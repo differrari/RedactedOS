@@ -1,2 +1,3 @@
 echo "Running rpi emulator"
-qemu-system-arm -M versatilepb -m 256M -kernel kernel.img -nographic #-display cocoa
+#qemu-system-aarch64 -M virt -cpu cortex-a57 -nographic -kernel kernel.img
+qemu-system-aarch64 -M virt -cpu cortex-a72 -m 512M -kernel kernel.elf -nographic -serial mon:stdio

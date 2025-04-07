@@ -1,17 +1,32 @@
-CFLAGS = -nostdlib -ffreestanding -c -mcpu=arm926ej-s
-#-Wall -Wextra
-LDFLAGS = -T linker.ld
+# Compiler and Linker
+ARCH= aarch64-none-elf
+CC = $(ARCH)-gcc
+LD = $(ARCH)-ld
+OBJCOPY = $(ARCH)-objcopy
 
-SRC = boot.s kernel.c uart.c framebuffer.c
+# Compiler and Linker Flags
+CFLAGS = -nostdlib -ffreestanding -Wall -Wextra -mcpu=cortex-a72
+LDFLAGS = -T $(shell ls *.ld)
 
-all: kernel.img
+C_SRC = $(wildcard *.c)
+ASM_SRC = $(wildcard *.S)
+OBJ = $(C_SRC:.c=.o) $(ASM_SRC:.S=.o)
 
-kernel.img: $(SRC)
-	arm-none-eabi-as -mcpu=arm926ej-s -g boot.s -o boot.o
-	arm-none-eabi-gcc $(CFLAGS) -g uart.c -o uart.o
-	arm-none-eabi-gcc $(CFLAGS) -g kernel.c -o kernel.o
-	arm-none-eabi-ld $(LDFLAGS) kernel.o uart.o boot.o -o kernel.elf
-	arm-none-eabi-objcopy -O binary kernel.elf kernel.img
+# Output File
+TARGET = kernel.elf
+
+# Build Rules
+all: $(TARGET)
+
+$(TARGET): $(OBJ)
+	$(LD) $(LDFLAGS) -o kernel.bin $(OBJ)
+	$(OBJCOPY) -O binary kernel.bin $(TARGET)
+
+%.o: %.S
+	$(CC) $(CFLAGS) -c $< -o $@
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f *.o *.elf *.img
+	rm -f $(OBJ) kernel.bin kernel.elf $(TARGET)

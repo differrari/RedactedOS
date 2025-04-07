@@ -1,5 +1,6 @@
 .global _start
 _start:
-    ldr sp, =stack_top        // Set up stack
+    ldr x0, =stack_top
+    mov sp, x0
     bl kernel_main            
-1:  b .
+    b .
