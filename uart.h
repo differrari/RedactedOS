@@ -1,0 +1,1 @@
+void put_uart(const char *s);

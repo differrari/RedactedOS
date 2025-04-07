@@ -1,0 +1,2 @@
+echo "Running rpi emulator"
+qemu-system-arm -M versatilepb -m 256M -kernel kernel.img -nographic #-display cocoa
