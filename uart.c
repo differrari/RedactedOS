@@ -4,7 +4,7 @@
 #define UART0DR 0x09000000
 
 void uart_putc(const char c){
-    mmio_write(UART0DR,c);
+    write(UART0DR,c);
 }
 
 void uart_puts(const char *s) {

@@ -17,15 +17,15 @@ uint64_t pci_make_addr(uint32_t bus, uint32_t slot, uint32_t func, uint32_t offs
             | ((uint64_t)(offset & 0xFFF));
 }
 
-uint64_t pci_get_bar(uint64_t base, uint8_t index){
-    return base + 0x10 + (index * 4);
+uint64_t pci_get_bar(uint64_t base, uint8_t offset, uint8_t index){
+    return base + offset + (index * 4);
 }
 
-void debug_read_bar(uint64_t base, uint8_t index){
-    uart_puts("Reading bar @");
-    uint64_t addr = pci_get_bar(base,index);
+void debug_read_bar(uint64_t base, uint8_t offset, uint8_t index){
+    uart_puts("Reading@");
+    uint64_t addr = pci_get_bar(base, offset, index);
     uart_puthex(addr);
-    uint64_t val = mmio_read32(addr);
+    uint64_t val = read32(addr);
     uart_puts(" (");
     uart_puthex(index);
     uart_puts(") content: ");
@@ -33,10 +33,10 @@ void debug_read_bar(uint64_t base, uint8_t index){
     uart_putc('\n');
 }
 
-void inspect_bar(uint64_t base) {
+void inspect_bars(uint64_t base, uint8_t offset) {
     uart_puts("Inspecting GPU BARs...\n");
-    for (uint32_t bar_offset = 0x0; bar_offset <= 0x18; bar_offset += 4) {
-        debug_read_bar(base, bar_offset);
+    for (uint32_t bar_offset = 0; bar_offset <= 0xFF; bar_offset += 1) {
+        debug_read_bar(base, offset, bar_offset);
     }
 }
 
@@ -45,7 +45,7 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id, uint64_t* out_m
         for (uint32_t slot = 0; slot < PCI_SLOT_MAX; slot++) {
             for (uint32_t func = 0; func < PCI_FUNC_MAX; func++) {
                 uint64_t device_address = pci_make_addr(bus, slot, func, 0x00);
-                uint64_t vendor_device = mmio_read(device_address);
+                uint64_t vendor_device = read(device_address);
                 if ((vendor_device & 0xFFFF) == vendor_id && ((vendor_device >> 16) & 0xFFFF) == device_id) {
 
                     uart_puts("Found device at bus ");
@@ -70,39 +70,12 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id, uint64_t* out_m
 void dump_pci_config(uint64_t base) {
     uart_puts("Dumping PCI Configuration Space:\n");
     for (uint32_t offset = 0; offset < 0x40; offset += 4) {
-        uint64_t val = mmio_read(base + offset);
+        uint64_t val = read(base + offset);
         uart_puts("Offset ");
         uart_puthex(offset);
         uart_puts(": ");
         uart_puthex(val);
         uart_putc('\n');
-    }
-}
-
-void pci_enable_device(uint64_t base) {
-    uint64_t cmd_before = mmio_read(base + 0x04);
-    uart_puts("PCI Command Register before: ");
-    uart_puthex(cmd_before);
-    uart_putc('\n');
-
-    // Set the Memory Space Enable (MSE) and Bus Master Enable (BME) bits
-    uint64_t cmd = cmd_before | 0x7;
-
-    uart_puts("Setting CMD: ");
-    uart_puthex(cmd);
-    uart_putc('\n');
-
-    mmio_write(base + 0x04, cmd);
-
-    uint64_t cmd_after = mmio_read(base + 0x04);
-    uart_puts("PCI Command Register after: ");
-    uart_puthex(cmd_after);
-    uart_putc('\n');
-
-    if ((cmd_after & 0x7) == 0x7) {
-        uart_puts("PCI device successfully enabled.\n");
-    } else {
-        uart_puts("Failed to enable PCI device (MSE/BME not set).\n");
     }
 }
 
