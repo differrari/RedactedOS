@@ -9,4 +9,8 @@ void pci_enable_device(uint64_t base);
 
 void dump_pci_config(uint64_t base);
 
+uint64_t pci_get_bar(uint64_t base, uint8_t index);
+
+void debug_read_bar(uint64_t base, uint8_t index);
+
 #endif

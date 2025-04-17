@@ -17,36 +17,26 @@ uint64_t pci_make_addr(uint32_t bus, uint32_t slot, uint32_t func, uint32_t offs
             | ((uint64_t)(offset & 0xFFF));
 }
 
+uint64_t pci_get_bar(uint64_t base, uint8_t index){
+    return base + 0x10 + (index * 4);
+}
+
+void debug_read_bar(uint64_t base, uint8_t index){
+    uart_puts("Reading bar @");
+    uint64_t addr = pci_get_bar(base,index);
+    uart_puthex(addr);
+    uint64_t val = mmio_read32(addr);
+    uart_puts(" (");
+    uart_puthex(index);
+    uart_puts(") content: ");
+    uart_puthex(val);
+    uart_putc('\n');
+}
+
 void inspect_bar(uint64_t base) {
     uart_puts("Inspecting GPU BARs...\n");
-    for (uint32_t bar_offset = 0x10; bar_offset <= 0x28; bar_offset += 4) {
-        uint64_t bar = mmio_read(base + bar_offset);
-        uart_puts("BAR @ offset ");
-        uart_puthex(bar_offset);
-        uart_puts(": ");
-        uart_puthex(bar);
-        uart_putc('\n');
-
-        // Check for 64-bit BAR
-        if ((bar & 0x4) != 0) {
-            uart_puts("  - 64-bit Prefetchable Memory\n");
-            uint64_t high = mmio_read(base + bar_offset + 4);
-            uart_puts("  - Upper 32 bits: ");
-            uart_puthex(high);
-            uart_putc('\n');
-            bar |= ((uint64_t)high << 32);
-        }
-
-        // Check if MMIO or IO
-        if (bar & 1) {
-            uart_puts("  - I/O Space\n");
-        } else {
-            uint64_t mmio_base = bar & ~0xF;
-            uart_puts("  - MMIO Space\n");
-            uart_puts("  - MMIO Base: ");
-            uart_puthex(mmio_base);
-            uart_putc('\n');
-        }
+    for (uint32_t bar_offset = 0x0; bar_offset <= 0x18; bar_offset += 4) {
+        debug_read_bar(base, bar_offset);
     }
 }
 
@@ -66,22 +56,9 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id, uint64_t* out_m
                     uart_puthex(func);
                     uart_putc('\n');
 
-                    // inspect_bar(device_address);
-
                     *out_mmio_base = device_address;
 
                     return device_address;
-
-                    // for (uint32_t bar_offset = 0x10; bar_offset <= 0x24; bar_offset += 4) {
-                    //     uint64_t baraddr = pci_make_addr(bus,slot,func,bar_offset);
-                    //     uint64_t bar = mmio_read(baraddr);
-                    //     if (bar == 0 || bar == 0xFFFFFFFF) continue;
-
-                    //     if ((bar & 1) == 0) { 
-                    //         *out_mmio_base = bar & ~0xF;
-                    //         return device_address;
-                    //     }
-                    // }
                 }
             }
         }
