@@ -2,3 +2,4 @@
 *.img
 *.elf
 *.bin
+*.log

@@ -1,3 +1,8 @@
-echo "Running rpi emulator"
-#qemu-system-aarch64 -M virt -cpu cortex-a57 -nographic -kernel kernel.img
-qemu-system-aarch64 -M virt -cpu cortex-a72 -m 512M -kernel kernel.elf -nographic -serial mon:stdio
+#/!bin/sh
+
+echo "Cleaning project"
+make clean
+echo "Building project"
+make
+echo "Running emulator"
+qemu-system-aarch64 -M virt -cpu cortex-a72 -m 512M -kernel kernel.elf -device virtio-gpu-pci #-serial mon:stdio -nographic #-monitor unix:/tmp/qemu-monitor-socket,server,nowait -s -S

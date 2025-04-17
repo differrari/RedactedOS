@@ -1,0 +1,4 @@
+#/!bin/sh
+
+ aarch64-none-elf-gdb -ex "target remote :1234" kernel.elf
+ #monitor info pci
