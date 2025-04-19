@@ -2,10 +2,9 @@
 
 #include "types.h"
 
-bool vgp_init();
+bool vgp_init(uint32_t width, uint32_t height);
 
 void vgp_flush();
-void vgp_transfer_to_host();
 
 void vgp_clear(uint32_t color);
 void vgp_draw_pixel(uint32_t x, uint32_t y, uint32_t color);

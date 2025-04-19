@@ -12,10 +12,10 @@ typedef enum {
 
 SupportedGPU chosen_GPU;
 
-void gpu_init(){
-    if (vgp_init())
+void gpu_init(size preferred_screen_size){
+    if (vgp_init(preferred_screen_size.width,preferred_screen_size.height))
         chosen_GPU = VIRTIO_GPU_PCI;
-    if (rfb_init())
+    if (rfb_init(preferred_screen_size.width,preferred_screen_size.height))
         chosen_GPU = RAMFB;
     uart_puts("Selected and initialized GPU ");
     uart_puthex(chosen_GPU);

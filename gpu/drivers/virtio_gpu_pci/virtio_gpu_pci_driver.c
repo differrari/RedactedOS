@@ -144,6 +144,8 @@ static uint32_t display_height = 600;
 static uint64_t framebuffer_memory = 0x0;
 static uint32_t scanout_id = 0;
 static bool scanout_found = false;
+static uint32_t default_width;
+static uint32_t default_height;
 #define FRAMEBUFFER_BPP 32
 
 uint64_t vgp_setup_bars(uint64_t base, uint8_t bar) {
@@ -633,9 +635,12 @@ void vgp_draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t 
 
 }
 
-bool vgp_init() {
+bool vgp_init(uint32_t width, uint32_t height) {
     uint64_t mmio_base;
     uint64_t address = find_pci_device(VENDOR_ID, DEVICE_ID_BASE + GPU_DEVICE_ID, &mmio_base);
+
+    default_width = width;
+    default_height = height;
 
     if (address > 0) {
         uart_puts("VGP GPU detected at ");

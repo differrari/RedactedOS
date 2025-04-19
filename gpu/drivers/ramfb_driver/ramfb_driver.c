@@ -141,15 +141,16 @@ struct fw_cfg_file* fw_find_file(string search) {
     return (struct fw_cfg_file*)0;
 }
 
-bool rfb_init() {
+bool rfb_init(uint32_t w, uint32_t h) {
 
     if (!fw_cfg_check()){
         uart_puts("Wrong FW_CFG config");
         return false;
     }
 
-    width = 1024;
-    height = 768;
+    width = w;
+    height = h;
+
     bpp = 4;
     stride = bpp * width;
 
