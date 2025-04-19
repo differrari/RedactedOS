@@ -10,7 +10,12 @@
 #define VIRTIO_STATUS_FEATURES_OK   0x8
 #define VIRTIO_STATUS_FAILED        0x80
 
-#define VIRTIO_GPU_CMD_GET_DISPLAY_INFO 0x0100
+#define VIRTIO_GPU_CMD_GET_DISPLAY_INFO        0x0100
+#define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D      0x0101
+#define VIRTIO_GPU_CMD_SET_SCANOUT             0x0102
+#define VIRTIO_GPU_CMD_RESOURCE_FLUSH          0x0103
+#define VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D     0x0104
+#define VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING 0x0106
 
 #define VIRTIO_PCI_CAP_COMMON_CFG        1
 #define VIRTIO_PCI_CAP_NOTIFY_CFG        2
@@ -23,7 +28,19 @@
 #define DEVICE_ID_BASE 0x1040
 #define GPU_DEVICE_ID 0x10
 
-#define VIRTQUEUE_BASE 0x41000000
+static uint64_t VIRTQUEUE_BASE;
+static uint64_t VIRTQUEUE_AVAIL;
+static uint64_t VIRTQUEUE_USED;
+
+static uint64_t VIRTQUEUE_CMD;
+static uint64_t VIRTQUEUE_RESP;
+static uint64_t VIRTQUEUE_DISP_INFO;
+
+#define VIRTIO_GPU_MAX_SCANOUTS 16 
+
+#define VIRTQ_DESC_F_WRITE 2
+
+#define framebuffer_size display_width * display_height * (FRAMEBUFFER_BPP/8)
 
 struct virtio_pci_cap {
     uint8_t cap_vndr;
@@ -63,7 +80,27 @@ struct virtio_gpu_ctrl_hdr {
     uint32_t flags;
     uint64_t fence_id;
     uint32_t ctx_id;
-    uint32_t padding;
+    uint8_t ring_idx;
+    uint8_t padding[3];
+};
+
+struct virtio_rect {
+    uint32_t x;
+    uint32_t y;
+    uint32_t width;
+    uint32_t height;
+};
+
+struct virtio_gpu_resp_display_info {
+    struct virtio_gpu_ctrl_hdr hdr;
+    struct virtio_gpu_display_one {
+        uint32_t enabled;
+        uint32_t flags;
+        uint32_t x;
+        uint32_t y;
+        uint32_t width;
+        uint32_t height;
+    } pmodes[VIRTIO_GPU_MAX_SCANOUTS];
 };
 
 struct virtq_desc {
@@ -133,30 +170,332 @@ uint64_t setup_gpu_bars(uint64_t base, uint8_t bar) {
     return (bar_val & ~0xF);
 }
 
-void gpu_send_command(uint64_t cmd_addr, uint64_t notify_base, uint32_t notify_multiplier) {
+#define VIRTQ_DESC_F_NEXT 1
 
+void gpu_send_command(uint64_t cmd_addr, uint32_t cmd_size, uint64_t resp_addr, uint32_t resp_size, uint64_t notify_base, uint32_t notify_multiplier, uint8_t flags) {
     uart_puts("New command\n");
 
-    volatile struct virtq_desc* desc = (volatile struct virtq_desc*)(uintptr_t)(VIRTQUEUE_BASE + 1000);
-    volatile struct virtq_avail* avail = (volatile struct virtq_avail*)(uintptr_t)(VIRTQUEUE_BASE + 2000);
-    volatile struct virtq_used* used = (volatile struct virtq_used*)(uintptr_t)(VIRTQUEUE_BASE + 3000);
+    volatile struct virtq_desc* desc = (volatile struct virtq_desc*)(uintptr_t)(common_cfg->queue_desc);
+    volatile struct virtq_avail* avail = (volatile struct virtq_avail*)(uintptr_t)(common_cfg->queue_driver);
+    volatile struct virtq_used* used = (volatile struct virtq_used*)(uintptr_t)(common_cfg->queue_device);
 
     desc[0].addr = cmd_addr;
-    desc[0].len = sizeof(struct virtio_gpu_ctrl_hdr);
-    desc[0].flags = 0;
-    desc[0].next = 0;
+    desc[0].len = cmd_size;
+    desc[0].flags = flags;
+    desc[0].next = 1;
+
+    desc[1].addr = resp_addr;
+    desc[1].len = resp_size;
+    desc[1].flags = VIRTQ_DESC_F_WRITE; 
+    desc[1].next = 0;
 
     avail->ring[avail->idx % 128] = 0;
     avail->idx++;
 
     *(volatile uint16_t*)(uintptr_t)(notify_base + notify_multiplier * 0) = 0;
 
-    while (used->idx == 0);
+    uint16_t last_used_idx = used->idx;
+    while (last_used_idx == used->idx);
+    last_used_idx = used->idx;
 
     uart_puts("Command issued\n");
 }
 
-void virtio_gpu_init(uint64_t base_addr) {
+#define GPU_RESOURCE_ID 1
+static uint32_t display_width = 800;
+static uint32_t display_height = 600;
+static uint64_t framebuffer_memory = 0x0;
+static uint32_t scanout_id = 0;
+#define FRAMEBUFFER_BPP 32
+
+bool gpu_get_display_info(){
+    volatile struct virtio_gpu_ctrl_hdr* cmd = (volatile struct virtio_gpu_ctrl_hdr*)(uintptr_t)(VIRTQUEUE_CMD);
+    cmd->type = VIRTIO_GPU_CMD_GET_DISPLAY_INFO;
+    cmd->flags = 0;
+    cmd->fence_id = 0;
+    cmd->ctx_id = 0;
+    cmd->ring_idx = 0;
+    cmd->padding[0] = 0;
+    cmd->padding[1] = 0;
+    cmd->padding[2] = 0;
+
+    uart_puts("Command prepared\n");
+
+    gpu_send_command((uint64_t)cmd, sizeof(struct virtio_gpu_ctrl_hdr), VIRTQUEUE_DISP_INFO, sizeof(struct virtio_gpu_resp_display_info), (uint64_t)notify_cfg, notify_off_multiplier, 0);
+
+    volatile struct virtio_gpu_resp_display_info* resp = (volatile struct virtio_gpu_resp_display_info*)(uintptr_t)(VIRTQUEUE_DISP_INFO);
+
+    for (int i = 0; i < VIRTIO_GPU_MAX_SCANOUTS; i++) {
+        uart_puts("Scanout ");
+        uart_puthex(i);
+        uart_puts(": enabled=");
+        uart_puthex(resp->pmodes[i].enabled);
+        uart_puts(" size=");
+        uart_puthex(resp->pmodes[i].width);
+        uart_putc('x');
+        uart_puthex(resp->pmodes[i].height);
+        uart_putc('\n');
+    }
+
+    for (uint32_t i = 0; i < VIRTIO_GPU_MAX_SCANOUTS; i++){
+        if (resp->pmodes[i].enabled || resp->pmodes[i].width > 0) {
+            uart_puts("FOUND A VALID DISPLAY: ");
+            uart_puthex(resp->pmodes[i].width);
+            uart_putc('x');
+            uart_puthex(resp->pmodes[i].height);
+            uart_putc('\n');
+            display_width = resp->pmodes[i].width;
+            display_height = resp->pmodes[i].height;
+            scanout_id = i;
+            return true;
+        }
+    }
+
+    uart_puts("Display not enabled yet. Using default \n");
+    resp->pmodes[0].width = 1024;
+    resp->pmodes[0].height = 768;
+    scanout_id = 0;
+    return false;
+}
+
+void gpu_create_2d_resource() {
+    volatile struct {
+        struct virtio_gpu_ctrl_hdr hdr;
+        uint32_t resource_id;
+        uint32_t format;
+        uint32_t width;
+        uint32_t height;
+    } *cmd = (volatile void*)(uintptr_t)(VIRTQUEUE_CMD);
+    
+    cmd->hdr.type = VIRTIO_GPU_CMD_RESOURCE_CREATE_2D;
+    cmd->hdr.flags = 0;
+    cmd->hdr.fence_id = 0;
+    cmd->hdr.ctx_id = 0;
+    cmd->hdr.ring_idx = 0;
+    cmd->hdr.padding[0] = 0;
+    cmd->hdr.padding[1] = 0;
+    cmd->hdr.padding[2] = 0;
+    cmd->resource_id = GPU_RESOURCE_ID;
+    cmd->format = 1; // VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM
+    cmd->width = display_width;
+    cmd->height = display_height;
+    
+    gpu_send_command((uint64_t)cmd, sizeof(*cmd), VIRTQUEUE_RESP, sizeof(struct virtio_gpu_ctrl_hdr), (uint64_t)notify_cfg, notify_off_multiplier, VIRTQ_DESC_F_NEXT);
+
+    asm volatile("" ::: "memory");
+
+    volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)(VIRTQUEUE_RESP);
+
+    uart_puts("Response type: ");
+    uart_puthex(resp->type);
+    uart_puts(" flags: ");
+    uart_puthex(resp->flags);
+    uart_putc('\n');
+    
+    if (resp->type == 0x1100) {
+        uart_puts("RESOURCE_CREATE_2D OK\n");
+    } else {
+        uart_puts("RESOURCE_CREATE_2D ERROR: ");
+        uart_puthex(resp->type);
+        uart_putc('\n');
+    }
+}
+
+void gpu_attach_backing() {
+    volatile uint8_t* ptr = (volatile uint8_t*)(uintptr_t)VIRTQUEUE_CMD;
+
+    volatile struct {
+        struct virtio_gpu_ctrl_hdr hdr;
+        uint32_t resource_id;
+        uint32_t nr_entries;
+    }__attribute__((packed)) *cmd = (volatile void*)ptr;
+
+    volatile struct {
+        uint64_t addr;
+        uint32_t length;
+        uint32_t padding;
+    }__attribute__((packed)) *entry = (volatile void*)(ptr + sizeof(*cmd));
+
+    cmd->hdr.type = VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING;
+    cmd->hdr.flags = 0;
+    cmd->hdr.fence_id = 0;
+    cmd->hdr.ctx_id = 0;
+    cmd->hdr.ring_idx = 0;
+    cmd->hdr.padding[0] = 0;
+    cmd->hdr.padding[1] = 0;
+    cmd->hdr.padding[2] = 0;
+    cmd->resource_id = GPU_RESOURCE_ID;
+    cmd->nr_entries = 1;
+
+    uart_puts("Attach framebuffer addr: ");
+    uart_puthex(framebuffer_memory);
+    uart_puts(", size: ");
+    uart_puthex(framebuffer_size);
+    uart_putc('\n');
+
+    entry->addr = framebuffer_memory;
+    entry->length = framebuffer_size;
+    entry->padding = 0;
+
+    gpu_send_command((uint64_t)cmd, sizeof(*cmd) + sizeof(*entry), VIRTQUEUE_RESP, sizeof(struct virtio_gpu_ctrl_hdr), (uint64_t)notify_cfg, notify_off_multiplier, VIRTQ_DESC_F_NEXT);
+
+    asm volatile("" ::: "memory");
+
+    volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)(VIRTQUEUE_RESP);
+
+    uart_puts("Response type: ");
+    uart_puthex(resp->type);
+    uart_puts(" flags: ");
+    uart_puthex(resp->flags);
+    uart_putc('\n');
+
+    if (resp->type == 0x1100) {
+        uart_puts("RESOURCE_ATTACH_BACKING OK\n");
+    } else {
+        uart_puts("RESOURCE_ATTACH_BACKING ERROR: ");
+        uart_puthex(resp->type);
+        uart_putc('\n');
+    }
+}
+
+void gpu_set_scanout() {
+    volatile struct {
+        struct virtio_gpu_ctrl_hdr hdr;
+        struct virtio_rect r;
+        uint32_t scanout_id;
+        uint32_t resource_id;
+    }__attribute__((packed)) *cmd = (volatile void*)(uintptr_t)VIRTQUEUE_CMD;
+
+    
+    cmd->r.x = 0;
+    cmd->r.y = 0;
+    cmd->r.width = display_width;
+    cmd->r.height = display_height;
+
+    cmd->scanout_id = scanout_id;
+    cmd->resource_id = GPU_RESOURCE_ID;
+
+    cmd->hdr.type = VIRTIO_GPU_CMD_SET_SCANOUT;
+    cmd->hdr.flags = 0;
+    cmd->hdr.fence_id = 0;
+    cmd->hdr.ctx_id = 0;
+    cmd->hdr.ring_idx = 0;
+    cmd->hdr.padding[0] = 0;
+    cmd->hdr.padding[1] = 0;
+    cmd->hdr.padding[2] = 0;
+
+
+    gpu_send_command((uint64_t)cmd, sizeof(*cmd), VIRTQUEUE_RESP, sizeof(struct virtio_gpu_ctrl_hdr), (uint64_t)notify_cfg, notify_off_multiplier, VIRTQ_DESC_F_NEXT);
+
+    asm volatile("" ::: "memory");
+
+    volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)VIRTQUEUE_RESP;
+
+    uart_puts("Response type: ");
+    uart_puthex(resp->type);
+    uart_puts(" flags: ");
+    uart_puthex(resp->flags);
+    uart_putc('\n');
+
+    if (resp->type == 0x1100) {
+        uart_puts("SCANOUT OK\n");
+    } else {
+        uart_puts("SCANOUT ERROR:\n");
+        uart_putc('\n');
+    }
+}
+
+void gpu_transfer_to_host() {
+    volatile struct {
+        uint32_t type;
+        uint32_t flags;
+        uint64_t fence_id;
+        uint32_t resource_id;
+        uint32_t rsvd;
+        uint32_t x;
+        uint32_t y;
+        uint32_t width;
+        uint32_t height;
+    } *cmd = (volatile void*)(uintptr_t)(VIRTQUEUE_CMD);
+    
+    cmd->type = VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D;
+    cmd->flags = 0;
+    cmd->fence_id = 0;
+    cmd->resource_id = GPU_RESOURCE_ID;
+    cmd->rsvd = 0;
+    cmd->x = 0;
+    cmd->y = 0;
+    cmd->width = display_width;
+    cmd->height = display_height;
+    
+    gpu_send_command((uint64_t)cmd, sizeof(*cmd), VIRTQUEUE_RESP, sizeof(struct virtio_gpu_ctrl_hdr), (uint64_t)notify_cfg, notify_off_multiplier, VIRTQ_DESC_F_NEXT);
+
+    asm volatile("" ::: "memory");
+
+    volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)(VIRTQUEUE_RESP);
+
+    uart_puts("Response type: ");
+    uart_puthex(resp->type);
+    uart_puts(" flags: ");
+    uart_puthex(resp->flags);
+    uart_putc('\n');
+    
+    if (resp->type == 0x1100) {
+        uart_puts("TRANSFER OK\n");
+    } else {
+        uart_puts("TRANSFER ERROR: ");
+        uart_puthex(resp->type);
+        uart_putc('\n');
+    }
+}
+
+void gpu_flush() {
+    volatile struct {
+        uint32_t type;
+        uint32_t flags;
+        uint64_t fence_id;
+        uint32_t resource_id;
+        uint32_t rsvd;
+    } *cmd = (volatile void*)(uintptr_t)(VIRTQUEUE_CMD);
+    
+    cmd->type = VIRTIO_GPU_CMD_RESOURCE_FLUSH;
+    cmd->flags = 0;
+    cmd->fence_id = 0;
+    cmd->resource_id = GPU_RESOURCE_ID;
+    cmd->rsvd = 0;
+    
+    gpu_send_command((uint64_t)cmd, sizeof(*cmd), VIRTQUEUE_RESP, sizeof(struct virtio_gpu_ctrl_hdr), (uint64_t)notify_cfg, notify_off_multiplier, VIRTQ_DESC_F_NEXT);
+
+    asm volatile("" ::: "memory");
+
+    volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)(VIRTQUEUE_RESP);
+    
+    uart_puts("Response type: ");
+    uart_puthex(resp->type);
+    uart_puts(" flags: ");
+    uart_puthex(resp->flags);
+    uart_putc('\n');
+
+    if (resp->type == 0x1100) {
+        uart_puts("FLUSH OK\n");
+    } else {
+        uart_puts("FLUSH ERROR: ");
+        uart_puthex(resp->type);
+        uart_putc('\n');
+    }
+}
+
+void gpu_clear(uint32_t color) {
+    volatile uint32_t* fb = (volatile uint32_t*)framebuffer_memory;
+    for (uint32_t i = 0; i < display_width * display_height; i++) {
+        fb[i] = color;
+    }
+
+    gpu_transfer_to_host();
+    gpu_flush();
+}
+
+void virtio_gpu_init() {
     uart_puts("Starting VirtIO GPU initialization\n");
 
     common_cfg->device_status = 0;
@@ -196,12 +535,21 @@ void virtio_gpu_init(uint64_t base_addr) {
 
     common_cfg->queue_size = queue_size;
 
-    common_cfg->queue_desc = VIRTQUEUE_BASE + 1000;
-    common_cfg->queue_driver = VIRTQUEUE_BASE + 2000;
-    common_cfg->queue_device = VIRTQUEUE_BASE + 3000;
+    VIRTQUEUE_BASE = alloc(4096);
+    VIRTQUEUE_AVAIL = alloc(4096);
+    VIRTQUEUE_USED = alloc(4096);
+    VIRTQUEUE_CMD = alloc(4096);
+    VIRTQUEUE_RESP = alloc(4096);
+    VIRTQUEUE_DISP_INFO = alloc(sizeof(struct virtio_gpu_resp_display_info));
+
+    common_cfg->queue_desc = VIRTQUEUE_BASE;
+    common_cfg->queue_driver = VIRTQUEUE_AVAIL;
+    common_cfg->queue_device = VIRTQUEUE_USED;
     common_cfg->queue_enable = 1;
 
     common_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
+
+    
 
     uart_puts("VirtIO GPU initialization complete\n");
 }
@@ -265,6 +613,7 @@ volatile struct virtio_pci_cap* get_capabilities(uint64_t address) {
     return 0;
 }
 
+
 void gpu_init() {
     uint64_t mmio_base;
     uint64_t address = find_pci_device(VENDOR_ID, DEVICE_ID_BASE + GPU_DEVICE_ID, &mmio_base);
@@ -277,11 +626,32 @@ void gpu_init() {
         uart_puts("Initializing GPU...\n");
 
         get_capabilities(address);
-        virtio_gpu_init(address);
+        virtio_gpu_init();
 
         uart_puts("GPU initialized. Issuing commands\n");
 
+        gpu_get_display_info();
+
+        gpu_get_display_info();
+        // while (!gpu_get_display_info()) {
+            // uart_puts("Waiting for display...\n");
+        // }
+
+        framebuffer_memory = alloc(framebuffer_size);
+
+        gpu_create_2d_resource();
+
+        gpu_attach_backing();
+
+        gpu_transfer_to_host();
+
+        gpu_flush();
+
+        gpu_set_scanout();
+        gpu_clear(0xFFFFFFFF); // White screen
 
         uart_puts("GPU ready\n");
+        
+        uart_puts("GPU test finished\n");
     }
 }

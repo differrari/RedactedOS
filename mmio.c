@@ -40,3 +40,13 @@ void write(uint64_t addr, uint64_t value) {
 uint64_t read(uint64_t addr) {
     return read64(addr);
 }
+
+extern uint64_t stack_top;
+uint64_t next_free_memory = (uint64_t)&stack_top;
+
+uint64_t alloc(uint64_t size) {
+    next_free_memory = (next_free_memory + 0xFFF) & ~0xFFF;
+    uint64_t result = next_free_memory;
+    next_free_memory += (size + 0xFFF) & ~0xFFF;
+    return result;
+}
