@@ -1,8 +1,8 @@
 #include "gpu.h"
 #include "uart.h"
 
-#include "drivers/virtio_gpu_pci/virtio_gpu_pci_driver.h"
-#include "drivers/ramfb_driver/ramfb_driver.h"
+#include "graph/drivers/virtio_gpu_pci/virtio_gpu_pci_driver.h"
+#include "graph/drivers/ramfb_driver/ramfb_driver.h"
 
 typedef enum {
     NONE,
@@ -79,6 +79,18 @@ void gpu_draw_line(point p0, point p1, uint32_t color){
         break;
         case RAMFB:
             rfb_draw_line(p0.x,p0.y,p1.x,p1.y,color);
+        break;
+        default:
+        break;
+    }
+}
+void gpu_draw_char(point p, char c, uint32_t color){
+    switch (chosen_GPU) {
+        case VIRTIO_GPU_PCI:
+            vgp_draw_char(p.x,p.y,c,color);
+        break;
+        case RAMFB:
+            rfb_draw_char(p.x,p.y,c,color);
         break;
         default:
         break;

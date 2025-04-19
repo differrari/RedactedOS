@@ -373,8 +373,8 @@ bool vgp_get_display_info(){
     }
 
     uart_puts("Display not enabled yet. Using default but not allowing scanout\n");
-    resp->pmodes[0].width = 1024;
-    resp->pmodes[0].height = 768;
+    resp->pmodes[0].width = default_width;
+    resp->pmodes[0].height = default_height;
     scanout_found = false;
     return false;
 }
@@ -633,6 +633,10 @@ void vgp_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t colo
 
 void vgp_draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t color){
 
+}
+
+void vgp_draw_char(uint32_t x, uint32_t y, char c, uint32_t color) {
+    
 }
 
 bool vgp_init(uint32_t width, uint32_t height) {

@@ -2,6 +2,7 @@
 #include "mmio.h"
 #include "string.h"
 #include "fw/fw_cfg.h"
+#include "graph/font8x8_basic.h"
 
 #define RGB_FORMAT_XRGB8888 ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
 
@@ -62,6 +63,18 @@ void rfb_draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t 
         e2 = err;
         if (e2 > -dx) { err -= dy; x0 += sx; }
         if (e2 < dy) { err += dx; y0 += sy; }
+    }
+}
+
+void rfb_draw_char(uint32_t x, uint32_t y, char c, uint32_t color) {
+    const uint8_t* glyph = font8x8_basic[(uint8_t)c];
+    for (uint32_t row = 0; row < 8; row++) {
+        uint8_t bits = glyph[row];
+        for (uint32_t col = 0; col < 8; col++) {
+            if (bits & (1 << (7 - col))) {
+                rfb_draw_pixel(x + col, y + row, color);
+            }
+        }
     }
 }
 
