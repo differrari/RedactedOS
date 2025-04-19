@@ -10,7 +10,7 @@ void kernel_main() {
     uart_puts("Preparing for draw\n");
 
     gpu_init();
-    gpu_clear(0x00FF00FF); 
-    
+    gpu_clear(0x00FF00); 
+
     uart_puts("Square drawn\n");
 }

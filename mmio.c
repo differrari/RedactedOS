@@ -50,3 +50,7 @@ uint64_t alloc(uint64_t size) {
     next_free_memory += (size + 0xFFF) & ~0xFFF;
     return result;
 }
+
+void free (void* ptr){
+
+}
