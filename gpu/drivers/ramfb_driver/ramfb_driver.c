@@ -65,6 +65,36 @@ void rfb_clear(uint32_t color){
     }
 }
 
+void rfb_draw_pixel(uint32_t x, uint32_t y, uint32_t color) {
+    if (x >= width || y >= height) return;
+    volatile uint32_t* fb = (volatile uint32_t*)fb_ptr;
+    fb[y * (stride / 4) + x] = color;
+}
+
+void rfb_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color) {
+    for (uint32_t dy = 0; dy < h; dy++) {
+        for (uint32_t dx = 0; dx < w; dx++) {
+            rfb_draw_pixel(x + dx, y + dy, color);
+        }
+    }
+}
+
+void rfb_draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t color) {
+    int dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
+    int sx = (x0 < x1) ? 1 : -1;
+    int dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
+    int sy = (y0 < y1) ? 1 : -1;
+    int err = (dx > dy ? dx : -dy) / 2, e2;
+
+    for (;;) {
+        rfb_draw_pixel(x0, y0, color);
+        if (x0 == x1 && y0 == y1) break;
+        e2 = err;
+        if (e2 > -dx) { err -= dy; x0 += sx; }
+        if (e2 < dy) { err += dx; y0 += sy; }
+    }
+}
+
 void fw_cfg_dma_read(void* dest, uint32_t size, uint32_t ctrl) {
     struct fw_cfg_dma_access access = {
         .address = __builtin_bswap64((uint64_t)dest),
@@ -149,4 +179,8 @@ bool rfb_init() {
     free(file);
 
     return true;
+}
+
+void rfb_flush(){
+    
 }

@@ -1,6 +1,6 @@
-#include "../uart.h"
-#include "../mmio.h"
-#include "../pci.h"
+#include "uart.h"
+#include "mmio.h"
+#include "pci.h"
 
 ///
 
@@ -570,6 +570,9 @@ void vgp_transfer_to_host() {
 }
 
 void vgp_flush() {
+
+    vgp_transfer_to_host();
+
     volatile struct {
         uint32_t type;
         uint32_t flags;
@@ -616,6 +619,18 @@ void vgp_clear(uint32_t color) {
 
     vgp_transfer_to_host();
     vgp_flush();
+}
+
+void vgp_draw_pixel(uint32_t x, uint32_t y, uint32_t color){
+
+}
+
+void vgp_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color){
+
+}
+
+void vgp_draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t color){
+
 }
 
 bool vgp_init() {

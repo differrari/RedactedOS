@@ -1,5 +1,5 @@
 #include "uart.h"
-#include "framebuffer.h"
+#include "gpu/gpu.h"
 #include "pci.h"
 
 void kernel_main() {
