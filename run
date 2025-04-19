@@ -11,11 +11,8 @@ echo "Running emulator"
 -cpu cortex-a72 \
 -m 512M \
 -kernel kernel.img \
--serial mon:stdio \
--device virtio-gpu-pci \
+-device ramfb \
 -display sdl \
-# -device ramfb \
-#virtio-gpu-pci,max_outputs=1 \
-#,xres=800,yres=600 \
+-serial mon:stdio \
 # -nographic \
 # -monitor unix:/tmp/qemu-monitor-socket,server,nowait -s -S

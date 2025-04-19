@@ -1,6 +1,8 @@
 #include "framebuffer.h"
-#include "virtio-gpu-pci/virtio_gpu_pci_driver.h"
 #include "uart.h"
+
+#include "virtio_gpu_pci/virtio_gpu_pci_driver.h"
+#include "ramfb_driver/ramfb_driver.h"
 
 typedef enum {
     NONE,
@@ -13,6 +15,8 @@ SupportedGPU chosen_GPU;
 void gpu_init(){
     if (vgp_init())
         chosen_GPU = VIRTIO_GPU_PCI;
+    if (rfb_init())
+        chosen_GPU = RAMFB;
     uart_puts("Selected and initialized GPU ");
     uart_puthex(chosen_GPU);
     uart_putc('\n');
@@ -33,6 +37,8 @@ void gpu_clear(uint32_t color){
         case VIRTIO_GPU_PCI:
             vgp_clear(color);
             break;
+        case RAMFB:
+            rfb_clear(color);
         default:
             break;
     }

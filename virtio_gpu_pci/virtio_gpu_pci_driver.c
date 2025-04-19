@@ -623,7 +623,7 @@ bool vgp_init() {
     uint64_t address = find_pci_device(VENDOR_ID, DEVICE_ID_BASE + GPU_DEVICE_ID, &mmio_base);
 
     if (address > 0) {
-        uart_puts("GPU detected at ");
+        uart_puts("VGP GPU detected at ");
         uart_puthex(address);
         uart_putc('\n');
 
