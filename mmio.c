@@ -41,8 +41,8 @@ uint64_t read(uint64_t addr) {
     return read64(addr);
 }
 
-extern uint64_t stack_top;
-uint64_t next_free_memory = (uint64_t)&stack_top;
+extern uint64_t heap_bottom;
+uint64_t next_free_memory = (uint64_t)&heap_bottom;
 
 uint64_t alloc(uint64_t size) {
     next_free_memory = (next_free_memory + 0xFFF) & ~0xFFF;

@@ -8,8 +8,9 @@ void kernel_main() {
 
     uart_puts("Hello world!\n");
     uart_puts("Preparing for draw\n");
-    // gpu_debug();
+
     gpu_init();
-    // gpu_clear(0x00FF00FF); 
+    gpu_clear(0x00FF00FF); 
+    
     uart_puts("Square drawn\n");
 }

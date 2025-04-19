@@ -5,15 +5,15 @@ LD = $(ARCH)-ld
 OBJCOPY = $(ARCH)-objcopy
 
 # Compiler and Linker Flags
-CFLAGS = -nostdlib -ffreestanding -Wall -Wextra -mcpu=cortex-a72
+CFLAGS = -nostdlib -ffreestanding -Wall -Wextra -mcpu=cortex-a72 -I.
 LDFLAGS = -T $(shell ls *.ld)
 
-C_SRC = $(wildcard *.c)
-ASM_SRC = $(wildcard *.S)
+C_SRC = $(shell find . -name '*.c')
+ASM_SRC = $(shell find . -name '*.S')
 OBJ = $(C_SRC:.c=.o) $(ASM_SRC:.S=.o)
 
 # Output File
-TARGET = kernel.elf
+TARGET = kernel.img
 
 # Build Rules
 all: $(TARGET)
@@ -29,4 +29,4 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJ) kernel.bin kernel.elf $(TARGET)
+	rm -f $(OBJ) kernel.bin $(TARGET)

@@ -10,10 +10,11 @@ echo "Running emulator"
 -M virt \
 -cpu cortex-a72 \
 -m 512M \
--kernel kernel.elf \
+-kernel kernel.img \
 -serial mon:stdio \
--device ramfb \
+-device virtio-gpu-pci \
 -display sdl \
+# -device ramfb \
 #virtio-gpu-pci,max_outputs=1 \
 #,xres=800,yres=600 \
 # -nographic \
