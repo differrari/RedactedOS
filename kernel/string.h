@@ -16,7 +16,6 @@ typedef struct {
 
 string string_l(const char *literal);
 string string_ca_max(const char *array, uint32_t max_length);
-string string_ca(const char *array);
 string string_c(const char c);
 string string_from_hex(uint64_t value);
 bool string_equals(string a, string b);

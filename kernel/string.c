@@ -10,7 +10,7 @@ static uint32_t compute_length(const char *s, uint32_t max_length) {
 }
 
 string string_l(const char *literal) {
-    uint32_t len = compute_length(literal, (uint32_t)-1);
+    uint32_t len = compute_length(literal, 0);
     string str;
     str.data = (char *)literal;
     str.length = len;
@@ -19,20 +19,10 @@ string string_l(const char *literal) {
 
 string string_ca_max(const char *array, uint32_t max_length) {
     uint32_t len = compute_length(array, max_length);
-    char *copy = (char*)alloc(len + 1);
-    for (uint32_t i = 0; i < len; i++) {
-        copy[i] = array[i];
-    }
-    copy[len] = '\0';
-    
     string str;
-    str.data = copy;
+    str.data = (char *)array;
     str.length = len;
     return str;
-}
-
-string string_ca(const char *array) {
-    return string_ca_max(array, 0);
 }
 
 string string_c(const char c){
