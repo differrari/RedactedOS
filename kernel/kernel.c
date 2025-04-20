@@ -3,6 +3,7 @@
 #include "graph/graphics.h"
 #include "pci.h"
 #include "string.h"
+#include "console/kconsole/kconsole.h"
 
 void kernel_main() {
 
@@ -21,6 +22,8 @@ void kernel_main() {
     uart_puts("Testlog\n");
 
     printf("GPU initialized");
+
+    // kconsole_clear();
 
     printf("Kernel initialization finished");
 }

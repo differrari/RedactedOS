@@ -15,14 +15,17 @@ public:
 
 private:
     bool check_ready();
+    void screen_clear();
+    void redraw();
 
     unsigned int cursor_x;
     unsigned int cursor_y;
     unsigned int columns;
     unsigned int rows;
     bool is_initialized = false;
+    int scroll_row_offset = 0;
     static constexpr int char_width = 8;
     static constexpr int char_height = 16;
-    char buffer[100][100];
+    char** buffer;
 };
 extern KernelConsole kconsole;
