@@ -62,10 +62,3 @@ void dump_pci_config(uint64_t base) {
         printf("Offset %h: %h",offset, val);
     }
 }
-
-//Network device
-// if (find_pci_device(0x1AF4, 0x1000, &bus, &slot, &func, &mmio_base)) {
-//     printf("Virtio Network device detected with MMIO base: ");
-//     uart_puthex(mmio_base);
-//     uart_putc('\n');
-// }
