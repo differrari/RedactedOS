@@ -43,9 +43,8 @@ void fw_cfg_dma_write(void* dest, uint32_t size, uint32_t ctrl){
     fw_cfg_dma_read(dest, size, (ctrl << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_WRITE);
 }
 
-struct fw_cfg_file* fw_find_file(string search) {
+bool fw_find_file(string search, struct fw_cfg_file *file) {
 
-    struct fw_cfg_file *file = (struct fw_cfg_file *)alloc(sizeof(struct fw_cfg_file));
     uint32_t count;
     fw_cfg_dma_read(&count, sizeof(count), (FW_LIST_DIRECTORY << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_READ);
 
@@ -63,9 +62,9 @@ struct fw_cfg_file* fw_find_file(string search) {
         string filename = string_ca_max(file->name, 56);
         if (string_equals(filename, search)){
             printf("Found device at selector %h", file->selector);
-            return file;
+            return true;
         }
     }
 
-    return (struct fw_cfg_file*)0;
+    return false;
 }
