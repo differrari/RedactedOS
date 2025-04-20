@@ -1,32 +1,18 @@
-# Compiler and Linker
-ARCH= aarch64-none-elf
-CC = $(ARCH)-gcc
-LD = $(ARCH)-ld
-OBJCOPY = $(ARCH)-objcopy
+.PHONY: all kernel clean
 
-# Compiler and Linker Flags
-CFLAGS = -nostdlib -ffreestanding -Wall -Wextra -mcpu=cortex-a72 -I. -Wno-unused-parameter
-LDFLAGS = -T $(shell ls *.ld)
+all: kernel
+	@echo "Build complete."
 
-C_SRC = $(shell find . -name '*.c')
-ASM_SRC = $(shell find . -name '*.S')
-OBJ = $(C_SRC:.c=.o) $(ASM_SRC:.S=.o)
+# shared:
+# 	$(MAKE) -C shared
 
-# Output File
-TARGET = kernel.img
+kernel:
+	$(MAKE) -C kernel
 
-# Build Rules
-all: $(TARGET)
-
-$(TARGET): $(OBJ)
-	$(LD) $(LDFLAGS) -o kernel.bin $(OBJ)
-	$(OBJCOPY) -O binary kernel.bin $(TARGET)
-
-%.o: %.S
-	$(CC) $(CFLAGS) -c $< -o $@
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+#user:
+#    $(MAKE) -C user
 
 clean:
-	rm -f $(OBJ) kernel.bin $(TARGET)
+#	$(MAKE) -C shared clean
+	$(MAKE) -C kernel clean
+#	#$(MAKE) -C user clean

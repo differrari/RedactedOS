@@ -1,5 +1,5 @@
 #include "fw_cfg.h"
-#include "console/console.h"
+#include "console/kio.h"
 #include "mmio.h"
 #include "string.h"
 

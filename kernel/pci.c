@@ -1,5 +1,5 @@
 #include "pci.h"
-#include "console/console.h"
+#include "console/kio.h"
 #include "mmio.h"
 
 #define PCI_ECAM_BASE 0x4010000000

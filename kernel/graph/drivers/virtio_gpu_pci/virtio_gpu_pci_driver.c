@@ -1,4 +1,4 @@
-#include "console/console.h"
+#include "console/kio.h"
 #include "mmio.h"
 #include "pci.h"
 

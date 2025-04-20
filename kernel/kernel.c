@@ -1,4 +1,4 @@
-#include "console/console.h"
+#include "console/kio.h"
 #include "console/serial/uart.h"
 #include "graph/gpu.h"
 #include "pci.h"
