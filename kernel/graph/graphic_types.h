@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef uint32_t color;
 
 typedef struct {
@@ -16,3 +20,7 @@ typedef struct {
     point point;
     size size;
 }__attribute__((packed)) rect;
+
+#ifdef __cplusplus
+}
+#endif

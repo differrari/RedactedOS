@@ -1,8 +1,11 @@
-#include "gpu.h"
+#include "graphics.h"
 #include "console/kio.h"
 
 #include "graph/drivers/virtio_gpu_pci/virtio_gpu_pci_driver.h"
 #include "graph/drivers/ramfb_driver/ramfb_driver.h"
+
+static size screen_size;
+static bool _gpu_ready;
 
 typedef enum {
     NONE,
@@ -17,10 +20,18 @@ void gpu_init(size preferred_screen_size){
         chosen_GPU = VIRTIO_GPU_PCI;
     else if (rfb_init(preferred_screen_size.width,preferred_screen_size.height))
         chosen_GPU = RAMFB;
+    screen_size = preferred_screen_size;
+    _gpu_ready = true;
     printf("Selected and initialized GPU %i",chosen_GPU);
 }
 
+bool gpu_ready(){
+    return chosen_GPU != NONE && _gpu_ready;
+}
+
 void gpu_flush(){
+    if (!gpu_ready())
+        return;
     switch (chosen_GPU) {
         case VIRTIO_GPU_PCI:
             vgp_flush();
@@ -33,6 +44,8 @@ void gpu_flush(){
     }
 }
 void gpu_clear(color color){
+    if (!gpu_ready())
+        return;
     switch (chosen_GPU) {
         case VIRTIO_GPU_PCI:
             vgp_clear(color);
@@ -45,6 +58,8 @@ void gpu_clear(color color){
 }
 
 void gpu_draw_pixel(point p, color color){
+    if (!gpu_ready())
+        return;
     switch (chosen_GPU) {
         case VIRTIO_GPU_PCI:
             vgp_draw_pixel(p.x,p.y,color);
@@ -58,6 +73,8 @@ void gpu_draw_pixel(point p, color color){
 }
 
 void gpu_fill_rect(rect r, color color){
+    if (!gpu_ready())
+        return;
     switch (chosen_GPU) {
         case VIRTIO_GPU_PCI:
             vgp_fill_rect(r.point.x,r.point.y,r.size.width,r.size.height,color);
@@ -71,6 +88,8 @@ void gpu_fill_rect(rect r, color color){
 }
 
 void gpu_draw_line(point p0, point p1, uint32_t color){
+    if (!gpu_ready())
+        return;
     switch (chosen_GPU) {
         case VIRTIO_GPU_PCI:
             vgp_draw_line(p0.x,p0.y,p1.x,p1.y,color);
@@ -83,6 +102,8 @@ void gpu_draw_line(point p0, point p1, uint32_t color){
     }
 }
 void gpu_draw_char(point p, char c, uint32_t color){
+    if (!gpu_ready())
+        return;
     switch (chosen_GPU) {
         case VIRTIO_GPU_PCI:
             vgp_draw_char(p.x,p.y,c,color);
@@ -93,4 +114,10 @@ void gpu_draw_char(point p, char c, uint32_t color){
         default:
         break;
     }
+}
+
+size gpu_get_screen_size(){
+    if (!gpu_ready())
+        return (size){0,0};
+    return screen_size;
 }

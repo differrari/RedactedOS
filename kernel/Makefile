@@ -29,5 +29,8 @@ $(TARGET): $(OBJ)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+%.o: %.cpp
+	$(CC) $(CFLAGS) -c $< -o $@
+
 clean:
 	rm -f $(OBJ) kernel.bin ../$(TARGET)

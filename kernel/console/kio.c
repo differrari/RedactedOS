@@ -1,13 +1,16 @@
 #include "kio.h"
 #include "serial/uart.h"
 #include "string.h"
+#include "kconsole/kconsole.h"
 
 void puts(const char *s){
     uart_puts(s);
+    kconsole_puts(s);
 }
 
 void putc(const char c){
     uart_putc(c);
+    kconsole_putc(c);
 }
 
 void puthex(uint64_t value){

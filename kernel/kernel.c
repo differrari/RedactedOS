@@ -1,6 +1,6 @@
 #include "console/kio.h"
 #include "console/serial/uart.h"
-#include "graph/gpu.h"
+#include "graph/graphics.h"
 #include "pci.h"
 #include "string.h"
 
@@ -18,13 +18,9 @@ void kernel_main() {
 
     gpu_init(screen_size);
 
+    uart_puts("Testlog\n");
+
     printf("GPU initialized");
 
-    gpu_clear(0x00FF00); 
-
-    printf("Screen initialized");
-
-    gpu_draw_line((point){0, screen_size.height/2}, (point){screen_size.width, screen_size.height/2}, 0xFF0000);
-
-    printf("Kernel initialized");
+    printf("Kernel initialization finished");
 }
