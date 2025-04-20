@@ -1,4 +1,4 @@
-#include "console/serial/uart.h"
+#include "console/console.h"
 #include "mmio.h"
 #include "pci.h"
 
@@ -150,33 +150,25 @@ static uint32_t default_height;
 
 uint64_t vgp_setup_bars(uint64_t base, uint8_t bar) {
     uint64_t bar_addr = pci_get_bar(base, 0x10, bar);
-    uart_puts("Setting up GPU BAR@");
-    uart_puthex(bar_addr);
-    uart_puts(" FROM BAR ");
-    uart_puthex(bar);
-    uart_putc('\n');
+    printf("Setting up GPU BAR@%h FROM BAR %i", bar_addr, bar);
 
     write32(bar_addr, 0xFFFFFFFF);
     uint64_t bar_val = read32(bar_addr);
 
     if (bar_val == 0 || bar_val == 0xFFFFFFFF) {
-        uart_puts("BAR size probing failed\n");
+        printf("BAR size probing failed");
         return 0;
     }
 
     uint64_t size = ((uint64_t)(~(bar_val & ~0xF)) + 1);
-    uart_puts("Calculated BAR size: ");
-    uart_puthex(size);
-    uart_putc('\n');
+    printf("Calculated BAR size: %h", size);
 
     uint64_t mmio_base = 0x10010000;
     write32(bar_addr, mmio_base & 0xFFFFFFFF);
 
     bar_val = read32(bar_addr);
 
-    uart_puts("FINAL BAR value: ");
-    uart_puthex(bar_val);
-    uart_putc('\n');
+    printf("FINAL BAR value: %h", bar_val);
 
     uint32_t cmd = read32(base + 0x4);
     cmd |= 0x2;
@@ -186,25 +178,23 @@ uint64_t vgp_setup_bars(uint64_t base, uint8_t bar) {
 }
 
 void vgp_start() {
-    uart_puts("Starting VirtIO GPU initialization\n");
+    printf("Starting VirtIO GPU initialization");
 
     common_cfg->device_status = 0;
     while (common_cfg->device_status != 0);
 
-    uart_puts("Device reset\n");
+    printf("Device reset");
 
     common_cfg->device_status |= VIRTIO_STATUS_ACKNOWLEDGE;
-    uart_puts("ACK sent\n");
+    printf("ACK sent");
 
     common_cfg->device_status |= VIRTIO_STATUS_DRIVER;
-    uart_puts("DRIVER sent\n");
+    printf("DRIVER sent");
 
     common_cfg->device_feature_select = 0;
     uint32_t features = common_cfg->device_feature;
 
-    uart_puts("Features received ");
-    uart_puthex(features);
-    uart_putc('\n');
+    printf("Features received %h", features);
 
     common_cfg->driver_feature_select = 0;
     common_cfg->driver_feature = features;
@@ -212,16 +202,14 @@ void vgp_start() {
     common_cfg->device_status |= VIRTIO_STATUS_FEATURES_OK;
 
     if (!(common_cfg->device_status & VIRTIO_STATUS_FEATURES_OK)) {
-        uart_puts("FEATURES_OK not accepted, device unusable\n");
+        printf("FEATURES_OK not accepted, device unusable");
         return;
     }
 
     common_cfg->queue_select = 0;
     uint32_t queue_size = common_cfg->queue_size;
 
-    uart_puts("Queue size: ");
-    uart_puthex(queue_size);
-    uart_putc('\n');
+    printf("Queue size: %h", queue_size);
 
     common_cfg->queue_size = queue_size;
 
@@ -239,7 +227,7 @@ void vgp_start() {
 
     common_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
 
-    uart_puts("VirtIO GPU initialization complete\n");
+    printf("VirtIO GPU initialization complete");
 }
 
 volatile struct virtio_pci_cap* vgp_get_capabilities(uint64_t address) {
@@ -249,19 +237,7 @@ volatile struct virtio_pci_cap* vgp_get_capabilities(uint64_t address) {
         uint64_t cap_address = address + offset;
         volatile struct virtio_pci_cap* cap = (volatile struct virtio_pci_cap*)(uintptr_t)(cap_address);
 
-        uart_puts("Inspecting@");
-        uart_puthex(cap_address);
-        uart_puts(" = ");
-        uart_puthex(cap->cap_vndr);
-        uart_puts(" (");
-        uart_puthex(cap->bar);
-        uart_puts(" + ");
-        uart_puthex(cap->offset);
-        uart_puts(") TYPE ");
-        uart_puthex(cap->cfg_type);
-        uart_puts(" -> ");
-        uart_puthex(cap->cap_next);
-        uart_putc('\n');
+        printf("Inspecting@%h = %h (%h + %h) TYPE %h -> %h",cap_address, cap->cap_vndr, cap->bar, cap->offset, cap->cfg_type, cap->cap_next);
 
         uint64_t target = pci_get_bar(address, 0x10, cap->bar);
         uint64_t val = read32(target) & ~0xF;
@@ -272,25 +248,17 @@ volatile struct virtio_pci_cap* vgp_get_capabilities(uint64_t address) {
             }
 
             if (cap->cfg_type == VIRTIO_PCI_CAP_COMMON_CFG) {
-                uart_puts("FOUND COMMON CONFIG @");
-                uart_puthex(val + cap->offset);
-                uart_putc('\n');
+                printf("Found common config %h", val + cap->offset);
                 common_cfg = (volatile struct virtio_pci_common_cfg*)(uintptr_t)(val + cap->offset);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_NOTIFY_CFG) {
-                uart_puts("FOUND NOTIFY CONFIG @");
-                uart_puthex(val + cap->offset);
-                uart_putc('\n');
+                printf("Found notify config %h", val + cap->offset);
                 notify_cfg = (volatile uint8_t*)(uintptr_t)(val + cap->offset);
                 notify_off_multiplier = *(volatile uint32_t*)(uintptr_t)(cap_address + sizeof(struct virtio_pci_cap));
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_DEVICE_CFG) {
-                uart_puts("FOUND DEVICE CONFIG @");
-                uart_puthex(val + cap->offset);
-                uart_putc('\n');
+                printf("Found device config %h", val + cap->offset);
                 device_cfg = (volatile uint8_t*)(uintptr_t)(val + cap->offset);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_ISR_CFG) {
-                uart_puts("FOUND ISR CONFIG @");
-                uart_puthex(val + cap->offset);
-                uart_putc('\n');
+                printf("Found ISR config %h", val + cap->offset);
                 isr_cfg = (volatile uint8_t*)(uintptr_t)(val + cap->offset);
             }
         }
@@ -340,7 +308,7 @@ bool vgp_get_display_info(){
     cmd->padding[1] = 0;
     cmd->padding[2] = 0;
 
-    uart_puts("Command prepared\n");
+    printf("Command prepared");
 
     vgp_send_command((uint64_t)cmd, sizeof(struct virtio_gpu_ctrl_hdr), VIRTQUEUE_DISP_INFO, sizeof(struct virtio_gpu_resp_display_info), (uint64_t)notify_cfg, notify_off_multiplier, 0);
 
@@ -348,22 +316,10 @@ bool vgp_get_display_info(){
 
     for (uint32_t i = 0; i < VIRTIO_GPU_MAX_SCANOUTS; i++){
         
-        uart_puts("Scanout ");
-        uart_puthex(i);
-        uart_puts(": enabled=");
-        uart_puthex(resp->pmodes[i].enabled);
-        uart_puts(" size=");
-        uart_puthex(resp->pmodes[i].width);
-        uart_putc('x');
-        uart_puthex(resp->pmodes[i].height);
-        uart_putc('\n');
+        printf("Scanout %i: enabled=%i size=%ix%i",i,resp->pmodes[i].enabled, resp->pmodes[i].width, resp->pmodes[i].height);
 
         if (resp->pmodes[i].enabled) {
-            uart_puts("FOUND A VALID DISPLAY: ");
-            uart_puthex(resp->pmodes[i].width);
-            uart_putc('x');
-            uart_puthex(resp->pmodes[i].height);
-            uart_putc('\n');
+            printf("Found a valid display: %ix%i",resp->pmodes[i].width,resp->pmodes[i].height);
             display_width = resp->pmodes[i].width;
             display_height = resp->pmodes[i].height;
             scanout_id = i;
@@ -372,7 +328,7 @@ bool vgp_get_display_info(){
         }
     }
 
-    uart_puts("Display not enabled yet. Using default but not allowing scanout\n");
+    printf("Display not enabled yet. Using default but not allowing scanout");
     resp->pmodes[0].width = default_width;
     resp->pmodes[0].height = default_height;
     scanout_found = false;
@@ -407,18 +363,12 @@ void vgp_create_2d_resource() {
 
     volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)(VIRTQUEUE_RESP);
 
-    uart_puts("Response type: ");
-    uart_puthex(resp->type);
-    uart_puts(" flags: ");
-    uart_puthex(resp->flags);
-    uart_putc('\n');
+    printf("Response type: %h flags: %h", resp->type, resp->flags);
     
     if (resp->type == 0x1100) {
-        uart_puts("RESOURCE_CREATE_2D OK\n");
+        printf("RESOURCE_CREATE_2D OK");
     } else {
-        uart_puts("RESOURCE_CREATE_2D ERROR: ");
-        uart_puthex(resp->type);
-        uart_putc('\n');
+        printf("RESOURCE_CREATE_2D ERROR: %h", resp->type);
     }
 }
 
@@ -448,11 +398,7 @@ void vgp_attach_backing() {
     cmd->resource_id = GPU_RESOURCE_ID;
     cmd->nr_entries = 1;
 
-    uart_puts("Attach framebuffer addr: ");
-    uart_puthex(framebuffer_memory);
-    uart_puts(", size: ");
-    uart_puthex(framebuffer_size);
-    uart_putc('\n');
+    printf("Attach framebuffer addr: %h, size: %i",framebuffer_memory,framebuffer_size);
 
     entry->addr = framebuffer_memory;
     entry->length = framebuffer_size;
@@ -464,18 +410,12 @@ void vgp_attach_backing() {
 
     volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)(VIRTQUEUE_RESP);
 
-    uart_puts("Response type: ");
-    uart_puthex(resp->type);
-    uart_puts(" flags: ");
-    uart_puthex(resp->flags);
-    uart_putc('\n');
+    printf("Response type: %h flags: %h", resp->type, resp->flags);
 
     if (resp->type == 0x1100) {
-        uart_puts("RESOURCE_ATTACH_BACKING OK\n");
+        printf("RESOURCE_ATTACH_BACKING OK");
     } else {
-        uart_puts("RESOURCE_ATTACH_BACKING ERROR: ");
-        uart_puthex(resp->type);
-        uart_putc('\n');
+        printf("RESOURCE_ATTACH_BACKING ERROR: %h", resp->type);
     }
 }
 
@@ -512,18 +452,12 @@ void vgp_set_scanout() {
 
     volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)VIRTQUEUE_RESP;
 
-    uart_puts("Response type: ");
-    uart_puthex(resp->type);
-    uart_puts(" flags: ");
-    uart_puthex(resp->flags);
-    uart_putc('\n');
+    printf("Response type: %h flags: %h", resp->type, resp->flags);
 
     if (resp->type == 0x1100) {
-        uart_puts("SCANOUT OK\n");
+        printf("SCANOUT OK");
     } else {
-        uart_puts("SCANOUT ERROR:\n");
-        uart_puthex(resp->type);
-        uart_putc('\n');
+        printf("SCANOUT ERROR: %h", resp->type);
     }
 }
 
@@ -556,18 +490,12 @@ void vgp_transfer_to_host() {
 
     volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)(VIRTQUEUE_RESP);
 
-    uart_puts("Response type: ");
-    uart_puthex(resp->type);
-    uart_puts(" flags: ");
-    uart_puthex(resp->flags);
-    uart_putc('\n');
+    printf("Response type: %h flags: %h", resp->type, resp->flags);
     
     if (resp->type == 0x1100) {
-        uart_puts("TRANSFER OK\n");
+        printf("TRANSFER_TO_HOST OK");
     } else {
-        uart_puts("TRANSFER ERROR: ");
-        uart_puthex(resp->type);
-        uart_putc('\n');
+        printf("TRANSFER_TO_HOST ERROR: %h", resp->type);
     }
 }
 
@@ -595,24 +523,18 @@ void vgp_flush() {
 
     volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)(VIRTQUEUE_RESP);
     
-    uart_puts("Response type: ");
-    uart_puthex(resp->type);
-    uart_puts(" flags: ");
-    uart_puthex(resp->flags);
-    uart_putc('\n');
+    printf("Response type: %h flags: %h", resp->type, resp->flags);
 
     if (resp->type == 0x1100) {
-        uart_puts("FLUSH OK\n");
+        printf("FLUSH OK");
     } else {
-        uart_puts("FLUSH ERROR: ");
-        uart_puthex(resp->type);
-        uart_putc('\n');
+        printf("FLUSH ERROR: %h", resp->type);
     }
 }
 
 void vgp_clear(uint32_t color) {
 
-    uart_puts("Clear screen\n");
+    printf("Clear screen");
 
     volatile uint32_t* fb = (volatile uint32_t*)framebuffer_memory;
     for (uint32_t i = 0; i < display_width * display_height; i++) {
@@ -647,16 +569,14 @@ bool vgp_init(uint32_t width, uint32_t height) {
     default_height = height;
 
     if (address > 0) {
-        uart_puts("VGP GPU detected at ");
-        uart_puthex(address);
-        uart_putc('\n');
+        printf("VGP GPU detected at %h",address);
 
-        uart_puts("Initializing GPU...\n");
+        printf("Initializing GPU...");
 
         vgp_get_capabilities(address);
         vgp_start();
 
-        uart_puts("GPU initialized. Issuing commands\n");
+        printf("GPU initialized. Issuing commands");
 
         vgp_get_display_info();
 
@@ -673,9 +593,9 @@ bool vgp_init(uint32_t width, uint32_t height) {
         if (scanout_found)
             vgp_set_scanout();
         else 
-            uart_puts("GPU did not return valid scanout data\n");
+            printf("GPU did not return valid scanout data");
 
-        uart_puts("GPU ready\n");
+        printf("GPU ready");
 
         return true;
     }

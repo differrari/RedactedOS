@@ -1,5 +1,5 @@
 #include "fw_cfg.h"
-#include "console/serial/uart.h"
+#include "console/console.h"
 #include "mmio.h"
 #include "string.h"
 
@@ -51,9 +51,7 @@ struct fw_cfg_file* fw_find_file(string search) {
 
     count = __builtin_bswap32(count);
 
-    uart_puts("There are ");
-    uart_puthex(count);
-    uart_puts(" values in directory\n");
+    printf("There are %i values in directory", count);
 
     for (uint32_t i = 0; i < count; i++) {
 
@@ -64,9 +62,7 @@ struct fw_cfg_file* fw_find_file(string search) {
 
         string filename = string_ca_max(file->name, 56);
         if (string_equals(filename, search)){
-            uart_puts("Found device at selector ");
-            uart_puthex(file->selector);
-            uart_putc('\n');
+            printf("Found device at selector %h", file->selector);
             return file;
         }
     }

@@ -1,4 +1,4 @@
-#include "console/serial/uart.h"
+#include "console/console.h"
 #include "mmio.h"
 #include "string.h"
 #include "fw/fw_cfg.h"
@@ -81,7 +81,7 @@ void rfb_draw_char(uint32_t x, uint32_t y, char c, uint32_t color) {
 bool rfb_init(uint32_t w, uint32_t h) {
 
     if (!fw_cfg_check()){
-        uart_puts("Wrong FW_CFG config");
+        printf("Wrong FW_CFG config");
         return false;
     }
 
@@ -105,13 +105,13 @@ bool rfb_init(uint32_t w, uint32_t h) {
     struct fw_cfg_file *file = fw_find_file(string_l("etc/ramfb"));
 
     if (file->selector == 0x0){
-        uart_puts("Ramfb not found\n");
+        printf("Ramfb not found");
         return false;
     }
 
     fw_cfg_dma_write(&fb, sizeof(fb), file->selector);
     
-    uart_puts("ramfb configured\n");
+    printf("ramfb configured");
 
     free(file);
 

@@ -1,5 +1,5 @@
 #include "gpu.h"
-#include "console/serial/uart.h"
+#include "console/console.h"
 
 #include "graph/drivers/virtio_gpu_pci/virtio_gpu_pci_driver.h"
 #include "graph/drivers/ramfb_driver/ramfb_driver.h"
@@ -15,11 +15,9 @@ SupportedGPU chosen_GPU;
 void gpu_init(size preferred_screen_size){
     if (vgp_init(preferred_screen_size.width,preferred_screen_size.height))
         chosen_GPU = VIRTIO_GPU_PCI;
-    if (rfb_init(preferred_screen_size.width,preferred_screen_size.height))
+    else if (rfb_init(preferred_screen_size.width,preferred_screen_size.height))
         chosen_GPU = RAMFB;
-    uart_puts("Selected and initialized GPU ");
-    uart_puthex(chosen_GPU);
-    uart_putc('\n');
+    printf("Selected and initialized GPU %i",chosen_GPU);
 }
 
 void gpu_flush(){

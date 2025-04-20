@@ -1,5 +1,5 @@
 #include "pci.h"
-#include "console/serial/uart.h"
+#include "console/console.h"
 #include "mmio.h"
 
 #define PCI_ECAM_BASE 0x4010000000
@@ -22,19 +22,13 @@ uint64_t pci_get_bar(uint64_t base, uint8_t offset, uint8_t index){
 }
 
 void debug_read_bar(uint64_t base, uint8_t offset, uint8_t index){
-    uart_puts("Reading@");
     uint64_t addr = pci_get_bar(base, offset, index);
-    uart_puthex(addr);
     uint64_t val = read32(addr);
-    uart_puts(" (");
-    uart_puthex(index);
-    uart_puts(") content: ");
-    uart_puthex(val);
-    uart_putc('\n');
+    printf("Reading@%h (%i) content: ", addr, index, val);
 }
 
 void inspect_bars(uint64_t base, uint8_t offset) {
-    uart_puts("Inspecting GPU BARs...\n");
+    printf("Inspecting GPU BARs...");
     for (uint32_t bar_offset = 0; bar_offset <= 0xFF; bar_offset += 1) {
         debug_read_bar(base, offset, bar_offset);
     }
@@ -48,13 +42,7 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id, uint64_t* out_m
                 uint64_t vendor_device = read(device_address);
                 if ((vendor_device & 0xFFFF) == vendor_id && ((vendor_device >> 16) & 0xFFFF) == device_id) {
 
-                    uart_puts("Found device at bus ");
-                    uart_puthex(bus);
-                    uart_puts(", slot ");
-                    uart_puthex(slot);
-                    uart_puts(", func ");
-                    uart_puthex(func);
-                    uart_putc('\n');
+                    printf("Found device at bus %i, slot %i, func %i", bus, slot, func);
 
                     *out_mmio_base = device_address;
 
@@ -63,25 +51,21 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id, uint64_t* out_m
             }
         }
     }
-    uart_puts("Device not found.\n");
+    printf("Device not found.");
     return 0;
 }
 
 void dump_pci_config(uint64_t base) {
-    uart_puts("Dumping PCI Configuration Space:\n");
+    printf("Dumping PCI Configuration Space:");
     for (uint32_t offset = 0; offset < 0x40; offset += 4) {
         uint64_t val = read(base + offset);
-        uart_puts("Offset ");
-        uart_puthex(offset);
-        uart_puts(": ");
-        uart_puthex(val);
-        uart_putc('\n');
+        printf("Offset %h: %h",offset, val);
     }
 }
 
 //Network device
 // if (find_pci_device(0x1AF4, 0x1000, &bus, &slot, &func, &mmio_base)) {
-//     uart_puts("Virtio Network device detected with MMIO base: ");
+//     printf("Virtio Network device detected with MMIO base: ");
 //     uart_puthex(mmio_base);
 //     uart_putc('\n');
 // }
