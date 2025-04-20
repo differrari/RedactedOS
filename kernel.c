@@ -1,6 +1,7 @@
 #include "uart.h"
 #include "graph/gpu.h"
 #include "pci.h"
+#include "string.h"
 
 void kernel_main() {
 
@@ -14,6 +15,8 @@ void kernel_main() {
     gpu_init(screen_size);
     gpu_clear(0x00FF00); 
 
+    uart_puts("Screen initialized\n");
+
     gpu_draw_line((point){0, screen_size.height/2}, (point){screen_size.width, screen_size.height/2}, 0xFF0000);
 
     char helloWorldArray[] = "Hello World";
@@ -22,5 +25,10 @@ void kernel_main() {
         gpu_draw_char((point){i * 8, 0}, helloWorldArray[i], 0x000000);
     }
 
-    uart_puts("Square drawn\n");
+    uart_puts("Chars drawn\n");
+
+    string s = string_format("hello\nworld %h %h", 0x1234ABCD, 0x0);
+    uart_puts(s.data);
+
+    uart_puts("All init");
 }

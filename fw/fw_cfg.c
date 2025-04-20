@@ -62,7 +62,7 @@ struct fw_cfg_file* fw_find_file(string search) {
         file->size = __builtin_bswap32(file->size);
         file->selector = __builtin_bswap16(file->selector);
 
-        string filename = string_c(file->name, 56);
+        string filename = string_ca_max(file->name, 56);
         if (string_equals(filename, search)){
             uart_puts("Found device at selector ");
             uart_puthex(file->selector);
