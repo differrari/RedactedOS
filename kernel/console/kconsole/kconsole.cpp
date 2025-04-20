@@ -23,6 +23,8 @@ void KernelConsole::resize() {
     size screen = gpu_get_screen_size();
     columns = screen.width / char_width;
     rows = screen.height / char_height;
+    if (buffer != nullptr)
+        free(buffer);
     buffer = (char**)alloc(rows * sizeof(char*));
     for (unsigned int i = 0; i < rows; i++) {
         buffer[i] = (char*)alloc(columns * sizeof(char));
