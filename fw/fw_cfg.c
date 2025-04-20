@@ -1,5 +1,5 @@
 #include "fw_cfg.h"
-#include "uart.h"
+#include "console/serial/uart.h"
 #include "mmio.h"
 #include "string.h"
 

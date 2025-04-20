@@ -1,5 +1,5 @@
 #include "pci.h"
-#include "uart.h"
+#include "console/serial/uart.h"
 #include "mmio.h"
 
 #define PCI_ECAM_BASE 0x4010000000

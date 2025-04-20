@@ -1,4 +1,4 @@
-#include "uart.h"
+#include "console/serial/uart.h"
 #include "mmio.h"
 #include "pci.h"
 

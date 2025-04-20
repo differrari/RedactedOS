@@ -1,5 +1,5 @@
 #include "gpu.h"
-#include "uart.h"
+#include "console/serial/uart.h"
 
 #include "graph/drivers/virtio_gpu_pci/virtio_gpu_pci_driver.h"
 #include "graph/drivers/ramfb_driver/ramfb_driver.h"
