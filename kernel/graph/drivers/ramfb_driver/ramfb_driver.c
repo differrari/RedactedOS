@@ -1,5 +1,5 @@
 #include "console/kio.h"
-#include "mmio.h"
+#include "ram_e.h"
 #include "string.h"
 #include "fw/fw_cfg.h"
 #include "graph/font8x8_basic.h"
@@ -91,7 +91,7 @@ bool rfb_init(uint32_t w, uint32_t h) {
     bpp = 4;
     stride = bpp * width;
 
-    fb_ptr = alloc(width * height * bpp);
+    fb_ptr = palloc(width * height * bpp);
 
     fb_structure fb = {
         .addr = __builtin_bswap64(fb_ptr),

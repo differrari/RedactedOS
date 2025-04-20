@@ -1,5 +1,5 @@
 #include "console/kio.h"
-#include "mmio.h"
+#include "ram_e.h"
 #include "pci.h"
 
 ///
@@ -163,8 +163,8 @@ uint64_t vgp_setup_bars(uint64_t base, uint8_t bar) {
     uint64_t size = ((uint64_t)(~(bar_val & ~0xF)) + 1);
     printf("Calculated BAR size: %h", size);
 
-    uint64_t mmio_base = 0x10010000;
-    write32(bar_addr, mmio_base & 0xFFFFFFFF);
+    uint64_t config_base = 0x10010000;
+    write32(bar_addr, config_base & 0xFFFFFFFF);
 
     bar_val = read32(bar_addr);
 
@@ -213,12 +213,12 @@ void vgp_start() {
 
     common_cfg->queue_size = queue_size;
 
-    VIRTQUEUE_BASE = alloc(4096);
-    VIRTQUEUE_AVAIL = alloc(4096);
-    VIRTQUEUE_USED = alloc(4096);
-    VIRTQUEUE_CMD = alloc(4096);
-    VIRTQUEUE_RESP = alloc(4096);
-    VIRTQUEUE_DISP_INFO = alloc(sizeof(struct virtio_gpu_resp_display_info));
+    VIRTQUEUE_BASE = palloc(4096);
+    VIRTQUEUE_AVAIL = palloc(4096);
+    VIRTQUEUE_USED = palloc(4096);
+    VIRTQUEUE_CMD = palloc(4096);
+    VIRTQUEUE_RESP = palloc(4096);
+    VIRTQUEUE_DISP_INFO = palloc(sizeof(struct virtio_gpu_resp_display_info));
 
     common_cfg->queue_desc = VIRTQUEUE_BASE;
     common_cfg->queue_driver = VIRTQUEUE_AVAIL;
@@ -562,8 +562,7 @@ void vgp_draw_char(uint32_t x, uint32_t y, char c, uint32_t color) {
 }
 
 bool vgp_init(uint32_t width, uint32_t height) {
-    uint64_t mmio_base;
-    uint64_t address = find_pci_device(VENDOR_ID, DEVICE_ID_BASE + GPU_DEVICE_ID, &mmio_base);
+    uint64_t address = find_pci_device(VENDOR_ID, DEVICE_ID_BASE + GPU_DEVICE_ID);
 
     default_width = width;
     default_height = height;
@@ -580,7 +579,7 @@ bool vgp_init(uint32_t width, uint32_t height) {
 
         vgp_get_display_info();
 
-        framebuffer_memory = alloc(framebuffer_size);
+        framebuffer_memory = palloc(framebuffer_size);
 
         vgp_create_2d_resource();
 

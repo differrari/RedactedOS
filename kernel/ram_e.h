@@ -1,5 +1,4 @@
-#ifndef MMIO_H
-#define MMIO_H
+#pragma once
 
 #include "types.h"
 
@@ -18,10 +17,10 @@ void write_barrier();
 #ifdef __cplusplus
 extern "C" {
 #endif
-uint64_t alloc(uint64_t size);
-void free (void* ptr);
+uint64_t talloc(uint64_t size);
 #ifdef __cplusplus
 }
 #endif
 
-#endif
+uint64_t palloc(uint64_t size);
+void free_temp();

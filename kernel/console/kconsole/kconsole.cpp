@@ -1,5 +1,5 @@
 #include "kconsole.hpp"
-#include "mmio.h"
+#include "ram_e.h"
 #include "graph/graphics.h"
 
 KernelConsole::KernelConsole()
@@ -23,11 +23,10 @@ void KernelConsole::resize() {
     size screen = gpu_get_screen_size();
     columns = screen.width / char_width;
     rows = screen.height / char_height;
-    if (buffer != nullptr)
-        free(buffer);
-    buffer = (char**)alloc(rows * sizeof(char*));
+#warning Buffer is currently growing from temporary memory, since we don't have proper memory management yet. If the system grows more complex and we're not careful we could trigger an overflow
+    buffer = (char**)talloc(rows * sizeof(char*));
     for (unsigned int i = 0; i < rows; i++) {
-        buffer[i] = (char*)alloc(columns * sizeof(char));
+        buffer[i] = (char*)talloc(columns * sizeof(char));
     }
 }
 

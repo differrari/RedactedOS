@@ -1,6 +1,6 @@
 #include "fw_cfg.h"
 #include "console/kio.h"
-#include "mmio.h"
+#include "ram_e.h"
 #include "string.h"
 
 #define FW_CFG_DATA  0x09020000

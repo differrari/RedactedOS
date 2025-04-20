@@ -1,5 +1,5 @@
 #include "console/serial/uart.h"
-#include "mmio.h"
+#include "ram_e.h"
 
 #define UART0_BASE 0x09000000
 #define UART0_DR   (UART0_BASE + 0x00)

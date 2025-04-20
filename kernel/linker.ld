@@ -6,10 +6,14 @@ SECTIONS {
     .text : { *(.text) }
     .data : { *(.data) }
     .bss : { *(.bss COMMON) }
+
     . = ALIGN(16);
-    . = . + 0x1000;
+    stack_bottom = .;
+    . = . + 0x10000; /* 64KB stack */
     stack_top = .;
 
-    . = 0x41000000; /* or higher */
+    . = ALIGN(4096);
     heap_bottom = .;
+    . = . + 0x1000000; /* 16MB heap */
+    heap_limit = .;
 }

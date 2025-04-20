@@ -1,6 +1,6 @@
 #include "pci.h"
 #include "console/kio.h"
-#include "mmio.h"
+#include "ram_e.h"
 
 #define PCI_ECAM_BASE 0x4010000000
 #define PCI_BUS_MAX 256
@@ -34,7 +34,7 @@ void inspect_bars(uint64_t base, uint8_t offset) {
     }
 }
 
-uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id, uint64_t* out_mmio_base) {
+uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
     for (uint32_t bus = 0; bus < PCI_BUS_MAX; bus++) {
         for (uint32_t slot = 0; slot < PCI_SLOT_MAX; slot++) {
             for (uint32_t func = 0; func < PCI_FUNC_MAX; func++) {
@@ -43,8 +43,6 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id, uint64_t* out_m
                 if ((vendor_device & 0xFFFF) == vendor_id && ((vendor_device >> 16) & 0xFFFF) == device_id) {
 
                     printf("Found device at bus %i, slot %i, func %i", bus, slot, func);
-
-                    *out_mmio_base = device_address;
 
                     return device_address;
                 }
