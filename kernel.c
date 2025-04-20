@@ -32,5 +32,5 @@ void kernel_main() {
         gpu_draw_char((point){i * 8, 0}, helloWorldArray[i], 0x000000);
     }
 
-    printf("Kernel initialized");
+    printf("Kernel initialized %i", 1234);
 }
