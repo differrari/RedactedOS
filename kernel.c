@@ -26,11 +26,5 @@ void kernel_main() {
 
     gpu_draw_line((point){0, screen_size.height/2}, (point){screen_size.width, screen_size.height/2}, 0xFF0000);
 
-    char helloWorldArray[] = "Hello World";
-
-    for (int i = 0; i < 11; i++) {
-        gpu_draw_char((point){i * 8, 0}, helloWorldArray[i], 0x000000);
-    }
-
     printf("Kernel initialized");
 }
