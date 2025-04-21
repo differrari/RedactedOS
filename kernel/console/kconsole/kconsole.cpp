@@ -12,9 +12,9 @@ KernelConsole::KernelConsole()
 bool KernelConsole::check_ready(){
     if (!gpu_ready()) return false;
     if (!is_initialized){
+        is_initialized = true;
         resize();
         clear();
-        is_initialized = true;
     }
     return true;
 }
