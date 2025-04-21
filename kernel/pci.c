@@ -5,7 +5,6 @@
 #include "fw/fw_cfg.h"
 #include "string.h"
 
-#define PCI_ECAM_BASE 0x4010000000
 #define PCI_BUS_MAX 256
 #define PCI_SLOT_MAX 32
 #define PCI_FUNC_MAX 8
@@ -92,7 +91,7 @@ void* find_rsdp() {
 }
 
 void find_pci(){
-    pci_base = 0x1;
+    pci_base = 0x4010000000;
     return;
     struct fw_cfg_file file;
     if (!fw_find_file(string_l("etc/acpi/rsdp"), &file))
@@ -164,7 +163,7 @@ void find_pci(){
 }
 
 uint64_t pci_make_addr(uint32_t bus, uint32_t slot, uint32_t func, uint32_t offset){
-    return PCI_ECAM_BASE
+    return pci_base
             | (((uint64_t)bus) << 20)
             | (((uint64_t)slot) << 15)
             | (((uint64_t)func) << 12) 
