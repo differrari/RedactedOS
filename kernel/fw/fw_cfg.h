@@ -12,3 +12,4 @@ struct fw_cfg_file {
 
 bool fw_find_file(string search, struct fw_cfg_file *file);
 void fw_cfg_dma_write(void* dest, uint32_t size, uint32_t ctrl);
+void fw_cfg_dma_read(void* dest, uint32_t size, uint32_t ctrl);

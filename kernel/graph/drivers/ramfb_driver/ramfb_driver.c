@@ -94,8 +94,6 @@ bool rfb_init(uint32_t w, uint32_t h) {
         return false;
     }
 
-    printf("Calling palloc from right place");
-
     fb_ptr = palloc(width * height * bpp);
 
     fb_structure fb = {

@@ -28,7 +28,7 @@ bool fw_cfg_check(){
     return checked;
 }
 
-void fw_cfg_dma_read(void* dest, uint32_t size, uint32_t ctrl) {
+void fw_cfg_dma_operation(void* dest, uint32_t size, uint32_t ctrl) {
     struct fw_cfg_dma_access access = {
         .address = __builtin_bswap64((uint64_t)dest),
         .length = __builtin_bswap32(size),
@@ -43,11 +43,18 @@ void fw_cfg_dma_read(void* dest, uint32_t size, uint32_t ctrl) {
     
 }
 
+void fw_cfg_dma_read(void* dest, uint32_t size, uint32_t ctrl){
+    if (!fw_cfg_check())
+        return;
+
+    fw_cfg_dma_operation(dest, size, (ctrl << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_READ);
+}
+
 void fw_cfg_dma_write(void* dest, uint32_t size, uint32_t ctrl){
     if (!fw_cfg_check())
         return;
 
-    fw_cfg_dma_read(dest, size, (ctrl << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_WRITE);
+    fw_cfg_dma_operation(dest, size, (ctrl << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_WRITE);
 }
 
 bool fw_find_file(string search, struct fw_cfg_file *file) {
@@ -56,13 +63,13 @@ bool fw_find_file(string search, struct fw_cfg_file *file) {
         return false;
 
     uint32_t count;
-    fw_cfg_dma_read(&count, sizeof(count), (FW_LIST_DIRECTORY << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_READ);
+    fw_cfg_dma_read(&count, sizeof(count), FW_LIST_DIRECTORY);
 
     count = __builtin_bswap32(count);
 
     for (uint32_t i = 0; i < count; i++) {
 
-        fw_cfg_dma_read(file, sizeof(struct fw_cfg_file), FW_CFG_DMA_READ);
+        fw_cfg_dma_operation(file, sizeof(struct fw_cfg_file), FW_CFG_DMA_READ);
 
         file->size = __builtin_bswap32(file->size);
         file->selector = __builtin_bswap16(file->selector);
