@@ -90,6 +90,16 @@ bool rfb_init(uint32_t w, uint32_t h) {
 
     bpp = 4;
     stride = bpp * width;
+    
+    struct fw_cfg_file file;
+    fw_find_file(string_l("etc/ramfb"), &file);
+    
+    if (file.selector == 0x0){
+        printf("Ramfb not found");
+        return false;
+    }
+
+    printf("Calling palloc from right place");
 
     fb_ptr = palloc(width * height * bpp);
 
@@ -101,14 +111,6 @@ bool rfb_init(uint32_t w, uint32_t h) {
         .flags = __builtin_bswap32(0),
         .stride = __builtin_bswap32(stride),
     };
-
-    struct fw_cfg_file file;
-    fw_find_file(string_l("etc/ramfb"), &file);
-
-    if (file.selector == 0x0){
-        printf("Ramfb not found");
-        return false;
-    }
 
     fw_cfg_dma_write(&fb, sizeof(fb), file.selector);
     
