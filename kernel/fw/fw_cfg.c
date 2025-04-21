@@ -14,6 +14,8 @@
 
 #define FW_LIST_DIRECTORY 0x19
 
+static bool checked = false;
+
 struct fw_cfg_dma_access {
     uint32_t control;
     uint32_t length;
@@ -21,7 +23,9 @@ struct fw_cfg_dma_access {
 }__attribute__((packed));
 
 bool fw_cfg_check(){
-    return read64(FW_CFG_DATA) == 0x554D4551;
+    if (checked) return true;
+    checked = read64(FW_CFG_DATA) == 0x554D4551;
+    return checked;
 }
 
 void fw_cfg_dma_read(void* dest, uint32_t size, uint32_t ctrl) {
@@ -40,17 +44,21 @@ void fw_cfg_dma_read(void* dest, uint32_t size, uint32_t ctrl) {
 }
 
 void fw_cfg_dma_write(void* dest, uint32_t size, uint32_t ctrl){
+    if (!fw_cfg_check())
+        return;
+
     fw_cfg_dma_read(dest, size, (ctrl << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_WRITE);
 }
 
 bool fw_find_file(string search, struct fw_cfg_file *file) {
 
+    if (!fw_cfg_check())
+        return false;
+
     uint32_t count;
     fw_cfg_dma_read(&count, sizeof(count), (FW_LIST_DIRECTORY << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_READ);
 
     count = __builtin_bswap32(count);
-
-    printf("There are %i values in directory", count);
 
     for (uint32_t i = 0; i < count; i++) {
 

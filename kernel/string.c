@@ -101,6 +101,9 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
                 for (int j = temp_len - 1; j >= 0 && len < 255; j--) {
                     buf[len++] = temp[j];
                 }
+            } else if (fmt[i] == 's') {
+                const char *str = (const char *)(uintptr_t)args[arg_index++];
+                for (uint32_t j = 0; str[j] && len < 255; j++) buf[len++] = str[j];
             } else {
                 buf[len++] = '%';
                 buf[len++] = fmt[i];

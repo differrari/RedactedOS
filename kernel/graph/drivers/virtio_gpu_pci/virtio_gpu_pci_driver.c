@@ -149,7 +149,7 @@ static uint32_t default_height;
 #define FRAMEBUFFER_BPP 32
 
 uint64_t vgp_setup_bars(uint64_t base, uint8_t bar) {
-    uint64_t bar_addr = pci_get_bar(base, 0x10, bar);
+    uint64_t bar_addr = pci_get_bar_address(base, 0x10, bar);
     printf("Setting up GPU BAR@%h FROM BAR %i", bar_addr, bar);
 
     write32(bar_addr, 0xFFFFFFFF);
@@ -239,7 +239,7 @@ volatile struct virtio_pci_cap* vgp_get_capabilities(uint64_t address) {
 
         printf("Inspecting@%h = %h (%h + %h) TYPE %h -> %h",cap_address, cap->cap_vndr, cap->bar, cap->offset, cap->cfg_type, cap->cap_next);
 
-        uint64_t target = pci_get_bar(address, 0x10, cap->bar);
+        uint64_t target = pci_get_bar_address(address, 0x10, cap->bar);
         uint64_t val = read32(target) & ~0xF;
 
         if (cap->cap_vndr == 0x9) {

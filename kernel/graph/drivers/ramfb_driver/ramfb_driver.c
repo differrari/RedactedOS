@@ -80,11 +80,6 @@ void rfb_draw_char(uint32_t x, uint32_t y, char c, uint32_t color) {
 
 bool rfb_init(uint32_t w, uint32_t h) {
 
-    if (!fw_cfg_check()){
-        printf("Wrong FW_CFG config");
-        return false;
-    }
-
     width = w;
     height = h;
 
