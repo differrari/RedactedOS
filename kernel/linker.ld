@@ -1,7 +1,7 @@
 ENTRY(_start)
 
 SECTIONS {
-    . = 0x40000000;
+    . = 0x41000000;
     kernel_start = .;
     .boot . : { boot.o(.text) }
     .text : { *(.text) }
@@ -11,11 +11,11 @@ SECTIONS {
 
     . = ALIGN(16);
     stack_bottom = .;
-    . = . + 0x10000; /* 64KB stack */
+    .stack_fill : { FILL(0); . = . + 0x10000; }
     stack_top = .;
 
     . = ALIGN(4096);
     heap_bottom = .;
-    . = . + 0x1000000; /* 16MB heap */
+    .heap_fill : { FILL(0); . = . + 0x1000000; }
     heap_limit = .;
 }

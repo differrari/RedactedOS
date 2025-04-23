@@ -2,6 +2,13 @@
 #include "types.h"
 #include "exception_handler.h"
 #include "console/kio.h"
+#include "dtb.h"
+
+static uint64_t total_ram_size;
+static uint64_t total_ram_start;
+static uint64_t calculated_ram_size;
+static uint64_t calculated_ram_start;
+static uint64_t calculated_ram_end;
 
 uint8_t read8(uintptr_t addr) {
     return *(volatile uint8_t*)addr;
@@ -54,7 +61,7 @@ uint64_t next_free_perm_memory = (uint64_t)temp_start;
 uint64_t talloc(uint64_t size) {
     next_free_temp_memory = (next_free_temp_memory + 0xFFF) & ~0xFFF;
     if (next_free_temp_memory + size > next_free_perm_memory)
-        panic(">>> Temporary allocator overflow");
+        panic_with_info(">>> Temporary allocator overflow",next_free_temp_memory);
     uint64_t result = next_free_temp_memory;
     next_free_temp_memory += (size + 0xFFF) & ~0xFFF;
     return result;
@@ -63,7 +70,7 @@ uint64_t talloc(uint64_t size) {
 uint64_t palloc(uint64_t size) {
     next_free_perm_memory = (next_free_perm_memory + 0xFFF) & ~0xFFF;
     if (next_free_perm_memory > (uint64_t)&heap_limit)
-        panic(">>> Permanent allocator overflow");
+        panic_with_info(">>> Permanent allocator overflow",(uint64_t)&heap_limit);
     uint64_t result = next_free_perm_memory;
     next_free_perm_memory += (size + 0xFFF) & ~0xFFF;
     return result;
@@ -79,4 +86,34 @@ uint64_t mem_get_kmem_start(){
 
 uint64_t mem_get_kmem_end(){
     return (uint64_t)&heap_limit;
+}
+
+void calc_ram(){
+    if (get_memory_region(&total_ram_start, &total_ram_size)) {
+        calculated_ram_end = total_ram_start + total_ram_size;
+        calculated_ram_start = mem_get_kmem_end() + 0x1;
+        calculated_ram_size = calculated_ram_end - calculated_ram_start;
+        printf("Device has %h memory starting at %h. %h for user starting at %h  ",total_ram_size, total_ram_start, calculated_ram_size, calculated_ram_start);
+    }
+}
+
+#define calcvar(var) \ 
+    if (var == 0)\
+        calc_ram();\
+    return var;
+
+uint64_t get_total_ram(){
+    calcvar(total_ram_size)
+}
+
+uint64_t get_total_user_ram(){
+    calcvar(calculated_ram_size)
+}
+
+uint64_t get_user_ram_start(){
+    calcvar(calculated_ram_start)
+}
+
+uint64_t get_user_ram_end(){
+    calcvar(calculated_ram_end)
 }

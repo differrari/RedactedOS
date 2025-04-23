@@ -27,3 +27,7 @@ void free_temp();
 
 uint64_t mem_get_kmem_start();
 uint64_t mem_get_kmem_end();
+uint64_t get_total_ram();
+uint64_t get_total_user_ram();
+uint64_t get_user_ram_start();
+uint64_t get_user_ram_end();

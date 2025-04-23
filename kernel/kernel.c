@@ -7,15 +7,18 @@
 #include "mmu.h"
 #include "exception_handler.h"
 #include "ram_e.h"
+#include "dtb.h"
 #include "gic.h"
 
 void kernel_main() {
-
-    printf("Kernel initializing...");
-
-    string s = string_format("Hello. This is a test panic for %h",0x0);
     
     enable_uart();
+
+    printf("Initializing kernel...");
+
+    printf("Reading device tree %h",get_total_ram());
+
+    string s = string_format("Hello. This is a test panic for %h",0x0);    
     
     printf("UART output enabled");
     
@@ -24,7 +27,6 @@ void kernel_main() {
     printf("Preparing for draw");
     
     gpu_init(screen_size);
-    
     
     printf("GPU initialized");
     
@@ -50,5 +52,10 @@ void kernel_main() {
     printf("MMU Mapped");
 
     printf("Kernel initialization finished");
-    printf("Now we're writing a really long string, because we both want to check string buffers and we want to check how visual console handles growth and wrapping and all that stuff. So it needs to be long, like really long, over 256 string sizes. We're almost there");
+    
+    printf("Preparing user memory...");
+
+    printf("There's %h memory for user processes",get_total_user_ram());
+
+    
 }
