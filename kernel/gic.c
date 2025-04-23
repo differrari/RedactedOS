@@ -4,7 +4,7 @@
 
 #define IRQ_TIMER 30
 
-static uint64_t secs;
+static uint64_t _msecs;
 
 void gic_init() {
     uint64_t current_el;
@@ -30,7 +30,7 @@ void gic_init() {
 void timer_reset() {
     uint64_t freq;
     asm volatile ("mrs %0, cntfrq_el0" : "=r"(freq));
-    uint64_t interval = freq * secs;
+    uint64_t interval = (freq * _msecs)/1000;
     printf("[TIMER] Resetting interval to: %h\n", interval);
     asm volatile ("msr cntp_tval_el0, %0" :: "r"(interval));
 }
@@ -42,8 +42,8 @@ void timer_enable() {
     printf("[TIMER] Timer enabled\n");
 }
 
-void timer_init(uint64_t seconds) {
-    secs = seconds;
+void timer_init(uint64_t msecs) {
+    _msecs = msecs;
     timer_reset();
     timer_enable();
 }

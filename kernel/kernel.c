@@ -38,7 +38,7 @@ void kernel_main() {
 
     printf("Interrupts init");
 
-    timer_init(5);
+    timer_init(1000);
 
     printf("Test timer done");
 
