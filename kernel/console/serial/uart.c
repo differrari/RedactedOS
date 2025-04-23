@@ -1,13 +1,16 @@
 #include "console/serial/uart.h"
 #include "ram_e.h"
 
-#define UART0_BASE 0x09000000
 #define UART0_DR   (UART0_BASE + 0x00)
 #define UART0_FR   (UART0_BASE + 0x18)
 #define UART0_IBRD (UART0_BASE + 0x24)
 #define UART0_FBRD (UART0_BASE + 0x28)
 #define UART0_LCRH (UART0_BASE + 0x2C)
 #define UART0_CR   (UART0_BASE + 0x30)
+
+uint64_t get_uart_base(){
+    return UART0_BASE;
+}
 
 void enable_uart() {
     write32(UART0_CR, 0x0);

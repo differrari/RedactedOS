@@ -4,6 +4,7 @@
 #include "pci.h"
 #include "string.h"
 #include "console/kconsole/kconsole.h"
+#include "mmu.h"
 
 void kernel_main() {
 
@@ -26,6 +27,7 @@ void kernel_main() {
     // kconsole_clear();
 
     printf("Kernel initialization finished");
+    mmu_init();
 
     printf("Now we're writing a really long string, because we both want to check string buffers and we want to check how visual console handles growth and wrapping and all that stuff. So it needs to be long, like really long, over 256 string sizes. We're almost there");
 }

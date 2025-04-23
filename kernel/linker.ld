@@ -2,6 +2,7 @@ ENTRY(_start)
 
 SECTIONS {
     . = 0x40000000;
+    kernel_start = .;
     .boot . : { boot.o(.text) }
     .text : { *(.text) }
     .data : { *(.data) }

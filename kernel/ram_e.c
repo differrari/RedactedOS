@@ -48,6 +48,7 @@ void panic(){
 
 #define temp_start &heap_bottom + 0x500000
 
+extern uint64_t kernel_start;
 extern uint64_t heap_bottom;
 extern uint64_t heap_limit;
 uint64_t next_free_temp_memory = (uint64_t)&heap_bottom;
@@ -73,4 +74,12 @@ uint64_t palloc(uint64_t size) {
 
 void free_temp(){
     next_free_temp_memory = (uint64_t)temp_start;
+}
+
+uint64_t mem_get_kmem_start(){
+    return (uint64_t)&kernel_start;
+}
+
+uint64_t mem_get_kmem_end(){
+    return (uint64_t)&heap_limit;
 }

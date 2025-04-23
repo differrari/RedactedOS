@@ -24,3 +24,6 @@ uint64_t talloc(uint64_t size);
 
 uint64_t palloc(uint64_t size);
 void free_temp();
+
+uint64_t mem_get_kmem_start();
+uint64_t mem_get_kmem_end();
