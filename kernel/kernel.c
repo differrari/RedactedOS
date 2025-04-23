@@ -7,6 +7,7 @@
 #include "mmu.h"
 #include "exception_handler.h"
 #include "ram_e.h"
+#include "gic.h"
 
 void kernel_main() {
 
@@ -32,6 +33,18 @@ void kernel_main() {
     set_exception_vectors();
 
     printf("Exception vectors set");
+
+    gic_init();
+
+    printf("Interrupts init");
+
+    timer_init(5);
+
+    printf("Test timer done");
+
+    enable_interrupt();
+
+    printf("Interrupts enabled");
 
     mmu_init();
     printf("MMU Mapped");

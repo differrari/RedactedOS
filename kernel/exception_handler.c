@@ -21,8 +21,6 @@ void handle_exception(const char* type) {
 
 void sync_el1_handler(){ handle_exception("SYNC EXCEPTION");}
 
-void irq_el1_handler(){ handle_exception("IRQ EXCEPTION\n"); }
-
 void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\n"); }
 
 void error_el1_handler(){ handle_exception("ERROR EXCEPTION\n"); }

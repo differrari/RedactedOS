@@ -23,27 +23,38 @@ void enable_uart() {
     write32(UART0_CR, (1 << 0) | (1 << 8) | (1 << 9));
 }
 
-void uart_putc(const char c) {
+void uart_raw_putc(const char c) {
     while (read32(UART0_FR) & (1 << 5));
     write32(UART0_DR, c);
 }
 
+void uart_putc(const char c){
+    asm volatile ("msr daifset, #2");
+    uart_raw_putc(c);
+    asm volatile ("msr daifclr, #2");
+}
+
 void uart_puts(const char *s) {
+    asm volatile ("msr daifset, #2");
     while (*s != '\0') {
-        uart_putc(*s);
+        uart_raw_putc(*s);
         s++;
     }
+    asm volatile ("msr daifclr, #2");
 }
 
 void uart_puthex(uint64_t value) {
+    asm volatile ("msr daifset, #2");
     const char hex_chars[] = "0123456789ABCDEF";
     bool started = false;
-    uart_puts("0x");
+    uart_raw_putc('0');
+    uart_raw_putc('x');
     for (int i = 60; i >= 0; i -= 4) {
         char curr_char = hex_chars[(value >> i) & 0xF];
         if (started || curr_char != '0' || i == 0) {
             started = true;
-            uart_putc(curr_char);
+            uart_raw_putc(curr_char);
         }
     }
+    asm volatile ("msr daifclr, #2");
 }

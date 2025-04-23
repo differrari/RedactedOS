@@ -2,6 +2,7 @@
 #include "console/serial/uart.h"
 #include "ram_e.h"
 #include "console/kio.h"
+#include "gic.h"
 
 #define MAIR_DEVICE_nGnRnE 0b00000000
 #define MAIR_NORMAL_NOCACHE 0b01000100
@@ -92,6 +93,9 @@ void mmu_init() {
         mmu_map_2mb(addr, addr, MAIR_IDX_NORMAL);
 
     for (uint64_t addr = UART0_BASE; addr < UART0_BASE + 0x1000; addr += 0x1000)
+        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE);
+
+    for (uint64_t addr = GICD_BASE; addr < GICD_BASE + 0x12000; addr += 0x1000)
         mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE);
 
     uint64_t mair = (MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_NOCACHE << (MAIR_IDX_NORMAL * 8));
