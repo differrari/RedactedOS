@@ -1,4 +1,5 @@
 #include "string.h"
+#include "ram_e.h"
 
 static uint32_t compute_length(const char *s, uint32_t max_length) {
     uint32_t len = 0;
@@ -25,14 +26,14 @@ string string_ca_max(const char *array, uint32_t max_length) {
 }
 
 string string_c(const char c){
-    static char buf[2];
+    char *buf = (char*)talloc(2);
     buf[0] = c;
     buf[1] = 0;
     return (string){ .data = buf, .length = 1 };
 }
 
 string string_from_hex(uint64_t value) {
-    static char buf[18];
+    char *buf = (char*)talloc(18);
     uint32_t len = 0;
     buf[len++] = '0';
     buf[len++] = 'x';
@@ -60,7 +61,7 @@ bool string_equals(string a, string b) {
 }
 
 string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_count) {
-    static char buf[256];
+    char *buf = (char*)talloc(256);
     uint32_t len = 0;
     uint32_t arg_index = 0;
 
