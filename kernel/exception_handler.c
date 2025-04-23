@@ -1,0 +1,43 @@
+#include "exception_handler.h"
+#include "console/serial/uart.h"
+#include "string.h"
+#include "console/kio.h"
+
+void set_exception_vectors(){
+    extern char exception_vectors[];
+    printf("Exception vectors setup at %h", (uint64_t)&exception_vectors);
+    asm volatile ("msr vbar_el1, %0" :: "r"(exception_vectors));
+}
+
+void handle_exception(const char* type) {
+    uint64_t esr, elr, far;
+    asm volatile ("mrs %0, esr_el1" : "=r"(esr));
+    asm volatile ("mrs %0, elr_el1" : "=r"(elr));
+    asm volatile ("mrs %0, far_el1" : "=r"(far));
+
+    string s = string_format("%s EXCEPTION\nESR_EL1: %h\nELR_EL1: %h\n,FAR_EL1: %h",(uint64_t)string_l(type).data,esr,elr,far);
+    panic(s.data);
+}
+
+void sync_el1_handler(){ handle_exception("SYNC EXCEPTION");}
+
+void irq_el1_handler(){ handle_exception("IRQ EXCEPTION\n"); }
+
+void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\n"); }
+
+void error_el1_handler(){ handle_exception("ERROR EXCEPTION\n"); }
+
+void panic(const char* panic_msg) {
+    printf("*** KERNEL PANIC ***");
+    printf(panic_msg);
+    printf("System Halted");
+    while (1);
+}
+
+void panic_with_info(const char* msg, uint64_t info) {
+    printf("*** KERNEL PANIC ***");
+    printf(msg);
+    printf("Additional info: %h",info);
+    printf("System Halted");
+    while (1);
+}

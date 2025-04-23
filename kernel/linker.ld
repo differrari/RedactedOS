@@ -7,6 +7,7 @@ SECTIONS {
     .text : { *(.text) }
     .data : { *(.data) }
     .bss : { *(.bss COMMON) }
+    .vectors : { KEEP(*(.vectors)) }
 
     . = ALIGN(16);
     stack_bottom = .;
