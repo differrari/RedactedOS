@@ -1,4 +1,3 @@
 #/!bin/sh
 
- aarch64-none-elf-gdb -ex "target remote :1234" kernel.elf
- #monitor info pci
+ aarch64-none-elf-gdb -ex "file kernel.elf" -ex "target remote :1234"

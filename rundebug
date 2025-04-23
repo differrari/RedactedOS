@@ -1,0 +1,9 @@
+#!/bin/bash
+
+osascript <<EOF
+tell application "Terminal"
+    do script "cd \"$PWD\"; ./run"
+    delay 0.5
+    do script "cd \"$PWD\"; ./debug"
+end tell
+EOF
