@@ -1,0 +1,6 @@
+Currently, there's an issue with boot.s/boot.S
+MacOS is case insensitive as is git
+Make is not
+It seems since boot.s is currently called .s instead of .S, it still detects .S
+Maybe this means boot cannot be modified as there's a ghost copy of it?
+It does mean the build can break if you change the name. It's possible to checkout an older commit and go back to current and it'll work, but it needs to be fixed eventually
