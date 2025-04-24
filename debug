@@ -1,3 +1,19 @@
-#/!bin/sh
+#!/bin/sh
 
- aarch64-none-elf-gdb -ex "file kernel.elf" -ex "target remote :1234"
+echo "Starting debug..."
+
+ARGS=("-ex" "file kernel.elf" "-ex" "target remote :1234")
+
+i=1
+while [ $i -le $# ]; do
+  eval arg=\$$i
+  if [ "$arg" = "b" ]; then
+    i=$((i + 1))
+    eval bp=\$$i
+    ARGS+=("-ex" "b $bp")
+  fi
+  i=$((i + 1))
+done
+
+echo "aarch64-none-elf-gdb ${ARGS[*]}"
+exec aarch64-none-elf-gdb "${ARGS[@]}"
