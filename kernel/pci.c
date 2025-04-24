@@ -41,7 +41,7 @@ struct acpi_xsdt_t {
     uint64_t entries[]; // Array of table pointers
 }__attribute__((packed));
 
-typedef struct acpi_mcfg_t {
+struct acpi_mcfg_t {
     char signature[4]; // "MCFG"
     uint32_t length;
     uint8_t revision;

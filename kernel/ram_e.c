@@ -97,7 +97,7 @@ void calc_ram(){
     }
 }
 
-#define calcvar(var) \ 
+#define calcvar(var)\ 
     if (var == 0)\
         calc_ram();\
     return var;

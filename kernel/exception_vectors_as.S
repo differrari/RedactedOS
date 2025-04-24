@@ -31,14 +31,12 @@ exception_vectors:
 
 .global irq_el1_asm_handler
 irq_el1_asm_handler:
-    // Save registers (minimal for now)
-    mrs x0, elr_el1
-    mrs x1, spsr_el1
-    stp x0, x1, [sp, #-16]!
+//NOTE: There may or may not be inconsistencies with the way sp/x29 and x30 work? But maybe I'm just reading values at the wrong time because they do make sense
+    mov x15, x0
+    mov x14, x1
+    mov x13, x29
+    mov x12, x30
+    mov x11, sp
+    mrs x10, spsr_el1
 
     bl irq_el1_handler
-
-    ldp x0, x1, [sp], #16
-    msr elr_el1, x0
-    msr spsr_el1, x1
-    eret

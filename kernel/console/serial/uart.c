@@ -36,11 +36,15 @@ void uart_putc(const char c){
 
 void uart_puts(const char *s) {
     asm volatile ("msr daifset, #2");
+    uart_raw_puts(s);
+    asm volatile ("msr daifclr, #2");
+}
+
+void uart_raw_puts(const char *s) {
     while (*s != '\0') {
         uart_raw_putc(*s);
         s++;
     }
-    asm volatile ("msr daifclr, #2");
 }
 
 void uart_puthex(uint64_t value) {

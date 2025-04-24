@@ -9,6 +9,7 @@
 #include "ram_e.h"
 #include "dtb.h"
 #include "gic.h"
+#include "process/scheduler.h"
 
 void kernel_main() {
     
@@ -17,8 +18,6 @@ void kernel_main() {
     printf("Initializing kernel...");
 
     printf("Reading device tree %h",get_total_ram());
-
-    string s = string_format("Hello. This is a test panic for %h",0x0);    
     
     printf("UART output enabled");
     
@@ -40,10 +39,6 @@ void kernel_main() {
 
     printf("Interrupts init");
 
-    timer_init(1000);
-
-    printf("Test timer done");
-
     enable_interrupt();
 
     printf("Interrupts enabled");
@@ -57,5 +52,15 @@ void kernel_main() {
 
     printf("There's %h memory for user processes",get_total_user_ram());
 
+    printf("Starting scheduler");
+
+    start_scheduler();
+
+    printf("scheduler started");
+
+    while (1)
+    {
+        printf("Current process %i", get_current_proc());
+    }
     
 }
