@@ -3,3 +3,4 @@
 *.elf
 *.bin
 *.log
+.vscode
