@@ -1,6 +1,7 @@
 #include "scheduler.h"
 #include "console/kio.h"
 #include "ram_e.h"
+#include "proc_allocator.h"
 #include "gic.h"
 
 extern void save_context(process_t* proc);
@@ -48,7 +49,7 @@ process_t* create_process(void (*func)()) {
     if (proc_count >= MAX_PROCS) return 0;
 
     process_t* proc = &processes[proc_count];
-    proc->sp = palloc(0x1000);
+    proc->sp = (uint64_t)alloc_proc_mem(0x1000);
     proc->pc = (uint64_t)func;
     proc->spsr = 0x3C5; // clean flags
     proc->state = READY;

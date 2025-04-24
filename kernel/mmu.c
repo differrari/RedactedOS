@@ -117,3 +117,7 @@ void mmu_init() {
 
     printf("Finished MMU init");
 }
+
+void register_proc_memory(uint64_t va, uint64_t pa){
+    mmu_map_4kb(va, pa, MAIR_IDX_NORMAL);
+}
