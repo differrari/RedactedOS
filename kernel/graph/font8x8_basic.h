@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stdint.h>
+#include "types.h"
 
 static const uint8_t font8x8_basic[128][8] = {
     [' '] = {0,0,0,0,0,0,0,0},

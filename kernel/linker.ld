@@ -18,4 +18,12 @@ SECTIONS {
     heap_bottom = .;
     .heap_fill : { FILL(0); . = . + 0x1000000; }
     heap_limit = .;
+
+    . = ALIGN(4096);
+    proc_1_rodata_start = .;
+    .rodata.proc1 : { KEEP(*(.rodata.proc1)) }
+    proc_1_rodata_end = .;
+    proc_1_start = .;
+    .text.proc1 : { KEEP(*(.text.proc1)) }
+    proc_1_end = .;
 }

@@ -11,7 +11,7 @@
 #define BOOT_PUD_ATTR PD_TABLE
 
 #define PAGE_TABLE_ENTRIES 512
-#define PAGE_SIZE PAGE_TABLE_ENTRIES * 8
+#define PAGE_SIZE 4096
 
 uint64_t mem_table_l1[PAGE_TABLE_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
 
@@ -80,6 +80,9 @@ void proc_allocator_init() {
 void* alloc_proc_mem(uint64_t size) {
     uint64_t start = get_user_ram_start();
     uint64_t end = get_user_ram_end();
+
+    start = (start + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    end = end & ~(PAGE_SIZE - 1);
 
     size = ((size + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
     for (uint64_t va = start; va + size <= end; va += PAGE_SIZE) {

@@ -27,8 +27,6 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     uint64_t l2_index = (va >> 30) & 0x1FF;
     uint64_t l3_index = (va >> 21) & 0x1FF;
 
-    printf("Addresses for %h: %i %i %i", va, l1_index, l2_index, l3_index);
-
     if (!(page_table_l1[l1_index] & 1)) {
         uint64_t* pud = (uint64_t*)palloc(PAGE_SIZE);
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) pud[i] = 0;
@@ -55,7 +53,6 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     uint64_t l3_index = (va >> 21) & 0x1FF;
     uint64_t l4_index = (va >> 12) & 0x1FF;
 
-    printf("Addresses for %h: %i %i %i %i", va, l1_index, l2_index, l3_index, l4_index);
 
     if (!(page_table_l1[l1_index] & 1)) {
         uint64_t* l2 = (uint64_t*)palloc(PAGE_SIZE);
@@ -118,6 +115,24 @@ void mmu_init() {
     printf("Finished MMU init");
 }
 
+static inline void mmu_flush_all() {
+    asm volatile (
+        "dsb ishst\n"        // Ensure all memory accesses complete
+        "tlbi vmalle1is\n"   // Invalidate all EL1 TLB entries (Inner Shareable)
+        "dsb ish\n"          // Ensure completion of TLB invalidation
+        "isb\n"              // Synchronize pipeline
+    );
+}
+
+static inline void mmu_flush_icache() {
+    asm volatile (
+        "ic iallu\n"         // Invalidate all instruction caches to PoU
+        "isb\n"              // Ensure completion before continuing
+    );
+}
+
 void register_proc_memory(uint64_t va, uint64_t pa){
     mmu_map_4kb(va, pa, MAIR_IDX_NORMAL);
+    mmu_flush_all();
+    mmu_flush_icache();
 }

@@ -11,22 +11,6 @@
 #include "gic.h"
 #include "process/scheduler.h"
 
-void func1(){
-    int j = 0;
-    while (1)
-    {
-        printf("First process %i",j++);
-    }
-}
-
-void func2(){
-    int i = 0;
-    while (1)
-    {
-        printf("Second process %i", i++);
-    }
-}
-
 void kernel_main() {
     
     enable_uart();
@@ -68,10 +52,9 @@ void kernel_main() {
 
     printf("There's %h memory for user processes",get_total_user_ram());
 
-    printf("Starting 2 processes");
+    printf("Starting default processes");
 
-    create_process(func1);
-    create_process(func2);
+    default_processes();
 
     printf("Starting scheduler");
 
