@@ -1,6 +1,5 @@
 .global save_context
 save_context:
-// NOTE: WE'RE POSSIBLY LOSING VALUES OF x0 and x30 doing this
     // x0: pointer to process_t
 
     // Save general-purpose registers x1-x30 (excluding x0 which holds the pointer)
@@ -62,8 +61,7 @@ restore_context:
     mov sp, x11
     msr sp_el0, x11
     mov x29, x11
-    #ldr x11, [x0, #(8 * 33)]
-    mov x11, #0xC0
+    ldr x11, [x0, #(8 * 33)]
     msr spsr_el1, x11
     ldr x11, [x0, #(8 * 32)]
     msr elr_el1, x11

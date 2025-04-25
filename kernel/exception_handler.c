@@ -20,7 +20,7 @@ void handle_exception(const char* type) {
 
     debug_mmu_address(far);
 
-    string s = string_format("%s EXCEPTION\nESR_EL1: %h\nELR_EL1: %h\n,FAR_EL1: %h",(uint64_t)string_l(type).data,esr,elr,far);
+    string s = string_format("%s \nESR_EL1: %h\nELR_EL1: %h\n,FAR_EL1: %h",(uint64_t)string_l(type).data,esr,elr,far);
     panic(s.data);
 }
 

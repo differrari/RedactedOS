@@ -19,19 +19,18 @@ exception_vectors:
     vector_slot fiq_el1_handler       // EL1h fiq
     vector_slot error_el1_handler     // EL1h serror
 
-    vector_slot sync_el1_handler      // EL0_64 sync
+    vector_slot sync_el0_handler_c      // EL0_64 sync
     vector_slot irq_el1_asm_handler       // EL0_64 irq
     vector_slot fiq_el1_handler       // EL0_64 fiq
     vector_slot error_el1_handler     // EL0_64 serror
 
-    vector_slot sync_el1_handler      // EL0_32 sync
+    vector_slot sync_el0_handler_c      // EL0_32 sync
     vector_slot irq_el1_asm_handler       // EL0_32 irq
     vector_slot fiq_el1_handler       // EL0_32 fiq
     vector_slot error_el1_handler     // EL0_32 serror
 
 .global irq_el1_asm_handler
 irq_el1_asm_handler:
-//NOTE: There may or may not be inconsistencies with the way sp/x29 and x30 work? But maybe I'm just reading values at the wrong time because they do make sense
     mov x15, x0
     mov x14, x1
     mov x13, x29

@@ -48,7 +48,7 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);   
     
     //For now we make this not executable. We'll need to to separate read_write, read_only and executable sections
-    uint64_t attr = (1 << 54) | (0 << 53) | PD_ACCESS | (0b11 << 8) | (0b00 << 6) | (attr_index << 2) | PD_BLOCK;
+    uint64_t attr = (0 << 54) | (0 << 53) | PD_ACCESS | (0b11 << 8) | (0b00 << 6) | (attr_index << 2) | PD_BLOCK;
     l3[l3_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
 }
 
@@ -88,7 +88,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
     uint64_t* l4 = (uint64_t*)(l3[l3_index] & 0xFFFFFFFFF000ULL);
     //54 = UXN level | 53 = PXN !level | 8 = share | 6 = Access permission
     uint8_t permission = level == 1 ? 0b00 : 0b01;
-    uint64_t attr = (level << 54) | (!level << 53) | PD_ACCESS | (0b11 << 8) | (permission << 6) | (attr_index << 2) | 0b11;
+    uint64_t attr = (level << 54) | (0 << 53) | PD_ACCESS | (0b11 << 8) | (permission << 6) | (attr_index << 2) | 0b11;
     
     l4[l4_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
 }
