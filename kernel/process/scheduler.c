@@ -42,7 +42,7 @@ void switch_proc(ProcSwitchReason reason) {
     restore_context(&processes[current_proc]);
 }
 
-void relocate_code(void* dst, void* src, uint32_t size) {
+void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, uint64_t dst_data_base, uint32_t data_size) {
     uint32_t* src32 = (uint32_t*)src;
     uint32_t* dst32 = (uint32_t*)dst;
     uint64_t src_base = (uint64_t)src32;
@@ -82,24 +82,46 @@ void relocate_code(void* dst, void* src, uint32_t size) {
             } else {
                 printf("Preserved internal conditional branch to %h\n", target);
             }
-        } else if ((instr >> 24) == 169) { // ADRP. Same page for now
-            uint64_t immhi = (instr >> 5) & 0x7FFFF;
+        } else if ((instr & 0x9F000000) == 0x90000000) {
             uint64_t immlo = (instr >> 29) & 0x3;
-            int64_t offset = ((immhi << 14) | (immlo << 12));
-            offset = (offset << 6) >> 6;
-            uint64_t target = src_base + (i * 4) + offset;
-            bool internal = (target >= src_base) && (target < src_base + size);
-            if (!internal) {
-                uint64_t new_target = dst_base + (i * 4) + offset;
-                uint64_t new_offset = new_target - (dst_base & ~0xFFFULL);
+            uint64_t immhi = (instr >> 5) & 0x7FFFF;
+            int64_t offset = ((int64_t)((immhi << 14) | (immlo << 12)) << 43) >> 43;
+
+            uint64_t pc_page = (src_base + i * 4) & ~0xFFFULL;
+            uint64_t target = pc_page + offset;
+
+            printf("Was at offset %i of original code, so at address %h and data started at %h",offset,target,src_data_base);
+        
+            // uint64_t target = (src_base & ~0xFFFULL) + ((i * 4 + offset) & ~0xFFFULL);
+            bool internal = (target >= src_data_base) && (target < src_data_base + data_size);
+
+            if (internal){
+                uint64_t data_offset = target - src_data_base;
+                uint64_t new_target = dst_data_base + data_offset;
+
+                uint64_t dst_pc_page = (dst_base + i * 4) & ~0xFFFULL;
+                int64_t new_offset = (int64_t)(new_target - dst_pc_page);
+                
                 uint64_t new_immhi = (new_offset >> 14) & 0x7FFFF;
                 uint64_t new_immlo = (new_offset >> 12) & 0x3;
+                
                 instr = (instr & ~0x60000000) | (new_immlo << 29);
                 instr = (instr & ~(0x7FFFF << 5)) | (new_immhi << 5);
-                printf("Relocated ADRP to %i\n", new_target);
-            } else {
-                printf("Preserved internal ADRP to %h\n", target);
-            }
+
+                printf("We're inside data stack, so new address is: %i",data_offset);
+
+                immlo = (instr >> 29) & 0x3;
+                immhi = (instr >> 5) & 0x7FFFF;
+                offset = ((int64_t)((immhi << 14) | (immlo << 12)) << 43) >> 43;
+
+                pc_page = (dst_base + i * 4) & ~0xFFFULL;
+                target = pc_page + offset;
+
+                printf("Confirmation: New address is %h compared to calculated one %h",target, new_target);
+
+            } else 
+                printf("We don't support this type of symbol yet.");
+        
         }
 
         dst32[i] = instr;
@@ -114,7 +136,7 @@ process_t* create_process(void (*func)(), uint64_t code_size, uint64_t func_base
 
     process_t* proc = &processes[proc_count];
 
-    printf("Code size %h", code_size);
+    printf("Code size %h. Data size %h", code_size, data_size);
     
     uint8_t* data_dest = (uint8_t*)alloc_proc_mem(data_size);
     if (!data_dest) return 0;
@@ -126,12 +148,11 @@ process_t* create_process(void (*func)(), uint64_t code_size, uint64_t func_base
     uint64_t* code_dest = (uint64_t*)alloc_proc_mem(code_size);
     if (!code_dest) return 0;
 
-    relocate_code(code_dest, func, code_size/*, (uint64_t)&func, (uint64_t)&code_dest*/);
+    relocate_code(code_dest, func, code_size, (uint64_t)&data[0], (uint64_t)&data_dest[0], data_size);
     
     printf("Code copied to %h", (uint64_t)code_dest);
     uint64_t stack_size = 0x1000;
 
-    
     uint64_t stack = (uint64_t)alloc_proc_mem(stack_size);
     printf("Stack size %h. Start %h", stack_size,stack);
     if (!stack) return 0;
@@ -158,12 +179,24 @@ int get_current_proc(){
 
 __attribute__((section(".rodata.proc1")))
 static const char fmt[] = "Process %i";
+__attribute__((section(".data.proc1")))
+static uint64_t j = 12;
 
 __attribute__((section(".text.proc1")))
 void proc_func() {
-    int j = 0;
+    // const char *msg = "hi from EL0\n";
     while (1) {
-        // printf(fmt, j++);
+        register uint64_t x0 asm("x0") = (uint64_t)&fmt;
+        register uint64_t x1 asm("x1") = (uint64_t)&j;
+        register uint64_t x2 asm("x2") = 1;
+        register uint64_t x8 asm("x8") = 3;
+
+        asm volatile(
+            "svc #3"
+            :
+            : "r"(x0), "r"(x1), "r"(x2), "r"(x8)
+            : "memory"
+        );
         j++;
     }
 }
@@ -173,6 +206,8 @@ void default_processes(){
     extern uint8_t proc_1_end;
     extern uint8_t proc_1_rodata_start;
     extern uint8_t proc_1_rodata_end;
+
+    printf("DATA STARTS AT %h ENDS AT %h",(uint64_t)&proc_1_rodata_start,(uint64_t)&proc_1_rodata_end);
 
     create_process(proc_func, (uint64_t)&proc_1_end - (uint64_t)&proc_1_start, (uint64_t)&proc_1_start, (void*)&fmt, (uint64_t)&proc_1_rodata_end - (uint64_t)&proc_1_rodata_start);
     create_process(proc_func, (uint64_t)&proc_1_end - (uint64_t)&proc_1_start, (uint64_t)&proc_1_start, (void*)&fmt, (uint64_t)&proc_1_rodata_end - (uint64_t)&proc_1_rodata_start);
