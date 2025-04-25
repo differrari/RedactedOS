@@ -26,4 +26,7 @@ SECTIONS {
     proc_1_start = .;
     .text.proc1 : { KEEP(*(.text.proc1)) }
     proc_1_end = .;
+
+    . = ALIGN(0x200000);
+    kcode_end = .;
 }

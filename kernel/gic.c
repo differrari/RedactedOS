@@ -11,8 +11,6 @@ extern void irq_el1_asm_handler();
 
 void gic_init() {
     uint64_t current_el;
-    asm volatile ("mrs %0, CurrentEL" : "=r"(current_el));
-    printf("[GIC INIT] CurrentEL: %h\n", current_el);
 
     write8(GICD_BASE, 0); // Disable Distributor
     write8(GICC_BASE, 0); // Disable CPU Interface
@@ -64,6 +62,4 @@ void irq_el1_handler() {
         write32(GICC_BASE + 0x10, irq);
         switch_proc(INTERRUPT);
     }
-
-    // printf(">>> Unhandled IRQ: %h\n", irq);
 }

@@ -39,10 +39,7 @@ void switch_proc(ProcSwitchReason reason) {
     }
 
     current_proc = next_proc;
-    if (reason == YIELD)
-        restore_context_yield(&processes[current_proc]);
-    else 
-        restore_context(&processes[current_proc]);
+    restore_context(&processes[current_proc]);
 }
 
 void relocate_code(void* dst, void* src, uint32_t size) {
@@ -134,13 +131,15 @@ process_t* create_process(void (*func)(), uint64_t code_size, uint64_t func_base
     printf("Code copied to %h", (uint64_t)code_dest);
     uint64_t stack_size = 0x1000;
 
-    printf("Stack size %h", stack_size);
-
+    
     uint64_t stack = (uint64_t)alloc_proc_mem(stack_size);
+    printf("Stack size %h. Start %h", stack_size,stack);
     if (!stack) return 0;
 
     proc->sp = (stack + stack_size);
+    
     proc->pc = (uint64_t)code_dest;
+    printf("Process allocated with address at %h, stack at %h",proc->pc, proc->sp);
     proc->spsr = 0x3C5; // clean flags
     proc->state = READY;
     proc->id = proc_count++;
@@ -164,7 +163,8 @@ __attribute__((section(".text.proc1")))
 void proc_func() {
     int j = 0;
     while (1) {
-        printf(fmt, j++);
+        // printf(fmt, j++);
+        j++;
     }
 }
 

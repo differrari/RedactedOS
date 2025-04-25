@@ -60,8 +60,10 @@ restore_context:
 
     ldr x11, [x0, #(8 * 31)]
     mov sp, x11
+    msr sp_el0, x11
     mov x29, x11
-    ldr x11, [x0, #(8 * 33)]
+    #ldr x11, [x0, #(8 * 33)]
+    mov x11, #0xC0
     msr spsr_el1, x11
     ldr x11, [x0, #(8 * 32)]
     msr elr_el1, x11
@@ -96,7 +98,9 @@ restore_context_yield:
     ldr x11, [x0, #(8 * 31)]
     mov sp, x11
     mov x29, x11
-    ldr x11, [x0, #(8 * 33)]
+    msr sp_el0, x11
+    #ldr x11, [x0, #(8 * 33)]
+    mov x11, #0xC0
     msr spsr_el1, x11
     ldr x11, [x0, #(8 * 32)]
     mov x0, x15

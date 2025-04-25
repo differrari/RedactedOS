@@ -55,6 +55,7 @@ uint64_t read(uint64_t addr) {
 extern uint64_t kernel_start;
 extern uint64_t heap_bottom;
 extern uint64_t heap_limit;
+extern uint64_t kcode_end;
 uint64_t next_free_temp_memory = (uint64_t)&heap_bottom;
 uint64_t next_free_perm_memory = (uint64_t)temp_start;
 
@@ -85,13 +86,16 @@ uint64_t mem_get_kmem_start(){
 }
 
 uint64_t mem_get_kmem_end(){
-    return (uint64_t)&heap_limit;
+    return (uint64_t)&kcode_end;
 }
 
 void calc_ram(){
     if (get_memory_region(&total_ram_start, &total_ram_size)) {
         calculated_ram_end = total_ram_start + total_ram_size;
         calculated_ram_start = mem_get_kmem_end() + 0x1;
+        calculated_ram_start = ((calculated_ram_start) & ~((1ULL << 21) - 1));
+        calculated_ram_end = ((calculated_ram_end) & ~((1ULL << 21) - 1));
+        
         calculated_ram_size = calculated_ram_end - calculated_ram_start;
         printf("Device has %h memory starting at %h. %h for user starting at %h  ",total_ram_size, total_ram_start, calculated_ram_size, calculated_ram_start);
     }

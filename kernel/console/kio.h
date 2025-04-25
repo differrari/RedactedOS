@@ -12,3 +12,5 @@ void printf_args(const char *fmt, const uint64_t *args, uint32_t arg_count);
 void puts(const char *s);
 void putc(const char c);
 void puthex(uint64_t value);
+void disable_visual();
+void enable_visual();

@@ -4,3 +4,5 @@
 
 void mmu_init();
 void register_proc_memory(uint64_t va, uint64_t pa);
+void debug_mmu_address(uint64_t va);
+void mmu_enable_verbose();
