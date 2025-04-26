@@ -10,8 +10,6 @@ static uint64_t _msecs;
 extern void irq_el1_asm_handler();
 
 void gic_init() {
-    uint64_t current_el;
-
     write8(GICD_BASE, 0); // Disable Distributor
     write8(GICC_BASE, 0); // Disable CPU Interface
 
@@ -49,7 +47,12 @@ void timer_init(uint64_t msecs) {
 
 void enable_interrupt() {
     asm volatile ("msr daifclr, #2");
-    printf("[INTERRUPTS] Global interrupts enabled\n");
+    asm volatile ("isb");
+}
+
+void disable_interrupt(){
+    asm volatile ("msr daifset, #2");
+    asm volatile ("isb");
 }
 
 void irq_el1_handler() {

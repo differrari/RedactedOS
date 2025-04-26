@@ -1,6 +1,7 @@
 #include "kio.h"
 #include "serial/uart.h"
 #include "string.h"
+#include "gic.h"
 #include "kconsole/kconsole.h"
 
 static bool use_visual = true;
@@ -18,9 +19,9 @@ void putc(const char c){
 }
 
 void printf_args(const char *fmt, const uint64_t *args, uint32_t arg_count){
-    asm volatile ("msr daifset, #2");
+    disable_interrupt();
     printf_args_raw(fmt, args, arg_count);
-    asm volatile ("msr daifclr, #2");
+    enable_interrupt();
 }
 
 void printf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count){

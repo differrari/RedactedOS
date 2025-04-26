@@ -1,5 +1,6 @@
 #include "console/serial/uart.h"
 #include "ram_e.h"
+#include "gic.h"
 
 #define UART0_DR   (UART0_BASE + 0x00)
 #define UART0_FR   (UART0_BASE + 0x18)
@@ -29,15 +30,15 @@ void uart_raw_putc(const char c) {
 }
 
 void uart_putc(const char c){
-    asm volatile ("msr daifset, #2");
+    disable_interrupt();
     uart_raw_putc(c);
-    asm volatile ("msr daifclr, #2");
+    enable_interrupt();
 }
 
 void uart_puts(const char *s) {
-    asm volatile ("msr daifset, #2");
+    disable_interrupt();
     uart_raw_puts(s);
-    asm volatile ("msr daifclr, #2");
+    enable_interrupt();
 }
 
 void uart_raw_puts(const char *s) {
@@ -48,7 +49,7 @@ void uart_raw_puts(const char *s) {
 }
 
 void uart_puthex(uint64_t value) {
-    asm volatile ("msr daifset, #2");
+    disable_interrupt();
     const char hex_chars[] = "0123456789ABCDEF";
     bool started = false;
     uart_raw_putc('0');
@@ -60,5 +61,5 @@ void uart_puthex(uint64_t value) {
             uart_raw_putc(curr_char);
         }
     }
-    asm volatile ("msr daifclr, #2");
+    enable_interrupt();
 }

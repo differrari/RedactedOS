@@ -8,9 +8,6 @@
 extern void save_context(process_t* proc);
 extern void save_pc_interrupt(process_t* proc);
 extern void restore_context(process_t* proc);
-extern void restore_context(process_t* proc);
-extern void restore_context_yield(process_t* proc);
-extern void restore_pc_interrupt(process_t* proc);
 
 #define MAX_PROCS 16
 process_t processes[MAX_PROCS];
@@ -23,10 +20,6 @@ void save_context_registers(){
 
 void save_return_address_interrupt(){
     save_pc_interrupt(&processes[current_proc]);
-}
-
-void restore_return_address_interrupt(){
-    restore_pc_interrupt(&processes[current_proc]);
 }
 
 void switch_proc(ProcSwitchReason reason) {
@@ -193,12 +186,12 @@ void proc_func() {
         register uint64_t x2 asm("x2") = 1;
         register uint64_t x8 asm("x8") = 3;
 
-        asm volatile(
-            "svc #3"
-            :
-            : "r"(x0), "r"(x1), "r"(x2), "r"(x8)
-            : "memory"
-        );
+        // asm volatile(
+        //     "svc #3"
+        //     :
+        //     : "r"(x0), "r"(x1), "r"(x2), "r"(x8)
+        //     : "memory"
+        // );
         j++;
     }
 }
