@@ -33,7 +33,6 @@ void switch_proc(ProcSwitchReason reason) {
     }
     
     current_proc = next_proc;
-    printf_raw("sb: %h",processes[current_proc].spsr);
     restore_context(&processes[current_proc]);
 }
 
@@ -164,6 +163,7 @@ process_t* create_process(void (*func)(), uint64_t code_size, uint64_t func_base
 }
 
 void start_scheduler(){
+    disable_interrupt();
     timer_init(10);
     switch_proc(YIELD);
 }
