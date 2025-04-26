@@ -33,6 +33,7 @@ void switch_proc(ProcSwitchReason reason) {
     }
     
     current_proc = next_proc;
+    printf_raw("sb: %h",processes[current_proc].spsr);
     restore_context(&processes[current_proc]);
 }
 
