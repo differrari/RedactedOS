@@ -20,8 +20,6 @@ void sync_el0_handler_c(){
 
     asm volatile ("mrs %0, elr_el1" : "=r"(elr));
     asm volatile ("mrs %0, daif" : "=r"(far));
-
-    printf_raw("IRQ STATUS %h",far);
     
     if (x8 == 3){
         printf_args_raw(x0,x1,x2);

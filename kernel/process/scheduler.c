@@ -33,7 +33,6 @@ void switch_proc(ProcSwitchReason reason) {
     }
     
     current_proc = next_proc;
-    printf_raw("New process chosen %h",processes[current_proc].pc);
     restore_context(&processes[current_proc]);
 }
 
@@ -156,7 +155,7 @@ process_t* create_process(void (*func)(), uint64_t code_size, uint64_t func_base
     
     proc->pc = (uint64_t)code_dest;
     printf("Process allocated with address at %h, stack at %h",proc->pc, proc->sp);
-    proc->spsr = 0xC0;
+    proc->spsr = 0;
     proc->state = READY;
     proc->id = proc_count++;
     
@@ -164,7 +163,7 @@ process_t* create_process(void (*func)(), uint64_t code_size, uint64_t func_base
 }
 
 void start_scheduler(){
-    timer_init(1);
+    timer_init(10);
     switch_proc(YIELD);
 }
 
@@ -181,6 +180,7 @@ __attribute__((section(".text.proc1")))
 void proc_func() {
     // const char *msg = "hi from EL0\n";
     while (1) {
+        // disable_interrupt();
         register uint64_t x0 asm("x0") = (uint64_t)&fmt;
         register uint64_t x1 asm("x1") = (uint64_t)&j;
         register uint64_t x2 asm("x2") = 1;
@@ -192,6 +192,7 @@ void proc_func() {
             : "r"(x0), "r"(x1), "r"(x2), "r"(x8)
             : "memory"
         );
+        // enable_interrupt();
         j++;
     }
 }
