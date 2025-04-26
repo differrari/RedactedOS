@@ -52,8 +52,8 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
         if (op == 5 || op == 37) {
             int32_t offset = ((int32_t)instr << 6) >> 6;
             offset *= 4;
-            printf("Offset %i",offset);
-            printf("Address %h",(uint64_t)src_base+(i*4));
+            // printf("Offset %i",offset);
+            // printf("Address %h",(uint64_t)src_base+(i*4));
             uint64_t target = src_base + (i * 4) + offset;
             bool internal = (target >= src_base) && (target < src_base + size);
         
@@ -62,7 +62,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
                 instr = (instr & 0xFC000000) | (rel & 0x03FFFFFF);
             }
         
-            printf("Branch op %i to %h (%s)", op, target, (uint64_t)(internal ? "internal" : "external"));
+            // printf("Branch op %i to %h (%s)", op, target, (uint64_t)(internal ? "internal" : "external"));
         } else if ((instr >> 24) == 84) { // B.cond (untested)
             int32_t offset = ((int32_t)(instr >> 5) & 0x7FFFF);
             offset = (offset << 6) >> 6;
@@ -72,9 +72,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
             if (!internal) {
                 int32_t rel = (int32_t)(target - (dst_base + (i * 4))) >> 2;
                 instr = (instr & ~0xFFFFE0) | ((rel & 0x7FFFF) << 5);
-                printf("Relocated conditional branch to %h\n", target);
-            } else {
-                printf("Preserved internal conditional branch to %h\n", target);
+                // printf("Relocated conditional branch to %h\n", target);
             }
         } else if ((instr & 0x9F000000) == 0x90000000) {
             uint64_t immlo = (instr >> 29) & 0x3;
@@ -84,7 +82,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
             uint64_t pc_page = (src_base + i * 4) & ~0xFFFULL;
             uint64_t target = pc_page + offset;
 
-            printf("Was at offset %i of original code, so at address %h and data started at %h",offset,target,src_data_base);
+            // printf("Was at offset %i of original code, so at address %h and data started at %h",offset,target,src_data_base);
         
             // uint64_t target = (src_base & ~0xFFFULL) + ((i * 4 + offset) & ~0xFFFULL);
             bool internal = (target >= src_data_base) && (target < src_data_base + data_size);
@@ -102,7 +100,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
                 instr = (instr & ~0x60000000) | (new_immlo << 29);
                 instr = (instr & ~(0x7FFFF << 5)) | (new_immhi << 5);
 
-                printf("We're inside data stack, so new address is: %i",data_offset);
+                // printf("We're inside data stack, so new address is: %i",data_offset);
 
                 immlo = (instr >> 29) & 0x3;
                 immhi = (instr >> 5) & 0x7FFFF;
@@ -111,7 +109,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
                 pc_page = (dst_base + i * 4) & ~0xFFFULL;
                 target = pc_page + offset;
 
-                printf("Confirmation: New address is %h compared to calculated one %h",target, new_target);
+                // printf("Confirmation: New address is %h compared to calculated one %h",target, new_target);
 
             } else 
                 printf("We don't support this type of symbol yet.");
@@ -175,11 +173,10 @@ int get_current_proc(){
 __attribute__((section(".rodata.proc1")))
 static const char fmt[] = "Process %i";
 __attribute__((section(".data.proc1")))
-static uint64_t j = 12;
+static uint64_t j = 0;
 
 __attribute__((section(".text.proc1")))
 void proc_func() {
-    // const char *msg = "hi from EL0\n";
     while (1) {
         register uint64_t x0 asm("x0") = (uint64_t)&fmt;
         register uint64_t x1 asm("x1") = (uint64_t)&j;
