@@ -14,9 +14,6 @@ void uart_puts(const char *s);
 void uart_putc(const char c);
 void uart_puthex(uint64_t value);
 
-void uart_raw_putc(const char c);
-void uart_raw_puts(const char *s);
-
 #ifdef __cplusplus
 }
 #endif

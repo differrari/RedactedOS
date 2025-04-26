@@ -62,6 +62,6 @@ void kernel_main() {
 
     start_scheduler();
 
-    printf_raw("Error: Kernel did not activate any process");
+    printf("Error: Kernel did not activate any process");
     
 }

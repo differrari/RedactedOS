@@ -27,7 +27,7 @@ void sync_el0_handler_c(){
     asm volatile ("mrs %0, spsr_el1" : "=r"(spsr));
 
     if (x8 == 3) {
-        printf_args_raw(x0, x1, x2);
+        printf_args(x0, x1, x2);
         asm volatile ("msr elr_el1, %0" : : "r"(elr));
     } else {
         handle_exception("UNEXPECTED EL0 EXCEPTION");
