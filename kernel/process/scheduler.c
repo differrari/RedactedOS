@@ -186,12 +186,12 @@ void proc_func() {
         register uint64_t x2 asm("x2") = 1;
         register uint64_t x8 asm("x8") = 3;
 
-        // asm volatile(
-        //     "svc #3"
-        //     :
-        //     : "r"(x0), "r"(x1), "r"(x2), "r"(x8)
-        //     : "memory"
-        // );
+        asm volatile(
+            "svc #3"
+            :
+            : "r"(x0), "r"(x1), "r"(x2), "r"(x8)
+            : "memory"
+        );
         j++;
     }
 }
