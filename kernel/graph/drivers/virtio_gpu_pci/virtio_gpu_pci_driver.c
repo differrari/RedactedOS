@@ -150,25 +150,25 @@ static uint32_t default_height;
 
 uint64_t vgp_setup_bars(uint64_t base, uint8_t bar) {
     uint64_t bar_addr = pci_get_bar_address(base, 0x10, bar);
-    printf("Setting up GPU BAR@%h FROM BAR %i", bar_addr, bar);
+    kprintf("Setting up GPU BAR@%h FROM BAR %i", bar_addr, bar);
 
     write32(bar_addr, 0xFFFFFFFF);
     uint64_t bar_val = read32(bar_addr);
 
     if (bar_val == 0 || bar_val == 0xFFFFFFFF) {
-        printf("BAR size probing failed");
+        kprintf("BAR size probing failed");
         return 0;
     }
 
     uint64_t size = ((uint64_t)(~(bar_val & ~0xF)) + 1);
-    printf("Calculated BAR size: %h", size);
+    kprintf("Calculated BAR size: %h", size);
 
     uint64_t config_base = 0x10010000;
     write32(bar_addr, config_base & 0xFFFFFFFF);
 
     bar_val = read32(bar_addr);
 
-    printf("FINAL BAR value: %h", bar_val);
+    kprintf("FINAL BAR value: %h", bar_val);
 
     uint32_t cmd = read32(base + 0x4);
     cmd |= 0x2;
@@ -178,23 +178,23 @@ uint64_t vgp_setup_bars(uint64_t base, uint8_t bar) {
 }
 
 void vgp_start() {
-    printf("Starting VirtIO GPU initialization");
+    kprintf("Starting VirtIO GPU initialization");
 
     common_cfg->device_status = 0;
     while (common_cfg->device_status != 0);
 
-    printf("Device reset");
+    kprintf("Device reset");
 
     common_cfg->device_status |= VIRTIO_STATUS_ACKNOWLEDGE;
-    printf("ACK sent");
+    kprintf("ACK sent");
 
     common_cfg->device_status |= VIRTIO_STATUS_DRIVER;
-    printf("DRIVER sent");
+    kprintf("DRIVER sent");
 
     common_cfg->device_feature_select = 0;
     uint32_t features = common_cfg->device_feature;
 
-    printf("Features received %h", features);
+    kprintf("Features received %h", features);
 
     common_cfg->driver_feature_select = 0;
     common_cfg->driver_feature = features;
@@ -202,14 +202,14 @@ void vgp_start() {
     common_cfg->device_status |= VIRTIO_STATUS_FEATURES_OK;
 
     if (!(common_cfg->device_status & VIRTIO_STATUS_FEATURES_OK)) {
-        printf("FEATURES_OK not accepted, device unusable");
+        kprintf("FEATURES_OK not accepted, device unusable");
         return;
     }
 
     common_cfg->queue_select = 0;
     uint32_t queue_size = common_cfg->queue_size;
 
-    printf("Queue size: %h", queue_size);
+    kprintf("Queue size: %h", queue_size);
 
     common_cfg->queue_size = queue_size;
 
@@ -227,7 +227,7 @@ void vgp_start() {
 
     common_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
 
-    printf("VirtIO GPU initialization complete");
+    kprintf("VirtIO GPU initialization complete");
 }
 
 volatile struct virtio_pci_cap* vgp_get_capabilities(uint64_t address) {
@@ -237,7 +237,7 @@ volatile struct virtio_pci_cap* vgp_get_capabilities(uint64_t address) {
         uint64_t cap_address = address + offset;
         volatile struct virtio_pci_cap* cap = (volatile struct virtio_pci_cap*)(uintptr_t)(cap_address);
 
-        printf("Inspecting@%h = %h (%h + %h) TYPE %h -> %h",cap_address, cap->cap_vndr, cap->bar, cap->offset, cap->cfg_type, cap->cap_next);
+        kprintf("Inspecting@%h = %h (%h + %h) TYPE %h -> %h",cap_address, cap->cap_vndr, cap->bar, cap->offset, cap->cfg_type, cap->cap_next);
 
         uint64_t target = pci_get_bar_address(address, 0x10, cap->bar);
         uint64_t val = read32(target) & ~0xF;
@@ -248,17 +248,17 @@ volatile struct virtio_pci_cap* vgp_get_capabilities(uint64_t address) {
             }
 
             if (cap->cfg_type == VIRTIO_PCI_CAP_COMMON_CFG) {
-                printf("Found common config %h", val + cap->offset);
+                kprintf("Found common config %h", val + cap->offset);
                 common_cfg = (volatile struct virtio_pci_common_cfg*)(uintptr_t)(val + cap->offset);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_NOTIFY_CFG) {
-                printf("Found notify config %h", val + cap->offset);
+                kprintf("Found notify config %h", val + cap->offset);
                 notify_cfg = (volatile uint8_t*)(uintptr_t)(val + cap->offset);
                 notify_off_multiplier = *(volatile uint32_t*)(uintptr_t)(cap_address + sizeof(struct virtio_pci_cap));
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_DEVICE_CFG) {
-                printf("Found device config %h", val + cap->offset);
+                kprintf("Found device config %h", val + cap->offset);
                 device_cfg = (volatile uint8_t*)(uintptr_t)(val + cap->offset);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_ISR_CFG) {
-                printf("Found ISR config %h", val + cap->offset);
+                kprintf("Found ISR config %h", val + cap->offset);
                 isr_cfg = (volatile uint8_t*)(uintptr_t)(val + cap->offset);
             }
         }
@@ -308,7 +308,7 @@ bool vgp_get_display_info(){
     cmd->padding[1] = 0;
     cmd->padding[2] = 0;
 
-    printf("Command prepared");
+    kprintf("Command prepared");
 
     vgp_send_command((uint64_t)cmd, sizeof(struct virtio_gpu_ctrl_hdr), VIRTQUEUE_DISP_INFO, sizeof(struct virtio_gpu_resp_display_info), (uint64_t)notify_cfg, notify_off_multiplier, 0);
 
@@ -316,10 +316,10 @@ bool vgp_get_display_info(){
 
     for (uint32_t i = 0; i < VIRTIO_GPU_MAX_SCANOUTS; i++){
         
-        printf("Scanout %i: enabled=%i size=%ix%i",i,resp->pmodes[i].enabled, resp->pmodes[i].width, resp->pmodes[i].height);
+        kprintf("Scanout %i: enabled=%i size=%ix%i",i,resp->pmodes[i].enabled, resp->pmodes[i].width, resp->pmodes[i].height);
 
         if (resp->pmodes[i].enabled) {
-            printf("Found a valid display: %ix%i",resp->pmodes[i].width,resp->pmodes[i].height);
+            kprintf("Found a valid display: %ix%i",resp->pmodes[i].width,resp->pmodes[i].height);
             display_width = resp->pmodes[i].width;
             display_height = resp->pmodes[i].height;
             scanout_id = i;
@@ -328,7 +328,7 @@ bool vgp_get_display_info(){
         }
     }
 
-    printf("Display not enabled yet. Using default but not allowing scanout");
+    kprintf("Display not enabled yet. Using default but not allowing scanout");
     resp->pmodes[0].width = default_width;
     resp->pmodes[0].height = default_height;
     scanout_found = false;
@@ -363,12 +363,12 @@ void vgp_create_2d_resource() {
 
     volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)(VIRTQUEUE_RESP);
 
-    printf("Response type: %h flags: %h", resp->type, resp->flags);
+    kprintf("Response type: %h flags: %h", resp->type, resp->flags);
     
     if (resp->type == 0x1100) {
-        printf("RESOURCE_CREATE_2D OK");
+        kprintf("RESOURCE_CREATE_2D OK");
     } else {
-        printf("RESOURCE_CREATE_2D ERROR: %h", resp->type);
+        kprintf("RESOURCE_CREATE_2D ERROR: %h", resp->type);
     }
 }
 
@@ -398,7 +398,7 @@ void vgp_attach_backing() {
     cmd->resource_id = GPU_RESOURCE_ID;
     cmd->nr_entries = 1;
 
-    printf("Attach framebuffer addr: %h, size: %i",framebuffer_memory,framebuffer_size);
+    kprintf("Attach framebuffer addr: %h, size: %i",framebuffer_memory,framebuffer_size);
 
     entry->addr = framebuffer_memory;
     entry->length = framebuffer_size;
@@ -410,12 +410,12 @@ void vgp_attach_backing() {
 
     volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)(VIRTQUEUE_RESP);
 
-    printf("Response type: %h flags: %h", resp->type, resp->flags);
+    kprintf("Response type: %h flags: %h", resp->type, resp->flags);
 
     if (resp->type == 0x1100) {
-        printf("RESOURCE_ATTACH_BACKING OK");
+        kprintf("RESOURCE_ATTACH_BACKING OK");
     } else {
-        printf("RESOURCE_ATTACH_BACKING ERROR: %h", resp->type);
+        kprintf("RESOURCE_ATTACH_BACKING ERROR: %h", resp->type);
     }
 }
 
@@ -452,12 +452,12 @@ void vgp_set_scanout() {
 
     volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)VIRTQUEUE_RESP;
 
-    printf("Response type: %h flags: %h", resp->type, resp->flags);
+    kprintf("Response type: %h flags: %h", resp->type, resp->flags);
 
     if (resp->type == 0x1100) {
-        printf("SCANOUT OK");
+        kprintf("SCANOUT OK");
     } else {
-        printf("SCANOUT ERROR: %h", resp->type);
+        kprintf("SCANOUT ERROR: %h", resp->type);
     }
 }
 
@@ -490,12 +490,12 @@ void vgp_transfer_to_host() {
 
     volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)(VIRTQUEUE_RESP);
 
-    printf("Response type: %h flags: %h", resp->type, resp->flags);
+    kprintf("Response type: %h flags: %h", resp->type, resp->flags);
     
     if (resp->type == 0x1100) {
-        printf("TRANSFER_TO_HOST OK");
+        kprintf("TRANSFER_TO_HOST OK");
     } else {
-        printf("TRANSFER_TO_HOST ERROR: %h", resp->type);
+        kprintf("TRANSFER_TO_HOST ERROR: %h", resp->type);
     }
 }
 
@@ -523,18 +523,18 @@ void vgp_flush() {
 
     volatile struct virtio_gpu_ctrl_hdr* resp = (volatile void*)(uintptr_t)(VIRTQUEUE_RESP);
     
-    printf("Response type: %h flags: %h", resp->type, resp->flags);
+    kprintf("Response type: %h flags: %h", resp->type, resp->flags);
 
     if (resp->type == 0x1100) {
-        printf("FLUSH OK");
+        kprintf("FLUSH OK");
     } else {
-        printf("FLUSH ERROR: %h", resp->type);
+        kprintf("FLUSH ERROR: %h", resp->type);
     }
 }
 
 void vgp_clear(uint32_t color) {
 
-    printf("Clear screen");
+    kprintf("Clear screen");
 
     volatile uint32_t* fb = (volatile uint32_t*)framebuffer_memory;
     for (uint32_t i = 0; i < display_width * display_height; i++) {
@@ -568,14 +568,14 @@ bool vgp_init(uint32_t width, uint32_t height) {
     default_height = height;
 
     if (address > 0) {
-        printf("VGP GPU detected at %h",address);
+        kprintf("VGP GPU detected at %h",address);
 
-        printf("Initializing GPU...");
+        kprintf("Initializing GPU...");
 
         vgp_get_capabilities(address);
         vgp_start();
 
-        printf("GPU initialized. Issuing commands");
+        kprintf("GPU initialized. Issuing commands");
 
         vgp_get_display_info();
 
@@ -592,9 +592,9 @@ bool vgp_init(uint32_t width, uint32_t height) {
         if (scanout_found)
             vgp_set_scanout();
         else 
-            printf("GPU did not return valid scanout data");
+            kprintf("GPU did not return valid scanout data");
 
-        printf("GPU ready");
+        kprintf("GPU ready");
 
         return true;
     }

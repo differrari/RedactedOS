@@ -15,53 +15,53 @@ void kernel_main() {
     
     enable_uart();
 
-    printf("Initializing kernel...");
+    kprintf("Initializing kernel...");
 
-    printf("Reading device tree %h",get_total_ram());
+    kprintf("Reading device tree %h",get_total_ram());
     
-    printf("UART output enabled");
+    kprintf("UART output enabled");
     
     size screen_size = {1024,768};
     
-    printf("Preparing for draw");
+    kprintf("Preparing for draw");
     
     gpu_init(screen_size);
     
-    printf("GPU initialized");
+    kprintf("GPU initialized");
     
-    printf("Device initialization finished");
+    kprintf("Device initialization finished");
     
     set_exception_vectors();
 
-    printf("Exception vectors set");
+    kprintf("Exception vectors set");
 
     gic_init();
 
-    printf("Interrupts init");
+    kprintf("Interrupts init");
 
 
-    printf("Interrupts enabled");
+    kprintf("Interrupts enabled");
 
     // mmu_enable_verbose();
     mmu_init();
-    printf("MMU Mapped");
+    kprintf("MMU Mapped");
 
-    printf("Kernel initialization finished");
+    kprintf("Kernel initialization finished");
     
-    printf("Preparing user memory...");
+    kprintf("Preparing user memory...");
 
-    printf("There's %h memory for user processes",get_total_user_ram());
+    kprintf("There's %h memory for user processes",get_total_user_ram());
 
-    printf("Starting default processes");
+    kprintf("Starting default processes");
 
     default_processes();
 
-    printf("Starting scheduler");
+    kprintf("Starting scheduler");
 
     enable_interrupt();
 
     start_scheduler();
 
-    printf_raw("Error: Kernel did not activate any process");
+    kprintf_raw("Error: Kernel did not activate any process");
     
 }

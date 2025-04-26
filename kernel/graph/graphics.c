@@ -22,7 +22,7 @@ void gpu_init(size preferred_screen_size){
         chosen_GPU = RAMFB;
     screen_size = preferred_screen_size;
     _gpu_ready = true;
-    printf("Selected and initialized GPU %i",chosen_GPU);
+    kprintf("Selected and initialized GPU %i",chosen_GPU);
 }
 
 bool gpu_ready(){

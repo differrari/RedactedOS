@@ -76,7 +76,7 @@ bool fw_find_file(string search, struct fw_cfg_file *file) {
 
         string filename = string_ca_max(file->name, 56);
         if (string_equals(filename, search)){
-            printf("Found device at selector %h", file->selector);
+            kprintf("Found device at selector %h", file->selector);
             return true;
         }
     }

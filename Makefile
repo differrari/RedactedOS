@@ -3,8 +3,8 @@
 all: kernel
 	@echo "Build complete."
 
-# shared:
-# 	$(MAKE) -C shared
+shared:
+	$(MAKE) -C shared
 
 kernel:
 	$(MAKE) -C kernel

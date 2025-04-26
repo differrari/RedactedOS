@@ -29,7 +29,7 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     uint64_t l3_index = (va >> 21) & 0x1FF;
 
     if (mmu_verbose)
-        printf("Mapping 2mb memory %h at [%i][%i][%i] for EL1", va, l1_index,l2_index,l3_index);
+        kprintf("Mapping 2mb memory %h at [%i][%i][%i] for EL1", va, l1_index,l2_index,l3_index);
 
     if (!(page_table_l1[l1_index] & 1)) {
         uint64_t* l2 = (uint64_t*)palloc(PAGE_SIZE);
@@ -59,7 +59,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
     uint64_t l4_index = (va >> 12) & 0x1FF;
 
     if (mmu_verbose)
-    printf("Mapping 4kb memory %h at [%i][%i][%i][%i] for EL%i", va, l1_index,l2_index,l3_index,l4_index,level);
+    kprintf("Mapping 4kb memory %h at [%i][%i][%i][%i] for EL%i", va, l1_index,l2_index,l3_index,l4_index,level);
 
     if (!(page_table_l1[l1_index] & 1)) {
         uint64_t* l2 = (uint64_t*)palloc(PAGE_SIZE);
@@ -81,7 +81,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l4[i] = 0;
         l3[l3_index] = ((uint64_t)l4 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     } else if ((l3_val & 0b11) == PD_BLOCK){
-        printf("[WARNING]: Region not mapped for address %h, already mapped at higher granularity [%i][%i][%i][%i]",va, l1_index,l2_index,l3_index,l4_index);
+        kprintf("[WARNING]: Region not mapped for address %h, already mapped at higher granularity [%i][%i][%i][%i]",va, l1_index,l2_index,l3_index,l4_index);
         return;
     }
 
@@ -132,7 +132,7 @@ void mmu_init() {
     uint64_t sctlr;
     asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
 
-    printf("Finished MMU init");
+    kprintf("Finished MMU init");
 }
 
 void mmu_enable_verbose(){
@@ -167,36 +167,36 @@ void debug_mmu_address(uint64_t va){
     uint64_t l3_index = (va >> 21) & 0x1FF;
     uint64_t l4_index = (va >> 12) & 0x1FF;
 
-    printf("Address is meant to be mapped to [%i][%i][%i][%i]",l1_index,l2_index,l3_index,l4_index);
+    kprintf("Address is meant to be mapped to [%i][%i][%i][%i]",l1_index,l2_index,l3_index,l4_index);
 
     if (!(page_table_l1[l1_index] & 1)) {
-        printf("L1 Table missing");
+        kprintf("L1 Table missing");
         return;
     }
     uint64_t* l2 = (uint64_t*)(page_table_l1[l1_index] & 0xFFFFFFFFF000ULL);
     if (!(l2[l2_index] & 1)) {
-        printf("L2 Table missing");
+        kprintf("L2 Table missing");
         return;
     }
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
     uint64_t l3_val = l3[l3_index];
     if (!(l3_val & 1)) {
-        printf("L3 Table missing");
+        kprintf("L3 Table missing");
         return;
     }
 
     if (!((l3_val >> 1) & 1)){
-        printf("Mapped as 2MB memory in L3");
-        printf("Entry: %h", l3_val);
+        kprintf("Mapped as 2MB memory in L3");
+        kprintf("Entry: %h", l3_val);
         return;
     }
 
     uint64_t* l4 = (uint64_t*)(l3[l3_index] & 0xFFFFFFFFF000ULL);
     uint64_t l4_val = l4[l4_index];
     if (!(l4_val & 1)){
-        printf("L4 Table entry missing");
+        kprintf("L4 Table entry missing");
         return;
     }
-    printf("Entry: %h", l4_val);
+    kprintf("Entry: %h", l4_val);
     return;
 }

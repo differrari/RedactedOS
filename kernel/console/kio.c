@@ -18,13 +18,13 @@ void putc(const char c){
         kconsole_putc(c);
 }
 
-void printf_args(const char *fmt, const uint64_t *args, uint32_t arg_count){
+void kprintf_args(const char *fmt, const uint64_t *args, uint32_t arg_count){
     disable_interrupt();
-    printf_args_raw(fmt, args, arg_count);
+    kprintf_args_raw(fmt, args, arg_count);
     enable_interrupt();
 }
 
-void printf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count){
+void kprintf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count){
     string s = string_format_args(fmt, args, arg_count);
     puts(s.data);
     putc('\n');

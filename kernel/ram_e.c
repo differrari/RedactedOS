@@ -97,7 +97,7 @@ void calc_ram(){
         calculated_ram_end = ((calculated_ram_end) & ~((1ULL << 21) - 1));
         
         calculated_ram_size = calculated_ram_end - calculated_ram_start;
-        printf("Device has %h memory starting at %h. %h for user starting at %h  ",total_ram_size, total_ram_start, calculated_ram_size, calculated_ram_start);
+        kprintf("Device has %h memory starting at %h. %h for user starting at %h  ",total_ram_size, total_ram_start, calculated_ram_size, calculated_ram_start);
     }
 }
 

@@ -43,7 +43,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     uint64_t dst_base = (uint64_t)dst32;
     uint32_t count = size / 4;
 
-    printf("Beginning translation from base address %h to new address %h", src_base, dst_base);
+    kprintf("Beginning translation from base address %h to new address %h", src_base, dst_base);
 
     for (uint32_t i = 0; i < count; i++) {
         uint32_t instr = src32[i];
@@ -52,8 +52,8 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
         if (op == 5 || op == 37) {
             int32_t offset = ((int32_t)instr << 6) >> 6;
             offset *= 4;
-            // printf("Offset %i",offset);
-            // printf("Address %h",(uint64_t)src_base+(i*4));
+            // kprintf("Offset %i",offset);
+            // kprintf("Address %h",(uint64_t)src_base+(i*4));
             uint64_t target = src_base + (i * 4) + offset;
             bool internal = (target >= src_base) && (target < src_base + size);
         
@@ -62,7 +62,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
                 instr = (instr & 0xFC000000) | (rel & 0x03FFFFFF);
             }
         
-            // printf("Branch op %i to %h (%s)", op, target, (uint64_t)(internal ? "internal" : "external"));
+            // kprintf("Branch op %i to %h (%s)", op, target, (uint64_t)(internal ? "internal" : "external"));
         } else if ((instr >> 24) == 84) { // B.cond (untested)
             int32_t offset = ((int32_t)(instr >> 5) & 0x7FFFF);
             offset = (offset << 6) >> 6;
@@ -72,7 +72,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
             if (!internal) {
                 int32_t rel = (int32_t)(target - (dst_base + (i * 4))) >> 2;
                 instr = (instr & ~0xFFFFE0) | ((rel & 0x7FFFF) << 5);
-                // printf("Relocated conditional branch to %h\n", target);
+                // kprintf("Relocated conditional branch to %h\n", target);
             }
         } else if ((instr & 0x9F000000) == 0x90000000) {
             uint64_t immlo = (instr >> 29) & 0x3;
@@ -82,7 +82,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
             uint64_t pc_page = (src_base + i * 4) & ~0xFFFULL;
             uint64_t target = pc_page + offset;
 
-            // printf("Was at offset %i of original code, so at address %h and data started at %h",offset,target,src_data_base);
+            // kprintf("Was at offset %i of original code, so at address %h and data started at %h",offset,target,src_data_base);
         
             // uint64_t target = (src_base & ~0xFFFULL) + ((i * 4 + offset) & ~0xFFFULL);
             bool internal = (target >= src_data_base) && (target < src_data_base + data_size);
@@ -100,7 +100,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
                 instr = (instr & ~0x60000000) | (new_immlo << 29);
                 instr = (instr & ~(0x7FFFF << 5)) | (new_immhi << 5);
 
-                // printf("We're inside data stack, so new address is: %i",data_offset);
+                // kprintf("We're inside data stack, so new address is: %i",data_offset);
 
                 immlo = (instr >> 29) & 0x3;
                 immhi = (instr >> 5) & 0x7FFFF;
@@ -109,17 +109,17 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
                 pc_page = (dst_base + i * 4) & ~0xFFFULL;
                 target = pc_page + offset;
 
-                // printf("Confirmation: New address is %h compared to calculated one %h",target, new_target);
+                // kprintf("Confirmation: New address is %h compared to calculated one %h",target, new_target);
 
             } else 
-                printf("We don't support this type of symbol yet.");
+                kprintf("We don't support this type of symbol yet.");
         
         }
 
         dst32[i] = instr;
     }
 
-    printf("Finished translation");
+    kprintf("Finished translation");
 }
 
 
@@ -128,7 +128,7 @@ process_t* create_process(void (*func)(), uint64_t code_size, uint64_t func_base
 
     process_t* proc = &processes[proc_count];
 
-    printf("Code size %h. Data size %h", code_size, data_size);
+    kprintf("Code size %h. Data size %h", code_size, data_size);
     
     uint8_t* data_dest = (uint8_t*)alloc_proc_mem(data_size);
     if (!data_dest) return 0;
@@ -142,17 +142,17 @@ process_t* create_process(void (*func)(), uint64_t code_size, uint64_t func_base
 
     relocate_code(code_dest, func, code_size, (uint64_t)&data[0], (uint64_t)&data_dest[0], data_size);
     
-    printf("Code copied to %h", (uint64_t)code_dest);
+    kprintf("Code copied to %h", (uint64_t)code_dest);
     uint64_t stack_size = 0x1000;
 
     uint64_t stack = (uint64_t)alloc_proc_mem(stack_size);
-    printf("Stack size %h. Start %h", stack_size,stack);
+    kprintf("Stack size %h. Start %h", stack_size,stack);
     if (!stack) return 0;
 
     proc->sp = (stack + stack_size);
     
     proc->pc = (uint64_t)code_dest;
-    printf("Process allocated with address at %h, stack at %h",proc->pc, proc->sp);
+    kprintf("Process allocated with address at %h, stack at %h",proc->pc, proc->sp);
     proc->spsr = 0;
     proc->state = READY;
     proc->id = proc_count++;
@@ -178,7 +178,6 @@ static uint64_t j = 0;
 __attribute__((section(".text.proc1")))
 void proc_func() {
     while (1) {
-        // disable_interrupt();
         register uint64_t x0 asm("x0") = (uint64_t)&fmt;
         register uint64_t x1 asm("x1") = (uint64_t)&j;
         register uint64_t x2 asm("x2") = 1;
@@ -190,7 +189,6 @@ void proc_func() {
             : "r"(x0), "r"(x1), "r"(x2), "r"(x8)
             : "memory"
         );
-        // enable_interrupt();
         j++;
     }
 }
@@ -201,7 +199,7 @@ void default_processes(){
     extern uint8_t proc_1_rodata_start;
     extern uint8_t proc_1_rodata_end;
 
-    printf("DATA STARTS AT %h ENDS AT %h",(uint64_t)&proc_1_rodata_start,(uint64_t)&proc_1_rodata_end);
+    kprintf("DATA STARTS AT %h ENDS AT %h",(uint64_t)&proc_1_rodata_start,(uint64_t)&proc_1_rodata_end);
 
     create_process(proc_func, (uint64_t)&proc_1_end - (uint64_t)&proc_1_start, (uint64_t)&proc_1_start, (void*)&fmt, (uint64_t)&proc_1_rodata_end - (uint64_t)&proc_1_rodata_start);
     create_process(proc_func, (uint64_t)&proc_1_end - (uint64_t)&proc_1_start, (uint64_t)&proc_1_start, (void*)&fmt, (uint64_t)&proc_1_rodata_end - (uint64_t)&proc_1_rodata_start);
