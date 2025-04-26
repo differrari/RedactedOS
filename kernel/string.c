@@ -9,30 +9,30 @@ static uint32_t compute_length(const char *s, uint32_t max_length) {
     return len;
 }
 
-string string_l(const char *literal) {
+kstring string_l(const char *literal) {
     uint32_t len = compute_length(literal, 0);
-    string str;
+    kstring str;
     str.data = (char *)literal;
     str.length = len;
     return str;
 }
 
-string string_ca_max(const char *array, uint32_t max_length) {
+kstring string_ca_max(const char *array, uint32_t max_length) {
     uint32_t len = compute_length(array, max_length);
-    string str;
+    kstring str;
     str.data = (char *)array;
     str.length = len;
     return str;
 }
 
-string string_c(const char c){
+kstring string_c(const char c){
     char *buf = (char*)talloc(2);
     buf[0] = c;
     buf[1] = 0;
-    return (string){ .data = buf, .length = 1 };
+    return (kstring){ .data = buf, .length = 1 };
 }
 
-string string_from_hex(uint64_t value) {
+kstring string_from_hex(uint64_t value) {
     char *buf = (char*)talloc(18);
     uint32_t len = 0;
     buf[len++] = '0';
@@ -49,10 +49,10 @@ string string_from_hex(uint64_t value) {
     }
 
     buf[len] = 0;
-    return (string){ .data = buf, .length = len };
+    return (kstring){ .data = buf, .length = len };
 }
 
-bool string_equals(string a, string b) {
+bool string_equals(kstring a, kstring b) {
     if (a.length != b.length) return 0;
     for (uint32_t i = 0; i < a.length; i++) {
         if (a.data[i] != b.data[i]) return 0;
@@ -60,7 +60,7 @@ bool string_equals(string a, string b) {
     return 1;
 }
 
-string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_count) {
+kstring string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_count) {
     char *buf = (char*)talloc(256);
     uint32_t len = 0;
     uint32_t arg_index = 0;
@@ -71,7 +71,7 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
             if (arg_index >= arg_count) break;
             if (fmt[i] == 'h') {
                 uint64_t val = args[arg_index++];
-                string hex = string_from_hex(val);
+                kstring hex = string_from_hex(val);
                 for (uint32_t j = 0; j < hex.length && len < 255; j++) buf[len++] = hex.data[j];
             } else if (fmt[i] == 'c') {
                 uint64_t val = args[arg_index++];
@@ -115,5 +115,5 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
     }
 
     buf[len] = 0;
-    return (string){ .data = buf, .length = len };
+    return (kstring){ .data = buf, .length = len };
 }

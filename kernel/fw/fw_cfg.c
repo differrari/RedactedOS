@@ -57,7 +57,7 @@ void fw_cfg_dma_write(void* dest, uint32_t size, uint32_t ctrl){
     fw_cfg_dma_operation(dest, size, (ctrl << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_WRITE);
 }
 
-bool fw_find_file(string search, struct fw_cfg_file *file) {
+bool fw_find_file(kstring search, struct fw_cfg_file *file) {
 
     if (!fw_cfg_check())
         return false;
@@ -74,7 +74,7 @@ bool fw_find_file(string search, struct fw_cfg_file *file) {
         file->size = __builtin_bswap32(file->size);
         file->selector = __builtin_bswap16(file->selector);
 
-        string filename = string_ca_max(file->name, 56);
+        kstring filename = string_ca_max(file->name, 56);
         if (string_equals(filename, search)){
             kprintf("Found device at selector %h", file->selector);
             return true;

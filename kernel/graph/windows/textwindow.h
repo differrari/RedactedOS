@@ -2,4 +2,4 @@
 
 #include "string.h"
 
-void add_line(string line);
+void add_line(kstring line);

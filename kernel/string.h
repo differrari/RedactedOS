@@ -1,12 +1,11 @@
 #pragma once
 
 #include "types.h"
-#include <stdarg.h>
 
 typedef struct {
     char *data;
     uint32_t length;
-} string;
+} kstring;
 
 #define string_format(fmt, ...) \
     ({ \
@@ -14,9 +13,9 @@ typedef struct {
         string_format_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
     })
 
-string string_l(const char *literal);
-string string_ca_max(const char *array, uint32_t max_length);
-string string_c(const char c);
-string string_from_hex(uint64_t value);
-bool string_equals(string a, string b);
-string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_count);
+kstring string_l(const char *literal);
+kstring string_ca_max(const char *array, uint32_t max_length);
+kstring string_c(const char c);
+kstring string_from_hex(uint64_t value);
+bool string_equals(kstring a, kstring b);
+kstring string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_count);

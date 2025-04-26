@@ -105,7 +105,7 @@ void find_pci(){
 
     kprintf("rsdp data read with address %h (%h = %h)", data.xsdt_address, data.length,sizeof(struct acpi_rsdp_t));
 
-    string a = string_ca_max(data.signature, 8);
+    kstring a = string_ca_max(data.signature, 8);
     if (!string_equals(string_l("RSD PTR "), a)){
         kprintf("Signature doesn't match %s", (uint64_t)a.data);
     } else 
