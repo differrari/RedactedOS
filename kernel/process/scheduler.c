@@ -3,6 +3,7 @@
 #include "ram_e.h"
 #include "proc_allocator.h"
 #include "gic.h"
+#include "console/serial/uart.h"
 
 extern void save_context(process_t* proc);
 extern void save_pc_interrupt(process_t* proc);
@@ -39,7 +40,7 @@ void switch_proc(ProcSwitchReason reason) {
     }
     
     current_proc = next_proc;
-    printf("New process chosen %h",(uint64_t)&processes[current_proc].pc);
+    printf_raw("New process chosen %h",processes[current_proc].pc);
     restore_context(&processes[current_proc]);
 }
 

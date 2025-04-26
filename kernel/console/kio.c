@@ -19,10 +19,14 @@ void putc(const char c){
 
 void printf_args(const char *fmt, const uint64_t *args, uint32_t arg_count){
     asm volatile ("msr daifset, #2");
+    printf_args_raw(fmt, args, arg_count);
+    asm volatile ("msr daifclr, #2");
+}
+
+void printf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count){
     string s = string_format_args(fmt, args, arg_count);
     puts(s.data);
     putc('\n');
-    asm volatile ("msr daifclr, #2");
 }
 
 void disable_visual(){

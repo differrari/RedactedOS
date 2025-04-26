@@ -18,8 +18,6 @@ void handle_exception(const char* type) {
 
     disable_visual();//Disable visual printf, since it has additional memory accesses that could be faulting
 
-    debug_mmu_address(far);
-
     string s = string_format("%s \nESR_EL1: %h\nELR_EL1: %h\n,FAR_EL1: %h",(uint64_t)string_l(type).data,esr,elr,far);
     panic(s.data);
 }
@@ -31,16 +29,16 @@ void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\n"); }
 void error_el1_handler(){ handle_exception("ERROR EXCEPTION\n"); }
 
 void panic(const char* panic_msg) {
-    printf("*** KERNEL PANIC ***");
-    printf(panic_msg);
-    printf("System Halted");
+    printf_raw("*** KERNEL PANIC ***");
+    printf_raw(panic_msg);
+    printf_raw("System Halted");
     while (1);
 }
 
 void panic_with_info(const char* msg, uint64_t info) {
-    printf("*** KERNEL PANIC ***");
-    printf(msg);
-    printf("Additional info: %h",info);
-    printf("System Halted");
+    printf_raw("*** KERNEL PANIC ***");
+    printf_raw(msg);
+    printf_raw("Additional info: %h",info);
+    printf_raw("System Halted");
     while (1);
 }
