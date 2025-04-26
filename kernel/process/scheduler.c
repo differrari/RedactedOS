@@ -178,6 +178,7 @@ static uint64_t j = 0;
 __attribute__((section(".text.proc1")))
 void proc_func() {
     while (1) {
+        // disable_interrupt();
         register uint64_t x0 asm("x0") = (uint64_t)&fmt;
         register uint64_t x1 asm("x1") = (uint64_t)&j;
         register uint64_t x2 asm("x2") = 1;
@@ -189,6 +190,7 @@ void proc_func() {
             : "r"(x0), "r"(x1), "r"(x2), "r"(x8)
             : "memory"
         );
+        // enable_interrupt();
         j++;
     }
 }
