@@ -37,10 +37,9 @@ void switch_proc(ProcSwitchReason reason) {
         if (next_proc == current_proc)
             return;
     }
-
-    printf("New process chosen");
-
+    
     current_proc = next_proc;
+    printf("New process chosen %h",(uint64_t)&processes[current_proc].pc);
     restore_context(&processes[current_proc]);
 }
 
