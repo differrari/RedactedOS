@@ -10,7 +10,8 @@ CFLAGS = -g -O0 -nostdlib -ffreestanding -Wall -Wextra -mcpu=cortex-a72 -I. -Wno
 # Source and Object Files
 C_SRC = $(shell find . -name '*.c')
 CPP_SRC = $(shell find . -name '*.cpp')
-OBJ = $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o)
+ASM_SRC = $(shell find . -name '*.S')
+OBJ = $(C_SRC:.c=.o) $(ASM_SRC:.S=.o) $(CPP_SRC:.cpp=.o)
 
 # Output File
 TARGET = libshared.a
@@ -20,6 +21,9 @@ all: $(TARGET)
 
 $(TARGET): $(OBJ)
 	$(AR) rcs $(TARGET) $(OBJ)
+
+%.o: %.S
+	$(CC) $(CFLAGS) -c $< -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
