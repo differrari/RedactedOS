@@ -29,7 +29,7 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     uint64_t l3_index = (va >> 21) & 0x1FF;
 
     if (mmu_verbose)
-        kprintf("Mapping 2mb memory %h at [%i][%i][%i] for EL1", va, l1_index,l2_index,l3_index);
+        kprintf_raw("Mapping 2mb memory %h at [%i][%i][%i] for EL1", va, l1_index,l2_index,l3_index);
 
     if (!(page_table_l1[l1_index] & 1)) {
         uint64_t* l2 = (uint64_t*)palloc(PAGE_SIZE);
@@ -80,14 +80,14 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l4[i] = 0;
         l3[l3_index] = ((uint64_t)l4 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     } else if ((l3_val & 0b11) == PD_BLOCK){
-        kprintf("[ERROR]: Region not mapped for address %h, already mapped at higher granularity [%i][%i][%i][%i]",va, l1_index,l2_index,l3_index,l4_index);
+        kprintf_raw("[ERROR]: Region not mapped for address %h, already mapped at higher granularity [%i][%i][%i][%i]",va, l1_index,l2_index,l3_index,l4_index);
         return;
     }
     
     uint64_t* l4 = (uint64_t*)(l3[l3_index] & 0xFFFFFFFFF000ULL);
     
     if (l4[l4_index] & 1){
-        kprintf("[WARNING]: Section already mapped %h",va);
+        kprintf_raw("[WARNING]: Section already mapped %h",va);
     }
     
     //54 = UXN level | 53 = PXN !level | 8 = share | 6 = Access permission
@@ -104,7 +104,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
     }
     uint64_t attr = ((level == 1) << 54) | (0 << 53) | PD_ACCESS | (0b11 << 8) | (permission << 6) | (attr_index << 2) | 0b11;
     if (mmu_verbose)
-        kprintf("Mapping 4kb memory %h at [%i][%i][%i][%i] for EL%i = %h permission: %i", va, l1_index,l2_index,l3_index,l4_index,level,attr,permission);
+        kprintf_raw("Mapping 4kb memory %h at [%i][%i][%i][%i] for EL%i = %h permission: %i", va, l1_index,l2_index,l3_index,l4_index,level,attr,permission);
     
     l4[l4_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
 }
@@ -125,7 +125,7 @@ void mmu_init() {
     for (uint64_t addr = GICD_BASE; addr <= GICD_BASE + 0x12000; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
 
-    kprintf("Shared memory %h",get_shared_start());
+    kprintf_raw("Shared memory %h",get_shared_start());
     for (uint64_t addr = get_shared_start(); addr <= get_shared_end(); addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 2);
 
@@ -152,7 +152,7 @@ void mmu_init() {
     uint64_t sctlr;
     asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
 
-    kprintf("Finished MMU init");
+    kprintf_raw("Finished MMU init");
 }
 
 void mmu_enable_verbose(){
@@ -187,36 +187,36 @@ void debug_mmu_address(uint64_t va){
     uint64_t l3_index = (va >> 21) & 0x1FF;
     uint64_t l4_index = (va >> 12) & 0x1FF;
 
-    kprintf("Address is meant to be mapped to [%i][%i][%i][%i]",l1_index,l2_index,l3_index,l4_index);
+    kprintf_raw("Address is meant to be mapped to [%i][%i][%i][%i]",l1_index,l2_index,l3_index,l4_index);
 
     if (!(page_table_l1[l1_index] & 1)) {
-        kprintf("L1 Table missing");
+        kprintf_raw("L1 Table missing");
         return;
     }
     uint64_t* l2 = (uint64_t*)(page_table_l1[l1_index] & 0xFFFFFFFFF000ULL);
     if (!(l2[l2_index] & 1)) {
-        kprintf("L2 Table missing");
+        kprintf_raw("L2 Table missing");
         return;
     }
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
     uint64_t l3_val = l3[l3_index];
     if (!(l3_val & 1)) {
-        kprintf("L3 Table missing");
+        kprintf_raw("L3 Table missing");
         return;
     }
 
     if (!((l3_val >> 1) & 1)){
-        kprintf("Mapped as 2MB memory in L3");
-        kprintf("Entry: %h", l3_val);
+        kprintf_raw("Mapped as 2MB memory in L3");
+        kprintf_raw("Entry: %h", l3_val);
         return;
     }
 
     uint64_t* l4 = (uint64_t*)(l3[l3_index] & 0xFFFFFFFFF000ULL);
     uint64_t l4_val = l4[l4_index];
     if (!(l4_val & 1)){
-        kprintf("L4 Table entry missing");
+        kprintf_raw("L4 Table entry missing");
         return;
     }
-    kprintf("Entry: %h", l4_val);
+    kprintf_raw("Entry: %h", l4_val);
     return;
 }

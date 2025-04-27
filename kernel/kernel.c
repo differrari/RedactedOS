@@ -59,7 +59,6 @@ void kernel_main() {
 
     kprintf("Starting scheduler");
 
-    enable_interrupt();
 
     start_scheduler();
 
