@@ -4,7 +4,9 @@ SECTIONS {
     . = 0x41000000;
     kernel_start = .;
     .boot . : { boot.o(.text) }
-    .text : { *(.text) }
+    .text : { 
+        *(EXCLUDE_FILE(shared/*.o) .text .text.[!p]*)
+    }
     .data : { *(.data) }
     .bss : { *(.bss COMMON) }
     .vectors : { KEEP(*(.vectors)) }
@@ -28,7 +30,23 @@ SECTIONS {
         KEEP(*(.text.proc1))
         proc_1_end = .;
     }
-
     . = ALIGN(0x200000);
     kcode_end = .;
+
+    . = . + 0x200000;
+
+    .shared : ALIGN(4096) {
+        shared_start = .;
+        KEEP(*(.shared))
+        KEEP(*(.text.shared))
+        KEEP(*shared/*.o(.text*))
+
+        . = ALIGN(8);
+        BYTE(0);
+
+        shared_end = .;
+    }
+
+    . = ALIGN(0x200000);
+    kfull_end = .;
 }

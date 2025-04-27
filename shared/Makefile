@@ -1,31 +1,25 @@
 # Compiler
 ARCH= aarch64-none-elf
 CC = $(ARCH)-gcc
-LD = $(ARCH)-ld
+AR = $(ARCH)-ar
 OBJCOPY = $(ARCH)-objcopy
 
-# Compiler and Linker Flags
+# Compiler Flags
 CFLAGS = -g -O0 -nostdlib -ffreestanding -Wall -Wextra -mcpu=cortex-a72 -I. -Wno-unused-parameter
-LDFLAGS = -T $(shell ls *.ld)
 
+# Source and Object Files
 C_SRC = $(shell find . -name '*.c')
-ASM_SRC = $(shell find . -name '*.S')
 CPP_SRC = $(shell find . -name '*.cpp')
-OBJ = $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o) $(ASM_SRC:.S=.o)
+OBJ = $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o)
 
 # Output File
-TARGET = kernel.img
-ELF = kernel.elf
+TARGET = libshared.a
 
 # Build Rules
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(LD) $(LDFLAGS) -o ../$(ELF) $(OBJ)
-	$(OBJCOPY) -O binary ../$(ELF) ../$(TARGET)
-
-%.o: %.S
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(AR) rcs $(TARGET) $(OBJ)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -34,4 +28,4 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJ) ../$(ELF) ../$(TARGET) $(TARGET)
+	rm -f $(OBJ) $(TARGET)

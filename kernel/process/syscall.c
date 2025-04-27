@@ -33,6 +33,5 @@ void sync_el0_handler_c(){
         handle_exception("UNEXPECTED EL0 EXCEPTION");
     }
 
-    asm volatile ("msr spsr_el1, %0" : : "r"(spsr)); // Restore user's SPSR
     asm volatile ("eret");
 }

@@ -33,6 +33,7 @@ void switch_proc(ProcSwitchReason reason) {
     }
     
     current_proc = next_proc;
+    // kprintf_raw("Resuming e xecution of process %i at %h",current_proc, processes[current_proc].pc);
     restore_context(&processes[current_proc]);
 }
 
@@ -82,7 +83,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
             uint64_t pc_page = (src_base + i * 4) & ~0xFFFULL;
             uint64_t target = pc_page + offset;
 
-            // kprintf("Was at offset %i of original code, so at address %h and data started at %h",offset,target,src_data_base);
+            kprintf("Was at offset %i of original code, so at address %h and data started at %h",offset,target,src_data_base);
         
             // uint64_t target = (src_base & ~0xFFFULL) + ((i * 4 + offset) & ~0xFFFULL);
             bool internal = (target >= src_data_base) && (target < src_data_base + data_size);
@@ -100,7 +101,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
                 instr = (instr & ~0x60000000) | (new_immlo << 29);
                 instr = (instr & ~(0x7FFFF << 5)) | (new_immhi << 5);
 
-                // kprintf("We're inside data stack, so new address is: %i",data_offset);
+                kprintf("We're inside data stack, so new address is: %i",data_offset);
 
                 immlo = (instr >> 29) & 0x3;
                 immhi = (instr >> 5) & 0x7FFFF;
@@ -109,10 +110,10 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
                 pc_page = (dst_base + i * 4) & ~0xFFFULL;
                 target = pc_page + offset;
 
-                // kprintf("Confirmation: New address is %h compared to calculated one %h",target, new_target);
+                kprintf("Confirmation: New address is %h compared to calculated one %h",target, new_target);
 
             } else 
-                kprintf("We don't support this type of symbol yet.");
+                kprintf("[ERROR:] Symbol not supported yet.");
         
         }
 
@@ -168,39 +169,4 @@ void start_scheduler(){
 
 int get_current_proc(){
     return current_proc;
-}
-
-__attribute__((section(".rodata.proc1")))
-static const char fmt[] = "Process %i";
-__attribute__((section(".data.proc1")))
-static uint64_t j = 0;
-
-__attribute__((section(".text.proc1")))
-void proc_func() {
-    while (1) {
-        register uint64_t x0 asm("x0") = (uint64_t)&fmt;
-        register uint64_t x1 asm("x1") = (uint64_t)&j;
-        register uint64_t x2 asm("x2") = 1;
-        register uint64_t x8 asm("x8") = 3;
-
-        asm volatile(
-            "svc #3"
-            :
-            : "r"(x0), "r"(x1), "r"(x2), "r"(x8)
-            : "memory"
-        );
-        j++;
-    }
-}
-
-void default_processes(){
-    extern uint8_t proc_1_start;
-    extern uint8_t proc_1_end;
-    extern uint8_t proc_1_rodata_start;
-    extern uint8_t proc_1_rodata_end;
-
-    kprintf("DATA STARTS AT %h ENDS AT %h",(uint64_t)&proc_1_rodata_start,(uint64_t)&proc_1_rodata_end);
-
-    create_process(proc_func, (uint64_t)&proc_1_end - (uint64_t)&proc_1_start, (uint64_t)&proc_1_start, (void*)&fmt, (uint64_t)&proc_1_rodata_end - (uint64_t)&proc_1_rodata_start);
-    create_process(proc_func, (uint64_t)&proc_1_end - (uint64_t)&proc_1_start, (uint64_t)&proc_1_start, (void*)&fmt, (uint64_t)&proc_1_rodata_end - (uint64_t)&proc_1_rodata_start);
 }
