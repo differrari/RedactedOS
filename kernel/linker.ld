@@ -30,6 +30,16 @@ SECTIONS {
         KEEP(*(.text.proc1))
         proc_1_end = .;
     }
+
+    .kbootscreen : ALIGN(8) {
+        kbootscreen_rodata_start = .;
+        KEEP(*(.rodata.kbootscreen))
+        KEEP(*(.data.kbootscreen))
+        kbootscreen_rodata_end = .;
+        kbootscreen_start = .;
+        KEEP(*(.text.kbootscreen))
+        kbootscreen_end = .;
+    }
     . = ALIGN(0x200000);
     kcode_end = .;
 

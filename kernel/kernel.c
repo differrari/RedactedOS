@@ -10,7 +10,8 @@
 #include "dtb.h"
 #include "gic.h"
 #include "process/scheduler.h"
-#include "kernel_processes/default_process.h"
+#include "default_process.h"
+#include "kernel_processes/bootscreen.h"
 
 void kernel_main() {
     
@@ -55,7 +56,9 @@ void kernel_main() {
 
     kprintf("Starting default processes");
 
-    default_processes();
+    // default_processes();
+
+    start_bootscreen();
 
     kprintf("Starting scheduler");
 
