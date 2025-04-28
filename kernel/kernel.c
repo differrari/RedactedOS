@@ -10,7 +10,7 @@
 #include "dtb.h"
 #include "gic.h"
 #include "process/scheduler.h"
-#include "process/default_process.h"
+#include "kernel_processes/default_process.h"
 
 void kernel_main() {
     
