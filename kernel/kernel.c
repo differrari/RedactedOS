@@ -57,12 +57,12 @@ void kernel_main() {
     kprintf("Starting default processes");
 
     // default_processes();
-
+    
     start_bootscreen();
-
+    
     kprintf("Starting scheduler");
 
-
+    free_temp();
     start_scheduler();
 
     kprintf_raw("Error: Kernel did not activate any process");
