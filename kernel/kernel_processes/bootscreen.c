@@ -14,24 +14,23 @@ void bootscreen(){
     // {
         gpu_clear(0);
         size screen_size = gpu_get_screen_size();
-        // gpu_draw_line((point){298,374},(point){298,650},0xFFFFFF);
         point screen_middle = {screen_size.width/2,screen_size.height/2};
         int sizes[4] = {30,screen_size.width/5,screen_size.height/3,40};
         int padding = 10;
-        point current_point = {screen_middle.x-padding-sizes[1],screen_middle.y-padding-sizes[0]};
+        int yoffset = 50;
+        point current_point = {screen_middle.x-padding-sizes[1],screen_middle.y-padding-yoffset-sizes[0]};
         for (int i = 0; i < 12; i++){
-            bool ys = i > 5 ? -1 : 1;
+            int ys = i > 5 ? -1 : 1;
             bool ui = (i % 6) != 0 && (i % 6) != 5;
             bool ul = (i/2) % 2 == 0;
             bool xn = (i/3) % 3 == 0;
             if (i >= 6){
                 ul = !ul;
-                // xn = !xn;
             }
-            bool xs = xn ? -1 : 1;
+            int xs = xn ? -1 : 1;
             int xloc = padding + (ui ? sizes[3] : sizes[1]);
             int yloc = padding + (ul ? sizes[0] : sizes[2]);
-            point next_point = {screen_middle.x + (xs * xloc),  screen_middle.y + (ys * yloc)};
+            point next_point = {screen_middle.x + (xs * xloc),  screen_middle.y + (ys * yloc) - (ul ? yoffset : 0)};
             int xlength = abs(current_point.x - next_point.x);
             int ylength = abs(current_point.y - next_point.y);
             kprintf("[%i] x will be %i y will be %i between %i,%i and %i,%i ys=%i ui=%i ul=%i xs%i",i,xlength,ylength,current_point.x,current_point.y, next_point.x,next_point.y, ys,ui,ul,xs);
