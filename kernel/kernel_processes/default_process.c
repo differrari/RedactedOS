@@ -1,6 +1,6 @@
 #include "default_process.h"
 #include "types.h"
-#include "process/process_loader.h"
+#include "process_loader.h"
 #include "console/kio.h"
 #include "syscalls/syscalls.h"
 

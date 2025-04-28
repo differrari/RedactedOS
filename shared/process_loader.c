@@ -1,6 +1,6 @@
 #include "process_loader.h"
-#include "scheduler.h"
-#include "proc_allocator.h"
+#include "process/scheduler.h"
+#include "process/proc_allocator.h"
 #include "console/kio.h"
 
 void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, uint64_t dst_data_base, uint32_t data_size) {
