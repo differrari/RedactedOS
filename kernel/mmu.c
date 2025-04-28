@@ -175,8 +175,8 @@ static inline void mmu_flush_icache() {
     );
 }
 
-void register_proc_memory(uint64_t va, uint64_t pa){
-    mmu_map_4kb(va, pa, MAIR_IDX_NORMAL, 0);
+void register_proc_memory(uint64_t va, uint64_t pa, bool kernel){
+    mmu_map_4kb(va, pa, MAIR_IDX_NORMAL, kernel);
     mmu_flush_all();
     mmu_flush_icache();
 }

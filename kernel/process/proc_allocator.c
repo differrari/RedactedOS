@@ -77,7 +77,7 @@ void proc_allocator_init() {
     }
 }
 
-void* alloc_proc_mem(uint64_t size) {
+void* alloc_proc_mem(uint64_t size, bool kernel) {
     uint64_t start = get_user_ram_start();
     uint64_t end = get_user_ram_end();
 
@@ -108,7 +108,7 @@ void* alloc_proc_mem(uint64_t size) {
         if (free) {
             for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE){
                 proc_map_4kb(va + offset, va + offset);
-                register_proc_memory(va + offset, va + offset);
+                register_proc_memory(va + offset, va + offset, kernel);
             }
             return (void*)va;
         }
