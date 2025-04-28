@@ -2,6 +2,8 @@
 #include "process/kprocess_loader.h"
 #include "console/kio.h"
 #include "graph/graphics.h"
+#include "string.h"
+#include "ram_e.h"
 
 int abs(int n){
     return n < 0 ? -n : n;
@@ -11,15 +13,22 @@ int lerp(int step, int a, int b){
     return (a + step * (a < b ? 1 : -1));
 }
 
+static uint64_t randomNumber = 0;
+
 __attribute__((section(".text.kbootscreen")))
 void boot_draw_name(point screen_middle,int xoffset, int yoffset){
-    const char* name = "JesOS - The Christian Operative System";
+    const char* name = "JesOS - The Christian Operative System - %i%";
+    uint64_t *i = &randomNumber;
+    kstring s = string_format_args(name, i, 1);
     int char_size = 20;
-    int str_length = 0;
-    while (name[str_length] != '\0') { str_length++;}
+    int str_length = s.length;
+    // while (name[str_length] != '\0') { str_length++;}
     int mid_offset = (str_length/2) * char_size;
+    int xo = screen_middle.x - mid_offset + xoffset;
+    int yo = screen_middle.y + yoffset;
+    gpu_fill_rect((rect){xo,yo,char_size*str_length,char_size},0x0);
     for (int i = 0; i < str_length; i++){    
-        gpu_draw_char((point){screen_middle.x - mid_offset + (i * char_size) + xoffset,screen_middle.y + yoffset},name[i],3, 0xFFFFFF);
+        gpu_draw_char((point){xo + (i * char_size),yo},s.data[i],3, 0xFFFFFF);
     }
 }
 
@@ -28,22 +37,22 @@ void bootscreen(){
     disable_visual();
     while (1)
     {
+        free_temp();
         gpu_clear(0);
         size screen_size = gpu_get_screen_size();
         point screen_middle = {screen_size.width/2,screen_size.height/2};
         int sizes[4] = {30,screen_size.width/5,screen_size.height/3,40};
         int padding = 10;
         int yoffset = 50;
-        boot_draw_name(screen_middle,0,padding + sizes[2] + 10);
+        
         point current_point = {screen_middle.x-padding-sizes[1],screen_middle.y-padding-yoffset-sizes[0]};
         for (int i = 0; i < 12; i++){
             int ys = i > 5 ? -1 : 1;
             bool ui = (i % 6) != 0 && (i % 6) != 5;
             bool ul = (i/2) % 2 == 0;
             bool xn = (i/3) % 3 == 0;
-            if (i >= 6){
+            if (i >= 6)
                 ul = !ul;
-            }
             int xs = xn ? -1 : 1;
             int xloc = padding + (ui ? sizes[3] : sizes[1]);
             int yloc = padding + (ul ? sizes[0] : sizes[2]);
@@ -55,9 +64,12 @@ void bootscreen(){
                     //Draw the line interpolating
                     point interpolated = {lerp(x,current_point.x,next_point.x),lerp(y,current_point.y,next_point.y)};
                     gpu_draw_pixel(interpolated,0xFFFFFF);
-                    for (int k = 0; k < 1000000; k++){}
+                    for (int k = 0; k < 3000000; k++){}
                 }    
+                boot_draw_name(screen_middle,0,padding + sizes[2] + 10);
             }
+            randomNumber += 1;
+            randomNumber %= 100;
             current_point = next_point;
         }
     }
