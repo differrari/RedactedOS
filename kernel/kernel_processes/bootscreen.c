@@ -60,7 +60,6 @@ void bootscreen(){
             int ylength = abs(current_point.y - next_point.y);
             for (int x = 0; x <= xlength; x++){
                 for (int y = 0; y <= ylength; y++){
-                    //Draw the line interpolating
                     point interpolated = {lerp(x,current_point.x,next_point.x),lerp(y,current_point.y,next_point.y)};
                     gpu_draw_pixel(interpolated,0xFFFFFF);
                     for (int k = 0; k < 3000000; k++){}

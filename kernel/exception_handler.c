@@ -29,16 +29,20 @@ void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\n"); }
 void error_el1_handler(){ handle_exception("ERROR EXCEPTION\n"); }
 
 void panic(const char* panic_msg) {
-    kprintf_raw("*** KERNEL PANIC ***");
-    kprintf_raw(panic_msg);
-    kprintf_raw("System Halted");
+    uart_raw_puts("*** CARDINAL SIN ***\n");
+    uart_raw_puts(panic_msg);
+    uart_raw_putc('\n');
+    uart_raw_puts("System Halted");
     while (1);
 }
 
 void panic_with_info(const char* msg, uint64_t info) {
-    kprintf_raw("*** KERNEL PANIC ***");
-    kprintf_raw(msg);
-    kprintf_raw("Additional info: %h",info);
-    kprintf_raw("System Halted");
+    uart_raw_puts("*** CARDINAL SIN ***\n");
+    uart_raw_puts(msg);
+    uart_raw_putc('\n');
+    uart_raw_puts("Additional info: ");
+    uart_puthex(info);
+    uart_raw_putc('\n');
+    uart_raw_puts("System Halted");
     while (1);
 }
