@@ -16,9 +16,9 @@ void bootscreen(){
         size screen_size = gpu_get_screen_size();
         // gpu_draw_line((point){298,374},(point){298,650},0xFFFFFF);
         point screen_middle = {screen_size.width/2,screen_size.height/2};
-        int sizes[4] = {screen_size.height/10,screen_size.width/5,screen_size.height/3,screen_size.width/8};
+        int sizes[4] = {30,screen_size.width/5,screen_size.height/3,40};
         int padding = 10;
-        point current_point = {screen_middle.x-padding-sizes[1],screen_middle.y-padding};
+        point current_point = {screen_middle.x-padding-sizes[1],screen_middle.y-padding-sizes[0]};
         for (int i = 0; i < 12; i++){
             bool ys = i > 5 ? -1 : 1;
             bool ui = (i % 6) != 0 && (i % 6) != 5;
@@ -29,8 +29,8 @@ void bootscreen(){
                 // xn = !xn;
             }
             bool xs = xn ? -1 : 1;
-            int xloc = padding + (ui ? 0 : sizes[1]);
-            int yloc = padding + (ul ? 0 : sizes[2]);
+            int xloc = padding + (ui ? sizes[3] : sizes[1]);
+            int yloc = padding + (ul ? sizes[0] : sizes[2]);
             point next_point = {screen_middle.x + (xs * xloc),  screen_middle.y + (ys * yloc)};
             int xlength = abs(current_point.x - next_point.x);
             int ylength = abs(current_point.y - next_point.y);
