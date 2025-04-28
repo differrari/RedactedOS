@@ -16,7 +16,7 @@ void gpu_clear(color color);
 void gpu_draw_pixel(point p, color color);
 void gpu_fill_rect(rect r, color color);
 void gpu_draw_line(point p0, point p1, color color);
-void gpu_draw_char(point p, char c, uint32_t color);
+void gpu_draw_char(point p, char c, int scale, uint32_t color);
 size gpu_get_screen_size();
 
 #ifdef __cplusplus

@@ -66,11 +66,11 @@ void rfb_draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t 
     }
 }
 
-void rfb_draw_char(uint32_t x, uint32_t y, char c, uint32_t color) {
+void rfb_draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color) {
     const uint8_t* glyph = font8x8_basic[(uint8_t)c];
-    for (uint32_t row = 0; row < 8; row++) {
-        uint8_t bits = glyph[row];
-        for (uint32_t col = 0; col < 8; col++) {
+    for (uint32_t row = 0; row < (8 * scale); row++) {
+        uint8_t bits = glyph[row/scale];
+        for (uint32_t col = 0; col < (8 * scale); col++) {
             if (bits & (1 << (7 - col))) {
                 rfb_draw_pixel(x + col, y + row, color);
             }

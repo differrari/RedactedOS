@@ -43,7 +43,7 @@ void KernelConsole::put_char(char c) {
         newline();
 
     buffer[(scroll_row_offset + cursor_y) % rows][cursor_x] = c;
-    gpu_draw_char({cursor_x * char_width, cursor_y * char_height}, c, 0xFFFFFFFF);
+    gpu_draw_char({cursor_x * char_width, cursor_y * char_height}, c, 1, 0xFFFFFFFF);
     cursor_x++;
 }
 
@@ -87,7 +87,7 @@ void KernelConsole::redraw(){
     for (unsigned int y = 0; y < rows; y++) {
         for (unsigned int x = 0; x < columns; x++) {
             char c = buffer[(scroll_row_offset + y) % rows][x];
-            gpu_draw_char({x * char_width, y * char_height}, c, 0xFFFFFFFF);
+            gpu_draw_char({x * char_width, y * char_height}, c, 1, 0xFFFFFFFF);
         }
     }
 }

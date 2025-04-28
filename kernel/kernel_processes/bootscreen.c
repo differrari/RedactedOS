@@ -14,12 +14,12 @@ int lerp(int step, int a, int b){
 __attribute__((section(".text.kbootscreen")))
 void boot_draw_name(point screen_middle,int xoffset, int yoffset){
     const char* name = "JesOS - The Christian Operative System";
-    int char_size = 10;
+    int char_size = 20;
     int str_length = 0;
     while (name[str_length] != '\0') { str_length++;}
     int mid_offset = (str_length/2) * char_size;
     for (int i = 0; i < str_length; i++){    
-        gpu_draw_char((point){screen_middle.x - mid_offset + (i * char_size) + xoffset,screen_middle.y + yoffset},name[i],0xFFFFFF);
+        gpu_draw_char((point){screen_middle.x - mid_offset + (i * char_size) + xoffset,screen_middle.y + yoffset},name[i],3, 0xFFFFFF);
     }
 }
 
