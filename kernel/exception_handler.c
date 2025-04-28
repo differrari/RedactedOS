@@ -22,7 +22,7 @@ void handle_exception(const char* type) {
     panic(s.data);
 }
 
-void sync_el1_handler(){ handle_exception("SYNC EXCEPTION");}
+void sync_el1_handler(){ handle_exception("SYNC EXCEPTION"); }
 
 void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\n"); }
 

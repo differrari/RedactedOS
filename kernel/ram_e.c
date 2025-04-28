@@ -50,7 +50,7 @@ uint64_t read(uint64_t addr) {
     return read64(addr);
 }
 
-#define temp_start &heap_bottom + 0x500000
+#define temp_start (uint64_t)&heap_bottom + 0x500000
 
 extern uint64_t kernel_start;
 extern uint64_t heap_bottom;
@@ -60,7 +60,7 @@ extern uint64_t kfull_end;
 extern uint64_t shared_start;
 extern uint64_t shared_end;
 uint64_t next_free_temp_memory = (uint64_t)&heap_bottom;
-uint64_t next_free_perm_memory = (uint64_t)temp_start;
+uint64_t next_free_perm_memory = temp_start;
 
 //We'll need to use a table indicating which sections of memory are available
 //So we can talloc and free dynamically
@@ -68,7 +68,7 @@ uint64_t next_free_perm_memory = (uint64_t)temp_start;
 uint64_t talloc(uint64_t size) {
     uint64_t aligned_size = (size + 0xFFF) & ~0xFFF;
     next_free_temp_memory = (next_free_temp_memory + 0xFFF) & ~0xFFF;
-    if (next_free_temp_memory + aligned_size > next_free_perm_memory)
+    if (next_free_temp_memory + aligned_size > temp_start)
         panic_with_info(">>> Temporary allocator overflow", next_free_temp_memory);
     uint64_t result = next_free_temp_memory;
     next_free_temp_memory += aligned_size;
