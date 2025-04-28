@@ -1,7 +1,7 @@
 #pragma once
 
 #include "types.h"
-#include "string.h"
+#include "kstring.h"
 
 struct fw_cfg_file {
     uint32_t size;

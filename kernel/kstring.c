@@ -1,4 +1,4 @@
-#include "string.h"
+#include "kstring.h"
 #include "ram_e.h"
 
 static uint32_t compute_length(const char *s, uint32_t max_length) {

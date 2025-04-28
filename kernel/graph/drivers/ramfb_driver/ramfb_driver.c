@@ -1,6 +1,6 @@
 #include "console/kio.h"
 #include "ram_e.h"
-#include "string.h"
+#include "kstring.h"
 #include "fw/fw_cfg.h"
 #include "graph/font8x8_basic.h"
 

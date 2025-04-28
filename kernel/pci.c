@@ -3,7 +3,7 @@
 #include "ram_e.h"
 #include "dma.h"
 #include "fw/fw_cfg.h"
-#include "string.h"
+#include "kstring.h"
 
 #define PCI_BUS_MAX 256
 #define PCI_SLOT_MAX 32

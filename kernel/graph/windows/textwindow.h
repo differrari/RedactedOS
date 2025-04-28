@@ -1,5 +1,5 @@
 #pragma once
 
-#include "string.h"
+#include "kstring.h"
 
 void add_line(kstring line);

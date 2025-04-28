@@ -2,7 +2,7 @@
 #include "console/serial/uart.h"
 #include "graph/graphics.h"
 #include "pci.h"
-#include "string.h"
+#include "kstring.h"
 #include "console/kconsole/kconsole.h"
 #include "mmu.h"
 #include "exception_handler.h"

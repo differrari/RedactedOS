@@ -1,6 +1,6 @@
 #include "exception_handler.h"
 #include "console/serial/uart.h"
-#include "string.h"
+#include "kstring.h"
 #include "console/kio.h"
 #include "mmu.h"
 
