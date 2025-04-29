@@ -18,12 +18,14 @@ void write_barrier();
 extern "C" {
 #endif
 uint64_t talloc(uint64_t size);
+void temp_free(void* ptr, uint64_t size);
+void enable_talloc_verbose();
 #ifdef __cplusplus
 }
 #endif
 
 uint64_t palloc(uint64_t size);
-void free_temp();
+
 
 uint64_t mem_get_kmem_start();
 uint64_t mem_get_kmem_end();

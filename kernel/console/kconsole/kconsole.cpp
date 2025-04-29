@@ -1,6 +1,7 @@
 #include "kconsole.hpp"
 #include "ram_e.h"
 #include "graph/graphics.h"
+#include "console/serial/uart.h"
 
 KernelConsole::KernelConsole()
     : cursor_x(0), cursor_y(0), scroll_row_offset(0)
@@ -23,10 +24,19 @@ void KernelConsole::resize() {
     size screen = gpu_get_screen_size();
     columns = screen.width / char_width;
     rows = screen.height / char_height;
-#warning Buffer is currently growing from temporary memory, since we don't have proper memory management yet. If the system grows more complex and we're not careful we could trigger an overflow
+
+    if (buffer_header_size > 0)
+        temp_free(buffer,buffer_header_size);
+    if (buffer_data_size > 0)
+        temp_free(row_data,buffer_data_size);
+
+    buffer_header_size = rows * sizeof(char*);
     buffer = (char**)talloc(rows * sizeof(char*));
+    buffer_data_size = rows * columns * sizeof(char);
+    row_data = (char*)talloc(buffer_data_size);
+
     for (unsigned int i = 0; i < rows; i++) {
-        buffer[i] = (char*)talloc(columns * sizeof(char));
+        buffer[i] = row_data + (i * columns);
     }
 }
 

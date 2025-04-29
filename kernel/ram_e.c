@@ -3,12 +3,20 @@
 #include "exception_handler.h"
 #include "console/kio.h"
 #include "dtb.h"
+#include "console/serial/uart.h"
 
 static uint64_t total_ram_size;
 static uint64_t total_ram_start;
 static uint64_t calculated_ram_size;
 static uint64_t calculated_ram_start;
 static uint64_t calculated_ram_end;
+
+typedef struct FreeBlock {
+    struct FreeBlock* next;
+    uint64_t size;
+} FreeBlock;
+
+FreeBlock* temp_free_list = 0;
 
 uint8_t read8(uintptr_t addr) {
     return *(volatile uint8_t*)addr;
@@ -65,28 +73,73 @@ uint64_t next_free_perm_memory = temp_start;
 //We'll need to use a table indicating which sections of memory are available
 //So we can talloc and free dynamically
 
+static bool talloc_verbose = false;
+
 uint64_t talloc(uint64_t size) {
-    uint64_t aligned_size = (size + 0xFFF) & ~0xFFF;
-    next_free_temp_memory = (next_free_temp_memory + 0xFFF) & ~0xFFF;
-    if (next_free_temp_memory + aligned_size > temp_start)
-        panic_with_info(">>> Temporary allocator overflow", next_free_temp_memory);
+
+    size = (size + 0xFFF) & ~0xFFF;
+
+    if (talloc_verbose){
+        uart_raw_puts("[talloc] Requested size: ");
+        uart_puthex(size);
+        uart_raw_putc('\n');
+    }
+
+    FreeBlock** curr = &temp_free_list;
+    while (*curr) {
+
+        if ((*curr)->size >= size) {
+            if (talloc_verbose){
+                uart_raw_puts("[talloc] Reusing free block at ");
+                uart_puthex((uint64_t)*curr);
+                uart_raw_putc('\n');
+            }
+
+            uint64_t result = (uint64_t)*curr;
+            *curr = (*curr)->next;
+            return result;
+        }
+        curr = &(*curr)->next;
+    }
+
+    if (next_free_temp_memory + size > temp_start) {
+        panic_with_info("Temporary allocator overflow", next_free_temp_memory);
+    }
+
     uint64_t result = next_free_temp_memory;
-    next_free_temp_memory += aligned_size;
+    next_free_temp_memory += size;
+
     return result;
+}
+
+void temp_free(void* ptr, uint64_t size) {
+    size = (size + 0xFFF) & ~0xFFF;
+    if (talloc_verbose){
+        uart_raw_puts("[temp_free] Freeing block at ");
+        uart_puthex((uint64_t)ptr);
+        uart_raw_puts(" size ");
+        uart_puthex(size);
+        uart_raw_putc('\n');
+    }
+
+    FreeBlock* block = (FreeBlock*)ptr;
+    block->size = size;
+    block->next = temp_free_list;
+    temp_free_list = block;
+}
+
+void enable_talloc_verbose(){
+    talloc_verbose = true;
 }
 
 uint64_t palloc(uint64_t size) {
     uint64_t aligned_size = (size + 0xFFF) & ~0xFFF;
     next_free_perm_memory = (next_free_perm_memory + 0xFFF) & ~0xFFF;
     if (next_free_perm_memory + aligned_size > (uint64_t)&heap_limit)
-        panic_with_info(">>> Permanent allocator overflow", (uint64_t)&heap_limit);
+        panic_with_info("Permanent allocator overflow", (uint64_t)&heap_limit);
     uint64_t result = next_free_perm_memory;
     next_free_perm_memory += aligned_size;
     return result;
-}
-
-void free_temp(){
-    next_free_temp_memory = (uint64_t)temp_start;
 }
 
 uint64_t mem_get_kmem_start(){

@@ -73,6 +73,7 @@ kstring string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_c
                 uint64_t val = args[arg_index++];
                 kstring hex = string_from_hex(val);
                 for (uint32_t j = 0; j < hex.length && len < 255; j++) buf[len++] = hex.data[j];
+                temp_free(hex.data,18);
             } else if (fmt[i] == 'c') {
                 uint64_t val = args[arg_index++];
                 buf[len++] = (char)val;

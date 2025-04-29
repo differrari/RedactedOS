@@ -29,6 +29,7 @@ void boot_draw_name(point screen_middle,int xoffset, int yoffset){
     for (int i = 0; i < str_length; i++){    
         gpu_draw_char((point){xo + (i * char_size),yo},s.data[i],3, 0xFFFFFF);
     }
+    temp_free(s.data,256);
 }
 
 __attribute__((section(".text.kbootscreen")))
@@ -36,7 +37,6 @@ void bootscreen(){
     disable_visual();
     while (1)
     {
-        free_temp();
         gpu_clear(0);
         size screen_size = gpu_get_screen_size();
         point screen_middle = {screen_size.width/2,screen_size.height/2};
@@ -62,7 +62,7 @@ void bootscreen(){
                 for (int y = 0; y <= ylength; y++){
                     point interpolated = {lerp(x,current_point.x,next_point.x),lerp(y,current_point.y,next_point.y)};
                     gpu_draw_pixel(interpolated,0xFFFFFF);
-                    for (int k = 0; k < 3000000; k++){}
+                    for (int k = 0; k < 1000000; k++){}
                 }    
                 boot_draw_name(screen_middle,0,padding + sizes[2] + 10);
             }

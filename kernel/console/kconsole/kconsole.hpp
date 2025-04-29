@@ -1,6 +1,6 @@
 #pragma once
 
-// #include <cstdint>
+#include "types.h"
 
 class KernelConsole {
 public:
@@ -27,5 +27,9 @@ private:
     static constexpr int char_width = 8;
     static constexpr int char_height = 16;
     char** buffer;
+    char* row_data;
+
+    uint64_t buffer_header_size;
+    uint64_t buffer_data_size;
 };
 extern KernelConsole kconsole;
