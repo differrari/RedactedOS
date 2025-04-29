@@ -5,6 +5,8 @@
 #include "mmu.h"
 #include "graph/graphics.h"
 
+static bool panic_triggered = false;
+
 void set_exception_vectors(){
     extern char exception_vectors[];
     kprintf("Exception vectors setup at %h", (uint64_t)&exception_vectors);
@@ -29,7 +31,20 @@ void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\n"); }
 
 void error_el1_handler(){ handle_exception("ERROR EXCEPTION\n"); }
 
+void draw_panic_screen(kstring s){
+    gpu_clear(0x0000FF);
+    uint32_t scale = 3;
+    uint32_t size = gpu_get_char_size(3);
+    gpu_draw_string(s, (point){20,20}, scale, 0xFFFFFF);
+}
+
 void panic(const char* panic_msg) {
+    bool old_panic_triggered = panic_triggered;
+    panic_triggered = true;
+    if (!old_panic_triggered){
+        kstring s = string_format("CARDINAL SIN\n%s\nSystem Halted",(uint64_t)panic_msg);
+        draw_panic_screen(s);
+    }
     uart_raw_puts("*** CARDINAL SIN ***\n");
     uart_raw_puts(panic_msg);
     uart_raw_putc('\n');
@@ -38,11 +53,12 @@ void panic(const char* panic_msg) {
 }
 
 void panic_with_info(const char* msg, uint64_t info) {
-    gpu_clear(0x0000FF);
-    uint32_t scale = 3;
-    uint32_t size = gpu_get_char_size(3);
-    kstring s = string_format("CARDINAL SIN\n%s\nError code: %h\nSystem Halted",(uint64_t)msg,info);
-    gpu_draw_string(s, (point){10,10}, scale, 0xFFFFFF);
+    bool old_panic_triggered = panic_triggered;
+    panic_triggered = true;
+    if (!old_panic_triggered){
+        kstring s = string_format("CARDINAL SIN\n%s\nError code: %h\nSystem Halted",(uint64_t)msg,info);
+        draw_panic_screen(s);
+    }
     uart_raw_puts("*** CARDINAL SIN ***\n");
     uart_raw_puts(msg);
     uart_raw_putc('\n');
