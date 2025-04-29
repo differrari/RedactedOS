@@ -101,7 +101,7 @@ void gpu_draw_line(point p0, point p1, uint32_t color){
         break;
     }
 }
-void gpu_draw_char(point p, char c, int scale, uint32_t color){
+void gpu_draw_char(point p, char c, uint32_t scale, uint32_t color){
     if (!gpu_ready())
         return;
     switch (chosen_GPU) {
@@ -110,6 +110,30 @@ void gpu_draw_char(point p, char c, int scale, uint32_t color){
         break;
         case RAMFB:
             rfb_draw_char(p.x,p.y,c,scale,color);
+        break;
+        default:
+        break;
+    }
+}
+
+void gpu_draw_string(kstring s, point p, uint32_t scale){
+    if (!gpu_ready())
+        return;
+    switch (chosen_GPU) {
+        case RAMFB:
+            rfb_draw_string(s, p.x,p.y, scale);
+        break;
+        default:
+        break;
+    }
+}
+
+uint32_t gpu_get_char_size(uint32_t scale){
+    if (!gpu_ready())
+        return 0;
+    switch (chosen_GPU) {
+        case RAMFB:
+            rfb_get_char_size(scale);
         break;
         default:
         break;

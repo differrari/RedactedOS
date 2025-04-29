@@ -2,6 +2,7 @@
 #include "ram_e.h"
 #include "kstring.h"
 #include "fw/fw_cfg.h"
+#include "ramfb_driver.h"
 #include "graph/font8x8_basic.h"
 
 #define RGB_FORMAT_XRGB8888 ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
@@ -105,6 +106,21 @@ bool rfb_init(uint32_t w, uint32_t h) {
 
     return true;
 }
+
+uint32_t rfb_get_char_size(uint32_t scale){
+    return 8 * scale;
+}
+
+void rfb_draw_string(kstring s, uint32_t x0, uint32_t y0, uint32_t scale){
+    int char_size = rfb_get_char_size(scale);
+    int str_length = s.length;
+
+    rfb_fill_rect(x0,y0, char_size*str_length,char_size,0x0);
+    for (int i = 0; i < str_length; i++){    
+        rfb_draw_char(x0 + (i * char_size),y0,s.data[i],scale, 0xFFFFFF);
+    }
+}
+
 
 void rfb_flush(){
     
