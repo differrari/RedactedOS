@@ -111,13 +111,20 @@ uint32_t rfb_get_char_size(uint32_t scale){
     return 8 * scale;
 }
 
-void rfb_draw_string(kstring s, uint32_t x0, uint32_t y0, uint32_t scale){
+void rfb_draw_string(kstring s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
     int char_size = rfb_get_char_size(scale);
     int str_length = s.length;
 
-    rfb_fill_rect(x0,y0, char_size*str_length,char_size,0x0);
+    uint32_t xoff = 0;
     for (int i = 0; i < str_length; i++){    
-        rfb_draw_char(x0 + (i * char_size),y0,s.data[i],scale, 0xFFFFFF);
+        char c = s.data[i];
+        if (c == '\n'){
+            y0 += char_size + 2; 
+            xoff = 0;
+        } else {
+            rfb_draw_char(x0 + (xoff * char_size),y0,c,scale, color);
+            xoff++;
+        }
     }
 }
 
