@@ -20,8 +20,8 @@ ELF = kernel.elf
 # Build Rules
 all: $(TARGET)
 
-$(TARGET): $(OBJ)
-	$(LD) $(LDFLAGS) -o ../$(ELF) $(OBJ) ../shared/libshared.a # ../user/libuser.a
+$(TARGET): ../shared/libshared.a ../user/libuser.a $(OBJ)
+	$(LD) $(LDFLAGS) -o ../$(ELF) $(OBJ) ../user/libuser.a ../shared/libshared.a
 	$(OBJCOPY) -O binary ../$(ELF) ../$(TARGET)
 
 %.o: %.S

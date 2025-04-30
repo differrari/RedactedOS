@@ -62,7 +62,7 @@ void kernel_main() {
 
     kprintf("Starting default processes");
 
-    // default_processes();
+    default_processes();
     
     start_bootscreen();
     

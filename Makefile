@@ -1,13 +1,12 @@
 .PHONY: all kernel user shared clean
 
-#user/libuser.a
-all: shared/libshared.a kernel
+all: shared user kernel
 	@echo "Build complete."
 
-shared/libshared.a:
+shared:
 	$(MAKE) -C shared
 
-user/libuser.a:
+user:
 	$(MAKE) -C user
 
 kernel:

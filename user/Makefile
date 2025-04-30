@@ -19,8 +19,7 @@ TARGET = libuser.a
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	# $(LD) $(LDFLAGS) -o ../$(ELF) $(OBJ)  ../user/libuser.a
-	$(AR) rcs $(TARGET) ../shared/libshared.a $(OBJ)
+	$(AR) rcs $(TARGET) $(OBJ)
 
 %.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
