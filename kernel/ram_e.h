@@ -14,6 +14,8 @@ void write(uint64_t addr, uint64_t value);
 uint64_t read(uint64_t addr);
 void write_barrier();
 
+int memcmp(const void *s1, const void *s2, unsigned long n);
+
 #ifdef __cplusplus
 extern "C" {
 #endif

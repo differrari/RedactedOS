@@ -19,4 +19,6 @@ fi
 -device ramfb \
 -display sdl \
 -serial mon:stdio \
+-drive file=disk.img,if=none,format=raw,id=hd0 \
+-device virtio-blk-device,drive=hd0 \
 $ARGS

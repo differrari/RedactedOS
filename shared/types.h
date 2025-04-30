@@ -14,6 +14,8 @@ typedef long intptr_t;
 typedef short int16_t;
 typedef char int8_t;
 
+#define NULL 0
+
 #ifdef __cplusplus
 }
 #else

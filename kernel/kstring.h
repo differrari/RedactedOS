@@ -19,3 +19,6 @@ kstring string_c(const char c);
 kstring string_from_hex(uint64_t value);
 bool string_equals(kstring a, kstring b);
 kstring string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_count);
+
+bool strcmp(const char *a, const char *b);
+bool strcont(const char *a, const char *b);

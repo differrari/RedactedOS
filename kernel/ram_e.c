@@ -5,11 +5,11 @@
 #include "dtb.h"
 #include "console/serial/uart.h"
 
-static uint64_t total_ram_size;
-static uint64_t total_ram_start;
-static uint64_t calculated_ram_size;
-static uint64_t calculated_ram_start;
-static uint64_t calculated_ram_end;
+static uint64_t total_ram_size = 0;
+static uint64_t total_ram_start = 0;
+static uint64_t calculated_ram_size = 0;
+static uint64_t calculated_ram_start = 0;
+static uint64_t calculated_ram_end = 0;
 
 typedef struct FreeBlock {
     struct FreeBlock* next;
@@ -56,6 +56,15 @@ void write(uint64_t addr, uint64_t value) {
 
 uint64_t read(uint64_t addr) {
     return read64(addr);
+}
+
+int memcmp(const void *s1, const void *s2, unsigned long n) {
+    const unsigned char *a = s1;
+    const unsigned char *b = s2;
+    for (unsigned long i = 0; i < n; i++) {
+        if (a[i] != b[i]) return a[i] - b[i];
+    }
+    return 0;
 }
 
 #define temp_start (uint64_t)&heap_bottom + 0x500000
