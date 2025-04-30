@@ -76,6 +76,13 @@ void *memset(void *dest, int val, unsigned long count) {
     return dest;
 }
 
+void *memcpy(void *dest, const void *src, uint64_t n) {
+    uint8_t *d = (uint8_t *)dest;
+    const uint8_t *s = (const uint8_t *)src;
+    for (uint64_t i = 0; i < n; i++) d[i] = s[i];
+    return dest;
+}
+
 #define temp_start (uint64_t)&heap_bottom + 0x500000
 
 extern uint64_t kernel_start;
@@ -126,6 +133,12 @@ uint64_t talloc(uint64_t size) {
 
     uint64_t result = next_free_temp_memory;
     next_free_temp_memory += size;
+
+    if (talloc_verbose){
+        uart_raw_puts("[talloc] Allocated address ");
+        uart_puthex(result);
+        uart_raw_putc('\n');
+    }
 
     return result;
 }

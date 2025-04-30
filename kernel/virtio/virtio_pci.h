@@ -2,6 +2,7 @@
 
 #include "types.h"
 
+#define VIRTQ_DESC_F_NEXT  1
 #define VIRTQ_DESC_F_WRITE 2
 
 typedef struct virtio_pci_common_cfg {
@@ -31,9 +32,6 @@ typedef struct virtio_device {
     volatile uint8_t* device_cfg;
     volatile uint8_t* isr_cfg;
     uint32_t notify_off_multiplier;
-    uint64_t queue_desc;
-    uint64_t queue_driver;
-    uint64_t queue_device;
 } virtio_device;
 
 void virtio_enable_verbose();

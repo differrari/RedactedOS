@@ -195,25 +195,44 @@ bool virtio_init_device(virtio_device *dev) {
     return true;
 }
 
+struct virtio_blk_req {
+    uint32_t type;
+    uint32_t reserved;
+    uint64_t sector;
+} __attribute__((packed));
+
 void virtio_send(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t used, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags) {
     struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)desc;
     struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)avail;
     struct virtq_used* u = (struct virtq_used*)(uintptr_t)used;
 
+    struct virtio_blk_req *req = (struct virtio_blk_req *)(uintptr_t)cmd;
+
     d[0].addr = cmd;
     d[0].len = cmd_len;
-    d[0].flags = flags;
+    d[0].flags = VIRTQ_DESC_F_NEXT;
     d[0].next = 1;
-
+    
     d[1].addr = resp;
     d[1].len = resp_len;
-    d[1].flags = VIRTQ_DESC_F_WRITE;
-    d[1].next = 0;
+    d[1].flags = VIRTQ_DESC_F_NEXT | flags;
+    d[1].next = 2;
+    
+    uint8_t status = 0;
+    d[2].addr = (uint64_t)&status;
+    d[2].len = 1;
+    d[2].flags = VIRTQ_DESC_F_WRITE;
+    d[2].next = 0;
 
     a->ring[a->idx % 128] = 0;
     a->idx++;
 
     *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * 0) = 0;
 
-    while (u->idx == 0);
+    uint16_t last_used_idx = u->idx;
+    while (last_used_idx == u->idx);
+    
+    if (status != 0)
+        kprintf("[VIRTIO OPERATION ERROR]: Wrong status %h",status);
+
 }

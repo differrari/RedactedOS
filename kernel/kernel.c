@@ -17,6 +17,7 @@
 void kernel_main() {
     
     enable_uart();
+    // enable_talloc_verbose();
 
     kprintf("Initializing kernel...");
 

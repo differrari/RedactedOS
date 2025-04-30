@@ -16,6 +16,7 @@ void write_barrier();
 
 int memcmp(const void *s1, const void *s2, unsigned long n);
 void *memset(void *dest, int val, unsigned long count);
+void *memcpy(void *dest, const void *src, uint64_t n);
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,7 +29,6 @@ void enable_talloc_verbose();
 #endif
 
 uint64_t palloc(uint64_t size);
-
 
 uint64_t mem_get_kmem_start();
 uint64_t mem_get_kmem_end();

@@ -11,33 +11,41 @@ static uint64_t disk_device_address;
 static uint64_t disk_device_size;
 
 struct virtio_mmio_blk_regs {
-    uint32_t magic;                 // 0x000
-    uint32_t version;              // 0x004
-    uint32_t device_id;            // 0x008
-    uint32_t vendor_id;            // 0x00C
-    uint32_t device_features;      // 0x010
-    uint32_t device_features_sel;  // 0x014
-    uint32_t reserved0[2];         // 0x018 - 0x01F
-    uint32_t driver_features;      // 0x020
-    uint32_t driver_features_sel;  // 0x024
-    uint32_t reserved1[2];         // 0x028 - 0x02F
-    uint32_t queue_sel;            // 0x030
-    uint32_t queue_num_max;        // 0x034
-    uint32_t queue_num;            // 0x038
-    uint32_t queue_ready;          // 0x03C
-    uint32_t queue_notify;         // 0x040
-    uint32_t reserved2[3];         // 0x044 - 0x04F
-    uint32_t interrupt_status;     // 0x050
-    uint32_t interrupt_ack;        // 0x054
-    uint32_t reserved3[2];         // 0x058 - 0x05F
-    uint32_t status;               // 0x060
-    uint32_t reserved4[3];         // 0x064 - 0x06F
-    uint64_t queue_desc;           // 0x070
-    uint64_t queue_driver;         // 0x078
-    uint64_t queue_device;         // 0x080
-    uint32_t config_generation;    // 0x088
-    uint32_t reserved5[3];         // 0x08C - 0x097
-    // device-specific config starts at 0x100
+    uint32_t magic;
+    uint32_t version;
+    uint32_t device_id;
+    uint32_t vendor_id;
+    uint32_t device_features;
+    uint32_t device_features_sel;
+    uint32_t reserved0[2];
+    uint32_t driver_features;
+    uint32_t driver_features_sel;
+    uint32_t reserved1[2];
+    uint32_t queue_sel;
+    uint32_t queue_num_max;
+    uint32_t queue_num;
+    uint32_t queue_ready;
+    uint32_t queue_notify;
+    uint32_t reserved2[3];
+    uint32_t interrupt_status;
+    uint32_t interrupt_ack;
+    uint32_t reserved3[2];
+    uint32_t status;
+    uint32_t reserved4[3];
+    uint64_t queue_desc;
+    uint64_t queue_driver;
+    uint64_t queue_device;
+    uint32_t config_generation; 
+    uint32_t reserved5[3];
+} __attribute__((packed));
+
+#define VIRTIO_BLK_T_IN   0
+#define VIRTIO_BLK_T_OUT  1
+
+struct virtio_blk_req {
+    uint32_t type;
+    uint32_t reserved;
+    uint64_t sector;
 } __attribute__((packed));
 
 #define VIRTIO_BLK_SUPPORTED_FEATURES \
@@ -100,8 +108,47 @@ bool find_disk(){
     return true;
 }
 
+void vblk_write(virtio_device *dev, const void *buffer, uint32_t sector, uint32_t count) {
+    uint64_t cmd = palloc(sizeof(struct virtio_blk_req));
+    uint64_t resp = palloc(1);
+    uint64_t data = palloc(count * 512);
+
+    memcpy((void *)(uintptr_t)data, buffer, count * 512);
+
+    struct virtio_blk_req *req = (struct virtio_blk_req *)(uintptr_t)cmd;
+    req->type = VIRTIO_BLK_T_OUT;
+    req->reserved = 0;
+    req->sector = sector;
+
+    virtio_send(dev, dev->common_cfg->queue_desc, dev->common_cfg->queue_driver, dev->common_cfg->queue_device,
+        cmd, sizeof(struct virtio_blk_req), data, count * 512, 0);
+}
+
+void vblk_read(virtio_device *dev, void *buffer, uint32_t sector, uint32_t count) {
+    uint64_t cmd = talloc(sizeof(struct virtio_blk_req));
+    uint64_t resp = talloc(count * 512);
+
+    struct virtio_blk_req *req = (struct virtio_blk_req *)(uintptr_t)cmd;
+    req->type = VIRTIO_BLK_T_IN;
+    req->reserved = 0;
+    req->sector = sector;
+
+    virtio_send(dev, dev->common_cfg->queue_desc, dev->common_cfg->queue_driver, dev->common_cfg->queue_device, cmd, sizeof(struct virtio_blk_req), resp, count * 512, VIRTQ_DESC_F_WRITE);
+
+    memcpy(buffer, (void *)(uintptr_t)resp, count * 512);
+
+    temp_free((void *)cmd,sizeof(struct virtio_blk_req));
+    temp_free((void *)resp,count * 512);
+}
+
 bool disk_test() {
-    
+    kprintf("Starting read test");
+    char buf[512];
+    vblk_read(&blk_dev, buf, 1, 1);
+    kprintf("Read performed");
+    kprintf("Read: %s",(uint64_t)buf);
+    const char *msg = "Written test";
+    vblk_write(&blk_dev,msg,1,1);
 }
 
 uint64_t get_disk_address(){
