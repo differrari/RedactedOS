@@ -3,7 +3,8 @@
 #include "types.h"
 #include "dtb.h"
 
-void find_disk();
-bool init_disk();
+bool find_disk();
+bool disk_test();
 uint64_t get_disk_address();
 uint64_t get_disk_size();
+void disk_verbose();
