@@ -48,6 +48,18 @@ struct virtio_blk_req {
     uint64_t sector;
 } __attribute__((packed));
 
+struct virtio_blk_config {
+    uint64_t capacity;//In number of sectors
+    uint32_t size_max;
+    uint32_t seg_max;
+    struct {
+        uint16_t cylinders;
+        uint8_t heads;
+        uint8_t sectors;
+    } geometry;
+    uint32_t blk_size;
+} __attribute__((packed));
+
 #define VIRTIO_BLK_SUPPORTED_FEATURES \
     ((1 << 0) | (1 << 1) | (1 << 4))
 
@@ -142,6 +154,12 @@ void vblk_read(virtio_device *dev, void *buffer, uint32_t sector, uint32_t count
 }
 
 bool disk_test() {
+    volatile struct virtio_blk_config *blk_cfg = (volatile struct virtio_blk_config *)((uint64_t)blk_dev.device_cfg);
+    uint64_t num_sectors = blk_cfg->capacity;
+    uint64_t bytes = num_sectors * 512;
+
+    kprintf("Disk size: %h bytes (%h sectors)", bytes, num_sectors);
+
     const char *msg = "Written test";
     vblk_write(&blk_dev,msg,1,1);
     kprintf("Starting read test");
