@@ -142,13 +142,13 @@ void vblk_read(virtio_device *dev, void *buffer, uint32_t sector, uint32_t count
 }
 
 bool disk_test() {
+    const char *msg = "Written test";
+    vblk_write(&blk_dev,msg,1,1);
     kprintf("Starting read test");
     char buf[512];
     vblk_read(&blk_dev, buf, 1, 1);
     kprintf("Read performed");
     kprintf("Read: %s",(uint64_t)buf);
-    const char *msg = "Written test";
-    vblk_write(&blk_dev,msg,1,1);
 }
 
 uint64_t get_disk_address(){
