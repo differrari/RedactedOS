@@ -38,13 +38,13 @@ bool dtb_addresses(uint64_t *start, uint64_t *size){
     if (!dtb_get_header()) return false;
     *start = (uint64_t)DTB_ADDR;
     *size = __builtin_bswap32(hdr->totalsize);
+    return true;
 }
 
-bool dtb_debug_print_all() {
-    if (!dtb_get_header()) return false;
+void dtb_debug_print_all() {
+    if (!dtb_get_header()) return;
 
     uint32_t *p = (uint32_t *)(DTB_ADDR + __builtin_bswap32(hdr->off_dt_struct));
-    const char *strings = (const char *)(DTB_ADDR + __builtin_bswap32(hdr->off_dt_strings));
 
     while (1) {
         uint32_t token = __builtin_bswap32(*p++);

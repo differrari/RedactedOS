@@ -83,5 +83,5 @@ void start_bootscreen(){
     extern uint8_t kbootscreen_end;
     // extern uint8_t kbootscreen_rodata_start;
     // extern uint8_t kbootscreen_rodata_end;
-    create_kernel_process(bootscreen, (uint64_t)&kbootscreen_end - (uint64_t)&kbootscreen_start/*, (uint64_t)&kbootscreen_start, (void*)0x0, 0*/);
+    create_kernel_process(bootscreen);
 }

@@ -3,7 +3,7 @@
 #include "scheduler.h"
 #include "proc_allocator.h"
 
-process_t *create_kernel_process(void (*func)(), uint64_t code_size){
+process_t *create_kernel_process(void (*func)()){
     
     process_t* proc = init_process();
 

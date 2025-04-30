@@ -42,9 +42,9 @@ void kernel_main() {
     gic_init();
 
     kprintf("Initializing disk...");
-    init_disk();
+    find_disk();
 
-    mmu_enable_verbose();
+    // mmu_enable_verbose();
     mmu_init();
     kprintf("MMU Mapped");
 
@@ -54,6 +54,9 @@ void kernel_main() {
 
     kprintf("There's %i memory for user processes",get_total_user_ram());
 
+    kprintf("Testing disk");
+    if (!init_disk())
+        panic("Disk initialization failure");
 
     kprintf("Starting default processes");
 
