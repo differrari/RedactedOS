@@ -38,11 +38,13 @@ void kernel_main() {
 
     kprintf("Exception vectors set");
 
+    kprintf("Interrupts init");
     gic_init();
 
-    kprintf("Interrupts init");
+    kprintf("Initializing disk...");
+    init_disk();
 
-    // mmu_enable_verbose();
+    mmu_enable_verbose();
     mmu_init();
     kprintf("MMU Mapped");
 
@@ -52,8 +54,6 @@ void kernel_main() {
 
     kprintf("There's %i memory for user processes",get_total_user_ram());
 
-    kprintf("Initializing disk...");
-    // init_disk();
 
     kprintf("Starting default processes");
 
