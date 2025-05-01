@@ -23,6 +23,7 @@ void save_return_address_interrupt(){
 }
 
 void switch_proc(ProcSwitchReason reason) {
+    // kprintf_raw("Stopping execution of process %i at %h",current_proc, processes[current_proc].sp);
     if (proc_count == 0)
         return;
     int next_proc = (current_proc + 1) % proc_count;
@@ -33,13 +34,13 @@ void switch_proc(ProcSwitchReason reason) {
     }
     
     current_proc = next_proc;
-    // kprintf_raw("Resuming e xecution of process %i at %h",current_proc, processes[current_proc].pc);
+    // kprintf_raw("Resuming execution of process %i at %h",current_proc, processes[current_proc].sp);
     restore_context(&processes[current_proc]);
 }
 
 void start_scheduler(){
     disable_interrupt();
-    timer_init(10);
+    timer_init(1);
     switch_proc(YIELD);
 }
 

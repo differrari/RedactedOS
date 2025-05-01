@@ -2,6 +2,7 @@
 _start:
     ldr x1, =stack_top
     mov sp, x1
+    mov SP_EL1, x1
     mov x29, xzr
     mov x30, xzr
     bl kernel_main

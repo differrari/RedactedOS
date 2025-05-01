@@ -17,7 +17,7 @@ process_t *create_kernel_process(void (*func)()){
     
     proc->pc = (uint64_t)func;
     kprintf_raw("Process allocated with address at %h, stack at %h",proc->pc, proc->sp);
-    proc->spsr = 0x3C5;
+    proc->spsr = 0x205;
     proc->state = READY;
     
     return proc;
