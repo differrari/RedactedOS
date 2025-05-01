@@ -39,6 +39,11 @@ void timer_enable() {
     asm volatile ("msr cntkctl_el1, %0" :: "r"(val));
 }
 
+void permanent_disable_timer(){
+    uint64_t ctl = 0;
+    asm volatile ("msr cntp_ctl_el0, %0" :: "r"(ctl));
+}
+
 void timer_init(uint64_t msecs) {
     _msecs = msecs;
     timer_reset();

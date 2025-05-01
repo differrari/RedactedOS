@@ -4,6 +4,7 @@
 #include "console/kio.h"
 #include "mmu.h"
 #include "graph/graphics.h"
+#include "gic.h"
 
 static bool panic_triggered = false;
 
@@ -39,6 +40,8 @@ void draw_panic_screen(kstring s){
 }
 
 void panic(const char* panic_msg) {
+    permanent_disable_timer();
+    
     bool old_panic_triggered = panic_triggered;
     panic_triggered = true;
     if (!old_panic_triggered){
@@ -53,6 +56,8 @@ void panic(const char* panic_msg) {
 }
 
 void panic_with_info(const char* msg, uint64_t info) {
+    permanent_disable_timer();
+
     bool old_panic_triggered = panic_triggered;
     panic_triggered = true;
     if (!old_panic_triggered){

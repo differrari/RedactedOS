@@ -10,3 +10,5 @@ void timer_init(uint64_t msecs);
 void irq_el1_handler();
 void disable_interrupt();
 void enable_interrupt();
+
+void permanent_disable_timer();

@@ -65,7 +65,7 @@ void bootscreen(){
                 }    
                 boot_draw_name(screen_middle,0,padding + sizes[2] + 10);
             }
-            randomNumber += 7;
+            randomNumber += 50;
             // randomNumber %= 100;
             if (randomNumber > 100){
                 panic_with_info("Failed to load",0x12345);
@@ -73,7 +73,6 @@ void bootscreen(){
             current_point = next_point;
         }
     }
-    while (1) {}
     
 }
 
