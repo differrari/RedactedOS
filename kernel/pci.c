@@ -18,6 +18,20 @@ static uint64_t pci_base;
 
 #define NINIT pci_base == 0x0
 
+static bool pci_verbose = false;
+
+void pci_enable_verbose(){
+    pci_verbose = true;
+}
+
+#define kprintfv(fmt, ...) \
+    ({ \
+        if (pci_verbose){\
+            uint64_t _args[] = { __VA_ARGS__ }; \
+            kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+        }\
+    })
+
 struct acpi_rsdp_t {
     char signature[8];
     uint8_t checksum;
@@ -184,6 +198,58 @@ void debug_read_bar(uint64_t base, uint8_t offset, uint8_t index){
     uint64_t addr = pci_get_bar_address(base, offset, index);
     uint64_t val = read32(addr);
     kprintf("Reading@%h (%i) content: ", addr, index, val);
+}
+
+uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_start, uint64_t *mmio_size) {
+    uint64_t bar_addr = pci_get_bar_address(pci_addr, 0x10, bar_index);
+    uint32_t original = read32(bar_addr);
+
+    write32(bar_addr, 0xFFFFFFFF);
+    uint32_t bar_low = read32(bar_addr);
+    kprintfv("First bar size %h",bar_low);
+
+    uint64_t size;
+    if ((original & 0x6) == 0x4) {
+        uint64_t bar_addr_hi = pci_get_bar_address(pci_addr, 0x10, bar_index+1);
+        uint32_t original_hi = read32(bar_addr_hi);
+
+        kprintfv("Original second bar %h",original_hi);
+
+        write32(bar_addr_hi, 0xFFFFFFFF);
+        uint32_t bar_high = read32(bar_addr_hi);
+
+        kprintfv("Second bar size %h",bar_high);
+
+        uint64_t combined = ((uint64_t)bar_high << 32) | (bar_low & ~0xF);
+        size = ~combined + 1;
+
+        kprintfv("Total bar size %h",size);
+
+        uint64_t config_base = alloc_mmio_region(size);
+        *mmio_start = config_base;
+        *mmio_size = size;
+
+        write32(bar_addr, config_base & 0xFFFFFFFF);
+        write32(bar_addr_hi, config_base >> 32);
+
+        uint32_t new_hi = read32(bar_addr_hi);
+        uint32_t new_lo = read32(bar_addr);
+
+        kprintfv("Two registers %h > %h",new_hi,new_lo);
+    } else {
+        bar_low &= ~0xF;
+        size = ~((uint64_t)bar_low) + 1;
+
+        uint64_t config_base = alloc_mmio_region(size);
+        *mmio_start = config_base;
+        *mmio_size = size;
+
+        write32(bar_addr, config_base & 0xFFFFFFFF);
+    }
+
+    write32(pci_addr + 0x04, read32(pci_addr + 0x04) | 0x2);
+
+    return *mmio_start;
 }
 
 uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {

@@ -112,58 +112,6 @@ void nec_enable_verbose(){
         }\
     })
 
-uint64_t xhci_setup_bar(uint64_t pci_addr, uint64_t *mmio_start, uint64_t *mmio_size) {
-    uint64_t bar_addr = pci_get_bar_address(pci_addr, 0x10, 0);
-    uint32_t original = read32(bar_addr);
-
-    write32(bar_addr, 0xFFFFFFFF);
-    uint32_t bar_low = read32(bar_addr);
-    kprintf("First bar size %h",bar_low);
-
-    uint64_t size;
-    if ((original & 0x6) == 0x4) {
-        uint64_t bar_addr_hi = pci_get_bar_address(pci_addr, 0x10, 1);
-        uint32_t original_hi = read32(bar_addr_hi);
-
-        kprintf("Original second bar %h",original_hi);
-
-        write32(bar_addr_hi, 0xFFFFFFFF);
-        uint32_t bar_high = read32(bar_addr_hi);
-
-        kprintf("Second bar size %h",bar_high);
-
-        uint64_t combined = ((uint64_t)bar_high << 32) | (bar_low & ~0xF);
-        size = ~combined + 1;
-
-        kprintfv("Total bar size %h",size);
-
-        uint64_t config_base = alloc_mmio_region(size);
-        *mmio_start = config_base;
-        *mmio_size = size;
-
-        write32(bar_addr, config_base & 0xFFFFFFFF);
-        write32(bar_addr_hi, config_base >> 32);
-
-        uint32_t new_hi = read32(bar_addr_hi);
-        uint32_t new_lo = read32(bar_addr);
-
-        kprintfv("Two registers %h > %h",new_hi,new_lo);
-    } else {
-        bar_low &= ~0xF;
-        size = ~((uint64_t)bar_low) + 1;
-
-        uint64_t config_base = alloc_mmio_region(size);
-        *mmio_start = config_base;
-        *mmio_size = size;
-
-        write32(bar_addr, config_base & 0xFFFFFFFF);
-    }
-
-    write32(pci_addr + 0x04, read32(pci_addr + 0x04) | 0x2);
-
-    return *mmio_start;
-}
-
 bool enable_xhci_interrupts(){
     kprintfv("[xHCI] Allocating ERST");
     xhci_interrupter* int0 = (xhci_interrupter*)(uintptr_t)(global_device.rt_base + 0x20);
@@ -234,7 +182,7 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
         cap_ptr = read8(pci_addr + cap_ptr + 1); // Next capability
     }
 
-    if (!xhci_setup_bar(pci_addr, &xhci->mmio, &xhci->mmio_size)){
+    if (!pci_setup_bar(pci_addr, 0, &xhci->mmio, &xhci->mmio_size)){
         kprintfv("[xHCI] BARs not set up");
         return false;
     }
