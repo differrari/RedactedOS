@@ -166,21 +166,22 @@ uint64_t xhci_setup_bar(uint64_t pci_addr, uint64_t *mmio_start, uint64_t *mmio_
 
 bool enable_xhci_interrupts(){
     kprintfv("[xHCI] Allocating ERST");
-    uint64_t erst_addr = 0x43000000;//palloc(sizeof(erst_entry) * MAX_ERST_AMOUNT);
+    xhci_interrupter* int0 = (xhci_interrupter*)(uintptr_t)(global_device.rt_base + 0x20);
+    int0->iman |= 1;
+
+    uint64_t event_ring = palloc(MAX_TRB_AMOUNT * sizeof(trb));
+    uint64_t erst_addr = palloc(sizeof(erst_entry) * MAX_ERST_AMOUNT);
     erst_entry* erst = (erst_entry*)erst_addr;
 
-    uint64_t event_ring = 0x44000000;//palloc(MAX_TRB_AMOUNT * sizeof(trb));
-    erst[0].ring_base = event_ring;
-    erst[0].ring_size = MAX_TRB_AMOUNT;
-    erst[0].reserved = 0;
+    erst->ring_base = event_ring;
+    erst->ring_size = MAX_TRB_AMOUNT;
+    erst->reserved = 0;
     kprintfv("[xHCI] ERST ring_base: %h", event_ring);
     kprintfv("[xHCI] ERST ring_size: %h", erst[0].ring_size);
     global_device.event_ring = (trb*)event_ring;
 
-    xhci_interrupter* int0 = (xhci_interrupter*)(uintptr_t)(global_device.rt_base + 0x20);
     kprintfv("[xHCI] Interrupter register @ %h", global_device.rt_base + 0x20);
     
-    int0->iman = 1;
     kprintfv("iman cleared %h",int0->iman);
     int0->erstsz = 1;
     kprintfv("[xHCI] ERSTSZ set to: %h", int0->erstsz);
@@ -190,8 +191,6 @@ bool enable_xhci_interrupts(){
     int0->erstba = erst_addr;
     kprintfv("[xHCI] ERSTBA set to: %h", int0->erstba);
     kprintf("USBSTS is %h after",global_device.op->usbsts);
-
-    return false;
     
     kprintfv("[xHCI] ERDP set to: %h", int0->erdp);
     
@@ -240,6 +239,8 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
         return false;
     }
 
+    pci_enable_device(pci_addr);
+
     kprintfv("[xHCI] BARs set up @ %h (%h)",xhci->mmio,xhci->mmio_size);
 
     xhci->cap = (xhci_cap_regs*)(uintptr_t)xhci->mmio;
@@ -250,12 +251,12 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
     xhci->rt_base = xhci->mmio + (xhci->cap->rtsoff & ~0x1F);
 
     kprintfv("[xHCI] Resetting controller");
-    xhci->op->usbcmd &= ~(1 << 0);
-    while (xhci->op->usbcmd & (1 << 0));
+    xhci->op->usbcmd &= ~1;
+    while (xhci->op->usbcmd & 1);
     kprintfv("[xHCI] Clear complete");
 
     xhci->op->usbcmd |= (1 << 1);
-    while (xhci->op->usbcmd & (1 << 1));
+    while (xhci->op->usbcmd & 1);
     kprintfv("[xHCI] Reset complete");
 
     while (xhci->op->usbsts & (1 << 11)); 
@@ -301,15 +302,15 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
     uint32_t max_device_slots = xhci->cap->hcsparams1 & 0xFF;
 
     uint16_t erst_max = ((xhci->cap->hcsparams2 >> 4) & 0xF);
-
+    
     kprintfv("[xHCI] ERST Max: 2^%i",erst_max);
-
+    
     xhci->op->dnctrl = 0xFFFF;//Enable device notifications
 
     xhci->op->config = max_device_slots;
     kprintfv("[xHCI] %i device slots", max_device_slots);
 
-    uint64_t dcbaap_addr = alloc_dma_region((max_device_slots + 1) * sizeof(uint64_t));
+    uint64_t dcbaap_addr = alloc_dma_region((max_device_slots + 1) * sizeof(uintptr_t));
 
     xhci->op->dcbaap = dcbaap_addr;
 

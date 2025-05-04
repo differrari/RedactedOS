@@ -11,6 +11,9 @@
 
 #define PCI_COMMAND_REGISTER 0x04
 
+#define PCI_COMMAND_MEMORY 0x2
+#define PCI_COMMAND_BUS 0x4
+
 static uint64_t pci_base;
 
 #define NINIT pci_base == 0x0
@@ -183,7 +186,6 @@ void debug_read_bar(uint64_t base, uint8_t offset, uint8_t index){
     kprintf("Reading@%h (%i) content: ", addr, index, val);
 }
 
-
 uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
 
     if (NINIT)
@@ -214,4 +216,10 @@ void dump_pci_config(uint64_t base) {
         uint64_t val = read(base + offset);
         kprintf("Offset %h: %h",offset, val);
     }
+}
+
+void pci_enable_device(uint64_t pci_addr){
+    uint32_t cmd = read16(pci_addr + PCI_COMMAND_REGISTER);
+    cmd |= PCI_COMMAND_MEMORY | PCI_COMMAND_REGISTER;
+    write16(pci_addr + PCI_COMMAND_REGISTER,cmd);
 }
