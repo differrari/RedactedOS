@@ -69,5 +69,7 @@ void irq_el1_handler() {
         timer_reset();
         write32(GICC_BASE + 0x10, irq);
         switch_proc(INTERRUPT);
+    } else {
+        kprintf_raw("Received unknown interrupt");
     }
 }

@@ -38,3 +38,6 @@ uint64_t get_user_ram_start();
 uint64_t get_user_ram_end();
 uint64_t get_shared_start();
 uint64_t get_shared_end();
+
+uint64_t alloc_mmio_region(uint64_t size);
+uint64_t alloc_dma_region(uint64_t size);

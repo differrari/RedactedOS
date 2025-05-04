@@ -13,6 +13,7 @@
 #include "default_process.h"
 #include "filesystem/disk.h"
 #include "kernel_processes/bootscreen.h"
+#include "input/xhci.h"
 
 void kernel_main() {
     
@@ -36,19 +37,27 @@ void kernel_main() {
     kprintf("Device initialization finished");
     
     set_exception_vectors();
-
+    
     kprintf("Exception vectors set");
-
+    
     kprintf("Interrupts init");
     gic_init();
 
+    enable_interrupt();
+
+    nec_enable_verbose();
+    if (!nec_input_init()){
+        panic("Input initialization failure");
+    }
+    
+    test_keyboard_input();
     kprintf("Initializing disk...");
     disk_verbose();
     if (!find_disk())
         panic("Disk initialization failure");
 
     // mmu_enable_verbose();
-    mmu_init();
+    // mmu_init();
     kprintf("MMU Mapped");
 
     kprintf("Kernel initialization finished");
@@ -62,12 +71,14 @@ void kernel_main() {
 
     kprintf("Starting default processes");
 
-    default_processes();
+    // default_processes();
+
     
     start_bootscreen();
     
     kprintf("Starting scheduler");
-
+    
+    disable_interrupt();
     start_scheduler();
 
     kprintf_raw("Error: Kernel did not activate any process");

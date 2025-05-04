@@ -199,7 +199,8 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
                     kprintf("Found device at bus %i, slot %i, func %i", bus, slot, func);
 
                     return device_address;
-                }
+                } else if (((vendor_device >> 16) & 0xFFFF) != 0xFFFF)
+                    kprintf("DID: %h VENDOR: %h",(vendor_device & 0xFFFF),((vendor_device >> 16) & 0xFFFF));
             }
         }
     }

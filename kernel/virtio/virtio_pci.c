@@ -43,9 +43,6 @@ struct virtq_used {
 
 #define VIRTQ_DESC_F_NEXT 1
 
-#define PCI_VIRTIO_MMIO_BASE   0x10010000
-#define PCI_VIRTIO_MMIO_LIMIT  0x1FFFFFFF
-
 struct virtio_pci_cap {
     uint8_t cap_vndr;
     uint8_t cap_next;
@@ -61,7 +58,6 @@ struct virtio_pci_cap {
 #define VIRTQ_DESC_F_NEXT 1
 #define VIRTQ_DESC_F_WRITE 2
 
-static uint64_t next_mmio_base = PCI_VIRTIO_MMIO_BASE;
 static bool virtio_verbose = false;
 
 void virtio_enable_verbose(){
@@ -75,14 +71,6 @@ void virtio_enable_verbose(){
             kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
         }\
     })
-
-uint64_t alloc_mmio_region(uint64_t size) {
-    size = (size + 0xFFF) & ~0xFFF;
-    if (next_mmio_base + size > PCI_VIRTIO_MMIO_LIMIT) return 0;
-    uint64_t addr = next_mmio_base;
-    next_mmio_base += size;
-    return addr;
-}
 
 uint64_t virtio_setup_bars(uint64_t base, uint8_t bar, uint64_t *mmio_start, uint64_t *mmio_size) {
     uint64_t bar_addr = pci_get_bar_address(base, 0x10, bar);

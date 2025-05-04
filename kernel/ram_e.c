@@ -59,6 +59,39 @@ uint64_t read(uint64_t addr) {
     return read64(addr);
 }
 
+#define PCI_MMIO_BASE   0x10010000
+#define PCI_MMIO_LIMIT  0x1FFFFFFF
+
+static uint64_t next_mmio_base = PCI_MMIO_BASE;
+
+uint64_t alloc_mmio_region(uint64_t size) {
+    size = (size + 0xFFF) & ~0xFFF;
+    if (next_mmio_base + size > PCI_MMIO_LIMIT){
+        panic_with_info("MMIO alloc overflow",next_mmio_base+size);
+        return 0;
+    }
+    uint64_t addr = next_mmio_base;
+    next_mmio_base += size;
+    return addr;
+}
+
+#define DMA_BASE   0x1000000
+#define DMA_LIMIT  0x2000000
+
+static uint64_t next_dma_base = DMA_BASE;
+
+uint64_t alloc_dma_region(uint64_t size) {
+    size = (size + (64 - 1)) & ~(64 - 1);
+    if (next_dma_base + size > DMA_LIMIT){
+        panic_with_info("DMA alloc overflow",next_dma_base+size);
+        return 0;
+    }
+    uint64_t addr = next_dma_base;
+    next_dma_base += size;
+    // memset((void*)addr,0,size);
+    return addr;
+}
+
 int memcmp(const void *s1, const void *s2, unsigned long n) {
     const unsigned char *a = s1;
     const unsigned char *b = s2;
