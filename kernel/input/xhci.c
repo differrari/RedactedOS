@@ -117,8 +117,8 @@ bool enable_xhci_interrupts(){
     xhci_interrupter* int0 = (xhci_interrupter*)(uintptr_t)(global_device.rt_base + 0x20);
     int0->iman |= 1;
 
-    uint64_t event_ring = palloc(MAX_TRB_AMOUNT * sizeof(trb));
-    uint64_t erst_addr = palloc(sizeof(erst_entry) * MAX_ERST_AMOUNT);
+    uint64_t event_ring = alloc_dma_region(MAX_TRB_AMOUNT * sizeof(trb));
+    uint64_t erst_addr = alloc_dma_region(sizeof(erst_entry) * MAX_ERST_AMOUNT);
     erst_entry* erst = (erst_entry*)erst_addr;
 
     erst->ring_base = event_ring;
@@ -311,6 +311,9 @@ void issue_command(uint64_t param, uint32_t status, uint32_t control){
     cmd->parameter = param;
     cmd->status = status;
     cmd->control = control | global_device.cycle_bit;
+    kprintfv("cmd_ring[0] param: %h", global_device.cmd_ring[0].parameter);
+    kprintfv("cmd_ring[0] status: %h", global_device.cmd_ring[0].status);
+    kprintfv("cmd_ring[0] control: %h", cmd->control);
     ring_doorbell(0, 0);
     kprintfv("cmd_ring[0] param: %h", global_device.cmd_ring[0].parameter);
     kprintfv("cmd_ring[0] status: %h", global_device.cmd_ring[0].status);
@@ -356,9 +359,7 @@ bool nec_input_init() {
 
     issue_command(0,0,TRB_TYPE_ENABLE_SLOT << 10);
 
-    // while (!(global_device.event_ring[0].control & global_device.cycle_bit)) {
-        // kprintf("Waiting for completion %h",global_device.event_ring[0].control);
-    // }
+    while (!(global_device.event_ring[0].control & global_device.cycle_bit));
 
     kprintf("Event TRB param: %h", global_device.event_ring[0].parameter);
     kprintf("Event TRB status: %h", global_device.event_ring[0].status);
@@ -439,7 +440,6 @@ bool nec_input_init() {
     kprintfv("TRB2 control = %h", ep0_ring[2].control);
 
     ring_doorbell(slot_id, 1);
-    kprintfv("Doorbell rung for EP0");
 
     while (!(global_device.event_ring[0].control & global_device.cycle_bit)) {
         kprintf("Waiting for descriptor %h", global_device.event_ring[0].control);
@@ -461,10 +461,10 @@ bool nec_input_init() {
     kprintf("2");
     
     for (int i = 0; i < 18 + 64; i += desc_buf[i]) {
-        kprintf("AB %i",i);
+        // kprintf("AB %i",i);
         if (desc_buf[i + 1] == 0x04) interface_number = desc_buf[i + 2];
         if (desc_buf[i + 1] == 0x05 && (desc_buf[i + 3] & 0x03) == 0x03) {
-            kprintf("A");
+            // kprintf("A");
             endpoint_address = desc_buf[i + 2];
             max_packet_size = desc_buf[i + 4] | (desc_buf[i + 5] << 8);
             interval = desc_buf[i + 6];

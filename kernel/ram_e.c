@@ -75,12 +75,13 @@ uint64_t alloc_mmio_region(uint64_t size) {
     return addr;
 }
 
-#define DMA_BASE   0x1000000
-#define DMA_LIMIT  0x2000000
+#define DMA_BASE   0x50010000
+#define DMA_LIMIT  0x5FFFFFFF
 
 static uint64_t next_dma_base = DMA_BASE;
 
 uint64_t alloc_dma_region(uint64_t size) {
+    return palloc(size);
     size = (size + (64 - 1)) & ~(64 - 1);
     if (next_dma_base + size > DMA_LIMIT){
         panic_with_info("DMA alloc overflow",next_dma_base+size);
