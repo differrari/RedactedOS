@@ -18,6 +18,9 @@
 #define MAX_TRB_AMOUNT 256
 #define MAX_ERST_AMOUNT 1
 
+#define TRB_TYPE_MASK 0xFC00
+#define TRB_TYPE_COMMAND_COMPLETION 0x21
+
 typedef struct {
     uint64_t parameter;
     uint32_t status;
@@ -58,6 +61,7 @@ typedef struct {
     uint64_t rt_base;
     trb* cmd_ring;
     int cmd_index;
+    int event_index;
     bool cycle_bit;
     trb* event_ring;
     uint8_t* key_buffer;
@@ -305,8 +309,18 @@ void issue_command(uint64_t param, uint32_t status, uint32_t control){
     cmd->parameter = param;
     cmd->status = status;
     cmd->control = control | global_device.cycle_bit;
+
+    uint64_t cmd_paddr = (uintptr_t)cmd;
     kprintfv("[xHCI] issuing command with control: %h", cmd->control);
     ring_doorbell(0, 0);
+    while (true) {
+        trb* ev = &global_device.event_ring[global_device.event_index];
+        if ((ev->control & TRB_TYPE_MASK) >> 10 == TRB_TYPE_COMMAND_COMPLETION &&
+            ev->parameter == (cmd_paddr & 0xFFFFFFFFFFFFFFFF)) {
+            global_device.event_index++;
+            break;
+        }
+    }
     //TODO: check for cycle.
 }
 
@@ -328,11 +342,11 @@ void submit_interrupt_in_trb(uint64_t ep_ring_addr, void* buf, uint32_t len) {
     trb* tr = (trb*)ep_ring_addr;
     tr[0].parameter = (uint64_t)(uintptr_t)buf;
     tr[0].status = len;
-    tr[0].control = (TRB_TYPE_TRANSFER << 10) | (1 << 5) | global_device.cycle_bit;
+    tr[0].control = (TRB_TYPE_TRANSFER << 10) | (1 << 5);
     ring_doorbell(1 /*slot_id*/, 2 /*EP2 IN*/);
 }
 
-bool nec_input_init() {
+bool xhci_input_init() {
     uint64_t addr = find_pci_device(0x1B36, 0xD);
     if (!addr){ 
         kprintf("[PCI] xHCI device not found");
@@ -347,8 +361,6 @@ bool nec_input_init() {
     kprintfv("[xHCI] usbcmd %h usbsts %h",global_device.op->usbcmd, global_device.op->usbsts);
 
     issue_command(0,0,TRB_TYPE_ENABLE_SLOT << 10);
-
-    while (!(global_device.event_ring[0].control & global_device.cycle_bit));
 
     kprintfv("[xHCI] Readback test event TRB param: %h", global_device.event_ring[0].parameter);
     kprintfv("[xHCI] Readback test event TRB status: %h", global_device.event_ring[0].status);
@@ -370,7 +382,7 @@ bool nec_input_init() {
     ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[slot_id] = (uint64_t)(uintptr_t)input_ctx;
     kprintfv("dcbaap[%d] = %h", slot_id, ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[slot_id]);
 
-    issue_command((uint64_t)input_ctx, slot_id << 24, TRB_TYPE_ADDRESS_DEV);
+    issue_command((uint64_t)input_ctx, 0, (slot_id << 24) | (TRB_TYPE_ADDRESS_DEV << 10));
     kprintfv("ADDRESS_DEV command issued");
 
     xhci_input_context* ctx = (xhci_input_context*)input_ctx;
