@@ -135,18 +135,12 @@ bool enable_xhci_interrupts(){
     kprintfv("[xHCI] ERSTSZ set to: %h", int0->erstsz);
     
     int0->erdp = event_ring;
-    kprintf("USBSTS is %h before",global_device.op->usbsts);
     int0->erstba = erst_addr;
     kprintfv("[xHCI] ERSTBA set to: %h", int0->erstba);
-    kprintf("USBSTS is %h after",global_device.op->usbsts);
     
     kprintfv("[xHCI] ERDP set to: %h", int0->erdp);
     
     int0->iman |= 1 << 1;//Enable interrupt
-    kprintfv("[xHCI] IMAN after enable: %h", int0->iman);
-    kprintfv("[xHCI] ERSTSZ readback: %h", int0->erstsz);
-    kprintfv("[xHCI] ERSTBA readback: %h", int0->erstba);
-    kprintfv("[xHCI] ERDP readback: %h", int0->erdp);
 
     global_device.op->usbsts = 1 << 3;
     int0->iman = 1;//Clear pending interrupts
@@ -291,7 +285,7 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
     kprintfv("[xHCI] interrupt configuration finished");
 
     xhci->op->usbcmd |= (1 << 2);//Interrupt enable
-    xhci->op->usbcmd |= 1;
+    xhci->op->usbcmd |= 1;//Run
     while ((xhci->op->usbsts & 0x1));
 
     kprintfv("[xHCI] Init complete with usbcmd %h",xhci->op->usbcmd);
@@ -302,7 +296,7 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
 
 static void ring_doorbell(uint32_t slot, uint32_t endpoint) {
     volatile uint32_t* db = (uint32_t*)(uintptr_t)(global_device.db_base + (slot << 2));
-    kprintf("Ringing doorbell at %h with value %h", global_device.db_base + (slot << 2),endpoint);
+    kprintfv("[xHCI] Ringing doorbell at %h with value %h", global_device.db_base + (slot << 2),endpoint);
     *db = endpoint;
 }
 
@@ -311,13 +305,8 @@ void issue_command(uint64_t param, uint32_t status, uint32_t control){
     cmd->parameter = param;
     cmd->status = status;
     cmd->control = control | global_device.cycle_bit;
-    kprintfv("cmd_ring[0] param: %h", global_device.cmd_ring[0].parameter);
-    kprintfv("cmd_ring[0] status: %h", global_device.cmd_ring[0].status);
-    kprintfv("cmd_ring[0] control: %h", cmd->control);
+    kprintfv("[xHCI] issuing command with control: %h", cmd->control);
     ring_doorbell(0, 0);
-    kprintfv("cmd_ring[0] param: %h", global_device.cmd_ring[0].parameter);
-    kprintfv("cmd_ring[0] status: %h", global_device.cmd_ring[0].status);
-    kprintfv("cmd_ring[0] control: %h", global_device.cmd_ring[0].control);
     //TODO: check for cycle.
 }
 
@@ -346,29 +335,29 @@ void submit_interrupt_in_trb(uint64_t ep_ring_addr, void* buf, uint32_t len) {
 bool nec_input_init() {
     uint64_t addr = find_pci_device(0x1B36, 0xD);
     if (!addr){ 
-        kprintf("[PCI] Input device not found");
+        kprintf("[PCI] xHCI device not found");
         return false;
     }
 
     if (!xhci_init(&global_device, addr)){
-        kprintf("Device initialization failed");
+        kprintf("xHCI device initialization failed");
         return false;
     }
 
-    kprintf("usbcmd %h usbsts %h",global_device.op->usbcmd, global_device.op->usbsts);
+    kprintfv("[xHCI] usbcmd %h usbsts %h",global_device.op->usbcmd, global_device.op->usbsts);
 
     issue_command(0,0,TRB_TYPE_ENABLE_SLOT << 10);
 
     while (!(global_device.event_ring[0].control & global_device.cycle_bit));
 
-    kprintf("Event TRB param: %h", global_device.event_ring[0].parameter);
-    kprintf("Event TRB status: %h", global_device.event_ring[0].status);
-    kprintf("Event TRB control: %h", global_device.event_ring[0].control);
+    kprintfv("[xHCI] Readback test event TRB param: %h", global_device.event_ring[0].parameter);
+    kprintfv("[xHCI] Readback test event TRB status: %h", global_device.event_ring[0].status);
+    kprintfv("[xHCI] Readback test event TRB control: %h", global_device.event_ring[0].control);
     uint32_t type = (global_device.event_ring[0].control >> 10) & 0x3F;
-    kprintf("Event TRB type: %h", type);
+    kprintfv("[xHCI] Readback test event TRB type: %h", type);
 
     uint32_t slot_id = (global_device.event_ring[0].status >> 24) & 0xFF;
-    kprintfv("Slot id %h", slot_id);
+    kprintfv("[xHCI] Slot id %h", slot_id);
 
     if (slot_id == 0){
         kprintf("[xHCI error]: Wrong slot id 0");
