@@ -72,40 +72,6 @@ void virtio_enable_verbose(){
         }\
     })
 
-uint64_t virtio_setup_bars(uint64_t base, uint8_t bar, uint64_t *mmio_start, uint64_t *mmio_size) {
-    uint64_t bar_addr = pci_get_bar_address(base, 0x10, bar);
-    kprintfv("[VIRTIO] Setting up GPU BAR@%h FROM BAR %i", bar_addr, bar);
-    
-    write32(bar_addr, 0xFFFFFFFF);
-    uint32_t bar_val = read32(bar_addr);
-    bar_val &= ~0xF;
-    
-    if (bar_val == 0 || bar_val == 0xFFFFFFF0) {
-        kprintfv("[VIRTIO] BAR size probing failed");
-        return 0;
-    }
-
-    uint64_t size = (uint64_t)(~bar_val + 1);
-    kprintfv("[VIRTIO] Calculated BAR size: %i", size);
-
-    uint64_t config_base = alloc_mmio_region(size);
-
-    *mmio_start = config_base;
-    *mmio_size = size;
-
-    write32(bar_addr, config_base & 0xFFFFFFFF);
-
-    bar_val = read32(bar_addr);
-
-    kprintfv("[VIRTIO] FINAL BAR value: %h", bar_val);
-
-    uint32_t cmd = read32(base + 0x4);
-    cmd |= 0x2;
-    write32(base + 0x4, cmd);
-
-    return (bar_val & ~0xF);
-}
-
 void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mmio_start, uint64_t *mmio_size) {
     uint64_t offset = read32(pci_addr + 0x34);
     while (offset) {
@@ -117,7 +83,7 @@ void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mm
         if (cap->cap_vndr == 0x9) {
             if (cap->cfg_type < VIRTIO_PCI_CAP_PCI_CFG && val == 0){
                 kprintfv("[VIRTIO] Setting up bar");
-                val = virtio_setup_bars(pci_addr, cap->bar, mmio_start, mmio_size);
+                val = pci_setup_bar(pci_addr, cap->bar, mmio_start, mmio_size);
                 kprintfv("[VIRTIO] Bar @ %h", val);
             }
 
@@ -142,6 +108,7 @@ void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mm
 }
 
 bool virtio_init_device(virtio_device *dev) {
+
     struct virtio_pci_common_cfg* cfg = dev->common_cfg;
 
     cfg->device_status = 0;

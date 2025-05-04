@@ -107,6 +107,8 @@ bool find_disk(){
         return false;
     }
 
+    pci_enable_device(addr);
+
     virtio_get_capabilities(&blk_dev, addr, &disk_device_address, &disk_device_size);
     if (!virtio_init_device(&blk_dev)) {
         kprintf("Failed initialization");
