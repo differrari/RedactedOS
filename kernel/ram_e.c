@@ -89,7 +89,7 @@ uint64_t alloc_dma_region(uint64_t size) {
     }
     uint64_t addr = next_dma_base;
     next_dma_base += size;
-    // memset((void*)addr,0,size);
+    memset((void*)addr,0,size);
     return addr;
 }
 
@@ -156,6 +156,7 @@ uint64_t talloc(uint64_t size) {
 
             uint64_t result = (uint64_t)*curr;
             *curr = (*curr)->next;
+            memset((void*)result, 0, size);
             return result;
         }
         curr = &(*curr)->next;
@@ -174,6 +175,7 @@ uint64_t talloc(uint64_t size) {
         uart_raw_putc('\n');
     }
 
+    memset((void*)result, 0, size);
     return result;
 }
 
@@ -204,6 +206,7 @@ uint64_t palloc(uint64_t size) {
         panic_with_info("Permanent allocator overflow", (uint64_t)&heap_limit);
     uint64_t result = next_free_perm_memory;
     next_free_perm_memory += aligned_size;
+    memset((void*)result, 0, size);
     return result;
 }
 

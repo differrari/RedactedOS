@@ -567,6 +567,8 @@ bool vgp_init(uint32_t width, uint32_t height) {
     default_width = width;
     default_height = height;
 
+    pci_enable_device(address);
+
     if (address > 0) {
         kprintf("VGP GPU detected at %h",address);
 
