@@ -21,6 +21,13 @@
 #define TRB_TYPE_MASK 0xFC00
 #define TRB_TYPE_COMMAND_COMPLETION 0x21
 
+#define TRB_TYPE_SETUP_STAGE 0x2
+#define TRB_TYPE_DATA_STAGE 0x3
+#define TRB_TYPE_STATUS_STAGE 0x4
+
+#define XHCI_USBSTS_HSE (1 << 2)
+#define XHCI_USBSTS_CE  (1 << 12)
+
 typedef struct {
     uint64_t parameter;
     uint32_t status;
@@ -53,6 +60,15 @@ typedef struct {
 }__attribute__((packed)) xhci_op_regs;
 
 typedef struct {
+    uint32_t iman;
+    uint32_t imod;
+    uint32_t erstsz;
+    uint32_t reserved;
+    uint64_t erstba;
+    uint64_t erdp;
+}__attribute__((packed)) xhci_interrupter;
+
+typedef struct {
     uint64_t mmio;
     uint64_t mmio_size;
     xhci_cap_regs* cap;
@@ -62,19 +78,12 @@ typedef struct {
     trb* cmd_ring;
     int cmd_index;
     int event_index;
-    bool cycle_bit;
+    bool command_cycle_bit;
+    bool event_cycle_bit;
     trb* event_ring;
     uint8_t* key_buffer;
+    xhci_interrupter* interrupter;
 } xhci_device;
-
-typedef struct {
-    uint32_t iman;
-    uint32_t imod;
-    uint32_t erstsz;
-    uint32_t reserved;
-    uint64_t erstba;
-    uint64_t erdp;
-}__attribute__((packed)) xhci_interrupter;
 
 typedef struct {
     uint64_t ring_base;
@@ -86,9 +95,116 @@ typedef struct {
     uint32_t drop_flags;
     uint32_t add_flags;
     uint64_t reserved[5];
-    uint32_t slot_ctx[8];
-    uint32_t ep0_ctx[8];
-} xhci_input_context;
+}__attribute__((packed)) xhci_input_control_context;
+
+typedef union
+{
+    struct 
+    {
+        uint32_t route_string: 20;
+        uint32_t speed: 4;
+        uint32_t rsvd : 1;
+        uint32_t mtt : 1;
+        uint32_t hub : 1;
+        uint32_t context_entries : 5;
+    };
+    uint32_t value;
+} slot_field0;
+
+typedef union
+{
+    struct 
+    {
+        uint16_t    max_exit_latency;
+        uint8_t     root_hub_port_num;
+        uint8_t     port_count;
+    };
+    uint32_t value;
+} slot_field1;
+
+typedef union
+{
+    struct 
+    {
+        uint32_t parent_hub_slot_id : 8;
+        uint32_t parent_port_number : 8;
+        uint32_t think_time : 2;
+        uint32_t rsvd : 4;
+        uint32_t interrupt_target : 10;
+    };
+    uint32_t value;
+} slot_field2;
+
+typedef union
+{
+    struct 
+    {
+        uint32_t device_address : 8;
+        uint32_t rsvd : 19;
+        uint32_t state : 5;//0 disabled, 1 default, 2 addressed, 3 configured
+    };
+    uint32_t value;
+} slot_field3;
+
+typedef union 
+{
+    struct {
+        uint32_t endpoint_state        : 3;
+        uint32_t rsvd0                 : 5;
+        uint32_t mult                  : 2;
+        uint32_t max_primary_streams   : 5;
+        uint32_t linear_stream_array   : 1;
+        uint32_t interval              : 8;
+        uint32_t max_esit_payload_hi   : 8;
+    };
+    uint32_t value;
+} endpoint_field0;
+
+typedef union 
+{
+    struct {
+        uint32_t rsvd1                 : 1;
+        uint32_t error_count             : 2;
+        uint32_t endpoint_type           : 3;
+        uint32_t rsvd2                   : 1;
+        uint32_t host_initiate_disable   : 1;
+        uint32_t max_burst_size          : 8;
+        uint32_t max_packet_size         : 16;
+    };
+    uint32_t value;
+} endpoint_field1;
+
+typedef union {
+    struct {
+        uint64_t dcs : 1;
+        uint64_t rsvd0 : 3;
+        uint64_t ring_ptr : 60;
+    };
+    uint64_t value;
+} endpoint_field23;
+
+typedef union 
+{
+    struct {
+        uint16_t average_trb_length;
+        uint16_t max_esit_payload_lo;
+    };
+    uint32_t value;
+} endpoint_field4;
+
+typedef struct {
+    xhci_input_control_context control_context;
+    slot_field0 slot_f0;
+    slot_field1 slot_f1;
+    slot_field2 slot_f2;
+    slot_field3 slot_f3;
+    uint32_t slot_rsvd[4];
+    endpoint_field0 endpoint_f0;
+    endpoint_field1 endpoint_f1;
+    endpoint_field23 endpoint_f23;
+    endpoint_field4 endpoint_f4;
+    uint32_t ep0_rsvd[3];
+}__attribute__((packed)) xhci_input_context;
 
 typedef struct __attribute__((packed)) {
     uint8_t bmRequestType;
@@ -116,10 +232,18 @@ void nec_enable_verbose(){
         }\
     })
 
-bool enable_xhci_interrupts(){
+bool xhci_check_fatal_error() {
+    uint32_t sts = global_device.op->usbsts;
+    if (sts & (XHCI_USBSTS_HSE | XHCI_USBSTS_CE)) {
+        kprintf("[xHCI ERROR] Fatal condition: USBSTS = %h", sts);
+        return true;
+    }
+    return false;
+}
+
+bool enable_xhci_events(){
     kprintfv("[xHCI] Allocating ERST");
-    xhci_interrupter* int0 = (xhci_interrupter*)(uintptr_t)(global_device.rt_base + 0x20);
-    int0->iman |= 1;
+    global_device.interrupter = (xhci_interrupter*)(uintptr_t)(global_device.rt_base + 0x20);
 
     uint64_t event_ring = alloc_dma_region(MAX_TRB_AMOUNT * sizeof(trb));
     uint64_t erst_addr = alloc_dma_region(sizeof(erst_entry) * MAX_ERST_AMOUNT);
@@ -134,23 +258,21 @@ bool enable_xhci_interrupts(){
 
     kprintfv("[xHCI] Interrupter register @ %h", global_device.rt_base + 0x20);
     
-    kprintfv("iman cleared %h",int0->iman);
-    int0->erstsz = 1;
-    kprintfv("[xHCI] ERSTSZ set to: %h", int0->erstsz);
+    global_device.interrupter->erstsz = 1;
+    kprintfv("[xHCI] ERSTSZ set to: %h", global_device.interrupter->erstsz);
     
-    int0->erdp = event_ring;
-    int0->erstba = erst_addr;
-    kprintfv("[xHCI] ERSTBA set to: %h", int0->erstba);
+    global_device.interrupter->erdp = event_ring | global_device.command_cycle_bit;
+    global_device.interrupter->erstba = erst_addr;
+    kprintfv("[xHCI] ERSTBA set to: %h", global_device.interrupter->erstba);
     
-    kprintfv("[xHCI] ERDP set to: %h", int0->erdp);
+    kprintfv("[xHCI] ERDP set to: %h", global_device.interrupter->erdp);
     
-    int0->iman |= 1 << 1;//Enable interrupt
+    global_device.interrupter->iman |= 1 << 1;//Enable interrupt
 
-    global_device.op->usbsts = 1 << 3;
-    int0->iman = 1;//Clear pending interrupts
+    global_device.op->usbsts = 1 << 3;//Enable interrupts
+    global_device.interrupter->iman |= 1;//Clear pending interrupts
 
-    return true;
-
+    return !xhci_check_fatal_error();
 }
 
 bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
@@ -243,7 +365,8 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
         kprintfv("[xHCI] Correct config value");
     }
 
-    xhci->cycle_bit = 1;
+    xhci->command_cycle_bit = 1;
+    xhci->event_cycle_bit = 1;
 
     uint32_t max_device_slots = xhci->cap->hcsparams1 & 0xFF;
 
@@ -279,22 +402,22 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
 
     xhci->cmd_ring = (trb*)command_ring;
     xhci->cmd_index = 0;
-    xhci->op->crcr = command_ring | xhci->cycle_bit;
+    xhci->op->crcr = command_ring | xhci->command_cycle_bit;
 
     kprintfv("[xHCI] command ring allocated at %h. crcr now %h",command_ring, xhci->op->crcr);
 
-    if (!enable_xhci_interrupts())
+    if (!enable_xhci_events())
         return false;
 
-    kprintfv("[xHCI] interrupt configuration finished");
+    kprintfv("[xHCI] event configuration finished");
 
     xhci->op->usbcmd |= (1 << 2);//Interrupt enable
     xhci->op->usbcmd |= 1;//Run
     while ((xhci->op->usbsts & 0x1));
 
-    kprintfv("[xHCI] Init complete with usbcmd %h",xhci->op->usbcmd);
+    kprintfv("[xHCI] Init complete with usbcmd %h, usbsts %h",xhci->op->usbcmd, xhci->op->usbsts);
 
-    return true;
+    return !xhci_check_fatal_error();
 }
 
 
@@ -304,46 +427,38 @@ static void ring_doorbell(uint32_t slot, uint32_t endpoint) {
     *db = endpoint;
 }
 
-void issue_command(uint64_t param, uint32_t status, uint32_t control){
+bool await_response(uint64_t command, uint32_t type){
+    while (true) {
+        if (xhci_check_fatal_error()){
+            kprintf("[xHCI error] USBSTS value %h",global_device.op->usbsts);
+            return false;
+        }
+        //We could optimize this by looking at which events we've already processed, but we risk skipping some
+        for (uint32_t event_index; event_index < MAX_TRB_AMOUNT; event_index++){
+            trb* ev = &global_device.event_ring[event_index];
+            if (!(ev->control & global_device.event_cycle_bit)) //TODO: implement a timeout
+                break;
+            kprintf("A response at %i ",event_index);
+            if ((ev->control & TRB_TYPE_MASK) >> 10 == type && ev->parameter == (command & 0xFFFFFFFFFFFFFFFF)){
+                kprintf("Received response %h", (ev->control >> 24) & 0xFF);
+                global_device.interrupter->iman |= 1;//Clear interrupts
+                return (ev->control >> 24) & 0xFF;
+            }
+        }
+    }
+}
+
+bool issue_command(uint64_t param, uint32_t status, uint32_t control){
     trb* cmd = &global_device.cmd_ring[global_device.cmd_index++];
     cmd->parameter = param;
     cmd->status = status;
-    cmd->control = control | global_device.cycle_bit;
+    cmd->control = control | global_device.command_cycle_bit;
 
-    uint64_t cmd_paddr = (uintptr_t)cmd;
+    uint64_t cmd_addr = (uintptr_t)cmd;
     kprintfv("[xHCI] issuing command with control: %h", cmd->control);
     ring_doorbell(0, 0);
-    while (true) {
-        trb* ev = &global_device.event_ring[global_device.event_index];
-        if ((ev->control & TRB_TYPE_MASK) >> 10 == TRB_TYPE_COMMAND_COMPLETION &&
-            ev->parameter == (cmd_paddr & 0xFFFFFFFFFFFFFFFF)) {
-            global_device.event_index++;
-            break;
-        }
-    }
+    return await_response(cmd_addr, TRB_TYPE_COMMAND_COMPLETION);
     //TODO: check for cycle.
-}
-
-void poll_xhci_events() {
-    trb* ev = &global_device.event_ring[0];
-    if (!(ev->control & global_device.cycle_bit)) return;
-
-    uint32_t type = (ev->control >> 10) & 0x3F;
-    if (type == TRB_TYPE_TRANSFER) {
-        uint8_t* data = (uint8_t*)(uintptr_t)(ev->parameter);
-        kprintf("[xHCI] Key data: %h", data[2]);
-        global_device.key_buffer = data;
-    }
-
-    // ev->control &= ~global_device.cycle_bit;
-}
-
-void submit_interrupt_in_trb(uint64_t ep_ring_addr, void* buf, uint32_t len) {
-    trb* tr = (trb*)ep_ring_addr;
-    tr[0].parameter = (uint64_t)(uintptr_t)buf;
-    tr[0].status = len;
-    tr[0].control = (TRB_TYPE_TRANSFER << 10) | (1 << 5);
-    ring_doorbell(1 /*slot_id*/, 2 /*EP2 IN*/);
 }
 
 bool xhci_input_init() {
@@ -358,15 +473,12 @@ bool xhci_input_init() {
         return false;
     }
 
-    kprintfv("[xHCI] usbcmd %h usbsts %h",global_device.op->usbcmd, global_device.op->usbsts);
+    kprintfv("[xHCI] detecting and activating the default device");
 
-    issue_command(0,0,TRB_TYPE_ENABLE_SLOT << 10);
-
-    kprintfv("[xHCI] Readback test event TRB param: %h", global_device.event_ring[0].parameter);
-    kprintfv("[xHCI] Readback test event TRB status: %h", global_device.event_ring[0].status);
-    kprintfv("[xHCI] Readback test event TRB control: %h", global_device.event_ring[0].control);
-    uint32_t type = (global_device.event_ring[0].control >> 10) & 0x3F;
-    kprintfv("[xHCI] Readback test event TRB type: %h", type);
+    if (!issue_command(0,0,TRB_TYPE_ENABLE_SLOT << 10)){
+        kprintf("[xHCI error] failed enable slot command");
+        return false;
+    }
 
     uint32_t slot_id = (global_device.event_ring[0].status >> 24) & 0xFF;
     kprintfv("[xHCI] Slot id %h", slot_id);
@@ -376,84 +488,111 @@ bool xhci_input_init() {
         return false;
     }
 
-    void* input_ctx = (void*)alloc_dma_region(0x1000);
-    kprintfv("input_ctx: %h", (uint64_t)(uintptr_t)input_ctx);
+    bool transfer_cycle_bit = 1;
 
-    ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[slot_id] = (uint64_t)(uintptr_t)input_ctx;
-    kprintfv("dcbaap[%d] = %h", slot_id, ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[slot_id]);
-
-    issue_command((uint64_t)input_ctx, 0, (slot_id << 24) | (TRB_TYPE_ADDRESS_DEV << 10));
-    kprintfv("ADDRESS_DEV command issued");
-
-    xhci_input_context* ctx = (xhci_input_context*)input_ctx;
-    ctx->add_flags = 0b11;
-    kprintfv("add_flags = %h", ctx->add_flags);
-
-    ctx->slot_ctx[0] = 1;
-    ctx->slot_ctx[1] = 0x03 << 27;
-    kprintfv("slot_ctx[0] = %h", ctx->slot_ctx[0]);
-    kprintfv("slot_ctx[1] = %h", ctx->slot_ctx[1]);
-
-    ctx->ep0_ctx[1] = (8 << 16) | (3 << 3);
-    ctx->ep0_ctx[2] = 0x200;
-    kprintfv("ep0_ctx[1] = %h", ctx->ep0_ctx[1]);
-    kprintfv("ep0_ctx[2] = %h", ctx->ep0_ctx[2]);
-
+    xhci_input_context* ctx = (xhci_input_context*)alloc_dma_region(0x1000);
+    
+    ctx->control_context.add_flags = 0b11;
+    
+    ctx->slot_f0.speed = 0;//Full Speed 0, hardcoded
+    ctx->slot_f0.context_entries = 1;
+    ctx->slot_f1.root_hub_port_num = 1;//Port id 1, hardcoded
+    
+    ctx->endpoint_f0.endpoint_state = 0;//Disabled
+    ctx->endpoint_f1.endpoint_type = 4;//Type = control
+    ctx->endpoint_f0.interval = 0;
+    ctx->endpoint_f1.error_count = 3;//3 errors allowed
+    ctx->endpoint_f1.max_packet_size = 8;//Packet size
     trb* ep0_ring = (trb*)alloc_dma_region(0x1000);
-    ctx->ep0_ctx[2] = (uint64_t)(uintptr_t)ep0_ring | 1;
-    kprintfv("ep0_ring = %h", (uint64_t)(uintptr_t)ep0_ring);
-    kprintfv("ep0_ctx[2] updated to = %h", ctx->ep0_ctx[2]);
+    ctx->endpoint_f23.dcs = transfer_cycle_bit;//Should use transfer cycle bit, but we're only using one for now
+    ctx->endpoint_f23.ring_ptr = (uintptr_t)ep0_ring;
+    ctx->endpoint_f4.average_trb_length = 8;
+    
+    ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[slot_id] = (uintptr_t)ctx;
+    if (!issue_command((uintptr_t)ctx, 0, (slot_id << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
+        kprintf("[xHCI error] failed addressing device at slot %h",slot_id);
+        return false;
+    }
+    kprintfv("[xHCI] ADDRESS_DEVICE command issued");
 
-    usb_setup_packet* setup = (usb_setup_packet*)alloc_dma_region(0x1000);
+    
+    usb_setup_packet* setup = (usb_setup_packet*)alloc_dma_region(sizeof(usb_setup_packet));
     *setup = (usb_setup_packet){
         .bmRequestType = 0x80,
         .bRequest = 6,
         .wValue = 0x0100,
         .wIndex = 0,
-        .wLength = 18
+        .wLength = 8
     };
-    kprintfv("setup TRB = %h", (uint64_t)(uintptr_t)setup);
-
-    ep0_ring[0] = (trb){
-        .parameter = (uint64_t)(uintptr_t)setup,
-        .status = 8,
-        .control = (TRB_TYPE_SETUP << 10) | global_device.cycle_bit
-    };
-    kprintfv("TRB0 param = %h", ep0_ring[0].parameter);
-    kprintfv("TRB0 status = %h", ep0_ring[0].status);
-    kprintfv("TRB0 control = %h", ep0_ring[0].control);
-
-    void* data_buf = (void*)alloc_dma_region(0x1000);
-    ep0_ring[1] = (trb){
-        .parameter = (uint64_t)(uintptr_t)data_buf,
-        .status = 18,
-        .control = (TRB_TYPE_NORMAL << 10) | (1 << 5) | global_device.cycle_bit
-    };
-    kprintfv("TRB1 param = %h", ep0_ring[1].parameter);
-    kprintfv("TRB1 status = %h", ep0_ring[1].status);
-    kprintfv("TRB1 control = %h", ep0_ring[1].control);
-
-    ep0_ring[2] = (trb){
-        .parameter = 0,
-        .status = 0,
-        .control = (TRB_TYPE_STATUS << 10) | global_device.cycle_bit
-    };
-    kprintfv("TRB2 control = %h", ep0_ring[2].control);
-
-    ring_doorbell(slot_id, 1);
-
-    while (!(global_device.event_ring[0].control & global_device.cycle_bit)) {
-        kprintf("Waiting for descriptor %h", global_device.event_ring[0].control);
-    }
     
-    uint32_t completion_code = (global_device.event_ring[0].control >> 24) & 0xFF;
-    if (completion_code != 1) { // 1 = Success
-        kprintf("Descriptor request failed, code: %h", completion_code);
+    trb* setup_trb = &ep0_ring[0];
+    setup_trb->parameter = (uintptr_t)setup;
+    setup_trb->status = sizeof(setup);
+    setup_trb->control = (TRB_TYPE_SETUP_STAGE << 10) | transfer_cycle_bit;
+    
+    void* device_desc_buf = (void*)alloc_dma_region(0x1000);
+    
+    kprintf("xHCI device descriptor buffer size %i",sizeof(device_desc_buf));
+    
+    uint8_t* desc_buf = (uint8_t*)device_desc_buf;
+    trb* data = &ep0_ring[1];
+    data->parameter = (uint64_t)(uintptr_t)device_desc_buf;
+    data->status = sizeof(device_desc_buf);
+    data->control = (TRB_TYPE_DATA_STAGE << 10) | (1 << 16) | transfer_cycle_bit; // DIR = IN
+    
+    //event data?
+    
+    trb* status_trb = &ep0_ring[2];
+    status_trb->parameter = 0;
+    status_trb->status = 0;
+    status_trb->control = (TRB_TYPE_STATUS_STAGE << 10) | transfer_cycle_bit;
+    
+    //event data 2
+    
+    uint32_t* slot_ctx = (uint32_t*)(uintptr_t)((uint64_t*)global_device.op->dcbaap)[slot_id];
+    kprintfv("slot_ctx[0]: %h", slot_ctx[0]);
+    kprintfv("slot_ctx[1]: %h", slot_ctx[1]);
+    
+    kprintf("%h - %h - %h",ep0_ring[0].control,ep0_ring[1].control,ep0_ring[2].control);
+    
+    ring_doorbell(slot_id, 1);
+    kprintfv("[xHCI] usbcmd %h usbsts %h",global_device.op->usbcmd, global_device.op->usbsts);
+
+    
+
+    if (await_response((uintptr_t)setup_trb, TRB_TYPE_TRANSFER) |
+    await_response((uintptr_t)data, TRB_TYPE_TRANSFER) |
+    await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
+        kprintf("[xHCI error] error fetching descriptor");
+    }
+
+    kprintf("[xHCI] EARLY RETURN");
+
+    return false;
+
+    if (!issue_command((uintptr_t)ctx, 0, (slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
+        kprintf("[xHCI error] failed configure endpoint on slot %h",slot_id);
         return false;
     }
-    // issue_command((uint64_t)(uintptr_t)ctx, slot_id << 24, TRB_TYPE_CONFIG_EP);
+
+    uint32_t* slot_ctx1 = (uint32_t*)(uintptr_t)((uint64_t*)global_device.op->dcbaap)[slot_id];
+    kprintfv("slot_ctx[0]: %h", slot_ctx1[0]);//Should not be 0, so address is most likely failing
+    kprintfv("slot_ctx[1]: %h", slot_ctx1[1]);
     
-    uint8_t* desc_buf = (uint8_t*)data_buf;
+    kprintfv("[xHCI] setup TRB = %h", (uint64_t)(uintptr_t)setup);
+
+    kprintfv("[xHCI] sent config ep command");
+    
+    kprintf("Responde received");
+
+    uint32_t completion_code = (global_device.event_ring[global_device.event_index].control >> 24) & 0xFF;
+    if (completion_code != 1) {
+        kprintf("Descriptor request failed, code: %h", completion_code);
+        return false;
+    } 
+    kprintf("Succeeded");
+    
+    
     uint8_t interface_number = 0;
     uint8_t endpoint_address = 0;
     uint16_t max_packet_size = 0;
@@ -461,42 +600,42 @@ bool xhci_input_init() {
     
     kprintf("2");
     
-    for (int i = 0; i < 18 + 64; i += desc_buf[i]) {
-        // kprintf("AB %i",i);
-        if (desc_buf[i + 1] == 0x04) interface_number = desc_buf[i + 2];
-        if (desc_buf[i + 1] == 0x05 && (desc_buf[i + 3] & 0x03) == 0x03) {
-            // kprintf("A");
-            endpoint_address = desc_buf[i + 2];
-            max_packet_size = desc_buf[i + 4] | (desc_buf[i + 5] << 8);
-            interval = desc_buf[i + 6];
-            break;
-        }
-    }
+    // for (int i = 0; i < 18 + 64; i += desc_buf[i]) {
+    //     // kprintf("AB %i",i);
+    //     if (desc_buf[i + 1] == 0x04) interface_number = desc_buf[i + 2];
+    //     if (desc_buf[i + 1] == 0x05 && (desc_buf[i + 3] & 0x03) == 0x03) {
+    //         // kprintf("A");
+    //         endpoint_address = desc_buf[i + 2];
+    //         max_packet_size = desc_buf[i + 4] | (desc_buf[i + 5] << 8);
+    //         interval = desc_buf[i + 6];
+    //         break;
+    //     }
+    // }
     kprintf("1");
-    static uint8_t key_buffer[4096] __attribute__((aligned(64)));
-    trb* ep_ring = (trb*)alloc_dma_region(0x1000);
-    ep_ring[0].parameter = (uint64_t)(uintptr_t)key_buffer;
-    ep_ring[0].status = sizeof(key_buffer);
-    ep_ring[0].control = (TRB_TYPE_TRANSFER << 10) | (1 << 5) | global_device.cycle_bit;
-    ring_doorbell(slot_id, 2);
+    // static uint8_t key_buffer[4096] __attribute__((aligned(64)));
+    // trb* ep_ring = (trb*)alloc_dma_region(0x1000);
+    // ep_ring[0].parameter = (uint64_t)(uintptr_t)key_buffer;
+    // ep_ring[0].status = sizeof(key_buffer);
+    // ep_ring[0].control = (TRB_TYPE_TRANSFER << 10) | (1 << 5) | global_device.cycle_bit;
+    // ring_doorbell(slot_id, 2);
     
     kprintf("3");
 
-    trb* intr_ring = (trb*)alloc_dma_region(0x1000);
-    global_device.event_ring[0].control = 0;
+    // trb* intr_ring = (trb*)alloc_dma_region(0x1000);
+    // global_device.event_ring[0].control = 0;
 
-    kprintf("4");
+    // kprintf("4");
 
-    global_device.cmd_index = 0;
+    // global_device.cmd_index = 0;
 
-    ctx->add_flags |= 1 << 2;
-    ctx->slot_ctx[0] |= (2 << 27); // now two contexts (EP0 + EP1)
+    // ctx->add_flags |= 1 << 2;
+    // ctx->slot_ctx[0] |= (2 << 27); // now two contexts (EP0 + EP1)
 
-    kprintf("5");
+    // kprintf("5");
 
-    ctx->ep0_ctx[0] = (endpoint_address & 0x7F) << 16;
-    ctx->ep0_ctx[1] = (max_packet_size << 16) | (3 << 3);
-    ctx->ep0_ctx[2] = (uint64_t)(uintptr_t)intr_ring | 1;
+    // ctx->ep0_ctx[0] = (endpoint_address & 0x7F) << 16;
+    // ctx->ep0_ctx[1] = (max_packet_size << 16) | (3 << 3);
+    // ctx->ep0_ctx[2] = (uint64_t)(uintptr_t)intr_ring | 1;
 
     kprintf("6");
 
@@ -507,12 +646,12 @@ bool xhci_input_init() {
 }
 
 bool nec_key_ready() {
-    return global_device.event_ring[0].control & global_device.cycle_bit;
+    return false;//global_device.event_ring[0].control & global_device.cycle_bit;
 }
 
 int nec_read_key() {
     // global_device.event_ring[0].control &= ~global_device.cycle_bit;
-    return global_device.key_buffer[2];
+    return 0;//global_device.key_buffer[2];
 }
 
 void test_keyboard_input() {
