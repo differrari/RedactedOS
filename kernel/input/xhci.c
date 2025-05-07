@@ -261,6 +261,23 @@ typedef struct __attribute__((packed)) {
     uint16_t wLength;
 } usb_setup_packet;
 
+typedef struct __attribute__((packed)) {
+    uint8_t  bLength;
+    uint8_t  bDescriptorType;
+    uint16_t bcdUSB;
+    uint8_t  bDeviceClass;
+    uint8_t  bDeviceSubClass;
+    uint8_t  bDeviceProtocol;
+    uint8_t  bMaxPacketSize0;
+    uint16_t idVendor;
+    uint16_t idProduct;
+    uint16_t bcdDevice;
+    uint8_t  iManufacturer;
+    uint8_t  iProduct;
+    uint8_t  iSerialNumber;
+    uint8_t  bNumConfigurations;
+} usb_device_descriptor;
+
 static trb transfer_ring[64]__attribute__((aligned(64)));
 
 static xhci_device global_device;
@@ -635,28 +652,31 @@ bool xhci_input_init() {
 
     kprintfv("[xHCI] ADDRESS_DEVICE command issued. Received package size %i",context->endpoint_f1.max_packet_size);
     
-    usb_setup_packet* setup = (usb_setup_packet*)alloc_dma_region(sizeof(usb_setup_packet));
-    *setup = (usb_setup_packet){
+    usb_setup_packet packet = {
         .bmRequestType = 0x80,
         .bRequest = 6,
-        .wValue = (3 << 8),
+        .wValue = (1 << 8),
         .wIndex = 0,
-        .wLength = 8
+        .wLength = 18//We're hardcoding this to 18, verified in the device. Once we refactor this code into proper functions, we'll need to get the descriptor twice, once as length 8, and get the first byte of that as the length for the second time
     };
     
+    
     trb* setup_trb = &ep0_ring[0];
-    setup_trb->parameter = (uintptr_t)setup;
-    setup_trb->status = sizeof(*setup);
+    memcpy(&setup_trb->parameter, &packet, sizeof(packet));
+    setup_trb->status = sizeof(usb_setup_packet);
     //bit 4 = chain
-    setup_trb->control = (1 << 16) | (TRB_TYPE_SETUP_STAGE << 10) | (1 << 6) | (1 << 4) |  transfer_cycle_bit;
+    setup_trb->control = (3 << 16) | (TRB_TYPE_SETUP_STAGE << 10) | (1 << 6) | (1 << 4) | transfer_cycle_bit;
+
+    kprintf("QEMU WILL TRY TO READ %h",setup_trb->parameter);
     
     void* device_desc_buf = (void*)alloc_dma_region(0x1000);
     
-    uint8_t* desc_buf = (uint8_t*)device_desc_buf;
+    
     trb* data = &ep0_ring[1];
     data->parameter = (uintptr_t)device_desc_buf;
-    data->status = setup->wLength;
-    data->control = (1 << 16) | (TRB_TYPE_DATA_STAGE << 10) | (1 << 4) | transfer_cycle_bit; // DIR = IN
+    data->status = packet.wLength;
+    //bit 16 = direction
+    data->control = (1 << 16) | (TRB_TYPE_DATA_STAGE << 10) | (0 << 4) | transfer_cycle_bit;
     
     trb* status_trb = &ep0_ring[2];
     status_trb->parameter = 0;
@@ -668,11 +688,28 @@ bool xhci_input_init() {
     
     ring_doorbell(slot_id, 1);
 
+    kprintf("Awaiting response of type %h at %h",TRB_TYPE_TRANSFER, (uintptr_t)status_trb);
     if (!await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
         kprintf("[xHCI error] error fetching descriptor");
     }
 
-    kprintf("[xHCI] EARLY RETURN");
+    uint8_t* desc_buf = (uint8_t*)device_desc_buf;
+    kprintf("[xHCI] EARLY RETURN WITH DESC %h",desc_buf[0]);
+    kprintf("[xHCI] EARLY RETURN WITH DESC %h",desc_buf[1]);
+    kprintf("[xHCI] EARLY RETURN WITH DESC %h",desc_buf[2]);
+
+    usb_device_descriptor* descriptor = (usb_device_descriptor*)device_desc_buf;
+
+    kprintf("[xHCI] Vendor %h",descriptor->idVendor);
+    kprintf("[xHCI] Product %h",descriptor->idProduct);
+    kprintf("[xHCI] USB version %h",descriptor->bcdUSB);
+    kprintf("[xHCI] EP0 Max Packet Size: %h", descriptor->bMaxPacketSize0);
+    kprintf("[xHCI] Configurations: %h", descriptor->bNumConfigurations);
+
+    for (int i = 0; i < 18; i++) {
+        kprintf("desc[%i] = %h", i, desc_buf[i]);
+    }
+
     return false;
 
     //Manually set the rest
