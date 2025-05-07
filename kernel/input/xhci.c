@@ -519,11 +519,15 @@ bool await_response(uint64_t command, uint32_t type){
             return false;
         }
         //We could optimize this by looking at which events we've already processed, but maybe we risk skipping some?
-        for (uint32_t event_index; event_index < MAX_TRB_AMOUNT; event_index++){
-            trb* ev = &global_device.event_ring[event_index];
+        for (global_device.event_index; global_device.event_index < MAX_TRB_AMOUNT; global_device.event_index++){
+            trb* ev = &global_device.event_ring[global_device.event_index];
             if (!(ev->control & global_device.event_cycle_bit)) //TODO: implement a timeout
                 break;
-            kprintf("[xHCI] A response at %i of type %h as a response to %h",event_index, (ev->control & TRB_TYPE_MASK) >> 10, ev->parameter);
+            kprintf("[xHCI] A response at %i of type %h as a response to %h",global_device.event_index, (ev->control & TRB_TYPE_MASK) >> 10, ev->parameter);
+            if (global_device.event_index == MAX_TRB_AMOUNT - 1){
+                global_device.event_index = 0;
+                global_device.event_cycle_bit = !global_device.event_cycle_bit;
+            }
             if ((ev->control & TRB_TYPE_MASK) >> 10 == type && (command == 0 || ev->parameter == (command & 0xFFFFFFFFFFFFFFFF))){
                 kprintfv("[xHCI] Received response %h", (ev->control >> 24) & 0xFF);
                 global_device.interrupter->erdp = (uintptr_t)ev | (1 << 3);//Inform of latest processed event
@@ -535,6 +539,19 @@ bool await_response(uint64_t command, uint32_t type){
     }
 }
 
+void make_ring_link_control(trb* ring, bool cycle){
+    ring[MAX_TRB_AMOUNT-1].control =
+        (TRB_TYPE_LINK << 10)
+      | (1 << 1)              // Toggle Cycle
+      | cycle;
+}
+
+void make_ring_link(trb* ring, bool cycle){
+    ring[MAX_TRB_AMOUNT-1].parameter = (uintptr_t)ring;
+    ring[MAX_TRB_AMOUNT-1].status = 0;
+    make_ring_link_control(ring, cycle);
+}
+
 bool issue_command(uint64_t param, uint32_t status, uint32_t control){
     trb* cmd = &global_device.cmd_ring[global_device.cmd_index++];
     cmd->parameter = param;
@@ -543,9 +560,13 @@ bool issue_command(uint64_t param, uint32_t status, uint32_t control){
 
     uint64_t cmd_addr = (uintptr_t)cmd;
     kprintfv("[xHCI] issuing command with control: %h", cmd->control);
+    if (global_device.cmd_index == MAX_TRB_AMOUNT - 1){
+        make_ring_link_control(global_device.cmd_ring, global_device.command_cycle_bit);
+        global_device.command_cycle_bit = !global_device.command_cycle_bit;
+        global_device.cmd_index = 0;
+    }
     ring_doorbell(0, 0);
     return await_response(cmd_addr, TRB_TYPE_COMMAND_COMPLETION);
-    //TODO: check for cycle.
 }
 
 uint16_t packet_size(uint16_t port_speed){
@@ -617,8 +638,12 @@ bool xhci_request_descriptor(xhci_usb_device *device, uint8_t type, uint16_t des
     status_trb->status = 0;
     //bit 5 = interrupt-on-completion
     status_trb->control = (TRB_TYPE_STATUS_STAGE << 10) | (1 << 5) | device->transfer_cycle_bit;
-    
-    uint32_t* slot_ctx = (uint32_t*)(uintptr_t)((uint64_t*)global_device.op->dcbaap)[device->slot_id];
+
+    if (device->transfer_index == MAX_TRB_AMOUNT - 1){
+        make_ring_link_control(device->transfer_ring, device->transfer_cycle_bit);
+        device->transfer_cycle_bit = !device->transfer_cycle_bit;
+        device->transfer_index = 0;
+    }
     
     ring_doorbell(device->slot_id, 1);
 
@@ -667,13 +692,6 @@ bool xhci_setup_device(uint16_t port){
     ctx->device_context.endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);//Packet size. Guessed from port speed
     
     device.transfer_ring = (trb*)alloc_dma_region(0x1000);
-
-    device.transfer_ring[MAX_TRB_AMOUNT-1].parameter = (uintptr_t)device.transfer_ring;
-    device.transfer_ring[MAX_TRB_AMOUNT-1].status = 0;
-    device.transfer_ring[MAX_TRB_AMOUNT-1].control =
-        (TRB_TYPE_LINK << 10)
-      | (1 << 1)              // Toggle Cycle
-      | device.transfer_cycle_bit;
 
     ctx->device_context.endpoint_f23.dcs = device.transfer_cycle_bit;
     ctx->device_context.endpoint_f23.ring_ptr = ((uintptr_t)device.transfer_ring) >> 4;
