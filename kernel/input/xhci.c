@@ -235,7 +235,6 @@ typedef union
 } endpoint_field4;
 
 typedef struct {
-    xhci_input_control_context control_context;
     slot_field0 slot_f0;
     slot_field1 slot_f1;
     slot_field2 slot_f2;
@@ -246,6 +245,11 @@ typedef struct {
     endpoint_field23 endpoint_f23;
     endpoint_field4 endpoint_f4;
     uint32_t ep0_rsvd[3];
+} xhci_device_context;
+
+typedef struct {
+    xhci_input_control_context control_context;
+    xhci_device_context device_context;
 } xhci_input_context;
 
 typedef struct __attribute__((packed)) {
@@ -597,19 +601,19 @@ bool xhci_input_init() {
     
     ctx->control_context.add_flags = 0b11;
     
-    ctx->slot_f0.speed = global_device.ports[port].portsc.port_speed;
-    ctx->slot_f0.context_entries = 1;
-    ctx->slot_f1.root_hub_port_num = port + 1;
+    ctx->device_context.slot_f0.speed = global_device.ports[port].portsc.port_speed;
+    ctx->device_context.slot_f0.context_entries = 1;
+    ctx->device_context.slot_f1.root_hub_port_num = port + 1;
     
-    ctx->endpoint_f0.endpoint_state = 0;//Disabled
-    ctx->endpoint_f1.endpoint_type = 4;//Type = control
-    ctx->endpoint_f0.interval = 0;
-    ctx->endpoint_f1.error_count = 3;//3 errors allowed
-    ctx->endpoint_f1.max_packet_size = packet_size(ctx->slot_f0.speed);//Packet size. Hardcoded for speed 0
+    ctx->device_context.endpoint_f0.endpoint_state = 0;//Disabled
+    ctx->device_context.endpoint_f1.endpoint_type = 4;//Type = control
+    ctx->device_context.endpoint_f0.interval = 0;
+    ctx->device_context.endpoint_f1.error_count = 3;//3 errors allowed
+    ctx->device_context.endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);//Packet size. Guessed from port speed
     trb* ep0_ring = (trb*)alloc_dma_region(0x1000);
-    ctx->endpoint_f23.dcs = transfer_cycle_bit;
-    ctx->endpoint_f23.ring_ptr = (uintptr_t)ep0_ring;
-    ctx->endpoint_f4.average_trb_length = 8;
+    ctx->device_context.endpoint_f23.dcs = transfer_cycle_bit;
+    ctx->device_context.endpoint_f23.ring_ptr = (uintptr_t)ep0_ring;
+    ctx->device_context.endpoint_f4.average_trb_length = 8;
 
     ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[slot_id] = (uintptr_t)output_ctx;
     if (!issue_command((uintptr_t)ctx, 0, (slot_id << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
@@ -618,13 +622,15 @@ bool xhci_input_init() {
     }
     kprintfv("[xHCI] ADDRESS_DEVICE command issued");
 
-    // ctx->control_context.drop_flags = 0;
-    // ctx->control_context.add_flags = 1 << 1;
+    ctx->control_context.drop_flags = 0;
+    ctx->control_context.add_flags = 1 << 1;
 
-    // if (!issue_command((uintptr_t)ctx, 0, (slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
-    //     kprintf("[xHCI error] failed configure endpoint on slot %h",slot_id);
-    //     return false;
-    // }
+    ctx->device_context.endpoint_f1.max_packet_size = 0;
+
+    if (!issue_command((uintptr_t)ctx, 0, (slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
+        kprintf("[xHCI error] failed configure endpoint on slot %h",slot_id);
+        return false;
+    }
     
     usb_setup_packet* setup = (usb_setup_packet*)alloc_dma_region(sizeof(usb_setup_packet));
     *setup = (usb_setup_packet){
