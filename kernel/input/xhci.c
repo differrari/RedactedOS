@@ -123,6 +123,7 @@ typedef struct {
     trb* event_ring;
     uint8_t* key_buffer;
     xhci_interrupter* interrupter;
+    uint64_t* dcbaa;
     uint16_t max_device_slots;
     uint16_t max_ports;
 } xhci_device;
@@ -435,12 +436,12 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
 
     uint32_t scratchpad_count = ((xhci->cap->hcsparams2 >> 27) & 0x1F);
 
-    uint64_t* dcbaap = (uint64_t *)dcbaap_addr;
+    xhci->dcbaa = (uint64_t *)dcbaap_addr;
 
     uint64_t* scratchpad_array = (uint64_t*)alloc_dma_region(scratchpad_count * sizeof(uint64_t));
     for (uint32_t i = 0; i < scratchpad_count; i++)
         scratchpad_array[i] = alloc_dma_region(0x1000);
-    dcbaap[0] = (uint64_t)scratchpad_array;
+    xhci->dcbaa[0] = (uint64_t)scratchpad_array;
 
     kprintfv("[xHCI] dcbaap assigned at %h with %i scratchpads",dcbaap_addr,scratchpad_count);
 
@@ -610,9 +611,18 @@ bool xhci_input_init() {
     ctx->device_context.endpoint_f0.interval = 0;
     ctx->device_context.endpoint_f1.error_count = 3;//3 errors allowed
     ctx->device_context.endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);//Packet size. Guessed from port speed
+    
     trb* ep0_ring = (trb*)alloc_dma_region(0x1000);
+
+    ep0_ring[63].parameter = (uintptr_t)ep0_ring;
+    ep0_ring[63].status = 0;
+    ep0_ring[63].control =
+        (TRB_TYPE_LINK << 10)
+      | (1 << 1)              // Toggle Cycle
+      | transfer_cycle_bit;
+
     ctx->device_context.endpoint_f23.dcs = transfer_cycle_bit;
-    ctx->device_context.endpoint_f23.ring_ptr = (uintptr_t)ep0_ring;
+    ctx->device_context.endpoint_f23.ring_ptr = ((uintptr_t)ep0_ring) >> 4;
     ctx->device_context.endpoint_f4.average_trb_length = 8;
 
     ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[slot_id] = (uintptr_t)output_ctx;
@@ -620,17 +630,10 @@ bool xhci_input_init() {
         kprintf("[xHCI error] failed addressing device at slot %h",slot_id);
         return false;
     }
-    kprintfv("[xHCI] ADDRESS_DEVICE command issued");
 
-    ctx->control_context.drop_flags = 0;
-    ctx->control_context.add_flags = 1 << 1;
+    xhci_device_context* context = (xhci_device_context*)(uintptr_t)(global_device.dcbaa[slot_id]);
 
-    ctx->device_context.endpoint_f1.max_packet_size = 0;
-
-    if (!issue_command((uintptr_t)ctx, 0, (slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
-        kprintf("[xHCI error] failed configure endpoint on slot %h",slot_id);
-        return false;
-    }
+    kprintfv("[xHCI] ADDRESS_DEVICE command issued. Received package size %i",context->endpoint_f1.max_packet_size);
     
     usb_setup_packet* setup = (usb_setup_packet*)alloc_dma_region(sizeof(usb_setup_packet));
     *setup = (usb_setup_packet){
@@ -643,7 +646,7 @@ bool xhci_input_init() {
     
     trb* setup_trb = &ep0_ring[0];
     setup_trb->parameter = (uintptr_t)setup;
-    setup_trb->status = sizeof(setup);
+    setup_trb->status = sizeof(*setup);
     //bit 4 = chain
     setup_trb->control = (1 << 16) | (TRB_TYPE_SETUP_STAGE << 10) | (1 << 6) | (1 << 4) |  transfer_cycle_bit;
     
@@ -651,7 +654,7 @@ bool xhci_input_init() {
     
     uint8_t* desc_buf = (uint8_t*)device_desc_buf;
     trb* data = &ep0_ring[1];
-    data->parameter = (uint64_t)(uintptr_t)device_desc_buf;
+    data->parameter = (uintptr_t)device_desc_buf;
     data->status = setup->wLength;
     data->control = (1 << 16) | (TRB_TYPE_DATA_STAGE << 10) | (1 << 4) | transfer_cycle_bit; // DIR = IN
     
@@ -670,12 +673,23 @@ bool xhci_input_init() {
     }
 
     kprintf("[xHCI] EARLY RETURN");
-
     return false;
+
+    //Manually set the rest
+    // ctx->control_context.drop_flags = 0;
+    // ctx->control_context.add_flags = 0b01;//1 << 1;
+    // ctx->device_context.slot_f0.context_entries = 1;
+
+    // ctx->device_context.endpoint_f1.max_packet_size = context->endpoint_f1.max_packet_size;
+
+    // if (!issue_command((uintptr_t)ctx, 0, (slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
+    //     kprintf("[xHCI error] failed configure endpoint on slot %h",slot_id);
+    //     return false;
+    // }
+
     
     // uint8_t interface_number = 0;
     // uint8_t endpoint_address = 0;
-    // uint16_t max_packet_size = 0;
     // uint8_t interval = 0;
     
     kprintf("2");
@@ -700,27 +714,6 @@ bool xhci_input_init() {
     // ring_doorbell(slot_id, 2);
     
     kprintf("3");
-
-    // trb* intr_ring = (trb*)alloc_dma_region(0x1000);
-    // global_device.event_ring[0].control = 0;
-
-    // kprintf("4");
-
-    // global_device.cmd_index = 0;
-
-    // ctx->add_flags |= 1 << 2;
-    // ctx->slot_ctx[0] |= (2 << 27); // now two contexts (EP0 + EP1)
-
-    // kprintf("5");
-
-    // ctx->ep0_ctx[0] = (endpoint_address & 0x7F) << 16;
-    // ctx->ep0_ctx[1] = (max_packet_size << 16) | (3 << 3);
-    // ctx->ep0_ctx[2] = (uint64_t)(uintptr_t)intr_ring | 1;
-
-    kprintf("6");
-
-
-    kprintf("7");
 
     return true;
 }
