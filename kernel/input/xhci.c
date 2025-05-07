@@ -116,8 +116,8 @@ typedef struct {
     uint64_t db_base;
     uint64_t rt_base;
     trb* cmd_ring;
-    int cmd_index;
-    int event_index;
+    uint32_t cmd_index;
+    uint32_t event_index;
     bool command_cycle_bit;
     bool event_cycle_bit;
     trb* event_ring;
@@ -127,6 +127,13 @@ typedef struct {
     uint16_t max_device_slots;
     uint16_t max_ports;
 } xhci_device;
+
+typedef struct {
+    bool transfer_cycle_bit;
+    uint32_t transfer_index;
+    trb* transfer_ring;
+    uint32_t slot_id;
+} xhci_usb_device;
 
 typedef struct {
     uint64_t ring_base;
@@ -262,8 +269,12 @@ typedef struct __attribute__((packed)) {
 } usb_setup_packet;
 
 typedef struct __attribute__((packed)) {
-    uint8_t  bLength;
-    uint8_t  bDescriptorType;
+    uint8_t bLength;
+    uint8_t bDescriptorType;
+} usb_descriptor_header ;
+
+typedef struct __attribute__((packed)) {
+    usb_descriptor_header header;
     uint16_t bcdUSB;
     uint8_t  bDeviceClass;
     uint8_t  bDeviceSubClass;
@@ -277,6 +288,14 @@ typedef struct __attribute__((packed)) {
     uint8_t  iSerialNumber;
     uint8_t  bNumConfigurations;
 } usb_device_descriptor;
+
+typedef struct __attribute__((packed)) {
+    usb_descriptor_header header;
+    uint16_t lang_ids[126];
+} usb_string_language_descriptor;
+
+#define USB_DEVICE_DESCRIPTOR 1
+#define USB_STRING_LANGUAGE_DESCRIPTOR 3
 
 static trb transfer_ring[64]__attribute__((aligned(64)));
 
@@ -569,6 +588,147 @@ bool reset_port(uint16_t port){
     return await_response(0, TRB_TYPE_PORT_STATUS_CHANGE);
 }
 
+bool xhci_request_descriptor(xhci_usb_device *device, uint8_t type, uint16_t descriptor_size, void *out_descriptor){
+    usb_setup_packet packet = {
+        .bmRequestType = 0x80,
+        .bRequest = 6,
+        .wValue = (type << 8),
+        .wIndex = 0,
+        .wLength = descriptor_size
+    };
+    
+    trb* setup_trb = &device->transfer_ring[device->transfer_index++];
+    memcpy(&setup_trb->parameter, &packet, sizeof(packet));
+    kprintf("Reading...");
+    setup_trb->status = sizeof(usb_setup_packet);
+    //bit 4 = chain
+    setup_trb->control = (3 << 16) | (TRB_TYPE_SETUP_STAGE << 10) | (1 << 6) | (1 << 4) | device->transfer_cycle_bit;
+
+    kprintf("QEMU WILL TRY TO READ %h",setup_trb->parameter);
+    
+    trb* data = &device->transfer_ring[device->transfer_index++];
+    data->parameter = (uintptr_t)out_descriptor;
+    data->status = packet.wLength;
+    //bit 16 = direction
+    data->control = (1 << 16) | (TRB_TYPE_DATA_STAGE << 10) | (0 << 4) | device->transfer_cycle_bit;
+    
+    trb* status_trb = &device->transfer_ring[device->transfer_index++];
+    status_trb->parameter = 0;
+    status_trb->status = 0;
+    //bit 5 = interrupt-on-completion
+    status_trb->control = (TRB_TYPE_STATUS_STAGE << 10) | (1 << 5) | device->transfer_cycle_bit;
+    
+    uint32_t* slot_ctx = (uint32_t*)(uintptr_t)((uint64_t*)global_device.op->dcbaap)[device->slot_id];
+    
+    ring_doorbell(device->slot_id, 1);
+
+    kprintf("Awaiting response of type %h at %h",TRB_TYPE_TRANSFER, (uintptr_t)status_trb);
+    if (!await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
+        kprintf("[xHCI error] error fetching descriptor");
+    }
+}
+
+bool xhci_setup_device(uint16_t port){
+
+    kprintfv("[xHCI] detecting and activating the default device at %i port. Resetting port...",port);
+    reset_port(port);
+    kprintfv("[xHCI] Port speed %i", (uint32_t)global_device.ports[port].portsc.port_speed);
+
+    if (!issue_command(0,0,TRB_TYPE_ENABLE_SLOT << 10)){
+        kprintf("[xHCI error] failed enable slot command");
+        return false;
+    }
+
+    xhci_usb_device device;
+
+    device.slot_id = (global_device.event_ring[0].status >> 24) & 0xFF;
+    kprintfv("[xHCI] Slot id %h", device.slot_id);
+
+    if (device.slot_id == 0){
+        kprintf("[xHCI error]: Wrong slot id 0");
+        return false;
+    }
+
+    device.transfer_cycle_bit = 1;
+
+    xhci_input_context* ctx = (xhci_input_context*)alloc_dma_region(0x1000);
+    void* output_ctx = (void*)alloc_dma_region(4096);
+    
+    ctx->control_context.add_flags = 0b11;
+    
+    ctx->device_context.slot_f0.speed = global_device.ports[port].portsc.port_speed;
+    ctx->device_context.slot_f0.context_entries = 1;
+    ctx->device_context.slot_f1.root_hub_port_num = port + 1;
+    
+    ctx->device_context.endpoint_f0.endpoint_state = 0;//Disabled
+    ctx->device_context.endpoint_f1.endpoint_type = 4;//Type = control
+    ctx->device_context.endpoint_f0.interval = 0;
+    ctx->device_context.endpoint_f1.error_count = 3;//3 errors allowed
+    ctx->device_context.endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);//Packet size. Guessed from port speed
+    
+    device.transfer_ring = (trb*)alloc_dma_region(0x1000);
+
+    device.transfer_ring[MAX_TRB_AMOUNT-1].parameter = (uintptr_t)device.transfer_ring;
+    device.transfer_ring[MAX_TRB_AMOUNT-1].status = 0;
+    device.transfer_ring[MAX_TRB_AMOUNT-1].control =
+        (TRB_TYPE_LINK << 10)
+      | (1 << 1)              // Toggle Cycle
+      | device.transfer_cycle_bit;
+
+    ctx->device_context.endpoint_f23.dcs = device.transfer_cycle_bit;
+    ctx->device_context.endpoint_f23.ring_ptr = ((uintptr_t)device.transfer_ring) >> 4;
+    ctx->device_context.endpoint_f4.average_trb_length = 8;
+
+    ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[device.slot_id] = (uintptr_t)output_ctx;
+    if (!issue_command((uintptr_t)ctx, 0, (device.slot_id << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
+        kprintf("[xHCI error] failed addressing device at slot %h",device.slot_id);
+        return false;
+    }
+
+    xhci_device_context* context = (xhci_device_context*)(uintptr_t)(global_device.dcbaa[device.slot_id]);
+
+    kprintfv("[xHCI] ADDRESS_DEVICE command issued. Received package size %i",context->endpoint_f1.max_packet_size);
+
+    void* device_desc_buf = (void*)alloc_dma_region(0x1000);
+    
+    if (!xhci_request_descriptor(&device, USB_DEVICE_DESCRIPTOR, 8, device_desc_buf)){
+        kprintf("[xHCI error] failed to get device descriptor");
+        return false;
+    }
+    usb_device_descriptor* descriptor = (usb_device_descriptor*)device_desc_buf;
+    if (descriptor->header.bLength == 0){
+        kprintf("[xHCI error] wrong descriptor size %i",descriptor->header.bLength);
+        return false;
+    }
+    kprintfv("[xHCI] device descriptor size %i",descriptor->header.bLength);
+    if (!xhci_request_descriptor(&device, USB_DEVICE_DESCRIPTOR, descriptor->header.bLength, device_desc_buf)){
+        kprintf("[xHCI error] failed to get full device descriptor");
+        return false;
+    }
+
+    kprintf("[xHCI] Vendor %h",descriptor->idVendor);
+    kprintf("[xHCI] Product %h",descriptor->idProduct);
+    kprintf("[xHCI] USB version %h",descriptor->bcdUSB);
+    kprintf("[xHCI] EP0 Max Packet Size: %h", descriptor->bMaxPacketSize0);
+    kprintf("[xHCI] Configurations: %h", descriptor->bNumConfigurations);
+
+    return false;
+
+    //Manually set the rest
+    // ctx->control_context.drop_flags = 0;
+    // ctx->control_context.add_flags = 0b01;//1 << 1;
+    // ctx->device_context.slot_f0.context_entries = 1;
+
+    // ctx->device_context.endpoint_f1.max_packet_size = context->endpoint_f1.max_packet_size;
+
+    // if (!issue_command((uintptr_t)ctx, 0, (slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
+    //     kprintf("[xHCI error] failed configure endpoint on slot %h",slot_id);
+    //     return false;
+    // }
+
+    return true;
+}
+
 bool xhci_input_init() {
     uint64_t addr = find_pci_device(0x1B36, 0xD);
     if (!addr){ 
@@ -595,164 +755,8 @@ bool xhci_input_init() {
         return false;
     }
 
-    kprintfv("[xHCI] detecting and activating the default device at %i port. Resetting port...",port);
-    reset_port(port);
-    kprintfv("[xHCI] Port speed %i", (uint32_t)global_device.ports[port].portsc.port_speed);
+    return xhci_setup_device(port);//Default device
 
-    if (!issue_command(0,0,TRB_TYPE_ENABLE_SLOT << 10)){
-        kprintf("[xHCI error] failed enable slot command");
-        return false;
-    }
-
-    uint32_t slot_id = (global_device.event_ring[0].status >> 24) & 0xFF;
-    kprintfv("[xHCI] Slot id %h", slot_id);
-
-    if (slot_id == 0){
-        kprintf("[xHCI error]: Wrong slot id 0");
-        return false;
-    }
-
-    bool transfer_cycle_bit = 1;
-
-    xhci_input_context* ctx = (xhci_input_context*)alloc_dma_region(0x1000);
-    void* output_ctx = (void*)alloc_dma_region(4096);
-    
-    ctx->control_context.add_flags = 0b11;
-    
-    ctx->device_context.slot_f0.speed = global_device.ports[port].portsc.port_speed;
-    ctx->device_context.slot_f0.context_entries = 1;
-    ctx->device_context.slot_f1.root_hub_port_num = port + 1;
-    
-    ctx->device_context.endpoint_f0.endpoint_state = 0;//Disabled
-    ctx->device_context.endpoint_f1.endpoint_type = 4;//Type = control
-    ctx->device_context.endpoint_f0.interval = 0;
-    ctx->device_context.endpoint_f1.error_count = 3;//3 errors allowed
-    ctx->device_context.endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);//Packet size. Guessed from port speed
-    
-    trb* ep0_ring = (trb*)alloc_dma_region(0x1000);
-
-    ep0_ring[63].parameter = (uintptr_t)ep0_ring;
-    ep0_ring[63].status = 0;
-    ep0_ring[63].control =
-        (TRB_TYPE_LINK << 10)
-      | (1 << 1)              // Toggle Cycle
-      | transfer_cycle_bit;
-
-    ctx->device_context.endpoint_f23.dcs = transfer_cycle_bit;
-    ctx->device_context.endpoint_f23.ring_ptr = ((uintptr_t)ep0_ring) >> 4;
-    ctx->device_context.endpoint_f4.average_trb_length = 8;
-
-    ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[slot_id] = (uintptr_t)output_ctx;
-    if (!issue_command((uintptr_t)ctx, 0, (slot_id << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
-        kprintf("[xHCI error] failed addressing device at slot %h",slot_id);
-        return false;
-    }
-
-    xhci_device_context* context = (xhci_device_context*)(uintptr_t)(global_device.dcbaa[slot_id]);
-
-    kprintfv("[xHCI] ADDRESS_DEVICE command issued. Received package size %i",context->endpoint_f1.max_packet_size);
-    
-    usb_setup_packet packet = {
-        .bmRequestType = 0x80,
-        .bRequest = 6,
-        .wValue = (1 << 8),
-        .wIndex = 0,
-        .wLength = 18//We're hardcoding this to 18, verified in the device. Once we refactor this code into proper functions, we'll need to get the descriptor twice, once as length 8, and get the first byte of that as the length for the second time
-    };
-    
-    
-    trb* setup_trb = &ep0_ring[0];
-    memcpy(&setup_trb->parameter, &packet, sizeof(packet));
-    setup_trb->status = sizeof(usb_setup_packet);
-    //bit 4 = chain
-    setup_trb->control = (3 << 16) | (TRB_TYPE_SETUP_STAGE << 10) | (1 << 6) | (1 << 4) | transfer_cycle_bit;
-
-    kprintf("QEMU WILL TRY TO READ %h",setup_trb->parameter);
-    
-    void* device_desc_buf = (void*)alloc_dma_region(0x1000);
-    
-    
-    trb* data = &ep0_ring[1];
-    data->parameter = (uintptr_t)device_desc_buf;
-    data->status = packet.wLength;
-    //bit 16 = direction
-    data->control = (1 << 16) | (TRB_TYPE_DATA_STAGE << 10) | (0 << 4) | transfer_cycle_bit;
-    
-    trb* status_trb = &ep0_ring[2];
-    status_trb->parameter = 0;
-    status_trb->status = 0;
-    //bit 5 = interrupt-on-completion
-    status_trb->control = (TRB_TYPE_STATUS_STAGE << 10) | (1 << 5) | transfer_cycle_bit;
-    
-    uint32_t* slot_ctx = (uint32_t*)(uintptr_t)((uint64_t*)global_device.op->dcbaap)[slot_id];
-    
-    ring_doorbell(slot_id, 1);
-
-    kprintf("Awaiting response of type %h at %h",TRB_TYPE_TRANSFER, (uintptr_t)status_trb);
-    if (!await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
-        kprintf("[xHCI error] error fetching descriptor");
-    }
-
-    uint8_t* desc_buf = (uint8_t*)device_desc_buf;
-    kprintf("[xHCI] EARLY RETURN WITH DESC %h",desc_buf[0]);
-    kprintf("[xHCI] EARLY RETURN WITH DESC %h",desc_buf[1]);
-    kprintf("[xHCI] EARLY RETURN WITH DESC %h",desc_buf[2]);
-
-    usb_device_descriptor* descriptor = (usb_device_descriptor*)device_desc_buf;
-
-    kprintf("[xHCI] Vendor %h",descriptor->idVendor);
-    kprintf("[xHCI] Product %h",descriptor->idProduct);
-    kprintf("[xHCI] USB version %h",descriptor->bcdUSB);
-    kprintf("[xHCI] EP0 Max Packet Size: %h", descriptor->bMaxPacketSize0);
-    kprintf("[xHCI] Configurations: %h", descriptor->bNumConfigurations);
-
-    for (int i = 0; i < 18; i++) {
-        kprintf("desc[%i] = %h", i, desc_buf[i]);
-    }
-
-    return false;
-
-    //Manually set the rest
-    // ctx->control_context.drop_flags = 0;
-    // ctx->control_context.add_flags = 0b01;//1 << 1;
-    // ctx->device_context.slot_f0.context_entries = 1;
-
-    // ctx->device_context.endpoint_f1.max_packet_size = context->endpoint_f1.max_packet_size;
-
-    // if (!issue_command((uintptr_t)ctx, 0, (slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
-    //     kprintf("[xHCI error] failed configure endpoint on slot %h",slot_id);
-    //     return false;
-    // }
-
-    
-    // uint8_t interface_number = 0;
-    // uint8_t endpoint_address = 0;
-    // uint8_t interval = 0;
-    
-    kprintf("2");
-    
-    // for (int i = 0; i < 18 + 64; i += desc_buf[i]) {
-    //     // kprintf("AB %i",i);
-    //     if (desc_buf[i + 1] == 0x04) interface_number = desc_buf[i + 2];
-    //     if (desc_buf[i + 1] == 0x05 && (desc_buf[i + 3] & 0x03) == 0x03) {
-    //         // kprintf("A");
-    //         endpoint_address = desc_buf[i + 2];
-    //         max_packet_size = desc_buf[i + 4] | (desc_buf[i + 5] << 8);
-    //         interval = desc_buf[i + 6];
-    //         break;
-    //     }
-    // }
-    kprintf("1");
-    // static uint8_t key_buffer[4096] __attribute__((aligned(64)));
-    // trb* ep_ring = (trb*)alloc_dma_region(0x1000);
-    // ep_ring[0].parameter = (uint64_t)(uintptr_t)key_buffer;
-    // ep_ring[0].status = sizeof(key_buffer);
-    // ep_ring[0].control = (TRB_TYPE_TRANSFER << 10) | (1 << 5) | global_device.cycle_bit;
-    // ring_doorbell(slot_id, 2);
-    
-    kprintf("3");
-
-    return true;
 }
 
 bool nec_key_ready() {
