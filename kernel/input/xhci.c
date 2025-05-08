@@ -291,6 +291,47 @@ typedef struct __attribute__((packed)) {
 
 typedef struct __attribute__((packed)) {
     usb_descriptor_header header;
+    uint16_t wTotalLength;
+    uint8_t bNumInterfaces;
+    uint8_t bConfigurationValue;
+    uint8_t iConfiguration;
+    uint8_t bmAttributes;
+    uint8_t bMaxPower;
+    uint8_t data[255];
+} usb_configuration_descriptor;
+
+typedef struct __attribute__((packed)) {
+    usb_descriptor_header header;
+    uint8_t bInterfaceNumber;
+    uint8_t bAlternateSetting;
+    uint8_t bNumEndpoints;
+    uint8_t bInterfaceClass;
+    uint8_t bInterfaceSubClass;
+    uint8_t bInterfaceProtocol;
+    uint8_t iInterface;
+} usb_interface_descriptor;
+
+typedef struct __attribute__((packed)) {
+    usb_descriptor_header header;
+    uint16_t bcdHID;
+    uint8_t  bCountryCode;
+    uint8_t  bNumDescriptors;
+    struct {
+        uint8_t  bDescriptorType;
+        uint16_t wDescriptorLength;
+    } __attribute__((packed)) desc[1];
+} usb_hid_descriptor;
+
+typedef struct __attribute__((packed)) {
+    usb_descriptor_header header;
+    uint8_t bEndpointAddress;
+    uint8_t bmAttributes;
+    uint16_t wMaxPacketSize;
+    uint8_t bInterval;
+} usb_endpoint_descriptor;
+
+typedef struct __attribute__((packed)) {
+    usb_descriptor_header header;
     uint16_t lang_ids[126];
 } usb_string_language_descriptor;
 
@@ -681,6 +722,39 @@ bool parse_string_descriptor_utf16le(const uint16_t* str_in, char* out_str, size
     return true;
 }
 
+bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_device *device){
+    uint16_t total_length = config->wTotalLength - config->header.bLength;
+
+    kprintfv("[xHCI] Config length %i (%i - %i)",total_length,config->wTotalLength,config->header.bLength);
+
+    for (int i = 0; i < total_length; i){
+        usb_descriptor_header* header = (usb_descriptor_header*)&config->data[i];
+        if (header->bLength == 0){
+            kprintf("Failed to get descriptor. Header size 0");
+            return false;
+        }
+        switch (header->bDescriptorType)
+        {
+        case 0x4: //Interface
+            kprintf("[xHCI implementation error] No parsing interfaces yet. Good to know we have one tho");
+            //Interface: get the interface descritor and add interface to the device (keep track in internal array)
+        break;
+        case 0x21://HID
+            kprintf("[xHCI implementation error] No parsing HID yet. Good to know we have one tho");
+            //HID: has subordinate descriptors. Iterate over them (bNumDescriptors) and if it's a report descriptor, get the latest interface and retrieve the descriptor from device via transfer (op x22) and set it as the interface's additional data
+        break;
+        case 0x5: //Endpoint
+            kprintf("[xHCI implementation error] No parsing endpoints yet. Good to know we have one tho");
+            //Endpoint: add endpoint to the latest interface's internal 
+        break;
+        }
+        i += header->bLength;
+    }
+
+    return true;
+    
+}
+
 bool xhci_setup_device(uint16_t port){
 
     kprintfv("[xHCI] detecting and activating the default device at %i port. Resetting port...",port);
@@ -779,6 +853,32 @@ bool xhci_setup_device(uint16_t port){
                 kprintf("[xHCI device] Serial: %s", (uint64_t)name);
             }
         }
+    }
+
+    usb_configuration_descriptor* config = (usb_configuration_descriptor*)alloc_dma_region(sizeof(usb_configuration_descriptor));
+    kprintf(">>> We have space for %i",sizeof(usb_configuration_descriptor));
+    if (!xhci_request_sized_descriptor(&device, USB_CONFIGURATION_DESCRIPTOR, 0, 0, 8, config)){
+        kprintf("[xHCI error] could not get config descriptor header");
+        return false;
+    }
+
+    kprintf(">>> Header length %i",config->header.bLength);
+
+    if (!xhci_request_sized_descriptor(&device, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->header.bLength, config)){
+        kprintf("[xHCI error] could not get full config descriptor");
+        return false;
+    }
+
+    kprintf(">>> Full length %i",config->wTotalLength);
+
+    if (!xhci_request_sized_descriptor(&device, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->wTotalLength, config)){
+        kprintf("[xHCI error] could not get full config descriptor");
+        return false;
+    }
+
+    if (!xhci_get_configuration(config, &device)){
+        kprintf("[xHCI error] failed to parse device configuration");
+        return false;
     }
 
     return false;
