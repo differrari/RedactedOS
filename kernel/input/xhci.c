@@ -294,22 +294,28 @@ typedef struct __attribute__((packed)) {
     uint16_t lang_ids[126];
 } usb_string_language_descriptor;
 
+typedef struct __attribute__((packed)){
+    usb_descriptor_header header;
+    uint16_t unicode_string[126];
+} usb_string_descriptor;
+
 #define USB_DEVICE_DESCRIPTOR 1
-#define USB_STRING_LANGUAGE_DESCRIPTOR 3
+#define USB_CONFIGURATION_DESCRIPTOR 2
+#define USB_STRING_DESCRIPTOR 3
 
 static trb transfer_ring[64]__attribute__((aligned(64)));
 
 static xhci_device global_device;
 
-static bool nec_verbose = false;
+static bool xhci_verbose = false;
 
-void nec_enable_verbose(){
-    nec_verbose = true;
+void xhci_enable_verbose(){
+    xhci_verbose = true;
 }
 
 #define kprintfv(fmt, ...) \
     ({ \
-        if (nec_verbose){\
+        if (xhci_verbose){\
             uint64_t _args[] = { __VA_ARGS__ }; \
             kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
         }\
@@ -523,7 +529,7 @@ bool await_response(uint64_t command, uint32_t type){
             trb* ev = &global_device.event_ring[global_device.event_index];
             if (!(ev->control & global_device.event_cycle_bit)) //TODO: implement a timeout
                 break;
-            kprintf("[xHCI] A response at %i of type %h as a response to %h",global_device.event_index, (ev->control & TRB_TYPE_MASK) >> 10, ev->parameter);
+            kprintfv("[xHCI] A response at %i of type %h as a response to %h",global_device.event_index, (ev->control & TRB_TYPE_MASK) >> 10, ev->parameter);
             if (global_device.event_index == MAX_TRB_AMOUNT - 1){
                 global_device.event_index = 0;
                 global_device.event_cycle_bit = !global_device.event_cycle_bit;
@@ -599,33 +605,30 @@ bool reset_port(uint16_t port){
     port_info->portsc.pec = 1;
     port_info->portsc.prc = 1;
 
-    //if usb3
+    //TODO: if usb3
     //portsc.wpr = 1;
     //else 
     port_info->portsc.pr = 1;
 
-    //read back after delay 
+    //TODO: read back after delay 
 
     return await_response(0, TRB_TYPE_PORT_STATUS_CHANGE);
 }
 
-bool xhci_request_descriptor(xhci_usb_device *device, uint8_t type, uint16_t descriptor_size, void *out_descriptor){
+bool xhci_request_sized_descriptor(xhci_usb_device *device, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor){
     usb_setup_packet packet = {
         .bmRequestType = 0x80,
         .bRequest = 6,
-        .wValue = (type << 8),
-        .wIndex = 0,
+        .wValue = (type << 8) | descriptor_index,
+        .wIndex = wIndex,
         .wLength = descriptor_size
     };
     
     trb* setup_trb = &device->transfer_ring[device->transfer_index++];
     memcpy(&setup_trb->parameter, &packet, sizeof(packet));
-    kprintf("Reading...");
     setup_trb->status = sizeof(usb_setup_packet);
-    //bit 4 = chain
+    //bit 4 = chain. Bit 16 direction (3 = IN, 2 = OUT, 0 = NO DATA)
     setup_trb->control = (3 << 16) | (TRB_TYPE_SETUP_STAGE << 10) | (1 << 6) | (1 << 4) | device->transfer_cycle_bit;
-
-    kprintf("QEMU WILL TRY TO READ %h",setup_trb->parameter);
     
     trb* data = &device->transfer_ring[device->transfer_index++];
     data->parameter = (uintptr_t)out_descriptor;
@@ -647,10 +650,35 @@ bool xhci_request_descriptor(xhci_usb_device *device, uint8_t type, uint16_t des
     
     ring_doorbell(device->slot_id, 1);
 
-    kprintf("Awaiting response of type %h at %h",TRB_TYPE_TRANSFER, (uintptr_t)status_trb);
+    kprintfv("Awaiting response of type %h at %h",TRB_TYPE_TRANSFER, (uintptr_t)status_trb);
     if (!await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
         kprintf("[xHCI error] error fetching descriptor");
     }
+    return true;
+}
+
+bool xhci_request_descriptor(xhci_usb_device *device, uint8_t type, uint16_t index, uint16_t wIndex, void *out_descriptor){
+    if (!xhci_request_sized_descriptor(device,type, index, wIndex, sizeof(usb_descriptor_header), out_descriptor)){
+        kprintf("[xHCI error] Failed to get descriptor header. Size %i", sizeof(usb_descriptor_header));
+        return false;
+    }
+    usb_descriptor_header* descriptor = (usb_descriptor_header*)out_descriptor;
+    if (descriptor->bLength == 0){
+        kprintf("[xHCI error] wrong descriptor size %i",descriptor->bLength);
+        return false;
+    }
+    return xhci_request_sized_descriptor(device, type, index, wIndex, descriptor->bLength, out_descriptor);
+}
+
+bool parse_string_descriptor_utf16le(const uint16_t* str_in, char* out_str, size_t max_len) {
+    size_t out_i = 0;
+    while (str_in[out_i] != 0 && out_i + 1 < max_len) {
+        uint16_t wc = str_in[out_i];
+        out_str[out_i] = (wc <= 0x7F) ? (char)wc : '?';
+        out_i++;
+    }
+    out_str[out_i] = '\0';
+    return true;
 }
 
 bool xhci_setup_device(uint16_t port){
@@ -707,28 +735,51 @@ bool xhci_setup_device(uint16_t port){
 
     kprintfv("[xHCI] ADDRESS_DEVICE command issued. Received package size %i",context->endpoint_f1.max_packet_size);
 
-    void* device_desc_buf = (void*)alloc_dma_region(0x1000);
+    usb_device_descriptor* descriptor = (usb_device_descriptor*)alloc_dma_region(sizeof(usb_device_descriptor));
     
-    if (!xhci_request_descriptor(&device, USB_DEVICE_DESCRIPTOR, 8, device_desc_buf)){
+    if (!xhci_request_descriptor(&device, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
         kprintf("[xHCI error] failed to get device descriptor");
         return false;
     }
-    usb_device_descriptor* descriptor = (usb_device_descriptor*)device_desc_buf;
-    if (descriptor->header.bLength == 0){
-        kprintf("[xHCI error] wrong descriptor size %i",descriptor->header.bLength);
-        return false;
-    }
-    kprintfv("[xHCI] device descriptor size %i",descriptor->header.bLength);
-    if (!xhci_request_descriptor(&device, USB_DEVICE_DESCRIPTOR, descriptor->header.bLength, device_desc_buf)){
-        kprintf("[xHCI error] failed to get full device descriptor");
-        return false;
+
+    usb_string_language_descriptor* lang_desc = (usb_string_language_descriptor*)alloc_dma_region(sizeof(usb_string_language_descriptor));
+
+    bool use_lang_desc = true;
+
+    if (!xhci_request_descriptor(&device, USB_STRING_DESCRIPTOR, 0, 0, lang_desc)){
+        kprintf("[xHCI warning] failed to get language descriptor");
+        use_lang_desc = false;
     }
 
-    kprintf("[xHCI] Vendor %h",descriptor->idVendor);
-    kprintf("[xHCI] Product %h",descriptor->idProduct);
-    kprintf("[xHCI] USB version %h",descriptor->bcdUSB);
-    kprintf("[xHCI] EP0 Max Packet Size: %h", descriptor->bMaxPacketSize0);
-    kprintf("[xHCI] Configurations: %h", descriptor->bNumConfigurations);
+    kprintfv("[xHCI] Vendor %h",descriptor->idVendor);
+    kprintfv("[xHCI] Product %h",descriptor->idProduct);
+    kprintfv("[xHCI] USB version %h",descriptor->bcdUSB);
+    kprintfv("[xHCI] EP0 Max Packet Size: %h", descriptor->bMaxPacketSize0);
+    kprintfv("[xHCI] Configurations: %h", descriptor->bNumConfigurations);
+    if (use_lang_desc){
+        uint16_t langid = lang_desc->lang_ids[0];
+        usb_string_descriptor* prod_name = (usb_string_descriptor*)alloc_dma_region(sizeof(usb_string_descriptor));
+        if (xhci_request_descriptor(&device, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){
+            char name[128];
+            if (parse_string_descriptor_utf16le(prod_name->unicode_string, name, sizeof(name))) {
+                kprintf("[xHCI device] Product name: %s", (uint64_t)name);
+            }
+        }
+        usb_string_descriptor* man_name = (usb_string_descriptor*)alloc_dma_region(sizeof(usb_string_descriptor));
+        if (xhci_request_descriptor(&device, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, man_name)){
+            char name[128];
+            if (parse_string_descriptor_utf16le(man_name->unicode_string, name, sizeof(name))) {
+                kprintf("[xHCI device] Manufacturer name: %s", (uint64_t)name);
+            }
+        }
+        usb_string_descriptor* ser_name = (usb_string_descriptor*)alloc_dma_region(sizeof(usb_string_descriptor));
+        if (xhci_request_descriptor(&device, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, ser_name)){
+            char name[128];
+            if (parse_string_descriptor_utf16le(ser_name->unicode_string, name, sizeof(name))) {
+                kprintf("[xHCI device] Serial: %s", (uint64_t)name);
+            }
+        }
+    }
 
     return false;
 
@@ -777,11 +828,11 @@ bool xhci_input_init() {
 
 }
 
-bool nec_key_ready() {
+bool xhci_key_ready() {
     return false;//global_device.event_ring[0].control & global_device.cycle_bit;
 }
 
-int nec_read_key() {
+int xhci_read_key() {
     // global_device.event_ring[0].control &= ~global_device.cycle_bit;
     return 0;//global_device.key_buffer[2];
 }
@@ -789,8 +840,8 @@ int nec_read_key() {
 void test_keyboard_input() {
     kprintf("[NEC] Waiting for input");
     while (true) {
-        if (nec_key_ready()) {
-            int ch = nec_read_key();
+        if (xhci_key_ready()) {
+            int ch = xhci_read_key();
             kprintf("Key: %c", ch);
         }
     }
