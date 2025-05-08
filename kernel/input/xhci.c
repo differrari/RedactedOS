@@ -129,19 +129,6 @@ typedef struct {
 } xhci_device;
 
 typedef struct {
-    bool transfer_cycle_bit;
-    uint32_t transfer_index;
-    bool endpoint_transfer_cycle_bit;
-    uint32_t endpoint_transfer_index;
-    trb* transfer_ring;
-    trb* endpoint_transfer_ring;
-    uint32_t slot_id;
-    uint8_t interface_protocol;//TODO: support multiple
-    uint16_t report_length;
-    uint8_t *report_descriptor;
- } xhci_usb_device;
-
-typedef struct {
     uint64_t ring_base;
     uint32_t ring_size;
     uint32_t reserved;
@@ -347,6 +334,20 @@ typedef struct __attribute__((packed)){
     usb_descriptor_header header;
     uint16_t unicode_string[126];
 } usb_string_descriptor;
+
+typedef struct {
+    bool transfer_cycle_bit;
+    uint32_t transfer_index;
+    bool endpoint_transfer_cycle_bit;
+    uint32_t endpoint_transfer_index;
+    trb* transfer_ring;
+    trb* endpoint_transfer_ring;
+    uint32_t slot_id;
+    uint8_t interface_protocol;//TODO: support multiple
+    uint16_t report_length;
+    uint8_t *report_descriptor;
+    xhci_input_context* ctx;
+ } xhci_usb_device;
 
 #define USB_DEVICE_DESCRIPTOR 1
 #define USB_CONFIGURATION_DESCRIPTOR 2
@@ -735,7 +736,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
 
     uint16_t interface_index = 0;
 
-    for (uint16_t i = 0; i < total_length; i){
+    for (uint16_t i = 0; i < total_length;){
         usb_descriptor_header* header = (usb_descriptor_header*)&config->data[i];
         if (header->bLength == 0){
             kprintf("Failed to get descriptor. Header size 0");
@@ -755,40 +756,35 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
         break;
         case 0x21://HID
             usb_hid_descriptor *hid = (usb_hid_descriptor *)&config->data[i];
-            kprintf("[xHCI] current i %h",config->data[i+6]);
-            kprintf("[xHCI] current j %h",(uintptr_t)&hid->descriptors[0].wDescriptorLength);
-            kprintf("[xHCI] value %h",hid->descriptors[0].wDescriptorLength);
             for (uint8_t j = 0; j < hid->bNumDescriptors; j++){
-                kprintf("[xHCI] HID descriptor %i: %h",j, hid->descriptors[j].bDescriptorType);
                 if (hid->descriptors[j].bDescriptorType == 0x22){//REPORT HID
-                    kprintf("Found report Length %i", hid->descriptors[j].wDescriptorLength);
-                    kprintf("Sending");
                     device->report_length = hid->descriptors[j].wDescriptorLength;
                     device->report_descriptor = (uint8_t*)alloc_dma_region(device->report_length);
                     xhci_request_descriptor(device, true, 0x22, 0, interface_index-1, device->report_descriptor);
                     kprintf("[xHCI] retrieved report descriptor of length %i at %h", device->report_length, (uintptr_t)device->report_descriptor);
                 }
             }
-            //HID: has subordinate descriptors. Iterate over them (bNumDescriptors) and if it's a report descriptor, get the latest interface and retrieve the descriptor from device via transfer (op x22) and set it as the interface's additional data
         break;
         case 0x5: //Endpoint
             usb_endpoint_descriptor *endpoint = (usb_endpoint_descriptor*)&config->data[i];
             kprintf("[xHCI] endpoint address %h",endpoint->bEndpointAddress);
             uint8_t ep_address = endpoint->bEndpointAddress;
             uint8_t ep_dir = (ep_address & 0x80) ? 1 : 0; // 1 IN, 0 OUT
-            uint8_t ep_num = ep_address & 0x0F;
+            uint8_t ep_num = ((ep_address & 0x0F) * 2) + ep_dir;
 
             uint8_t ep_type = endpoint->bmAttributes & 0x03; // 0 = Control, 1 = Iso, 2 = Bulk, 3 = Interrupt
-            kprintf("[xHCI] endpoint info. Direction %i type %i",ep_dir, ep_type);
+            kprintf("[xHCI] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
 
-            xhci_input_context* ctx = (xhci_input_context*)alloc_dma_region(0x1000);
+            xhci_input_context* ctx = device->ctx;
 
-            ctx->control_context.add_flags = 1; // Endpoint 1 (EP1 IN)
+            ctx->control_context.add_flags = (1 << 0) | (1 << ep_num);
             ctx->device_context.slot_f0.context_entries = 2; // 2 entries: EP0 + EP1
             ctx->device_context.endpoint_f0.interval = endpoint->bInterval;
-
+            
+            ctx->device_context.endpoint_f0.endpoint_state = 0;
             ctx->device_context.endpoint_f1.endpoint_type = ep_type;
             ctx->device_context.endpoint_f1.max_packet_size = endpoint->wMaxPacketSize;
+            ctx->device_context.endpoint_f4.max_esit_payload_lo = endpoint->wMaxPacketSize;
             ctx->device_context.endpoint_f1.error_count = 3;
 
             device->endpoint_transfer_ring = (trb*)alloc_dma_region(0x1000);
@@ -798,7 +794,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             ctx->device_context.endpoint_f23.ring_ptr = ((uintptr_t)device->endpoint_transfer_ring) >> 4;
             ctx->device_context.endpoint_f4.average_trb_length = 8;
 
-            if (!issue_command((uintptr_t)ctx, 0, (device->slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
+            if (!issue_command((uintptr_t)device->ctx, 0, (device->slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
                 kprintf("Failed to configure endpoint");
                 return false;
             }
@@ -834,7 +830,8 @@ bool xhci_setup_device(uint16_t port){
 
     device->transfer_cycle_bit = 1;
 
-    xhci_input_context* ctx = (xhci_input_context*)alloc_dma_region(0x1000);
+    xhci_input_context *ctx = (xhci_input_context*)alloc_dma_region(0x1000);
+    device->ctx = ctx;
     void* output_ctx = (void*)alloc_dma_region(4096);
     
     ctx->control_context.add_flags = 0b11;
@@ -857,7 +854,7 @@ bool xhci_setup_device(uint16_t port){
     ctx->device_context.endpoint_f4.average_trb_length = 8;
 
     ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[device->slot_id] = (uintptr_t)output_ctx;
-    if (!issue_command((uintptr_t)ctx, 0, (device->slot_id << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
+    if (!issue_command((uintptr_t)device->ctx, 0, (device->slot_id << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
         kprintf("[xHCI error] failed addressing device at slot %h",device->slot_id);
         return false;
     }
