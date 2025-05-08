@@ -241,11 +241,13 @@ typedef struct {
     slot_field2 slot_f2;
     slot_field3 slot_f3;
     uint32_t slot_rsvd[4];
-    endpoint_field0 endpoint_f0;
-    endpoint_field1 endpoint_f1;
-    endpoint_field23 endpoint_f23;
-    endpoint_field4 endpoint_f4;
-    uint32_t ep0_rsvd[3];
+    struct {
+        endpoint_field0 endpoint_f0;
+        endpoint_field1 endpoint_f1;
+        endpoint_field23 endpoint_f23;
+        endpoint_field4 endpoint_f4;
+        uint32_t ep_rsvd[3];
+    } endpoints[31]
 } xhci_device_context;
 
 typedef struct {
@@ -430,26 +432,6 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
     if (!(read16(pci_addr + 0x06) & (1 << 4))){
         kprintfv("[xHCI] Wrong capabilities list");
         return false;
-    }
-
-    uint8_t cap_ptr = read8(pci_addr + 0x34);
-    while (cap_ptr) {
-        uint8_t cap_id = read8(pci_addr + cap_ptr);
-        if (cap_id == 0x11) { // MSI-X
-            uint16_t msg_ctrl = read16(pci_addr + cap_ptr + 0x2);
-            msg_ctrl &= ~(1 << 15); // Clear MSI-X Enable bit
-            write16(pci_addr + cap_ptr + 0x2, msg_ctrl);
-            kprintf("MSI-X disabled");
-            break;
-        }
-        if (cap_id == 0x05) { // MSI
-            uint16_t msg_ctrl = read16(pci_addr + cap_ptr + 0x2);
-            msg_ctrl &= ~(1 << 0); // Clear MSI Enable bit
-            write16(pci_addr + cap_ptr + 0x2, msg_ctrl);
-            kprintf("MSI disabled");
-            break;
-        }
-        cap_ptr = read8(pci_addr + cap_ptr + 1); // Next capability
     }
 
     if (!pci_setup_bar(pci_addr, 0, &xhci->mmio, &xhci->mmio_size)){
@@ -779,22 +761,22 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
 
             ctx->control_context.add_flags = (1 << 0) | (1 << ep_num);
             ctx->device_context.slot_f0.context_entries = 2; // 2 entries: EP0 + EP1
-            ctx->device_context.endpoint_f0.interval = endpoint->bInterval;
+            ctx->device_context.endpoints[ep_num-1].endpoint_f0.interval = endpoint->bInterval;
             
-            ctx->device_context.endpoint_f0.endpoint_state = 0;
-            ctx->device_context.endpoint_f1.endpoint_type = ep_type;
-            ctx->device_context.endpoint_f1.max_packet_size = endpoint->wMaxPacketSize;
-            ctx->device_context.endpoint_f4.max_esit_payload_lo = endpoint->wMaxPacketSize;
-            ctx->device_context.endpoint_f1.error_count = 3;
+            ctx->device_context.endpoints[ep_num-1].endpoint_f0.endpoint_state = 0;
+            ctx->device_context.endpoints[ep_num-1].endpoint_f1.endpoint_type = ep_type;
+            ctx->device_context.endpoints[ep_num-1].endpoint_f1.max_packet_size = endpoint->wMaxPacketSize;
+            ctx->device_context.endpoints[ep_num-1].endpoint_f4.max_esit_payload_lo = endpoint->wMaxPacketSize;
+            ctx->device_context.endpoints[ep_num-1].endpoint_f1.error_count = 3;
 
             device->endpoint_transfer_ring = (trb*)alloc_dma_region(0x1000);
             device->endpoint_transfer_cycle_bit = 1;
             make_ring_link(device->endpoint_transfer_ring, device->endpoint_transfer_cycle_bit);
-            ctx->device_context.endpoint_f23.dcs = device->endpoint_transfer_cycle_bit;
-            ctx->device_context.endpoint_f23.ring_ptr = ((uintptr_t)device->endpoint_transfer_ring) >> 4;
-            ctx->device_context.endpoint_f4.average_trb_length = 8;
+            ctx->device_context.endpoints[ep_num-1].endpoint_f23.dcs = device->endpoint_transfer_cycle_bit;
+            ctx->device_context.endpoints[ep_num-1].endpoint_f23.ring_ptr = ((uintptr_t)device->endpoint_transfer_ring) >> 4;
+            ctx->device_context.endpoints[ep_num-1].endpoint_f4.average_trb_length = 8;
 
-            if (!issue_command((uintptr_t)device->ctx, 0, (device->slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
+            if (!issue_command((uintptr_t)ctx, 0, (device->slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
                 kprintf("Failed to configure endpoint");
                 return false;
             }
@@ -840,18 +822,18 @@ bool xhci_setup_device(uint16_t port){
     ctx->device_context.slot_f0.context_entries = 1;
     ctx->device_context.slot_f1.root_hub_port_num = port + 1;
     
-    ctx->device_context.endpoint_f0.endpoint_state = 0;//Disabled
-    ctx->device_context.endpoint_f1.endpoint_type = 4;//Type = control
-    ctx->device_context.endpoint_f0.interval = 0;
-    ctx->device_context.endpoint_f1.error_count = 3;//3 errors allowed
-    ctx->device_context.endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);//Packet size. Guessed from port speed
+    ctx->device_context.endpoints[0].endpoint_f0.endpoint_state = 0;//Disabled
+    ctx->device_context.endpoints[0].endpoint_f1.endpoint_type = 4;//Type = control
+    ctx->device_context.endpoints[0].endpoint_f0.interval = 0;
+    ctx->device_context.endpoints[0].endpoint_f1.error_count = 3;//3 errors allowed
+    ctx->device_context.endpoints[0].endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);//Packet size. Guessed from port speed
     
     device->transfer_ring = (trb*)alloc_dma_region(0x1000);
     make_ring_link(device->transfer_ring, device->transfer_cycle_bit);
 
-    ctx->device_context.endpoint_f23.dcs = device->transfer_cycle_bit;
-    ctx->device_context.endpoint_f23.ring_ptr = ((uintptr_t)device->transfer_ring) >> 4;
-    ctx->device_context.endpoint_f4.average_trb_length = 8;
+    ctx->device_context.endpoints[0].endpoint_f23.dcs = device->transfer_cycle_bit;
+    ctx->device_context.endpoints[0].endpoint_f23.ring_ptr = ((uintptr_t)device->transfer_ring) >> 4;
+    ctx->device_context.endpoints[0].endpoint_f4.average_trb_length = 8;
 
     ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[device->slot_id] = (uintptr_t)output_ctx;
     if (!issue_command((uintptr_t)device->ctx, 0, (device->slot_id << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
@@ -861,7 +843,7 @@ bool xhci_setup_device(uint16_t port){
 
     xhci_device_context* context = (xhci_device_context*)(uintptr_t)(global_device.dcbaa[device->slot_id]);
 
-    kprintfv("[xHCI] ADDRESS_DEVICE command issued. Received package size %i",context->endpoint_f1.max_packet_size);
+    kprintfv("[xHCI] ADDRESS_DEVICE command issued. Received package size %i",context->endpoints[0].endpoint_f1.max_packet_size);
 
     usb_device_descriptor* descriptor = (usb_device_descriptor*)alloc_dma_region(sizeof(usb_device_descriptor));
     
@@ -934,20 +916,6 @@ bool xhci_setup_device(uint16_t port){
         kprintf("[xHCI error] failed to parse device configuration");
         return false;
     }
-
-    return false;
-
-    //Manually set the rest
-    // ctx->control_context.drop_flags = 0;
-    // ctx->control_context.add_flags = 0b01;//1 << 1;
-    // ctx->device_context.slot_f0.context_entries = 1;
-
-    // ctx->device_context.endpoint_f1.max_packet_size = context->endpoint_f1.max_packet_size;
-
-    // if (!issue_command((uintptr_t)ctx, 0, (slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
-    //     kprintf("[xHCI error] failed configure endpoint on slot %h",slot_id);
-    //     return false;
-    // }
 
     return true;
 }
