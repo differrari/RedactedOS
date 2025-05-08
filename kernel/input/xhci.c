@@ -133,6 +133,9 @@ typedef struct {
     uint32_t transfer_index;
     trb* transfer_ring;
     uint32_t slot_id;
+    uint8_t interface_protocol;//TODO: support multiple
+    uint16_t report_length;
+    uint8_t *report_descriptor;
 } xhci_usb_device;
 
 typedef struct {
@@ -318,8 +321,9 @@ typedef struct __attribute__((packed)) {
     uint8_t  bNumDescriptors;
     struct {
         uint8_t  bDescriptorType;
-        uint16_t wDescriptorLength;
-    } __attribute__((packed)) desc[1];
+        uint8_t wDescriptorLength;
+    }__attribute__((packed)) descriptors[1];
+#warning wDescriptorLength is supposed to be 16, but for some reason the descriptor from usb-kbd is 8. We'll need to fix this once we do a real device
 } usb_hid_descriptor;
 
 typedef struct __attribute__((packed)) {
@@ -343,8 +347,6 @@ typedef struct __attribute__((packed)){
 #define USB_DEVICE_DESCRIPTOR 1
 #define USB_CONFIGURATION_DESCRIPTOR 2
 #define USB_STRING_DESCRIPTOR 3
-
-static trb transfer_ring[64]__attribute__((aligned(64)));
 
 static xhci_device global_device;
 
@@ -656,14 +658,16 @@ bool reset_port(uint16_t port){
     return await_response(0, TRB_TYPE_PORT_STATUS_CHANGE);
 }
 
-bool xhci_request_sized_descriptor(xhci_usb_device *device, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor){
+bool xhci_request_sized_descriptor(xhci_usb_device *device, bool interface, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor){
     usb_setup_packet packet = {
-        .bmRequestType = 0x80,
+        .bmRequestType = 0x80 | interface,
         .bRequest = 6,
         .wValue = (type << 8) | descriptor_index,
         .wIndex = wIndex,
         .wLength = descriptor_size
     };
+
+    kprintf("Sending packet %h",packet.bmRequestType);
     
     trb* setup_trb = &device->transfer_ring[device->transfer_index++];
     memcpy(&setup_trb->parameter, &packet, sizeof(packet));
@@ -698,8 +702,8 @@ bool xhci_request_sized_descriptor(xhci_usb_device *device, uint8_t type, uint16
     return true;
 }
 
-bool xhci_request_descriptor(xhci_usb_device *device, uint8_t type, uint16_t index, uint16_t wIndex, void *out_descriptor){
-    if (!xhci_request_sized_descriptor(device,type, index, wIndex, sizeof(usb_descriptor_header), out_descriptor)){
+bool xhci_request_descriptor(xhci_usb_device *device, bool interface, uint8_t type, uint16_t index, uint16_t wIndex, void *out_descriptor){
+    if (!xhci_request_sized_descriptor(device, interface, type, index, wIndex, sizeof(usb_descriptor_header), out_descriptor)){
         kprintf("[xHCI error] Failed to get descriptor header. Size %i", sizeof(usb_descriptor_header));
         return false;
     }
@@ -708,7 +712,7 @@ bool xhci_request_descriptor(xhci_usb_device *device, uint8_t type, uint16_t ind
         kprintf("[xHCI error] wrong descriptor size %i",descriptor->bLength);
         return false;
     }
-    return xhci_request_sized_descriptor(device, type, index, wIndex, descriptor->bLength, out_descriptor);
+    return xhci_request_sized_descriptor(device, interface, type, index, wIndex, descriptor->bLength, out_descriptor);
 }
 
 bool parse_string_descriptor_utf16le(const uint16_t* str_in, char* out_str, size_t max_len) {
@@ -727,7 +731,9 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
 
     kprintfv("[xHCI] Config length %i (%i - %i)",total_length,config->wTotalLength,config->header.bLength);
 
-    for (int i = 0; i < total_length; i){
+    uint16_t interface_index = 0;
+
+    for (uint16_t i = 0; i < total_length; i){
         usb_descriptor_header* header = (usb_descriptor_header*)&config->data[i];
         if (header->bLength == 0){
             kprintf("Failed to get descriptor. Header size 0");
@@ -736,15 +742,37 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
         switch (header->bDescriptorType)
         {
         case 0x4: //Interface
-            kprintf("[xHCI implementation error] No parsing interfaces yet. Good to know we have one tho");
-            //Interface: get the interface descritor and add interface to the device (keep track in internal array)
+            usb_interface_descriptor *interface = (usb_interface_descriptor *)&config->data[i];
+            if (interface->bInterfaceClass != 0x3){
+                kprintf("[xHCI implementation error] non-hid devices not supported yet");
+                return false;
+            }
+            kprintfv("[xHCI] interface protocol %h",interface->bInterfaceProtocol);
+            device->interface_protocol = interface->bInterfaceProtocol;
+            interface_index++;
         break;
         case 0x21://HID
-            kprintf("[xHCI implementation error] No parsing HID yet. Good to know we have one tho");
+            usb_hid_descriptor *hid = (usb_hid_descriptor *)&config->data[i];
+            kprintf("[xHCI] current i %h",config->data[i+6]);
+            kprintf("[xHCI] current j %h",(uintptr_t)&hid->descriptors[0].wDescriptorLength);
+            kprintf("[xHCI] value %h",hid->descriptors[0].wDescriptorLength);
+            for (uint8_t j = 0; j < hid->bNumDescriptors; j++){
+                kprintf("[xHCI] HID descriptor %i: %h",j, hid->descriptors[j].bDescriptorType);
+                if (hid->descriptors[j].bDescriptorType == 0x22){//REPORT HID
+                    kprintf("Found report Length %i", hid->descriptors[j].wDescriptorLength);
+                    kprintf("Sending");
+                    device->report_length = hid->descriptors[j].wDescriptorLength;
+                    device->report_descriptor = (uint8_t*)alloc_dma_region(device->report_length);
+                    xhci_request_descriptor(device, true, 0x22, 0, interface_index-1, device->report_descriptor);
+                    kprintf("[xHCI] retrieved report descriptor of length %i at %h", device->report_length, (uintptr_t)device->report_descriptor);
+                }
+            }
             //HID: has subordinate descriptors. Iterate over them (bNumDescriptors) and if it's a report descriptor, get the latest interface and retrieve the descriptor from device via transfer (op x22) and set it as the interface's additional data
         break;
         case 0x5: //Endpoint
             kprintf("[xHCI implementation error] No parsing endpoints yet. Good to know we have one tho");
+            usb_endpoint_descriptor *endpoint = (usb_endpoint_descriptor*)&config->data[i];
+            kprintf("[xHCI] endpoint address %h",endpoint->bEndpointAddress);
             //Endpoint: add endpoint to the latest interface's internal 
         break;
         }
@@ -811,7 +839,7 @@ bool xhci_setup_device(uint16_t port){
 
     usb_device_descriptor* descriptor = (usb_device_descriptor*)alloc_dma_region(sizeof(usb_device_descriptor));
     
-    if (!xhci_request_descriptor(&device, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
+    if (!xhci_request_descriptor(&device, false, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
         kprintf("[xHCI error] failed to get device descriptor");
         return false;
     }
@@ -820,7 +848,7 @@ bool xhci_setup_device(uint16_t port){
 
     bool use_lang_desc = true;
 
-    if (!xhci_request_descriptor(&device, USB_STRING_DESCRIPTOR, 0, 0, lang_desc)){
+    if (!xhci_request_descriptor(&device, false, USB_STRING_DESCRIPTOR, 0, 0, lang_desc)){
         kprintf("[xHCI warning] failed to get language descriptor");
         use_lang_desc = false;
     }
@@ -833,21 +861,21 @@ bool xhci_setup_device(uint16_t port){
     if (use_lang_desc){
         uint16_t langid = lang_desc->lang_ids[0];
         usb_string_descriptor* prod_name = (usb_string_descriptor*)alloc_dma_region(sizeof(usb_string_descriptor));
-        if (xhci_request_descriptor(&device, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){
+        if (xhci_request_descriptor(&device, false, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){
             char name[128];
             if (parse_string_descriptor_utf16le(prod_name->unicode_string, name, sizeof(name))) {
                 kprintf("[xHCI device] Product name: %s", (uint64_t)name);
             }
         }
         usb_string_descriptor* man_name = (usb_string_descriptor*)alloc_dma_region(sizeof(usb_string_descriptor));
-        if (xhci_request_descriptor(&device, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, man_name)){
+        if (xhci_request_descriptor(&device, false, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, man_name)){
             char name[128];
             if (parse_string_descriptor_utf16le(man_name->unicode_string, name, sizeof(name))) {
                 kprintf("[xHCI device] Manufacturer name: %s", (uint64_t)name);
             }
         }
         usb_string_descriptor* ser_name = (usb_string_descriptor*)alloc_dma_region(sizeof(usb_string_descriptor));
-        if (xhci_request_descriptor(&device, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, ser_name)){
+        if (xhci_request_descriptor(&device, false, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, ser_name)){
             char name[128];
             if (parse_string_descriptor_utf16le(ser_name->unicode_string, name, sizeof(name))) {
                 kprintf("[xHCI device] Serial: %s", (uint64_t)name);
@@ -857,21 +885,21 @@ bool xhci_setup_device(uint16_t port){
 
     usb_configuration_descriptor* config = (usb_configuration_descriptor*)alloc_dma_region(sizeof(usb_configuration_descriptor));
     kprintf(">>> We have space for %i",sizeof(usb_configuration_descriptor));
-    if (!xhci_request_sized_descriptor(&device, USB_CONFIGURATION_DESCRIPTOR, 0, 0, 8, config)){
+    if (!xhci_request_sized_descriptor(&device, false, USB_CONFIGURATION_DESCRIPTOR, 0, 0, 8, config)){
         kprintf("[xHCI error] could not get config descriptor header");
         return false;
     }
 
     kprintf(">>> Header length %i",config->header.bLength);
 
-    if (!xhci_request_sized_descriptor(&device, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->header.bLength, config)){
+    if (!xhci_request_sized_descriptor(&device, false, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->header.bLength, config)){
         kprintf("[xHCI error] could not get full config descriptor");
         return false;
     }
 
     kprintf(">>> Full length %i",config->wTotalLength);
 
-    if (!xhci_request_sized_descriptor(&device, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->wTotalLength, config)){
+    if (!xhci_request_sized_descriptor(&device, false, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->wTotalLength, config)){
         kprintf("[xHCI error] could not get full config descriptor");
         return false;
     }
