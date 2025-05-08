@@ -70,7 +70,7 @@ void disk_verbose(){
     virtio_enable_verbose();
 }
 
-int handle_virtio_node(const char *name, const char *propname, const void *prop, uint32_t len, dtb_match_t *match) {
+int handle_virtio_node(const char *propname, const void *prop, uint32_t len, dtb_match_t *match) {
     if (strcmp(propname, "reg") == 0 && len >= 16) {
         uint32_t *p = (uint32_t *)prop;
         match->reg_base = ((uint64_t)__builtin_bswap32(p[0]) << 32) | __builtin_bswap32(p[1]);
@@ -124,7 +124,6 @@ bool find_disk(){
 
 void vblk_write(virtio_device *dev, const void *buffer, uint32_t sector, uint32_t count) {
     uint64_t cmd = palloc(sizeof(struct virtio_blk_req));
-    uint64_t resp = palloc(1);
     uint64_t data = palloc(count * 512);
 
     memcpy((void *)(uintptr_t)data, buffer, count * 512);
@@ -155,7 +154,7 @@ void vblk_read(virtio_device *dev, void *buffer, uint32_t sector, uint32_t count
     temp_free((void *)resp,count * 512);
 }
 
-bool disk_test() {
+void disk_test() {
     volatile struct virtio_blk_config *blk_cfg = (volatile struct virtio_blk_config *)((uint64_t)blk_dev.device_cfg);
     uint64_t num_sectors = blk_cfg->capacity;
     uint64_t bytes = num_sectors * 512;

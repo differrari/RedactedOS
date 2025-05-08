@@ -5,8 +5,6 @@
 #include "gic.h"
 #include "ram_e.h"
 
-static uint64_t syscall_sp = 0;
-
 void sync_el0_handler_c(){
     uint64_t x0;
     asm volatile ("mov %0, x11" : "=r"(x0));

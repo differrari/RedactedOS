@@ -218,7 +218,7 @@ uint64_t mem_get_kmem_end(){
     return (uint64_t)&kcode_end;
 }
 
-int handle_mem_node(const char *name, const char *propname, const void *prop, uint32_t len, dtb_match_t *match) {
+int handle_mem_node(const char *propname, const void *prop, uint32_t len, dtb_match_t *match) {
     if (strcmp(propname, "reg") == 0 && len >= 16) {
         uint32_t *p = (uint32_t *)prop;
         match->reg_base = ((uint64_t)__builtin_bswap32(p[0]) << 32) | __builtin_bswap32(p[1]);
@@ -226,7 +226,7 @@ int handle_mem_node(const char *name, const char *propname, const void *prop, ui
         
         return 1;
     }
-    if (strcmp(propname, "device_type") == 0, strcmp(prop,"memory") == 0){
+    if (strcmp(propname, "device_type") == 0 && strcmp(prop,"memory") == 0){
         match->found = true;
     }
     return 0;
@@ -254,7 +254,7 @@ void calc_ram(){
     }
 }
 
-#define calcvar(var)\ 
+#define calcvar(var)\
     if (var == 0)\
         calc_ram();\
     return var;

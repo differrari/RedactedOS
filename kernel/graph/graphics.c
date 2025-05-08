@@ -133,11 +133,11 @@ uint32_t gpu_get_char_size(uint32_t scale){
         return 0;
     switch (chosen_GPU) {
         case RAMFB:
-            rfb_get_char_size(scale);
-        break;
+            return rfb_get_char_size(scale);
         default:
-        break;
+            return 0;
     }
+    return 0;
 }
 
 size gpu_get_screen_size(){

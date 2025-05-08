@@ -666,8 +666,6 @@ bool xhci_request_sized_descriptor(xhci_usb_device *device, bool interface, uint
         .wIndex = wIndex,
         .wLength = descriptor_size
     };
-
-    kprintf("Sending packet %h",packet.bmRequestType);
     
     trb* setup_trb = &device->transfer_ring[device->transfer_index++];
     memcpy(&setup_trb->parameter, &packet, sizeof(packet));

@@ -85,7 +85,7 @@ bool dtb_scan(const char *search_name, dtb_node_handler handler, dtb_match_t *ma
             const char *propname = strings + nameoff;
             const void *prop = p;
 
-            handler(NULL, propname, prop, len, match);
+            handler(propname, prop, len, match);
         
             p += (len + 3) / 4;
         } else if (token == FDT_END_NODE) {
