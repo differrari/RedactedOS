@@ -783,7 +783,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
 
             xhci_input_context* ctx = (xhci_input_context*)alloc_dma_region(0x1000);
 
-            ctx->control_context.add_flags = (1 << 1); // Endpoint 1 (EP1 IN)
+            ctx->control_context.add_flags = 1; // Endpoint 1 (EP1 IN)
             ctx->device_context.slot_f0.context_entries = 2; // 2 entries: EP0 + EP1
             ctx->device_context.endpoint_f0.interval = endpoint->bInterval;
 
