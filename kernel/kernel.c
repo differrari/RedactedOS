@@ -51,7 +51,6 @@ void kernel_main() {
         panic("Input initialization failure");
     }
     
-    // test_keyboard_input();
     kprintf("Initializing disk...");
 
     disk_verbose();
@@ -73,7 +72,7 @@ void kernel_main() {
 
     kprintf("Starting default processes");
 
-    // default_processes();
+    default_processes();
 
     start_bootscreen();
     

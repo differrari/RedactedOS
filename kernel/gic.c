@@ -45,7 +45,7 @@ void gic_init() {
     write8(GICC_BASE, 1); // Enable CPU Interface
     write8(GICD_BASE, 1); // Enable Distributor
 
-    kprintf("[GIC INIT] GIC enabled\n");
+    kprintf("[GIC] GIC enabled\n");
 }
 
 void timer_reset() {
@@ -96,6 +96,8 @@ void irq_el1_handler() {
         write32(GICC_BASE + 0x10, irq);
         process_restore();
     } else {
-        kprintf_raw("Received unknown interrupt");
+        kprintf_raw("[GIC error]Received unknown interrupt");
+        write32(GICC_BASE + 0x10, irq);
+        process_restore();
     }
 }

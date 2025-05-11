@@ -10,4 +10,5 @@ void make_ring_link_control(trb* ring, bool cycle);
 void ring_doorbell(uint32_t slot, uint32_t endpoint);
 bool xhci_await_response(uint64_t command, uint32_t type);
 
+void xhci_sync_events();
 void xhci_handle_interrupt();

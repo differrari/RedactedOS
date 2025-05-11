@@ -51,6 +51,20 @@ void xhci_kbd_request_data() {
 
 }
 
+bool is_new_keypress(keypress* current, keypress* previous) {
+    if (current->modifier != previous->modifier) return true;
+
+    uint8_t seen[32] = {0};
+    for (int i = 0; i < 6; i++)
+        if (current->keys[i] != previous->keys[i] && hid_keycode_to_char[current->keys[i]] != previous->keys[i]){
+            return true;
+        } 
+
+    return false;
+}
+
+keypress last_keypress;
+
 keypress xhci_read_key() {
 
     keypress kp = {0};
@@ -58,16 +72,19 @@ keypress xhci_read_key() {
         return kp;
     }
     
-    if (!xhci_await_response((uintptr_t)latest_ring,TRB_TYPE_TRANSFER)){
-        kprintf("[xHCI error] failed getting key");
-        return kp;
-    }
+    if (!xhci_await_response((uintptr_t)latest_ring,TRB_TYPE_TRANSFER))
+        xhci_sync_events();//TODO: we're just consuming the event without even looking to see if it's the right one, this is wrong, seriously, IRQ await would fix this
+
     keypress *rkp = (keypress*)default_device->input_buffer;
-    kp.modifier = rkp->modifier;
-    for (int i = 0; i < 6; i++){
-        if (rkp->keys[i] != 0){ kp.keys[i] = hid_keycode_to_char[rkp->keys[i]];
-            kprintf("Key [%i]: %c (%i)", kp.keys[i], kp.keys[i]);
+    if (is_new_keypress(rkp, &last_keypress)){
+        kp.modifier = rkp->modifier;
+        kprintf_raw("Mod: %i", kp.modifier);
+        for (int i = 0; i < 6; i++){
+            if (rkp->keys[i] != 0)
+                kp.keys[i] = hid_keycode_to_char[rkp->keys[i]];
+            kprintf_raw("Key [%i]: %c %i", i, kp.keys[i], kp.keys[i]);
         }
+        last_keypress = kp;
     }
 
     xhci_kbd_request_data();

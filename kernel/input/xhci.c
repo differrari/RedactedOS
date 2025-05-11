@@ -17,14 +17,14 @@ void xhci_enable_verbose(){
     ({ \
         if (xhci_verbose){\
             uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
         }\
     })
 
 bool xhci_check_fatal_error() {
     uint32_t sts = global_device.op->usbsts;
     if (sts & (XHCI_USBSTS_HSE | XHCI_USBSTS_CE)) {
-        kprintf("[xHCI ERROR] Fatal condition: USBSTS = %h", sts);
+        kprintf_raw("[xHCI ERROR] Fatal condition: USBSTS = %h", sts);
         return true;
     }
     return false;
@@ -116,35 +116,35 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
     kprintfv("[xHCI] Device ready");
 
     if (xhci->op->usbcmd != 0){
-        kprintf("[xHCI Error] wrong usbcmd %h",xhci->op->usbcmd);
+        kprintf_raw("[xHCI Error] wrong usbcmd %h",xhci->op->usbcmd);
         return false;
     } else {
         kprintfv("[xHCI] Correct usbcmd value");
     }
 
     if (xhci->op->dnctrl != 0){
-        kprintf("[xHCI Error] wrong dnctrl %h",xhci->op->dnctrl);
+        kprintf_raw("[xHCI Error] wrong dnctrl %h",xhci->op->dnctrl);
         return false;
     } else {
         kprintfv("[xHCI] Correct dnctrl value");
     }
 
     if (xhci->op->crcr != 0){
-        kprintf("[xHCI Error] wrong crcr %h",xhci->op->crcr);
+        kprintf_raw("[xHCI Error] wrong crcr %h",xhci->op->crcr);
         return false;
     } else {
         kprintfv("[xHCI] Correct crcr value");
     }
 
     if (xhci->op->dcbaap != 0){
-        kprintf("[xHCI Error] wrong dcbaap %h",xhci->op->dcbaap);
+        kprintf_raw("[xHCI Error] wrong dcbaap %h",xhci->op->dcbaap);
         return false;
     } else {
         kprintfv("[xHCI] Correct dcbaap value");
     }
 
     if (xhci->op->config != 0){
-        kprintf("[xHCI Error] wrong config %h",xhci->op->config);
+        kprintf_raw("[xHCI Error] wrong config %h",xhci->op->config);
         return false;
     } else {
         kprintfv("[xHCI] Correct config value");
@@ -214,16 +214,16 @@ void ring_doorbell(uint32_t slot, uint32_t endpoint) {
 }
 
 bool xhci_await_response(uint64_t command, uint32_t type){
-    while (true) {
+    while (true){
         if (xhci_check_fatal_error()){
-            kprintf("[xHCI error] USBSTS value %h",global_device.op->usbsts);
+            kprintf_raw("[xHCI error] USBSTS value %h",global_device.op->usbsts);
             return false;
         }
         for (global_device.event_index; global_device.event_index < MAX_TRB_AMOUNT; global_device.event_index++){
             trb* ev = &global_device.event_ring[global_device.event_index];
             if (!((ev->control & 1) == global_device.event_cycle_bit)) //TODO: implement a timeout
                 break;
-            kprintfv("[xHCI] A response at %i of type %h as a response to %h",global_device.event_index, (ev->control & TRB_TYPE_MASK) >> 10, ev->parameter);
+            // kprintf_raw("[xHCI] A response at %i of type %h as a response to %h",global_device.event_index, (ev->control & TRB_TYPE_MASK) >> 10, ev->parameter);
             if (global_device.event_index == MAX_TRB_AMOUNT - 1){
                 global_device.event_index = 0;
                 global_device.event_cycle_bit = !global_device.event_cycle_bit;
@@ -236,20 +236,19 @@ bool xhci_await_response(uint64_t command, uint32_t type){
                 return completion_code == 1;
             }
         }
+        return false;
     }
 }
 
-bool xhci_sync_events(){
+void xhci_sync_events(){
     for (global_device.event_index; global_device.event_index < MAX_TRB_AMOUNT; global_device.event_index++){
         trb* ev = &global_device.event_ring[global_device.event_index];
         if (!((ev->control & 1) == global_device.event_cycle_bit)){
-            kprintf("Found end of event ring");
             global_device.interrupter->erdp = (uintptr_t)ev | (1 << 3);
             global_device.interrupter->iman |= 1;
             global_device.op->usbsts |= 1 << 3;
-            return true;
+            return;
         }
-        kprintf("[xHCI] Found unhandled response %h",(ev->control & TRB_TYPE_MASK) >> 10);
         global_device.interrupter->erdp = (uintptr_t)ev | (1 << 3);
         global_device.interrupter->iman |= 1;
         global_device.op->usbsts |= 1 << 3;
@@ -294,7 +293,7 @@ bool reset_port(uint16_t port){
 
         //Read back after delay to ensure
         // if (port_info->portsc.pp == 0){
-        //     kprintf("[xHCI error] failed to power on port %i",port);
+        //     kprintf_raw("[xHCI error] failed to power on port %i",port);
         //     return false;
         // }
     }
@@ -350,7 +349,7 @@ bool xhci_request_sized_descriptor(xhci_usb_device *device, bool interface, uint
 
     kprintfv("Awaiting response of type %h at %h",TRB_TYPE_TRANSFER, (uintptr_t)status_trb);
     if (!xhci_await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
-        kprintf("[xHCI error] error fetching descriptor");
+        kprintf_raw("[xHCI error] error fetching descriptor");
     }
     return true;
 }
@@ -387,18 +386,18 @@ bool clear_halt(xhci_usb_device *device, uint16_t endpoint_num){
 
     kprintfv("Awaiting response of type %h at %h",TRB_TYPE_TRANSFER, (uintptr_t)status_trb);
     if (!xhci_await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
-        kprintf("[xHCI error] could not clear stall");
+        kprintf_raw("[xHCI error] could not clear stall");
     }
 }
 
 bool xhci_request_descriptor(xhci_usb_device *device, bool interface, uint8_t type, uint16_t index, uint16_t wIndex, void *out_descriptor){
     if (!xhci_request_sized_descriptor(device, interface, type, index, wIndex, sizeof(usb_descriptor_header), out_descriptor)){
-        kprintf("[xHCI error] Failed to get descriptor header. Size %i", sizeof(usb_descriptor_header));
+        kprintf_raw("[xHCI error] Failed to get descriptor header. Size %i", sizeof(usb_descriptor_header));
         return false;
     }
     usb_descriptor_header* descriptor = (usb_descriptor_header*)out_descriptor;
     if (descriptor->bLength == 0){
-        kprintf("[xHCI error] wrong descriptor size %i",descriptor->bLength);
+        kprintf_raw("[xHCI error] wrong descriptor size %i",descriptor->bLength);
         return false;
     }
     return xhci_request_sized_descriptor(device, interface, type, index, wIndex, descriptor->bLength, out_descriptor);
@@ -431,7 +430,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
     for (uint16_t i = 0; i < total_length;){
         usb_descriptor_header* header = (usb_descriptor_header*)&config->data[i];
         if (header->bLength == 0){
-            kprintf("Failed to get descriptor. Header size 0");
+            kprintf_raw("Failed to get descriptor. Header size 0");
             return false;
         }
         switch (header->bDescriptorType)
@@ -439,7 +438,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
         case 0x4: //Interface
             usb_interface_descriptor *interface = (usb_interface_descriptor *)&config->data[i];
             if (interface->bInterfaceClass != 0x3){
-                kprintf("[xHCI implementation error] non-hid devices not supported yet");
+                kprintf_raw("[xHCI implementation error] non-hid devices not supported yet");
                 return false;
             }
             kprintfv("[xHCI] interface protocol %h",interface->bInterfaceProtocol);
@@ -499,21 +498,21 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             device->poll_endpoint = ep_num;
             device->poll_packetSize = endpoint->wMaxPacketSize;
 
-            kprintf("A");
+            kprintf_raw("A");
 
             if (!issue_command((uintptr_t)ctx, 0, (device->slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
-                kprintf("[xHCI] Failed to configure endpoint %i",ep_num);
+                kprintf_raw("[xHCI] Failed to configure endpoint %i",ep_num);
                 return false;
             }
 
-            kprintf("Finished");
+            kprintf_raw("Finished");
 
         break;
         }
         i += header->bLength;
     }
 
-    xhci_sync_events();
+    xhci_sync_events();//TODO: This is hacky af, we should have await use irqs entirely and we won't need to await anything anymore
 
     if (device->type == KEYBOARD)
         xhci_kbd_request_data();
@@ -529,7 +528,7 @@ bool xhci_setup_device(uint16_t port){
     kprintfv("[xHCI] Port speed %i", (uint32_t)global_device.ports[port].portsc.port_speed);
 
     if (!issue_command(0,0,TRB_TYPE_ENABLE_SLOT << 10)){
-        kprintf("[xHCI error] failed enable slot command");
+        kprintf_raw("[xHCI error] failed enable slot command");
         return false;
     }
 
@@ -539,7 +538,7 @@ bool xhci_setup_device(uint16_t port){
     kprintfv("[xHCI] Slot id %h", device->slot_id);
 
     if (device->slot_id == 0){
-        kprintf("[xHCI error]: Wrong slot id 0");
+        kprintf_raw("[xHCI error]: Wrong slot id 0");
         return false;
     }
 
@@ -570,7 +569,7 @@ bool xhci_setup_device(uint16_t port){
 
     ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[device->slot_id] = (uintptr_t)output_ctx;
     if (!issue_command((uintptr_t)device->ctx, 0, (device->slot_id << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
-        kprintf("[xHCI error] failed addressing device at slot %h",device->slot_id);
+        kprintf_raw("[xHCI error] failed addressing device at slot %h",device->slot_id);
         return false;
     }
 
@@ -581,7 +580,7 @@ bool xhci_setup_device(uint16_t port){
     usb_device_descriptor* descriptor = (usb_device_descriptor*)alloc_dma_region(sizeof(usb_device_descriptor));
     
     if (!xhci_request_descriptor(device, false, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
-        kprintf("[xHCI error] failed to get device descriptor");
+        kprintf_raw("[xHCI error] failed to get device descriptor");
         return false;
     }
 
@@ -590,7 +589,7 @@ bool xhci_setup_device(uint16_t port){
     bool use_lang_desc = true;
 
     if (!xhci_request_descriptor(device, false, USB_STRING_DESCRIPTOR, 0, 0, lang_desc)){
-        kprintf("[xHCI warning] failed to get language descriptor");
+        kprintf_raw("[xHCI warning] failed to get language descriptor");
         use_lang_desc = false;
     }
 
@@ -626,22 +625,22 @@ bool xhci_setup_device(uint16_t port){
 
     usb_configuration_descriptor* config = (usb_configuration_descriptor*)alloc_dma_region(sizeof(usb_configuration_descriptor));
     if (!xhci_request_sized_descriptor(device, false, USB_CONFIGURATION_DESCRIPTOR, 0, 0, 8, config)){
-        kprintf("[xHCI error] could not get config descriptor header");
+        kprintf_raw("[xHCI error] could not get config descriptor header");
         return false;
     }
 
     if (!xhci_request_sized_descriptor(device, false, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->header.bLength, config)){
-        kprintf("[xHCI error] could not get full config descriptor");
+        kprintf_raw("[xHCI error] could not get full config descriptor");
         return false;
     }
 
     if (!xhci_request_sized_descriptor(device, false, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->wTotalLength, config)){
-        kprintf("[xHCI error] could not get full config descriptor");
+        kprintf_raw("[xHCI error] could not get full config descriptor");
         return false;
     }
 
     if (!xhci_get_configuration(config, device)){
-        kprintf("[xHCI error] failed to parse device configuration");
+        kprintf_raw("[xHCI error] failed to parse device configuration");
         return false;
     }
 
@@ -651,12 +650,12 @@ bool xhci_setup_device(uint16_t port){
 bool xhci_input_init() {
     uint64_t addr = find_pci_device(0x1B36, 0xD);
     if (!addr){ 
-        kprintf("[PCI] xHCI device not found");
+        kprintf_raw("[PCI] xHCI device not found");
         return false;
     }
 
     if (!xhci_init(&global_device, addr)){
-        kprintf("xHCI device initialization failed");
+        kprintf_raw("xHCI device initialization failed");
         return false;
     }
 
@@ -667,7 +666,7 @@ bool xhci_input_init() {
     for (uint16_t i = 0; i < global_device.max_ports; i++)
         if (global_device.ports[i].portsc.ccs && global_device.ports[i].portsc.csc){
             if (!xhci_setup_device(i)){
-                kprintf("Failed to configure device at port %i",i);
+                kprintf_raw("Failed to configure device at port %i",i);
                 return false;
             }
             break;
