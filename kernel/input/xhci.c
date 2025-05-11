@@ -350,6 +350,8 @@ typedef struct {
     uint8_t *report_descriptor;
     xhci_input_context* ctx;
     uint8_t *input_buffer;
+    uint8_t poll_packetSize;
+    uint8_t poll_endpoint;
  } xhci_usb_device;
 
 #define USB_DEVICE_DESCRIPTOR 1
@@ -560,7 +562,7 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
 
 static void ring_doorbell(uint32_t slot, uint32_t endpoint) {
     volatile uint32_t* db = (uint32_t*)(uintptr_t)(global_device.db_base + (slot << 2));
-    kprintf("[xHCI] Ringing doorbell at %h with value %h", global_device.db_base + (slot << 2),endpoint);
+    kprintfv("[xHCI] Ringing doorbell at %h with value %h", global_device.db_base + (slot << 2),endpoint);
     *db = endpoint;
 }
 
@@ -582,7 +584,7 @@ bool await_response(uint64_t command, uint32_t type){
             }
             if ((ev->control & TRB_TYPE_MASK) >> 10 == type && (command == 0 || ev->parameter == (command & 0xFFFFFFFFFFFFFFFF))){
                 uint8_t completion_code = (ev->control >> 24) & 0xFF;
-                kprintf("[xHCI] Received response %h",completion_code);
+                kprintfv("[xHCI] Received response %h",completion_code);
                 global_device.interrupter->erdp = (uintptr_t)ev | (1 << 3);//Inform of latest processed event
                 global_device.interrupter->iman |= 1;//Clear interrupts
                 global_device.op->usbsts |= 1 << 3;//Clear interrupts
@@ -820,25 +822,13 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             ctx->device_context.endpoints[ep_num-1].endpoint_f23.ring_ptr = ((uintptr_t)device->endpoint_transfer_ring) >> 4;
             ctx->device_context.endpoints[ep_num-1].endpoint_f4.average_trb_length = 8;
 
+            device->poll_endpoint = ep_num;
+            device->poll_packetSize = endpoint->wMaxPacketSize;
+
             if (!issue_command((uintptr_t)ctx, 0, (device->slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
                 kprintf("Failed to configure endpoint");
                 return false;
             }
-
-            trb* ring = device->endpoint_transfer_ring;
-            
-            uint64_t buffer_addr = (uint64_t)alloc_dma_region(0x1000);
-            device->input_buffer = (uint8_t*)buffer_addr;
-            
-            ring->parameter = (uintptr_t)buffer_addr;
-            ring->status = endpoint->wMaxPacketSize;
-            ring->control = (TRB_TYPE_NORMAL << 10) | (1 << 5) | device->endpoint_transfer_cycle_bit;
-
-            kprintf("Param %h Status %h Control %h",ring->parameter,ring->status,ring->control);
-            ring_doorbell(device->slot_id, ep_num);
-
-            kprintf("Awaiting response of type %h at %h", TRB_TYPE_TRANSFER, (uintptr_t)ring);
-            bool result = await_response((uintptr_t)ring,TRB_TYPE_TRANSFER);
 
         break;
         }
@@ -1014,20 +1004,69 @@ bool xhci_input_init() {
 }
 
 bool xhci_key_ready() {
-    return await_response(0x0,0);
+    trb* ring = &default_device->endpoint_transfer_ring[default_device->endpoint_transfer_index++];
+            
+    if (default_device->input_buffer == 0x0){
+        uint64_t buffer_addr = (uint64_t)alloc_dma_region(default_device->poll_packetSize);
+        default_device->input_buffer = (uint8_t*)buffer_addr;
+    }
+    
+    ring->parameter = (uintptr_t)default_device->input_buffer;
+    ring->status = default_device->poll_packetSize;
+    ring->control = (TRB_TYPE_NORMAL << 10) | (1 << 5) | default_device->endpoint_transfer_cycle_bit;
+
+    if (default_device->endpoint_transfer_index == MAX_TRB_AMOUNT - 1){
+        make_ring_link_control(default_device->endpoint_transfer_ring, default_device->endpoint_transfer_cycle_bit);
+        default_device->endpoint_transfer_cycle_bit = !default_device->endpoint_transfer_cycle_bit;
+        default_device->endpoint_transfer_index = 0;
+    }
+
+    ring_doorbell(default_device->slot_id, default_device->poll_endpoint);
+
+    if (!await_response((uintptr_t)ring,TRB_TYPE_TRANSFER)){
+        // kprintf("[xHCI error] input buffer setup failed");
+    }
+
+    // kprintf("[xHCI] input buffer has received input");
 }
 
-int xhci_read_key() {
-    // global_device.event_ring[0].control &= ~global_device.cycle_bit;
-    return 0;//global_device.key_buffer[2];
+static const char hid_keycode_to_char[256] = {
+    [0x04] = 'a', [0x05] = 'b', [0x06] = 'c', [0x07] = 'd',
+    [0x08] = 'e', [0x09] = 'f', [0x0A] = 'g', [0x0B] = 'h',
+    [0x0C] = 'i', [0x0D] = 'j', [0x0E] = 'k', [0x0F] = 'l',
+    [0x10] = 'm', [0x11] = 'n', [0x12] = 'o', [0x13] = 'p',
+    [0x14] = 'q', [0x15] = 'r', [0x16] = 's', [0x17] = 't',
+    [0x18] = 'u', [0x19] = 'v', [0x1A] = 'w', [0x1B] = 'x',
+    [0x1C] = 'y', [0x1D] = 'z',
+    [0x1E] = '1', [0x1F] = '2', [0x20] = '3', [0x21] = '4',
+    [0x22] = '5', [0x23] = '6', [0x24] = '7', [0x25] = '8',
+    [0x26] = '9', [0x27] = '0',
+    [0x28] = '\n', [0x2C] = ' ', [0x2D] = '-', [0x2E] = '=',
+    [0x2F] = '[', [0x30] = ']', [0x31] = '\\', [0x33] = ';',
+    [0x34] = '\'', [0x35] = '`', [0x36] = ',', [0x37] = '.',
+    [0x38] = '/',
+};
+
+typedef struct {
+    uint8_t modifier;
+    uint8_t rsvd;
+    char keys[6];
+} keypress;
+
+keypress xhci_read_key() {
+    keypress *kp = (keypress*)default_device->input_buffer;
+    for (int i = 0; i < 6; i++){
+        if (kp->keys[i] != 0) kp->keys[i] = hid_keycode_to_char[kp->keys[i]];
+    }
+    return *kp;
 }
 
 void test_keyboard_input() {
     kprintf("[NEC] Waiting for input");
     while (true) {
         if (xhci_key_ready()) {
-            int ch = xhci_read_key();
-            kprintf("Key: %c", ch);
+            keypress ch = xhci_read_key();
+            kprintf("Key: %c", ch.keys[0]);
         }
     }
 }
