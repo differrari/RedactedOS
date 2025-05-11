@@ -25,17 +25,21 @@ void set_default_kbd(xhci_usb_device* kbd){
     default_device = kbd;
 }
 
-bool xhci_key_ready() {
-    trb* ring = &default_device->endpoint_transfer_ring[default_device->endpoint_transfer_index++];
+trb* latest_ring;
+bool requesting = false;
+
+void xhci_kbd_request_data() {
+    requesting = true;
+    latest_ring = &default_device->endpoint_transfer_ring[default_device->endpoint_transfer_index++];
             
     if (default_device->input_buffer == 0x0){
         uint64_t buffer_addr = (uint64_t)alloc_dma_region(default_device->poll_packetSize);
         default_device->input_buffer = (uint8_t*)buffer_addr;
     }
     
-    ring->parameter = (uintptr_t)default_device->input_buffer;
-    ring->status = default_device->poll_packetSize;
-    ring->control = (TRB_TYPE_NORMAL << 10) | (1 << 5) | default_device->endpoint_transfer_cycle_bit;
+    latest_ring->parameter = (uintptr_t)default_device->input_buffer;
+    latest_ring->status = default_device->poll_packetSize;
+    latest_ring->control = (TRB_TYPE_NORMAL << 10) | (1 << 5) | default_device->endpoint_transfer_cycle_bit;
 
     if (default_device->endpoint_transfer_index == MAX_TRB_AMOUNT - 1){
         make_ring_link_control(default_device->endpoint_transfer_ring, default_device->endpoint_transfer_cycle_bit);
@@ -45,31 +49,28 @@ bool xhci_key_ready() {
 
     ring_doorbell(default_device->slot_id, default_device->poll_endpoint);
 
-    if (!await_response((uintptr_t)ring,TRB_TYPE_TRANSFER)){
-        kprintf("[xHCI error] failed getting key");
-    }
 }
-
-typedef struct {
-    uint8_t modifier;
-    uint8_t rsvd;
-    char keys[6];
-} keypress;
 
 keypress xhci_read_key() {
-    keypress *kp = (keypress*)default_device->input_buffer;
-    for (int i = 0; i < 6; i++){
-        if (kp->keys[i] != 0) kp->keys[i] = hid_keycode_to_char[kp->keys[i]];
-    }
-    return *kp;
-}
 
-void test_keyboard_input() {
-    kprintf("[NEC] Waiting for input");
-    while (true) {
-        if (xhci_key_ready()) {
-            keypress ch = xhci_read_key();
-            kprintf("Key: %c", ch.keys[0]);
+    keypress kp = {0};
+    if (!requesting){
+        return kp;
+    }
+    
+    if (!xhci_await_response((uintptr_t)latest_ring,TRB_TYPE_TRANSFER)){
+        kprintf("[xHCI error] failed getting key");
+        return kp;
+    }
+    keypress *rkp = (keypress*)default_device->input_buffer;
+    kp.modifier = rkp->modifier;
+    for (int i = 0; i < 6; i++){
+        if (rkp->keys[i] != 0){ kp.keys[i] = hid_keycode_to_char[rkp->keys[i]];
+            kprintf("Key [%i]: %c (%i)", kp.keys[i], kp.keys[i]);
         }
     }
+
+    xhci_kbd_request_data();
+
+    return kp;
 }

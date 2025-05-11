@@ -28,6 +28,8 @@
 #define XHCI_USBSTS_HSE (1 << 2)
 #define XHCI_USBSTS_CE  (1 << 12)
 
+#define XHCI_IRQ 31
+
 typedef struct {
     uint64_t parameter;
     uint32_t status;
@@ -335,6 +337,12 @@ typedef struct __attribute__((packed)){
     uint16_t unicode_string[126];
 } usb_string_descriptor;
 
+typedef enum {
+    NONE,
+    KEYBOARD,
+    MOUSE
+} xhci_device_types;
+
 typedef struct {
     bool transfer_cycle_bit;
     uint32_t transfer_index;
@@ -350,6 +358,7 @@ typedef struct {
     uint8_t *input_buffer;
     uint8_t poll_packetSize;
     uint8_t poll_endpoint;
+    xhci_device_types type;
  } xhci_usb_device;
 
 #define USB_DEVICE_DESCRIPTOR 1

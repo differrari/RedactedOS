@@ -84,7 +84,7 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
         return false;
     }
 
-    kprintf("XHCI IRQ LINE %h",read8(pci_addr+0x3C));
+    pci_setup_msi(pci_addr, XHCI_IRQ);
 
     if (!pci_setup_bar(pci_addr, 0, &xhci->mmio, &xhci->mmio_size)){
         kprintfv("[xHCI] BARs not set up");
@@ -213,7 +213,7 @@ void ring_doorbell(uint32_t slot, uint32_t endpoint) {
     *db = endpoint;
 }
 
-bool await_response(uint64_t command, uint32_t type){
+bool xhci_await_response(uint64_t command, uint32_t type){
     while (true) {
         if (xhci_check_fatal_error()){
             kprintf("[xHCI error] USBSTS value %h",global_device.op->usbsts);
@@ -230,13 +230,29 @@ bool await_response(uint64_t command, uint32_t type){
             }
             if ((ev->control & TRB_TYPE_MASK) >> 10 == type && (command == 0 || ev->parameter == (command & 0xFFFFFFFFFFFFFFFF))){
                 uint8_t completion_code = (ev->control >> 24) & 0xFF;
-                kprintfv("[xHCI] Received response %h",completion_code);
                 global_device.interrupter->erdp = (uintptr_t)ev | (1 << 3);//Inform of latest processed event
                 global_device.interrupter->iman |= 1;//Clear interrupts
                 global_device.op->usbsts |= 1 << 3;//Clear interrupts
                 return completion_code == 1;
             }
         }
+    }
+}
+
+bool xhci_sync_events(){
+    for (global_device.event_index; global_device.event_index < MAX_TRB_AMOUNT; global_device.event_index++){
+        trb* ev = &global_device.event_ring[global_device.event_index];
+        if (!((ev->control & 1) == global_device.event_cycle_bit)){
+            kprintf("Found end of event ring");
+            global_device.interrupter->erdp = (uintptr_t)ev | (1 << 3);
+            global_device.interrupter->iman |= 1;
+            global_device.op->usbsts |= 1 << 3;
+            return true;
+        }
+        kprintf("[xHCI] Found unhandled response %h",(ev->control & TRB_TYPE_MASK) >> 10);
+        global_device.interrupter->erdp = (uintptr_t)ev | (1 << 3);
+        global_device.interrupter->iman |= 1;
+        global_device.op->usbsts |= 1 << 3;
     }
 }
 
@@ -254,7 +270,7 @@ bool issue_command(uint64_t param, uint32_t status, uint32_t control){
         global_device.cmd_index = 0;
     }
     ring_doorbell(0, 0);
-    return await_response(cmd_addr, TRB_TYPE_COMMAND_COMPLETION);
+    return xhci_await_response(cmd_addr, TRB_TYPE_COMMAND_COMPLETION);
 }
 
 uint16_t packet_size(uint16_t port_speed){
@@ -294,7 +310,7 @@ bool reset_port(uint16_t port){
 
     //TODO: read back after delay 
 
-    return await_response(0, TRB_TYPE_PORT_STATUS_CHANGE);
+    return xhci_await_response(0, TRB_TYPE_PORT_STATUS_CHANGE);
 }
 
 bool xhci_request_sized_descriptor(xhci_usb_device *device, bool interface, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor){
@@ -333,7 +349,7 @@ bool xhci_request_sized_descriptor(xhci_usb_device *device, bool interface, uint
     ring_doorbell(device->slot_id, 1);
 
     kprintfv("Awaiting response of type %h at %h",TRB_TYPE_TRANSFER, (uintptr_t)status_trb);
-    if (!await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
+    if (!xhci_await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
         kprintf("[xHCI error] error fetching descriptor");
     }
     return true;
@@ -370,7 +386,7 @@ bool clear_halt(xhci_usb_device *device, uint16_t endpoint_num){
     ring_doorbell(device->slot_id, 1);
 
     kprintfv("Awaiting response of type %h at %h",TRB_TYPE_TRANSFER, (uintptr_t)status_trb);
-    if (!await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
+    if (!xhci_await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
         kprintf("[xHCI error] could not clear stall");
     }
 }
@@ -410,6 +426,8 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
 
     uint16_t interface_index = 0;
 
+    uint8_t device_type;
+
     for (uint16_t i = 0; i < total_length;){
         usb_descriptor_header* header = (usb_descriptor_header*)&config->data[i];
         if (header->bLength == 0){
@@ -429,6 +447,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             {
             case 0x1:
                 set_default_kbd(device);
+                device->type = KEYBOARD;
                 break;
             
             default:
@@ -480,15 +499,24 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             device->poll_endpoint = ep_num;
             device->poll_packetSize = endpoint->wMaxPacketSize;
 
+            kprintf("A");
+
             if (!issue_command((uintptr_t)ctx, 0, (device->slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
                 kprintf("[xHCI] Failed to configure endpoint %i",ep_num);
                 return false;
             }
 
+            kprintf("Finished");
+
         break;
         }
         i += header->bLength;
     }
+
+    xhci_sync_events();
+
+    if (device->type == KEYBOARD)
+        xhci_kbd_request_data();
 
     return true;
     
@@ -646,4 +674,8 @@ bool xhci_input_init() {
         }
 
     return true;
+}
+
+void xhci_handle_interrupt(){
+    xhci_read_key();
 }

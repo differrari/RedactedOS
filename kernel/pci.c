@@ -4,6 +4,7 @@
 #include "dma.h"
 #include "fw/fw_cfg.h"
 #include "kstring.h"
+#include "gic.h"
 
 #define PCI_BUS_MAX 256
 #define PCI_SLOT_MAX 32
@@ -288,4 +289,29 @@ void pci_enable_device(uint64_t pci_addr){
     uint32_t cmd = read16(pci_addr + PCI_COMMAND_REGISTER);
     cmd |= PCI_COMMAND_MEMORY | PCI_COMMAND_REGISTER;
     write16(pci_addr + PCI_COMMAND_REGISTER,cmd);
+}
+
+bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_line) {
+    uint8_t cap_ptr = read8(pci_addr + 0x34);
+    while (cap_ptr) {
+        uint8_t cap_id = read8(pci_addr + cap_ptr);
+        if (cap_id == 0x05) { // MSI
+            uint16_t msg_ctrl = read16(pci_addr + cap_ptr + 0x2);
+            bool is_64bit = msg_ctrl & (1 << 7);
+
+            write32(pci_addr + cap_ptr + 0x4, 0x8020040);
+            int offset = 0x8;
+            if (is_64bit) {
+                write32(pci_addr + cap_ptr + 0x8, 0);
+                offset += 4;
+            }
+
+            write16(pci_addr + cap_ptr + offset, 50 + irq_line);
+            msg_ctrl |= 1; // enable MSI
+            write16(pci_addr + cap_ptr + 0x2, msg_ctrl);
+            return true;
+        }
+        cap_ptr = read8(pci_addr + cap_ptr + 1);
+    }
+    return false;
 }

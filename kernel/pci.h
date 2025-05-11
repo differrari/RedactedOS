@@ -1,5 +1,6 @@
-#ifndef PCI_H
-#define PCI_H
+#pragma once
+
+#define MSI_OFFSET 50
 
 #include "types.h"
 
@@ -13,4 +14,4 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
 
 void pci_enable_verbose();
 
-#endif
+bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_vector);

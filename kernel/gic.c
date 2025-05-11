@@ -2,6 +2,9 @@
 #include "console/kio.h"
 #include "ram_e.h"
 #include "process/scheduler.h"
+#include "input/xhci_types.h"
+#include "pci.h"
+#include "input/xhci.h"
 
 #define IRQ_TIMER 30
 
@@ -9,16 +12,35 @@ static uint64_t _msecs;
 
 extern void irq_el1_asm_handler();
 
+static void gic_enable_irq(uint32_t irq, uint8_t priority, uint8_t cpu_target) {
+    uint32_t reg_offset = (irq / 32) * 4;
+    uint32_t bit = 1 << (irq % 32);
+
+    uint32_t flag = read32(GICD_BASE + 0x100 + reg_offset);
+    write32(GICD_BASE + 0x100 + reg_offset, flag | bit);
+
+    write8(GICD_BASE + 0x800 + irq, cpu_target);
+    write8(GICD_BASE + 0x400 + irq, priority);  
+
+    uint32_t config_offset = (irq / 16) * 4;
+    uint32_t config_shift = (irq % 16) * 2;
+    uint32_t config = read32(GICD_BASE + 0xC00 + config_offset);
+    config &= ~(3 << config_shift);
+    config |= (2 << config_shift); // 0b10 = edge-triggered
+    write32(GICD_BASE + 0xC00 + config_offset, config);
+}
+
 void gic_init() {
     write8(GICD_BASE, 0); // Disable Distributor
     write8(GICC_BASE, 0); // Disable CPU Interface
 
-    uint32_t flag = read32(GICD_BASE + 0x100 + (IRQ_TIMER / 32) * 4);
-    write32(GICD_BASE + 0x100 + (IRQ_TIMER / 32) * 4, flag | (1 << (IRQ_TIMER % 32))); // Enable IRQ
-    write32(GICD_BASE + 0x800 + (IRQ_TIMER / 4) * 4, 1 << ((IRQ_TIMER % 4) * 8)); // Target CPU 0
-    write32(GICD_BASE + 0x400 + (IRQ_TIMER / 4) * 4, 0); // Priority 0
+    gic_enable_irq(IRQ_TIMER, 0x80, 0);
+    gic_enable_irq(MSI_OFFSET + XHCI_IRQ, 0x80, 0);
 
-    write16(GICC_BASE + 0x004, 0xF0); // Priority Mask Register
+    write32(GICD_BASE + 0x000, 0x1);
+
+    write32(GICC_BASE + 0x000, 0x1); //Priority
+    write32(GICC_BASE + 0x004, 0xF0); //Priority
 
     write8(GICC_BASE, 1); // Enable CPU Interface
     write8(GICD_BASE, 1); // Enable Distributor
@@ -69,6 +91,10 @@ void irq_el1_handler() {
         timer_reset();
         write32(GICC_BASE + 0x10, irq);
         switch_proc(INTERRUPT);
+    } else if (irq == MSI_OFFSET + XHCI_IRQ){
+        xhci_handle_interrupt();
+        write32(GICC_BASE + 0x10, irq);
+        process_restore();
     } else {
         kprintf_raw("Received unknown interrupt");
     }

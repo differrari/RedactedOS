@@ -45,14 +45,15 @@ void kernel_main() {
     gic_init();
 
     enable_interrupt();
-
+    
     // xhci_enable_verbose();
     if (!xhci_input_init()){
         panic("Input initialization failure");
     }
     
-    test_keyboard_input();
+    // test_keyboard_input();
     kprintf("Initializing disk...");
+
     disk_verbose();
     if (!find_disk())
         panic("Disk initialization failure");
@@ -74,7 +75,6 @@ void kernel_main() {
 
     // default_processes();
 
-    
     start_bootscreen();
     
     kprintf("Starting scheduler");

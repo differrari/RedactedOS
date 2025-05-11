@@ -35,6 +35,10 @@ void switch_proc(ProcSwitchReason reason) {
     
     current_proc = next_proc;
     // kprintf_raw("Resuming execution of process %i at %h",current_proc, processes[current_proc].sp);
+    process_restore();
+}
+
+void process_restore(){
     restore_context(&processes[current_proc]);
 }
 

@@ -21,6 +21,6 @@ fi
 -serial mon:stdio \
 -drive file=disk.img,if=none,format=raw,id=hd0 \
 -device virtio-blk-pci,drive=hd0 \
--device qemu-xhci,id=usb \
+-device qemu-xhci,msi=on,msix=off,id=usb \
 -device usb-kbd,bus=usb.0 \
 $ARGS

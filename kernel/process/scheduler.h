@@ -14,3 +14,4 @@ int get_current_proc();
 void save_context_registers();
 void save_return_address_interrupt();
 process_t* init_process();
+void process_restore();
