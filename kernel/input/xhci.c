@@ -219,10 +219,9 @@ bool await_response(uint64_t command, uint32_t type){
             kprintf("[xHCI error] USBSTS value %h",global_device.op->usbsts);
             return false;
         }
-        //We could optimize this by looking at which events we've already processed, but maybe we risk skipping some?
         for (global_device.event_index; global_device.event_index < MAX_TRB_AMOUNT; global_device.event_index++){
             trb* ev = &global_device.event_ring[global_device.event_index];
-            if (!(ev->control & global_device.event_cycle_bit)) //TODO: implement a timeout
+            if (!((ev->control & 1) == global_device.event_cycle_bit)) //TODO: implement a timeout
                 break;
             kprintfv("[xHCI] A response at %i of type %h as a response to %h",global_device.event_index, (ev->control & TRB_TYPE_MASK) >> 10, ev->parameter);
             if (global_device.event_index == MAX_TRB_AMOUNT - 1){
