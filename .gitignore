@@ -6,3 +6,4 @@
 .vscode
 libshared.a
 *.a
+dump.dtb

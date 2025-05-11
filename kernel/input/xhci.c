@@ -3,360 +3,7 @@
 #include "console/serial/uart.h"
 #include "pci.h"
 #include "ram_e.h"
-
-#define TRB_TYPE_NORMAL      1
-#define TRB_TYPE_LINK        6
-#define TRB_TYPE_EVENT_DATA  3
-#define TRB_TYPE_TRANSFER    32
-#define TRB_TYPE_ENABLE_SLOT 9
-#define TRB_TYPE_ADDRESS_DEV 11
-#define TRB_TYPE_CONFIG_EP   12
-#define TRB_TYPE_SETUP       2
-#define TRB_TYPE_STATUS      4
-#define TRB_TYPE_INPUT       8
-
-#define MAX_TRB_AMOUNT 256
-#define MAX_ERST_AMOUNT 1
-
-#define TRB_TYPE_MASK 0xFC00
-
-#define TRB_TYPE_COMMAND_COMPLETION 0x21
-#define TRB_TYPE_PORT_STATUS_CHANGE 0x22
-
-#define TRB_TYPE_SETUP_STAGE 0x2
-#define TRB_TYPE_DATA_STAGE 0x3
-#define TRB_TYPE_STATUS_STAGE 0x4
-
-#define XHCI_USBSTS_HSE (1 << 2)
-#define XHCI_USBSTS_CE  (1 << 12)
-
-typedef struct {
-    uint64_t parameter;
-    uint32_t status;
-    uint32_t control;
-}__attribute__((packed)) trb;
-
-typedef struct {
-    uint8_t caplength;
-    uint8_t reserved;
-    uint16_t hciversion;
-    uint32_t hcsparams1;
-    uint32_t hcsparams2;
-    uint32_t hcsparams3;
-    uint32_t hccparams1;
-    uint32_t dboff;
-    uint32_t rtsoff;
-    uint32_t hccparams2;
-}__attribute__((packed)) xhci_cap_regs;
-
-typedef struct {
-    uint32_t usbcmd;
-    uint32_t usbsts;
-    uint32_t pagesize;
-    uint64_t reserved0;
-    uint32_t dnctrl;
-    uint64_t crcr;
-    uint32_t reserved1[4];
-    uint64_t dcbaap;
-    uint32_t config;
-}__attribute__((packed)) xhci_op_regs;
-
-typedef union {
-    struct {
-        uint32_t    ccs         : 1;
-        uint32_t    ped         : 1;
-        uint32_t    rsvd0       : 1;
-        uint32_t    oca         : 1;
-        uint32_t    pr          : 1;
-        uint32_t    pls         : 4;
-        uint32_t    pp          : 1;
-        uint32_t    port_speed  : 4;
-        uint32_t    pic         : 2;
-        uint32_t    lws         : 1;
-        uint32_t    csc         : 1;
-        uint32_t    pec         : 1;
-        uint32_t    wrc         : 1;
-        uint32_t    occ         : 1;
-        uint32_t    prc         : 1;
-        uint32_t    plc         : 1;
-        uint32_t    cec         : 1;
-        uint32_t    cas         : 1;
-        uint32_t    wce         : 1;
-        uint32_t    wde         : 1;
-        uint32_t    woe         : 1;
-        uint32_t    rsvd1        : 2;
-        uint32_t    dr          : 1;
-        uint32_t    wpr         : 1;
-    };
-    uint32_t value;
-} portsc;
-
-typedef struct {
-    portsc portsc;
-    uint32_t portpmsc;
-    uint32_t portli;
-    uint32_t rsvd;
-}__attribute__((packed, aligned(4))) xhci_port_regs;
-
-typedef struct {
-    uint32_t iman;
-    uint32_t imod;
-    uint32_t erstsz;
-    uint32_t reserved;
-    uint64_t erstba;
-    uint64_t erdp;
-}__attribute__((packed)) xhci_interrupter;
-
-typedef struct {
-    uint64_t mmio;
-    uint64_t mmio_size;
-    xhci_cap_regs* cap;
-    xhci_op_regs* op;
-    xhci_port_regs* ports;
-    uint64_t db_base;
-    uint64_t rt_base;
-    trb* cmd_ring;
-    uint32_t cmd_index;
-    uint32_t event_index;
-    bool command_cycle_bit;
-    bool event_cycle_bit;
-    trb* event_ring;
-    uint8_t* key_buffer;
-    xhci_interrupter* interrupter;
-    uint64_t* dcbaa;
-    uint16_t max_device_slots;
-    uint16_t max_ports;
-} xhci_device;
-
-typedef struct {
-    uint64_t ring_base;
-    uint32_t ring_size;
-    uint32_t reserved;
-}__attribute__((packed)) erst_entry;
-
-typedef struct {
-    uint32_t drop_flags;
-    uint32_t add_flags;
-    uint64_t reserved[3];
-}__attribute__((packed)) xhci_input_control_context;
-
-typedef union
-{
-    struct 
-    {
-        uint32_t route_string: 20;
-        uint32_t speed: 4;
-        uint32_t rsvd : 1;
-        uint32_t mtt : 1;
-        uint32_t hub : 1;
-        uint32_t context_entries : 5;
-    };
-    uint32_t value;
-} slot_field0;
-
-typedef union
-{
-    struct 
-    {
-        uint16_t    max_exit_latency;
-        uint8_t     root_hub_port_num;
-        uint8_t     port_count;
-    };
-    uint32_t value;
-} slot_field1;
-
-typedef union
-{
-    struct 
-    {
-        uint32_t parent_hub_slot_id : 8;
-        uint32_t parent_port_number : 8;
-        uint32_t think_time : 2;
-        uint32_t rsvd : 4;
-        uint32_t interrupt_target : 10;
-    };
-    uint32_t value;
-} slot_field2;
-
-typedef union
-{
-    struct 
-    {
-        uint32_t device_address : 8;
-        uint32_t rsvd : 19;
-        uint32_t state : 5;//0 disabled, 1 default, 2 addressed, 3 configured
-    };
-    uint32_t value;
-} slot_field3;
-
-typedef union 
-{
-    struct {
-        uint32_t endpoint_state        : 3;
-        uint32_t rsvd0                 : 5;
-        uint32_t mult                  : 2;
-        uint32_t max_primary_streams   : 5;
-        uint32_t linear_stream_array   : 1;
-        uint32_t interval              : 8;
-        uint32_t max_esit_payload_hi   : 8;
-    };
-    uint32_t value;
-} endpoint_field0;
-
-typedef union 
-{
-    struct {
-        uint32_t rsvd1                 : 1;
-        uint32_t error_count             : 2;
-        uint32_t endpoint_type           : 3;
-        uint32_t rsvd2                   : 1;
-        uint32_t host_initiate_disable   : 1;
-        uint32_t max_burst_size          : 8;
-        uint32_t max_packet_size         : 16;
-    };
-    uint32_t value;
-} endpoint_field1;
-
-typedef union {
-    struct {
-        uint64_t dcs : 1;
-        uint64_t rsvd0 : 3;
-        uint64_t ring_ptr : 60;
-    };
-    uint64_t value;
-} endpoint_field23;
-
-typedef union 
-{
-    struct {
-        uint16_t average_trb_length;
-        uint16_t max_esit_payload_lo;
-    };
-    uint32_t value;
-} endpoint_field4;
-
-typedef struct {
-    slot_field0 slot_f0;
-    slot_field1 slot_f1;
-    slot_field2 slot_f2;
-    slot_field3 slot_f3;
-    uint32_t slot_rsvd[4];
-    struct {
-        endpoint_field0 endpoint_f0;
-        endpoint_field1 endpoint_f1;
-        endpoint_field23 endpoint_f23;
-        endpoint_field4 endpoint_f4;
-        uint32_t ep_rsvd[3];
-    } endpoints[31]
-} xhci_device_context;
-
-typedef struct {
-    xhci_input_control_context control_context;
-    xhci_device_context device_context;
-} xhci_input_context;
-
-typedef struct __attribute__((packed)) {
-    uint8_t bmRequestType;
-    uint8_t bRequest;
-    uint16_t wValue;
-    uint16_t wIndex;
-    uint16_t wLength;
-} usb_setup_packet;
-
-typedef struct __attribute__((packed)) {
-    uint8_t bLength;
-    uint8_t bDescriptorType;
-} usb_descriptor_header ;
-
-typedef struct __attribute__((packed)) {
-    usb_descriptor_header header;
-    uint16_t bcdUSB;
-    uint8_t  bDeviceClass;
-    uint8_t  bDeviceSubClass;
-    uint8_t  bDeviceProtocol;
-    uint8_t  bMaxPacketSize0;
-    uint16_t idVendor;
-    uint16_t idProduct;
-    uint16_t bcdDevice;
-    uint8_t  iManufacturer;
-    uint8_t  iProduct;
-    uint8_t  iSerialNumber;
-    uint8_t  bNumConfigurations;
-} usb_device_descriptor;
-
-typedef struct __attribute__((packed)) {
-    usb_descriptor_header header;
-    uint16_t wTotalLength;
-    uint8_t bNumInterfaces;
-    uint8_t bConfigurationValue;
-    uint8_t iConfiguration;
-    uint8_t bmAttributes;
-    uint8_t bMaxPower;
-    uint8_t data[255];
-} usb_configuration_descriptor;
-
-typedef struct __attribute__((packed)) {
-    usb_descriptor_header header;
-    uint8_t bInterfaceNumber;
-    uint8_t bAlternateSetting;
-    uint8_t bNumEndpoints;
-    uint8_t bInterfaceClass;
-    uint8_t bInterfaceSubClass;
-    uint8_t bInterfaceProtocol;
-    uint8_t iInterface;
-} usb_interface_descriptor;
-
-typedef struct __attribute__((packed)) {
-    usb_descriptor_header header;
-    uint16_t bcdHID;
-    uint8_t  bCountryCode;
-    uint8_t  bNumDescriptors;
-    struct {
-        uint8_t  bDescriptorType;
-        uint8_t wDescriptorLength;
-    }__attribute__((packed)) descriptors[1];
-#warning wDescriptorLength is supposed to be 16, but for some reason the descriptor from usb-kbd is 8. We'll need to fix this once we do a real device
-} usb_hid_descriptor;
-
-typedef struct __attribute__((packed)) {
-    usb_descriptor_header header;
-    uint8_t bEndpointAddress;
-    uint8_t bmAttributes;
-    uint8_t wMaxPacketSize;
-    uint8_t bInterval;
-#warning wMaxPacketSize is supposed to be 16, but for some reason the descriptor from usb-kbd is 8. We'll need to fix this once we do a real device
-} usb_endpoint_descriptor;
-
-typedef struct __attribute__((packed)) {
-    usb_descriptor_header header;
-    uint16_t lang_ids[126];
-} usb_string_language_descriptor;
-
-typedef struct __attribute__((packed)){
-    usb_descriptor_header header;
-    uint16_t unicode_string[126];
-} usb_string_descriptor;
-
-typedef struct {
-    bool transfer_cycle_bit;
-    uint32_t transfer_index;
-    bool endpoint_transfer_cycle_bit;
-    uint32_t endpoint_transfer_index;
-    trb* transfer_ring;
-    trb* endpoint_transfer_ring;
-    uint32_t slot_id;
-    uint8_t interface_protocol;//TODO: support multiple
-    uint16_t report_length;
-    uint8_t *report_descriptor;
-    xhci_input_context* ctx;
-    uint8_t *input_buffer;
-    uint8_t poll_packetSize;
-    uint8_t poll_endpoint;
- } xhci_usb_device;
-
-#define USB_DEVICE_DESCRIPTOR 1
-#define USB_CONFIGURATION_DESCRIPTOR 2
-#define USB_STRING_DESCRIPTOR 3
+#include "xhci_kbd.h"
 
 static xhci_device global_device;
 
@@ -560,7 +207,7 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
 }
 
 
-static void ring_doorbell(uint32_t slot, uint32_t endpoint) {
+void ring_doorbell(uint32_t slot, uint32_t endpoint) {
     volatile uint32_t* db = (uint32_t*)(uintptr_t)(global_device.db_base + (slot << 2));
     kprintfv("[xHCI] Ringing doorbell at %h with value %h", global_device.db_base + (slot << 2),endpoint);
     *db = endpoint;
@@ -694,7 +341,7 @@ bool xhci_request_sized_descriptor(xhci_usb_device *device, bool interface, uint
 }
 
 bool clear_halt(xhci_usb_device *device, uint16_t endpoint_num){
-    kprintf("Clearing halt");
+    kprintfv("Clearing halt");
     usb_setup_packet packet = {
         .bmRequestType = 0x2,
         .bRequest = 1,
@@ -779,6 +426,15 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
                 return false;
             }
             kprintfv("[xHCI] interface protocol %h",interface->bInterfaceProtocol);
+            switch (interface->bInterfaceProtocol)
+            {
+            case 0x1:
+                set_default_kbd(device);
+                break;
+            
+            default:
+                break;
+            }
             device->interface_protocol = interface->bInterfaceProtocol;
             interface_index++;
         break;
@@ -789,19 +445,19 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
                     device->report_length = hid->descriptors[j].wDescriptorLength;
                     device->report_descriptor = (uint8_t*)alloc_dma_region(device->report_length);
                     xhci_request_descriptor(device, true, 0x22, 0, interface_index-1, device->report_descriptor);
-                    kprintf("[xHCI] retrieved report descriptor of length %i at %h", device->report_length, (uintptr_t)device->report_descriptor);
+                    kprintfv("[xHCI] retrieved report descriptor of length %i at %h", device->report_length, (uintptr_t)device->report_descriptor);
                 }
             }
         break;
         case 0x5: //Endpoint
             usb_endpoint_descriptor *endpoint = (usb_endpoint_descriptor*)&config->data[i];
-            kprintf("[xHCI] endpoint address %h",endpoint->bEndpointAddress);
+            kprintfv("[xHCI] endpoint address %h",endpoint->bEndpointAddress);
             uint8_t ep_address = endpoint->bEndpointAddress;
             uint8_t ep_dir = (ep_address & 0x80) ? 1 : 0; // 1 IN, 0 OUT
             uint8_t ep_num = ((ep_address & 0x0F) * 2) + ep_dir;
 
             uint8_t ep_type = endpoint->bmAttributes & 0x03; // 0 = Control, 1 = Iso, 2 = Bulk, 3 = Interrupt
-            kprintf("[xHCI] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
+            kprintfv("[xHCI] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
 
             xhci_input_context* ctx = device->ctx;
 
@@ -826,7 +482,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             device->poll_packetSize = endpoint->wMaxPacketSize;
 
             if (!issue_command((uintptr_t)ctx, 0, (device->slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
-                kprintf("Failed to configure endpoint");
+                kprintf("[xHCI] Failed to configure endpoint %i",ep_num);
                 return false;
             }
 
@@ -838,8 +494,6 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
     return true;
     
 }
-
-xhci_usb_device* default_device;
 
 bool xhci_setup_device(uint16_t port){
 
@@ -853,7 +507,6 @@ bool xhci_setup_device(uint16_t port){
     }
 
     xhci_usb_device *device = (xhci_usb_device*)palloc(sizeof(xhci_usb_device));
-    default_device = device;
 
     device->slot_id = (global_device.event_ring[0].status >> 24) & 0xFF;
     kprintfv("[xHCI] Slot id %h", device->slot_id);
@@ -925,40 +578,35 @@ bool xhci_setup_device(uint16_t port){
         if (xhci_request_descriptor(device, false, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){
             char name[128];
             if (parse_string_descriptor_utf16le(prod_name->unicode_string, name, sizeof(name))) {
-                kprintf("[xHCI device] Product name: %s", (uint64_t)name);
+                kprintfv("[xHCI device] Product name: %s", (uint64_t)name);
             }
         }
         usb_string_descriptor* man_name = (usb_string_descriptor*)alloc_dma_region(sizeof(usb_string_descriptor));
         if (xhci_request_descriptor(device, false, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, man_name)){
             char name[128];
             if (parse_string_descriptor_utf16le(man_name->unicode_string, name, sizeof(name))) {
-                kprintf("[xHCI device] Manufacturer name: %s", (uint64_t)name);
+                kprintfv("[xHCI device] Manufacturer name: %s", (uint64_t)name);
             }
         }
         usb_string_descriptor* ser_name = (usb_string_descriptor*)alloc_dma_region(sizeof(usb_string_descriptor));
         if (xhci_request_descriptor(device, false, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, ser_name)){
             char name[128];
             if (parse_string_descriptor_utf16le(ser_name->unicode_string, name, sizeof(name))) {
-                kprintf("[xHCI device] Serial: %s", (uint64_t)name);
+                kprintfv("[xHCI device] Serial: %s", (uint64_t)name);
             }
         }
     }
 
     usb_configuration_descriptor* config = (usb_configuration_descriptor*)alloc_dma_region(sizeof(usb_configuration_descriptor));
-    kprintf(">>> We have space for %i",sizeof(usb_configuration_descriptor));
     if (!xhci_request_sized_descriptor(device, false, USB_CONFIGURATION_DESCRIPTOR, 0, 0, 8, config)){
         kprintf("[xHCI error] could not get config descriptor header");
         return false;
     }
 
-    kprintf(">>> Header length %i",config->header.bLength);
-
     if (!xhci_request_sized_descriptor(device, false, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->header.bLength, config)){
         kprintf("[xHCI error] could not get full config descriptor");
         return false;
     }
-
-    kprintf(">>> Full length %i",config->wTotalLength);
 
     if (!xhci_request_sized_descriptor(device, false, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->wTotalLength, config)){
         kprintf("[xHCI error] could not get full config descriptor");
@@ -987,87 +635,16 @@ bool xhci_input_init() {
 
     kprintfv("[xHCI] device initialized");
 
-    int port = -1;
-    for (uint16_t i = 0; i < global_device.max_ports; i++)//qemu only
+    //QEMU only device finder
+
+    for (uint16_t i = 0; i < global_device.max_ports; i++)
         if (global_device.ports[i].portsc.ccs && global_device.ports[i].portsc.csc){
-            port = i;
+            if (!xhci_setup_device(i)){
+                kprintf("Failed to configure device at port %i",i);
+                return false;
+            }
             break;
         }
 
-    if (port == -1){
-        kprintf("[xHCI error] no device connected. If we're in QEMU this is an error, if not, we'll need to revise this code");
-        return false;
-    }
-
-    return xhci_setup_device(port);//Default device
-
+    return true;
 }
-
-bool xhci_key_ready() {
-    trb* ring = &default_device->endpoint_transfer_ring[default_device->endpoint_transfer_index++];
-            
-    if (default_device->input_buffer == 0x0){
-        uint64_t buffer_addr = (uint64_t)alloc_dma_region(default_device->poll_packetSize);
-        default_device->input_buffer = (uint8_t*)buffer_addr;
-    }
-    
-    ring->parameter = (uintptr_t)default_device->input_buffer;
-    ring->status = default_device->poll_packetSize;
-    ring->control = (TRB_TYPE_NORMAL << 10) | (1 << 5) | default_device->endpoint_transfer_cycle_bit;
-
-    if (default_device->endpoint_transfer_index == MAX_TRB_AMOUNT - 1){
-        make_ring_link_control(default_device->endpoint_transfer_ring, default_device->endpoint_transfer_cycle_bit);
-        default_device->endpoint_transfer_cycle_bit = !default_device->endpoint_transfer_cycle_bit;
-        default_device->endpoint_transfer_index = 0;
-    }
-
-    ring_doorbell(default_device->slot_id, default_device->poll_endpoint);
-
-    if (!await_response((uintptr_t)ring,TRB_TYPE_TRANSFER)){
-        // kprintf("[xHCI error] input buffer setup failed");
-    }
-
-    // kprintf("[xHCI] input buffer has received input");
-}
-
-static const char hid_keycode_to_char[256] = {
-    [0x04] = 'a', [0x05] = 'b', [0x06] = 'c', [0x07] = 'd',
-    [0x08] = 'e', [0x09] = 'f', [0x0A] = 'g', [0x0B] = 'h',
-    [0x0C] = 'i', [0x0D] = 'j', [0x0E] = 'k', [0x0F] = 'l',
-    [0x10] = 'm', [0x11] = 'n', [0x12] = 'o', [0x13] = 'p',
-    [0x14] = 'q', [0x15] = 'r', [0x16] = 's', [0x17] = 't',
-    [0x18] = 'u', [0x19] = 'v', [0x1A] = 'w', [0x1B] = 'x',
-    [0x1C] = 'y', [0x1D] = 'z',
-    [0x1E] = '1', [0x1F] = '2', [0x20] = '3', [0x21] = '4',
-    [0x22] = '5', [0x23] = '6', [0x24] = '7', [0x25] = '8',
-    [0x26] = '9', [0x27] = '0',
-    [0x28] = '\n', [0x2C] = ' ', [0x2D] = '-', [0x2E] = '=',
-    [0x2F] = '[', [0x30] = ']', [0x31] = '\\', [0x33] = ';',
-    [0x34] = '\'', [0x35] = '`', [0x36] = ',', [0x37] = '.',
-    [0x38] = '/',
-};
-
-typedef struct {
-    uint8_t modifier;
-    uint8_t rsvd;
-    char keys[6];
-} keypress;
-
-keypress xhci_read_key() {
-    keypress *kp = (keypress*)default_device->input_buffer;
-    for (int i = 0; i < 6; i++){
-        if (kp->keys[i] != 0) kp->keys[i] = hid_keycode_to_char[kp->keys[i]];
-    }
-    return *kp;
-}
-
-void test_keyboard_input() {
-    kprintf("[NEC] Waiting for input");
-    while (true) {
-        if (xhci_key_ready()) {
-            keypress ch = xhci_read_key();
-            kprintf("Key: %c", ch.keys[0]);
-        }
-    }
-}
-

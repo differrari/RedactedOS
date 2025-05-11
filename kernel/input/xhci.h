@@ -1,7 +1,11 @@
 #pragma once
 
 #include "types.h"
+#include "xhci_types.h"
 
 void xhci_enable_verbose();
 bool xhci_input_init();
-void test_keyboard_input();
+
+void make_ring_link_control(trb* ring, bool cycle);
+void ring_doorbell(uint32_t slot, uint32_t endpoint);
+bool await_response(uint64_t command, uint32_t type);

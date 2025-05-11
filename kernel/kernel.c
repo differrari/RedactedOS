@@ -13,6 +13,7 @@
 #include "default_process.h"
 #include "filesystem/disk.h"
 #include "kernel_processes/bootscreen.h"
+#include "input/xhci_kbd.h"
 #include "input/xhci.h"
 
 void kernel_main() {
