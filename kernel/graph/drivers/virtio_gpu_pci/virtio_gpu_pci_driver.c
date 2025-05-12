@@ -567,14 +567,14 @@ bool vgp_init(uint32_t width, uint32_t height) {
     default_width = width;
     default_height = height;
 
-    pci_enable_device(address);
-
+    //TODO: This device is beyond abandoned
     if (address > 0) {
         kprintf("VGP GPU detected at %h",address);
-
+        
         kprintf("Initializing GPU...");
-
+        
         vgp_get_capabilities(address);
+        pci_enable_device(address);
         vgp_start();
 
         kprintf("GPU initialized. Issuing commands");

@@ -5,6 +5,7 @@
 #include "fw/fw_cfg.h"
 #include "kstring.h"
 #include "gic.h"
+#include "mmu.h"
 
 #define PCI_BUS_MAX 256
 #define PCI_SLOT_MAX 32
@@ -195,6 +196,18 @@ uint64_t pci_get_bar_address(uint64_t base, uint8_t offset, uint8_t index){
     return base + offset + (index * 4);
 }
 
+uint64_t pci_read_address_bar(uintptr_t pci_addr, uint32_t bar_index){
+    uint64_t bar_addr = pci_get_bar_address(pci_addr, 0x10, bar_index);
+    uint32_t original = read32(bar_addr);
+    uint64_t full = original;
+    if ((original & 0x6) == 0x4) {
+        uint64_t bar_addr_hi = pci_get_bar_address(pci_addr, 0x10, bar_index+1);
+        uint32_t original_hi = read32(bar_addr_hi);
+        full |= original_hi << 32;
+    }
+    return full & ~0xF;
+}
+
 void debug_read_bar(uint64_t base, uint8_t offset, uint8_t index){
     uint64_t addr = pci_get_bar_address(base, offset, index);
     uint64_t val = read32(addr);
@@ -291,6 +304,17 @@ void pci_enable_device(uint64_t pci_addr){
     write16(pci_addr + PCI_COMMAND_REGISTER,cmd);
 }
 
+uint16_t pci_device_count = 0;
+pci_device_mmio pci_devices[16];
+
+void pci_register(uint64_t mmio_addr, uint64_t mmio_size){
+    pci_devices[pci_device_count++] = (pci_device_mmio){mmio_addr,mmio_size};
+    kprintf(">>Registering PCI device %i",pci_device_count);
+    if (mmu_active())
+        for (uint64_t addr = mmio_addr; addr <= mmio_addr + mmio_size; addr += GRANULE_4KB)
+            register_device_memory(addr,addr);
+}
+
 bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_line) {
     uint8_t cap_ptr = read8(pci_addr + 0x34);
     while (cap_ptr) {
@@ -314,4 +338,47 @@ bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_line) {
         cap_ptr = read8(pci_addr + cap_ptr + 1);
     }
     return false;
+}
+
+typedef struct {
+    uint32_t msg_addr_low;
+    uint32_t msg_addr_high;
+    uint32_t msg_data;
+    uint32_t vector_control;
+} msix_table_entry;
+
+bool pci_setup_msix(uint64_t pci_addr, uint8_t irq_line) {
+
+    uint8_t cap_ptr = read8(pci_addr + 0x34);
+    while (cap_ptr) {
+        uint8_t cap_id = read8(pci_addr + cap_ptr);
+        if (cap_id == 0x11) { // MSI-X
+            uint16_t msg_ctrl = read16(pci_addr + cap_ptr + 0x2);
+            uint16_t num_vectors = (msg_ctrl & 0x7FF) + 1;
+            msg_ctrl &= ~(1 << 15); // Clear MSI-X Enable bit
+            write16(pci_addr + cap_ptr + 0x2, msg_ctrl);
+            uint8_t table_size = (msg_ctrl & 0x7FF) + 1;
+            uint32_t table_offset = read32(pci_addr + cap_ptr + 0x4);
+            uint8_t bir = table_offset & 0x7;
+            uint32_t table_addr_offset = table_offset & ~0x7;
+            
+            uint64_t table_addr = pci_read_address_bar(pci_addr, bir);
+            
+            msix_table_entry *msix_entry = (msix_table_entry *)(uintptr_t)(table_addr + table_addr_offset);
+            
+            msix_entry->msg_addr_low = 0x8020040;
+            msix_entry->msg_addr_high = 0;
+            msix_entry->msg_data = 50 + irq_line;
+            msix_entry->vector_control = 0;
+            
+            msg_ctrl |= (1 << 15); // MSI-X Enable
+            msg_ctrl &= ~(1 << 14); // Clear Function Mask
+            write16(pci_addr + cap_ptr + 0x2, msg_ctrl);
+
+            break;
+        }
+        cap_ptr = read8(pci_addr + cap_ptr + 1);
+    }
+
+    return true;
 }

@@ -4,14 +4,22 @@
 
 #include "types.h"
 
-uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id);
+typedef struct {
+    uint64_t base_addr;
+    uint64_t size;
+} pci_device_mmio;
 
+extern pci_device_mmio pci_devices[16];
+extern uint16_t pci_device_count;
+
+uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id);
 uint64_t pci_get_bar_address(uint64_t base, uint8_t offset, uint8_t index);
+uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_start, uint64_t *mmio_size);
 
 void pci_enable_device(uint64_t pci_addr);
-
-uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_start, uint64_t *mmio_size);
+void pci_register(uint64_t mmio_addr, uint64_t mmio_size);
 
 void pci_enable_verbose();
 
 bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_vector);
+bool pci_setup_msix(uint64_t pci_addr, uint8_t irq_line);

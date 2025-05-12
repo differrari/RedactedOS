@@ -56,7 +56,7 @@ bool is_new_keypress(keypress* current, keypress* previous) {
 
     uint8_t seen[32] = {0};
     for (int i = 0; i < 6; i++)
-        if (current->keys[i] != previous->keys[i] && hid_keycode_to_char[current->keys[i]] != previous->keys[i]){
+        if (current->keys[i] != previous->keys[i]){
             return true;
         } 
 
@@ -80,9 +80,8 @@ keypress xhci_read_key() {
         kp.modifier = rkp->modifier;
         kprintf_raw("Mod: %i", kp.modifier);
         for (int i = 0; i < 6; i++){
-            if (rkp->keys[i] != 0)
-                kp.keys[i] = hid_keycode_to_char[rkp->keys[i]];
-            kprintf_raw("Key [%i]: %c %i", i, kp.keys[i], kp.keys[i]);
+            kp.keys[i] = rkp->keys[i];
+            kprintf_raw("Key [%i]: %i", i, kp.keys[i]);
         }
         last_keypress = kp;
     }

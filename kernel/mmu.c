@@ -4,6 +4,7 @@
 #include "console/kio.h"
 #include "gic.h"
 #include "dtb.h"
+#include "pci.h"
 #include "filesystem/disk.h"
 
 #define MAIR_DEVICE_nGnRnE 0b00000000
@@ -18,12 +19,10 @@
 #define PAGE_TABLE_ENTRIES 512
 #define PAGE_SIZE PAGE_TABLE_ENTRIES * 8
 
-#define GRANULE_4KB 0x1000
-#define GRANULE_2MB 0x200000
-
 uint64_t page_table_l1[PAGE_TABLE_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
 
 static bool mmu_verbose;
+static bool _mmu_active;
 
 void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     uint64_t l1_index = (va >> 37) & 0x1FF;
@@ -124,7 +123,7 @@ void mmu_init() {
     for (uint64_t addr = UART0_BASE; addr <= UART0_BASE; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
 
-    for (uint64_t addr = GICD_BASE; addr <= GICD_BASE + 0x12000; addr += GRANULE_4KB)
+    for (uint64_t addr = GICD_BASE; addr <= GICD_BASE + 0x20040; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
 
     for (uint64_t addr = get_shared_start(); addr <= get_shared_end(); addr += GRANULE_4KB)
@@ -136,11 +135,12 @@ void mmu_init() {
     for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 1);
 
-    uint64_t diskstart = get_disk_address();
-    uint64_t disksize = get_disk_size();
-    kprintf("Disk device size %h",disksize);
-    for (uint64_t addr = diskstart; addr <= diskstart + disksize; addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
+    kprintf("ALLOCING FOR %i DEVICES", pci_device_count);
+    for (uint16_t i = 0; i < pci_device_count; i++){
+        kprintf("Allocing device [%i] at %h (%h)",i,pci_devices[i].base_addr,pci_devices[i].size);
+        for (uint64_t addr = pci_devices[i].base_addr; addr <= pci_devices[i].base_addr + pci_devices[i].size; addr += GRANULE_4KB)
+            mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
+    }
 
     uint64_t mair = (MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_NOCACHE << (MAIR_IDX_NORMAL * 8));
     asm volatile ("msr mair_el1, %0" :: "r"(mair));
@@ -165,6 +165,7 @@ void mmu_init() {
     uint64_t sctlr;
     asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
 
+    _mmu_active = true;
     kprintf_raw("Finished MMU init");
 }
 
@@ -238,4 +239,8 @@ void debug_mmu_address(uint64_t va){
     }
     kprintf_raw("Entry: %h", l4_val);
     return;
+}
+
+bool mmu_active(){
+    return _mmu_active;
 }

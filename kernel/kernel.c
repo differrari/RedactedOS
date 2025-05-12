@@ -58,7 +58,7 @@ void kernel_main() {
         panic("Disk initialization failure");
 
     // mmu_enable_verbose();
-    // mmu_init();
+    mmu_init();
     kprintf("MMU Mapped");
 
     kprintf("Kernel initialization finished");
@@ -72,7 +72,7 @@ void kernel_main() {
 
     kprintf("Starting default processes");
 
-    default_processes();
+    // default_processes();
 
     start_bootscreen();
     

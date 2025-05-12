@@ -91,6 +91,8 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
         return false;
     }
 
+    pci_register(xhci->mmio, xhci->mmio_size);
+
     pci_enable_device(pci_addr);
 
     kprintfv("[xHCI] BARs set up @ %h (%h)",xhci->mmio,xhci->mmio_size);

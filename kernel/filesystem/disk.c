@@ -110,6 +110,7 @@ bool find_disk(){
     pci_enable_device(addr);
 
     virtio_get_capabilities(&blk_dev, addr, &disk_device_address, &disk_device_size);
+    pci_register(disk_device_address, disk_device_size);
     if (!virtio_init_device(&blk_dev)) {
         kprintf("Failed initialization");
         return false;
@@ -168,12 +169,4 @@ void disk_test() {
     vblk_read(&blk_dev, buf, 1, 1);
     kprintf("Read performed");
     kprintf("Read: %s",(uint64_t)buf);
-}
-
-uint64_t get_disk_address(){
-    return disk_device_address;
-}
-
-uint64_t get_disk_size(){
-    return disk_device_size;
 }
