@@ -48,7 +48,15 @@ void start_scheduler(){
     switch_proc(YIELD);
 }
 
-int get_current_proc(){
+process_t* get_current_proc(){
+    return &processes[current_proc];
+}
+
+process_t* get_proc_by_pid(uint16_t pid){
+    return &processes[pid];
+}
+
+uint16_t get_current_proc_pid(){
     return current_proc;
 }
 

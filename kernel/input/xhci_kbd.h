@@ -1,3 +1,5 @@
+#pragma once
+
 #include "xhci.h"
 #include "xhci_types.h"
 

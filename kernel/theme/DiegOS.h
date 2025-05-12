@@ -1,4 +1,4 @@
-#define BOOTSCREEN_TEXT "I haven't bothered giving this OS a name yet - %i%"
+#define BOOTSCREEN_TEXT "I haven't bothered giving this OS a name yet - %c"
 
 #define BOOTSCREEN_NUM_SYMBOLS 13
 #define BOOTSCREEN_NUM_STEPS 12

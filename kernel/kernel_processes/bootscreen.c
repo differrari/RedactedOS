@@ -6,6 +6,7 @@
 #include "ram_e.h"
 #include "theme/theme.h"
 #include "interrupts/exception_handler.h"
+#include "input/input_dispatch.h"
 
 int abs(int n){
     return n < 0 ? -n : n;
@@ -26,6 +27,11 @@ __attribute__((section(".text.kbootscreen")))
 void boot_draw_name(point screen_middle,int xoffset, int yoffset){
     const char* name = BOOTSCREEN_TEXT;
     uint64_t *i = &randomNumber;
+    keypress kp;
+    if (sys_read_input_current(&kp)){
+        if (kp.keys[0] != 0)
+            randomNumber = kp.keys[0];
+    }
     kstring s = string_format_args(name, i, 1);
     int scale = 2;
     uint32_t char_size = gpu_get_char_size(scale);
@@ -56,6 +62,7 @@ point boot_calc_point(point offset, int sizes[4], size screen_size, point screen
 __attribute__((section(".text.kbootscreen")))
 void bootscreen(){
     disable_visual();
+    sys_focus_current();
     while (1)
     {
         gpu_clear(0);
@@ -79,8 +86,6 @@ void bootscreen(){
                 for (int k = 0; k < 1000000; k++) {}
                 boot_draw_name(screen_middle, 0, BOOTSCREEN_PADDING + sizes[2] + 10);
             }
-            randomNumber += 30;
-            randomNumber %= 100;
             current_point = next_point;
         }
     }

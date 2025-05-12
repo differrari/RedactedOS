@@ -10,8 +10,11 @@ typedef enum {
 
 void switch_proc(ProcSwitchReason reason);
 void start_scheduler();
-int get_current_proc();
 void save_context_registers();
 void save_return_address_interrupt();
 process_t* init_process();
 void process_restore();
+
+process_t* get_current_proc();
+process_t* get_proc_by_pid(uint16_t pid);
+uint16_t get_current_proc_pid();
