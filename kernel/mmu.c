@@ -2,7 +2,7 @@
 #include "console/serial/uart.h"
 #include "ram_e.h"
 #include "console/kio.h"
-#include "gic.h"
+#include "interrupts/gic.h"
 #include "dtb.h"
 #include "pci.h"
 #include "filesystem/disk.h"

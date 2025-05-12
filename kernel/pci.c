@@ -4,7 +4,7 @@
 #include "dma.h"
 #include "fw/fw_cfg.h"
 #include "kstring.h"
-#include "gic.h"
+#include "interrupts/gic.h"
 #include "mmu.h"
 
 #define PCI_BUS_MAX 256

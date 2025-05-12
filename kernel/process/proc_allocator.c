@@ -1,6 +1,6 @@
 #include "proc_allocator.h"
 #include "ram_e.h"
-#include "gic.h"
+#include "interrupts/gic.h"
 #include "console/kio.h"
 #include "mmu.h"
 

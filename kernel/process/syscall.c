@@ -1,8 +1,8 @@
 #include "syscall.h"
 #include "console/kio.h"
-#include "exception_handler.h"
+#include "interrupts/exception_handler.h"
 #include "console/serial/uart.h"
-#include "gic.h"
+#include "interrupts/gic.h"
 #include "ram_e.h"
 
 void sync_el0_handler_c(){

@@ -1,6 +1,6 @@
 #include "console/serial/uart.h"
 #include "ram_e.h"
-#include "gic.h"
+#include "interrupts/gic.h"
 
 #define UART0_DR   (UART0_BASE + 0x00)
 #define UART0_FR   (UART0_BASE + 0x18)

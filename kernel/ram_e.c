@@ -1,6 +1,6 @@
 #include "ram_e.h"
 #include "types.h"
-#include "exception_handler.h"
+#include "interrupts/exception_handler.h"
 #include "console/kio.h"
 #include "dtb.h"
 #include "console/serial/uart.h"

@@ -4,7 +4,7 @@
 #include "graph/graphics.h"
 #include "kstring.h"
 #include "ram_e.h"
-#include "exception_handler.h"
+#include "interrupts/exception_handler.h"
 
 int abs(int n){
     return n < 0 ? -n : n;

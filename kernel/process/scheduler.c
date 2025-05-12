@@ -2,7 +2,7 @@
 #include "console/kio.h"
 #include "ram_e.h"
 #include "proc_allocator.h"
-#include "gic.h"
+#include "interrupts/gic.h"
 #include "console/serial/uart.h"
 
 extern void save_context(process_t* proc);
