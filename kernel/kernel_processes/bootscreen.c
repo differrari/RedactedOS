@@ -4,21 +4,27 @@
 #include "graph/graphics.h"
 #include "kstring.h"
 #include "ram_e.h"
+#include "theme/theme.h"
 #include "interrupts/exception_handler.h"
 
 int abs(int n){
     return n < 0 ? -n : n;
 }
 
-int lerp(int step, int a, int b){
-    return (a + step * (a < b ? 1 : -1));
+int sign(int x) {
+    return (x > 0) - (x < 0);
 }
 
+int lerp(int i, int start, int end, int steps) {
+    return start + (end - start) * i / steps;
+}
+
+__attribute__((section(".data.kbootscreen")))
 static uint64_t randomNumber = 0;
 
 __attribute__((section(".text.kbootscreen")))
 void boot_draw_name(point screen_middle,int xoffset, int yoffset){
-    const char* name = "JesOS - The Christian Operative System - %i%";
+    const char* name = BOOTSCREEN_TEXT;
     uint64_t *i = &randomNumber;
     kstring s = string_format_args(name, i, 1);
     int scale = 2;
@@ -31,6 +37,22 @@ void boot_draw_name(point screen_middle,int xoffset, int yoffset){
     temp_free(s.data,256);
 }
 
+__attribute__((section(".rodata.kbootscreen")))
+point offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
+
+__attribute__((section(".text.kbootscreen")))
+point boot_calc_point(point offset, int sizes[4], size screen_size, point screen_middle){
+    bool x0 = offset.x == 0;
+    bool y0 = offset.y == 0;
+    bool ui = !(abs(offset.x) - 1);
+    bool ul = !(abs(offset.y) - 1);
+    int xs = sign(offset.x);
+    int ys = sign(offset.y);
+    int xloc = BOOTSCREEN_PADDING + (x0 ? 0 : (ui ? sizes[3] : sizes[1]));
+    int yloc = BOOTSCREEN_PADDING + (y0 ? 0 : (ul ? sizes[0] : sizes[2]));
+    return (point){screen_middle.x + (xs * xloc) - (ui ? BOOTSCREEN_ASYMM.x : 0),  screen_middle.y + (ys * yloc) - (ul ? BOOTSCREEN_ASYMM.y : 0)};
+}
+
 __attribute__((section(".text.kbootscreen")))
 void bootscreen(){
     disable_visual();
@@ -39,38 +61,29 @@ void bootscreen(){
         gpu_clear(0);
         size screen_size = gpu_get_screen_size();
         point screen_middle = {screen_size.width/2,screen_size.height/2};
-        int sizes[4] = {30,screen_size.width/5,screen_size.height/3,40};
-        int padding = 10;
-        int yoffset = 50;
+        int sizes[4] = {BOOTSCREEN_INNER_X_CONST,screen_size.width/BOOTSCREEN_OUTER_X_DIV,screen_size.height/BOOTSCREEN_UPPER_Y_DIV,BOOTSCREEN_LOWER_Y_CONST};
         
-        point current_point = {screen_middle.x-padding-sizes[1],screen_middle.y-padding-yoffset-sizes[0]};
-        for (int i = 0; i < 12; i++){
-            int ys = i > 5 ? -1 : 1;
-            bool ui = (i % 6) != 0 && (i % 6) != 5;
-            bool ul = (i/2) % 2 == 0;
-            bool xn = (i/3) % 3 == 0;
-            if (i >= 6)
-                ul = !ul;
-            int xs = xn ? -1 : 1;
-            int xloc = padding + (ui ? sizes[3] : sizes[1]);
-            int yloc = padding + (ul ? sizes[0] : sizes[2]);
-            point next_point = {screen_middle.x + (xs * xloc),  screen_middle.y + (ys * yloc) - (ul ? yoffset : 0)};
+        point current_point = boot_calc_point(offsets[BOOTSCREEN_NUM_SYMBOLS-1],sizes,screen_size,screen_middle);
+        for (int i = 0; i < BOOTSCREEN_NUM_STEPS; i++){
+            point offset = offsets[i];
+            point next_point = boot_calc_point(offset,sizes,screen_size,screen_middle);
             int xlength = abs(current_point.x - next_point.x);
             int ylength = abs(current_point.y - next_point.y);
-            for (int x = 0; x <= xlength; x++){
-                for (int y = 0; y <= ylength; y++){
-                    point interpolated = {lerp(x,current_point.x,next_point.x),lerp(y,current_point.y,next_point.y)};
-                    gpu_draw_pixel(interpolated,0xFFFFFF);
-                    for (int k = 0; k < 1000000; k++){}
-                }    
-                boot_draw_name(screen_middle,0,padding + sizes[2] + 10);
+            int steps = xlength > ylength ? xlength : ylength;
+            for (int i = 0; i <= steps; i++) {
+                point interpolated = {
+                    lerp(i, current_point.x, next_point.x, steps),
+                    lerp(i, current_point.y, next_point.y, steps)
+                };
+                gpu_draw_pixel(interpolated, 0xFFFFFF);
+                for (int k = 0; k < 1000000; k++) {}
+                boot_draw_name(screen_middle, 0, BOOTSCREEN_PADDING + sizes[2] + 10);
             }
-            randomNumber += 50;
+            randomNumber += 30;
             randomNumber %= 100;
             current_point = next_point;
         }
     }
-    
 }
 
 void start_bootscreen(){
