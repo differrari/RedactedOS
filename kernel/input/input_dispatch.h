@@ -8,6 +8,8 @@ void sys_subscribe_shortcut(keypress kp);
 void sys_set_focus(int pid);
 void sys_focus_current();
 
+void sys_unset_focus();
+
 ///A process can request for shortcuts and others to be disabled
 void sys_set_secure(bool secure);
 

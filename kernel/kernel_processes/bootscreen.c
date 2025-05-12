@@ -7,6 +7,7 @@
 #include "theme/theme.h"
 #include "interrupts/exception_handler.h"
 #include "input/input_dispatch.h"
+#include "process/scheduler.h"
 
 int abs(int n){
     return n < 0 ? -n : n;
@@ -83,11 +84,12 @@ void bootscreen(){
                     lerp(i, current_point.y, next_point.y, steps)
                 };
                 gpu_draw_pixel(interpolated, 0xFFFFFF);
-                for (int k = 0; k < 1000000; k++) {}
+                for (int k = 0; k < 10000; k++) {}
                 boot_draw_name(screen_middle, 0, BOOTSCREEN_PADDING + sizes[2] + 10);
             }
             current_point = next_point;
         }
+        stop_current_process();
     }
 }
 

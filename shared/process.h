@@ -17,6 +17,6 @@ typedef struct {
     uint64_t pc;
     uint64_t spsr; 
     uint64_t id;
-    enum { READY, RUNNING, BLOCKED } state;
+    enum { STOPPED, READY, RUNNING, BLOCKED } state;
     input_buffer_t input_buffer;
 } process_t;

@@ -4,6 +4,8 @@
 #include "proc_allocator.h"
 #include "interrupts/gic.h"
 #include "console/serial/uart.h"
+#include "input/input_dispatch.h"
+#include "interrupts/exception_handler.h"
 
 extern void save_context(process_t* proc);
 extern void save_pc_interrupt(process_t* proc);
@@ -11,8 +13,9 @@ extern void restore_context(process_t* proc);
 
 #define MAX_PROCS 16
 process_t processes[MAX_PROCS];
-int current_proc = 0;
-int proc_count = 0;
+uint16_t current_proc = 0;
+uint16_t proc_count = 0;
+uint16_t next_proc_index = 0;
 
 void save_context_registers(){
     save_context(&processes[current_proc]);
@@ -25,10 +28,10 @@ void save_return_address_interrupt(){
 void switch_proc(ProcSwitchReason reason) {
     // kprintf_raw("Stopping execution of process %i at %h",current_proc, processes[current_proc].sp);
     if (proc_count == 0)
-        return;
-    int next_proc = (current_proc + 1) % proc_count;
+        panic("No processes active");
+    int next_proc = (current_proc + 1) % next_proc_index;
     while (processes[next_proc].state != READY) {
-        next_proc = (next_proc + 1) % proc_count;
+        next_proc = (next_proc + 1) % next_proc_index;
         if (next_proc == current_proc)
             return;
     }
@@ -60,10 +63,50 @@ uint16_t get_current_proc_pid(){
     return current_proc;
 }
 
-process_t* init_process(){
-    if (proc_count >= MAX_PROCS) return 0;
+void reset_process(process_t *proc){
+    proc->sp = 0;
+    proc->pc = 0;
+    proc->spsr = 0;
+    for (int j = 0; j < 31; j++){
+        proc->regs[j] = 0;
+    }
+    proc->input_buffer.read_index = 0;
+    proc->input_buffer.write_index = 0;
+    for (int k = 0; k < INPUT_BUFFER_CAPACITY; k++){
+        proc->input_buffer.entries[k] = (keypress){0};
+    }
+}
 
-    process_t* proc = &processes[proc_count];
-    proc->id = proc_count++;
+process_t* init_process(){
+    process_t* proc;
+    if (next_proc_index >= MAX_PROCS){
+        for (uint16_t i = 0; i < MAX_PROCS; i++){
+            if (processes[i].state == STOPPED){
+                proc = &processes[i];
+                reset_process(proc);
+                proc->state = READY;
+                proc->id = i;
+                return proc;
+            }
+        }
+    }
+
+    proc = &processes[next_proc_index];
+    proc->id = next_proc_index++;
+    proc->state = READY;
+    proc_count++;
     return proc;
+}
+
+void stop_process(uint16_t pid){
+    process_t *proc = &processes[pid];
+    proc->state = STOPPED;
+    sys_unset_focus();
+    reset_process(proc);
+    proc_count--;
+    switch_proc(HALT);
+}
+
+void stop_current_process(){
+    stop_process(current_proc);
 }

@@ -22,6 +22,9 @@ static const char hid_keycode_to_char[256] = {
 };
 
 void register_keypress(keypress kp) {
+
+    if ((uintptr_t)focused_proc) return;
+
     input_buffer_t* buf = &focused_proc->input_buffer;
     uint32_t next_index = (buf->write_index + 1) % INPUT_BUFFER_CAPACITY;
 
@@ -44,9 +47,13 @@ void sys_set_focus(int pid){
     focused_proc = get_proc_by_pid(pid);
 }
 
+void sys_unset_focus(){
+    focused_proc = 0;
+}
+
 ///A process can request for shortcuts and others to be disabled
 void sys_set_secure(bool secure){
-    //Temporarily disable shortcuts. I guess shortcuts could malitiously be used to detect parts of a keyboard
+    //Temporarily disable shortcuts. I guess shortcuts could malitiously be used to detect parts of a password
 }
 
 bool sys_read_input_current(keypress *out){
