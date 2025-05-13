@@ -38,11 +38,8 @@ void xhci_kbd_request_data() {
 bool is_new_keypress(keypress* current, keypress* previous) {
     if (current->modifier != previous->modifier) return true;
 
-    uint8_t seen[32] = {0};
     for (int i = 0; i < 6; i++)
-        if (current->keys[i] != previous->keys[i]){
-            return true;
-        } 
+        if (current->keys[i] != previous->keys[i]) return true;
 
     return false;
 }

@@ -30,4 +30,4 @@
 
 #define BG_COLOR 0x703285
 
-#define default_pwd "hediedforyoursins"
+#define default_pwd "amen"
