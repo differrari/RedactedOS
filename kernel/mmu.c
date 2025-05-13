@@ -60,7 +60,6 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
     uint64_t l3_index = (va >> 21) & 0x1FF;
     uint64_t l4_index = (va >> 12) & 0x1FF;
 
-    
     if (!(page_table_l1[l1_index] & 1)) {
         uint64_t* l2 = (uint64_t*)palloc(PAGE_SIZE);
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l2[i] = 0;
@@ -89,6 +88,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
     
     if (l4[l4_index] & 1){
         kprintf_raw("[WARNING]: Section already mapped %h",va);
+        return;
     }
     
     //54 = UXN level | 53 = PXN !level | 8 = share | 6 = Access permission
@@ -108,6 +108,50 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
         kprintf_raw("Mapping 4kb memory %h at [%i][%i][%i][%i] for EL%i = %h permission: %i", va, l1_index,l2_index,l3_index,l4_index,level,attr,permission);
     
     l4[l4_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
+}
+
+static inline void mmu_flush_all() {
+    asm volatile (
+        "dsb ishst\n"        // Ensure all memory accesses complete
+        "tlbi vmalle1is\n"   // Invalidate all EL1 TLB entries (Inner Shareable)
+        "dsb ish\n"          // Ensure completion of TLB invalidation
+        "isb\n"              // Synchronize pipeline
+    );
+}
+
+static inline void mmu_flush_icache() {
+    asm volatile (
+        "ic iallu\n"         // Invalidate all instruction caches to PoU
+        "isb\n"              // Ensure completion before continuing
+    );
+}
+
+void mmu_unmap(uint64_t va, uint64_t pa){
+    uint64_t l1_index = (va >> 37) & 0x1FF;
+    uint64_t l2_index = (va >> 30) & 0x1FF;
+    uint64_t l3_index = (va >> 21) & 0x1FF;
+    uint64_t l4_index = (va >> 12) & 0x1FF;
+
+    if (!(page_table_l1[l1_index] & 1)) return;
+    
+    uint64_t* l2 = (uint64_t*)(page_table_l1[l1_index] & 0xFFFFFFFFF000ULL);
+    if (!(l2[l2_index] & 1)) return;
+    
+    uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
+    uint64_t l3_val = l3[l3_index];
+    if (!(l3_val & 1)) {
+        return;
+    } else if ((l3_val & 0b11) == PD_BLOCK){
+        l3[l3_index] = 0;
+        return;
+    }
+    
+    uint64_t* l4 = (uint64_t*)(l3[l3_index] & 0xFFFFFFFFF000ULL);
+
+    l4[l4_index] = 0;
+
+    mmu_flush_all();
+    mmu_flush_icache();
 }
 
 void mmu_init() {
@@ -171,22 +215,6 @@ void mmu_init() {
 
 void mmu_enable_verbose(){
     mmu_verbose = true;
-}
-
-static inline void mmu_flush_all() {
-    asm volatile (
-        "dsb ishst\n"        // Ensure all memory accesses complete
-        "tlbi vmalle1is\n"   // Invalidate all EL1 TLB entries (Inner Shareable)
-        "dsb ish\n"          // Ensure completion of TLB invalidation
-        "isb\n"              // Synchronize pipeline
-    );
-}
-
-static inline void mmu_flush_icache() {
-    asm volatile (
-        "ic iallu\n"         // Invalidate all instruction caches to PoU
-        "isb\n"              // Ensure completion before continuing
-    );
 }
 
 void register_device_memory(uint64_t va, uint64_t pa){

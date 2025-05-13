@@ -98,6 +98,8 @@ void free_proc_mem(void* ptr, uint64_t size) {
         uint64_t* l4t = (uint64_t*)(l3t[l3] & ~0xFFF);
 
         l4t[l4] = 0;
+
+        mmu_unmap(v,v);
     }
 }
 

@@ -54,7 +54,7 @@ void kernel_main() {
     
     kprintf("Initializing disk...");
 
-    disk_verbose();
+    // disk_verbose();
     if (!find_disk())
         panic("Disk initialization failure");
 
@@ -73,6 +73,7 @@ void kernel_main() {
 
     kprintf("Starting default processes");
 
+
     // default_processes();
 
     start_process_monitor();
@@ -84,6 +85,6 @@ void kernel_main() {
     disable_interrupt();
     start_scheduler();
 
-    kprintf_raw("Error: Kernel did not activate any process");
+    panic("Kernel did not activate any process");
     
 }

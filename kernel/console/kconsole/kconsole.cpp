@@ -117,4 +117,5 @@ void KernelConsole::clear() {
     cursor_x = 0;
     cursor_y = 0;
     scroll_row_offset = 0;
+    gpu_flush();
 }

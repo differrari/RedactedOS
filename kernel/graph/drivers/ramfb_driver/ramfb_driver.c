@@ -131,7 +131,7 @@ void rfb_draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t colo
 }
 
 void rfb_draw_single_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color) {
-    rfb_draw_char(x,y,x,scale,color);
+    rfb_draw_char(x,y,c,scale,color);
     mark_dirty(x,y,8*scale,8*scale);
 }
 
