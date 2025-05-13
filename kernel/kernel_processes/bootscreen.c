@@ -27,13 +27,7 @@ static uint64_t randomNumber = 0;
 __attribute__((section(".text.kcoreprocesses")))
 void boot_draw_name(point screen_middle,int xoffset, int yoffset){
     const char* name = BOOTSCREEN_TEXT;
-    uint64_t *i = &randomNumber;
-    keypress kp;
-    if (sys_read_input_current(&kp)){
-        if (kp.keys[0] != 0)
-            randomNumber = kp.keys[0];
-    }
-    kstring s = string_format_args(name, i, 1);
+    kstring s = string_l(name);
     int scale = 2;
     uint32_t char_size = gpu_get_char_size(scale);
     int mid_offset = (s.length/2) * char_size;
@@ -41,7 +35,7 @@ void boot_draw_name(point screen_middle,int xoffset, int yoffset){
     int yo = screen_middle.y + yoffset;
     gpu_fill_rect((rect){xo,yo, char_size * s.length, char_size},0x0);
     gpu_draw_string(s, (point){xo, yo}, scale, 0xFFFFFF);
-    temp_free(s.data,256);
+    temp_free(s.data,s.length);
 }
 
 __attribute__((section(".rodata.kcoreprocesses")))

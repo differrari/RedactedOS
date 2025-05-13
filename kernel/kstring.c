@@ -11,18 +11,18 @@ static uint32_t compute_length(const char *s, uint32_t max_length) {
 
 kstring string_l(const char *literal) {
     uint32_t len = compute_length(literal, 0);
-    kstring str;
-    str.data = (char *)literal;
-    str.length = len;
-    return str;
+    char *buf = (char*)talloc(len);
+    for (int i = 0; i < len; i++)
+        buf[i] = literal[i];
+    return (kstring){ .data = buf, .length = len };
 }
 
 kstring string_ca_max(const char *array, uint32_t max_length) {
     uint32_t len = compute_length(array, max_length);
-    kstring str;
-    str.data = (char *)array;
-    str.length = len;
-    return str;
+    char *buf = (char*)talloc(len);
+    for (int i = 0; i < len; i++)
+        buf[i] = array[i];
+    return (kstring){ .data = buf, .length = len };
 }
 
 kstring string_c(const char c){

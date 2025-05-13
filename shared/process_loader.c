@@ -114,7 +114,9 @@ process_t* create_process(void (*func)(), uint64_t code_size, uint64_t func_base
     kprintf_raw("Stack size %h. Start %h", stack_size,stack);
     if (!stack) return 0;
 
-    proc->sp = (stack + stack_size);
+    proc->stack = (stack + stack_size);
+    proc->stack_size = stack_size;
+    proc->sp = proc->stack;
     
     proc->pc = (uint64_t)code_dest;
     kprintf_raw("Process allocated with address at %h, stack at %h",proc->pc, proc->sp);

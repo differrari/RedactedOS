@@ -77,6 +77,30 @@ void proc_allocator_init() {
     }
 }
 
+void free_proc_mem(void* ptr, uint64_t size) {
+    uint64_t addr = (uint64_t)ptr;
+    size = ((size + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
+
+    memset((void*)addr,0,size);
+
+    for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
+        uint64_t v = addr + offset;
+        uint64_t l1 = (v >> 39) & 0x1FF;
+        uint64_t l2 = (v >> 30) & 0x1FF;
+        uint64_t l3 = (v >> 21) & 0x1FF;
+        uint64_t l4 = (v >> 12) & 0x1FF;
+
+        if (!(mem_table_l1[l1] & 1)) continue;
+        uint64_t* l2t = (uint64_t*)(mem_table_l1[l1] & ~0xFFF);
+        if (!(l2t[l2] & 1)) continue;
+        uint64_t* l3t = (uint64_t*)(l2t[l2] & ~0xFFF);
+        if (!(l3t[l3] & 1)) continue;
+        uint64_t* l4t = (uint64_t*)(l3t[l3] & ~0xFFF);
+
+        l4t[l4] = 0;
+    }
+}
+
 void* alloc_proc_mem(uint64_t size, bool kernel) {
     uint64_t start = get_user_ram_start();
     uint64_t end = get_user_ram_end();
