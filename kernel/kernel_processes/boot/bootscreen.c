@@ -1,5 +1,5 @@
 #include "bootscreen.h"
-#include "process/kprocess_loader.h"
+#include "../kprocess_loader.h"
 #include "console/kio.h"
 #include "graph/graphics.h"
 #include "kstring.h"

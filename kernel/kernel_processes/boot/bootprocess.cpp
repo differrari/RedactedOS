@@ -1,6 +1,6 @@
 #include "bootprocess_sm.hpp"
 #include "bootprocess.h"
-#include "process/kprocess_loader.h"
+#include "../kprocess_loader.h"
 #include "console/kio.h"
 
 BootSM state_machine;

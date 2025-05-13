@@ -12,7 +12,7 @@
 #include "process/scheduler.h"
 #include "default_process.h"
 #include "filesystem/disk.h"
-#include "kernel_processes/bootprocess.h"
+#include "kernel_processes/boot/bootprocess.h"
 #include "input/xhci_kbd.h"
 #include "input/xhci.h"
 

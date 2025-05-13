@@ -1,7 +1,7 @@
 #include "kprocess_loader.h"
 #include "console/kio.h"
-#include "scheduler.h"
-#include "proc_allocator.h"
+#include "process/scheduler.h"
+#include "process/proc_allocator.h"
 
 process_t *create_kernel_process(void (*func)()){
     
