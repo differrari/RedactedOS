@@ -23,6 +23,7 @@ save_context:
     str x11, [x0, #(8 * 31)]
 
     //Save status bits
+    and x10, x10, 0xFFF
     str x10, [x0, #(8 * 33)]
 
     ret
@@ -61,8 +62,8 @@ restore_context:
     mov sp, x11
     msr sp_el0, x11
     mov x29, x11
-    ldr x11, [x0, #(8 * 33)]
-    msr spsr_el1, x11
+    ldr x10, [x0, #(8 * 33)]
+    msr spsr_el1, x10
     
     ldr x11, [x0, #(8 * 32)]
     msr elr_el1, x11

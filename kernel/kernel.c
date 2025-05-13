@@ -71,8 +71,7 @@ void kernel_main() {
     kprintf("Conducting disk test");
     disk_test();
 
-    kprintf("Starting default processes");
-
+    kprintf("Starting processes");
 
     // default_processes();
 

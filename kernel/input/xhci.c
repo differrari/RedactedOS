@@ -500,14 +500,10 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             device->poll_endpoint = ep_num;
             device->poll_packetSize = endpoint->wMaxPacketSize;
 
-            kprintf_raw("A");
-
             if (!issue_command((uintptr_t)ctx, 0, (device->slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
                 kprintf_raw("[xHCI] Failed to configure endpoint %i",ep_num);
                 return false;
             }
-
-            kprintf_raw("Finished");
 
         break;
         }
