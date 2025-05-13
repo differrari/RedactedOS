@@ -15,7 +15,7 @@ extern void restore_context(process_t* proc);
 process_t processes[MAX_PROCS];
 uint16_t current_proc = 0;
 uint16_t proc_count = 0;
-uint16_t next_proc_index = 0;
+uint16_t next_proc_index = 1;
 
 void save_context_registers(){
     save_context(&processes[current_proc]);
@@ -56,11 +56,14 @@ process_t* get_current_proc(){
 }
 
 process_t* get_proc_by_pid(uint16_t pid){
-    return &processes[pid];
+    for (int i = 0; i < MAX_PROCS; i++)
+        if (processes[i].id == pid)
+            return &processes[i];
+    return NULL;
 }
 
 uint16_t get_current_proc_pid(){
-    return current_proc;
+    return processes[current_proc].id;
 }
 
 void reset_process(process_t *proc){

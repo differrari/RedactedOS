@@ -100,12 +100,12 @@ void* find_rsdp() {
                     for (int i = 0; i < candidate->length; i++) sum += p[i];
                     if (sum != 0) continue;
                 }
-                kprintf("Found a suitable candidate");
+                kprintf("[PCI] Found a suitable candidate");
                 return candidate;
             }
         }
     }
-    kprintf("No candidate found");
+    kprintf("[PCI] No candidate found");
     return 0x0;
 }
 
@@ -116,32 +116,32 @@ void find_pci(){
     if (!fw_find_file(string_l("etc/acpi/rsdp"), &file))
         return;
 
-    kprintf("rsdp file found");
+    kprintf("[PCI] rsdp file found");
 
     struct acpi_rsdp_t data;
     
     fw_cfg_dma_read(&data, sizeof(struct acpi_rsdp_t), file.selector);
 
-    kprintf("rsdp data read with address %h (%h = %h)", data.xsdt_address, data.length,sizeof(struct acpi_rsdp_t));
+    kprintf("[PCI] rsdp data read with address %h (%h = %h)", data.xsdt_address, data.length,sizeof(struct acpi_rsdp_t));
 
     kstring a = string_ca_max(data.signature, 8);
     if (!string_equals(string_l("RSD PTR "), a)){
-        kprintf("Signature doesn't match %s", (uint64_t)a.data);
+        kprintf("[PCI] Signature doesn't match %s", (uint64_t)a.data);
     } else 
-        kprintf("Signature match %s", (uint64_t)a.data);
+        kprintf("[PCI] Signature match %s", (uint64_t)a.data);
 
     uint8_t sum = 0;
     uint8_t* bytes = (uint8_t*)&data;
     for (uint32_t i = 0; i < 20; i++) sum += bytes[i];
     if (sum != data.checksum) {
-        kprintf("Bad RSDP checksum %i vs %i", sum, data.checksum);
+        kprintf("[PCI] Bad RSDP checksum %i vs %i", sum, data.checksum);
     }
 
     if (data.revision >= 2) {
         sum = 0;
         for (uint32_t i = 0; i < data.length; i++) sum += bytes[i];
         if (sum != data.extended_checksum) {
-            kprintf("Bad extended RSDP checksum %i vs %i", sum, data.extended_checksum);
+            kprintf("[PCI] Bad extended RSDP checksum %i vs %i", sum, data.extended_checksum);
         }
     }
 
@@ -149,22 +149,22 @@ void find_pci(){
 
     uint64_t xsdt_addr = (bkdata->revision >= 2) ? bkdata->xsdt_address : (uint64_t)bkdata->rsdt_address;
 
-    kprintf("rsdp pointer %h", xsdt_addr);
+    kprintf("[PCI] rsdp pointer %h", xsdt_addr);
     
     struct acpi_xsdt_t xsdt_header;
     dma_read(&xsdt_header, sizeof(xsdt_header), xsdt_addr);
 
-    kprintf("xsdt header found");
+    kprintf("[PCI] xsdt header found");
     
     uint32_t entry_count = (xsdt_header.length - sizeof(xsdt_header)) / sizeof(uint64_t);
 
-    kprintf("xsdt %c entries", xsdt_header.signature[0]);
+    kprintf("[PCI] xsdt %c entries", xsdt_header.signature[0]);
 
     for (uint32_t i = 0; i < entry_count; i++) {
         uint64_t entry_addr;
         dma_read(&entry_addr, sizeof(entry_addr), xsdt_addr + sizeof(xsdt_header) + i * sizeof(uint64_t));
 
-        kprintf("entry found");
+        kprintf("[PCI] entry found");
 
         char sig[4];
         dma_read(&sig, 4, entry_addr);
@@ -173,12 +173,12 @@ void find_pci(){
             struct acpi_mcfg_t mcfg;
             dma_read(&mcfg, sizeof(mcfg), entry_addr);
 
-            kprintf("Found PCI controller base address: %h", mcfg.allocations[0].base_address);
+            kprintf("[PCI] Found PCI controller base address: %h", mcfg.allocations[0].base_address);
             return;
         }
     }
 
-    kprintf("MCFG not found");
+    kprintf("[PCI] MCFG not found");
 }
 
 uint64_t pci_make_addr(uint32_t bus, uint32_t slot, uint32_t func, uint32_t offset){
@@ -211,7 +211,7 @@ uint64_t pci_read_address_bar(uintptr_t pci_addr, uint32_t bar_index){
 void debug_read_bar(uint64_t base, uint8_t offset, uint8_t index){
     uint64_t addr = pci_get_bar_address(base, offset, index);
     uint64_t val = read32(addr);
-    kprintf("Reading@%h (%i) content: ", addr, index, val);
+    kprintf("[PCI] Reading@%h (%i) content: ", addr, index, val);
 }
 
 uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_start, uint64_t *mmio_size) {
@@ -220,24 +220,24 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
 
     write32(bar_addr, 0xFFFFFFFF);
     uint32_t bar_low = read32(bar_addr);
-    kprintfv("First bar size %h",bar_low);
+    kprintfv("[PCI] First bar size %h",bar_low);
 
     uint64_t size;
     if ((original & 0x6) == 0x4) {
         uint64_t bar_addr_hi = pci_get_bar_address(pci_addr, 0x10, bar_index+1);
         uint32_t original_hi = read32(bar_addr_hi);
 
-        kprintfv("Original second bar %h",original_hi);
+        kprintfv("[PCI] Original second bar %h",original_hi);
 
         write32(bar_addr_hi, 0xFFFFFFFF);
         uint32_t bar_high = read32(bar_addr_hi);
 
-        kprintfv("Second bar size %h",bar_high);
+        kprintfv("[PCI] Second bar size %h",bar_high);
 
         uint64_t combined = ((uint64_t)bar_high << 32) | (bar_low & ~0xF);
         size = ~combined + 1;
 
-        kprintfv("Total bar size %h",size);
+        kprintfv("[PCI] Total bar size %h",size);
 
         uint64_t config_base = alloc_mmio_region(size);
         *mmio_start = config_base;
@@ -249,7 +249,7 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
         uint32_t new_hi = read32(bar_addr_hi);
         uint32_t new_lo = read32(bar_addr);
 
-        kprintfv("Two registers %h > %h",new_hi,new_lo);
+        kprintfv("[PCI] Two registers %h > %h",new_hi,new_lo);
     } else {
         bar_low &= ~0xF;
         size = ~((uint64_t)bar_low) + 1;
@@ -278,20 +278,20 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
                 uint64_t vendor_device = read(device_address);
                 if ((vendor_device & 0xFFFF) == vendor_id && ((vendor_device >> 16) & 0xFFFF) == device_id) {
 
-                    kprintf("Found device at bus %i, slot %i, func %i", bus, slot, func);
+                    kprintf("[PCI] Found device at bus %i, slot %i, func %i", bus, slot, func);
 
                     return device_address;
-                } else if (((vendor_device >> 16) & 0xFFFF) != 0xFFFF)
-                    kprintf("DID: %h VENDOR: %h",(vendor_device & 0xFFFF),((vendor_device >> 16) & 0xFFFF));
+                } //else if (((vendor_device >> 16) & 0xFFFF) != 0xFFFF)
+                    // kprintf("[PCI] DID: %h VENDOR: %h",(vendor_device & 0xFFFF),((vendor_device >> 16) & 0xFFFF));
             }
         }
     }
-    kprintf("Device not found.");
+    kprintf("[PCI] Device not found.");
     return 0;
 }
 
 void dump_pci_config(uint64_t base) {
-    kprintf("Dumping PCI Configuration Space:");
+    kprintf("[PCI] Dumping PCI Configuration Space:");
     for (uint32_t offset = 0; offset < 0x40; offset += 4) {
         uint64_t val = read(base + offset);
         kprintf("Offset %h: %h",offset, val);
@@ -309,7 +309,7 @@ pci_device_mmio pci_devices[16];
 
 void pci_register(uint64_t mmio_addr, uint64_t mmio_size){
     pci_devices[pci_device_count++] = (pci_device_mmio){mmio_addr,mmio_size};
-    kprintf(">>Registering PCI device %i",pci_device_count);
+    kprintf("[PCI] Registering PCI device %i",pci_device_count);
     if (mmu_active())
         for (uint64_t addr = mmio_addr; addr <= mmio_addr + mmio_size; addr += GRANULE_4KB)
             register_device_memory(addr,addr);

@@ -17,6 +17,7 @@ typedef struct {
 }__attribute__((packed)) fb_structure;
 
 uint64_t fb_ptr;
+uint64_t bfb_ptr;
 
 uint32_t width;
 uint32_t height;
@@ -24,7 +25,7 @@ uint32_t bpp;
 uint32_t stride;
 
 void rfb_clear(uint32_t color){
-    volatile uint32_t* fb = (volatile uint32_t*)fb_ptr;
+    volatile uint32_t* fb = (volatile uint32_t*)bfb_ptr;
     uint32_t pixels = width * height;
     for (uint32_t i = 0; i < pixels; i++) {
         fb[i] = color;
@@ -33,7 +34,7 @@ void rfb_clear(uint32_t color){
 
 void rfb_draw_pixel(uint32_t x, uint32_t y, uint32_t color) {
     if (x >= width || y >= height) return;
-    volatile uint32_t* fb = (volatile uint32_t*)fb_ptr;
+    volatile uint32_t* fb = (volatile uint32_t*)bfb_ptr;
     fb[y * (stride / 4) + x] = color;
 }
 
@@ -90,6 +91,7 @@ bool rfb_init(uint32_t w, uint32_t h) {
     }
 
     fb_ptr = palloc(width * height * bpp);
+    bfb_ptr = palloc(width * height * bpp);
 
     fb_structure fb = {
         .addr = __builtin_bswap64(fb_ptr),
@@ -130,5 +132,5 @@ void rfb_draw_string(kstring s, uint32_t x0, uint32_t y0, uint32_t scale, uint32
 
 
 void rfb_flush(){
-    
+    memcpy((void*)fb_ptr, (void*)bfb_ptr, width * height * bpp);
 }

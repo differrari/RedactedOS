@@ -37,6 +37,7 @@ void draw_panic_screen(kstring s){
     gpu_clear(0x0000FF);
     uint32_t scale = 3;
     gpu_draw_string(s, (point){20,20}, scale, 0xFFFFFF);
+    gpu_flush();
 }
 
 void panic(const char* panic_msg) {

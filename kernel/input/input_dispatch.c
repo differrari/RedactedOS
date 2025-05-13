@@ -57,7 +57,7 @@ void sys_set_secure(bool secure){
 }
 
 bool sys_read_input_current(keypress *out){
-    sys_read_input(get_current_proc_pid(), out);
+    return sys_read_input(get_current_proc_pid(), out);
 }
 
 bool sys_read_input(int pid, keypress *out){
@@ -66,7 +66,7 @@ bool sys_read_input(int pid, keypress *out){
 
     *out = process->input_buffer.entries[process->input_buffer.read_index];
     for (int i = 0; i < 6; i++){
-        out->keys[i] = hid_keycode_to_char[out->keys[i]];
+        out->keys[i] = hid_keycode_to_char[(int)out->keys[i]];
     }
     process->input_buffer.read_index = (process->input_buffer.read_index + 1) % INPUT_BUFFER_CAPACITY;
     return true;

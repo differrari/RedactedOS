@@ -63,6 +63,7 @@ void KernelConsole::put_string(const char *str) {
     for (uint32_t i = 0; str[i] != 0; i++) {
         put_char(str[i]);
     }
+    gpu_flush();
 }
 
 void KernelConsole::newline() {
