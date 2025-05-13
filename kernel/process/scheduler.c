@@ -15,7 +15,7 @@ extern void restore_context(process_t* proc);
 process_t processes[MAX_PROCS];
 uint16_t current_proc = 0;
 uint16_t proc_count = 0;
-uint16_t next_proc_index = 1;
+uint16_t next_proc_index = 0;
 
 void save_context_registers(){
     save_context(&processes[current_proc]);
@@ -30,9 +30,9 @@ void switch_proc(ProcSwitchReason reason) {
     // kprintf_raw("Stopping execution of process %i at %h",current_proc, processes[current_proc].spsr);
     if (proc_count == 0)
         panic("No processes active");
-    int next_proc = (current_proc + 1) % next_proc_index;
+    int next_proc = (current_proc + 1) % MAX_PROCS;
     while (processes[next_proc].state != READY) {
-        next_proc = (next_proc + 1) % next_proc_index;
+        next_proc = (next_proc + 1) % MAX_PROCS;
         if (next_proc == current_proc)
             return;
     }
@@ -90,10 +90,11 @@ process_t* init_process(){
                 proc = &processes[i];
                 reset_process(proc);
                 proc->state = READY;
-                proc->id = i;
+                proc->id = next_proc_index++;
                 return proc;
             }
         }
+        panic("Out of process memory");
     }
 
     proc = &processes[next_proc_index];
@@ -107,16 +108,17 @@ process_t* init_process(){
 void stop_process(uint16_t pid){
     disable_interrupt();
     process_t *proc = get_proc_by_pid(pid);
+    if (proc->state != READY) return;
     proc->state = STOPPED;
     if (proc->focused)
         sys_unset_focus();
-    kprintf_raw("Stopped process");
-    //TODO: we don't wipe the process' data. If we do, we corrupt our sp, since we're still in the process' sp.
+        //TODO: we don't wipe the process' data. If we do, we corrupt our sp, since we're still in the process' sp.
     proc_count--;
     switch_proc(HALT);
 }
 
 void stop_current_process(){
+    disable_interrupt();
     stop_process(current_proc);
 }
 
