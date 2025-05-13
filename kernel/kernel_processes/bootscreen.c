@@ -21,10 +21,10 @@ int lerp(int i, int start, int end, int steps) {
     return start + (end - start) * i / steps;
 }
 
-__attribute__((section(".data.kbootscreen")))
+__attribute__((section(".data.kcoreprocesses")))
 static uint64_t randomNumber = 0;
 
-__attribute__((section(".text.kbootscreen")))
+__attribute__((section(".text.kcoreprocesses")))
 void boot_draw_name(point screen_middle,int xoffset, int yoffset){
     const char* name = BOOTSCREEN_TEXT;
     uint64_t *i = &randomNumber;
@@ -44,10 +44,10 @@ void boot_draw_name(point screen_middle,int xoffset, int yoffset){
     temp_free(s.data,256);
 }
 
-__attribute__((section(".rodata.kbootscreen")))
+__attribute__((section(".rodata.kcoreprocesses")))
 point offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
 
-__attribute__((section(".text.kbootscreen")))
+__attribute__((section(".text.kcoreprocesses")))
 point boot_calc_point(point offset, int sizes[4], size screen_size, point screen_middle){
     bool x0 = offset.x == 0;
     bool y0 = offset.y == 0;
@@ -60,7 +60,7 @@ point boot_calc_point(point offset, int sizes[4], size screen_size, point screen
     return (point){screen_middle.x + (xs * xloc) - (ui ? BOOTSCREEN_ASYMM.x : 0),  screen_middle.y + (ys * yloc) - (ul ? BOOTSCREEN_ASYMM.y : 0)};
 }
 
-__attribute__((section(".text.kbootscreen")))
+__attribute__((section(".text.kcoreprocesses")))
 void bootscreen(){
     disable_visual();
     sys_focus_current();
@@ -93,6 +93,6 @@ void bootscreen(){
     }
 }
 
-void start_bootscreen(){
-    create_kernel_process(bootscreen);
+process_t* start_bootscreen(){
+    return create_kernel_process(bootscreen);
 }

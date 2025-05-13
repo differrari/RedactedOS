@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "types.h"
 #include "keypress.h"
 
@@ -17,6 +21,10 @@ typedef struct {
     uint64_t pc;
     uint64_t spsr; 
     uint64_t id;
-    enum { STOPPED, READY, RUNNING, BLOCKED } state;
+    enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     input_buffer_t input_buffer;
 } process_t;
+
+#ifdef __cplusplus
+}
+#endif

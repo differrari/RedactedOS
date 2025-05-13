@@ -12,7 +12,7 @@
 #include "process/scheduler.h"
 #include "default_process.h"
 #include "filesystem/disk.h"
-#include "kernel_processes/bootscreen.h"
+#include "kernel_processes/bootprocess.h"
 #include "input/xhci_kbd.h"
 #include "input/xhci.h"
 
@@ -74,7 +74,7 @@ void kernel_main() {
 
     // default_processes();
 
-    start_bootscreen();
+    init_bootprocess();
     
     kprintf("Starting scheduler");
     

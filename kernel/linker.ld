@@ -31,14 +31,14 @@ SECTIONS {
         proc_1_end = .;
     }
 
-    .kbootscreen : ALIGN(8) {
-        kbootscreen_rodata_start = .;
-        KEEP(*(.rodata.kbootscreen))
-        KEEP(*(.data.kbootscreen))
-        kbootscreen_rodata_end = .;
-        kbootscreen_start = .;
-        KEEP(*(.text.kbootscreen))
-        kbootscreen_end = .;
+    .kcoreprocesses : ALIGN(8) {
+        kcoreprocesses_rodata_start = .;
+        KEEP(*(.rodata.kcoreprocesses))
+        KEEP(*(.data.kcoreprocesses))
+        kcoreprocesses_rodata_end = .;
+        kcoreprocesses_start = .;
+        KEEP(*(.text.kcoreprocesses))
+        kcoreprocesses_end = .;
     }
     . = ALIGN(0x200000);
     kcode_end = .;

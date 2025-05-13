@@ -221,7 +221,7 @@ bool xhci_await_response(uint64_t command, uint32_t type){
             kprintf_raw("[xHCI error] USBSTS value %h",global_device.op->usbsts);
             return false;
         }
-        for (global_device.event_index; global_device.event_index < MAX_TRB_AMOUNT; global_device.event_index++){
+        for (; global_device.event_index < MAX_TRB_AMOUNT; global_device.event_index++){
             trb* ev = &global_device.event_ring[global_device.event_index];
             if (!((ev->control & 1) == global_device.event_cycle_bit)) //TODO: implement a timeout
                 break;
@@ -243,7 +243,7 @@ bool xhci_await_response(uint64_t command, uint32_t type){
 }
 
 void xhci_sync_events(){
-    for (global_device.event_index; global_device.event_index < MAX_TRB_AMOUNT; global_device.event_index++){
+    for (; global_device.event_index < MAX_TRB_AMOUNT; global_device.event_index++){
         trb* ev = &global_device.event_ring[global_device.event_index];
         if (!((ev->control & 1) == global_device.event_cycle_bit)){
             global_device.interrupter->erdp = (uintptr_t)ev | (1 << 3);

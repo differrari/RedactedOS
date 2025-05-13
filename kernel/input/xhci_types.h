@@ -247,7 +247,7 @@ typedef struct {
         endpoint_field23 endpoint_f23;
         endpoint_field4 endpoint_f4;
         uint32_t ep_rsvd[3];
-    } endpoints[31]
+    } endpoints[31];
 } xhci_device_context;
 
 typedef struct {
@@ -315,7 +315,7 @@ typedef struct __attribute__((packed)) {
         uint8_t  bDescriptorType;
         uint8_t wDescriptorLength;
     }__attribute__((packed)) descriptors[1];
-#warning wDescriptorLength is supposed to be 16, but for some reason the descriptor from usb-kbd is 8. We'll need to fix this once we do a real device
+#warning wDescriptorLength is supposed to be 16, but for some reason the descriptor from usb-kbd is 8. Will need to fix this once we do a real device
 } usb_hid_descriptor;
 
 typedef struct __attribute__((packed)) {
@@ -324,7 +324,7 @@ typedef struct __attribute__((packed)) {
     uint8_t bmAttributes;
     uint8_t wMaxPacketSize;
     uint8_t bInterval;
-#warning wMaxPacketSize is supposed to be 16, but for some reason the descriptor from usb-kbd is 8. We'll need to fix this once we do a real device
+#warning wMaxPacketSize is supposed to be 16, but for some reason the descriptor from usb-kbd is 8. Will need to fix this once we do a real device
 } usb_endpoint_descriptor;
 
 typedef struct __attribute__((packed)) {

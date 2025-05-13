@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "types.h"
 
 #define kprintf(fmt, ...) \
@@ -21,3 +25,7 @@ void putc(const char c);
 void puthex(uint64_t value);
 void disable_visual();
 void enable_visual();
+
+#ifdef __cplusplus
+}
+#endif
