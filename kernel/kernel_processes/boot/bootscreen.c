@@ -78,13 +78,14 @@ void bootscreen(){
                     lerp(i, current_point.y, next_point.y, steps)
                 };
                 gpu_draw_pixel(interpolated, 0xFFFFFF);
-                // for (int k = 0; k < 1000; k++) {}
+                keypress kp;
+                if (sys_read_input_current(&kp))
+                    stop_current_process();
                 boot_draw_name(screen_middle, 0, BOOTSCREEN_PADDING + sizes[2] + 10);
                 gpu_flush();
             }
             current_point = next_point;
         }
-        stop_current_process();
     }
 }
 
