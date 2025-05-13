@@ -80,7 +80,9 @@ void bootscreen(){
                 gpu_draw_pixel(interpolated, 0xFFFFFF);
                 keypress kp;
                 if (sys_read_input_current(&kp))
-                    stop_current_process();
+                    if (kp.keys[0] != 0){
+                        stop_current_process();
+                    }
                 boot_draw_name(screen_middle, 0, BOOTSCREEN_PADDING + sizes[2] + 10);
                 gpu_flush();
             }

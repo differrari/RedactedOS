@@ -25,6 +25,7 @@ typedef struct {
     uint16_t id;
     uint64_t stack;
     uint64_t stack_size;
+    bool focused;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     input_buffer_t input_buffer;
 } process_t;

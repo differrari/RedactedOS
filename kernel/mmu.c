@@ -139,9 +139,8 @@ void mmu_unmap(uint64_t va, uint64_t pa){
     
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
     uint64_t l3_val = l3[l3_index];
-    if (!(l3_val & 1)) {
-        return;
-    } else if ((l3_val & 0b11) == PD_BLOCK){
+    if (!(l3_val & 1)) return;
+    else if ((l3_val & 0b11) == PD_BLOCK){
         l3[l3_index] = 0;
         return;
     }

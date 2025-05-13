@@ -45,9 +45,11 @@ void sys_focus_current(){
 
 void sys_set_focus(int pid){
     focused_proc = get_proc_by_pid(pid);
+    focused_proc->focused = true;
 }
 
 void sys_unset_focus(){
+    focused_proc->focused = false;
     focused_proc = 0;
 }
 

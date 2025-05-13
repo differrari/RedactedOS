@@ -69,7 +69,7 @@ uint16_t get_current_proc_pid(){
 
 void reset_process(process_t *proc){
     proc->sp = 0;
-    free_proc_mem((void*)proc->stack-proc->stack_size,proc->stack_size);
+    free_proc_mem((void*)proc->stack,proc->stack_size);
     proc->pc = 0;
     proc->spsr = 0;
     for (int j = 0; j < 31; j++){
@@ -105,9 +105,12 @@ process_t* init_process(){
 }
 
 void stop_process(uint16_t pid){
-    process_t *proc = &processes[pid];
+    disable_interrupt();
+    process_t *proc = get_proc_by_pid(pid);
     proc->state = STOPPED;
-    sys_unset_focus();
+    if (proc->focused)
+        sys_unset_focus();
+    kprintf_raw("Stopped process");
     reset_process(proc);
     proc_count--;
     switch_proc(HALT);

@@ -1,5 +1,6 @@
 #include "bootprocess_sm.hpp"
 #include "bootscreen.h"
+#include "console/kio.h"
 
 BootSM::BootSM(){
 
