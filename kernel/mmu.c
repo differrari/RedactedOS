@@ -24,13 +24,24 @@ uint64_t page_table_l1[PAGE_TABLE_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
 static bool mmu_verbose;
 static bool _mmu_active;
 
+void mmu_enable_verbose(){
+    mmu_verbose = true;
+}
+
+#define kprintfv(fmt, ...) \
+    ({ \
+        if (mmu_verbose){\
+            uint64_t _args[] = { __VA_ARGS__ }; \
+            kprintf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+        }\
+    })
+
 void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     uint64_t l1_index = (va >> 37) & 0x1FF;
     uint64_t l2_index = (va >> 30) & 0x1FF;
     uint64_t l3_index = (va >> 21) & 0x1FF;
 
-    if (mmu_verbose)
-        kprintf_raw("Mapping 2mb memory %h at [%i][%i][%i] for EL1", va, l1_index,l2_index,l3_index);
+    kprintfv("[MMU] Mapping 2mb memory %h at [%i][%i][%i] for EL1", va, l1_index,l2_index,l3_index);
 
     if (!(page_table_l1[l1_index] & 1)) {
         uint64_t* l2 = (uint64_t*)palloc(PAGE_SIZE);
@@ -80,14 +91,14 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l4[i] = 0;
         l3[l3_index] = ((uint64_t)l4 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     } else if ((l3_val & 0b11) == PD_BLOCK){
-        kprintf_raw("[ERROR]: Region not mapped for address %h, already mapped at higher granularity [%i][%i][%i][%i]",va, l1_index,l2_index,l3_index,l4_index);
+        kprintf_raw("[MMU error]: Region not mapped for address %h, already mapped at higher granularity [%i][%i][%i][%i]",va, l1_index,l2_index,l3_index,l4_index);
         return;
     }
     
     uint64_t* l4 = (uint64_t*)(l3[l3_index] & 0xFFFFFFFFF000ULL);
     
     if (l4[l4_index] & 1){
-        kprintf_raw("[WARNING]: Section already mapped %h",va);
+        kprintf_raw("[MMU warning]: Section already mapped %h",va);
         return;
     }
     
@@ -104,8 +115,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
         break;
     }
     uint64_t attr = ((level == 1) << 54) | (0 << 53) | PD_ACCESS | (0b11 << 8) | (permission << 6) | (attr_index << 2) | 0b11;
-    if (mmu_verbose)
-        kprintf_raw("Mapping 4kb memory %h at [%i][%i][%i][%i] for EL%i = %h permission: %i", va, l1_index,l2_index,l3_index,l4_index,level,attr,permission);
+    kprintfv("[MMU] Mapping 4kb memory %h at [%i][%i][%i][%i] for EL%i = %h permission: %i", va, l1_index,l2_index,l3_index,l4_index,level,attr,permission);
     
     l4[l4_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
 }
@@ -127,11 +137,14 @@ static inline void mmu_flush_icache() {
 }
 
 void mmu_unmap(uint64_t va, uint64_t pa){
+
+    
     uint64_t l1_index = (va >> 37) & 0x1FF;
     uint64_t l2_index = (va >> 30) & 0x1FF;
     uint64_t l3_index = (va >> 21) & 0x1FF;
     uint64_t l4_index = (va >> 12) & 0x1FF;
-
+    
+    kprintfv("[MMU] Unmapping 4kb memory %h at [%i][%i][%i][%i] for EL1", va, l1_index,l2_index,l3_index, l4_index);
     if (!(page_table_l1[l1_index] & 1)) return;
     
     uint64_t* l2 = (uint64_t*)(page_table_l1[l1_index] & 0xFFFFFFFFF000ULL);
@@ -178,9 +191,9 @@ void mmu_init() {
     for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 1);
 
-    kprintf("ALLOCING FOR %i DEVICES", pci_device_count);
+    kprintfv("[MMU] mapping MMU for %i PCI devices", pci_device_count);
     for (uint16_t i = 0; i < pci_device_count; i++){
-        kprintf("Allocing device [%i] at %h (%h)",i,pci_devices[i].base_addr,pci_devices[i].size);
+        kprintfv("Mapping mmu for device [%i] at %h (%h)",i,pci_devices[i].base_addr,pci_devices[i].size);
         for (uint64_t addr = pci_devices[i].base_addr; addr <= pci_devices[i].base_addr + pci_devices[i].size; addr += GRANULE_4KB)
             mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
     }
@@ -210,10 +223,6 @@ void mmu_init() {
 
     _mmu_active = true;
     kprintf_raw("Finished MMU init");
-}
-
-void mmu_enable_verbose(){
-    mmu_verbose = true;
 }
 
 void register_device_memory(uint64_t va, uint64_t pa){

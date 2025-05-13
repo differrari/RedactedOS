@@ -36,7 +36,7 @@ void switch_proc(ProcSwitchReason reason) {
         if (next_proc == current_proc)
             return;
     }
-    
+
     current_proc = next_proc;
     process_restore();
 }
@@ -69,7 +69,7 @@ uint16_t get_current_proc_pid(){
 
 void reset_process(process_t *proc){
     proc->sp = 0;
-    free_proc_mem((void*)proc->stack,proc->stack_size);
+    free_proc_mem((void*)proc->stack-proc->stack_size,proc->stack_size);
     proc->pc = 0;
     proc->spsr = 0;
     for (int j = 0; j < 31; j++){
@@ -111,7 +111,7 @@ void stop_process(uint16_t pid){
     if (proc->focused)
         sys_unset_focus();
     kprintf_raw("Stopped process");
-    reset_process(proc);
+    //TODO: we don't wipe the process' data. If we do, we corrupt our sp, since we're still in the process' sp.
     proc_count--;
     switch_proc(HALT);
 }
