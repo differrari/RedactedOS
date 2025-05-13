@@ -25,6 +25,7 @@ void save_return_address_interrupt(){
     save_pc_interrupt(&processes[current_proc]);
 }
 
+//TODO: Processes can currently exit and just crash the whole system with an EL1 Sync exception trying to read from 0x0. Better than continuing execution past bounds but still not great
 void switch_proc(ProcSwitchReason reason) {
     // kprintf_raw("Stopping execution of process %i at %h",current_proc, processes[current_proc].sp);
     if (proc_count == 0)
@@ -113,4 +114,12 @@ void stop_process(uint16_t pid){
 
 void stop_current_process(){
     stop_process(current_proc);
+}
+
+uint16_t process_count(){
+    return proc_count;
+}
+
+process_t *get_all_processes(){
+    return processes;
 }

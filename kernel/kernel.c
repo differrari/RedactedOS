@@ -15,6 +15,7 @@
 #include "kernel_processes/boot/bootprocess.h"
 #include "input/xhci_kbd.h"
 #include "input/xhci.h"
+#include "kernel_processes/monitor/monitor_processes.h"
 
 void kernel_main() {
     
@@ -73,6 +74,8 @@ void kernel_main() {
     kprintf("Starting default processes");
 
     // default_processes();
+
+    start_process_monitor();
 
     init_bootprocess();
     

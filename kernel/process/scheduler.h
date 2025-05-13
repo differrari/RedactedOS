@@ -9,6 +9,8 @@ typedef enum {
     HALT,
 } ProcSwitchReason;
 
+#define MAX_PROCS 16
+
 void switch_proc(ProcSwitchReason reason);
 void start_scheduler();
 void save_context_registers();
@@ -22,3 +24,6 @@ uint16_t get_current_proc_pid();
 
 void stop_process(uint16_t pid);
 void stop_current_process();
+
+uint16_t process_count();
+process_t *get_all_processes();
