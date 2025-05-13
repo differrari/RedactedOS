@@ -80,6 +80,7 @@ uint64_t alloc_mmio_region(uint64_t size) {
 
 static uint64_t next_dma_base = DMA_BASE;
 
+//TODO: This just allocates based on palloc, it should be free-able and it should be its own region
 uint64_t alloc_dma_region(uint64_t size) {
     return palloc(size);
     size = (size + (64 - 1)) & ~(64 - 1);

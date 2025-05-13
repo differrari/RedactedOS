@@ -65,7 +65,7 @@ void gpu_draw_pixel(point p, color color){
             vgp_draw_pixel(p.x,p.y,color);
         break;
         case RAMFB:
-            rfb_draw_pixel(p.x,p.y,color);
+            rfb_draw_single_pixel(p.x,p.y,color);
         break;
         default:
         break;
@@ -109,7 +109,7 @@ void gpu_draw_char(point p, char c, uint32_t scale, uint32_t color){
             vgp_draw_char(p.x,p.y,c,color);
         break;
         case RAMFB:
-            rfb_draw_char(p.x,p.y,c,scale,color);
+            rfb_draw_single_char(p.x,p.y,c,scale,color);
         break;
         default:
         break;
