@@ -23,7 +23,7 @@ static const char hid_keycode_to_char[256] = {
 
 void register_keypress(keypress kp) {
 
-    if ((uintptr_t)focused_proc) return;
+    if (!(uintptr_t)focused_proc) return;
 
     input_buffer_t* buf = &focused_proc->input_buffer;
     uint32_t next_index = (buf->write_index + 1) % INPUT_BUFFER_CAPACITY;
