@@ -2,6 +2,7 @@
 #include "process/scheduler.h"
 #include "process/proc_allocator.h"
 #include "console/kio.h"
+#include "interrupts/gic.h"
 
 void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, uint64_t dst_data_base, uint32_t data_size) {
     uint32_t* src32 = (uint32_t*)src;
@@ -91,6 +92,8 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
 
 
 process_t* create_process(void (*func)(), uint64_t code_size, uint64_t func_base, void* data, uint64_t data_size) {
+    
+    disable_interrupt();
     process_t* proc = init_process();
 
     kprintf_raw("Code size %h. Data size %h", code_size, data_size);
@@ -122,6 +125,8 @@ process_t* create_process(void (*func)(), uint64_t code_size, uint64_t func_base
     kprintf_raw("Process allocated with address at %h, stack at %h",proc->pc, proc->sp);
     proc->spsr = 0;
     proc->state = READY;
+
+    enable_interrupt();
     
     return proc;
 }

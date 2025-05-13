@@ -2,8 +2,11 @@
 #include "console/kio.h"
 #include "process/scheduler.h"
 #include "process/proc_allocator.h"
+#include "interrupts/gic.h"
 
 process_t *create_kernel_process(void (*func)()){
+
+    disable_interrupt();
     
     process_t* proc = init_process();
 
@@ -21,6 +24,8 @@ process_t *create_kernel_process(void (*func)()){
     kprintf_raw("Process allocated with address at %h, stack at %h",proc->pc, proc->sp);
     proc->spsr = 0x205;
     proc->state = READY;
+
+    enable_interrupt();
     
     return proc;
 }
