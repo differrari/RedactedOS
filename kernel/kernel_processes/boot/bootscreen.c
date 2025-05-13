@@ -33,7 +33,7 @@ void boot_draw_name(point screen_middle,int xoffset, int yoffset){
     int mid_offset = (s.length/2) * char_size;
     int xo = screen_middle.x - mid_offset + xoffset;
     int yo = screen_middle.y + yoffset;
-    gpu_fill_rect((rect){xo,yo, char_size * s.length, char_size},0x0);
+    gpu_fill_rect((rect){xo,yo, char_size * s.length, char_size},BG_COLOR);
     gpu_draw_string(s, (point){xo, yo}, scale, 0xFFFFFF);
     temp_free(s.data,s.length);
 }
@@ -60,7 +60,7 @@ void bootscreen(){
     sys_focus_current();
     while (1)
     {
-        gpu_clear(0);
+        gpu_clear(BG_COLOR);
         size screen_size = gpu_get_screen_size();
         point screen_middle = {screen_size.width/2,screen_size.height/2};
         int sizes[4] = {BOOTSCREEN_INNER_X_CONST,screen_size.width/BOOTSCREEN_OUTER_X_DIV,screen_size.height/BOOTSCREEN_UPPER_Y_DIV,BOOTSCREEN_LOWER_Y_CONST};
