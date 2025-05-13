@@ -91,6 +91,7 @@ process_t* init_process(){
                 reset_process(proc);
                 proc->state = READY;
                 proc->id = next_proc_index++;
+                proc_count++;
                 return proc;
             }
         }
@@ -112,14 +113,15 @@ void stop_process(uint16_t pid){
     proc->state = STOPPED;
     if (proc->focused)
         sys_unset_focus();
-        //TODO: we don't wipe the process' data. If we do, we corrupt our sp, since we're still in the process' sp.
+    //TODO: we don't wipe the process' data. If we do, we corrupt our sp, since we're still in the process' sp.
     proc_count--;
+    kprintf_raw("Stopped %i process %i",pid,proc_count);
     switch_proc(HALT);
 }
 
 void stop_current_process(){
     disable_interrupt();
-    stop_process(current_proc);
+    stop_process(processes[current_proc].id);
 }
 
 uint16_t process_count(){
