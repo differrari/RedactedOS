@@ -4,7 +4,17 @@
 #include "input/input_dispatch.h"
 #include "../kprocess_loader.h"
 #include "theme/theme.h"
+#include "console/kio.h"
 #include "process/scheduler.h"
+
+bool keypress_contains(keypress *kp, char key, uint8_t modifier){
+    if (kp->modifier != modifier) return false;//TODO: This is not entirely accurate, some modifiers do not change key
+
+    for (int i = 0; i < 6; i++)
+        if (kp->keys[i] == key)
+            return true;
+    return false;
+}
 
 __attribute__((section(".text.kcoreprocesses")))
 void login_screen(){
@@ -12,6 +22,7 @@ void login_screen(){
     sys_set_secure(true);
     char* buf = (char*)talloc(256);
     int len = 0;
+    keypress old_kp;
     while (1)
     {
         gpu_clear(BG_COLOR);
@@ -27,12 +38,17 @@ void login_screen(){
         gpu_draw_string(s, (point){xo, yo}, scale, 0xFFFFFF);
         keypress kp;
         if (sys_read_input_current(&kp))
-            if (kp.keys[0] != 0 && len < 256){
-                buf[len] = kp.keys[0];
-                len++;
+            for (int i = 0; i < 6; i++){
+                if (kp.keys[i] != 0 && len < 256 && !keypress_contains(&old_kp,kp.keys[i], kp.modifier)){
+                    buf[len] = kp.keys[i];
+                    kprintf_raw("%c",buf[len]);
+                    len++;
+                }
             }
         if (strcmp(buf,default_pwd) == 0)
             stop_current_process();
+
+        old_kp = kp;
         gpu_flush();
         temp_free(s.data,s.length);
     }
