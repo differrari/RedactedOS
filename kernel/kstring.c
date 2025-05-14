@@ -11,10 +11,18 @@ static uint32_t compute_length(const char *s, uint32_t max_length) {
 
 kstring string_l(const char *literal) {
     uint32_t len = compute_length(literal, 0);
-    char *buf = (char*)talloc(len);
+    char *buf = (char*)talloc(len+1);
     for (int i = 0; i < len; i++)
         buf[i] = literal[i];
+    buf[len] = 0;
     return (kstring){ .data = buf, .length = len };
+}
+
+kstring string_repeat(char symbol, uint32_t amount){
+    char *buf = (char*)talloc(amount + 1);
+    memset(buf, symbol, amount);
+    buf[amount] = 0;
+    return (kstring){ .data = buf, .length = amount };
 }
 
 kstring string_tail(const char *array, uint32_t max_length){
@@ -23,17 +31,19 @@ kstring string_tail(const char *array, uint32_t max_length){
     if (offset < 0) 
         offset = 0; 
     uint32_t adjusted_len = len - offset;
-    char *buf = (char*)talloc(adjusted_len);
+    char *buf = (char*)talloc(adjusted_len + 1);
     for (int i = offset; i < len; i++)
         buf[i-offset] = array[i];
+    buf[len-offset] = 0;
     return (kstring){ .data = buf, .length = adjusted_len };
 }
 
 kstring string_ca_max(const char *array, uint32_t max_length) {
     uint32_t len = compute_length(array, max_length);
-    char *buf = (char*)talloc(len);
+    char *buf = (char*)talloc(len + 1);
     for (int i = 0; i < len; i++)
         buf[i] = array[i];
+    buf[len] = 0;
     return (kstring){ .data = buf, .length = len };
 }
 

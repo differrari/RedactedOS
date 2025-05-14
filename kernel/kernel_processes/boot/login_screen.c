@@ -33,6 +33,10 @@ bool keypress_contains(keypress *kp, char key, uint8_t modifier){
     return false;
 }
 
+int min(int a, int b){
+    return a < b ? a : b;
+}
+
 __attribute__((section(".text.kcoreprocesses")))
 void login_screen(){
     sys_focus_current();
@@ -40,17 +44,25 @@ void login_screen(){
     char* buf = (char*)talloc(256);
     int len = 0;
     keypress old_kp;
+    const char* name = BOOTSCREEN_TEXT;
+    kstring title = string_l(name);
+    kstring subtitle = string_l("Login");
     while (1)
     {
         gpu_clear(BG_COLOR);
         size screen_size = gpu_get_screen_size();
         point screen_middle = {screen_size.width/2,screen_size.height/2};
-        kstring s = string_tail(buf,20);
+        kstring s = string_repeat('*',min(len,20));
         int scale = 2;
         uint32_t char_size = gpu_get_char_size(scale);
         int xo = screen_size.width / 3;
         int yo = screen_middle.y;
-        gpu_fill_rect((rect){xo,yo  - char_size/2, screen_size.width / 3, char_size * 2},BG_COLOR+0x111111);
+        int height = char_size * 2;
+        
+        gpu_draw_string(title, (point){screen_middle.x - ((title.length/2) * char_size), yo - char_size*9}, scale, 0xFFFFFF);
+        gpu_draw_string(subtitle, (point){screen_middle.x - ((subtitle.length/2) * char_size), yo - char_size*6}, scale, 0xFFFFFF);
+
+        gpu_fill_rect((rect){xo,yo  - char_size/2, screen_size.width / 3, height},BG_COLOR+0x111111);
         gpu_draw_string(s, (point){xo, yo}, scale, 0xFFFFFF);
         keypress kp;
         if (sys_read_input_current(&kp)){
@@ -58,8 +70,13 @@ void login_screen(){
                 char key = kp.keys[i];
                 if (hid_keycode_to_char[key]){
                     if (key == 0x28){
-                        if (strcmp(buf,default_pwd) == 0)
+                        if (strcmp(buf,default_pwd) == 0){
                             stop_current_process();
+                            temp_free(s.data,s.length);
+                            temp_free(title.data,title.length);
+                            temp_free(subtitle.data,subtitle.length);
+                        } else
+                            break;
                     }
                     key = hid_keycode_to_char[key];//Translate readables
                     if (key != 0 && len < 256 && !keypress_contains(&old_kp,kp.keys[i], kp.modifier) || identical_keypress(&old_kp, &kp)){
