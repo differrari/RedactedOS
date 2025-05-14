@@ -8,5 +8,14 @@ WindowManager::WindowManager(){
 }
 
 void WindowManager::manage_windows(){
+    if (paused) return;
     desktop.draw_desktop();
+}
+
+void WindowManager::pause(){
+    paused = true;
+}
+
+void WindowManager::resume(){
+    paused = false;
 }

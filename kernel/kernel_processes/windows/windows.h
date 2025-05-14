@@ -9,6 +9,9 @@ extern "C" {
 
 process_t* start_windows();
 
+void pause_window_draw();
+void resume_window_draw();
+
 #ifdef __cplusplus
 }
 #endif

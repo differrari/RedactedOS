@@ -4,7 +4,28 @@
 
 process_t* focused_proc;
 
+typedef struct {
+    keypress kp;
+    int pid;
+    bool triggered;
+} shortcut;
+
+shortcut shortcuts[16];
+
+uint16_t shortcut_count = 0;
+
+bool secure_mode = false;
+
 void register_keypress(keypress kp) {
+
+    if (!secure_mode){
+        for (int i = 0; i < shortcut_count; i++){
+            if (shortcuts[i].pid != -1 && identical_keypress(&shortcuts[i].kp, &kp)){
+                shortcuts[i].triggered = true;
+                return;
+            }
+        }
+    }
 
     if (!(uintptr_t)focused_proc) return;
 
@@ -18,8 +39,16 @@ void register_keypress(keypress kp) {
         buf->read_index = (buf->read_index + 1) % INPUT_BUFFER_CAPACITY;
 }
 
-void sys_subscribe_shortcut(keypress kp){
-    //Register a shortcut, as requested by a system
+uint16_t sys_subscribe_shortcut_current(keypress kp){
+    return sys_subscribe_shortcut(get_current_proc_pid(),kp);
+}
+
+uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp){
+    shortcuts[shortcut_count] = (shortcut){
+        .kp = kp,
+        .pid = pid
+    };
+    return shortcut_count++;
 }
 
 void sys_focus_current(){
@@ -36,9 +65,13 @@ void sys_unset_focus(){
     focused_proc = 0;
 }
 
-///A process can request for shortcuts and others to be disabled
+void sys_unregister_proc_input_(uint16_t pid){
+    //Unfocus
+    //Unregister shortcuts by setting their pid to -1
+}
+
 void sys_set_secure(bool secure){
-    //Temporarily disable shortcuts. I guess shortcuts could malitiously be used to detect parts of a password
+    secure_mode = secure;
 }
 
 bool sys_read_input_current(keypress *out){
@@ -56,4 +89,16 @@ bool sys_read_input(int pid, keypress *out){
     *out = process->input_buffer.entries[process->input_buffer.read_index];
     process->input_buffer.read_index = (process->input_buffer.read_index + 1) % INPUT_BUFFER_CAPACITY;
     return true;
+}
+
+bool sys_shortcut_triggered_current(uint16_t sid){
+    return sys_shortcut_triggered(get_current_proc_pid(), sid);
+}
+
+bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
+    if (shortcuts[sid].pid == pid && shortcuts[sid].triggered){
+        shortcuts[sid].triggered = false;
+        return true;
+    }
+    return false;
 }

@@ -49,6 +49,7 @@ void process_restore(){
 void start_scheduler(){
     disable_interrupt();
     timer_init(1);
+    //TODO: We should save the current SP before this and use it whenever we switch back to EL1, otherwise we risk exposing kernel data onto a process' stack (as well as reset_process not being callable immediately after a process reset)
     switch_proc(YIELD);
 }
 

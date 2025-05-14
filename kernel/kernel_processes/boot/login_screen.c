@@ -71,10 +71,11 @@ void login_screen(){
                 if (hid_keycode_to_char[key]){
                     if (key == KEY_ENTER){
                         if (strcmp(buf,default_pwd) == 0){
-                            stop_current_process();
                             temp_free(s.data,s.length);
                             temp_free(title.data,title.length);
                             temp_free(subtitle.data,subtitle.length);
+                            sys_set_secure(false);
+                            stop_current_process();
                         } else
                             break;
                     }

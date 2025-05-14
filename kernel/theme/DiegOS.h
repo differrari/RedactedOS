@@ -31,4 +31,4 @@
 
 #define BG_COLOR 0x222233
 
-#define default_pwd "helloworld"
+#define default_pwd "hi"

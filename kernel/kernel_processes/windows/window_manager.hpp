@@ -9,6 +9,10 @@ public:
 
     void manage_windows();
 
+    void pause();
+    void resume();
+
 private:
     Desktop desktop;
+    bool paused;
 };

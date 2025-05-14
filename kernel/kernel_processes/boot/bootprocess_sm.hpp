@@ -1,12 +1,5 @@
 #pragma once
 
-//This is supposed to be a state machine
-
-//bootscreen -> login
-//login -> desktop
-//desktop -> register keystroke
-//desktop -> logout
-
 #include "types.h"
 #include "process.h"
 
