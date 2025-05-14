@@ -17,6 +17,18 @@ kstring string_l(const char *literal) {
     return (kstring){ .data = buf, .length = len };
 }
 
+kstring string_tail(const char *array, uint32_t max_length){
+    uint32_t len = compute_length(array, 0);
+    int offset = len-max_length;
+    if (offset < 0) 
+        offset = 0; 
+    uint32_t adjusted_len = len - offset;
+    char *buf = (char*)talloc(adjusted_len);
+    for (int i = offset; i < len; i++)
+        buf[i-offset] = array[i];
+    return (kstring){ .data = buf, .length = adjusted_len };
+}
+
 kstring string_ca_max(const char *array, uint32_t max_length) {
     uint32_t len = compute_length(array, max_length);
     char *buf = (char*)talloc(len);

@@ -45,13 +45,12 @@ void login_screen(){
         gpu_clear(BG_COLOR);
         size screen_size = gpu_get_screen_size();
         point screen_middle = {screen_size.width/2,screen_size.height/2};
-        kstring s = string_l(buf);
+        kstring s = string_tail(buf,20);
         int scale = 2;
         uint32_t char_size = gpu_get_char_size(scale);
-        int mid_offset = (s.length/2) * char_size;
-        int xo = screen_middle.x - mid_offset;
+        int xo = screen_size.width / 3;
         int yo = screen_middle.y;
-        gpu_fill_rect((rect){xo,yo, char_size * s.length, char_size},BG_COLOR);
+        gpu_fill_rect((rect){xo,yo  - char_size/2, screen_size.width / 3, char_size * 2},BG_COLOR+0x111111);
         gpu_draw_string(s, (point){xo, yo}, scale, 0xFFFFFF);
         keypress kp;
         if (sys_read_input_current(&kp)){
@@ -70,7 +69,6 @@ void login_screen(){
                     buf[len] = '\0';
                 } 
             }
-            kprintf(">");
         }
         if (strcmp(buf,default_pwd) == 0)
             stop_current_process();
