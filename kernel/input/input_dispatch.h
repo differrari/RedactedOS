@@ -15,3 +15,5 @@ void sys_set_secure(bool secure);
 
 bool sys_read_input(int pid, keypress *out);
 bool sys_read_input_current(keypress *out);
+
+bool identical_keypress(keypress* current, keypress* previous);

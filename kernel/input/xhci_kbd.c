@@ -46,6 +46,8 @@ bool is_new_keypress(keypress* current, keypress* previous) {
 
 keypress last_keypress;
 
+int repeated_keypresses = 0; 
+
 keypress xhci_read_key() {
 
     keypress kp = {0};
@@ -57,7 +59,9 @@ keypress xhci_read_key() {
         xhci_sync_events();//TODO: we're just consuming the event without even looking to see if it's the right one, this is wrong, seriously, IRQ await would fix this
 
     keypress *rkp = (keypress*)default_device->input_buffer;
-    if (is_new_keypress(rkp, &last_keypress)){
+    if (is_new_keypress(rkp, &last_keypress) || repeated_keypresses > 3){
+        if (is_new_keypress(rkp, &last_keypress))
+            repeated_keypresses = 0;
         kp.modifier = rkp->modifier;
         kprintf_raw("Mod: %i", kp.modifier);
         for (int i = 0; i < 6; i++){
@@ -65,7 +69,8 @@ keypress xhci_read_key() {
             kprintf_raw("Key [%i]: %i", i, kp.keys[i]);
         }
         last_keypress = kp;
-    }
+    } else
+        repeated_keypresses++;
 
     xhci_kbd_request_data();
 

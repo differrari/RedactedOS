@@ -45,6 +45,10 @@ bool sys_read_input_current(keypress *out){
     return sys_read_input(get_current_proc_pid(), out);
 }
 
+bool identical_keypress(keypress* current, keypress* previous){
+    return !is_new_keypress(current,previous);
+}
+
 bool sys_read_input(int pid, keypress *out){
     process_t *process = get_proc_by_pid(pid);
     if (process->input_buffer.read_index == process->input_buffer.write_index) return false;

@@ -57,8 +57,12 @@ void login_screen(){
             for (int i = 0; i < 6; i++){
                 char key = kp.keys[i];
                 if (hid_keycode_to_char[key]){
+                    if (key == 0x28){
+                        if (strcmp(buf,default_pwd) == 0)
+                            stop_current_process();
+                    }
                     key = hid_keycode_to_char[key];//Translate readables
-                    if (key != 0 && len < 256 && !keypress_contains(&old_kp,kp.keys[i], kp.modifier)){
+                    if (key != 0 && len < 256 && !keypress_contains(&old_kp,kp.keys[i], kp.modifier) || identical_keypress(&old_kp, &kp)){
                         buf[len] = key;
                         kprintf("%c",key);
                         len++;
@@ -70,8 +74,6 @@ void login_screen(){
                 } 
             }
         }
-        if (strcmp(buf,default_pwd) == 0)
-            stop_current_process();
 
         old_kp = kp;
         gpu_flush();
