@@ -29,7 +29,7 @@ void print_process_info(){
     for (int i = 0; i < MAX_PROCS; i++){
         process_t *proc = &processes[i];
         if (proc->id != 0 && proc->state != STOPPED){
-            kprintf("Process: %i. [Status: %s]",proc->id,(uint64_t)parse_proc_state(proc->state));
+            kprintf("Process: %s [pid = %i | status = %s]",(uintptr_t)proc->name,proc->id,(uint64_t)parse_proc_state(proc->state));
             kprintf("Stack: %h (%h). SP: %h",proc->stack, proc->stack_size, proc->sp);
             kprintf("Flags: %h", proc->spsr);
             kprintf("PC: %h",proc->pc);
@@ -60,5 +60,5 @@ void monitor_procs(){
 }
 
 void start_process_monitor(){
-    create_kernel_process(monitor_procs);
+    create_kernel_process("procmonitor",monitor_procs);
 }

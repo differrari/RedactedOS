@@ -73,9 +73,10 @@ void reset_process(process_t *proc){
     free_proc_mem((void*)proc->stack-proc->stack_size,proc->stack_size);
     proc->pc = 0;
     proc->spsr = 0;
-    for (int j = 0; j < 31; j++){
+    for (int j = 0; j < 31; j++)
         proc->regs[j] = 0;
-    }
+    for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++)
+        proc->name[k] = 0;
     proc->input_buffer.read_index = 0;
     proc->input_buffer.write_index = 0;
     for (int k = 0; k < INPUT_BUFFER_CAPACITY; k++){
@@ -107,6 +108,13 @@ process_t* init_process(){
     return proc;
 }
 
+void name_process(process_t *proc, char *name){
+    uint32_t len = 0;
+    while (len < MAX_PROC_NAME_LENGTH && name[len] != '\0') len++;
+    for (int i = 0; i < len; i++)
+        proc->name[i] = name[i];
+}
+
 void stop_process(uint16_t pid){
     disable_interrupt();
     process_t *proc = get_proc_by_pid(pid);
@@ -116,7 +124,7 @@ void stop_process(uint16_t pid){
         sys_unset_focus();
     //TODO: we don't wipe the process' data. If we do, we corrupt our sp, since we're still in the process' sp.
     proc_count--;
-    kprintf_raw("Stopped %i process %i",pid,proc_count);
+    // kprintf_raw("Stopped %i process %i",pid,proc_count);
     switch_proc(HALT);
 }
 

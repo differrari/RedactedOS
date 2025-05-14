@@ -8,18 +8,7 @@
 #include "interrupts/exception_handler.h"
 #include "input/input_dispatch.h"
 #include "process/scheduler.h"
-
-int abs(int n){
-    return n < 0 ? -n : n;
-}
-
-int sign(int x) {
-    return (x > 0) - (x < 0);
-}
-
-int lerp(int i, int start, int end, int steps) {
-    return start + (end - start) * i / steps;
-}
+#include "math/math.h"
 
 __attribute__((section(".data.kcoreprocesses")))
 static uint64_t randomNumber = 0;
@@ -92,5 +81,5 @@ void bootscreen(){
 }
 
 process_t* start_bootscreen(){
-    return create_kernel_process(bootscreen);
+    return create_kernel_process("bootscreen",bootscreen);
 }

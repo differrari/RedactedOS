@@ -4,11 +4,13 @@
 #include "process/proc_allocator.h"
 #include "interrupts/gic.h"
 
-process_t *create_kernel_process(void (*func)()){
+process_t *create_kernel_process(char *name, void (*func)()){
 
     disable_interrupt();
     
     process_t* proc = init_process();
+
+    name_process(proc, name);
 
     uint64_t stack_size = 0x1000;
 

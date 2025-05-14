@@ -6,6 +6,7 @@
 #include "theme/theme.h"
 #include "console/kio.h"
 #include "process/scheduler.h"
+#include "math/math.h"
 
 static const char hid_keycode_to_char[256] = {
     [0x04] = 'a', [0x05] = 'b', [0x06] = 'c', [0x07] = 'd',
@@ -31,10 +32,6 @@ bool keypress_contains(keypress *kp, char key, uint8_t modifier){
         if (kp->keys[i] == key)
             return true;
     return false;
-}
-
-int min(int a, int b){
-    return a < b ? a : b;
 }
 
 __attribute__((section(".text.kcoreprocesses")))
@@ -100,5 +97,5 @@ void login_screen(){
 }
 
 process_t* present_login(){
-    return create_kernel_process(login_screen);
+    return create_kernel_process("login",login_screen);
 }

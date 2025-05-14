@@ -15,6 +15,8 @@ typedef struct {
     keypress entries[INPUT_BUFFER_CAPACITY];
 } input_buffer_t;
 
+#define MAX_PROC_NAME_LENGTH 256
+
 typedef struct {
     //We use the addresses of these variables to save and restore process state
     uint64_t regs[31]; // x0–x30
@@ -28,6 +30,7 @@ typedef struct {
     bool focused;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     input_buffer_t input_buffer;
+    char name[MAX_PROC_NAME_LENGTH];
 } process_t;
 
 #ifdef __cplusplus

@@ -91,10 +91,12 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
 }
 
 
-process_t* create_process(void (*func)(), uint64_t code_size, uint64_t func_base, void* data, uint64_t data_size) {
+process_t* create_process(char *name, void (*func)(), uint64_t code_size, uint64_t func_base, void* data, uint64_t data_size) {
     
     disable_interrupt();
     process_t* proc = init_process();
+
+    name_process(proc, name);
 
     kprintf_raw("Code size %h. Data size %h", code_size, data_size);
     

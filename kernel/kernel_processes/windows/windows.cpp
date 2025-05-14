@@ -26,5 +26,5 @@ void resume_window_draw(){
 }
 
 extern "C" process_t* start_windows(){
-    return create_kernel_process(manage_windows);
+    return create_kernel_process("winmanager",manage_windows);
 }
