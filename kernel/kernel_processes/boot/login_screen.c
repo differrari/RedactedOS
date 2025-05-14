@@ -69,7 +69,7 @@ void login_screen(){
             for (int i = 0; i < 6; i++){
                 char key = kp.keys[i];
                 if (hid_keycode_to_char[key]){
-                    if (key == 0x28){
+                    if (key == KEY_ENTER){
                         if (strcmp(buf,default_pwd) == 0){
                             stop_current_process();
                             temp_free(s.data,s.length);
@@ -85,7 +85,7 @@ void login_screen(){
                         len++;
                     }
                 } 
-                if (kp.keys[i] == 42){
+                if (kp.keys[i] == KEY_BACKSPACE){
                     if (len > 0) len--;
                     buf[len] = '\0';
                 } 

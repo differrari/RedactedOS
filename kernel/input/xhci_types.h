@@ -89,10 +89,10 @@ typedef union {
         uint32_t    wpr         : 1;
     };
     uint32_t value;
-} portsc;
+} portstatuscontrol;
 
 typedef struct {
-    portsc portsc;
+    portstatuscontrol portsc;
     uint32_t portpmsc;
     uint32_t portli;
     uint32_t rsvd;

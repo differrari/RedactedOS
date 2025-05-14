@@ -1,6 +1,7 @@
 #include "bootprocess_sm.hpp"
 #include "bootscreen.h"
 #include "login_screen.h"
+#include "../windows/windows.h"
 #include "console/kio.h"
 
 BootSM::BootSM(){
@@ -28,7 +29,7 @@ void BootSM::AdvanceToState(BootStates next_state){
             current_proc = present_login();
         break;
         case Desktop:
-            current_proc = start_bootscreen();
+            current_proc = start_windows();
         break;
     }
     current_state = next_state;
