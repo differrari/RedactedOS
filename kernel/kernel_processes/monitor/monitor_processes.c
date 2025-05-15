@@ -4,6 +4,11 @@
 #include "console/kio.h"
 #include "input/input_dispatch.h"
 #include "../windows/windows.h"
+#include "graph/graphics.h"
+#include "kstring.h"
+#include "ram_e.h"
+#include "theme/theme.h"
+#include "math/math.h"
 
 __attribute__((section(".text.kcoreprocesses")))
 char* parse_proc_state(int state){
@@ -29,13 +34,92 @@ void print_process_info(){
     for (int i = 0; i < MAX_PROCS; i++){
         process_t *proc = &processes[i];
         if (proc->id != 0 && proc->state != STOPPED){
-            kprintf("Process: %s [pid = %i | status = %s]",(uintptr_t)proc->name,proc->id,(uint64_t)parse_proc_state(proc->state));
+            kprintf("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uint64_t)parse_proc_state(proc->state));
             kprintf("Stack: %h (%h). SP: %h",proc->stack, proc->stack_size, proc->sp);
             kprintf("Flags: %h", proc->spsr);
             kprintf("PC: %h",proc->pc);
         }
     }
     for (int i = 0; i < 100000000; i++);
+}
+
+#define PROCS_PER_SCREEN 2
+
+uint16_t scroll_index = 0;
+
+__attribute__((section(".text.kcoreprocesses")))
+void draw_process_view(){
+    gpu_clear(BG_COLOR+0x112211);
+    process_t *processes = get_all_processes();
+    size screen_size = gpu_get_screen_size();
+    point screen_middle = {screen_size.width / 2, screen_size.height / 2};
+
+    for (int i = 0; i < PROCS_PER_SCREEN; i++) {
+        int index = scroll_index + i;
+
+        process_t *proc;
+        while (index < MAX_PROCS){
+            kprintf("AAA");
+            proc = &processes[index];
+            if (proc->id == 0 || proc->state == STOPPED){ 
+                kprintf("Process %i %s invalid",index, (uintptr_t)proc->name);
+                index++;
+            }
+            else {
+                kprintf("Process %i %s valid", index, (uint64_t)proc->name);
+                break;
+            }
+        }
+
+        kprintf("Settled on process %i",index);
+
+        if (proc->id == 0 || proc->state == STOPPED) break;
+
+        kstring name = string_l((const char*)(uintptr_t)proc->name);
+        kstring state = string_l(parse_proc_state(proc->state));
+
+        int scale = 2;
+        uint32_t char_size = gpu_get_char_size(scale);
+        int name_offset = (name.length / 2) * char_size;
+        int state_offset = (state.length / 2) * char_size;
+
+        int name_y = screen_middle.y - 100;
+        int state_y = screen_middle.y - 60;
+        int pc_y = screen_middle.y - 30;
+        int stack_y = screen_middle.y;
+        int stack_height = 100;
+        int stack_width = 40;
+        int flags_y = stack_y + stack_height + 10;
+
+        int xo = (i * (screen_size.width / PROCS_PER_SCREEN)) + 50;
+
+        gpu_draw_string(name, (point){xo, name_y}, scale, BG_COLOR);
+        gpu_draw_string(state, (point){xo, state_y}, scale, BG_COLOR);
+        
+        kstring pc = string_from_hex(proc->pc);
+        gpu_draw_string(pc, (point){xo, pc_y}, scale, BG_COLOR);
+        temp_free(pc.data, pc.length);
+        
+        point stack_top = {xo, stack_y};
+        gpu_draw_line(stack_top, (point){stack_top.x + stack_width, stack_top.y}, 0xFFFFFF);
+        gpu_draw_line(stack_top, (point){stack_top.x, stack_top.y + stack_height}, 0xFFFFFF);
+        gpu_draw_line((point){stack_top.x + stack_width, stack_top.y}, (point){stack_top.x + stack_width, stack_top.y + stack_height}, 0xFFFFFF);
+        gpu_draw_line((point){stack_top.x, stack_top.y + stack_height}, (point){stack_top.x + stack_width, stack_top.y + stack_height}, 0xFFFFFF);
+
+        int used_stack = proc->stack - proc->sp;
+        int used_height = max((used_stack * stack_height) / proc->stack_size,1);
+
+        gpu_fill_rect((rect){stack_top.x + 1, stack_top.y + stack_height - used_height + 1, stack_width - 2, used_height-1}, BG_COLOR);
+
+        kstring flags = string_from_hex(proc->spsr);
+        gpu_draw_string(flags, (point){xo, flags_y}, scale, BG_COLOR);
+        temp_free(name.data, name.length);
+        temp_free(state.data, state.length);
+        temp_free(flags.data, flags.length);
+
+    }
+    print_process_info();
+    gpu_flush();
 }
 
 __attribute__((section(".text.kcoreprocesses")))
@@ -55,10 +139,10 @@ void monitor_procs(){
                 resume_window_draw();
         }
         if (active)
-            print_process_info();
+            draw_process_view();
     }
 }
 
-void start_process_monitor(){
-    create_kernel_process("procmonitor",monitor_procs);
+process_t* start_process_monitor(){
+    return create_kernel_process("procmonitor",monitor_procs);
 }

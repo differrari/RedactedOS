@@ -75,8 +75,6 @@ void kernel_main() {
 
     // default_processes();
 
-    start_process_monitor();
-
     init_bootprocess();
     
     kprintf("Starting scheduler");

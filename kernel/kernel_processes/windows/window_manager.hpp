@@ -2,12 +2,14 @@
 
 #include "types.h"
 #include "desktop.hpp"
+#include "process.h"
 
 class WindowManager {
 public:
     WindowManager();
 
     void manage_windows();
+    void initialize();
 
     void pause();
     void resume();
@@ -15,4 +17,5 @@ public:
 private:
     Desktop desktop;
     bool paused;
+    process_t *monitor_proc;
 };
