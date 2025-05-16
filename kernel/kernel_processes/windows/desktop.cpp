@@ -46,7 +46,7 @@ bool Desktop::await_gpu(){
     if (!ready){
         disable_visual();
         sys_focus_current();
-        size screen_size = gpu_get_screen_size();
+        gpu_size screen_size = gpu_get_screen_size();
         tile_size = {screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20};
         ready = true;
     }
@@ -59,6 +59,6 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
     int border = 4;
 
     if (sel)
-        gpu_fill_rect((rect){10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row), tile_size.width, tile_size.height}, BG_COLOR+0x333333);
-    gpu_fill_rect((rect){10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0), tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}, BG_COLOR+0x111111);
+        gpu_fill_rect((gpu_rect){10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row), tile_size.width, tile_size.height}, BG_COLOR+0x333333);
+    gpu_fill_rect((gpu_rect){10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0), tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}, BG_COLOR+0x111111);
 }

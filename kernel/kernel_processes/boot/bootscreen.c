@@ -14,7 +14,7 @@ __attribute__((section(".data.kcoreprocesses")))
 static uint64_t randomNumber = 0;
 
 __attribute__((section(".text.kcoreprocesses")))
-void boot_draw_name(point screen_middle,int xoffset, int yoffset){
+void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
     const char* name = BOOTSCREEN_TEXT;
     kstring s = string_l(name);
     int scale = 2;
@@ -22,16 +22,16 @@ void boot_draw_name(point screen_middle,int xoffset, int yoffset){
     int mid_offset = (s.length/2) * char_size;
     int xo = screen_middle.x - mid_offset + xoffset;
     int yo = screen_middle.y + yoffset;
-    gpu_fill_rect((rect){xo,yo, char_size * s.length, char_size},BG_COLOR);
-    gpu_draw_string(s, (point){xo, yo}, scale, 0xFFFFFF);
+    gpu_fill_rect((gpu_rect){xo,yo, char_size * s.length, char_size},BG_COLOR);
+    gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFF);
     temp_free(s.data,s.length);
 }
 
 __attribute__((section(".rodata.kcoreprocesses")))
-point offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
+gpu_point offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
 
 __attribute__((section(".text.kcoreprocesses")))
-point boot_calc_point(point offset, int sizes[4], size screen_size, point screen_middle){
+gpu_point boot_calc_point(gpu_point offset, int sizes[4], gpu_size screen_size, gpu_point screen_middle){
     bool x0 = offset.x == 0;
     bool y0 = offset.y == 0;
     bool ui = !(abs(offset.x) - 1);
@@ -40,7 +40,7 @@ point boot_calc_point(point offset, int sizes[4], size screen_size, point screen
     int ys = sign(offset.y);
     int xloc = BOOTSCREEN_PADDING + (x0 ? 0 : (ui ? sizes[3] : sizes[1]));
     int yloc = BOOTSCREEN_PADDING + (y0 ? 0 : (ul ? sizes[0] : sizes[2]));
-    return (point){screen_middle.x + (xs * xloc) - (ui ? BOOTSCREEN_ASYMM.x : 0),  screen_middle.y + (ys * yloc) - (ul ? BOOTSCREEN_ASYMM.y : 0)};
+    return (gpu_point){screen_middle.x + (xs * xloc) - (ui ? BOOTSCREEN_ASYMM.x : 0),  screen_middle.y + (ys * yloc) - (ul ? BOOTSCREEN_ASYMM.y : 0)};
 }
 
 __attribute__((section(".text.kcoreprocesses")))
@@ -50,19 +50,19 @@ void bootscreen(){
     while (1)
     {
         gpu_clear(BG_COLOR);
-        size screen_size = gpu_get_screen_size();
-        point screen_middle = {screen_size.width/2,screen_size.height/2};
+        gpu_size screen_size = gpu_get_screen_size();
+        gpu_point screen_middle = {screen_size.width/2,screen_size.height/2};
         int sizes[4] = {BOOTSCREEN_INNER_X_CONST,screen_size.width/BOOTSCREEN_OUTER_X_DIV,screen_size.height/BOOTSCREEN_UPPER_Y_DIV,BOOTSCREEN_LOWER_Y_CONST};
         
-        point current_point = boot_calc_point(offsets[BOOTSCREEN_NUM_SYMBOLS-1],sizes,screen_size,screen_middle);
+        gpu_point current_point = boot_calc_point(offsets[BOOTSCREEN_NUM_SYMBOLS-1],sizes,screen_size,screen_middle);
         for (int i = 0; i < BOOTSCREEN_NUM_STEPS; i++){
-            point offset = offsets[i];
-            point next_point = boot_calc_point(offset,sizes,screen_size,screen_middle);
+            gpu_point offset = offsets[i];
+            gpu_point next_point = boot_calc_point(offset,sizes,screen_size,screen_middle);
             int xlength = abs(current_point.x - next_point.x);
             int ylength = abs(current_point.y - next_point.y);
             int steps = xlength > ylength ? xlength : ylength;
             for (int i = 0; i <= steps; i++) {
-                point interpolated = {
+                gpu_point interpolated = {
                     lerp(i, current_point.x, next_point.x, steps),
                     lerp(i, current_point.y, next_point.y, steps)
                 };

@@ -52,8 +52,8 @@ __attribute__((section(".text.kcoreprocesses")))
 void draw_process_view(){
     gpu_clear(BG_COLOR+0x112211);
     process_t *processes = get_all_processes();
-    size screen_size = gpu_get_screen_size();
-    point screen_middle = {screen_size.width / 2, screen_size.height / 2};
+    gpu_size screen_size = gpu_get_screen_size();
+    gpu_point screen_middle = {screen_size.width / 2, screen_size.height / 2};
 
     for (int i = 0; i < PROCS_PER_SCREEN; i++) {
         int index = scroll_index + i;
@@ -93,26 +93,26 @@ void draw_process_view(){
 
         int xo = (i * (screen_size.width / PROCS_PER_SCREEN)) + 50;
 
-        gpu_draw_string(name, (point){xo, name_y}, scale, BG_COLOR);
-        gpu_draw_string(state, (point){xo, state_y}, scale, BG_COLOR);
+        gpu_draw_string(name, (gpu_point){xo, name_y}, scale, BG_COLOR);
+        gpu_draw_string(state, (gpu_point){xo, state_y}, scale, BG_COLOR);
         
         kstring pc = string_from_hex(proc->pc);
-        gpu_draw_string(pc, (point){xo, pc_y}, scale, BG_COLOR);
+        gpu_draw_string(pc, (gpu_point){xo, pc_y}, scale, BG_COLOR);
         temp_free(pc.data, pc.length);
         
-        point stack_top = {xo, stack_y};
-        gpu_draw_line(stack_top, (point){stack_top.x + stack_width, stack_top.y}, 0xFFFFFF);
-        gpu_draw_line(stack_top, (point){stack_top.x, stack_top.y + stack_height}, 0xFFFFFF);
-        gpu_draw_line((point){stack_top.x + stack_width, stack_top.y}, (point){stack_top.x + stack_width, stack_top.y + stack_height}, 0xFFFFFF);
-        gpu_draw_line((point){stack_top.x, stack_top.y + stack_height}, (point){stack_top.x + stack_width, stack_top.y + stack_height}, 0xFFFFFF);
+        gpu_point stack_top = {xo, stack_y};
+        gpu_draw_line(stack_top, (gpu_point){stack_top.x + stack_width, stack_top.y}, 0xFFFFFF);
+        gpu_draw_line(stack_top, (gpu_point){stack_top.x, stack_top.y + stack_height}, 0xFFFFFF);
+        gpu_draw_line((gpu_point){stack_top.x + stack_width, stack_top.y}, (gpu_point){stack_top.x + stack_width, stack_top.y + stack_height}, 0xFFFFFF);
+        gpu_draw_line((gpu_point){stack_top.x, stack_top.y + stack_height}, (gpu_point){stack_top.x + stack_width, stack_top.y + stack_height}, 0xFFFFFF);
 
         int used_stack = proc->stack - proc->sp;
         int used_height = max((used_stack * stack_height) / proc->stack_size,1);
 
-        gpu_fill_rect((rect){stack_top.x + 1, stack_top.y + stack_height - used_height + 1, stack_width - 2, used_height-1}, BG_COLOR);
+        gpu_fill_rect((gpu_rect){stack_top.x + 1, stack_top.y + stack_height - used_height + 1, stack_width - 2, used_height-1}, BG_COLOR);
 
         kstring flags = string_from_hex(proc->spsr);
-        gpu_draw_string(flags, (point){xo, flags_y}, scale, BG_COLOR);
+        gpu_draw_string(flags, (gpu_point){xo, flags_y}, scale, BG_COLOR);
         temp_free(name.data, name.length);
         temp_free(state.data, state.length);
         temp_free(flags.data, flags.length);

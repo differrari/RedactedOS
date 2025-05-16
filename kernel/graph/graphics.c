@@ -4,7 +4,7 @@
 #include "graph/drivers/virtio_gpu_pci/virtio_gpu_pci_driver.h"
 #include "graph/drivers/ramfb_driver/ramfb_driver.h"
 
-static size screen_size;
+static gpu_size screen_size;
 static bool _gpu_ready;
 
 typedef enum {
@@ -15,7 +15,7 @@ typedef enum {
 
 SupportedGPU chosen_GPU;
 
-void gpu_init(size preferred_screen_size){
+void gpu_init(gpu_size preferred_screen_size){
     if (vgp_init(preferred_screen_size.width,preferred_screen_size.height))
         chosen_GPU = VIRTIO_GPU_PCI;
     else if (rfb_init(preferred_screen_size.width,preferred_screen_size.height))
@@ -57,7 +57,7 @@ void gpu_clear(color color){
     }
 }
 
-void gpu_draw_pixel(point p, color color){
+void gpu_draw_pixel(gpu_point p, color color){
     if (!gpu_ready())
         return;
     switch (chosen_GPU) {
@@ -72,7 +72,7 @@ void gpu_draw_pixel(point p, color color){
     }
 }
 
-void gpu_fill_rect(rect r, color color){
+void gpu_fill_rect(gpu_rect r, color color){
     if (!gpu_ready())
         return;
     switch (chosen_GPU) {
@@ -87,7 +87,7 @@ void gpu_fill_rect(rect r, color color){
     }
 }
 
-void gpu_draw_line(point p0, point p1, uint32_t color){
+void gpu_draw_line(gpu_point p0, gpu_point p1, uint32_t color){
     if (!gpu_ready())
         return;
     switch (chosen_GPU) {
@@ -101,7 +101,7 @@ void gpu_draw_line(point p0, point p1, uint32_t color){
         break;
     }
 }
-void gpu_draw_char(point p, char c, uint32_t scale, uint32_t color){
+void gpu_draw_char(gpu_point p, char c, uint32_t scale, uint32_t color){
     if (!gpu_ready())
         return;
     switch (chosen_GPU) {
@@ -116,7 +116,7 @@ void gpu_draw_char(point p, char c, uint32_t scale, uint32_t color){
     }
 }
 
-void gpu_draw_string(kstring s, point p, uint32_t scale, uint32_t color){
+void gpu_draw_string(kstring s, gpu_point p, uint32_t scale, uint32_t color){
     if (!gpu_ready())
         return;
     switch (chosen_GPU) {
@@ -140,8 +140,8 @@ uint32_t gpu_get_char_size(uint32_t scale){
     return 0;
 }
 
-size gpu_get_screen_size(){
+gpu_size gpu_get_screen_size(){
     if (!gpu_ready())
-        return (size){0,0};
+        return (gpu_size){0,0};
     return screen_size;
 }

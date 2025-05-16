@@ -10,8 +10,8 @@ public:
     void draw_desktop();
 
 private:
-    size tile_size;
-    point selected;
+    gpu_size tile_size;
+    gpu_point selected;
     void draw_tile(uint32_t column, uint32_t row);
     bool await_gpu();
     bool ready = false;

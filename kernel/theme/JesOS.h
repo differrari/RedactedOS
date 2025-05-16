@@ -18,7 +18,7 @@
     {-2,-1},\
 }
 
-#define BOOTSCREEN_ASYMM (point){0,50}
+#define BOOTSCREEN_ASYMM (gpu_point){0,50}
 #define BOOTSCREEN_PADDING 10
 
 #define BOOTSCREEN_INNER_X_CONST 30

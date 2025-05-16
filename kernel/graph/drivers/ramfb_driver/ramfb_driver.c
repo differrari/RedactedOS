@@ -26,11 +26,11 @@ uint32_t bpp;
 uint32_t stride;
 
 #define MAX_DIRTY_RECTS 64
-rect dirty_rects[MAX_DIRTY_RECTS];
+gpu_rect dirty_rects[MAX_DIRTY_RECTS];
 uint32_t dirty_count = 0;
 bool full_redraw = false;
 
-int try_merge(rect* a, rect* b) {
+int try_merge(gpu_rect* a, gpu_rect* b) {
     uint32_t ax2 = a->point.x + a->size.width;
     uint32_t ay2 = a->point.y + a->size.height;
     uint32_t bx2 = b->point.x + b->size.width;
@@ -53,7 +53,7 @@ int try_merge(rect* a, rect* b) {
 }
 
 void mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
-    rect new_rect = { x, y, w, h };
+    gpu_rect new_rect = { x, y, w, h };
 
     for (int i = 0; i < dirty_count; i++) {
         if (try_merge(&dirty_rects[i], &new_rect))
@@ -180,7 +180,7 @@ void rfb_flush() {
     volatile uint32_t* bfb = (volatile uint32_t*)bfb_ptr;
     
     for (int i = 0; i < dirty_count; i++) {
-        rect r = dirty_rects[i];
+        gpu_rect r = dirty_rects[i];
         
         for (uint32_t y = 0; y < r.size.height; y++) {
             uint32_t dest_y = r.point.y + y;
