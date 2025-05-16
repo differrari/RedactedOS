@@ -20,13 +20,10 @@
 void kernel_main() {
     
     enable_uart();
+    kprintf("UART output enabled");
     // enable_talloc_verbose();
 
     kprintf("Initializing kernel...");
-
-    kprintf("Reading device tree %h",get_total_ram());
-    
-    kprintf("UART output enabled");
     
     size screen_size = {1024,768};
     

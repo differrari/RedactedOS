@@ -176,7 +176,7 @@ void mmu_init() {
     for (uint64_t addr = kstart; addr <= kend; addr += GRANULE_2MB)
         mmu_map_2mb(addr, addr, MAIR_IDX_NORMAL);
 
-    for (uint64_t addr = UART0_BASE; addr <= UART0_BASE; addr += GRANULE_4KB)
+    for (uint64_t addr = get_uart_base(); addr <= get_uart_base(); addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
 
     for (uint64_t addr = GICD_BASE; addr <= GICD_BASE + 0x20040; addr += GRANULE_4KB)

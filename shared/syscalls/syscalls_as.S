@@ -3,6 +3,8 @@ printf_args:
 svc #3
 ret
 
+//Malloc
+//Free
 //Read key
 //Submit shortcut
 //Read shortcut

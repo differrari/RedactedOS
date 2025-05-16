@@ -55,16 +55,16 @@ void panic(const char* panic_msg) {
     
     bool old_panic_triggered = panic_triggered;
     panic_triggered = true;
-    if (!old_panic_triggered){
-        kstring s = string_format("%s\n%s\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)panic_msg);
-        draw_panic_screen(s);
-    }
     uart_raw_puts("*** ");
     uart_raw_puts(PANIC_TEXT);
     uart_raw_puts(" ***\n");
     uart_raw_puts(panic_msg);
     uart_raw_putc('\n');
     uart_raw_puts("System Halted");
+    if (!old_panic_triggered){
+        kstring s = string_format("%s\n%s\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)panic_msg);
+        draw_panic_screen(s);
+    }
     while (1);
 }
 
@@ -73,10 +73,6 @@ void panic_with_info(const char* msg, uint64_t info) {
 
     bool old_panic_triggered = panic_triggered;
     panic_triggered = true;
-    if (!old_panic_triggered){
-        kstring s = string_format("%s\n%s\nError code: %h\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)msg,info);
-        draw_panic_screen(s);
-    }
     uart_raw_puts("*** ");
     uart_raw_puts(PANIC_TEXT);
     uart_raw_puts(" ***\n");
@@ -86,5 +82,9 @@ void panic_with_info(const char* msg, uint64_t info) {
     uart_puthex(info);
     uart_raw_putc('\n');
     uart_raw_puts("System Halted");
+    if (!old_panic_triggered){
+        kstring s = string_format("%s\n%s\nError code: %h\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)msg,info);
+        draw_panic_screen(s);
+    }
     while (1);
 }

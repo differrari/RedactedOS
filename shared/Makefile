@@ -5,7 +5,7 @@ AR = $(ARCH)-ar
 OBJCOPY = $(ARCH)-objcopy
 
 # Compiler Flags
-CFLAGS = -g -O0 -nostdlib -ffreestanding -Wall -Wextra -mcpu=cortex-a72 -I. -I../kernel -Wno-unused-parameter
+CFLAGS = -g -O0 -nostdlib -nolibc -ffreestanding -Wall -Wextra -mcpu=cortex-a72 -I. -I../kernel -Wno-unused-parameter
 
 # Source and Object Files
 C_SRC = $(shell find . -name '*.c')
