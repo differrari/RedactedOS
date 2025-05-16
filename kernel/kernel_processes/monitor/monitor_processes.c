@@ -35,9 +35,9 @@ void print_process_info(){
     for (int i = 0; i < MAX_PROCS; i++){
         process_t *proc = &processes[i];
         if (proc->id != 0 && proc->state != STOPPED){
-            kprintf("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uint64_t)parse_proc_state(proc->state));
-            kprintf("Stack: %h (%h). SP: %h",proc->stack, proc->stack_size, proc->sp);
-            kprintf("Flags: %h", proc->spsr);
+            printf("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uint64_t)parse_proc_state(proc->state));
+            printf("Stack: %h (%h). SP: %h",proc->stack, proc->stack_size, proc->sp);
+            printf("Flags: %h", proc->spsr);
             printf("PC: %h",proc->pc);
         }
     }
@@ -60,19 +60,18 @@ void draw_process_view(){
 
         process_t *proc;
         while (index < MAX_PROCS){
-            kprintf("AAA");
             proc = &processes[index];
             if (proc->id == 0 || proc->state == STOPPED){ 
-                kprintf("Process %i %s invalid",index, (uintptr_t)proc->name);
+                printf("Process %i %s invalid",index, (uintptr_t)proc->name);
                 index++;
             }
             else {
-                kprintf("Process %i %s valid", index, (uint64_t)proc->name);
+                printf("Process %i %s valid", index, (uint64_t)proc->name);
                 break;
             }
         }
 
-        kprintf("Settled on process %i",index);
+        printf("Settled on process %i",index);
 
         if (proc->id == 0 || proc->state == STOPPED) break;
 
