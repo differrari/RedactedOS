@@ -4,7 +4,7 @@
 #include "fw/fw_cfg.h"
 #include "ramfb_driver.h"
 #include "graph/font8x8_basic.h"
-#include "graph/graphic_types.h"
+#include "graphic_types.h"
 
 #define RGB_FORMAT_XRGB8888 ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
 

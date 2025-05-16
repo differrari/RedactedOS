@@ -5,7 +5,7 @@ extern "C" {
 #endif
 
 #include "types.h"
-#include "graph/graphic_types.h"
+#include "graphic_types.h"
 #include "kstring.h"
 
 void gpu_init(gpu_size preferred_screen_size);
