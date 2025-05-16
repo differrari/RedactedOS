@@ -7,12 +7,15 @@ __attribute__((section(".rodata.proc1")))
 static const char fmt[] = "Process %i";
 __attribute__((section(".data.proc1")))
 static uint64_t j = 0;
+__attribute__((section(".data.proc1")))
+static uint64_t i = 0;
 
 __attribute__((section(".text.proc1")))
 void proc_func() {
     while (1) {
         printf_args(fmt,&j, 1);
         j++;
+        // for (i = 0; i < 10000; i++);//TODO: User processes can't even handle this just yet
     }
 }
 

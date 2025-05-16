@@ -27,7 +27,17 @@ void handle_exception(const char* type) {
     panic(s.data);
 }
 
-void sync_el1_handler(){ handle_exception("SYNC EXCEPTION"); }
+void handle_exception_with_info(const char* type, uint64_t info) {
+    uint64_t esr, elr, far;
+    asm volatile ("mrs %0, esr_el1" : "=r"(esr));
+    asm volatile ("mrs %0, elr_el1" : "=r"(elr));
+    asm volatile ("mrs %0, far_el1" : "=r"(far));
+
+    disable_visual();//Disable visual kprintf, since it has additional memory accesses that could be faulting
+
+    kstring s = string_format("%s \nESR_EL1: %h\nELR_EL1: %h\nFAR_EL1: %h",(uint64_t)string_l(type).data,esr,elr,far);
+    panic_with_info(s.data, info);
+}
 
 void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\n"); }
 

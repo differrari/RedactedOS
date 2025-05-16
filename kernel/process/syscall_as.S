@@ -8,6 +8,6 @@ sync_el0_handler_as:
     mov x14, x8
     mov x15, x29
     mov x16, x30
-    mov x17, #1
+    mov x17, sp
     b sync_el0_handler_c
     eret

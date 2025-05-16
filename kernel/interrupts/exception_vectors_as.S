@@ -9,12 +9,12 @@ exception_vectors:
     .space 0x80 - 4
 .endm
 
-    vector_slot sync_el1_handler      // EL1t sync
+    vector_slot sync_el0_handler_as      // EL1t sync
     vector_slot irq_el1_asm_handler       // EL1t irq
     vector_slot fiq_el1_handler       // EL1t fiq
     vector_slot error_el1_handler     // EL1t serror
 
-    vector_slot sync_el1_handler      // EL1h sync
+    vector_slot sync_el0_handler_as      // EL1h sync
     vector_slot irq_el1_asm_handler       // EL1h irq
     vector_slot fiq_el1_handler       // EL1h fiq
     vector_slot error_el1_handler     // EL1h serror

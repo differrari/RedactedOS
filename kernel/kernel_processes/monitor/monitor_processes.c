@@ -9,6 +9,7 @@
 #include "ram_e.h"
 #include "theme/theme.h"
 #include "math/math.h"
+#include "syscalls/syscalls.h"
 
 __attribute__((section(".text.kcoreprocesses")))
 char* parse_proc_state(int state){
@@ -37,7 +38,7 @@ void print_process_info(){
             kprintf("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uint64_t)parse_proc_state(proc->state));
             kprintf("Stack: %h (%h). SP: %h",proc->stack, proc->stack_size, proc->sp);
             kprintf("Flags: %h", proc->spsr);
-            kprintf("PC: %h",proc->pc);
+            printf("PC: %h",proc->pc);
         }
     }
     for (int i = 0; i < 100000000; i++);
