@@ -32,6 +32,12 @@ void kprintf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count)
     temp_free(s.data,256);
 }
 
+void kputf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count){
+    kstring s = string_format_args(fmt, args, arg_count);
+    puts(s.data);
+    temp_free(s.data,256);
+}
+
 void disable_visual(){
     use_visual = false;
 }
