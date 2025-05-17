@@ -14,7 +14,7 @@ Desktop::Desktop(){
 void Desktop::draw_desktop(){
     if (!await_gpu()) return;
     keypress kp;
-    if (sys_read_input_current(&kp)){
+    while (sys_read_input_current(&kp)){
         for (int i = 0; i < 6; i++){
             char key = kp.keys[i];
             if (kp.keys[i] == KEY_ARROW_RIGHT){
