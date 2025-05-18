@@ -70,7 +70,7 @@ void kernel_main() {
 
     kprintf("Starting processes");
 
-    // default_processes();
+    default_processes();
 
     init_bootprocess();
     

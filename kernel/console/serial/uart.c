@@ -50,12 +50,12 @@ void uart_raw_puts(const char *s) {
 
 void uart_puthex(uint64_t value) {
     disable_interrupt();
-    const char hex_chars[] = "0123456789ABCDEF";
     bool started = false;
     uart_raw_putc('0');
     uart_raw_putc('x');
     for (int i = 60; i >= 0; i -= 4) {
-        char curr_char = hex_chars[(value >> i) & 0xF];
+        uint8_t nibble = (value >> i) & 0xF;
+        char curr_char = nibble < 10 ? '0' + nibble : 'A' + (nibble - 10);
         if (started || curr_char != '0' || i == 0) {
             started = true;
             uart_raw_putc(curr_char);

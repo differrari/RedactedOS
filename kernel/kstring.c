@@ -74,6 +74,25 @@ kstring string_from_hex(uint64_t value) {
     return (kstring){ .data = buf, .length = len };
 }
 
+kstring string_from_bin(uint64_t value) {
+    char *buf = (char*)talloc(67);
+    uint32_t len = 0;
+    buf[len++] = '0';
+    buf[len++] = 'b';
+
+    bool started = false;
+    for (int i = 60; i >= 0; i --) {
+        char bit = (value >> i) & 1  ? '1' : '0';
+        if (started || bit != '0' || i == 0) {
+            started = true;
+            buf[len++] = bit;
+        }
+    }
+
+    buf[len] = 0;
+    return (kstring){ .data = buf, .length = len };
+}
+
 bool string_equals(kstring a, kstring b) {
     return strcmp(a.data,b.data) == 0;
 }
@@ -91,7 +110,12 @@ kstring string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_c
                 uint64_t val = args[arg_index++];
                 kstring hex = string_from_hex(val);
                 for (uint32_t j = 0; j < hex.length && len < 255; j++) buf[len++] = hex.data[j];
-                temp_free(hex.data,18);
+                temp_free(hex.data,hex.length);
+            } else if (fmt[i] == 'b') {
+                uint64_t val = args[arg_index++];
+                kstring bin = string_from_bin(val);
+                for (uint32_t j = 0; j < bin.length && len < 255; j++) buf[len++] = bin.data[j];
+                temp_free(bin.data,bin.length);
             } else if (fmt[i] == 'c') {
                 uint64_t val = args[arg_index++];
                 buf[len++] = (char)val;
