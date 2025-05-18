@@ -29,3 +29,5 @@ void name_process(process_t *proc, char *name);
 
 uint16_t process_count();
 process_t *get_all_processes();
+
+extern uint64_t ksp;

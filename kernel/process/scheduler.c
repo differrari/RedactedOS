@@ -17,6 +17,8 @@ uint16_t current_proc = 0;
 uint16_t proc_count = 0;
 uint16_t next_proc_index = 0;
 
+uint64_t ksp;
+
 void save_context_registers(){
     save_context(&processes[current_proc]);
 }
@@ -47,9 +49,9 @@ void process_restore(){
 }
 
 void start_scheduler(){
+    asm volatile ("mov %0, sp" : "=r"(ksp));
     disable_interrupt();
     timer_init(1);
-    //TODO: We should save the current SP before this and use it whenever we switch back to EL1, otherwise we risk exposing kernel data onto a process' stack (as well as reset_process not being callable immediately after a process reset)
     switch_proc(YIELD);
 }
 

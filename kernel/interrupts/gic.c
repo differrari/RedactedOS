@@ -85,6 +85,9 @@ void disable_interrupt(){
 void irq_el1_handler() {
     save_context_registers();
     save_return_address_interrupt();
+    if (ksp != 0){
+        asm volatile ("mov sp, %0" :: "r"(ksp));
+    }
     uint32_t irq = read32(GICC_BASE + 0xC);
 
     if (irq == IRQ_TIMER) {

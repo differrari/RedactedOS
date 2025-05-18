@@ -171,6 +171,13 @@ uint32_t print_mov32(uint32_t instr, uint64_t pc, bool translate, process_layout
     return instr;
 }
 
+uint32_t print_movr(uint32_t instr, uint64_t pc, bool translate, process_layout *source, process_layout *destination) {
+    uint32_t rd = instr & 0x1F;
+    uint32_t imm16 = (instr >> 15) & 0x1F;
+    kputfv("x%i, x%i", rd, imm16);
+    return instr;
+}
+
 uint32_t print_cmp(uint32_t instr, uint64_t pc, bool translate, process_layout *source, process_layout *destination) {
     uint32_t rn = (instr >> 5) & 0x1F;
     uint32_t rm = (instr >> 16) & 0x1F;
@@ -194,6 +201,7 @@ instruction_entry ops[] = {
     { 0xFFF00000, 0xB9400000, "ldr", print_ldr_str },
     { 0xFF800000, 0x72800000, "movk", print_movz },
     { 0xFF00001F, 0x6B00001F, "cmp", print_cmp },
+    { 0xFFE00000, 0xAA000000, "mov", print_movr },
 };
 
 uint32_t parse_instruction(uint32_t instruction, uint64_t pc, bool translate, process_layout *source, process_layout *destination){

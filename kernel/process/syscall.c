@@ -4,8 +4,10 @@
 #include "console/serial/uart.h"
 #include "interrupts/gic.h"
 #include "ram_e.h"
+#include "process/scheduler.h"
 
 void sync_el0_handler_c(){
+    asm volatile ("mov sp, %0" :: "r"(ksp));
     uint64_t x0;
     asm volatile ("mov %0, x11" : "=r"(x0));
     uint64_t *x1;
@@ -21,15 +23,11 @@ void sync_el0_handler_c(){
     uint64_t spsr;
     asm volatile ("mrs %0, spsr_el1" : "=r"(spsr));
 
-    uint64_t currentEL = (spsr >> 2) & 0b11;
+    uint64_t currentEL;
+    asm volatile ("mov %0, x19" : "=r"(currentEL));
 
     uint64_t sp_el;
-    if (currentEL == 1)
-        asm volatile ("mov %0, x17" : "=r"(sp_el));
-    else if (currentEL == 0)
-        asm volatile ("mrs %0, sp_el0" : "=r"(sp_el));
-    else 
-        handle_exception_with_info("UNEXPECTED EL",currentEL);//100€ to whoever manages to trigger this exception
+    asm volatile ("mov %0, x17" : "=r"(sp_el));
 
     uint64_t esr;
     asm volatile ("mrs %0, esr_el1" : "=r"(esr));
