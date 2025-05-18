@@ -26,7 +26,7 @@ void kernel_main() {
 
     kprintf("Initializing kernel...");
     
-    gpu_size screen_size = {1024,768};
+    gpu_size screen_size = {1080,720};
     
     kprintf("Preparing for draw");
     
