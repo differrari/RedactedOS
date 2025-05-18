@@ -14,6 +14,7 @@ Desktop::Desktop(){
 void Desktop::draw_desktop(){
     if (!await_gpu()) return;
     keypress kp;
+    gpu_point old_selected = selected;
     while (sys_read_input_current(&kp)){
         for (int i = 0; i < 6; i++){
             char key = kp.keys[i];
@@ -31,6 +32,17 @@ void Desktop::draw_desktop(){
             } 
         }
     }
+    if (!renderedFull){
+        renderedFull = true;
+        draw_full();
+    } else if (old_selected.x != selected.x || old_selected.y != selected.y){
+        draw_tile(old_selected.x, old_selected.y);
+        draw_tile(selected.x, selected.y);
+        gpu_flush();
+    }
+}
+
+void Desktop::draw_full(){
     gpu_clear(BG_COLOR);
     for (uint32_t column = 0; column < MAX_COLS; column++){
         for (uint32_t row = 0; row < MAX_ROWS; row++){

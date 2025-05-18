@@ -14,5 +14,7 @@ private:
     gpu_point selected;
     void draw_tile(uint32_t column, uint32_t row);
     bool await_gpu();
+    void draw_full();
     bool ready = false;
+    bool renderedFull = false;
 };
