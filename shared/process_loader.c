@@ -46,7 +46,7 @@ uint32_t print_branch(uint32_t instr, uint64_t pc, bool translate, process_layou
     int32_t imm26 = instr & 0x03FFFFFF;
     int32_t signed_imm = (imm26 << 6) >> 6;
     uint64_t target = pc + ((int64_t)signed_imm << 2);
-    kputfv("%h //pc = %h", target, pc);
+    kputfv("%h /*pc = %h*/", target, pc);
 
     if (!translate) return instr;
 
@@ -190,6 +190,10 @@ instruction_entry ops[] = {
     { 0xFFFFFC1F, 0xEB00001F, "cmp", print_cmp },
     { 0xFC000000, 0x14000000, "b", print_branch },
     { 0xFF000010, 0x54000000, "b.cond", print_cond_branch },
+    { 0xFFC00000, 0xB9000000, "str", print_ldr_str },
+    { 0xFFF00000, 0xB9400000, "ldr", print_ldr_str },
+    { 0xFF800000, 0x72800000, "movk", print_movz },
+    { 0xFF00001F, 0x6B00001F, "cmp", print_cmp },
 };
 
 uint32_t parse_instruction(uint32_t instruction, uint64_t pc, bool translate, process_layout *source, process_layout *destination){

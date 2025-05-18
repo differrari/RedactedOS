@@ -16,6 +16,7 @@
 #include "input/xhci_kbd.h"
 #include "input/xhci.h"
 #include "kernel_processes/monitor/monitor_processes.h"
+#include "process_loader.h"
 
 void kernel_main() {
     
@@ -69,6 +70,8 @@ void kernel_main() {
     disk_test();
 
     kprintf("Starting processes");
+
+    // translate_enable_verbose();
 
     default_processes();
 
