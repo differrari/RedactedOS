@@ -1,6 +1,6 @@
 #include "pci.h"
 #include "console/kio.h"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 #include "dma.h"
 #include "fw/fw_cfg.h"
 #include "kstring.h"

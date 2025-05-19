@@ -1,4 +1,4 @@
-#include "ram_e.h"
+#include "kalloc.h"
 #include "types.h"
 #include "interrupts/exception_handler.h"
 #include "console/kio.h"
@@ -31,12 +31,6 @@ uint64_t alloc_mmio_region(uint64_t size) {
     return addr;
 }
 
-#define DMA_BASE   0x50010000
-#define DMA_LIMIT  0x5FFFFFFF
-
-static uint64_t next_dma_base = DMA_BASE;
-
-#define temp_start (uint64_t)&heap_bottom + 0x500000
 
 extern uint64_t kernel_start;
 extern uint64_t heap_bottom;
@@ -45,13 +39,12 @@ extern uint64_t kcode_end;
 extern uint64_t kfull_end;
 extern uint64_t shared_start;
 extern uint64_t shared_end;
+static bool talloc_verbose = false;
+
+#define temp_start (uint64_t)&heap_bottom + 0x500000
+
 uint64_t next_free_temp_memory = (uint64_t)&heap_bottom;
 uint64_t next_free_perm_memory = temp_start;
-
-//We'll need to use a table indicating which sections of memory are available
-//So we can talloc and free dynamically
-
-static bool talloc_verbose = false;
 
 uint64_t talloc(uint64_t size) {
 

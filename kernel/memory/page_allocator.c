@@ -1,7 +1,7 @@
 #include "page_allocator.h"
 #include "memory_types.h"
 #include "memory_access.h"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 #include "console/kio.h"
 #include "mmu.h"
 #include "interrupts/exception_handler.h"

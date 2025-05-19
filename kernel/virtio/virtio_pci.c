@@ -1,7 +1,7 @@
 #include "console/kio.h"
 #include "pci.h"
 #include "memory/memory_access.h"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 #include "virtio_pci.h"
 
 struct virtq_desc {

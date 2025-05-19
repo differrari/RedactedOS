@@ -6,7 +6,7 @@
 #include "console/kconsole/kconsole.h"
 #include "mmu.h"
 #include "interrupts/exception_handler.h"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 #include "dtb.h"
 #include "interrupts/gic.h"
 #include "process/scheduler.h"

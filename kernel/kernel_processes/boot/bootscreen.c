@@ -3,7 +3,7 @@
 #include "console/kio.h"
 #include "graph/graphics.h"
 #include "kstring.h"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 #include "theme/theme.h"
 #include "interrupts/exception_handler.h"
 #include "input/input_dispatch.h"

@@ -1,5 +1,5 @@
 #include "xhci_kbd.h"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 #include "console/kio.h"
 #include "input_dispatch.h"
 #include "memory/page_allocator.h"

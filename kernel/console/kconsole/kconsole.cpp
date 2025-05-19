@@ -1,5 +1,5 @@
 #include "kconsole.hpp"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 #include "graph/graphics.h"
 #include "console/serial/uart.h"
 

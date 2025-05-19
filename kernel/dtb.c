@@ -1,7 +1,7 @@
 #include "dtb.h"
 #include "console/kio.h"
 #include "kstring.h"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 
 #define DTB_ADDR 0x40000000UL
 #define FDT_MAGIC 0xD00DFEED

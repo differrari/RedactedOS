@@ -1,6 +1,6 @@
 #include "mmu.h"
 #include "console/serial/uart.h"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 #include "console/kio.h"
 #include "interrupts/gic.h"
 #include "dtb.h"

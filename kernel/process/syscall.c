@@ -3,7 +3,7 @@
 #include "interrupts/exception_handler.h"
 #include "console/serial/uart.h"
 #include "interrupts/gic.h"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 #include "process/scheduler.h"
 
 void sync_el0_handler_c(){

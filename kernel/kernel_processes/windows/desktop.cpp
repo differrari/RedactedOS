@@ -4,7 +4,7 @@
 #include "theme/theme.h"
 #include "input/input_dispatch.h"
 #include "default_process.h"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3

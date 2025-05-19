@@ -1,6 +1,6 @@
 #include "scheduler.h"
 #include "console/kio.h"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 #include "memory/page_allocator.h"
 #include "interrupts/gic.h"
 #include "console/serial/uart.h"

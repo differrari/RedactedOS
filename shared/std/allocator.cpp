@@ -1,5 +1,5 @@
 #include "allocator.hpp"
-#include "ram_e.h"
+#include "memory/kalloc.h"
 
 void* operator new(size_t size) { 
     return (void*)talloc(size); 
