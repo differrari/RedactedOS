@@ -1,6 +1,6 @@
 #include "gic.h"
 #include "console/kio.h"
-#include "ram_e.h"
+#include "memory/memory_access.h"
 #include "process/scheduler.h"
 #include "input/xhci_types.h"
 #include "pci.h"

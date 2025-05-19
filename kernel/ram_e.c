@@ -14,46 +14,6 @@ static uint64_t calculated_ram_end = 0;
 
 FreeBlock* temp_free_list = 0;
 
-uint8_t read8(uintptr_t addr) {
-    return *(volatile uint8_t*)addr;
-}
-
-void write8(uintptr_t addr, uint8_t value) {
-    *(volatile uint8_t*)addr = value;
-}
-
-uint16_t read16(uintptr_t addr) {
-    return *(volatile uint16_t*)addr;
-}
-
-void write16(uintptr_t addr, uint16_t value) {
-    *(volatile uint16_t*)addr = value;
-}
-
-uint32_t read32(uintptr_t addr) {
-    return *(volatile uint32_t*)addr;
-}
-
-void write32(uintptr_t addr, uint32_t value) {
-    *(volatile uint32_t*)addr = value;
-}
-
-uint64_t read64(uintptr_t addr) {
-    return *(volatile uint64_t*)addr;
-}
-
-void write64(uintptr_t addr, uint64_t value) {
-    *(volatile uint64_t*)addr = value;
-}
-
-void write(uint64_t addr, uint64_t value) {
-    write64(addr, value);
-}
-
-uint64_t read(uint64_t addr) {
-    return read64(addr);
-}
-
 #define PCI_MMIO_BASE   0x10010000
 #define PCI_MMIO_LIMIT  0x1FFFFFFF
 
@@ -74,20 +34,6 @@ uint64_t alloc_mmio_region(uint64_t size) {
 #define DMA_LIMIT  0x5FFFFFFF
 
 static uint64_t next_dma_base = DMA_BASE;
-
-//TODO: This just allocates based on palloc, it should be free-able and it should be its own region
-uint64_t alloc_dma_region(uint64_t size) {
-    return palloc(size);
-    size = (size + (64 - 1)) & ~(64 - 1);
-    if (next_dma_base + size > DMA_LIMIT){
-        panic_with_info("DMA alloc overflow",next_dma_base+size);
-        return 0;
-    }
-    uint64_t addr = next_dma_base;
-    next_dma_base += size;
-    memset((void*)addr,0,size);
-    return addr;
-}
 
 int memcmp(const void *s1, const void *s2, unsigned long n) {
     const unsigned char *a = s1;

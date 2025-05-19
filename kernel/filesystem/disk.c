@@ -1,6 +1,7 @@
 #include "disk.h"
 #include "dtb.h"
 #include "kstring.h"
+#include "memory/memory_access.h"
 #include "ram_e.h"
 #include "mmu.h"
 #include "console/kio.h"

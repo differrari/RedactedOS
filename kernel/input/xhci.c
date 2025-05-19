@@ -3,6 +3,7 @@
 #include "console/serial/uart.h"
 #include "pci.h"
 #include "ram_e.h"
+#include "memory/memory_access.h"
 #include "memory/page_allocator.h"
 #include "xhci_kbd.h"
 

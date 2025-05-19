@@ -1,5 +1,5 @@
 #include "console/serial/uart.h"
-#include "ram_e.h"
+#include "memory/memory_access.h"
 #include "interrupts/gic.h"
 
 #define UART0_DR   (UART0_BASE + 0x00)

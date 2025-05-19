@@ -1,6 +1,7 @@
 #include "console/kio.h"
 #include "ram_e.h"
 #include "pci.h"
+#include "memory/memory_access.h"
 
 ///
 

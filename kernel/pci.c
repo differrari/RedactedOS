@@ -6,6 +6,7 @@
 #include "kstring.h"
 #include "interrupts/gic.h"
 #include "mmu.h"
+#include "memory/memory_access.h"
 
 #define PCI_BUS_MAX 256
 #define PCI_SLOT_MAX 32
