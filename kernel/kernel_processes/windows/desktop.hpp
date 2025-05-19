@@ -3,6 +3,7 @@
 #include "types.h"
 #include "graph/graphics.h"
 #include "process.h"
+#include "ui/ui.hpp"
 
 struct LaunchEntry {
     char* name;
@@ -28,4 +29,6 @@ private:
     LaunchEntry *entries;
     int num_entries;
     process_t *active_proc;
+    //TODO: This is hardcoded, ew
+    Label *single_label;
 };

@@ -97,8 +97,17 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
     
     if (sel)
         gpu_fill_rect((gpu_rect){10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row), tile_size.width, tile_size.height}, BG_COLOR+0x333333);
-    gpu_fill_rect((gpu_rect){10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0), tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}, BG_COLOR+0x111111);
+    gpu_rect inner_rect = (gpu_rect){10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0), tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)};
+    gpu_fill_rect(inner_rect, BG_COLOR+0x111111);
     if (index < num_entries){
-        gpu_draw_string(string_l(entries[index].name),(gpu_point){10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0)},1,0xFFFFFF);
+        if (!single_label)
+            single_label = new Label();
+        single_label->set_text(string_l(entries[index].name));
+        single_label->set_bg_color(BG_COLOR+0x111111);
+        single_label->set_text_color(0xFFFFFF);
+        single_label->set_font_size(3);
+        single_label->rect = inner_rect;
+        single_label->set_alignment(HorizontalAlignment::HorizontalCenter, VerticalAlignment::VerticalCenter);
+        single_label->render();
     }
 }
