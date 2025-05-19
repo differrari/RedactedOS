@@ -20,13 +20,14 @@ typedef struct {
 typedef struct {
     //We use the addresses of these variables to save and restore process state
     uint64_t regs[31]; // x0–x30
-    uint64_t sp;
-    uint64_t pc;
+    uintptr_t sp;
+    uintptr_t pc;
     uint64_t spsr; 
     //Not used in process saving
     uint16_t id;
-    uint64_t stack;
+    uintptr_t stack;
     uint64_t stack_size;
+    uintptr_t heap;
     bool focused;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     input_buffer_t input_buffer;

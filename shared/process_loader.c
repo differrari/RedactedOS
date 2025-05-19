@@ -278,12 +278,19 @@ process_t* create_process(char *name, void (*func)(), uint64_t code_size, uint64
     kprintfv("Code copied to %h", (uint64_t)code_dest);
     uint64_t stack_size = 0x1000;
 
-    uint64_t stack = (uint64_t)alloc_page(stack_size, false, false, false);
+    uintptr_t stack = (uintptr_t)alloc_page(stack_size, false, false, false);
     kprintfv("Stack size %h. Start %h", stack_size,stack);
     if (!stack) return 0;
 
+    uintptr_t heap = (uintptr_t)alloc_page(stack_size, false, false, false);
+    kprintfv("Heap %h", heap);
+    if (!heap) return 0;
+
     proc->stack = (stack + stack_size);
     proc->stack_size = stack_size;
+
+
+
     proc->sp = proc->stack;
     
     proc->pc = (uint64_t)code_dest;

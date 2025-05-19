@@ -14,15 +14,22 @@ process_t *create_kernel_process(char *name, void (*func)()){
 
     uint64_t stack_size = 0x1000;
 
-    uint64_t stack = (uint64_t)alloc_page(stack_size, true, false, false);
+    uintptr_t stack = (uintptr_t)alloc_page(stack_size, true, false, false);
     kprintf_raw("Stack size %h. Start %h", stack_size,stack);
     if (!stack) return 0;
 
+    uintptr_t heap = (uintptr_t)alloc_page(stack_size, true, false, false);
+    kprintf_raw("Heap %h", heap);
+    if (!heap) return 0;
+
     proc->stack = (stack + stack_size);
     proc->stack_size = stack_size;
+
+    proc->heap = heap;
+
     proc->sp = proc->stack;
     
-    proc->pc = (uint64_t)func;
+    proc->pc = (uintptr_t)func;
     kprintf_raw("Process allocated with address at %h, stack at %h",proc->pc, proc->sp);
     proc->spsr = 0x205;
     proc->state = READY;
