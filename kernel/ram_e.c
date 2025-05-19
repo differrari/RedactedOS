@@ -12,11 +12,6 @@ static uint64_t calculated_ram_size = 0;
 static uint64_t calculated_ram_start = 0;
 static uint64_t calculated_ram_end = 0;
 
-typedef struct FreeBlock {
-    struct FreeBlock* next;
-    uint64_t size;
-} FreeBlock;
-
 FreeBlock* temp_free_list = 0;
 
 uint8_t read8(uintptr_t addr) {
@@ -166,7 +161,6 @@ uint64_t talloc(uint64_t size) {
 
     FreeBlock** curr = &temp_free_list;
     while (*curr) {
-
         if ((*curr)->size >= size) {
             if (talloc_verbose){
                 uart_raw_puts("[talloc] Reusing free block at ");
@@ -208,6 +202,8 @@ void temp_free(void* ptr, uint64_t size) {
         uart_puthex(size);
         uart_raw_putc('\n');
     }
+
+    memset((void*)ptr,0,size);
 
     FreeBlock* block = (FreeBlock*)ptr;
     block->size = size;

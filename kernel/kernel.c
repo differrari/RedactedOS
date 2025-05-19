@@ -17,9 +17,11 @@
 #include "input/xhci.h"
 #include "kernel_processes/monitor/monitor_processes.h"
 #include "process_loader.h"
+#include "memory/page_allocator.h"
 
 void kernel_main() {
     
+    mmu_alloc();
     enable_uart();
     kprintf("UART output enabled");
     // enable_talloc_verbose();
@@ -44,6 +46,8 @@ void kernel_main() {
     gic_init();
 
     enable_interrupt();
+
+    // page_alloc_enable_verbose();
     
     // xhci_enable_verbose();
     if (!xhci_input_init()){

@@ -6,6 +6,7 @@
 #include "dtb.h"
 #include "pci.h"
 #include "filesystem/disk.h"
+#include "memory/page_allocator.h"
 
 #define MAIR_DEVICE_nGnRnE 0b00000000
 #define MAIR_NORMAL_NOCACHE 0b01000100
@@ -166,10 +167,13 @@ void mmu_unmap(uint64_t va, uint64_t pa){
     mmu_flush_icache();
 }
 
-void mmu_init() {
+void mmu_alloc(){
     for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) {
         page_table_l1[i] = 0;
     }
+}
+
+void mmu_init() {
 
     uint64_t kstart = mem_get_kmem_start();
     uint64_t kend = mem_get_kmem_end();
@@ -190,13 +194,6 @@ void mmu_init() {
     dtb_addresses(&dstart,&dsize);
     for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 1);
-
-    kprintfv("[MMU] mapping MMU for %i PCI devices", pci_device_count);
-    for (uint16_t i = 0; i < pci_device_count; i++){
-        kprintfv("Mapping mmu for device [%i] at %h (%h)",i,pci_devices[i].base_addr,pci_devices[i].size);
-        for (uint64_t addr = pci_devices[i].base_addr; addr <= pci_devices[i].base_addr + pci_devices[i].size; addr += GRANULE_4KB)
-            mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
-    }
 
     uint64_t mair = (MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_NOCACHE << (MAIR_IDX_NORMAL * 8));
     asm volatile ("msr mair_el1, %0" :: "r"(mair));

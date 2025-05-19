@@ -28,6 +28,11 @@ void enable_talloc_verbose();
 }
 #endif
 
+typedef struct FreeBlock {
+    uint64_t size;
+    struct FreeBlock* next;
+} FreeBlock;
+
 uint64_t palloc(uint64_t size);
 
 uint64_t mem_get_kmem_start();
@@ -40,4 +45,3 @@ uint64_t get_shared_start();
 uint64_t get_shared_end();
 
 uint64_t alloc_mmio_region(uint64_t size);
-uint64_t alloc_dma_region(uint64_t size);

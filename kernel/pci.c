@@ -304,15 +304,9 @@ void pci_enable_device(uint64_t pci_addr){
     write16(pci_addr + PCI_COMMAND_REGISTER,cmd);
 }
 
-uint16_t pci_device_count = 0;
-pci_device_mmio pci_devices[16];
-
 void pci_register(uint64_t mmio_addr, uint64_t mmio_size){
-    pci_devices[pci_device_count++] = (pci_device_mmio){mmio_addr,mmio_size};
-    kprintf("[PCI] Registering PCI device %i",pci_device_count);
-    if (mmu_active())
-        for (uint64_t addr = mmio_addr; addr <= mmio_addr + mmio_size; addr += GRANULE_4KB)
-            register_device_memory(addr,addr);
+    for (uint64_t addr = mmio_addr; addr <= mmio_addr + mmio_size; addr += GRANULE_4KB)
+        register_device_memory(addr,addr);
 }
 
 bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_line) {

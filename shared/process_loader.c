@@ -1,6 +1,6 @@
 #include "process_loader.h"
 #include "process/scheduler.h"
-#include "process/proc_allocator.h"
+#include "memory/page_allocator.h"
 #include "console/kio.h"
 #include "interrupts/gic.h"
 #include "interrupts/exception_handler.h"
@@ -263,14 +263,14 @@ process_t* create_process(char *name, void (*func)(), uint64_t code_size, uint64
 
     kprintfv("Code size %h. Data size %h", code_size, data_size);
     
-    uint8_t* data_dest = (uint8_t*)alloc_proc_mem(data_size, false);
+    uint8_t* data_dest = (uint8_t*)alloc_page(data_size, false, false, false);
     if (!data_dest) return 0;
 
     for (uint64_t i = 0; i < data_size; i++){
         data_dest[i] = ((uint8_t *)data)[i];
     }
 
-    uint64_t* code_dest = (uint64_t*)alloc_proc_mem(code_size, false);
+    uint64_t* code_dest = (uint64_t*)alloc_page(code_size, false, false, false);
     if (!code_dest) return 0;
 
     relocate_code(code_dest, func, code_size, (uint64_t)&data[0], (uint64_t)&data_dest[0], data_size);
@@ -278,7 +278,7 @@ process_t* create_process(char *name, void (*func)(), uint64_t code_size, uint64
     kprintfv("Code copied to %h", (uint64_t)code_dest);
     uint64_t stack_size = 0x1000;
 
-    uint64_t stack = (uint64_t)alloc_proc_mem(stack_size, false);
+    uint64_t stack = (uint64_t)alloc_page(stack_size, false, false, false);
     kprintfv("Stack size %h. Start %h", stack_size,stack);
     if (!stack) return 0;
 

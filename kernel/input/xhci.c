@@ -3,6 +3,7 @@
 #include "console/serial/uart.h"
 #include "pci.h"
 #include "ram_e.h"
+#include "memory/page_allocator.h"
 #include "xhci_kbd.h"
 
 static xhci_device global_device;
@@ -21,6 +22,8 @@ void xhci_enable_verbose(){
         }\
     })
 
+static void* xhci_mem_page;
+
 bool xhci_check_fatal_error() {
     uint32_t sts = global_device.op->usbsts;
     if (sts & (XHCI_USBSTS_HSE | XHCI_USBSTS_CE)) {
@@ -34,8 +37,8 @@ bool enable_xhci_events(){
     kprintfv("[xHCI] Allocating ERST");
     global_device.interrupter = (xhci_interrupter*)(uintptr_t)(global_device.rt_base + 0x20);
 
-    uint64_t event_ring = alloc_dma_region(MAX_TRB_AMOUNT * sizeof(trb));
-    uint64_t erst_addr = alloc_dma_region(sizeof(erst_entry) * MAX_ERST_AMOUNT);
+    uint64_t event_ring = (uintptr_t)allocate_in_page(xhci_mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
+    uint64_t erst_addr = (uintptr_t)allocate_in_page(xhci_mem_page, MAX_ERST_AMOUNT * sizeof(erst_entry), ALIGN_64B, true, true);
     erst_entry* erst = (erst_entry*)erst_addr;
 
     erst->ring_base = event_ring;
@@ -167,7 +170,9 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
     xhci->op->config = xhci->max_device_slots;
     kprintfv("[xHCI] %i device slots", xhci->max_device_slots);
 
-    uint64_t dcbaap_addr = alloc_dma_region((xhci->max_device_slots + 1) * sizeof(uintptr_t));
+    xhci_mem_page = alloc_page(0x1000, true, true, false);
+
+    uintptr_t dcbaap_addr = (uintptr_t)allocate_in_page(xhci_mem_page, (xhci->max_device_slots + 1) * sizeof(uintptr_t), ALIGN_64B, true, true);
 
     xhci->op->dcbaap = dcbaap_addr;
 
@@ -177,14 +182,14 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
 
     xhci->dcbaa = (uint64_t *)dcbaap_addr;
 
-    uint64_t* scratchpad_array = (uint64_t*)alloc_dma_region(scratchpad_count * sizeof(uint64_t));
+    uint64_t* scratchpad_array = (uint64_t*)allocate_in_page(xhci_mem_page, (scratchpad_count == 0 ? 1 : scratchpad_count) * sizeof(uintptr_t), ALIGN_64B, true, true);
     for (uint32_t i = 0; i < scratchpad_count; i++)
-        scratchpad_array[i] = alloc_dma_region(0x1000);
+        scratchpad_array[i] = (uint64_t)allocate_in_page(xhci_mem_page, 0x1000, ALIGN_64B, true, true);
     xhci->dcbaa[0] = (uint64_t)scratchpad_array;
 
     kprintfv("[xHCI] dcbaap assigned at %h with %i scratchpads",dcbaap_addr,scratchpad_count);
 
-    uint64_t command_ring = alloc_dma_region(MAX_TRB_AMOUNT * sizeof(trb));
+    uint64_t command_ring = (uintptr_t)allocate_in_page(xhci_mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
 
     xhci->cmd_ring = (trb*)command_ring;
     xhci->cmd_index = 0;
@@ -462,7 +467,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             for (uint8_t j = 0; j < hid->bNumDescriptors; j++){
                 if (hid->descriptors[j].bDescriptorType == 0x22){//REPORT HID
                     device->report_length = hid->descriptors[j].wDescriptorLength;
-                    device->report_descriptor = (uint8_t*)alloc_dma_region(device->report_length);
+                    device->report_descriptor = (uint8_t*)allocate_in_page(xhci_mem_page, device->report_length, ALIGN_64B, true, true);
                     xhci_request_descriptor(device, true, 0x22, 0, interface_index-1, device->report_descriptor);
                     kprintfv("[xHCI] retrieved report descriptor of length %i at %h", device->report_length, (uintptr_t)device->report_descriptor);
                 }
@@ -490,7 +495,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             ctx->device_context.endpoints[ep_num-1].endpoint_f4.max_esit_payload_lo = endpoint->wMaxPacketSize;
             ctx->device_context.endpoints[ep_num-1].endpoint_f1.error_count = 3;
 
-            device->endpoint_transfer_ring = (trb*)alloc_dma_region(0x1000);
+            device->endpoint_transfer_ring = (trb*)allocate_in_page(xhci_mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
             device->endpoint_transfer_cycle_bit = 1;
             make_ring_link(device->endpoint_transfer_ring, device->endpoint_transfer_cycle_bit);
             ctx->device_context.endpoints[ep_num-1].endpoint_f23.dcs = device->endpoint_transfer_cycle_bit;
@@ -542,9 +547,10 @@ bool xhci_setup_device(uint16_t port){
 
     device->transfer_cycle_bit = 1;
 
-    xhci_input_context *ctx = (xhci_input_context*)alloc_dma_region(0x1000);
+    xhci_input_context *ctx = (xhci_input_context*)allocate_in_page(xhci_mem_page, sizeof(xhci_input_context), ALIGN_64B, true, true);
     device->ctx = ctx;
-    void* output_ctx = (void*)alloc_dma_region(4096);
+    void* output_ctx = (void*)allocate_in_page(xhci_mem_page, 0x1000, ALIGN_64B, true, true);
+    kprintfv("[xHCI] Allocating output for context at %h", (uintptr_t)output_ctx);
     
     ctx->control_context.add_flags = 0b11;
     
@@ -558,7 +564,8 @@ bool xhci_setup_device(uint16_t port){
     ctx->device_context.endpoints[0].endpoint_f1.error_count = 3;//3 errors allowed
     ctx->device_context.endpoints[0].endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);//Packet size. Guessed from port speed
     
-    device->transfer_ring = (trb*)alloc_dma_region(0x1000);
+    device->transfer_ring = (trb*)allocate_in_page(xhci_mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
+    kprintfv("Transfer ring at %h",(uintptr_t)device->transfer_ring);
     make_ring_link(device->transfer_ring, device->transfer_cycle_bit);
 
     ctx->device_context.endpoints[0].endpoint_f23.dcs = device->transfer_cycle_bit;
@@ -575,14 +582,14 @@ bool xhci_setup_device(uint16_t port){
 
     kprintfv("[xHCI] ADDRESS_DEVICE command issued. Received package size %i",context->endpoints[0].endpoint_f1.max_packet_size);
 
-    usb_device_descriptor* descriptor = (usb_device_descriptor*)alloc_dma_region(sizeof(usb_device_descriptor));
+    usb_device_descriptor* descriptor = (usb_device_descriptor*)allocate_in_page(xhci_mem_page, sizeof(usb_device_descriptor), ALIGN_64B, true, true);
     
     if (!xhci_request_descriptor(device, false, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
         kprintf_raw("[xHCI error] failed to get device descriptor");
         return false;
     }
 
-    usb_string_language_descriptor* lang_desc = (usb_string_language_descriptor*)alloc_dma_region(sizeof(usb_string_language_descriptor));
+    usb_string_language_descriptor* lang_desc = (usb_string_language_descriptor*)allocate_in_page(xhci_mem_page, sizeof(usb_string_language_descriptor), ALIGN_64B, true, true);
 
     bool use_lang_desc = true;
 
@@ -598,21 +605,21 @@ bool xhci_setup_device(uint16_t port){
     kprintfv("[xHCI] Configurations: %h", descriptor->bNumConfigurations);
     if (use_lang_desc){
         uint16_t langid = lang_desc->lang_ids[0];
-        usb_string_descriptor* prod_name = (usb_string_descriptor*)alloc_dma_region(sizeof(usb_string_descriptor));
+        usb_string_descriptor* prod_name = (usb_string_descriptor*)allocate_in_page(xhci_mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
         if (xhci_request_descriptor(device, false, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){
             char name[128];
             if (parse_string_descriptor_utf16le(prod_name->unicode_string, name, sizeof(name))) {
                 kprintfv("[xHCI device] Product name: %s", (uint64_t)name);
             }
         }
-        usb_string_descriptor* man_name = (usb_string_descriptor*)alloc_dma_region(sizeof(usb_string_descriptor));
+        usb_string_descriptor* man_name = (usb_string_descriptor*)allocate_in_page(xhci_mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
         if (xhci_request_descriptor(device, false, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, man_name)){
             char name[128];
             if (parse_string_descriptor_utf16le(man_name->unicode_string, name, sizeof(name))) {
                 kprintfv("[xHCI device] Manufacturer name: %s", (uint64_t)name);
             }
         }
-        usb_string_descriptor* ser_name = (usb_string_descriptor*)alloc_dma_region(sizeof(usb_string_descriptor));
+        usb_string_descriptor* ser_name = (usb_string_descriptor*)allocate_in_page(xhci_mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
         if (xhci_request_descriptor(device, false, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, ser_name)){
             char name[128];
             if (parse_string_descriptor_utf16le(ser_name->unicode_string, name, sizeof(name))) {
@@ -621,7 +628,7 @@ bool xhci_setup_device(uint16_t port){
         }
     }
 
-    usb_configuration_descriptor* config = (usb_configuration_descriptor*)alloc_dma_region(sizeof(usb_configuration_descriptor));
+    usb_configuration_descriptor* config = (usb_configuration_descriptor*)allocate_in_page(xhci_mem_page, sizeof(usb_configuration_descriptor), ALIGN_64B, true, true);
     if (!xhci_request_sized_descriptor(device, false, USB_CONFIGURATION_DESCRIPTOR, 0, 0, 8, config)){
         kprintf_raw("[xHCI error] could not get config descriptor header");
         return false;

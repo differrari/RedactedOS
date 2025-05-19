@@ -2,6 +2,7 @@
 #include "ram_e.h"
 #include "console/kio.h"
 #include "input_dispatch.h"
+#include "memory/page_allocator.h"
 
 xhci_usb_device* default_device;
 
@@ -17,7 +18,7 @@ void xhci_kbd_request_data() {
     latest_ring = &default_device->endpoint_transfer_ring[default_device->endpoint_transfer_index++];
             
     if (default_device->input_buffer == 0x0){
-        uint64_t buffer_addr = (uint64_t)alloc_dma_region(default_device->poll_packetSize);
+        uint64_t buffer_addr = (uint64_t)alloc_page(default_device->poll_packetSize, true, true, true);
         default_device->input_buffer = (uint8_t*)buffer_addr;
     }
     

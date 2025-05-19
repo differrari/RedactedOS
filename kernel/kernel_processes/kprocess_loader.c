@@ -1,7 +1,7 @@
 #include "kprocess_loader.h"
 #include "console/kio.h"
 #include "process/scheduler.h"
-#include "process/proc_allocator.h"
+#include "memory/page_allocator.h"
 #include "interrupts/gic.h"
 
 process_t *create_kernel_process(char *name, void (*func)()){
@@ -14,7 +14,7 @@ process_t *create_kernel_process(char *name, void (*func)()){
 
     uint64_t stack_size = 0x1000;
 
-    uint64_t stack = (uint64_t)alloc_proc_mem(stack_size, true);
+    uint64_t stack = (uint64_t)alloc_page(stack_size, true, false, false);
     kprintf_raw("Stack size %h. Start %h", stack_size,stack);
     if (!stack) return 0;
 
