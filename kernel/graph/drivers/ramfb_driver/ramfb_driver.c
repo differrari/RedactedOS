@@ -3,6 +3,7 @@
 #include "kstring.h"
 #include "fw/fw_cfg.h"
 #include "ramfb_driver.h"
+#include "memory/memory_access.h"
 #include "graph/font8x8_basic.h"
 #include "ui/graphic_types.h"
 

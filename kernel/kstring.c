@@ -1,5 +1,6 @@
 #include "kstring.h"
 #include "ram_e.h"
+#include "memory/memory_access.h"
 
 static uint32_t compute_length(const char *s, uint32_t max_length) {
     uint32_t len = 0;
