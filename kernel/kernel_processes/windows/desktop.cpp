@@ -10,14 +10,14 @@
 #define MAX_ROWS 3
 
 void Desktop::add_entry(char* name, process_t* (*process_loader)()){
-    entries[num_entries++] = {
+    entries.add({
         .name = name,
         .process_loader = process_loader,
-    };
+    });
 }
 
 Desktop::Desktop() {
-    entries = (LaunchEntry*)talloc(0x1000);
+    entries = Array<LaunchEntry>::create(9);
 
     add_entry("Test Process",default_processes);
 }
@@ -84,7 +84,7 @@ bool Desktop::await_gpu(){
 void Desktop::activate_current(){
     int index = (selected.y * MAX_COLS) + selected.x;
 
-    if (index < num_entries)
+    if (index < entries.size())
         active_proc = entries[index].process_loader();
     
 }
@@ -99,7 +99,7 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
         gpu_fill_rect((gpu_rect){10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row), tile_size.width, tile_size.height}, BG_COLOR+0x333333);
     gpu_rect inner_rect = (gpu_rect){10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0), tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)};
     gpu_fill_rect(inner_rect, BG_COLOR+0x111111);
-    if (index < num_entries){
+    if (index < entries.size()){
         if (!single_label)
             single_label = new Label();
         single_label->set_text(string_l(entries[index].name));

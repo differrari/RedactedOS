@@ -2,8 +2,6 @@
 
 #include "types.h"
 
-#define PRINTF_SYSCALL 3
-
 extern void printf_args(const char *fmt, const uint64_t *args, uint32_t arg_count);
 
 #define printf(fmt, ...) \

@@ -4,6 +4,7 @@
 #include "graph/graphics.h"
 #include "process.h"
 #include "ui/ui.hpp"
+#include "std/std.hpp"
 
 struct LaunchEntry {
     char* name;
@@ -26,9 +27,8 @@ private:
     void activate_current();
     bool ready = false;
     bool renderedFull = false;
-    LaunchEntry *entries;
-    int num_entries;
     process_t *active_proc;
     //TODO: This is hardcoded, ew
     Label *single_label;
+    Array<LaunchEntry> entries;
 };

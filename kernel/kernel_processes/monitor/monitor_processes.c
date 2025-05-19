@@ -9,7 +9,7 @@
 #include "ram_e.h"
 #include "theme/theme.h"
 #include "math/math.h"
-#include "syscalls/syscalls.h"
+#include "std/syscalls/syscalls.h"
 
 __attribute__((section(".text.kcoreprocesses")))
 char* parse_proc_state(int state){

@@ -1,7 +1,7 @@
 #include "default_process.h"
 #include "types.h"
 #include "process_loader.h"
-#include "syscalls/syscalls.h"
+#include "std/syscalls/syscalls.h"
 
 __attribute__((section(".rodata.proc1")))
 static const char fmt[] = "Process %i";//Note: So long as we keep loading this process inside the kernel, we'll need to keep strings outside functions so we can reliably indicate their section
