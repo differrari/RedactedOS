@@ -15,12 +15,11 @@ void proc_func() {
     }
 }
 
-void default_processes(){
+process_t* default_processes(){
     extern uint8_t proc_1_start;
     extern uint8_t proc_1_end;
     extern uint8_t proc_1_rodata_start;
     extern uint8_t proc_1_rodata_end;
 
-    create_process("testproc1",proc_func, (uint64_t)&proc_1_end - (uint64_t)&proc_1_start, (uint64_t)&proc_1_start, (void*)&fmt, (uint64_t)&proc_1_rodata_end - (uint64_t)&proc_1_rodata_start);
-    create_process("testproc2", proc_func, (uint64_t)&proc_1_end - (uint64_t)&proc_1_start, (uint64_t)&proc_1_start, (void*)&fmt, (uint64_t)&proc_1_rodata_end - (uint64_t)&proc_1_rodata_start);
+    return create_process("testprocess",proc_func, (uint64_t)&proc_1_end - (uint64_t)&proc_1_start, (uint64_t)&proc_1_start, (void*)&fmt, (uint64_t)&proc_1_rodata_end - (uint64_t)&proc_1_rodata_start);
 }

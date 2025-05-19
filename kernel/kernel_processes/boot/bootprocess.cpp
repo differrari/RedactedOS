@@ -13,6 +13,6 @@ extern "C" void eval_bootscreen() {
 }
 
 extern "C" void init_bootprocess() {
-    state_machine.initialize();
     create_kernel_process("bootsm",eval_bootscreen);
+    state_machine.initialize();
 }

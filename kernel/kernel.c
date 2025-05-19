@@ -73,8 +73,6 @@ void kernel_main() {
 
     // translate_enable_verbose();
 
-    default_processes();
-
     init_bootprocess();
     
     kprintf("Starting scheduler");

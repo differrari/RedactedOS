@@ -3,6 +3,7 @@
 #include "graph/graphics.h"
 #include "theme/theme.h"
 #include "../monitor/monitor_processes.h"
+#include "std/std.hpp"
 
 WindowManager::WindowManager(){
     
@@ -10,12 +11,12 @@ WindowManager::WindowManager(){
 
 void WindowManager::initialize(){
     monitor_proc = start_process_monitor();
-    desktop = Desktop();
+    desktop = new Desktop();
 }
 
 void WindowManager::manage_windows(){
     if (paused) return;
-    desktop.draw_desktop();
+    desktop->draw_desktop();
 }
 
 void WindowManager::pause(){

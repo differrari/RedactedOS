@@ -5,7 +5,7 @@ LD = $(ARCH)-ld
 OBJCOPY = $(ARCH)-objcopy
 
 # Compiler and Linker Flags
-CFLAGS = -g -O0 -nostdlib -ffreestanding -Wall -Wextra -mcpu=cortex-a72 -I. -I../shared -I../user
+CFLAGS = -g -O0 -nostdlib -ffreestanding -fno-exceptions -fno-rtti -fno-unwind-tables -fno-asynchronous-unwind-tables -Wall -Wextra -mcpu=cortex-a72 -I. -I../shared -I../user
 LDFLAGS = -T $(shell ls *.ld)
 
 C_SRC = $(shell find . -name '*.c')

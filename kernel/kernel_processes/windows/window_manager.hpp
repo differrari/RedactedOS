@@ -15,7 +15,7 @@ public:
     void resume();
 
 private:
-    Desktop desktop;
+    Desktop *desktop;
     bool paused;
     process_t *monitor_proc;
 };

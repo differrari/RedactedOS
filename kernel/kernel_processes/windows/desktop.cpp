@@ -3,21 +3,37 @@
 #include "graph/graphics.h"
 #include "theme/theme.h"
 #include "input/input_dispatch.h"
+#include "default_process.h"
+#include "ram_e.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3
 
-Desktop::Desktop(){
-    
+void Desktop::add_entry(char* name, process_t* (*process_loader)()){
+    entries[num_entries++] = {
+        .name = name,
+        .process_loader = process_loader,
+    };
+}
+
+Desktop::Desktop() {
+    entries = (LaunchEntry*)talloc(0x1000);
+
+    add_entry("Test Process",default_processes);
 }
 
 void Desktop::draw_desktop(){
     if (!await_gpu()) return;
+    if (active_proc != nullptr && active_proc->state != process_t::process_state::STOPPED) return;
     keypress kp;
     gpu_point old_selected = selected;
     while (sys_read_input_current(&kp)){
         for (int i = 0; i < 6; i++){
             char key = kp.keys[i];
+            if (kp.keys[i] == KEY_ENTER){
+                activate_current();
+                break;
+            }
             if (kp.keys[i] == KEY_ARROW_RIGHT){
                 selected.x = (selected.x + 1) % MAX_COLS;
             }
@@ -65,12 +81,24 @@ bool Desktop::await_gpu(){
     return ready;
 }
 
+void Desktop::activate_current(){
+    int index = (selected.y * MAX_COLS) + selected.x;
+
+    if (index < num_entries)
+        active_proc = entries[index].process_loader();
+    
+}
+
 void Desktop::draw_tile(uint32_t column, uint32_t row){
     bool sel = selected.x == column && selected.y == row;
-
+    int index = (row * MAX_COLS) + column;
+    
     int border = 4;
-
+    
     if (sel)
         gpu_fill_rect((gpu_rect){10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row), tile_size.width, tile_size.height}, BG_COLOR+0x333333);
     gpu_fill_rect((gpu_rect){10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0), tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}, BG_COLOR+0x111111);
+    if (index < num_entries){
+        gpu_draw_string(string_l(entries[index].name),(gpu_point){10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0)},1,0xFFFFFF);
+    }
 }
