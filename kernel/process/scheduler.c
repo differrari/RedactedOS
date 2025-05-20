@@ -49,10 +49,18 @@ void process_restore(){
 }
 
 void start_scheduler(){
-    asm volatile ("mov %0, sp" : "=r"(ksp));
+    ksp = (uintptr_t)alloc_page(0x1000,true,false,true);
     disable_interrupt();
     timer_init(1);
     switch_proc(YIELD);
+}
+
+uintptr_t get_current_heap(){
+    return processes[current_proc].heap;
+}
+
+bool get_current_privilege(){
+    return (processes[current_proc].spsr & 0b1111) != 0;
 }
 
 process_t* get_current_proc(){

@@ -62,7 +62,7 @@ void proc_map_4kb(uint64_t va, uint64_t pa) {
     l4[l4_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
 }
 
-void proc_allocator_init() {
+void page_allocator_init() {
     for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) {
         mem_table_l1[i] = 0;
     }
@@ -100,16 +100,6 @@ typedef struct mem_page {
     uint64_t next_free_mem_ptr;
 } mem_page;
 
-static uintptr_t last_used_page = 0;
-
-uintptr_t get_paging_start(){
-    return get_user_ram_start();
-}
-
-uintptr_t get_paging_end(){
-    return last_used_page;
-}
-
 void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
     uint64_t start = get_user_ram_start();
     uint64_t end = get_user_ram_end();
@@ -146,8 +136,6 @@ void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
                 else
                     register_proc_memory(va + offset, va + offset, kernel);
             }
-            if (va > last_used_page) 
-                last_used_page = va;
             if (!full){
                 mem_page* new_info = (mem_page*)va;
                 new_info->next = NULL;
@@ -169,6 +157,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
     mem_page *info = (mem_page*)page;
 
     if (size >= PAGE_SIZE){
+        kprintfv("[page_alloc] Allocating full page for %h",size);
         void *first_addr = 0;
         for (int i = 0; i < size; i += PAGE_SIZE){
             void* ptr = alloc_page(PAGE_SIZE, kernel, device, true);
@@ -191,7 +180,11 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
         curr = &(*curr)->next;
     }
 
+    kprintfv("[page_alloc] Current next pointer %h",info->next_free_mem_ptr);
+
     info->next_free_mem_ptr = (info->next_free_mem_ptr + alignment - 1) & ~(alignment - 1);
+
+    kprintfv("[page_alloc] Aligned next pointer %h",info->next_free_mem_ptr);
 
     if (info->next_free_mem_ptr + size > (((uintptr_t)page) + PAGE_SIZE)) {
         if (!info->next)

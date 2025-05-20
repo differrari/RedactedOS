@@ -3,23 +3,31 @@
 #include "types.h"
 
 #include "allocator.hpp"
+#include "syscalls/syscalls.h"
+#include "process/scheduler.h"
+#include "memory/page_allocator.h"
 
 template<typename T>
 class Array {
 public:
-    static Array create(uint32_t capacity) {
-        void* mem = ::operator new(sizeof(T) * capacity);
-        Array<T> array;
-        array.count = 0;
-        array.capacity = capacity;
-        array.items = reinterpret_cast<T*>(mem);
-        return array;
+
+    Array() : count(0), capacity(0), items(0) {
     }
 
-    void destroy() {
+    Array(uint32_t capacity) : count(0), capacity(capacity) {
+        if (capacity == 0) {
+            items = 0;
+            return;
+        }
+        void *mem = (void*)malloc(sizeof(T) * capacity);
+        items = reinterpret_cast<T*>(mem);
+    }
+
+    ~Array() {
+        if (count == 0) return;
         for (uint32_t i = 0; i < count; i++)
             items[i].~T();
-        ::operator delete(this, sizeof(Array) + sizeof(T) * capacity);
+        ::operator delete(items, sizeof(T) * count);
     }
 
     bool add(const T& value) {
@@ -34,8 +42,8 @@ public:
     uint32_t size() const { return count; }
     uint32_t max_size() const { return capacity; }
 
+    T* items;
 private:
     uint32_t count;
     uint32_t capacity;
-    T* items;
 };

@@ -5,12 +5,13 @@
 #include "interrupts/gic.h"
 #include "memory/kalloc.h"
 #include "process/scheduler.h"
+#include "memory/page_allocator.h"
 
 void sync_el0_handler_c(){
     asm volatile ("mov sp, %0" :: "r"(ksp));
     uint64_t x0;
     asm volatile ("mov %0, x11" : "=r"(x0));
-    uint64_t *x1;
+    uint64_t x1;
     asm volatile ("mov %0, x12" : "=r"(x1));
     uint64_t x2;
     asm volatile ("mov %0, x13" : "=r"(x2));
@@ -35,30 +36,41 @@ void sync_el0_handler_c(){
     uint64_t ec = (esr >> 26) & 0x3F;
     uint64_t iss = esr & 0xFFFFFF;
 
+    
+    uint64_t result = 0;
     if (ec == 0x15) {
         switch (iss)
         {
+        case 0:
+            result = (uintptr_t)allocate_in_page((void*)get_current_heap(), x0, ALIGN_16B, get_current_privilege(), false);
+            break;
+        case 1:
+            free_from_page((void*)x0, x1);
+            break;
         case 3:
-            kprintf_args_raw((const char *)x0, x1, x2);
+            kprintf_args_raw((const char *)x0, (uintptr_t*)x1, x2);
             break;
         
         default:
             handle_exception_with_info("Unknown syscall", iss);
             break;
         }
-        
     } else {
         //We could handle more exceptions now, such as x25 (unmasked x96) = data abort
         handle_exception_with_info("UNEXPECTED EXCEPTION",ec);
     }
-            
+    
     asm volatile ("mov x29, %0" :: "r"(x29));
     asm volatile ("mov x30, %0" :: "r"(x30));
     if (currentEL == 0)
         asm volatile ("msr sp_el0, %0" :: "r"(sp_el));
     asm volatile ("msr elr_el1, %0" : : "r"(elr));
     asm volatile ("msr spsr_el1, %0" : : "r"(spsr));
-    asm volatile ("mov sp, %0" :: "r"(sp_el));
-    asm volatile ("eret");
-    
+    asm volatile (
+        "mov x0, %0\n"
+        "mov sp, %1\n"
+        "eret\n"
+        :: "r"(result), "r"(sp_el)
+        : "x0", "memory"
+    );
 }

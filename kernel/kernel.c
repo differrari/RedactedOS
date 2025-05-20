@@ -48,6 +48,8 @@ void kernel_main() {
     enable_interrupt();
 
     // page_alloc_enable_verbose();
+
+    page_allocator_init();
     
     // xhci_enable_verbose();
     if (!xhci_input_init()){

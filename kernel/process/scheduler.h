@@ -27,6 +27,15 @@ void stop_current_process();
 
 void name_process(process_t *proc, char *name);
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+uintptr_t get_current_heap();
+bool get_current_privilege();
+#ifdef __cplusplus
+}
+#endif
+
 uint16_t process_count();
 process_t *get_all_processes();
 

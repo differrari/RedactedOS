@@ -64,10 +64,10 @@ keypress xhci_read_key() {
         if (is_new_keypress(rkp, &last_keypress))
             repeated_keypresses = 0;
         kp.modifier = rkp->modifier;
-        kprintf_raw("Mod: %i", kp.modifier);
+        // kprintf_raw("Mod: %i", kp.modifier);
         for (int i = 0; i < 6; i++){
             kp.keys[i] = rkp->keys[i];
-            kprintf_raw("Key [%i]: %i", i, kp.keys[i]);
+            // kprintf_raw("Key [%i]: %i", i, kp.keys[i]);
         }
         last_keypress = kp;
     } else

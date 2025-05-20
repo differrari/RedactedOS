@@ -1,5 +1,6 @@
 .macro syscall_def name:req, id:req
 .global \name
+.type \name, %function
 \name:
     svc #\id
     ret

@@ -13,7 +13,6 @@ void BootSM::initialize(){
 }
 
 BootSM::BootStates BootSM::eval_state(){
-    //Check current process to see if it's terminated
     if (current_proc->state == process_t::process_state::STOPPED)
         AdvanceToState(GetNextState());
 
