@@ -1,7 +1,7 @@
 #include "pci.h"
 #include "console/kio.h"
 #include "memory/kalloc.h"
-#include "dma.h"
+#include "memory/dma.h"
 #include "fw/fw_cfg.h"
 #include "kstring.h"
 #include "interrupts/irq.h"
