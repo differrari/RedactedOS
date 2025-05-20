@@ -2,7 +2,7 @@
 #include "console/serial/uart.h"
 #include "memory/kalloc.h"
 #include "console/kio.h"
-#include "interrupts/gic.h"
+#include "interrupts/irq.h"
 #include "dtb.h"
 #include "pci.h"
 #include "filesystem/disk.h"

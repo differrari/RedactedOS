@@ -43,6 +43,8 @@ public:
     uint32_t max_size() const { return capacity; }
 
     T* items;
+
+    //TODO: we could make arrays expandable as linked lists of various arrays with a fixed capacity. Essentially once you reach capacity, you allocate (and point to) another array which can be accessed sequentially
 private:
     uint32_t count;
     uint32_t capacity;

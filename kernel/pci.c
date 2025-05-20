@@ -4,7 +4,7 @@
 #include "dma.h"
 #include "fw/fw_cfg.h"
 #include "kstring.h"
-#include "interrupts/gic.h"
+#include "interrupts/irq.h"
 #include "mmu.h"
 #include "memory/memory_access.h"
 

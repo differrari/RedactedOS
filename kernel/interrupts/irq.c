@@ -1,4 +1,4 @@
-#include "gic.h"
+#include "irq.h"
 #include "console/kio.h"
 #include "memory/memory_access.h"
 #include "process/scheduler.h"
@@ -30,7 +30,7 @@ static void gic_enable_irq(uint32_t irq, uint8_t priority, uint8_t cpu_target) {
     write32(GICD_BASE + 0xC00 + config_offset, config);
 }
 
-void gic_init() {
+void irq_init() {
     write8(GICD_BASE, 0); // Disable Distributor
     write8(GICC_BASE, 0); // Disable CPU Interface
 

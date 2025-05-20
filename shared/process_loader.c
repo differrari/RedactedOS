@@ -2,7 +2,7 @@
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
 #include "console/kio.h"
-#include "interrupts/gic.h"
+#include "interrupts/irq.h"
 #include "interrupts/exception_handler.h"
 
 typedef struct {

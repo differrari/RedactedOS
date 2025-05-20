@@ -4,7 +4,7 @@
 #include "console/kio.h"
 #include "mmu.h"
 #include "graph/graphics.h"
-#include "gic.h"
+#include "irq.h"
 #include "theme/theme.h"
 
 static bool panic_triggered = false;

@@ -77,7 +77,7 @@ void bootscreen(){
             }
             current_point = next_point;
         }
-        for (int i = 0; i < 100000000; i++);
+        for (int i = 0; i < 1000000; i++);
     }
 }
 

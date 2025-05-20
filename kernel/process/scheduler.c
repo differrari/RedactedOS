@@ -2,7 +2,7 @@
 #include "console/kio.h"
 #include "memory/kalloc.h"
 #include "memory/page_allocator.h"
-#include "interrupts/gic.h"
+#include "interrupts/irq.h"
 #include "console/serial/uart.h"
 #include "input/input_dispatch.h"
 #include "interrupts/exception_handler.h"

@@ -8,7 +8,7 @@
 #include "interrupts/exception_handler.h"
 #include "memory/kalloc.h"
 #include "dtb.h"
-#include "interrupts/gic.h"
+#include "interrupts/irq.h"
 #include "process/scheduler.h"
 #include "default_process.h"
 #include "filesystem/disk.h"
@@ -25,6 +25,9 @@ void kernel_main() {
     enable_uart();
     kprintf("UART output enabled");
     // enable_talloc_verbose();
+    
+    set_exception_vectors();
+    kprintf("Exception vectors set");
 
     kprintf("Initializing kernel...");
     
@@ -36,19 +39,14 @@ void kernel_main() {
     
     kprintf("GPU initialized");
     
-    kprintf("Device initialization finished");
-    
-    set_exception_vectors();
-    
-    kprintf("Exception vectors set");
-    
-    kprintf("Interrupts init");
-    gic_init();
+    irq_init();
+    kprintf("Interrupts initialized");
 
     enable_interrupt();
 
     // page_alloc_enable_verbose();
 
+    kprintf("There's %i memory for user processes",get_total_user_ram());
     page_allocator_init();
     
     // xhci_enable_verbose();
@@ -67,13 +65,6 @@ void kernel_main() {
     kprintf("MMU Mapped");
 
     kprintf("Kernel initialization finished");
-    
-    kprintf("Preparing user memory...");
-
-    kprintf("There's %i memory for user processes",get_total_user_ram());
-
-    kprintf("Conducting disk test");
-    disk_test();
 
     kprintf("Starting processes");
 

@@ -1,7 +1,7 @@
 #include "kio.h"
 #include "serial/uart.h"
 #include "kstring.h"
-#include "interrupts/gic.h"
+#include "interrupts/irq.h"
 #include "memory/kalloc.h"
 #include "kconsole/kconsole.h"
 
