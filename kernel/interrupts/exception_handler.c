@@ -23,7 +23,7 @@ void handle_exception(const char* type) {
 
     disable_visual();//Disable visual kprintf, since it has additional memory accesses that could be faulting
 
-    kstring s = string_format("%s \nESR_EL1: %h\nELR_EL1: %h\nFAR_EL1: %h",(uint64_t)string_l(type).data,esr,elr,far);
+    kstring s = kstring_format("%s \nESR_EL1: %h\nELR_EL1: %h\nFAR_EL1: %h",(uint64_t)kstring_l(type).data,esr,elr,far);
     panic(s.data);
 }
 
@@ -35,7 +35,7 @@ void handle_exception_with_info(const char* type, uint64_t info) {
 
     disable_visual();//Disable visual kprintf, since it has additional memory accesses that could be faulting
 
-    kstring s = string_format("%s \nESR_EL1: %h\nELR_EL1: %h\nFAR_EL1: %h",(uint64_t)string_l(type).data,esr,elr,far);
+    kstring s = kstring_format("%s \nESR_EL1: %h\nELR_EL1: %h\nFAR_EL1: %h",(uint64_t)kstring_l(type).data,esr,elr,far);
     panic_with_info(s.data, info);
 }
 
@@ -62,7 +62,7 @@ void panic(const char* panic_msg) {
     uart_raw_putc('\n');
     uart_raw_puts("System Halted");
     if (!old_panic_triggered){
-        kstring s = string_format("%s\n%s\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)panic_msg);
+        kstring s = kstring_format("%s\n%s\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)panic_msg);
         draw_panic_screen(s);
     }
     while (1);
@@ -83,7 +83,7 @@ void panic_with_info(const char* msg, uint64_t info) {
     uart_raw_putc('\n');
     uart_raw_puts("System Halted");
     if (!old_panic_triggered){
-        kstring s = string_format("%s\n%s\nError code: %h\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)msg,info);
+        kstring s = kstring_format("%s\n%s\nError code: %h\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)msg,info);
         draw_panic_screen(s);
     }
     while (1);

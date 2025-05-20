@@ -114,7 +114,7 @@ void find_pci(){
     pci_base = 0x4010000000;
     return;
     struct fw_cfg_file file;
-    if (!fw_find_file(string_l("etc/acpi/rsdp"), &file))
+    if (!fw_find_file(kstring_l("etc/acpi/rsdp"), &file))
         return;
 
     kprintf("[PCI] rsdp file found");
@@ -125,8 +125,8 @@ void find_pci(){
 
     kprintf("[PCI] rsdp data read with address %h (%h = %h)", data.xsdt_address, data.length,sizeof(struct acpi_rsdp_t));
 
-    kstring a = string_ca_max(data.signature, 8);
-    if (!string_equals(string_l("RSD PTR "), a)){
+    kstring a = kstring_ca_max(data.signature, 8);
+    if (!kstring_equals(kstring_l("RSD PTR "), a)){
         kprintf("[PCI] Signature doesn't match %s", (uint64_t)a.data);
     } else 
         kprintf("[PCI] Signature match %s", (uint64_t)a.data);

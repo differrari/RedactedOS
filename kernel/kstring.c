@@ -10,7 +10,7 @@ static uint32_t compute_length(const char *s, uint32_t max_length) {
     return len;
 }
 
-kstring string_l(const char *literal) {
+kstring kstring_l(const char *literal) {
     uint32_t len = compute_length(literal, 0);
     char *buf = (char*)talloc(len+1);
     for (int i = 0; i < len; i++)
@@ -19,14 +19,14 @@ kstring string_l(const char *literal) {
     return (kstring){ .data = buf, .length = len };
 }
 
-kstring string_repeat(char symbol, uint32_t amount){
+kstring kstring_repeat(char symbol, uint32_t amount){
     char *buf = (char*)talloc(amount + 1);
     memset(buf, symbol, amount);
     buf[amount] = 0;
     return (kstring){ .data = buf, .length = amount };
 }
 
-kstring string_tail(const char *array, uint32_t max_length){
+kstring kstring_tail(const char *array, uint32_t max_length){
     uint32_t len = compute_length(array, 0);
     int offset = len-max_length;
     if (offset < 0) 
@@ -39,7 +39,7 @@ kstring string_tail(const char *array, uint32_t max_length){
     return (kstring){ .data = buf, .length = adjusted_len };
 }
 
-kstring string_ca_max(const char *array, uint32_t max_length) {
+kstring kstring_ca_max(const char *array, uint32_t max_length) {
     uint32_t len = compute_length(array, max_length);
     char *buf = (char*)talloc(len + 1);
     for (int i = 0; i < len; i++)
@@ -48,14 +48,14 @@ kstring string_ca_max(const char *array, uint32_t max_length) {
     return (kstring){ .data = buf, .length = len };
 }
 
-kstring string_c(const char c){
+kstring kstring_c(const char c){
     char *buf = (char*)talloc(2);
     buf[0] = c;
     buf[1] = 0;
     return (kstring){ .data = buf, .length = 1 };
 }
 
-kstring string_from_hex(uint64_t value) {
+kstring kstring_from_hex(uint64_t value) {
     char *buf = (char*)talloc(18);
     uint32_t len = 0;
     buf[len++] = '0';
@@ -75,7 +75,7 @@ kstring string_from_hex(uint64_t value) {
     return (kstring){ .data = buf, .length = len };
 }
 
-kstring string_from_bin(uint64_t value) {
+kstring kstring_from_bin(uint64_t value) {
     char *buf = (char*)talloc(67);
     uint32_t len = 0;
     buf[len++] = '0';
@@ -94,11 +94,11 @@ kstring string_from_bin(uint64_t value) {
     return (kstring){ .data = buf, .length = len };
 }
 
-bool string_equals(kstring a, kstring b) {
+bool kstring_equals(kstring a, kstring b) {
     return strcmp(a.data,b.data) == 0;
 }
 
-kstring string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_count) {
+kstring kstring_format_args(const char *fmt, const uint64_t *args, uint32_t arg_count) {
     char *buf = (char*)talloc(256);
     uint32_t len = 0;
     uint32_t arg_index = 0;
@@ -109,12 +109,12 @@ kstring string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_c
             if (arg_index >= arg_count) break;
             if (fmt[i] == 'h') {
                 uint64_t val = args[arg_index++];
-                kstring hex = string_from_hex(val);
+                kstring hex = kstring_from_hex(val);
                 for (uint32_t j = 0; j < hex.length && len < 255; j++) buf[len++] = hex.data[j];
                 temp_free(hex.data,hex.length);
             } else if (fmt[i] == 'b') {
                 uint64_t val = args[arg_index++];
-                kstring bin = string_from_bin(val);
+                kstring bin = kstring_from_bin(val);
                 for (uint32_t j = 0; j < bin.length && len < 255; j++) buf[len++] = bin.data[j];
                 temp_free(bin.data,bin.length);
             } else if (fmt[i] == 'c') {

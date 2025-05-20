@@ -211,7 +211,7 @@ bool rfb_init(uint32_t w, uint32_t h) {
     stride = bpp * width;
     
     struct fw_cfg_file file;
-    fw_find_file(string_l("etc/ramfb"), &file);
+    fw_find_file(kstring_l("etc/ramfb"), &file);
     
     if (file.selector == 0x0){
         kprintf("Ramfb not found");

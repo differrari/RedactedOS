@@ -74,8 +74,8 @@ bool fw_find_file(kstring search, struct fw_cfg_file *file) {
         file->size = __builtin_bswap32(file->size);
         file->selector = __builtin_bswap16(file->selector);
 
-        kstring filename = string_ca_max(file->name, 56);
-        if (string_equals(filename, search)){
+        kstring filename = kstring_ca_max(file->name, 56);
+        if (kstring_equals(filename, search)){
             kprintf("Found device at selector %h", file->selector);
             return true;
         }

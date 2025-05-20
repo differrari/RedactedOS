@@ -75,8 +75,8 @@ void draw_process_view(){
 
         if (proc->id == 0 || proc->state == STOPPED) break;
 
-        kstring name = string_l((const char*)(uintptr_t)proc->name);
-        kstring state = string_l(parse_proc_state(proc->state));
+        kstring name = kstring_l((const char*)(uintptr_t)proc->name);
+        kstring state = kstring_l(parse_proc_state(proc->state));
 
         int scale = 2;
         uint32_t char_size = gpu_get_char_size(scale);
@@ -96,7 +96,7 @@ void draw_process_view(){
         gpu_draw_string(name, (gpu_point){xo, name_y}, scale, BG_COLOR);
         gpu_draw_string(state, (gpu_point){xo, state_y}, scale, BG_COLOR);
         
-        kstring pc = string_from_hex(proc->pc);
+        kstring pc = kstring_from_hex(proc->pc);
         gpu_draw_string(pc, (gpu_point){xo, pc_y}, scale, BG_COLOR);
         temp_free(pc.data, pc.length);
         
@@ -111,7 +111,7 @@ void draw_process_view(){
 
         gpu_fill_rect((gpu_rect){stack_top.x + 1, stack_top.y + stack_height - used_height + 1, stack_width - 2, used_height-1}, BG_COLOR);
 
-        kstring flags = string_from_hex(proc->spsr);
+        kstring flags = kstring_from_hex(proc->spsr);
         gpu_draw_string(flags, (gpu_point){xo, flags_y}, scale, BG_COLOR);
         temp_free(name.data, name.length);
         temp_free(state.data, state.length);

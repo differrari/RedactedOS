@@ -16,7 +16,7 @@ static uint64_t randomNumber = 0;
 __attribute__((section(".text.kcoreprocesses")))
 void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
     const char* name = BOOTSCREEN_TEXT;
-    kstring s = string_l(name);
+    kstring s = kstring_l(name);
     int scale = 2;
     uint32_t char_size = gpu_get_char_size(scale);
     int mid_offset = (s.length/2) * char_size;

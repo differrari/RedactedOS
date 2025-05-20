@@ -76,7 +76,7 @@ void sync_el0_handler_c(){
             break;
 
         case 15:
-            kstring str = string_l((const char *)x0);
+            kstring str = kstring_l((const char *)x0);
             gpu_draw_string(str,*(gpu_point*)x1,x2,x3);
             break;
 

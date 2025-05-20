@@ -42,14 +42,14 @@ void login_screen(){
     int len = 0;
     keypress old_kp;
     const char* name = BOOTSCREEN_TEXT;
-    kstring title = string_l(name);
-    kstring subtitle = string_l("Login");
+    kstring title = kstring_l(name);
+    kstring subtitle = kstring_l("Login");
     while (1)
     {
         gpu_clear(BG_COLOR);
         gpu_size screen_size = gpu_get_screen_size();
         gpu_point screen_middle = {screen_size.width/2,screen_size.height/2};
-        kstring s = string_repeat('*',min(len,20));
+        kstring s = kstring_repeat('*',min(len,20));
         int scale = 2;
         uint32_t char_size = gpu_get_char_size(scale);
         int xo = screen_size.width / 3;
