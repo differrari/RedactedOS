@@ -6,6 +6,8 @@
 #include "memory/kalloc.h"
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
+#include "graph/graphics.h"
+#include "memory/memory_access.h"
 
 void sync_el0_handler_c(){
     asm volatile ("mov sp, %0" :: "r"(ksp));
@@ -15,6 +17,8 @@ void sync_el0_handler_c(){
     asm volatile ("mov %0, x12" : "=r"(x1));
     uint64_t x2;
     asm volatile ("mov %0, x13" : "=r"(x2));
+    uint64_t x3;
+    asm volatile ("mov %0, x3" : "=r"(x3));
     uint64_t x29;
     asm volatile ("mov %0, x15" : "=r"(x29));
     uint64_t x30;
@@ -49,6 +53,45 @@ void sync_el0_handler_c(){
             break;
         case 3:
             kprintf_args_raw((const char *)x0, (uintptr_t*)x1, x2);
+            break;
+
+        case 10:
+            gpu_clear(x0);
+            break;
+
+        case 11:
+            gpu_draw_pixel(*(gpu_point*)x0,x1);
+            break;
+
+        case 12:
+            gpu_draw_line(*(gpu_point*)x0,*(gpu_point*)x1,x2);
+            break;
+
+        case 13:
+            gpu_fill_rect(*(gpu_rect*)x0,x1);
+            break;
+
+        case 14:
+            gpu_draw_char(*(gpu_point*)x0,(char)x1,x2,x3);
+            break;
+
+        case 15:
+            kstring str = string_l((const char *)x0);
+            gpu_draw_string(str,*(gpu_point*)x1,x2,x3);
+            break;
+
+        case 20:
+            gpu_flush();
+            break;
+
+        case 21:
+            result = (uintptr_t)allocate_in_page((void*)get_current_heap(), sizeof(gpu_size), ALIGN_16B, get_current_privilege(), false);
+            gpu_size size = gpu_get_screen_size();
+            memcpy((void*)result, &size, sizeof(gpu_size));
+            break;
+
+        case 22:
+            result = gpu_get_char_size(x0);
             break;
         
         default:

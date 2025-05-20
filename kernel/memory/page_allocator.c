@@ -142,10 +142,11 @@ void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
                 new_info->free_list = NULL;
                 new_info->next_free_mem_ptr = (uint64_t)va + sizeof(mem_page);
             }
-            kprintfv("[page_alloc] Page allocated: %h", va);
+            kprintf_raw("[page_alloc] Page allocated: %h", va);
             return (void*)va;
         }
     }
+    kprintf_raw("Could not allocate");
     return 0;
 }
 
@@ -167,6 +168,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
         return first_addr;
     }
 
+    kprintf_raw("{>>>>} %h",(uintptr_t)&info->free_list);
     FreeBlock** curr = &info->free_list;
     while (*curr) {
         if ((*curr)->size >= size) {
@@ -177,6 +179,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
             memset((void*)result, 0, size);
             return (void*)result;
         }
+        kprintf("-> %h",(uintptr_t)&(*curr)->next);
         curr = &(*curr)->next;
     }
 

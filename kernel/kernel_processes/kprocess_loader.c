@@ -30,7 +30,7 @@ process_t *create_kernel_process(char *name, void (*func)()){
     proc->sp = proc->stack;
     
     proc->pc = (uintptr_t)func;
-    kprintf_raw("Process allocated with address at %h, stack at %h",proc->pc, proc->sp);
+    kprintf_raw("Kernel process allocated with address at %h, stack at %h, heap at %h",proc->pc, proc->sp, proc->heap);
     proc->spsr = 0x205;
     proc->state = READY;
 

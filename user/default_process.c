@@ -5,12 +5,20 @@
 
 __attribute__((section(".rodata.proc1")))
 static const char fmt[] = "Process %i";//Note: So long as we keep loading this process inside the kernel, we'll need to keep strings outside functions so we can reliably indicate their section
+__attribute__((section(".rodata.proc1")))
+static const char woah[] = "Woah";
 
 __attribute__((section(".text.proc1")))
 void proc_func() {
     uint64_t j = 0;
+    gpu_size* size = gpu_screen_size();
+    gpu_rect rect = (gpu_rect){10,10,size->width-20,size->height-20};
     while (1) {
+        clear_screen(0xFF00FF);
         printf(fmt, j++);
+        draw_primitive_rect(&rect, 0xFFFFFF);
+        draw_primitive_text(woah,&rect.point,2, 0x0);
+        gpu_flush_data();
         for (int i = 0; i < 100000000; i++);
     }
 }

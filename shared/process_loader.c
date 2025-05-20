@@ -288,13 +288,12 @@ process_t* create_process(char *name, void (*func)(), uint64_t code_size, uint64
 
     proc->stack = (stack + stack_size);
     proc->stack_size = stack_size;
-
-
+    proc->heap = heap;
 
     proc->sp = proc->stack;
     
     proc->pc = (uint64_t)code_dest;
-    kprintfv("Process allocated with address at %h, stack at %h",proc->pc, proc->sp);
+    kprintf_raw("User process allocated with address at %h, stack at %h, heap at %h",proc->pc, proc->sp, proc->heap);
     proc->spsr = 0;
     proc->state = READY;
 
