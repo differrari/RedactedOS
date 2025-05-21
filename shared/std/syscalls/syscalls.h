@@ -13,7 +13,6 @@ extern void printf_args(const char *fmt, const uint64_t *args, uint32_t arg_coun
 extern uintptr_t malloc(size_t size);
 extern void free(void *ptr, size_t size);
 
-void request_focus();
 bool read_key(keypress *kp);
 
 extern void sleep(uint64_t time);

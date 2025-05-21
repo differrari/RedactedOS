@@ -59,10 +59,6 @@ void sync_el0_handler_c(){
             kprintf_args_raw((const char *)x0, (uintptr_t*)x1, x2);
             break;
 
-        case 4:
-            sys_focus_current();
-            break;
-            
         case 5:
             keypress *kp = (keypress*)x1;
             result = sys_read_input_current(kp);

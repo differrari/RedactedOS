@@ -85,8 +85,10 @@ bool Desktop::await_gpu(){
 void Desktop::activate_current(){
     int index = (selected.y * MAX_COLS) + selected.x;
 
-    if (index < entries.size())
+    if (index < entries.size()){
         active_proc = entries[index].process_loader();
+        sys_set_focus(active_proc->id);
+    }
     
 }
 
