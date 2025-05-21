@@ -36,6 +36,9 @@ irq_el1_asm_handler:
     mov x13, x29
     mov x12, x30
     mov x11, sp
+    mov x9, x2
+    mov x16, x3
+    
     mrs x10, spsr_el1
 
     bl irq_el1_handler

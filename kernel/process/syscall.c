@@ -21,7 +21,7 @@ void sync_el0_handler_c(){
     uint64_t x2;
     asm volatile ("mov %0, x9" : "=r"(x2));
     uint64_t x3;
-    asm volatile ("mov %0, x3" : "=r"(x3));
+    asm volatile ("mov %0, x16" : "=r"(x3));
     uint64_t x29;
     asm volatile ("mov %0, x13" : "=r"(x29));
     uint64_t x30;
