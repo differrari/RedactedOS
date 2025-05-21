@@ -10,6 +10,7 @@
 #include "theme/theme.h"
 #include "math/math.h"
 #include "std/syscalls/syscalls.h"
+#include "memory/memory_types.h"
 
 __attribute__((section(".text.kcoreprocesses")))
 char* parse_proc_state(int state){
@@ -48,6 +49,26 @@ void print_process_info(){
 
 uint16_t scroll_index = 0;
 
+uint64_t calc_heap(uintptr_t ptr){
+    mem_page *info = (mem_page*)ptr;
+    uint64_t size = info->size;
+    if (info->next)
+        size += calc_heap((uintptr_t)info->next);
+    return size;
+}
+
+void draw_memory(int x, int y, int width, int height, int used, int size){
+    gpu_point stack_top = {x, y};
+    gpu_draw_line(stack_top, (gpu_point){stack_top.x + width, stack_top.y}, 0xFFFFFF);
+    gpu_draw_line(stack_top, (gpu_point){stack_top.x, stack_top.y + height}, 0xFFFFFF);
+    gpu_draw_line((gpu_point){stack_top.x + width, stack_top.y}, (gpu_point){stack_top.x + width, stack_top.y + height}, 0xFFFFFF);
+    gpu_draw_line((gpu_point){stack_top.x, stack_top.y + height}, (gpu_point){stack_top.x + width, stack_top.y + height}, 0xFFFFFF);
+
+    int used_height = max((used * height) / size,1);
+
+    gpu_fill_rect((gpu_rect){stack_top.x + 1, stack_top.y + height - used_height + 1, width - 2, used_height-1}, BG_COLOR);
+}
+
 __attribute__((section(".text.kcoreprocesses")))
 void draw_process_view(){
     gpu_clear(BG_COLOR+0x112211);
@@ -63,8 +84,6 @@ void draw_process_view(){
             scroll_index = max(scroll_index - 1, 0);
         if (kp.keys[0] == KEY_ARROW_RIGHT)
             scroll_index = min(scroll_index + 1,MAX_PROCS);
-
-        kprintf_raw("KEY %i, %i, %i",scroll_index, KEY_ARROW_LEFT, KEY_ARROW_RIGHT);
     }
 
     for (int i = 0; i < PROCS_PER_SCREEN; i++) {
@@ -110,16 +129,10 @@ void draw_process_view(){
         gpu_draw_string(pc, (gpu_point){xo, pc_y}, scale, BG_COLOR);
         temp_free(pc.data, pc.length);
         
-        gpu_point stack_top = {xo, stack_y};
-        gpu_draw_line(stack_top, (gpu_point){stack_top.x + stack_width, stack_top.y}, 0xFFFFFF);
-        gpu_draw_line(stack_top, (gpu_point){stack_top.x, stack_top.y + stack_height}, 0xFFFFFF);
-        gpu_draw_line((gpu_point){stack_top.x + stack_width, stack_top.y}, (gpu_point){stack_top.x + stack_width, stack_top.y + stack_height}, 0xFFFFFF);
-        gpu_draw_line((gpu_point){stack_top.x, stack_top.y + stack_height}, (gpu_point){stack_top.x + stack_width, stack_top.y + stack_height}, 0xFFFFFF);
-
-        int used_stack = proc->stack - proc->sp;
-        int used_height = max((used_stack * stack_height) / proc->stack_size,1);
-
-        gpu_fill_rect((gpu_rect){stack_top.x + 1, stack_top.y + stack_height - used_height + 1, stack_width - 2, used_height-1}, BG_COLOR);
+        draw_memory(xo, stack_y, stack_width, stack_height, proc->stack - proc->sp, proc->stack_size);
+        uint64_t heap = calc_heap(proc->heap);
+        uint64_t heap_limit = ((heap + 0xFFF) & ~0xFFF);
+        draw_memory(xo + stack_width + 10, stack_y, stack_width, stack_height, heap, heap_limit);
 
         kstring flags = kstring_from_hex(proc->spsr);
         gpu_draw_string(flags, (gpu_point){xo, flags_y}, scale, BG_COLOR);

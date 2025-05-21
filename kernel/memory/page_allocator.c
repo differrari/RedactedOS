@@ -1,5 +1,4 @@
 #include "page_allocator.h"
-#include "memory_types.h"
 #include "memory_access.h"
 #include "memory/kalloc.h"
 #include "console/kio.h"
@@ -94,12 +93,6 @@ void free_page(void* ptr, uint64_t size) {
     }
 }
 
-typedef struct mem_page {
-    struct mem_page *next;
-    FreeBlock *free_list;
-    uint64_t next_free_mem_ptr;
-} mem_page;
-
 void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
     uint64_t start = get_user_ram_start();
     uint64_t end = get_user_ram_end();
@@ -141,6 +134,7 @@ void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
                 new_info->next = NULL;
                 new_info->free_list = NULL;
                 new_info->next_free_mem_ptr = (uint64_t)va + sizeof(mem_page);
+                new_info->size = 0;
             }
             kprintfv("[page_alloc] Page allocated: %h", va);
             return (void*)va;
@@ -165,6 +159,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
             memset((void*)ptr, 0, PAGE_SIZE);
             if (!first_addr) first_addr = ptr;
         }
+        //TODO: we're not keeping track of this size
         return first_addr;
     }
 
@@ -176,6 +171,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
             uint64_t result = (uint64_t)*curr;
             *curr = (*curr)->next;
             memset((void*)result, 0, size);
+            info->size += size;
             return (void*)result;
         }
         kprintfv("-> %h",(uintptr_t)&(*curr)->next);
@@ -201,6 +197,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
     kprintfv("[page_alloc] Allocated address %h",result);
 
     memset((void*)result, 0, size);
+    info->size += size;
     return (void*)result;
 }
 
@@ -215,4 +212,5 @@ void free_from_page(void* ptr, uint64_t size) {
     block->size = size;
     block->next = page->free_list;
     page->free_list = block;
+    page->size -= size;
 }

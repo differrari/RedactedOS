@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "memory_types.h"
 
 #define ALIGN_4KB 0x1000
 #define ALIGN_16B 0x10
