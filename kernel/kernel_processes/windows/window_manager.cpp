@@ -4,6 +4,7 @@
 #include "theme/theme.h"
 #include "../monitor/monitor_processes.h"
 #include "std/std.hpp"
+#include "windows.h"
 
 WindowManager::WindowManager(){
     
@@ -23,8 +24,10 @@ void WindowManager::manage_windows(){
 //Tho it'd be nice to avoid the double repetition of writing to private, then backbuffer, then main buffer, but that's gpu-driver-specific
 void WindowManager::pause(){
     paused = true;
+    screen_overlay = paused;
 }
 
 void WindowManager::resume(){
     paused = false;
+    screen_overlay = paused;
 }

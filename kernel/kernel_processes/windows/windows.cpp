@@ -7,6 +7,8 @@
 
 WindowManager manager;
 
+bool screen_overlay;
+
 __attribute__((section(".text.kcoreprocesses")))
 extern "C" void manage_windows(){
     manager.initialize();

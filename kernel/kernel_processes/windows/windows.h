@@ -12,6 +12,8 @@ process_t* start_windows();
 void pause_window_draw();
 void resume_window_draw();
 
+extern bool screen_overlay;
+
 #ifdef __cplusplus
 }
 #endif

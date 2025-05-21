@@ -9,6 +9,7 @@
 #include "graph/graphics.h"
 #include "memory/memory_access.h"
 #include "input/input_dispatch.h"
+#include "kernel_processes/windows/windows.h"
 
 void sync_el0_handler_c(){
     save_context_registers();
@@ -65,32 +66,40 @@ void sync_el0_handler_c(){
             break;
 
         case 10:
-            gpu_clear(x0);
+            if (!screen_overlay)
+                gpu_clear(x0);
             break;
 
         case 11:
-            gpu_draw_pixel(*(gpu_point*)x0,x1);
+            if (!screen_overlay)
+                gpu_draw_pixel(*(gpu_point*)x0,x1);
             break;
 
         case 12:
-            gpu_draw_line(*(gpu_point*)x0,*(gpu_point*)x1,x2);
+            if (!screen_overlay)
+                gpu_draw_line(*(gpu_point*)x0,*(gpu_point*)x1,x2);
             break;
 
         case 13:
-            gpu_fill_rect(*(gpu_rect*)x0,x1);
+            if (!screen_overlay)
+                gpu_fill_rect(*(gpu_rect*)x0,x1);
             break;
 
         case 14:
-            gpu_draw_char(*(gpu_point*)x0,(char)x1,x2,x3);
+            if (!screen_overlay)
+                gpu_draw_char(*(gpu_point*)x0,(char)x1,x2,x3);
             break;
 
         case 15:
-            kstring str = kstring_l((const char *)x0);
-            gpu_draw_string(str,*(gpu_point*)x1,x2,x3);
+            if (!screen_overlay){
+                kstring str = kstring_l((const char *)x0);
+                gpu_draw_string(str,*(gpu_point*)x1,x2,x3);
+            }
             break;
 
         case 20:
-            gpu_flush();
+            if (!screen_overlay)
+                gpu_flush();
             break;
 
         case 21:
