@@ -1,6 +1,6 @@
 #include "dtb.h"
 #include "console/kio.h"
-#include "kstring.h"
+#include "std/string.h"
 #include "memory/kalloc.h"
 
 #define DTB_ADDR 0x40000000UL

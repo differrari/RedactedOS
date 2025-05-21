@@ -27,6 +27,7 @@ extern "C" {
 void kprintf_args(const char *fmt, const uint64_t *args, uint32_t arg_count);
 void kprintf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count);
 void kputf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count);
+void kprintf_l(const char *fmt);
 void puts(const char *s);
 void putc(const char c);
 void puthex(uint64_t value);

@@ -21,6 +21,3 @@ bool kstring_equals(kstring a, kstring b);
 kstring kstring_format_args(const char *fmt, const uint64_t *args, uint32_t arg_count);
 kstring kstring_tail(const char *array, uint32_t max_length);
 kstring kstring_repeat(char symbol, uint32_t amount);
-
-bool strcmp(const char *a, const char *b);
-bool strcont(const char *a, const char *b);

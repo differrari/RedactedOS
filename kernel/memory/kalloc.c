@@ -5,7 +5,7 @@
 #include "dtb.h"
 #include "console/serial/uart.h"
 #include "memory/memory_access.h"
-#include "kstring.h"
+#include "std/string.h"
 
 static uint64_t total_ram_size = 0;
 static uint64_t total_ram_start = 0;

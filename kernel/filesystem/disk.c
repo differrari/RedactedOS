@@ -1,6 +1,6 @@
 #include "disk.h"
 #include "dtb.h"
-#include "kstring.h"
+#include "std/string.h"
 #include "memory/memory_access.h"
 #include "memory/kalloc.h"
 #include "mmu.h"

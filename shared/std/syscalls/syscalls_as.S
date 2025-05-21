@@ -9,7 +9,7 @@
 syscall_def malloc, 0
 syscall_def free, 1
 
-syscall_def printf_args, 3
+syscall_def printl, 3
 
 syscall_def read_key, 5
 syscall_def register_shortcut, 6
