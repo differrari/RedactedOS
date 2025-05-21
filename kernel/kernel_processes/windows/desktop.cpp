@@ -30,7 +30,6 @@ void Desktop::draw_desktop(){
         sys_focus_current();
         rendered_full = false;
     }
-    kprintf_raw("Drawing to desktop");
     keypress kp;
     gpu_point old_selected = selected;
     while (sys_read_input_current(&kp)){

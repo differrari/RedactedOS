@@ -55,25 +55,35 @@ void draw_process_view(){
     gpu_size screen_size = gpu_get_screen_size();
     gpu_point screen_middle = {screen_size.width / 2, screen_size.height / 2};
 
+    sys_focus_current();
+
+    keypress kp;
+    while (sys_read_input_current(&kp)){
+        if (kp.keys[0] == KEY_ARROW_LEFT)
+            scroll_index = max(scroll_index - 1, 0);
+        if (kp.keys[0] == KEY_ARROW_RIGHT)
+            scroll_index = min(scroll_index + 1,MAX_PROCS);
+
+        kprintf_raw("KEY %i, %i, %i",scroll_index, KEY_ARROW_LEFT, KEY_ARROW_RIGHT);
+    }
+
     for (int i = 0; i < PROCS_PER_SCREEN; i++) {
-        int index = scroll_index + i;
+        int index = scroll_index;
+        int valid_count = 0;
 
         process_t *proc;
-        while (index < MAX_PROCS){
+        while (index < MAX_PROCS) {
             proc = &processes[index];
-            if (proc->id == 0 || proc->state == STOPPED){ 
-                printf("Process %i %s invalid",index, (uintptr_t)proc->name);
-                index++;
+            if (proc->id != 0 && proc->state != STOPPED) {
+                if (valid_count == i + scroll_index) {
+                    break;
+                }
+                valid_count++;
             }
-            else {
-                printf("Process %i %s valid", index, (uint64_t)proc->name);
-                break;
-            }
+            index++;
         }
 
-        printf("Settled on process %i",index);
-
-        if (proc->id == 0 || proc->state == STOPPED) break;
+        if (proc->id == 0 || valid_count < i || proc->state == STOPPED) break;
 
         kstring name = kstring_l((const char*)(uintptr_t)proc->name);
         kstring state = kstring_l(parse_proc_state(proc->state));
@@ -118,7 +128,6 @@ void draw_process_view(){
         temp_free(flags.data, flags.length);
 
     }
-    print_process_info();
     gpu_flush();
 }
 
