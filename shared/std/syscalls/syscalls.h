@@ -2,6 +2,7 @@
 
 #include "types.h"
 #include "ui/graphic_types.h"
+#include "keypress.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,14 +11,16 @@ extern "C" {
 extern void printf_args(const char *fmt, const uint64_t *args, uint32_t arg_count);
 
 extern uintptr_t malloc(size_t size);
-
 extern void free(void *ptr, size_t size);
 
-extern void clear_screen(color color);
-
-extern void gpu_flush_data();
+void request_focus();
+bool read_key(keypress *kp);
 
 extern void sleep(uint64_t time);
+extern void halt();
+
+extern void clear_screen(color color);
+extern void gpu_flush_data();
 
 gpu_size* gpu_screen_size();
 uint32_t gpu_char_size(uint32_t scale);
@@ -27,6 +30,7 @@ extern void draw_primitive_line(gpu_point *p0, gpu_point *p1, color color);
 extern void draw_primitive_rect(gpu_rect *r, color color);
 extern void draw_primitive_char(gpu_point *p, char c, uint32_t scale, uint32_t color);
 extern void draw_primitive_text(const char *text, gpu_point *p, uint32_t scale, uint32_t color);
+
 
 #define printf(fmt, ...) \
     ({ \

@@ -13,13 +13,18 @@ void proc_func() {
     uint64_t j = 0;
     gpu_size* size = gpu_screen_size();
     gpu_rect rect = (gpu_rect){10,10,size->width-20,size->height-20};
+    request_focus();
     while (1) {
+        keypress *kp = (keypress*)malloc(sizeof(keypress));
+        if (read_key(kp)){
+            if (kp->keys[0] != 0)
+                printf(fmt, j++);
+        }
+        free(kp, sizeof(keypress));
         clear_screen(0xFF00FF);
-        printf(fmt, j++);
         draw_primitive_rect(&rect, 0xFFFFFF);
         draw_primitive_text(woah,&rect.point,2, 0x0);
         gpu_flush_data();
-        sleep(1000);
     }
 }
 

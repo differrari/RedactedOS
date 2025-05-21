@@ -8,6 +8,7 @@
 #include "memory/page_allocator.h"
 #include "graph/graphics.h"
 #include "memory/memory_access.h"
+#include "input/input_dispatch.h"
 
 void sync_el0_handler_c(){
     save_context_registers();
@@ -58,6 +59,15 @@ void sync_el0_handler_c(){
             kprintf_args_raw((const char *)x0, (uintptr_t*)x1, x2);
             break;
 
+        case 4:
+            sys_focus_current();
+            break;
+            
+        case 5:
+            keypress *kp = (keypress*)x1;
+            result = sys_read_input_current(kp);
+            break;
+
         case 10:
             gpu_clear(x0);
             break;
@@ -99,6 +109,10 @@ void sync_el0_handler_c(){
 
         case 30:
             sleep_process(x0);
+            break;
+        
+        case 33:
+            stop_current_process();
             break;
         
         default:

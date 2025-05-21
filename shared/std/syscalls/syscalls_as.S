@@ -11,9 +11,10 @@ syscall_def free, 1
 
 syscall_def printf_args, 3
 
-syscall_def read_key, 4
-syscall_def register_shortcut, 5
-syscall_def read_shortcut, 6
+syscall_def request_focus, 4
+syscall_def read_key, 5
+syscall_def register_shortcut, 6
+syscall_def read_shortcut, 7
 
 //Primitives
 syscall_def clear_screen, 10
@@ -31,4 +32,4 @@ syscall_def gpu_char_size, 21
 syscall_def sleep, 30
 syscall_def process_yield, 31
 // syscall_def process_await, 32
-syscall_def process_terminate, 33
+syscall_def halt, 33
