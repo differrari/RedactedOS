@@ -21,10 +21,11 @@ private:
     gpu_size tile_size;
     gpu_point selected;
     bool ready = false;
-    bool renderedFull = false;
+    bool rendered_full = false;
     process_t *active_proc;
     Label *single_label;// TODO: This is hardcoded, ew
     Array<LaunchEntry> entries;
+    bool process_active = false;
 
     void draw_tile(uint32_t column, uint32_t row);
     bool await_gpu();

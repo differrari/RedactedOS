@@ -26,6 +26,11 @@ Desktop::Desktop() {
 void Desktop::draw_desktop(){
     if (!await_gpu()) return;
     if (active_proc != nullptr && active_proc->state != process_t::process_state::STOPPED) return;
+    if (process_active){
+        sys_focus_current();
+        rendered_full = false;
+    }
+    kprintf_raw("Drawing to desktop");
     keypress kp;
     gpu_point old_selected = selected;
     while (sys_read_input_current(&kp)){
@@ -49,8 +54,8 @@ void Desktop::draw_desktop(){
             } 
         }
     }
-    if (!renderedFull){
-        renderedFull = true;
+    if (!rendered_full){
+        rendered_full = true;
         draw_full();
     } else if (old_selected.x != selected.x || old_selected.y != selected.y){
         draw_tile(old_selected.x, old_selected.y);
@@ -87,6 +92,7 @@ void Desktop::activate_current(){
 
     if (index < entries.size()){
         active_proc = entries[index].process_loader();
+        process_active = true;
         sys_set_focus(active_proc->id);
     }
     

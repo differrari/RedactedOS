@@ -19,6 +19,8 @@ void WindowManager::manage_windows(){
     desktop->draw_desktop();
 }
 
+//TODO: the window manager will need to handle gpu access from windows as well. Windows should work on their private FB and it should be written by the window manager into the real fb
+//Tho it'd be nice to avoid the double repetition of writing to private, then backbuffer, then main buffer, but that's gpu-driver-specific
 void WindowManager::pause(){
     paused = true;
 }

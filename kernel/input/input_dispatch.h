@@ -1,19 +1,9 @@
 #pragma once
 
 #include "xhci_kbd.h"
+#include "input_keycodes.h"
 
 void register_keypress(keypress kp);
-
-#define KEY_ARROW_UP 0x52
-#define KEY_ARROW_DOWN 0x51
-#define KEY_ARROW_LEFT 0x50
-#define KEY_ARROW_RIGHT  0x4F
-#define KEY_BACKSPACE 0x2A
-#define KEY_ENTER 0x28
-
-#define KEY_MOD_CMD 0x8
-#define KEY_MOD_ALT 0x4
-#define KEY_MOD_CTRL 0x1
 
 #ifdef __cplusplus
 extern "C" {
