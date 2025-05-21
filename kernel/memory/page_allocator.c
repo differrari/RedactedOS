@@ -178,7 +178,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
             memset((void*)result, 0, size);
             return (void*)result;
         }
-        kprintf("-> %h",(uintptr_t)&(*curr)->next);
+        kprintfv("-> %h",(uintptr_t)&(*curr)->next);
         curr = &(*curr)->next;
     }
 
@@ -209,7 +209,7 @@ void free_from_page(void* ptr, uint64_t size) {
 
     memset((void*)ptr,0,size);
 
-    mem_page *page = (mem_page *)((((uintptr_t)ptr) + 0xFFF) & ~0xFFF);
+    mem_page *page = (mem_page *)(((uintptr_t)ptr) & ~0xFFF);
 
     FreeBlock* block = (FreeBlock*)ptr;
     block->size = size;
