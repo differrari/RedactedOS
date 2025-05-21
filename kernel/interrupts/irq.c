@@ -5,8 +5,10 @@
 #include "input/xhci_types.h"
 #include "pci.h"
 #include "input/xhci.h"
+#include "console/serial/uart.h"
 
 #define IRQ_TIMER 30
+#define SLEEP_TIMER 27
 
 static uint64_t _msecs;
 
@@ -36,6 +38,7 @@ void irq_init() {
 
     gic_enable_irq(IRQ_TIMER, 0x80, 0);
     gic_enable_irq(MSI_OFFSET + XHCI_IRQ, 0x80, 0);
+    gic_enable_irq(SLEEP_TIMER, 0x80, 0);
 
     write32(GICD_BASE + 0x000, 0x1);
 
@@ -72,6 +75,26 @@ void timer_init(uint64_t msecs) {
     timer_enable();
 }
 
+void virtual_timer_reset(uint64_t smsecs) {
+    uint64_t freq;
+    asm volatile ("mrs %0, cntfrq_el0" : "=r"(freq));
+    uint64_t interval = (freq * smsecs)/1000;
+    asm volatile ("msr cntv_tval_el0, %0" :: "r"(interval));
+}
+
+void virtual_timer_enable() {
+    uint64_t val = 1;
+    asm volatile ("msr cntv_ctl_el0, %0" :: "r"(val));
+}
+
+uint64_t virtual_timer_remaining_msec() {
+    uint64_t ticks;
+    uint64_t freq;
+    asm volatile ("mrs %0, cntv_tval_el0" : "=r"(ticks));
+    asm volatile ("mrs %0, cntfrq_el0" : "=r"(freq));
+    return (ticks * 1000) / freq;
+}
+
 void enable_interrupt() {
     asm volatile ("msr daifclr, #2");
     asm volatile ("isb");
@@ -80,6 +103,19 @@ void enable_interrupt() {
 void disable_interrupt(){
     asm volatile ("msr daifset, #2");
     asm volatile ("isb");
+}
+
+uint64_t timer_now() {
+    uint64_t val;
+    asm volatile ("mrs %0, cntpct_el0" : "=r"(val));
+    return val;
+}
+
+uint64_t timer_now_msec() {
+    uint64_t ticks, freq;
+    asm volatile ("mrs %0, cntpct_el0" : "=r"(ticks));
+    asm volatile ("mrs %0, cntfrq_el0" : "=r"(freq));
+    return (ticks * 1000) / freq;
 }
 
 void irq_el1_handler() {
@@ -98,8 +134,12 @@ void irq_el1_handler() {
         xhci_handle_interrupt();
         write32(GICC_BASE + 0x10, irq);
         process_restore();
+    } else if (irq == SLEEP_TIMER){
+        wake_processes();
+        write32(GICC_BASE + 0x10, irq);
+        process_restore();
     } else {
-        kprintf_raw("[GIC error]Received unknown interrupt");
+        kprintf_raw("[GIC error] Received unknown interrupt");
         write32(GICC_BASE + 0x10, irq);
         process_restore();
     }

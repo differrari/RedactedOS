@@ -12,10 +12,21 @@ extern void save_pc_interrupt(process_t* proc);
 extern void restore_context(process_t* proc);
 
 #define MAX_PROCS 16
+//TODO: use queues, eliminate the max procs limitation
 process_t processes[MAX_PROCS];
 uint16_t current_proc = 0;
 uint16_t proc_count = 0;
 uint16_t next_proc_index = 0;
+
+typedef struct sleep_tracker {
+    uint16_t pid;
+    uint64_t timestamp;
+    uint64_t sleep_time;
+    bool valid;
+} sleep_tracker;
+
+sleep_tracker sleeping[MAX_PROCS];
+uint16_t sleep_count;
 
 uint64_t ksp;
 
@@ -35,8 +46,6 @@ void switch_proc(ProcSwitchReason reason) {
     int next_proc = (current_proc + 1) % MAX_PROCS;
     while (processes[next_proc].state != READY) {
         next_proc = (next_proc + 1) % MAX_PROCS;
-        if (next_proc == current_proc)
-            return;
     }
 
     current_proc = next_proc;
@@ -44,7 +53,6 @@ void switch_proc(ProcSwitchReason reason) {
 }
 
 void process_restore(){
-    // kprintf_raw("Resuming execution of process %i at %h",current_proc, processes[current_proc].spsr);
     restore_context(&processes[current_proc]);
 }
 
@@ -149,4 +157,40 @@ uint16_t process_count(){
 
 process_t *get_all_processes(){
     return processes;
+}
+
+void sleep_process(uint64_t msec){
+    if (sleep_count < MAX_PROCS){
+        processes[current_proc].state = BLOCKED;
+        sleeping[sleep_count++] = (sleep_tracker){
+            .pid = processes[current_proc].id,
+            .timestamp = timer_now_msec(),
+            .sleep_time = msec, 
+            .valid = true
+        };
+    }
+    if (virtual_timer_remaining_msec() > msec || virtual_timer_remaining_msec() == 0){
+        virtual_timer_reset(msec);
+        virtual_timer_enable();
+    }
+    switch_proc(YIELD);
+}
+
+void wake_processes(){
+    uint16_t removed = 0;
+    uint64_t new_wake_time = 0;
+    for (uint16_t i = 0; i < sleep_count; i++){
+        uint64_t wake_time = sleeping[i].timestamp + sleeping[i].sleep_time;
+        if (wake_time <= timer_now_msec()){
+            process_t *proc = get_proc_by_pid(sleeping[i].pid);
+            proc->state = READY;
+            sleeping[i].valid = false;
+            removed++;
+        } else if (new_wake_time == 0 || wake_time < new_wake_time){
+            new_wake_time = wake_time;
+        }
+    }
+    sleep_count -= removed;
+    virtual_timer_reset(timer_now_msec() - new_wake_time);
+    virtual_timer_enable();
 }

@@ -55,7 +55,7 @@ void kernel_main() {
     }
     
     kprintf("Initializing disk...");
-
+    
     // disk_verbose();
     if (!find_disk())
         panic("Disk initialization failure");

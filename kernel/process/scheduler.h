@@ -27,6 +27,9 @@ void stop_current_process();
 
 void name_process(process_t *proc, char *name);
 
+void sleep_process(uint64_t msec);
+void wake_processes();
+
 #ifdef __cplusplus
 extern "C" {
 #endif

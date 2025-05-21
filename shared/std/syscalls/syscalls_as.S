@@ -28,7 +28,7 @@ syscall_def gpu_flush_data, 20
 syscall_def gpu_screen_size, 21
 syscall_def gpu_char_size, 21
 
-syscall_def process_sleep, 30
+syscall_def sleep, 30
 syscall_def process_yield, 31
 // syscall_def process_await, 32
 syscall_def process_terminate, 33

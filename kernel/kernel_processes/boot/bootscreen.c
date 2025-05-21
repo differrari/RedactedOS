@@ -9,6 +9,7 @@
 #include "input/input_dispatch.h"
 #include "process/scheduler.h"
 #include "math/math.h"
+#include "std/syscalls/syscalls.h"
 
 __attribute__((section(".data.kcoreprocesses")))
 static uint64_t randomNumber = 0;
@@ -77,7 +78,7 @@ void bootscreen(){
             }
             current_point = next_point;
         }
-        for (int i = 0; i < 1000000; i++);
+        sleep(1000);
     }
 }
 
