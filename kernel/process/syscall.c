@@ -60,7 +60,7 @@ void sync_el0_handler_c(){
             break;
 
         case 5:
-            keypress *kp = (keypress*)x1;
+            keypress *kp = (keypress*)x0;
             result = sys_read_input_current(kp);
             break;
 
