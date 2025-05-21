@@ -57,7 +57,8 @@ uint64_t calc_heap(uintptr_t ptr){
     return size;
 }
 
-void draw_memory(int x, int y, int width, int height, int used, int size){
+void draw_memory(char *name,int x, int y, int width, int full_height, int used, int size){
+    int height = full_height - (gpu_get_char_size(2)*2) - 10;
     gpu_point stack_top = {x, y};
     gpu_draw_line(stack_top, (gpu_point){stack_top.x + width, stack_top.y}, 0xFFFFFF);
     gpu_draw_line(stack_top, (gpu_point){stack_top.x, stack_top.y + height}, 0xFFFFFF);
@@ -67,6 +68,10 @@ void draw_memory(int x, int y, int width, int height, int used, int size){
     int used_height = max((used * height) / size,1);
 
     gpu_fill_rect((gpu_rect){stack_top.x + 1, stack_top.y + height - used_height + 1, width - 2, used_height-1}, BG_COLOR);
+
+    kstring str = kstring_format("%s\n%h",(uintptr_t)name, used);
+    gpu_draw_string(str, (gpu_point){stack_top.x, stack_top.y + height + 5}, 2, BG_COLOR);
+    temp_free(str.data,str.length);
 }
 
 __attribute__((section(".text.kcoreprocesses")))
@@ -116,7 +121,7 @@ void draw_process_view(){
         int state_y = screen_middle.y - 60;
         int pc_y = screen_middle.y - 30;
         int stack_y = screen_middle.y;
-        int stack_height = 100;
+        int stack_height = 130;
         int stack_width = 40;
         int flags_y = stack_y + stack_height + 10;
 
@@ -129,12 +134,12 @@ void draw_process_view(){
         gpu_draw_string(pc, (gpu_point){xo, pc_y}, scale, BG_COLOR);
         temp_free(pc.data, pc.length);
         
-        draw_memory(xo, stack_y, stack_width, stack_height, proc->stack - proc->sp, proc->stack_size);
+        draw_memory("Stack", xo, stack_y, stack_width, stack_height, proc->stack - proc->sp, proc->stack_size);
         uint64_t heap = calc_heap(proc->heap);
         uint64_t heap_limit = ((heap + 0xFFF) & ~0xFFF);
-        draw_memory(xo + stack_width + 10, stack_y, stack_width, stack_height, heap, heap_limit);
+        draw_memory("Heap", xo + stack_width + 50, stack_y, stack_width, stack_height, heap, heap_limit);
 
-        kstring flags = kstring_from_hex(proc->spsr);
+        kstring flags = kstring_format("Flags: %h", proc->spsr);
         gpu_draw_string(flags, (gpu_point){xo, flags_y}, scale, BG_COLOR);
         temp_free(name.data, name.length);
         temp_free(state.data, state.length);
