@@ -41,7 +41,7 @@ void print_process_info(){
             printf("PC: %h",proc->pc);
         }
     }
-    for (int i = 0; i < 100000000; i++);
+    sleep(1000);
 }
 
 #define PROCS_PER_SCREEN 2

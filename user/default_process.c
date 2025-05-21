@@ -19,7 +19,7 @@ void proc_func() {
         draw_primitive_rect(&rect, 0xFFFFFF);
         draw_primitive_text(woah,&rect.point,2, 0x0);
         gpu_flush_data();
-        for (int i = 0; i < 100000000; i++);
+        sleep(1000);
     }
 }
 
