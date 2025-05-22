@@ -1,8 +1,12 @@
 #pragma once
 
-#define MSI_OFFSET 50
-
 #include "types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define MSI_OFFSET 50
 
 typedef struct {
     uint64_t base_addr;
@@ -20,3 +24,7 @@ void pci_enable_verbose();
 
 bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_vector);
 bool pci_setup_msix(uint64_t pci_addr, uint8_t irq_line);
+
+#ifdef __cplusplus
+}
+#endif

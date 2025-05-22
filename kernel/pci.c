@@ -282,12 +282,12 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
                     kprintf("[PCI] Found device at bus %i, slot %i, func %i", bus, slot, func);
 
                     return device_address;
-                } //else if (((vendor_device >> 16) & 0xFFFF) != 0xFFFF)
-                    // kprintf("[PCI] DID: %h VENDOR: %h",(vendor_device & 0xFFFF),((vendor_device >> 16) & 0xFFFF));
+                }// else if (((vendor_device >> 16) & 0xFFFF) != 0xFFFF)
+                   //  kprintf("[PCI] VENDOR: %h DID: %h",(vendor_device & 0xFFFF),((vendor_device >> 16) & 0xFFFF));
             }
         }
     }
-    kprintf("[PCI] Device not found.");
+    kprintf("[PCI] Device not found. Vendor = %h Device = %h",vendor_id,device_id);
     return 0;
 }
 
