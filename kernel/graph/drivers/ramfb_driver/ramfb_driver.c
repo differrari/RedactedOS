@@ -24,7 +24,7 @@ uint64_t bfb_ptr;
 uint32_t width;
 uint32_t height;
 uint32_t bpp;
-uint32_t stride;
+uint32_t legacy_stride;
 
 #define MAX_DIRTY_RECTS 64
 gpu_rect dirty_rects[MAX_DIRTY_RECTS];
@@ -79,7 +79,7 @@ void rfb_clear(uint32_t color){
 void rfb_draw_pixel(uint32_t x, uint32_t y, uint32_t color) {
     if (x >= width || y >= height) return;
     volatile uint32_t* fb = (volatile uint32_t*)bfb_ptr;
-    fb[y * (stride / 4) + x] = color;
+    fb[y * (legacy_stride / 4) + x] = color;
 }
 
 void rfb_draw_single_pixel(uint32_t x, uint32_t y, uint32_t color) {
@@ -187,8 +187,8 @@ void rfb_flush() {
             uint32_t dest_y = r.point.y + y;
             if (dest_y >= height) break;
             
-            uint32_t* dst = (uint32_t*)&fb[dest_y * (stride / 4) + r.point.x];
-            uint32_t* src = (uint32_t*)&bfb[dest_y * (stride / 4) + r.point.x];
+            uint32_t* dst = (uint32_t*)&fb[dest_y * (legacy_stride / 4) + r.point.x];
+            uint32_t* src = (uint32_t*)&bfb[dest_y * (legacy_stride / 4) + r.point.x];
             
             uint32_t copy_width = r.size.width;
             if (r.point.x + copy_width > width)
@@ -208,7 +208,7 @@ bool rfb_init(uint32_t w, uint32_t h) {
     height = h;
 
     bpp = 4;
-    stride = bpp * width;
+    legacy_stride = bpp * width;
     
     struct fw_cfg_file file;
     fw_find_file(kstring_l("etc/ramfb"), &file);
@@ -227,7 +227,7 @@ bool rfb_init(uint32_t w, uint32_t h) {
         .height = __builtin_bswap32(height),
         .fourcc = __builtin_bswap32(RGB_FORMAT_XRGB8888),
         .flags = __builtin_bswap32(0),
-        .stride = __builtin_bswap32(stride),
+        .stride = __builtin_bswap32(legacy_stride),
     };
 
     fw_cfg_dma_write(&fb, sizeof(fb), file.selector);

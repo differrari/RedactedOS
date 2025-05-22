@@ -33,6 +33,4 @@ private:
 
     bool scanout_found;
     uint64_t scanout_id;
-
-    uint32_t stride;
 };
