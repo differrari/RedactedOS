@@ -5,6 +5,7 @@
 #define line_height char_size + 2
 
 uint32_t stride = 0;
+uint32_t max_width, max_height;
 
 void fb_clear(uint32_t* fb, uint32_t width, uint32_t height, uint32_t color) {
     for (uint32_t i = 0; i < width * height; i++) {
@@ -13,6 +14,7 @@ void fb_clear(uint32_t* fb, uint32_t width, uint32_t height, uint32_t color) {
 }
 
 void fb_draw_pixel(uint32_t* fb, uint32_t x, uint32_t y, color color){
+    if (x > max_width || y > max_height) return;
     fb[y * (stride / 4) + x] = color;
 }
 
@@ -93,4 +95,9 @@ uint32_t fb_get_char_size(uint32_t scale){
 
 void fb_set_stride(uint32_t new_stride){
     stride = new_stride;
+}
+
+void fb_set_bounds(uint32_t width, uint32_t height){
+    max_width = width;
+    max_height = height;
 }

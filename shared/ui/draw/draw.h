@@ -15,6 +15,7 @@ gpu_size fb_draw_string(uint32_t* fb, kstring s, uint32_t x, uint32_t y, uint32_
 uint32_t fb_get_char_size(uint32_t scale);
 
 void fb_set_stride(uint32_t new_stride);
+void fb_set_bounds(uint32_t width, uint32_t height);
 
 #ifdef __cplusplus
 }

@@ -49,6 +49,8 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     framebuffer_size = screen_size.width * screen_size.height * BPP;
     framebuffer_size = (framebuffer_size);
     framebuffer = talloc(framebuffer_size);
+
+    fb_set_bounds(screen_size.width,screen_size.height);
     
     if (!create_2d_resource(screen_size)) return false;
     

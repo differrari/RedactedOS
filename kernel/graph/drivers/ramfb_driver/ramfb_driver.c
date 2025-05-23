@@ -154,6 +154,7 @@ bool rfb_init(uint32_t w, uint32_t h) {
     ramfb_stride = bpp * width;
 
     fb_set_stride(ramfb_stride);
+    fb_set_bounds(width,height);
     
     struct fw_cfg_file file;
     fw_find_file(kstring_l("etc/ramfb"), &file);
