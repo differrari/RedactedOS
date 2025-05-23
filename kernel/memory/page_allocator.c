@@ -37,21 +37,21 @@ void proc_map_4kb(uint64_t va, uint64_t pa) {
     uint64_t l4_index = (va >> 12) & 0x1FF;
 
     if (!(mem_table_l1[l1_index] & 1)) {
-        uint64_t* l2 = (uint64_t*)palloc(PAGE_SIZE);
+        uint64_t* l2 = (uint64_t*)talloc(PAGE_SIZE);
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l2[i] = 0;
         mem_table_l1[l1_index] = ((uint64_t)l2 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     }
 
     uint64_t* l2 = (uint64_t*)(mem_table_l1[l1_index] & 0xFFFFFFFFF000ULL);
     if (!(l2[l2_index] & 1)) {
-        uint64_t* l3 = (uint64_t*)palloc(PAGE_SIZE);
+        uint64_t* l3 = (uint64_t*)talloc(PAGE_SIZE);
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l3[i] = 0;
         l2[l2_index] = ((uint64_t)l3 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     }
 
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
     if (!(l3[l3_index] & 1)) {
-        uint64_t* l4 = (uint64_t*)palloc(PAGE_SIZE);
+        uint64_t* l4 = (uint64_t*)talloc(PAGE_SIZE);
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l4[i] = 0;
         l3[l3_index] = ((uint64_t)l4 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     }

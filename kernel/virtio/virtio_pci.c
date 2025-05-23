@@ -133,9 +133,9 @@ bool virtio_init_device(virtio_device *dev) {
     cfg->queue_select = 0;
     uint32_t size = cfg->queue_size;
 
-    uint64_t base = palloc(0x1000);
-    uint64_t avail = palloc(0x1000);
-    uint64_t used = palloc(0x1000);
+    uint64_t base = talloc(0x1000);
+    uint64_t avail = talloc(0x1000);
+    uint64_t used = talloc(0x1000);
 
     kprintfv("[VIRTIO] Device base %h",base);
     kprintfv("[VIRTIO] Device avail %h",avail);

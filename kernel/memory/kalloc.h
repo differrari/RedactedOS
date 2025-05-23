@@ -13,8 +13,6 @@ void enable_talloc_verbose();
 }
 #endif
 
-uint64_t palloc(uint64_t size);
-
 uint64_t mem_get_kmem_start();
 uint64_t mem_get_kmem_end();
 uint64_t get_total_ram();

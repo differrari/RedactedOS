@@ -45,7 +45,7 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     kprintfv("[MMU] Mapping 2mb memory %h at [%i][%i][%i] for EL1", va, l1_index,l2_index,l3_index);
 
     if (!(page_table_l1[l1_index] & 1)) {
-        uint64_t* l2 = (uint64_t*)palloc(PAGE_SIZE);
+        uint64_t* l2 = (uint64_t*)talloc(PAGE_SIZE);
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l2[i] = 0;
         page_table_l1[l1_index] = ((uint64_t)l2 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     }
@@ -53,7 +53,7 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     uint64_t* l2 = (uint64_t*)(page_table_l1[l1_index] & 0xFFFFFFFFF000ULL);
 
     if (!(l2[l2_index] & 1)) {
-        uint64_t* l3 = (uint64_t*)palloc(PAGE_SIZE);
+        uint64_t* l3 = (uint64_t*)talloc(PAGE_SIZE);
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l3[i] = 0;
         l2[l2_index] = ((uint64_t)l3 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     }
@@ -73,14 +73,14 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
     uint64_t l4_index = (va >> 12) & 0x1FF;
 
     if (!(page_table_l1[l1_index] & 1)) {
-        uint64_t* l2 = (uint64_t*)palloc(PAGE_SIZE);
+        uint64_t* l2 = (uint64_t*)talloc(PAGE_SIZE);
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l2[i] = 0;
         page_table_l1[l1_index] = ((uint64_t)l2 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     }
     
     uint64_t* l2 = (uint64_t*)(page_table_l1[l1_index] & 0xFFFFFFFFF000ULL);
     if (!(l2[l2_index] & 1)) {
-        uint64_t* l3 = (uint64_t*)palloc(PAGE_SIZE);
+        uint64_t* l3 = (uint64_t*)talloc(PAGE_SIZE);
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l3[i] = 0;
         l2[l2_index] = ((uint64_t)l3 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     }
@@ -88,7 +88,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
     uint64_t l3_val = l3[l3_index];
     if (!(l3_val & 1)) {
-        uint64_t* l4 = (uint64_t*)palloc(PAGE_SIZE);
+        uint64_t* l4 = (uint64_t*)talloc(PAGE_SIZE);
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l4[i] = 0;
         l3[l3_index] = ((uint64_t)l4 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     } else if ((l3_val & 0b11) == PD_BLOCK){

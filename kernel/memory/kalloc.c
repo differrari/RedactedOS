@@ -41,10 +41,7 @@ extern uint64_t shared_start;
 extern uint64_t shared_end;
 static bool talloc_verbose = false;
 
-#define temp_start (uint64_t)&heap_bottom + 0x800000
-
 uint64_t next_free_temp_memory = (uint64_t)&heap_bottom;
-uint64_t next_free_perm_memory = temp_start;
 
 uint64_t talloc(uint64_t size) {
 
@@ -73,8 +70,8 @@ uint64_t talloc(uint64_t size) {
         curr = &(*curr)->next;
     }
 
-    if (next_free_temp_memory + size > temp_start) {
-        panic_with_info("Temporary allocator overflow", next_free_temp_memory);
+    if (next_free_temp_memory + size > (uintptr_t)&heap_limit) {
+        panic_with_info("Kernel allocator overflow", next_free_temp_memory);
     }
 
     uint64_t result = next_free_temp_memory;
@@ -110,17 +107,6 @@ void temp_free(void* ptr, uint64_t size) {
 
 void enable_talloc_verbose(){
     talloc_verbose = true;
-}
-
-uint64_t palloc(uint64_t size) {
-    uint64_t aligned_size = (size + 0xFFF) & ~0xFFF;
-    next_free_perm_memory = (next_free_perm_memory + 0xFFF) & ~0xFFF;
-    if (next_free_perm_memory + aligned_size > (uint64_t)&heap_limit)
-        panic_with_info("Permanent allocator overflow", (uint64_t)&heap_limit);
-    uint64_t result = next_free_perm_memory;
-    next_free_perm_memory += aligned_size;
-    memset((void*)result, 0, size);
-    return result;
 }
 
 uint64_t mem_get_kmem_start(){

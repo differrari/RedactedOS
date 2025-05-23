@@ -117,16 +117,16 @@ bool find_disk(){
         return false;
     }
 
-    blk_cmd = palloc(4096);
-    blk_data = palloc(4096);
-    blk_status = palloc(1);
+    blk_cmd = talloc(4096);
+    blk_data = talloc(4096);
+    blk_status = talloc(1);
 
     return true;
 }
 
 void vblk_write(virtio_device *dev, const void *buffer, uint32_t sector, uint32_t count) {
-    uint64_t cmd = palloc(sizeof(struct virtio_blk_req));
-    uint64_t data = palloc(count * 512);
+    uint64_t cmd = talloc(sizeof(struct virtio_blk_req));
+    uint64_t data = talloc(count * 512);
 
     memcpy((void *)(uintptr_t)data, buffer, count * 512);
 

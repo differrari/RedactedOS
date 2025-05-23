@@ -536,7 +536,7 @@ bool xhci_setup_device(uint16_t port){
         return false;
     }
 
-    xhci_usb_device *device = (xhci_usb_device*)palloc(sizeof(xhci_usb_device));
+    xhci_usb_device *device = (xhci_usb_device*)talloc(sizeof(xhci_usb_device));
 
     device->slot_id = (global_device.event_ring[0].status >> 24) & 0xFF;
     kprintfv("[xHCI] Slot id %h", device->slot_id);
