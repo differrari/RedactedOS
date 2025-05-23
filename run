@@ -16,7 +16,7 @@ fi
 -cpu cortex-a72 \
 -m 512M \
 -kernel kernel.elf \
--device virtio-gpu-pci \
+-device ramfb \
 -display sdl \
 -serial mon:stdio \
 -drive file=disk.img,if=none,format=raw,id=hd0 \

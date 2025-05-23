@@ -395,3 +395,7 @@ void VirtioGPUDriver::draw_string(kstring s, uint32_t x, uint32_t y, uint32_t sc
 uint32_t VirtioGPUDriver::get_char_size(uint32_t scale){
     return fb_get_char_size(scale);
 }
+
+gpu_size VirtioGPUDriver::get_screen_size(){
+    return screen_size;
+}

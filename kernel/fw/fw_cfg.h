@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif 
+
 #include "types.h"
 #include "kstring.h"
 
@@ -13,3 +17,7 @@ struct fw_cfg_file {
 bool fw_find_file(kstring search, struct fw_cfg_file *file);
 void fw_cfg_dma_write(void* dest, uint32_t size, uint32_t ctrl);
 void fw_cfg_dma_read(void* dest, uint32_t size, uint32_t ctrl);
+
+#ifdef __cplusplus
+}
+#endif

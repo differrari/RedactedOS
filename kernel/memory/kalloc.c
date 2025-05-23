@@ -41,7 +41,7 @@ extern uint64_t shared_start;
 extern uint64_t shared_end;
 static bool talloc_verbose = false;
 
-#define temp_start (uint64_t)&heap_bottom + 0x500000
+#define temp_start (uint64_t)&heap_bottom + 0x800000
 
 uint64_t next_free_temp_memory = (uint64_t)&heap_bottom;
 uint64_t next_free_perm_memory = temp_start;

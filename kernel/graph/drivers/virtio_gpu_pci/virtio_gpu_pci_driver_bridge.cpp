@@ -36,7 +36,7 @@ uint32_t vgp_get_char_size(uint32_t scale){
 }
 
 gpu_size vgp_get_screen_size(){
-    return driver.screen_size;
+    return driver.get_screen_size();
 }
 
 void vgp_flush() {

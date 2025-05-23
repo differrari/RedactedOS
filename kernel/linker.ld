@@ -18,7 +18,7 @@ SECTIONS {
 
     . = ALIGN(4096);
     heap_bottom = .;
-    .heap_fill : { FILL(0); . = . + 0x1000000; }
+    .heap_fill : { FILL(0); . = . + 0x2000000; }
     heap_limit = .;
 
     .proc1 : ALIGN(8) {

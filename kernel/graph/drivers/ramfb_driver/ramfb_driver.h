@@ -1,6 +1,11 @@
 #pragma once 
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "types.h"
+#include "kstring.h"
 
 bool rfb_init(uint32_t width, uint32_t height);
 
@@ -13,3 +18,7 @@ void rfb_draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t 
 void rfb_draw_single_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color);
 void rfb_draw_string(kstring s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color);
 uint32_t  rfb_get_char_size(uint32_t scale);
+
+#ifdef __cplusplus
+}
+#endif
