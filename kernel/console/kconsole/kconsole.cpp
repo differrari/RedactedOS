@@ -14,18 +14,14 @@ bool KernelConsole::check_ready(){
     if (!gpu_ready()) return false;
     if (!is_initialized){
         is_initialized = true;
-        uart_puts("\n\nGPU READY\n\n");
         resize();
-        uart_puts("\n\nDONE RESIZE\n\n");
         clear();
     }
     return true;
 }
 
 void KernelConsole::resize() {
-    uart_puts("\n\nHUH?\n\n");
     gpu_size screen = gpu_get_screen_size();
-    uart_puts("\n\nScreen size w: ");
     uart_puthex(screen.width);
     columns = screen.width / char_width;
     rows = screen.height / char_height;
@@ -95,7 +91,6 @@ void KernelConsole::scroll() {
         buffer[(scroll_row_offset + rows - 1) % rows][x] = 0;
     }
 
-    uart_puts("SCROLL");
     redraw();
 }
 
@@ -114,7 +109,6 @@ void KernelConsole::screen_clear(){
 }
 
 void KernelConsole::clear() {
-    uart_puts("CLEARCONSOLE");
     screen_clear();
     for (unsigned int y = 0; y < rows; y++) {
         for (unsigned int x = 0; x < columns; x++) {
