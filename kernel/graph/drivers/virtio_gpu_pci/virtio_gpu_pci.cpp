@@ -376,6 +376,10 @@ void VirtioGPUDriver::draw_pixel(uint32_t x, uint32_t y, color color){
     fb_draw_pixel((uint32_t*)framebuffer, x, y, color);
 }
 
+void VirtioGPUDriver::draw_single_pixel(uint32_t x, uint32_t y, color color){
+    draw_pixel(x,y,color);
+}
+
 void VirtioGPUDriver::fill_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
     fb_fill_rect((uint32_t*)framebuffer, x, y, width, height, color);
 }
@@ -386,6 +390,10 @@ void VirtioGPUDriver::draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t 
 
 void VirtioGPUDriver::draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
     fb_draw_char((uint32_t*)framebuffer, x, y, c, scale, color);
+}
+
+void VirtioGPUDriver::draw_single_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
+    draw_char(x, y, c, scale, color);
 }
 
 void VirtioGPUDriver::draw_string(kstring s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color){
