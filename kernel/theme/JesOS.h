@@ -2,20 +2,25 @@
 
 #define BOOTSCREEN_NUM_SYMBOLS 12
 #define BOOTSCREEN_NUM_STEPS 12
+#define BOOTSCREEN_NUM_LINES 1
+
+#define BOOTSCREEN_REPEAT 1
+
+#define BOOTSCREEN_DIV 15
 
 #define BOOTSCREEN_OFFSETS {\
-    {-2,1},\
+    {-3,1},\
     {-1,1},\
-    {-1,2},\
-    {1,2},\
+    {-1,5},\
+    {1,5},\
     {1,1},\
-    {2,1},\
-    {2,-1},\
+    {3,1},\
+    {3,-1},\
     {1,-1},\
-    {1,-2},\
-    {-1,-2},\
+    {1,-5},\
+    {-1,-5},\
     {-1,-1},\
-    {-2,-1},\
+    {-3,-1},\
 }
 
 #define BOOTSCREEN_ASYMM (gpu_point){0,50}

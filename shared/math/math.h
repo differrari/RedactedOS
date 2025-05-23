@@ -17,7 +17,7 @@ static inline int abs(int n){
 }
 
 static inline int sign(int x) {
-    return (x > 0) - (x < 0);
+    return x < 0 ? -1 : 1;
 }
 
 static inline int lerp(int i, int start, int end, int steps) {
