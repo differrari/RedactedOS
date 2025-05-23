@@ -24,7 +24,7 @@ void fb_fill_rect(uint32_t* fb, uint32_t x, uint32_t y, uint32_t width, uint32_t
     }
 }
 
-void fb_draw_line(uint32_t* fb, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, color color){
+gpu_rect fb_draw_line(uint32_t* fb, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, color color){
     int dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
     int sx = (x0 < x1) ? 1 : -1;
     int dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
@@ -43,6 +43,8 @@ void fb_draw_line(uint32_t* fb, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t 
     int min_y = (y0 < y1) ? y0 : y1;
     int max_x = (x0 > x1) ? x0 : x1;
     int max_y = (y0 > y1) ? y0 : y1;
+
+    return (gpu_rect){min_x, min_y, max_x - min_x + 1, max_y - min_y + 1};
 }
 
 void fb_draw_char(uint32_t* fb, uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
@@ -57,7 +59,7 @@ void fb_draw_char(uint32_t* fb, uint32_t x, uint32_t y, char c, uint32_t scale, 
     }
 }
 
-void fb_draw_string(uint32_t* fb, kstring s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
+gpu_size fb_draw_string(uint32_t* fb, kstring s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
     int char_size = fb_get_char_size(scale);
     int str_length = s.length;
     
@@ -81,6 +83,8 @@ void fb_draw_string(uint32_t* fb, kstring s, uint32_t x0, uint32_t y0, uint32_t 
     }
     if (xRowSize > xSize)
         xSize = xRowSize;
+
+    return (gpu_size){xSize,ySize};
 }
 
 uint32_t fb_get_char_size(uint32_t scale){

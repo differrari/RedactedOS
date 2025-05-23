@@ -6,6 +6,7 @@
 #include "memory/memory_access.h"
 #include "graph/font8x8_basic.h"
 #include "ui/graphic_types.h"
+#include "ui/draw/draw.h"
 
 #define RGB_FORMAT_XRGB8888 ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
 
@@ -24,7 +25,7 @@ uint64_t bfb_ptr;
 uint32_t width;
 uint32_t height;
 uint32_t bpp;
-uint32_t legacy_stride;
+uint32_t ramfb_stride;
 
 #define MAX_DIRTY_RECTS 64
 gpu_rect dirty_rects[MAX_DIRTY_RECTS];
@@ -64,22 +65,16 @@ void mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     if (dirty_count < MAX_DIRTY_RECTS)
         dirty_rects[dirty_count++] = new_rect;
     else
-        full_redraw = true; // optional: fallback to full redraw
+        full_redraw = true;
 }
 
 void rfb_clear(uint32_t color){
-    volatile uint32_t* fb = (volatile uint32_t*)bfb_ptr;
-    uint32_t pixels = width * height;
-    for (uint32_t i = 0; i < pixels; i++) {
-        fb[i] = color;
-    }
+    fb_clear((uint32_t*)bfb_ptr, width, height, color);
     mark_dirty(0,0,width,height);
 }
 
 void rfb_draw_pixel(uint32_t x, uint32_t y, uint32_t color) {
-    if (x >= width || y >= height) return;
-    volatile uint32_t* fb = (volatile uint32_t*)bfb_ptr;
-    fb[y * (legacy_stride / 4) + x] = color;
+    fb_draw_pixel((uint32_t*)bfb_ptr, x, y, color);
 }
 
 void rfb_draw_single_pixel(uint32_t x, uint32_t y, uint32_t color) {
@@ -88,47 +83,17 @@ void rfb_draw_single_pixel(uint32_t x, uint32_t y, uint32_t color) {
 }
 
 void rfb_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color) {
-    for (uint32_t dy = 0; dy < h; dy++) {
-        for (uint32_t dx = 0; dx < w; dx++) {
-            rfb_draw_pixel(x + dx, y + dy, color);
-        }
-    }
+    fb_fill_rect((uint32_t*)bfb_ptr, x, y, w, h, color);
     mark_dirty(x,y,w,h);
 }
 
 void rfb_draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t color) {
-    int dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
-    int sx = (x0 < x1) ? 1 : -1;
-    int dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
-    int sy = (y0 < y1) ? 1 : -1;
-    int err = (dx > dy ? dx : -dy) / 2, e2;
-
-    for (;;) {
-        rfb_draw_pixel(x0, y0, color);
-        if (x0 == x1 && y0 == y1) break;
-        e2 = err;
-        if (e2 > -dx) { err -= dy; x0 += sx; }
-        if (e2 < dy) { err += dx; y0 += sy; }
-    }
-
-    int min_x = (x0 < x1) ? x0 : x1;
-    int min_y = (y0 < y1) ? y0 : y1;
-    int max_x = (x0 > x1) ? x0 : x1;
-    int max_y = (y0 > y1) ? y0 : y1;
-
-    mark_dirty(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
+    gpu_rect rect = fb_draw_line((uint32_t*)bfb_ptr, x0, y0, x1, y1, color);
+    mark_dirty(rect.point.x,rect.point.y,rect.size.width,rect.size.height);
 }
 
 void rfb_draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color) {
-    const uint8_t* glyph = font8x8_basic[(uint8_t)c];
-    for (uint32_t row = 0; row < (8 * scale); row++) {
-        uint8_t bits = glyph[row/scale];
-        for (uint32_t col = 0; col < (8 * scale); col++) {
-            if (bits & (1 << (7 - (col / scale)))) {
-                rfb_draw_pixel(x + col, y + row, color);
-            }
-        }
-    }
+    fb_draw_char((uint32_t*)bfb_ptr, x, y, c, scale, color);
 }
 
 void rfb_draw_single_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color) {
@@ -137,36 +102,14 @@ void rfb_draw_single_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32
 }
 
 uint32_t rfb_get_char_size(uint32_t scale){
-    return 8 * scale;
+    return fb_get_char_size(scale);
 }
 
 #define line_height char_size + 2
 
 void rfb_draw_string(kstring s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
-    int char_size = rfb_get_char_size(scale);
-    int str_length = s.length;
-    
-    uint32_t xoff = 0;
-    uint32_t xSize = 0;
-    uint32_t xRowSize = 0;
-    uint32_t ySize = line_height;
-    for (int i = 0; i < str_length; i++){    
-        char c = s.data[i];
-        if (c == '\n'){
-            y0 += line_height; 
-            ySize += line_height;
-            if (xRowSize > xSize)
-                xSize = xRowSize;
-            xoff = 0;
-        } else {
-            rfb_draw_char(x0 + (xoff * char_size),y0,c,scale, color);
-            xoff++;
-            xRowSize += char_size;
-        }
-    }
-    if (xRowSize > xSize)
-        xSize = xRowSize;
-    mark_dirty(x0,y0,xSize,ySize);
+    gpu_size drawn_string = fb_draw_string((uint32_t*)bfb_ptr, s, x0, y0, scale, color);
+    mark_dirty(x0,y0,drawn_string.width,drawn_string.height);
 }
 
 void rfb_flush() {
@@ -187,8 +130,8 @@ void rfb_flush() {
             uint32_t dest_y = r.point.y + y;
             if (dest_y >= height) break;
             
-            uint32_t* dst = (uint32_t*)&fb[dest_y * (legacy_stride / 4) + r.point.x];
-            uint32_t* src = (uint32_t*)&bfb[dest_y * (legacy_stride / 4) + r.point.x];
+            uint32_t* dst = (uint32_t*)&fb[dest_y * (ramfb_stride / 4) + r.point.x];
+            uint32_t* src = (uint32_t*)&bfb[dest_y * (ramfb_stride / 4) + r.point.x];
             
             uint32_t copy_width = r.size.width;
             if (r.point.x + copy_width > width)
@@ -208,7 +151,9 @@ bool rfb_init(uint32_t w, uint32_t h) {
     height = h;
 
     bpp = 4;
-    legacy_stride = bpp * width;
+    ramfb_stride = bpp * width;
+
+    fb_set_stride(ramfb_stride);
     
     struct fw_cfg_file file;
     fw_find_file(kstring_l("etc/ramfb"), &file);
@@ -227,7 +172,7 @@ bool rfb_init(uint32_t w, uint32_t h) {
         .height = __builtin_bswap32(height),
         .fourcc = __builtin_bswap32(RGB_FORMAT_XRGB8888),
         .flags = __builtin_bswap32(0),
-        .stride = __builtin_bswap32(legacy_stride),
+        .stride = __builtin_bswap32(ramfb_stride),
     };
 
     fw_cfg_dma_write(&fb, sizeof(fb), file.selector);
