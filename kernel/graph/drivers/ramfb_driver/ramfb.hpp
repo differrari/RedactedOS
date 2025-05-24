@@ -3,7 +3,7 @@
 #include "kstring.h"
 #include "../gpu_driver.hpp"
 
-#define MAX_DIRTY_RECTS 64
+#define MAX_DIRTY_RECTS_RFB 64
 
 class RamFBGPUDriver : public GPUDriver {
 public:
@@ -31,7 +31,7 @@ private:
     uintptr_t back_framebuffer;
     uint64_t framebuffer_size;
     gpu_size screen_size;
-    gpu_rect dirty_rects[MAX_DIRTY_RECTS];
+    gpu_rect dirty_rects[MAX_DIRTY_RECTS_RFB];
     uint32_t dirty_count = 0;
     bool full_redraw = false;
     int try_merge(gpu_rect* a, gpu_rect* b);

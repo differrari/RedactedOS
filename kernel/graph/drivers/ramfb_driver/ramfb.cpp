@@ -112,10 +112,12 @@ void RamFBGPUDriver::draw_single_pixel(uint32_t x, uint32_t y, color color){
 
 void RamFBGPUDriver::fill_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
     fb_fill_rect((uint32_t*)back_framebuffer, x, y, width, height, color);
+    mark_dirty(x,y,width,height);
 }
 
 void RamFBGPUDriver::draw_line(uint32_t x0, uint32_t y0, uint32_t x1,uint32_t y1, color color){
-    fb_draw_line((uint32_t*)back_framebuffer, x0, y0, x1, y1, color);
+    gpu_rect rect = fb_draw_line((uint32_t*)framebuffer, x0, y0, x1, y1, color);
+    mark_dirty(rect.point.x,rect.point.y,rect.size.width,rect.size.height);
 }
 
 void RamFBGPUDriver::draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
@@ -170,7 +172,7 @@ void RamFBGPUDriver::mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) 
             return;
     }
 
-    if (dirty_count < MAX_DIRTY_RECTS)
+    if (dirty_count < MAX_DIRTY_RECTS_RFB)
         dirty_rects[dirty_count++] = new_rect;
     else
         full_redraw = true;

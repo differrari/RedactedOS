@@ -4,6 +4,8 @@
 #include "virtio/virtio_pci.h"
 #include "../gpu_driver.hpp"
 
+#define MAX_DIRTY_RECTS_VGP 64
+
 class VirtioGPUDriver : public GPUDriver {
 public:
     static VirtioGPUDriver* try_init(gpu_size preferred_screen_size);
@@ -34,7 +36,13 @@ private:
     bool create_2d_resource(gpu_size size);
     bool attach_backing();
     bool set_scanout();
-    bool transfer_to_host();
+    bool transfer_to_host(gpu_rect rect);
+
+    gpu_rect dirty_rects[MAX_DIRTY_RECTS_VGP];
+    uint32_t dirty_count = 0;
+    bool full_redraw = false;
+    int try_merge(gpu_rect* a, gpu_rect* b);
+    void mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 
     bool scanout_found;
     uint64_t scanout_id;
