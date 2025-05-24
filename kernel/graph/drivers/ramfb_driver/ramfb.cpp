@@ -103,10 +103,6 @@ void RamFBGPUDriver::clear(color color){
 
 void RamFBGPUDriver::draw_pixel(uint32_t x, uint32_t y, color color){
     fb_draw_pixel((uint32_t*)back_framebuffer, x, y, color);
-}
-
-void RamFBGPUDriver::draw_single_pixel(uint32_t x, uint32_t y, color color){
-    RamFBGPUDriver::draw_pixel(x,y,color);
     mark_dirty(x,y,1,1);
 }
 
@@ -122,10 +118,6 @@ void RamFBGPUDriver::draw_line(uint32_t x0, uint32_t y0, uint32_t x1,uint32_t y1
 
 void RamFBGPUDriver::draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
     fb_draw_char((uint32_t*)back_framebuffer, x, y, c, scale, color);
-}
-
-void RamFBGPUDriver::draw_single_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
-    RamFBGPUDriver::draw_char(x, y, c, scale, color);
     mark_dirty(x,y,8*scale,8*scale);
 }
 

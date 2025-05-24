@@ -16,11 +16,9 @@ public:
 
     void clear(color color) override;
     void draw_pixel(uint32_t x, uint32_t y, color color) override;
-    void draw_single_pixel(uint32_t x, uint32_t y, color color) override;
     void fill_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color) override;
     void draw_line(uint32_t x0, uint32_t y0, uint32_t x1,uint32_t y1, color color) override;
     void draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color) override;
-    void draw_single_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color) override;
     gpu_size get_screen_size() override;
     void draw_string(kstring s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color) override;
     uint32_t get_char_size(uint32_t scale) override;

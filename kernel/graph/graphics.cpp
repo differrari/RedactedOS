@@ -40,7 +40,7 @@ void gpu_clear(color color){
 void gpu_draw_pixel(gpu_point p, color color){
     if (!gpu_ready())
         return;
-    gpu_driver->draw_single_pixel(p.x,p.y,color);
+    gpu_driver->draw_pixel(p.x,p.y,color);
 }
 
 void gpu_fill_rect(gpu_rect r, color color){
@@ -57,7 +57,7 @@ void gpu_draw_line(gpu_point p0, gpu_point p1, uint32_t color){
 void gpu_draw_char(gpu_point p, char c, uint32_t scale, uint32_t color){
     if (!gpu_ready())
         return;
-    gpu_driver->draw_single_char(p.x,p.y,c,scale,color);
+    gpu_driver->draw_char(p.x,p.y,c,scale,color);
 }
 
 void gpu_draw_string(kstring s, gpu_point p, uint32_t scale, uint32_t color){
