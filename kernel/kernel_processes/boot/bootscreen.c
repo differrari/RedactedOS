@@ -90,7 +90,7 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
                 stop_current_process();
             }
         gpu_flush();
-        sleep(3);
+        // sleep(0);
     }
 }
 
@@ -108,8 +108,8 @@ void bootscreen(){
         for (int i = 0; i < BOOTSCREEN_NUM_STEPS; i++){
             gpu_point offset = offsets[i];
             gpu_point next_point = boot_calc_point(offset,screen_size,screen_middle);
-            boot_draw_lines(current_point, next_point, screen_size, BOOTSCREEN_REPEAT, 5);
             boot_draw_name(screen_middle, 0, BOOTSCREEN_PADDING + screen_size.height/BOOTSCREEN_UPPER_Y_DIV + 10);
+            boot_draw_lines(current_point, next_point, screen_size, BOOTSCREEN_REPEAT, 5);
             current_point = next_point;
         }
         sleep(1000);
