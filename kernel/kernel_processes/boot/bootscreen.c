@@ -20,10 +20,10 @@ void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
     kstring s = kstring_l(name);
     int scale = 2;
     uint32_t char_size = gpu_get_char_size(scale);
-    int mid_offset = ((s.length/2) * char_size)/BOOTSCREEN_NUM_LINES;
+    int mid_offset = ((s.length/BOOTSCREEN_NUM_LINES) * char_size)/2;
     int xo = screen_middle.x - mid_offset + xoffset;
     int yo = screen_middle.y + yoffset;
-    gpu_fill_rect((gpu_rect){xo,yo, char_size * s.length, char_size},BG_COLOR);
+    gpu_fill_rect((gpu_rect){xo,yo, char_size * (s.length/BOOTSCREEN_NUM_LINES), char_size * BOOTSCREEN_NUM_LINES},BG_COLOR);
     gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFF);
     temp_free(s.data,s.length);
 }
