@@ -97,7 +97,7 @@ void RamFBGPUDriver::draw_pixel(uint32_t x, uint32_t y, color color){
 }
 
 void RamFBGPUDriver::draw_single_pixel(uint32_t x, uint32_t y, color color){
-    draw_pixel(x,y,color);
+    RamFBGPUDriver::draw_pixel(x,y,color);
     mark_dirty(x,y,1,1);
 }
 
@@ -114,7 +114,7 @@ void RamFBGPUDriver::draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, u
 }
 
 void RamFBGPUDriver::draw_single_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
-    draw_char(x, y, c, scale, color);
+    RamFBGPUDriver::draw_char(x, y, c, scale, color);
     mark_dirty(x,y,8*scale,8*scale);
 }
 

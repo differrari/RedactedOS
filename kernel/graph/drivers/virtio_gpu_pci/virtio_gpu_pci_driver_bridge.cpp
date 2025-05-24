@@ -15,6 +15,10 @@ void vgp_draw_pixel(uint32_t x, uint32_t y, uint32_t color){
     driver.draw_pixel(x,y,color);
 }
 
+void vgp_draw_single_pixel(uint32_t x, uint32_t y, uint32_t color){
+    driver.draw_single_pixel(x,y,color);
+}
+
 void vgp_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color){
     driver.fill_rect(x,y,w,h,color);
 }
@@ -25,6 +29,10 @@ void vgp_draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t 
 
 void vgp_draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
     driver.draw_char(x,y,c,scale, color);
+}
+
+void vgp_draw_single_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
+    driver.draw_single_char(x,y,c,scale, color);
 }
 
 void vgp_draw_string(kstring s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color){

@@ -5,7 +5,7 @@ ARGS="$@"
 osascript <<EOF
 tell application "Terminal"
     do script "cd \"$PWD\"; ./run debug"
-    delay 1
+    delay 3
     do script "cd \"$PWD\"; ./debug $ARGS"
 end tell
 EOF

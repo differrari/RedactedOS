@@ -82,10 +82,15 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
                     lerp(i, ccurrent.y, cnext.y, csteps)
                 };
                 gpu_draw_pixel(interpolated, 0xFFFFFF);
-                gpu_flush();
             }
         }
-        sleep(1);
+        keypress kp;
+        if (sys_read_input_current(&kp))
+            if (kp.keys[0] != 0){
+                stop_current_process();
+            }
+        gpu_flush();
+        sleep(3);
     }
 }
 
@@ -104,11 +109,6 @@ void bootscreen(){
             gpu_point offset = offsets[i];
             gpu_point next_point = boot_calc_point(offset,screen_size,screen_middle);
             boot_draw_lines(current_point, next_point, screen_size, BOOTSCREEN_REPEAT, 5);
-            keypress kp;
-            if (sys_read_input_current(&kp))
-                if (kp.keys[0] != 0){
-                    stop_current_process();
-                }
             boot_draw_name(screen_middle, 0, BOOTSCREEN_PADDING + screen_size.height/BOOTSCREEN_UPPER_Y_DIV + 10);
             current_point = next_point;
         }

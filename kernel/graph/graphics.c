@@ -62,7 +62,7 @@ void gpu_draw_pixel(gpu_point p, color color){
         return;
     switch (chosen_GPU) {
         case VIRTIO_GPU_PCI:
-            vgp_draw_pixel(p.x,p.y,color);
+            vgp_draw_single_pixel(p.x,p.y,color);
         break;
         case RAMFB:
             rfb_draw_single_pixel(p.x,p.y,color);
@@ -106,7 +106,7 @@ void gpu_draw_char(gpu_point p, char c, uint32_t scale, uint32_t color){
         return;
     switch (chosen_GPU) {
         case VIRTIO_GPU_PCI:
-            vgp_draw_char(p.x,p.y,c,scale,color);
+            vgp_draw_single_char(p.x,p.y,c,scale,color);
         break;
         case RAMFB:
             rfb_draw_single_char(p.x,p.y,c,scale,color);
