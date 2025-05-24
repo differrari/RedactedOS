@@ -4,6 +4,7 @@
 #include "console/kio.h"
 #include "graph/font8x8_bridge.h"
 #include "ui/draw/draw.h"
+#include "std/std.hpp"
 
 #define VIRTIO_GPU_CMD_GET_DISPLAY_INFO        0x0100
 #define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D      0x0101
@@ -15,6 +16,14 @@
 #define GPU_RESOURCE_ID 1
 
 #define BPP 4
+
+VirtioGPUDriver* VirtioGPUDriver::try_init(gpu_size preferred_screen_size){
+    VirtioGPUDriver* driver = new VirtioGPUDriver();
+    if (driver->init(preferred_screen_size))
+        return driver;
+    delete driver;
+    return nullptr;
+}
 
 bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     

@@ -29,26 +29,21 @@ void kernel_main() {
     set_exception_vectors();
     kprintf("Exception vectors set");
 
+    page_allocator_init();
     kprintf("Initializing kernel...");
     
-    gpu_size screen_size = {1080,720};
-    
     kprintf("Preparing for draw");
-    
-    gpu_init(screen_size);
-    
-    kprintf("GPU initialized");
+    gpu_size screen_size = {1080,720};
     
     irq_init();
     kprintf("Interrupts initialized");
 
     enable_interrupt();
-
-    // page_alloc_enable_verbose();
-
-    kprintf("There's %i memory for user processes",get_total_user_ram());
-    page_allocator_init();
+    gpu_init(screen_size);
     
+    kprintf("GPU initialized");
+    
+
     // xhci_enable_verbose();
     if (!xhci_input_init()){
         panic("Input initialization failure");

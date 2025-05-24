@@ -14,8 +14,9 @@
 void sync_el0_handler_c(){
     save_context_registers();
     save_return_address_interrupt();
-
-    asm volatile ("mov sp, %0" :: "r"(ksp));
+    
+    if (ksp > 0)
+        asm volatile ("mov sp, %0" :: "r"(ksp));
     uint64_t x0;
     asm volatile ("mov %0, x15" : "=r"(x0));
     uint64_t x1;
@@ -51,7 +52,14 @@ void sync_el0_handler_c(){
         switch (iss)
         {
         case 0:
-            result = (uintptr_t)allocate_in_page((void*)get_current_heap(), x0, ALIGN_16B, get_current_privilege(), false);
+            void* page_ptr = (void*)get_current_heap();
+            if ((uintptr_t)page_ptr == 0x0){
+                if (currentEL == 1)
+                    page_ptr = alloc_page(0x1000,true,false,false);
+                else 
+                    handle_exception_with_info("Wrong process heap state", iss);
+            }
+            result = (uintptr_t)allocate_in_page(page_ptr, x0, ALIGN_16B, get_current_privilege(), false);
             break;
         case 1:
             free_from_page((void*)x0, x1);

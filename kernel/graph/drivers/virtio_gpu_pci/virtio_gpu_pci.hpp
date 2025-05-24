@@ -6,6 +6,7 @@
 
 class VirtioGPUDriver : public GPUDriver {
 public:
+    static VirtioGPUDriver* try_init(gpu_size preferred_screen_size);
     VirtioGPUDriver(){}
     bool init(gpu_size preferred_screen_size) override;
 

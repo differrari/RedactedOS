@@ -5,6 +5,7 @@
 #include "graph/font8x8_bridge.h"
 #include "ui/draw/draw.h"
 #include "memory/memory_access.h"
+#include "std/std.hpp"
 
 typedef struct {
     uint64_t addr;
@@ -18,6 +19,14 @@ typedef struct {
 #define RGB_FORMAT_XRGB8888 ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
 
 #define bpp 4
+
+RamFBGPUDriver* RamFBGPUDriver::try_init(gpu_size preferred_screen_size){
+    RamFBGPUDriver* driver = new RamFBGPUDriver();
+    if (driver->init(preferred_screen_size))
+        return driver;
+    delete driver;
+    return nullptr;
+}
 
 bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
     screen_size = preferred_screen_size;

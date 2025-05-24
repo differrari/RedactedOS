@@ -7,6 +7,7 @@
 
 class RamFBGPUDriver : public GPUDriver {
 public:
+    static RamFBGPUDriver* try_init(gpu_size preferred_screen_size);
     RamFBGPUDriver(){}
     bool init(gpu_size preferred_screen_size) override;
 

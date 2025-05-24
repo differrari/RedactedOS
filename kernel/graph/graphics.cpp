@@ -1,0 +1,79 @@
+#include "graphics.h"
+#include "console/kio.h"
+
+#include "drivers/virtio_gpu_pci/virtio_gpu_pci.hpp"
+#include "drivers/ramfb_driver/ramfb.hpp"
+
+#include "std/std.hpp"
+
+static gpu_size screen_size;
+static bool _gpu_ready;
+
+GPUDriver *gpu_driver;
+
+void gpu_init(gpu_size preferred_screen_size){
+    if (VirtioGPUDriver *vgd = VirtioGPUDriver::try_init(preferred_screen_size)){
+        gpu_driver = vgd;
+    } else if (RamFBGPUDriver *rfb = RamFBGPUDriver::try_init(preferred_screen_size)){
+        gpu_driver = rfb;
+    }
+    screen_size = preferred_screen_size;
+    _gpu_ready = true;
+    kprintf("Selected and initialized GPU %h", (uintptr_t)gpu_driver);
+}
+
+bool gpu_ready(){
+    return gpu_driver != nullptr && _gpu_ready;
+}
+
+void gpu_flush(){
+    if (!gpu_ready())
+        return;
+    gpu_driver->flush();
+}
+void gpu_clear(color color){
+    if (!gpu_ready())
+        return;
+    gpu_driver->clear(color);
+}
+
+void gpu_draw_pixel(gpu_point p, color color){
+    if (!gpu_ready())
+        return;
+    gpu_driver->draw_single_pixel(p.x,p.y,color);
+}
+
+void gpu_fill_rect(gpu_rect r, color color){
+    if (!gpu_ready())
+        return;
+   gpu_driver->fill_rect(r.point.x,r.point.y,r.size.width,r.size.height,color);
+}
+
+void gpu_draw_line(gpu_point p0, gpu_point p1, uint32_t color){
+    if (!gpu_ready())
+        return;
+    gpu_driver->draw_line(p0.x,p0.y,p1.x,p1.y,color);
+}
+void gpu_draw_char(gpu_point p, char c, uint32_t scale, uint32_t color){
+    if (!gpu_ready())
+        return;
+    gpu_driver->draw_single_char(p.x,p.y,c,scale,color);
+}
+
+void gpu_draw_string(kstring s, gpu_point p, uint32_t scale, uint32_t color){
+    if (!gpu_ready())
+        return;
+    gpu_driver->draw_string(s, p.x, p.y, scale, color);
+}
+
+uint32_t gpu_get_char_size(uint32_t scale){
+    if (!gpu_ready())
+        return 0;
+    return gpu_driver->get_char_size(scale);
+}
+
+gpu_size gpu_get_screen_size(){
+    if (!gpu_ready())
+        return (gpu_size){0,0};
+    return gpu_driver->get_screen_size();
+}
