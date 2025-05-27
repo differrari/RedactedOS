@@ -27,6 +27,7 @@ void Desktop::draw_desktop(){
     if (!await_gpu()) return;
     if (active_proc != nullptr && active_proc->state != process_t::process_state::STOPPED) return;
     if (process_active){
+        active_proc = nullptr;
         sys_focus_current();
         rendered_full = false;
     }
@@ -37,7 +38,7 @@ void Desktop::draw_desktop(){
             char key = kp.keys[i];
             if (kp.keys[i] == KEY_ENTER){
                 activate_current();
-                break;
+                return;
             }
             if (kp.keys[i] == KEY_ARROW_RIGHT){
                 selected.x = (selected.x + 1) % MAX_COLS;
