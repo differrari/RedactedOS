@@ -453,7 +453,6 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             switch (interface->bInterfaceProtocol)
             {
             case 0x1:
-                set_default_kbd(device);
                 device->type = KEYBOARD;
                 break;
             
@@ -518,8 +517,10 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
 
     xhci_sync_events();//TODO: This is hacky af, we should have await use irqs entirely and we won't need to await anything anymore
 
-    if (device->type == KEYBOARD)
+    if (device->type == KEYBOARD){
+        xhci_configure_keyboard(device);
         xhci_kbd_request_data();
+    }
 
     return true;
     

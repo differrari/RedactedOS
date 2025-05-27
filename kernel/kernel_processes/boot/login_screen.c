@@ -78,7 +78,7 @@ void login_screen(){
                             break;
                     }
                     key = hid_keycode_to_char[key];//Translate readables
-                    if (key != 0 && len < 256 && !keypress_contains(&old_kp,kp.keys[i], kp.modifier) || identical_keypress(&old_kp, &kp)){
+                    if (key != 0 && len < 256 && !keypress_contains(&old_kp,kp.keys[i], kp.modifier) || !is_new_keypress(&old_kp, &kp)){
                         buf[len] = key;
                         kprintf("%c",key);
                         len++;

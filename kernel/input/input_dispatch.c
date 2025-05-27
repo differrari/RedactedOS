@@ -20,7 +20,7 @@ void register_keypress(keypress kp) {
 
     if (!secure_mode){
         for (int i = 0; i < shortcut_count; i++){
-            if (shortcuts[i].pid != -1 && identical_keypress(&shortcuts[i].kp, &kp)){
+            if (shortcuts[i].pid != -1 && !is_new_keypress(&shortcuts[i].kp, &kp)){
                 shortcuts[i].triggered = true;
                 return;
             }
@@ -78,8 +78,13 @@ bool sys_read_input_current(keypress *out){
     return sys_read_input(get_current_proc_pid(), out);
 }
 
-bool identical_keypress(keypress* current, keypress* previous){
-    return !is_new_keypress(current,previous);
+bool is_new_keypress(keypress* current, keypress* previous) {
+    if (current->modifier != previous->modifier) return true;
+
+    for (int i = 0; i < 6; i++)
+        if (current->keys[i] != previous->keys[i]) return true;
+
+    return false;
 }
 
 bool sys_read_input(int pid, keypress *out){

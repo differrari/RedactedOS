@@ -19,10 +19,10 @@ void sys_set_secure(bool secure);
 bool sys_read_input(int pid, keypress *out);
 bool sys_read_input_current(keypress *out);
 
-bool identical_keypress(keypress* current, keypress* previous);
-
 bool sys_shortcut_triggered_current(uint16_t sid);
 bool sys_shortcut_triggered(uint16_t pid, uint16_t sid);
+
+bool is_new_keypress(keypress* current, keypress* previous);
 
 #ifdef __cplusplus
 }
