@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif 
+
 #include "types.h"
 
 #define TRB_TYPE_NORMAL      1
@@ -364,3 +368,7 @@ typedef struct {
 #define USB_DEVICE_DESCRIPTOR 1
 #define USB_CONFIGURATION_DESCRIPTOR 2
 #define USB_STRING_DESCRIPTOR 3
+
+#ifdef __cplusplus
+}
+#endif 

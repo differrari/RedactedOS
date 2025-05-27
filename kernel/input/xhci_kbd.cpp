@@ -3,6 +3,8 @@
 #include "console/kio.h"
 #include "input_dispatch.h"
 #include "memory/page_allocator.h"
+#include "xHCIManager.hpp"
+#include "xHCIKeyboard.hpp"
 
 xhci_usb_device* default_device;
 
@@ -78,4 +80,11 @@ keypress xhci_read_key() {
     register_keypress(kp);
 
     return kp;
+}
+
+xHCIManager xhci_manager;
+
+void xhci_configure_keyboard(xhci_usb_device *device){
+    xhci_manager.default_device = new xHCIKeyboard();
+    xhci_manager.default_device->device = device;
 }

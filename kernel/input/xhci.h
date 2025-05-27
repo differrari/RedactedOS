@@ -1,5 +1,8 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif 
 #include "types.h"
 #include "xhci_types.h"
 
@@ -12,3 +15,7 @@ bool xhci_await_response(uint64_t command, uint32_t type);
 
 void xhci_sync_events();
 void xhci_handle_interrupt();
+
+#ifdef __cplusplus
+}
+#endif 

@@ -3,11 +3,10 @@
 #include "xhci_kbd.h"
 #include "input_keycodes.h"
 
-void register_keypress(keypress kp);
-
 #ifdef __cplusplus
 extern "C" {
 #endif 
+void register_keypress(keypress kp);
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp);
 uint16_t sys_subscribe_shortcut_current(keypress kp);
 void sys_set_focus(int pid);
