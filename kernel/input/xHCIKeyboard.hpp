@@ -6,8 +6,8 @@
 
 class xHCIKeyboard: public xHCIDevice {
 public:
-    void request_data() override;
-    void process_data() override;
+    void request_data(uint8_t endpoint_id) override;
+    void process_data(uint8_t endpoint_id) override;
 private:
     trb* latest_ring;
     bool requesting = false;

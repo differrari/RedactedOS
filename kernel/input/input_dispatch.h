@@ -1,6 +1,6 @@
 #pragma once
 
-#include "xhci_kbd.h"
+#include "xhci_bridge.h"
 #include "input_keycodes.h"
 
 #ifdef __cplusplus

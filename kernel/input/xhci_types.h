@@ -20,6 +20,8 @@ extern "C" {
 #define MAX_ERST_AMOUNT 1
 
 #define TRB_TYPE_MASK 0xFC00
+#define TRB_ENDPOINT_MASK 0xF0000
+#define TRB_SLOT_MASK 0xF000000
 
 #define TRB_TYPE_TRANSFER           0x20
 #define TRB_TYPE_COMMAND_COMPLETION 0x21

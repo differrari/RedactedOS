@@ -13,7 +13,7 @@
 #include "default_process.h"
 #include "filesystem/disk.h"
 #include "kernel_processes/boot/bootprocess.h"
-#include "input/xhci_kbd.h"
+#include "input/xhci_bridge.h"
 #include "input/xhci.h"
 #include "kernel_processes/monitor/monitor_processes.h"
 #include "process_loader.h"
@@ -43,6 +43,7 @@ void kernel_main() {
     
     kprintf("GPU initialized");
     
+    // page_alloc_enable_verbose();
     // xhci_enable_verbose();
     if (!xhci_input_init()){
         panic("Input initialization failure");

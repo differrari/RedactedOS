@@ -5,7 +5,7 @@
 #include "memory/kalloc.h"
 #include "memory/memory_access.h"
 #include "memory/page_allocator.h"
-#include "xhci_kbd.h"
+#include "xhci_bridge.h"
 
 static xhci_device global_device;
 
@@ -171,6 +171,8 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
 
     xhci->max_device_slots = xhci->cap->hcsparams1 & 0xFF;
     xhci->max_ports = (xhci->cap->hcsparams1 >> 24) & 0xFF;
+
+    xhci_initialize_manager(xhci->max_device_slots);
 
     uint16_t erst_max = ((xhci->cap->hcsparams2 >> 4) & 0xF);
     
@@ -519,10 +521,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
 
     xhci_sync_events();//TODO: This is hacky af, we should have await use irqs entirely and we won't need to await anything anymore
 
-    if (device->type == KEYBOARD){
-        xhci_configure_keyboard(device);
-        xhci_kbd_request_data();
-    }
+    xhci_configure_device(device->slot_id, device->poll_endpoint, device);
 
     return true;
     
@@ -539,7 +538,7 @@ bool xhci_setup_device(uint16_t port){
         return false;
     }
 
-    xhci_usb_device *device = (xhci_usb_device*)talloc(sizeof(xhci_usb_device));
+    xhci_usb_device *device = (xhci_usb_device*)allocate_in_page(xhci_mem_page, sizeof(xhci_usb_device), ALIGN_64B, true, true);
 
     device->slot_id = (global_device.event_ring[0].status >> 24) & 0xFF;
     kprintfv("[xHCI] Slot id %h", device->slot_id);
@@ -693,7 +692,10 @@ void xhci_handle_interrupt(){
     kprintfv("[xHCI] Unhandled interrupt");
     switch (type){
         case TRB_TYPE_TRANSFER:
-        xhci_read_key();
+            uint8_t slot_id = (ev->control & TRB_SLOT_MASK) >> 24;
+            uint8_t endpoint_id = (ev->control & TRB_ENDPOINT_MASK) >> 16;
+            kprintf_raw("Received input from slot %i endpoint %i",slot_id, endpoint_id);
+            xhci_process_input(slot_id, endpoint_id);
         break;
         case TRB_TYPE_PORT_STATUS_CHANGE:
             kprintf_raw("[xHCI] Port status change. Ignored for now");

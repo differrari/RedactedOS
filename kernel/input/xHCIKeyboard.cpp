@@ -3,7 +3,7 @@
 #include "input_dispatch.h"
 #include "memory/page_allocator.h"
 
-void xHCIKeyboard::request_data(){
+void xHCIKeyboard::request_data(uint8_t endpoint_id){
     requesting = true;
     latest_ring = &device->endpoint_transfer_ring[device->endpoint_transfer_index++];
             
@@ -22,10 +22,10 @@ void xHCIKeyboard::request_data(){
         device->endpoint_transfer_index = 0;
     }
 
-    ring_doorbell(device->slot_id, device->poll_endpoint);
+    ring_doorbell(device->slot_id, endpoint_id);
 }
 
-void xHCIKeyboard::process_data(){
+void xHCIKeyboard::process_data(uint8_t endpoint_id){
     if (!requesting){
         return;
     }
@@ -48,7 +48,7 @@ void xHCIKeyboard::process_data(){
     } else
         repeated_keypresses++;
 
-    request_data();
+    request_data(endpoint_id);
 
     register_keypress(kp);
 }
