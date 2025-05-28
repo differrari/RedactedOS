@@ -147,7 +147,7 @@ void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
 void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kernel, bool device){
     size = (size + alignment - 1) & ~(alignment - 1);
 
-    kprintfv("[page_alloc] Requested size: %h", size);
+    kprintfv("[in_page_alloc] Requested size: %h", size);
 
     mem_page *info = (mem_page*)page;
 
@@ -166,7 +166,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
     FreeBlock** curr = &info->free_list;
     while (*curr) {
         if ((*curr)->size >= size) {
-            kprintfv("[page_alloc] Reusing free block at %h",(uintptr_t)*curr);
+            kprintfv("[in_page_alloc] Reusing free block at %h",(uintptr_t)*curr);
 
             uint64_t result = (uint64_t)*curr;
             *curr = (*curr)->next;
@@ -178,23 +178,23 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
         curr = &(*curr)->next;
     }
 
-    kprintfv("[page_alloc] Current next pointer %h",info->next_free_mem_ptr);
+    kprintfv("[in_page_alloc] Current next pointer %h",info->next_free_mem_ptr);
 
     info->next_free_mem_ptr = (info->next_free_mem_ptr + alignment - 1) & ~(alignment - 1);
 
-    kprintfv("[page_alloc] Aligned next pointer %h",info->next_free_mem_ptr);
+    kprintfv("[in_page_alloc] Aligned next pointer %h",info->next_free_mem_ptr);
 
     if (info->next_free_mem_ptr + size > (((uintptr_t)page) + PAGE_SIZE)) {
         if (!info->next)
             info->next = alloc_page(PAGE_SIZE, kernel, device, false);
-        kprintfv("[page_alloc] Page full. Moving to %h",(uintptr_t)info->next);
+        kprintfv("[in_page_alloc] Page full. Moving to %h",(uintptr_t)info->next);
         return allocate_in_page(info->next, size, alignment, kernel, device);
     }
 
     uint64_t result = info->next_free_mem_ptr;
     info->next_free_mem_ptr += size;
 
-    kprintfv("[page_alloc] Allocated address %h",result);
+    kprintfv("[in_page_alloc] Allocated address %h",result);
 
     memset((void*)result, 0, size);
     info->size += size;
