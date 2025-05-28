@@ -12,12 +12,11 @@ void xHCIManager::register_device(uint8_t slot_id, uint8_t endpoint_id, xhci_usb
     xHCIDevice *newdevice;
     switch (device->type){
         case KEYBOARD:
-            newdevice = new xHCIKeyboard();
+            newdevice = new xHCIKeyboard(device);
             break;
         default: return;
     }
     if (!newdevice) return;
-    newdevice->device = device;
     devices.add(slot_id,newdevice);
     request_data(slot_id,endpoint_id);
 }

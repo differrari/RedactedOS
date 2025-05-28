@@ -6,6 +6,7 @@
 
 class xHCIKeyboard: public xHCIDevice {
 public:
+    xHCIKeyboard(xhci_usb_device *dev) : xHCIDevice(dev) {}
     void request_data(uint8_t endpoint_id) override;
     void process_data(uint8_t endpoint_id) override;
 private:

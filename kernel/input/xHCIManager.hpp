@@ -5,6 +5,7 @@
 
 class xHCIDevice {
 public:
+    xHCIDevice(xhci_usb_device *dev) : device(dev) {}
     virtual void request_data(uint8_t endpoint_id) = 0;
 
     virtual void process_data(uint8_t endpoint_id) = 0;
@@ -13,6 +14,8 @@ public:
 };
 
 class xHCIDummy: public xHCIDevice {
+public:
+    xHCIDummy() : xHCIDevice(0x0) {}
     void request_data(uint8_t endpoint_id) override {}
     void process_data(uint8_t endpoint_id) override {}
 };
