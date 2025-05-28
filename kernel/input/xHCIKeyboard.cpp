@@ -4,29 +4,29 @@
 #include "console/kio.h"
 #include "memory/page_allocator.h"
 
-void xHCIKeyboard::request_data(uint8_t endpoint_id){
+void xHCIKeyboard::request_data(){
     requesting = true;
-    latest_ring = &device->endpoint_transfer_ring[device->endpoint_transfer_index++];
+    latest_ring = &endpoint->endpoint_transfer_ring[endpoint->endpoint_transfer_index++];
             
-    if (device->input_buffer == 0x0){
-        uint64_t buffer_addr = (uint64_t)alloc_page(device->poll_packetSize, true, true, true);
-        device->input_buffer = (uint8_t*)buffer_addr;
+    if (endpoint->input_buffer == 0x0){
+        uint64_t buffer_addr = (uint64_t)alloc_page(endpoint->poll_packetSize, true, true, true);
+        endpoint->input_buffer = (uint8_t*)buffer_addr;
     }
     
-    latest_ring->parameter = (uintptr_t)device->input_buffer;
-    latest_ring->status = device->poll_packetSize;
-    latest_ring->control = (TRB_TYPE_NORMAL << 10) | (1 << 5) | device->endpoint_transfer_cycle_bit;
+    latest_ring->parameter = (uintptr_t)endpoint->input_buffer;
+    latest_ring->status = endpoint->poll_packetSize;
+    latest_ring->control = (TRB_TYPE_NORMAL << 10) | (1 << 5) | endpoint->endpoint_transfer_cycle_bit;
 
-    if (device->endpoint_transfer_index == MAX_TRB_AMOUNT - 1){
-        make_ring_link_control(device->endpoint_transfer_ring, device->endpoint_transfer_cycle_bit);
-        device->endpoint_transfer_cycle_bit = !device->endpoint_transfer_cycle_bit;
-        device->endpoint_transfer_index = 0;
+    if (endpoint->endpoint_transfer_index == MAX_TRB_AMOUNT - 1){
+        make_ring_link_control(endpoint->endpoint_transfer_ring, endpoint->endpoint_transfer_cycle_bit);
+        endpoint->endpoint_transfer_cycle_bit = !endpoint->endpoint_transfer_cycle_bit;
+        endpoint->endpoint_transfer_index = 0;
     }
 
-    ring_doorbell(device->slot_id, endpoint_id);
+    ring_doorbell(slot_id, endpoint->poll_endpoint);
 }
 
-void xHCIKeyboard::process_data(uint8_t endpoint_id){
+void xHCIKeyboard::process_data(){
     if (!requesting){
         return;
     }
@@ -35,7 +35,7 @@ void xHCIKeyboard::process_data(uint8_t endpoint_id){
     if (!xhci_await_response((uintptr_t)latest_ring,TRB_TYPE_TRANSFER))
         xhci_sync_events();//TODO: we're just consuming the event without even looking to see if it's the right one, this is wrong, seriously, IRQ await would fix this
 
-    keypress *rkp = (keypress*)device->input_buffer;
+    keypress *rkp = (keypress*)endpoint->input_buffer;
     if (is_new_keypress(rkp, &last_keypress) || repeated_keypresses > 3){
         if (is_new_keypress(rkp, &last_keypress))
             repeated_keypresses = 0;
@@ -49,7 +49,7 @@ void xHCIKeyboard::process_data(uint8_t endpoint_id){
     } else
         repeated_keypresses++;
 
-    request_data(endpoint_id);
+    request_data();
 
     register_keypress(kp);
 }

@@ -4,21 +4,19 @@
 
 xHCIManager::xHCIManager(uint32_t capacity){
     devices = IndexMap<xHCIDevice*>(capacity);
-    dummy_device = new xHCIDummy();//TODO: Our allocator fails if we allocate only one thing in a constructor, so we allocate a dummy here
+    dummy_device = new xHCIDevice(0,nullptr);//TODO: Our allocator fails if we allocate only one thing in a constructor, so we allocate a dummy here
 };
 
-void xHCIManager::register_device(uint8_t slot_id, uint8_t endpoint_id, xhci_usb_device *device){
+void xHCIManager::register_device(uint8_t slot_id, xhci_usb_device *device){
     if (slot_id >= devices.max_size()) return;
-    xHCIDevice *newdevice;
-    switch (device->type){
-        case KEYBOARD:
-            newdevice = new xHCIKeyboard(device);
-            break;
-        default: return;
-    }
+    xHCIDevice *newdevice = new xHCIDevice(8,device);
     if (!newdevice) return;
     devices.add(slot_id,newdevice);
-    request_data(slot_id,endpoint_id);
+}
+
+void xHCIManager::register_endpoint(uint8_t slot_id, xhci_usb_device_endpoint *endpoint){
+    if (slot_id >= devices.max_size()) return;
+    devices[slot_id]->register_endpoint(endpoint);
 }
 
 void xHCIManager::request_data(uint8_t slot_id, uint8_t endpoint_id){

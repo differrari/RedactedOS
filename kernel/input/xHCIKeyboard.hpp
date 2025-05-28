@@ -1,17 +1,18 @@
 #pragma once
 
 #include "types.h"
-#include "xHCIManager.hpp"
+#include "xHCIDevice.hpp"
 #include "keypress.h"
 
-class xHCIKeyboard: public xHCIDevice {
+class xHCIKeyboard: public xHCIEndpoint {
 public:
-    xHCIKeyboard(xhci_usb_device *dev) : xHCIDevice(dev) {}
-    void request_data(uint8_t endpoint_id) override;
-    void process_data(uint8_t endpoint_id) override;
+    xHCIKeyboard(uint8_t new_slot_id, xhci_usb_device_endpoint *endpoint) : slot_id(new_slot_id), xHCIEndpoint(endpoint) {}
+    void request_data() override;
+    void process_data() override;
 private:
     trb* latest_ring;
     bool requesting = false;
+    uint8_t slot_id;
 
     keypress last_keypress;
 

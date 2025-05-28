@@ -2,23 +2,7 @@
 #include "types.h"
 #include "xhci_types.h"
 #include "std/std.hpp"
-
-class xHCIDevice {
-public:
-    xHCIDevice(xhci_usb_device *dev) : device(dev) {}
-    virtual void request_data(uint8_t endpoint_id) = 0;
-
-    virtual void process_data(uint8_t endpoint_id) = 0;
-
-    xhci_usb_device *device;
-};
-
-class xHCIDummy: public xHCIDevice {
-public:
-    xHCIDummy() : xHCIDevice(0x0) {}
-    void request_data(uint8_t endpoint_id) override {}
-    void process_data(uint8_t endpoint_id) override {}
-};
+#include "xHCIDevice.hpp"
 
 class xHCIManager {
 public:
@@ -27,7 +11,8 @@ public:
     IndexMap<xHCIDevice*> devices;
     xHCIDevice *default_device;
 
-    void register_device(uint8_t slot_id, uint8_t endpoint_id, xhci_usb_device *device);
+    void register_device(uint8_t slot_id, xhci_usb_device *device);
+    void register_endpoint(uint8_t slot_id, xhci_usb_device_endpoint *endpoint);
     void request_data(uint8_t slot_id, uint8_t endpoint_id);
     void process_data(uint8_t slot_id, uint8_t endpoint_id);
 };

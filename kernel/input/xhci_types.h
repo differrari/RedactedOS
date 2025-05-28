@@ -350,22 +350,25 @@ typedef enum {
 } xhci_device_types;
 
 typedef struct {
-    bool transfer_cycle_bit;
+    uint8_t transfer_cycle_bit;
     uint32_t transfer_index;
-    bool endpoint_transfer_cycle_bit;
-    uint32_t endpoint_transfer_index;
     trb* transfer_ring;
-    trb* endpoint_transfer_ring;
     uint32_t slot_id;
     uint8_t interface_protocol;//TODO: support multiple
+    xhci_input_context* ctx;
+} xhci_usb_device;
+
+typedef struct {
+    xhci_device_types type;
+    trb* endpoint_transfer_ring;
+    uint32_t endpoint_transfer_index;
+    uint8_t endpoint_transfer_cycle_bit;
+    uint8_t poll_packetSize;
+    uint8_t *input_buffer;
+    uint8_t poll_endpoint;
     uint16_t report_length;
     uint8_t *report_descriptor;
-    xhci_input_context* ctx;
-    uint8_t *input_buffer;
-    uint8_t poll_packetSize;
-    uint8_t poll_endpoint;
-    xhci_device_types type;
- } xhci_usb_device;
+ } xhci_usb_device_endpoint;
 
 #define USB_DEVICE_DESCRIPTOR 1
 #define USB_CONFIGURATION_DESCRIPTOR 2

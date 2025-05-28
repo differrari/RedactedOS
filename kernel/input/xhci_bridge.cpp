@@ -1,6 +1,5 @@
 #include "xhci_bridge.h"
 #include "memory/kalloc.h"
-#include "console/kio.h"
 #include "input_dispatch.h"
 #include "memory/page_allocator.h"
 #include "xHCIManager.hpp"
@@ -20,6 +19,10 @@ void xhci_initialize_manager(uint32_t capacity){
     xhci_manager = new xHCIManager(capacity); 
 }
 
-void xhci_configure_device(uint8_t slot_id, uint8_t endpoint_id, xhci_usb_device *device){
-    xhci_manager->register_device(slot_id,endpoint_id,device);
+void xhci_configure_device(uint8_t slot_id, xhci_usb_device *device){
+    xhci_manager->register_device(slot_id,device);
+}
+
+void xhci_configure_endpoint(uint8_t slot_id, xhci_usb_device_endpoint *endpoint){
+    xhci_manager->register_endpoint(slot_id,endpoint);
 }
