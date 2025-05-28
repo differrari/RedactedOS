@@ -15,9 +15,11 @@ void xhci_enable_verbose(){
     xhci_verbose = true;
 }
 
+uint64_t awaited_addr;
 uint32_t awaited_type;
 #define AWAIT(addr, action, type) \
     ({ \
+        awaited_addr = (uintptr_t)(addr); \
         awaited_type = (type); \
         action; \
         xhci_await_response((uintptr_t)(addr), (type)); \
@@ -686,7 +688,9 @@ void xhci_handle_interrupt(){
     trb* ev = &global_device.event_ring[global_device.event_index];
     kprintf_raw("Interrupt with next event id %h. Awaited is %h", (ev->control & TRB_TYPE_MASK) >> 10, awaited_type);
     uint32_t type = (ev->control & TRB_TYPE_MASK) >> 10;
-    if (type == awaited_type) return;// Compatibility between our polling and interrupt, we'll need to get rid of this
+    uint64_t addr = ev->parameter;
+    if (type == awaited_type && (awaited_addr == 0 || (awaited_addr & 0xFFFFFFFFFFFFFFFF) == addr)) return;// Compatibility between our polling and interrupt, we'll need to get rid of this
+    kprintf_raw("This interrupt is unhandled");
     switch (type){
         case TRB_TYPE_TRANSFER:
         xhci_read_key();
