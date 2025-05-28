@@ -9,7 +9,6 @@ extern "C" {
 #define TRB_TYPE_NORMAL      1
 #define TRB_TYPE_LINK        6
 #define TRB_TYPE_EVENT_DATA  3
-#define TRB_TYPE_TRANSFER    32
 #define TRB_TYPE_ENABLE_SLOT 9
 #define TRB_TYPE_ADDRESS_DEV 11
 #define TRB_TYPE_CONFIG_EP   12
@@ -22,6 +21,7 @@ extern "C" {
 
 #define TRB_TYPE_MASK 0xFC00
 
+#define TRB_TYPE_TRANSFER           0x20
 #define TRB_TYPE_COMMAND_COMPLETION 0x21
 #define TRB_TYPE_PORT_STATUS_CHANGE 0x22
 

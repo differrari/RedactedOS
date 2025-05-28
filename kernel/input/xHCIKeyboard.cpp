@@ -48,7 +48,7 @@ void xHCIKeyboard::process_data(){
     } else
         repeated_keypresses++;
 
-    xhci_kbd_request_data();
+    request_data();
 
     register_keypress(kp);
 }

@@ -15,6 +15,14 @@ void xhci_enable_verbose(){
     xhci_verbose = true;
 }
 
+uint32_t awaited_type;
+#define AWAIT(addr, action, type) \
+    ({ \
+        awaited_type = (type); \
+        action; \
+        xhci_await_response((uintptr_t)(addr), (type)); \
+    })
+
 #define kprintfv(fmt, ...) \
     ({ \
         if (xhci_verbose){\
@@ -225,6 +233,7 @@ bool xhci_await_response(uint64_t command, uint32_t type){
     while (true){
         if (xhci_check_fatal_error()){
             kprintf_raw("[xHCI error] USBSTS value %h",global_device.op->usbsts);
+            awaited_type = 0;
             return false;
         }
         for (; global_device.event_index < MAX_TRB_AMOUNT; global_device.event_index++){
@@ -241,9 +250,11 @@ bool xhci_await_response(uint64_t command, uint32_t type){
                 global_device.interrupter->erdp = (uintptr_t)ev | (1 << 3);//Inform of latest processed event
                 global_device.interrupter->iman |= 1;//Clear interrupts
                 global_device.op->usbsts |= 1 << 3;//Clear interrupts
+                awaited_type = 0;
                 return completion_code == 1;
             }
         }
+        awaited_type = 0;
         return false;
     }
 }
@@ -276,8 +287,7 @@ bool issue_command(uint64_t param, uint32_t status, uint32_t control){
         global_device.command_cycle_bit = !global_device.command_cycle_bit;
         global_device.cmd_index = 0;
     }
-    ring_doorbell(0, 0);
-    return xhci_await_response(cmd_addr, TRB_TYPE_COMMAND_COMPLETION);
+    return AWAIT(cmd_addr, {ring_doorbell(0, 0);}, TRB_TYPE_COMMAND_COMPLETION);
 }
 
 uint16_t packet_size(uint16_t port_speed){
@@ -313,11 +323,10 @@ bool reset_port(uint16_t port){
     //TODO: if usb3
     //portsc.wpr = 1;
     //else 
-    port_info->portsc.pr = 1;
 
-    //TODO: read back after delay 
-
-    return xhci_await_response(0, TRB_TYPE_PORT_STATUS_CHANGE);
+    return AWAIT(0, {
+        port_info->portsc.pr = 1;
+    },TRB_TYPE_PORT_STATUS_CHANGE);
 }
 
 bool xhci_request_sized_descriptor(xhci_usb_device *device, bool interface, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor){
@@ -352,14 +361,8 @@ bool xhci_request_sized_descriptor(xhci_usb_device *device, bool interface, uint
         device->transfer_cycle_bit = !device->transfer_cycle_bit;
         device->transfer_index = 0;
     }
-    
-    ring_doorbell(device->slot_id, 1);
 
-    kprintfv("Awaiting response of type %h at %h",TRB_TYPE_TRANSFER, (uintptr_t)status_trb);
-    if (!xhci_await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
-        kprintf_raw("[xHCI error] error fetching descriptor");
-    }
-    return true;
+    return AWAIT((uintptr_t)status_trb, {ring_doorbell(device->slot_id, 1);}, TRB_TYPE_TRANSFER);
 }
 
 bool clear_halt(xhci_usb_device *device, uint16_t endpoint_num){
@@ -390,10 +393,7 @@ bool clear_halt(xhci_usb_device *device, uint16_t endpoint_num){
         device->transfer_index = 0;
     }
     
-    ring_doorbell(device->slot_id, 1);
-
-    kprintfv("Awaiting response of type %h at %h",TRB_TYPE_TRANSFER, (uintptr_t)status_trb);
-    if (!xhci_await_response((uintptr_t)status_trb, TRB_TYPE_TRANSFER)){
+    if (!AWAIT((uintptr_t)status_trb, {ring_doorbell(device->slot_id, 1);},TRB_TYPE_TRANSFER)){
         kprintf_raw("[xHCI error] could not clear stall");
     }
 }
@@ -683,5 +683,19 @@ bool xhci_input_init() {
 }
 
 void xhci_handle_interrupt(){
-    xhci_read_key();
+    trb* ev = &global_device.event_ring[global_device.event_index];
+    kprintf_raw("Interrupt with next event id %h. Awaited is %h", (ev->control & TRB_TYPE_MASK) >> 10, awaited_type);
+    uint32_t type = (ev->control & TRB_TYPE_MASK) >> 10;
+    if (type == awaited_type) return;// Compatibility between our polling and interrupt, we'll need to get rid of this
+    switch (type){
+        case TRB_TYPE_TRANSFER:
+        xhci_read_key();
+        break;
+        case TRB_TYPE_PORT_STATUS_CHANGE:
+            kprintf_raw("Port status change. Ignored for now");
+            global_device.interrupter->erdp = (uintptr_t)ev | (1 << 3);//Inform of latest processed event
+            global_device.interrupter->iman |= 1;//Clear interrupts
+            global_device.op->usbsts |= 1 << 3;//Clear interrupts
+            break;
+    }
 }
