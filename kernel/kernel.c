@@ -43,7 +43,6 @@ void kernel_main() {
     
     kprintf("GPU initialized");
     
-
     // xhci_enable_verbose();
     if (!xhci_input_init()){
         panic("Input initialization failure");

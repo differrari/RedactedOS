@@ -686,17 +686,17 @@ bool xhci_input_init() {
 
 void xhci_handle_interrupt(){
     trb* ev = &global_device.event_ring[global_device.event_index];
-    kprintf_raw("Interrupt with next event id %h. Awaited is %h", (ev->control & TRB_TYPE_MASK) >> 10, awaited_type);
+    kprintfv("[xHCI] Interrupt with next event id %h. Awaited is %h", (ev->control & TRB_TYPE_MASK) >> 10, awaited_type);
     uint32_t type = (ev->control & TRB_TYPE_MASK) >> 10;
     uint64_t addr = ev->parameter;
     if (type == awaited_type && (awaited_addr == 0 || (awaited_addr & 0xFFFFFFFFFFFFFFFF) == addr)) return;// Compatibility between our polling and interrupt, we'll need to get rid of this
-    kprintf_raw("This interrupt is unhandled");
+    kprintfv("[xHCI] Unhandled interrupt");
     switch (type){
         case TRB_TYPE_TRANSFER:
         xhci_read_key();
         break;
         case TRB_TYPE_PORT_STATUS_CHANGE:
-            kprintf_raw("Port status change. Ignored for now");
+            kprintf_raw("[xHCI] Port status change. Ignored for now");
             global_device.interrupter->erdp = (uintptr_t)ev | (1 << 3);//Inform of latest processed event
             global_device.interrupter->iman |= 1;//Clear interrupts
             global_device.op->usbsts |= 1 << 3;//Clear interrupts
