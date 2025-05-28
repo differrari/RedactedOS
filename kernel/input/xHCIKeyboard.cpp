@@ -1,6 +1,7 @@
 #include "xHCIKeyboard.hpp"
 #include "xhci.h"
 #include "input_dispatch.h"
+#include "console/kio.h"
 #include "memory/page_allocator.h"
 
 void xHCIKeyboard::request_data(uint8_t endpoint_id){
