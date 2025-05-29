@@ -31,10 +31,10 @@ typedef struct virtio_pci_common_cfg {
 }__attribute__((packed)) virtio_pci_common_cfg;
 
 typedef struct virtio_device {
-    volatile struct virtio_pci_common_cfg* common_cfg;
-    volatile uint8_t* notify_cfg;
-    volatile uint8_t* device_cfg;
-    volatile uint8_t* isr_cfg;
+    struct virtio_pci_common_cfg* common_cfg;
+    uint8_t* notify_cfg;
+    uint8_t* device_cfg;
+    uint8_t* isr_cfg;
     uint32_t notify_off_multiplier;
 } virtio_device;
 

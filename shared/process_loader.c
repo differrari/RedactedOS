@@ -271,7 +271,7 @@ process_t* create_process(char *name, void (*func)(), uint64_t code_size, uint64
     uint64_t* code_dest = (uint64_t*)alloc_page(code_size, false, false, false);
     if (!code_dest) return 0;
 
-    relocate_code(code_dest, func, code_size, (uint64_t)&data[0], (uint64_t)&data_dest[0], data_size);
+    relocate_code(code_dest, func, code_size, (uintptr_t)((uint8_t*)data), (uintptr_t)&data_dest[0], data_size);
     
     kprintfv("Code copied to %h", (uint64_t)code_dest);
     uint64_t stack_size = 0x1000;

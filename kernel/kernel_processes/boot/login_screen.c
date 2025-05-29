@@ -66,7 +66,7 @@ void login_screen(){
         if (sys_read_input_current(&kp)){
             for (int i = 0; i < 6; i++){
                 char key = kp.keys[i];
-                if (hid_keycode_to_char[key]){
+                if (hid_keycode_to_char[(uint8_t)key]){
                     if (key == KEY_ENTER){
                         if (strcmp(buf,default_pwd) == 0){
                             temp_free(s.data,s.length);
@@ -77,7 +77,7 @@ void login_screen(){
                         } else
                             break;
                     }
-                    key = hid_keycode_to_char[key];//Translate readables
+                    key = hid_keycode_to_char[(uint8_t)key];//Translate readables
                     if (key != 0 && len < 256 && (!keypress_contains(&old_kp,kp.keys[i], kp.modifier) || !is_new_keypress(&old_kp, &kp))){
                         buf[len] = key;
                         len++;

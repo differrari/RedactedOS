@@ -26,7 +26,7 @@ void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
 }
 
 __attribute__((section(".rodata.kcoreprocesses")))
-gpu_point offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
+const gpu_point offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
 
 __attribute__((section(".text.kcoreprocesses")))
 gpu_point boot_calc_point(gpu_point offset, gpu_size screen_size, gpu_point screen_middle){

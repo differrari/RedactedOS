@@ -19,5 +19,5 @@ public:
     virtual void draw_string(kstring s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color) = 0;
     virtual uint32_t get_char_size(uint32_t scale) = 0;
 
-    ~GPUDriver() = default;
+    virtual ~GPUDriver() = default;
 };
