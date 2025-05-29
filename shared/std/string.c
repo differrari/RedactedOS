@@ -60,15 +60,15 @@ string string_from_hex(uint64_t value) {
     uint32_t len = 0;
     buf[len++] = '0';
     buf[len++] = 'x';
-
     bool started = false;
-    for (uint32_t i = 60; i >= 0; i -= 4) {
+    for (uint32_t i = 60;; i -= 4) {
         uint8_t nibble = (value >> i) & 0xF;
         char curr_char = nibble < 10 ? '0' + nibble : 'A' + (nibble - 10);
         if (started || curr_char != '0' || i == 0) {
             started = true;
             buf[len++] = curr_char;
         }
+        if (i == 0) break;
     }
 
     buf[len] = 0;
@@ -82,12 +82,13 @@ string string_from_bin(uint64_t value) {
     buf[len++] = 'b';
 
     bool started = false;
-    for (uint32_t i = 60; i >= 0; i --) {
+    for (uint32_t i = 60;; i --) {
         char bit = (value >> i) & 1  ? '1' : '0';
         if (started || bit != '0' || i == 0) {
             started = true;
             buf[len++] = bit;
         }
+        if (i == 0) break;
     }
 
     buf[len] = 0;

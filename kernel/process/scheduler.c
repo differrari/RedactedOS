@@ -129,7 +129,7 @@ process_t* init_process(){
 void name_process(process_t *proc, char *name){
     uint32_t len = 0;
     while (len < MAX_PROC_NAME_LENGTH && name[len] != '\0') len++;
-    for (int i = 0; i < len; i++)
+    for (uint32_t i = 0; i < len; i++)
         proc->name[i] = name[i];
 }
 

@@ -88,7 +88,7 @@ bool Desktop::await_gpu(){
 }
 
 void Desktop::activate_current(){
-    int index = (selected.y * MAX_COLS) + selected.x;
+    uint32_t index = (selected.y * MAX_COLS) + selected.x;
 
     if (index < entries.size()){
         active_proc = entries[index].process_loader();
@@ -100,7 +100,7 @@ void Desktop::activate_current(){
 
 void Desktop::draw_tile(uint32_t column, uint32_t row){
     bool sel = selected.x == column && selected.y == row;
-    int index = (row * MAX_COLS) + column;
+    uint32_t index = (row * MAX_COLS) + column;
     
     int border = 4;
     

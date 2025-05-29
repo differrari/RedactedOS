@@ -343,7 +343,7 @@ void VirtioGPUDriver::flush() {
     if (full_redraw) {
         transfer_to_host((gpu_rect){0,0,screen_size.width,screen_size.height});
     } else {
-        for (int i = 0; i < dirty_count; i++) {
+        for (uint32_t i = 0; i < dirty_count; i++) {
             gpu_rect r = dirty_rects[i];
             transfer_to_host(r);
         }
@@ -409,7 +409,7 @@ int VirtioGPUDriver::try_merge(gpu_rect* a, gpu_rect* b) {
 void VirtioGPUDriver::mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     gpu_rect new_rect = { x, y, w, h };
 
-    for (int i = 0; i < dirty_count; i++) {
+    for (uint32_t i = 0; i < dirty_count; i++) {
         if (try_merge(&dirty_rects[i], &new_rect))
             return;
     }

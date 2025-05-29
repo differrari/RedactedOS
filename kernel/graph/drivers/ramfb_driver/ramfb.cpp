@@ -74,7 +74,7 @@ void RamFBGPUDriver::flush(){
     volatile uint32_t* fb = (volatile uint32_t*)framebuffer;
     volatile uint32_t* bfb = (volatile uint32_t*)back_framebuffer;
     
-    for (int i = 0; i < dirty_count; i++) {
+    for (uint32_t i = 0; i < dirty_count; i++) {
         gpu_rect r = dirty_rects[i];
         
         for (uint32_t y = 0; y < r.size.height; y++) {
@@ -159,7 +159,7 @@ int RamFBGPUDriver::try_merge(gpu_rect* a, gpu_rect* b) {
 void RamFBGPUDriver::mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     gpu_rect new_rect = { x, y, w, h };
 
-    for (int i = 0; i < dirty_count; i++) {
+    for (uint32_t i = 0; i < dirty_count; i++) {
         if (try_merge(&dirty_rects[i], &new_rect))
             return;
     }

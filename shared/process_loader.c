@@ -204,7 +204,7 @@ instruction_entry ops[] = {
 };
 
 uint32_t parse_instruction(uint32_t instruction, uint64_t pc, bool translate, process_layout *source, process_layout *destination){
-    for (int i = 0; i < sizeof(ops)/sizeof(ops[0]); i++) {
+    for (uint64_t i = 0; i < sizeof(ops)/sizeof(ops[0]); i++) {
         if ((instruction & ops[i].mask) == ops[i].pattern) {
             kputfv("%s ", (uintptr_t)ops[i].mnemonic);
             uint64_t newinstr = ops[i].print_args(instruction, pc, translate, source, destination);
