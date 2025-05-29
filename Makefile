@@ -16,3 +16,6 @@ clean:
 	$(MAKE) -C shared clean
 	$(MAKE) -C kernel clean
 	$(MAKE) -C user clean
+
+run: all
+	./run

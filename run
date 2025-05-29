@@ -1,9 +1,5 @@
 #/!bin/sh
 
-echo "Cleaning project"
-make clean
-echo "Building project"
-make
 echo "Running emulator"
 
 ARGS=""
