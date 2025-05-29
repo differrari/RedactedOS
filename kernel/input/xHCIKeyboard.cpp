@@ -31,7 +31,7 @@ void xHCIKeyboard::process_data(){
         return;
     }
     
-    keypress kp = {0};
+    keypress kp;
     if (!xhci_await_response((uintptr_t)latest_ring,TRB_TYPE_TRANSFER))
         xhci_sync_events();//TODO: we're just consuming the event without even looking to see if it's the right one, this is wrong, seriously, IRQ await would fix this
 

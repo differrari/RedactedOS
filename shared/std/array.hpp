@@ -11,7 +11,7 @@ template<typename T>
 class Array {
 public:
 
-    Array() : count(0), capacity(0), items(0) {
+    Array() : items(0), count(0), capacity(0) {
     }
 
     Array(uint32_t capacity) : count(0), capacity(capacity) {

@@ -199,7 +199,7 @@ typedef struct virtio_backing_cmd {
         uint32_t length;
         uint32_t padding;
     }__attribute__((packed)) entries[1];
-}__attribute__((packed));
+}__attribute__((packed)) virtio_backing_cmd;
 
 bool VirtioGPUDriver::attach_backing() {
     virtio_backing_cmd* cmd = (virtio_backing_cmd*)talloc(sizeof(virtio_backing_cmd));
@@ -244,7 +244,7 @@ typedef struct virtio_scanout_cmd {
     struct virtio_rect r;
     uint32_t scanout_id;
     uint32_t resource_id;
-}__attribute__((packed));
+}__attribute__((packed)) virtio_scanout_cmd;
 
 bool VirtioGPUDriver::set_scanout() {
     virtio_scanout_cmd* cmd = (virtio_scanout_cmd*)talloc(sizeof(virtio_scanout_cmd));
@@ -287,12 +287,12 @@ bool VirtioGPUDriver::set_scanout() {
 }
 
 typedef struct virtio_transfer_cmd {
-     struct virtio_gpu_ctrl_hdr hdr; 
+    struct virtio_gpu_ctrl_hdr hdr; 
     struct virtio_rect rect; 
     uint64_t offset; 
     uint32_t resource_id; 
     uint32_t padding; 
-};
+}__attribute__((packed)) virtio_transfer_cmd;
 
 bool VirtioGPUDriver::transfer_to_host(gpu_rect rect) {
     virtio_transfer_cmd* cmd = (virtio_transfer_cmd*)talloc(sizeof(virtio_transfer_cmd));
@@ -332,11 +332,11 @@ bool VirtioGPUDriver::transfer_to_host(gpu_rect rect) {
 }
 
 typedef struct virtio_flush_cmd {
-     struct virtio_gpu_ctrl_hdr hdr; 
+    struct virtio_gpu_ctrl_hdr hdr; 
     struct virtio_rect rect; 
     uint32_t resource_id; 
     uint32_t padding; 
-};
+}__attribute__((packed)) virtio_flush_cmd;
 
 void VirtioGPUDriver::flush() {
 

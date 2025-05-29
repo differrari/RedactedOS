@@ -6,7 +6,7 @@
 
 class xHCIKeyboard: public xHCIEndpoint {
 public:
-    xHCIKeyboard(uint8_t new_slot_id, xhci_usb_device_endpoint *endpoint) : slot_id(new_slot_id), xHCIEndpoint(endpoint) {}
+    xHCIKeyboard(uint8_t new_slot_id, xhci_usb_device_endpoint *endpoint) : xHCIEndpoint(endpoint), slot_id(new_slot_id) {}
     void request_data() override;
     void process_data() override;
 private:

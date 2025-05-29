@@ -11,7 +11,7 @@ template<typename T>
 class IndexMap {
 public:
 
-    IndexMap() : count(0), capacity(0), items(0) {
+    IndexMap() : items(0), count(0), capacity(0) {
     }
 
     IndexMap(uint32_t capacity) : count(0), capacity(capacity) {
