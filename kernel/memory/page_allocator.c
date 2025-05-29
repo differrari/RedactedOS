@@ -154,7 +154,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
     if (size >= PAGE_SIZE){
         kprintfv("[page_alloc] Allocating full page for %h",size);
         void *first_addr = 0;
-        for (int i = 0; i < size; i += PAGE_SIZE){
+        for (uint64_t i = 0; i < size; i += PAGE_SIZE){
             void* ptr = alloc_page(PAGE_SIZE, kernel, device, true);
             memset((void*)ptr, 0, PAGE_SIZE);
             if (!first_addr) first_addr = ptr;

@@ -98,7 +98,7 @@ void* find_rsdp() {
             if (sum == 0) {
                 if (candidate->revision >= 2) {
                     sum = 0;
-                    for (int i = 0; i < candidate->length; i++) sum += p[i];
+                    for (uint32_t i = 0; i < candidate->length; i++) sum += p[i];
                     if (sum != 0) continue;
                 }
                 kprintf("[PCI] Found a suitable candidate");
@@ -203,7 +203,7 @@ uint64_t pci_read_address_bar(uintptr_t pci_addr, uint32_t bar_index){
     uint64_t full = original;
     if ((original & 0x6) == 0x4) {
         uint64_t bar_addr_hi = pci_get_bar_address(pci_addr, 0x10, bar_index+1);
-        uint32_t original_hi = read32(bar_addr_hi);
+        uint64_t original_hi = read32(bar_addr_hi);
         full |= original_hi << 32;
     }
     return full & ~0xF;
@@ -349,10 +349,8 @@ bool pci_setup_msix(uint64_t pci_addr, uint8_t irq_line) {
         uint8_t cap_id = read8(pci_addr + cap_ptr);
         if (cap_id == 0x11) { // MSI-X
             uint16_t msg_ctrl = read16(pci_addr + cap_ptr + 0x2);
-            uint16_t num_vectors = (msg_ctrl & 0x7FF) + 1;
             msg_ctrl &= ~(1 << 15); // Clear MSI-X Enable bit
             write16(pci_addr + cap_ptr + 0x2, msg_ctrl);
-            uint8_t table_size = (msg_ctrl & 0x7FF) + 1;
             uint32_t table_offset = read32(pci_addr + cap_ptr + 0x4);
             uint8_t bir = table_offset & 0x7;
             uint32_t table_addr_offset = table_offset & ~0x7;

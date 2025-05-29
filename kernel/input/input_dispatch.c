@@ -65,11 +65,6 @@ void sys_unset_focus(){
     focused_proc = 0;
 }
 
-void sys_unregister_proc_input_(uint16_t pid){
-    //Unfocus
-    //Unregister shortcuts by setting their pid to -1
-}
-
 void sys_set_secure(bool secure){
     secure_mode = secure;
 }

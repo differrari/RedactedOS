@@ -25,13 +25,12 @@ char* parse_proc_state(int state){
         return "Running";
     
     default:
-        break;
+        return "Invalid";
     }
 }
 
 __attribute__((section(".text.kcoreprocesses")))
 void print_process_info(){
-    uint16_t proc_count = process_count();
     process_t *processes = get_all_processes();
     for (int i = 0; i < MAX_PROCS; i++){
         process_t *proc = &processes[i];
@@ -67,7 +66,7 @@ void draw_memory(char *name,int x, int y, int width, int full_height, int used, 
 
     int used_height = max((used * height) / size,1);
 
-    gpu_fill_rect((gpu_rect){stack_top.x + 1, stack_top.y + height - used_height + 1, width - 2, used_height-1}, BG_COLOR);
+    gpu_fill_rect((gpu_rect){{stack_top.x + 1, stack_top.y + height - used_height + 1}, {width - 2, used_height-1}}, BG_COLOR);
 
     kstring str = kstring_format("%s\n%h",(uintptr_t)name, used);
     gpu_draw_string(str, (gpu_point){stack_top.x, stack_top.y + height + 5}, 2, BG_COLOR);
@@ -114,8 +113,6 @@ void draw_process_view(){
 
         int scale = 2;
         uint32_t char_size = gpu_get_char_size(scale);
-        int name_offset = (name.length / 2) * char_size;
-        int state_offset = (state.length / 2) * char_size;
 
         int name_y = screen_middle.y - 100;
         int state_y = screen_middle.y - 60;

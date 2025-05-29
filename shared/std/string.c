@@ -13,7 +13,7 @@ static uint32_t compute_length(const char *s, uint32_t max_length) {
 string string_l(const char *literal) {
     uint32_t len = compute_length(literal, 0);
     char *buf = (char*)malloc(len+1);
-    for (int i = 0; i < len; i++)
+    for (uint32_t i = 0; i < len; i++)
         buf[i] = literal[i];
     buf[len] = 0;
     return (string){ .data = buf, .length = len };
@@ -33,7 +33,7 @@ string string_tail(const char *array, uint32_t max_length){
         offset = 0; 
     uint32_t adjusted_len = len - offset;
     char *buf = (char*)malloc(adjusted_len + 1);
-    for (int i = offset; i < len; i++)
+    for (uint32_t i = offset; i < len; i++)
         buf[i-offset] = array[i];
     buf[len-offset] = 0;
     return (string){ .data = buf, .length = adjusted_len };
@@ -42,7 +42,7 @@ string string_tail(const char *array, uint32_t max_length){
 string string_ca_max(const char *array, uint32_t max_length) {
     uint32_t len = compute_length(array, max_length);
     char *buf = (char*)malloc(len + 1);
-    for (int i = 0; i < len; i++)
+    for (uint32_t i = 0; i < len; i++)
         buf[i] = array[i];
     buf[len] = 0;
     return (string){ .data = buf, .length = len };
@@ -62,7 +62,7 @@ string string_from_hex(uint64_t value) {
     buf[len++] = 'x';
 
     bool started = false;
-    for (int i = 60; i >= 0; i -= 4) {
+    for (uint32_t i = 60; i >= 0; i -= 4) {
         uint8_t nibble = (value >> i) & 0xF;
         char curr_char = nibble < 10 ? '0' + nibble : 'A' + (nibble - 10);
         if (started || curr_char != '0' || i == 0) {
@@ -82,7 +82,7 @@ string string_from_bin(uint64_t value) {
     buf[len++] = 'b';
 
     bool started = false;
-    for (int i = 60; i >= 0; i --) {
+    for (uint32_t i = 60; i >= 0; i --) {
         char bit = (value >> i) & 1  ? '1' : '0';
         if (started || bit != '0' || i == 0) {
             started = true;

@@ -306,7 +306,6 @@ uint16_t packet_size(uint16_t port_speed){
 }
 
 bool reset_port(uint16_t port){
-    if (port == -1) return false;
 
     xhci_port_regs* port_info = &global_device.ports[port];
 
@@ -399,7 +398,10 @@ bool clear_halt(xhci_usb_device *device, uint16_t endpoint_num){
     
     if (!AWAIT((uintptr_t)status_trb, {ring_doorbell(device->slot_id, 1);},TRB_TYPE_TRANSFER)){
         kprintf_raw("[xHCI error] could not clear stall");
+        return false;
     }
+
+    return true;
 }
 
 bool xhci_request_descriptor(xhci_usb_device *device, bool interface, uint8_t type, uint16_t index, uint16_t wIndex, void *out_descriptor){
@@ -436,8 +438,6 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
     kprintfv("[xHCI] Config length %i (%i - %i)",total_length,config->wTotalLength,config->header.bLength);
 
     uint16_t interface_index = 0;
-
-    uint8_t device_type;
 
     bool need_new_endpoint = true;
 
@@ -622,6 +622,7 @@ bool xhci_setup_device(uint16_t port){
     kprintfv("[xHCI] EP0 Max Packet Size: %h", descriptor->bMaxPacketSize0);
     kprintfv("[xHCI] Configurations: %h", descriptor->bNumConfigurations);
     if (use_lang_desc){
+        //TODO: we want to maintain the strings so we can have USB device information, and rework it to silece the alignment warning
         uint16_t langid = lang_desc->lang_ids[0];
         usb_string_descriptor* prod_name = (usb_string_descriptor*)allocate_in_page(xhci_mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
         if (xhci_request_descriptor(device, false, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){

@@ -60,7 +60,6 @@ uint32_t print_branch(uint32_t instr, uint64_t pc, bool translate, process_layou
         if (rel < -(1 << 25) || rel >= (1 << 25)) {
             kputfv("O.O.R. %h", rel);//We need to account for out of range
         }
-        uint32_t imm26 = (uint32_t)((rel < 0) ? (1 << 26) + rel : rel);
         return (instr & 0xFC000000) | ((uint32_t)(rel & 0x03FFFFFF));
     }
 
@@ -239,7 +238,6 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     kprintfv("Beginning translation from base address %h to new address %h", src_base, dst_base);
     for (uint32_t i = 0; i < count; i++) {
         uint32_t instr = src32[i];
-        uint32_t op = instr >> 26;
 
         kputfv("[%h]: ",instr);
         instr = parse_instruction(instr, (src_base + (i*4)), true, &source_layout, &destination_layout);

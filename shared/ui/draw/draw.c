@@ -46,7 +46,7 @@ gpu_rect fb_draw_line(uint32_t* fb, uint32_t x0, uint32_t y0, uint32_t x1, uint3
     int max_x = (x0 > x1) ? x0 : x1;
     int max_y = (y0 > y1) ? y0 : y1;
 
-    return (gpu_rect){min_x, min_y, max_x - min_x + 1, max_y - min_y + 1};
+    return (gpu_rect) { {min_x, min_y}, {max_x - min_x + 1, max_y - min_y + 1}};
 }
 
 void fb_draw_char(uint32_t* fb, uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
