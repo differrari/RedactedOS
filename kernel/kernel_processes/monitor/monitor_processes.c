@@ -112,7 +112,6 @@ void draw_process_view(){
         kstring state = kstring_l(parse_proc_state(proc->state));
 
         int scale = 2;
-        uint32_t char_size = gpu_get_char_size(scale);
 
         int name_y = screen_middle.y - 100;
         int state_y = screen_middle.y - 60;

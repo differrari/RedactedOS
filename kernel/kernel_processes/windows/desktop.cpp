@@ -36,20 +36,20 @@ void Desktop::draw_desktop(){
     while (sys_read_input_current(&kp)){
         for (int i = 0; i < 6; i++){
             char key = kp.keys[i];
-            if (kp.keys[i] == KEY_ENTER){
+            if (key == KEY_ENTER){
                 activate_current();
                 return;
             }
-            if (kp.keys[i] == KEY_ARROW_RIGHT){
+            if (key == KEY_ARROW_RIGHT){
                 selected.x = (selected.x + 1) % MAX_COLS;
             }
-            if (kp.keys[i] == KEY_ARROW_LEFT){
+            if (key == KEY_ARROW_LEFT){
                 selected.x = (selected.x - 1 + MAX_COLS) % MAX_COLS;
             } 
-            if (kp.keys[i] == KEY_ARROW_DOWN){
+            if (key == KEY_ARROW_DOWN){
                 selected.y = (selected.y + 1) % MAX_ROWS;
             } 
-            if (kp.keys[i] == KEY_ARROW_UP){
+            if (key == KEY_ARROW_UP){
                 selected.y = (selected.y - 1 + MAX_ROWS) % MAX_ROWS;
             } 
         }

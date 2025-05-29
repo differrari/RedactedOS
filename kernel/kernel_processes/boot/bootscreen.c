@@ -11,9 +11,6 @@
 #include "math/math.h"
 #include "std/syscalls/syscalls.h"
 
-__attribute__((section(".data.kcoreprocesses")))
-static uint64_t randomNumber = 0;
-
 __attribute__((section(".text.kcoreprocesses")))
 void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
     const char* name = BOOTSCREEN_TEXT;
@@ -33,8 +30,6 @@ gpu_point offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
 
 __attribute__((section(".text.kcoreprocesses")))
 gpu_point boot_calc_point(gpu_point offset, gpu_size screen_size, gpu_point screen_middle){
-    bool x0 = offset.x == 0;
-    bool y0 = offset.y == 0;
     int xoff = (screen_size.width/BOOTSCREEN_DIV) * offset.x;
     int yoff = (screen_size.height/BOOTSCREEN_DIV) * offset.y;
     int xloc = BOOTSCREEN_PADDING + xoff;

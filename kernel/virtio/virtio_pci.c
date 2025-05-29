@@ -161,8 +161,6 @@ bool virtio_send(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t use
     struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)desc;
     struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)avail;
     struct virtq_used* u = (struct virtq_used*)(uintptr_t)used;
-
-    struct virtio_blk_req *req = (struct virtio_blk_req *)(uintptr_t)cmd;
     
     d[0].addr = cmd;
     d[0].len = cmd_len;
@@ -200,8 +198,6 @@ bool virtio_send2(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t us
     struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)avail;
     struct virtq_used* u = (struct virtq_used*)(uintptr_t)used;
     uint16_t last_used_idx = u->idx;
-
-    struct virtio_blk_req *req = (struct virtio_blk_req *)(uintptr_t)cmd;
 
     d[0].addr = cmd;
     d[0].len = cmd_len;
