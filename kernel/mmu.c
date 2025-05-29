@@ -61,12 +61,12 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);   
     
     //For now we make this not executable. We'll need to to separate read_write, read_only and executable sections
-    uint64_t attr = (0 << 54) | (0 << 53) | PD_ACCESS | (0b11 << 8) | (0b00 << 6) | (attr_index << 2) | PD_BLOCK;
+    uint64_t attr = ((uint64_t)0 << 54) | ((uint64_t)0 << 53) | PD_ACCESS | (0b11 << 8) | (0b00 << 6) | (attr_index << 2) | PD_BLOCK;
     l3[l3_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
 }
 
 //Level 0 = EL0, Level 1 = EL1, Level 2 = Shared
-void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
+void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) {
     uint64_t l1_index = (va >> 37) & 0x1FF;
     uint64_t l2_index = (va >> 30) & 0x1FF;
     uint64_t l3_index = (va >> 21) & 0x1FF;
@@ -115,7 +115,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, int level) {
     default:
         break;
     }
-    uint64_t attr = ((level == 1) << 54) | (0 << 53) | PD_ACCESS | (0b11 << 8) | (permission << 6) | (attr_index << 2) | 0b11;
+    uint64_t attr = ((uint64_t)(level == 1) << 54) | ((uint64_t)0 << 53) | PD_ACCESS | (0b11 << 8) | (permission << 6) | (attr_index << 2) | 0b11;
     kprintfv("[MMU] Mapping 4kb memory %h at [%i][%i][%i][%i] for EL%i = %h permission: %i", va, l1_index,l2_index,l3_index,l4_index,level,attr,permission);
     
     l4[l4_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
