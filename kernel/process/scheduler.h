@@ -25,7 +25,7 @@ uint16_t get_current_proc_pid();
 void stop_process(uint16_t pid);
 void stop_current_process();
 
-void name_process(process_t *proc, char *name);
+void name_process(process_t *proc, const char *name);
 
 void sleep_process(uint64_t msec);
 void wake_processes();

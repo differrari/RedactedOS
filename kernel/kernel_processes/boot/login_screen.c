@@ -60,7 +60,7 @@ void login_screen(){
         gpu_draw_string(title, (gpu_point){screen_middle.x - ((title.length/4) * char_size), yo - char_size*9}, scale, 0xFFFFFF);
         gpu_draw_string(subtitle, (gpu_point){screen_middle.x - ((subtitle.length/2) * char_size), yo - char_size*6}, scale, 0xFFFFFF);
 
-        gpu_fill_rect((gpu_rect){xo,yo  - char_size/2, screen_size.width / 3, height},BG_COLOR+0x111111);
+        gpu_fill_rect((gpu_rect){{xo,yo  - char_size/2}, {screen_size.width / 3, height}},BG_COLOR+0x111111);
         gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFF);
         keypress kp;
         if (sys_read_input_current(&kp)){
@@ -78,9 +78,8 @@ void login_screen(){
                             break;
                     }
                     key = hid_keycode_to_char[key];//Translate readables
-                    if (key != 0 && len < 256 && !keypress_contains(&old_kp,kp.keys[i], kp.modifier) || !is_new_keypress(&old_kp, &kp)){
+                    if (key != 0 && len < 256 && (!keypress_contains(&old_kp,kp.keys[i], kp.modifier) || !is_new_keypress(&old_kp, &kp))){
                         buf[len] = key;
-                        kprintf("%c",key);
                         len++;
                     }
                 } 

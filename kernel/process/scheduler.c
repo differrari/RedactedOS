@@ -126,7 +126,7 @@ process_t* init_process(){
     return proc;
 }
 
-void name_process(process_t *proc, char *name){
+void name_process(process_t *proc, const char *name){
     uint32_t len = 0;
     while (len < MAX_PROC_NAME_LENGTH && name[len] != '\0') len++;
     for (uint32_t i = 0; i < len; i++)
