@@ -19,3 +19,6 @@ clean:
 
 run: all
 	./run
+
+debug: all
+	./rundebug
