@@ -710,7 +710,7 @@ void xhci_handle_interrupt(){
         case TRB_TYPE_TRANSFER:
             uint8_t slot_id = (ev->control & TRB_SLOT_MASK) >> 24;
             uint8_t endpoint_id = (ev->control & TRB_ENDPOINT_MASK) >> 16;
-            kprintf_raw("Received input from slot %i endpoint %i",slot_id, endpoint_id);
+            kprintfv("Received input from slot %i endpoint %i",slot_id, endpoint_id);
             xhci_process_input(slot_id, endpoint_id);
         break;
         case TRB_TYPE_PORT_STATUS_CHANGE:

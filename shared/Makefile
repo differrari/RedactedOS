@@ -5,7 +5,7 @@ AR = $(ARCH)-ar
 OBJCOPY = $(ARCH)-objcopy
 
 # Compiler Flags
-CFLAGS = -g -O0 -nostdlib -nolibc -ffreestanding -fno-exceptions -fno-rtti -fno-unwind-tables -fno-asynchronous-unwind-tables -Wall -Wextra -mcpu=cortex-a72 -I. -I../kernel -Wno-unused-parameter
+CFLAGS = -g -O0 -nostdlib -nolibc -ffreestanding -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -Wall -Wextra -mcpu=cortex-a72 -I. -I../kernel -Wno-unused-parameter
 
 # Source and Object Files
 C_SRC = $(shell find . -name '*.c')
@@ -29,7 +29,7 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 %.o: %.cpp
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
 
 clean:
 	rm -f $(OBJ) $(TARGET)

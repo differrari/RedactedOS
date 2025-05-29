@@ -7,7 +7,7 @@
 #include "std/std.hpp"
 
 struct LaunchEntry {
-    char* name;
+    const char* name;
     process_t* (*process_loader)();
 };
 
@@ -30,6 +30,6 @@ private:
     void draw_tile(uint32_t column, uint32_t row);
     bool await_gpu();
     void draw_full();
-    void add_entry(char* name, process_t* (*process_loader)());
+    void add_entry(const char* name, process_t* (*process_loader)());
     void activate_current();
 };

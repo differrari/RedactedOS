@@ -9,7 +9,7 @@
 #define MAX_COLS 3
 #define MAX_ROWS 3
 
-void Desktop::add_entry(char* name, process_t* (*process_loader)()){
+void Desktop::add_entry(const char* name, process_t* (*process_loader)()){
     entries.add({
         .name = name,
         .process_loader = process_loader,
