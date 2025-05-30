@@ -32,6 +32,8 @@ void kernel_main() {
     page_allocator_init();
     kprintf("Initializing kernel...");
     
+    init_main_process();
+
     kprintf("Preparing for draw");
     gpu_size screen_size = {1080,720};
     

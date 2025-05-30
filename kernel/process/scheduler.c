@@ -52,6 +52,10 @@ void switch_proc(ProcSwitchReason reason) {
     process_restore();
 }
 
+void save_syscall_return(uint64_t value){
+    processes[current_proc].regs[14] = value;
+}
+
 void process_restore(){
     restore_context(&processes[current_proc]);
 }
@@ -100,6 +104,17 @@ void reset_process(process_t *proc){
     for (int k = 0; k < INPUT_BUFFER_CAPACITY; k++){
         proc->input_buffer.entries[k] = (keypress){0};
     }
+}
+
+void init_main_process(){
+    process_t* proc = &processes[0];
+    reset_process(proc);
+    proc->id = next_proc_index++;
+    proc->state = BLOCKED;
+    proc->heap = (uintptr_t)alloc_page(0x1000, true, false, false);
+    // proc->sp = ksp;
+    name_process(proc, "kernel");
+    proc_count++;
 }
 
 process_t* init_process(){

@@ -15,7 +15,9 @@ void switch_proc(ProcSwitchReason reason);
 void start_scheduler();
 void save_context_registers();
 void save_return_address_interrupt();
+void init_main_process();
 process_t* init_process();
+void save_syscall_return(uint64_t value);
 void process_restore();
 
 process_t* get_current_proc();
