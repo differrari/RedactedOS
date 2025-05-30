@@ -76,6 +76,7 @@ gpu_size fb_draw_string(uint32_t* fb, kstring s, uint32_t x0, uint32_t y0, uint3
             ySize += line_height;
             if (xRowSize > xSize)
                 xSize = xRowSize;
+            xRowSize = 0;
             xoff = 0;
         } else {
             fb_draw_char(fb, x0 + (xoff * char_size),y0,c,scale, color);
