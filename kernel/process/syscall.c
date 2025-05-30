@@ -54,10 +54,7 @@ void sync_el0_handler_c(){
         case 0:
             void* page_ptr = (void*)get_current_heap();
             if ((uintptr_t)page_ptr == 0x0){
-                if (currentEL == 1)
-                    page_ptr = alloc_page(0x1000,true,false,false);
-                else 
-                    handle_exception_with_info("Wrong process heap state", iss);
+                handle_exception_with_info("Wrong process heap state", iss);
             }
             result = (uintptr_t)allocate_in_page(page_ptr, x0, ALIGN_16B, get_current_privilege(), false);
             break;
@@ -136,18 +133,7 @@ void sync_el0_handler_c(){
         //We could handle more exceptions now, such as x25 (unmasked x96) = data abort
         handle_exception_with_info("UNEXPECTED EXCEPTION",ec);
     }
-    
-    asm volatile ("mov x29, %0" :: "r"(x29));
-    asm volatile ("mov x30, %0" :: "r"(x30));
-    if (currentEL == 0)
-        asm volatile ("msr sp_el0, %0" :: "r"(sp_el));
-    asm volatile ("msr elr_el1, %0" : : "r"(elr));
-    asm volatile ("msr spsr_el1, %0" : : "r"(spsr));
-    asm volatile (
-        "mov x0, %0\n"
-        "mov sp, %1\n"
-        "eret\n"
-        :: "r"(result), "r"(sp_el)
-        : "x0", "memory"
-    );
+    save_syscall_return(result);
+    process_restore();
 }
+

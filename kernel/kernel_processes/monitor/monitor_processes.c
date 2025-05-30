@@ -29,6 +29,14 @@ char* parse_proc_state(int state){
     }
 }
 
+uint64_t calc_heap(uintptr_t ptr){
+    mem_page *info = (mem_page*)ptr;
+    uint64_t size = info->size;
+    if (info->next)
+        size += calc_heap((uintptr_t)info->next);
+    return size;
+}
+
 __attribute__((section(".text.kcoreprocesses")))
 void print_process_info(){
     process_t *processes = get_all_processes();
@@ -37,6 +45,7 @@ void print_process_info(){
         if (proc->id != 0 && proc->state != STOPPED){
             printf("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uint64_t)parse_proc_state(proc->state));
             printf("Stack: %h (%h). SP: %h",proc->stack, proc->stack_size, proc->sp);
+            printf("Heap: %h (%h)",proc->heap, calc_heap(proc->heap));
             printf("Flags: %h", proc->spsr);
             printf("PC: %h",proc->pc);
         }
@@ -48,13 +57,6 @@ void print_process_info(){
 
 uint16_t scroll_index = 0;
 
-uint64_t calc_heap(uintptr_t ptr){
-    mem_page *info = (mem_page*)ptr;
-    uint64_t size = info->size;
-    if (info->next)
-        size += calc_heap((uintptr_t)info->next);
-    return size;
-}
 
 void draw_memory(char *name,int x, int y, int width, int full_height, int used, int size){
     int height = full_height - (gpu_get_char_size(2)*2) - 10;
@@ -143,6 +145,7 @@ void draw_process_view(){
 
     }
     gpu_flush();
+    print_process_info();
 }
 
 __attribute__((section(".text.kcoreprocesses")))

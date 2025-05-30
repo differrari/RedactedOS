@@ -16,7 +16,7 @@ extern void restore_context(process_t* proc);
 process_t processes[MAX_PROCS];
 uint16_t current_proc = 0;
 uint16_t proc_count = 0;
-uint16_t next_proc_index = 0;
+uint16_t next_proc_index = 1;
 
 typedef struct sleep_tracker {
     uint16_t pid;
@@ -61,7 +61,6 @@ void process_restore(){
 }
 
 void start_scheduler(){
-    ksp = (uintptr_t)alloc_page(0x1000,true,false,true);
     disable_interrupt();
     timer_init(1);
     switch_proc(YIELD);
@@ -112,7 +111,10 @@ void init_main_process(){
     proc->id = next_proc_index++;
     proc->state = BLOCKED;
     proc->heap = (uintptr_t)alloc_page(0x1000, true, false, false);
-    // proc->sp = ksp;
+    proc->stack_size = 0x1000;
+    proc->stack = (uintptr_t)alloc_page(proc->stack_size,true,false,true);
+    ksp = proc->stack + proc->stack_size;
+    proc->sp = ksp;
     name_process(proc, "kernel");
     proc_count++;
 }
