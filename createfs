@@ -1,0 +1,21 @@
+#!/bin/bash
+set -e
+
+IMG="disk.img"
+FOLDER="fs"
+SIZE_MB=64
+VOLUME_NAME="REDOS"
+
+[ -f "$IMG" ] && rm "$IMG"
+
+DEV_INFO=$(hdiutil create -size ${SIZE_MB}m -fs "ExFAT" -volname "$VOLUME_NAME" "$IMG" -attach)
+MOUNTPOINT=$(echo "$DEV_INFO" | grep "Volumes" | awk '{print $NF}')
+DEVICE=$(hdiutil info | grep "$MOUNTPOINT" | awk '{print $1}')
+
+cp -a "$FOLDER/." "$MOUNTPOINT/"
+
+echo $DEV_INFO | grep "Volumes" | awk '{print $NF}'
+
+mv "$IMG.dmg" $IMG
+
+hdiutil detach "$DEVICE"
