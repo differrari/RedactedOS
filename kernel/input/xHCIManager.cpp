@@ -4,7 +4,6 @@
 
 xHCIManager::xHCIManager(uint32_t capacity){
     devices = IndexMap<xHCIDevice*>(capacity);
-    dummy_device = new xHCIDevice(0,nullptr);//TODO: Our allocator fails if we allocate only one thing in a constructor, so we allocate a dummy here
 };
 
 void xHCIManager::register_device(uint8_t slot_id, xhci_usb_device *device){

@@ -10,12 +10,12 @@ sync_el0_handler_as:
     mov x13, x29
     mov x12, x30
     mrs     x10, spsr_el1
-    lsr     x19, x10, #2
-    and     x19, x19, #0b11
+    lsr     x18, x10, #2
+    and     x18, x18, #0b11
 
-    cmp     x19, #1
+    cmp     x18, #1
     b.eq    1f
-    cmp     x19, #0
+    cmp     x18, #0
     b.eq    2f
 
     b       3f

@@ -3,7 +3,6 @@
 
 xHCIDevice::xHCIDevice(uint32_t capacity, xhci_usb_device *dev) : device(dev) {
     endpoints = IndexMap<xHCIEndpoint*>(capacity);
-    dummy_endpoint = new xHCIEndpoint(nullptr);//TODO: Our allocator fails if we allocate only one thing in a constructor, so we allocate a dummy here
 };
 
 void xHCIDevice::request_data(uint8_t endpoint_id){

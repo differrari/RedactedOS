@@ -7,7 +7,6 @@
 class xHCIManager {
 public:
     xHCIManager(uint32_t capacity);
-    xHCIDevice *dummy_device;
     IndexMap<xHCIDevice*> devices;
     xHCIDevice *default_device;
 

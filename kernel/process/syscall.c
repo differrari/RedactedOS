@@ -35,7 +35,7 @@ void sync_el0_handler_c(){
     asm volatile ("mrs %0, spsr_el1" : "=r"(spsr));
 
     uint64_t currentEL;
-    asm volatile ("mov %0, x19" : "=r"(currentEL));
+    asm volatile ("mov %0, x18" : "=r"(currentEL));
 
     uint64_t sp_el;
     asm volatile ("mov %0, x11" : "=r"(sp_el));

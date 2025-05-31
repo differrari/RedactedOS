@@ -22,7 +22,6 @@ public:
 
     void register_endpoint(xhci_usb_device_endpoint *endpoint);
 
-    xHCIEndpoint *dummy_endpoint;
     IndexMap<xHCIEndpoint*> endpoints;
     xhci_usb_device *device;
 };
