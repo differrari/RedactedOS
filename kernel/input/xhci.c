@@ -6,6 +6,7 @@
 #include "memory/memory_access.h"
 #include "memory/page_allocator.h"
 #include "xhci_bridge.h"
+#include "std/string.h"
 
 static xhci_device global_device;
 
@@ -417,17 +418,6 @@ bool xhci_request_descriptor(xhci_usb_device *device, bool interface, uint8_t ty
     return xhci_request_sized_descriptor(device, interface, type, index, wIndex, descriptor->bLength, out_descriptor);
 }
 
-bool parse_string_descriptor_utf16le(const uint16_t* str_in, char* out_str, size_t max_len) {
-    size_t out_i = 0;
-    while (str_in[out_i] != 0 && out_i + 1 < max_len) {
-        uint16_t wc = str_in[out_i];
-        out_str[out_i] = (wc <= 0x7F) ? (char)wc : '?';
-        out_i++;
-    }
-    out_str[out_i] = '\0';
-    return true;
-}
-
 uint8_t get_ep_type(usb_endpoint_descriptor* descriptor) {
     return (descriptor->bEndpointAddress & 0x80 ? 1 << 2 : 0) | (descriptor->bmAttributes & 0x3);
 }
@@ -627,21 +617,21 @@ bool xhci_setup_device(uint16_t port){
         usb_string_descriptor* prod_name = (usb_string_descriptor*)allocate_in_page(xhci_mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
         if (xhci_request_descriptor(device, false, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){
             char name[128];
-            if (parse_string_descriptor_utf16le(prod_name->unicode_string, name, sizeof(name))) {
+            if (utf16tochar(prod_name->unicode_string, name, sizeof(name))) {
                 kprintfv("[xHCI device] Product name: %s", (uint64_t)name);
             }
         }
         usb_string_descriptor* man_name = (usb_string_descriptor*)allocate_in_page(xhci_mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
         if (xhci_request_descriptor(device, false, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, man_name)){
             char name[128];
-            if (parse_string_descriptor_utf16le(man_name->unicode_string, name, sizeof(name))) {
+            if (utf16tochar(man_name->unicode_string, name, sizeof(name))) {
                 kprintfv("[xHCI device] Manufacturer name: %s", (uint64_t)name);
             }
         }
         usb_string_descriptor* ser_name = (usb_string_descriptor*)allocate_in_page(xhci_mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
         if (xhci_request_descriptor(device, false, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, ser_name)){
             char name[128];
-            if (parse_string_descriptor_utf16le(ser_name->unicode_string, name, sizeof(name))) {
+            if (utf16tochar(ser_name->unicode_string, name, sizeof(name))) {
                 kprintfv("[xHCI device] Serial: %s", (uint64_t)name);
             }
         }

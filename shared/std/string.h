@@ -24,3 +24,5 @@ string string_repeat(char symbol, uint32_t amount);
 
 int strcmp(const char *a, const char *b);
 bool strcont(const char *a, const char *b);
+
+bool utf16tochar(const uint16_t* str_in, char* out_str, size_t max_len);
