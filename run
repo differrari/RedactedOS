@@ -9,7 +9,7 @@ fi
 
 ../qemu/build/qemu-system-aarch64-unsigned \
 -M virt \
--cpu cortex-a72 \
+-cpu cortex-a76 \
 -m 512M \
 -kernel kernel.elf \
 -device virtio-gpu-pci \
