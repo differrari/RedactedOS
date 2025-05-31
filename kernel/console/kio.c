@@ -26,9 +26,7 @@ void puthex(uint64_t value){
 }
 
 void kprintf_args(const char *fmt, const uint64_t *args, uint32_t arg_count){
-    disable_interrupt();
     kprintf_args_raw(fmt, args, arg_count);
-    enable_interrupt();
 }
 
 void kprintf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count){

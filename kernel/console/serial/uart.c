@@ -30,15 +30,11 @@ void uart_raw_putc(const char c) {
 }
 
 void uart_putc(const char c){
-    disable_interrupt();
     uart_raw_putc(c);
-    enable_interrupt();
 }
 
 void uart_puts(const char *s) {
-    disable_interrupt();
     uart_raw_puts(s);
-    enable_interrupt();
 }
 
 void uart_raw_puts(const char *s) {
@@ -49,7 +45,6 @@ void uart_raw_puts(const char *s) {
 }
 
 void uart_puthex(uint64_t value) {
-    disable_interrupt();
     bool started = false;
     uart_raw_putc('0');
     uart_raw_putc('x');
@@ -61,5 +56,4 @@ void uart_puthex(uint64_t value) {
             uart_raw_putc(curr_char);
         }
     }
-    enable_interrupt();
 }
