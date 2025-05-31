@@ -45,7 +45,7 @@ bool ef_init(){
         kprintf("Wrong boot signature %h",mbs->bootsignature);
         return false;
     }
-    if (strcont("EXFAT", mbs->fsname) != 0){
+    if (strcmp("EXFAT   ", mbs->fsname) != 0){
         kprintf("Wrong filesystem type %s",(uintptr_t)mbs->fsname);
         return false;
     }
