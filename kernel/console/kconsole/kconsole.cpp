@@ -67,6 +67,25 @@ void KernelConsole::put_string(const char *str) {
     gpu_flush();
 }
 
+void KernelConsole::put_hex(uint64_t value) {
+    if (!check_ready())
+        return;
+    put_char('0');
+    put_char('x');
+    bool started = false;
+    for (uint32_t i = 60;; i -= 4) {
+        uint8_t nibble = (value >> i) & 0xF;
+        char curr_char = nibble < 10 ? '0' + nibble : 'A' + (nibble - 10);
+        if (started || curr_char != '0' || i == 0) {
+            started = true;
+            put_char(curr_char);
+        }
+        if (i == 0) break;
+    }
+
+    gpu_flush();
+}
+
 void KernelConsole::newline() {
     if (!check_ready())
         return;

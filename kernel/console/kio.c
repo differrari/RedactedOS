@@ -19,6 +19,12 @@ void putc(const char c){
         kconsole_putc(c);
 }
 
+void puthex(uint64_t value){
+    uart_puthex(value);
+    if (use_visual)
+        kconsole_puthex(value);
+}
+
 void kprintf_args(const char *fmt, const uint64_t *args, uint32_t arg_count){
     disable_interrupt();
     kprintf_args_raw(fmt, args, arg_count);
