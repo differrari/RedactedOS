@@ -36,6 +36,7 @@ typedef struct virtio_device {
     uint8_t* device_cfg;
     uint8_t* isr_cfg;
     uint32_t notify_off_multiplier;
+    void *memory_page;
 } virtio_device;
 
 void virtio_enable_verbose();

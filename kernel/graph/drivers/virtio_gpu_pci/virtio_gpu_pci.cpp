@@ -111,6 +111,7 @@ typedef struct virtio_2d_resource {
 } virtio_2d_resource;
 
 gpu_size VirtioGPUDriver::get_display_info(){
+    //TODO: replace talloc as we did in disk
     virtio_gpu_ctrl_hdr* cmd = (virtio_gpu_ctrl_hdr*)talloc(sizeof(virtio_gpu_ctrl_hdr));
     cmd->type = VIRTIO_GPU_CMD_GET_DISPLAY_INFO;
     cmd->flags = 0;

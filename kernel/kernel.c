@@ -57,6 +57,8 @@ void kernel_main() {
     if (!find_disk())
         panic("Disk initialization failure");
 
+    disk_init_test();
+
     // mmu_enable_verbose();
     mmu_init();
     kprintf("MMU Mapped");

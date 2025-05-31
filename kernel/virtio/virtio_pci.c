@@ -1,7 +1,7 @@
 #include "console/kio.h"
 #include "pci.h"
 #include "memory/memory_access.h"
-#include "memory/kalloc.h"
+#include "memory/page_allocator.h"
 #include "virtio_pci.h"
 
 struct virtq_desc {
@@ -133,9 +133,11 @@ bool virtio_init_device(virtio_device *dev) {
     cfg->queue_select = 0;
     uint32_t size = cfg->queue_size;
 
-    uint64_t base = talloc(0x1000);
-    uint64_t avail = talloc(0x1000);
-    uint64_t used = talloc(0x1000);
+    dev->memory_page = alloc_page(0x1000, true, true, false);
+
+    uint64_t base = (uintptr_t)allocate_in_page(dev->memory_page, 0x1000, ALIGN_64B, true, true);
+    uint64_t avail = (uintptr_t)allocate_in_page(dev->memory_page, 0x1000, ALIGN_64B, true, true);
+    uint64_t used = (uintptr_t)allocate_in_page(dev->memory_page, 0x1, ALIGN_64B, true, true);
 
     kprintfv("[VIRTIO] Device base %h",base);
     kprintfv("[VIRTIO] Device avail %h",avail);
@@ -150,12 +152,6 @@ bool virtio_init_device(virtio_device *dev) {
     cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
     return true;
 }
-
-struct virtio_blk_req {
-    uint32_t type;
-    uint32_t reserved;
-    uint64_t sector;
-} __attribute__((packed));
 
 bool virtio_send(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t used, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags) {
     struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)desc;
