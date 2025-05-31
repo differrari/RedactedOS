@@ -46,10 +46,10 @@ void xHCIKeyboard::process_data(){
             // kprintf_raw("Key [%i]: %i", i, kp.keys[i]);
         }
         last_keypress = kp;
+        register_keypress(kp);
     } else
         repeated_keypresses++;
 
     request_data();
 
-    register_keypress(kp);
 }
