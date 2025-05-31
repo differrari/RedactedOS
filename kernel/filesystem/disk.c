@@ -21,8 +21,8 @@ bool find_disk(){
     return vblk_find_disk();
 }
 
-void disk_init_test(){
-    ef_read_test_file();
+bool disk_init(){
+    return ef_init();
 }
 
 void disk_write(const void *buffer, uint32_t sector, uint32_t count){

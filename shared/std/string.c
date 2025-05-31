@@ -160,7 +160,7 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
     return (string){ .data = buf, .length = len };
 }
 
-bool strcmp(const char *a, const char *b) {
+int strcmp(const char *a, const char *b) {
     while (*a && *b) {
         if (*a != *b) return (unsigned char)*a - (unsigned char)*b;
         a++; b++;

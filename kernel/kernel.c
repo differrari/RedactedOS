@@ -56,11 +56,12 @@ void kernel_main() {
     // disk_verbose();
     if (!find_disk())
         panic("Disk initialization failure");
-
-    disk_init_test();
+    
+    mmu_init();
+    if (!disk_init())
+        panic("Disk read failure");
 
     // mmu_enable_verbose();
-    mmu_init();
     kprintf("MMU Mapped");
 
     kprintf("Kernel initialization finished");
