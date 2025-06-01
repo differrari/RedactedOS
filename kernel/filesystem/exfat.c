@@ -50,21 +50,18 @@ typedef struct file_entry {
         uint8_t rsvd2[7];
 }__attribute__((packed)) file_entry;
 
-// C0 03 00 04 36 FC 00 00 00 10 00 00 00 00 00 00 00 00 00 00 0B 00 00 00 00 10 00 00 00 00 00 00 // root directory
-// C0 03 00 09 46 30 00 00 0D 00 00 00 00 00 00 00 00 00 00 00 11 00 00 00 0D 00 00 00 00 00 00 00 // hello.txt
-// C0 03 00 09 11 AB 00 00 11 00 00 00 00 00 00 00 00 00 00 00 0F 00 00 00 11 00 00 00 00 00 00 00//world.txt
-
 typedef struct fileinfo_entry {
         uint8_t entry_type;
         uint8_t flags;
         uint8_t rsvd;
-        uint8_t unk[5];
-        uint64_t filesize;
-        uint32_t unk2;
+        uint8_t name_length;
+        uint16_t name_hash;
+        uint16_t rsvd2;
+        uint64_t valid_filesize;
+        uint32_t rsvd3;
         uint32_t first_cluster;
-        uint64_t filesize2;
+        uint64_t filesize;
 }__attribute__((packed)) fileinfo_entry;
-//Microsoft is so bad at their job I found it easier to reverse engineer their struct format than interpret their incorrect documentation
 
 typedef struct filename_entry {
         uint8_t entry_type;
