@@ -2,7 +2,7 @@
 #include "console/serial/uart.h"
 #include "kstring.h"
 #include "console/kio.h"
-#include "mmu.h"
+#include "memory/mmu.h"
 #include "graph/graphics.h"
 #include "irq.h"
 #include "theme/theme.h"

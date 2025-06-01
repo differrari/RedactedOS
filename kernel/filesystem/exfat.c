@@ -72,45 +72,45 @@ typedef struct filename_entry {
         uint16_t name[15];
 }__attribute__((packed)) filename_entry;
 
-void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_index){
-
+void* ef_read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_index){
     uint32_t count = cluster_size;
 
     kprintf("Reading cluster %i (LBA %i)", root_index, cluster_start + ((root_index - 2) * cluster_size));
 
-    char* buffer = (char*)allocate_in_page(fs_page, cluster_size * 512, ALIGN_64B, true, true);
+    void* buffer = (char*)allocate_in_page(fs_page, cluster_size * 512, ALIGN_64B, true, true);
     
-    disk_read((void*)buffer, cluster_start + ((root_index - 2) * cluster_size), count);
+    disk_read(buffer, cluster_start + ((root_index - 2) * cluster_size), count);
+    
+    return buffer;
+}
+
+void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_index){
+
+    char *buffer = (char*)ef_read_cluster(cluster_start, cluster_size, root_index);
 
     file_entry *entry;
     fileinfo_entry *entry1;
     filename_entry *entry2;
-    for (uint64_t i = 0; i < count * 512; i++){
+    for (uint64_t i = 0; i < cluster_size * 512; i++){
         char c = buffer[i];
         if (c == 0x85){
             entry = (file_entry *)&buffer[i];
-            kprintf("Found entry with %i more subsequent entries", entry->entry_count);
+            // kprintf("Found entry with %i more subsequent entries", entry->entry_count);
             i += sizeof(file_entry)-1;
         }
         else if (c == 0xC0){
             entry1 = (fileinfo_entry *)&buffer[i];
-            kprintf("Found info entry with %i size", entry1->filesize);
-            for (int j = 0; j < sizeof(fileinfo_entry); j++){
-                puthex(buffer[i+j]);
-                putc(' ');
-            }
-            kprintf("\nFinished entry debug");
             i += sizeof(fileinfo_entry)-1;
         }
         else if (c == 0xC1){
             entry2 = (filename_entry *)&buffer[i];
             char name[15];
             utf16tochar(entry2->name, name, 15);
-            kprintf("Found name entry: %s", (uintptr_t)name);
-            if (strcont(name, "root")){
+            kprintf("%s - %i", (uintptr_t)name, entry1->filesize);
+            if (strcont(name, "hello.txt")){
                 uint32_t filecluster = entry1->first_cluster;
-                kprintf("Found hello.txt at %h - size %h", filecluster,entry1->filesize);
-                ef_read_root(cluster_start, cluster_size, filecluster);
+                kprintf("Found hello.txt at %h - %h bytes", filecluster,entry1->filesize);
+                ef_read_debug(cluster_start, cluster_size, filecluster);
             }
             i += sizeof(filename_entry)-1;
         }
@@ -123,15 +123,9 @@ void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_i
 
 void ef_read_debug(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_index){
 
-    uint32_t count = cluster_size;
+    char *buffer = (char*)ef_read_cluster(cluster_start, cluster_size, root_index);
 
-    kprintf("Reading cluster %i (LBA %i)", root_index, cluster_start + ((root_index - 2) * cluster_size));
-
-    char* buffer = (char*)allocate_in_page(fs_page, cluster_size * 512, ALIGN_64B, true, true);
-    
-    disk_read((void*)buffer, cluster_start + ((root_index - 2) * cluster_size), count);
-
-    for (uint64_t i = 0; i < count * 512; i++){
+    for (uint64_t i = 0; i < cluster_size * 512; i++){
         // if (i % 8 == 0){ puts("\n["); puthex(i/8); puts("]: "); }
         char c = buffer[i];
         if (c >= 0x20 && c <= 0x7E) putc(c);

@@ -4,7 +4,7 @@
 #include "pci.h"
 #include "kstring.h"
 #include "console/kconsole/kconsole.h"
-#include "mmu.h"
+#include "memory/mmu.h"
 #include "interrupts/exception_handler.h"
 #include "memory/kalloc.h"
 #include "dtb.h"

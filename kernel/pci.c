@@ -5,7 +5,7 @@
 #include "fw/fw_cfg.h"
 #include "kstring.h"
 #include "interrupts/irq.h"
-#include "mmu.h"
+#include "memory/mmu.h"
 #include "memory/memory_access.h"
 
 #define PCI_BUS_MAX 256

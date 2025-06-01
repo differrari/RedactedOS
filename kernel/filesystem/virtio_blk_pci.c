@@ -3,7 +3,6 @@
 #include "std/string.h"
 #include "memory/memory_access.h"
 #include "memory/page_allocator.h"
-#include "mmu.h"
 #include "console/kio.h"
 #include "pci.h"
 #include "virtio/virtio_pci.h"
