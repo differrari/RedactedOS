@@ -110,7 +110,7 @@ void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_i
             if (strcont(name, "hello.txt")){
                 uint32_t filecluster = entry1->first_cluster;
                 kprintf("Found hello.txt at %h - %h bytes", filecluster,entry1->filesize);
-                ef_read_debug(cluster_start, cluster_size, filecluster);
+                ef_read_dump(cluster_start, cluster_size, filecluster);
             }
             i += sizeof(filename_entry)-1;
         }
@@ -121,7 +121,7 @@ void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_i
     putc('\n');
 }
 
-void ef_read_debug(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_index){
+void ef_read_dump(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_index){
 
     char *buffer = (char*)ef_read_cluster(cluster_start, cluster_size, root_index);
 
