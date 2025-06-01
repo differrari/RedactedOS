@@ -31,28 +31,44 @@ typedef struct exfat_mbs {
 }__attribute__((packed)) exfat_mbs;
 
 typedef struct file_entry {
-        uint8_t entry_type;// = 0x85;
-        uint8_t entry_count; // This is the number of subsequent entries that also belong to this "file" entry. Should be at least 2, one 0xC0 and one 0xC1 for info and filename.
+        uint8_t entry_type;
+        uint8_t entry_count;
+        uint16_t checksum;
+        uint16_t flags;
+        
+        // uint8_t custom[14];
         uint16_t rsvd;
-        uint32_t flags; // 0x10 == directory, probably identical to fat32
-        uint32_t creation, modification, access;
-        char pad[12];
+        uint32_t create_timestamp;
+        uint32_t last_modified;
+        uint32_t last_accessed;
+        uint8_t create10msincrement;
+        uint8_t lastmod10msincrement;
+        uint8_t createutcoffset;
+        uint8_t lastmodutcoffset;
+        uint8_t lastaccutcoffset;
+        
+        uint8_t rsvd2[7];
 }__attribute__((packed)) file_entry;
 
+// C0 03 00 04 36 FC 00 00 00 10 00 00 00 00 00 00 00 00 00 00 0B 00 00 00 00 10 00 00 00 00 00 00 // root directory
+// C0 03 00 09 46 30 00 00 0D 00 00 00 00 00 00 00 00 00 00 00 11 00 00 00 0D 00 00 00 00 00 00 00 // hello.txt
+// C0 03 00 09 11 AB 00 00 11 00 00 00 00 00 00 00 00 00 00 00 0F 00 00 00 11 00 00 00 00 00 00 00//world.txt
+
 typedef struct fileinfo_entry {
-        uint8_t entryType;
+        uint8_t entry_type;
         uint8_t flags;
-        uint8_t unk; // = 0. May be part of next field, but then it'd be in big-endian order which is unlikely.
-        uint8_t filenameLengthInBytes;
+        uint8_t rsvd;
+        uint8_t unk[5];
         uint64_t filesize;
         uint32_t unk2;
-        uint32_t startCluster; // minus 2! Same as fat12/16/32.
+        uint32_t first_cluster;
         uint64_t filesize2;
 }__attribute__((packed)) fileinfo_entry;
+//Microsoft is so bad at their job I found it easier to reverse engineer their struct format than interpret their incorrect documentation
 
 typedef struct filename_entry {
-        uint8_t entrytype;
-        uint8_t entrycount;
+        uint8_t entry_type;
+        uint8_t flags;
         uint16_t name[15];
 }__attribute__((packed)) filename_entry;
 
@@ -66,26 +82,40 @@ void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_i
     
     disk_read((void*)buffer, cluster_start + ((root_index - 2) * cluster_size), count);
 
+    file_entry *entry;
+    fileinfo_entry *entry1;
+    filename_entry *entry2;
     for (uint64_t i = 0; i < count * 512; i++){
         char c = buffer[i];
         if (c == 0x85){
-            file_entry *entry = (file_entry *)&buffer[i];
+            entry = (file_entry *)&buffer[i];
             kprintf("Found entry with %i more subsequent entries", entry->entry_count);
             i += sizeof(file_entry)-1;
         }
         else if (c == 0xC0){
-            fileinfo_entry *entry1 = (fileinfo_entry *)&buffer[i];
-            kprintf("Found info entry with %i size", entry1->filenameLengthInBytes);
+            entry1 = (fileinfo_entry *)&buffer[i];
+            kprintf("Found info entry with %i size", entry1->filesize);
+            for (int j = 0; j < sizeof(fileinfo_entry); j++){
+                puthex(buffer[i+j]);
+                putc(' ');
+            }
+            kprintf("\nFinished entry debug");
             i += sizeof(fileinfo_entry)-1;
         }
         else if (c == 0xC1){
-            filename_entry *entry2 = (filename_entry *)&buffer[i];
+            entry2 = (filename_entry *)&buffer[i];
             char name[15];
             utf16tochar(entry2->name, name, 15);
             kprintf("Found name entry: %s", (uintptr_t)name);
+            if (strcont(name, "root")){
+                uint32_t filecluster = entry1->first_cluster;
+                kprintf("Found hello.txt at %h - size %h", filecluster,entry1->filesize);
+                ef_read_root(cluster_start, cluster_size, filecluster);
+            }
             i += sizeof(filename_entry)-1;
         }
-        else if (c >= 0x20 && c <= 0x7E) putc(c);
+        // else if (c >= 0x20 && c <= 0x7E) putc(c);
+        // else puthex(c);
     }
     // puts("Done printing");
     putc('\n');
