@@ -1,4 +1,4 @@
-#define BOOTSCREEN_TEXT "[REDACTED] Operative System\nPowering Divine Machinery"
+#define BOOTSCREEN_TEXT "[REDACTED] Operating System"
 
 #define BOOTSCREEN_NUM_SYMBOLS 8
 #define BOOTSCREEN_NUM_STEPS 7

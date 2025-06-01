@@ -1,4 +1,4 @@
-#define BOOTSCREEN_TEXT "JesOS - The Christian Operative System"
+#define BOOTSCREEN_TEXT "JesOS - The Christian Operating System"
 
 #define BOOTSCREEN_NUM_SYMBOLS 12
 #define BOOTSCREEN_NUM_STEPS 12
