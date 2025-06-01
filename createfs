@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 IMG="disk.img"
 FOLDER="fs"
@@ -9,7 +8,7 @@ VOLUME_NAME="REDOS"
 [ -f "$IMG" ] && rm "$IMG"
 [ -f "$IMG.dmg" ] && rm "$IMG.dmg"
 
-DEV_INFO=$(hdiutil create -size ${SIZE_MB}m -fs "ExFAT" -volname "$VOLUME_NAME" "$IMG" -attach)
+DEV_INFO=$(hdiutil create -size ${SIZE_MB}m -fs "ExFAT" -layout NONE -volname "$VOLUME_NAME" "$IMG" -attach)
 MOUNTPOINT=$(echo "$DEV_INFO" | awk '/\/Volumes\// {print $NF}')
 DEVICE=$(echo "$DEV_INFO" | awk '/\/dev\/disk/ {print $1; exit}')
 

@@ -72,7 +72,7 @@ typedef struct filename_entry {
 void* ef_read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_index){
     uint32_t count = cluster_size;
 
-    kprintf("Reading cluster %i (LBA %i)", root_index, cluster_start + ((root_index - 2) * cluster_size));
+    kprintf("Reading cluster %i, starting from %i (LBA %i)", root_index, cluster_start, cluster_start + ((root_index - 2) * cluster_size));
 
     void* buffer = (char*)allocate_in_page(fs_page, cluster_size * 512, ALIGN_64B, true, true);
     
@@ -103,8 +103,13 @@ void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_i
             entry2 = (filename_entry *)&buffer[i];
             char name[15];
             utf16tochar(entry2->name, name, 15);
-            kprintf("%s - %i", (uintptr_t)name, entry1->filesize);
-            if (strcont(name, "hello.txt")){
+            kprintf("%s - %i -> %h", (uintptr_t)name, entry1->filesize, entry1->first_cluster);
+            if (strcmp(name, "root") == 0){
+                uint32_t filecluster = entry1->first_cluster;
+                kprintf("Found root at %h - %h bytes", filecluster,entry1->filesize);
+                ef_read_root(cluster_start, cluster_size, filecluster);
+            }
+            if (strcmp(name, "hello.txt") == 0){
                 uint32_t filecluster = entry1->first_cluster;
                 kprintf("Found hello.txt at %h - %h bytes", filecluster,entry1->filesize);
                 ef_read_dump(cluster_start, cluster_size, filecluster);
@@ -146,7 +151,7 @@ bool ef_init(){
 
     exfat_mbs* mbs = (exfat_mbs*)allocate_in_page(fs_page, 512, ALIGN_64B, true, true);
     
-    disk_read((void*)mbs, 1, 1);
+    disk_read((void*)mbs, 0, 1);
 
     if (mbs->bootsignature != 0xAA55){
         kprintf("[exfat] Wrong boot signature %h",mbs->bootsignature);
@@ -159,14 +164,17 @@ bool ef_init(){
     uintptr_t extended = (1 << mbs->bytes_per_sector_shift) - 512;
     if (extended > 0){
         kprintf("[exfat implementation error] we don't support extended boot sector yet");
-        return false;
+        // return false;
     }
 
     if (mbs->first_cluster_of_root_directory > mbs->cluster_count){
         kprintf("[exfat error] root directory cluster not found");
         return false;
     }
-    kprintf("Cluster at %h (%h size %i)",mbs->fat_offset + mbs->fat_length * mbs->number_of_fats, mbs->cluster_heap_offset,mbs->cluster_count);    
+
+    kprintf("EXFAT Volume uses %i cluster size", 1 << mbs->bytes_per_sector_shift);
+
+    kprintf("Cluster at %h (%h * %h of size %h each)",mbs->fat_offset + mbs->fat_length * mbs->number_of_fats, mbs->cluster_heap_offset,mbs->cluster_count, 1 << mbs->sectors_per_cluster_shift);    
     ef_read_FAT(mbs->fat_offset, mbs->fat_length, mbs->number_of_fats);
     ef_read_root(mbs->cluster_heap_offset, 1 << mbs->sectors_per_cluster_shift, mbs->first_cluster_of_root_directory);
 
