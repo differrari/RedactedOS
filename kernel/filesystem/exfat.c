@@ -69,21 +69,25 @@ typedef struct filename_entry {
         uint16_t name[15];
 }__attribute__((packed)) filename_entry;
 
-void* ef_read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_index){
-    uint32_t count = cluster_size;
+exfat_mbs* mbs;
 
-    kprintf("Reading cluster %i, starting from %i (LBA %i)", root_index, cluster_start, cluster_start + ((root_index - 2) * cluster_size));
+void* ef_read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index){
+    uint32_t count = cluster_count * cluster_size;
 
-    void* buffer = (char*)allocate_in_page(fs_page, cluster_size * 512, ALIGN_64B, true, true);
+    uint32_t lba = cluster_start + ((root_index - 2) * cluster_size);
+
+    kprintf("Reading cluster(s) %i-%i, starting from %i (LBA %i)", root_index, root_index+cluster_count, cluster_start, lba);
+
+    void* buffer = (char*)allocate_in_page(fs_page, cluster_count * cluster_size * 512, ALIGN_64B, true, true);
     
-    disk_read(buffer, cluster_start + ((root_index - 2) * cluster_size), count);
+    disk_read(buffer, lba, count);
     
     return buffer;
 }
 
-void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_index){
+void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index){
 
-    char *buffer = (char*)ef_read_cluster(cluster_start, cluster_size, root_index);
+    char *buffer = (char*)ef_read_cluster(cluster_start, cluster_size, cluster_count, root_index);
 
     file_entry *entry;
     fileinfo_entry *entry1;
@@ -92,7 +96,6 @@ void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_i
         char c = buffer[i];
         if (c == 0x85){
             entry = (file_entry *)&buffer[i];
-            // kprintf("Found entry with %i more subsequent entries", entry->entry_count);
             i += sizeof(file_entry)-1;
         }
         else if (c == 0xC0){
@@ -104,30 +107,25 @@ void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_i
             char name[15];
             utf16tochar(entry2->name, name, 15);
             kprintf("%s - %i -> %h", (uintptr_t)name, entry1->filesize, entry1->first_cluster);
-            if (strcmp(name, "root") == 0){
+            if (strcmp(name, "user.elf") == 0){
                 uint32_t filecluster = entry1->first_cluster;
-                kprintf("Found root at %h - %h bytes", filecluster,entry1->filesize);
-                ef_read_root(cluster_start, cluster_size, filecluster);
-            }
-            if (strcmp(name, "hello.txt") == 0){
-                uint32_t filecluster = entry1->first_cluster;
-                kprintf("Found hello.txt at %h - %h bytes", filecluster,entry1->filesize);
-                ef_read_dump(cluster_start, cluster_size, filecluster);
+                uint32_t bytes_per_sector = 1 << mbs->bytes_per_sector_shift;
+                uint32_t sectors_per_cluster = 1 << mbs->sectors_per_cluster_shift;
+                uint32_t bytes_per_cluster = bytes_per_sector * sectors_per_cluster;
+                uint32_t cluster_count = (entry1->filesize + bytes_per_cluster - 1) / bytes_per_cluster;
+                kprintf("Found user.elf at %h - %i bytes, %i clusters", filecluster,entry1->filesize, cluster_count);
+                ef_read_dump(cluster_start, cluster_size, cluster_count, filecluster);
             }
             i += sizeof(filename_entry)-1;
         }
-        // else if (c >= 0x20 && c <= 0x7E) putc(c);
-        // else puthex(c);
     }
-    // puts("Done printing");
-    putc('\n');
 }
 
-void ef_read_dump(uint32_t cluster_start, uint32_t cluster_size, uint32_t root_index){
+void ef_read_dump(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index){
 
-    char *buffer = (char*)ef_read_cluster(cluster_start, cluster_size, root_index);
+    char *buffer = (char*)ef_read_cluster(cluster_start, cluster_size, cluster_count, root_index);
 
-    for (uint64_t i = 0; i < cluster_size * 512; i++){
+    for (uint64_t i = 0; i < cluster_size * cluster_count * 512; i++){
         // if (i % 8 == 0){ puts("\n["); puthex(i/8); puts("]: "); }
         char c = buffer[i];
         if (c >= 0x20 && c <= 0x7E) putc(c);
@@ -149,7 +147,7 @@ void ef_read_FAT(uint32_t location, uint32_t size, uint8_t count){
 bool ef_init(){
     fs_page = alloc_page(0x1000, true, true, false);
 
-    exfat_mbs* mbs = (exfat_mbs*)allocate_in_page(fs_page, 512, ALIGN_64B, true, true);
+    mbs = (exfat_mbs*)allocate_in_page(fs_page, 512, ALIGN_64B, true, true);
     
     disk_read((void*)mbs, 0, 1);
 
@@ -176,7 +174,7 @@ bool ef_init(){
 
     kprintf("Cluster at %h (%h * %h of size %h each)",mbs->fat_offset + mbs->fat_length * mbs->number_of_fats, mbs->cluster_heap_offset,mbs->cluster_count, 1 << mbs->sectors_per_cluster_shift);    
     ef_read_FAT(mbs->fat_offset, mbs->fat_length, mbs->number_of_fats);
-    ef_read_root(mbs->cluster_heap_offset, 1 << mbs->sectors_per_cluster_shift, mbs->first_cluster_of_root_directory);
+    ef_read_root(mbs->cluster_heap_offset, 1 << mbs->sectors_per_cluster_shift, 1, mbs->first_cluster_of_root_directory);
 
     // while(1);
     return true;
