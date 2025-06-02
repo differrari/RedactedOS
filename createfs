@@ -14,6 +14,9 @@ DEVICE=$(echo "$DEV_INFO" | awk '/\/dev\/disk/ {print $1; exit}')
 
 cp -R "$FOLDER/" "$MOUNTPOINT/"
 
+#.fseventsd is not getting deleted i think
+find "$MOUNTPOINT/" -type f \( -name '.DS_Store' -o -name '.fseventsd' -o -name '._*' \) -delete
+
 echo "$MOUNTPOINT"
 echo "DEV: $DEVICE"
 

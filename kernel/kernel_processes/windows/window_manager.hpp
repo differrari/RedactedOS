@@ -2,7 +2,7 @@
 
 #include "types.h"
 #include "desktop.hpp"
-#include "process.h"
+#include "process/process.h"
 
 class WindowManager {
 public:

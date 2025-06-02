@@ -10,13 +10,11 @@
 #include "dtb.h"
 #include "interrupts/irq.h"
 #include "process/scheduler.h"
-#include "default_process.h"
 #include "filesystem/disk.h"
 #include "kernel_processes/boot/bootprocess.h"
 #include "input/xhci_bridge.h"
 #include "input/xhci.h"
 #include "kernel_processes/monitor/monitor_processes.h"
-#include "process_loader.h"
 #include "memory/page_allocator.h"
 
 void kernel_main() {

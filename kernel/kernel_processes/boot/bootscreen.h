@@ -3,7 +3,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "process.h"
+#include "process/process.h"
 #include "types.h"
 
 process_t* start_bootscreen();

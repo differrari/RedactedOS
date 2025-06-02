@@ -1,7 +1,7 @@
 #pragma once
 
 #include "types.h"
-#include "process.h"
+#include "process/process.h"
 
 #ifdef __cplusplus
 extern "C" {

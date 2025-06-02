@@ -6,6 +6,7 @@
 #include "ui/draw/draw.h"
 #include "memory/memory_access.h"
 #include "std/std.hpp"
+#include "std/memfunctions.h"
 
 typedef struct {
     uint64_t addr;

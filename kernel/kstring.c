@@ -2,6 +2,7 @@
 #include "memory/kalloc.h"
 #include "memory/memory_access.h"
 #include "std/string.h"
+#include "std/memfunctions.h"
 
 //TODO: we can most likely get rid of this class now and use string entirely
 static uint32_t compute_length(const char *s, uint32_t max_length) {

@@ -2,7 +2,7 @@
 
 #include "types.h"
 #include "graph/graphics.h"
-#include "process.h"
+#include "process/process.h"
 #include "ui/ui.hpp"
 #include "std/std.hpp"
 

@@ -10,6 +10,7 @@
 #include "memory/memory_access.h"
 #include "input/input_dispatch.h"
 #include "kernel_processes/windows/windows.h"
+#include "std/memfunctions.h"
 
 void sync_el0_handler_c(){
     save_context_registers();

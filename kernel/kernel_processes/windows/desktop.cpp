@@ -3,7 +3,6 @@
 #include "graph/graphics.h"
 #include "theme/theme.h"
 #include "input/input_dispatch.h"
-#include "default_process.h"
 #include "memory/kalloc.h"
 
 #define MAX_COLS 3
@@ -18,8 +17,8 @@ void Desktop::add_entry(const char* name, process_t* (*process_loader)()){
 
 Desktop::Desktop() {
     entries = Array<LaunchEntry>(9);
-    add_entry("Test Process",default_processes);
-    add_entry("Test Process 2",default_processes);
+    // add_entry("Test Process",default_processes);
+    // add_entry("Test Process 2",default_processes);
     single_label = new Label();
 }
 

@@ -7,6 +7,7 @@
 #include "memory/page_allocator.h"
 #include "xhci_bridge.h"
 #include "std/string.h"
+#include "std/memfunctions.h"
 
 static xhci_device global_device;
 

@@ -5,7 +5,7 @@ extern "C" {
 #endif
 
 #include "types.h"
-#include "process.h"
+#include "process/process.h"
 
 process_t* start_windows();
 

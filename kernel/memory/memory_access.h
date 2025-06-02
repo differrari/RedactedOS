@@ -13,15 +13,3 @@ void write64(uintptr_t addr, uint64_t value);
 void write(uint64_t addr, uint64_t value);
 uint64_t read(uint64_t addr);
 void write_barrier();
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-int memcmp(const void *s1, const void *s2, unsigned long n);
-void *memset(void *dest, int val, unsigned long count);
-void *memcpy(void *dest, const void *src, uint64_t n);
-
-#ifdef __cplusplus
-}
-#endif

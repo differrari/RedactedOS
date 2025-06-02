@@ -2,6 +2,7 @@
 
 all: shared user kernel
 	@echo "Build complete."
+	./createfs
 
 shared:
 	$(MAKE) -C shared

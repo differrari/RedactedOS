@@ -178,6 +178,6 @@ bool ef_init(){
     ef_read_FAT(mbs->fat_offset, mbs->fat_length, mbs->number_of_fats);
     ef_read_root(mbs->cluster_heap_offset, 1 << mbs->sectors_per_cluster_shift, mbs->first_cluster_of_root_directory);
 
-    while(1);
+    // while(1);
     return true;
 }

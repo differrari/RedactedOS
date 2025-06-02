@@ -1,5 +1,5 @@
 #include "input_dispatch.h"
-#include "process.h"
+#include "process/process.h"
 #include "process/scheduler.h"
 
 process_t* focused_proc;

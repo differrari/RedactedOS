@@ -21,16 +21,6 @@ SECTIONS {
     .heap_fill : { FILL(0); . = . + 0x2000000; }
     heap_limit = .;
 
-    .proc1 : ALIGN(8) {
-        proc_1_rodata_start = .;
-        KEEP(*(.rodata.proc1))
-        KEEP(*(.data.proc1))
-        proc_1_rodata_end = .;
-        proc_1_start = .;
-        KEEP(*(.text.proc1))
-        proc_1_end = .;
-    }
-
     .kcoreprocesses : ALIGN(8) {
         kcoreprocesses_rodata_start = .;
         KEEP(*(.rodata.kcoreprocesses))

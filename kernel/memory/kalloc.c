@@ -6,6 +6,7 @@
 #include "console/serial/uart.h"
 #include "memory/memory_access.h"
 #include "std/string.h"
+#include "std/memfunctions.h"
 
 static uint64_t total_ram_size = 0;
 static uint64_t total_ram_start = 0;
