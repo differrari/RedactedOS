@@ -169,6 +169,14 @@ int strcmp(const char *a, const char *b) {
     return (unsigned char)*a - (unsigned char)*b;
 }
 
+int strstart(const char *a, const char *b) {
+    while (*a && *b) {
+        if (*a != *b) return (unsigned char)*a - (unsigned char)*b;
+        a++; b++;
+    }
+    return 0;
+}
+
 bool strcont(const char *a, const char *b) {
     while (*a) {
         const char *p = a, *q = b;

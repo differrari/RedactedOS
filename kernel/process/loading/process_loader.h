@@ -6,7 +6,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-process_t* create_process(char *name, void (*func)(), uint64_t code_size, uint64_t func_base, void* data, uint64_t data_size);
+process_t* create_process(char *name, void *content, uint64_t content_size, uintptr_t entry);
 void translate_enable_verbose();
 #ifdef __cplusplus
 }

@@ -3,6 +3,7 @@
 #include "memory/page_allocator.h"
 #include "console/kio.h"
 #include "std/string.h"
+#include <string.h>
 
 void *fs_page;
 
@@ -34,9 +35,16 @@ typedef struct file_entry {
         uint8_t entry_type;
         uint8_t entry_count;
         uint16_t checksum;
-        uint16_t flags;
+        struct {
+            uint16_t read_only: 1;
+            uint16_t hidden: 1;
+            uint16_t system: 1;
+            uint16_t rsvd: 1;
+            uint16_t directory: 1;
+            uint16_t archive: 1;
+            uint16_t rsvd2: 10;
+        } flags;
         
-        // uint8_t custom[14];
         uint16_t rsvd;
         uint32_t create_timestamp;
         uint32_t last_modified;
@@ -85,7 +93,14 @@ void* ef_read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t cl
     return buffer;
 }
 
-void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index){
+const char* advance_path(const char *path){
+    while (*path != '/' && *path != '\0')
+        path++;
+    path++;
+    return path;
+}
+
+void* ef_read_directory(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index, const char *seek){
 
     char *buffer = (char*)ef_read_cluster(cluster_start, cluster_size, cluster_count, root_index);
 
@@ -107,18 +122,35 @@ void ef_read_root(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluste
             char name[15];
             utf16tochar(entry2->name, name, 15);
             kprintf("%s - %i -> %h", (uintptr_t)name, entry1->filesize, entry1->first_cluster);
-            if (strcmp(name, "user.elf") == 0){
+            kprintf("Is directory? %h",entry->flags.directory);
+            if (strstart(seek, name) == 0){
                 uint32_t filecluster = entry1->first_cluster;
                 uint32_t bytes_per_sector = 1 << mbs->bytes_per_sector_shift;
                 uint32_t sectors_per_cluster = 1 << mbs->sectors_per_cluster_shift;
                 uint32_t bytes_per_cluster = bytes_per_sector * sectors_per_cluster;
                 uint32_t cluster_count = (entry1->filesize + bytes_per_cluster - 1) / bytes_per_cluster;
-                kprintf("Found user.elf at %h - %i bytes, %i clusters", filecluster,entry1->filesize, cluster_count);
-                ef_read_dump(cluster_start, cluster_size, cluster_count, filecluster);
+                kprintf("Found component at %h - %i bytes, %i clusters", filecluster,entry1->filesize, cluster_count);
+                if (entry->flags.directory){
+                    return ef_read_directory(cluster_start, cluster_size, cluster_count, filecluster, advance_path(seek));
+                } else {
+                    return ef_read_full_file(cluster_start, cluster_size, cluster_count, entry1->filesize, filecluster);
+                }
             }
             i += sizeof(filename_entry)-1;
         }
     }
+    return 0x0;
+}
+
+void* ef_read_full_file(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint64_t file_size, uint32_t root_index){
+
+    char *buffer = (char*)ef_read_cluster(cluster_start, cluster_size, cluster_count, root_index);
+
+    void *file = allocate_in_page(fs_page, file_size, ALIGN_64B, true, true);
+
+    memcpy(file, (void*)buffer, file_size);
+    
+    return file;
 }
 
 void ef_read_dump(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index){
@@ -174,8 +206,11 @@ bool ef_init(){
 
     kprintf("Cluster at %h (%h * %h of size %h each)",mbs->fat_offset + mbs->fat_length * mbs->number_of_fats, mbs->cluster_heap_offset,mbs->cluster_count, 1 << mbs->sectors_per_cluster_shift);    
     ef_read_FAT(mbs->fat_offset, mbs->fat_length, mbs->number_of_fats);
-    ef_read_root(mbs->cluster_heap_offset, 1 << mbs->sectors_per_cluster_shift, 1, mbs->first_cluster_of_root_directory);
-
-    // while(1);
     return true;
+}
+
+void* ef_read_file(const char *path){
+    path = advance_path(path);
+
+    return ef_read_directory(mbs->cluster_heap_offset, 1 << mbs->sectors_per_cluster_shift, 1, mbs->first_cluster_of_root_directory, path);
 }

@@ -16,6 +16,7 @@
 #include "input/xhci.h"
 #include "kernel_processes/monitor/monitor_processes.h"
 #include "memory/page_allocator.h"
+#include "process/loading/elf_file.h"
 
 void kernel_main() {
     
@@ -67,6 +68,11 @@ void kernel_main() {
     kprintf("Starting processes");
 
     // translate_enable_verbose();
+
+    void *file = read_file("/ros/user/user.elf");
+ 
+    //WARNING: The test process draws to the screen at the same time as other processes, which results in flashing images due to it being loaded at this point
+    // load_elf_file("Test Process", file);
 
     init_bootprocess();
     

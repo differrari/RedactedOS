@@ -252,36 +252,26 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
 }
 
 
-process_t* create_process(char *name, void (*func)(), uint64_t code_size, uint64_t func_base, void* data, uint64_t data_size) {
+process_t* create_process(char *name, void *content, uint64_t content_size, uintptr_t entry) {
     
     disable_interrupt();
     process_t* proc = init_process();
 
     name_process(proc, name);
-
-    kprintfv("Code size %h. Data size %h", code_size, data_size);
     
-    uint8_t* data_dest = (uint8_t*)alloc_page(data_size, false, false, false);
-    if (!data_dest) return 0;
+    uint8_t* dest = (uint8_t*)alloc_page(content_size, false, false, false);
+    if (!dest) return 0;
 
-    for (uint64_t i = 0; i < data_size; i++){
-        data_dest[i] = ((uint8_t *)data)[i];
+    for (uint64_t i = 0; i < content_size; i++){
+        dest[i] = ((uint8_t *)content)[i];
     }
-
-    uint64_t* code_dest = (uint64_t*)alloc_page(code_size, false, false, false);
-    if (!code_dest) return 0;
-
-    relocate_code(code_dest, func, code_size, (uintptr_t)((uint8_t*)data), (uintptr_t)&data_dest[0], data_size);
     
-    kprintfv("Code copied to %h", (uint64_t)code_dest);
     uint64_t stack_size = 0x1000;
 
     uintptr_t stack = (uintptr_t)alloc_page(stack_size, false, false, false);
-    kprintfv("Stack size %h. Start %h", stack_size,stack);
     if (!stack) return 0;
 
     uintptr_t heap = (uintptr_t)alloc_page(stack_size, false, false, false);
-    kprintfv("Heap %h", heap);
     if (!heap) return 0;
 
     proc->stack = (stack + stack_size);
@@ -290,8 +280,8 @@ process_t* create_process(char *name, void (*func)(), uint64_t code_size, uint64
 
     proc->sp = proc->stack;
     
-    proc->pc = (uint64_t)code_dest;
-    kprintf_raw("User process allocated with address at %h, stack at %h, heap at %h",proc->pc, proc->sp, proc->heap);
+    proc->pc = (uintptr_t)(dest + entry);
+    kprintf_raw("User process %s allocated with address at %h, stack at %h, heap at %h",(uintptr_t)name,proc->pc, proc->sp, proc->heap);
     proc->spsr = 0;
     proc->state = READY;
 

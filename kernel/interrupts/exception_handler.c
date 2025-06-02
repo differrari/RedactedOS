@@ -71,6 +71,11 @@ void panic(const char* panic_msg) {
 void panic_with_info(const char* msg, uint64_t info) {
     permanent_disable_timer();
 
+    uint64_t esr, elr, far;
+    asm volatile ("mrs %0, esr_el1" : "=r"(esr));
+    asm volatile ("mrs %0, elr_el1" : "=r"(elr));
+    asm volatile ("mrs %0, far_el1" : "=r"(far));
+
     bool old_panic_triggered = panic_triggered;
     panic_triggered = true;
     uart_raw_puts("*** ");
