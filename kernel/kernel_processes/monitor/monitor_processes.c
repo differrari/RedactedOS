@@ -72,7 +72,7 @@ void draw_memory(char *name,int x, int y, int width, int full_height, int used, 
 
     kstring str = kstring_format("%s\n%h",(uintptr_t)name, used);
     gpu_draw_string(str, (gpu_point){stack_top.x, stack_top.y + height + 5}, 2, BG_COLOR);
-    temp_free(str.data,str.length);
+    temp_free(str.data,256);
 }
 
 __attribute__((section(".text.kcoreprocesses")))
@@ -130,7 +130,7 @@ void draw_process_view(){
         
         kstring pc = kstring_from_hex(proc->pc);
         gpu_draw_string(pc, (gpu_point){xo, pc_y}, scale, BG_COLOR);
-        temp_free(pc.data, pc.length);
+        temp_free(pc.data, 18);
         
         draw_memory("Stack", xo, stack_y, stack_width, stack_height, proc->stack - proc->sp, proc->stack_size);
         uint64_t heap = calc_heap(proc->heap);
@@ -139,9 +139,9 @@ void draw_process_view(){
 
         kstring flags = kstring_format("Flags: %h", proc->spsr);
         gpu_draw_string(flags, (gpu_point){xo, flags_y}, scale, BG_COLOR);
-        temp_free(name.data, name.length);
-        temp_free(state.data, state.length);
-        temp_free(flags.data, flags.length);
+        temp_free(name.data, name.length+1);
+        temp_free(state.data, state.length+1);
+        temp_free(flags.data, 256);
 
     }
     gpu_flush();

@@ -5,6 +5,7 @@
 typedef struct {
     char *data;
     uint32_t length;
+    uint32_t mem_length;
 } string;
 
 #define string_format(fmt, ...) \

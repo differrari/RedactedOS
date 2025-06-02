@@ -2,7 +2,6 @@
 #include "syscalls/syscalls.h"
 #include "memory/memory_access.h"
 #include "std/memfunctions.h"
-
 static uint32_t compute_length(const char *s, uint32_t max_length) {
     uint32_t len = 0;
     while ((max_length == 0 || len < max_length) && s[len] != '\0') {
@@ -17,14 +16,14 @@ string string_l(const char *literal) {
     for (uint32_t i = 0; i < len; i++)
         buf[i] = literal[i];
     buf[len] = 0;
-    return (string){ .data = buf, .length = len };
+    return (string){ .data = buf, .length = len, .mem_length = len+1 };
 }
 
 string string_repeat(char symbol, uint32_t amount){
     char *buf = (char*)malloc(amount + 1);
     memset(buf, symbol, amount);
     buf[amount] = 0;
-    return (string){ .data = buf, .length = amount };
+    return (string){ .data = buf, .length = amount, .mem_length = amount+1 };
 }
 
 string string_tail(const char *array, uint32_t max_length){
@@ -53,11 +52,10 @@ string string_c(const char c){
     char *buf = (char*)malloc(2);
     buf[0] = c;
     buf[1] = 0;
-    return (string){ .data = buf, .length = 1 };
+    return (string){ .data = buf, .length = 1, .mem_length = 2 };
 }
 
-string string_from_hex(uint64_t value) {
-    char *buf = (char*)malloc(18);
+uint32_t parse_hex(uint64_t value, char* buf){
     uint32_t len = 0;
     buf[len++] = '0';
     buf[len++] = 'x';
@@ -73,17 +71,21 @@ string string_from_hex(uint64_t value) {
     }
 
     buf[len] = 0;
-    return (string){ .data = buf, .length = len };
+    return len;
 }
 
-string string_from_bin(uint64_t value) {
-    char *buf = (char*)malloc(67);
+string string_from_hex(uint64_t value) {
+    char *buf = (char*)malloc(18);
+    uint32_t len = parse_hex(value, buf);
+    return (string){ .data = buf, .length = len, .mem_length = 18 };
+}
+
+uint32_t parse_bin(uint64_t value, char* buf){
     uint32_t len = 0;
     buf[len++] = '0';
     buf[len++] = 'b';
-
     bool started = false;
-    for (uint32_t i = 60;; i --) {
+    for (uint32_t i = 63;; i --) {
         char bit = (value >> i) & 1  ? '1' : '0';
         if (started || bit != '0' || i == 0) {
             started = true;
@@ -93,7 +95,13 @@ string string_from_bin(uint64_t value) {
     }
 
     buf[len] = 0;
-    return (string){ .data = buf, .length = len };
+    return len;
+}
+
+string string_from_bin(uint64_t value) {
+    char *buf = (char*)malloc(66);
+    uint32_t len = parse_bin(value, buf);
+    return (string){ .data = buf, .length = len, .mem_length = 67 };
 }
 
 bool string_equals(string a, string b) {
@@ -111,14 +119,10 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
             if (arg_index >= arg_count) break;
             if (fmt[i] == 'h') {
                 uint64_t val = args[arg_index++];
-                string hex = string_from_hex(val);
-                for (uint32_t j = 0; j < hex.length && len < 255; j++) buf[len++] = hex.data[j];
-                free(hex.data,hex.length);
+                len += parse_hex(val,(char*)buf + len);
             } else if (fmt[i] == 'b') {
                 uint64_t val = args[arg_index++];
-                string bin = string_from_bin(val);
-                for (uint32_t j = 0; j < bin.length && len < 255; j++) buf[len++] = bin.data[j];
-                free(bin.data,bin.length);
+                len += parse_bin(val,(char*)buf + len);
             } else if (fmt[i] == 'c') {
                 uint64_t val = args[arg_index++];
                 buf[len++] = (char)val;
@@ -158,7 +162,7 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
     }
 
     buf[len] = 0;
-    return (string){ .data = buf, .length = len };
+    return (string){ .data = buf, .length = len, .mem_length = 256 };
 }
 
 int strcmp(const char *a, const char *b) {
