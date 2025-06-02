@@ -8,7 +8,7 @@
 
 struct LaunchEntry {
     const char* name;
-    process_t* (*process_loader)();
+    const char* path;
 };
 
 class Desktop {
@@ -30,6 +30,6 @@ private:
     void draw_tile(uint32_t column, uint32_t row);
     bool await_gpu();
     void draw_full();
-    void add_entry(const char* name, process_t* (*process_loader)());
+    void add_entry(const char* name, const char* path);
     void activate_current();
 };

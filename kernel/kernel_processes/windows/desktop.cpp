@@ -4,21 +4,23 @@
 #include "theme/theme.h"
 #include "input/input_dispatch.h"
 #include "memory/kalloc.h"
+#include "filesystem/disk.h"
+#include "process/loading/elf_file.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3
 
-void Desktop::add_entry(const char* name, process_t* (*process_loader)()){
+void Desktop::add_entry(const char* name, const char* path){
     entries.add({
         .name = name,
-        .process_loader = process_loader,
+        .path = path,
     });
 }
 
 Desktop::Desktop() {
     entries = Array<LaunchEntry>(9);
-    // add_entry("Test Process",default_processes);
-    // add_entry("Test Process 2",default_processes);
+    add_entry("Test Process","/ros/user/user.elf");
+    add_entry("Test Process 2","/ros/user/user.elf");
     single_label = new Label();
 }
 
@@ -90,7 +92,8 @@ void Desktop::activate_current(){
     uint32_t index = (selected.y * MAX_COLS) + selected.x;
 
     if (index < entries.size()){
-        active_proc = entries[index].process_loader();
+        void *file = read_file(entries[index].path);
+        active_proc = load_elf_file(entries[index].name, file);
         process_active = true;
         sys_set_focus(active_proc->id);
     }

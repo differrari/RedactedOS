@@ -36,7 +36,7 @@ typedef struct elf_program_header {
     uint64_t alignment;
 } elf_program_header;
 
-void load_elf_file(const char *name, void* file){
+process_t* load_elf_file(const char *name, void* file){
     elf_header *header = (elf_header*)file;
 
     kprintf("ELF FILE VERSION %h HEADER VERSION %h (%h)",header->elf_version,header->header_version,header->header_size);
@@ -48,8 +48,5 @@ void load_elf_file(const char *name, void* file){
     kprintf("SECTION %h - %i * %i",header->section_header_offset, header->section_entry_size,header->section_num_entries);
     kprintf("First instruction %h", (uint64_t)*((uint8_t *)file + 0x1000));
 
-    create_process(name, (void*)(file + first_program_header->p_offset), first_program_header->p_filez, header->program_entry_offset);
-
-    // while(1);
-
+    return create_process(name, (void*)(file + first_program_header->p_offset), first_program_header->p_filez, header->program_entry_offset);
 }
