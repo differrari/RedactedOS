@@ -80,3 +80,7 @@ void Label::set_alignment(HorizontalAlignment horizontal_alignment,VerticalAlign
     horz_alignment = horizontal_alignment;
     vert_alignment = vertical_alignment;
 }
+
+void Label::adapt_to_size(){
+    rect.size = calculate_label_size();
+}

@@ -7,8 +7,9 @@
 #include "std/std.hpp"
 
 struct LaunchEntry {
-    const char* name;
-    const char* path;
+    char* name;
+    char* ext;
+    char* path;
 };
 
 class Desktop {
@@ -24,12 +25,14 @@ private:
     bool rendered_full = false;
     process_t *active_proc;
     Label *single_label;// TODO: This is hardcoded, ew
+    Label *extension_label;// TODO: This is hardcoded, ew
     Array<LaunchEntry> entries;
     bool process_active = false;
 
     void draw_tile(uint32_t column, uint32_t row);
     bool await_gpu();
     void draw_full();
-    void add_entry(const char* name, const char* path);
+    void add_entry(char* name, char* ext, char* path);
     void activate_current();
+    uint16_t find_extension(char *path);
 };

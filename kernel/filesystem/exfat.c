@@ -102,7 +102,7 @@ const char* advance_path(const char *path){
 
 typedef void* (*ef_entry_handler)(file_entry*, fileinfo_entry*, filename_entry*, const char *seek);
 
-static void* ef_walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, ef_entry_handler handler) {
+void* ef_walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, ef_entry_handler handler) {
     uint32_t cluster_size = 1 << mbs->sectors_per_cluster_shift;
     char *buffer = (char*)ef_read_cluster(mbs->cluster_heap_offset, cluster_size, cluster_count, root_index);
     file_entry *entry = 0;
@@ -131,28 +131,43 @@ static void* ef_walk_directory(uint32_t cluster_count, uint32_t root_index, cons
     return 0;
 }
 
-static void* read_entry_handler(file_entry *entry, fileinfo_entry *info, filename_entry *name, const char *seek) {
-    char filename[15];
-    utf16tochar(name->name, filename, 15);
-    kprintf("%s - %i -> %h", (uintptr_t)filename, info->filesize, info->first_cluster);
-    kprintf("Is directory? %h", entry->flags.directory);
+void* ef_list_directory(uint32_t cluster_count, uint32_t root_index) {
+    uint32_t cluster_size = 1 << mbs->sectors_per_cluster_shift;
+    char *buffer = (char*)ef_read_cluster(mbs->cluster_heap_offset, cluster_size, cluster_count, root_index);
+    file_entry *entry = 0;
+    fileinfo_entry *entry1 = 0;
+    filename_entry *entry2 = 0;
+    void *list_buffer = (char*)allocate_in_page(fs_page, 0x1000 * cluster_count, ALIGN_64B, true, true);
+    uint32_t len = 0; 
+    uint32_t count = 0;
 
-    if (strstart(seek, filename) != 0)
-        return 0;
+    char *write_ptr = (char*)list_buffer + 4;
 
-    uint32_t filecluster = info->first_cluster;
-    uint32_t bps = 1 << mbs->bytes_per_sector_shift;
-    uint32_t spc = 1 << mbs->sectors_per_cluster_shift;
-    uint32_t bpc = bps * spc;
-    uint32_t count = (info->filesize + bpc - 1) / bpc;
+    for (uint64_t i = 0; i < cluster_size * 512; i++) {
+        char c = buffer[i];
+        if (c == 0x85) {
+            entry = (file_entry *)&buffer[i];
+            i += sizeof(file_entry) - 1;
+        } else if (c == 0xC0) {
+            entry1 = (fileinfo_entry *)&buffer[i];
+            i += sizeof(fileinfo_entry) - 1;
+        } else if (c == 0xC1) {
+            entry2 = (filename_entry *)&buffer[i];
+            if (entry && entry1 && entry2) {
+                count++;
+                char filename[15];
+                utf16tochar(entry2->name, filename, 15);
+                for (int j = 0; j < 15 && filename[j]; j++)
+                    *write_ptr++ = filename[j];
+                *write_ptr++ = '\0';
+            }
+            i += sizeof(filename_entry) - 1;
+        }
+    }
 
-    return entry->flags.directory
-        ? ef_read_directory(mbs->cluster_heap_offset, 1 << mbs->sectors_per_cluster_shift, count, filecluster, advance_path(seek))
-        : ef_read_full_file(mbs->cluster_heap_offset, 1 << mbs->sectors_per_cluster_shift, count, info->filesize, filecluster);
-}
+    *(uint32_t*)list_buffer = count;
 
-void* ef_read_directory(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index, const char *seek) {
-    return ef_walk_directory(cluster_count, root_index, seek, read_entry_handler);
+    return list_buffer;
 }
 
 void* ef_read_full_file(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint64_t file_size, uint32_t root_index){
@@ -222,8 +237,56 @@ bool ef_init(){
     return true;
 }
 
+static void* read_entry_handler(file_entry *entry, fileinfo_entry *info, filename_entry *name, const char *seek) {
+    char filename[15];
+    utf16tochar(name->name, filename, 15);
+
+    if (strstart(seek, filename) != 0)
+        return 0;
+
+    uint32_t filecluster = info->first_cluster;
+    uint32_t bps = 1 << mbs->bytes_per_sector_shift;
+    uint32_t spc = 1 << mbs->sectors_per_cluster_shift;
+    uint32_t bpc = bps * spc;
+    uint32_t count = (info->filesize + bpc - 1) / bpc;
+
+    return entry->flags.directory
+        ? ef_walk_directory(count, filecluster, advance_path(seek), read_entry_handler)
+        : ef_read_full_file(mbs->cluster_heap_offset, 1 << mbs->sectors_per_cluster_shift, count, info->filesize, filecluster);
+}
+
 void* ef_read_file(const char *path){
     path = advance_path(path);
 
-    return ef_read_directory(mbs->cluster_heap_offset, 1 << mbs->sectors_per_cluster_shift, 1, mbs->first_cluster_of_root_directory, path);
+    return ef_walk_directory(1, mbs->first_cluster_of_root_directory, path, read_entry_handler);
+}
+
+static void* list_entries_handler(file_entry *entry, fileinfo_entry *info, filename_entry *name, const char *seek) {
+    char filename[15];
+    utf16tochar(name->name, filename, 15);
+
+    if (strstart(seek, filename) != 0)
+        return 0;
+
+    bool is_last = *advance_path(seek) == '\0';
+
+    uint32_t filecluster = info->first_cluster;
+    uint32_t bps = 1 << mbs->bytes_per_sector_shift;
+    uint32_t spc = 1 << mbs->sectors_per_cluster_shift;
+    uint32_t bpc = bps * spc;
+    uint32_t count = (info->filesize + bpc - 1) / bpc;
+
+    kprintf("Now handling %s. Last %i",(uintptr_t)seek, is_last);
+
+    if (is_last)
+        return ef_list_directory(count, filecluster);
+    if (entry->flags.directory)
+        return ef_walk_directory(count, filecluster, advance_path(seek), list_entries_handler);
+    return 0;
+}
+
+string_list* ef_list_contents(const char *path){
+    path = advance_path(path);
+
+    return (string_list*)ef_walk_directory(1, mbs->first_cluster_of_root_directory, path, list_entries_handler);
 }

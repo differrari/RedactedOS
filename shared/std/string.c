@@ -2,6 +2,7 @@
 #include "syscalls/syscalls.h"
 #include "memory/memory_access.h"
 #include "std/memfunctions.h"
+
 static uint32_t compute_length(const char *s, uint32_t max_length) {
     uint32_t len = 0;
     while ((max_length == 0 || len < max_length) && s[len] != '\0') {
@@ -181,6 +182,20 @@ int strstart(const char *a, const char *b) {
         a++; b++;
     }
     return 0;
+}
+
+int strend(const char *a, const char *b) {
+    while (*a && *b) {
+        if (*a == *b) {
+            const char *pa = a, *pb = b;
+            while (*pa == *pb) {
+                if (!*pa) return 0;
+                pa++; pb++;
+            }
+        }
+        a++;
+    }
+    return 1;
 }
 
 bool strcont(const char *a, const char *b) {

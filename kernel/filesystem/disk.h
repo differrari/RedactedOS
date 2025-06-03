@@ -5,6 +5,7 @@ extern "C" {
 #endif
 
 #include "types.h"
+#include "std/string.h"
 
 bool find_disk();
 void disk_verbose();
@@ -14,6 +15,7 @@ void disk_write(const void *buffer, uint32_t sector, uint32_t count);
 void disk_read(void *buffer, uint32_t sector, uint32_t count);
 
 void* read_file(const char *path);
+string_list* list_directory_contents(const char *path);
 
 #ifdef __cplusplus
 }

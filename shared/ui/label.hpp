@@ -25,6 +25,7 @@ public:
     void set_font_size(unsigned int size);
     void set_alignment(HorizontalAlignment horizontal_alignment,VerticalAlignment vertical_alignment);
     void render();
+    void adapt_to_size();
 private:
     string content;
     color background_color;

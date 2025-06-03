@@ -36,3 +36,7 @@ void disk_read(void *buffer, uint32_t sector, uint32_t count){
 void* read_file(const char *path){
     return ef_read_file(path);
 }
+
+string_list* list_directory_contents(const char *path){
+    return ef_list_contents(path);
+}
