@@ -4,6 +4,7 @@
 #include "theme/theme.h"
 #include "input/input_dispatch.h"
 #include "memory/kalloc.h"
+#include "std/string.h"
 #include "filesystem/disk.h"
 #include "process/loading/elf_file.h"
 
@@ -19,8 +20,8 @@ void Desktop::add_entry(const char* name, const char* path){
 
 Desktop::Desktop() {
     entries = Array<LaunchEntry>(9);
-    add_entry("Test Process","/ros/user/user.elf");
-    add_entry("Test Process 2","/ros/user/user.elf");
+    add_entry("Test Process","/user.elf");
+    add_entry("Test Process 2","/user.elf");
     single_label = new Label();
 }
 
@@ -111,7 +112,7 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
     gpu_rect inner_rect = (gpu_rect){10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0), tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)};
     gpu_fill_rect(inner_rect, BG_COLOR+0x111111);
     if (index < entries.size()){
-        single_label->set_text(kstring_l(entries[index].name));
+        single_label->set_text(string_l(entries[index].name));
         single_label->set_bg_color(BG_COLOR+0x111111);
         single_label->set_text_color(0xFFFFFF);
         single_label->set_font_size(3);

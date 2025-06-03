@@ -6,7 +6,7 @@ extern "C" {
 
 #include "types.h"
 #include "ui/graphic_types.h"
-#include "kstring.h"
+#include "std/string.h"
 
 void gpu_init(gpu_size preferred_screen_size);
 bool gpu_ready();
@@ -19,7 +19,7 @@ void gpu_fill_rect(gpu_rect r, color color);
 void gpu_draw_line(gpu_point p0, gpu_point p1, color color);
 void gpu_draw_char(gpu_point p, char c, uint32_t scale, uint32_t color);
 gpu_size gpu_get_screen_size();
-void gpu_draw_string(kstring s, gpu_point p, uint32_t scale, uint32_t color);
+void gpu_draw_string(string s, gpu_point p, uint32_t scale, uint32_t color);
 uint32_t gpu_get_char_size(uint32_t scale);
 
 #ifdef __cplusplus

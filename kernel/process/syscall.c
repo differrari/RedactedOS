@@ -3,7 +3,6 @@
 #include "interrupts/exception_handler.h"
 #include "console/serial/uart.h"
 #include "interrupts/irq.h"
-#include "memory/kalloc.h"
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
 #include "graph/graphics.h"
@@ -11,6 +10,7 @@
 #include "input/input_dispatch.h"
 #include "kernel_processes/windows/windows.h"
 #include "std/memfunctions.h"
+#include "std/string.h"
 
 void sync_el0_handler_c(){
     save_context_registers();
@@ -63,6 +63,7 @@ void sync_el0_handler_c(){
             free_from_page((void*)x0, x1);
             break;
         case 3:
+            kprintf("Printing from address %h",x0);
             kprintf_l((const char *)x0);
             break;
 
@@ -98,8 +99,7 @@ void sync_el0_handler_c(){
 
         case 15:
             if (!screen_overlay){
-                kstring str = kstring_l((const char *)x0);
-                gpu_draw_string(str,*(gpu_point*)x1,x2,x3);
+                gpu_draw_string(*(string *)x0,*(gpu_point*)x1,x2,x3);
             }
             break;
 

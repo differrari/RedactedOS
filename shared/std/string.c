@@ -101,7 +101,7 @@ uint32_t parse_bin(uint64_t value, char* buf){
 string string_from_bin(uint64_t value) {
     char *buf = (char*)malloc(66);
     uint32_t len = parse_bin(value, buf);
-    return (string){ .data = buf, .length = len, .mem_length = 67 };
+    return (string){ .data = buf, .length = len, .mem_length = 66 };
 }
 
 bool string_equals(string a, string b) {
@@ -119,10 +119,12 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
             if (arg_index >= arg_count) break;
             if (fmt[i] == 'h') {
                 uint64_t val = args[arg_index++];
-                len += parse_hex(val,(char*)buf + len);
+                len += parse_hex(val,(char*)(buf + len));
             } else if (fmt[i] == 'b') {
                 uint64_t val = args[arg_index++];
-                len += parse_bin(val,(char*)buf + len);
+                string bin = string_from_bin(val);
+                for (uint32_t j = 0; j < bin.length && len < 255; j++) buf[len++] = bin.data[j];
+                free(bin.data,bin.mem_length);
             } else if (fmt[i] == 'c') {
                 uint64_t val = args[arg_index++];
                 buf[len++] = (char)val;

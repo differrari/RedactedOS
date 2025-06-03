@@ -1,7 +1,7 @@
 #pragma once
 
 #include "UIElement.hpp"
-#include "kstring.h"
+#include "std/string.h"
 
 enum HorizontalAlignment : int {
     Leading = 1 << 1,
@@ -19,14 +19,14 @@ class Label: UIElement {
 public:
     Label();
     gpu_rect rect;
-    void set_text(kstring text);
+    void set_text(string text);
     void set_bg_color(color bg);
     void set_text_color(color txt);
     void set_font_size(unsigned int size);
     void set_alignment(HorizontalAlignment horizontal_alignment,VerticalAlignment vertical_alignment);
     void render();
 private:
-    kstring content;
+    string content;
     color background_color;
     color text_color;
     VerticalAlignment vert_alignment = VerticalAlignment::Top;

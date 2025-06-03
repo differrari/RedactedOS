@@ -2,7 +2,7 @@
 #include "../kprocess_loader.h"
 #include "console/kio.h"
 #include "graph/graphics.h"
-#include "kstring.h"
+#include "std/string.h"
 #include "memory/kalloc.h"
 #include "theme/theme.h"
 #include "interrupts/exception_handler.h"
@@ -14,7 +14,7 @@
 __attribute__((section(".text.kcoreprocesses")))
 void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
     const char* name = BOOTSCREEN_TEXT;
-    kstring s = kstring_l(name);
+    string s = string_l(name);
     int scale = 2;
     uint32_t char_size = gpu_get_char_size(scale);
     int mid_offset = ((s.length/BOOTSCREEN_NUM_LINES) * char_size)/2;
@@ -22,7 +22,7 @@ void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
     int yo = screen_middle.y + yoffset;
     gpu_fill_rect((gpu_rect){{xo,yo}, {char_size * (s.length/BOOTSCREEN_NUM_LINES), char_size * BOOTSCREEN_NUM_LINES}},BG_COLOR);
     gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFF);
-    temp_free(s.data,s.length);
+    free(s.data,s.mem_length);
 }
 
 __attribute__((section(".rodata.kcoreprocesses")))

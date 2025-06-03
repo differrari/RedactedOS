@@ -5,7 +5,7 @@
 #include "input/input_dispatch.h"
 #include "../windows/windows.h"
 #include "graph/graphics.h"
-#include "kstring.h"
+#include "std/string.h"
 #include "memory/kalloc.h"
 #include "theme/theme.h"
 #include "math/math.h"
@@ -70,9 +70,9 @@ void draw_memory(char *name,int x, int y, int width, int full_height, int used, 
 
     gpu_fill_rect((gpu_rect){{stack_top.x + 1, stack_top.y + height - used_height + 1}, {width - 2, used_height-1}}, BG_COLOR);
 
-    kstring str = kstring_format("%s\n%h",(uintptr_t)name, used);
+    string str = string_format("%s\n%h",(uintptr_t)name, used);
     gpu_draw_string(str, (gpu_point){stack_top.x, stack_top.y + height + 5}, 2, BG_COLOR);
-    temp_free(str.data,256);
+    free(str.data,str.mem_length);
 }
 
 __attribute__((section(".text.kcoreprocesses")))
@@ -110,8 +110,8 @@ void draw_process_view(){
 
         if (proc->id == 0 || valid_count < i || proc->state == STOPPED) break;
 
-        kstring name = kstring_l((const char*)(uintptr_t)proc->name);
-        kstring state = kstring_l(parse_proc_state(proc->state));
+        string name = string_l((const char*)(uintptr_t)proc->name);
+        string state = string_l(parse_proc_state(proc->state));
 
         int scale = 2;
 
@@ -128,20 +128,20 @@ void draw_process_view(){
         gpu_draw_string(name, (gpu_point){xo, name_y}, scale, BG_COLOR);
         gpu_draw_string(state, (gpu_point){xo, state_y}, scale, BG_COLOR);
         
-        kstring pc = kstring_from_hex(proc->pc);
+        string pc = string_from_hex(proc->pc);
         gpu_draw_string(pc, (gpu_point){xo, pc_y}, scale, BG_COLOR);
-        temp_free(pc.data, 18);
+        free(pc.data, pc.mem_length);
         
         draw_memory("Stack", xo, stack_y, stack_width, stack_height, proc->stack - proc->sp, proc->stack_size);
         uint64_t heap = calc_heap(proc->heap);
         uint64_t heap_limit = ((heap + 0xFFF) & ~0xFFF);
         draw_memory("Heap", xo + stack_width + 50, stack_y, stack_width, stack_height, heap, heap_limit);
 
-        kstring flags = kstring_format("Flags: %h", proc->spsr);
+        string flags = string_format("Flags: %h", proc->spsr);
         gpu_draw_string(flags, (gpu_point){xo, flags_y}, scale, BG_COLOR);
-        temp_free(name.data, name.length+1);
-        temp_free(state.data, state.length+1);
-        temp_free(flags.data, 256);
+        free(name.data, name.mem_length);
+        free(state.data, state.mem_length);
+        free(flags.data, flags.mem_length);
 
     }
     gpu_flush();

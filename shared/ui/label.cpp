@@ -68,7 +68,7 @@ void Label::set_text_color(color txt){
     this->text_color = txt;
 }
 
-void Label::set_text(kstring text){
+void Label::set_text(string text){
     this->content = text;
 }
 

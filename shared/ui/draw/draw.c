@@ -61,7 +61,7 @@ void fb_draw_char(uint32_t* fb, uint32_t x, uint32_t y, char c, uint32_t scale, 
     }
 }
 
-gpu_size fb_draw_string(uint32_t* fb, kstring s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
+gpu_size fb_draw_string(uint32_t* fb, string s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
     int char_size = fb_get_char_size(scale);
     int str_length = s.length;
     

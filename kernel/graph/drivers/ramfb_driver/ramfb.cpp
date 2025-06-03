@@ -126,7 +126,7 @@ gpu_size RamFBGPUDriver::get_screen_size(){
     return screen_size;
 }
 
-void RamFBGPUDriver::draw_string(kstring s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color){
+void RamFBGPUDriver::draw_string(string s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color){
     gpu_size drawn_string = fb_draw_string((uint32_t*)back_framebuffer, s, x, y, scale, color);
     mark_dirty(x,y,drawn_string.width,drawn_string.height);
 }

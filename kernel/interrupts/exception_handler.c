@@ -6,6 +6,7 @@
 #include "graph/graphics.h"
 #include "irq.h"
 #include "theme/theme.h"
+#include "std/string.h"
 
 static bool panic_triggered = false;
 
@@ -46,7 +47,7 @@ void error_el1_handler(){ handle_exception("ERROR EXCEPTION\n"); }
 void draw_panic_screen(kstring s){
     gpu_clear(0x0000FF);
     uint32_t scale = 3;
-    gpu_draw_string(s, (gpu_point){20,20}, scale, 0xFFFFFF);
+    gpu_draw_string(*(string *)&s, (gpu_point){20,20}, scale, 0xFFFFFF);
     gpu_flush();
 }
 

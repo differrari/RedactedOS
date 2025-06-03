@@ -446,7 +446,7 @@ void VirtioGPUDriver::draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, 
     mark_dirty(x,y,8*scale,8*scale);
 }
 
-void VirtioGPUDriver::draw_string(kstring s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color){
+void VirtioGPUDriver::draw_string(string s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color){
     gpu_size drawn_string = fb_draw_string((uint32_t*)framebuffer, s, x, y, scale, color);
     mark_dirty(x,y,drawn_string.width,drawn_string.height);
 }

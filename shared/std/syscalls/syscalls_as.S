@@ -21,7 +21,7 @@ syscall_def draw_primitive_pixel, 11
 syscall_def draw_primitive_line, 12
 syscall_def draw_primitive_rect, 13
 syscall_def draw_primitive_char, 14
-syscall_def draw_primitive_text, 15
+syscall_def draw_primitive_string, 15
 
 //GPU commands
 syscall_def gpu_flush_data, 20
