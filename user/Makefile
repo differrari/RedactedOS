@@ -10,16 +10,16 @@ C_SRC = $(shell find . -name '*.c')
 CPP_SRC = $(shell find . -name '*.cpp')
 OBJ = $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o)
 
-TARGET = user.bin
-ELF = user.elf
-LOCATION = ../fs/
+NAME = $(shell basename "$$PWD")
+TARGET = $(NAME).bin
+ELF = $(NAME).elf
+LOCATION = ../fs/redos/user/
 
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
 	$(LD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(OBJ) ../shared/libshared.a
 	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $(LOCATION)$(TARGET)
-
 
 %.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
