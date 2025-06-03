@@ -20,8 +20,8 @@ void Desktop::add_entry(const char* name, const char* path){
 
 Desktop::Desktop() {
     entries = Array<LaunchEntry>(9);
-    add_entry("Test Process","/user.elf");
-    add_entry("Test Process 2","/user.elf");
+    add_entry("Test Process","/redos/user/user.elf");
+    add_entry("Test Process 2","/redos/user/user.elf");
     single_label = new Label();
 }
 

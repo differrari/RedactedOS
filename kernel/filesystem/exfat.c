@@ -3,7 +3,7 @@
 #include "memory/page_allocator.h"
 #include "console/kio.h"
 #include "std/string.h"
-#include <string.h>
+#include "std/memfunctions.h"
 
 void *fs_page;
 
@@ -100,46 +100,59 @@ const char* advance_path(const char *path){
     return path;
 }
 
-void* ef_read_directory(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index, const char *seek){
+typedef void* (*ef_entry_handler)(file_entry*, fileinfo_entry*, filename_entry*, const char *seek);
 
-    char *buffer = (char*)ef_read_cluster(cluster_start, cluster_size, cluster_count, root_index);
+static void* ef_walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, ef_entry_handler handler) {
+    uint32_t cluster_size = 1 << mbs->sectors_per_cluster_shift;
+    char *buffer = (char*)ef_read_cluster(mbs->cluster_heap_offset, cluster_size, cluster_count, root_index);
+    file_entry *entry = 0;
+    fileinfo_entry *entry1 = 0;
+    filename_entry *entry2 = 0;
 
-    file_entry *entry;
-    fileinfo_entry *entry1;
-    filename_entry *entry2;
-    for (uint64_t i = 0; i < cluster_size * 512; i++){
+    for (uint64_t i = 0; i < cluster_size * 512; i++) {
         char c = buffer[i];
-        if (c == 0x85){
+        if (c == 0x85) {
             entry = (file_entry *)&buffer[i];
-            i += sizeof(file_entry)-1;
-        }
-        else if (c == 0xC0){
+            i += sizeof(file_entry) - 1;
+        } else if (c == 0xC0) {
             entry1 = (fileinfo_entry *)&buffer[i];
-            i += sizeof(fileinfo_entry)-1;
-        }
-        else if (c == 0xC1){
+            i += sizeof(fileinfo_entry) - 1;
+        } else if (c == 0xC1) {
             entry2 = (filename_entry *)&buffer[i];
-            char name[15];
-            utf16tochar(entry2->name, name, 15);
-            kprintf("%s - %i -> %h", (uintptr_t)name, entry1->filesize, entry1->first_cluster);
-            kprintf("Is directory? %h",entry->flags.directory);
-            if (strstart(seek, name) == 0){
-                uint32_t filecluster = entry1->first_cluster;
-                uint32_t bytes_per_sector = 1 << mbs->bytes_per_sector_shift;
-                uint32_t sectors_per_cluster = 1 << mbs->sectors_per_cluster_shift;
-                uint32_t bytes_per_cluster = bytes_per_sector * sectors_per_cluster;
-                uint32_t cluster_count = (entry1->filesize + bytes_per_cluster - 1) / bytes_per_cluster;
-                kprintf("Found component at %h - %i bytes, %i clusters", filecluster,entry1->filesize, cluster_count);
-                if (entry->flags.directory){
-                    return ef_read_directory(cluster_start, cluster_size, cluster_count, filecluster, advance_path(seek));
-                } else {
-                    return ef_read_full_file(cluster_start, cluster_size, cluster_count, entry1->filesize, filecluster);
-                }
+            if (entry && entry1 && entry2) {
+                void *result = handler(entry, entry1, entry2, seek);
+                if (result)
+                    return result;
             }
-            i += sizeof(filename_entry)-1;
+            i += sizeof(filename_entry) - 1;
         }
     }
-    return 0x0;
+
+    return 0;
+}
+
+static void* read_entry_handler(file_entry *entry, fileinfo_entry *info, filename_entry *name, const char *seek) {
+    char filename[15];
+    utf16tochar(name->name, filename, 15);
+    kprintf("%s - %i -> %h", (uintptr_t)filename, info->filesize, info->first_cluster);
+    kprintf("Is directory? %h", entry->flags.directory);
+
+    if (strstart(seek, filename) != 0)
+        return 0;
+
+    uint32_t filecluster = info->first_cluster;
+    uint32_t bps = 1 << mbs->bytes_per_sector_shift;
+    uint32_t spc = 1 << mbs->sectors_per_cluster_shift;
+    uint32_t bpc = bps * spc;
+    uint32_t count = (info->filesize + bpc - 1) / bpc;
+
+    return entry->flags.directory
+        ? ef_read_directory(mbs->cluster_heap_offset, 1 << mbs->sectors_per_cluster_shift, count, filecluster, advance_path(seek))
+        : ef_read_full_file(mbs->cluster_heap_offset, 1 << mbs->sectors_per_cluster_shift, count, info->filesize, filecluster);
+}
+
+void* ef_read_directory(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index, const char *seek) {
+    return ef_walk_directory(cluster_count, root_index, seek, read_entry_handler);
 }
 
 void* ef_read_full_file(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint64_t file_size, uint32_t root_index){
