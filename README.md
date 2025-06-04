@@ -1,0 +1,63 @@
+# Redacted Operating System
+
+## Summary
+
+The REDACTED Operating System is a 64 bit operating system meant to run on ARM processors. 
+It currently runs entirely in QEMU, but in the future it will be restructured to run on Raspberry Pi.
+Its GUI is heavily inspired by video game consoles, and the OS is entirely controllable via keyboard (with future mouse and possibly gamepad support)
+It has limited support for third party processes, currently limited to entirely self-contained programs.
+
+The OS is a hobby project, and my first attempy at writing an OS, so it's subject to improvement, and most likely isn't the most reliable and certainly not the cleanest code.
+
+## Project organization
+
+The project is divided into 3 main sections, each represented by a folder in its main directory.
+
+### Kernel
+
+Contains the kernel code, this code is the entry point to the system and responsible for its initialization.
+The system's entry point is the `boot.s` file (see aboutboot.txt in the kernel folder if there's issues with the boot file). The boot file loads a stack pointer defined in the `linker.ld` file, which also defines where the kernel is loaded. It then jumps to the `kernel_main` function located in `kernel.c`.
+The actual system initialization happens in `kernel.c`'s `kernel_main` function, which is responsible for initializing the system until the point where it's handed off to processes.
+
+Once the system is initialized, most of the system's functionality is provided by processes, which includes kernel processes and user processes. User processes are defined in their on section of the readme file, but kernel processes are included directly into the kernel. While they're placed in their own section defined in the linker, there's no real distinction between their code and any other kernel code. 
+Certain parts of the system initialization, such as GPU initialization and XHCI input code initialization rely on some syscalls that expect a process to be running, so an initial kernel.c process is created to hold their data. In the future they'll each have their own process.
+Everything about kernel processes and the pseudo-processes mentioned for GPU/XHCI will most likley be improved in the future, to make the system more modular, and kernel processes might get loaded from filesystem, in a similar way to how user processes are loaded. In order to do this, they either need to not rely on any kernel-only code (as several of them currently do) and rely on syscalls entirely, or (less ideal) dynamically link to the kernel. Doing this will increase the kernel's modularity.
+
+The system currently heavily relies on symbols defined in the linker to run, and these symbols are not available in the stripped binary version of the kernel, so REDACTED OS must be run through the kernel.elf file rather than the kernel.bin file.
+This limitation will be lifted in the future, removing reliance on these symbols altogether when possible, and creating alternatives for them when they're needed.
+
+### Shared
+
+A shared library made available to both the kernel and external user processes.
+It provides very limited implementations for a standard library (std). It includes definitions for the C++ new and delete operators, basic implementations for fixed-size arrays and index maps, which will most likely be expanded into linked lists in order to remove the fixed-size limitation. The library also includes string and memory copy/clear/set functions. These can be accessed by including the `std/std.h` header.
+It provides a UI library, which includes simple 2D drawing functions to write pixels directly through a framebuffer. This is not needed by processes at this time, as syscalls that draw onto the screen directly will be provided, but this will be changed in the future. It also includes a basic C++ Label class, and will be expanded to have more common UI types in the future. These can be accessed by including the `ui/ui.h` header.
+The shared library also contains simple math functions. These can be accessed by including the `math/math.h` header.
+Finally, it includes a header that defines a structure for handling keyboard input from the system, as well as basic keycodes.
+
+### User
+
+This section contains the code for user processes. The code is currently compiled into single a single executable, which comes in a .elf and .bin format. Currently, only .elf format is supported by the system.
+Due to the lack of dynamic linking in the system, the code must be entirely self-contained, and any external library it uses must be included in the final binary file. The system's shared library, which provides useful type definitions and syscalls is compiled as a .a static library file which can be linked into the final binary file as `shared/libshared.a`.
+
+The compiled binaries (both the .elf and .bin) are automatically moved into the fs/ folder, from which a system-readable image is created to make it accessible to the system. 
+
+This is (theoretically) not the only way to run user processes on the system. Placing a .elf file inside the fs/redos/user/ folder and running the createfs command (or an equivalent if running on a non-macOS host system) should make them readable and executable by the system, though a limit of 9 processes exists due to array and desktop ui limitations that will be lifted in the future as the system evolves.
+
+This folder will most likely be removed in the future, to be replaced by standalone projects that create user processes.
+
+### Support files
+
+In addition to the code located in the system's 3 main folders, a few other files in the root directory of the project provide useful commands for compiling and running REDACTED OS.
+
+- run: runs REDACTED OS in QEMU using a compatible board and devices. It's possible to attach gdb to it by passing the debug argument and additionally running the `debug` command, a shortcut for this is the `rundebug` command.
+- debug: attaches gdb to an instance of QEMU running REDACTED OS. The instance must be run with the `debug` argument as `./run debug` in order for gdb to attach and control its execution. It can support automatically running a command inside gdb such as adding a breakpoint by passing it as an argument as `./debug b kernel_main`
+- rundebug: a shortcut for running both the `run` and `debug` commands. It can pass arguments for the debug command, which in turn will pass them to gdb
+- createfs: creates a filesystem image for the system to read. The image does not contain kernel code and is not used to boot the system, but is still required to boot the system, and contains user processes. The script is written specifically for macOS, as it relies on the diskutil commands to create the image. There isn't a linux or windows version for it, but a filesystem image can be created manually and placed in the root directory with the name disk.img
+- Makefile: can compile and run the system. `make run` compiles the system, creates the filesystem image and executes the `./run` command. `make debug` compiles the system, creates the filesystem and executes the OS and gdb, through the `./rundebug` command. `make all` simply compiles and creates the filesystem image. `make clean` cleans compiled files.
+
+## Compiling
+
+In order to compile the system, you'll need to have the ARM GNU toolchain, for which ARM should provide binaries that run on your host system.
+The OS currently only runs on QEMU, so QEMU needs to be installed as well. The system can run entirely on QEMU devices which are included in the pre-built QEMU binaries, but could optionally also support other devices that are not available by default. To use them, QEMU must be compiled by source and configured to include those devices. 
+Running `make run` or `make all` followed by `./run` is the fastest way to run the system, using the default configuration. Further explanations on these commands and their options provided in the Supporting Files section.
+
