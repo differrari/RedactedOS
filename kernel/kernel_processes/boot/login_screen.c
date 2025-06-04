@@ -8,7 +8,7 @@
 #include "process/scheduler.h"
 #include "math/math.h"
 #include "std/string.h"
-#include "std/syscalls/syscalls.h"
+#include "syscalls/syscalls.h"
 
 static const char hid_keycode_to_char[256] = {
     [0x04] = 'a', [0x05] = 'b', [0x06] = 'c', [0x07] = 'd',

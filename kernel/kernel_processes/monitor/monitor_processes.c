@@ -9,7 +9,7 @@
 #include "memory/kalloc.h"
 #include "theme/theme.h"
 #include "math/math.h"
-#include "std/syscalls/syscalls.h"
+#include "syscalls/syscalls.h"
 #include "memory/memory_types.h"
 
 __attribute__((section(".text.kcoreprocesses")))

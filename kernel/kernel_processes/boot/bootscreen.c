@@ -9,7 +9,7 @@
 #include "input/input_dispatch.h"
 #include "process/scheduler.h"
 #include "math/math.h"
-#include "std/syscalls/syscalls.h"
+#include "syscalls/syscalls.h"
 
 __attribute__((section(".text.kcoreprocesses")))
 void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){

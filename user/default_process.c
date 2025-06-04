@@ -1,6 +1,6 @@
 #include "default_process.h"
 #include "types.h"
-#include "std/syscalls/syscalls.h"
+#include "syscalls/syscalls.h"
 #include "input_keycodes.h"
 #include "std/string.h"
 
