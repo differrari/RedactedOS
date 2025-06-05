@@ -63,7 +63,6 @@ void sync_el0_handler_c(){
             free_from_page((void*)x0, x1);
             break;
         case 3:
-            kprintf("Printing from address %h",x0);
             kprintf_l((const char *)x0);
             break;
 

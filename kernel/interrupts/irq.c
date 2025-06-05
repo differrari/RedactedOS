@@ -40,9 +40,6 @@ void irq_init() {
     gic_enable_irq(MSI_OFFSET + XHCI_IRQ, 0x80, 0);
     gic_enable_irq(SLEEP_TIMER, 0x80, 0);
 
-    write32(GICD_BASE + 0x000, 0x1);
-
-    write32(GICC_BASE + 0x000, 0x1); //Priority
     write32(GICC_BASE + 0x004, 0xF0); //Priority
 
     write8(GICC_BASE, 1); // Enable CPU Interface
