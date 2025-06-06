@@ -1,0 +1,115 @@
+name: Build CI
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  arm_toolchain_version: 14.2.rel1
+
+jobs:
+  build:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}-${{ matrix.config.os-version }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: Windows MingGW
+            os: windows
+            os-version: 2025
+            environment: mingw
+            architecture: x86_64
+            shell: 'msys2 {0}'
+            toolchain_arch: mingw-w64-x86_64
+
+          - name: Linux (ARM64)
+            os: ubuntu
+            os-version: 24.04-arm
+            arm: true
+            shell: bash
+            toolchain_arch: aarch64
+
+          - name: Linux
+            os: ubuntu
+            os-version: 24.04
+            arm: false
+            shell: bash
+            toolchain_arch: x86_64
+
+          - name: MacOS
+            os: macos
+            os-version: 13
+            arm: false
+            shell: bash
+            toolchain_arch: darwin-x86_64
+
+          - name: MacOS (Arm64)
+            os: macos
+            os-version: 15
+            arm: true
+            shell: bash
+            toolchain_arch: darwin-arm64
+
+    defaults:
+      run:
+        shell: ${{ matrix.config.shell }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: '0'
+
+      - name: Setup MSYS2 with Dependencies
+        if: matrix.config.os == 'windows' && ( matrix.config.environment == 'mingw')
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{matrix.config.environment == 'mingw' && 'MINGW64' || 'UCRT64'}}
+          update: true
+          install: >-
+            mingw-w64-${{matrix.config.architecture}}-pkg-config
+            mingw-w64-${{matrix.config.architecture}}-ca-certificates
+            mingw-w64-${{matrix.config.architecture}}-make
+            git
+            unzip
+            make
+
+      - name: Install Linux Dependencies
+        if: matrix.config.os == 'ubuntu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install make -y --no-install-recommends
+
+      - name: Install MacOS Dependencies
+        if: matrix.config.os == 'macos'
+        run: |
+          brew update
+          brew install make
+
+      - name: Install Toolchain
+        run: |
+            wget -q "https://developer.arm.com/-/media/Files/downloads/gnu/${{env.arm_toolchain_version}}/binrel/arm-gnu-toolchain-${{env.arm_toolchain_version}}-${{matrix.config.toolchain_arch}}-aarch64-none-elf.${{ matrix.config.os == 'windows' && 'zip' || 'tar.xz'}}" -O "toolchain.${{ matrix.config.os == 'windows' && 'zip' || 'tar.xz'}}"
+            ${{ matrix.config.os == 'windows' && 'mkdir ./extracted/ && unzip -q toolchain.zip -d ./extracted/' || 'tar -xf toolchain.tar.xz'}}
+            mv "./extracted/" "arm-gnu-toolchain-${{env.arm_toolchain_version}}-${{matrix.config.toolchain_arch}}-aarch64-none-elf" || true ## only needed on windows
+            mv "arm-gnu-toolchain-${{env.arm_toolchain_version}}-${{matrix.config.toolchain_arch}}-aarch64-none-elf/" "$RUNNER_TEMP/arm-toolchain"
+            echo "$RUNNER_TEMP/arm-toolchain/bin" >> $GITHUB_PATH
+
+      - name: Fix PATH Environment variable in MSYS2
+        if: matrix.config.os == 'windows'
+        shell: msys2 {0}
+        run: |
+          echo "export PATH=\"$(echo "$RUNNER_TEMP" | sed -E 's|\\|/|g' | sed -E 's|^([A-Za-z]):|/\L\1|')/arm-toolchain/bin:\$PATH\"" > /etc/profile.d/custom_path.sh
+          chmod +x /etc/profile.d/custom_path.sh
+
+      - name: Build
+        run: |
+          make all
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.config.name }} Kernel Image
+          path: kernel/kernel.img
