@@ -1,0 +1,57 @@
+name: Build CI
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  arm_toolchain_version: 14.2.rel1
+
+jobs:
+  build:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}-${{ matrix.config.os-version }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: MacOS (Arm64)
+            os: macos
+            os-version: 15
+            toolchain_arch: darwin-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: '0'
+
+      - name: Install MacOS Dependencies
+        if: matrix.config.os == 'macos'
+        run: |
+          brew update
+          brew install make
+
+      - name: Install Toolchain
+        run: |
+            wget -q "https://developer.arm.com/-/media/Files/downloads/gnu/${{env.arm_toolchain_version}}/binrel/arm-gnu-toolchain-${{env.arm_toolchain_version}}-${{matrix.config.toolchain_arch}}-aarch64-none-elf.tar.xz" -O "toolchain.tar.xz"
+            tar -xf toolchain.tar.xz
+            mv "arm-gnu-toolchain-${{env.arm_toolchain_version}}-${{matrix.config.toolchain_arch}}-aarch64-none-elf/" "$RUNNER_TEMP/arm-toolchain"
+            echo "$RUNNER_TEMP/arm-toolchain/bin" >> $GITHUB_PATH
+
+      - name: Build
+        run: |
+          mkdir -pv fs/redos/user
+          make all
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: "${{ matrix.config.name }} - kernel + disk.img + user programs"
+          path: |
+            kernel.elf
+            kernel.img
+            disk.img
+            fs/redos/user/*.elf
