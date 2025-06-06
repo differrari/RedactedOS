@@ -11,15 +11,19 @@ CPP_SRC = $(shell find . -name '*.cpp')
 OBJ = $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o)
 
 NAME = $(shell basename "$$PWD")
-TARGET = $(NAME).bin
+TARGET_BIN = $(NAME).bin
 ELF = $(NAME).elf
 LOCATION = ../fs/redos/user/
 
-all: $(TARGET)
+all: $(TARGET_BIN) libuser.a
 
-$(TARGET): $(OBJ)
+$(TARGET_BIN): $(OBJ)
+	mkdir -p "$(LOCATION)"
 	$(LD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(OBJ) ../shared/libshared.a
-	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $(LOCATION)$(TARGET)
+	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $(LOCATION)$(TARGET_BIN)
+
+libuser.a: $(OBJ)
+	$(AR) rcs libuser.a $(OBJ)
 
 %.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -31,4 +35,4 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJ) $(TARGET)
+	rm -f $(OBJ) $(TARGET_BIN) libuser.a

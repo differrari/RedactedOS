@@ -11,14 +11,13 @@ ASM_SRC = $(shell find . -name '*.S')
 CPP_SRC = $(shell find . -name '*.cpp')
 OBJ = $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o) $(ASM_SRC:.S=.o)
 
-TARGET = kernel.img
 ELF = kernel.elf
 
-all: $(TARGET)
+all: kernel.img
 
-$(TARGET): ../shared/libshared.a ../user/libuser.a $(OBJ)
+kernel.img: ../shared/libshared.a ../user/libuser.a $(OBJ)
 	$(LD) $(LDFLAGS) -o ../$(ELF) $(OBJ) ../user/libuser.a ../shared/libshared.a
-	$(OBJCOPY) -O binary ../$(ELF) ../$(TARGET)
+	$(OBJCOPY) -O binary ../$(ELF) ../$@
 
 %.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -30,4 +29,4 @@ $(TARGET): ../shared/libshared.a ../user/libuser.a $(OBJ)
 	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
 
 clean:
-	rm -f $(OBJ) ../$(ELF) ../$(TARGET) $(TARGET)
+	rm -f $(OBJ) ../$(ELF) ../kernel.img kernel.img
