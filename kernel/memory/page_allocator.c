@@ -12,7 +12,7 @@
 #define BOOT_PGD_ATTR PD_TABLE
 #define BOOT_PUD_ATTR PD_TABLE
 
-#define PAGE_TABLE_ENTRIES 512
+#define PAGE_TABLE_ENTRIES 65536
 #define PAGE_SIZE 4096
 
 uint64_t mem_table_l1[PAGE_TABLE_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
@@ -30,37 +30,6 @@ void page_alloc_enable_verbose(){
             kprintf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
         }\
     })
-
-void proc_map_4kb(uint64_t va, uint64_t pa) {
-    uint64_t l1_index = (va >> 39) & 0x1FF;
-    uint64_t l2_index = (va >> 30) & 0x1FF;
-    uint64_t l3_index = (va >> 21) & 0x1FF;
-    uint64_t l4_index = (va >> 12) & 0x1FF;
-
-    if (!(mem_table_l1[l1_index] & 1)) {
-        uint64_t* l2 = (uint64_t*)talloc(PAGE_SIZE);
-        for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l2[i] = 0;
-        mem_table_l1[l1_index] = ((uint64_t)l2 & 0xFFFFFFFFF000ULL) | PD_TABLE;
-    }
-
-    uint64_t* l2 = (uint64_t*)(mem_table_l1[l1_index] & 0xFFFFFFFFF000ULL);
-    if (!(l2[l2_index] & 1)) {
-        uint64_t* l3 = (uint64_t*)talloc(PAGE_SIZE);
-        for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l3[i] = 0;
-        l2[l2_index] = ((uint64_t)l3 & 0xFFFFFFFFF000ULL) | PD_TABLE;
-    }
-
-    uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
-    if (!(l3[l3_index] & 1)) {
-        uint64_t* l4 = (uint64_t*)talloc(PAGE_SIZE);
-        for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l4[i] = 0;
-        l3[l3_index] = ((uint64_t)l4 & 0xFFFFFFFFF000ULL) | PD_TABLE;
-    }
-
-    uint64_t* l4 = (uint64_t*)(l3[l3_index] & 0xFFFFFFFFF000ULL);
-    uint64_t attr = PD_ACCESS | (1 << 2) | 0b11;
-    l4[l4_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
-}
 
 void page_allocator_init() {
     for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) {
@@ -94,53 +63,58 @@ void free_page(void* ptr, uint64_t size) {
     }
 }
 
+int count_pages(uint64_t i1,uint64_t i2){
+    return (i1/i2) + (i1 % i2 > 0);
+}
+
 void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
-    uint64_t start = get_user_ram_start();
-    uint64_t end = get_user_ram_end();
+    uint64_t start = count_pages(get_user_ram_start(),PAGE_SIZE);
+    uint64_t end = count_pages(get_user_ram_end(),PAGE_SIZE);
+    uint64_t page_count = count_pages(size,PAGE_SIZE);
 
-    start = (start + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-    end = end & ~(PAGE_SIZE - 1);
+    for (uint64_t i = start/64; i < end/64; i++) {
+        if (mem_table_l1[i] != UINT64_MAX) {
+            uint64_t inv = ~mem_table_l1[i];
+            uint64_t bit = __builtin_ctzll(inv);
+            do {
+                bool found = true;
+                for (uint64_t b = bit; b < bit + (page_count - 1); b++){
+                    if (!mem_table_l1[i] >> b & 1){
+                        bit += page_count;
+                        found = false;
+                    }
+                }
+                if (found) break;
+            } while (bit < 64);
+            if (bit == 64) continue;
+            
+            uintptr_t first_address = 0;
+            for (uint64_t j = 0; j < page_count; j++){
+                mem_table_l1[i] |= (1ULL << bit + j);
+                uint64_t page_index = (i * 64) + (bit + j);
+                uintptr_t address = page_index * PAGE_SIZE;
+                if (!first_address) first_address = address;
 
-    size = ((size + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
-    for (uint64_t va = start; va + size <= end; va += PAGE_SIZE) {
-        bool free = true;
-        for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
-            uint64_t v = va + offset;
-            uint64_t l1 = (v >> 39) & 0x1FF;
-            uint64_t l2 = (v >> 30) & 0x1FF;
-            uint64_t l3 = (v >> 21) & 0x1FF;
-            uint64_t l4 = (v >> 12) & 0x1FF;
-
-            if (!(mem_table_l1[l1] & 1)) continue;
-            uint64_t* l2t = (uint64_t*)(mem_table_l1[l1] & ~0xFFF);
-            if (!(l2t[l2] & 1)) continue;
-            uint64_t* l3t = (uint64_t*)(l2t[l2] & ~0xFFF);
-            if (!(l3t[l3] & 1)) continue;
-            uint64_t* l4t = (uint64_t*)(l3t[l3] & ~0xFFF);
-            if (l4t[l4] & 1) {
-                free = false;
-                break;
-            }
-        }
-        if (free) {
-            for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE){
-                proc_map_4kb(va + offset, va + offset);
                 if (device && kernel)
-                    register_device_memory(va+offset, va+offset);
+                    register_device_memory(address, address);
                 else
-                    register_proc_memory(va + offset, va + offset, kernel);
+                    register_proc_memory(address, address, kernel);
+
+                if (!full) {
+                    mem_page* new_info = (mem_page*)address;
+                    new_info->next = NULL;
+                    new_info->free_list = NULL;
+                    new_info->next_free_mem_ptr = address + sizeof(mem_page);
+                    new_info->size = 0;
+                }
             }
-            if (!full){
-                mem_page* new_info = (mem_page*)va;
-                new_info->next = NULL;
-                new_info->free_list = NULL;
-                new_info->next_free_mem_ptr = (uint64_t)va + sizeof(mem_page);
-                new_info->size = 0;
-            }
-            kprintfv("[page_alloc] Page allocated: %h", va);
-            return (void*)va;
+
+            kprintfv("[page_alloc] Final address %h", first_address);
+
+            return (void*)first_address;
         }
     }
+
     kprintf_raw("[page_alloc error] Could not allocate");
     return 0;
 }

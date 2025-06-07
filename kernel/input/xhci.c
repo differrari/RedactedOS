@@ -676,7 +676,7 @@ bool xhci_input_init() {
 
     kprintfv("[xHCI] device initialized");
 
-    //QEMU only device finder
+    //TODO: we don't need this anymore, it's enough to handle port status changes
 
     for (uint16_t i = 0; i < global_device.max_ports; i++)
         if (global_device.ports[i].portsc.ccs && global_device.ports[i].portsc.csc){

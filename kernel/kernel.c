@@ -28,6 +28,7 @@ void kernel_main() {
     kprintf("Exception vectors set");
 
     page_allocator_init();
+    // page_alloc_enable_verbose();
     kprintf("Initializing kernel...");
     
     init_main_process();
@@ -43,7 +44,6 @@ void kernel_main() {
     
     kprintf("GPU initialized");
     
-    // page_alloc_enable_verbose();
     // xhci_enable_verbose();
     if (!xhci_input_init()){
         panic("Input initialization failure");
