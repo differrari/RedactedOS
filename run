@@ -7,9 +7,9 @@ if [ "$1" = "debug" ]; then
   ARGS="-monitor unix:/tmp/qemu-monitor-socket,server,nowait -s -S"
 fi
 
-../qemu/build/qemu-system-aarch64-unsigned \
+qemu-system-aarch64 \
 -M virt \
--cpu cortex-a76 \
+-cpu cortex-a72 \
 -m 512M \
 -kernel kernel.elf \
 -device virtio-gpu-pci \
