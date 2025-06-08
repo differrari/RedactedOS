@@ -27,4 +27,4 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
 
 clean:
-	rm -f $(OBJ) $(TARGET)
+	rm -f $(shell find . -name '*.o') $(TARGET)

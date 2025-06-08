@@ -30,4 +30,4 @@ $(TARGET): ../shared/libshared.a $(OBJ)
 	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
 
 clean:
-	rm -f $(OBJ) ../$(ELF) ../$(TARGET) $(TARGET)
+	rm -f $(shell find . -name '*.o') ../$(ELF) ../$(TARGET) $(TARGET)
