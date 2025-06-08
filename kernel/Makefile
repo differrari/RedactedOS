@@ -17,7 +17,7 @@ ELF = kernel.elf
 all: $(TARGET)
 
 $(TARGET): ../shared/libshared.a $(OBJ)
-	$(LD) $(LDFLAGS) -o ../$(ELF) $(OBJ) ../user/libuser.a ../shared/libshared.a
+	$(LD) $(LDFLAGS) -o ../$(ELF) $(OBJ) ../shared/libshared.a
 	$(OBJCOPY) -O binary ../$(ELF) ../$(TARGET)
 
 %.o: %.S
