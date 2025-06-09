@@ -2,8 +2,8 @@
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
 #include "console/kio.h"
-#include "interrupts/irq.h"
-#include "interrupts/exception_handler.h"
+#include "exceptions/irq.h"
+#include "exceptions/exception_handler.h"
 
 typedef struct {
     uint64_t code_base_start;

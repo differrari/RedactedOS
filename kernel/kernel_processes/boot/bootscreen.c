@@ -5,7 +5,7 @@
 #include "std/string.h"
 #include "memory/kalloc.h"
 #include "theme/theme.h"
-#include "interrupts/exception_handler.h"
+#include "exceptions/exception_handler.h"
 #include "input/input_dispatch.h"
 #include "process/scheduler.h"
 #include "math/math.h"

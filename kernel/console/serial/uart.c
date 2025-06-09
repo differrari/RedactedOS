@@ -1,6 +1,6 @@
 #include "console/serial/uart.h"
 #include "memory/memory_access.h"
-#include "interrupts/irq.h"
+#include "exceptions/irq.h"
 
 #define UART0_DR   (UART0_BASE + 0x00)
 #define UART0_FR   (UART0_BASE + 0x18)

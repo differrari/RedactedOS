@@ -2,7 +2,7 @@
 #include "console/kio.h"
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
-#include "interrupts/irq.h"
+#include "exceptions/irq.h"
 
 process_t *create_kernel_process(const char *name, void (*func)()){
 

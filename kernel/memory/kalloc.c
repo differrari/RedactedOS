@@ -1,6 +1,6 @@
 #include "kalloc.h"
 #include "types.h"
-#include "interrupts/exception_handler.h"
+#include "exceptions/exception_handler.h"
 #include "console/kio.h"
 #include "dtb.h"
 #include "console/serial/uart.h"

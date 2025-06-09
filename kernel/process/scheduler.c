@@ -2,10 +2,11 @@
 #include "console/kio.h"
 #include "memory/kalloc.h"
 #include "memory/page_allocator.h"
-#include "interrupts/irq.h"
+#include "exceptions/irq.h"
 #include "console/serial/uart.h"
 #include "input/input_dispatch.h"
-#include "interrupts/exception_handler.h"
+#include "exceptions/exception_handler.h"
+#include "exceptions/timer.h"
 
 extern void save_context(process_t* proc);
 extern void save_pc_interrupt(process_t* proc);
@@ -49,6 +50,7 @@ void switch_proc(ProcSwitchReason reason) {
     }
 
     current_proc = next_proc;
+    timer_reset();
     process_restore();
 }
 

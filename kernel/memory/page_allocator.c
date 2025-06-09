@@ -3,7 +3,7 @@
 #include "memory/kalloc.h"
 #include "console/kio.h"
 #include "mmu.h"
-#include "interrupts/exception_handler.h"
+#include "exceptions/exception_handler.h"
 #include "std/memfunctions.h"
 
 #define PD_TABLE 0b11
