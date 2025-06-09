@@ -198,10 +198,10 @@ void ef_read_dump(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluste
 void ef_read_FAT(uint32_t location, uint32_t size, uint8_t count){
     uint32_t* fat = (uint32_t*)allocate_in_page(fs_page, size * count * 512, ALIGN_64B, true, true);
     disk_read((void*)fat, location, size);
-    kprintf("FAT: %h (%h)",location*512,size * count * 512);
+    kprintf("FAT: %x (%x)",location*512,size * count * 512);
     uint32_t total_entries = (size * count * 512) / 4;
     for (uint32_t i = 0; i < total_entries; i++)
-        if (fat[i] != 0) kprintf("[%i] = %h", i, fat[i]);
+        if (fat[i] != 0) kprintf("[%i] = %x", i, fat[i]);
 }
 
 bool ef_init(){
@@ -212,7 +212,7 @@ bool ef_init(){
     disk_read((void*)mbs, 0, 1);
 
     if (mbs->bootsignature != 0xAA55){
-        kprintf("[exfat] Wrong boot signature %h",mbs->bootsignature);
+        kprintf("[exfat] Wrong boot signature %x",mbs->bootsignature);
         return false;
     }
     if (strcmp("EXFAT   ", mbs->fsname) != 0){
@@ -232,7 +232,7 @@ bool ef_init(){
 
     kprintf("EXFAT Volume uses %i cluster size", 1 << mbs->bytes_per_sector_shift);
 
-    kprintf("Cluster at %h (%h * %h of size %h each)",mbs->fat_offset + mbs->fat_length * mbs->number_of_fats, mbs->cluster_heap_offset,mbs->cluster_count, 1 << mbs->sectors_per_cluster_shift);    
+    kprintf("Cluster at %x (%x * %x of size %x each)",mbs->fat_offset + mbs->fat_length * mbs->number_of_fats, mbs->cluster_heap_offset,mbs->cluster_count, 1 << mbs->sectors_per_cluster_shift);    
     ef_read_FAT(mbs->fat_offset, mbs->fat_length, mbs->number_of_fats);
     return true;
 }

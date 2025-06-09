@@ -87,21 +87,21 @@ void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mm
             if (cap->cfg_type < VIRTIO_PCI_CAP_PCI_CFG && val == 0){
                 kprintfv("[VIRTIO] Setting up bar");
                 val = pci_setup_bar(pci_addr, cap->bar, mmio_start, mmio_size);
-                kprintfv("[VIRTIO] Bar @ %h", val);
+                kprintfv("[VIRTIO] Bar @ %x", val);
             }
 
             if (cap->cfg_type == VIRTIO_PCI_CAP_COMMON_CFG){
-                kprintfv("[VIRTIO] Common CFG @ %h",val + cap->offset);
+                kprintfv("[VIRTIO] Common CFG @ %x",val + cap->offset);
                 dev->common_cfg = (struct virtio_pci_common_cfg*)(uintptr_t)(val + cap->offset);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_NOTIFY_CFG) {
-                kprintfv("[VIRTIO] Notify CFG @ %h",val + cap->offset);
+                kprintfv("[VIRTIO] Notify CFG @ %x",val + cap->offset);
                 dev->notify_cfg = (uint8_t*)(uintptr_t)(val + cap->offset);
                 dev->notify_off_multiplier = *(uint32_t*)(uintptr_t)(cap_addr + sizeof(struct virtio_pci_cap));
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_DEVICE_CFG){
-                kprintfv("[VIRTIO] Device CFG @ %h",val + cap->offset);
+                kprintfv("[VIRTIO] Device CFG @ %x",val + cap->offset);
                 dev->device_cfg = (uint8_t*)(uintptr_t)(val + cap->offset);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_ISR_CFG){
-                kprintfv("[VIRTIO] ISR CFG @ %h",val + cap->offset);
+                kprintfv("[VIRTIO] ISR CFG @ %x",val + cap->offset);
                 dev->isr_cfg = (uint8_t*)(uintptr_t)(val + cap->offset);
             }
         }
@@ -128,7 +128,7 @@ bool virtio_init_device(virtio_device *dev) {
 
     cfg->device_status |= VIRTIO_STATUS_FEATURES_OK;
     if (!(cfg->device_status & VIRTIO_STATUS_FEATURES_OK)){
-        kprintf("Failed to negotiate features. Supported features %h",features);
+        kprintf("Failed to negotiate features. Supported features %x",features);
         return false;
     }
 
@@ -141,9 +141,9 @@ bool virtio_init_device(virtio_device *dev) {
     uint64_t avail = (uintptr_t)allocate_in_page(dev->memory_page, 0x1000, ALIGN_64B, true, true);
     uint64_t used = (uintptr_t)allocate_in_page(dev->memory_page, 0x1, ALIGN_64B, true, true);
 
-    kprintfv("[VIRTIO] Device base %h",base);
-    kprintfv("[VIRTIO] Device avail %h",avail);
-    kprintfv("[VIRTIO] Device used %h",used);
+    kprintfv("[VIRTIO] Device base %x",base);
+    kprintfv("[VIRTIO] Device avail %x",avail);
+    kprintfv("[VIRTIO] Device used %x",used);
 
     cfg->queue_size = size;
     cfg->queue_desc = base;
@@ -185,7 +185,7 @@ bool virtio_send(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t use
     while (last_used_idx == u->idx);
     
     if (status != 0)
-        kprintf("[VIRTIO OPERATION ERROR]: Wrong status %h",status);
+        kprintf("[VIRTIO OPERATION ERROR]: Wrong status %x",status);
     
     return status == 0;
 }

@@ -46,7 +46,7 @@ uint32_t print_branch(uint32_t instr, uint64_t pc, bool translate, process_layou
     int32_t imm26 = instr & 0x03FFFFFF;
     int32_t signed_imm = (imm26 << 6) >> 6;
     uint64_t target = pc + ((int64_t)signed_imm << 2);
-    kputfv("%h /*pc = %h*/", target, pc);
+    kputfv("%x /*pc = %x*/", target, pc);
 
     if (!translate) return instr;
 
@@ -58,7 +58,7 @@ uint32_t print_branch(uint32_t instr, uint64_t pc, bool translate, process_layou
         uint64_t dest_pc = destination->code_base_start + offset;
         int64_t rel = (int64_t)(target - dest_pc) >> 2;
         if (rel < -(1 << 25) || rel >= (1 << 25)) {
-            kputfv("O.O.R. %h", rel);//We need to account for out of range
+            kputfv("O.O.R. %x", rel);//We need to account for out of range
         }
         return (instr & 0xFC000000) | ((uint32_t)(rel & 0x03FFFFFF));
     }
@@ -76,7 +76,7 @@ uint32_t print_cond_branch(uint32_t instr, uint64_t pc, bool translate, process_
         "eq","ne","cs","cc","mi","pl","vs","vc",
         "hi","ls","ge","lt","gt","le","","invalid"
     };
-    kputfv("%h, %s", target, (uintptr_t)cond_names[cond]);
+    kputfv("%x, %s", target, (uintptr_t)cond_names[cond]);
 
     if (!translate) return instr;
     
@@ -106,7 +106,7 @@ uint32_t print_adrp(uint32_t instr, uint64_t pc, bool translate,  process_layout
     uint64_t immhi = (instr >> 5) & 0x7FFFF;
     uint64_t immlo = (instr >> 29) & 0x3;
     int64_t offset = ((int64_t)((immhi << 2) | immlo) << 44) >> 32;
-    kputfv("x%i, %h", rd, (pc & ~0xFFFUL) + offset);
+    kputfv("x%i, %x", rd, (pc & ~0xFFFUL) + offset);
 
     if (!translate) return instr;
 
@@ -235,13 +235,13 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
         .data_size = data_size,
     };
     
-    kprintfv("Beginning translation from base address %h to new address %h", src_base, dst_base);
+    kprintfv("Beginning translation from base address %x to new address %x", src_base, dst_base);
     for (uint32_t i = 0; i < count; i++) {
         uint32_t instr = src32[i];
 
-        kputfv("[%h]: ",instr);
+        kputfv("[%x]: ",instr);
         instr = parse_instruction(instr, (src_base + (i*4)), true, &source_layout, &destination_layout);
-        kputfv(" ->\t\t\t\t [%h]: ", instr);
+        kputfv(" ->\t\t\t\t [%x]: ", instr);
         parse_instruction(instr, (dst_base + (i*4)), false, &source_layout, &destination_layout);
         kputfv("\n");
 
@@ -281,7 +281,7 @@ process_t* create_process(char *name, void *content, uint64_t content_size, uint
     proc->sp = proc->stack;
     
     proc->pc = (uintptr_t)(dest + entry);
-    kprintf_raw("User process %s allocated with address at %h, stack at %h, heap at %h",(uintptr_t)name,proc->pc, proc->sp, proc->heap);
+    kprintf_raw("User process %s allocated with address at %x, stack at %x, heap at %x",(uintptr_t)name,proc->pc, proc->sp, proc->heap);
     proc->spsr = 0;
     proc->state = READY;
 

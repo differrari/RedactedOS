@@ -4,7 +4,7 @@
 #include "console/kio.h"
 #include "memory/mmu.h"
 #include "graph/graphics.h"
-#include "irq.h"
+#include "timer.h"
 #include "theme/theme.h"
 #include "std/string.h"
 
@@ -12,7 +12,7 @@ static bool panic_triggered = false;
 
 void set_exception_vectors(){
     extern char exception_vectors[];
-    kprintf("Exception vectors setup at %h", (uint64_t)&exception_vectors);
+    kprintf("Exception vectors setup at %x", (uint64_t)&exception_vectors);
     asm volatile ("msr vbar_el1, %0" :: "r"(exception_vectors));
 }
 
@@ -24,7 +24,7 @@ void handle_exception(const char* type) {
 
     disable_visual();//Disable visual kprintf, since it has additional memory accesses that could be faulting
 
-    kstring s = kstring_format("%s \nESR_EL1: %h\nELR_EL1: %h\nFAR_EL1: %h",(uint64_t)kstring_l(type).data,esr,elr,far);
+    kstring s = kstring_format("%s \nESR_EL1: %x\nELR_EL1: %x\nFAR_EL1: %x",(uint64_t)kstring_l(type).data,esr,elr,far);
     panic(s.data);
 }
 
@@ -36,7 +36,7 @@ void handle_exception_with_info(const char* type, uint64_t info) {
 
     disable_visual();//Disable visual kprintf, since it has additional memory accesses that could be faulting
 
-    kstring s = kstring_format("%s \nESR_EL1: %h\nELR_EL1: %h\nFAR_EL1: %h",(uint64_t)kstring_l(type).data,esr,elr,far);
+    kstring s = kstring_format("%s \nESR_EL1: %x\nELR_EL1: %x\nFAR_EL1: %x",(uint64_t)kstring_l(type).data,esr,elr,far);
     panic_with_info(s.data, info);
 }
 
@@ -89,7 +89,7 @@ void panic_with_info(const char* msg, uint64_t info) {
     uart_raw_putc('\n');
     uart_raw_puts("System Halted");
     if (!old_panic_triggered){
-        kstring s = kstring_format("%s\n%s\nError code: %h\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)msg,info);
+        kstring s = kstring_format("%s\n%s\nError code: %x\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)msg,info);
         draw_panic_screen(s);
     }
     while (1);

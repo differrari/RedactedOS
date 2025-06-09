@@ -41,7 +41,7 @@ void save_return_address_interrupt(){
 
 //TODO: Processes can currently exit and just crash the whole system with an EL1 Sync exception trying to read from 0x0. Better than continuing execution past bounds but still not great
 void switch_proc(ProcSwitchReason reason) {
-    // kprintf_raw("Stopping execution of process %i at %h",current_proc, processes[current_proc].spsr);
+    // kprintf_raw("Stopping execution of process %i at %x",current_proc, processes[current_proc].spsr);
     if (proc_count == 0)
         panic("No processes active");
     int next_proc = (current_proc + 1) % MAX_PROCS;

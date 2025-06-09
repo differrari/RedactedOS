@@ -19,7 +19,7 @@ void gpu_init(gpu_size preferred_screen_size){
     }
     screen_size = preferred_screen_size;
     _gpu_ready = true;
-    kprintf("Selected and initialized GPU %h", (uintptr_t)gpu_driver);
+    kprintf("Selected and initialized GPU %x", (uintptr_t)gpu_driver);
 }
 
 bool gpu_ready(){

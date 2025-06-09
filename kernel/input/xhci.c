@@ -40,7 +40,7 @@ static void* xhci_mem_page;
 bool xhci_check_fatal_error() {
     uint32_t sts = global_device.op->usbsts;
     if (sts & (XHCI_USBSTS_HSE | XHCI_USBSTS_CE)) {
-        kprintf_raw("[xHCI ERROR] Fatal condition: USBSTS = %h", sts);
+        kprintf_raw("[xHCI ERROR] Fatal condition: USBSTS = %x", sts);
         return true;
     }
     return false;
@@ -57,20 +57,20 @@ bool enable_xhci_events(){
     erst->ring_base = event_ring;
     erst->ring_size = MAX_TRB_AMOUNT;
     erst->reserved = 0;
-    kprintfv("[xHCI] ERST ring_base: %h", event_ring);
-    kprintfv("[xHCI] ERST ring_size: %h", erst[0].ring_size);
+    kprintfv("[xHCI] ERST ring_base: %x", event_ring);
+    kprintfv("[xHCI] ERST ring_size: %x", erst[0].ring_size);
     global_device.event_ring = (trb*)event_ring;
 
-    kprintfv("[xHCI] Interrupter register @ %h", global_device.rt_base + 0x20);
+    kprintfv("[xHCI] Interrupter register @ %x", global_device.rt_base + 0x20);
     
     global_device.interrupter->erstsz = 1;
-    kprintfv("[xHCI] ERSTSZ set to: %h", global_device.interrupter->erstsz);
+    kprintfv("[xHCI] ERSTSZ set to: %x", global_device.interrupter->erstsz);
     
     global_device.interrupter->erdp = event_ring;
     global_device.interrupter->erstba = erst_addr;
-    kprintfv("[xHCI] ERSTBA set to: %h", global_device.interrupter->erstba);
+    kprintfv("[xHCI] ERSTBA set to: %x", global_device.interrupter->erstba);
     
-    kprintfv("[xHCI] ERDP set to: %h", global_device.interrupter->erdp);
+    kprintfv("[xHCI] ERDP set to: %x", global_device.interrupter->erdp);
     
     global_device.interrupter->iman |= 1 << 1;//Enable interrupt
 
@@ -111,10 +111,10 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
 
     pci_enable_device(pci_addr);
 
-    kprintfv("[xHCI] BARs set up @ %h (%h)",xhci->mmio,xhci->mmio_size);
+    kprintfv("[xHCI] BARs set up @ %x (%x)",xhci->mmio,xhci->mmio_size);
 
     xhci->cap = (xhci_cap_regs*)(uintptr_t)xhci->mmio;
-    kprintfv("[xHCI] caplength %h",xhci->cap->caplength);
+    kprintfv("[xHCI] caplength %x",xhci->cap->caplength);
     uint64_t op_base = xhci->mmio + xhci->cap->caplength;
     xhci->op = (xhci_op_regs*)(uintptr_t)op_base;
     xhci->ports = (xhci_port_regs*)((uintptr_t)op_base + 0x400);
@@ -134,35 +134,35 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
     kprintfv("[xHCI] Device ready");
 
     if (xhci->op->usbcmd != 0){
-        kprintf_raw("[xHCI Error] wrong usbcmd %h",xhci->op->usbcmd);
+        kprintf_raw("[xHCI Error] wrong usbcmd %x",xhci->op->usbcmd);
         return false;
     } else {
         kprintfv("[xHCI] Correct usbcmd value");
     }
 
     if (xhci->op->dnctrl != 0){
-        kprintf_raw("[xHCI Error] wrong dnctrl %h",xhci->op->dnctrl);
+        kprintf_raw("[xHCI Error] wrong dnctrl %x",xhci->op->dnctrl);
         return false;
     } else {
         kprintfv("[xHCI] Correct dnctrl value");
     }
 
     if (xhci->op->crcr != 0){
-        kprintf_raw("[xHCI Error] wrong crcr %h",xhci->op->crcr);
+        kprintf_raw("[xHCI Error] wrong crcr %x",xhci->op->crcr);
         return false;
     } else {
         kprintfv("[xHCI] Correct crcr value");
     }
 
     if (xhci->op->dcbaap != 0){
-        kprintf_raw("[xHCI Error] wrong dcbaap %h",xhci->op->dcbaap);
+        kprintf_raw("[xHCI Error] wrong dcbaap %x",xhci->op->dcbaap);
         return false;
     } else {
         kprintfv("[xHCI] Correct dcbaap value");
     }
 
     if (xhci->op->config != 0){
-        kprintf_raw("[xHCI Error] wrong config %h",xhci->op->config);
+        kprintf_raw("[xHCI Error] wrong config %x",xhci->op->config);
         return false;
     } else {
         kprintfv("[xHCI] Correct config value");
@@ -202,7 +202,7 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
         scratchpad_array[i] = (uint64_t)allocate_in_page(xhci_mem_page, 0x1000, ALIGN_64B, true, true);
     xhci->dcbaa[0] = (uint64_t)scratchpad_array;
 
-    kprintfv("[xHCI] dcbaap assigned at %h with %i scratchpads",dcbaap_addr,scratchpad_count);
+    kprintfv("[xHCI] dcbaap assigned at %x with %i scratchpads",dcbaap_addr,scratchpad_count);
 
     uint64_t command_ring = (uintptr_t)allocate_in_page(xhci_mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
 
@@ -212,7 +212,7 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
 
     make_ring_link(xhci->cmd_ring, xhci->command_cycle_bit);
 
-    kprintfv("[xHCI] command ring allocated at %h. crcr now %h",command_ring, xhci->op->crcr);
+    kprintfv("[xHCI] command ring allocated at %x. crcr now %x",command_ring, xhci->op->crcr);
 
     if (!enable_xhci_events())
         return false;
@@ -223,7 +223,7 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
     xhci->op->usbcmd |= 1;//Run
     while ((xhci->op->usbsts & 0x1));
 
-    kprintfv("[xHCI] Init complete with usbcmd %h, usbsts %h",xhci->op->usbcmd, xhci->op->usbsts);
+    kprintfv("[xHCI] Init complete with usbcmd %x, usbsts %x",xhci->op->usbcmd, xhci->op->usbsts);
 
     return !xhci_check_fatal_error();
 }
@@ -231,14 +231,14 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
 
 void ring_doorbell(uint32_t slot, uint32_t endpoint) {
     volatile uint32_t* db = (uint32_t*)(uintptr_t)(global_device.db_base + (slot << 2));
-    kprintfv("[xHCI] Ringing doorbell at %h with value %h", global_device.db_base + (slot << 2),endpoint);
+    kprintfv("[xHCI] Ringing doorbell at %x with value %x", global_device.db_base + (slot << 2),endpoint);
     *db = endpoint;
 }
 
 bool xhci_await_response(uint64_t command, uint32_t type){
     while (true){
         if (xhci_check_fatal_error()){
-            kprintf_raw("[xHCI error] USBSTS value %h",global_device.op->usbsts);
+            kprintf_raw("[xHCI error] USBSTS value %x",global_device.op->usbsts);
             awaited_type = 0;
             return false;
         }
@@ -246,7 +246,7 @@ bool xhci_await_response(uint64_t command, uint32_t type){
             trb* ev = &global_device.event_ring[global_device.event_index];
             if (!((ev->control & 1) == global_device.event_cycle_bit)) //TODO: implement a timeout
                 break;
-            // kprintf_raw("[xHCI] A response at %i of type %h as a response to %h",global_device.event_index, (ev->control & TRB_TYPE_MASK) >> 10, ev->parameter);
+            // kprintf_raw("[xHCI] A response at %i of type %x as a response to %x",global_device.event_index, (ev->control & TRB_TYPE_MASK) >> 10, ev->parameter);
             if (global_device.event_index == MAX_TRB_AMOUNT - 1){
                 global_device.event_index = 0;
                 global_device.event_cycle_bit = !global_device.event_cycle_bit;
@@ -287,7 +287,7 @@ bool issue_command(uint64_t param, uint32_t status, uint32_t control){
     cmd->control = control | global_device.command_cycle_bit;
 
     uint64_t cmd_addr = (uintptr_t)cmd;
-    kprintfv("[xHCI] issuing command with control: %h", cmd->control);
+    kprintfv("[xHCI] issuing command with control: %x", cmd->control);
     if (global_device.cmd_index == MAX_TRB_AMOUNT - 1){
         make_ring_link_control(global_device.cmd_ring, global_device.command_cycle_bit);
         global_device.command_cycle_bit = !global_device.command_cycle_bit;
@@ -454,7 +454,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
                 kprintf_raw("[xHCI implementation error] non-hid devices not supported yet");
                 return false;
             }
-            kprintfv("[xHCI] interface protocol %h",interface->bInterfaceProtocol);
+            kprintfv("[xHCI] interface protocol %x",interface->bInterfaceProtocol);
             switch (interface->bInterfaceProtocol)
             {
             case 0x1:
@@ -473,13 +473,13 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
                     device_endpoint->report_length = hid->descriptors[j].wDescriptorLength;
                     device_endpoint->report_descriptor = (uint8_t*)allocate_in_page(xhci_mem_page, device_endpoint->report_length, ALIGN_64B, true, true);
                     xhci_request_descriptor(device, true, 0x22, 0, interface_index-1, device_endpoint->report_descriptor);
-                    kprintfv("[xHCI] retrieved report descriptor of length %i at %h", device_endpoint->report_length, (uintptr_t)device_endpoint->report_descriptor);
+                    kprintfv("[xHCI] retrieved report descriptor of length %i at %x", device_endpoint->report_length, (uintptr_t)device_endpoint->report_descriptor);
                 }
             }
         break;
         case 0x5: //Endpoint
             usb_endpoint_descriptor *endpoint = (usb_endpoint_descriptor*)&config->data[i];
-            kprintfv("[xHCI] endpoint address %h",endpoint->bEndpointAddress);
+            kprintfv("[xHCI] endpoint address %x",endpoint->bEndpointAddress);
             uint8_t ep_address = endpoint->bEndpointAddress;
             uint8_t ep_dir = (ep_address & 0x80) ? 1 : 0; // 1 IN, 0 OUT
             uint8_t ep_num = ((ep_address & 0x0F) * 2) + ep_dir;
@@ -514,11 +514,11 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
                 return false;
             }
 
-            kprintf_raw("[xHCI] Storing configuration for endpoint %i -> %i (%h)",ep_num,device_endpoint->poll_endpoint, (uintptr_t)device_endpoint);
+            kprintf_raw("[xHCI] Storing configuration for endpoint %i -> %i (%x)",ep_num,device_endpoint->poll_endpoint, (uintptr_t)device_endpoint);
 
             xhci_configure_endpoint(device->slot_id, device_endpoint);
 
-            kprintf_raw("[xHCI] Returned from configuration for endpoint %i -> %i (%h)",ep_num,device_endpoint->poll_endpoint, (uintptr_t)device_endpoint);
+            kprintf_raw("[xHCI] Returned from configuration for endpoint %i -> %i (%x)",ep_num,device_endpoint->poll_endpoint, (uintptr_t)device_endpoint);
 
             need_new_endpoint = true;
 
@@ -547,7 +547,7 @@ bool xhci_setup_device(uint16_t port){
     xhci_usb_device *device = (xhci_usb_device*)allocate_in_page(xhci_mem_page, sizeof(xhci_usb_device), ALIGN_64B, true, true);
 
     device->slot_id = (global_device.event_ring[0].status >> 24) & 0xFF;
-    kprintfv("[xHCI] Slot id %h", device->slot_id);
+    kprintfv("[xHCI] Slot id %x", device->slot_id);
 
     if (device->slot_id == 0){
         kprintf_raw("[xHCI error]: Wrong slot id 0");
@@ -559,7 +559,7 @@ bool xhci_setup_device(uint16_t port){
     xhci_input_context *ctx = (xhci_input_context*)allocate_in_page(xhci_mem_page, sizeof(xhci_input_context), ALIGN_64B, true, true);
     device->ctx = ctx;
     void* output_ctx = (void*)allocate_in_page(xhci_mem_page, 0x1000, ALIGN_64B, true, true);
-    kprintfv("[xHCI] Allocating output for context at %h", (uintptr_t)output_ctx);
+    kprintfv("[xHCI] Allocating output for context at %x", (uintptr_t)output_ctx);
     
     ctx->control_context.add_flags = 0b11;
     
@@ -574,7 +574,7 @@ bool xhci_setup_device(uint16_t port){
     ctx->device_context.endpoints[0].endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);//Packet size. Guessed from port speed
     
     device->transfer_ring = (trb*)allocate_in_page(xhci_mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
-    kprintfv("Transfer ring at %h",(uintptr_t)device->transfer_ring);
+    kprintfv("Transfer ring at %x",(uintptr_t)device->transfer_ring);
     make_ring_link(device->transfer_ring, device->transfer_cycle_bit);
 
     ctx->device_context.endpoints[0].endpoint_f23.dcs = device->transfer_cycle_bit;
@@ -583,7 +583,7 @@ bool xhci_setup_device(uint16_t port){
 
     ((uint64_t*)(uintptr_t)global_device.op->dcbaap)[device->slot_id] = (uintptr_t)output_ctx;
     if (!issue_command((uintptr_t)device->ctx, 0, (device->slot_id << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
-        kprintf_raw("[xHCI error] failed addressing device at slot %h",device->slot_id);
+        kprintf_raw("[xHCI error] failed addressing device at slot %x",device->slot_id);
         return false;
     }
 
@@ -607,11 +607,11 @@ bool xhci_setup_device(uint16_t port){
         use_lang_desc = false;
     }
 
-    kprintfv("[xHCI] Vendor %h",descriptor->idVendor);
-    kprintfv("[xHCI] Product %h",descriptor->idProduct);
-    kprintfv("[xHCI] USB version %h",descriptor->bcdUSB);
-    kprintfv("[xHCI] EP0 Max Packet Size: %h", descriptor->bMaxPacketSize0);
-    kprintfv("[xHCI] Configurations: %h", descriptor->bNumConfigurations);
+    kprintfv("[xHCI] Vendor %x",descriptor->idVendor);
+    kprintfv("[xHCI] Product %x",descriptor->idProduct);
+    kprintfv("[xHCI] USB version %x",descriptor->bcdUSB);
+    kprintfv("[xHCI] EP0 Max Packet Size: %x", descriptor->bMaxPacketSize0);
+    kprintfv("[xHCI] Configurations: %x", descriptor->bNumConfigurations);
     if (use_lang_desc){
         //TODO: we want to maintain the strings so we can have USB device information, and rework it to silece the alignment warning
         uint16_t langid = lang_desc->lang_ids[0];
@@ -692,7 +692,7 @@ bool xhci_input_init() {
 
 void xhci_handle_interrupt(){
     trb* ev = &global_device.event_ring[global_device.event_index];
-    kprintfv("[xHCI] Interrupt with next event id %h. Awaited is %h", (ev->control & TRB_TYPE_MASK) >> 10, awaited_type);
+    kprintfv("[xHCI] Interrupt with next event id %x. Awaited is %x", (ev->control & TRB_TYPE_MASK) >> 10, awaited_type);
     uint32_t type = (ev->control & TRB_TYPE_MASK) >> 10;
     uint64_t addr = ev->parameter;
     if (type == awaited_type && (awaited_addr == 0 || (awaited_addr & 0xFFFFFFFFFFFFFFFF) == addr)) return;// Compatibility between our polling and interrupt, we'll need to get rid of this

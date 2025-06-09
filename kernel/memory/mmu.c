@@ -42,7 +42,7 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     uint64_t l2_index = (va >> 30) & 0x1FF;
     uint64_t l3_index = (va >> 21) & 0x1FF;
 
-    kprintfv("[MMU] Mapping 2mb memory %h at [%i][%i][%i] for EL1", va, l1_index,l2_index,l3_index);
+    kprintfv("[MMU] Mapping 2mb memory %x at [%i][%i][%i] for EL1", va, l1_index,l2_index,l3_index);
 
     if (!(page_table_l1[l1_index] & 1)) {
         uint64_t* l2 = (uint64_t*)talloc(PAGE_SIZE);
@@ -92,14 +92,14 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) 
         for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) l4[i] = 0;
         l3[l3_index] = ((uint64_t)l4 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     } else if ((l3_val & 0b11) == PD_BLOCK){
-        kprintf_raw("[MMU error]: Region not mapped for address %h, already mapped at higher granularity [%i][%i][%i][%i]",va, l1_index,l2_index,l3_index,l4_index);
+        kprintf_raw("[MMU error]: Region not mapped for address %x, already mapped at higher granularity [%i][%i][%i][%i]",va, l1_index,l2_index,l3_index,l4_index);
         return;
     }
     
     uint64_t* l4 = (uint64_t*)(l3[l3_index] & 0xFFFFFFFFF000ULL);
     
     if (l4[l4_index] & 1){
-        kprintf_raw("[MMU warning]: Section already mapped %h",va);
+        kprintf_raw("[MMU warning]: Section already mapped %x",va);
         return;
     }
     
@@ -116,7 +116,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) 
         break;
     }
     uint64_t attr = ((uint64_t)(level == 1) << 54) | ((uint64_t)0 << 53) | PD_ACCESS | (0b11 << 8) | (permission << 6) | (attr_index << 2) | 0b11;
-    kprintfv("[MMU] Mapping 4kb memory %h at [%i][%i][%i][%i] for EL%i = %h permission: %i", va, l1_index,l2_index,l3_index,l4_index,level,attr,permission);
+    kprintfv("[MMU] Mapping 4kb memory %x at [%i][%i][%i][%i] for EL%i = %x permission: %i", va, l1_index,l2_index,l3_index,l4_index,level,attr,permission);
     
     l4[l4_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
 }
@@ -145,7 +145,7 @@ void mmu_unmap(uint64_t va, uint64_t pa){
     uint64_t l3_index = (va >> 21) & 0x1FF;
     uint64_t l4_index = (va >> 12) & 0x1FF;
     
-    kprintfv("[MMU] Unmapping 4kb memory %h at [%i][%i][%i][%i] for EL1", va, l1_index,l2_index,l3_index, l4_index);
+    kprintfv("[MMU] Unmapping 4kb memory %x at [%i][%i][%i][%i] for EL1", va, l1_index,l2_index,l3_index, l4_index);
     if (!(page_table_l1[l1_index] & 1)) return;
     
     uint64_t* l2 = (uint64_t*)(page_table_l1[l1_index] & 0xFFFFFFFFF000ULL);
@@ -260,7 +260,7 @@ void debug_mmu_address(uint64_t va){
 
     if (!((l3_val >> 1) & 1)){
         kprintf_raw("Mapped as 2MB memory in L3");
-        kprintf_raw("Entry: %h", l3_val);
+        kprintf_raw("Entry: %x", l3_val);
         return;
     }
 
@@ -270,7 +270,7 @@ void debug_mmu_address(uint64_t va){
         kprintf_raw("L4 Table entry missing");
         return;
     }
-    kprintf_raw("Entry: %h", l4_val);
+    kprintf_raw("Entry: %x", l4_val);
     return;
 }
 

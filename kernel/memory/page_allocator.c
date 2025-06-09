@@ -91,7 +91,7 @@ void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
                 }
             }
 
-            kprintfv("[page_alloc] Final address %h", first_address);
+            kprintfv("[page_alloc] Final address %x", first_address);
 
             return (void*)first_address;
         }
@@ -104,12 +104,12 @@ void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
 void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kernel, bool device){
     size = (size + alignment - 1) & ~(alignment - 1);
 
-    kprintfv("[in_page_alloc] Requested size: %h", size);
+    kprintfv("[in_page_alloc] Requested size: %x", size);
 
     mem_page *info = (mem_page*)page;
 
     if (size >= PAGE_SIZE){
-        kprintfv("[page_alloc] Allocating full page for %h",size);
+        kprintfv("[page_alloc] Allocating full page for %x",size);
         void *first_addr = 0;
         for (uint64_t i = 0; i < size; i += PAGE_SIZE){
             void* ptr = alloc_page(PAGE_SIZE, kernel, device, true);
@@ -123,7 +123,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
     FreeBlock** curr = &info->free_list;
     while (*curr) {
         if ((*curr)->size >= size) {
-            kprintfv("[in_page_alloc] Reusing free block at %h",(uintptr_t)*curr);
+            kprintfv("[in_page_alloc] Reusing free block at %x",(uintptr_t)*curr);
 
             uint64_t result = (uint64_t)*curr;
             *curr = (*curr)->next;
@@ -131,27 +131,27 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
             info->size += size;
             return (void*)result;
         }
-        kprintfv("-> %h",(uintptr_t)&(*curr)->next);
+        kprintfv("-> %x",(uintptr_t)&(*curr)->next);
         curr = &(*curr)->next;
     }
 
-    kprintfv("[in_page_alloc] Current next pointer %h",info->next_free_mem_ptr);
+    kprintfv("[in_page_alloc] Current next pointer %x",info->next_free_mem_ptr);
 
     info->next_free_mem_ptr = (info->next_free_mem_ptr + alignment - 1) & ~(alignment - 1);
 
-    kprintfv("[in_page_alloc] Aligned next pointer %h",info->next_free_mem_ptr);
+    kprintfv("[in_page_alloc] Aligned next pointer %x",info->next_free_mem_ptr);
 
     if (info->next_free_mem_ptr + size > (((uintptr_t)page) + PAGE_SIZE)) {
         if (!info->next)
             info->next = alloc_page(PAGE_SIZE, kernel, device, false);
-        kprintfv("[in_page_alloc] Page full. Moving to %h",(uintptr_t)info->next);
+        kprintfv("[in_page_alloc] Page full. Moving to %x",(uintptr_t)info->next);
         return allocate_in_page(info->next, size, alignment, kernel, device);
     }
 
     uint64_t result = info->next_free_mem_ptr;
     info->next_free_mem_ptr += size;
 
-    kprintfv("[in_page_alloc] Allocated address %h",result);
+    kprintfv("[in_page_alloc] Allocated address %x",result);
 
     memset((void*)result, 0, size);
     info->size += size;
@@ -159,7 +159,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
 }
 
 void free_from_page(void* ptr, uint64_t size) {
-    kprintfv("[page_alloc_free] Freeing block at %h size %h",(uintptr_t)ptr, size);
+    kprintfv("[page_alloc_free] Freeing block at %x size %x",(uintptr_t)ptr, size);
 
     memset((void*)ptr,0,size);
 

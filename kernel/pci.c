@@ -123,7 +123,7 @@ void find_pci(){
     
     fw_cfg_dma_read(&data, sizeof(struct acpi_rsdp_t), file.selector);
 
-    kprintf("[PCI] rsdp data read with address %h (%h = %h)", data.xsdt_address, data.length,sizeof(struct acpi_rsdp_t));
+    kprintf("[PCI] rsdp data read with address %x (%x = %x)", data.xsdt_address, data.length,sizeof(struct acpi_rsdp_t));
 
     kstring a = kstring_ca_max(data.signature, 8);
     if (!kstring_equals(kstring_l("RSD PTR "), a)){
@@ -150,7 +150,7 @@ void find_pci(){
 
     uint64_t xsdt_addr = (bkdata->revision >= 2) ? bkdata->xsdt_address : (uint64_t)bkdata->rsdt_address;
 
-    kprintf("[PCI] rsdp pointer %h", xsdt_addr);
+    kprintf("[PCI] rsdp pointer %x", xsdt_addr);
     
     struct acpi_xsdt_t xsdt_header;
     dma_read(&xsdt_header, sizeof(xsdt_header), xsdt_addr);
@@ -174,7 +174,7 @@ void find_pci(){
             struct acpi_mcfg_t mcfg;
             dma_read(&mcfg, sizeof(mcfg), entry_addr);
 
-            kprintf("[PCI] Found PCI controller base address: %h", mcfg.allocations[0].base_address);
+            kprintf("[PCI] Found PCI controller base address: %x", mcfg.allocations[0].base_address);
             return;
         }
     }
@@ -212,7 +212,7 @@ uint64_t pci_read_address_bar(uintptr_t pci_addr, uint32_t bar_index){
 void debug_read_bar(uint64_t base, uint8_t offset, uint8_t index){
     uint64_t addr = pci_get_bar_address(base, offset, index);
     uint64_t val = read32(addr);
-    kprintf("[PCI] Reading@%h (%i) content: ", addr, index, val);
+    kprintf("[PCI] Reading@%x (%i) content: ", addr, index, val);
 }
 
 uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_start, uint64_t *mmio_size) {
@@ -221,24 +221,24 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
 
     write32(bar_addr, 0xFFFFFFFF);
     uint32_t bar_low = read32(bar_addr);
-    kprintfv("[PCI] First bar size %h",bar_low);
+    kprintfv("[PCI] First bar size %x",bar_low);
 
     uint64_t size;
     if ((original & 0x6) == 0x4) {
         uint64_t bar_addr_hi = pci_get_bar_address(pci_addr, 0x10, bar_index+1);
         uint32_t original_hi = read32(bar_addr_hi);
 
-        kprintfv("[PCI] Original second bar %h",original_hi);
+        kprintfv("[PCI] Original second bar %x",original_hi);
 
         write32(bar_addr_hi, 0xFFFFFFFF);
         uint32_t bar_high = read32(bar_addr_hi);
 
-        kprintfv("[PCI] Second bar size %h",bar_high);
+        kprintfv("[PCI] Second bar size %x",bar_high);
 
         uint64_t combined = ((uint64_t)bar_high << 32) | (bar_low & ~0xF);
         size = ~combined + 1;
 
-        kprintfv("[PCI] Total bar size %h",size);
+        kprintfv("[PCI] Total bar size %x",size);
 
         uint64_t config_base = alloc_mmio_region(size);
         *mmio_start = config_base;
@@ -250,7 +250,7 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
         uint32_t new_hi = read32(bar_addr_hi);
         uint32_t new_lo = read32(bar_addr);
 
-        kprintfv("[PCI] Two registers %h > %h",new_hi,new_lo);
+        kprintfv("[PCI] Two registers %x > %x",new_hi,new_lo);
     } else {
         bar_low &= ~0xF;
         size = ~((uint64_t)bar_low) + 1;
@@ -283,11 +283,11 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
 
                     return device_address;
                 }// else if (((vendor_device >> 16) & 0xFFFF) != 0xFFFF)
-                   //  kprintf("[PCI] VENDOR: %h DID: %h",(vendor_device & 0xFFFF),((vendor_device >> 16) & 0xFFFF));
+                   //  kprintf("[PCI] VENDOR: %x DID: %x",(vendor_device & 0xFFFF),((vendor_device >> 16) & 0xFFFF));
             }
         }
     }
-    kprintf("[PCI] Device not found. Vendor = %h Device = %h",vendor_id,device_id);
+    kprintf("[PCI] Device not found. Vendor = %x Device = %x",vendor_id,device_id);
     return 0;
 }
 
@@ -295,7 +295,7 @@ void dump_pci_config(uint64_t base) {
     kprintf("[PCI] Dumping PCI Configuration Space:");
     for (uint32_t offset = 0; offset < 0x40; offset += 4) {
         uint64_t val = read(base + offset);
-        kprintf("Offset %h: %h",offset, val);
+        kprintf("Offset %x: %x",offset, val);
     }
 }
 

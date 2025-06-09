@@ -112,7 +112,7 @@ kstring kstring_format_args(const char *fmt, const uint64_t *args, uint32_t arg_
         if (fmt[i] == '%' && fmt[i+1]) {
             i++;
             if (arg_index >= arg_count) break;
-            if (fmt[i] == 'h') {
+            if (fmt[i] == 'x') {
                 uint64_t val = args[arg_index++];
                 kstring hex = kstring_from_hex(val);
                 for (uint32_t j = 0; j < hex.length && len < 255; j++) buf[len++] = hex.data[j];

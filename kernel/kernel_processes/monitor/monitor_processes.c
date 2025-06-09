@@ -44,10 +44,10 @@ void print_process_info(){
         process_t *proc = &processes[i];
         if (proc->id != 0 && proc->state != STOPPED){
             printf("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uint64_t)parse_proc_state(proc->state));
-            printf("Stack: %h (%h). SP: %h",proc->stack, proc->stack_size, proc->sp);
-            printf("Heap: %h (%h)",proc->heap, calc_heap(proc->heap));
-            printf("Flags: %h", proc->spsr);
-            printf("PC: %h",proc->pc);
+            printf("Stack: %x (%x). SP: %x",proc->stack, proc->stack_size, proc->sp);
+            printf("Heap: %x (%x)",proc->heap, calc_heap(proc->heap));
+            printf("Flags: %x", proc->spsr);
+            printf("PC: %x",proc->pc);
         }
     }
     sleep(1000);
@@ -70,7 +70,7 @@ void draw_memory(char *name,int x, int y, int width, int full_height, int used, 
 
     gpu_fill_rect((gpu_rect){{stack_top.x + 1, stack_top.y + height - used_height + 1}, {width - 2, used_height-1}}, BG_COLOR);
 
-    string str = string_format("%s\n%h",(uintptr_t)name, used);
+    string str = string_format("%s\n%x",(uintptr_t)name, used);
     gpu_draw_string(str, (gpu_point){stack_top.x, stack_top.y + height + 5}, 2, BG_COLOR);
     free(str.data,str.mem_length);
 }
@@ -137,7 +137,7 @@ void draw_process_view(){
         uint64_t heap_limit = ((heap + 0xFFF) & ~0xFFF);
         draw_memory("Heap", xo + stack_width + 50, stack_y, stack_width, stack_height, heap, heap_limit);
 
-        string flags = string_format("Flags: %h", proc->spsr);
+        string flags = string_format("Flags: %x", proc->spsr);
         gpu_draw_string(flags, (gpu_point){xo, flags_y}, scale, BG_COLOR);
         free(name.data, name.mem_length);
         free(state.data, state.mem_length);

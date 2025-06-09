@@ -118,7 +118,7 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
         if (fmt[i] == '%' && fmt[i+1]) {
             i++;
             if (arg_index >= arg_count) break;
-            if (fmt[i] == 'h') {
+            if (fmt[i] == 'x') {
                 uint64_t val = args[arg_index++];
                 len += parse_hex(val,(char*)(buf + len));
             } else if (fmt[i] == 'b') {
