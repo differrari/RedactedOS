@@ -136,7 +136,12 @@ void sync_el0_handler_c(){
         }
     } else {
         //We could handle more exceptions now, such as x25 (unmasked x96) = data abort
-        handle_exception_with_info("UNEXPECTED EXCEPTION",ec);
+        if (currentEL == 1)
+            handle_exception_with_info("UNEXPECTED EXCEPTION",ec);
+        else {
+            kprintf("Process has crashed. ESR: %x. ELR: %x", esr, elr);
+            stop_current_process();
+        }
     }
     save_syscall_return(result);
     process_restore();

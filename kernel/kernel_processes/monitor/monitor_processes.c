@@ -158,11 +158,11 @@ void monitor_procs(){
     bool active = false;
     while (1){
         if (sys_shortcut_triggered_current(shortcut)){
-            active = !active;
             if (active)
                 pause_window_draw();
             else 
                 resume_window_draw();
+            active = !active;
         }
         if (active)
             draw_process_view();
