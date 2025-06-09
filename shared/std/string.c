@@ -140,6 +140,7 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
             
                 if ((int)val < 0) {
                     negative = true;
+                    buf[len++] = '-';
                     val = (uint64_t)(-(int)val);
                 }
             
@@ -148,12 +149,37 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
                     val /= 10;
                 } while (val && temp_len < 20);
             
-                if (negative && temp_len < 20) {
-                    temp[temp_len++] = '-';
-                }
-            
                 for (int j = temp_len - 1; j >= 0 && len < 255; j--) {
                     buf[len++] = temp[j];
+                }
+            }else if (fmt[i] == 'f') {
+                float val = *((float*)&args[arg_index++]);
+                if (val < 0) {
+                    buf[len++] = '-';
+                    val = -val;
+                }
+
+                uint64_t whole = (uint64_t)val;
+                double frac = val - (double)whole;
+
+                char temp[21];
+                uint32_t temp_len = 0;
+                do {
+                    temp[temp_len++] = '0' + (whole % 10);
+                    whole /= 10;
+                } while (whole && temp_len < 20);
+
+                for (int j = temp_len - 1; j >= 0 && len < 255; j--) {
+                    buf[len++] = temp[j];
+                }
+
+                if (len < 255) buf[len++] = '.';
+
+                for (int d = 0; d < 6 && len < 255; d++) {
+                    frac *= 10;
+                    int digit = (int)frac;
+                    buf[len++] = '0' + digit;
+                    frac -= digit;
                 }
             } else {
                 buf[len++] = '%';

@@ -10,7 +10,7 @@ void proc_func() {
     gpu_rect rect = (gpu_rect){{10,10},{size->width-20,size->height-20}};
     while (1) {
         keypress kp;
-        printf("Print console test %i", get_time()/1000);
+        printf("Print console test %f", (get_time()/1000.f));
         while (read_key(&kp)){
             if (kp.keys[0] == KEY_ESC)
                 halt();
