@@ -152,8 +152,9 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
                 for (int j = temp_len - 1; j >= 0 && len < 255; j--) {
                     buf[len++] = temp[j];
                 }
-            }else if (fmt[i] == 'f') {
-                float val = *((float*)&args[arg_index++]);
+            }else if (fmt[i] == 'f' || fmt[i] == 'd') {
+                double val;
+                memcpy(&val, &args[arg_index++], sizeof(double));
                 if (val < 0) {
                     buf[len++] = '-';
                     val = -val;

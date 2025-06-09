@@ -13,16 +13,9 @@ typedef struct string_list {
     char array[];
 } string_list;
 
-#define CAST_ARG(x) \
-    _Generic((x), \
-        double: ((union { double d; uint64_t u; }){ .d = (x) }).u, \
-        float:  ((union { float f; uint64_t u; }){ .f = (x) }).u, \
-        default: (x) \
-    )
-
 #define string_format(fmt, ...) \
     ({ \
-        uint64_t _args[] = { CAST_ARG(__VA_ARGS__) }; \
+        uint64_t _args[] = { __VA_ARGS__ }; \
         string_format_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
     })
 
