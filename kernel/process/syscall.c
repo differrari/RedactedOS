@@ -11,6 +11,7 @@
 #include "kernel_processes/windows/windows.h"
 #include "std/memfunctions.h"
 #include "std/string.h"
+#include "exceptions/timer.h"
 
 void sync_el0_handler_c(){
     save_context_registers();
@@ -123,6 +124,10 @@ void sync_el0_handler_c(){
         
         case 33:
             stop_current_process();
+            break;
+
+        case 40:
+            result = timer_now_msec();
             break;
         
         default:

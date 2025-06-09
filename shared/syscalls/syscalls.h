@@ -31,6 +31,8 @@ extern void draw_primitive_rect(gpu_rect *r, color color);
 extern void draw_primitive_char(gpu_point *p, char c, uint32_t scale, uint32_t color);
 extern void draw_primitive_string(string *text, gpu_point *p, uint32_t scale, uint32_t color);
 
+extern uint64_t get_time();
+
 void printf_args(const char *fmt, const uint64_t *args, uint32_t arg_count);
 
 #define printf(fmt, ...) \

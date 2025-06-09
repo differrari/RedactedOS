@@ -32,3 +32,5 @@ syscall_def sleep, 30
 syscall_def process_yield, 31
 // syscall_def process_await, 32
 syscall_def halt, 33
+
+syscall_def get_time, 40
