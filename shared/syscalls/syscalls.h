@@ -33,13 +33,7 @@ extern void draw_primitive_string(string *text, gpu_point *p, uint32_t scale, ui
 
 extern uint64_t get_time();
 
-void printf_args(const char *fmt, const uint64_t *args, uint32_t arg_count);
-
-#define printf(fmt, ...) \
-    ({ \
-        uint64_t _args[] = { __VA_ARGS__ }; \
-        printf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
-    })
+void printf(const char *fmt, ...);
 
 #ifdef __cplusplus
 }

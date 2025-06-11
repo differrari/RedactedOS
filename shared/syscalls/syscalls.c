@@ -1,8 +1,9 @@
 #include "syscalls.h"
 #include "std/string.h"
 
-void printf_args(const char *fmt, const uint64_t *args, uint32_t arg_count){
-    string str = string_format_args(fmt, args, arg_count);
+void printf(const char *fmt, ...){
+    va_list args;
+    string str = string_format(fmt, args);
     printl(str.data);
     free(str.data, str.mem_length);
 }

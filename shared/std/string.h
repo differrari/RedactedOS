@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "args.h"
 
 typedef struct {
     char *data;
@@ -13,18 +14,12 @@ typedef struct string_list {
     char array[];
 } string_list;
 
-#define string_format(fmt, ...) \
-    ({ \
-        uint64_t _args[] = { __VA_ARGS__ }; \
-        string_format_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
-    })
-
 string string_l(const char *literal);
 string string_ca_max(const char *array, uint32_t max_length);
 string string_c(const char c);
 string string_from_hex(uint64_t value);
 bool string_equals(string a, string b);
-string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_count);
+string string_format(const char *fmt, ...);
 string string_tail(const char *array, uint32_t max_length);
 string string_repeat(char symbol, uint32_t amount);
 

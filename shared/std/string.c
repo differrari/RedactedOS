@@ -109,31 +109,33 @@ bool string_equals(string a, string b) {
     return strcmp(a.data,b.data) == 0;
 }
 
-string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_count) {
+string string_format(const char *fmt, ...) {
     char *buf = (char*)malloc(256);
     uint32_t len = 0;
     uint32_t arg_index = 0;
 
+    va_list args;
+    va_start(args, fmt);
+
     for (uint32_t i = 0; fmt[i] && len < 255; i++) {
         if (fmt[i] == '%' && fmt[i+1]) {
             i++;
-            if (arg_index >= arg_count) break;
             if (fmt[i] == 'x') {
-                uint64_t val = args[arg_index++];
+                uint64_t val = va_arg(args, uint64_t);
                 len += parse_hex(val,(char*)(buf + len));
             } else if (fmt[i] == 'b') {
-                uint64_t val = args[arg_index++];
+                uint64_t val = va_arg(args, uint64_t);
                 string bin = string_from_bin(val);
                 for (uint32_t j = 0; j < bin.length && len < 255; j++) buf[len++] = bin.data[j];
                 free(bin.data,bin.mem_length);
             } else if (fmt[i] == 'c') {
-                uint64_t val = args[arg_index++];
+                uint64_t val = va_arg(args, uint8_t);
                 buf[len++] = (char)val;
             } else if (fmt[i] == 's') {
-                const char *str = (const char *)(uintptr_t)args[arg_index++];
+                const char *str = (const char *)va_arg(args, uintptr_t);
                 for (uint32_t j = 0; str[j] && len < 255; j++) buf[len++] = str[j];
             } else if (fmt[i] == 'i') {
-                uint64_t val = args[arg_index++];
+                uint64_t val = va_arg(args, long int);
                 char temp[21];
                 uint32_t temp_len = 0;
                 bool negative = false;
@@ -153,8 +155,7 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
                     buf[len++] = temp[j];
                 }
             }else if (fmt[i] == 'f' || fmt[i] == 'd') {
-                double val;
-                memcpy(&val, &args[arg_index++], sizeof(double));
+                double val = va_arg(args, double);
                 if (val < 0) {
                     buf[len++] = '-';
                     val = -val;
@@ -192,6 +193,7 @@ string string_format_args(const char *fmt, const uint64_t *args, uint32_t arg_co
     }
 
     buf[len] = 0;
+    va_end(args);
     return (string){ .data = buf, .length = len, .mem_length = 256 };
 }
 

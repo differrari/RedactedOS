@@ -4,6 +4,11 @@
 #include "input_keycodes.h"
 #include "std/string.h"
 
+void var_test(char* s, ...){
+    va_list args;
+    va_start(args, s);
+}
+
 void proc_func() {
     uint64_t j = 0;
     gpu_size* size = gpu_screen_size();
