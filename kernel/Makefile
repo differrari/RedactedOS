@@ -10,7 +10,7 @@ C_SRC = $(shell find . -name '*.c')
 ASM_SRC = $(shell find . -name '*.S')
 CPP_SRC = $(shell find . -name '*.cpp')
 OBJ = $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o) $(ASM_SRC:.S=.o)
-OBJ := $(filter-out ./boot.o, $(OBJ))
+OBJL = $(filter-out ./boot.o, $(OBJ))
 
 TARGET = kernel.img
 ELF = kernel.elf
@@ -18,7 +18,7 @@ ELF = kernel.elf
 all: $(TARGET)
 
 $(TARGET): ../shared/libshared.a $(OBJ)
-	$(LD) $(LDFLAGS) -o ../$(ELF) $(OBJ) ../shared/libshared.a
+	$(LD) $(LDFLAGS) -o ../$(ELF) $(OBJL) ../shared/libshared.a
 	$(OBJCOPY) -O binary ../$(ELF) ../$(TARGET)
 
 %.o: %.S
