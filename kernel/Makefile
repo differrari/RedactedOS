@@ -10,6 +10,7 @@ C_SRC = $(shell find . -name '*.c')
 ASM_SRC = $(shell find . -name '*.S')
 CPP_SRC = $(shell find . -name '*.cpp')
 OBJ = $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o) $(ASM_SRC:.S=.o)
+OBJ := $(filter-out ./boot.o, $(OBJ))
 
 TARGET = kernel.img
 ELF = kernel.elf

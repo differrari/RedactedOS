@@ -3,6 +3,7 @@ ENTRY(_start)
 SECTIONS {
     . = 0x41000000;
     kernel_start = .;
+    .boot . : { boot.o(.text) }
     .text : { 
         *(EXCLUDE_FILE(shared/*.o) .text .text.[!p]*)
     }
