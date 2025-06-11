@@ -11,7 +11,7 @@ qemu-system-aarch64 \
 -M virt \
 -cpu cortex-a72 \
 -m 512M \
--kernel kernel.elf \
+-kernel kernel.img \
 -device virtio-gpu-pci \
 -display sdl \
 -serial mon:stdio \

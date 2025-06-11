@@ -3,7 +3,10 @@
 #include "memory/kalloc.h"
 #include "console/kio.h"
 #include "exceptions/irq.h"
+#include "hw/hw.h"
+#ifdef USE_DTB
 #include "dtb.h"
+#endif
 #include "pci.h"
 #include "filesystem/disk.h"
 #include "memory/page_allocator.h"
@@ -189,11 +192,13 @@ void mmu_init() {
     for (uint64_t addr = get_shared_start(); addr <= get_shared_end(); addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 2);
 
+#ifdef USE_DTB
     uint64_t dstart;
     uint64_t dsize;
     dtb_addresses(&dstart,&dsize);
     for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 1);
+#endif
 
     uint64_t mair = (MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_NOCACHE << (MAIR_IDX_NORMAL * 8));
     asm volatile ("msr mair_el1, %0" :: "r"(mair));

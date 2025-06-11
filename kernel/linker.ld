@@ -1,7 +1,7 @@
 ENTRY(_start)
 
 SECTIONS {
-    . = 0x41000000;
+    . = 0x40080000;
     kernel_start = .;
     .boot . : { boot.o(.text) }
     .text : { 
