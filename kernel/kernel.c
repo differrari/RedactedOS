@@ -7,7 +7,6 @@
 #include "memory/mmu.h"
 #include "exceptions/exception_handler.h"
 #include "memory/kalloc.h"
-#include "dtb.h"
 #include "exceptions/irq.h"
 #include "process/scheduler.h"
 #include "filesystem/disk.h"

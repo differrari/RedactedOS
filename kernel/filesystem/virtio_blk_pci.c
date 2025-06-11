@@ -1,5 +1,4 @@
 #include "disk.h"
-#include "dtb.h"
 #include "std/string.h"
 #include "memory/memory_access.h"
 #include "memory/page_allocator.h"
