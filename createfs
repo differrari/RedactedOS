@@ -57,5 +57,6 @@ elif [[ "$OS_TYPE" == "Linux" ]]; then
     # 2. Format it as ExFAT
     mkfs.exfat -n "$VOLUME_NAME" "$IMG"
 else
-    echo "Unknown OS: $OS_TYPE"
+    echo "Unknown OS: $OS_TYPE" >&2
+    exit 1
 fi
