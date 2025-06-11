@@ -61,7 +61,7 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);   
     
     //For now we make this not executable. We'll need to to separate read_write, read_only and executable sections
-    uint64_t attr = ((uint64_t)0 << 54) | ((uint64_t)0 << 53) | PD_ACCESS | (0b11 << 8) | (0b00 << 6) | (attr_index << 2) | PD_BLOCK;
+    uint64_t attr = ((uint64_t)1 << 54) | ((uint64_t)0 << 53) | PD_ACCESS | (0b11 << 8) | (0b00 << 6) | (attr_index << 2) | PD_BLOCK;
     l3[l3_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
 }
 

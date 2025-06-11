@@ -139,7 +139,9 @@ void sync_el0_handler_c(){
         if (currentEL == 1)
             handle_exception_with_info("UNEXPECTED EXCEPTION",ec);
         else {
-            kprintf("Process has crashed. ESR: %x. ELR: %x", esr, elr);
+            uint64_t far;
+            asm volatile ("mrs %0, far_el1" : "=r"(far));
+            kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
             stop_current_process();
         }
     }
