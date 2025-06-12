@@ -54,4 +54,6 @@ jobs:
             kernel.elf
             kernel.img
             disk.img
+            run
+            debug
             fs/redos/user/*.elf
