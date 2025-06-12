@@ -17,6 +17,12 @@
 #define PCI_COMMAND_MEMORY 0x2
 #define PCI_COMMAND_BUS 0x4
 
+#define PCI_BAR_BASE_OFFSET 0x10
+
+#define PCI_CAPABILITY_MSI 0x05
+#define PCI_CAPABILITY_PCIE 0x10
+#define PCI_CAPABILITY_MSIX 0x11
+
 static uint64_t pci_base;
 
 #define NINIT pci_base == 0x0
@@ -198,25 +204,19 @@ uint64_t pci_get_bar_address(uint64_t base, uint8_t offset, uint8_t index){
 }
 
 uint64_t pci_read_address_bar(uintptr_t pci_addr, uint32_t bar_index){
-    uint64_t bar_addr = pci_get_bar_address(pci_addr, 0x10, bar_index);
+    uint64_t bar_addr = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, bar_index);
     uint32_t original = read32(bar_addr);
     uint64_t full = original;
     if ((original & 0x6) == 0x4) {
-        uint64_t bar_addr_hi = pci_get_bar_address(pci_addr, 0x10, bar_index+1);
+        uint64_t bar_addr_hi = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, bar_index+1);
         uint64_t original_hi = read32(bar_addr_hi);
         full |= original_hi << 32;
     }
     return full & ~0xF;
 }
 
-void debug_read_bar(uint64_t base, uint8_t offset, uint8_t index){
-    uint64_t addr = pci_get_bar_address(base, offset, index);
-    uint64_t val = read32(addr);
-    kprintf("[PCI] Reading@%x (%i) content: ", addr, index, val);
-}
-
 uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_start, uint64_t *mmio_size) {
-    uint64_t bar_addr = pci_get_bar_address(pci_addr, 0x10, bar_index);
+    uint64_t bar_addr = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, bar_index);
     uint32_t original = read32(bar_addr);
 
     write32(bar_addr, 0xFFFFFFFF);
@@ -225,7 +225,7 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
 
     uint64_t size;
     if ((original & 0x6) == 0x4) {
-        uint64_t bar_addr_hi = pci_get_bar_address(pci_addr, 0x10, bar_index+1);
+        uint64_t bar_addr_hi = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, bar_index+1);
         uint32_t original_hi = read32(bar_addr_hi);
 
         kprintfv("[PCI] Original second bar %x",original_hi);
@@ -314,7 +314,7 @@ bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_line) {
     uint8_t cap_ptr = read8(pci_addr + 0x34);
     while (cap_ptr) {
         uint8_t cap_id = read8(pci_addr + cap_ptr);
-        if (cap_id == 0x05) { // MSI
+        if (cap_id == PCI_CAPABILITY_MSI) { // MSI
             uint16_t msg_ctrl = read16(pci_addr + cap_ptr + 0x2);
             bool is_64bit = msg_ctrl & (1 << 7);
 
@@ -325,7 +325,7 @@ bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_line) {
                 offset += 4;
             }
 
-            write16(pci_addr + cap_ptr + offset, 50 + irq_line);
+            write16(pci_addr + cap_ptr + offset, MSI_OFFSET + irq_line);
             msg_ctrl |= 1; // enable MSI
             write16(pci_addr + cap_ptr + 0x2, msg_ctrl);
             return true;
@@ -342,27 +342,46 @@ typedef struct {
     uint32_t vector_control;
 } msix_table_entry;
 
-bool pci_setup_msix(uint64_t pci_addr, uint8_t irq_line) {
+bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_size) {
 
     uint8_t cap_ptr = read8(pci_addr + 0x34);
     while (cap_ptr) {
         uint8_t cap_id = read8(pci_addr + cap_ptr);
-        if (cap_id == 0x11) { // MSI-X
+        if (cap_id == PCI_CAPABILITY_MSIX) { // MSI-X
             uint16_t msg_ctrl = read16(pci_addr + cap_ptr + 0x2);
             msg_ctrl &= ~(1 << 15); // Clear MSI-X Enable bit
             write16(pci_addr + cap_ptr + 0x2, msg_ctrl);
+            uint16_t table_size = (msg_ctrl & 0x07FF) +1; // takes the 11 rightmost bits, its value is N-1, so add 1 to it for the full size
+
+            if(line_size > table_size){
+                kprintf_raw("[PCI] MSI-X only supports %i interrupts, but you tried to add %i interrupts", table_size, line_size);
+                return false;
+            }
+
             uint32_t table_offset = read32(pci_addr + cap_ptr + 0x4);
             uint8_t bir = table_offset & 0x7;
             uint32_t table_addr_offset = table_offset & ~0x7;
             
             uint64_t table_addr = pci_read_address_bar(pci_addr, bir);
+
+            if(!table_addr){
+                kprintf_raw("[PCI] MSI-X setup error: Table address is null. Did you setup the bar memory before calling this function?");
+                return false;
+            } 
             
-            msix_table_entry *msix_entry = (msix_table_entry *)(uintptr_t)(table_addr + table_addr_offset);
-            
-            msix_entry->msg_addr_low = 0x8020040;
-            msix_entry->msg_addr_high = 0;
-            msix_entry->msg_data = 50 + irq_line;
-            msix_entry->vector_control = 0;
+            msix_table_entry *msix_start = (msix_table_entry *)(uintptr_t)(table_addr + table_addr_offset);
+
+            for (uint32_t i = 0; i < line_size; i++){
+                msix_table_entry *msix_entry = msix_start + i;
+
+                msix_irq_line irq_line = irq_lines[i];
+                uint64_t addr_full = 0x8020040 + irq_line.addr_offset;
+
+                msix_entry->msg_addr_low = addr_full & 0xFFFFFFFF;
+                msix_entry->msg_addr_high = addr_full >> 32;
+                msix_entry->msg_data = MSI_OFFSET + irq_line.irq_num;
+                msix_entry->vector_control = msix_entry->vector_control & ~0x1; // all bits other then the last one are reserved, so don't chnage it, just set the last bit to 0
+            }
             
             msg_ctrl |= (1 << 15); // MSI-X Enable
             msg_ctrl &= ~(1 << 14); // Clear Function Mask
