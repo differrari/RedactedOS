@@ -56,4 +56,5 @@ jobs:
             disk.img
             run
             debug
+            createfs
             fs/redos/user/*.elf
