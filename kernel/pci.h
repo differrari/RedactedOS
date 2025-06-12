@@ -23,7 +23,13 @@ void pci_register(uint64_t mmio_addr, uint64_t mmio_size);
 void pci_enable_verbose();
 
 bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_vector);
-bool pci_setup_msix(uint64_t pci_addr, uint8_t irq_line);
+
+typedef struct {
+    uint32_t addr_offset;
+    uint8_t irq_num;
+} msix_irq_line;
+
+bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_size);
 
 #ifdef __cplusplus
 }
