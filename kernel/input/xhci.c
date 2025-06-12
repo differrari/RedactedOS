@@ -95,18 +95,16 @@ void make_ring_link(trb* ring, bool cycle){
 
 
 uint8_t xhci_init_interrupts(uint64_t pci_addr){
-    bool msi_ok = pci_setup_msi(pci_addr, XHCI_IRQ);
+#define MSIX_IRQ_LENGTH 1
+    msix_irq_line irq_lines[MSIX_IRQ_LENGTH] = {(msix_irq_line){.addr_offset=0,.irq_num=XHCI_IRQ}};
+    bool msix_ok = pci_setup_msix(pci_addr, irq_lines, MSIX_IRQ_LENGTH);
 
-    if(msi_ok){
+    if(msix_ok){
         return 1;
     }
 
-#define MSIX_IRQ_LENGTH 1
-
-    msix_irq_line irq_lines[MSIX_IRQ_LENGTH] = {(msix_irq_line){.addr_offset=0,.irq_num=XHCI_IRQ}};
-
-    bool msix_ok = pci_setup_msix(pci_addr, irq_lines, MSIX_IRQ_LENGTH);
-    if(msix_ok){
+    bool msi_ok = pci_setup_msi(pci_addr, XHCI_IRQ);
+    if(msi_ok){
         return 2;
     }
     
@@ -132,7 +130,7 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
         case 0:
             kprintf_raw("[xHCI] Failed to setup interrupts\n");
             return false;
-        case 2:
+        case 1:
             kprintf_raw("[xHCI] Interrupts setup with MSI-X");
             break;
         default:
