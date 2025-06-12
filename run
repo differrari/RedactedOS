@@ -7,6 +7,14 @@ if [ "$1" = "debug" ]; then
   ARGS="-monitor unix:/tmp/qemu-monitor-socket,server,nowait -s -S"
 fi
 
+MSI_CAPABILITIES=""
+
+XHCI_CAPABILITIES="$(qemu-system-aarch64 -device qemu-xhci,help)"
+
+if echo "$XHCI_CAPABILITIES" | grep -q "msi "; then
+  MSI_CAPABILITIES="msi=on,msix=off,"
+fi
+
 qemu-system-aarch64 \
 -M virt \
 -cpu cortex-a72 \
@@ -17,7 +25,7 @@ qemu-system-aarch64 \
 -serial mon:stdio \
 -drive file=disk.img,if=none,format=raw,id=hd0 \
 -device virtio-blk-pci,drive=hd0 \
--device qemu-xhci,msi=on,msix=off,id=usb \
+-device qemu-xhci,${MSI_CAPABILITIES}id=usb \
 -device usb-kbd,bus=usb.0 \
 -d guest_errors \
 $ARGS
