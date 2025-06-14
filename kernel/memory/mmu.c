@@ -23,7 +23,6 @@
 uint64_t page_table_l1[PAGE_TABLE_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
 
 static bool mmu_verbose;
-static bool _mmu_active;
 
 void mmu_enable_verbose(){
     mmu_verbose = true;
@@ -116,7 +115,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) 
         break;
     }
     uint64_t attr = ((uint64_t)(level == 1) << 54) | ((uint64_t)0 << 53) | PD_ACCESS | (0b11 << 8) | (permission << 6) | (attr_index << 2) | 0b11;
-    kprintfv("[MMU] Mapping 4kb memory %x at [%i][%i][%i][%i] for EL%i = %x permission: %i", va, l1_index,l2_index,l3_index,l4_index,level,attr,permission);
+    kprintfv("[MMU] Mapping 4kb memory %x at [%i][%i][%i][%i] for EL%i = %x | %x permission: %i", va, l1_index,l2_index,l3_index,l4_index,level,pa,attr,permission);
     
     l4[l4_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
 }
@@ -218,12 +217,17 @@ void mmu_init() {
     uint64_t sctlr;
     asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
 
-    _mmu_active = true;
     kprintf_raw("Finished MMU init");
 }
 
 void register_device_memory(uint64_t va, uint64_t pa){
     mmu_map_4kb(va, pa, MAIR_IDX_DEVICE, 1);
+    mmu_flush_all();
+    mmu_flush_icache();
+}
+
+void register_device_memory_2mb(uint64_t va, uint64_t pa){
+    mmu_map_2mb(va, pa, MAIR_IDX_DEVICE);
     mmu_flush_all();
     mmu_flush_icache();
 }
@@ -272,8 +276,4 @@ void debug_mmu_address(uint64_t va){
     }
     kprintf_raw("Entry: %x", l4_val);
     return;
-}
-
-bool mmu_active(){
-    return _mmu_active;
 }

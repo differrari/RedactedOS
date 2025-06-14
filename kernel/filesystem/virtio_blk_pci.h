@@ -1,7 +1,6 @@
 #pragma once
 
 #include "types.h"
-#include "dtb.h"
 
 bool vblk_find_disk();
 void vblk_disk_verbose();

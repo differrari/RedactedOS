@@ -118,74 +118,8 @@ void* find_rsdp() {
 
 void find_pci(){
     pci_base = 0x4010000000;
-    return;
-    struct fw_cfg_file file;
-    if (!fw_find_file(kstring_l("etc/acpi/rsdp"), &file))
-        return;
-
-    kprintf("[PCI] rsdp file found");
-
-    struct acpi_rsdp_t data;
-    
-    fw_cfg_dma_read(&data, sizeof(struct acpi_rsdp_t), file.selector);
-
-    kprintf("[PCI] rsdp data read with address %x (%x = %x)", data.xsdt_address, data.length,sizeof(struct acpi_rsdp_t));
-
-    kstring a = kstring_ca_max(data.signature, 8);
-    if (!kstring_equals(kstring_l("RSD PTR "), a)){
-        kprintf("[PCI] Signature doesn't match %s", (uint64_t)a.data);
-    } else 
-        kprintf("[PCI] Signature match %s", (uint64_t)a.data);
-
-    uint8_t sum = 0;
-    uint8_t* bytes = (uint8_t*)&data;
-    for (uint32_t i = 0; i < 20; i++) sum += bytes[i];
-    if (sum != data.checksum) {
-        kprintf("[PCI] Bad RSDP checksum %i vs %i", sum, data.checksum);
-    }
-
-    if (data.revision >= 2) {
-        sum = 0;
-        for (uint32_t i = 0; i < data.length; i++) sum += bytes[i];
-        if (sum != data.extended_checksum) {
-            kprintf("[PCI] Bad extended RSDP checksum %i vs %i", sum, data.extended_checksum);
-        }
-    }
-
-    struct acpi_rsdp_t *bkdata = find_rsdp();
-
-    uint64_t xsdt_addr = (bkdata->revision >= 2) ? bkdata->xsdt_address : (uint64_t)bkdata->rsdt_address;
-
-    kprintf("[PCI] rsdp pointer %x", xsdt_addr);
-    
-    struct acpi_xsdt_t xsdt_header;
-    dma_read(&xsdt_header, sizeof(xsdt_header), xsdt_addr);
-
-    kprintf("[PCI] xsdt header found");
-    
-    uint32_t entry_count = (xsdt_header.length - sizeof(xsdt_header)) / sizeof(uint64_t);
-
-    kprintf("[PCI] xsdt %c entries", xsdt_header.signature[0]);
-
-    for (uint32_t i = 0; i < entry_count; i++) {
-        uint64_t entry_addr;
-        dma_read(&entry_addr, sizeof(entry_addr), xsdt_addr + sizeof(xsdt_header) + i * sizeof(uint64_t));
-
-        kprintf("[PCI] entry found");
-
-        char sig[4];
-        dma_read(&sig, 4, entry_addr);
-
-        if (sig[0] == 'M' && sig[1] == 'C' && sig[2] == 'F' && sig[3] == 'G') {
-            struct acpi_mcfg_t mcfg;
-            dma_read(&mcfg, sizeof(mcfg), entry_addr);
-
-            kprintf("[PCI] Found PCI controller base address: %x", mcfg.allocations[0].base_address);
-            return;
-        }
-    }
-
-    kprintf("[PCI] MCFG not found");
+    for (uint64_t addr = pci_base; addr < pci_base + 0x10000000; addr += GRANULE_2MB)
+        register_device_memory_2mb(addr, addr);
 }
 
 uint64_t pci_make_addr(uint32_t bus, uint32_t slot, uint32_t func, uint32_t offset){

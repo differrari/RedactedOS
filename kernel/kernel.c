@@ -16,9 +16,12 @@
 #include "kernel_processes/monitor/monitor_processes.h"
 #include "memory/page_allocator.h"
 
+#include "networking/virtio_net_pci.h"
+
 void kernel_main() {
     
     mmu_alloc();
+    // mmu_enable_verbose();
     enable_uart();
     kprintf("UART output enabled");
     // enable_talloc_verbose();
@@ -53,13 +56,15 @@ void kernel_main() {
     // disk_verbose();
     if (!find_disk())
         panic("Disk initialization failure");
-    
-    mmu_init();
-    if (!disk_init())
-        panic("Disk read failure");
 
-    // mmu_enable_verbose();
+    if (!vnp_find_network())
+        panic("Network initialization failure");
+
+    mmu_init();
     kprintf("MMU Mapped");
+
+    if (!disk_init())
+    panic("Disk read failure");
 
     kprintf("Kernel initialization finished");
 

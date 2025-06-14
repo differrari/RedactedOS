@@ -62,7 +62,7 @@ bool vblk_find_disk(){
     virtio_get_capabilities(&blk_dev, addr, &disk_device_address, &disk_device_size);
     pci_register(disk_device_address, disk_device_size);
     if (!virtio_init_device(&blk_dev)) {
-        kprintf("Failed initialization");
+        kprintf("Failed disk initialization");
         return false;
     }
 

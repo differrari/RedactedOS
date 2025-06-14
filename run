@@ -22,6 +22,7 @@ qemu-system-aarch64 \
 -kernel kernel.elf \
 -device virtio-gpu-pci \
 -display sdl \
+-device virtio-net-pci \
 -serial mon:stdio \
 -drive file=disk.img,if=none,format=raw,id=hd0 \
 -device virtio-blk-pci,drive=hd0 \
