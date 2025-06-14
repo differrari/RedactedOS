@@ -17,9 +17,10 @@ bool vnp_find_network(){
     }
     
     pci_enable_device(addr);
-    return true;
 
     uint64_t net_device_address, net_device_size;
+
+    kprintf("Configuring network device");
 
     virtio_get_capabilities(&vnp_net_dev, addr, &net_device_address, &net_device_size);
     pci_register(net_device_address, net_device_size);

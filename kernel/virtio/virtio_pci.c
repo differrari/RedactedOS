@@ -132,27 +132,37 @@ bool virtio_init_device(virtio_device *dev) {
         return false;
     }
 
-    cfg->queue_select = 0;
-    uint32_t size = cfg->queue_size;
-
     dev->memory_page = alloc_page(0x1000, true, true, false);
 
-    uint64_t base = (uintptr_t)allocate_in_page(dev->memory_page, 0x1000, ALIGN_64B, true, true);
-    uint64_t avail = (uintptr_t)allocate_in_page(dev->memory_page, 0x1000, ALIGN_64B, true, true);
-    uint64_t used = (uintptr_t)allocate_in_page(dev->memory_page, 0x1, ALIGN_64B, true, true);
+    uint32_t queue_index = 0;
+    while (select_queue(dev,queue_index)){
+        uint64_t base = (uintptr_t)allocate_in_page(dev->memory_page, 0x1000, ALIGN_64B, true, true);
+        uint64_t avail = (uintptr_t)allocate_in_page(dev->memory_page, 0x1000, ALIGN_64B, true, true);
+        uint64_t used = (uintptr_t)allocate_in_page(dev->memory_page, 0x1, ALIGN_64B, true, true);
 
-    kprintfv("[VIRTIO] Device base %x",base);
-    kprintfv("[VIRTIO] Device avail %x",avail);
-    kprintfv("[VIRTIO] Device used %x",used);
+        kprintfv("[VIRTIO QUEUE %i] Device base %x",queue_index,base);
+        kprintfv("[VIRTIO QUEUE %i] Device avail %x",queue_index,avail);
+        kprintfv("[VIRTIO QUEUE %i] Device used %x",queue_index,used);
 
-    cfg->queue_size = size;
-    cfg->queue_desc = base;
-    cfg->queue_driver = avail;
-    cfg->queue_device = used;
-    cfg->queue_enable = 1;
+        cfg->queue_desc = base;
+        cfg->queue_driver = avail;
+        cfg->queue_device = used;
+        cfg->queue_enable = 1;
+        queue_index++;
+    }
+
+    kprintfv("Device initialized %i virtqueues",queue_index);
+
+    select_queue(dev,0);
 
     cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
     return true;
+}
+
+uint32_t select_queue(virtio_device *dev, uint32_t index){
+    dev->common_cfg->queue_select = index;
+    asm volatile ("dsb sy" ::: "memory");
+    return dev->common_cfg->queue_size;
 }
 
 bool virtio_send(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t used, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags) {
