@@ -16,7 +16,7 @@ struct virtq_desc {
 struct virtq_avail {
     uint16_t flags;
     uint16_t idx;
-    uint16_t ring[128];
+    uint16_t ring[];
 } __attribute__((packed));
 
 struct virtq_used_elem {
@@ -135,10 +135,11 @@ bool virtio_init_device(virtio_device *dev) {
     dev->memory_page = alloc_page(0x1000, true, true, false);
 
     uint32_t queue_index = 0;
-    while (select_queue(dev,queue_index)){
-        uint64_t base = (uintptr_t)allocate_in_page(dev->memory_page, 0x1000, ALIGN_64B, true, true);
-        uint64_t avail = (uintptr_t)allocate_in_page(dev->memory_page, 0x1000, ALIGN_64B, true, true);
-        uint64_t used = (uintptr_t)allocate_in_page(dev->memory_page, 0x1, ALIGN_64B, true, true);
+    uint32_t size;
+    while ((size = select_queue(dev,queue_index))){
+        uint64_t base = (uintptr_t)allocate_in_page(dev->memory_page, 16 * size, ALIGN_64B, true, true);
+        uint64_t avail = (uintptr_t)allocate_in_page(dev->memory_page, 4 + (2 * size), ALIGN_64B, true, true);
+        uint64_t used = (uintptr_t)allocate_in_page(dev->memory_page, sizeof(uint16_t) * (2 + size), ALIGN_64B, true, true);
 
         kprintfv("[VIRTIO QUEUE %i] Device base %x",queue_index,base);
         kprintfv("[VIRTIO QUEUE %i] Device avail %x",queue_index,avail);
