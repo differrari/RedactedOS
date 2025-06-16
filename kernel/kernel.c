@@ -46,11 +46,6 @@ void kernel_main() {
     
     kprintf("GPU initialized");
     
-    // xhci_enable_verbose();
-    if (!xhci_input_init()){
-        panic("Input initialization failure");
-    }
-    
     kprintf("Initializing disk...");
     
     // disk_verbose();
@@ -60,6 +55,10 @@ void kernel_main() {
     if (!vnp_find_network())
         panic("Network initialization failure");
 
+    // xhci_enable_verbose();
+    if (!xhci_input_init()){
+        panic("Input initialization failure");
+    }
     mmu_init();
     kprintf("MMU Mapped");
 
