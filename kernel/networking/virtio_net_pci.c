@@ -16,6 +16,7 @@ static virtio_device vnp_net_dev;
 #define VIRTIO_NET_HDR_GSO_NONE 0
 
 #define UDP_PACKET_SIZE sizeof(virtio_net_hdr_t) + sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(udp_hdr_t)
+#define MAX_PACKET_SIZE 0x1000
 
 typedef struct __attribute__((packed)) virtio_net_hdr_t {
     uint8_t  flags;
@@ -160,23 +161,24 @@ bool vnp_find_network(){
     
     size_t payload_size = 6;
     char hw[6] = {'h','e','l','l','o', '\0'};
+
+    select_queue(&vnp_net_dev, RECEIVE_QUEUE);
+
+    for (uint16_t i = 0; i < 128; i++){
+        void* buf = allocate_in_page(vnp_net_dev.memory_page, MAX_PACKET_SIZE, ALIGN_64B, true, true);
+        virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_PACKET_SIZE);
+    }
     
     void* test_packet = allocate_in_page(vnp_net_dev.memory_page, UDP_PACKET_SIZE + payload_size, ALIGN_64B, true, true);
     create_udp_packet(test_packet,net_config->mac,dest,(192 << 24) | (168 << 16) | (1 << 8) | 131,(255 << 24) | (255 << 16) | (255 << 8) | 255,8888,8080,hw, payload_size);
 
     kprintf("Packet created");
 
-    select_queue(&vnp_net_dev, 1);
+    select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
 
     size_t size = UDP_PACKET_SIZE + payload_size;
     
     kprintf("Upload queue selected for packet %x (size %i)",(uintptr_t)test_packet, size);
-
-    // uint8_t *packet_bytes = (uint8_t*)test_packet;
-
-    // for (size_t s = 0; s < size; s++){
-    //     kprintf("[%i] = %x",s,packet_bytes[s]);
-    // }
 
     virtio_send_1d(&vnp_net_dev, (uintptr_t)test_packet, size);
 
