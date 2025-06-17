@@ -63,6 +63,8 @@ struct virtio_pci_cap {
 
 static bool virtio_verbose = false;
 
+uint32_t feature_mask;
+
 void virtio_enable_verbose(){
     virtio_verbose = true;
 }
@@ -74,6 +76,10 @@ void virtio_enable_verbose(){
             kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
         }\
     })
+
+void virtio_set_feature_mask(uint32_t mask){
+    feature_mask = mask;
+}
 
 void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mmio_start, uint64_t *mmio_size) {
     uint64_t offset = read32(pci_addr + 0x34);
@@ -122,6 +128,12 @@ bool virtio_init_device(virtio_device *dev) {
 
     cfg->device_feature_select = 0;
     uint32_t features = cfg->device_feature;
+
+    kprintfv("Features %x",features);
+
+    features &= feature_mask;
+
+    kprintfv("Negotiated features %x",features);
 
     cfg->driver_feature_select = 0;
     cfg->driver_feature = features;
@@ -191,7 +203,7 @@ bool virtio_send(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t use
     a->ring[a->idx % 128] = 0;
     a->idx++;
 
-    *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * 0) = 0;
+    *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
 
     while (last_used_idx == u->idx);
     
@@ -221,7 +233,30 @@ bool virtio_send2(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t us
     a->ring[a->idx % 128] = 0;
     a->idx++;
 
-    *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * 0) = 0;
+    *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
+
+    while (last_used_idx == u->idx);
+
+    return true;
+}
+
+bool virtio_send3(virtio_device *dev, uint64_t cmd, uint32_t cmd_len) {
+
+    struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)dev->common_cfg->queue_desc;
+    struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)dev->common_cfg->queue_driver;
+    struct virtq_used* u = (struct virtq_used*)(uintptr_t)dev->common_cfg->queue_device;
+    uint16_t last_used_idx = u->idx;
+    
+    d[0].addr = cmd;
+    d[0].len = cmd_len;
+    d[0].flags = 0;
+    d[0].next = 0;
+    
+    a->ring[a->idx % 128] = 0;
+
+    a->idx++;
+
+    *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
 
     while (last_used_idx == u->idx);
 
