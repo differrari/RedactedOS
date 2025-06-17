@@ -40,8 +40,8 @@ uint16_t udp_checksum(
     sum += src_ip & 0xFFFF;
     sum += (dst_ip >> 16) & 0xFFFF;
     sum += dst_ip & 0xFFFF;
-    sum += __builtin_bswap16(protocol);
-    sum += __builtin_bswap16(length);
+    sum += protocol;
+    sum += length;
 
     for (uint16_t i = 0; i + 1 < length; i += 2)
         sum += (udp_header_and_payload[i] << 8) | udp_header_and_payload[i + 1];
@@ -92,7 +92,7 @@ void create_udp_packet(
     ip->identification = 0;
     ip->flags_frag_offset = __builtin_bswap16(0x4000);
     ip->ttl = 64;
-    ip->protocol = 17;
+    ip->protocol = 0x11;
     ip->header_checksum = 0;
     ip->src_ip = __builtin_bswap32(src_ip);
     ip->dst_ip = __builtin_bswap32(dst_ip);
@@ -100,18 +100,20 @@ void create_udp_packet(
     uint32_t sum = 0;
     for (int i = 0; i < 10; i++) sum += ip_words[i];
     while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
-    ip->header_checksum = __builtin_bswap16(~sum);
+    ip->header_checksum = ~sum;
     p += sizeof(ipv4_hdr_t);
 
     udp_hdr_t* udp = (udp_hdr_t*)p;
     udp->src_port = __builtin_bswap16(src_port);
     udp->dst_port = __builtin_bswap16(dst_port);
     udp->length = __builtin_bswap16(sizeof(udp_hdr_t) + payload_len);
-    udp->checksum = udp_checksum(ip->src_ip,ip->dst_ip,17,(uint8_t*)udp,sizeof(udp_hdr_t) + payload_len);
+
     p += sizeof(udp_hdr_t);
 
     uint8_t* data = (uint8_t*)p;
     for (int i = 0; i < payload_len; i++) data[i] = payload[i];
+
+    udp->checksum = __builtin_bswap16(udp_checksum(src_ip,dst_ip,ip->protocol,(uint8_t*)udp,sizeof(udp_hdr_t) + payload_len));
     
 }
 
