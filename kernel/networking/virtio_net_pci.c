@@ -178,7 +178,7 @@ bool vnp_find_network(){
     //     kprintf("[%i] = %x",s,packet_bytes[s]);
     // }
 
-    virtio_send3(&vnp_net_dev, (uintptr_t)test_packet, size);
+    virtio_send_1d(&vnp_net_dev, (uintptr_t)test_packet, size);
 
     kprintf("Packet sent");
 

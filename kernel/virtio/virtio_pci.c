@@ -240,7 +240,7 @@ bool virtio_send2(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t us
     return true;
 }
 
-bool virtio_send3(virtio_device *dev, uint64_t cmd, uint32_t cmd_len) {
+bool virtio_send_1d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len) {
 
     struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)dev->common_cfg->queue_desc;
     struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)dev->common_cfg->queue_driver;
