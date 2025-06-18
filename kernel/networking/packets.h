@@ -6,6 +6,10 @@ extern "C" {
     
 #include "types.h"
 
+typedef enum NetProtocol {
+    UDP
+} NetProtocol;
+
 typedef struct __attribute__((packed)) eth_hdr_t {
     uint8_t dst_mac[6];
     uint8_t src_mac[6];

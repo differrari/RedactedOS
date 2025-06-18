@@ -4,6 +4,8 @@
 #include "networking/udp.h"
 #include "networking/network.h"
 #include "pci.h"
+#include "syscalls/syscalls.h"
+#include "memory/page_allocator.h"
 
 #define RECEIVE_QUEUE 0
 #define TRANSMIT_QUEUE 1
@@ -84,22 +86,42 @@ bool VirtioNetDriver::init(){
 
     virtio_net_config* net_config = (virtio_net_config*)vnp_net_dev.device_cfg;
     kprintfv("[VIRTIO_NET] %x:%x:%x:%x:%x:%x", net_config->mac[0], net_config->mac[1], net_config->mac[2], net_config->mac[3], net_config->mac[4], net_config->mac[5]);
+
+    connection_context = (network_connection_ctx){
+        .port = 0,
+        .ip = (uint32_t)((192 << 24) | (168 << 16) | (1 << 8) | 131),
+        .mac = {net_config->mac[0],net_config->mac[1],net_config->mac[2],net_config->mac[3],net_config->mac[4],net_config->mac[5]},
+    };
     
     kprintfv("[VIRTIO_NET] %i virtqueue pairs",net_config->max_virtqueue_pairs);
     kprintfv("[VIRTIO_NET] %x speed", net_config->speed);
     kprintfv("[VIRTIO_NET] status = %x", net_config->status);
 
+    select_queue(&vnp_net_dev, RECEIVE_QUEUE);
+
+    for (uint16_t i = 0; i < 128; i++){
+        void* buf = allocate_in_page(vnp_net_dev.memory_page, MAX_PACKET_SIZE, ALIGN_64B, true, true);
+        virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_PACKET_SIZE);
+    }
+
+    kprintfv("[VIRTIO_NET] Current MSI-X queue index %i",vnp_net_dev.common_cfg->queue_msix_vector);
+    vnp_net_dev.common_cfg->queue_msix_vector = 0;
+    if (vnp_net_dev.common_cfg->queue_msix_vector != 0){
+        kprintfv("[VIRTIO_NET error] failed to set interrupts on receive queue, network will be unable to receive packets");
+        return false;
+    }
+
     return true;
 }
 
 void VirtioNetDriver::handle_interrupt(){
-        select_queue(&vnp_net_dev, RECEIVE_QUEUE);
+    select_queue(&vnp_net_dev, RECEIVE_QUEUE);
     struct virtq_used* used = (struct virtq_used*)(uintptr_t)vnp_net_dev.common_cfg->queue_device;
+    struct virtq_desc* desc = (struct virtq_desc*)(uintptr_t)vnp_net_dev.common_cfg->queue_desc;
+    struct virtq_avail* avail = (struct virtq_avail*)(uintptr_t)vnp_net_dev.common_cfg->queue_driver;
 
     uint16_t new_idx = used->idx;
     if (new_idx != last_used_receive_idx) {
-        struct virtq_desc* desc = (struct virtq_desc*)(uintptr_t)vnp_net_dev.common_cfg->queue_desc;
-        struct virtq_avail* avail = (struct virtq_avail*)(uintptr_t)vnp_net_dev.common_cfg->queue_driver;
         uint16_t used_ring_index = last_used_receive_idx % 128;
         last_used_receive_idx = new_idx;
         struct virtq_used_elem* e = &used->ring[used_ring_index];
@@ -108,6 +130,7 @@ void VirtioNetDriver::handle_interrupt(){
         kprintf("Received network packet %i at index %i (len %i)",used->idx, desc_index, len);
 
         uintptr_t packet = desc[desc_index].addr;
+        packet += sizeof(virtio_net_hdr_t);
 
         udp_parse_packet(packet);
 
@@ -115,12 +138,32 @@ void VirtioNetDriver::handle_interrupt(){
         avail->idx++;
 
         *(volatile uint16_t*)(uintptr_t)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
+
+        return;
+    }
+
+    select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
+    new_idx = used->idx;
+    if (new_idx != last_used_receive_idx) {
+        uint16_t used_ring_index = last_used_receive_idx % 128;
+        last_used_receive_idx = new_idx;
+        struct virtq_used_elem* e = &used->ring[used_ring_index];
+        uint32_t desc_index = e->id;
+        uint32_t len = e->len;
+        free_from_page((void*)desc[desc_index].addr, len);
+        kprintf("Freed memory");
+        return;
     }
 }
 
-void VirtioNetDriver::send_packet(void* packet, size_t size){
+void VirtioNetDriver::send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len){
     select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
-    virtio_send_1d(&vnp_net_dev, (uintptr_t)packet, size);
+    size_t size = calc_udp_packet_size(payload_len) + sizeof(virtio_net_hdr_t);
+    uintptr_t buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
+    connection_context.port = port;
+    create_udp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), connection_context, *destination, (uint8_t*)payload, payload_len);
+    virtio_send_1d(&vnp_net_dev, buf_ptr, size);
+    kprintf("Queued new packet");
 }
 
 void VirtioNetDriver::enable_verbose(){

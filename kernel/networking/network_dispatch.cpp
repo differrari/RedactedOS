@@ -31,3 +31,8 @@ void NetworkDispatch::handle_interrupt(){
     if (driver)
         driver->handle_interrupt();
 }
+
+void NetworkDispatch::send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len){
+    if (driver)
+        driver->send_packet(protocol, port, destination, payload, payload_len);
+}
