@@ -10,6 +10,7 @@ typedef unsigned short uint16_t;
 typedef unsigned char uint8_t;
 
 #define UINT64_MAX 0xFFFFFFFFFFFFFFFFULL
+#define UINT16_MAX 0xFFFF
 
 typedef int int32_t;
 typedef long int64_t;
