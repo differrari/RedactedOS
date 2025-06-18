@@ -16,6 +16,20 @@ A separate project for the server code will be provided once that's necessary, b
 */
 #include "net_constants.h"
 
+static bool vnp_verbose = false;
+
+void vnp_enable_verbose(){
+    vnp_verbose = true;
+}
+
+#define kprintfv(fmt, ...) \
+    ({ \
+        if (vnp_verbose){\
+            uint64_t _args[] = { __VA_ARGS__ }; \
+            kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+        }\
+    })
+
 static virtio_device vnp_net_dev;
 
 #define RECEIVE_QUEUE 0
@@ -140,13 +154,13 @@ typedef struct virtio_net_config {
 bool vnp_find_network(){
     uint64_t addr = find_pci_device(0x1AF4, 0x1000);
     if (!addr){ 
-        kprintf("[VIRTIO_NET] Virtio network device not found");
+        kprintf("[VIRTIO_NET error] Virtio network device not found");
         return false;
     }
     
     uint64_t net_device_address, net_device_size;
     
-    kprintf("[VIRTIO_NET] Configuring network device");
+    kprintfv("[VIRTIO_NET] Configuring network device");
     
     virtio_get_capabilities(&vnp_net_dev, addr, &net_device_address, &net_device_size);
     pci_register(net_device_address, net_device_size);
@@ -167,16 +181,16 @@ bool vnp_find_network(){
     pci_enable_device(addr);
 
     if (!virtio_init_device(&vnp_net_dev)) {
-        kprintf("[VIRTIO_NET] Failed network initialization");
+        kprintf("[VIRTIO_NET error] Failed network initialization");
         return false;
     }
 
     virtio_net_config* net_config = (virtio_net_config*)vnp_net_dev.device_cfg;
-    kprintf("[VIRTIO_NET] %x:%x:%x:%x:%x:%x", net_config->mac[0], net_config->mac[1], net_config->mac[2], net_config->mac[3], net_config->mac[4], net_config->mac[5]);
+    kprintfv("[VIRTIO_NET] %x:%x:%x:%x:%x:%x", net_config->mac[0], net_config->mac[1], net_config->mac[2], net_config->mac[3], net_config->mac[4], net_config->mac[5]);
 
-    kprintf("[VIRTIO_NET] %i virtqueue pairs",net_config->max_virtqueue_pairs);
-    kprintf("[VIRTIO_NET] %x speed", net_config->speed);
-    kprintf("[VIRTIO_NET] status = %x", net_config->status);
+    kprintfv("[VIRTIO_NET] %i virtqueue pairs",net_config->max_virtqueue_pairs);
+    kprintfv("[VIRTIO_NET] %x speed", net_config->speed);
+    kprintfv("[VIRTIO_NET] status = %x", net_config->status);
 
     uint8_t dest[6] = HOST_MAC;
 
@@ -192,32 +206,32 @@ bool vnp_find_network(){
         virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_PACKET_SIZE);
     }
 
-    kprintf("[VIRTIO_NET] Current MSI-X queue index %i",vnp_net_dev.common_cfg->queue_msix_vector);
+    kprintfv("[VIRTIO_NET] Current MSI-X queue index %i",vnp_net_dev.common_cfg->queue_msix_vector);
     vnp_net_dev.common_cfg->queue_msix_vector = 0;
     if (vnp_net_dev.common_cfg->queue_msix_vector != 0){
-        kprintf("[VIRTIO_NET error] failed to set interrupts on receive queue, network will be unable to receive packets");
+        kprintfv("[VIRTIO_NET error] failed to set interrupts on receive queue, network will be unable to receive packets");
         return false;
     }
     
     void* test_packet = allocate_in_page(vnp_net_dev.memory_page, UDP_PACKET_SIZE + payload_size, ALIGN_64B, true, true);
     create_udp_packet(test_packet,net_config->mac,dest,(192 << 24) | (168 << 16) | (1 << 8) | 131,HOST_IP,8888,8080,hw, payload_size);
 
-    kprintf("[VIRTIO_NET] Packet created");
+    kprintfv("[VIRTIO_NET] Packet created");
 
     select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
-    kprintf("[VIRTIO_NET] New MSI-X queue index %i",vnp_net_dev.common_cfg->msix_config);
+    kprintfv("[VIRTIO_NET] New MSI-X queue index %x",vnp_net_dev.common_cfg->msix_config);
 
     size_t size = UDP_PACKET_SIZE + payload_size;
     
-    kprintf("[VIRTIO_NET] Upload queue selected for packet %x (size %i)",(uintptr_t)test_packet, size);
+    kprintfv("[VIRTIO_NET] Upload queue selected for packet %x (size %i)",(uintptr_t)test_packet, size);
 
-    virtio_send_1d(&vnp_net_dev, (uintptr_t)test_packet, size);
+    // virtio_send_1d(&vnp_net_dev, (uintptr_t)test_packet, size);
 
-    kprintf("[VIRTIO_NET] Packet sent");
+    kprintfv("[VIRTIO_NET] Packet sent");
 
     return true;
 }
 
 void vnp_handle_interrupt(){
-    kprintf("Received network interrupt");
+    kprintf(">>>>>>>>Received network interrupt");
 }
