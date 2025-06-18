@@ -7,6 +7,13 @@
 #include "virtio/virtio_pci.h"
 #include "std/memfunctions.h"
 #include "packets.h"
+/*
+net_constants.h is gitignored and needs to be created. It should contain a {0xXX,0xXX,0xXX,0xXX,0xXX,0xXX}' uint8_t[6] called HOST_MAC  and '(192 << 24) | (168 << 16) | (1 << 8) | x' uint64_t called HOST_IP.
+These are used to test networking capabilities, if you want to test networking on the system, you should also set up a server on the receiving computer. It should be fine if packets sent from here are ignored on the receiving side.
+Eventually, this networking functionality can be used to transfer data between the host computer (or another server) and REDACTED OS.
+A separate project for the server code will be provided once that's necessary, but for now it just listens for UDP on port 8080 and optionally sends UDP packets as a response
+*/
+#include "net_constants.h"
 
 static virtio_device vnp_net_dev;
 
@@ -157,12 +164,12 @@ bool vnp_find_network(){
     kprintf("%x speed", net_config->speed);
     kprintf("status = %x", net_config->status);
 
-    uint8_t dest[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    uint8_t dest[6] = HOST_MAC;
 
     kprintf("%x:%x:%x:%x:%x:%x", dest[0], dest[1], dest[2], dest[3], dest[4], dest[5]);
     
-    size_t payload_size = 6;
-    char hw[6] = {'h','e','l','l','o', '\0'};
+    size_t payload_size = 5;
+    char hw[5] = {'h','e','l','l','o'};
 
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
 
@@ -172,7 +179,7 @@ bool vnp_find_network(){
     }
     
     void* test_packet = allocate_in_page(vnp_net_dev.memory_page, UDP_PACKET_SIZE + payload_size, ALIGN_64B, true, true);
-    create_udp_packet(test_packet,net_config->mac,dest,(192 << 24) | (168 << 16) | (1 << 8) | 131,(255 << 24) | (255 << 16) | (255 << 8) | 255,8888,8080,hw, payload_size);
+    create_udp_packet(test_packet,net_config->mac,dest,(192 << 24) | (168 << 16) | (1 << 8) | 131,HOST_IP,8888,8080,hw, payload_size);
 
     kprintf("Packet created");
 
