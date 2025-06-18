@@ -225,13 +225,65 @@ bool vnp_find_network(){
     
     kprintfv("[VIRTIO_NET] Upload queue selected for packet %x (size %i)",(uintptr_t)test_packet, size);
 
-    // virtio_send_1d(&vnp_net_dev, (uintptr_t)test_packet, size);
+    virtio_send_1d(&vnp_net_dev, (uintptr_t)test_packet, size);
 
     kprintfv("[VIRTIO_NET] Packet sent");
 
     return true;
 }
 
+static uint16_t last_used_receive_idx = 0;
+
+void vnp_parse_packet(uintptr_t packet_ptr){
+    packet_ptr += sizeof(virtio_net_hdr_t);
+
+    eth_hdr_t* eth = (eth_hdr_t*)packet_ptr;
+    uint8_t filter[6] = HOST_MAC;
+    if (filter[0] == eth->src_mac[0])
+        kprintf(">>>>[VIRTIO_NET packet] SOURCE: %x:%x:%x:%x:%x:%x", eth->src_mac[0], eth->src_mac[1], eth->src_mac[2], eth->src_mac[3], eth->src_mac[4], eth->src_mac[5]);
+    
+    packet_ptr += sizeof(eth_hdr_t);
+    
+    if (__builtin_bswap16(eth->ethertype) == 0x800){
+        ipv4_hdr_t* ip = (ipv4_hdr_t*)packet_ptr;
+        packet_ptr += sizeof(ipv4_hdr_t);
+        if (ip->protocol == 0x11){
+            udp_hdr_t* udp = (udp_hdr_t*)packet_ptr;
+            packet_ptr += sizeof(udp_hdr_t);
+            uint8_t* data = (uint8_t*)packet_ptr;
+            uint16_t payload_len = __builtin_bswap16(udp->length) - sizeof(udp_hdr_t);
+            for (int i = 0; i < payload_len; i++) if (data[i] >= 0x20 && data[i] <= 0x7E) kprintf("%c",data[i]);
+        } else {
+            kprintf("[VIRTIO_NET packet] Not prepared to handle non-UDP packets %x",ip->protocol);
+        }
+    }
+    else {
+        kprintf("[VIRTIO_NET packet] Not prepared to handle non-ipv4 packets %x",__builtin_bswap16(eth->ethertype));
+    }
+}
+
 void vnp_handle_interrupt(){
-    kprintf(">>>>>>>>Received network interrupt");
+    select_queue(&vnp_net_dev, RECEIVE_QUEUE);
+    struct virtq_used* used = (struct virtq_used*)(uintptr_t)vnp_net_dev.common_cfg->queue_device;
+
+    uint16_t new_idx = used->idx;
+    if (new_idx != last_used_receive_idx) {
+        struct virtq_desc* desc = (struct virtq_desc*)(uintptr_t)vnp_net_dev.common_cfg->queue_desc;
+        struct virtq_avail* avail = (struct virtq_avail*)(uintptr_t)vnp_net_dev.common_cfg->queue_driver;
+        uint16_t used_ring_index = last_used_receive_idx % 128;
+        last_used_receive_idx = new_idx;
+        struct virtq_used_elem* e = &used->ring[used_ring_index];
+        uint32_t desc_index = e->id;
+        uint32_t len = e->len;
+        kprintf("Received network packet %i at index %i (len %i)",used->idx, desc_index, len);
+
+        uintptr_t packet = desc[desc_index].addr;
+
+        vnp_parse_packet(packet);
+
+        avail->ring[avail->idx % 128] = desc_index;
+        avail->idx++;
+
+        *(volatile uint16_t*)(uintptr_t)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
+    }
 }

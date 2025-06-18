@@ -4,32 +4,6 @@
 #include "memory/page_allocator.h"
 #include "virtio_pci.h"
 
-//TODO: We're allocating way too much memory for each virtqueue element, we can reduce it down to the size of the structures, and use them more efficiently using rings instead of always writing the first command
-
-struct virtq_desc {
-    uint64_t addr;
-    uint32_t len;
-    uint16_t flags;
-    uint16_t next;
-} __attribute__((packed));
-
-struct virtq_avail {
-    uint16_t flags;
-    uint16_t idx;
-    uint16_t ring[];
-} __attribute__((packed));
-
-struct virtq_used_elem {
-    uint32_t id;
-    uint32_t len;
-} __attribute__((packed));
-
-struct virtq_used {
-    uint16_t flags;
-    uint16_t idx;
-    struct virtq_used_elem ring[128];
-} __attribute__((packed));
-
 #define VIRTIO_STATUS_RESET         0x0
 #define VIRTIO_STATUS_ACKNOWLEDGE   0x1
 #define VIRTIO_STATUS_DRIVER        0x2
