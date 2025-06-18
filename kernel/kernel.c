@@ -52,13 +52,14 @@ void kernel_main() {
     if (!find_disk())
         panic("Disk initialization failure");
 
-    if (!vnp_find_network())
-        panic("Network initialization failure");
-
     // xhci_enable_verbose();
     if (!xhci_input_init()){
         panic("Input initialization failure");
     }
+
+    if (!vnp_find_network())
+        panic("Network initialization failure");
+
     mmu_init();
     kprintf("MMU Mapped");
 

@@ -6,6 +6,7 @@
 #include "pci.h"
 #include "input/xhci.h"
 #include "console/serial/uart.h"
+#include "networking/virtio_net_pci.h"
 
 #define IRQ_TIMER 30
 #define SLEEP_TIMER 27
@@ -36,6 +37,7 @@ void irq_init() {
 
     gic_enable_irq(IRQ_TIMER, 0x80, 0);
     gic_enable_irq(MSI_OFFSET + XHCI_IRQ, 0x80, 0);
+    gic_enable_irq(MSI_OFFSET + NET_IRQ, 0x80, 0);
     gic_enable_irq(SLEEP_TIMER, 0x80, 0);
 
     write32(GICC_BASE + 0x004, 0xF0); //Priority
@@ -73,6 +75,10 @@ void irq_el1_handler() {
         process_restore();
     } else if (irq == SLEEP_TIMER){
         wake_processes();
+        write32(GICC_BASE + 0x10, irq);
+        process_restore();
+    } else if (irq == MSI_OFFSET + NET_IRQ){
+        vnp_handle_interrupt();
         write32(GICC_BASE + 0x10, irq);
         process_restore();
     } else {

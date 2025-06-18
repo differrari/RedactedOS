@@ -7,6 +7,7 @@
 #include "virtio/virtio_pci.h"
 #include "std/memfunctions.h"
 #include "packets.h"
+#include "exceptions/irq.h"
 /*
 net_constants.h is gitignored and needs to be created. It should contain a {0xXX,0xXX,0xXX,0xXX,0xXX,0xXX}' uint8_t[6] called HOST_MAC  and '(192 << 24) | (168 << 16) | (1 << 8) | x' uint64_t called HOST_IP.
 These are used to test networking capabilities, if you want to test networking on the system, you should also set up a server on the receiving computer. It should be fine if packets sent from here are ignored on the receiving side.
@@ -137,36 +138,49 @@ typedef struct virtio_net_config {
 }__attribute__((packed)) virtio_net_config; 
 
 bool vnp_find_network(){
-    virtio_enable_verbose();
     uint64_t addr = find_pci_device(0x1AF4, 0x1000);
     if (!addr){ 
-        kprintf("Virtio network device not found");
+        kprintf("[VIRTIO_NET] Virtio network device not found");
         return false;
     }
     
-    pci_enable_device(addr);
-
     uint64_t net_device_address, net_device_size;
-
-    kprintf("Configuring network device");
-
+    
+    kprintf("[VIRTIO_NET] Configuring network device");
+    
     virtio_get_capabilities(&vnp_net_dev, addr, &net_device_address, &net_device_size);
     pci_register(net_device_address, net_device_size);
+
+    uint8_t interrupts_ok = pci_setup_interrupts(addr, NET_IRQ);
+    switch(interrupts_ok){
+        case 0:
+            kprintf_raw("[VIRTIO_NET] Failed to setup interrupts");
+            return false;
+        case 1:
+            kprintf_raw("[VIRTIO_NET] Interrupts setup with MSI-X %i",NET_IRQ);
+            break;
+        default:
+            kprintf_raw("[VIRTIO_NET] Interrupts setup with MSI %i",NET_IRQ);
+            break;
+    }
+
+    pci_enable_device(addr);
+
     if (!virtio_init_device(&vnp_net_dev)) {
-        kprintf("Failed network initialization");
+        kprintf("[VIRTIO_NET] Failed network initialization");
         return false;
     }
 
     virtio_net_config* net_config = (virtio_net_config*)vnp_net_dev.device_cfg;
-    kprintf("%x:%x:%x:%x:%x:%x", net_config->mac[0], net_config->mac[1], net_config->mac[2], net_config->mac[3], net_config->mac[4], net_config->mac[5]);
+    kprintf("[VIRTIO_NET] %x:%x:%x:%x:%x:%x", net_config->mac[0], net_config->mac[1], net_config->mac[2], net_config->mac[3], net_config->mac[4], net_config->mac[5]);
 
-    kprintf("%i virtqueue pairs",net_config->max_virtqueue_pairs);
-    kprintf("%x speed", net_config->speed);
-    kprintf("status = %x", net_config->status);
+    kprintf("[VIRTIO_NET] %i virtqueue pairs",net_config->max_virtqueue_pairs);
+    kprintf("[VIRTIO_NET] %x speed", net_config->speed);
+    kprintf("[VIRTIO_NET] status = %x", net_config->status);
 
     uint8_t dest[6] = HOST_MAC;
 
-    kprintf("%x:%x:%x:%x:%x:%x", dest[0], dest[1], dest[2], dest[3], dest[4], dest[5]);
+    kprintf("[VIRTIO_NET] %x:%x:%x:%x:%x:%x", dest[0], dest[1], dest[2], dest[3], dest[4], dest[5]);
     
     size_t payload_size = 5;
     char hw[5] = {'h','e','l','l','o'};
@@ -177,21 +191,33 @@ bool vnp_find_network(){
         void* buf = allocate_in_page(vnp_net_dev.memory_page, MAX_PACKET_SIZE, ALIGN_64B, true, true);
         virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_PACKET_SIZE);
     }
+
+    kprintf("[VIRTIO_NET] Current MSI-X queue index %i",vnp_net_dev.common_cfg->queue_msix_vector);
+    vnp_net_dev.common_cfg->queue_msix_vector = 0;
+    if (vnp_net_dev.common_cfg->queue_msix_vector != 0){
+        kprintf("[VIRTIO_NET error] failed to set interrupts on receive queue, network will be unable to receive packets");
+        return false;
+    }
     
     void* test_packet = allocate_in_page(vnp_net_dev.memory_page, UDP_PACKET_SIZE + payload_size, ALIGN_64B, true, true);
     create_udp_packet(test_packet,net_config->mac,dest,(192 << 24) | (168 << 16) | (1 << 8) | 131,HOST_IP,8888,8080,hw, payload_size);
 
-    kprintf("Packet created");
+    kprintf("[VIRTIO_NET] Packet created");
 
     select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
+    kprintf("[VIRTIO_NET] New MSI-X queue index %i",vnp_net_dev.common_cfg->msix_config);
 
     size_t size = UDP_PACKET_SIZE + payload_size;
     
-    kprintf("Upload queue selected for packet %x (size %i)",(uintptr_t)test_packet, size);
+    kprintf("[VIRTIO_NET] Upload queue selected for packet %x (size %i)",(uintptr_t)test_packet, size);
 
     virtio_send_1d(&vnp_net_dev, (uintptr_t)test_packet, size);
 
-    kprintf("Packet sent");
+    kprintf("[VIRTIO_NET] Packet sent");
 
     return true;
+}
+
+void vnp_handle_interrupt(){
+    kprintf("Received network interrupt");
 }
