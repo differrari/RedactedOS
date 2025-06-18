@@ -15,8 +15,7 @@
 #include "input/xhci.h"
 #include "kernel_processes/monitor/monitor_processes.h"
 #include "memory/page_allocator.h"
-
-#include "networking/virtio_net_pci.h"
+#include "networking/network.h"
 
 void kernel_main() {
     
@@ -57,7 +56,7 @@ void kernel_main() {
         panic("Input initialization failure");
     }
 
-    if (!vnp_find_network())
+    if (!network_init())
         panic("Network initialization failure");
 
     mmu_init();

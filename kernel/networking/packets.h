@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+    
 #include "types.h"
 
 typedef struct __attribute__((packed)) eth_hdr_t {
@@ -27,3 +31,13 @@ typedef struct __attribute__((packed)) udp_hdr_t {
     uint16_t length;
     uint16_t checksum;
 } udp_hdr_t;
+
+typedef struct network_connection_ctx {
+    uint16_t port;
+    uint32_t ip;
+    uint8_t mac[6];
+} network_connection_ctx;
+
+#ifdef __cplusplus
+}
+#endif

@@ -6,7 +6,7 @@
 #include "pci.h"
 #include "input/xhci.h"
 #include "console/serial/uart.h"
-#include "networking/virtio_net_pci.h"
+#include "networking/network.h"
 
 #define IRQ_TIMER 30
 #define SLEEP_TIMER 27
@@ -78,7 +78,7 @@ void irq_el1_handler() {
         write32(GICC_BASE + 0x10, irq);
         process_restore();
     } else if (irq == MSI_OFFSET + NET_IRQ){
-        vnp_handle_interrupt();
+        network_handle_interrupt();
         write32(GICC_BASE + 0x10, irq);
         process_restore();
     } else {
