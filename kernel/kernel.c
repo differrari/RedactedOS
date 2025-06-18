@@ -14,6 +14,7 @@
 #include "input/xhci_bridge.h"
 #include "input/xhci.h"
 #include "kernel_processes/monitor/monitor_processes.h"
+#include "kernel_processes/net/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
 
@@ -70,6 +71,8 @@ void kernel_main() {
     kprintf("Starting processes");
 
     // translate_enable_verbose();
+
+    launch_net_process();
 
     init_bootprocess();
     
