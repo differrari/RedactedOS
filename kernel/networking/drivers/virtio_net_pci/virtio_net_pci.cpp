@@ -1,6 +1,5 @@
 #include "virtio_net_pci.hpp"
 #include "console/kio.h"
-#include "networking/network_types.h"
 #include "networking/udp.h"
 #include "networking/network.h"
 #include "pci.h"
@@ -148,6 +147,8 @@ ReceivedPacket VirtioNetDriver::handle_receive_packet(){
 
         return (ReceivedPacket){packet,len};
     }
+
+    return (ReceivedPacket){0,0};
 
     // select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
     // new_idx = used->idx;
