@@ -3,7 +3,7 @@
 #include "network_types.h"
 #include "process/scheduler.h"
 #include "console/kio.h"
-#include "networking/udp.h"
+#include "net/udp.h"
 #include "syscalls/syscalls.h"
 
 void test_network(){

@@ -3,7 +3,7 @@
 #include "network_types.h"
 #include "console/kio.h"
 #include "process/scheduler.h"
-#include "udp.h"
+#include "net/udp.h"
 #include "memory/page_allocator.h"
 #include "std/memfunctions.h"
 
