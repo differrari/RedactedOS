@@ -1,13 +1,7 @@
 #include "udp.h"
 #include "console/kio.h"
 #include "network_types.h"
-/*
-net_constants.h is gitignored and needs to be created. It should contain a {0xXX,0xXX,0xXX,0xXX,0xXX,0xXX}' uint8_t[6] called HOST_MAC  and '(192 << 24) | (168 << 16) | (1 << 8) | x' uint64_t called HOST_IP.
-These are used to test networking capabilities, if you want to test networking on the system, you should also set up a server on the receiving computer. It should be fine if packets sent from here are ignored on the receiving side.
-Eventually, this networking functionality can be used to transfer data between the host computer (or another server) and REDACTED OS.
-A separate project for the server code will be provided once that's necessary, but for now it just listens for UDP on port 8080 and optionally sends UDP packets as a response
-*/
-// #include "net_constants.h"
+#include "syscalls/syscalls.h"
 
 uint16_t udp_checksum(
     uint32_t src_ip,

@@ -29,11 +29,7 @@ void test_network(){
 
     uint8_t *content = (uint8_t*)payload.ptr;
 
-    kputf_raw("PAYLOAD: ");
-    for (size_t i = 0; i < payload.size; i++){
-        kputf_raw("%c",content[i]);
-    }
-    kputf_raw("\n");
+    kprintf("PAYLOAD: %s",(uintptr_t)string_ca_max(content, payload.size).data);
 
     stop_current_process();
     unbind_port(8888);
