@@ -1,6 +1,6 @@
 #pragma once
 
-#include "network_types.h"
+#include "net/network_types.h"
 #include "types.h"
 #include "std/indexmap.hpp"
 #include "drivers/net_driver.hpp"

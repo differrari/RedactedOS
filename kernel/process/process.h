@@ -6,7 +6,7 @@ extern "C" {
 
 #include "types.h"
 #include "keypress.h"
-#include "network_types.h"
+#include "net/network_types.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128

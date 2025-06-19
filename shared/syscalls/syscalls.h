@@ -4,7 +4,7 @@
 #include "ui/graphic_types.h"
 #include "keypress.h"
 #include "std/string.h"
-#include "network_types.h"
+#include "net/network_types.h"
 
 #ifdef __cplusplus
 extern "C" {

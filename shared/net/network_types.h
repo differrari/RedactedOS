@@ -29,13 +29,6 @@ typedef struct __attribute__((packed)) ipv4_hdr_t {
     uint32_t dst_ip;
 } ipv4_hdr_t;
 
-typedef struct __attribute__((packed)) udp_hdr_t {
-    uint16_t src_port;
-    uint16_t dst_port;
-    uint16_t length;
-    uint16_t checksum;
-} udp_hdr_t;
-
 typedef struct network_connection_ctx {
     uint16_t port;
     uint32_t ip;

@@ -3,7 +3,7 @@
 #include "types.h"
 #include "std/string.h"
 #include "ui/graphic_types.h"
-#include "network_types.h"
+#include "net/network_types.h"
 
 class NetDriver {
 public:

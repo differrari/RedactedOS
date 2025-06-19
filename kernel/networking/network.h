@@ -5,7 +5,7 @@ extern "C" {
 #endif
 
 #include "types.h"
-#include "network_types.h"
+#include "net/network_types.h"
 
 #define NET_IRQ 32
 

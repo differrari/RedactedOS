@@ -1,6 +1,6 @@
 #include "udp.h"
 #include "console/kio.h"
-#include "network_types.h"
+#include "net/network_types.h"
 #include "syscalls/syscalls.h"
 
 uint16_t udp_checksum(

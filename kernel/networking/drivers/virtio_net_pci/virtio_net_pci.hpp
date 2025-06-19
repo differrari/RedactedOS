@@ -1,6 +1,6 @@
 #include "../net_driver.hpp"
 #include "virtio/virtio_pci.h"
-#include "network_types.h"
+#include "net/network_types.h"
 
 class VirtioNetDriver : public NetDriver {
 public:

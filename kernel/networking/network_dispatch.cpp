@@ -1,6 +1,6 @@
 #include "network_dispatch.hpp"
 #include "drivers/virtio_net_pci/virtio_net_pci.hpp"
-#include "network_types.h"
+#include "net/network_types.h"
 #include "console/kio.h"
 #include "process/scheduler.h"
 #include "net/udp.h"
