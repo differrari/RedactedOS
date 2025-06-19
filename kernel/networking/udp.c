@@ -80,7 +80,6 @@ void create_udp_packet(uint8_t* buf, network_connection_ctx source, network_conn
 
 void udp_parse_packet(uintptr_t packet_ptr){
     eth_hdr_t* eth = (eth_hdr_t*)packet_ptr;
-    // kprintf("[UDP packet] SOURCE: %x:%x:%x:%x:%x:%x", eth->src_mac[0], eth->src_mac[1], eth->src_mac[2], eth->src_mac[3], eth->src_mac[4], eth->src_mac[5]);
     
     packet_ptr += sizeof(eth_hdr_t);
     
@@ -91,11 +90,13 @@ void udp_parse_packet(uintptr_t packet_ptr){
         if (ip->protocol == 0x11){
             udp_hdr_t* udp = (udp_hdr_t*)packet_ptr;
             packet_ptr += sizeof(udp_hdr_t);
-            if (udp->dst_port != 8888) return;
-            kprintf(">>>>Source %i.%i.%i.%i:%i",srcip >> 24, (srcip >> 16) & 0xFF, (srcip >> 8) & 0xFF, srcip & 0xFF,udp->src_port);
+            uint16_t port = __builtin_bswap16(udp->dst_port);
+            if (port != 8888) return;
             uint8_t* data = (uint8_t*)packet_ptr;
             uint16_t payload_len = __builtin_bswap16(udp->length) - sizeof(udp_hdr_t);
+            kputf_raw("Received UDP Packet from %i.%i.%i.%i:%i = ",srcip >> 24, (srcip >> 16) & 0xFF, (srcip >> 8) & 0xFF, srcip & 0xFF,__builtin_bswap16(udp->src_port));
             for (int i = 0; i < payload_len; i++) if (data[i] >= 0x20 && data[i] <= 0x7E) kputf_raw("%c",data[i]);
+            kputf_raw("\n");
         } else {
             // kprintf("[UDP packet] Not prepared to handle non-UDP packets %x",ip->protocol);
         }

@@ -127,7 +127,7 @@ void VirtioNetDriver::handle_interrupt(){
         struct virtq_used_elem* e = &used->ring[used_ring_index];
         uint32_t desc_index = e->id;
         uint32_t len = e->len;
-        kprintf("Received network packet %i at index %i (len %i)",used->idx, desc_index, len);
+        kprintf("Received network packet %i at index %i (len %i - %i)",used->idx, desc_index, len,sizeof(virtio_net_hdr_t));
 
         uintptr_t packet = desc[desc_index].addr;
         packet += sizeof(virtio_net_hdr_t);
