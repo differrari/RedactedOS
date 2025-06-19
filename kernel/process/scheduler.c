@@ -108,7 +108,7 @@ void reset_process(process_t *proc){
     proc->packet_buffer.read_index = 0;
     proc->packet_buffer.write_index = 0;
     for (int k = 0; k < PACKET_BUFFER_CAPACITY; k++){
-        proc->packet_buffer.entries[k] = (ReceivedPacket){0};
+        proc->packet_buffer.entries[k] = (sizedptr){0};
     }
 }
 

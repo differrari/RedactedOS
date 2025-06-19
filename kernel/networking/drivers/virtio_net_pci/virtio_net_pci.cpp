@@ -8,7 +8,7 @@
 
 #define RECEIVE_QUEUE 0
 #define TRANSMIT_QUEUE 1
-#define MAX_PACKET_SIZE 0x1000
+#define MAX_size 0x1000
 
 #define kprintfv(fmt, ...) \
     ({ \
@@ -99,8 +99,8 @@ bool VirtioNetDriver::init(){
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
 
     for (uint16_t i = 0; i < 128; i++){
-        void* buf = allocate_in_page(vnp_net_dev.memory_page, MAX_PACKET_SIZE, ALIGN_64B, true, true);
-        virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_PACKET_SIZE);
+        void* buf = allocate_in_page(vnp_net_dev.memory_page, MAX_size, ALIGN_64B, true, true);
+        virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_size);
     }
 
     kprintf("[VIRTIO_NET] Current MSI-X queue index %i",vnp_net_dev.common_cfg->queue_msix_vector);
@@ -122,7 +122,7 @@ bool VirtioNetDriver::init(){
     return true;
 }
 
-ReceivedPacket VirtioNetDriver::handle_receive_packet(){
+sizedptr VirtioNetDriver::handle_receive_packet(){
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
     struct virtq_used* used = (struct virtq_used*)(uintptr_t)vnp_net_dev.common_cfg->queue_device;
     struct virtq_desc* desc = (struct virtq_desc*)(uintptr_t)vnp_net_dev.common_cfg->queue_desc;
@@ -145,10 +145,10 @@ ReceivedPacket VirtioNetDriver::handle_receive_packet(){
 
         *(volatile uint16_t*)(uintptr_t)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
 
-        return (ReceivedPacket){packet,len};
+        return (sizedptr){packet,len};
     }
 
-    return (ReceivedPacket){0,0};
+    return (sizedptr){0,0};
 
     // select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
     // new_idx = used->idx;
@@ -166,7 +166,7 @@ ReceivedPacket VirtioNetDriver::handle_receive_packet(){
 
 void VirtioNetDriver::send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len){
     select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
-    size_t size = calc_udp_packet_size(payload_len) + sizeof(virtio_net_hdr_t);
+    size_t size = calc_udp_size(payload_len) + sizeof(virtio_net_hdr_t);
     uintptr_t buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
     connection_context.port = port;
     create_udp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), connection_context, *destination, (uint8_t*)payload, payload_len);

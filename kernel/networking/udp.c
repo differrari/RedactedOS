@@ -78,18 +78,18 @@ void create_udp_packet(uint8_t* buf, network_connection_ctx source, network_conn
     
 }
 
-uint16_t udp_parse_packet(uintptr_t packet_ptr){
-    eth_hdr_t* eth = (eth_hdr_t*)packet_ptr;
+uint16_t udp_parse_packet(uintptr_t ptr){
+    eth_hdr_t* eth = (eth_hdr_t*)ptr;
     
-    packet_ptr += sizeof(eth_hdr_t);
+    ptr += sizeof(eth_hdr_t);
     
     if (__builtin_bswap16(eth->ethertype) == 0x800){
-        ipv4_hdr_t* ip = (ipv4_hdr_t*)packet_ptr;
+        ipv4_hdr_t* ip = (ipv4_hdr_t*)ptr;
         uint32_t srcip = __builtin_bswap32(ip->src_ip);
-        packet_ptr += sizeof(ipv4_hdr_t);
+        ptr += sizeof(ipv4_hdr_t);
         if (ip->protocol == 0x11){
-            udp_hdr_t* udp = (udp_hdr_t*)packet_ptr;
-            packet_ptr += sizeof(udp_hdr_t);
+            udp_hdr_t* udp = (udp_hdr_t*)ptr;
+            ptr += sizeof(udp_hdr_t);
             uint16_t port = __builtin_bswap16(udp->dst_port);
             return port;
         } else {
@@ -103,20 +103,20 @@ uint16_t udp_parse_packet(uintptr_t packet_ptr){
     return 0;
 }
 
-ReceivedPacket udp_parse_packet_payload(uintptr_t packet_ptr){
-    eth_hdr_t* eth = (eth_hdr_t*)packet_ptr;
+sizedptr udp_parse_packet_payload(uintptr_t ptr){
+    eth_hdr_t* eth = (eth_hdr_t*)ptr;
     
-    packet_ptr += sizeof(eth_hdr_t);
+    ptr += sizeof(eth_hdr_t);
     
     if (__builtin_bswap16(eth->ethertype) == 0x800){
-        ipv4_hdr_t* ip = (ipv4_hdr_t*)packet_ptr;
+        ipv4_hdr_t* ip = (ipv4_hdr_t*)ptr;
         uint32_t srcip = __builtin_bswap32(ip->src_ip);
-        packet_ptr += sizeof(ipv4_hdr_t);
+        ptr += sizeof(ipv4_hdr_t);
         if (ip->protocol == 0x11){
-            udp_hdr_t* udp = (udp_hdr_t*)packet_ptr;
-            packet_ptr += sizeof(udp_hdr_t);
+            udp_hdr_t* udp = (udp_hdr_t*)ptr;
+            ptr += sizeof(udp_hdr_t);
             uint16_t payload_len = __builtin_bswap16(udp->length) - sizeof(udp_hdr_t);
-            return (ReceivedPacket){packet_ptr,payload_len};
+            return (sizedptr){ptr,payload_len};
         } else {
             // kprintf("[UDP packet] Not prepared to handle non-UDP packets %x",ip->protocol);
         }
@@ -125,9 +125,9 @@ ReceivedPacket udp_parse_packet_payload(uintptr_t packet_ptr){
         // kprintf("[UDP packet] Not prepared to handle non-ipv4 packets %x",__builtin_bswap16(eth->ethertype));
     }
 
-    return (ReceivedPacket){0,0};
+    return (sizedptr){0,0};
 }
 
-size_t calc_udp_packet_size(uint16_t payload_len){
+size_t calc_udp_size(uint16_t payload_len){
     return sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(udp_hdr_t) + payload_len;
 }

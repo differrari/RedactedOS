@@ -13,7 +13,7 @@ public:
     bool unbind_port(uint16_t port, uint16_t process);
     void handle_interrupt();
     void send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len);
-    bool read_packet(ReceivedPacket *Packet, uint16_t process);
+    bool read_packet(sizedptr *Packet, uint16_t process);
 
 private:
     IndexMap<uint16_t> ports;

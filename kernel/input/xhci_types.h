@@ -218,7 +218,7 @@ typedef union
         uint32_t rsvd2                   : 1;
         uint32_t host_initiate_disable   : 1;
         uint32_t max_burst_size          : 8;
-        uint32_t max_packet_size         : 16;
+        uint32_t max_size         : 16;
     };
     uint32_t value;
 } endpoint_field1;

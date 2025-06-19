@@ -35,10 +35,10 @@ void network_send_packet(NetProtocol protocol, uint16_t port, network_connection
     return dispatch->send_packet(protocol, port, destination, payload, payload_len);
 }
 
-bool network_read_packet(ReceivedPacket *packet, uint16_t process){
+bool network_read_packet(sizedptr *packet, uint16_t process){
     return dispatch->read_packet(packet, process);
 }
 
-bool network_read_packet_current(ReceivedPacket *packet){
+bool network_read_packet_current(sizedptr *packet){
     return dispatch->read_packet(packet, get_current_proc_pid());
 }

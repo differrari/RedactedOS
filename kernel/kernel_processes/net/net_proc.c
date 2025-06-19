@@ -19,16 +19,16 @@ void test_network(){
 
     network_send_packet(UDP, 8888, &dest, hw, payload_size);
 
-    ReceivedPacket pack;
+    sizedptr pack;
 
     while (!network_read_packet_current(&pack));
 
-    ReceivedPacket payload = udp_parse_packet_payload(pack.packet_ptr);
+    sizedptr payload = udp_parse_packet_payload(pack.ptr);
 
-    uint8_t *content = (uint8_t*)payload.packet_ptr;
+    uint8_t *content = (uint8_t*)payload.ptr;
 
     kputf_raw("PAYLOAD: ");
-    for (size_t i = 0; i < payload.packet_size; i++){
+    for (size_t i = 0; i < payload.size; i++){
         kputf_raw("%c",content[i]);
     }
     kputf_raw("\n");

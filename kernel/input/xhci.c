@@ -309,7 +309,7 @@ bool issue_command(uint64_t param, uint32_t status, uint32_t control){
     return AWAIT(cmd_addr, {ring_doorbell(0, 0);}, TRB_TYPE_COMMAND_COMPLETION);
 }
 
-uint16_t packet_size(uint16_t port_speed){
+uint16_t size(uint16_t port_speed){
     switch (port_speed) {
         case 2: return 8;//Low
         case 1:
@@ -508,7 +508,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             
             ctx->device_context.endpoints[ep_num-1].endpoint_f0.endpoint_state = 0;
             ctx->device_context.endpoints[ep_num-1].endpoint_f1.endpoint_type = get_ep_type(endpoint);
-            ctx->device_context.endpoints[ep_num-1].endpoint_f1.max_packet_size = endpoint->wMaxPacketSize;
+            ctx->device_context.endpoints[ep_num-1].endpoint_f1.max_size = endpoint->wMaxPacketSize;
             ctx->device_context.endpoints[ep_num-1].endpoint_f4.max_esit_payload_lo = endpoint->wMaxPacketSize;
             ctx->device_context.endpoints[ep_num-1].endpoint_f1.error_count = 3;
 
@@ -584,7 +584,7 @@ bool xhci_setup_device(uint16_t port){
     ctx->device_context.endpoints[0].endpoint_f1.endpoint_type = 4;//Type = control
     ctx->device_context.endpoints[0].endpoint_f0.interval = 0;
     ctx->device_context.endpoints[0].endpoint_f1.error_count = 3;//3 errors allowed
-    ctx->device_context.endpoints[0].endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);//Packet size. Guessed from port speed
+    ctx->device_context.endpoints[0].endpoint_f1.max_size = size(ctx->device_context.slot_f0.speed);//Packet size. Guessed from port speed
     
     device->transfer_ring = (trb*)allocate_in_page(xhci_mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
     kprintfv("Transfer ring at %x",(uintptr_t)device->transfer_ring);
@@ -602,7 +602,7 @@ bool xhci_setup_device(uint16_t port){
 
     xhci_device_context* context = (xhci_device_context*)(uintptr_t)(global_device.dcbaa[device->slot_id]);
 
-    kprintfv("[xHCI] ADDRESS_DEVICE command issued. Received package size %i",context->endpoints[0].endpoint_f1.max_packet_size);
+    kprintfv("[xHCI] ADDRESS_DEVICE command issued. Received package size %i",context->endpoints[0].endpoint_f1.max_size);
 
     usb_device_descriptor* descriptor = (usb_device_descriptor*)allocate_in_page(xhci_mem_page, sizeof(usb_device_descriptor), ALIGN_64B, true, true);
     

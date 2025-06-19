@@ -10,7 +10,7 @@ public:
     NetDriver(){}
     virtual bool init() = 0;
 
-    virtual ReceivedPacket handle_receive_packet() = 0;
+    virtual sizedptr handle_receive_packet() = 0;
 
     virtual void enable_verbose() = 0;
 

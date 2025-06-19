@@ -18,8 +18,8 @@ void network_send_packet(NetProtocol protocol, uint16_t port, network_connection
 bool network_bind_port_current(uint16_t port);
 bool network_unbind_port_current(uint16_t port);
 
-bool network_read_packet(ReceivedPacket *packet, uint16_t process);
-bool network_read_packet_current(ReceivedPacket *packet);
+bool network_read_packet(sizedptr *packet, uint16_t process);
+bool network_read_packet_current(sizedptr *packet);
 
 #ifdef __cplusplus
 }

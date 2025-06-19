@@ -10,7 +10,7 @@ public:
 
     bool init() override;
 
-    ReceivedPacket handle_receive_packet() override;
+    sizedptr handle_receive_packet() override;
 
     void enable_verbose() override;
 

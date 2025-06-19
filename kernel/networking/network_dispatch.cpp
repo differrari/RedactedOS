@@ -35,9 +35,9 @@ bool NetworkDispatch::unbind_port(uint16_t port, uint16_t process){
 
 void NetworkDispatch::handle_interrupt(){
     if (driver){
-        ReceivedPacket packet = driver->handle_receive_packet();
-        if (packet.packet_ptr){
-            uint16_t port = udp_parse_packet(packet.packet_ptr);
+        sizedptr packet = driver->handle_receive_packet();
+        if (packet.ptr){
+            uint16_t port = udp_parse_packet(packet.ptr);
             if (ports[port] != UINT16_MAX){
                 process_t *proc = get_proc_by_pid(ports[port]);
                 if (!proc)
@@ -57,15 +57,15 @@ void NetworkDispatch::handle_interrupt(){
     }
 }
 
-bool NetworkDispatch::read_packet(ReceivedPacket *Packet, uint16_t process){
+bool NetworkDispatch::read_packet(sizedptr *Packet, uint16_t process){
     process_t *proc = get_proc_by_pid(process);
     if (proc->packet_buffer.read_index == proc->packet_buffer.write_index) return false;
 
-    ReceivedPacket original = proc->packet_buffer.entries[proc->packet_buffer.read_index];
+    sizedptr original = proc->packet_buffer.entries[proc->packet_buffer.read_index];
 
-    uintptr_t copy = malloc(original.packet_size);
-    memcpy((void*)copy,(void*)original.packet_ptr,original.packet_size);
-    *Packet = (ReceivedPacket){copy, original.packet_size};
+    uintptr_t copy = malloc(original.size);
+    memcpy((void*)copy,(void*)original.ptr,original.size);
+    *Packet = (sizedptr){copy, original.size};
     proc->packet_buffer.read_index = (proc->packet_buffer.read_index + 1) % PACKET_BUFFER_CAPACITY;
     return true;
 }

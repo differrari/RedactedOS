@@ -20,7 +20,7 @@ typedef struct {
 typedef struct {
     volatile uint32_t write_index;
     volatile uint32_t read_index;
-    ReceivedPacket entries[PACKET_BUFFER_CAPACITY];
+    sizedptr entries[PACKET_BUFFER_CAPACITY];
 } packet_buffer_t;
 
 #define MAX_PROC_NAME_LENGTH 256
