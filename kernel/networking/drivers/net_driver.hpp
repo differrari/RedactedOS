@@ -3,14 +3,14 @@
 #include "types.h"
 #include "std/string.h"
 #include "ui/graphic_types.h"
-#include "networking/packets.h"
+#include "networking/network_types.h"
 
 class NetDriver {
 public:
     NetDriver(){}
     virtual bool init() = 0;
 
-    virtual void handle_interrupt() = 0;
+    virtual ReceivedPacket handle_receive_packet() = 0;
 
     virtual void enable_verbose() = 0;
 

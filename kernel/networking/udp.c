@@ -1,6 +1,6 @@
 #include "udp.h"
 #include "console/kio.h"
-#include "packets.h"
+#include "network_types.h"
 /*
 net_constants.h is gitignored and needs to be created. It should contain a {0xXX,0xXX,0xXX,0xXX,0xXX,0xXX}' uint8_t[6] called HOST_MAC  and '(192 << 24) | (168 << 16) | (1 << 8) | x' uint64_t called HOST_IP.
 These are used to test networking capabilities, if you want to test networking on the system, you should also set up a server on the receiving computer. It should be fine if packets sent from here are ignored on the receiving side.
@@ -78,7 +78,7 @@ void create_udp_packet(uint8_t* buf, network_connection_ctx source, network_conn
     
 }
 
-void udp_parse_packet(uintptr_t packet_ptr){
+uint16_t udp_parse_packet(uintptr_t packet_ptr){
     eth_hdr_t* eth = (eth_hdr_t*)packet_ptr;
     
     packet_ptr += sizeof(eth_hdr_t);
@@ -91,12 +91,7 @@ void udp_parse_packet(uintptr_t packet_ptr){
             udp_hdr_t* udp = (udp_hdr_t*)packet_ptr;
             packet_ptr += sizeof(udp_hdr_t);
             uint16_t port = __builtin_bswap16(udp->dst_port);
-            if (port != 8888) return;
-            uint8_t* data = (uint8_t*)packet_ptr;
-            uint16_t payload_len = __builtin_bswap16(udp->length) - sizeof(udp_hdr_t);
-            kputf_raw("Received UDP Packet from %i.%i.%i.%i:%i = ",srcip >> 24, (srcip >> 16) & 0xFF, (srcip >> 8) & 0xFF, srcip & 0xFF,__builtin_bswap16(udp->src_port));
-            for (int i = 0; i < payload_len; i++) if (data[i] >= 0x20 && data[i] <= 0x7E) kputf_raw("%c",data[i]);
-            kputf_raw("\n");
+            return port;
         } else {
             // kprintf("[UDP packet] Not prepared to handle non-UDP packets %x",ip->protocol);
         }
@@ -104,6 +99,8 @@ void udp_parse_packet(uintptr_t packet_ptr){
     else {
         // kprintf("[UDP packet] Not prepared to handle non-ipv4 packets %x",__builtin_bswap16(eth->ethertype));
     }
+
+    return 0;
 }
 
 size_t calc_udp_packet_size(uint16_t payload_len){

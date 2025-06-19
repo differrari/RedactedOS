@@ -4,6 +4,7 @@
 #include "process/scheduler.h"
 
 void test_network(){
+    network_bind_port_current(8888);
     network_connection_ctx dest = (network_connection_ctx){
         .ip = (192 << 24) | (168 << 16) | (1 << 8) | 255,
         .mac = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
@@ -16,6 +17,7 @@ void test_network(){
     network_send_packet(UDP, 8888, &dest, hw, payload_size);
 
     stop_current_process();
+    network_unbind_port_current(8888);
 }
 
 process_t* launch_net_process(){

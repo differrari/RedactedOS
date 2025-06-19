@@ -10,6 +10,11 @@ typedef enum NetProtocol {
     UDP
 } NetProtocol;
 
+typedef struct ReceivedPacket {
+    uintptr_t packet_ptr;
+    size_t packet_size;
+} ReceivedPacket;
+
 typedef struct __attribute__((packed)) eth_hdr_t {
     uint8_t dst_mac[6];
     uint8_t src_mac[6];

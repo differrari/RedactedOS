@@ -1,6 +1,6 @@
 #include "../net_driver.hpp"
 #include "virtio/virtio_pci.h"
-#include "networking/packets.h"
+#include "networking/network_types.h"
 
 class VirtioNetDriver : public NetDriver {
 public:
@@ -10,7 +10,7 @@ public:
 
     bool init() override;
 
-    void handle_interrupt() override;
+    ReceivedPacket handle_receive_packet() override;
 
     void enable_verbose() override;
 

@@ -1,6 +1,6 @@
 #include "virtio_net_pci.hpp"
 #include "console/kio.h"
-#include "networking/packets.h"
+#include "networking/network_types.h"
 #include "networking/udp.h"
 #include "networking/network.h"
 #include "pci.h"
@@ -104,17 +104,26 @@ bool VirtioNetDriver::init(){
         virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_PACKET_SIZE);
     }
 
-    kprintfv("[VIRTIO_NET] Current MSI-X queue index %i",vnp_net_dev.common_cfg->queue_msix_vector);
+    kprintf("[VIRTIO_NET] Current MSI-X queue index %i",vnp_net_dev.common_cfg->queue_msix_vector);
     vnp_net_dev.common_cfg->queue_msix_vector = 0;
     if (vnp_net_dev.common_cfg->queue_msix_vector != 0){
-        kprintfv("[VIRTIO_NET error] failed to set interrupts on receive queue, network will be unable to receive packets");
+        kprintf("[VIRTIO_NET error] failed to set interrupts on receive queue, network will be unable to receive packets");
+        return false;
+    }
+
+    select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
+
+    kprintf("[VIRTIO_NET] Current MSI-X queue index %i",vnp_net_dev.common_cfg->queue_msix_vector);
+    vnp_net_dev.common_cfg->queue_msix_vector = 0;
+    if (vnp_net_dev.common_cfg->queue_msix_vector != 0){
+        kprintf("[VIRTIO_NET error] failed to set interrupts on transmit queue, network will be unable to cleanup transmitted packets");
         return false;
     }
 
     return true;
 }
 
-void VirtioNetDriver::handle_interrupt(){
+ReceivedPacket VirtioNetDriver::handle_receive_packet(){
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
     struct virtq_used* used = (struct virtq_used*)(uintptr_t)vnp_net_dev.common_cfg->queue_device;
     struct virtq_desc* desc = (struct virtq_desc*)(uintptr_t)vnp_net_dev.common_cfg->queue_desc;
@@ -127,33 +136,31 @@ void VirtioNetDriver::handle_interrupt(){
         struct virtq_used_elem* e = &used->ring[used_ring_index];
         uint32_t desc_index = e->id;
         uint32_t len = e->len;
-        kprintf("Received network packet %i at index %i (len %i - %i)",used->idx, desc_index, len,sizeof(virtio_net_hdr_t));
+        kprintfv("Received network packet %i at index %i (len %i - %i)",used->idx, desc_index, len,sizeof(virtio_net_hdr_t));
 
         uintptr_t packet = desc[desc_index].addr;
         packet += sizeof(virtio_net_hdr_t);
-
-        udp_parse_packet(packet);
 
         avail->ring[avail->idx % 128] = desc_index;
         avail->idx++;
 
         *(volatile uint16_t*)(uintptr_t)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
 
-        return;
+        return (ReceivedPacket){packet,len};
     }
 
-    select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
-    new_idx = used->idx;
-    if (new_idx != last_used_receive_idx) {
-        uint16_t used_ring_index = last_used_receive_idx % 128;
-        last_used_receive_idx = new_idx;
-        struct virtq_used_elem* e = &used->ring[used_ring_index];
-        uint32_t desc_index = e->id;
-        uint32_t len = e->len;
-        free_from_page((void*)desc[desc_index].addr, len);
-        kprintf("Freed memory");
-        return;
-    }
+    // select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
+    // new_idx = used->idx;
+    // if (new_idx != last_used_receive_idx) {
+    //     uint16_t used_ring_index = last_used_receive_idx % 128;
+    //     last_used_receive_idx = new_idx;
+    //     struct virtq_used_elem* e = &used->ring[used_ring_index];
+    //     uint32_t desc_index = e->id;
+    //     uint32_t len = e->len;
+    //     free_from_page((void*)desc[desc_index].addr, len);
+    //     kprintf("Freed memory");
+    //     return;
+    // }
 }
 
 void VirtioNetDriver::send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len){
