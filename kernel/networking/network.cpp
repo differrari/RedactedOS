@@ -18,7 +18,7 @@ bool network_bind_port(uint16_t port, uint16_t process){
     return dispatch->bind_port(port, process);
 }
 
-bool network_unbindbind_port(uint16_t port, uint16_t process){
+bool network_unbind_port(uint16_t port, uint16_t process){
     return dispatch->unbind_port(port, process);
 }
 

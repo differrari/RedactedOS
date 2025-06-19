@@ -4,7 +4,7 @@
 #include "console/kio.h"
 #include "process/scheduler.h"
 #include "udp.h"
-#include "syscalls/syscalls.h"
+#include "memory/page_allocator.h"
 #include "std/memfunctions.h"
 
 NetworkDispatch::NetworkDispatch(){
@@ -63,7 +63,7 @@ bool NetworkDispatch::read_packet(sizedptr *Packet, uint16_t process){
 
     sizedptr original = proc->packet_buffer.entries[proc->packet_buffer.read_index];
 
-    uintptr_t copy = malloc(original.size);
+    uintptr_t copy = (uintptr_t)allocate_in_page((void*)get_current_heap(), original.size, ALIGN_16B, get_current_privilege(), false);
     memcpy((void*)copy,(void*)original.ptr,original.size);
     *Packet = (sizedptr){copy, original.size};
     proc->packet_buffer.read_index = (proc->packet_buffer.read_index + 1) % PACKET_BUFFER_CAPACITY;

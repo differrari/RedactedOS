@@ -33,6 +33,11 @@ extern void draw_primitive_string(string *text, gpu_point *p, uint32_t scale, ui
 
 extern uint64_t get_time();
 
+extern bool bind_port(uint16_t port);
+extern bool unbind_port(uint16_t port);
+extern void send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len);
+extern bool read_packet(sizedptr *ptr);
+
 void printf(const char *fmt, ...);
 
 #ifdef __cplusplus
