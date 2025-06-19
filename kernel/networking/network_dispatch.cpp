@@ -1,8 +1,9 @@
 #include "network_dispatch.hpp"
 #include "drivers/virtio_net_pci/virtio_net_pci.hpp"
 #include "network_types.h"
-#include "udp.h"
 #include "console/kio.h"
+#include "process/scheduler.h"
+#include "udp.h"
 
 NetworkDispatch::NetworkDispatch(){
     ports = IndexMap<uint16_t>(UINT16_MAX);
@@ -36,7 +37,20 @@ void NetworkDispatch::handle_interrupt(){
         if (packet.packet_ptr){
             uint16_t port = udp_parse_packet(packet.packet_ptr);
             if (ports[port] != UINT16_MAX){
-                kprintf("RECEIVED DATA TO A BOUND PORT TO %i",ports[port]);
+                process_t *proc = get_proc_by_pid(ports[port]);
+                if (!proc)
+                    unbind_port(port, ports[port]);
+                else {
+                    packet_buffer_t* buf = &proc->packet_buffer;
+                    uint32_t next_index = (buf->write_index + 1) % PACKET_BUFFER_CAPACITY;
+
+                    buf->entries[buf->write_index] = packet;
+                    buf->write_index = next_index;
+
+                    if (buf->write_index == buf->read_index)
+                        buf->read_index = (buf->read_index + 1) % PACKET_BUFFER_CAPACITY;
+                    kprintf("RECEIVED DATA TO A BOUND PORT TO %i",ports[port]);
+                }
             }
         }
     }
