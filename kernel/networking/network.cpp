@@ -34,3 +34,11 @@ bool network_unbind_port_current(uint16_t port){
 void network_send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len){
     return dispatch->send_packet(protocol, port, destination, payload, payload_len);
 }
+
+bool network_read_packet(ReceivedPacket *packet, uint16_t process){
+    return dispatch->read_packet(packet, process);
+}
+
+bool network_read_packet_current(ReceivedPacket *packet){
+    return dispatch->read_packet(packet, get_current_proc_pid());
+}

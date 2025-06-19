@@ -4,6 +4,8 @@
 #include "console/kio.h"
 #include "process/scheduler.h"
 #include "udp.h"
+#include "syscalls/syscalls.h"
+#include "std/memfunctions.h"
 
 NetworkDispatch::NetworkDispatch(){
     ports = IndexMap<uint16_t>(UINT16_MAX);
@@ -49,11 +51,23 @@ void NetworkDispatch::handle_interrupt(){
 
                     if (buf->write_index == buf->read_index)
                         buf->read_index = (buf->read_index + 1) % PACKET_BUFFER_CAPACITY;
-                    kprintf("RECEIVED DATA TO A BOUND PORT TO %i",ports[port]);
                 }
             }
         }
     }
+}
+
+bool NetworkDispatch::read_packet(ReceivedPacket *Packet, uint16_t process){
+    process_t *proc = get_proc_by_pid(process);
+    if (proc->packet_buffer.read_index == proc->packet_buffer.write_index) return false;
+
+    ReceivedPacket original = proc->packet_buffer.entries[proc->packet_buffer.read_index];
+
+    uintptr_t copy = malloc(original.packet_size);
+    memcpy((void*)copy,(void*)original.packet_ptr,original.packet_size);
+    *Packet = (ReceivedPacket){copy, original.packet_size};
+    proc->packet_buffer.read_index = (proc->packet_buffer.read_index + 1) % PACKET_BUFFER_CAPACITY;
+    return true;
 }
 
 void NetworkDispatch::send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len){

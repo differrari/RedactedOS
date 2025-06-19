@@ -110,14 +110,14 @@ bool VirtioNetDriver::init(){
         return false;
     }
 
-    select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
+    // select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
 
-    kprintf("[VIRTIO_NET] Current MSI-X queue index %i",vnp_net_dev.common_cfg->queue_msix_vector);
-    vnp_net_dev.common_cfg->queue_msix_vector = 0;
-    if (vnp_net_dev.common_cfg->queue_msix_vector != 0){
-        kprintf("[VIRTIO_NET error] failed to set interrupts on transmit queue, network will be unable to cleanup transmitted packets");
-        return false;
-    }
+    // kprintf("[VIRTIO_NET] Current MSI-X queue index %i",vnp_net_dev.common_cfg->queue_msix_vector);
+    // vnp_net_dev.common_cfg->queue_msix_vector = 0;
+    // if (vnp_net_dev.common_cfg->queue_msix_vector != 0){
+    //     kprintf("[VIRTIO_NET error] failed to set interrupts on transmit queue, network will be unable to cleanup transmitted packets");
+    //     return false;
+    // }
 
     return true;
 }

@@ -1,7 +1,10 @@
 #include "net_proc.h"
 #include "../kprocess_loader.h"
 #include "networking/network.h"
+#include "network_types.h"
 #include "process/scheduler.h"
+#include "console/kio.h"
+#include "networking/udp.h"
 
 void test_network(){
     network_bind_port_current(8888);
@@ -15,6 +18,20 @@ void test_network(){
     char hw[5] = {'h','e','l','l','o'};
 
     network_send_packet(UDP, 8888, &dest, hw, payload_size);
+
+    ReceivedPacket pack;
+
+    while (!network_read_packet_current(&pack));
+
+    ReceivedPacket payload = udp_parse_packet_payload(pack.packet_ptr);
+
+    uint8_t *content = (uint8_t*)payload.packet_ptr;
+
+    kputf_raw("PAYLOAD: ");
+    for (size_t i = 0; i < payload.packet_size; i++){
+        kputf_raw("%c",content[i]);
+    }
+    kputf_raw("\n");
 
     stop_current_process();
     network_unbind_port_current(8888);
