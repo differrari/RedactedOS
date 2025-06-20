@@ -1,5 +1,6 @@
 #include "ipv4.h"
 #include "console/kio.h"
+#include "std/memfunctions.h"
 
 uintptr_t create_ipv4_packet(uintptr_t p, uint32_t payload_len, uint8_t protocol, uint32_t source_ip, uint32_t destination_ip){
     ipv4_hdr_t* ip = (ipv4_hdr_t*)p;
@@ -23,4 +24,9 @@ uintptr_t create_ipv4_packet(uintptr_t p, uint32_t payload_len, uint8_t protocol
 
 uint8_t ipv4_get_protocol(uintptr_t ptr){
     return ((ipv4_hdr_t*)ptr)->protocol;
+}
+
+void ipv4_populate_response(network_connection_ctx *ctx, eth_hdr_t *eth, ipv4_hdr_t* ipv4){
+    ctx->ip = __builtin_bswap32(ipv4->src_ip);
+    memcpy(ctx->mac, eth->src_mac, 6);
 }

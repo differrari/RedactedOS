@@ -7,6 +7,7 @@
 #include "net/eth.h"
 #include "net/ipv4.h"
 #include "memory/page_allocator.h"
+#include "protocols/icmp.h"
 #include "std/memfunctions.h"
 #include "protocols/arp.h"
 
@@ -41,6 +42,7 @@ void NetworkDispatch::handle_interrupt(){
         sizedptr packet = driver->handle_receive_packet();
         uintptr_t ptr = packet.ptr;
         if (ptr){
+            eth_hdr_t *eth = (eth_hdr_t*)ptr;
             uint16_t ethtype = eth_parse_packet_type(ptr);
             ptr += sizeof(eth_hdr_t);
             if (ethtype == 0x806){
@@ -54,6 +56,7 @@ void NetworkDispatch::handle_interrupt(){
                 }
                 //Should also look for responses to our own queries
             } else if (ethtype == 0x800){//IPV4
+                ipv4_hdr_t *ipv4 = (ipv4_hdr_t*)ptr;
                 uint8_t protocol = ipv4_get_protocol(ptr);
                 ptr += sizeof(ipv4_hdr_t);
                 if (protocol == 0x11){
@@ -73,6 +76,17 @@ void NetworkDispatch::handle_interrupt(){
                                 buf->read_index = (buf->read_index + 1) % PACKET_BUFFER_CAPACITY;
                         }
                     }
+                } else if (protocol == 0x1) {
+                    icmp_data data = (icmp_data){
+                        .response = true
+                    };
+                    network_connection_ctx conn;
+                    icmp_packet *icmp = (icmp_packet*)ptr;
+                    data.seq = icmp_get_sequence(icmp);
+                    data.id = icmp_get_id(icmp);
+                    icmp_copy_payload(&data.payload, icmp);
+                    ipv4_populate_response(&conn, eth, ipv4);
+                    send_packet(ICMP, 0, &conn, &data, sizeof(icmp_data));
                 }
             }
         }

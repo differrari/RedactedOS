@@ -3,6 +3,7 @@
 #include "net/udp.h"
 #include "../../protocols/dhcp.h"
 #include "../../protocols/arp.h"
+#include "../../protocols/icmp.h"
 #include "networking/network.h"
 #include "pci.h"
 #include "syscalls/syscalls.h"
@@ -186,6 +187,11 @@ void VirtioNetDriver::send_packet(NetProtocol protocol, uint16_t port, network_c
             size = sizeof(eth_hdr_t) + sizeof(arp_hdr_t) + sizeof(virtio_net_hdr_t);
             buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
             create_arp_packet(buf_ptr + sizeof(virtio_net_hdr_t), connection_context.mac, connection_context.ip, destination->mac, destination->ip, *(bool*)payload);
+            break;
+        case ICMP:
+            size = sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(virtio_net_hdr_t) + sizeof(icmp_packet);
+            buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
+            create_icmp_packet(buf_ptr + sizeof(virtio_net_hdr_t), connection_context, *destination, (icmp_data*)payload);
             break;
         default:
         break;

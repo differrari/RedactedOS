@@ -10,7 +10,8 @@ typedef enum NetProtocol {
     UDP,
     DHCP,
     ARP,
-    TCP
+    TCP,
+    ICMP
 } NetProtocol;
 
 typedef struct __attribute__((packed)) eth_hdr_t {
