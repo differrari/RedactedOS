@@ -183,7 +183,7 @@ void VirtioNetDriver::send_packet(NetProtocol protocol, uint16_t port, network_c
             create_dhcp_packet(buf_ptr + sizeof(virtio_net_hdr_t), (dhcp_request*)payload);
             break;
         case ARP:
-            size = sizeof(eth_hdr_t) + sizeof(arp_hdr_t);
+            size = sizeof(eth_hdr_t) + sizeof(arp_hdr_t) + sizeof(virtio_net_hdr_t);
             buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
             create_arp_packet(buf_ptr + sizeof(virtio_net_hdr_t), connection_context.mac, connection_context.ip, destination->mac, destination->ip, *(bool*)payload);
             break;
