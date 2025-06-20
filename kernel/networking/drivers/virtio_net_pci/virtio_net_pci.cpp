@@ -2,6 +2,7 @@
 #include "console/kio.h"
 #include "net/udp.h"
 #include "../../protocols/dhcp.h"
+#include "../../protocols/arp.h"
 #include "networking/network.h"
 #include "pci.h"
 #include "syscalls/syscalls.h"
@@ -178,8 +179,15 @@ void VirtioNetDriver::send_packet(NetProtocol protocol, uint16_t port, network_c
         break;
         case DHCP:
             size = DHCP_SIZE  + sizeof(virtio_net_hdr_t);
-            buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, DHCP_SIZE, ALIGN_64B, true, true);
+            buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
             create_dhcp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), (uint8_t*)payload);
+            break;
+        case ARP:
+            size = sizeof(eth_hdr_t) + sizeof(arp_hdr_t);
+            buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
+            create_arp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), connection_context.mac, connection_context.ip, destination->mac, destination->ip, *(bool*)payload);
+            break;
+        default:
         break;
     }
     virtio_send_1d(&vnp_net_dev, buf_ptr, size);

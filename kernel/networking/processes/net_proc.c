@@ -36,6 +36,7 @@ void test_network(){
 }
 
 void negotiate_dhcp(){
+    kprintf("Sending DHCP request");
     network_connection_ctx *ctx = network_get_context();
     bind_port(68);
     if (ctx->ip == 0){
@@ -46,7 +47,7 @@ void negotiate_dhcp(){
 
     while (!read_packet(&ptr));
 
-    kprintf("RECEIVED DHCP RESPONSE");
+    kprintf("Received DHCP response");
 
     dhcp_packet *payload = dhcp_parse_packet_payload(ptr.ptr);
 

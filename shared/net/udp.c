@@ -2,6 +2,7 @@
 #include "console/kio.h"
 #include "net/network_types.h"
 #include "syscalls/syscalls.h"
+#include "eth.h"
 
 uint16_t udp_checksum(
     uint32_t src_ip,
@@ -32,13 +33,7 @@ uint16_t udp_checksum(
 }
 
 void create_udp_packet(uint8_t* buf, network_connection_ctx source, network_connection_ctx destination, const uint8_t* payload, uint16_t payload_len) {
-    uintptr_t p = (uintptr_t)buf;
-
-    eth_hdr_t* eth = (eth_hdr_t*)p;
-    for (int i = 0; i < 6; i++) eth->dst_mac[i] = destination.mac[i];
-    for (int i = 0; i < 6; i++) eth->src_mac[i] = source.mac[i];
-    eth->ethertype = __builtin_bswap16(0x0800);
-    p += sizeof(eth_hdr_t);
+    uintptr_t p = create_eth_packet(buf, source.mac, destination.mac, 0x800);
 
     ipv4_hdr_t* ip = (ipv4_hdr_t*)p;
     ip->version_ihl = 0x45;
@@ -73,25 +68,16 @@ void create_udp_packet(uint8_t* buf, network_connection_ctx source, network_conn
 }
 
 uint16_t udp_parse_packet(uintptr_t ptr){
-    eth_hdr_t* eth = (eth_hdr_t*)ptr;
-    
-    ptr += sizeof(eth_hdr_t);
-    
-    if (__builtin_bswap16(eth->ethertype) == 0x800){
-        ipv4_hdr_t* ip = (ipv4_hdr_t*)ptr;
-        uint32_t srcip = __builtin_bswap32(ip->src_ip);
-        ptr += sizeof(ipv4_hdr_t);
-        if (ip->protocol == 0x11){
-            udp_hdr_t* udp = (udp_hdr_t*)ptr;
-            ptr += sizeof(udp_hdr_t);
-            uint16_t port = __builtin_bswap16(udp->dst_port);
-            return port;
-        } else {
-            // kprintf("[UDP packet] Not prepared to handle non-UDP packets %x",ip->protocol);
-        }
-    }
-    else {
-        // kprintf("[UDP packet] Not prepared to handle non-ipv4 packets %x",__builtin_bswap16(eth->ethertype));
+    ipv4_hdr_t* ip = (ipv4_hdr_t*)ptr;
+    uint32_t srcip = __builtin_bswap32(ip->src_ip);
+    ptr += sizeof(ipv4_hdr_t);
+    if (ip->protocol == 0x11){
+        udp_hdr_t* udp = (udp_hdr_t*)ptr;
+        ptr += sizeof(udp_hdr_t);
+        uint16_t port = __builtin_bswap16(udp->dst_port);
+        return port;
+    } else {
+        // kprintf("[UDP packet] Not prepared to handle non-UDP packets %x",ip->protocol);
     }
 
     return 0;

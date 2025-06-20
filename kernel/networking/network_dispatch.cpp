@@ -4,6 +4,7 @@
 #include "console/kio.h"
 #include "process/scheduler.h"
 #include "net/udp.h"
+#include "net/eth.h"
 #include "memory/page_allocator.h"
 #include "std/memfunctions.h"
 
@@ -37,20 +38,25 @@ void NetworkDispatch::handle_interrupt(){
     if (driver){
         sizedptr packet = driver->handle_receive_packet();
         if (packet.ptr){
-            uint16_t port = udp_parse_packet(packet.ptr);
-            if (ports[port] != UINT16_MAX){
-                process_t *proc = get_proc_by_pid(ports[port]);
-                if (!proc)
-                    unbind_port(port, ports[port]);
-                else {
-                    packet_buffer_t* buf = &proc->packet_buffer;
-                    uint32_t next_index = (buf->write_index + 1) % PACKET_BUFFER_CAPACITY;
+            uint16_t ethtype = eth_parse_packet_type(packet.ptr);
+            if (ethtype == 0x806){
+                kprintf("We've received an ARP packet, but it's too late to write a parser for it rn. gn");
+            } else if (ethtype == 0x800){//IPV4
+                uint16_t port = udp_parse_packet(packet.ptr + sizeof(eth_hdr_t));
+                if (ports[port] != UINT16_MAX){
+                    process_t *proc = get_proc_by_pid(ports[port]);
+                    if (!proc)
+                        unbind_port(port, ports[port]);
+                    else {
+                        packet_buffer_t* buf = &proc->packet_buffer;
+                        uint32_t next_index = (buf->write_index + 1) % PACKET_BUFFER_CAPACITY;
 
-                    buf->entries[buf->write_index] = packet;
-                    buf->write_index = next_index;
+                        buf->entries[buf->write_index] = packet;
+                        buf->write_index = next_index;
 
-                    if (buf->write_index == buf->read_index)
-                        buf->read_index = (buf->read_index + 1) % PACKET_BUFFER_CAPACITY;
+                        if (buf->write_index == buf->read_index)
+                            buf->read_index = (buf->read_index + 1) % PACKET_BUFFER_CAPACITY;
+                    }
                 }
             }
         }

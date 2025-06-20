@@ -8,7 +8,9 @@ extern "C" {
 
 typedef enum NetProtocol {
     UDP,
-    DHCP
+    DHCP,
+    ARP,
+    TCP
 } NetProtocol;
 
 typedef struct __attribute__((packed)) eth_hdr_t {
