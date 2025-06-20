@@ -59,7 +59,7 @@ void NetworkDispatch::handle_interrupt(){
                 ipv4_hdr_t *ipv4 = (ipv4_hdr_t*)ptr;
                 uint8_t protocol = ipv4_get_protocol(ptr);
                 ptr += sizeof(ipv4_hdr_t);
-                if (protocol == 0x11){
+                if (protocol == 0x11 || protocol == 0x06){
                     uint16_t port = udp_parse_packet(ptr);
                     if (ports[port] != UINT16_MAX){
                         process_t *proc = get_proc_by_pid(ports[port]);

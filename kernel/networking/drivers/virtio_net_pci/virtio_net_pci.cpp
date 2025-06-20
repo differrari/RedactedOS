@@ -1,6 +1,7 @@
 #include "virtio_net_pci.hpp"
 #include "console/kio.h"
 #include "net/udp.h"
+#include "net/tcp.h"
 #include "../../protocols/dhcp.h"
 #include "../../protocols/arp.h"
 #include "../../protocols/icmp.h"
@@ -193,8 +194,13 @@ void VirtioNetDriver::send_packet(NetProtocol protocol, uint16_t port, network_c
             buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
             create_icmp_packet(buf_ptr + sizeof(virtio_net_hdr_t), connection_context, *destination, (icmp_data*)payload);
             break;
-        default:
-        break;
+        case TCP:
+            tcp_data *data = (tcp_data*)payload;
+            size = sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(virtio_net_hdr_t) + sizeof(tcp_hdr_t) + data->options.size + data->payload.size;
+            buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
+            connection_context.port = port;
+            create_tcp_packet(buf_ptr + sizeof(virtio_net_hdr_t), connection_context, *destination, (sizedptr){(uintptr_t)data, sizeof(tcp_data)});
+            break;
     }
     virtio_send_1d(&vnp_net_dev, buf_ptr, size);
     

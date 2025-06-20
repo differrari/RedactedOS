@@ -10,30 +10,43 @@
 #include "networking/network.h"
 #include "syscalls/syscalls.h"
 #include "math/math.h"
+#include "../net_constants.h"
+#include "net/tcp.h"
 
 void test_network(){
 
     bind_port(8888);
     network_connection_ctx dest = (network_connection_ctx){
-        .ip = (192 << 24) | (168 << 16) | (1 << 8) | 255,
-        .mac = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
-        .port = 8080,
+        .ip = HOST_IP,
+        .mac = HOST_MAC,
+        .port = 80,
     };
 
-    size_t payload_size = 5;
-    char hw[5] = {'h','e','l','l','o'};
+    tcp_data data = (tcp_data){
+        .sequence = 0,
+        .ack = 0,
+        .flags = (1 << SYN_F),
+        .window = UINT16_MAX,
+        // sizedptr options;
+        // sizedptr payload;
+    };
 
-    send_packet(UDP, 8888, &dest, hw, payload_size);
+    // size_t payload_size = 5;
+    // char hw[5] = {'h','e','l','l','o'};
+
+    send_packet(TCP, 8888, &dest, &data, sizeof(tcp_data));
 
     sizedptr pack;
 
     while (!read_packet(&pack));
 
-    sizedptr payload = udp_parse_packet_payload(pack.ptr);
+    kprintf("We got a response from the server. I'll parse it after dinner");
 
-    uint8_t *content = (uint8_t*)payload.ptr;
+    // sizedptr payload = udp_parse_packet_payload(pack.ptr);
 
-    kprintf("PAYLOAD: %s",(uintptr_t)string_ca_max(content, payload.size).data);
+    // uint8_t *content = (uint8_t*)payload.ptr;
+
+    // kprintf("PAYLOAD: %s",(uintptr_t)string_ca_max(content, payload.size).data);
 
     unbind_port(8888);
 }
@@ -97,6 +110,7 @@ uint32_t negotiate_dhcp(){
     //Subnet mask
     //Router (3)
     //DNS (8 bytes) (6)
+    //TODO: Make subsequent DHCP requests (renewals and requests) directed to the server
     ctx->ip = local_ip;
 
     test_network();
