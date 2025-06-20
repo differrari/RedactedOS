@@ -1,5 +1,6 @@
 #include "ipv4.h"
 #include "console/kio.h"
+#include "network_types.h"
 #include "std/memfunctions.h"
 
 uintptr_t create_ipv4_packet(uintptr_t p, uint32_t payload_len, uint8_t protocol, uint32_t source_ip, uint32_t destination_ip){
@@ -11,14 +12,9 @@ uintptr_t create_ipv4_packet(uintptr_t p, uint32_t payload_len, uint8_t protocol
     ip->flags_frag_offset = __builtin_bswap16(0x4000);
     ip->ttl = 64;
     ip->protocol = protocol;
-    ip->header_checksum = 0;
     ip->src_ip = __builtin_bswap32(source_ip);
     ip->dst_ip = __builtin_bswap32(destination_ip);
-    uint16_t* ip_words = (uint16_t*)ip;
-    uint32_t sum = 0;
-    for (int i = 0; i < 10; i++) sum += ip_words[i];
-    while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
-    ip->header_checksum = ~sum;
+    ip->header_checksum = checksum16((uint16_t*)ip, 10);
     return p + sizeof(ipv4_hdr_t);
 }
 

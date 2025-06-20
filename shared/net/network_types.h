@@ -14,6 +14,13 @@ typedef enum NetProtocol {
     ICMP
 } NetProtocol;
 
+static uint16_t checksum16(uint16_t *data, size_t len) {
+    uint32_t sum = 0;
+    for (int i = 0; i < len; i++) sum += data[i];
+    while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+    return ~sum;
+}
+
 typedef struct __attribute__((packed)) eth_hdr_t {
     uint8_t dst_mac[6];
     uint8_t src_mac[6];

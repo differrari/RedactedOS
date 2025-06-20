@@ -4,25 +4,6 @@
 #include "net/ipv4.h"
 #include "std/memfunctions.h"
 
-uint16_t icmp_checksum(uint16_t *data, size_t len) {
-    uint16_t sum = 0;
-
-    while (len > 1) {
-        sum += *data++;
-        len -= 2;
-    }
-
-    if (len == 1) {
-        sum += *(const uint8_t *)data;
-    }
-
-    while (sum >> 16) {
-        sum = (sum & 0xFFFF) + (sum >> 16);
-    }
-
-    return ~sum;
-}
-
 void create_icmp_packet(uintptr_t p, network_connection_ctx source, network_connection_ctx destination, icmp_data* data){
     p = create_eth_packet(p, source.mac, destination.mac, 0x800);
 
@@ -30,11 +11,11 @@ void create_icmp_packet(uintptr_t p, network_connection_ctx source, network_conn
 
     icmp_packet *packet = (icmp_packet*)p;
 
-    packet->type = data->response ? 0 : 8;
+    packet->type = __builtin_bswap16(data->response ? 0 : 8);
     packet->seq = __builtin_bswap16(data->seq);
     packet->id = __builtin_bswap16(data->id);
     memcpy(packet->payload, data->payload, 56);
-    packet->checksum = icmp_checksum((uint16_t*)packet, sizeof(icmp_packet));
+    packet->checksum = checksum16((uint16_t*)packet, sizeof(icmp_packet));
 }
 
 uint16_t icmp_get_sequence(icmp_packet *packet){
