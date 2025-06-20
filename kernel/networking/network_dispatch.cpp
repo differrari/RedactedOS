@@ -41,9 +41,15 @@ void NetworkDispatch::handle_interrupt(){
         if (packet.ptr){
             uint16_t ethtype = eth_parse_packet_type(packet.ptr);
             if (ethtype == 0x806){
-                if (arp_should_handle(packet.ptr + sizeof(eth_hdr_t), get_context()->ip))
-                    kprintf("We've received an ARP packet, but it's too late to write a parser for it rn. gn");
-                    //create_arp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), connection_context.mac, connection_context.ip, destination->mac, destination->ip, *(bool*)payload);
+                arp_hdr_t *arp = (arp_hdr_t*)(packet.ptr + sizeof(eth_hdr_t));
+                if (arp_should_handle(arp, get_context()->ip)){
+                    kprintf("Received an ARP request");
+                    bool req = 0;
+                    network_connection_ctx conn;
+                    arp_populate_response(&conn, arp);
+                    send_packet(ARP, 0, &conn, &req, 1);
+                }
+                //Should also look for responses to our own queries
             } else if (ethtype == 0x800){//IPV4
                 uint16_t port = udp_parse_packet(packet.ptr + sizeof(eth_hdr_t));
                 if (ports[port] != UINT16_MAX){
