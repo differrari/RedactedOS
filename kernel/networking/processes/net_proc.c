@@ -1,10 +1,10 @@
 #include "net_proc.h"
-#include "../kprocess_loader.h"
+#include "kernel_processes/kprocess_loader.h"
 #include "net/network_types.h"
 #include "process/scheduler.h"
 #include "console/kio.h"
 #include "net/udp.h"
-#include "net/dhcp.h"
+#include "../protocols/dhcp.h"
 #include "networking/network.h"
 #include "syscalls/syscalls.h"
 
@@ -63,7 +63,7 @@ void negotiate_dhcp(){
         ctx->ip = local_ip;
     }
 
-    // unbind_port(68); Do we need to keep this open?
+    unbind_port(68);
     test_network();
     stop_current_process();
 }

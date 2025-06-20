@@ -5,8 +5,8 @@ extern "C" {
 #endif
 
 #include "types.h"
-#include "network_types.h"
-#include "udp.h"
+#include "net/network_types.h"
+#include "net/udp.h"
 
 typedef struct __attribute__((packed)) dhcp_packet {
     uint8_t op;

@@ -14,7 +14,7 @@
 #include "input/xhci_bridge.h"
 #include "input/xhci.h"
 #include "kernel_processes/monitor/monitor_processes.h"
-#include "kernel_processes/net/net_proc.h"
+#include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
 

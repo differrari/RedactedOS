@@ -1,7 +1,7 @@
 #include "virtio_net_pci.hpp"
 #include "console/kio.h"
 #include "net/udp.h"
-#include "net/dhcp.h"
+#include "../../protocols/dhcp.h"
 #include "networking/network.h"
 #include "pci.h"
 #include "syscalls/syscalls.h"
