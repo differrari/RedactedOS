@@ -1,7 +1,7 @@
 #include "dhcp.h"
 #include "std/memfunctions.h"
 
-void create_dhcp_packet(uint8_t* buf, dhcp_request *payload){
+void create_dhcp_packet(uintptr_t p, dhcp_request *payload){
     network_connection_ctx source = (network_connection_ctx){
         .port = 68,
     };
@@ -50,7 +50,7 @@ void create_dhcp_packet(uint8_t* buf, dhcp_request *payload){
         packet.options[7] = 255; // END
     }
     
-    create_udp_packet(buf, source, destination, (uint8_t*)&packet, sizeof(dhcp_packet));
+    create_udp_packet(p, source, destination, (uint8_t*)&packet, sizeof(dhcp_packet));
 }
 
 dhcp_packet* dhcp_parse_packet_payload(uintptr_t ptr){

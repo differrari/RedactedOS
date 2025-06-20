@@ -175,17 +175,17 @@ void VirtioNetDriver::send_packet(NetProtocol protocol, uint16_t port, network_c
             size = calc_udp_size(payload_len) + sizeof(virtio_net_hdr_t);
             buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
             connection_context.port = port;
-            create_udp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), connection_context, *destination, (uint8_t*)payload, payload_len);
+            create_udp_packet(buf_ptr + sizeof(virtio_net_hdr_t), connection_context, *destination, (uint8_t*)payload, payload_len);
         break;
         case DHCP:
             size = DHCP_SIZE  + sizeof(virtio_net_hdr_t);
             buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
-            create_dhcp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), (dhcp_request*)payload);
+            create_dhcp_packet(buf_ptr + sizeof(virtio_net_hdr_t), (dhcp_request*)payload);
             break;
         case ARP:
             size = sizeof(eth_hdr_t) + sizeof(arp_hdr_t);
             buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
-            create_arp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), connection_context.mac, connection_context.ip, destination->mac, destination->ip, *(bool*)payload);
+            create_arp_packet(buf_ptr + sizeof(virtio_net_hdr_t), connection_context.mac, connection_context.ip, destination->mac, destination->ip, *(bool*)payload);
             break;
         default:
         break;

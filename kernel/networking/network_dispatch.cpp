@@ -5,6 +5,7 @@
 #include "process/scheduler.h"
 #include "net/udp.h"
 #include "net/eth.h"
+#include "net/ipv4.h"
 #include "memory/page_allocator.h"
 #include "std/memfunctions.h"
 #include "protocols/arp.h"
@@ -38,10 +39,12 @@ bool NetworkDispatch::unbind_port(uint16_t port, uint16_t process){
 void NetworkDispatch::handle_interrupt(){
     if (driver){
         sizedptr packet = driver->handle_receive_packet();
-        if (packet.ptr){
-            uint16_t ethtype = eth_parse_packet_type(packet.ptr);
+        uintptr_t ptr = packet.ptr;
+        if (ptr){
+            uint16_t ethtype = eth_parse_packet_type(ptr);
+            ptr += sizeof(eth_hdr_t);
             if (ethtype == 0x806){
-                arp_hdr_t *arp = (arp_hdr_t*)(packet.ptr + sizeof(eth_hdr_t));
+                arp_hdr_t *arp = (arp_hdr_t*)ptr;
                 if (arp_should_handle(arp, get_context()->ip)){
                     kprintf("Received an ARP request");
                     bool req = 0;
@@ -51,20 +54,24 @@ void NetworkDispatch::handle_interrupt(){
                 }
                 //Should also look for responses to our own queries
             } else if (ethtype == 0x800){//IPV4
-                uint16_t port = udp_parse_packet(packet.ptr + sizeof(eth_hdr_t));
-                if (ports[port] != UINT16_MAX){
-                    process_t *proc = get_proc_by_pid(ports[port]);
-                    if (!proc)
-                        unbind_port(port, ports[port]);
-                    else {
-                        packet_buffer_t* buf = &proc->packet_buffer;
-                        uint32_t next_index = (buf->write_index + 1) % PACKET_BUFFER_CAPACITY;
+                uint8_t protocol = ipv4_get_protocol(ptr);
+                ptr += sizeof(ipv4_hdr_t);
+                if (protocol == 0x11){
+                    uint16_t port = udp_parse_packet(ptr);
+                    if (ports[port] != UINT16_MAX){
+                        process_t *proc = get_proc_by_pid(ports[port]);
+                        if (!proc)
+                            unbind_port(port, ports[port]);
+                        else {
+                            packet_buffer_t* buf = &proc->packet_buffer;
+                            uint32_t next_index = (buf->write_index + 1) % PACKET_BUFFER_CAPACITY;
 
-                        buf->entries[buf->write_index] = packet;
-                        buf->write_index = next_index;
+                            buf->entries[buf->write_index] = packet;
+                            buf->write_index = next_index;
 
-                        if (buf->write_index == buf->read_index)
-                            buf->read_index = (buf->read_index + 1) % PACKET_BUFFER_CAPACITY;
+                            if (buf->write_index == buf->read_index)
+                                buf->read_index = (buf->read_index + 1) % PACKET_BUFFER_CAPACITY;
+                        }
                     }
                 }
             }

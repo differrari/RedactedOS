@@ -1,9 +1,7 @@
 #include "arp.h"
 #include "std/memfunctions.h"
 
-void create_arp_packet(uint8_t* buf, uint8_t* src_mac, uint32_t src_ip, uint8_t* dst_mac, uint32_t dst_ip, bool is_request){
-    uintptr_t p = (uintptr_t)buf;
-
+void create_arp_packet(uintptr_t p, uint8_t* src_mac, uint32_t src_ip, uint8_t* dst_mac, uint32_t dst_ip, bool is_request){
     eth_hdr_t* eth = (eth_hdr_t*)p;
     for (int i = 0; i < 6; i++) eth->dst_mac[i] = is_request ? 0xFF : dst_mac[i];
     memcpy(eth->src_mac, src_mac, 6);

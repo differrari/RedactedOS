@@ -34,7 +34,7 @@ typedef struct dhcp_request {
 
 #define DHCP_SIZE sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(udp_hdr_t) + sizeof(dhcp_packet)
 
-void create_dhcp_packet(uint8_t* buf, dhcp_request *data);
+void create_dhcp_packet(uintptr_t p, dhcp_request *data);
 dhcp_packet* dhcp_parse_packet_payload(uintptr_t ptr);
 uint16_t dhcp_parse_option(dhcp_packet *pack, uint16_t option);
 
