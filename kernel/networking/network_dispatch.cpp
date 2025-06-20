@@ -7,6 +7,7 @@
 #include "net/eth.h"
 #include "memory/page_allocator.h"
 #include "std/memfunctions.h"
+#include "protocols/arp.h"
 
 NetworkDispatch::NetworkDispatch(){
     ports = IndexMap<uint16_t>(UINT16_MAX);
@@ -40,7 +41,9 @@ void NetworkDispatch::handle_interrupt(){
         if (packet.ptr){
             uint16_t ethtype = eth_parse_packet_type(packet.ptr);
             if (ethtype == 0x806){
-                kprintf("We've received an ARP packet, but it's too late to write a parser for it rn. gn");
+                if (arp_should_handle(packet.ptr + sizeof(eth_hdr_t), get_context()->ip))
+                    kprintf("We've received an ARP packet, but it's too late to write a parser for it rn. gn");
+                    //create_arp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), connection_context.mac, connection_context.ip, destination->mac, destination->ip, *(bool*)payload);
             } else if (ethtype == 0x800){//IPV4
                 uint16_t port = udp_parse_packet(packet.ptr + sizeof(eth_hdr_t));
                 if (ports[port] != UINT16_MAX){

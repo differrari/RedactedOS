@@ -26,10 +26,17 @@ typedef struct __attribute__((packed)) dhcp_packet {
     uint8_t options[312];
 } dhcp_packet;
 
+typedef struct dhcp_request {
+    uint8_t mac[6];
+    uint32_t server_ip;
+    uint32_t offered_ip;
+} dhcp_request;
+
 #define DHCP_SIZE sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(udp_hdr_t) + sizeof(dhcp_packet)
 
-void create_dhcp_packet(uint8_t* buf, uint8_t mac[6]);
+void create_dhcp_packet(uint8_t* buf, dhcp_request *data);
 dhcp_packet* dhcp_parse_packet_payload(uintptr_t ptr);
+uint16_t dhcp_parse_option(dhcp_packet *pack, uint16_t option);
 
 #ifdef __cplusplus
 }

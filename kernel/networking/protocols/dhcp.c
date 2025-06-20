@@ -1,7 +1,7 @@
 #include "dhcp.h"
 #include "std/memfunctions.h"
 
-void create_dhcp_packet(uint8_t* buf, uint8_t mac[6]){
+void create_dhcp_packet(uint8_t* buf, dhcp_request *payload){
     network_connection_ctx source = (network_connection_ctx){
         .port = 68,
     };
@@ -23,8 +23,8 @@ void create_dhcp_packet(uint8_t* buf, uint8_t mac[6]){
         .siaddr = 0,
         .giaddr = 0,
     };
-    memcpy(packet.chaddr, mac, 6);
-    memcpy(source.mac, mac, 6);
+    memcpy(packet.chaddr, payload->mac, 6);
+    memcpy(source.mac, payload->mac, 6);
 
     packet.options[0] = 0x63; // magic
     packet.options[1] = 0x82;
@@ -33,13 +33,34 @@ void create_dhcp_packet(uint8_t* buf, uint8_t mac[6]){
 
     packet.options[4] = 53; // DHCP type
     packet.options[5] = 1; // length
-    packet.options[6] = 1; // DHCPDISCOVER
+    if (payload->server_ip != 0 && payload->offered_ip != 0){
+        packet.options[6] = 3; // DHCPREQUEST
 
-    packet.options[7] = 255; // END
-    create_udp_packet(buf,  source, destination, (uint8_t*)&packet, sizeof(dhcp_packet));
+        packet.options[7] = 50;
+        packet.options[8] = 4;
+        memcpy(&packet.options[9], &payload->offered_ip, 4);
+
+        packet.options[13] = 54;
+        packet.options[14] = 4;
+        memcpy(&packet.options[15], &payload->server_ip, 4);
+        packet.options[19] = 255;
+    } else {
+        packet.options[6] = 1; // DHCPDISCOVER
+
+        packet.options[7] = 255; // END
+    }
+    
+    create_udp_packet(buf, source, destination, (uint8_t*)&packet, sizeof(dhcp_packet));
 }
 
 dhcp_packet* dhcp_parse_packet_payload(uintptr_t ptr){
     sizedptr sptr = udp_parse_packet_payload(ptr);
     return (dhcp_packet*)sptr.ptr;
+}
+
+uint16_t dhcp_parse_option(dhcp_packet *pack, uint16_t option){
+    for (int i = 0; i < 312; i++)
+        if (pack->options[i] == option) return i;
+
+    return 0;
 }

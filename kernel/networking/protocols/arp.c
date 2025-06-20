@@ -22,3 +22,9 @@ void create_arp_packet(uint8_t* buf, uint8_t* src_mac, uint32_t src_ip, uint8_t*
     memcpy(arp->target_mac, dst_mac, 6);
     arp->target_ip = dst_ip;
 }
+
+bool arp_should_handle(uintptr_t ptr, uint32_t ip){
+    arp_hdr_t* arp = (arp_hdr_t*)ptr;
+
+    return arp->target_ip == ip;
+}

@@ -20,6 +20,7 @@ typedef struct __attribute__((packed)) arp_hdr_t {
 } arp_hdr_t;
 
 void create_arp_packet(uint8_t* buf, uint8_t* src_mac, uint32_t src_ip, uint8_t* dst_mac, uint32_t dst_ip, bool is_request);
+bool arp_should_handle(uintptr_t ptr, uint32_t ip);
 
 #ifdef __cplusplus
 }

@@ -180,7 +180,7 @@ void VirtioNetDriver::send_packet(NetProtocol protocol, uint16_t port, network_c
         case DHCP:
             size = DHCP_SIZE  + sizeof(virtio_net_hdr_t);
             buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
-            create_dhcp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), (uint8_t*)payload);
+            create_dhcp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), (dhcp_request*)payload);
             break;
         case ARP:
             size = sizeof(eth_hdr_t) + sizeof(arp_hdr_t);

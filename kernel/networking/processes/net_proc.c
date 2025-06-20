@@ -5,6 +5,8 @@
 #include "console/kio.h"
 #include "net/udp.h"
 #include "../protocols/dhcp.h"
+#include "../protocols/dhcp.h"
+#include "std/memfunctions.h"
 #include "networking/network.h"
 #include "syscalls/syscalls.h"
 
@@ -39,9 +41,15 @@ void negotiate_dhcp(){
     kprintf("Sending DHCP request");
     network_connection_ctx *ctx = network_get_context();
     bind_port(68);
-    if (ctx->ip == 0){
-        send_packet(DHCP, 53, ctx, ctx->mac, 6);
-    }
+    if (ctx->ip != 0)
+        return;
+    dhcp_request request = (dhcp_request){
+        .mac = 0,
+        .offered_ip = 0,
+        .server_ip = 0,
+    };
+    memcpy(request.mac, ctx->mac, 6);
+    send_packet(DHCP, 53, ctx, &request, sizeof(dhcp_request));
 
     sizedptr ptr;
 
@@ -54,13 +62,37 @@ void negotiate_dhcp(){
     if (payload){
         uint32_t local_ip = __builtin_bswap32(payload->yiaddr);
         kprintf("Received local IP %i.%i.%i.%i",(local_ip >> 24) & 0xFF,(local_ip >> 16) & 0xFF,(local_ip >> 8) & 0xFF,(local_ip >> 0) & 0xFF);
+        request.offered_ip = payload->yiaddr;
+
+        uint16_t opt_index = dhcp_parse_option(payload, 53);
+        if (payload->options[opt_index + 2] != 2){
+            negotiate_dhcp();
+            return;
+        }
+
+        uint16_t serv_index = dhcp_parse_option(payload, 54);
+        memcpy((void*)&request.server_ip, (void*)(payload->options + serv_index + 2), payload->options[serv_index+1]);
+
+        send_packet(DHCP, 53, ctx, &request, sizeof(dhcp_request));
+
+        while (!read_packet(&ptr));
+
+        payload = dhcp_parse_packet_payload(ptr.ptr);
+        opt_index = dhcp_parse_option(payload, 53);
+        if (payload->options[opt_index + 2] != 5){
+            kprintf("Did not receive acknowledge for DHCP");
+            negotiate_dhcp();
+            return;
+        }
+
+        kprintf("DHCP negotiation finished");
 
         //We can parse options for
-        //Lease time
+        //Lease time (51)
         //DHCP Server identifier
         //Subnet mask
-        //Router
-        //DNS (8 bytes)
+        //Router (3)
+        //DNS (8 bytes) (6)
         ctx->ip = local_ip;
     }
 
