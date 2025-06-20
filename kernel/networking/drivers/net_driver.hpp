@@ -17,4 +17,6 @@ public:
     virtual void send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len) = 0;
 
     virtual ~NetDriver() = default;
+
+    network_connection_ctx connection_context;
 };

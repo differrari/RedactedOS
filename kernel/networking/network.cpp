@@ -42,3 +42,7 @@ bool network_read_packet(sizedptr *packet, uint16_t process){
 bool network_read_packet_current(sizedptr *packet){
     return dispatch->read_packet(packet, get_current_proc_pid());
 }
+
+network_connection_ctx* network_get_context(){
+    return dispatch->get_context();
+}

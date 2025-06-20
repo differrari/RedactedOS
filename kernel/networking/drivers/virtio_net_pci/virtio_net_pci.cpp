@@ -1,6 +1,7 @@
 #include "virtio_net_pci.hpp"
 #include "console/kio.h"
 #include "net/udp.h"
+#include "net/dhcp.h"
 #include "networking/network.h"
 #include "pci.h"
 #include "syscalls/syscalls.h"
@@ -88,7 +89,7 @@ bool VirtioNetDriver::init(){
 
     connection_context = (network_connection_ctx){
         .port = 0,
-        .ip = (uint32_t)((192 << 24) | (168 << 16) | (1 << 8) | 131),
+        .ip = 0,
         .mac = {net_config->mac[0],net_config->mac[1],net_config->mac[2],net_config->mac[3],net_config->mac[4],net_config->mac[5]},
     };
     
@@ -166,11 +167,23 @@ sizedptr VirtioNetDriver::handle_receive_packet(){
 
 void VirtioNetDriver::send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len){
     select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
-    size_t size = calc_udp_size(payload_len) + sizeof(virtio_net_hdr_t);
-    uintptr_t buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
-    connection_context.port = port;
-    create_udp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), connection_context, *destination, (uint8_t*)payload, payload_len);
+    size_t size;
+    uintptr_t buf_ptr;
+    switch (protocol) {
+        case UDP:
+            size = calc_udp_size(payload_len) + sizeof(virtio_net_hdr_t);
+            buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
+            connection_context.port = port;
+            create_udp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), connection_context, *destination, (uint8_t*)payload, payload_len);
+        break;
+        case DHCP:
+            size = DHCP_SIZE  + sizeof(virtio_net_hdr_t);
+            buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, DHCP_SIZE, ALIGN_64B, true, true);
+            create_dhcp_packet((uint8_t*)(buf_ptr + sizeof(virtio_net_hdr_t)), (uint8_t*)payload);
+        break;
+    }
     virtio_send_1d(&vnp_net_dev, buf_ptr, size);
+    
     kprintf("Queued new packet");
 }
 

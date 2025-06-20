@@ -15,6 +15,8 @@ public:
     void send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len);
     bool read_packet(sizedptr *Packet, uint16_t process);
 
+    network_connection_ctx* get_context();
+
 private:
     IndexMap<uint16_t> ports;
     NetDriver *driver;

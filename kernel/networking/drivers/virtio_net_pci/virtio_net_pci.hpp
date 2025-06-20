@@ -22,5 +22,4 @@ private:
     bool verbose = false;
     uint16_t last_used_receive_idx = 0;
     virtio_device vnp_net_dev;
-    network_connection_ctx connection_context;
 };

@@ -21,6 +21,8 @@ bool network_unbind_port_current(uint16_t port);
 bool network_read_packet(sizedptr *packet, uint16_t process);
 bool network_read_packet_current(sizedptr *packet);
 
+network_connection_ctx* network_get_context();
+
 #ifdef __cplusplus
 }
 #endif

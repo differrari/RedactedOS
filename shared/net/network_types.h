@@ -7,7 +7,8 @@ extern "C" {
 #include "types.h"
 
 typedef enum NetProtocol {
-    UDP
+    UDP,
+    DHCP
 } NetProtocol;
 
 typedef struct __attribute__((packed)) eth_hdr_t {

@@ -75,3 +75,7 @@ void NetworkDispatch::send_packet(NetProtocol protocol, uint16_t port, network_c
     if (driver)
         driver->send_packet(protocol, port, destination, payload, payload_len);
 }
+
+network_connection_ctx* NetworkDispatch::get_context(){
+    return &driver->connection_context;
+}
