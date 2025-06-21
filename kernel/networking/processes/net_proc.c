@@ -13,62 +13,139 @@
 #include "../net_constants.h"
 #include "net/tcp.h"
 
-tcp_hdr_t* tcp_handskake(network_connection_ctx *dest, uint16_t port, tcp_data *data, uint8_t retry){
-    if (retry == 5){
-        kprintf("Exceeded max number of retries");
-        return 0x0;
-    } 
+#define TCP_RESET 2
+#define TCP_RETRY 1
+#define TCP_OK 0
 
-    send_packet(TCP, port, dest, data, sizeof(tcp_data));
+void tcp_send(uint16_t port, network_connection_ctx *destination, tcp_data* data){
+    send_packet(TCP, port, destination, data, sizeof(tcp_data));
+    data->expected_ack = __builtin_bswap32(data->sequence) + 1;
+    if ((data->flags & ~(1 << ACK_F)) != 0)
+        data->sequence += __builtin_bswap32(max(1,data->payload.size));
+    // kprintf("Next seq %i", __builtin_bswap32(data->sequence));
+}
+
+void tcp_reset(uint16_t port, network_connection_ctx *destination, tcp_data* data){
+    data->flags = (1 << RST_F);
+    tcp_send(port, destination, data);
+}
+
+bool expect_response(sizedptr *pack){
+    uint16_t timeout = 10;
+    while (!read_packet(pack)){
+        sleep(1000);
+        if (timeout-- == 0){
+            kprintf("Response timeout");
+            return false;
+        }
+    }
+    return true;
+}
+
+uint8_t tcp_check_response(tcp_data *data){
 
     sizedptr pack;
 
-    uint16_t timeout = 10;
-    while (!read_packet(&pack)){
-        sleep(1000);
-        if (timeout-- == 0){
-            return tcp_handskake(dest, port, data, retry+1);
-        }
+    if (!expect_response(&pack) || !pack.ptr){
+        kprintf("Response timeout. Retrying");
+        return TCP_RETRY;
     }
 
     sizedptr payload = tcp_parse_packet_payload(pack.ptr);
-
     if (!payload.ptr) {
         kprintf("Wrong payload pointer. Retrying");
-        sleep(1000);
-        return tcp_handskake(dest, port, data, retry+1);
+        return TCP_RETRY;
     }
 
     tcp_hdr_t *response = (tcp_hdr_t*)payload.ptr;
-    if ((response->data_offset_reserved >> 4) * 4 != payload.size){
-        kprintf("Wrong payload size %i vs %i. Retrying", (response->data_offset_reserved >> 4) * 4, payload.size);
-        sleep(1000);
-        return tcp_handskake(dest, port, data, retry+1);
-    }
-
-    if (response->flags != (data->flags | (1 << ACK_F))){
-        kprintf("Wrong flags %b vs %b. Retrying",response->flags, data->flags | (1 << ACK_F));
-        sleep(1000);
-        return tcp_handskake(dest, port, data, retry+1);
-    }
 
     uint32_t ack = __builtin_bswap32(response->ack);
     uint32_t seq = __builtin_bswap32(response->sequence);
-    if (ack != data->sequence + 1){
-        kprintf("Wrong ack %i vs %i. Retrying", response->ack, data->sequence + 1);
-        sleep(1000);
-        return tcp_handskake(dest, port, data, retry+1);
+    if (ack != data->expected_ack){
+        kprintf("Wrong ack %i vs %i. Resetting", ack, data->sequence + 1);
+        return TCP_RESET;
     }
 
-    data->sequence = __builtin_bswap32(ack);
-    data->ack = __builtin_bswap32(seq+1);
+    if (response->flags != (data->flags | (1 << ACK_F))){
+        kprintf("Wrong flags %b vs %b. Resetting",response->flags, data->flags | (1 << ACK_F));
+        return TCP_RESET;
+    }
+
+    data->ack = __builtin_bswap32(seq+max(1,(payload.size - sizeof(tcp_hdr_t) - ((response->data_offset_reserved >> 4) * 4))));
+
+    return TCP_OK;
+}
+
+bool tcp_handskake(network_connection_ctx *dest, uint16_t port, tcp_data *data, uint8_t retry){
+    if (retry == 5){
+        kprintf("Exceeded max number of retries");
+        return false;
+    } 
+    
+    data->sequence = 0;
+    data->ack = 0;
+    data->flags = (1 << SYN_F);
+
+    tcp_send(port, dest, data);
+    
+    uint8_t resp = tcp_check_response(data);
+    if (resp == TCP_RETRY){
+        sleep(1000);
+        return tcp_handskake(dest, port, data, retry+1);
+    } else if (resp == TCP_RESET){
+        tcp_reset(port, dest, data);
+        return false;
+    }
+
     data->flags = (1 << ACK_F);
 
-    send_packet(TCP, port, dest, data, sizeof(tcp_data));
+    tcp_send(port, dest, data);
 
-    kprintf("Acknowledgement of acknowledgemnt sent. Server seq = %i",seq);
+    kprintf("Acknowledgement of acknowledgemnt sent");
 
-    return response;
+    return true;
+}
+
+bool tcp_close(network_connection_ctx *dest, uint16_t port, tcp_data *data, uint8_t retry, uint32_t orig_seq, uint32_t orig_ack){
+    if (retry == 5){
+        kprintf("Exceeded max number of retries");
+        return false;
+    } 
+
+    data->sequence = orig_seq;
+    data->ack = orig_ack;
+    data->flags = (1 << FIN_F) | (1 << ACK_F);
+
+    tcp_send(port, dest, data);
+
+    data->flags = (1 << ACK_F);
+    uint8_t resp = tcp_check_response(data);
+    if (resp == TCP_RETRY){
+        sleep(1000);
+        return tcp_handskake(dest, port, data, retry+1);
+    } else if (resp == TCP_RESET){
+        tcp_reset(port, dest, data);
+        return false;
+    }
+
+    data->flags = (1 << FIN_F);
+
+    resp = tcp_check_response(data);
+    if (resp == TCP_RETRY){
+        sleep(1000);
+        return tcp_handskake(dest, port, data, retry+1);
+    } else if (resp == TCP_RESET){
+        tcp_reset(port, dest, data);
+        return true;
+    }
+
+    data->flags = (1 << ACK_F);
+
+    tcp_send(port, dest, data);
+
+    kprintf("Connection closed");
+
+    return true;
 }
 
 void test_network(){
@@ -80,14 +157,18 @@ void test_network(){
     };
 
     tcp_data data = (tcp_data){
-        .sequence = 0,
-        .ack = 0,
-        .flags = (1 << SYN_F),
         .window = UINT16_MAX,
     };
 
     if (!tcp_handskake(&dest, 8888, &data, 0)){
         kprintf("TCP Error");
+        return;
+    }
+
+    kprintf("Handshake completed");
+
+    if (!tcp_close(&dest, 8888, &data, 0, data.sequence, data.ack)){
+        kprintf("TCP Connnection not closed");
         return;
     }
 

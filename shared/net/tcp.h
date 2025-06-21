@@ -36,6 +36,7 @@ typedef struct tcp_data {
     uint16_t window;
     sizedptr options;
     sizedptr payload;
+    uint32_t expected_ack;
 } tcp_data;
 
 void create_tcp_packet(uintptr_t p, network_connection_ctx source, network_connection_ctx destination, sizedptr payload);
