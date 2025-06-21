@@ -45,12 +45,7 @@ sizedptr udp_parse_packet_payload(uintptr_t ptr){
             ptr += sizeof(udp_hdr_t);
             uint16_t payload_len = __builtin_bswap16(udp->length) - sizeof(udp_hdr_t);
             return (sizedptr){ptr,payload_len};
-        } else {
-            // kprintf("[UDP packet] Not prepared to handle non-UDP packets %x",ip->protocol);
         }
-    }
-    else {
-        // kprintf("[UDP packet] Not prepared to handle non-ipv4 packets %x",__builtin_bswap16(eth->ethertype));
     }
 
     return (sizedptr){0,0};

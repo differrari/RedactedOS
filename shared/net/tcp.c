@@ -38,3 +38,21 @@ void create_tcp_packet(uintptr_t p, network_connection_ctx source, network_conne
 
     tcp->checksum = __builtin_bswap16(checksum16_pipv4(source.ip,destination.ip,0x06,(uint8_t*)tcp, full_size));
 }
+
+sizedptr tcp_parse_packet_payload(uintptr_t ptr){
+    eth_hdr_t* eth = (eth_hdr_t*)ptr;
+    
+    ptr += sizeof(eth_hdr_t);
+    
+    if (__builtin_bswap16(eth->ethertype) == 0x800){
+        ipv4_hdr_t* ip = (ipv4_hdr_t*)ptr;
+        uint32_t srcip = __builtin_bswap32(ip->src_ip);
+        ptr += sizeof(ipv4_hdr_t);
+        if (ip->protocol == 0x06){
+            tcp_hdr_t* tcp = (tcp_hdr_t*)ptr;
+            return (sizedptr){ptr,((tcp->data_offset_reserved >> 4) & 0xF) * 4};
+        }
+    }
+
+    return (sizedptr){0,0};
+}

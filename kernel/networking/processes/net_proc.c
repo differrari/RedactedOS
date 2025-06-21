@@ -13,8 +13,65 @@
 #include "../net_constants.h"
 #include "net/tcp.h"
 
-void test_network(){
+tcp_hdr_t* tcp_handskake(network_connection_ctx *dest, uint16_t port, tcp_data *data, uint8_t retry){
+    if (retry == 5){
+        kprintf("Exceeded max number of retries");
+        return 0x0;
+    } 
 
+    send_packet(TCP, port, dest, data, sizeof(tcp_data));
+
+    sizedptr pack;
+
+    uint16_t timeout = 10;
+    while (!read_packet(&pack)){
+        sleep(1000);
+        if (timeout-- == 0){
+            return tcp_handskake(dest, port, data, retry+1);
+        }
+    }
+
+    sizedptr payload = tcp_parse_packet_payload(pack.ptr);
+
+    if (!payload.ptr) {
+        kprintf("Wrong payload pointer. Retrying");
+        sleep(1000);
+        return tcp_handskake(dest, port, data, retry+1);
+    }
+
+    tcp_hdr_t *response = (tcp_hdr_t*)payload.ptr;
+    if ((response->data_offset_reserved >> 4) * 4 != payload.size){
+        kprintf("Wrong payload size %i vs %i. Retrying", (response->data_offset_reserved >> 4) * 4, payload.size);
+        sleep(1000);
+        return tcp_handskake(dest, port, data, retry+1);
+    }
+
+    if (response->flags != (data->flags | (1 << ACK_F))){
+        kprintf("Wrong flags %b vs %b. Retrying",response->flags, data->flags | (1 << ACK_F));
+        sleep(1000);
+        return tcp_handskake(dest, port, data, retry+1);
+    }
+
+    uint32_t ack = __builtin_bswap32(response->ack);
+    uint32_t seq = __builtin_bswap32(response->sequence);
+    if (ack != data->sequence + 1){
+        kprintf("Wrong ack %i vs %i. Retrying", response->ack, data->sequence + 1);
+        sleep(1000);
+        return tcp_handskake(dest, port, data, retry+1);
+    }
+
+    data->sequence = __builtin_bswap32(ack);
+    data->ack = __builtin_bswap32(seq+1);
+    data->flags = (1 << ACK_F);
+
+    send_packet(TCP, port, dest, data, sizeof(tcp_data));
+
+    kprintf("Acknowledgement of acknowledgemnt sent. Server seq = %i",seq);
+
+    return response;
+}
+
+void test_network(){
     bind_port(8888);
     network_connection_ctx dest = (network_connection_ctx){
         .ip = HOST_IP,
@@ -27,26 +84,12 @@ void test_network(){
         .ack = 0,
         .flags = (1 << SYN_F),
         .window = UINT16_MAX,
-        // sizedptr options;
-        // sizedptr payload;
     };
 
-    // size_t payload_size = 5;
-    // char hw[5] = {'h','e','l','l','o'};
-
-    send_packet(TCP, 8888, &dest, &data, sizeof(tcp_data));
-
-    sizedptr pack;
-
-    while (!read_packet(&pack));
-
-    kprintf("We got a response from the server. I'll parse it after dinner");
-
-    // sizedptr payload = udp_parse_packet_payload(pack.ptr);
-
-    // uint8_t *content = (uint8_t*)payload.ptr;
-
-    // kprintf("PAYLOAD: %s",(uintptr_t)string_ca_max(content, payload.size).data);
+    if (!tcp_handskake(&dest, 8888, &data, 0)){
+        kprintf("TCP Error");
+        return;
+    }
 
     unbind_port(8888);
 }
