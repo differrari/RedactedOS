@@ -1,6 +1,7 @@
 #include "ipv4.h"
 #include "console/kio.h"
 #include "network_types.h"
+#include "std/string.h"
 #include "std/memfunctions.h"
 
 uintptr_t create_ipv4_packet(uintptr_t p, uint32_t payload_len, uint8_t protocol, uint32_t source_ip, uint32_t destination_ip){
@@ -25,4 +26,8 @@ uint8_t ipv4_get_protocol(uintptr_t ptr){
 void ipv4_populate_response(network_connection_ctx *ctx, eth_hdr_t *eth, ipv4_hdr_t* ipv4){
     ctx->ip = __builtin_bswap32(ipv4->src_ip);
     memcpy(ctx->mac, eth->src_mac, 6);
+}
+
+string ipv4_to_string(uint32_t ip){
+    return string_format("%i.%i.%i.%i",(ip >> 24) & 0xFF,(ip >> 16) & 0xFF,(ip >> 8) & 0xFF,(ip >> 0) & 0xFF);
 }
