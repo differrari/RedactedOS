@@ -16,6 +16,10 @@ extern "C" {
 #define ECE_F 6
 #define CWR_F 7
 
+#define TCP_RESET 2
+#define TCP_RETRY 1
+#define TCP_OK 0
+
 typedef struct __attribute__((packed)) tcp_hdr_t {
     uint16_t src_port;
     uint16_t dst_port;
@@ -43,6 +47,13 @@ void create_tcp_packet(uintptr_t p, network_connection_ctx source, network_conne
 size_t calc_tcp_size(uint16_t payload_len);
 uint16_t tcp_parse_packet(uintptr_t ptr);
 sizedptr tcp_parse_packet_payload(uintptr_t ptr);
+
+void tcp_send(uint16_t port, network_connection_ctx *destination, tcp_data* data);
+void tcp_reset(uint16_t port, network_connection_ctx *destination, tcp_data* data);
+bool expect_response(sizedptr *pack);
+uint8_t tcp_check_response(tcp_data *data);
+bool tcp_handskake(network_connection_ctx *dest, uint16_t port, tcp_data *data, uint8_t retry);
+bool tcp_close(network_connection_ctx *dest, uint16_t port, tcp_data *data, uint8_t retry, uint32_t orig_seq, uint32_t orig_ack);
 
 #ifdef __cplusplus
 }
