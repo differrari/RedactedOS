@@ -51,7 +51,7 @@ sizedptr tcp_parse_packet_payload(uintptr_t ptr);
 void tcp_send(uint16_t port, network_connection_ctx *destination, tcp_data* data);
 void tcp_reset(uint16_t port, network_connection_ctx *destination, tcp_data* data);
 bool expect_response(sizedptr *pack);
-uint8_t tcp_check_response(tcp_data *data);
+uint8_t tcp_check_response(tcp_data *data, sizedptr *out);
 bool tcp_handskake(network_connection_ctx *dest, uint16_t port, tcp_data *data, uint8_t retry);
 bool tcp_close(network_connection_ctx *dest, uint16_t port, tcp_data *data, uint8_t retry, uint32_t orig_seq, uint32_t orig_ack);
 
