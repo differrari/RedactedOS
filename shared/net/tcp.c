@@ -57,3 +57,144 @@ sizedptr tcp_parse_packet_payload(uintptr_t ptr){
 
     return (sizedptr){0,0};
 }
+
+void tcp_send(uint16_t port, network_connection_ctx *destination, tcp_data* data){
+    send_packet(TCP, port, destination, data, sizeof(tcp_data));
+    if ((data->flags & ~(1 << ACK_F)) != 0 || data->payload.size > 0){
+        printf("The payload is %i size",data->payload.size);
+        data->sequence += __builtin_bswap32(max(1,data->payload.size));
+    }
+    data->expected_ack = __builtin_bswap32(data->sequence);
+    printf("Next seq %i", __builtin_bswap32(data->sequence));
+}
+
+void tcp_reset(uint16_t port, network_connection_ctx *destination, tcp_data* data){
+    data->flags = (1 << RST_F) | (1 << ACK_F);
+    tcp_send(port, destination, data);
+}
+
+bool tcp_expect_response(sizedptr *pack){
+    uint16_t timeout = 10;
+    while (!read_packet(pack)){
+        sleep(1000);
+        if (timeout-- == 0){
+            printf("Response timeout");
+            return false;
+        }
+    }
+    return true;
+}
+
+uint8_t tcp_check_response(tcp_data *data, sizedptr *out){
+
+    sizedptr pack;
+
+    if (!tcp_expect_response(&pack) || !pack.ptr){
+        printf("Response timeout. Retrying");
+        return TCP_RETRY;
+    }
+
+    sizedptr payload = tcp_parse_packet_payload(pack.ptr);
+    if (!payload.ptr) {
+        printf("Wrong payload pointer. Retrying");
+        return TCP_RETRY;
+    }
+
+    tcp_hdr_t *response = (tcp_hdr_t*)payload.ptr;
+
+    uint32_t ack = __builtin_bswap32(response->ack);
+    uint32_t seq = __builtin_bswap32(response->sequence);
+    
+    size_t hdr_size = (response->data_offset_reserved >> 4) * 4;
+    size_t payload_size = payload.size - hdr_size;
+    data->ack = __builtin_bswap32(seq+max(1,payload_size));
+    
+    if (ack != data->expected_ack){
+        printf("Wrong ack %i vs %i. Resetting", ack, data->expected_ack);
+        return TCP_RESET;
+    } else printf("Received ack %i", ack);
+
+    if (response->flags != (data->flags | (1 << ACK_F))){
+        printf("Wrong flags %b vs %b. Resetting",response->flags, data->flags | (1 << ACK_F));
+        return TCP_RESET;
+    }
+
+    if (out){
+        out->ptr = payload.ptr + hdr_size;
+        out->size = payload_size;
+    }
+
+    return TCP_OK;
+}
+
+bool tcp_handskake(network_connection_ctx *dest, uint16_t port, tcp_data *data, uint8_t retry){
+    if (retry == 5){
+        printf("Exceeded max number of retries");
+        return false;
+    } 
+    
+    data->sequence = 0;
+    data->ack = 0;
+    data->flags = (1 << SYN_F);
+
+    tcp_send(port, dest, data);
+    
+    uint8_t resp = tcp_check_response(data, 0);
+    if (resp == TCP_RETRY){
+        sleep(1000);
+        return tcp_handskake(dest, port, data, retry+1);
+    } else if (resp == TCP_RESET){
+        tcp_reset(port, dest, data);
+        return false;
+    }
+
+    data->flags = (1 << ACK_F);
+
+    tcp_send(port, dest, data);
+
+    printf("Acknowledgement of acknowledgemnt sent");
+
+    return true;
+}
+
+bool tcp_close(network_connection_ctx *dest, uint16_t port, tcp_data *data, uint8_t retry, uint32_t orig_seq, uint32_t orig_ack){
+    if (retry == 5){
+        printf("Exceeded max number of retries");
+        return false;
+    } 
+
+    data->sequence = orig_seq;
+    data->ack = orig_ack;
+    data->flags = (1 << FIN_F) | (1 << ACK_F);
+
+    tcp_send(port, dest, data);
+
+    data->flags = (1 << ACK_F);
+    uint8_t resp = tcp_check_response(data, 0);
+    if (resp == TCP_RETRY){
+        sleep(1000);
+        return tcp_handskake(dest, port, data, retry+1);
+    } else if (resp == TCP_RESET){
+        tcp_reset(port, dest, data);
+        return false;
+    }
+
+    data->flags = (1 << FIN_F);
+
+    resp = tcp_check_response(data, 0);
+    if (resp == TCP_RETRY){
+        sleep(1000);
+        return tcp_handskake(dest, port, data, retry+1);
+    } else if (resp == TCP_RESET){
+        tcp_reset(port, dest, data);
+        return true;
+    }
+
+    data->flags = (1 << ACK_F);
+
+    tcp_send(port, dest, data);
+
+    printf("Connection closed");
+
+    return true;
+}

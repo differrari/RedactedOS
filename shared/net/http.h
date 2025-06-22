@@ -11,4 +11,4 @@ typedef enum HTTPRequest {
     DELETE
 } HTTPRequest;
 
-// sizedptr request_http_data(HTTPRequest request, network_connection_ctx *dest, uint16_t port);
+sizedptr request_http_data(HTTPRequest request, network_connection_ctx *dest, uint16_t port);
