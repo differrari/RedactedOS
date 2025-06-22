@@ -26,8 +26,12 @@ void test_network(){
 
     kprintf("Received payload? %x",(uintptr_t)&http);
 
-    if (http.ptr != 0)
-        kprintf("Received payload? %s",(uintptr_t)http.ptr);
+    if (http.ptr != 0){
+        kprintf("Parsing payload");
+        sizedptr payload = http_get_payload(http);
+        string content = http_get_chunked_payload(payload);
+        printf("Received payload? %s",(uintptr_t)content.data);
+    }
 
     unbind_port(8888);
 }

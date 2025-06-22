@@ -51,7 +51,7 @@ sizedptr tcp_parse_packet_payload(uintptr_t ptr){
         ptr += sizeof(ipv4_hdr_t);
         if (ip->protocol == 0x06){
             tcp_hdr_t* tcp = (tcp_hdr_t*)ptr;
-            return (sizedptr){ptr,((tcp->data_offset_reserved >> 4) & 0xF) * 4};
+            return (sizedptr){ptr,__builtin_bswap16(ip->total_length) - sizeof(ipv4_hdr_t)};
         }
     }
 

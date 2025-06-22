@@ -28,5 +28,8 @@ int strcmp(const char *a, const char *b);
 bool strcont(const char *a, const char *b);
 int strstart(const char *a, const char *b);
 int strend(const char *a, const char *b);
+int strindex(const char *a, const char *b);
+
+uint64_t parse_hex_u64(char* str, size_t size);
 
 bool utf16tochar(const uint16_t* str_in, char* out_str, size_t max_len);

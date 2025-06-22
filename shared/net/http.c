@@ -3,6 +3,7 @@
 #include "tcp.h"
 #include "syscalls/syscalls.h"
 #include "ipv4.h"
+#include "std/memfunctions.h"
 
 string make_http_request(HTTPRequest request, char *domain, char *agent){
     //TODO: request instead of hardcoded GET
@@ -86,4 +87,23 @@ sizedptr request_http_data(HTTPRequest request, network_connection_ctx *dest, ui
     }
 
     return http_response;
+}
+
+sizedptr http_get_payload(sizedptr header){
+    if (header.ptr && header.size > 0){
+        int start = strindex((char*)header.ptr, "\r\n\r\n");
+        if (start < header.size){
+            return (sizedptr){header.ptr + start + 4,header.size-start-4};    
+        }
+    } 
+    return (sizedptr){0,0};
+}
+
+string http_get_chunked_payload(sizedptr chunk){
+    if (chunk.ptr && chunk.size > 0){
+        int sizetrm = strindex((char*)chunk.ptr, "\r\n");
+        uint64_t chunk_size = parse_hex_u64((char*)chunk.ptr,sizetrm);
+        return string_ca_max((char*)(chunk.ptr + sizetrm + 2),chunk_size);
+    } 
+    return (string){0};
 }
