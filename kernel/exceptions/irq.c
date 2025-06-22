@@ -38,6 +38,7 @@ void irq_init() {
     gic_enable_irq(IRQ_TIMER, 0x80, 0);
     gic_enable_irq(MSI_OFFSET + XHCI_IRQ, 0x80, 0);
     gic_enable_irq(MSI_OFFSET + NET_IRQ, 0x80, 0);
+    gic_enable_irq(MSI_OFFSET + NET_IRQ + 1, 0x80, 0);
     gic_enable_irq(SLEEP_TIMER, 0x80, 0);
 
     write32(GICC_BASE + 0x004, 0xF0); //Priority
@@ -78,7 +79,11 @@ void irq_el1_handler() {
         write32(GICC_BASE + 0x10, irq);
         process_restore();
     } else if (irq == MSI_OFFSET + NET_IRQ){
-        network_handle_interrupt();
+        network_handle_download_interrupt();
+        write32(GICC_BASE + 0x10, irq);
+        process_restore();
+    }  else if (irq == MSI_OFFSET + NET_IRQ + 1){
+        network_handle_upload_interrupt();
         write32(GICC_BASE + 0x10, irq);
         process_restore();
     } else {

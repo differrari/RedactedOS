@@ -10,9 +10,14 @@ bool network_init(){
     return dispatch->init();
 }
 
-void network_handle_interrupt(){
-    return dispatch->handle_interrupt();
+void network_handle_download_interrupt(){
+    return dispatch->handle_download_interrupt();
 }
+
+void network_handle_upload_interrupt(){
+    return dispatch->handle_upload_interrupt();
+}
+
 
 bool network_bind_port(uint16_t port, uint16_t process){
     return dispatch->bind_port(port, process);
@@ -29,7 +34,6 @@ bool network_bind_port_current(uint16_t port){
 bool network_unbind_port_current(uint16_t port){
     return dispatch->unbind_port(port, get_current_proc_pid());
 }
-
 
 void network_send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len){
     return dispatch->send_packet(protocol, port, destination, payload, payload_len);

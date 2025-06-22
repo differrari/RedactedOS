@@ -37,7 +37,7 @@ bool NetworkDispatch::unbind_port(uint16_t port, uint16_t process){
     return true;
 }
 
-void NetworkDispatch::handle_interrupt(){
+void NetworkDispatch::handle_download_interrupt(){
     if (driver){
         sizedptr packet = driver->handle_receive_packet();
         uintptr_t ptr = packet.ptr;
@@ -91,6 +91,10 @@ void NetworkDispatch::handle_interrupt(){
             }
         }
     }
+}
+
+void NetworkDispatch::handle_upload_interrupt(){
+    driver->handle_sent_packet();
 }
 
 bool NetworkDispatch::read_packet(sizedptr *Packet, uint16_t process){

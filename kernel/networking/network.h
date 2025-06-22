@@ -10,7 +10,8 @@ extern "C" {
 #define NET_IRQ 32
 
 bool network_init();
-void network_handle_interrupt();
+void network_handle_download_interrupt();
+void network_handle_upload_interrupt();
 bool network_bind_port(uint16_t port, uint16_t process);
 bool network_unbind_port(uint16_t port, uint16_t process);
 void network_send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len);

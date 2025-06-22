@@ -65,16 +65,16 @@ bool VirtioNetDriver::init(){
     virtio_get_capabilities(&vnp_net_dev, addr, &net_device_address, &net_device_size);
     pci_register(net_device_address, net_device_size);
 
-    uint8_t interrupts_ok = pci_setup_interrupts(addr, NET_IRQ);
+    uint8_t interrupts_ok = pci_setup_interrupts(addr, NET_IRQ, 2);
     switch(interrupts_ok){
         case 0:
             kprintf_raw("[VIRTIO_NET] Failed to setup interrupts");
             return false;
         case 1:
-            kprintf_raw("[VIRTIO_NET] Interrupts setup with MSI-X %i",NET_IRQ);
+            kprintf_raw("[VIRTIO_NET] Interrupts setup with MSI-X %i, %i",NET_IRQ,NET_IRQ+1);
             break;
         default:
-            kprintf_raw("[VIRTIO_NET] Interrupts setup with MSI %i",NET_IRQ);
+            kprintf_raw("[VIRTIO_NET] Interrupts setup with MSI %i,%i",NET_IRQ,NET_IRQ+1);
             break;
     }
 
@@ -107,21 +107,19 @@ bool VirtioNetDriver::init(){
         virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_size);
     }
 
-    kprintf("[VIRTIO_NET] Current MSI-X queue index %i",vnp_net_dev.common_cfg->queue_msix_vector);
     vnp_net_dev.common_cfg->queue_msix_vector = 0;
     if (vnp_net_dev.common_cfg->queue_msix_vector != 0){
         kprintf("[VIRTIO_NET error] failed to set interrupts on receive queue, network will be unable to receive packets");
         return false;
     }
 
-    // select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
+    select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
 
-    // kprintf("[VIRTIO_NET] Current MSI-X queue index %i",vnp_net_dev.common_cfg->queue_msix_vector);
-    // vnp_net_dev.common_cfg->queue_msix_vector = 0;
-    // if (vnp_net_dev.common_cfg->queue_msix_vector != 0){
-    //     kprintf("[VIRTIO_NET error] failed to set interrupts on transmit queue, network will be unable to cleanup transmitted packets");
-    //     return false;
-    // }
+    vnp_net_dev.common_cfg->queue_msix_vector = 1;
+    if (vnp_net_dev.common_cfg->queue_msix_vector != 1){
+        kprintf("[VIRTIO_NET error] failed to set interrupts on transmit queue, network will be unable to cleanup transmitted packets");
+        return false;
+    }
 
     return true;
 }
@@ -153,19 +151,26 @@ sizedptr VirtioNetDriver::handle_receive_packet(){
     }
 
     return (sizedptr){0,0};
+}
 
-    // select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
-    // new_idx = used->idx;
-    // if (new_idx != last_used_receive_idx) {
-    //     uint16_t used_ring_index = last_used_receive_idx % 128;
-    //     last_used_receive_idx = new_idx;
-    //     struct virtq_used_elem* e = &used->ring[used_ring_index];
-    //     uint32_t desc_index = e->id;
-    //     uint32_t len = e->len;
-    //     free_from_page((void*)desc[desc_index].addr, len);
-    //     kprintf("Freed memory");
-    //     return;
-    // }
+void VirtioNetDriver::handle_sent_packet(){
+    select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
+
+    struct virtq_used* used = (struct virtq_used*)(uintptr_t)vnp_net_dev.common_cfg->queue_device;
+    struct virtq_desc* desc = (struct virtq_desc*)(uintptr_t)vnp_net_dev.common_cfg->queue_desc;
+    struct virtq_avail* avail = (struct virtq_avail*)(uintptr_t)vnp_net_dev.common_cfg->queue_driver;
+
+    uint16_t new_idx = used->idx;
+
+    if (new_idx != last_used_sent_idx) {
+        uint16_t used_ring_index = last_used_sent_idx % 128;
+        last_used_sent_idx = new_idx;
+        struct virtq_used_elem* e = &used->ring[used_ring_index];
+        uint32_t desc_index = e->id;
+        uint32_t len = e->len;
+        free_from_page((void*)desc[desc_index].addr, len);
+        return;
+    }
 }
 
 void VirtioNetDriver::send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len){

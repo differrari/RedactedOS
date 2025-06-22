@@ -109,7 +109,7 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
 
     pci_register(xhci->mmio, xhci->mmio_size);
 
-    uint8_t interrupts_ok = pci_setup_interrupts(pci_addr, XHCI_IRQ);
+    uint8_t interrupts_ok = pci_setup_interrupts(pci_addr, XHCI_IRQ, 1);
     switch(interrupts_ok){
         case 0:
             kprintf_raw("[xHCI] Failed to setup interrupts");
@@ -121,8 +121,6 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
             kprintf_raw("[xHCI] Interrupts setup with MSI %i",XHCI_IRQ);
             break;
     }
-
-    
 
     kprintfv("[xHCI] BARs set up @ %x (%x)",xhci->mmio,xhci->mmio_size);
 

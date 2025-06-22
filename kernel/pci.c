@@ -340,15 +340,20 @@ bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_si
     return true;
 }
 
-uint8_t pci_setup_interrupts(uint64_t pci_addr, uint8_t irq_line){
-    msix_irq_line irq_lines[1] = {(msix_irq_line){.addr_offset=0,.irq_num=irq_line}};
-    bool msix_ok = pci_setup_msix(pci_addr, irq_lines, 1);
+uint8_t pci_setup_interrupts(uint64_t pci_addr, uint8_t irq_line, uint8_t amount){
+    msix_irq_line irq_lines[amount];
+    for (uint8_t i = 0; i < amount; i++)
+        irq_lines[i] = (msix_irq_line){.addr_offset=0,.irq_num=irq_line+i};
+
+    bool msix_ok = pci_setup_msix(pci_addr, irq_lines, amount);
 
     if(msix_ok){
         return 1;
     }
 
-    bool msi_ok = pci_setup_msi(pci_addr, irq_line);
+    bool msi_ok = true;
+    for (uint8_t i = 0; i < amount; i++)
+        msi_ok &= pci_setup_msi(pci_addr, irq_line+i);
     if(msi_ok){
         return 2;
     }
