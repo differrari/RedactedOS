@@ -7,9 +7,9 @@
 #include "net/eth.h"
 #include "net/ipv4.h"
 #include "memory/page_allocator.h"
-#include "protocols/icmp.h"
+#include "net/icmp.h"
 #include "std/memfunctions.h"
-#include "protocols/arp.h"
+#include "net/arp.h"
 
 NetworkDispatch::NetworkDispatch(){
     ports = IndexMap<uint16_t>(UINT16_MAX);
