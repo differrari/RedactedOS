@@ -43,7 +43,7 @@ void print_process_info(){
     for (int i = 0; i < MAX_PROCS; i++){
         process_t *proc = &processes[i];
         if (proc->id != 0 && proc->state != STOPPED){
-            printf("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uint64_t)parse_proc_state(proc->state));
+            printf("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uintptr_t)parse_proc_state(proc->state));
             printf("Stack: %x (%x). SP: %x",proc->stack, proc->stack_size, proc->sp);
             printf("Heap: %x (%x)",proc->heap, calc_heap(proc->heap));
             printf("Flags: %x", proc->spsr);

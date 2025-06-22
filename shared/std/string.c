@@ -110,12 +110,16 @@ bool string_equals(string a, string b) {
 }
 
 string string_format(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    string_format_va(fmt, args);
+    va_end(args);
+}
+
+string string_format_va(const char *fmt, va_list args){
     char *buf = (char*)malloc(256);
     uint32_t len = 0;
     uint32_t arg_index = 0;
-
-    va_list args;
-    va_start(args, fmt);
 
     for (uint32_t i = 0; fmt[i] && len < 255; i++) {
         if (fmt[i] == '%' && fmt[i+1]) {
@@ -193,7 +197,6 @@ string string_format(const char *fmt, ...) {
     }
 
     buf[len] = 0;
-    va_end(args);
     return (string){ .data = buf, .length = len, .mem_length = 256 };
 }
 

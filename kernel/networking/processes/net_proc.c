@@ -251,7 +251,8 @@ void test_network(){
 
     kprintf("Received payload? %x",(uintptr_t)&http);
 
-    kprintf("Received payload? %s",(uintptr_t)http.ptr);
+    if (http.ptr != 0)
+        kprintf("Received payload? %s",(uintptr_t)http.ptr);
 
     unbind_port(8888);
 }

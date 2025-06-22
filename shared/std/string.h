@@ -20,6 +20,7 @@ string string_c(const char c);
 string string_from_hex(uint64_t value);
 bool string_equals(string a, string b);
 string string_format(const char *fmt, ...);
+string string_format_va(const char *fmt, va_list args);
 string string_tail(const char *array, uint32_t max_length);
 string string_repeat(char symbol, uint32_t amount);
 
