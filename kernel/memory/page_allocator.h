@@ -19,6 +19,8 @@ void free_page(void* ptr, uint64_t size);
 void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kernel, bool device);
 void free_from_page(void* ptr, uint64_t size);
 
+void free_sized(sizedptr ptr);
+
 #ifdef __cplusplus
 }
 #endif

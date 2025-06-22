@@ -40,6 +40,7 @@ bool NetworkDispatch::unbind_port(uint16_t port, uint16_t process){
 void NetworkDispatch::handle_download_interrupt(){
     if (driver){
         sizedptr packet = driver->handle_receive_packet();
+        bool need_free = true;
         uintptr_t ptr = packet.ptr;
         if (ptr){
             eth_hdr_t *eth = (eth_hdr_t*)ptr;
@@ -72,6 +73,8 @@ void NetworkDispatch::handle_download_interrupt(){
                             buf->entries[buf->write_index] = packet;
                             buf->write_index = next_index;
 
+                            need_free = false;
+
                             if (buf->write_index == buf->read_index)
                                 buf->read_index = (buf->read_index + 1) % PACKET_BUFFER_CAPACITY;
                         }
@@ -90,6 +93,9 @@ void NetworkDispatch::handle_download_interrupt(){
                 }
             }
         }
+        if (need_free){
+            free_sized(packet);
+        }
     }
 }
 
@@ -107,6 +113,7 @@ bool NetworkDispatch::read_packet(sizedptr *Packet, uint16_t process){
     memcpy((void*)copy,(void*)original.ptr,original.size);
     Packet->ptr = copy;
     Packet->size = original.size;
+    free_sized(original);
     proc->packet_buffer.read_index = (proc->packet_buffer.read_index + 1) % PACKET_BUFFER_CAPACITY;
     return true;
 }
