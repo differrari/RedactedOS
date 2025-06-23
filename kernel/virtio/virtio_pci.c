@@ -95,7 +95,7 @@ bool virtio_init_device(virtio_device *dev) {
     struct virtio_pci_common_cfg* cfg = dev->common_cfg;
 
     cfg->device_status = 0;
-    while (cfg->device_status != 0);
+    while (cfg->device_status != 0);//TODO: OPT
 
     cfg->device_status |= VIRTIO_STATUS_ACKNOWLEDGE;
     cfg->device_status |= VIRTIO_STATUS_DRIVER;
@@ -179,7 +179,7 @@ bool virtio_send(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t use
 
     *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
 
-    while (last_used_idx == u->idx);
+    while (last_used_idx == u->idx);//TODO: OPT
     
     if (status != 0)
         kprintf("[VIRTIO OPERATION ERROR]: Wrong status %x",status);
@@ -209,7 +209,7 @@ bool virtio_send2(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t us
 
     *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
 
-    while (last_used_idx == u->idx);
+    while (last_used_idx == u->idx);//TODO: OPT
 
     return true;
 }
@@ -232,7 +232,7 @@ bool virtio_send_1d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len) {
 
     *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
 
-    while (last_used_idx == u->idx);
+    while (last_used_idx == u->idx);//TODO: OPT
 
     return true;
 }

@@ -1,10 +1,5 @@
 #include "virtio_net_pci.hpp"
 #include "console/kio.h"
-#include "net/udp.h"
-#include "net/tcp.h"
-#include "net/dhcp.h"
-#include "net/arp.h"
-#include "net/icmp.h"
 #include "networking/network.h"
 #include "pci.h"
 #include "syscalls/syscalls.h"
@@ -121,7 +116,13 @@ bool VirtioNetDriver::init(){
         return false;
     }
 
+    header_size = sizeof(virtio_net_hdr_t);
+
     return true;
+}
+
+sizedptr VirtioNetDriver::allocate_packet(size_t size){
+    return (sizedptr){(uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size + header_size, ALIGN_64B, true, true),size + header_size};
 }
 
 sizedptr VirtioNetDriver::handle_receive_packet(){
@@ -173,41 +174,11 @@ void VirtioNetDriver::handle_sent_packet(){
     }
 }
 
-void VirtioNetDriver::send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len){
+void VirtioNetDriver::send_packet(sizedptr packet){
     select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
-    size_t size;
-    uintptr_t buf_ptr;
-    switch (protocol) {
-        case UDP:
-            size = calc_udp_size(payload_len) + sizeof(virtio_net_hdr_t);
-            buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
-            connection_context.port = port;
-            create_udp_packet(buf_ptr + sizeof(virtio_net_hdr_t), connection_context, *destination, (uint8_t*)payload, payload_len);
-        break;
-        case DHCP:
-            size = DHCP_SIZE  + sizeof(virtio_net_hdr_t);
-            buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
-            create_dhcp_packet(buf_ptr + sizeof(virtio_net_hdr_t), (dhcp_request*)payload);
-            break;
-        case ARP:
-            size = sizeof(eth_hdr_t) + sizeof(arp_hdr_t) + sizeof(virtio_net_hdr_t);
-            buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
-            create_arp_packet(buf_ptr + sizeof(virtio_net_hdr_t), connection_context.mac, connection_context.ip, destination->mac, destination->ip, *(bool*)payload);
-            break;
-        case ICMP:
-            size = sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(virtio_net_hdr_t) + sizeof(icmp_packet);
-            buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
-            create_icmp_packet(buf_ptr + sizeof(virtio_net_hdr_t), connection_context, *destination, (icmp_data*)payload);
-            break;
-        case TCP:
-            tcp_data *data = (tcp_data*)payload;
-            size = sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(virtio_net_hdr_t) + sizeof(tcp_hdr_t) + data->options.size + data->payload.size;
-            buf_ptr = (uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size, ALIGN_64B, true, true);
-            connection_context.port = port;
-            create_tcp_packet(buf_ptr + sizeof(virtio_net_hdr_t), connection_context, *destination, (sizedptr){(uintptr_t)data, sizeof(tcp_data)});
-            break;
-    }
-    virtio_send_1d(&vnp_net_dev, buf_ptr, size);
+    
+    if (packet.ptr && packet.size)
+        virtio_send_1d(&vnp_net_dev, packet.ptr, packet.size);
     
     kprintf("Queued new packet");
 }

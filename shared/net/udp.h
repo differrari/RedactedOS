@@ -15,7 +15,6 @@ typedef struct __attribute__((packed)) udp_hdr_t {
 } udp_hdr_t;
 
 void create_udp_packet(uintptr_t p, network_connection_ctx source, network_connection_ctx destination, const uint8_t* payload, uint16_t payload_len);
-size_t calc_udp_size(uint16_t payload_len);
 uint16_t udp_parse_packet(uintptr_t ptr);
 sizedptr udp_parse_packet_payload(uintptr_t ptr);
 

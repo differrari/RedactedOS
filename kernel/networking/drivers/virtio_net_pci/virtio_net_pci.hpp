@@ -10,12 +10,14 @@ public:
 
     bool init() override;
 
+    sizedptr allocate_packet(size_t size) override;
+
     sizedptr handle_receive_packet() override;
     void handle_sent_packet() override;
 
     void enable_verbose() override;
 
-    void send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len) override;
+    void send_packet(sizedptr packet) override;
 
     ~VirtioNetDriver() = default;
 

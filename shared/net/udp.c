@@ -50,7 +50,3 @@ sizedptr udp_parse_packet_payload(uintptr_t ptr){
 
     return (sizedptr){0,0};
 }
-
-size_t calc_udp_size(uint16_t payload_len){
-    return sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(udp_hdr_t) + payload_len;
-}

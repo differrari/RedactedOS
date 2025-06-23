@@ -21,4 +21,6 @@ public:
 private:
     IndexMap<uint16_t> ports;
     NetDriver *driver;
+
+    sizedptr allocate_packet(size_t size);
 };

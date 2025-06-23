@@ -4,12 +4,14 @@
 #include "console/kio.h"
 #include "process/scheduler.h"
 #include "net/udp.h"
+#include "net/tcp.h"
+#include "net/dhcp.h"
+#include "net/arp.h"
 #include "net/eth.h"
 #include "net/ipv4.h"
-#include "memory/page_allocator.h"
 #include "net/icmp.h"
+#include "memory/page_allocator.h"
 #include "std/memfunctions.h"
-#include "net/arp.h"
 
 NetworkDispatch::NetworkDispatch(){
     ports = IndexMap<uint16_t>(UINT16_MAX);
@@ -119,8 +121,34 @@ bool NetworkDispatch::read_packet(sizedptr *Packet, uint16_t process){
 }
 
 void NetworkDispatch::send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len){
+    sizedptr packet_buffer;
+    switch (protocol) {
+        case UDP:
+            packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(udp_hdr_t) + payload_len);
+            driver->connection_context.port = port;
+            create_udp_packet(packet_buffer.ptr + driver->header_size, driver->connection_context, *destination, (uint8_t*)payload, payload_len);
+        break;
+        case DHCP:
+            packet_buffer = driver->allocate_packet(DHCP_SIZE);
+            create_dhcp_packet(packet_buffer.ptr + driver->header_size, (dhcp_request*)payload);
+            break;
+        case ARP:
+            packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(arp_hdr_t));
+            create_arp_packet(packet_buffer.ptr + driver->header_size, driver->connection_context.mac, driver->connection_context.ip, destination->mac, destination->ip, *(bool*)payload);
+            break;
+        case ICMP:
+            packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(icmp_packet));
+            create_icmp_packet(packet_buffer.ptr + driver->header_size, driver->connection_context, *destination, (icmp_data*)payload);
+            break;
+        case TCP:
+            tcp_data *data = (tcp_data*)payload;
+            packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(tcp_hdr_t) + data->options.size + data->payload.size);
+            driver->connection_context.port = port;
+            create_tcp_packet(packet_buffer.ptr + driver->header_size, driver->connection_context, *destination, (sizedptr){(uintptr_t)data, sizeof(tcp_data)});
+            break;
+    }
     if (driver)
-        driver->send_packet(protocol, port, destination, payload, payload_len);
+        driver->send_packet(packet_buffer);
 }
 
 network_connection_ctx* NetworkDispatch::get_context(){
