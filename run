@@ -16,17 +16,8 @@ if echo "$XHCI_CAPABILITIES" | grep -q "msi "; then
 fi
 
 qemu-system-aarch64 \
--M virt \
--cpu cortex-a72 \
--m 512M \
+-M raspi4b \
 -kernel kernel.elf \
--device virtio-gpu-pci \
--display sdl \
--device virtio-net-pci \
 -serial mon:stdio \
--drive file=disk.img,if=none,format=raw,id=hd0 \
--device virtio-blk-pci,drive=hd0 \
--device qemu-xhci,${MSI_CAPABILITIES}id=usb \
--device usb-kbd,bus=usb.0 \
 -d guest_errors \
 $ARGS
