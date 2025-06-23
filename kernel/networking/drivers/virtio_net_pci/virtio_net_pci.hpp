@@ -19,6 +19,8 @@ public:
 
     void send_packet(sizedptr packet) override;
 
+    void get_mac(network_connection_ctx *context) override;
+
     ~VirtioNetDriver() = default;
 
 private:

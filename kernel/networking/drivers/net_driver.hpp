@@ -20,9 +20,9 @@ public:
 
     virtual void send_packet(sizedptr packet) = 0;
 
-    virtual ~NetDriver() = default;
+    virtual void get_mac(network_connection_ctx *context) = 0;
 
-    network_connection_ctx connection_context;
+    virtual ~NetDriver() = default;
 
     uint16_t header_size;
 };

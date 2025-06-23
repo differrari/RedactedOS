@@ -4,6 +4,7 @@
 #include "pci.h"
 #include "syscalls/syscalls.h"
 #include "memory/page_allocator.h"
+#include "std/memfunctions.h"
 
 #define RECEIVE_QUEUE 0
 #define TRANSMIT_QUEUE 1
@@ -82,19 +83,6 @@ bool VirtioNetDriver::init(){
 
     kprintf("[VIRTIO_NET] Device set up at %x",(uintptr_t)vnp_net_dev.device_cfg);
 
-    virtio_net_config* net_config = (virtio_net_config*)vnp_net_dev.device_cfg;
-    kprintfv("[VIRTIO_NET] %x:%x:%x:%x:%x:%x", net_config->mac[0], net_config->mac[1], net_config->mac[2], net_config->mac[3], net_config->mac[4], net_config->mac[5]);
-
-    connection_context = (network_connection_ctx){
-        .port = 0,
-        .ip = 0,
-        .mac = {net_config->mac[0],net_config->mac[1],net_config->mac[2],net_config->mac[3],net_config->mac[4],net_config->mac[5]},
-    };
-    
-    kprintfv("[VIRTIO_NET] %i virtqueue pairs",net_config->max_virtqueue_pairs);
-    kprintfv("[VIRTIO_NET] %x speed", net_config->speed);
-    kprintfv("[VIRTIO_NET] status = %x", net_config->status);
-
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
 
     for (uint16_t i = 0; i < 128; i++){
@@ -119,6 +107,17 @@ bool VirtioNetDriver::init(){
     header_size = sizeof(virtio_net_hdr_t);
 
     return true;
+}
+
+void VirtioNetDriver::get_mac(network_connection_ctx *context){
+    virtio_net_config* net_config = (virtio_net_config*)vnp_net_dev.device_cfg;
+    kprintfv("[VIRTIO_NET] %x:%x:%x:%x:%x:%x", net_config->mac[0], net_config->mac[1], net_config->mac[2], net_config->mac[3], net_config->mac[4], net_config->mac[5]);
+
+    memcpy((void*)&context->mac,(void*)&net_config->mac,6);
+    
+    kprintfv("[VIRTIO_NET] %i virtqueue pairs",net_config->max_virtqueue_pairs);
+    kprintfv("[VIRTIO_NET] %x speed", net_config->speed);
+    kprintfv("[VIRTIO_NET] status = %x", net_config->status);
 }
 
 sizedptr VirtioNetDriver::allocate_packet(size_t size){

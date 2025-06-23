@@ -22,5 +22,8 @@ private:
     IndexMap<uint16_t> ports;
     NetDriver *driver;
 
+    NetDriver* select_driver();
+
     sizedptr allocate_packet(size_t size);
+    network_connection_ctx context;
 };

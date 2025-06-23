@@ -17,11 +17,16 @@ NetworkDispatch::NetworkDispatch(){
     ports = IndexMap<uint16_t>(UINT16_MAX);
     for (uint16_t i = 0; i < UINT16_MAX; i++)
         ports[i] = UINT16_MAX;
+    context = (network_connection_ctx) {0};
+}
+
+NetDriver* NetworkDispatch::select_driver(){
+    return VirtioNetDriver::try_init();
 }
 
 bool NetworkDispatch::init(){
-    if (VirtioNetDriver *vnd = VirtioNetDriver::try_init()){
-        driver = vnd;
+    if ((driver = select_driver())){
+        driver->get_mac(&context);
         return true;
     }
     return false;
@@ -125,8 +130,8 @@ void NetworkDispatch::send_packet(NetProtocol protocol, uint16_t port, network_c
     switch (protocol) {
         case UDP:
             packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(udp_hdr_t) + payload_len);
-            driver->connection_context.port = port;
-            create_udp_packet(packet_buffer.ptr + driver->header_size, driver->connection_context, *destination, (uint8_t*)payload, payload_len);
+            context.port = port;
+            create_udp_packet(packet_buffer.ptr + driver->header_size, context, *destination, (uint8_t*)payload, payload_len);
         break;
         case DHCP:
             packet_buffer = driver->allocate_packet(DHCP_SIZE);
@@ -134,17 +139,17 @@ void NetworkDispatch::send_packet(NetProtocol protocol, uint16_t port, network_c
             break;
         case ARP:
             packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(arp_hdr_t));
-            create_arp_packet(packet_buffer.ptr + driver->header_size, driver->connection_context.mac, driver->connection_context.ip, destination->mac, destination->ip, *(bool*)payload);
+            create_arp_packet(packet_buffer.ptr + driver->header_size, context.mac, context.ip, destination->mac, destination->ip, *(bool*)payload);
             break;
         case ICMP:
             packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(icmp_packet));
-            create_icmp_packet(packet_buffer.ptr + driver->header_size, driver->connection_context, *destination, (icmp_data*)payload);
+            create_icmp_packet(packet_buffer.ptr + driver->header_size, context, *destination, (icmp_data*)payload);
             break;
         case TCP:
             tcp_data *data = (tcp_data*)payload;
             packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(tcp_hdr_t) + data->options.size + data->payload.size);
-            driver->connection_context.port = port;
-            create_tcp_packet(packet_buffer.ptr + driver->header_size, driver->connection_context, *destination, (sizedptr){(uintptr_t)data, sizeof(tcp_data)});
+            context.port = port;
+            create_tcp_packet(packet_buffer.ptr + driver->header_size, context, *destination, (sizedptr){(uintptr_t)data, sizeof(tcp_data)});
             break;
     }
     if (driver)
@@ -152,5 +157,5 @@ void NetworkDispatch::send_packet(NetProtocol protocol, uint16_t port, network_c
 }
 
 network_connection_ctx* NetworkDispatch::get_context(){
-    return &driver->connection_context;
+    return &context;
 }
