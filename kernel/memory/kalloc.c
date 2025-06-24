@@ -156,6 +156,11 @@ void calc_ram(){
         calculated_ram_start = ((calculated_ram_start) & ~((1ULL << 21) - 1));
         calculated_ram_end = ((calculated_ram_end) & ~((1ULL << 21) - 1));
     }
+#elif defined (RAM_ADDRESSES)
+    total_ram_start = RAM_START;
+    total_ram_size = RAM_SIZE;
+    calculated_ram_end = CRAM_END;
+    calculated_ram_start = CRAM_START;
 #else
     total_ram_start = 0x40000000;
     total_ram_size = 0x20000000;
