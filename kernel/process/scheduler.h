@@ -20,10 +20,6 @@ process_t* init_process();
 void save_syscall_return(uint64_t value);
 void process_restore();
 
-process_t* get_current_proc();
-process_t* get_proc_by_pid(uint16_t pid);
-uint16_t get_current_proc_pid();
-
 void stop_process(uint16_t pid);
 void stop_current_process();
 
@@ -35,6 +31,11 @@ void wake_processes();
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+process_t* get_current_proc();
+process_t* get_proc_by_pid(uint16_t pid);
+uint16_t get_current_proc_pid();
+
 uintptr_t get_current_heap();
 bool get_current_privilege();
 #ifdef __cplusplus

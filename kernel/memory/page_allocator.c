@@ -171,3 +171,7 @@ void free_from_page(void* ptr, uint64_t size) {
     page->free_list = block;
     page->size -= size;
 }
+
+void free_sized(sizedptr ptr){
+    free_from_page((void*)ptr.ptr, ptr.size);
+}

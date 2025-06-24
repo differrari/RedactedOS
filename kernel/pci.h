@@ -24,6 +24,8 @@ void pci_enable_verbose();
 
 bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_vector);
 
+uint8_t pci_setup_interrupts(uint64_t pci_addr, uint8_t irq_line, uint8_t amount);
+
 typedef struct {
     uint32_t addr_offset;
     uint8_t irq_num;

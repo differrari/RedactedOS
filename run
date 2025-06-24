@@ -18,6 +18,8 @@ fi
 qemu-system-aarch64 \
 -M raspi4b \
 -kernel kernel.elf \
+-display sdl \
+-netdev vmnet-bridged,id=net0,ifname=en0 \
 -serial mon:stdio \
 -d guest_errors \
 $ARGS
