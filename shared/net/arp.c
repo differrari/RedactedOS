@@ -1,12 +1,9 @@
 #include "arp.h"
+#include "eth.h"
 #include "std/memfunctions.h"
 
 void create_arp_packet(uintptr_t p, uint8_t* src_mac, uint32_t src_ip, uint8_t* dst_mac, uint32_t dst_ip, bool is_request){
-    eth_hdr_t* eth = (eth_hdr_t*)p;
-    for (int i = 0; i < 6; i++) eth->dst_mac[i] = is_request ? 0xFF : dst_mac[i];
-    memcpy(eth->src_mac, src_mac, 6);
-    eth->ethertype = __builtin_bswap16(0x0806);
-    p += sizeof(eth_hdr_t);
+    p = create_eth_packet(p, src_mac, is_request ? (uint8_t[]){0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF} : dst_mac, 0x806);
     
     arp_hdr_t* arp = (arp_hdr_t*)p;
 
@@ -27,6 +24,5 @@ void arp_populate_response(network_connection_ctx *ctx, arp_hdr_t* arp){
 }
 
 bool arp_should_handle(arp_hdr_t *arp, uint32_t ip){
-
     return __builtin_bswap32(arp->target_ip) == ip;
 }

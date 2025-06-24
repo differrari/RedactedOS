@@ -61,11 +61,9 @@ sizedptr tcp_parse_packet_payload(uintptr_t ptr){
 void tcp_send(uint16_t port, network_connection_ctx *destination, tcp_data* data){
     send_packet(TCP, port, destination, data, sizeof(tcp_data));
     if ((data->flags & ~(1 << ACK_F)) != 0 || data->payload.size > 0){
-        printf("The payload is %i size",data->payload.size);
         data->sequence += __builtin_bswap32(max(1,data->payload.size));
     }
     data->expected_ack = __builtin_bswap32(data->sequence);
-    printf("Next seq %i", __builtin_bswap32(data->sequence));
 }
 
 void tcp_reset(uint16_t port, network_connection_ctx *destination, tcp_data* data){
@@ -112,7 +110,7 @@ uint8_t tcp_check_response(tcp_data *data, sizedptr *out){
     if (ack != data->expected_ack){
         printf("Wrong ack %i vs %i. Resetting", ack, data->expected_ack);
         return TCP_RESET;
-    } else printf("Received ack %i", ack);
+    }
 
     if (response->flags != (data->flags | (1 << ACK_F))){
         printf("Wrong flags %b vs %b. Resetting",response->flags, data->flags | (1 << ACK_F));

@@ -13,6 +13,7 @@ public:
     bool unbind_port(uint16_t port, uint16_t process);
     void handle_upload_interrupt();
     void handle_download_interrupt();
+    //TODO: use sizedptr
     void send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len);
     bool read_packet(sizedptr *Packet, uint16_t process);
 

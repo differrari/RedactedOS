@@ -59,13 +59,11 @@ void test_network(){
 
     sizedptr http = request_http_data(GET, &server, 8888);
 
-    kprintf("Received payload? %x",(uintptr_t)&http);
-
     if (http.ptr != 0){
         kprintf("Parsing payload");
         sizedptr payload = http_get_payload(http);
         string content = http_get_chunked_payload(payload);
-        printf("Received payload? %s",(uintptr_t)content.data);
+        printf("Received payload %s",(uintptr_t)content.data);
     }
 
     unbind_port(8888);
@@ -87,7 +85,7 @@ uint32_t negotiate_dhcp(){
     dhcp_packet *payload;
 
     for (int i = 5; i >= 0; i--){
-        while (!read_packet(&ptr));
+        while (!read_packet(&ptr));//TODO. Timeout. Opt
         kprintf("Received DHCP response");
         payload = dhcp_parse_packet_payload(ptr.ptr);
         uint16_t opt_index = dhcp_parse_option(payload, 53);
@@ -114,7 +112,7 @@ uint32_t negotiate_dhcp(){
 
     for (int i = 5; i >= 0; i--){
         while (!read_packet(&ptr));
-        kprintf("Received DHCP response");
+        kprintf("Received DHCP response");//TODO. Timeout. Opt
         payload = dhcp_parse_packet_payload(ptr.ptr);
         uint16_t opt_index = dhcp_parse_option(payload, 53);
         if (payload->options[opt_index + 2] == 5)

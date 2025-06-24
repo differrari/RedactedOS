@@ -11,7 +11,7 @@ uint16_t checksum16_pipv4(
     uint32_t src_ip,
     uint32_t dst_ip,
     uint8_t protocol,
-    const uint8_t* udp_header_and_payload,
+    const uint8_t* payload,
     uint16_t length
 ) {
     uint32_t sum = 0;
@@ -24,10 +24,10 @@ uint16_t checksum16_pipv4(
     sum += length;
 
     for (uint16_t i = 0; i + 1 < length; i += 2)
-        sum += (udp_header_and_payload[i] << 8) | udp_header_and_payload[i + 1];
+        sum += (payload[i] << 8) | payload[i + 1];
 
     if (length & 1)
-        sum += udp_header_and_payload[length - 1] << 8;
+        sum += payload[length - 1] << 8;
 
     while (sum >> 16)
         sum = (sum & 0xFFFF) + (sum >> 16);

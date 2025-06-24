@@ -62,7 +62,7 @@ void NetworkDispatch::handle_download_interrupt(){
                     arp_populate_response(&conn, arp);
                     send_packet(ARP, 0, &conn, &req, 1);
                 }
-                //Should also look for responses to our own queries
+                //TODO: Should also look for responses to our own queries
             } else if (ethtype == 0x800){//IPV4
                 ipv4_hdr_t *ipv4 = (ipv4_hdr_t*)ptr;
                 uint8_t protocol = ipv4_get_protocol(ptr);

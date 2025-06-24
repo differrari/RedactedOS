@@ -63,6 +63,8 @@ sizedptr request_http_data(HTTPRequest request, network_connection_ctx *dest, ui
         .window = UINT16_MAX,
     };
 
+    printf("TCP Handshake");
+
     if (!tcp_handskake(dest, 8888, &data, 0)){
         printf("TCP Handshake Error");
         return (sizedptr){0};
@@ -73,11 +75,13 @@ sizedptr request_http_data(HTTPRequest request, network_connection_ctx *dest, ui
 
     free(serverstr.data, serverstr.mem_length);
 
-    printf("Request");
+    printf("HTTP Request");
+
+    //TODO: more chunked support
 
     sizedptr http_response = http_data_transfer(dest, (sizedptr){(uintptr_t)req.data, req.length}, port, &data, 0, data.sequence, data.ack);
 
-    printf("END");
+    printf("TCP End");
 
     free(req.data, req.mem_length);
 
@@ -100,6 +104,7 @@ sizedptr http_get_payload(sizedptr header){
 }
 
 string http_get_chunked_payload(sizedptr chunk){
+    //TODO: allow finding 0 to know when we're done reading the payload
     if (chunk.ptr && chunk.size > 0){
         int sizetrm = strindex((char*)chunk.ptr, "\r\n");
         uint64_t chunk_size = parse_hex_u64((char*)chunk.ptr,sizetrm);

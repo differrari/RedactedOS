@@ -16,6 +16,7 @@ extern "C" {
 #define ECE_F 6
 #define CWR_F 7
 
+//TODO: more response types. Indicate why we reset or retry instead of just that
 #define TCP_RESET 2
 #define TCP_RETRY 1
 #define TCP_OK 0

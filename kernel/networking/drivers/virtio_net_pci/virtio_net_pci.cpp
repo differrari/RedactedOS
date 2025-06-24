@@ -179,7 +179,7 @@ void VirtioNetDriver::send_packet(sizedptr packet){
     if (packet.ptr && packet.size)
         virtio_send_1d(&vnp_net_dev, packet.ptr, packet.size);
     
-    kprintf("Queued new packet");
+    kprintfv("Queued new packet");
 }
 
 void VirtioNetDriver::enable_verbose(){
