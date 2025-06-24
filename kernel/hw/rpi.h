@@ -4,3 +4,5 @@
 #define RAM_SIZE 0x20000000
 #define CRAM_END 0x60000000
 #define CRAM_START 0x43600000
+
+#undef USE_PCI

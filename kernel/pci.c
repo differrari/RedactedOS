@@ -7,6 +7,7 @@
 #include "exceptions/irq.h"
 #include "memory/mmu.h"
 #include "memory/memory_access.h"
+#include "hw/hw.h"
 
 #define PCI_BUS_MAX 256
 #define PCI_SLOT_MAX 32
@@ -202,6 +203,10 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
 }
 
 uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
+
+#ifndef USE_PCI
+        return 0;
+#endif
 
     if (NINIT)
         find_pci();

@@ -42,6 +42,9 @@ void kernel_main() {
     kprintf("Interrupts initialized");
 
     enable_interrupt();
+
+    kprintf("Initializing GPU");
+
     gpu_init(screen_size);
     
     kprintf("GPU initialized");
