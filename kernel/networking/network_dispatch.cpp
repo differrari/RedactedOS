@@ -131,7 +131,7 @@ void NetworkDispatch::send_packet(NetProtocol protocol, uint16_t port, network_c
         case UDP:
             packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(udp_hdr_t) + payload_len);
             context.port = port;
-            create_udp_packet(packet_buffer.ptr + driver->header_size, context, *destination, (uint8_t*)payload, payload_len);
+            create_udp_packet(packet_buffer.ptr + driver->header_size, context, *destination, (sizedptr){(uintptr_t)payload, payload_len});
         break;
         case DHCP:
             packet_buffer = driver->allocate_packet(DHCP_SIZE);

@@ -5,22 +5,23 @@
 #include "eth.h"
 #include "ipv4.h"
 
-void create_udp_packet(uintptr_t p, network_connection_ctx source, network_connection_ctx destination, const uint8_t* payload, uint16_t payload_len) {
+void create_udp_packet(uintptr_t p, network_connection_ctx source, network_connection_ctx destination, sizedptr payload){
     p = create_eth_packet(p, source.mac, destination.mac, 0x800);
 
-    p = create_ipv4_packet(p, sizeof(udp_hdr_t) + payload_len, 0x11, source.ip, destination.ip);
+    p = create_ipv4_packet(p, sizeof(udp_hdr_t) + payload.size, 0x11, source.ip, destination.ip);
 
     udp_hdr_t* udp = (udp_hdr_t*)p;
     udp->src_port = __builtin_bswap16(source.port);
     udp->dst_port = __builtin_bswap16(destination.port);
-    udp->length = __builtin_bswap16(sizeof(udp_hdr_t) + payload_len);
+    udp->length = __builtin_bswap16(sizeof(udp_hdr_t) + payload.size);
 
     p += sizeof(udp_hdr_t);
 
     uint8_t* data = (uint8_t*)p;
-    for (int i = 0; i < payload_len; i++) data[i] = payload[i];
+    uint8_t* payload_c = (uint8_t*)payload.ptr;
+    for (size_t i = 0; i < payload.size; i++) data[i] = payload_c[i];
 
-    udp->checksum = __builtin_bswap16(checksum16_pipv4(source.ip,destination.ip,0x11,(uint8_t*)udp,sizeof(udp_hdr_t) + payload_len));
+    udp->checksum = __builtin_bswap16(checksum16_pipv4(source.ip,destination.ip,0x11,(uint8_t*)udp,sizeof(udp_hdr_t) + payload.size));
     
 }
 

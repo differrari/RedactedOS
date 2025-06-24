@@ -50,7 +50,7 @@ void create_dhcp_packet(uintptr_t p, dhcp_request *payload){
         packet.options[7] = 255; // END
     }
     
-    create_udp_packet(p, source, destination, (uint8_t*)&packet, sizeof(dhcp_packet));
+    create_udp_packet(p, source, destination, (sizedptr){(uintptr_t)&packet, sizeof(dhcp_packet)});
 }
 
 dhcp_packet* dhcp_parse_packet_payload(uintptr_t ptr){
