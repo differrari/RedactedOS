@@ -16,3 +16,8 @@ uint16_t eth_parse_packet_type(uintptr_t ptr){
     
     return __builtin_bswap16(eth->ethertype);
 }
+
+uintptr_t eth_get_source(uintptr_t ptr){
+    eth_hdr_t* eth = (eth_hdr_t*)ptr;
+    return (uintptr_t)&eth->src_mac;
+}

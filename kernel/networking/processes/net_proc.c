@@ -9,20 +9,48 @@
 #include "networking/network.h"
 #include "syscalls/syscalls.h"
 #include "math/math.h"
-#include "../net_constants.h"
 #include "net/tcp.h"
 #include "net/http.h"
 #include "net/ipv4.h"
+#include "net/eth.h"
 
-void test_network(){
-    bind_port(8888);
-    network_connection_ctx dest = (network_connection_ctx){
-        .ip = HOST_IP,
-        .mac = HOST_MAC,
-        .port = 80,
+network_connection_ctx server;
+
+void find_server(){
+    bind_port(7777);
+    server = (network_connection_ctx){
+        .ip = (192 << 24) | (168 << 16) | (1 << 8) | 255,
+        .mac = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
+        .port = 8080,
     };
 
-    sizedptr http = request_http_data(GET, &dest, 8888);
+    size_t payload_size = 5;
+    char hw[5] = {'h','e','l','l','o'};
+
+    send_packet(UDP, 7777, &server, hw, payload_size);
+
+    sizedptr pack;
+
+    while (!read_packet(&pack));
+
+    memcpy((void*)&server.mac, (void*)eth_get_source(pack.ptr), 6);
+
+    server.ip = ipv4_get_source(pack.ptr + sizeof(eth_hdr_t));
+
+    sizedptr payload = udp_parse_packet_payload(pack.ptr);
+
+    uint8_t *content = (uint8_t*)payload.ptr;
+
+    kprintf("PAYLOAD: %s",(uintptr_t)string_ca_max(content, payload.size).data);
+
+    unbind_port(7777);
+}
+
+void test_network(){
+    find_server();
+    bind_port(8888);
+
+    sizedptr http = request_http_data(GET, &server, 8888);
 
     kprintf("Received payload? %x",(uintptr_t)&http);
 

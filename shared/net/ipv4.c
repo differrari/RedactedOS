@@ -31,3 +31,7 @@ void ipv4_populate_response(network_connection_ctx *ctx, eth_hdr_t *eth, ipv4_hd
 string ipv4_to_string(uint32_t ip){
     return string_format("%i.%i.%i.%i",(ip >> 24) & 0xFF,(ip >> 16) & 0xFF,(ip >> 8) & 0xFF,(ip >> 0) & 0xFF);
 }
+
+uint32_t ipv4_get_source(uintptr_t ptr){
+    return __builtin_bswap32(((ipv4_hdr_t*)ptr)->src_ip);
+}
