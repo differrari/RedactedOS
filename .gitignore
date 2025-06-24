@@ -7,4 +7,3 @@
 libshared.a
 *.a
 dump.dtb
-net_constants.h
