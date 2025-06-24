@@ -8,7 +8,7 @@ extern "C" {
 #include "hw/hw.h"
 
 #ifdef UART_RPI_BASE
-#define UART_BASE UART_RPI_BASE
+#define UART0_BASE UART_RPI_BASE
 #else 
 #define UART0_BASE 0x9000000
 #endif
