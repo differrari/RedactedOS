@@ -16,7 +16,7 @@
 
 network_connection_ctx server;
 
-void find_server(){
+bool find_server(){
     bind_port(7777);
     server = (network_connection_ctx){
         .ip = (192 << 24) | (168 << 16) | (1 << 8) | 255,
@@ -44,10 +44,15 @@ void find_server(){
     kprintf("PAYLOAD: %s",(uintptr_t)string_ca_max(content, payload.size).data);
 
     unbind_port(7777);
+
+    return strcmp(content, "world") == 0;
 }
 
 void test_network(){
-    find_server();
+    if (!find_server()){
+        kprintf("Could not find update server");
+        return;
+    }
     bind_port(8888);
 
     server.port = 80;
