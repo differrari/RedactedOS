@@ -3,9 +3,7 @@
 #include "exceptions/exception_handler.h"
 #include "console/kio.h"
 #include "hw/hw.h"
-#ifdef USE_DTB
 #include "dtb.h"
-#endif
 #include "console/serial/uart.h"
 #include "memory/memory_access.h"
 #include "std/string.h"
@@ -124,8 +122,6 @@ uint64_t mem_get_kmem_end(){
     return (uint64_t)&kcode_end;
 }
 
-#ifdef USE_DTB
-
 int handle_mem_node(const char *propname, const void *prop, uint32_t len, dtb_match_t *match) {
     if (strcmp(propname, "reg") == 0 && len >= 16) {
         uint32_t *p = (uint32_t *)prop;
@@ -149,27 +145,21 @@ int get_memory_region(uint64_t *out_base, uint64_t *out_size) {
     }
     return 0;
 }
-#endif
 
 void calc_ram(){
-#ifdef USE_DTB
-    if (get_memory_region(&total_ram_start, &total_ram_size)) {
-        calculated_ram_end = total_ram_start + total_ram_size;
-        calculated_ram_start = ((uint64_t)&kfull_end) + 0x1;
-        calculated_ram_start = ((calculated_ram_start) & ~((1ULL << 21) - 1));
-        calculated_ram_end = ((calculated_ram_end) & ~((1ULL << 21) - 1));
+    if (USE_DTB){
+        if (get_memory_region(&total_ram_start, &total_ram_size)) {
+            calculated_ram_end = total_ram_start + total_ram_size;
+            calculated_ram_start = ((uint64_t)&kfull_end) + 0x1;
+            calculated_ram_start = ((calculated_ram_start) & ~((1ULL << 21) - 1));
+            calculated_ram_end = ((calculated_ram_end) & ~((1ULL << 21) - 1));
+        }
+    } else {
+        total_ram_start = RAM_START;
+        total_ram_size = RAM_SIZE;
+        calculated_ram_end = CRAM_END;
+        calculated_ram_start = CRAM_START;
     }
-#elif defined (RAM_ADDRESSES)
-    total_ram_start = RAM_START;
-    total_ram_size = RAM_SIZE;
-    calculated_ram_end = CRAM_END;
-    calculated_ram_start = CRAM_START;
-#else
-    total_ram_start = 0x40000000;
-    total_ram_size = 0x20000000;
-    calculated_ram_end = 0x60000000;
-    calculated_ram_start = 0x43600000;
-#endif
     calculated_ram_size = calculated_ram_end - calculated_ram_start;
     kprintf("Device has %x memory starting at %x. %x for user starting at %x ending at %x  ",total_ram_size, total_ram_start, calculated_ram_size, calculated_ram_start, calculated_ram_end);
 }

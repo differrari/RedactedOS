@@ -7,12 +7,6 @@ extern "C" {
 #include "types.h"
 #include "hw/hw.h"
 
-#ifdef UART_RPI_BASE
-#define UART0_BASE UART_RPI_BASE
-#else 
-#define UART0_BASE 0x9000000
-#endif
-
 uint64_t get_uart_base();
 void enable_uart();
 void uart_puts(const char *s);

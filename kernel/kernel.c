@@ -1,6 +1,7 @@
 #include "console/kio.h"
 #include "console/serial/uart.h"
 #include "graph/graphics.h"
+#include "hw/hw.h"
 #include "pci.h"
 #include "kstring.h"
 #include "console/kconsole/kconsole.h"
@@ -19,6 +20,8 @@
 #include "networking/network.h"
 
 void kernel_main() {
+
+    detect_hardware();
     
     mmu_alloc();
     // mmu_enable_verbose();

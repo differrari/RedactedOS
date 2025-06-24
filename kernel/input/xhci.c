@@ -677,11 +677,12 @@ bool xhci_setup_device(uint16_t port){
 }
 
 bool xhci_input_init() {
-    #ifdef XHCI_BASE
-    uint64_t addr = XHCI_BASE;
-    #else
-    uint64_t addr = find_pci_device(0x1B36, 0xD);
-    #endif
+    uint64_t addr;
+    if (XHCI_BASE){
+        addr = XHCI_BASE;
+    } else if (USE_PCI) {
+        addr = find_pci_device(0x1B36, 0xD);
+    }
     if (!addr){ 
         kprintf_raw("[PCI] xHCI device not found");
         return false;
