@@ -12,6 +12,7 @@
 #include "std/memfunctions.h"
 #include "std/string.h"
 #include "exceptions/timer.h"
+#include "networking/network.h"
 
 void sync_el0_handler_c(){
     save_context_registers();
@@ -27,6 +28,8 @@ void sync_el0_handler_c(){
     asm volatile ("mov %0, x9" : "=r"(x2));
     uint64_t x3;
     asm volatile ("mov %0, x16" : "=r"(x3));
+    uint64_t x4;
+    asm volatile ("mov %0, x4" : "=r"(x4));
     uint64_t x29;
     asm volatile ("mov %0, x13" : "=r"(x29));
     uint64_t x30;
@@ -128,6 +131,25 @@ void sync_el0_handler_c(){
 
         case 40:
             result = timer_now_msec();
+            break;
+
+        case 51:
+            result = network_bind_port(x0, get_current_proc_pid());
+            break;
+
+        case 52:
+            result = network_unbind_port(x0, get_current_proc_pid());
+            break;
+
+        case 53:
+            network_connection_ctx *ctx = (network_connection_ctx*)x2;
+            void* payload = (void*)x3;
+            network_send_packet(x0, x1, ctx, payload, x4);
+            break;
+
+        case 54:
+            sizedptr *ptr = (sizedptr*)x0;
+            result = network_read_packet_current(ptr);
             break;
         
         default:

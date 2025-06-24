@@ -32,6 +32,9 @@ uint64_t alloc_mmio_region(uint64_t size) {
     return addr;
 }
 
+bool is_mmio_allocated(uint64_t addr){
+    return addr > PCI_MMIO_BASE && addr < next_mmio_base;
+}
 
 extern uint64_t kernel_start;
 extern uint64_t heap_bottom;

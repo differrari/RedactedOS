@@ -110,12 +110,16 @@ bool string_equals(string a, string b) {
 }
 
 string string_format(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    string_format_va(fmt, args);
+    va_end(args);
+}
+
+string string_format_va(const char *fmt, va_list args){
     char *buf = (char*)malloc(256);
     uint32_t len = 0;
     uint32_t arg_index = 0;
-
-    va_list args;
-    va_start(args, fmt);
 
     for (uint32_t i = 0; fmt[i] && len < 255; i++) {
         if (fmt[i] == '%' && fmt[i+1]) {
@@ -129,7 +133,7 @@ string string_format(const char *fmt, ...) {
                 for (uint32_t j = 0; j < bin.length && len < 255; j++) buf[len++] = bin.data[j];
                 free(bin.data,bin.mem_length);
             } else if (fmt[i] == 'c') {
-                uint64_t val = va_arg(args, uint8_t);
+                uint64_t val = va_arg(args, uint64_t);
                 buf[len++] = (char)val;
             } else if (fmt[i] == 's') {
                 const char *str = (const char *)va_arg(args, uintptr_t);
@@ -193,7 +197,6 @@ string string_format(const char *fmt, ...) {
     }
 
     buf[len] = 0;
-    va_end(args);
     return (string){ .data = buf, .length = len, .mem_length = 256 };
 }
 
@@ -211,6 +214,15 @@ int strstart(const char *a, const char *b) {
         a++; b++;
     }
     return 0;
+}
+
+int strindex(const char *a, const char *b) {
+    for (int i = 0; a[i]; i++) {
+        int j = 0;
+        while (b[j] && a[i + j] == b[j]) j++;
+        if (!b[j]) return i;
+    }
+    return -1;
 }
 
 int strend(const char *a, const char *b) {
@@ -248,4 +260,18 @@ bool utf16tochar(const uint16_t* str_in, char* out_str, size_t max_len) {
     }
     out_str[out_i] = '\0';
     return true;
+}
+
+uint64_t parse_hex_u64(char* str, size_t size) {
+    uint64_t result = 0;
+    for (uint32_t i = 0; i < size; i++) {
+        char c = str[i];
+        uint8_t digit = 0;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+        else break;
+        result = (result << 4) | digit;
+    }
+    return result;
 }

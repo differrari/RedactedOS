@@ -23,3 +23,5 @@ uint64_t get_shared_start();
 uint64_t get_shared_end();
 
 uint64_t alloc_mmio_region(uint64_t size);
+
+bool is_mmio_allocated(uint64_t addr);

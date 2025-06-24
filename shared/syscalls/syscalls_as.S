@@ -33,4 +33,11 @@ syscall_def process_yield, 31
 // syscall_def process_await, 32
 syscall_def halt, 33
 
+//Time commands
 syscall_def get_time, 40
+
+//Network commands
+syscall_def bind_port, 51
+syscall_def unbind_port, 52
+syscall_def send_packet, 53
+syscall_def read_packet, 54

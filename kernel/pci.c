@@ -1,5 +1,6 @@
 #include "pci.h"
 #include "console/kio.h"
+#include "exceptions/exception_handler.h"
 #include "memory/kalloc.h"
 #include "memory/dma.h"
 #include "fw/fw_cfg.h"
@@ -185,13 +186,22 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
         uint32_t new_lo = read32(bar_addr);
 
         kprintfv("[PCI] Two registers %x > %x",new_hi,new_lo);
+        uint64_t full = (new_hi << 32) | (new_lo & ~0xF);
+        if (full != config_base){
+            if (is_mmio_allocated(full))
+                panic_with_info("Device hardcoded address is already in use", full);
+            else 
+                *mmio_start = full;
+        }
     } else {
-        bar_low &= ~0xF;
-        size = ~((uint64_t)bar_low) + 1;
+        uint32_t size32 = bar_low & ~0xF;
+        size32 = ~size32 + 1;
 
-        uint64_t config_base = alloc_mmio_region(size);
+        kprintfv("[PCI] Calculated bar size %x",size32);
+
+        uint64_t config_base = alloc_mmio_region(size32);
         *mmio_start = config_base;
-        *mmio_size = size;
+        *mmio_size = size32;
 
         write32(bar_addr, config_base & 0xFFFFFFFF);
     }
@@ -299,9 +309,10 @@ bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_si
             uint64_t table_addr = pci_read_address_bar(pci_addr, bir);
 
             if(!table_addr){
-                kprintf_raw("[PCI] MSI-X setup error: Table address is null. Did you setup the bar memory before calling this function?");
-                return false;
-            } 
+                uint64_t bar_size;
+                pci_setup_bar(pci_addr, bir, &table_addr, &bar_size);
+                kprintfv("Setting up new bar for MSI-X %x + %x",table_addr, table_addr_offset);
+            } else kprintfv("Bar %i setup at %x + %x",bir, table_addr, table_addr_offset);
             
             msix_table_entry *msix_start = (msix_table_entry *)(uintptr_t)(table_addr + table_addr_offset);
 
@@ -327,4 +338,25 @@ bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_si
     }
 
     return true;
+}
+
+uint8_t pci_setup_interrupts(uint64_t pci_addr, uint8_t irq_line, uint8_t amount){
+    msix_irq_line irq_lines[amount];
+    for (uint8_t i = 0; i < amount; i++)
+        irq_lines[i] = (msix_irq_line){.addr_offset=0,.irq_num=irq_line+i};
+
+    bool msix_ok = pci_setup_msix(pci_addr, irq_lines, amount);
+
+    if(msix_ok){
+        return 1;
+    }
+
+    bool msi_ok = true;
+    for (uint8_t i = 0; i < amount; i++)
+        msi_ok &= pci_setup_msi(pci_addr, irq_line+i);
+    if(msi_ok){
+        return 2;
+    }
+    
+    return 0;
 }

@@ -93,30 +93,14 @@ void make_ring_link(trb* ring, bool cycle){
     make_ring_link_control(ring, cycle);
 }
 
-
-uint8_t xhci_init_interrupts(uint64_t pci_addr){
-#define MSIX_IRQ_LENGTH 1
-    msix_irq_line irq_lines[MSIX_IRQ_LENGTH] = {(msix_irq_line){.addr_offset=0,.irq_num=XHCI_IRQ}};
-    bool msix_ok = pci_setup_msix(pci_addr, irq_lines, MSIX_IRQ_LENGTH);
-
-    if(msix_ok){
-        return 1;
-    }
-
-    bool msi_ok = pci_setup_msi(pci_addr, XHCI_IRQ);
-    if(msi_ok){
-        return 2;
-    }
-    
-    return 0;
-}
-
 bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
     kprintfv("[xHCI] init");
     if (!(read16(pci_addr + 0x06) & (1 << 4))){
         kprintfv("[xHCI] Wrong capabilities list");
         return false;
     }
+
+    pci_enable_device(pci_addr);
 
     if (!pci_setup_bar(pci_addr, 0, &xhci->mmio, &xhci->mmio_size)){
         kprintfv("[xHCI] BARs not set up");
@@ -125,20 +109,18 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
 
     pci_register(xhci->mmio, xhci->mmio_size);
 
-    uint8_t interrupts_ok = xhci_init_interrupts(pci_addr);
+    uint8_t interrupts_ok = pci_setup_interrupts(pci_addr, XHCI_IRQ, 1);
     switch(interrupts_ok){
         case 0:
-            kprintf_raw("[xHCI] Failed to setup interrupts\n");
+            kprintf_raw("[xHCI] Failed to setup interrupts");
             return false;
         case 1:
-            kprintf_raw("[xHCI] Interrupts setup with MSI-X");
+            kprintf_raw("[xHCI] Interrupts setup with MSI-X %i",XHCI_IRQ);
             break;
         default:
-            kprintf_raw("[xHCI] Interrupts setup with MSI");
+            kprintf_raw("[xHCI] Interrupts setup with MSI %i",XHCI_IRQ);
             break;
     }
-
-    pci_enable_device(pci_addr);
 
     kprintfv("[xHCI] BARs set up @ %x (%x)",xhci->mmio,xhci->mmio_size);
 

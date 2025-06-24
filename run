@@ -22,7 +22,8 @@ qemu-system-aarch64 \
 -kernel kernel.elf \
 -device virtio-gpu-pci \
 -display sdl \
--device virtio-net-pci \
+-netdev vmnet-bridged,id=net0,ifname=en0 \
+-device virtio-net-pci,netdev=net0 \
 -serial mon:stdio \
 -drive file=disk.img,if=none,format=raw,id=hd0 \
 -device virtio-blk-pci,drive=hd0 \

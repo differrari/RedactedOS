@@ -23,8 +23,8 @@ Once the system is initialized, most of the system's functionality is provided b
 Certain parts of the system initialization, such as GPU initialization and XHCI input code initialization rely on some syscalls that expect a process to be running, so an initial kernel.c process is created to hold their data. In the future they'll each have their own process.
 Everything about kernel processes and the pseudo-processes mentioned for GPU/XHCI will most likley be improved in the future, to make the system more modular, and kernel processes might get loaded from filesystem, in a similar way to how user processes are loaded. In order to do this, they either need to not rely on any kernel-only code (as several of them currently do) and rely on syscalls entirely, or (less ideal) dynamically link to the kernel. Doing this will increase the kernel's modularity.
 
-The system currently heavily relies on symbols defined in the linker to run, and these symbols are not available in the stripped binary version of the kernel, so REDACTED OS must be run through the kernel.elf file rather than the kernel.bin file.
-This limitation will be lifted in the future, removing reliance on these symbols altogether when possible, and creating alternatives for them when they're needed.
+The system must be run through the .elf file, since the .img file overwrites the device's DTB, making it impossible to detect certain features of the system.
+This limitation will be lifted in the future.
 
 ### Shared
 
@@ -63,4 +63,9 @@ Running `make run` or `make all` followed by `./run` is the fastest way to run t
 In order to run the OS, you'll need to create a folder called fs inside the project's root directory. This folder will contain user processes. It must have the following subfolders: /redos/user/, with user processes placed inside with the .elf extension. The `user` process will automatically be placed in that folder when compiling. A script called `createfs` will run automatically to create an image from the fs folder. This script currently only works on MacOS and Linux host systems, it will need to be adapted to run on Windows systems. Since my main host system is Mac, there's a chance the linux version won't be up to date if any changes need to be made.
 
 Github Actions should automatically compile changes made to the `main` branch using Mac, so a compiled version of the system with all the files needed to run it should be found there. This includes the fs folder, containing the filesystem, but you'll need to recompile the `disk.img` filesystem with `createfs` for any changes made to this folder to be reflected.
+
+## Networking
+
+The system has basic networking support. Currently, it performs DHCP a discovery and request to receive an IP address on the local network, is capable of responding to Ping and ARP, and can connect to a server running on ports 8080 and 80, though it currently does nothing noteworthy.
+An implementation of the server can be found at the [RedactedOS Firmware Server Repository](https://github.com/differrari/RedactedOS_firmware_server/tree/main)
 
