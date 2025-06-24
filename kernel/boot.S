@@ -3,10 +3,19 @@
 _start:
     mrs x0, mpidr_el1
     and x0, x0, #3
-    cbz x0, check_hw
+    cbz x0, setup_vars
 half:
     wfe
     b half
+
+setup_vars:
+    ldr     x5, =__bss_start
+    ldr     x6, =__bss_end
+clear_bss:
+    cmp     x5, x6
+    b.ge    check_hw
+    str     xzr, [x5], #8
+    b       clear_bss
 
 check_hw:
     adr     x0, . 
@@ -82,14 +91,6 @@ el2_entry:
     eret
 
 el1_non_secure:
-    ldr     x5, =__bss_start
-    ldr     x6, =__bss_end
-clear_bss:
-    cmp     x5, x6
-    b.ge    stack_setup
-    str     xzr, [x5], #8
-    b       clear_bss
-
 stack_setup:
     ldr x1, =stack_top
     mov sp, x1
