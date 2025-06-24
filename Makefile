@@ -1,4 +1,6 @@
-.PHONY: all kernel user shared clean
+MODE ?= rpi
+
+.PHONY: all kernel user shared clean rpi virtio debugrpi debugvirtio run debug
 
 all: shared user kernel
 	@echo "Build complete."
@@ -18,20 +20,16 @@ clean:
 	$(MAKE) -C kernel clean
 	$(MAKE) -C user clean
 
-rpi: 
+rpi:
 	$(MAKE) LOAD_ADDR=0x80000 all
 
-virtio: 
+virtio:
 	$(MAKE) LOAD_ADDR=0x41000000 all
 
-debugrpi:
-	$(MAKE) rpi
-	./rundebug_r
-
-debugvirtio:
-	$(MAKE) virtio
-	./rundebug_v
+debug:
+	$(MAKE) $(MODE)
+	./rundebug MODE=$(MODE) $(ARGS)
 
 run: 
-	$(MAKE) rpi
-	./run_rpi
+	$(MAKE) $(MODE)
+	./run_$(MODE)
