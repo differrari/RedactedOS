@@ -50,6 +50,8 @@ void test_network(){
     find_server();
     bind_port(8888);
 
+    server.port = 80;
+
     sizedptr http = request_http_data(GET, &server, 8888);
 
     kprintf("Received payload? %x",(uintptr_t)&http);
