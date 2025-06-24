@@ -8,6 +8,7 @@
 #include "xhci_bridge.h"
 #include "std/string.h"
 #include "std/memfunctions.h"
+#include "hw/hw.h"
 
 static xhci_device global_device;
 
@@ -113,6 +114,7 @@ uint8_t xhci_init_interrupts(uint64_t pci_addr){
 
 bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
     kprintfv("[xHCI] init");
+#ifdef USE_PCI
     if (!(read16(pci_addr + 0x06) & (1 << 4))){
         kprintfv("[xHCI] Wrong capabilities list");
         return false;
@@ -141,6 +143,7 @@ bool xhci_init(xhci_device *xhci, uint64_t pci_addr) {
     pci_enable_device(pci_addr);
 
     kprintfv("[xHCI] BARs set up @ %x (%x)",xhci->mmio,xhci->mmio_size);
+#endif
 
     xhci->cap = (xhci_cap_regs*)(uintptr_t)xhci->mmio;
     kprintfv("[xHCI] caplength %x",xhci->cap->caplength);
@@ -692,7 +695,11 @@ bool xhci_setup_device(uint16_t port){
 }
 
 bool xhci_input_init() {
+    #ifdef XHCI_BASE
+    uint64_t addr = XHCI_BASE;
+    #else
     uint64_t addr = find_pci_device(0x1B36, 0xD);
+    #endif
     if (!addr){ 
         kprintf_raw("[PCI] xHCI device not found");
         return false;

@@ -6,3 +6,6 @@
 #define CRAM_START 0x43600000
 
 #undef USE_PCI
+
+#define XHCI_BASE     0xFE9C0000
+#define UART_RPI_BASE 0xFE201000
