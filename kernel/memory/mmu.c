@@ -189,10 +189,9 @@ void mmu_init() {
     for (uint64_t addr = get_shared_start(); addr <= get_shared_end(); addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 2);
 
-    if (USE_DTB){
-        uint64_t dstart;
-        uint64_t dsize;
-        dtb_addresses(&dstart,&dsize);
+    uint64_t dstart;
+    uint64_t dsize;
+    if (dtb_addresses(&dstart,&dsize)){
         for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB)
             mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 1);
     }

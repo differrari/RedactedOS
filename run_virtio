@@ -1,6 +1,6 @@
 #/!bin/sh
 
-echo "Running emulator"
+echo "Running virtio emulator"
 
 ARGS=""
 if [ "$1" = "debug" ]; then
@@ -16,10 +16,18 @@ if echo "$XHCI_CAPABILITIES" | grep -q "msi "; then
 fi
 
 qemu-system-aarch64 \
--M raspi4b \
+-M virt \
+-cpu cortex-a72 \
+-m 512M \
 -kernel kernel.elf \
+-device virtio-gpu-pci \
 -display sdl \
 -netdev vmnet-bridged,id=net0,ifname=en0 \
+-device virtio-net-pci,netdev=net0 \
 -serial mon:stdio \
+-drive file=disk.img,if=none,format=raw,id=hd0 \
+-device virtio-blk-pci,drive=hd0 \
+-device qemu-xhci,${MSI_CAPABILITIES}id=usb \
+-device usb-kbd,bus=usb.0 \
 -d guest_errors \
 $ARGS

@@ -32,6 +32,8 @@ void kernel_main() {
     set_exception_vectors();
     kprintf("Exception vectors set");
 
+    print_hardware();
+
     page_allocator_init();
     // page_alloc_enable_verbose();
     kprintf("Initializing kernel...");

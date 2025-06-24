@@ -1,7 +1,7 @@
 ENTRY(_start)
 
 SECTIONS {
-    . = 0x80000;
+    . = LOAD_ADDR;
     kernel_start = .;
     .boot . : { boot.o(.text) }
     .text : { 

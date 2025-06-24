@@ -4,7 +4,8 @@ LD = $(ARCH)-ld
 OBJCOPY = $(ARCH)-objcopy
 
 CFLAGS = -g -O0 -nostdlib -ffreestanding -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -Wall -Wextra -mcpu=cortex-a72 -I. -I../shared -I../user
-LDFLAGS = -T $(shell ls *.ld)
+
+LDFLAGS = -T $(shell ls *.ld) --defsym=LOAD_ADDR=$(LOAD_ADDR)
 
 C_SRC = $(shell find . -name '*.c')
 ASM_SRC = $(shell find . -name '*.S')
