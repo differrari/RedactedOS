@@ -7,9 +7,15 @@
 
 void mmu_alloc();
 void mmu_init();
+#ifdef __cplusplus
+extern "C" {
+#endif
 void register_device_memory(uint64_t va, uint64_t pa);
 void register_device_memory_2mb(uint64_t va, uint64_t pa);
 void register_proc_memory(uint64_t va, uint64_t pa, bool kernel);
+#ifdef __cplusplus
+}
+#endif
 void debug_mmu_address(uint64_t va);
 void mmu_enable_verbose();
 

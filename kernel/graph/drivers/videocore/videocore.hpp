@@ -28,6 +28,8 @@ private:
     uintptr_t back_framebuffer;
     uint64_t framebuffer_size;
 
+    void* page;
+
     gpu_rect dirty_rects[MAX_DIRTY_RECTS_VCG];
     uint32_t dirty_count = 0;
     bool full_redraw = false;

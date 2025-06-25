@@ -9,6 +9,7 @@
 #include "std/memfunctions.h"
 #include "mailbox/mailbox.h"
 #include "math/math.h"
+#include "memory/mmu.h"
 
 #define RGB_FORMAT_XRGB8888 ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
 
@@ -59,9 +60,12 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
             return false;
         }
         framebuffer = fb_mbox[5];
-        back_framebuffer = talloc(screen_size.width * screen_size.height * bpp);
+        size_t fb_size = fb_mbox[6];
+        page = alloc_page(0x1000, true, true, false);
+        back_framebuffer = (uintptr_t)allocate_in_page(page, fb_size, ALIGN_16B, true, true);
         kprintf("Framebuffer allocated to %x. BPP %i. Stride %i",framebuffer, bpp, stride/bpp);
-        kprintf("Done");
+        for (size_t i = framebuffer; i < framebuffer + fb_size; i += GRANULE_4KB)
+            register_device_memory(i,i);
         return true;
     }
     return false;
