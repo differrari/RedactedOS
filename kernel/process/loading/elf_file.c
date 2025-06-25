@@ -46,7 +46,7 @@ process_t* load_elf_file(const char *name, void* file){
     elf_program_header* first_program_header = (elf_program_header*)((uint8_t *)file + header->program_header_offset);
     kprintf("program takes up %x, begins at %x, and is %b, %b",first_program_header->p_filez, first_program_header->p_offset, first_program_header->segment_type, first_program_header->flags);
     kprintf("SECTION %x - %i * %i",header->section_header_offset, header->section_entry_size,header->section_num_entries);
-    kprintf("First instruction %x", (uint64_t)*((uint8_t *)file + 0x1000));
+    kprintf("First instruction %x", *(uint64_t*)(file + header->program_entry_offset));
 
     return create_process(name, (void*)(file + first_program_header->p_offset), first_program_header->p_filez, header->program_entry_offset);
 }

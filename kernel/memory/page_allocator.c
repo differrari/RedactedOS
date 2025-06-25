@@ -72,7 +72,7 @@ void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
             
             uintptr_t first_address = 0;
             for (uint64_t j = 0; j < page_count; j++){
-                mem_bitmap[i] |= (1ULL << bit + j);
+                mem_bitmap[i] |= (1 << (bit + j));
                 uint64_t page_index = (i * 64) + (bit + j);
                 uintptr_t address = page_index * PAGE_SIZE;
                 if (!first_address) first_address = address;
