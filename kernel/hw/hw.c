@@ -10,10 +10,12 @@ uintptr_t CRAM_START = 0;
 uintptr_t CRAM_END = 0;
 uintptr_t UART0_BASE = 0;
 uintptr_t XHCI_BASE = 0;
+uintptr_t MMIO_BASE = 0;
 
 void detect_hardware(){
     if (BOARD_TYPE == 1){
         UART0_BASE = 0x9000000;
+        MMIO_BASE = 0x10010000;
     } else {
         uint32_t reg;
         asm volatile ("mrs %x0, midr_el1" : "=r" (reg));
@@ -21,10 +23,11 @@ void detect_hardware(){
         uint32_t raspi = (reg >> 4) & 0xFFF;
         switch (raspi) {
             case 0xC07:
-            case 0xD03:  UART0_BASE = 0x3F201000; break;
-            case 0xD08:  UART0_BASE = 0xFE201000; break;;
-            default: UART0_BASE = 0x20201000; break;
+            case 0xD03:  MMIO_BASE = 0x3F000000; break;
+            case 0xD08:  MMIO_BASE = 0xFE000000; break;;
+            default: MMIO_BASE = 0x20000000; break;
         }
+         UART0_BASE = MMIO_BASE + 0x201000;
     }
 
     RAM_START       = 0x40000000;

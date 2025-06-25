@@ -17,12 +17,12 @@ static uint64_t calculated_ram_end = 0;
 
 FreeBlock* temp_free_list = 0;
 
-#define PCI_MMIO_BASE   0x10010000
-#define PCI_MMIO_LIMIT  0x1FFFFFFF
+#define PCI_MMIO_LIMIT  MMIO_BASE + 0xFFFFFFF
 
-static uint64_t next_mmio_base = PCI_MMIO_BASE;
+static uint64_t next_mmio_base;
 
 uint64_t alloc_mmio_region(uint64_t size) {
+    if (next_mmio_base == 0) next_mmio_base = MMIO_BASE;
     size = (size + 0xFFF) & ~0xFFF;
     if (next_mmio_base + size > PCI_MMIO_LIMIT){
         panic_with_info("MMIO alloc overflow",next_mmio_base+size);
@@ -34,7 +34,7 @@ uint64_t alloc_mmio_region(uint64_t size) {
 }
 
 bool is_mmio_allocated(uint64_t addr){
-    return addr > PCI_MMIO_BASE && addr < next_mmio_base;
+    return addr > MMIO_BASE && addr < next_mmio_base;
 }
 
 extern uint64_t kernel_start;

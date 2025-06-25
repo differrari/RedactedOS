@@ -54,6 +54,8 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     }
 
     fb_set_stride(screen_size.width * BPP);
+
+    kprintf("Stride %i",screen_size.width * BPP);
     
     framebuffer_size = screen_size.width * screen_size.height * BPP;
     framebuffer_size = (framebuffer_size);

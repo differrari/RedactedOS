@@ -16,5 +16,7 @@ extern uintptr_t CRAM_END;
 extern uintptr_t UART0_BASE;
 extern uintptr_t XHCI_BASE;
 
+extern uintptr_t MMIO_BASE;
+
 void detect_hardware();
 void print_hardware();
