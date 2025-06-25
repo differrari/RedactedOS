@@ -78,8 +78,6 @@ void kernel_main() {
 
     kprintf("Starting processes");
 
-    // translate_enable_verbose();
-
     launch_net_process();
 
     init_bootprocess();
