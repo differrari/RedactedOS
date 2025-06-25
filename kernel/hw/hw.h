@@ -18,5 +18,8 @@ extern uintptr_t XHCI_BASE;
 
 extern uintptr_t MMIO_BASE;
 
+extern uintptr_t GICD_BASE;
+extern uintptr_t GICC_BASE;
+
 void detect_hardware();
 void print_hardware();

@@ -183,7 +183,7 @@ void mmu_init() {
     for (uint64_t addr = get_uart_base(); addr <= get_uart_base(); addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
 
-    for (uint64_t addr = GICD_BASE; addr <= GICD_BASE + 0x20040; addr += GRANULE_4KB)
+    for (uint64_t addr = GICD_BASE; addr <= GICC_BASE + 0x1000; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
 
     for (uint64_t addr = get_shared_start(); addr <= get_shared_end(); addr += GRANULE_4KB)

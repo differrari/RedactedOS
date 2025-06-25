@@ -11,6 +11,8 @@ uintptr_t CRAM_END = 0;
 uintptr_t UART0_BASE = 0;
 uintptr_t XHCI_BASE = 0;
 uintptr_t MMIO_BASE = 0;
+uintptr_t GICD_BASE = 0;
+uintptr_t GICC_BASE = 0;
 
 void detect_hardware(){
     if (BOARD_TYPE == 1){
@@ -20,13 +22,20 @@ void detect_hardware(){
         RAM_START       = 0x40000000;
         CRAM_START      = 0x43600000;
         USE_PCI = 1;
+        GICD_BASE = 0x08000000;
+        GICC_BASE = 0x08010000;
+
     } else {
         uint32_t reg;
         asm volatile ("mrs %x0, midr_el1" : "=r" (reg));
         //We can detect if we're running on 0x400.... to know if we're in virt. And 41 vs 40 to know if we're in img or elf
         uint32_t raspi = (reg >> 4) & 0xFFF;
         switch (raspi) {
-            case 0xD08:  MMIO_BASE = 0xFE000000; break;;
+            case 0xD08:  
+            MMIO_BASE = 0xFE000000; 
+            GICD_BASE = 0xff841000;
+            GICC_BASE = 0xff842000;
+            break;;
             default:  MMIO_BASE = 0x3F000000; break;
         }
          UART0_BASE = MMIO_BASE + 0x201000;
