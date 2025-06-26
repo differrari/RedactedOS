@@ -200,8 +200,8 @@ void ef_read_FAT(uint32_t location, uint32_t size, uint8_t count){
     disk_read((void*)fat, location, size);
     kprintf("FAT: %x (%x)",location*512,size * count * 512);
     uint32_t total_entries = (size * count * 512) / 4;
-    for (uint32_t i = 0; i < total_entries; i++)
-        if (fat[i] != 0) kprintf("[%i] = %x", i, fat[i]);
+    // for (uint32_t i = 0; i < total_entries; i++)
+    //     if (fat[i] != 0) kprintf("[%i] = %x", i, fat[i]);
 }
 
 bool ef_init(){

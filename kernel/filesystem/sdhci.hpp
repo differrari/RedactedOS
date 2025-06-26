@@ -27,7 +27,7 @@ class SDHCI {
 public:
     bool init();
     void write(void *buffer, uint32_t sector, uint32_t count);
-    void read(void *buffer, uint32_t sector, uint32_t count);
+    bool read(void *buffer, uint32_t sector, uint32_t count);
 private:
     sdhci_regs* regs;
     bool issue_command(uint32_t cmd_index, uint32_t arg, uint32_t flags = 0);
@@ -38,4 +38,5 @@ private:
     void dump();
     bool wait(uint32_t *reg, uint32_t expected_value, bool match = true, uint32_t timeout = 2000);
     uint32_t clock_rate;
+    uint32_t rca;
 };

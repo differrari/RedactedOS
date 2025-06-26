@@ -3,6 +3,8 @@
 #include "hw/hw.h"
 #include "mailbox/mailbox.h"
 #include "syscalls/syscalls.h"
+#include "memory/mmu.h"
+#include "std/memfunctions.h"
 
 #define CMD_INDEX(x)   ((x) << 8)
 #define RESP_TYPE(x)   (x)
@@ -14,15 +16,19 @@
 #define IF_COND (CMD_INDEX(8) | RESP_TYPE(2) | CRC_ENABLE | IDX_ENABLE)
 #define RCA (CMD_INDEX(3) | RESP_TYPE(2) | CRC_ENABLE)
 #define APP (CMD_INDEX(55) | RESP_TYPE(2) | CRC_ENABLE | IDX_ENABLE)
+#define SELECT_CARD (CMD_INDEX(7) | RESP_TYPE(3) | CRC_ENABLE | IDX_ENABLE)
 #define OCR (CMD_INDEX(41) | RESP_TYPE(2))
+#define READ_ONE (CMD_INDEX(17) | RESP_TYPE(2) | CRC_ENABLE | IS_DATA)
+#define READ_MULTIPLE (CMD_INDEX(18) | RESP_TYPE(2) | CRC_ENABLE | IS_DATA)
+#define STOP_TRANSMISSION (CMD_INDEX(12) | RESP_TYPE(2) | CRC_ENABLE)
 
 bool SDHCI::wait(uint32_t *reg, uint32_t expected_value, bool match, uint32_t timeout){
     bool condition;
     do {
-        delay(140);
+        delay(1);
         timeout--;
         if (timeout == 0){
-            kprintf("Command timed out. Final value %x vs %x on %x",*reg,expected_value, (uintptr_t)reg);
+            kprintf("Command timed out");
             return false;
         }
         condition = *reg & expected_value;
@@ -81,7 +87,7 @@ uint32_t SDHCI::clock_divider(uint32_t target_rate) {
 bool SDHCI::switch_clock_rate(uint32_t target_rate) {
     uint32_t div = clock_divider(target_rate);
 
-    wait(&regs->status,0b11, false);
+    if (!wait(&regs->status,0b11, false)) return false;
 
     kprintf("Clock divider %i",div);
 
@@ -120,7 +126,7 @@ bool SDHCI::setup_clock(){
     regs->ctrl1 |= (11 << 16);
     regs->ctrl1 |= (1 << 2);
 
-    wait(&regs->ctrl1, (1 << 1));
+    if (!wait(&regs->ctrl1, (1 << 1))) return false;
 
     delay(30);
 
@@ -143,10 +149,13 @@ void SDHCI::dump(){
 
 bool SDHCI::init() {
     if (!SDHCI_BASE) return false;
+
+    register_device_memory(SDHCI_BASE, SDHCI_BASE);
+
     regs = (sdhci_regs*)SDHCI_BASE;
 
     regs->ctrl1 |= (1 << 24);//Reset
-    wait(&regs->ctrl1,(1 << 24), false);
+    if (!wait(&regs->ctrl1,(1 << 24), false)) return false;
 
     if (RPI_BOARD == 4){
         regs->ctrl0 |= 0x0F << 8;//VDD1 bus power
@@ -190,10 +199,6 @@ bool SDHCI::init() {
     
     kprintf("[SDHCI] V2 = %i",v2_card);
 
-    if (!true) {//usable_card
-        return false;
-    }
-
     while (true){
         if (!issue_app_command(OCR, 0xFF8000 | (v2_card << 30))){
             kprintf("[SDHCI error] Get OCR Failed");
@@ -217,13 +222,11 @@ bool SDHCI::init() {
         return false;
     }
 
-    kprintf("[SDHCI] RCA %x",(regs->resp0 >> 16) & 0xFFFF);
+    rca = (regs->resp0 >> 16) & 0xFFFF;
+    kprintf("[SDHCI] RCA %x",rca);
 
-    // if (!select_card()) {
-    //     return false;
-    // }
-
-    if (!true) {//set_scr
+    if (!issue_command(SELECT_CARD, rca << 16)){
+        kprintf("[SDHCI error] Failed to select card");
         return false;
     }
 
@@ -246,7 +249,6 @@ bool SDHCI::issue_command(uint32_t cmd, uint32_t arg, uint32_t flags) {
 
     regs->interrupt = 0xFFFFFFFF;
 
-    regs->blksize_count = 0;
     regs->arg1 = arg;
     regs->cmd_transfmode = (cmd << 16) | flags;
 
@@ -264,3 +266,39 @@ bool SDHCI::issue_command(uint32_t cmd, uint32_t arg, uint32_t flags) {
 
     return true;
 }
+
+bool SDHCI::read(void *buffer, uint32_t sector, uint32_t count){
+    bool multiple = count > 1;
+    regs->blksize_count = (count << 16) | 512;
+    uint32_t command = multiple ? READ_MULTIPLE : READ_ONE;
+    uint32_t flags = multiple ? 0b110110 : 0b010000;
+    kprintf("Direction %b",(flags >> 4) & 1);
+    for (int i = 5; i >= 0; i--){
+        if (issue_command(command, sector, flags)) break;
+        if (i == 0) { kprintf("[SDHCI read timeout]"); return false; }
+        delay(500);
+    }
+
+    uint32_t* dest = (uint32_t*)buffer;
+    for (uint32_t i = 0; i < count; i++) {
+        if (!wait(&regs->interrupt,(1 << 5) | 0x8000)){
+            kprintf("Read operation timed out on block %i",i);
+            return false;
+        }
+        for (int j = 0; j < 128; j++)
+            dest[(i * 128) + j] = regs->data;
+        regs->interrupt = (1 << 5);
+    }
+    
+    wait(&regs->interrupt, 1 << 1);
+    regs->interrupt = (1 << 1);
+
+    kprintf("Finished reading");
+
+    if (multiple)
+        issue_command(STOP_TRANSMISSION, 0, 0);
+
+    return true;
+}
+
+//Write CMD (24 block, 25 multiple)
