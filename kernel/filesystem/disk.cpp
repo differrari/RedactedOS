@@ -1,6 +1,8 @@
 #include "disk.h"
 #include "exfat.h"
 #include "virtio_blk_pci.h"
+#include "sdhci.hpp"
+#include "hw/hw.h"
 
 static bool disk_enable_verbose;
 
@@ -17,8 +19,13 @@ void disk_verbose(){
         }\
     })
 
+SDHCI sdhci_driver; 
+
 bool find_disk(){
-    return vblk_find_disk();
+    if (BOARD_TYPE == 2)
+        return sdhci_driver.init();
+    else 
+        return vblk_find_disk();
 }
 
 bool disk_init(){

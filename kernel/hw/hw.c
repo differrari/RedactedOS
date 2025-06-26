@@ -13,6 +13,9 @@ uintptr_t XHCI_BASE = 0;
 uintptr_t MMIO_BASE = 0;
 uintptr_t GICD_BASE = 0;
 uintptr_t GICC_BASE = 0;
+uintptr_t SDHCI_BASE = 0;
+
+uint8_t RPI_BOARD;
 
 void detect_hardware(){
     if (BOARD_TYPE == 1){
@@ -35,18 +38,36 @@ void detect_hardware(){
             MMIO_BASE = 0xFE000000; 
             GICD_BASE = 0xff841000;
             GICC_BASE = 0xff842000;
+            RPI_BOARD = 4;
             break;;
             default:  MMIO_BASE = 0x3F000000; break;
         }
          UART0_BASE = MMIO_BASE + 0x201000;
+         SDHCI_BASE = MMIO_BASE + 0x300000;
+         XHCI_BASE  = MMIO_BASE + 0x9C0000;
          RAM_START       = 0x10000000;
          CRAM_END        = (MMIO_BASE - 0x10000000) & 0xF0000000;
          RAM_START       = 0x10000000;
          CRAM_START      = 0x13600000;
-         XHCI_BASE       = 0xFE9C0000;
     }
 }
 
 void print_hardware(){
     kprintf("Board type %i",BOARD_TYPE);
+}
+
+void delay(uint32_t ms) {
+    uint64_t freq;
+    asm volatile ("mrs %0, cntfrq_el0" : "=r"(freq));
+
+    uint64_t ticks;
+    asm volatile ("mrs %0, cntpct_el0" : "=r"(ticks));
+
+    uint64_t target = ticks + (freq / 1000) * ms;
+
+    while (1) {
+        uint64_t now;
+        asm volatile ("mrs %0, cntpct_el0" : "=r"(now));
+        if (now >= target) break;
+    }
 }

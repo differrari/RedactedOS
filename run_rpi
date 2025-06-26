@@ -11,7 +11,7 @@ qemu-system-aarch64 \
 -M raspi4b \
 -kernel kernel.elf \
 -display sdl \
--drive file=disk.img,if=none,format=raw,id=hd0 \
+-device sd-card,drive=sd -drive id=sd,format=raw,file=disk.img,if=none \
 -netdev vmnet-bridged,id=net0,ifname=en0 \
 -serial mon:stdio \
 -d guest_errors \
