@@ -39,7 +39,7 @@ void detect_hardware(){
             GICD_BASE = 0xff841000;
             GICC_BASE = 0xff842000;
             RPI_BOARD = 4;
-            break;;
+            break;
             default:  MMIO_BASE = 0x3F000000; break;
         }
          UART0_BASE = MMIO_BASE + 0x201000;
