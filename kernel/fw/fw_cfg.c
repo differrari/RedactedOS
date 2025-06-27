@@ -3,6 +3,10 @@
 #include "memory/memory_access.h"
 #include "kstring.h"
 
+#ifndef asm
+#define asm __asm__
+#endif
+
 #define FW_CFG_DATA  0x09020000
 #define FW_CFG_CTL   (FW_CFG_DATA + 0x8)
 #define FW_CFG_DMA   (FW_CFG_DATA + 0x10)
@@ -13,6 +17,7 @@
 #define FW_CFG_DMA_ERROR 0x1
 
 #define FW_LIST_DIRECTORY 0x19
+
 
 static bool checked = false;
 

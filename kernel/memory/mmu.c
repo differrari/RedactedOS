@@ -8,6 +8,10 @@
 #include "filesystem/disk.h"
 #include "memory/page_allocator.h"
 
+#ifndef asm
+#define asm __asm__
+#endif
+
 #define MAIR_DEVICE_nGnRnE 0b00000000
 #define MAIR_NORMAL_NOCACHE 0b01000100
 #define MAIR_IDX_DEVICE 0

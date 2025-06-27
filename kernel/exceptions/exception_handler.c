@@ -8,6 +8,10 @@
 #include "theme/theme.h"
 #include "std/string.h"
 
+#ifndef asm
+#define asm __asm__
+#endif
+
 static bool panic_triggered = false;
 
 void set_exception_vectors(){

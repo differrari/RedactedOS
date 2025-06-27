@@ -14,6 +14,10 @@
 #include "exceptions/timer.h"
 #include "networking/network.h"
 
+#ifndef asm
+#define asm __asm__
+#endif
+
 void sync_el0_handler_c(){
     save_context_registers();
     save_return_address_interrupt();
