@@ -3,7 +3,7 @@ CC = $(ARCH)-gcc
 AR = $(ARCH)-ar
 OBJCOPY = $(ARCH)-objcopy
 
-CFLAGS = -g -O0 -nostdlib -nolibc -ffreestanding -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -Wall -Wextra -mcpu=cortex-a72 -I. -I../kernel -Wno-unused-parameter
+CFLAGS = -g -O0 -std=c17 -nostdlib -nolibc -ffreestanding -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -Wall -Wextra -mcpu=cortex-a72 -I. -I../kernel -Wno-unused-parameter
 
 C_SRC = $(shell find . -name '*.c')
 CPP_SRC = $(shell find . -name '*.cpp')

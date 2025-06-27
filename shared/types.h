@@ -1,8 +1,14 @@
 #pragma once
 
+#ifndef asm
+#define asm __asm__
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+
 
 typedef unsigned int uint32_t;
 typedef long unsigned int size_t;

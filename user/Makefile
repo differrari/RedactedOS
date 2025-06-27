@@ -3,7 +3,7 @@ CC = $(ARCH)-gcc
 LD = $(ARCH)-ld
 OBJCOPY = $(ARCH)-objcopy
 
-CFLAGS = -g -O0 -nostdlib -ffreestanding -Wall -Wextra -mcpu=cortex-a72 -I. -I../shared -Wno-unused-parameter
+CFLAGS = -g -O0 -std=c17 -nostdlib -ffreestanding -Wall -Wextra -mcpu=cortex-a72 -I. -I../shared -Wno-unused-parameter
 LDFLAGS = -T $(shell ls *.ld)
 
 C_SRC = $(shell find . -name '*.c')
