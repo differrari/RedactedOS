@@ -1,9 +1,5 @@
 #include "timer.h"
 
-#ifndef asm
-#define asm __asm__
-#endif
-
 static uint64_t _msecs;
 
 void timer_reset() {

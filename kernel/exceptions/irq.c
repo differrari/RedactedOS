@@ -8,10 +8,6 @@
 #include "console/serial/uart.h"
 #include "networking/network.h"
 
-#ifndef asm
-#define asm __asm__
-#endif
-
 #define IRQ_TIMER 30
 #define SLEEP_TIMER 27
 

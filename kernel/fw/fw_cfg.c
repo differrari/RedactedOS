@@ -3,10 +3,6 @@
 #include "memory/memory_access.h"
 #include "kstring.h"
 
-#ifndef asm
-#define asm __asm__
-#endif
-
 #define FW_CFG_DATA  0x09020000
 #define FW_CFG_CTL   (FW_CFG_DATA + 0x8)
 #define FW_CFG_DMA   (FW_CFG_DATA + 0x10)

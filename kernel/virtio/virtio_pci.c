@@ -4,10 +4,6 @@
 #include "memory/page_allocator.h"
 #include "virtio_pci.h"
 
-#ifndef asm
-#define asm __asm__
-#endif
-
 #define VIRTIO_STATUS_RESET         0x0
 #define VIRTIO_STATUS_ACKNOWLEDGE   0x1
 #define VIRTIO_STATUS_DRIVER        0x2
