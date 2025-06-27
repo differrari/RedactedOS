@@ -55,19 +55,3 @@ void detect_hardware(){
 void print_hardware(){
     kprintf("Board type %i",BOARD_TYPE);
 }
-
-void delay(uint32_t ms) {
-    uint64_t freq;
-    asm volatile ("mrs %0, cntfrq_el0" : "=r"(freq));
-
-    uint64_t ticks;
-    asm volatile ("mrs %0, cntpct_el0" : "=r"(ticks));
-
-    uint64_t target = ticks + (freq / 1000) * ms;
-
-    while (1) {
-        uint64_t now;
-        asm volatile ("mrs %0, cntpct_el0" : "=r"(now));
-        if (now >= target) break;
-    }
-}

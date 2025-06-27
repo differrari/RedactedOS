@@ -36,7 +36,6 @@ private:
     bool setup_clock();
     uint32_t clock_divider(uint32_t target_rate);
     bool switch_clock_rate(uint32_t target_rate);
-    bool wait(uint32_t *reg, uint32_t expected_value, bool match = true, uint32_t timeout = 2000);
     uint32_t clock_rate;
     uint32_t rca;
     bool verbose;

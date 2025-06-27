@@ -5,6 +5,7 @@
 #include "syscalls/syscalls.h"
 #include "memory/mmu.h"
 #include "std/memfunctions.h"
+#include "async.h"
 
 #define CMD_INDEX(x)   ((x) << 8)
 #define RESP_TYPE(x)   (x)
@@ -33,21 +34,6 @@
 
 void SDHCI::enable_verbose(){
     verbose = true;
-}
-
-bool SDHCI::wait(uint32_t *reg, uint32_t expected_value, bool match, uint32_t timeout){
-    bool condition;
-    do {
-        delay(1);
-        timeout--;
-        if (timeout == 0){
-            kprintf("[SDHCI] Command timed out");
-            return false;
-        }
-        condition = *reg & expected_value;
-    } while (match ^ condition);
-
-    return true;
 }
 
 uint32_t SDHCI::clock_divider(uint32_t target_rate) {
@@ -99,7 +85,7 @@ uint32_t SDHCI::clock_divider(uint32_t target_rate) {
 bool SDHCI::switch_clock_rate(uint32_t target_rate) {
     uint32_t div = clock_divider(target_rate);
 
-    if (!wait(&regs->status,0b11, false)) return false;
+    if (!wait(&regs->status,0b11, false, 2000)) return false;
 
     regs->ctrl1 &= ~(1 << 2);
 
@@ -136,7 +122,7 @@ bool SDHCI::setup_clock(){
     regs->ctrl1 |= (11 << 16);
     regs->ctrl1 |= (1 << 2);
 
-    if (!wait(&regs->ctrl1, (1 << 1))) return false;
+    if (!wait(&regs->ctrl1, (1 << 1), true, 2000)) return false;
 
     delay(30);
 
@@ -155,7 +141,7 @@ bool SDHCI::init() {
     regs = (sdhci_regs*)SDHCI_BASE;
 
     regs->ctrl1 |= (1 << 24);//Reset
-    if (!wait(&regs->ctrl1,(1 << 24), false)) return false;
+    if (!wait(&regs->ctrl1,(1 << 24), false, 2000)) return false;
 
     if (RPI_BOARD == 4){
         regs->ctrl0 |= 0x0F << 8;//VDD1 bus power
@@ -247,7 +233,7 @@ bool SDHCI::issue_app_command(uint32_t cmd, uint32_t arg, uint32_t flags) {
 
 bool SDHCI::issue_command(uint32_t cmd, uint32_t arg, uint32_t flags) {
 
-    if (!wait(&regs->status, 0b11, false)) {
+    if (!wait(&regs->status, 0b11, false, 2000)) {
         kprintf("[SDHCI error] Timeout waiting for CMD/DAT inhibit");
         return false;
     }
@@ -259,7 +245,7 @@ bool SDHCI::issue_command(uint32_t cmd, uint32_t arg, uint32_t flags) {
 
     kprintfv("[SDHCI] Sent command %b.",(cmd << 16) | flags);
 
-    if (!wait(&regs->interrupt,0x8001)) { 
+    if (!wait(&regs->interrupt,0x8001, true, 2000)) { 
         kprintf("[SDHCI warning] Issue command timeout"); 
         return false; 
     }
@@ -286,7 +272,7 @@ bool SDHCI::read(void *buffer, uint32_t sector, uint32_t count){
 
     uint32_t* dest = (uint32_t*)buffer;
     for (uint32_t i = 0; i < count; i++) {
-        if (!wait(&regs->interrupt,(1 << 5) | 0x8000)){
+        if (!wait(&regs->interrupt,(1 << 5) | 0x8000, true, 2000)){
             kprintf("[SDHCI error] Read operation timed out on block %i",i);
             memset(buffer,0,count * 128);
             return false;
@@ -302,7 +288,7 @@ bool SDHCI::read(void *buffer, uint32_t sector, uint32_t count){
     }
 
     if (multiple) {
-        if (!wait(&regs->interrupt, (1 << 1))) {
+        if (!wait(&regs->interrupt, (1 << 1), true, 2000)) {
             kprintf("[SDHCI error] Timed out waiting for DATA_DONE");
             return false;
         }
