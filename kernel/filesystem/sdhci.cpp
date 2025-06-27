@@ -21,6 +21,19 @@
 #define READ_ONE (CMD_INDEX(17) | RESP_TYPE(2) | CRC_ENABLE | IS_DATA)
 #define READ_MULTIPLE (CMD_INDEX(18) | RESP_TYPE(2) | CRC_ENABLE | IS_DATA)
 #define STOP_TRANSMISSION (CMD_INDEX(12) | RESP_TYPE(2) | CRC_ENABLE)
+#define SET_BLOCKLEN (CMD_INDEX(16) | RESP_TYPE(2) | CRC_ENABLE)
+
+#define kprintfv(fmt, ...) \
+    ({ \
+        if (verbose){\
+            uint64_t _args[] = { __VA_ARGS__ }; \
+            kprintf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+        }\
+    })
+
+void SDHCI::enable_verbose(){
+    verbose = true;
+}
 
 bool SDHCI::wait(uint32_t *reg, uint32_t expected_value, bool match, uint32_t timeout){
     bool condition;
@@ -28,13 +41,12 @@ bool SDHCI::wait(uint32_t *reg, uint32_t expected_value, bool match, uint32_t ti
         delay(1);
         timeout--;
         if (timeout == 0){
-            kprintf("Command timed out");
+            kprintf("[SDHCI] Command timed out");
             return false;
         }
         condition = *reg & expected_value;
     } while (match ^ condition);
 
-    kprintf("Finished with %i",timeout);
     return true;
 }
 
@@ -89,8 +101,6 @@ bool SDHCI::switch_clock_rate(uint32_t target_rate) {
 
     if (!wait(&regs->status,0b11, false)) return false;
 
-    kprintf("Clock divider %i",div);
-
     regs->ctrl1 &= ~(1 << 2);
 
     delay(3);
@@ -137,16 +147,6 @@ bool SDHCI::setup_clock(){
     return true;
 }
 
-void SDHCI::dump(){
-    kprintf("SD HCI Register dump\n*-*-*");
-    for (size_t i = 0; i <= 0xFC; i+= 4){
-        uint32_t value = *(uint32_t*)(SDHCI_BASE + i);
-        if (value)
-            kprintf("[%x] %x",i,value);
-    }
-    kprintf("*-*-*");
-}
-
 bool SDHCI::init() {
     if (!SDHCI_BASE) return false;
 
@@ -162,7 +162,7 @@ bool SDHCI::init() {
         delay(3);
     }
 
-    kprintf("[SDHCI] Controller reset");
+    kprintfv("[SDHCI] Controller reset");
 
     setup_clock();
 
@@ -178,17 +178,17 @@ bool SDHCI::init() {
         kprintf("[SDHCI error] Failed setting to idle");
         return false;
     }
-    kprintf("[SDHCI] Idle");
+    kprintfv("[SDHCI] Idle");
 
     switch_clock_rate(25000000);
 
     bool v2_card = 0;  
     if (!issue_command(IF_COND, 0)){ 
         if (!(regs->interrupt & 0x10000)){
-            kprintf("Error in IFCOND");
+            kprintf("[SDHCI error] IFCOND error");
             return false;
         }
-        kprintf("[SDHCI error] Timeout on IFCOND. Defaulting to V1");
+        kprintfv("[SDHCI] Timeout on IFCOND. Defaulting to V1");
     } else {
         if ((regs->resp0 & 0xFF) != 0xAA) {
             kprintf("[SDHCI error] IFCOND pattern mismatch");
@@ -197,7 +197,7 @@ bool SDHCI::init() {
         v2_card = true;
     }
     
-    kprintf("[SDHCI] V2 = %i",v2_card);
+    kprintfv("[SDHCI] V2 = %i",v2_card);
 
     while (true){
         if (!issue_app_command(OCR, 0xFF8000 | (v2_card << 30))){
@@ -208,7 +208,7 @@ bool SDHCI::init() {
         else delay(500);
     }
 
-    kprintf("[SDHCI] OCR %x",regs->resp0);
+    kprintfv("[SDHCI] OCR %x",regs->resp0);
 
     delay(1000);
 
@@ -223,10 +223,15 @@ bool SDHCI::init() {
     }
 
     rca = (regs->resp0 >> 16) & 0xFFFF;
-    kprintf("[SDHCI] RCA %x",rca);
+    kprintfv("[SDHCI] RCA %x",rca);
 
     if (!issue_command(SELECT_CARD, rca << 16)){
         kprintf("[SDHCI error] Failed to select card");
+        return false;
+    }
+
+    if (!issue_command(SET_BLOCKLEN, 512)){
+        kprintf("[SDHCI error] Failed to set block length");
         return false;
     }
 
@@ -243,7 +248,7 @@ bool SDHCI::issue_app_command(uint32_t cmd, uint32_t arg, uint32_t flags) {
 bool SDHCI::issue_command(uint32_t cmd, uint32_t arg, uint32_t flags) {
 
     if (!wait(&regs->status, 0b11, false)) {
-        kprintf("[SDHCI] Timeout waiting for CMD/DAT inhibit");
+        kprintf("[SDHCI error] Timeout waiting for CMD/DAT inhibit");
         return false;
     }
 
@@ -252,14 +257,14 @@ bool SDHCI::issue_command(uint32_t cmd, uint32_t arg, uint32_t flags) {
     regs->arg1 = arg;
     regs->cmd_transfmode = (cmd << 16) | flags;
 
-    kprintf("[SDHCI] Sent command %b.",(cmd << 16) | flags);
+    kprintfv("[SDHCI] Sent command %b.",(cmd << 16) | flags);
 
     if (!wait(&regs->interrupt,0x8001)) { 
         kprintf("[SDHCI warning] Issue command timeout"); 
         return false; 
     }
 
-    kprintf("[SDHCI] Command finished %x",regs->interrupt);
+    kprintfv("[SDHCI] Command finished %x",regs->interrupt);
     
     if (regs->interrupt & 0x8000) return false;//Error
     if (!(regs->interrupt & 0x0001)) return false;//No finish
@@ -272,33 +277,40 @@ bool SDHCI::read(void *buffer, uint32_t sector, uint32_t count){
     regs->blksize_count = (count << 16) | 512;
     uint32_t command = multiple ? READ_MULTIPLE : READ_ONE;
     uint32_t flags = multiple ? 0b110110 : 0b010000;
-    kprintf("Direction %b",(flags >> 4) & 1);
     for (int i = 5; i >= 0; i--){
-        if (issue_command(command, sector, flags)) break;
-        if (i == 0) { kprintf("[SDHCI read timeout]"); return false; }
+        //TODO: Byte addressing works here, instead of block addressing. Not sure that's normal or if it's card-specific
+        if (issue_command(command, sector * 512, flags)) break;
+        if (i == 0) { kprintf("[SDHCI error] read request timeout"); return false; }
         delay(500);
     }
 
     uint32_t* dest = (uint32_t*)buffer;
     for (uint32_t i = 0; i < count; i++) {
         if (!wait(&regs->interrupt,(1 << 5) | 0x8000)){
-            kprintf("Read operation timed out on block %i",i);
+            kprintf("[SDHCI error] Read operation timed out on block %i",i);
+            memset(buffer,0,count * 128);
             return false;
         }
+
+        regs->interrupt = 0xFFFFFFFF;
+        
         for (int j = 0; j < 128; j++)
             dest[(i * 128) + j] = regs->data;
-        regs->interrupt = (1 << 5);
+        
+        if (regs->interrupt & (1 << 1))
+            break;
     }
-    
-    wait(&regs->interrupt, 1 << 1);
-    regs->interrupt = (1 << 1);
 
-    kprintf("Finished reading");
-
-    if (multiple)
-        issue_command(STOP_TRANSMISSION, 0, 0);
+    if (multiple) {
+        if (!wait(&regs->interrupt, (1 << 1))) {
+            kprintf("[SDHCI error] Timed out waiting for DATA_DONE");
+            return false;
+        }
+        regs->interrupt = 0xFFFFFFFF;
+    }
 
     return true;
 }
 
-//Write CMD (24 block, 25 multiple)
+//TODO: Write (CMD24 block, CMD25 multiple). Read can be generalized.
+//TODO: DMA

@@ -28,6 +28,7 @@ public:
     bool init();
     void write(void *buffer, uint32_t sector, uint32_t count);
     bool read(void *buffer, uint32_t sector, uint32_t count);
+    void enable_verbose();
 private:
     sdhci_regs* regs;
     bool issue_command(uint32_t cmd_index, uint32_t arg, uint32_t flags = 0);
@@ -35,8 +36,8 @@ private:
     bool setup_clock();
     uint32_t clock_divider(uint32_t target_rate);
     bool switch_clock_rate(uint32_t target_rate);
-    void dump();
     bool wait(uint32_t *reg, uint32_t expected_value, bool match = true, uint32_t timeout = 2000);
     uint32_t clock_rate;
     uint32_t rca;
+    bool verbose;
 };

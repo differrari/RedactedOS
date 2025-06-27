@@ -5,10 +5,14 @@
 #include "hw/hw.h"
 
 static bool disk_enable_verbose;
+SDHCI sdhci_driver; 
 
 void disk_verbose(){
     disk_enable_verbose = true;
     vblk_disk_verbose();
+    if (BOARD_TYPE == 2){
+        sdhci_driver.enable_verbose();
+    }
 }
 
 #define kprintfv(fmt, ...) \
@@ -19,7 +23,6 @@ void disk_verbose(){
         }\
     })
 
-SDHCI sdhci_driver; 
 
 bool find_disk(){
     if (BOARD_TYPE == 2)
