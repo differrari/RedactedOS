@@ -69,6 +69,8 @@ bool dwc2_init() {
     host->port &= ~0b101110;
     host->port &= ~(1 << 8);
 
+    wait(&host->port, (1 << 8), false, 2000);
+
     kprintf("Port reset %x",host->port);
 
     return true;
