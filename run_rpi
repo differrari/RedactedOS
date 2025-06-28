@@ -7,12 +7,26 @@ if [ "$1" = "debug" ]; then
   ARGS="-monitor unix:/tmp/qemu-monitor-socket,server,nowait -s -S"
 fi
 
-qemu-system-aarch64 \
+OS_TYPE="$(uname)"
+
+if [[ "$OS_TYPE" == "Darwin" ]]; then
+    NETARG="vmnet-bridged,id=net0,ifname=en0"
+    PRIVILEGE="sudo"
+elif [[ "$OS_TYPE" == "Linux" ]]; then
+    NETARG="user,id=net0"
+    PRIVILEGE=""
+else
+    echo "Unknown OS: $OS_TYPE" >&2
+    exit 1
+fi
+
+$PRIVILEGE qemu-system-aarch64 \
 -M raspi4b \
 -kernel kernel.elf \
 -display sdl \
 -device sd-card,drive=sd -drive id=sd,format=raw,file=disk.img,if=none \
--netdev vmnet-bridged,id=net0,ifname=en0 \
+-netdev $NETARG \
 -serial mon:stdio \
+-device usb-kbd \
 -d guest_errors \
 $ARGS
