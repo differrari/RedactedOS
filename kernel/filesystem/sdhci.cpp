@@ -245,8 +245,8 @@ bool SDHCI::issue_command(uint32_t cmd, uint32_t arg, uint32_t flags) {
 
     kprintfv("[SDHCI] Sent command %b.",(cmd << 16) | flags);
 
-    if (!wait(&regs->interrupt,0x8001, true, 2000)) { 
-        kprintf("[SDHCI warning] Issue command timeout"); 
+    if (!wait(&regs->interrupt,0x1, true, 2000)) { 
+        kprintf("[SDHCI warning] Issue command timeout %x",regs->interrupt); 
         return false; 
     }
 
@@ -272,8 +272,8 @@ bool SDHCI::read(void *buffer, uint32_t sector, uint32_t count){
 
     uint32_t* dest = (uint32_t*)buffer;
     for (uint32_t i = 0; i < count; i++) {
-        if (!wait(&regs->interrupt,(1 << 5) | 0x8000, true, 2000)){
-            kprintf("[SDHCI error] Read operation timed out on block %i",i);
+        if (!wait(&regs->interrupt,(1 << 5), true, 2000)){
+            kprintf("[SDHCI error] Read operation timed out on block %i %x",i,regs->interrupt);
             memset(buffer,0,count * 128);
             return false;
         }
