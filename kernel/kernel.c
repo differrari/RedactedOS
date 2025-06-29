@@ -12,8 +12,7 @@
 #include "process/scheduler.h"
 #include "filesystem/disk.h"
 #include "kernel_processes/boot/bootprocess.h"
-#include "input/xhci_bridge.h"
-#include "input/xhci.h"
+#include "input/input_dispatch.h"
 #include "kernel_processes/monitor/monitor_processes.h"
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
@@ -61,9 +60,8 @@ void kernel_main() {
         panic("Disk initialization failure");
 
     // xhci_enable_verbose();
-    if (!xhci_input_init()){
-        panic("Input initialization failure");
-    }
+    if (!input_init())
+        panic("Input initialization error");
 
     if (!network_init())
         panic("Network initialization failure");

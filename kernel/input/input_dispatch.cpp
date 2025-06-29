@@ -1,6 +1,8 @@
 #include "input_dispatch.h"
 #include "process/process.h"
 #include "process/scheduler.h"
+#include "dwc2.hpp"
+#include "hw/hw.h"
 
 process_t* focused_proc;
 
@@ -101,4 +103,12 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
         return true;
     }
     return false;
+}
+
+DWC2Driver dwc_driver;
+
+bool input_init(){
+    if (BOARD_TYPE == 2){
+        return dwc_driver.init();
+    } else return xhci_input_init();
 }

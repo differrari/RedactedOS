@@ -24,6 +24,8 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid);
 
 bool is_new_keypress(keypress* current, keypress* previous);
 
+bool input_init();
+
 #ifdef __cplusplus
 }
 #endif 

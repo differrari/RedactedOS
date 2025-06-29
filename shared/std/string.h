@@ -3,6 +3,10 @@
 #include "types.h"
 #include "args.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     char *data;
     uint32_t length;
@@ -33,3 +37,7 @@ int strindex(const char *a, const char *b);
 uint64_t parse_hex_u64(char* str, size_t size);
 
 bool utf16tochar(const uint16_t* str_in, char* out_str, size_t max_len);
+
+#ifdef __cplusplus
+}
+#endif
