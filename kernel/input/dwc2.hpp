@@ -42,10 +42,13 @@ typedef struct {
 class DWC2Driver {
 public:
     bool init();
-    bool request_descriptor(uint8_t rType, uint8_t type, uint16_t index, uint16_t wIndex, void *out_descriptor);
-    bool request_sized_descriptor(uint8_t rType, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor);
+    bool request_descriptor(dwc2_host_channel *channel, uint8_t rType, uint8_t request, uint8_t type, uint16_t index, uint16_t wIndex, void *out_descriptor);
+    bool request_sized_descriptor(dwc2_host_channel *channel, uint8_t rType, uint8_t request, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor);
     uint16_t packet_size(uint16_t speed);
-    bool get_configuration();
+    bool get_configuration(dwc2_host_channel *channel);
+    void hub_enumerate(dwc2_host_channel *channel);
+    bool port_reset(uint32_t *port);
+    bool setup_device(dwc2_host_channel *channel);
 private:
     dwc2_host_channel* get_channel(uint16_t channel);
     void assign_channel(dwc2_host_channel* channel, uint8_t device, uint8_t endpoint, uint8_t ep_type);
@@ -54,4 +57,5 @@ private:
     uint16_t port_speed;
     dwc2_regs *dwc2;
     dwc2_host *host;
+    uint16_t next_channel;
 };
