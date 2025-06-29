@@ -354,7 +354,6 @@ typedef struct {
     uint32_t transfer_index;
     trb* transfer_ring;
     uint32_t slot_id;
-    uint8_t interface_protocol;//TODO: support multiple
     xhci_input_context* ctx;
 } xhci_usb_device;
 
