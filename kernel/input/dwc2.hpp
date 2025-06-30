@@ -1,6 +1,7 @@
 #include "types.h"
 #include "keypress.h"
 #include "xhci_types.h"
+#include "std/indexmap.hpp"
 
 typedef struct {
     uint32_t gotgctl;
@@ -50,14 +51,16 @@ public:
     bool get_configuration(dwc2_host_channel *channel);
     void hub_enumerate(dwc2_host_channel *channel, uint16_t address);
     bool port_reset(uint32_t *port);
-    bool setup_device(dwc2_host_channel *channel);
+    bool setup_device();
     uint8_t address_device(dwc2_host_channel *channel);
     bool poll_interrupt_in();
     bool configure_endpoint(dwc2_host_channel *channel, usb_endpoint_descriptor *endpoint, uint8_t configuration_value);
+    // bool configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value);
 private:
     dwc2_host_channel* get_channel(uint16_t channel);
-    void assign_channel(dwc2_host_channel* channel, uint8_t device, uint8_t endpoint, uint8_t ep_type);
+    uint8_t assign_channel(uint8_t device, uint8_t endpoint, uint8_t ep_type);
     bool make_transfer(dwc2_host_channel *channel, bool in, uint8_t pid, sizedptr data);
+    dwc2_host_channel* get_channel(uint8_t device, uint8_t endpoint);
     void *mem_page;
     uint16_t port_speed;
     void *TEMP_input_buffer;
@@ -68,4 +71,5 @@ private:
     dwc2_host_channel *endpoint_channel;
     keypress last_keypress;
     int repeated_keypresses = 0;
+    IndexMap<uint8_t> channel_map;
 };

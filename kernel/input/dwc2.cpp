@@ -13,8 +13,16 @@ dwc2_host_channel* DWC2Driver::get_channel(uint16_t channel){
     return (dwc2_host_channel *)(DWC2_BASE + 0x500 + (channel * 0x20));
 }
 
-void DWC2Driver::assign_channel(dwc2_host_channel* channel, uint8_t device, uint8_t endpoint, uint8_t ep_type){
+uint8_t DWC2Driver::assign_channel(uint8_t device, uint8_t endpoint, uint8_t ep_type){
+    uint8_t new_chan = ++next_channel;
+    dwc2_host_channel *channel = get_channel(new_chan);
     channel->cchar = (device << 22) | (endpoint << 11) | (ep_type << 18);
+    channel_map[device << 8 | endpoint] = new_chan;
+    return new_chan;
+}
+
+dwc2_host_channel* DWC2Driver::get_channel(uint8_t device, uint8_t endpoint){
+    return get_channel(channel_map[device << 8 | endpoint]);
 }
 
 uint16_t DWC2Driver::packet_size(uint16_t speed){
@@ -62,17 +70,16 @@ bool DWC2Driver::init() {
         return false;
     }
 
+    channel_map = IndexMap<uint8_t>(64);
+
     kprintf("Port reset %x",host->port);
 
     port_speed = (host->port >> 17) & 0x3;
     kprintf("Port speed %i",port_speed);
 
-    dwc2_host_channel *channel = get_channel(next_channel++);
-
-    assign_channel(channel, 0, 0, 0);
     mem_page = alloc_page(0x1000, true, true, false);
 
-    setup_device(channel);
+    setup_device();
 
     register_device_memory(DWC2_BASE, DWC2_BASE);
 
@@ -80,11 +87,15 @@ bool DWC2Driver::init() {
 }
 
 uint8_t DWC2Driver::address_device(dwc2_host_channel *channel){
-    request_sized_descriptor(channel, 0x0, 0x5, 0, ++next_address, 0, 0, 0);
+    uint8_t new_address = ++next_address;
+    request_sized_descriptor(get_channel(0), 0x0, 0x5, 0, new_address, 0, 0, 0);
+    channel_map[new_address << 16] = assign_channel(new_address, 0, 0);
     return next_address;
 }
 
-bool DWC2Driver::setup_device(dwc2_host_channel *channel){
+bool DWC2Driver::setup_device(){
+
+    dwc2_host_channel *channel = get_channel(0);
 
     uint8_t address = (channel->cchar >> 22) & 0xFFFF;
 
@@ -99,12 +110,14 @@ bool DWC2Driver::setup_device(dwc2_host_channel *channel){
         return false;
     }
 
-    uint16_t addr = address_device(channel);
+    address = address_device(channel);
+
+    channel->splt = 0;
+
+    channel = get_channel(channel_map[address << 16]);
 
     channel->cchar &= ~(0x7F << 22);
-    channel->cchar |= (addr << 22);
-
-    address = (channel->cchar >> 22) & 0xFFFF;
+    channel->cchar |= (address << 22);
 
     kprintf("Changed address of device to %i",address);
 
@@ -261,8 +274,7 @@ bool DWC2Driver::configure_endpoint(dwc2_host_channel *channel, usb_endpoint_des
         return false;
     }
 
-    endpoint_channel = get_channel(next_channel++);
-    assign_channel(endpoint_channel, address, ep_num, ep_type);
+    endpoint_channel = get_channel(assign_channel(address, ep_num, ep_type));
     if (channel->splt)
         endpoint_channel->splt = channel->splt;
 
@@ -439,10 +451,8 @@ void DWC2Driver::hub_enumerate(dwc2_host_channel *channel, uint16_t address){
             kprintf("Port not enabled or device not connected");
             return;
         }
-        uint16_t new_channel = next_channel++;
-        dwc2_host_channel *dev_channel = get_channel(new_channel);
+        dwc2_host_channel *dev_channel = get_channel(0);
         dev_channel->splt = (1 << 31) | (1 << 16) | (address << 7) | (port << 0);
-        if (address == 1)
-            setup_device(dev_channel);
+        setup_device();
     }
 }
