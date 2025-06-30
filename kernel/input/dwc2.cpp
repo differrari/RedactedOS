@@ -89,8 +89,8 @@ bool DWC2Driver::init() {
 uint8_t DWC2Driver::address_device(dwc2_host_channel *channel){
     uint8_t new_address = ++next_address;
     request_sized_descriptor(get_channel(0), 0x0, 0x5, 0, new_address, 0, 0, 0);
-    channel_map[new_address << 16] = assign_channel(new_address, 0, 0);
-    return next_address;
+    channel_map[new_address << 8] = assign_channel(new_address, 0, 0);
+    return new_address;
 }
 
 bool DWC2Driver::setup_device(){
@@ -114,12 +114,12 @@ bool DWC2Driver::setup_device(){
 
     channel->splt = 0;
 
-    channel = get_channel(channel_map[address << 16]);
+    channel = get_channel(channel_map[address << 8]);
 
     channel->cchar &= ~(0x7F << 22);
     channel->cchar |= (address << 22);
 
-    kprintf("Changed address of device to %i",address);
+    kprintf("Changed address of device to %i %x",address,(uintptr_t)channel);
 
     usb_string_language_descriptor* lang_desc = (usb_string_language_descriptor*)allocate_in_page(mem_page, sizeof(usb_string_language_descriptor), ALIGN_64B, true, true);
 
@@ -161,7 +161,7 @@ bool DWC2Driver::setup_device(){
         }
     }
 
-    get_configuration(channel);
+    get_configuration(address);
 
     return true;
 }
@@ -295,10 +295,11 @@ bool DWC2Driver::configure_endpoint(dwc2_host_channel *channel, usb_endpoint_des
     return true;
 }
 
-bool DWC2Driver::get_configuration(dwc2_host_channel *channel){
+bool DWC2Driver::get_configuration(uint8_t address){
 
-    uint8_t address = (channel->cchar >> 22) & 0xFFFF;
-
+    dwc2_host_channel *channel = get_channel(channel_map[address << 8]);
+    
+    kprintf("Getting configuration for device %i %x",address, (uintptr_t)channel);
     uint16_t ep_num = 0;
 
     usb_configuration_descriptor* config = (usb_configuration_descriptor*)allocate_in_page(mem_page, sizeof(usb_configuration_descriptor), ALIGN_64B, true, true);
