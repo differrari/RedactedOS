@@ -3,6 +3,7 @@
 #include "process/scheduler.h"
 #include "dwc2.hpp"
 #include "hw/hw.h"
+#include "std/std.hpp"
 
 process_t* focused_proc;
 
@@ -18,7 +19,7 @@ uint16_t shortcut_count = 0;
 
 bool secure_mode = false;
 
-DWC2Driver dwc_driver;
+DWC2Driver *dwc_driver;
 
 void register_keypress(keypress kp) {
 
@@ -88,7 +89,7 @@ bool is_new_keypress(keypress* current, keypress* previous) {
 
 bool sys_read_input(int pid, keypress *out){
     if (BOARD_TYPE == 2)
-        dwc_driver.poll_interrupt_in();
+        dwc_driver->poll_interrupt_in();
     process_t *process = get_proc_by_pid(pid);
     if (process->input_buffer.read_index == process->input_buffer.write_index) return false;
 
@@ -111,6 +112,7 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
 
 bool input_init(){
     if (BOARD_TYPE == 2){
-        return dwc_driver.init();
+        dwc_driver = new DWC2Driver();//TODO: QEMU Only
+        return dwc_driver->init();
     } else return xhci_input_init();
 }

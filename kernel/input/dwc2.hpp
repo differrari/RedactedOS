@@ -1,6 +1,6 @@
-#include "types.h"
-#include "keypress.h"
-#include "xhci_types.h"
+#pragma once
+
+#include "usb.hpp"
 #include "std/indexmap.hpp"
 
 typedef struct {
@@ -42,26 +42,21 @@ typedef struct {
     uint32_t buf;
 } dwc2_host_channel;
 
-class DWC2Driver {
+class DWC2Driver: public USBDriver {
 public:
+    DWC2Driver() = default;
     bool init();
     bool request_descriptor(uint8_t address, uint8_t endpoint, uint8_t rType, uint8_t request, uint8_t type, uint16_t index, uint16_t wIndex, void *out_descriptor);
     bool request_sized_descriptor(uint8_t address, uint8_t endpoint, uint8_t rType, uint8_t request, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor);
-    uint16_t packet_size(uint16_t speed);
-    bool get_configuration(uint8_t address);
-    void hub_enumerate(uint8_t address);
-    bool port_reset(uint32_t *port);
-    bool setup_device();
     uint8_t address_device();
     bool poll_interrupt_in();
     bool configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value);
-    // bool configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value);
+    void handle_hub_routing(uint8_t hub, uint8_t port);
+    ~DWC2Driver() = default;
 private:
     dwc2_host_channel* get_channel(uint16_t channel);
     uint8_t assign_channel(uint8_t device, uint8_t endpoint, uint8_t ep_type);
     bool make_transfer(dwc2_host_channel *channel, bool in, uint8_t pid, sizedptr data);
-    dwc2_host_channel* get_channel(uint8_t device, uint8_t endpoint);
-    void *mem_page;
     uint16_t port_speed;
     void *TEMP_input_buffer;
     dwc2_regs *dwc2;
@@ -71,5 +66,5 @@ private:
     dwc2_host_channel *endpoint_channel;
     keypress last_keypress;
     int repeated_keypresses = 0;
-    IndexMap<uint8_t> channel_map;
+    IndexMap<uint16_t> channel_map;
 };
