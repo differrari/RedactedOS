@@ -1,5 +1,6 @@
 #include "types.h"
 #include "keypress.h"
+#include "xhci_types.h"
 
 typedef struct {
     uint32_t gotgctl;
@@ -52,6 +53,7 @@ public:
     bool setup_device(dwc2_host_channel *channel);
     uint8_t address_device(dwc2_host_channel *channel);
     bool poll_interrupt_in();
+    bool configure_endpoint(dwc2_host_channel *channel, usb_endpoint_descriptor *endpoint, uint8_t configuration_value);
 private:
     dwc2_host_channel* get_channel(uint16_t channel);
     void assign_channel(dwc2_host_channel* channel, uint8_t device, uint8_t endpoint, uint8_t ep_type);

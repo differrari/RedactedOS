@@ -86,10 +86,9 @@ uint8_t DWC2Driver::address_device(dwc2_host_channel *channel){
 
 bool DWC2Driver::setup_device(dwc2_host_channel *channel){
 
-    uint8_t chan_num = ((uintptr_t)channel - DWC2_BASE - 0x500)/0x20;
     uint8_t address = (channel->cchar >> 22) & 0xFFFF;
 
-    kprintf("Speaking to device %i on channel %i",address, chan_num);
+    kprintf("Speaking to device %i",address);
     if (channel->splt)
         kprintf("Using split from original device %i:%i", (channel->splt >> 7) & 0x7F, (channel->splt) & 0x7F);
 
@@ -107,7 +106,7 @@ bool DWC2Driver::setup_device(dwc2_host_channel *channel){
 
     address = (channel->cchar >> 22) & 0xFFFF;
 
-    kprintf("Changed address of device to %i on channel %i",address, chan_num);
+    kprintf("Changed address of device to %i",address);
 
     usb_string_language_descriptor* lang_desc = (usb_string_language_descriptor*)allocate_in_page(mem_page, sizeof(usb_string_language_descriptor), ALIGN_64B, true, true);
 
@@ -240,9 +239,52 @@ bool DWC2Driver::request_descriptor(dwc2_host_channel *channel, uint8_t rType, u
     return request_sized_descriptor(channel, rType, request, type, index, wIndex, descriptor->bLength, out_descriptor);
 }
 
+bool DWC2Driver::configure_endpoint(dwc2_host_channel *channel, usb_endpoint_descriptor *endpoint, uint8_t configuration_value){
+    uint8_t ep_address = endpoint->bEndpointAddress;
+    uint8_t ep_num = ep_address & 0x0F;
+    uint8_t ep_dir = (ep_address & 0x80) >> 7;
+
+    uint8_t address = (channel->cchar >> 22) & 0xFFFF;
+
+    uint8_t ep_type = endpoint->bmAttributes & 0x03; // 0 = Control, 1 = Iso, 2 = Bulk, 3 = Interrupt
+
+    kprintf("[DWC2] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
+
+    //Configure endpoint
+    request_sized_descriptor(channel, 0x00, 0x09, 0, configuration_value, 0, 0, 0);
+
+    uint8_t conf;
+    request_sized_descriptor(channel, 0x80, 0x08, 0, 0, 0, 1, &conf);
+
+    if (!conf){
+        kprintf("Failed to set configuration for device");
+        return false;
+    }
+
+    endpoint_channel = get_channel(next_channel++);
+    assign_channel(endpoint_channel, address, ep_num, ep_type);
+    if (channel->splt)
+        endpoint_channel->splt = channel->splt;
+
+    endpoint_channel->cchar &= ~(1 << 15);
+    endpoint_channel->cchar |= (ep_dir << 15);
+
+    endpoint_channel->cchar &= ~0x7FF;
+    endpoint_channel->cchar |= endpoint->wMaxPacketSize;
+
+    endpoint_channel->xfer_size = (1 << 19) | (0x3 << 29) | endpoint->wMaxPacketSize;
+
+    uint8_t mc = endpoint->bInterval & 0x3;
+    endpoint_channel->cchar &= ~(0b11 << 20);
+    endpoint_channel->cchar |= (mc << 20);
+
+    TEMP_input_buffer = allocate_in_page(mem_page, 8, ALIGN_64B, true, true);
+
+    return true;
+}
+
 bool DWC2Driver::get_configuration(dwc2_host_channel *channel){
 
-    uint8_t chan_num = ((uintptr_t)channel - DWC2_BASE - 0x500)/0x20;
     uint8_t address = (channel->cchar >> 22) & 0xFFFF;
 
     uint16_t ep_num = 0;
@@ -322,46 +364,9 @@ bool DWC2Driver::get_configuration(dwc2_host_channel *channel){
         }
         break;
         case 0x5: {//Endpoint
-        
             usb_endpoint_descriptor *endpoint = (usb_endpoint_descriptor*)&config->data[i];
-            kprintf("[DWC2] endpoint address %x. Device address %i",endpoint->bEndpointAddress,address);
-            uint8_t ep_address = endpoint->bEndpointAddress;
-            uint8_t ep_num = ep_address & 0x0F;
-            uint8_t ep_dir = (ep_address & 0x80) >> 7;
-
-            uint8_t ep_type = endpoint->bmAttributes & 0x03; // 0 = Control, 1 = Iso, 2 = Bulk, 3 = Interrupt
-
-            kprintf("[DWC2] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
-
-            //Configure endpoint
-            request_sized_descriptor(channel, 0x00, 0x09, 0, config->bConfigurationValue, 0, 0, 0);
-
-            uint8_t conf;
-            request_sized_descriptor(channel, 0x80, 0x08, 0, 0, 0, 1, &conf);
-
-            if (!conf){
-                kprintf("Failed to set configuration for device");
-                return false;
-            }
-
-            endpoint_channel = get_channel(next_channel++);
-            assign_channel(endpoint_channel, address, ep_num, ep_type);
-            if (channel->splt)
-                endpoint_channel->splt = channel->splt;
-
-            endpoint_channel->cchar &= ~(1 << 15);
-            endpoint_channel->cchar |= (ep_dir << 15);
-
-            endpoint_channel->cchar &= ~0x7FF;
-            endpoint_channel->cchar |= endpoint->wMaxPacketSize;
-
-            endpoint_channel->xfer_size = (1 << 19) | (0x3 << 29) | endpoint->wMaxPacketSize;
-
-            uint8_t mc = endpoint->bInterval & 0x3;
-            endpoint_channel->cchar &= ~(0b11 << 20);
-            endpoint_channel->cchar |= (mc << 20);
-        
-            TEMP_input_buffer = allocate_in_page(mem_page, 8, ALIGN_64B, true, true);
+            
+            if (!configure_endpoint(channel, endpoint, config->bConfigurationValue)) return false;
 
             need_new_endpoint = true;
         }
