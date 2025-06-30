@@ -70,7 +70,7 @@ void kernel_main() {
     kprintf("MMU Mapped");
 
     if (!disk_init())
-    panic("Disk read failure");
+        panic("Disk read failure");
 
     kprintf("Kernel initialization finished");
 

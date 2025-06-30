@@ -57,6 +57,7 @@ void Desktop::draw_desktop(){
     keypress kp;
     gpu_point old_selected = selected;
     while (sys_read_input_current(&kp)){
+        //TODO: there's a crash when moving in the desktop with no processes loaded. Memcpy
         for (int i = 0; i < 6; i++){
             char key = kp.keys[i];
             if (key == KEY_ENTER){

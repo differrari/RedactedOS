@@ -4,6 +4,8 @@
 #include "memory/page_allocator.h"
 #include "xhci_types.h"//TODO: split into xhci and USB types
 #include "std/string.h"
+#include "memory/mmu.h"
+#include "input_dispatch.h"
 
 #define DWC2_BASE 0xFE980000
 
@@ -71,6 +73,8 @@ bool DWC2Driver::init() {
     mem_page = alloc_page(0x1000, true, true, false);
 
     setup_device(channel);
+
+    register_device_memory(DWC2_BASE, DWC2_BASE);
 
     return true;
 }
@@ -340,61 +344,78 @@ bool DWC2Driver::get_configuration(dwc2_host_channel *channel){
                 return false;
             }
 
-            dwc2_host_channel *ep_channel = get_channel(next_channel++);
-            assign_channel(ep_channel, address, ep_num, ep_type);
+            endpoint_channel = get_channel(next_channel++);
+            assign_channel(endpoint_channel, address, ep_num, ep_type);
             if (channel->splt)
-                ep_channel->splt = channel->splt;
+                endpoint_channel->splt = channel->splt;
+
+            endpoint_channel->cchar &= ~(1 << 15);
+            endpoint_channel->cchar |= (ep_dir << 15);
+
+            endpoint_channel->cchar &= ~0x7FF;
+            endpoint_channel->cchar |= endpoint->wMaxPacketSize;
+
+            endpoint_channel->xfer_size = (1 << 19) | (0x3 << 29) | endpoint->wMaxPacketSize;
+
+            uint8_t mc = endpoint->bInterval & 0x3;
+            endpoint_channel->cchar &= ~(0b11 << 20);
+            endpoint_channel->cchar |= (mc << 20);
         
             TEMP_input_buffer = allocate_in_page(mem_page, 8, ALIGN_64B, true, true);
 
-            ep_channel->dma = (uintptr_t)TEMP_input_buffer; // Aligned memory to receive the report
-            // uint8_t pckt_size = endpoint->wMaxPacketSize;
-
-            ep_channel->intmask = 0xFFFFFFFF;
-
-            ep_channel->xfer_size = (1 << 19) | (0x3 << 29) | endpoint->wMaxPacketSize;
-
-            ep_channel->cchar &= ~0x7FF;
-            ep_channel->cchar |= endpoint->wMaxPacketSize;
-
-            ep_channel->intmask = 0xFFFFFFFF;
-
-            ep_channel->cchar &= ~(1 << 15);
-            ep_channel->cchar |= (ep_dir << 15);
-            
-            ep_channel->cchar &= ~(1 << 30);
-            ep_channel->cchar &= ~(1 << 31);
-            ep_channel->cchar |= (1 << 17); 
-            
-            uint8_t mc = endpoint->bInterval & 0x3;
-            ep_channel->cchar &= ~(0b11 << 20);
-            ep_channel->cchar |= (mc << 20);
-
-            // ep_channel->cchar |= (1 << 19);
-
-            delay(1000);
-
-            ep_channel->cchar |= (1 << 31); 
-
-
-
             need_new_endpoint = true;
-
-            if (!wait(&ep_channel->interrupt, 1, true, 20000)){
-                kprintf("Did not receive a keystroke");
-                return false;
-            }
-
-            kprintf("Keystroke received");
         }
         break;
-        default: kprintf("Unknown type %x", header->bDescriptorType);
+        default: { kprintf("Unknown type %x", header->bDescriptorType); return false; }
         }
         i += header->bLength;
     }
 
     return true;
     
+}
+
+bool DWC2Driver::poll_interrupt_in(){
+    if (endpoint_channel->cchar & 1)
+        return false;
+
+    endpoint_channel->dma = (uintptr_t)TEMP_input_buffer;
+
+    endpoint_channel->xfer_size = (1 << 19) | (0x3 << 29) | 8;
+
+    endpoint_channel->intmask = 0xFFFFFFFF;
+
+    endpoint_channel->interrupt = 0xFFFFFFFF;
+    
+    endpoint_channel->cchar &= ~(1 << 30);
+    endpoint_channel->cchar &= ~(1 << 31);
+
+    endpoint_channel->cchar |= (1 << 31); 
+
+    if (!wait(&endpoint_channel->interrupt, 1, true, 10)){
+        return false;
+    }
+
+    endpoint_channel->interrupt = 0xFFFFFFFF;
+    endpoint_channel->cchar &= ~(1 << 31);
+
+    keypress kp;
+    
+    keypress *rkp = (keypress*)TEMP_input_buffer;
+    if (is_new_keypress(rkp, &last_keypress) || repeated_keypresses > 3){
+        if (is_new_keypress(rkp, &last_keypress))
+            repeated_keypresses = 0;
+        kp.modifier = rkp->modifier;
+        for (int i = 0; i < 6; i++){
+            kp.keys[i] = rkp->keys[i];
+        }
+        last_keypress = kp;
+        register_keypress(kp);
+        return true;
+    } else
+        repeated_keypresses++;
+
+    return false;
 }
 
 void DWC2Driver::hub_enumerate(dwc2_host_channel *channel, uint16_t address){

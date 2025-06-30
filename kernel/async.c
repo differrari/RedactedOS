@@ -22,10 +22,8 @@ bool wait(uint32_t *reg, uint32_t expected_value, bool match, uint32_t timeout){
     do {
         delay(1);
         timeout--;
-        if (timeout == 0){
-            kprintf("Wait timed out");
+        if (timeout == 0)
             return false;
-        }
         condition = (*reg & expected_value) == expected_value;
     } while ((match > 0) ^ condition);
 

@@ -1,4 +1,5 @@
 #include "types.h"
+#include "keypress.h"
 
 typedef struct {
     uint32_t gotgctl;
@@ -50,6 +51,7 @@ public:
     bool port_reset(uint32_t *port);
     bool setup_device(dwc2_host_channel *channel);
     uint8_t address_device(dwc2_host_channel *channel);
+    bool poll_interrupt_in();
 private:
     dwc2_host_channel* get_channel(uint16_t channel);
     void assign_channel(dwc2_host_channel* channel, uint8_t device, uint8_t endpoint, uint8_t ep_type);
@@ -61,4 +63,7 @@ private:
     dwc2_host *host;
     uint8_t next_channel;
     uint8_t next_address;
+    dwc2_host_channel *endpoint_channel;
+    keypress last_keypress;
+    int repeated_keypresses = 0;
 };
