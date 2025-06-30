@@ -346,7 +346,7 @@ bool DWC2Driver::get_configuration(uint8_t address){
             usb_interface_descriptor *interface = (usb_interface_descriptor *)&config->data[i];
             if (interface->bInterfaceClass == 0x9){
                 kprintf("USB Hub detected %i", interface->bNumEndpoints);
-                hub_enumerate(channel, address);
+                hub_enumerate(address);
                 return true;
             } else if (interface->bInterfaceClass != 0x3){
                 kprintf("[DWC2 implementation error] non-hid devices not supported yet %x",interface->bInterfaceClass);
@@ -437,7 +437,8 @@ bool DWC2Driver::poll_interrupt_in(){
     return false;
 }
 
-void DWC2Driver::hub_enumerate(dwc2_host_channel *channel, uint16_t address){
+void DWC2Driver::hub_enumerate(uint8_t address){
+    dwc2_host_channel *channel = get_channel(channel_map[address << 8]);
     //TODO: actually support multiple devices
     uint8_t port = 1;
     uint32_t port_status;

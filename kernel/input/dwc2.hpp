@@ -49,7 +49,7 @@ public:
     bool request_sized_descriptor(dwc2_host_channel *channel, uint8_t rType, uint8_t request, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor);
     uint16_t packet_size(uint16_t speed);
     bool get_configuration(uint8_t address);
-    void hub_enumerate(dwc2_host_channel *channel, uint16_t address);
+    void hub_enumerate(uint8_t address);
     bool port_reset(uint32_t *port);
     bool setup_device();
     uint8_t address_device();
