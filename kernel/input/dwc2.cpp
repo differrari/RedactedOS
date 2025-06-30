@@ -88,7 +88,7 @@ bool DWC2Driver::init() {
 
 uint8_t DWC2Driver::address_device(){
     uint8_t new_address = ++next_address;
-    request_sized_descriptor(get_channel(0), 0x0, 0x5, 0, new_address, 0, 0, 0);
+    request_sized_descriptor(0, 0, 0x0, 0x5, 0, new_address, 0, 0, 0);
     channel_map[new_address << 8] = assign_channel(new_address, 0, 0);
     return new_address;
 }
@@ -105,7 +105,7 @@ bool DWC2Driver::setup_device(){
 
     usb_device_descriptor* descriptor = (usb_device_descriptor*)allocate_in_page(mem_page, sizeof(usb_device_descriptor), ALIGN_64B, true, true);
     
-    if (!request_descriptor(channel, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
+    if (!request_descriptor(address, 0, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
         kprintf_raw("[DWC2 error] failed to get device descriptor");
         return false;
     }
@@ -125,7 +125,7 @@ bool DWC2Driver::setup_device(){
 
     bool use_lang_desc = true;
 
-    if (!request_descriptor(channel, 0x80, 6, USB_STRING_DESCRIPTOR, 0, 0, lang_desc)){
+    if (!request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, 0, 0, lang_desc)){
         kprintf_raw("[DWC2 warning] failed to get language descriptor");
         use_lang_desc = false;
     }
@@ -139,21 +139,21 @@ bool DWC2Driver::setup_device(){
         //TODO: we want to maintain the strings so we can have USB device information, and rework it to silece the alignment warning
         uint16_t langid = lang_desc->lang_ids[0];
         usb_string_descriptor* prod_name = (usb_string_descriptor*)allocate_in_page(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
-        if (request_descriptor(channel, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){
+        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){
             char name[128];
             if (utf16tochar(prod_name->unicode_string, name, sizeof(name))) {
                 kprintf("[DWC2 device] Product name: %s", (uint64_t)name);
             }
         }
         usb_string_descriptor* man_name = (usb_string_descriptor*)allocate_in_page(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
-        if (request_descriptor(channel, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, man_name)){
+        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, man_name)){
             char name[128];
             if (utf16tochar(man_name->unicode_string, name, sizeof(name))) {
                 kprintf("[DWC2 device] Manufacturer name: %s", (uint64_t)name);
             }
         }
         usb_string_descriptor* ser_name = (usb_string_descriptor*)allocate_in_page(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
-        if (request_descriptor(channel, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, ser_name)){
+        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, ser_name)){
             char name[128];
             if (utf16tochar(ser_name->unicode_string, name, sizeof(name))) {
                 kprintf("[DWC2 device] Serial: %s", (uint64_t)name);
@@ -205,7 +205,7 @@ bool DWC2Driver::make_transfer(dwc2_host_channel *channel, bool in, uint8_t pid,
     return true;
 }
 
-bool DWC2Driver::request_sized_descriptor(dwc2_host_channel *channel, uint8_t rType, uint8_t request, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor){
+bool DWC2Driver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uint8_t rType, uint8_t request, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor){
     
     usb_setup_packet packet = {
         .bmRequestType = rType,
@@ -217,6 +217,7 @@ bool DWC2Driver::request_sized_descriptor(dwc2_host_channel *channel, uint8_t rT
 
     bool is_in = (rType & 0x80) != 0;
 
+    dwc2_host_channel *channel = address == 0 ? get_channel(0) : get_channel(channel_map[address << 8 | endpoint]);
     // kprintf("RT: %x R: %x V: %x I: %x L: %x",packet.bmRequestType,packet.bRequest,packet.wValue,packet.wIndex,packet.wLength);
 
     if (!make_transfer(channel, false, 0x3, (sizedptr){(uintptr_t)&packet, sizeof(uintptr_t)})){
@@ -239,8 +240,8 @@ bool DWC2Driver::request_sized_descriptor(dwc2_host_channel *channel, uint8_t rT
     return true;
 }
 
-bool DWC2Driver::request_descriptor(dwc2_host_channel *channel, uint8_t rType, uint8_t request, uint8_t type, uint16_t index, uint16_t wIndex, void *out_descriptor){
-    if (!request_sized_descriptor(channel, rType, request, type, index, wIndex, sizeof(usb_descriptor_header), out_descriptor)){
+bool DWC2Driver::request_descriptor(uint8_t address, uint8_t endpoint, uint8_t rType, uint8_t request, uint8_t type, uint16_t index, uint16_t wIndex, void *out_descriptor){
+    if (!request_sized_descriptor(address, endpoint, rType, request, type, index, wIndex, sizeof(usb_descriptor_header), out_descriptor)){
         kprintf_raw("[DWC2 error] Failed to get descriptor header. Size %i", sizeof(usb_descriptor_header));
         return false;
     }
@@ -249,7 +250,7 @@ bool DWC2Driver::request_descriptor(dwc2_host_channel *channel, uint8_t rType, u
         kprintf_raw("[DWC2 error] wrong descriptor size %i",descriptor->bLength);
         return false;
     }
-    return request_sized_descriptor(channel, rType, request, type, index, wIndex, descriptor->bLength, out_descriptor);
+    return request_sized_descriptor(address, endpoint, rType, request, type, index, wIndex, descriptor->bLength, out_descriptor);
 }
 
 bool DWC2Driver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value){
@@ -265,10 +266,10 @@ bool DWC2Driver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     kprintf("[DWC2] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
 
     //Configure endpoint
-    request_sized_descriptor(channel, 0x00, 0x09, 0, configuration_value, 0, 0, 0);
+    request_sized_descriptor(address, 0, 0x00, 0x09, 0, configuration_value, 0, 0, 0);
 
     uint8_t conf;
-    request_sized_descriptor(channel, 0x80, 0x08, 0, 0, 0, 1, &conf);
+    request_sized_descriptor(address, 0, 0x80, 0x08, 0, 0, 0, 1, &conf);
 
     if (!conf){
         kprintf("Failed to set configuration for device");
@@ -304,17 +305,17 @@ bool DWC2Driver::get_configuration(uint8_t address){
     uint16_t ep_num = 0;
 
     usb_configuration_descriptor* config = (usb_configuration_descriptor*)allocate_in_page(mem_page, sizeof(usb_configuration_descriptor), ALIGN_64B, true, true);
-    if (!request_sized_descriptor(channel, 0x80, 6, USB_CONFIGURATION_DESCRIPTOR, 0, 0, 8, config)){
+    if (!request_sized_descriptor(address, 0, 0x80, 6, USB_CONFIGURATION_DESCRIPTOR, 0, 0, 8, config)){
         kprintf("[DWC2 error] could not get config descriptor header");
         return false;
     }
 
-    if (!request_sized_descriptor(channel, 0x80, 6, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->header.bLength, config)){
+    if (!request_sized_descriptor(address, 0, 0x80, 6, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->header.bLength, config)){
         kprintf("[DWC2 error] could not get full config descriptor");
         return false;
     }
 
-    if (!request_sized_descriptor(channel, 0x80, 6, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->wTotalLength, config)){
+    if (!request_sized_descriptor(address, 0, 0x80, 6, USB_CONFIGURATION_DESCRIPTOR, 0, 0, config->wTotalLength, config)){
         kprintf("[DWC2 error] could not get full config descriptor");
         return false;
     }
@@ -371,7 +372,7 @@ bool DWC2Driver::get_configuration(uint8_t address){
                 if (hid->descriptors[j].bDescriptorType == 0x22){//REPORT HID
                     report_length = hid->descriptors[j].wDescriptorLength;
                     report_descriptor = (uint8_t*)allocate_in_page(mem_page, report_length, ALIGN_64B, true, true);
-                    request_descriptor(channel, 0x81, 6, 0x22, 0, interface_index-1, report_descriptor);
+                    request_descriptor(address, 0, 0x81, 6, 0x22, 0, interface_index-1, report_descriptor);
                     kprintf("[DWC2] retrieved report descriptor of length %i at %x", report_length, (uintptr_t)report_descriptor);
                 }
             }
@@ -442,14 +443,14 @@ void DWC2Driver::hub_enumerate(uint8_t address){
     //TODO: actually support multiple devices
     uint8_t port = 1;
     uint32_t port_status;
-    request_sized_descriptor(channel, 0xA3, 0, 0, 0, port, sizeof(uint32_t), (void*)&port_status);
+    request_sized_descriptor(address, 0, 0xA3, 0, 0, 0, port, sizeof(uint32_t), (void*)&port_status);
     if (port_status & 1){
         kprintf("Port %i status %b",port, port_status);
-        request_sized_descriptor(channel, 0x23, 3, 0, 4, port, 0, 0);//Port Reset
+        request_sized_descriptor(address, 0, 0x23, 3, 0, 4, port, 0, 0);//Port Reset
         delay(50);
-        request_sized_descriptor(channel, 0x23, 1, 0, 4, port, 0, 0);//Port Reset Clear
+        request_sized_descriptor(address, 0, 0x23, 1, 0, 4, port, 0, 0);//Port Reset Clear
         delay(10);
-        request_sized_descriptor(channel, 0xA3, 0, 0, 0, port, sizeof(uint32_t), (void*)&port_status);
+        request_sized_descriptor(address, 0, 0xA3, 0, 0, 0, port, sizeof(uint32_t), (void*)&port_status);
         if (!(port_status & 0b11)){
             kprintf("Port not enabled or device not connected");
             return;
