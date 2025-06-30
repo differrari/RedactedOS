@@ -52,9 +52,9 @@ public:
     void hub_enumerate(dwc2_host_channel *channel, uint16_t address);
     bool port_reset(uint32_t *port);
     bool setup_device();
-    uint8_t address_device(dwc2_host_channel *channel);
+    uint8_t address_device();
     bool poll_interrupt_in();
-    bool configure_endpoint(dwc2_host_channel *channel, usb_endpoint_descriptor *endpoint, uint8_t configuration_value);
+    bool configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value);
     // bool configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value);
 private:
     dwc2_host_channel* get_channel(uint16_t channel);

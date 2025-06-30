@@ -86,7 +86,7 @@ bool DWC2Driver::init() {
     return true;
 }
 
-uint8_t DWC2Driver::address_device(dwc2_host_channel *channel){
+uint8_t DWC2Driver::address_device(){
     uint8_t new_address = ++next_address;
     request_sized_descriptor(get_channel(0), 0x0, 0x5, 0, new_address, 0, 0, 0);
     channel_map[new_address << 8] = assign_channel(new_address, 0, 0);
@@ -110,7 +110,7 @@ bool DWC2Driver::setup_device(){
         return false;
     }
 
-    address = address_device(channel);
+    address = address_device();
 
     channel->splt = 0;
 
@@ -252,12 +252,13 @@ bool DWC2Driver::request_descriptor(dwc2_host_channel *channel, uint8_t rType, u
     return request_sized_descriptor(channel, rType, request, type, index, wIndex, descriptor->bLength, out_descriptor);
 }
 
-bool DWC2Driver::configure_endpoint(dwc2_host_channel *channel, usb_endpoint_descriptor *endpoint, uint8_t configuration_value){
+bool DWC2Driver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value){
+    
+    dwc2_host_channel *channel = get_channel(channel_map[address << 8]);
+    
     uint8_t ep_address = endpoint->bEndpointAddress;
     uint8_t ep_num = ep_address & 0x0F;
     uint8_t ep_dir = (ep_address & 0x80) >> 7;
-
-    uint8_t address = (channel->cchar >> 22) & 0xFFFF;
 
     uint8_t ep_type = endpoint->bmAttributes & 0x03; // 0 = Control, 1 = Iso, 2 = Bulk, 3 = Interrupt
 
@@ -379,7 +380,7 @@ bool DWC2Driver::get_configuration(uint8_t address){
         case 0x5: {//Endpoint
             usb_endpoint_descriptor *endpoint = (usb_endpoint_descriptor*)&config->data[i];
             
-            if (!configure_endpoint(channel, endpoint, config->bConfigurationValue)) return false;
+            if (!configure_endpoint(address, endpoint, config->bConfigurationValue)) return false;
 
             need_new_endpoint = true;
         }
