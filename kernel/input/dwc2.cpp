@@ -65,7 +65,6 @@ bool DWC2Driver::init() {
     port_speed = (host->port >> 17) & 0x3;
     kprintf("Port speed %i",port_speed);
 
-
     dwc2_host_channel *channel = get_channel(next_channel++);
 
     assign_channel(channel, 0, 0, 0);
@@ -76,7 +75,19 @@ bool DWC2Driver::init() {
     return true;
 }
 
+uint8_t DWC2Driver::address_device(dwc2_host_channel *channel){
+    request_sized_descriptor(channel, 0x0, 0x5, 0, ++next_address, 0, 0, 0);
+    return next_address;
+}
+
 bool DWC2Driver::setup_device(dwc2_host_channel *channel){
+
+    uint8_t chan_num = ((uintptr_t)channel - DWC2_BASE - 0x500)/0x20;
+    uint8_t address = (channel->cchar >> 22) & 0xFFFF;
+
+    kprintf("Speaking to device %i on channel %i",address, chan_num);
+    if (channel->splt)
+        kprintf("Using split from original device %i:%i", (channel->splt >> 7) & 0xFFFF, (channel->splt) & 0x7F);
 
     usb_device_descriptor* descriptor = (usb_device_descriptor*)allocate_in_page(mem_page, sizeof(usb_device_descriptor), ALIGN_64B, true, true);
     
@@ -84,6 +95,15 @@ bool DWC2Driver::setup_device(dwc2_host_channel *channel){
         kprintf_raw("[DWC2 error] failed to get device descriptor");
         return false;
     }
+
+    uint16_t addr = address_device(channel);
+
+    channel->cchar &= ~(0x7F << 22);
+    channel->cchar |= (addr << 22);
+
+    address = (channel->cchar >> 22) & 0xFFFF;
+
+    kprintf("Changed address of device to %i on channel %i",address, chan_num);
 
     usb_string_language_descriptor* lang_desc = (usb_string_language_descriptor*)allocate_in_page(mem_page, sizeof(usb_string_language_descriptor), ALIGN_64B, true, true);
 
@@ -153,8 +173,6 @@ bool DWC2Driver::make_transfer(dwc2_host_channel *channel, bool in, uint8_t pid,
 
     channel->intmask = 0xFFFFFFFF;
 
-    delay(10);
-
     channel->cchar &= ~(1 << 15);
     channel->cchar |= ((in ? 1 : 0) << 15);
     
@@ -182,7 +200,7 @@ bool DWC2Driver::request_sized_descriptor(dwc2_host_channel *channel, uint8_t rT
 
     // kprintf("RT: %x R: %x V: %x I: %x L: %x",packet.bmRequestType,packet.bRequest,packet.wValue,packet.wIndex,packet.wLength);
 
-    if (!make_transfer(channel, descriptor_size == 0, 0x3, (sizedptr){(uintptr_t)&packet, sizeof(uintptr_t)})){
+    if (!make_transfer(channel, false, 0x3, (sizedptr){(uintptr_t)&packet, sizeof(uintptr_t)})){
         kprintf("[DWC2 error] Descriptor transfer failed setup stage");
         return false;
     }
@@ -209,13 +227,16 @@ bool DWC2Driver::request_descriptor(dwc2_host_channel *channel, uint8_t rType, u
     }
     usb_descriptor_header* descriptor = (usb_descriptor_header*)out_descriptor;
     if (descriptor->bLength == 0){
-        kprintf_raw("[DWC2 error] wrong descriptor size %i. Size %x",descriptor->bLength, (uintptr_t)out_descriptor);
+        kprintf_raw("[DWC2 error] wrong descriptor size %i",descriptor->bLength);
         return false;
     }
     return request_sized_descriptor(channel, rType, request, type, index, wIndex, descriptor->bLength, out_descriptor);
 }
 
 bool DWC2Driver::get_configuration(dwc2_host_channel *channel){
+
+    uint8_t chan_num = ((uintptr_t)channel - DWC2_BASE - 0x500)/0x20;
+    uint8_t address = (channel->cchar >> 22) & 0xFFFF;
 
     uint16_t ep_num = 0;
 
@@ -262,7 +283,7 @@ bool DWC2Driver::get_configuration(dwc2_host_channel *channel){
             usb_interface_descriptor *interface = (usb_interface_descriptor *)&config->data[i];
             if (interface->bInterfaceClass == 0x9){
                 kprintf("USB Hub detected %i", interface->bNumEndpoints);
-                hub_enumerate(channel);
+                hub_enumerate(channel, address);
                 return true;
             } else if (interface->bInterfaceClass != 0x3){
                 kprintf("[DWC2 implementation error] non-hid devices not supported yet %x",interface->bInterfaceClass);
@@ -305,15 +326,34 @@ bool DWC2Driver::get_configuration(dwc2_host_channel *channel){
             kprintf("[DWC2] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
 
             //Configure endpoint
-            uint16_t new_channel = next_channel++;
-            uint16_t address = ((uintptr_t)channel - DWC2_BASE - 0x500)/0x20;
-            uint16_t port = ((channel->splt >> 1) & 0xF) << 1;
-            request_sized_descriptor(channel, 0x0, 0x5, 0, new_channel, port, 0, 0);//Address device
-            dwc2_host_channel *ep_channel = get_channel(new_channel);
-            assign_channel(ep_channel, address, 0, 0);
-            ep_channel->splt = (1 << 31 /*split enable*/) | (address << 7)  | port;
+            dwc2_host_channel *ep_channel = get_channel(next_channel++);
+            assign_channel(ep_channel, address, ep_num, ep_type);
+            if (channel->splt)
+                ep_channel->splt = channel->splt;
+
+            TEMP_input_buffer = allocate_in_page(mem_page, 0x1000, ALIGN_64B, true, true);
+
+            ep_channel->dma = (uintptr_t)TEMP_input_buffer; // Aligned memory to receive the report
+            uint16_t pckt_size = endpoint->wMaxPacketSize;
+            ep_channel->xfer_size = (1 << 19) | (0x1 << 29) | pckt_size;
+
+            ep_channel->intmask = 0xFFFFFFFF;
+            ep_channel->cchar &= ~0x7FF;
+            ep_channel->cchar |= pckt_size;
+            ep_channel->cchar &= ~(1 << 30);
+            ep_channel->cchar |= (1 << 15);
+            ep_channel->cchar |= (1 << 31);
+
+            kprintf("EP transfer requested %b. Packet size %i",ep_channel->cchar,endpoint->wMaxPacketSize);
 
             need_new_endpoint = true;
+
+            if (!wait(&ep_channel->interrupt, 1, true, 20000)){
+                kprintf("Did not receive a keystroke");
+                return false;
+            }
+
+            kprintf("Keystroke received");
         }
         break;
         default: kprintf("Unknown type %x", header->bDescriptorType);
@@ -325,11 +365,10 @@ bool DWC2Driver::get_configuration(dwc2_host_channel *channel){
     
 }
 
-void DWC2Driver::hub_enumerate(dwc2_host_channel *channel){
+void DWC2Driver::hub_enumerate(dwc2_host_channel *channel, uint16_t address){
     //TODO: actually support multiple devices
     uint8_t port = 1;
     uint32_t port_status;
-    uint16_t address = ((uintptr_t)channel - DWC2_BASE - 0x500)/0x20;
     request_sized_descriptor(channel, 0xA3, 0, 0, 0, port, sizeof(uint32_t), (void*)&port_status);
     kprintf("Port %i status %b",port, port_status);
     if (port_status & 1){
@@ -337,20 +376,21 @@ void DWC2Driver::hub_enumerate(dwc2_host_channel *channel){
         delay(50);
         request_sized_descriptor(channel, 0x23, 1, 0, 4, port, 0, 0);//Port Reset Clear
         delay(10);
+        channel->splt = (1 << 31) | (1 << 16) | (address << 7) | (port << 0);
         request_sized_descriptor(channel, 0xA3, 0, 0, 0, port, sizeof(uint32_t), (void*)&port_status);
+        channel->splt = 0;
         kprintf("Port 1 status %b",port_status);
         if (!(port_status & 0b11)){
             kprintf("Port not enabled or device not connected");
             return;
         }
         uint16_t new_channel = next_channel++;
-        kprintf("Address device %i",new_channel);
-        request_sized_descriptor(channel, 0x0, 0x5, 0, new_channel, port, 0, 0);//Address device
         request_sized_descriptor(channel, 0xA3, 0, 0, 0, port, sizeof(uint32_t), (void*)&port_status);
         kprintf("Port 1 status %b",port_status);
         dwc2_host_channel *dev_channel = get_channel(new_channel);
-        assign_channel(dev_channel, address, 0, 0);
-        dev_channel->splt = (1 << 31) | (address << 7)  | (port << 1);
-        setup_device(dev_channel);
+        dev_channel->splt = (1 << 31) | (3 << 14) | (address << 7) | (port << 0);
+        assign_channel(dev_channel, 0, 0, 0);
+        if (address == 1)
+            setup_device(dev_channel);
     }
 }

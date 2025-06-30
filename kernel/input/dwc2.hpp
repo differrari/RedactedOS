@@ -46,16 +46,19 @@ public:
     bool request_sized_descriptor(dwc2_host_channel *channel, uint8_t rType, uint8_t request, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor);
     uint16_t packet_size(uint16_t speed);
     bool get_configuration(dwc2_host_channel *channel);
-    void hub_enumerate(dwc2_host_channel *channel);
+    void hub_enumerate(dwc2_host_channel *channel, uint16_t address);
     bool port_reset(uint32_t *port);
     bool setup_device(dwc2_host_channel *channel);
+    uint8_t address_device(dwc2_host_channel *channel);
 private:
     dwc2_host_channel* get_channel(uint16_t channel);
     void assign_channel(dwc2_host_channel* channel, uint8_t device, uint8_t endpoint, uint8_t ep_type);
     bool make_transfer(dwc2_host_channel *channel, bool in, uint8_t pid, sizedptr data);
     void *mem_page;
     uint16_t port_speed;
+    void *TEMP_input_buffer;
     dwc2_regs *dwc2;
     dwc2_host *host;
-    uint16_t next_channel;
+    uint8_t next_channel;
+    uint8_t next_address;
 };
