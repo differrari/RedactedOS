@@ -47,6 +47,8 @@ private:
 
     xhci_ring command_ring;
     xhci_ring event_ring;
+    
+    trb* last_event;
 
     IndexMap<xhci_ring> endpoint_map;
     IndexMap<xhci_input_context*> context_map;

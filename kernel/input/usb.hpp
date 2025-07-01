@@ -26,5 +26,5 @@ public:
 protected:
     void *mem_page;
     USBManager *usb_manager;
-    bool verbose = false;
+    bool verbose = true;
 };

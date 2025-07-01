@@ -274,22 +274,22 @@ bool XHCIDriver::await_response(uint64_t command, uint32_t type){
             return false;
         }
         for (; event_ring.index < MAX_TRB_AMOUNT; event_ring.index++){
-            trb* ev = &event_ring.ring[event_ring.index];
-            if (!wait(&ev->control, event_ring.cycle_bit, true, 2000)){
+            last_event = &event_ring.ring[event_ring.index];
+            if (!wait(&last_event->control, event_ring.cycle_bit, true, 2000)){
                 awaited_type = 0;
                 return false;
             }
-            // kprintf_raw("[xHCI] A response at %i of type %x as a response to %x",event_ring.index, (ev->control & TRB_TYPE_MASK) >> 10, ev->parameter);
+            // kprintf_raw("[xHCI] A response at %i of type %x as a response to %x",event_ring.index, (last_event->control & TRB_TYPE_MASK) >> 10, last_event->parameter);
             // kprintf_raw("[xHCI]  %x vs %x = %i and %x vs %x = %i", (ev->control & TRB_TYPE_MASK) >> 10, type, (ev->control & TRB_TYPE_MASK) >> 10 == type, ev->parameter, command, command == 0 || ev->parameter == command);
             if (event_ring.index == MAX_TRB_AMOUNT - 1){
                 event_ring.index = 0;
                 event_ring.cycle_bit = !event_ring.cycle_bit;
             }
-            if ((((ev->control & TRB_TYPE_MASK) >> 10) == type) && (command == 0 || ev->parameter == command)){
-                uint8_t completion_code = (ev->status >> 24) & 0xFF;
+            if ((((last_event->control & TRB_TYPE_MASK) >> 10) == type) && (command == 0 || last_event->parameter == command)){
+                uint8_t completion_code = (last_event->status >> 24) & 0xFF;
                 if (completion_code != 1) 
-                    kprintf("[xHCI error] wrong status %i on command type %x", completion_code, ((ev->control & TRB_TYPE_MASK) >> 10) );
-                interrupter->erdp = (uintptr_t)ev | (1 << 3);//Inform of latest processed event
+                    kprintf("[xHCI error] wrong status %i on command type %x", completion_code, ((last_event->control & TRB_TYPE_MASK) >> 10) );
+                interrupter->erdp = (uintptr_t)last_event | (1 << 3);//Inform of latest processed event
                 interrupter->iman |= 1;//Clear interrupts
                 op->usbsts |= 1 << 3;//Clear interrupts
                 awaited_type = 0;
@@ -324,7 +324,7 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
         return false;
     }
 
-    address = (event_ring.ring[event_ring.index].status >> 24) & 0xFF;
+    address = (last_event->control >> 24) & 0xFF;
     kprintfv("[xHCI] Slot id %x", address);
 
     if (address == 0){
@@ -414,7 +414,7 @@ uint8_t XHCIDriver::address_device(uint8_t address){
     }
     xhci_device_context* context = (xhci_device_context*)((uint64_t*)dcbaap)[address];
 
-    kprintf("[xHCI] ADDRESS_DEVICE command issued. Received package size %i",context->endpoints[0].endpoint_f1.max_packet_size);
+    kprintf("[xHCI] ADDRESS_DEVICE command issued. Received packet size %i",context->endpoints[0].endpoint_f1.max_packet_size);
     return address;
 }
 
