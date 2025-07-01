@@ -1,11 +1,12 @@
 #pragma once
 
-#include "xhci_bridge.h"
 #include "input_keycodes.h"
+#include "keypress.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif 
+
 void register_keypress(keypress kp);
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp);
 uint16_t sys_subscribe_shortcut_current(keypress kp);
@@ -25,6 +26,8 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid);
 bool is_new_keypress(keypress* current, keypress* previous);
 
 bool input_init();
+
+void handle_input_interrupt();
 
 #ifdef __cplusplus
 }

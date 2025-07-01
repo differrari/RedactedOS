@@ -1,5 +1,4 @@
 #include "USBKeyboard.hpp"
-#include "xhci.h"
 #include "input_dispatch.h"
 #include "console/kio.h"
 #include "memory/page_allocator.h"

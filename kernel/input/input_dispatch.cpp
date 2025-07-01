@@ -2,6 +2,7 @@
 #include "process/process.h"
 #include "process/scheduler.h"
 #include "dwc2.hpp"
+#include "xhci.hpp"
 #include "hw/hw.h"
 #include "std/std.hpp"
 
@@ -19,7 +20,7 @@ uint16_t shortcut_count = 0;
 
 bool secure_mode = false;
 
-DWC2Driver *dwc_driver;
+USBDriver *input_driver;
 
 void register_keypress(keypress kp) {
     if (!secure_mode){
@@ -88,7 +89,7 @@ bool is_new_keypress(keypress* current, keypress* previous) {
 
 bool sys_read_input(int pid, keypress *out){
     if (BOARD_TYPE == 2)
-        dwc_driver->poll_inputs();
+        input_driver->poll_inputs();
     process_t *process = get_proc_by_pid(pid);
     if (process->input_buffer.read_index == process->input_buffer.write_index) return false;
 
@@ -105,13 +106,20 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
     if (shortcuts[sid].pid == pid && shortcuts[sid].triggered){
         shortcuts[sid].triggered = false;
         return true;
-    }
+    } 
     return false;
 }
 
 bool input_init(){
     if (BOARD_TYPE == 2){
-        dwc_driver = new DWC2Driver();//TODO: QEMU Only
-        return dwc_driver->init();
-    } else return xhci_input_init();
+        input_driver = new DWC2Driver();//TODO: QEMU & 3 Only
+        return input_driver->init();
+    } else {
+        input_driver = new XHCIDriver();
+        return input_driver->init();
+    }
+}
+
+void handle_input_interrupt(){
+    if (input_driver->use_interrupts) input_driver->handle_interrupt();
 }

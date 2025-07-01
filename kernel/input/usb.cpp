@@ -16,28 +16,16 @@ uint16_t USBDriver::packet_size(uint16_t speed){
     }
 }
 
-bool USBDriver::port_reset(uint32_t *port){
-    *port &= ~0b101110;
-    *port |= (1 << 8);
+bool USBDriver::setup_device(uint8_t address, uint16_t port){
 
-    delay(50);
-
-    *port &= ~0b101110;
-    *port &= ~(1 << 8);
-
-    return wait(port, (1 << 8), false, 2000);
-}
-
-bool USBDriver::setup_device(){
-
+    address = address_device(address);
     usb_device_descriptor* descriptor = (usb_device_descriptor*)allocate_in_page(mem_page, sizeof(usb_device_descriptor), ALIGN_64B, true, true);
     
-    if (!request_descriptor(0, 0, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
+    if (!request_descriptor(address, 0, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
         kprintf_raw("[USB error] failed to get device descriptor");
         return false;
     }
 
-    uint8_t address = address_device();
 
     usb_string_language_descriptor* lang_desc = (usb_string_language_descriptor*)allocate_in_page(mem_page, sizeof(usb_string_language_descriptor), ALIGN_64B, true, true);
 
@@ -79,9 +67,7 @@ bool USBDriver::setup_device(){
         }
     }
 
-    get_configuration(address);
-
-    return true;
+    return get_configuration(address);
 }
 
 bool USBDriver::get_configuration(uint8_t address){
@@ -212,7 +198,7 @@ void USBDriver::hub_enumerate(uint8_t address){
             return;
         }
         handle_hub_routing(address,port);
-        setup_device();
+        setup_device(0,1);
     }
 }
 

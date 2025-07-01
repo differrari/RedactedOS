@@ -19,6 +19,18 @@ uint8_t DWC2Driver::assign_channel(uint8_t device, uint8_t endpoint, uint8_t ep_
     return new_chan;
 }
 
+bool DWC2Driver::port_reset(uint32_t *port){
+    *port &= ~0b101110;
+    *port |= (1 << 8);
+
+    delay(50);
+
+    *port &= ~0b101110;
+    *port &= ~(1 << 8);
+
+    return wait(port, (1 << 8), false, 2000);
+}
+
 bool DWC2Driver::init() {
 
     use_interrupts = false;
@@ -55,7 +67,7 @@ bool DWC2Driver::init() {
         return false;
     }
 
-    channel_map = IndexMap<uint16_t>(127);
+    channel_map = IndexMap<uint16_t>(127 * 5);
     usb_manager = new USBManager(127); 
 
     kprintf("Port reset %x",host->port);
@@ -65,14 +77,14 @@ bool DWC2Driver::init() {
 
     mem_page = alloc_page(0x1000, true, true, false);
 
-    setup_device();
+    setup_device(0,0);
 
     register_device_memory(DWC2_BASE, DWC2_BASE);
 
     return true;
 }
 
-uint8_t DWC2Driver::address_device(){
+uint8_t DWC2Driver::address_device(uint8_t address){
     uint8_t new_address = ++next_address;
     request_sized_descriptor(0, 0, 0x0, 0x5, 0, new_address, 0, 0, 0);
     channel_map[new_address << 8] = assign_channel(new_address, 0, 0);
@@ -219,3 +231,5 @@ void DWC2Driver::handle_hub_routing(uint8_t hub, uint8_t port){
     dwc2_host_channel *dev_channel = get_channel(0);
     dev_channel->splt = (1 << 31) | (1 << 16) | (hub << 7) | (port << 0);
 }
+
+void DWC2Driver::handle_interrupt(){}
