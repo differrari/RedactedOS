@@ -36,11 +36,11 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
         use_lang_desc = false;
     }
 
-    kprintf("[USB] Vendor %x",descriptor->idVendor);
-    kprintf("[USB] Product %x",descriptor->idProduct);
-    kprintf("[USB] USB version %x",descriptor->bcdUSB);
-    kprintf("[USB] EP0 Max Packet Size: %x", descriptor->bMaxPacketSize0);
-    kprintf("[USB] Configurations: %x", descriptor->bNumConfigurations);
+    kprintf("[USB device] Vendor %x",descriptor->idVendor);
+    kprintf("[USB device] Product %x",descriptor->idProduct);
+    kprintf("[USB device] USB version %x",descriptor->bcdUSB);
+    kprintf("[USB device] EP0 Max Packet Size: %x", descriptor->bMaxPacketSize0);
+    kprintf("[USB device] Configurations: %x", descriptor->bNumConfigurations);
     if (use_lang_desc){
         //TODO: we want to maintain the strings so we can have USB device information, and rework it to silece the alignment warning
         uint16_t langid = lang_desc->lang_ids[0];
@@ -137,8 +137,8 @@ bool USBDriver::get_configuration(uint8_t address){
                 break;
             }
             interface_index++;
+            break;
         }
-        break;
         case 0x21: { //HID
             usb_hid_descriptor *hid = (usb_hid_descriptor *)&config->data[i];
             for (uint8_t j = 0; j < hid->bNumDescriptors; j++){
@@ -149,16 +149,16 @@ bool USBDriver::get_configuration(uint8_t address){
                     kprintf("[USB] retrieved report descriptor of length %i at %x", report_length, (uintptr_t)report_descriptor);
                 }
             }
+            break;
         }
-        break;
         case 0x5: {//Endpoint
             usb_endpoint_descriptor *endpoint = (usb_endpoint_descriptor*)&config->data[i];
             
             if (!configure_endpoint(address, endpoint, config->bConfigurationValue, dev_type)) return false;
 
             need_new_endpoint = true;
+            break;
         }
-        break;
         default: { kprintf("[USB error] Unknown type %x", header->bDescriptorType); return false; }
         }
         i += header->bLength;

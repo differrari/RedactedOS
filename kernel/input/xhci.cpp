@@ -177,7 +177,6 @@ bool XHCIDriver::init(){
                 kprintf_raw("[xHCI] Failed to configure device at port %i",i);
                 return false;
             }
-            break;
         }
 
     return true;
@@ -289,7 +288,7 @@ bool XHCIDriver::await_response(uint64_t command, uint32_t type){
             if ((((ev->control & TRB_TYPE_MASK) >> 10) == type) && (command == 0 || ev->parameter == command)){
                 uint8_t completion_code = (ev->status >> 24) & 0xFF;
                 if (completion_code != 1) 
-                    kprintf("[xHCI] status error %i", completion_code);
+                    kprintf("[xHCI error] wrong status %i on command type %x", completion_code, ((ev->control & TRB_TYPE_MASK) >> 10) );
                 interrupter->erdp = (uintptr_t)ev | (1 << 3);//Inform of latest processed event
                 interrupter->iman |= 1;//Clear interrupts
                 op->usbsts |= 1 << 3;//Clear interrupts
@@ -413,7 +412,9 @@ uint8_t XHCIDriver::address_device(uint8_t address){
         kprintf_raw("[xHCI error] failed addressing device at slot %x",address);
         return 0;
     }
-    kprintf("Succeeded Addressing device %i with context %x", address, (uintptr_t)ctx);
+    xhci_device_context* context = (xhci_device_context*)((uint64_t*)dcbaap)[address];
+
+    kprintf("[xHCI] ADDRESS_DEVICE command issued. Received package size %i",context->endpoints[0].endpoint_f1.max_packet_size);
     return address;
 }
 
@@ -432,8 +433,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
 
     xhci_input_context* ctx = context_map[address << 8];
 
-    kprintf("XHCI ADD FLAGS %i",ctx->device_context.endpoints[0].endpoint_f1.max_packet_size);
-
+    
     ctx->control_context.add_flags = (1 << 0) | (1 << ep_num);
     ctx->device_context.slot_f0.context_entries = 2; //2 entries: EP0 + EP1
     ctx->device_context.endpoints[ep_num-1].endpoint_f0.interval = endpoint->bInterval;
@@ -443,9 +443,10 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     ctx->device_context.endpoints[ep_num-1].endpoint_f1.max_packet_size = endpoint->wMaxPacketSize;
     ctx->device_context.endpoints[ep_num-1].endpoint_f4.max_esit_payload_lo = endpoint->wMaxPacketSize;
     ctx->device_context.endpoints[ep_num-1].endpoint_f1.error_count = 3;
-
+    
     xhci_ring *ep_ring = &endpoint_map[address << 8 | ep_num];
-
+    
+    kprintf("XHCI ADD FLAGS %i",ctx->device_context.endpoints[0].endpoint_f1.max_packet_size);
     ep_ring->ring = (trb*)allocate_in_page(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
     ep_ring->cycle_bit = 1;
     make_ring_link(ep_ring->ring, ep_ring->cycle_bit);
@@ -457,7 +458,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
 
     if (!issue_command((uintptr_t)ctx, 0, (address << 24) | (TRB_TYPE_CONFIG_EP << 10))){
         kprintf_raw("[xHCI] Failed to configure endpoint %i for address %i",ep_num,address);
-        return false;
+        // return false;
     }
 
     usb_manager->register_endpoint(address, ep_num, type, endpoint->wMaxPacketSize);
