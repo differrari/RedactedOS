@@ -362,7 +362,7 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
     ctx->device_context.endpoints[0].endpoint_f23.ring_ptr = ((uintptr_t)transfer_ring->ring) >> 4;
     ctx->device_context.endpoints[0].endpoint_f4.average_trb_length = sizeof(trb);
 
-    USBDriver::setup_device(address, port);
+    return USBDriver::setup_device(address, port);
 }
 
 bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uint8_t rType, uint8_t request, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor){
