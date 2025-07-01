@@ -3,9 +3,9 @@
 #include "xhci_types.h"
 #include "std/std.hpp"
 
-class xHCIEndpoint {
+class USBEndpoint {
 public:
-    xHCIEndpoint(xhci_usb_device_endpoint *ep): endpoint(ep) {}
+    USBEndpoint(xhci_usb_device_endpoint *ep): endpoint(ep) {}
     virtual void request_data() {};
 
     virtual void process_data() {};
@@ -13,15 +13,15 @@ public:
     xhci_usb_device_endpoint *endpoint;
 };
 
-class xHCIDevice {
+class USBDevice {
 public:
-    xHCIDevice(uint32_t capacity, xhci_usb_device *dev);
+    USBDevice(uint32_t capacity, xhci_usb_device *dev);
     void request_data(uint8_t endpoint_id);
 
     void process_data(uint8_t endpoint_id);
 
     void register_endpoint(xhci_usb_device_endpoint *endpoint);
 
-    IndexMap<xHCIEndpoint*> endpoints;
+    IndexMap<USBEndpoint*> endpoints;
     xhci_usb_device *device;
 };

@@ -1,10 +1,13 @@
-#include "xHCIKeyboard.hpp"
+#include "USBKeyboard.hpp"
 #include "xhci.h"
 #include "input_dispatch.h"
 #include "console/kio.h"
 #include "memory/page_allocator.h"
 
-void xHCIKeyboard::request_data(){
+//Input buffer
+//Packet size
+//Endpoint identifier
+void USBKeyboard::request_data(){
     requesting = true;
     latest_ring = &endpoint->endpoint_transfer_ring[endpoint->endpoint_transfer_index++];
             
@@ -26,7 +29,7 @@ void xHCIKeyboard::request_data(){
     ring_doorbell(slot_id, endpoint->poll_endpoint);
 }
 
-void xHCIKeyboard::process_data(){
+void USBKeyboard::process_data(){
     if (!requesting){
         return;
     }
