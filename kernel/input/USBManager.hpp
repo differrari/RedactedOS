@@ -4,14 +4,16 @@
 #include "std/std.hpp"
 #include "USBDevice.hpp"
 
+class USBDriver;
+
 class USBManager {
 public:
     USBManager(uint32_t capacity);
     IndexMap<USBDevice*> devices;
-    USBDevice *default_device;
 
-    void register_device(uint8_t slot_id, xhci_usb_device *device);
-    void register_endpoint(uint8_t slot_id, xhci_usb_device_endpoint *endpoint);
-    void request_data(uint8_t slot_id, uint8_t endpoint_id);
-    void process_data(uint8_t slot_id, uint8_t endpoint_id);
+    void register_device(uint8_t address);
+    void register_endpoint(uint8_t slot_id, uint8_t endpoint, xhci_device_types type, uint16_t packet_size);
+    void request_data(uint8_t slot_id, uint8_t endpoint_id, USBDriver *driver);
+    void process_data(uint8_t slot_id, uint8_t endpoint_id, USBDriver *driver);
+    void poll_inputs(USBDriver *driver);
 };

@@ -4,7 +4,6 @@
 #include "memory/page_allocator.h"
 #include "std/string.h"
 #include "memory/mmu.h"
-#include "input_dispatch.h"
 
 #define DWC2_BASE 0xFE980000
 
@@ -21,6 +20,8 @@ uint8_t DWC2Driver::assign_channel(uint8_t device, uint8_t endpoint, uint8_t ep_
 }
 
 bool DWC2Driver::init() {
+
+    use_interrupts = false;
 
     dwc2 = (dwc2_regs*)DWC2_BASE;
     host = (dwc2_host*)(DWC2_BASE + 0x400);
@@ -54,7 +55,8 @@ bool DWC2Driver::init() {
         return false;
     }
 
-    channel_map = IndexMap<uint16_t>(UINT16_MAX);
+    channel_map = IndexMap<uint16_t>(127);
+    usb_manager = new USBManager(127); 
 
     kprintf("Port reset %x",host->port);
 
@@ -140,7 +142,7 @@ bool DWC2Driver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
     return true;
 }
 
-bool DWC2Driver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value){
+bool DWC2Driver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value, xhci_device_types type){
     
     uint8_t ep_address = endpoint->bEndpointAddress;
     uint8_t ep_num = ep_address & 0x0F;
@@ -178,18 +180,21 @@ bool DWC2Driver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     endpoint_channel->cchar &= ~(0b11 << 20);
     endpoint_channel->cchar |= (mc << 20);
 
-    TEMP_input_buffer = allocate_in_page(mem_page, 8, ALIGN_64B, true, true);
+    usb_manager->register_endpoint(address, ep_num, type, endpoint->wMaxPacketSize);
 
     return true;
 }
 
-bool DWC2Driver::poll_interrupt_in(){
+bool DWC2Driver::poll(uint8_t address, uint8_t endpoint, void *out_buf, uint16_t size){
+    dwc2_host_channel *endpoint_channel = get_channel(channel_map[(address << 8) | endpoint]);
     if (endpoint_channel->cchar & 1)
         return false;
 
-    endpoint_channel->dma = (uintptr_t)TEMP_input_buffer;
+    endpoint_channel->dma = (uintptr_t)out_buf;
 
-    endpoint_channel->xfer_size = (1 << 19) | (0x3 << 29) | 8;
+    uint16_t max_size = endpoint_channel->cchar & 0x7FF;
+    uint32_t pkt_count = (size + max_size - 1)/max_size;
+    endpoint_channel->xfer_size = (pkt_count << 19) | (0x3 << 29) | size;
 
     endpoint_channel->intmask = 0xFFFFFFFF;
 
@@ -207,23 +212,7 @@ bool DWC2Driver::poll_interrupt_in(){
     endpoint_channel->interrupt = 0xFFFFFFFF;
     endpoint_channel->cchar &= ~(1 << 31);
 
-    keypress kp;
-    
-    keypress *rkp = (keypress*)TEMP_input_buffer;
-    if (is_new_keypress(rkp, &last_keypress) || repeated_keypresses > 3){
-        if (is_new_keypress(rkp, &last_keypress))
-            repeated_keypresses = 0;
-        kp.modifier = rkp->modifier;
-        for (int i = 0; i < 6; i++){
-            kp.keys[i] = rkp->keys[i];
-        }
-        last_keypress = kp;
-        register_keypress(kp);
-        return true;
-    } else
-        repeated_keypresses++;
-
-    return false;
+    return true;
 }
 
 void DWC2Driver::handle_hub_routing(uint8_t hub, uint8_t port){

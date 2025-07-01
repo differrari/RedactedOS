@@ -3,6 +3,7 @@
 #include "async.h"
 #include "std/string.h"
 #include "memory/page_allocator.h"
+#include "xhci_types.h"
 
 uint16_t USBDriver::packet_size(uint16_t speed){
     switch (speed) {
@@ -87,6 +88,8 @@ bool USBDriver::get_configuration(uint8_t address){
     
     uint16_t ep_num = 0;
 
+    usb_manager->register_device(address);
+
     usb_configuration_descriptor* config = (usb_configuration_descriptor*)allocate_in_page(mem_page, sizeof(usb_configuration_descriptor), ALIGN_64B, true, true);
     if (!request_sized_descriptor(address, 0, 0x80, 6, USB_CONFIGURATION_DESCRIPTOR, 0, 0, 8, config)){
         kprintf("[USB error] could not get config descriptor header");
@@ -114,6 +117,8 @@ bool USBDriver::get_configuration(uint8_t address){
     uint8_t* report_descriptor;
     uint16_t report_length;
 
+    xhci_device_types dev_type;
+
     for (uint16_t i = 0; i < total_length;){
         usb_descriptor_header* header = (usb_descriptor_header*)&config->data[i];
         if (header->bLength == 0){
@@ -122,7 +127,6 @@ bool USBDriver::get_configuration(uint8_t address){
         }
         if (need_new_endpoint){
             need_new_endpoint = false;
-            // device_endpoint = (xhci_usb_device_endpoint*)allocate_in_page(xhci_mem_page, sizeof(xhci_usb_device_endpoint), ALIGN_64B, true, true);
         }
         switch (header->bDescriptorType)
         {
@@ -140,7 +144,7 @@ bool USBDriver::get_configuration(uint8_t address){
             switch (interface->bInterfaceProtocol)
             {
             case 0x1:
-                // device_endpoint->type = KEYBOARD;
+                dev_type = KEYBOARD;
                 break;
             
             default:
@@ -164,7 +168,7 @@ bool USBDriver::get_configuration(uint8_t address){
         case 0x5: {//Endpoint
             usb_endpoint_descriptor *endpoint = (usb_endpoint_descriptor*)&config->data[i];
             
-            if (!configure_endpoint(address, endpoint, config->bConfigurationValue)) return false;
+            if (!configure_endpoint(address, endpoint, config->bConfigurationValue, dev_type)) return false;
 
             need_new_endpoint = true;
         }
@@ -210,4 +214,8 @@ void USBDriver::hub_enumerate(uint8_t address){
         handle_hub_routing(address,port);
         setup_device();
     }
+}
+
+void USBDriver::poll_inputs(){
+    usb_manager->poll_inputs(this);
 }

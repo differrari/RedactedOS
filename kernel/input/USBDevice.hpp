@@ -2,26 +2,33 @@
 #include "types.h"
 #include "xhci_types.h"
 #include "std/std.hpp"
+#include "console/kio.h"
+
+class USBDriver;
 
 class USBEndpoint {
 public:
-    USBEndpoint(xhci_usb_device_endpoint *ep): endpoint(ep) {}
-    virtual void request_data() {};
+    USBEndpoint(uint8_t endpoint, xhci_device_types type, uint16_t packet_size): endpoint(endpoint), type(type), packet_size(packet_size) { }
+    virtual void request_data(USBDriver *driver) = 0;
 
-    virtual void process_data() {};
+    virtual void process_data(USBDriver *driver) = 0;
 
-    xhci_usb_device_endpoint *endpoint;
+    uint8_t endpoint;
+    xhci_device_types type;
+    uint16_t packet_size;
 };
 
 class USBDevice {
 public:
-    USBDevice(uint32_t capacity, xhci_usb_device *dev);
-    void request_data(uint8_t endpoint_id);
+    USBDevice(uint32_t capacity, uint8_t address);
+    void request_data(uint8_t endpoint_id, USBDriver *driver);
 
-    void process_data(uint8_t endpoint_id);
+    void process_data(uint8_t endpoint_id, USBDriver *driver);
 
-    void register_endpoint(xhci_usb_device_endpoint *endpoint);
+    void register_endpoint(uint8_t endpoint, xhci_device_types type, uint16_t packet_size);
+
+    void poll_inputs(USBDriver *driver);
 
     IndexMap<USBEndpoint*> endpoints;
-    xhci_usb_device *device;
+    uint8_t address;
 };

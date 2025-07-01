@@ -9,6 +9,7 @@
 #include "std/string.h"
 #include "std/memfunctions.h"
 #include "hw/hw.h"
+#include "xhci_types.h"
 
 static xhci_device global_device;
 
@@ -446,9 +447,9 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
 
     bool need_new_endpoint = true;
 
-    xhci_usb_device_endpoint *device_endpoint;
+    xhci_device_types dev_type;
 
-    xhci_configure_device(device->slot_id, device);
+    xhci_configure_device(device->slot_id);
 
     for (uint16_t i = 0; i < total_length;){
         usb_descriptor_header* header = (usb_descriptor_header*)&config->data[i];
@@ -458,7 +459,6 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
         }
         if (need_new_endpoint){
             need_new_endpoint = false;
-            device_endpoint = (xhci_usb_device_endpoint*)allocate_in_page(xhci_mem_page, sizeof(xhci_usb_device_endpoint), ALIGN_64B, true, true);
         }
         switch (header->bDescriptorType)
         {
@@ -472,7 +472,7 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             switch (interface->bInterfaceProtocol)
             {
             case 0x1:
-                device_endpoint->type = KEYBOARD;
+                dev_type = KEYBOARD;
                 break;
             
             default:
@@ -484,10 +484,10 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             usb_hid_descriptor *hid = (usb_hid_descriptor *)&config->data[i];
             for (uint8_t j = 0; j < hid->bNumDescriptors; j++){
                 if (hid->descriptors[j].bDescriptorType == 0x22){//REPORT HID
-                    device_endpoint->report_length = hid->descriptors[j].wDescriptorLength;
-                    device_endpoint->report_descriptor = (uint8_t*)allocate_in_page(xhci_mem_page, device_endpoint->report_length, ALIGN_64B, true, true);
-                    xhci_request_descriptor(device, true, 0x22, 0, interface_index-1, device_endpoint->report_descriptor);
-                    kprintfv("[xHCI] retrieved report descriptor of length %i at %x", device_endpoint->report_length, (uintptr_t)device_endpoint->report_descriptor);
+                    // device_endpoint->report_length = hid->descriptors[j].wDescriptorLength;
+                    // device_endpoint->report_descriptor = (uint8_t*)allocate_in_page(xhci_mem_page, device_endpoint->report_length, ALIGN_64B, true, true);
+                    // xhci_request_descriptor(device, true, 0x22, 0, interface_index-1, device_endpoint->report_descriptor);
+                    // kprintfv("[xHCI] retrieved report descriptor of length %i at %x", device_endpoint->report_length, (uintptr_t)device_endpoint->report_descriptor);
                 }
             }
         break;
@@ -513,26 +513,25 @@ bool xhci_get_configuration(usb_configuration_descriptor *config, xhci_usb_devic
             ctx->device_context.endpoints[ep_num-1].endpoint_f4.max_esit_payload_lo = endpoint->wMaxPacketSize;
             ctx->device_context.endpoints[ep_num-1].endpoint_f1.error_count = 3;
 
-            device_endpoint->endpoint_transfer_ring = (trb*)allocate_in_page(xhci_mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
-            device_endpoint->endpoint_transfer_cycle_bit = 1;
-            make_ring_link(device_endpoint->endpoint_transfer_ring, device_endpoint->endpoint_transfer_cycle_bit);
-            ctx->device_context.endpoints[ep_num-1].endpoint_f23.dcs = device_endpoint->endpoint_transfer_cycle_bit;
-            ctx->device_context.endpoints[ep_num-1].endpoint_f23.ring_ptr = ((uintptr_t)device_endpoint->endpoint_transfer_ring) >> 4;
-            ctx->device_context.endpoints[ep_num-1].endpoint_f4.average_trb_length = 8;
+            // device_endpoint->endpoint_transfer_ring = (trb*)allocate_in_page(xhci_mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
+            // device_endpoint->endpoint_transfer_cycle_bit = 1;
+            // make_ring_link(device_endpoint->endpoint_transfer_ring, device_endpoint->endpoint_transfer_cycle_bit);
+            // ctx->device_context.endpoints[ep_num-1].endpoint_f23.dcs = device_endpoint->endpoint_transfer_cycle_bit;
+            // ctx->device_context.endpoints[ep_num-1].endpoint_f23.ring_ptr = ((uintptr_t)device_endpoint->endpoint_transfer_ring) >> 4;
+            // ctx->device_context.endpoints[ep_num-1].endpoint_f4.average_trb_length = endpoint->wMaxPacketSize;
 
-            device_endpoint->poll_endpoint = ep_num;
-            device_endpoint->poll_packetSize = endpoint->wMaxPacketSize;
+            // device_endpoint->poll_packetSize = endpoint->wMaxPacketSize;
 
             if (!issue_command((uintptr_t)ctx, 0, (device->slot_id << 24) | (TRB_TYPE_CONFIG_EP << 10))){
                 kprintf_raw("[xHCI] Failed to configure endpoint %i",ep_num);
                 return false;
             }
 
-            kprintf_raw("[xHCI] Storing configuration for endpoint %i -> %i (%x)",ep_num,device_endpoint->poll_endpoint, (uintptr_t)device_endpoint);
+            // kprintf_raw("[xHCI] Storing configuration for endpoint %i -> %i (%x)",ep_num,device_endpoint->poll_endpoint, (uintptr_t)device_endpoint);
 
-            xhci_configure_endpoint(device->slot_id, device_endpoint);
+            xhci_configure_endpoint(device->slot_id, ep_num, dev_type, endpoint->wMaxPacketSize);
 
-            kprintf_raw("[xHCI] Returned from configuration for endpoint %i -> %i (%x)",ep_num,device_endpoint->poll_endpoint, (uintptr_t)device_endpoint);
+            // kprintf_raw("[xHCI] Returned from configuration for endpoint %i -> %i (%x)",ep_num,device_endpoint->poll_endpoint, (uintptr_t)device_endpoint);
 
             need_new_endpoint = true;
 

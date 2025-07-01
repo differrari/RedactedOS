@@ -22,7 +22,6 @@ bool secure_mode = false;
 DWC2Driver *dwc_driver;
 
 void register_keypress(keypress kp) {
-
     if (!secure_mode){
         for (int i = 0; i < shortcut_count; i++){
             if (shortcuts[i].pid != -1 && !is_new_keypress(&shortcuts[i].kp, &kp)){
@@ -89,7 +88,7 @@ bool is_new_keypress(keypress* current, keypress* previous) {
 
 bool sys_read_input(int pid, keypress *out){
     if (BOARD_TYPE == 2)
-        dwc_driver->poll_interrupt_in();
+        dwc_driver->poll_inputs();
     process_t *process = get_proc_by_pid(pid);
     if (process->input_buffer.read_index == process->input_buffer.write_index) return false;
 
