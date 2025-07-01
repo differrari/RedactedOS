@@ -63,8 +63,7 @@ void kernel_main() {
     if (!input_init())
         panic("Input initialization error");
 
-    if (!network_init())
-        panic("Network initialization failure");
+    bool network_available = network_init();
 
     mmu_init();
     kprintf("MMU Mapped");
@@ -76,7 +75,7 @@ void kernel_main() {
 
     kprintf("Starting processes");
 
-    launch_net_process();
+    if (network_available) launch_net_process();
 
     init_bootprocess();
     
