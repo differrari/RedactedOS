@@ -42,7 +42,7 @@ typedef struct {
     uint32_t control;
 }__attribute__((packed)) trb;
 
-typedef struct __attribute__((packed)){
+typedef struct {
     uint8_t caplength;
     uint8_t reserved;
     uint16_t hciversion;
@@ -53,9 +53,9 @@ typedef struct __attribute__((packed)){
     uint32_t dboff;
     uint32_t rtsoff;
     uint32_t hccparams2;
-} xhci_cap_regs;
+}__attribute__((packed)) xhci_cap_regs;
 
-typedef struct __attribute__((packed)){
+typedef struct {
     uint32_t usbcmd;
     uint32_t usbsts;
     uint32_t pagesize;
@@ -65,7 +65,7 @@ typedef struct __attribute__((packed)){
     uint32_t reserved1[4];
     uint64_t dcbaap;
     uint32_t config;
-} xhci_op_regs;
+}__attribute__((packed)) xhci_op_regs;
 
 typedef union {
     struct {
@@ -97,21 +97,21 @@ typedef union {
     uint32_t value;
 } portstatuscontrol;
 
-typedef struct __attribute__((packed)){
+typedef struct {
     portstatuscontrol portsc;
     uint32_t portpmsc;
     uint32_t portli;
     uint32_t rsvd;
-} xhci_port_regs;
+}__attribute__((packed, aligned(4))) xhci_port_regs;
 
-typedef struct __attribute__((packed)){
+typedef struct {
     uint32_t iman;
     uint32_t imod;
     uint32_t erstsz;
     uint32_t reserved;
     uint64_t erstba;
     uint64_t erdp;
-} xhci_interrupter;
+}__attribute__((packed)) xhci_interrupter;
 
 typedef struct {
     uint64_t mmio;
@@ -134,17 +134,17 @@ typedef struct {
     uint16_t max_ports;
 } xhci_device;
 
-typedef struct __attribute__((packed)){
+typedef struct {
     uint64_t ring_base;
     uint32_t ring_size;
     uint32_t reserved;
-} erst_entry;
+}__attribute__((packed)) erst_entry;
 
-typedef struct __attribute__((packed)) {
+typedef struct {
     uint32_t drop_flags;
     uint32_t add_flags;
     uint64_t reserved[3];
-} xhci_input_control_context;
+}__attribute__((packed)) xhci_input_control_context;
 
 typedef union
 {
@@ -241,7 +241,7 @@ typedef union
     uint32_t value;
 } endpoint_field4;
 
-typedef struct __attribute__((packed)) {
+typedef struct {
     slot_field0 slot_f0;
     slot_field1 slot_f1;
     slot_field2 slot_f2;
@@ -256,7 +256,7 @@ typedef struct __attribute__((packed)) {
     } endpoints[31];
 } xhci_device_context;
 
-typedef struct __attribute__((packed)) {
+typedef struct {
     xhci_input_control_context control_context;
     xhci_device_context device_context;
 } xhci_input_context;
