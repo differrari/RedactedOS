@@ -1,11 +1,12 @@
 #include "disk.h"
-#include "exfat.h"
+#include "exfat.hpp"
 #include "virtio_blk_pci.h"
 #include "sdhci.hpp"
 #include "hw/hw.h"
 
 static bool disk_enable_verbose;
 SDHCI sdhci_driver; 
+ExFATFS fs_driver;
 
 void disk_verbose(){
     disk_enable_verbose = true;
@@ -32,7 +33,7 @@ bool find_disk(){
 }
 
 bool disk_init(){
-    return ef_init();
+    return fs_driver.init();
 }
 
 void disk_write(const void *buffer, uint32_t sector, uint32_t count){
@@ -46,10 +47,10 @@ void disk_read(void *buffer, uint32_t sector, uint32_t count){
         vblk_read(buffer, sector, count);
 }
 
-void* read_file(const char *path){
-    return ef_read_file(path);
+void* read_file(char *path){
+    return fs_driver.read_file(path);
 }
 
-string_list* list_directory_contents(const char *path){
-    return ef_list_contents(path);
+string_list* list_directory_contents(char *path){
+    return fs_driver.list_contents(path);
 }
