@@ -35,8 +35,6 @@ private:
     void make_ring_link_control(trb* ring, bool cycle);
     void make_ring_link(trb* ring, bool cycle);
 
-    void sync_events();
-
     xhci_cap_regs* cap;
     xhci_op_regs* op;
     xhci_port_regs* ports;

@@ -10,9 +10,15 @@ void USBKeyboard::request_data(USBDriver *driver){
     if (buffer == 0){
         buffer = alloc_page(packet_size, true, true, true);
     }
-    
-    if (driver->poll(slot_id, endpoint, buffer, packet_size) && !driver->use_interrupts){
+
+    if (!driver->poll(slot_id, endpoint, buffer, packet_size)){
+        
+        return;
+    } 
+
+    if (!driver->use_interrupts){
         process_keypress((keypress*)buffer);
+        return;
     }
 }
 
@@ -21,14 +27,9 @@ void USBKeyboard::process_data(USBDriver *driver){
         return;
     }
     
-    // if (!xhci_await_response((uintptr_t)latest_ring,TRB_TYPE_TRANSFER))
-    //     xhci_sync_events();//TODO: we're just consuming the event without even looking to see if it's the right one, this is wrong, seriously, IRQ await would fix this
+    process_keypress((keypress*)buffer);
 
-    // keypress *rkp = (keypress*)endpoint->input_buffer;
-    // process_keypress(rkp);
-
-    // request_data();
-
+    request_data(driver);
 }
 
 void USBKeyboard::process_keypress(keypress *rkp){
