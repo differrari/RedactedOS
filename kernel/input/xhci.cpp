@@ -134,12 +134,12 @@ bool XHCIDriver::init(){
 
     uint32_t scratchpad_count = ((cap->hcsparams2 >> 27) & 0x1F);
 
-    dcbaap = dcbaap_addr;
+    dcbaap = (uintptr_t*)dcbaap_addr;
 
     uint64_t* scratchpad_array = (uint64_t*)allocate_in_page(mem_page, (scratchpad_count == 0 ? 1 : scratchpad_count) * sizeof(uintptr_t), ALIGN_64B, true, true);
     for (uint32_t i = 0; i < scratchpad_count; i++)
         scratchpad_array[i] = (uint64_t)allocate_in_page(mem_page, 0x1000, ALIGN_64B, true, true);
-    ((uint64_t*)dcbaap)[0] = (uint64_t)scratchpad_array;
+    dcbaap[0] = (uint64_t)scratchpad_array;
 
     kprintfv("[xHCI] dcbaap assigned at %x with %i scratchpads",dcbaap_addr,scratchpad_count);
 
@@ -362,6 +362,8 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
     ctx->device_context.endpoints[0].endpoint_f23.ring_ptr = ((uintptr_t)transfer_ring->ring) >> 4;
     ctx->device_context.endpoints[0].endpoint_f4.average_trb_length = sizeof(trb);
 
+    dcbaap[address] = (uintptr_t)output_ctx;
+
     return USBDriver::setup_device(address, port);
 }
 
@@ -412,9 +414,9 @@ uint8_t XHCIDriver::address_device(uint8_t address){
         kprintf_raw("[xHCI error] failed addressing device at slot %x",address);
         return 0;
     }
-    xhci_device_context* context = (xhci_device_context*)((uint64_t*)dcbaap)[address];
+    xhci_device_context* context = (xhci_device_context*)dcbaap[address];
 
-    kprintf("[xHCI] ADDRESS_DEVICE command issued. Received packet size %i",context->endpoints[0].endpoint_f1.max_packet_size);
+    kprintf("[xHCI] ADDRESS_DEVICE %i command issued. DCBAAP %x Received packet size %i",address, (uintptr_t)dcbaap, context->endpoints[0].endpoint_f1.max_packet_size);
     return address;
 }
 
@@ -458,12 +460,29 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
 
     if (!issue_command((uintptr_t)ctx, 0, (address << 24) | (TRB_TYPE_CONFIG_EP << 10))){
         kprintf_raw("[xHCI] Failed to configure endpoint %i for address %i",ep_num,address);
-        // return false;
+        return false;
     }
 
     usb_manager->register_endpoint(address, ep_num, type, endpoint->wMaxPacketSize);
 
+    sync_events();
+
     return true;
+}
+
+void XHCIDriver::sync_events(){
+    for (; event_ring.index < MAX_TRB_AMOUNT; event_ring.index++){
+        trb* ev = &event_ring.ring[event_ring.index];
+        if (!((ev->control & 1) == event_ring.cycle_bit)){
+            interrupter->erdp = (uintptr_t)ev | (1 << 3);
+            interrupter->iman |= 1;
+            op->usbsts |= 1 << 3;
+            return;
+        }
+        interrupter->erdp = (uintptr_t)ev | (1 << 3);
+        interrupter->iman |= 1;
+        op->usbsts |= 1 << 3;
+    }
 }
 
 void XHCIDriver::handle_hub_routing(uint8_t hub, uint8_t port){

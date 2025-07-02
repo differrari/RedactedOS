@@ -35,13 +35,15 @@ private:
     void make_ring_link_control(trb* ring, bool cycle);
     void make_ring_link(trb* ring, bool cycle);
 
+    void sync_events();
+
     xhci_cap_regs* cap;
     xhci_op_regs* op;
     xhci_port_regs* ports;
     xhci_interrupter* interrupter;
     uintptr_t db_base;
     uintptr_t rt_base;
-    uintptr_t dcbaap;
+    uintptr_t* dcbaap;
     uint16_t max_device_slots;
     uint16_t max_ports;
 
