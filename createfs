@@ -1,62 +1,29 @@
 #!/bin/bash
 
-IMG="disk.img"
 FOLDER="fs"
-SIZE_MB=64
-VOLUME_NAME="REDOS"
+VOLUME_LABEL="REDACTED OS"
+IMAGE=disk.img
 
-[ -f "$IMG" ] && rm "$IMG"
-[ -f "$IMG.dmg" ] && rm "$IMG.dmg"
-
-function need_executable() {
-
-    EXECUTABLE="$1"
-
-    RECOMMENDED_PACKAGE="$2"
-
-    if ! command -v "$EXECUTABLE" >/dev/null 2>&1; then
-        echo "Error: this script needs the '$EXECUTABLE' executable, please install it" >&2
-        if [ -n "$RECOMMENDED_PACKAGE" ]; then
-            echo "The recommended package to install for this program is: '$RECOMMENDED_PACKAGE'" >&2
-        fi
-        exit 1
-    fi
-
-}
-
-OS_TYPE="$(uname)"
-
-if [[ "$OS_TYPE" == "Darwin" ]]; then
-    echo "Running on macOS"
-    need_executable hdiutil
-
-    DEV_INFO=$(hdiutil create -size ${SIZE_MB}m -fs "ExFAT" -layout NONE -volname "$VOLUME_NAME" "$IMG" -attach)
-    MOUNTPOINT=$(echo "$DEV_INFO" | awk '/\/Volumes\// {print $NF}')
-    DEVICE=$(echo "$DEV_INFO" | awk '/\/dev\/disk/ {print $1; exit}')
-
-    cp -R "$FOLDER/" "$MOUNTPOINT/"
-
-    #.fseventsd is not getting deleted i think
-    find "$MOUNTPOINT/" -type f \( -name '.DS_Store' -o -name '.fseventsd' -o -name '._*' \) -delete
-
-    echo "$MOUNTPOINT"
-    echo "DEV: $DEVICE"
-
-    hdiutil detach "$DEVICE"
-    mv "$IMG.dmg" "$IMG"
-
-elif [[ "$OS_TYPE" == "Linux" ]]; then
-    echo "Running on Linux"
-
-    need_executable dd
-    need_executable mkfs.exfat "exfatprogs"
-
-    # 1. Create an empty image file
-    dd if=/dev/zero of="$IMG" bs=1M count="$SIZE_MB"
-
-    # 2. Format it as ExFAT
-    mkfs.exfat -n "$VOLUME_NAME" "$IMG"
-else
-    echo "Unknown OS: $OS_TYPE" >&2
+if ! command -v "mcopy" >/dev/null 2>&1; then
+    echo "Error: this script depends on mtools. Please install it" >&2
     exit 1
 fi
+
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  SIZE_KB=$(du -sk "$FOLDER" | cut -f1)
+else
+  SIZE_KB=$(du -s -B1 "$FOLDER" | awk '{print int($1/1024)}')
+fi
+
+SIZE_MB=$(( (SIZE_KB * 12 / 10 + 1023) / 1024 ))
+
+if ((SIZE_MB < 64)); then
+    SIZE_MB=64
+fi
+
+dd if=/dev/zero of=$IMAGE bs=1M count=$SIZE_MB
+
+mkfs.fat -F 32 -n "$VOLUME_LABEL" $IMAGE
+
+mcopy -i $IMAGE -s "$FOLDER"/* ::

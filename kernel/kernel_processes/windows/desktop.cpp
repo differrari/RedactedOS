@@ -35,8 +35,10 @@ Desktop::Desktop() {
             string fullpath = string_format("/redos/user/%s",(uintptr_t)file);
             string name = string_ca_max(file,find_extension(file));
             string ext = string_l(file + find_extension(file));
-            if (strcmp(ext.data,".elf") == 0)
+            if (strcmp(ext.data,".elf", true) == 0){
+                kprintf("Extension %s matches .elf", (uintptr_t)ext.data);
                 add_entry(name.data, ext.data, fullpath.data);
+            }
             while (*reader) reader++;
             reader++;
         }
@@ -115,12 +117,17 @@ void Desktop::activate_current(){
     uint32_t index = (selected.y * MAX_COLS) + selected.x;
 
     if (index < entries.size()){
-        if (strcmp(".elf",entries[index].ext) != 0){
+        if (strcmp(".elf",entries[index].ext, true) != 0){
             kprintf("Wrong executable format. Must be .elf");
             return;
         }
+        kprintf("File path %s",(uintptr_t)entries[index].path);
         void *file = read_file(entries[index].path);
         active_proc = load_elf_file(entries[index].name, file);
+        if (!active_proc){
+            kprintf("Failed to read ELF file");
+            return;
+        }
         process_active = true;
         sys_set_focus(active_proc->id);
     }

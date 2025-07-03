@@ -123,14 +123,14 @@ uint64_t mem_get_kmem_end(){
 }
 
 int handle_mem_node(const char *propname, const void *prop, uint32_t len, dtb_match_t *match) {
-    if (strcmp(propname, "reg") == 0 && len >= 16) {
+    if (strcmp(propname, "reg", false) == 0 && len >= 16) {
         uint32_t *p = (uint32_t *)prop;
         match->reg_base = ((uint64_t)__builtin_bswap32(p[0]) << 32) | __builtin_bswap32(p[1]);
         match->reg_size = ((uint64_t)__builtin_bswap32(p[2]) << 32) | __builtin_bswap32(p[3]);
         
         return 1;
     }
-    if (strcmp(propname, "device_type") == 0 && strcmp(prop,"memory") == 0){
+    if (strcmp(propname, "device_type", false) == 0 && strcmp(prop,"memory", false) == 0){
         match->found = true;
     }
     return 0;

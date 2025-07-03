@@ -1,12 +1,13 @@
 #include "disk.h"
 #include "exfat.hpp"
+#include "fat32.hpp"
 #include "virtio_blk_pci.h"
 #include "sdhci.hpp"
 #include "hw/hw.h"
 
 static bool disk_enable_verbose;
 SDHCI sdhci_driver; 
-ExFATFS fs_driver;
+FAT32FS fs_driver;
 
 void disk_verbose(){
     disk_enable_verbose = true;

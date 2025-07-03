@@ -39,6 +39,11 @@ typedef struct elf_program_header {
 process_t* load_elf_file(const char *name, void* file){
     elf_header *header = (elf_header*)file;
 
+    if (header->magic[0] != 0x7f){
+        kprintf("Failed to read header file");
+        return 0;
+    }
+
     kprintf("ELF FILE VERSION %x HEADER VERSION %x (%x)",header->elf_version,header->header_version,header->header_size);
     kprintf("FILE %i for %x",header->type, header->instruction_set);
     kprintf("ENTRY %x - %i",header->program_entry_offset);

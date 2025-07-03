@@ -69,7 +69,7 @@ void login_screen(){
                 char key = kp.keys[i];
                 if (hid_keycode_to_char[(uint8_t)key]){
                     if (key == KEY_ENTER){
-                        if (strcmp(buf,default_pwd) == 0){
+                        if (strcmp(buf,default_pwd, false) == 0){
                             free(s.data,s.mem_length);
                             free(title.data,title.mem_length);
                             free(subtitle.data,subtitle.mem_length);
