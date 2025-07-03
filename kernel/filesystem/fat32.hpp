@@ -62,22 +62,20 @@ typedef struct f32file_entry {
 
 }__attribute__((packed)) f32file_entry;
 
-// typedef struct f32longname {
-//         uint8_t entry_type;
-//         uint8_t flags;
-//         uint8_t rsvd;
-//         uint8_t name_length;
-//         uint16_t name_hash;
-//         uint16_t rsvd2;
-//         uint64_t valid_filesize;
-//         uint32_t rsvd3;
-//         uint32_t first_cluster;
-//         uint64_t filesize;
-// }__attribute__((packed)) f32longname;
+typedef struct f32longname {
+        uint8_t order;
+        uint16_t name1[5];
+        uint8_t attribute;
+        uint8_t long_type;
+        uint8_t checksum;
+        uint16_t name2[6];
+        uint16_t rsvd2;
+        uint16_t name3[2];
+}__attribute__((packed)) f32longname;
 
 class FAT32FS;
 
-typedef void* (*f32_entry_handler)(FAT32FS *instance, f32file_entry*, char *seek);
+typedef void* (*f32_entry_handler)(FAT32FS *instance, f32file_entry*, char *filename, char *seek);
 
 class FAT32FS {
 public:
@@ -98,6 +96,9 @@ protected:
     uint32_t cluster_count;
     uint32_t data_start_sector;
 
-    static void* read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *seek);
-    static void* list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *seek);
+    static void* read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek);
+    static void* list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek);
+
+    void parse_longnames(f32longname entries[], uint16_t count, char* out);
+    void parse_shortnames(f32file_entry* entry, char* out);
 };

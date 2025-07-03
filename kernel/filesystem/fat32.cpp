@@ -28,18 +28,63 @@ void* FAT32FS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint3
     return buffer;
 }
 
+void FAT32FS::parse_longnames(f32longname entries[], uint16_t count, char* out){
+    uint16_t total = (5+6+2)*count;
+    uint16_t filename[total];
+    uint16_t f = 0;
+    for (int i = count-1; i >= 0; i--){
+        for (int j = 0; j < 5; j++)
+            filename[f++] = entries[i].name1[j];
+        for (int j = 0; j < 6; j++)
+            filename[f++] = entries[i].name2[j];
+        for (int j = 0; j < 2; j++)
+            filename[f++] = entries[i].name3[j];
+    }
+    filename[f++] = '\0';
+    utf16tochar(filename, out, total);
+}
+
+void FAT32FS::parse_shortnames(f32file_entry* entry, char* out){
+    int j = 0;
+    bool ext_found = false;
+    for (int i = 0; i < 11 && entry->filename[i]; i++){
+        if (entry->filename[i] != ' ')
+            out[j++] = entry->filename[i];
+        else if (!ext_found){
+            out[j++] = '.';
+            ext_found = true;
+        }
+    }
+    out[j++] = '\0';
+}
+
 void* FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, char *seek, f32_entry_handler handler) {
     uint32_t cluster_size = mbs->sectors_per_cluster;
     char *buffer = (char*)read_cluster(data_start_sector, cluster_size, cluster_count, root_index);
     f32file_entry *entry = 0;
 
     for (uint64_t i = 0; i < cluster_size * 512; i++) {
-        char c = buffer[i];
+        bool long_name = buffer[i + 0xB] == 0xF;
+        char filename[255];
+        if (long_name){
+            uint8_t order;
+            f32longname *first_longname = (f32longname*)&buffer[i];
+            uint16_t count;
+            do {
+                f32longname *longname = (f32longname*)&buffer[i];
+                i += sizeof(f32longname);
+                count++;
+            } while (buffer[i + 0xB] == 0xF);
+            parse_longnames(first_longname, count, filename);
+        }
         entry = (f32file_entry *)&buffer[i];
-        void *result = handler(this, entry, seek);
+        if (!long_name){
+            parse_shortnames(entry, filename);
+        }
+        i+= sizeof(f32file_entry) - 1;
+        void *result = handler(this, entry, filename, seek);
         if (result)
             return result;
-        i+= sizeof(f32file_entry) - 1;
     }
 
     return 0;
@@ -57,17 +102,28 @@ void* FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
 
     for (uint64_t i = 0; i < cluster_size * 512; i++) {
         char c = buffer[i];
-        entry = (f32file_entry *)&buffer[i];
         count++;
-
-        bool ext_found = false;
-        for (int j = 0; j < 11 && entry->filename[j]; j++){
-            if (entry->filename[j] != ' ')
-                *write_ptr++ = entry->filename[j];
-            else if (!ext_found){
-                *write_ptr++ = '.';
-                ext_found = true;
-            }
+        bool long_name = buffer[i + 0xB] == 0xF;
+        char filename[255];
+        if (long_name){
+            uint8_t order;
+            f32longname *first_longname = (f32longname*)&buffer[i];
+            uint16_t count;
+            do {
+                f32longname *longname = (f32longname*)&buffer[i];
+                i += sizeof(f32longname);
+                count++;
+            } while (buffer[i + 0xB] == 0xF);
+            parse_longnames(first_longname, count, filename);
+        }
+        entry = (f32file_entry *)&buffer[i];
+        if (!long_name){
+            parse_shortnames(entry, filename);
+        }
+        char *f = filename;
+        while (*f) {
+            *write_ptr++ = *f;
+            f++;
         }
         *write_ptr++ = '\0';
         i += sizeof(f32file_entry) - 1;
@@ -130,20 +186,9 @@ bool FAT32FS::init(){
     return true;
 }
 
-void* FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *seek) {
-    char filename[11];
+void* FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek) {
     if (entry->flags.volume_id) return 0;
-    int j = 0;
-    bool ext_found = false;
-    for (int i = 0; i < 11 && entry->filename[i]; i++){
-        if (entry->filename[i] != ' ')
-            filename[j++] = entry->filename[i];
-        else if (!ext_found){
-            filename[j++] = '.';
-            ext_found = true;
-        }
-    }
-    filename[j++] = '\0';
+    
     bool is_last = *instance->advance_path(seek) == '\0';
     if (!is_last && strstart(seek, filename, true) == 0) return 0;
     if (is_last && strcmp(seek, filename, true) != 0) return 0;
@@ -165,10 +210,10 @@ void* FAT32FS::read_file(char *path){
     return walk_directory(1, mbs->first_cluster_of_root_directory, path, read_entry_handler);
 }
 
-void* FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *seek) {
+void* FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek) {
 
     if (entry->flags.volume_id) return 0;
-    if (strstart(seek, entry->filename, true) == 0) return 0;
+    if (strstart(seek, filename, true) == 0) return 0;
     
     bool is_last = *instance->advance_path(seek) == '\0';
     
