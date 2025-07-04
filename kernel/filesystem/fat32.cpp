@@ -27,7 +27,7 @@ void* FAT32FS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint3
             kprintf("Cluster %i = %x (%x)",i,next_index,(cluster_start + ((next_index - 2) * cluster_size)) * 512);
             disk_read(buffer + (i * cluster_size * 512), cluster_start + ((next_index - 2) * cluster_size), cluster_size);
             next_index = fat[next_index];
-            // if (next_index >= 0x0FFFFFF8) return buffer;
+            if (next_index >= 0x0FFFFFF8) return buffer;
         }
     }
     
@@ -35,19 +35,23 @@ void* FAT32FS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint3
 }
 
 void FAT32FS::parse_longnames(f32longname entries[], uint16_t count, char* out){
-    uint16_t total = (5+6+2)*count;
+    if (count == 0) return;
+    uint16_t total = ((5+6+2)*count) + 1;
     uint16_t filename[total];
     uint16_t f = 0;
     for (int i = count-1; i >= 0; i--){
-        for (int j = 0; j < 5; j++)
+        for (int j = 0; j < 5; j++){
             filename[f++] = entries[i].name1[j];
-        for (int j = 0; j < 6; j++)
+        }
+        for (int j = 0; j < 6; j++){
             filename[f++] = entries[i].name2[j];
-        for (int j = 0; j < 2; j++)
+        }
+        for (int j = 0; j < 2; j++){
             filename[f++] = entries[i].name3[j];
+        }
     }
     filename[f++] = '\0';
-    utf16tochar(filename, out, total);
+    utf16tochar(filename, out, f);
 }
 
 void FAT32FS::parse_shortnames(f32file_entry* entry, char* out){
@@ -69,13 +73,13 @@ void* FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, char 
     char *buffer = (char*)read_cluster(data_start_sector, cluster_size, cluster_count, root_index);
     f32file_entry *entry = 0;
 
-    for (uint64_t i = 0; i < cluster_size * 512; i++) {
+    for (uint64_t i = 0; i < cluster_count * cluster_size * 512; i++) {
         bool long_name = buffer[i + 0xB] == 0xF;
         char filename[255];
         if (long_name){
             uint8_t order;
             f32longname *first_longname = (f32longname*)&buffer[i];
-            uint16_t count;
+            uint16_t count = 0;
             do {
                 i += sizeof(f32longname);
                 count++;
@@ -105,7 +109,7 @@ void* FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
 
     char *write_ptr = (char*)list_buffer + 4;
 
-    for (uint64_t i = 0; i < cluster_size * 512; i++) {
+    for (uint64_t i = 0; i < cluster_count * cluster_size * 512; i++) {
         char c = buffer[i];
         count++;
         bool long_name = buffer[i + 0xB] == 0xF;
@@ -113,7 +117,7 @@ void* FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
         if (long_name){
             uint8_t order;
             f32longname *first_longname = (f32longname*)&buffer[i];
-            uint16_t count;
+            uint16_t count = 0;
             do {
                 i += sizeof(f32longname);
                 count++;
