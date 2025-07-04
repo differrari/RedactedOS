@@ -38,6 +38,7 @@ void FAT32FS::parse_longnames(f32longname entries[], uint16_t count, char* out){
     if (count == 0) return;
     uint16_t total = ((5+6+2)*count) + 1;
     uint16_t filename[total];
+    memset(filename, 0, sizeof(filename));
     uint16_t f = 0;
     for (int i = count-1; i >= 0; i--){
         for (int j = 0; j < 5; j++){
@@ -222,7 +223,8 @@ void* FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char 
 void* FAT32FS::read_file(char *path){
     path = advance_path(path);
 
-    return walk_directory(1, mbs->first_cluster_of_root_directory, path, read_entry_handler);
+    uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
+    return walk_directory(count, mbs->first_cluster_of_root_directory, path, read_entry_handler);
 }
 
 void* FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek) {
