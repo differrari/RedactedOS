@@ -98,6 +98,7 @@ protected:
     uint32_t data_start_sector;
     uint32_t* fat;
     uint32_t total_fat_entries;
+    uint16_t bytes_per_sector;
 
     static void* read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek);
     static void* list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek);

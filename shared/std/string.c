@@ -285,12 +285,11 @@ bool strcont( char *a,  char *b) {
 
 bool utf16tochar( uint16_t* str_in, char* out_str, size_t max_len) {
     size_t out_i = 0;
-    while (str_in[out_i] != 0 && out_i + 1 < max_len) {
-        uint16_t wc = str_in[out_i];
-        out_str[out_i] = (wc <= 0x7F) ? (char)wc : '?';
-        out_i++;
+    for (int i = 0; i < max_len && str_in[i]; i++){
+        uint16_t wc = str_in[i];
+        out_str[out_i++] = (wc <= 0x7F) ? (char)(wc & 0xFF) : '?';
     }
-    out_str[out_i] = '\0';
+    out_str[out_i++] = '\0';
     return true;
 }
 

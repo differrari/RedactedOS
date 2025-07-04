@@ -41,14 +41,15 @@ void FAT32FS::parse_longnames(f32longname entries[], uint16_t count, char* out){
     memset(filename, 0, sizeof(filename));
     uint16_t f = 0;
     for (int i = count-1; i >= 0; i--){
+        uint8_t* buffer = (uint8_t*)&entries[i];
         for (int j = 0; j < 5; j++){
-            filename[f++] = entries[i].name1[j];
+            filename[f++] = (buffer[1+(j*2)] << 8) | buffer[1+(j*2) + 1];
         }
         for (int j = 0; j < 6; j++){
-            filename[f++] = entries[i].name2[j];
+            filename[f++] = (buffer[14+(j*2)] << 8) | buffer[1+(j*2) + 1];
         }
         for (int j = 0; j < 2; j++){
-            filename[f++] = entries[i].name3[j];
+            filename[f++] = (buffer[18+(j*2)] << 8) | buffer[1+(j*2) + 1];
         }
     }
     filename[f++] = '\0';
@@ -170,6 +171,12 @@ uint32_t FAT32FS::count_FAT(uint32_t first){
     return count;
 }
 
+uint16_t read_unaligned16(const uint8_t *p) {
+    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
+
+#define MBS_NUM_SECTORS read_unaligned16(mbs8 + 0x13)
+
 bool FAT32FS::init(){
     fs_page = alloc_page(0x1000, true, true, false);
 
@@ -186,7 +193,9 @@ bool FAT32FS::init(){
         return false;
     }
 
-    cluster_count = (mbs->num_sectors == 0 ? mbs->large_num_sectors : mbs->num_sectors)/mbs->sectors_per_cluster;
+    uint8_t *mbs8 = (uint8_t*)mbs;
+
+    cluster_count = (MBS_NUM_SECTORS == 0 ? mbs->large_num_sectors : MBS_NUM_SECTORS)/mbs->sectors_per_cluster;
     data_start_sector = mbs->reserved_sectors + (mbs->sectors_per_fat * mbs->number_of_fats);
 
     if (mbs->first_cluster_of_root_directory > cluster_count){
@@ -194,7 +203,9 @@ bool FAT32FS::init(){
         return false;
     }
 
-    kprintf("FAT32 Volume uses %i cluster size", mbs->bytes_per_sector);
+    bytes_per_sector = read_unaligned16(mbs8 + 0xB);
+
+    kprintf("FAT32 Volume uses %i cluster size", bytes_per_sector);
     kprintf("Data start at %x",data_start_sector*512);
 
     read_FAT(mbs->reserved_sectors, mbs->sectors_per_fat, mbs->number_of_fats);
@@ -210,7 +221,7 @@ void* FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char 
     if (is_last && strcmp(seek, filename, true) != 0) return 0;
 
     uint32_t filecluster = (entry->hi_first_cluster << 16) | entry->lo_first_cluster;
-    uint32_t bps = instance->mbs->bytes_per_sector;
+    uint32_t bps = instance->bytes_per_sector;
     uint32_t spc = instance->mbs->sectors_per_cluster;
     uint32_t bpc = bps * spc;
     uint32_t count = entry->filesize > 0 ? ((entry->filesize + bpc - 1) / bpc) : instance->count_FAT(filecluster);
@@ -236,7 +247,7 @@ void* FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, cha
     
     uint32_t filecluster = (entry->hi_first_cluster << 16) | entry->lo_first_cluster;
 
-    uint32_t bps = instance->mbs->bytes_per_sector;
+    uint32_t bps = instance->bytes_per_sector;
     uint32_t spc = instance->mbs->sectors_per_cluster;
     uint32_t bpc = bps * spc;
     uint32_t count = instance->count_FAT(filecluster);
