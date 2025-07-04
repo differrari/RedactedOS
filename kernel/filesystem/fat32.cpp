@@ -6,6 +6,14 @@
 #include "std/memfunctions.h"
 #include "math/math.h"
 
+#define kprintfv(fmt, ...) \
+    ({ \
+        if (verbose){\
+            uint64_t _args[] = { __VA_ARGS__ }; \
+            kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+        }\
+    })
+
 char* FAT32FS::advance_path(char *path){
     while (*path != '/' && *path != '\0')
         path++;
@@ -17,14 +25,14 @@ void* FAT32FS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint3
 
     uint32_t lba = cluster_start + ((root_index - 2) * cluster_size);
 
-    kprintf("Reading cluster(s) %i-%i, starting from %i (LBA %i) Address %x", root_index, root_index+cluster_count, cluster_start, lba, lba * 512);
+    kprintfv("Reading cluster(s) %i-%i, starting from %i (LBA %i) Address %x", root_index, root_index+cluster_count, cluster_start, lba, lba * 512);
 
     void* buffer = (char*)allocate_in_page(fs_page, cluster_count * cluster_size * 512, ALIGN_64B, true, true);
     
     if (cluster_count > 0){
         uint32_t next_index = root_index;
         for (int i = 0; i < cluster_count; i++){
-            kprintf("Cluster %i = %x (%x)",i,next_index,(cluster_start + ((next_index - 2) * cluster_size)) * 512);
+            kprintfv("Cluster %i = %x (%x)",i,next_index,(cluster_start + ((next_index - 2) * cluster_size)) * 512);
             disk_read(buffer + (i * cluster_size * 512), cluster_start + ((next_index - 2) * cluster_size), cluster_size);
             next_index = fat[next_index];
             if (next_index >= 0x0FFFFFF8) return buffer;
@@ -37,11 +45,10 @@ void* FAT32FS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint3
 void FAT32FS::parse_longnames(f32longname entries[], uint16_t count, char* out){
     if (count == 0) return;
     uint16_t total = ((5+6+2)*count) + 1;
-    uint16_t filename[total];
-    memset(filename, 0, sizeof(filename));
+    uint16_t *filename = (uint16_t*)allocate_in_page(fs_page, total*2, ALIGN_64B, true, true);
     uint16_t f = 0;
     for (int i = count-1; i >= 0; i--){
-        uint8_t* buffer = (uint8_t*)&entries[i];
+        uint8_t *buffer = (uint8_t*)&entries[i];
         for (int j = 0; j < 5; j++){
             filename[f++] = (buffer[1+(j*2)] << 8) | buffer[1+(j*2) + 1];
         }
@@ -54,6 +61,7 @@ void FAT32FS::parse_longnames(f32longname entries[], uint16_t count, char* out){
     }
     filename[f++] = '\0';
     utf16tochar(filename, out, f);
+    free_from_page(filename, total*2);
 }
 
 void FAT32FS::parse_shortnames(f32file_entry* entry, char* out){
@@ -82,7 +90,7 @@ void* FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, char 
             continue;
         }
         bool long_name = buffer[i + 0xB] == 0xF;
-        char filename[255];
+        char *filename = (char*)allocate_in_page(fs_page, 255, ALIGN_64B, true, true);
         if (long_name){
             uint8_t order;
             f32longname *first_longname = (f32longname*)&buffer[i];
@@ -98,6 +106,7 @@ void* FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, char 
             parse_shortnames(entry, filename);
         }
         void *result = handler(this, entry, filename, seek);
+        free_from_page(filename, 255);
         if (result)
             return result;
         i += sizeof(f32file_entry);
@@ -125,7 +134,7 @@ void* FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
         char c = buffer[i];
         count++;
         bool long_name = buffer[i + 0xB] == 0xF;
-        char filename[255];
+        char *filename = (char*)allocate_in_page(fs_page, 255, ALIGN_64B, true, true);
         if (long_name){
             uint8_t order;
             f32longname *first_longname = (f32longname*)&buffer[i];
@@ -146,6 +155,7 @@ void* FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
             f++;
         }
         *write_ptr++ = '\0';
+        free_from_page(filename, 255);
         i += sizeof(f32file_entry);
     }
 
@@ -262,8 +272,6 @@ void* FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, cha
     uint32_t bpc = bps * spc;
     uint32_t count = instance->count_FAT(filecluster);
 
-    kprintf("Final count %i", count);
-
     if (is_last) return instance->list_directory(count, filecluster);
     if (entry->flags.directory) return instance->walk_directory(count, filecluster, instance->advance_path(seek), list_entries_handler);
     return 0;
@@ -273,6 +281,5 @@ string_list* FAT32FS::list_contents(char *path){
     path = advance_path(path);
 
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
-    kprintf("Total clusters of root directory %i",count);
     return (string_list*)walk_directory(count, mbs->first_cluster_of_root_directory, path, list_entries_handler);
 }

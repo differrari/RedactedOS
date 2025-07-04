@@ -105,4 +105,6 @@ protected:
 
     void parse_longnames(f32longname entries[], uint16_t count, char* out);
     void parse_shortnames(f32file_entry* entry, char* out);
+
+    bool verbose = false;
 };
