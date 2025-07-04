@@ -16,7 +16,18 @@ else
   SIZE_KB=$(du -s -B1 "$FOLDER" | awk '{print int($1/1024)}')
 fi
 
+power_of_two() {
+    local n=$1
+    local p=1
+    while (( p < n )); do
+        (( p *= 2 ))
+    done
+    echo $p
+}
+
 SIZE_MB=$(( (SIZE_KB * 12 / 10 + 1023) / 1024 ))
+
+SIZE_MB=$(power_of_two "$SIZE_MB")
 
 if ((SIZE_MB < 64)); then
     SIZE_MB=64
