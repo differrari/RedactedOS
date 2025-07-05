@@ -1,4 +1,4 @@
-MODE ?= rpi
+MODE ?= virtio
 
 .PHONY: all kernel user shared clean rpi virtio debugrpi debugvirtio run debug
 
