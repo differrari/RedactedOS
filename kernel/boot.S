@@ -54,6 +54,11 @@ rpi:
     b       drop_el3
 
 drop_el3:
+    mrs x0, CurrentEL
+    lsr x0, x0, #2
+    cmp x0, #3
+    b.ne el2_entry
+
     msr sctlr_el2, xzr
     mrs x0, hcr_el2
     orr x0, x0, #(1<<19)
@@ -72,6 +77,11 @@ drop_el3:
     eret
 
 el2_entry:
+    mrs x0, CurrentEL
+    lsr x0, x0, #2
+    cmp x0, #2
+    b.ne el1_non_secure
+
     mov	x0, #3 << 20
     msr	cpacr_el1, x0
 
