@@ -14,6 +14,7 @@
 
 #define FW_LIST_DIRECTORY 0x19
 
+
 static bool checked = false;
 
 struct fw_cfg_dma_access {

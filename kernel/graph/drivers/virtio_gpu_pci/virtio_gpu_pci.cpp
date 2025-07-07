@@ -410,6 +410,18 @@ int VirtioGPUDriver::try_merge(gpu_rect* a, gpu_rect* b) {
 }
 
 void VirtioGPUDriver::mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    if (x >= screen_size.width || y >= screen_size.height)
+        return;
+
+    if (x + w > screen_size.width)
+        w = screen_size.width - x;
+
+    if (y + h > screen_size.height)
+        h = screen_size.height - y;
+
+    if (w == 0 || h == 0)
+        return;
+
     gpu_rect new_rect = { x, y, w, h };
 
     for (uint32_t i = 0; i < dirty_count; i++) {
@@ -422,6 +434,7 @@ void VirtioGPUDriver::mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
     else
         full_redraw = true;
 }
+
 
 void VirtioGPUDriver::clear(uint32_t color) {
     fb_clear((uint32_t*)framebuffer, screen_size.width, screen_size.height, color);
