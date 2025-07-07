@@ -44,7 +44,7 @@ jobs:
       - name: Build
         run: |
           mkdir -pv fs/redos/user
-          make all
+          make run MODE=virt
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
