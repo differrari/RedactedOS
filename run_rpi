@@ -22,7 +22,7 @@ fi
 
 $PRIVILEGE qemu-system-aarch64 \
 -M raspi4b \
--kernel kernel.elf \
+-kernel kernel.img \
 -display sdl \
 -device sd-card,drive=sd -drive id=sd,format=raw,file=disk.img,if=none \
 -netdev $NETARG \

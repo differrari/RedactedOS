@@ -25,7 +25,7 @@ void kernel_main() {
     mmu_alloc();
     // mmu_enable_verbose();
     enable_uart();
-    kprintf("UART output enabled");
+    kprintf_l("UART output enabled");
     // enable_talloc_verbose();
     
     set_exception_vectors();
