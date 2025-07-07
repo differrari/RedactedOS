@@ -1,6 +1,8 @@
 #include "console/serial/uart.h"
 #include "memory/memory_access.h"
 #include "exceptions/irq.h"
+#include "gpio.h"
+#include "hw/hw.h"
 
 #define UART0_DR   (UART0_BASE + 0x00)
 #define UART0_FR   (UART0_BASE + 0x18)
@@ -15,6 +17,11 @@ uint64_t get_uart_base(){
 
 void enable_uart() {
     write32(UART0_CR, 0x0);
+
+    if (BOARD_TYPE == 2){
+        enable_gpio_pin(14);
+        enable_gpio_pin(15);
+    }
 
     write32(UART0_IBRD, 1);
     write32(UART0_FBRD, 40);

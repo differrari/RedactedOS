@@ -1,5 +1,6 @@
 #include "hw.h"
 #include "console/kio.h"
+#include "gpio.h"
 
 uint8_t BOARD_TYPE;
 uint8_t USE_DTB = 0;
@@ -16,6 +17,8 @@ uintptr_t GICC_BASE = 0;
 uintptr_t SDHCI_BASE = 0;
 
 uint8_t RPI_BOARD;
+uint8_t GPIO_BASE;
+uint8_t GPIO_PIN_BASE;
 
 void detect_hardware(){
     if (BOARD_TYPE == 1){
@@ -31,24 +34,31 @@ void detect_hardware(){
     } else {
         uint32_t reg;
         asm volatile ("mrs %x0, midr_el1" : "=r" (reg));
-        //We can detect if we're running on 0x400.... to know if we're in virt. And 41 vs 40 to know if we're in img or elf
         uint32_t raspi = (reg >> 4) & 0xFFF;
         switch (raspi) {
-            case 0xD08:  
+            case 0xD08:  //4B. Cortex A72
             MMIO_BASE = 0xFE000000; 
-            GICD_BASE = 0xff841000;
-            GICC_BASE = 0xff842000;
             RPI_BOARD = 4;
+            GPIO_PIN_BASE = 0x50;
+            break;
+            case 0xD0B:  //5. Cortex A76
+            MMIO_BASE = 0x107C000000UL;
+            RPI_BOARD = 5;
+            GPIO_PIN_BASE = 0x50;
             break;
             default:  MMIO_BASE = 0x3F000000; break;
         }
-         UART0_BASE = MMIO_BASE + 0x201000;
-         SDHCI_BASE = MMIO_BASE + 0x300000;
-         XHCI_BASE  = MMIO_BASE + 0x9C0000;
-         RAM_START       = 0x10000000;
-         CRAM_END        = (MMIO_BASE - 0x10000000) & 0xF0000000;
-         RAM_START       = 0x10000000;
-         CRAM_START      = 0x13600000;
+        GPIO_BASE  = MMIO_BASE + 0x200000;
+        GICD_BASE = MMIO_BASE + 0x1841000;
+        GICC_BASE = MMIO_BASE + 0x1842000;
+        UART0_BASE = MMIO_BASE + 0x201000;
+        SDHCI_BASE = MMIO_BASE + 0x300000;
+        XHCI_BASE  = MMIO_BASE + 0x9C0000;
+        RAM_START       = 0x10000000;
+        CRAM_END        = (MMIO_BASE - 0x10000000) & 0xF0000000;
+        RAM_START       = 0x10000000;
+        CRAM_START      = 0x13600000;
+        reset_gpio();
     }
 }
 

@@ -143,7 +143,7 @@ bool SDHCI::init() {
     regs->ctrl1 |= (1 << 24);//Reset
     if (!wait(&regs->ctrl1,(1 << 24), false, 2000)) return false;
 
-    if (RPI_BOARD == 4){
+    if (RPI_BOARD >= 4){
         regs->ctrl0 |= 0x0F << 8;//VDD1 bus power
         delay(3);
     }
