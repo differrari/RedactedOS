@@ -1,6 +1,6 @@
-MODE ?= virtio
+MODE ?= virt
 
-.PHONY: all kernel user shared clean rpi virtio debugrpi debugvirtio run debug
+.PHONY: all kernel user shared clean raspi virt run debug
 
 all: shared user kernel
 	@echo "Build complete."
@@ -20,10 +20,10 @@ clean:
 	$(MAKE) -C kernel clean
 	$(MAKE) -C user clean
 
-rpi:
+raspi:
 	$(MAKE) LOAD_ADDR=0x80000 all
 
-virtio:
+virt:
 	$(MAKE) LOAD_ADDR=0x41000000 all
 
 debug:
