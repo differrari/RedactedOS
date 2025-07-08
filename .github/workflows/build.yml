@@ -34,6 +34,7 @@ jobs:
           brew update
           brew install make
           brew install mtools
+          brew install dosfstools
 
       - name: Install Toolchain
         run: |
