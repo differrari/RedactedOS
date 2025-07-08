@@ -9,6 +9,11 @@ if ! command -v "mcopy" >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v "mkfs.fat" >/dev/null 2>&1; then
+    echo "Error: this script depends on dosfstools. Please install it" >&2
+    exit 1
+fi
+
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
   SIZE_KB=$(du -sk "$FOLDER" | cut -f1)

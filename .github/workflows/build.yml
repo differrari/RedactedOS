@@ -32,6 +32,8 @@ jobs:
         if: matrix.config.os == 'macos'
         run: |
           brew update
+          brew install qemu
+          brew install aarch64-elf-gcc
           brew install make
           brew install mtools
           brew install dosfstools
