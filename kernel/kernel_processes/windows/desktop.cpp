@@ -28,16 +28,20 @@ uint16_t Desktop::find_extension(char *path){
 Desktop::Desktop() {
     entries = Array<LaunchEntry>(9);
     string_list *list = list_directory_contents("/redos/user/");
-    char* reader = (char*)list->array;
-    for (uint32_t i = 0; i < list->count; i++){
-        char *file = reader;
-        string fullpath = string_format("/redos/user/%s",(uintptr_t)file);
-        string name = string_ca_max(file,find_extension(file));
-        string ext = string_l(file + find_extension(file));
-        if (strcmp(ext.data,".elf") == 0)
-            add_entry(name.data, ext.data, fullpath.data);
-        while (*reader) reader++;
-        reader++;
+    if (list){
+        char* reader = (char*)list->array;
+        for (uint32_t i = 0; i < list->count; i++){
+            char *file = reader;
+            string fullpath = string_format("/redos/user/%s",(uintptr_t)file);
+            string name = string_ca_max(file,find_extension(file));
+            string ext = string_l(file + find_extension(file));
+            if (strcmp(ext.data,".elf", true) == 0){
+                kprintf("Extension %s matches .elf", (uintptr_t)ext.data);
+                add_entry(name.data, ext.data, fullpath.data);
+            }
+            while (*reader) reader++;
+            reader++;
+        }
     }
     
     single_label = new Label();
@@ -55,6 +59,7 @@ void Desktop::draw_desktop(){
     keypress kp;
     gpu_point old_selected = selected;
     while (sys_read_input_current(&kp)){
+        //TODO: there's a crash when moving in the desktop with no processes loaded. Memcpy
         for (int i = 0; i < 6; i++){
             char key = kp.keys[i];
             if (key == KEY_ENTER){
@@ -112,12 +117,17 @@ void Desktop::activate_current(){
     uint32_t index = (selected.y * MAX_COLS) + selected.x;
 
     if (index < entries.size()){
-        if (strcmp(".elf",entries[index].ext) != 0){
+        if (strcmp(".elf",entries[index].ext, true) != 0){
             kprintf("Wrong executable format. Must be .elf");
             return;
         }
+        kprintf("File path %s",(uintptr_t)entries[index].path);
         void *file = read_file(entries[index].path);
         active_proc = load_elf_file(entries[index].name, file);
+        if (!active_proc){
+            kprintf("Failed to read ELF file");
+            return;
+        }
         process_active = true;
         sys_set_focus(active_proc->id);
     }

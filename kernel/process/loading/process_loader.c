@@ -259,7 +259,8 @@ process_t* create_process(char *name, void *content, uint64_t content_size, uint
 
     name_process(proc, name);
     
-    uint8_t* dest = (uint8_t*)alloc_page(content_size, false, false, false);
+    //TODO: keep track of code size so we can free up allocated code pages
+    uint8_t* dest = (uint8_t*)alloc_page(content_size, false, false, true);
     if (!dest) return 0;
 
     for (uint64_t i = 0; i < content_size; i++){

@@ -3,6 +3,7 @@
 #include "memory/kalloc.h"
 #include "console/kio.h"
 #include "exceptions/irq.h"
+#include "hw/hw.h"
 #include "dtb.h"
 #include "pci.h"
 #include "filesystem/disk.h"
@@ -173,7 +174,7 @@ void mmu_alloc(){
 }
 
 void mmu_init() {
-
+    //TODO: Move these hardcoded mappings to their own file
     uint64_t kstart = mem_get_kmem_start();
     uint64_t kend = mem_get_kmem_end();
     for (uint64_t addr = kstart; addr <= kend; addr += GRANULE_2MB)
@@ -182,7 +183,7 @@ void mmu_init() {
     for (uint64_t addr = get_uart_base(); addr <= get_uart_base(); addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
 
-    for (uint64_t addr = GICD_BASE; addr <= GICD_BASE + 0x20040; addr += GRANULE_4KB)
+    for (uint64_t addr = GICD_BASE; addr <= GICC_BASE + 0x1000; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
 
     for (uint64_t addr = get_shared_start(); addr <= get_shared_end(); addr += GRANULE_4KB)
@@ -190,9 +191,10 @@ void mmu_init() {
 
     uint64_t dstart;
     uint64_t dsize;
-    dtb_addresses(&dstart,&dsize);
-    for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 1);
+    if (dtb_addresses(&dstart,&dsize)){
+        for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB)
+            mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 1);
+    }
 
     uint64_t mair = (MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_NOCACHE << (MAIR_IDX_NORMAL * 8));
     asm volatile ("msr mair_el1, %0" :: "r"(mair));

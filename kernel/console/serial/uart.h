@@ -5,8 +5,7 @@ extern "C" {
 #endif
 
 #include "types.h"
-
-#define UART0_BASE 0x09000000
+#include "hw/hw.h"
 
 uint64_t get_uart_base();
 void enable_uart();

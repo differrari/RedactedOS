@@ -2,9 +2,9 @@
 #include "console/kio.h"
 #include "memory/memory_access.h"
 #include "process/scheduler.h"
+#include "input/input_dispatch.h"
 #include "input/xhci_types.h"
 #include "pci.h"
-#include "input/xhci.h"
 #include "console/serial/uart.h"
 #include "networking/network.h"
 
@@ -71,7 +71,7 @@ void irq_el1_handler() {
         write32(GICC_BASE + 0x10, irq);
         switch_proc(INTERRUPT);
     } else if (irq == MSI_OFFSET + XHCI_IRQ){
-        xhci_handle_interrupt();
+        handle_input_interrupt();
         write32(GICC_BASE + 0x10, irq);
         process_restore();
     } else if (irq == SLEEP_TIMER){

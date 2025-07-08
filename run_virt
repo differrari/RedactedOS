@@ -1,6 +1,6 @@
-#!/bin/sh
+#/!bin/sh
 
-echo "Running emulator"
+echo "Running virt emulator"
 
 ARGS=""
 if [ "$1" = "debug" ]; then
@@ -19,24 +19,23 @@ OS_TYPE="$(uname)"
 
 if [[ "$OS_TYPE" == "Darwin" ]]; then
     NETARG="vmnet-bridged,id=net0,ifname=en0"
-
+    PRIVILEGE="sudo"
 elif [[ "$OS_TYPE" == "Linux" ]]; then
     NETARG="user,id=net0"
-
+    PRIVILEGE=""
 else
     echo "Unknown OS: $OS_TYPE" >&2
     exit 1
 fi
 
-
-qemu-system-aarch64 \
+$PRIVILEGE qemu-system-aarch64 \
   -M virt \
   -cpu cortex-a72 \
   -m 512M \
   -kernel kernel.elf \
   -device virtio-gpu-pci \
   -display sdl \
-  -netdev ${NETARG} \
+  -netdev $NETARG \
   -device virtio-net-pci,netdev=net0 \
   -serial mon:stdio \
   -drive file=disk.img,if=none,format=raw,id=hd0 \

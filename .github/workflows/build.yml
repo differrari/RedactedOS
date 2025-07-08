@@ -18,21 +18,21 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - name: MacOS (Arm64)
-            os: macos
-            os-version: 15
-            toolchain_arch: darwin-arm64
+          - name: Linux (x64)
+            os: ubuntu
+            os-version: 22.04
+            toolchain_arch: x86_64
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: '0'
 
-      - name: Install MacOS Dependencies
-        if: matrix.config.os == 'macos'
+      - name: Install Linux Dependencies
+        if: matrix.config.os == 'ubuntu'
         run: |
-          brew update
-          brew install make
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-aarch64 qemu-utils make mtools dosfstools wget xz-utils
 
       - name: Install Toolchain
         run: |
@@ -44,7 +44,7 @@ jobs:
       - name: Build
         run: |
           mkdir -pv fs/redos/user
-          make all
+          make all LOAD_ADDR=0x41000000
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -54,7 +54,7 @@ jobs:
             kernel.elf
             kernel.img
             disk.img
-            run
+            run_virt
             debug
             createfs
             fs/redos/user/*.elf

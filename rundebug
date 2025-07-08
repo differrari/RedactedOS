@@ -1,10 +1,18 @@
 #!/bin/bash
 
-ARGS="$@"
+MODE="rpi"
+ARGS=()
+
+for arg in "$@"; do
+  case $arg in
+    MODE=*) MODE="${arg#MODE=}" ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
 
 osascript <<EOF
 tell application "Terminal"
-    do script "cd \"$PWD\"; ./run debug"
-    do script "cd \"$PWD\"; ./debug $ARGS"
+    do script "cd \"$PWD\"; ./run_$MODE debug"
+    do script "cd \"$PWD\"; ./debug ${ARGS[*]}"
 end tell
 EOF

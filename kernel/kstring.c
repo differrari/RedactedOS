@@ -100,7 +100,7 @@ kstring kstring_from_bin(uint64_t value) {
 }
 
 bool kstring_equals(kstring a, kstring b) {
-    return strcmp(a.data,b.data) == 0;
+    return strcmp(a.data,b.data, false) == 0;
 }
 
 kstring kstring_format_args(const char *fmt, const uint64_t *args, uint32_t arg_count) {

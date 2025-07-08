@@ -45,7 +45,7 @@ bool find_server(){
 
     unbind_port(7777);
 
-    return strcmp(content, "world") == 0;
+    return strcmp(content, "world", false) == 0;
 }
 
 void test_network(){

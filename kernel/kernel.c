@@ -1,6 +1,7 @@
 #include "console/kio.h"
 #include "console/serial/uart.h"
 #include "graph/graphics.h"
+#include "hw/hw.h"
 #include "pci.h"
 #include "kstring.h"
 #include "console/kconsole/kconsole.h"
@@ -11,37 +12,43 @@
 #include "process/scheduler.h"
 #include "filesystem/disk.h"
 #include "kernel_processes/boot/bootprocess.h"
-#include "input/xhci_bridge.h"
-#include "input/xhci.h"
+#include "input/input_dispatch.h"
 #include "kernel_processes/monitor/monitor_processes.h"
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
 
 void kernel_main() {
+
+    detect_hardware();
     
     mmu_alloc();
     // mmu_enable_verbose();
     enable_uart();
-    kprintf("UART output enabled");
+    kprintf_l("UART output enabled");
     // enable_talloc_verbose();
     
     set_exception_vectors();
-    kprintf("Exception vectors set");
+    kprintf_l("Exception vectors set");
+
+    print_hardware();
 
     page_allocator_init();
     // page_alloc_enable_verbose();
-    kprintf("Initializing kernel...");
+    kprintf_l("Initializing kernel...");
     
     init_main_process();
 
-    kprintf("Preparing for draw");
+    kprintf_l("Preparing for draw");
     gpu_size screen_size = {1080,720};
     
     irq_init();
     kprintf("Interrupts initialized");
 
     enable_interrupt();
+
+    kprintf_l("Initializing GPU");
+
     gpu_init(screen_size);
     
     kprintf("GPU initialized");
@@ -53,30 +60,26 @@ void kernel_main() {
         panic("Disk initialization failure");
 
     // xhci_enable_verbose();
-    if (!xhci_input_init()){
-        panic("Input initialization failure");
-    }
+    if (!input_init())
+        panic("Input initialization error");
 
-    if (!network_init())
-        panic("Network initialization failure");
+    bool network_available = network_init();
 
     mmu_init();
-    kprintf("MMU Mapped");
+    kprintf_l("MMU Mapped");
 
     if (!disk_init())
-    panic("Disk read failure");
+        panic("Disk read failure");
 
-    kprintf("Kernel initialization finished");
+    kprintf_l("Kernel initialization finished");
 
-    kprintf("Starting processes");
+    kprintf_l("Starting processes");
 
-    // translate_enable_verbose();
-
-    launch_net_process();
+    if (network_available) launch_net_process();
 
     init_bootprocess();
     
-    kprintf("Starting scheduler");
+    kprintf_l("Starting scheduler");
     
     disable_interrupt();
     start_scheduler();

@@ -40,7 +40,7 @@ void vblk_disk_verbose(){
 
 #define kprintfv(fmt, ...) \
     ({ \
-        if (mmu_verbose){\
+        if (blk_disk_enable_verbose){\
             uint64_t _args[] = { __VA_ARGS__ }; \
             kprintf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
         }\

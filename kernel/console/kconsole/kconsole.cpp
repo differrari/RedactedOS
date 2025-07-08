@@ -22,7 +22,6 @@ bool KernelConsole::check_ready(){
 
 void KernelConsole::resize() {
     gpu_size screen = gpu_get_screen_size();
-    uart_puthex(screen.width);
     columns = screen.width / char_width;
     rows = screen.height / char_height;
 
