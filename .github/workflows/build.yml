@@ -33,6 +33,7 @@ jobs:
         run: |
           brew update
           brew install make
+          brew install mtools
 
       - name: Install Toolchain
         run: |
