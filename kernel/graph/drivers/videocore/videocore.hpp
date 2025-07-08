@@ -2,8 +2,6 @@
 
 #include "../gpu_driver.hpp"
 
-#define MAX_DIRTY_RECTS_VCG 64
-
 class VideoCoreGPUDriver : public GPUDriver {
 public:
     static VideoCoreGPUDriver* try_init(gpu_size preferred_screen_size);
@@ -26,15 +24,9 @@ private:
     gpu_size screen_size;
     uintptr_t framebuffer;
     uintptr_t back_framebuffer;
-    uint64_t framebuffer_size;
 
     void* page;
 
-    gpu_rect dirty_rects[MAX_DIRTY_RECTS_VCG];
-    uint32_t dirty_count = 0;
-    bool full_redraw = false;
-    int try_merge(gpu_rect* a, gpu_rect* b);
-    void mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
     uint8_t bpp;
     uint32_t stride;
 };

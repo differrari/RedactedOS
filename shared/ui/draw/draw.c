@@ -7,15 +7,70 @@
 uint32_t stride = 0;
 uint32_t max_width, max_height;
 
-void fb_clear(uint32_t* fb, uint32_t width, uint32_t height, uint32_t color) {
-    for (uint32_t i = 0; i < width * height; i++) {
+gpu_rect dirty_rects[MAX_DIRTY_RECTS];
+uint32_t dirty_count = 0;
+bool full_redraw = false;
+
+int try_merge(gpu_rect* a, gpu_rect* b) {
+    uint32_t ax2 = a->point.x + a->size.width;
+    uint32_t ay2 = a->point.y + a->size.height;
+    uint32_t bx2 = b->point.x + b->size.width;
+    uint32_t by2 = b->point.y + b->size.height;
+
+    if (a->point.x > bx2 || b->point.x > ax2 || a->point.y > by2 || b->point.y > ay2)
+        return false;
+
+    uint32_t min_x = a->point.x < b->point.x ? a->point.x : b->point.x;
+    uint32_t min_y = a->point.y < b->point.y ? a->point.y : b->point.y;
+    uint32_t max_x = ax2 > bx2 ? ax2 : bx2;
+    uint32_t max_y = ay2 > by2 ? ay2 : by2;
+
+    a->point.x = min_x;
+    a->point.y = min_y;
+    a->size.width = max_x - min_x;
+    a->size.height = max_y - min_y;
+
+    return true;
+}
+
+void mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    if (full_redraw) return;
+    
+    if (x >= max_width || y >= max_height)
+        return;
+
+    if (x + w > max_width)
+        w = max_width - x;
+
+    if (y + h > max_height)
+        h = max_height - y;
+
+    if (w == 0 || h == 0)
+        return;
+
+    gpu_rect new_rect = { x, y, w, h };
+
+    for (uint32_t i = 0; i < dirty_count; i++)
+        if (try_merge(&dirty_rects[i], &new_rect))
+            return;
+
+    if (dirty_count < MAX_DIRTY_RECTS)
+        dirty_rects[dirty_count++] = new_rect;
+    else
+        full_redraw = true;
+}
+
+void fb_clear(uint32_t* fb, uint32_t color) {
+    for (uint32_t i = 0; i < max_width * max_height; i++) {
         fb[i] = color;
     }
+    full_redraw = true;
 }
 
 void fb_draw_pixel(uint32_t* fb, uint32_t x, uint32_t y, color color){
-    if (x > max_width || y > max_height) return;
+    if (x >= max_width || y >= max_height) return;
     fb[y * (stride / 4) + x] = color;
+    //TODO: for some reason, calling mark_dirty from here crashes. Calling it from just outside this function does not. Something to do with merge. Need to investigate.
 }
 
 void fb_fill_rect(uint32_t* fb, uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
@@ -24,6 +79,7 @@ void fb_fill_rect(uint32_t* fb, uint32_t x, uint32_t y, uint32_t width, uint32_t
             fb_draw_pixel(fb, x + dx, y + dy, color);
         }
     }
+    mark_dirty(x,y,width,height);
 }
 
 gpu_rect fb_draw_line(uint32_t* fb, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, color color){
@@ -46,6 +102,8 @@ gpu_rect fb_draw_line(uint32_t* fb, uint32_t x0, uint32_t y0, uint32_t x1, uint3
     int max_x = (x0 > x1) ? x0 : x1;
     int max_y = (y0 > y1) ? y0 : y1;
 
+    mark_dirty(min_x,min_y,max_x - min_x + 1,max_y - min_y + 1);
+
     return (gpu_rect) { {min_x, min_y}, {max_x - min_x + 1, max_y - min_y + 1}};
 }
 
@@ -59,6 +117,7 @@ void fb_draw_char(uint32_t* fb, uint32_t x, uint32_t y, char c, uint32_t scale, 
             }
         }
     }
+    mark_dirty(x,y,8*scale,8*scale);
 }
 
 gpu_size fb_draw_string(uint32_t* fb, string s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
@@ -86,6 +145,8 @@ gpu_size fb_draw_string(uint32_t* fb, string s, uint32_t x0, uint32_t y0, uint32
     }
     if (xRowSize > xSize)
         xSize = xRowSize;
+
+    mark_dirty(x0,y0,xSize,ySize);
 
     return (gpu_size){xSize,ySize};
 }
