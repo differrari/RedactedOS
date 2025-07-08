@@ -7,7 +7,7 @@ It currently runs entirely in QEMU, but in the future it will be restructured to
 Its GUI is heavily inspired by video game consoles, and the OS is entirely controllable via keyboard (with future mouse and possibly gamepad support)
 It has limited support for third party processes, currently limited to entirely self-contained programs.
 
-The OS is a hobby project, and my first attempy at writing an OS, so it's subject to improvement, and most likely isn't the most reliable and certainly not the cleanest code.
+The OS is a hobby project, and my first attempt at writing an OS, so it's subject to improvement, and most likely isn't the most reliable and certainly not the cleanest code.
 
 ## Project organization
 
