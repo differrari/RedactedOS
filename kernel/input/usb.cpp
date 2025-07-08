@@ -26,7 +26,6 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
         return false;
     }
 
-
     usb_string_language_descriptor* lang_desc = (usb_string_language_descriptor*)allocate_in_page(mem_page, sizeof(usb_string_language_descriptor), ALIGN_64B, true, true);
 
     bool use_lang_desc = true;

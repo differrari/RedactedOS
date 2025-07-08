@@ -29,17 +29,17 @@ void kernel_main() {
     // enable_talloc_verbose();
     
     set_exception_vectors();
-    kprintf("Exception vectors set");
+    kprintf_l("Exception vectors set");
 
     print_hardware();
 
     page_allocator_init();
     // page_alloc_enable_verbose();
-    kprintf("Initializing kernel...");
+    kprintf_l("Initializing kernel...");
     
     init_main_process();
 
-    kprintf("Preparing for draw");
+    kprintf_l("Preparing for draw");
     gpu_size screen_size = {1080,720};
     
     irq_init();
@@ -47,7 +47,7 @@ void kernel_main() {
 
     enable_interrupt();
 
-    kprintf("Initializing GPU");
+    kprintf_l("Initializing GPU");
 
     gpu_init(screen_size);
     
@@ -66,20 +66,20 @@ void kernel_main() {
     bool network_available = network_init();
 
     mmu_init();
-    kprintf("MMU Mapped");
+    kprintf_l("MMU Mapped");
 
     if (!disk_init())
         panic("Disk read failure");
 
-    kprintf("Kernel initialization finished");
+    kprintf_l("Kernel initialization finished");
 
-    kprintf("Starting processes");
+    kprintf_l("Starting processes");
 
     if (network_available) launch_net_process();
 
     init_bootprocess();
     
-    kprintf("Starting scheduler");
+    kprintf_l("Starting scheduler");
     
     disable_interrupt();
     start_scheduler();

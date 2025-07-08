@@ -174,7 +174,7 @@ void mmu_alloc(){
 }
 
 void mmu_init() {
-
+    //TODO: Move these hardcoded mappings to their own file
     uint64_t kstart = mem_get_kmem_start();
     uint64_t kend = mem_get_kmem_end();
     for (uint64_t addr = kstart; addr <= kend; addr += GRANULE_2MB)
