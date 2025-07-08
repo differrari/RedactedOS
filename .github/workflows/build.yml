@@ -54,7 +54,7 @@ jobs:
             kernel.elf
             kernel.img
             disk.img
-            run
+            run_virt
             debug
             createfs
             fs/redos/user/*.elf
