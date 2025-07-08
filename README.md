@@ -19,9 +19,9 @@ Contains the kernel code, this code is the entry point to the system and respons
 The system's entry point is the `boot.s` file (see aboutboot.txt in the kernel folder if there's issues with the boot file). The boot file loads a stack pointer defined in the `linker.ld` file, which also defines where the kernel is loaded. It then jumps to the `kernel_main` function located in `kernel.c`.
 The actual system initialization happens in `kernel.c`'s `kernel_main` function, which is responsible for initializing the system until the point where it's handed off to processes.
 
-Once the system is initialized, most of the system's functionality is provided by processes, which includes kernel processes and user processes. User processes are defined in their on section of the readme file, but kernel processes are included directly into the kernel. While they're placed in their own section defined in the linker, there's no real distinction between their code and any other kernel code. 
+Once the system is initialized, most of the system's functionality is provided by processes, which includes kernel processes and user processes. User processes are defined in their own section of the readme file, but kernel processes are included directly into the kernel. While they're placed in their own section defined in the linker, there's no real distinction between their code and any other kernel code. 
 Certain parts of the system initialization, such as GPU initialization and XHCI input code initialization rely on some syscalls that expect a process to be running, so an initial kernel.c process is created to hold their data. In the future they'll each have their own process.
-Everything about kernel processes and the pseudo-processes mentioned for GPU/XHCI will most likley be improved in the future, to make the system more modular, and kernel processes might get loaded from filesystem, in a similar way to how user processes are loaded. In order to do this, they either need to not rely on any kernel-only code (as several of them currently do) and rely on syscalls entirely, or (less ideal) dynamically link to the kernel. Doing this will increase the kernel's modularity.
+Everything about kernel processes and the pseudo-processes mentioned for GPU/XHCI will most likey be improved in the future, to make the system more modular, and kernel processes might get loaded from filesystem, in a similar way to how user processes are loaded. In order to do this, they either need to not rely on any kernel-only code (as several of them currently do) and rely on syscalls entirely, or (less ideal) dynamically link to the kernel. Doing this will increase the kernel's modularity.
 
 The system must be run through the .elf file, since the .img file overwrites the device's DTB, making it impossible to detect certain features of the system.
 This limitation will be lifted in the future.
@@ -66,6 +66,6 @@ Github Actions should automatically compile changes made to the `main` branch us
 
 ## Networking
 
-The system has basic networking support. Currently, it performs DHCP a discovery and request to receive an IP address on the local network, is capable of responding to Ping and ARP, and can connect to a server running on ports 8080 and 80, though it currently does nothing noteworthy.
+The system has basic networking support. Currently, it performs DHCP discovery and request to receive an IP address on the local network, is capable of responding to Ping and ARP, and can connect to a server running on ports 8080 and 80, though it currently does nothing noteworthy.
 An implementation of the server can be found at the [RedactedOS Firmware Server Repository](https://github.com/differrari/RedactedOS_firmware_server/tree/main)
 
