@@ -18,25 +18,21 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - name: MacOS (Arm64)
-            os: macos
-            os-version: 15
-            toolchain_arch: darwin-arm64
+          - name: Linux (x64)
+            os: ubuntu
+            os-version: 22.04
+            toolchain_arch: x86_64
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: '0'
 
-      - name: Install MacOS Dependencies
-        if: matrix.config.os == 'macos'
+      - name: Install Linux Dependencies
+        if: matrix.config.os == 'ubuntu'
         run: |
-          brew update
-          brew install qemu
-          brew install aarch64-elf-gcc
-          brew install make
-          brew install mtools
-          brew install dosfstools
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils make mtools dosfstools wget xz-utils
 
       - name: Install Toolchain
         run: |
