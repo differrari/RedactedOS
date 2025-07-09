@@ -1,4 +1,5 @@
 MODE ?= virt
+LOAD_ADDR ?= 0x41000000
 
 .PHONY: all kernel user shared clean raspi virt run debug
 

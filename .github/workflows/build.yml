@@ -44,7 +44,7 @@ jobs:
       - name: Build
         run: |
           mkdir -pv fs/redos/user
-          make all LOAD_ADDR=0x41000000
+          make all
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
