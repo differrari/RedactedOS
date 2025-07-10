@@ -11,5 +11,6 @@ int mailbox_call(volatile uint32_t* mbox, uint8_t channel) {
         uint32_t resp = MBOX_READ;
         if ((resp & 0xF) == channel && (resp & ~0xF) == addr)
             return mbox[1] == 0x80000000;
+        else return false;
     }
 }

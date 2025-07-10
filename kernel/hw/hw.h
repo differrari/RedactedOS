@@ -23,11 +23,13 @@ extern uintptr_t GICC_BASE;
 
 extern uintptr_t SDHCI_BASE;
 
-extern uint8_t GPIO_BASE;
+extern uintptr_t GPIO_BASE;
 
-extern uint8_t GPIO_PIN_BASE;
+extern uintptr_t GPIO_PIN_BASE;
 
 extern uint8_t RPI_BOARD;
+
+extern uintptr_t MAILBOX_BASE;
 
 void detect_hardware();
 void print_hardware();

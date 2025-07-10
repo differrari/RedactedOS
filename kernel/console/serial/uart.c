@@ -3,6 +3,7 @@
 #include "exceptions/irq.h"
 #include "gpio.h"
 #include "hw/hw.h"
+#include "mailbox/mailbox.h"
 
 #define UART0_DR   (UART0_BASE + 0x00)
 #define UART0_FR   (UART0_BASE + 0x18)
@@ -15,13 +16,23 @@ uint64_t get_uart_base(){
     return UART0_BASE;
 }
 
+volatile uint32_t uart_mbox[9] __attribute__((aligned(16))) = {
+    36, 0, 0x38002, 12, 8, 2, 3000000, 0, 0
+};
+
 void enable_uart() {
     write32(UART0_CR, 0x0);
 
     if (BOARD_TYPE == 2){
-        enable_gpio_pin(14);
-        enable_gpio_pin(15);
+        if (RPI_BOARD != 5){
+            enable_gpio_pin(14);
+            enable_gpio_pin(15);
+        }
+        if (RPI_BOARD >= 4) 
+            if (!mailbox_call(uart_mbox,8)) 
+                return;
     }
+
 
     write32(UART0_IBRD, 1);
     write32(UART0_FBRD, 40);
