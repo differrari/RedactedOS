@@ -48,13 +48,13 @@ uint64_t virtual_timer_remaining_msec() {
 
 uint64_t timer_now() {
     uint64_t val;
-    asm volatile ("mrs %0, cntpct_el0" : "=r"(val));
+    asm volatile ("mrs %0, cntvct_el0" : "=r"(val));
     return val;
 }
 
 uint64_t timer_now_msec() {
     uint64_t ticks, freq;
-    asm volatile ("mrs %0, cntpct_el0" : "=r"(ticks));
+    asm volatile ("mrs %0, cntvct_el0" : "=r"(ticks));
     asm volatile ("mrs %0, cntfrq_el0" : "=r"(freq));
     return (ticks * 1000) / freq;
 }
