@@ -17,6 +17,7 @@
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
+#include "math/random.h"
 
 void kernel_main() {
 
@@ -27,7 +28,11 @@ void kernel_main() {
     enable_uart();
     kprintf_l("UART output enabled");
     // enable_talloc_verbose();
-    
+    uint64_t seed;
+    asm volatile("mrs %0, cntvct_el0" : "=r"(seed)); //virtual timer counter as entropy source for rng seed
+    rng_init_global(seed);
+    kprintf("Random init. seed: %i\n", seed);
+    //kprintf("Next32: %i\n", rng_next32(&global_rng));
     set_exception_vectors();
     kprintf_l("Exception vectors set");
 
