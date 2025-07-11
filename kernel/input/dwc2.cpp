@@ -58,7 +58,7 @@ bool DWC2Driver::init() {
     
     if (!wait(&host->port, 1, true, 2000)){
         kprintf("[DWC2] No device connected %x",host->port);
-        return false;
+        return true;
     }
 
     if (!port_reset(&host->port)){
