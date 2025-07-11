@@ -17,6 +17,7 @@
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
+#include "shared/math/random.h"
 
 void kernel_main() {
 
