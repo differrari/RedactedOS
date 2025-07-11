@@ -19,6 +19,7 @@ uintptr_t SDHCI_BASE = 0;
 uintptr_t MAILBOX_BASE = 0;
 uintptr_t GPIO_BASE;
 uintptr_t GPIO_PIN_BASE;
+uintptr_t DWC2_BASE;
 
 void detect_hardware(){
     if (BOARD_TYPE == 1){
@@ -51,18 +52,23 @@ void detect_hardware(){
                 MMIO_BASE = 0x3F000000; 
             break;
         }
-        GPIO_BASE  = MMIO_BASE + 0x200000;
-        GICD_BASE = MMIO_BASE + 0x1841000;
-        GICC_BASE = MMIO_BASE + 0x1842000;
+        if (RPI_BOARD == 3){
+            GICD_BASE = MMIO_BASE + 0xB200;
+        } else {
+            GICD_BASE = MMIO_BASE + 0x1841000;
+            GICC_BASE = MMIO_BASE + 0x1842000;
+        }
         if (RPI_BOARD == 5){
             MAILBOX_BASE = MMIO_BASE + 0x13880;
             //EMMC base becomes 0x1000FFF000UL
             UART0_BASE = MMIO_BASE + 0x1001000;
         } else {
+            GPIO_BASE  = MMIO_BASE + 0x200000;
             MAILBOX_BASE = MMIO_BASE + 0xB880;
             UART0_BASE = MMIO_BASE + 0x201000;
         }
         SDHCI_BASE = MMIO_BASE + 0x300000;
+        DWC2_BASE  = MMIO_BASE + 0x980000;
         XHCI_BASE  = MMIO_BASE + 0x9C0000;
         RAM_START       = 0x10000000;
         CRAM_END        = (MMIO_BASE - 0x10000000) & 0xF0000000;

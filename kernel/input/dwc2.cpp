@@ -4,8 +4,7 @@
 #include "memory/page_allocator.h"
 #include "std/string.h"
 #include "memory/mmu.h"
-
-#define DWC2_BASE 0xFE980000
+#include "hw/hw.h"
 
 dwc2_host_channel* DWC2Driver::get_channel(uint16_t channel){
     return (dwc2_host_channel *)(DWC2_BASE + 0x500 + (channel * 0x20));

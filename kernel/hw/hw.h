@@ -31,5 +31,7 @@ extern uint8_t RPI_BOARD;
 
 extern uintptr_t MAILBOX_BASE;
 
+extern uintptr_t DWC2_BASE;
+
 void detect_hardware();
 void print_hardware();
