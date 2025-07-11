@@ -6,7 +6,6 @@
 extern "C" {
 #endif
 //xoroshiro128+, pseudorandom
-//can be used while waiting for a hardware one
 typedef struct{
     uint64_t s0;
     uint64_t s1;
@@ -15,10 +14,9 @@ typedef struct{
 static inline uint64_t rotl(uint64_t x, int k){
     return (x << k)|(x >> (64 - k));
 }
-
+extern rng_t global_rng; //use &global_rng as rng_t* rng argument
 //init
-void rng_seed(rng_t* rng, uint64_t seed);
-
+void rng_init_global(uint64_t seed);
 //single random
 uint8_t  rng_next8(rng_t* rng);
 uint16_t rng_next16(rng_t* rng);
@@ -40,3 +38,4 @@ void rng_fill64(rng_t* rng, uint64_t* dst, uint32_t count);
 #ifdef __cplusplus
 }
 #endif
+
