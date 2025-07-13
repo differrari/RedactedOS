@@ -82,6 +82,12 @@ el2_entry:
     cmp x0, #2
     b.ne el1_non_secure
 
+    mrs x0, cnthctl_el2
+    orr x0, x0, #(1 << 0) | (1 << 1) //Disable trapping of timer calls on hypervisor level
+    msr cnthctl_el2, x0
+
+    msr cntvoff_el2, xzr
+
     mov	x0, #3 << 20
     msr	cpacr_el1, x0
 

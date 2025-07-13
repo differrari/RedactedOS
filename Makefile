@@ -43,6 +43,7 @@ debug:
 	./rundebug MODE=$(MODE) $(ARGS)
 
 install:
+	$(MAKE) clean
 	$(MAKE) LOAD_ADDR=0x80000 all
 	cp kernel.img $(BOOTFS)/kernel8.img
 	cp kernel.img $(BOOTFS)/kernel_2712.img
