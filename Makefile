@@ -1,11 +1,22 @@
 MODE ?= virt
 LOAD_ADDR ?= 0x41000000
 
-.PHONY: all kernel user shared clean raspi virt run debug
+OS := $(shell uname)
+
+ifeq ($(OS),Darwin)
+BOOTFS=/Volumes/bootfs
+else
+BOOTFS=/media/bootfs
+endif
+
+.PHONY: all kernel user shared clean raspi virt run debug dump
 
 all: shared user kernel
 	@echo "Build complete."
 	./createfs
+
+dump:
+	aarch64-none-elf-objdump -D kernel.elf > dump
 
 shared:
 	$(MAKE) -C shared
@@ -30,6 +41,11 @@ virt:
 debug:
 	$(MAKE) $(MODE)
 	./rundebug MODE=$(MODE) $(ARGS)
+
+install:
+	$(MAKE) LOAD_ADDR=0x80000 all
+	cp kernel.img $(BOOTFS)/kernel8.img
+	cp kernel.img $(BOOTFS)/kernel_2712.img
 
 run: 
 	$(MAKE) $(MODE)

@@ -8,3 +8,5 @@ libshared.a
 *.a
 dump.dtb
 fs
+dump
+*.cfg
