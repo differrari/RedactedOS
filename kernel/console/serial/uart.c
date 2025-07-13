@@ -17,11 +17,15 @@ uint64_t get_uart_base(){
 }
 
 volatile uint32_t uart_mbox[9] __attribute__((aligned(16))) = {
-    36, 0, 0x38002, 12, 8, 2, 3000000, 0, 0
+    36, 0, 0x30002, 12, 8, 2, 0, 0, 0
 };
 
 void enable_uart() {
     write32(UART0_CR, 0x0);
+
+    uint32_t ibrd = 1;
+    uint32_t fbrd = 40;
+    uint32_t baud = 115200;
 
     if (BOARD_TYPE == 2){
         if (RPI_BOARD != 5){
@@ -29,13 +33,17 @@ void enable_uart() {
             enable_gpio_pin(15);
         }
         if (RPI_BOARD >= 4) 
-            if (!mailbox_call(uart_mbox,8)) 
-                return;
+            if (mailbox_call(uart_mbox,8)){
+                uint32_t uart_clk = uart_mbox[6];
+                ibrd = uart_clk / (16 * baud);
+                uint32_t rem = uart_clk % (16 * baud);
+                fbrd = (rem * 64 + baud/2) / baud;
+            }
     }
 
+    write32(UART0_IBRD, ibrd);
+    write32(UART0_FBRD, fbrd);
 
-    write32(UART0_IBRD, 1);
-    write32(UART0_FBRD, 40);
 
     write32(UART0_LCRH, (1 << 4) | (1 << 5) | (1 << 6));
 
