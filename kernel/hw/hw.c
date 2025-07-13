@@ -41,21 +41,20 @@ void detect_hardware(){
                 MMIO_BASE = 0xFE000000; 
                 RPI_BOARD = 4;
                 GPIO_PIN_BASE = 0x50;
+                GICD_BASE = MMIO_BASE + 0x1841000;
+                GICC_BASE = MMIO_BASE + 0x1842000;
             break;
             case 0xD0B:  //5. Cortex A76
                 MMIO_BASE = 0x107C000000UL;
                 RPI_BOARD = 5;
+                GICD_BASE = 0x20001000;
+                GICC_BASE = 0x20002000;
             break;
             default:  
                 RPI_BOARD = 3;
                 MMIO_BASE = 0x3F000000; 
+                GICD_BASE = MMIO_BASE + 0xB200;
             break;
-        }
-        if (RPI_BOARD == 3){
-            GICD_BASE = MMIO_BASE + 0xB200;
-        } else {
-            GICD_BASE = MMIO_BASE + 0x1841000;
-            GICC_BASE = MMIO_BASE + 0x1842000;
         }
         if (RPI_BOARD == 5){
             MAILBOX_BASE = MMIO_BASE + 0x13880;
