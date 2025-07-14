@@ -81,7 +81,6 @@ void kernel_main() {
     
     kprintf_l("Starting scheduler");
     
-    disable_interrupt();
     start_scheduler();
 
     panic("Kernel did not activate any process");
