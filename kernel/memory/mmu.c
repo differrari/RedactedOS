@@ -67,7 +67,7 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
 
 //Level 0 = EL0, Level 1 = EL1, Level 2 = Shared
 void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) {
-    uint64_t l1_index = (va >> 37) & 0x1FF;
+    uint64_t l1_index = (va >> 39) & 0x1FF;
     uint64_t l2_index = (va >> 30) & 0x1FF;
     uint64_t l3_index = (va >> 21) & 0x1FF;
     uint64_t l4_index = (va >> 12) & 0x1FF;
@@ -140,7 +140,7 @@ static inline void mmu_flush_icache() {
 void mmu_unmap(uint64_t va, uint64_t pa){
 
     
-    uint64_t l1_index = (va >> 37) & 0x1FF;
+    uint64_t l1_index = (va >> 39) & 0x1FF;
     uint64_t l2_index = (va >> 30) & 0x1FF;
     uint64_t l3_index = (va >> 21) & 0x1FF;
     uint64_t l4_index = (va >> 12) & 0x1FF;
@@ -246,7 +246,7 @@ void debug_mmu_address(uint64_t va){
     uint64_t l3_index = (va >> 21) & 0x1FF;
     uint64_t l4_index = (va >> 12) & 0x1FF;
 
-    kprintf_raw("Address is meant to be mapped to [%i][%i][%i][%i]",l1_index,l2_index,l3_index,l4_index);
+    kprintf_raw("Address %x is meant to be mapped to [%i][%i][%i][%i]",va, l1_index,l2_index,l3_index,l4_index);
 
     if (!(page_table_l1[l1_index] & 1)) {
         kprintf_raw("L1 Table missing");
