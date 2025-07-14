@@ -16,7 +16,13 @@
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01
-#define PD_ACCESS (1 << 10)
+
+#define UXN_BIT 54
+#define PXN_BIT 53
+#define AF_BIT 10
+#define SH_BIT 8
+#define AP_BIT 6
+#define MAIR_BIT 2
 
 #define PAGE_TABLE_ENTRIES 512
 #define PAGE_SIZE PAGE_TABLE_ENTRIES * 8
@@ -61,7 +67,7 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);   
     
     //For now we make this not executable. We'll need to to separate read_write, read_only and executable sections
-    uint64_t attr = ((uint64_t)1 << 54) | ((uint64_t)0 << 53) | PD_ACCESS | (0b11 << 8) | (0b00 << 6) | (attr_index << 2) | PD_BLOCK;
+    uint64_t attr = ((uint64_t)1 << UXN_BIT) | ((uint64_t)0 << PXN_BIT) | (1 << AF_BIT) | (0b11 << SH_BIT) | (0b00 << AP_BIT) | (attr_index << MAIR_BIT) | PD_BLOCK;
     l3[l3_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
 }
 
@@ -103,7 +109,6 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) 
         return;
     }
     
-    //54 = UXN level | 53 = PXN !level | 8 = share | 6 = Access permission
     uint8_t permission;
     
     switch (level)
@@ -115,7 +120,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) 
     default:
         break;
     }
-    uint64_t attr = ((uint64_t)(level == 1) << 54) | ((uint64_t)0 << 53) | PD_ACCESS | (0b11 << 8) | (permission << 6) | (attr_index << 2) | 0b11;
+    uint64_t attr = ((uint64_t)(level == 1) << UXN_BIT) | ((uint64_t)0 << PXN_BIT) | (1 << AF_BIT) | (0b01 << SH_BIT) | (permission << AP_BIT) | (attr_index << MAIR_BIT) | 0b11;
     kprintfv("[MMU] Mapping 4kb memory %x at [%i][%i][%i][%i] for EL%i = %x | %x permission: %i", va, l1_index,l2_index,l3_index,l4_index,level,pa,attr,permission);
     
     l4[l4_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
@@ -138,7 +143,6 @@ static inline void mmu_flush_icache() {
 }
 
 void mmu_unmap(uint64_t va, uint64_t pa){
-
     
     uint64_t l1_index = (va >> 39) & 0x1FF;
     uint64_t l2_index = (va >> 30) & 0x1FF;
