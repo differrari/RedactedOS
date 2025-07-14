@@ -62,13 +62,8 @@ drop_el3:
     b.ne el2_entry
 
     msr sctlr_el2, xzr
-    mrs x0, hcr_el2
-    orr x0, x0, #(1<<19)
-    msr hcr_el2, x0
 
-    mrs x0, scr_el3
-    orr x0, x0, #(1<<10)
-    orr x0, x0, #(1<<0)
+    ldr x0, =SCR_VALUE
     msr scr_el3, x0
 
     mov x0, #0b01001//DAIF 0000
@@ -84,8 +79,7 @@ el2_entry:
     cmp x0, #2
     b.ne stack_setup
 
-    mrs x0, cnthctl_el2
-    orr x0, x0, #(1 << 0) | (1 << 1) //Disable trapping of timer calls on hypervisor level
+    ldr x0, =CNTHCTL_VALUE
     msr cnthctl_el2, x0
 
     msr cntvoff_el2, xzr

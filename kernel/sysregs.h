@@ -41,4 +41,12 @@
 #define SPSR_EL1h (5 << 0)
 #define SPSR_VALUE (SPSR_MASK_ALL | SPSR_EL1h)
 
+// ***************************************
+// CNTHCTL_EL2, Counter-timer Hypervisor Control Register (EL2) Page 9569 of AArch64-Reference-Manual.
+// ***************************************
+
+#define TRAP_PHYS_TIMER_DISABLED (1 << 0) 
+#define TRAV_VIRT_TIMER_DISABLED (1 << 1) //Disable trapping of timer calls on hypervisor level
+#define CNTHCTL_VALUE (TRAP_PHYS_TIMER_DISABLED | TRAV_VIRT_TIMER_DISABLED)
+
 #endif
