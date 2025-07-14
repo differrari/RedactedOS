@@ -47,8 +47,8 @@ void detect_hardware(){
             case 0xD0B:  //5. Cortex A76
                 MMIO_BASE = 0x107C000000UL;
                 RPI_BOARD = 5;
-                GICD_BASE = 0x20001000;
-                GICC_BASE = 0x20002000;
+                GICD_BASE = MMIO_BASE + 0x3FF9000;
+                GICC_BASE = MMIO_BASE + 0x3FFA000;
             break;
             default:  
                 RPI_BOARD = 3;
