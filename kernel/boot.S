@@ -1,3 +1,5 @@
+#include "sysregs.h"
+
 .global _start
 .section .text
 _start:
@@ -80,7 +82,7 @@ el2_entry:
     mrs x0, CurrentEL
     lsr x0, x0, #2
     cmp x0, #2
-    b.ne el1_non_secure
+    b.ne stack_setup
 
     mrs x0, cnthctl_el2
     orr x0, x0, #(1 << 0) | (1 << 1) //Disable trapping of timer calls on hypervisor level
@@ -91,22 +93,20 @@ el2_entry:
     mov	x0, #3 << 20
     msr	cpacr_el1, x0
 
-    ldr x0, =0x30C00800
+    ldr x0, =SCTLR_VALUE_MMU_DISABLED
     msr	sctlr_el1, x0
 
-    mrs x0, hcr_el2
-    orr x0, x0, #(1<<31)
+    ldr x0, =HCR_RW
     msr hcr_el2, x0
 
     mov x0, 0x1C5
     msr spsr_el2, x0
 
-    adr x0, el1_non_secure
+    adr x0, stack_setup
     msr elr_el2, x0
 
     eret
 
-el1_non_secure:
 stack_setup:
     ldr x1, =stack_top
     mov sp, x1
