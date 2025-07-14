@@ -25,8 +25,8 @@ static void gic_enable_irq(uint32_t irq, uint8_t priority, uint8_t cpu_target) {
     uint32_t flag = read32(GICD_BASE + 0x100 + reg_offset);
     write32(GICD_BASE + 0x100 + reg_offset, flag | bit);
 
-    write8(GICD_BASE + 0x800 + irq, cpu_target);
-    write8(GICD_BASE + 0x400 + irq, priority);  
+    write32(GICD_BASE + 0x800 + irq, cpu_target);
+    write32(GICD_BASE + 0x400 + irq, priority);  
 
     uint32_t config_offset = (irq / 16) * 4;
     uint32_t config_shift = (irq % 16) * 2;
@@ -38,8 +38,8 @@ static void gic_enable_irq(uint32_t irq, uint8_t priority, uint8_t cpu_target) {
 
 void irq_init() {
     if (RPI_BOARD != 3){
-        write8(GICD_BASE, 0); // Disable Distributor
-        write8(GICC_BASE, 0); // Disable CPU Interface
+        write32(GICD_BASE, 0); // Disable Distributor
+        write32(GICC_BASE, 0); // Disable CPU Interface
     }
 
     gic_enable_irq(IRQ_TIMER, 0x80, 0);
@@ -51,8 +51,8 @@ void irq_init() {
     if (RPI_BOARD != 3){
         write32(GICC_BASE + 0x004, 0xF0); //Priority
 
-        write8(GICC_BASE, 1); // Enable CPU Interface
-        write8(GICD_BASE, 1); // Enable Distributor
+        write32(GICC_BASE, 1); // Enable CPU Interface
+        write32(GICD_BASE, 1); // Enable Distributor
 
         kprintf_l("[GIC] GIC enabled");
     } else {
