@@ -66,7 +66,7 @@ drop_el3:
     ldr x0, =SCR_VALUE
     msr scr_el3, x0
 
-    mov x0, #0b01001//DAIF 0000
+    ldr x0, =SPSR3_VALUE
     msr spsr_el3, x0
 
     adr x0, el2_entry

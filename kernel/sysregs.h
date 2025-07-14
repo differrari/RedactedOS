@@ -39,7 +39,7 @@
 
 #define SPSR_MASK_ALL (7 << 6)
 #define SPSR_EL1h (5 << 0)
-#define SPSR_VALUE (SPSR_MASK_ALL | SPSR_EL1h)
+#define SPSR3_VALUE (SPSR_MASK_ALL | SPSR_EL1h)
 
 // ***************************************
 // CNTHCTL_EL2, Counter-timer Hypervisor Control Register (EL2) Page 9569 of AArch64-Reference-Manual.
