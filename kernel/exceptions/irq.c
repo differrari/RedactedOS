@@ -25,8 +25,8 @@ static void gic_enable_irq(uint32_t irq, uint8_t priority, uint8_t cpu_target) {
     uint32_t flag = read32(GICD_BASE + 0x100 + reg_offset);
     write32(GICD_BASE + 0x100 + reg_offset, flag | bit);
 
-    write32(GICD_BASE + 0x800 + irq, cpu_target);
-    write32(GICD_BASE + 0x400 + irq, priority);  
+    write8(GICD_BASE + 0x800 + irq, cpu_target);
+    write8(GICD_BASE + 0x400 + irq, priority);  
 
     uint32_t config_offset = (irq / 16) * 4;
     uint32_t config_shift = (irq % 16) * 2;
