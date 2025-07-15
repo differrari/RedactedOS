@@ -13,6 +13,8 @@
 
 #define RGB_FORMAT_XRGB8888 ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
 
+#define BUS_ADDRESS(addr)   ((addr) & ~0xC0000000)
+
 VideoCoreGPUDriver* VideoCoreGPUDriver::try_init(gpu_size preferred_screen_size){
     VideoCoreGPUDriver* driver = new VideoCoreGPUDriver();
     if (driver->init(preferred_screen_size))
@@ -59,11 +61,11 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
             kprintf("Error");
             return false;
         }
-        framebuffer = fb_mbox[5];
+        framebuffer = BUS_ADDRESS(fb_mbox[5]);
         size_t fb_size = fb_mbox[6];
         page = alloc_page(0x1000, true, true, false);
         back_framebuffer = (uintptr_t)allocate_in_page(page, fb_size, ALIGN_16B, true, true);
-        kprintf("Framebuffer allocated to %x. BPP %i. Stride %i",framebuffer, bpp, stride/bpp);
+        kprintf("Framebuffer allocated to %x (%i). BPP %i. Stride %i",framebuffer, fb_size, bpp, stride/bpp);
         mark_used(framebuffer,count_pages(fb_size,PAGE_SIZE));
         //TODO: Mark the fb memory as used in the page allocator manually
         for (size_t i = framebuffer; i < framebuffer + fb_size; i += GRANULE_4KB)

@@ -61,8 +61,10 @@ void mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
 }
 
 void fb_clear(uint32_t* fb, uint32_t color) {
-    for (uint32_t i = 0; i < max_width * max_height; i++) {
-        fb[i] = color;
+    for (uint32_t y = 0; y < max_height; y++){
+        for (uint32_t x = 0; x < max_width; x++){
+            fb[y * (stride / 4) + x] = color;
+        }
     }
     full_redraw = true;
 }
