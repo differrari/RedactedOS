@@ -20,7 +20,7 @@ uint16_t shortcut_count = 0;
 
 bool secure_mode = false;
 
-USBDriver *input_driver;
+USBDriver *input_driver = 0x0;
 
 void register_keypress(keypress kp) {
     if (!secure_mode){
@@ -88,7 +88,7 @@ bool is_new_keypress(keypress* current, keypress* previous) {
 }
 
 bool sys_read_input(int pid, keypress *out){
-    if (BOARD_TYPE == 2)
+    if (BOARD_TYPE == 2 && input_driver)
         input_driver->poll_inputs();
     process_t *process = get_proc_by_pid(pid);
     if (process->input_buffer.read_index == process->input_buffer.write_index) return false;
