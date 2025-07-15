@@ -165,7 +165,8 @@ void sync_el0_handler_c(){
             stop_current_process();
         }
     }
-    save_syscall_return(result);
+    if (result > 0)
+        save_syscall_return(result);
     process_restore();
 }
 
