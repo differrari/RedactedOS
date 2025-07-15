@@ -64,6 +64,7 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
         page = alloc_page(0x1000, true, true, false);
         back_framebuffer = (uintptr_t)allocate_in_page(page, fb_size, ALIGN_16B, true, true);
         kprintf("Framebuffer allocated to %x. BPP %i. Stride %i",framebuffer, bpp, stride/bpp);
+        mark_used(framebuffer,count_pages(fb_size,PAGE_SIZE));
         //TODO: Mark the fb memory as used in the page allocator manually
         for (size_t i = framebuffer; i < framebuffer + fb_size; i += GRANULE_4KB)
             register_device_memory(i,i);

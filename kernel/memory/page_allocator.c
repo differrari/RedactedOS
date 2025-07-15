@@ -13,7 +13,6 @@
 #define BOOT_PUD_ATTR PD_TABLE
 
 #define PAGE_TABLE_ENTRIES 65536
-#define PAGE_SIZE 4096
 
 uint64_t mem_bitmap[PAGE_TABLE_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
 
@@ -99,6 +98,27 @@ void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
 
     kprintf_raw("[page_alloc error] Could not allocate");
     return 0;
+}
+
+void mark_used(uintptr_t address, size_t pages)
+{
+    if ((address & (PAGE_SIZE - 1)) != 0) {
+        kprintf("[mark_used error] address %x not aligned", address);
+        return;
+    }
+    if (pages == 0) return;
+
+    uint64_t start = count_pages(get_user_ram_start(),PAGE_SIZE);
+
+    uint64_t page_index = (address / (PAGE_SIZE * 64)) - (start/64);
+
+    for (size_t j = 0; j < pages; j++) {
+        uint64_t idx = page_index + j;
+        uint64_t i = idx / 64;
+        uint64_t bit  = idx % 64;
+
+        mem_bitmap[i] |= (1ULL << bit);
+    }
 }
 
 void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kernel, bool device){
