@@ -13,7 +13,7 @@ void BootSM::initialize(){
 }
 
 BootSM::BootStates BootSM::eval_state(){
-    if (current_proc->state == process_t::process_state::STOPPED)
+    if (!current_proc || current_proc->state == process_t::process_state::STOPPED)
         AdvanceToState(GetNextState());
 
     return current_state;
