@@ -21,7 +21,7 @@ void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
     int xo = screen_middle.x - mid_offset + xoffset;
     int yo = screen_middle.y + yoffset;
     gpu_fill_rect((gpu_rect){{xo,yo}, {char_size * (s.length/BOOTSCREEN_NUM_LINES), char_size * BOOTSCREEN_NUM_LINES}},BG_COLOR);
-    gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFF);
+    gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFFFF);
     free(s.data,s.mem_length);
 }
 
@@ -76,7 +76,7 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
                     lerp(i, ccurrent.x, cnext.x, csteps),
                     lerp(i, ccurrent.y, cnext.y, csteps)
                 };
-                gpu_draw_pixel(interpolated, 0xFFFFFF);
+                gpu_draw_pixel(interpolated, 0xFFFFFFFF);
             }
         }
         keypress kp;
