@@ -38,11 +38,11 @@ VideoCoreGPUDriver* VideoCoreGPUDriver::try_init(gpu_size preferred_screen_size)
 volatile uint32_t rmbox[40] __attribute__((aligned(16))) = {
     30 * 4,// Buf size
     0,// Request. Code 0
-    VC_PHYS_SIZE_TAG | VC_SET_VALUE, 8, 0, 640, 480,// Physical size
-    VC_VIRT_SIZE_TAG, 8, 0, 640, 480,// Virtual size
+    VC_PHYS_SIZE_TAG, 8, 0, 0, 0,// Physical size
+    VC_VIRT_SIZE_TAG, 8, 0, 0, 0,// Virtual size
     VC_DEPTH_TAG | VC_SET_VALUE, 4, 4, 32,// Depth
     VC_PITCH_TAG, 4, 0, 0,//Pitch
-    VC_FORMAT_TAG | VC_SET_VALUE, 4, 0, 0, //BGR
+    VC_FORMAT_TAG | VC_SET_VALUE, 4, 4, 0, //BGR
     VC_FRAMEBUFFER_TAG, 8, 0, 16, 0,
     0,// End
 };
