@@ -47,11 +47,12 @@ void detect_hardware(){
             case 0xD0B:  //5. Cortex A76
                 MMIO_BASE = 0x107C000000UL;
                 RPI_BOARD = 5;
-                GICD_BASE = MMIO_BASE + 0x3FF9000;
-                GICC_BASE = MMIO_BASE + 0x3FFA000;
-                MAILBOX_BASE = MMIO_BASE + 0x13880;
-                SDHCI_BASE = 0x1000FFF000UL;
-                UART0_BASE = MMIO_BASE + 0x1001000;
+                GICD_BASE =     MMIO_BASE + 0x3FF9000;
+                GICC_BASE =     MMIO_BASE + 0x3FFA000;
+                MAILBOX_BASE =  MMIO_BASE + 0x13880;
+                SDHCI_BASE =    MMIO_BASE + 0xFFF000UL;
+                UART0_BASE =    MMIO_BASE + 0x1001000;
+                XHCI_BASE =     0x1000300000UL;
             break;
             default:  
                 RPI_BOARD = 3;
@@ -64,9 +65,9 @@ void detect_hardware(){
             MAILBOX_BASE = MMIO_BASE + 0xB880;
             UART0_BASE = MMIO_BASE + 0x201000;
             SDHCI_BASE = MMIO_BASE + 0x300000;
+            XHCI_BASE  = MMIO_BASE + 0x9C0000;
         }
         DWC2_BASE  = MMIO_BASE + 0x980000;
-        XHCI_BASE  = MMIO_BASE + 0x9C0000;
         RAM_START       = 0x10000000;
         CRAM_END        = (MMIO_BASE - 0x10000000) & 0xF0000000;
         RAM_START       = 0x10000000;

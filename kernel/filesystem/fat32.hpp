@@ -79,7 +79,7 @@ typedef void* (*f32_entry_handler)(FAT32FS *instance, f32file_entry*, char *file
 
 class FAT32FS {
 public:
-    bool init();
+    bool init(uint32_t partition_sector);
     void* read_file(char *path);
     string_list* list_contents(char *path);
     
@@ -99,6 +99,7 @@ protected:
     uint32_t* fat;
     uint32_t total_fat_entries;
     uint16_t bytes_per_sector;
+    uint32_t partition_first_sector;
 
     static void* read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek);
     static void* list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek);

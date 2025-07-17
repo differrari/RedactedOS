@@ -4,10 +4,12 @@
 #include "virtio_blk_pci.h"
 #include "sdhci.hpp"
 #include "hw/hw.h"
+#include "console/kio.h"
+#include "mbr.h"
 
 static bool disk_enable_verbose;
 SDHCI sdhci_driver; 
-FAT32FS fs_driver;
+FAT32FS *fs_driver;
 
 void disk_verbose(){
     disk_enable_verbose = true;
@@ -34,7 +36,9 @@ bool find_disk(){
 }
 
 bool disk_init(){
-    return fs_driver.init();
+    uint32_t f32_partition = mbr_find_partition(0xC);
+    fs_driver = new FAT32FS();
+    return fs_driver->init(f32_partition);
 }
 
 void disk_write(const void *buffer, uint32_t sector, uint32_t count){
@@ -49,9 +53,9 @@ void disk_read(void *buffer, uint32_t sector, uint32_t count){
 }
 
 void* read_file(char *path){
-    return fs_driver.read_file(path);
+    return fs_driver->read_file(path);
 }
 
 string_list* list_directory_contents(char *path){
-    return fs_driver.list_contents(path);
+    return fs_driver->list_contents(path);
 }
