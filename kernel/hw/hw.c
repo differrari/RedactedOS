@@ -49,6 +49,9 @@ void detect_hardware(){
                 RPI_BOARD = 5;
                 GICD_BASE = MMIO_BASE + 0x3FF9000;
                 GICC_BASE = MMIO_BASE + 0x3FFA000;
+                MAILBOX_BASE = MMIO_BASE + 0x13880;
+                SDHCI_BASE = 0x1000FFF000UL;
+                UART0_BASE = MMIO_BASE + 0x1001000;
             break;
             default:  
                 RPI_BOARD = 3;
@@ -56,11 +59,7 @@ void detect_hardware(){
                 GICD_BASE = MMIO_BASE + 0xB200;
             break;
         }
-        if (RPI_BOARD == 5){
-            MAILBOX_BASE = MMIO_BASE + 0x13880;
-            SDHCI_BASE = 0x1000FFF000UL;
-            UART0_BASE = MMIO_BASE + 0x1001000;
-        } else {
+        if (RPI_BOARD != 5){
             GPIO_BASE  = MMIO_BASE + 0x200000;
             MAILBOX_BASE = MMIO_BASE + 0xB880;
             UART0_BASE = MMIO_BASE + 0x201000;
