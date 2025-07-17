@@ -17,7 +17,7 @@ uint64_t get_uart_base(){
 }
 
 volatile uint32_t uart_mbox[9] __attribute__((aligned(16))) = {
-    36, 0, 0x30002, 12, 8, 2, 0, 0, 0
+    36, 0, MBOX_CLKRATE_TAG, 12, 8, 2, 0, 0, 0
 };
 
 void enable_uart() {

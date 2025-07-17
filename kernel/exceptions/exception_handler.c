@@ -45,9 +45,9 @@ void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\r\n"); }
 void error_el1_handler(){ handle_exception("ERROR EXCEPTION\r\n"); }
 
 void draw_panic_screen(kstring s){
-    gpu_clear(0x0000FF);
+    gpu_clear(0xFF0000FF);
     uint32_t scale = 3;
-    gpu_draw_string(*(string *)&s, (gpu_point){20,20}, scale, 0xFFFFFF);
+    gpu_draw_string(*(string *)&s, (gpu_point){20,20}, scale, 0xFFFFFFFF);
     gpu_flush();
 }
 

@@ -105,7 +105,7 @@ bool SDHCI::switch_clock_rate(uint32_t target_rate) {
 volatile uint32_t mbox[8] __attribute__((aligned(16))) = {
     32,
     0,
-    0x00030002, 8, 0, 1, 0,//Request clock rate for 1 (EMMC)
+    MBOX_CLKRATE_TAG, 8, 0, 1, 0,//Request clock rate for 1 (EMMC)
     0
 };
 
