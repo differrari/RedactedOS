@@ -152,7 +152,7 @@ bool SDHCI::init() {
 
     setup_clock();
 
-    kprintf("[SDHCI] Controller ready");
+    kprintf("[SDHCI] Controller ready CTL0 %x",regs->ctrl0);
 
     regs->interrupt = 0;
     regs->irpt_en = 0xFFFFFFFF;
@@ -169,14 +169,14 @@ bool SDHCI::init() {
     switch_clock_rate(25000000);
 
     bool v2_card = 0;  
-    if (!issue_command(IF_COND, 0)){ 
+    if (!issue_command(IF_COND, 0x1AA)){ 
         if (!(regs->interrupt & 0x10000)){
             kprintf("[SDHCI error] IFCOND error");
             return false;
         }
         kprintfv("[SDHCI] Timeout on IFCOND. Defaulting to V1");
     } else {
-        if ((regs->resp0 & 0xFF) != 0xAA) {
+        if ((regs->resp0 & 0xFFF) != 0x1AA) {
             kprintf("[SDHCI error] IFCOND pattern mismatch");
             return false;
         }
