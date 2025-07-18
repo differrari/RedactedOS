@@ -19,6 +19,10 @@ uint16_t USBDriver::packet_size(uint16_t speed){
 bool USBDriver::setup_device(uint8_t address, uint16_t port){
 
     address = address_device(address);
+    if (address == 0){
+        kprintf("[USB error] failed to address device");
+        return false;
+    }
     usb_device_descriptor* descriptor = (usb_device_descriptor*)allocate_in_page(mem_page, sizeof(usb_device_descriptor), ALIGN_64B, true, true);
     
     if (!request_descriptor(address, 0, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){

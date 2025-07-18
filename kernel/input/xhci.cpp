@@ -18,8 +18,9 @@ uint32_t awaited_type;
         awaited_type = (type); \
         interrupter->iman &= ~1; \
         action; \
-        await_response((uintptr_t)(addr), (type)); \
+        bool response = await_response((uintptr_t)(addr), (type)); \
         interrupter->iman |= 1; \
+        response; \
     })
 
 #define kprintfv(fmt, ...) \
