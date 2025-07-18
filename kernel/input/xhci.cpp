@@ -176,11 +176,10 @@ bool XHCIDriver::init(){
         if (ports[i].portsc.ccs && ports[i].portsc.csc){
             if (!port_reset(i)){
                 kprintf("[xHCI] Failed to reset port %i",i);
-                return false;
+                continue;
             }
             if (!setup_device(0,i)){
                 kprintf_raw("[xHCI] Failed to configure device at port %i",i);
-                return false;
             }
         }
 
@@ -195,11 +194,13 @@ bool XHCIDriver::port_reset(uint16_t port){
     if (port_info->portsc.pp == 0){
         port_info->portsc.pp = 1;
 
+        delay(20);
+
         //Read back after delay to ensure
-        // if (port_info->portsc.pp == 0){
-        //     kprintf_raw("[xHCI error] failed to power on port %i",port);
-        //     return false;
-        // }
+        if (port_info->portsc.pp == 0){
+            kprintf_raw("[xHCI error] failed to power on port %i",port);
+            return false;
+        }
     }
 
     port_info->portsc.csc = 1;
@@ -207,12 +208,23 @@ bool XHCIDriver::port_reset(uint16_t port){
     port_info->portsc.prc = 1;
 
     //TODO: if usb3
-    //portsc.wpr = 1;
+    // port_info->portsc.wpr = 1;
     //else 
 
-    return AWAIT(0, {
-        port_info->portsc.pr = 1;
-    },TRB_TYPE_PORT_STATUS_CHANGE);
+    if (!AWAIT(0, { port_info->portsc.pr = 1; },TRB_TYPE_PORT_STATUS_CHANGE)){
+        kprintf("[xHCI error] failed port reset");
+        return false;
+    }
+
+    port_info->portsc.prc = 1;
+    port_info->portsc.wrc = 1;
+    port_info->portsc.csc = 1;
+    port_info->portsc.pec = 1;
+    port_info->portsc.ped = 0;
+
+    delay(300);
+
+    return port_info->portsc.ped != 0;
 }
 
 bool XHCIDriver::enable_events(){
