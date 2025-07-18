@@ -5,7 +5,7 @@
 uint8_t BOARD_TYPE;
 uint8_t RPI_BOARD;
 uint8_t USE_DTB = 0;
-uint8_t USE_PCI = 0;
+uintptr_t PCI_BASE = 0;
 uintptr_t RAM_START = 0;
 uintptr_t RAM_SIZE = 0;
 uintptr_t CRAM_START = 0;
@@ -28,10 +28,9 @@ void detect_hardware(){
         CRAM_END        = 0x60000000;
         RAM_START       = 0x40000000;
         CRAM_START      = 0x43600000;
-        USE_PCI = 1;
+        PCI_BASE = 0x4010000000;
         GICD_BASE = 0x08000000;
         GICC_BASE = 0x08010000;
-
     } else {
         uint32_t reg;
         asm volatile ("mrs %x0, midr_el1" : "=r" (reg));

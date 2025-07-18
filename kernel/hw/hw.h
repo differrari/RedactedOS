@@ -6,7 +6,7 @@
 extern uint8_t BOARD_TYPE;
 
 extern uint8_t USE_DTB;
-extern uint8_t USE_PCI;
+extern uintptr_t PCI_BASE;
 
 extern uintptr_t RAM_START;
 extern uintptr_t RAM_SIZE;

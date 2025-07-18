@@ -44,7 +44,7 @@ bool XHCIDriver::init(){
     if (XHCI_BASE){
         addr = XHCI_BASE;
         mmio = addr;
-    } else if (USE_PCI) {
+    } else if (PCI_BASE) {
         addr = find_pci_device(0x1B36, 0xD);
     }
     if (!addr){ 
@@ -53,7 +53,7 @@ bool XHCIDriver::init(){
     }
 
     kprintfv("[xHCI] init");
-    if (USE_PCI){
+    if (PCI_BASE){
         if (!(*(uint16_t*)(addr + 0x06) & (1 << 4))){
             kprintfv("[xHCI] Wrong capabilities list");
             return false;
