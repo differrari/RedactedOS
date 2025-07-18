@@ -104,7 +104,6 @@ bool XHCIDriver::init(){
     kprintfv("[xHCI] Reset complete");
 
     wait(&op->usbsts, 1 << 11, false, 1000);
-    while (op->usbsts & (1 << 11)); 
     kprintfv("[xHCI] Device ready");
 
     if (!CHECK_XHCI_FIELD(usbcmd)) return false;
