@@ -51,7 +51,7 @@ void detect_hardware(){
                 MAILBOX_BASE =  MMIO_BASE + 0x13880;
                 SDHCI_BASE =    MMIO_BASE + 0xFFF000UL;
                 UART0_BASE =    MMIO_BASE + 0x1001000;
-                XHCI_BASE =     0x1000300000UL;
+                XHCI_BASE =     0x1F00300000UL;
             break;
             default:  
                 RPI_BOARD = 3;

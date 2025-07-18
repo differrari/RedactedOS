@@ -111,7 +111,7 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
 }
 
 bool input_init(){
-    if (BOARD_TYPE == 2){
+    if (BOARD_TYPE == 2 && RPI_BOARD != 5){
         input_driver = new DWC2Driver();//TODO: QEMU & 3 Only
         return input_driver->init();
     } else {

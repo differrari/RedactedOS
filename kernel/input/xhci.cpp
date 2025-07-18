@@ -7,6 +7,8 @@
 #include "hw/hw.h"
 #include "memory/memory_access.h"
 #include "std/memfunctions.h"
+#include "async.h"
+#include "memory/memory_access.h"
 
 uint64_t awaited_addr;
 uint32_t awaited_type;
@@ -84,23 +86,24 @@ bool XHCIDriver::init(){
         kprintfv("[xHCI] BARs set up @ %x (%x)",mmio,mmio_size);
     }
 
-    cap = (xhci_cap_regs*)(uintptr_t)mmio;
+    cap = (xhci_cap_regs*)mmio;
     kprintfv("[xHCI] caplength %x",cap->caplength);
-    uint64_t op_base = mmio + cap->caplength;
-    op = (xhci_op_regs*)(uintptr_t)op_base;
-    ports = (xhci_port_regs*)((uintptr_t)op_base + 0x400);
+    uintptr_t op_base = mmio + cap->caplength;
+    op = (xhci_op_regs*)op_base;
+    ports = (xhci_port_regs*)(op_base + 0x400);
     db_base = mmio + (cap->dboff & ~0x1F);
     rt_base = mmio + (cap->rtsoff & ~0x1F);
 
     kprintfv("[xHCI] Resetting controller");
     op->usbcmd &= ~1;
-    while (op->usbcmd & 1);
+    wait(&op->usbcmd, 1, false, 16);
     kprintfv("[xHCI] Clear complete");
 
     op->usbcmd |= (1 << 1);
-    while (op->usbcmd & 1);
+    wait(&op->usbcmd, 1 << 1, false, 1000);
     kprintfv("[xHCI] Reset complete");
 
+    wait(&op->usbsts, 1 << 11, false, 1000);
     while (op->usbsts & (1 << 11)); 
     kprintfv("[xHCI] Device ready");
 
