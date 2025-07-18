@@ -1,7 +1,7 @@
 #pragma once
 
 #include "usb.hpp"
-#include "xhci_types.h"
+#include "usb_types.h"
 
 typedef struct xhci_ring {
     trb* ring;

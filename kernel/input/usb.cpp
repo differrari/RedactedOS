@@ -3,7 +3,7 @@
 #include "async.h"
 #include "std/string.h"
 #include "memory/page_allocator.h"
-#include "xhci_types.h"
+#include "usb_types.h"
 
 uint16_t USBDriver::packet_size(uint16_t speed){
     switch (speed) {

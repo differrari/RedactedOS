@@ -20,6 +20,7 @@ uintptr_t MAILBOX_BASE = 0;
 uintptr_t GPIO_BASE;
 uintptr_t GPIO_PIN_BASE;
 uintptr_t DWC2_BASE;
+uint32_t MSI_OFFSET;
 
 void detect_hardware(){
     if (BOARD_TYPE == 1){
@@ -31,6 +32,7 @@ void detect_hardware(){
         PCI_BASE = 0x4010000000;
         GICD_BASE = 0x08000000;
         GICC_BASE = 0x08010000;
+        MSI_OFFSET = 50;
     } else {
         uint32_t reg;
         asm volatile ("mrs %x0, midr_el1" : "=r" (reg));
@@ -71,6 +73,7 @@ void detect_hardware(){
         CRAM_END        = (MMIO_BASE - 0x10000000) & 0xF0000000;
         RAM_START       = 0x10000000;
         CRAM_START      = 0x13600000;
+        MSI_OFFSET = 0;
         if (RPI_BOARD != 5) reset_gpio();
     }
 }

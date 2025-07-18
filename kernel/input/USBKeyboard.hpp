@@ -3,7 +3,7 @@
 #include "types.h"
 #include "USBDevice.hpp"
 #include "keypress.h"
-#include "xhci_types.h"
+#include "usb_types.h"
 
 class USBKeyboard: public USBEndpoint {
 public:

@@ -6,8 +6,6 @@
 extern "C" {
 #endif
 
-#define MSI_OFFSET 50
-
 typedef struct {
     uint64_t base_addr;
     uint64_t size;

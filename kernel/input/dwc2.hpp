@@ -2,7 +2,7 @@
 
 #include "usb.hpp"
 #include "std/indexmap.hpp"
-#include "xhci_types.h"
+#include "usb_types.h"
 
 typedef struct {
     uint32_t gotgctl;

@@ -1,6 +1,6 @@
 #include "USBDevice.hpp"
 #include "USBKeyboard.hpp"
-#include "xhci_types.h"
+#include "usb_types.h"
 #include "console/kio.h"
 
 USBDevice::USBDevice(uint32_t capacity, uint8_t address) : address(address) {

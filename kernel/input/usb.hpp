@@ -2,7 +2,7 @@
 
 #include "types.h"
 #include "keypress.h"
-#include "xhci_types.h"
+#include "usb_types.h"
 #include "USBManager.hpp"
 
 class USBDriver {

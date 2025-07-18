@@ -3,7 +3,7 @@
 #include "async.h"
 #include "usb.hpp"
 #include "pci.h"
-#include "xhci_types.h"
+#include "usb_types.h"
 #include "hw/hw.h"
 #include "memory/memory_access.h"
 #include "std/memfunctions.h"
@@ -162,7 +162,7 @@ bool XHCIDriver::init(){
 
     op->usbcmd |= (1 << 2);//Interrupt enable
     op->usbcmd |= 1;//Run
-    while ((op->usbsts & 0x1));
+    wait (&op->usbsts, 0x1, false, 1000);
 
     endpoint_map = IndexMap<xhci_ring>(255 * 5);
     context_map = IndexMap<xhci_input_context*>(255 * 5);

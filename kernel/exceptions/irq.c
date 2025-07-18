@@ -3,7 +3,7 @@
 #include "memory/memory_access.h"
 #include "process/scheduler.h"
 #include "input/input_dispatch.h"
-#include "input/xhci_types.h"
+#include "input/usb_types.h"
 #include "pci.h"
 #include "console/serial/uart.h"
 #include "networking/network.h"

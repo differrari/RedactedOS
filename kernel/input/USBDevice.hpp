@@ -1,6 +1,6 @@
 #pragma once
 #include "types.h"
-#include "xhci_types.h"
+#include "usb_types.h"
 #include "std/std.hpp"
 #include "console/kio.h"
 

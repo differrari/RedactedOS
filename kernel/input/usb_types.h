@@ -34,7 +34,7 @@ extern "C" {
 #define XHCI_USBSTS_HSE (1 << 2)
 #define XHCI_USBSTS_CE  (1 << 12)
 
-#define XHCI_IRQ 31
+#define XHCI_IRQ 36
 
 typedef struct {
     uint64_t parameter;
