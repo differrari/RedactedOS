@@ -3,7 +3,10 @@
 #include "memory/memory_access.h"
 #include "std/memfunctions.h"
 
-static uint32_t compute_length( char *s, uint32_t max_length) {
+static uint32_t compute_length(char *s, uint32_t max_length) {
+    if (s == NULL) {
+        return 0;
+    }
     uint32_t len = 0;
     while ((max_length == 0 || len < max_length) && s[len] != '\0') {
         len++;
@@ -11,13 +14,22 @@ static uint32_t compute_length( char *s, uint32_t max_length) {
     return len;
 }
 
-string string_l( char *literal) {
+string string_l(char *literal) {
+    if (literal == NULL) {
+        // ritorna stringa vuota
+        return (string){ .data = NULL, .length = 0, .mem_length = 0 };
+    }
     uint32_t len = compute_length(literal, 0);
-    char *buf = (char*)malloc(len+1);
-    for (uint32_t i = 0; i < len; i++)
+    char *buf = (char*)malloc(len + 1);
+    if (!buf) {
+        //manage malloc
+        return (string){ .data = NULL, .length = 0, .mem_length = 0 };
+    }
+    for (uint32_t i = 0; i < len; i++) {
         buf[i] = literal[i];
-    buf[len] = 0;
-    return (string){ .data = buf, .length = len, .mem_length = len+1 };
+    }
+    buf[len] = '\0';
+    return (string){ .data = buf, .length = len, .mem_length = len + 1 };
 }
 
 string string_repeat(char symbol, uint32_t amount){
@@ -27,26 +39,41 @@ string string_repeat(char symbol, uint32_t amount){
     return (string){ .data = buf, .length = amount, .mem_length = amount+1 };
 }
 
-string string_tail( char *array, uint32_t max_length){
+string string_tail(char *array, uint32_t max_length) {
+    if (array == NULL) {
+        return (string){ .data = NULL, .length = 0, .mem_length = 0 };
+    }
     uint32_t len = compute_length(array, 0);
-    int offset = len-max_length;
-    if (offset < 0) 
-        offset = 0; 
+    int offset = (int)len - (int)max_length;
+    if (offset < 0) {
+        offset = 0;
+    }
     uint32_t adjusted_len = len - offset;
     char *buf = (char*)malloc(adjusted_len + 1);
-    for (uint32_t i = offset; i < len; i++)
-        buf[i-offset] = array[i];
-    buf[len-offset] = 0;
-    return (string){ .data = buf, .length = adjusted_len };
+    if (!buf) {
+        return (string){ .data = NULL, .length = 0, .mem_length = 0 };
+    }
+    for (uint32_t i = 0; i < adjusted_len; i++) {
+        buf[i] = array[offset + i];
+    }
+    buf[adjusted_len] = '\0';
+    return (string){ .data = buf, .length = adjusted_len, .mem_length = adjusted_len + 1 };
 }
 
-string string_ca_max( char *array, uint32_t max_length) {
+string string_ca_max(char *array, uint32_t max_length) {
+    if (array == NULL) {
+        return (string){ .data = NULL, .length = 0, .mem_length = 0 };
+    }
     uint32_t len = compute_length(array, max_length);
     char *buf = (char*)malloc(len + 1);
-    for (uint32_t i = 0; i < len; i++)
+    if (!buf) {
+        return (string){ .data = NULL, .length = 0, .mem_length = 0 };
+    }
+    for (uint32_t i = 0; i < len; i++) {
         buf[i] = array[i];
-    buf[len] = 0;
-    return (string){ .data = buf, .length = len };
+    }
+    buf[len] = '\0';
+    return (string){ .data = buf, .length = len, .mem_length = len + 1 };
 }
 
 string string_c( char c){
@@ -109,11 +136,15 @@ bool string_equals(string a, string b) {
     return strcmp(a.data,b.data, false) == 0;
 }
 
-string string_format( char *fmt, ...) {
+string string_format(char *fmt, ...) {
+    if (fmt == NULL) {
+        return (string){ .data = NULL, .length = 0, .mem_length = 0 };
+    }
     va_list args;
     va_start(args, fmt);
-    string_format_va(fmt, args);
+    string result = string_format_va(fmt, args);
     va_end(args);
+    return result;
 }
 
 string string_format_va( char *fmt, va_list args){
@@ -206,21 +237,23 @@ char tolower(char c){
 }
 
 int strcmp(char *a, char *b, bool case_insensitive) {
+    if (a == NULL && b == NULL) return 0; //i guess
+    if (a == NULL) return -1;  
+    if (b == NULL) return  1;
+
     while (*a && *b) {
         char ca = *a;
         char cb = *b;
-
         if (case_insensitive) {
             ca = tolower((unsigned char)ca);
             cb = tolower((unsigned char)cb);
         }
-
-        if (ca != cb) return ca - cb; 
-
+        if (ca != cb) return ca - cb;
         a++; b++;
     }
-    if (case_insensitive) return tolower(*a) - tolower(*b);
-    return *a - *b;
+    if (case_insensitive)
+        return tolower((unsigned char)*a) - tolower((unsigned char)*b);
+    return (unsigned char)*a - (unsigned char)*b;
 }
 
 int strstart(char *a, char *b, bool case_insensitive) {
