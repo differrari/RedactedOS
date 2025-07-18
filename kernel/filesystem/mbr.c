@@ -17,9 +17,9 @@ uint32_t mbr_find_partition(uint8_t partition_type){
 
     for (uint8_t i = 0; i < 4; i++){
         partition_entry *entry = &mbr_entry->partitions[i];
-        kprintf("MBR Partition %i = %x -> %x",i, entry->type, read_unaligned32((uint8_t*)&entry->first_sector));
+        kprintf("MBR Partition %i = %x -> %x",i, entry->type, read_unaligned32(&entry->first_sector));
         if (entry->type == partition_type){
-            offset = read_unaligned32((uint8_t*)&entry->first_sector);
+            offset = read_unaligned32(&entry->first_sector);
         }
     }
 

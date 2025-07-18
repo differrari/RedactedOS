@@ -22,8 +22,6 @@ char* FAT32FS::advance_path(char *path){
     return path;
 }
 
-#define MBS_NUM_SECTORS read_unaligned16(mbs8 + 0x13)
-
 bool FAT32FS::init(uint32_t partition_sector){
     fs_page = alloc_page(0x1000, true, true, false);
 
@@ -50,9 +48,9 @@ bool FAT32FS::init(uint32_t partition_sector){
         return false;
     }
 
-    uint8_t *mbs8 = (uint8_t*)mbs;
+    uint16_t num_sectors = read_unaligned16(&mbs->num_sectors);
 
-    cluster_count = (MBS_NUM_SECTORS == 0 ? mbs->large_num_sectors : MBS_NUM_SECTORS)/mbs->sectors_per_cluster;
+    cluster_count = (num_sectors == 0 ? mbs->large_num_sectors : num_sectors)/mbs->sectors_per_cluster;
     data_start_sector = mbs->reserved_sectors + (mbs->sectors_per_fat * mbs->number_of_fats);
 
     if (mbs->first_cluster_of_root_directory > cluster_count){
@@ -60,7 +58,7 @@ bool FAT32FS::init(uint32_t partition_sector){
         return false;
     }
 
-    bytes_per_sector = read_unaligned16(mbs8 + 0xB);
+    bytes_per_sector = read_unaligned16(&mbs->bytes_per_sector);
 
     kprintf("FAT32 Volume uses %i cluster size", bytes_per_sector);
     kprintf("Data start at %x",data_start_sector*512);
