@@ -264,7 +264,7 @@ typedef struct {
 } xhci_usb_device;
 
 typedef struct {
-    xhci_device_types type;
+    usb_device_types type;
     trb* endpoint_transfer_ring;
     uint32_t endpoint_transfer_index;
     uint8_t endpoint_transfer_cycle_bit;

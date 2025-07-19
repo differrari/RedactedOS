@@ -442,7 +442,7 @@ uint8_t XHCIDriver::get_ep_type(usb_endpoint_descriptor* descriptor) {
     return (descriptor->bEndpointAddress & 0x80 ? 1 << 2 : 0) | (descriptor->bmAttributes & 0x3);
 }
 
-bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value, xhci_device_types type){
+bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value, usb_device_types type){
     kprintfv("[xHCI] endpoint address %x",endpoint->bEndpointAddress);
     uint8_t ep_address = endpoint->bEndpointAddress;
     uint8_t ep_dir = (ep_address & 0x80) ? 1 : 0; // 1 IN, 0 OUT

@@ -106,7 +106,7 @@ bool USBDriver::get_configuration(uint8_t address){
     uint8_t* report_descriptor;
     uint16_t report_length;
 
-    xhci_device_types dev_type;
+    usb_device_types dev_type;
 
     for (uint16_t i = 0; i < total_length;){
         usb_descriptor_header* header = (usb_descriptor_header*)&config->data[i];

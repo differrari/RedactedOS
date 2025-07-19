@@ -94,7 +94,7 @@ typedef enum {
     NONE,
     KEYBOARD,
     MOUSE
-} xhci_device_types;
+} usb_device_types;
 
 #define USB_DEVICE_DESCRIPTOR 1
 #define USB_CONFIGURATION_DESCRIPTOR 2
