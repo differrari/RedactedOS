@@ -45,7 +45,7 @@ debug:
 
 install:
 	$(MAKE) clean
-	$(MAKE) LOAD_ADDR=0x80000 all
+	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 all
 	cp kernel.img $(BOOTFS)/kernel8.img
 	cp kernel.img $(BOOTFS)/kernel_2712.img
 
