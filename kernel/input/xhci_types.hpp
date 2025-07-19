@@ -138,6 +138,9 @@ typedef struct {
     uint32_t drop_flags;
     uint32_t add_flags;
     uint64_t reserved[3];
+#if XHCI_CTX_SIZE == 64
+    uint32_t pad[8];
+#endif
 }__attribute__((packed)) xhci_input_control_context;
 
 typedef union
@@ -241,12 +244,18 @@ typedef struct {
     slot_field2 slot_f2;
     slot_field3 slot_f3;
     uint32_t slot_rsvd[4];
+#if XHCI_CTX_SIZE == 64
+    uint32_t pad[8];
+#endif
     struct {
         endpoint_field0 endpoint_f0;
         endpoint_field1 endpoint_f1;
         endpoint_field23 endpoint_f23;
         endpoint_field4 endpoint_f4;
         uint32_t ep_rsvd[3];
+#if XHCI_CTX_SIZE == 64
+    uint32_t pad[8];
+#endif
     } endpoints[31];
 } xhci_device_context;
 

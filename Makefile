@@ -1,5 +1,6 @@
 MODE ?= virt
 LOAD_ADDR ?= 0x41000000
+XHCI_CTX_SIZE ?= 32
 
 OS := $(shell uname)
 
@@ -25,7 +26,7 @@ user:
 	$(MAKE) -C user
 
 kernel:
-	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR)
+	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
 
 clean:
 	$(MAKE) -C shared clean
@@ -33,10 +34,10 @@ clean:
 	$(MAKE) -C user clean
 
 raspi:
-	$(MAKE) LOAD_ADDR=0x80000 all
+	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 all
 
 virt:
-	$(MAKE) LOAD_ADDR=0x41000000 all
+	$(MAKE) LOAD_ADDR=0x41000000 XHCI_CTX_SIZE=32 all
 
 debug:
 	$(MAKE) $(MODE)
