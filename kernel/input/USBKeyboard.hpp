@@ -12,7 +12,6 @@ public:
     void process_data(USBDriver *driver) override;
 private:
     void process_keypress(keypress *rkp);
-    trb* latest_ring;
     bool requesting = false;
     uint8_t slot_id;
 
