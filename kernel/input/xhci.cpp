@@ -71,16 +71,16 @@ bool XHCIDriver::init(){
     
         pci_register(mmio, mmio_size);
     
-        uint8_t interrupts_ok = pci_setup_interrupts(addr, XHCI_IRQ, 1);
+        uint8_t interrupts_ok = pci_setup_interrupts(addr, INPUT_IRQ, 1);
         switch(interrupts_ok){
             case 0:
                 kprintf_raw("[xHCI] Failed to setup interrupts");
                 return false;
             case 1:
-                kprintf_raw("[xHCI] Interrupts setup with MSI-X %i",XHCI_IRQ);
+                kprintf_raw("[xHCI] Interrupts setup with MSI-X %i",INPUT_IRQ);
                 break;
             default:
-                kprintf_raw("[xHCI] Interrupts setup with MSI %i",XHCI_IRQ);
+                kprintf_raw("[xHCI] Interrupts setup with MSI %i",INPUT_IRQ);
                 break;
         }
     

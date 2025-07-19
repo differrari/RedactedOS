@@ -43,7 +43,7 @@ void irq_init() {
     }
 
     gic_enable_irq(IRQ_TIMER, 0x80, 0);
-    gic_enable_irq(MSI_OFFSET + XHCI_IRQ, 0x80, 0);
+    gic_enable_irq(MSI_OFFSET + INPUT_IRQ, 0x80, 0);
     gic_enable_irq(MSI_OFFSET + NET_IRQ, 0x80, 0);
     gic_enable_irq(MSI_OFFSET + NET_IRQ + 1, 0x80, 0);
     gic_enable_irq(SLEEP_TIMER, 0x80, 0);
@@ -84,7 +84,7 @@ void irq_el1_handler() {
     if (irq == IRQ_TIMER) {
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         switch_proc(INTERRUPT);
-    } else if (irq == MSI_OFFSET + XHCI_IRQ){
+    } else if (irq == MSI_OFFSET + INPUT_IRQ){
         handle_input_interrupt();
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         process_restore();
