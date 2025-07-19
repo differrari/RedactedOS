@@ -134,11 +134,17 @@ typedef struct {
     uint32_t reserved;
 }__attribute__((packed)) erst_entry;
 
-typedef struct {
+template <size_t size>
+struct xhci_input_control_context {
     uint32_t drop_flags;
     uint32_t add_flags;
-    uint64_t reserved[3];
-}__attribute__((packed)) xhci_input_control_context;
+    uint32_t reserved[5];
+    uint8_t config_value;
+    uint8_t interface_number;
+    uint8_t alternate_setting;
+    uint8_t rsvd;
+    uint32_t padding[size == 64 ? 8 : 0];
+}__attribute__((packed));
 
 typedef union
 {
@@ -235,32 +241,37 @@ typedef union
     uint32_t value;
 } endpoint_field4;
 
-typedef struct {
+template <size_t size>
+struct xhci_device_context {
     slot_field0 slot_f0;
     slot_field1 slot_f1;
     slot_field2 slot_f2;
     slot_field3 slot_f3;
     uint32_t slot_rsvd[4];
+    uint32_t padding[size == 64 ? 8 : 0];
     struct {
         endpoint_field0 endpoint_f0;
         endpoint_field1 endpoint_f1;
         endpoint_field23 endpoint_f23;
         endpoint_field4 endpoint_f4;
         uint32_t ep_rsvd[3];
+        uint32_t ep_padding[size == 64 ? 8 : 0];
     } endpoints[31];
-} xhci_device_context;
+}__attribute__((packed));
 
-typedef struct {
-    xhci_input_control_context control_context;
-    xhci_device_context device_context;
-} xhci_input_context;
+template <size_t size>
+struct xhci_input_context {
+    xhci_input_control_context<size> control_context;
+    xhci_device_context<size> device_context;
+};
+static_assert(sizeof(xhci_input_context<32>) == 32*33);
 
 typedef struct {
     uint8_t transfer_cycle_bit;
     uint32_t transfer_index;
     trb* transfer_ring;
     uint32_t slot_id;
-    xhci_input_context* ctx;
+    xhci_input_context<64>* ctx;
 } xhci_usb_device;
 
 typedef struct {

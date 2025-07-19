@@ -52,5 +52,5 @@ private:
     trb* last_event;
 
     IndexMap<xhci_ring> endpoint_map;
-    IndexMap<xhci_input_context*> context_map;
+    IndexMap<uintptr_t> context_map;
 };

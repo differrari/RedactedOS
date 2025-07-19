@@ -166,7 +166,7 @@ bool XHCIDriver::init(){
     wait (&op->usbsts, 0x1, false, 1000);
 
     endpoint_map = IndexMap<xhci_ring>(255 * 5);
-    context_map = IndexMap<xhci_input_context*>(255 * 5);
+    context_map = IndexMap<uintptr_t>(255 * 5);
 
     kprintfv("[xHCI] Init complete with usbcmd %x, usbsts %x",op->usbcmd, op->usbsts);
     
@@ -354,9 +354,9 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
 
     transfer_ring->cycle_bit = 1;
 
-    xhci_input_context *ctx = (xhci_input_context*)allocate_in_page(mem_page, sizeof(xhci_input_context), ALIGN_64B, true, true);
+    xhci_input_context<64> *ctx = (xhci_input_context<64>*)allocate_in_page(mem_page, sizeof(xhci_input_context<64>), ALIGN_64B, true, true);
     kprintfv("[xHCI] Allocating input context at %x", (uintptr_t)ctx);
-    context_map[address << 8] = ctx;
+    context_map[address << 8] = (uintptr_t)ctx;
     void* output_ctx = (void*)allocate_in_page(mem_page, 0x1000, ALIGN_64B, true, true);
     kprintfv("[xHCI] Allocating output for context at %x", (uintptr_t)output_ctx);
     
@@ -426,13 +426,13 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
 }
 
 uint8_t XHCIDriver::address_device(uint8_t address){
-    xhci_input_context* ctx = context_map[address << 8];
+    xhci_input_context<64>* ctx = (xhci_input_context<64>*)context_map[address << 8];
     kprintfv("Addressing device %i with context %x", address, (uintptr_t)ctx);
     if (!issue_command((uintptr_t)ctx, 0, (address << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
         kprintf_raw("[xHCI error] failed addressing device at slot %x",address);
         return 0;
     }
-    xhci_device_context* context = (xhci_device_context*)dcbaap[address];
+    xhci_device_context<64>* context = (xhci_device_context<64>*)dcbaap[address];
 
     kprintfv("[xHCI] ADDRESS_DEVICE %i command issued. dcbaap %x Received packet size %i",address, (uintptr_t)dcbaap, context->endpoints[0].endpoint_f1.max_packet_size);
     return address;
@@ -451,8 +451,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     uint8_t ep_type = endpoint->bmAttributes & 0x03; // 0 = Control, 1 = Iso, 2 = Bulk, 3 = Interrupt
     kprintf_raw("[xHCI] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
 
-    xhci_input_context* ctx = context_map[address << 8];
-
+    xhci_input_context<64>* ctx = (xhci_input_context<64>*)context_map[address << 8];
     
     ctx->control_context.add_flags = (1 << 0) | (1 << ep_num);
     ctx->device_context.slot_f0.context_entries = 2; //2 entries: EP0 + EP1
