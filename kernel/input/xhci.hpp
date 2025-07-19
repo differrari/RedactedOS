@@ -2,6 +2,7 @@
 
 #include "usb.hpp"
 #include "usb_types.h"
+#include "xhci_types.hpp"
 
 typedef struct xhci_ring {
     trb* ring;
