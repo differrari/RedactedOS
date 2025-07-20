@@ -32,6 +32,7 @@ private:
     void ring_doorbell(uint32_t slot, uint32_t endpoint);
     bool await_response(uint64_t command, uint32_t type);
     uint8_t get_ep_type(usb_endpoint_descriptor* descriptor);
+    uint32_t calculate_interval(uint32_t speed, uint32_t received_interval);
 
     void make_ring_link_control(trb* ring, bool cycle);
     void make_ring_link(trb* ring, bool cycle);

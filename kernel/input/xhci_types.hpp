@@ -142,6 +142,7 @@ typedef struct {
     uint32_t pad[8];
 #endif
 }__attribute__((packed)) xhci_input_control_context;
+static_assert(sizeof(xhci_input_control_context) == XHCI_CTX_SIZE);
 
 typedef union
 {
@@ -254,10 +255,11 @@ typedef struct {
         endpoint_field4 endpoint_f4;
         uint32_t ep_rsvd[3];
 #if XHCI_CTX_SIZE == 64
-    uint32_t pad[8];
+        uint32_t pad[8];
 #endif
-    } endpoints[31];
-} xhci_device_context;
+    }__attribute__((packed)) endpoints[31];
+}__attribute__((packed)) xhci_device_context;
+static_assert(sizeof(xhci_device_context) == XHCI_CTX_SIZE * 32);
 
 typedef struct {
     xhci_input_control_context control_context;

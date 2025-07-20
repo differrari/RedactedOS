@@ -188,6 +188,10 @@ void mmu_init() {
     for (uint64_t addr = get_shared_start(); addr <= get_shared_end(); addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 2);
 
+    if (XHCI_BASE)
+    for (uint64_t addr = XHCI_BASE; addr <= XHCI_BASE + 0x1000; addr += GRANULE_4KB)
+        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
+
     uint64_t dstart;
     uint64_t dsize;
     if (dtb_addresses(&dstart,&dsize)){
