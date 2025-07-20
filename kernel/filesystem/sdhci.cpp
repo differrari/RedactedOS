@@ -168,7 +168,7 @@ bool SDHCI::init() {
 
     switch_clock_rate(25000000);
 
-    bool v2_card = 0;  
+    v2_card = 0;  
     if (!issue_command(IF_COND, 0x1AA)){ 
         if (!(regs->interrupt & 0x10000)){
             kprintf("[SDHCI error] IFCOND error");
@@ -264,7 +264,8 @@ bool SDHCI::read(void *buffer, uint32_t sector, uint32_t count){
     uint32_t command = multiple ? READ_MULTIPLE : READ_ONE;
     uint32_t flags = multiple ? 0b110110 : 0b010000;
     for (int i = 5; i >= 0; i--){
-        //TODO: This is now broken on qemu. On QEMU, we need to multiply sector by 512
+        if (!v2_card)
+            sector *= 512;
         if (issue_command(command, sector, flags)) break;
         if (i == 0) { kprintf("[SDHCI error] read request timeout"); return false; }
         delay(500);

@@ -66,7 +66,7 @@ void panic(const char* panic_msg) {
         kstring s = kstring_format("%s\r\n%s\r\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)panic_msg);
         draw_panic_screen(s);
     }
-    while (1);//TODO: OPT
+    while (1);
 }
 
 void panic_with_info(const char* msg, uint64_t info) {
@@ -92,5 +92,5 @@ void panic_with_info(const char* msg, uint64_t info) {
         kstring s = kstring_format("%s\r\n%s\r\nError code: %x\r\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)msg,info);
         draw_panic_screen(s);
     }
-    while (1);//TODO: OPT
+    while (1);
 }

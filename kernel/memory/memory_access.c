@@ -40,10 +40,20 @@ uint64_t read(uint64_t addr) {
     return read64(addr);
 }
 
-uint16_t read_unaligned16(const uint8_t *p) {
+uint16_t read_unaligned16(const uint16_t *up) {
+    uint8_t *p = (uint8_t*)up;
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
 }
 
-uint32_t read_unaligned32(const uint8_t *p) {
+uint32_t read_unaligned32(const uint32_t *up) {
+    uint8_t *p = (uint8_t*)up;
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+void write_unaligned32(uint32_t *up, uint32_t value) {
+    uint8_t *p = (uint8_t*)up;
+    p[0] = (uint8_t)(value & 0xFF);
+    p[1] = (uint8_t)((value >> 8) & 0xFF);
+    p[2] = (uint8_t)((value >> 16) & 0xFF);
+    p[3] = (uint8_t)((value >> 24) & 0xFF);
 }

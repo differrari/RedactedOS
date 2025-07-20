@@ -3,7 +3,7 @@
 #include "async.h"
 #include "std/string.h"
 #include "memory/page_allocator.h"
-#include "xhci_types.h"
+#include "usb_types.h"
 
 uint16_t USBDriver::packet_size(uint16_t speed){
     switch (speed) {
@@ -19,6 +19,10 @@ uint16_t USBDriver::packet_size(uint16_t speed){
 bool USBDriver::setup_device(uint8_t address, uint16_t port){
 
     address = address_device(address);
+    if (address == 0){
+        kprintf("[USB error] failed to address device");
+        return false;
+    }
     usb_device_descriptor* descriptor = (usb_device_descriptor*)allocate_in_page(mem_page, sizeof(usb_device_descriptor), ALIGN_64B, true, true);
     
     if (!request_descriptor(address, 0, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
@@ -102,7 +106,7 @@ bool USBDriver::get_configuration(uint8_t address){
     uint8_t* report_descriptor;
     uint16_t report_length;
 
-    xhci_device_types dev_type;
+    usb_device_types dev_type;
 
     for (uint16_t i = 0; i < total_length;){
         usb_descriptor_header* header = (usb_descriptor_header*)&config->data[i];

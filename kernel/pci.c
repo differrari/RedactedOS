@@ -25,10 +25,6 @@
 #define PCI_CAPABILITY_PCIE 0x10
 #define PCI_CAPABILITY_MSIX 0x11
 
-static uint64_t pci_base;
-
-#define NINIT pci_base == 0x0
-
 static bool pci_verbose = false;
 
 void pci_enable_verbose(){
@@ -92,6 +88,8 @@ struct acpi_mcfg_t {
 #define RSDP_SEARCH_START 0x000E0000
 #define RSDP_SEARCH_END   0x00100000
 
+bool initialized;
+
 void* find_rsdp() {
     for (uint64_t addr = RSDP_SEARCH_START; addr < RSDP_SEARCH_END; addr += 16) {
         const char* sig = (const char*)(uintptr_t)addr;
@@ -119,13 +117,15 @@ void* find_rsdp() {
 }
 
 void find_pci(){
-    pci_base = 0x4010000000;
-    for (uint64_t addr = pci_base; addr < pci_base + 0x10000000; addr += GRANULE_2MB)
-        register_device_memory_2mb(addr, addr);
+    if (!initialized){
+        initialized = true;
+        for (uint64_t addr = PCI_BASE; addr < PCI_BASE + 0x10000000; addr += GRANULE_2MB)
+            register_device_memory_2mb(addr, addr);
+    }
 }
 
 uint64_t pci_make_addr(uint32_t bus, uint32_t slot, uint32_t func, uint32_t offset){
-    return pci_base
+    return PCI_BASE
             | (((uint64_t)bus) << 20)
             | (((uint64_t)slot) << 15)
             | (((uint64_t)func) << 12) 
@@ -133,8 +133,8 @@ uint64_t pci_make_addr(uint32_t bus, uint32_t slot, uint32_t func, uint32_t offs
 }
 
 uint64_t pci_get_bar_address(uint64_t base, uint8_t offset, uint8_t index){
-    if (NINIT)
-        find_pci();
+    if (!PCI_BASE)
+        return 0;
 
     return base + offset + (index * 4);
 }
@@ -214,10 +214,10 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
 
 uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
 
-    if (!USE_PCI)
+    if (!PCI_BASE)
         return 0;
-
-    if (NINIT)
+    
+    if (!initialized)
         find_pci();
 
     for (uint32_t bus = 0; bus < PCI_BUS_MAX; bus++) {

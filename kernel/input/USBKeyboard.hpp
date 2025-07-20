@@ -3,7 +3,7 @@
 #include "types.h"
 #include "USBDevice.hpp"
 #include "keypress.h"
-#include "xhci_types.h"
+#include "usb_types.h"
 
 class USBKeyboard: public USBEndpoint {
 public:
@@ -12,7 +12,6 @@ public:
     void process_data(USBDriver *driver) override;
 private:
     void process_keypress(keypress *rkp);
-    trb* latest_ring;
     bool requesting = false;
     uint8_t slot_id;
 

@@ -153,7 +153,7 @@ bool DWC2Driver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
     return true;
 }
 
-bool DWC2Driver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value, xhci_device_types type){
+bool DWC2Driver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value, usb_device_types type){
     
     uint8_t ep_address = endpoint->bEndpointAddress;
     uint8_t ep_num = ep_address & 0x0F;

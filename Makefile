@@ -15,10 +15,11 @@ LDFLAGS_BASE ?=
 #build var
 LOAD_ADDR   ?= 0x41000000
 MODE ?= virt
+XHCI_CTX_SIZE  ?= 32
 
 
 #export
-export ARCH CC LD AR OBJCOPY CFLAGS_BASE LDFLAGS_BASE LOAD_ADDR
+export ARCH CC LD AR OBJCOPY CFLAGS_BASE LDFLAGS_BASE LOAD_ADDR XHCI_CTX_SIZE
 
 #config fs
 OS      := $(shell uname)
@@ -45,7 +46,7 @@ user:
 	$(MAKE) -C user
 
 kernel:
-	$(MAKE) -C kernel
+  $(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
 
 clean:
 	$(MAKE) -C shared clean
@@ -57,10 +58,10 @@ clean:
 	rm -f kernel.img kernel.elf disk.img dump
 
 raspi:
-	$(MAKE) LOAD_ADDR=0x80000 all
+	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 all
 
 virt:
-	$(MAKE) LOAD_ADDR=0x41000000 all
+	$(MAKE) LOAD_ADDR=0x41000000 XHCI_CTX_SIZE=32 all
 
 run:
 	$(MAKE) $(MODE)
@@ -69,15 +70,17 @@ run:
 debug:
 	$(MAKE) $(MODE)
 	./rundebug MODE=$(MODE) $(ARGS)
-
+  
 dump:
 	$(OBJCOPY) -O binary kernel.elf kernel.img
 	aarch64-none-elf-objdump -D kernel.elf > dump
-
-install: clean raspi
+  
+install:
+	$(MAKE) clean
+	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 all
 	cp kernel.img $(BOOTFS)/kernel8.img
 	cp kernel.img $(BOOTFS)/kernel_2712.img
-
+  
 prepare-fs:
 	@echo "creating dirs"
 	@mkdir -p $(FS_DIRS)
