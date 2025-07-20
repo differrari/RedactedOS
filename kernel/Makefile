@@ -5,7 +5,7 @@ LDFLAGS := $(LDFLAGS_BASE) -T $(shell ls *.ld) --defsym=LOAD_ADDR=$(LOAD_ADDR)
 C_SRC   := $(shell find . -name '*.c')
 ASM_SRC := $(shell find . -name '*.S')
 CPP_SRC := $(shell find . -name '*.cpp')
-OBJ     := $(C_SRC:.c=.o) $(ASM_SRC:.S=.o) $(CPP_SRC:.cpp:.o)
+OBJ     := $(C_SRC:.c=.o) $(ASM_SRC:.S=.o) $(CPP_SRC:.cpp=.o)
 OBJL    := $(filter-out ./boot.o,$(OBJ))
 
 ELF     := ../kernel.elf
