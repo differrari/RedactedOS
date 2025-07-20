@@ -180,7 +180,6 @@ bool XHCIDriver::init(){
                 return false;
             }
         }
-
     return true;
 
 }

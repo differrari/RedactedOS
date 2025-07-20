@@ -1,13 +1,14 @@
 #pragma once
-
 #include "types.h"
+#include "data_struct/ring_buffer.hpp"
+#include "graph/graphics.h"
+#include "memory/kalloc.h"
 
-class KernelConsole {
+class KernelConsole{
 public:
     KernelConsole();
-
     void put_char(char c);
-    void put_string(const char *str);
+    void put_string(const char* str);
     void put_hex(uint64_t value);
     void newline();
     void scroll();
@@ -19,18 +20,17 @@ private:
     void screen_clear();
     void redraw();
 
-    unsigned int cursor_x;
-    unsigned int cursor_y;
-    unsigned int columns;
-    unsigned int rows;
-    bool is_initialized = false;
-    int scroll_row_offset = 0;
-    static constexpr int char_width = 8;
-    static constexpr int char_height = 16;
-    char** buffer;
-    char* row_data;
+    uint32_t cursor_x, cursor_y;
+    uint32_t columns, rows;
+    bool is_initialized;
 
-    uint64_t buffer_header_size;
-    uint64_t buffer_data_size;
+    static constexpr uint32_t char_width=8;
+    static constexpr uint32_t char_height=16;
+    static constexpr uint32_t max_rows=128;
+
+    RingBuffer<uint32_t,max_rows> row_ring;
+    char* row_data;
+    uint32_t buffer_data_size;
 };
+
 extern KernelConsole kconsole;

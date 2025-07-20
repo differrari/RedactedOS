@@ -6,6 +6,7 @@
 #include "std/string.h"
 #include "std/memfunctions.h"
 #include "math/math.h"
+#include "data_struct/linked_list.hpp"
 
 #define kprintfv(fmt, ...) \
     ({ \
@@ -64,7 +65,6 @@ bool FAT32FS::init(uint32_t partition_sector){
 
     kprintf("FAT32 Volume uses %i cluster size", bytes_per_sector);
     kprintf("Data start at %x",data_start_sector*512);
-
     read_FAT(mbs->reserved_sectors, mbs->sectors_per_fat, mbs->number_of_fats);
 
     return true;}
