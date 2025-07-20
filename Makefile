@@ -46,7 +46,7 @@ user:
 	$(MAKE) -C user
 
 kernel:
-  $(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
+	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
 
 clean:
 	$(MAKE) -C shared clean
