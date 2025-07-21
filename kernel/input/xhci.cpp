@@ -171,8 +171,10 @@ bool XHCIDriver::init(){
 
     kprintfv("[xHCI] command ring allocated at %x. crcr now %x",(uintptr_t)command_ring.ring, op->crcr);
 
-    if (!enable_events())
+    if (!enable_events()){
+        kprintf("[xHCI error] failed to enable events");
         return false;
+    }
 
     kprintfv("[xHCI] event configuration finished");
 
