@@ -59,11 +59,13 @@ bool XHCIDriver::check_fatal_error() {
 
 bool XHCIDriver::init(){
     uint64_t addr, mmio, mmio_size;
+    bool use_pci = false;
     if (XHCI_BASE){
         addr = XHCI_BASE;
         mmio = addr;
     } else if (PCI_BASE) {
         addr = find_pci_device(0x1B36, 0xD);
+        use_pci = true;
     }
     if (!addr){ 
         kprintf_raw("[PCI] xHCI device not found");
@@ -71,16 +73,16 @@ bool XHCIDriver::init(){
     }
 
     kprintfv("[xHCI] init");
-    if (PCI_BASE){
+    if (use_pci){
         if (!(*(uint16_t*)(addr + 0x06) & (1 << 4))){
-            kprintfv("[xHCI] Wrong capabilities list");
+            kprintf("[xHCI] Wrong capabilities list");
             return false;
         }
     
         pci_enable_device(addr);
     
         if (!pci_setup_bar(addr, 0, &mmio, &mmio_size)){
-            kprintfv("[xHCI] BARs not set up");
+            kprintf("[xHCI] BARs not set up");
             return false;
         }
     
@@ -89,13 +91,13 @@ bool XHCIDriver::init(){
         uint8_t interrupts_ok = pci_setup_interrupts(addr, INPUT_IRQ, 1);
         switch(interrupts_ok){
             case 0:
-                kprintf_raw("[xHCI] Failed to setup interrupts");
+                kprintf("[xHCI] Failed to setup interrupts");
                 return false;
             case 1:
-                kprintf_raw("[xHCI] Interrupts setup with MSI-X %i",INPUT_IRQ);
+                kprintf("[xHCI] Interrupts setup with MSI-X %i",INPUT_IRQ);
                 break;
             default:
-                kprintf_raw("[xHCI] Interrupts setup with MSI %i",INPUT_IRQ);
+                kprintf("[xHCI] Interrupts setup with MSI %i",INPUT_IRQ);
                 break;
         }
     
@@ -196,7 +198,7 @@ bool XHCIDriver::init(){
                 continue;
             }
             if (!setup_device(0,i)){
-                kprintf_raw("[xHCI] Failed to configure device at port %i",i);
+                kprintf("[xHCI] Failed to configure device at port %i",i);
             }
         }
 

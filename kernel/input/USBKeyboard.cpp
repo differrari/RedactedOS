@@ -12,7 +12,6 @@ void USBKeyboard::request_data(USBDriver *driver){
     }
 
     if (!driver->poll(slot_id, endpoint, buffer, packet_size)){
-        
         return;
     } 
 
