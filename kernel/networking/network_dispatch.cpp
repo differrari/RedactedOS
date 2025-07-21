@@ -12,6 +12,7 @@
 #include "net/icmp.h"
 #include "memory/page_allocator.h"
 #include "std/memfunctions.h"
+#include "hw/hw.h"
 
 NetworkDispatch::NetworkDispatch(){
     ports = IndexMap<uint16_t>(UINT16_MAX);
@@ -21,7 +22,7 @@ NetworkDispatch::NetworkDispatch(){
 }
 
 NetDriver* NetworkDispatch::select_driver(){
-    return VirtioNetDriver::try_init();
+    return BOARD_TYPE == 1 ? VirtioNetDriver::try_init() : 0x0;
 }
 
 bool NetworkDispatch::init(){
