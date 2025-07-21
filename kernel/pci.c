@@ -224,7 +224,7 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
         for (uint32_t slot = 0; slot < PCI_SLOT_MAX; slot++) {
             for (uint32_t func = 0; func < PCI_FUNC_MAX; func++) {
                 uint64_t device_address = pci_make_addr(bus, slot, func, 0x00);
-                uint64_t vendor_device = read(device_address);
+                uint64_t vendor_device = read32(device_address);
                 if ((vendor_device & 0xFFFF) == vendor_id && ((vendor_device >> 16) & 0xFFFF) == device_id) {
 
                     kprintf("[PCI] Found device at bus %i, slot %i, func %i", bus, slot, func);
