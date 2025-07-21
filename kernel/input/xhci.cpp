@@ -63,6 +63,8 @@ bool XHCIDriver::init(){
     if (XHCI_BASE){
         addr = XHCI_BASE;
         mmio = addr;
+        if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
+            use_interrupts = pci_setup_msi_rp1(36, true);
     } else if (PCI_BASE) {
         addr = find_pci_device(0x1B36, 0xD);
         use_pci = true;
@@ -92,12 +94,15 @@ bool XHCIDriver::init(){
         switch(interrupts_ok){
             case 0:
                 kprintf("[xHCI] Failed to setup interrupts");
-                return false;
+                use_interrupts = false;
+                break;
             case 1:
                 kprintf("[xHCI] Interrupts setup with MSI-X %i",INPUT_IRQ);
+                use_interrupts = true;
                 break;
             default:
                 kprintf("[xHCI] Interrupts setup with MSI %i",INPUT_IRQ);
+                use_interrupts = true;
                 break;
         }
     
@@ -277,8 +282,6 @@ bool XHCIDriver::enable_events(){
 
     op->usbsts = 1 << 3;//Enable interrupts
     interrupter->iman |= 1;//Clear pending interrupts
-
-    use_interrupts = true;
 
     return !check_fatal_error();
 }

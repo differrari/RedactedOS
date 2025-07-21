@@ -54,6 +54,9 @@ void kernel_main() {
     kprintf("GPU initialized");
     
     kprintf("Initializing disk...");
+
+    if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
+        pci_setup_rp1();
     
     // disk_verbose();
     if (!find_disk())
