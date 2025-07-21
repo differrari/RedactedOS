@@ -28,7 +28,7 @@ void *clinkedlist_remove(clinkedlist_t *list, clinkedlist_node_t *node);
 void clinkedlist_update(clinkedlist_t *list, clinkedlist_node_t *node, void *new_data);
 uint64_t clinkedlist_length(const clinkedlist_t *list);
 uint64_t clinkedlist_size_bytes(const clinkedlist_t *list);
-clinkedlist_node_t *clinkedlist_find(clinkedlist_t *list, void *key,int (*cmp)(void *, void *));
+clinkedlist_node_t *clinkedlist_find(clinkedlist_t *list, void *key,int (*cmp)(void *, void *));//so not const function doesnt rise an annoyng warning
 void clinkedlist_for_each(const clinkedlist_t *list, void (*func)(void *));
 
 #ifdef __cplusplus
