@@ -88,7 +88,7 @@ bool is_new_keypress(keypress* current, keypress* previous) {
 }
 
 bool sys_read_input(int pid, keypress *out){
-    if (BOARD_TYPE == 2 && input_driver)
+    if (!input_driver->use_interrupts)
         input_driver->poll_inputs();
     process_t *process = get_proc_by_pid(pid);
     if (process->input_buffer.read_index == process->input_buffer.write_index) return false;
