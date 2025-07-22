@@ -212,6 +212,8 @@ bool XHCIDriver::init(){
 
 bool XHCIDriver::port_reset(uint16_t port){
 
+    kprintf("[xHCI] port %i",port);
+
     xhci_port_regs* port_info = &ports[port];
 
     if (port_info->portsc.pp == 0){
@@ -307,7 +309,7 @@ void XHCIDriver::ring_doorbell(uint32_t slot, uint32_t endpoint) {
 bool XHCIDriver::await_response(uint64_t command, uint32_t type){
     while (1){
         if (check_fatal_error()){
-            kprintf_raw("[xHCI error] USBSTS value %x",op->usbsts);
+            kprintf("[xHCI error] USBSTS value %x",op->usbsts);
             awaited_type = 0;
             return false;
         }
@@ -318,8 +320,8 @@ bool XHCIDriver::await_response(uint64_t command, uint32_t type){
                 awaited_type = 0;
                 return false;
             }
-            // kprintf_raw("[xHCI] A response at %i of type %x as a response to %x",event_ring.index, (last_event->control & TRB_TYPE_MASK) >> 10, last_event->parameter);
-            // kprintf_raw("[xHCI]  %x vs %x = %i and %x vs %x = %i", (ev->control & TRB_TYPE_MASK) >> 10, type, (ev->control & TRB_TYPE_MASK) >> 10 == type, ev->parameter, command, command == 0 || ev->parameter == command);
+            // kprintf("[xHCI] A response at %i of type %x as a response to %x",event_ring.index, (last_event->control & TRB_TYPE_MASK) >> 10, last_event->parameter);
+            // kprintf("[xHCI]  %x vs %x = %i and %x vs %x = %i", (ev->control & TRB_TYPE_MASK) >> 10, type, (ev->control & TRB_TYPE_MASK) >> 10 == type, ev->parameter, command, command == 0 || ev->parameter == command);
             if (event_ring.index == MAX_TRB_AMOUNT - 1){
                 event_ring.index = 0;
                 event_ring.cycle_bit = !event_ring.cycle_bit;
@@ -416,6 +418,8 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
         .wLength = descriptor_size
     };
 
+    // kprintf("RT: %x R: %x V: %x I: %x L: %x",packet.bmRequestType,packet.bRequest,packet.wValue,packet.wIndex,packet.wLength);
+
     bool is_in = (rType & 0x80) != 0;
 
     xhci_ring *transfer_ring = &endpoint_map[address << 8 | endpoint];
@@ -424,13 +428,15 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
     memcpy(&setup_trb->parameter, &packet, sizeof(packet));
     setup_trb->status = sizeof(usb_setup_packet);
     //bit 4 = chain. Bit 16 direction (3 = IN, 2 = OUT, 0 = NO DATA)
-    setup_trb->control = (3 << 16) | (TRB_TYPE_SETUP_STAGE << 10) | (1 << 6) | (1 << 4) | transfer_ring->cycle_bit;
-    
-    trb* data = &transfer_ring->ring[transfer_ring->index++];
-    data->parameter = (uintptr_t)out_descriptor;
-    data->status = packet.wLength;
-    //bit 16 = direction
-    data->control = (1 << 16) | (TRB_TYPE_DATA_STAGE << 10) | (0 << 4) | transfer_ring->cycle_bit;
+    setup_trb->control = (3 << 16) | (TRB_TYPE_SETUP_STAGE << 10) | (1 << 6) | ((descriptor_size > 0) << 4) | transfer_ring->cycle_bit;
+
+    if (descriptor_size > 0){
+        trb* data = &transfer_ring->ring[transfer_ring->index++];
+        data->parameter = (uintptr_t)out_descriptor;
+        data->status = packet.wLength;
+        //bit 16 = direction
+        data->control = (1 << 16) | (TRB_TYPE_DATA_STAGE << 10) | (0 << 4) | transfer_ring->cycle_bit;
+    }
     
     trb* status_trb = &transfer_ring->ring[transfer_ring->index++];
     status_trb->parameter = 0;
@@ -444,7 +450,7 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
         transfer_ring->index = 0;
     }
 
-    return AWAIT((uintptr_t)status_trb, {ring_doorbell(address, 1);}, TRB_TYPE_TRANSFER);
+    return AWAIT(0, {ring_doorbell(address, 1);}, TRB_TYPE_TRANSFER);//TODO: Devices can respond with an error to any of the 3 stages
 }
 
 uint8_t XHCIDriver::address_device(uint8_t address){
@@ -565,14 +571,17 @@ void XHCIDriver::handle_interrupt(){
         return;
     kprintfv("[xHCI] >>> Unhandled interrupt %i %x",event_ring.index,type);
     uint8_t completion_code = (ev->status >> 24) & 0xFF;
-    if (completion_code == 1){
+    if (completion_code == 1 || completion_code == 4){
         switch (type){
             case TRB_TYPE_TRANSFER: {
                 uint8_t slot_id = (ev->control & TRB_SLOT_MASK) >> 24;
                 uint8_t endpoint_id = (ev->control & TRB_ENDPOINT_MASK) >> 16;
                 kprintfv("Received input from slot %i endpoint %i",slot_id, endpoint_id);
                 
-                usb_manager->process_data(slot_id,endpoint_id, this);
+                if (completion_code == 4)
+                    usb_manager->request_data(slot_id,endpoint_id,this);
+                else 
+                    usb_manager->process_data(slot_id,endpoint_id, this);
                 break;
             }
             case TRB_TYPE_PORT_STATUS_CHANGE: {

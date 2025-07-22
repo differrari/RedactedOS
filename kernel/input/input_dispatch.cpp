@@ -90,7 +90,7 @@ bool is_new_keypress(keypress* current, keypress* previous) {
 bool sys_read_input(int pid, keypress *out){
     if (!input_driver->use_interrupts)
         input_driver->poll_inputs();
-    if (input_driver->quirk_simulate_interrupts)
+    else if (input_driver->quirk_simulate_interrupts)
         input_driver->handle_interrupt();
     process_t *process = get_proc_by_pid(pid);
     if (process->input_buffer.read_index == process->input_buffer.write_index) return false;
