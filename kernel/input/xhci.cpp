@@ -564,19 +564,24 @@ void XHCIDriver::handle_interrupt(){
     if (type == awaited_type && (awaited_addr == 0 || (awaited_addr & 0xFFFFFFFFFFFFFFFF) == addr))
         return;
     kprintfv("[xHCI] >>> Unhandled interrupt %i %x",event_ring.index,type);
-    switch (type){
-        case TRB_TYPE_TRANSFER: {
-            uint8_t slot_id = (ev->control & TRB_SLOT_MASK) >> 24;
-            uint8_t endpoint_id = (ev->control & TRB_ENDPOINT_MASK) >> 16;
-            kprintfv("Received input from slot %i endpoint %i",slot_id, endpoint_id);
-            
-            usb_manager->process_data(slot_id,endpoint_id, this);
-            break;
+    uint8_t completion_code = (ev->status >> 24) & 0xFF;
+    if (completion_code == 1){
+        switch (type){
+            case TRB_TYPE_TRANSFER: {
+                uint8_t slot_id = (ev->control & TRB_SLOT_MASK) >> 24;
+                uint8_t endpoint_id = (ev->control & TRB_ENDPOINT_MASK) >> 16;
+                kprintfv("Received input from slot %i endpoint %i",slot_id, endpoint_id);
+                
+                usb_manager->process_data(slot_id,endpoint_id, this);
+                break;
+            }
+            case TRB_TYPE_PORT_STATUS_CHANGE: {
+                kprintfv("[xHCI] Port status change. Ignored for now");
+                break;
+            }
         }
-        case TRB_TYPE_PORT_STATUS_CHANGE: {
-            kprintfv("[xHCI] Port status change. Ignored for now");
-            break;
-        }
+    } else {
+        kprintf("[xHCI error] wrong status %i on command type %x", completion_code, ((ev->control & TRB_TYPE_MASK) >> 10));
     }
     event_ring.index++;
     if (event_ring.index == MAX_TRB_AMOUNT - 1){
