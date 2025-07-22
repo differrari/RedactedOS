@@ -58,11 +58,11 @@ void login_screen(){
         int yo = screen_middle.y;
         int height = char_size * 2;
         
-        gpu_draw_string(title, (gpu_point){screen_middle.x - ((title.length/2) * char_size), yo - char_size*9}, scale, 0xFFFFFF);
-        gpu_draw_string(subtitle, (gpu_point){screen_middle.x - ((subtitle.length/2) * char_size), yo - char_size*6}, scale, 0xFFFFFF);
+        gpu_draw_string(title, (gpu_point){screen_middle.x - ((title.length/2) * char_size), yo - char_size*9}, scale, 0xFFFFFFFF);
+        gpu_draw_string(subtitle, (gpu_point){screen_middle.x - ((subtitle.length/2) * char_size), yo - char_size*6}, scale, 0xFFFFFFFF);
 
         gpu_fill_rect((gpu_rect){{xo,yo  - char_size/2}, {screen_size.width / 3, height}},BG_COLOR+0x111111);
-        gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFF);
+        gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFFFF);
         keypress kp;
         if (sys_read_input_current(&kp)){
             for (int i = 0; i < 6; i++){
