@@ -1,4 +1,4 @@
-#/!bin/sh
+#!/bin/sh
 
 echo "Running virt emulator"
 
@@ -17,10 +17,10 @@ fi
 
 OS_TYPE="$(uname)"
 
-if [[ "$OS_TYPE" == "Darwin" ]]; then
+if [ "$OS_TYPE" = "Darwin" ]; then
     NETARG="vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
-elif [[ "$OS_TYPE" == "Linux" ]]; then
+elif [ "$OS_TYPE" = "Linux" ]; then
     NETARG="user,id=net0"
     PRIVILEGE=""
 else
@@ -34,7 +34,7 @@ $PRIVILEGE qemu-system-aarch64 \
   -m 512M \
   -kernel kernel.elf \
   -device virtio-gpu-pci \
-  -display sdl \
+  -display default \
   -netdev $NETARG \
   -device virtio-net-pci,netdev=net0 \
   -serial mon:stdio \

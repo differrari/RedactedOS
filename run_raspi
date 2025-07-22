@@ -1,4 +1,4 @@
-#/!bin/sh
+#!/bin/sh
 
 echo "Running raspi emulator"
 
@@ -9,10 +9,10 @@ fi
 
 OS_TYPE="$(uname)"
 
-if [[ "$OS_TYPE" == "Darwin" ]]; then
+if [ "$OS_TYPE" = "Darwin" ]; then
     NETARG="vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
-elif [[ "$OS_TYPE" == "Linux" ]]; then
+elif [ "$OS_TYPE" = "Linux" ]; then
     NETARG="user,id=net0"
     PRIVILEGE=""
 else
@@ -23,7 +23,7 @@ fi
 $PRIVILEGE qemu-system-aarch64 \
 -M raspi4b \
 -kernel kernel.img \
--display sdl \
+-display default \
 -device sd-card,drive=sd -drive id=sd,format=raw,file=disk.img,if=none \
 -netdev $NETARG \
 -serial mon:stdio \
