@@ -353,7 +353,7 @@ bool pci_setup_msi_rp1(uint8_t irq_line, bool edge_triggered) {
 
     kprintf("Fired? %b", read32(RP1_INT_STAT_HIGH) << 32 | read32(RP1_INT_STAT_LOW));
 
-    return true;
+    return false;
 }
 
 bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_line) {
