@@ -60,11 +60,12 @@ bool XHCIDriver::check_fatal_error() {
 bool XHCIDriver::init(){
     uint64_t addr, mmio, mmio_size;
     bool use_pci = false;
+    use_interrupts = true;
     if (XHCI_BASE){
         addr = XHCI_BASE;
         mmio = addr;
         if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
-            use_interrupts = pci_setup_msi_rp1(36, true);
+            quirk_simulate_interrupts = !pci_setup_msi_rp1(36, true);
     } else if (PCI_BASE) {
         addr = find_pci_device(0x1B36, 0xD);
         use_pci = true;
@@ -94,15 +95,13 @@ bool XHCIDriver::init(){
         switch(interrupts_ok){
             case 0:
                 kprintf("[xHCI] Failed to setup interrupts");
-                use_interrupts = false;
+                quirk_simulate_interrupts = true;
                 break;
             case 1:
-                kprintf("[xHCI] Interrupts setup with MSI-X %i",INPUT_IRQ);
-                use_interrupts = true;
+                kprintfv("[xHCI] Interrupts setup with MSI-X %i",INPUT_IRQ);
                 break;
             default:
-                kprintf("[xHCI] Interrupts setup with MSI %i",INPUT_IRQ);
-                use_interrupts = true;
+                kprintfv("[xHCI] Interrupts setup with MSI %i",INPUT_IRQ);
                 break;
         }
     

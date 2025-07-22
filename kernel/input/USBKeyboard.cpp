@@ -22,13 +22,13 @@ void USBKeyboard::request_data(USBDriver *driver){
 }
 
 void USBKeyboard::process_data(USBDriver *driver){
-    if (!requesting){
+    if (!requesting)
         return;
-    }
     
     process_keypress((keypress*)buffer);
 
-    request_data(driver);
+    if (driver->use_interrupts)
+        request_data(driver);
 }
 
 void USBKeyboard::process_keypress(keypress *rkp){
@@ -46,4 +46,6 @@ void USBKeyboard::process_keypress(keypress *rkp){
         register_keypress(kp);
     } else
         repeated_keypresses++;
+
+    requesting = false;
 }
