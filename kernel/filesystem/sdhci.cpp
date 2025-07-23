@@ -263,9 +263,10 @@ bool SDHCI::read(void *buffer, uint32_t sector, uint32_t count){
     regs->blksize_count = (count << 16) | 512;
     uint32_t command = multiple ? READ_MULTIPLE : READ_ONE;
     uint32_t flags = multiple ? 0b110110 : 0b010000;
+#if QEMU
+    sector *= 512;
+#endif
     for (int i = 5; i >= 0; i--){
-        if (!v2_card)
-            sector *= 512;
         if (issue_command(command, sector, flags)) break;
         if (i == 0) { kprintf("[SDHCI error] read request timeout"); return false; }
         delay(500);

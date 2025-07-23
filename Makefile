@@ -1,6 +1,7 @@
 MODE ?= virt
 LOAD_ADDR ?= 0x41000000
 XHCI_CTX_SIZE ?= 32
+QEMU ?= true
 
 OS := $(shell uname)
 
@@ -26,7 +27,7 @@ user:
 	$(MAKE) -C user
 
 kernel:
-	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
+	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU)
 
 clean:
 	$(MAKE) -C shared clean
@@ -34,10 +35,10 @@ clean:
 	$(MAKE) -C user clean
 
 raspi:
-	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 all
+	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true all
 
 virt:
-	$(MAKE) LOAD_ADDR=0x41000000 XHCI_CTX_SIZE=32 all
+	$(MAKE) LOAD_ADDR=0x41000000 XHCI_CTX_SIZE=32 QEMU=true all
 
 debug:
 	$(MAKE) $(MODE)
@@ -45,7 +46,7 @@ debug:
 
 install:
 	$(MAKE) clean
-	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 all
+	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=false all
 	cp kernel.img $(BOOTFS)/kernel8.img
 	cp kernel.img $(BOOTFS)/kernel_2712.img
 	cp config.txt $(BOOTFS)/config.txt

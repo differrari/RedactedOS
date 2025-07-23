@@ -5,6 +5,10 @@ OBJCOPY = $(ARCH)-objcopy
 
 CFLAGS = -g -O0 -std=c17 -nostdlib -ffreestanding -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -Wall -Wextra -DXHCI_CTX_SIZE=$(XHCI_CTX_SIZE) -mcpu=cortex-a72 -I. -I../shared -I../user
 
+ifeq ($(QEMU),true)
+    CFLAGS += -DQEMU
+endif
+
 LDFLAGS = -T $(shell ls *.ld) --defsym=LOAD_ADDR=$(LOAD_ADDR)
 
 C_SRC = $(shell find . -name '*.c')
