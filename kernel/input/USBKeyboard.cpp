@@ -11,9 +11,8 @@ void USBKeyboard::request_data(USBDriver *driver){
         buffer = alloc_page(packet_size, true, true, true);
     }
 
-    if (!driver->poll(slot_id, endpoint, buffer, packet_size)){
+    if (!driver->poll(slot_id, endpoint, buffer, packet_size))
         return;
-    } 
 
     if (!driver->use_interrupts){
         process_keypress((keypress*)buffer);
