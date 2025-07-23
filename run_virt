@@ -17,9 +17,12 @@ fi
 
 OS_TYPE="$(uname)"
 
+DISPLAY="default"
+
 if [ "$OS_TYPE" = "Darwin" ]; then
     NETARG="vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
+    DISPLAY="sdl"
 elif [ "$OS_TYPE" = "Linux" ]; then
     NETARG="user,id=net0"
     PRIVILEGE=""
@@ -34,7 +37,7 @@ $PRIVILEGE qemu-system-aarch64 \
   -m 512M \
   -kernel kernel.elf \
   -device virtio-gpu-pci \
-  -display default \
+  -display $DISPLAY \
   -netdev $NETARG \
   -device virtio-net-pci,netdev=net0 \
   -serial mon:stdio \

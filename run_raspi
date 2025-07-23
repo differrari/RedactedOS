@@ -9,9 +9,12 @@ fi
 
 OS_TYPE="$(uname)"
 
+DISPLAY="default"
+
 if [ "$OS_TYPE" = "Darwin" ]; then
     NETARG="vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
+    DISPLAY="sdl"
 elif [ "$OS_TYPE" = "Linux" ]; then
     NETARG="user,id=net0"
     PRIVILEGE=""
@@ -23,7 +26,7 @@ fi
 $PRIVILEGE qemu-system-aarch64 \
 -M raspi4b \
 -kernel kernel.img \
--display default \
+-display $DISPLAY \
 -device sd-card,drive=sd -drive id=sd,format=raw,file=disk.img,if=none \
 -netdev $NETARG \
 -serial mon:stdio \
