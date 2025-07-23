@@ -67,6 +67,7 @@ void kernel_main() {
         panic("Input initialization error");
 
     bool network_available = network_init();
+    init_input_process();
 
     mmu_init();
     kprintf_l("MMU Mapped");
