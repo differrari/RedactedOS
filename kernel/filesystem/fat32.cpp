@@ -65,7 +65,8 @@ bool FAT32FS::init(uint32_t partition_sector){
 
     read_FAT(mbs->reserved_sectors, mbs->sectors_per_fat, mbs->number_of_fats);
 
-    return true;}
+    return true;
+}
 
 void* FAT32FS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index){
 
@@ -162,6 +163,7 @@ void* FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, char 
 }
 
 void* FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
+    if (!mbs) return 0;
     uint32_t cluster_size = mbs->sectors_per_cluster;
     char *buffer = (char*)read_cluster(data_start_sector, cluster_size, cluster_count, root_index);
     f32file_entry *entry = 0;
@@ -256,6 +258,7 @@ void* FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char 
 }
 
 void* FAT32FS::read_file(char *path){
+    if (!mbs) return 0;
     path = advance_path(path);
 
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
@@ -282,6 +285,7 @@ void* FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, cha
 }
 
 string_list* FAT32FS::list_contents(char *path){
+    if (!mbs) return 0;
     path = advance_path(path);
 
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
