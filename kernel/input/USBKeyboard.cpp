@@ -39,7 +39,7 @@ void USBKeyboard::process_keypress(keypress *rkp){
         // kprintf_raw("Mod: %i", kp.modifier);
         for (int i = 0; i < 6; i++){
             kp.keys[i] = rkp->keys[i];
-            // kprintf_raw("Key [%i]: %i", i, kp.keys[i]);
+            // kprintf_raw("Key [%i]: %x", i, kp.keys[i]);
         }
         last_keypress = kp;
         register_keypress(kp);

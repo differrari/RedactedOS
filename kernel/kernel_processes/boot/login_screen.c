@@ -10,6 +10,7 @@
 #include "std/string.h"
 #include "syscalls/syscalls.h"
 
+//TODO: properly handle keypad
 static const char hid_keycode_to_char[256] = {
     [0x04] = 'a', [0x05] = 'b', [0x06] = 'c', [0x07] = 'd',
     [0x08] = 'e', [0x09] = 'f', [0x0A] = 'g', [0x0B] = 'h',
@@ -24,7 +25,7 @@ static const char hid_keycode_to_char[256] = {
     [0x28] = '\n', [0x2C] = ' ', [0x2D] = '-', [0x2E] = '=',
     [0x2F] = '[', [0x30] = ']', [0x31] = '\\', [0x33] = ';',
     [0x34] = '\'', [0x35] = '`', [0x36] = ',', [0x37] = '.',
-    [0x38] = '/',
+    [0x38] = '/', [0x58] = '\n',
 };
 
 bool keypress_contains(keypress *kp, char key, uint8_t modifier){
@@ -68,7 +69,7 @@ void login_screen(){
             for (int i = 0; i < 6; i++){
                 char key = kp.keys[i];
                 if (hid_keycode_to_char[(uint8_t)key]){
-                    if (key == KEY_ENTER){
+                    if (key == KEY_ENTER || key == KEY_KEYPAD_ENTER){
                         if (strcmp(buf,default_pwd, false) == 0){
                             free(s.data,s.mem_length);
                             free(title.data,title.mem_length);
