@@ -6,6 +6,8 @@
 #include "memory/mmu.h"
 #include "hw/hw.h"
 
+#define DWC2_INT_DATA 0b11
+
 dwc2_host_channel* DWC2Driver::get_channel(uint16_t channel){
     return (dwc2_host_channel *)(DWC2_BASE + 0x500 + (channel * 0x20));
 }
@@ -220,10 +222,12 @@ bool DWC2Driver::poll(uint8_t address, uint8_t endpoint, void *out_buf, uint16_t
         return false;
     }
 
+    bool found_input = (endpoint_channel->interrupt & DWC2_INT_DATA) == DWC2_INT_DATA;
+
     endpoint_channel->interrupt = 0xFFFFFFFF;
     endpoint_channel->cchar &= ~(1 << 31);
 
-    return true;
+    return found_input;
 }
 
 void DWC2Driver::handle_hub_routing(uint8_t hub, uint8_t port){

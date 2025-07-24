@@ -1,5 +1,4 @@
-#top mk
-#toolchain
+#top make
 ARCH       ?= aarch64-none-elf
 CC         := $(ARCH)-gcc
 LD         := $(ARCH)-ld
@@ -10,18 +9,18 @@ OBJCOPY    := $(ARCH)-objcopy
 CFLAGS_BASE  ?= -g -O0 -std=c17 -nostdlib -ffreestanding \
                 -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables \
                 -Wall -Wextra -mcpu=cortex-a72
+LDFLAGS_BASE ?=
 
-LDFLAGS_BASE ?= 
-#build var
-LOAD_ADDR   ?= 0x41000000
-MODE ?= virt
+#build vars
+LOAD_ADDR      ?= 0x41000000
 XHCI_CTX_SIZE  ?= 32
-
+QEMU           ?= true
+MODE           ?= virt
 
 #export
-export ARCH CC LD AR OBJCOPY CFLAGS_BASE LDFLAGS_BASE LOAD_ADDR XHCI_CTX_SIZE
+export ARCH CC LD AR OBJCOPY CFLAGS_BASE LDFLAGS_BASE LOAD_ADDR XHCI_CTX_SIZE QEMU
 
-#config fs
+#config filesystem
 OS      := $(shell uname)
 FS_DIRS := fs/redos/user
 
@@ -41,12 +40,11 @@ all: shared user kernel
 shared:
 	$(MAKE) -C shared
 
-user:
-	$(MAKE) prepare-fs
+user: prepare-fs
 	$(MAKE) -C user
 
 kernel:
-	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
+	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU)
 
 clean:
 	$(MAKE) -C shared clean
@@ -58,10 +56,10 @@ clean:
 	rm -f kernel.img kernel.elf disk.img dump
 
 raspi:
-	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 all
+	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true all
 
 virt:
-	$(MAKE) LOAD_ADDR=0x41000000 XHCI_CTX_SIZE=32 all
+	$(MAKE) LOAD_ADDR=0x41000000 XHCI_CTX_SIZE=32 QEMU=true all
 
 run:
 	$(MAKE) $(MODE)
@@ -77,23 +75,23 @@ dump:
   
 install:
 	$(MAKE) clean
-	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 all
+	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=false all
 	cp kernel.img $(BOOTFS)/kernel8.img
 	cp kernel.img $(BOOTFS)/kernel_2712.img
-  
+	cp config.txt $(BOOTFS)/config.txt
+
 prepare-fs:
 	@echo "creating dirs"
 	@mkdir -p $(FS_DIRS)
 
 help:
 	@printf "usage:\n\
-  make all          build the os, accepts MODE parameter\n\
+  make all          build the os\n\
   make clean        remove all build artifacts\n\
   make raspi        build for raspberry\n\
   make virt         build for qemu virt board\n\
-  make run          build and run in virt mode(accepts MODE parameter)\n\
-  make debug        build and run with debugger(accepts MODE parameter)\n\
+  make run          build and run in virt mode\n\
+  make debug        build and run with debugger\n\
   make dump         disassemble kernel.elf\n\
   make install      create raspi kernel and mount it on a bootable partition\n\
-  make prepare-fs   create directories for the filesystem\n\
-\n"
+  make prepare-fs   create directories for the filesystem\n\n"

@@ -5,6 +5,7 @@
 #include "xhci.hpp"
 #include "hw/hw.h"
 #include "std/std.hpp"
+#include "kernel_processes/kprocess_loader.h"
 
 process_t* focused_proc;
 
@@ -88,8 +89,6 @@ bool is_new_keypress(keypress* current, keypress* previous) {
 }
 
 bool sys_read_input(int pid, keypress *out){
-    if (BOARD_TYPE == 2 && input_driver)
-        input_driver->poll_inputs();
     process_t *process = get_proc_by_pid(pid);
     if (process->input_buffer.read_index == process->input_buffer.write_index) return false;
 
@@ -118,6 +117,25 @@ bool input_init(){
         input_driver = new XHCIDriver();
         return input_driver->init();
     }
+}
+
+void input_process_poll(){
+    while (1){
+        input_driver->poll_inputs();
+    }
+}
+
+void input_process_fake_interrupts(){
+    while (1){
+        input_driver->handle_interrupt();
+    }
+}
+
+void init_input_process(){
+    if (!input_driver->use_interrupts)
+        create_kernel_process("input_poll", &input_process_poll);
+    if (input_driver->quirk_simulate_interrupts)
+        create_kernel_process("input_int_mock", &input_process_fake_interrupts);
 }
 
 void handle_input_interrupt(){

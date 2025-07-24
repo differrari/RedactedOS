@@ -21,7 +21,8 @@ public:
     virtual bool poll(uint8_t address, uint8_t endpoint, void *out_buf, uint16_t size) = 0;
     void poll_inputs();
     virtual void handle_interrupt() = 0;
-    bool use_interrupts;
+    bool use_interrupts = false;
+    bool quirk_simulate_interrupts = false;
     ~USBDriver() = default;
 protected:
     void *mem_page;

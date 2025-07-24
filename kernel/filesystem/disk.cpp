@@ -53,9 +53,11 @@ void disk_read(void *buffer, uint32_t sector, uint32_t count){
 }
 
 void* read_file(char *path){
+    if (!fs_driver) return 0;
     return fs_driver->read_file(path);
 }
 
 string_list* list_directory_contents(char *path){
+    if (!fs_driver) return 0;
     return fs_driver->list_contents(path);
 }

@@ -91,7 +91,7 @@ typedef struct __attribute__((packed)){
 } usb_string_descriptor;
 
 typedef enum {
-    NONE,
+    UNKNOWN,
     KEYBOARD,
     MOUSE
 } usb_device_types;

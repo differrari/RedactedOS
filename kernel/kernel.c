@@ -54,6 +54,9 @@ void kernel_main() {
     kprintf("GPU initialized");
     
     kprintf("Initializing disk...");
+
+    if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
+        pci_setup_rp1();
     
     // disk_verbose();
     if (!find_disk())
@@ -64,6 +67,7 @@ void kernel_main() {
         panic("Input initialization error");
 
     bool network_available = network_init();
+    init_input_process();
 
     mmu_init();
     kprintf_l("MMU Mapped");

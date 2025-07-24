@@ -108,6 +108,9 @@ bool USBDriver::get_configuration(uint8_t address){
 
     usb_device_types dev_type;
 
+    kprintf("[USB] set configuration %i for device %i", config->bConfigurationValue, address);
+    request_sized_descriptor(address, 0, 0, 9, 0, config->bConfigurationValue, 0, 0, 0);
+
     for (uint16_t i = 0; i < total_length;){
         usb_descriptor_header* header = (usb_descriptor_header*)&config->data[i];
         if (header->bLength == 0){
@@ -137,19 +140,22 @@ bool USBDriver::get_configuration(uint8_t address){
                 break;
             
             default:
+                dev_type = UNKNOWN;
                 break;
             }
             interface_index++;
             break;
         }
         case 0x21: { //HID
-            usb_hid_descriptor *hid = (usb_hid_descriptor *)&config->data[i];
-            for (uint8_t j = 0; j < hid->bNumDescriptors; j++){
-                if (hid->descriptors[j].bDescriptorType == 0x22){//REPORT HID
-                    report_length = hid->descriptors[j].wDescriptorLength;
-                    report_descriptor = (uint8_t*)allocate_in_page(mem_page, report_length, ALIGN_64B, true, true);
-                    request_descriptor(address, 0, 0x81, 6, 0x22, 0, interface_index-1, report_descriptor);
-                    kprintf("[USB] retrieved report descriptor of length %i at %x", report_length, (uintptr_t)report_descriptor);
+            if (dev_type != UNKNOWN){
+                usb_hid_descriptor *hid = (usb_hid_descriptor *)&config->data[i];
+                for (uint8_t j = 0; j < hid->bNumDescriptors; j++){
+                    if (hid->descriptors[j].bDescriptorType == 0x22){//REPORT HID
+                        report_length = hid->descriptors[j].wDescriptorLength;
+                        report_descriptor = (uint8_t*)allocate_in_page(mem_page, report_length, ALIGN_64B, true, true);
+                        request_descriptor(address, 0, 0x81, 6, 0x22, 0, interface_index-1, report_descriptor);
+                        kprintf("[USB] retrieved report descriptor of length %i at %x", report_length, (uintptr_t)report_descriptor);
+                    }
                 }
             }
             break;
@@ -157,7 +163,8 @@ bool USBDriver::get_configuration(uint8_t address){
         case 0x5: {//Endpoint
             usb_endpoint_descriptor *endpoint = (usb_endpoint_descriptor*)&config->data[i];
             
-            if (!configure_endpoint(address, endpoint, config->bConfigurationValue, dev_type)) return false;
+            if (dev_type != UNKNOWN)
+                configure_endpoint(address, endpoint, config->bConfigurationValue, dev_type);
 
             need_new_endpoint = true;
             break;

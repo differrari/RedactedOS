@@ -3,7 +3,8 @@
 ## Summary
 
 The REDACTED Operating System is a 64 bit operating system meant to run on ARM processors. 
-It currently runs entirely in QEMU, either in an entirely virtual machine using QEMU's `virt` board, or emulating a Raspberry Pi 4B. It currently most likely will not work on real hardware (not on the raspi 5 anyway, haven't tested on a 4B) 
+It can run entirely in QEMU, either in an entirely virtual machine using QEMU's `virt` board, or emulating a Raspberry Pi 4B.
+It also has preliminary support for the Raspberry Pi 5, and possibly 4B and 3B, though these last two are largely untested.
 Its GUI is heavily inspired by video game consoles, and the OS is entirely controllable via keyboard (with future mouse and possibly gamepad support)
 It has limited support for third party processes, currently limited to entirely self-contained programs. The `shared` library is provided for syscalls and common functions but it should be used as a static library embedded into the final executable `.elf` file.
 
@@ -53,7 +54,7 @@ In addition to the code located in the system's 3 main folders, a few other file
 - debug: attaches gdb to an instance of QEMU running REDACTED OS. The instance must be run with the `debug` argument as `./run debug` in order for gdb to attach and control its execution. It can support automatically running a command inside gdb such as adding a breakpoint by passing it as an argument as `./debug b kernel_main`
 - rundebug: a shortcut for running both the `run` and `debug` commands. It can pass arguments for the debug command, which in turn will pass them to gdb
 - createfs: creates a filesystem image for the system to read. The image does not contain kernel code and is not used to boot the system, but is still required to boot the system, and contains user processes. The script is written specifically for macOS, as it relies on the diskutil commands to create the image. There isn't a linux or windows version for it, but a filesystem image can be created manually and placed in the root directory with the name disk.img
-- Makefile: can compile and run the system. `make run` compiles the system for the virt board, passing MODE=virt/raspi specifies which board to compile for. It creates the filesystem image and executes the correct `./run` command. `make debug` compiles the system, creates the filesystem and executes the OS and gdb, through the `./rundebug` command. `make all` simply compiles and creates the filesystem image. `make clean` cleans compiled files.
+- Makefile: can compile and run the system. `make run` compiles the system for the virt board, passing MODE=virt/raspi specifies which board to compile for, default is virt. It creates the filesystem image and executes the correct `./run` command. `make debug` compiles the system, creates the filesystem and executes the OS and gdb, through the `./rundebug` command. `make all` simply compiles and creates the filesystem image. `make clean` cleans compiled files. The `make install` command performs a clean build and attempts to install onto a raspberry-pi-formatted sd card in its `bootfs` partition.
 
 ## Compiling
 
@@ -62,6 +63,7 @@ The OS currently only runs on QEMU, so QEMU needs to be installed as well. The s
 Running `make run` or `make all` followed by `./run` is the fastest way to run the system, using the default configuration (virt board for QEMU). Further explanations on these commands and their options provided in the Supporting Files section.
 Running `make run MODE=virt/raspi` can select which board to compile the code for.
 In order to run the OS, you'll need to create a folder called fs inside the project's root directory. This folder will contain user processes. It must have the following subfolders: /redos/user/, with user processes placed inside with the .elf extension. The `user` process will automatically be placed in that folder when compiling. A script called `createfs` will run automatically to create an image from the fs folder. This script currently only works on MacOS and Linux host systems, it will need to be adapted to run on Windows systems. Since my main host system is Mac, there's a chance the linux version won't be up to date if any changes need to be made.
+Running `make install` will perform a clean build for the raspberry pi and copy the resulting kernel image and the provided `config.txt` file to a partition called `bootfs`, which should be created using Raspberry Pi Imager on an SD card. It should be possible to then boot the system onto a Raspberry Pi 5, 4B or 3B, although support may be limited. It is recommended to use a UART debug probe along with the `screen` command running on the development machine to see the system's console output and debug potential issues.
 
 Github Actions should automatically compile changes made to the `main` branch using Mac, so a compiled version of the system with all the files needed to run it should be found there. This includes the fs folder, containing the filesystem, but you'll need to recompile the `disk.img` filesystem with `createfs` for any changes made to this folder to be reflected. Currently it only builds a version for the virt board.
 

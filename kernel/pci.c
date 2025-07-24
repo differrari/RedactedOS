@@ -224,7 +224,7 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
         for (uint32_t slot = 0; slot < PCI_SLOT_MAX; slot++) {
             for (uint32_t func = 0; func < PCI_FUNC_MAX; func++) {
                 uint64_t device_address = pci_make_addr(bus, slot, func, 0x00);
-                uint64_t vendor_device = read(device_address);
+                uint64_t vendor_device = read32(device_address);
                 if ((vendor_device & 0xFFFF) == vendor_id && ((vendor_device >> 16) & 0xFFFF) == device_id) {
 
                     kprintf("[PCI] Found device at bus %i, slot %i, func %i", bus, slot, func);
@@ -256,6 +256,104 @@ void pci_enable_device(uint64_t pci_addr){
 void pci_register(uint64_t mmio_addr, uint64_t mmio_size){
     for (uint64_t addr = mmio_addr; addr <= mmio_addr + mmio_size; addr += GRANULE_4KB)
         register_device_memory(addr,addr);
+}
+
+#pragma region Interrupts
+
+#define RP1_INT_PCI_MASK_CLR 0x4514
+#define RP1_INT_PCI_BAR_L 0x4044
+#define RP1_INT_PCI_BAR_H 0x4048
+#define RP1_INT_PCI_CONFIG 0x404c
+
+#define RP1_MSI_BAR_TRANSL_VIRT_L 0x402c
+#define RP1_MSI_BAR_TRANSL_VIRT_H 0x4030
+#define RP1_MSI_BAR_TRANSL_PHYS_L 0x40ac
+#define RP1_MSI_BAR_TRANSL_PHYS_H 0x40b0
+
+#define RP1_INT_BASE 0x1F00108000UL
+
+#define IRQ_NUMBER__MASK	0x3FF
+#define IRQ_EDGE_TRIG__MASK 0x400
+#define IRQ_FROM_RP1__MASK  0x800
+
+#define MSIX_CFG(irq)           (0x008 + (irq)*4)
+#define MSIX_CFG_ENABLE     (1ULL << 0)
+#define MSIX_CFG_TEST       (1ULL << 1)
+#define MSIX_CFG_IACK       (1ULL << 2)
+#define MSIX_CFG_IACK_ENABLE (1ULL << 3)
+
+#define RP1_INT_SET            (RP1_INT_BASE + 0x800)
+#define RP1_INT_CLR            (RP1_INT_BASE + 0xC00)
+#define RP1_INT_STAT_LOW		(RP1_INT_BASE + 0x108)
+#define RP1_INT_STAT_HIGH		(RP1_INT_BASE + 0x10C)
+
+bool pci_setup_rp1() {
+    uint64_t pci_addr = find_pci_device(0x1de4,1);
+    // dump_pci_config(pci_addr);
+    kprintf("RP1 %x",pci_addr);
+    uint8_t cap_ptr = read8(pci_addr + 0x34);
+    while (cap_ptr) {
+        uint8_t cap_id = read8(pci_addr + cap_ptr);
+        if (cap_id == PCI_CAPABILITY_MSIX){
+            uint16_t msg_ctrl = read16(pci_addr + cap_ptr + 0x2);
+            kprintf("Enabled? %x",(msg_ctrl >> 15) & 1);
+            msg_ctrl |= (1 << 15); // Clear MSI-X Enable bit
+            write16(pci_addr + cap_ptr + 0x2, msg_ctrl);
+            msg_ctrl = read16(pci_addr + cap_ptr + 0x2);
+            kprintf("Enabled? %x",(msg_ctrl >> 15) & 1);
+        }
+        cap_ptr = read8(pci_addr + cap_ptr + 1);
+    }
+    uint64_t bar_addr = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, 1);
+    uint64_t bar_addr2 = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, 2);
+
+    uintptr_t msi_pci_addr  = 0xFFFFFFF000UL;
+    uintptr_t msi_phys_addr = 0x1000130000UL;
+
+    //Translate pci address to phys address
+
+    write32(pci_addr + RP1_MSI_BAR_TRANSL_VIRT_L, (msi_pci_addr & 0xFFFFFFFF) | 0x1C);
+    write32(pci_addr + RP1_MSI_BAR_TRANSL_VIRT_H, (msi_pci_addr >> 32) & 0xFFFFFFFF);
+    write32(pci_addr + RP1_MSI_BAR_TRANSL_PHYS_L, (msi_phys_addr & 0xFFFFFFFF) | 1);
+    write32(pci_addr + RP1_MSI_BAR_TRANSL_PHYS_H, (msi_phys_addr >> 32) & 0xFFFFFFFF);
+
+    write32(pci_addr + RP1_INT_PCI_MASK_CLR, UINT32_MAX);//Unmask all interrupts
+    write32(pci_addr + RP1_INT_PCI_BAR_L, (msi_pci_addr & UINT32_MAX) | 1);//Set address and enable
+    write32(pci_addr + RP1_INT_PCI_BAR_H, (msi_pci_addr >> 32) & UINT32_MAX);
+    write32(pci_addr + RP1_INT_PCI_CONFIG, 0xffe03210);//ffe0 32 messages, 3210 arbitrary unique value
+
+    for (int i = 0; i < 6; i++)
+        kprintf("BAR %i = %x",i,pci_read_address_bar(pci_addr, i));
+    kprintf("INTa? %i",read8 (pci_addr + 0x3D));
+    kprintf("CMD %b",read16(pci_addr + PCI_COMMAND_REGISTER));
+
+    return true;
+
+}
+
+bool pci_setup_msi_rp1(uint8_t irq_line, bool edge_triggered) {
+
+    kprintf("Sanity 1 %i",read32(0x1F00108000));
+
+    if (edge_triggered)
+        write32(RP1_INT_CLR + MSIX_CFG(irq_line), MSIX_CFG_IACK_ENABLE);
+    else
+        write32(RP1_INT_SET + MSIX_CFG(irq_line), MSIX_CFG_IACK_ENABLE);
+
+    kprintf("Sanity 2 %i",read32(RP1_INT_SET + MSIX_CFG(irq_line)));
+    kprintf("Sanity 3 %i",read32(RP1_INT_CLR + MSIX_CFG(irq_line)));
+
+    write32(RP1_INT_SET + MSIX_CFG(irq_line), MSIX_CFG_ENABLE);
+
+    kprintf("Sanity 4 %i",read32(RP1_INT_SET + MSIX_CFG(irq_line)));
+
+    write32(RP1_INT_SET + MSIX_CFG(irq_line), MSIX_CFG_TEST);
+
+    kprintf("Sanity 5 %i",read32(RP1_INT_SET + MSIX_CFG(irq_line)));
+
+    kprintf("Fired? %b", read32(RP1_INT_STAT_HIGH) << 32 | read32(RP1_INT_STAT_LOW));
+
+    return false;
 }
 
 bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_line) {

@@ -29,6 +29,8 @@ bool input_init();
 
 void handle_input_interrupt();
 
+void init_input_process();
+
 #ifdef __cplusplus
 }
 #endif 
