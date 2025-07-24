@@ -51,7 +51,7 @@ bool FAT32FS::init(uint32_t partition_sector){
     uint16_t num_sectors = read_unaligned16(&mbs->num_sectors);
 
     cluster_count = (num_sectors == 0 ? mbs->large_num_sectors : num_sectors)/mbs->sectors_per_cluster;
-    data_start_sector = partition_first_sector + mbs->reserved_sectors + (mbs->sectors_per_fat * mbs->number_of_fats);
+    data_start_sector = mbs->reserved_sectors + (mbs->sectors_per_fat * mbs->number_of_fats);
 
     if (mbs->first_cluster_of_root_directory > cluster_count){
         kprintf("[fat32 error] root directory cluster not found");
@@ -63,7 +63,7 @@ bool FAT32FS::init(uint32_t partition_sector){
     kprintf("FAT32 Volume uses %i cluster size", bytes_per_sector);
     kprintf("Data start at %x",data_start_sector*512);
 
-    read_FAT(partition_first_sector + mbs->reserved_sectors, mbs->sectors_per_fat, mbs->number_of_fats);
+    read_FAT(mbs->reserved_sectors, mbs->sectors_per_fat, mbs->number_of_fats);
 
     return true;
 }
