@@ -170,5 +170,10 @@ void monitor_procs(){
 }
 
 process_t* start_process_monitor(){
+#if QEMU
     return create_kernel_process("procmonitor",monitor_procs);
+#else 
+    //TODO: disabled process monitor since shortcuts seem broken on rpi
+    return 0x0;//create_kernel_process("procmonitor",monitor_procs);
+#endif
 }

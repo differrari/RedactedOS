@@ -15,7 +15,7 @@ typedef struct {
     bool triggered;
 } shortcut;
 
-shortcut shortcuts[16];
+shortcut shortcuts[16] = {0};
 
 uint16_t shortcut_count = 0;
 
@@ -52,7 +52,8 @@ uint16_t sys_subscribe_shortcut_current(keypress kp){
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp){
     shortcuts[shortcut_count] = (shortcut){
         .kp = kp,
-        .pid = pid
+        .pid = pid,
+        .triggered = false
     };
     return shortcut_count++;
 }
@@ -98,7 +99,8 @@ bool sys_read_input(int pid, keypress *out){
 }
 
 bool sys_shortcut_triggered_current(uint16_t sid){
-    return sys_shortcut_triggered(get_current_proc_pid(), sid);
+    bool value = sys_shortcut_triggered(get_current_proc_pid(), sid);
+    return value;
 }
 
 bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){

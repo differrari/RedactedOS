@@ -13,7 +13,6 @@
 #include "filesystem/disk.h"
 #include "kernel_processes/boot/bootprocess.h"
 #include "input/input_dispatch.h"
-#include "kernel_processes/monitor/monitor_processes.h"
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
@@ -66,7 +65,7 @@ void kernel_main() {
     if (!input_init())
         panic("Input initialization error");
 
-    bool network_available = network_init();
+    // bool network_available = network_init();
     init_input_process();
 
     mmu_init();
@@ -79,7 +78,7 @@ void kernel_main() {
 
     kprintf_l("Starting processes");
 
-    if (network_available) launch_net_process();
+    // if (network_available) launch_net_process();
 
     init_bootprocess();
     
