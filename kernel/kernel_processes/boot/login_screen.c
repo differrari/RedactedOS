@@ -47,9 +47,9 @@ void login_screen(){
     const char* name = BOOTSCREEN_TEXT;
     string title = string_l(name);
     string subtitle = string_l("Login");
+    gpu_clear(BG_COLOR);
     while (1)
     {
-        gpu_clear(BG_COLOR);
         gpu_size screen_size = gpu_get_screen_size();
         gpu_point screen_middle = {screen_size.width/2,screen_size.height/2};
         string s = string_repeat('*',min(len,20));
