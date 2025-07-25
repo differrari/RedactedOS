@@ -1,4 +1,5 @@
 #pragma once
+
 #include "types.h"
 #include "data_struct/ring_buffer.hpp"
 #include "graph/graphics.h"
@@ -7,9 +8,11 @@
 class KernelConsole{
 public:
     KernelConsole();
+
     void put_char(char c);
     void put_string(const char* str);
     void put_hex(uint64_t value);
+
     void newline();
     void scroll();
     void clear();
@@ -28,7 +31,7 @@ private:
     static constexpr uint32_t char_height=16;
     static constexpr uint32_t max_rows=128;
 
-    RingBuffer<uint32_t,max_rows> row_ring;
+    RingBuffer<uint32_t, max_rows> row_ring;
     char* row_data;
     uint32_t buffer_data_size;
 };
