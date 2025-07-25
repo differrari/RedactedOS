@@ -58,8 +58,7 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     kprintf("Stride %i",screen_size.width * BPP);
     
     framebuffer_size = screen_size.width * screen_size.height * BPP;
-    framebuffer_size = (framebuffer_size);
-    framebuffer = talloc(framebuffer_size);
+    framebuffer = (uintptr_t)allocate_in_page(gpu_dev.memory_page, framebuffer_size, ALIGN_4KB, true, true);
 
     fb_set_bounds(screen_size.width,screen_size.height);
     
@@ -316,7 +315,7 @@ bool VirtioGPUDriver::transfer_to_host(gpu_rect rect) {
     virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)allocate_in_page(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, true, true);
 
     if (!virtio_send(&gpu_dev, gpu_dev.common_cfg->queue_desc, gpu_dev.common_cfg->queue_driver, gpu_dev.common_cfg->queue_device,
-        (uintptr_t)cmd, sizeof(*cmd), (uintptr_t)resp, sizeof(*resp), VIRTQ_DESC_F_WRITE)){
+        (uintptr_t)cmd, sizeof(virtio_transfer_cmd), (uintptr_t)resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE)){
         free_from_page((void*)cmd, sizeof(virtio_transfer_cmd));
         free_from_page((void*)resp, sizeof(virtio_gpu_ctrl_hdr));
         return false;
@@ -369,7 +368,7 @@ void VirtioGPUDriver::flush() {
     virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)allocate_in_page(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, true, true);
 
     if (!virtio_send(&gpu_dev, gpu_dev.common_cfg->queue_desc, gpu_dev.common_cfg->queue_driver, gpu_dev.common_cfg->queue_device,
-        (uintptr_t)cmd, sizeof(*cmd), (uintptr_t)resp, sizeof(*resp), VIRTQ_DESC_F_WRITE)){
+        (uintptr_t)cmd, sizeof(virtio_flush_cmd), (uintptr_t)resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE)){
         free_from_page((void*)cmd, sizeof(virtio_flush_cmd));
         free_from_page((void*)resp, sizeof(virtio_gpu_ctrl_hdr));
         return;
