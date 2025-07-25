@@ -15,8 +15,8 @@ CPP_SRC := $(shell find . -name '*.cpp')
 OBJ     := $(C_SRC:.c=.o) $(ASM_SRC:.S=.o) $(CPP_SRC:.cpp=.o)
 OBJL    := $(filter-out ./boot.o,$(OBJ))
 
-ELF     := kernel.elf
-TARGET  := kernel.img
+ELF     := ../kernel.elf
+TARGET  := ../kernel.img
 
 all: $(TARGET)
 
