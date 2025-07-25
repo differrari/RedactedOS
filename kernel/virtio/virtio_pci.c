@@ -3,6 +3,7 @@
 #include "memory/memory_access.h"
 #include "memory/page_allocator.h"
 #include "virtio_pci.h"
+#include "async.h"
 
 #define VIRTIO_STATUS_RESET         0x0
 #define VIRTIO_STATUS_ACKNOWLEDGE   0x1
@@ -95,7 +96,7 @@ bool virtio_init_device(virtio_device *dev) {
     struct virtio_pci_common_cfg* cfg = dev->common_cfg;
 
     cfg->device_status = 0;
-    while (cfg->device_status != 0);//TODO: OPT
+    if (!wait((uint32_t*)&cfg->device_status, 0, false, 2000)) return false;
 
     cfg->device_status |= VIRTIO_STATUS_ACKNOWLEDGE;
     cfg->device_status |= VIRTIO_STATUS_DRIVER;
