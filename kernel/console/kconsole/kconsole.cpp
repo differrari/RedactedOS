@@ -1,7 +1,7 @@
 #include "kconsole.hpp"
 #include "console/serial/uart.h"
 
-KernelConsole::KernelConsole():cursor_x(0),cursor_y(0),is_initialized(false){
+KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false){
     resize();
     clear();
 }
