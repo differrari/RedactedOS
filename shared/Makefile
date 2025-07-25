@@ -1,6 +1,7 @@
 #shared
 CFLAGS  := $(CFLAGS_BASE) -I. -I../kernel -Wno-unused-parameter
 
+CLEAN_OBJS := $(shell find . -name '*.o')
 C_SRC   := $(shell find . -name '*.c')
 CPP_SRC := $(shell find . -name '*.cpp')
 ASM_SRC := $(shell find . -name '*.S')
@@ -25,4 +26,4 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
 
 clean:
-	rm -f $(OBJ) $(TARGET)
+	rm -f $(CLEAN_OBJS) $(TARGET)
