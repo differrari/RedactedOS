@@ -1,25 +1,24 @@
-ARCH= aarch64-none-elf
-CC = $(ARCH)-gcc
-LD = $(ARCH)-ld
-OBJCOPY = $(ARCH)-objcopy
+#user
+CFLAGS  := $(CFLAGS_BASE) -I. -I../shared -Wno-unused-parameter
+LDFLAGS := -T $(shell ls *.ld)
 
-CFLAGS = -g -O0 -std=c17 -nostdlib -ffreestanding -Wall -Wextra -mcpu=cortex-a72 -I. -I../shared -Wno-unused-parameter
-LDFLAGS = -T $(shell ls *.ld)
+CLEAN_OBJS := $(shell find . -name '*.o')
+C_SRC   := $(shell find . -name '*.c')
+CPP_SRC := $(shell find . -name '*.cpp')
+OBJ     := $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o)
 
-C_SRC = $(shell find . -name '*.c')
-CPP_SRC = $(shell find . -name '*.cpp')
-OBJ = $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o)
+NAME     := $(notdir $(CURDIR))
+ELF      := $(NAME).elf
+TARGET   := $(NAME).bin
+LOCATION := ../fs/redos/user/
 
-NAME = $(shell basename "$$PWD")
-TARGET = $(NAME).bin
-ELF = $(NAME).elf
-LOCATION = ../fs/redos/user/
+.PHONY: all clean
 
-all: $(TARGET)
+all: $(LOCATION)$(TARGET)
 
-$(TARGET): $(OBJ)
+$(LOCATION)$(TARGET): $(OBJ)
 	$(LD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(OBJ) ../shared/libshared.a
-	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $(LOCATION)$(TARGET)
+	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $@
 
 %.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -28,7 +27,7 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 %.o: %.cpp
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
 
 clean:
-	rm -f $(shell find . -name '*.o') $(TARGET)
+	rm -f $(CLEAN_OBJS) $(TARGET)

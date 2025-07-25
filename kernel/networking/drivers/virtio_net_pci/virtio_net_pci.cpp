@@ -47,6 +47,8 @@ VirtioNetDriver* VirtioNetDriver::try_init(){
     return nullptr;
 }
 
+
+
 bool VirtioNetDriver::init(){
     uint64_t addr = find_pci_device(0x1AF4, 0x1000);
     if (!addr){ 
@@ -73,14 +75,12 @@ bool VirtioNetDriver::init(){
             kprintf_raw("[VIRTIO_NET] Interrupts setup with MSI %i,%i",NET_IRQ,NET_IRQ+1);
             break;
     }
-
     pci_enable_device(addr);
 
     if (!virtio_init_device(&vnp_net_dev)) {
         kprintf("[VIRTIO_NET error] Failed network initialization");
         return false;
     }
-
     kprintf("[VIRTIO_NET] Device set up at %x",(uintptr_t)vnp_net_dev.device_cfg);
 
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
@@ -108,6 +108,7 @@ bool VirtioNetDriver::init(){
 
     return true;
 }
+
 
 void VirtioNetDriver::get_mac(network_connection_ctx *context){
     virtio_net_config* net_config = (virtio_net_config*)vnp_net_dev.device_cfg;

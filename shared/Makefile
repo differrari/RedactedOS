@@ -1,21 +1,20 @@
-ARCH= aarch64-none-elf
-CC = $(ARCH)-gcc
-AR = $(ARCH)-ar
-OBJCOPY = $(ARCH)-objcopy
+#shared
+CFLAGS  := $(CFLAGS_BASE) -I. -I../kernel -Wno-unused-parameter
 
-CFLAGS = -g -O0 -std=c17 -nostdlib -nolibc -ffreestanding -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -Wall -Wextra -mcpu=cortex-a72 -I. -I../kernel -Wno-unused-parameter
+CLEAN_OBJS := $(shell find . -name '*.o')
+C_SRC   := $(shell find . -name '*.c')
+CPP_SRC := $(shell find . -name '*.cpp')
+ASM_SRC := $(shell find . -name '*.S')
+OBJ     := $(C_SRC:.c=.o) $(ASM_SRC:.S=.o) $(CPP_SRC:.cpp=.o)
 
-C_SRC = $(shell find . -name '*.c')
-CPP_SRC = $(shell find . -name '*.cpp')
-ASM_SRC = $(shell find . -name '*.S')
-OBJ = $(C_SRC:.c=.o) $(ASM_SRC:.S=.o) $(CPP_SRC:.cpp=.o)
+TARGET  := libshared.a
 
-TARGET = libshared.a
+.PHONY: all clean
 
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(AR) rcs $(TARGET) $(OBJ)
+	$(AR) rcs $@ $^
 
 %.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -27,4 +26,4 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
 
 clean:
-	rm -f $(shell find . -name '*.o') $(TARGET)
+	rm -f $(CLEAN_OBJS) $(TARGET)

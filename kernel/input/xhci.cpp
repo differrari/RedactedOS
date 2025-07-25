@@ -205,7 +205,6 @@ bool XHCIDriver::init(){
                 kprintf("[xHCI] Failed to configure device at port %i",i);
             }
         }
-
     return true;
 
 }
