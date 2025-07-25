@@ -2,7 +2,7 @@
 #include "types.h"
 
 extern "C" {
-struct CRingBuffer{
+struct CRingBuffer {
     void* buffer;
     uint64_t capacity; //TODO: define size_t as the same size of os architecture
     uint64_t element_size;
@@ -18,9 +18,12 @@ int32_t cring_is_empty(const struct CRingBuffer* rb);
 int32_t cring_is_full(const struct CRingBuffer* rb);
 void cring_clear(struct CRingBuffer* rb);
 uint64_t cring_capacity(const struct CRingBuffer* rb);
+
 }
 
-template<typename T, uint64_t Capacity> class RingBuffer{
+template<typename T, uint64_t Capacity>
+class RingBuffer{
+
 private:
     T data[Capacity];
     uint64_t head = 0;
@@ -29,15 +32,17 @@ private:
 
 public:
     int32_t push(const T& item){
-        if(full) return 0;
+        if (full) return 0;
+        
         data[head] = item;
         head = (head + 1) % Capacity;
-        full =(head == tail);
+        full = (head == tail);
         return 1;
     }
 
     int32_t pop(T& out){
-        if(is_empty()) return 0;
+        if (is_empty()) return 0;
+        
         out = data[tail];
         tail = (tail + 1)% Capacity;
         full = 0;
@@ -53,13 +58,15 @@ public:
     }
 
     void clear(){
-        head = tail= 0;
+        head = tail = 0;
         full = 0;
     }
 
     uint64_t size() const{
-        if(full) return Capacity;
-        if(head >= tail) return head - tail;
+        if (full) return Capacity;
+        
+        if (head >= tail) return head - tail;
+        
         return Capacity + head - tail;
     }
 
@@ -74,5 +81,6 @@ public:
     T& at(uint32_t index){
         return data[(tail + index)% Capacity];
     }
-    static constexpr uint64_t capacity(){return Capacity;}
+
+    static constexpr uint64_t capacity(){ return Capacity; }
 };
