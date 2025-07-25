@@ -4,6 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
 typedef struct clinkedlist_node{
     void *data;
     struct clinkedlist_node *next;
@@ -15,8 +16,10 @@ typedef struct clinkedlist{
     uint64_t length;
 }clinkedlist_t;
 
+
 extern uintptr_t malloc(uint64_t size);
 extern void free(void *ptr, uint64_t size);
+
 
 clinkedlist_t *clinkedlist_create(void);
 void clinkedlist_destroy(clinkedlist_t *list);
@@ -40,6 +43,7 @@ private:
         T data;
         Node *next;
     };
+
     Node *head = nullptr;
     Node *tail = nullptr;
     uint64_t length = 0;
@@ -51,6 +55,7 @@ private:
         n->next = nullptr;
         return n;
     }
+
     void free_node(Node *n){
         free(n, sizeof(Node));
     }
@@ -59,28 +64,29 @@ public:
     LinkedList() = default;
 
     LinkedList(const LinkedList<T> &other){
-        for(Node *it = other.head; it; it = it->next){
+        for (Node *it = other.head; it; it = it->next){
             push_front(it->data);
         }
         LinkedList<T> tmp;
-        while(!empty()){
+        while (!empty()){
             tmp.push_front(pop_front());
         }
         *this = tmp;
     }
 
     ~LinkedList(){
-        while(!empty()) pop_front();
+        while (!empty()) pop_front();
     }
 
     LinkedList<T> &operator=(const LinkedList<T> &other){
-        if(this != &other){
-            while(!empty()) pop_front();
-            for(Node *it = other.head; it; it = it->next){
+        if (this != &other){
+            while (!empty()) pop_front();
+            for (Node *it = other.head; it; it = it->next){
                 push_front(it->data);
             }
+            
             LinkedList<T> tmp;
-            while(!empty()){
+            while (!empty()){
                 tmp.push_front(pop_front());
             }
             head = tmp.head;
@@ -104,6 +110,7 @@ public:
         Node *n = head;
         head = head->next;
         if (head == nullptr) tail = nullptr;
+        
         T val = n->data;
         free_node(n);
         --length;
@@ -111,26 +118,28 @@ public:
     }
 
     Node *insert_after(Node *node, const T &value){
-        if(node == nullptr){
+        if (node == nullptr){
             push_front(value);
             return head;
         }
+        
         Node *n = alloc_node(value);
         n->next = node->next;
         node->next = n;
-        if(tail == node) tail = n;
+        if (tail == node) tail = n;
         ++length;
         return n;
     }
 
     T remove(Node *node){
-        if(node == nullptr) return T();
-        if(node == head) return pop_front();
+        if (node == nullptr) return T();
+        if (node == head) return pop_front();
+        
         Node *prev = head;
-        while(prev && prev->next != node) prev = prev->next;
-        if(prev == nullptr) return T();
+        while (prev && prev->next != node) prev = prev->next;
+        if (prev == nullptr) return T();
         prev->next = node->next;
-        if(node == tail) tail = prev;
+        if (node == tail) tail = prev;
         T val = node->data;
         free_node(node);
         --length;
@@ -138,7 +147,7 @@ public:
     }
 
     void update(Node *node, const T &value){
-        if(node) node->data = value;
+        if (node) node->data = value;
     }
 
     uint64_t size() const{return length;}
@@ -146,9 +155,10 @@ public:
     Node *begin() const{ return head; }
     Node *end() const{ return nullptr;}
     template <typename Predicate>
+
     Node *find(Predicate pred) const{
-        for(Node *it = head; it; it = it->next){
-            if(pred(it->data)) return it;
+        for (Node *it = head; it; it = it->next){
+            if (pred(it->data)) return it;
         }
         return nullptr;
     }
