@@ -6,7 +6,6 @@
 #include "std/string.h"
 #include "std/memfunctions.h"
 #include "math/math.h"
-#include "data_struct/linked_list.hpp"
 
 #define kprintfv(fmt, ...) \
     ({ \
