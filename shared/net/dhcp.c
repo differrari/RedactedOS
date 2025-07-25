@@ -1,5 +1,6 @@
 #include "dhcp.h"
 #include "std/memfunctions.h"
+#include "math/random.h"
 
 void create_dhcp_packet(uintptr_t p, dhcp_request *payload){
     network_connection_ctx source = (network_connection_ctx){
@@ -15,7 +16,7 @@ void create_dhcp_packet(uintptr_t p, dhcp_request *payload){
         .htype = 1,//Ethernet
         .hlen = 6,//Mac length
         .hops = 0,
-        .xid = 372,//Transaction ID: Static, could be random
+        .xid = rng_next32(&global_rng),//Transaction ID: RANDOM
         .secs = 0,
         .flags = __builtin_bswap16(0x8000),//Broadcast
         .ciaddr = 0,
@@ -64,3 +65,5 @@ uint16_t dhcp_parse_option(dhcp_packet *pack, uint16_t option){
 
     return 0;
 }
+
+
