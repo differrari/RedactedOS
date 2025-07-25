@@ -16,6 +16,7 @@
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
+#include "math/random.h"
 
 void kernel_main() {
 
@@ -26,7 +27,12 @@ void kernel_main() {
     enable_uart();
     kprintf_l("UART output enabled");
     // enable_talloc_verbose();
-    
+
+    uint64_t seed;
+    asm volatile("mrs %0, cntvct_el0" : "=r"(seed));
+    rng_init_global(seed);
+    kprintf("Random init. seed: %i\n", seed);
+
     set_exception_vectors();
     kprintf_l("Exception vectors set");
 
@@ -65,7 +71,7 @@ void kernel_main() {
     if (!input_init())
         panic("Input initialization error");
 
-    // bool network_available = network_init();
+    bool network_available = network_init();
     init_input_process();
 
     mmu_init();
@@ -78,7 +84,7 @@ void kernel_main() {
 
     kprintf_l("Starting processes");
 
-    // if (network_available) launch_net_process();
+    if (network_available) launch_net_process();
 
     init_bootprocess();
     
