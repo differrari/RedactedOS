@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-typedef struct CQueue{
+typedef struct CQueue {
     void*    buffer;
     uint64_t capacity;      //curremt queue size
     uint64_t max_capacity;  //0 is infinite
@@ -15,8 +15,10 @@ typedef struct CQueue{
     uint64_t length;
 }CQueue;
 
+
 extern uintptr_t malloc(uint64_t);
 extern void free(void*,uint64_t);
+
 
 void cqueue_init(CQueue* q,uint64_t max_capacity,uint64_t elem_size);
 int32_t cqueue_enqueue(CQueue* q,const void* item);
@@ -30,8 +32,9 @@ void cqueue_destroy(CQueue* q);
 }
 
 template<typename T>
-class Queue{
+class Queue {
     CQueue q_;
+
 public:
     explicit Queue(uint64_t cap=0){cqueue_init(&q_,cap,sizeof(T));}
     ~Queue(){ cqueue_destroy(&q_); }
