@@ -2,6 +2,7 @@
 CFLAGS  := $(CFLAGS_BASE) -I. -I../shared -Wno-unused-parameter
 LDFLAGS := -T $(shell ls *.ld)
 
+CLEAN_OBJS := $(shell find . -name '*.o')
 C_SRC   := $(shell find . -name '*.c')
 CPP_SRC := $(shell find . -name '*.cpp')
 OBJ     := $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o)
@@ -29,4 +30,4 @@ $(LOCATION)$(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
 
 clean:
-	rm -f $(OBJ) $(TARGET)
+	rm -f $(CLEAN_OBJS) $(TARGET)
