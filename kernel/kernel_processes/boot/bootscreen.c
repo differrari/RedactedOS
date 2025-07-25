@@ -85,7 +85,6 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
                 stop_current_process();
             }
         gpu_flush();
-        // sleep(0);
     }
 }
 
