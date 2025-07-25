@@ -140,7 +140,7 @@ public:
     }
 
     T pop_front(){
-        if !head) return T();
+        if (!head) return T();
         
         Node* n = head;
         T val = n->data;
