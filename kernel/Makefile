@@ -8,6 +8,7 @@ endif
 
 LDFLAGS := $(LDFLAGS_BASE) -T $(shell ls *.ld) --defsym=LOAD_ADDR=$(LOAD_ADDR)
 
+CLEAN_OBJS := $(shell find . -name '*.o')
 C_SRC   := $(shell find . -name '*.c')
 ASM_SRC := $(shell find . -name '*.S')
 CPP_SRC := $(shell find . -name '*.cpp')
@@ -31,4 +32,4 @@ $(TARGET): ../shared/libshared.a $(OBJ)
 	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
 
 clean:
-	rm -f $(OBJ) $(ELF) $(TARGET)
+	rm -f $(CLEAN_OBJS) $(ELF) $(TARGET)
