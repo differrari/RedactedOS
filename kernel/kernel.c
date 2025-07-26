@@ -13,7 +13,6 @@
 #include "filesystem/disk.h"
 #include "kernel_processes/boot/bootprocess.h"
 #include "input/input_dispatch.h"
-#include "kernel_processes/monitor/monitor_processes.h"
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
@@ -28,11 +27,12 @@ void kernel_main() {
     enable_uart();
     kprintf_l("UART output enabled");
     // enable_talloc_verbose();
+
     uint64_t seed;
-    asm volatile("mrs %0, cntvct_el0" : "=r"(seed)); //virtual timer counter as entropy source for rng seed
+    asm volatile("mrs %0, cntvct_el0" : "=r"(seed));
     rng_init_global(seed);
     kprintf("Random init. seed: %i\n", seed);
-    //kprintf("Next32: %i\n", rng_next32(&global_rng));
+
     set_exception_vectors();
     kprintf_l("Exception vectors set");
 
@@ -59,6 +59,9 @@ void kernel_main() {
     kprintf("GPU initialized");
     
     kprintf("Initializing disk...");
+
+    if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
+        pci_setup_rp1();
     
     // disk_verbose();
     if (!find_disk())
@@ -69,6 +72,7 @@ void kernel_main() {
         panic("Input initialization error");
 
     bool network_available = network_init();
+    init_input_process();
 
     mmu_init();
     kprintf_l("MMU Mapped");
@@ -86,7 +90,6 @@ void kernel_main() {
     
     kprintf_l("Starting scheduler");
     
-    disable_interrupt();
     start_scheduler();
 
     panic("Kernel did not activate any process");

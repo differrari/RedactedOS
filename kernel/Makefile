@@ -1,35 +1,35 @@
-ARCH= aarch64-none-elf
-CC = $(ARCH)-gcc
-LD = $(ARCH)-ld
-OBJCOPY = $(ARCH)-objcopy
+#kernel
+# toolchain (inherited from top-level)
 
-CFLAGS = -g -O0 -std=c17 -nostdlib -ffreestanding -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -Wall -Wextra -mcpu=cortex-a72 -I. -I../shared -I../user
+CFLAGS := $(CFLAGS_BASE) -I. -I../shared -I../user -DXHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
+ifeq ($(QEMU),true)
+  CFLAGS += -DQEMU
+endif
 
-LDFLAGS = -T $(shell ls *.ld) --defsym=LOAD_ADDR=$(LOAD_ADDR)
+LDFLAGS := $(LDFLAGS_BASE) -T $(shell ls *.ld) --defsym=LOAD_ADDR=$(LOAD_ADDR)
 
-C_SRC = $(shell find . -name '*.c')
-ASM_SRC = $(shell find . -name '*.S')
-CPP_SRC = $(shell find . -name '*.cpp')
-OBJ = $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o) $(ASM_SRC:.S=.o)
-OBJL = $(filter-out ./boot.o, $(OBJ))
+CLEAN_OBJS := $(shell find . -name '*.o')
+C_SRC   := $(shell find . -name '*.c')
+ASM_SRC := $(shell find . -name '*.S')
+CPP_SRC := $(shell find . -name '*.cpp')
+OBJ     := $(C_SRC:.c=.o) $(ASM_SRC:.S=.o) $(CPP_SRC:.cpp=.o)
+OBJL    := $(filter-out ./boot.o,$(OBJ))
 
-TARGET = kernel.img
-ELF = kernel.elf
+ELF     := ../kernel.elf
+TARGET  := ../kernel.img
 
 all: $(TARGET)
 
 $(TARGET): ../shared/libshared.a $(OBJ)
-	$(LD) $(LDFLAGS) -o ../$(ELF) $(OBJL) ../shared/libshared.a
-	$(OBJCOPY) -O binary ../$(ELF) ../$(TARGET)
+	$(LD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/libshared.a
+	$(OBJCOPY) -O binary $(ELF) $@
 
 %.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
-
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
-
 %.o: %.cpp
 	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
 
 clean:
-	rm -f $(shell find . -name '*.o') ../$(ELF) ../$(TARGET) $(TARGET)
+	rm -f $(CLEAN_OBJS) $(ELF) $(TARGET)

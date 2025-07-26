@@ -21,7 +21,7 @@ void* ExFATFS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint3
 
     void* buffer = (char*)allocate_in_page(fs_page, cluster_count * cluster_size * 512, ALIGN_64B, true, true);
     
-    disk_read(buffer, lba, count);
+    disk_read(buffer, partition_first_sector + lba, count);
     
     return buffer;
 }
@@ -107,19 +107,21 @@ void* ExFATFS::read_full_file(uint32_t cluster_start, uint32_t cluster_size, uin
 
 void ExFATFS::read_FAT(uint32_t location, uint32_t size, uint8_t count){
     uint32_t* fat = (uint32_t*)allocate_in_page(fs_page, size * count * 512, ALIGN_64B, true, true);
-    disk_read((void*)fat, location, size);
+    disk_read((void*)fat, partition_first_sector + location, size);
     kprintf("FAT: %x (%x)",location*512,size * count * 512);
     uint32_t total_entries = (size * count * 512) / 4;
     // for (uint32_t i = 0; i < total_entries; i++)
     //     if (fat[i] != 0) kprintf("[%i] = %x", i, fat[i]);
 }
 
-bool ExFATFS::init(){
+bool ExFATFS::init(uint32_t partition_sector){
     fs_page = alloc_page(0x1000, true, true, false);
 
     mbs = (exfat_mbs*)allocate_in_page(fs_page, 512, ALIGN_64B, true, true);
+
+    partition_first_sector = partition_sector;
     
-    disk_read((void*)mbs, 0, 1);
+    disk_read((void*)mbs, partition_first_sector, 1);
 
     if (mbs->bootsignature != 0xAA55){
         kprintf("[exfat] Wrong boot signature %x",mbs->bootsignature);

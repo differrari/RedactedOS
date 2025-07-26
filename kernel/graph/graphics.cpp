@@ -14,10 +14,12 @@ static bool _gpu_ready;
 GPUDriver *gpu_driver;
 
 void gpu_init(gpu_size preferred_screen_size){
-    if (VirtioGPUDriver *vgd = VirtioGPUDriver::try_init(preferred_screen_size)){
-        gpu_driver = vgd;
-    } else if (RamFBGPUDriver *rfb = RamFBGPUDriver::try_init(preferred_screen_size)){
-        gpu_driver = rfb;
+    if (BOARD_TYPE == 1){
+        if (VirtioGPUDriver *vgd = VirtioGPUDriver::try_init(preferred_screen_size)){
+            gpu_driver = vgd;
+        } else if (RamFBGPUDriver *rfb = RamFBGPUDriver::try_init(preferred_screen_size)){
+            gpu_driver = rfb;
+        }
     } else if (BOARD_TYPE == 2){
         gpu_driver = VideoCoreGPUDriver::try_init(preferred_screen_size);
     }

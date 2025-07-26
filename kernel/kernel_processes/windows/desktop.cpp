@@ -59,10 +59,9 @@ void Desktop::draw_desktop(){
     keypress kp;
     gpu_point old_selected = selected;
     while (sys_read_input_current(&kp)){
-        //TODO: there's a crash when moving in the desktop with no processes loaded. Memcpy
         for (int i = 0; i < 6; i++){
             char key = kp.keys[i];
-            if (key == KEY_ENTER){
+            if (key == KEY_ENTER || key == KEY_KEYPAD_ENTER){
                 activate_current();
                 return;
             }
@@ -150,7 +149,7 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
 
         single_label->set_text(namestr);
         single_label->set_bg_color(BG_COLOR+0x111111);
-        single_label->set_text_color(0xFFFFFF);
+        single_label->set_text_color(0xFFFFFFFF);
         single_label->set_font_size(3);
         single_label->rect = inner_rect;
         single_label->set_alignment(HorizontalAlignment::HorizontalCenter, VerticalAlignment::VerticalCenter);
@@ -158,7 +157,7 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
         
         extension_label->set_text(extstr);
         extension_label->set_bg_color(BG_COLOR+0x111111);
-        extension_label->set_text_color(0xFFFFFF);
+        extension_label->set_text_color(0xFFFFFFFF);
         extension_label->set_font_size(1);
         extension_label->rect = (gpu_rect){10 + ((tile_size.width + 10)*column)+ (sel ? border*2 : border), 50 + ((tile_size.height + 10) *row) + (sel ? border*2 : border), 1, 1};
         extension_label->set_alignment(HorizontalAlignment::Leading, VerticalAlignment::Top);

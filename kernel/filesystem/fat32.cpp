@@ -2,6 +2,7 @@
 #include "disk.h"
 #include "memory/page_allocator.h"
 #include "console/kio.h"
+#include "memory/memory_access.h"
 #include "std/string.h"
 #include "std/memfunctions.h"
 #include "math/math.h"
@@ -21,6 +22,51 @@ char* FAT32FS::advance_path(char *path){
     return path;
 }
 
+bool FAT32FS::init(uint32_t partition_sector){
+    fs_page = alloc_page(0x1000, true, true, false);
+
+    mbs = (fat32_mbs*)allocate_in_page(fs_page, 512, ALIGN_64B, true, true);
+
+    partition_first_sector = partition_sector;
+    
+    disk_read((void*)mbs, partition_first_sector, 1);
+
+    kprintf("[fat32] Reading fat32 mbs at %x. %x",partition_first_sector, mbs->jumpboot[0]);
+
+    if (mbs->boot_signature != 0xAA55){
+        kprintf("[fat32] Wrong boot signature %x",mbs->boot_signature);
+        uint8_t *bytes = ((uint8_t*)mbs);
+        for (int i = 0; i < 512; i++){
+            uint64_t _args[] = { bytes[i] }; \
+            kputf_args_raw("%x",_args,1);
+        }
+        kprintf("Failed to read");
+        return false;
+    }
+    if (mbs->signature != 0x29 && mbs->signature != 0x28){
+        kprintf("[fat32 error] Wrong signature %x",mbs->signature);
+        return false;
+    }
+
+    uint16_t num_sectors = read_unaligned16(&mbs->num_sectors);
+
+    cluster_count = (num_sectors == 0 ? mbs->large_num_sectors : num_sectors)/mbs->sectors_per_cluster;
+    data_start_sector = mbs->reserved_sectors + (mbs->sectors_per_fat * mbs->number_of_fats);
+
+    if (mbs->first_cluster_of_root_directory > cluster_count){
+        kprintf("[fat32 error] root directory cluster not found");
+        return false;
+    }
+
+    bytes_per_sector = read_unaligned16(&mbs->bytes_per_sector);
+
+    kprintf("FAT32 Volume uses %i cluster size", bytes_per_sector);
+    kprintf("Data start at %x",data_start_sector*512);
+    read_FAT(mbs->reserved_sectors, mbs->sectors_per_fat, mbs->number_of_fats);
+
+    return true;
+}
+
 void* FAT32FS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index){
 
     uint32_t lba = cluster_start + ((root_index - 2) * cluster_size);
@@ -33,7 +79,7 @@ void* FAT32FS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint3
         uint32_t next_index = root_index;
         for (int i = 0; i < cluster_count; i++){
             kprintfv("Cluster %i = %x (%x)",i,next_index,(cluster_start + ((next_index - 2) * cluster_size)) * 512);
-            disk_read(buffer + (i * cluster_size * 512), cluster_start + ((next_index - 2) * cluster_size), cluster_size);
+            disk_read(buffer + (i * cluster_size * 512), partition_first_sector + cluster_start + ((next_index - 2) * cluster_size), cluster_size);
             next_index = fat[next_index];
             if (next_index >= 0x0FFFFFF8) return buffer;
         }
@@ -116,6 +162,7 @@ void* FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, char 
 }
 
 void* FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
+    if (!mbs) return 0;
     uint32_t cluster_size = mbs->sectors_per_cluster;
     char *buffer = (char*)read_cluster(data_start_sector, cluster_size, cluster_count, root_index);
     f32file_entry *entry = 0;
@@ -177,60 +224,18 @@ void* FAT32FS::read_full_file(uint32_t cluster_start, uint32_t cluster_size, uin
 
 void FAT32FS::read_FAT(uint32_t location, uint32_t size, uint8_t count){
     fat = (uint32_t*)allocate_in_page(fs_page, size * count * 512, ALIGN_64B, true, true);
-    disk_read((void*)fat, location, size);
+    disk_read((void*)fat, partition_first_sector + location, size);
     total_fat_entries = (size * count * 512) / 4;
 }
 
 uint32_t FAT32FS::count_FAT(uint32_t first){
     uint32_t entry = fat[first];
     int count = 1;
-    while (entry < 0x0FFFFFF8){
+    while (entry < 0x0FFFFFF8 && entry != 0){
         entry = fat[entry];
         count++;
     }
     return count;
-}
-
-uint16_t read_unaligned16(const uint8_t *p) {
-    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
-}
-
-#define MBS_NUM_SECTORS read_unaligned16(mbs8 + 0x13)
-
-bool FAT32FS::init(){
-    fs_page = alloc_page(0x1000, true, true, false);
-
-    mbs = (fat32_mbs*)allocate_in_page(fs_page, 512, ALIGN_64B, true, true);
-    
-    disk_read((void*)mbs, 0, 1);
-
-    if (mbs->boot_signature != 0xAA55){
-        kprintf("[fat32] Wrong boot signature %x",mbs->boot_signature);
-        return false;
-    }
-    if (mbs->signature != 0x29 && mbs->signature != 0x28){
-        kprintf("[fat32 error] Wrong signature %x",mbs->signature);
-        return false;
-    }
-
-    uint8_t *mbs8 = (uint8_t*)mbs;
-
-    cluster_count = (MBS_NUM_SECTORS == 0 ? mbs->large_num_sectors : MBS_NUM_SECTORS)/mbs->sectors_per_cluster;
-    data_start_sector = mbs->reserved_sectors + (mbs->sectors_per_fat * mbs->number_of_fats);
-
-    if (mbs->first_cluster_of_root_directory > cluster_count){
-        kprintf("[fat32 error] root directory cluster not found");
-        return false;
-    }
-
-    bytes_per_sector = read_unaligned16(mbs8 + 0xB);
-
-    kprintf("FAT32 Volume uses %i cluster size", bytes_per_sector);
-    kprintf("Data start at %x",data_start_sector*512);
-
-    read_FAT(mbs->reserved_sectors, mbs->sectors_per_fat, mbs->number_of_fats);
-
-    return true;
 }
 
 void* FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek) {
@@ -252,6 +257,7 @@ void* FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char 
 }
 
 void* FAT32FS::read_file(char *path){
+    if (!mbs) return 0;
     path = advance_path(path);
 
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
@@ -278,6 +284,7 @@ void* FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, cha
 }
 
 string_list* FAT32FS::list_contents(char *path){
+    if (!mbs) return 0;
     path = advance_path(path);
 
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);

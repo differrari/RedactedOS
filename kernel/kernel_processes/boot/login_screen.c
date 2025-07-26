@@ -10,6 +10,7 @@
 #include "std/string.h"
 #include "syscalls/syscalls.h"
 
+//TODO: properly handle keypad
 static const char hid_keycode_to_char[256] = {
     [0x04] = 'a', [0x05] = 'b', [0x06] = 'c', [0x07] = 'd',
     [0x08] = 'e', [0x09] = 'f', [0x0A] = 'g', [0x0B] = 'h',
@@ -24,7 +25,7 @@ static const char hid_keycode_to_char[256] = {
     [0x28] = '\n', [0x2C] = ' ', [0x2D] = '-', [0x2E] = '=',
     [0x2F] = '[', [0x30] = ']', [0x31] = '\\', [0x33] = ';',
     [0x34] = '\'', [0x35] = '`', [0x36] = ',', [0x37] = '.',
-    [0x38] = '/',
+    [0x38] = '/', [0x58] = '\n',
 };
 
 bool keypress_contains(keypress *kp, char key, uint8_t modifier){
@@ -46,9 +47,9 @@ void login_screen(){
     const char* name = BOOTSCREEN_TEXT;
     string title = string_l(name);
     string subtitle = string_l("Login");
+    gpu_clear(BG_COLOR);
     while (1)
     {
-        gpu_clear(BG_COLOR);
         gpu_size screen_size = gpu_get_screen_size();
         gpu_point screen_middle = {screen_size.width/2,screen_size.height/2};
         string s = string_repeat('*',min(len,20));
@@ -58,17 +59,17 @@ void login_screen(){
         int yo = screen_middle.y;
         int height = char_size * 2;
         
-        gpu_draw_string(title, (gpu_point){screen_middle.x - ((title.length/2) * char_size), yo - char_size*9}, scale, 0xFFFFFF);
-        gpu_draw_string(subtitle, (gpu_point){screen_middle.x - ((subtitle.length/2) * char_size), yo - char_size*6}, scale, 0xFFFFFF);
+        gpu_draw_string(title, (gpu_point){screen_middle.x - ((title.length/2) * char_size), yo - char_size*9}, scale, 0xFFFFFFFF);
+        gpu_draw_string(subtitle, (gpu_point){screen_middle.x - ((subtitle.length/2) * char_size), yo - char_size*6}, scale, 0xFFFFFFFF);
 
         gpu_fill_rect((gpu_rect){{xo,yo  - char_size/2}, {screen_size.width / 3, height}},BG_COLOR+0x111111);
-        gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFF);
+        gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFFFF);
         keypress kp;
         if (sys_read_input_current(&kp)){
             for (int i = 0; i < 6; i++){
                 char key = kp.keys[i];
                 if (hid_keycode_to_char[(uint8_t)key]){
-                    if (key == KEY_ENTER){
+                    if (key == KEY_ENTER || key == KEY_KEYPAD_ENTER){
                         if (strcmp(buf,default_pwd, false) == 0){
                             free(s.data,s.mem_length);
                             free(title.data,title.mem_length);

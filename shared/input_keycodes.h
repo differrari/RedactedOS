@@ -9,6 +9,7 @@ extern "C" {
 #define KEY_ARROW_RIGHT  0x4F
 #define KEY_BACKSPACE 0x2A
 #define KEY_ENTER 0x28
+#define KEY_KEYPAD_ENTER 0x58
 #define KEY_ESC 0x29
 
 #define KEY_MOD_CMD 0x8

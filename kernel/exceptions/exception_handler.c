@@ -24,7 +24,7 @@ void handle_exception(const char* type) {
 
     disable_visual();//Disable visual kprintf, since it has additional memory accesses that could be faulting
 
-    kstring s = kstring_format("%s \nESR_EL1: %x\nELR_EL1: %x\nFAR_EL1: %x",(uint64_t)kstring_l(type).data,esr,elr,far);
+    kstring s = kstring_format("%s \r\nESR_EL1: %x\r\nELR_EL1: %x\r\nFAR_EL1: %x",(uint64_t)kstring_l(type).data,esr,elr,far);
     panic(s.data);
 }
 
@@ -36,18 +36,18 @@ void handle_exception_with_info(const char* type, uint64_t info) {
 
     disable_visual();//Disable visual kprintf, since it has additional memory accesses that could be faulting
 
-    kstring s = kstring_format("%s \nESR_EL1: %x\nELR_EL1: %x\nFAR_EL1: %x",(uint64_t)kstring_l(type).data,esr,elr,far);
+    kstring s = kstring_format("%s \r\nESR_EL1: %x\r\nELR_EL1: %x\r\nFAR_EL1: %x",(uint64_t)kstring_l(type).data,esr,elr,far);
     panic_with_info(s.data, info);
 }
 
-void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\n"); }
+void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\r\n"); }
 
-void error_el1_handler(){ handle_exception("ERROR EXCEPTION\n"); }
+void error_el1_handler(){ handle_exception("ERROR EXCEPTION\r\n"); }
 
 void draw_panic_screen(kstring s){
-    gpu_clear(0x0000FF);
+    gpu_clear(0xFF0000FF);
     uint32_t scale = 3;
-    gpu_draw_string(*(string *)&s, (gpu_point){20,20}, scale, 0xFFFFFF);
+    gpu_draw_string(*(string *)&s, (gpu_point){20,20}, scale, 0xFFFFFFFF);
     gpu_flush();
 }
 
@@ -58,15 +58,15 @@ void panic(const char* panic_msg) {
     panic_triggered = true;
     uart_raw_puts("*** ");
     uart_raw_puts(PANIC_TEXT);
-    uart_raw_puts(" ***\n");
+    uart_raw_puts(" ***\r\n");
     uart_raw_puts(panic_msg);
-    uart_raw_putc('\n');
-    uart_raw_puts("System Halted");
+    uart_raw_puts("\r\n");
+    uart_raw_puts("System Halted\r\n");
     if (!old_panic_triggered){
-        kstring s = kstring_format("%s\n%s\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)panic_msg);
+        kstring s = kstring_format("%s\r\n%s\r\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)panic_msg);
         draw_panic_screen(s);
     }
-    while (1);//TODO: OPT
+    while (1);
 }
 
 void panic_with_info(const char* msg, uint64_t info) {
@@ -81,16 +81,16 @@ void panic_with_info(const char* msg, uint64_t info) {
     panic_triggered = true;
     uart_raw_puts("*** ");
     uart_raw_puts(PANIC_TEXT);
-    uart_raw_puts(" ***\n");
+    uart_raw_puts(" ***\r\n");
     uart_raw_puts(msg);
-    uart_raw_putc('\n');
+    uart_raw_puts("\r\n");
     uart_raw_puts("Additional info: ");
     uart_puthex(info);
-    uart_raw_putc('\n');
-    uart_raw_puts("System Halted");
+    uart_raw_puts("\r\n");
+    uart_raw_puts("System Halted\r\n");
     if (!old_panic_triggered){
-        kstring s = kstring_format("%s\n%s\nError code: %x\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)msg,info);
+        kstring s = kstring_format("%s\r\n%s\r\nError code: %x\r\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)msg,info);
         draw_panic_screen(s);
     }
-    while (1);//TODO: OPT
+    while (1);
 }

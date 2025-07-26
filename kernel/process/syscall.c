@@ -39,8 +39,7 @@ void sync_el0_handler_c(){
     uint64_t spsr;
     asm volatile ("mrs %0, spsr_el1" : "=r"(spsr));
 
-    uint64_t currentEL;
-    asm volatile ("mov %0, x18" : "=r"(currentEL));
+    uint64_t currentEL = (spsr >> 2) & 3;
 
     uint64_t sp_el;
     asm volatile ("mov %0, x11" : "=r"(sp_el));
@@ -50,7 +49,6 @@ void sync_el0_handler_c(){
 
     uint64_t ec = (esr >> 26) & 0x3F;
     uint64_t iss = esr & 0xFFFFFF;
-
     
     uint64_t result = 0;
     if (ec == 0x15) {

@@ -1,6 +1,7 @@
 #include "draw.h"
 #include "graph/font8x8_bridge.h"
 #include "kstring.h"
+#include "std/memfunctions.h"
 
 #define line_height char_size + 2
 
@@ -61,9 +62,7 @@ void mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
 }
 
 void fb_clear(uint32_t* fb, uint32_t color) {
-    for (uint32_t i = 0; i < max_width * max_height; i++) {
-        fb[i] = color;
-    }
+    memset(fb, color, stride * max_height);
     full_redraw = true;
 }
 

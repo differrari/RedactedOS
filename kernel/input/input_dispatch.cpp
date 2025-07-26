@@ -5,6 +5,7 @@
 #include "xhci.hpp"
 #include "hw/hw.h"
 #include "std/std.hpp"
+#include "kernel_processes/kprocess_loader.h"
 
 process_t* focused_proc;
 
@@ -14,13 +15,13 @@ typedef struct {
     bool triggered;
 } shortcut;
 
-shortcut shortcuts[16];
+shortcut shortcuts[16] = {0};
 
 uint16_t shortcut_count = 0;
 
 bool secure_mode = false;
 
-USBDriver *input_driver;
+USBDriver *input_driver = 0x0;
 
 void register_keypress(keypress kp) {
     if (!secure_mode){
@@ -51,7 +52,8 @@ uint16_t sys_subscribe_shortcut_current(keypress kp){
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp){
     shortcuts[shortcut_count] = (shortcut){
         .kp = kp,
-        .pid = pid
+        .pid = pid,
+        .triggered = false
     };
     return shortcut_count++;
 }
@@ -88,8 +90,6 @@ bool is_new_keypress(keypress* current, keypress* previous) {
 }
 
 bool sys_read_input(int pid, keypress *out){
-    if (BOARD_TYPE == 2)
-        input_driver->poll_inputs();
     process_t *process = get_proc_by_pid(pid);
     if (process->input_buffer.read_index == process->input_buffer.write_index) return false;
 
@@ -99,7 +99,8 @@ bool sys_read_input(int pid, keypress *out){
 }
 
 bool sys_shortcut_triggered_current(uint16_t sid){
-    return sys_shortcut_triggered(get_current_proc_pid(), sid);
+    bool value = sys_shortcut_triggered(get_current_proc_pid(), sid);
+    return value;
 }
 
 bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
@@ -111,13 +112,32 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
 }
 
 bool input_init(){
-    if (BOARD_TYPE == 2){
+    if (BOARD_TYPE == 2 && RPI_BOARD != 5){
         input_driver = new DWC2Driver();//TODO: QEMU & 3 Only
         return input_driver->init();
     } else {
         input_driver = new XHCIDriver();
         return input_driver->init();
     }
+}
+
+void input_process_poll(){
+    while (1){
+        input_driver->poll_inputs();
+    }
+}
+
+void input_process_fake_interrupts(){
+    while (1){
+        input_driver->handle_interrupt();
+    }
+}
+
+void init_input_process(){
+    if (!input_driver->use_interrupts)
+        create_kernel_process("input_poll", &input_process_poll);
+    if (input_driver->quirk_simulate_interrupts)
+        create_kernel_process("input_int_mock", &input_process_fake_interrupts);
 }
 
 void handle_input_interrupt(){

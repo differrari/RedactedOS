@@ -17,15 +17,20 @@ void delay(uint32_t ms) {
     }
 }
 
+#define WAIT_COND (*reg & expected_value) == expected_value
+#define WAIT_CHECK (match > 0) ^ condition
+
 bool wait(uint32_t *reg, uint32_t expected_value, bool match, uint32_t timeout){
-    bool condition;
-    do {
-        delay(1);
-        timeout--;
+    bool condition = WAIT_COND;
+    while (WAIT_CHECK) {
+        if (timeout != 0){
+            timeout--;
+            delay(1);
+        }
+        condition = WAIT_COND;
         if (timeout == 0)
-            return false;
-        condition = (*reg & expected_value) == expected_value;
-    } while ((match > 0) ^ condition);
+            return WAIT_CHECK;
+    }
 
     return true;
 }

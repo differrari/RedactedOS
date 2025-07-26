@@ -6,8 +6,6 @@
 extern "C" {
 #endif
 
-#define MSI_OFFSET 50
-
 typedef struct {
     uint64_t base_addr;
     uint64_t size;
@@ -25,6 +23,9 @@ void pci_enable_verbose();
 bool pci_setup_msi(uint64_t pci_addr, uint8_t irq_vector);
 
 uint8_t pci_setup_interrupts(uint64_t pci_addr, uint8_t irq_line, uint8_t amount);
+
+bool pci_setup_rp1();
+bool pci_setup_msi_rp1(uint8_t irq_line, bool edge_triggered);
 
 typedef struct {
     uint32_t addr_offset;

@@ -68,7 +68,6 @@ void test_network(){
 
     unbind_port(8888);
 }
-
 uint32_t negotiate_dhcp(){
     kprintf("Sending DHCP request");
     network_connection_ctx *ctx = network_get_context();
@@ -130,9 +129,7 @@ uint32_t negotiate_dhcp(){
     //DNS (8 bytes) (6)
     //TODO: Make subsequent DHCP requests (renewals and requests) directed to the server
     ctx->ip = local_ip;
-
     test_network();
-
     return lease_time;
 }
 

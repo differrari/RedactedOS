@@ -13,6 +13,8 @@
 
 #define RGB_FORMAT_XRGB8888 ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
 
+#define BUS_ADDRESS(addr)   ((addr) & ~0xC0000000)
+
 VideoCoreGPUDriver* VideoCoreGPUDriver::try_init(gpu_size preferred_screen_size){
     VideoCoreGPUDriver* driver = new VideoCoreGPUDriver();
     if (driver->init(preferred_screen_size))
@@ -21,55 +23,49 @@ VideoCoreGPUDriver* VideoCoreGPUDriver::try_init(gpu_size preferred_screen_size)
     return nullptr;
 }
 
-volatile uint32_t rmbox[36] __attribute__((aligned(16))) = {
-    25 * 4,// Buf size
+volatile uint32_t rmbox[40] __attribute__((aligned(16))) = {
+    30 * 4,// Buf size
     0,// Request. Code 0
-    0x00048003, 8, 0, 640, 480,// Physical size
-    0x00048004, 8, 0, 0, 0,// Virtual size
-    0x00048005, 4, 0, 32,// Depth
-    0x00040008, 4, 0, 0,//Pitch
-    0x00048006, 4, 0, 0, //BGR
+    MBOX_VC_PHYS_SIZE_TAG, 8, 0, 0, 0,// Physical size
+    MBOX_VC_VIRT_SIZE_TAG, 8, 0, 0, 0,// Virtual size
+    MBOX_VC_DEPTH_TAG | MBOX_SET_VALUE, 4, 4, 32,// Depth
+    MBOX_VC_PITCH_TAG, 4, 0, 0,//Pitch
+    MBOX_VC_FORMAT_TAG | MBOX_SET_VALUE, 4, 4, 0, //BGR
+    MBOX_VC_FRAMEBUFFER_TAG, 8, 0, 16, 0,
     0,// End
-};//TODO: Screen resolution seems fixed at 640x480 (on QEMU at least). Setting it to anything else hangs the system
-
-volatile uint32_t fb_mbox[36] __attribute__((aligned(16))) = {
-    32, 0, 
-    0x00040001, 8, 0, 16, 0,
-    0
 };
 
 bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
     kprintf("Initializing VideoCore GPU");
-    if (mailbox_call(rmbox, 8)) {
-        uint32_t phys_w = rmbox[5];
-        uint32_t phys_h = rmbox[6];
-        uint32_t virt_w = rmbox[10];
-        uint32_t virt_h = rmbox[11];
-        uint32_t depth  = rmbox[15];
-        stride = rmbox[19];
 
-        bpp = depth/8;
-        
-        screen_size = (gpu_size){phys_w,phys_h};
-        kprintf("Size %ix%i (%ix%i) (%ix%i) | %i (%i)",phys_w,phys_h,virt_w,virt_h,screen_size.width,screen_size.height,depth, stride);
-        
-        fb_set_stride(bpp * screen_size.width);
-        fb_set_bounds(screen_size.width,screen_size.height);
-        if (!mailbox_call(fb_mbox, 8)){
-            kprintf("Error");
-            return false;
-        }
-        framebuffer = fb_mbox[5];
-        size_t fb_size = fb_mbox[6];
-        page = alloc_page(0x1000, true, true, false);
-        back_framebuffer = (uintptr_t)allocate_in_page(page, fb_size, ALIGN_16B, true, true);
-        kprintf("Framebuffer allocated to %x. BPP %i. Stride %i",framebuffer, bpp, stride/bpp);
-        //TODO: Mark the fb memory as used in the page allocator manually
-        for (size_t i = framebuffer; i < framebuffer + fb_size; i += GRANULE_4KB)
-            register_device_memory(i,i);
-        return true;
+    if (!mailbox_call(rmbox, 8)) {
+        kprintf("Failed videocore setup");
+        return false;
     }
-    return false;
+    uint32_t phys_w = rmbox[5];
+    uint32_t phys_h = rmbox[6];
+    uint32_t virt_w = rmbox[10];
+    uint32_t virt_h = rmbox[11];
+    uint32_t depth  = rmbox[15];
+    stride = rmbox[19];
+
+    bpp = depth/8;
+    
+    screen_size = (gpu_size){phys_w,phys_h};
+    kprintf("Size %ix%i (%ix%i) (%ix%i) | %i (%i)",phys_w,phys_h,virt_w,virt_h,screen_size.width,screen_size.height,depth, stride);
+    
+    fb_set_stride(stride);
+    fb_set_bounds(screen_size.width,screen_size.height);
+
+    framebuffer = rmbox[27];
+    size_t fb_size = rmbox[28];
+    page = alloc_page(0x1000, true, true, false);
+    back_framebuffer = (uintptr_t)allocate_in_page(page, fb_size, ALIGN_16B, true, true);
+    kprintf("Framebuffer allocated to %x (%i). BPP %i. Stride %i",framebuffer, fb_size, bpp, stride/bpp);
+    mark_used(framebuffer,count_pages(fb_size,PAGE_SIZE));
+    for (size_t i = framebuffer; i < framebuffer + fb_size; i += GRANULE_4KB)
+        register_device_memory(i,i);
+    return true;
 }
 
 void VideoCoreGPUDriver::flush(){

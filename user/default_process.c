@@ -15,10 +15,10 @@ void proc_func() {
             if (kp.keys[0] == KEY_ESC)
                 halt();
         }
-        clear_screen(0xFFFFFF);
-        draw_primitive_rect(&rect, 0x222233);
+        clear_screen(0xFFFFFFFF);
+        draw_primitive_rect(&rect, 0xFF222233);
         string s = string_l("Print screen test");
-        draw_primitive_string(&s,&rect.point,2, 0xFFFFFF);
+        draw_primitive_string(&s,&rect.point,2, 0xFFFFFFFF);
         free(s.data,s.mem_length);
         gpu_flush_data();
     }

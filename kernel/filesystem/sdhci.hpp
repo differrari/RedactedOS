@@ -38,5 +38,6 @@ private:
     bool switch_clock_rate(uint32_t target_rate);
     uint32_t clock_rate;
     uint32_t rca;
+    bool v2_card;
     bool verbose;
 };

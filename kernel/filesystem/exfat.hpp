@@ -77,9 +77,10 @@ class ExFATFS;
 
 typedef void* (*ef_entry_handler)(ExFATFS *instance, file_entry*, fileinfo_entry*, filename_entry*, char *seek);
 
+//TODO: Unify fs classes under parent class, including the identifier for the partition so it can be found on mbr
 class ExFATFS {
 public:
-    bool init();
+    bool init(uint32_t partition_sector);
     void* read_full_file(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint64_t file_size, uint32_t root_index);
     void* read_file(char *path);
     string_list* list_contents(char *path);
@@ -93,6 +94,7 @@ protected:
 
     exfat_mbs* mbs;
     void *fs_page;
+    uint32_t partition_first_sector;
     
     static void* read_entry_handler(ExFATFS *instance, file_entry *entry, fileinfo_entry *info, filename_entry *name, char *seek);
     static void* list_entries_handler(ExFATFS *instance, file_entry *entry, fileinfo_entry *info, filename_entry *name, char *seek);

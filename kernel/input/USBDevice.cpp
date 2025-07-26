@@ -1,6 +1,6 @@
 #include "USBDevice.hpp"
 #include "USBKeyboard.hpp"
-#include "xhci_types.h"
+#include "usb_types.h"
 #include "console/kio.h"
 
 USBDevice::USBDevice(uint32_t capacity, uint8_t address) : address(address) {
@@ -21,7 +21,7 @@ void USBDevice::process_data(uint8_t endpoint_id, USBDriver *driver){
         ep->process_data(driver);
 }
 
-void USBDevice::register_endpoint(uint8_t endpoint, xhci_device_types type, uint16_t packet_size){
+void USBDevice::register_endpoint(uint8_t endpoint, usb_device_types type, uint16_t packet_size){
     if (endpoint >= endpoints.max_size()) return;
     USBEndpoint *newendpoint;
     switch (type){

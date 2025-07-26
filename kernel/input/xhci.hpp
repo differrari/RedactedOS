@@ -1,7 +1,8 @@
 #pragma once
 
 #include "usb.hpp"
-#include "xhci_types.h"
+#include "usb_types.h"
+#include "xhci_types.hpp"
 
 typedef struct xhci_ring {
     trb* ring;
@@ -15,7 +16,7 @@ public:
     bool init() override;
     bool request_sized_descriptor(uint8_t address, uint8_t endpoint, uint8_t rType, uint8_t request, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor) override;
     uint8_t address_device(uint8_t address) override;
-    bool configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value, xhci_device_types type) override;
+    bool configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value, usb_device_types type) override;
     void handle_hub_routing(uint8_t hub, uint8_t port) override;
     bool poll(uint8_t address, uint8_t endpoint, void *out_buf, uint16_t size) override;
     bool setup_device(uint8_t address, uint16_t port) override;
@@ -31,6 +32,7 @@ private:
     void ring_doorbell(uint32_t slot, uint32_t endpoint);
     bool await_response(uint64_t command, uint32_t type);
     uint8_t get_ep_type(usb_endpoint_descriptor* descriptor);
+    uint32_t calculate_interval(uint32_t speed, uint32_t received_interval);
 
     void make_ring_link_control(trb* ring, bool cycle);
     void make_ring_link(trb* ring, bool cycle);

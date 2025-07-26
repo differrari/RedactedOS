@@ -79,7 +79,7 @@ typedef void* (*f32_entry_handler)(FAT32FS *instance, f32file_entry*, char *file
 
 class FAT32FS {
 public:
-    bool init();
+    bool init(uint32_t partition_sector);
     void* read_file(char *path);
     string_list* list_contents(char *path);
     
@@ -92,13 +92,14 @@ protected:
     void* read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index);
     char* advance_path(char *path);
 
-    fat32_mbs* mbs;
-    void *fs_page;
-    uint32_t cluster_count;
-    uint32_t data_start_sector;
-    uint32_t* fat;
-    uint32_t total_fat_entries;
-    uint16_t bytes_per_sector;
+    fat32_mbs* mbs = 0x0;
+    void *fs_page = 0x0;
+    uint32_t cluster_count = 0;
+    uint32_t data_start_sector = 0;
+    uint32_t* fat = 0x0;
+    uint32_t total_fat_entries = 0;
+    uint16_t bytes_per_sector = 0;
+    uint32_t partition_first_sector = 0;
 
     static void* read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek);
     static void* list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek);

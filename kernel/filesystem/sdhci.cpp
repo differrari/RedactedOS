@@ -105,7 +105,7 @@ bool SDHCI::switch_clock_rate(uint32_t target_rate) {
 volatile uint32_t mbox[8] __attribute__((aligned(16))) = {
     32,
     0,
-    0x00030002, 8, 0, 1, 0,//Request clock rate for 1 (EMMC)
+    MBOX_CLKRATE_TAG, 8, 0, 1, 0,//Request clock rate for 1 (EMMC)
     0
 };
 
@@ -152,7 +152,7 @@ bool SDHCI::init() {
 
     setup_clock();
 
-    kprintf("[SDHCI] Controller ready");
+    kprintf("[SDHCI] Controller ready CTL0 %x",regs->ctrl0);
 
     regs->interrupt = 0;
     regs->irpt_en = 0xFFFFFFFF;
@@ -168,15 +168,15 @@ bool SDHCI::init() {
 
     switch_clock_rate(25000000);
 
-    bool v2_card = 0;  
-    if (!issue_command(IF_COND, 0)){ 
+    v2_card = 0;  
+    if (!issue_command(IF_COND, 0x1AA)){ 
         if (!(regs->interrupt & 0x10000)){
             kprintf("[SDHCI error] IFCOND error");
             return false;
         }
         kprintfv("[SDHCI] Timeout on IFCOND. Defaulting to V1");
     } else {
-        if ((regs->resp0 & 0xFF) != 0xAA) {
+        if ((regs->resp0 & 0xFFF) != 0x1AA) {
             kprintf("[SDHCI error] IFCOND pattern mismatch");
             return false;
         }
@@ -263,9 +263,11 @@ bool SDHCI::read(void *buffer, uint32_t sector, uint32_t count){
     regs->blksize_count = (count << 16) | 512;
     uint32_t command = multiple ? READ_MULTIPLE : READ_ONE;
     uint32_t flags = multiple ? 0b110110 : 0b010000;
+#if QEMU
+    sector *= 512;
+#endif
     for (int i = 5; i >= 0; i--){
-        //TODO: Byte addressing works here, instead of block addressing. Not sure that's normal or if it's card-specific
-        if (issue_command(command, sector * 512, flags)) break;
+        if (issue_command(command, sector, flags)) break;
         if (i == 0) { kprintf("[SDHCI error] read request timeout"); return false; }
         delay(500);
     }

@@ -16,7 +16,7 @@ void create_dhcp_packet(uintptr_t p, dhcp_request *payload){
         .htype = 1,//Ethernet
         .hlen = 6,//Mac length
         .hops = 0,
-        .xid = rng_next32(&global_rng),//Transaction ID: RANDOM
+        .xid = rng_next32(&global_rng),//Transaction ID
         .secs = 0,
         .flags = __builtin_bswap16(0x8000),//Broadcast
         .ciaddr = 0,

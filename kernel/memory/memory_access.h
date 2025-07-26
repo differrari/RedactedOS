@@ -13,3 +13,15 @@ void write64(uintptr_t addr, uint64_t value);
 void write(uint64_t addr, uint64_t value);
 uint64_t read(uint64_t addr);
 void write_barrier();
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+uint16_t read_unaligned16(const uint16_t *p);
+uint32_t read_unaligned32(const uint32_t *p);
+void write_unaligned32(uint32_t *p, uint32_t value);
+
+#ifdef __cplusplus
+}
+#endif
