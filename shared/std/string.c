@@ -3,7 +3,7 @@
 #include "memory/memory_access.h"
 #include "std/memfunctions.h"
 
-static uint32_t compute_length(char *s, uint32_t max_length){
+uint32_t strlen(char *s, uint32_t max_length){
     if (s == NULL) return 0;
     
     uint32_t len = 0;
@@ -15,7 +15,7 @@ static uint32_t compute_length(char *s, uint32_t max_length){
 string string_l(char *literal){
     if (literal == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0};
     
-    uint32_t len = compute_length(literal, 0);
+    uint32_t len = strlen(literal, 0);
     char *buf = (char*)malloc(len + 1);
     if (!buf) return (string){ .data = NULL, .length = 0, .mem_length = 0 };
 
@@ -36,7 +36,7 @@ string string_tail(char *array, uint32_t max_length){
     
     if (array == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0 };
 
-    uint32_t len = compute_length(array, 0);
+    uint32_t len = strlen(array, 0);
     int offset = (int)len - (int)max_length;
     if (offset < 0) offset = 0;
     
@@ -53,7 +53,7 @@ string string_tail(char *array, uint32_t max_length){
 string string_ca_max(char *array, uint32_t max_length){
     if (array == NULL) return (string){.data = NULL, .length = 0, .mem_length= 0 };
 
-    uint32_t len = compute_length(array, max_length);
+    uint32_t len = strlen(array, max_length);
     char *buf = (char*)malloc(len + 1);
     if(!buf) return (string){ .data = NULL, .length = 0, .mem_length=0 };
 

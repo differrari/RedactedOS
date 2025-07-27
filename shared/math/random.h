@@ -30,10 +30,11 @@ uint32_t rng_between32(rng_t* rng, uint32_t min, uint32_t max);
 uint64_t rng_between64(rng_t* rng, uint64_t min, uint64_t max);
 
 //array fill
-void rng_fill8(rng_t* rng, uint8_t* dst, uint32_t count);
-void rng_fill16(rng_t* rng, uint16_t* dst, uint32_t count);
-void rng_fill32(rng_t* rng, uint32_t* dst, uint32_t count);
-void rng_fill64(rng_t* rng, uint64_t* dst, uint32_t count);
+void rng_fill8(rng_t* rng, uint8_t* dst, size_t count);
+void rng_fill16(rng_t* rng, uint16_t* dst, size_t count);
+void rng_fill32(rng_t* rng, uint32_t* dst, size_t count);
+void rng_fill64(rng_t* rng, uint64_t* dst, size_t count);
+void rng_fill_buf(rng_t* rng, void* dst, size_t count);
 
 #ifdef __cplusplus
 }

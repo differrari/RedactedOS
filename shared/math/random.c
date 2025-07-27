@@ -59,24 +59,37 @@ uint8_t rng_between8(rng_t* rng, uint8_t min, uint8_t max){
     return (uint8_t)(rng_next64(rng) % (max - min)) + min;
 }
 
-void rng_fill64(rng_t* rng, uint64_t* dst, uint32_t count){
+void rng_fill64(rng_t* rng, uint64_t* dst, size_t count){
     for (uint32_t i = 0; i < count; i++)
         dst[i] = rng_next64(rng);
 }
 
-void rng_fill32(rng_t* rng, uint32_t* dst, uint32_t count){
+void rng_fill32(rng_t* rng, uint32_t* dst, size_t count){
     for (uint32_t i = 0; i < count; i++)
         dst[i] = rng_next32(rng);
 }
 
-void rng_fill16(rng_t* rng, uint16_t* dst, uint32_t count){
+void rng_fill16(rng_t* rng, uint16_t* dst, size_t count){
     for (uint32_t i = 0; i < count; i++)
         dst[i] = rng_next16(rng);
 }
 
-void rng_fill8(rng_t* rng, uint8_t* dst, uint32_t count){
+void rng_fill8(rng_t* rng, uint8_t* dst, size_t count){
     for (uint32_t i = 0; i < count; i++)
         dst[i] = rng_next8(rng);
+}
+
+void rng_fill_buf(rng_t* rng, void* dest, size_t count) {
+    uint64_t *d64 = (uint64_t *)dest;
+
+    uint64_t blocks = count / 32;
+    rng_fill64(rng, dest, blocks);
+
+    uint64_t remaining = (count % 32) / 8;
+    for (uint64_t i = 0; i < remaining; i++) d64[i] = rng_next64(&global_rng);;
+
+    uint8_t *d8 = (uint8_t *)(d64 + remaining);
+    for (uint64_t i = 0; i < count % 8; i++) d8[i] = rng_next8(&global_rng);;
 }
 
 void rng_init_global(uint64_t seed) {

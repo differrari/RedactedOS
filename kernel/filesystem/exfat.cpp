@@ -167,7 +167,7 @@ void* ExFATFS::read_entry_handler(ExFATFS *instance, file_entry *entry, fileinfo
         : instance->read_full_file(instance->mbs->cluster_heap_offset, 1 << instance->mbs->sectors_per_cluster_shift, count, info->filesize, filecluster);
 }
 
-void* ExFATFS::read_file(char *path){
+void* ExFATFS::read_file(char *path, size_t size){
     path = advance_path(path);
 
     return walk_directory(1, mbs->first_cluster_of_root_directory, path, read_entry_handler);

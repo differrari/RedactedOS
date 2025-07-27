@@ -256,7 +256,7 @@ void* FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char 
         : instance->read_full_file(instance->data_start_sector, instance->mbs->sectors_per_cluster, count, entry->filesize, filecluster);
 }
 
-void* FAT32FS::read_file(char *path){
+void* FAT32FS::read_file(char *path, size_t size){
     if (!mbs) return 0;
     path = advance_path(path);
 

@@ -81,6 +81,8 @@ void kernel_main() {
     if (!init_boot_filesystem())
         panic("Filesystem initialization failure");
 
+    init_dev_filesystem();
+
     kprintf_l("Kernel initialization finished");
 
     kprintf_l("Starting processes");

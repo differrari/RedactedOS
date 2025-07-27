@@ -18,6 +18,7 @@ typedef struct string_list {
     char array[];
 } string_list;
 
+uint32_t strlen(char *s, uint32_t max_length);
 string string_l( char *literal);
 string string_ca_max( char *array, uint32_t max_length);
 string string_c( char c);

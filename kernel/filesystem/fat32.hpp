@@ -81,7 +81,7 @@ typedef void* (*f32_entry_handler)(FAT32FS *instance, f32file_entry*, char *file
 class FAT32FS: public FSDriver {
 public:
     bool init(uint32_t partition_sector) override;
-    void* read_file(char *path) override;
+    void* read_file(char *path, size_t size) override;
     string_list* list_contents(char *path) override;
     
 protected:

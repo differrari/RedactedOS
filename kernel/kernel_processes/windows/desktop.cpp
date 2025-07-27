@@ -121,7 +121,7 @@ void Desktop::activate_current(){
             return;
         }
         kprintf("File path %s",(uintptr_t)entries[index].path);
-        void *file = read_file(entries[index].path);
+        void *file = read_file(entries[index].path, 0);
         active_proc = load_elf_file(entries[index].name, file);
         if (!active_proc){
             kprintf("Failed to read ELF file");
