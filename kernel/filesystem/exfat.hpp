@@ -2,6 +2,7 @@
 
 #include "types.h"
 #include "std/string.h"
+#include "fsdriver.hpp"
 
 typedef struct exfat_mbs {
     uint8_t jumpboot[3];//3
@@ -78,15 +79,15 @@ class ExFATFS;
 typedef void* (*ef_entry_handler)(ExFATFS *instance, file_entry*, fileinfo_entry*, filename_entry*, char *seek);
 
 //TODO: Unify fs classes under parent class, including the identifier for the partition so it can be found on mbr
-class ExFATFS {
+class ExFATFS: FSDriver {
 public:
-    bool init(uint32_t partition_sector);
-    void* read_full_file(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint64_t file_size, uint32_t root_index);
-    void* read_file(char *path);
-    string_list* list_contents(char *path);
-
-protected:
+    bool init(uint32_t partition_sector) override;
+    void* read_file(char *path) override;
+    string_list* list_contents(char *path) override;
+    
+    protected:
     void read_FAT(uint32_t location, uint32_t size, uint8_t count);
+    void* read_full_file(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint64_t file_size, uint32_t root_index);
     void* list_directory(uint32_t cluster_count, uint32_t root_index);
     void* walk_directory(uint32_t cluster_count, uint32_t root_index, char *seek, ef_entry_handler handler);
     void* read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index);

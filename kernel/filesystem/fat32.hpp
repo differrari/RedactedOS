@@ -2,6 +2,7 @@
 
 #include "types.h"
 #include "std/string.h"
+#include "fsdriver.hpp"
 
 typedef struct fat32_mbs {
     uint8_t jumpboot[3];//3
@@ -77,11 +78,11 @@ class FAT32FS;
 
 typedef void* (*f32_entry_handler)(FAT32FS *instance, f32file_entry*, char *filename, char *seek);
 
-class FAT32FS {
+class FAT32FS: FSDriver {
 public:
-    bool init(uint32_t partition_sector);
-    void* read_file(char *path);
-    string_list* list_contents(char *path);
+    bool init(uint32_t partition_sector) override;
+    void* read_file(char *path) override;
+    string_list* list_contents(char *path) override;
     
 protected:
     void* read_full_file(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint64_t file_size, uint32_t root_index);
