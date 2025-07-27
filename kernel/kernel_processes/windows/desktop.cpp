@@ -27,12 +27,12 @@ uint16_t Desktop::find_extension(char *path){
 
 Desktop::Desktop() {
     entries = Array<LaunchEntry>(9);
-    string_list *list = list_directory_contents("/redos/user/");
+    string_list *list = list_directory_contents("/boot/redos/user/");
     if (list){
         char* reader = (char*)list->array;
         for (uint32_t i = 0; i < list->count; i++){
             char *file = reader;
-            string fullpath = string_format("/redos/user/%s",(uintptr_t)file);
+            string fullpath = string_format("/boot/redos/user/%s",(uintptr_t)file);
             string name = string_ca_max(file,find_extension(file));
             string ext = string_l(file + find_extension(file));
             if (strcmp(ext.data,".elf", true) == 0){

@@ -78,8 +78,7 @@ class ExFATFS;
 
 typedef void* (*ef_entry_handler)(ExFATFS *instance, file_entry*, fileinfo_entry*, filename_entry*, char *seek);
 
-//TODO: Unify fs classes under parent class, including the identifier for the partition so it can be found on mbr
-class ExFATFS: FSDriver {
+class ExFATFS: public FSDriver {
 public:
     bool init(uint32_t partition_sector) override;
     void* read_file(char *path) override;

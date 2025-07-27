@@ -78,7 +78,7 @@ class FAT32FS;
 
 typedef void* (*f32_entry_handler)(FAT32FS *instance, f32file_entry*, char *filename, char *seek);
 
-class FAT32FS: FSDriver {
+class FAT32FS: public FSDriver {
 public:
     bool init(uint32_t partition_sector) override;
     void* read_file(char *path) override;

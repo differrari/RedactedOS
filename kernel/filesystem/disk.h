@@ -7,9 +7,9 @@ extern "C" {
 #include "types.h"
 #include "std/string.h"
 
-bool find_disk();
+bool init_disk_device();
 void disk_verbose();
-bool disk_init();
+bool init_boot_filesystem();
 
 void disk_write(const void *buffer, uint32_t sector, uint32_t count);
 void disk_read(void *buffer, uint32_t sector, uint32_t count);

@@ -259,7 +259,7 @@ int strstart(char *a, char *b, bool case_insensitive){
         if (ca != cb) return index;
         a++; b++; index++;
     }
-    return 0;
+    return index;
 }
 
 int strindex( char *a,  char *b){

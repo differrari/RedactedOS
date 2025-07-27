@@ -64,7 +64,7 @@ void kernel_main() {
         pci_setup_rp1();
     
     // disk_verbose();
-    if (!find_disk())
+    if (!init_disk_device())
         panic("Disk initialization failure");
 
     // xhci_enable_verbose();
@@ -77,8 +77,8 @@ void kernel_main() {
     mmu_init();
     kprintf_l("MMU Mapped");
 
-    if (!disk_init())
-        panic("Disk read failure");
+    if (!init_boot_filesystem())
+        panic("Filesystem initialization failure");
 
     kprintf_l("Kernel initialization finished");
 
