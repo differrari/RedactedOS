@@ -5,7 +5,7 @@
 #include "input/input_dispatch.h"
 #include "memory/kalloc.h"
 #include "std/string.h"
-#include "filesystem/disk.h"
+#include "filesystem/filesystem.h"
 #include "process/loading/elf_file.h"
 
 #define MAX_COLS 3

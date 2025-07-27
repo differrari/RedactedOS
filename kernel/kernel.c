@@ -17,6 +17,7 @@
 #include "memory/page_allocator.h"
 #include "networking/network.h"
 #include "math/random.h"
+#include "filesystem/filesystem.h" 
 
 void kernel_main() {
 
