@@ -2,7 +2,7 @@
 
 #include "types.h"
 
-#include "allocator.hpp"
+#include "std/allocator.hpp"
 #include "syscalls/syscalls.h"
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
@@ -44,7 +44,6 @@ public:
 
     T* items;
 
-    //TODO: we could make arrays expandable as linked lists of various arrays with a fixed capacity. Essentially once you reach capacity, you allocate (and point to) another array which can be accessed sequentially
 private:
     uint32_t count;
     uint32_t capacity;

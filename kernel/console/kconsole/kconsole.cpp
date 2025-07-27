@@ -92,6 +92,7 @@ void KernelConsole::newline(){
 }
 
 void KernelConsole::scroll(){
+    //TODO: once we scroll, the ring buffer seems to not work correctly anymore
     if (!check_ready()) return;
     uint32_t row_index;
     if (row_ring.pop(row_index)){
