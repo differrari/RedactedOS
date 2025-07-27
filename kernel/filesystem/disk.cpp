@@ -18,7 +18,7 @@ typedef struct mountkvp {
     FSDriver *driver;
 } mountkvp;
 
-LinkedList<mountkvp> *mountpoints;
+LinkedList<mountkvp> *mountpoints = 0;
 
 void disk_verbose(){
     disk_enable_verbose = true;
@@ -82,17 +82,13 @@ FSDriver* get_fs(char **full_path){
 }
 
 void* read_file(char *path){
-    kprintf("Searching for file at path %s",(uintptr_t)path);
     FSDriver *selected_driver = get_fs(&path);
-    kprintf("Path %s will be handled by %x",(uintptr_t)path,(uintptr_t)selected_driver);
     if (!selected_driver) return 0;
     return selected_driver->read_file(path);
 }
 
 string_list* list_directory_contents(char *path){
-    kprintf("Searching for file at path %s",(uintptr_t)path);
     FSDriver *selected_driver = get_fs(&path);
-    kprintf("Path %s will be handled by %x",(uintptr_t)path,(uintptr_t)selected_driver);
     if (!selected_driver) return 0;
     return selected_driver->list_contents(path);
 }
