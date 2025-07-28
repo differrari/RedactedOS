@@ -4,7 +4,6 @@
 #include "memory/kalloc.h"
 #include "memory/dma.h"
 #include "fw/fw_cfg.h"
-#include "kstring.h"
 #include "exceptions/irq.h"
 #include "memory/mmu.h"
 #include "memory/memory_access.h"

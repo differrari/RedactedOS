@@ -38,7 +38,7 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
     fb_set_bounds(screen_size.width,screen_size.height);
     
     struct fw_cfg_file file;
-    fw_find_file(kstring_l("etc/ramfb"), &file);
+    fw_find_file("etc/ramfb", &file);
     
     if (file.selector == 0x0){
         kprintf("Ramfb not found");

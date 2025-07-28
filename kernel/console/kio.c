@@ -1,7 +1,5 @@
 #include "kio.h"
 #include "serial/uart.h"
-#include "kstring.h"
-#include "exceptions/irq.h"
 #include "kconsole/kconsole.h"
 #include "std/string.h"
 #include "memory/page_allocator.h"
