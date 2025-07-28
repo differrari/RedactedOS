@@ -26,7 +26,7 @@ void page_alloc_enable_verbose(){
     ({ \
         if (page_alloc_verbose){\
             uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
 
@@ -96,7 +96,7 @@ void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
         }
     }
 
-    // kprintf_raw("[page_alloc error] Could not allocate");
+    // kprintf("[page_alloc error] Could not allocate");
     return 0;
 }
 

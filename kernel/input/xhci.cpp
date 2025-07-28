@@ -27,20 +27,20 @@ uint32_t awaited_type;
     ({ \
         if (verbose){\
             uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
 
 bool XHCIDriver::check_fatal_error() {
     uint32_t sts = op->usbsts;
     if (sts & (XHCI_USBSTS_HSE | XHCI_USBSTS_CE)) {
-        kprintf_raw("[xHCI ERROR] Fatal condition: USBSTS = %x", sts);
+        kprintf("[xHCI ERROR] Fatal condition: USBSTS = %x", sts);
         return true;
     }
     return false;
 }
 
-#define CHECK_XHCI_FIELD(field) (op->field != 0 ? (kprintf_raw("[xHCI Error] wrong " #field " %x", op->field), false) : (kprintfv("[xHCI] Correct " #field " value"), true))
+#define CHECK_XHCI_FIELD(field) (op->field != 0 ? (kprintf("[xHCI Error] wrong " #field " %x", op->field), false) : (kprintfv("[xHCI] Correct " #field " value"), true))
 
 #define XHCI_EP_TYPE_INT_IN 7
 #define XHCI_EP_TYPE_INT_OUT 3
@@ -71,7 +71,7 @@ bool XHCIDriver::init(){
         use_pci = true;
     }
     if (!addr){ 
-        kprintf_raw("[PCI] xHCI device not found");
+        kprintf("[PCI] xHCI device not found");
         return false;
     }
 
@@ -222,7 +222,7 @@ bool XHCIDriver::port_reset(uint16_t port){
 
         //Read back after delay to ensure
         if (port_info->portsc.pp == 0){
-            kprintf_raw("[xHCI error] failed to power on port %i",port);
+            kprintf("[xHCI error] failed to power on port %i",port);
             return false;
         }
     }
@@ -361,7 +361,7 @@ bool XHCIDriver::issue_command(uint64_t param, uint32_t status, uint32_t control
 bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
 
     if (!issue_command(0,0,TRB_TYPE_ENABLE_SLOT << 10)){
-        kprintf_raw("[xHCI error] failed enable slot command");
+        kprintf("[xHCI error] failed enable slot command");
         return false;
     }
 
@@ -369,7 +369,7 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
     kprintfv("[xHCI] Slot id %x", address);
 
     if (address == 0){
-        kprintf_raw("[xHCI error]: Wrong slot id 0");
+        kprintf("[xHCI error]: Wrong slot id 0");
         return false;
     }
 
@@ -456,7 +456,7 @@ uint8_t XHCIDriver::address_device(uint8_t address){
     xhci_input_context* ctx = context_map[address << 8];
     kprintfv("Addressing device %i with context %x", address, (uintptr_t)ctx);
     if (!issue_command((uintptr_t)ctx, 0, (address << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
-        kprintf_raw("[xHCI error] failed addressing device at slot %x",address);
+        kprintf("[xHCI error] failed addressing device at slot %x",address);
         return 0;
     }
     xhci_device_context* context = (xhci_device_context*)dcbaap[address];
@@ -500,7 +500,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
         kprintf("[xHCI implementation warning] Endpoint type %i not supported. Ignored",ep_type);
         return true;
     }
-    kprintf_raw("[xHCI] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
+    kprintf("[xHCI] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
 
     xhci_input_context* ctx = context_map[address << 8];
     xhci_device_context* context = (xhci_device_context*)dcbaap[address];
@@ -527,7 +527,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     ctx->device_context.endpoints[ep_num-1].endpoint_f4.average_trb_length = sizeof(trb);
 
     if (!issue_command((uintptr_t)ctx, 0, (address << 24) | (TRB_TYPE_CONFIG_EP << 10))){
-        kprintf_raw("[xHCI] Failed to configure endpoint %i for address %i",ep_num,address);
+        kprintf("[xHCI] Failed to configure endpoint %i for address %i",ep_num,address);
         return false;
     }
 

@@ -15,11 +15,11 @@ process_t *create_kernel_process(const char *name, void (*func)()){
     uint64_t stack_size = 0x1000;
 
     uintptr_t stack = (uintptr_t)alloc_page(stack_size, true, false, false);
-    kprintf_raw("Stack size %x. Start %x", stack_size,stack);
+    kprintf("Stack size %x. Start %x", stack_size,stack);
     if (!stack) return 0;
 
     uintptr_t heap = (uintptr_t)alloc_page(stack_size, true, false, false);
-    kprintf_raw("Heap %x", heap);
+    kprintf("Heap %x", heap);
     if (!heap) return 0;
 
     proc->stack = (stack + stack_size);
@@ -30,7 +30,7 @@ process_t *create_kernel_process(const char *name, void (*func)()){
     proc->sp = proc->stack;
     
     proc->pc = (uintptr_t)func;
-    kprintf_raw("Kernel process %s allocated with address at %x, stack at %x, heap at %x", (uintptr_t)name, proc->pc, proc->sp, proc->heap);
+    kprintf("Kernel process %s allocated with address at %x, stack at %x, heap at %x", (uintptr_t)name, proc->pc, proc->sp, proc->heap);
     proc->spsr = 0x205;
     proc->state = READY;
 

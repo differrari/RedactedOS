@@ -13,8 +13,7 @@
 #define kprintfv(fmt, ...) \
     ({ \
         if (verbose){\
-            uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
 
@@ -66,13 +65,13 @@ bool VirtioNetDriver::init(){
     uint8_t interrupts_ok = pci_setup_interrupts(addr, NET_IRQ, 2);
     switch(interrupts_ok){
         case 0:
-            kprintf_raw("[VIRTIO_NET] Failed to setup interrupts");
+            kprintf("[VIRTIO_NET] Failed to setup interrupts");
             return false;
         case 1:
-            kprintf_raw("[VIRTIO_NET] Interrupts setup with MSI-X %i, %i",NET_IRQ,NET_IRQ+1);
+            kprintf("[VIRTIO_NET] Interrupts setup with MSI-X %i, %i",NET_IRQ,NET_IRQ+1);
             break;
         default:
-            kprintf_raw("[VIRTIO_NET] Interrupts setup with MSI %i,%i",NET_IRQ,NET_IRQ+1);
+            kprintf("[VIRTIO_NET] Interrupts setup with MSI %i,%i",NET_IRQ,NET_IRQ+1);
             break;
     }
     pci_enable_device(addr);

@@ -2,10 +2,12 @@
 #include "serial/uart.h"
 #include "kstring.h"
 #include "exceptions/irq.h"
-#include "memory/kalloc.h"
 #include "kconsole/kconsole.h"
+#include "std/string.h"
+#include "memory/page_allocator.h"
 
 static bool use_visual = true;
+void* print_buf;
 
 void puts(const char *s){
     uart_raw_puts(s);
@@ -25,28 +27,38 @@ void puthex(uint64_t value){
         kconsole_puthex(value);
 }
 
-void kprintf_args(const char *fmt, const uint64_t *args, uint32_t arg_count){
-    kprintf_args_raw(fmt, args, arg_count);
+void init_print_buf(){
+    print_buf = alloc_page(0x1000,true, false, false);
 }
 
-void kprintf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count){
-    kstring s = kstring_format_args(fmt, args, arg_count);
-    puts(s.data);
+void kprintf(const char *fmt, ...){
+    if (!print_buf) init_print_buf();
+    va_list args;
+    va_start(args, fmt);
+    char* buf = allocate_in_page(print_buf, 256, ALIGN_64B, true, false);
+    size_t len = string_format_va_buf(fmt, buf, args);
+    va_end(args);
+    puts(buf);
     putc('\r');
     putc('\n');
-    temp_free(s.data,256);
+    free_from_page((void*)buf, 256);
 }
 
-void kprintf_l(const char *fmt){
+void kprint(const char *fmt){
     puts(fmt);
     putc('\r');
     putc('\n');
 }
 
-void kputf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count){
-    kstring s = kstring_format_args(fmt, args, arg_count);
-    puts(s.data);
-    temp_free(s.data,256);
+void kputf(const char *fmt, ...){
+    if (!print_buf) init_print_buf();
+    va_list args;
+    va_start(args, fmt);
+    char* buf = allocate_in_page(print_buf, 256, ALIGN_64B, true, false);
+    size_t len = string_format_va_buf(fmt, buf, args);
+    va_end(args);
+    puts(buf);
+    free_from_page((void*)buf, 256);
 }
 
 void disable_visual(){

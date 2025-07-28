@@ -26,7 +26,7 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
     usb_device_descriptor* descriptor = (usb_device_descriptor*)allocate_in_page(mem_page, sizeof(usb_device_descriptor), ALIGN_64B, true, true);
     
     if (!request_descriptor(address, 0, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
-        kprintf_raw("[USB error] failed to get device descriptor");
+        kprintf("[USB error] failed to get device descriptor");
         return false;
     }
 
@@ -35,7 +35,7 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
     bool use_lang_desc = true;
 
     if (!request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, 0, 0, lang_desc)){
-        kprintf_raw("[USB warning] failed to get language descriptor");
+        kprintf("[USB warning] failed to get language descriptor");
         use_lang_desc = false;
     }
 
@@ -180,12 +180,12 @@ bool USBDriver::get_configuration(uint8_t address){
 
 bool USBDriver::request_descriptor(uint8_t address, uint8_t endpoint, uint8_t rType, uint8_t request, uint8_t type, uint16_t index, uint16_t wIndex, void *out_descriptor){
     if (!request_sized_descriptor(address, endpoint, rType, request, type, index, wIndex, sizeof(usb_descriptor_header), out_descriptor)){
-        kprintf_raw("[USB error] Failed to get descriptor header. Size %i", sizeof(usb_descriptor_header));
+        kprintf("[USB error] Failed to get descriptor header. Size %i", sizeof(usb_descriptor_header));
         return false;
     }
     usb_descriptor_header* descriptor = (usb_descriptor_header*)out_descriptor;
     if (descriptor->bLength == 0){
-        kprintf_raw("[USB error] wrong descriptor size %i",descriptor->bLength);
+        kprintf("[USB error] wrong descriptor size %i",descriptor->bLength);
         return false;
     }
     return request_sized_descriptor(address, endpoint, rType, request, type, index, wIndex, descriptor->bLength, out_descriptor);

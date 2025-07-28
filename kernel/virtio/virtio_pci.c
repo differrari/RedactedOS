@@ -47,8 +47,7 @@ void virtio_enable_verbose(){
 #define kprintfv(fmt, ...) \
     ({ \
         if (virtio_verbose){\
-            uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
 

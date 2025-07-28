@@ -137,7 +137,12 @@ string string_format(char *fmt, ...){
 
 string string_format_va(char *fmt, va_list args){
     char *buf = (char*)malloc(256);
-    uint32_t len = 0;
+    size_t len = string_format_va_buf(fmt, buf, args);
+    return (string){ .data = buf, .length = len, .mem_length = 256 };
+}
+
+size_t string_format_va_buf( char *fmt, char *buf, va_list args){
+    size_t len = 0;
     uint32_t arg_index = 0;
     for (uint32_t i = 0; fmt[i] && len < 255; i++){
         if (fmt[i] == '%' && fmt[i+1]){
@@ -217,7 +222,7 @@ string string_format_va(char *fmt, va_list args){
     }
 
     buf[len]=0;
-    return (string){ .data = buf, .length = len, .mem_length = 256 };
+    return len;
 }
 
 char tolower(char c){

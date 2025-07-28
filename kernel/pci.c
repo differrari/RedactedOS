@@ -34,8 +34,7 @@ void pci_enable_verbose(){
 #define kprintfv(fmt, ...) \
     ({ \
         if (pci_verbose){\
-            uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
 
@@ -400,7 +399,7 @@ bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_si
             uint16_t table_size = (msg_ctrl & 0x07FF) +1; // takes the 11 rightmost bits, its value is N-1, so add 1 to it for the full size
 
             if(line_size > table_size){
-                kprintf_raw("[PCI] MSI-X only supports %i interrupts, but you tried to add %i interrupts", table_size, line_size);
+                kprintf("[PCI] MSI-X only supports %i interrupts, but you tried to add %i interrupts", table_size, line_size);
                 return false;
             }
 

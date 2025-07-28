@@ -65,7 +65,7 @@ void sync_el0_handler_c(){
             free_from_page((void*)x0, x1);
             break;
         case 3:
-            kprintf_l((const char *)x0);
+            kprint((const char *)x0);
             break;
 
         case 5:

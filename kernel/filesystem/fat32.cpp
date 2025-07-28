@@ -11,7 +11,7 @@
     ({ \
         if (verbose){\
             uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
 
@@ -37,8 +37,7 @@ bool FAT32FS::init(uint32_t partition_sector){
         kprintf("[fat32] Wrong boot signature %x",mbs->boot_signature);
         uint8_t *bytes = ((uint8_t*)mbs);
         for (int i = 0; i < 512; i++){
-            uint64_t _args[] = { bytes[i] }; \
-            kputf_args_raw("%x",_args,1);
+            kputf("%x",bytes[i]);
         }
         kprintf("Failed to read");
         return false;

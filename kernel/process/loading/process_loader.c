@@ -28,16 +28,14 @@ void translate_enable_verbose(){
 #define kputfv(fmt, ...) \
     ({ \
         if (translate_verbose){\
-            uint64_t _args[] = { __VA_ARGS__ }; \
-            kputf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kputf((fmt), ##__VA_ARGS__); \
         }\
     })
 
 #define kprintfv(fmt, ...) \
     ({ \
         if (translate_verbose){\
-            uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
 
@@ -282,7 +280,7 @@ process_t* create_process(char *name, void *content, uint64_t content_size, uint
     proc->sp = proc->stack;
     
     proc->pc = (uintptr_t)(dest + entry);
-    kprintf_raw("User process %s allocated with address at %x, stack at %x, heap at %x",(uintptr_t)name,proc->pc, proc->sp, proc->heap);
+    kprintf("User process %s allocated with address at %x, stack at %x, heap at %x",(uintptr_t)name,proc->pc, proc->sp, proc->heap);
     proc->spsr = 0;
     proc->state = READY;
 

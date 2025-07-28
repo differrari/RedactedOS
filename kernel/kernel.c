@@ -26,13 +26,13 @@ void kernel_main() {
     //  page_alloc_enable_verbose();
     page_allocator_init();
 
-    print_hardware();
+    enable_uart();
 
     mmu_alloc();
+
     // mmu_enable_verbose();
-    enable_uart();
-    kprintf_l("UART output enabled");
-    // enable_talloc_verbose();
+    print_hardware();
+    kprint("UART output enabled");
 
     uint64_t seed;
     asm volatile("mrs %0, cntvct_el0" : "=r"(seed));
@@ -40,14 +40,13 @@ void kernel_main() {
     kprintf("Random init. seed: %i\n", seed);
 
     set_exception_vectors();
-    kprintf_l("Exception vectors set");
-
+    kprint("Exception vectors set");
    
-    kprintf_l("Initializing kernel...");
+    kprint("Initializing kernel...");
     
     init_main_process();
 
-    kprintf_l("Preparing for draw");
+    kprint("Preparing for draw");
     gpu_size screen_size = {1080,720};
     
     irq_init();
@@ -55,7 +54,7 @@ void kernel_main() {
 
     enable_interrupt();
 
-    kprintf_l("Initializing GPU");
+    kprint("Initializing GPU");
 
     gpu_init(screen_size);
     
@@ -78,22 +77,22 @@ void kernel_main() {
     init_input_process();
 
     mmu_init();
-    kprintf_l("MMU Mapped");
+    kprint("MMU Mapped");
 
     if (!init_boot_filesystem())
         panic("Filesystem initialization failure");
 
     init_dev_filesystem();
 
-    kprintf_l("Kernel initialization finished");
+    kprint("Kernel initialization finished");
 
-    kprintf_l("Starting processes");
+    kprint("Starting processes");
 
     if (network_available) launch_net_process();
 
     init_bootprocess();
     
-    kprintf_l("Starting scheduler");
+    kprint("Starting scheduler");
     
     start_scheduler();
 

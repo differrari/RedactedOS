@@ -54,9 +54,9 @@ void irq_init() {
         write32(GICC_BASE, 1); // Enable CPU Interface
         write32(GICD_BASE, 1); // Enable Distributor
 
-        kprintf_l("[GIC] GIC enabled");
+        kprint("[GIC] GIC enabled");
     } else {
-        kprintf_l("Interrupts initialized");
+        kprint("Interrupts initialized");
     }
 }
 
@@ -101,7 +101,7 @@ void irq_el1_handler() {
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         process_restore();
     } else {
-        kprintf_raw("[GIC error] Received unknown interrupt");
+        kprintf("[GIC error] Received unknown interrupt");
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         process_restore();
     }
