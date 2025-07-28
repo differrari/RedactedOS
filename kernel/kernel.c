@@ -23,6 +23,11 @@ void kernel_main() {
 
     detect_hardware();
     
+    //  page_alloc_enable_verbose();
+    page_allocator_init();
+
+    print_hardware();
+
     mmu_alloc();
     // mmu_enable_verbose();
     enable_uart();
@@ -37,10 +42,7 @@ void kernel_main() {
     set_exception_vectors();
     kprintf_l("Exception vectors set");
 
-    print_hardware();
-
-    page_allocator_init();
-    // page_alloc_enable_verbose();
+   
     kprintf_l("Initializing kernel...");
     
     init_main_process();
