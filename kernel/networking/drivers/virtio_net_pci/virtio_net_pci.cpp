@@ -85,7 +85,7 @@ bool VirtioNetDriver::init(){
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
 
     for (uint16_t i = 0; i < 128; i++){
-        void* buf = allocate_in_page(vnp_net_dev.memory_page, MAX_size, ALIGN_64B, true, true);
+        void* buf = kalloc(vnp_net_dev.memory_page, MAX_size, ALIGN_64B, true, true);
         virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_size);
     }
 
@@ -121,7 +121,7 @@ void VirtioNetDriver::get_mac(network_connection_ctx *context){
 }
 
 sizedptr VirtioNetDriver::allocate_packet(size_t size){
-    return (sizedptr){(uintptr_t)allocate_in_page(vnp_net_dev.memory_page, size + header_size, ALIGN_64B, true, true),size + header_size};
+    return (sizedptr){(uintptr_t)kalloc(vnp_net_dev.memory_page, size + header_size, ALIGN_64B, true, true),size + header_size};
 }
 
 sizedptr VirtioNetDriver::handle_receive_packet(){
@@ -168,7 +168,7 @@ void VirtioNetDriver::handle_sent_packet(){
         struct virtq_used_elem* e = &used->ring[used_ring_index];
         uint32_t desc_index = e->id;
         uint32_t len = e->len;
-        free_from_page((void*)desc[desc_index].addr, len);
+        kfree((void*)desc[desc_index].addr, len);
         return;
     }
 }

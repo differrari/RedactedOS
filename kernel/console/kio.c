@@ -28,20 +28,20 @@ void puthex(uint64_t value){
 }
 
 void init_print_buf(){
-    print_buf = alloc_page(0x1000,true, false, false);
+    print_buf = palloc(0x1000,true, false, false);
 }
 
 void kprintf(const char *fmt, ...){
     if (!print_buf) init_print_buf();
     va_list args;
     va_start(args, fmt);
-    char* buf = allocate_in_page(print_buf, 256, ALIGN_64B, true, false);
+    char* buf = kalloc(print_buf, 256, ALIGN_64B, true, false);
     size_t len = string_format_va_buf(fmt, buf, args);
     va_end(args);
     puts(buf);
     putc('\r');
     putc('\n');
-    free_from_page((void*)buf, 256);
+    kfree((void*)buf, 256);
 }
 
 void kprint(const char *fmt){
@@ -54,11 +54,11 @@ void kputf(const char *fmt, ...){
     if (!print_buf) init_print_buf();
     va_list args;
     va_start(args, fmt);
-    char* buf = allocate_in_page(print_buf, 256, ALIGN_64B, true, false);
+    char* buf = kalloc(print_buf, 256, ALIGN_64B, true, false);
     size_t len = string_format_va_buf(fmt, buf, args);
     va_end(args);
     puts(buf);
-    free_from_page((void*)buf, 256);
+    kfree((void*)buf, 256);
 }
 
 void disable_visual(){

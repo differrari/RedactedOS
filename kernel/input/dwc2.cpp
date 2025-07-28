@@ -76,7 +76,7 @@ bool DWC2Driver::init() {
     port_speed = (host->port >> 17) & 0x3;
     kprintf("Port speed %i",port_speed);
 
-    mem_page = alloc_page(0x1000, true, true, false);
+    mem_page = palloc(0x1000, true, true, false);
 
     setup_device(0,0);
 

@@ -70,8 +70,8 @@ bool vblk_find_disk(){
 }
 
 void vblk_write(const void *buffer, uint32_t sector, uint32_t count) {
-    void* cmd = allocate_in_page(blk_dev.memory_page, sizeof(struct virtio_blk_req), ALIGN_64B, true, true);
-    void* data = allocate_in_page(blk_dev.memory_page, count * 512, ALIGN_64B, true, true);
+    void* cmd = kalloc(blk_dev.memory_page, sizeof(struct virtio_blk_req), ALIGN_64B, true, true);
+    void* data = kalloc(blk_dev.memory_page, count * 512, ALIGN_64B, true, true);
 
     memcpy(data, buffer, count * 512);
 
@@ -83,13 +83,13 @@ void vblk_write(const void *buffer, uint32_t sector, uint32_t count) {
     virtio_send(&blk_dev, blk_dev.common_cfg->queue_desc, blk_dev.common_cfg->queue_driver, blk_dev.common_cfg->queue_device,
         (uintptr_t)cmd, sizeof(struct virtio_blk_req), (uintptr_t)data, count * 512, 0);
 
-    free_from_page((void *)cmd,sizeof(struct virtio_blk_req));
-    free_from_page((void *)data,count * 512);
+    kfree((void *)cmd,sizeof(struct virtio_blk_req));
+    kfree((void *)data,count * 512);
 }
 
 void vblk_read(void *buffer, uint32_t sector, uint32_t count) {
-    void* cmd = allocate_in_page(blk_dev.memory_page, sizeof(struct virtio_blk_req), ALIGN_64B, true, true);
-    void* data = allocate_in_page(blk_dev.memory_page, count * 512, ALIGN_64B, true, true);
+    void* cmd = kalloc(blk_dev.memory_page, sizeof(struct virtio_blk_req), ALIGN_64B, true, true);
+    void* data = kalloc(blk_dev.memory_page, count * 512, ALIGN_64B, true, true);
 
     struct virtio_blk_req *req = (struct virtio_blk_req *)cmd;
     req->type = VIRTIO_BLK_T_IN;
@@ -100,6 +100,6 @@ void vblk_read(void *buffer, uint32_t sector, uint32_t count) {
 
     memcpy(buffer, (void *)(uintptr_t)data, count * 512);
 
-    free_from_page((void *)cmd,sizeof(struct virtio_blk_req));
-    free_from_page((void *)data,count * 512);
+    kfree((void *)cmd,sizeof(struct virtio_blk_req));
+    kfree((void *)data,count * 512);
 }

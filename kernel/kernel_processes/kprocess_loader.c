@@ -14,11 +14,11 @@ process_t *create_kernel_process(const char *name, void (*func)()){
 
     uint64_t stack_size = 0x1000;
 
-    uintptr_t stack = (uintptr_t)alloc_page(stack_size, true, false, false);
+    uintptr_t stack = (uintptr_t)palloc(stack_size, true, false, false);
     kprintf("Stack size %x. Start %x", stack_size,stack);
     if (!stack) return 0;
 
-    uintptr_t heap = (uintptr_t)alloc_page(stack_size, true, false, false);
+    uintptr_t heap = (uintptr_t)palloc(stack_size, true, false, false);
     kprintf("Heap %x", heap);
     if (!heap) return 0;
 

@@ -19,7 +19,7 @@ void* ExFATFS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint3
 
     kprintf("Reading cluster(s) %i-%i, starting from %i (LBA %i)", root_index, root_index+cluster_count, cluster_start, lba);
 
-    void* buffer = (char*)allocate_in_page(fs_page, cluster_count * cluster_size * 512, ALIGN_64B, true, true);
+    void* buffer = (char*)kalloc(fs_page, cluster_count * cluster_size * 512, ALIGN_64B, true, true);
     
     disk_read(buffer, partition_first_sector + lba, count);
     
@@ -61,7 +61,7 @@ void* ExFATFS::list_directory(uint32_t cluster_count, uint32_t root_index) {
     file_entry *entry = 0;
     fileinfo_entry *entry1 = 0;
     filename_entry *entry2 = 0;
-    void *list_buffer = (char*)allocate_in_page(fs_page, 0x1000 * cluster_count, ALIGN_64B, true, true);
+    void *list_buffer = (char*)kalloc(fs_page, 0x1000 * cluster_count, ALIGN_64B, true, true);
     uint32_t len = 0; 
     uint32_t count = 0;
 
@@ -98,7 +98,7 @@ void* ExFATFS::read_full_file(uint32_t cluster_start, uint32_t cluster_size, uin
 
     char *buffer = (char*)read_cluster(cluster_start, cluster_size, cluster_count, root_index);
 
-    void *file = allocate_in_page(fs_page, file_size, ALIGN_64B, true, true);
+    void *file = kalloc(fs_page, file_size, ALIGN_64B, true, true);
 
     memcpy(file, (void*)buffer, file_size);
     
@@ -106,7 +106,7 @@ void* ExFATFS::read_full_file(uint32_t cluster_start, uint32_t cluster_size, uin
 }
 
 void ExFATFS::read_FAT(uint32_t location, uint32_t size, uint8_t count){
-    uint32_t* fat = (uint32_t*)allocate_in_page(fs_page, size * count * 512, ALIGN_64B, true, true);
+    uint32_t* fat = (uint32_t*)kalloc(fs_page, size * count * 512, ALIGN_64B, true, true);
     disk_read((void*)fat, partition_first_sector + location, size);
     kprintf("FAT: %x (%x)",location*512,size * count * 512);
     uint32_t total_entries = (size * count * 512) / 4;
@@ -115,9 +115,9 @@ void ExFATFS::read_FAT(uint32_t location, uint32_t size, uint8_t count){
 }
 
 bool ExFATFS::init(uint32_t partition_sector){
-    fs_page = alloc_page(0x1000, true, true, false);
+    fs_page = palloc(0x1000, true, true, false);
 
-    mbs = (exfat_mbs*)allocate_in_page(fs_page, 512, ALIGN_64B, true, true);
+    mbs = (exfat_mbs*)kalloc(fs_page, 512, ALIGN_64B, true, true);
 
     partition_first_sector = partition_sector;
     

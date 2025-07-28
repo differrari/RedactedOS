@@ -8,7 +8,7 @@ void USBKeyboard::request_data(USBDriver *driver){
     requesting = true;
 
     if (buffer == 0){
-        buffer = alloc_page(packet_size, true, true, true);
+        buffer = palloc(packet_size, true, true, true);
     }
 
     if (!driver->poll(slot_id, endpoint, buffer, packet_size))

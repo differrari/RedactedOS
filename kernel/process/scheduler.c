@@ -93,7 +93,7 @@ uint16_t get_current_proc_pid(){
 
 void reset_process(process_t *proc){
     proc->sp = 0;
-    free_page((void*)proc->stack-proc->stack_size,proc->stack_size);
+    pfree((void*)proc->stack-proc->stack_size,proc->stack_size);
     proc->pc = 0;
     proc->spsr = 0;
     for (int j = 0; j < 31; j++)
@@ -120,9 +120,9 @@ void init_main_process(){
     reset_process(proc);
     proc->id = next_proc_index++;
     proc->state = BLOCKED;
-    proc->heap = (uintptr_t)alloc_page(0x1000, true, false, false);
+    proc->heap = (uintptr_t)palloc(0x1000, true, false, false);
     proc->stack_size = 0x1000;
-    proc->stack = (uintptr_t)alloc_page(proc->stack_size,true,false,true);
+    proc->stack = (uintptr_t)palloc(proc->stack_size,true,false,true);
     ksp = proc->stack + proc->stack_size;
     proc->sp = ksp;
     name_process(proc, "kernel");

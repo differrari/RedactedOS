@@ -23,14 +23,14 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
         kprintf("[USB error] failed to address device");
         return false;
     }
-    usb_device_descriptor* descriptor = (usb_device_descriptor*)allocate_in_page(mem_page, sizeof(usb_device_descriptor), ALIGN_64B, true, true);
+    usb_device_descriptor* descriptor = (usb_device_descriptor*)kalloc(mem_page, sizeof(usb_device_descriptor), ALIGN_64B, true, true);
     
     if (!request_descriptor(address, 0, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
         kprintf("[USB error] failed to get device descriptor");
         return false;
     }
 
-    usb_string_language_descriptor* lang_desc = (usb_string_language_descriptor*)allocate_in_page(mem_page, sizeof(usb_string_language_descriptor), ALIGN_64B, true, true);
+    usb_string_language_descriptor* lang_desc = (usb_string_language_descriptor*)kalloc(mem_page, sizeof(usb_string_language_descriptor), ALIGN_64B, true, true);
 
     bool use_lang_desc = true;
 
@@ -47,21 +47,21 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
     if (use_lang_desc){
         //TODO: we want to maintain the strings so we can have USB device information, and rework it to silece the alignment warning
         uint16_t langid = lang_desc->lang_ids[0];
-        usb_string_descriptor* prod_name = (usb_string_descriptor*)allocate_in_page(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
+        usb_string_descriptor* prod_name = (usb_string_descriptor*)kalloc(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
         if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){
             char name[128];
             if (utf16tochar(prod_name->unicode_string, name, sizeof(name))) {
                 kprintf("[USB device] Product name: %s", (uint64_t)name);
             }
         }
-        usb_string_descriptor* man_name = (usb_string_descriptor*)allocate_in_page(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
+        usb_string_descriptor* man_name = (usb_string_descriptor*)kalloc(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
         if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, man_name)){
             char name[128];
             if (utf16tochar(man_name->unicode_string, name, sizeof(name))) {
                 kprintf("[USB device] Manufacturer name: %s", (uint64_t)name);
             }
         }
-        usb_string_descriptor* ser_name = (usb_string_descriptor*)allocate_in_page(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
+        usb_string_descriptor* ser_name = (usb_string_descriptor*)kalloc(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
         if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, ser_name)){
             char name[128];
             if (utf16tochar(ser_name->unicode_string, name, sizeof(name))) {
@@ -79,7 +79,7 @@ bool USBDriver::get_configuration(uint8_t address){
 
     usb_manager->register_device(address);
 
-    usb_configuration_descriptor* config = (usb_configuration_descriptor*)allocate_in_page(mem_page, sizeof(usb_configuration_descriptor), ALIGN_64B, true, true);
+    usb_configuration_descriptor* config = (usb_configuration_descriptor*)kalloc(mem_page, sizeof(usb_configuration_descriptor), ALIGN_64B, true, true);
     if (!request_sized_descriptor(address, 0, 0x80, 6, USB_CONFIGURATION_DESCRIPTOR, 0, 0, 8, config)){
         kprintf("[USB error] could not get config descriptor header");
         return false;
@@ -152,7 +152,7 @@ bool USBDriver::get_configuration(uint8_t address){
                 for (uint8_t j = 0; j < hid->bNumDescriptors; j++){
                     if (hid->descriptors[j].bDescriptorType == 0x22){//REPORT HID
                         report_length = hid->descriptors[j].wDescriptorLength;
-                        report_descriptor = (uint8_t*)allocate_in_page(mem_page, report_length, ALIGN_64B, true, true);
+                        report_descriptor = (uint8_t*)kalloc(mem_page, report_length, ALIGN_64B, true, true);
                         request_descriptor(address, 0, 0x81, 6, 0x22, 0, interface_index-1, report_descriptor);
                         kprintf("[USB] retrieved report descriptor of length %i at %x", report_length, (uintptr_t)report_descriptor);
                     }

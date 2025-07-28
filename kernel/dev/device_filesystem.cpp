@@ -4,7 +4,7 @@
 #include "memory/page_allocator.h"
 
 bool DeviceFS::init(uint32_t partition_sector){
-    fs_page = alloc_page(0x1000, true, true, false);
+    fs_page = palloc(0x1000, true, true, false);
     return true;
 }
 
@@ -22,7 +22,7 @@ void* DeviceFS::read_file(char *path, size_t size){
 }
 
 void* DeviceFS::create_buffer(size_t size){
-    return allocate_in_page(fs_page, size, ALIGN_64B, true, true);
+    return kalloc(fs_page, size, ALIGN_64B, true, true);
 }
 
 string_list* DeviceFS::list_contents(char *path){

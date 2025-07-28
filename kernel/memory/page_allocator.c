@@ -36,7 +36,7 @@ void page_allocator_init() {
     }
 }
 
-void free_page(void* ptr, uint64_t size) {
+void pfree(void* ptr, uint64_t size) {
     uint64_t addr = (uint64_t)ptr;
     addr /= PAGE_SIZE;
     uint64_t table_index = addr/64;
@@ -48,7 +48,7 @@ int count_pages(uint64_t i1,uint64_t i2){
     return (i1/i2) + (i1 % i2 > 0);
 }
 
-void* alloc_page(uint64_t size, bool kernel, bool device, bool full) {
+void* palloc(uint64_t size, bool kernel, bool device, bool full) {
     uint64_t start = count_pages(get_user_ram_start(),PAGE_SIZE);
     uint64_t end = count_pages(get_user_ram_end(),PAGE_SIZE);
     uint64_t page_count = count_pages(size,PAGE_SIZE);
@@ -121,7 +121,7 @@ void mark_used(uintptr_t address, size_t pages)
     }
 }
 
-void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kernel, bool device){
+void* kalloc(void *page, uint64_t size, uint16_t alignment, bool kernel, bool device){
     size = (size + alignment - 1) & ~(alignment - 1);
 
     // kprintfv("[in_page_alloc] Requested size: %x", size);
@@ -132,7 +132,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
         // kprintfv("[page_alloc] Allocating full page for %x",size);
         void *first_addr = 0;
         for (uint64_t i = 0; i < size; i += PAGE_SIZE){
-            void* ptr = alloc_page(PAGE_SIZE, kernel, device, true);
+            void* ptr = palloc(PAGE_SIZE, kernel, device, true);
             memset((void*)ptr, 0, PAGE_SIZE);
             if (!first_addr) first_addr = ptr;
         }
@@ -163,9 +163,9 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
 
     if (info->next_free_mem_ptr + size > (((uintptr_t)page) + PAGE_SIZE)) {
         if (!info->next)
-            info->next = alloc_page(PAGE_SIZE, kernel, device, false);
+            info->next = palloc(PAGE_SIZE, kernel, device, false);
         // kprintfv("[in_page_alloc] Page full. Moving to %x",(uintptr_t)info->next);
-        return allocate_in_page(info->next, size, alignment, kernel, device);
+        return kalloc(info->next, size, alignment, kernel, device);
     }
 
     uint64_t result = info->next_free_mem_ptr;
@@ -178,7 +178,7 @@ void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kerne
     return (void*)result;
 }
 
-void free_from_page(void* ptr, uint64_t size) {
+void kfree(void* ptr, uint64_t size) {
     // kprintfv("[page_alloc_free] Freeing block at %x size %x",(uintptr_t)ptr, size);
 
     memset((void*)ptr,0,size);
@@ -193,5 +193,5 @@ void free_from_page(void* ptr, uint64_t size) {
 }
 
 void free_sized(sizedptr ptr){
-    free_from_page((void*)ptr.ptr, ptr.size);
+    kfree((void*)ptr.ptr, ptr.size);
 }
