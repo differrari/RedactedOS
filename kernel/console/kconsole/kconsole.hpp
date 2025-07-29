@@ -11,7 +11,6 @@ public:
 
     void put_char(char c);
     void put_string(const char* str);
-    void put_hex(uint64_t value);
 
     void newline();
     void scroll();

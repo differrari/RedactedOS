@@ -19,12 +19,6 @@ void putc(const char c){
         kconsole_putc(c);
 }
 
-void puthex(uint64_t value){
-    uart_puthex(value);
-    if (use_visual)
-        kconsole_puthex(value);
-}
-
 void init_print_buf(){
     print_buf = palloc(0x1000,true, false, false);
 }

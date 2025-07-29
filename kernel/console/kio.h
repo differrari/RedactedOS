@@ -12,7 +12,6 @@ void kprint(const char *fmt);
 void kputf(const char *fmt, ...);
 void puts(const char *s);
 void putc(const char c);
-void puthex(uint64_t value);
 
 void disable_visual();
 void enable_visual();
