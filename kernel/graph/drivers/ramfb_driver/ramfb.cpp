@@ -45,8 +45,12 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
         return false;
     }
 
-    framebuffer = talloc(screen_size.width * screen_size.height * bpp);
-    back_framebuffer = talloc(screen_size.width * screen_size.height * bpp);
+    size_t fb_size = screen_size.width * screen_size.height * bpp;
+
+    mem_page = palloc(0x1000, true, true, false);
+
+    framebuffer = (uintptr_t)kalloc(mem_page, fb_size, true, true, false);
+    back_framebuffer = (uintptr_t)kalloc(mem_page, fb_size, true, true, false);
 
     ramfb_structure fb = {
         .addr = __builtin_bswap64(framebuffer),
