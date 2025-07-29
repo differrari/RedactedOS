@@ -2,9 +2,6 @@
 #include "console/kio.h"
 #include "exceptions/exception_handler.h"
 #include "memory/kalloc.h"
-#include "memory/dma.h"
-#include "fw/fw_cfg.h"
-#include "exceptions/irq.h"
 #include "memory/mmu.h"
 #include "memory/memory_access.h"
 #include "hw/hw.h"
@@ -181,8 +178,8 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
         write32(bar_addr, config_base & 0xFFFFFFFF);
         write32(bar_addr_hi, config_base >> 32);
 
-        uint32_t new_hi = read32(bar_addr_hi);
-        uint32_t new_lo = read32(bar_addr);
+        uint64_t new_hi = read32(bar_addr_hi);
+        uint64_t new_lo = read32(bar_addr);
 
         kprintfv("[PCI] Two registers %x > %x",new_hi,new_lo);
         uint64_t full = (new_hi << 32) | (new_lo & ~0xF);
@@ -302,8 +299,8 @@ bool pci_setup_rp1() {
         }
         cap_ptr = read8(pci_addr + cap_ptr + 1);
     }
-    uint64_t bar_addr = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, 1);
-    uint64_t bar_addr2 = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, 2);
+    // uint64_t bar_addr = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, 1);
+    // uint64_t bar_addr2 = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, 2);
 
     uintptr_t msi_pci_addr  = 0xFFFFFFF000UL;
     uintptr_t msi_phys_addr = 0x1000130000UL;
@@ -349,7 +346,7 @@ bool pci_setup_msi_rp1(uint8_t irq_line, bool edge_triggered) {
 
     kprintf("Sanity 5 %i",read32(RP1_INT_SET + MSIX_CFG(irq_line)));
 
-    kprintf("Fired? %b", read32(RP1_INT_STAT_HIGH) << 32 | read32(RP1_INT_STAT_LOW));
+    kprintf("Fired? %b", (uint64_t)read32(RP1_INT_STAT_HIGH) << 32 | read32(RP1_INT_STAT_LOW));
 
     return false;
 }

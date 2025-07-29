@@ -8,7 +8,7 @@ OBJCOPY    := $(ARCH)-objcopy
 #common flags
 CFLAGS_BASE  ?= -g -O0 -std=c17 -nostdlib -ffreestanding \
                 -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables \
-                -Wall -Wextra -mcpu=cortex-a72
+                -Wall -Wextra -Wno-unused-parameter -mcpu=cortex-a72
 LDFLAGS_BASE ?=
 
 #build vars

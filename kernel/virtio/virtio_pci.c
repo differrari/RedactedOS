@@ -241,7 +241,6 @@ void virtio_add_buffer(virtio_device *dev, uint16_t index, uint64_t buf, uint32_
 
     struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)dev->common_cfg->queue_desc;
     struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)dev->common_cfg->queue_driver;
-    struct virtq_used* u = (struct virtq_used*)(uintptr_t)dev->common_cfg->queue_device;
     
     d[index].addr = buf;
     d[index].len = buf_len;
