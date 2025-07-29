@@ -38,7 +38,6 @@ void mmu_enable_verbose(){
 #define kprintfv(fmt, ...) \
     ({ \
         if (mmu_verbose){\
-            uint64_t _args[] = { __VA_ARGS__ }; \
             kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
