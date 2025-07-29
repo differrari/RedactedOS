@@ -51,11 +51,7 @@ void kernel_main() {
 
     enable_interrupt();
 
-    kprint("Initializing GPU");
-
     load_module(&graphics_module);
-    
-    kprintf("GPU initialized");
     
     kprintf("Initializing disk...");
 

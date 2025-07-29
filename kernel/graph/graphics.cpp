@@ -14,6 +14,7 @@ static bool _gpu_ready;
 GPUDriver *gpu_driver;
 
 bool gpu_init(){
+    kprint("Initializing GPU");
     gpu_size preferred_screen_size = {1080,720};
     if (BOARD_TYPE == 1){
         if (VirtioGPUDriver *vgd = VirtioGPUDriver::try_init(preferred_screen_size)){
@@ -89,6 +90,7 @@ gpu_size gpu_get_screen_size(){
 driver_module graphics_module = {
     .name = "graphics",
     .mount = "/dev/graph",
+    .version = VERSION_NUM(0, 1, 0, 0),
     .init = gpu_init,
     .fini = 0,
     .open = 0,
