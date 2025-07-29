@@ -1,5 +1,6 @@
 #include "kconsole.hpp"
 #include "console/serial/uart.h"
+#include "memory/page_allocator.h"
 
 KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false){
     resize();
@@ -10,6 +11,7 @@ bool KernelConsole::check_ready(){
     if (!gpu_ready()) return false;
     if (!is_initialized){
         is_initialized= true;
+        mem_page = palloc(PAGE_SIZE, true, true, false);
         resize();
         clear();
     }
@@ -21,9 +23,11 @@ void KernelConsole::resize(){
     columns = screen_size.width / char_width;
     rows = screen_size.height / char_height;
 
-    if (row_data) temp_free(row_data, buffer_data_size);
+    if (row_data) kfree(row_data, buffer_data_size);
     buffer_data_size = rows * columns;
-    row_data = (char*)talloc(buffer_data_size);
+    uart_puts("Data Size ");
+    uart_puthex(buffer_data_size);
+    row_data = (char*)kalloc(mem_page, buffer_data_size, ALIGN_16B, true, true);
     if (!row_data){
         rows = columns = 0;
         row_ring.clear();

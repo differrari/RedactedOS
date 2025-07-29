@@ -34,6 +34,8 @@ private:
     RingBuffer<uint32_t, max_rows> row_ring;
     char* row_data;
     uint32_t buffer_data_size;
+
+    void *mem_page;
 };
 
 extern KernelConsole kconsole;
