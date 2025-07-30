@@ -46,14 +46,11 @@ void KernelConsole::put_char(char c){
     }
     if (cursor_x >= columns) newline();
 
-    uint32_t row_index;
-    if (row_ring.pop(row_index)){
-        row_ring.push(row_index);
-        char* line = row_data + row_index * columns;
-        line[cursor_x] = c;
-        gpu_draw_char({cursor_x * char_width, cursor_y * char_height}, c, 1, 0xFFFFFFFF);
-        cursor_x++;
-    }
+    uint32_t row_index = row_ring.peek();
+    char* line = row_data + row_index * columns;
+    line[cursor_x] = c;
+    gpu_draw_char({cursor_x * char_width, cursor_y * char_height}, c, 1, 0xFFFFFFFF);
+    cursor_x++;
 }
 
 void KernelConsole::put_string(const char* str){
@@ -79,7 +76,6 @@ void KernelConsole::newline(){
 }
 
 void KernelConsole::scroll(){
-    //TODO: once we scroll, the ring buffer seems to not work correctly anymore
     if (!check_ready()) return;
     uint32_t row_index;
     if (row_ring.pop(row_index)){
