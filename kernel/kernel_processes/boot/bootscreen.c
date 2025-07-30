@@ -91,6 +91,7 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
 __attribute__((section(".text.kcoreprocesses")))
 void bootscreen(){
     disable_visual();
+    gpu_clear(BG_COLOR);
     sys_focus_current();
     while (1)
     {
