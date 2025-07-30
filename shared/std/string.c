@@ -3,7 +3,7 @@
 #include "memory/memory_access.h"
 #include "std/memfunctions.h"
 
-uint32_t strlen(char *s, uint32_t max_length){
+uint32_t strlen(const char *s, uint32_t max_length){
     if (s == NULL) return 0;
     
     uint32_t len = 0;
@@ -12,7 +12,7 @@ uint32_t strlen(char *s, uint32_t max_length){
     return len;
 }
 
-string string_l(char *literal){
+string string_l(const char *literal){
     if (literal == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0};
     
     uint32_t len = strlen(literal, 0);
@@ -32,7 +32,7 @@ string string_repeat(char symbol, uint32_t amount){
     return (string){ .data = buf, .length = amount, .mem_length = amount+1 };
 }
 
-string string_tail(char *array, uint32_t max_length){
+string string_tail(const char *array, uint32_t max_length){
     
     if (array == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0 };
 
@@ -50,7 +50,7 @@ string string_tail(char *array, uint32_t max_length){
     return (string){.data = buf, .length = adjusted_len, .mem_length = adjusted_len + 1 };
 }
 
-string string_ca_max(char *array, uint32_t max_length){
+string string_ca_max(const char *array, uint32_t max_length){
     if (array == NULL) return (string){.data = NULL, .length = 0, .mem_length= 0 };
 
     uint32_t len = strlen(array, max_length);
@@ -63,7 +63,7 @@ string string_ca_max(char *array, uint32_t max_length){
     return (string){ .data = buf, .length = len, .mem_length = len+1};
 }
 
-string string_c( char c){
+string string_c(const char c){
     char *buf = (char*)malloc(2);
     buf[0] = c;
     buf[1] = 0;
@@ -125,7 +125,7 @@ bool string_equals(string a, string b){
     return strcmp(a.data,b.data, false) == 0;
 }
 
-string string_format(char *fmt, ...){
+string string_format(const char *fmt, ...){
     if (fmt == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0};
 
     va_list args;
@@ -135,13 +135,13 @@ string string_format(char *fmt, ...){
     return result;
 }
 
-string string_format_va(char *fmt, va_list args){
+string string_format_va(const char *fmt, va_list args){
     char *buf = (char*)malloc(256);
     size_t len = string_format_va_buf(fmt, buf, args);
     return (string){ .data = buf, .length = len, .mem_length = 256 };
 }
 
-size_t string_format_va_buf( char *fmt, char *buf, va_list args){
+size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
     size_t len = 0;
     uint32_t arg_index = 0;
     for (uint32_t i = 0; fmt[i] && len < 255; i++){
@@ -230,7 +230,7 @@ char tolower(char c){
     return c;
 }
 
-int strcmp(char *a, char *b, bool case_insensitive){
+int strcmp(const char *a, const char *b, bool case_insensitive){
     if (a == NULL && b == NULL)return 0; //i guess
     if (a == NULL) return -1;  
     if (b == NULL) return  1;
@@ -250,7 +250,7 @@ int strcmp(char *a, char *b, bool case_insensitive){
     return (unsigned char)*a - (unsigned char)*b;
 }
 
-int strstart(char *a, char *b, bool case_insensitive){
+int strstart(const char *a, const char *b, bool case_insensitive){
     int index = 0;
     while (*a && *b){
         char ca = *a;
@@ -267,7 +267,7 @@ int strstart(char *a, char *b, bool case_insensitive){
     return index;
 }
 
-int strindex( char *a,  char *b){
+int strindex(const char *a, const char *b){
     for (int i = 0; a[i]; i++){
         int j = 0;
         while (b[j] && a[i + j] == b[j]) j++;
@@ -276,7 +276,7 @@ int strindex( char *a,  char *b){
     return -1;
 }
 
-int strend(char *a, char *b, bool case_insensitive){
+int strend(const char *a, const char *b, bool case_insensitive){
     while (*a && *b){
         char ca = case_insensitive ? tolower((unsigned char)*a) : *a;
         char cb = case_insensitive ? tolower((unsigned char)*b) : *b;
@@ -298,7 +298,7 @@ int strend(char *a, char *b, bool case_insensitive){
     return 1;
 }
 
-bool strcont( char *a,  char *b){
+bool strcont(const char *a, const char *b){
     while (*a){
          char *p = a, *q = b;
         while (*p && *q && *p == *q){
