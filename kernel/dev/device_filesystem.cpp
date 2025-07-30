@@ -1,5 +1,4 @@
 #include "device_filesystem.hpp"
-#include "console/kio.h"
 #include "math/random.h"
 #include "memory/page_allocator.h"
 
@@ -8,7 +7,7 @@ bool DeviceFS::init(uint32_t partition_sector){
     return true;
 }
 
-void* DeviceFS::read_file(char *path, size_t size){
+void* DeviceFS::read_file(const char *path, size_t size){
     if (strcmp(path,"/zero",false) == 0){
         return create_buffer(size);
     }
@@ -25,6 +24,6 @@ void* DeviceFS::create_buffer(size_t size){
     return kalloc(fs_page, size, ALIGN_64B, true, true);
 }
 
-string_list* DeviceFS::list_contents(char *path){
+string_list* DeviceFS::list_contents(const char *path){
     return nullptr;
 }

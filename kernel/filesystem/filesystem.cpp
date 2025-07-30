@@ -2,18 +2,17 @@
 #include "fat32.hpp"
 #include "mbr.h"
 #include "fsdriver.hpp"
-#include "console/kio.h"
 #include "std/std.hpp"
 #include "dev/device_filesystem.hpp"
 
 typedef struct mountkvp {
-    char* mount_point;
+    const char* mount_point;
     FSDriver *driver;
 } mountkvp;
 
 LinkedList<mountkvp> *mountpoints = 0;
 
-void mount(FSDriver *driver, char *mount_point){
+void mount(FSDriver *driver, const char *mount_point){
     if (!mountpoints) mountpoints = new LinkedList<mountkvp>();
     mountpoints->push_front((mountkvp){mount_point, driver});
 }
@@ -31,7 +30,7 @@ bool init_dev_filesystem(){
     return fs_driver->init(0);
 }
 
-FSDriver* get_fs(char **full_path){
+FSDriver* get_fs(const char **full_path){
     auto lamdba = [&full_path](mountkvp kvp){
         int index = strstart(*full_path, kvp.mount_point, false);
         if (index == (int)strlen(kvp.mount_point,0)){
@@ -45,13 +44,13 @@ FSDriver* get_fs(char **full_path){
     return node->data.driver;
 }
 
-void* read_file(char *path, size_t size){
+void* read_file(const char *path, size_t size){
     FSDriver *selected_driver = get_fs(&path);
     if (!selected_driver) return 0;
     return selected_driver->read_file(path, size);
 }
 
-string_list* list_directory_contents(char *path){
+string_list* list_directory_contents(const char *path){
     FSDriver *selected_driver = get_fs(&path);
     if (!selected_driver) return 0;
     return selected_driver->list_contents(path);

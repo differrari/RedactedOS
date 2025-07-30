@@ -5,7 +5,7 @@
 #include "std/string.h"
 #include "std/memfunctions.h"
 
-char* ExFATFS::advance_path(char *path){
+const char* ExFATFS::advance_path(const char *path){
     while (*path != '/' && *path != '\0')
         path++;
     path++;
@@ -26,7 +26,7 @@ void* ExFATFS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint3
     return buffer;
 }
 
-void* ExFATFS::walk_directory(uint32_t cluster_count, uint32_t root_index, char *seek, ef_entry_handler handler) {
+void* ExFATFS::walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, ef_entry_handler handler) {
     uint32_t cluster_size = 1 << mbs->sectors_per_cluster_shift;
     char *buffer = (char*)read_cluster(mbs->cluster_heap_offset, cluster_size, cluster_count, root_index);
     file_entry *entry = 0;
@@ -149,7 +149,7 @@ bool ExFATFS::init(uint32_t partition_sector){
     return true;
 }
 
-void* ExFATFS::read_entry_handler(ExFATFS *instance, file_entry *entry, fileinfo_entry *info, filename_entry *name, char *seek) {
+void* ExFATFS::read_entry_handler(ExFATFS *instance, file_entry *entry, fileinfo_entry *info, filename_entry *name, const char *seek) {
     char filename[15];
     utf16tochar(name->name, filename, 15);
 
@@ -167,13 +167,13 @@ void* ExFATFS::read_entry_handler(ExFATFS *instance, file_entry *entry, fileinfo
         : instance->read_full_file(instance->mbs->cluster_heap_offset, 1 << instance->mbs->sectors_per_cluster_shift, count, info->filesize, filecluster);
 }
 
-void* ExFATFS::read_file(char *path, size_t size){
+void* ExFATFS::read_file(const char *path, size_t size){
     path = advance_path(path);
 
     return walk_directory(1, mbs->first_cluster_of_root_directory, path, read_entry_handler);
 }
 
-void* ExFATFS::list_entries_handler(ExFATFS *instance, file_entry *entry, fileinfo_entry *info, filename_entry *name, char *seek) {
+void* ExFATFS::list_entries_handler(ExFATFS *instance, file_entry *entry, fileinfo_entry *info, filename_entry *name, const char *seek) {
     char filename[15];
     utf16tochar(name->name, filename, 15);
 
@@ -197,7 +197,7 @@ void* ExFATFS::list_entries_handler(ExFATFS *instance, file_entry *entry, filein
     return 0;
 }
 
-string_list* ExFATFS::list_contents(char *path){
+string_list* ExFATFS::list_contents(const char *path){
     path = advance_path(path);
 
     return (string_list*)walk_directory(1, mbs->first_cluster_of_root_directory, path, list_entries_handler);

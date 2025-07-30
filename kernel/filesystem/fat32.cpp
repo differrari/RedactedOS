@@ -14,7 +14,7 @@
         }\
     })
 
-char* FAT32FS::advance_path(char *path){
+const char* FAT32FS::advance_path(const char *path){
     while (*path != '/' && *path != '\0')
         path++;
     path++;
@@ -122,7 +122,7 @@ void FAT32FS::parse_shortnames(f32file_entry* entry, char* out){
     out[j++] = '\0';
 }
 
-void* FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, char *seek, f32_entry_handler handler) {
+void* FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, f32_entry_handler handler) {
     uint32_t cluster_size = mbs->sectors_per_cluster;
     char *buffer = (char*)read_cluster(data_start_sector, cluster_size, cluster_count, root_index);
     f32file_entry *entry = 0;
@@ -236,7 +236,7 @@ uint32_t FAT32FS::count_FAT(uint32_t first){
     return count;
 }
 
-void* FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek) {
+void* FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {
     if (entry->flags.volume_id) return 0;
     
     bool is_last = *instance->advance_path(seek) == '\0';
@@ -254,7 +254,7 @@ void* FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char 
         : instance->read_full_file(instance->data_start_sector, instance->mbs->sectors_per_cluster, count, entry->filesize, filecluster);
 }
 
-void* FAT32FS::read_file(char *path, size_t size){
+void* FAT32FS::read_file(const char *path, size_t size){
     if (!mbs) return 0;
     path = advance_path(path);
 
@@ -262,7 +262,7 @@ void* FAT32FS::read_file(char *path, size_t size){
     return walk_directory(count, mbs->first_cluster_of_root_directory, path, read_entry_handler);
 }
 
-void* FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, char *seek) {
+void* FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {
 
     if (entry->flags.volume_id) return 0;
     if (strstart(seek, filename, true) == 0) return 0;
@@ -281,7 +281,7 @@ void* FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, cha
     return 0;
 }
 
-string_list* FAT32FS::list_contents(char *path){
+string_list* FAT32FS::list_contents(const char *path){
     if (!mbs) return 0;
     path = advance_path(path);
 

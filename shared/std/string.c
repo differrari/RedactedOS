@@ -143,7 +143,6 @@ string string_format_va(const char *fmt, va_list args){
 
 size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
     size_t len = 0;
-    uint32_t arg_index = 0;
     for (uint32_t i = 0; fmt[i] && len < 255; i++){
         if (fmt[i] == '%' && fmt[i+1]){
             i++;
@@ -169,10 +168,8 @@ size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
                 uint64_t val = va_arg(args, long int);
                 char temp[21];
                 uint32_t temp_len = 0;
-                bool negative = false;
             
                 if ((int)val < 0) {
-                    negative = true;
                     buf[len++] = '-';
                     val = (uint64_t)(-(int)val);
                 }
@@ -282,7 +279,7 @@ int strend(const char *a, const char *b, bool case_insensitive){
         char cb = case_insensitive ? tolower((unsigned char)*b) : *b;
 
         if (ca == cb){
-            char *pa = a, *pb = b;
+            const char *pa = a, *pb = b;
             while (1){
                 char cpa = case_insensitive ? tolower((unsigned char)*pa) : *pa;
                 char cpb = case_insensitive ? tolower((unsigned char)*pb) : *pb;
@@ -300,7 +297,7 @@ int strend(const char *a, const char *b, bool case_insensitive){
 
 bool strcont(const char *a, const char *b){
     while (*a){
-         char *p = a, *q = b;
+        const char *p = a, *q = b;
         while (*p && *q && *p == *q){
             p++; q++;
         }
@@ -312,7 +309,7 @@ bool strcont(const char *a, const char *b){
 
 bool utf16tochar(uint16_t* str_in, char* out_str, size_t max_len){
     size_t out_i = 0;
-    for (int i = 0; i < max_len && str_in[i]; i++){
+    for (size_t i = 0; i < max_len && str_in[i]; i++){
         uint16_t wc = str_in[i];
         out_str[out_i++] = (wc <= 0x7F) ? (char)(wc & 0xFF) : '?';
     }
