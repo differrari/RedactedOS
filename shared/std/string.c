@@ -1,6 +1,5 @@
 #include "std/string.h"
 #include "syscalls/syscalls.h"
-#include "memory/memory_access.h"
 #include "std/memfunctions.h"
 
 uint32_t strlen(const char *s, uint32_t max_length){

@@ -71,11 +71,11 @@ void* FAT32FS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint3
 
     kprintfv("Reading cluster(s) %i-%i, starting from %i (LBA %i) Address %x", root_index, root_index+cluster_count, cluster_start, lba, lba * 512);
 
-    void* buffer = (char*)kalloc(fs_page, cluster_count * cluster_size * 512, ALIGN_64B, true, true);
+    void* buffer = kalloc(fs_page, cluster_count * cluster_size * 512, ALIGN_64B, true, true);
     
     if (cluster_count > 0){
         uint32_t next_index = root_index;
-        for (int i = 0; i < cluster_count; i++){
+        for (uint32_t i = 0; i < cluster_count; i++){
             kprintfv("Cluster %i = %x (%x)",i,next_index,(cluster_start + ((next_index - 2) * cluster_size)) * 512);
             disk_read(buffer + (i * cluster_size * 512), partition_first_sector + cluster_start + ((next_index - 2) * cluster_size), cluster_size);
             next_index = fat[next_index];
@@ -136,7 +136,6 @@ void* FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, const
         bool long_name = buffer[i + 0xB] == 0xF;
         char *filename = (char*)kalloc(fs_page, 255, ALIGN_64B, true, true);
         if (long_name){
-            uint8_t order;
             f32longname *first_longname = (f32longname*)&buffer[i];
             uint16_t count = 0;
             do {
@@ -165,7 +164,6 @@ void* FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
     char *buffer = (char*)read_cluster(data_start_sector, cluster_size, cluster_count, root_index);
     f32file_entry *entry = 0;
     void *list_buffer = (char*)kalloc(fs_page, 0x1000 * cluster_count, ALIGN_64B, true, true);
-    uint32_t len = 0; 
     uint32_t count = 0;
 
     char *write_ptr = (char*)list_buffer + 4;
@@ -176,12 +174,10 @@ void* FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
             i += sizeof(f32file_entry);
             continue;
         }
-        char c = buffer[i];
         count++;
         bool long_name = buffer[i + 0xB] == 0xF;
         char *filename = (char*)kalloc(fs_page, 255, ALIGN_64B, true, true);
         if (long_name){
-            uint8_t order;
             f32longname *first_longname = (f32longname*)&buffer[i];
             uint16_t count = 0;
             do {
@@ -271,9 +267,6 @@ void* FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, cha
     
     uint32_t filecluster = (entry->hi_first_cluster << 16) | entry->lo_first_cluster;
 
-    uint32_t bps = instance->bytes_per_sector;
-    uint32_t spc = instance->mbs->sectors_per_cluster;
-    uint32_t bpc = bps * spc;
     uint32_t count = instance->count_FAT(filecluster);
 
     if (is_last) return instance->list_directory(count, filecluster);

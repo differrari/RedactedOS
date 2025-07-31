@@ -105,11 +105,12 @@ void* ExFATFS::read_full_file(uint32_t cluster_start, uint32_t cluster_size, uin
     return file;
 }
 
+//TODO: Finish exfat driver FAT tables and chained clusters
 void ExFATFS::read_FAT(uint32_t location, uint32_t size, uint8_t count){
     uint32_t* fat = (uint32_t*)kalloc(fs_page, size * count * 512, ALIGN_64B, true, true);
     disk_read((void*)fat, partition_first_sector + location, size);
     kprintf("FAT: %x (%x)",location*512,size * count * 512);
-    uint32_t total_entries = (size * count * 512) / 4;
+    // uint32_t total_entries = (size * count * 512) / 4;
     // for (uint32_t i = 0; i < total_entries; i++)
     //     if (fat[i] != 0) kprintf("[%i] = %x", i, fat[i]);
 }

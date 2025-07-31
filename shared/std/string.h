@@ -26,6 +26,7 @@ string string_from_hex(uint64_t value);
 bool string_equals(string a, string b);
 string string_format(const char *fmt, ...);
 string string_format_va(const char *fmt, va_list args);
+__attribute__((used))
 size_t string_format_va_buf(const char *fmt, char *out, va_list args);
 string string_tail(const char *array, uint32_t max_length);
 string string_repeat(char symbol, uint32_t amount);

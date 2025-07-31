@@ -25,7 +25,6 @@
 #define MAIR_BIT 2
 
 #define PAGE_TABLE_ENTRIES 512
-#define PAGE_SIZE PAGE_TABLE_ENTRIES * 8
 
 uint64_t page_table_l0[PAGE_TABLE_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
 

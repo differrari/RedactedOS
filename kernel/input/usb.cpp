@@ -74,8 +74,6 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
 }
 
 bool USBDriver::get_configuration(uint8_t address){
-    
-    uint16_t ep_num = 0;
 
     usb_manager->register_device(address);
 

@@ -48,7 +48,7 @@ void mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     if (w == 0 || h == 0)
         return;
 
-    gpu_rect new_rect = { x, y, w, h };
+    gpu_rect new_rect = { {x, y}, {w, h} };
 
     for (uint32_t i = 0; i < dirty_count; i++)
         if (try_merge(&dirty_rects[i], &new_rect))
