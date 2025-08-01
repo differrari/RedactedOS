@@ -2,6 +2,8 @@
 
 #include "types.h"
 
+#define VIRTIO_BLK_ID 0x1001
+
 #ifdef __cplusplus
 extern "C" {
 #endif

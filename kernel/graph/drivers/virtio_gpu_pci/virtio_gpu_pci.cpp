@@ -27,7 +27,7 @@ VirtioGPUDriver* VirtioGPUDriver::try_init(gpu_size preferred_screen_size){
 
 bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     
-    uint64_t addr = find_pci_device(0x1AF4, 0x1050);
+    uint64_t addr = find_pci_device(VIRTIO_VENDOR, VIRTIO_GPU_ID);
     if (!addr){ 
         kprintf("Virtio GPU not found");
         return false;

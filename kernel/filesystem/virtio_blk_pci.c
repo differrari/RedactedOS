@@ -6,6 +6,7 @@
 #include "pci.h"
 #include "virtio/virtio_pci.h"
 #include "std/memfunctions.h"
+#include "virtio_blk_pci.h"
 
 #define VIRTIO_BLK_T_IN   0
 #define VIRTIO_BLK_T_OUT  1
@@ -48,7 +49,7 @@ void vblk_disk_verbose(){
 static virtio_device blk_dev;
 
 bool vblk_find_disk(){
-    uint64_t addr = find_pci_device(0x1AF4, 0x1001);
+    uint64_t addr = find_pci_device(VIRTIO_VENDOR, VIRTIO_BLK_ID);
     if (!addr){ 
         kprintf("Disk device not found");
         return false;

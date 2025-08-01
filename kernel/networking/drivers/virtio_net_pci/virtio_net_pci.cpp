@@ -46,10 +46,8 @@ VirtioNetDriver* VirtioNetDriver::try_init(){
     return nullptr;
 }
 
-
-
 bool VirtioNetDriver::init(){
-    uint64_t addr = find_pci_device(0x1AF4, 0x1000);
+    uint64_t addr = find_pci_device(VIRTIO_VENDOR, VIRTIO_NET_ID);
     if (!addr){ 
         kprintf("[VIRTIO_NET error] Virtio network device not found");
         return false;
