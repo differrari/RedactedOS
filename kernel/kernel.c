@@ -16,6 +16,7 @@
 #include "math/random.h"
 #include "filesystem/filesystem.h"
 #include "dev/module_loader.h" 
+#include "audio/audio.h"
 
 void kernel_main() {
 
@@ -72,6 +73,7 @@ void kernel_main() {
     if (!input_init())
         panic("Input initialization error");
 
+    bool audio_available = init_audio();
     bool network_available = network_init();
     init_input_process();
 

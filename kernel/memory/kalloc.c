@@ -21,6 +21,7 @@ FreeBlock* temp_free_list = 0;
 
 static uint64_t next_mmio_base;
 
+//TODO: come up with a fix for hardcoded MMIO for some devices
 uint64_t alloc_mmio_region(uint64_t size) {
     if (next_mmio_base == 0) next_mmio_base = MMIO_BASE;
     size = (size + 0xFFF) & ~0xFFF;

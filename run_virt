@@ -46,5 +46,7 @@ $PRIVILEGE qemu-system-aarch64 \
   -device virtio-blk-pci,drive=hd0 \
   -device qemu-xhci,${MSI_CAPABILITIES}id=usb \
   -device usb-kbd,bus=usb.0 \
+  -device virtio-sound-pci,audiodev=sdl_audio \
+  -audiodev sdl,id=sdl_audio \
   -d guest_errors \
   $ARGS
