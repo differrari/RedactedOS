@@ -23,6 +23,10 @@
 #define KEY_MOD_RALT   0x40
 #define KEY_MOD_RMETA  0x80
 
+// Combined modifier masks for convenience
+#define KEY_MOD_CTRL (KEY_MOD_LCTRL | KEY_MOD_RCTRL)
+#define KEY_MOD_ALT  (KEY_MOD_LALT | KEY_MOD_RALT)
+
 /**
  * Scan codes - last N slots in the HID report (usually 6).
  * 0x00 if no key pressed.

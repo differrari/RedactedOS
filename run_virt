@@ -60,4 +60,5 @@ $PRIVILEGE qemu-system-aarch64 \
   -device virtio-sound-pci,audiodev=sdl_audio \
   -audiodev sdl,id=sdl_audio \
   -d guest_errors \
+  -semihosting \
   $ARGS

@@ -9,7 +9,7 @@ if ! command -v "mcopy" >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! command -v "mkfs.fat" >/dev/null 2>&1; then
+if ! command -v "/usr/sbin/mkfs.fat" >/dev/null 2>&1; then
     echo "Error: this script depends on dosfstools. Please install it" >&2
     exit 1
 fi
@@ -40,6 +40,6 @@ fi
 
 dd if=/dev/zero of=$IMAGE bs=1M count=$SIZE_MB
 
-mkfs.fat -F 32 -n "$VOLUME_LABEL" $IMAGE
+/usr/sbin/mkfs.fat -F 32 -n "$VOLUME_LABEL" $IMAGE
 
 mcopy -i $IMAGE -s "$FOLDER"/* ::

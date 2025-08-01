@@ -15,6 +15,7 @@
 #include "networking/network.h"
 #include "networking/port_manager.h"
 #include "filesystem/filesystem.h"
+#include "power.h"
 
 int syscall_depth = 0;
 
@@ -164,6 +165,15 @@ void sync_el0_handler_c(){
             result = net_rx_frame(user_out);
             break;
         }
+
+        case 60:  // Poweroff system
+            power_off();
+            break;
+
+        case 61:  // Reboot system
+            reboot();
+            break;
+
         
         default:
             handle_exception_with_info("Unknown syscall", iss);
