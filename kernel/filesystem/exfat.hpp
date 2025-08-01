@@ -1,3 +1,5 @@
+#if false
+
 #pragma once
 
 #include "types.h"
@@ -99,3 +101,5 @@ public:
     static void* read_entry_handler(ExFATFS *instance, file_entry *entry, fileinfo_entry *info, filename_entry *name, const char *seek);
     static void* list_entries_handler(ExFATFS *instance, file_entry *entry, fileinfo_entry *info, filename_entry *name, const char *seek);
 };
+
+#endif

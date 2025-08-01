@@ -159,7 +159,6 @@ void calc_ram(){
         calculated_ram_start = CRAM_START;
     }
     calculated_ram_size = calculated_ram_end - calculated_ram_start;
-    kprintf("Device has %x memory starting at %x. %x for user starting at %x ending at %x  ",total_ram_size, total_ram_start, calculated_ram_size, calculated_ram_start, calculated_ram_end);
 }
 
 #define calcvar(var)\

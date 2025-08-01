@@ -14,7 +14,8 @@
 #include "memory/page_allocator.h"
 #include "networking/network.h"
 #include "math/random.h"
-#include "filesystem/filesystem.h" 
+#include "filesystem/filesystem.h"
+#include "dev/module_loader.h" 
 
 void kernel_main() {
 
@@ -23,7 +24,11 @@ void kernel_main() {
     //  page_alloc_enable_verbose();
     page_allocator_init();
 
-    enable_uart();
+    set_exception_vectors();
+
+    init_main_process();
+
+    load_module(console_module);
 
     mmu_alloc();
 
@@ -36,12 +41,9 @@ void kernel_main() {
     rng_init_global(seed);
     kprintf("Random init. seed: %i\n", seed);
 
-    set_exception_vectors();
     kprint("Exception vectors set");
    
     kprint("Initializing kernel...");
-    
-    init_main_process();
 
     kprint("Preparing for draw");
     gpu_size screen_size = {1080,720};
@@ -79,8 +81,6 @@ void kernel_main() {
     if (!init_boot_filesystem())
         panic("Filesystem initialization failure");
 
-    init_dev_filesystem();
-
     kprint("Kernel initialization finished");
 
     kprint("Starting processes");
@@ -88,6 +88,8 @@ void kernel_main() {
     if (network_available) launch_net_process();
 
     init_bootprocess();
+
+    console_module.write(0, "Hello from module", 0, 0);
     
     kprint("Starting scheduler");
     

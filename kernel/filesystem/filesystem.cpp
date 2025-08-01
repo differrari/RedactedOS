@@ -3,55 +3,78 @@
 #include "mbr.h"
 #include "fsdriver.hpp"
 #include "std/std.hpp"
-#include "dev/device_filesystem.hpp"
+#include "console/kio.h"
+#include "dev/module_loader.h"
+#include "memory/page_allocator.h"
 
-typedef struct mountkvp {
-    const char* mount_point;
-    FSDriver *driver;
-} mountkvp;
+FAT32FS *fs_driver;
 
-LinkedList<mountkvp> *mountpoints = 0;
-
-void mount(FSDriver *driver, const char *mount_point){
-    if (!mountpoints) mountpoints = new LinkedList<mountkvp>();
-    mountpoints->push_front((mountkvp){mount_point, driver});
+bool boot_partition_init(){
+    uint32_t f32_partition = mbr_find_partition(0xC);
+    fs_driver = new FAT32FS();
+    fs_driver->init(f32_partition);
+    return true;
 }
+
+bool boot_partition_fini(){
+    return false;
+}
+
+FS_RESULT boot_partition_open(const char *path, file *out_fd){
+    //TODO: File descriptors are needed for F32
+    return fs_driver->open_file(path, out_fd);
+}
+
+size_t boot_partition_read(file *fd, char *out_buf, size_t size, file_offset offset){
+    //TODO: Need to pass a buffer and return a size instead, and use FD
+    return fs_driver->read_file(fd, out_buf, size);
+}
+
+size_t boot_partition_write(file *fd, const char *buf, size_t size, file_offset offset){
+    return 0;
+}
+
+
+file_offset boot_partition_seek(file *fd, file_offset offset){
+    return 0;
+}
+
+sizedptr boot_partition_readdir(const char* path){
+    //TODO: Need to pass a buffer and write to that, returning size
+    return fs_driver->list_contents(path);
+}
+
+static driver_module boot_fs_module = (driver_module){
+    .name = "boot",
+    .mount = "/boot",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = boot_partition_init,
+    .fini = boot_partition_fini,
+    .open = boot_partition_open,
+    .read = boot_partition_read,
+    .write = boot_partition_write,
+    .seek = boot_partition_seek,
+    .readdir = boot_partition_readdir,
+};
 
 bool init_boot_filesystem(){
-    uint32_t f32_partition = mbr_find_partition(0xC);
-    FAT32FS *fs_driver = new FAT32FS();
-    mount(fs_driver, "/boot");
-    return fs_driver->init(f32_partition);
-}
-
-bool init_dev_filesystem(){
-    DeviceFS *fs_driver = new DeviceFS();
-    mount(fs_driver,"/dev");
-    return fs_driver->init(0);
-}
-
-FSDriver* get_fs(const char **full_path){
-    auto lamdba = [&full_path](mountkvp kvp){
-        int index = strstart(*full_path, kvp.mount_point, false);
-        if (index == (int)strlen(kvp.mount_point,0)){
-            *full_path += index;
-            return true;
-        }
-        return false;
-    };
-    auto node = mountpoints->find(lamdba);
-    if (!node) return NULL;
-    return node->data.driver;
+    return load_module(boot_fs_module);
 }
 
 void* read_file(const char *path, size_t size){
-    FSDriver *selected_driver = get_fs(&path);
-    if (!selected_driver) return 0;
-    return selected_driver->read_file(path, size);
+    driver_module *mod = &boot_fs_module;//get_module(&path);
+    if (!mod) return 0;
+    file fd = {0,0};
+    mod->open(path, &fd);
+    void* pg = palloc(PAGE_SIZE, true, false, false);
+    char *TMP_BUF = (char*)kalloc(pg, fd.size, ALIGN_64B, true, false);
+    mod->read(&fd, TMP_BUF, fd.size, 0);
+    return TMP_BUF;
 }
 
-string_list* list_directory_contents(const char *path){
-    FSDriver *selected_driver = get_fs(&path);
-    if (!selected_driver) return 0;
-    return selected_driver->list_contents(path);
+sizedptr list_directory_contents(const char *path){
+    const char* path2 = "/boot/redos/userland";
+    driver_module *mod = &boot_fs_module;//get_module(&path2);
+    if (!mod) return {0,0};
+    return mod->readdir(path);
 }

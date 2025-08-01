@@ -1,10 +1,11 @@
 #pragma once
 
+#include "types.h"
+#include "dev/driver_base.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "types.h"
 
 void kprintf(const char *fmt, ...);
 void kprint(const char *fmt);
@@ -15,6 +16,8 @@ void putc(const char c);
 
 void disable_visual();
 void enable_visual();
+
+extern driver_module console_module;
 
 #ifdef __cplusplus
 }

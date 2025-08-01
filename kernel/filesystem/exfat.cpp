@@ -1,3 +1,5 @@
+#if false
+
 #include "exfat.hpp"
 #include "disk.h"
 #include "memory/page_allocator.h"
@@ -203,3 +205,5 @@ string_list* ExFATFS::list_contents(const char *path){
 
     return (string_list*)walk_directory(1, mbs->first_cluster_of_root_directory, path, list_entries_handler);
 }
+
+#endif

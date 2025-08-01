@@ -10,7 +10,6 @@ static bool panic_triggered = false;
 
 void set_exception_vectors(){
     extern char exception_vectors[];
-    kprintf("Exception vectors setup at %x", (uint64_t)&exception_vectors);
     asm volatile ("msr vbar_el1, %0" :: "r"(exception_vectors));
 }
 

@@ -165,9 +165,7 @@ void mmu_unmap(uint64_t va, uint64_t pa){
 }
 
 void mmu_alloc(){
-    for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) {
-        page_table_l0[i] = 0;
-    }
+    //TODO: use palloc, but consider it won't be able to add sections to MMU during that init
 }
 
 void mmu_init() {

@@ -7,6 +7,49 @@
 static bool use_visual = true;
 void* print_buf;
 
+bool console_init(){
+    enable_uart();
+    return true;
+}
+
+bool console_fini(){
+    return false;
+}
+
+FS_RESULT console_open(const char *path, file *out_fd){
+    return FS_RESULT_SUCCESS;
+}
+
+size_t console_read(file *fd, char *out_buf, size_t size, file_offset offset){
+    return 0;
+}
+
+size_t console_write(file *fd, const char *buf, size_t size, file_offset offset){
+    kprintf(buf);
+}
+
+
+file_offset console_seek(file *fd, file_offset offset){
+    return 0;
+}
+
+sizedptr console_readdir(const char* path){
+    return (sizedptr){ 0, 0 };
+}
+
+driver_module console_module = (driver_module){
+    .name = "console",
+    .mount = "/dev/console",
+    .version = VERSION_NUM(0,1,0,0),
+    .init = console_init,
+    .fini = console_fini,
+    .open = console_open,
+    .read = console_read,
+    .write = console_write,
+    .seek = console_seek,
+    .readdir = console_readdir,
+};
+
 void puts(const char *s){
     uart_raw_puts(s);
     if (use_visual)
