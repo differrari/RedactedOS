@@ -20,6 +20,7 @@ bool boot_partition_fini(){
     return false;
 }
 
+//TODO: find a way to make this more elegant
 FS_RESULT boot_partition_open(const char *path, file *out_fd){
     //TODO: File descriptors are needed for F32
     return fs_driver->open_file(path, out_fd);
@@ -62,10 +63,13 @@ bool init_boot_filesystem(){
 }
 
 void* read_file(const char *path, size_t size){
-    driver_module *mod = &boot_fs_module;//get_module(&path);
+    const char *search_path = path;
+    kprintf("Getting module for path %s",(uintptr_t)search_path);
+    driver_module *mod = get_module(&search_path);
+    kprintf("Got module %x for path %s",(uintptr_t)mod,(uintptr_t)search_path);
     if (!mod) return 0;
     file fd = {0,0};
-    mod->open(path, &fd);
+    mod->open(search_path, &fd);
     void* pg = palloc(PAGE_SIZE, true, false, false);
     char *TMP_BUF = (char*)kalloc(pg, fd.size, ALIGN_64B, true, false);
     mod->read(&fd, TMP_BUF, fd.size, 0);
@@ -73,7 +77,10 @@ void* read_file(const char *path, size_t size){
 }
 
 sizedptr list_directory_contents(const char *path){
-    driver_module *mod = get_module(&path);
+    const char *search_path = path;
+    kprintf("Getting module for path %s",(uintptr_t)search_path);
+    driver_module *mod = get_module(&search_path);
+    kprintf("Got module %x for path %s",(uintptr_t)mod,(uintptr_t)search_path);
     if (!mod) return {0,0};
-    return mod->readdir(path);
+    return mod->readdir(search_path);
 }

@@ -259,7 +259,6 @@ sizedptr FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, ch
 FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (!mbs) return FS_RESULT_DRIVER_ERROR;
     path = advance_path(path);
-    path = advance_path(path);
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
     sizedptr buf_ptr = walk_directory(count, mbs->first_cluster_of_root_directory, path, read_entry_handler);
     void *buf = (void*)buf_ptr.ptr;
@@ -295,7 +294,6 @@ sizedptr FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, 
 
 sizedptr FAT32FS::list_contents(const char *path){
     if (!mbs) return { 0, 0 };
-    path = advance_path(path);
     path = advance_path(path);
 
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
