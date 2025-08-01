@@ -4,13 +4,13 @@
 
 clinkedlist_t* modules;
 
-bool load_module(driver_module module){
+bool load_module(driver_module *module){
     if (!modules) modules = clinkedlist_create();
-    clinkedlist_push_front(modules, (void*)&module);
-    return module.init();
+    clinkedlist_push_front(modules, (void*)module);
+    return module->init();
 }
 
-bool unload_module(driver_module module){
+bool unload_module(driver_module *module){
     return false;
 }
 

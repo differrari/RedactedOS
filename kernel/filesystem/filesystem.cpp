@@ -44,7 +44,7 @@ sizedptr boot_partition_readdir(const char* path){
     return fs_driver->list_contents(path);
 }
 
-static driver_module boot_fs_module = (driver_module){
+driver_module boot_fs_module = (driver_module){
     .name = "boot",
     .mount = "/boot",
     .version = VERSION_NUM(0, 1, 0, 0),
@@ -58,7 +58,7 @@ static driver_module boot_fs_module = (driver_module){
 };
 
 bool init_boot_filesystem(){
-    return load_module(boot_fs_module);
+    return load_module(&boot_fs_module);
 }
 
 void* read_file(const char *path, size_t size){
@@ -73,8 +73,7 @@ void* read_file(const char *path, size_t size){
 }
 
 sizedptr list_directory_contents(const char *path){
-    const char* path2 = "/boot/redos/userland";
-    driver_module *mod = &boot_fs_module;//get_module(&path2);
+    driver_module *mod = get_module(&path);
     if (!mod) return {0,0};
     return mod->readdir(path);
 }

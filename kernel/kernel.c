@@ -28,7 +28,7 @@ void kernel_main() {
 
     init_main_process();
 
-    load_module(console_module);
+    load_module(&console_module);
 
     mmu_alloc();
 
