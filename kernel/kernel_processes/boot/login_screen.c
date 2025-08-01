@@ -9,6 +9,8 @@
 #include "math/math.h"
 #include "std/string.h"
 #include "syscalls/syscalls.h"
+#include "process/syscall.h"  // For SYS_POWEROFF
+#include "power.h"  // For power_off()
 
 //TODO: properly handle keypad
 static const char hid_keycode_to_char[256] = {
@@ -28,12 +30,44 @@ static const char hid_keycode_to_char[256] = {
     [0x38] = '/', [0x58] = '\n',
 };
 
-bool keypress_contains(keypress *kp, char key, uint8_t modifier){
-    if (kp->modifier != modifier) return false;//TODO: This is not entirely accurate, some modifiers do not change key
+bool keypress_contains(keypress *kp, char key, uint8_t modifier) {
+    if (kp->modifier != modifier) return false; //TODO: This is not entirely accurate, some modifiers do not change key
 
     for (int i = 0; i < 6; i++)
         if (kp->keys[i] == key)
             return true;
+    return false;
+}
+
+// Check if the keypress contains the Ctrl+Alt+Del combination
+bool is_ctrl_alt_del(keypress *kp) {
+    // Check for Ctrl+Alt modifiers (0x5 = 0x1 (CTRL) | 0x4 (ALT))
+    if ((kp->modifier & (KEY_MOD_CTRL | KEY_MOD_ALT)) != (KEY_MOD_CTRL | KEY_MOD_ALT)) {
+        return false;
+    }
+
+    // Check for Delete key in any of the key slots
+    for (int i = 0; i < 6; i++) {
+        if (kp->keys[i] == KEY_DELETE) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Check if the keypress contains the Ctrl+Alt+Backspace combination
+bool is_ctrl_alt_backspace(keypress *kp) {
+    // Check for Ctrl+Alt modifiers
+    if ((kp->modifier & (KEY_MOD_CTRL | KEY_MOD_ALT)) != (KEY_MOD_CTRL | KEY_MOD_ALT)) {
+        return false;
+    }
+
+    // Check for Backspace key in any of the key slots
+    for (int i = 0; i < 6; i++) {
+        if (kp->keys[i] == KEY_BACKSPACE) {
+            return true;
+        }
+    }
     return false;
 }
 
@@ -44,10 +78,15 @@ void login_screen(){
     char* buf = (char*)malloc(256);
     int len = 0;
     keypress old_kp;
+    bool ctrl_alt_del_pressed = false;
+    bool ctrl_alt_backspace_pressed = false;
     const char* name = BOOTSCREEN_TEXT;
     string title = string_l(name);
     string subtitle = string_l("Login");
     gpu_clear(BG_COLOR);
+    // Shutdown hint position
+    int button_padding = 10;
+
     while (1)
     {
         gpu_size screen_size = gpu_get_screen_size();
@@ -59,13 +98,49 @@ void login_screen(){
         int yo = screen_middle.y;
         int height = char_size * 2;
         
+        // Draw title and subtitle
         gpu_draw_string(title, (gpu_point){screen_middle.x - ((title.length/2) * char_size), yo - char_size*9}, scale, 0xFFFFFFFF);
         gpu_draw_string(subtitle, (gpu_point){screen_middle.x - ((subtitle.length/2) * char_size), yo - char_size*6}, scale, 0xFFFFFFFF);
 
+        // Draw password input field
         gpu_fill_rect((gpu_rect){{xo,yo  - char_size/2}, {screen_size.width / 3, height}},BG_COLOR+0x111111);
         gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFFFF);
+
+        // Draw shutdown hint
+        string shutdown_hint = string_l("Press Ctrl+Alt+Del to shutdown");
+        gpu_draw_string(shutdown_hint,
+                       (gpu_point){screen_size.width - (shutdown_hint.length * char_size) - button_padding,
+                                 screen_size.height - char_size - button_padding},
+                       1, 0x888888); // Gray text
+
         keypress kp;
         if (sys_read_input_current(&kp)){
+            // Check for Ctrl+Alt+Del to shutdown
+            if (is_ctrl_alt_del(&kp)) {
+                if (!ctrl_alt_del_pressed) {
+                    ctrl_alt_del_pressed = true;
+                    kprintf("\nShutting down system...\n");
+                    power_off();
+                    // If power_off() returns (which it shouldn't), just continue
+                    continue;
+                }
+            } else {
+                ctrl_alt_del_pressed = false;
+            }
+
+            // Check for Ctrl+Alt+Backspace to reboot
+            if (is_ctrl_alt_backspace(&kp)) {
+                if (!ctrl_alt_backspace_pressed) {
+                    ctrl_alt_backspace_pressed = true;
+                    kprintf("\nRebooting system...\n");
+                    reboot();
+                    // If reboot() returns (which it shouldn't), just continue
+                    continue;
+                }
+            } else {
+                ctrl_alt_backspace_pressed = false;
+            }
+
             for (int i = 0; i < 6; i++){
                 char key = kp.keys[i];
                 if (hid_keycode_to_char[(uint8_t)key]){

@@ -47,4 +47,5 @@ $PRIVILEGE qemu-system-aarch64 \
   -device qemu-xhci,${MSI_CAPABILITIES}id=usb \
   -device usb-kbd,bus=usb.0 \
   -d guest_errors \
+  -semihosting \
   $ARGS

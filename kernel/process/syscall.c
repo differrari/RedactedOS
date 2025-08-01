@@ -13,6 +13,7 @@
 #include "std/string.h"
 #include "exceptions/timer.h"
 #include "networking/network.h"
+#include "power.h"
 
 void sync_el0_handler_c(){
     save_context_registers();
@@ -149,7 +150,15 @@ void sync_el0_handler_c(){
             sizedptr *ptr = (sizedptr*)x0;
             result = network_read_packet_current(ptr);
             break;
-        
+
+        case 60:  // Poweroff system
+            power_off();
+            break;
+
+        case 61:  // Reboot system
+            reboot();
+            break;
+
         default:
             handle_exception_with_info("Unknown syscall", iss);
             break;
