@@ -286,6 +286,7 @@ void VirtioAudioDriver::config_channel_maps(){
 
 }
 
+//TODO: remove interrupts if they're really not needed
 void VirtioAudioDriver::handle_interrupt(){
     select_queue(&audio_dev, EVENT_QUEUE);
     struct virtq_used* used = (struct virtq_used*)(uintptr_t)audio_dev.common_cfg->queue_device;
