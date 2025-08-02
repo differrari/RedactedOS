@@ -90,7 +90,7 @@ void kputf(const char *fmt, ...){
     va_list args;
     va_start(args, fmt);
     char* buf = kalloc(print_buf, 256, ALIGN_64B, true, false);
-    string_format_va_buf(fmt, buf, args);
+    size_t len = string_format_va_buf(fmt, buf, args);
     va_end(args);
     puts(buf);
     kfree((void*)buf, 256);
