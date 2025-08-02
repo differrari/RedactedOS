@@ -6,7 +6,7 @@ OBJCOPY    := $(ARCH)-objcopy
 
 CFLAGS_BASE  ?= -g -O0 -nostdlib -ffreestanding \
                 -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables \
-                -Wall -Wextra -Wno-unused-parameter -mcpu=cortex-a72
+                -Wall -Wextra -Wno-unused-parameter -Wno-address-of-packed-member -mcpu=cortex-a72
 CONLY_FLAGS_BASE ?= -std=c17
 LDFLAGS_BASE ?=
 
