@@ -184,10 +184,7 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
         kprintfv("[PCI] Two registers %x > %x",new_hi,new_lo);
         uint64_t full = (new_hi << 32) | (new_lo & ~0xF);
         if (full != config_base){
-            if (is_mmio_allocated(full))
-                panic_with_info("Device hardcoded address is already in use", full);
-            else 
-                *mmio_start = full;
+            *mmio_start = full;
         }
     } else {
         uint32_t size32 = bar_low & ~0xF;
@@ -408,8 +405,8 @@ bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_si
             if(!table_addr){
                 uint64_t bar_size;
                 pci_setup_bar(pci_addr, bir, &table_addr, &bar_size);
-                kprintfv("Setting up new bar for MSI-X %x + %x",table_addr, table_addr_offset);
-            } else kprintfv("Bar %i setup at %x + %x",bir, table_addr, table_addr_offset);
+                kprintf("Setting up new bar for MSI-X %x + %x",table_addr, table_addr_offset);
+            } else kprintf("Bar %i setup at %x + %x",bir, table_addr, table_addr_offset);
             
             msix_table_entry *msix_start = (msix_table_entry *)(uintptr_t)(table_addr + table_addr_offset);
 
