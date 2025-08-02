@@ -8,6 +8,7 @@
 
 #define RECEIVE_QUEUE 0
 #define TRANSMIT_QUEUE 1
+//TODO: review this number
 #define MAX_size 0x1000
 
 #define kprintfv(fmt, ...) \

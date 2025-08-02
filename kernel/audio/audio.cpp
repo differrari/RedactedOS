@@ -7,3 +7,7 @@ bool init_audio(){
     audio_driver = new VirtioAudioDriver();
     return audio_driver->init();
 }
+
+void audio_handle_interrupt(){
+    audio_driver->handle_interrupt();
+}

@@ -14,6 +14,7 @@ typedef struct virtio_snd_config {
 class VirtioAudioDriver {
 public:
     bool init();
+    void handle_interrupt();
 private:
     bool get_config();
     void config_jacks();
@@ -21,6 +22,10 @@ private:
     bool config_streams(uint32_t streams);
     bool stream_set_params(uint32_t stream_id, uint32_t features, uint64_t format, uint64_t rate, uint8_t channels);
 
-    void config_channels();
+    void config_channel_maps();
+
+
+    uint16_t last_used_idx = 0;
+
     virtio_device audio_dev;
 };
