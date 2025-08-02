@@ -73,8 +73,10 @@ void kernel_main() {
     if (!input_init())
         panic("Input initialization error");
 
-    bool audio_available = init_audio();
     bool network_available = network_init();
+    
+    load_module(&audio_module);
+
     init_input_process();
 
     mmu_init();
