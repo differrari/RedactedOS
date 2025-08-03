@@ -22,6 +22,7 @@ SECTIONS {
     . = ALIGN(16);
     stack_bottom = .;
     .stack_fill : { FILL(0); . = . + 0x10000; }
+    ksp = .;
     stack_top = .;
 
     . = ALIGN(4096);

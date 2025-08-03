@@ -6,6 +6,7 @@
 #include "console/kio.h"
 #include "dev/module_loader.h"
 #include "memory/page_allocator.h"
+#include "math/math.h"
 
 FAT32FS *fs_driver;
 
@@ -64,23 +65,21 @@ bool init_boot_filesystem(){
 
 void* read_file(const char *path, size_t size){
     const char *search_path = path;
-    kprintf("Getting module for path %s",(uintptr_t)search_path);
     driver_module *mod = get_module(&search_path);
-    kprintf("Got module %x for path %s",(uintptr_t)mod,(uintptr_t)search_path);
     if (!mod) return 0;
     file fd = {0,0};
     mod->open(search_path, &fd);
     void* pg = palloc(PAGE_SIZE, true, false, false);
-    char *TMP_BUF = (char*)kalloc(pg, fd.size, ALIGN_64B, true, false);
-    mod->read(&fd, TMP_BUF, fd.size, 0);
+    //TODO: TMP_BUF is not supposed to be used, you allocate your own memory 
+    //TODO: There should be a separate open function, and keep track of which module handles which fd
+    char *TMP_BUF = (char*)kalloc(pg, min(fd.size,size), ALIGN_64B, true, false);
+    mod->read(&fd, TMP_BUF, min(fd.size,size), 0);
     return TMP_BUF;
 }
 
 sizedptr list_directory_contents(const char *path){
     const char *search_path = path;
-    kprintf("Getting module for path %s",(uintptr_t)search_path);
     driver_module *mod = get_module(&search_path);
-    kprintf("Got module %x for path %s",(uintptr_t)mod,(uintptr_t)search_path);
     if (!mod) return {0,0};
     return mod->readdir(search_path);
 }

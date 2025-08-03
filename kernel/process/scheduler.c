@@ -29,8 +29,6 @@ typedef struct sleep_tracker {
 sleep_tracker sleeping[MAX_PROCS];
 uint16_t sleep_count;
 
-uint64_t ksp;
-
 void save_context_registers(){
     save_context(&processes[current_proc]);
 }
@@ -123,7 +121,6 @@ void init_main_process(){
     proc->heap = (uintptr_t)palloc(0x1000, true, false, false);
     proc->stack_size = 0x1000;
     proc->stack = (uintptr_t)palloc(proc->stack_size,true,false,true);
-    ksp = proc->stack + proc->stack_size;
     proc->sp = ksp;
     name_process(proc, "kernel");
     proc_count++;

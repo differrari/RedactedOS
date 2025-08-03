@@ -34,11 +34,6 @@ bool FAT32FS::init(uint32_t partition_sector){
 
     if (mbs->boot_signature != 0xAA55){
         kprintf("[fat32] Wrong boot signature %x",mbs->boot_signature);
-        uint8_t *bytes = ((uint8_t*)mbs);
-        for (int i = 0; i < 512; i++){
-            kputf("%x",bytes[i]);
-        }
-        kprintf("Failed to read");
         return false;
     }
     if (mbs->signature != 0x29 && mbs->signature != 0x28){
@@ -263,15 +258,16 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     sizedptr buf_ptr = walk_directory(count, mbs->first_cluster_of_root_directory, path, read_entry_handler);
     void *buf = (void*)buf_ptr.ptr;
     if (!buf) return FS_RESULT_NOTFOUND;
-    descriptor->id = open_files.size();
+    descriptor->id = reserve_fd_id();
     descriptor->size = buf_ptr.size;
-    open_files.add(descriptor->id, buf);
+    open_files.add(reserve_fd_id(), buf);
     //TODO: go back to using a linked list, and a static id for the file, ideally global for system
     return FS_RESULT_SUCCESS;
 }
 
 size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
     void* file = open_files[descriptor->id];
+    //TODO: keep track of file size and limit copy to only that or less
     memcpy(buf, file, size);
     return size;
 }

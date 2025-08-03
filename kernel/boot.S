@@ -102,7 +102,7 @@ el2_entry:
     eret
 
 stack_setup:
-    ldr x1, =stack_top
+    ldr x1, =ksp
     mov sp, x1
 
     mov x29, xzr
