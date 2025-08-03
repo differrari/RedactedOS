@@ -3,9 +3,21 @@
 #include "kconsole/kconsole.h"
 #include "std/string.h"
 #include "memory/page_allocator.h"
+#include "std/memfunctions.h"
 
 static bool use_visual = true;
 void* print_buf;
+uintptr_t cursor;
+
+void reset_buffer(){
+    cursor = ((uintptr_t)print_buf);
+    memset(print_buf, 0, 0x3000);
+}
+
+void init_print_buf(){
+    print_buf = palloc(0x3000,true, false, true);
+    reset_buffer();
+}
 
 bool console_init(){
     enable_uart();
@@ -62,22 +74,26 @@ void putc(const char c){
         kconsole_putc(c);
 }
 
-void init_print_buf(){
-    print_buf = palloc(0x1000,true, false, false);
-}
-
 void kprintf(const char *fmt, ...){
     if (!print_buf) init_print_buf();
     va_list args;
     va_start(args, fmt);
-    char* buf = kalloc(print_buf, 256, ALIGN_64B, true, false);
-    size_t len = string_format_va_buf(fmt, buf, args);
+
+    //TODO: If we don't read this value, the logs crash. Could it be stack overflow? We probably don't need KSP
+    mem_page *info = (mem_page*)print_buf;
+    info->next_free_mem_ptr = info->next_free_mem_ptr;
+
+    if (cursor >= ((uintptr_t)print_buf) + 0x2F00){
+        reset_buffer();
+    }
+
+    //TODO: string_format_va_buf should be given a maximum size
+    size_t len = string_format_va_buf(fmt, (char*)cursor, args);
     va_end(args);
-    puts(buf);
+    puts((char*)cursor);
     putc('\r');
     putc('\n');
-    //TODO: these buffers should be freed sometime, maybe after writing them to disk, and even those should be wiped eventually
-    // kfree((void*)buf, 256);
+    cursor += len;
 }
 
 void kprint(const char *fmt){
@@ -90,11 +106,19 @@ void kputf(const char *fmt, ...){
     if (!print_buf) init_print_buf();
     va_list args;
     va_start(args, fmt);
-    char* buf = kalloc(print_buf, 256, ALIGN_64B, true, false);
-    size_t len = string_format_va_buf(fmt, buf, args);
+
+    //TODO: If we don't read this value, the logs crash
+    mem_page *info = (mem_page*)print_buf;
+    info->next_free_mem_ptr = info->next_free_mem_ptr;
+
+    if (cursor >= ((uintptr_t)print_buf) + 0x2F00){
+        reset_buffer();
+    }
+
+    size_t len = string_format_va_buf(fmt, (char*)cursor, args);
     va_end(args);
-    puts(buf);
-    // kfree((void*)buf, 256);
+    puts((char*)cursor);
+    cursor += len;
 }
 
 void disable_visual(){
