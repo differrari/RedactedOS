@@ -30,12 +30,12 @@ void kernel_main() {
     init_main_process();
 
     load_module(&console_module);
-
-    mmu_alloc();
+    kprint("UART output enabled");
 
     // mmu_enable_verbose();
+    mmu_alloc();
+
     print_hardware();
-    kprint("UART output enabled");
 
     uint64_t seed;
     asm volatile("mrs %0, cntvct_el0" : "=r"(seed));
@@ -45,9 +45,6 @@ void kernel_main() {
     kprint("Exception vectors set");
    
     kprint("Initializing kernel...");
-
-    kprint("Preparing for draw");
-    gpu_size screen_size = {1080,720};
     
     irq_init();
     kprintf("Interrupts initialized");
@@ -56,7 +53,7 @@ void kernel_main() {
 
     kprint("Initializing GPU");
 
-    gpu_init(screen_size);
+    load_module(&graphics_module);
     
     kprintf("GPU initialized");
     

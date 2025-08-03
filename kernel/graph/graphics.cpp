@@ -13,7 +13,8 @@ static bool _gpu_ready;
 
 GPUDriver *gpu_driver;
 
-void gpu_init(gpu_size preferred_screen_size){
+bool gpu_init(){
+    gpu_size preferred_screen_size = {1080,720};
     if (BOARD_TYPE == 1){
         if (VirtioGPUDriver *vgd = VirtioGPUDriver::try_init(preferred_screen_size)){
             gpu_driver = vgd;
@@ -22,10 +23,11 @@ void gpu_init(gpu_size preferred_screen_size){
         }
     } else if (BOARD_TYPE == 2){
         gpu_driver = VideoCoreGPUDriver::try_init(preferred_screen_size);
-    }
+    } else return false;
     screen_size = preferred_screen_size;
     _gpu_ready = true;
     kprintf("Selected and initialized GPU %x", (uintptr_t)gpu_driver);
+    return true;
 }
 
 bool gpu_ready(){
@@ -83,3 +85,15 @@ gpu_size gpu_get_screen_size(){
         return (gpu_size){0,0};
     return gpu_driver->get_screen_size();
 }
+
+driver_module graphics_module = {
+    .name = "graphics",
+    .mount = "/dev/graph",
+    .init = gpu_init,
+    .fini = 0,
+    .open = 0,
+    .read = 0,
+    .write = 0,
+    .seek = 0,
+    .readdir = 0
+};
