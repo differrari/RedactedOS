@@ -28,16 +28,14 @@ void translate_enable_verbose(){
 #define kputfv(fmt, ...) \
     ({ \
         if (translate_verbose){\
-            uint64_t _args[] = { __VA_ARGS__ }; \
-            kputf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kputf((fmt), ##__VA_ARGS__); \
         }\
     })
 
 #define kprintfv(fmt, ...) \
     ({ \
         if (translate_verbose){\
-            uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
 
@@ -252,7 +250,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
 }
 
 
-process_t* create_process(char *name, void *content, uint64_t content_size, uintptr_t entry) {
+process_t* create_process(const char *name, void *content, uint64_t content_size, uintptr_t entry) {
     
     disable_interrupt();
     process_t* proc = init_process();
@@ -260,7 +258,7 @@ process_t* create_process(char *name, void *content, uint64_t content_size, uint
     name_process(proc, name);
     
     //TODO: keep track of code size so we can free up allocated code pages
-    uint8_t* dest = (uint8_t*)alloc_page(content_size, false, false, true);
+    uint8_t* dest = (uint8_t*)palloc(content_size, false, false, true);
     if (!dest) return 0;
 
     for (uint64_t i = 0; i < content_size; i++){
@@ -269,10 +267,10 @@ process_t* create_process(char *name, void *content, uint64_t content_size, uint
     
     uint64_t stack_size = 0x1000;
 
-    uintptr_t stack = (uintptr_t)alloc_page(stack_size, false, false, false);
+    uintptr_t stack = (uintptr_t)palloc(stack_size, false, false, false);
     if (!stack) return 0;
 
-    uintptr_t heap = (uintptr_t)alloc_page(stack_size, false, false, false);
+    uintptr_t heap = (uintptr_t)palloc(stack_size, false, false, false);
     if (!heap) return 0;
 
     proc->stack = (stack + stack_size);
@@ -282,7 +280,7 @@ process_t* create_process(char *name, void *content, uint64_t content_size, uint
     proc->sp = proc->stack;
     
     proc->pc = (uintptr_t)(dest + entry);
-    kprintf_raw("User process %s allocated with address at %x, stack at %x, heap at %x",(uintptr_t)name,proc->pc, proc->sp, proc->heap);
+    kprintf("User process %s allocated with address at %x, stack at %x, heap at %x",(uintptr_t)name,proc->pc, proc->sp, proc->heap);
     proc->spsr = 0;
     proc->state = READY;
 

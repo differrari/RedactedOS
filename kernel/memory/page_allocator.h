@@ -14,12 +14,12 @@ void page_allocator_init();
 #ifdef __cplusplus
 extern "C" {
 #endif
-void* alloc_page(uint64_t size, bool kernel, bool device, bool full);
-void free_page(void* ptr, uint64_t size);
+void* palloc(uint64_t size, bool kernel, bool device, bool full);
+void pfree(void* ptr, uint64_t size);
 void mark_used(uintptr_t address, size_t pages);
 
-void* allocate_in_page(void *page, uint64_t size, uint16_t alignment, bool kernel, bool device);
-void free_from_page(void* ptr, uint64_t size);
+void* kalloc(void *page, uint64_t size, uint16_t alignment, bool kernel, bool device);
+void kfree(void* ptr, uint64_t size);
 
 int count_pages(uint64_t i1,uint64_t i2);
 

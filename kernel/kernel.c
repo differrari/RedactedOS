@@ -3,11 +3,8 @@
 #include "graph/graphics.h"
 #include "hw/hw.h"
 #include "pci.h"
-#include "kstring.h"
-#include "console/kconsole/kconsole.h"
 #include "memory/mmu.h"
 #include "exceptions/exception_handler.h"
-#include "memory/kalloc.h"
 #include "exceptions/irq.h"
 #include "process/scheduler.h"
 #include "filesystem/disk.h"
@@ -16,47 +13,42 @@
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
-#include "math/random.h"
+#include "dev/random/random.h"
+#include "filesystem/filesystem.h"
+#include "dev/module_loader.h" 
+#include "audio/audio.h"
 
 void kernel_main() {
 
     detect_hardware();
     
-    mmu_alloc();
-    // mmu_enable_verbose();
-    enable_uart();
-    kprintf_l("UART output enabled");
-    // enable_talloc_verbose();
-
-    uint64_t seed;
-    asm volatile("mrs %0, cntvct_el0" : "=r"(seed));
-    rng_init_global(seed);
-    kprintf("Random init. seed: %i\n", seed);
+    //  page_alloc_enable_verbose();
+    page_allocator_init();
 
     set_exception_vectors();
-    kprintf_l("Exception vectors set");
+
+    init_main_process();
+
+    load_module(&console_module);
+    kprint("UART output enabled");
+
+    // mmu_enable_verbose();
+    mmu_alloc();
 
     print_hardware();
 
-    page_allocator_init();
-    // page_alloc_enable_verbose();
-    kprintf_l("Initializing kernel...");
-    
-    init_main_process();
+    load_module(&rng_module);
 
-    kprintf_l("Preparing for draw");
-    gpu_size screen_size = {1080,720};
+    kprint("Exception vectors set");
+   
+    kprint("Initializing kernel...");
     
     irq_init();
     kprintf("Interrupts initialized");
 
     enable_interrupt();
 
-    kprintf_l("Initializing GPU");
-
-    gpu_init(screen_size);
-    
-    kprintf("GPU initialized");
+    load_module(&graphics_module);
     
     kprintf("Initializing disk...");
 
@@ -64,7 +56,7 @@ void kernel_main() {
         pci_setup_rp1();
     
     // disk_verbose();
-    if (!find_disk())
+    if (!init_disk_device())
         panic("Disk initialization failure");
 
     // xhci_enable_verbose();
@@ -72,23 +64,28 @@ void kernel_main() {
         panic("Input initialization error");
 
     bool network_available = network_init();
+    
+    load_module(&audio_module);
+
     init_input_process();
 
     mmu_init();
-    kprintf_l("MMU Mapped");
+    kprint("MMU Mapped");
 
-    if (!disk_init())
-        panic("Disk read failure");
+    if (!init_boot_filesystem())
+        panic("Filesystem initialization failure");
 
-    kprintf_l("Kernel initialization finished");
+    kprint("Kernel initialization finished");
 
-    kprintf_l("Starting processes");
+    kprint("Starting processes");
 
     if (network_available) launch_net_process();
 
     init_bootprocess();
+
+    console_module.write(0, "Hello from module", 0, 0);
     
-    kprintf_l("Starting scheduler");
+    kprint("Starting scheduler");
     
     start_scheduler();
 

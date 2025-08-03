@@ -10,3 +10,6 @@ dump.dtb
 fs
 dump
 *.cfg
+.cache/*
+compile_commands.json
+.clangd

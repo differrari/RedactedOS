@@ -117,7 +117,7 @@ bool NetworkDispatch::read_packet(sizedptr *Packet, uint16_t process){
 
     sizedptr original = proc->packet_buffer.entries[proc->packet_buffer.read_index];
     
-    uintptr_t copy = (uintptr_t)allocate_in_page((void*)get_current_heap(), original.size, ALIGN_16B, get_current_privilege(), false);
+    uintptr_t copy = (uintptr_t)kalloc((void*)get_current_heap(), original.size, ALIGN_16B, get_current_privilege(), false);
     memcpy((void*)copy,(void*)original.ptr,original.size);
     Packet->ptr = copy;
     Packet->size = original.size;

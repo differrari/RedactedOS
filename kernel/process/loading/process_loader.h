@@ -6,7 +6,7 @@ extern "C" {
 #include "types.h"
 #include "process/process.h"
 
-process_t* create_process(char *name, void *content, uint64_t content_size, uintptr_t entry);
+process_t* create_process(const char *name, void *content, uint64_t content_size, uintptr_t entry);
 void translate_enable_verbose();
 #ifdef __cplusplus
 }

@@ -3,9 +3,7 @@
 #include "console/kio.h"
 #include "graph/graphics.h"
 #include "std/string.h"
-#include "memory/kalloc.h"
 #include "theme/theme.h"
-#include "exceptions/exception_handler.h"
 #include "input/input_dispatch.h"
 #include "process/scheduler.h"
 #include "math/math.h"
@@ -91,6 +89,7 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
 __attribute__((section(".text.kcoreprocesses")))
 void bootscreen(){
     disable_visual();
+    gpu_clear(BG_COLOR);
     sys_focus_current();
     while (1)
     {

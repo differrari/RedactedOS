@@ -1,11 +1,54 @@
 #include "kio.h"
 #include "serial/uart.h"
-#include "kstring.h"
-#include "exceptions/irq.h"
-#include "memory/kalloc.h"
 #include "kconsole/kconsole.h"
+#include "std/string.h"
+#include "memory/page_allocator.h"
 
 static bool use_visual = true;
+void* print_buf;
+
+bool console_init(){
+    enable_uart();
+    return true;
+}
+
+bool console_fini(){
+    return false;
+}
+
+FS_RESULT console_open(const char *path, file *out_fd){
+    return FS_RESULT_SUCCESS;
+}
+
+size_t console_read(file *fd, char *out_buf, size_t size, file_offset offset){
+    return 0;
+}
+
+size_t console_write(file *fd, const char *buf, size_t size, file_offset offset){
+    kprintf(buf);
+}
+
+
+file_offset console_seek(file *fd, file_offset offset){
+    return 0;
+}
+
+sizedptr console_readdir(const char* path){
+    return (sizedptr){ 0, 0 };
+}
+
+driver_module console_module = (driver_module){
+    .name = "console",
+    .mount = "/dev/console",
+    .version = VERSION_NUM(0,1,0,0),
+    .init = console_init,
+    .fini = console_fini,
+    .open = console_open,
+    .read = console_read,
+    .write = console_write,
+    .seek = console_seek,
+    .readdir = console_readdir,
+};
 
 void puts(const char *s){
     uart_raw_puts(s);
@@ -19,34 +62,39 @@ void putc(const char c){
         kconsole_putc(c);
 }
 
-void puthex(uint64_t value){
-    uart_puthex(value);
-    if (use_visual)
-        kconsole_puthex(value);
+void init_print_buf(){
+    print_buf = palloc(0x1000,true, false, false);
 }
 
-void kprintf_args(const char *fmt, const uint64_t *args, uint32_t arg_count){
-    kprintf_args_raw(fmt, args, arg_count);
-}
-
-void kprintf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count){
-    kstring s = kstring_format_args(fmt, args, arg_count);
-    puts(s.data);
+void kprintf(const char *fmt, ...){
+    if (!print_buf) init_print_buf();
+    va_list args;
+    va_start(args, fmt);
+    char* buf = kalloc(print_buf, 256, ALIGN_64B, true, false);
+    size_t len = string_format_va_buf(fmt, buf, args);
+    va_end(args);
+    puts(buf);
     putc('\r');
     putc('\n');
-    temp_free(s.data,256);
+    //TODO: these buffers should be freed sometime, maybe after writing them to disk, and even those should be wiped eventually
+    // kfree((void*)buf, 256);
 }
 
-void kprintf_l(const char *fmt){
+void kprint(const char *fmt){
     puts(fmt);
     putc('\r');
     putc('\n');
 }
 
-void kputf_args_raw(const char *fmt, const uint64_t *args, uint32_t arg_count){
-    kstring s = kstring_format_args(fmt, args, arg_count);
-    puts(s.data);
-    temp_free(s.data,256);
+void kputf(const char *fmt, ...){
+    if (!print_buf) init_print_buf();
+    va_list args;
+    va_start(args, fmt);
+    char* buf = kalloc(print_buf, 256, ALIGN_64B, true, false);
+    size_t len = string_format_va_buf(fmt, buf, args);
+    va_end(args);
+    puts(buf);
+    // kfree((void*)buf, 256);
 }
 
 void disable_visual(){

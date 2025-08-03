@@ -47,8 +47,7 @@ void virtio_enable_verbose(){
 #define kprintfv(fmt, ...) \
     ({ \
         if (virtio_verbose){\
-            uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
 
@@ -119,14 +118,14 @@ bool virtio_init_device(virtio_device *dev) {
         return false;
     }
 
-    dev->memory_page = alloc_page(0x1000, true, true, false);
+    dev->memory_page = palloc(0x1000, true, true, false);
 
     uint32_t queue_index = 0;
     uint32_t size;
     while ((size = select_queue(dev,queue_index))){
-        uint64_t base = (uintptr_t)allocate_in_page(dev->memory_page, 16 * size, ALIGN_4KB, true, true);
-        uint64_t avail = (uintptr_t)allocate_in_page(dev->memory_page, 4 + (2 * size), ALIGN_4KB, true, true);
-        uint64_t used = (uintptr_t)allocate_in_page(dev->memory_page, sizeof(uint16_t) * (2 + size), ALIGN_4KB, true, true);
+        uint64_t base = (uintptr_t)kalloc(dev->memory_page, 16 * size, ALIGN_4KB, true, true);
+        uint64_t avail = (uintptr_t)kalloc(dev->memory_page, 4 + (2 * size), ALIGN_4KB, true, true);
+        uint64_t used = (uintptr_t)kalloc(dev->memory_page, sizeof(uint16_t) * (2 + size), ALIGN_4KB, true, true);
 
         kprintfv("[VIRTIO QUEUE %i] Device base %x",queue_index,base);
         kprintfv("[VIRTIO QUEUE %i] Device avail %x",queue_index,avail);
@@ -242,7 +241,6 @@ void virtio_add_buffer(virtio_device *dev, uint16_t index, uint64_t buf, uint32_
 
     struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)dev->common_cfg->queue_desc;
     struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)dev->common_cfg->queue_driver;
-    struct virtq_used* u = (struct virtq_used*)(uintptr_t)dev->common_cfg->queue_device;
     
     d[index].addr = buf;
     d[index].len = buf_len;

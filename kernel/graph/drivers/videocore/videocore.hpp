@@ -25,7 +25,7 @@ private:
     uintptr_t framebuffer;
     uintptr_t back_framebuffer;
 
-    void* page;
+    void* mem_page;
 
     uint8_t bpp;
     uint32_t stride;

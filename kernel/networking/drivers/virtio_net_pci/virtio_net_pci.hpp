@@ -2,6 +2,8 @@
 #include "virtio/virtio_pci.h"
 #include "net/network_types.h"
 
+#define VIRTIO_NET_ID 0x1000
+
 class VirtioNetDriver : public NetDriver {
 public:
     static VirtioNetDriver* try_init();

@@ -41,7 +41,7 @@ __attribute__((section(".text.kcoreprocesses")))
 void login_screen(){
     sys_focus_current();
     sys_set_secure(true);
-    char* buf = (char*)talloc(256);
+    char* buf = (char*)malloc(256);
     int len = 0;
     keypress old_kp;
     const char* name = BOOTSCREEN_TEXT;
@@ -71,6 +71,7 @@ void login_screen(){
                 if (hid_keycode_to_char[(uint8_t)key]){
                     if (key == KEY_ENTER || key == KEY_KEYPAD_ENTER){
                         if (strcmp(buf,default_pwd, false) == 0){
+                            free(buf, 256);
                             free(s.data,s.mem_length);
                             free(title.data,title.mem_length);
                             free(subtitle.data,subtitle.mem_length);
@@ -79,7 +80,7 @@ void login_screen(){
                         } else
                             break;
                     }
-                    key = hid_keycode_to_char[(uint8_t)key];//Translate readables
+                    key = hid_keycode_to_char[(uint8_t)key];
                     if (key != 0 && len < 256 && (!keypress_contains(&old_kp,kp.keys[i], kp.modifier) || !is_new_keypress(&old_kp, &kp))){
                         buf[len] = key;
                         len++;

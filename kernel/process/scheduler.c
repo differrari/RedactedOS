@@ -41,7 +41,7 @@ void save_return_address_interrupt(){
 
 //TODO: Processes can currently exit and just crash the whole system with an EL1 Sync exception trying to read from 0x0. Better than continuing execution past bounds but still not great
 void switch_proc(ProcSwitchReason reason) {
-    // kprintf_raw("Stopping execution of process %i at %x",current_proc, processes[current_proc].spsr);
+    // kprintf("Stopping execution of process %i at %x",current_proc, processes[current_proc].spsr);
     if (proc_count == 0)
         panic("No processes active");
     int next_proc = (current_proc + 1) % MAX_PROCS;
@@ -93,7 +93,7 @@ uint16_t get_current_proc_pid(){
 
 void reset_process(process_t *proc){
     proc->sp = 0;
-    free_page((void*)proc->stack-proc->stack_size,proc->stack_size);
+    pfree((void*)proc->stack-proc->stack_size,proc->stack_size);
     proc->pc = 0;
     proc->spsr = 0;
     for (int j = 0; j < 31; j++)
@@ -120,9 +120,9 @@ void init_main_process(){
     reset_process(proc);
     proc->id = next_proc_index++;
     proc->state = BLOCKED;
-    proc->heap = (uintptr_t)alloc_page(0x1000, true, false, false);
+    proc->heap = (uintptr_t)palloc(0x1000, true, false, false);
     proc->stack_size = 0x1000;
-    proc->stack = (uintptr_t)alloc_page(proc->stack_size,true,false,true);
+    proc->stack = (uintptr_t)palloc(proc->stack_size,true,false,true);
     ksp = proc->stack + proc->stack_size;
     proc->sp = ksp;
     name_process(proc, "kernel");
@@ -169,7 +169,7 @@ void stop_process(uint16_t pid){
         sys_unset_focus();
     //TODO: we don't wipe the process' data. If we do, we corrupt our sp, since we're still in the process' sp.
     proc_count--;
-    // kprintf_raw("Stopped %i process %i",pid,proc_count);
+    // kprintf("Stopped %i process %i",pid,proc_count);
     switch_proc(HALT);
 }
 

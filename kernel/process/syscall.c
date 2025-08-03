@@ -59,13 +59,13 @@ void sync_el0_handler_c(){
             if ((uintptr_t)page_ptr == 0x0){
                 handle_exception_with_info("Wrong process heap state", iss);
             }
-            result = (uintptr_t)allocate_in_page(page_ptr, x0, ALIGN_16B, get_current_privilege(), false);
+            result = (uintptr_t)kalloc(page_ptr, x0, ALIGN_16B, get_current_privilege(), false);
             break;
         case 1:
-            free_from_page((void*)x0, x1);
+            kfree((void*)x0, x1);
             break;
         case 3:
-            kprintf_l((const char *)x0);
+            kprint((const char *)x0);
             break;
 
         case 5:
@@ -110,7 +110,7 @@ void sync_el0_handler_c(){
             break;
 
         case 21:
-            result = (uintptr_t)allocate_in_page((void*)get_current_heap(), sizeof(gpu_size), ALIGN_16B, get_current_privilege(), false);
+            result = (uintptr_t)kalloc((void*)get_current_heap(), sizeof(gpu_size), ALIGN_16B, get_current_privilege(), false);
             gpu_size size = gpu_get_screen_size();
             memcpy((void*)result, &size, sizeof(gpu_size));
             break;

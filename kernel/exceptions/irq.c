@@ -8,6 +8,7 @@
 #include "console/serial/uart.h"
 #include "networking/network.h"
 #include "hw/hw.h"
+#include "audio/audio.h"
 
 #define IRQ_TIMER 30
 #define SLEEP_TIMER 27
@@ -47,6 +48,7 @@ void irq_init() {
     gic_enable_irq(MSI_OFFSET + NET_IRQ, 0x80, 0);
     gic_enable_irq(MSI_OFFSET + NET_IRQ + 1, 0x80, 0);
     gic_enable_irq(SLEEP_TIMER, 0x80, 0);
+    gic_enable_irq(MSI_OFFSET + AUDIO_IRQ, 0x80, 0);
 
     if (RPI_BOARD != 3){
         write32(GICC_BASE + 0x004, 0xF0); //Priority
@@ -54,9 +56,9 @@ void irq_init() {
         write32(GICC_BASE, 1); // Enable CPU Interface
         write32(GICD_BASE, 1); // Enable Distributor
 
-        kprintf_l("[GIC] GIC enabled");
+        kprint("[GIC] GIC enabled");
     } else {
-        kprintf_l("Interrupts initialized");
+        kprint("Interrupts initialized");
     }
 }
 
@@ -96,12 +98,16 @@ void irq_el1_handler() {
         network_handle_download_interrupt();
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         process_restore();
-    }  else if (irq == MSI_OFFSET + NET_IRQ + 1){
+    } else if (irq == MSI_OFFSET + NET_IRQ + 1){
         network_handle_upload_interrupt();
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         process_restore();
+    } else if (irq == MSI_OFFSET + AUDIO_IRQ){
+        audio_handle_interrupt();
+        if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
+        process_restore();
     } else {
-        kprintf_raw("[GIC error] Received unknown interrupt");
+        kprintf("[GIC error] Received unknown interrupt %i",irq);
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         process_restore();
     }

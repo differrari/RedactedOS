@@ -27,4 +27,5 @@ private:
     uint64_t framebuffer_size;
     gpu_size screen_size;
     uint32_t stride;
+    void* mem_page;
 };
