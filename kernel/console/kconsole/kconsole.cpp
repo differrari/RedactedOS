@@ -63,9 +63,9 @@ void KernelConsole::newline(){
     if (!check_ready()) return;
     uint32_t row_index;
     if (row_ring.pop(row_index)){
+        row_ring.push(row_index);
         char* line = row_data + row_index * columns;
         for (uint32_t x = cursor_x; x < columns; x++) line[x] = 0;
-        row_ring.push(row_index);
     }
     cursor_x = 0;
     cursor_y++;
@@ -77,11 +77,9 @@ void KernelConsole::newline(){
 
 void KernelConsole::scroll(){
     if (!check_ready()) return;
-    uint32_t row_index;
-    if (row_ring.pop(row_index)){
+    if (uint32_t row_index = row_ring.peek()){
         char* line = row_data + row_index * columns;
         for (uint32_t x = 0; x < columns; x++) line[x] = 0;
-        row_ring.push(row_index);
     }
     redraw();
 }
