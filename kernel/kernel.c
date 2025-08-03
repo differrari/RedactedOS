@@ -13,7 +13,7 @@
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
-#include "math/random.h"
+#include "dev/random/random.h"
 #include "filesystem/filesystem.h"
 #include "dev/module_loader.h" 
 #include "audio/audio.h"
@@ -37,10 +37,7 @@ void kernel_main() {
 
     print_hardware();
 
-    uint64_t seed;
-    asm volatile("mrs %0, cntvct_el0" : "=r"(seed));
-    rng_init_global(seed);
-    kprintf("Random init. seed: %i\n", seed);
+    load_module(&rng_module);
 
     kprint("Exception vectors set");
    

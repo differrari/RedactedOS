@@ -1,9 +1,13 @@
-#include "random.h"
+#include "rng.h"
 #include "std/memfunctions.h"
 
-rng_t global_rng;
+void rng_init_random(rng_t *rng){
+    uint64_t seed;
+    asm volatile("mrs %0, cntvct_el0" : "=r"(seed));
+    rng_seed(rng, seed);
+}
 
-void rng_seed(rng_t* rng, uint64_t seed){ //i guess it is "private", no definition in header
+void rng_seed(rng_t* rng, uint64_t seed){ 
     uint64_t z = seed + 0x9E3779B97F4A7C15;
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9;
     z = (z ^ (z >> 27)) *0x94D049BB133111EB;
@@ -86,12 +90,8 @@ void rng_fill_buf(rng_t* rng, void* dest, size_t count) {
     rng_fill64(rng, dest, blocks);
 
     uint64_t remaining = (count % 32) / 8;
-    for (uint64_t i = 0; i < remaining; i++) d64[i] = rng_next64(&global_rng);;
+    for (uint64_t i = 0; i < remaining; i++) d64[i] = rng_next64(rng);;
 
     uint8_t *d8 = (uint8_t *)(d64 + remaining);
-    for (uint64_t i = 0; i < count % 8; i++) d8[i] = rng_next8(&global_rng);;
-}
-
-void rng_init_global(uint64_t seed) {
-    rng_seed(&global_rng, seed);
+    for (uint64_t i = 0; i < count % 8; i++) d8[i] = rng_next8(rng);
 }
