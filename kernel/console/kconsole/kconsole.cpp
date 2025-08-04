@@ -2,6 +2,7 @@
 #include "console/serial/uart.h"
 #include "memory/page_allocator.h"
 #include "filesystem/filesystem.h"
+#include "input/input_dispatch.h"
 
 KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false){
     initialize();
@@ -126,4 +127,18 @@ void KernelConsole::clear(){
         }
     }
     cursor_x = cursor_y = 0;
+}
+
+void KernelConsole::handle_input(){
+    keypress kp;
+    while (sys_read_input_current(&kp)){
+        for (int i = 0; i < 6; i++){
+            char key = kp.keys[i];
+            char readable = hid_to_char((uint8_t)key);
+            if (readable){
+                put_char(readable);
+                gpu_flush();
+            }
+        }
+    }
 }

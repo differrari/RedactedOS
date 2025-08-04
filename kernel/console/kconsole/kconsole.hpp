@@ -22,8 +22,9 @@ public:
     void refresh();
     
     void set_active(bool active);
+    void handle_input();
     
-    private:
+private:
     bool check_ready();
     void screen_clear();
     void redraw();

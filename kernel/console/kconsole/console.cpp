@@ -34,11 +34,15 @@ extern "C" void toggle_visual(){
             active = !active;
             if (active){
                 pause_window_draw();
+                sys_focus_current();
                 console->refresh();
             } else {
                 resume_window_draw();
                 console->clear();
             }
+        }
+        if (active){
+            console->handle_input();
         }
     }
 }
