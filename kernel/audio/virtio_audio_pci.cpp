@@ -195,6 +195,7 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
             kprintf("[VIRTIO_AUDIO error] Failed to configure stream %i",stream);
         }
 
+#if false
         if (stream_info[stream].direction == VIRTIO_SND_D_OUTPUT){
             kprintf("Playing from stream %i",stream);
             select_queue(&audio_dev, TRANSMIT_QUEUE);
@@ -218,8 +219,8 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
 
             select_queue(&audio_dev, CONTROL_QUEUE);
         }
+#endif 
     }
-
     return true;
 }
 
