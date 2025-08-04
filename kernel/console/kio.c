@@ -105,7 +105,7 @@ void kprintf(const char *fmt, ...){
     puts((char*)cursor);
     putc('\r');
     putc('\n');
-    cursor += len-1;
+    cursor += len;
     *(char*)(cursor++) = '\r';
     *(char*)(cursor++) = '\n';
 }
@@ -147,6 +147,7 @@ void disable_visual(){
 void enable_visual(){
     use_visual = true;
     pause_window_draw();
+    kconsole_refresh();
 }
 
 __attribute__((section(".text.kcoreprocesses")))
@@ -159,11 +160,11 @@ void toggle_visual(){
     bool active = false;
     while (1){
         if (sys_shortcut_triggered_current(shortcut)){
+            active = !active;
             if (active)
                 enable_visual();
             else 
                 disable_visual();
-            active = !active;
         }
     }
 }

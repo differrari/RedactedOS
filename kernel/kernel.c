@@ -82,8 +82,6 @@ void kernel_main() {
     if (network_available) launch_net_process();
 
     init_bootprocess();
-
-    console_module.write(0, "Hello from module", 0, 0);
     
     kprint("Starting scheduler");
     

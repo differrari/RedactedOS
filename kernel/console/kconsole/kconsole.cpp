@@ -1,6 +1,7 @@
 #include "kconsole.hpp"
 #include "console/serial/uart.h"
 #include "memory/page_allocator.h"
+#include "filesystem/filesystem.h"
 
 KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false){
     resize();
@@ -81,6 +82,14 @@ void KernelConsole::scroll(){
         char* line = row_data + row_index * columns;
         for (uint32_t x = 0; x < columns; x++) line[x] = 0;
     }
+    redraw();
+}
+
+void KernelConsole::refresh_input(){
+    resize();
+    clear();
+    void *content = read_file("/dev/console", buffer_data_size);
+    row_data = (char*)content;
     redraw();
 }
 

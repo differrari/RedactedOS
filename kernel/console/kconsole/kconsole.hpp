@@ -16,8 +16,11 @@ public:
     void scroll();
     void clear();
     void resize();
-
-private:
+    void refresh_input();
+    
+    void set_active(bool active);
+    
+    private:
     bool check_ready();
     void screen_clear();
     void redraw();
@@ -35,6 +38,7 @@ private:
     uint32_t buffer_data_size;
 
     void *mem_page;
+    bool active = true;
 };
 
 extern KernelConsole kconsole;

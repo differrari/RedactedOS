@@ -16,3 +16,8 @@ extern "C" void kconsole_puts(const char *s) {
 extern "C" void kconsole_clear() {
     kconsole.clear();
 }
+
+extern "C" void kconsole_refresh(){
+    kconsole.refresh_input();
+    gpu_flush();
+}
