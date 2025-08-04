@@ -89,8 +89,7 @@ void kprintf(const char *fmt, ...){
 
     //TODO: If we don't read this value, the logs crash. Could it be stack overflow?
     mem_page *info = (mem_page*)print_buf;
-    // info->next_free_mem_ptr = info->next_free_mem_ptr;
-
+    
     if (cursor >= ((uintptr_t)print_buf) + 0x2F00){
         reset_buffer();
     }

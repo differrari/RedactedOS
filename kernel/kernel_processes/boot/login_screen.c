@@ -10,15 +10,6 @@
 #include "std/string.h"
 #include "syscalls/syscalls.h"
 
-bool keypress_contains(keypress *kp, char key, uint8_t modifier){
-    if (kp->modifier != modifier) return false;//TODO: This is not entirely accurate, some modifiers do not change key
-
-    for (int i = 0; i < 6; i++)
-        if (kp->keys[i] == key)
-            return true;
-    return false;
-}
-
 __attribute__((section(".text.kcoreprocesses")))
 void login_screen(){
     sys_focus_current();

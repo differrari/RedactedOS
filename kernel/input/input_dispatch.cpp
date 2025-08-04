@@ -89,6 +89,20 @@ bool is_new_keypress(keypress* current, keypress* previous) {
     return false;
 }
 
+void remove_double_keypresses(keypress* current, keypress* previous){
+    for (int i = 0; i < 6; i++)
+        if (keypress_contains(previous, current->keys[i], previous->modifier)) current->keys[i] = 0;
+}
+
+bool keypress_contains(keypress *kp, char key, uint8_t modifier){
+    if (kp->modifier != modifier) return false;//TODO: This is not entirely accurate, some modifiers do not change key
+
+    for (int i = 0; i < 6; i++)
+        if (kp->keys[i] == key)
+            return true;
+    return false;
+}
+
 bool sys_read_input(int pid, keypress *out){
     process_t *process = get_proc_by_pid(pid);
     if (process->input_buffer.read_index == process->input_buffer.write_index) return false;

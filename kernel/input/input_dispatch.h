@@ -24,6 +24,8 @@ bool sys_shortcut_triggered_current(uint16_t sid);
 bool sys_shortcut_triggered(uint16_t pid, uint16_t sid);
 
 bool is_new_keypress(keypress* current, keypress* previous);
+bool keypress_contains(keypress *kp, char key, uint8_t modifier);
+void remove_double_keypresses(keypress* current, keypress* previous);
 
 bool input_init();
 

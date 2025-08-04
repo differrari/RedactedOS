@@ -36,6 +36,7 @@ void page_allocator_init() {
 }
 
 void pfree(void* ptr, uint64_t size) {
+    //TODO: review this, we're not using size
     uint64_t addr = (uint64_t)ptr;
     addr /= PAGE_SIZE;
     uint64_t table_index = addr/64;
@@ -58,7 +59,9 @@ void* palloc(uint64_t size, bool kernel, bool device, bool full) {
             uint64_t bit = __builtin_ctzll(inv);
             do {
                 bool found = true;
+                //TODO: check bounds
                 for (uint64_t b = bit; b < bit + (page_count - 1); b++){
+                    //TODO: Review parentheses here
                     if (!mem_bitmap[i] >> b & 1){
                         bit += page_count;
                         found = false;
