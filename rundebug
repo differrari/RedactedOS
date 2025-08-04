@@ -10,9 +10,9 @@ for arg in "$@"; do
   esac
 done
 
-# Apri una nuova finestra di terminale e lancia ./run_$MODE debug
-gnome-terminal -- bash -c "cd \"$PWD\"; ./run_$MODE debug; exec bash"
-
-# Apri un'altra finestra di terminale e lancia ./debug con gli argomenti passati
-gnome-terminal -- bash -c "cd \"$PWD\"; ./debug ${ARGS[*]}; exec bash"
-
+osascript <<EOF
+tell application "Terminal"
+    do script "cd \"$PWD\"; ./run_$MODE debug"
+    do script "cd \"$PWD\"; ./debug ${ARGS[*]}"
+end tell
+EOF
