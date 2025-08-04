@@ -15,7 +15,7 @@ typedef struct {
     bool triggered;
 } shortcut;
 
-shortcut shortcuts[16] = {0};
+shortcut shortcuts[16];
 
 uint16_t shortcut_count = 0;
 
@@ -112,6 +112,7 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
 }
 
 bool input_init(){
+    for (int i = 0; i < 16; i++) shortcuts[i] = (shortcut){0};
     if (BOARD_TYPE == 2 && RPI_BOARD != 5){
         input_driver = new DWC2Driver();//TODO: QEMU & 3 Only
         return input_driver->init();

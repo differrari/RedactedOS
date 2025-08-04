@@ -7,9 +7,9 @@
 void* mbr_page;
 
 uint32_t mbr_find_partition(uint8_t partition_type){
-    mbr_page = alloc_page(0x1000, true, true, false);
+    mbr_page = palloc(0x1000, true, true, false);
 
-    mbr *mbr_entry = (mbr*)allocate_in_page(mbr_page, 512, ALIGN_64B, true, true);
+    mbr *mbr_entry = (mbr*)kalloc(mbr_page, 512, ALIGN_64B, true, true);
     
     disk_read((void*)mbr_entry, 0, 1);
 

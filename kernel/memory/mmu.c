@@ -25,7 +25,6 @@
 #define MAIR_BIT 2
 
 #define PAGE_TABLE_ENTRIES 512
-#define PAGE_SIZE PAGE_TABLE_ENTRIES * 8
 
 uint64_t page_table_l0[PAGE_TABLE_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
 
@@ -38,8 +37,7 @@ void mmu_enable_verbose(){
 #define kprintfv(fmt, ...) \
     ({ \
         if (mmu_verbose){\
-            uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
 
@@ -93,14 +91,14 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) 
         uint64_t* l3 = (uint64_t*)talloc(PAGE_SIZE);
         l2[l2_index] = ((uint64_t)l3 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     } else if ((l2_val & 0b11) == PD_BLOCK){
-        kprintf_raw("[MMU error]: Region not mapped for address %x, already mapped at higher granularity [%i][%i][%i][%i]",va, l0_index,l1_index,l2_index,l3_index);
+        kprintf("[MMU error]: Region not mapped for address %x, already mapped at higher granularity [%i][%i][%i][%i]",va, l0_index,l1_index,l2_index,l3_index);
         return;
     }
     
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
     
     if (l3[l3_index] & 1){
-        kprintf_raw("[MMU warning]: Section already mapped %x",va);
+        kprintf("[MMU warning]: Section already mapped %x",va);
         return;
     }
     
@@ -167,9 +165,7 @@ void mmu_unmap(uint64_t va, uint64_t pa){
 }
 
 void mmu_alloc(){
-    for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) {
-        page_table_l0[i] = 0;
-    }
+    //TODO: use palloc, but consider it won't be able to add sections to MMU during that init
 }
 
 void mmu_init() {
@@ -222,7 +218,7 @@ void mmu_init() {
     uint64_t sctlr;
     asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
 
-    kprintf_raw("Finished MMU init");
+    kprintf("Finished MMU init");
 }
 
 void register_device_memory(uint64_t va, uint64_t pa){
@@ -249,36 +245,36 @@ void debug_mmu_address(uint64_t va){
     uint64_t l2_index = (va >> 21) & 0x1FF;
     uint64_t l3_index = (va >> 12) & 0x1FF;
 
-    kprintf_raw("Address %x is meant to be mapped to [%i][%i][%i][%i]",va, l0_index,l1_index,l2_index,l3_index);
+    kprintf("Address %x is meant to be mapped to [%i][%i][%i][%i]",va, l0_index,l1_index,l2_index,l3_index);
 
     if (!(page_table_l0[l0_index] & 1)) {
-        kprintf_raw("L1 Table missing");
+        kprintf("L1 Table missing");
         return;
     }
     uint64_t* l1 = (uint64_t*)(page_table_l0[l0_index] & 0xFFFFFFFFF000ULL);
     if (!(l1[l1_index] & 1)) {
-        kprintf_raw("L2 Table missing");
+        kprintf("L2 Table missing");
         return;
     }
     uint64_t* l2 = (uint64_t*)(l1[l1_index] & 0xFFFFFFFFF000ULL);
     uint64_t l3_val = l2[l2_index];
     if (!(l3_val & 1)) {
-        kprintf_raw("L3 Table missing");
+        kprintf("L3 Table missing");
         return;
     }
 
     if (!((l3_val >> 1) & 1)){
-        kprintf_raw("Mapped as 2MB memory in L3");
-        kprintf_raw("Entry: %x", l3_val);
+        kprintf("Mapped as 2MB memory in L3");
+        kprintf("Entry: %x", l3_val);
         return;
     }
 
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
     uint64_t l4_val = l3[l3_index];
     if (!(l4_val & 1)){
-        kprintf_raw("L4 Table entry missing");
+        kprintf("L4 Table entry missing");
         return;
     }
-    kprintf_raw("Entry: %x", l4_val);
+    kprintf("Entry: %x", l4_val);
     return;
 }

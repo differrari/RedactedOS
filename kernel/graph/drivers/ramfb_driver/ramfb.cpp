@@ -38,15 +38,19 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
     fb_set_bounds(screen_size.width,screen_size.height);
     
     struct fw_cfg_file file;
-    fw_find_file(kstring_l("etc/ramfb"), &file);
+    fw_find_file("etc/ramfb", &file);
     
     if (file.selector == 0x0){
         kprintf("Ramfb not found");
         return false;
     }
 
-    framebuffer = talloc(screen_size.width * screen_size.height * bpp);
-    back_framebuffer = talloc(screen_size.width * screen_size.height * bpp);
+    size_t fb_size = screen_size.width * screen_size.height * bpp;
+
+    mem_page = palloc(0x1000, true, true, false);
+
+    framebuffer = (uintptr_t)kalloc(mem_page, fb_size, true, true, false);
+    back_framebuffer = (uintptr_t)kalloc(mem_page, fb_size, true, true, false);
 
     ramfb_structure fb = {
         .addr = __builtin_bswap64(framebuffer),
@@ -111,7 +115,7 @@ void RamFBGPUDriver::fill_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t 
 }
 
 void RamFBGPUDriver::draw_line(uint32_t x0, uint32_t y0, uint32_t x1,uint32_t y1, color color){
-    gpu_rect rect = fb_draw_line((uint32_t*)framebuffer, x0, y0, x1, y1, color);
+    fb_draw_line((uint32_t*)framebuffer, x0, y0, x1, y1, color);
 }
 
 void RamFBGPUDriver::draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
@@ -123,7 +127,7 @@ gpu_size RamFBGPUDriver::get_screen_size(){
 }
 
 void RamFBGPUDriver::draw_string(string s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color){
-    gpu_size drawn_string = fb_draw_string((uint32_t*)back_framebuffer, s, x, y, scale, color);
+    fb_draw_string((uint32_t*)back_framebuffer, s, x, y, scale, color);
 }
 
 uint32_t RamFBGPUDriver::get_char_size(uint32_t scale){

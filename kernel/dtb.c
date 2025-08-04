@@ -55,7 +55,7 @@ void dtb_debug_print_all() {
             while (((char *)p)[skip]) skip++;
             skip = (skip + 4) & ~3;
             p += skip / 4;
-            kprintf_raw(name);
+            kprintf(name);
         } 
     }
 }

@@ -5,7 +5,7 @@
 #include "input/input_dispatch.h"
 #include "memory/kalloc.h"
 #include "std/string.h"
-#include "filesystem/disk.h"
+#include "filesystem/filesystem.h"
 #include "process/loading/elf_file.h"
 
 #define MAX_COLS 3
@@ -27,21 +27,22 @@ uint16_t Desktop::find_extension(char *path){
 
 Desktop::Desktop() {
     entries = Array<LaunchEntry>(9);
-    string_list *list = list_directory_contents("/redos/user/");
-    if (list){
+    sizedptr list_ptr = list_directory_contents("/boot/redos/user/");
+    string_list *list = (string_list*)list_ptr.ptr;
+    if (list && list_ptr.size){
         char* reader = (char*)list->array;
         for (uint32_t i = 0; i < list->count; i++){
             char *file = reader;
-            string fullpath = string_format("/redos/user/%s",(uintptr_t)file);
+            string fullpath = string_format("/boot/redos/user/%s",(uintptr_t)file);
             string name = string_ca_max(file,find_extension(file));
             string ext = string_l(file + find_extension(file));
             if (strcmp(ext.data,".elf", true) == 0){
-                kprintf("Extension %s matches .elf", (uintptr_t)ext.data);
                 add_entry(name.data, ext.data, fullpath.data);
             }
             while (*reader) reader++;
             reader++;
         }
+        //TODO: The list of strings needs to be freed, but this class is not its owner
     }
     
     single_label = new Label();
@@ -121,7 +122,7 @@ void Desktop::activate_current(){
             return;
         }
         kprintf("File path %s",(uintptr_t)entries[index].path);
-        void *file = read_file(entries[index].path);
+        void *file = read_file(entries[index].path, 0);
         active_proc = load_elf_file(entries[index].name, file);
         if (!active_proc){
             kprintf("Failed to read ELF file");
@@ -140,8 +141,8 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
     int border = 4;
     
     if (sel)
-        gpu_fill_rect((gpu_rect){10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row), tile_size.width, tile_size.height}, BG_COLOR+0x333333);
-    gpu_rect inner_rect = (gpu_rect){10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0), tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)};
+        gpu_fill_rect((gpu_rect){{10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row)}, {tile_size.width, tile_size.height}}, BG_COLOR+0x333333);
+    gpu_rect inner_rect = (gpu_rect){{10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0)}, {tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}};
     gpu_fill_rect(inner_rect, BG_COLOR+0x111111);
     if (index < entries.size()){
         string namestr = string_l(entries[index].name);
@@ -159,7 +160,7 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
         extension_label->set_bg_color(BG_COLOR+0x111111);
         extension_label->set_text_color(0xFFFFFFFF);
         extension_label->set_font_size(1);
-        extension_label->rect = (gpu_rect){10 + ((tile_size.width + 10)*column)+ (sel ? border*2 : border), 50 + ((tile_size.height + 10) *row) + (sel ? border*2 : border), 1, 1};
+        extension_label->rect = (gpu_rect){{10 + ((tile_size.width + 10)*column)+ (sel ? border*2 : border), 50 + ((tile_size.height + 10) *row) + (sel ? border*2 : border)}, {1, 1}};
         extension_label->set_alignment(HorizontalAlignment::Leading, VerticalAlignment::Top);
         extension_label->render();
         free(namestr.data, namestr.mem_length);

@@ -118,7 +118,7 @@ bool NetworkDispatch::dequeue_packet_for(uint16_t pid, sizedptr *out)
     sizedptr stored = buf.entries[buf.read_index];
     buf.read_index = (buf.read_index + 1) % PACKET_BUFFER_CAPACITY;
 
-    void *dst = allocate_in_page(reinterpret_cast<void *>(get_current_heap()),
+    void *dst = kalloc(reinterpret_cast<void *>(get_current_heap()),
                                  stored.size, ALIGN_16B,
                                  get_current_privilege(), false);
     if (!dst) return false;
@@ -128,6 +128,7 @@ bool NetworkDispatch::dequeue_packet_for(uint16_t pid, sizedptr *out)
     out->size = stored.size;
 
     free(reinterpret_cast<void *>(stored.ptr), stored.size);
+
     return true;
 }
 
@@ -149,7 +150,7 @@ static sizedptr make_user_copy(const sizedptr &src)
 sizedptr NetworkDispatch::make_copy(const sizedptr &in)
 {
     sizedptr out{0, 0};
-    void *dst = allocate_in_page(reinterpret_cast<void *>(get_current_heap()),
+    void *dst = kalloc(reinterpret_cast<void *>(get_current_heap()),
                                  in.size, ALIGN_16B,
                                  get_current_privilege(), false);
     if (!dst) return out;

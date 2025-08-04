@@ -26,21 +26,20 @@ uint32_t awaited_type;
 #define kprintfv(fmt, ...) \
     ({ \
         if (verbose){\
-            uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args_raw((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
 
 bool XHCIDriver::check_fatal_error() {
     uint32_t sts = op->usbsts;
     if (sts & (XHCI_USBSTS_HSE | XHCI_USBSTS_CE)) {
-        kprintf_raw("[xHCI ERROR] Fatal condition: USBSTS = %x", sts);
+        kprintf("[xHCI ERROR] Fatal condition: USBSTS = %x", sts);
         return true;
     }
     return false;
 }
 
-#define CHECK_XHCI_FIELD(field) (op->field != 0 ? (kprintf_raw("[xHCI Error] wrong " #field " %x", op->field), false) : (kprintfv("[xHCI] Correct " #field " value"), true))
+#define CHECK_XHCI_FIELD(field) (op->field != 0 ? (kprintf("[xHCI Error] wrong " #field " %x", op->field), false) : (kprintfv("[xHCI] Correct " #field " value"), true))
 
 #define XHCI_EP_TYPE_INT_IN 7
 #define XHCI_EP_TYPE_INT_OUT 3
@@ -71,7 +70,7 @@ bool XHCIDriver::init(){
         use_pci = true;
     }
     if (!addr){ 
-        kprintf_raw("[PCI] xHCI device not found");
+        kprintf("[PCI] xHCI device not found");
         return false;
     }
 
@@ -150,9 +149,9 @@ bool XHCIDriver::init(){
     op->config = max_device_slots;
     kprintfv("[xHCI] %i device slots", max_device_slots);
 
-    mem_page = alloc_page(0x1000, true, true, false);
+    mem_page = palloc(0x1000, true, true, false);
 
-    uintptr_t dcbaap_addr = (uintptr_t)allocate_in_page(mem_page, (max_device_slots + 1) * sizeof(uintptr_t), ALIGN_64B, true, true);
+    uintptr_t dcbaap_addr = (uintptr_t)kalloc(mem_page, (max_device_slots + 1) * sizeof(uintptr_t), ALIGN_64B, true, true);
 
     op->dcbaap = dcbaap_addr;
 
@@ -162,14 +161,14 @@ bool XHCIDriver::init(){
 
     dcbaap = (uintptr_t*)dcbaap_addr;
 
-    uint64_t* scratchpad_array = (uint64_t*)allocate_in_page(mem_page, (scratchpad_count == 0 ? 1 : scratchpad_count) * sizeof(uintptr_t), ALIGN_64B, true, true);
+    uint64_t* scratchpad_array = (uint64_t*)kalloc(mem_page, (scratchpad_count == 0 ? 1 : scratchpad_count) * sizeof(uintptr_t), ALIGN_64B, true, true);
     for (uint32_t i = 0; i < scratchpad_count; i++)
-        scratchpad_array[i] = (uint64_t)allocate_in_page(mem_page, 0x1000, ALIGN_64B, true, true);
+        scratchpad_array[i] = (uint64_t)kalloc(mem_page, 0x1000, ALIGN_64B, true, true);
     dcbaap[0] = (uint64_t)scratchpad_array;
 
     kprintfv("[xHCI] dcbaap assigned at %x with %i scratchpads",dcbaap_addr,scratchpad_count);
 
-    command_ring.ring = (trb*)allocate_in_page(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
+    command_ring.ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
 
     op->crcr = (uintptr_t)command_ring.ring | command_ring.cycle_bit;
 
@@ -222,7 +221,7 @@ bool XHCIDriver::port_reset(uint16_t port){
 
         //Read back after delay to ensure
         if (port_info->portsc.pp == 0){
-            kprintf_raw("[xHCI error] failed to power on port %i",port);
+            kprintf("[xHCI error] failed to power on port %i",port);
             return false;
         }
     }
@@ -255,8 +254,8 @@ bool XHCIDriver::enable_events(){
     kprintfv("[xHCI] Allocating ERST");
     interrupter = (xhci_interrupter*)(rt_base + 0x20);
 
-    uint64_t ev_ring = (uintptr_t)allocate_in_page(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
-    uint64_t erst_addr = (uintptr_t)allocate_in_page(mem_page, MAX_ERST_AMOUNT * sizeof(erst_entry), ALIGN_64B, true, true);
+    uint64_t ev_ring = (uintptr_t)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
+    uint64_t erst_addr = (uintptr_t)kalloc(mem_page, MAX_ERST_AMOUNT * sizeof(erst_entry), ALIGN_64B, true, true);
     erst_entry* erst = (erst_entry*)erst_addr;
 
     erst->ring_base = ev_ring;
@@ -361,7 +360,7 @@ bool XHCIDriver::issue_command(uint64_t param, uint32_t status, uint32_t control
 bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
 
     if (!issue_command(0,0,TRB_TYPE_ENABLE_SLOT << 10)){
-        kprintf_raw("[xHCI error] failed enable slot command");
+        kprintf("[xHCI error] failed enable slot command");
         return false;
     }
 
@@ -369,7 +368,7 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
     kprintfv("[xHCI] Slot id %x", address);
 
     if (address == 0){
-        kprintf_raw("[xHCI error]: Wrong slot id 0");
+        kprintf("[xHCI error]: Wrong slot id 0");
         return false;
     }
 
@@ -377,10 +376,10 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
 
     transfer_ring->cycle_bit = 1;
 
-    xhci_input_context *ctx = (xhci_input_context*)allocate_in_page(mem_page, sizeof(xhci_input_context), ALIGN_64B, true, true);
+    xhci_input_context *ctx = (xhci_input_context*)kalloc(mem_page, sizeof(xhci_input_context), ALIGN_64B, true, true);
     kprintfv("[xHCI] Allocating input context at %x", (uintptr_t)ctx);
     context_map[address << 8] = ctx;
-    void* output_ctx = (void*)allocate_in_page(mem_page, 0x1000, ALIGN_64B, true, true);
+    void* output_ctx = (void*)kalloc(mem_page, 0x1000, ALIGN_64B, true, true);
     kprintfv("[xHCI] Allocating output for context at %x", (uintptr_t)output_ctx);
     
     ctx->control_context.add_flags = 0b11;
@@ -395,7 +394,7 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
     ctx->device_context.endpoints[0].endpoint_f1.error_count = 3;
     ctx->device_context.endpoints[0].endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);
     
-    transfer_ring->ring = (trb*)allocate_in_page(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
+    transfer_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
     kprintfv("Transfer ring at %x %i",(uintptr_t)transfer_ring->ring, address << 8);
     make_ring_link(transfer_ring->ring, transfer_ring->cycle_bit);
 
@@ -456,7 +455,7 @@ uint8_t XHCIDriver::address_device(uint8_t address){
     xhci_input_context* ctx = context_map[address << 8];
     kprintfv("Addressing device %i with context %x", address, (uintptr_t)ctx);
     if (!issue_command((uintptr_t)ctx, 0, (address << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
-        kprintf_raw("[xHCI error] failed addressing device at slot %x",address);
+        kprintf("[xHCI error] failed addressing device at slot %x",address);
         return 0;
     }
     xhci_device_context* context = (xhci_device_context*)dcbaap[address];
@@ -500,7 +499,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
         kprintf("[xHCI implementation warning] Endpoint type %i not supported. Ignored",ep_type);
         return true;
     }
-    kprintf_raw("[xHCI] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
+    kprintf("[xHCI] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
 
     xhci_input_context* ctx = context_map[address << 8];
     xhci_device_context* context = (xhci_device_context*)dcbaap[address];
@@ -519,7 +518,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     
     xhci_ring *ep_ring = &endpoint_map[address << 8 | ep_num];
     
-    ep_ring->ring = (trb*)allocate_in_page(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
+    ep_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
     ep_ring->cycle_bit = 1;
     make_ring_link(ep_ring->ring, ep_ring->cycle_bit);
     ctx->device_context.endpoints[ep_num-1].endpoint_f23.dcs = ep_ring->cycle_bit;
@@ -527,7 +526,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     ctx->device_context.endpoints[ep_num-1].endpoint_f4.average_trb_length = sizeof(trb);
 
     if (!issue_command((uintptr_t)ctx, 0, (address << 24) | (TRB_TYPE_CONFIG_EP << 10))){
-        kprintf_raw("[xHCI] Failed to configure endpoint %i for address %i",ep_num,address);
+        kprintf("[xHCI] Failed to configure endpoint %i for address %i",ep_num,address);
         return false;
     }
 

@@ -3,6 +3,8 @@
 #include "virtio/virtio_pci.h"
 #include "../gpu_driver.hpp"
 
+#define VIRTIO_GPU_ID 0x1050
+
 class VirtioGPUDriver : public GPUDriver {
 public:
     static VirtioGPUDriver* try_init(gpu_size preferred_screen_size);

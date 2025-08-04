@@ -9,6 +9,8 @@ extern "C" {
 #define VIRTQ_DESC_F_NEXT  1
 #define VIRTQ_DESC_F_WRITE 2
 
+#define VIRTIO_VENDOR 0x1AF4
+
 typedef struct virtio_pci_common_cfg {
     uint32_t device_feature_select;
     uint32_t device_feature;

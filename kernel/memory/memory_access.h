@@ -20,6 +20,7 @@ extern "C" {
 
 uint16_t read_unaligned16(const uint16_t *p);
 uint32_t read_unaligned32(const uint32_t *p);
+uint64_t read_unaligned64(const uint64_t *p);
 void write_unaligned32(uint32_t *p, uint32_t value);
 
 #ifdef __cplusplus
