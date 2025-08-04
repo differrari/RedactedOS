@@ -1,5 +1,5 @@
-#!/bin/sh
-
+#!/usr/bin/env bash
+set -e
 echo "Running virt emulator"
 
 ARGS=""
@@ -20,18 +20,21 @@ OS_TYPE="$(uname)"
 DISPLAY_MODE="default"
 SELECTED_GPU="virtio-gpu-pci"
 
-if [ "$OS_TYPE" = "Darwin" ]; then
-    NETARG="vmnet-bridged,id=net0,ifname=en0"
+if [[ "$OS_TYPE" = "Darwin" ]]; then
+    NETDEV=" -netdev vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
     DISPLAY_MODE="sdl"
-elif [ "$OS_TYPE" = "Linux" ]; then
-    NETARG="user,id=net0"
+elif [[ -d /sys/class/net/tap0 && -d /sys/class/net/br0 ]]; then
+    # TAP is a bridge
+    NETDEV="-netdev tap,id=net0,ifname=tap0,script=no,downscript=no,vnet_hdr=off"
     PRIVILEGE=""
-else
-    echo "Unknown OS: $OS_TYPE" >&2
-    exit 1
+elif [[ "$OS_TYPE" = "Linux" ]]; then
+    NETDEV=" -netdev user,id=net0"
+    PRIVILEGE=""
 fi
 
+DUMP="-object filter-dump,id=f0,netdev=net0,file=/tmp/virtio.pcap"
+echo "Using networking mode: $NETARG"
 $PRIVILEGE qemu-system-aarch64 \
   -M virt \
   -cpu cortex-a72 \
@@ -39,8 +42,9 @@ $PRIVILEGE qemu-system-aarch64 \
   -kernel kernel.elf \
   -device $SELECTED_GPU \
   -display $DISPLAY_MODE \
-  -netdev $NETARG \
-  -device virtio-net-pci,netdev=net0 \
+  $NETDEV \
+  -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56 \
+  $DUMP \
   -serial mon:stdio \
   -drive file=disk.img,if=none,format=raw,id=hd0 \
   -device virtio-blk-pci,drive=hd0 \
