@@ -10,5 +10,6 @@ dump.dtb
 fs
 dump
 *.cfg
-backup.patch
-.gitignore
+.cache/*
+compile_commands.json
+.clangd
