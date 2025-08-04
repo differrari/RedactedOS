@@ -11,7 +11,7 @@ public:
     virtual bool init() = 0;
 
     virtual sizedptr allocate_packet(size_t size) = 0;
-
+    
     virtual sizedptr handle_receive_packet() = 0;
 
     virtual void handle_sent_packet() = 0;
@@ -20,7 +20,7 @@ public:
 
     virtual void send_packet(sizedptr packet) = 0;
 
-    virtual void get_mac(network_connection_ctx *context) = 0;
+    virtual void get_mac(net_l2l3_endpoint *context) = 0;
 
     virtual ~NetDriver() = default;
 

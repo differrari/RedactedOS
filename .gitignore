@@ -10,3 +10,6 @@ dump.dtb
 fs
 dump
 *.cfg
+backup.patch
+.gitignore
+bk.zip

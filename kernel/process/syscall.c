@@ -13,6 +13,7 @@
 #include "std/string.h"
 #include "exceptions/timer.h"
 #include "networking/network.h"
+#include "networking/port_manager.h"
 
 void sync_el0_handler_c(){
     save_context_registers();
@@ -131,24 +132,34 @@ void sync_el0_handler_c(){
             result = timer_now_msec();
             break;
 
-        case 51:
-            result = network_bind_port(x0, get_current_proc_pid());
+        case 51: {  //bind
+            uint16_t port     = (uint16_t)x0;
+            port_recv_handler_t handler = (port_recv_handler_t)x1;
+            protocol_t proto  = (protocol_t)x2;
+            uint16_t pid      = get_current_proc_pid();
+            result = port_bind_manual(port, pid, proto, handler);
             break;
+        }
 
-        case 52:
-            result = network_unbind_port(x0, get_current_proc_pid());
+        case 52: {  //unbind
+            uint16_t port    = (uint16_t)x0;
+            protocol_t proto = (protocol_t)x2;
+            uint16_t pid     = get_current_proc_pid();
+            result = port_unbind(port, proto, pid);
             break;
+        }
 
-        case 53:
-            network_connection_ctx *ctx = (network_connection_ctx*)x2;
-            void* payload = (void*)x3;
-            network_send_packet(x0, x1, ctx, payload, x4);
+        case 53: { //net_tx_frame
+            uintptr_t frame_ptr = x0;
+            uint32_t  frame_len = (uint32_t)x1;
+            result = net_tx_frame(frame_ptr, frame_len);
             break;
-
-        case 54:
-            sizedptr *ptr = (sizedptr*)x0;
-            result = network_read_packet_current(ptr);
+        }
+        case 54: { //net_rx_frame
+            sizedptr *user_out = (sizedptr*)x0;
+            result = net_rx_frame(user_out);
             break;
+        }
         
         default:
             handle_exception_with_info("Unknown syscall", iss);
@@ -165,7 +176,8 @@ void sync_el0_handler_c(){
             stop_current_process();
         }
     }
-    save_syscall_return(result);
+    if (result > 0)
+        save_syscall_return(result);
     process_restore();
 }
 

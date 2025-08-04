@@ -9,20 +9,20 @@ extern "C" {
 
 #define NET_IRQ 32
 
-bool network_init();
-void network_handle_download_interrupt();
-void network_handle_upload_interrupt();
-bool network_bind_port(uint16_t port, uint16_t process);
-bool network_unbind_port(uint16_t port, uint16_t process);
-void network_send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len);
+void network_net_set_pid(uint16_t pid);
+uint16_t network_net_get_pid(void);
 
-bool network_bind_port_current(uint16_t port);
-bool network_unbind_port_current(uint16_t port);
+bool network_init(void);
+void network_handle_download_interrupt(void);
+void network_handle_upload_interrupt(void);
+void network_net_task_entry(void);
 
-bool network_read_packet(sizedptr *packet, uint16_t process);
-bool network_read_packet_current(sizedptr *packet);
 
-network_connection_ctx* network_get_context();
+int net_tx_frame(uintptr_t frame_ptr, uint32_t frame_len);
+int net_rx_frame(sizedptr *out_frame);
+
+const net_l2l3_endpoint* network_get_local_endpoint(void);
+void network_update_local_ip(uint32_t ip);
 
 #ifdef __cplusplus
 }
