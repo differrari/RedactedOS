@@ -9,12 +9,9 @@
 #include "types.h"
 #include "data_struct/ring_buffer.hpp"
 
-#define KP(fmt, ...) do {                              \
-    const uint64_t __a[] = { __VA_ARGS__ };            \
-    kprintf_args_raw(fmt, __a,                         \
-        (uint32_t)(sizeof(__a)/sizeof(__a[0])));       \
-} while(0)
-
+#define KP(fmt, ...) \
+    do { kprintf(fmt, ##__VA_ARGS__); } while (0)
+    
 extern "C" {
     void      sleep(uint64_t ms);
     uintptr_t malloc(uint64_t size);

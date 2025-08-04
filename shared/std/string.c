@@ -330,14 +330,10 @@ uint64_t parse_hex_u64(char* str, size_t size){
     return result;
 }
 
-uint32_t strlen(const char *s)
-{
-    uint32_t n = 0; while (s && s[n]) ++n; return n;
-}
 
 string string_from_const(const char *lit)
 {
-    uint32_t len = strlen(lit);
+    uint32_t len = strlen(lit, 0);
     return (string){ (char *)lit, len, len };
 }
 

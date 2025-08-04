@@ -6,10 +6,8 @@
 #include "std/string.h"
 #include "std/memfunctions.h"
 
-#define KP(fmt, ...) do { \
-    const uint64_t __a[] = { __VA_ARGS__ }; \
-    kprintf_args_raw(fmt, __a, (uint32_t)(sizeof(__a)/sizeof(__a[0]))); \
-} while(0)
+#define KP(fmt, ...) \
+    do { kprintf(fmt, ##__VA_ARGS__); } while (0)
 
 class HTTPServer {
 private:

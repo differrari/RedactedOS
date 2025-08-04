@@ -20,10 +20,8 @@ extern void      free(void *ptr, uint64_t size);
 static uint16_t g_arp_pid = 0xFFFF;
 static arp_entry_t g_arp_table[ARP_TABLE_MAX];
 static bool init = false;
-#define KP(fmt, ...) do { \
-    const uint64_t _a[] = { __VA_ARGS__ }; \
-    kprintf_args_raw(fmt, _a, (uint32_t)(sizeof(_a)/sizeof(_a[0]))); \
-} while(0)
+#define KP(fmt, ...) \
+    do { kprintf(fmt, ##__VA_ARGS__); } while (0)
 
 void arp_set_pid(uint16_t pid) { g_arp_pid = pid; }
 uint16_t arp_get_pid(void) { return g_arp_pid; }

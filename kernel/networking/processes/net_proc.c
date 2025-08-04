@@ -17,11 +17,8 @@ extern uintptr_t malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
 extern void      sleep(uint64_t ms);
 
-#define KP(fmt, ...) do {                              \
-    const uint64_t __a[] = { __VA_ARGS__ };            \
-    kprintf_args_raw(fmt, __a,                         \
-        (uint32_t)(sizeof(__a)/sizeof(__a[0])));       \
-} while(0)
+#define KP(fmt, ...) \
+    do { kprintf(fmt, ##__VA_ARGS__); } while (0)
 
 static uint32_t pick_probe_ip(void) {
     const net_cfg_t *cfg = ipv4_get_cfg();
@@ -162,7 +159,7 @@ void http_server_hello_entry(void)
                         ? req.path.length
                         : sizeof(tmp) - 1;
             memcpy(tmp, req.path.data, n);
-            KP("[HTTP] GET %s", (uintptr_t)tmp);
+            KP("[HTTP] GET %s", tmp);
         }
 
         HTTPResponseMsg res = {0};
@@ -229,7 +226,7 @@ static void test_http(uint32_t ip)
             KP("[HTTP] %i %i bytes of body%s\n",
                (uint64_t)resp.status_code,
                (uint64_t)resp.body.size,
-               (uintptr_t)body_str);
+               body_str);
             free(body_str, resp.body.size + 1);
         }
     }
