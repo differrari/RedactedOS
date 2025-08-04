@@ -2,7 +2,6 @@
 #include "fw/fw_cfg.h"
 #include "memory/kalloc.h"
 #include "console/kio.h"
-#include "graph/font8x8_bridge.h"
 #include "ui/draw/draw.h"
 #include "memory/memory_access.h"
 #include "std/std.hpp"

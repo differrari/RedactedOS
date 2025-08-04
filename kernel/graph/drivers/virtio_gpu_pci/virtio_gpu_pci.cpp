@@ -2,7 +2,6 @@
 #include "pci.h"
 #include "memory/kalloc.h"
 #include "console/kio.h"
-#include "graph/font8x8_bridge.h"
 #include "ui/draw/draw.h"
 #include "std/std.hpp"
 
