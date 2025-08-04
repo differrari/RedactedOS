@@ -56,7 +56,11 @@ void KernelConsole::put_char(char c){
 
 void KernelConsole::put_string(const char* str){
     if (!check_ready()) return;
-    for (uint32_t i = 0; str[i]; i++) put_char(str[i]);
+    for (uint32_t i = 0; str[i]; i++){
+        char c = str[i];
+        put_char(c);
+        if (c == '\n') gpu_flush();
+    } 
     gpu_flush();
 }
 
