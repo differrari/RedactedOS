@@ -3,7 +3,7 @@
 #include "networking/port_manager.h"
 #include "net/internet_layer/ipv4.h"
 #include "std/memfunctions.h"
-#include "math/random.h"
+#include "math/rng.h"
 //TODO: add mtu check and fragmentation. also fragment rebuild
 extern uintptr_t malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
@@ -428,7 +428,9 @@ void tcp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
     if (!flow) {
         int listen_idx = find_flow(dst_port, 0, 0);
         if ((flags & (1<<SYN_F)) && !(flags & (1<<ACK_F)) && listen_idx >= 0) {
-
+            //TODO: use a syscall for the rng
+            rng_t rng;
+            rng_init_random(&rng);
             tcp_flow_t *lf = &tcp_flows[listen_idx];
             int new_idx = allocate_flow_entry();
             if (new_idx < 0) return;
@@ -439,8 +441,8 @@ void tcp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
             flow->remote.port = src_port;
             flow->state = TCP_SYN_RECEIVED;
             flow->retries = TCP_SYN_RETRIES;
-
-            uint32_t iss = rng_next32(&global_rng);
+            
+            uint32_t iss = rng_next32(&rng);
             flow->ctx.sequence = iss;
             flow->ctx.ack = seq + 1;
             flow->ctx.window = 0xFFFF;

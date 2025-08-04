@@ -128,7 +128,7 @@ bool NetworkDispatch::dequeue_packet_for(uint16_t pid, sizedptr *out)
     out->size = stored.size;
 
     free(reinterpret_cast<void *>(stored.ptr), stored.size);
-
+    //free(reinterpret_cast<void*>(out->ptr), out->size);
     return true;
 }
 

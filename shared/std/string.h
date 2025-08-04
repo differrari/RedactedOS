@@ -42,7 +42,6 @@ uint64_t parse_hex_u64(char* str, size_t size);
 
 bool utf16tochar( uint16_t* str_in, char* out_str, size_t max_len);
 
-uint32_t strlen(const char *s);
 string string_from_const(const char *literal);
 string string_concat(string a, string b);
 void string_concat_inplace(string *dest, string src);
