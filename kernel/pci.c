@@ -2,10 +2,6 @@
 #include "console/kio.h"
 #include "exceptions/exception_handler.h"
 #include "memory/kalloc.h"
-#include "memory/dma.h"
-#include "fw/fw_cfg.h"
-#include "kstring.h"
-#include "exceptions/irq.h"
 #include "memory/mmu.h"
 #include "memory/memory_access.h"
 #include "hw/hw.h"
@@ -34,8 +30,7 @@ void pci_enable_verbose(){
 #define kprintfv(fmt, ...) \
     ({ \
         if (pci_verbose){\
-            uint64_t _args[] = { __VA_ARGS__ }; \
-            kprintf_args((fmt), _args, sizeof(_args) / sizeof(_args[0])); \
+            kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
 
@@ -183,16 +178,13 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
         write32(bar_addr, config_base & 0xFFFFFFFF);
         write32(bar_addr_hi, config_base >> 32);
 
-        uint32_t new_hi = read32(bar_addr_hi);
-        uint32_t new_lo = read32(bar_addr);
+        uint64_t new_hi = read32(bar_addr_hi);
+        uint64_t new_lo = read32(bar_addr);
 
         kprintfv("[PCI] Two registers %x > %x",new_hi,new_lo);
         uint64_t full = (new_hi << 32) | (new_lo & ~0xF);
         if (full != config_base){
-            if (is_mmio_allocated(full))
-                panic_with_info("Device hardcoded address is already in use", full);
-            else 
-                *mmio_start = full;
+            *mmio_start = full;
         }
     } else {
         uint32_t size32 = bar_low & ~0xF;
@@ -304,8 +296,8 @@ bool pci_setup_rp1() {
         }
         cap_ptr = read8(pci_addr + cap_ptr + 1);
     }
-    uint64_t bar_addr = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, 1);
-    uint64_t bar_addr2 = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, 2);
+    // uint64_t bar_addr = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, 1);
+    // uint64_t bar_addr2 = pci_get_bar_address(pci_addr, PCI_BAR_BASE_OFFSET, 2);
 
     uintptr_t msi_pci_addr  = 0xFFFFFFF000UL;
     uintptr_t msi_phys_addr = 0x1000130000UL;
@@ -351,7 +343,7 @@ bool pci_setup_msi_rp1(uint8_t irq_line, bool edge_triggered) {
 
     kprintf("Sanity 5 %i",read32(RP1_INT_SET + MSIX_CFG(irq_line)));
 
-    kprintf("Fired? %b", read32(RP1_INT_STAT_HIGH) << 32 | read32(RP1_INT_STAT_LOW));
+    kprintf("Fired? %b", (uint64_t)read32(RP1_INT_STAT_HIGH) << 32 | read32(RP1_INT_STAT_LOW));
 
     return false;
 }
@@ -400,7 +392,7 @@ bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_si
             uint16_t table_size = (msg_ctrl & 0x07FF) +1; // takes the 11 rightmost bits, its value is N-1, so add 1 to it for the full size
 
             if(line_size > table_size){
-                kprintf_raw("[PCI] MSI-X only supports %i interrupts, but you tried to add %i interrupts", table_size, line_size);
+                kprintf("[PCI] MSI-X only supports %i interrupts, but you tried to add %i interrupts", table_size, line_size);
                 return false;
             }
 
@@ -413,8 +405,8 @@ bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_si
             if(!table_addr){
                 uint64_t bar_size;
                 pci_setup_bar(pci_addr, bir, &table_addr, &bar_size);
-                kprintfv("Setting up new bar for MSI-X %x + %x",table_addr, table_addr_offset);
-            } else kprintfv("Bar %i setup at %x + %x",bir, table_addr, table_addr_offset);
+                kprintf("Setting up new bar for MSI-X %x + %x",table_addr, table_addr_offset);
+            } else kprintf("Bar %i setup at %x + %x",bir, table_addr, table_addr_offset);
             
             msix_table_entry *msix_start = (msix_table_entry *)(uintptr_t)(table_addr + table_addr_offset);
 

@@ -151,7 +151,7 @@ void draw_process_view(){
 __attribute__((section(".text.kcoreprocesses")))
 void monitor_procs(){
     keypress kp = {
-        .modifier = KEY_MOD_ALT | KEY_MOD_CMD,
+        .modifier = KEY_MOD_ALT,
         .keys[0] = 0x15//R
     };
     uint16_t shortcut = sys_subscribe_shortcut_current(kp);

@@ -8,7 +8,7 @@ void USBKeyboard::request_data(USBDriver *driver){
     requesting = true;
 
     if (buffer == 0){
-        buffer = alloc_page(packet_size, true, true, true);
+        buffer = palloc(packet_size, true, true, true);
     }
 
     if (!driver->poll(slot_id, endpoint, buffer, packet_size))
@@ -36,10 +36,10 @@ void USBKeyboard::process_keypress(keypress *rkp){
         if (is_new_keypress(rkp, &last_keypress))
             repeated_keypresses = 0;
         kp.modifier = rkp->modifier;
-        // kprintf_raw("Mod: %i", kp.modifier);
+        // kprintf("Mod: %i", kp.modifier);
         for (int i = 0; i < 6; i++){
             kp.keys[i] = rkp->keys[i];
-            // kprintf_raw("Key [%i]: %x", i, kp.keys[i]);
+            // kprintf("Key [%i]: %x", i, kp.keys[i]);
         }
         last_keypress = kp;
         register_keypress(kp);

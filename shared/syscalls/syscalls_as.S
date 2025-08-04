@@ -30,7 +30,6 @@ syscall_def gpu_char_size, 21
 
 syscall_def sleep, 30
 syscall_def process_yield, 31
-// syscall_def process_await, 32
 syscall_def halt, 33
 
 //Time commands

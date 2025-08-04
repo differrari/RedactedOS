@@ -1,7 +1,7 @@
 #include "fw_cfg.h"
 #include "console/kio.h"
 #include "memory/memory_access.h"
-#include "kstring.h"
+#include "std/string.h"
 
 #define FW_CFG_DATA  0x09020000
 #define FW_CFG_CTL   (FW_CFG_DATA + 0x8)
@@ -58,7 +58,7 @@ void fw_cfg_dma_write(void* dest, uint32_t size, uint32_t ctrl){
     fw_cfg_dma_operation(dest, size, (ctrl << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_WRITE);
 }
 
-bool fw_find_file(kstring search, struct fw_cfg_file *file) {
+bool fw_find_file(const char* search, struct fw_cfg_file *file) {
 
     if (!fw_cfg_check())
         return false;
@@ -75,8 +75,7 @@ bool fw_find_file(kstring search, struct fw_cfg_file *file) {
         file->size = __builtin_bswap32(file->size);
         file->selector = __builtin_bswap16(file->selector);
 
-        kstring filename = kstring_ca_max(file->name, 56);
-        if (kstring_equals(filename, search)){
+        if (strcmp(file->name, search, false) == 0){
             kprintf("Found device at selector %x", file->selector);
             return true;
         }

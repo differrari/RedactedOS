@@ -1,26 +1,22 @@
-#top make
 ARCH       ?= aarch64-none-elf
 CC         := $(ARCH)-gcc
 LD         := $(ARCH)-ld
 AR         := $(ARCH)-ar
 OBJCOPY    := $(ARCH)-objcopy
 
-#common flags
-CFLAGS_BASE  ?= -g -O0 -std=c17 -nostdlib -ffreestanding \
+CFLAGS_BASE  ?= -g -O0 -nostdlib -ffreestanding \
                 -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables \
-                -Wall -Wextra -mcpu=cortex-a72
+                -Wall -Wextra -Wno-unused-parameter -Wno-address-of-packed-member -mcpu=cortex-a72
+CONLY_FLAGS_BASE ?= -std=c17
 LDFLAGS_BASE ?=
 
-#build vars
 LOAD_ADDR      ?= 0x41000000
 XHCI_CTX_SIZE  ?= 32
 QEMU           ?= true
 MODE           ?= virt
 
-#export
-export ARCH CC LD AR OBJCOPY CFLAGS_BASE LDFLAGS_BASE LOAD_ADDR XHCI_CTX_SIZE QEMU
+export ARCH CC LD AR OBJCOPY CFLAGS_BASE CONLY_FLAGS_BASE LDFLAGS_BASE LOAD_ADDR XHCI_CTX_SIZE QEMU
 
-#config filesystem
 OS      := $(shell uname)
 FS_DIRS := fs/redos/user
 
@@ -30,7 +26,6 @@ else
 BOOTFS := /media/bootfs
 endif
 
-#targets
 .PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
 
 all: shared user kernel

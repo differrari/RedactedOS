@@ -1,6 +1,5 @@
 #include "console/serial/uart.h"
 #include "memory/memory_access.h"
-#include "exceptions/irq.h"
 #include "gpio.h"
 #include "hw/hw.h"
 #include "mailbox/mailbox.h"

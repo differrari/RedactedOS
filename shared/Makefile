@@ -20,7 +20,7 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(CONLY_FLAGS_BASE) -c $< -o $@
 
 %.o: %.cpp
 	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
