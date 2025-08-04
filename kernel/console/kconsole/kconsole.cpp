@@ -4,6 +4,12 @@
 #include "filesystem/filesystem.h"
 
 KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false){
+    initialize();
+}
+
+void KernelConsole::initialize(){
+    is_initialized = true;
+    mem_page = palloc(PAGE_SIZE, true, true, false);
     resize();
     clear();
 }
@@ -11,10 +17,7 @@ KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false)
 bool KernelConsole::check_ready(){
     if (!gpu_ready()) return false;
     if (!is_initialized){
-        is_initialized= true;
-        mem_page = palloc(PAGE_SIZE, true, true, false);
-        resize();
-        clear();
+        initialize();
     }
     return true;
 }
@@ -26,8 +29,6 @@ void KernelConsole::resize(){
 
     if (row_data) kfree(row_data, buffer_data_size);
     buffer_data_size = rows * columns;
-    uart_puts("Data Size ");
-    uart_puthex(buffer_data_size);
     row_data = (char*)kalloc(mem_page, buffer_data_size, ALIGN_16B, true, true);
     if (!row_data){
         rows = columns = 0;
@@ -74,7 +75,7 @@ void KernelConsole::newline(){
     }
     cursor_x = 0;
     cursor_y++;
-    if (cursor_y >= rows){
+    if (cursor_y >= rows - 1){
         scroll();
         cursor_y = rows - 1;
     }
@@ -89,12 +90,11 @@ void KernelConsole::scroll(){
     redraw();
 }
 
-void KernelConsole::refresh_input(){
+void KernelConsole::refresh(){
     resize();
     clear();
-    void *content = read_file("/dev/console", buffer_data_size);
-    row_data = (char*)content;
     redraw();
+    gpu_flush();
 }
 
 void KernelConsole::redraw(){

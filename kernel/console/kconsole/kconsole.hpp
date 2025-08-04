@@ -9,6 +9,8 @@ class KernelConsole{
 public:
     KernelConsole();
 
+    void initialize();
+
     void put_char(char c);
     void put_string(const char* str);
 
@@ -16,7 +18,8 @@ public:
     void scroll();
     void clear();
     void resize();
-    void refresh_input();
+
+    void refresh();
     
     void set_active(bool active);
     

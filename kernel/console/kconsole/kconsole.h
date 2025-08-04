@@ -1,5 +1,8 @@
 #pragma once
 
+#include "process/process.h"
+#include "kernel_processes/kprocess_loader.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -7,7 +10,7 @@ extern "C" {
 void kconsole_putc(char c);
 void kconsole_puts(const char *s);
 void kconsole_clear();
-void kconsole_refresh();
+process_t* start_terminal();
 
 #ifdef __cplusplus
 }

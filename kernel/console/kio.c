@@ -5,8 +5,6 @@
 #include "memory/page_allocator.h"
 #include "std/memfunctions.h"
 #include "math/math.h"
-#include "input/input_dispatch.h"
-#include "kernel_processes/windows/windows.h"
 
 static bool use_visual = true;
 char* print_buf;
@@ -41,8 +39,6 @@ FS_RESULT console_open(const char *path, file *out_fd){
 }
 
 size_t console_read(file *fd, char *out_buf, size_t size, file_offset offset){
-    uart_puthex(size);
-    uart_puts(string_ca_max(print_buf+offset, size).data);
     memcpy(out_buf, print_buf+offset, min(size,CONSOLE_BUF_SIZE));
     return 0;
 }
@@ -91,7 +87,7 @@ void kprintf(const char *fmt, ...){
     va_list args;
     va_start(args, fmt);
 
-    //TODO: If we don't read this value, the logs crash. Could it be stack overflow? We probably don't need KSP
+    //TODO: If we don't read this value, the logs crash. Could it be stack overflow?
     mem_page *info = (mem_page*)print_buf;
     info->next_free_mem_ptr = info->next_free_mem_ptr;
 
@@ -140,35 +136,9 @@ void kputf(const char *fmt, ...){
 
 void disable_visual(){
     use_visual = false;
-    resume_window_draw();
     kconsole_clear();
 }
 
 void enable_visual(){
     use_visual = true;
-    pause_window_draw();
-    kconsole_refresh();
-}
-
-__attribute__((section(".text.kcoreprocesses")))
-void toggle_visual(){
-    keypress kp = {
-        .modifier = KEY_MOD_ALT,
-        .keys[0] = 0x13//P
-    };
-    uint16_t shortcut = sys_subscribe_shortcut_current(kp);
-    bool active = false;
-    while (1){
-        if (sys_shortcut_triggered_current(shortcut)){
-            active = !active;
-            if (active)
-                enable_visual();
-            else 
-                disable_visual();
-        }
-    }
-}
-
-process_t* start_terminal(){
-    return create_kernel_process("terminal",toggle_visual);
 }
