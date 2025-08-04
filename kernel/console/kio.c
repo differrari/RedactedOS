@@ -140,8 +140,34 @@ void kputf(const char *fmt, ...){
 
 void disable_visual(){
     use_visual = false;
+    resume_window_draw();
+    kconsole_clear();
 }
 
 void enable_visual(){
     use_visual = true;
+    pause_window_draw();
+}
+
+__attribute__((section(".text.kcoreprocesses")))
+void toggle_visual(){
+    keypress kp = {
+        .modifier = KEY_MOD_ALT,
+        .keys[0] = 0x13//P
+    };
+    uint16_t shortcut = sys_subscribe_shortcut_current(kp);
+    bool active = false;
+    while (1){
+        if (sys_shortcut_triggered_current(shortcut)){
+            if (active)
+                enable_visual();
+            else 
+                disable_visual();
+            active = !active;
+        }
+    }
+}
+
+process_t* start_terminal(){
+    return create_kernel_process("terminal",toggle_visual);
 }

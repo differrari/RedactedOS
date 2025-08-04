@@ -9,6 +9,7 @@ BootSM::BootSM(){
 }
 
 void BootSM::initialize(){
+    start_terminal();
     AdvanceToState(Bootscreen);
 }
 
