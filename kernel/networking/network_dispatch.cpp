@@ -15,7 +15,7 @@
 #define QUEUE_CAPACITY 1024
 
 
-//TODO: takes a lot of time to responde to every request. smt is creating a large delay in receive and trasmission somewhere
+//TODO: takes a lot of time to responde to every request. smt is creating a variable delay in receiving and trasmission somewhere
 extern void      sleep(uint64_t ms);
 extern uintptr_t malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size); 
