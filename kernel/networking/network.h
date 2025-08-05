@@ -8,6 +8,8 @@ extern "C" {
 #include "net/network_types.h"
 
 #define NET_IRQ 32
+//TODO: consider using the system MTU here
+#define MAX_PACKET_SIZE 0x1000
 
 void network_net_set_pid(uint16_t pid);
 uint16_t network_net_get_pid(void);
@@ -16,7 +18,6 @@ bool network_init(void);
 void network_handle_download_interrupt(void);
 void network_handle_upload_interrupt(void);
 void network_net_task_entry(void);
-
 
 int net_tx_frame(uintptr_t frame_ptr, uint32_t frame_len);
 int net_rx_frame(sizedptr *out_frame);

@@ -1,28 +1,21 @@
 #include "network_dispatch.hpp"
+#include "network.h"
 #include "drivers/virtio_net_pci/virtio_net_pci.hpp"
 #include "memory/page_allocator.h"
 #include "net/link_layer/eth.h"
-#include "port_manager.h"
 #include "net/network_types.h"
-#include "net/link_layer/arp.h"
-#include "net/application_layer/dhcp_daemon.h"
+#include "port_manager.h"
 #include "std/memfunctions.h"
-#include "console/kio.h"
-#include "types.h"
-#include "process/scheduler.h"
-#include "std/string.h"
 
-#define QUEUE_CAPACITY 1024
-
-
-//TODO: takes a moment to responde to every request. smt is creating a variable delay in receiving and trasmission somewhere
 extern void      sleep(uint64_t ms);
 extern uintptr_t malloc(uint64_t size);
-extern void      free(void *ptr, uint64_t size); 
+extern void      free(void *ptr, uint64_t size);
 
 static uint16_t g_net_pid = 0xFFFF;
+static uint8_t recv_buffer[MAX_PACKET_SIZE];
 
-NetworkDispatch::NetworkDispatch() : ports(UINT16_MAX + 1),
+NetworkDispatch::NetworkDispatch()
+  : ports(UINT16_MAX + 1),
     driver(nullptr),
     tx_queue(QUEUE_CAPACITY),
     rx_queue(QUEUE_CAPACITY)
@@ -44,38 +37,40 @@ bool NetworkDispatch::init()
 void NetworkDispatch::handle_download_interrupt()
 {
     if (!driver) return;
-
-    sizedptr raw = driver->handle_receive_packet();
-    if (!raw.ptr) return;
-
-    sizedptr frame = make_copy(raw);
-    free_frame(raw);
-
-    if (frame.ptr && frame.size >= sizeof(eth_hdr_t)) {
-        if (!rx_queue.enqueue(frame))
-            free_frame(frame);
-    } else {
-        free_frame(frame);
+    
+    sizedptr raw = driver->handle_receive_packet(recv_buffer);
+    if (raw.size < sizeof(eth_hdr_t)) {
+        return;
     }
+
+    sizedptr frame{0, raw.size};
+    frame.ptr = reinterpret_cast<uintptr_t>(
+        kalloc(reinterpret_cast<void*>(get_current_heap()),
+               raw.size, ALIGN_16B,
+               get_current_privilege(), false));
+    if (!frame.ptr) return;
+
+    memcpy(reinterpret_cast<void*>(frame.ptr), recv_buffer, raw.size);
+
+    if (!rx_queue.enqueue(frame))
+        free_frame(frame);
 }
 
 void NetworkDispatch::handle_upload_interrupt()
 {
-    if (driver) driver->handle_sent_packet();
+    if (driver)
+        driver->handle_sent_packet();
 }
 
 bool NetworkDispatch::enqueue_frame(const sizedptr &frame)
 {
-    if (frame.size == 0) {
-        kprintf("[NetworkDispatch] drop zero‑length frame\n");
-        return false;
-    }
+    if (frame.size == 0) return false;
 
     sizedptr pkt = driver->allocate_packet(frame.size);
     if (!pkt.ptr) return false;
 
-    void *dst = reinterpret_cast<void *>(pkt.ptr + driver->header_size);
-    memcpy(dst, reinterpret_cast<const void *>(frame.ptr), frame.size);
+    void* dst = reinterpret_cast<void*>(pkt.ptr + driver->header_size);
+    memcpy(dst, reinterpret_cast<const void*>(frame.ptr), frame.size);
 
     if (!tx_queue.enqueue(pkt)) {
         free_frame(pkt);
@@ -103,7 +98,8 @@ void NetworkDispatch::net_task()
             driver->send_packet(pkt);
         }
 
-        if (!did_work) sleep(10);
+        if (!did_work)
+            sleep(10);
     }
 }
 
@@ -118,17 +114,16 @@ bool NetworkDispatch::dequeue_packet_for(uint16_t pid, sizedptr *out)
     sizedptr stored = buf.entries[buf.read_index];
     buf.read_index = (buf.read_index + 1) % PACKET_BUFFER_CAPACITY;
 
-    void *dst = kalloc(reinterpret_cast<void *>(get_current_heap()),
-                                 stored.size, ALIGN_16B,
-                                 get_current_privilege(), false);
+    void *dst = kalloc(reinterpret_cast<void*>(get_current_heap()),
+                       stored.size, ALIGN_16B,
+                       get_current_privilege(), false);
     if (!dst) return false;
 
-    memcpy(dst, reinterpret_cast<void *>(stored.ptr), stored.size);
-    out->ptr = reinterpret_cast<uintptr_t>(dst);
+    memcpy(dst, reinterpret_cast<void*>(stored.ptr), stored.size);
+    out->ptr  = reinterpret_cast<uintptr_t>(dst);
     out->size = stored.size;
 
-    free(reinterpret_cast<void *>(stored.ptr), stored.size);
-    //free(reinterpret_cast<void*>(out->ptr), out->size);
+    free(reinterpret_cast<void*>(stored.ptr), stored.size);
     return true;
 }
 
@@ -138,11 +133,11 @@ static sizedptr make_user_copy(const sizedptr &src)
     uintptr_t mem = malloc(src.size);
     if (!mem) return out;
 
-    memcpy(reinterpret_cast<void *>(mem),
-           reinterpret_cast<const void *>(src.ptr),
+    memcpy(reinterpret_cast<void*>(mem),
+           reinterpret_cast<const void*>(src.ptr),
            src.size);
 
-    out.ptr = mem;
+    out.ptr  = mem;
     out.size = src.size;
     return out;
 }
@@ -150,13 +145,13 @@ static sizedptr make_user_copy(const sizedptr &src)
 sizedptr NetworkDispatch::make_copy(const sizedptr &in)
 {
     sizedptr out{0, 0};
-    void *dst = kalloc(reinterpret_cast<void *>(get_current_heap()),
-                                 in.size, ALIGN_16B,
-                                 get_current_privilege(), false);
+    void *dst = kalloc(reinterpret_cast<void*>(get_current_heap()),
+                       in.size, ALIGN_16B,
+                       get_current_privilege(), false);
     if (!dst) return out;
 
-    memcpy(dst, reinterpret_cast<const void *>(in.ptr), in.size);
-    out.ptr = reinterpret_cast<uintptr_t>(dst);
+    memcpy(dst, reinterpret_cast<const void*>(in.ptr), in.size);
+    out.ptr  = reinterpret_cast<uintptr_t>(dst);
     out.size = in.size;
     return out;
 }
@@ -167,4 +162,4 @@ void NetworkDispatch::free_frame(const sizedptr &f)
 }
 
 void NetworkDispatch::set_net_pid(uint16_t pid) { g_net_pid = pid; }
-uint16_t NetworkDispatch::get_net_pid() const { return g_net_pid; }
+uint16_t NetworkDispatch::get_net_pid() const   { return g_net_pid; }

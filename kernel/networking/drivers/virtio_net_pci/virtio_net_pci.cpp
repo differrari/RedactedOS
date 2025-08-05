@@ -8,8 +8,6 @@
 
 #define RECEIVE_QUEUE 0
 #define TRANSMIT_QUEUE 1
-//TODO: review this number
-#define MAX_size 0x1000
 
 #define kprintfv(fmt, ...) \
     ({ \
@@ -84,8 +82,8 @@ bool VirtioNetDriver::init(){
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
 
     for (uint16_t i = 0; i < 128; i++){
-        void* buf = kalloc(vnp_net_dev.memory_page, MAX_size, ALIGN_64B, true, true);
-        virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_size);
+        void* buf = kalloc(vnp_net_dev.memory_page, MAX_PACKET_SIZE, ALIGN_64B, true, true);
+        virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_PACKET_SIZE);
     }
 
     vnp_net_dev.common_cfg->queue_msix_vector = 0;
@@ -123,7 +121,7 @@ sizedptr VirtioNetDriver::allocate_packet(size_t size){
     return (sizedptr){(uintptr_t)kalloc(vnp_net_dev.memory_page, size + header_size, ALIGN_64B, true, true),size + header_size};
 }
 
-sizedptr VirtioNetDriver::handle_receive_packet(){
+sizedptr VirtioNetDriver::handle_receive_packet(void* buffer){
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
     struct virtq_used* used = (struct virtq_used*)(uintptr_t)vnp_net_dev.common_cfg->queue_device;
     struct virtq_desc* desc = (struct virtq_desc*)(uintptr_t)vnp_net_dev.common_cfg->queue_desc;
@@ -141,10 +139,14 @@ sizedptr VirtioNetDriver::handle_receive_packet(){
         uintptr_t packet = desc[desc_index].addr;
         packet += sizeof(virtio_net_hdr_t);
 
+        memcpy(buffer, (void*)packet, len);
+
         avail->ring[avail->idx % 128] = desc_index;
         avail->idx++;
 
         *(volatile uint16_t*)(uintptr_t)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
+
+        kfree((void*)desc[desc_index].addr, MAX_PACKET_SIZE);
 
         return (sizedptr){packet,len};
     }
