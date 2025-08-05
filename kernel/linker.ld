@@ -14,7 +14,7 @@ SECTIONS {
         bss = .;
         *(.bss)
     }
-    . = ALIGN(4096); /* align to page size */
+    . = ALIGN(4096);
     __bss_end = .;
     __bss_size = __bss_end - __bss_start;
     .vectors : { KEEP(*(.vectors)) }

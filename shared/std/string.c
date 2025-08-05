@@ -127,7 +127,7 @@ bool string_equals(string a, string b){
 string string_format(const char *fmt, ...){
     if (fmt == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0};
 
-    va_list args;
+    __attribute__((aligned(16))) va_list args;
     va_start(args, fmt);
     string result = string_format_va(fmt, args);
     va_end(args);

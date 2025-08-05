@@ -84,11 +84,8 @@ void putc(const char c){
 
 void kprintf(const char *fmt, ...){
     if (!print_buf) init_print_buf();
-    va_list args;
+    __attribute__((aligned(16))) va_list args;
     va_start(args, fmt);
-
-    //TODO: If we don't read this value, the logs crash. Could it be stack overflow?
-    mem_page *info = (mem_page*)print_buf;
     
     if (cursor >= ((uintptr_t)print_buf) + 0x2F00){
         reset_buffer();
