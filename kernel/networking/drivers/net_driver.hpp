@@ -12,7 +12,7 @@ public:
 
     virtual sizedptr allocate_packet(size_t size) = 0;
 
-    virtual sizedptr handle_receive_packet() = 0;
+    virtual sizedptr handle_receive_packet(void* buffer) = 0;
 
     virtual void handle_sent_packet() = 0;
 

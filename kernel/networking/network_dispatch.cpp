@@ -13,6 +13,7 @@
 #include "memory/page_allocator.h"
 #include "std/memfunctions.h"
 #include "hw/hw.h"
+#include "network.h"
 
 NetworkDispatch::NetworkDispatch(){
     ports = IndexMap<uint16_t>(UINT16_MAX);
@@ -47,7 +48,8 @@ bool NetworkDispatch::unbind_port(uint16_t port, uint16_t process){
 
 void NetworkDispatch::handle_download_interrupt(){
     if (driver){
-        sizedptr packet = driver->handle_receive_packet();
+        void *buffer = kalloc((void*)get_current_heap(), MAX_PACKET_SIZE, ALIGN_16B, get_current_privilege(), false);
+        sizedptr packet = driver->handle_receive_packet(buffer);
         bool need_free = true;
         uintptr_t ptr = packet.ptr;
         if (ptr){
@@ -102,7 +104,7 @@ void NetworkDispatch::handle_download_interrupt(){
             }
         }
         if (need_free){
-            free_sized(packet);
+            kfree(buffer, MAX_PACKET_SIZE);
         }
     }
 }

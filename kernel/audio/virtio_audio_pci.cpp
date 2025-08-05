@@ -96,10 +96,10 @@ bool VirtioAudioDriver::init(){
             kprintf("[VIRTIO_AUDIO] Failed to setup interrupts");
             return false;
         case 1:
-            kprintf("[VIRTIO_AUDIO] Interrupts setup with MSI-X %i,%i",AUDIO_IRQ);
+            kprintf("[VIRTIO_AUDIO] Interrupts setup with MSI-X %i",AUDIO_IRQ);
             break;
         default:
-            kprintf("[VIRTIO_AUDIO] Interrupts setup with MSI %i,%i",AUDIO_IRQ);
+            kprintf("[VIRTIO_AUDIO] Interrupts setup with MSI %i",AUDIO_IRQ);
             break;
     }
     pci_enable_device(addr);
@@ -111,17 +111,17 @@ bool VirtioAudioDriver::init(){
 
     select_queue(&audio_dev, EVENT_QUEUE);
 
+    audio_dev.common_cfg->queue_msix_vector = 0;
+    if (audio_dev.common_cfg->queue_msix_vector != 0){
+        kprintf("[VIRTIO_AUDIO error] failed to setup interrupts for event queue");
+        return false;
+    }
     for (uint16_t i = 0; i < 128; i++){
         void* buf = kalloc(audio_dev.memory_page, sizeof(virtio_snd_event), ALIGN_64B, true, true);
         virtio_add_buffer(&audio_dev, i, (uintptr_t)buf, sizeof(virtio_snd_event));
     }
 
     select_queue(&audio_dev, CONTROL_QUEUE);
-    audio_dev.common_cfg->queue_msix_vector = 0;
-    if (audio_dev.common_cfg->queue_msix_vector != 0){
-        kprintf("[VIRTIO_AUDIO error] failed to setup interrupts for event queue");
-        return false;
-    }
 
     return get_config();
 }
