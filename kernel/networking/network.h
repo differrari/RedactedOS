@@ -9,6 +9,9 @@ extern "C" {
 
 #define NET_IRQ 32
 
+//TODO: review this number
+#define MAX_PACKET_SIZE 0x1000
+
 bool network_init();
 void network_handle_download_interrupt();
 void network_handle_upload_interrupt();
