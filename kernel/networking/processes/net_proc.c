@@ -261,7 +261,6 @@ void test_network(void)
 
         if (udp_probe_server(bcast, 8080, &l2, &srv)) {
             test_http(srv.ip);
-            return;
         }
         http_server_hello_entry();
         return;

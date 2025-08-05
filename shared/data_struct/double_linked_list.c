@@ -1,4 +1,4 @@
-#include "doubly_linked_list.h"
+#include "double_linked_list.h"
 
 cdouble_linked_list_t* cdouble_linked_list_create(void) {
     uintptr_t raw = malloc((uint64_t)sizeof(cdouble_linked_list_t));
