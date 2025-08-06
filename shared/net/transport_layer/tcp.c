@@ -107,7 +107,7 @@ static int find_flow(uint16_t local_port, uint32_t remote_ip, uint16_t remote_po
     return -1;
 }
 
-static int allocate_flow_entry(void) {
+static int allocate_flow_entry() {
     for (int i = 0; i < MAX_TCP_FLOWS; ++i) {
         if (tcp_flows[i].state == TCP_STATE_CLOSED) {
             tcp_flows[i].state = TCP_STATE_CLOSED;

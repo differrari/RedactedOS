@@ -19,7 +19,7 @@ typedef struct clinkedlist {
 extern uintptr_t malloc(uint64_t size);
 extern void free(void *ptr, uint64_t size);
 
-clinkedlist_t *clinkedlist_create(void);
+clinkedlist_t *clinkedlist_create();
 void clinkedlist_destroy(clinkedlist_t *list);
 clinkedlist_t *clinkedlist_clone(const clinkedlist_t *list);
 void clinkedlist_push_front(clinkedlist_t *list, void *data);

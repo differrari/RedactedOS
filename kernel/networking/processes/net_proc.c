@@ -20,7 +20,7 @@ extern void      sleep(uint64_t ms);
 #define KP(fmt, ...) \
     do { kprintf(fmt, ##__VA_ARGS__); } while (0)
 
-static uint32_t pick_probe_ip(void) {
+static uint32_t pick_probe_ip() {
     const net_cfg_t *cfg = ipv4_get_cfg();
     if (!cfg || cfg->mode == NET_MODE_DISABLED || cfg->ip == 0)
         return 0;
@@ -109,7 +109,7 @@ void free_request(HTTPRequestMsg *req)
         free((void*)req->body.ptr, req->body.size);
 }
 
-void http_server_hello_entry(void)
+void http_server_hello_entry()
 {
     uint16_t pid = get_current_proc_pid();
     http_server_handle_t srv = http_server_create(pid);
@@ -247,7 +247,7 @@ static void test_http(uint32_t ip)
              resp.extra_header_count * sizeof(HTTPHeader));
 }
 
-void test_network(void)
+void test_network()
 {
     const net_cfg_t *cfg = ipv4_get_cfg();
     net_l2l3_endpoint l2 = {0};
@@ -276,12 +276,12 @@ void test_network(void)
     }
 }
 
-void net_test_entry(void){
+void net_test_entry(){
     test_network();
     stop_current_process();
 }
 
-void ip_waiter_entry(void)
+void ip_waiter_entry()
 {
     for (;;) {
         const net_cfg_t *cfg = ipv4_get_cfg();
@@ -294,7 +294,7 @@ void ip_waiter_entry(void)
     stop_current_process();
 }
 
-process_t* launch_net_process(void)
+process_t* launch_net_process()
 {
     const net_cfg_t *cfg = ipv4_get_cfg();
 

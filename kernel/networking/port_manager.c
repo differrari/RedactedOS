@@ -12,7 +12,7 @@ static inline bool proto_valid(protocol_t proto) {
     return (uint32_t)proto< PROTO_COUNT;
 }
 
-void port_manager_init(void) {
+void port_manager_init() {
     for (int pr = 0; pr < PROTO_COUNT; ++pr) {
         for (uint32_t p = 0; p < MAX_PORTS; ++p) {
             g_port_table[pr][p].used    = false;

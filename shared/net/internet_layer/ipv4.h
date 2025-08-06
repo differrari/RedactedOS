@@ -43,9 +43,9 @@ typedef struct __attribute__((packed)) ipv4_hdr_t {
     uint32_t dst_ip;
 } ipv4_hdr_t;
 
-void ipv4_cfg_init(void);
+void ipv4_cfg_init();
 void ipv4_set_cfg(const net_cfg_t *src);
-const net_cfg_t* ipv4_get_cfg(void);
+const net_cfg_t* ipv4_get_cfg();
 
 string ipv4_to_string(uint32_t ip);
 
@@ -63,9 +63,9 @@ static inline uint32_t ipv4_broadcast(uint32_t ip, uint32_t mask){ return (ip & 
 static inline uint32_t ipv4_first_host(uint32_t ip, uint32_t mask){ return (ip & mask) + 1; }
 static inline uint32_t ipv4_last_host(uint32_t ip, uint32_t mask){ return ((ip & mask) | ~mask) - 1; }
 
-void ipv4_cfg_init(void);
+void ipv4_cfg_init();
 void ipv4_set_cfg(const net_cfg_t *src);
-const net_cfg_t* ipv4_get_cfg(void);
+const net_cfg_t* ipv4_get_cfg();
 #ifdef __cplusplus
 }
 #endif

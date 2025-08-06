@@ -31,7 +31,7 @@ typedef struct arp_entry {
     uint8_t  static_entry;//1 static, 0 dynamic
 } arp_entry_t;
 
-void arp_table_init(void);
+void arp_table_init();
 
 void arp_table_put(uint32_t ip, const uint8_t mac[6], uint32_t ttl_ms, bool is_static);
 
@@ -39,15 +39,15 @@ bool arp_table_get(uint32_t ip, uint8_t mac_out[6]);
 
 void arp_table_tick(uint32_t ms);
 
-void arp_table_init_static_defaults(void);
+void arp_table_init_static_defaults();
 
 void arp_send_request(uint32_t target_ip);
 
-void arp_daemon_entry(void);
-bool arp_can_reply(void);
-void arp_daemon_entry(void);
+void arp_daemon_entry();
+bool arp_can_reply();
+void arp_daemon_entry();
 void arp_set_pid(uint16_t pid);
-uint16_t arp_get_pid(void);
+uint16_t arp_get_pid();
 void arp_input(uintptr_t frame_ptr, uint32_t frame_len);
 #ifdef __cplusplus
 }
