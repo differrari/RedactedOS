@@ -1,6 +1,7 @@
 #include "terminal.hpp"
 #include "input/input_dispatch.h"
-// #include "../kio.h"
+#include "../kio.h"
+#include "../serial/uart.h"
 
 void Terminal::handle_input(){
     keypress kp;
@@ -13,6 +14,9 @@ void Terminal::handle_input(){
                 put_char(readable);
                 draw_cursor();
                 gpu_flush();
+            } else if (key == KEY_BACKSPACE){
+                uart_puts("Backspace");
+                delete_last_char();
             }
         }
     }

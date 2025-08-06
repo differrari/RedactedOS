@@ -23,6 +23,7 @@ public:
     void refresh();
     
     void set_active(bool active);
+    void delete_last_char();
     
 protected:
     bool check_ready();

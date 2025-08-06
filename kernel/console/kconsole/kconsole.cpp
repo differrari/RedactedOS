@@ -57,6 +57,30 @@ void KernelConsole::put_char(char c){
     cursor_x++;
 }
 
+void KernelConsole::delete_last_char(){
+    if (cursor_x > 0){
+        cursor_x--;
+    } else if (cursor_y > 0){
+        cursor_y--;
+        cursor_x = 0;
+        char* line = row_data + cursor_y * columns;
+        while (*line){
+            uart_putc(*line);
+            line++;
+            cursor_x++;
+        } 
+        draw_cursor();
+        gpu_flush();
+        return;
+    } else return;
+    
+    char* line = row_data + cursor_y * columns;
+    line[cursor_x] = 0;
+    gpu_fill_rect({{cursor_x*char_width, cursor_y * line_height}, {char_width, line_height}}, COLOR_BLACK);
+    draw_cursor();
+    gpu_flush();
+}
+
 void KernelConsole::draw_cursor(){
     if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0){
         gpu_fill_rect({{last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height}, {char_width, line_height}}, COLOR_BLACK);
