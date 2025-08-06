@@ -2,7 +2,7 @@
 #include "console/serial/uart.h"
 #include "memory/page_allocator.h"
 #include "filesystem/filesystem.h"
-#include "input/input_dispatch.h"
+#include "theme/theme.h"
 
 KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false){
     initialize();
@@ -26,7 +26,7 @@ bool KernelConsole::check_ready(){
 void KernelConsole::resize(){
     gpu_size screen_size = gpu_get_screen_size();
     columns = screen_size.width / char_width;
-    rows = screen_size.height / char_height;
+    rows = screen_size.height / line_height;
 
     if (row_data) kfree(row_data, buffer_data_size);
     buffer_data_size = rows * columns;
@@ -45,6 +45,7 @@ void KernelConsole::put_char(char c){
     if (!check_ready()) return;
     if (c == '\n'){
         newline(); 
+        gpu_flush();
         return;
     }
     if (cursor_x >= columns) newline();
@@ -52,8 +53,20 @@ void KernelConsole::put_char(char c){
     uint32_t row_index = row_ring.peek();
     char* line = row_data + row_index * columns;
     line[cursor_x] = c;
-    gpu_draw_char({cursor_x * char_width, cursor_y * char_height}, c, 1, 0xFFFFFFFF);
+    gpu_draw_char({cursor_x * char_width, (cursor_y * line_height)+(line_height/2)}, c, 1, COLOR_WHITE);
     cursor_x++;
+}
+
+void KernelConsole::draw_cursor(){
+    if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0){
+        gpu_fill_rect({{last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height}, {char_width, line_height}}, COLOR_BLACK);
+        char *line = row_data + (last_drawn_cursor_y * columns);
+        uart_putc(line[last_drawn_cursor_x]);
+        gpu_draw_char({last_drawn_cursor_x * char_width, (last_drawn_cursor_y * line_height)+(line_height/2)}, line[last_drawn_cursor_x], 1, COLOR_WHITE);
+    }
+    gpu_fill_rect({{cursor_x*char_width, cursor_y * line_height}, {char_width, line_height}}, COLOR_WHITE);
+    last_drawn_cursor_x = cursor_x;
+    last_drawn_cursor_y = cursor_y;
 }
 
 void KernelConsole::put_string(const char* str){
@@ -61,8 +74,8 @@ void KernelConsole::put_string(const char* str){
     for (uint32_t i = 0; str[i]; i++){
         char c = str[i];
         put_char(c);
-        if (c == '\n') gpu_flush();
     } 
+    draw_cursor();
     gpu_flush();
 }
 
@@ -106,14 +119,17 @@ void KernelConsole::redraw(){
             row_ring.push(row_index);
             char* line = row_data + row_index * columns;
             for (uint32_t x = 0; x < columns; x++){
-                gpu_draw_char({x * char_width, y * char_height}, line[x], 1, 0xFFFFFFFF);
+                gpu_draw_char({x * char_width, (y * line_height)+(line_height/2)}, line[x], 1, COLOR_WHITE);
             }
         }
     }
+    draw_cursor();
 }
 
 void KernelConsole::screen_clear(){
-    gpu_clear(0x0);
+    gpu_clear(COLOR_BLACK);
+    last_drawn_cursor_x = -1;
+    last_drawn_cursor_y = -1;
 }
 
 void KernelConsole::clear(){
@@ -127,21 +143,4 @@ void KernelConsole::clear(){
         }
     }
     cursor_x = cursor_y = 0;
-}
-
-// #include "../kio.h"
-
-void KernelConsole::handle_input(){
-    keypress kp;
-    if (sys_read_input_current(&kp)){
-        for (int i = 0; i < 6; i++){
-            char key = kp.keys[i];
-            // kprintf("Key[%i] %i", i, key);
-            char readable = hid_to_char((uint8_t)key);
-            if (readable){
-                put_char(readable);
-                gpu_flush();
-            }
-        }
-    }
 }

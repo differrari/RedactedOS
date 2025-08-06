@@ -3,6 +3,7 @@
 #include "graph/graphics.h"
 #include "input/input_dispatch.h"
 #include "kernel_processes/windows/windows.h"
+#include "terminal.hpp"
 
 KernelConsole kconsole;
 
@@ -27,22 +28,22 @@ extern "C" void toggle_visual(){
     };
     uint16_t shortcut = sys_subscribe_shortcut_current(kp);
     bool active = false;
-    KernelConsole *console = new KernelConsole();
-    console->initialize();
+    Terminal *terminal = new Terminal();
+    terminal->initialize();
     while (1){
         if (sys_shortcut_triggered_current(shortcut)){
             active = !active;
             if (active){
                 pause_window_draw();
                 sys_focus_current();
-                console->refresh();
+                terminal->refresh();
             } else {
                 resume_window_draw();
-                console->clear();
+                terminal->clear();
             }
         }
         if (active){
-            console->handle_input();
+            terminal->handle_input();
         }
     }
 }

@@ -107,15 +107,15 @@ gpu_rect fb_draw_line(uint32_t* fb, uint32_t x0, uint32_t y0, uint32_t x1, uint3
 
 void fb_draw_char(uint32_t* fb, uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
     const uint8_t* glyph = get_font8x8((uint8_t)c);
-    for (uint32_t row = 0; row < (8 * scale); row++) {
+    for (uint32_t row = 0; row < (CHAR_SIZE * scale); row++) {
         uint8_t bits = glyph[row/scale];
-        for (uint32_t col = 0; col < (8 * scale); col++) {
+        for (uint32_t col = 0; col < (CHAR_SIZE * scale); col++) {
             if (bits & (1 << (7 - (col / scale)))) {
                 fb_draw_pixel(fb, x + col, y + row, color);
             }
         }
     }
-    mark_dirty(x,y,8*scale,8*scale);
+    mark_dirty(x,y,CHAR_SIZE*scale,CHAR_SIZE*scale);
 }
 
 gpu_size fb_draw_string(uint32_t* fb, string s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
@@ -150,7 +150,7 @@ gpu_size fb_draw_string(uint32_t* fb, string s, uint32_t x0, uint32_t y0, uint32
 }
 
 uint32_t fb_get_char_size(uint32_t scale){
-    return 8 * scale;
+    return CHAR_SIZE * scale;
 }
 
 void fb_set_stride(uint32_t new_stride){

@@ -33,3 +33,6 @@
 #define BG_COLOR 0xFF222233
 
 #define default_pwd "hi"
+
+#define COLOR_WHITE 0xFFFFFFFF
+#define COLOR_BLACK 0
