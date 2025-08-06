@@ -4,7 +4,7 @@
 #include "std/memfunctions.h"
 #include "process/scheduler.h"
 #include "math/math.h"
-#include "math/rng.h"+
+#include "math/rng.h"
 
 #include "networking/network.h"
 #include "net/application_layer/dhcp.h"
@@ -334,6 +334,8 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
         uint32_t t1_net;
         memcpy(&t1_net, &p->options[idx+2], 4);
         cfg_local.rt->t1 = __builtin_bswap32(t1_net);
+    } else {
+        cfg_local.rt->t1 = cfg_local.rt->lease / 2;
     }
     idx = dhcp_parse_option(p, 59);
     if (idx != UINT16_MAX && p->options[idx+1] >= 4) {
