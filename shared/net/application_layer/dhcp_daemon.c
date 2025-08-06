@@ -51,10 +51,10 @@ static uint16_t g_pid_dhcpd = 0xFFFF;
 
 static socket_handle_t g_sock = 0;
 
-uint16_t get_dhcp_pid(void) { return g_pid_dhcpd; }
-bool dhcp_is_running(void) { return g_pid_dhcpd != 0xFFFF; }
+uint16_t get_dhcp_pid() { return g_pid_dhcpd; }
+bool dhcp_is_running() { return g_pid_dhcpd != 0xFFFF; }
 void dhcp_set_pid(uint16_t p){ g_pid_dhcpd = p;    }
-void dhcp_force_renew(void) { g_force_renew = true; }
+void dhcp_force_renew() { g_force_renew = true; }
 
 static inline uint32_t rd_be32(const uint8_t* p){
     uint32_t v; memcpy(&v, p, 4); return __builtin_bswap32(v);
@@ -142,7 +142,7 @@ static bool dhcp_wait_for_type(uint8_t wanted,
     return false;
 }
 
-static void dhcp_fsm_once(void)
+static void dhcp_fsm_once()
 {
     //TODO: use a syscall for the rng
     rng_t rng;
@@ -245,7 +245,7 @@ static void dhcp_fsm_once(void)
     if (old != g_state) log_state_change(old, g_state);
 }
 
-void dhcp_daemon_entry(void){
+void dhcp_daemon_entry(){
     KP("[DHCP] daemon start pid=%i", get_current_proc_pid());
     g_pid_dhcpd = (uint16_t)get_current_proc_pid();
     g_sock = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dhcpd);

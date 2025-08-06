@@ -4,7 +4,7 @@
 static ipv4_rt_entry_t g_rt[IPV4_RT_MAX];
 static int g_rt_len = 0;
 
-void ipv4_rt_init(void) {
+void ipv4_rt_init() {
     g_rt_len = 0;
     memset(g_rt, 0, sizeof(g_rt));
 }

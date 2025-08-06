@@ -30,7 +30,7 @@ typedef struct {
     bool used;
 } port_entry_t;
 
-void port_manager_init(void);
+void port_manager_init();
 
 int  port_alloc_ephemeral(protocol_t proto,
                         uint16_t pid,

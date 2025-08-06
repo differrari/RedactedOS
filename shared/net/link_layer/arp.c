@@ -24,16 +24,16 @@ static bool init = false;
     do { kprintf(fmt, ##__VA_ARGS__); } while (0)
 
 void arp_set_pid(uint16_t pid) { g_arp_pid = pid; }
-uint16_t arp_get_pid(void) { return g_arp_pid; }
+uint16_t arp_get_pid() { return g_arp_pid; }
 
-void arp_table_init(void) {
+void arp_table_init() {
     KP("[ARP] init");
     memset(g_arp_table, 0, sizeof(g_arp_table));
     init = true;
     arp_table_init_static_defaults();
 }
 
-void arp_table_init_static_defaults(void) {
+void arp_table_init_static_defaults() {
     uint8_t bmac[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
     arp_table_put(0xFFFFFFFF, bmac, 0, true);
 }
@@ -45,7 +45,7 @@ static int arp_table_find_slot(uint32_t ip) {
     return -1;
 }
 
-static int arp_table_find_free(void) {
+static int arp_table_find_free() {
     for (int i = 0; i < ARP_TABLE_MAX; i++) {
         if (g_arp_table[i].ip == 0) return i;
     }
@@ -148,12 +148,12 @@ void arp_populate_response(net_l2l3_endpoint *ep, const arp_hdr_t *arp) {
     ep->ip = __builtin_bswap32(arp->sender_ip);
 }
 
-bool arp_can_reply(void) {
+bool arp_can_reply() {
     const net_cfg_t *cfg = ipv4_get_cfg();
     return (cfg && cfg->ip != 0 && cfg->mode != NET_MODE_DISABLED);
 }
 
-void arp_daemon_entry(void) {
+void arp_daemon_entry() {
     while (1){
         const net_cfg_t *cfg = ipv4_get_cfg();
         if(cfg && cfg->ip != 0 && cfg->mode != NET_MODE_DISABLED) break;

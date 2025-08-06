@@ -23,7 +23,7 @@ net_cfg_t g_net_cfg = {
     .rt = &g_rt_opts
 };
 
-void ipv4_cfg_init(void) {
+void ipv4_cfg_init() {
     memset(&g_rt_opts, 0, sizeof(g_rt_opts));
     g_net_cfg.ip = 0;
     g_net_cfg.mask = 0;
@@ -55,7 +55,7 @@ void ipv4_set_cfg(const net_cfg_t *src) {
     }
 }
 
-const net_cfg_t* ipv4_get_cfg(void) {
+const net_cfg_t* ipv4_get_cfg() {
     return &g_net_cfg;
 }
 
