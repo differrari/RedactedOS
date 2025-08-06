@@ -117,7 +117,7 @@ void kprint(const char *fmt){
 
 void kputf(const char *fmt, ...){
     if (!print_buf) init_print_buf();
-    va_list args;
+    __attribute__((aligned(16))) va_list args;
     va_start(args, fmt);
 
     if (cursor >= ((uintptr_t)print_buf) + CONSOLE_BUF_SIZE - 0x100){
