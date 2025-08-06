@@ -29,10 +29,9 @@
 #define BOOTSCREEN_LOWER_Y_CONST 30
 
 #define PANIC_TEXT "FATAL ERROR"
+#define default_pwd "hi"
 
 #define BG_COLOR 0xFF222233
-
-#define default_pwd "hi"
 
 #define COLOR_WHITE 0xFFFFFFFF
 #define COLOR_BLACK 0
