@@ -340,6 +340,8 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
         uint32_t t2_net;
         memcpy(&t2_net, &p->options[idx+2], 4);
         cfg_local.rt->t2 = __builtin_bswap32(t2_net);
+    } else {
+        cfg_local.rt->t2 = cfg_local.rt->t1 * 2;
     }
 
     idx = dhcp_parse_option(p, 54);
