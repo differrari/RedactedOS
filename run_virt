@@ -20,8 +20,6 @@ OS_TYPE="$(uname)"
 DISPLAY_MODE="default"
 SELECTED_GPU="virtio-gpu-pci"
 
-DUMP=""
-
 if [ "$OS_TYPE" = "Darwin" ]; then
     NETDEV="-netdev vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
@@ -38,9 +36,9 @@ if [ -d /sys/class/net/tap0 ] && [ -d /sys/class/net/br0 ]; then
     #tap bridge
     NETDEV="-netdev tap,id=net0,ifname=tap0,script=no,downscript=no,vnet_hdr=off"
     PRIVILEGE=""
-    DUMP="-object filter-dump,id=f0,netdev=net0,file=/tmp/virtio.pcap"
 fi
 
+DUMP="-object filter-dump,id=f0,netdev=net0,file=/tmp/virtio.pcap"
 echo "Using networking mode: $NETDEV"
 
 $PRIVILEGE qemu-system-aarch64 \
