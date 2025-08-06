@@ -14,6 +14,8 @@
 
 #include "net/transport_layer/csocket_udp.h"
 
+#include "../net.h"
+
 extern void      sleep(uint64_t ms);
 extern uintptr_t malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
@@ -358,6 +360,8 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
     arp_table_put(bcast, bmac, 0, true);
 
     ipv4_set_cfg(&cfg_local);
+
+    kprintf("Local IP: %i.%i.%i.%i",FORMAT_IP(cfg_local.ip));
 
     g_t1_left_ms = cfg_local.rt->t1 * 1000;
     g_t2_left_ms = cfg_local.rt->t2 * 1000;

@@ -12,6 +12,7 @@
 #include "net/network_types.h"
 #include "net/link_layer/arp.h"
 #include "networking/network.h"
+#include "net/net.h"
 
 extern uintptr_t malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
@@ -131,7 +132,7 @@ void http_server_hello_entry()
         return;
     }
 
-    KP("[HTTP] listening on port 80");
+    KP("[HTTP] listening at %i.%i.%i.%i on port 80", FORMAT_IP(ipv4_get_cfg()->ip));
 
     static const char HTML_ROOT[] =
         "<h1>Hello, world!</h1>\n"
