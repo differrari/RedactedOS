@@ -20,7 +20,7 @@ typedef struct cdouble_linked_list {
 extern uintptr_t malloc(uint64_t size);
 extern void free(void* ptr, uint64_t size);
 
-cdouble_linked_list_t* cdouble_linked_list_create(void);
+cdouble_linked_list_t* cdouble_linked_list_create();
 void cdouble_linked_list_destroy(cdouble_linked_list_t* list);
 cdouble_linked_list_t* cdouble_linked_list_clone(const cdouble_linked_list_t* list);
 void cdouble_linked_list_push_front(cdouble_linked_list_t* list, void* data);

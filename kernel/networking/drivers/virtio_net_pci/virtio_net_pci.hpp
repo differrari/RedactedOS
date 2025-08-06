@@ -15,13 +15,14 @@ public:
     sizedptr allocate_packet(size_t size) override;
 
     sizedptr handle_receive_packet(void* buffer) override;
+
     void handle_sent_packet() override;
 
     void enable_verbose() override;
 
     void send_packet(sizedptr packet) override;
 
-    void get_mac(network_connection_ctx *context) override;
+    void get_mac(net_l2l3_endpoint *context) override;
 
     ~VirtioNetDriver() = default;
 
