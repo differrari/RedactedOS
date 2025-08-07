@@ -60,6 +60,9 @@ driver_module boot_fs_module = (driver_module){
 };
 
 bool init_boot_filesystem(){
+    const char *path = "/disk";
+    driver_module *disk_mod = get_module(&path);
+    if (!disk_mod) return false;
     return load_module(&boot_fs_module);
 }
 

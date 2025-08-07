@@ -158,3 +158,16 @@ void init_input_process(){
 void handle_input_interrupt(){
     if (input_driver->use_interrupts) input_driver->handle_interrupt();
 }
+
+driver_module input_module = (driver_module){
+    .name = "input",
+    .mount = "/in",
+    .version = VERSION_NUM(0, 1, 0, 1),
+    .init = input_init,
+    .fini = 0,
+    .open = 0,
+    .read = 0,
+    .write = 0,
+    .seek = 0,
+    .readdir = 0,
+};
