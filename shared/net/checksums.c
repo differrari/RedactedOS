@@ -1,25 +1,24 @@
-#include "network_types.h"
+#include "checksums.h"
 
-uint16_t checksum16(uint16_t *data, size_t len) {
+uint16_t checksum16(const uint16_t *data, size_t len) {
     uint32_t sum = 0;
-    for (int i = 0; i < len; i++) sum += data[i];
+    for (size_t i = 0; i < len; i++) sum += data[i];
     while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
-    return ~sum;
+    return (uint16_t)~sum;
 }
 
-uint16_t checksum16_pipv4(
-    uint32_t src_ip,
-    uint32_t dst_ip,
-    uint8_t protocol,
-    const uint8_t* payload,
-    uint16_t length
-) {
+uint16_t checksum16_pipv4(uint32_t src_ip,
+                        uint32_t dst_ip,
+                        uint8_t  protocol,
+                        const uint8_t *payload,
+                        uint16_t length)
+{
     uint32_t sum = 0;
 
     sum += (src_ip >> 16) & 0xFFFF;
-    sum += src_ip & 0xFFFF;
+    sum +=  src_ip & 0xFFFF;
     sum += (dst_ip >> 16) & 0xFFFF;
-    sum += dst_ip & 0xFFFF;
+    sum +=  dst_ip & 0xFFFF;
     sum += protocol;
     sum += length;
 
@@ -32,5 +31,5 @@ uint16_t checksum16_pipv4(
     while (sum >> 16)
         sum = (sum & 0xFFFF) + (sum >> 16);
 
-    return ~sum;
+    return (uint16_t)~sum;
 }

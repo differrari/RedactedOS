@@ -7,7 +7,7 @@
 #include "input/input_dispatch.h"
 #include "exceptions/exception_handler.h"
 #include "exceptions/timer.h"
-
+#include "console/kconsole/kconsole.h"
 extern void save_context(process_t* proc);
 extern void save_pc_interrupt(process_t* proc);
 extern void restore_context(process_t* proc);
@@ -61,6 +61,7 @@ void process_restore(){
 }
 
 void start_scheduler(){
+    kconsole_clear();
     disable_interrupt();
     timer_init(1);
     switch_proc(YIELD);
@@ -201,20 +202,24 @@ void sleep_process(uint64_t msec){
 }
 
 void wake_processes(){
-    uint16_t removed = 0;
-    uint64_t new_wake_time = 0;
-    for (uint16_t i = 0; i < sleep_count; i++){
-        uint64_t wake_time = sleeping[i].timestamp + sleeping[i].sleep_time;
-        if (wake_time <= timer_now_msec()){
-            process_t *proc = get_proc_by_pid(sleeping[i].pid);
-            proc->state = READY;
-            sleeping[i].valid = false;
-            removed++;
-        } else if (new_wake_time == 0 || wake_time < new_wake_time){
-            new_wake_time = wake_time;
+    uint64_t now = timer_now_msec();
+    uint64_t next = UINT64_MAX;
+    uint16_t w = 0;
+    for(uint16_t i=0;i<sleep_count;i++){
+        if(!sleeping[i].valid) continue;
+        uint64_t wake = sleeping[i].timestamp + sleeping[i].sleep_time;
+        if(wake <= now){
+            process_t *p = get_proc_by_pid(sleeping[i].pid);
+            if(p) p->state = READY;
+        }else{
+            if(wake < next) next = wake;
+            sleeping[w++] = sleeping[i];
         }
     }
-    sleep_count -= removed;
-    virtual_timer_reset(timer_now_msec() - new_wake_time);
-    virtual_timer_enable();
+    sleep_count = w;
+
+    if(next != UINT64_MAX){
+        virtual_timer_reset(next - now);
+        virtual_timer_enable();
+    }
 }
