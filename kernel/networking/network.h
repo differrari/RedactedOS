@@ -6,6 +6,7 @@ extern "C" {
 
 #include "types.h"
 #include "net/network_types.h"
+#include "dev/driver_base.h"
 
 #define NET_IRQ 32
 //TODO: consider using the system MTU here
@@ -24,6 +25,8 @@ int net_rx_frame(sizedptr *out_frame);
 
 const net_l2l3_endpoint* network_get_local_endpoint();
 void network_update_local_ip(uint32_t ip);
+
+extern driver_module net_module;
 
 #ifdef __cplusplus
 }
