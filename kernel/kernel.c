@@ -63,7 +63,7 @@ void kernel_main() {
     if (!input_init())
         panic("Input initialization error");
 
-    bool network_available = network_init();
+    bool network_available = load_module(&net_module);
     
     load_module(&audio_module);
 
