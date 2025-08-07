@@ -39,3 +39,16 @@ void disk_read(void *buffer, uint32_t sector, uint32_t count){
     else 
         vblk_read(buffer, sector, count);
 }
+
+driver_module disk_module = (driver_module){
+    .name = "disk",
+    .mount = "/disk",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = init_disk_device,
+    .fini = 0,
+    .open = 0,
+    .read = 0,
+    .write = 0,
+    .seek = 0,
+    .readdir = 0,
+};

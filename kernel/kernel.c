@@ -56,8 +56,7 @@ void kernel_main() {
         pci_setup_rp1();
     
     // disk_verbose();
-    if (!init_disk_device())
-        panic("Disk initialization failure");
+    load_module(&disk_module);
 
     // xhci_enable_verbose();
     bool input_available = load_module(&input_module);
@@ -66,14 +65,12 @@ void kernel_main() {
     
     load_module(&audio_module);
 
-    if (input_available)
-        init_input_process();
+    if (input_available) init_input_process();
 
     mmu_init();
     kprint("MMU Mapped");
 
-    if (!init_boot_filesystem())
-        panic("Filesystem initialization failure");
+    init_boot_filesystem();
 
     kprint("Kernel initialization finished");
 
