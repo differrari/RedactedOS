@@ -2,6 +2,7 @@
 
 #include "input_keycodes.h"
 #include "keypress.h"
+#include "dev/driver_base.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,11 +26,11 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid);
 
 bool is_new_keypress(keypress* current, keypress* previous);
 
-bool input_init();
-
 void handle_input_interrupt();
 
 void init_input_process();
+
+extern driver_module input_module;
 
 #ifdef __cplusplus
 }

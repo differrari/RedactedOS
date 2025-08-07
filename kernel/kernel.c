@@ -60,14 +60,14 @@ void kernel_main() {
         panic("Disk initialization failure");
 
     // xhci_enable_verbose();
-    if (!input_init())
-        panic("Input initialization error");
+    bool input_available = load_module(&input_module);
 
     bool network_available = load_module(&net_module);
     
     load_module(&audio_module);
 
-    init_input_process();
+    if (input_available)
+        init_input_process();
 
     mmu_init();
     kprint("MMU Mapped");
