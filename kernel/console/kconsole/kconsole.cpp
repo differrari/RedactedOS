@@ -57,6 +57,7 @@ void KernelConsole::put_char(char c){
     cursor_x++;
 }
 
+//TODO: generalize this function to handle movement in general
 void KernelConsole::delete_last_char(){
     if (cursor_x > 0){
         cursor_x--;

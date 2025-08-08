@@ -42,7 +42,7 @@ void login_screen(){
             for (int i = 0; i < 6; i++){
                 char key = kp.keys[i];
                 if (hid_keycode_to_char[(uint8_t)key]){
-                    if (key == KEY_ENTER || key == KEY_KEYPAD_ENTER){
+                    if (key == KEY_ENTER || key == KEY_KPENTER){
                         if (strcmp(buf,default_pwd, false) == 0){
                             free(buf, 256);
                             free(s.data,s.mem_length);

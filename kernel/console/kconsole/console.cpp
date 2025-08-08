@@ -22,7 +22,7 @@ extern "C" void kconsole_clear() {
 
 extern "C" void toggle_visual(){
     keypress kp = {
-        .modifier = KEY_MOD_ALT,
+        .modifier = KEY_MOD_LALT,
         .rsvd = 0,
         .keys = {0x13},
     };

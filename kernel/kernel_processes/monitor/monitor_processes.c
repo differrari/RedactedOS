@@ -86,9 +86,9 @@ void draw_process_view(){
 
     keypress kp;
     while (sys_read_input_current(&kp)){
-        if (kp.keys[0] == KEY_ARROW_LEFT)
+        if (kp.keys[0] == KEY_LEFT)
             scroll_index = max(scroll_index - 1, 0);
-        if (kp.keys[0] == KEY_ARROW_RIGHT)
+        if (kp.keys[0] == KEY_RIGHT)
             scroll_index = min(scroll_index + 1,MAX_PROCS);
     }
 
@@ -151,7 +151,7 @@ void draw_process_view(){
 __attribute__((section(".text.kcoreprocesses")))
 void monitor_procs(){
     keypress kp = {
-        .modifier = KEY_MOD_ALT,
+        .modifier = KEY_MOD_LALT,
         .keys[0] = 0x15//R
     };
     uint16_t shortcut = sys_subscribe_shortcut_current(kp);
