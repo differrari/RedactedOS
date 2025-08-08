@@ -1,7 +1,7 @@
 #include "pci.h"
 #include "console/kio.h"
 #include "exceptions/exception_handler.h"
-#include "memory/kalloc.h"
+#include "memory/talloc.h"
 #include "memory/mmu.h"
 #include "memory/memory_access.h"
 #include "hw/hw.h"

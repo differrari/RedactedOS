@@ -3,7 +3,7 @@
 #include "graph/graphics.h"
 #include "theme/theme.h"
 #include "input/input_dispatch.h"
-#include "memory/kalloc.h"
+#include "memory/talloc.h"
 #include "std/string.h"
 #include "filesystem/filesystem.h"
 #include "process/loading/elf_file.h"
@@ -118,14 +118,20 @@ void Desktop::activate_current(){
 
     if (index < entries.size()){
         if (strcmp(".elf",entries[index].ext, true) != 0){
-            kprintf("Wrong executable format. Must be .elf");
+            kprintf("[LAUNCHER] Wrong executable format. Must be .elf");
             return;
         }
-        kprintf("File path %s",(uintptr_t)entries[index].path);
-        void *file = read_file(entries[index].path, 0);
+        kprintf("[LAUNCHER] File path %s",(uintptr_t)entries[index].path);
+        file fd;
+        open_file(entries[index].path, &fd);
+        char *file = (char*)malloc(fd.size);
+        if (read_file(&fd, file, fd.size) != fd.size){
+            kprintf("[LAUNCHER] Failed to read full elf file");
+            return;
+        } 
         active_proc = load_elf_file(entries[index].name, file);
         if (!active_proc){
-            kprintf("Failed to read ELF file");
+            kprintf("[LAUNCHER] Failed to read ELF file");
             return;
         }
         process_active = true;
