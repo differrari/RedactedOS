@@ -70,7 +70,7 @@ void Terminal::TMP_test(const char* args){
     if (*term == 0) return;
     const char *next = seek_to(term, ';');
     uint64_t color = parse_hex_u64(term, next - term);
-    set_text_color(color);
+    set_text_color(color & 0xFFFFFF);
     put_string(next);
 }
 
