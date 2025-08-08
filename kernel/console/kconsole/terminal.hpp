@@ -13,6 +13,7 @@ protected:
 
     //TODO: proper commands
     void TMP_cat(const char *args);
+    void TMP_test(const char *args);
 
     bool command_running;
 };

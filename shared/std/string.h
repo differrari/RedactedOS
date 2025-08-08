@@ -38,7 +38,7 @@ int strstart(const char *a, const char *b, bool case_insensitive);
 int strend(const char *a, const char *b, bool case_insensitive);
 int strindex(const char *a, const char *b);
 
-uint64_t parse_hex_u64(char* str, size_t size);
+uint64_t parse_hex_u64(const char* str, size_t size);
 
 bool utf16tochar( uint16_t* str_in, char* out_str, size_t max_len);
 
@@ -46,6 +46,7 @@ string string_from_const(const char *literal);
 string string_concat(string a, string b);
 void string_concat_inplace(string *dest, string src);
 void string_append_bytes(string *dest, const void *buf, uint32_t len);
+const char* seek_to(const char *string, char character);
 
 #ifdef __cplusplus
 }
