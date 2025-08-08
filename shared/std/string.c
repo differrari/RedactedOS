@@ -316,7 +316,7 @@ bool utf16tochar(uint16_t* str_in, char* out_str, size_t max_len){
     return true;
 }
 
-uint64_t parse_hex_u64(char* str, size_t size){
+uint64_t parse_hex_u64(const char* str, size_t size){
     uint64_t result = 0;
     for (uint32_t i = 0; i < size; i++){
         char c = str[i];
@@ -377,4 +377,11 @@ void string_append_bytes(string *dest, const void *buf, uint32_t len)
     if (!len) return;
     string tmp = { (char *)buf, len, len };
     string_concat_inplace(dest, tmp);
+}
+
+const char* seek_to(const char *string, char character){
+    while (*string != character && *string != '\0')
+        string++;
+    string++;
+    return string;
 }

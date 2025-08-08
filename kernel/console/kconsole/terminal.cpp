@@ -18,13 +18,7 @@ void Terminal::end_command(){
     put_char('\n');
     draw_cursor();
     gpu_flush();
-}
-
-const char* Terminal::seek_to(const char *string, char character){
-    while (*string != character && *string != '\0')
-        string++;
-    string++;
-    return string;
+    set_text_color(default_text_color);
 }
 
 void Terminal::TMP_cat(const char *args){
@@ -53,9 +47,11 @@ void Terminal::run_command(){
     put_char('\r');
     put_char('\n');
 
-    if (strcmp(cmd.data, "cat", true) == 0){
+    if (strcmp(cmd.data, "cat", true) == 0)
         TMP_cat(args);
-    } else put_string(s.data);
+    if (strcmp(cmd.data, "test", true) == 0)
+        TMP_test(args);
+    else put_string(s.data);
     
     free(s.data, s.mem_length);
     free(cmd.data, cmd.mem_length);
@@ -63,6 +59,19 @@ void Terminal::run_command(){
     draw_cursor();
     gpu_flush();
     command_running = true;
+}
+
+//TODO: implement the full state machine explained at https://vt100.net/emu/dec_ansi_parser & https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
+//The current implementation is not standard compliant and uses hex colors as [FF0000;
+void Terminal::TMP_test(const char* args){
+    // const char *term = seek_to(args, '\033');
+    // if (*term == 0) return;
+    const char *term = seek_to(args, '[');
+    if (*term == 0) return;
+    const char *next = seek_to(term, ';');
+    uint64_t color = parse_hex_u64(term, next - term);
+    set_text_color(color);
+    put_string(next);
 }
 
 void Terminal::handle_input(){

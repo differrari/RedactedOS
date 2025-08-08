@@ -14,6 +14,7 @@
         }\
     })
 
+//TODO: use seek_to
 const char* FAT32FS::advance_path(const char *path){
     while (*path != '/' && *path != '\0')
         path++;

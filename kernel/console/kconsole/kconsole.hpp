@@ -32,6 +32,8 @@ protected:
     void draw_cursor();
     const char* get_current_line();
 
+    void set_text_color(uint32_t color);
+
     uint32_t cursor_x, cursor_y;
     int32_t last_drawn_cursor_x, last_drawn_cursor_y;
     uint32_t columns, rows;
@@ -40,6 +42,9 @@ protected:
     static constexpr uint32_t char_width=CHAR_SIZE;
     static constexpr uint32_t line_height=CHAR_SIZE*2;
     static constexpr uint32_t max_rows=128;
+
+    uint32_t default_text_color = 0xFFFFFFFF;
+    uint32_t text_color = default_text_color;
 
     int32_t scroll_row_offset = 0;
     char* row_data;

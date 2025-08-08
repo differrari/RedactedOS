@@ -14,6 +14,8 @@ void KernelConsole::initialize(){
     mem_page = palloc(PAGE_SIZE, true, true, false);
     resize();
     clear();
+    default_text_color = 0xFFFFFFFF;
+    text_color = default_text_color;
 }
 
 bool KernelConsole::check_ready(){
@@ -52,7 +54,7 @@ void KernelConsole::put_char(char c){
     uint32_t row_index = (scroll_row_offset + cursor_y) % rows;
     char* line = row_data + row_index * columns;
     line[cursor_x] = c;
-    gpu_draw_char({cursor_x * char_width, (cursor_y * line_height)+(line_height/2)}, c, 1, COLOR_WHITE);
+    gpu_draw_char({cursor_x * char_width, (cursor_y * line_height)+(line_height/2)}, c, 1, text_color);
     cursor_x++;
 }
 
@@ -84,7 +86,7 @@ void KernelConsole::draw_cursor(){
     if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0){
         gpu_fill_rect({{last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height}, {char_width, line_height}}, COLOR_BLACK);
         char *line = row_data + (last_drawn_cursor_y * columns);
-        gpu_draw_char({last_drawn_cursor_x * char_width, (last_drawn_cursor_y * line_height)+(line_height/2)}, line[last_drawn_cursor_x], 1, COLOR_WHITE);
+        gpu_draw_char({last_drawn_cursor_x * char_width, (last_drawn_cursor_y * line_height)+(line_height/2)}, line[last_drawn_cursor_x], 1, text_color);
     }
     gpu_fill_rect({{cursor_x*char_width, cursor_y * line_height}, {char_width, line_height}}, COLOR_WHITE);
     last_drawn_cursor_x = cursor_x;
@@ -136,7 +138,7 @@ void KernelConsole::redraw(){
         uint32_t row_index = (scroll_row_offset + y) % rows;
         char* line = row_data + row_index * columns;
         for (uint32_t x = 0; x < columns; x++){
-            gpu_draw_char({x * char_width, (y * line_height)+(line_height/2)}, line[x], 1, COLOR_WHITE);
+            gpu_draw_char({x * char_width, (y * line_height)+(line_height/2)}, line[x], 1, text_color);
         }
     }
     draw_cursor();
@@ -157,4 +159,8 @@ void KernelConsole::clear(){
 const char* KernelConsole::get_current_line(){
     uint32_t row_index = (scroll_row_offset + cursor_y) % rows;
     return row_data + row_index * columns;
+}
+
+void KernelConsole::set_text_color(uint32_t hex){
+    text_color = hex | 0xFF000000;
 }
