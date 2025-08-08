@@ -65,7 +65,6 @@ void KernelConsole::delete_last_char(){
         cursor_x = 0;
         char* line = row_data + cursor_y * columns;
         while (*line){
-            uart_putc(*line);
             line++;
             cursor_x++;
         } 
@@ -85,7 +84,6 @@ void KernelConsole::draw_cursor(){
     if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0){
         gpu_fill_rect({{last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height}, {char_width, line_height}}, COLOR_BLACK);
         char *line = row_data + (last_drawn_cursor_y * columns);
-        uart_putc(line[last_drawn_cursor_x]);
         gpu_draw_char({last_drawn_cursor_x * char_width, (last_drawn_cursor_y * line_height)+(line_height/2)}, line[last_drawn_cursor_x], 1, COLOR_WHITE);
     }
     gpu_fill_rect({{cursor_x*char_width, cursor_y * line_height}, {char_width, line_height}}, COLOR_WHITE);
@@ -154,4 +152,9 @@ void KernelConsole::clear(){
     screen_clear();
     memset(row_data, 0, buffer_data_size);
     cursor_x = cursor_y = 0;
+}
+
+const char* KernelConsole::get_current_line(){
+    uint32_t row_index = (scroll_row_offset + cursor_y) % rows;
+    return row_data + row_index * columns;
 }

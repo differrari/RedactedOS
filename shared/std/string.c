@@ -160,7 +160,7 @@ size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
                 buf[len++] = (char)val;
                 
             } else if (fmt[i] == 's') {
-                 char *str = ( char *)va_arg(args, uintptr_t);
+                char *str = ( char *)va_arg(args, uintptr_t);
                 for (uint32_t j = 0; str[j] && len < 255; j++) buf[len++] = str[j];
                 
             } else if (fmt[i] == 'i') {

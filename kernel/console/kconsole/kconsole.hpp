@@ -30,6 +30,7 @@ protected:
     void screen_clear();
     void redraw();
     void draw_cursor();
+    const char* get_current_line();
 
     uint32_t cursor_x, cursor_y;
     int32_t last_drawn_cursor_x, last_drawn_cursor_y;
