@@ -3,7 +3,7 @@
 #include "types.h"
 #include "data_struct/ring_buffer.hpp"
 #include "graph/graphics.h"
-#include "memory/kalloc.h"
+#include "memory/talloc.h"
 
 class KernelConsole{
 public:

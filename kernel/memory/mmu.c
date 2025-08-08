@@ -1,6 +1,6 @@
 #include "mmu.h"
 #include "console/serial/uart.h"
-#include "memory/kalloc.h"
+#include "memory/talloc.h"
 #include "console/kio.h"
 #include "exceptions/irq.h"
 #include "hw/hw.h"
