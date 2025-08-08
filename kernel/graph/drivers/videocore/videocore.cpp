@@ -1,6 +1,6 @@
 #include "videocore.hpp"
 #include "fw/fw_cfg.h"
-#include "memory/kalloc.h"
+#include "memory/talloc.h"
 #include "console/kio.h"
 #include "graph/font8x8_bridge.h"
 #include "ui/draw/draw.h"

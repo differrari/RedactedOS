@@ -1,6 +1,6 @@
 #include "page_allocator.h"
 #include "memory_access.h"
-#include "memory/kalloc.h"
+#include "memory/talloc.h"
 #include "console/kio.h"
 #include "mmu.h"
 #include "exceptions/exception_handler.h"

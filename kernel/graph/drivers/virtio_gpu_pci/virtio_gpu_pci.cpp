@@ -1,6 +1,6 @@
 #include "virtio_gpu_pci.hpp"
 #include "pci.h"
-#include "memory/kalloc.h"
+#include "memory/talloc.h"
 #include "console/kio.h"
 #include "graph/font8x8_bridge.h"
 #include "ui/draw/draw.h"

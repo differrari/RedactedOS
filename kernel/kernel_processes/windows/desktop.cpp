@@ -3,7 +3,7 @@
 #include "graph/graphics.h"
 #include "theme/theme.h"
 #include "input/input_dispatch.h"
-#include "memory/kalloc.h"
+#include "memory/talloc.h"
 #include "std/string.h"
 #include "filesystem/filesystem.h"
 #include "process/loading/elf_file.h"

@@ -6,7 +6,7 @@
 #include "../windows/windows.h"
 #include "graph/graphics.h"
 #include "std/string.h"
-#include "memory/kalloc.h"
+#include "memory/talloc.h"
 #include "theme/theme.h"
 #include "math/math.h"
 #include "syscalls/syscalls.h"
