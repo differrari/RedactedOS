@@ -329,3 +329,52 @@ uint64_t parse_hex_u64(char* str, size_t size){
     }
     return result;
 }
+
+
+string string_from_const(const char *lit)
+{
+    uint32_t len = strlen(lit, 0);
+    return (string){ (char *)lit, len, len };
+}
+
+string string_concat(string a, string b)
+{
+    uint32_t len = a.length + b.length;
+    char *dst = (char *)malloc(len);
+    if (!dst) return (string){0};
+    memcpy(dst, a.data, a.length);
+    memcpy(dst + a.length, b.data, b.length);
+    return (string){ dst, len, len };
+}
+
+void string_concat_inplace(string *dest, string src) //b string_concat_inplace
+{
+    if (!dest || !src.data) return;
+
+    uint32_t new_len = dest->length + src.length;
+    uint32_t new_cap = new_len + 1;
+
+    uintptr_t raw = malloc(new_cap);
+    if (!raw) return;
+    char *dst = (char *)raw;
+
+    if (dest->data && dest->length) {
+        memcpy(dst, dest->data, dest->length);
+    }
+
+    memcpy(dst + dest->length, src.data, src.length);
+    dst[new_len] = '\0';
+    if (dest->data) {
+        free(dest->data, dest->mem_length);
+    }
+    dest->data = dst;
+    dest->length = new_len;
+    dest->mem_length = new_cap;
+}
+
+void string_append_bytes(string *dest, const void *buf, uint32_t len)
+{
+    if (!len) return;
+    string tmp = { (char *)buf, len, len };
+    string_concat_inplace(dest, tmp);
+}

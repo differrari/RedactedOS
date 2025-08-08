@@ -34,10 +34,12 @@ extern void draw_primitive_string(string *text, gpu_point *p, uint32_t scale, ui
 
 extern uint64_t get_time();
 
-extern bool bind_port(uint16_t port);
-extern bool unbind_port(uint16_t port);
-extern void send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len);
-extern bool read_packet(sizedptr *ptr);
+extern bool network_bind_port_current(uint16_t port);
+extern bool network_unbind_port_current(uint16_t port);
+extern int network_alloc_ephemeral_port_current();
+extern int net_tx_frame(uintptr_t frame_ptr, uint32_t frame_len);
+extern int net_rx_frame(sizedptr *out_frame);
+extern bool dispatch_enqueue_frame(const sizedptr *frame);
 
 void printf(const char *fmt, ...);
 

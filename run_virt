@@ -21,16 +21,25 @@ DISPLAY_MODE="default"
 SELECTED_GPU="virtio-gpu-pci"
 
 if [ "$OS_TYPE" = "Darwin" ]; then
-    NETARG="vmnet-bridged,id=net0,ifname=en0"
+    NETDEV="-netdev vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
     DISPLAY_MODE="sdl"
 elif [ "$OS_TYPE" = "Linux" ]; then
-    NETARG="user,id=net0"
+    NETDEV="-netdev user,id=net0"
     PRIVILEGE=""
 else
     echo "Unknown OS: $OS_TYPE" >&2
     exit 1
 fi
+
+if [ -d /sys/class/net/tap0 ] && [ -d /sys/class/net/br0 ]; then
+    #tap bridge
+    NETDEV="-netdev tap,id=net0,ifname=tap0,script=no,downscript=no,vnet_hdr=off"
+    PRIVILEGE=""
+fi
+
+DUMP="-object filter-dump,id=f0,netdev=net0,file=/tmp/virtio.pcap"
+echo "Using networking mode: $NETDEV"
 
 $PRIVILEGE qemu-system-aarch64 \
   -M virt \
@@ -39,8 +48,9 @@ $PRIVILEGE qemu-system-aarch64 \
   -kernel kernel.elf \
   -device $SELECTED_GPU \
   -display $DISPLAY_MODE \
-  -netdev $NETARG \
-  -device virtio-net-pci,netdev=net0 \
+  $NETDEV \
+  -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56 \
+  $DUMP \
   -serial mon:stdio \
   -drive file=disk.img,if=none,format=raw,id=hd0 \
   -device virtio-blk-pci,drive=hd0 \

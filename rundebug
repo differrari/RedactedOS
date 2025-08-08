@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MODE="virt"
+MODE="raspi"
 ARGS=()
 
 for arg in "$@"; do
@@ -10,5 +10,9 @@ for arg in "$@"; do
   esac
 done
 
-./run_$MODE debug &
-./debug ${ARGS[*]}
+osascript <<EOF
+tell application "Terminal"
+    do script "cd \"$PWD\"; ./run_$MODE debug"
+    do script "cd \"$PWD\"; ./debug ${ARGS[*]}"
+end tell
+EOF

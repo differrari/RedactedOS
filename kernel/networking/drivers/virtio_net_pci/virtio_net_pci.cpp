@@ -106,7 +106,7 @@ bool VirtioNetDriver::init(){
 }
 
 
-void VirtioNetDriver::get_mac(network_connection_ctx *context){
+void VirtioNetDriver::get_mac(net_l2l3_endpoint *context){
     virtio_net_config* net_config = (virtio_net_config*)vnp_net_dev.device_cfg;
     kprintfv("[VIRTIO_NET] %x:%x:%x:%x:%x:%x", net_config->mac[0], net_config->mac[1], net_config->mac[2], net_config->mac[3], net_config->mac[4], net_config->mac[5]);
 

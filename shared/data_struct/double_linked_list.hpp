@@ -2,11 +2,11 @@
 #include "types.h"
 
 extern "C" {
-#include "doubly_linked_list.h"
+#include "double_linked_list.h"
 }
 
 template<typename T>
-class LinkedList {
+class DoubleLinkedList {
 private:
     struct Node {
         T data;
@@ -32,16 +32,24 @@ private:
         free(n, sizeof(Node));
     }
 
-    static void swap(LinkedList& a, LinkedList& b) noexcept {
-        std::swap(a.head, b.head);
-        std::swap(a.tail, b.tail);
-        std::swap(a.length, b.length);
+    static void swap(DoubleLinkedList& a, DoubleLinkedList& b) noexcept {
+        Node* tmpHead = a.head;
+        a.head = b.head;
+        b.head = tmpHead;
+
+        Node* tmpTail = a.tail;
+        a.tail = b.tail;
+        b.tail = tmpTail;
+
+        size_t tmpLen = a.length;
+        a.length = b.length;
+        b.length = tmpLen;
     }
 
 public:
-    LinkedList() : head(nullptr), tail(nullptr), length(0) {}
+    DoubleLinkedList() : head(nullptr), tail(nullptr), length(0) {}
 
-    LinkedList(const LinkedList& other) : head(nullptr), tail(nullptr), length(0) {
+    DoubleLinkedList(const DoubleLinkedList& other) : head(nullptr), tail(nullptr), length(0) {
         if (other.head) {
             Node* it = other.head;
             do {
@@ -51,13 +59,13 @@ public:
         }
     }
 
-    ~LinkedList() {
+    ~DoubleLinkedList() {
         while (!empty()) pop_front();
     }
 
-    LinkedList& operator=(const LinkedList& other) {
+    DoubleLinkedList& operator=(const DoubleLinkedList& other) {
         if (this != &other) {
-            LinkedList tmp(other);
+            DoubleLinkedList tmp(other);
             swap(*this, tmp);
         }
         return *this;

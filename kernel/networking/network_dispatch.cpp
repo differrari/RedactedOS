@@ -1,164 +1,165 @@
 #include "network_dispatch.hpp"
-#include "drivers/virtio_net_pci/virtio_net_pci.hpp"
-#include "net/network_types.h"
-#include "console/kio.h"
-#include "process/scheduler.h"
-#include "net/udp.h"
-#include "net/tcp.h"
-#include "net/dhcp.h"
-#include "net/arp.h"
-#include "net/eth.h"
-#include "net/ipv4.h"
-#include "net/icmp.h"
-#include "memory/page_allocator.h"
-#include "std/memfunctions.h"
-#include "hw/hw.h"
 #include "network.h"
+#include "drivers/virtio_net_pci/virtio_net_pci.hpp"
+#include "memory/page_allocator.h"
+#include "net/link_layer/eth.h"
+#include "net/network_types.h"
+#include "port_manager.h"
+#include "std/memfunctions.h"
 
-NetworkDispatch::NetworkDispatch(){
-    ports = IndexMap<uint16_t>(UINT16_MAX);
-    for (uint16_t i = 0; i < UINT16_MAX; i++)
+extern void      sleep(uint64_t ms);
+extern uintptr_t malloc(uint64_t size);
+extern void      free(void *ptr, uint64_t size);
+
+static uint16_t g_net_pid = 0xFFFF;
+static uint8_t recv_buffer[MAX_PACKET_SIZE];
+
+NetworkDispatch::NetworkDispatch()
+  : ports(UINT16_MAX + 1),
+    driver(nullptr),
+    tx_queue(QUEUE_CAPACITY),
+    rx_queue(QUEUE_CAPACITY)
+{
+    for (uint32_t i = 0; i <= UINT16_MAX; ++i)
         ports[i] = UINT16_MAX;
-    context = (network_connection_ctx) {0};
+
+    memset(local_mac.mac, 0, sizeof(local_mac.mac));
 }
 
-NetDriver* NetworkDispatch::select_driver(){
-    return BOARD_TYPE == 1 ? VirtioNetDriver::try_init() : 0x0;
-}
-
-bool NetworkDispatch::init(){
-    if ((driver = select_driver())){
-        driver->get_mac(&context);
-        return true;
-    }
-    return false;
-}
-
-bool NetworkDispatch::bind_port(uint16_t port, uint16_t process){
-    if (ports[port] != UINT16_MAX) return false;
-    ports[port] = process;
+bool NetworkDispatch::init()
+{
+    driver = VirtioNetDriver::try_init();
+    if (!driver) return false;
+    driver->get_mac(&local_mac);
     return true;
 }
 
-bool NetworkDispatch::unbind_port(uint16_t port, uint16_t process){
-    if (ports[port] != process) return false;
-    ports[port] = UINT16_MAX;
-    return true;
-}
-
-void NetworkDispatch::handle_download_interrupt(){
-    if (driver){
-        void *buffer = kalloc((void*)get_current_heap(), MAX_PACKET_SIZE, ALIGN_16B, get_current_privilege(), false);
-        sizedptr packet = driver->handle_receive_packet(buffer);
-        bool need_free = true;
-        uintptr_t ptr = packet.ptr;
-        if (ptr){
-            eth_hdr_t *eth = (eth_hdr_t*)ptr;
-            uint16_t ethtype = eth_parse_packet_type(ptr);
-            ptr += sizeof(eth_hdr_t);
-            if (ethtype == 0x806){
-                arp_hdr_t *arp = (arp_hdr_t*)ptr;
-                if (arp_should_handle(arp, get_context()->ip)){
-                    kprintf("Received an ARP request");
-                    bool req = 0;
-                    network_connection_ctx conn;
-                    arp_populate_response(&conn, arp);
-                    send_packet(ARP, 0, &conn, &req, 1);
-                }
-                //TODO: Should also look for responses to our own queries
-            } else if (ethtype == 0x800){//IPV4
-                ipv4_hdr_t *ipv4 = (ipv4_hdr_t*)ptr;
-                uint8_t protocol = ipv4_get_protocol(ptr);
-                ptr += sizeof(ipv4_hdr_t);
-                if (protocol == 0x11 || protocol == 0x06){
-                    uint16_t port = udp_parse_packet(ptr);
-                    if (ports[port] != UINT16_MAX){
-                        process_t *proc = get_proc_by_pid(ports[port]);
-                        if (!proc)
-                            unbind_port(port, ports[port]);
-                        else {
-                            packet_buffer_t* buf = &proc->packet_buffer;
-                            uint32_t next_index = (buf->write_index + 1) % PACKET_BUFFER_CAPACITY;
-
-                            buf->entries[buf->write_index] = packet;
-                            buf->write_index = next_index;
-
-                            need_free = false;
-
-                            if (buf->write_index == buf->read_index)
-                                buf->read_index = (buf->read_index + 1) % PACKET_BUFFER_CAPACITY;
-                        }
-                    }
-                } else if (protocol == 0x1) {
-                    icmp_data data = (icmp_data){
-                        .response = true
-                    };
-                    network_connection_ctx conn;
-                    icmp_packet *icmp = (icmp_packet*)ptr;
-                    data.seq = icmp_get_sequence(icmp);
-                    data.id = icmp_get_id(icmp);
-                    icmp_copy_payload(&data.payload, icmp);
-                    ipv4_populate_response(&conn, eth, ipv4);
-                    send_packet(ICMP, 0, &conn, &data, sizeof(icmp_data));
-                }
-            }
-        }
-        if (need_free){
-            kfree(buffer, MAX_PACKET_SIZE);
-        }
-    }
-}
-
-void NetworkDispatch::handle_upload_interrupt(){
-    driver->handle_sent_packet();
-}
-
-bool NetworkDispatch::read_packet(sizedptr *Packet, uint16_t process){
-    process_t *proc = get_proc_by_pid(process);
-    if (proc->packet_buffer.read_index == proc->packet_buffer.write_index) return false;
-
-    sizedptr original = proc->packet_buffer.entries[proc->packet_buffer.read_index];
+void NetworkDispatch::handle_download_interrupt()
+{
+    if (!driver) return;
     
-    uintptr_t copy = (uintptr_t)kalloc((void*)get_current_heap(), original.size, ALIGN_16B, get_current_privilege(), false);
-    memcpy((void*)copy,(void*)original.ptr,original.size);
-    Packet->ptr = copy;
-    Packet->size = original.size;
-    free_sized(original);
-    proc->packet_buffer.read_index = (proc->packet_buffer.read_index + 1) % PACKET_BUFFER_CAPACITY;
+    sizedptr raw = driver->handle_receive_packet(recv_buffer);
+    if (raw.size < sizeof(eth_hdr_t)) {
+        return;
+    }
+
+    sizedptr frame{0, raw.size};
+    frame.ptr = reinterpret_cast<uintptr_t>(
+        kalloc(reinterpret_cast<void*>(get_current_heap()),
+               raw.size, ALIGN_16B,
+               get_current_privilege(), false));
+    if (!frame.ptr) return;
+
+    memcpy(reinterpret_cast<void*>(frame.ptr), recv_buffer, raw.size);
+
+    if (!rx_queue.enqueue(frame))
+        free_frame(frame);
+}
+
+void NetworkDispatch::handle_upload_interrupt()
+{
+    if (driver)
+        driver->handle_sent_packet();
+}
+
+bool NetworkDispatch::enqueue_frame(const sizedptr &frame)
+{
+    if (frame.size == 0) return false;
+
+    sizedptr pkt = driver->allocate_packet(frame.size);
+    if (!pkt.ptr) return false;
+
+    void* dst = reinterpret_cast<void*>(pkt.ptr + driver->header_size);
+    memcpy(dst, reinterpret_cast<const void*>(frame.ptr), frame.size);
+
+    if (!tx_queue.enqueue(pkt)) {
+        free_frame(pkt);
+        return false;
+    }
     return true;
 }
 
-void NetworkDispatch::send_packet(NetProtocol protocol, uint16_t port, network_connection_ctx *destination, void* payload, uint16_t payload_len){
-    sizedptr packet_buffer;
-    switch (protocol) {
-        case UDP:
-            packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(udp_hdr_t) + payload_len);
-            context.port = port;
-            create_udp_packet(packet_buffer.ptr + driver->header_size, context, *destination, (sizedptr){(uintptr_t)payload, payload_len});
-        break;
-        case DHCP:
-            packet_buffer = driver->allocate_packet(DHCP_SIZE);
-            create_dhcp_packet(packet_buffer.ptr + driver->header_size, (dhcp_request*)payload);
-            break;
-        case ARP:
-            packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(arp_hdr_t));
-            create_arp_packet(packet_buffer.ptr + driver->header_size, context.mac, context.ip, destination->mac, destination->ip, *(bool*)payload);
-            break;
-        case ICMP:
-            packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(icmp_packet));
-            create_icmp_packet(packet_buffer.ptr + driver->header_size, context, *destination, (icmp_data*)payload);
-            break;
-        case TCP:
-            tcp_data *data = (tcp_data*)payload;
-            packet_buffer = driver->allocate_packet(sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(tcp_hdr_t) + data->options.size + data->payload.size);
-            context.port = port;
-            create_tcp_packet(packet_buffer.ptr + driver->header_size, context, *destination, (sizedptr){(uintptr_t)data, sizeof(tcp_data)});
-            break;
+void NetworkDispatch::net_task()
+{
+    for (;;) {
+        bool did_work = false;
+        sizedptr pkt;
+
+        //rx
+        if (!rx_queue.is_empty() && rx_queue.dequeue(pkt)) {
+            did_work = true;
+            eth_input(pkt.ptr, pkt.size);
+            free_frame(pkt);
+        }
+
+        //tx
+        if (!tx_queue.is_empty() && tx_queue.dequeue(pkt)) {
+            did_work = true;
+            driver->send_packet(pkt);
+        }
+
+        if (!did_work)
+            sleep(10);
     }
-    if (driver)
-        driver->send_packet(packet_buffer);
 }
 
-network_connection_ctx* NetworkDispatch::get_context(){
-    return &context;
+bool NetworkDispatch::dequeue_packet_for(uint16_t pid, sizedptr *out)
+{
+    process_t *proc = get_proc_by_pid(pid);
+    if (!proc || !out) return false;
+
+    auto &buf = proc->packet_buffer;
+    if (buf.read_index == buf.write_index) return false;
+
+    sizedptr stored = buf.entries[buf.read_index];
+    buf.read_index = (buf.read_index + 1) % PACKET_BUFFER_CAPACITY;
+
+    void *dst = kalloc(reinterpret_cast<void*>(get_current_heap()),
+                       stored.size, ALIGN_16B,
+                       get_current_privilege(), false);
+    if (!dst) return false;
+
+    memcpy(dst, reinterpret_cast<void*>(stored.ptr), stored.size);
+    out->ptr  = reinterpret_cast<uintptr_t>(dst);
+    out->size = stored.size;
+
+    free(reinterpret_cast<void*>(stored.ptr), stored.size);
+    return true;
 }
+
+static sizedptr make_user_copy(const sizedptr &src)
+{
+    sizedptr out{0, 0};
+    uintptr_t mem = malloc(src.size);
+    if (!mem) return out;
+
+    memcpy(reinterpret_cast<void*>(mem),
+           reinterpret_cast<const void*>(src.ptr),
+           src.size);
+
+    out.ptr  = mem;
+    out.size = src.size;
+    return out;
+}
+
+sizedptr NetworkDispatch::make_copy(const sizedptr &in)
+{
+    sizedptr out{0, 0};
+    void *dst = kalloc(reinterpret_cast<void*>(get_current_heap()),
+                       in.size, ALIGN_16B,
+                       get_current_privilege(), false);
+    if (!dst) return out;
+
+    memcpy(dst, reinterpret_cast<const void*>(in.ptr), in.size);
+    out.ptr  = reinterpret_cast<uintptr_t>(dst);
+    out.size = in.size;
+    return out;
+}
+
+void NetworkDispatch::free_frame(const sizedptr &f)
+{
+    if (f.ptr) free_sized(f);
+}
+
+void NetworkDispatch::set_net_pid(uint16_t pid) { g_net_pid = pid; }
+uint16_t NetworkDispatch::get_net_pid() const   { return g_net_pid; }
