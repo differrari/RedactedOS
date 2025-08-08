@@ -12,10 +12,11 @@ FAT32FS *fs_driver;
 
 typedef struct {
     uint64_t file_id;
+    size_t file_size;
     driver_module* mod;
-} file_mod_kvp;
+} open_file_descriptors;
 
-LinkedList<file_mod_kvp> *open_files;
+LinkedList<open_file_descriptors> *open_files;
 
 bool boot_partition_init(){
     uint32_t f32_partition = mbr_find_partition(0xC);
@@ -80,9 +81,10 @@ FS_RESULT open_file(const char* path, file* descriptor){
     if (!mod) return FS_RESULT_NOTFOUND;
     FS_RESULT result = mod->open(search_path, descriptor);
     if (!open_files)
-        open_files = new LinkedList<file_mod_kvp>();
+        open_files = new LinkedList<open_file_descriptors>();
     open_files->push_front({
         .file_id = descriptor->id,
+        .file_size = descriptor->size,
         .mod = mod
     });
     return result;
@@ -93,11 +95,11 @@ size_t read_file(file *descriptor, char* buf, size_t size){
         kprintf("[FS] No open files");
         return 0;
     }
-    driver_module *mod = open_files->find([descriptor](file_mod_kvp kvp){
+    open_file_descriptors file = open_files->find([descriptor](open_file_descriptors kvp){
         return descriptor->id == kvp.file_id;
-    })->data.mod;
-    size_t adj_size = min(size,descriptor->size);//TODO: still possible to modify the fd's size
-    return mod->read(descriptor, buf, adj_size, 0);
+    })->data;
+    size_t adj_size = min(size,file.file_size);//TODO: still possible to modify the fd's size
+    return file.mod->read(descriptor, buf, adj_size, 0);
 }
 
 sizedptr list_directory_contents(const char *path){
