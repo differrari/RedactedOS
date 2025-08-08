@@ -7,9 +7,17 @@
 extern "C" {
 #endif
 
+#ifdef __GNUC__
+#define PRINTF_FORMAT __attribute__((format(printf, 1, 2)))
+#else
+#define PRINTF_FORMAT
+#endif
+
+PRINTF_FORMAT
 void kprintf(const char *fmt, ...);
 void kprint(const char *fmt);
 
+PRINTF_FORMAT
 void kputf(const char *fmt, ...);
 void puts(const char *s);
 void putc(const char c);
