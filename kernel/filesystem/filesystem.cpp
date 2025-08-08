@@ -4,10 +4,18 @@
 #include "fsdriver.hpp"
 #include "std/std.hpp"
 #include "console/kio.h"
-#include "dev/module_loader.h"
 #include "memory/page_allocator.h"
+#include "math/math.h"
+#include "dev/module_loader.h"
 
 FAT32FS *fs_driver;
+
+typedef struct {
+    uint64_t file_id;
+    driver_module* mod;
+} file_mod_kvp;
+
+LinkedList<file_mod_kvp> *open_files;
 
 bool boot_partition_init(){
     uint32_t f32_partition = mbr_find_partition(0xC);
@@ -65,18 +73,29 @@ bool init_boot_filesystem(){
     return load_module(&boot_fs_module);
 }
 
-void* read_file(const char *path, size_t size){
+FS_RESULT open_file(const char* path, file* descriptor){
     const char *search_path = path;
     kprintf("Getting module for path %s",(uintptr_t)search_path);
     driver_module *mod = get_module(&search_path);
     kprintf("Got module %x for path %s",(uintptr_t)mod,(uintptr_t)search_path);
-    if (!mod) return 0;
-    file fd = {0,0};
-    mod->open(search_path, &fd);
-    void* pg = palloc(PAGE_SIZE, true, false, false);
-    char *TMP_BUF = (char*)kalloc(pg, fd.size, ALIGN_64B, true, false);
-    mod->read(&fd, TMP_BUF, fd.size, 0);
-    return TMP_BUF;
+    if (!mod) return FS_RESULT_NOTFOUND;
+    FS_RESULT result = mod->open(search_path, descriptor);
+    if (!open_files)
+        open_files = new LinkedList<file_mod_kvp>();
+    open_files->push_front({
+        .file_id = descriptor->id,
+        .mod = mod
+    });
+    return result;
+}
+
+size_t read_file(file *descriptor, char* buf, size_t size){
+    if (!open_files) return 0;
+    driver_module *mod = open_files->find([descriptor](file_mod_kvp kvp){
+        return descriptor->id == kvp.file_id;
+    })->data.mod;
+    size_t adj_size = min(size,descriptor->size);//TODO: still possible to modify the fd's size
+    return mod->read(descriptor, buf, adj_size, 0);
 }
 
 sizedptr list_directory_contents(const char *path){
