@@ -43,7 +43,7 @@ extern "C" void toggle_visual(){
             }
         }
         if (active){
-            terminal->handle_input();
+            terminal->update();
         }
     }
 }

@@ -39,8 +39,9 @@ FS_RESULT console_open(const char *path, file *out_fd){
 }
 
 size_t console_read(file *fd, char *out_buf, size_t size, file_offset offset){
-    memcpy(out_buf, print_buf+offset, min(size,CONSOLE_BUF_SIZE));
-    return 0;
+    size = min(size,CONSOLE_BUF_SIZE);
+    memcpy(out_buf, print_buf+offset, size);
+    return size;
 }
 
 size_t console_write(file *fd, const char *buf, size_t size, file_offset offset){
@@ -82,6 +83,7 @@ void putc(const char c){
         kconsole_putc(c);
 }
 
+//TODO: __attribute__((format)) 
 void kprintf(const char *fmt, ...){
     if (!print_buf) init_print_buf();
     __attribute__((aligned(16))) va_list args;
