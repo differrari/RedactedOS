@@ -3,6 +3,7 @@
 #include "memory/page_allocator.h"
 #include "filesystem/filesystem.h"
 #include "theme/theme.h"
+#include "std/memfunctions.h"
 
 KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false){
     initialize();
@@ -33,12 +34,10 @@ void KernelConsole::resize(){
     row_data = (char*)kalloc(mem_page, buffer_data_size, ALIGN_16B, true, true);
     if (!row_data){
         rows = columns = 0;
-        row_ring.clear();
         return;
     }
 
-    row_ring.clear();
-    for (uint32_t i = 0; i < rows; i++) row_ring.push(i);
+    scroll_row_offset = 0;
 }
 
 void KernelConsole::put_char(char c){
@@ -50,7 +49,7 @@ void KernelConsole::put_char(char c){
     }
     if (cursor_x >= columns) newline();
 
-    uint32_t row_index = row_ring.peek();
+    uint32_t row_index = (scroll_row_offset + cursor_y) % rows;
     char* line = row_data + row_index * columns;
     line[cursor_x] = c;
     gpu_draw_char({cursor_x * char_width, (cursor_y * line_height)+(line_height/2)}, c, 1, COLOR_WHITE);
@@ -106,12 +105,9 @@ void KernelConsole::put_string(const char* str){
 
 void KernelConsole::newline(){
     if (!check_ready()) return;
-    uint32_t row_index;
-    if (row_ring.pop(row_index)){
-        row_ring.push(row_index);
-        char* line = row_data + row_index * columns;
-        for (uint32_t x = cursor_x; x < columns; x++) line[x] = 0;
-    }
+    uint32_t row_index = (scroll_row_offset + cursor_y) % rows;
+    char* line = row_data + row_index * columns;
+    for (uint32_t x = cursor_x; x < columns; x++) line[x] = 0;
     cursor_x = 0;
     cursor_y++;
     if (cursor_y >= rows - 1){
@@ -122,10 +118,10 @@ void KernelConsole::newline(){
 
 void KernelConsole::scroll(){
     if (!check_ready()) return;
-    if (uint32_t row_index = row_ring.peek()){
-        char* line = row_data + row_index * columns;
-        for (uint32_t x = 0; x < columns; x++) line[x] = 0;
-    }
+    scroll_row_offset = (scroll_row_offset + 1) % rows;
+    uint32_t row_index = (scroll_row_offset + cursor_y) % rows;
+    char* line = row_data + row_index * columns;
+    for (uint32_t x = 0; x < columns; x++) line[x] = 0;
     redraw();
 }
 
@@ -139,13 +135,10 @@ void KernelConsole::refresh(){
 void KernelConsole::redraw(){
     screen_clear();
     for (uint32_t y = 0; y < rows; y++){
-        uint32_t row_index;
-        if (row_ring.pop(row_index)){
-            row_ring.push(row_index);
-            char* line = row_data + row_index * columns;
-            for (uint32_t x = 0; x < columns; x++){
-                gpu_draw_char({x * char_width, (y * line_height)+(line_height/2)}, line[x], 1, COLOR_WHITE);
-            }
+        uint32_t row_index = (scroll_row_offset + y) % rows;
+        char* line = row_data + row_index * columns;
+        for (uint32_t x = 0; x < columns; x++){
+            gpu_draw_char({x * char_width, (y * line_height)+(line_height/2)}, line[x], 1, COLOR_WHITE);
         }
     }
     draw_cursor();
@@ -159,13 +152,6 @@ void KernelConsole::screen_clear(){
 
 void KernelConsole::clear(){
     screen_clear();
-    for (uint32_t i = 0; i < rows; i++){
-        uint32_t row_index;
-        if (row_ring.pop(row_index)){
-            char* line = row_data + row_index * columns;
-            for (uint32_t x = 0; x < columns; x++) line[x] = 0;
-            row_ring.push(row_index);
-        }
-    }
+    memset(row_data, 0, buffer_data_size);
     cursor_x = cursor_y = 0;
 }

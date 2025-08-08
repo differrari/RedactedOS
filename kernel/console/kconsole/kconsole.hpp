@@ -40,7 +40,7 @@ protected:
     static constexpr uint32_t line_height=CHAR_SIZE*2;
     static constexpr uint32_t max_rows=128;
 
-    RingBuffer<uint32_t, max_rows> row_ring;
+    int32_t scroll_row_offset = 0;
     char* row_data;
     uint32_t gap_start, gap_end;
     uint32_t buffer_data_size;
