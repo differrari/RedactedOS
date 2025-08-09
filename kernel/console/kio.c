@@ -9,6 +9,7 @@ void* print_buf;
 
 bool console_init(){
     enable_uart();
+    kprint("UART initialized");
     return true;
 }
 

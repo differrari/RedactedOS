@@ -168,7 +168,8 @@ sizedptr FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
     sizedptr buf_ptr = read_cluster(data_start_sector, cluster_size, cluster_count, root_index);
     char *buffer = (char*)buf_ptr.ptr;
     f32file_entry *entry = 0;
-    void *list_buffer = (char*)kalloc(fs_page, 0x1000 * cluster_count, ALIGN_64B, true, true);
+    size_t full_size = 0x1000 * cluster_count;
+    void *list_buffer = (char*)kalloc(fs_page, full_size, ALIGN_64B, true, true);
     uint32_t count = 0;
 
     char *write_ptr = (char*)list_buffer + 4;
@@ -207,7 +208,7 @@ sizedptr FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
 
     *(uint32_t*)list_buffer = count;
 
-    return (sizedptr){(uintptr_t)list_buffer, (uintptr_t)write_ptr-(uintptr_t)list_buffer};
+    return (sizedptr){(uintptr_t)list_buffer, full_size};
 }
 
 sizedptr FAT32FS::read_full_file(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint64_t file_size, uint32_t root_index){

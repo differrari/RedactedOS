@@ -22,7 +22,6 @@ void kernel_main() {
 
     detect_hardware();
     
-    //  page_alloc_enable_verbose();
     page_allocator_init();
 
     set_exception_vectors();
@@ -30,18 +29,12 @@ void kernel_main() {
     init_main_process();
 
     load_module(&console_module);
-    kprint("UART output enabled");
 
-    // mmu_enable_verbose();
     mmu_alloc();
 
     print_hardware();
 
     load_module(&rng_module);
-
-    kprint("Exception vectors set");
-   
-    kprint("Initializing kernel...");
     
     irq_init();
     kprintf("Interrupts initialized");
@@ -50,41 +43,31 @@ void kernel_main() {
 
     load_module(&graphics_module);
     
-    kprintf("Initializing disk...");
-
     if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
         pci_setup_rp1();
-    
-    // disk_verbose();
+
     load_module(&disk_module);
 
-    // xhci_enable_verbose();
     bool input_available = load_module(&input_module);
 
     bool network_available = load_module(&net_module);
     
     load_module(&audio_module);
-
-    if (input_available) init_input_process();
-
+    
     mmu_init();
-    kprint("MMU Mapped");
-
-    init_boot_filesystem();
 
     kprint("Kernel initialization finished");
-
+    
     kprint("Starting processes");
+    
+    init_boot_filesystem();
+    if (input_available) init_input_process();
 
     if (network_available) launch_net_process();
 
     init_bootprocess();
 
-    console_module.write(0, "Hello from module", 0, 0);
-    
-    kprint("Starting scheduler");
-    
-    start_scheduler();
+    load_module(&scheduler_module);
 
     panic("Kernel did not activate any process");
     

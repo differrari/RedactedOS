@@ -27,7 +27,7 @@ bool rng_init_global() {
 
 driver_module rng_module = {
     .name = "random",
-    .mount = "random",
+    .mount = "/random",
     .version = VERSION_NUM(0, 1, 0, 0),
     .init = rng_init_global,
     .open = rng_open,
