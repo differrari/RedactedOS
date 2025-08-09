@@ -12,6 +12,7 @@
 #include "std/string.h"
 #include "data_struct/linked_list.h"
 #include "std/memfunctions.h"
+#include "math/math.h"
 
 extern void save_context(process_t* proc);
 extern void save_pc_interrupt(process_t* proc);
@@ -282,6 +283,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     process_t *proc = get_proc_by_pid(pid);
     descriptor->id = reserve_fd_id();
     descriptor->size = PROC_OUT_BUF;
+    descriptor->cursor = 0;
     if (!proc_opened_files) 
         proc_opened_files = kalloc(proc_page, sizeof(clinkedlist_t), ALIGN_64B, true, false);
     proc_open_file *file = kalloc(proc_page, sizeof(proc_open_file), ALIGN_64B, true, false);
@@ -293,18 +295,25 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     return FS_RESULT_SUCCESS;
 }
 
-size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
-    return 0;
-}
 
 int find_open_proc_file(void *node, void* key){
-    uart_puts("Processing file against key ");
     uint64_t *fid = (uint64_t*)key;
-    uart_puthex(*fid);
     proc_open_file *file = (proc_open_file*)node;
-    if (file->fid == *fid)
-        return 0;
+    if (file->fid == *fid) return 0;
     return -1;
+}
+
+size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
+    if (!proc_opened_files){
+        kprint("No files open");
+        return 0;
+    }
+    clinkedlist_node_t *node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
+    if (!node->data) return 0;
+    proc_open_file *file = (proc_open_file*)node->data;
+    size = min(size, file->file_size);
+    memcpy(buf, (void*)(file->buffer + fd->cursor), size);
+    return size;
 }
 
 size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
@@ -313,16 +322,19 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
         return 0;
     }
     clinkedlist_node_t *node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
-    // if (!node->data) return 0;
-    // proc_open_file *file = (proc_open_file*)node->data;
-    // if (size >= PROC_OUT_BUF){
-    //     kprint("Output buffer too large");
-    //     return 0;
-    // }
-    // if (fd->cursor + size >= PROC_OUT_BUF)
-    //     fd->cursor = 0;
-    // memcpy((void*)(file->buffer + fd->cursor), buf, size);
-    // kprintf("Wrote %i bytes into process %i's output buffer", size, file->pid);
+    if (!node->data) return 0;
+    proc_open_file *file = (proc_open_file*)node->data;
+    if (size >= PROC_OUT_BUF){
+        kprint("Output buffer too large");
+        return 0;
+    }
+    if (fd->cursor + size >= PROC_OUT_BUF){
+        fd->cursor = 0;
+        memset((void*)file->buffer, 0, file->file_size);
+    }
+    memcpy((void*)(file->buffer + fd->cursor), buf, size);
+    fd->cursor += size;
+    kprintf("Wrote %i bytes into process %i's output buffer", size, file->pid);
     return size;
 }
 
