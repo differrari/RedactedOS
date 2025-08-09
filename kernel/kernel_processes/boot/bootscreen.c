@@ -8,10 +8,18 @@
 #include "process/scheduler.h"
 #include "math/math.h"
 #include "syscalls/syscalls.h"
+#include "filesystem/filesystem.h"
 
 __attribute__((section(".text.kcoreprocesses")))
 void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
-    printf("Hello buffer");
+    file fd;
+    uint16_t pid = get_current_proc_pid();
+    string proc_out = string_format("/proc/%i/out",pid);
+    open_file(proc_out.data, &fd);
+    free(proc_out.data, proc_out.mem_length);
+
+    write_file(&fd, "hello buffer", 12);
+
     const char* name = BOOTSCREEN_TEXT;
     string s = string_l(name);
     int scale = 2;
