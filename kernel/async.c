@@ -25,7 +25,12 @@ bool wait(uint32_t *reg, uint32_t expected_value, bool match, uint32_t timeout){
     while (WAIT_CHECK) {
         if (timeout != 0){
             timeout--;
+#if QEMU
+            delay(0);
+#else
+            //TODO: should be possible to make the delay shorter with some extra math
             delay(1);
+#endif
         }
         condition = WAIT_COND;
         if (timeout == 0)
