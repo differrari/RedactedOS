@@ -77,7 +77,6 @@ bool init_boot_filesystem(){
 FS_RESULT open_file(const char* path, file* descriptor){
     const char *search_path = path;
     driver_module *mod = get_module(&search_path);
-    kprintf("Got module %x for path %s",(uintptr_t)mod,search_path);
     if (!mod) return FS_RESULT_NOTFOUND;
     FS_RESULT result = mod->open(search_path, descriptor);
     if (!open_files)
