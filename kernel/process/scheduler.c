@@ -10,6 +10,8 @@
 #include "console/kconsole/kconsole.h"
 #include "syscalls/syscalls.h"
 #include "std/string.h"
+#include "data_struct/linked_list.h"
+#include "std/memfunctions.h"
 
 extern void save_context(process_t* proc);
 extern void save_pc_interrupt(process_t* proc);
@@ -31,6 +33,17 @@ typedef struct sleep_tracker {
 
 sleep_tracker sleeping[MAX_PROCS];
 uint16_t sleep_count;
+
+clinkedlist_t *proc_opened_files;
+
+typedef struct proc_open_file {
+    uint64_t fid;
+    size_t file_size;
+    uintptr_t buffer;
+    uint16_t pid;
+} proc_open_file;
+
+void* proc_page;
 
 void save_context_registers(){
     save_context(&processes[current_proc]);
@@ -120,6 +133,7 @@ void reset_process(process_t *proc){
 }
 
 void init_main_process(){
+    proc_page = palloc(0x1000, true, false, false);
     process_t* proc = &processes[0];
     reset_process(proc);
     proc->id = next_proc_index++;
@@ -259,18 +273,57 @@ sizedptr list_processes(const char *path){
     return (sizedptr){(uintptr_t)list_buffer,size};
 }
 
+#define PROC_OUT_BUF 0x1000
+
 FS_RESULT open_proc(const char *path, file *descriptor){
-    kprintf("OPEN: %s",path);
-    // path = seek_to()
-    return FS_RESULT_DRIVER_ERROR;
+    const char *pid_s = seek_to(path, '/');
+    path = seek_to(pid_s, '/');
+    uint64_t pid = parse_int_u64(pid_s, path - pid_s);
+    process_t *proc = get_proc_by_pid(pid);
+    descriptor->id = reserve_fd_id();
+    descriptor->size = PROC_OUT_BUF;
+    if (!proc_opened_files) 
+        proc_opened_files = kalloc(proc_page, sizeof(clinkedlist_t), ALIGN_64B, true, false);
+    proc_open_file *file = kalloc(proc_page, sizeof(proc_open_file), ALIGN_64B, true, false);
+    file->fid = descriptor->id;
+    file->buffer = proc->output;
+    file->pid = proc->id;
+    file->file_size = descriptor->size;
+    clinkedlist_push_front(proc_opened_files, (void*)file);
+    return FS_RESULT_SUCCESS;
 }
 
 size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
+    return 0;
+}
 
+int find_open_proc_file(void *node, void* key){
+    uart_puts("Processing file against key ");
+    uint64_t *fid = (uint64_t*)key;
+    uart_puthex(*fid);
+    proc_open_file *file = (proc_open_file*)node;
+    if (file->fid == *fid)
+        return 0;
+    return -1;
 }
 
 size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
-
+    if (!proc_opened_files){
+        kprint("No files open");
+        return 0;
+    }
+    clinkedlist_node_t *node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
+    // if (!node->data) return 0;
+    // proc_open_file *file = (proc_open_file*)node->data;
+    // if (size >= PROC_OUT_BUF){
+    //     kprint("Output buffer too large");
+    //     return 0;
+    // }
+    // if (fd->cursor + size >= PROC_OUT_BUF)
+    //     fd->cursor = 0;
+    // memcpy((void*)(file->buffer + fd->cursor), buf, size);
+    // kprintf("Wrote %i bytes into process %i's output buffer", size, file->pid);
+    return size;
 }
 
 driver_module scheduler_module = (driver_module){
