@@ -71,17 +71,6 @@ void sync_el0_handler_c(){
             kfree((void*)x0, x1);
             break;
         case 3:
-            process_t *proc = get_current_proc();
-            if (proc->out_fd.id == 0){
-                string s = string_format("/proc/%i/out",proc->id);
-                if (open_file(s.data, &proc->out_fd) != FS_RESULT_SUCCESS){
-                    kprint("Failed to open process output");
-                    kfree(s.data, s.mem_length);
-                    break;
-                }
-                kfree(s.data, s.mem_length);
-            }
-            write_file(&proc->out_fd, (const char *)x0, strlen((const char *)x0,256));
             kprint((const char *)x0);
             break;
         case 5:
