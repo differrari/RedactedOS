@@ -5,7 +5,7 @@
 
 BootSM *state_machine;
 
-extern "C" __attribute__((section(".text.kcoreprocesses"))) void eval_bootscreen() {
+extern "C" void eval_bootscreen() {
     while (1){
         state_machine->eval_state();
     }

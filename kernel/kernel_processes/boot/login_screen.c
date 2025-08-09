@@ -10,7 +10,6 @@
 #include "std/string.h"
 #include "syscalls/syscalls.h"
 
-__attribute__((section(".text.kcoreprocesses")))
 void login_screen(){
     sys_focus_current();
     sys_set_secure(true);

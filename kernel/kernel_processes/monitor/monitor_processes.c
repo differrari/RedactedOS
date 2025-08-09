@@ -12,7 +12,6 @@
 #include "syscalls/syscalls.h"
 #include "memory/memory_types.h"
 
-__attribute__((section(".text.kcoreprocesses")))
 char* parse_proc_state(int state){
     switch (state)
     {
@@ -37,7 +36,6 @@ uint64_t calc_heap(uintptr_t ptr){
     return size;
 }
 
-__attribute__((section(".text.kcoreprocesses")))
 void print_process_info(){
     process_t *processes = get_all_processes();
     for (int i = 0; i < MAX_PROCS; i++){
@@ -75,7 +73,6 @@ void draw_memory(char *name,int x, int y, int width, int full_height, int used, 
     free(str.data,str.mem_length);
 }
 
-__attribute__((section(".text.kcoreprocesses")))
 void draw_process_view(){
     gpu_clear(BG_COLOR+0x112211);
     process_t *processes = get_all_processes();
@@ -148,7 +145,6 @@ void draw_process_view(){
     print_process_info();
 }
 
-__attribute__((section(".text.kcoreprocesses")))
 void monitor_procs(){
     keypress kp = {
         .modifier = KEY_MOD_LALT,
