@@ -8,6 +8,8 @@
 #include "exceptions/exception_handler.h"
 #include "exceptions/timer.h"
 #include "console/kconsole/kconsole.h"
+#include "syscalls/syscalls.h"
+
 extern void save_context(process_t* proc);
 extern void save_pc_interrupt(process_t* proc);
 extern void restore_context(process_t* proc);
@@ -60,11 +62,13 @@ void process_restore(){
     restore_context(&processes[current_proc]);
 }
 
-void start_scheduler(){
+bool start_scheduler(){
+    kprint("Starting scheduler");
     kconsole_clear();
     disable_interrupt();
     timer_init(1);
     switch_proc(YIELD);
+    return true;
 }
 
 uintptr_t get_current_heap(){
@@ -223,3 +227,58 @@ void wake_processes(){
         virtual_timer_enable();
     }
 }
+
+sizedptr list_processes(const char *path){
+    size_t size = 0x1000;
+    void *list_buffer = (char*)malloc(size);
+    if (strlen(path, 100) == 0){
+        uint32_t count = 0;
+    
+        char *write_ptr = (char*)list_buffer + 4;
+        process_t *processes = get_all_processes();
+        for (int i = 0; i < MAX_PROCS; i++){
+            process_t *proc = &processes[i];
+            if (proc->id != 0 && proc->state != STOPPED){
+                count++;
+                char* name = proc->name;
+                while (*name) {
+                    *write_ptr++ = *name;
+                    name++;
+                }
+                *write_ptr++ = 0;
+            }
+        }
+        *(uint32_t*)list_buffer = count;
+    }
+    //TODO:
+    //else advance to / and get the pid
+        //if that's it print that
+        //else open the file (out, in, etc)
+    return (sizedptr){(uintptr_t)list_buffer,size};
+}
+
+FS_RESULT open_proc(const char *path, file *descriptor){
+    kprintf("OPEN: %s",path);
+    return FS_RESULT_DRIVER_ERROR;
+}
+
+size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
+
+}
+
+size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
+
+}
+
+driver_module scheduler_module = (driver_module){
+    .name = "scheduler",
+    .mount = "/proc",
+    .version = VERSION_NUM(0, 1, 0, 1),
+    .init = start_scheduler,
+    .fini = 0,
+    .open = open_proc,
+    .read = read_proc,
+    .write = write_proc,
+    .seek = 0,
+    .readdir = list_processes,
+};

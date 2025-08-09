@@ -2,6 +2,7 @@
 
 #include "types.h"
 #include "process/process.h"
+#include "dev/driver_base.h"
 
 typedef enum {
     INTERRUPT,
@@ -12,7 +13,7 @@ typedef enum {
 #define MAX_PROCS 16
 
 void switch_proc(ProcSwitchReason reason);
-void start_scheduler();
+bool start_scheduler();
 void save_context_registers();
 void save_return_address_interrupt();
 void init_main_process();
@@ -44,5 +45,7 @@ bool get_current_privilege();
 
 uint16_t process_count();
 process_t *get_all_processes();
+
+extern driver_module scheduler_module;
 
 extern uint64_t ksp;
