@@ -30,19 +30,8 @@ SECTIONS {
     .heap_fill : { FILL(0); . = . + 0x2000000; }
     heap_limit = .;
 
-    .kcoreprocesses : ALIGN(8) {
-        kcoreprocesses_rodata_start = .;
-        KEEP(*(.rodata.kcoreprocesses))
-        KEEP(*(.data.kcoreprocesses))
-        kcoreprocesses_rodata_end = .;
-        kcoreprocesses_start = .;
-        KEEP(*(.text.kcoreprocesses))
-        kcoreprocesses_end = .;
-    }
     . = ALIGN(0x200000);
     kcode_end = .;
-
-    . = . + 0x200000;
 
     .shared : ALIGN(4096) {
         shared_start = .;

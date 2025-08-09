@@ -10,7 +10,6 @@
 #include "syscalls/syscalls.h"
 #include "filesystem/filesystem.h"
 
-__attribute__((section(".text.kcoreprocesses")))
 void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
     file fd;
     uint16_t pid = get_current_proc_pid();
@@ -32,10 +31,8 @@ void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
     free(s.data,s.mem_length);
 }
 
-__attribute__((section(".rodata.kcoreprocesses")))
 const gpu_point offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
 
-__attribute__((section(".text.kcoreprocesses")))
 gpu_point boot_calc_point(gpu_point offset, gpu_size screen_size, gpu_point screen_middle){
     int xoff = (screen_size.width/BOOTSCREEN_DIV) * offset.x;
     int yoff = (screen_size.height/BOOTSCREEN_DIV) * offset.y;
@@ -95,7 +92,6 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
     }
 }
 
-__attribute__((section(".text.kcoreprocesses")))
 void bootscreen(){
     disable_visual();
     gpu_clear(BG_COLOR);
