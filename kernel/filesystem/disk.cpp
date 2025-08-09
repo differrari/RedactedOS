@@ -23,6 +23,7 @@ void disk_verbose(){
     })
 
 bool init_disk_device(){
+    kprint("Initializing disk");
     if (BOARD_TYPE == 2)
         return sdhci_driver.init();
     else 
