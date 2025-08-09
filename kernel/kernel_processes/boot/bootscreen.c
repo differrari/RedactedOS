@@ -11,6 +11,7 @@
 
 __attribute__((section(".text.kcoreprocesses")))
 void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
+    printf("Hello buffer");
     const char* name = BOOTSCREEN_TEXT;
     string s = string_l(name);
     int scale = 2;

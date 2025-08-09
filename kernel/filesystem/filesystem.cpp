@@ -98,8 +98,18 @@ size_t read_file(file *descriptor, char* buf, size_t size){
     open_file_descriptors file = open_files->find([descriptor](open_file_descriptors kvp){
         return descriptor->id == kvp.file_id;
     })->data;
-    size_t adj_size = min(size,file.file_size);//TODO: still possible to modify the fd's size
+    if (!file.mod) return 0;
+    size_t adj_size = min(size,file.file_size);
     return file.mod->read(descriptor, buf, adj_size, 0);
+}
+
+size_t write_file(file *descriptor, const char* buf, size_t size){
+    if (!open_files) return 0;
+    open_file_descriptors file = open_files->find([descriptor](open_file_descriptors kvp){
+        return descriptor->id == kvp.file_id;
+    })->data;
+    if (!file.mod) return 0;
+    return file.mod->write(descriptor, buf, size, 0);
 }
 
 sizedptr list_directory_contents(const char *path){
