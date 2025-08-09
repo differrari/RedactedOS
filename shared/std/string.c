@@ -330,6 +330,17 @@ uint64_t parse_hex_u64(const char* str, size_t size){
     return result;
 }
 
+uint64_t parse_int_u64(const char* str, size_t size){
+    uint64_t result = 0;
+    for (uint32_t i = 0; i < size; i++){
+        char c = str[i];
+        uint8_t digit = 0;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else break;
+        result = (result * 10) + digit;
+    }
+    return result;
+}
 
 string string_from_const(const char *lit)
 {
