@@ -16,9 +16,13 @@
 #include "networking/port_manager.h"
 #include "filesystem/filesystem.h"
 
+int syscall_depth = 0;
+
 void sync_el0_handler_c(){
     save_context_registers();
     save_return_address_interrupt();
+
+    syscall_depth++;
     
     if (ksp > 0)
         asm volatile ("mov sp, %0" :: "r"(ksp));
@@ -57,7 +61,7 @@ void sync_el0_handler_c(){
         switch (iss)
         {
         case 0:
-            void* page_ptr = (void*)get_current_heap();
+            void* page_ptr = syscall_depth > 1 ? (void*)get_proc_by_pid(1)->heap : (void*)get_current_heap();
             if ((uintptr_t)page_ptr == 0x0){
                 handle_exception_with_info("Wrong process heap state", iss);
             }
@@ -67,13 +71,17 @@ void sync_el0_handler_c(){
             kfree((void*)x0, x1);
             break;
         case 3:
-            // process_t *proc = get_current_proc();
-            // if (proc->out_fd.id == 0){
-            //     string s = string_format("/proc/%i/out",proc->id);
-            //     open_file(s.data, &proc->out_fd);
-            //     kfree(s.data, s.mem_length);
-            // }
-            // write_file(&proc->out_fd, (const char *)x0, strlen((const char *)x0,256));
+            process_t *proc = get_current_proc();
+            if (proc->out_fd.id == 0){
+                string s = string_format("/proc/%i/out",proc->id);
+                if (open_file(s.data, &proc->out_fd) != FS_RESULT_SUCCESS){
+                    kprint("Failed to open process output");
+                    kfree(s.data, s.mem_length);
+                    break;
+                }
+                kfree(s.data, s.mem_length);
+            }
+            write_file(&proc->out_fd, (const char *)x0, strlen((const char *)x0,256));
             kprint((const char *)x0);
             break;
         case 5:
@@ -183,8 +191,8 @@ void sync_el0_handler_c(){
             stop_current_process();
         }
     }
+    syscall_depth--;
     if (result > 0)
         save_syscall_return(result);
     process_restore();
 }
-
