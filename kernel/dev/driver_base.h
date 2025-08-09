@@ -6,6 +6,7 @@
 typedef struct file {
     uint64_t id;
     size_t size;
+    uint64_t cursor;
 } file;
 
 typedef uint64_t file_offset;
