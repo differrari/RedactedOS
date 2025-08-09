@@ -14,6 +14,7 @@
 #include "exceptions/timer.h"
 #include "networking/network.h"
 #include "networking/port_manager.h"
+#include "filesystem/filesystem.h"
 
 void sync_el0_handler_c(){
     save_context_registers();
@@ -66,9 +67,15 @@ void sync_el0_handler_c(){
             kfree((void*)x0, x1);
             break;
         case 3:
+            // process_t *proc = get_current_proc();
+            // if (proc->out_fd.id == 0){
+            //     string s = string_format("/proc/%i/out",proc->id);
+            //     open_file(s.data, &proc->out_fd);
+            //     kfree(s.data, s.mem_length);
+            // }
+            // write_file(&proc->out_fd, (const char *)x0, strlen((const char *)x0,256));
             kprint((const char *)x0);
             break;
-
         case 5:
             keypress *kp = (keypress*)x0;
             result = sys_read_input_current(kp);

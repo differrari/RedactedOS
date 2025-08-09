@@ -34,6 +34,8 @@ process_t *create_kernel_process(const char *name, void (*func)()){
     proc->spsr = 0x205;
     proc->state = READY;
 
+    proc->output = (uintptr_t)palloc(0x1000, true, false, true);
+
     enable_interrupt();
     
     return proc;

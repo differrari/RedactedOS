@@ -9,6 +9,7 @@
 #include "exceptions/timer.h"
 #include "console/kconsole/kconsole.h"
 #include "syscalls/syscalls.h"
+#include "std/string.h"
 
 extern void save_context(process_t* proc);
 extern void save_pc_interrupt(process_t* proc);
@@ -127,6 +128,7 @@ void init_main_process(){
     proc->stack_size = 0x1000;
     proc->stack = (uintptr_t)palloc(proc->stack_size,true,false,true);
     proc->sp = ksp;
+    proc->output = (uintptr_t)palloc(0x1000, true, false, true);
     name_process(proc, "kernel");
     proc_count++;
 }
@@ -259,6 +261,7 @@ sizedptr list_processes(const char *path){
 
 FS_RESULT open_proc(const char *path, file *descriptor){
     kprintf("OPEN: %s",path);
+    // path = seek_to()
     return FS_RESULT_DRIVER_ERROR;
 }
 

@@ -284,6 +284,8 @@ process_t* create_process(const char *name, void *content, uint64_t content_size
     proc->spsr = 0;
     proc->state = READY;
 
+    proc->output = (uintptr_t)palloc(0x1000, false, false, true);
+
     enable_interrupt();
     
     return proc;
