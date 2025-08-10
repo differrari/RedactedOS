@@ -1,5 +1,7 @@
 #shared
-CFLAGS  := $(CFLAGS_BASE) -I. -I../kernel -Wno-unused-parameter
+CPPFLAGS := -I. -I../kernel
+CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
+CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
 
 CLEAN_OBJS := $(shell find . -name '*.o')
 CLEAN_DEPS := $(shell find . -name '*.d')
@@ -22,10 +24,10 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -c -MMD -MP $< -o $@
 
 %.o: %.c
-	$(CC) $(CFLAGS) $(CONLY_FLAGS_BASE) -c -MMD -MP $< -o $@
+	$(CC) $(CFLAGS) -c -MMD -MP $< -o $@
 
 %.o: %.cpp
-	$(CC) $(CFLAGS) -fno-rtti -c -MMD -MP $< -o $@
+	$(CXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)

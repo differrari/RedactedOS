@@ -1,21 +1,25 @@
 ARCH       ?= aarch64-none-elf
 CC         := $(ARCH)-gcc
+CXX        := $(ARCH)-g++
 LD         := $(ARCH)-ld
 AR         := $(ARCH)-ar
 OBJCOPY    := $(ARCH)-objcopy
 
-CFLAGS_BASE  ?= -g -O0 -nostdlib -ffreestanding \
-                -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables \
-                -Wall -Wextra -Wno-unused-parameter -Wno-address-of-packed-member -mcpu=cortex-a72
-CONLY_FLAGS_BASE ?= -std=c17
-LDFLAGS_BASE ?=
+COMMON_FLAGS  ?= -ffreestanding -nostdlib -fno-exceptions -fno-unwind-tables \
+                 -fno-asynchronous-unwind-tables -g -O0 -Wall -Wextra \
+                 -Wno-unused-parameter -Wno-address-of-packed-member \
+                 -mcpu=cortex-a72
+
+CFLAGS_BASE   ?= $(COMMON_FLAGS) -std=c17
+CXXFLAGS_BASE ?= $(COMMON_FLAGS) -fno-rtti
+LDFLAGS_BASE  ?=
 
 LOAD_ADDR      ?= 0x41000000
 XHCI_CTX_SIZE  ?= 32
 QEMU           ?= true
 MODE           ?= virt
 
-export ARCH CC LD AR OBJCOPY CFLAGS_BASE CONLY_FLAGS_BASE LDFLAGS_BASE LOAD_ADDR XHCI_CTX_SIZE QEMU
+export ARCH CC CXX LD AR OBJCOPY COMMON_FLAGS CFLAGS_BASE CXXFLAGS_BASE LDFLAGS_BASE LOAD_ADDR XHCI_CTX_SIZE QEMU
 
 OS      := $(shell uname)
 FS_DIRS := fs/redos/user
