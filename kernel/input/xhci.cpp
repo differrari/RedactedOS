@@ -53,7 +53,7 @@ bool XHCIDriver::check_fatal_error() {
 #define XHCI_SPEED_SUPER_SPEED          4
 #define XHCI_SPEED_SUPER_SPEED_PLUS     5
 
-#define XHCI_EP_DISABLED 0 
+#define XHCI_EP_DISABLED 0
 #define XHCI_EP_CONTROL 4
 
 bool XHCIDriver::init(){
@@ -69,7 +69,7 @@ bool XHCIDriver::init(){
         addr = find_pci_device(0x1B36, 0xD);
         use_pci = true;
     }
-    if (!addr){ 
+    if (!addr){
         kprintf("[PCI] xHCI device not found");
         return false;
     }
@@ -80,16 +80,16 @@ bool XHCIDriver::init(){
             kprintf("[xHCI] Wrong capabilities list");
             return false;
         }
-    
+
         pci_enable_device(addr);
-    
+
         if (!pci_setup_bar(addr, 0, &mmio, &mmio_size)){
             kprintf("[xHCI] BARs not set up");
             return false;
         }
-    
+
         pci_register(mmio, mmio_size);
-    
+
         uint8_t interrupts_ok = pci_setup_interrupts(addr, INPUT_IRQ, 1);
         switch(interrupts_ok){
             case 0:
@@ -103,7 +103,7 @@ bool XHCIDriver::init(){
                 kprintfv("[xHCI] Interrupts setup with MSI %i",INPUT_IRQ);
                 break;
         }
-    
+
         kprintfv("[xHCI] BARs set up @ %x (%x)",mmio,mmio_size);
     }
 
@@ -141,9 +141,9 @@ bool XHCIDriver::init(){
     usb_manager = new USBManager(max_device_slots);
 
     uint16_t erst_max = ((cap->hcsparams2 >> 4) & 0xF);
-    
+
     kprintfv("[xHCI] ERST Max: 2^%i",erst_max);
-    
+
     op->dnctrl = 0xFFFF;//Enable device notifications
 
     op->config = max_device_slots;
@@ -191,7 +191,7 @@ bool XHCIDriver::init(){
     context_map = IndexMap<xhci_input_context*>(255 * 5);
 
     kprintfv("[xHCI] Init complete with usbcmd %x, usbsts %x",op->usbcmd, op->usbsts);
-    
+
     if (check_fatal_error()) return false;
 
     for (uint16_t i = 0; i < max_ports; i++)
@@ -232,7 +232,7 @@ bool XHCIDriver::port_reset(uint16_t port){
 
     //TODO: if usb3
     // port_info->portsc.wpr = 1;
-    //else 
+    //else
 
     if (!AWAIT(0, { port_info->portsc.pr = 1; },TRB_TYPE_PORT_STATUS_CHANGE)){
         kprintf("[xHCI error] failed port reset");
@@ -267,16 +267,16 @@ bool XHCIDriver::enable_events(){
     event_ring.cycle_bit = 1;
 
     kprintfv("[xHCI] Interrupter register @ %x", rt_base + 0x20);
-    
+
     interrupter->erstsz = 1;
     kprintfv("[xHCI] ERSTSZ set to: %x", interrupter->erstsz);
-    
+
     interrupter->erdp = ev_ring;
     interrupter->erstba = erst_addr;
     kprintfv("[xHCI] ERSTBA set to: %x", interrupter->erstba);
-    
+
     kprintfv("[xHCI] ERDP set to: %x", interrupter->erdp);
-    
+
     interrupter->iman |= 1 << 1;//Enable interrupt
 
     op->usbsts = 1 << 3;//Enable interrupts
@@ -326,7 +326,7 @@ bool XHCIDriver::await_response(uint64_t command, uint32_t type){
             }
             if ((((last_event->control & TRB_TYPE_MASK) >> 10) == type) && (command == 0 || last_event->parameter == command)){
                 uint8_t completion_code = (last_event->status >> 24) & 0xFF;
-                if (completion_code != 1) 
+                if (completion_code != 1)
                     kprintf("[xHCI error] wrong status %i on command type %x", completion_code, ((last_event->control & TRB_TYPE_MASK) >> 10) );
                 interrupter->erdp = (uintptr_t)&event_ring.ring[event_ring.index+1] | (1 << 3);//Inform of latest processed event
                 interrupter->iman |= 1;//Clear interrupts
@@ -381,19 +381,19 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
     context_map[address << 8] = ctx;
     void* output_ctx = (void*)kalloc(mem_page, 0x1000, ALIGN_64B, true, true);
     kprintfv("[xHCI] Allocating output for context at %x", (uintptr_t)output_ctx);
-    
+
     ctx->control_context.add_flags = 0b11;
-    
+
     ctx->device_context.slot_f0.speed = ports[port].portsc.port_speed;
     ctx->device_context.slot_f0.context_entries = 1;
     ctx->device_context.slot_f1.root_hub_port_num = port + 1;
-    
+
     ctx->device_context.endpoints[0].endpoint_f0.endpoint_state = XHCI_EP_DISABLED;
     ctx->device_context.endpoints[0].endpoint_f1.endpoint_type = XHCI_EP_CONTROL;
     ctx->device_context.endpoints[0].endpoint_f0.interval = 0;
     ctx->device_context.endpoints[0].endpoint_f1.error_count = 3;
     ctx->device_context.endpoints[0].endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);
-    
+
     transfer_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
     kprintfv("Transfer ring at %x %i",(uintptr_t)transfer_ring->ring, address << 8);
     make_ring_link(transfer_ring->ring, transfer_ring->cycle_bit);
@@ -411,7 +411,7 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
     usb_setup_packet packet = {
         .bmRequestType = rType,
         .bRequest = request,
-        .wValue = (type << 8) | descriptor_index,
+        .wValue = (uint16_t)((type << 8) | descriptor_index),
         .wIndex = wIndex,
         .wLength = descriptor_size
     };
@@ -435,7 +435,7 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
         //bit 16 = direction
         data->control = (1 << 16) | (TRB_TYPE_DATA_STAGE << 10) | (0 << 4) | transfer_ring->cycle_bit;
     }
-    
+
     trb* status_trb = &transfer_ring->ring[transfer_ring->index++];
     status_trb->parameter = 0;
     status_trb->status = 0;
@@ -495,7 +495,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
 
     uint8_t ep_type = endpoint->bmAttributes & 0x03; // 0 = Control, 1 = Iso, 2 = Bulk, 3 = Interrupt
 
-    if (ep_type != 3){ 
+    if (ep_type != 3){
         kprintf("[xHCI implementation warning] Endpoint type %i not supported. Ignored",ep_type);
         return true;
     }
@@ -509,15 +509,15 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
         ctx->device_context.slot_f0.context_entries = ep_num;
     ctx->device_context.slot_f0.speed = context->slot_f0.speed;
     ctx->device_context.endpoints[ep_num-1].endpoint_f0.interval = calculate_interval(context->slot_f0.speed, endpoint->bInterval);
-    
+
     ctx->device_context.endpoints[ep_num-1].endpoint_f0.endpoint_state = XHCI_EP_DISABLED;
     ctx->device_context.endpoints[ep_num-1].endpoint_f1.endpoint_type = get_ep_type(endpoint);
     ctx->device_context.endpoints[ep_num-1].endpoint_f1.max_packet_size = endpoint->wMaxPacketSize;
     ctx->device_context.endpoints[ep_num-1].endpoint_f4.max_esit_payload_lo = endpoint->wMaxPacketSize;
     ctx->device_context.endpoints[ep_num-1].endpoint_f1.error_count = 3;
-    
+
     xhci_ring *ep_ring = &endpoint_map[address << 8 | ep_num];
-    
+
     ep_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
     ep_ring->cycle_bit = 1;
     make_ring_link(ep_ring->ring, ep_ring->cycle_bit);
@@ -532,7 +532,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
 
     usb_manager->register_endpoint(address, ep_num, type, endpoint->wMaxPacketSize);
     usb_manager->request_data(address, ep_num, this);
-    
+
     return true;
 }
 
@@ -575,10 +575,10 @@ void XHCIDriver::handle_interrupt(){
                 uint8_t slot_id = (ev->control & TRB_SLOT_MASK) >> 24;
                 uint8_t endpoint_id = (ev->control & TRB_ENDPOINT_MASK) >> 16;
                 kprintfv("Received input from slot %i endpoint %i",slot_id, endpoint_id);
-                
+
                 if (completion_code == 4)
                     usb_manager->request_data(slot_id,endpoint_id,this);
-                else 
+                else
                     usb_manager->process_data(slot_id,endpoint_id, this);
                 break;
             }
