@@ -418,8 +418,6 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
 
     // kprintf("RT: %x R: %x V: %x I: %x L: %x",packet.bmRequestType,packet.bRequest,packet.wValue,packet.wIndex,packet.wLength);
 
-    bool is_in = (rType & 0x80) != 0;
-
     xhci_ring *transfer_ring = &endpoint_map[address << 8 | endpoint];
 
     trb* setup_trb = &transfer_ring->ring[transfer_ring->index++];
