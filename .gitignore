@@ -13,3 +13,4 @@ dump
 .cache/*
 compile_commands.json
 .clangd
+*.d
