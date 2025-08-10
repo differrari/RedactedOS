@@ -88,7 +88,7 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
         keypress kp;
         if (sys_read_input_current(&kp))
             if (kp.keys[0] != 0){
-                stop_current_process();
+                stop_current_process(0);
             }
         gpu_flush();
     }

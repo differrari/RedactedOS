@@ -11,7 +11,7 @@ void proc_func() {
         printf("Print console test %f", (get_time()/1000.f));
         while (read_key(&kp)){
             if (kp.keys[0] == KEY_ESC)
-                halt();
+                halt(0);
         }
         clear_screen(0xFFFFFFFF);
         draw_primitive_rect(&rect, 0xFF222233);
@@ -20,4 +20,5 @@ void proc_func() {
         free(s.data,s.mem_length);
         gpu_flush_data();
     }
+    halt(1);
 }

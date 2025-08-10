@@ -114,6 +114,7 @@ void reset_process(process_t *proc){
     pfree((void*)proc->stack-proc->stack_size,proc->stack_size);
     proc->pc = 0;
     proc->spsr = 0;
+    proc->exit_code = 0;
     for (int j = 0; j < 31; j++)
         proc->regs[j] = 0;
     for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++)
@@ -179,11 +180,12 @@ void name_process(process_t *proc, const char *name){
         proc->name[i] = name[i];
 }
 
-void stop_process(uint16_t pid){
+void stop_process(uint16_t pid, uint32_t exit_code){
     disable_interrupt();
     process_t *proc = get_proc_by_pid(pid);
     if (proc->state != READY) return;
     proc->state = STOPPED;
+    proc->exit_code = exit_code;
     if (proc->focused)
         sys_unset_focus();
     //TODO: we don't wipe the process' data. If we do, we corrupt our sp, since we're still in the process' sp.
@@ -192,9 +194,9 @@ void stop_process(uint16_t pid){
     switch_proc(HALT);
 }
 
-void stop_current_process(){
+void stop_current_process(uint32_t exit_code){
     disable_interrupt();
-    stop_process(processes[current_proc].id);
+    stop_process(processes[current_proc].id, exit_code);
 }
 
 uint16_t process_count(){

@@ -48,7 +48,7 @@ int login_screen(){
                             free(title.data,title.mem_length);
                             free(subtitle.data,subtitle.mem_length);
                             sys_set_secure(false);
-                            stop_current_process();
+                            stop_current_process(0);
                         } else
                             break;
                     }

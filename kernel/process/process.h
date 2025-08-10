@@ -39,6 +39,7 @@ typedef struct {
     uintptr_t heap;
     uintptr_t output;
     file out_fd;
+    uint64_t exit_code;
     bool focused;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     input_buffer_t input_buffer;

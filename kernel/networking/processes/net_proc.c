@@ -115,20 +115,20 @@ void http_server_hello_entry()
     uint16_t pid = get_current_proc_pid();
     http_server_handle_t srv = http_server_create(pid);
     if (!srv) {
-        stop_current_process();
+        stop_current_process(1);
         return;
     }
 
     if (http_server_bind(srv, 80) < 0) {
         http_server_destroy(srv);
-        stop_current_process();
+        stop_current_process(2);
         return;
     }
 
     if (http_server_listen(srv, 4) < 0) {
         http_server_close(srv);
         http_server_destroy(srv);
-        stop_current_process();
+        stop_current_process(3);
         return;
     }
 

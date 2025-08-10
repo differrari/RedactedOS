@@ -35,6 +35,9 @@ void Terminal::TMP_cat(int argc, const char *args[]){
         put_string(buf);
         free(buf, amount);
     }
+    string exit_msg = string_format("Process %i ended with exit code %i.",cat->id, cat->exit_code);
+    put_string(exit_msg.data);
+    free(exit_msg.data, exit_msg.mem_length);
 }
 
 const char** Terminal::parse_arguments(char *args, int *count){
