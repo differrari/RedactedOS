@@ -1,4 +1,7 @@
 #user
+
+include ../common.mk
+
 CPPFLAGS := -I. -I../shared
 CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
 CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)

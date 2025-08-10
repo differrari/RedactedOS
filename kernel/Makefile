@@ -1,6 +1,8 @@
 #kernel
 # toolchain (inherited from top-level)
 
+include ../common.mk
+
 CPPFLAGS := -I. -I../shared -I../user -DXHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
 
 ifeq ($(QEMU),true)
