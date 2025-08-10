@@ -1,6 +1,5 @@
-#pragma once
 #include "csocket_http_client.h"
-#include "socket_http_client.hpp" 
+#include "socket_http_client.hpp"
 #include "net/transport_layer/socket_tcp.hpp"
 
 extern "C" {
