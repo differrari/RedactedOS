@@ -28,6 +28,6 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -fno-rtti -c -MMD -MP $< -o $@
 
 clean:
-	rm -f $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
+	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
 
 -include $(DEP)
