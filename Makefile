@@ -63,11 +63,11 @@ run:
 debug:
 	$(MAKE) $(MODE)
 	./rundebug MODE=$(MODE) $(ARGS)
-  
+
 dump:
 	$(OBJCOPY) -O binary kernel.elf kernel.img
-	aarch64-none-elf-objdump -D kernel.elf > dump
-  
+	$(ARCH)-objdump -D kernel.elf > dump
+
 install:
 	$(MAKE) clean
 	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=false all
