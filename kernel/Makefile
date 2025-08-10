@@ -26,17 +26,17 @@ TARGET  := ../kernel.img
 all: $(TARGET)
 
 $(TARGET): ../shared/libshared.a $(OBJ)
-	$(LD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/libshared.a
+	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/libshared.a
 	$(OBJCOPY) -O binary $(ELF) $@
 
 %.o: %.S
-	$(CC) $(CFLAGS) -c -MMD -MP $< -o $@
+	$(VAS) $(CFLAGS) -c $< -o $@
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -MMD -MP $< -o $@
+	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
 
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
+	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(ELF) $(TARGET)

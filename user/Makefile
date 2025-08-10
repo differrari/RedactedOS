@@ -21,17 +21,17 @@ LOCATION := ../fs/redos/user/
 all: $(LOCATION)$(TARGET)
 
 $(LOCATION)$(TARGET): $(OBJ)
-	$(LD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(OBJ) ../shared/libshared.a
+	$(VLD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(OBJ) ../shared/libshared.a
 	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $@
 
 %.o: %.S
-	$(CC) $(CFLAGS) -c -MMD -MP $< -o $@
+	$(VAS) $(CFLAGS) -c $< -o $@
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -MMD -MP $< -o $@
+	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
 
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
+	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
