@@ -6,10 +6,6 @@
 
 static port_entry_t g_port_table[PROTO_COUNT][MAX_PORTS];//tab proto/port
 
-static inline bool port_valid(uint32_t p) {
-    return p > 0 && p < MAX_PORTS;
-}
-
 static inline bool proto_valid(protocol_t proto) {
     return (uint32_t)proto < PROTO_COUNT;
 }
@@ -57,7 +53,7 @@ bool port_bind_manual(protocol_t proto,
                       uint16_t pid,
                       port_recv_handler_t handler)
 {
-    if (!proto_valid(proto) || !port_valid(port)) return false;
+    if (!proto_valid(proto)) return false;
     port_entry_t *e = &g_port_table[proto][port];
     if (e->used) return false;
     e->used = true;
@@ -70,7 +66,7 @@ bool port_unbind(protocol_t proto,
                  uint16_t port,
                  uint16_t pid)
 {
-    if (!proto_valid(proto) || !port_valid(port)) return false;
+    if (!proto_valid(proto)) return false;
     port_entry_t *e = &g_port_table[proto][port];
     if (!e->used || e->pid != pid) return false;
     e->used = false;
@@ -93,17 +89,17 @@ void port_unbind_all(uint16_t pid) {
 }
 
 bool port_is_bound(protocol_t proto, uint16_t port) {
-    if (!proto_valid(proto) || !port_valid(port)) return false;
+    if (!proto_valid(proto)) return false;
     return g_port_table[proto][port].used;
 }
 
 uint16_t port_owner_of(protocol_t proto, uint16_t port) {
-    if (!proto_valid(proto) || !port_valid(port)) return PORT_FREE_OWNER;
+    if (!proto_valid(proto)) return PORT_FREE_OWNER;
     return g_port_table[proto][port].pid;
 }
 
 port_recv_handler_t port_get_handler(protocol_t proto, uint16_t port) {
-    if (!proto_valid(proto) || !port_valid(port)) return NULL;
+    if (!proto_valid(proto)) return NULL;
     return g_port_table[proto][port].used
         ? g_port_table[proto][port].handler
         : NULL;

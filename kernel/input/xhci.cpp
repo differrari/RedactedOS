@@ -411,14 +411,12 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
     usb_setup_packet packet = {
         .bmRequestType = rType,
         .bRequest = request,
-        .wValue = (type << 8) | descriptor_index,
+        .wValue = (uint16_t)((type << 8) | descriptor_index),
         .wIndex = wIndex,
         .wLength = descriptor_size
     };
 
     // kprintf("RT: %x R: %x V: %x I: %x L: %x",packet.bmRequestType,packet.bRequest,packet.wValue,packet.wIndex,packet.wLength);
-
-    bool is_in = (rType & 0x80) != 0;
 
     xhci_ring *transfer_ring = &endpoint_map[address << 8 | endpoint];
 
@@ -482,7 +480,7 @@ uint32_t XHCIDriver::calculate_interval(uint32_t speed, uint32_t received_interv
 
 	uint32_t i;
 	for (i = 3; i < 11; i++)
-		if (125 * (1 << i) >= 1000 * received_interval) break;
+		if (125u * (1 << i) >= 1000 * received_interval) break;
 
 	return i;
 }
