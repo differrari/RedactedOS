@@ -73,7 +73,6 @@ void Terminal::run_command(){
         cmd = string_ca_max(fullcmd, args - fullcmd - 1);
         args_copy = string_l(args);
         argv = parse_arguments(args_copy.data, &argc);
-        kprintf("There are %i arguments",argc);
     }
 
     put_char('\r');

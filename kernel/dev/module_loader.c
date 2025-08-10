@@ -27,5 +27,5 @@ int fs_search(void *node, void *key){
 
 driver_module* get_module(const char **full_path){
     clinkedlist_node_t *node = clinkedlist_find(modules, (void*)full_path, fs_search);
-    return ((driver_module*)node->data);
+    return node ? ((driver_module*)node->data) : 0;
 }

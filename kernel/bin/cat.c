@@ -6,23 +6,30 @@
 #include "console/kio.h"
 
 int run_cat(int argc, char* argv[]){
-    if (argc != 2) return 2;
-    kprintf("Cat with %i arguments. %s", argc, argv[0]);
+    uint16_t pid = get_current_proc_pid();
+    string s = string_format("/proc/%i/out",pid);
+    file fd2;
+    open_file(s.data, &fd2);
+    if (argc != 2){
+        string err_msg = string_l("Usage cat <path> <size>");
+        write_file(&fd2, err_msg.data, err_msg.length);
+        free(err_msg.data, err_msg.mem_length);
+        return 2;
+    }
     const char* path = argv[0];
-    kprintf("Cat with %i arguments. %s", argc, argv[1]);
     size_t size = parse_int_u64(argv[1], UINT32_MAX);
     file fd;
     open_file(path, &fd);
-    if (fd.size == 0) return 1;
+    if (fd.size == 0){
+        string err_msg = string_format("Couldn't find file %s", argv[0]);
+        write_file(&fd2, err_msg.data, err_msg.length);
+        free(err_msg.data, err_msg.mem_length);
+        return 1;
+    } 
     if (size == 0) size = fd.size;
     char* buf = (char*)malloc(size);
     read_file(&fd, buf, size);
 
-    uint16_t pid = get_current_proc_pid();
-
-    string s = string_format("/proc/%i/out",pid);
-    file fd2;
-    open_file(s.data, &fd2);
     write_file(&fd2, buf, size);
     free(s.data, s.mem_length);
     return 0;
