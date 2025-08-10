@@ -62,9 +62,9 @@ kernel:
 	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU)
 
 clean:
-	$(MAKE) -C shared clean
-	$(MAKE) -C user   clean
-	$(MAKE) -C kernel clean
+	$(MAKE) -C shared $@
+	$(MAKE) -C user   $@
+	$(MAKE) -C kernel $@
 	@echo "removing fs dirs"
 	$(RM) -r $(FS_DIRS)
 	@echo "removing images"
