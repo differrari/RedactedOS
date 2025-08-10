@@ -5,8 +5,6 @@
 #include "types.h"
 #include "net/transport_layer/csocket_udp.h"
 
-static socket_handle_t g_dhcp_socket = NULL;
-
 extern uintptr_t malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
 extern void      sleep(uint64_t ms);
