@@ -18,16 +18,16 @@ TARGET  := libshared.a
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(AR) rcs $@ $^
+	$(VAR) rcs $@ $^
 
 %.o: %.S
-	$(CC) $(CFLAGS) -c -MMD -MP $< -o $@
+	$(VAS) $(CFLAGS) -c $< -o $@
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -MMD -MP $< -o $@
+	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
 
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
+	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)

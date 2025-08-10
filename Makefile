@@ -19,7 +19,23 @@ XHCI_CTX_SIZE  ?= 32
 QEMU           ?= true
 MODE           ?= virt
 
-export ARCH CC CXX LD AR OBJCOPY COMMON_FLAGS CFLAGS_BASE CXXFLAGS_BASE LDFLAGS_BASE LOAD_ADDR XHCI_CTX_SIZE QEMU
+ifeq ($(V), 1)
+  VAR  = $(AR)
+  VAS  = $(CC)
+  VCC  = $(CC)
+  VCXX = $(CXX)
+  VLD  = $(LD)
+else
+  VAR  = @echo "  [AR]   $@" && $(AR)
+  VAS  = @echo "  [AS]   $@" && $(CC)
+  VCC  = @echo "  [CC]   $@" && $(CC)
+  VCXX = @echo "  [CXX]  $@" && $(CXX)
+  VLD  = @echo "  [LD]   $@" && $(LD)
+endif
+
+export AR AS CC CXX LD OBJCOPY
+export VAR VAS VCC VCXX VLD
+export ARCH COMMON_FLAGS CFLAGS_BASE CXXFLAGS_BASE LDFLAGS_BASE LOAD_ADDR XHCI_CTX_SIZE QEMU
 
 OS      := $(shell uname)
 FS_DIRS := fs/redos/user
@@ -93,4 +109,6 @@ help:
   make debug        build and run with debugger\n\
   make dump         disassemble kernel.elf\n\
   make install      create raspi kernel and mount it on a bootable partition\n\
-  make prepare-fs   create directories for the filesystem\n\n"
+  make prepare-fs   create directories for the filesystem\n\n"\
+  \n\
+  Use 'make V=1' for verbose build output.
