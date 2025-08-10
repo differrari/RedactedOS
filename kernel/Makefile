@@ -34,6 +34,6 @@ $(TARGET): ../shared/libshared.a $(OBJ)
 	$(CC) $(CFLAGS) -fno-rtti -c -MMD -MP $< -o $@
 
 clean:
-	rm -f $(CLEAN_OBJS) $(CLEAN_DEPS) $(ELF) $(TARGET)
+	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(ELF) $(TARGET)
 
 -include $(DEP)
