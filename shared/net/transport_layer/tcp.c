@@ -26,6 +26,26 @@ static inline uint32_t htonl(uint32_t x) {
 static inline uint32_t ntohl(uint32_t x) {
     return htonl(x);
 }
+
+static int find_flow(uint16_t local_port, uint32_t remote_ip, uint16_t remote_port) {
+    for (int i = 0; i < MAX_TCP_FLOWS; ++i) {
+        tcp_flow_t *f = &tcp_flows[i];
+        if (f->state != TCP_STATE_CLOSED) {
+            if (f->local_port == local_port) {
+                if (f->state == TCP_LISTEN) {
+                    if (remote_ip == 0 && remote_port == 0) {
+                        return i;
+                    }
+                }
+                if (f->remote.ip == remote_ip && f->remote.port == remote_port) {
+                    return i;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
 tcp_data* tcp_get_ctx(uint16_t local_port,
                     uint32_t remote_ip,
                     uint16_t remote_port)
@@ -86,25 +106,6 @@ uint16_t tcp_compute_checksum(const void *segment,
     free((void *)raw, total_len);
 
     return htons((uint16_t)(~sum & 0xFFFF));
-}
-
-static int find_flow(uint16_t local_port, uint32_t remote_ip, uint16_t remote_port) {
-    for (int i = 0; i < MAX_TCP_FLOWS; ++i) {
-        tcp_flow_t *f = &tcp_flows[i];
-        if (f->state != TCP_STATE_CLOSED) {
-            if (f->local_port == local_port) {
-                if (f->state == TCP_LISTEN) {
-                    if (remote_ip == 0 && remote_port == 0) {
-                        return i;
-                    }
-                }
-                if (f->remote.ip == remote_ip && f->remote.port == remote_port) {
-                    return i;
-                }
-            }
-        }
-    }
-    return -1;
 }
 
 static int allocate_flow_entry() {
@@ -295,7 +296,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx) {
     if (!flow) {
         return TCP_INVALID;
     }
-    
+
     uint8_t flags = flow_ctx->flags;
     uint8_t *payload_ptr = (uint8_t*) flow_ctx->payload.ptr;
     uint16_t payload_len = flow_ctx->payload.size;
@@ -441,7 +442,7 @@ void tcp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
             flow->remote.port = src_port;
             flow->state = TCP_SYN_RECEIVED;
             flow->retries = TCP_SYN_RETRIES;
-            
+
             uint32_t iss = rng_next32(&rng);
             flow->ctx.sequence = iss;
             flow->ctx.ack = seq + 1;

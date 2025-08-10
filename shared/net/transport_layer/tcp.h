@@ -71,7 +71,7 @@ typedef enum {
 typedef struct {
     uint16_t local_port;
     net_l4_endpoint remote;
-    tcp_state_t state; 
+    tcp_state_t state;
     tcp_data ctx;
     uint8_t retries;
 } tcp_flow_t;
@@ -80,8 +80,6 @@ typedef struct {
 #define TCP_SYN_RETRIES 5
 #define TCP_DATA_RETRIES 5
 #define TCP_RETRY_TIMEOUT_MS 1000
-
-static int find_flow(uint16_t local_port, uint32_t remote_ip, uint16_t remote_port);
 
 tcp_data* tcp_get_ctx(uint16_t local_port,
                     uint32_t remote_ip,
