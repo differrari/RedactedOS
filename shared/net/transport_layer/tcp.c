@@ -422,7 +422,6 @@ void tcp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
     uint32_t seq = ntohl(hdr->sequence);
     uint32_t ack = ntohl(hdr->ack);
     uint8_t flags = hdr->flags;
-    uint16_t window = ntohs(hdr->window);
     int idx = find_flow(dst_port, src_ip, src_port);
     tcp_flow_t *flow = (idx >= 0 ? &tcp_flows[idx] : NULL);
 
@@ -432,7 +431,6 @@ void tcp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
             //TODO: use a syscall for the rng
             rng_t rng;
             rng_init_random(&rng);
-            tcp_flow_t *lf = &tcp_flows[listen_idx];
             int new_idx = allocate_flow_entry();
             if (new_idx < 0) return;
 
