@@ -543,6 +543,7 @@ void tcp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
             );
             return;
         }
+        // fall-through
     case TCP_FIN_WAIT_1:
     case TCP_FIN_WAIT_2:
     case TCP_CLOSE_WAIT:
