@@ -13,6 +13,7 @@ extern "C" {
 http_client_handle_t http_client_create(uint16_t pid) {
     uintptr_t mem = malloc(sizeof(HTTPClient));
     if (!mem) return NULL;
+    // TODO: check for correct fix here
     HTTPClient *cli = reinterpret_cast<HTTPClient*>( (void*)mem );
     return reinterpret_cast<http_client_handle_t>(new HTTPClient(pid));
 }

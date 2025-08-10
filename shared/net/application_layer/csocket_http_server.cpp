@@ -12,6 +12,7 @@ extern "C" {
 http_server_handle_t http_server_create(uint16_t pid) {
     void* raw = (void*)malloc(sizeof(HTTPServer));
     if (!raw) return nullptr;
+    // TODO: check for correct fix here
     HTTPServer* srv = reinterpret_cast<HTTPServer*>(raw);
     return reinterpret_cast<http_server_handle_t>(new HTTPServer(pid));
 }
