@@ -53,10 +53,7 @@ void create_icmp_packet(uintptr_t p,
     pkt->id   = __builtin_bswap16(d->id);
     pkt->seq  = __builtin_bswap16(d->seq);
 
-    if (d->payload)
-        memcpy(pkt->payload, d->payload, 56);
-    else
-        memset(pkt->payload, 0, 56);
+    memcpy(pkt->payload, d->payload, 56);
 
     pkt->checksum = 0;
 }
