@@ -1,5 +1,10 @@
 #shared
-CFLAGS  := $(CFLAGS_BASE) -I. -I../kernel -Wno-unused-parameter
+
+include ../common.mk
+
+CPPFLAGS := -I. -I../kernel
+CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
+CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
 
 CLEAN_OBJS := $(shell find . -name '*.o')
 CLEAN_DEPS := $(shell find . -name '*.d')
@@ -16,18 +21,18 @@ TARGET  := libshared.a
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(AR) rcs $@ $^
+	$(VAR) rcs $@ $^
 
 %.o: %.S
-	$(CC) $(CFLAGS) -c -MMD -MP $< -o $@
+	$(VAS) $(CFLAGS) -c $< -o $@
 
 %.o: %.c
-	$(CC) $(CFLAGS) $(CONLY_FLAGS_BASE) -c -MMD -MP $< -o $@
+	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
 
 %.o: %.cpp
-	$(CC) $(CFLAGS) -fno-rtti -c -MMD -MP $< -o $@
+	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
 clean:
-	rm -f $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
+	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
 
 -include $(DEP)

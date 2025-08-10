@@ -1,12 +1,17 @@
 #kernel
 # toolchain (inherited from top-level)
 
-CFLAGS := $(CFLAGS_BASE) -I. -I../shared -I../user -DXHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
+include ../common.mk
+
+CPPFLAGS := -I. -I../shared -I../user -DXHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
+
 ifeq ($(QEMU),true)
-  CFLAGS += -DQEMU
+  CPPFLAGS += -DQEMU
 endif
 
-LDFLAGS := $(LDFLAGS_BASE) -T $(shell ls *.ld) --defsym=LOAD_ADDR=$(LOAD_ADDR)
+CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
+CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
+LDFLAGS  := $(LDFLAGS_BASE) -T $(shell ls *.ld) --defsym=LOAD_ADDR=$(LOAD_ADDR)
 
 CLEAN_OBJS := $(shell find . -name '*.o')
 CLEAN_DEPS := $(shell find . -name '*.d')
@@ -23,17 +28,19 @@ TARGET  := ../kernel.img
 all: $(TARGET)
 
 $(TARGET): ../shared/libshared.a $(OBJ)
-	$(LD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/libshared.a
+	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/libshared.a
 	$(OBJCOPY) -O binary $(ELF) $@
 
 %.o: %.S
-	$(CC) $(CFLAGS) -c -MMD -MP $< -o $@
+	$(VAS) $(CFLAGS) -c $< -o $@
+
 %.o: %.c
-	$(CC) $(CFLAGS) $(CONLY_FLAGS_BASE) -c -MMD -MP $< -o $@
+	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
+
 %.o: %.cpp
-	$(CC) $(CFLAGS) -fno-rtti -c -MMD -MP $< -o $@
+	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
 clean:
-	rm -f $(CLEAN_OBJS) $(CLEAN_DEPS) $(ELF) $(TARGET)
+	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(ELF) $(TARGET)
 
 -include $(DEP)
