@@ -3,9 +3,11 @@ CFLAGS  := $(CFLAGS_BASE) -I. -I../shared -Wno-unused-parameter
 LDFLAGS := -T $(shell ls *.ld)
 
 CLEAN_OBJS := $(shell find . -name '*.o')
+CLEAN_DEPS := $(shell find . -name '*.d')
 C_SRC   := $(shell find . -name '*.c')
 CPP_SRC := $(shell find . -name '*.cpp')
 OBJ     := $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o)
+DEP     := $(C_SRC:.c=.d) $(CPP_SRC:.cpp=.d)
 
 NAME     := $(notdir $(CURDIR))
 ELF      := $(NAME).elf
@@ -21,13 +23,15 @@ $(LOCATION)$(TARGET): $(OBJ)
 	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $@
 
 %.o: %.S
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c -MMD -MP $< -o $@
 
 %.o: %.c
-	$(CC) $(CFLAGS) $(CONLY_FLAGS_BASE) -c $< -o $@
+	$(CC) $(CFLAGS) $(CONLY_FLAGS_BASE) -c -MMD -MP $< -o $@
 
 %.o: %.cpp
-	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
+	$(CC) $(CFLAGS) -fno-rtti -c -MMD -MP $< -o $@
 
 clean:
-	rm -f $(CLEAN_OBJS) $(TARGET)
+	rm -f $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
+
+-include $(DEP)
