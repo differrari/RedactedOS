@@ -1,0 +1,17 @@
+#pragma once
+#include "types.h"
+#include "net/transport_layer/csocket_udp.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+uint16_t sntp_get_pid(void);
+bool sntp_is_running(void);
+void sntp_set_pid(uint16_t p);
+socket_handle_t sntp_socket_handle(void);
+void sntp_daemon_entry(void);
+
+#ifdef __cplusplus
+}
+#endif

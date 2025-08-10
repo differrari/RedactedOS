@@ -4,7 +4,7 @@
 #include "std/memfunctions.h"
 #include "process/scheduler.h"
 #include "math/math.h"
-#include "math/rng.h"
+#include "math/rng.h"+
 
 #include "networking/network.h"
 #include "net/application_layer/dhcp.h"
@@ -13,8 +13,6 @@
 #include "net/link_layer/arp.h"
 
 #include "net/transport_layer/csocket_udp.h"
-
-#include "../net.h"
 
 extern void      sleep(uint64_t ms);
 extern uintptr_t malloc(uint64_t size);
@@ -53,7 +51,7 @@ static uint16_t g_pid_dhcpd = 0xFFFF;
 
 static socket_handle_t g_sock = 0;
 
-uint16_t get_dhcp_pid() { return g_pid_dhcpd; }
+uint16_t dhcp_get_pid() { return g_pid_dhcpd; }
 bool dhcp_is_running() { return g_pid_dhcpd != 0xFFFF; }
 void dhcp_set_pid(uint16_t p){ g_pid_dhcpd = p;    }
 void dhcp_force_renew() { g_force_renew = true; }
@@ -248,8 +246,7 @@ static void dhcp_fsm_once()
 }
 
 void dhcp_daemon_entry(){
-    KP("[DHCP] daemon start pid=%i", get_current_proc_pid());
-    g_pid_dhcpd = (uint16_t)get_current_proc_pid();
+    dhcp_set_pid(get_current_proc_pid());
     g_sock = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dhcpd);
     if(socket_bind_udp(g_sock, 68) != 0){
         KP("[DHCP] bind failed\n");
@@ -336,16 +333,12 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
         uint32_t t1_net;
         memcpy(&t1_net, &p->options[idx+2], 4);
         cfg_local.rt->t1 = __builtin_bswap32(t1_net);
-    } else {
-        cfg_local.rt->t1 = cfg_local.rt->lease / 2;
     }
     idx = dhcp_parse_option(p, 59);
     if (idx != UINT16_MAX && p->options[idx+1] >= 4) {
         uint32_t t2_net;
         memcpy(&t2_net, &p->options[idx+2], 4);
         cfg_local.rt->t2 = __builtin_bswap32(t2_net);
-    } else {
-        cfg_local.rt->t2 = cfg_local.rt->t1 * 2;
     }
 
     idx = dhcp_parse_option(p, 54);
@@ -355,13 +348,16 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
         cfg_local.rt->server_ip = __builtin_bswap32(srv_net);
         req->server_ip = srv_net;
     }
+
+    if (cfg_local.rt->dns[0] == 0 && cfg_local.gw != 0) {
+        cfg_local.rt->dns[0] = cfg_local.gw;
+    }
+
     uint32_t bcast = ipv4_broadcast(cfg_local.ip, cfg_local.mask);
     static const uint8_t bmac[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
     arp_table_put(bcast, bmac, 0, true);
 
     ipv4_set_cfg(&cfg_local);
-
-    kprintf("Local IP: %i.%i.%i.%i",FORMAT_IP(cfg_local.ip));
 
     g_t1_left_ms = cfg_local.rt->t1 * 1000;
     g_t2_left_ms = cfg_local.rt->t2 * 1000;

@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 void dhcp_daemon_entry();
-uint16_t get_dhcp_pid();
+uint16_t dhcp_get_pid();
 bool dhcp_is_running();
 void dhcp_set_pid(uint16_t pid);
 

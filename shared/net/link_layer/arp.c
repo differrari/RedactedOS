@@ -27,7 +27,6 @@ void arp_set_pid(uint16_t pid) { g_arp_pid = pid; }
 uint16_t arp_get_pid() { return g_arp_pid; }
 
 void arp_table_init() {
-    KP("[ARP] init");
     memset(g_arp_table, 0, sizeof(g_arp_table));
     init = true;
     arp_table_init_static_defaults();
@@ -154,6 +153,7 @@ bool arp_can_reply() {
 }
 
 void arp_daemon_entry() {
+    arp_set_pid(get_current_proc_pid());
     while (1){
         const net_cfg_t *cfg = ipv4_get_cfg();
         if(cfg && cfg->ip != 0 && cfg->mode != NET_MODE_DISABLED) break;

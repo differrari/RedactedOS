@@ -81,6 +81,7 @@ bool NetworkDispatch::enqueue_frame(const sizedptr &frame)
 
 void NetworkDispatch::net_task()
 {
+    network_net_set_pid(get_current_proc_pid());
     for (;;) {
         bool did_work = false;
         sizedptr pkt;
