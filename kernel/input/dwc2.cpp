@@ -57,7 +57,7 @@ bool DWC2Driver::init() {
     //Device setup0
 
     host->port |= (1 << 12);
-    
+
     if (!wait(&host->port, 1, true, 2000)){
         kprintf("[DWC2] No device connected %x",host->port);
         return true;
@@ -69,7 +69,7 @@ bool DWC2Driver::init() {
     }
 
     channel_map = IndexMap<uint16_t>(127 * 5);
-    usb_manager = new USBManager(127); 
+    usb_manager = new USBManager(127);
 
     kprintf("Port reset %x",host->port);
 
@@ -107,10 +107,10 @@ bool DWC2Driver::make_transfer(dwc2_host_channel *channel, bool in, uint8_t pid,
 
     channel->cchar &= ~(1 << 15);
     channel->cchar |= ((in ? 1 : 0) << 15);
-    
+
     channel->cchar &= ~(1 << 30);
     channel->cchar &= ~(1 << 31);
-    channel->cchar |= (1 << 31); 
+    channel->cchar |= (1 << 31);
 
     if (!wait(&channel->interrupt, 1, true, 2000)){
         kprintf("[DWC2 error] Transfer timed out.");
@@ -121,11 +121,11 @@ bool DWC2Driver::make_transfer(dwc2_host_channel *channel, bool in, uint8_t pid,
 }
 
 bool DWC2Driver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uint8_t rType, uint8_t request, uint8_t type, uint16_t descriptor_index, uint16_t wIndex, uint16_t descriptor_size, void *out_descriptor){
-    
+
     usb_setup_packet packet = {
         .bmRequestType = rType,
         .bRequest = request,
-        .wValue = (type << 8) | descriptor_index,
+        .wValue = (uint16_t)((type << 8) | descriptor_index),
         .wIndex = wIndex,
         .wLength = descriptor_size
     };
@@ -156,26 +156,26 @@ bool DWC2Driver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
 }
 
 bool DWC2Driver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value, usb_device_types type){
-    
+
     uint8_t ep_address = endpoint->bEndpointAddress;
     uint8_t ep_num = ep_address & 0x0F;
     uint8_t ep_dir = (ep_address & 0x80) >> 7;
-    
+
     uint8_t ep_type = endpoint->bmAttributes & 0x03; // 0 = Control, 1 = Iso, 2 = Bulk, 3 = Interrupt
-    
+
     kprintf("[DWC2] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
-    
+
     //Configure endpoint
     request_sized_descriptor(address, 0, 0x00, 0x09, 0, configuration_value, 0, 0, 0);
-    
+
     uint8_t conf;
     request_sized_descriptor(address, 0, 0x80, 0x08, 0, 0, 0, 1, &conf);
-    
+
     if (!conf){
         kprintf("Failed to set configuration for device");
         return false;
     }
-    
+
     dwc2_host_channel *channel = get_channel(channel_map[address << 8]);
     endpoint_channel = get_channel(assign_channel(address, ep_num, ep_type));
     if (channel->splt)
@@ -212,11 +212,11 @@ bool DWC2Driver::poll(uint8_t address, uint8_t endpoint, void *out_buf, uint16_t
     endpoint_channel->intmask = 0xFFFFFFFF;
 
     endpoint_channel->interrupt = 0xFFFFFFFF;
-    
+
     endpoint_channel->cchar &= ~(1 << 30);
     endpoint_channel->cchar &= ~(1 << 31);
 
-    endpoint_channel->cchar |= (1 << 31); 
+    endpoint_channel->cchar |= (1 << 31);
 
     if (!wait(&endpoint_channel->interrupt, 1, true, 10)){
         return false;
