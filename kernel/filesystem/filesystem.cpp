@@ -99,7 +99,9 @@ size_t read_file(file *descriptor, char* buf, size_t size){
     })->data;
     if (!file.mod) return 0;
     size_t adj_size = min(size,file.file_size);
-    return file.mod->read(descriptor, buf, adj_size, 0);
+    size_t amount_read = file.mod->read(descriptor, buf, adj_size, 0);
+    descriptor->cursor += amount_read;
+    return amount_read;
 }
 
 size_t write_file(file *descriptor, const char* buf, size_t size){

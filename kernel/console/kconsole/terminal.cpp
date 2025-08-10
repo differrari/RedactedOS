@@ -4,6 +4,7 @@
 #include "../serial/uart.h"
 #include "std/std.hpp"
 #include "filesystem/filesystem.h"
+#include "bin/cat.h"
 
 void Terminal::update(){
     if (!command_running) handle_input();
@@ -22,34 +23,32 @@ void Terminal::end_command(){
 }
 
 void Terminal::TMP_cat(const char *args){
+    process_t *cat = create_cat_process(args);
+    string s = string_format("/proc/%i/out",cat->id);
     file fd;
-    if (open_file(args, &fd) != FS_RESULT_SUCCESS) {
-        string s = string_format("Path not found %s", args);
-        put_string(s.data);
-        free(s.data,s.mem_length);
-        return;
+    open_file(s.data, &fd);
+    free(s.data, s.mem_length);
+    while (cat->state != process_t::STOPPED){
+        size_t amount = 0x100;
+        char *buf = (char*)malloc(amount);
+        read_file(&fd, buf, amount);
+        put_string(buf);
+        free(buf, amount);
     }
-    size_t req_size = 0x100;
-    char* buf = (char*)malloc(req_size);
-    if (read_file(&fd, buf, req_size) == 0){
-        put_string("Error reading file");
-        return;
-    }
-    put_string(buf);
 }
 
 void Terminal::run_command(){
     const char* fullcmd = get_current_line();
     const char* args = seek_to(fullcmd, ' ');
     string cmd = string_ca_max(fullcmd, args - fullcmd - 1);
-    string s = string_format("Executing command %s with args %s", cmd.data, args);
+    string s = string_format("Unknown command %s with args %s", cmd.data, args);
 
     put_char('\r');
     put_char('\n');
 
     if (strcmp(cmd.data, "cat", true) == 0)
         TMP_cat(args);
-    if (strcmp(cmd.data, "test", true) == 0)
+    else if (strcmp(cmd.data, "test", true) == 0)
         TMP_test(args);
     else put_string(s.data);
     
