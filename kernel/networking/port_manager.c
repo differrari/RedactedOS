@@ -24,13 +24,13 @@ int port_alloc_ephemeral(protocol_t proto,
                          port_recv_handler_t handler)
 {
     if (!proto_valid(proto)) return -1;
-    for (uint16_t p = PORT_MIN_EPHEMERAL; p <= PORT_MAX_EPHEMERAL; ++p) {
+    for (int p = PORT_MIN_EPHEMERAL; p <= PORT_MAX_EPHEMERAL; ++p) {
         port_entry_t *e = &g_port_table[proto][p];
         if (!e->used) {
             e->used = true;
             e->pid = pid;
             e->handler = handler;
-            return (int)p;
+            return p;
         }
     }
     return -1;
@@ -65,7 +65,7 @@ bool port_unbind(protocol_t proto,
 
 void port_unbind_all(uint16_t pid) {
     for (int pr = 0; pr < PROTO_COUNT; ++pr) {
-        for (uint16_t p = 1; p < MAX_PORTS; ++p) {
+        for (int p = 1; p < MAX_PORTS; ++p) {
             port_entry_t *e = &g_port_table[pr][p];
             if (e->used && e->pid == pid) {
                 e->used    = false;
