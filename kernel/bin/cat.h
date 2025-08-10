@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 
-process_t* create_cat_process(int argc, const char *argv[]);
+int run_cat(int argc, char* argv[]);
 
 #ifdef __cplusplus
 }

@@ -12,7 +12,7 @@ protected:
     const char** parse_arguments(char *args, int *count);
 
     //TODO: proper commands
-    void TMP_cat(int argc, const char *args[]);
+    bool exec_cmd(const char *cmd, int argc, const char *args[]);
     void TMP_test(int argc, const char *args[]);
 
     bool command_running;

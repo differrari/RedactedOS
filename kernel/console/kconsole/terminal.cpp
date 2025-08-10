@@ -4,7 +4,7 @@
 #include "../serial/uart.h"
 #include "std/std.hpp"
 #include "filesystem/filesystem.h"
-#include "bin/cat.h"
+#include "bin/bin_mod.h"
 
 void Terminal::update(){
     if (!command_running) handle_input();
@@ -22,22 +22,24 @@ void Terminal::end_command(){
     set_text_color(default_text_color);
 }
 
-void Terminal::TMP_cat(int argc, const char *args[]){
-    process_t *cat = create_cat_process(argc, args);
-    string s = string_format("/proc/%i/out",cat->id);
+bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
+    process_t *proc = exec(cmd, argc, argv);
+    if (!proc) return false;
+    string s = string_format("/proc/%i/out",proc->id);
     file fd;
     open_file(s.data, &fd);
     free(s.data, s.mem_length);
-    while (cat->state != process_t::STOPPED){
+    while (proc->state != process_t::STOPPED){
         size_t amount = 0x100;
         char *buf = (char*)malloc(amount);
         read_file(&fd, buf, amount);
         put_string(buf);
         free(buf, amount);
     }
-    string exit_msg = string_format("Process %i ended with exit code %i.",cat->id, cat->exit_code);
+    string exit_msg = string_format("Process %i ended with exit code %i.",proc->id, proc->exit_code);
     put_string(exit_msg.data);
     free(exit_msg.data, exit_msg.mem_length);
+    return true;
 }
 
 const char** Terminal::parse_arguments(char *args, int *count){
@@ -81,14 +83,14 @@ void Terminal::run_command(){
     put_char('\r');
     put_char('\n');
 
-    if (strcmp(cmd.data, "cat", true) == 0)
-        TMP_cat(argc, argv);
-    else if (strcmp(cmd.data, "test", true) == 0)
-        TMP_test(argc, argv);
-    else {
-        string s = string_format("Unknown command %s with args %s", cmd.data, args);
-        put_string(s.data);
-        free(s.data, s.mem_length);
+    if (!exec_cmd(cmd.data, argc, argv)){
+        if (strcmp(cmd.data, "test", true) == 0){
+            TMP_test(argc, argv);
+        } else {
+            string s = string_format("Unknown command %s with args %s", cmd.data, args);
+            put_string(s.data);
+            free(s.data, s.mem_length);
+        }
     }
     
     free(cmd.data, cmd.mem_length);

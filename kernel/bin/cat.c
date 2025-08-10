@@ -34,7 +34,3 @@ int run_cat(int argc, char* argv[]){
     free(s.data, s.mem_length);
     return 0;
 }
-
-process_t* create_cat_process(int argc, const char *argv[]){
-    return create_kernel_process("cat", run_cat, argc, argv);
-}
