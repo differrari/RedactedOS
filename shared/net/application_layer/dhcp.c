@@ -67,10 +67,10 @@ uint16_t dhcp_parse_option(const dhcp_packet *p, uint16_t wanted) {
         }
         i += len;
     }
-    return UINT16_MAX; 
+    return UINT16_MAX;
 }
 
 uint8_t dhcp_option_len(const dhcp_packet *p, uint16_t idx) {
-    if (idx == 0 || idx + 1 >= sizeof(p->options)) return 0;
+    if (idx == 0 || idx + 1u >= sizeof(p->options)) return 0;
     return p->options[idx+1];
 }
