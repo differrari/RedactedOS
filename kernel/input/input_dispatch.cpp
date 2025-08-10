@@ -136,23 +136,25 @@ bool input_init(){
     }
 }
 
-void input_process_poll(){
+int input_process_poll(int argc, char* argv[]){
     while (1){
         input_driver->poll_inputs();
     }
+    return 1;
 }
 
-void input_process_fake_interrupts(){
+int input_process_fake_interrupts(int argc, char* argv[]){
     while (1){
         input_driver->handle_interrupt();
     }
+    return 1;
 }
 
 void init_input_process(){
     if (!input_driver->use_interrupts)
-        create_kernel_process("input_poll", &input_process_poll);
+        create_kernel_process("input_poll", &input_process_poll, 0, 0);
     if (input_driver->quirk_simulate_interrupts)
-        create_kernel_process("input_int_mock", &input_process_fake_interrupts);
+        create_kernel_process("input_int_mock", &input_process_fake_interrupts, 0, 0);
 }
 
 void handle_input_interrupt(){

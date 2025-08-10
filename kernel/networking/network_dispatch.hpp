@@ -15,7 +15,7 @@ public:
     void handle_download_interrupt();
     void handle_upload_interrupt();
     bool enqueue_frame(const sizedptr&);
-    void net_task();
+    int net_task();
     bool dequeue_packet_for(uint16_t, sizedptr*);
 
     void set_net_pid(uint16_t pid);

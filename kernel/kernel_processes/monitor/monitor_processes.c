@@ -145,7 +145,7 @@ void draw_process_view(){
     print_process_info();
 }
 
-void monitor_procs(){
+int monitor_procs(){
     keypress kp = {
         .modifier = KEY_MOD_LALT,
         .keys[0] = 0x15//R
@@ -163,13 +163,14 @@ void monitor_procs(){
         if (active)
             draw_process_view();
     }
+    return 1;
 }
 
 process_t* start_process_monitor(){
 #if QEMU
-    return create_kernel_process("procmonitor",monitor_procs);
+    return create_kernel_process("procmonitor",monitor_procs, 0, 0);
 #else 
     //TODO: disabled process monitor since shortcuts seem broken on rpi
-    return 0x0;//create_kernel_process("procmonitor",monitor_procs);
+    return 0x0;//create_kernel_process("procmonitor",monitor_procs, 0, 0);
 #endif
 }

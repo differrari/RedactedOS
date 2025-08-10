@@ -247,13 +247,13 @@ static void dhcp_fsm_once()
     if (old != g_state) log_state_change(old, g_state);
 }
 
-void dhcp_daemon_entry(){
+int dhcp_daemon_entry(){
     KP("[DHCP] daemon start pid=%i", get_current_proc_pid());
     g_pid_dhcpd = (uint16_t)get_current_proc_pid();
     g_sock = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dhcpd);
     if(socket_bind_udp(g_sock, 68) != 0){
         KP("[DHCP] bind failed\n");
-        return;
+        return 1;
     }
 
     for(;;){

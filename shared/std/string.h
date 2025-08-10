@@ -24,6 +24,7 @@ string string_ca_max(const char *array, uint32_t max_length);
 string string_c(const char c);
 string string_from_hex(uint64_t value);
 bool string_equals(string a, string b);
+string string_replace(const char *str, char orig, char repl);
 string string_format(const char *fmt, ...);
 string string_format_va(const char *fmt, va_list args);
 __attribute__((used))
@@ -37,6 +38,7 @@ bool strcont(const char *a, const char *b);
 int strstart(const char *a, const char *b, bool case_insensitive);
 int strend(const char *a, const char *b, bool case_insensitive);
 int strindex(const char *a, const char *b);
+int count_occurrences(const char* str, char c);
 
 uint64_t parse_hex_u64(const char* str, size_t size);
 uint64_t parse_int_u64(const char* str, size_t size);

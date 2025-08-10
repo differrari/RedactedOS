@@ -9,7 +9,7 @@ WindowManager manager;
 
 bool screen_overlay;
 
-extern "C" void manage_windows(){
+extern "C" int manage_windows(int argc, char* argv[]){
     manager.initialize();
     while (1)
     {
@@ -26,5 +26,5 @@ void resume_window_draw(){
 }
 
 extern "C" process_t* start_windows(){
-    return create_kernel_process("winmanager",manage_windows);
+    return create_kernel_process("winmanager",manage_windows, 0, 0);
 }

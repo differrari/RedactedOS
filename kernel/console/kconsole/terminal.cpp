@@ -22,8 +22,8 @@ void Terminal::end_command(){
     set_text_color(default_text_color);
 }
 
-void Terminal::TMP_cat(const char *args){
-    process_t *cat = create_cat_process(args);
+void Terminal::TMP_cat(int argc, const char *args[]){
+    process_t *cat = create_cat_process(argc, args);
     string s = string_format("/proc/%i/out",cat->id);
     file fd;
     open_file(s.data, &fd);
@@ -37,23 +37,60 @@ void Terminal::TMP_cat(const char *args){
     }
 }
 
+const char** Terminal::parse_arguments(char *args, int *count){
+    *count = 0;
+    const char* prev = args;
+    char* next_args;
+    const char **argv = (const char**)malloc(16 * sizeof(uintptr_t));
+    do {
+        next_args = (char*)seek_to(args, ' ');
+        argv[*count] = prev;
+        (*count)++;
+        prev = next_args;
+        *(next_args - 1) = 0;
+        kprintf("Found an argument %s",prev);
+    } while(prev != next_args);
+    if (*next_args){
+        argv[*count] = prev;
+        (*count)++;
+        kprintf("Ended at %s",next_args);
+    }
+    return argv;
+}
+
 void Terminal::run_command(){
     const char* fullcmd = get_current_line();
     const char* args = seek_to(fullcmd, ' ');
-    string cmd = string_ca_max(fullcmd, args - fullcmd - 1);
-    string s = string_format("Unknown command %s with args %s", cmd.data, args);
+    
+    string cmd;
+    int argc = 0;
+    const char** argv; 
+    string args_copy;
+    
+    if (fullcmd == args){
+        cmd = string_l(fullcmd);
+    } else {
+        cmd = string_ca_max(fullcmd, args - fullcmd - 1);
+        args_copy = string_l(args);
+        argv = parse_arguments(args_copy.data, &argc);
+        kprintf("There are %i arguments",argc);
+    }
 
     put_char('\r');
     put_char('\n');
 
     if (strcmp(cmd.data, "cat", true) == 0)
-        TMP_cat(args);
+        TMP_cat(argc, argv);
     else if (strcmp(cmd.data, "test", true) == 0)
-        TMP_test(args);
-    else put_string(s.data);
+        TMP_test(argc, argv);
+    else {
+        string s = string_format("Unknown command %s with args %s", cmd.data, args);
+        put_string(s.data);
+        free(s.data, s.mem_length);
+    }
     
-    free(s.data, s.mem_length);
     free(cmd.data, cmd.mem_length);
+    if (args_copy.mem_length) free(args_copy.data, args_copy.mem_length);
     
     draw_cursor();
     gpu_flush();
@@ -62,10 +99,10 @@ void Terminal::run_command(){
 
 //TODO: implement the full state machine explained at https://vt100.net/emu/dec_ansi_parser & https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
 //The current implementation is not standard compliant and uses hex colors as [FF0000;
-void Terminal::TMP_test(const char* args){
+void Terminal::TMP_test(int argc, const char* args[]){
     // const char *term = seek_to(args, '\033');
     // if (*term == 0) return;
-    const char *term = seek_to(args, '[');
+    const char *term = seek_to(*args, '[');
     if (*term == 0) return;
     const char *next = seek_to(term, ';');
     uint64_t color = parse_hex_u64(term, next - term);

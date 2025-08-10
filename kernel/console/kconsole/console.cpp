@@ -20,7 +20,7 @@ extern "C" void kconsole_clear() {
     kconsole.clear();
 }
 
-extern "C" void toggle_visual(){
+extern "C" int toggle_visual(int argc, char* argv[]){
     keypress kp = {
         .modifier = KEY_MOD_LALT,
         .rsvd = 0,
@@ -46,8 +46,9 @@ extern "C" void toggle_visual(){
             terminal->update();
         }
     }
+    return 1;
 }
 
 process_t* start_terminal(){
-    return create_kernel_process("terminal",toggle_visual);
+    return create_kernel_process("terminal",toggle_visual, 0, 0);
 }

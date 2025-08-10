@@ -124,6 +124,16 @@ bool string_equals(string a, string b){
     return strcmp(a.data,b.data, false) == 0;
 }
 
+string string_replace(const char *str, char orig, char repl){
+    size_t str_size = strlen(str, 0);
+    char *buf = (char*)malloc(str_size+1);
+    for (size_t i = 0; i < str_size && str[i]; i++){
+        buf[i] = str[i] == orig ? repl : str[i];
+    }
+    buf[str_size] = 0;
+    return (string){ .data = buf, .length = str_size, .mem_length = str_size + 1};
+}
+
 string string_format(const char *fmt, ...){
     if (fmt == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0};
 
@@ -304,6 +314,15 @@ bool strcont(const char *a, const char *b){
         a++;
     }
     return 0;
+}
+
+int count_occurrences(const char* str, char c){
+    int count = 0;
+    while (*str) {
+        if (*str == c) count++;
+        str++;
+    }
+    return count;
 }
 
 bool utf16tochar(uint16_t* str_in, char* out_str, size_t max_len){

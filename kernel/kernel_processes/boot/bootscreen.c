@@ -94,7 +94,7 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
     }
 }
 
-void bootscreen(){
+int bootscreen(){
     disable_visual();
     gpu_clear(BG_COLOR);
     sys_focus_current();
@@ -114,8 +114,9 @@ void bootscreen(){
         }
         sleep(1000);
     }
+    return 0;
 }
 
 process_t* start_bootscreen(){
-    return create_kernel_process("bootscreen",bootscreen);
+    return create_kernel_process("bootscreen",bootscreen, 0, 0);
 }

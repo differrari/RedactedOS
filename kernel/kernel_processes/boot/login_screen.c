@@ -10,7 +10,7 @@
 #include "std/string.h"
 #include "syscalls/syscalls.h"
 
-void login_screen(){
+int login_screen(){
     sys_focus_current();
     sys_set_secure(true);
     char* buf = (char*)malloc(256);
@@ -69,8 +69,9 @@ void login_screen(){
         gpu_flush();
         free(s.data,s.mem_length);
     }
+    return 1;
 }
 
 process_t* present_login(){
-    return create_kernel_process("login",login_screen);
+    return create_kernel_process("login",login_screen, 0, 0);
 }
