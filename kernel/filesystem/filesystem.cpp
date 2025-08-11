@@ -4,18 +4,19 @@
 #include "fsdriver.hpp"
 #include "std/std.hpp"
 #include "console/kio.h"
+#include "dev/module_loader.h"
 #include "memory/page_allocator.h"
 #include "math/math.h"
-#include "dev/module_loader.h"
 
 FAT32FS *fs_driver;
 
 typedef struct {
     uint64_t file_id;
+    size_t file_size;
     driver_module* mod;
-} file_mod_kvp;
+} open_file_descriptors;
 
-LinkedList<file_mod_kvp> *open_files;
+LinkedList<open_file_descriptors> *open_files;
 
 bool boot_partition_init(){
     uint32_t f32_partition = mbr_find_partition(0xC);
@@ -75,34 +76,46 @@ bool init_boot_filesystem(){
 
 FS_RESULT open_file(const char* path, file* descriptor){
     const char *search_path = path;
-    kprintf("Getting module for path %s",(uintptr_t)search_path);
     driver_module *mod = get_module(&search_path);
-    kprintf("Got module %x for path %s",(uintptr_t)mod,(uintptr_t)search_path);
     if (!mod) return FS_RESULT_NOTFOUND;
     FS_RESULT result = mod->open(search_path, descriptor);
     if (!open_files)
-        open_files = new LinkedList<file_mod_kvp>();
+        open_files = new LinkedList<open_file_descriptors>();
     open_files->push_front({
         .file_id = descriptor->id,
+        .file_size = descriptor->size,
         .mod = mod
     });
     return result;
 }
 
 size_t read_file(file *descriptor, char* buf, size_t size){
-    if (!open_files) return 0;
-    driver_module *mod = open_files->find([descriptor](file_mod_kvp kvp){
+    if (!open_files){
+        kprintf("[FS] No open files");
+        return 0;
+    }
+    open_file_descriptors file = open_files->find([descriptor](open_file_descriptors kvp){
         return descriptor->id == kvp.file_id;
-    })->data.mod;
-    size_t adj_size = min(size,descriptor->size);//TODO: still possible to modify the fd's size
-    return mod->read(descriptor, buf, adj_size, 0);
+    })->data;
+    if (!file.mod) return 0;
+    size_t adj_size = min(size,file.file_size);
+    size_t amount_read = file.mod->read(descriptor, buf, adj_size, 0);
+    descriptor->cursor += amount_read;
+    return amount_read;
+}
+
+size_t write_file(file *descriptor, const char* buf, size_t size){
+    if (!open_files) return 0;
+    open_file_descriptors file = open_files->find([descriptor](open_file_descriptors kvp){
+        return descriptor->id == kvp.file_id;
+    })->data;
+    if (!file.mod) return 0;
+    return file.mod->write(descriptor, buf, size, 0);
 }
 
 sizedptr list_directory_contents(const char *path){
     const char *search_path = path;
-    kprintf("Getting module for path %s",(uintptr_t)search_path);
     driver_module *mod = get_module(&search_path);
-    kprintf("Got module %x for path %s",(uintptr_t)mod,(uintptr_t)search_path);
     if (!mod) return {0,0};
     return mod->readdir(search_path);
 }

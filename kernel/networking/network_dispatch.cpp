@@ -79,20 +79,18 @@ bool NetworkDispatch::enqueue_frame(const sizedptr &frame)
     return true;
 }
 
-void NetworkDispatch::net_task()
+int NetworkDispatch::net_task()
 {
     for (;;) {
         bool did_work = false;
         sizedptr pkt;
 
-        //rx
         if (!rx_queue.is_empty() && rx_queue.dequeue(pkt)) {
             did_work = true;
             eth_input(pkt.ptr, pkt.size);
             free_frame(pkt);
         }
 
-        //tx
         if (!tx_queue.is_empty() && tx_queue.dequeue(pkt)) {
             did_work = true;
             driver->send_packet(pkt);
@@ -101,6 +99,7 @@ void NetworkDispatch::net_task()
         if (!did_work)
             sleep(10);
     }
+    return 0;
 }
 
 bool NetworkDispatch::dequeue_packet_for(uint16_t pid, sizedptr *out)

@@ -10,35 +10,7 @@
 #include "std/string.h"
 #include "syscalls/syscalls.h"
 
-//TODO: properly handle keypad
-static const char hid_keycode_to_char[256] = {
-    [0x04] = 'a', [0x05] = 'b', [0x06] = 'c', [0x07] = 'd',
-    [0x08] = 'e', [0x09] = 'f', [0x0A] = 'g', [0x0B] = 'h',
-    [0x0C] = 'i', [0x0D] = 'j', [0x0E] = 'k', [0x0F] = 'l',
-    [0x10] = 'm', [0x11] = 'n', [0x12] = 'o', [0x13] = 'p',
-    [0x14] = 'q', [0x15] = 'r', [0x16] = 's', [0x17] = 't',
-    [0x18] = 'u', [0x19] = 'v', [0x1A] = 'w', [0x1B] = 'x',
-    [0x1C] = 'y', [0x1D] = 'z',
-    [0x1E] = '1', [0x1F] = '2', [0x20] = '3', [0x21] = '4',
-    [0x22] = '5', [0x23] = '6', [0x24] = '7', [0x25] = '8',
-    [0x26] = '9', [0x27] = '0',
-    [0x28] = '\n', [0x2C] = ' ', [0x2D] = '-', [0x2E] = '=',
-    [0x2F] = '[', [0x30] = ']', [0x31] = '\\', [0x33] = ';',
-    [0x34] = '\'', [0x35] = '`', [0x36] = ',', [0x37] = '.',
-    [0x38] = '/', [0x58] = '\n',
-};
-
-bool keypress_contains(keypress *kp, char key, uint8_t modifier){
-    if (kp->modifier != modifier) return false;//TODO: This is not entirely accurate, some modifiers do not change key
-
-    for (int i = 0; i < 6; i++)
-        if (kp->keys[i] == key)
-            return true;
-    return false;
-}
-
-__attribute__((section(".text.kcoreprocesses")))
-void login_screen(){
+int login_screen(){
     sys_focus_current();
     sys_set_secure(true);
     char* buf = (char*)malloc(256);
@@ -69,14 +41,14 @@ void login_screen(){
             for (int i = 0; i < 6; i++){
                 char key = kp.keys[i];
                 if (hid_keycode_to_char[(uint8_t)key]){
-                    if (key == KEY_ENTER || key == KEY_KEYPAD_ENTER){
+                    if (key == KEY_ENTER || key == KEY_KPENTER){
                         if (strcmp(buf,default_pwd, false) == 0){
                             free(buf, 256);
                             free(s.data,s.mem_length);
                             free(title.data,title.mem_length);
                             free(subtitle.data,subtitle.mem_length);
                             sys_set_secure(false);
-                            stop_current_process();
+                            stop_current_process(0);
                         } else
                             break;
                     }
@@ -97,8 +69,9 @@ void login_screen(){
         gpu_flush();
         free(s.data,s.mem_length);
     }
+    return 1;
 }
 
 process_t* present_login(){
-    return create_kernel_process("login",login_screen);
+    return create_kernel_process("login",login_screen, 0, 0);
 }

@@ -6,6 +6,7 @@
 typedef struct file {
     uint64_t id;
     size_t size;
+    uint64_t cursor;
 } file;
 
 typedef uint64_t file_offset;
@@ -17,6 +18,14 @@ typedef enum FS_RESULT {
 } FS_RESULT;
 
 #define VERSION_NUM(major,minor,patch,build) (uint64_t)((((uint64_t)major) << 48) | (((uint64_t)minor) << 32) | (((uint64_t)patch) << 16) | ((uint64_t)build))
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+uint64_t reserve_fd_id();
+#ifdef __cplusplus
+}
+#endif
 
 typedef struct driver_module {
     const char* name;

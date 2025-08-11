@@ -124,10 +124,20 @@ bool string_equals(string a, string b){
     return strcmp(a.data,b.data, false) == 0;
 }
 
+string string_replace(const char *str, char orig, char repl){
+    size_t str_size = strlen(str, 0);
+    char *buf = (char*)malloc(str_size+1);
+    for (size_t i = 0; i < str_size && str[i]; i++){
+        buf[i] = str[i] == orig ? repl : str[i];
+    }
+    buf[str_size] = 0;
+    return (string){ .data = buf, .length = str_size, .mem_length = str_size + 1};
+}
+
 string string_format(const char *fmt, ...){
     if (fmt == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0};
 
-    va_list args;
+    __attribute__((aligned(16))) va_list args;
     va_start(args, fmt);
     string result = string_format_va(fmt, args);
     va_end(args);
@@ -160,7 +170,7 @@ size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
                 buf[len++] = (char)val;
                 
             } else if (fmt[i] == 's') {
-                 char *str = ( char *)va_arg(args, uintptr_t);
+                char *str = ( char *)va_arg(args, uintptr_t);
                 for (uint32_t j = 0; str[j] && len < 255; j++) buf[len++] = str[j];
                 
             } else if (fmt[i] == 'i') {
@@ -306,6 +316,15 @@ bool strcont(const char *a, const char *b){
     return 0;
 }
 
+int count_occurrences(const char* str, char c){
+    int count = 0;
+    while (*str) {
+        if (*str == c) count++;
+        str++;
+    }
+    return count;
+}
+
 bool utf16tochar(uint16_t* str_in, char* out_str, size_t max_len){
     size_t out_i = 0;
     for (size_t i = 0; i < max_len && str_in[i]; i++){
@@ -316,7 +335,7 @@ bool utf16tochar(uint16_t* str_in, char* out_str, size_t max_len){
     return true;
 }
 
-uint64_t parse_hex_u64(char* str, size_t size){
+uint64_t parse_hex_u64(const char* str, size_t size){
     uint64_t result = 0;
     for (uint32_t i = 0; i < size; i++){
         char c = str[i];
@@ -330,6 +349,17 @@ uint64_t parse_hex_u64(char* str, size_t size){
     return result;
 }
 
+uint64_t parse_int_u64(const char* str, size_t size){
+    uint64_t result = 0;
+    for (uint32_t i = 0; i < size; i++){
+        char c = str[i];
+        uint8_t digit = 0;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else break;
+        result = (result * 10) + digit;
+    }
+    return result;
+}
 
 string string_from_const(const char *lit)
 {
@@ -377,4 +407,11 @@ void string_append_bytes(string *dest, const void *buf, uint32_t len)
     if (!len) return;
     string tmp = { (char *)buf, len, len };
     string_concat_inplace(dest, tmp);
+}
+
+const char* seek_to(const char *string, char character){
+    while (*string != character && *string != '\0')
+        string++;
+    string++;
+    return string;
 }

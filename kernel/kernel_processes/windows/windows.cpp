@@ -9,7 +9,7 @@ WindowManager manager;
 
 bool screen_overlay;
 
-extern "C" __attribute__((section(".text.kcoreprocesses"))) void manage_windows(){
+extern "C" int manage_windows(int argc, char* argv[]){
     manager.initialize();
     while (1)
     {
@@ -17,16 +17,14 @@ extern "C" __attribute__((section(".text.kcoreprocesses"))) void manage_windows(
     }
 }
 
-__attribute__((section(".text.kcoreprocesses")))
 void pause_window_draw(){
     manager.pause();
 }
 
-__attribute__((section(".text.kcoreprocesses")))
 void resume_window_draw(){
     manager.resume();
 }
 
 extern "C" process_t* start_windows(){
-    return create_kernel_process("winmanager",manage_windows);
+    return create_kernel_process("winmanager",manage_windows, 0, 0);
 }

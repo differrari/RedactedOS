@@ -18,7 +18,7 @@ extern void free(void *ptr, size_t size);
 extern bool read_key(keypress *kp);
 
 extern void sleep(uint64_t time);
-extern void halt();
+extern void halt(uint32_t exit_code);
 
 extern void clear_screen(color color);
 extern void gpu_flush_data();

@@ -115,20 +115,20 @@ void http_server_hello_entry()
     uint16_t pid = get_current_proc_pid();
     http_server_handle_t srv = http_server_create(pid);
     if (!srv) {
-        stop_current_process();
+        stop_current_process(1);
         return;
     }
 
     if (http_server_bind(srv, 80) < 0) {
         http_server_destroy(srv);
-        stop_current_process();
+        stop_current_process(2);
         return;
     }
 
     if (http_server_listen(srv, 4) < 0) {
         http_server_close(srv);
         http_server_destroy(srv);
-        stop_current_process();
+        stop_current_process(3);
         return;
     }
 
@@ -277,41 +277,41 @@ void test_network()
     }
 }
 
-void net_test_entry(){
+int net_test_entry(){
     test_network();
-    stop_current_process();
+    return 0;
 }
 
-void ip_waiter_entry()
+int ip_waiter_entry()
 {
     for (;;) {
         const net_cfg_t *cfg = ipv4_get_cfg();
         if (cfg && cfg->mode != NET_MODE_DISABLED && cfg->ip != 0) {
-            create_kernel_process("net_test", net_test_entry);
+            create_kernel_process("net_test", net_test_entry, 0, 0);
             break;
         }
         sleep(200);
     }
-    stop_current_process();
+    return 0;
 }
 
 process_t* launch_net_process()
 {
     const net_cfg_t *cfg = ipv4_get_cfg();
 
-    process_t* net  = create_kernel_process("net_net",  network_net_task_entry);
+    process_t* net  = create_kernel_process("net_net",  network_net_task_entry, 0, 0);
     network_net_set_pid(net ? net->id : 0xFFFF);
 
-    process_t* arp = create_kernel_process("arp_daemon", arp_daemon_entry);
+    process_t* arp = create_kernel_process("arp_daemon", arp_daemon_entry, 0, 0);
     arp_set_pid(arp ? arp->id : 0xFFFF);
 
     if (cfg && cfg->mode != NET_MODE_DISABLED && cfg->ip != 0) {
-        create_kernel_process("net_test", net_test_entry);
+        create_kernel_process("net_test", net_test_entry, 0, 0);
         return NULL;
     }
 
-    process_t* dhcp = create_kernel_process("dhcp_daemon", dhcp_daemon_entry);
+    process_t* dhcp = create_kernel_process("dhcp_daemon", dhcp_daemon_entry, 0, 0);
     dhcp_set_pid(dhcp ? dhcp->id : 0xFFFF);
-    create_kernel_process("ip_waiter", ip_waiter_entry);
+    create_kernel_process("ip_waiter", ip_waiter_entry, 0, 0);
     return dhcp;
 }

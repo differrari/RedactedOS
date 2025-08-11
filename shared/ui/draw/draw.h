@@ -6,6 +6,8 @@ extern "C" {
 #include "ui/graphic_types.h"
 #include "std/string.h"
 
+#define CHAR_SIZE 8
+
 int try_merge(gpu_rect* a, gpu_rect* b);
 void mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 

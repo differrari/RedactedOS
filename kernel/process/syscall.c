@@ -14,10 +14,15 @@
 #include "exceptions/timer.h"
 #include "networking/network.h"
 #include "networking/port_manager.h"
+#include "filesystem/filesystem.h"
+
+int syscall_depth = 0;
 
 void sync_el0_handler_c(){
     save_context_registers();
     save_return_address_interrupt();
+
+    syscall_depth++;
     
     if (ksp > 0)
         asm volatile ("mov sp, %0" :: "r"(ksp));
@@ -56,7 +61,7 @@ void sync_el0_handler_c(){
         switch (iss)
         {
         case 0:
-            void* page_ptr = (void*)get_current_heap();
+            void* page_ptr = syscall_depth > 1 ? (void*)get_proc_by_pid(1)->heap : (void*)get_current_heap();
             if ((uintptr_t)page_ptr == 0x0){
                 handle_exception_with_info("Wrong process heap state", iss);
             }
@@ -68,7 +73,6 @@ void sync_el0_handler_c(){
         case 3:
             kprint((const char *)x0);
             break;
-
         case 5:
             keypress *kp = (keypress*)x0;
             result = sys_read_input_current(kp);
@@ -125,7 +129,7 @@ void sync_el0_handler_c(){
             break;
         
         case 33:
-            stop_current_process();
+            stop_current_process(x0);
             break;
 
         case 40:
@@ -166,18 +170,27 @@ void sync_el0_handler_c(){
             break;
         }
     } else {
-        //We could handle more exceptions now, such as x25 (unmasked x96) = data abort
+        switch (ec) {
+            case 0x21:
+                uint64_t far;
+                asm volatile ("mrs %0, far_el1" : "=r"(far));
+                if (far == 0){
+                    kprintf("Process has exited %x",x0);
+                    stop_current_process(x0);
+                }
+        }
+        //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
         if (currentEL == 1)
             handle_exception_with_info("UNEXPECTED EXCEPTION",ec);
         else {
             uint64_t far;
             asm volatile ("mrs %0, far_el1" : "=r"(far));
             kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
-            stop_current_process();
+            stop_current_process(ec);
         }
     }
+    syscall_depth--;
     if (result > 0)
         save_syscall_return(result);
     process_restore();
 }
-

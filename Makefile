@@ -1,21 +1,4 @@
-ARCH       ?= aarch64-none-elf
-CC         := $(ARCH)-gcc
-LD         := $(ARCH)-ld
-AR         := $(ARCH)-ar
-OBJCOPY    := $(ARCH)-objcopy
-
-CFLAGS_BASE  ?= -g -O0 -nostdlib -ffreestanding \
-                -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables \
-                -Wall -Wextra -Wno-unused-parameter -Wno-address-of-packed-member -mcpu=cortex-a72
-CONLY_FLAGS_BASE ?= -std=c17
-LDFLAGS_BASE ?=
-
-LOAD_ADDR      ?= 0x41000000
-XHCI_CTX_SIZE  ?= 32
-QEMU           ?= true
-MODE           ?= virt
-
-export ARCH CC LD AR OBJCOPY CFLAGS_BASE CONLY_FLAGS_BASE LDFLAGS_BASE LOAD_ADDR XHCI_CTX_SIZE QEMU
+include common.mk
 
 OS      := $(shell uname)
 FS_DIRS := fs/redos/user
@@ -42,13 +25,13 @@ kernel:
 	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU)
 
 clean:
-	$(MAKE) -C shared clean
-	$(MAKE) -C user   clean
-	$(MAKE) -C kernel clean
+	$(MAKE) -C shared $@
+	$(MAKE) -C user   $@
+	$(MAKE) -C kernel $@
 	@echo "removing fs dirs"
-	rm -rf $(FS_DIRS)
+	$(RM) -r $(FS_DIRS)
 	@echo "removing images"
-	rm -f kernel.img kernel.elf disk.img dump
+	$(RM) kernel.img kernel.elf disk.img dump
 
 raspi:
 	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true all
@@ -63,11 +46,11 @@ run:
 debug:
 	$(MAKE) $(MODE)
 	./rundebug MODE=$(MODE) $(ARGS)
-  
+
 dump:
 	$(OBJCOPY) -O binary kernel.elf kernel.img
-	aarch64-none-elf-objdump -D kernel.elf > dump
-  
+	$(ARCH)-objdump -D kernel.elf > dump
+
 install:
 	$(MAKE) clean
 	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=false all
@@ -89,4 +72,6 @@ help:
   make debug        build and run with debugger\n\
   make dump         disassemble kernel.elf\n\
   make install      create raspi kernel and mount it on a bootable partition\n\
-  make prepare-fs   create directories for the filesystem\n\n"
+  make prepare-fs   create directories for the filesystem\n\n"\
+  \n\
+  Use 'make V=1' for verbose build output.

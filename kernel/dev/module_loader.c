@@ -17,7 +17,6 @@ bool unload_module(driver_module *module){
 int fs_search(void *node, void *key){
     driver_module* module = (driver_module*)node;
     const char** path = (const char**)key;
-    kprintf("Comparing %s to %s",(uintptr_t)*path,(uintptr_t)module->mount);
     int index = strstart(*path, module->mount, false);
     if (index == (int)strlen(module->mount,0)){ 
         *path += index;
@@ -27,7 +26,6 @@ int fs_search(void *node, void *key){
 }
 
 driver_module* get_module(const char **full_path){
-    kprintf("Seeking module %s",(uintptr_t)*full_path);
     clinkedlist_node_t *node = clinkedlist_find(modules, (void*)full_path, fs_search);
-    return ((driver_module*)node->data);
+    return node ? ((driver_module*)node->data) : 0;
 }

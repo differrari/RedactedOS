@@ -9,6 +9,10 @@
 #include "exceptions/timer.h"
 #include "console/kconsole/kconsole.h"
 #include "syscalls/syscalls.h"
+#include "std/string.h"
+#include "data_struct/linked_list.h"
+#include "std/memfunctions.h"
+#include "math/math.h"
 
 extern void save_context(process_t* proc);
 extern void save_pc_interrupt(process_t* proc);
@@ -31,7 +35,16 @@ typedef struct sleep_tracker {
 sleep_tracker sleeping[MAX_PROCS];
 uint16_t sleep_count;
 
-uint64_t ksp;
+clinkedlist_t *proc_opened_files;
+
+typedef struct proc_open_file {
+    uint64_t fid;
+    size_t file_size;
+    uintptr_t buffer;
+    uint16_t pid;
+} proc_open_file;
+
+void* proc_page;
 
 void save_context_registers(){
     save_context(&processes[current_proc]);
@@ -101,6 +114,7 @@ void reset_process(process_t *proc){
     pfree((void*)proc->stack-proc->stack_size,proc->stack_size);
     proc->pc = 0;
     proc->spsr = 0;
+    proc->exit_code = 0;
     for (int j = 0; j < 31; j++)
         proc->regs[j] = 0;
     for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++)
@@ -121,6 +135,7 @@ void reset_process(process_t *proc){
 }
 
 void init_main_process(){
+    proc_page = palloc(0x1000, true, false, false);
     process_t* proc = &processes[0];
     reset_process(proc);
     proc->id = next_proc_index++;
@@ -128,8 +143,8 @@ void init_main_process(){
     proc->heap = (uintptr_t)palloc(0x1000, true, false, false);
     proc->stack_size = 0x1000;
     proc->stack = (uintptr_t)palloc(proc->stack_size,true,false,true);
-    ksp = proc->stack + proc->stack_size;
     proc->sp = ksp;
+    proc->output = (uintptr_t)palloc(0x1000, true, false, true);
     name_process(proc, "kernel");
     proc_count++;
 }
@@ -165,11 +180,12 @@ void name_process(process_t *proc, const char *name){
         proc->name[i] = name[i];
 }
 
-void stop_process(uint16_t pid){
+void stop_process(uint16_t pid, uint32_t exit_code){
     disable_interrupt();
     process_t *proc = get_proc_by_pid(pid);
     if (proc->state != READY) return;
     proc->state = STOPPED;
+    proc->exit_code = exit_code;
     if (proc->focused)
         sys_unset_focus();
     //TODO: we don't wipe the process' data. If we do, we corrupt our sp, since we're still in the process' sp.
@@ -178,9 +194,9 @@ void stop_process(uint16_t pid){
     switch_proc(HALT);
 }
 
-void stop_current_process(){
+void stop_current_process(uint32_t exit_code){
     disable_interrupt();
-    stop_process(processes[current_proc].id);
+    stop_process(processes[current_proc].id, exit_code);
 }
 
 uint16_t process_count(){
@@ -260,17 +276,68 @@ sizedptr list_processes(const char *path){
     return (sizedptr){(uintptr_t)list_buffer,size};
 }
 
+#define PROC_OUT_BUF 0x1000
+
 FS_RESULT open_proc(const char *path, file *descriptor){
-    kprintf("OPEN: %s",path);
-    return FS_RESULT_DRIVER_ERROR;
+    const char *pid_s = seek_to(path, '/');
+    path = seek_to(pid_s, '/');
+    uint64_t pid = parse_int_u64(pid_s, path - pid_s);
+    process_t *proc = get_proc_by_pid(pid);
+    descriptor->id = reserve_fd_id();
+    descriptor->size = PROC_OUT_BUF;
+    descriptor->cursor = 0;
+    if (!proc_opened_files) 
+        proc_opened_files = kalloc(proc_page, sizeof(clinkedlist_t), ALIGN_64B, true, false);
+    proc_open_file *file = kalloc(proc_page, sizeof(proc_open_file), ALIGN_64B, true, false);
+    file->fid = descriptor->id;
+    file->buffer = proc->output;
+    file->pid = proc->id;
+    file->file_size = descriptor->size;
+    clinkedlist_push_front(proc_opened_files, (void*)file);
+    return FS_RESULT_SUCCESS;
+}
+
+
+int find_open_proc_file(void *node, void* key){
+    uint64_t *fid = (uint64_t*)key;
+    proc_open_file *file = (proc_open_file*)node;
+    if (file->fid == *fid) return 0;
+    return -1;
 }
 
 size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
-
+    if (!proc_opened_files){
+        kprint("No files open");
+        return 0;
+    }
+    clinkedlist_node_t *node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
+    if (!node->data) return 0;
+    proc_open_file *file = (proc_open_file*)node->data;
+    size = min(size, file->file_size);
+    memcpy(buf, (void*)(file->buffer + fd->cursor), size);
+    return size;
 }
 
 size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
-
+    if (!proc_opened_files){
+        kprint("No files open");
+        return 0;
+    }
+    clinkedlist_node_t *node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
+    if (!node->data) return 0;
+    proc_open_file *file = (proc_open_file*)node->data;
+    if (size >= PROC_OUT_BUF){
+        kprint("Output buffer too large");
+        return 0;
+    }
+    if (fd->cursor + size >= PROC_OUT_BUF){
+        fd->cursor = 0;
+        memset((void*)file->buffer, 0, file->file_size);
+    }
+    memcpy((void*)(file->buffer + fd->cursor), buf, size);
+    fd->cursor += size;
+    kprintf("Wrote %i bytes into process %i's output buffer", size, file->pid);
+    return size;
 }
 
 driver_module scheduler_module = (driver_module){

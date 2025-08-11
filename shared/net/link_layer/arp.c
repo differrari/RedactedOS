@@ -153,7 +153,7 @@ bool arp_can_reply() {
     return (cfg && cfg->ip != 0 && cfg->mode != NET_MODE_DISABLED);
 }
 
-void arp_daemon_entry() {
+int arp_daemon_entry() {
     while (1){
         const net_cfg_t *cfg = ipv4_get_cfg();
         if(cfg && cfg->ip != 0 && cfg->mode != NET_MODE_DISABLED) break;

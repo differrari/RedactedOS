@@ -195,11 +195,12 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
             kprintf("[VIRTIO_AUDIO error] Failed to configure stream %i",stream);
         }
 
+#if false
         if (stream_info[stream].direction == VIRTIO_SND_D_OUTPUT){
             kprintf("Playing from stream %i",stream);
             select_queue(&audio_dev, TRANSMIT_QUEUE);
         
-            for (uint16_t i = 0; i < 100; i++){
+            for (uint16_t i = 0; i < 10; i++){
                 size_t total_size = sizeof(virtio_snd_pcm_status) + sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
                 uintptr_t full_buffer = (uintptr_t)kalloc(audio_dev.memory_page, total_size, ALIGN_4KB, true, true);
                 virtio_snd_pcm_xfer *header = (virtio_snd_pcm_xfer*)full_buffer;
@@ -218,8 +219,8 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
 
             select_queue(&audio_dev, CONTROL_QUEUE);
         }
+#endif 
     }
-
     return true;
 }
 

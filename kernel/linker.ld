@@ -14,7 +14,7 @@ SECTIONS {
         bss = .;
         *(.bss)
     }
-    . = ALIGN(4096); /* align to page size */
+    . = ALIGN(4096);
     __bss_end = .;
     __bss_size = __bss_end - __bss_start;
     .vectors : { KEEP(*(.vectors)) }
@@ -22,6 +22,7 @@ SECTIONS {
     . = ALIGN(16);
     stack_bottom = .;
     .stack_fill : { FILL(0); . = . + 0x10000; }
+    ksp = .;
     stack_top = .;
 
     . = ALIGN(4096);
@@ -29,19 +30,8 @@ SECTIONS {
     .heap_fill : { FILL(0); . = . + 0x2000000; }
     heap_limit = .;
 
-    .kcoreprocesses : ALIGN(8) {
-        kcoreprocesses_rodata_start = .;
-        KEEP(*(.rodata.kcoreprocesses))
-        KEEP(*(.data.kcoreprocesses))
-        kcoreprocesses_rodata_end = .;
-        kcoreprocesses_start = .;
-        KEEP(*(.text.kcoreprocesses))
-        kcoreprocesses_end = .;
-    }
     . = ALIGN(0x200000);
     kcode_end = .;
-
-    . = . + 0x200000;
 
     .shared : ALIGN(4096) {
         shared_start = .;
