@@ -127,7 +127,7 @@ void ip_input(uintptr_t ip_ptr,
     arp_table_put(sip, src_mac, 60000, false);
 
     uint32_t dip = __builtin_bswap32(hdr->dst_ip);
-    const net_cfg_t *cfg = ipv4_get_cfg(); //TODO manage special ip
+    //TODO manage special ip
 
     uintptr_t payload_ptr = ip_ptr + header_bytes;
     uint32_t payload_len = __builtin_bswap16(hdr->total_length) - header_bytes;

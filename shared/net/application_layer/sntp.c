@@ -69,7 +69,7 @@ sntp_result_t sntp_poll_once(uint32_t timeout_ms){
     if (sock == 0) return SNTP_ERR_SOCKET;
 
     uint64_t t1_0 = 0, t1_1 = 0;
-    bool sent0=false, sent1=false;
+    bool sent0, sent1;
     if (s0) sent0 = (sntp_send_query(sock, s0, &t1_0) == SNTP_OK);
     if (s1 && s1 != s0) sent1 = (sntp_send_query(sock, s1, &t1_1) == SNTP_OK);
 
@@ -136,7 +136,7 @@ sntp_result_t sntp_poll_once(uint32_t timeout_ms){
 
     uint64_t sec = best_server_unix_us / 1000000ULL;
     uint64_t frac = ((best_server_unix_us % 1000000ULL) << 32) / 1000000ULL;
-    uint64_t ntp64 = ((sec + NTP_UNIX_EPOCH_DELTA) << 32) | frac;
+    //uint64_t ntp64 = ((sec + NTP_UNIX_EPOCH_DELTA) << 32) | frac;
 
     timer_apply_sntp_sample_us(best_server_unix_us);
     return SNTP_OK;

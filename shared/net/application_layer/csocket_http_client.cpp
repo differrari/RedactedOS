@@ -1,4 +1,3 @@
-#pragma once
 #include "csocket_http_client.h"
 #include "socket_http_client.hpp" 
 #include "net/transport_layer/socket_tcp.hpp"
@@ -14,7 +13,7 @@ extern "C" {
 http_client_handle_t http_client_create(uint16_t pid) {
     uintptr_t mem = malloc(sizeof(HTTPClient));
     if (!mem) return NULL;
-    HTTPClient *cli = reinterpret_cast<HTTPClient*>( (void*)mem );
+    //HTTPClient *cli = reinterpret_cast<HTTPClient*>( (void*)mem );
     return reinterpret_cast<http_client_handle_t>(new HTTPClient(pid));
 }
 

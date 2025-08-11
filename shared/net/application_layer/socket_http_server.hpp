@@ -1,5 +1,3 @@
-#pragma once
-
 #include "console/kio.h"
 #include "net/transport_layer/socket_tcp.hpp"
 #include "http.h"
