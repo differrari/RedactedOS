@@ -74,4 +74,5 @@ help:
   make install      create raspi kernel and mount it on a bootable partition\n\
   make prepare-fs   create directories for the filesystem\n\n"\
   \n\
-  Use 'make V=1' for verbose build output.
+  Use 'make V=1' for verbose build output.\n\
+  Use 'make RELEASE=1' for optimized release build (currently broken).

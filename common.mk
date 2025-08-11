@@ -6,9 +6,15 @@ AR         := $(ARCH)-ar
 OBJCOPY    := $(ARCH)-objcopy
 
 COMMON_FLAGS  ?= -ffreestanding -nostdlib -fno-exceptions -fno-unwind-tables \
-                 -fno-asynchronous-unwind-tables -g -O0 -Wall -Wextra \
+                 -fno-asynchronous-unwind-tables -Wall -Wextra \
                  -Wno-unused-parameter -Wno-address-of-packed-member \
                  -mcpu=cortex-a72
+
+ifeq ($(RELEASE), 1)
+  COMMON_FLAGS += -O3 -s -DNDEBUG
+else
+  COMMON_FLAGS += -O0 -g
+endif
 
 CFLAGS_BASE   ?= $(COMMON_FLAGS) -std=c17
 CXXFLAGS_BASE ?= $(COMMON_FLAGS) -fno-rtti
