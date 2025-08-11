@@ -205,7 +205,7 @@ static void test_http(uint32_t ip) {
         if (body_str) {
             memcpy(body_str, (void*)resp.body.ptr, resp.body.size);
             body_str[resp.body.size] = '\0';
-            kprintf("[HTTP] %i %i bytes of body%s\n", (uint64_t)resp.status_code, (uint64_t)resp.body.size, body_str);
+            kprintf("[HTTP] %i %i bytes of body%s", (long)resp.status_code, (long)resp.body.size, (uintptr_t)body_str);
             free(body_str, resp.body.size + 1);
         }
     }

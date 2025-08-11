@@ -11,17 +11,15 @@ extern "C" {
 extern "C" {
 
 http_client_handle_t http_client_create(uint16_t pid) {
-    uintptr_t mem = malloc(sizeof(HTTPClient));
-    if (!mem) return NULL;
-    //HTTPClient *cli = reinterpret_cast<HTTPClient*>( (void*)mem );
-    return reinterpret_cast<http_client_handle_t>(new HTTPClient(pid));
+    HTTPClient* cli = new HTTPClient(pid);
+    if (!cli) return nullptr;
+    return reinterpret_cast<http_client_handle_t>(cli);
 }
 
 void http_client_destroy(http_client_handle_t h) {
     if (!h) return;
-    HTTPClient *cli = reinterpret_cast<HTTPClient*>(h);
-    cli->~HTTPClient();
-    free(cli, sizeof(HTTPClient));
+    HTTPClient* cli = reinterpret_cast<HTTPClient*>(h);
+    delete cli;
 }
 
 int32_t http_client_connect(http_client_handle_t h,
