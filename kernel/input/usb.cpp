@@ -24,7 +24,7 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
         return false;
     }
     usb_device_descriptor* descriptor = (usb_device_descriptor*)kalloc(mem_page, sizeof(usb_device_descriptor), ALIGN_64B, true, true);
-    
+
     if (!request_descriptor(address, 0, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
         kprintf("[USB error] failed to get device descriptor");
         return false;
@@ -104,7 +104,7 @@ bool USBDriver::get_configuration(uint8_t address){
     uint8_t* report_descriptor;
     uint16_t report_length;
 
-    usb_device_types dev_type;
+    usb_device_types dev_type = UNKNOWN;
 
     kprintf("[USB] set configuration %i for device %i", config->bConfigurationValue, address);
     request_sized_descriptor(address, 0, 0, 9, 0, config->bConfigurationValue, 0, 0, 0);
@@ -136,7 +136,7 @@ bool USBDriver::get_configuration(uint8_t address){
             case 0x1:
                 dev_type = KEYBOARD;
                 break;
-            
+
             default:
                 dev_type = UNKNOWN;
                 break;
@@ -160,7 +160,7 @@ bool USBDriver::get_configuration(uint8_t address){
         }
         case 0x5: {//Endpoint
             usb_endpoint_descriptor *endpoint = (usb_endpoint_descriptor*)&config->data[i];
-            
+
             if (dev_type != UNKNOWN)
                 configure_endpoint(address, endpoint, config->bConfigurationValue, dev_type);
 
@@ -173,7 +173,7 @@ bool USBDriver::get_configuration(uint8_t address){
     }
 
     return true;
-    
+
 }
 
 bool USBDriver::request_descriptor(uint8_t address, uint8_t endpoint, uint8_t rType, uint8_t request, uint8_t type, uint16_t index, uint16_t wIndex, void *out_descriptor){

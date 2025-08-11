@@ -27,6 +27,7 @@ size_t console_read(file *fd, char *out_buf, size_t size, file_offset offset){
 
 size_t console_write(file *fd, const char *buf, size_t size, file_offset offset){
     kprintf(buf);
+    return size;
 }
 
 
@@ -72,7 +73,7 @@ void kprintf(const char *fmt, ...){
     va_list args;
     va_start(args, fmt);
     char* buf = kalloc(print_buf, 256, ALIGN_64B, true, false);
-    size_t len = string_format_va_buf(fmt, buf, args);
+    string_format_va_buf(fmt, buf, args);
     va_end(args);
     puts(buf);
     putc('\r');
@@ -92,7 +93,7 @@ void kputf(const char *fmt, ...){
     va_list args;
     va_start(args, fmt);
     char* buf = kalloc(print_buf, 256, ALIGN_64B, true, false);
-    size_t len = string_format_va_buf(fmt, buf, args);
+    string_format_va_buf(fmt, buf, args);
     va_end(args);
     puts(buf);
     // kfree((void*)buf, 256);

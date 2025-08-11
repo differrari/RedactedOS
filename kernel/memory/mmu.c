@@ -60,8 +60,8 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
         l1[l1_index] = ((uint64_t)l2 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     }
 
-    uint64_t* l2 = (uint64_t*)(l1[l1_index] & 0xFFFFFFFFF000ULL);   
-    
+    uint64_t* l2 = (uint64_t*)(l1[l1_index] & 0xFFFFFFFFF000ULL);
+
     //For now we make this not executable. We'll need to to separate read_write, read_only and executable sections
     uint64_t attr = ((uint64_t)1 << UXN_BIT) | ((uint64_t)0 << PXN_BIT) | (1 << AF_BIT) | (0b11 << SH_BIT) | (0b00 << AP_BIT) | (attr_index << MAIR_BIT) | PD_BLOCK;
     l2[l2_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
@@ -78,13 +78,13 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) 
         uint64_t* l1 = (uint64_t*)talloc(PAGE_SIZE);
         page_table_l0[l0_index] = ((uint64_t)l1 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     }
-    
+
     uint64_t* l1 = (uint64_t*)(page_table_l0[l0_index] & 0xFFFFFFFFF000ULL);
     if (!(l1[l1_index] & 1)) {
         uint64_t* l2 = (uint64_t*)talloc(PAGE_SIZE);
         l1[l1_index] = ((uint64_t)l2 & 0xFFFFFFFFF000ULL) | PD_TABLE;
     }
-    
+
     uint64_t* l2 = (uint64_t*)(l1[l1_index] & 0xFFFFFFFFF000ULL);
     uint64_t l2_val = l2[l2_index];
     if (!(l2_val & 1)) {
@@ -94,28 +94,28 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) 
         kprintf("[MMU error]: Region not mapped for address %x, already mapped at higher granularity [%i][%i][%i][%i]",va, l0_index,l1_index,l2_index,l3_index);
         return;
     }
-    
+
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
-    
+
     if (l3[l3_index] & 1){
         kprintf("[MMU warning]: Section already mapped %x",va);
         return;
     }
-    
-    uint8_t permission;
-    
+
+    uint8_t permission = 0;
+
     switch (level)
     {
     case 0: permission = 0b01; break;
     case 1: permission = 0b00; break;
     case 2: permission = 0b10; break;
-    
+
     default:
         break;
     }
     uint64_t attr = ((uint64_t)(level == 1) << UXN_BIT) | ((uint64_t)0 << PXN_BIT) | (1 << AF_BIT) | (0b01 << SH_BIT) | (permission << AP_BIT) | (attr_index << MAIR_BIT) | 0b11;
     kprintfv("[MMU] Mapping 4kb memory %x at [%i][%i][%i][%i] for EL%i = %x | %x permission: %i", va, l0_index,l1_index,l2_index,l3_index,level,pa,attr,permission);
-    
+
     l3[l3_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
 }
 
@@ -136,18 +136,18 @@ static inline void mmu_flush_icache() {
 }
 
 void mmu_unmap(uint64_t va, uint64_t pa){
-    
+
     uint64_t l0_index = (va >> 39) & 0x1FF;
     uint64_t l1_index = (va >> 30) & 0x1FF;
     uint64_t l2_index = (va >> 21) & 0x1FF;
     uint64_t l3_index = (va >> 12) & 0x1FF;
-    
+
     kprintfv("[MMU] Unmapping 4kb memory %x at [%i][%i][%i][%i] for EL1", va, l0_index,l1_index,l2_index, l3_index);
     if (!(page_table_l0[l0_index] & 1)) return;
-    
+
     uint64_t* l1 = (uint64_t*)(page_table_l0[l0_index] & 0xFFFFFFFFF000ULL);
     if (!(l1[l1_index] & 1)) return;
-    
+
     uint64_t* l2 = (uint64_t*)(l1[l1_index] & 0xFFFFFFFFF000ULL);
     uint64_t l3_val = l2[l2_index];
     if (!(l3_val & 1)) return;
@@ -155,7 +155,7 @@ void mmu_unmap(uint64_t va, uint64_t pa){
         l2[l2_index] = 0;
         return;
     }
-    
+
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
 
     l3[l3_index] = 0;
@@ -206,7 +206,7 @@ void mmu_init() {
     asm volatile ("isb");
 
     asm volatile ("msr ttbr0_el1, %0" :: "r"(page_table_l0));
-    
+
     asm volatile (
         "mrs x0, sctlr_el1\n"
         "orr x0, x0, #0x1\n"

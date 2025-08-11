@@ -23,7 +23,7 @@ char* parse_proc_state(int state){
     case RUNNING:
     case BLOCKED:
         return "Running";
-    
+
     default:
         return "Invalid";
     }
@@ -96,7 +96,7 @@ void draw_process_view(){
         int index = scroll_index;
         int valid_count = 0;
 
-        process_t *proc;
+        process_t *proc = NULL;
         while (index < MAX_PROCS) {
             proc = &processes[index];
             if (proc->id != 0 && proc->state != STOPPED) {
@@ -107,6 +107,8 @@ void draw_process_view(){
             }
             index++;
         }
+
+        if (!proc) continue; // TODO: panic?
 
         if (proc->id == 0 || valid_count < i || proc->state == STOPPED) break;
 
@@ -127,11 +129,11 @@ void draw_process_view(){
 
         gpu_draw_string(name, (gpu_point){xo, name_y}, scale, BG_COLOR);
         gpu_draw_string(state, (gpu_point){xo, state_y}, scale, BG_COLOR);
-        
+
         string pc = string_from_hex(proc->pc);
         gpu_draw_string(pc, (gpu_point){xo, pc_y}, scale, BG_COLOR);
         free(pc.data, pc.mem_length);
-        
+
         draw_memory("Stack", xo, stack_y, stack_width, stack_height, proc->stack - proc->sp, proc->stack_size);
         uint64_t heap = calc_heap(proc->heap);
         uint64_t heap_limit = ((heap + 0xFFF) & ~0xFFF);
@@ -160,7 +162,7 @@ void monitor_procs(){
         if (sys_shortcut_triggered_current(shortcut)){
             if (active)
                 pause_window_draw();
-            else 
+            else
                 resume_window_draw();
             active = !active;
         }
@@ -172,7 +174,7 @@ void monitor_procs(){
 process_t* start_process_monitor(){
 #if QEMU
     return create_kernel_process("procmonitor",monitor_procs);
-#else 
+#else
     //TODO: disabled process monitor since shortcuts seem broken on rpi
     return 0x0;//create_kernel_process("procmonitor",monitor_procs);
 #endif

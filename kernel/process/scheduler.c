@@ -197,7 +197,7 @@ void sleep_process(uint64_t msec){
         sleeping[sleep_count++] = (sleep_tracker){
             .pid = processes[current_proc].id,
             .timestamp = timer_now_msec(),
-            .sleep_time = msec, 
+            .sleep_time = msec,
             .valid = true
         };
     }
@@ -236,7 +236,7 @@ sizedptr list_processes(const char *path){
     void *list_buffer = (char*)malloc(size);
     if (strlen(path, 100) == 0){
         uint32_t count = 0;
-    
+
         char *write_ptr = (char*)list_buffer + 4;
         process_t *processes = get_all_processes();
         for (int i = 0; i < MAX_PROCS; i++){
@@ -266,11 +266,19 @@ FS_RESULT open_proc(const char *path, file *descriptor){
 }
 
 size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
-
+    (void)fd;
+    (void)buf;
+    (void)size;
+    (void)offset;
+    return 0;
 }
 
 size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
-
+    (void)fd;
+    (void)buf;
+    (void)size;
+    (void)offset;
+    return 0;
 }
 
 driver_module scheduler_module = (driver_module){

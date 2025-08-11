@@ -6,10 +6,10 @@
 #include "audio.h"
 
 #define VIRTIO_SND_R_PCM_INFO       0x0100
-#define VIRTIO_SND_R_PCM_SET_PARAMS 0x0101 
-#define VIRTIO_SND_R_PCM_PREPARE    0x0102 
-#define VIRTIO_SND_R_PCM_RELEASE    0x0103 
-#define VIRTIO_SND_R_PCM_START      0x0104 
+#define VIRTIO_SND_R_PCM_SET_PARAMS 0x0101
+#define VIRTIO_SND_R_PCM_PREPARE    0x0102
+#define VIRTIO_SND_R_PCM_RELEASE    0x0103
+#define VIRTIO_SND_R_PCM_START      0x0104
 #define VIRTIO_SND_R_PCM_STOP       0x0105
 
 #define VIRTIO_SND_S_OK         0x8000
@@ -17,7 +17,7 @@
 #define VIRTIO_SND_S_NOT_SUPP   0x8002
 #define VIRTIO_SND_S_IO_ERR     0x8003
 
-#define VIRTIO_SND_PCM_FMT_U32      18 
+#define VIRTIO_SND_PCM_FMT_U32      18
 #define VIRTIO_SND_PCM_FMT_FLOAT    19
 #define VIRTIO_SND_PCM_FMT_FLOAT64  20
 
@@ -38,49 +38,49 @@
 #define VIRTIO_SND_D_OUTPUT 0
 #define VIRTIO_SND_D_INPUT  1
 
-typedef struct virtio_snd_hdr { 
-    uint32_t code; 
-} virtio_snd_hdr; 
+typedef struct virtio_snd_hdr {
+    uint32_t code;
+} virtio_snd_hdr;
 static_assert(sizeof(virtio_snd_hdr) == 4, "Sound header must be 4 bytes");
 
-typedef struct virtio_snd_query_info { 
-    virtio_snd_hdr hdr; 
-    uint32_t start_id; 
-    uint32_t count; 
-    uint32_t size; 
+typedef struct virtio_snd_query_info {
+    virtio_snd_hdr hdr;
+    uint32_t start_id;
+    uint32_t count;
+    uint32_t size;
 } virtio_snd_query_info;
 static_assert(sizeof(virtio_snd_query_info) == 16, "Query info struct must be 16 bytes");
 
-typedef struct virtio_snd_pcm_hdr { 
-    virtio_snd_hdr hdr; 
-    uint32_t stream_id; 
-} virtio_snd_pcm_hdr; 
+typedef struct virtio_snd_pcm_hdr {
+    virtio_snd_hdr hdr;
+    uint32_t stream_id;
+} virtio_snd_pcm_hdr;
 
-typedef struct virtio_snd_info_hdr { 
-    uint32_t hda_fn_nid; 
+typedef struct virtio_snd_info_hdr {
+    uint32_t hda_fn_nid;
 } virtio_snd_info_hdr;
 
-typedef struct virtio_snd_pcm_info { 
-    virtio_snd_info_hdr info_hdr; 
-    uint32_t features; /* 1 << VIRTIO_SND_PCM_F_XXX */ 
-    uint64_t formats; /* 1 << VIRTIO_SND_PCM_FMT_XXX */ 
-    uint64_t rates; /* 1 << VIRTIO_SND_PCM_RATE_XXX */ 
-    uint8_t direction; 
-    uint8_t channels_min; 
-    uint8_t channels_max; 
- 
-    uint8_t padding[5]; 
+typedef struct virtio_snd_pcm_info {
+    virtio_snd_info_hdr info_hdr;
+    uint32_t features; /* 1 << VIRTIO_SND_PCM_F_XXX */
+    uint64_t formats; /* 1 << VIRTIO_SND_PCM_FMT_XXX */
+    uint64_t rates; /* 1 << VIRTIO_SND_PCM_RATE_XXX */
+    uint8_t direction;
+    uint8_t channels_min;
+    uint8_t channels_max;
+
+    uint8_t padding[5];
 }__attribute__((packed)) virtio_snd_pcm_info;
 static_assert(sizeof(virtio_snd_pcm_info) == 32, "PCM Info must be 32");
 
-typedef struct virtio_snd_event { 
-    struct virtio_snd_hdr hdr; 
-    uint32_t data; 
+typedef struct virtio_snd_event {
+    struct virtio_snd_hdr hdr;
+    uint32_t data;
 }__attribute__((packed)) virtio_snd_event;
 
 bool VirtioAudioDriver::init(){
     uint64_t addr = find_pci_device(VIRTIO_VENDOR, VIRTIO_AUDIO_ID);
-    if (!addr){ 
+    if (!addr){
         kprintf("Disk device not found");
         return false;
     }
@@ -142,14 +142,14 @@ void VirtioAudioDriver::config_jacks(){
 
 }
 
-typedef struct virtio_snd_pcm_xfer { 
-    uint32_t stream_id; 
-}__attribute__((packed)) virtio_snd_pcm_xfer; 
- 
-typedef struct virtio_snd_pcm_status { 
-    uint32_t status; 
-    uint32_t latency_bytes; 
-}__attribute__((packed)) virtio_snd_pcm_status; 
+typedef struct virtio_snd_pcm_xfer {
+    uint32_t stream_id;
+}__attribute__((packed)) virtio_snd_pcm_xfer;
+
+typedef struct virtio_snd_pcm_status {
+    uint32_t status;
+    uint32_t latency_bytes;
+}__attribute__((packed)) virtio_snd_pcm_status;
 
 bool VirtioAudioDriver::config_streams(uint32_t streams){
     virtio_snd_query_info* cmd = (virtio_snd_query_info*)kalloc(audio_dev.memory_page, sizeof(virtio_snd_query_info), ALIGN_4KB, true, true);
@@ -159,7 +159,7 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
     cmd->size = sizeof(virtio_snd_pcm_info);
 
     size_t resp_size = sizeof(virtio_snd_hdr) + (streams * cmd->size);
-    
+
     uintptr_t resp = (uintptr_t)kalloc(audio_dev.memory_page, resp_size, ALIGN_64B, true, true);
 
     if (!virtio_send(&audio_dev, audio_dev.common_cfg->queue_desc, audio_dev.common_cfg->queue_driver, audio_dev.common_cfg->queue_device,
@@ -170,7 +170,7 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
     }
 
     uint8_t *streams_bytes = (uint8_t*)(resp + sizeof(virtio_snd_hdr));
-    
+
     virtio_snd_pcm_info *stream_info = (virtio_snd_pcm_info*)streams_bytes;
     for (uint32_t stream = 0; stream < streams; stream++){
         uint64_t format = read_unaligned64(&stream_info[stream].formats);
@@ -198,20 +198,21 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
         if (stream_info[stream].direction == VIRTIO_SND_D_OUTPUT){
             kprintf("Playing from stream %i",stream);
             select_queue(&audio_dev, TRANSMIT_QUEUE);
-        
+
             for (uint16_t i = 0; i < 100; i++){
                 size_t total_size = sizeof(virtio_snd_pcm_status) + sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
                 uintptr_t full_buffer = (uintptr_t)kalloc(audio_dev.memory_page, total_size, ALIGN_4KB, true, true);
                 virtio_snd_pcm_xfer *header = (virtio_snd_pcm_xfer*)full_buffer;
 
                 header->stream_id = stream;
-                
+
                 uint32_t *buf = (uint32_t*)(full_buffer + sizeof(virtio_snd_pcm_xfer));
                 uint32_t buf_size = TOTAL_BUF_SIZE/SND_U32_BYTES;
                 for (uint32_t sample = 0; sample < buf_size; sample++){
+                    // TODO: what is meant here? GCC suggests parentheses
                     buf[sample] = sample < buf_size/2 == 0 ? 0x88888888 : UINT32_MAX;
                 }
-                
+
                 virtio_send_1d(&audio_dev, full_buffer, total_size);
 
             }
@@ -223,16 +224,16 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
     return true;
 }
 
-typedef struct virtio_snd_pcm_set_params { 
+typedef struct virtio_snd_pcm_set_params {
     virtio_snd_pcm_hdr hdr;
-    uint32_t buffer_bytes; 
-    uint32_t period_bytes; 
-    uint32_t features; 
-    uint8_t channels; 
-    uint8_t format; 
-    uint8_t rate; 
- 
-    uint8_t padding; 
+    uint32_t buffer_bytes;
+    uint32_t period_bytes;
+    uint32_t features;
+    uint8_t channels;
+    uint8_t format;
+    uint8_t rate;
+
+    uint8_t padding;
 }__attribute__((packed)) virtio_snd_pcm_set_params;
 static_assert(sizeof(virtio_snd_pcm_set_params) == 24, "Virtio sound Set Params command needs to be n bytes");
 
@@ -252,7 +253,7 @@ bool VirtioAudioDriver::stream_set_params(uint32_t stream_id, uint32_t features,
 
     bool result = virtio_send(&audio_dev, audio_dev.common_cfg->queue_desc, audio_dev.common_cfg->queue_driver, audio_dev.common_cfg->queue_device,
         (uintptr_t)cmd, sizeof(virtio_snd_pcm_set_params), (uintptr_t)resp, sizeof(virtio_snd_info_hdr), VIRTQ_DESC_F_WRITE);
-    
+
     kfree(cmd, sizeof(virtio_snd_query_info));
     kfree((void*)resp, sizeof(virtio_snd_info_hdr));
 
@@ -261,7 +262,7 @@ bool VirtioAudioDriver::stream_set_params(uint32_t stream_id, uint32_t features,
 
     if (result)
         result = send_simple_stream_cmd(stream_id, VIRTIO_SND_R_PCM_START);
-    
+
     return result;
 }
 
@@ -270,15 +271,15 @@ bool VirtioAudioDriver::send_simple_stream_cmd(uint32_t stream_id, uint32_t comm
     virtio_snd_pcm_hdr* cmd = (virtio_snd_pcm_hdr*)kalloc(audio_dev.memory_page, sizeof(virtio_snd_pcm_hdr), ALIGN_4KB, true, true);
     cmd->hdr.code = command;
     cmd->stream_id = stream_id;
-    
+
     virtio_snd_info_hdr *resp = (virtio_snd_info_hdr*)kalloc(audio_dev.memory_page, sizeof(virtio_snd_info_hdr), ALIGN_64B, true, true);
-    
+
     bool result = virtio_send(&audio_dev, audio_dev.common_cfg->queue_desc, audio_dev.common_cfg->queue_driver, audio_dev.common_cfg->queue_device,
         (uintptr_t)cmd, sizeof(virtio_snd_pcm_hdr), (uintptr_t)resp, sizeof(virtio_snd_info_hdr), VIRTQ_DESC_F_WRITE);
 
     kfree(cmd, sizeof(virtio_snd_query_info));
     kfree((void*)resp, sizeof(virtio_snd_info_hdr));
-    
+
     return result;
 }
 
