@@ -78,7 +78,19 @@ FS_RESULT open_file(const char* path, file* descriptor){
     const char *search_path = path;
     driver_module *mod = get_module(&search_path);
     if (!mod) return FS_RESULT_NOTFOUND;
+    
+    // Initialize descriptor fields to safe values before calling driver
+    descriptor->cursor = 0;
+    descriptor->size = 0;
+    descriptor->id = 0;
+    
     FS_RESULT result = mod->open(search_path, descriptor);
+    
+    // Ensure cursor is still 0 after driver call
+    if (descriptor->cursor != 0) {
+        descriptor->cursor = 0;
+    }
+    
     if (!open_files)
         open_files = new LinkedList<open_file_descriptors>();
     open_files->push_front({
@@ -94,13 +106,45 @@ size_t read_file(file *descriptor, char* buf, size_t size){
         kprintf("[FS] No open files");
         return 0;
     }
-    open_file_descriptors file = open_files->find([descriptor](open_file_descriptors kvp){
+    
+    // Find the file descriptor
+    auto found = open_files->find([descriptor](open_file_descriptors kvp){
         return descriptor->id == kvp.file_id;
-    })->data;
-    if (!file.mod) return 0;
-    size_t adj_size = min(size,file.file_size);
-    size_t amount_read = file.mod->read(descriptor, buf, adj_size, 0);
-    descriptor->cursor += amount_read;
+    });
+    
+    if (!found) {
+        kprintf("[FS] File descriptor not found: %x", descriptor->id);
+        return 0;
+    }
+    
+    open_file_descriptors file = found->data;
+    if (!file.mod) {
+        kprintf("[FS] No filesystem module for file");
+        return 0;
+    }
+    
+    if (!file.mod->read) {
+        kprintf("[FS] No read function in filesystem module");
+        return 0;
+    }
+    
+    // Fix corrupted cursor - reset to 0 for read from beginning
+    if (descriptor->cursor > file.file_size) {
+        kprintf("[FS] WARNING: Corrupted cursor %x, resetting to 0", descriptor->cursor);
+        descriptor->cursor = 0;
+    }
+    
+    // Calculate how much we can actually read
+    size_t available = (descriptor->cursor >= file.file_size) ? 0 : (file.file_size - descriptor->cursor);
+    size_t read_size = min(size, available);
+    
+    if (read_size == 0) {
+        return 0;
+    }
+    
+    // Call the driver once for the entire read
+    size_t amount_read = file.mod->read(descriptor, buf, read_size, 0);
+    
     return amount_read;
 }
 

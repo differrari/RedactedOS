@@ -121,17 +121,19 @@ void Desktop::activate_current(){
             kprintf("[LAUNCHER] Wrong executable format. Must be .elf");
             return;
         }
-        kprintf("[LAUNCHER] File path %s",(uintptr_t)entries[index].path);
         file fd;
         open_file(entries[index].path, &fd);
-        char *file = (char*)malloc(fd.size);
-        if (read_file(&fd, file, fd.size) != fd.size){
-            kprintf("[LAUNCHER] Failed to read full elf file");
-            return;
-        } 
-        active_proc = load_elf_file(entries[index].name, file);
+        char *file_data = (char*)malloc(fd.size);
+        size_t bytes_read = read_file(&fd, file_data, fd.size);
+        if (bytes_read != fd.size){
+            free(file_data, fd.size);
+            
+            return; // Skip if read failed
+        } else {
+            active_proc = load_elf_file(entries[index].name, file_data);
+        }
+        
         if (!active_proc){
-            kprintf("[LAUNCHER] Failed to read ELF file");
             return;
         }
         process_active = true;

@@ -262,16 +262,21 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (!buf) return FS_RESULT_NOTFOUND;
     descriptor->id = reserve_fd_id();
     descriptor->size = buf_ptr.size;
-    open_files.add(reserve_fd_id(), buf);
+    open_files.add(descriptor->id, buf);
     //TODO: go back to using a linked list, and a static id for the file, ideally global for system
     return FS_RESULT_SUCCESS;
 }
 
 size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
     void* file = open_files[descriptor->id];
-    //TODO: keep track of file size and limit copy to only that or less
-    memcpy(buf, file, size);
-    return size;
+    if (!file) {
+        kprintf("[FAT32] File not found in open_files for id %x", descriptor->id);
+        return 0;
+    }
+    // Limit to actual file size
+    size_t read_size = size > descriptor->size ? descriptor->size : size;
+    memcpy(buf, file, read_size);
+    return read_size;
 }
 
 sizedptr FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {

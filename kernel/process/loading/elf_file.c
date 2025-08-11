@@ -44,14 +44,11 @@ process_t* load_elf_file(const char *name, void* file){
         return 0;
     }
 
-    kprintf("ELF FILE VERSION %x HEADER VERSION %x (%x)",header->elf_version,header->header_version,header->header_size);
-    kprintf("FILE %i for %x",header->type, header->instruction_set);
-    kprintf("ENTRY %x - %i",header->program_entry_offset);
-    kprintf("HEADER %x - %i * %i vs %i",header->program_header_offset, header->program_header_entry_size,header->program_header_num_entries,sizeof(elf_program_header));
     elf_program_header* first_program_header = (elf_program_header*)((uint8_t *)file + header->program_header_offset);
-    kprintf("program takes up %x, begins at %x, and is %b, %b",first_program_header->p_filez, first_program_header->p_offset, first_program_header->segment_type, first_program_header->flags);
-    kprintf("SECTION %x - %i * %i",header->section_header_offset, header->section_entry_size,header->section_num_entries);
-    kprintf("First instruction %x", *(uint64_t*)(file + header->program_entry_offset));
-
-    return create_process(name, (void*)(file + first_program_header->p_offset), first_program_header->p_filez, header->program_entry_offset);
+    
+    // Calculate entry offset relative to the first loadable segment
+    uint64_t entry_offset = header->program_entry_offset - first_program_header->p_vaddr;
+    
+    return create_process(name, (void*)(file + first_program_header->p_offset), 
+                         first_program_header->p_filez, entry_offset);
 }
