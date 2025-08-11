@@ -239,8 +239,7 @@ static void dhcp_fsm_once()
     if (old != g_state) log_state_change(old, g_state);
 }
 
-int dhcp_daemon_entry(int argc, char* argv[])
-{
+int dhcp_daemon_entry(int argc, char* argv[]){
     (void)argc; (void)argv;
     g_pid_dhcpd = (uint16_t)get_current_proc_pid();
     dhcp_set_pid(g_pid_dhcpd);

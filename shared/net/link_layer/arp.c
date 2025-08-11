@@ -144,8 +144,7 @@ bool arp_can_reply() {
 }
 
 
-int arp_daemon_entry(int argc, char* argv[])
-{
+int arp_daemon_entry(int argc, char* argv[]){
     (void)argc; (void)argv;
     arp_set_pid(get_current_proc_pid());
     while (1){

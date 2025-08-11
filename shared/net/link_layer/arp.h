@@ -43,7 +43,7 @@ void arp_table_init_static_defaults();
 
 void arp_send_request(uint32_t target_ip);
 
-int arp_daemon_entry();
+int arp_daemon_entry(int argc, char* argv[]);
 bool arp_can_reply();
 void arp_set_pid(uint16_t pid);
 uint16_t arp_get_pid();

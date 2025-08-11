@@ -19,7 +19,8 @@ socket_handle_t sntp_socket_handle(void){ return g_sock; }
 #define SNTP_QUERY_TIMEOUT_MS 1200u
 #define SNTP_BOOTSTRAP_MAX_RETRY 5u
 
-void sntp_daemon_entry(void){
+int sntp_daemon_entry(int argc, char* argv[]){
+    (void)argc; (void)argv;
     g_pid_sntp = (uint16_t)get_current_proc_pid();
     g_sock = udp_socket_create(0, g_pid_sntp);
     sntp_set_pid(get_current_proc_pid());
@@ -45,4 +46,5 @@ void sntp_daemon_entry(void){
         sntp_poll_once(SNTP_QUERY_TIMEOUT_MS);
         sleep(SNTP_POLL_INTERVAL_MS);
     }
+    return 1;
 }

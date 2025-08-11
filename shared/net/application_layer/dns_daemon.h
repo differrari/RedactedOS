@@ -8,7 +8,7 @@ extern "C" {
     void dns_set_pid(uint16_t p);
     socket_handle_t dns_socket_handle(void);
     uint16_t dns_get_pid(void);
-    void dns_deamon_entry(void);
+    int dns_deamon_entry(int argc, char* argv[]);
 #ifdef __cplusplus
 }
 #endif
