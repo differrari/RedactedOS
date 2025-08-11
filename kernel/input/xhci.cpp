@@ -480,7 +480,7 @@ uint32_t XHCIDriver::calculate_interval(uint32_t speed, uint32_t received_interv
 
 	uint32_t i;
 	for (i = 3; i < 11; i++)
-		if (125 * (1 << i) >= 1000 * received_interval) break;
+		if (125u * (1 << i) >= 1000 * received_interval) break;
 
 	return i;
 }
