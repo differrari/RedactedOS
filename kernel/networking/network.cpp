@@ -35,7 +35,7 @@ int net_rx_frame(sizedptr *out_frame) {
 }
 
 const net_l2l3_endpoint* network_get_local_endpoint() {
-    static net_l2l3_endpoint dummy = {0};
+    static net_l2l3_endpoint dummy = {};
     return dispatch ? &dispatch->get_local_ep() : &dummy;
 }
 

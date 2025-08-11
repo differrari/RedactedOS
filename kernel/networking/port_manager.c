@@ -2,18 +2,20 @@
 #include "types.h"
 #include "networking/port_manager.h"
 #include "net/internet_layer/ipv4.h"
+#include "math/rng.h"
 
 static port_entry_t g_port_table[PROTO_COUNT][MAX_PORTS];//tab proto/port
 
-static inline bool port_valid(uint16_t p) {
+static inline bool port_valid(uint32_t p) {
     return p > 0 && p < MAX_PORTS;
 }
+
 static inline bool proto_valid(protocol_t proto) {
-    return (uint32_t)proto< PROTO_COUNT;
+    return (uint32_t)proto < PROTO_COUNT;
 }
 
-void port_manager_init() {
-    for (int pr = 0; pr < PROTO_COUNT; ++pr) {
+void port_manager_init(void) {
+    for (uint32_t pr = 0; pr < PROTO_COUNT; ++pr) {
         for (uint32_t p = 0; p < MAX_PORTS; ++p) {
             g_port_table[pr][p].used    = false;
             g_port_table[pr][p].pid     = PORT_FREE_OWNER;
@@ -27,7 +29,18 @@ int port_alloc_ephemeral(protocol_t proto,
                          port_recv_handler_t handler)
 {
     if (!proto_valid(proto)) return -1;
-    for (uint16_t p = PORT_MIN_EPHEMERAL; p <= PORT_MAX_EPHEMERAL; ++p) {
+
+    rng_t rng;
+    rng_init_random(&rng);
+    uint32_t seed = rng_next32(&rng);
+
+    uint32_t minp = (uint32_t)PORT_MIN_EPHEMERAL;
+    uint32_t maxp = (uint32_t)PORT_MAX_EPHEMERAL;
+    uint32_t range = maxp - minp + 1u;
+    uint32_t first = minp + (seed % range);
+
+    for (uint32_t i = 0; i < range; ++i) {
+        uint32_t p = minp + ((first - minp + i) % range);
         port_entry_t *e = &g_port_table[proto][p];
         if (!e->used) {
             e->used = true;
@@ -67,8 +80,8 @@ bool port_unbind(protocol_t proto,
 }
 
 void port_unbind_all(uint16_t pid) {
-    for (int pr = 0; pr < PROTO_COUNT; ++pr) {
-        for (uint16_t p = 1; p < MAX_PORTS; ++p) {
+    for (uint32_t pr = 0; pr < PROTO_COUNT; ++pr) {
+        for (uint32_t p = 1; p < MAX_PORTS; ++p) {
             port_entry_t *e = &g_port_table[pr][p];
             if (e->used && e->pid == pid) {
                 e->used    = false;

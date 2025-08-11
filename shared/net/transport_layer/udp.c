@@ -9,8 +9,6 @@ extern void sleep(uint64_t ms);
 extern uintptr_t malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
 
-static inline uint16_t bswap16(uint16_t v) { return __builtin_bswap16(v); }
-
 bool udp_bind(uint16_t port,
             uint16_t pid,
             port_recv_handler_t handler)

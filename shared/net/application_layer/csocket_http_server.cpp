@@ -10,17 +10,15 @@ extern "C" {
 extern "C" {
 
 http_server_handle_t http_server_create(uint16_t pid) {
-    void* raw = (void*)malloc(sizeof(HTTPServer));
-    if (!raw) return nullptr;
-    HTTPServer* srv = reinterpret_cast<HTTPServer*>(raw);
-    return reinterpret_cast<http_server_handle_t>(new HTTPServer(pid));
+    HTTPServer* srv = new HTTPServer(pid);
+    if (!srv) return nullptr;
+    return reinterpret_cast<http_server_handle_t>(srv);
 }
 
 void http_server_destroy(http_server_handle_t h) {
     if (!h) return;
     HTTPServer* srv = reinterpret_cast<HTTPServer*>(h);
-    srv->~HTTPServer();
-    free(srv, sizeof(HTTPServer));
+    delete srv;
 }
 
 int32_t http_server_bind(http_server_handle_t h, uint16_t port) {

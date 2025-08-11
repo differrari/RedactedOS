@@ -5,8 +5,6 @@
 #include "types.h"
 #include "net/transport_layer/csocket_udp.h"
 
-static socket_handle_t g_dhcp_socket = NULL;
-
 extern uintptr_t malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
 extern void      sleep(uint64_t ms);
@@ -71,6 +69,9 @@ uint16_t dhcp_parse_option(const dhcp_packet *p, uint16_t wanted) {
 }
 
 uint8_t dhcp_option_len(const dhcp_packet *p, uint16_t idx) {
-    if (idx == 0 || idx + 1 >= sizeof(p->options)) return 0;
-    return p->options[idx+1];
+    size_t opt_size = sizeof(p->options);
+
+    if (idx == 0 || (size_t)idx + 1 >= opt_size) return 0;
+    return p->options[idx + 1];
 }
+

@@ -47,7 +47,7 @@ void ipv4_cfg_init();
 void ipv4_set_cfg(const net_cfg_t *src);
 const net_cfg_t* ipv4_get_cfg();
 
-string ipv4_to_string(uint32_t ip);
+void ipv4_to_string(uint32_t ip, char* buf);
 
 void ipv4_send_segment(uint32_t src_ip,
                             uint32_t dst_ip,

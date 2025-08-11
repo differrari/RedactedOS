@@ -9,9 +9,6 @@
 #include "types.h"
 #include "data_struct/ring_buffer.hpp"
 
-#define KP(fmt, ...) \
-    do { kprintf(fmt, ##__VA_ARGS__); } while (0)
-    
 extern "C" {
     void      sleep(uint64_t ms);
     uintptr_t malloc(uint64_t size);
@@ -154,7 +151,7 @@ public:
         flow->payload = { (uintptr_t)buf, (uint32_t)len };
         flow->flags = (1<<PSH_F) | (1<<ACK_F);
         tcp_result_t res = tcp_flow_send(flow);
-        return (res == TCP_OK) ? (int64_t)len : res;
+        return (res == TCP_OK) ? static_cast<int64_t>(len) : static_cast<int64_t>(res);
     }
 
     int64_t recv(void* buf, uint64_t len) {

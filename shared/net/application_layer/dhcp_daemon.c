@@ -14,8 +14,6 @@
 
 #include "net/transport_layer/csocket_udp.h"
 
-#include "../net.h"
-
 extern void      sleep(uint64_t ms);
 extern uintptr_t malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
@@ -42,8 +40,6 @@ typedef enum {
     DHCP_S_REBINDING
 } dhcp_state_t;
 
-#define KP(fmt, ...) \
-    do { kprintf(fmt, ##__VA_ARGS__); } while(0)
 static dhcp_state_t g_state = DHCP_S_INIT;
 static net_l2l3_endpoint g_local_ep = {0};
 static volatile bool g_force_renew = false;
@@ -53,17 +49,13 @@ static uint16_t g_pid_dhcpd = 0xFFFF;
 
 static socket_handle_t g_sock = 0;
 
-uint16_t get_dhcp_pid() { return g_pid_dhcpd; }
+uint16_t dhcp_get_pid() { return g_pid_dhcpd; }
 bool dhcp_is_running() { return g_pid_dhcpd != 0xFFFF; }
 void dhcp_set_pid(uint16_t p){ g_pid_dhcpd = p;    }
 void dhcp_force_renew() { g_force_renew = true; }
 
-static inline uint32_t rd_be32(const uint8_t* p){
-    uint32_t v; memcpy(&v, p, 4); return __builtin_bswap32(v);
-}
-
 static void log_state_change(dhcp_state_t old, dhcp_state_t now){
-    KP("[DHCP] state %i -> %i", old, now);
+    kprintf("[DHCP] state %i -> %i", old, now);
 }
 
 static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid);
@@ -79,7 +71,7 @@ static void dhcp_tx_packet(const dhcp_request *req,
 }
 
 static void dhcp_send_discover(uint32_t xid){
-    KP("[DHCP] discover xid=%i", xid);
+    kprintf("[DHCP] discover xid=%i", xid);
     dhcp_request req = {0};
     memcpy(req.mac, g_local_ep.mac, 6);
     dhcp_tx_packet(&req, DHCPDISCOVER, xid, 0xFFFFFFFFu);
@@ -90,7 +82,7 @@ static void dhcp_send_request(const dhcp_request *req,
                             bool broadcast)
 {
     uint32_t dst = broadcast ? 0xFFFFFFFFu : __builtin_bswap32(req->server_ip);
-    //KP("[DHCP] request xid=%i dst=%x\n", (uint64_t)xid, (uint64_t)dst);
+    //kprintf("[DHCP] request xid=%i dst=%x\n", (uint64_t)xid, (uint64_t)dst);
     dhcp_tx_packet(req, DHCPREQUEST, xid, dst);
 }
 
@@ -101,7 +93,7 @@ static void dhcp_send_renew(uint32_t xid) {
     req.offered_ip = __builtin_bswap32(cfg->ip);
     req.server_ip  = cfg->rt ? cfg->rt->server_ip : 0;
     uint32_t dst = req.server_ip ? __builtin_bswap32(req.server_ip) : 0xFFFFFFFFu;
-    KP("[DHCP] renew xid=%i dst=%x", xid, dst);
+    kprintf("[DHCP] renew xid=%i dst=%x", xid, dst);
     dhcp_tx_packet(&req, DHCPREQUEST, xid, dst);
 }
 
@@ -111,7 +103,7 @@ static void dhcp_send_rebind(uint32_t xid) {
     memcpy(req.mac, g_local_ep.mac, 6);
     req.offered_ip = __builtin_bswap32(cfg->ip);
     req.server_ip  = 0;
-    KP("[DHCP] rebind xid=%i", xid);
+    kprintf("[DHCP] rebind xid=%i", xid);
     dhcp_tx_packet(&req, DHCPREQUEST, xid, 0xFFFFFFFFu);
 }
 
@@ -140,7 +132,7 @@ static bool dhcp_wait_for_type(uint8_t wanted,
             waited += 50;
         }
     }
-    KP("[DHCP] wait timeout type=%i", wanted);
+    kprintf("[DHCP] wait timeout type=%i", wanted);
     return false;
 }
 
@@ -247,12 +239,13 @@ static void dhcp_fsm_once()
     if (old != g_state) log_state_change(old, g_state);
 }
 
-int dhcp_daemon_entry(){
-    KP("[DHCP] daemon start pid=%i", get_current_proc_pid());
+int dhcp_daemon_entry(int argc, char* argv[]){
+    (void)argc; (void)argv;
     g_pid_dhcpd = (uint16_t)get_current_proc_pid();
+    dhcp_set_pid(g_pid_dhcpd);
     g_sock = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dhcpd);
     if(socket_bind_udp(g_sock, 68) != 0){
-        KP("[DHCP] bind failed\n");
+        kprint("[DHCP] bind failed\n");
         return 1;
     }
 
@@ -336,16 +329,12 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
         uint32_t t1_net;
         memcpy(&t1_net, &p->options[idx+2], 4);
         cfg_local.rt->t1 = __builtin_bswap32(t1_net);
-    } else {
-        cfg_local.rt->t1 = cfg_local.rt->lease / 2;
     }
     idx = dhcp_parse_option(p, 59);
     if (idx != UINT16_MAX && p->options[idx+1] >= 4) {
         uint32_t t2_net;
         memcpy(&t2_net, &p->options[idx+2], 4);
         cfg_local.rt->t2 = __builtin_bswap32(t2_net);
-    } else {
-        cfg_local.rt->t2 = cfg_local.rt->t1 * 2;
     }
 
     idx = dhcp_parse_option(p, 54);
@@ -355,13 +344,16 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
         cfg_local.rt->server_ip = __builtin_bswap32(srv_net);
         req->server_ip = srv_net;
     }
+
+    if (cfg_local.rt->dns[0] == 0 && cfg_local.gw != 0) {
+        cfg_local.rt->dns[0] = cfg_local.gw;
+    }
+
     uint32_t bcast = ipv4_broadcast(cfg_local.ip, cfg_local.mask);
     static const uint8_t bmac[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
     arp_table_put(bcast, bmac, 0, true);
 
     ipv4_set_cfg(&cfg_local);
-
-    kprintf("Local IP: %i.%i.%i.%i",FORMAT_IP(cfg_local.ip));
 
     g_t1_left_ms = cfg_local.rt->t1 * 1000;
     g_t2_left_ms = cfg_local.rt->t2 * 1000;

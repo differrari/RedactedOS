@@ -1,4 +1,3 @@
-#pragma once
 #include "net/transport_layer/socket_udp.hpp"
 #include "net/transport_layer/socket.hpp"
 #include "csocket_udp.h"

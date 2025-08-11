@@ -1,13 +1,8 @@
-#pragma once
-
 #include "console/kio.h"
 #include "net/transport_layer/socket_tcp.hpp"
 #include "http.h"
 #include "std/string.h"
 #include "std/memfunctions.h"
-
-#define KP(fmt, ...) \
-    do { kprintf(fmt, ##__VA_ARGS__); } while (0)
 
 class HTTPServer {
 private:
