@@ -37,7 +37,7 @@ bool NetworkDispatch::init()
 void NetworkDispatch::handle_download_interrupt()
 {
     if (!driver) return;
-    
+
     sizedptr raw = driver->handle_receive_packet(recv_buffer);
     if (raw.size < sizeof(eth_hdr_t)) {
         return;
@@ -125,21 +125,6 @@ bool NetworkDispatch::dequeue_packet_for(uint16_t pid, sizedptr *out)
 
     free(reinterpret_cast<void*>(stored.ptr), stored.size);
     return true;
-}
-
-static sizedptr make_user_copy(const sizedptr &src)
-{
-    sizedptr out{0, 0};
-    uintptr_t mem = malloc(src.size);
-    if (!mem) return out;
-
-    memcpy(reinterpret_cast<void*>(mem),
-           reinterpret_cast<const void*>(src.ptr),
-           src.size);
-
-    out.ptr  = mem;
-    out.size = src.size;
-    return out;
 }
 
 sizedptr NetworkDispatch::make_copy(const sizedptr &in)
