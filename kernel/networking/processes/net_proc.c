@@ -50,7 +50,7 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l2l3_end
 
     char recv_buf[64];
     uint32_t waited = 0;
-    const uint32_t TIMEOUT_MS = 1000;
+    const uint32_t TIMEOUT_MS = 2000;
     const uint32_t INTERVAL_MS = 50;
     int64_t recvd = 0;
     uint32_t resp_ip = 0;
@@ -205,7 +205,8 @@ static void test_http(uint32_t ip) {
         if (body_str) {
             memcpy(body_str, (void*)resp.body.ptr, resp.body.size);
             body_str[resp.body.size] = '\0';
-            kprintf("[HTTP] %i %i bytes of body%s", (long)resp.status_code, (long)resp.body.size, (uintptr_t)body_str);
+            kprintf("[HTTP] %i %i bytes of body", resp.status_code, resp.body.size);
+            kprintf("%s\n", body_str);
             free(body_str, resp.body.size + 1);
         }
     }

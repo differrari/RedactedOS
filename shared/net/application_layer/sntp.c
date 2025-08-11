@@ -58,7 +58,7 @@ static sntp_result_t sntp_send_query(socket_handle_t sock, uint32_t server_ip_ho
 }
 
 sntp_result_t sntp_poll_once(uint32_t timeout_ms){
-    const net_cfg_t* cfg = ipv4_get_cfg();
+     const net_cfg_t* cfg = ipv4_get_cfg();
     if (!cfg || !cfg->rt) return SNTP_ERR_NO_CFG;
 
     uint32_t s0 = cfg->rt->ntp[0];
@@ -69,9 +69,13 @@ sntp_result_t sntp_poll_once(uint32_t timeout_ms){
     if (sock == 0) return SNTP_ERR_SOCKET;
 
     uint64_t t1_0 = 0, t1_1 = 0;
-    bool sent0, sent1;
-    if (s0) sent0 = (sntp_send_query(sock, s0, &t1_0) == SNTP_OK);
-    if (s1 && s1 != s0) sent1 = (sntp_send_query(sock, s1, &t1_1) == SNTP_OK);
+
+    if (s0) {
+        if (sntp_send_query(sock, s0, &t1_0) != SNTP_OK) t1_0 = 0;
+    }
+    if (s1 && s1 != s0) {
+        if (sntp_send_query(sock, s1, &t1_1) != SNTP_OK) t1_1 = 0;
+    }
 
     uint32_t waited = 0;
     uint64_t best_server_unix_us = 0;
@@ -134,8 +138,8 @@ sntp_result_t sntp_poll_once(uint32_t timeout_ms){
 
     if (best_server_unix_us == 0) return SNTP_ERR_TIMEOUT;
 
-    uint64_t sec = best_server_unix_us / 1000000ULL;
-    uint64_t frac = ((best_server_unix_us % 1000000ULL) << 32) / 1000000ULL;
+    //uint64_t sec = best_server_unix_us / 1000000ULL;
+    //uint64_t frac = ((best_server_unix_us % 1000000ULL) << 32) / 1000000ULL;
     //uint64_t ntp64 = ((sec + NTP_UNIX_EPOCH_DELTA) << 32) | frac;
 
     timer_apply_sntp_sample_us(best_server_unix_us);
