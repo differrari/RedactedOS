@@ -21,8 +21,6 @@ extern uintptr_t malloc(uint64_t size);
 extern void free(void *ptr, uint64_t size);
 extern void sleep(uint64_t ms);
 
-#define KP(fmt, ...) do { kprintf(fmt, ##__VA_ARGS__); } while (0)
-
 static uint32_t pick_probe_ip() {
     const net_cfg_t *cfg = ipv4_get_cfg();
     if (!cfg || cfg->mode == NET_MODE_DISABLED || cfg->ip == 0)
@@ -123,7 +121,7 @@ void run_http_server() {
         return;
     }
 
-    KP("[HTTP] listening on port 80");
+    kprintf("[HTTP] listening on port 80");
 
     static const char HTML_ROOT[] =
         "<h1>Hello, world!</h1>\n"
@@ -149,7 +147,7 @@ void run_http_server() {
             char tmp[128] = {0};
             uint32_t n = req.path.length < sizeof(tmp) - 1 ? req.path.length : sizeof(tmp) - 1;
             memcpy(tmp, req.path.data, n);
-            KP("[HTTP] GET %s", tmp);
+            kprintf("[HTTP] GET %s", tmp);
         }
 
         HTTPResponseMsg res = {0};
@@ -179,8 +177,10 @@ void run_http_server() {
 }
 
 static void test_http(uint32_t ip) {
-    KP("[HTTP] GET %i.%i.%i.%i:80\n", (ip >> 24) & 0xFF, (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF);
+    char ip_str[16];
+    ipv4_to_string(ip, ip_str);
 
+    kprintf("[HTTP] GET %s:80\n", ip_str);
     uint16_t pid = get_current_proc_pid();
     http_client_handle_t cli = http_client_create(pid);
     if (!cli)
@@ -205,7 +205,7 @@ static void test_http(uint32_t ip) {
         if (body_str) {
             memcpy(body_str, (void*)resp.body.ptr, resp.body.size);
             body_str[resp.body.size] = '\0';
-            KP("[HTTP] %i %i bytes of body%s\n", (uint64_t)resp.status_code, (uint64_t)resp.body.size, body_str);
+            kprintf("[HTTP] %i %i bytes of body%s\n", (uint64_t)resp.status_code, (uint64_t)resp.body.size, body_str);
             free(body_str, resp.body.size + 1);
         }
     }
@@ -235,16 +235,14 @@ void print_info() {
 
         const net_cfg_t *cfg = ipv4_get_cfg();
         if (cfg && cfg->mode != NET_MODE_DISABLED && cfg->ip != 0) {
-            KP("[NET] IP: %i.%i.%i.%i MASK: %i.%i.%i.%i GW: %i.%i.%i.%i",
-                (cfg->ip >> 24) & 0xFF, (cfg->ip >> 16) & 0xFF,
-                (cfg->ip >> 8) & 0xFF, cfg->ip & 0xFF,
-                (cfg->mask >> 24) & 0xFF, (cfg->mask >> 16) & 0xFF,
-                (cfg->mask >> 8) & 0xFF, cfg->mask & 0xFF,
-                (cfg->gw >> 24) & 0xFF, (cfg->gw >> 16) & 0xFF,
-                (cfg->gw >> 8) & 0xFF, cfg->gw & 0xFF);
-            }
+            char ip_str[16], mask_str[16], gw_str[16];
+            ipv4_to_string(cfg->ip,   ip_str);
+            ipv4_to_string(cfg->mask, mask_str);
+            ipv4_to_string(cfg->gw,   gw_str);
 
-        KP("[NET] PIDs -- NET: %i ARP: %i DHCP: %i DNS: %i SNTP: %i",
+            kprintf("[NET] IP: %s MASK: %s GW: %s", ip_str, mask_str, gw_str);
+        }
+        kprintf("[NET] PIDs -- NET: %i ARP: %i DHCP: %i DNS: %i SNTP: %i",
         network_net_get_pid(),
         arp_get_pid(),
         dhcp_get_pid(),
@@ -252,23 +250,22 @@ void print_info() {
         sntp_get_pid());
 
         timer_set_timezone_minutes(120);
-        KP("[TIME]timezone offset %i minutes", (int32_t)timer_get_timezone_minutes());
+        kprintf("[TIME]timezone offset %i minutes", (int32_t)timer_get_timezone_minutes());
 
         DateTime now_dt_utc, now_dt_loc;
         if (timer_now_datetime(&now_dt_utc, 0)) {
             char s[20];
             timer_datetime_to_string(&now_dt_utc, s, sizeof s);
-            KP("[TIME] UTC: %s", s);
+            kprintf("[TIME] UTC: %s", s);
         }
         if (timer_now_datetime(&now_dt_loc, 1)) {
             char s[20];
             timer_datetime_to_string(&now_dt_loc, s, sizeof s);
-            KP("[TIME] LOCAL: %s (TZ %i min)", s, (int32_t)timer_get_timezone_minutes());
+            kprintf("[TIME] LOCAL: %s (TZ %i min)", s, (int32_t)timer_get_timezone_minutes());
         }
-        uint32_t ip;
-        char domain[] = "home.leox.me";
-        dns_result_t r = dns_resolve_a(domain, &ip, DNS_USE_BOTH, 3000);
-        KP("[DNS] domain %s translated in %i.%i.%i.%i, status %i", domain, (ip>>24)&0xFF, (ip>>16)&0xFF, (ip>>8)&0xFF, (ip&0xFF), (int)r);
+        //uint32_t ip;
+        //char domain[] = "google.com";
+        //dns_result_t r = dns_resolve_a(domain, &ip, DNS_USE_BOTH, 3000);
     }
 }
 
@@ -281,7 +278,10 @@ void test_net() {
         print_info();
 
         uint32_t bcast = ipv4_broadcast(cfg->ip, cfg->mask);
-        KP("[NET] probing broadcast %i.%i.%i.%i", (bcast>>24)&0xFF, (bcast>>16)&0xFF, (bcast>>8)&0xFF, (bcast&0xFF));
+        char bcast_str[16];
+        ipv4_to_string(bcast, bcast_str);
+
+        kprintf("[NET] probing broadcast %s", bcast_str);
 
         if (udp_probe_server(bcast, 8080, &l2, &srv))
             test_http(srv.ip);
@@ -297,7 +297,7 @@ void test_net() {
 
     if (udp_probe_server(fallback, 8080, &l2, &srv))
         test_http(srv.ip);
-    else KP("[NET] could not find update server\n");
+    else kprintf("[NET] could not find update server\n");
 }
 
 void ip_waiter_entry() {

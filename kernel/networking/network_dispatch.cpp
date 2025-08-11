@@ -84,7 +84,7 @@ void NetworkDispatch::net_task()
     network_net_set_pid(get_current_proc_pid());
     for (;;) {
         bool did_work = false;
-        sizedptr pkt;
+        sizedptr pkt{0,0};
 
         //rx
         if (!rx_queue.is_empty() && rx_queue.dequeue(pkt)) {
@@ -126,21 +126,6 @@ bool NetworkDispatch::dequeue_packet_for(uint16_t pid, sizedptr *out)
 
     free(reinterpret_cast<void*>(stored.ptr), stored.size);
     return true;
-}
-
-static sizedptr make_user_copy(const sizedptr &src)
-{
-    sizedptr out{0, 0};
-    uintptr_t mem = malloc(src.size);
-    if (!mem) return out;
-
-    memcpy(reinterpret_cast<void*>(mem),
-           reinterpret_cast<const void*>(src.ptr),
-           src.size);
-
-    out.ptr  = mem;
-    out.size = src.size;
-    return out;
 }
 
 sizedptr NetworkDispatch::make_copy(const sizedptr &in)

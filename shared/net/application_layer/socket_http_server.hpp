@@ -6,9 +6,6 @@
 #include "std/string.h"
 #include "std/memfunctions.h"
 
-#define KP(fmt, ...) \
-    do { kprintf(fmt, ##__VA_ARGS__); } while (0)
-
 class HTTPServer {
 private:
     TCPSocket sock;

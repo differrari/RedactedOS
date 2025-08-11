@@ -4,7 +4,7 @@
 #include "std/memfunctions.h"
 #include "process/scheduler.h"
 #include "math/math.h"
-#include "math/rng.h"+
+#include "math/rng.h"
 
 #include "networking/network.h"
 #include "net/application_layer/dhcp.h"
@@ -40,8 +40,6 @@ typedef enum {
     DHCP_S_REBINDING
 } dhcp_state_t;
 
-#define KP(fmt, ...) \
-    do { kprintf(fmt, ##__VA_ARGS__); } while(0)
 static dhcp_state_t g_state = DHCP_S_INIT;
 static net_l2l3_endpoint g_local_ep = {0};
 static volatile bool g_force_renew = false;
@@ -56,12 +54,8 @@ bool dhcp_is_running() { return g_pid_dhcpd != 0xFFFF; }
 void dhcp_set_pid(uint16_t p){ g_pid_dhcpd = p;    }
 void dhcp_force_renew() { g_force_renew = true; }
 
-static inline uint32_t rd_be32(const uint8_t* p){
-    uint32_t v; memcpy(&v, p, 4); return __builtin_bswap32(v);
-}
-
 static void log_state_change(dhcp_state_t old, dhcp_state_t now){
-    KP("[DHCP] state %i -> %i", old, now);
+    kprintf("[DHCP] state %i -> %i", old, now);
 }
 
 static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid);
@@ -77,7 +71,7 @@ static void dhcp_tx_packet(const dhcp_request *req,
 }
 
 static void dhcp_send_discover(uint32_t xid){
-    KP("[DHCP] discover xid=%i", xid);
+    kprintf("[DHCP] discover xid=%i", xid);
     dhcp_request req = {0};
     memcpy(req.mac, g_local_ep.mac, 6);
     dhcp_tx_packet(&req, DHCPDISCOVER, xid, 0xFFFFFFFFu);
@@ -88,7 +82,7 @@ static void dhcp_send_request(const dhcp_request *req,
                             bool broadcast)
 {
     uint32_t dst = broadcast ? 0xFFFFFFFFu : __builtin_bswap32(req->server_ip);
-    //KP("[DHCP] request xid=%i dst=%x\n", (uint64_t)xid, (uint64_t)dst);
+    //kprintf("[DHCP] request xid=%i dst=%x\n", (uint64_t)xid, (uint64_t)dst);
     dhcp_tx_packet(req, DHCPREQUEST, xid, dst);
 }
 
@@ -99,7 +93,7 @@ static void dhcp_send_renew(uint32_t xid) {
     req.offered_ip = __builtin_bswap32(cfg->ip);
     req.server_ip  = cfg->rt ? cfg->rt->server_ip : 0;
     uint32_t dst = req.server_ip ? __builtin_bswap32(req.server_ip) : 0xFFFFFFFFu;
-    KP("[DHCP] renew xid=%i dst=%x", xid, dst);
+    kprintf("[DHCP] renew xid=%i dst=%x", xid, dst);
     dhcp_tx_packet(&req, DHCPREQUEST, xid, dst);
 }
 
@@ -109,7 +103,7 @@ static void dhcp_send_rebind(uint32_t xid) {
     memcpy(req.mac, g_local_ep.mac, 6);
     req.offered_ip = __builtin_bswap32(cfg->ip);
     req.server_ip  = 0;
-    KP("[DHCP] rebind xid=%i", xid);
+    kprintf("[DHCP] rebind xid=%i", xid);
     dhcp_tx_packet(&req, DHCPREQUEST, xid, 0xFFFFFFFFu);
 }
 
@@ -138,7 +132,7 @@ static bool dhcp_wait_for_type(uint8_t wanted,
             waited += 50;
         }
     }
-    KP("[DHCP] wait timeout type=%i", wanted);
+    kprintf("[DHCP] wait timeout type=%i", wanted);
     return false;
 }
 
@@ -249,7 +243,7 @@ void dhcp_daemon_entry(){
     dhcp_set_pid(get_current_proc_pid());
     g_sock = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dhcpd);
     if(socket_bind_udp(g_sock, 68) != 0){
-        KP("[DHCP] bind failed\n");
+        kprintf("[DHCP] bind failed\n");
         return;
     }
 

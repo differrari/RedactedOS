@@ -88,7 +88,7 @@ uint16_t tcp_compute_checksum(const void *segment,
     return htons((uint16_t)(~sum & 0xFFFF));
 }
 
-static int find_flow(uint16_t local_port, uint32_t remote_ip, uint16_t remote_port) {
+int find_flow(uint16_t local_port, uint32_t remote_ip, uint16_t remote_port) {
     for (int i = 0; i < MAX_TCP_FLOWS; ++i) {
         tcp_flow_t *f = &tcp_flows[i];
         if (f->state != TCP_STATE_CLOSED) {
@@ -424,13 +424,17 @@ void tcp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
     uint16_t window = ntohs(hdr->window);
     int idx = find_flow(dst_port, src_ip, src_port);
     tcp_flow_t *flow = (idx >= 0 ? &tcp_flows[idx] : NULL);
+    if (flow) {
+        flow->ctx.window = window;
+    }
 
     if (!flow) {
         int listen_idx = find_flow(dst_port, 0, 0);
-        if ((flags & (1<<SYN_F)) && !(flags & (1<<ACK_F)) && listen_idx >= 0) {
-            //TODO: use a syscall for the rng
+        if ((flags & (1u<<SYN_F)) && !(flags & (1u<<ACK_F)) && listen_idx >= 0) {
+            // TODO syscall for rng
             rng_t rng;
             rng_init_random(&rng);
+
             tcp_flow_t *lf = &tcp_flows[listen_idx];
             int new_idx = allocate_flow_entry();
             if (new_idx < 0) return;
@@ -441,16 +445,16 @@ void tcp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
             flow->remote.port = src_port;
             flow->state = TCP_SYN_RECEIVED;
             flow->retries = TCP_SYN_RETRIES;
-            
+
+            flow->ctx.window = lf->ctx.window ? lf->ctx.window : 0xFFFF;
+            flow->ctx.flags = 0;
+            flow->ctx.options = lf->ctx.options;
+            flow->ctx.payload.ptr  = 0;
+            flow->ctx.payload.size = 0;
+
             uint32_t iss = rng_next32(&rng);
             flow->ctx.sequence = iss;
             flow->ctx.ack = seq + 1;
-            flow->ctx.window = 0xFFFF;
-            flow->ctx.flags = 0;
-            flow->ctx.options.ptr = 0;
-            flow->ctx.options.size = 0;
-            flow->ctx.payload.ptr = 0;
-            flow->ctx.payload.size = 0;
             flow->ctx.expected_ack = iss + 1;
             flow->ctx.ack_received = 0;
 
@@ -459,16 +463,15 @@ void tcp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
             synack_hdr.dst_port = htons(src_port);
             synack_hdr.sequence = htonl(iss);
             synack_hdr.ack      = htonl(seq + 1);
-            synack_hdr.flags    = (1<<SYN_F) | (1<<ACK_F);
-            synack_hdr.window   = flow->ctx.window;
+            synack_hdr.flags    = (uint8_t)((1u<<SYN_F) | (1u<<ACK_F));
+            synack_hdr.window   = htons(flow->ctx.window);
             synack_hdr.urgent_ptr = 0;
             uint32_t src_ip_local = ipv4_get_cfg()->ip;
             send_tcp_segment(src_ip_local, src_ip, &synack_hdr, NULL, 0);
-
             return;
         } else {
-            if (!(flags & (1<<RST_F))) {
-                if (flags & (1<<ACK_F)) {
+            if (!(flags & (1u<<RST_F))) {
+                if (flags & (1u<<ACK_F)) {
                     send_reset(dst_ip, src_ip, dst_port, src_port, seq, ack, false);
                 } else {
                     send_reset(dst_ip, src_ip, dst_port, src_port, seq, ack, true);
@@ -519,23 +522,26 @@ void tcp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
             free_flow_entry(idx);
         }
         return;
-    case TCP_ESTABLISHED: //keep alive
-        uint8_t hdr_len  = (hdr->data_offset_reserved >> 4) * 4;
-        uint32_t data_len = len - hdr_len;
+    case TCP_ESTABLISHED: {
+        uint8_t hdr_len = (uint8_t)((hdr->data_offset_reserved >> 4) * 4);
+        if (len < hdr_len) return;
 
-        if ((flags & ACK_F)
-            && !(flags & (SYN_F|FIN_F|RST_F))
-            && data_len == 0
-            && seq + 1 == flow->ctx.ack)
-        {
-            tcp_hdr_t ack_hdr = {
-                .src_port    = htons(flow->local_port),
-                .dst_port    = htons(flow->remote.port),
-                .sequence    = htonl(flow->ctx.sequence),
-                .ack         = htonl(flow->ctx.ack),
-                .flags       = (1 << ACK_F),
-                .window      = flow->ctx.window,
-                .urgent_ptr  = 0
+        uint32_t data_len = len - hdr_len;
+        const bool is_ack_only =
+            ( (flags & (1u << ACK_F)) != 0 ) &&
+            ( (flags & ((1u << SYN_F) | (1u << FIN_F) | (1u << RST_F))) == 0 ) &&
+            ( data_len == 0 ) &&
+            ( seq + 1u == flow->ctx.ack );
+
+        if (is_ack_only) {
+            tcp_hdr_t ack_hdr = (tcp_hdr_t){
+                .src_port   = htons(flow->local_port),
+                .dst_port   = htons(flow->remote.port),
+                .sequence   = htonl(flow->ctx.sequence),
+                .ack        = htonl(flow->ctx.ack),
+                .flags      = (uint8_t)(1u << ACK_F),
+                .window     = htons(flow->ctx.window),
+                .urgent_ptr = 0
             };
             send_tcp_segment(
                 ipv4_get_cfg()->ip,
@@ -544,6 +550,9 @@ void tcp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
             );
             return;
         }
+
+        __attribute__((fallthrough));
+    }
     case TCP_FIN_WAIT_1:
     case TCP_FIN_WAIT_2:
     case TCP_CLOSE_WAIT:

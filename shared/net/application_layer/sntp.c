@@ -5,6 +5,7 @@
 #include "net/transport_layer/csocket_udp.h"
 #include "process/scheduler.h"
 #include "console/kio.h"
+#include "types.h"
 
 #define NTP_PORT 123
 #define NTP_UNIX_EPOCH_DELTA 2208988800UL
@@ -24,10 +25,6 @@ typedef struct __attribute__((packed)) {
     uint64_t recvTs;
     uint64_t txTs;
 } ntp_packet_t;
-
-static inline uint16_t be16(uint16_t v){ return __builtin_bswap16(v); }
-static inline uint32_t be32(uint32_t v){ return __builtin_bswap32(v); }
-static inline uint64_t be64(uint64_t v){ return __builtin_bswap64(v); }
 
 static uint64_t unix_us_to_ntp64_be(uint64_t unix_us){
     uint64_t sec = unix_us / 1000000ULL;

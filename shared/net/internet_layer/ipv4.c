@@ -59,12 +59,33 @@ const net_cfg_t* ipv4_get_cfg() {
     return &g_net_cfg;
 }
 
-string ipv4_to_string(uint32_t ip) {
-    return string_format("%i.%i.%i.%i",
-                        (ip>>24)&0xFF,
-                        (ip>>16)&0xFF,
-                        (ip>>8)&0xFF,
-                        ip&0xFF);
+static char* u8_to_str(uint8_t val, char* out) {
+    if (val >= 100) {
+        *out++ = '0' + (val / 100);
+        val %= 100;
+        *out++ = '0' + (val / 10);
+        *out++ = '0' + (val % 10);
+    } else if (val >= 10) {
+        *out++ = '0' + (val / 10);
+        *out++ = '0' + (val % 10);
+    } else {
+        *out++ = '0' + val;
+    }
+    return out;
+}
+
+void ipv4_to_string(uint32_t ip, char* buf) {
+    uint8_t a = (ip >> 24) & 0xFF;
+    uint8_t b = (ip >> 16) & 0xFF;
+    uint8_t c = (ip >> 8)  & 0xFF;
+    uint8_t d = ip & 0xFF;
+
+    char* p = buf;
+    p = u8_to_str(a, p); *p++ = '.';
+    p = u8_to_str(b, p); *p++ = '.';
+    p = u8_to_str(c, p); *p++ = '.';
+    p = u8_to_str(d, p);
+    *p = '\0';
 }
 
 static uint16_t ipv4_checksum(const void *buf, size_t len) {
@@ -121,7 +142,7 @@ void ip_input(uintptr_t ip_ptr,
             udp_input(payload_ptr, payload_len, sip, dip);
             break;
         default:
-            //everything elese
+            //everything else
             break;
     }
 }

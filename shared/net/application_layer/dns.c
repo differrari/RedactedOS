@@ -4,13 +4,9 @@
 #include "process/scheduler.h"
 #include "net/internet_layer/ipv4.h"
 #include "dns_daemon.h"
+#include "types.h"
 
 extern void sleep(uint64_t ms);
-
-static inline uint16_t read_be16(const uint8_t* p){ uint16_t v; memcpy(&v,p,2); return __builtin_bswap16(v); }
-static inline uint32_t read_be32(const uint8_t* p){ uint32_t v; memcpy(&v,p,4); return __builtin_bswap32(v); }
-static inline void write_be16(uint8_t* p, uint16_t v){ v = __builtin_bswap16(v); memcpy(p,&v,2); }
-static inline void write_be32(uint8_t* p, uint32_t v){ v = __builtin_bswap32(v); memcpy(p,&v,4); }
 
 static uint32_t encode_dns_qname(uint8_t* dst, const char* name){
     uint32_t index = 0;
@@ -41,10 +37,10 @@ static uint32_t skip_dns_name(const uint8_t* message, uint32_t message_len, uint
 
 static dns_result_t parse_dns_a_record(uint8_t* buffer, uint32_t buffer_len, uint16_t message_id, uint32_t* out_ip){
     if (buffer_len < 12) return DNS_ERR_FORMAT;
-    if (read_be16(buffer+0) != message_id) return DNS_ERR_FORMAT;
-    uint16_t flags = read_be16(buffer+2);
-    uint16_t question_count = read_be16(buffer+4);
-    uint16_t answer_count = read_be16(buffer+6);
+    if (rd_be16(buffer+0) != message_id) return DNS_ERR_FORMAT;
+    uint16_t flags = rd_be16(buffer+2);
+    uint16_t question_count = rd_be16(buffer+4);
+    uint16_t answer_count = rd_be16(buffer+6);
     if ((flags & 0x000F) == 3) return DNS_ERR_NXDOMAIN;
     uint32_t offset = 12;
     for (uint16_t i = 0; i < question_count; ++i){
@@ -55,13 +51,13 @@ static dns_result_t parse_dns_a_record(uint8_t* buffer, uint32_t buffer_len, uin
     for (uint16_t i = 0; i < answer_count; ++i){
         offset = skip_dns_name(buffer, buffer_len, offset);
         if (offset + 10 > buffer_len) return DNS_ERR_FORMAT;
-        uint16_t type = read_be16(buffer+offset+0);
-        uint16_t klass = read_be16(buffer+offset+2);
-        uint16_t rdlength = read_be16(buffer+offset+8);
+        uint16_t type = rd_be16(buffer+offset+0);
+        uint16_t klass = rd_be16(buffer+offset+2);
+        uint16_t rdlength = rd_be16(buffer+offset+8);
         offset += 10;
         if (offset + rdlength > buffer_len) return DNS_ERR_FORMAT;
         if (type == 1 && klass == 1 && rdlength == 4){
-            uint32_t ip_host = read_be32(buffer+offset);
+            uint32_t ip_host = rd_be32(buffer+offset);
             *out_ip = ip_host;
             return DNS_OK;
         }
@@ -74,13 +70,13 @@ static dns_result_t perform_dns_query_once(socket_handle_t sock, uint32_t dns_ip
     uint8_t request_buffer[512]; memset(request_buffer,0,sizeof(request_buffer));
     rng_t rng; rng_init_random(&rng);
     uint16_t message_id = (uint16_t)(rng_next32(&rng) & 0xFFFF);
-    write_be16(request_buffer+0, message_id);
-    write_be16(request_buffer+2, 0x0100);
-    write_be16(request_buffer+4, 1);
+    wr_be16(request_buffer+0, message_id);
+    wr_be16(request_buffer+2, 0x0100);
+    wr_be16(request_buffer+4, 1);
     uint32_t offset = 12;
     offset += encode_dns_qname(request_buffer+offset, name);
-    write_be16(request_buffer+offset+0, 1);
-    write_be16(request_buffer+offset+2, 1);
+    wr_be16(request_buffer+offset+0, 1);
+    wr_be16(request_buffer+offset+2, 1);
     offset += 4;
     int64_t sent = socket_sendto_udp(sock, dns_ip_host, 53, request_buffer, offset);
     if (sent < 0) return DNS_ERR_SEND;

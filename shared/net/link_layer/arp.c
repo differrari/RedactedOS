@@ -20,8 +20,6 @@ extern void      free(void *ptr, uint64_t size);
 static uint16_t g_arp_pid = 0xFFFF;
 static arp_entry_t g_arp_table[ARP_TABLE_MAX];
 static bool init = false;
-#define KP(fmt, ...) \
-    do { kprintf(fmt, ##__VA_ARGS__); } while (0)
 
 void arp_set_pid(uint16_t pid) { g_arp_pid = pid; }
 uint16_t arp_get_pid() { return g_arp_pid; }
@@ -60,13 +58,6 @@ void arp_table_put(uint32_t ip, const uint8_t mac[6], uint32_t ttl_ms, bool is_s
     memcpy(g_arp_table[idx].mac, mac, 6);
     g_arp_table[idx].ttl_ms = is_static ? 0 : ttl_ms;
     g_arp_table[idx].static_entry = is_static ? 1 : 0;
-
-    /*KP("[ARP] put %i.%i.%i.%i -> %x:%x:%x:%x:%x:%x static=%i ttl=%i\n",
-       (uint64_t)((ip>>24)&0xFF), (uint64_t)((ip>>16)&0xFF),
-       (uint64_t)((ip>>8)&0xFF),  (uint64_t)(ip&0xFF),
-       (uint64_t)mac[0], (uint64_t)mac[1], (uint64_t)mac[2],
-       (uint64_t)mac[3], (uint64_t)mac[4], (uint64_t)mac[5],
-       (uint64_t)g_arp_table[idx].static_entry, (uint64_t)ttl_ms);*/
 }
 
 bool arp_table_get(uint32_t ip, uint8_t mac_out[6]) {
