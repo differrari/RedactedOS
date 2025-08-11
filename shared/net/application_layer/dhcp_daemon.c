@@ -239,12 +239,15 @@ static void dhcp_fsm_once()
     if (old != g_state) log_state_change(old, g_state);
 }
 
-void dhcp_daemon_entry(){
-    dhcp_set_pid(get_current_proc_pid());
+int dhcp_daemon_entry(int argc, char* argv[])
+{
+    (void)argc; (void)argv;
+    g_pid_dhcpd = (uint16_t)get_current_proc_pid();
+    dhcp_set_pid(g_pid_dhcpd);
     g_sock = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dhcpd);
     if(socket_bind_udp(g_sock, 68) != 0){
-        kprintf("[DHCP] bind failed\n");
-        return;
+        kprint("[DHCP] bind failed\n");
+        return 1;
     }
 
     for(;;){

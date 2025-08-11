@@ -17,8 +17,9 @@ void network_handle_upload_interrupt() {
     if (dispatch) dispatch->handle_upload_interrupt();
 }
 
-void network_net_task_entry() {
-    if (dispatch) dispatch->net_task();
+int network_net_task_entry(int argc, char* argv[]) {
+    if (dispatch) return dispatch->net_task();
+    return 0;
 }
 
 int net_tx_frame(uintptr_t frame_ptr, uint32_t frame_len) {

@@ -1,11 +1,18 @@
 #shared
-CFLAGS  := $(CFLAGS_BASE) -I. -I../kernel -Wno-unused-parameter
+
+include ../common.mk
+
+CPPFLAGS := -I. -I../kernel
+CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
+CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
 
 CLEAN_OBJS := $(shell find . -name '*.o')
+CLEAN_DEPS := $(shell find . -name '*.d')
 C_SRC   := $(shell find . -name '*.c')
 CPP_SRC := $(shell find . -name '*.cpp')
 ASM_SRC := $(shell find . -name '*.S')
 OBJ     := $(C_SRC:.c=.o) $(ASM_SRC:.S=.o) $(CPP_SRC:.cpp=.o)
+DEP     := $(C_SRC:.c=.d) $(ASM_SRC:.S=.d) $(CPP_SRC:.cpp=.d)
 
 TARGET  := libshared.a
 
@@ -14,16 +21,18 @@ TARGET  := libshared.a
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(AR) rcs $@ $^
+	$(VAR) rcs $@ $^
 
 %.o: %.S
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(VAS) $(CFLAGS) -c $< -o $@
 
 %.o: %.c
-	$(CC) $(CFLAGS) $(CONLY_FLAGS_BASE) -c $< -o $@
+	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
 
 %.o: %.cpp
-	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
+	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
 clean:
-	rm -f $(CLEAN_OBJS) $(TARGET)
+	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
+
+-include $(DEP)

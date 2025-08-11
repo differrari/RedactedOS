@@ -8,9 +8,19 @@
 #include "process/scheduler.h"
 #include "math/math.h"
 #include "syscalls/syscalls.h"
+#include "filesystem/filesystem.h"
 
-__attribute__((section(".text.kcoreprocesses")))
+file boot_fd;
+
 void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
+    uint16_t pid = get_current_proc_pid();
+    if (boot_fd.size == 0){
+        string proc_out = string_format("/proc/%i/out",pid);
+        open_file(proc_out.data, &boot_fd);
+        free(proc_out.data, proc_out.mem_length);
+    }
+    write_file(&boot_fd, "hello buffer", 12);
+
     const char* name = BOOTSCREEN_TEXT;
     string s = string_l(name);
     int scale = 2;
@@ -23,10 +33,8 @@ void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
     free(s.data,s.mem_length);
 }
 
-__attribute__((section(".rodata.kcoreprocesses")))
 const gpu_point offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
 
-__attribute__((section(".text.kcoreprocesses")))
 gpu_point boot_calc_point(gpu_point offset, gpu_size screen_size, gpu_point screen_middle){
     int xoff = (screen_size.width/BOOTSCREEN_DIV) * offset.x;
     int yoff = (screen_size.height/BOOTSCREEN_DIV) * offset.y;
@@ -80,14 +88,13 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
         keypress kp;
         if (sys_read_input_current(&kp))
             if (kp.keys[0] != 0){
-                stop_current_process();
+                stop_current_process(0);
             }
         gpu_flush();
     }
 }
 
-__attribute__((section(".text.kcoreprocesses")))
-void bootscreen(){
+int bootscreen(){
     disable_visual();
     gpu_clear(BG_COLOR);
     sys_focus_current();
@@ -107,8 +114,9 @@ void bootscreen(){
         }
         sleep(1000);
     }
+    return 0;
 }
 
 process_t* start_bootscreen(){
-    return create_kernel_process("bootscreen",bootscreen);
+    return create_kernel_process("bootscreen",bootscreen, 0, 0);
 }

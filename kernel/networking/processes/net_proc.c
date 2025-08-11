@@ -4,19 +4,24 @@
 #include "console/kio.h"
 #include "std/memfunctions.h"
 #include "std/string.h"
+
+#include "net/network_types.h"
+#include "networking/network.h"
+
+#include "net/link_layer/arp.h"
+
 #include "net/internet_layer/ipv4.h"
+
 #include "net/transport_layer/csocket_udp.h"
+
 #include "net/application_layer/csocket_http_client.h"
 #include "net/application_layer/csocket_http_server.h"
 #include "net/application_layer/dhcp_daemon.h"
-#include "net/network_types.h"
-#include "net/link_layer/arp.h"
-#include "networking/network.h"
 #include "net/application_layer/dns_daemon.h"
 #include "net/application_layer/dns.h"
 #include "net/application_layer/sntp_daemon.h"
-#include "exceptions/timer.h"
 
+#include "exceptions/timer.h"
 extern uintptr_t malloc(uint64_t size);
 extern void free(void *ptr, uint64_t size);
 extern void sleep(uint64_t ms);
@@ -81,7 +86,7 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l2l3_end
     return resp_ip;
 }
 
-void free_request(HTTPRequestMsg *req) {
+static void free_request(HTTPRequestMsg *req) {
     if (req->path.mem_length)
         free(req->path.data, req->path.mem_length);
 
@@ -100,24 +105,24 @@ void free_request(HTTPRequestMsg *req) {
         free((void*)req->body.ptr, req->body.size);
 }
 
-void run_http_server() {
+static void run_http_server() {
     uint16_t pid = get_current_proc_pid();
     http_server_handle_t srv = http_server_create(pid);
     if (!srv) {
-        stop_current_process();
+        stop_current_process(1);
         return;
     }
 
     if (http_server_bind(srv, 80) < 0) {
         http_server_destroy(srv);
-        stop_current_process();
+        stop_current_process(2);
         return;
     }
 
     if (http_server_listen(srv, 4) < 0) {
         http_server_close(srv);
         http_server_destroy(srv);
-        stop_current_process();
+        stop_current_process(3);
         return;
     }
 
@@ -131,10 +136,10 @@ void run_http_server() {
         "<h1>404 Regrettably, no such page exists in this realm</h1>\n"
         "<p>Im rather inclined to deduce that your page simply does not exist. Given the state of affairs, I dare say it's not altogether surprising, innit?</p>";
 
-    const string STR_OK = string_from_const("OK");
-    const string STR_HTML = string_from_const("text/html");
-    const string STR_CLOSE = string_from_const("close");
-    const string STR_NOTFOUND = string_from_const("Not Found");
+    const string STR_OK      = string_from_const("OK");
+    const string STR_HTML    = string_from_const("text/html");
+    const string STR_CLOSE   = string_from_const("close");
+    const string STR_NOTFOUND= string_from_const("Not Found");
 
     while (1) {
         http_connection_handle_t conn = http_server_accept(srv);
@@ -158,7 +163,7 @@ void run_http_server() {
             res.headers_common.length = sizeof(HTML_ROOT) - 1;
             res.headers_common.type = STR_HTML;
             res.headers_common.connection = STR_CLOSE;
-            res.body.ptr = (uintptr_t)HTML_ROOT;
+            res.body.ptr  = (uintptr_t)HTML_ROOT;
             res.body.size = sizeof(HTML_ROOT) - 1;
         } else {
             res.status_code = HTTP_NOT_FOUND;
@@ -166,7 +171,7 @@ void run_http_server() {
             res.headers_common.length = sizeof(HTML_404) - 1;
             res.headers_common.type = STR_HTML;
             res.headers_common.connection = STR_CLOSE;
-            res.body.ptr = (uintptr_t)HTML_404;
+            res.body.ptr  = (uintptr_t)HTML_404;
             res.body.size = sizeof(HTML_404) - 1;
         }
 
@@ -229,9 +234,9 @@ static void test_http(uint32_t ip) {
         free(resp.extra_headers, resp.extra_header_count * sizeof(HTTPHeader));
 }
 
-void print_info() {
+static void print_info() {
     if (!sntp_is_running()) {
-        create_kernel_process("sntpd", sntp_daemon_entry);
+        create_kernel_process("sntpd", sntp_daemon_entry, 0, 0);
         while (!timer_is_synchronised());
 
         const net_cfg_t *cfg = ipv4_get_cfg();
@@ -244,11 +249,11 @@ void print_info() {
             kprintf("[NET] IP: %s MASK: %s GW: %s", ip_str, mask_str, gw_str);
         }
         kprintf("[NET] PIDs -- NET: %i ARP: %i DHCP: %i DNS: %i SNTP: %i",
-        network_net_get_pid(),
-        arp_get_pid(),
-        dhcp_get_pid(),
-        dns_get_pid(),
-        sntp_get_pid());
+            network_net_get_pid(),
+            arp_get_pid(),
+            dhcp_get_pid(),
+            dns_get_pid(),
+            sntp_get_pid());
 
         timer_set_timezone_minutes(120);
         kprintf("[TIME]timezone offset %i minutes", (int32_t)timer_get_timezone_minutes());
@@ -264,13 +269,10 @@ void print_info() {
             timer_datetime_to_string(&now_dt_loc, s, sizeof s);
             kprintf("[TIME] LOCAL: %s (TZ %i min)", s, (int32_t)timer_get_timezone_minutes());
         }
-        //uint32_t ip;
-        //char domain[] = "google.com";
-        //dns_result_t r = dns_resolve_a(domain, &ip, DNS_USE_BOTH, 3000);
     }
 }
 
-void test_net() {
+static void test_net() {
     const net_cfg_t *cfg = ipv4_get_cfg();
     net_l2l3_endpoint l2 = {0};
     net_l4_endpoint srv = {0};
@@ -298,37 +300,43 @@ void test_net() {
 
     if (udp_probe_server(fallback, 8080, &l2, &srv))
         test_http(srv.ip);
-    else kprintf("[NET] could not find update server\n");
+    else
+        kprintf("[NET] could not find update server\n");
 }
 
-void ip_waiter_entry() {
+static int net_test_entry(int argc, char* argv[]) {
+    (void)argc; (void)argv;
+    test_net();
+    return 0;
+}
+
+static int ip_waiter_entry(int argc, char* argv[]) {
+    (void)argc; (void)argv;
     for (;;) {
         const net_cfg_t *cfg = ipv4_get_cfg();
         if (cfg && cfg->mode != NET_MODE_DISABLED && cfg->ip != 0) {
-            create_kernel_process("net_test", test_net);
+            create_kernel_process("net_test", net_test_entry, 0, 0);
             break;
         }
         sleep(200);
     }
-    stop_current_process();
+    return 0;
 }
+
 
 process_t* launch_net_process() {
     const net_cfg_t *cfg = ipv4_get_cfg();
 
-    create_kernel_process("net_net", network_net_task_entry);
-
-    create_kernel_process("arp_daemon", arp_daemon_entry);
-
-    create_kernel_process("dhcp_daemon", dhcp_daemon_entry);
-
-    create_kernel_process("dns_daemon", dns_deamon_entry);
+    create_kernel_process("net_net", network_net_task_entry, 0, 0);
+    create_kernel_process("arp_daemon", arp_daemon_entry, 0, 0);
+    create_kernel_process("dhcp_daemon", dhcp_daemon_entry, 0, 0);
+    create_kernel_process("dns_daemon", dns_deamon_entry, 0, 0);
 
     if (cfg && cfg->mode != NET_MODE_DISABLED && cfg->ip != 0) {
-        create_kernel_process("net_test", test_net);
-        return 0;
+        create_kernel_process("net_test", net_test_entry, 0, 0);
+        return NULL;
     }
 
-    create_kernel_process("ip_waiter", ip_waiter_entry);
-    return 0;
+    create_kernel_process("ip_waiter", ip_waiter_entry, 0, 0);
+    return NULL;
 }

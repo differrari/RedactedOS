@@ -5,8 +5,10 @@
 extern "C" {
 #endif
 
-void dhcp_daemon_entry();
+
+int dhcp_daemon_entry(int argc, char* argv[]);
 uint16_t dhcp_get_pid();
+
 bool dhcp_is_running();
 void dhcp_set_pid(uint16_t pid);
 

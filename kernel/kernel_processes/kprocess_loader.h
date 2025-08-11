@@ -7,7 +7,7 @@ extern "C" {
 #include "types.h"
 #include "process/process.h"
 
-process_t *create_kernel_process(const char *name, void (*func)());
+process_t *create_kernel_process(const char *name, int (*func)(int argc, char* argv[]), int argc, const char* argv[]);
 
 #ifdef __cplusplus
 }

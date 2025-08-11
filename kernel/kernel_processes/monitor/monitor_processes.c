@@ -12,7 +12,6 @@
 #include "syscalls/syscalls.h"
 #include "memory/memory_types.h"
 
-__attribute__((section(".text.kcoreprocesses")))
 char* parse_proc_state(int state){
     switch (state)
     {
@@ -37,7 +36,6 @@ uint64_t calc_heap(uintptr_t ptr){
     return size;
 }
 
-__attribute__((section(".text.kcoreprocesses")))
 void print_process_info(){
     process_t *processes = get_all_processes();
     for (int i = 0; i < MAX_PROCS; i++){
@@ -75,7 +73,6 @@ void draw_memory(char *name,int x, int y, int width, int full_height, int used, 
     free(str.data,str.mem_length);
 }
 
-__attribute__((section(".text.kcoreprocesses")))
 void draw_process_view(){
     gpu_clear(BG_COLOR+0x112211);
     process_t *processes = get_all_processes();
@@ -86,9 +83,9 @@ void draw_process_view(){
 
     keypress kp;
     while (sys_read_input_current(&kp)){
-        if (kp.keys[0] == KEY_ARROW_LEFT)
+        if (kp.keys[0] == KEY_LEFT)
             scroll_index = max(scroll_index - 1, 0);
-        if (kp.keys[0] == KEY_ARROW_RIGHT)
+        if (kp.keys[0] == KEY_RIGHT)
             scroll_index = min(scroll_index + 1,MAX_PROCS);
     }
 
@@ -148,10 +145,9 @@ void draw_process_view(){
     print_process_info();
 }
 
-__attribute__((section(".text.kcoreprocesses")))
-void monitor_procs(){
+int monitor_procs(){
     keypress kp = {
-        .modifier = KEY_MOD_ALT,
+        .modifier = KEY_MOD_LALT,
         .keys[0] = 0x15//R
     };
     uint16_t shortcut = sys_subscribe_shortcut_current(kp);
@@ -167,13 +163,14 @@ void monitor_procs(){
         if (active)
             draw_process_view();
     }
+    return 1;
 }
 
 process_t* start_process_monitor(){
 #if QEMU
-    return create_kernel_process("procmonitor",monitor_procs);
+    return create_kernel_process("procmonitor",monitor_procs, 0, 0);
 #else 
     //TODO: disabled process monitor since shortcuts seem broken on rpi
-    return 0x0;//create_kernel_process("procmonitor",monitor_procs);
+    return 0x0;//create_kernel_process("procmonitor",monitor_procs, 0, 0);
 #endif
 }

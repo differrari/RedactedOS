@@ -89,6 +89,20 @@ bool is_new_keypress(keypress* current, keypress* previous) {
     return false;
 }
 
+void remove_double_keypresses(keypress* current, keypress* previous){
+    for (int i = 0; i < 6; i++)
+        if (keypress_contains(previous, current->keys[i], previous->modifier)) current->keys[i] = 0;
+}
+
+bool keypress_contains(keypress *kp, char key, uint8_t modifier){
+    if (kp->modifier != modifier) return false;//TODO: This is not entirely accurate, some modifiers do not change key
+
+    for (int i = 0; i < 6; i++)
+        if (kp->keys[i] == key)
+            return true;
+    return false;
+}
+
 bool sys_read_input(int pid, keypress *out){
     process_t *process = get_proc_by_pid(pid);
     if (process->input_buffer.read_index == process->input_buffer.write_index) return false;
@@ -122,23 +136,25 @@ bool input_init(){
     }
 }
 
-void input_process_poll(){
+int input_process_poll(int argc, char* argv[]){
     while (1){
         input_driver->poll_inputs();
     }
+    return 1;
 }
 
-void input_process_fake_interrupts(){
+int input_process_fake_interrupts(int argc, char* argv[]){
     while (1){
         input_driver->handle_interrupt();
     }
+    return 1;
 }
 
 void init_input_process(){
     if (!input_driver->use_interrupts)
-        create_kernel_process("input_poll", &input_process_poll);
+        create_kernel_process("input_poll", &input_process_poll, 0, 0);
     if (input_driver->quirk_simulate_interrupts)
-        create_kernel_process("input_int_mock", &input_process_fake_interrupts);
+        create_kernel_process("input_int_mock", &input_process_fake_interrupts, 0, 0);
 }
 
 void handle_input_interrupt(){

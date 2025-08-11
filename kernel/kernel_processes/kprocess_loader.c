@@ -4,7 +4,7 @@
 #include "memory/page_allocator.h"
 #include "exceptions/irq.h"
 
-process_t *create_kernel_process(const char *name, void (*func)()){
+process_t *create_kernel_process(const char *name, int (*func)(int argc, char* argv[]), int argc, const char* argv[]){
 
     disable_interrupt();
     
@@ -30,9 +30,13 @@ process_t *create_kernel_process(const char *name, void (*func)()){
     proc->sp = proc->stack;
     
     proc->pc = (uintptr_t)func;
-    kprintf("Kernel process %s allocated with address at %x, stack at %x, heap at %x", (uintptr_t)name, proc->pc, proc->sp, proc->heap);
+    kprintf("Kernel process %s allocated with address at %x, stack at %x, heap at %x. %i argument(s)", (uintptr_t)name, proc->pc, proc->sp, proc->heap, argc);
     proc->spsr = 0x205;
     proc->state = READY;
+    proc->regs[14] = argc;
+    proc->regs[13] = (uintptr_t)argv;
+
+    proc->output = (uintptr_t)palloc(0x1000, true, false, true);
 
     enable_interrupt();
     

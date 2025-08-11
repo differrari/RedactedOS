@@ -18,7 +18,7 @@ uint16_t network_net_get_pid();
 bool network_init();
 void network_handle_download_interrupt();
 void network_handle_upload_interrupt();
-void network_net_task_entry();
+int network_net_task_entry(int argc, char* argv[]);
 
 int net_tx_frame(uintptr_t frame_ptr, uint32_t frame_len);
 int net_rx_frame(sizedptr *out_frame);

@@ -1,11 +1,18 @@
 #user
-CFLAGS  := $(CFLAGS_BASE) -I. -I../shared -Wno-unused-parameter
-LDFLAGS := -T $(shell ls *.ld)
+
+include ../common.mk
+
+CPPFLAGS := -I. -I../shared
+CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
+CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
+LDFLAGS  := -T $(shell ls *.ld)
 
 CLEAN_OBJS := $(shell find . -name '*.o')
+CLEAN_DEPS := $(shell find . -name '*.d')
 C_SRC   := $(shell find . -name '*.c')
 CPP_SRC := $(shell find . -name '*.cpp')
 OBJ     := $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o)
+DEP     := $(C_SRC:.c=.d) $(CPP_SRC:.cpp=.d)
 
 NAME     := $(notdir $(CURDIR))
 ELF      := $(NAME).elf
@@ -17,17 +24,19 @@ LOCATION := ../fs/redos/user/
 all: $(LOCATION)$(TARGET)
 
 $(LOCATION)$(TARGET): $(OBJ)
-	$(LD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(OBJ) ../shared/libshared.a
+	$(VLD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(OBJ) ../shared/libshared.a
 	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $@
 
 %.o: %.S
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(VAS) $(CFLAGS) -c $< -o $@
 
 %.o: %.c
-	$(CC) $(CFLAGS) $(CONLY_FLAGS_BASE) -c $< -o $@
+	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
 
 %.o: %.cpp
-	$(CC) $(CFLAGS) -fno-rtti -c $< -o $@
+	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
 clean:
-	rm -f $(CLEAN_OBJS) $(TARGET)
+	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
+
+-include $(DEP)

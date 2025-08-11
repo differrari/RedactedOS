@@ -2,7 +2,6 @@
 #include "fw/fw_cfg.h"
 #include "memory/talloc.h"
 #include "console/kio.h"
-#include "graph/font8x8_bridge.h"
 #include "ui/draw/draw.h"
 #include "memory/memory_access.h"
 #include "std/std.hpp"
@@ -90,8 +89,7 @@ void VideoCoreGPUDriver::flush(){
             uint32_t* src = (uint32_t*)&bfb[dest_y * (stride / 4) + r.point.x];
             
             uint32_t copy_width = r.size.width;
-            if (r.point.x + copy_width > screen_size.width)
-            copy_width = screen_size.width - r.point.x;
+            if (r.point.x + copy_width > screen_size.width) copy_width = screen_size.width - r.point.x;
             
             memcpy(dst, src, copy_width * sizeof(uint32_t));
         }

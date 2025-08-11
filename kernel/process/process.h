@@ -7,6 +7,7 @@ extern "C" {
 #include "types.h"
 #include "keypress.h"
 #include "net/network_types.h"
+#include "dev/driver_base.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
@@ -36,6 +37,9 @@ typedef struct {
     uintptr_t stack;
     uint64_t stack_size;
     uintptr_t heap;
+    uintptr_t output;
+    file out_fd;
+    uint64_t exit_code;
     bool focused;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     input_buffer_t input_buffer;
