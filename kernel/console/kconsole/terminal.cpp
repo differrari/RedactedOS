@@ -110,7 +110,7 @@ void Terminal::TMP_test(int argc, const char* args[]){
     if (*term == 0) return;
     const char *next = seek_to(term, ';');
     uint64_t color = parse_hex_u64(term, next - term);
-    set_text_color(color & 0xFFFFFF);
+    set_text_color(color & UINT32_MAX);
     put_string(next);
 }
 

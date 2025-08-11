@@ -14,7 +14,7 @@ void KernelConsole::initialize(){
     mem_page = palloc(PAGE_SIZE, true, true, false);
     resize();
     clear();
-    default_text_color = 0xFFFFFFFF;
+    default_text_color = COLOR_WHITE;
     text_color = default_text_color;
 }
 
