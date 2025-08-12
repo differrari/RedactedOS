@@ -62,87 +62,107 @@ void sync_el0_handler_c(){
         switch (iss)
         {
         case MALLOC_CODE:
+        {
             void* page_ptr = syscall_depth > 1 ? (void*)get_proc_by_pid(1)->heap : (void*)get_current_heap();
             if ((uintptr_t)page_ptr == 0x0){
                 handle_exception_with_info("Wrong process heap state", iss);
             }
             result = (uintptr_t)kalloc(page_ptr, x0, ALIGN_16B, get_current_privilege(), false);
             break;
+        }
         case FREE_CODE:
+        {
             kfree((void*)x0, x1);
             break;
+        }
         case PRINTL_CODE:
+        {
             kprint((const char *)x0);
             break;
+        }
         case READ_KEY_CODE:
+        {
             keypress *kp = (keypress*)x0;
             result = sys_read_input_current(kp);
             break;
-
+        }
         case READ_SHORTCUT_CODE:
+        {
             kprint("[SYSCALL implementation error] Shortcut syscalls are not implemented yet");
             break;
             // keypress *kp = (keypress*)x0;
             // result = sys_shortcut_triggered_current(uint16_t sid)
-
+        }
         case CLEAR_SCREEN_CODE:
+        {
             if (!screen_overlay)
                 gpu_clear(x0);
             break;
-
+        }
         case DRAW_PRIMITIVE_PIXEL_CODE:
+        {
             if (!screen_overlay)
                 gpu_draw_pixel(*(gpu_point*)x0,x1);
             break;
-
+        }
         case DRAW_PRIMITIVE_LINE_CODE:
+        {
             if (!screen_overlay)
                 gpu_draw_line(*(gpu_point*)x0,*(gpu_point*)x1,x2);
             break;
-
+        }
         case DRAW_PRIMITIVE_RECT_CODE:
+        {
             if (!screen_overlay)
                 gpu_fill_rect(*(gpu_rect*)x0,x1);
             break;
-
+        }
         case DRAW_PRIMITIVE_CHAR_CODE:
+        {
             if (!screen_overlay)
                 gpu_draw_char(*(gpu_point*)x0,(char)x1,x2,x3);
             break;
-
+        }
         case DRAW_PRIMITIVE_STRING_CODE:
+        {
             if (!screen_overlay){
                 gpu_draw_string(*(string *)x0,*(gpu_point*)x1,x2,x3);
             }
             break;
-
+        }
         case GPU_FLUSH_DATA_CODE:
+        {
             if (!screen_overlay)
                 gpu_flush();
             break;
-
+        }
         case GPU_SCREEN_SIZE_CODE:
+        {
             result = (uintptr_t)kalloc((void*)get_current_heap(), sizeof(gpu_size), ALIGN_16B, get_current_privilege(), false);
             gpu_size size = gpu_get_screen_size();
             memcpy((void*)result, &size, sizeof(gpu_size));
             break;
-
+        }
         case GPU_CHAR_SIZE_CODE:
+        {
             result = gpu_get_char_size(x0);
             break;
-
+        }
         case SLEEP_CODE:
+        {
             sleep_process(x0);
             break;
-        
+        }
         case HALT_CODE:
+        {
             stop_current_process(x0);
             break;
-
+        }
         case GET_TIME_CODE:
+        {
             result = timer_now_msec();
             break;
-
+        }
         case BIND_PORT_CODE: {  //bind
             uint16_t port     = (uint16_t)x0;
             port_recv_handler_t handler = (port_recv_handler_t)x1;
@@ -172,9 +192,10 @@ void sync_el0_handler_c(){
             break;
         }
         
-        default:
+        default: {
             handle_exception_with_info("Unknown syscall", iss);
             break;
+        }
         }
     } else {
         switch (ec) {
