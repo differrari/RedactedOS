@@ -199,13 +199,14 @@ void sync_el0_handler_c(){
         }
     } else {
         switch (ec) {
-            case 0x21:
+            case 0x21: {
                 uint64_t far;
                 asm volatile ("mrs %0, far_el1" : "=r"(far));
                 if (far == 0){
                     kprintf("Process has exited %x",x0);
                     stop_current_process(x0);
                 }
+            }
         }
         //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
         if (currentEL == 1)
