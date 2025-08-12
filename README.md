@@ -1,8 +1,8 @@
-# Redacted Operating System
+# \[Redacted\] Operating System
 
 ## Summary
 
-The REDACTED Operating System is a 64 bit operating system meant to run on ARM processors. 
+The \[REDACTED\] Operating System is a 64 bit operating system meant to run on ARM processors. 
 It can run entirely in QEMU, either in an entirely virtual machine using QEMU's `virt` board, or emulating a Raspberry Pi 4B.
 It also has preliminary support for the Raspberry Pi 5, and possibly 4B and 3B, though these last two are largely untested.
 Its GUI is heavily inspired by video game consoles, and the OS is entirely controllable via keyboard (with future mouse and possibly gamepad support)
