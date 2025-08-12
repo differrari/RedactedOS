@@ -15,6 +15,7 @@
 #include "networking/network.h"
 #include "networking/port_manager.h"
 #include "filesystem/filesystem.h"
+#include "syscalls/syscall_codes.h"
 
 int syscall_depth = 0;
 
@@ -60,83 +61,89 @@ void sync_el0_handler_c(){
     if (ec == 0x15) {
         switch (iss)
         {
-        case 0:
+        case MALLOC_CODE:
             void* page_ptr = syscall_depth > 1 ? (void*)get_proc_by_pid(1)->heap : (void*)get_current_heap();
             if ((uintptr_t)page_ptr == 0x0){
                 handle_exception_with_info("Wrong process heap state", iss);
             }
             result = (uintptr_t)kalloc(page_ptr, x0, ALIGN_16B, get_current_privilege(), false);
             break;
-        case 1:
+        case FREE_CODE:
             kfree((void*)x0, x1);
             break;
-        case 3:
+        case PRINTL_CODE:
             kprint((const char *)x0);
             break;
-        case 5:
+        case READ_KEY_CODE:
             keypress *kp = (keypress*)x0;
             result = sys_read_input_current(kp);
             break;
 
-        case 10:
+        case READ_SHORTCUT_CODE:
+            kprint("[SYSCALL implementation error] Shortcut syscalls are not implemented yet");
+            break;
+            // keypress *kp = (keypress*)x0;
+            // result = sys_shortcut_triggered_current(uint16_t sid)
+
+        case CLEAR_SCREEN_CODE:
             if (!screen_overlay)
                 gpu_clear(x0);
             break;
 
-        case 11:
+        case DRAW_PRIMITIVE_PIXEL_CODE:
             if (!screen_overlay)
                 gpu_draw_pixel(*(gpu_point*)x0,x1);
             break;
 
-        case 12:
+        case DRAW_PRIMITIVE_LINE_CODE:
             if (!screen_overlay)
                 gpu_draw_line(*(gpu_point*)x0,*(gpu_point*)x1,x2);
             break;
 
-        case 13:
+        case DRAW_PRIMITIVE_RECT_CODE:
             if (!screen_overlay)
                 gpu_fill_rect(*(gpu_rect*)x0,x1);
             break;
 
-        case 14:
+        case DRAW_PRIMITIVE_CHAR_CODE:
             if (!screen_overlay)
                 gpu_draw_char(*(gpu_point*)x0,(char)x1,x2,x3);
             break;
 
-        case 15:
+        case DRAW_PRIMITIVE_STRING_CODE:
             if (!screen_overlay){
                 gpu_draw_string(*(string *)x0,*(gpu_point*)x1,x2,x3);
             }
             break;
 
-        case 20:
+        case GPU_FLUSH_DATA_CODE:
             if (!screen_overlay)
                 gpu_flush();
             break;
 
-        case 21:
+        case GPU_SCREEN_SIZE_CODE:
             result = (uintptr_t)kalloc((void*)get_current_heap(), sizeof(gpu_size), ALIGN_16B, get_current_privilege(), false);
             gpu_size size = gpu_get_screen_size();
             memcpy((void*)result, &size, sizeof(gpu_size));
             break;
 
-        case 22:
+        case GPU_CHAR_SIZE_CODE:
             result = gpu_get_char_size(x0);
             break;
 
-        case 30:
+        case SLEEP_CODE:
             sleep_process(x0);
             break;
         
-        case 33:
+        case HALT_CODE:
             stop_current_process(x0);
             break;
 
-        case 40:
+        case GET_TIME_CODE:
             result = timer_now_msec();
             break;
 
-        case 51: {  //bind
+        case BIND_PORT_CODE: {  //bind
             uint16_t port     = (uint16_t)x0;
             port_recv_handler_t handler = (port_recv_handler_t)x1;
             protocol_t proto  = (protocol_t)x2;
@@ -145,7 +152,7 @@ void sync_el0_handler_c(){
             break;
         }
 
-        case 52: {  //unbind
+        case UNBIND_PORT_CODE: {  //unbind
             uint16_t port    = (uint16_t)x0;
             protocol_t proto = (protocol_t)x2;
             uint16_t pid     = get_current_proc_pid();
@@ -153,13 +160,13 @@ void sync_el0_handler_c(){
             break;
         }
 
-        case 53: { //net_tx_frame
+        case SEND_PACKET_CODE: { //net_tx_frame
             uintptr_t frame_ptr = x0;
             uint32_t  frame_len = (uint32_t)x1;
             result = net_tx_frame(frame_ptr, frame_len);
             break;
         }
-        case 54: { //net_rx_frame
+        case READ_PACKET_CODE: { //net_rx_frame
             sizedptr *user_out = (sizedptr*)x0;
             result = net_rx_frame(user_out);
             break;

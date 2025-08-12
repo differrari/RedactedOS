@@ -1,3 +1,5 @@
+#include "syscall_codes.h"
+
 .macro syscall_def name:req, id:req
 .global \name
 .type \name, %function
@@ -6,37 +8,33 @@
     ret
 .endm
 
-syscall_def malloc, 0
-syscall_def free, 1
+syscall_def malloc, MALLOC_CODE
+syscall_def free, FREE_CODE
 
-syscall_def printl, 3
+syscall_def printl, PRINTL_CODE
 
-syscall_def read_key, 5
-syscall_def register_shortcut, 6
-syscall_def read_shortcut, 7
+syscall_def read_key, READ_KEY_CODE
+syscall_def register_shortcut, REGISTER_SHORTCUT_CODE
+syscall_def read_shortcut, READ_SHORTCUT_CODE
 
-//Primitives
-syscall_def clear_screen, 10
-syscall_def draw_primitive_pixel, 11
-syscall_def draw_primitive_line, 12
-syscall_def draw_primitive_rect, 13
-syscall_def draw_primitive_char, 14
-syscall_def draw_primitive_string, 15
+syscall_def clear_screen, CLEAR_SCREEN_CODE
+syscall_def draw_primitive_pixel, DRAW_PRIMITIVE_PIXEL_CODE
+syscall_def draw_primitive_line, DRAW_PRIMITIVE_LINE_CODE
+syscall_def draw_primitive_rect, DRAW_PRIMITIVE_RECT_CODE
+syscall_def draw_primitive_char, DRAW_PRIMITIVE_CHAR_CODE
+syscall_def draw_primitive_string, DRAW_PRIMITIVE_STRING_CODE
 
-//GPU commands
-syscall_def gpu_flush_data, 20
-syscall_def gpu_screen_size, 21
-syscall_def gpu_char_size, 21
+syscall_def gpu_flush_data, GPU_FLUSH_DATA_CODE
+syscall_def gpu_screen_size, GPU_SCREEN_SIZE_CODE
+syscall_def gpu_char_size, GPU_CHAR_SIZE_CODE
 
-syscall_def sleep, 30
-syscall_def process_yield, 31
-syscall_def halt, 33
+syscall_def sleep, SLEEP_CODE
+syscall_def process_yield, PROCESS_YIELD_CODE
+syscall_def halt, HALT_CODE
 
-//Time commands
-syscall_def get_time, 40
+syscall_def get_time, GET_TIME_CODE
 
-//Network commands
-syscall_def bind_port, 51
-syscall_def unbind_port, 52
-syscall_def send_packet, 53
-syscall_def read_packet, 54
+syscall_def bind_port, BIND_PORT_CODE
+syscall_def unbind_port, UNBIND_PORT_CODE
+syscall_def send_packet, SEND_PACKET_CODE
+syscall_def read_packet, READ_PACKET_CODE
