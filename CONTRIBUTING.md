@@ -9,6 +9,7 @@ All types of contributions are encouraged and valued. Please make sure you read 
 5. Make sure to test any code that's been changed as part of your PR, and any code that might've been affected by it. If you have access to the github action produced build for your PR (which only runs after being explicitly allowed), make sure to test it there too.
 6. Keep comments to a minimum. As a general rule, code should be self explanatory\*, it should be possible to read the code in a mostly-natural language, without comments, and comments should be used only if there's no other way to make the code self-explanatory, or to highlight quirks in the code's behavior or similar gotchas. It can also be used for TODOs and similar comments.
 7. If possible or necessary, include screenshots, logs or similar resources in the description of the PR to make understanding the new code's behavior easier to visualize and understand.
+8. Try to keep a consistent coding style with the rest of the project. There's currently an experimental commit message style as well [Using brackets] but you're not required to follow. Check previous commits for examples if you're interested in doing it.
 
 \* I understand the code of Redacted OS is not always the cleanest or most elegant or self explanatory. I did not expect to continue this project long term and as such didn't bother with code cleanliness. Any refactors in the code you modify are appreciated but not required for contributing.
 
