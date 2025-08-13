@@ -20,11 +20,11 @@ save_context:
     stp x29, x30, [x0, #(8 * 28)]
 
     // Save SP
-    str x11, [x0, #(8 * 31)]
+    str x18, [x0, #(8 * 31)]
 
     //Save status bits
-    and x10, x10, 0xFFF
-    str x10, [x0, #(8 * 33)]
+    and x15, x15, 0xFFF
+    str x15, [x0, #(8 * 33)]
 
     ret
 
@@ -58,20 +58,20 @@ restore_context:
     ldp x27, x28, [x0, #(8 * 26)]
     ldp x29, x30, [x0, #(8 * 28)]    
 
-    ldr x11, [x0, #(8 * 31)]
-    mov sp, x11
-    msr sp_el0, x11
-    mov x29, x11
-    ldr x10, [x0, #(8 * 33)]
-    msr spsr_el1, x10
+    ldr x18, [x0, #(8 * 31)]
+    mov sp, x18
+    msr sp_el0, x18
+    mov x29, x16
+    ldr x15, [x0, #(8 * 33)]
+    msr spsr_el1, x15
     
-    ldr x11, [x0, #(8 * 32)]
-    msr elr_el1, x11
+    ldr x14, [x0, #(8 * 32)]
+    msr elr_el1, x14
     
-    mov x0, x15
-    mov x1, x14
-    mov x30, x12
-    mov x2, x9
-    mov x3, x16
+    mov x0, x8
+    mov x1, x9
+    mov x2, x10
+    mov x3, x11
+    mov x30, x17
 
     eret

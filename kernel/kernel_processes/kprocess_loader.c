@@ -33,8 +33,8 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
     kprintf("Kernel process %s allocated with address at %x, stack at %x, heap at %x. %i argument(s)", (uintptr_t)name, proc->pc, proc->sp, proc->heap, argc);
     proc->spsr = 0x205;
     proc->state = READY;
-    proc->regs[14] = argc;
-    proc->regs[13] = (uintptr_t)argv;
+    proc->regs[7] = argc;
+    proc->regs[8] = (uintptr_t)argv;
 
     proc->output = (uintptr_t)palloc(0x1000, true, false, true);
 

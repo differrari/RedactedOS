@@ -28,19 +28,19 @@ void sync_el0_handler_c(){
     if (ksp > 0)
         asm volatile ("mov sp, %0" :: "r"(ksp));
     uint64_t x0;
-    asm volatile ("mov %0, x15" : "=r"(x0));
+    asm volatile ("mov %0, x8" : "=r"(x0));
     uint64_t x1;
-    asm volatile ("mov %0, x14" : "=r"(x1));
+    asm volatile ("mov %0, x9" : "=r"(x1));
     uint64_t x2;
-    asm volatile ("mov %0, x9" : "=r"(x2));
+    asm volatile ("mov %0, x10" : "=r"(x2));
     uint64_t x3;
-    asm volatile ("mov %0, x16" : "=r"(x3));
+    asm volatile ("mov %0, x11" : "=r"(x3));
     uint64_t x4;
     asm volatile ("mov %0, x4" : "=r"(x4));
     uint64_t x29;
-    asm volatile ("mov %0, x13" : "=r"(x29));
+    asm volatile ("mov %0, x16" : "=r"(x29));
     uint64_t x30;
-    asm volatile ("mov %0, x12" : "=r"(x30));
+    asm volatile ("mov %0, x17" : "=r"(x30));
     uint64_t elr;
     asm volatile ("mrs %0, elr_el1" : "=r"(elr));
     uint64_t spsr;
@@ -49,7 +49,7 @@ void sync_el0_handler_c(){
     uint64_t currentEL = (spsr >> 2) & 3;
 
     uint64_t sp_el;
-    asm volatile ("mov %0, x11" : "=r"(sp_el));
+    asm volatile ("mov %0, x15" : "=r"(sp_el));
 
     uint64_t esr;
     asm volatile ("mrs %0, esr_el1" : "=r"(esr));

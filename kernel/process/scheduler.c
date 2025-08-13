@@ -70,7 +70,7 @@ void switch_proc(ProcSwitchReason reason) {
 }
 
 void save_syscall_return(uint64_t value){
-    processes[current_proc].regs[14] = value;
+    processes[current_proc].regs[7] = value;
 }
 
 void process_restore(){
