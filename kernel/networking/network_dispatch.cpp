@@ -23,14 +23,14 @@ NetworkDispatch::NetworkDispatch()
     for (uint32_t i = 0; i <= UINT16_MAX; ++i)
         ports[i] = UINT16_MAX;
 
-    memset(local_mac.mac, 0, sizeof(local_mac.mac));
+    memset(local_mac, 0, sizeof(local_mac));
 }
 
 bool NetworkDispatch::init()
 {
     driver = VirtioNetDriver::try_init();
     if (!driver) return false;
-    driver->get_mac(&local_mac);
+    driver->get_mac(local_mac);
     return true;
 }
 

@@ -34,9 +34,9 @@ int net_rx_frame(sizedptr *out_frame) {
     return sz;
 }
 
-const net_l2l3_endpoint* network_get_local_endpoint() {
-    static net_l2l3_endpoint dummy = {};
-    return dispatch ? &dispatch->get_local_ep() : &dummy;
+const uint8_t* network_get_local_mac() {
+    static uint8_t dummy[6] = {0};
+    return dispatch ? dispatch->get_local_mac() : dummy;
 }
 
 void network_net_set_pid(uint16_t pid) {

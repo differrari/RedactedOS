@@ -22,12 +22,7 @@ public:
     uint16_t get_net_pid() const;
 
 
-    const net_l2l3_endpoint& get_local_ep() const {
-        static net_l2l3_endpoint ep; //TODO: locking/thread safe would be good
-        ep = local_mac;
-        ep.ip = ipv4_get_cfg()->ip;
-        return ep;
-    }
+    const uint8_t* get_local_mac() const { return local_mac; }
 
 
     NetDriver* driver_ptr() const { return driver; }
@@ -38,7 +33,7 @@ private:
 
     IndexMap<uint16_t> ports; //port pid map
     NetDriver* driver;
-    net_l2l3_endpoint local_mac;
+    uint8_t local_mac[6];
 
     Queue<sizedptr> tx_queue;
     Queue<sizedptr> rx_queue;

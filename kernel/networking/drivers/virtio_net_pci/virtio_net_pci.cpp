@@ -106,13 +106,11 @@ bool VirtioNetDriver::init(){
 }
 
 
-void VirtioNetDriver::get_mac(net_l2l3_endpoint *context){
+void VirtioNetDriver::get_mac(uint8_t out_mac[6]){
     virtio_net_config* net_config = (virtio_net_config*)vnp_net_dev.device_cfg;
     kprintfv("[VIRTIO_NET] %x:%x:%x:%x:%x:%x", net_config->mac[0], net_config->mac[1], net_config->mac[2], net_config->mac[3], net_config->mac[4], net_config->mac[5]);
-
-    memcpy((void*)&context->mac,(void*)&net_config->mac,6);
-    
-    kprintfv("[VIRTIO_NET] %i virtqueue pairs",net_config->max_virtqueue_pairs);
+    memcpy(out_mac, net_config->mac, 6);
+    kprintfv("[VIRTIO_NET] %i virtqueue pairs", net_config->max_virtqueue_pairs);
     kprintfv("[VIRTIO_NET] %x speed", net_config->speed);
     kprintfv("[VIRTIO_NET] status = %x", net_config->status);
 }

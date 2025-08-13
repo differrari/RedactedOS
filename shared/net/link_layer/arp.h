@@ -19,7 +19,7 @@ typedef struct __attribute__((packed)) arp_hdr_t {
 } arp_hdr_t;
 
 bool arp_should_handle(const arp_hdr_t *arp, uint32_t my_ip);
-void arp_populate_response(net_l2l3_endpoint *ep, const arp_hdr_t *arp);
+void arp_populate_response(uint8_t out_mac[6], uint32_t *out_ip, const arp_hdr_t *arp);
 bool arp_resolve(uint32_t ip, uint8_t mac_out[6], uint32_t timeout_ms);
 
 #define ARP_TABLE_MAX  64

@@ -100,7 +100,11 @@ bool arp_resolve(uint32_t ip, uint8_t mac_out[6], uint32_t timeout_ms) {
 }
 
 void arp_send_request(uint32_t target_ip) {
-    const net_l2l3_endpoint *ep = network_get_local_endpoint();
+    const uint8_t *local_mac = network_get_local_mac();
+    const net_cfg_t *cfg = ipv4_get_cfg();
+
+    if (!cfg) return;
+
     uint8_t dst_mac[6];
     arp_hdr_t hdr;
     uintptr_t buf;
@@ -113,16 +117,16 @@ void arp_send_request(uint32_t target_ip) {
     hdr.ptype     = __builtin_bswap16(0x0800);
     hdr.hlen      = 6;
     hdr.plen      = 4;
-    hdr.opcode = __builtin_bswap16(1);
-    memcpy(hdr.sender_mac, ep->mac, 6);
-    hdr.sender_ip = __builtin_bswap32(ep->ip);
+    hdr.opcode    = __builtin_bswap16(ARP_OPCODE_REQUEST);
+    memcpy(hdr.sender_mac, local_mac, 6);
+    hdr.sender_ip = __builtin_bswap32(cfg->ip);
     hdr.target_ip = __builtin_bswap32(target_ip);
 
     len = sizeof(eth_hdr_t) + sizeof(arp_hdr_t);
     buf = (uintptr_t)malloc(len);
     if (!buf) return;
 
-    uintptr_t ptr = create_eth_packet(buf, ep->mac, dst_mac, 0x0806);
+    uintptr_t ptr = create_eth_packet(buf, local_mac, dst_mac, 0x0806);
     memcpy((void*)ptr, &hdr, sizeof(arp_hdr_t));
 
     eth_send_frame(buf, len);
@@ -133,9 +137,9 @@ bool arp_should_handle(const arp_hdr_t *arp, uint32_t my_ip) {
     return __builtin_bswap32(arp->target_ip) == my_ip;
 }
 
-void arp_populate_response(net_l2l3_endpoint *ep, const arp_hdr_t *arp) {
-    memcpy(ep->mac, arp->sender_mac, 6);
-    ep->ip = __builtin_bswap32(arp->sender_ip);
+void arp_populate_response(uint8_t out_mac[6], uint32_t *out_ip, const arp_hdr_t *arp) {
+    if (out_mac) memcpy(out_mac, arp->sender_mac, 6);
+    if (out_ip)  *out_ip = __builtin_bswap32(arp->sender_ip);
 }
 
 bool arp_can_reply() {
@@ -160,24 +164,25 @@ int arp_daemon_entry(int argc, char* argv[]){
     }
 }
 static void arp_send_reply(const arp_hdr_t *in_arp,
-                           const uint8_t in_src_mac[6],
-                           uint32_t frame_len) {
-    const net_l2l3_endpoint *ep = network_get_local_endpoint();
+                            const uint8_t in_src_mac[6],
+                            uint32_t frame_len){
+    (void)frame_len;
+
+    const uint8_t *local_mac = network_get_local_mac();
+    const net_cfg_t *cfg = ipv4_get_cfg();
+    if (!cfg) return;
 
     uint32_t len = sizeof(eth_hdr_t) + sizeof(arp_hdr_t);
     uintptr_t buf = (uintptr_t)malloc(len);
     if (!buf) return;
 
-    uintptr_t ptr = create_eth_packet(buf,
-                                    ep->mac,
-                                    in_src_mac,
-                                    0x0806);
+    uintptr_t ptr = create_eth_packet(buf, local_mac, in_src_mac, 0x0806);
 
     arp_hdr_t reply = *in_arp;
     memcpy(reply.target_mac, in_arp->sender_mac, 6);
-    memcpy(reply.sender_mac, ep->mac,          6);
+    memcpy(reply.sender_mac, local_mac,          6);
     reply.target_ip = in_arp->sender_ip;
-    reply.sender_ip = __builtin_bswap32(ep->ip);
+    reply.sender_ip = __builtin_bswap32(cfg->ip);
     reply.opcode    = __builtin_bswap16(ARP_OPCODE_REPLY);
 
     memcpy((void*)ptr, &reply, sizeof(reply));
@@ -189,21 +194,22 @@ static void arp_send_reply(const arp_hdr_t *in_arp,
 
 void arp_input(uintptr_t frame_ptr, uint32_t frame_len) {
     if (frame_len < sizeof(eth_hdr_t) + sizeof(arp_hdr_t)) return;
-
-    if(!init) return;
+    if (!init) return;
 
     arp_hdr_t *hdr = (arp_hdr_t*)(frame_ptr + sizeof(eth_hdr_t));
     uint32_t sender_ip = __builtin_bswap32(hdr->sender_ip);
 
     arp_table_put(sender_ip, hdr->sender_mac, 180000, false);
 
-    const net_l2l3_endpoint *ep = network_get_local_endpoint();
+    const net_cfg_t *cfg = ipv4_get_cfg();
+    if (!cfg) return;
+
     if (__builtin_bswap16(hdr->opcode) == ARP_OPCODE_REQUEST &&
-        arp_should_handle(hdr, ep->ip) &&
+        arp_should_handle(hdr, cfg->ip) &&
         arp_can_reply())
     {
-        const arp_hdr_t *hdr = (arp_hdr_t*)(frame_ptr + sizeof(eth_hdr_t));
-        const uint8_t *src_mac  = hdr->sender_mac;
-        arp_send_reply(hdr, src_mac, frame_len);
+        const arp_hdr_t *hdr_in = (arp_hdr_t*)(frame_ptr + sizeof(eth_hdr_t));
+        const uint8_t *src_mac  = hdr_in->sender_mac;
+        arp_send_reply(hdr_in, src_mac, frame_len);
     }
 }

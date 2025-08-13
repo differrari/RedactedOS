@@ -13,7 +13,7 @@ public:
     virtual void handle_sent_packet() = 0;
     virtual void enable_verbose() = 0;
     virtual void send_packet(sizedptr packet) = 0;
-    virtual void get_mac(net_l2l3_endpoint *context) = 0;
+    virtual void get_mac(uint8_t out_mac[6]) = 0;
 
     virtual ~NetDriver() = default;
 

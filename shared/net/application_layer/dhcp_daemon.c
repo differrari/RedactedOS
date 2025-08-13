@@ -41,7 +41,7 @@ typedef enum {
 } dhcp_state_t;
 
 static dhcp_state_t g_state = DHCP_S_INIT;
-static net_l2l3_endpoint g_local_ep = {0};
+static uint8_t g_local_mac[6] = {0};
 static volatile bool g_force_renew = false;
 static uint32_t g_t1_left_ms = 0;
 static uint32_t g_t2_left_ms = 0;
@@ -73,7 +73,7 @@ static void dhcp_tx_packet(const dhcp_request *req,
 static void dhcp_send_discover(uint32_t xid){
     kprintf("[DHCP] discover xid=%i", xid);
     dhcp_request req = {0};
-    memcpy(req.mac, g_local_ep.mac, 6);
+    memcpy(req.mac, g_local_mac, 6);
     dhcp_tx_packet(&req, DHCPDISCOVER, xid, 0xFFFFFFFFu);
 }
 
@@ -89,7 +89,7 @@ static void dhcp_send_request(const dhcp_request *req,
 static void dhcp_send_renew(uint32_t xid) {
     const net_cfg_t *cfg = ipv4_get_cfg();
     dhcp_request req = {0};
-    memcpy(req.mac, g_local_ep.mac, 6);
+    memcpy(req.mac, g_local_mac, 6);
     req.offered_ip = __builtin_bswap32(cfg->ip);
     req.server_ip  = cfg->rt ? cfg->rt->server_ip : 0;
     uint32_t dst = req.server_ip ? __builtin_bswap32(req.server_ip) : 0xFFFFFFFFu;
@@ -100,7 +100,7 @@ static void dhcp_send_renew(uint32_t xid) {
 static void dhcp_send_rebind(uint32_t xid) {
     const net_cfg_t *cfg = ipv4_get_cfg();
     dhcp_request req = {0};
-    memcpy(req.mac, g_local_ep.mac, 6);
+    memcpy(req.mac, g_local_mac, 6);
     req.offered_ip = __builtin_bswap32(cfg->ip);
     req.server_ip  = 0;
     kprintf("[DHCP] rebind xid=%i", xid);
@@ -147,9 +147,8 @@ static void dhcp_fsm_once()
     switch (g_state) {
 
     case DHCP_S_INIT: {
-        const net_l2l3_endpoint *le = network_get_local_endpoint();
-        memcpy(g_local_ep.mac, le->mac, 6);
-        g_local_ep.ip = 0;
+        const uint8_t *mac = network_get_local_mac();
+        memcpy(g_local_mac, mac, 6);
         xid_seed += 0x1111;
         dhcp_send_discover(xid_seed);
         g_state = DHCP_S_SELECTING;
@@ -162,7 +161,7 @@ static void dhcp_fsm_once()
             break;
         }
         dhcp_request req = {0};
-        memcpy(req.mac, g_local_ep.mac, 6);
+        memcpy(req.mac, g_local_mac, 6);
         dhcp_apply_offer(offer, &req, xid_seed);
         free((void*)sp.ptr, sp.size);
 
@@ -177,7 +176,7 @@ static void dhcp_fsm_once()
             g_state = DHCP_S_INIT;
         } else {
             dhcp_request dummy = {0};
-            memcpy(dummy.mac, g_local_ep.mac, 6);
+            memcpy(dummy.mac, g_local_mac, 6);
             dhcp_apply_offer(ack, &dummy, xid_seed);
             free((void*)sp.ptr, sp.size);
             g_state = DHCP_S_BOUND;
@@ -207,7 +206,7 @@ static void dhcp_fsm_once()
         dhcp_packet *p = NULL; sizedptr sp = {0};
         if (dhcp_wait_for_type(DHCPACK, &p, &sp, 2000)) {
             dhcp_request dummy = {0};
-            memcpy(dummy.mac, g_local_ep.mac, 6);
+            memcpy(dummy.mac, g_local_mac, 6);
             dhcp_apply_offer(p, &dummy, xid_seed);
             free((void*)sp.ptr, sp.size);
             g_state = DHCP_S_BOUND;
@@ -222,7 +221,7 @@ static void dhcp_fsm_once()
         dhcp_packet *p = NULL; sizedptr sp = {0};
         if (dhcp_wait_for_type(DHCPACK, &p, &sp, 2000)) {
             dhcp_request dummy = {0};
-            memcpy(dummy.mac, g_local_ep.mac, 6);
+            memcpy(dummy.mac, g_local_mac, 6);
             dhcp_apply_offer(p, &dummy, xid_seed);
             free((void*)sp.ptr, sp.size);
             g_state = DHCP_S_BOUND;

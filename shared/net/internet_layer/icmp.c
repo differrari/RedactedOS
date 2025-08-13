@@ -1,6 +1,5 @@
 #include "icmp.h"
 #include "net/internet_layer/ipv4.h"
-#include "net/network_types.h"
 #include "net/checksums.h"
 #include "std/memfunctions.h"
 #include "console/kio.h"
@@ -43,8 +42,6 @@ static void free_slot(int i){
 }
 
 void create_icmp_packet(uintptr_t p,
-                        const net_l2l3_endpoint *src,
-                        const net_l2l3_endpoint *dst,
                         const icmp_data *d)
 {
     icmp_packet *pkt = (icmp_packet*)p;
@@ -73,12 +70,13 @@ void icmp_send_echo(uint32_t dst_ip,
     uintptr_t buf = (uintptr_t)malloc(icmp_len);
     if(!buf) return;
 
-    const net_l2l3_endpoint *local = network_get_local_endpoint();
-    create_icmp_packet(buf, local, NULL, &d);
+    create_icmp_packet(buf, &d);
 
     ((icmp_packet*)buf)->checksum = checksum16((uint16_t*)buf, icmp_len);
 
-    ipv4_send_segment(local->ip, dst_ip, 1, (sizedptr){ buf, icmp_len });
+    const net_cfg_t *cfg = ipv4_get_cfg();
+    if (!cfg) { free((void*)buf, icmp_len); return; }
+    ipv4_send_segment(cfg->ip, dst_ip, 1, (sizedptr){ buf, icmp_len });
 
     free((void*)buf, icmp_len);
 }
@@ -111,11 +109,13 @@ void icmp_input(uintptr_t ptr,
         uintptr_t buf = (uintptr_t)malloc(reply_len);
         if(!buf) return;
 
-        const net_l2l3_endpoint *local = network_get_local_endpoint();
-        create_icmp_packet(buf, local, NULL, &d);
+        create_icmp_packet(buf, &d);
         ((icmp_packet*)buf)->checksum = checksum16((uint16_t*)buf, reply_len);
 
-        ipv4_send_segment(local->ip, src_ip, 1, (sizedptr){ buf, reply_len });
+        const net_cfg_t *cfg = ipv4_get_cfg();
+        if (cfg) {
+            ipv4_send_segment(cfg->ip, src_ip, 1, (sizedptr){ buf, reply_len });
+        }
         free((void*)buf, reply_len);
         return;
     }

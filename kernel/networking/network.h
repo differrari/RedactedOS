@@ -23,7 +23,7 @@ int network_net_task_entry(int argc, char* argv[]);
 int net_tx_frame(uintptr_t frame_ptr, uint32_t frame_len);
 int net_rx_frame(sizedptr *out_frame);
 
-const net_l2l3_endpoint* network_get_local_endpoint();
+const uint8_t* network_get_local_mac(void);
 void network_update_local_ip(uint32_t ip);
 
 extern driver_module net_module;

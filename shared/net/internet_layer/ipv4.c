@@ -174,8 +174,8 @@ void ipv4_send_segment(uint32_t src_ip,
     uintptr_t buf = (uintptr_t)malloc(total);
     if (!buf) return;
 
-    const net_l2l3_endpoint *local = network_get_local_endpoint();
-    uintptr_t ptr = create_eth_packet(buf, local->mac, dst_mac, 0x0800);
+    const uint8_t* src_mac = network_get_local_mac();
+    uintptr_t ptr = create_eth_packet(buf, src_mac, dst_mac, 0x0800);
 
     ipv4_hdr_t *ip = (ipv4_hdr_t *)ptr;
     ip->version_ihl = (4 << 4) | (sizeof(*ip)/4);

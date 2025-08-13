@@ -22,7 +22,7 @@ public:
 
     void send_packet(sizedptr packet) override;
 
-    void get_mac(net_l2l3_endpoint *context) override;
+    void get_mac(uint8_t out_mac[6]) override;
 
     ~VirtioNetDriver() = default;
 

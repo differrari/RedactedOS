@@ -38,11 +38,7 @@ static uint32_t pick_probe_ip() {
     return ipv4_first_host(cfg->ip, cfg->mask);
 }
 
-static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l2l3_endpoint *out_l2, net_l4_endpoint *out_l4) {
-    const net_l2l3_endpoint *local = network_get_local_endpoint();
-    if (!local)
-        return 0;
-
+static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpoint *out_l4) {
     socket_handle_t sock = udp_socket_create(0, 0);
     if (!sock)
         return 0;
@@ -78,8 +74,6 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l2l3_end
     socket_close_udp(sock);
     socket_destroy_udp(sock);
 
-    memcpy(out_l2->mac, local->mac, 6);
-    out_l2->ip = resp_ip;
     out_l4->ip = resp_ip;
     out_l4->port = resp_port;
 
@@ -274,7 +268,6 @@ static void print_info() {
 
 static void test_net() {
     const net_cfg_t *cfg = ipv4_get_cfg();
-    net_l2l3_endpoint l2 = {0};
     net_l4_endpoint srv = {0};
 
     if (cfg && cfg->mode != NET_MODE_DISABLED && cfg->ip != 0) {
@@ -286,7 +279,7 @@ static void test_net() {
 
         kprintf("[NET] probing broadcast %s", bcast_str);
 
-        if (udp_probe_server(bcast, 8080, &l2, &srv))
+        if (udp_probe_server(bcast, 8080, &srv))
             test_http(srv.ip);
 
         sleep(2000);
@@ -298,7 +291,7 @@ static void test_net() {
     if (!fallback)
         fallback = (192<<24)|(168<<16)|(1<<8)|255;
 
-    if (udp_probe_server(fallback, 8080, &l2, &srv))
+    if (udp_probe_server(fallback, 8080, &srv))
         test_http(srv.ip);
     else
         kprintf("[NET] could not find update server\n");
@@ -322,7 +315,6 @@ static int ip_waiter_entry(int argc, char* argv[]) {
     }
     return 0;
 }
-
 
 process_t* launch_net_process() {
     const net_cfg_t *cfg = ipv4_get_cfg();
