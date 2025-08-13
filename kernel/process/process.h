@@ -47,6 +47,12 @@ typedef struct {
     char name[MAX_PROC_NAME_LENGTH];
 } process_t;
 
+//Helper functions for accessing registers mapped to scratch regs
+#define PROC_X0 regs[7]
+#define PROC_X1 regs[8]
+#define PROC_X2 regs[9]
+#define PROC_X3 regs[10]
+
 #ifdef __cplusplus
 }
 #endif
