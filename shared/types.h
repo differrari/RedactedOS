@@ -53,6 +53,8 @@ typedef unsigned char uint8_t;
 #define UINT16_MAX 0xFFFF
 #define UINT32_MAX 0xFFFFFFFF
 
+#define N_ARR(arr) (sizeof(arr)/sizeof((arr)[0]))
+
 typedef int int32_t;
 typedef long int64_t;
 typedef long intptr_t;
