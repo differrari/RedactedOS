@@ -184,9 +184,6 @@ void sync_el0_handler_c(){
     process_t *proc = get_current_proc();
 
     uint64_t x0 = proc->PROC_X0;
-    uint64_t x1 = proc->PROC_X1;
-    uint64_t x2 = proc->PROC_X2;
-    uint64_t x3 = proc->PROC_X3;
     uint64_t elr;
     asm volatile ("mrs %0, elr_el1" : "=r"(elr));
     uint64_t spsr;
