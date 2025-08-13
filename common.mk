@@ -5,6 +5,8 @@ LD         := $(ARCH)-ld
 AR         := $(ARCH)-ar
 OBJCOPY    := $(ARCH)-objcopy
 
+BUILD_DIR := ./build
+
 COMMON_FLAGS  ?= -ffreestanding -nostdlib -fno-exceptions -fno-unwind-tables \
                  -fno-asynchronous-unwind-tables -g -O0 -Wall -Wextra \
                  -Wno-unused-parameter -Wno-address-of-packed-member \

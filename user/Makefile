@@ -19,22 +19,26 @@ ELF      := $(NAME).elf
 TARGET   := $(NAME).bin
 LOCATION := ../fs/redos/user/
 
-.PHONY: all clean
+.PHONY: prepare all clean
 
-all: $(LOCATION)$(TARGET)
+all: prepare $(LOCATION)$(TARGET)
+
+prepare:
+	mkdir -p $(BUILD_DIR)
 
 $(LOCATION)$(TARGET): $(OBJ)
-	$(VLD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(OBJ) ../shared/libshared.a
+	echo $(LDFLAGS) -o $(LOCATION)$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
+	$(VLD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
 	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $@
 
 %.o: %.S
-	$(VAS) $(CFLAGS) -c $< -o $@
+	$(VAS) $(CFLAGS) -c $< -o $(BUILD_DIR)/$(notdir $@)
 
 %.o: %.c
-	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
+	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $(BUILD_DIR)/$(notdir $@)
 
 %.o: %.cpp
-	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
+	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $(BUILD_DIR)/$(notdir $@)
 
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)

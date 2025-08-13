@@ -3,7 +3,7 @@ ENTRY(_start)
 SECTIONS {
     . = LOAD_ADDR;
     kernel_start = .;
-    .boot . : { boot.o(.text) }
+    .boot . : { ./build/boot.o(.text) }
     .text : { 
         *(EXCLUDE_FILE(shared/*.o) .text .text.[!p]*)
     }
