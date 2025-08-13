@@ -291,8 +291,6 @@ void VirtioAudioDriver::config_channel_maps(){
 void VirtioAudioDriver::handle_interrupt(){
     select_queue(&audio_dev, EVENT_QUEUE);
     struct virtq_used* used = (struct virtq_used*)(uintptr_t)audio_dev.common_cfg->queue_device;
-    // TODO: desc isn't used in this function, was it supposed to be?
-    struct virtq_desc* desc = (struct virtq_desc*)(uintptr_t)audio_dev.common_cfg->queue_desc;
     struct virtq_avail* avail = (struct virtq_avail*)(uintptr_t)audio_dev.common_cfg->queue_driver;
 
     uint16_t new_idx = used->idx;
