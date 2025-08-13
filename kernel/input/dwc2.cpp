@@ -125,7 +125,7 @@ bool DWC2Driver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
     usb_setup_packet packet = {
         .bmRequestType = rType,
         .bRequest = request,
-        .wValue = (type << 8) | descriptor_index,
+        .wValue = (uint16_t)((type << 8) | descriptor_index),
         .wIndex = wIndex,
         .wLength = descriptor_size
     };
