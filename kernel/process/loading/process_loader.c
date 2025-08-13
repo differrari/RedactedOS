@@ -16,7 +16,7 @@ typedef struct {
     uint32_t mask;
     uint32_t pattern;
     const char* mnemonic;
-    uint32_t (*print_args)(uint32_t instr, uint64_t pc, bool translate, process_layout *source, process_layout *destination);
+    uint32_t (*reloc)(uint32_t instr, uint64_t pc, bool translate, process_layout *source, process_layout *destination);
 } instruction_entry;
 
 static bool translate_verbose = false;
@@ -205,7 +205,7 @@ uint32_t parse_instruction(uint32_t instruction, uint64_t pc, bool translate, pr
     for (uint64_t i = 0; i < sizeof(ops)/sizeof(ops[0]); i++) {
         if ((instruction & ops[i].mask) == ops[i].pattern) {
             kputfv("%s ", (uintptr_t)ops[i].mnemonic);
-            uint64_t newinstr = ops[i].print_args(instruction, pc, translate, source, destination);
+            uint64_t newinstr = ops[i].reloc(instruction, pc, translate, source, destination);
             return newinstr;
         }
     }
