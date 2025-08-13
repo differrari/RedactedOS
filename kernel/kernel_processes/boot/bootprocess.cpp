@@ -7,7 +7,6 @@ BootSM *state_machine;
 
 //TODO: This is overengineered, just use C
 extern "C" int eval_bootscreen(int argc, char* argv[]) {
-    kprintf(">>>> There are %i arguments");
     while (1){
         state_machine->eval_state();
     }
