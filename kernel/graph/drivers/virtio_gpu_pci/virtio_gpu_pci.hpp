@@ -34,6 +34,7 @@ private:
     bool attach_backing();
     bool set_scanout();
     bool transfer_to_host(gpu_rect rect);
+    void get_capset();
 
     bool scanout_found;
     uint64_t scanout_id;

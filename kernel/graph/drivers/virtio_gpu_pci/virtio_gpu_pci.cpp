@@ -5,12 +5,21 @@
 #include "ui/draw/draw.h"
 #include "std/std.hpp"
 
-#define VIRTIO_GPU_CMD_GET_DISPLAY_INFO        0x0100
-#define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D      0x0101
-#define VIRTIO_GPU_CMD_SET_SCANOUT             0x0103
-#define VIRTIO_GPU_CMD_RESOURCE_FLUSH          0x0104
-#define VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D     0x0105
-#define VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING 0x0106
+#define VIRTIO_GPU_CMD_GET_DISPLAY_INFO         0x0100
+#define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D       0x0101
+#define VIRTIO_GPU_CMD_SET_SCANOUT              0x0103
+#define VIRTIO_GPU_CMD_RESOURCE_FLUSH           0x0104
+#define VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D      0x0105
+#define VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING  0x0106
+#define VIRTIO_GPU_CMD_GET_CAPSET_INFO          0x0108
+
+#define VIRTIO_GPU_RESP_OK_NODATA               0x1100
+#define VIRTIO_GPU_RESP_OK_DISPLAY_INFO         0x1101
+#define VIRTIO_GPU_RESP_OK_CAPSET_INFO          0x1102
+#define VIRTIO_GPU_RESP_OK_CAPSET               0x1103
+#define VIRTIO_GPU_RESP_OK_EDID                 0x1104
+#define VIRTIO_GPU_RESP_OK_RESOURCE_UUID        0x1105 
+#define VIRTIO_GPU_RESP_OK_MAP_INFO             0x1106
 
 #define GPU_RESOURCE_ID 1
 
@@ -61,6 +70,8 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     framebuffer = (uintptr_t)kalloc(gpu_dev.memory_page, framebuffer_size, ALIGN_4KB, true, true);
 
     fb_set_bounds(screen_size.width,screen_size.height);
+
+    get_capset();
     
     if (!create_2d_resource(screen_size)) return false;
     
@@ -131,7 +142,7 @@ gpu_size VirtioGPUDriver::get_display_info(){
         return (gpu_size){0, 0};
     }
 
-    if (resp->hdr.type != 0x1101) {
+    if (resp->hdr.type != VIRTIO_GPU_RESP_OK_DISPLAY_INFO) {
         kfree((void*)(void*)cmd, sizeof(virtio_gpu_ctrl_hdr));
         kfree((void*)resp, sizeof(virtio_gpu_resp_display_info));
         return (gpu_size){0, 0};
@@ -179,7 +190,7 @@ bool VirtioGPUDriver::create_2d_resource(gpu_size size) {
         return false;
     }
     
-    if (resp->type != 0x1100) {
+    if (resp->type != VIRTIO_GPU_RESP_OK_NODATA) {
         kfree((void*)cmd, sizeof(virtio_2d_resource));
         kfree((void*)resp, sizeof(virtio_gpu_ctrl_hdr));
         return false;
@@ -229,7 +240,7 @@ bool VirtioGPUDriver::attach_backing() {
         return false;
     }
 
-    if (resp->type != 0x1100) {
+    if (resp->type != VIRTIO_GPU_RESP_OK_NODATA) {
         kfree((void*)cmd, sizeof(virtio_backing_cmd));
         kfree((void*)resp, sizeof(virtio_gpu_ctrl_hdr));
         return false;
@@ -276,7 +287,7 @@ bool VirtioGPUDriver::set_scanout() {
         return false;
     }
 
-    if (resp->type != 0x1100) {
+    if (resp->type != VIRTIO_GPU_RESP_OK_NODATA) {
         kfree((void*)cmd, sizeof(virtio_scanout_cmd));
         kfree((void*)resp, sizeof(virtio_gpu_ctrl_hdr));
         return false;
@@ -321,7 +332,7 @@ bool VirtioGPUDriver::transfer_to_host(gpu_rect rect) {
         return false;
     }
 
-    if (resp->type != 0x1100) {
+    if (resp->type != VIRTIO_GPU_RESP_OK_NODATA) {
         kfree((void*)cmd, sizeof(virtio_transfer_cmd));
         kfree((void*)resp, sizeof(virtio_gpu_ctrl_hdr));
         return false;
@@ -374,7 +385,7 @@ void VirtioGPUDriver::flush() {
         return;
     }
 
-    if (resp->type != 0x1100) {
+    if (resp->type != VIRTIO_GPU_RESP_OK_NODATA) {
         kfree((void*)cmd, sizeof(virtio_flush_cmd));
         kfree((void*)resp, sizeof(virtio_gpu_ctrl_hdr));
         return;
@@ -382,6 +393,53 @@ void VirtioGPUDriver::flush() {
 
     kfree((void*)cmd, sizeof(virtio_flush_cmd));
     kfree((void*)resp, sizeof(virtio_gpu_ctrl_hdr));
+    return;
+}
+
+struct virtio_gpu_get_capset_info { 
+    struct virtio_gpu_ctrl_hdr hdr; 
+    uint32_t capset_index; 
+    uint32_t padding; 
+}; 
+
+struct virtio_gpu_resp_capset_info { 
+    struct virtio_gpu_ctrl_hdr hdr; 
+    uint32_t capset_id; 
+    uint32_t capset_max_version; 
+    uint32_t capset_max_size; 
+    uint32_t padding; 
+};
+
+void VirtioGPUDriver::get_capset(){
+    virtio_gpu_get_capset_info* cmd = (virtio_gpu_get_capset_info*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_get_capset_info), ALIGN_4KB, true, true);
+    
+    cmd->hdr.type = VIRTIO_GPU_CMD_GET_CAPSET_INFO;
+    cmd->hdr.flags = 0;
+    cmd->hdr.fence_id = 0;
+    cmd->capset_index = 0;
+    cmd->padding = 0;
+
+    virtio_gpu_resp_capset_info* resp = (virtio_gpu_resp_capset_info*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_resp_capset_info), ALIGN_4KB, true, true);
+
+    if (!virtio_send(&gpu_dev, gpu_dev.common_cfg->queue_desc, gpu_dev.common_cfg->queue_driver, gpu_dev.common_cfg->queue_device,
+        (uintptr_t)cmd, sizeof(virtio_gpu_get_capset_info), (uintptr_t)resp, sizeof(virtio_gpu_resp_capset_info), VIRTQ_DESC_F_WRITE)){
+        kprintf("Could not send command");
+        kfree((void*)cmd, sizeof(virtio_gpu_get_capset_info));
+        kfree((void*)resp, sizeof(virtio_gpu_resp_capset_info));
+        return;
+    }
+
+    if (resp->hdr.type != VIRTIO_GPU_RESP_OK_CAPSET_INFO) {
+        kprintf("Received wrong response");
+        kfree((void*)cmd, sizeof(virtio_gpu_get_capset_info));
+        kfree((void*)resp, sizeof(virtio_gpu_resp_capset_info));
+        return;
+    }
+
+    kprintf("Capset 0's %i", resp->capset_id);
+
+    kfree((void*)cmd, sizeof(virtio_gpu_get_capset_info));
+    kfree((void*)resp, sizeof(virtio_gpu_resp_capset_info));
     return;
 }
 
