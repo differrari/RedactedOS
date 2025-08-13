@@ -16,21 +16,26 @@ DEP     := $(C_SRC:.c=.d) $(ASM_SRC:.S=.d) $(CPP_SRC:.cpp=.d)
 
 TARGET  := libshared.a
 
-.PHONY: all clean
+.PHONY: all clean prepare
 
-all: $(TARGET)
+all: prepare $(TARGET)
+
+prepare:
+	mkdir -p $(BUILD_DIR)
 
 $(TARGET): $(OBJ)
-	$(VAR) rcs $@ $^
+	echo "Finishing build"
+	echo $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ)))
+	$(VAR) rcs $@ $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ)))
 
 %.o: %.S
-	$(VAS) $(CFLAGS) -c $< -o $@
+	$(VAS) $(CFLAGS) -c $< -o $(BUILD_DIR)/$(notdir $@)
 
 %.o: %.c
-	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
+	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $(BUILD_DIR)/$(notdir $@)
 
 %.o: %.cpp
-	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
+	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $(BUILD_DIR)/$(notdir $@)
 
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)

@@ -19,7 +19,7 @@ C_SRC   := $(shell find . -name '*.c')
 ASM_SRC := $(shell find . -name '*.S')
 CPP_SRC := $(shell find . -name '*.cpp')
 OBJ     := $(C_SRC:.c=.o) $(ASM_SRC:.S=.o) $(CPP_SRC:.cpp=.o)
-OBJL    := $(filter-out ./boot.o,$(OBJ))
+OBJL    := $(filter-out $(BUILD_DIR)/boot.o,$(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))))
 DEP     := $(C_SRC:.c=.d) $(ASM_SRC:.S=.d) $(CPP_SRC:.cpp=.d)
 
 ELF     := ../kernel.elf
@@ -27,18 +27,22 @@ TARGET  := ../kernel.img
 
 all: $(TARGET)
 
-$(TARGET): ../shared/libshared.a $(OBJ)
-	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/libshared.a
+prepare:
+	mkdir -p $(BUILD_DIR)
+
+$(TARGET): ../shared/libshared.a prepare $(OBJ)
+	echo $(LDFLAGS)
+	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/libshared.a $(BUILD_DIR)/boot.o
 	$(OBJCOPY) -O binary $(ELF) $@
 
 %.o: %.S
-	$(VAS) $(CFLAGS) -c $< -o $@
+	$(VAS) $(CFLAGS) -c $< -o $(BUILD_DIR)/$(notdir $@)
 
 %.o: %.c
-	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
+	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $(BUILD_DIR)/$(notdir $@)
 
 %.o: %.cpp
-	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
+	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $(BUILD_DIR)/$(notdir $@)
 
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(ELF) $(TARGET)

@@ -11,7 +11,7 @@ endif
 
 .PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
 
-all: shared user kernel
+all: shared kernel user 
 	@echo "Build complete."
 	./createfs
 
