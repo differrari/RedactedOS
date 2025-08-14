@@ -39,9 +39,15 @@ typedef struct common_ui_config {
 extern "C" {
 #endif
 
-void draw_label(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config);
-void draw_textbox(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config);
-void draw_rectangle(draw_ctx ctx, rect_ui_config rect_config, common_ui_config common_config);
+#define DRAW(item, children)\
+({\
+item;\
+children;\
+})
+
+void label(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config);
+void textbox(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config);
+void rectangle(draw_ctx ctx, rect_ui_config rect_config, common_ui_config common_config);
 
 #ifdef __cplusplus
 }

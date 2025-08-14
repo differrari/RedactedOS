@@ -29,7 +29,7 @@ int login_screen(){
         int yo = screen_middle.y;
         int height = char_size * 2;
 
-        draw_label(gpu_get_ctx(), (text_ui_config){
+        label(gpu_get_ctx(), (text_ui_config){
             .text = BOOTSCREEN_TEXT,
             .font_size = 2,
         }, (common_ui_config){
@@ -41,7 +41,7 @@ int login_screen(){
             .foreground_color = COLOR_WHITE,
         });
 
-        draw_label(gpu_get_ctx(), (text_ui_config){
+        label(gpu_get_ctx(), (text_ui_config){
             .text = "Login",
             .font_size = 2,
         }, (common_ui_config){
@@ -53,7 +53,7 @@ int login_screen(){
             .foreground_color = COLOR_WHITE,
         });
 
-        draw_textbox(gpu_get_ctx(), (text_ui_config){
+        textbox(gpu_get_ctx(), (text_ui_config){
             .text = s.data,
             .font_size = 2,
         }, (common_ui_config){

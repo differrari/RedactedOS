@@ -12,7 +12,7 @@ COMMON_FLAGS  ?= -ffreestanding -nostdlib -fno-exceptions -fno-unwind-tables \
                  -Wno-unused-parameter -Wno-address-of-packed-member \
                  -mcpu=cortex-a72
 
-CFLAGS_BASE   ?= $(COMMON_FLAGS) -std=c17
+CFLAGS_BASE   ?= $(COMMON_FLAGS) -std=c99
 CXXFLAGS_BASE ?= $(COMMON_FLAGS) -fno-rtti
 LDFLAGS_BASE  ?=
 
