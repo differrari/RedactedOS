@@ -102,7 +102,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) 
         return;
     }
     
-    uint8_t permission;
+    uint8_t permission = 0;
     
     switch (level)
     {
