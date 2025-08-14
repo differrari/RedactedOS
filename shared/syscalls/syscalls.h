@@ -5,6 +5,7 @@
 #include "keypress.h"
 #include "std/string.h"
 #include "net/network_types.h"
+#include "ui/draw/draw.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,6 +20,8 @@ extern bool read_key(keypress *kp);
 
 extern void sleep(uint64_t time);
 extern void halt(uint32_t exit_code);
+
+extern draw_ctx request_draw_ctx();
 
 extern void clear_screen(color color);
 extern void gpu_flush_data();

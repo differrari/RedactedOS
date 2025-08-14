@@ -87,6 +87,11 @@ gpu_size gpu_get_screen_size(){
     return gpu_driver->get_screen_size();
 }
 
+draw_ctx gpu_get_ctx(){
+    if (!gpu_ready()) return 0;
+    return gpu_driver->get_ctx();
+}
+
 driver_module graphics_module = {
     .name = "graphics",
     .mount = "/dev/graph",

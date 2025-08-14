@@ -19,6 +19,8 @@ public:
     void draw_string(string s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color) override;
     uint32_t get_char_size(uint32_t scale) override;
 
+    draw_ctx get_ctx() override;
+
     ~RamFBGPUDriver() = default;
     
 private: 

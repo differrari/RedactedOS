@@ -1,4 +1,4 @@
-#include "label.hpp"
+#include "label_cpp.hpp"
 #include "graph/graphics.h"
 #include "console/kio.h"
 

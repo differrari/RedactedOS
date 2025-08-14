@@ -12,9 +12,10 @@
 #define DRAW_PRIMITIVE_RECT_CODE    13
 #define DRAW_PRIMITIVE_CHAR_CODE    14
 #define DRAW_PRIMITIVE_STRING_CODE  15
-#define GPU_FLUSH_DATA_CODE         20
-#define GPU_SCREEN_SIZE_CODE        21
-#define GPU_CHAR_SIZE_CODE          22
+#define REQUEST_DRAW_CTX_CODE        20
+#define GPU_FLUSH_DATA_CODE         21
+#define GPU_SCREEN_SIZE_CODE        22
+#define GPU_CHAR_SIZE_CODE          23
 #define SLEEP_CODE                  30
 #define PROCESS_YIELD_CODE          31
 #define HALT_CODE                   33

@@ -465,7 +465,7 @@ void VirtioGPUDriver::draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, 
 }
 
 void VirtioGPUDriver::draw_string(string s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color){
-    fb_draw_string((uint32_t*)framebuffer, s, x, y, scale, color);
+    fb_draw_string((uint32_t*)framebuffer, s.data, x, y, scale, color);
 }
 
 uint32_t VirtioGPUDriver::get_char_size(uint32_t scale){
@@ -474,4 +474,8 @@ uint32_t VirtioGPUDriver::get_char_size(uint32_t scale){
 
 gpu_size VirtioGPUDriver::get_screen_size(){
     return screen_size;
+}
+
+draw_ctx VirtioGPUDriver::get_ctx(){
+    return (uint32_t*)framebuffer;
 }

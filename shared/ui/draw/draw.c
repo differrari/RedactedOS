@@ -118,16 +118,16 @@ void fb_draw_char(uint32_t* fb, uint32_t x, uint32_t y, char c, uint32_t scale, 
     mark_dirty(x,y,CHAR_SIZE*scale,CHAR_SIZE*scale);
 }
 
-gpu_size fb_draw_string(uint32_t* fb, string s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
+gpu_size fb_draw_string(uint32_t* fb, const char* s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
     int char_size = fb_get_char_size(scale);
-    int str_length = s.length;
+    int str_length = strlen(s,0);
     
     uint32_t xoff = 0;
     uint32_t xSize = 0;
     uint32_t xRowSize = 0;
     uint32_t ySize = line_height;
     for (int i = 0; i < str_length; i++){    
-        char c = s.data[i];
+        char c = s[i];
         if (c == '\n'){
             y0 += line_height; 
             ySize += line_height;

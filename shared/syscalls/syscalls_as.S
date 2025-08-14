@@ -24,6 +24,7 @@ syscall_def draw_primitive_rect, DRAW_PRIMITIVE_RECT_CODE
 syscall_def draw_primitive_char, DRAW_PRIMITIVE_CHAR_CODE
 syscall_def draw_primitive_string, DRAW_PRIMITIVE_STRING_CODE
 
+syscall_def request_draw_ctx, REQUEST_DRAW_CTX_CODE
 syscall_def gpu_flush_data, GPU_FLUSH_DATA_CODE
 syscall_def gpu_screen_size, GPU_SCREEN_SIZE_CODE
 syscall_def gpu_char_size, GPU_CHAR_SIZE_CODE

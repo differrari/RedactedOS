@@ -90,6 +90,10 @@ uint64_t syscall_draw_string(process_t *ctx){
     return 0;
 }
 
+uintptr_t syscall_gpu_request_ctx(process_t *ctx){
+    return (uintptr_t)gpu_get_ctx();
+}
+
 uint64_t syscall_gpu_flush(process_t *ctx){
     if (!screen_overlay)
         gpu_flush();
@@ -160,6 +164,7 @@ syscall_entry syscalls[] = {
     { DRAW_PRIMITIVE_RECT_CODE, syscall_draw_rect},
     { DRAW_PRIMITIVE_CHAR_CODE, syscall_draw_char},
     { DRAW_PRIMITIVE_STRING_CODE, syscall_draw_string},
+    { REQUEST_DRAW_CTX_CODE, syscall_gpu_request_ctx},
     { GPU_FLUSH_DATA_CODE, syscall_gpu_flush},
     { GPU_SCREEN_SIZE_CODE, syscall_screen_size},
     { GPU_CHAR_SIZE_CODE, syscall_char_size},

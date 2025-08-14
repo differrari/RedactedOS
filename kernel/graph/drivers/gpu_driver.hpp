@@ -3,6 +3,7 @@
 #include "types.h"
 #include "std/string.h"
 #include "ui/graphic_types.h"
+#include "ui/draw/draw.h"
 
 class GPUDriver {
 public:
@@ -19,6 +20,8 @@ public:
     virtual gpu_size get_screen_size() = 0;
     virtual void draw_string(string s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color) = 0;
     virtual uint32_t get_char_size(uint32_t scale) = 0;
+
+    virtual draw_ctx get_ctx() = 0;
 
     virtual ~GPUDriver() = default;
 };

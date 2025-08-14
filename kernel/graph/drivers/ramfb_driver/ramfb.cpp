@@ -90,7 +90,7 @@ void RamFBGPUDriver::flush(){
             
             uint32_t copy_width = r.size.width;
             if (r.point.x + copy_width > screen_size.width)
-            copy_width = screen_size.width - r.point.x;
+                copy_width = screen_size.width - r.point.x;
             
             memcpy(dst, src, copy_width * sizeof(uint32_t));
         }
@@ -126,9 +126,13 @@ gpu_size RamFBGPUDriver::get_screen_size(){
 }
 
 void RamFBGPUDriver::draw_string(string s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color){
-    fb_draw_string((uint32_t*)back_framebuffer, s, x, y, scale, color);
+    fb_draw_string((uint32_t*)back_framebuffer, s.data, x, y, scale, color);
 }
 
 uint32_t RamFBGPUDriver::get_char_size(uint32_t scale){
     return fb_get_char_size(scale);
+}
+
+draw_ctx RamFBGPUDriver::get_ctx(){
+    return (uint32_t*)back_framebuffer;
 }

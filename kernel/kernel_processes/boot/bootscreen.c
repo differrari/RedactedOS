@@ -9,10 +9,11 @@
 #include "math/math.h"
 #include "syscalls/syscalls.h"
 #include "filesystem/filesystem.h"
+#include "ui/iui/label.h"
 
 file boot_fd;
 
-void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
+void boot_draw_name(gpu_size screen_size, int xoffset, int yoffset){
     uint16_t pid = get_current_proc_pid();
     if (boot_fd.size == 0){
         string proc_out = string_format("/proc/%i/out",pid);
@@ -21,16 +22,17 @@ void boot_draw_name(gpu_point screen_middle,int xoffset, int yoffset){
     }
     write_file(&boot_fd, "hello buffer", 12);
 
-    const char* name = BOOTSCREEN_TEXT;
-    string s = string_l(name);
-    int scale = 2;
-    uint32_t char_size = gpu_get_char_size(scale);
-    int mid_offset = ((s.length/BOOTSCREEN_NUM_LINES) * char_size)/2;
-    int xo = screen_middle.x - mid_offset + xoffset;
-    int yo = screen_middle.y + yoffset;
-    gpu_fill_rect((gpu_rect){{xo,yo}, {char_size * (s.length/BOOTSCREEN_NUM_LINES), char_size * BOOTSCREEN_NUM_LINES}},BG_COLOR);
-    gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFFFF);
-    free(s.data,s.mem_length);
+    draw_label(gpu_get_ctx(), (text_ui_config){
+        .text = BOOTSCREEN_TEXT,
+        .font_size = 2,
+    }, (common_ui_config){
+        .point = {0, screen_size.height/2 + yoffset},
+        .size = { screen_size.width, (screen_size.height/2) - yoffset},
+        .horizontal_align = HorizontalCenter,
+        .vertical_align = Top,
+        .background_color = BG_COLOR,
+        .foreground_color = COLOR_WHITE,
+    });
 }
 
 const gpu_point offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
@@ -108,7 +110,7 @@ int bootscreen(){
         for (int i = 0; i < BOOTSCREEN_NUM_STEPS; i++){
             gpu_point offset = offsets[i];
             gpu_point next_point = boot_calc_point(offset,screen_size,screen_middle);
-            boot_draw_name(screen_middle, 0, BOOTSCREEN_PADDING + screen_size.height/BOOTSCREEN_UPPER_Y_DIV + 10);
+            boot_draw_name(screen_size, 0, BOOTSCREEN_PADDING + screen_size.height/BOOTSCREEN_UPPER_Y_DIV + 10);
             boot_draw_lines(current_point, next_point, screen_size, BOOTSCREEN_REPEAT, 5);
             current_point = next_point;
         }
