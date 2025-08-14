@@ -57,7 +57,7 @@ bool XHCIDriver::check_fatal_error() {
 #define XHCI_EP_CONTROL 4
 
 bool XHCIDriver::init(){
-    uint64_t addr, mmio, mmio_size;
+    uint64_t addr = 0, mmio = 0, mmio_size = 0;
     bool use_pci = false;
     use_interrupts = true;
     if (XHCI_BASE){

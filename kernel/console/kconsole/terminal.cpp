@@ -70,7 +70,7 @@ void Terminal::run_command(){
     string cmd;
     int argc = 0;
     const char** argv; 
-    string args_copy;
+    string args_copy = {};
     
     if (fullcmd == args){
         cmd = string_l(fullcmd);

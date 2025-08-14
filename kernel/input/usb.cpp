@@ -104,7 +104,7 @@ bool USBDriver::get_configuration(uint8_t address){
     uint8_t* report_descriptor;
     uint16_t report_length;
 
-    usb_device_types dev_type;
+    usb_device_types dev_type = UNKNOWN;
 
     kprintf("[USB] set configuration %i for device %i", config->bConfigurationValue, address);
     request_sized_descriptor(address, 0, 0, 9, 0, config->bConfigurationValue, 0, 0, 0);
