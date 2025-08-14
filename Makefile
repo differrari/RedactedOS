@@ -18,10 +18,10 @@ all: shared kernel user
 shared:
 	$(MAKE) -C shared
 
-user: prepare-fs
+user: shared prepare-fs
 	$(MAKE) -C user
 
-kernel:
+kernel: shared
 	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU)
 
 clean:
