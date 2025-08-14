@@ -31,14 +31,15 @@ exception_vectors:
 
 .global irq_el1_asm_handler
 irq_el1_asm_handler:
-    mov x8, x0
-    mov x9, x1
-    mov x10, x2
-    mov x11, x3
-    mrs x15, spsr_el1
-    mov x16, x29
-    mov x17, x30
-    mov x18, sp
+    mov x15, x0
+    mov x14, x1
+    mov x13, x29
+    mov x12, x30
+    mov x11, sp
+    mov x9, x2
+    mov x16, x3
+    
+    mrs x10, spsr_el1
 
     bl irq_el1_handler
 

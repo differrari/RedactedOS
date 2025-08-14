@@ -191,6 +191,9 @@ void sync_el0_handler_c(){
 
     uint64_t currentEL = (spsr >> 2) & 3;
 
+    uint64_t sp_el;
+    asm volatile ("mov %0, x11" : "=r"(sp_el));
+    
     uint64_t esr;
     asm volatile ("mrs %0, esr_el1" : "=r"(esr));
 
