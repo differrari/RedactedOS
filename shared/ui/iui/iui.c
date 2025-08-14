@@ -1,4 +1,4 @@
-#include "label.h"
+#include "iui.h"
 #include "ui/draw/draw.h"
 
 gpu_size calculate_label_size(text_ui_config text_config){

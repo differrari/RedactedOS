@@ -9,7 +9,7 @@
 #include "math/math.h"
 #include "std/string.h"
 #include "syscalls/syscalls.h"
-#include "ui/iui/label.h"
+#include "ui/iui/iui.h"
 
 int login_screen(){
     sys_focus_current();
