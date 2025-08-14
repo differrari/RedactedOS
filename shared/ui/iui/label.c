@@ -51,7 +51,11 @@ gpu_point calculate_label_pos(text_ui_config text_config, common_ui_config commo
 }
 
 void draw_label(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config){
-    fb_fill_rect(ctx, common_config.point.x, common_config.point.y, common_config.size.width, common_config.size.height, common_config.background_color);
     gpu_point p = calculate_label_pos(text_config, common_config);
     fb_draw_string(ctx, text_config.text, p.x, p.y, text_config.font_size, common_config.foreground_color);
+}
+
+void draw_textbox(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config){
+    fb_fill_rect(ctx, common_config.point.x, common_config.point.y, common_config.size.width, common_config.size.height, common_config.background_color);
+    draw_label(ctx, text_config, common_config);
 }

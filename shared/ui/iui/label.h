@@ -4,10 +4,6 @@
 #include "../graphic_types.h"
 #include "../draw/draw.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef enum HorizontalAlignment {
     Leading,
     HorizontalCenter,
@@ -34,8 +30,13 @@ typedef struct common_ui_config {
     color foreground_color;
 } common_ui_config;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 void draw_label(uint32_t* ctx, text_ui_config text_config, common_ui_config common_config);
+void draw_textbox(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config);
+
 #ifdef __cplusplus
 }
 #endif

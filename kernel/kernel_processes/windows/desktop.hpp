@@ -3,7 +3,6 @@
 #include "types.h"
 #include "graph/graphics.h"
 #include "process/process.h"
-#include "ui/ui.hpp"
 #include "std/std.hpp"
 
 struct LaunchEntry {
@@ -24,8 +23,6 @@ private:
     bool ready = false;
     bool rendered_full = false;
     process_t *active_proc;
-    Label *single_label;// TODO: This is hardcoded, ew
-    Label *extension_label;// TODO: This is hardcoded, ew
     Array<LaunchEntry> entries;
     bool process_active = false;
 

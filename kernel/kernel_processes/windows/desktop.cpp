@@ -7,6 +7,7 @@
 #include "std/string.h"
 #include "filesystem/filesystem.h"
 #include "process/loading/elf_file.h"
+#include "ui/iui/label.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3
@@ -44,9 +45,6 @@ Desktop::Desktop() {
         }
         //TODO: The list of strings needs to be freed, but this class is not its owner
     }
-    
-    single_label = new Label();
-    extension_label = new Label();
 }
 
 void Desktop::draw_desktop(){
@@ -151,25 +149,28 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
     gpu_rect inner_rect = (gpu_rect){{10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0)}, {tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}};
     gpu_fill_rect(inner_rect, BG_COLOR+0x111111);
     if (index < entries.size()){
-        string namestr = string_l(entries[index].name);
-        string extstr = string_l(entries[index].ext);
+        draw_label(gpu_get_ctx(), (text_ui_config){
+            .text = entries[index].name,
+            .font_size = 3,
+        }, (common_ui_config){
+            .point = inner_rect.point,
+            .size = inner_rect.size,
+            .horizontal_align = HorizontalCenter,
+            .vertical_align = VerticalCenter,
+            .background_color = 0,
+            .foreground_color = COLOR_WHITE,
+        });
 
-        single_label->set_text(namestr);
-        single_label->set_bg_color(BG_COLOR+0x111111);
-        single_label->set_text_color(0xFFFFFFFF);
-        single_label->set_font_size(3);
-        single_label->rect = inner_rect;
-        single_label->set_alignment(HorizontalAlignment::HorizontalCenter, VerticalAlignment::VerticalCenter);
-        single_label->render();
-        
-        extension_label->set_text(extstr);
-        extension_label->set_bg_color(BG_COLOR+0x111111);
-        extension_label->set_text_color(0xFFFFFFFF);
-        extension_label->set_font_size(1);
-        extension_label->rect = (gpu_rect){{10 + ((tile_size.width + 10)*column)+ (sel ? border*2 : border), 50 + ((tile_size.height + 10) *row) + (sel ? border*2 : border)}, {1, 1}};
-        extension_label->set_alignment(HorizontalAlignment::Leading, VerticalAlignment::Top);
-        extension_label->render();
-        free(namestr.data, namestr.mem_length);
-        free(extstr.data, extstr.mem_length);
+        draw_label(gpu_get_ctx(), (text_ui_config){
+            .text = entries[index].ext,
+            .font_size = 1,
+        }, (common_ui_config){
+            .point = {10 + ((tile_size.width + 10)*column)+ (sel ? border*2 : border), 50 + ((tile_size.height + 10) *row) + (sel ? border*2 : border)},
+            .size = { 1, 1 },
+            .horizontal_align = Leading,
+            .vertical_align = Top,
+            .background_color = 0,
+            .foreground_color = COLOR_WHITE,
+        });
     }
 }
