@@ -143,11 +143,21 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
     uint32_t index = (row * MAX_COLS) + column;
     
     int border = 4;
-    
-    if (sel)
-        gpu_fill_rect((gpu_rect){{10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row)}, {tile_size.width, tile_size.height}}, BG_COLOR+0x333333);
+
+    draw_rectangle(gpu_get_ctx(), (rect_ui_config){
+        .border_size = (uint8_t)(sel ? 4 : 0),
+        .border_color = BG_COLOR+0x333333,
+    }, (common_ui_config){
+        .point = {10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row)},
+        .size = {tile_size.width, tile_size.height},
+        .horizontal_align = Leading,
+        .vertical_align = Top,
+        .background_color = BG_COLOR+0x111111,
+        .foreground_color = 0
+    });
+
     gpu_rect inner_rect = (gpu_rect){{10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0)}, {tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}};
-    gpu_fill_rect(inner_rect, BG_COLOR+0x111111);
+
     if (index < entries.size()){
         draw_label(gpu_get_ctx(), (text_ui_config){
             .text = entries[index].name,

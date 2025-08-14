@@ -21,6 +21,11 @@ typedef struct text_ui_config {
     uint16_t font_size;
 } text_ui_config;
 
+typedef struct rect_ui_config {
+    uint8_t border_size;
+    color border_color;
+} rect_ui_config;
+
 typedef struct common_ui_config {
     gpu_point point;
     gpu_size size;
@@ -34,8 +39,9 @@ typedef struct common_ui_config {
 extern "C" {
 #endif
 
-void draw_label(uint32_t* ctx, text_ui_config text_config, common_ui_config common_config);
+void draw_label(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config);
 void draw_textbox(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config);
+void draw_rectangle(draw_ctx ctx, rect_ui_config rect_config, common_ui_config common_config);
 
 #ifdef __cplusplus
 }
