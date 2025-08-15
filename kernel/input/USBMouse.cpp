@@ -7,8 +7,6 @@
 void USBMouse::request_data(USBDriver *driver){
     requesting = true;
 
-    kprintf(" Requesting %x", packet_size);
-
     if (buffer == 0){
         buffer = palloc(packet_size, true, true, true);
     }
@@ -33,5 +31,6 @@ void USBMouse::process_data(USBDriver *driver){
 }
 
 void USBMouse::process_mouse_input(mouse_input *rat){
+    register_mouse_input(rat);
     requesting = false;
 }

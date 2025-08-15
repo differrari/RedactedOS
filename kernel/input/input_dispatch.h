@@ -2,13 +2,20 @@
 
 #include "input_keycodes.h"
 #include "keypress.h"
+#include "mouse_input.h"
 #include "dev/driver_base.h"
+#include "ui/graphic_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif 
 
 void register_keypress(keypress kp);
+void mouse_config(gpu_point point, gpu_size size);
+void register_mouse_input(mouse_input *rat);
+
+gpu_point get_mouse_pos();
+
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp);
 uint16_t sys_subscribe_shortcut_current(keypress kp);
 void sys_set_focus(int pid);

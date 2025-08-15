@@ -85,6 +85,7 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
                     lerp(i, ccurrent.y, cnext.y, csteps)
                 };
                 gpu_draw_pixel(interpolated, 0xFFFFFFFF);
+                gpu_draw_pixel(get_mouse_pos(), 0xB4DD13);
             }
         }
         keypress kp;
@@ -100,10 +101,11 @@ int bootscreen(){
     disable_visual();
     gpu_clear(BG_COLOR);
     sys_focus_current();
+    gpu_size screen_size = gpu_get_screen_size();
+    mouse_config((gpu_point){screen_size.width/2,screen_size.height/2}, screen_size);
     while (1)
     {
         gpu_clear(BG_COLOR);
-        gpu_size screen_size = gpu_get_screen_size();
         gpu_point screen_middle = {screen_size.width/2,screen_size.height/2};
         
         gpu_point current_point = boot_calc_point(offsets[BOOTSCREEN_NUM_SYMBOLS-1],screen_size,screen_middle);

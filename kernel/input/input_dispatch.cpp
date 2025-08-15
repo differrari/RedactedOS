@@ -6,6 +6,7 @@
 #include "hw/hw.h"
 #include "std/std.hpp"
 #include "kernel_processes/kprocess_loader.h"
+#include "math/math.h"
 
 process_t* focused_proc;
 
@@ -22,6 +23,11 @@ uint16_t shortcut_count = 0;
 bool secure_mode = false;
 
 USBDriver *input_driver = 0x0;
+
+gpu_point mouse_loc;
+gpu_size screen_bounds;
+
+bool mouse_setup;
 
 void register_keypress(keypress kp) {
     if (!secure_mode){
@@ -43,6 +49,24 @@ void register_keypress(keypress kp) {
 
     if (buf->write_index == buf->read_index)
         buf->read_index = (buf->read_index + 1) % INPUT_BUFFER_CAPACITY;
+}
+
+void mouse_config(gpu_point point, gpu_size size){
+    mouse_loc = point;
+    screen_bounds = size;
+}
+
+void register_mouse_input(mouse_input *rat){
+    int32_t dx = rat->x;
+    int32_t dy = rat->y;
+    mouse_loc.x += dx;
+    mouse_loc.y += dy;
+    mouse_loc.x = min(max(0, mouse_loc.x), screen_bounds.width);
+    mouse_loc.y = min(max(0, mouse_loc.y), screen_bounds.height);
+}
+
+gpu_point get_mouse_pos(){
+    return mouse_loc;
 }
 
 uint16_t sys_subscribe_shortcut_current(keypress kp){
