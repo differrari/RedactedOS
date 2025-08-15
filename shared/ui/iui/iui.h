@@ -45,6 +45,8 @@ common_ui_config parent = item;\
 children;\
 })
 
+#define RELATIVE(a,b) { parent.point.x + a, parent.point.y + b }
+
 common_ui_config label(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config);
 common_ui_config textbox(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config);
 common_ui_config rectangle(draw_ctx ctx, rect_ui_config rect_config, common_ui_config common_config);

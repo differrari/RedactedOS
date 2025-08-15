@@ -165,7 +165,7 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
                 .text = entries[index].name,
                 .font_size = 3,
             }, (common_ui_config){
-                .point = {parent.point.x, parent.point.y},
+                .point = RELATIVE(0,0),
                 .size = inner_rect.size,
                 .horizontal_align = HorizontalCenter,
                 .vertical_align = VerticalCenter,
@@ -177,7 +177,7 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
                 .text = entries[index].ext,
                 .font_size = 1,
             }, (common_ui_config){
-                .point = {10 + ((tile_size.width + 10)*column)+ (sel ? border*2 : border), 50 + ((tile_size.height + 10) *row) + (sel ? border*2 : border)},
+                .point = RELATIVE(5, 5),
                 .size = { 1, 1 },
                 .horizontal_align = Leading,
                 .vertical_align = Top,
