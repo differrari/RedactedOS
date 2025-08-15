@@ -1,5 +1,6 @@
 #include "USBDevice.hpp"
 #include "USBKeyboard.hpp"
+#include "USBMouse.hpp"
 #include "usb_types.h"
 #include "console/kio.h"
 
@@ -27,6 +28,9 @@ void USBDevice::register_endpoint(uint8_t endpoint, usb_device_types type, uint1
     switch (type){
         case KEYBOARD:
             newendpoint = new USBKeyboard(address, endpoint, packet_size);
+            break;
+        case MOUSE:
+            newendpoint = new USBMouse(address,endpoint,packet_size);
             break;
         default: return;
     }

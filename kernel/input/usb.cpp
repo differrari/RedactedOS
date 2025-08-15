@@ -136,6 +136,10 @@ bool USBDriver::get_configuration(uint8_t address){
             case 0x1:
                 dev_type = KEYBOARD;
                 break;
+
+            case 0x2:
+                dev_type = MOUSE;
+                break;
             
             default:
                 dev_type = UNKNOWN;
