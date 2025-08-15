@@ -20,6 +20,9 @@ public:
     uint32_t get_char_size(uint32_t scale) override;
 
     draw_ctx get_ctx() override;
+
+    void setup_cursor() override;    
+    void update_cursor(uint32_t x, uint32_t y, bool full) override;
     
     ~VideoCoreGPUDriver() = default;
     

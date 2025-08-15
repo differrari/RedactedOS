@@ -136,3 +136,13 @@ uint32_t RamFBGPUDriver::get_char_size(uint32_t scale){
 draw_ctx RamFBGPUDriver::get_ctx(){
     return (uint32_t*)back_framebuffer;
 }
+
+void RamFBGPUDriver::setup_cursor()
+{
+    
+}   
+
+void RamFBGPUDriver::update_cursor(uint32_t x, uint32_t y, bool full)
+{
+
+}

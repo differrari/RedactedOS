@@ -92,6 +92,15 @@ draw_ctx gpu_get_ctx(){
     return gpu_driver->get_ctx();
 }
 
+void gpu_setup_cursor(gpu_point initial_loc){
+    gpu_driver->setup_cursor();
+    gpu_driver->update_cursor(initial_loc.x, initial_loc.y, true);
+}
+
+void gpu_update_cursor(gpu_point new_loc){
+    gpu_driver->update_cursor(new_loc.x, new_loc.y, true);
+}
+
 driver_module graphics_module = {
     .name = "graphics",
     .mount = "/dev/graph",

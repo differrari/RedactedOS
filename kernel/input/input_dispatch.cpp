@@ -7,6 +7,7 @@
 #include "std/std.hpp"
 #include "kernel_processes/kprocess_loader.h"
 #include "math/math.h"
+#include "graph/graphics.h"
 
 process_t* focused_proc;
 
@@ -52,6 +53,7 @@ void register_keypress(keypress kp) {
 }
 
 void mouse_config(gpu_point point, gpu_size size){
+    gpu_setup_cursor(point);
     mouse_loc = point;
     screen_bounds = size;
 }
@@ -63,6 +65,7 @@ void register_mouse_input(mouse_input *rat){
     mouse_loc.y += dy;
     mouse_loc.x = min(max(0, mouse_loc.x), screen_bounds.width);
     mouse_loc.y = min(max(0, mouse_loc.y), screen_bounds.height);
+    gpu_update_cursor({mouse_loc});
 }
 
 gpu_point get_mouse_pos(){

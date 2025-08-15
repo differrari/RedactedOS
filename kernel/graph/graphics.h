@@ -24,6 +24,9 @@ void gpu_draw_string(string s, gpu_point p, uint32_t scale, uint32_t color);
 uint32_t gpu_get_char_size(uint32_t scale);
 draw_ctx gpu_get_ctx();
 
+void gpu_setup_cursor(gpu_point initial_loc);
+void gpu_update_cursor(gpu_point new_loc);
+
 extern driver_module graphics_module;
 
 #ifdef __cplusplus

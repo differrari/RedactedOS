@@ -23,6 +23,9 @@ public:
     uint32_t get_char_size(uint32_t scale) override;
 
     draw_ctx get_ctx() override;
+
+    void setup_cursor() override;    
+    void update_cursor(uint32_t x, uint32_t y, bool full) override;
     
     ~VirtioGPUDriver() = default;
     
@@ -33,11 +36,17 @@ private:
     uint64_t framebuffer_size;
 
     gpu_size get_display_info();
-    bool create_2d_resource(gpu_size size);
-    bool attach_backing();
+    bool create_2d_resource(uint32_t resource_id, gpu_size size);
+    bool attach_backing(uint32_t resource_id, sizedptr ptr);
     bool set_scanout();
-    bool transfer_to_host(gpu_rect rect);
+    bool transfer_to_host(uint32_t resource_id, gpu_rect rect);
     void get_capset();
+    uint32_t new_resource_id();
+
+    uint32_t resource_id_counter;
+
+    uint32_t fb_resource_id;
+    uint32_t cursor_resource_id;
 
     bool scanout_found;
     uint64_t scanout_id;

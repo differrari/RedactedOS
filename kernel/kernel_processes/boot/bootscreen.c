@@ -85,7 +85,6 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
                     lerp(i, ccurrent.y, cnext.y, csteps)
                 };
                 gpu_draw_pixel(interpolated, 0xFFFFFFFF);
-                gpu_draw_pixel(get_mouse_pos(), 0xB4DD13);
             }
         }
         keypress kp;
