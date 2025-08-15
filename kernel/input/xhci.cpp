@@ -588,11 +588,11 @@ void XHCIDriver::handle_interrupt(){
     } else {
         kprintf("[xHCI error] wrong status %i on command type %x", completion_code, ((ev->control & TRB_TYPE_MASK) >> 10));
     }
-    event_ring.index++;
     if (event_ring.index == MAX_TRB_AMOUNT - 1){
         event_ring.index = 0;
         event_ring.cycle_bit = !event_ring.cycle_bit;
-    }
+    } else
+        event_ring.index++;
     interrupter->erdp = (uintptr_t)&event_ring.ring[event_ring.index] | (1 << 3);//Inform of latest processed event
     interrupter->iman |= 1;//Clear interrupts
     op->usbsts |= 1 << 3;//Clear interrupts
