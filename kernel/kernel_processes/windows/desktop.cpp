@@ -146,19 +146,18 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
 
     gpu_rect inner_rect = (gpu_rect){{10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0)}, {tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}};
 
-    DRAW({
-        rectangle(gpu_get_ctx(), (rect_ui_config){
-            .border_size = (uint8_t)(sel ? 4 : 0),
-            .border_color = BG_COLOR+0x333333,
+    DRAW(
+        rectangle(gpu_get_ctx(), {
+        .border_size = (uint8_t)(sel ? 4 : 0),
+        .border_color = BG_COLOR+0x333333,
         }, (common_ui_config){
-            .point = {10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row)},
-            .size = {tile_size.width, tile_size.height},
-            .horizontal_align = Leading,
-            .vertical_align = Top,
-            .background_color = BG_COLOR+0x111111,
-            .foreground_color = 0
-        });
-    }, {
+        .point = {10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row)},
+        .size = {tile_size.width, tile_size.height},
+        .horizontal_align = Leading,
+        .vertical_align = Top,
+        .background_color = BG_COLOR+0x111111,
+        .foreground_color = 0
+        }), {
         
         if (index < entries.size()){
             
@@ -166,7 +165,7 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
                 .text = entries[index].name,
                 .font_size = 3,
             }, (common_ui_config){
-                .point = inner_rect.point,
+                .point = {parent.point.x, parent.point.y},
                 .size = inner_rect.size,
                 .horizontal_align = HorizontalCenter,
                 .vertical_align = VerticalCenter,

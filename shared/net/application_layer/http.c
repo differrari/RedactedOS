@@ -8,11 +8,7 @@ extern void      sleep(uint64_t ms);
 static inline bool is_space(char c) {
     return c == ' ' || c == '\t';
 }
-static inline bool starts_with(const char *a, const char *b, uint32_t len) {
-    for (uint32_t i = 0; i < len; i++)
-        if (a[i] != b[i]) return false;
-    return true;
-}
+
 static inline uint32_t parse_u32(const char *s, uint32_t len) {
     uint32_t r = 0;
     for (uint32_t i = 0; i < len; i++) {

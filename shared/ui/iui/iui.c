@@ -50,18 +50,26 @@ gpu_point calculate_label_pos(text_ui_config text_config, common_ui_config commo
     return point;
 }
 
-void label(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config){
+common_ui_config label(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config){
     gpu_point p = calculate_label_pos(text_config, common_config);
     fb_draw_string(ctx, text_config.text, p.x, p.y, text_config.font_size, common_config.foreground_color);
+    return common_config;
 }
 
-void textbox(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config){
+common_ui_config textbox(draw_ctx ctx, text_ui_config text_config, common_ui_config common_config){
     rectangle(ctx, (rect_ui_config){0,0}, common_config);
     label(ctx, text_config, common_config);
+    return common_config;
 }
 
-void rectangle(draw_ctx ctx, rect_ui_config rect_config, common_ui_config common_config){
+common_ui_config rectangle(draw_ctx ctx, rect_ui_config rect_config, common_ui_config common_config){
     if (rect_config.border_size > 0)
         fb_fill_rect(ctx, common_config.point.x, common_config.point.y, common_config.size.width, common_config.size.height, rect_config.border_color);
     fb_fill_rect(ctx, common_config.point.x + rect_config.border_size, common_config.point.y + rect_config.border_size, common_config.size.width - rect_config.border_size*2, common_config.size.height - rect_config.border_size*2, common_config.background_color);
+    return (common_ui_config){
+        .point = { common_config.point.x + rect_config.border_size, common_config.point.y + rect_config.border_size },
+        .size = {common_config.size.width - rect_config.border_size*2, common_config.size.height - rect_config.border_size*2},
+        .background_color = common_config.background_color,
+        .foreground_color = common_config.foreground_color
+    };
 }
