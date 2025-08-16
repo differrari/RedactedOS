@@ -162,8 +162,7 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
     
     uintptr_t resp = (uintptr_t)kalloc(audio_dev.memory_page, resp_size, ALIGN_64B, true, true);
 
-    if (!virtio_send(&audio_dev, audio_dev.common_cfg->queue_desc, audio_dev.common_cfg->queue_driver, audio_dev.common_cfg->queue_device,
-        (uintptr_t)cmd, sizeof(virtio_snd_query_info), resp, resp_size, VIRTQ_DESC_F_WRITE)){
+    if (!virtio_send(&audio_dev, (uintptr_t)cmd, sizeof(virtio_snd_query_info), resp, resp_size, VIRTQ_DESC_F_WRITE)){
         kfree(cmd, sizeof(virtio_snd_query_info));
         kfree((void*)resp, resp_size);
         return false;
@@ -195,7 +194,7 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
             kprintf("[VIRTIO_AUDIO error] Failed to configure stream %i",stream);
         }
 
-#if false
+#if true
         if (stream_info[stream].direction == VIRTIO_SND_D_OUTPUT){
             kprintf("Playing from stream %i",stream);
             select_queue(&audio_dev, TRANSMIT_QUEUE);
@@ -251,8 +250,7 @@ bool VirtioAudioDriver::stream_set_params(uint32_t stream_id, uint32_t features,
 
     virtio_snd_info_hdr *resp = (virtio_snd_info_hdr*)kalloc(audio_dev.memory_page, sizeof(virtio_snd_info_hdr), ALIGN_64B, true, true);
 
-    bool result = virtio_send(&audio_dev, audio_dev.common_cfg->queue_desc, audio_dev.common_cfg->queue_driver, audio_dev.common_cfg->queue_device,
-        (uintptr_t)cmd, sizeof(virtio_snd_pcm_set_params), (uintptr_t)resp, sizeof(virtio_snd_info_hdr), VIRTQ_DESC_F_WRITE);
+    bool result = virtio_send(&audio_dev, (uintptr_t)cmd, sizeof(virtio_snd_pcm_set_params), (uintptr_t)resp, sizeof(virtio_snd_info_hdr), VIRTQ_DESC_F_WRITE);
     
     kfree(cmd, sizeof(virtio_snd_query_info));
     kfree((void*)resp, sizeof(virtio_snd_info_hdr));
@@ -274,8 +272,7 @@ bool VirtioAudioDriver::send_simple_stream_cmd(uint32_t stream_id, uint32_t comm
     
     virtio_snd_info_hdr *resp = (virtio_snd_info_hdr*)kalloc(audio_dev.memory_page, sizeof(virtio_snd_info_hdr), ALIGN_64B, true, true);
     
-    bool result = virtio_send(&audio_dev, audio_dev.common_cfg->queue_desc, audio_dev.common_cfg->queue_driver, audio_dev.common_cfg->queue_device,
-        (uintptr_t)cmd, sizeof(virtio_snd_pcm_hdr), (uintptr_t)resp, sizeof(virtio_snd_info_hdr), VIRTQ_DESC_F_WRITE);
+    bool result = virtio_send(&audio_dev, (uintptr_t)cmd, sizeof(virtio_snd_pcm_hdr), (uintptr_t)resp, sizeof(virtio_snd_info_hdr), VIRTQ_DESC_F_WRITE);
 
     kfree(cmd, sizeof(virtio_snd_query_info));
     kfree((void*)resp, sizeof(virtio_snd_info_hdr));

@@ -5,6 +5,32 @@
 
 #define VIRTIO_GPU_ID 0x1050
 
+typedef struct virtio_gpu_ctrl_hdr {
+    uint32_t type;
+    uint32_t flags;
+    uint64_t fence_id;
+    uint32_t ctx_id;
+    uint8_t ring_idx;
+    uint8_t padding[3];
+} virtio_gpu_ctrl_hdr;
+
+struct virtio_gpu_cursor_pos { 
+    uint32_t scanout_id; 
+    uint32_t x; 
+    uint32_t y; 
+    uint32_t padding;
+}; 
+ 
+struct virtio_gpu_update_cursor { 
+    virtio_gpu_ctrl_hdr hdr; 
+    virtio_gpu_cursor_pos pos; 
+    uint32_t resource_id; 
+    uint32_t hot_x; 
+    uint32_t hot_y; 
+    uint32_t padding;
+};
+static_assert(sizeof(virtio_gpu_update_cursor) == 56, "Update cursor command must be 56 bytes");
+
 class VirtioGPUDriver : public GPUDriver {
 public:
     static VirtioGPUDriver* try_init(gpu_size preferred_screen_size);
@@ -47,6 +73,8 @@ private:
 
     uint32_t fb_resource_id;
     uint32_t cursor_resource_id;
+
+    virtio_gpu_update_cursor *cursor_cmd;
 
     bool scanout_found;
     uint64_t scanout_id;
