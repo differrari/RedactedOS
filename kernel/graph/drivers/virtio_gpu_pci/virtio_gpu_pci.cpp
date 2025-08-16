@@ -4,6 +4,7 @@
 #include "console/kio.h"
 #include "ui/draw/draw.h"
 #include "std/std.hpp"
+#include "theme/theme.h"
 
 #define VIRTIO_GPU_CMD_GET_DISPLAY_INFO         0x0100
 #define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D       0x0101
@@ -492,8 +493,8 @@ uint32_t VirtioGPUDriver::new_cursor(uint32_t color){
 
 void VirtioGPUDriver::setup_cursor()
 {
-    cursor_pressed_resource_id = new_cursor(0xFFB4DD13);
-    cursor_unpressed_resource_id = new_cursor(0xFF223344);
+    cursor_pressed_resource_id = new_cursor(CURSOR_COLOR_SELECTED);
+    cursor_unpressed_resource_id = new_cursor(CURSOR_COLOR_DESELECTED);
     set_cursor_pressed(false);
 }   
 
