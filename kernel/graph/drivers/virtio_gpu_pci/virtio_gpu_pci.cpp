@@ -23,6 +23,8 @@
 #define VIRTIO_GPU_RESP_OK_RESOURCE_UUID        0x1105 
 #define VIRTIO_GPU_RESP_OK_MAP_INFO             0x1106
 
+#define VIRTIO_GPU_FLAG_FENCE   (1 << 0)
+
 #define BPP 4
 
 #define CONTROL_QUEUE 0
@@ -173,7 +175,7 @@ bool VirtioGPUDriver::create_2d_resource(uint32_t resource_id, gpu_size size) {
     
     cmd->hdr.type = VIRTIO_GPU_CMD_RESOURCE_CREATE_2D;
     cmd->hdr.flags = 0;
-    cmd->hdr.fence_id = 0;
+    cmd->hdr.fence_id = VIRTIO_GPU_FLAG_FENCE;
     cmd->hdr.ctx_id = 0;
     cmd->hdr.ring_idx = 0;
     cmd->hdr.padding[0] = 0;
@@ -220,7 +222,7 @@ bool VirtioGPUDriver::attach_backing(uint32_t resource_id, sizedptr ptr) {
 
     cmd->hdr.type = VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING;
     cmd->hdr.flags = 0;
-    cmd->hdr.fence_id = 0;
+    cmd->hdr.fence_id = VIRTIO_GPU_FLAG_FENCE;
     cmd->hdr.ctx_id = 0;
     cmd->hdr.ring_idx = 0;
     cmd->hdr.padding[0] = 0;
@@ -311,7 +313,7 @@ bool VirtioGPUDriver::transfer_to_host(uint32_t resource_id, gpu_rect rect) {
     
     cmd->hdr.type = VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D;
     cmd->hdr.flags = 0;
-    cmd->hdr.fence_id = 0;
+    cmd->hdr.fence_id = VIRTIO_GPU_FLAG_FENCE;
     cmd->hdr.padding[0] = 0;
     cmd->hdr.padding[1] = 0;
     cmd->hdr.padding[2] = 0;
