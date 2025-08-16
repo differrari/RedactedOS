@@ -63,8 +63,12 @@ common_ui_config textbox(draw_ctx ctx, text_ui_config text_config, common_ui_con
 }
 
 common_ui_config rectangle(draw_ctx ctx, rect_ui_config rect_config, common_ui_config common_config){
-    if (rect_config.border_size > 0)
-        fb_fill_rect(ctx, common_config.point.x, common_config.point.y, common_config.size.width, common_config.size.height, rect_config.border_color);
+    if (rect_config.border_size > 0){
+        fb_fill_rect(ctx, common_config.point.x, common_config.point.y, rect_config.border_size, common_config.size.height, rect_config.border_color);
+        fb_fill_rect(ctx, common_config.point.x + common_config.size.width - rect_config.border_size, common_config.point.y, rect_config.border_size, common_config.size.height, rect_config.border_color);
+        fb_fill_rect(ctx, common_config.point.x, common_config.point.y, common_config.size.width, rect_config.border_size, rect_config.border_color);
+        fb_fill_rect(ctx, common_config.point.x, common_config.point.y  + common_config.size.height - rect_config.border_size, common_config.size.width, rect_config.border_size, rect_config.border_color);
+    }
     fb_fill_rect(ctx, common_config.point.x + rect_config.border_size, common_config.point.y + rect_config.border_size, common_config.size.width - rect_config.border_size*2, common_config.size.height - rect_config.border_size*2, common_config.background_color);
     return (common_ui_config){
         .point = { common_config.point.x + rect_config.border_size, common_config.point.y + rect_config.border_size },
