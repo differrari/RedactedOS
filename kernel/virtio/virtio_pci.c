@@ -152,7 +152,7 @@ uint32_t select_queue(virtio_device *dev, uint32_t index){
     return dev->common_cfg->queue_size;
 }
 
-bool virtio_send(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags) {
+bool virtio_send_3d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags) {
     struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)dev->common_cfg->queue_desc;
     struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)dev->common_cfg->queue_driver;
     struct virtq_used* u = (struct virtq_used*)(uintptr_t)dev->common_cfg->queue_device;
@@ -187,7 +187,7 @@ bool virtio_send(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t re
     return status == 0;
 }
 
-bool virtio_send2(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags) {
+bool virtio_send_2d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags) {
 
     struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)dev->common_cfg->queue_desc;
     struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)dev->common_cfg->queue_driver;

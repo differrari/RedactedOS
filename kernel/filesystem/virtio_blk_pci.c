@@ -80,7 +80,7 @@ void vblk_write(const void *buffer, uint32_t sector, uint32_t count) {
     req->reserved = 0;
     req->sector = sector;
 
-    virtio_send(&blk_dev, (uintptr_t)cmd, sizeof(struct virtio_blk_req), (uintptr_t)data, count * 512, 0);
+    virtio_send_3d(&blk_dev, (uintptr_t)cmd, sizeof(struct virtio_blk_req), (uintptr_t)data, count * 512, 0);
 
     kfree((void *)cmd,sizeof(struct virtio_blk_req));
     kfree((void *)data,count * 512);
@@ -95,7 +95,7 @@ void vblk_read(void *buffer, uint32_t sector, uint32_t count) {
     req->reserved = 0;
     req->sector = sector;
 
-    virtio_send(&blk_dev, (uintptr_t)cmd, sizeof(struct virtio_blk_req), (uintptr_t)data, count * 512, VIRTQ_DESC_F_WRITE);
+    virtio_send_3d(&blk_dev, (uintptr_t)cmd, sizeof(struct virtio_blk_req), (uintptr_t)data, count * 512, VIRTQ_DESC_F_WRITE);
 
     memcpy(buffer, (void *)(uintptr_t)data, count * 512);
 
