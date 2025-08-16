@@ -22,10 +22,10 @@ int window_system(){
             gpu_size size = {abs(end_point.x - start_point.x), abs(end_point.y - start_point.y)};
             gpu_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
             rectangle(gpu_get_ctx(), (rect_ui_config){
-                .border_size = 3,
+                .border_size = 0,
                 .border_color = BG_COLOR + 0x222222
             }, (common_ui_config){
-                .background_color = BG_COLOR,
+                .background_color = BG_COLOR + 0x222222,
                 .foreground_color = COLOR_WHITE,
                 .point = fixed_point,
                 .size = size
