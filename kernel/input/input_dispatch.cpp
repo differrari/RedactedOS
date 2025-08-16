@@ -177,9 +177,13 @@ bool input_init(){
 
 int input_process_poll(int argc, char* argv[]){
     while (1){
-        input_driver->poll_inputs();
+        if (input_driver) input_driver->poll_inputs();
     }
     return 1;
+}
+
+void input_start_polling(){
+    if (input_driver) input_driver->poll_inputs();
 }
 
 int input_process_fake_interrupts(int argc, char* argv[]){

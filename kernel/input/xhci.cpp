@@ -529,7 +529,6 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     }
 
     usb_manager->register_endpoint(address, ep_num, type, endpoint->wMaxPacketSize);
-    usb_manager->request_data(address, ep_num, this);
     
     return true;
 }

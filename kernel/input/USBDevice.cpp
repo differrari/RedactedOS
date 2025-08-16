@@ -41,7 +41,7 @@ void USBDevice::register_endpoint(uint8_t endpoint, usb_device_types type, uint1
 void USBDevice::poll_inputs(USBDriver *driver){
     for (uint8_t i = 0; i < endpoints.max_size(); i++){
         USBEndpoint *ep = endpoints[i];
-        if (ep && ep->type == KEYBOARD)
+        if (ep && ep->type != UNKNOWN)
             ep->request_data(driver);
     }
 }

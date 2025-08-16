@@ -98,6 +98,7 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
 
 int bootscreen(){
     disable_visual();
+    input_start_polling();
     gpu_clear(BG_COLOR);
     sys_focus_current();
     gpu_size screen_size = gpu_get_screen_size();
