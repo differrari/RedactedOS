@@ -80,6 +80,10 @@ gpu_point get_mouse_pos(){
     return mouse_loc;
 }
 
+bool mouse_button_pressed(mouse_button mb){
+    return (last_cursor_state & (1 << mb)) == (1 << mb);
+}
+
 uint16_t sys_subscribe_shortcut_current(keypress kp){
     return sys_subscribe_shortcut(get_current_proc_pid(),kp);
 }

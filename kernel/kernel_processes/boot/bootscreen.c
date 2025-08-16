@@ -9,7 +9,7 @@
 #include "math/math.h"
 #include "syscalls/syscalls.h"
 #include "filesystem/filesystem.h"
-#include "ui/iui/iui.h"
+#include "ui/uno/uno.h"
 
 file boot_fd;
 

@@ -7,7 +7,7 @@
 #include "std/string.h"
 #include "filesystem/filesystem.h"
 #include "process/loading/elf_file.h"
-#include "ui/iui/iui.h"
+#include "ui/uno/uno.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3
