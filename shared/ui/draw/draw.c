@@ -1,6 +1,7 @@
 #include "draw.h"
 #include "graph/font8x8_bridge.h"
 #include "std/memfunctions.h"
+#include "math/math.h"
 
 #define line_height char_size + 2
 
@@ -155,7 +156,7 @@ uint32_t fb_get_char_size(uint32_t scale){
 
 void fb_draw_cursor(uint32_t* fb, uint32_t color){
     for (uint32_t y = 0; y < 32; y++){
-        uint32_t ppl = y;
+        uint32_t ppl = max(1,24-y);
         for (uint32_t x = 0; x < ppl; x++)
             fb[y * 64 + x] = x == 0 || x == ppl-1 ? 0 : color;
     }   
