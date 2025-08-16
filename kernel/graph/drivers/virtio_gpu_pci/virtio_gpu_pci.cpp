@@ -482,10 +482,11 @@ draw_ctx VirtioGPUDriver::get_ctx(){
 void VirtioGPUDriver::setup_cursor()
 {
     cursor_resource_id = new_resource_id();
+    kprintf("Cursor %i",cursor_resource_id);
     size_t cursor_size = 64*64*BPP;
     create_2d_resource(cursor_resource_id, {64,64});
     uint32_t *cursor = (uint32_t*)kalloc(gpu_dev.memory_page, cursor_size, ALIGN_4KB, true, true);
-    for (uint32_t i = 0; i < 64*64; i++) cursor[i] = 0xB4DD13;
+    for (uint32_t i = 0; i < 64*64; i++) cursor[i] = 0xFFB4DD13;
     attach_backing(cursor_resource_id, (sizedptr){(uintptr_t)cursor, cursor_size});
     transfer_to_host(cursor_resource_id, {{0,0},{64,64}});
 }   
