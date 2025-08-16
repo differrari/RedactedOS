@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+#define STRING_MAX_LEN 256
+
 typedef struct {
     char *data;
     uint32_t length;

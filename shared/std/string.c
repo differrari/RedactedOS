@@ -146,14 +146,14 @@ string string_format(const char *fmt, ...){
 }
 
 string string_format_va(const char *fmt, va_list args){
-    char *buf = (char*)malloc(256);
+    char *buf = (char*)malloc(STRING_MAX_LEN);
     size_t len = string_format_va_buf(fmt, buf, args);
-    return (string){ .data = buf, .length = len, .mem_length = 256 };
+    return (string){ .data = buf, .length = len, .mem_length = STRING_MAX_LEN };
 }
 
 size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
     size_t len = 0;
-    for (uint32_t i = 0; fmt[i] && len < 255; i++){
+    for (uint32_t i = 0; fmt[i] && len < STRING_MAX_LEN - 1; i++){
         if (fmt[i] == '%' && fmt[i+1]){
             i++;
             if (fmt[i] == 'x'){
@@ -163,7 +163,7 @@ size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
             } else if (fmt[i] == 'b') {
                 uint64_t val = va_arg(args, uint64_t);
                 string bin = string_from_bin(val);
-                for(uint32_t j = 0; j < bin.length && len < 255; j++) buf[len++] = bin.data[j];
+                for(uint32_t j = 0; j < bin.length && len < STRING_MAX_LEN - 1; j++) buf[len++] = bin.data[j];
                 free(bin.data,bin.mem_length);
                 
             } else if (fmt[i] == 'c') {
@@ -172,7 +172,7 @@ size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
                 
             } else if (fmt[i] == 's') {
                 char *str = ( char *)va_arg(args, uintptr_t);
-                for (uint32_t j = 0; str[j] && len < 255; j++) buf[len++] = str[j];
+                for (uint32_t j = 0; str[j] && len < STRING_MAX_LEN - 1; j++) buf[len++] = str[j];
                 
             } else if (fmt[i] == 'i') {
                 uint64_t val = va_arg(args, long int);
@@ -189,7 +189,7 @@ size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
                     val /= 10;
                 } while (val && temp_len < 20);
             
-                for (int j = temp_len - 1; j >= 0 && len < 255; j--){
+                for (int j = temp_len - 1; j >= 0 && len < STRING_MAX_LEN - 1; j--){
                     buf[len++] = temp[j];
                 }
             } else if (fmt[i] == 'f' || fmt[i] == 'd') {
@@ -208,12 +208,12 @@ size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
                     whole /= 10;
                 } while(whole && temp_len < 20);
 
-                for (int j = temp_len - 1; j >= 0 && len < 255; j--){
+                for (int j = temp_len - 1; j >= 0 && len < STRING_MAX_LEN - 1; j--){
                     buf[len++] = temp[j];
                 }
-                if (len < 255) buf[len++] = '.';
+                if (len < STRING_MAX_LEN - 1) buf[len++] = '.';
                 
-                for (int d = 0; d < 6 && len < 255; d++) {
+                for (int d = 0; d < 6 && len < STRING_MAX_LEN - 1; d++) {
                     frac *= 10;
                     int digit = (int)frac;
                     buf[len++] = '0' + digit;
