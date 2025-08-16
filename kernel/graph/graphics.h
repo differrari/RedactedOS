@@ -25,7 +25,8 @@ uint32_t gpu_get_char_size(uint32_t scale);
 draw_ctx gpu_get_ctx();
 
 void gpu_setup_cursor(gpu_point initial_loc);
-void gpu_update_cursor(gpu_point new_loc);
+void gpu_update_cursor(gpu_point new_loc, bool full);
+void gpu_set_cursor_pressed(bool pressed);
 
 extern driver_module graphics_module;
 

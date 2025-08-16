@@ -52,6 +52,7 @@ public:
 
     void setup_cursor() override;    
     void update_cursor(uint32_t x, uint32_t y, bool full) override;
+    void set_cursor_pressed(bool pressed) override;
     
     ~VirtioGPUDriver() = default;
     
@@ -68,11 +69,14 @@ private:
     bool transfer_to_host(uint32_t resource_id, gpu_rect rect);
     void get_capset();
     uint32_t new_resource_id();
+    uint32_t new_cursor(uint32_t color);
 
     uint32_t resource_id_counter;
 
     uint32_t fb_resource_id;
     uint32_t cursor_resource_id;
+    uint32_t cursor_pressed_resource_id;
+    uint32_t cursor_unpressed_resource_id;
 
     virtio_gpu_update_cursor *cursor_cmd;
 

@@ -21,9 +21,6 @@ public:
 
     draw_ctx get_ctx() override;
 
-    void setup_cursor() override;    
-    void update_cursor(uint32_t x, uint32_t y, bool full) override;
-
     ~RamFBGPUDriver() = default;
     
 private: 

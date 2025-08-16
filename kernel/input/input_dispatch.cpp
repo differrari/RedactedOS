@@ -58,6 +58,8 @@ void mouse_config(gpu_point point, gpu_size size){
     screen_bounds = size;
 }
 
+uint8_t last_cursor_state = 0;
+
 void register_mouse_input(mouse_input *rat){
     int32_t dx = rat->x;
     int32_t dy = rat->y;
@@ -65,7 +67,13 @@ void register_mouse_input(mouse_input *rat){
     mouse_loc.y += dy;
     mouse_loc.x = min(max(0, mouse_loc.x), screen_bounds.width);
     mouse_loc.y = min(max(0, mouse_loc.y), screen_bounds.height);
-    gpu_update_cursor({mouse_loc});
+    gpu_update_cursor(mouse_loc, false);
+    uint8_t lmb = rat->buttons & 1;
+    if (lmb != last_cursor_state){
+        last_cursor_state = lmb;
+        gpu_set_cursor_pressed(last_cursor_state);
+        gpu_update_cursor(mouse_loc, true);
+    }
 }
 
 gpu_point get_mouse_pos(){

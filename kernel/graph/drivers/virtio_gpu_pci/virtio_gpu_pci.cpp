@@ -479,16 +479,22 @@ draw_ctx VirtioGPUDriver::get_ctx(){
     return (uint32_t*)framebuffer;
 }
 
+uint32_t VirtioGPUDriver::new_cursor(uint32_t color){
+    uint32_t id = new_resource_id();
+    size_t cursor_size = 64*64*BPP;
+    create_2d_resource(id, {64,64});
+    uint32_t *cursor = (uint32_t*)kalloc(gpu_dev.memory_page, cursor_size, ALIGN_4KB, true, true);
+    fb_draw_cursor(cursor, color);
+    attach_backing(id, (sizedptr){(uintptr_t)cursor, cursor_size});
+    transfer_to_host(id, {{0,0},{64,64}});
+    return id;
+}
+
 void VirtioGPUDriver::setup_cursor()
 {
-    cursor_resource_id = new_resource_id();
-    kprintf("Cursor %i",cursor_resource_id);
-    size_t cursor_size = 64*64*BPP;
-    create_2d_resource(cursor_resource_id, {64,64});
-    uint32_t *cursor = (uint32_t*)kalloc(gpu_dev.memory_page, cursor_size, ALIGN_4KB, true, true);
-    for (uint32_t i = 0; i < 64*64; i++) cursor[i] = 0xFFB4DD13;
-    attach_backing(cursor_resource_id, (sizedptr){(uintptr_t)cursor, cursor_size});
-    transfer_to_host(cursor_resource_id, {{0,0},{64,64}});
+    cursor_pressed_resource_id = new_cursor(0xFFB4DD13);
+    cursor_unpressed_resource_id = new_cursor(0xFF223344);
+    set_cursor_pressed(false);
 }   
 
 void VirtioGPUDriver::update_cursor(uint32_t x, uint32_t y, bool full)
@@ -519,4 +525,8 @@ void VirtioGPUDriver::update_cursor(uint32_t x, uint32_t y, bool full)
     }
 
     kfree((void*)resp, sizeof(virtio_gpu_ctrl_hdr));
+}
+
+void VirtioGPUDriver::set_cursor_pressed(bool pressed){
+    cursor_resource_id = pressed ? cursor_pressed_resource_id : cursor_unpressed_resource_id;
 }

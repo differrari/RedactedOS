@@ -97,8 +97,12 @@ void gpu_setup_cursor(gpu_point initial_loc){
     gpu_driver->update_cursor(initial_loc.x, initial_loc.y, true);
 }
 
-void gpu_update_cursor(gpu_point new_loc){
-    gpu_driver->update_cursor(new_loc.x, new_loc.y, false);
+void gpu_update_cursor(gpu_point new_loc, bool full){
+    gpu_driver->update_cursor(new_loc.x, new_loc.y, full);
+}
+
+void gpu_set_cursor_pressed(bool pressed){
+    gpu_driver->set_cursor_pressed(pressed);
 }
 
 driver_module graphics_module = {

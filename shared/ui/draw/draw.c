@@ -153,6 +153,14 @@ uint32_t fb_get_char_size(uint32_t scale){
     return CHAR_SIZE * scale;
 }
 
+void fb_draw_cursor(uint32_t* fb, uint32_t color){
+    for (uint32_t y = 0; y < 32; y++){
+        uint32_t ppl = y;
+        for (uint32_t x = 0; x < ppl; x++)
+            fb[y * 64 + x] = x == 0 || x == ppl-1 ? 0 : color;
+    }   
+}
+
 void fb_set_stride(uint32_t new_stride){
     stride = new_stride;
 }

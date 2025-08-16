@@ -135,13 +135,3 @@ uint32_t VideoCoreGPUDriver::get_char_size(uint32_t scale){
 draw_ctx VideoCoreGPUDriver::get_ctx(){
     return (uint32_t*)back_framebuffer;
 }
-
-void VideoCoreGPUDriver::setup_cursor()
-{
-    
-}   
-
-void VideoCoreGPUDriver::update_cursor(uint32_t x, uint32_t y, bool full)
-{
-
-}
