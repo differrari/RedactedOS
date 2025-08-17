@@ -54,7 +54,7 @@ public:
     void update_cursor(uint32_t x, uint32_t y, bool full) override;
     void set_cursor_pressed(bool pressed) override;
 
-    void create_window(uint32_t width, uint32_t height, draw_ctx *ctx) override;
+    void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *ctx) override;
     
     ~VirtioGPUDriver() = default;
     

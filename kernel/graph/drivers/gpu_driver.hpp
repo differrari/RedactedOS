@@ -25,7 +25,7 @@ public:
     virtual void update_cursor(uint32_t x, uint32_t y, bool full){};
     virtual void set_cursor_pressed(bool pressed){};
 
-    virtual void create_window(uint32_t width, uint32_t height, draw_ctx *ctx) = 0;
+    virtual void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *ctx) = 0;
 
     virtual draw_ctx get_ctx() = 0;
 

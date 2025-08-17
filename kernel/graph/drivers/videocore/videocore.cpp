@@ -52,16 +52,6 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
     
     screen_size = (gpu_size){phys_w,phys_h};
     kprintf("Size %ix%i (%ix%i) (%ix%i) | %i (%i)",phys_w,phys_h,virt_w,virt_h,screen_size.width,screen_size.height,depth, stride);
-    
-    ctx = {
-        .fb = (uint32_t*)framebuffer,
-        .stride = screen_size.width * bpp,
-        .width = screen_size.width,
-        .height = screen_size.height,
-        .dirty_rects = {},
-        .dirty_count = 0,
-        .full_redraw = 0,
-    };
 
     framebuffer = rmbox[27];
     size_t fb_size = rmbox[28];
@@ -71,6 +61,17 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
     mark_used(framebuffer,count_pages(fb_size,PAGE_SIZE));
     for (size_t i = framebuffer; i < framebuffer + fb_size; i += GRANULE_4KB)
         register_device_memory(i,i);
+
+    ctx = {
+        .dirty_rects = {},
+        .fb = (uint32_t*)framebuffer,
+        .stride = screen_size.width * bpp,
+        .width = screen_size.width,
+        .height = screen_size.height,
+        .dirty_count = 0,
+        .full_redraw = 0,
+    };
+
     return true;
 }
 
@@ -142,7 +143,7 @@ draw_ctx VideoCoreGPUDriver::get_ctx(){
     return ctx;
 }
 
-void VideoCoreGPUDriver::create_window(uint32_t width, uint32_t height, draw_ctx *new_ctx){
+void VideoCoreGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *new_ctx){
     new_ctx->fb = ctx.fb;
     new_ctx->width = width;
     new_ctx->height = height;

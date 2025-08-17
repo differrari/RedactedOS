@@ -8,7 +8,6 @@
 #include "graph/graphics.h"
 #include "memory/memory_access.h"
 #include "input/input_dispatch.h"
-#include "kernel_processes/windows/windows.h"
 #include "std/memfunctions.h"
 #include "std/string.h"
 #include "exceptions/timer.h"
@@ -55,38 +54,32 @@ uint64_t syscall_read_shortcut(process_t *ctx){
 }
 
 uint64_t syscall_clear_screen(process_t *ctx){
-    if (!screen_overlay)
-        gpu_clear(ctx->PROC_X0 & UINT32_MAX);
+    gpu_clear(ctx->PROC_X0 & UINT32_MAX);
     return 0;
 }
 
 uint64_t syscall_draw_pixel(process_t *ctx){
-    if (!screen_overlay)
-        gpu_draw_pixel(*(gpu_point*)ctx->PROC_X0,ctx->PROC_X1);
+    gpu_draw_pixel(*(gpu_point*)ctx->PROC_X0,ctx->PROC_X1);
     return 0;
 }
 
 uint64_t syscall_draw_line(process_t *ctx){
-    if (!screen_overlay)
-        gpu_draw_line(*(gpu_point*)ctx->PROC_X0,*(gpu_point*)ctx->PROC_X1, ctx->PROC_X2 & UINT32_MAX);
+    gpu_draw_line(*(gpu_point*)ctx->PROC_X0,*(gpu_point*)ctx->PROC_X1, ctx->PROC_X2 & UINT32_MAX);
     return 0;
 }
 
 uint64_t syscall_draw_rect(process_t *ctx){
-    if (!screen_overlay)
-        gpu_fill_rect(*(gpu_rect*)ctx->PROC_X0,ctx->PROC_X1 & UINT32_MAX);
+    gpu_fill_rect(*(gpu_rect*)ctx->PROC_X0,ctx->PROC_X1 & UINT32_MAX);
     return 0;
 }
 
 uint64_t syscall_draw_char(process_t *ctx){
-    if (!screen_overlay)
-        gpu_draw_char(*(gpu_point*)ctx->PROC_X0,(char)(ctx->PROC_X1 & 0xFF),ctx->PROC_X2,ctx->PROC_X3 & UINT32_MAX);
+    gpu_draw_char(*(gpu_point*)ctx->PROC_X0,(char)(ctx->PROC_X1 & 0xFF),ctx->PROC_X2,ctx->PROC_X3 & UINT32_MAX);
     return 0;
 }
 
 uint64_t syscall_draw_string(process_t *ctx){
-    if (!screen_overlay)
-        gpu_draw_string(*(string *)ctx->PROC_X0,*(gpu_point*)ctx->PROC_X1,ctx->PROC_X2,ctx->PROC_X3 & UINT32_MAX);
+    gpu_draw_string(*(string *)ctx->PROC_X0,*(gpu_point*)ctx->PROC_X1,ctx->PROC_X2,ctx->PROC_X3 & UINT32_MAX);
     return 0;
 }
 
@@ -97,8 +90,7 @@ uint64_t syscall_gpu_request_ctx(process_t *ctx){
 }
 
 uint64_t syscall_gpu_flush(process_t *ctx){
-    if (!screen_overlay)
-        gpu_flush();
+    gpu_flush();
     return 0;
 }
 

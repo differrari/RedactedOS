@@ -22,7 +22,7 @@ public:
 
     draw_ctx get_ctx() override;
 
-    void create_window(uint32_t width, uint32_t height, draw_ctx *ctx) override;
+    void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *ctx) override;
     
     ~VideoCoreGPUDriver() = default;
     

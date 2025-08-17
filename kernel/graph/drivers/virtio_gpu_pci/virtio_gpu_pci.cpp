@@ -76,11 +76,11 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     framebuffer = (uintptr_t)kalloc(gpu_dev.memory_page, framebuffer_size, ALIGN_4KB, true, true);
 
     ctx = {
+        .dirty_rects = {},
         .fb = (uint32_t*)framebuffer,
         .stride = screen_size.width * BPP,
         .width = screen_size.width,
         .height = screen_size.height,
-        .dirty_rects = {},
         .dirty_count = 0,
         .full_redraw = 0,
     };
@@ -319,14 +319,8 @@ bool VirtioGPUDriver::transfer_to_host(uint32_t resource_id, gpu_rect rect) {
     virtio_transfer_cmd* cmd = (virtio_transfer_cmd*)kalloc(gpu_dev.memory_page, sizeof(virtio_transfer_cmd), ALIGN_4KB, true, true);
     
     cmd->hdr.type = VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D;
-    cmd->hdr.flags = 0;
     cmd->hdr.fence_id = VIRTIO_GPU_FLAG_FENCE;
-    cmd->hdr.padding[0] = 0;
-    cmd->hdr.padding[1] = 0;
-    cmd->hdr.padding[2] = 0;
     cmd->resource_id = resource_id;
-    cmd->offset = 0;
-    cmd->padding = 0;
     cmd->rect.x = rect.point.x;
     cmd->rect.y = rect.point.y;
     cmd->rect.width = rect.size.width;
@@ -493,7 +487,7 @@ uint32_t VirtioGPUDriver::new_cursor(uint32_t color){
     size_t cursor_size = 64*64*BPP;
     create_2d_resource(id, {64,64});
     uint32_t *cursor = (uint32_t*)kalloc(gpu_dev.memory_page, cursor_size, ALIGN_4KB, true, true);
-    draw_ctx ctx = {cursor, 64 * BPP, 64, 64, {},0,0};
+    draw_ctx ctx = {{},cursor, 64 * BPP, 64, 64, 0,0};
     fb_draw_cursor(&ctx, color);
     attach_backing(id, (sizedptr){(uintptr_t)cursor, cursor_size});
     transfer_to_host(id, {{0,0},{64,64}});
@@ -541,8 +535,8 @@ void VirtioGPUDriver::set_cursor_pressed(bool pressed){
     cursor_resource_id = pressed ? cursor_pressed_resource_id : cursor_unpressed_resource_id;
 }
 
-void VirtioGPUDriver::create_window(uint32_t width, uint32_t height, draw_ctx *new_ctx){
-    new_ctx->fb = ctx.fb;
+void VirtioGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *new_ctx){
+    new_ctx->fb = ctx.fb + (y * ctx.width) + x;
     new_ctx->width = width;
     new_ctx->height = height;
     new_ctx->stride = ctx.stride;

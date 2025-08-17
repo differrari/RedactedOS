@@ -6,6 +6,8 @@
 #include "input/input_dispatch.h"
 #include "console/kio.h"
 #include "math/math.h"
+#include "graph/tres.h"
+#include "launcher.h"
 
 int window_system(){
     gpu_clear(BG_COLOR);
@@ -23,15 +25,18 @@ int window_system(){
             gpu_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
             draw_ctx ctx = {0};
             gpu_get_ctx(&ctx);
-            rectangle(&ctx, (rect_ui_config){
+            DRAW(rectangle(&ctx, (rect_ui_config){
                 .border_size = 3,
                 .border_color = BG_COLOR + 0x222222
             }, (common_ui_config){
+                .point = fixed_point,
+                .size = size,
                 .background_color = BG_COLOR,
                 .foreground_color = COLOR_WHITE,
-                .point = fixed_point,
-                .size = size
+            }),{
+                create_window(parent.point.x, parent.point.y, parent.size.width, parent.size.height);
             });
+            launch_launcher();
             drawing = false;
         }
         gpu_flush();

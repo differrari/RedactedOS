@@ -90,7 +90,7 @@ void Desktop::draw_desktop(){
 }
 
 void Desktop::draw_full(){
-    fb_fill_rect(&ctx, 0, 0, ctx.width, ctx.height, BG_COLOR);
+    fb_fill_rect(&ctx, 0, 0, ctx.width, ctx.height, BG_COLOR+0x050505);
     for (uint32_t column = 0; column < MAX_COLS; column++){
         for (uint32_t row = 0; row < MAX_ROWS; row++){
             draw_tile(column, row);
@@ -103,8 +103,6 @@ bool Desktop::await_gpu(){
     if (!gpu_ready())
         return false;
     if (!ready){
-        disable_visual();
-        create_window(200, 200);
         get_window_ctx(&ctx);
         sys_focus_current();
         gpu_size screen_size = {ctx.width, ctx.height};

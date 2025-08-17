@@ -13,14 +13,14 @@ extern "C" {
 #define MAX_DIRTY_RECTS 64
 
 typedef struct draw_ctx {
+    gpu_rect dirty_rects[MAX_DIRTY_RECTS];
     uint32_t* fb;
     uint32_t stride;
     uint32_t width;
     uint32_t height;
-    gpu_rect dirty_rects[MAX_DIRTY_RECTS];
     uint32_t dirty_count;
     bool full_redraw;
-}__attribute__((packed)) draw_ctx;
+} draw_ctx;
 
 void fb_clear(draw_ctx *ctx, uint32_t color);
 void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color);

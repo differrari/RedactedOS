@@ -32,16 +32,6 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
     screen_size = preferred_screen_size;
 
     stride = bpp * screen_size.width;
-
-    ctx = {
-        .fb = (uint32_t*)framebuffer,
-        .stride = screen_size.width * bpp,
-        .width = screen_size.width,
-        .height = screen_size.height,
-        .dirty_rects = {},
-        .dirty_count = 0,
-        .full_redraw = 0,
-    };
     
     struct fw_cfg_file file;
     fw_find_file("etc/ramfb", &file);
@@ -57,6 +47,16 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
 
     framebuffer = (uintptr_t)kalloc(mem_page, fb_size, true, true, false);
     back_framebuffer = (uintptr_t)kalloc(mem_page, fb_size, true, true, false);
+
+    ctx = {
+        .dirty_rects = {},
+        .fb = (uint32_t*)framebuffer,
+        .stride = screen_size.width * bpp,
+        .width = screen_size.width,
+        .height = screen_size.height,
+        .dirty_count = 0,
+        .full_redraw = 0,
+    };
 
     ramfb_structure fb = {
         .addr = __builtin_bswap64(framebuffer),
@@ -143,7 +143,7 @@ draw_ctx RamFBGPUDriver::get_ctx(){
     return ctx;
 }
 
-void RamFBGPUDriver::create_window(uint32_t width, uint32_t height, draw_ctx *new_ctx){
+void RamFBGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *new_ctx){
     new_ctx->fb = ctx.fb;
     new_ctx->width = width;
     new_ctx->height = height;

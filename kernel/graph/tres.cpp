@@ -17,8 +17,8 @@ void init_window_manager(uintptr_t gpu_driver){
     main_gpu_driver = (GPUDriver*)gpu_driver;
 }
 
-void create_window(uint32_t width, uint32_t height){
-    main_gpu_driver->create_window(width, height, &test_window.win_ctx);
+extern "C" void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height){
+    main_gpu_driver->create_window(x,y, width, height, &test_window.win_ctx);
 }
 
 void get_window_ctx(draw_ctx *ctx){

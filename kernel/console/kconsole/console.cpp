@@ -2,7 +2,6 @@
 #include "kconsole.h"
 #include "graph/graphics.h"
 #include "input/input_dispatch.h"
-#include "kernel_processes/windows/windows.h"
 #include "terminal.hpp"
 
 KernelConsole kconsole;
@@ -34,17 +33,14 @@ extern "C" int toggle_visual(int argc, char* argv[]){
         if (sys_shortcut_triggered_current(shortcut)){
             active = !active;
             if (active){
-                pause_window_draw();
                 sys_focus_current();
                 terminal->refresh();
             } else {
-                resume_window_draw();
                 terminal->clear();
             }
         }
-        if (active){
+        if (active)
             terminal->update();
-        }
     }
     return 1;
 }

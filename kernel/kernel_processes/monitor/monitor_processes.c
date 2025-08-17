@@ -3,7 +3,6 @@
 #include "../kprocess_loader.h"
 #include "console/kio.h"
 #include "input/input_dispatch.h"
-#include "../windows/windows.h"
 #include "graph/graphics.h"
 #include "std/string.h"
 #include "memory/talloc.h"
@@ -154,10 +153,11 @@ int monitor_procs(){
     bool active = false;
     while (1){
         if (sys_shortcut_triggered_current(shortcut)){
-            if (active)
-                pause_window_draw();
-            else 
-                resume_window_draw();
+            //TODO: restore this functionality with the new window system or put the process in a window
+            // if (active)
+            //     pause_window_draw();
+            // else 
+            //     resume_window_draw();
             active = !active;
         }
         if (active)
