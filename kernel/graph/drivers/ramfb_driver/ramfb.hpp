@@ -1,6 +1,7 @@
 #pragma once 
 
 #include "../gpu_driver.hpp"
+#include "exceptions/exception_handler.h"
 
 class RamFBGPUDriver : public GPUDriver {
 public:
@@ -20,6 +21,8 @@ public:
     uint32_t get_char_size(uint32_t scale) override;
 
     draw_ctx get_ctx() override;
+
+    void create_window(uint32_t width, uint32_t height, draw_ctx *ctx) override;
 
     ~RamFBGPUDriver() = default;
     

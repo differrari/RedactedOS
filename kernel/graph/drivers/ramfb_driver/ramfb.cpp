@@ -142,3 +142,10 @@ uint32_t RamFBGPUDriver::get_char_size(uint32_t scale){
 draw_ctx RamFBGPUDriver::get_ctx(){
     return ctx;
 }
+
+void RamFBGPUDriver::create_window(uint32_t width, uint32_t height, draw_ctx *new_ctx){
+    new_ctx->fb = ctx.fb;
+    new_ctx->width = width;
+    new_ctx->height = height;
+    new_ctx->stride = ctx.stride;
+}

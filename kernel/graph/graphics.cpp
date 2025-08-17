@@ -8,6 +8,8 @@
 #include "std/std.hpp"
 #include "hw/hw.h"
 
+#include "tres.h"
+
 static gpu_size screen_size;
 static bool _gpu_ready;
 
@@ -28,6 +30,10 @@ bool gpu_init(){
     screen_size = preferred_screen_size;
     _gpu_ready = true;
     kprintf("Selected and initialized GPU %x", (uintptr_t)gpu_driver);
+
+    //TODO: make window manager its own module and access the driver by exposing it through /dev/gpu
+    init_window_manager((uintptr_t)gpu_driver);
+
     return true;
 }
 

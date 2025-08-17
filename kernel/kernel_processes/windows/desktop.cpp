@@ -8,6 +8,7 @@
 #include "filesystem/filesystem.h"
 #include "process/loading/elf_file.h"
 #include "ui/uno/uno.h"
+#include "graph/tres.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3
@@ -89,7 +90,7 @@ void Desktop::draw_desktop(){
 }
 
 void Desktop::draw_full(){
-    gpu_clear(BG_COLOR);
+    fb_fill_rect(&ctx, 0, 0, ctx.width, ctx.height, BG_COLOR);
     for (uint32_t column = 0; column < MAX_COLS; column++){
         for (uint32_t row = 0; row < MAX_ROWS; row++){
             draw_tile(column, row);
@@ -103,8 +104,10 @@ bool Desktop::await_gpu(){
         return false;
     if (!ready){
         disable_visual();
+        create_window(200, 200);
+        get_window_ctx(&ctx);
         sys_focus_current();
-        gpu_size screen_size = gpu_get_screen_size();
+        gpu_size screen_size = {ctx.width, ctx.height};
         tile_size = {screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20};
         ready = true;
     }
@@ -145,9 +148,6 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
     int border = 4;
 
     gpu_rect inner_rect = (gpu_rect){{10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0)}, {tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}};
-
-    draw_ctx ctx = {};
-    gpu_get_ctx(&ctx);
 
     DRAW(
         rectangle(&ctx, {

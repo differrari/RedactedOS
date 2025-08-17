@@ -141,3 +141,10 @@ uint32_t VideoCoreGPUDriver::get_char_size(uint32_t scale){
 draw_ctx VideoCoreGPUDriver::get_ctx(){
     return ctx;
 }
+
+void VideoCoreGPUDriver::create_window(uint32_t width, uint32_t height, draw_ctx *new_ctx){
+    new_ctx->fb = ctx.fb;
+    new_ctx->width = width;
+    new_ctx->height = height;
+    new_ctx->stride = ctx.stride;
+}

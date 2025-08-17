@@ -13,13 +13,13 @@ WindowManager::WindowManager(){
 
 void WindowManager::initialize(){
     monitor_proc = start_process_monitor();
-    // desktop = new Desktop();
+    desktop = new Desktop();
     create_windowing_system();
 }
 
 void WindowManager::manage_windows(){
     if (paused) return;
-    // desktop->draw_desktop();
+    desktop->draw_desktop();
 }
 
 //TODO: the window manager will need to handle gpu access from windows as well. Windows should work on their private FB and it should be written by the window manager into the real fb

@@ -540,3 +540,10 @@ void VirtioGPUDriver::update_cursor(uint32_t x, uint32_t y, bool full)
 void VirtioGPUDriver::set_cursor_pressed(bool pressed){
     cursor_resource_id = pressed ? cursor_pressed_resource_id : cursor_unpressed_resource_id;
 }
+
+void VirtioGPUDriver::create_window(uint32_t width, uint32_t height, draw_ctx *new_ctx){
+    new_ctx->fb = ctx.fb;
+    new_ctx->width = width;
+    new_ctx->height = height;
+    new_ctx->stride = ctx.stride;
+}
