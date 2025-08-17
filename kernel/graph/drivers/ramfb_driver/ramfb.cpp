@@ -37,7 +37,10 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
         .fb = (uint32_t*)framebuffer,
         .stride = screen_size.width * bpp,
         .width = screen_size.width,
-        .height = screen_size.height
+        .height = screen_size.height,
+        .dirty_rects = {},
+        .dirty_count = 0,
+        .full_redraw = 0,
     };
     
     struct fw_cfg_file file;

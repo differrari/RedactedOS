@@ -146,7 +146,7 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
 
     gpu_rect inner_rect = (gpu_rect){{10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0)}, {tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}};
 
-    draw_ctx ctx = {0,0,0,0};
+    draw_ctx ctx = {};
     gpu_get_ctx(&ctx);
 
     DRAW(

@@ -79,7 +79,10 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
         .fb = (uint32_t*)framebuffer,
         .stride = screen_size.width * BPP,
         .width = screen_size.width,
-        .height = screen_size.height
+        .height = screen_size.height,
+        .dirty_rects = {},
+        .dirty_count = 0,
+        .full_redraw = 0,
     };
 
     get_capset();
@@ -490,7 +493,7 @@ uint32_t VirtioGPUDriver::new_cursor(uint32_t color){
     size_t cursor_size = 64*64*BPP;
     create_2d_resource(id, {64,64});
     uint32_t *cursor = (uint32_t*)kalloc(gpu_dev.memory_page, cursor_size, ALIGN_4KB, true, true);
-    draw_ctx ctx = {cursor, 64 * BPP, 64, 64};
+    draw_ctx ctx = {cursor, 64 * BPP, 64, 64, {},0,0};
     fb_draw_cursor(&ctx, color);
     attach_backing(id, (sizedptr){(uintptr_t)cursor, cursor_size});
     transfer_to_host(id, {{0,0},{64,64}});
