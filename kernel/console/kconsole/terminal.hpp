@@ -4,6 +4,7 @@
 
 class Terminal: public KernelConsole {
 public:
+    Terminal() : KernelConsole(){};
     void update();
 protected:
     void handle_input();

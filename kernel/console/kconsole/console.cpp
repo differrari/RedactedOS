@@ -28,7 +28,6 @@ extern "C" int toggle_visual(int argc, char* argv[]){
     uint16_t shortcut = sys_subscribe_shortcut_current(kp);
     bool active = false;
     Terminal *terminal = new Terminal();
-    terminal->initialize();
     while (1){
         if (sys_shortcut_triggered_current(shortcut)){
             active = !active;
