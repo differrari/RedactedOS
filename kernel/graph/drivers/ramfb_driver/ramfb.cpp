@@ -33,8 +33,12 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
 
     stride = bpp * screen_size.width;
 
-    fb_set_stride(stride);
-    fb_set_bounds(screen_size.width,screen_size.height);
+    ctx = {
+        .fb = (uint32_t*)framebuffer,
+        .stride = screen_size.width * bpp,
+        .width = screen_size.width,
+        .height = screen_size.height
+    };
     
     struct fw_cfg_file file;
     fw_find_file("etc/ramfb", &file);
@@ -68,18 +72,18 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
 }
 
 void RamFBGPUDriver::flush(){
-    if (full_redraw) {
+    if (ctx.full_redraw) {
         memcpy((void*)framebuffer, (void*)back_framebuffer, screen_size.width * screen_size.height * bpp);
-        dirty_count = 0;
-        full_redraw = false;
+        ctx.dirty_count = 0;
+        ctx.full_redraw = false;
         return;
     }
     
     volatile uint32_t* fb = (volatile uint32_t*)framebuffer;
     volatile uint32_t* bfb = (volatile uint32_t*)back_framebuffer;
     
-    for (uint32_t i = 0; i < dirty_count; i++) {
-        gpu_rect r = dirty_rects[i];
+    for (uint32_t i = 0; i < ctx.dirty_count; i++) {
+        gpu_rect r = ctx.dirty_rects[i];
         
         for (uint32_t y = 0; y < r.size.height; y++) {
             uint32_t dest_y = r.point.y + y;
@@ -96,29 +100,28 @@ void RamFBGPUDriver::flush(){
         }
     }
     
-    full_redraw = false;
-    dirty_count = 0;
+    ctx.full_redraw = false;
+    ctx.dirty_count = 0;
 }
 
 void RamFBGPUDriver::clear(color color){
-    fb_clear((uint32_t*)back_framebuffer, color);
+    fb_clear(&ctx, color);
 }
 
 void RamFBGPUDriver::draw_pixel(uint32_t x, uint32_t y, color color){
-    fb_draw_pixel((uint32_t*)back_framebuffer, x, y, color);
-    mark_dirty(x,y,1,1);
+    fb_draw_pixel(&ctx, x, y, color);
 }
 
 void RamFBGPUDriver::fill_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
-    fb_fill_rect((uint32_t*)back_framebuffer, x, y, width, height, color);
+    fb_fill_rect(&ctx, x, y, width, height, color);
 }
 
 void RamFBGPUDriver::draw_line(uint32_t x0, uint32_t y0, uint32_t x1,uint32_t y1, color color){
-    fb_draw_line((uint32_t*)framebuffer, x0, y0, x1, y1, color);
+    fb_draw_line(&ctx, x0, y0, x1, y1, color);
 }
 
 void RamFBGPUDriver::draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
-    fb_draw_char((uint32_t*)back_framebuffer, x, y, c, scale, color);
+    fb_draw_char(&ctx, x, y, c, scale, color);
 }
 
 gpu_size RamFBGPUDriver::get_screen_size(){
@@ -126,7 +129,7 @@ gpu_size RamFBGPUDriver::get_screen_size(){
 }
 
 void RamFBGPUDriver::draw_string(string s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color){
-    fb_draw_string((uint32_t*)back_framebuffer, s.data, x, y, scale, color);
+    fb_draw_string(&ctx, s.data, x, y, scale, color);
 }
 
 uint32_t RamFBGPUDriver::get_char_size(uint32_t scale){
@@ -134,5 +137,5 @@ uint32_t RamFBGPUDriver::get_char_size(uint32_t scale){
 }
 
 draw_ctx RamFBGPUDriver::get_ctx(){
-    return (uint32_t*)back_framebuffer;
+    return ctx;
 }

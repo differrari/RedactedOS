@@ -68,8 +68,6 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
         return false;
     }
 
-    fb_set_stride(screen_size.width * BPP);
-
     resource_id_counter = 0;
 
     kprintf("Stride %i",screen_size.width * BPP);
@@ -77,7 +75,12 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     framebuffer_size = screen_size.width * screen_size.height * BPP;
     framebuffer = (uintptr_t)kalloc(gpu_dev.memory_page, framebuffer_size, ALIGN_4KB, true, true);
 
-    fb_set_bounds(screen_size.width,screen_size.height);
+    ctx = {
+        .fb = (uint32_t*)framebuffer,
+        .stride = screen_size.width * BPP,
+        .width = screen_size.width,
+        .height = screen_size.height
+    };
 
     get_capset();
 
@@ -354,11 +357,11 @@ typedef struct virtio_flush_cmd {
 
 void VirtioGPUDriver::flush() {
 
-    if (full_redraw) {
+    if (ctx.full_redraw) {
         transfer_to_host(fb_resource_id, (gpu_rect){{0,0},{screen_size.width,screen_size.height}});
     } else {
-        for (uint32_t i = 0; i < dirty_count; i++) {
-            gpu_rect r = dirty_rects[i];
+        for (uint32_t i = 0; i < ctx.dirty_count; i++) {
+            gpu_rect r = ctx.dirty_rects[i];
             transfer_to_host(fb_resource_id, r);
         }
     }
@@ -377,6 +380,9 @@ void VirtioGPUDriver::flush() {
     cmd->rect.y = 0;
     cmd->rect.width = screen_size.width;
     cmd->rect.height = screen_size.height;
+
+    //TODO: // ctx.dirty_count = 0;
+    // ctx.full_redraw = false;
 
     virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, true, true);
 
@@ -444,28 +450,27 @@ void VirtioGPUDriver::get_capset(){
 }
 
 void VirtioGPUDriver::clear(uint32_t color) {
-    fb_clear((uint32_t*)framebuffer, color);
+    fb_clear(&ctx, color);
 }
 
 void VirtioGPUDriver::draw_pixel(uint32_t x, uint32_t y, color color){
-    fb_draw_pixel((uint32_t*)framebuffer, x, y, color);
-    mark_dirty(x,y,1,1);
+    fb_draw_pixel(&ctx, x, y, color);
 }
 
 void VirtioGPUDriver::fill_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
-    fb_fill_rect((uint32_t*)framebuffer, x, y, width, height, color);
+    fb_fill_rect(&ctx, x, y, width, height, color);
 }
 
 void VirtioGPUDriver::draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, color color){
-    fb_draw_line((uint32_t*)framebuffer, x0, y0, x1, y1, color);
+    fb_draw_line(&ctx, x0, y0, x1, y1, color);
 }
 
 void VirtioGPUDriver::draw_char(uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
-    fb_draw_char((uint32_t*)framebuffer, x, y, c, scale, color);
+    fb_draw_char(&ctx, x, y, c, scale, color);
 }
 
 void VirtioGPUDriver::draw_string(string s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color){
-    fb_draw_string((uint32_t*)framebuffer, s.data, x, y, scale, color);
+    fb_draw_string(&ctx, s.data, x, y, scale, color);
 }
 
 uint32_t VirtioGPUDriver::get_char_size(uint32_t scale){
@@ -477,7 +482,7 @@ gpu_size VirtioGPUDriver::get_screen_size(){
 }
 
 draw_ctx VirtioGPUDriver::get_ctx(){
-    return (uint32_t*)framebuffer;
+    return ctx;
 }
 
 uint32_t VirtioGPUDriver::new_cursor(uint32_t color){
@@ -485,7 +490,8 @@ uint32_t VirtioGPUDriver::new_cursor(uint32_t color){
     size_t cursor_size = 64*64*BPP;
     create_2d_resource(id, {64,64});
     uint32_t *cursor = (uint32_t*)kalloc(gpu_dev.memory_page, cursor_size, ALIGN_4KB, true, true);
-    fb_draw_cursor(cursor, color);
+    draw_ctx ctx = {cursor, 64 * BPP, 64, 64};
+    fb_draw_cursor(&ctx, color);
     attach_backing(id, (sizedptr){(uintptr_t)cursor, cursor_size});
     transfer_to_host(id, {{0,0},{64,64}});
     return id;

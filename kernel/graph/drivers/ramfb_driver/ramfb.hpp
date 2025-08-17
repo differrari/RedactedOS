@@ -30,4 +30,6 @@ private:
     gpu_size screen_size;
     uint32_t stride;
     void* mem_page;
+
+    draw_ctx ctx;
 };

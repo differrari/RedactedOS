@@ -124,6 +124,10 @@ void mark_used(uintptr_t address, size_t pages)
 }
 
 void* kalloc(void *page, uint64_t size, uint16_t alignment, bool kernel, bool device){
+    //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
+    if (size > UINT32_MAX)
+        panic("Fauly allocation");
+    
     size = (size + alignment - 1) & ~(alignment - 1);
 
     // kprintfv("[in_page_alloc] Requested size: %x", size);

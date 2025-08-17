@@ -80,6 +80,8 @@ private:
 
     virtio_gpu_update_cursor *cursor_cmd;
 
+    draw_ctx ctx;
+
     bool scanout_found;
     uint64_t scanout_id;
 };

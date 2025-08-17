@@ -21,7 +21,9 @@ int window_system(){
             gpu_point end_point = get_mouse_pos();
             gpu_size size = {abs(end_point.x - start_point.x), abs(end_point.y - start_point.y)};
             gpu_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
-            rectangle(gpu_get_ctx(), (rect_ui_config){
+            draw_ctx ctx = {0};
+            gpu_get_ctx(&ctx);
+            rectangle(&ctx, (rect_ui_config){
                 .border_size = 3,
                 .border_color = BG_COLOR + 0x222222
             }, (common_ui_config){

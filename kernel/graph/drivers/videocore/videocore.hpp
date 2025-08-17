@@ -32,4 +32,6 @@ private:
 
     uint8_t bpp;
     uint32_t stride;
+
+    draw_ctx ctx;
 };
