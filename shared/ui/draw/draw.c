@@ -157,7 +157,7 @@ uint32_t fb_get_char_size(uint32_t scale){
 
 void fb_draw_cursor(draw_ctx *ctx, uint32_t color){
     for (uint32_t y = 0; y < 32; y++){
-        uint32_t ppl = max(1,24-y);
+        uint32_t ppl = max(0,24-y);
         for (uint32_t x = 0; x < ppl; x++)
             fb_draw_raw_pixel(ctx, x, y, color);
     }   
