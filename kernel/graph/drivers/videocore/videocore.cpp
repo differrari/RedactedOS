@@ -144,8 +144,8 @@ draw_ctx* VideoCoreGPUDriver::get_ctx(){
 }
 
 void VideoCoreGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *new_ctx){
-    new_ctx->fb = ctx.fb;
+    new_ctx->fb = (uint32_t*)kalloc(mem_page, width * height * bpp, ALIGN_4KB, true, true);
     new_ctx->width = width;
     new_ctx->height = height;
-    new_ctx->stride = ctx.stride;
+    new_ctx->stride = width * bpp;
 }
