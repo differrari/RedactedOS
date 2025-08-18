@@ -54,7 +54,6 @@ void save_return_address_interrupt(){
     save_pc_interrupt(&processes[current_proc]);
 }
 
-//TODO: Processes can currently exit and just crash the whole system with an EL1 Sync exception trying to read from 0x0. Better than continuing execution past bounds but still not great
 void switch_proc(ProcSwitchReason reason) {
     // kprintf("Stopping execution of process %i at %x",current_proc, processes[current_proc].spsr);
     if (proc_count == 0)
@@ -188,7 +187,7 @@ void stop_process(uint16_t pid, uint32_t exit_code){
     proc->exit_code = exit_code;
     if (proc->focused)
         sys_unset_focus();
-    //TODO: we don't wipe the process' data. If we do, we corrupt our sp, since we're still in the process' sp.
+    reset_process(proc);
     proc_count--;
     // kprintf("Stopped %i process %i",pid,proc_count);
     switch_proc(HALT);

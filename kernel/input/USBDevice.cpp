@@ -9,14 +9,14 @@ USBDevice::USBDevice(uint32_t capacity, uint8_t address) : address(address) {
 };
 
 void USBDevice::request_data(uint8_t endpoint_id, USBDriver *driver){
-    if (endpoint_id >= endpoints.max_size()) return;//TODO: check if it exists
+    if (endpoint_id >= endpoints.max_size()) return;
     USBEndpoint *ep = endpoints[endpoint_id];
     if (ep)
         ep->request_data(driver);
 }
 
 void USBDevice::process_data(uint8_t endpoint_id, USBDriver *driver){
-    if (endpoint_id >= endpoints.max_size()) return;//TODO: check if it exists
+    if (endpoint_id >= endpoints.max_size()) return;
     USBEndpoint *ep = endpoints[endpoint_id];
     if (ep)
         ep->process_data(driver);

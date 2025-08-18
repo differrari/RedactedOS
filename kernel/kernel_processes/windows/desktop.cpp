@@ -55,6 +55,7 @@ void Desktop::draw_desktop(){
         active_proc = nullptr;
         sys_focus_current();
         rendered_full = false;
+        process_active = false;
     }
     keypress kp;
     gpu_point old_selected = selected;
