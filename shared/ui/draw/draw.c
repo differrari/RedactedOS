@@ -76,6 +76,13 @@ void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_
         }
     }
     mark_dirty(ctx, x,y,width,height);
+    return;
+    if (x + width >= ctx->width || y + height >= ctx->height) return;
+    // if (width == ctx->width && x == 0){
+    //     memset(ctx->fb + (y * (ctx->width)) , color, ctx->stride * height);
+    // }
+    for (uint32_t dy = 0; dy < height; dy++)
+        memset(ctx->fb + ((y+dy) * (ctx->width)) + x, color, width*4);
 }
 
 gpu_rect fb_draw_line(draw_ctx *ctx, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, color color){
