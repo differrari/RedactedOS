@@ -70,19 +70,13 @@ void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
 }
 
 void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
-    for (uint32_t dy = 0; dy < height; dy++) {
-        for (uint32_t dx = 0; dx < width; dx++) {
-            fb_draw_raw_pixel(ctx, x + dx, y + dy, color);
-        }
-    }
-    mark_dirty(ctx, x,y,width,height);
-    return;
     if (x + width >= ctx->width || y + height >= ctx->height) return;
-    // if (width == ctx->width && x == 0){
-    //     memset(ctx->fb + (y * (ctx->width)) , color, ctx->stride * height);
-    // }
+    if (width == ctx->width && x == 0){
+        memset(ctx->fb + (y * (ctx->width)) , color, ctx->stride * height);
+    }
     for (uint32_t dy = 0; dy < height; dy++)
         memset(ctx->fb + ((y+dy) * (ctx->width)) + x, color, width*4);
+    mark_dirty(ctx, x,y,width,height);
 }
 
 gpu_rect fb_draw_line(draw_ctx *ctx, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, color color){

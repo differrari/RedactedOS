@@ -85,18 +85,18 @@ void Desktop::draw_desktop(){
     } else if (old_selected.x != selected.x || old_selected.y != selected.y){
         draw_tile(old_selected.x, old_selected.y);
         draw_tile(selected.x, selected.y);
-        gpu_flush();
+        commit_frame();
     }
 }
 
 void Desktop::draw_full(){
-    fb_fill_rect(&ctx, 0, 0, ctx.width, ctx.height, BG_COLOR+0x050505);
+    fb_clear(&ctx, BG_COLOR+0x050505);
     for (uint32_t column = 0; column < MAX_COLS; column++){
         for (uint32_t row = 0; row < MAX_ROWS; row++){
             draw_tile(column, row);
         }
     }
-    gpu_flush();
+    commit_frame();
 }
 
 bool Desktop::await_gpu(){
