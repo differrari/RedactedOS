@@ -22,6 +22,10 @@ int window_system(){
         } else if (drawing){
             gpu_point end_point = get_mouse_pos();
             gpu_size size = {abs(end_point.x - start_point.x), abs(end_point.y - start_point.y)};
+            if (size.width < 0x100 || size.height < 0x100){
+                drawing = false;
+                continue;
+            }
             gpu_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
             draw_ctx *ctx = gpu_get_ctx();
             DRAW(rectangle(ctx, (rect_ui_config){
