@@ -14,14 +14,6 @@
         }\
     })
 
-//TODO: use seek_to
-const char* FAT32FS::advance_path(const char *path){
-    while (*path != '/' && *path != '\0')
-        path++;
-    path++;
-    return path;
-}
-
 bool FAT32FS::init(uint32_t partition_sector){
     fs_page = palloc(0x1000, true, true, false);
 
@@ -238,7 +230,7 @@ uint32_t FAT32FS::count_FAT(uint32_t first){
 sizedptr FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {
     if (entry->flags.volume_id) return {0,0};
     
-    bool is_last = *instance->advance_path(seek) == '\0';
+    bool is_last = *seek_to(seek, '/') == '\0';
     if (!is_last && strstart(seek, filename, true) == 0) return {0, 0};
     if (is_last && strcmp(seek, filename, true) != 0) return {0, 0};
 
@@ -249,13 +241,13 @@ sizedptr FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, ch
     uint32_t count = entry->filesize > 0 ? ((entry->filesize + bpc - 1) / bpc) : instance->count_FAT(filecluster);
 
     return entry->flags.directory
-        ? instance->walk_directory(count, filecluster, instance->advance_path(seek), read_entry_handler)
+        ? instance->walk_directory(count, filecluster, seek_to(seek, '/'), read_entry_handler)
         : instance->read_full_file(instance->data_start_sector, instance->mbs->sectors_per_cluster, count, entry->filesize, filecluster);
 }
 
 FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (!mbs) return FS_RESULT_DRIVER_ERROR;
-    path = advance_path(path);
+    path = seek_to(path, '/');
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
     sizedptr buf_ptr = walk_directory(count, mbs->first_cluster_of_root_directory, path, read_entry_handler);
     void *buf = (void*)buf_ptr.ptr;
@@ -279,20 +271,20 @@ sizedptr FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, 
     if (entry->flags.volume_id) return { 0, 0 };
     if (strstart(seek, filename, true) == 0) return { 0, 0 };
     
-    bool is_last = *instance->advance_path(seek) == '\0';
+    bool is_last = *seek_to(seek, '/') == '\0';
     
     uint32_t filecluster = (entry->hi_first_cluster << 16) | entry->lo_first_cluster;
 
     uint32_t count = instance->count_FAT(filecluster);
 
     if (is_last) return instance->list_directory(count, filecluster);
-    if (entry->flags.directory) return instance->walk_directory(count, filecluster, instance->advance_path(seek), list_entries_handler);
+    if (entry->flags.directory) return instance->walk_directory(count, filecluster, seek_to(seek, '/'), list_entries_handler);
     return { 0, 0 };
 }
 
 sizedptr FAT32FS::list_contents(const char *path){
     if (!mbs) return { 0, 0 };
-    path = advance_path(path);
+    path = seek_to(path, '/');
 
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
     return walk_directory(count, mbs->first_cluster_of_root_directory, path, list_entries_handler);

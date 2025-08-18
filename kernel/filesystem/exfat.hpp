@@ -92,7 +92,6 @@ public:
     void* list_directory(uint32_t cluster_count, uint32_t root_index);
     void* walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, ef_entry_handler handler);
     void* read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index);
-    const char* advance_path(const char *path);
 
     exfat_mbs* mbs;
     void *fs_page;

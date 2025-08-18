@@ -7,13 +7,6 @@
 #include "std/string.h"
 #include "std/memfunctions.h"
 
-const char* ExFATFS::advance_path(const char *path){
-    while (*path != '/' && *path != '\0')
-        path++;
-    path++;
-    return path;
-}
-
 void* ExFATFS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index){
     uint32_t count = cluster_count * cluster_size;
 
@@ -166,12 +159,12 @@ void* ExFATFS::read_entry_handler(ExFATFS *instance, file_entry *entry, fileinfo
     uint32_t count = (info->filesize + bpc - 1) / bpc;
 
     return entry->flags.directory
-        ? instance->walk_directory(count, filecluster, instance->advance_path(seek), read_entry_handler)
+        ? instance->walk_directory(count, filecluster, seek_to(path, '/'), read_entry_handler)
         : instance->read_full_file(instance->mbs->cluster_heap_offset, 1 << instance->mbs->sectors_per_cluster_shift, count, info->filesize, filecluster);
 }
 
 void* ExFATFS::read_file(const char *path, size_t size){
-    path = advance_path(path);
+    path = seek_to(path, '/');
 
     return walk_directory(1, mbs->first_cluster_of_root_directory, path, read_entry_handler);
 }
@@ -183,7 +176,7 @@ void* ExFATFS::list_entries_handler(ExFATFS *instance, file_entry *entry, filein
     if (strstart(seek, filename, false) != 0)
         return 0;
 
-    bool is_last = *instance->advance_path(seek) == '\0';
+    bool is_last = *seek_to(seek, '/') == '\0';
 
     uint32_t filecluster = info->first_cluster;
     uint32_t bps = 1 << instance->mbs->bytes_per_sector_shift;
@@ -196,12 +189,12 @@ void* ExFATFS::list_entries_handler(ExFATFS *instance, file_entry *entry, filein
     if (is_last)
         return instance->list_directory(count, filecluster);
     if (entry->flags.directory)
-        return instance->walk_directory(count, filecluster, instance->advance_path(seek), list_entries_handler);
+        return instance->walk_directory(count, filecluster, seek_to(seek, '/'), list_entries_handler);
     return 0;
 }
 
 string_list* ExFATFS::list_contents(const char *path){
-    path = advance_path(path);
+    path = seek_to(path, '/');
 
     return (string_list*)walk_directory(1, mbs->first_cluster_of_root_directory, path, list_entries_handler);
 }
