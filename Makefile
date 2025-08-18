@@ -35,6 +35,7 @@ clean:
 
 raspi:
 	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true all
+	./run_raspi
 
 virt:
 	$(MAKE) LOAD_ADDR=0x41000000 XHCI_CTX_SIZE=32 QEMU=true all

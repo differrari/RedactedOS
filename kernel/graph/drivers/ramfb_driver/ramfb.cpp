@@ -50,7 +50,7 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
 
     ctx = {
         .dirty_rects = {},
-        .fb = (uint32_t*)framebuffer,
+        .fb = (uint32_t*)back_framebuffer,
         .stride = screen_size.width * bpp,
         .width = screen_size.width,
         .height = screen_size.height,
