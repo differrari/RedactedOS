@@ -27,7 +27,7 @@ public:
 
     virtual void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *ctx) = 0;
 
-    virtual draw_ctx get_ctx() = 0;
+    virtual draw_ctx* get_ctx() = 0;
 
     virtual ~GPUDriver() = default;
 };

@@ -23,7 +23,7 @@ gpu_size gpu_get_screen_size();
 void gpu_draw_string(string s, gpu_point p, uint32_t scale, uint32_t color);
 uint32_t gpu_get_char_size(uint32_t scale);
 
-void gpu_get_ctx(draw_ctx *ctx);
+draw_ctx* gpu_get_ctx();
 
 void gpu_setup_cursor(gpu_point initial_loc);
 void gpu_update_cursor(gpu_point new_loc, bool full);

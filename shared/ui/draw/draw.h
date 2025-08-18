@@ -22,6 +22,8 @@ typedef struct draw_ctx {
     bool full_redraw;
 } draw_ctx;
 
+void mark_dirty(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
+
 void fb_clear(draw_ctx *ctx, uint32_t color);
 void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color);
 void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color);

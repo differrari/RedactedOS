@@ -83,10 +83,8 @@ uint64_t syscall_draw_string(process_t *ctx){
     return 0;
 }
 
-uint64_t syscall_gpu_request_ctx(process_t *ctx){
-    draw_ctx *dctx = (draw_ctx*)ctx->PROC_X0;
-    gpu_get_ctx(dctx);
-    return 0;
+uintptr_t syscall_gpu_request_ctx(process_t *ctx){
+    return (uintptr_t)gpu_get_ctx();
 }
 
 uint64_t syscall_gpu_flush(process_t *ctx){

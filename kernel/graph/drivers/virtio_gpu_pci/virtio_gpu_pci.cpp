@@ -378,7 +378,8 @@ void VirtioGPUDriver::flush() {
     cmd->rect.width = screen_size.width;
     cmd->rect.height = screen_size.height;
 
-    //TODO: // ctx.dirty_count = 0;
+    //TODO: 
+    // ctx.dirty_count = 0;
     // ctx.full_redraw = false;
 
     virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, true, true);
@@ -478,8 +479,8 @@ gpu_size VirtioGPUDriver::get_screen_size(){
     return screen_size;
 }
 
-draw_ctx VirtioGPUDriver::get_ctx(){
-    return ctx;
+draw_ctx* VirtioGPUDriver::get_ctx(){
+    return &ctx;
 }
 
 uint32_t VirtioGPUDriver::new_cursor(uint32_t color){

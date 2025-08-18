@@ -22,9 +22,8 @@ void boot_draw_name(gpu_size screen_size, int xoffset, int yoffset){
     }
     write_file(&boot_fd, "hello buffer", 12);
 
-    draw_ctx ctx = {0};
-    gpu_get_ctx(&ctx);
-    label(&ctx, (text_ui_config){
+    draw_ctx *ctx = gpu_get_ctx();
+    label(ctx, (text_ui_config){
         .text = BOOTSCREEN_TEXT,
         .font_size = 2,
     }, (common_ui_config){

@@ -93,9 +93,9 @@ gpu_size gpu_get_screen_size(){
     return gpu_driver->get_screen_size();
 }
 
-void gpu_get_ctx(draw_ctx* ctx){
-    if (!gpu_ready()) return;
-    *ctx = gpu_driver->get_ctx();
+draw_ctx* gpu_get_ctx(){
+    if (!gpu_ready()) return 0;
+    return gpu_driver->get_ctx();
 }
 
 void gpu_setup_cursor(gpu_point initial_loc){

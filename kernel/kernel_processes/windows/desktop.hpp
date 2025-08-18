@@ -32,5 +32,5 @@ private:
     void add_entry(char* name, char* ext, char* path);
     void activate_current();
     uint16_t find_extension(char *path);
-    draw_ctx ctx;
+    draw_ctx* ctx;
 };

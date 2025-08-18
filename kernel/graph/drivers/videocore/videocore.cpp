@@ -139,8 +139,8 @@ uint32_t VideoCoreGPUDriver::get_char_size(uint32_t scale){
     return fb_get_char_size(max(1,scale-1));//TODO: Screen resolution seems fixed at 640x480 (on QEMU at least). So we make the font smaller
 }
 
-draw_ctx VideoCoreGPUDriver::get_ctx(){
-    return ctx;
+draw_ctx* VideoCoreGPUDriver::get_ctx(){
+    return &ctx;
 }
 
 void VideoCoreGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *new_ctx){
