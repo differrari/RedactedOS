@@ -37,6 +37,7 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
         free(buf, amount);
     }
     string exit_msg = string_format("Process %i ended with exit code %i.",proc->id, proc->exit_code);
+    //TODO: format message
     put_string(exit_msg.data);
     free(exit_msg.data, exit_msg.mem_length);
     return true;
