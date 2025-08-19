@@ -50,6 +50,7 @@ void kernel_main() {
 
     bool input_available = load_module(&input_module);
 
+    //TODO: look into why networking blocks other things
     bool network_available = load_module(&net_module);
     
     load_module(&audio_module);
