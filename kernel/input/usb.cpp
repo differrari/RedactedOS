@@ -45,7 +45,7 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
     kprintf("[USB device] EP0 Max Packet Size: %x", descriptor->bMaxPacketSize0);
     kprintf("[USB device] Configurations: %x", descriptor->bNumConfigurations);
     if (use_lang_desc){
-        //TODO: we want to maintain the strings so we can have USB device information, and rework it to silece the alignment warning
+        //TODO: we want to maintain the strings so we can have USB device information
         uint16_t langid = lang_desc->lang_ids[0];
         usb_string_descriptor* prod_name = (usb_string_descriptor*)kalloc(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, true, true);
         if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){

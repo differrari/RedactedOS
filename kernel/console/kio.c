@@ -46,7 +46,6 @@ size_t console_read(file *fd, char *out_buf, size_t size, file_offset offset){
 }
 
 size_t console_write(file *fd, const char *buf, size_t size, file_offset offset){
-    //TODO: kinda allowing arbitrary buffers here
     kprintf(buf);
     return size;
 }
