@@ -18,9 +18,10 @@ CLEAN_DEPS := $(shell find . -name '*.d')
 C_SRC   := $(shell find . -name '*.c')
 ASM_SRC := $(shell find . -name '*.S')
 CPP_SRC := $(shell find . -name '*.cpp')
-OBJ     := $(C_SRC:.c=.o) $(ASM_SRC:.S=.o) $(CPP_SRC:.cpp=.o)
-OBJL    := $(filter-out $(BUILD_DIR)/boot.o,$(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))))
-DEP     := $(C_SRC:.c=.d) $(ASM_SRC:.S=.d) $(CPP_SRC:.cpp=.d)
+OBJ     := $(C_SRC:%.c=$(BUILD_DIR)/%.o) $(ASM_SRC:%.S=$(BUILD_DIR)/%.o) $(CPP_SRC:%.cpp=$(BUILD_DIR)/%.o)
+DEP     := $(C_SRC:%.c=$(BUILD_DIR)/%.d) $(ASM_SRC:%.S=$(BUILD_DIR)/%.d) $(CPP_SRC:%.cpp=$(BUILD_DIR)/%.d)
+
+OBJL    := $(filter-out $(BUILD_DIR)/./boot.o,$(OBJ))
 
 ELF     := ../kernel.elf
 TARGET  := ../kernel.img
@@ -35,15 +36,19 @@ $(TARGET): ../shared/libshared.a prepare $(OBJ)
 	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/libshared.a $(BUILD_DIR)/boot.o
 	$(OBJCOPY) -O binary $(ELF) $@
 
-%.o: %.S
-	$(VAS) $(CFLAGS) -c $< -o $(BUILD_DIR)/$(notdir $@)
+$(BUILD_DIR)/%.o: %.S
+	@mkdir -p $(dir $@)
+	$(VAS) $(CFLAGS) -c $< -o $@
 
-%.o: %.c
-	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $(BUILD_DIR)/$(notdir $@)
+$(BUILD_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
 
-%.o: %.cpp
-	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $(BUILD_DIR)/$(notdir $@)
+$(BUILD_DIR)/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
+# Might want to also delete the directories created inside BUILD_DIR
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(ELF) $(TARGET)
 
