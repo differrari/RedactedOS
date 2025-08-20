@@ -173,6 +173,7 @@ void sync_el0_handler_c(){
         }
     } else {
         switch (ec) {
+            case 0x20:
             case 0x21: {
                 uint64_t far;
                 asm volatile ("mrs %0, far_el1" : "=r"(far));
