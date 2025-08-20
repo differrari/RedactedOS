@@ -22,18 +22,9 @@ extern void sleep(uint64_t time);
 extern void halt(uint32_t exit_code);
 
 extern void request_draw_ctx(draw_ctx*);
-
-extern void clear_screen(color color);
 extern void gpu_flush_data(draw_ctx*);
 
-extern gpu_size* gpu_screen_size();
 extern uint32_t gpu_char_size(uint32_t scale);
-
-extern void draw_primitive_pixel(gpu_point *p, color color);
-extern void draw_primitive_line(gpu_point *p0, gpu_point *p1, color color);
-extern void draw_primitive_rect(gpu_rect *r, color color);
-extern void draw_primitive_char(gpu_point *p, char c, uint32_t scale, uint32_t color);
-extern void draw_primitive_string(string *text, gpu_point *p, uint32_t scale, uint32_t color);
 
 extern uint64_t get_time();
 

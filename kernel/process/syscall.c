@@ -54,36 +54,6 @@ uint64_t syscall_read_shortcut(process_t *ctx){
     return 0;
 }
 
-uint64_t syscall_clear_screen(process_t *ctx){
-    gpu_clear(ctx->PROC_X0 & UINT32_MAX);
-    return 0;
-}
-
-uint64_t syscall_draw_pixel(process_t *ctx){
-    gpu_draw_pixel(*(gpu_point*)ctx->PROC_X0,ctx->PROC_X1);
-    return 0;
-}
-
-uint64_t syscall_draw_line(process_t *ctx){
-    gpu_draw_line(*(gpu_point*)ctx->PROC_X0,*(gpu_point*)ctx->PROC_X1, ctx->PROC_X2 & UINT32_MAX);
-    return 0;
-}
-
-uint64_t syscall_draw_rect(process_t *ctx){
-    gpu_fill_rect(*(gpu_rect*)ctx->PROC_X0,ctx->PROC_X1 & UINT32_MAX);
-    return 0;
-}
-
-uint64_t syscall_draw_char(process_t *ctx){
-    gpu_draw_char(*(gpu_point*)ctx->PROC_X0,(char)(ctx->PROC_X1 & 0xFF),ctx->PROC_X2,ctx->PROC_X3 & UINT32_MAX);
-    return 0;
-}
-
-uint64_t syscall_draw_string(process_t *ctx){
-    gpu_draw_string(*(string *)ctx->PROC_X0,*(gpu_point*)ctx->PROC_X1,ctx->PROC_X2,ctx->PROC_X3 & UINT32_MAX);
-    return 0;
-}
-
 uintptr_t syscall_gpu_request_ctx(process_t *ctx){
     draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
     get_window_ctx(d_ctx);
@@ -95,14 +65,6 @@ uint64_t syscall_gpu_flush(process_t *ctx){
     commit_frame(d_ctx);
     gpu_flush();
     return 0;
-}
-
-//TODO: do not allocate memory for the process, let it provide its own
-uint64_t syscall_screen_size(process_t *ctx){
-    uint64_t result = (uintptr_t)kalloc((void*)get_current_heap(), sizeof(gpu_size), ALIGN_16B, get_current_privilege(), false);
-    gpu_size size = gpu_get_screen_size();
-    memcpy((void*)result, &size, sizeof(gpu_size));
-    return result;
 }
 
 uint64_t syscall_char_size(process_t *ctx){
@@ -155,15 +117,8 @@ syscall_entry syscalls[] = {
     { PRINTL_CODE, syscall_printl},
     { READ_KEY_CODE, syscall_read_key},
     { READ_SHORTCUT_CODE, syscall_read_shortcut},
-    { CLEAR_SCREEN_CODE, syscall_clear_screen},
-    { DRAW_PRIMITIVE_PIXEL_CODE, syscall_draw_pixel},
-    { DRAW_PRIMITIVE_LINE_CODE, syscall_draw_line},
-    { DRAW_PRIMITIVE_RECT_CODE, syscall_draw_rect},
-    { DRAW_PRIMITIVE_CHAR_CODE, syscall_draw_char},
-    { DRAW_PRIMITIVE_STRING_CODE, syscall_draw_string},
     { REQUEST_DRAW_CTX_CODE, syscall_gpu_request_ctx},
     { GPU_FLUSH_DATA_CODE, syscall_gpu_flush},
-    { GPU_SCREEN_SIZE_CODE, syscall_screen_size},
     { GPU_CHAR_SIZE_CODE, syscall_char_size},
     { SLEEP_CODE, syscall_sleep},
     { HALT_CODE, syscall_halt},

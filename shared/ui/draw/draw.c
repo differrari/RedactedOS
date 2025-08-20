@@ -1,5 +1,5 @@
 #include "draw.h"
-#include "graph/font8x8_bridge.h"
+#include "ui/font8x8_bridge.h"
 #include "std/memfunctions.h"
 #include "math/math.h"
 
