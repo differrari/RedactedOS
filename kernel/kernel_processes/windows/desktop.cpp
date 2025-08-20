@@ -86,28 +86,27 @@ void Desktop::draw_desktop(){
     } else if (old_selected.x != selected.x || old_selected.y != selected.y){
         draw_tile(old_selected.x, old_selected.y);
         draw_tile(selected.x, selected.y);
-        commit_frame();
+        commit_frame(&ctx);
     }
 }
 
 void Desktop::draw_full(){
-    fb_clear(ctx, BG_COLOR+0x050505);
+    fb_clear(&ctx, BG_COLOR+0x050505);
     for (uint32_t column = 0; column < MAX_COLS; column++){
         for (uint32_t row = 0; row < MAX_ROWS; row++){
             draw_tile(column, row);
         }
     }
-    kprintf("Full redraw true? %i",ctx->full_redraw);
-    commit_frame();
+    commit_frame(&ctx);
 }
 
 bool Desktop::await_gpu(){
     if (!gpu_ready())
         return false;
     if (!ready){
-        ctx = get_window_ctx();
+        get_window_ctx(&ctx);
         sys_focus_current();
-        gpu_size screen_size = {ctx->width, ctx->height};
+        gpu_size screen_size = {ctx.width, ctx.height};
         tile_size = {screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20};
         ready = true;
     }
@@ -150,7 +149,7 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
     gpu_rect inner_rect = (gpu_rect){{10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0)}, {tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}};
 
     DRAW(
-        rectangle(ctx, {
+        rectangle(&ctx, {
         .border_size = (uint8_t)(sel ? 4 : 0),
         .border_color = BG_COLOR+0x333333,
         }, (common_ui_config){
@@ -164,7 +163,7 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
         
         if (index < entries.size()){
             
-            label(ctx, (text_ui_config){
+            label(&ctx, (text_ui_config){
                 .text = entries[index].name,
                 .font_size = 3,
             }, (common_ui_config){
@@ -176,7 +175,7 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
                 .foreground_color = COLOR_WHITE,
             });
 
-            label(ctx, (text_ui_config){
+            label(&ctx, (text_ui_config){
                 .text = entries[index].ext,
                 .font_size = 1,
             }, (common_ui_config){

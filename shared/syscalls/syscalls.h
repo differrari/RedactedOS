@@ -21,10 +21,10 @@ extern bool read_key(keypress *kp);
 extern void sleep(uint64_t time);
 extern void halt(uint32_t exit_code);
 
-extern draw_ctx* request_draw_ctx();
+extern void request_draw_ctx(draw_ctx*);
 
 extern void clear_screen(color color);
-extern void gpu_flush_data();
+extern void gpu_flush_data(draw_ctx*);
 
 extern gpu_size* gpu_screen_size();
 extern uint32_t gpu_char_size(uint32_t scale);

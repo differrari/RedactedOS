@@ -15,6 +15,7 @@
 #include "networking/port_manager.h"
 #include "filesystem/filesystem.h"
 #include "syscalls/syscall_codes.h"
+#include "graph/tres.h"
 
 int syscall_depth = 0;
 
@@ -84,10 +85,14 @@ uint64_t syscall_draw_string(process_t *ctx){
 }
 
 uintptr_t syscall_gpu_request_ctx(process_t *ctx){
-    return (uintptr_t)gpu_get_ctx();
+    draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
+    get_window_ctx(d_ctx);
+    return 0;
 }
 
 uint64_t syscall_gpu_flush(process_t *ctx){
+    draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
+    commit_frame(d_ctx);
     gpu_flush();
     return 0;
 }
