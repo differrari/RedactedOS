@@ -77,6 +77,7 @@ uint64_t syscall_sleep(process_t *ctx){
 }
 
 uint64_t syscall_halt(process_t *ctx){
+    kprintf("Process has ended with code %i",ctx->PROC_X0);
     stop_current_process(ctx->PROC_X0);
     return 0;
 }
