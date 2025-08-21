@@ -72,7 +72,7 @@ typedef struct sizedptr {
 }
 #else
 
-typedef unsigned int bool;
+typedef unsigned char bool;
 
 #define true 1
 #define false 0
