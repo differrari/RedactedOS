@@ -1,5 +1,5 @@
 #include "ring_buffer.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 void cring_init(CRingBuffer* rb, void* storage, uint64_t capacity, uint64_t elem_size) {
     rb->buffer = storage;

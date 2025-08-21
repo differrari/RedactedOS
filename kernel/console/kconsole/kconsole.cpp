@@ -3,7 +3,7 @@
 #include "memory/page_allocator.h"
 #include "filesystem/filesystem.h"
 #include "theme/theme.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false){
     initialize();

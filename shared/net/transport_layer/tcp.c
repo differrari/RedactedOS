@@ -2,7 +2,7 @@
 #include "types.h"
 #include "networking/port_manager.h"
 #include "net/internet_layer/ipv4.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "math/rng.h"
 //TODO: add mtu check and fragmentation. also fragment rebuild
 extern uintptr_t malloc(uint64_t size);

@@ -3,7 +3,7 @@
 #include "kconsole/kconsole.h"
 #include "std/string.h"
 #include "memory/page_allocator.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "math/math.h"
 
 static bool use_visual = true;

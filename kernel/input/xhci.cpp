@@ -6,7 +6,7 @@
 #include "usb_types.h"
 #include "hw/hw.h"
 #include "memory/memory_access.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "async.h"
 #include "memory/memory_access.h"
 

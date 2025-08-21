@@ -2,7 +2,7 @@
 #include "net/internet_layer/ipv4.h"
 #include "net/network_types.h"
 #include "net/checksums.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "console/kio.h"
 #include "ipv4.h"
 #include "networking/network.h"

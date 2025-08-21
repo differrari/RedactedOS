@@ -5,7 +5,7 @@
 #include "drivers/ramfb_driver/ramfb.hpp"
 #include "drivers/videocore/videocore.hpp"
 
-#include "std/std.hpp"
+#include "std/std.h"
 #include "hw/hw.h"
 
 #include "tres.h"

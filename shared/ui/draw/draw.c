@@ -1,6 +1,6 @@
 #include "draw.h"
 #include "ui/font8x8_bridge.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "math/math.h"
 
 #define line_height char_size + 2

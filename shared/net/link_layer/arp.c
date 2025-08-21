@@ -1,7 +1,7 @@
 #include "arp.h"
 #include "eth.h"
 #include "console/kio.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "net/internet_layer/ipv4.h"
 #include "networking/network.h"
 #include "process/scheduler.h"

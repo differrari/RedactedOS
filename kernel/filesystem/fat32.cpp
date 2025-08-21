@@ -4,7 +4,7 @@
 #include "console/kio.h"
 #include "memory/memory_access.h"
 #include "std/string.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "math/math.h"
 
 #define kprintfv(fmt, ...) \

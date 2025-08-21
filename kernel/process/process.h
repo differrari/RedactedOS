@@ -5,7 +5,7 @@ extern "C" {
 #endif
 
 #include "types.h"
-#include "keypress.h"
+#include "keyboard_input.h"
 #include "net/network_types.h"
 #include "dev/driver_base.h"
 

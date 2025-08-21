@@ -5,7 +5,7 @@
 #include "net/link_layer/eth.h"
 #include "net/network_types.h"
 #include "port_manager.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 extern void      sleep(uint64_t ms);
 extern uintptr_t malloc(uint64_t size);

@@ -3,7 +3,7 @@
 #include "memory/talloc.h"
 #include "console/kio.h"
 #include "ui/draw/draw.h"
-#include "std/std.hpp"
+#include "std/std.h"
 #include "theme/theme.h"
 
 #define VIRTIO_GPU_CMD_GET_DISPLAY_INFO         0x0100

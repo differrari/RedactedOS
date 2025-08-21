@@ -8,7 +8,7 @@
 #include "graph/graphics.h"
 #include "memory/memory_access.h"
 #include "input/input_dispatch.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "std/string.h"
 #include "exceptions/timer.h"
 #include "networking/network.h"

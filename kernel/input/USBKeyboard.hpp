@@ -2,7 +2,7 @@
 
 #include "types.h"
 #include "USBDevice.hpp"
-#include "keypress.h"
+#include "keyboard_input.h"
 #include "usb_types.h"
 
 class USBKeyboard: public USBEndpoint {

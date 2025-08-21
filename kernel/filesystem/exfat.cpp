@@ -5,7 +5,7 @@
 #include "memory/page_allocator.h"
 #include "console/kio.h"
 #include "std/string.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 void* ExFATFS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index){
     uint32_t count = cluster_count * cluster_size;

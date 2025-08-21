@@ -20,7 +20,7 @@ void proc_func() {
         string s = string_from_literal("Print screen test");
         fb_draw_string(&ctx, s.data, rect.point.x, rect.point.y, 2, 0xFFFFFFFF);
         free(s.data,s.mem_length);
-        gpu_flush_data(&ctx);
+        commit_draw_ctx(&ctx);
     }
     halt(1);
 }

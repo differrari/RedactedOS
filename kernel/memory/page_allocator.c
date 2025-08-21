@@ -4,7 +4,7 @@
 #include "console/kio.h"
 #include "mmu.h"
 #include "exceptions/exception_handler.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01

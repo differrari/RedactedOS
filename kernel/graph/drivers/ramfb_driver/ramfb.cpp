@@ -4,8 +4,8 @@
 #include "console/kio.h"
 #include "ui/draw/draw.h"
 #include "memory/memory_access.h"
-#include "std/std.hpp"
-#include "std/memfunctions.h"
+#include "std/std.h"
+#include "std/memory.h"
 
 typedef struct {
     uint64_t addr;

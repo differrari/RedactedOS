@@ -1,7 +1,7 @@
 #pragma once
 #include "types.h"
 #include "std/string.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "queue.h"
 
 template<typename T>

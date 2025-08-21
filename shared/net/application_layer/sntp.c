@@ -1,6 +1,6 @@
 #include "sntp.h"
 #include "exceptions/timer.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "net/internet_layer/ipv4.h"
 #include "net/transport_layer/csocket_udp.h"
 #include "process/scheduler.h"

@@ -1,5 +1,5 @@
 #include "ipv4_route.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 static ipv4_rt_entry_t g_rt[IPV4_RT_MAX];
 static int g_rt_len = 0;

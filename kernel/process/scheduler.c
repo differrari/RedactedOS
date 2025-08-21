@@ -11,7 +11,7 @@
 #include "syscalls/syscalls.h"
 #include "std/string.h"
 #include "data_struct/linked_list.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "math/math.h"
 
 extern void save_context(process_t* proc);

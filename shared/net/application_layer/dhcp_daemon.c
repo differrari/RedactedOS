@@ -1,7 +1,7 @@
 #include "dhcp_daemon.h"
 
 #include "console/kio.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "process/scheduler.h"
 #include "math/math.h"
 #include "math/rng.h"

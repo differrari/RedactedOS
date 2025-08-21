@@ -2,7 +2,7 @@
 
 #include "types.h"
 #include "ui/graphic_types.h"
-#include "keypress.h"
+#include "keyboard_input.h"
 #include "std/string.h"
 #include "net/network_types.h"
 #include "ui/draw/draw.h"
@@ -22,7 +22,7 @@ extern void sleep(uint64_t time);
 extern void halt(uint32_t exit_code);
 
 extern void request_draw_ctx(draw_ctx*);
-extern void gpu_flush_data(draw_ctx*);
+extern void commit_draw_ctx(draw_ctx*);
 
 extern uint32_t gpu_char_size(uint32_t scale);
 

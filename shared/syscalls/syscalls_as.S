@@ -18,7 +18,7 @@ syscall_def register_shortcut, REGISTER_SHORTCUT_CODE
 syscall_def read_shortcut, READ_SHORTCUT_CODE
 
 syscall_def request_draw_ctx, REQUEST_DRAW_CTX_CODE
-syscall_def gpu_flush_data, GPU_FLUSH_DATA_CODE
+syscall_def commit_draw_ctx, GPU_FLUSH_DATA_CODE
 
 syscall_def gpu_char_size, GPU_CHAR_SIZE_CODE
 

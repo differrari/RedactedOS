@@ -2,7 +2,7 @@
 #include "kernel_processes/kprocess_loader.h"
 #include "process/scheduler.h"
 #include "console/kio.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "std/string.h"
 
 #include "net/network_types.h"

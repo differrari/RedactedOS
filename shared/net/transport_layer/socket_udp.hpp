@@ -5,7 +5,7 @@
 #include "types.h"
 #include "std/string.h"
 #include "net/internet_layer/ipv4.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 extern "C" {
     void      sleep(uint64_t ms);

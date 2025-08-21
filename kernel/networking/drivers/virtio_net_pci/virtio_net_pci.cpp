@@ -4,7 +4,7 @@
 #include "pci.h"
 #include "syscalls/syscalls.h"
 #include "memory/page_allocator.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 #define RECEIVE_QUEUE 0
 #define TRANSMIT_QUEUE 1

@@ -1,4 +1,4 @@
-#include "memfunctions.h"
+#include "memory.h"
 
 int memcmp(const void *s1, const void *s2, unsigned long count) {
     const unsigned char *a = s1;

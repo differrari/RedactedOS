@@ -5,7 +5,7 @@
 #include "console/kio.h"
 #include "pci.h"
 #include "virtio/virtio_pci.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "virtio_blk_pci.h"
 
 #define VIRTIO_BLK_T_IN   0

@@ -1,7 +1,7 @@
 #include "tres.h"
 #include "data_struct/linked_list.h"
 #include "drivers/gpu_driver.hpp"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "process/scheduler.h"
 
 // clinkedlist_t windows;

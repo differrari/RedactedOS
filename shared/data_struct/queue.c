@@ -1,5 +1,5 @@
 #include "queue.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 void cqueue_init(CQueue* q, uint64_t max_capacity, uint64_t elem_size) {
     q->buffer = NULL;
