@@ -36,8 +36,8 @@ Desktop::Desktop() {
         for (uint32_t i = 0; i < list->count; i++){
             char *file = reader;
             string fullpath = string_format("/boot/redos/user/%s",(uintptr_t)file);
-            string name = string_ca_max(file,find_extension(file));
-            string ext = string_l(file + find_extension(file));
+            string name = string_from_literal_length(file,find_extension(file));
+            string ext = string_from_literal(file + find_extension(file));
             if (strcmp(ext.data,".elf", true) == 0){
                 add_entry(name.data, ext.data, fullpath.data);
             }

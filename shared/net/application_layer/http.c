@@ -144,20 +144,20 @@ void http_header_parser(const char *buf, uint32_t len,
             C->length = parse_u32(buf + val_start, val_len);
         }
         else if (copy_len == 12 && strcmp(key_tmp, "content-type", true) == 0) {
-            C->type = string_ca_max((char*)(buf + val_start), val_len);
+            C->type = string_from_literal_length((char*)(buf + val_start), val_len);
         }
         else if (copy_len == 4 && strcmp(key_tmp, "date", true) == 0) {
-            C->date = string_ca_max((char*)(buf + val_start), val_len);
+            C->date = string_from_literal_length((char*)(buf + val_start), val_len);
         }
         else if (copy_len == 10 && strcmp(key_tmp, "connection", true) == 0) {
-            C->connection = string_ca_max((char*)(buf + val_start), val_len);
+            C->connection = string_from_literal_length((char*)(buf + val_start), val_len);
         }
         else if (copy_len == 10 && strcmp(key_tmp, "keep-alive", true) == 0) {
-            C->keep_alive = string_ca_max((char*)(buf + val_start), val_len);
+            C->keep_alive = string_from_literal_length((char*)(buf + val_start), val_len);
         }
         else {
-            string key = string_ca_max((char*)(buf + pos), key_len);
-            string value = string_ca_max((char*)(buf + val_start), val_len);
+            string key = string_from_literal_length((char*)(buf + pos), key_len);
+            string value = string_from_literal_length((char*)(buf + val_start), val_len);
             extras[extra_i++] = (HTTPHeader){ key, value };
         }
 
@@ -184,7 +184,7 @@ string http_request_builder(const HTTPRequestMsg *R)
     free(hdrs.data, hdrs.mem_length);
 
     if (R->body.ptr && R->body.size) {
-        string body = string_ca_max((char*)R->body.ptr, R->body.size);
+        string body = string_from_literal_length((char*)R->body.ptr, R->body.size);
         string_append_bytes(&out, body.data, body.length);
         free(body.data, body.mem_length);
     }
@@ -247,7 +247,7 @@ string http_get_chunked_payload(sizedptr chunk) {
     if (chunk.ptr && chunk.size > 0) {
         int sizetrm = strindex((char*)chunk.ptr, "\r\n");
         uint64_t chunk_size = parse_hex_u64((char*)chunk.ptr, sizetrm);
-        return string_ca_max((char*)(chunk.ptr + sizetrm + 2),
+        return string_from_literal_length((char*)(chunk.ptr + sizetrm + 2),
                             (uint32_t)chunk_size);
     }
     return (string){0};

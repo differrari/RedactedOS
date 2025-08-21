@@ -106,8 +106,8 @@ void draw_process_view(){
 
         if (proc == NULL || proc->id == 0 || valid_count < i || proc->state == STOPPED) break;
 
-        string name = string_l((const char*)(uintptr_t)proc->name);
-        string state = string_l(parse_proc_state(proc->state));
+        string name = string_from_literal((const char*)(uintptr_t)proc->name);
+        string state = string_from_literal(parse_proc_state(proc->state));
 
         int scale = 2;
 

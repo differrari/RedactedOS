@@ -11,7 +11,7 @@ uint32_t strlen(const char *s, uint32_t max_length){
     return len;
 }
 
-string string_l(const char *literal){
+string string_from_literal(const char *literal){
     if (literal == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0};
     
     uint32_t len = strlen(literal, 0);
@@ -49,7 +49,7 @@ string string_tail(const char *array, uint32_t max_length){
     return (string){.data = buf, .length = adjusted_len, .mem_length = adjusted_len + 1 };
 }
 
-string string_ca_max(const char *array, uint32_t max_length){
+string string_from_literal_length(const char *array, uint32_t max_length){
     if (array == NULL) return (string){.data = NULL, .length = 0, .mem_length= 0 };
 
     uint32_t len = strlen(array, max_length);
@@ -62,7 +62,7 @@ string string_ca_max(const char *array, uint32_t max_length){
     return (string){ .data = buf, .length = len, .mem_length = len+1};
 }
 
-string string_c(const char c){
+string string_from_char(const char c){
     char *buf = (char*)malloc(2);
     buf[0] = c;
     buf[1] = 0;
@@ -238,7 +238,7 @@ char tolower(char c){
 }
 
 int strcmp(const char *a, const char *b, bool case_insensitive){
-    if (a == NULL && b == NULL)return 0; //i guess
+    if (a == NULL && b == NULL) return 0;
     if (a == NULL) return -1;  
     if (b == NULL) return  1;
 
@@ -378,7 +378,7 @@ string string_concat(string a, string b)
     return (string){ dst, len, len };
 }
 
-void string_concat_inplace(string *dest, string src) //b string_concat_inplace
+void string_concat_inplace(string *dest, string src)
 {
     if (!dest || !src.data) return;
 

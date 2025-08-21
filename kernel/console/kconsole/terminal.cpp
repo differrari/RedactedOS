@@ -74,11 +74,11 @@ void Terminal::run_command(){
     string args_copy = {};
     
     if (fullcmd == args){
-        cmd = string_l(fullcmd);
+        cmd = string_from_literal(fullcmd);
         argv = 0;
     } else {
-        cmd = string_ca_max(fullcmd, args - fullcmd - 1);
-        args_copy = string_l(args);
+        cmd = string_from_literal_length(fullcmd, args - fullcmd - 1);
+        args_copy = string_from_literal(args);
         argv = parse_arguments(args_copy.data, &argc);
     }
 
