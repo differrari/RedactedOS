@@ -4,8 +4,8 @@
 void printf(const char *fmt, ...){
     __attribute__((aligned(16))) va_list args;
     va_start(args, fmt);
-    string str = string_format_va(fmt, args);
+    char li[256]; 
+    string_format_va_buf(fmt, li, args);
     va_end(args);
-    printl(str.data);
-    free(str.data, str.mem_length);
+    printl(li);
 }
