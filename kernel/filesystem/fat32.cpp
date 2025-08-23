@@ -255,7 +255,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     descriptor->id = reserve_fd_id();
     descriptor->size = buf_ptr.size;
     open_files.add(descriptor->id, buf);
-    //TODO: go back to using a linked list, and a static id for the file, ideally global for system
+    //TODO: go back to using a linked list
     return FS_RESULT_SUCCESS;
 }
 

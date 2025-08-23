@@ -41,7 +41,5 @@ typedef struct driver_module {
 
     file_offset (*seek)(file*, file_offset);
     sizedptr (*readdir)(const char* path);
-
-    //TODO: flush
-    //TODO: poll
+    
 } driver_module;

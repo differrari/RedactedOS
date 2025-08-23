@@ -44,7 +44,7 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     
     uint64_t addr = find_pci_device(VIRTIO_VENDOR, VIRTIO_GPU_ID);
     if (!addr){ 
-        kprintf("Virtio GPU not found");
+        kprintf("[VIRTIO_GPU error] Virtio GPU not found");
         return false;
     }
 
@@ -55,22 +55,20 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     virtio_get_capabilities(&gpu_dev, addr, &device_address, &device_size);
     pci_register(device_address, device_size);
     if (!virtio_init_device(&gpu_dev)) {
-        kprintf("Failed initialization");
+        kprintf("[VIRTIO_GPU error] Failed initialization");
         return false;
     }
 
-    kprintf("GPU initialized. Issuing commands");
+    kprintf("[VIRTIO_GPU] GPU initialized. Issuing commands");
 
     screen_size = get_display_info();
 
-    kprintf("Returned display size %ix%i", screen_size.width,screen_size.height);
+    kprintf("[VIRTIO_GPU] Display size %ix%i", screen_size.width,screen_size.height);
     if (screen_size.width == 0 || screen_size.height == 0){
         return false;
     }
 
     resource_id_counter = 0;
-
-    kprintf("Stride %i",screen_size.width * BPP);
     
     framebuffer_size = screen_size.width * screen_size.height * BPP;
     framebuffer = (uintptr_t)kalloc(gpu_dev.memory_page, framebuffer_size, ALIGN_4KB, true, true);
@@ -88,8 +86,6 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     get_capset();
 
     fb_resource_id = new_resource_id();
-
-    kprintf("Resource %i", fb_resource_id);
     
     if (!create_2d_resource(fb_resource_id, screen_size)) return false;
     
@@ -98,9 +94,7 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     if (scanout_found)
         set_scanout();
     else
-        kprintf("GPU did not return valid scanout data");
-
-    kprintf("GPU ready");
+        kprintf("[VIRTIO_GPU error] GPU did not return valid scanout data");
 
     return true;
 }
