@@ -67,7 +67,7 @@ help:
 	@printf "usage:\n\
   make all          build the os\n\
   make clean        remove all build artifacts\n\
-  make raspi        build for raspberry\n\
+  make raspi        build for raspberry pi\n\
   make virt         build for qemu virt board\n\
   make run          build and run in virt mode\n\
   make debug        build and run with debugger\n\
