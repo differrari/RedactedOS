@@ -31,6 +31,28 @@ struct virtio_gpu_update_cursor {
 };
 static_assert(sizeof(virtio_gpu_update_cursor) == 56, "Update cursor command must be 56 bytes");
 
+typedef struct virtio_rect {
+    uint32_t x;
+    uint32_t y;
+    uint32_t width;
+    uint32_t height;
+} virtio_rect;
+
+typedef struct virtio_flush_cmd {
+    struct virtio_gpu_ctrl_hdr hdr; 
+    struct virtio_rect rect; 
+    uint32_t resource_id; 
+    uint32_t padding; 
+}__attribute__((packed)) virtio_flush_cmd;
+
+typedef struct virtio_transfer_cmd {
+    struct virtio_gpu_ctrl_hdr hdr; 
+    struct virtio_rect rect; 
+    uint64_t offset; 
+    uint32_t resource_id; 
+    uint32_t padding; 
+}__attribute__((packed)) virtio_transfer_cmd;
+
 class VirtioGPUDriver : public GPUDriver {
 public:
     static VirtioGPUDriver* try_init(gpu_size preferred_screen_size);
@@ -80,7 +102,10 @@ private:
     uint32_t cursor_pressed_resource_id;
     uint32_t cursor_unpressed_resource_id;
 
+    virtio_gpu_ctrl_hdr *trans_resp, *flush_resp, *cursor_resp;
     virtio_gpu_update_cursor *cursor_cmd;
+    virtio_transfer_cmd *trans_cmd;
+    virtio_flush_cmd *flush_cmd;
 
     draw_ctx ctx;
 
