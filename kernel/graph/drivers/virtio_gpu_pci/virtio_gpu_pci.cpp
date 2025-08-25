@@ -531,7 +531,7 @@ void VirtioGPUDriver::set_cursor_pressed(bool pressed){
 }
 
 void VirtioGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *new_ctx){
-    new_ctx->fb = (uint32_t*)kalloc(gpu_dev.memory_page, width * height * BPP, ALIGN_4KB, true, true);
+    new_ctx->fb = (uint32_t*)kalloc(gpu_dev.memory_page, width * height * BPP, ALIGN_4KB, false, false);
     new_ctx->width = width;
     new_ctx->height = height;
     new_ctx->stride = width * BPP;
