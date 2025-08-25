@@ -68,7 +68,7 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
 }
 
 //Level 0 = EL0, Level 1 = EL1, Level 2 = Shared
-void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) {
+void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint8_t level) {
     uint64_t l0_index = (va >> 39) & 0x1FF;
     uint64_t l1_index = (va >> 30) & 0x1FF;
     uint64_t l2_index = (va >> 21) & 0x1FF;

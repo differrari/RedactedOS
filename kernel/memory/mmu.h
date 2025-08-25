@@ -13,10 +13,10 @@ extern "C" {
 void register_device_memory(uint64_t va, uint64_t pa);
 void register_device_memory_2mb(uint64_t va, uint64_t pa);
 void register_proc_memory(uint64_t va, uint64_t pa, bool kernel);
+void debug_mmu_address(uint64_t va);
+void mmu_enable_verbose();
 #ifdef __cplusplus
 }
 #endif
-void debug_mmu_address(uint64_t va);
-void mmu_enable_verbose();
 
 void mmu_unmap(uint64_t va, uint64_t pa);

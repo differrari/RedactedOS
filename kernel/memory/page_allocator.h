@@ -8,6 +8,10 @@
 #define ALIGN_64B 0x40
 #define PAGE_SIZE 4096
 
+#define MEM_PRIV_USER   0
+#define MEM_PRIV_KERNEL 1
+#define MEM_PRIV_SHARED 2
+
 void page_alloc_enable_verbose();
 void page_allocator_init();
 

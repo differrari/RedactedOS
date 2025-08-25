@@ -1,7 +1,7 @@
 #include "page_allocator.h"
 #include "memory_access.h"
 #include "memory/talloc.h"
-#include "console/kio.h"
+#include "console/serial/uart.h"
 #include "mmu.h"
 #include "exceptions/exception_handler.h"
 #include "std/memory.h"
@@ -100,7 +100,7 @@ void* palloc(uint64_t size, bool kernel, bool device, bool full) {
         }
     }
 
-    // kprintf("[page_alloc error] Could not allocate");
+    uart_puts("[page_alloc error] Could not allocate");
     return 0;
 }
 
@@ -128,7 +128,7 @@ void mark_used(uintptr_t address, size_t pages)
 void* kalloc(void *page, uint64_t size, uint16_t alignment, bool kernel, bool device){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
     if (size > UINT32_MAX)//TODO: This serves to catch an issue, except if we put this if in, the issue does not happen
-        panic("Fauly allocation");
+        panic("Faulty allocation");
     
     size = (size + alignment - 1) & ~(alignment - 1);
 

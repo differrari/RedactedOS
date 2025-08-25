@@ -16,6 +16,7 @@
 #include "filesystem/filesystem.h"
 #include "syscalls/syscall_codes.h"
 #include "graph/tres.h"
+#include "memory/mmu.h"
 
 int syscall_depth = 0;
 
@@ -191,6 +192,7 @@ void sync_el0_handler_c(){
             uint64_t far;
             asm volatile ("mrs %0, far_el1" : "=r"(far));
             kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
+            debug_mmu_address(far);
             stop_current_process(ec);
         }
     }
