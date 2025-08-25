@@ -275,6 +275,6 @@ void debug_mmu_address(uint64_t va){
         kprintf("L4 Table entry missing");
         return;
     }
-    kprintf("Entry: %x", l4_val);
+    kprintf("Entry: %b", l4_val);
     return;
 }
