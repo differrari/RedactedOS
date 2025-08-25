@@ -5,6 +5,7 @@
 #include "mmu.h"
 #include "exceptions/exception_handler.h"
 #include "std/memory.h"
+#include "math/math.h"
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01
@@ -48,21 +49,22 @@ int count_pages(uint64_t i1,uint64_t i2){
     return (i1/i2) + (i1 % i2 > 0);
 }
 
+//TODO: prepare for allocating more than 64 bits by marking full registers at a time
 void* palloc(uint64_t size, bool kernel, bool device, bool full) {
     uint64_t start = count_pages(get_user_ram_start(),PAGE_SIZE);
     uint64_t end = count_pages(get_user_ram_end(),PAGE_SIZE);
     uint64_t page_count = count_pages(size,PAGE_SIZE);
 
+    //TODO: start at the last non-full page found
     for (uint64_t i = start/64; i < end/64; i++) {
         if (mem_bitmap[i] != UINT64_MAX) {
             uint64_t inv = ~mem_bitmap[i];
             uint64_t bit = __builtin_ctzll(inv);
+            if (bit > (64 - page_count)) continue;
             do {
                 bool found = true;
-                //TODO: check bounds
-                for (uint64_t b = bit; b < bit + (page_count - 1); b++){
-                    //TODO: Review parentheses here
-                    if (!mem_bitmap[i] >> b & 1){
+                for (uint64_t b = bit; b < (uint64_t)min(64,bit + (page_count - 1)); b++){
+                    if (((mem_bitmap[i] >> b) & 1)){
                         bit += page_count;
                         found = false;
                     }
@@ -125,7 +127,7 @@ void mark_used(uintptr_t address, size_t pages)
 
 void* kalloc(void *page, uint64_t size, uint16_t alignment, bool kernel, bool device){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
-    if (size > UINT32_MAX)
+    if (size > UINT32_MAX)//TODO: This serves to catch an issue, except if we put this if in, the issue does not happen
         panic("Fauly allocation");
     
     size = (size + alignment - 1) & ~(alignment - 1);
@@ -135,13 +137,12 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, bool kernel, bool de
     mem_page *info = (mem_page*)page;
 
     if (size >= PAGE_SIZE){
-        // kprintfv("[page_alloc] Allocating full page for %x",size);
         void *first_addr = 0;
         for (uint64_t i = 0; i < size; i += PAGE_SIZE){
             void* ptr = palloc(PAGE_SIZE, kernel, device, true);
             memset((void*)ptr, 0, PAGE_SIZE);
             if (!first_addr) first_addr = ptr;
-        }
+        } 
         //TODO: we're not keeping track of this size
         return first_addr;
     }
