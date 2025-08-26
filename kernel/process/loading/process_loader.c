@@ -201,8 +201,17 @@ instruction_entry ops[] = {
     { 0xFFE00000, 0xAA000000, "mov", print_movr },
 };
 
+void decode_instruction(uint32_t instruction){
+    kprintf("Instruction code %x",instruction);
+    for (uint64_t i = 0; i < N_ARR(ops); i++) {
+        if ((instruction & ops[i].mask) == ops[i].pattern) {
+            kputf("%s ", (uintptr_t)ops[i].mnemonic);
+        }
+    }
+}
+
 uint32_t parse_instruction(uint32_t instruction, uint64_t pc, bool translate, process_layout *source, process_layout *destination){
-    for (uint64_t i = 0; i < sizeof(ops)/sizeof(ops[0]); i++) {
+    for (uint64_t i = 0; i < N_ARR(ops); i++) {
         if ((instruction & ops[i].mask) == ops[i].pattern) {
             kputfv("%s ", (uintptr_t)ops[i].mnemonic);
             uint64_t newinstr = ops[i].reloc(instruction, pc, translate, source, destination);

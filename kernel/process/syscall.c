@@ -17,6 +17,7 @@
 #include "syscalls/syscall_codes.h"
 #include "graph/tres.h"
 #include "memory/mmu.h"
+#include "loading/process_loader.h"
 
 int syscall_depth = 0;
 
@@ -131,6 +132,41 @@ syscall_entry syscalls[] = {
     { READ_PACKET_CODE, syscall_read_packet},
 };
 
+void coredump(uint64_t esr, uint64_t elr, uint64_t far){
+    uint8_t ifsc = esr & 0x3F;
+    // 0b000000	Address size fault in TTBR0 or TTBR1.
+
+    // 0b000101	Translation fault, 1st level.
+    // 00b00110	Translation fault, 2nd level.
+    // 00b00111	Translation fault, 3rd level.
+
+    // 0b001001	Access flag fault, 1st level.
+    // 0b001010	Access flag fault, 2nd level.
+    // 0b001011	Access flag fault, 3rd level.
+
+    // 0b001101	Permission fault, 1st level.
+    // 0b001110	Permission fault, 2nd level.
+    // 0b001111	Permission fault, 3rd level.
+
+    // 0b010000	Synchronous external abort.
+    // 0b011000	Synchronous parity error on memory access.
+    // 0b010101	Synchronous external abort on translation table walk, 1st level.
+    // 0b010110	Synchronous external abort on translation table walk, 2nd level.
+    // 0b010111	Synchronous external abort on translation table walk, 3rd level.
+    // 0b011101	Synchronous parity error on memory access on translation table walk, 1st level.
+    // 0b011110	Synchronous parity error on memory access on translation table walk, 2nd level.
+    // 0b011111	Synchronous parity error on memory access on translation table walk, 3rd level.
+    
+    // 0b100001	Alignment fault.
+    // 0b100010	Debug event.
+    //TODO: Can parse instruction class, fault cause, etc
+    decode_instruction(*(uint32_t*)elr);
+    if (far > 0) 
+        debug_mmu_address(far);
+    else 
+        kprintf("Null pointer accessed at %x",elr);
+}
+
 void sync_el0_handler_c(){
     save_context_registers();
     save_return_address_interrupt();
@@ -185,14 +221,15 @@ void sync_el0_handler_c(){
                 }
             }
         }
+        uint64_t far;
+        asm volatile ("mrs %0, far_el1" : "=r"(far));
         //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
-        if (currentEL == 1)
+        if (currentEL == 1){
+            coredump(esr, elr, far);
             handle_exception_with_info("UNEXPECTED EXCEPTION",ec);
-        else {
-            uint64_t far;
-            asm volatile ("mrs %0, far_el1" : "=r"(far));
+        } else {
             kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
-            debug_mmu_address(far);
+            coredump(esr, elr, far);
             stop_current_process(ec);
         }
     }
