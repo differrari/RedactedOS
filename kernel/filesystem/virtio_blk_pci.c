@@ -70,8 +70,8 @@ bool vblk_find_disk(){
 }
 
 void vblk_write(const void *buffer, uint32_t sector, uint32_t count) {
-    void* cmd = kalloc(blk_dev.memory_page, sizeof(struct virtio_blk_req), ALIGN_64B, true, true);
-    void* data = kalloc(blk_dev.memory_page, count * 512, ALIGN_64B, true, true);
+    void* cmd = kalloc(blk_dev.memory_page, sizeof(struct virtio_blk_req), ALIGN_64B, MEM_PRIV_KERNEL, true);
+    void* data = kalloc(blk_dev.memory_page, count * 512, ALIGN_64B, MEM_PRIV_KERNEL, true);
 
     memcpy(data, buffer, count * 512);
 
@@ -87,8 +87,8 @@ void vblk_write(const void *buffer, uint32_t sector, uint32_t count) {
 }
 
 void vblk_read(void *buffer, uint32_t sector, uint32_t count) {
-    void* cmd = kalloc(blk_dev.memory_page, sizeof(struct virtio_blk_req), ALIGN_64B, true, true);
-    void* data = kalloc(blk_dev.memory_page, count * 512, ALIGN_64B, true, true);
+    void* cmd = kalloc(blk_dev.memory_page, sizeof(struct virtio_blk_req), ALIGN_64B, MEM_PRIV_KERNEL, true);
+    void* data = kalloc(blk_dev.memory_page, count * 512, ALIGN_64B, MEM_PRIV_KERNEL, true);
 
     struct virtio_blk_req *req = (struct virtio_blk_req *)cmd;
     req->type = VIRTIO_BLK_T_IN;

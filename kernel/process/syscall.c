@@ -206,9 +206,8 @@ void sync_el0_handler_c(){
                 break;
             }
         }
-        if (!found){
-            kprintf("Unknown syscall %i", iss);
-        }
+        if (!found)
+            panic_with_info("Unknown syscall %i", iss);
     } else {
         switch (ec) {
             case 0x20:

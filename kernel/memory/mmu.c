@@ -106,14 +106,14 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint8_t level) {
     
     switch (level)
     {
-    case 0: permission = 0b01; break;
-    case 1: permission = 0b00; break;
-    case 2: permission = 0b10; break;
+    case MEM_PRIV_USER:
+    case MEM_PRIV_SHARED: permission = 0b01; break;
+    case MEM_PRIV_KERNEL: permission = 0b00; break;
     
     default:
         break;
     }
-    uint64_t attr = ((uint64_t)(level == 1) << UXN_BIT) | ((uint64_t)0 << PXN_BIT) | (1 << AF_BIT) | (0b01 << SH_BIT) | (permission << AP_BIT) | (attr_index << MAIR_BIT) | 0b11;
+    uint64_t attr = ((uint64_t)(level == MEM_PRIV_KERNEL) << UXN_BIT) | ((uint64_t)0 << PXN_BIT) | (1 << AF_BIT) | (0b01 << SH_BIT) | (permission << AP_BIT) | (attr_index << MAIR_BIT) | 0b11;
     kprintfv("[MMU] Mapping 4kb memory %x at [%i][%i][%i][%i] for EL%i = %x | %x permission: %i", va, l0_index,l1_index,l2_index,l3_index,level,pa,attr,permission);
     
     l3[l3_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
@@ -176,23 +176,23 @@ void mmu_init() {
         mmu_map_2mb(addr, addr, MAIR_IDX_NORMAL);
 
     for (uint64_t addr = get_uart_base(); addr <= get_uart_base(); addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
+        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_PRIV_KERNEL);
 
     for (uint64_t addr = GICD_BASE; addr <= GICC_BASE + 0x1000; addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
+        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_PRIV_KERNEL);
 
     for (uint64_t addr = get_shared_start(); addr <= get_shared_end(); addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 2);
+        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_PRIV_SHARED);
 
     if (XHCI_BASE)
     for (uint64_t addr = XHCI_BASE; addr <= XHCI_BASE + 0x1000; addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
+        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_PRIV_KERNEL);
 
     uint64_t dstart;
     uint64_t dsize;
     if (dtb_addresses(&dstart,&dsize)){
         for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB)
-            mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 1);
+            mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_PRIV_KERNEL);
     }
 
     uint64_t mair = (MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_NOCACHE << (MAIR_IDX_NORMAL * 8));
@@ -233,8 +233,8 @@ void register_device_memory_2mb(uint64_t va, uint64_t pa){
     mmu_flush_icache();
 }
 
-void register_proc_memory(uint64_t va, uint64_t pa, bool kernel){
-    mmu_map_4kb(va, pa, MAIR_IDX_NORMAL, kernel);
+void register_proc_memory(uint64_t va, uint64_t pa, uint8_t level){
+    mmu_map_4kb(va, pa, MAIR_IDX_NORMAL, level);
     mmu_flush_all();
     mmu_flush_icache();
 }

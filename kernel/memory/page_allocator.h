@@ -18,11 +18,11 @@ void page_allocator_init();
 #ifdef __cplusplus
 extern "C" {
 #endif
-void* palloc(uint64_t size, bool kernel, bool device, bool full);
+void* palloc(uint64_t size, uint8_t kernel, bool device, bool full);
 void pfree(void* ptr, uint64_t size);
 void mark_used(uintptr_t address, size_t pages);
 
-void* kalloc(void *page, uint64_t size, uint16_t alignment, bool kernel, bool device);
+void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t kernel, bool device);
 void kfree(void* ptr, uint64_t size);
 
 int count_pages(uint64_t i1,uint64_t i2);

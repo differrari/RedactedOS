@@ -11,7 +11,7 @@ KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false)
 
 void KernelConsole::initialize(){
     is_initialized = true;
-    mem_page = palloc(PAGE_SIZE, true, true, false);
+    mem_page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, true, false);
     resize();
     clear();
     default_text_color = COLOR_WHITE;
@@ -33,7 +33,7 @@ void KernelConsole::resize(){
 
     if (row_data) kfree(row_data, buffer_data_size);
     buffer_data_size = rows * columns;
-    row_data = (char*)kalloc(mem_page, buffer_data_size, ALIGN_16B, true, true);
+    row_data = (char*)kalloc(mem_page, buffer_data_size, ALIGN_16B, MEM_PRIV_KERNEL, true);
     if (!row_data){
         rows = columns = 0;
         return;

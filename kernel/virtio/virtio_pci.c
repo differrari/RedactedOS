@@ -118,14 +118,14 @@ bool virtio_init_device(virtio_device *dev) {
         return false;
     }
 
-    dev->memory_page = palloc(0x1000, true, true, false);
+    dev->memory_page = palloc(0x1000, MEM_PRIV_KERNEL, true, false);
 
     uint32_t queue_index = 0;
     uint32_t size;
     while ((size = select_queue(dev,queue_index))){
-        uint64_t base = (uintptr_t)kalloc(dev->memory_page, 16 * size, ALIGN_4KB, true, true);
-        uint64_t avail = (uintptr_t)kalloc(dev->memory_page, 4 + (2 * size), ALIGN_4KB, true, true);
-        uint64_t used = (uintptr_t)kalloc(dev->memory_page, sizeof(uint16_t) * (2 + size), ALIGN_4KB, true, true);
+        uint64_t base = (uintptr_t)kalloc(dev->memory_page, 16 * size, ALIGN_4KB, MEM_PRIV_KERNEL, true);
+        uint64_t avail = (uintptr_t)kalloc(dev->memory_page, 4 + (2 * size), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+        uint64_t used = (uintptr_t)kalloc(dev->memory_page, sizeof(uint16_t) * (2 + size), ALIGN_4KB, MEM_PRIV_KERNEL, true);
 
         kprintfv("[VIRTIO QUEUE %i] Device base %x",queue_index,base);
         kprintfv("[VIRTIO QUEUE %i] Device avail %x",queue_index,avail);

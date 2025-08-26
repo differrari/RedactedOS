@@ -43,10 +43,10 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
 
     size_t fb_size = screen_size.width * screen_size.height * bpp;
 
-    mem_page = palloc(0x1000, true, true, false);
+    mem_page = palloc(0x1000, MEM_PRIV_KERNEL, true, false);
 
-    framebuffer = (uintptr_t)kalloc(mem_page, fb_size, true, true, false);
-    back_framebuffer = (uintptr_t)kalloc(mem_page, fb_size, true, true, false);
+    framebuffer = (uintptr_t)kalloc(mem_page, fb_size, ALIGN_4KB, MEM_PRIV_KERNEL, false);
+    back_framebuffer = (uintptr_t)kalloc(mem_page, fb_size, ALIGN_4KB, MEM_PRIV_KERNEL, false);
 
     ctx = {
         .dirty_rects = {},
@@ -144,7 +144,7 @@ draw_ctx* RamFBGPUDriver::get_ctx(){
 }
 
 void RamFBGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *new_ctx){
-    new_ctx->fb = (uint32_t*)kalloc(mem_page, width * height * bpp, ALIGN_4KB, true, true);
+    new_ctx->fb = (uint32_t*)kalloc(mem_page, width * height * bpp, ALIGN_4KB, MEM_PRIV_KERNEL, true);
     new_ctx->width = width;
     new_ctx->height = height;
     new_ctx->stride = width * bpp;

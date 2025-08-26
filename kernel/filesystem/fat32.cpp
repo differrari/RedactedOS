@@ -15,9 +15,9 @@
     })
 
 bool FAT32FS::init(uint32_t partition_sector){
-    fs_page = palloc(0x1000, true, true, false);
+    fs_page = palloc(0x1000, MEM_PRIV_KERNEL, true, false);
 
-    mbs = (fat32_mbs*)kalloc(fs_page, 512, ALIGN_64B, true, true);
+    mbs = (fat32_mbs*)kalloc(fs_page, 512, ALIGN_64B, MEM_PRIV_KERNEL, true);
 
     partition_first_sector = partition_sector;
     
@@ -62,7 +62,7 @@ sizedptr FAT32FS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, ui
     kprintfv("Reading cluster(s) %i-%i, starting from %i (LBA %i) Address %x", root_index, root_index+cluster_count, cluster_start, lba, lba * 512);
 
     size_t size = cluster_count * cluster_size * 512;
-    void* buffer = kalloc(fs_page, size, ALIGN_64B, true, true);
+    void* buffer = kalloc(fs_page, size, ALIGN_64B, MEM_PRIV_KERNEL, true);
     
     if (cluster_count > 0){
         uint32_t next_index = root_index;
@@ -80,7 +80,7 @@ sizedptr FAT32FS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, ui
 void FAT32FS::parse_longnames(f32longname entries[], uint16_t count, char* out){
     if (count == 0) return;
     uint16_t total = ((5+6+2)*count) + 1;
-    uint16_t *filename = (uint16_t*)kalloc(fs_page, total*2, ALIGN_64B, true, true);
+    uint16_t *filename = (uint16_t*)kalloc(fs_page, total*2, ALIGN_64B, MEM_PRIV_KERNEL, true);
     uint16_t f = 0;
     for (int i = count-1; i >= 0; i--){
         uint8_t *buffer = (uint8_t*)&entries[i];
@@ -126,7 +126,7 @@ sizedptr FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, co
             continue;
         }
         bool long_name = buffer[i + 0xB] == 0xF;
-        char *filename = (char*)kalloc(fs_page, 255, ALIGN_64B, true, true);
+        char *filename = (char*)kalloc(fs_page, 255, ALIGN_64B, MEM_PRIV_KERNEL, true);
         if (long_name){
             f32longname *first_longname = (f32longname*)&buffer[i];
             uint16_t count = 0;
@@ -157,7 +157,7 @@ sizedptr FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
     char *buffer = (char*)buf_ptr.ptr;
     f32file_entry *entry = 0;
     size_t full_size = 0x1000 * cluster_count;
-    void *list_buffer = (char*)kalloc(fs_page, full_size, ALIGN_64B, true, true);
+    void *list_buffer = (char*)kalloc(fs_page, full_size, ALIGN_64B, MEM_PRIV_KERNEL, true);
     uint32_t count = 0;
 
     char *write_ptr = (char*)list_buffer + 4;
@@ -170,7 +170,7 @@ sizedptr FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
         }
         count++;
         bool long_name = buffer[i + 0xB] == 0xF;
-        char *filename = (char*)kalloc(fs_page, 255, ALIGN_64B, true, true);
+        char *filename = (char*)kalloc(fs_page, 255, ALIGN_64B, MEM_PRIV_KERNEL, true);
         if (long_name){
             f32longname *first_longname = (f32longname*)&buffer[i];
             uint16_t count = 0;
@@ -204,7 +204,7 @@ sizedptr FAT32FS::read_full_file(uint32_t cluster_start, uint32_t cluster_size, 
     sizedptr buf_ptr = read_cluster(cluster_start, cluster_size, cluster_count, root_index);
     char *buffer = (char*)buf_ptr.ptr;
 
-    void *file = kalloc(fs_page, file_size, ALIGN_64B, true, true);
+    void *file = kalloc(fs_page, file_size, ALIGN_64B, MEM_PRIV_KERNEL, true);
 
     memcpy(file, (void*)buffer, file_size);
     
@@ -212,7 +212,7 @@ sizedptr FAT32FS::read_full_file(uint32_t cluster_start, uint32_t cluster_size, 
 }
 
 void FAT32FS::read_FAT(uint32_t location, uint32_t size, uint8_t count){
-    fat = (uint32_t*)kalloc(fs_page, size * count * 512, ALIGN_64B, true, true);
+    fat = (uint32_t*)kalloc(fs_page, size * count * 512, ALIGN_64B, MEM_PRIV_KERNEL, true);
     disk_read((void*)fat, partition_first_sector + location, size);
     total_fat_entries = (size * count * 512) / 4;
 }
