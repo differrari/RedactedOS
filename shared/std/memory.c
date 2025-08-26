@@ -31,8 +31,7 @@ void* memset(void* dest, uint32_t val, size_t count) {
         remaining -= 4;
     }
     if (remaining >= 2) {
-        *((uint16_t *)d8) = (uint16_t)val;
-        d8 += 2;
+        *((uint16_t *)d8) = ((val & 0xFF) << 8) | (val & 0xFF);
         remaining -= 2;
     }
     if (remaining >= 1)
