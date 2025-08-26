@@ -26,7 +26,7 @@
 
 #define PAGE_TABLE_ENTRIES 512
 
-uint64_t page_table_l0[PAGE_TABLE_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
+uint64_t *page_table_l0;
 
 static bool mmu_verbose;
 
@@ -113,6 +113,11 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint8_t level) {
     default:
         break;
     }
+    //TODO:
+    //Kernel always rw (0 << 1)
+    //Kernel-only (0 << 0)
+    //User rw (01)
+    //User ro (11) - makes kernel ro too
     uint64_t attr = ((uint64_t)(level == MEM_PRIV_KERNEL) << UXN_BIT) | ((uint64_t)(level == MEM_PRIV_USER) << PXN_BIT) | (1 << AF_BIT) | (0b01 << SH_BIT) | (permission << AP_BIT) | (attr_index << MAIR_BIT) | 0b11;
     kprintfv("[MMU] Mapping 4kb memory %x at [%i][%i][%i][%i] for EL%i = %x | %x permission: %i", va, l0_index,l1_index,l2_index,l3_index,level,pa,attr,permission);
     
@@ -165,6 +170,7 @@ void mmu_unmap(uint64_t va, uint64_t pa){
 }
 
 void mmu_alloc(){
+    page_table_l0 = (uint64_t*)talloc(PAGE_SIZE);
     //TODO: use palloc, but consider it won't be able to add sections to MMU during that init
 }
 

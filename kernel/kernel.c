@@ -21,6 +21,8 @@
 void kernel_main() {
 
     detect_hardware();
+
+    mmu_alloc();
     
     page_allocator_init();
 
@@ -29,8 +31,6 @@ void kernel_main() {
     init_main_process();
 
     load_module(&console_module);
-
-    mmu_alloc();
 
     print_hardware();
 
