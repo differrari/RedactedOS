@@ -43,7 +43,7 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
 
     size_t fb_size = screen_size.width * screen_size.height * bpp;
 
-    mem_page = palloc(0x1000, MEM_PRIV_KERNEL, true, false);
+    mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
 
     framebuffer = (uintptr_t)kalloc(mem_page, fb_size, ALIGN_4KB, MEM_PRIV_KERNEL, false);
     back_framebuffer = (uintptr_t)kalloc(mem_page, fb_size, ALIGN_4KB, MEM_PRIV_KERNEL, false);

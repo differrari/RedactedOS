@@ -12,13 +12,19 @@
 #define MEM_PRIV_KERNEL 1
 #define MEM_PRIV_SHARED 2
 
+#define MEM_RW      (1 << 0)
+#define MEM_RO      (0 << 0)
+#define MEM_EXEC    (1 << 1)
+#define MEM_DEV     (1 << 2)
+#define MEM_NORM    (0 << 2)
+
 void page_alloc_enable_verbose();
 void page_allocator_init();
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-void* palloc(uint64_t size, uint8_t kernel, bool device, bool full);
+void* palloc(uint64_t size, uint8_t kernel, uint8_t device, bool full);
 void pfree(void* ptr, uint64_t size);
 void mark_used(uintptr_t address, size_t pages);
 

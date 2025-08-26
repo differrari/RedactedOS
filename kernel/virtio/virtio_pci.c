@@ -118,7 +118,7 @@ bool virtio_init_device(virtio_device *dev) {
         return false;
     }
 
-    dev->memory_page = palloc(0x1000, MEM_PRIV_KERNEL, true, false);
+    dev->memory_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, false);
 
     uint32_t queue_index = 0;
     uint32_t size;

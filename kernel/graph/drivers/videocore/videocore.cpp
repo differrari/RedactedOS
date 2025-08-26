@@ -55,7 +55,7 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
 
     framebuffer = rmbox[27];
     size_t fb_size = rmbox[28];
-    mem_page = palloc(0x1000, MEM_PRIV_KERNEL, true, false);
+    mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
     back_framebuffer = (uintptr_t)kalloc(mem_page, fb_size, ALIGN_16B, MEM_PRIV_KERNEL, true);
     kprintf("Framebuffer allocated to %x (%i). BPP %i. Stride %i",framebuffer, fb_size, bpp, stride/bpp);
     mark_used(framebuffer,count_pages(fb_size,PAGE_SIZE));

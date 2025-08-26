@@ -11,7 +11,7 @@ KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false)
 
 void KernelConsole::initialize(){
     is_initialized = true;
-    mem_page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, true, false);
+    mem_page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
     resize();
     clear();
     default_text_color = COLOR_WHITE;

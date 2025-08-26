@@ -149,7 +149,7 @@ bool XHCIDriver::init(){
     op->config = max_device_slots;
     kprintfv("[xHCI] %i device slots", max_device_slots);
 
-    mem_page = palloc(0x1000, MEM_PRIV_KERNEL, true, false);
+    mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
 
     uintptr_t dcbaap_addr = (uintptr_t)kalloc(mem_page, (max_device_slots + 1) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL, true);
 

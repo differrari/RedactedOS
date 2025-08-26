@@ -111,7 +111,7 @@ void ExFATFS::read_FAT(uint32_t location, uint32_t size, uint8_t count){
 }
 
 bool ExFATFS::init(uint32_t partition_sector){
-    fs_page = palloc(0x1000, MEM_PRIV_KERNEL, true, false);
+    fs_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, false);
 
     mbs = (exfat_mbs*)kalloc(fs_page, 512, ALIGN_64B, MEM_PRIV_KERNEL, true);
 

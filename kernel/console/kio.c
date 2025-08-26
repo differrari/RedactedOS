@@ -19,7 +19,7 @@ void reset_buffer(){
 
 
 void init_print_buf(){
-    print_buf = palloc(CONSOLE_BUF_SIZE,MEM_PRIV_KERNEL, false, true);
+    print_buf = palloc(CONSOLE_BUF_SIZE,MEM_PRIV_KERNEL, MEM_RW, true);
     reset_buffer();
 }
 

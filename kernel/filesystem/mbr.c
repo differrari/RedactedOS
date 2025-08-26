@@ -7,7 +7,7 @@
 void* mbr_page;
 
 uint32_t mbr_find_partition(uint8_t partition_type){
-    mbr_page = palloc(0x1000, MEM_PRIV_KERNEL, true, false);
+    mbr_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
 
     mbr *mbr_entry = (mbr*)kalloc(mbr_page, 512, ALIGN_64B, MEM_PRIV_KERNEL, true);
     

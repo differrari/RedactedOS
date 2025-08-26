@@ -134,16 +134,16 @@ void reset_process(process_t *proc){
 }
 
 void init_main_process(){
-    proc_page = palloc(0x1000, MEM_PRIV_KERNEL, false, false);
+    proc_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
     process_t* proc = &processes[0];
     reset_process(proc);
     proc->id = next_proc_index++;
     proc->state = BLOCKED;
-    proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, false, false);
+    proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
     proc->stack_size = 0x1000;
-    proc->stack = (uintptr_t)palloc(proc->stack_size,MEM_PRIV_KERNEL,false,true);
+    proc->stack = (uintptr_t)palloc(proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
     proc->sp = ksp;
-    proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, false, true);
+    proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, true);
     name_process(proc, "kernel");
     proc_count++;
 }

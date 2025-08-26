@@ -50,7 +50,7 @@ int count_pages(uint64_t i1,uint64_t i2){
 }
 
 //TODO: prepare for allocating more than 64 bits by marking full registers at a time
-void* palloc(uint64_t size, uint8_t level, bool device, bool full) {
+void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
     uint64_t start = count_pages(get_user_ram_start(),PAGE_SIZE);
     uint64_t end = count_pages(get_user_ram_end(),PAGE_SIZE);
     uint64_t page_count = count_pages(size,PAGE_SIZE);
@@ -80,7 +80,7 @@ void* palloc(uint64_t size, uint8_t level, bool device, bool full) {
                 uintptr_t address = page_index * PAGE_SIZE;
                 if (!first_address) first_address = address;
 
-                if (device && level == MEM_PRIV_KERNEL)
+                if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
                     register_device_memory(address, address);
                 else
                     register_proc_memory(address, address, level);
@@ -139,7 +139,7 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level, bool 
     if (size >= PAGE_SIZE){
         void *first_addr = 0;
         for (uint64_t i = 0; i < size; i += PAGE_SIZE){
-            void* ptr = palloc(PAGE_SIZE, level, device, true);
+            void* ptr = palloc(PAGE_SIZE, level, device ? MEM_DEV | MEM_RW : MEM_RW, true);
             memset((void*)ptr, 0, PAGE_SIZE);
             if (!first_addr) first_addr = ptr;
         } 
@@ -170,7 +170,7 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level, bool 
 
     if (info->next_free_mem_ptr + size > (((uintptr_t)page) + PAGE_SIZE)) {
         if (!info->next)
-            info->next = palloc(PAGE_SIZE, level, device, false);
+            info->next = palloc(PAGE_SIZE, level, device ? MEM_DEV | MEM_RW : MEM_RW, false);
         // kprintfv("[in_page_alloc] Page full. Moving to %x",(uintptr_t)info->next);
         return kalloc(info->next, size, alignment, level, device);
     }

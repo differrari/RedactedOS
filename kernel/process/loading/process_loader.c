@@ -267,7 +267,7 @@ process_t* create_process(const char *name, void *content, uint64_t content_size
     name_process(proc, name);
     
     //TODO: keep track of code size so we can free up allocated code pages
-    uint8_t* dest = (uint8_t*)palloc(content_size, MEM_PRIV_USER, false, true);
+    uint8_t* dest = (uint8_t*)palloc(content_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true);
     if (!dest) return 0;
 
     for (uint64_t i = 0; i < content_size; i++){
@@ -276,10 +276,10 @@ process_t* create_process(const char *name, void *content, uint64_t content_size
     
     uint64_t stack_size = 0x1000;
 
-    uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_USER, false, false);
+    uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_USER, MEM_RW, false);
     if (!stack) return 0;
 
-    uintptr_t heap = (uintptr_t)palloc(stack_size, MEM_PRIV_USER, false, false);
+    uintptr_t heap = (uintptr_t)palloc(stack_size, MEM_PRIV_USER, MEM_RW, false);
     if (!heap) return 0;
 
     proc->stack = (stack + stack_size);
@@ -293,7 +293,7 @@ process_t* create_process(const char *name, void *content, uint64_t content_size
     proc->spsr = 0;
     proc->state = READY;
 
-    proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_USER, false, true);
+    proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_USER, MEM_RW, true);
 
     enable_interrupt();
     

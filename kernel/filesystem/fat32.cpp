@@ -15,7 +15,7 @@
     })
 
 bool FAT32FS::init(uint32_t partition_sector){
-    fs_page = palloc(0x1000, MEM_PRIV_KERNEL, true, false);
+    fs_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, false);
 
     mbs = (fat32_mbs*)kalloc(fs_page, 512, ALIGN_64B, MEM_PRIV_KERNEL, true);
 
