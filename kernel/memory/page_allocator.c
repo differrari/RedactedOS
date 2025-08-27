@@ -90,6 +90,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
                     new_info->next = NULL;
                     new_info->free_list = NULL;
                     new_info->next_free_mem_ptr = address + sizeof(mem_page);
+                    new_info->attributes = attributes;
                     new_info->size = 0;
                 }
             }
@@ -139,7 +140,7 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level, bool 
     if (size >= PAGE_SIZE){
         void *first_addr = 0;
         for (uint64_t i = 0; i < size; i += PAGE_SIZE){
-            void* ptr = palloc(PAGE_SIZE, level, device ? MEM_DEV | MEM_RW : MEM_RW, true);
+            void* ptr = palloc(PAGE_SIZE, level, info->attributes, true);
             memset((void*)ptr, 0, PAGE_SIZE);
             if (!first_addr) first_addr = ptr;
         } 
@@ -170,7 +171,7 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level, bool 
 
     if (info->next_free_mem_ptr + size > (((uintptr_t)page) + PAGE_SIZE)) {
         if (!info->next)
-            info->next = palloc(PAGE_SIZE, level, device ? MEM_DEV | MEM_RW : MEM_RW, false);
+            info->next = palloc(PAGE_SIZE, level, info->attributes, false);
         // kprintfv("[in_page_alloc] Page full. Moving to %x",(uintptr_t)info->next);
         return kalloc(info->next, size, alignment, level, device);
     }
