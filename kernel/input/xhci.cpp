@@ -151,7 +151,7 @@ bool XHCIDriver::init(){
 
     mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
 
-    uintptr_t dcbaap_addr = (uintptr_t)kalloc(mem_page, (max_device_slots + 1) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL, true);
+    uintptr_t dcbaap_addr = (uintptr_t)kalloc(mem_page, (max_device_slots + 1) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL);
 
     op->dcbaap = dcbaap_addr;
 
@@ -161,14 +161,14 @@ bool XHCIDriver::init(){
 
     dcbaap = (uintptr_t*)dcbaap_addr;
 
-    uint64_t* scratchpad_array = (uint64_t*)kalloc(mem_page, (scratchpad_count == 0 ? 1 : scratchpad_count) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL, true);
+    uint64_t* scratchpad_array = (uint64_t*)kalloc(mem_page, (scratchpad_count == 0 ? 1 : scratchpad_count) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL);
     for (uint32_t i = 0; i < scratchpad_count; i++)
-        scratchpad_array[i] = (uint64_t)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL, true);
+        scratchpad_array[i] = (uint64_t)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL);
     dcbaap[0] = (uint64_t)scratchpad_array;
 
     kprintfv("[xHCI] dcbaap assigned at %x with %i scratchpads",dcbaap_addr,scratchpad_count);
 
-    command_ring.ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL, true);
+    command_ring.ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
 
     op->crcr = (uintptr_t)command_ring.ring | command_ring.cycle_bit;
 
@@ -254,8 +254,8 @@ bool XHCIDriver::enable_events(){
     kprintfv("[xHCI] Allocating ERST");
     interrupter = (xhci_interrupter*)(rt_base + 0x20);
 
-    uint64_t ev_ring = (uintptr_t)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL, true);
-    uint64_t erst_addr = (uintptr_t)kalloc(mem_page, MAX_ERST_AMOUNT * sizeof(erst_entry), ALIGN_64B, MEM_PRIV_KERNEL, true);
+    uint64_t ev_ring = (uintptr_t)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
+    uint64_t erst_addr = (uintptr_t)kalloc(mem_page, MAX_ERST_AMOUNT * sizeof(erst_entry), ALIGN_64B, MEM_PRIV_KERNEL);
     erst_entry* erst = (erst_entry*)erst_addr;
 
     erst->ring_base = ev_ring;
@@ -376,10 +376,10 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
 
     transfer_ring->cycle_bit = 1;
 
-    xhci_input_context *ctx = (xhci_input_context*)kalloc(mem_page, sizeof(xhci_input_context), ALIGN_64B, MEM_PRIV_KERNEL, true);
+    xhci_input_context *ctx = (xhci_input_context*)kalloc(mem_page, sizeof(xhci_input_context), ALIGN_64B, MEM_PRIV_KERNEL);
     kprintfv("[xHCI] Allocating input context at %x", (uintptr_t)ctx);
     context_map[address << 8] = ctx;
-    void* output_ctx = (void*)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL, true);
+    void* output_ctx = (void*)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL);
     kprintfv("[xHCI] Allocating output for context at %x", (uintptr_t)output_ctx);
     
     ctx->control_context.add_flags = 0b11;
@@ -394,7 +394,7 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
     ctx->device_context.endpoints[0].endpoint_f1.error_count = 3;
     ctx->device_context.endpoints[0].endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);
     
-    transfer_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL, true);
+    transfer_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
     kprintfv("Transfer ring at %x %i",(uintptr_t)transfer_ring->ring, address << 8);
     make_ring_link(transfer_ring->ring, transfer_ring->cycle_bit);
 
@@ -516,7 +516,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     
     xhci_ring *ep_ring = &endpoint_map[address << 8 | ep_num];
     
-    ep_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL, true);
+    ep_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
     ep_ring->cycle_bit = 1;
     make_ring_link(ep_ring->ring, ep_ring->cycle_bit);
     ctx->device_context.endpoints[ep_num-1].endpoint_f23.dcs = ep_ring->cycle_bit;

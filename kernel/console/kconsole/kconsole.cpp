@@ -33,7 +33,7 @@ void KernelConsole::resize(){
 
     if (row_data) kfree(row_data, buffer_data_size);
     buffer_data_size = rows * columns;
-    row_data = (char*)kalloc(mem_page, buffer_data_size, ALIGN_16B, MEM_PRIV_KERNEL, true);
+    row_data = (char*)kalloc(mem_page, buffer_data_size, ALIGN_16B, MEM_PRIV_KERNEL);
     if (!row_data){
         rows = columns = 0;
         return;

@@ -33,7 +33,7 @@ uint64_t syscall_malloc(process_t *ctx){
     if ((uintptr_t)page_ptr == 0x0){
         handle_exception("Wrong process heap state");
     }
-    return (uintptr_t)kalloc(page_ptr, ctx->PROC_X0, ALIGN_16B, get_current_privilege(), false);
+    return (uintptr_t)kalloc(page_ptr, ctx->PROC_X0, ALIGN_16B, get_current_privilege());
 }
 
 uint64_t syscall_free(process_t *ctx){

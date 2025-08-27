@@ -56,7 +56,7 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
     framebuffer = rmbox[27];
     size_t fb_size = rmbox[28];
     mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
-    back_framebuffer = (uintptr_t)kalloc(mem_page, fb_size, ALIGN_16B, MEM_PRIV_KERNEL, true);
+    back_framebuffer = (uintptr_t)kalloc(mem_page, fb_size, ALIGN_16B, MEM_PRIV_KERNEL);
     kprintf("Framebuffer allocated to %x (%i). BPP %i. Stride %i",framebuffer, fb_size, bpp, stride/bpp);
     mark_used(framebuffer,count_pages(fb_size,PAGE_SIZE));
     for (size_t i = framebuffer; i < framebuffer + fb_size; i += GRANULE_4KB)
@@ -144,7 +144,7 @@ draw_ctx* VideoCoreGPUDriver::get_ctx(){
 }
 
 void VideoCoreGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *new_ctx){
-    new_ctx->fb = (uint32_t*)kalloc(mem_page, width * height * bpp, ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    new_ctx->fb = (uint32_t*)kalloc(mem_page, width * height * bpp, ALIGN_4KB, MEM_PRIV_KERNEL);
     new_ctx->width = width;
     new_ctx->height = height;
     new_ctx->stride = width * bpp;

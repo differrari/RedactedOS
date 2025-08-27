@@ -82,7 +82,7 @@ bool VirtioNetDriver::init(){
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
 
     for (uint16_t i = 0; i < 128; i++){
-        void* buf = kalloc(vnp_net_dev.memory_page, MAX_PACKET_SIZE, ALIGN_64B, MEM_PRIV_KERNEL, true);
+        void* buf = kalloc(vnp_net_dev.memory_page, MAX_PACKET_SIZE, ALIGN_64B, MEM_PRIV_KERNEL);
         virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_PACKET_SIZE);
     }
 
@@ -118,7 +118,7 @@ void VirtioNetDriver::get_mac(net_l2l3_endpoint *context){
 }
 
 sizedptr VirtioNetDriver::allocate_packet(size_t size){
-    return (sizedptr){(uintptr_t)kalloc(vnp_net_dev.memory_page, size + header_size, ALIGN_64B, MEM_PRIV_KERNEL, true),size + header_size};
+    return (sizedptr){(uintptr_t)kalloc(vnp_net_dev.memory_page, size + header_size, ALIGN_64B, MEM_PRIV_KERNEL), size + header_size};
 }
 
 sizedptr VirtioNetDriver::handle_receive_packet(void* buffer){

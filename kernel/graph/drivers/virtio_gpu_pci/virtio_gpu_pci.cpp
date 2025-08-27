@@ -71,7 +71,7 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     resource_id_counter = 0;
     
     framebuffer_size = screen_size.width * screen_size.height * BPP;
-    framebuffer = (uintptr_t)kalloc(gpu_dev.memory_page, framebuffer_size, ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    framebuffer = (uintptr_t)kalloc(gpu_dev.memory_page, framebuffer_size, ALIGN_4KB, MEM_PRIV_KERNEL);
 
     ctx = {
         .dirty_rects = {},
@@ -123,7 +123,7 @@ typedef struct virtio_2d_resource {
 } virtio_2d_resource;
 
 gpu_size VirtioGPUDriver::get_display_info(){
-    virtio_gpu_ctrl_hdr* cmd = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    virtio_gpu_ctrl_hdr* cmd = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
     cmd->type = VIRTIO_GPU_CMD_GET_DISPLAY_INFO;
     cmd->flags = 0;
     cmd->fence_id = 0;
@@ -133,7 +133,7 @@ gpu_size VirtioGPUDriver::get_display_info(){
     cmd->padding[1] = 0;
     cmd->padding[2] = 0;
 
-    virtio_gpu_resp_display_info* resp = (virtio_gpu_resp_display_info*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_resp_display_info), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    virtio_gpu_resp_display_info* resp = (virtio_gpu_resp_display_info*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_resp_display_info), ALIGN_4KB, MEM_PRIV_KERNEL);
 
     if (!virtio_send_3d(&gpu_dev, (uintptr_t)cmd, sizeof(virtio_gpu_ctrl_hdr), (uintptr_t)resp, sizeof(virtio_gpu_resp_display_info), VIRTQ_DESC_F_WRITE)){
         kfree((void*)cmd, sizeof(virtio_gpu_ctrl_hdr));
@@ -165,7 +165,7 @@ gpu_size VirtioGPUDriver::get_display_info(){
 }
 
 bool VirtioGPUDriver::create_2d_resource(uint32_t resource_id, gpu_size size) {
-    virtio_2d_resource* cmd = (virtio_2d_resource*)kalloc(gpu_dev.memory_page, sizeof(virtio_2d_resource), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    virtio_2d_resource* cmd = (virtio_2d_resource*)kalloc(gpu_dev.memory_page, sizeof(virtio_2d_resource), ALIGN_4KB, MEM_PRIV_KERNEL);
     
     cmd->hdr.type = VIRTIO_GPU_CMD_RESOURCE_CREATE_2D;
     cmd->hdr.flags = 0;
@@ -180,7 +180,7 @@ bool VirtioGPUDriver::create_2d_resource(uint32_t resource_id, gpu_size size) {
     cmd->width = size.width;
     cmd->height = size.height;
 
-    virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
 
     if (!virtio_send_3d(&gpu_dev, (uintptr_t)cmd, sizeof(virtio_2d_resource), (uintptr_t)resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE)){
         kfree((void*)cmd, sizeof(virtio_2d_resource));
@@ -212,7 +212,7 @@ typedef struct virtio_backing_cmd {
 }__attribute__((packed)) virtio_backing_cmd;
 
 bool VirtioGPUDriver::attach_backing(uint32_t resource_id, sizedptr ptr) {
-    virtio_backing_cmd* cmd = (virtio_backing_cmd*)kalloc(gpu_dev.memory_page, sizeof(virtio_backing_cmd), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    virtio_backing_cmd* cmd = (virtio_backing_cmd*)kalloc(gpu_dev.memory_page, sizeof(virtio_backing_cmd), ALIGN_4KB, MEM_PRIV_KERNEL);
 
     cmd->hdr.type = VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING;
     cmd->hdr.flags = 0;
@@ -229,7 +229,7 @@ bool VirtioGPUDriver::attach_backing(uint32_t resource_id, sizedptr ptr) {
     cmd->entries[0].length = ptr.size;
     cmd->entries[0].padding = 0;
 
-    virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
 
     if (!virtio_send_2d(&gpu_dev, (uintptr_t)cmd, sizeof(*cmd), (uintptr_t)resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_NEXT)){
         kfree((void*)cmd, sizeof(*cmd));
@@ -256,7 +256,7 @@ typedef struct virtio_scanout_cmd {
 }__attribute__((packed)) virtio_scanout_cmd;
 
 bool VirtioGPUDriver::set_scanout() {
-    virtio_scanout_cmd* cmd = (virtio_scanout_cmd*)kalloc(gpu_dev.memory_page, sizeof(virtio_scanout_cmd), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    virtio_scanout_cmd* cmd = (virtio_scanout_cmd*)kalloc(gpu_dev.memory_page, sizeof(virtio_scanout_cmd), ALIGN_4KB, MEM_PRIV_KERNEL);
     
     cmd->r.x = 0;
     cmd->r.y = 0;
@@ -275,7 +275,7 @@ bool VirtioGPUDriver::set_scanout() {
     cmd->hdr.padding[1] = 0;
     cmd->hdr.padding[2] = 0;
 
-    virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
 
     if (!virtio_send_3d(&gpu_dev, (uintptr_t)cmd, sizeof(*cmd), (uintptr_t)resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE)){
         kfree((void*)cmd, sizeof(virtio_scanout_cmd));
@@ -296,7 +296,7 @@ bool VirtioGPUDriver::set_scanout() {
 
 bool VirtioGPUDriver::transfer_to_host(uint32_t resource_id, gpu_rect rect) {
     if (!trans_cmd)
-        trans_cmd = (virtio_transfer_cmd*)kalloc(gpu_dev.memory_page, sizeof(virtio_transfer_cmd), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+        trans_cmd = (virtio_transfer_cmd*)kalloc(gpu_dev.memory_page, sizeof(virtio_transfer_cmd), ALIGN_4KB, MEM_PRIV_KERNEL);
     
     trans_cmd->hdr.type = VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D;
     trans_cmd->hdr.fence_id = VIRTIO_GPU_FLAG_FENCE;
@@ -307,7 +307,7 @@ bool VirtioGPUDriver::transfer_to_host(uint32_t resource_id, gpu_rect rect) {
     trans_cmd->rect.height = rect.size.height;
 
     if (!trans_resp)
-        trans_resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+        trans_resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
 
     return virtio_send_3d(&gpu_dev,(uintptr_t)trans_cmd, sizeof(virtio_transfer_cmd), (uintptr_t)trans_resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE);
 }
@@ -324,7 +324,7 @@ void VirtioGPUDriver::flush() {
     }
     
     if (!flush_cmd)
-        flush_cmd = (virtio_flush_cmd*)kalloc(gpu_dev.memory_page, sizeof(virtio_flush_cmd), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+        flush_cmd = (virtio_flush_cmd*)kalloc(gpu_dev.memory_page, sizeof(virtio_flush_cmd), ALIGN_4KB, MEM_PRIV_KERNEL);
     
     flush_cmd->hdr.type = VIRTIO_GPU_CMD_RESOURCE_FLUSH;
     flush_cmd->hdr.flags = 0;
@@ -344,7 +344,7 @@ void VirtioGPUDriver::flush() {
     // ctx.full_redraw = false;
     
     if (!flush_resp)
-        flush_resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+        flush_resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
     
     virtio_send_3d(&gpu_dev, (uintptr_t)flush_cmd, sizeof(virtio_flush_cmd), (uintptr_t)flush_resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE);
 }
@@ -364,7 +364,7 @@ struct virtio_gpu_resp_capset_info {
 };
 
 void VirtioGPUDriver::get_capset(){
-    virtio_gpu_get_capset_info* cmd = (virtio_gpu_get_capset_info*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_get_capset_info), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    virtio_gpu_get_capset_info* cmd = (virtio_gpu_get_capset_info*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_get_capset_info), ALIGN_4KB, MEM_PRIV_KERNEL);
     
     cmd->hdr.type = VIRTIO_GPU_CMD_GET_CAPSET_INFO;
     cmd->hdr.flags = 0;
@@ -372,7 +372,7 @@ void VirtioGPUDriver::get_capset(){
     cmd->capset_index = 0;
     cmd->padding = 0;
 
-    virtio_gpu_resp_capset_info* resp = (virtio_gpu_resp_capset_info*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_resp_capset_info), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    virtio_gpu_resp_capset_info* resp = (virtio_gpu_resp_capset_info*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_resp_capset_info), ALIGN_4KB, MEM_PRIV_KERNEL);
 
     if (!virtio_send_3d(&gpu_dev, (uintptr_t)cmd, sizeof(virtio_gpu_get_capset_info), (uintptr_t)resp, sizeof(virtio_gpu_resp_capset_info), VIRTQ_DESC_F_WRITE)){
         kprintf("Could not send command");
@@ -435,7 +435,7 @@ uint32_t VirtioGPUDriver::new_cursor(uint32_t color){
     uint32_t id = new_resource_id();
     size_t cursor_size = 64*64*BPP;
     create_2d_resource(id, {64,64});
-    uint32_t *cursor = (uint32_t*)kalloc(gpu_dev.memory_page, cursor_size, ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    uint32_t *cursor = (uint32_t*)kalloc(gpu_dev.memory_page, cursor_size, ALIGN_4KB, MEM_PRIV_KERNEL);
     draw_ctx ctx = {{},cursor, 64 * BPP, 64, 64, 0,0};
     fb_draw_cursor(&ctx, color);
     attach_backing(id, (sizedptr){(uintptr_t)cursor, cursor_size});
@@ -454,7 +454,7 @@ void VirtioGPUDriver::update_cursor(uint32_t x, uint32_t y, bool full)
 {
     select_queue(&gpu_dev, CURSOR_QUEUE);
 
-    if (!cursor_cmd) cursor_cmd = (virtio_gpu_update_cursor*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_update_cursor), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+    if (!cursor_cmd) cursor_cmd = (virtio_gpu_update_cursor*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_update_cursor), ALIGN_4KB, MEM_PRIV_KERNEL);
     
     cursor_cmd->hdr.type = full ? VIRTIO_GPU_CMD_UPDATE_CURSOR : VIRTIO_GPU_CMD_MOVE_CURSOR;
     cursor_cmd->pos.scanout_id = scanout_id;
@@ -463,7 +463,7 @@ void VirtioGPUDriver::update_cursor(uint32_t x, uint32_t y, bool full)
     cursor_cmd->resource_id = cursor_resource_id;
 
     if (!cursor_resp)
-        cursor_resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL, true);
+        cursor_resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
 
     virtio_send_3d(&gpu_dev, (uintptr_t)cursor_cmd, sizeof(virtio_gpu_update_cursor), (uintptr_t)cursor_resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE);
     select_queue(&gpu_dev, CONTROL_QUEUE);
@@ -476,7 +476,7 @@ void VirtioGPUDriver::set_cursor_pressed(bool pressed){
 void VirtioGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *new_ctx){
     // TODO: use this once we can ensure we can alloc continuous.
     // new_ctx->fb = (uint32_t*)palloc(width * height * BPP, MEM_PRIV_SHARED, MEM_RW, true);
-    new_ctx->fb = (uint32_t*)kalloc(gpu_dev.memory_page, width * height * BPP, ALIGN_4KB, MEM_PRIV_SHARED, false);
+    new_ctx->fb = (uint32_t*)kalloc(gpu_dev.memory_page, width * height * BPP, ALIGN_4KB, MEM_PRIV_SHARED);
     new_ctx->width = width;
     new_ctx->height = height;
     new_ctx->stride = width * BPP;

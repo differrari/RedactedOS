@@ -126,7 +126,7 @@ void mark_used(uintptr_t address, size_t pages)
     }
 }
 
-void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level, bool device){
+void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
     if (size > UINT32_MAX)//TODO: This serves to catch an issue, except if we put this if in, the issue does not happen
         panic("Faulty allocation");
@@ -173,7 +173,7 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level, bool 
         if (!info->next)
             info->next = palloc(PAGE_SIZE, level, info->attributes, false);
         // kprintfv("[in_page_alloc] Page full. Moving to %x",(uintptr_t)info->next);
-        return kalloc(info->next, size, alignment, level, device);
+        return kalloc(info->next, size, alignment, level);
     }
 
     uint64_t result = info->next_free_mem_ptr;

@@ -286,8 +286,8 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     descriptor->size = PROC_OUT_BUF;
     descriptor->cursor = 0;
     if (!proc_opened_files) 
-        proc_opened_files = kalloc(proc_page, sizeof(clinkedlist_t), ALIGN_64B, MEM_PRIV_KERNEL, false);
-    proc_open_file *file = kalloc(proc_page, sizeof(proc_open_file), ALIGN_64B, MEM_PRIV_KERNEL, false);
+        proc_opened_files = kalloc(proc_page, sizeof(clinkedlist_t), ALIGN_64B, MEM_PRIV_KERNEL);
+    proc_open_file *file = kalloc(proc_page, sizeof(proc_open_file), ALIGN_64B, MEM_PRIV_KERNEL);
     file->fid = descriptor->id;
     file->buffer = proc->output;
     file->pid = proc->id;
