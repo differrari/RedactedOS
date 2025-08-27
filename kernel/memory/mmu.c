@@ -106,8 +106,8 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint8_t level) {
     
     switch (level)
     {
-    case MEM_PRIV_USER:
-    case MEM_PRIV_SHARED: permission = 0b01; break;
+    case MEM_PRIV_USER:   permission = 0b01; break;
+    case MEM_PRIV_SHARED: permission = 0b00; break;
     case MEM_PRIV_KERNEL: permission = 0b00; break;
     
     default:
@@ -178,7 +178,8 @@ void mmu_init() {
     //TODO: Move these hardcoded mappings to their own file
     uint64_t kstart = mem_get_kmem_start();
     uint64_t kend = mem_get_kmem_end();
-    for (uint64_t addr = kstart; addr <= kend; addr += GRANULE_2MB)
+
+    for (uint64_t addr = kstart; addr < kend; addr += GRANULE_2MB)
         mmu_map_2mb(addr, addr, MAIR_IDX_NORMAL);
 
     for (uint64_t addr = get_uart_base(); addr <= get_uart_base(); addr += GRANULE_4KB)
@@ -187,7 +188,7 @@ void mmu_init() {
     for (uint64_t addr = GICD_BASE; addr <= GICC_BASE + 0x1000; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_PRIV_KERNEL);
 
-    for (uint64_t addr = get_shared_start(); addr <= get_shared_end(); addr += GRANULE_4KB)
+    for (uint64_t addr = get_shared_start(); addr < get_shared_end(); addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_PRIV_SHARED);
 
     if (XHCI_BASE)
@@ -221,8 +222,6 @@ void mmu_init() {
         "isb\n"
         ::: "x0", "memory"
     );
-    uint64_t sctlr;
-    asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
 
     kprintf("Finished MMU init");
 }
@@ -271,7 +270,7 @@ void debug_mmu_address(uint64_t va){
 
     if (!((l3_val >> 1) & 1)){
         kprintf("Mapped as 2MB memory in L3");
-        kprintf("Entry: %x", l3_val);
+        kprintf("Entry: %b", l3_val);
         return;
     }
 

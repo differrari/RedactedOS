@@ -5,7 +5,7 @@ SECTIONS {
     kernel_start = .;
     .boot . : { ./build/boot.o(.text) }
     .text : { 
-        *(EXCLUDE_FILE(shared/*.o) .text .text.[!p]*)
+        *(EXCLUDE_FILE(*libshared.a:*.o) .text)
     }
     .data : { *(.data) }
     __bss_start = .;
@@ -14,7 +14,7 @@ SECTIONS {
         bss = .;
         *(.bss)
     }
-    . = ALIGN(4096);
+    . = ALIGN(0x1000);
     __bss_end = .;
     __bss_size = __bss_end - __bss_start;
     .vectors : { KEEP(*(.vectors)) }
@@ -25,7 +25,7 @@ SECTIONS {
     ksp = .;
     stack_top = .;
 
-    . = ALIGN(4096);
+    . = ALIGN(0x1000);
     heap_bottom = .;
     .heap_fill : { FILL(0); . = . + 0x30000; }
     heap_limit = .;
@@ -33,15 +33,11 @@ SECTIONS {
     . = ALIGN(0x200000);
     kcode_end = .;
 
-    .shared : ALIGN(4096) {
+    .shared : ALIGN(0x1000) {
         shared_start = .;
-        KEEP(*(.shared))
-        KEEP(*(.text.shared))
-        KEEP(*shared/*.o(.text*))
+        *libshared.a:*(.text*)
 
-        . = ALIGN(8);
-        BYTE(0);
-
+        . = ALIGN(0x1000);
         shared_end = .;
     }
 

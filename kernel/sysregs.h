@@ -1,5 +1,4 @@
-#ifndef SYSREGS_H
-#define SYSREGS_H
+#pragma once
 
 // ***************************************
 // SCTLR_EL1, System Control Register (EL1), Page 2654 of AArch64-Reference-Manual.
@@ -48,5 +47,3 @@
 #define TRAP_PHYS_TIMER_DISABLED (1 << 0) 
 #define TRAV_VIRT_TIMER_DISABLED (1 << 1) //Disable trapping of timer calls on hypervisor level
 #define CNTHCTL_VALUE (TRAP_PHYS_TIMER_DISABLED | TRAV_VIRT_TIMER_DISABLED)
-
-#endif

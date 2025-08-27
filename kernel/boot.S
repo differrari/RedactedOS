@@ -48,7 +48,7 @@ virt:
     mov     w0, #1
     adrp    x1, BOARD_TYPE
     strb    w0, [x1, #:lo12:BOARD_TYPE]
-    b       stack_setup
+    b       drop_el3
 rpi:
     mov     w0, #2
     adrp    x1, BOARD_TYPE
@@ -74,6 +74,9 @@ drop_el3:
     eret
 
 el2_entry:
+    ldr x0, =SCTLR_VALUE_MMU_DISABLED
+    msr	sctlr_el1, x0
+
     mrs x0, CurrentEL
     lsr x0, x0, #2
     cmp x0, #2
@@ -86,9 +89,6 @@ el2_entry:
 
     mov	x0, #3 << 20
     msr	cpacr_el1, x0
-
-    ldr x0, =SCTLR_VALUE_MMU_DISABLED
-    msr	sctlr_el1, x0
 
     ldr x0, =HCR_RW
     msr hcr_el2, x0
