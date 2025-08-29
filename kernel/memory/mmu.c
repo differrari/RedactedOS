@@ -104,6 +104,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint8_t mem_attr
     
     uint8_t permission = 0;
     
+    //TODO: proper memory permissions, including accounting for WXN
     switch (level)
     {
     case MEM_PRIV_USER:   permission = 0b01; break;
@@ -192,8 +193,6 @@ void mmu_init() {
 
     for (uint64_t addr = GICD_BASE; addr <= GICC_BASE + 0x1000; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
-
-    kprintf(" Shared start %x - Code end %x - End %x", (uintptr_t)&shared_start, (uintptr_t)&shared_code_end, (uintptr_t)&shared_end);
 
     for (uint64_t addr = (uintptr_t)&shared_start; addr < (uintptr_t)&shared_code_end; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO, MEM_PRIV_SHARED);//TODO: separate into sections and mark as shared
