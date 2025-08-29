@@ -83,7 +83,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
                 if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
                     register_device_memory(address, address);
                 else
-                    register_proc_memory(address, address, level);
+                    register_proc_memory(address, address, attributes, level);
 
                 if (!full) {
                     mem_page* new_info = (mem_page*)address;

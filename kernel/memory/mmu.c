@@ -68,7 +68,7 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
 }
 
 //Level 0 = EL0, Level 1 = EL1, Level 2 = Shared
-void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint8_t level) {
+void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint8_t mem_attributes, uint8_t level) {
     uint64_t l0_index = (va >> 39) & 0x1FF;
     uint64_t l1_index = (va >> 30) & 0x1FF;
     uint64_t l2_index = (va >> 21) & 0x1FF;
@@ -107,7 +107,7 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint8_t level) {
     switch (level)
     {
     case MEM_PRIV_USER:   permission = 0b01; break;
-    case MEM_PRIV_SHARED: permission = 0b00; break;
+    case MEM_PRIV_SHARED: permission = mem_attributes & MEM_EXEC ? 0b11 : 0b01; break;
     case MEM_PRIV_KERNEL: permission = 0b00; break;
     
     default:
@@ -174,6 +174,10 @@ void mmu_alloc(){
     //TODO: use palloc, but consider it won't be able to add sections to MMU during that init
 }
 
+extern uint64_t shared_start;
+extern uint64_t shared_code_end;
+extern uint64_t shared_end;
+
 void mmu_init() {
     //TODO: Move these hardcoded mappings to their own file
     uint64_t kstart = mem_get_kmem_start();
@@ -183,23 +187,28 @@ void mmu_init() {
         mmu_map_2mb(addr, addr, MAIR_IDX_NORMAL);
 
     for (uint64_t addr = get_uart_base(); addr <= get_uart_base(); addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_PRIV_KERNEL);
+        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
 
     for (uint64_t addr = GICD_BASE; addr <= GICC_BASE + 0x1000; addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_PRIV_KERNEL);
+        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
 
-    for (uint64_t addr = get_shared_start(); addr < get_shared_end(); addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_PRIV_SHARED);
+    kprintf(" Shared start %x - Code end %x - End %x", (uintptr_t)&shared_start, (uintptr_t)&shared_code_end, (uintptr_t)&shared_end);
+
+    for (uint64_t addr = (uintptr_t)&shared_start; addr < (uintptr_t)&shared_code_end; addr += GRANULE_4KB)
+        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_EXEC | MEM_RW, MEM_PRIV_SHARED);//TODO: separate into sections and mark as shared
+
+    for (uint64_t addr = (uintptr_t)&shared_code_end; addr < (uintptr_t)&shared_end; addr += GRANULE_4KB)
+        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_SHARED);//TODO: separate into sections and mark as shared
 
     if (XHCI_BASE)
     for (uint64_t addr = XHCI_BASE; addr <= XHCI_BASE + 0x1000; addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_PRIV_KERNEL);
+        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
 
     uint64_t dstart;
     uint64_t dsize;
     if (dtb_addresses(&dstart,&dsize)){
         for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB)
-            mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_PRIV_KERNEL);
+            mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_RO, MEM_PRIV_KERNEL);
     }
 
     uint64_t mair = (MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_NOCACHE << (MAIR_IDX_NORMAL * 8));
@@ -227,7 +236,7 @@ void mmu_init() {
 }
 
 void register_device_memory(uint64_t va, uint64_t pa){
-    mmu_map_4kb(va, pa, MAIR_IDX_DEVICE, 1);
+    mmu_map_4kb(va, pa, MAIR_IDX_DEVICE, MEM_RW, 1);
     mmu_flush_all();
     mmu_flush_icache();
 }
@@ -238,8 +247,8 @@ void register_device_memory_2mb(uint64_t va, uint64_t pa){
     mmu_flush_icache();
 }
 
-void register_proc_memory(uint64_t va, uint64_t pa, uint8_t level){
-    mmu_map_4kb(va, pa, MAIR_IDX_NORMAL, level);
+void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t level){
+    mmu_map_4kb(va, pa, MAIR_IDX_NORMAL, attributes, level);
     mmu_flush_all();
     mmu_flush_icache();
 }
