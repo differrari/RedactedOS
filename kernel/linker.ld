@@ -36,7 +36,14 @@ SECTIONS {
     .shared : ALIGN(0x1000) {
         shared_start = .;
         *libshared.a:*(.text*)
-
+        shared_code_end = .;
+        . = ALIGN(0x1000);
+        *libshared.a:*(.rodata*)
+        shared_ro_end = .;
+        . = ALIGN(0x1000);
+        *libshared.a:*(.data*)
+        . = ALIGN(0x1000);
+        *libshared.a:*(.bss*)
         . = ALIGN(0x1000);
         shared_end = .;
     }

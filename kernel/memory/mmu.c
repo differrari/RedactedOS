@@ -176,6 +176,7 @@ void mmu_alloc(){
 
 extern uint64_t shared_start;
 extern uint64_t shared_code_end;
+extern uint64_t shared_ro_end;
 extern uint64_t shared_end;
 
 void mmu_init() {
@@ -195,9 +196,12 @@ void mmu_init() {
     kprintf(" Shared start %x - Code end %x - End %x", (uintptr_t)&shared_start, (uintptr_t)&shared_code_end, (uintptr_t)&shared_end);
 
     for (uint64_t addr = (uintptr_t)&shared_start; addr < (uintptr_t)&shared_code_end; addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_EXEC | MEM_RW, MEM_PRIV_SHARED);//TODO: separate into sections and mark as shared
+        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO, MEM_PRIV_SHARED);//TODO: separate into sections and mark as shared
 
-    for (uint64_t addr = (uintptr_t)&shared_code_end; addr < (uintptr_t)&shared_end; addr += GRANULE_4KB)
+    for (uint64_t addr = (uintptr_t)&shared_code_end; addr < (uintptr_t)&shared_ro_end; addr += GRANULE_4KB)
+        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_RO, MEM_PRIV_SHARED);//TODO: separate into sections and mark as share
+
+    for (uint64_t addr = (uintptr_t)&shared_ro_end; addr < (uintptr_t)&shared_end; addr += GRANULE_4KB)
         mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_SHARED);//TODO: separate into sections and mark as shared
 
     if (XHCI_BASE)
