@@ -258,7 +258,6 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     kprintfv("Finished translation");
 }
 
-
 process_t* create_process(const char *name, void *content, uint64_t content_size, uintptr_t entry) {
     
     disable_interrupt();
