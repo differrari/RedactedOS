@@ -25,13 +25,13 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     NETDEV="-netdev vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
     DISPLAY_MODE="sdl"
-    SELECTED_GPU="virtio-gpu-pci$(VIRTIO_GPU_VARS)"
+    SELECTED_GPU="virtio-gpu-pci$VIRTIO_GPU_VARS"
     GL="off"
 elif [ "$OS_TYPE" = "Linux" ]; then
     NETDEV="-netdev user,id=net0"
     PRIVILEGE=""
     DISPLAY_MODE="sdl"
-    SELECTED_GPU="virtio-gpu-gl$(VIRTIO_GPU_VARS)"
+    SELECTED_GPU="virtio-gpu-gl$VIRTIO_GPU_VARS"
 else
     echo "Unknown OS: $OS_TYPE" >&2
     exit 1
