@@ -4,6 +4,8 @@
 #include "memory/page_allocator.h"
 #include "memory/memory_access.h"
 #include "audio.h"
+#include "std/memory.h"
+#include "OutputAudioDevice.hpp"
 
 #define VIRTIO_SND_R_PCM_INFO       0x0100
 #define VIRTIO_SND_R_PCM_SET_PARAMS 0x0101 
@@ -194,26 +196,27 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
             kprintf("[VIRTIO_AUDIO error] Failed to configure stream %i",stream);
         }
 
-#if false
+        
+#if true
         if (stream_info[stream].direction == VIRTIO_SND_D_OUTPUT){
+            OutputAudioDevice *out_dev = new OutputAudioDevice();
+            out_dev->stream_id = stream;
+            out_dev->channels = channels;
+            out_dev->packet_size = sizeof(virtio_snd_pcm_status) + sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
+            out_dev->buf_size = TOTAL_BUF_SIZE/SND_U32_BYTES;
+            out_dev->header_size = sizeof(virtio_snd_pcm_xfer);
+            out_dev->populate();
             kprintf("Playing from stream %i",stream);
             select_queue(&audio_dev, TRANSMIT_QUEUE);
         
-            for (uint16_t i = 0; i < 10; i++){
-                size_t total_size = sizeof(virtio_snd_pcm_status) + sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
-                uintptr_t full_buffer = (uintptr_t)kalloc(audio_dev.memory_page, total_size, ALIGN_4KB, MEM_PRIV_KERNEL, true);
-                virtio_snd_pcm_xfer *header = (virtio_snd_pcm_xfer*)full_buffer;
-
-                header->stream_id = stream;
-                
-                uint32_t *buf = (uint32_t*)(full_buffer + sizeof(virtio_snd_pcm_xfer));
-                uint32_t buf_size = TOTAL_BUF_SIZE/SND_U32_BYTES;
-                for (uint32_t sample = 0; sample < buf_size; sample++){
-                    buf[sample] = sample < buf_size/2 == 0 ? 0x88888888 : UINT32_MAX;
+            for (uint16_t i = 0; i < 1000; i++){
+                sizedptr buf = out_dev->get_buffer();
+                uint32_t num_samples = buf.size/SND_U32_BYTES;
+                uint32_t *buffer = (uint32_t*)buf.ptr;
+                for (uint32_t sample = 0; sample < num_samples; sample++){
+                    buffer[sample] = sample < num_samples/2 == 0 ? 0x88888888 : UINT32_MAX;
                 }
-                
-                virtio_send_1d(&audio_dev, full_buffer, total_size);
-
+                out_dev->submit_buffer(this);
             }
 
             select_queue(&audio_dev, CONTROL_QUEUE);
@@ -221,6 +224,10 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
 #endif 
     }
     return true;
+}
+
+void VirtioAudioDriver::send_buffer(sizedptr buf){
+    virtio_send_1d(&audio_dev, buf.ptr, buf.size);
 }
 
 typedef struct virtio_snd_pcm_set_params { 
