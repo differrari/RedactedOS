@@ -122,18 +122,27 @@ void Desktop::activate_current(){
             return;
         }
         kprintf("[LAUNCHER] File path %s",(uintptr_t)entries[index].path);
-        file fd;
-        open_file(entries[index].path, &fd);
+        file fd = {};
+        FS_RESULT rest = open_file(entries[index].path, &fd);
+        kprintf(" Open file %i", rest);
+        if (rest != FS_RESULT_SUCCESS)
+        {
+            kprintf("[LAUNCHER] Failed to open file");
+            return;
+        }
         char *file = (char*)malloc(fd.size);
+        kprintf("[LAUNCHER] opened file");
         if (read_file(&fd, file, fd.size) != fd.size){
             kprintf("[LAUNCHER] Failed to read full elf file");
             return;
         } 
+        kprintf("[LAUNCHER] read file");
         active_proc = load_elf_file(entries[index].name, file);
         if (!active_proc){
-            kprintf("[LAUNCHER] Failed to read ELF file");
+            kprintf("[LAUNCHER] Failed to load ELF file");
             return;
         }
+        kprintf("[LAUNCHER] process launched");
         process_active = true;
         sys_set_focus(active_proc->id);
     }
