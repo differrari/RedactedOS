@@ -118,10 +118,11 @@ bool VirtioAudioDriver::init(){
         kprintf("[VIRTIO_AUDIO error] failed to setup interrupts for event queue");
         return false;
     }
-    for (uint16_t i = 0; i < 128; i++){
-        void* buf = kalloc(audio_dev.memory_page, sizeof(virtio_snd_event), ALIGN_64B, MEM_PRIV_KERNEL);
-        virtio_add_buffer(&audio_dev, i, (uintptr_t)buf, sizeof(virtio_snd_event));
-    }
+    //TODO: This should (probably) be for input devices only
+    // for (uint16_t i = 0; i < 128; i++){
+    //     void* buf = kalloc(audio_dev.memory_page, sizeof(virtio_snd_event), ALIGN_64B, MEM_PRIV_KERNEL);
+    //     virtio_add_buffer(&audio_dev, i, (uintptr_t)buf, sizeof(virtio_snd_event));
+    // }
 
     select_queue(&audio_dev, CONTROL_QUEUE);
 
@@ -196,38 +197,31 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
             kprintf("[VIRTIO_AUDIO error] Failed to configure stream %i",stream);
         }
 
-        
-#if true
         if (stream_info[stream].direction == VIRTIO_SND_D_OUTPUT){
-            OutputAudioDevice *out_dev = new OutputAudioDevice();
+            out_dev = new OutputAudioDevice();
             out_dev->stream_id = stream;
             out_dev->channels = channels;
             out_dev->packet_size = sizeof(virtio_snd_pcm_status) + sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
             out_dev->buf_size = TOTAL_BUF_SIZE/SND_U32_BYTES;
             out_dev->header_size = sizeof(virtio_snd_pcm_xfer);
             out_dev->populate();
-            kprintf("Playing from stream %i",stream);
-            select_queue(&audio_dev, TRANSMIT_QUEUE);
-        
-            for (uint16_t i = 0; i < 1000; i++){
-                sizedptr buf = out_dev->get_buffer();
-                uint32_t num_samples = buf.size/SND_U32_BYTES;
-                uint32_t *buffer = (uint32_t*)buf.ptr;
-                for (uint32_t sample = 0; sample < num_samples; sample++){
-                    buffer[sample] = sample < num_samples/2 == 0 ? 0x88888888 : UINT32_MAX;
-                }
-                out_dev->submit_buffer(this);
-            }
-
-            select_queue(&audio_dev, CONTROL_QUEUE);
         }
-#endif 
     }
+    select_queue(&audio_dev, TRANSMIT_QUEUE);
     return true;
 }
 
 void VirtioAudioDriver::send_buffer(sizedptr buf){
-    virtio_send_1d(&audio_dev, buf.ptr, buf.size);
+    select_queue(&audio_dev, TRANSMIT_QUEUE);
+    struct virtq_used* u = (struct virtq_used*)(uintptr_t)audio_dev.common_cfg->queue_device;
+    
+    virtio_add_buffer(&audio_dev, cmd_index, buf.ptr, buf.size, true);
+    if (cmd_index == audio_dev.common_cfg->queue_size - 1){
+        while (u->idx % audio_dev.common_cfg->queue_size < cmd_index);
+        cmd_index = 0;
+    }
+    else cmd_index++;
+    // select_queue(&audio_dev, CONTROL_QUEUE);
 }
 
 typedef struct virtio_snd_pcm_set_params { 

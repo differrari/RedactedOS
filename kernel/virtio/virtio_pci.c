@@ -174,7 +174,7 @@ bool virtio_send_3d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t
     d[2].next = 0;
     
     uint16_t last_used_idx = u->idx;
-    a->ring[a->idx % 128] = 0;
+    a->ring[a->idx % dev->common_cfg->queue_size] = 0;
     a->idx++;
 
     *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
@@ -204,7 +204,7 @@ bool virtio_send_2d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t
     d[1].flags = VIRTQ_DESC_F_WRITE;
     d[1].next = 0;
 
-    a->ring[a->idx % 128] = 0;
+    a->ring[a->idx % dev->common_cfg->queue_size] = 0;
     a->idx++;
 
     *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
@@ -226,7 +226,7 @@ bool virtio_send_1d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len) {
     d[0].flags = 0;
     d[0].next = 0;
     
-    a->ring[a->idx % 128] = 0;
+    a->ring[a->idx % dev->common_cfg->queue_size] = 0;
 
     a->idx++;
 
@@ -237,17 +237,17 @@ bool virtio_send_1d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len) {
     return true;
 }
 
-void virtio_add_buffer(virtio_device *dev, uint16_t index, uint64_t buf, uint32_t buf_len) {
+void virtio_add_buffer(virtio_device *dev, uint16_t index, uint64_t buf, uint32_t buf_len, bool host_to_dev) {
 
     struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)dev->common_cfg->queue_desc;
     struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)dev->common_cfg->queue_driver;
     
     d[index].addr = buf;
     d[index].len = buf_len;
-    d[index].flags = VIRTQ_DESC_F_WRITE;
+    d[index].flags = host_to_dev ? 0 : VIRTQ_DESC_F_WRITE;
     d[index].next = 0;
     
-    a->ring[a->idx % 128] = index;
+    a->ring[a->idx % dev->common_cfg->queue_size] = index;
     a->idx++;
 
     *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;

@@ -83,7 +83,7 @@ bool VirtioNetDriver::init(){
 
     for (uint16_t i = 0; i < 128; i++){
         void* buf = kalloc(vnp_net_dev.memory_page, MAX_PACKET_SIZE, ALIGN_64B, MEM_PRIV_KERNEL);
-        virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_PACKET_SIZE);
+        virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_PACKET_SIZE, false);
     }
 
     vnp_net_dev.common_cfg->queue_msix_vector = 0;

@@ -10,6 +10,8 @@ public:
 class AudioDevice {
 public:
     virtual void populate() = 0;
+    virtual sizedptr request_buffer() = 0;
+    virtual void submit_buffer(AudioDriver *driver) = 0;
     uint32_t stream_id;
     uint8_t channels;
     uintptr_t buffer;
