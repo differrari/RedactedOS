@@ -161,6 +161,9 @@ void coredump(uint64_t esr, uint64_t elr, uint64_t far){
     // 0b100010	Debug event.
     //TODO: Can parse instruction class, fault cause, etc
     decode_instruction(*(uint32_t*)elr);
+    process_t *proc = get_current_proc();
+    for (int i = 0; i < 31; i++)
+        kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
     if (far > 0) 
         debug_mmu_address(far);
     else 
