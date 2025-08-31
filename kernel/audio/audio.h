@@ -10,6 +10,10 @@ extern "C" {
 
 #define AUDIO_IRQ 34
 
+typedef enum WAVE_TYPE {
+    WAVE_SQUARE
+} WAVE_TYPE;
+
 bool init_audio();
 void audio_handle_interrupt();
 
