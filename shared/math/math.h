@@ -26,6 +26,13 @@ static inline int lerp(int i, int start, int end, int steps) {
     return start + (end - start) * i / steps;
 }
 
+static inline int ceil(float val){
+    uint64_t whole = (uint64_t)val;
+    double frac = val - (double)whole;
+
+    return frac > 0 ? val + 1 : val;
+}
+
 #ifdef __cplusplus
 }
 #endif
