@@ -42,7 +42,7 @@ void make_wave(WAVE_TYPE type, float freq, float seconds){
 }
 
 int play_test_audio(int argc, char* argv[]){      
-    make_wave(WAVE_SAW, 440, 1);
+    make_wave(WAVE_SAW, 261.63, 1);
     return 0;
 }
 
