@@ -1,6 +1,9 @@
 #include "audio.h"
 #include "virtio_audio_pci.hpp"
 #include "kernel_processes/kprocess_loader.h"
+#include "console/kio.h"
+#include "math/math.h"
+#include "audio/cuatro.h"
 
 VirtioAudioDriver *audio_driver;
 
@@ -21,16 +24,25 @@ void audio_submit_buffer(){
     audio_driver->out_dev->submit_buffer(audio_driver);
 }
 
-int play_test_audio(int argc, char* argv[]){      
-    for (int i = 0; i < 100; i++){
+void make_wave(WAVE_TYPE type, float freq, float seconds){
+    uint32_t period = 441/((freq/100.f) * 2);//TODO: improve this formula
+    uint32_t accumulator = 0;
+
+    for (int i = 0; i < (int)(seconds * 100); i++){
         sizedptr buf = audio_request_buffer(audio_driver->out_dev->stream_id);
-        uint32_t num_samples = buf.size/sizeof(uint32_t);
+        
+        uint32_t num_samples = buf.size;
         uint32_t *buffer = (uint32_t*)buf.ptr;
         for (uint32_t sample = 0; sample < num_samples; sample++){
-            buffer[sample] = sample < num_samples/2 == 0 ? 0x88888888 : UINT32_MAX;
+            buffer[sample] = sample_wave(type, accumulator, period, UINT32_MAX/2);
+            accumulator++;
         }
         audio_submit_buffer();
     }
+}
+
+int play_test_audio(int argc, char* argv[]){      
+    make_wave(WAVE_SAW, 261.63, 1);
     return 0;
 }
 

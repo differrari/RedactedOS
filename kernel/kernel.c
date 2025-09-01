@@ -53,6 +53,8 @@ void kernel_main() {
     bool network_available = load_module(&net_module);
     
     load_module(&audio_module);
+
+    init_audio_mixer();
     
     mmu_init();
 
