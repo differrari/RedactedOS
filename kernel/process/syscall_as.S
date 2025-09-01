@@ -17,6 +17,9 @@ sync_el0_handler_as:
     b       3f
 
 2:  mrs     x11, sp_el0
+    ldr x1, =ksp
+    //TODO: in order to ensure we don't ovewrite any stack data, save it to its own global variable
+    mov sp, x1
 
 3:
     msr daifset, #2//Disable interrupts

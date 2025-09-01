@@ -175,9 +175,6 @@ void sync_el0_handler_c(){
     save_return_address_interrupt();
 
     syscall_depth++;
-    
-    if (ksp > 0)
-        asm volatile ("mov sp, %0" :: "r"(ksp));
 
     process_t *proc = get_current_proc();
 
@@ -188,9 +185,6 @@ void sync_el0_handler_c(){
     asm volatile ("mrs %0, spsr_el1" : "=r"(spsr));
 
     uint64_t currentEL = (spsr >> 2) & 3;
-
-    uint64_t sp_el;
-    asm volatile ("mov %0, x11" : "=r"(sp_el));
     
     uint64_t esr;
     asm volatile ("mrs %0, esr_el1" : "=r"(esr));
