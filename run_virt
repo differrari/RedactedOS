@@ -31,7 +31,8 @@ elif [ "$OS_TYPE" = "Linux" ]; then
     NETDEV="-netdev user,id=net0"
     PRIVILEGE=""
     DISPLAY_MODE="sdl"
-    SELECTED_GPU="virtio-gpu-gl$VIRTIO_GPU_VARS"
+    SELECTED_GPU="virtio-gpu-pci$VIRTIO_GPU_VARS"
+    GL="off"
 else
     echo "Unknown OS: $OS_TYPE" >&2
     exit 1
@@ -52,7 +53,7 @@ $PRIVILEGE qemu-system-aarch64 \
   -m 512M \
   -kernel kernel.elf \
   -device $SELECTED_GPU \
-  -display $DISPLAY_MODE,gl=$GL \
+  -display $DISPLAY_MODE${GL:+,gl=$GL} \
   $NETDEV \
   -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56 \
   $DUMP \
