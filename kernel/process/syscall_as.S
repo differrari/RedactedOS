@@ -2,6 +2,7 @@
 
 //TODO: Rethink the registers used to be sequential both here and in context_switch and exception_vectors_as
 sync_el0_handler_as:
+    msr daifset, #2
     mrs     x10, spsr_el1
     lsr     x18, x10, #2
     and     x18, x18, #0b11
@@ -22,7 +23,6 @@ sync_el0_handler_as:
     mov sp, x18
 
 3:
-    msr daifset, #2//Disable interrupts
     mov x15, x0
     mov x14, x1
     mov x9, x2

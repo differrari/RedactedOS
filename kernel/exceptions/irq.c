@@ -75,9 +75,6 @@ void disable_interrupt(){
 void irq_el1_handler() {
     save_context_registers();
     save_return_address_interrupt();
-    if (ksp != 0){
-        asm volatile ("mov sp, %0" :: "r"(ksp));
-    }
     uint32_t irq;
     if (RPI_BOARD == 3){
         irq = 31 - __builtin_clz(read32(GICD_BASE + 0x204));
