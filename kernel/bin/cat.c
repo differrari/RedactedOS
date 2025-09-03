@@ -11,7 +11,7 @@ int run_cat(int argc, char* argv[]){
     file fd2;
     open_file(s.data, &fd2);
     if (argc != 2){
-        string err_msg = string_l("Usage cat <path> <size>");
+        string err_msg = string_from_literal("Usage cat <path> <size>");
         write_file(&fd2, err_msg.data, err_msg.length);
         free(err_msg.data, err_msg.mem_length);
         return 2;

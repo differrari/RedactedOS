@@ -53,11 +53,13 @@ typedef unsigned char uint8_t;
 #define UINT16_MAX 0xFFFF
 #define UINT32_MAX 0xFFFFFFFF
 
-typedef int int32_t;
-typedef long int64_t;
-typedef long intptr_t;
-typedef short int16_t;
-typedef char int8_t;
+#define N_ARR(arr) (sizeof(arr)/sizeof((arr)[0]))
+
+typedef signed int int32_t;
+typedef signed long int64_t;
+typedef signed long intptr_t;
+typedef signed short int16_t;
+typedef signed char int8_t;
 
 typedef struct sizedptr {
     uintptr_t ptr;
@@ -70,7 +72,7 @@ typedef struct sizedptr {
 }
 #else
 
-typedef unsigned int bool;
+typedef unsigned char bool;
 
 #define true 1
 #define false 0

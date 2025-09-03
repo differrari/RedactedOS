@@ -6,7 +6,7 @@
 #include "usb_types.h"
 #include "hw/hw.h"
 #include "memory/memory_access.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "async.h"
 #include "memory/memory_access.h"
 
@@ -57,7 +57,7 @@ bool XHCIDriver::check_fatal_error() {
 #define XHCI_EP_CONTROL 4
 
 bool XHCIDriver::init(){
-    uint64_t addr, mmio, mmio_size;
+    uint64_t addr = 0, mmio = 0, mmio_size = 0;
     bool use_pci = false;
     use_interrupts = true;
     if (XHCI_BASE){
@@ -149,9 +149,9 @@ bool XHCIDriver::init(){
     op->config = max_device_slots;
     kprintfv("[xHCI] %i device slots", max_device_slots);
 
-    mem_page = palloc(0x1000, true, true, false);
+    mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
 
-    uintptr_t dcbaap_addr = (uintptr_t)kalloc(mem_page, (max_device_slots + 1) * sizeof(uintptr_t), ALIGN_64B, true, true);
+    uintptr_t dcbaap_addr = (uintptr_t)kalloc(mem_page, (max_device_slots + 1) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL);
 
     op->dcbaap = dcbaap_addr;
 
@@ -161,14 +161,14 @@ bool XHCIDriver::init(){
 
     dcbaap = (uintptr_t*)dcbaap_addr;
 
-    uint64_t* scratchpad_array = (uint64_t*)kalloc(mem_page, (scratchpad_count == 0 ? 1 : scratchpad_count) * sizeof(uintptr_t), ALIGN_64B, true, true);
+    uint64_t* scratchpad_array = (uint64_t*)kalloc(mem_page, (scratchpad_count == 0 ? 1 : scratchpad_count) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL);
     for (uint32_t i = 0; i < scratchpad_count; i++)
-        scratchpad_array[i] = (uint64_t)kalloc(mem_page, 0x1000, ALIGN_64B, true, true);
+        scratchpad_array[i] = (uint64_t)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL);
     dcbaap[0] = (uint64_t)scratchpad_array;
 
     kprintfv("[xHCI] dcbaap assigned at %x with %i scratchpads",dcbaap_addr,scratchpad_count);
 
-    command_ring.ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
+    command_ring.ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
 
     op->crcr = (uintptr_t)command_ring.ring | command_ring.cycle_bit;
 
@@ -254,8 +254,8 @@ bool XHCIDriver::enable_events(){
     kprintfv("[xHCI] Allocating ERST");
     interrupter = (xhci_interrupter*)(rt_base + 0x20);
 
-    uint64_t ev_ring = (uintptr_t)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
-    uint64_t erst_addr = (uintptr_t)kalloc(mem_page, MAX_ERST_AMOUNT * sizeof(erst_entry), ALIGN_64B, true, true);
+    uint64_t ev_ring = (uintptr_t)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
+    uint64_t erst_addr = (uintptr_t)kalloc(mem_page, MAX_ERST_AMOUNT * sizeof(erst_entry), ALIGN_64B, MEM_PRIV_KERNEL);
     erst_entry* erst = (erst_entry*)erst_addr;
 
     erst->ring_base = ev_ring;
@@ -376,10 +376,10 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
 
     transfer_ring->cycle_bit = 1;
 
-    xhci_input_context *ctx = (xhci_input_context*)kalloc(mem_page, sizeof(xhci_input_context), ALIGN_64B, true, true);
+    xhci_input_context *ctx = (xhci_input_context*)kalloc(mem_page, sizeof(xhci_input_context), ALIGN_64B, MEM_PRIV_KERNEL);
     kprintfv("[xHCI] Allocating input context at %x", (uintptr_t)ctx);
     context_map[address << 8] = ctx;
-    void* output_ctx = (void*)kalloc(mem_page, 0x1000, ALIGN_64B, true, true);
+    void* output_ctx = (void*)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL);
     kprintfv("[xHCI] Allocating output for context at %x", (uintptr_t)output_ctx);
     
     ctx->control_context.add_flags = 0b11;
@@ -394,7 +394,7 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
     ctx->device_context.endpoints[0].endpoint_f1.error_count = 3;
     ctx->device_context.endpoints[0].endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);
     
-    transfer_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
+    transfer_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
     kprintfv("Transfer ring at %x %i",(uintptr_t)transfer_ring->ring, address << 8);
     make_ring_link(transfer_ring->ring, transfer_ring->cycle_bit);
 
@@ -411,14 +411,12 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
     usb_setup_packet packet = {
         .bmRequestType = rType,
         .bRequest = request,
-        .wValue = (type << 8) | descriptor_index,
+        .wValue = (uint16_t)((type << 8) | descriptor_index),
         .wIndex = wIndex,
         .wLength = descriptor_size
     };
 
     // kprintf("RT: %x R: %x V: %x I: %x L: %x",packet.bmRequestType,packet.bRequest,packet.wValue,packet.wIndex,packet.wLength);
-
-    bool is_in = (rType & 0x80) != 0;
 
     xhci_ring *transfer_ring = &endpoint_map[address << 8 | endpoint];
 
@@ -482,7 +480,7 @@ uint32_t XHCIDriver::calculate_interval(uint32_t speed, uint32_t received_interv
 
 	uint32_t i;
 	for (i = 3; i < 11; i++)
-		if (125 * (1 << i) >= 1000 * received_interval) break;
+		if (125u * (1 << i) >= 1000 * received_interval) break;
 
 	return i;
 }
@@ -518,7 +516,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     
     xhci_ring *ep_ring = &endpoint_map[address << 8 | ep_num];
     
-    ep_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, true, true);
+    ep_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
     ep_ring->cycle_bit = 1;
     make_ring_link(ep_ring->ring, ep_ring->cycle_bit);
     ctx->device_context.endpoints[ep_num-1].endpoint_f23.dcs = ep_ring->cycle_bit;
@@ -531,7 +529,6 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     }
 
     usb_manager->register_endpoint(address, ep_num, type, endpoint->wMaxPacketSize);
-    usb_manager->request_data(address, ep_num, this);
     
     return true;
 }
@@ -590,11 +587,11 @@ void XHCIDriver::handle_interrupt(){
     } else {
         kprintf("[xHCI error] wrong status %i on command type %x", completion_code, ((ev->control & TRB_TYPE_MASK) >> 10));
     }
-    event_ring.index++;
     if (event_ring.index == MAX_TRB_AMOUNT - 1){
         event_ring.index = 0;
         event_ring.cycle_bit = !event_ring.cycle_bit;
-    }
+    } else
+        event_ring.index++;
     interrupter->erdp = (uintptr_t)&event_ring.ring[event_ring.index] | (1 << 3);//Inform of latest processed event
     interrupter->iman |= 1;//Clear interrupts
     op->usbsts |= 1 << 3;//Clear interrupts

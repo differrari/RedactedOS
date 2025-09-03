@@ -3,7 +3,6 @@
 #include "../kprocess_loader.h"
 #include "console/kio.h"
 #include "input/input_dispatch.h"
-#include "../windows/windows.h"
 #include "graph/graphics.h"
 #include "std/string.h"
 #include "memory/talloc.h"
@@ -93,7 +92,7 @@ void draw_process_view(){
         int index = scroll_index;
         int valid_count = 0;
 
-        process_t *proc;
+        process_t *proc = NULL;
         while (index < MAX_PROCS) {
             proc = &processes[index];
             if (proc->id != 0 && proc->state != STOPPED) {
@@ -105,10 +104,10 @@ void draw_process_view(){
             index++;
         }
 
-        if (proc->id == 0 || valid_count < i || proc->state == STOPPED) break;
+        if (proc == NULL || proc->id == 0 || valid_count < i || proc->state == STOPPED) break;
 
-        string name = string_l((const char*)(uintptr_t)proc->name);
-        string state = string_l(parse_proc_state(proc->state));
+        string name = string_from_literal((const char*)(uintptr_t)proc->name);
+        string state = string_from_literal(parse_proc_state(proc->state));
 
         int scale = 2;
 
@@ -154,10 +153,11 @@ int monitor_procs(){
     bool active = false;
     while (1){
         if (sys_shortcut_triggered_current(shortcut)){
-            if (active)
-                pause_window_draw();
-            else 
-                resume_window_draw();
+            //TODO: restore this functionality with the new window system or put the process in a window
+            // if (active)
+            //     pause_window_draw();
+            // else 
+            //     resume_window_draw();
             active = !active;
         }
         if (active)

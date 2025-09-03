@@ -1,5 +1,5 @@
 #include "dns.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "math/rng.h"
 #include "process/scheduler.h"
 #include "net/internet_layer/ipv4.h"

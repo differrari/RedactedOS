@@ -76,7 +76,7 @@ bool DWC2Driver::init() {
     port_speed = (host->port >> 17) & 0x3;
     kprintf("Port speed %i",port_speed);
 
-    mem_page = palloc(0x1000, true, true, false);
+    mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
 
     setup_device(0,0);
 
@@ -125,7 +125,7 @@ bool DWC2Driver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
     usb_setup_packet packet = {
         .bmRequestType = rType,
         .bRequest = request,
-        .wValue = (type << 8) | descriptor_index,
+        .wValue = (uint16_t)((type << 8) | descriptor_index),
         .wIndex = wIndex,
         .wLength = descriptor_size
     };

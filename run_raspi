@@ -31,5 +31,6 @@ $PRIVILEGE qemu-system-aarch64 \
 -netdev $NETARG \
 -serial mon:stdio \
 -device usb-kbd \
+-device usb-mouse \
 -d guest_errors \
 $ARGS

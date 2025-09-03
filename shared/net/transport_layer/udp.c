@@ -2,7 +2,7 @@
 #include "net/checksums.h"
 #include "net/internet_layer/ipv4.h"
 #include "networking/port_manager.h"        
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "types.h"
 
 extern void sleep(uint64_t ms);

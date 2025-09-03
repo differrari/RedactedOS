@@ -4,7 +4,7 @@
 #include "mailbox/mailbox.h"
 #include "syscalls/syscalls.h"
 #include "memory/mmu.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "async.h"
 
 #define CMD_INDEX(x)   ((x) << 8)

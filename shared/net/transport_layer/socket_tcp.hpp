@@ -3,7 +3,7 @@
 #include "console/kio.h"
 #include "std/string.h"
 #include "net/internet_layer/ipv4.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "socket.hpp"
 #include "net/transport_layer/tcp.h"
 #include "types.h"

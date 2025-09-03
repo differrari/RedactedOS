@@ -7,7 +7,7 @@
 #include "console/serial/uart.h"
 #include "memory/memory_access.h"
 #include "std/string.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 static uint64_t total_ram_size = 0;
 static uint64_t total_ram_start = 0;
@@ -43,8 +43,6 @@ extern uint64_t heap_bottom;
 extern uint64_t heap_limit;
 extern uint64_t kcode_end;
 extern uint64_t kfull_end;
-extern uint64_t shared_start;
-extern uint64_t shared_end;
 static bool talloc_verbose = false;
 
 uint64_t next_free_temp_memory = (uint64_t)&heap_bottom;
@@ -181,12 +179,4 @@ uint64_t get_user_ram_start(){
 
 uint64_t get_user_ram_end(){
     calcvar(calculated_ram_end)
-}
-
-uint64_t get_shared_start(){
-    return (uint64_t)&shared_start;
-}
-
-uint64_t get_shared_end(){
-    return (uint64_t)&shared_end;
 }

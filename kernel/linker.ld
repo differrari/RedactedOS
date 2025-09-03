@@ -3,9 +3,9 @@ ENTRY(_start)
 SECTIONS {
     . = LOAD_ADDR;
     kernel_start = .;
-    .boot . : { boot.o(.text) }
+    .boot . : { ./build/boot.o(.text) }
     .text : { 
-        *(EXCLUDE_FILE(shared/*.o) .text .text.[!p]*)
+        *(EXCLUDE_FILE(*libshared.a:*.o) .text)
     }
     .data : { *(.data) }
     __bss_start = .;
@@ -14,7 +14,7 @@ SECTIONS {
         bss = .;
         *(.bss)
     }
-    . = ALIGN(4096);
+    . = ALIGN(0x1000);
     __bss_end = .;
     __bss_size = __bss_end - __bss_start;
     .vectors : { KEEP(*(.vectors)) }
@@ -25,23 +25,26 @@ SECTIONS {
     ksp = .;
     stack_top = .;
 
-    . = ALIGN(4096);
+    . = ALIGN(0x1000);
     heap_bottom = .;
-    .heap_fill : { FILL(0); . = . + 0x2000000; }
+    .heap_fill : { FILL(0); . = . + 0x30000; }
     heap_limit = .;
 
     . = ALIGN(0x200000);
     kcode_end = .;
 
-    .shared : ALIGN(4096) {
+    .shared : ALIGN(0x1000) {
         shared_start = .;
-        KEEP(*(.shared))
-        KEEP(*(.text.shared))
-        KEEP(*shared/*.o(.text*))
-
-        . = ALIGN(8);
-        BYTE(0);
-
+        *libshared.a:*(.text*)
+        shared_code_end = .;
+        . = ALIGN(0x1000);
+        *libshared.a:*(.rodata*)
+        shared_ro_end = .;
+        . = ALIGN(0x1000);
+        *libshared.a:*(.data*)
+        . = ALIGN(0x1000);
+        *libshared.a:*(.bss*)
+        . = ALIGN(0x1000);
         shared_end = .;
     }
 

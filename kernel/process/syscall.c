@@ -8,49 +8,184 @@
 #include "graph/graphics.h"
 #include "memory/memory_access.h"
 #include "input/input_dispatch.h"
-#include "kernel_processes/windows/windows.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "std/string.h"
 #include "exceptions/timer.h"
 #include "networking/network.h"
 #include "networking/port_manager.h"
 #include "filesystem/filesystem.h"
 #include "syscalls/syscall_codes.h"
+#include "graph/tres.h"
+#include "memory/mmu.h"
+#include "loading/process_loader.h"
 
 int syscall_depth = 0;
+
+//TODO: What happens if we pass another process' data in here?
+//TODO: make indexmap in c and it can be used here
+typedef struct {
+    uint16_t syscall_num;
+    uint64_t (*syscall)(process_t *ctx);
+} syscall_entry;
+
+uint64_t syscall_malloc(process_t *ctx){
+    void* page_ptr = syscall_depth > 1 ? (void*)get_proc_by_pid(1)->heap : (void*)get_current_heap();
+    if ((uintptr_t)page_ptr == 0x0){
+        handle_exception("Wrong process heap state");
+    }
+    return (uintptr_t)kalloc(page_ptr, ctx->PROC_X0, ALIGN_16B, get_current_privilege());
+}
+
+uint64_t syscall_free(process_t *ctx){
+    kfree((void*)ctx->PROC_X0, ctx->PROC_X1);
+    return 0;
+}
+
+uint64_t syscall_printl(process_t *ctx){
+    kprint((const char *)ctx->PROC_X0);
+    return 0;
+}
+
+uint64_t syscall_read_key(process_t *ctx){
+    keypress *kp = (keypress*)ctx->PROC_X0;
+    return sys_read_input_current(kp);
+}
+
+uint64_t syscall_read_shortcut(process_t *ctx){
+    kprint("[SYSCALL implementation error] Shortcut syscalls are not implemented yet");
+    return 0;
+}
+
+uintptr_t syscall_gpu_request_ctx(process_t *ctx){
+    draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
+    get_window_ctx(d_ctx);
+    return 0;
+}
+
+uint64_t syscall_gpu_flush(process_t *ctx){
+    draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
+    commit_frame(d_ctx);
+    gpu_flush();
+    return 0;
+}
+
+uint64_t syscall_char_size(process_t *ctx){
+    return gpu_get_char_size(ctx->PROC_X0);;
+}
+
+uint64_t syscall_sleep(process_t *ctx){
+    sleep_process(ctx->PROC_X0);
+    return 0;
+}
+
+uint64_t syscall_halt(process_t *ctx){
+    kprintf("Process has ended with code %i",ctx->PROC_X0);
+    stop_current_process(ctx->PROC_X0);
+    return 0;
+}
+
+uint64_t syscall_get_time(process_t *ctx){
+    return timer_now_msec();
+}
+
+uint64_t syscall_bind_port(process_t *ctx){
+    uint16_t port     = (uint16_t)ctx->PROC_X0;
+    port_recv_handler_t handler = (port_recv_handler_t)ctx->PROC_X1;
+    protocol_t proto  = (protocol_t)ctx->PROC_X2;
+    uint16_t pid      = get_current_proc_pid();
+    return port_bind_manual(port, pid, proto, handler);
+}
+
+uint64_t syscall_unbind_port(process_t *ctx){
+    uint16_t port    = (uint16_t)ctx->PROC_X0;
+    protocol_t proto = (protocol_t)ctx->PROC_X2;
+    uint16_t pid     = get_current_proc_pid();
+    return port_unbind(port, proto, pid);
+}
+
+uint64_t syscall_send_packet(process_t *ctx){
+    uintptr_t frame_ptr = ctx->PROC_X0;
+    uint32_t  frame_len = (uint32_t)ctx->PROC_X1;
+    return net_tx_frame(frame_ptr, frame_len);
+}
+
+uint64_t syscall_read_packet(process_t *ctx){
+    sizedptr *user_out = (sizedptr*)ctx->PROC_X0;
+    return net_rx_frame(user_out);
+}
+
+syscall_entry syscalls[] = {
+    { MALLOC_CODE, syscall_malloc},
+    { FREE_CODE, syscall_free},
+    { PRINTL_CODE, syscall_printl},
+    { READ_KEY_CODE, syscall_read_key},
+    { READ_SHORTCUT_CODE, syscall_read_shortcut},
+    { REQUEST_DRAW_CTX_CODE, syscall_gpu_request_ctx},
+    { GPU_FLUSH_DATA_CODE, syscall_gpu_flush},
+    { GPU_CHAR_SIZE_CODE, syscall_char_size},
+    { SLEEP_CODE, syscall_sleep},
+    { HALT_CODE, syscall_halt},
+    { GET_TIME_CODE, syscall_get_time},
+    { BIND_PORT_CODE, syscall_bind_port},
+    { UNBIND_PORT_CODE, syscall_unbind_port},
+    { SEND_PACKET_CODE, syscall_send_packet},
+    { READ_PACKET_CODE, syscall_read_packet},
+};
+
+void coredump(uint64_t esr, uint64_t elr, uint64_t far){
+    uint8_t ifsc = esr & 0x3F;
+    // 0b000000	Address size fault in TTBR0 or TTBR1.
+
+    // 0b000101	Translation fault, 1st level.
+    // 00b00110	Translation fault, 2nd level.
+    // 00b00111	Translation fault, 3rd level.
+
+    // 0b001001	Access flag fault, 1st level.
+    // 0b001010	Access flag fault, 2nd level.
+    // 0b001011	Access flag fault, 3rd level.
+
+    // 0b001101	Permission fault, 1st level.
+    // 0b001110	Permission fault, 2nd level.
+    // 0b001111	Permission fault, 3rd level.
+
+    // 0b010000	Synchronous external abort.
+    // 0b011000	Synchronous parity error on memory access.
+    // 0b010101	Synchronous external abort on translation table walk, 1st level.
+    // 0b010110	Synchronous external abort on translation table walk, 2nd level.
+    // 0b010111	Synchronous external abort on translation table walk, 3rd level.
+    // 0b011101	Synchronous parity error on memory access on translation table walk, 1st level.
+    // 0b011110	Synchronous parity error on memory access on translation table walk, 2nd level.
+    // 0b011111	Synchronous parity error on memory access on translation table walk, 3rd level.
+    
+    // 0b100001	Alignment fault.
+    // 0b100010	Debug event.
+    //TODO: Can parse instruction class, fault cause, etc
+    decode_instruction(*(uint32_t*)elr);
+    process_t *proc = get_current_proc();
+    for (int i = 0; i < 31; i++)
+        kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
+    if (far > 0) 
+        debug_mmu_address(far);
+    else 
+        kprintf("Null pointer accessed at %x",elr);
+}
 
 void sync_el0_handler_c(){
     save_context_registers();
     save_return_address_interrupt();
 
     syscall_depth++;
-    
-    if (ksp > 0)
-        asm volatile ("mov sp, %0" :: "r"(ksp));
-    uint64_t x0;
-    asm volatile ("mov %0, x15" : "=r"(x0));
-    uint64_t x1;
-    asm volatile ("mov %0, x14" : "=r"(x1));
-    uint64_t x2;
-    asm volatile ("mov %0, x9" : "=r"(x2));
-    uint64_t x3;
-    asm volatile ("mov %0, x16" : "=r"(x3));
-    uint64_t x4;
-    asm volatile ("mov %0, x4" : "=r"(x4));
-    uint64_t x29;
-    asm volatile ("mov %0, x13" : "=r"(x29));
-    uint64_t x30;
-    asm volatile ("mov %0, x12" : "=r"(x30));
+
+    process_t *proc = get_current_proc();
+
+    uint64_t x0 = proc->PROC_X0;
     uint64_t elr;
     asm volatile ("mrs %0, elr_el1" : "=r"(elr));
     uint64_t spsr;
     asm volatile ("mrs %0, spsr_el1" : "=r"(spsr));
 
     uint64_t currentEL = (spsr >> 2) & 3;
-
-    uint64_t sp_el;
-    asm volatile ("mov %0, x11" : "=r"(sp_el));
-
+    
     uint64_t esr;
     asm volatile ("mrs %0, esr_el1" : "=r"(esr));
 
@@ -59,146 +194,20 @@ void sync_el0_handler_c(){
     
     uint64_t result = 0;
     if (ec == 0x15) {
-        switch (iss)
-        {
-        case MALLOC_CODE:
-        {
-            void* page_ptr = syscall_depth > 1 ? (void*)get_proc_by_pid(1)->heap : (void*)get_current_heap();
-            if ((uintptr_t)page_ptr == 0x0){
-                handle_exception_with_info("Wrong process heap state", iss);
+        uint16_t num_syscalls = N_ARR(syscalls);
+        bool found = false;
+        for (uint16_t i = 0; i < num_syscalls; i++){
+            if (syscalls[i].syscall_num == iss){
+                found = true;
+                result = syscalls[i].syscall(proc);
+                break;
             }
-            result = (uintptr_t)kalloc(page_ptr, x0, ALIGN_16B, get_current_privilege(), false);
-            break;
         }
-        case FREE_CODE:
-        {
-            kfree((void*)x0, x1);
-            break;
-        }
-        case PRINTL_CODE:
-        {
-            kprint((const char *)x0);
-            break;
-        }
-        case READ_KEY_CODE:
-        {
-            keypress *kp = (keypress*)x0;
-            result = sys_read_input_current(kp);
-            break;
-        }
-        case READ_SHORTCUT_CODE:
-        {
-            kprint("[SYSCALL implementation error] Shortcut syscalls are not implemented yet");
-            break;
-            // keypress *kp = (keypress*)x0;
-            // result = sys_shortcut_triggered_current(uint16_t sid)
-        }
-        case CLEAR_SCREEN_CODE:
-        {
-            if (!screen_overlay)
-                gpu_clear(x0);
-            break;
-        }
-        case DRAW_PRIMITIVE_PIXEL_CODE:
-        {
-            if (!screen_overlay)
-                gpu_draw_pixel(*(gpu_point*)x0,x1);
-            break;
-        }
-        case DRAW_PRIMITIVE_LINE_CODE:
-        {
-            if (!screen_overlay)
-                gpu_draw_line(*(gpu_point*)x0,*(gpu_point*)x1,x2);
-            break;
-        }
-        case DRAW_PRIMITIVE_RECT_CODE:
-        {
-            if (!screen_overlay)
-                gpu_fill_rect(*(gpu_rect*)x0,x1);
-            break;
-        }
-        case DRAW_PRIMITIVE_CHAR_CODE:
-        {
-            if (!screen_overlay)
-                gpu_draw_char(*(gpu_point*)x0,(char)x1,x2,x3);
-            break;
-        }
-        case DRAW_PRIMITIVE_STRING_CODE:
-        {
-            if (!screen_overlay){
-                gpu_draw_string(*(string *)x0,*(gpu_point*)x1,x2,x3);
-            }
-            break;
-        }
-        case GPU_FLUSH_DATA_CODE:
-        {
-            if (!screen_overlay)
-                gpu_flush();
-            break;
-        }
-        case GPU_SCREEN_SIZE_CODE:
-        {
-            result = (uintptr_t)kalloc((void*)get_current_heap(), sizeof(gpu_size), ALIGN_16B, get_current_privilege(), false);
-            gpu_size size = gpu_get_screen_size();
-            memcpy((void*)result, &size, sizeof(gpu_size));
-            break;
-        }
-        case GPU_CHAR_SIZE_CODE:
-        {
-            result = gpu_get_char_size(x0);
-            break;
-        }
-        case SLEEP_CODE:
-        {
-            sleep_process(x0);
-            break;
-        }
-        case HALT_CODE:
-        {
-            stop_current_process(x0);
-            break;
-        }
-        case GET_TIME_CODE:
-        {
-            result = timer_now_msec();
-            break;
-        }
-        case BIND_PORT_CODE: {  //bind
-            uint16_t port     = (uint16_t)x0;
-            port_recv_handler_t handler = (port_recv_handler_t)x1;
-            protocol_t proto  = (protocol_t)x2;
-            uint16_t pid      = get_current_proc_pid();
-            result = port_bind_manual(port, pid, proto, handler);
-            break;
-        }
-
-        case UNBIND_PORT_CODE: {  //unbind
-            uint16_t port    = (uint16_t)x0;
-            protocol_t proto = (protocol_t)x2;
-            uint16_t pid     = get_current_proc_pid();
-            result = port_unbind(port, proto, pid);
-            break;
-        }
-
-        case SEND_PACKET_CODE: { //net_tx_frame
-            uintptr_t frame_ptr = x0;
-            uint32_t  frame_len = (uint32_t)x1;
-            result = net_tx_frame(frame_ptr, frame_len);
-            break;
-        }
-        case READ_PACKET_CODE: { //net_rx_frame
-            sizedptr *user_out = (sizedptr*)x0;
-            result = net_rx_frame(user_out);
-            break;
-        }
-        
-        default: {
-            handle_exception_with_info("Unknown syscall", iss);
-            break;
-        }
-        }
+        if (!found)
+            panic_with_info("Unknown syscall %i", iss);
     } else {
         switch (ec) {
+            case 0x20:
             case 0x21: {
                 uint64_t far;
                 asm volatile ("mrs %0, far_el1" : "=r"(far));
@@ -208,13 +217,15 @@ void sync_el0_handler_c(){
                 }
             }
         }
+        uint64_t far;
+        asm volatile ("mrs %0, far_el1" : "=r"(far));
         //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
-        if (currentEL == 1)
+        if (currentEL == 1){
+            coredump(esr, elr, far);
             handle_exception_with_info("UNEXPECTED EXCEPTION",ec);
-        else {
-            uint64_t far;
-            asm volatile ("mrs %0, far_el1" : "=r"(far));
+        } else {
             kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
+            coredump(esr, elr, far);
             stop_current_process(ec);
         }
     }

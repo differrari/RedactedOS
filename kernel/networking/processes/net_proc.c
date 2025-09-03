@@ -2,7 +2,7 @@
 #include "kernel_processes/kprocess_loader.h"
 #include "process/scheduler.h"
 #include "console/kio.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "std/string.h"
 
 #include "net/network_types.h"
@@ -205,7 +205,7 @@ static void test_http(uint32_t ip) {
             memcpy(body_str, (void*)resp.body.ptr, resp.body.size);
             body_str[resp.body.size] = '\0';
             kprintf("[HTTP] %i %i bytes of body", resp.status_code, resp.body.size);
-            kprintf("%s\n", body_str);
+            kprintf("%s", body_str);
             free(body_str, resp.body.size + 1);
         }
     }

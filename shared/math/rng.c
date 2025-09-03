@@ -1,5 +1,5 @@
 #include "rng.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 void rng_init_random(rng_t *rng){
     uint64_t seed;

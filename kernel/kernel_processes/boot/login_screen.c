@@ -9,6 +9,7 @@
 #include "math/math.h"
 #include "std/string.h"
 #include "syscalls/syscalls.h"
+#include "ui/uno/uno.h"
 
 int login_screen(){
     sys_focus_current();
@@ -16,9 +17,6 @@ int login_screen(){
     char* buf = (char*)malloc(256);
     int len = 0;
     keypress old_kp;
-    const char* name = BOOTSCREEN_TEXT;
-    string title = string_l(name);
-    string subtitle = string_l("Login");
     gpu_clear(BG_COLOR);
     while (1)
     {
@@ -30,12 +28,45 @@ int login_screen(){
         int xo = screen_size.width / 3;
         int yo = screen_middle.y;
         int height = char_size * 2;
-        
-        gpu_draw_string(title, (gpu_point){screen_middle.x - ((title.length/2) * char_size), yo - char_size*9}, scale, 0xFFFFFFFF);
-        gpu_draw_string(subtitle, (gpu_point){screen_middle.x - ((subtitle.length/2) * char_size), yo - char_size*6}, scale, 0xFFFFFFFF);
 
-        gpu_fill_rect((gpu_rect){{xo,yo  - char_size/2}, {screen_size.width / 3, height}},BG_COLOR+0x111111);
-        gpu_draw_string(s, (gpu_point){xo, yo}, scale, 0xFFFFFFFF);
+        draw_ctx *ctx = gpu_get_ctx();
+
+        label(ctx, (text_ui_config){
+            .text = BOOTSCREEN_TEXT,
+            .font_size = 2,
+        }, (common_ui_config){
+            .point = {0, yo - char_size*9},
+            .size = { screen_size.width, yo },
+            .horizontal_align = HorizontalCenter,
+            .vertical_align = Top,
+            .background_color = 0,
+            .foreground_color = COLOR_WHITE,
+        });
+
+        label(ctx, (text_ui_config){
+            .text = "Login",
+            .font_size = 2,
+        }, (common_ui_config){
+            .point = {0, yo - char_size*6},
+            .size = { screen_size.width, yo },
+            .horizontal_align = HorizontalCenter,
+            .vertical_align = Top,
+            .background_color = 0,
+            .foreground_color = COLOR_WHITE,
+        });
+
+        textbox(ctx, (text_ui_config){
+            .text = s.data,
+            .font_size = 2,
+        }, (common_ui_config){
+            .point = {xo, yo - char_size/2},
+            .size = { screen_size.width/3, height },
+            .horizontal_align = Leading,
+            .vertical_align = VerticalCenter,
+            .background_color = BG_COLOR+0x111111,
+            .foreground_color = COLOR_WHITE,
+        });
+
         keypress kp;
         if (sys_read_input_current(&kp)){
             for (int i = 0; i < 6; i++){
@@ -45,8 +76,6 @@ int login_screen(){
                         if (strcmp(buf,default_pwd, false) == 0){
                             free(buf, 256);
                             free(s.data,s.mem_length);
-                            free(title.data,title.mem_length);
-                            free(subtitle.data,subtitle.mem_length);
                             sys_set_secure(false);
                             stop_current_process(0);
                         } else

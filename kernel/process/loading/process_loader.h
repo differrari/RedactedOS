@@ -8,6 +8,7 @@ extern "C" {
 
 process_t* create_process(const char *name, void *content, uint64_t content_size, uintptr_t entry);
 void translate_enable_verbose();
+void decode_instruction(uint32_t instruction);
 #ifdef __cplusplus
 }
 #endif

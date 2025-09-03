@@ -2,7 +2,7 @@
 #include "input/input_dispatch.h"
 #include "../kio.h"
 #include "../serial/uart.h"
-#include "std/std.hpp"
+#include "std/std.h"
 #include "filesystem/filesystem.h"
 #include "bin/bin_mod.h"
 
@@ -37,6 +37,7 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
         free(buf, amount);
     }
     string exit_msg = string_format("Process %i ended with exit code %i.",proc->id, proc->exit_code);
+    //TODO: format message
     put_string(exit_msg.data);
     free(exit_msg.data, exit_msg.mem_length);
     return true;
@@ -70,14 +71,14 @@ void Terminal::run_command(){
     string cmd;
     int argc = 0;
     const char** argv; 
-    string args_copy;
+    string args_copy = {};
     
     if (fullcmd == args){
-        cmd = string_l(fullcmd);
+        cmd = string_from_literal(fullcmd);
         argv = 0;
     } else {
-        cmd = string_ca_max(fullcmd, args - fullcmd - 1);
-        args_copy = string_l(args);
+        cmd = string_from_literal_length(fullcmd, args - fullcmd - 1);
+        args_copy = string_from_literal(args);
         argv = parse_arguments(args_copy.data, &argc);
     }
 

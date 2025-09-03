@@ -2,7 +2,7 @@
 
 #include "http.h"
 #include "std/string.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 #ifdef __cplusplus
 extern "C" {

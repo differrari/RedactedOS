@@ -7,6 +7,8 @@
 #include "std/string.h"
 #include "filesystem/filesystem.h"
 #include "process/loading/elf_file.h"
+#include "ui/uno/uno.h"
+#include "graph/tres.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3
@@ -34,8 +36,8 @@ Desktop::Desktop() {
         for (uint32_t i = 0; i < list->count; i++){
             char *file = reader;
             string fullpath = string_format("/boot/redos/user/%s",(uintptr_t)file);
-            string name = string_ca_max(file,find_extension(file));
-            string ext = string_l(file + find_extension(file));
+            string name = string_from_literal_length(file,find_extension(file));
+            string ext = string_from_literal(file + find_extension(file));
             if (strcmp(ext.data,".elf", true) == 0){
                 add_entry(name.data, ext.data, fullpath.data);
             }
@@ -44,9 +46,6 @@ Desktop::Desktop() {
         }
         //TODO: The list of strings needs to be freed, but this class is not its owner
     }
-    
-    single_label = new Label();
-    extension_label = new Label();
 }
 
 void Desktop::draw_desktop(){
@@ -56,6 +55,7 @@ void Desktop::draw_desktop(){
         active_proc = nullptr;
         sys_focus_current();
         rendered_full = false;
+        process_active = false;
     }
     keypress kp;
     gpu_point old_selected = selected;
@@ -86,27 +86,27 @@ void Desktop::draw_desktop(){
     } else if (old_selected.x != selected.x || old_selected.y != selected.y){
         draw_tile(old_selected.x, old_selected.y);
         draw_tile(selected.x, selected.y);
-        gpu_flush();
+        commit_frame(&ctx);
     }
 }
 
 void Desktop::draw_full(){
-    gpu_clear(BG_COLOR);
+    fb_clear(&ctx, BG_COLOR+0x050505);
     for (uint32_t column = 0; column < MAX_COLS; column++){
         for (uint32_t row = 0; row < MAX_ROWS; row++){
             draw_tile(column, row);
         }
     }
-    gpu_flush();
+    commit_frame(&ctx);
 }
 
 bool Desktop::await_gpu(){
     if (!gpu_ready())
         return false;
     if (!ready){
-        disable_visual();
+        get_window_ctx(&ctx);
         sys_focus_current();
-        gpu_size screen_size = gpu_get_screen_size();
+        gpu_size screen_size = {ctx.width, ctx.height};
         tile_size = {screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20};
         ready = true;
     }
@@ -122,18 +122,27 @@ void Desktop::activate_current(){
             return;
         }
         kprintf("[LAUNCHER] File path %s",(uintptr_t)entries[index].path);
-        file fd;
-        open_file(entries[index].path, &fd);
+        file fd = {};
+        FS_RESULT rest = open_file(entries[index].path, &fd);
+        kprintf(" Open file %i", rest);
+        if (rest != FS_RESULT_SUCCESS)
+        {
+            kprintf("[LAUNCHER] Failed to open file");
+            return;
+        }
         char *file = (char*)malloc(fd.size);
+        kprintf("[LAUNCHER] opened file");
         if (read_file(&fd, file, fd.size) != fd.size){
             kprintf("[LAUNCHER] Failed to read full elf file");
             return;
         } 
+        kprintf("[LAUNCHER] read file");
         active_proc = load_elf_file(entries[index].name, file);
         if (!active_proc){
-            kprintf("[LAUNCHER] Failed to read ELF file");
+            kprintf("[LAUNCHER] Failed to load ELF file");
             return;
         }
+        kprintf("[LAUNCHER] process launched");
         process_active = true;
         sys_set_focus(active_proc->id);
     }
@@ -145,31 +154,49 @@ void Desktop::draw_tile(uint32_t column, uint32_t row){
     uint32_t index = (row * MAX_COLS) + column;
     
     int border = 4;
-    
-    if (sel)
-        gpu_fill_rect((gpu_rect){{10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row)}, {tile_size.width, tile_size.height}}, BG_COLOR+0x333333);
-    gpu_rect inner_rect = (gpu_rect){{10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0)}, {tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}};
-    gpu_fill_rect(inner_rect, BG_COLOR+0x111111);
-    if (index < entries.size()){
-        string namestr = string_l(entries[index].name);
-        string extstr = string_l(entries[index].ext);
 
-        single_label->set_text(namestr);
-        single_label->set_bg_color(BG_COLOR+0x111111);
-        single_label->set_text_color(0xFFFFFFFF);
-        single_label->set_font_size(3);
-        single_label->rect = inner_rect;
-        single_label->set_alignment(HorizontalAlignment::HorizontalCenter, VerticalAlignment::VerticalCenter);
-        single_label->render();
+    gpu_rect inner_rect = (gpu_rect){{10 + ((tile_size.width + 10)*column)+ (sel ? border : 0), 50 + ((tile_size.height + 10) *row) + (sel ? border : 0)}, {tile_size.width - (sel ? border * 2 : 0), tile_size.height - (sel ? border * 2 : 0)}};
+
+    DRAW(
+        rectangle(&ctx, {
+        .border_size = (uint8_t)(sel ? 4 : 0),
+        .border_color = BG_COLOR+0x333333,
+        }, (common_ui_config){
+        .point = {10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row)},
+        .size = {tile_size.width, tile_size.height},
+        .horizontal_align = Leading,
+        .vertical_align = Top,
+        .background_color = BG_COLOR+0x111111,
+        .foreground_color = 0
+        }), {
         
-        extension_label->set_text(extstr);
-        extension_label->set_bg_color(BG_COLOR+0x111111);
-        extension_label->set_text_color(0xFFFFFFFF);
-        extension_label->set_font_size(1);
-        extension_label->rect = (gpu_rect){{10 + ((tile_size.width + 10)*column)+ (sel ? border*2 : border), 50 + ((tile_size.height + 10) *row) + (sel ? border*2 : border)}, {1, 1}};
-        extension_label->set_alignment(HorizontalAlignment::Leading, VerticalAlignment::Top);
-        extension_label->render();
-        free(namestr.data, namestr.mem_length);
-        free(extstr.data, extstr.mem_length);
-    }
+        if (index < entries.size()){
+            
+            label(&ctx, (text_ui_config){
+                .text = entries[index].name,
+                .font_size = 3,
+            }, (common_ui_config){
+                .point = RELATIVE(0,0),
+                .size = inner_rect.size,
+                .horizontal_align = HorizontalCenter,
+                .vertical_align = VerticalCenter,
+                .background_color = 0,
+                .foreground_color = COLOR_WHITE,
+            });
+
+            label(&ctx, (text_ui_config){
+                .text = entries[index].ext,
+                .font_size = 1,
+            }, (common_ui_config){
+                .point = RELATIVE(5, 5),
+                .size = { 1, 1 },
+                .horizontal_align = Leading,
+                .vertical_align = Top,
+                .background_color = 0,
+                .foreground_color = COLOR_WHITE,
+            });
+        }
+    });
+
+    
 }

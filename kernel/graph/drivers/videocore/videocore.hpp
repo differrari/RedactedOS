@@ -1,6 +1,7 @@
 #pragma once 
 
 #include "../gpu_driver.hpp"
+#include "exceptions/exception_handler.h"
 
 class VideoCoreGPUDriver : public GPUDriver {
 public:
@@ -18,6 +19,11 @@ public:
     gpu_size get_screen_size() override;
     void draw_string(string s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color) override;
     uint32_t get_char_size(uint32_t scale) override;
+
+    draw_ctx* get_ctx() override;
+
+    void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *ctx) override;
+    
     ~VideoCoreGPUDriver() = default;
     
 private: 
@@ -29,4 +35,6 @@ private:
 
     uint8_t bpp;
     uint32_t stride;
+
+    draw_ctx ctx;
 };

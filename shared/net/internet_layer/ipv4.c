@@ -1,6 +1,6 @@
 #include "ipv4.h"
 #include "console/kio.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "networking/network.h"
 #include "net/link_layer/arp.h"
 #include "net/transport_layer/udp.h"

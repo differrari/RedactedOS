@@ -2,6 +2,7 @@
 
 #include "types.h"
 #include "virtio/virtio_pci.h"
+#include "AudioDevice.hpp"
 
 #define VIRTIO_AUDIO_ID 0x1059
 
@@ -11,10 +12,13 @@ typedef struct virtio_snd_config {
     uint32_t chmaps; 
 } virtio_snd_config;
 
-class VirtioAudioDriver {
+class VirtioAudioDriver: public AudioDriver {
 public:
     bool init();
     void handle_interrupt();
+    void send_buffer(sizedptr buf) override;
+
+    AudioDevice *out_dev;//TODO: proper device management
 private:
     bool get_config();
     void config_jacks();
@@ -26,6 +30,8 @@ private:
     void config_channel_maps();
 
     uint16_t last_used_idx = 0;
+
+    uint16_t cmd_index = 0;
 
     virtio_device audio_dev;
 };

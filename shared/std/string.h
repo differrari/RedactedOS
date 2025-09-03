@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+#define STRING_MAX_LEN 256
+
 typedef struct {
     char *data;
     uint32_t length;
@@ -19,9 +21,9 @@ typedef struct string_list {
 } string_list;
 
 uint32_t strlen(const char *s, uint32_t max_length);
-string string_l(const char *literal);
-string string_ca_max(const char *array, uint32_t max_length);
-string string_c(const char c);
+string string_from_literal(const char *literal);
+string string_from_literal_length(const char *array, uint32_t max_length);
+string string_from_char(const char c);
 string string_from_hex(uint64_t value);
 bool string_equals(string a, string b);
 string string_replace(const char *str, char orig, char repl);
@@ -43,7 +45,7 @@ int count_occurrences(const char* str, char c);
 uint64_t parse_hex_u64(const char* str, size_t size);
 uint64_t parse_int_u64(const char* str, size_t size);
 
-bool utf16tochar( uint16_t* str_in, char* out_str, size_t max_len);
+bool utf16tochar(uint16_t* str_in, char* out_str, size_t max_len);
 
 string string_from_const(const char *literal);
 string string_concat(string a, string b);

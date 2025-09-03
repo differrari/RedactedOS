@@ -1,0 +1,6 @@
+Licensing exception for syscalls
+
+This project's GPL license does not cover programs and drivers distributed 
+separately from the system source that make use of headers inside the 
+shared library, and as such, these headers can be included into non-GPL
+compliant software.

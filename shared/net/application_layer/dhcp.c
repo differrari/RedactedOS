@@ -1,5 +1,5 @@
 #include "dhcp.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "net/transport_layer/udp.h"
 #include "net/internet_layer/ipv4.h"
 #include "types.h"

@@ -18,16 +18,20 @@ fi
 OS_TYPE="$(uname)"
 
 DISPLAY_MODE="default"
-SELECTED_GPU="virtio-gpu-pci,xres=1920,yres=1080"
+VIRTIO_GPU_VARS=",xres=1920,yres=1080"
+GL="on"
 
 if [ "$OS_TYPE" = "Darwin" ]; then
     NETDEV="-netdev vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
     DISPLAY_MODE="sdl"
+    SELECTED_GPU="virtio-gpu-pci"
+    GL="off"
 elif [ "$OS_TYPE" = "Linux" ]; then
     NETDEV="-netdev user,id=net0"
     PRIVILEGE=""
     DISPLAY_MODE="sdl"
+    SELECTED_GPU="virtio-gpu-gl$VIRTIO_GPU_VARS"
 else
     echo "Unknown OS: $OS_TYPE" >&2
     exit 1
@@ -48,7 +52,7 @@ $PRIVILEGE qemu-system-aarch64 \
   -m 512M \
   -kernel kernel.elf \
   -device $SELECTED_GPU \
-  -display $DISPLAY_MODE \
+  -display $DISPLAY_MODE,gl=$GL \
   $NETDEV \
   -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56 \
   $DUMP \
@@ -57,6 +61,7 @@ $PRIVILEGE qemu-system-aarch64 \
   -device virtio-blk-pci,drive=hd0 \
   -device qemu-xhci,${MSI_CAPABILITIES}id=usb \
   -device usb-kbd,bus=usb.0 \
+  -device usb-mouse,bus=usb.0 \
   -device virtio-sound-pci,audiodev=sdl_audio \
   -audiodev sdl,id=sdl_audio \
   -d guest_errors \

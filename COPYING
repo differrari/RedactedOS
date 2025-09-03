@@ -1,0 +1,3 @@
+The [REDACTED] OS kernel and code are provided under:
+GPL-3.0 WITH syscall-exception as stated in GPL,
+with an explicit exception made for syscall use and use of the shared library for the distribution of programs and drivers, as explained in SYSCALL-EXCEPTION.

@@ -1,7 +1,7 @@
 #include "dhcp_daemon.h"
 
 #include "console/kio.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "process/scheduler.h"
 #include "math/math.h"
 #include "math/rng.h"
@@ -244,7 +244,7 @@ int dhcp_daemon_entry(int argc, char* argv[]){
     dhcp_set_pid(g_pid_dhcpd);
     g_sock = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dhcpd);
     if(socket_bind_udp(g_sock, 68) != 0){
-        kprint("[DHCP] bind failed\n");
+        kprint("[DHCP] bind failed");
         return 1;
     }
 

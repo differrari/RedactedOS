@@ -1,6 +1,6 @@
 #include "dns_daemon.h"
 #include "process/scheduler.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 extern void sleep(uint64_t ms);
 

@@ -4,8 +4,10 @@
 #include "dwc2.hpp"
 #include "xhci.hpp"
 #include "hw/hw.h"
-#include "std/std.hpp"
+#include "std/std.h"
 #include "kernel_processes/kprocess_loader.h"
+#include "math/math.h"
+#include "graph/graphics.h"
 
 process_t* focused_proc;
 
@@ -22,6 +24,11 @@ uint16_t shortcut_count = 0;
 bool secure_mode = false;
 
 USBDriver *input_driver = 0x0;
+
+gpu_point mouse_loc;
+gpu_size screen_bounds;
+
+bool mouse_setup;
 
 void register_keypress(keypress kp) {
     if (!secure_mode){
@@ -43,6 +50,38 @@ void register_keypress(keypress kp) {
 
     if (buf->write_index == buf->read_index)
         buf->read_index = (buf->read_index + 1) % INPUT_BUFFER_CAPACITY;
+}
+
+void mouse_config(gpu_point point, gpu_size size){
+    gpu_setup_cursor(point);
+    mouse_loc = point;
+    screen_bounds = size;
+}
+
+uint8_t last_cursor_state = 0;
+
+void register_mouse_input(mouse_input *rat){
+    int32_t dx = rat->x;
+    int32_t dy = rat->y;
+    mouse_loc.x += dx;
+    mouse_loc.y += dy;
+    mouse_loc.x = min(max(0, mouse_loc.x), screen_bounds.width);
+    mouse_loc.y = min(max(0, mouse_loc.y), screen_bounds.height);
+    gpu_update_cursor(mouse_loc, false);
+    uint8_t lmb = rat->buttons & 1;
+    if (lmb != last_cursor_state){
+        last_cursor_state = lmb;
+        gpu_set_cursor_pressed(last_cursor_state);
+        gpu_update_cursor(mouse_loc, true);
+    }
+}
+
+gpu_point get_mouse_pos(){
+    return mouse_loc;
+}
+
+bool mouse_button_pressed(mouse_button mb){
+    return (last_cursor_state & (1 << mb)) == (1 << mb);
 }
 
 uint16_t sys_subscribe_shortcut_current(keypress kp){
@@ -126,7 +165,7 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
 }
 
 bool input_init(){
-    for (int i = 0; i < 16; i++) shortcuts[i] = (shortcut){0};
+    for (int i = 0; i < 16; i++) shortcuts[i] = {};
     if (BOARD_TYPE == 2 && RPI_BOARD != 5){
         input_driver = new DWC2Driver();//TODO: QEMU & 3 Only
         return input_driver->init();
@@ -138,9 +177,13 @@ bool input_init(){
 
 int input_process_poll(int argc, char* argv[]){
     while (1){
-        input_driver->poll_inputs();
+        if (input_driver) input_driver->poll_inputs();
     }
     return 1;
+}
+
+void input_start_polling(){
+    if (input_driver) input_driver->poll_inputs();
 }
 
 int input_process_fake_interrupts(int argc, char* argv[]){

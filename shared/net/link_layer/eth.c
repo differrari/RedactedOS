@@ -1,6 +1,6 @@
 #include "eth.h"
 #include "arp.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "net/internet_layer/ipv4.h"
 extern int net_tx_frame(uintptr_t frame_ptr, uint32_t frame_len);
 

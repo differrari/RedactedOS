@@ -3,7 +3,7 @@
 #include "networking/port_manager.h"
 #include "net/internet_layer/ipv4.h"
 #include "net/link_layer/eth.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "net/network_types.h"
 #ifdef __cplusplus
 extern "C" {

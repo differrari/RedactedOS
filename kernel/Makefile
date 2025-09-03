@@ -18,26 +18,34 @@ CLEAN_DEPS := $(shell find . -name '*.d')
 C_SRC   := $(shell find . -name '*.c')
 ASM_SRC := $(shell find . -name '*.S')
 CPP_SRC := $(shell find . -name '*.cpp')
-OBJ     := $(C_SRC:.c=.o) $(ASM_SRC:.S=.o) $(CPP_SRC:.cpp=.o)
-OBJL    := $(filter-out ./boot.o,$(OBJ))
-DEP     := $(C_SRC:.c=.d) $(ASM_SRC:.S=.d) $(CPP_SRC:.cpp=.d)
+OBJ     := $(C_SRC:%.c=$(BUILD_DIR)/%.o) $(ASM_SRC:%.S=$(BUILD_DIR)/%.o) $(CPP_SRC:%.cpp=$(BUILD_DIR)/%.o)
+DEP     := $(C_SRC:%.c=$(BUILD_DIR)/%.d) $(ASM_SRC:%.S=$(BUILD_DIR)/%.d) $(CPP_SRC:%.cpp=$(BUILD_DIR)/%.d)
+
+OBJL    := $(filter-out $(BUILD_DIR)/./boot.o,$(OBJ))
 
 ELF     := ../kernel.elf
 TARGET  := ../kernel.img
 
 all: $(TARGET)
 
-$(TARGET): ../shared/libshared.a $(OBJ)
-	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/libshared.a
+prepare:
+	mkdir -p $(BUILD_DIR)
+
+$(TARGET): ../shared/libshared.a prepare $(OBJ)
+	echo $(LDFLAGS)
+	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/libshared.a $(BUILD_DIR)/boot.o
 	$(OBJCOPY) -O binary $(ELF) $@
 
-%.o: %.S
+$(BUILD_DIR)/%.o: %.S
+	@mkdir -p $(dir $@)
 	$(VAS) $(CFLAGS) -c $< -o $@
 
-%.o: %.c
+$(BUILD_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)
 	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
 
-%.o: %.cpp
+$(BUILD_DIR)/%.o: %.cpp
+	@mkdir -p $(dir $@)
 	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
 clean:

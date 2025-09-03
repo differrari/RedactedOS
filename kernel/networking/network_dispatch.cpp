@@ -5,7 +5,7 @@
 #include "net/link_layer/eth.h"
 #include "net/network_types.h"
 #include "port_manager.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 extern void      sleep(uint64_t ms);
 extern uintptr_t malloc(uint64_t size);
@@ -45,9 +45,7 @@ void NetworkDispatch::handle_download_interrupt()
 
     sizedptr frame{0, raw.size};
     frame.ptr = reinterpret_cast<uintptr_t>(
-        kalloc(reinterpret_cast<void*>(get_current_heap()),
-               raw.size, ALIGN_16B,
-               get_current_privilege(), false));
+        kalloc(reinterpret_cast<void*>(get_current_heap()), raw.size, ALIGN_16B, get_current_privilege()));
     if (!frame.ptr) return;
 
     memcpy(reinterpret_cast<void*>(frame.ptr), recv_buffer, raw.size);
@@ -114,9 +112,7 @@ bool NetworkDispatch::dequeue_packet_for(uint16_t pid, sizedptr *out)
     sizedptr stored = buf.entries[buf.read_index];
     buf.read_index = (buf.read_index + 1) % PACKET_BUFFER_CAPACITY;
 
-    void *dst = kalloc(reinterpret_cast<void*>(get_current_heap()),
-                       stored.size, ALIGN_16B,
-                       get_current_privilege(), false);
+    void *dst = kalloc(reinterpret_cast<void*>(get_current_heap()), stored.size, ALIGN_16B, get_current_privilege());
     if (!dst) return false;
 
     memcpy(dst, reinterpret_cast<void*>(stored.ptr), stored.size);
@@ -130,9 +126,7 @@ bool NetworkDispatch::dequeue_packet_for(uint16_t pid, sizedptr *out)
 sizedptr NetworkDispatch::make_copy(const sizedptr &in)
 {
     sizedptr out{0, 0};
-    void *dst = kalloc(reinterpret_cast<void*>(get_current_heap()),
-                       in.size, ALIGN_16B,
-                       get_current_privilege(), false);
+    void *dst = kalloc(reinterpret_cast<void*>(get_current_heap()), in.size, ALIGN_16B, get_current_privilege());
     if (!dst) return out;
 
     memcpy(dst, reinterpret_cast<const void*>(in.ptr), in.size);

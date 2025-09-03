@@ -2,8 +2,6 @@
 #include "cat.h"
 #include "kernel_processes/kprocess_loader.h"
 
-#define N_ARR(arr) (sizeof(arr)/sizeof((arr)[0]))
-
 bool init_bin(){
     return true;
 }

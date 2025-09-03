@@ -11,27 +11,36 @@ CLEAN_DEPS := $(shell find . -name '*.d')
 C_SRC   := $(shell find . -name '*.c')
 CPP_SRC := $(shell find . -name '*.cpp')
 ASM_SRC := $(shell find . -name '*.S')
-OBJ     := $(C_SRC:.c=.o) $(ASM_SRC:.S=.o) $(CPP_SRC:.cpp=.o)
-DEP     := $(C_SRC:.c=.d) $(ASM_SRC:.S=.d) $(CPP_SRC:.cpp=.d)
+OBJ     := $(C_SRC:%.c=$(BUILD_DIR)/%.o) $(ASM_SRC:%.S=$(BUILD_DIR)/%.o) $(CPP_SRC:%.cpp=$(BUILD_DIR)/%.o)
+DEP     := $(C_SRC:%.c=$(BUILD_DIR)/%.d) $(ASM_SRC:%.S=$(BUILD_DIR)/%.d) $(CPP_SRC:%.cpp=$(BUILD_DIR)/%.d)
 
 TARGET  := libshared.a
 
-.PHONY: all clean
+.PHONY: all clean prepare
 
-all: $(TARGET)
+all: prepare $(TARGET)
+
+prepare:
+	mkdir -p $(BUILD_DIR)
 
 $(TARGET): $(OBJ)
-	$(VAR) rcs $@ $^
+	echo "Finishing build"
+	echo $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ)))
+	$(VAR) rcs $@ $(OBJ)
 
-%.o: %.S
+$(BUILD_DIR)/%.o: %.S
+	@mkdir -p $(dir $@)
 	$(VAS) $(CFLAGS) -c $< -o $@
 
-%.o: %.c
+$(BUILD_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)
 	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
 
-%.o: %.cpp
+$(BUILD_DIR)/%.o: %.cpp
+	@mkdir -p $(dir $@)
 	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
+# Might want to also delete the directories created inside BUILD_DIR
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
 

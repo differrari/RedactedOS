@@ -11,31 +11,39 @@ CLEAN_OBJS := $(shell find . -name '*.o')
 CLEAN_DEPS := $(shell find . -name '*.d')
 C_SRC   := $(shell find . -name '*.c')
 CPP_SRC := $(shell find . -name '*.cpp')
-OBJ     := $(C_SRC:.c=.o) $(CPP_SRC:.cpp=.o)
-DEP     := $(C_SRC:.c=.d) $(CPP_SRC:.cpp=.d)
+OBJ     := $(C_SRC:%.c=$(BUILD_DIR)/%.o) $(CPP_SRC:%.cpp=.$(BUILD_DIR)/%.o)
+DEP     := $(C_SRC:%.c=$(BUILD_DIR)/%.d) $(CPP_SRC:%.cpp=.$(BUILD_DIR)/%.d)
 
 NAME     := $(notdir $(CURDIR))
 ELF      := $(NAME).elf
 TARGET   := $(NAME).bin
 LOCATION := ../fs/redos/user/
 
-.PHONY: all clean
+.PHONY: prepare all clean
 
-all: $(LOCATION)$(TARGET)
+all: prepare $(LOCATION)$(TARGET)
 
-$(LOCATION)$(TARGET): $(OBJ)
-	$(VLD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(OBJ) ../shared/libshared.a
+prepare:
+	mkdir -p $(BUILD_DIR)
+
+$(LOCATION)$(TARGET): ../shared/libshared.a $(OBJ)
+	echo $(LDFLAGS) -o $(LOCATION)$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
+	$(VLD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
 	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $@
 
-%.o: %.S
+$(BUILD_DIR)/%.o: %.S
+	@mkdir -p $(dir $@)
 	$(VAS) $(CFLAGS) -c $< -o $@
 
-%.o: %.c
+$(BUILD_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)
 	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
 
-%.o: %.cpp
+$(BUILD_DIR)/%.o: %.cpp
+	@mkdir -p $(dir $@)
 	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
+# Might want to also delete the directories created inside BUILD_DIR
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
 

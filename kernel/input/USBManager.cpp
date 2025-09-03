@@ -22,14 +22,14 @@ void USBManager::register_endpoint(uint8_t slot_id, uint8_t endpoint, usb_device
 }
 
 void USBManager::request_data(uint8_t slot_id, uint8_t endpoint_id, USBDriver *driver){
-    if (slot_id >= devices.max_size()) return;//TODO: check if it exists
+    if (slot_id >= devices.max_size()) return;
     USBDevice *dev = devices[slot_id];
     if (dev)
         dev->request_data(endpoint_id, driver);
 }
 
 void USBManager::process_data(uint8_t slot_id, uint8_t endpoint_id, USBDriver *driver){
-    if (slot_id >= devices.max_size()) return;//TODO: check if it exists
+    if (slot_id >= devices.max_size()) return;
     USBDevice *dev = devices[slot_id];
     if (dev)
         dev->process_data(endpoint_id, driver);

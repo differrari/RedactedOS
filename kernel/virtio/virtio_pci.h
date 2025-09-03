@@ -69,10 +69,10 @@ void virtio_set_feature_mask(uint32_t mask);
 void virtio_enable_verbose();
 void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mmio_start, uint64_t *mmio_size);
 bool virtio_init_device(virtio_device *dev);
-bool virtio_send(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t used, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags);
-bool virtio_send2(virtio_device *dev, uint64_t desc, uint64_t avail, uint64_t used, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags);
+bool virtio_send_3d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags);
+bool virtio_send_2d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags);
 bool virtio_send_1d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len);
-void virtio_add_buffer(virtio_device *dev, uint16_t index, uint64_t buf, uint32_t buf_len);
+void virtio_add_buffer(virtio_device *dev, uint16_t index, uint64_t buf, uint32_t buf_len, bool host_to_dev);
 uint32_t select_queue(virtio_device *dev, uint32_t index);
 
 #ifdef __cplusplus

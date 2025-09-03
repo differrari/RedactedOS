@@ -1,14 +1,28 @@
 #pragma once
 
 #include "input_keycodes.h"
-#include "keypress.h"
+#include "keyboard_input.h"
+#include "mouse_input.h"
 #include "dev/driver_base.h"
+#include "ui/graphic_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif 
 
+typedef enum mouse_button {
+    LMB,
+    RMB,
+    MMB,
+} mouse_button;
+
 void register_keypress(keypress kp);
+void mouse_config(gpu_point point, gpu_size size);
+void register_mouse_input(mouse_input *rat);
+
+gpu_point get_mouse_pos();
+bool mouse_button_pressed(mouse_button mb);
+
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp);
 uint16_t sys_subscribe_shortcut_current(keypress kp);
 void sys_set_focus(int pid);
@@ -31,6 +45,7 @@ void remove_double_keypresses(keypress* current, keypress* previous);
 void handle_input_interrupt();
 
 void init_input_process();
+void input_start_polling();
 
 extern driver_module input_module;
 

@@ -2,7 +2,7 @@
 #include "fat32.hpp"
 #include "mbr.h"
 #include "fsdriver.hpp"
-#include "std/std.hpp"
+#include "std/std.h"
 #include "console/kio.h"
 #include "dev/module_loader.h"
 #include "memory/page_allocator.h"
@@ -31,12 +31,10 @@ bool boot_partition_fini(){
 
 //TODO: find a way to make this more elegant
 FS_RESULT boot_partition_open(const char *path, file *out_fd){
-    //TODO: File descriptors are needed for F32
     return fs_driver->open_file(path, out_fd);
 }
 
 size_t boot_partition_read(file *fd, char *out_buf, size_t size, file_offset offset){
-    //TODO: Need to pass a buffer and return a size instead, and use FD
     return fs_driver->read_file(fd, out_buf, size);
 }
 

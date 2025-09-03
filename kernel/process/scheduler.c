@@ -11,7 +11,7 @@
 #include "syscalls/syscalls.h"
 #include "std/string.h"
 #include "data_struct/linked_list.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "math/math.h"
 
 extern void save_context(process_t* proc);
@@ -54,7 +54,6 @@ void save_return_address_interrupt(){
     save_pc_interrupt(&processes[current_proc]);
 }
 
-//TODO: Processes can currently exit and just crash the whole system with an EL1 Sync exception trying to read from 0x0. Better than continuing execution past bounds but still not great
 void switch_proc(ProcSwitchReason reason) {
     // kprintf("Stopping execution of process %i at %x",current_proc, processes[current_proc].spsr);
     if (proc_count == 0)
@@ -70,7 +69,7 @@ void switch_proc(ProcSwitchReason reason) {
 }
 
 void save_syscall_return(uint64_t value){
-    processes[current_proc].regs[14] = value;
+    processes[current_proc].PROC_X0 = value;
 }
 
 void process_restore(){
@@ -135,16 +134,16 @@ void reset_process(process_t *proc){
 }
 
 void init_main_process(){
-    proc_page = palloc(0x1000, true, false, false);
+    proc_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
     process_t* proc = &processes[0];
     reset_process(proc);
     proc->id = next_proc_index++;
     proc->state = BLOCKED;
-    proc->heap = (uintptr_t)palloc(0x1000, true, false, false);
+    proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
     proc->stack_size = 0x1000;
-    proc->stack = (uintptr_t)palloc(proc->stack_size,true,false,true);
+    proc->stack = (uintptr_t)palloc(proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
     proc->sp = ksp;
-    proc->output = (uintptr_t)palloc(0x1000, true, false, true);
+    proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, true);
     name_process(proc, "kernel");
     proc_count++;
 }
@@ -188,7 +187,7 @@ void stop_process(uint16_t pid, uint32_t exit_code){
     proc->exit_code = exit_code;
     if (proc->focused)
         sys_unset_focus();
-    //TODO: we don't wipe the process' data. If we do, we corrupt our sp, since we're still in the process' sp.
+    reset_process(proc);
     proc_count--;
     // kprintf("Stopped %i process %i",pid,proc_count);
     switch_proc(HALT);
@@ -287,8 +286,8 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     descriptor->size = PROC_OUT_BUF;
     descriptor->cursor = 0;
     if (!proc_opened_files) 
-        proc_opened_files = kalloc(proc_page, sizeof(clinkedlist_t), ALIGN_64B, true, false);
-    proc_open_file *file = kalloc(proc_page, sizeof(proc_open_file), ALIGN_64B, true, false);
+        proc_opened_files = kalloc(proc_page, sizeof(clinkedlist_t), ALIGN_64B, MEM_PRIV_KERNEL);
+    proc_open_file *file = kalloc(proc_page, sizeof(proc_open_file), ALIGN_64B, MEM_PRIV_KERNEL);
     file->fid = descriptor->id;
     file->buffer = proc->output;
     file->pid = proc->id;

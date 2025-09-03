@@ -1,7 +1,7 @@
 #include "icmp.h"
 #include "net/internet_layer/ipv4.h"
 #include "net/checksums.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "console/kio.h"
 #include "ipv4.h"
 #include "networking/network.h"

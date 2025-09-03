@@ -3,7 +3,7 @@
 #include "kconsole/kconsole.h"
 #include "std/string.h"
 #include "memory/page_allocator.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 #include "math/math.h"
 
 static bool use_visual = true;
@@ -19,7 +19,7 @@ void reset_buffer(){
 
 
 void init_print_buf(){
-    print_buf = palloc(CONSOLE_BUF_SIZE,true, false, true);
+    print_buf = palloc(CONSOLE_BUF_SIZE,MEM_PRIV_KERNEL, MEM_RW, true);
     reset_buffer();
 }
 
@@ -46,7 +46,6 @@ size_t console_read(file *fd, char *out_buf, size_t size, file_offset offset){
 }
 
 size_t console_write(file *fd, const char *buf, size_t size, file_offset offset){
-    //TODO: kinda allowing arbitrary buffers here
     kprintf(buf);
     return size;
 }

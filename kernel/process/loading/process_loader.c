@@ -16,7 +16,7 @@ typedef struct {
     uint32_t mask;
     uint32_t pattern;
     const char* mnemonic;
-    uint32_t (*print_args)(uint32_t instr, uint64_t pc, bool translate, process_layout *source, process_layout *destination);
+    uint32_t (*reloc)(uint32_t instr, uint64_t pc, bool translate, process_layout *source, process_layout *destination);
 } instruction_entry;
 
 static bool translate_verbose = false;
@@ -201,11 +201,20 @@ instruction_entry ops[] = {
     { 0xFFE00000, 0xAA000000, "mov", print_movr },
 };
 
+void decode_instruction(uint32_t instruction){
+    kprintf("Instruction code %x",instruction);
+    for (uint64_t i = 0; i < N_ARR(ops); i++) {
+        if ((instruction & ops[i].mask) == ops[i].pattern) {
+            kputf("%s ", (uintptr_t)ops[i].mnemonic);
+        }
+    }
+}
+
 uint32_t parse_instruction(uint32_t instruction, uint64_t pc, bool translate, process_layout *source, process_layout *destination){
-    for (uint64_t i = 0; i < sizeof(ops)/sizeof(ops[0]); i++) {
+    for (uint64_t i = 0; i < N_ARR(ops); i++) {
         if ((instruction & ops[i].mask) == ops[i].pattern) {
             kputfv("%s ", (uintptr_t)ops[i].mnemonic);
-            uint64_t newinstr = ops[i].print_args(instruction, pc, translate, source, destination);
+            uint64_t newinstr = ops[i].reloc(instruction, pc, translate, source, destination);
             return newinstr;
         }
     }
@@ -249,7 +258,6 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     kprintfv("Finished translation");
 }
 
-
 process_t* create_process(const char *name, void *content, uint64_t content_size, uintptr_t entry) {
     
     disable_interrupt();
@@ -258,7 +266,7 @@ process_t* create_process(const char *name, void *content, uint64_t content_size
     name_process(proc, name);
     
     //TODO: keep track of code size so we can free up allocated code pages
-    uint8_t* dest = (uint8_t*)palloc(content_size, false, false, true);
+    uint8_t* dest = (uint8_t*)palloc(content_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true);
     if (!dest) return 0;
 
     for (uint64_t i = 0; i < content_size; i++){
@@ -267,10 +275,10 @@ process_t* create_process(const char *name, void *content, uint64_t content_size
     
     uint64_t stack_size = 0x1000;
 
-    uintptr_t stack = (uintptr_t)palloc(stack_size, false, false, false);
+    uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_USER, MEM_RW, false);
     if (!stack) return 0;
 
-    uintptr_t heap = (uintptr_t)palloc(stack_size, false, false, false);
+    uintptr_t heap = (uintptr_t)palloc(stack_size, MEM_PRIV_USER, MEM_RW, false);
     if (!heap) return 0;
 
     proc->stack = (stack + stack_size);
@@ -284,7 +292,7 @@ process_t* create_process(const char *name, void *content, uint64_t content_size
     proc->spsr = 0;
     proc->state = READY;
 
-    proc->output = (uintptr_t)palloc(0x1000, false, false, true);
+    proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_USER, MEM_RW, true);
 
     enable_interrupt();
     

@@ -5,8 +5,10 @@
 #include "drivers/ramfb_driver/ramfb.hpp"
 #include "drivers/videocore/videocore.hpp"
 
-#include "std/std.hpp"
+#include "std/std.h"
 #include "hw/hw.h"
+
+#include "tres.h"
 
 static gpu_size screen_size;
 static bool _gpu_ready;
@@ -28,6 +30,10 @@ bool gpu_init(){
     screen_size = preferred_screen_size;
     _gpu_ready = true;
     kprintf("Selected and initialized GPU %x", (uintptr_t)gpu_driver);
+
+    //TODO: make window manager its own module and access the driver by exposing it through /dev/gpu
+    init_window_manager((uintptr_t)gpu_driver);
+
     return true;
 }
 
@@ -85,6 +91,24 @@ gpu_size gpu_get_screen_size(){
     if (!gpu_ready())
         return (gpu_size){0,0};
     return gpu_driver->get_screen_size();
+}
+
+draw_ctx* gpu_get_ctx(){
+    if (!gpu_ready()) return 0;
+    return gpu_driver->get_ctx();
+}
+
+void gpu_setup_cursor(gpu_point initial_loc){
+    gpu_driver->setup_cursor();
+    gpu_driver->update_cursor(initial_loc.x, initial_loc.y, true);
+}
+
+void gpu_update_cursor(gpu_point new_loc, bool full){
+    gpu_driver->update_cursor(new_loc.x, new_loc.y, full);
+}
+
+void gpu_set_cursor_pressed(bool pressed){
+    gpu_driver->set_cursor_pressed(pressed);
 }
 
 driver_module graphics_module = {

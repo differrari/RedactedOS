@@ -5,12 +5,14 @@ LD         := $(ARCH)-ld
 AR         := $(ARCH)-ar
 OBJCOPY    := $(ARCH)-objcopy
 
+BUILD_DIR := ./build
+
 COMMON_FLAGS  ?= -ffreestanding -nostdlib -fno-exceptions -fno-unwind-tables \
                  -fno-asynchronous-unwind-tables -g -O0 -Wall -Wextra \
                  -Wno-unused-parameter -Wno-address-of-packed-member \
                  -mcpu=cortex-a72
 
-CFLAGS_BASE   ?= $(COMMON_FLAGS) -std=c17
+CFLAGS_BASE   ?= $(COMMON_FLAGS) -std=c99
 CXXFLAGS_BASE ?= $(COMMON_FLAGS) -fno-rtti
 LDFLAGS_BASE  ?=
 
@@ -26,9 +28,9 @@ ifeq ($(V), 1)
   VCXX = $(CXX)
   VLD  = $(LD)
 else
-  VAR  = @echo "  [AR]   $@" && $(AR)
-  VAS  = @echo "  [AS]   $@" && $(CC)
-  VCC  = @echo "  [CC]   $@" && $(CC)
-  VCXX = @echo "  [CXX]  $@" && $(CXX)
-  VLD  = @echo "  [LD]   $@" && $(LD)
+  VAR  = @echo "  [AR]   $<" && $(AR)
+  VAS  = @echo "  [AS]   $<" && $(CC)
+  VCC  = @echo "  [CC]   $<" && $(CC)
+  VCXX = @echo "  [CXX]  $<" && $(CXX)
+  VLD  = @echo "  [LD]   $<" && $(LD)
 endif

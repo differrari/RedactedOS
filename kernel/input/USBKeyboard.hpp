@@ -2,7 +2,7 @@
 
 #include "types.h"
 #include "USBDevice.hpp"
-#include "keypress.h"
+#include "keyboard_input.h"
 #include "usb_types.h"
 
 class USBKeyboard: public USBEndpoint {
@@ -15,7 +15,7 @@ private:
     bool requesting = false;
     uint8_t slot_id;
 
-    keypress last_keypress;
+    __attribute__((aligned(16))) keypress last_keypress;
 
     int repeated_keypresses = 0; 
 

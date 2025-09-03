@@ -12,4 +12,5 @@ typedef struct mem_page {
     FreeBlock *free_list;
     uint64_t next_free_mem_ptr;
     uint64_t size;
+    uint8_t attributes;
 } mem_page;

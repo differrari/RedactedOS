@@ -26,7 +26,7 @@
 
 #define PAGE_TABLE_ENTRIES 512
 
-uint64_t page_table_l0[PAGE_TABLE_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
+uint64_t *page_table_l0;
 
 static bool mmu_verbose;
 
@@ -68,7 +68,7 @@ void mmu_map_2mb(uint64_t va, uint64_t pa, uint64_t attr_index) {
 }
 
 //Level 0 = EL0, Level 1 = EL1, Level 2 = Shared
-void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) {
+void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint8_t mem_attributes, uint8_t level) {
     uint64_t l0_index = (va >> 39) & 0x1FF;
     uint64_t l1_index = (va >> 30) & 0x1FF;
     uint64_t l2_index = (va >> 21) & 0x1FF;
@@ -102,18 +102,24 @@ void mmu_map_4kb(uint64_t va, uint64_t pa, uint64_t attr_index, uint64_t level) 
         return;
     }
     
-    uint8_t permission;
+    uint8_t permission = 0;
     
+    //TODO: proper memory permissions, including accounting for WXN
     switch (level)
     {
-    case 0: permission = 0b01; break;
-    case 1: permission = 0b00; break;
-    case 2: permission = 0b10; break;
+    case MEM_PRIV_USER:   permission = 0b01; break;
+    case MEM_PRIV_SHARED: permission = mem_attributes & MEM_EXEC ? 0b11 : 0b01; break;
+    case MEM_PRIV_KERNEL: permission = 0b00; break;
     
     default:
         break;
     }
-    uint64_t attr = ((uint64_t)(level == 1) << UXN_BIT) | ((uint64_t)0 << PXN_BIT) | (1 << AF_BIT) | (0b01 << SH_BIT) | (permission << AP_BIT) | (attr_index << MAIR_BIT) | 0b11;
+    //TODO:
+    //Kernel always rw (0 << 1)
+    //Kernel-only (0 << 0)
+    //User rw (01)
+    //User ro (11) - makes kernel ro too
+    uint64_t attr = ((uint64_t)(level == MEM_PRIV_KERNEL) << UXN_BIT) | ((uint64_t)(level == MEM_PRIV_USER) << PXN_BIT) | (1 << AF_BIT) | (0b01 << SH_BIT) | (permission << AP_BIT) | (attr_index << MAIR_BIT) | 0b11;
     kprintfv("[MMU] Mapping 4kb memory %x at [%i][%i][%i][%i] for EL%i = %x | %x permission: %i", va, l0_index,l1_index,l2_index,l3_index,level,pa,attr,permission);
     
     l3[l3_index] = (pa & 0xFFFFFFFFF000ULL) | attr;
@@ -165,34 +171,47 @@ void mmu_unmap(uint64_t va, uint64_t pa){
 }
 
 void mmu_alloc(){
+    page_table_l0 = (uint64_t*)talloc(PAGE_SIZE);
     //TODO: use palloc, but consider it won't be able to add sections to MMU during that init
 }
+
+extern uint64_t shared_start;
+extern uint64_t shared_code_end;
+extern uint64_t shared_ro_end;
+extern uint64_t shared_end;
 
 void mmu_init() {
     //TODO: Move these hardcoded mappings to their own file
     uint64_t kstart = mem_get_kmem_start();
     uint64_t kend = mem_get_kmem_end();
-    for (uint64_t addr = kstart; addr <= kend; addr += GRANULE_2MB)
+
+    for (uint64_t addr = kstart; addr < kend; addr += GRANULE_2MB)
         mmu_map_2mb(addr, addr, MAIR_IDX_NORMAL);
 
     for (uint64_t addr = get_uart_base(); addr <= get_uart_base(); addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
+        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
 
     for (uint64_t addr = GICD_BASE; addr <= GICC_BASE + 0x1000; addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
+        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
 
-    for (uint64_t addr = get_shared_start(); addr <= get_shared_end(); addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 2);
+    for (uint64_t addr = (uintptr_t)&shared_start; addr < (uintptr_t)&shared_code_end; addr += GRANULE_4KB)
+        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO, MEM_PRIV_SHARED);//TODO: separate into sections and mark as shared
+
+    for (uint64_t addr = (uintptr_t)&shared_code_end; addr < (uintptr_t)&shared_ro_end; addr += GRANULE_4KB)
+        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_RO, MEM_PRIV_SHARED);//TODO: separate into sections and mark as share
+
+    for (uint64_t addr = (uintptr_t)&shared_ro_end; addr < (uintptr_t)&shared_end; addr += GRANULE_4KB)
+        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_SHARED);//TODO: separate into sections and mark as shared
 
     if (XHCI_BASE)
     for (uint64_t addr = XHCI_BASE; addr <= XHCI_BASE + 0x1000; addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, 1);
+        mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
 
     uint64_t dstart;
     uint64_t dsize;
     if (dtb_addresses(&dstart,&dsize)){
         for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB)
-            mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, 1);
+            mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_RO, MEM_PRIV_KERNEL);
     }
 
     uint64_t mair = (MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_NOCACHE << (MAIR_IDX_NORMAL * 8));
@@ -215,14 +234,12 @@ void mmu_init() {
         "isb\n"
         ::: "x0", "memory"
     );
-    uint64_t sctlr;
-    asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
 
     kprintf("Finished MMU init");
 }
 
 void register_device_memory(uint64_t va, uint64_t pa){
-    mmu_map_4kb(va, pa, MAIR_IDX_DEVICE, 1);
+    mmu_map_4kb(va, pa, MAIR_IDX_DEVICE, MEM_RW, 1);
     mmu_flush_all();
     mmu_flush_icache();
 }
@@ -233,8 +250,8 @@ void register_device_memory_2mb(uint64_t va, uint64_t pa){
     mmu_flush_icache();
 }
 
-void register_proc_memory(uint64_t va, uint64_t pa, bool kernel){
-    mmu_map_4kb(va, pa, MAIR_IDX_NORMAL, kernel);
+void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t level){
+    mmu_map_4kb(va, pa, MAIR_IDX_NORMAL, attributes, level);
     mmu_flush_all();
     mmu_flush_icache();
 }
@@ -265,7 +282,7 @@ void debug_mmu_address(uint64_t va){
 
     if (!((l3_val >> 1) & 1)){
         kprintf("Mapped as 2MB memory in L3");
-        kprintf("Entry: %x", l3_val);
+        kprintf("Entry: %b", l3_val);
         return;
     }
 
@@ -275,6 +292,6 @@ void debug_mmu_address(uint64_t va){
         kprintf("L4 Table entry missing");
         return;
     }
-    kprintf("Entry: %x", l4_val);
+    kprintf("Entry: %b", l4_val);
     return;
 }

@@ -1,6 +1,6 @@
 #include "std/string.h"
 #include "syscalls/syscalls.h"
-#include "std/memfunctions.h"
+#include "std/memory.h"
 
 uint32_t strlen(const char *s, uint32_t max_length){
     if (s == NULL) return 0;
@@ -11,7 +11,7 @@ uint32_t strlen(const char *s, uint32_t max_length){
     return len;
 }
 
-string string_l(const char *literal){
+string string_from_literal(const char *literal){
     if (literal == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0};
     
     uint32_t len = strlen(literal, 0);
@@ -49,7 +49,7 @@ string string_tail(const char *array, uint32_t max_length){
     return (string){.data = buf, .length = adjusted_len, .mem_length = adjusted_len + 1 };
 }
 
-string string_ca_max(const char *array, uint32_t max_length){
+string string_from_literal_length(const char *array, uint32_t max_length){
     if (array == NULL) return (string){.data = NULL, .length = 0, .mem_length= 0 };
 
     uint32_t len = strlen(array, max_length);
@@ -62,7 +62,7 @@ string string_ca_max(const char *array, uint32_t max_length){
     return (string){ .data = buf, .length = len, .mem_length = len+1};
 }
 
-string string_c(const char c){
+string string_from_char(const char c){
     char *buf = (char*)malloc(2);
     buf[0] = c;
     buf[1] = 0;
@@ -95,6 +95,7 @@ string string_from_hex(uint64_t value){
     return (string){ .data = buf, .length = len, .mem_length = 18 };
 }
 
+//TODO: Can lead to a crash
 uint32_t parse_bin(uint64_t value, char* buf){
     uint32_t len = 0;
     buf[len++] = '0';
@@ -145,14 +146,14 @@ string string_format(const char *fmt, ...){
 }
 
 string string_format_va(const char *fmt, va_list args){
-    char *buf = (char*)malloc(256);
+    char *buf = (char*)malloc(STRING_MAX_LEN);
     size_t len = string_format_va_buf(fmt, buf, args);
-    return (string){ .data = buf, .length = len, .mem_length = 256 };
+    return (string){ .data = buf, .length = len, .mem_length = STRING_MAX_LEN };
 }
 
 size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
     size_t len = 0;
-    for (uint32_t i = 0; fmt[i] && len < 255; i++){
+    for (uint32_t i = 0; fmt[i] && len < STRING_MAX_LEN - 1; i++){
         if (fmt[i] == '%' && fmt[i+1]){
             i++;
             if (fmt[i] == 'x'){
@@ -162,7 +163,7 @@ size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
             } else if (fmt[i] == 'b') {
                 uint64_t val = va_arg(args, uint64_t);
                 string bin = string_from_bin(val);
-                for(uint32_t j = 0; j < bin.length && len < 255; j++) buf[len++] = bin.data[j];
+                for(uint32_t j = 0; j < bin.length && len < STRING_MAX_LEN - 1; j++) buf[len++] = bin.data[j];
                 free(bin.data,bin.mem_length);
                 
             } else if (fmt[i] == 'c') {
@@ -171,7 +172,7 @@ size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
                 
             } else if (fmt[i] == 's') {
                 char *str = ( char *)va_arg(args, uintptr_t);
-                for (uint32_t j = 0; str[j] && len < 255; j++) buf[len++] = str[j];
+                for (uint32_t j = 0; str[j] && len < STRING_MAX_LEN - 1; j++) buf[len++] = str[j];
                 
             } else if (fmt[i] == 'i') {
                 uint64_t val = va_arg(args, long int);
@@ -188,7 +189,7 @@ size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
                     val /= 10;
                 } while (val && temp_len < 20);
             
-                for (int j = temp_len - 1; j >= 0 && len < 255; j--){
+                for (int j = temp_len - 1; j >= 0 && len < STRING_MAX_LEN - 1; j--){
                     buf[len++] = temp[j];
                 }
             } else if (fmt[i] == 'f' || fmt[i] == 'd') {
@@ -207,12 +208,12 @@ size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
                     whole /= 10;
                 } while(whole && temp_len < 20);
 
-                for (int j = temp_len - 1; j >= 0 && len < 255; j--){
+                for (int j = temp_len - 1; j >= 0 && len < STRING_MAX_LEN - 1; j--){
                     buf[len++] = temp[j];
                 }
-                if (len < 255) buf[len++] = '.';
+                if (len < STRING_MAX_LEN - 1) buf[len++] = '.';
                 
-                for (int d = 0; d < 6 && len < 255; d++) {
+                for (int d = 0; d < 6 && len < STRING_MAX_LEN - 1; d++) {
                     frac *= 10;
                     int digit = (int)frac;
                     buf[len++] = '0' + digit;
@@ -237,7 +238,7 @@ char tolower(char c){
 }
 
 int strcmp(const char *a, const char *b, bool case_insensitive){
-    if (a == NULL && b == NULL)return 0; //i guess
+    if (a == NULL && b == NULL) return 0;
     if (a == NULL) return -1;  
     if (b == NULL) return  1;
 
@@ -377,7 +378,7 @@ string string_concat(string a, string b)
     return (string){ dst, len, len };
 }
 
-void string_concat_inplace(string *dest, string src) //b string_concat_inplace
+void string_concat_inplace(string *dest, string src)
 {
     if (!dest || !src.data) return;
 

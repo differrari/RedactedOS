@@ -1,7 +1,7 @@
 #pragma once
 
 #include "types.h"
-#include "keypress.h"
+#include "keyboard_input.h"
 #include "usb_types.h"
 #include "USBManager.hpp"
 

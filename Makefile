@@ -11,17 +11,17 @@ endif
 
 .PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
 
-all: shared user kernel
+all: shared kernel user 
 	@echo "Build complete."
 	./createfs
 
 shared:
 	$(MAKE) -C shared
 
-user: prepare-fs
+user: shared prepare-fs
 	$(MAKE) -C user
 
-kernel:
+kernel: shared
 	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU)
 
 clean:
@@ -35,6 +35,7 @@ clean:
 
 raspi:
 	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true all
+	./run_raspi
 
 virt:
 	$(MAKE) LOAD_ADDR=0x41000000 XHCI_CTX_SIZE=32 QEMU=true all
@@ -66,7 +67,7 @@ help:
 	@printf "usage:\n\
   make all          build the os\n\
   make clean        remove all build artifacts\n\
-  make raspi        build for raspberry\n\
+  make raspi        build for raspberry pi\n\
   make virt         build for qemu virt board\n\
   make run          build and run in virt mode\n\
   make debug        build and run with debugger\n\

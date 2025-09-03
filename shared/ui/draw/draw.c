@@ -1,15 +1,9 @@
 #include "draw.h"
-#include "graph/font8x8_bridge.h"
-#include "std/memfunctions.h"
+#include "ui/font8x8_bridge.h"
+#include "std/memory.h"
+#include "math/math.h"
 
 #define line_height char_size + 2
-
-uint32_t stride = 0;
-uint32_t max_width, max_height;
-
-gpu_rect dirty_rects[MAX_DIRTY_RECTS];
-uint32_t dirty_count = 0;
-bool full_redraw = false;
 
 int try_merge(gpu_rect* a, gpu_rect* b) {
     uint32_t ax2 = a->point.x + a->size.width;
@@ -33,54 +27,59 @@ int try_merge(gpu_rect* a, gpu_rect* b) {
     return true;
 }
 
-void mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
-    if (full_redraw) return;
+void mark_dirty(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    if (ctx->full_redraw) return;
     
-    if (x >= max_width || y >= max_height)
+    if (x >= ctx->width || y >= ctx->height)
         return;
 
-    if (x + w > max_width)
-        w = max_width - x;
+    if (x + w > ctx->width)
+        w = ctx->width - x;
 
-    if (y + h > max_height)
-        h = max_height - y;
+    if (y + h > ctx->height)
+        h = ctx->height - y;
 
     if (w == 0 || h == 0)
         return;
 
     gpu_rect new_rect = { {x, y}, {w, h} };
 
-    for (uint32_t i = 0; i < dirty_count; i++)
-        if (try_merge(&dirty_rects[i], &new_rect))
+    for (uint32_t i = 0; i < ctx->dirty_count; i++)
+        if (try_merge(&ctx->dirty_rects[i], &new_rect))
             return;
 
-    if (dirty_count < MAX_DIRTY_RECTS)
-        dirty_rects[dirty_count++] = new_rect;
+    if (ctx->dirty_count < MAX_DIRTY_RECTS)
+        ctx->dirty_rects[ctx->dirty_count++] = new_rect;
     else
-        full_redraw = true;
+        ctx->full_redraw = true;
 }
 
-void fb_clear(uint32_t* fb, uint32_t color) {
-    memset(fb, color, stride * max_height);
-    full_redraw = true;
+void fb_clear(draw_ctx *ctx, uint32_t color) {
+    memset(ctx->fb, color, ctx->stride * ctx->height);
+    ctx->full_redraw = true;
 }
 
-void fb_draw_pixel(uint32_t* fb, uint32_t x, uint32_t y, color color){
-    if (x >= max_width || y >= max_height) return;
-    fb[y * (stride / 4) + x] = color;
-    //TODO: for some reason, calling mark_dirty from here crashes. Calling it from just outside this function does not. Something to do with merge. Need to investigate.
+void fb_draw_raw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
+    if (x >= ctx->width || y >= ctx->height) return;
+    ctx->fb[y * (ctx->stride / 4) + x] = color;
 }
 
-void fb_fill_rect(uint32_t* fb, uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
-    for (uint32_t dy = 0; dy < height; dy++) {
-        for (uint32_t dx = 0; dx < width; dx++) {
-            fb_draw_pixel(fb, x + dx, y + dy, color);
-        }
+void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
+    fb_draw_raw_pixel(ctx, x, y, color);
+    mark_dirty(ctx, x,y,1,1);
+}
+
+void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
+    if (x + width >= ctx->width || y + height >= ctx->height) return;
+    if (width == ctx->width && x == 0){
+        memset(ctx->fb + (y * (ctx->width)) , color, ctx->stride * height);
     }
-    mark_dirty(x,y,width,height);
+    for (uint32_t dy = 0; dy < height; dy++)
+        memset(ctx->fb + ((y+dy) * (ctx->width)) + x, color, width*4);
+    mark_dirty(ctx, x,y,width,height);
 }
 
-gpu_rect fb_draw_line(uint32_t* fb, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, color color){
+gpu_rect fb_draw_line(draw_ctx *ctx, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, color color){
     int dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
     int sx = (x0 < x1) ? 1 : -1;
     int dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
@@ -88,7 +87,7 @@ gpu_rect fb_draw_line(uint32_t* fb, uint32_t x0, uint32_t y0, uint32_t x1, uint3
     int err = (dx > dy ? dx : -dy) / 2, e2;
 
     for (;;) {
-        fb_draw_pixel(fb, x0, y0, color);
+        fb_draw_raw_pixel(ctx, x0, y0, color);
         if (x0 == x1 && y0 == y1) break;
         e2 = err;
         if (e2 > -dx) { err -= dy; x0 += sx; }
@@ -100,34 +99,38 @@ gpu_rect fb_draw_line(uint32_t* fb, uint32_t x0, uint32_t y0, uint32_t x1, uint3
     int max_x = (x0 > x1) ? x0 : x1;
     int max_y = (y0 > y1) ? y0 : y1;
 
-    mark_dirty(min_x,min_y,max_x - min_x + 1,max_y - min_y + 1);
+    mark_dirty(ctx, min_x,min_y,max_x - min_x + 1,max_y - min_y + 1);
 
     return (gpu_rect) { {min_x, min_y}, {max_x - min_x + 1, max_y - min_y + 1}};
 }
 
-void fb_draw_char(uint32_t* fb, uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
+void fb_draw_raw_char(draw_ctx *ctx, uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
     const uint8_t* glyph = get_font8x8((uint8_t)c);
     for (uint32_t row = 0; row < (CHAR_SIZE * scale); row++) {
         uint8_t bits = glyph[row/scale];
         for (uint32_t col = 0; col < (CHAR_SIZE * scale); col++) {
             if (bits & (1 << (7 - (col / scale)))) {
-                fb_draw_pixel(fb, x + col, y + row, color);
+                fb_draw_raw_pixel(ctx, x + col, y + row, color);
             }
         }
     }
-    mark_dirty(x,y,CHAR_SIZE*scale,CHAR_SIZE*scale);
 }
 
-gpu_size fb_draw_string(uint32_t* fb, string s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
+void fb_draw_char(draw_ctx *ctx, uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
+    fb_draw_raw_char(ctx, x, y, c, scale, color);
+    mark_dirty(ctx, x,y,CHAR_SIZE*scale,CHAR_SIZE*scale);
+}
+
+gpu_size fb_draw_string(draw_ctx *ctx, const char* s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
     int char_size = fb_get_char_size(scale);
-    int str_length = s.length;
+    int str_length = strlen(s,0);
     
     uint32_t xoff = 0;
     uint32_t xSize = 0;
     uint32_t xRowSize = 0;
     uint32_t ySize = line_height;
     for (int i = 0; i < str_length; i++){    
-        char c = s.data[i];
+        char c = s[i];
         if (c == '\n'){
             y0 += line_height; 
             ySize += line_height;
@@ -136,7 +139,7 @@ gpu_size fb_draw_string(uint32_t* fb, string s, uint32_t x0, uint32_t y0, uint32
             xRowSize = 0;
             xoff = 0;
         } else {
-            fb_draw_char(fb, x0 + (xoff * char_size),y0,c,scale, color);
+            fb_draw_raw_char(ctx, x0 + (xoff * char_size),y0,c,scale, color);
             xoff++;
             xRowSize += char_size;
         }
@@ -144,7 +147,7 @@ gpu_size fb_draw_string(uint32_t* fb, string s, uint32_t x0, uint32_t y0, uint32
     if (xRowSize > xSize)
         xSize = xRowSize;
 
-    mark_dirty(x0,y0,xSize,ySize);
+    mark_dirty(ctx, x0,y0,xSize,ySize);
 
     return (gpu_size){xSize,ySize};
 }
@@ -153,11 +156,10 @@ uint32_t fb_get_char_size(uint32_t scale){
     return CHAR_SIZE * scale;
 }
 
-void fb_set_stride(uint32_t new_stride){
-    stride = new_stride;
-}
-
-void fb_set_bounds(uint32_t width, uint32_t height){
-    max_width = width;
-    max_height = height;
+void fb_draw_cursor(draw_ctx *ctx, uint32_t color){
+    for (uint32_t y = 0; y < 32; y++){
+        uint32_t ppl = max(0,24-y);
+        for (uint32_t x = 0; x < ppl; x++)
+            fb_draw_raw_pixel(ctx, x, y, color);
+    }   
 }

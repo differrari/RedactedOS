@@ -1,7 +1,7 @@
 #pragma once
 
 #include "usb.hpp"
-#include "std/std.hpp"
+#include "std/std.h"
 #include "usb_types.h"
 
 typedef struct {
