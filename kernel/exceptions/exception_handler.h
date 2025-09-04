@@ -5,7 +5,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-void panic(const char* msg);
 void panic_with_info(const char* msg, uint64_t info);
 #ifdef __cplusplus
 }
@@ -14,5 +13,4 @@ void panic_with_info(const char* msg, uint64_t info);
 void set_exception_vectors();
 void fiq_el1_handler();
 void error_el1_handler();
-void handle_exception(const char* type);
 void handle_exception_with_info(const char* type, uint64_t info);

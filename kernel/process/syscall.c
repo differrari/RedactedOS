@@ -31,7 +31,7 @@ typedef struct {
 uint64_t syscall_malloc(process_t *ctx){
     void* page_ptr = syscall_depth > 1 ? (void*)get_proc_by_pid(1)->heap : (void*)get_current_heap();
     if ((uintptr_t)page_ptr == 0x0){
-        handle_exception("Wrong process heap state");
+        handle_exception_with_info("Wrong process heap state", 0);
     }
     return (uintptr_t)kalloc(page_ptr, ctx->PROC_X0, ALIGN_16B, get_current_privilege());
 }
