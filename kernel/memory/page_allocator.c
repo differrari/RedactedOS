@@ -49,13 +49,15 @@ int count_pages(uint64_t i1,uint64_t i2){
     return (i1/i2) + (i1 % i2 > 0);
 }
 
+uint64_t start;
+uint64_t end;
+
 //TODO: prepare for allocating more than 64 bits by marking full registers at a time
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
-    uint64_t start = count_pages(get_user_ram_start(),PAGE_SIZE);
-    uint64_t end = count_pages(get_user_ram_end(),PAGE_SIZE);
+    if (!start) start = count_pages(get_user_ram_start(),PAGE_SIZE);
+    if (!end) end = count_pages(get_user_ram_end(),PAGE_SIZE);
     uint64_t page_count = count_pages(size,PAGE_SIZE);
-
-    //TODO: start at the last non-full page found
+    
     for (uint64_t i = start/64; i < end/64; i++) {
         if (mem_bitmap[i] != UINT64_MAX) {
             uint64_t inv = ~mem_bitmap[i];
@@ -98,7 +100,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
             // kprintfv("[page_alloc] Final address %x", first_address);
 
             return (void*)first_address;
-        }
+        } else start = (i + 1) * 64;
     }
 
     uart_puts("[page_alloc error] Could not allocate");
