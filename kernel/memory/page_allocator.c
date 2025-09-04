@@ -175,7 +175,7 @@ void mark_used(uintptr_t address, size_t pages)
 void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
     if (size > UINT32_MAX)//TODO: This serves to catch an issue, except if we put this if in, the issue does not happen
-        panic_with_info("Faulty allocation", size);
+        panic("Faulty allocation", size);
     
     size = (size + alignment - 1) & ~(alignment - 1);
 

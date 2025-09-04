@@ -13,7 +13,7 @@ void set_exception_vectors(){
     asm volatile ("msr vbar_el1, %0" :: "r"(exception_vectors));
 }
 
-void handle_exception_with_info(const char* type, uint64_t info) {
+void handle_exception(const char* type, uint64_t info) {
     uint64_t esr, elr, far;
     asm volatile ("mrs %0, esr_el1" : "=r"(esr));
     asm volatile ("mrs %0, elr_el1" : "=r"(elr));
@@ -22,12 +22,12 @@ void handle_exception_with_info(const char* type, uint64_t info) {
     disable_visual();//Disable visual kprintf, since it has additional memory accesses that could be faulting
 
     string s = string_format("%s \r\nESR_EL1: %x\r\nELR_EL1: %x\r\nFAR_EL1: %x",(uintptr_t)type,esr,elr,far);
-    panic_with_info(s.data, info);
+    panic(s.data, info);
 }
 
-void fiq_el1_handler(){ handle_exception_with_info("FIQ EXCEPTION\r\n", 0); }
+void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\r\n", 0); }
 
-void error_el1_handler(){ handle_exception_with_info("ERROR EXCEPTION\r\n", 0); }
+void error_el1_handler(){ handle_exception("ERROR EXCEPTION\r\n", 0); }
 
 void draw_panic_screen(string s){
     gpu_clear(0xFF0000FF);
@@ -36,7 +36,7 @@ void draw_panic_screen(string s){
     gpu_flush();
 }
 
-void panic_with_info(const char* msg, uint64_t info) {
+void panic(const char* msg, uint64_t info) {
     permanent_disable_timer();
 
     uint64_t esr, elr, far;

@@ -56,7 +56,7 @@ void save_return_address_interrupt(){
 void switch_proc(ProcSwitchReason reason) {
     // kprintf("Stopping execution of process %i at %x",current_proc, processes[current_proc].spsr);
     if (proc_count == 0)
-        panic_with_info("No processes active", 0);
+        panic("No processes active", 0);
     int next_proc = (current_proc + 1) % MAX_PROCS;
     while (processes[next_proc].state != READY) {
         next_proc = (next_proc + 1) % MAX_PROCS;
@@ -160,7 +160,7 @@ process_t* init_process(){
                 return proc;
             }
         }
-        panic_with_info("Out of process memory", 0);
+        panic("Out of process memory", 0);
     }
 
     proc = &processes[next_proc_index];
