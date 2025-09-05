@@ -31,7 +31,7 @@ public:
 private:
     static constexpr size_t QUEUE_CAPACITY = 1024;
 
-    IndexMap<uint16_t> ports; //port pid map
+    //IndexMap<uint16_t> ports; //port pid map
     NetDriver* driver;
     uint8_t local_mac[6];
 

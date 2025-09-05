@@ -18,13 +18,10 @@ extern void      free(void *ptr, uint64_t size);
 static uint16_t g_net_pid = 0xFFFF;
 
 NetworkDispatch::NetworkDispatch()
-  : ports(UINT16_MAX + 1),
-    driver(nullptr),
+  : driver(nullptr),
     tx_queue(QUEUE_CAPACITY),
     rx_queue(QUEUE_CAPACITY)
 {
-    for (uint32_t i = 0; i <= UINT16_MAX; ++i)
-        ports[i] = UINT16_MAX;
 
     memset(local_mac, 0, sizeof(local_mac));
 }
@@ -107,7 +104,7 @@ int NetworkDispatch::net_task()
         }
 
         if (!did_work)
-            sleep(10);
+            sleep(10); //TODO: manage it with an event
     }
 }
 
