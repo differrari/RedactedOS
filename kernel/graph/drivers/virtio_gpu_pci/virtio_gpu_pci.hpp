@@ -91,7 +91,7 @@ private:
     bool attach_backing(uint32_t resource_id, sizedptr ptr);
     bool set_scanout();
     bool transfer_to_host(uint32_t resource_id, gpu_rect rect);
-    void get_capset();
+    void get_capset(uint32_t capset);
     uint32_t new_resource_id();
     uint32_t new_cursor(uint32_t color);
 

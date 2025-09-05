@@ -83,13 +83,21 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
         .full_redraw = 0,
     };
 
-    get_capset();
+    uint32_t capset_count = gpu_dev.device_cfg[12];
+    if (capset_count > 0)
+        get_capset(0);
 
     fb_resource_id = new_resource_id();
     
-    if (!create_2d_resource(fb_resource_id, screen_size)) return false;
+    if (!create_2d_resource(fb_resource_id, screen_size)){ 
+        kprintf("[VIRTIO_GPU error] failed to create 2D resource");
+        return false;
+    }
     
-    if (!attach_backing(fb_resource_id, (sizedptr){framebuffer,framebuffer_size})) return false;
+    if (!attach_backing(fb_resource_id, (sizedptr){framebuffer,framebuffer_size})){ 
+        kprintf("[VIRTIO_GPU error] failed to attach backing");
+        return false;
+    }
 
     if (scanout_found)
         set_scanout();
@@ -363,13 +371,13 @@ struct virtio_gpu_resp_capset_info {
     uint32_t padding; 
 };
 
-void VirtioGPUDriver::get_capset(){
+void VirtioGPUDriver::get_capset(uint32_t capset){
     virtio_gpu_get_capset_info* cmd = (virtio_gpu_get_capset_info*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_get_capset_info), ALIGN_4KB, MEM_PRIV_KERNEL);
-    
+
     cmd->hdr.type = VIRTIO_GPU_CMD_GET_CAPSET_INFO;
     cmd->hdr.flags = 0;
     cmd->hdr.fence_id = 0;
-    cmd->capset_index = 0;
+    cmd->capset_index = capset;
     cmd->padding = 0;
 
     virtio_gpu_resp_capset_info* resp = (virtio_gpu_resp_capset_info*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_resp_capset_info), ALIGN_4KB, MEM_PRIV_KERNEL);

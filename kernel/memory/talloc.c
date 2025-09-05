@@ -26,7 +26,7 @@ uint64_t alloc_mmio_region(uint64_t size) {
     if (next_mmio_base == 0) next_mmio_base = MMIO_BASE;
     size = (size + 0xFFF) & ~0xFFF;
     if (next_mmio_base + size > PCI_MMIO_LIMIT){
-        panic_with_info("MMIO alloc overflow",next_mmio_base+size);
+        panic("MMIO alloc overflow",next_mmio_base+size);
         return 0;
     }
     uint64_t addr = next_mmio_base;
@@ -75,7 +75,7 @@ uint64_t talloc(uint64_t size) {
     }
 
     if (next_free_temp_memory + size > (uintptr_t)&heap_limit) {
-        panic_with_info("Kernel allocator overflow", next_free_temp_memory);
+        panic("Kernel allocator overflow", next_free_temp_memory);
     }
 
     uint64_t result = next_free_temp_memory;
