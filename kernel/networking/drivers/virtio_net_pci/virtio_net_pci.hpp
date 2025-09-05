@@ -14,7 +14,7 @@ public:
 
     sizedptr allocate_packet(size_t size) override;
 
-    sizedptr handle_receive_packet(void* buffer) override;
+    sizedptr handle_receive_packet() override;
 
     void handle_sent_packet() override;
 

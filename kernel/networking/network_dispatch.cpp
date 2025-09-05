@@ -11,8 +11,11 @@ extern void      sleep(uint64_t ms);
 extern uintptr_t malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
 
+#define RX_INTR_BATCH_LIMIT 32
+#define TASK_RX_BATCH_LIMIT 32
+#define TASK_TX_BATCH_LIMIT 32
+
 static uint16_t g_net_pid = 0xFFFF;
-static uint8_t recv_buffer[MAX_PACKET_SIZE];
 
 NetworkDispatch::NetworkDispatch()
   : ports(UINT16_MAX + 1),
@@ -37,21 +40,22 @@ bool NetworkDispatch::init()
 void NetworkDispatch::handle_download_interrupt()
 {
     if (!driver) return;
-    
-    sizedptr raw = driver->handle_receive_packet(recv_buffer);
-    if (raw.size < sizeof(eth_hdr_t)) {
-        return;
+
+    for (int drained = 0; drained < RX_INTR_BATCH_LIMIT; ++drained) {
+        sizedptr raw = driver->handle_receive_packet();
+        if (raw.size == 0) {
+            break;
+        }
+
+        if (raw.size < sizeof(eth_hdr_t)) {
+            free_frame(raw);
+            continue;
+        }
+
+        if (!rx_queue.enqueue(raw)) {
+            free_frame(raw);
+        }
     }
-
-    sizedptr frame{0, raw.size};
-    frame.ptr = reinterpret_cast<uintptr_t>(
-        kalloc(reinterpret_cast<void*>(get_current_heap()), raw.size, ALIGN_16B, get_current_privilege()));
-    if (!frame.ptr) return;
-
-    memcpy(reinterpret_cast<void*>(frame.ptr), recv_buffer, raw.size);
-
-    if (!rx_queue.enqueue(frame))
-        free_frame(frame);
 }
 
 void NetworkDispatch::handle_upload_interrupt()
@@ -82,15 +86,22 @@ int NetworkDispatch::net_task()
     network_net_set_pid(get_current_proc_pid());
     for (;;) {
         bool did_work = false;
-        sizedptr pkt{0,0};
 
-        if (!rx_queue.is_empty() && rx_queue.dequeue(pkt)) {
+        for (int i = 0; i < TASK_RX_BATCH_LIMIT; ++i) {
+            if (rx_queue.is_empty()) break;
+            sizedptr pkt{0,0};
+            if (!rx_queue.dequeue(pkt)) break;
+
             did_work = true;
             eth_input(pkt.ptr, pkt.size);
             free_frame(pkt);
         }
 
-        if (!tx_queue.is_empty() && tx_queue.dequeue(pkt)) {
+        for (int i = 0; i < TASK_TX_BATCH_LIMIT; ++i) {
+            if (tx_queue.is_empty()) break;
+            sizedptr pkt{0,0};
+            if (!tx_queue.dequeue(pkt)) break;
+
             did_work = true;
             driver->send_packet(pkt);
         }
@@ -98,7 +109,6 @@ int NetworkDispatch::net_task()
         if (!did_work)
             sleep(10);
     }
-    return 0;
 }
 
 bool NetworkDispatch::dequeue_packet_for(uint16_t pid, sizedptr *out)
