@@ -4,6 +4,8 @@
 #include "console/kio.h"
 #include "math/math.h"
 #include "audio/cuatro.h"
+#include "graph/graphics.h"
+#include "theme/theme.h"
 
 VirtioAudioDriver *audio_driver;
 
@@ -24,25 +26,51 @@ void audio_submit_buffer(){
     audio_driver->out_dev->submit_buffer(audio_driver);
 }
 
-void make_wave(WAVE_TYPE type, float freq, float seconds){
+void make_wave(WAVE_TYPE type, float freq, float seconds, uint32_t amplitude){
+    gpu_clear(0x1fb03f);
     uint32_t period = 441/((freq/100.f) * 2);//TODO: improve this formula
+    kprintf("Period %i",period);
     uint32_t accumulator = 0;
+    gpu_size size = gpu_get_screen_size();
+    uint32_t previous_pixel = UINT32_MAX;
 
-    for (int i = 0; i < (int)(seconds * 100); i++){
+    //TODO: distorsion
+    //size of the buffer should be bigger, 
+    //palloc should be 64 pages
+    //in the virtio driver, cmd_index is waiting for the device to catch up
+    
+    float last_wave = 0;
+    for (int i = 0; i < seconds * 100; i++){
         sizedptr buf = audio_request_buffer(audio_driver->out_dev->stream_id);
         
         uint32_t num_samples = buf.size;
         uint32_t *buffer = (uint32_t*)buf.ptr;
         for (uint32_t sample = 0; sample < num_samples; sample++){
-            buffer[sample] = sample_wave(type, accumulator, period, UINT32_MAX/2);
+            float wave = sample_raw_wave(type, accumulator, period);
+            uint32_t min = 64 * num_samples;
+            buffer[sample] = wave * amplitude;
+            // if (i >63 && wave != last_wave)
+            //     kprintf("%i %i - %x - %i|%i",i, sample, buffer[sample], accumulator,min);
+            last_wave = wave;
+
             accumulator++;
+            if (accumulator >= min && accumulator < min + size.width){
+                gpu_point p = (gpu_point){ accumulator - min, 100-(uint32_t)(100*wave)};
+                if (previous_pixel != UINT32_MAX && abs(p.y-previous_pixel) > 10){
+                    gpu_draw_line({ p.x - 1, previous_pixel}, p, 0xFFB4DD13);
+                }
+                previous_pixel = p.y;
+                gpu_draw_pixel(p, 0xFFB4DD13);
+            }
         }
         audio_submit_buffer();
     }
+    gpu_flush();
+    while(1);
 }
 
 int play_test_audio(int argc, char* argv[]){      
-    make_wave(WAVE_SAW, 261.63, 1);
+    make_wave(WAVE_SQUARE, 100, 5, UINT32_MAX/3);
     return 0;
 }
 

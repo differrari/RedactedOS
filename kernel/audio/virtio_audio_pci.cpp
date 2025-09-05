@@ -212,16 +212,12 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
 }
 
 void VirtioAudioDriver::send_buffer(sizedptr buf){
-    select_queue(&audio_dev, TRANSMIT_QUEUE);
+    virtio_add_buffer(&audio_dev, cmd_index % audio_dev.common_cfg->queue_size, buf.ptr, buf.size, true);
     struct virtq_used* u = (struct virtq_used*)(uintptr_t)audio_dev.common_cfg->queue_device;
-    
-    virtio_add_buffer(&audio_dev, cmd_index, buf.ptr, buf.size, true);
-    if (cmd_index == audio_dev.common_cfg->queue_size - 1){
-        while (u->idx % audio_dev.common_cfg->queue_size < cmd_index);
-        cmd_index = 0;
+    if (u->idx < cmd_index-20){
+        while (u->idx < cmd_index-5);
     }
-    else cmd_index++;
-    // select_queue(&audio_dev, CONTROL_QUEUE);
+    cmd_index++;
 }
 
 typedef struct virtio_snd_pcm_set_params { 
