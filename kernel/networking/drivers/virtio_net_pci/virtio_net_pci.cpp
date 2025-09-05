@@ -9,6 +9,11 @@
 #define RECEIVE_QUEUE 0
 #define TRANSMIT_QUEUE 1
 
+static constexpr uint32_t RX_BUF_SIZE = PAGE_SIZE;
+
+static void* g_rx_pool = nullptr;
+static uint16_t g_rx_qsz = 0;
+
 #define kprintfv(fmt, ...) \
     ({ \
         if (verbose){\
@@ -82,9 +87,27 @@ bool VirtioNetDriver::init(){
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
 
     uint16_t rx_qsz = vnp_net_dev.common_cfg->queue_size;
+    g_rx_qsz = rx_qsz;
+
+    if (!g_rx_pool) {
+        g_rx_pool = palloc((uint64_t)rx_qsz * RX_BUF_SIZE, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, true);
+        if (!g_rx_pool) {
+            kprintf("[VIRTIO_NET warn] palloc failed, fallingback to kalloc");
+        }
+    }
+
     for (uint16_t i = 0; i < rx_qsz; i++){
-        void* buf = kalloc(vnp_net_dev.memory_page, MAX_PACKET_SIZE, ALIGN_64B, MEM_PRIV_KERNEL);
-        virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, MAX_PACKET_SIZE, false);
+        void* buf = nullptr;
+        if (g_rx_pool) {
+            buf = (void*)((uintptr_t)g_rx_pool + (uintptr_t)i * RX_BUF_SIZE);
+        } else {
+            buf = kalloc(vnp_net_dev.memory_page, RX_BUF_SIZE, ALIGN_64B, MEM_PRIV_KERNEL);
+            if (!buf) {
+                kprintf("[VIRTIO_NET error] rx buffer allocation failed at %i", i);
+                return false;
+            }
+        }
+        virtio_add_buffer(&vnp_net_dev, i, (uintptr_t)buf, RX_BUF_SIZE, false);
     }
 
     vnp_net_dev.common_cfg->queue_msix_vector = 0;
