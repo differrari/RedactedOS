@@ -71,6 +71,6 @@ void kernel_main() {
 
     load_module(&scheduler_module);
 
-    panic("Kernel did not activate any process");
+    panic("Kernel did not activate any process", 0);
     
 }

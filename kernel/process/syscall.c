@@ -31,7 +31,7 @@ typedef struct {
 uint64_t syscall_malloc(process_t *ctx){
     void* page_ptr = syscall_depth > 1 ? (void*)get_proc_by_pid(1)->heap : (void*)get_current_heap();
     if ((uintptr_t)page_ptr == 0x0){
-        handle_exception("Wrong process heap state");
+        handle_exception("Wrong process heap state", 0);
     }
     return (uintptr_t)kalloc(page_ptr, ctx->PROC_X0, ALIGN_16B, get_current_privilege());
 }
@@ -204,7 +204,7 @@ void sync_el0_handler_c(){
             }
         }
         if (!found)
-            panic_with_info("Unknown syscall %i", iss);
+            panic("Unknown syscall %i", iss);
     } else {
         switch (ec) {
             case 0x20:
@@ -222,7 +222,7 @@ void sync_el0_handler_c(){
         //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
         if (currentEL == 1){
             coredump(esr, elr, far);
-            handle_exception_with_info("UNEXPECTED EXCEPTION",ec);
+            handle_exception("UNEXPECTED EXCEPTION",ec);
         } else {
             kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
             coredump(esr, elr, far);

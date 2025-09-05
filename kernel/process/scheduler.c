@@ -18,7 +18,6 @@ extern void save_context(process_t* proc);
 extern void save_pc_interrupt(process_t* proc);
 extern void restore_context(process_t* proc);
 
-#define MAX_PROCS 16
 //TODO: use queues, eliminate the max procs limitation
 process_t processes[MAX_PROCS];
 uint16_t current_proc = 0;
@@ -57,7 +56,7 @@ void save_return_address_interrupt(){
 void switch_proc(ProcSwitchReason reason) {
     // kprintf("Stopping execution of process %i at %x",current_proc, processes[current_proc].spsr);
     if (proc_count == 0)
-        panic("No processes active");
+        panic("No processes active", 0);
     int next_proc = (current_proc + 1) % MAX_PROCS;
     while (processes[next_proc].state != READY) {
         next_proc = (next_proc + 1) % MAX_PROCS;
@@ -161,7 +160,7 @@ process_t* init_process(){
                 return proc;
             }
         }
-        panic("Out of process memory");
+        panic("Out of process memory", 0);
     }
 
     proc = &processes[next_proc_index];

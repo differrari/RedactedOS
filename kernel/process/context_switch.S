@@ -19,10 +19,10 @@ save_context:
     stp x27, x28, [x0, #(8 * 26)]
     stp x29, x30, [x0, #(8 * 28)]
 
-    // Save SP
+    // SP
     str x11, [x0, #(8 * 31)]
 
-    //Save status bits
+    //Status bits
     and x10, x10, 0xFFF
     str x10, [x0, #(8 * 33)]
 
@@ -30,18 +30,14 @@ save_context:
 
 .global save_pc_interrupt
 save_pc_interrupt:
-    // x0: pointer to process_t
-    
     mrs x1, elr_el1
-    str x1, [x0, #(8 * 32)]//PC
+    str x1, [x0, #(8 * 32)]
 
     ret
 
 .global restore_context
 restore_context:
-    // x0: pointer to process_t
-
-    // Restore general-purpose registers x1-x30
+    // Restore general-purpose registers
     ldp x1, x2, [x0, #(8 * 0)]
     ldp x3, x4, [x0, #(8 * 2)]
     ldp x5, x6, [x0, #(8 * 4)]
@@ -59,12 +55,25 @@ restore_context:
     ldp x29, x30, [x0, #(8 * 28)]    
 
     ldr x11, [x0, #(8 * 31)]
-    mov sp, x11
-    msr sp_el0, x11
-    mov x29, x11
     ldr x10, [x0, #(8 * 33)]
     msr spsr_el1, x10
-    
+    lsr     x18, x10, #2
+    and     x18, x18, #0b11
+
+    cmp     x18, #1
+    b.eq    1f
+    cmp     x18, #0
+    b.eq    2f
+
+    b       3f
+
+1:  mov     sp, x11
+    b       3f
+
+2:  msr     sp_el0, x11
+
+3:
+    mov x29, x11
     ldr x11, [x0, #(8 * 32)]
     msr elr_el1, x11
     

@@ -10,7 +10,7 @@ typedef enum {
     HALT,
 } ProcSwitchReason;
 
-#define MAX_PROCS 16
+#define MAX_PROCS 64
 
 void switch_proc(ProcSwitchReason reason);
 bool start_scheduler();
