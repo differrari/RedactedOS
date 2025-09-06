@@ -31,6 +31,7 @@ void make_wave(WAVE_TYPE type, float freq, float seconds, uint32_t amplitude){
     uint32_t period = 441/((freq/100.f) * 2);//TODO: improve this formula
     kprintf("Period %i",period);
     uint32_t accumulator = 0;
+    uint32_t increment = (uint32_t)(freq * (float)UINT32_MAX / 44100.0);
     gpu_size size = gpu_get_screen_size();
     uint32_t previous_pixel = UINT32_MAX;
 
@@ -39,7 +40,6 @@ void make_wave(WAVE_TYPE type, float freq, float seconds, uint32_t amplitude){
     //palloc should be 64 pages
     //in the virtio driver, cmd_index is waiting for the device to catch up
     
-    float last_wave = 0;
     for (int i = 0; i < seconds * 100; i++){
         sizedptr buf = audio_request_buffer(audio_driver->out_dev->stream_id);
         
@@ -49,11 +49,8 @@ void make_wave(WAVE_TYPE type, float freq, float seconds, uint32_t amplitude){
             float wave = sample_raw_wave(type, accumulator, period);
             uint32_t min = 64 * num_samples;
             buffer[sample] = wave * amplitude;
-            // if (i >63 && wave != last_wave)
-            //     kprintf("%i %i - %x - %i|%i",i, sample, buffer[sample], accumulator,min);
-            last_wave = wave;
 
-            accumulator++;
+            accumulator += increment;
             if (accumulator >= min && accumulator < min + size.width){
                 gpu_point p = (gpu_point){ accumulator - min, 100-(uint32_t)(100*wave)};
                 if (previous_pixel != UINT32_MAX && abs(p.y-previous_pixel) > 10){
@@ -70,7 +67,7 @@ void make_wave(WAVE_TYPE type, float freq, float seconds, uint32_t amplitude){
 }
 
 int play_test_audio(int argc, char* argv[]){      
-    make_wave(WAVE_SQUARE, 100, 5, UINT32_MAX/3);
+    make_wave(WAVE_SQUARE, 100, 3, UINT32_MAX/4);
     return 0;
 }
 

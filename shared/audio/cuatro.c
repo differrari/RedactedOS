@@ -2,7 +2,7 @@
 #include "math/math.h"
 
 float sample_raw_wave(WAVE_TYPE type, uint32_t accumulator, uint32_t period){
-    float t = ((float)accumulator/(period*2));
+    float t = ((float)accumulator/(float)UINT32_MAX);
     switch (type) {
         case WAVE_TRIG: {
             float trig = 2*(absf(t-floor(t + 0.5)));
@@ -11,7 +11,7 @@ float sample_raw_wave(WAVE_TYPE type, uint32_t accumulator, uint32_t period){
         case WAVE_SAW:
             return ((t-floor(t + 0.5)) + 0.5f);
         case WAVE_SQUARE:
-            return (accumulator/period) % 2 == 0 ? 0 : 1;
+            return (accumulator < UINT32_MAX/2) ? 0 : 1;
     }
 }
 
