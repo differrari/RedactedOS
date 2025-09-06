@@ -86,16 +86,6 @@ typedef struct l3_ipv6_interface {
     l2_interface_t *l2;
 } l3_ipv6_interface_t;
 
-typedef struct network_dispatcher {
-    l2_interface_t *l2[MAX_L2_INTERFACES];
-    uint8_t l2_count;
-    l3_ipv4_interface_t *lo_v4;
-    l3_ipv6_interface_t *lo_v6;
-    void *rt4;
-    void *rt6;
-    int8_t primary_ifindex;
-} network_dispatcher_t;
-
 typedef struct ip_resolution_result {
     bool found;
     l3_ipv4_interface_t *ipv4;
@@ -106,9 +96,12 @@ typedef struct ip_resolution_result {
 uint8_t l2_interface_create(const char *name, void *driver_ctx);
 bool l2_interface_destroy(uint8_t ifindex);
 l2_interface_t *l2_interface_find_by_index(uint8_t ifindex);
+uint8_t l2_interface_count(void);
+l2_interface_t *l2_interface_at(uint8_t idx);
 bool l2_interface_set_mac(uint8_t ifindex, const uint8_t mac[6]);
 bool l2_interface_set_mtu(uint8_t ifindex, uint16_t mtu);
 bool l2_interface_set_up(uint8_t ifindex, bool up);
+bool l2_interface_set_send_trampoline(uint8_t ifindex, int (*fn)(struct l2_interface*, const void*, size_t));
 bool l2_ipv4_mcast_join(uint8_t ifindex, uint32_t group);
 bool l2_ipv4_mcast_leave(uint8_t ifindex, uint32_t group);
 bool l2_ipv6_mcast_join(uint8_t ifindex, const uint8_t group[16]);
@@ -133,12 +126,6 @@ ip_resolution_result_t resolve_ipv6_to_interface(const uint8_t dst_ip[16]);
 
 bool check_ipv4_overlap(uint32_t new_ip, uint32_t mask, uint8_t ifindex);
 bool check_ipv6_overlap(const uint8_t new_ip[16], uint8_t prefix_len, uint8_t ifindex);
-
-network_dispatcher_t *get_network_dispatcher(void);
-void network_dispatcher_init(void);
-bool network_set_primary(uint8_t ifindex);
-l2_interface_t *get_primary_interface(void);
-l3_ipv4_interface_t *get_primary_ipv4(void);
 
 #ifdef __cplusplus
 }

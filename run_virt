@@ -66,4 +66,6 @@ $PRIVILEGE qemu-system-aarch64 \
   -device virtio-sound-pci,audiodev=sdl_audio \
   -audiodev sdl,id=sdl_audio \
   -d guest_errors \
+  #-netdev tap,id=net1,ifname=tap1,script=no,downscript=no,vnet_hdr=off \
+  #-device virtio-net-pci,netdev=net1,mac=52:54:00:12:34:57
   $ARGS

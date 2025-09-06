@@ -5,39 +5,51 @@
 #include "data_struct/queue.hpp"
 #include "net/network_types.h"
 #include "net/internet_layer/ipv4.h"
+#include "interface_manager.h"
+#include "std/std.h"
 
 class NetworkDispatch {
 public:
     NetworkDispatch();
-
     bool init();
-    
-    void handle_download_interrupt();
-    void handle_upload_interrupt();
-    bool enqueue_frame(const sizedptr&);
+    void handle_rx_irq(size_t nic_id);
+    void handle_tx_irq(size_t nic_id);
+    bool enqueue_frame_on(size_t nic_id, const sizedptr&);
     int net_task();
-    bool dequeue_packet_for(uint16_t, sizedptr*);
-
     void set_net_pid(uint16_t pid);
     uint16_t get_net_pid() const;
 
-
-    const uint8_t* get_local_mac() const { return local_mac; }
-
-
-    NetDriver* driver_ptr() const { return driver; }
-    uint16_t header_size() const { return driver ? driver->header_size : 0; }
+    size_t nic_count() const;
+    const char* ifname(size_t nic_id) const;
+    const char* hw_ifname(size_t nic_id) const;
+    const uint8_t* mac(size_t nic_id) const;
+    uint16_t mtu(size_t nic_id) const;
+    uint16_t header_size(size_t nic_id) const;
+    uint8_t ifindex(size_t nic_id) const;
+    l2_interface_t* l2_at(size_t nic_id) const;
+    NetDriver* driver_at(size_t nic_id) const;
 
 private:
-    static constexpr size_t QUEUE_CAPACITY = 1024;
+    struct NICCtx {
+        NetDriver* drv;
+        uint8_t ifindex;
+        char ifname_str[16];
+        char hwname_str[32];
+        uint8_t mac_addr[6];
+        uint16_t mtu_val;
+        uint16_t hdr_sz;
+        Queue<sizedptr> tx;
+        Queue<sizedptr> rx;
+    };
 
-    //IndexMap<uint16_t> ports; //port pid map
-    NetDriver* driver;
-    uint8_t local_mac[6];
+    static const size_t MAX_NIC = 16;
+    static const size_t QUEUE_CAPACITY = 1024;
 
-    Queue<sizedptr> tx_queue;
-    Queue<sizedptr> rx_queue;
+    NICCtx nics[MAX_NIC];
+    size_t nic_num;
+    uint16_t g_net_pid;
 
-    sizedptr make_copy(const sizedptr&);
     void free_frame(const sizedptr&);
+    bool register_all_from_bus();
+    void copy_str(char* dst, int cap, const char* src);
 };

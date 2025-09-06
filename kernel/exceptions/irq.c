@@ -9,6 +9,7 @@
 #include "networking/network.h"
 #include "hw/hw.h"
 #include "audio/audio.h"
+#include "networking/interface_manager.h"
 
 #define IRQ_TIMER 30
 #define SLEEP_TIMER 27
@@ -45,8 +46,11 @@ void irq_init() {
 
     gic_enable_irq(IRQ_TIMER, 0x80, 0);
     gic_enable_irq(MSI_OFFSET + INPUT_IRQ, 0x80, 0);
-    gic_enable_irq(MSI_OFFSET + NET_IRQ, 0x80, 0);
-    gic_enable_irq(MSI_OFFSET + NET_IRQ + 1, 0x80, 0);
+
+    for (uint32_t i = 0; i < (uint32_t)MAX_L2_INTERFACES; ++i) {
+        gic_enable_irq(MSI_OFFSET + NET_IRQ_BASE + (2*i), 0x80, 0);
+        gic_enable_irq(MSI_OFFSET + NET_IRQ_BASE + (2*i+1), 0x80, 0);
+    }
     gic_enable_irq(SLEEP_TIMER, 0x80, 0);
     gic_enable_irq(MSI_OFFSET + AUDIO_IRQ, 0x80, 0);
 
@@ -91,12 +95,12 @@ void irq_el1_handler() {
         wake_processes();
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         process_restore();
-    } else if (irq == MSI_OFFSET + NET_IRQ){
-        network_handle_download_interrupt();
-        if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
-        process_restore();
-    } else if (irq == MSI_OFFSET + NET_IRQ + 1){
-        network_handle_upload_interrupt();
+    } else if (irq >= MSI_OFFSET + NET_IRQ_BASE && irq <  MSI_OFFSET + NET_IRQ_BASE + (2*MAX_L2_INTERFACES)){
+        uint32_t rel = irq - (MSI_OFFSET + NET_IRQ_BASE);
+        uint16_t nic_id = (uint16_t)(rel >> 1);
+        uint8_t is_rx = (rel & 1) == 0;
+        if (is_rx) network_handle_download_interrupt_nic(nic_id);
+        else network_handle_upload_interrupt_nic(nic_id);
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         process_restore();
     } else if (irq == MSI_OFFSET + AUDIO_IRQ){

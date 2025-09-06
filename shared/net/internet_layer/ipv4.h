@@ -7,9 +7,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define NET_MODE_DISABLED ((int8_t)-1)
-#define NET_MODE_DHCP 0
-#define NET_MODE_STATIC 1
 
 typedef struct net_runtime_opts {
     uint16_t mtu;

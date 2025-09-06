@@ -19,7 +19,7 @@ net_cfg_t g_net_cfg = {
     .ip = 0,
     .mask = 0,
     .gw = 0,
-    .mode = NET_MODE_DHCP,
+    .mode = 0,//NET_MODE_DHCP
     .rt = &g_rt_opts
 };
 
@@ -28,7 +28,7 @@ void ipv4_cfg_init() {
     g_net_cfg.ip = 0;
     g_net_cfg.mask = 0;
     g_net_cfg.gw = 0;
-    g_net_cfg.mode = NET_MODE_DHCP;
+    g_net_cfg.mode = 0; //NET_MODE_DHCP
     g_net_cfg.rt = &g_rt_opts;
     ipv4_rt_init();
 }

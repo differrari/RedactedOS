@@ -123,18 +123,26 @@ bool virtio_init_device(virtio_device *dev) {
     uint32_t queue_index = 0;
     uint32_t size;
     while ((size = select_queue(dev,queue_index))){
-        uint64_t base = (uintptr_t)kalloc(dev->memory_page, 16 * size, ALIGN_4KB, MEM_PRIV_KERNEL);
-        uint64_t avail = (uintptr_t)kalloc(dev->memory_page, 4 + (2 * size), ALIGN_4KB, MEM_PRIV_KERNEL);
-        uint64_t used = (uintptr_t)kalloc(dev->memory_page, sizeof(uint16_t) * (2 + size), ALIGN_4KB, MEM_PRIV_KERNEL);
+        uint64_t desc_sz  = 16ULL * size;
+        uint64_t avail_sz = 4ULL + 2ULL * size;
+        uint64_t used_sz  = 4ULL + 8ULL * size;
+        uint64_t base = (uintptr_t)kalloc(dev->memory_page, desc_sz,  ALIGN_4KB, MEM_PRIV_KERNEL);
+        uint64_t avail = (uintptr_t)kalloc(dev->memory_page, avail_sz, ALIGN_4KB, MEM_PRIV_KERNEL);
+        uint64_t used = (uintptr_t)kalloc(dev->memory_page, used_sz,  ALIGN_4KB, MEM_PRIV_KERNEL);
 
-        kprintfv("[VIRTIO QUEUE %i] Device base %x",queue_index,base);
-        kprintfv("[VIRTIO QUEUE %i] Device avail %x",queue_index,avail);
-        kprintfv("[VIRTIO QUEUE %i] Device used %x",queue_index,used);
+        dev->common_cfg->queue_desc = base;
+        dev->common_cfg->queue_driver = avail;
+        dev->common_cfg->queue_device = used;
 
-        cfg->queue_desc = base;
-        cfg->queue_driver = avail;
-        cfg->queue_device = used;
-        cfg->queue_enable = 1;
+        volatile struct virtq_avail* A = (volatile struct virtq_avail*)(uintptr_t)avail;
+        A->flags = 0;
+        A->idx = 0;
+
+        volatile struct virtq_used* U = (volatile struct virtq_used*)(uintptr_t)used;
+        U->flags = 0;
+        U->idx = 0;
+
+        dev->common_cfg->queue_enable = 1;
         queue_index++;
     }
 

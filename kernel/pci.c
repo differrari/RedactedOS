@@ -84,6 +84,9 @@ struct acpi_mcfg_t {
 #define RSDP_SEARCH_END   0x00100000
 
 bool initialized;
+static pci_device_info g_pci_cache[256];
+static size_t g_pci_count = 0;
+static bool g_pci_scanned = false;
 
 void* find_rsdp() {
     for (uint64_t addr = RSDP_SEARCH_START; addr < RSDP_SEARCH_END; addr += 16) {
@@ -111,20 +114,52 @@ void* find_rsdp() {
     return 0x0;
 }
 
-void find_pci(){
-    if (!initialized){
-        initialized = true;
-        for (uint64_t addr = PCI_BASE; addr < PCI_BASE + 0x10000000; addr += GRANULE_2MB)
-            register_device_memory_2mb(addr, addr);
-    }
-}
-
 uint64_t pci_make_addr(uint32_t bus, uint32_t slot, uint32_t func, uint32_t offset){
     return PCI_BASE
             | (((uint64_t)bus) << 20)
             | (((uint64_t)slot) << 15)
             | (((uint64_t)func) << 12) 
             | ((uint64_t)(offset & 0xFFF));
+}
+
+void find_pci(){
+    if (!initialized){
+        initialized = true;
+        for (uint64_t addr = PCI_BASE; addr < PCI_BASE + 0x10000000; addr += GRANULE_2MB)
+            register_device_memory_2mb(addr, addr);
+    }
+
+    if (!g_pci_scanned){
+        g_pci_count = 0;
+
+        for (uint32_t bus = 0; bus < 256 && g_pci_count < (sizeof(g_pci_cache)/sizeof(g_pci_cache[0])); ++bus) {
+            for (uint32_t slot = 0; slot < 32 && g_pci_count < (sizeof(g_pci_cache)/sizeof(g_pci_cache[0])); ++slot) {
+                for (uint32_t func = 0; func < 8 && g_pci_count < (sizeof(g_pci_cache)/sizeof(g_pci_cache[0])); ++func) {
+                    uint64_t addr = pci_make_addr(bus, slot, func, 0x00);
+                    uint16_t vendor = read16(addr + 0x00);
+                    if (vendor == 0xFFFF) continue;
+
+                    uint16_t device = read16(addr + 0x02);
+                    uint8_t class_code = read8 (addr + 0x0B);
+                    uint8_t subclass = read8 (addr + 0x0A);
+                    uint8_t prog_if = read8 (addr + 0x09);
+
+                    g_pci_cache[g_pci_count].addr = addr;
+                    g_pci_cache[g_pci_count].vendor = vendor;
+                    g_pci_cache[g_pci_count].device = device;
+                    g_pci_cache[g_pci_count].class_code = class_code;
+                    g_pci_cache[g_pci_count].subclass = subclass;
+                    g_pci_cache[g_pci_count].prog_if = prog_if;
+                    ++g_pci_count;
+
+                    kprintfv("[PCI] device %u: bus=%u slot=%u func=%u ven=%x dev=%x", (unsigned)(g_pci_count-1), bus, slot, func, vendor, device);
+                }
+            }
+        }
+
+        kprintfv("[PCI] devices cached: %u", (unsigned)g_pci_count);
+        g_pci_scanned = true;
+    }
 }
 
 uint64_t pci_get_bar_address(uint64_t base, uint8_t offset, uint8_t index){
@@ -240,13 +275,15 @@ void dump_pci_config(uint64_t base) {
 }
 
 void pci_enable_device(uint64_t pci_addr){
-    uint32_t cmd = read16(pci_addr + PCI_COMMAND_REGISTER);
-    cmd |= PCI_COMMAND_MEMORY | PCI_COMMAND_REGISTER;
+    uint16_t cmd = read16(pci_addr + PCI_COMMAND_REGISTER);
+    cmd |= (uint16_t)(PCI_COMMAND_MEMORY | PCI_COMMAND_BUS);
     write16(pci_addr + PCI_COMMAND_REGISTER,cmd);
 }
 
 void pci_register(uint64_t mmio_addr, uint64_t mmio_size){
-    for (uint64_t addr = mmio_addr; addr <= mmio_addr + mmio_size; addr += GRANULE_4KB)
+    uint64_t start = mmio_addr & ~(GRANULE_4KB - 1);
+    uint64_t end = (mmio_addr + mmio_size + GRANULE_4KB - 1) & ~(GRANULE_4KB - 1);
+    for (uint64_t addr = start; addr < end; addr += GRANULE_4KB)
         register_device_memory(addr,addr);
 }
 
@@ -387,9 +424,9 @@ bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_si
         uint8_t cap_id = read8(pci_addr + cap_ptr);
         if (cap_id == PCI_CAPABILITY_MSIX) { // MSI-X
             uint16_t msg_ctrl = read16(pci_addr + cap_ptr + 0x2);
-            msg_ctrl &= ~(1 << 15); // Clear MSI-X Enable bit
+            msg_ctrl &= (uint16_t)~(1u << 15); // Clear MSI-X Enable bit
             write16(pci_addr + cap_ptr + 0x2, msg_ctrl);
-            uint16_t table_size = (msg_ctrl & 0x07FF) +1; // takes the 11 rightmost bits, its value is N-1, so add 1 to it for the full size
+            uint16_t table_size = (uint16_t)((msg_ctrl & 0x07FF) +1); // takes the 11 rightmost bits, its value is N-1, so add 1 to it for the full size
 
             if(line_size > table_size){
                 kprintf("[PCI] MSI-X only supports %i interrupts, but you tried to add %i interrupts", table_size, line_size);
@@ -397,41 +434,41 @@ bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_si
             }
 
             uint32_t table_offset = read32(pci_addr + cap_ptr + 0x4);
-            uint8_t bir = table_offset & 0x7;
-            uint32_t table_addr_offset = table_offset & ~0x7;
+            uint8_t bir = (uint8_t)(table_offset & 0x7);
+            uint32_t table_addr_offset = (table_offset & ~0x7);
             
             uint64_t table_addr = pci_read_address_bar(pci_addr, bir);
 
             if(!table_addr){
-                uint64_t bar_size;
+                uint64_t bar_size = 0;
                 pci_setup_bar(pci_addr, bir, &table_addr, &bar_size);
                 kprintf("Setting up new bar for MSI-X %x + %x",table_addr, table_addr_offset);
             } else kprintf("Bar %i setup at %x + %x",bir, table_addr, table_addr_offset);
             
-            msix_table_entry *msix_start = (msix_table_entry *)(uintptr_t)(table_addr + table_addr_offset);
+            volatile msix_table_entry *msix_start = (volatile msix_table_entry *)(uintptr_t)(table_addr + table_addr_offset);
 
-            for (uint32_t i = 0; i < line_size; i++){
-                msix_table_entry *msix_entry = msix_start + i;
+            for (uint32_t i = 0; i < line_size; ++i){
+                volatile msix_table_entry *msix_entry = msix_start + i;
 
                 msix_irq_line irq_line = irq_lines[i];
                 uint64_t addr_full = 0x8020040 + irq_line.addr_offset;
 
-                msix_entry->msg_addr_low = addr_full & 0xFFFFFFFF;
-                msix_entry->msg_addr_high = addr_full >> 32;
-                msix_entry->msg_data = MSI_OFFSET + irq_line.irq_num;
+                msix_entry->msg_addr_low = (uint32_t)(addr_full & 0xFFFFFFFFu);
+                msix_entry->msg_addr_high = (uint32_t)(addr_full >> 32);
+                msix_entry->msg_data = (uint32_t)(MSI_OFFSET + irq_line.irq_num);
                 msix_entry->vector_control = msix_entry->vector_control & ~0x1; // all bits other then the last one are reserved, so don't chnage it, just set the last bit to 0
             }
             
-            msg_ctrl |= (1 << 15); // MSI-X Enable
-            msg_ctrl &= ~(1 << 14); // Clear Function Mask
+            msg_ctrl |= (uint16_t)(1u << 15); // MSI-X Enable
+            msg_ctrl &= ~(uint16_t)(1u << 14); // Clear Function Mask
             write16(pci_addr + cap_ptr + 0x2, msg_ctrl);
 
-            break;
+            return true;
         }
         cap_ptr = read8(pci_addr + cap_ptr + 1);
     }
 
-    return true;
+    return false;
 }
 
 uint8_t pci_setup_interrupts(uint64_t pci_addr, uint8_t irq_line, uint8_t amount){
@@ -453,4 +490,17 @@ uint8_t pci_setup_interrupts(uint64_t pci_addr, uint8_t irq_line, uint8_t amount
     }
     
     return 0;
+}
+size_t pci_enumerate(pci_device_info* out, size_t max) {
+    if (!out || max == 0) return 0;
+
+    if (!initialized || !g_pci_scanned)
+        find_pci();
+
+    size_t to_copy = g_pci_count < max ? g_pci_count : max;
+    for (size_t i = 0; i < to_copy; ++i)
+        out[i] = g_pci_cache[i];
+
+    kprintf("[PCI] (enumerate) served %u/ cached %u", (unsigned)to_copy, (unsigned)g_pci_count);
+    return to_copy;
 }

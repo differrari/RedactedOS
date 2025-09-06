@@ -144,7 +144,7 @@ void arp_populate_response(uint8_t out_mac[6], uint32_t *out_ip, const arp_hdr_t
 
 bool arp_can_reply() {
     const net_cfg_t *cfg = ipv4_get_cfg();
-    return (cfg && cfg->ip != 0 && cfg->mode != NET_MODE_DISABLED);
+    return (cfg && cfg->ip != 0 && cfg->mode != -1); //NET_MODE_DISABLED
 }
 
 
@@ -153,7 +153,7 @@ int arp_daemon_entry(int argc, char* argv[]){
     arp_set_pid(get_current_proc_pid());
     while (1){
         const net_cfg_t *cfg = ipv4_get_cfg();
-        if(cfg && cfg->ip != 0 && cfg->mode != NET_MODE_DISABLED) break;
+        if(cfg && cfg->ip != 0 && cfg->mode != -1) break; //NET_MODE_DISABLED
         sleep(200);
     }
     arp_table_init();

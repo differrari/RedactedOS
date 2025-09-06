@@ -228,7 +228,7 @@ static void dhcp_fsm_once()
         } else {
             net_cfg_t g_net_cfg;
             g_net_cfg.ip = 0;
-            g_net_cfg.mode = NET_MODE_DISABLED;
+            g_net_cfg.mode = 0; //NET_MODE_DHCP
             ipv4_set_cfg(&g_net_cfg);
             g_state = DHCP_S_INIT;
         }
@@ -266,7 +266,7 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
     memset(&rt_static, 0, sizeof(rt_static));
     cfg_local.rt = &rt_static;
     cfg_local.rt->xid = (uint16_t)xid;
-    cfg_local.mode = NET_MODE_DHCP;
+    cfg_local.mode = 0; //NET_MODE_DHCP
 
     uint32_t yi_net = p->yiaddr;
     cfg_local.ip = __builtin_bswap32(yi_net);

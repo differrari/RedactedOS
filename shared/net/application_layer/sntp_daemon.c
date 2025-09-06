@@ -27,7 +27,7 @@ int sntp_daemon_entry(int argc, char* argv[]){
     uint32_t attempts = 0;
     while (attempts < SNTP_BOOTSTRAP_MAX_RETRY){
         const net_cfg_t* cfg = ipv4_get_cfg();
-        if (!cfg || cfg->mode == NET_MODE_DISABLED || cfg->ip == 0){
+        if (!cfg || cfg->mode == -1 || cfg->ip == 0){ //NET_MODE_DISABLED
             sleep(500);
             continue;
         }

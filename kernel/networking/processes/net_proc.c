@@ -7,6 +7,7 @@
 
 #include "net/network_types.h"
 #include "networking/network.h"
+#include "networking/interface_manager.h"
 
 #include "net/link_layer/arp.h"
 
