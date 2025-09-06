@@ -74,12 +74,14 @@ uint64_t syscall_char_size(process_t *ctx){
 }
 
 uint64_t syscall_sleep(process_t *ctx){
+    syscall_depth--;
     sleep_process(ctx->PROC_X0);
     return 0;
 }
 
 uint64_t syscall_halt(process_t *ctx){
     kprintf("Process has ended with code %i",ctx->PROC_X0);
+    syscall_depth--;
     stop_current_process(ctx->PROC_X0);
     return 0;
 }
@@ -213,6 +215,7 @@ void sync_el0_handler_c(){
                 asm volatile ("mrs %0, far_el1" : "=r"(far));
                 if (far == 0){
                     kprintf("Process has exited %x",x0);
+                    syscall_depth--;
                     stop_current_process(x0);
                 }
             }
@@ -226,6 +229,7 @@ void sync_el0_handler_c(){
         } else {
             kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
             coredump(esr, elr, far);
+            syscall_depth--;
             stop_current_process(ec);
         }
     }
