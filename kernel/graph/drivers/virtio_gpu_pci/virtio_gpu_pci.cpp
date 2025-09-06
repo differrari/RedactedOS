@@ -31,6 +31,8 @@
 #define CONTROL_QUEUE 0
 #define CURSOR_QUEUE 1
 
+#define VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM 1
+
 //TODO: format logs
 VirtioGPUDriver* VirtioGPUDriver::try_init(gpu_size preferred_screen_size){
     VirtioGPUDriver* driver = new VirtioGPUDriver();
@@ -184,7 +186,7 @@ bool VirtioGPUDriver::create_2d_resource(uint32_t resource_id, gpu_size size) {
     cmd->hdr.padding[1] = 0;
     cmd->hdr.padding[2] = 0;
     cmd->resource_id = resource_id;
-    cmd->format = 1; // VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM
+    cmd->format = VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM;
     cmd->width = size.width;
     cmd->height = size.height;
 
