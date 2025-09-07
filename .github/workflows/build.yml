@@ -58,4 +58,5 @@ jobs:
             debug
             createfs
             shared/libshared.a
+            shared/*.h
             fs/redos/user/*.elf
