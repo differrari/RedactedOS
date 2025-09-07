@@ -32,3 +32,8 @@ syscall_def bind_port, BIND_PORT_CODE
 syscall_def unbind_port, UNBIND_PORT_CODE
 syscall_def send_packet, SEND_PACKET_CODE
 syscall_def read_packet, READ_PACKET_CODE
+
+syscall_def fopen, FILE_OPEN_CODE
+syscall_def fread, FILE_READ_CODE
+syscall_def fwrit, FILE_WRITE_CODE
+syscall_def dir_list , DIR_LIST_CODE

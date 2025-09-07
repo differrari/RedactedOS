@@ -72,13 +72,25 @@ bool init_boot_filesystem(){
     return load_module(&boot_fs_module);
 }
 
+void* page;
+
 FS_RESULT open_file(const char* path, file* descriptor){
     const char *search_path = path;
     driver_module *mod = get_module(&search_path);
     if (!mod) return FS_RESULT_NOTFOUND;
     FS_RESULT result = mod->open(search_path, descriptor);
-    if (!open_files)
+    if (!open_files){
         open_files = new LinkedList<open_file_descriptors>();
+        page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
+        open_files->set_allocator(
+        [](size_t size) -> uintptr_t {
+            return (uintptr_t)kalloc(page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+        },
+        [](void* ptr, size_t size) {
+            kfree(ptr, size);
+        }
+    );
+    }
     open_files->push_front({
         .file_id = descriptor->id,
         .file_size = descriptor->size,

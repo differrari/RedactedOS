@@ -17,3 +17,7 @@
 #define UNBIND_PORT_CODE            52
 #define SEND_PACKET_CODE            53
 #define READ_PACKET_CODE            54
+#define FILE_OPEN_CODE              60
+#define FILE_READ_CODE              61
+#define FILE_WRITE_CODE             62
+#define DIR_LIST_CODE               70

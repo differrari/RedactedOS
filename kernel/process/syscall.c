@@ -116,6 +116,33 @@ uint64_t syscall_read_packet(process_t *ctx){
     return net_rx_frame(user_out);
 }
 
+uint64_t syscall_fopen(process_t *ctx){
+    char *path = (char *)ctx->PROC_X0;
+    file *descriptor = (file*)ctx->PROC_X1;
+    return open_file(path, descriptor);
+}
+
+uint64_t syscall_fread(process_t *ctx){
+    file *descriptor = (file*)ctx->PROC_X0;
+    char *buf = (char*)ctx->PROC_X1;
+    size_t size = (size_t)ctx->PROC_X2;
+    return read_file(descriptor, buf, size);
+}
+
+uint64_t syscall_fwrite(process_t *ctx){
+    file *descriptor = (file*)ctx->PROC_X0;
+    char *buf = (char*)ctx->PROC_X1;
+    size_t size = (size_t)ctx->PROC_X2;
+    return write_file(descriptor, buf, size);
+}
+
+uint64_t syscall_dir_list(process_t *ctx){
+    kprintf("[SYSCALL implementation error] directory listing not implemented yet");
+    // char *path = (char *)ctx->PROC_X0;
+    // return list_directory_contents(path);
+    return 0;
+}
+
 syscall_entry syscalls[] = {
     { MALLOC_CODE, syscall_malloc},
     { FREE_CODE, syscall_free},
@@ -132,6 +159,10 @@ syscall_entry syscalls[] = {
     { UNBIND_PORT_CODE, syscall_unbind_port},
     { SEND_PACKET_CODE, syscall_send_packet},
     { READ_PACKET_CODE, syscall_read_packet},
+    {FILE_OPEN_CODE, syscall_fopen},
+    {FILE_READ_CODE, syscall_fread},
+    {FILE_WRITE_CODE, syscall_fwrite},
+    {DIR_LIST_CODE, syscall_dir_list},
 };
 
 void coredump(uint64_t esr, uint64_t elr, uint64_t far){
@@ -234,7 +265,6 @@ void sync_el0_handler_c(){
         }
     }
     syscall_depth--;
-    if (result > 0)
-        save_syscall_return(result);
+    save_syscall_return(result);
     process_restore();
 }

@@ -17,16 +17,18 @@ private:
     Node* tail = nullptr;
     uint64_t length = 0;
 
+    uintptr_t (*alloc_func)(size_t) = malloc;
+    void (*free_func)(void*,size_t) = free;
+
     Node* alloc_node(const T& value) {
-        uintptr_t mem = malloc(sizeof(Node));
-        Node* n = reinterpret_cast<Node*>(mem);
+        Node* n = reinterpret_cast<Node*>(alloc_func(sizeof(Node)));
         n->data = value;
         n->next = nullptr;
         return n;
     }
 
     void free_node(Node* n) {
-        free(n, sizeof(Node));
+        free_func(n);
     }
 
 public:
@@ -135,5 +137,9 @@ public:
         }
         return nullptr;
     }
-};
 
+    void set_allocator(uintptr_t (*alloc)(size_t), void (*dealloc)(void*, size_t)) {
+        alloc_func = alloc;
+        free_func = dealloc;
+    }
+};

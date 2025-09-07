@@ -8,6 +8,12 @@ void proc_func() {
     request_draw_ctx(&ctx);
     gpu_size size = (gpu_size){ctx.width,ctx.height};
     gpu_rect rect = (gpu_rect){{10,10},{size.width-20,size.height-20}};
+    file descriptor = {};
+    FS_RESULT res = fopen("/dev/console", &descriptor);
+    if (res == FS_RESULT_SUCCESS){
+        char buffer[256];
+        fread(&descriptor, buffer, 256);
+    }
     while (1) {
         keypress kp = {};
         printf("Print console test %f", (get_time()/1000.f));

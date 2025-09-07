@@ -6,6 +6,7 @@
 #include "std/string.h"
 #include "net/network_types.h"
 #include "ui/draw/draw.h"
+#include "files/fs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,6 +37,12 @@ extern int net_rx_frame(sizedptr *out_frame);
 extern bool dispatch_enqueue_frame(const sizedptr *frame);
 
 void printf(const char *fmt, ...);
+
+FS_RESULT fopen(const char* path, file* descriptor);
+size_t fread(file *descriptor, char* buf, size_t size);
+size_t fwrite(file *descriptor, const char* buf, size_t size);
+
+sizedptr dir_list(const char *path);
 
 #ifdef __cplusplus
 }
