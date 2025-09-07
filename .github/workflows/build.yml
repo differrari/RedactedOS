@@ -45,11 +45,12 @@ jobs:
         run: |
           mkdir -pv fs/redos/user
           make all
+          cp shared/libshared.a libshared.a
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: "${{ matrix.config.name }} - kernel + disk.img + user programs"
+          name: "REDACTED_OS"
           path: |
             kernel.elf
             kernel.img
@@ -57,4 +58,5 @@ jobs:
             run_virt
             debug
             createfs
+            libshared.a
             fs/redos/user/*.elf
