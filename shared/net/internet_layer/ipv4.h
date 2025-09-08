@@ -46,7 +46,7 @@ const net_cfg_t* ipv4_get_cfg();
 
 void ipv4_to_string(uint32_t ip, char* buf);
 
-void ipv4_send_segment(uint32_t src_ip,
+void ipv4_send_packet(uint32_t src_ip,
                             uint32_t dst_ip,
                             uint8_t  proto,
                             sizedptr segment);
@@ -60,9 +60,6 @@ static inline uint32_t ipv4_broadcast(uint32_t ip, uint32_t mask){ return (ip & 
 static inline uint32_t ipv4_first_host(uint32_t ip, uint32_t mask){ return (ip & mask) + 1; }
 static inline uint32_t ipv4_last_host(uint32_t ip, uint32_t mask){ return ((ip & mask) | ~mask) - 1; }
 
-void ipv4_cfg_init();
-void ipv4_set_cfg(const net_cfg_t *src);
-const net_cfg_t* ipv4_get_cfg();
 #ifdef __cplusplus
 }
 #endif

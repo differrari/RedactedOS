@@ -76,7 +76,7 @@ void icmp_send_echo(uint32_t dst_ip,
 
     const net_cfg_t *cfg = ipv4_get_cfg();
     if (!cfg) { free((void*)buf, icmp_len); return; }
-    ipv4_send_segment(cfg->ip, dst_ip, 1, (sizedptr){ buf, icmp_len });
+    ipv4_send_packet(cfg->ip, dst_ip, 1, (sizedptr){ buf, icmp_len });
 
     free((void*)buf, icmp_len);
 }
@@ -114,7 +114,7 @@ void icmp_input(uintptr_t ptr,
 
         const net_cfg_t *cfg = ipv4_get_cfg();
         if (cfg) {
-            ipv4_send_segment(cfg->ip, src_ip, 1, (sizedptr){ buf, reply_len });
+            ipv4_send_packet(cfg->ip, src_ip, 1, (sizedptr){ buf, reply_len });
         }
         free((void*)buf, reply_len);
         return;

@@ -105,14 +105,10 @@ void arp_send_request(uint32_t target_ip) {
 
     if (!cfg) return;
 
-    uint8_t dst_mac[6];
+    uint8_t dst_mac[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
     arp_hdr_t hdr;
-    uintptr_t buf;
-    uint32_t len;
 
-    memset(dst_mac, 0xFF, sizeof(dst_mac));
     memset(hdr.target_mac, 0x00, sizeof(hdr.target_mac));
-
     hdr.htype     = __builtin_bswap16(1);
     hdr.ptype     = __builtin_bswap16(0x0800);
     hdr.hlen      = 6;
@@ -122,15 +118,15 @@ void arp_send_request(uint32_t target_ip) {
     hdr.sender_ip = __builtin_bswap32(cfg->ip);
     hdr.target_ip = __builtin_bswap32(target_ip);
 
-    len = sizeof(eth_hdr_t) + sizeof(arp_hdr_t);
-    buf = (uintptr_t)malloc(len);
+    sizedptr payload = { (uintptr_t)&hdr, sizeof(hdr) };
+    uintptr_t buf = (uintptr_t)malloc(sizeof(hdr));
     if (!buf) return;
+    memcpy((void*)buf, &hdr, sizeof(hdr));
+    payload.ptr = buf;
 
-    uintptr_t ptr = create_eth_packet(buf, local_mac, dst_mac, 0x0806);
-    memcpy((void*)ptr, &hdr, sizeof(arp_hdr_t));
+    eth_send_frame(0x0806, dst_mac, payload);
 
-    eth_send_frame(buf, len);
-    free((void*)buf, len);
+    free((void*)buf, sizeof(hdr));
 }
 
 bool arp_should_handle(const arp_hdr_t *arp, uint32_t my_ip) {
@@ -163,6 +159,7 @@ int arp_daemon_entry(int argc, char* argv[]){
         sleep(1000);
     }
 }
+
 static void arp_send_reply(const arp_hdr_t *in_arp,
                             const uint8_t in_src_mac[6],
                             uint32_t frame_len){
@@ -172,12 +169,6 @@ static void arp_send_reply(const arp_hdr_t *in_arp,
     const net_cfg_t *cfg = ipv4_get_cfg();
     if (!cfg) return;
 
-    uint32_t len = sizeof(eth_hdr_t) + sizeof(arp_hdr_t);
-    uintptr_t buf = (uintptr_t)malloc(len);
-    if (!buf) return;
-
-    uintptr_t ptr = create_eth_packet(buf, local_mac, in_src_mac, 0x0806);
-
     arp_hdr_t reply = *in_arp;
     memcpy(reply.target_mac, in_arp->sender_mac, 6);
     memcpy(reply.sender_mac, local_mac,          6);
@@ -185,12 +176,16 @@ static void arp_send_reply(const arp_hdr_t *in_arp,
     reply.sender_ip = __builtin_bswap32(cfg->ip);
     reply.opcode    = __builtin_bswap16(ARP_OPCODE_REPLY);
 
-    memcpy((void*)ptr, &reply, sizeof(reply));
+    sizedptr payload = {(uintptr_t)&reply, sizeof(reply)};
 
-    eth_send_frame(buf, len);
-    free((void*)buf, len);
+    uintptr_t buf = (uintptr_t)malloc(sizeof(reply));
+    if (!buf) return;
+    memcpy((void*)buf, &reply, sizeof(reply));
+    payload.ptr = buf;
+
+    eth_send_frame(0x0806, in_src_mac, payload);
+    free((void*)buf, sizeof(reply));
 }
-
 
 void arp_input(uintptr_t frame_ptr, uint32_t frame_len) {
     if (frame_len < sizeof(eth_hdr_t) + sizeof(arp_hdr_t)) return;

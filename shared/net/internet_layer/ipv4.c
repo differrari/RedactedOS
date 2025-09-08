@@ -147,7 +147,7 @@ void ip_input(uintptr_t ip_ptr,
     }
 }
 
-void ipv4_send_segment(uint32_t src_ip,
+void ipv4_send_packet(uint32_t src_ip,
                     uint32_t dst_ip,
                     uint8_t  proto,
                     sizedptr segment)
@@ -168,19 +168,14 @@ void ipv4_send_segment(uint32_t src_ip,
         memset(dst_mac, 0xFF, sizeof(dst_mac));
     }
 
-    uint32_t total = sizeof(eth_hdr_t)
-                + sizeof(ipv4_hdr_t)
-                + segment.size;
-    uintptr_t buf = (uintptr_t)malloc(total);
-    if (!buf) return;
+    uint32_t ip_len = sizeof(ipv4_hdr_t) + segment.size;
+    uintptr_t ip_buf = (uintptr_t)malloc(ip_len);
+    if (!ip_buf) return;
 
-    const uint8_t* src_mac = network_get_local_mac();
-    uintptr_t ptr = create_eth_packet(buf, src_mac, dst_mac, 0x0800);
-
-    ipv4_hdr_t *ip = (ipv4_hdr_t *)ptr;
+    ipv4_hdr_t *ip = (ipv4_hdr_t *)ip_buf;
     ip->version_ihl = (4 << 4) | (sizeof(*ip)/4);
     ip->dscp_ecn = 0;
-    ip->total_length = __builtin_bswap16(sizeof(*ip) + segment.size);
+    ip->total_length = __builtin_bswap16(ip_len);
     ip->identification = 0;
     ip->flags_frag_offset = __builtin_bswap16(0x4000);
     ip->ttl = 64;
@@ -190,13 +185,13 @@ void ipv4_send_segment(uint32_t src_ip,
     ip->header_checksum = 0;
     ip->header_checksum = ipv4_checksum(ip, sizeof(*ip));
 
-    ptr += sizeof(*ip);
 
     if (segment.size) {
-        memcpy((void*)ptr, (void*)segment.ptr, segment.size);
+        memcpy((void*)(ip_buf + sizeof(*ip)), (void*)segment.ptr, segment.size);
     }
 
-    eth_send_frame(buf, total);
+    sizedptr payload = { ip_buf, ip_len };
+    eth_send_frame(0x0800, dst_mac, payload);
 
-    free((void*)buf, total);
+    free((void*)ip_buf, ip_len);
 }
