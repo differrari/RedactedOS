@@ -6,28 +6,30 @@
 #include "net/network_types.h"
 #include "net/internet_layer/ipv4.h"
 #include "interface_manager.h"
-#include "std/std.h"
 
 class NetworkDispatch {
 public:
     NetworkDispatch();
     bool init();
+
     void handle_rx_irq(size_t nic_id);
     void handle_tx_irq(size_t nic_id);
-    bool enqueue_frame_on(size_t nic_id, const sizedptr&);
+
+    bool enqueue_frame(uint8_t ifindex, const sizedptr&);
+
     int net_task();
     void set_net_pid(uint16_t pid);
     uint16_t get_net_pid() const;
 
     size_t nic_count() const;
-    const char* ifname(size_t nic_id) const;
-    const char* hw_ifname(size_t nic_id) const;
-    const uint8_t* mac(size_t nic_id) const;
-    uint16_t mtu(size_t nic_id) const;
-    uint16_t header_size(size_t nic_id) const;
-    uint8_t ifindex(size_t nic_id) const;
-    l2_interface_t* l2_at(size_t nic_id) const;
-    NetDriver* driver_at(size_t nic_id) const;
+
+    const char* ifname(uint8_t ifindex) const;
+    const char* hw_ifname(uint8_t ifindex) const;
+    const uint8_t* mac(uint8_t ifindex) const;
+    uint16_t mtu(uint8_t ifindex) const;
+    uint16_t header_size(uint8_t ifindex) const;
+    l2_interface_t* l2_at(uint8_t ifindex) const;
+    NetDriver* driver_at(uint8_t ifindex) const;
 
 private:
     struct NICCtx {
@@ -49,7 +51,11 @@ private:
     size_t nic_num;
     uint16_t g_net_pid;
 
+    uint8_t ifindex_to_nicid[MAX_L2_INTERFACES + 1];
+
     void free_frame(const sizedptr&);
     bool register_all_from_bus();
     void copy_str(char* dst, int cap, const char* src);
+
+    int nic_for_ifindex(uint8_t ifindex) const;
 };

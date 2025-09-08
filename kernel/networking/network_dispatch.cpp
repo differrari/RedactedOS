@@ -7,6 +7,7 @@
 #include "port_manager.h"
 #include "std/memory.h"
 #include "std/std.h"
+#include "console/kio.h"
 
 extern void      sleep(uint64_t ms);
 extern uintptr_t malloc(uint64_t size);
@@ -20,12 +21,20 @@ NetworkDispatch::NetworkDispatch()
 {
     nic_num = 0;
     g_net_pid = 0xFFFF;
+    for (int i = 0; i <= (int)MAX_L2_INTERFACES; ++i) ifindex_to_nicid[i] = 0xFF;
 }
 
 bool NetworkDispatch::init()
 {
     if (net_bus_init() <= 0) return false;
     if (!register_all_from_bus()) return false;
+    for (int ix=1; ix <= (int)MAX_L2_INTERFACES; ++ix) {
+        int nid = nic_for_ifindex((uint8_t)ix);
+        if (nid >= 0) {
+            const char* nm = nics[nid].ifname_str;
+            kprintf("[net] ifindex=%i -> nic_id=%i (%s)", ix, nid, nm );
+        }
+    }
     return nic_num > 0;
 }
 
@@ -50,17 +59,21 @@ void NetworkDispatch::handle_tx_irq(size_t nic_id)
     driver->handle_sent_packet();
 }
 
-bool NetworkDispatch::enqueue_frame_on(size_t nic_id, const sizedptr& frame)
+bool NetworkDispatch::enqueue_frame(uint8_t ifindex, const sizedptr& frame)
 {
-    if (nic_id >= nic_num) return false;
+    int nic_id = nic_for_ifindex(ifindex);
+    if (nic_id < 0) return false;
     NetDriver* driver = nics[nic_id].drv;
     if (!driver) return false;
     if (frame.size == 0) return false;
+
     sizedptr pkt = driver->allocate_packet(frame.size);
     if (!pkt.ptr) return false;
+
     uint16_t hs = nics[nic_id].hdr_sz;
     void* dst = (void*)(pkt.ptr + hs);
     memcpy(dst, (const void*)frame.ptr, frame.size);
+
     if (!nics[nic_id].tx.enqueue(pkt)) { free_frame(pkt); return false; }
     return true;
 }
@@ -113,52 +126,45 @@ size_t NetworkDispatch::nic_count() const
     return nic_num;
 }
 
-const char* NetworkDispatch::ifname(size_t nic_id) const
+const char* NetworkDispatch::ifname(uint8_t ifindex) const
 {
-    if (nic_id >= nic_num) return 0;
-    return nics[nic_id].ifname_str;
+    int nic_id = nic_for_ifindex(ifindex);
+    return nic_id < 0 ? nullptr : nics[nic_id].ifname_str;
 }
 
-const char* NetworkDispatch::hw_ifname(size_t nic_id) const
+const char* NetworkDispatch::hw_ifname(uint8_t ifindex) const
 {
-    if (nic_id >= nic_num) return 0;
-    return nics[nic_id].hwname_str;
+    int nic_id = nic_for_ifindex(ifindex);
+    return nic_id < 0 ? nullptr : nics[nic_id].hwname_str;
 }
 
-const uint8_t* NetworkDispatch::mac(size_t nic_id) const
+const uint8_t* NetworkDispatch::mac(uint8_t ifindex) const
 {
-    if (nic_id >= nic_num) return 0;
-    return nics[nic_id].mac_addr;
+    int nic_id = nic_for_ifindex(ifindex);
+    return nic_id < 0 ? nullptr : nics[nic_id].mac_addr;
 }
 
-uint16_t NetworkDispatch::mtu(size_t nic_id) const
+uint16_t NetworkDispatch::mtu(uint8_t ifindex) const
 {
-    if (nic_id >= nic_num) return 0;
-    return nics[nic_id].mtu_val;
+    int nic_id = nic_for_ifindex(ifindex);
+    return nic_id < 0 ? 0 : nics[nic_id].mtu_val;
 }
 
-uint16_t NetworkDispatch::header_size(size_t nic_id) const
+uint16_t NetworkDispatch::header_size(uint8_t ifindex) const 
 {
-    if (nic_id >= nic_num) return 0;
-    return nics[nic_id].hdr_sz;
+    int nic_id = nic_for_ifindex(ifindex);
+    return nic_id < 0 ? 0 : nics[nic_id].hdr_sz;
 }
 
-uint8_t NetworkDispatch::ifindex(size_t nic_id) const
+l2_interface_t* NetworkDispatch::l2_at(uint8_t ifindex) const
 {
-    if (nic_id >= nic_num) return 0xFF;
-    return nics[nic_id].ifindex;
+    return l2_interface_find_by_index(ifindex);
 }
 
-l2_interface_t* NetworkDispatch::l2_at(size_t nic_id) const
+NetDriver* NetworkDispatch::driver_at(uint8_t ifindex) const
 {
-    if (nic_id >= nic_num) return 0;
-    return l2_interface_find_by_index(nics[nic_id].ifindex);
-}
-
-NetDriver* NetworkDispatch::driver_at(size_t nic_id) const
-{
-    if (nic_id >= nic_num) return 0;
-    return nics[nic_id].drv;
+    int nic_id = nic_for_ifindex(ifindex);
+    return nic_id < 0 ? nullptr : nics[nic_id].drv;
 }
 
 void NetworkDispatch::free_frame(const sizedptr &f)
@@ -189,6 +195,7 @@ bool NetworkDispatch::register_all_from_bus() {
             l2_interface_set_mac(ix, zero_mac);
             l2_interface_set_mtu(ix, m ? m : 65535);
             l2_interface_set_up(ix, true);
+
             continue;
         }
 
@@ -210,17 +217,26 @@ bool NetworkDispatch::register_all_from_bus() {
         l2_interface_set_up(ix, true);
         c->ifindex = ix;
 
+        if (ix <= MAX_L2_INTERFACES) ifindex_to_nicid[ix] = (uint8_t)nic_num;
+
         nic_num += 1;
     }
     return nic_num > 0;
 }
 
-
-void NetworkDispatch::copy_str(char* dst, int cap, const char* src)
-{
+void NetworkDispatch::copy_str(char* dst, int cap, const char* src) {
     if (!dst || cap <= 0) return;
     if (!src) { dst[0] = 0; return; }
     uint32_t n = strlen(src, (uint32_t)(cap - 1));
     memcpy(dst, src, n);
     dst[n] = 0;
+}
+
+int NetworkDispatch::nic_for_ifindex(uint8_t ifindex) const {
+    if (!ifindex) return -1;
+    if (ifindex > MAX_L2_INTERFACES) return -1;
+    uint8_t nic_id = ifindex_to_nicid[ifindex];
+    if (nic_id == 0xFF) return -1;
+    if (nic_id >= nic_num) return -1;
+    return (int)nic_id;
 }

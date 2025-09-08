@@ -11,11 +11,11 @@ bool network_init() {
 }
 
 void network_handle_download_interrupt() {
-    if (dispatch) dispatch->handle_rx_irq(0);
+    if (dispatch) dispatch->handle_rx_irq(0);//legacy
 }
 
 void network_handle_upload_interrupt() {
-    if (dispatch) dispatch->handle_tx_irq(0);
+    if (dispatch) dispatch->handle_tx_irq(0); //legacy
 }
 
 void network_handle_download_interrupt_nic(uint16_t nic_id) {
@@ -33,12 +33,14 @@ int network_net_task_entry(int argc, char* argv[]) {
 
 int net_tx_frame(uintptr_t frame_ptr, uint32_t frame_len) {
     if (!dispatch || !frame_ptr || !frame_len) return -1;
-    return dispatch->enqueue_frame_on(0, {frame_ptr, frame_len}) ? 0 : -1;
+    uint8_t ix = 1; //legacy
+    if (ix == 0xFF) return -1;
+    return dispatch->enqueue_frame(ix, {frame_ptr, frame_len}) ? 0 : -1;
 }
 
-int net_tx_frame_on(uint16_t nic_id, uintptr_t frame_ptr, uint32_t frame_len) {
+int net_tx_frame_on(uint16_t ifindex, uintptr_t frame_ptr, uint32_t frame_len) {
     if (!dispatch || !frame_ptr || !frame_len) return -1;
-    return dispatch->enqueue_frame_on((size_t)nic_id, {frame_ptr, frame_len}) ? 0 : -1;
+    return dispatch->enqueue_frame(ifindex, {frame_ptr, frame_len}) ? 0 : -1;
 }
 
 int net_rx_frame(sizedptr* out_frame) {
@@ -47,42 +49,40 @@ int net_rx_frame(sizedptr* out_frame) {
     out_frame->size = 0;
     return 0;
 }
+
 const uint8_t* network_get_local_mac() {
     static uint8_t dummy[6] = {0,0,0,0,0,0};
     if (!dispatch) return dummy;
-    return dispatch->mac(0);
-}
-
-const uint8_t* network_get_mac(uint16_t nic_id) {
-    static uint8_t dummy[6] = {0,0,0,0,0,0};
-    if (!dispatch) return dummy;
-    const uint8_t* m = dispatch->mac((size_t)nic_id);
+    if (1 == 0xFF) return dummy;
+    const uint8_t* m = dispatch->mac(1); //kegacy
     return m ? m : dummy;
 }
 
-uint16_t network_get_mtu(uint16_t nic_id) {
-    if (!dispatch) return 0;
-    return dispatch->mtu((size_t)nic_id);
+const uint8_t* network_get_mac(uint16_t ifindex) {
+    static uint8_t dummy[6] = {0,0,0,0,0,0};
+    if (!dispatch) return dummy;
+    const uint8_t* m = dispatch->mac(ifindex);
+    return m ? m : dummy;
 }
 
-uint16_t network_get_header_size(uint16_t nic_id) {
+uint16_t network_get_mtu(uint16_t ifindex) {
     if (!dispatch) return 0;
-    return dispatch->header_size((size_t)nic_id);
+    return dispatch->mtu(ifindex);
 }
 
-uint8_t network_get_ifindex(uint16_t nic_id) {
-    if (!dispatch) return 0xFF;
-    return dispatch->ifindex((size_t)nic_id);
+uint16_t network_get_header_size(uint16_t ifindex) {
+    if (!dispatch) return 0;
+    return dispatch->header_size(ifindex);
 }
 
-const char* network_get_ifname(uint16_t nic_id) {
+const char* network_get_ifname(uint16_t ifindex) {
     if (!dispatch) return 0;
-    return dispatch->ifname((size_t)nic_id);
+    return dispatch->ifname(ifindex);
 }
 
-const char* network_get_hw_ifname(uint16_t nic_id) {
+const char* network_get_hw_ifname(uint16_t ifindex) {
     if (!dispatch) return 0;
-    return dispatch->hw_ifname((size_t)nic_id);
+    return dispatch->hw_ifname(ifindex);
 }
 
 size_t network_nic_count() {

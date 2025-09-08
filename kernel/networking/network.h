@@ -23,16 +23,15 @@ void network_handle_upload_interrupt_nic(uint16_t nic_id);
 int network_net_task_entry(int argc, char* argv[]);
 
 int net_tx_frame(uintptr_t frame_ptr, uint32_t frame_len);
-int net_tx_frame_on(uint16_t nic_id, uintptr_t frame_ptr, uint32_t frame_len);
+int net_tx_frame_on(uint16_t ifindex, uintptr_t frame_ptr, uint32_t frame_len);
 int net_rx_frame(sizedptr *out_frame);
 
 const uint8_t* network_get_local_mac(void);
-const uint8_t* network_get_mac(uint16_t nic_id);
-uint16_t network_get_mtu(uint16_t nic_id);
-uint16_t network_get_header_size(uint16_t nic_id);
-uint8_t network_get_ifindex(uint16_t nic_id);
-const char* network_get_ifname(uint16_t nic_id);
-const char* network_get_hw_ifname(uint16_t nic_id);
+const uint8_t* network_get_mac(uint16_t ifindex);
+uint16_t network_get_mtu(uint16_t ifindex);
+uint16_t network_get_header_size(uint16_t ifindex);
+const char* network_get_ifname(uint16_t ifindex);
+const char* network_get_hw_ifname(uint16_t ifindex);
 size_t network_nic_count(void);
 
 void network_update_local_ip(uint32_t ip);
