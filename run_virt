@@ -25,7 +25,7 @@ GL="on"
 if [ "$OS_TYPE" = "Darwin" ]; then
     NETDEV="-netdev vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
-    DISPLAY_MODE="sdl"
+    DISPLAY_MODE="cocoa"
     SELECTED_GPU="virtio-gpu-pci"
     AUDIO_BACKEND="coreaudio"
     GL="off"
