@@ -30,6 +30,8 @@ void kernel_main() {
 
     init_main_process();
 
+    disable_visual();
+
     load_module(&console_module);
 
     print_hardware();
