@@ -201,7 +201,7 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
             out_dev = new OutputAudioDevice();
             out_dev->stream_id = stream;
             out_dev->channels = channels;
-            out_dev->packet_size = sizeof(virtio_snd_pcm_status) + sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
+            out_dev->packet_size = sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
             out_dev->buf_size = TOTAL_BUF_SIZE/SND_U32_BYTES;
             out_dev->header_size = sizeof(virtio_snd_pcm_xfer);
             out_dev->populate();
