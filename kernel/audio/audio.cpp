@@ -67,7 +67,7 @@ void make_wave(WAVE_TYPE type, float freq, float seconds, uint32_t amplitude){
 }
 
 int play_test_audio(int argc, char* argv[]){      
-    make_wave(WAVE_SQUARE, 100, 3, UINT32_MAX/4);
+    // make_wave(WAVE_SAW, 440, 3, UINT32_MAX/4);
     return 0;
 }
 
