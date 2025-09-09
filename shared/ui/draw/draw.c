@@ -7,6 +7,7 @@
 
 int try_merge(gpu_rect* a, gpu_rect* b) {
     //TODO: this is probably causing rects to not get updated correctly. See G.O.L. without full_redraw
+    //TODO: drawing to full height is not working, needs to be -1
     uint32_t ax2 = a->point.x + a->size.width;
     uint32_t ay2 = a->point.y + a->size.height;
     uint32_t bx2 = b->point.x + b->size.width;
