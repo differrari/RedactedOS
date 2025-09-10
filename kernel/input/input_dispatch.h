@@ -20,6 +20,8 @@ void register_keypress(keypress kp);
 void mouse_config(gpu_point point, gpu_size size);
 void register_mouse_input(mouse_input *rat);
 
+mouse_input get_raw_mouse_in();
+
 gpu_point get_mouse_pos();
 bool mouse_button_pressed(mouse_button mb);
 

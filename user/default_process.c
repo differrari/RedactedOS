@@ -15,6 +15,9 @@ void proc_func() {
         fread(&descriptor, buffer, 256);
     }
     while (1) {
+        mouse_input mouse = {};
+        get_mouse_status(&mouse);
+        printf("Mouse %i",mouse.x);
         keypress kp = {};
         printf("Print console test %f", (get_time()/1000.f));
         if (read_key(&kp))

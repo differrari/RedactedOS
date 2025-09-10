@@ -16,6 +16,7 @@ syscall_def printl, PRINTL_CODE
 syscall_def read_key, READ_KEY_CODE
 syscall_def register_shortcut, REGISTER_SHORTCUT_CODE
 syscall_def read_shortcut, READ_SHORTCUT_CODE
+syscall_def get_mouse_status, GET_MOUSE_STATUS_CODE
 
 syscall_def request_draw_ctx, REQUEST_DRAW_CTX_CODE
 syscall_def commit_draw_ctx, GPU_FLUSH_DATA_CODE

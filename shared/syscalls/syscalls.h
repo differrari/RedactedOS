@@ -3,6 +3,7 @@
 #include "types.h"
 #include "ui/graphic_types.h"
 #include "keyboard_input.h"
+#include "mouse_input.h"
 #include "std/string.h"
 #include "net/network_types.h"
 #include "ui/draw/draw.h"
@@ -18,6 +19,7 @@ extern uintptr_t malloc(size_t size);
 extern void free(void *ptr, size_t size);
 
 extern bool read_key(keypress *kp);
+extern void get_mouse_status(mouse_input *in);
 
 extern void sleep(uint64_t time);
 extern void halt(uint32_t exit_code);
