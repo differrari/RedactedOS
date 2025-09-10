@@ -33,6 +33,7 @@ void USBKeyboard::process_data(USBDriver *driver){
 void USBKeyboard::process_keypress(keypress *rkp){
     keypress kp;
     if (is_new_keypress(rkp, &last_keypress) || repeated_keypresses > 3){
+        //TODO: press and hold delay shouldn't be applied at kernel level for all keys. Games don't want it
         if (is_new_keypress(rkp, &last_keypress)){
             repeated_keypresses = 0;
             remove_double_keypresses(rkp, &last_keypress);

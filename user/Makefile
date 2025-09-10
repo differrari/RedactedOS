@@ -27,7 +27,6 @@ prepare:
 	mkdir -p $(BUILD_DIR)
 
 $(LOCATION)$(TARGET): ../shared/libshared.a $(OBJ)
-	echo $(LDFLAGS) -o $(LOCATION)$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
 	$(VLD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
 	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $@
 
