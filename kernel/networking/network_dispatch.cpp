@@ -8,6 +8,7 @@
 #include "std/memory.h"
 #include "std/std.h"
 #include "console/kio.h"
+#include "networking/interface_manager.h"
 
 extern void      sleep(uint64_t ms);
 extern uintptr_t malloc(uint64_t size);
@@ -28,7 +29,14 @@ bool NetworkDispatch::init()
 {
     if (net_bus_init() <= 0) return false;
     if (!register_all_from_bus()) return false;
-    for (int ix=1; ix <= (int)MAX_L2_INTERFACES; ++ix) {
+
+    l3_init_localhost_ipv4();
+    l3_init_localhost_ipv6();
+    ifmgr_autoconfig_all_l2();
+
+    dump_interfaces();
+
+    for (int ix = 1; ix <= (int)MAX_L2_INTERFACES; ++ix){
         int nid = nic_for_ifindex((uint8_t)ix);
         if (nid >= 0) {
             const char* nm = nics[nid].ifname_str;
@@ -191,11 +199,7 @@ bool NetworkDispatch::register_all_from_bus() {
             if (!is_lo0) continue;
 
             uint8_t ix = l2_interface_create(name, nullptr);
-            uint8_t zero_mac[6] = {0,0,0,0,0,0};
-            l2_interface_set_mac(ix, zero_mac);
-            l2_interface_set_mtu(ix, m ? m : 65535);
             l2_interface_set_up(ix, true);
-
             continue;
         }
 
@@ -212,8 +216,6 @@ bool NetworkDispatch::register_all_from_bus() {
         c->hdr_sz = hs;
 
         uint8_t ix = l2_interface_create(c->ifname_str, (void*)drv);
-        l2_interface_set_mac(ix, c->mac_addr);
-        l2_interface_set_mtu(ix, c->mtu_val);
         l2_interface_set_up(ix, true);
         c->ifindex = ix;
 
@@ -239,4 +241,92 @@ int NetworkDispatch::nic_for_ifindex(uint8_t ifindex) const {
     if (nic_id == 0xFF) return -1;
     if (nic_id >= nic_num) return -1;
     return (int)nic_id;
+}
+
+void NetworkDispatch::dump_interfaces()
+{
+    kprintf("[net]interface dump start");
+
+    auto ipv6_to_str = [&](const uint8_t ip[16], char out[41]){ //TODO: move this to ipv6 file
+        static const char HEX[] = "0123456789abcdef";
+        int p = 0;
+        for (int g = 0; g < 8; ++g) {
+            uint16_t w = (uint16_t(ip[g*2]) << 8) | uint16_t(ip[g*2 + 1]);
+            out[p++] = HEX[(w >> 12) & 0xF];
+            out[p++] = HEX[(w >> 8) & 0xF];
+            out[p++] = HEX[(w >> 4) & 0xF];
+            out[p++] = HEX[w & 0xF];
+            if (g != 7) out[p++] = ':';
+        }
+        out[p] = 0;
+    };
+
+    for (uint8_t ifx = 1; ifx <= (uint8_t)MAX_L2_INTERFACES; ++ifx){
+        l2_interface_t* l2 = l2_interface_find_by_index(ifx);
+        if (!l2) continue;
+
+        int nid = nic_for_ifindex(ifx);
+        kprintf("int l2 %u: name=%s up=%u ipv4_count=%u ipv6_count=%u arp=%x nd=%x mcast4=%u mcast6=%u",
+                (unsigned)ifx, l2->name, l2->is_up?1:0,
+                (unsigned)l2->ipv4_count, (unsigned)l2->ipv6_count,
+                (uint64_t)(uintptr_t)l2->arp_table, (uint64_t)(uintptr_t)l2->nd_table,
+                (unsigned)l2->ipv4_mcast_count, (unsigned)l2->ipv6_mcast_count);
+
+        if (nid >= 0){
+            char macs[18];
+            {
+                static const char HEX[] = "0123456789abcdef";
+                int p = 0;
+                for (int i = 0; i < 6; ++i) {
+                    uint8_t b = nics[nid].mac_addr[i];
+                    macs[p++] = HEX[b >> 4];
+                    macs[p++] = HEX[b & 0x0F];
+                    if (i != 5) macs[p++] = ':';
+                }
+                macs[p] = 0;
+            }
+
+            kprintf(" driver: nic_id=%u ifname=%s hw=%s mtu=%u hdr=%u mac=%s drv=%x",
+                    (unsigned)nid,
+                    nics[nid].ifname_str ? nics[nid].ifname_str : (char*)"(null)",
+                    nics[nid].hwname_str ? nics[nid].hwname_str : (char*)"(null)",
+                    (unsigned)nics[nid].mtu_val, (unsigned)nics[nid].hdr_sz, macs,
+                    (uint64_t)(uintptr_t)nics[nid].drv);
+        } else {
+            kprintf(" driver: none");
+        }
+
+        kprintf(" int ipv4:");
+        for (int s = 0; s < (int)MAX_IPV4_PER_INTERFACE; ++s){
+            l3_ipv4_interface_t* v4 = l2->l3_v4[s];
+            if (!v4) continue;
+            char ip[16], mask[16], gw[16], bc[16];
+            ipv4_to_string(v4->ip, ip);
+            ipv4_to_string(v4->mask, mask);
+            ipv4_to_string(v4->gw, gw);
+            ipv4_to_string(v4->broadcast, bc);
+            kprintf("  - slot=%u l3_id=%u mode=%i ip=%s mask=%s gw=%s bcast=%s rt=%x localhost=%u",
+                    (unsigned)s, (unsigned)v4->l3_id, (int)v4->mode, ip, mask, gw, bc,
+                    (uint64_t)(uintptr_t)v4->rt_v4, v4->is_localhost?1:0);
+        }
+
+        kprintf(" int ipv6:");
+        for (int s = 0; s < (int)MAX_IPV6_PER_INTERFACE; ++s){
+            l3_ipv6_interface_t* v6 = l2->l3_v6[s];
+            if (!v6) continue;
+            char ip6[41], gw6[41];
+            ipv6_to_str(v6->ip, ip6);
+            ipv6_to_str(v6->gateway, gw6);
+            uint32_t llc = (v6->kind & IPV6_ADDRK_LINK_LOCAL) ? 1u : 0u;
+            uint32_t gua = (v6->kind & IPV6_ADDRK_GLOBAL) ? 1u : 0u;
+            uint32_t en = (v6->cfg != IPV6_CFG_DISABLE) ? 1u : 0u;
+            kprintf("  - slot=%u l3_id=%u kind=%u cfg=%i llc=%u gua=%u en=%u ip=%s/%u gw=%s vlft=%u plft=%u tsc=%u localhost=%u",
+                    (unsigned)s, (unsigned)v6->l3_id, (unsigned)v6->kind, (int)v6->cfg, llc, gua, en,
+                    ip6, (unsigned)v6->prefix_len, gw6,
+                    (unsigned)v6->valid_lifetime, (unsigned)v6->preferred_lifetime, (unsigned)v6->timestamp_created,
+                    v6->is_localhost?1:0);
+        }
+    }
+
+    kprintf("[net]interface dump end");
 }

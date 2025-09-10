@@ -29,7 +29,7 @@ extern void sleep(uint64_t ms);
 
 static uint32_t pick_probe_ip() {
     const net_cfg_t *cfg = ipv4_get_cfg();
-    if (!cfg || cfg->mode == NET_MODE_DISABLED || cfg->ip == 0)
+    if (!cfg || cfg->mode == IPV4_CFG_DISABLED || cfg->ip == 0)
         return 0;
     if (cfg->gw)
         return cfg->gw;
@@ -235,7 +235,7 @@ static void print_info() {
         while (!timer_is_synchronised());
 
         const net_cfg_t *cfg = ipv4_get_cfg();
-        if (cfg && cfg->mode != NET_MODE_DISABLED && cfg->ip != 0) {
+        if (cfg && cfg->mode != IPV4_CFG_DISABLED && cfg->ip != 0) {
             char ip_str[16], mask_str[16], gw_str[16];
             ipv4_to_string(cfg->ip,   ip_str);
             ipv4_to_string(cfg->mask, mask_str);
@@ -271,7 +271,7 @@ static void test_net() {
     const net_cfg_t *cfg = ipv4_get_cfg();
     net_l4_endpoint srv = {0};
 
-    if (cfg && cfg->mode != NET_MODE_DISABLED && cfg->ip != 0) {
+    if (cfg && cfg->mode != IPV4_CFG_DISABLED && cfg->ip != 0) {
         print_info();
 
         uint32_t bcast = ipv4_broadcast(cfg->ip, cfg->mask);
@@ -308,7 +308,7 @@ static int ip_waiter_entry(int argc, char* argv[]) {
     (void)argc; (void)argv;
     for (;;) {
         const net_cfg_t *cfg = ipv4_get_cfg();
-        if (cfg && cfg->mode != NET_MODE_DISABLED && cfg->ip != 0) {
+        if (cfg && cfg->mode != IPV4_CFG_DISABLED && cfg->ip != 0) {
             create_kernel_process("net_test", net_test_entry, 0, 0);
             break;
         }
@@ -325,7 +325,7 @@ process_t* launch_net_process() {
     create_kernel_process("dhcp_daemon", dhcp_daemon_entry, 0, 0);
     create_kernel_process("dns_daemon", dns_deamon_entry, 0, 0);
 
-    if (cfg && cfg->mode != NET_MODE_DISABLED && cfg->ip != 0) {
+    if (cfg && cfg->mode != IPV4_CFG_DISABLED && cfg->ip != 0) {
         create_kernel_process("net_test", net_test_entry, 0, 0);
         return NULL;
     }

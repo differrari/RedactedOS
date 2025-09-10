@@ -4,20 +4,10 @@
 #include "net/link_layer/eth.h"
 #include "net/network_types.h"
 #include "net/checksums.h"
+#include "networking/interface_manager.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef struct net_runtime_opts {
-    uint16_t mtu;
-    uint32_t t1;
-    uint32_t t2;
-    uint32_t dns[2];
-    uint32_t ntp[2];
-    uint16_t xid;
-    uint32_t server_ip;
-    uint32_t lease;
-} net_runtime_opts_t;
 
 typedef struct net_cfg {
     uint32_t ip;

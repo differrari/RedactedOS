@@ -56,6 +56,7 @@ private:
     void free_frame(const sizedptr&);
     bool register_all_from_bus();
     void copy_str(char* dst, int cap, const char* src);
-
+    void dump_interfaces();
+    
     int nic_for_ifindex(uint8_t ifindex) const;
 };
