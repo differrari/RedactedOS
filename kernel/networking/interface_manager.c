@@ -99,6 +99,17 @@ static inline uint8_t make_l3_id(uint8_t ifindex, uint8_t local_slot){ return (u
 static inline uint8_t l3_ifindex_from_id(uint8_t l3_id){ return (uint8_t)((l3_id >> 4) & 0x0F); }
 static inline uint8_t l3_local_slot_from_id(uint8_t l3_id){ return (uint8_t)(l3_id & 0x0F); }
 
+static bool v4_has_dhcp_on_l2(uint8_t ifindex){
+    for (int i = 0; i < V4_POOL_SIZE; i++){
+        if (!g_v4[i].used) continue;
+        l3_ipv4_interface_t *x = &g_v4[i].node;
+        if (!x->l2) continue;
+        if (x->l2->ifindex != ifindex) continue;
+        if (x->mode == IPV4_CFG_DHCP) return true;
+    }
+    return false;
+}
+
 uint8_t l2_interface_create(const char *name, void *driver_ctx) {
     int slot = find_free_l2_slot();
     if (slot < 0) return 0;
@@ -264,6 +275,13 @@ static int alloc_global_v6_slot(void){ for (int i=0;i<V6_POOL_SIZE;i++) if (!g_v
 uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, uint32_t gw, ipv4_cfg_t mode, net_runtime_opts_t *rt){
     l2_interface_t *l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return 0;
+
+    if (mode == IPV4_CFG_DHCP) {
+        if (v4_has_dhcp_on_l2(ifindex)) {
+            return 0;
+        }
+    }
+
     if (mode == IPV4_CFG_STATIC){
         if (ipv4_is_unspecified(ip)) return 0;
         if (!is_power2_mask_contiguous(mask)) return 0;
@@ -275,6 +293,7 @@ uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
         if (v4_ip_exists_anywhere(ip)) return 0;
         if (v4_overlap_intra_l2(ifindex, ip, mask)) return 0;
     }
+    
     if (l2->ipv4_count >= MAX_IPV4_PER_INTERFACE) return 0;
     int loc = alloc_local_slot_v4(l2);
     int g = alloc_global_v4_slot();
@@ -300,8 +319,16 @@ uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
 bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4_cfg_t mode, net_runtime_opts_t *rt){
     l3_ipv4_interface_t *n = l3_ipv4_find_by_id(l3_id);
     if (!n) return false;
+
     l2_interface_t *l2 = n->l2;
     if (!l2) return false;
+
+    if (mode == IPV4_CFG_DHCP && n->mode != IPV4_CFG_DHCP) {
+        if (v4_has_dhcp_on_l2(l2->ifindex)) {
+            return false;
+        }
+    }
+
     if (mode == IPV4_CFG_STATIC){
         if (ipv4_is_unspecified(ip)) return false;
         if (!is_power2_mask_contiguous(mask)) return false;
@@ -311,26 +338,37 @@ bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
         if (ipv4_is_network_address(ip, mask)) return false;
         if (ipv4_is_broadcast_address(ip, mask)) return false;
         if (ip != n->ip && v4_ip_exists_anywhere(ip)) return false;
-        for (int i=0;i<V4_POOL_SIZE;i++){
+
+        for (int i = 0; i < V4_POOL_SIZE; i++){
             if (!g_v4[i].used) continue;
             l3_ipv4_interface_t *x = &g_v4[i].node;
             if (x==n) continue;
             if (!x->l2 || x->l2->ifindex != l2->ifindex) continue;
             if (x->mode == IPV4_CFG_DISABLED) continue;
+
             uint32_t m = (x->mask < mask) ? x->mask : mask;
             if (ipv4_net(ip, m) == ipv4_net(x->ip, m)) return false;
         }
     }
+
     n->mode = mode;
     n->rt_v4 = rt;
-    if (mode == IPV4_CFG_STATIC){
-        n->ip = ip; n->mask = mask; n->gw = gw;
+
+    if (mode == IPV4_CFG_STATIC) {
+        n->ip = ip;
+        n->mask = mask;
+        n->gw = gw;
         n->broadcast = ipv4_broadcast_calc(ip, mask);
     } else {
-        n->ip = 0; n->mask = 0; n->gw = 0; n->broadcast = 0;
+        n->ip = 0;
+        n->mask = 0;
+        n->gw = 0;
+        n->broadcast = 0;
     }
+
     return true;
 }
+
 
 bool l3_ipv4_remove_from_interface(uint8_t l3_id){
     l3_ipv4_interface_t *n = l3_ipv4_find_by_id(l3_id);
