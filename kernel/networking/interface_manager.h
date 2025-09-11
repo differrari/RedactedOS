@@ -82,7 +82,7 @@ typedef struct l3_ipv6_interface {
     uint8_t prefix_len;
     uint8_t gateway[16];
     uint8_t kind;
-    uint8_t cfg;
+    ipv6_cfg_t cfg;
     bool is_localhost;
     uint32_t valid_lifetime;
     uint32_t preferred_lifetime;
@@ -118,8 +118,8 @@ bool l3_ipv4_remove_from_interface(uint8_t l3_id);
 l3_ipv4_interface_t *l3_ipv4_find_by_id(uint8_t l3_id);
 l3_ipv4_interface_t *l3_ipv4_find_by_ip(uint32_t ip);
 
-uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t prefix_len, const uint8_t gw[16], uint8_t cfg, uint8_t kind);
-bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, const uint8_t gw[16], uint8_t cfg, uint8_t kind);
+uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t prefix_len, const uint8_t gw[16], ipv6_cfg_t cfg, uint8_t kind);
+bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, const uint8_t gw[16], ipv6_cfg_t cfg, uint8_t kind);
 bool l3_ipv6_remove_from_interface(uint8_t l3_id);
 bool l3_ipv6_set_enabled(uint8_t l3_id, bool enable);
 l3_ipv6_interface_t *l3_ipv6_find_by_id(uint8_t l3_id);

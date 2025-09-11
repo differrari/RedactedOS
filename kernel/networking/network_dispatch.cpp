@@ -288,8 +288,8 @@ void NetworkDispatch::dump_interfaces()
 
             kprintf(" driver: nic_id=%u ifname=%s hw=%s mtu=%u hdr=%u mac=%s drv=%x",
                     (unsigned)nid,
-                    nics[nid].ifname_str ? nics[nid].ifname_str : (char*)"(null)",
-                    nics[nid].hwname_str ? nics[nid].hwname_str : (char*)"(null)",
+                    nics[nid].ifname_str[0] ? nics[nid].ifname_str : "(null)",
+                    nics[nid].hwname_str[0] ? nics[nid].hwname_str : "(null)",
                     (unsigned)nics[nid].mtu_val, (unsigned)nics[nid].hdr_sz, macs,
                     (uint64_t)(uintptr_t)nics[nid].drv);
         } else {

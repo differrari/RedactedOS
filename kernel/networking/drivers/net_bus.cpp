@@ -1,7 +1,7 @@
 #include "net_driver.hpp"
 #include "virtio_net_pci/virtio_net_pci.hpp"
 #include "pci.h"
-#include "std/memory.h"
+#include "std/std.h"
 #include "console/kio.h"
 #include "types.h"
 #include "networking/interface_manager.h"
@@ -23,19 +23,12 @@ static net_nic_desc_t g_nics[MAX_L2_INTERFACES];
 static size_t g_count = 0;
 static int g_eth_next = 0;
 static int g_wif_next = 0;
+static int g_net_next = 0;
 static bool g_lo_added = false;
 static bool verbose = true;
 
 static void memzero(void* p, size_t n){
     memset(p,0,n);
-}
-
-static size_t cpystr(char* dst, size_t cap, const char* src){
-    size_t i=0;
-    if (!dst || !src || cap==0) return 0;
-    while (i<cap-1 && src[i]!=0){ dst[i]=src[i]; i++; }
-    dst[i]=0;
-    return i;
 }
 
 static size_t u32_to_dec(char* dst, size_t cap, unsigned v){
@@ -55,9 +48,9 @@ static void make_ifname(char* dst, size_t cap, const char* prefix){
     int idx=0;
     if (prefix && prefix[0]=='e'){ idx = g_eth_next++; }
     else if (prefix && prefix[0]=='w'){ idx = g_wif_next++; }
-    else { idx = g_eth_next + g_wif_next; g_eth_next++; }
+    else { idx = g_net_next++; }
     size_t j=0;
-    if (prefix){ j = cpystr(dst, cap, prefix); } else { dst[0]='n'; dst[1]='i'; dst[2]='c'; dst[3]=0; j=3; }
+    if (prefix){ j = strcpy(dst, cap, prefix); } else { dst[0]='n'; dst[1]='i'; dst[2]='c'; dst[3]=0; j=3; }
     if (j<cap-1) u32_to_dec(dst+j, cap-j, (unsigned)idx);
 }
 
@@ -89,6 +82,7 @@ int net_bus_init(){
     g_count = 0;
     g_eth_next = 0;
     g_wif_next = 0;
+    g_net_next = 0;
     g_lo_added = false;
 
     kprintfv("[net-bus] init");
@@ -133,8 +127,7 @@ int net_bus_init(){
             net_nic_desc_t* e = &g_nics[g_count++];
             e->drv = d;
 
-            uint8_t mac[6]; d->get_mac(mac);
-            memcpy(e->mac, mac, 6);
+            d->get_mac(e->mac);
             e->mtu = d->get_mtu();
             e->header_size = d->get_header_size();
             e->kind = kind;
@@ -142,8 +135,7 @@ int net_bus_init(){
             make_ifname(e->ifname, sizeof(e->ifname), if_prefix);
 
             const char* hw = d->hw_ifname();
-            if (hw && hw[0]) cpystr(e->hw_ifname, sizeof(e->hw_ifname), hw);
-            else { e->hw_ifname[0]='v'; e->hw_ifname[1]='n'; e->hw_ifname[2]='e'; e->hw_ifname[3]='t'; e->hw_ifname[4]=0; }
+            strcpy(e->hw_ifname, sizeof(e->hw_ifname), (hw && hw[0]) ? hw : "vnet");
 
             kprintfv("[net-bus] added if=%s mac=%x:%x:%x:%x:%x:%x mtu=%u hdr=%u hw=%s irq_base=%u",
                      e->ifname, e->mac[0],e->mac[1],e->mac[2],e->mac[3],e->mac[4],e->mac[5],
