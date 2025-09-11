@@ -109,14 +109,14 @@ void arp_send_request(uint32_t target_ip) {
     arp_hdr_t hdr;
 
     memset(hdr.target_mac, 0x00, sizeof(hdr.target_mac));
-    hdr.htype     = __builtin_bswap16(1);
-    hdr.ptype     = __builtin_bswap16(0x0800);
+    hdr.htype     = bswap16(1);
+    hdr.ptype     = bswap16(0x0800);
     hdr.hlen      = 6;
     hdr.plen      = 4;
-    hdr.opcode    = __builtin_bswap16(ARP_OPCODE_REQUEST);
+    hdr.opcode    = bswap16(ARP_OPCODE_REQUEST);
     memcpy(hdr.sender_mac, local_mac, 6);
-    hdr.sender_ip = __builtin_bswap32(cfg->ip);
-    hdr.target_ip = __builtin_bswap32(target_ip);
+    hdr.sender_ip = bswap32(cfg->ip);
+    hdr.target_ip = bswap32(target_ip);
 
     sizedptr payload = { (uintptr_t)&hdr, sizeof(hdr) };
     uintptr_t buf = (uintptr_t)malloc(sizeof(hdr));
@@ -130,12 +130,12 @@ void arp_send_request(uint32_t target_ip) {
 }
 
 bool arp_should_handle(const arp_hdr_t *arp, uint32_t my_ip) {
-    return __builtin_bswap32(arp->target_ip) == my_ip;
+    return bswap32(arp->target_ip) == my_ip;
 }
 
 void arp_populate_response(uint8_t out_mac[6], uint32_t *out_ip, const arp_hdr_t *arp) {
     if (out_mac) memcpy(out_mac, arp->sender_mac, 6);
-    if (out_ip)  *out_ip = __builtin_bswap32(arp->sender_ip);
+    if (out_ip)  *out_ip = bswap32(arp->sender_ip);
 }
 
 bool arp_can_reply() {
@@ -173,8 +173,8 @@ static void arp_send_reply(const arp_hdr_t *in_arp,
     memcpy(reply.target_mac, in_arp->sender_mac, 6);
     memcpy(reply.sender_mac, local_mac,          6);
     reply.target_ip = in_arp->sender_ip;
-    reply.sender_ip = __builtin_bswap32(cfg->ip);
-    reply.opcode    = __builtin_bswap16(ARP_OPCODE_REPLY);
+    reply.sender_ip = bswap32(cfg->ip);
+    reply.opcode    = bswap16(ARP_OPCODE_REPLY);
 
     sizedptr payload = {(uintptr_t)&reply, sizeof(reply)};
 
@@ -192,14 +192,14 @@ void arp_input(uintptr_t frame_ptr, uint32_t frame_len) {
     if (!init) return;
 
     arp_hdr_t *hdr = (arp_hdr_t*)(frame_ptr + sizeof(eth_hdr_t));
-    uint32_t sender_ip = __builtin_bswap32(hdr->sender_ip);
+    uint32_t sender_ip = bswap32(hdr->sender_ip);
 
     arp_table_put(sender_ip, hdr->sender_mac, 180000, false);
 
     const net_cfg_t *cfg = ipv4_get_cfg();
     if (!cfg) return;
 
-    if (__builtin_bswap16(hdr->opcode) == ARP_OPCODE_REQUEST &&
+    if (bswap16(hdr->opcode) == ARP_OPCODE_REQUEST &&
         arp_should_handle(hdr, cfg->ip) &&
         arp_can_reply())
     {

@@ -47,8 +47,8 @@ void create_icmp_packet(uintptr_t p,
     icmp_packet *pkt = (icmp_packet*)p;
     pkt->type = d->response ? ICMP_ECHO_REPLY : ICMP_ECHO_REQUEST;
     pkt->code = 0;
-    pkt->id   = __builtin_bswap16(d->id);
-    pkt->seq  = __builtin_bswap16(d->seq);
+    pkt->id   = bswap16(d->id);
+    pkt->seq  = bswap16(d->seq);
 
     memset(pkt->payload, 0, sizeof(pkt->payload));
     memcpy(pkt->payload, d->payload, sizeof(pkt->payload));
@@ -95,8 +95,8 @@ void icmp_input(uintptr_t ptr,
     pkt->checksum = recv_ck;
 
     uint8_t type = pkt->type;
-    uint16_t id = __builtin_bswap16(pkt->id);
-    uint16_t sq = __builtin_bswap16(pkt->seq);
+    uint16_t id = bswap16(pkt->id);
+    uint16_t sq = bswap16(pkt->seq);
     uint32_t pay = len - 8;
     if(pay > 56) pay = 56;
 

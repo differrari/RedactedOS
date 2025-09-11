@@ -18,7 +18,7 @@ sizedptr dhcp_build_packet(const dhcp_request *req,
 
     p.op = 1; p.htype = 1; p.hlen  = 6; p.hops  = 0;
     p.xid = xid; p.secs  = 0;
-    p.flags = __builtin_bswap16(0x8000);
+    p.flags = bswap16(0x8000);
     p.ciaddr = 0; p.yiaddr = 0; p.siaddr = 0; p.giaddr = 0;
     memcpy(p.chaddr, req->mac, 6);
 

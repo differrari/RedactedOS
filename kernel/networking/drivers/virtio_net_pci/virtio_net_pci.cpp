@@ -59,7 +59,10 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector){
     virtio_get_capabilities(&vnp_net_dev, addr, &mmio_addr, &mmio_size);
     kprintfv("[virtio-net] mmio=%x size=%x",(uintptr_t)mmio_addr,(uintptr_t)mmio_size);
 
-    pci_register(mmio_addr, mmio_size);
+    if (vnp_net_dev.common_cfg) pci_register(((uintptr_t)vnp_net_dev.common_cfg) & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
+    if (vnp_net_dev.device_cfg) pci_register(((uintptr_t)vnp_net_dev.device_cfg) & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
+    if (vnp_net_dev.notify_cfg) pci_register(((uintptr_t)vnp_net_dev.notify_cfg) & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
+    if (vnp_net_dev.isr_cfg)    pci_register(((uintptr_t)vnp_net_dev.isr_cfg)    & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
 
     uint8_t interrupts_ok = pci_setup_interrupts(addr, irq_base_vector, 2);
     if (!interrupts_ok){

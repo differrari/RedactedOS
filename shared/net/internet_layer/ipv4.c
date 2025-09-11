@@ -123,14 +123,14 @@ void ip_input(uintptr_t ip_ptr,
         hdr->header_checksum = recv_ck;
     }
 
-    uint32_t sip = __builtin_bswap32(hdr->src_ip);
+    uint32_t sip = bswap32(hdr->src_ip);
     arp_table_put(sip, src_mac, 60000, false);
 
-    uint32_t dip = __builtin_bswap32(hdr->dst_ip);
+    uint32_t dip = bswap32(hdr->dst_ip);
     //TODO manage special ip
 
     uintptr_t payload_ptr = ip_ptr + header_bytes;
-    uint32_t payload_len = __builtin_bswap16(hdr->total_length) - header_bytes;
+    uint32_t payload_len = bswap16(hdr->total_length) - header_bytes;
     switch (hdr->protocol) {
         case 1://icmp
             icmp_input(payload_ptr, payload_len, sip, dip);
@@ -175,13 +175,13 @@ void ipv4_send_packet(uint32_t src_ip,
     ipv4_hdr_t *ip = (ipv4_hdr_t *)ip_buf;
     ip->version_ihl = (4 << 4) | (sizeof(*ip)/4);
     ip->dscp_ecn = 0;
-    ip->total_length = __builtin_bswap16(ip_len);
+    ip->total_length = bswap16(ip_len);
     ip->identification = 0;
-    ip->flags_frag_offset = __builtin_bswap16(0x4000);
+    ip->flags_frag_offset = bswap16(0x4000);
     ip->ttl = 64;
     ip->protocol = proto;
-    ip->src_ip = __builtin_bswap32(src_ip);
-    ip->dst_ip = __builtin_bswap32(dst_ip);
+    ip->src_ip = bswap32(src_ip);
+    ip->dst_ip = bswap32(dst_ip);
     ip->header_checksum = 0;
     ip->header_checksum = ipv4_checksum(ip, sizeof(*ip));
 

@@ -81,7 +81,7 @@ static void dhcp_send_request(const dhcp_request *req,
                             uint32_t xid,
                             bool broadcast)
 {
-    uint32_t dst = broadcast ? 0xFFFFFFFFu : __builtin_bswap32(req->server_ip);
+    uint32_t dst = broadcast ? 0xFFFFFFFFu : bswap32(req->server_ip);
     //kprintf("[DHCP] request xid=%i dst=%x\n", (uint64_t)xid, (uint64_t)dst);
     dhcp_tx_packet(req, DHCPREQUEST, xid, dst);
 }
@@ -90,9 +90,9 @@ static void dhcp_send_renew(uint32_t xid) {
     const net_cfg_t *cfg = ipv4_get_cfg();
     dhcp_request req = {0};
     memcpy(req.mac, g_local_mac, 6);
-    req.offered_ip = __builtin_bswap32(cfg->ip);
+    req.offered_ip = bswap32(cfg->ip);
     req.server_ip  = cfg->rt ? cfg->rt->server_ip : 0;
-    uint32_t dst = req.server_ip ? __builtin_bswap32(req.server_ip) : 0xFFFFFFFFu;
+    uint32_t dst = req.server_ip ? bswap32(req.server_ip) : 0xFFFFFFFFu;
     kprintf("[DHCP] renew xid=%i dst=%x", xid, dst);
     dhcp_tx_packet(&req, DHCPREQUEST, xid, dst);
 }
@@ -101,7 +101,7 @@ static void dhcp_send_rebind(uint32_t xid) {
     const net_cfg_t *cfg = ipv4_get_cfg();
     dhcp_request req = {0};
     memcpy(req.mac, g_local_mac, 6);
-    req.offered_ip = __builtin_bswap32(cfg->ip);
+    req.offered_ip = bswap32(cfg->ip);
     req.server_ip  = 0;
     kprintf("[DHCP] rebind xid=%i", xid);
     dhcp_tx_packet(&req, DHCPREQUEST, xid, 0xFFFFFFFFu);
@@ -269,7 +269,7 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
     cfg_local.mode = 0; //NET_MODE_DHCP
 
     uint32_t yi_net = p->yiaddr;
-    cfg_local.ip = __builtin_bswap32(yi_net);
+    cfg_local.ip = bswap32(yi_net);
     req->offered_ip = yi_net;
 
     uint16_t idx;
@@ -279,14 +279,14 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
     if (idx != UINT16_MAX && (len = p->options[idx+1]) >= 4) {
         uint32_t mask_net;
         memcpy(&mask_net, &p->options[idx+2], 4);
-        cfg_local.mask = __builtin_bswap32(mask_net);
+        cfg_local.mask = bswap32(mask_net);
     }
 
     idx = dhcp_parse_option(p, 3);
     if (idx != UINT16_MAX && (len = p->options[idx+1]) >= 4) {
         uint32_t gw_net;
         memcpy(&gw_net, &p->options[idx+2], 4);
-        cfg_local.gw = __builtin_bswap32(gw_net);
+        cfg_local.gw = bswap32(gw_net);
     }
 
     idx = dhcp_parse_option(p, 6);
@@ -295,7 +295,7 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
         for (int i = 0; i < 2 && (i*4 + 4) <= len; ++i) {
             uint32_t dns_net;
             memcpy(&dns_net, &p->options[idx+2 + i*4], 4);
-            cfg_local.rt->dns[i] = __builtin_bswap32(dns_net);
+            cfg_local.rt->dns[i] = bswap32(dns_net);
         }
     }
 
@@ -305,7 +305,7 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
         for (int i = 0; i < 2 && (i*4 + 4) <= len; ++i) {
             uint32_t ntp_net;
             memcpy(&ntp_net, &p->options[idx+2 + i*4], 4);
-            cfg_local.rt->ntp[i] = __builtin_bswap32(ntp_net);
+            cfg_local.rt->ntp[i] = bswap32(ntp_net);
         }
     }
 
@@ -313,21 +313,21 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
     if (idx != UINT16_MAX && p->options[idx+1] == 2) {
         uint16_t mtu_net;
         memcpy(&mtu_net, &p->options[idx+2], 2);
-        cfg_local.rt->mtu = __builtin_bswap16(mtu_net);
+        cfg_local.rt->mtu = bswap16(mtu_net);
     }
 
     idx = dhcp_parse_option(p, 51);
     if (idx != UINT16_MAX && p->options[idx+1] >= 4) {
         uint32_t lease_net;
         memcpy(&lease_net, &p->options[idx+2], 4);
-        cfg_local.rt->lease = __builtin_bswap32(lease_net);
+        cfg_local.rt->lease = bswap32(lease_net);
     }
 
     idx = dhcp_parse_option(p, 58);
     if (idx != UINT16_MAX && p->options[idx+1] >= 4) {
         uint32_t t1_net;
         memcpy(&t1_net, &p->options[idx+2], 4);
-        cfg_local.rt->t1 = __builtin_bswap32(t1_net);
+        cfg_local.rt->t1 = bswap32(t1_net);
     }else {
         cfg_local.rt->t1 = cfg_local.rt->lease / 2;
     }
@@ -336,7 +336,7 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
     if (idx != UINT16_MAX && p->options[idx+1] >= 4) {
         uint32_t t2_net;
         memcpy(&t2_net, &p->options[idx+2], 4);
-        cfg_local.rt->t2 = __builtin_bswap32(t2_net);
+        cfg_local.rt->t2 = bswap32(t2_net);
     } else {
         cfg_local.rt->t2 = (cfg_local.rt->lease / 8) * 7;
     }
@@ -345,7 +345,7 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
     if (idx != UINT16_MAX && p->options[idx+1] >= 4) {
         uint32_t srv_net;
         memcpy(&srv_net, &p->options[idx+2], 4);
-        cfg_local.rt->server_ip = __builtin_bswap32(srv_net);
+        cfg_local.rt->server_ip = bswap32(srv_net);
         req->server_ip = srv_net;
     }
 

@@ -16,13 +16,13 @@ uintptr_t create_eth_packet(uintptr_t p,
     eth_hdr_t* eth =(eth_hdr_t*)p;
     memcpy(eth->src_mac, src_mac, 6);
     memcpy(eth->dst_mac, dst_mac, 6);
-    eth->ethertype = __builtin_bswap16(type);
+    eth->ethertype = bswap16(type);
     return p + sizeof(eth_hdr_t);
 }
 
 uint16_t eth_parse_packet_type(uintptr_t ptr) {
     const eth_hdr_t* eth = (const eth_hdr_t*)ptr;
-    return __builtin_bswap16(eth->ethertype);
+    return bswap16(eth->ethertype);
 }
 
 const uint8_t* eth_get_source(uintptr_t ptr){
