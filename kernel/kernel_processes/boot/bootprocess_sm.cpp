@@ -10,6 +10,10 @@ BootSM::BootSM(){
 
 void BootSM::initialize(){
     start_terminal();
+    disable_visual();
+    input_start_polling();
+    gpu_size screen_size = gpu_get_screen_size();
+    mouse_config((gpu_point){screen_size.width/2,screen_size.height/2}, screen_size);
     AdvanceToState(Bootscreen);
 }
 

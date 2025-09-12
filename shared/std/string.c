@@ -237,6 +237,11 @@ char tolower(char c){
     return c;
 }
 
+char toupper(char c){
+    if (c >= 'a' && c <= 'z') return c - ('a' - 'A');
+    return c;
+}
+
 int strcmp(const char *a, const char *b, bool case_insensitive){
     if (a == NULL && b == NULL) return 0;
     if (a == NULL) return -1;  

@@ -35,6 +35,8 @@ string string_tail(const char *array, uint32_t max_length);
 string string_repeat(char symbol, uint32_t amount);
 
 char tolower(char c);
+char toupper(char c);
+
 int strcmp(const char *a, const char *b, bool case_insensitive);
 bool strcont(const char *a, const char *b);
 int strstart(const char *a, const char *b, bool case_insensitive);
