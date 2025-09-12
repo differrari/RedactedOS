@@ -6,6 +6,7 @@
 #define READ_KEY_CODE               5
 #define REGISTER_SHORTCUT_CODE      6
 #define READ_SHORTCUT_CODE          7
+#define GET_MOUSE_STATUS_CODE       8
 #define REQUEST_DRAW_CTX_CODE       20
 #define GPU_FLUSH_DATA_CODE         21
 #define GPU_CHAR_SIZE_CODE          23

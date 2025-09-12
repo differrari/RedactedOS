@@ -6,7 +6,6 @@
 #define line_height char_size + 2
 
 int try_merge(gpu_rect* a, gpu_rect* b) {
-    //TODO: this is probably causing rects to not get updated correctly. See G.O.L. without full_redraw
     //TODO: drawing to full height is not working, needs to be -1
     uint32_t ax2 = a->point.x + a->size.width;
     uint32_t ay2 = a->point.y + a->size.height;
@@ -75,9 +74,10 @@ void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_
     if (x + width >= ctx->width || y + height >= ctx->height) return;
     if (width == ctx->width && x == 0){
         memset(ctx->fb + (y * (ctx->width)) , color, ctx->stride * height);
+    } else {
+        for (uint32_t dy = 0; dy < height; dy++)
+            memset(ctx->fb + ((y+dy) * (ctx->width)) + x, color, width*4);
     }
-    for (uint32_t dy = 0; dy < height; dy++)
-        memset(ctx->fb + ((y+dy) * (ctx->width)) + x, color, width*4);
     mark_dirty(ctx, x,y,width,height);
 }
 

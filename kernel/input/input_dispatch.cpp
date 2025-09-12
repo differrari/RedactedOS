@@ -59,8 +59,14 @@ void mouse_config(gpu_point point, gpu_size size){
 }
 
 uint8_t last_cursor_state = 0;
+mouse_input last_mouse_in;
+
+mouse_input get_raw_mouse_in(){
+    return last_mouse_in;
+}
 
 void register_mouse_input(mouse_input *rat){
+    last_mouse_in = *rat;
     int32_t dx = rat->x;
     int32_t dy = rat->y;
     mouse_loc.x += dx;

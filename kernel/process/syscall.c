@@ -56,6 +56,14 @@ uint64_t syscall_read_shortcut(process_t *ctx){
     return 0;
 }
 
+uint64_t syscall_get_mouse(process_t *ctx){
+    //TODO: do we want to prevent the process from knowing what the mouse is doing outside the window unless it's explicitly allowed?
+    if (get_current_proc_pid() != ctx->id) return 0;
+    mouse_input *inp = (mouse_input*)ctx->PROC_X0;
+    *inp = get_raw_mouse_in();
+    return 0;
+}
+
 uintptr_t syscall_gpu_request_ctx(process_t *ctx){
     draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
     get_window_ctx(d_ctx);
@@ -149,6 +157,7 @@ syscall_entry syscalls[] = {
     { PRINTL_CODE, syscall_printl},
     { READ_KEY_CODE, syscall_read_key},
     { READ_SHORTCUT_CODE, syscall_read_shortcut},
+    { GET_MOUSE_STATUS_CODE, syscall_get_mouse },
     { REQUEST_DRAW_CTX_CODE, syscall_gpu_request_ctx},
     { GPU_FLUSH_DATA_CODE, syscall_gpu_flush},
     { GPU_CHAR_SIZE_CODE, syscall_char_size},

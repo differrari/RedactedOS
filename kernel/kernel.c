@@ -51,12 +51,15 @@ void kernel_main() {
     load_module(&disk_module);
 
     bool input_available = load_module(&input_module);
+    bool network_available = false;
 
-    bool network_available = load_module(&net_module);
-    
-    load_module(&audio_module);
+    if (BOARD_TYPE == 1){//TODO: Normally, we'd want to fix the net and audio module to handle the devices not being found (for the Pi, for example) gracefully, but we're doing it this way to try to avoid a major merge conflict right now
+        network_available = load_module(&net_module);
+        
+        load_module(&audio_module);
 
-    init_audio_mixer();
+        init_audio_mixer();
+    }
     
     mmu_init();
 
