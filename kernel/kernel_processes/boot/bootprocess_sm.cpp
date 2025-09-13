@@ -3,6 +3,8 @@
 #include "login_screen.h"
 #include "../windows/dos.h"
 #include "console/kio.h"
+#include "input/input_dispatch.h"
+#include "graph/graphics.h"
 
 BootSM::BootSM(){
 
