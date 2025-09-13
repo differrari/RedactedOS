@@ -252,9 +252,9 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
 }
 
 size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
-    void* file = open_files[descriptor->id];
-    //TODO: keep track of file size and limit copy to only that or less
-    memcpy(buf, file, size);
+    uintptr_t file = (uintptr_t)open_files[descriptor->id];
+    if (descriptor->cursor > size) return 0;
+    memcpy(buf, (void*)(file + descriptor->cursor), size);
     return size;
 }
 
