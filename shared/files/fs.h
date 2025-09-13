@@ -8,6 +8,11 @@ typedef struct file {
 
 typedef uint64_t file_offset;
 
+typedef enum SEEK_TYPE {
+    SEEK_ABSOLUTE,
+    SEEK_RELATIVE
+} SEEK_TYPE;
+
 typedef enum FS_RESULT {
     FS_RESULT_SUCCESS,
     FS_RESULT_NOTFOUND,

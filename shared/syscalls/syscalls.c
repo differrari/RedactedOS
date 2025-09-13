@@ -1,5 +1,7 @@
 #include "syscalls.h"
 #include "std/string.h"
+#include "math/math.h"
+#include "std/memory.h"
 
 void printf(const char *fmt, ...){
     __attribute__((aligned(16))) va_list args;
@@ -8,4 +10,25 @@ void printf(const char *fmt, ...){
     string_format_va_buf(fmt, li, args);
     va_end(args);
     printl(li);
+}
+
+void seek(file *descriptor, int64_t offset, SEEK_TYPE type){
+    uint64_t new_cursor = descriptor->cursor;
+    switch (type) {
+        case SEEK_ABSOLUTE:
+            new_cursor = (uint64_t)offset;
+            break;
+        case SEEK_RELATIVE:
+            new_cursor += offset;
+            break;
+    }
+    if (new_cursor > descriptor->size) return;
+    descriptor->cursor = new_cursor;
+}
+
+uintptr_t realloc(uintptr_t old_ptr, size_t old_size, size_t new_size){
+    uintptr_t new_ptr = malloc(new_size);
+    memcpy((void*)new_ptr, (void*)old_ptr, min(old_size,new_size));
+    free((void*)old_ptr, old_size);
+    return new_ptr;
 }
