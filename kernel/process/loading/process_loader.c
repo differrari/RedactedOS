@@ -4,6 +4,7 @@
 #include "console/kio.h"
 #include "exceptions/irq.h"
 #include "exceptions/exception_handler.h"
+#include "std/memory.h"
 
 typedef struct {
     uint64_t code_base_start;
@@ -264,14 +265,12 @@ process_t* create_process(const char *name, void *content, uint64_t content_size
     process_t* proc = init_process();
 
     name_process(proc, name);
-    
+
     //TODO: keep track of code size so we can free up allocated code pages
     uint8_t* dest = (uint8_t*)palloc(content_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true);
     if (!dest) return 0;
 
-    for (uint64_t i = 0; i < content_size; i++){
-        dest[i] = ((uint8_t *)content)[i];
-    }
+    memcpy(dest, content, content_size);
     
     uint64_t stack_size = 0x1000;
 

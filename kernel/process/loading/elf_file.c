@@ -36,7 +36,7 @@ typedef struct elf_program_header {
     uint64_t alignment;
 } elf_program_header;
 
-process_t* load_elf_file(const char *name, void* file){
+process_t* load_elf_file(const char *name, void* file, size_t filesize){
     elf_header *header = (elf_header*)file;
 
     if (header->magic[0] != 0x7f){
@@ -45,6 +45,7 @@ process_t* load_elf_file(const char *name, void* file){
     }
 
     kprintf("ELF FILE VERSION %x HEADER VERSION %x (%x)",header->elf_version,header->header_version,header->header_size);
+    kprintf("There are %i program headers",header->program_header_num_entries);
     kprintf("FILE %i for %x",header->type, header->instruction_set);
     kprintf("ENTRY %x - %i",header->program_entry_offset);
     kprintf("HEADER %x - %i * %i vs %i",header->program_header_offset, header->program_header_entry_size,header->program_header_num_entries,sizeof(elf_program_header));
@@ -53,5 +54,5 @@ process_t* load_elf_file(const char *name, void* file){
     kprintf("SECTION %x - %i * %i",header->section_header_offset, header->section_entry_size,header->section_num_entries);
     kprintf("First instruction %x", *(uint64_t*)(file + header->program_entry_offset));
 
-    return create_process(name, (void*)(file + first_program_header->p_offset), first_program_header->p_filez, header->program_entry_offset);
+    return create_process(name, (void*)(file + first_program_header->p_offset), filesize, header->program_entry_offset);
 }

@@ -136,8 +136,8 @@ void Desktop::activate_current(){
             kprintf("[LAUNCHER] Failed to read full elf file");
             return;
         } 
-        kprintf("[LAUNCHER] read file");
-        active_proc = load_elf_file(entries[index].name, file);
+        kprintf("[LAUNCHER] read file %x",fd.size);
+        active_proc = load_elf_file(entries[index].name, file,fd.size);
         if (!active_proc){
             kprintf("[LAUNCHER] Failed to load ELF file");
             return;
