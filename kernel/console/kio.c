@@ -109,10 +109,12 @@ void kprint(const char *fmt){
     putc('\r');
     putc('\n');
 
-     while (*fmt != '\0') {
-        *(char*)(cursor++) = *fmt;
-        fmt++;
-    }
+    if (cursor + strlen(fmt, 0) >= ((uint64_t)print_buf + CONSOLE_BUF_SIZE))
+        reset_buffer();
+
+    while (*fmt)
+        *(char*)(cursor++) = *fmt++;
+    
     *(char*)(cursor++) = '\r';
     *(char*)(cursor++) = '\n';
 }
