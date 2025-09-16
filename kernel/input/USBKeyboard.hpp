@@ -15,8 +15,6 @@ private:
     bool requesting = false;
     uint8_t slot_id;
 
-    __attribute__((aligned(16))) keypress last_keypress;
-
     int repeated_keypresses = 0; 
 
     void* buffer;
