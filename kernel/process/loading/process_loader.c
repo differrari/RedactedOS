@@ -5,6 +5,7 @@
 #include "exceptions/irq.h"
 #include "exceptions/exception_handler.h"
 #include "std/memory.h"
+#include "memory/mmu.h"
 
 typedef struct {
     uint64_t code_base_start;
@@ -259,7 +260,7 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     kprintfv("Finished translation");
 }
 
-process_t* create_process(const char *name, void *content, uint64_t content_size, uintptr_t entry) {
+process_t* create_process(const char *name, void *content, uint64_t content_size, uintptr_t entry, uintptr_t va_base) {
     
     disable_interrupt();
     process_t* proc = init_process();
@@ -270,14 +271,23 @@ process_t* create_process(const char *name, void *content, uint64_t content_size
     uint8_t* dest = (uint8_t*)palloc(content_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true);
     if (!dest) return 0;
 
+    if (va_base + content_size >= LOWEST_ADDR){
+        kprintf("[PROCESS_LOADING IMPLEMENTATION WARNING] virtual addressing currently not supported for this process. Would overwrite %x",LOWEST_ADDR);
+        entry += (uintptr_t)dest;
+    } else {
+        //TODO: multiple TTBRs
+        for (uint32_t i = 0; i < content_size; i+= GRANULE_4KB){
+            register_proc_memory(va_base + i, (uintptr_t)dest + i, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
+        }
+    }
     memcpy(dest, content, content_size);
     
     uint64_t stack_size = 0x1000;
 
-    uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_USER, MEM_RW, false);
+    uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_USER, MEM_RW, true);
     if (!stack) return 0;
 
-    uintptr_t heap = (uintptr_t)palloc(stack_size, MEM_PRIV_USER, MEM_RW, false);
+    uintptr_t heap = (uintptr_t)palloc(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, false);
     if (!heap) return 0;
 
     proc->stack = (stack + stack_size);
@@ -286,7 +296,7 @@ process_t* create_process(const char *name, void *content, uint64_t content_size
 
     proc->sp = proc->stack;
     
-    proc->pc = (uintptr_t)(dest + entry);
+    proc->pc = (uintptr_t)(entry);
     kprintf("User process %s allocated with address at %x, stack at %x, heap at %x",(uintptr_t)name,proc->pc, proc->sp, proc->heap);
     proc->spsr = 0;
     proc->state = READY;
