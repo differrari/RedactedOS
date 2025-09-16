@@ -10,6 +10,7 @@
 #include "launcher.h"
 
 int window_system(){
+    disable_visual();
     gpu_clear(BG_COLOR);
     gpu_point start_point = {0,0};
     bool drawing = false;

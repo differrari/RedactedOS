@@ -143,6 +143,8 @@ void Desktop::activate_current(){
             return;
         }
         kprintf("[LAUNCHER] process launched");
+        fb_clear(&ctx, 0);
+        commit_draw_ctx(&ctx);
         process_active = true;
         sys_set_focus(active_proc->id);
     }
