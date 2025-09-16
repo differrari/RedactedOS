@@ -98,7 +98,7 @@ int NetworkDispatch::net_task()
                 sizedptr pkt{0,0};
                 if (!nics[n].rx.dequeue(pkt)) break;
                 did_work = true;
-                eth_input(pkt.ptr, pkt.size);
+                eth_input(nics[n].ifindex, pkt.ptr, pkt.size);
                 free_frame(pkt);
             }
         }
@@ -175,6 +175,24 @@ NetDriver* NetworkDispatch::driver_at(uint8_t ifindex) const
     return nic_id < 0 ? nullptr : nics[nic_id].drv;
 }
 
+uint32_t NetworkDispatch::speed(uint8_t ifindex) const
+{
+    int nic_id = nic_for_ifindex(ifindex);
+    return nic_id < 0 ? 0xFFFFFFFFu : nics[nic_id].speed_mbps;
+}
+
+uint8_t NetworkDispatch::duplex(uint8_t ifindex) const
+{
+    int nic_id = nic_for_ifindex(ifindex);
+    return nic_id < 0 ? 0xFFu : nics[nic_id].duplex_mode;
+}
+
+uint8_t NetworkDispatch::kind(uint8_t ifindex) const
+{
+    int nic_id = nic_for_ifindex(ifindex);
+    return nic_id < 0 ? 0xFFu : nics[nic_id].kind_val;
+}
+
 void NetworkDispatch::free_frame(const sizedptr &f)
 {
     if (f.ptr) free_sized(f);
@@ -190,6 +208,9 @@ bool NetworkDispatch::register_all_from_bus() {
         const char* hw = net_bus_hw_ifname(i);
         uint16_t m = net_bus_get_mtu(i);
         uint16_t hs = net_bus_get_header_size(i);
+        uint32_t sp = net_bus_get_speed_mbps(i);
+        uint8_t dp = net_bus_get_duplex(i);
+        uint8_t kd = net_bus_get_kind(i);
         uint8_t macbuf[6]; net_bus_get_mac(i, macbuf);
 
         if (!name) continue;
@@ -197,11 +218,34 @@ bool NetworkDispatch::register_all_from_bus() {
         if (!drv) {
             bool is_lo0 = (name[0]=='l' && name[1]=='o' && name[2]=='0' && name[3]==0);
             if (!is_lo0) continue;
-
-            uint8_t ix = l2_interface_create(name, nullptr);
+            uint8_t ix = l2_interface_create(name, nullptr, 0);
             l2_interface_set_up(ix, true);
             continue;
         }
+
+        uint16_t type_cost =
+            (kd == NET_IFK_LOCALHOST) ? 0 :
+            (kd == NET_IFK_ETH) ? 20 :
+            (kd == NET_IFK_WIFI) ? 40 : 30;
+
+        uint16_t speed_cost =
+            (sp == 0xFFFFFFFFu) ? 10 :
+            (sp >= 40000u) ? 0 :
+            (sp >= 10000u) ? 2 :
+            (sp >= 1000u) ? 5 :
+            (sp >= 100u) ? 15 : 40;
+
+        uint16_t duplex_cost =
+            (dp == 1) ? 0 :
+            (dp == 0) ? 20 : 5;
+
+        uint16_t mtu_cost =
+            (m >= 9000u) ? 0 :
+            (m >= 2000u) ? 3 :
+            (m >= 1500u) ? 5 :
+            (m >= 576u) ? 15 : 100;
+
+        uint16_t base_metric = (kd == NET_IFK_LOCALHOST) ? 0 : (uint16_t)(type_cost + speed_cost + duplex_cost + mtu_cost);
 
         NICCtx* c = &nics[nic_num];
         c->drv = drv;
@@ -209,13 +253,16 @@ bool NetworkDispatch::register_all_from_bus() {
         new ((void*)&c->tx) Queue<sizedptr>(QUEUE_CAPACITY);
         new ((void*)&c->rx) Queue<sizedptr>(QUEUE_CAPACITY);
 
-        copy_str(c->ifname_str, (int)sizeof(c->ifname_str), name);
-        copy_str(c->hwname_str, (int)sizeof(c->hwname_str), hw);
+        strcpy(c->ifname_str, (int)sizeof(c->ifname_str), name);
+        strcpy(c->hwname_str, (int)sizeof(c->hwname_str), hw);
         memcpy(c->mac_addr, macbuf, 6);
         c->mtu_val = m;
         c->hdr_sz = hs;
+        c->speed_mbps = sp;
+        c->duplex_mode = dp;
+        c->kind_val = kd;
 
-        uint8_t ix = l2_interface_create(c->ifname_str, (void*)drv);
+        uint8_t ix = l2_interface_create(c->ifname_str, (void*)drv, base_metric);
         l2_interface_set_up(ix, true);
         c->ifindex = ix;
 
@@ -224,14 +271,6 @@ bool NetworkDispatch::register_all_from_bus() {
         nic_num += 1;
     }
     return nic_num > 0;
-}
-
-void NetworkDispatch::copy_str(char* dst, int cap, const char* src) {
-    if (!dst || cap <= 0) return;
-    if (!src) { dst[0] = 0; return; }
-    uint32_t n = strlen(src, (uint32_t)(cap - 1));
-    memcpy(dst, src, n);
-    dst[n] = 0;
 }
 
 int NetworkDispatch::nic_for_ifindex(uint8_t ifindex) const {
@@ -286,12 +325,16 @@ void NetworkDispatch::dump_interfaces()
                 macs[p] = 0;
             }
 
-            kprintf(" driver: nic_id=%u ifname=%s hw=%s mtu=%u hdr=%u mac=%s drv=%x",
+            const char* dpx = (nics[nid].duplex_mode == 0) ? "half" :
+                              (nics[nid].duplex_mode == 1) ? "full" : "unknown";
+
+            kprintf(" driver: nic_id=%u ifname=%s hw=%s mtu=%u hdr=%u mac=%s drv=%x spd=%u dup=%s kind=%u",
                     (unsigned)nid,
                     nics[nid].ifname_str[0] ? nics[nid].ifname_str : "(null)",
                     nics[nid].hwname_str[0] ? nics[nid].hwname_str : "(null)",
                     (unsigned)nics[nid].mtu_val, (unsigned)nics[nid].hdr_sz, macs,
-                    (uint64_t)(uintptr_t)nics[nid].drv);
+                    (uint64_t)(uintptr_t)nics[nid].drv,
+                    (unsigned)nics[nid].speed_mbps, dpx, (unsigned)nics[nid].kind_val);
         } else {
             kprintf(" driver: none");
         }
@@ -307,7 +350,7 @@ void NetworkDispatch::dump_interfaces()
             ipv4_to_string(v4->broadcast, bc);
             kprintf("  - slot=%u l3_id=%u mode=%i ip=%s mask=%s gw=%s bcast=%s rt=%x localhost=%u",
                     (unsigned)s, (unsigned)v4->l3_id, (int)v4->mode, ip, mask, gw, bc,
-                    (uint64_t)(uintptr_t)v4->rt_v4, v4->is_localhost?1:0);
+                    (uint64_t)(uintptr_t)v4->runtime_opts_v4, v4->is_localhost?1:0);
         }
 
         kprintf(" int ipv6:");

@@ -155,7 +155,7 @@ static bool send_tcp_segment(uint32_t src_ip, uint32_t dst_ip, tcp_hdr_t *hdr, c
     hdr_on_buf->checksum = 0;
     uint16_t csum = tcp_compute_checksum(segment, tcp_len, src_ip, dst_ip);
     hdr_on_buf->checksum = csum;
-    ipv4_send_packet(src_ip, dst_ip, 6, (sizedptr){ .ptr = (uintptr_t)segment, .size = tcp_len });
+    ipv4_send_packet(dst_ip, 6, (sizedptr){ .ptr = (uintptr_t)segment, .size = tcp_len }, NULL);
     free(segment, tcp_len);
     return true;
 }

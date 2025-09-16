@@ -38,6 +38,7 @@ typedef struct l2_interface {
     uint8_t ifindex;
     char name[16];
     bool is_up;
+    uint16_t base_metric;
     void *driver_context;
     void *arp_table;
     void *nd_table;
@@ -59,7 +60,8 @@ typedef struct l3_ipv4_interface {
     uint32_t broadcast;
     ipv4_cfg_t mode;
     bool is_localhost;
-    void *rt_v4;
+    void *runtime_opts_v4;
+    void *routing_table;
     void *port_manager;
     l2_interface_t *l2;
 } l3_ipv4_interface_t;
@@ -100,7 +102,7 @@ typedef struct ip_resolution_result {
     l2_interface_t *l2;
 } ip_resolution_result_t;
 
-uint8_t l2_interface_create(const char *name, void *driver_ctx);
+uint8_t l2_interface_create(const char *name, void *driver_ctx, uint16_t base_metric);
 bool l2_interface_destroy(uint8_t ifindex);
 l2_interface_t *l2_interface_find_by_index(uint8_t ifindex);
 uint8_t l2_interface_count(void);
@@ -136,6 +138,9 @@ ip_resolution_result_t resolve_ipv6_to_interface(const uint8_t dst_ip[16]);
 
 bool check_ipv4_overlap(uint32_t new_ip, uint32_t mask, uint8_t ifindex);
 bool check_ipv6_overlap(const uint8_t new_ip[16], uint8_t prefix_len, uint8_t ifindex);
+
+static inline uint32_t ipv4_net(uint32_t ip, uint32_t mask){ return ip & mask; }
+static inline uint32_t ipv4_broadcast_calc(uint32_t ip, uint32_t mask){ return (mask==0)?0:((ip & mask) | ~mask); }
 
 #ifdef __cplusplus
 }

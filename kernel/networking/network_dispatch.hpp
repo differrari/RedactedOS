@@ -31,6 +31,10 @@ public:
     l2_interface_t* l2_at(uint8_t ifindex) const;
     NetDriver* driver_at(uint8_t ifindex) const;
 
+    uint32_t speed(uint8_t ifindex) const;
+    uint8_t duplex(uint8_t ifindex) const;
+    uint8_t kind(uint8_t ifindex) const;
+
 private:
     struct NICCtx {
         NetDriver* drv;
@@ -40,6 +44,9 @@ private:
         uint8_t mac_addr[6];
         uint16_t mtu_val;
         uint16_t hdr_sz;
+        uint32_t speed_mbps;
+        uint8_t duplex_mode;
+        uint8_t kind_val;
         Queue<sizedptr> tx;
         Queue<sizedptr> rx;
     };

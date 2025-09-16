@@ -20,33 +20,14 @@ static uint16_t g_rx_qsz = 0;
             kprintf(fmt, ##__VA_ARGS__); \
         }\
     })
-typedef struct __attribute__((packed)) virtio_net_hdr_t {
-    uint8_t  flags;
-    uint8_t  gso_type;
-    uint16_t hdr_len;
-    uint16_t gso_size;
-    uint16_t csum_start;
-    uint16_t csum_offset;
-} virtio_net_hdr_t;
-
-typedef struct virtio_net_config { 
-        uint8_t mac[6]; 
-        uint16_t status; 
-        uint16_t max_virtqueue_pairs; 
-        uint16_t mtu; 
-        uint32_t speed; 
-        uint8_t duplex; 
-        uint8_t rss_max_key_size; 
-        uint16_t rss_max_indirection_table_length; 
-        uint32_t supported_hash_types; 
-}__attribute__((packed)) virtio_net_config; 
-
 VirtioNetDriver::VirtioNetDriver() {
     verbose = false;
-    last_used_receive_idx = 0;
-    last_used_sent_idx = 0;
     header_size = sizeof(virtio_net_hdr_t);
     mtu = 1500;
+    speed_mbps = 0xFFFFFFFFu;
+    duplex = LinkDuplex::Unknown;
+    last_used_receive_idx = 0;
+    last_used_sent_idx = 0;
     hw_name[0] = 0;
 }
 
@@ -112,35 +93,34 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector){
 
     virtio_net_config* cfg = (virtio_net_config*)vnp_net_dev.device_cfg;
 
-    uint64_t feats = 0;
-    #ifdef VIRTIO_NEGOTIATED_FEATURES_FIELD
-    feats = vnp_net_dev.negotiated_features;
-    #elif defined(VIRTIO_DEVICE_FEATURES_FIELD)
-    feats = vnp_net_dev.device_features;
-    #endif
+    uint8_t mac[6]; get_mac(mac);
 
-    bool has_mtu_feat = false;
-    bool has_mrg_rx = false;
-    #ifdef VIRTIO_NET_F_MTU
-    has_mtu_feat = (feats & (1ull << VIRTIO_NET_F_MTU)) != 0;
-    #endif
-    #ifdef VIRTIO_NET_F_MRG_RXBUF
-    has_mrg_rx = (feats & (1ull << VIRTIO_NET_F_MRG_RXBUF)) != 0;
-    #endif
 
     uint16_t dev_mtu = cfg->mtu;
-    if (has_mtu_feat && dev_mtu && dev_mtu != 0xFFFF && dev_mtu >= 576){
-        mtu = dev_mtu;
-    } else {
-        mtu = 1500;
+    if (dev_mtu != 0 && dev_mtu != 0xFFFF && dev_mtu >= 576) mtu = dev_mtu; else mtu = 1500;
+
+    header_size = sizeof(virtio_net_hdr_t);
+
+    speed_mbps = cfg->speed;
+    switch (cfg->duplex) {
+        case 0: duplex = LinkDuplex::Half; break;
+        case 1: duplex = LinkDuplex::Full; break;
+        default: duplex = LinkDuplex::Unknown; break;
     }
-    header_size = has_mrg_rx ? 12 : 10;
 
-    uint8_t mac[6]; get_mac(mac);
-    kprintfv("[virtio-net] mac=%x:%x:%x:%x:%x:%x mtu=%u hdr=%u",
-             mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],mtu,header_size);
+    hw_name[0] = 'v'; hw_name[1] = 'i'; hw_name[2] = 'r'; hw_name[3] = 't'; hw_name[4] = 'i'; hw_name[5] = 'o'; hw_name[6] = 0;
 
-    hw_name[0]='v'; hw_name[1]='i'; hw_name[2]='r'; hw_name[3]='t'; hw_name[4]='i'; hw_name[5]='o'; hw_name[6]=0;
+    const char* dpx_str = (duplex == LinkDuplex::Full) ? "full" : (duplex == LinkDuplex::Half) ? "half" : "unknown";
+    if (speed_mbps != 0xFFFFFFFF) {
+        kprintfv("[virtio-net] mac=%x:%x:%x:%x:%x:%x mtu=%u hdr=%u speed=%uMbps duplex=%s",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
+                 (unsigned)mtu, (unsigned)header_size, (unsigned)speed_mbps, dpx_str);
+    } else {
+        kprintfv("[virtio-net] mac=%x:%x:%x:%x:%x:%x mtu=%u hdr=%u speed=unknown duplex=%s",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
+                 (unsigned)mtu, (unsigned)header_size, dpx_str);
+    }
+
     return true;
 }
 
@@ -159,12 +139,18 @@ uint16_t VirtioNetDriver::get_header_size() const {
     return header_size;
 }
 
-const char* VirtioNetDriver::if_prefix() const {
-    return "eth";
-}
-
 const char* VirtioNetDriver::hw_ifname() const {
     return hw_name;
+}
+
+uint32_t VirtioNetDriver::get_speed_mbps() const { return speed_mbps; }
+
+uint8_t VirtioNetDriver::get_duplex() const {
+    switch (duplex) {
+        case LinkDuplex::Half: return 0;
+        case LinkDuplex::Full: return 1;
+        default: return 0xFF;
+    }
 }
 
 sizedptr VirtioNetDriver::allocate_packet(size_t size){
@@ -186,13 +172,16 @@ sizedptr VirtioNetDriver::handle_receive_packet(){
     uint16_t used_ring_index = (uint16_t)(last_used_receive_idx % qsz);
     struct virtq_used_elem* e = &used->ring[used_ring_index];
     last_used_receive_idx++;
+
     uint32_t desc_index = e->id;
     uint32_t len = e->len;
     if (desc_index >= qsz || len <= header_size)
-        {avail->ring[avail->idx % qsz] = (uint16_t)desc_index;
-    avail->idx++;
-    *(volatile uint16_t*)(uintptr_t)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
-    return (sizedptr){0,0};}
+    {
+        avail->ring[avail->idx % qsz] = (uint16_t)desc_index;
+        avail->idx++;
+        *(volatile uint16_t*)(uintptr_t)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
+        return (sizedptr){0,0};
+    }
 
     uintptr_t packet_addr = desc[desc_index].addr;
     uint32_t payload_len = len - header_size;
@@ -239,7 +228,7 @@ void VirtioNetDriver::send_packet(sizedptr packet){
     if (packet.ptr && packet.size){
         if (header_size <= packet.size) memset((void*)packet.ptr, 0, header_size);
         virtio_send_1d(&vnp_net_dev, packet.ptr, packet.size);
-        kprintfv("[virtio-net] tx queued len=%u\n",(unsigned)packet.size);
+        kprintfv("[virtio-net] tx queued len=%u",(unsigned)packet.size);
     }
 }
 

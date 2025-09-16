@@ -1,10 +1,9 @@
 #include "icmp.h"
-#include "net/internet_layer/ipv4.h"
 #include "net/checksums.h"
 #include "std/memory.h"
-#include "console/kio.h"
-#include "ipv4.h"
-#include "networking/network.h"
+#include "networking/interface_manager.h"
+#include "net/internet_layer/ipv4.h"
+#include "net/internet_layer/ipv4_route.h"
 
 extern uintptr_t malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
@@ -74,9 +73,7 @@ void icmp_send_echo(uint32_t dst_ip,
 
     ((icmp_packet*)buf)->checksum = checksum16((uint16_t*)buf, icmp_len);
 
-    const net_cfg_t *cfg = ipv4_get_cfg();
-    if (!cfg) { free((void*)buf, icmp_len); return; }
-    ipv4_send_packet(cfg->ip, dst_ip, 1, (sizedptr){ buf, icmp_len });
+    ipv4_send_packet(dst_ip, 1, (sizedptr){ buf, icmp_len}, NULL);
 
     free((void*)buf, icmp_len);
 }
@@ -86,22 +83,22 @@ void icmp_input(uintptr_t ptr,
                 uint32_t  src_ip,
                 uint32_t  dst_ip)
 {
-    if(len < 8) return;
+    if (len < 8) return;
 
     icmp_packet *pkt = (icmp_packet*)ptr;
     uint16_t recv_ck = pkt->checksum;
     pkt->checksum = 0;
-    if(checksum16((uint16_t*)pkt, len) != recv_ck) return;
+    if (checksum16((uint16_t*)pkt, len) != recv_ck) return;
     pkt->checksum = recv_ck;
 
     uint8_t type = pkt->type;
     uint16_t id = bswap16(pkt->id);
     uint16_t sq = bswap16(pkt->seq);
     uint32_t pay = len - 8;
-    if(pay > 56) pay = 56;
+    if (pay > 56) pay = 56;
 
-    if(type == ICMP_ECHO_REQUEST){
-        icmp_data d = { .response=true, .id=id, .seq=sq };
+    if (type == ICMP_ECHO_REQUEST) {
+        icmp_data d = { .response = true, .id = id, .seq = sq };
         memcpy(d.payload, pkt->payload, pay);
         memset(d.payload + pay, 0, 56 - pay);
 
@@ -112,17 +109,26 @@ void icmp_input(uintptr_t ptr,
         create_icmp_packet(buf, &d);
         ((icmp_packet*)buf)->checksum = checksum16((uint16_t*)buf, reply_len);
 
-        const net_cfg_t *cfg = ipv4_get_cfg();
-        if (cfg) {
-            ipv4_send_packet(cfg->ip, src_ip, 1, (sizedptr){ buf, reply_len });
+        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(dst_ip); // nostro IP
+        if (l3 && l3->l2) {
+            ipv4_tx_opts_t o = { .index = l3->l3_id, .int_type = 1 };
+
+            char sbuf[16], dbuf[16];
+            ipv4_to_string(src_ip, sbuf);
+            ipv4_to_string(dst_ip, dbuf);
+
+            ipv4_send_packet(src_ip, 1, (sizedptr){ buf, reply_len }, &o);
         }
+
         free((void*)buf, reply_len);
         return;
     }
 
-    if(type == ICMP_ECHO_REPLY)
+    if(type == ICMP_ECHO_REPLY) {
         mark_received(id, sq);
+    }
 }
+
 
 bool icmp_ping(uint32_t dst_ip,
                uint16_t id,

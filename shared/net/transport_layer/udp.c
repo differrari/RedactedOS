@@ -62,7 +62,8 @@ void udp_send_segment(const net_l4_endpoint *src,
     uintptr_t udp_buf = buf + sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t);
     size_t udp_len = create_udp_segment(udp_buf, src, dst, payload);
 
-    ipv4_send_packet(src->ip, dst->ip, 0x11,(sizedptr){ udp_buf, (uint32_t)udp_len });
+    ipv4_tx_opts_t o = { .index = 1, .int_type = 0 };
+    ipv4_send_packet(0xFFFFFFFFu, 0x11,(sizedptr){ udp_buf, (uint32_t)udp_len }, &o);
 
     free((void*)buf, eth_total);
 }

@@ -353,9 +353,9 @@ static void dhcp_apply_offer(dhcp_packet *p, dhcp_request *req, uint32_t xid) {
         cfg_local.rt->dns[0] = cfg_local.gw;
     }
 
-    uint32_t bcast = ipv4_broadcast(cfg_local.ip, cfg_local.mask);
+    uint32_t bcast = ipv4_broadcast_calc(cfg_local.ip, cfg_local.mask);
     static const uint8_t bmac[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
-    arp_table_put(bcast, bmac, 0, true);
+    arp_table_put_for_l2(1, bcast, bmac, 0, true);
 
     ipv4_set_cfg(&cfg_local);
 

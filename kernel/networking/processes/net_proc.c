@@ -33,10 +33,8 @@ static uint32_t pick_probe_ip() {
         return 0;
     if (cfg->gw)
         return cfg->gw;
-    uint32_t bcast = ipv4_broadcast(cfg->ip, cfg->mask);
-    if (bcast)
-        return bcast;
-    return ipv4_first_host(cfg->ip, cfg->mask);
+    uint32_t bcast = ipv4_broadcast_calc(cfg->ip, cfg->mask);
+    return bcast;
 }
 
 static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpoint *out_l4) {
@@ -274,7 +272,7 @@ static void test_net() {
     if (cfg && cfg->mode != IPV4_CFG_DISABLED && cfg->ip != 0) {
         print_info();
 
-        uint32_t bcast = ipv4_broadcast(cfg->ip, cfg->mask);
+        uint32_t bcast = ipv4_broadcast_calc(cfg->ip, cfg->mask);
         char bcast_str[16];
         ipv4_to_string(bcast, bcast_str);
 
@@ -323,6 +321,7 @@ process_t* launch_net_process() {
     create_kernel_process("net_net", network_net_task_entry, 0, 0);
     create_kernel_process("arp_daemon", arp_daemon_entry, 0, 0);
     create_kernel_process("dhcp_daemon", dhcp_daemon_entry, 0, 0);
+    return NULL;
     create_kernel_process("dns_daemon", dns_deamon_entry, 0, 0);
 
     if (cfg && cfg->mode != IPV4_CFG_DISABLED && cfg->ip != 0) {
