@@ -8,6 +8,16 @@ extern "C" {
 
 typedef uint32_t color;
 
+typedef union argbcolor {
+    struct {
+        uint32_t blue: 8;
+        uint32_t green: 8;
+        uint32_t red: 8;
+        uint32_t alpha: 8;
+    };
+    uint32_t color;
+} argbcolor;
+
 typedef struct {
     uint32_t x;
     uint32_t y;
