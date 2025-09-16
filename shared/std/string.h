@@ -38,6 +38,7 @@ char tolower(char c);
 char toupper(char c);
 
 int strcmp(const char *a, const char *b, bool case_insensitive);
+int strncmp(const char *a, const char *b, bool case_insensitive, int length);
 bool strcont(const char *a, const char *b);
 int strstart(const char *a, const char *b, bool case_insensitive);
 int strend(const char *a, const char *b, bool case_insensitive);

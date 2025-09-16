@@ -262,6 +262,25 @@ int strcmp(const char *a, const char *b, bool case_insensitive){
     return (unsigned char)*a - (unsigned char)*b;
 }
 
+int strncmp(const char *a, const char *b, bool case_insensitive, int max){
+    if (a == NULL && b == NULL) return 0;
+    if (a == NULL) return -1;  
+    if (b == NULL) return  1;
+
+    for (int i = 0; i < max && *a && *b; i++, a++, b++){
+        char ca = *a;
+        char cb = *b;
+        if (case_insensitive){
+            ca = tolower((unsigned char)ca);
+            cb = tolower((unsigned char)cb);
+        }
+        if (ca != cb || i == max - 1) return ca - cb;
+    }
+    if (case_insensitive) return tolower((unsigned char)*a) - tolower((unsigned char)*b);
+    
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
 int strstart(const char *a, const char *b, bool case_insensitive){
     int index = 0;
     while (*a && *b){
