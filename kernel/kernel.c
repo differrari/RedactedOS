@@ -17,6 +17,7 @@
 #include "filesystem/filesystem.h"
 #include "dev/module_loader.h" 
 #include "audio/audio.h"
+#include "mailbox/mailbox.h"
 
 void kernel_main() {
 
@@ -24,13 +25,15 @@ void kernel_main() {
 
     mmu_alloc();
     
+    mailbox_init();
+
     page_allocator_init();
 
     set_exception_vectors();
 
     init_main_process();
 
-    disable_visual();
+   if (BOARD_TYPE == 1) disable_visual();
 
     load_module(&console_module);
 

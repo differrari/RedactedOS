@@ -14,4 +14,7 @@ public:
     
     ~VideoCoreGPUDriver() = default;
     
+protected:
+    uintptr_t original_fb;
+    uint32_t last_offset;
 };

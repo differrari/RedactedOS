@@ -27,6 +27,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+void mailbox_init();
 int mailbox_call(volatile uint32_t* mbox, uint8_t channel);
 #ifdef __cplusplus
 }

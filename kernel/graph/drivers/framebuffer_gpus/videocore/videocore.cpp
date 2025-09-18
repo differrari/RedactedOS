@@ -23,13 +23,20 @@ VideoCoreGPUDriver* VideoCoreGPUDriver::try_init(gpu_size preferred_screen_size)
 }
 
 volatile uint32_t rmbox[40] __attribute__((aligned(16))) = {
-    30 * 4,// Buf size
+    24 * 4,// Buf size
     0,// Request. Code 0
-    MBOX_VC_PHYS_SIZE_TAG, 8, 0, 0, 0,// Physical size
-    MBOX_VC_VIRT_SIZE_TAG, 8, 0, 0, 0,// Virtual size
-    MBOX_VC_DEPTH_TAG | MBOX_SET_VALUE, 4, 4, 32,// Depth
-    MBOX_VC_PITCH_TAG, 4, 0, 0,//Pitch
-    MBOX_VC_FORMAT_TAG | MBOX_SET_VALUE, 4, 4, 0, //BGR
+    MBOX_VC_PHYS_SIZE_TAG, 8, 0, 0, 0,
+    MBOX_VC_VIRT_SIZE_TAG, 8, 0, 0, 0,
+    MBOX_VC_DEPTH_TAG | MBOX_SET_VALUE, 4, 4, 32,
+    MBOX_VC_PITCH_TAG, 4, 0, 0,
+    MBOX_VC_FORMAT_TAG | MBOX_SET_VALUE, 4, 4, 0,
+    0,// End
+};
+
+volatile uint32_t rmbox2[40] __attribute__((aligned(16))) = {
+    12 * 4,// Buf size
+    0,// Request. Code 0
+    MBOX_VC_VIRT_SIZE_TAG | MBOX_SET_VALUE, 8, 0, 0, 0,
     MBOX_VC_FRAMEBUFFER_TAG, 8, 0, 16, 0,
     0,// End
 };
@@ -48,6 +55,16 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
     uint32_t depth  = rmbox[15];
     stride = rmbox[19];
 
+    rmbox2[5] = virt_w;
+    rmbox2[6] = virt_h*2;
+
+    if (!mailbox_call(rmbox2, 8)) {
+        kprintf("[VIDEOCORE] Failed updating mailbox");
+        return false;
+    }
+
+    virt_h = rmbox2[6];
+
     if (bpp != depth/8){
         kprintf("[VIDEOCORE] failed to initialize. Wrong BPP (%i), should be %i. Check your config.txt file",depth/8, bpp);
         return false;
@@ -56,15 +73,16 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
     screen_size = (gpu_size){phys_w,phys_h};
     kprintf("[VIDEOCORE] Size %ix%i (%ix%i) (%ix%i) | %i (%i)",phys_w,phys_h,virt_w,virt_h,screen_size.width,screen_size.height,depth, stride);
 
-    framebuffer = (uint32_t*)(uintptr_t)rmbox[27];
-    framebuffer_size = rmbox[28];
+    framebuffer = (uint32_t*)(uintptr_t)rmbox2[10];
+    framebuffer_size = rmbox2[11]/2;
     mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
-    back_framebuffer = (uint32_t*)palloc(framebuffer_size, MEM_PRIV_SHARED, MEM_RW, true);
-    //TODO: make backbuffer just framebuffer + bf_size/2
-    kprintf("[VIDEOCORE] Framebuffer allocated to %x (%i). BPP %i. Stride %i",framebuffer, framebuffer_size, bpp, stride/bpp);
-    mark_used((uintptr_t)framebuffer,count_pages(framebuffer_size,PAGE_SIZE));
-    for (size_t i = (uintptr_t)framebuffer; i < (uintptr_t)framebuffer + framebuffer_size; i += GRANULE_4KB)
+    back_framebuffer = (uint32_t*)((uintptr_t)framebuffer + framebuffer_size);
+
+    kprintf("[VIDEOCORE] Framebuffer allocated to %x (%i). BPP %i. Stride %i. Backbuffer at %x",framebuffer, framebuffer_size, bpp, stride/bpp,back_framebuffer);
+    mark_used((uintptr_t)framebuffer,count_pages(rmbox2[11],PAGE_SIZE));
+    for (size_t i = (uintptr_t)framebuffer; i < (uintptr_t)framebuffer + rmbox2[11]; i += GRANULE_4KB){
         register_device_memory(i,i);
+    }
 
     ctx = {
         .dirty_rects = {},
@@ -79,9 +97,20 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
     return true;
 }
 
+
+volatile uint32_t swbox[40] __attribute__((aligned(16))) = {
+    30 * 4,// Buf size
+    0,// Request. Code 0
+    MBOX_VC_OFFSET_TAG | MBOX_SET_VALUE, 8, 8, 0, 0,
+    0,
+};
+
 void VideoCoreGPUDriver::update_gpu_fb(){
-    // memcpy(void *dest, const void *src, uint64_t count)
-    //TODO: set fb offset to fb_size/2
+    last_offset = screen_size.height - last_offset;
+    swbox[6] = last_offset;
+    if (!mailbox_call(swbox, 8)){
+        kprintf("[VIDEOCORE] failed to swap buffer");
+    }
 }
 
 gpu_size VideoCoreGPUDriver::get_screen_size(){
