@@ -5,6 +5,8 @@
 #include "ui/graphic_types.h"
 #include "ui/draw/draw.h"
 
+#define bpp 4
+
 class GPUDriver {
 public:
     GPUDriver(){}
