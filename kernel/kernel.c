@@ -25,7 +25,7 @@ void kernel_main() {
 
     mmu_alloc();
     
-    mailbox_init();
+    if (BOARD_TYPE == 2) mailbox_init();
 
     page_allocator_init();
 
