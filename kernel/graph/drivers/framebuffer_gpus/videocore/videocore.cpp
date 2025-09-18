@@ -57,13 +57,13 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
     kprintf("[VIDEOCORE] Size %ix%i (%ix%i) (%ix%i) | %i (%i)",phys_w,phys_h,virt_w,virt_h,screen_size.width,screen_size.height,depth, stride);
 
     framebuffer = (uint32_t*)(uintptr_t)rmbox[27];
-    size_t fb_size = rmbox[28];
+    framebuffer_size = rmbox[28];
     mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
     back_framebuffer = (uint32_t*)palloc(framebuffer_size, MEM_PRIV_SHARED, MEM_RW, true);
     //TODO: make backbuffer just framebuffer + bf_size/2
-    kprintf("[VIDEOCORE] Framebuffer allocated to %x (%i). BPP %i. Stride %i",framebuffer, fb_size, bpp, stride/bpp);
-    mark_used((uintptr_t)framebuffer,count_pages(fb_size,PAGE_SIZE));
-    for (size_t i = (uintptr_t)framebuffer; i < (uintptr_t)framebuffer + fb_size; i += GRANULE_4KB)
+    kprintf("[VIDEOCORE] Framebuffer allocated to %x (%i). BPP %i. Stride %i",framebuffer, framebuffer_size, bpp, stride/bpp);
+    mark_used((uintptr_t)framebuffer,count_pages(framebuffer_size,PAGE_SIZE));
+    for (size_t i = (uintptr_t)framebuffer; i < (uintptr_t)framebuffer + framebuffer_size; i += GRANULE_4KB)
         register_device_memory(i,i);
 
     ctx = {
