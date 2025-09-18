@@ -9,14 +9,14 @@ void mailbox_init(){
 
 int mailbox_call(volatile uint32_t* mbox, uint8_t channel) {
     uint32_t addr = ((uint32_t)(uintptr_t)mbox) & ~0xF;
-    if (!wait(MBOX_STATUS, MBOX_FULL, false, 2000)){
+    if (!wait(MBOX_STATUS, MBOX_FULL, false, 200)){
         uart_puts("[MAILBOX] could not find free mailbox slot\n");
         return false;
     }
     MBOX_WRITE = addr | (channel & 0xF);
 
     while (1) {
-        if (!wait(MBOX_STATUS, MBOX_EMPTY, false, 2000)){
+        if (!wait(MBOX_STATUS, MBOX_EMPTY, false, 200)){
             uart_puts("[MAILBOX] No response received\n");
             return false;
         }
