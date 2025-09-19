@@ -1,6 +1,6 @@
 #include "bmp.h"
-#include "std/memory_access.h"
 #include "math/math.h"
+#include "syscalls/syscalls.h"
 
 typedef struct bmp_header {
     char signature[2];
@@ -24,36 +24,25 @@ typedef struct bmp_header {
     uint32_t important_colors;//0 is all, ignored
 }__attribute__((packed)) bmp_header;
 
-#include "syscalls/syscalls.h"
-
 image_info bmp_get_info(void * file, size_t size){
+    if (size < sizeof(bmp_header)) return (image_info){0,0};
     bmp_header *header = (bmp_header*)file;
-    printf("%x. Width %x",header, &header->width);
     return (image_info){
         .width = header->width,
         .height = header->height
     };
 }
 
-#define ARGB(a,r,g,b) ((a & 0xFF) << 24) | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF)
-
-uint32_t convert_color_bpp(uint16_t bpp, uintptr_t value_ptr){
-    switch (bpp) {
-        case 1: return 0;
-
-        case 4: return 0;
-
-        case 8: return 0;
-
-        case 24: return ARGB(0xFF, read8(value_ptr + 2), read8(value_ptr + 1), read8(value_ptr)); 
-
-        case 32: return value_ptr % 8 == 0 ? *(uint32_t*)value_ptr : read_unaligned32((uint32_t*)value_ptr);
-    }
-    return 0;
-}
-
 void bmp_read_image(void *file, size_t size, uint32_t *buf){
+    if (size < sizeof(bmp_header)){ 
+        printf("Wrong file size");
+        return;
+    }
     bmp_header *header = (bmp_header*)file;
+    if (size < header->data_offset + header->img_size || size < header->file_size){ 
+        printf("Wrong file size");
+        return;
+    }
     uintptr_t color_data = (uintptr_t)file + header->data_offset;
     uint16_t increment = header->bpp/8;
     uint32_t height = abs(header->height);
@@ -63,5 +52,34 @@ void bmp_read_image(void *file, size_t size, uint32_t *buf){
     for (uint32_t y = 0; y < height; y++){
         for (uint32_t x = 0; x < (uint32_t)header->width; x++)
             buf[(y * header->width) + x] = convert_color_bpp(header->bpp, color_data + (((flipped ? height - y - 1 : y) * (header->width + padding)) + x) * increment);   
+    }
+}
+
+void* load_bmp(char *path, image_info *info){
+    file descriptor;
+    FS_RESULT res = fopen(path, &descriptor);
+    void *img;
+    image_info img_info;
+    if (res == FS_RESULT_SUCCESS){
+        void *img_file = (void*)malloc(descriptor.size);
+        fread(&descriptor, img_file, descriptor.size);
+        img_info = bmp_get_info(img_file, descriptor.size);
+        if (img_info.width > 0 && img_info.height > 0){
+            size_t image_size = img_info.width * img_info.height * system_bpp;
+            img = (void*)malloc(image_size);
+            bmp_read_image(img_file, descriptor.size, img);
+            fclose(&descriptor);
+            *info = img_info;
+            return img;
+        } else { 
+            printf("Wrong image size %i",img_info.width,img_info.height);
+            fclose(&descriptor);
+            *info = (image_info){0, 0};
+            return 0;
+        }
+    } else { 
+        printf("Failed to open image");
+        *info = (image_info){0, 0};
+        return 0;
     }
 }

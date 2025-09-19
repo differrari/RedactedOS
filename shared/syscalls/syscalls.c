@@ -32,3 +32,7 @@ uintptr_t realloc(uintptr_t old_ptr, size_t old_size, size_t new_size){
     free((void*)old_ptr, old_size);
     return new_ptr;
 }
+
+void fclose(file *descriptor){
+    
+}
