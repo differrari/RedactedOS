@@ -49,6 +49,7 @@ void bmp_read_image(void *file, size_t size, uint32_t *buf){
     uint32_t width = (uint32_t)header->width;
     bool flipped = header->height > 0;
     uint32_t padding = 4 - (((header->bpp/8) * width) % 4);
+    if (padding == 4) padding = 0;
     uint32_t padded = ((header->bpp/8) * width) + padding;
     for (uint32_t y = 0; y < height; y++){
         for (uint32_t x = 0; x < (uint32_t)header->width; x++)
