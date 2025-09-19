@@ -54,9 +54,10 @@ void* memset(void* dest, uint32_t val, size_t count) {
     }
     if (count >= 2) {
         *((uint16_t *)d8) = ((val & 0xFF) << 8) | (val & 0xFF);
+        d8 += 2;
         count -= 2;
     }
-    if (count >= 1)
+    if (count == 1)
         *d8 = val & 0xFF;
 
     return dest;
@@ -114,9 +115,8 @@ void* memcpy(void *dest, const void *src, uint64_t count) {
         s8 += 2;
         count -= 2;
     }
-    if (count >= 1) {
+    if (count == 1)
         *d8 = *s8;
-    }
 
     return dest;
 }
