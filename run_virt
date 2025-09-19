@@ -53,7 +53,7 @@ $PRIVILEGE qemu-system-aarch64 \
   -cpu cortex-a72 \
   -m 512M \
   -kernel kernel.elf \
-  -device $SELECTED_GPU \
+  -device ramfb \
   -display $DISPLAY_MODE,gl=$GL \
   $NETDEV \
   -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56 \
