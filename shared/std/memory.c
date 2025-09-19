@@ -18,23 +18,45 @@ void* memset(void* dest, uint32_t val, size_t count) {
         count--;
     }
 
-    size_t blocks = count / 8;
+    size_t blocks = count / 128;
+    uint64_t *d64 = (uint64_t *)d8;
     for (size_t i = 0; i < blocks; i++) {
-        *((uint64_t *)d8) = pattern;
-        d8 += 8;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
+        *(d64++) = pattern;
     }
 
-    size_t remaining = count % 8;
-    if (remaining >= 4) {
-        *((uint32_t *)d8) = (uint32_t)val;
+    count %= 128;
+    if (count >= 8) {
+        for (size_t i = 0; i < count / 8; i++) {
+            *d64++ = pattern;
+        }
+        count %= 8;
+    } 
+    d8 = (uint8_t *)d64;
+    if (count >= 4) {
+        *((uint32_t *)d8) = val;
         d8 += 4;
-        remaining -= 4;
+        count -= 4;
     }
-    if (remaining >= 2) {
+    if (count >= 2) {
         *((uint16_t *)d8) = ((val & 0xFF) << 8) | (val & 0xFF);
-        remaining -= 2;
+        count -= 2;
     }
-    if (remaining >= 1)
+    if (count >= 1)
         *d8 = val & 0xFF;
 
     return dest;
@@ -49,28 +71,52 @@ void* memcpy(void *dest, const void *src, uint64_t count) {
         count--;
     }
 
-    size_t blocks = count / 8;
+    size_t blocks = count / 128;
+    uint64_t *d64 = (uint64_t *)d8;
+    const uint64_t *s64 = (const uint64_t *)s8;
     for (size_t i = 0; i < blocks; i++) {
-        *((uint64_t *)d8) = *((uint64_t *)s8);
-        d8 += 8;
-        s8 += 8;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
+        *d64++ = *s64++;
     }
 
-    size_t remaining = count % 8;
-    if (remaining >= 4) {
-        *((uint32_t *)d8) = *((uint32_t *)s8);
+    count %= 128;
+    if (count >= 8) {
+        for (size_t i = 0; i < count / 8; i++) {
+            *d64++ = *s64++;
+        }
+        count %= 8;
+    }
+    d8 = (uint8_t *)d64;
+    s8 = (uint8_t *)s64;
+    if (count >= 4) {
+        *(uint32_t *)d8 = *(uint32_t *)s8;
         d8 += 4;
         s8 += 4;
-        remaining -= 4;
+        count -= 4;
     }
-    if (remaining >= 2) {
-        *((uint16_t *)d8) = *((uint16_t *)s8);
+    if (count >= 2) {
+        *(uint16_t *)d8 = *(uint16_t *)s8;
         d8 += 2;
         s8 += 2;
-        remaining -= 2;
+        count -= 2;
     }
-    if (remaining >= 1)
-        *d8 = *s8 & 0xFF;
+    if (count >= 1) {
+        *d8 = *s8;
+    }
 
     return dest;
 }
