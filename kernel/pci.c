@@ -234,7 +234,7 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
 void dump_pci_config(uint64_t base) {
     kprintf("[PCI] Dumping PCI Configuration Space:");
     for (uint32_t offset = 0; offset < 0x40; offset += 4) {
-        uint64_t val = read(base + offset);
+        uint64_t val = read64(base + offset);
         kprintf("Offset %x: %x",offset, val);
     }
 }
