@@ -1,6 +1,6 @@
 #include "disk.h"
 #include "std/string.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "memory/page_allocator.h"
 #include "console/kio.h"
 #include "pci.h"

@@ -3,7 +3,7 @@
 #include "exceptions/exception_handler.h"
 #include "memory/talloc.h"
 #include "memory/mmu.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "hw/hw.h"
 
 #define PCI_BUS_MAX 256

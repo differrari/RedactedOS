@@ -1,3 +1,3 @@
 #pragma once
 
-void proc_func();
+int proc_func();

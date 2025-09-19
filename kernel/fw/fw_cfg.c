@@ -1,6 +1,6 @@
 #include "fw_cfg.h"
 #include "console/kio.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "memory/mmu.h"
 
 #define FW_CFG_DATA  0x09020000

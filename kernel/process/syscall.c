@@ -6,7 +6,7 @@
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
 #include "graph/graphics.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "input/input_dispatch.h"
 #include "std/memory.h"
 #include "std/string.h"

@@ -5,10 +5,9 @@
 #include "pci.h"
 #include "usb_types.h"
 #include "hw/hw.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "std/memory.h"
 #include "async.h"
-#include "memory/memory_access.h"
 
 uint64_t awaited_addr;
 uint32_t awaited_type;

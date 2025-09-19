@@ -2,7 +2,7 @@
 #include "pci.h"
 #include "console/kio.h"
 #include "memory/page_allocator.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "audio.h"
 #include "std/memory.h"
 #include "OutputAudioDevice.hpp"

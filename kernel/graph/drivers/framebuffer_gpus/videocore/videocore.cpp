@@ -3,7 +3,7 @@
 #include "memory/talloc.h"
 #include "console/kio.h"
 #include "ui/draw/draw.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "std/std.h"
 #include "std/memory.h"
 #include "mailbox/mailbox.h"
@@ -96,7 +96,6 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
 
     return true;
 }
-
 
 volatile uint32_t swbox[40] __attribute__((aligned(16))) = {
     30 * 4,// Buf size

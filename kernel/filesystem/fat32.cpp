@@ -2,7 +2,7 @@
 #include "disk.h"
 #include "memory/page_allocator.h"
 #include "console/kio.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "std/string.h"
 #include "std/memory.h"
 #include "math/math.h"

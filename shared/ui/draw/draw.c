@@ -81,6 +81,17 @@ void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_
     mark_dirty(ctx, x,y,width,height);
 }
 
+void fb_draw_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t img_width, uint32_t img_height){
+    if (x + img_width >= ctx->width || y + img_height >= ctx->height) return;
+    if (img_width == ctx->width && x == 0){
+        memcpy(ctx->fb + (y * (ctx->width)), img, ctx->stride * img_height);
+    } else {
+        for (uint32_t dy = 0; dy < img_height; dy++)
+            memcpy(ctx->fb + ((y+dy) * (ctx->width)) + x, img + (dy * img_width), img_width*4);
+    }
+    mark_dirty(ctx, x,y,img_width,img_height);
+}
+
 gpu_rect fb_draw_line(draw_ctx *ctx, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, color color){
     int dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
     int sx = (x0 < x1) ? 1 : -1;
@@ -159,7 +170,7 @@ uint32_t fb_get_char_size(uint32_t scale){
 }
 
 void fb_draw_cursor(draw_ctx *ctx, uint32_t color) {
-    // 24x22 Px
+    // 22x24 Px
     const uint8_t cursor_bitmap[22][24] =
     {
         {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
