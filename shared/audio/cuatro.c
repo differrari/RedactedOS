@@ -13,6 +13,7 @@ float sample_raw_wave(WAVE_TYPE type, uint32_t accumulator, uint32_t period){
         case WAVE_SQUARE:
             return (accumulator < UINT32_MAX/2) ? 0 : 1;
     }
+    return 0;
 }
 
 uint32_t sample_wave(WAVE_TYPE type, uint32_t accumulator, uint32_t period, uint32_t amplitude){

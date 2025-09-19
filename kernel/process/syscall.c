@@ -175,7 +175,7 @@ syscall_entry syscalls[] = {
 };
 
 void coredump(uint64_t esr, uint64_t elr, uint64_t far){
-    uint8_t ifsc = esr & 0x3F;
+    // uint8_t ifsc = esr & 0x3F;
     // 0b000000	Address size fault in TTBR0 or TTBR1.
 
     // 0b000101	Translation fault, 1st level.
@@ -203,9 +203,9 @@ void coredump(uint64_t esr, uint64_t elr, uint64_t far){
     // 0b100010	Debug event.
     //TODO: Can parse instruction class, fault cause, etc
     decode_instruction(*(uint32_t*)elr);
-    process_t *proc = get_current_proc();
-    for (int i = 0; i < 31; i++)
-        kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
+    // process_t *proc = get_current_proc();
+    // for (int i = 0; i < 31; i++)
+    //     kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
     if (far > 0) 
         debug_mmu_address(far);
     else 

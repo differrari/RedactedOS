@@ -52,7 +52,6 @@ int count_pages(uint64_t i1,uint64_t i2){
 uint64_t start;
 uint64_t end;
 
-//TODO: prepare for allocating more than 64 bits by marking full registers at a time
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
     if (!start) start = count_pages(get_user_ram_start(),PAGE_SIZE);
     if (!end) end = count_pages(get_user_ram_end(),PAGE_SIZE);
@@ -172,6 +171,7 @@ void mark_used(uintptr_t address, size_t pages)
     }
 }
 
+//TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
 void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
     if (size > UINT32_MAX)//TODO: This serves to catch an issue, except if we put this if in, the issue does not happen

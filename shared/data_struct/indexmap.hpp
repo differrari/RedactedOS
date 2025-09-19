@@ -28,7 +28,7 @@ public:
         if (count == 0) return;
         for (uint32_t i = 0; i < count; i++)
             items[i].~T();
-        ::operator delete(items, sizeof(T) * count);
+        free(items, sizeof(T) * count);
     }
 
     bool add(const uint32_t index, const T& value) {
