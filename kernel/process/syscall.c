@@ -99,29 +99,37 @@ uint64_t syscall_get_time(process_t *ctx){
 }
 
 uint64_t syscall_bind_port(process_t *ctx){
-    uint16_t port     = (uint16_t)ctx->PROC_X0;
-    port_recv_handler_t handler = (port_recv_handler_t)ctx->PROC_X1;
-    protocol_t proto  = (protocol_t)ctx->PROC_X2;
-    uint16_t pid      = get_current_proc_pid();
-    return port_bind_manual(port, pid, proto, handler);
+    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
+    // uint16_t port     = (uint16_t)ctx->PROC_X0;
+    // port_recv_handler_t handler = (port_recv_handler_t)ctx->PROC_X1;
+    // protocol_t proto  = (protocol_t)ctx->PROC_X2;
+    // uint16_t pid      = get_current_proc_pid();
+    // return port_bind_manual(port, pid, proto, handler);
+    return 0;
 }
 
 uint64_t syscall_unbind_port(process_t *ctx){
-    uint16_t port    = (uint16_t)ctx->PROC_X0;
-    protocol_t proto = (protocol_t)ctx->PROC_X2;
-    uint16_t pid     = get_current_proc_pid();
-    return port_unbind(port, proto, pid);
+    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
+    // uint16_t port    = (uint16_t)ctx->PROC_X0;
+    // protocol_t proto = (protocol_t)ctx->PROC_X2;
+    // uint16_t pid     = get_current_proc_pid();
+    // return port_unbind(port, proto, pid);
+    return 0;
 }
 
 uint64_t syscall_send_packet(process_t *ctx){
-    uintptr_t frame_ptr = ctx->PROC_X0;
-    uint32_t  frame_len = (uint32_t)ctx->PROC_X1;
-    return net_tx_frame(frame_ptr, frame_len);
+    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
+    // uintptr_t frame_ptr = ctx->PROC_X0;
+    // uint32_t  frame_len = (uint32_t)ctx->PROC_X1;
+    // return net_tx_frame(frame_ptr, frame_len);
+    return 0;
 }
 
 uint64_t syscall_read_packet(process_t *ctx){
-    sizedptr *user_out = (sizedptr*)ctx->PROC_X0;
-    return net_rx_frame(user_out);
+    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
+    // sizedptr *user_out = (sizedptr*)ctx->PROC_X0;
+    // return net_rx_frame(user_out);
+    return 0;
 }
 
 uint64_t syscall_fopen(process_t *ctx){
