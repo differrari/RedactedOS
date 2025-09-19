@@ -12,6 +12,10 @@ typedef enum {
 
 #define MAX_PROCS 64
 
+#define PROC_PRIORITY_FULL 250
+#define PROC_PRIORITY_HIGH 25
+#define PROC_PRIORITY_LOW  1
+
 void switch_proc(ProcSwitchReason reason);
 bool start_scheduler();
 void save_context_registers();

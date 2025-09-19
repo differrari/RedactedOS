@@ -142,6 +142,7 @@ void Desktop::activate_current(){
             kprintf("[LAUNCHER] Failed to load ELF file");
             return;
         }
+        active_proc->priority = PROC_PRIORITY_FULL;
         kprintf("[LAUNCHER] process launched");
         fb_clear(&ctx, 0);
         commit_draw_ctx(&ctx);

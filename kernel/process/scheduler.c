@@ -63,7 +63,7 @@ void switch_proc(ProcSwitchReason reason) {
     }
 
     current_proc = next_proc;
-    timer_reset();
+    timer_reset(processes[current_proc].priority);
     process_restore();
 }
 
@@ -79,7 +79,7 @@ bool start_scheduler(){
     kprint("Starting scheduler");
     kconsole_clear();
     disable_interrupt();
-    timer_init(1);
+    timer_init(processes[current_proc].priority);
     switch_proc(YIELD);
     return true;
 }
@@ -143,6 +143,7 @@ void init_main_process(){
     proc->stack = (uintptr_t)palloc(proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
     proc->sp = ksp;
     proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, true);
+    proc->priority = PROC_PRIORITY_LOW;
     name_process(proc, "kernel");
     proc_count++;
 }
@@ -167,6 +168,7 @@ process_t* init_process(){
     reset_process(proc);
     proc->id = next_proc_index++;
     proc->state = READY;
+    proc->priority = PROC_PRIORITY_LOW;
     proc_count++;
     return proc;
 }

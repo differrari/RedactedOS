@@ -1,7 +1,5 @@
 #include "timer.h"
 
-static uint64_t _msecs;
-
 static int64_t g_wall_offset_us = 0;
 static int g_sync = 0;
 
@@ -13,9 +11,9 @@ static inline uint64_t rd_cntfrq_el0(void) {
     return v;
 }
 
-void timer_reset() {
+void timer_reset(uint64_t time) {
     uint64_t freq = rd_cntfrq_el0();
-    uint64_t interval = (freq * _msecs) / 1000;
+    uint64_t interval = (freq * time) / 1000;
     asm volatile ("msr cntp_tval_el0, %0" :: "r"(interval));
 }
 
@@ -31,8 +29,7 @@ void permanent_disable_timer(){
 }
 
 void timer_init(uint64_t msecs) {
-    _msecs = msecs;
-    timer_reset();
+    timer_reset(msecs);
     timer_enable();
 }
 

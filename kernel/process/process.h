@@ -44,6 +44,7 @@ typedef struct {
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     input_buffer_t input_buffer;
     packet_buffer_t packet_buffer;
+    uint8_t priority;
     char name[MAX_PROC_NAME_LENGTH];
 } process_t;
 
