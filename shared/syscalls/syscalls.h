@@ -26,6 +26,7 @@ extern void halt(uint32_t exit_code);
 
 extern void request_draw_ctx(draw_ctx*);
 extern void commit_draw_ctx(draw_ctx*);
+extern void resize_draw_ctx(draw_ctx*, uint32_t width, uint32_t height);
 
 extern uint32_t gpu_char_size(uint32_t scale);
 

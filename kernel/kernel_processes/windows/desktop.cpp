@@ -134,18 +134,20 @@ void Desktop::activate_current(){
         kprintf("[LAUNCHER] opened file");
         if (read_file(&fd, file, fd.size) != fd.size){
             kprintf("[LAUNCHER] Failed to read full elf file");
+            rendered_full = false;
             return;
         } 
+        fb_clear(&ctx, 0);
+        commit_draw_ctx(&ctx);
         kprintf("[LAUNCHER] read file %x",fd.size);
         active_proc = load_elf_file(entries[index].name, file,fd.size);
         if (!active_proc){
             kprintf("[LAUNCHER] Failed to load ELF file");
+            rendered_full = false;
             return;
         }
         active_proc->priority = PROC_PRIORITY_FULL;
         kprintf("[LAUNCHER] process launched");
-        fb_clear(&ctx, 0);
-        commit_draw_ctx(&ctx);
         process_active = true;
         sys_set_focus(active_proc->id);
     }

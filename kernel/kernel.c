@@ -56,7 +56,7 @@ void kernel_main() {
     bool input_available = load_module(&input_module);
     bool network_available = false;
 
-    if (BOARD_TYPE == 1){//TODO: Normally, we'd want to fix the net and audio module to handle the devices not being found (for the Pi, for example) gracefully, but we're doing it this way to try to avoid a major merge conflict right now
+    if (BOARD_TYPE == 1){
         network_available = load_module(&net_module);
         
         load_module(&audio_module);

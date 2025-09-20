@@ -20,6 +20,7 @@ syscall_def get_mouse_status, GET_MOUSE_STATUS_CODE
 
 syscall_def request_draw_ctx, REQUEST_DRAW_CTX_CODE
 syscall_def commit_draw_ctx, GPU_FLUSH_DATA_CODE
+syscall_def resize_draw_ctx, RESIZE_DRAW_CTX_CODE
 
 syscall_def gpu_char_size, GPU_CHAR_SIZE_CODE
 
