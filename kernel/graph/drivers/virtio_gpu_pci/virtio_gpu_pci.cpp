@@ -490,3 +490,9 @@ void VirtioGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint
     new_ctx->height = height;
     new_ctx->stride = width * BPP;
 }
+
+void VirtioGPUDriver::resize_window(uint32_t width, uint32_t height, draw_ctx *win_ctx){
+    size_t old_size = win_ctx->width * win_ctx->height * BPP;
+    pfree(win_ctx->fb, old_size);
+    create_window(0, 0, width, height, win_ctx);
+}

@@ -25,6 +25,12 @@ extern "C" void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t h
     main_gpu_driver->create_window(x,y, width, height, &test_window.win_ctx);
 }
 
+void resize_window(uint32_t width, uint32_t height){
+    test_window.win_ctx.width = width;
+    test_window.win_ctx.height = height;
+    main_gpu_driver->resize_window(width, height, &test_window.win_ctx);
+}
+
 void get_window_ctx(draw_ctx* out_ctx){
     *out_ctx = test_window.win_ctx;
     test_window.pid = get_current_proc_pid();
