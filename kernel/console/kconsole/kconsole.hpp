@@ -4,7 +4,6 @@
 #include "data_struct/ring_buffer.hpp"
 #include "graph/graphics.h"
 #include "ui/draw/draw.h"
-#include "memory/talloc.h"
 
 class KernelConsole{
 public:

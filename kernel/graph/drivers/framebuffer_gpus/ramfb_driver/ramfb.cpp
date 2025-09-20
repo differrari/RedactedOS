@@ -1,5 +1,4 @@
 #include "ramfb.hpp"
-#include "memory/talloc.h"
 #include "console/kio.h"
 #include "ui/draw/draw.h"
 #include "memory/memory_access.h"

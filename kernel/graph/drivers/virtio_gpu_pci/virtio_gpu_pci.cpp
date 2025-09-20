@@ -1,6 +1,5 @@
 #include "virtio_gpu_pci.hpp"
 #include "pci.h"
-#include "memory/talloc.h"
 #include "console/kio.h"
 #include "ui/draw/draw.h"
 #include "std/std.h"
@@ -162,8 +161,8 @@ gpu_size VirtioGPUDriver::get_display_info(){
             scanout_id = i;
             scanout_found = true;
             gpu_size size = {resp->pmodes[i].rect.width, resp->pmodes[i].rect.height};
-            temp_free(cmd, sizeof(virtio_gpu_ctrl_hdr));
-            temp_free(resp, sizeof(virtio_gpu_resp_display_info));
+            kfree(cmd, sizeof(virtio_gpu_ctrl_hdr));
+            kfree(resp, sizeof(virtio_gpu_resp_display_info));
             return size;
         }
     }
