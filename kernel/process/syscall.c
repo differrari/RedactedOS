@@ -6,7 +6,7 @@
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
 #include "graph/graphics.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "input/input_dispatch.h"
 #include "std/memory.h"
 #include "std/string.h"
@@ -77,6 +77,16 @@ uint64_t syscall_gpu_flush(process_t *ctx){
     return 0;
 }
 
+uint64_t syscall_gpu_resize_ctx(process_t *ctx){
+    draw_ctx *d_ctx = (draw_ctx*)ctx->PROC_X0;
+    uint32_t width = (uint32_t)ctx->PROC_X1;
+    uint32_t height = (uint32_t)ctx->PROC_X2;
+    resize_window(width, height);
+    get_window_ctx(d_ctx);
+    gpu_flush();
+    return 0;
+}
+
 uint64_t syscall_char_size(process_t *ctx){
     return gpu_get_char_size(ctx->PROC_X0);;
 }
@@ -99,29 +109,37 @@ uint64_t syscall_get_time(process_t *ctx){
 }
 
 uint64_t syscall_bind_port(process_t *ctx){
-    uint16_t port     = (uint16_t)ctx->PROC_X0;
-    port_recv_handler_t handler = (port_recv_handler_t)ctx->PROC_X1;
-    protocol_t proto  = (protocol_t)ctx->PROC_X2;
-    uint16_t pid      = get_current_proc_pid();
-    return port_bind_manual(port, pid, proto, handler);
+    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
+    // uint16_t port     = (uint16_t)ctx->PROC_X0;
+    // port_recv_handler_t handler = (port_recv_handler_t)ctx->PROC_X1;
+    // protocol_t proto  = (protocol_t)ctx->PROC_X2;
+    // uint16_t pid      = get_current_proc_pid();
+    // return port_bind_manual(port, pid, proto, handler);
+    return 0;
 }
 
 uint64_t syscall_unbind_port(process_t *ctx){
-    uint16_t port    = (uint16_t)ctx->PROC_X0;
-    protocol_t proto = (protocol_t)ctx->PROC_X2;
-    uint16_t pid     = get_current_proc_pid();
-    return port_unbind(port, proto, pid);
+    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
+    // uint16_t port    = (uint16_t)ctx->PROC_X0;
+    // protocol_t proto = (protocol_t)ctx->PROC_X2;
+    // uint16_t pid     = get_current_proc_pid();
+    // return port_unbind(port, proto, pid);
+    return 0;
 }
 
 uint64_t syscall_send_packet(process_t *ctx){
-    uintptr_t frame_ptr = ctx->PROC_X0;
-    uint32_t  frame_len = (uint32_t)ctx->PROC_X1;
-    return net_tx_frame(frame_ptr, frame_len);
+    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
+    // uintptr_t frame_ptr = ctx->PROC_X0;
+    // uint32_t  frame_len = (uint32_t)ctx->PROC_X1;
+    // return net_tx_frame(frame_ptr, frame_len);
+    return 0;
 }
 
 uint64_t syscall_read_packet(process_t *ctx){
-    sizedptr *user_out = (sizedptr*)ctx->PROC_X0;
-    return net_rx_frame(user_out);
+    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
+    // sizedptr *user_out = (sizedptr*)ctx->PROC_X0;
+    // return net_rx_frame(user_out);
+    return 0;
 }
 
 uint64_t syscall_fopen(process_t *ctx){
@@ -161,6 +179,7 @@ syscall_entry syscalls[] = {
     { REQUEST_DRAW_CTX_CODE, syscall_gpu_request_ctx},
     { GPU_FLUSH_DATA_CODE, syscall_gpu_flush},
     { GPU_CHAR_SIZE_CODE, syscall_char_size},
+    { RESIZE_DRAW_CTX_CODE, syscall_gpu_resize_ctx},
     { SLEEP_CODE, syscall_sleep},
     { HALT_CODE, syscall_halt},
     { GET_TIME_CODE, syscall_get_time},

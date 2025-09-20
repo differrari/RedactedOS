@@ -431,7 +431,6 @@ void tcp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
     if (!flow) {
         int listen_idx = find_flow(dst_port, 0, 0);
         if ((flags & (1u<<SYN_F)) && !(flags & (1u<<ACK_F)) && listen_idx >= 0) {
-            // TODO syscall for rng
             rng_t rng;
             rng_init_random(&rng);
 

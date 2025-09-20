@@ -20,6 +20,7 @@ syscall_def get_mouse_status, GET_MOUSE_STATUS_CODE
 
 syscall_def request_draw_ctx, REQUEST_DRAW_CTX_CODE
 syscall_def commit_draw_ctx, GPU_FLUSH_DATA_CODE
+syscall_def resize_draw_ctx, RESIZE_DRAW_CTX_CODE
 
 syscall_def gpu_char_size, GPU_CHAR_SIZE_CODE
 
@@ -36,5 +37,5 @@ syscall_def read_packet, READ_PACKET_CODE
 
 syscall_def fopen, FILE_OPEN_CODE
 syscall_def fread, FILE_READ_CODE
-syscall_def fwrit, FILE_WRITE_CODE
-syscall_def dir_list , DIR_LIST_CODE
+syscall_def fwrite, FILE_WRITE_CODE
+syscall_def dir_list, DIR_LIST_CODE

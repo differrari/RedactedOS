@@ -95,7 +95,6 @@ string string_from_hex(uint64_t value){
     return (string){ .data = buf, .length = len, .mem_length = 18 };
 }
 
-//TODO: Can lead to a crash
 uint32_t parse_bin(uint64_t value, char* buf){
     uint32_t len = 0;
     buf[len++] = '0';

@@ -1,5 +1,4 @@
 #include "page_allocator.h"
-#include "memory_access.h"
 #include "memory/talloc.h"
 #include "console/serial/uart.h"
 #include "mmu.h"

@@ -9,6 +9,25 @@
 #include "graph/tres.h"
 #include "launcher.h"
 
+#define BORDER_SIZE 3
+
+void draw_window(gpu_point location, gpu_size size){
+    gpu_point fixed_point = {location.x - BORDER_SIZE, location.y - BORDER_SIZE};
+    gpu_size fixed_size = { size.width + BORDER_SIZE*2, size.height + BORDER_SIZE*2 };
+    draw_ctx *ctx = gpu_get_ctx();
+    DRAW(rectangle(ctx, (rect_ui_config){
+        .border_size = 3,
+        .border_color = BG_COLOR + 0x222222
+    }, (common_ui_config){
+        .point = fixed_point,
+        .size = fixed_size,
+        .background_color = BG_COLOR,
+        .foreground_color = COLOR_WHITE,
+    }),{
+        
+    });
+}
+
 int window_system(){
     disable_visual();
     gpu_clear(BG_COLOR);
@@ -28,18 +47,8 @@ int window_system(){
                 continue;
             }
             gpu_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
-            draw_ctx *ctx = gpu_get_ctx();
-            DRAW(rectangle(ctx, (rect_ui_config){
-                .border_size = 3,
-                .border_color = BG_COLOR + 0x222222
-            }, (common_ui_config){
-                .point = fixed_point,
-                .size = size,
-                .background_color = BG_COLOR,
-                .foreground_color = COLOR_WHITE,
-            }),{
-                create_window(parent.point.x, parent.point.y, parent.size.width, parent.size.height);
-            });
+            create_window(fixed_point.x, fixed_point.y, size.width, size.height);
+            draw_window(fixed_point, size);
             launch_launcher();
             drawing = false;
         }

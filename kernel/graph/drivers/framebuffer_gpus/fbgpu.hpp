@@ -22,6 +22,7 @@ public:
 
     draw_ctx new_cursor(uint32_t color);
     void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *ctx) override;
+    void resize_window(uint32_t width, uint32_t height, draw_ctx *win_ctx) override;
     void setup_cursor() override;   
     void restore_below_cursor(); 
     void update_cursor(uint32_t x, uint32_t y, bool full) override;

@@ -139,3 +139,9 @@ void FBGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t
     new_ctx->height = height;
     new_ctx->stride = width * bpp;
 }
+
+void FBGPUDriver::resize_window(uint32_t width, uint32_t height, draw_ctx *win_ctx){
+    size_t old_size = win_ctx->width * win_ctx->height * bpp;
+    pfree(win_ctx->fb, old_size);
+    create_window(0, 0, width, height, win_ctx);
+}

@@ -1,6 +1,6 @@
 #include "irq.h"
 #include "console/kio.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "process/scheduler.h"
 #include "input/input_dispatch.h"
 #include "input/usb_types.h"
