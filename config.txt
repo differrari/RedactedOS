@@ -53,3 +53,7 @@ otg_mode=1
 [all]
 gpu_mem=512
 framebuffer_depth=32
+framebuffer_width=1920
+framebuffer_height=2160
+framebuffer_max_width=1920
+framebuffer_max_height=2160
