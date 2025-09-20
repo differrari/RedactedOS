@@ -57,7 +57,10 @@ bool VirtioNetDriver::init(){
     kprintfv("[VIRTIO_NET] Configuring network device");
     
     virtio_get_capabilities(&vnp_net_dev, addr, &net_device_address, &net_device_size);
-    pci_register(net_device_address, net_device_size);
+    if (vnp_net_dev.common_cfg) pci_register(((uintptr_t)vnp_net_dev.common_cfg) & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
+    if (vnp_net_dev.device_cfg) pci_register(((uintptr_t)vnp_net_dev.device_cfg) & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
+    if (vnp_net_dev.notify_cfg) pci_register(((uintptr_t)vnp_net_dev.notify_cfg) & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
+    if (vnp_net_dev.isr_cfg) pci_register(((uintptr_t)vnp_net_dev.isr_cfg) & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
 
     uint8_t interrupts_ok = pci_setup_interrupts(addr, NET_IRQ, 2);
     switch(interrupts_ok){
