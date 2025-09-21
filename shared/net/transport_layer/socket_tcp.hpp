@@ -11,7 +11,7 @@
 
 extern "C" {
     void      sleep(uint64_t ms);
-    uintptr_t malloc(uint64_t size);
+    void* malloc(uint64_t size);
     void      free(void *ptr, uint64_t size);
 }
 

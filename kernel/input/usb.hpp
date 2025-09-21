@@ -5,6 +5,13 @@
 #include "usb_types.h"
 #include "USBManager.hpp"
 
+#define USB_SPEED_UNDEFINED            0
+#define USB_SPEED_FULL_SPEED           1
+#define USB_SPEED_LOW_SPEED            2
+#define USB_SPEED_HIGH_SPEED           3
+#define USB_SPEED_SUPER_SPEED          4
+#define USB_SPEED_SUPER_SPEED_PLUS     5
+
 class USBDriver {
 public:
     USBDriver() = default;
@@ -21,6 +28,7 @@ public:
     virtual bool poll(uint8_t address, uint8_t endpoint, void *out_buf, uint16_t size) = 0;
     void poll_inputs();
     virtual void handle_interrupt() = 0;
+    uint32_t calculate_interval(uint32_t speed, uint32_t received_interval);
     bool use_interrupts = false;
     bool quirk_simulate_interrupts = false;
     ~USBDriver() = default;

@@ -16,7 +16,7 @@ typedef struct clinkedlist {
     uint64_t length;
 } clinkedlist_t;
 
-extern uintptr_t malloc(uint64_t size);
+extern void* malloc(uint64_t size);
 extern void free(void *ptr, uint64_t size);
 
 clinkedlist_t *clinkedlist_create();

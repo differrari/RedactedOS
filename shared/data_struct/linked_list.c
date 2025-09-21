@@ -1,7 +1,7 @@
 #include "linked_list.h"
 
 clinkedlist_t *clinkedlist_create(){
-    uintptr_t mem = malloc(sizeof(clinkedlist_t));
+    uintptr_t mem = (uintptr_t)malloc(sizeof(clinkedlist_t));
     if((void *)mem == NULL) return NULL;
     clinkedlist_t *list = (clinkedlist_t *)mem;
     list->head = NULL;

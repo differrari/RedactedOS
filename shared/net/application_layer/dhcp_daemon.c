@@ -15,7 +15,7 @@
 #include "net/transport_layer/csocket_udp.h"
 
 extern void      sleep(uint64_t ms);
-extern uintptr_t malloc(uint64_t size);
+extern void*     malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
 
 #ifndef SOCK_ROLE_SERVER
@@ -121,7 +121,7 @@ static bool dhcp_wait_for_type(uint8_t wanted,
             dhcp_packet *p = (dhcp_packet*)buf;
             uint16_t idx= dhcp_parse_option(p, 53);
             if (idx != UINT16_MAX && p->options[idx + 2] == wanted){
-                uintptr_t copy = malloc((uint32_t)r);
+                uintptr_t copy = (uintptr_t)malloc((uint32_t)r);
                 memcpy((void*)copy, buf, (size_t)r);
                 if (outp) *outp= (dhcp_packet*)copy;
                 if (outsp) *outsp = (sizedptr){ copy, (uint32_t)r };

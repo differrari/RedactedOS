@@ -1,7 +1,7 @@
 #include "http.h"
 #include "std/string.h"
 #include "std/memory.h"
-extern uintptr_t malloc(uint64_t size);
+extern void* malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
 extern void      sleep(uint64_t ms);
 

@@ -5,7 +5,7 @@
 #include "std/memory.h"
 #include "math/rng.h"
 //TODO: add mtu check and fragmentation. also fragment rebuild
-extern uintptr_t malloc(uint64_t size);
+extern void* malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
 extern void      sleep(uint64_t ms);
 
@@ -50,7 +50,7 @@ uint16_t tcp_compute_checksum(const void *segment,
     const uint8_t *seg = (const uint8_t *)segment;
     const uint64_t total_len = 12 + seg_len;
 
-    uintptr_t raw = malloc(total_len);
+    uintptr_t raw = (uintptr_t)malloc(total_len);
     if (!raw) {
         return 0;
     }

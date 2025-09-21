@@ -6,7 +6,7 @@
 #include "types.h"
 
 extern void sleep(uint64_t ms);
-extern uintptr_t malloc(uint64_t size);
+extern void* malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
 
 bool udp_bind(uint16_t port,

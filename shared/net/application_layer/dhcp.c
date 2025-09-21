@@ -5,7 +5,7 @@
 #include "types.h"
 #include "net/transport_layer/csocket_udp.h"
 
-extern uintptr_t malloc(uint64_t size);
+extern void* malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
 extern void      sleep(uint64_t ms);
 sizedptr dhcp_build_packet(const dhcp_request *req,
@@ -41,7 +41,7 @@ sizedptr dhcp_build_packet(const dhcp_request *req,
 
     size_t dhcp_len = sizeof(dhcp_packet) - (sizeof(p.options) - idx);
 
-    uintptr_t buf = malloc(dhcp_len);
+    uintptr_t buf = (uintptr_t)malloc(dhcp_len);
     memcpy((void*)buf, &p, dhcp_len);
 
     return (sizedptr){ .ptr = buf, .size = (uint32_t)dhcp_len };

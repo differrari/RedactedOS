@@ -2,7 +2,7 @@
 #include "socket_http_server.hpp"
 
 extern "C" {
-    extern uintptr_t malloc(uint64_t size);
+    extern void* malloc(uint64_t size);
     extern void      free(void *ptr, uint64_t size);
     extern void      sleep(uint64_t ms);
 }

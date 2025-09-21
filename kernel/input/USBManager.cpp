@@ -14,11 +14,11 @@ void USBManager::register_device(uint8_t address){
     devices.add(address,newdevice);
 }
 
-void USBManager::register_endpoint(uint8_t slot_id, uint8_t endpoint, usb_device_types type, uint16_t packet_size){
+void USBManager::register_endpoint(uint8_t slot_id, uint8_t endpoint, uint32_t interval, usb_device_types type, uint16_t packet_size){
     if (slot_id >= devices.max_size()) return;
     USBDevice *dev = devices[slot_id];
     if (dev)
-        dev->register_endpoint(endpoint, type, packet_size);
+        dev->register_endpoint(endpoint, type, interval, packet_size);
 }
 
 void USBManager::request_data(uint8_t slot_id, uint8_t endpoint_id, USBDriver *driver){

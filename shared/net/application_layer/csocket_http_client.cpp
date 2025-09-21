@@ -3,7 +3,7 @@
 #include "net/transport_layer/socket_tcp.hpp"
 
 extern "C" {
-    extern uintptr_t malloc(uint64_t size);
+    extern void* malloc(uint64_t size);
     extern void      free(void *ptr, uint64_t size);
     extern void      sleep(uint64_t ms);
 }

@@ -22,15 +22,15 @@ void USBDevice::process_data(uint8_t endpoint_id, USBDriver *driver){
         ep->process_data(driver);
 }
 
-void USBDevice::register_endpoint(uint8_t endpoint, usb_device_types type, uint16_t packet_size){
+void USBDevice::register_endpoint(uint8_t endpoint, usb_device_types type, uint32_t interval, uint16_t packet_size){
     if (endpoint >= endpoints.max_size()) return;
     USBEndpoint *newendpoint;
     switch (type){
         case KEYBOARD:
-            newendpoint = new USBKeyboard(address, endpoint, packet_size);
+            newendpoint = new USBKeyboard(address, endpoint, interval, packet_size);
             break;
         case MOUSE:
-            newendpoint = new USBMouse(address,endpoint,packet_size);
+            newendpoint = new USBMouse(address, endpoint, interval, packet_size);
             break;
         default: return;
     }

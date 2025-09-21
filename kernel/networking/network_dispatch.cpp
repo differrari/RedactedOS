@@ -8,7 +8,7 @@
 #include "std/memory.h"
 
 extern void      sleep(uint64_t ms);
-extern uintptr_t malloc(uint64_t size);
+extern void* malloc(uint64_t size);
 extern void      free(void *ptr, uint64_t size);
 
 static uint16_t g_net_pid = 0xFFFF;

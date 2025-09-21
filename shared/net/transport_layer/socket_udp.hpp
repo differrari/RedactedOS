@@ -9,7 +9,7 @@
 
 extern "C" {
     void      sleep(uint64_t ms);
-    uintptr_t malloc(uint64_t size);
+    void* malloc(uint64_t size);
     void      free(void *ptr, uint64_t size);
 }
 
@@ -44,7 +44,7 @@ class UDPSocket : public Socket {
         this->remoteIP = src_ip;
         this->remotePort = src_port;
 
-        uintptr_t copy = malloc(len);
+        uintptr_t copy = (uintptr_t)malloc(len);
         if (!copy) {
             free((void*)ptr, len);
             return;

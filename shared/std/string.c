@@ -408,7 +408,7 @@ void string_concat_inplace(string *dest, string src)
     uint32_t new_len = dest->length + src.length;
     uint32_t new_cap = new_len + 1;
 
-    uintptr_t raw = malloc(new_cap);
+    uintptr_t raw = (uintptr_t)malloc(new_cap);
     if (!raw) return;
     char *dst = (char *)raw;
 

@@ -193,7 +193,7 @@ bool DWC2Driver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     endpoint_channel->cchar &= ~(0b11 << 20);
     endpoint_channel->cchar |= (mc << 20);
 
-    usb_manager->register_endpoint(address, ep_num, type, endpoint->wMaxPacketSize);
+    usb_manager->register_endpoint(address, ep_num, calculate_interval(port_speed, endpoint->bInterval), type, endpoint->wMaxPacketSize);
 
     return true;
 }
