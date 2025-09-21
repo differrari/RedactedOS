@@ -275,11 +275,16 @@ void sync_el0_handler_c(){
         if (!found)
             panic("Unknown syscall %i", iss);
     } else {
+        uint64_t far;
+        asm volatile ("mrs %0, far_el1" : "=r"(far));
+        if (far == 0 && elr == 0 && currentEL == 0){
+            kprintf("Process has exited %x",x0);
+            syscall_depth--;
+            stop_current_process(x0);
+        }// else kprintf("ELR %x FAR %x",elr,far);
         switch (ec) {
             case 0x20:
             case 0x21: {
-                uint64_t far;
-                asm volatile ("mrs %0, far_el1" : "=r"(far));
                 if (far == 0){
                     kprintf("Process has exited %x",x0);
                     syscall_depth--;
@@ -287,8 +292,6 @@ void sync_el0_handler_c(){
                 }
             }
         }
-        uint64_t far;
-        asm volatile ("mrs %0, far_el1" : "=r"(far));
         //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
         if (currentEL == 1){
             kprintf("System has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
