@@ -37,9 +37,8 @@ Desktop::Desktop() {
             string fullpath = string_format("/boot/redos/user/%s",(uintptr_t)file);
             string name = string_from_literal_length(file,find_extension(file));
             string ext = string_from_literal(file + find_extension(file));
-            if (strcmp(ext.data,".elf", true) == 0){
+            if (strcmp(ext.data,".elf", true) == 0)
                 add_entry(name.data, ext.data, fullpath.data);
-            }
             while (*reader) reader++;
             reader++;
         }
@@ -65,18 +64,10 @@ void Desktop::draw_desktop(){
                 activate_current();
                 return;
             }
-            if (key == KEY_RIGHT){
-                selected.x = (selected.x + 1) % MAX_COLS;
-            }
-            if (key == KEY_LEFT){
-                selected.x = (selected.x - 1 + MAX_COLS) % MAX_COLS;
-            } 
-            if (key == KEY_DOWN){
-                selected.y = (selected.y + 1) % MAX_ROWS;
-            } 
-            if (key == KEY_UP){
-                selected.y = (selected.y - 1 + MAX_ROWS) % MAX_ROWS;
-            } 
+            if (key == KEY_RIGHT) selected.x = (selected.x + 1) % MAX_COLS;
+            if (key == KEY_LEFT) selected.x = (selected.x - 1 + MAX_COLS) % MAX_COLS; 
+            if (key == KEY_DOWN) selected.y = (selected.y + 1) % MAX_ROWS; 
+            if (key == KEY_UP) selected.y = (selected.y - 1 + MAX_ROWS) % MAX_ROWS; 
         }
     }
     if (!rendered_full){
@@ -90,6 +81,7 @@ void Desktop::draw_desktop(){
 }
 
 void Desktop::draw_full(){
+    if (!await_gpu()) return;
     fb_clear(&ctx, BG_COLOR+0x050505);
     for (uint32_t column = 0; column < MAX_COLS; column++){
         for (uint32_t row = 0; row < MAX_ROWS; row++){
