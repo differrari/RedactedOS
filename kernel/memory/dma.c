@@ -1,5 +1,4 @@
 #include "dma.h"
-#include "memory/talloc.h"
 
 void dma_read(void* dest, uint32_t size, uint64_t pointer) {
     uint8_t* d = (uint8_t*)dest;
