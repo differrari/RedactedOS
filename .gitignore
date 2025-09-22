@@ -13,4 +13,5 @@ dump
 .cache/*
 compile_commands.json
 .clangd
+.DS_STORE
 *.d
