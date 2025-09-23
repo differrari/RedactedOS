@@ -7,6 +7,7 @@ typedef struct wav_data {
     int16_t* samples;
 } wav_data;
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif

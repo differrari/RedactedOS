@@ -27,7 +27,7 @@
 #define VIRTIO_SND_PCM_RATE_44100   6
 #define VIRTIO_SND_PCM_RATE_48000   7
 
-#define SND_44100_BUFFER_SIZE 256
+#define SND_44100_BUFFER_SIZE       256
 static_assert((SND_44100_BUFFER_SIZE & 0x01) == 0x00, "Audio buffer size must be even.");
 #define SND_U32_BYTES 4
 #define SND_PERIOD 1

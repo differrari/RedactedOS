@@ -12,7 +12,7 @@ typedef enum WAVE_TYPE {
 #define PHASE_MAX  PHASE_MASK
 #define PHASE_MID  (PHASE_MAX >> 1)
 
-#define WAVE_MID_VALUE 0x80000000
+#define WAVE_MID_VALUE  0x80000000
 
 #define AUDIO_LEVEL_MAX UINT32_MAX
 
