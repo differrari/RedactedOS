@@ -23,7 +23,7 @@ int proc_func() {
                 halt(0);
         fb_clear(&ctx, 0xFFFFFFFF);
         // fb_fill_rect(&ctx, rect.point.x, rect.point.y, rect.size.width, rect.size.height, 0xFF222233);
-        fb_draw_img(&ctx, BORDER, BORDER, img, info.width, info.height);
+        if (img) fb_draw_img(&ctx, BORDER, BORDER, img, info.width, info.height);
         // fb_draw_string(&ctx, "Print screen test", rect.point.x, rect.point.y, 2, 0xFFFFFFFF);
         commit_draw_ctx(&ctx);
     }

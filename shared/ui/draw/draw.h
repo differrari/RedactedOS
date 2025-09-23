@@ -28,6 +28,7 @@ void fb_clear(draw_ctx *ctx, uint32_t color);
 void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color);
 void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color);
 void fb_draw_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t img_width, uint32_t img_height);
+void fb_draw_partial_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t img_width, uint32_t img_height, uint32_t start_x, uint32_t start_y, uint32_t full_width);
 gpu_rect fb_draw_line(draw_ctx *ctx, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, color color);
 void fb_draw_char(draw_ctx *ctx, uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color);
 gpu_size fb_draw_string(draw_ctx *ctx, const char* s, uint32_t x, uint32_t y, uint32_t scale, uint32_t color);
