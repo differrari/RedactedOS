@@ -61,8 +61,6 @@ typedef signed long intptr_t;
 typedef signed short int16_t;
 typedef signed char int8_t;
 
-#define INT16_MAX 0x7FFF
-
 typedef struct sizedptr {
     uintptr_t ptr;
     size_t size;
