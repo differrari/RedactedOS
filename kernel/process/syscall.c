@@ -143,7 +143,15 @@ uint64_t syscall_read_packet(process_t *ctx){
 }
 
 uint64_t syscall_fopen(process_t *ctx){
-    char *path = (char *)ctx->PROC_X0;
+    char *req_path = (char *)ctx->PROC_X0;
+    char path[255];
+    if (!(ctx->spsr & 0x200)){
+        // path = 
+        if (strstart("/resources/", req_path, true)){
+            string_format_buf("%s%s", path, ctx->bundle, req_path);
+        } else return 0;//In the future, we'll allow a documents path as well as privilege escalation for full-ish filesystem access
+    } else memcpy(path, req_path, strlen(req_path, 0));
+    kprint(path);
     file *descriptor = (file*)ctx->PROC_X1;
     return open_file(path, descriptor);
 }

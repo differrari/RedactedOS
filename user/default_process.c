@@ -10,7 +10,7 @@ int proc_func() {
     draw_ctx ctx = {};
     request_draw_ctx(&ctx);
     image_info info;
-    void *img = load_bmp("/boot/redos/images/jest.bmp", &info);
+    void *img = load_bmp("/resources/jest.bmp", &info);
     resize_draw_ctx(&ctx, info.width+BORDER*2, info.height+BORDER*2);
     while (1) {
         mouse_input mouse = {};

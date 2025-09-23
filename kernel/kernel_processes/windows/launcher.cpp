@@ -132,7 +132,7 @@ void Launcher::activate_current(){
         fb_clear(&ctx, 0);
         commit_draw_ctx(&ctx);
         kprintf("[LAUNCHER] read file %x",fd.size);
-        active_proc = load_elf_file(entries[index].name, file,fd.size);
+        active_proc = load_elf_file(entries[index].name,entries[index].path, file,fd.size);
         if (!active_proc){
             kprintf("[LAUNCHER] Failed to load ELF file");
             rendered_full = false;

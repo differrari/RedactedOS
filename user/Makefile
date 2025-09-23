@@ -28,7 +28,7 @@ all: prepare $(PACKAGE)/$(TARGET)
 prepare:
 	mkdir -p $(BUILD_DIR)
 	mkdir -p $(PACKAGE)
-	cp -r resources $(PACKAGE)/resources
+	cp -r resources $(PACKAGE)
 
 $(PACKAGE)/$(TARGET): ../shared/libshared.a $(OBJ)
 	$(VLD) $(LDFLAGS) -o $(PACKAGE)/$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
@@ -49,6 +49,7 @@ $(BUILD_DIR)/%.o: %.cpp
 
 # Might want to also delete the directories created inside BUILD_DIR
 clean:
-	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
+	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET) 
+	$(RM) -r $(PACKAGE)
 
 -include $(DEP)
