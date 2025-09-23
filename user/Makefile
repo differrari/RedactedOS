@@ -17,18 +17,23 @@ DEP     := $(C_SRC:%.c=$(BUILD_DIR)/%.d) $(CPP_SRC:%.cpp=.$(BUILD_DIR)/%.d)
 NAME     := $(notdir $(CURDIR))
 ELF      := $(NAME).elf
 TARGET   := $(NAME).bin
-LOCATION := ../fs/redos/user/
+PACKAGE  := $(NAME).red
+LOCATION := ../fs/redos/user/$(NAME).red/
+
 
 .PHONY: prepare all clean
 
-all: prepare $(LOCATION)$(TARGET)
+all: prepare $(PACKAGE)$(TARGET)
 
 prepare:
 	mkdir -p $(BUILD_DIR)
+	mkdir -p $(PACKAGE)
+	cp -r resources $(PACKAGE)/resources
 
-$(LOCATION)$(TARGET): ../shared/libshared.a $(OBJ)
-	$(VLD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
-	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $@
+$(PACKAGE)$(TARGET): ../shared/libshared.a $(OBJ)
+	$(VLD) $(LDFLAGS) -o $(PACKAGE)$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
+	$(OBJCOPY) -O binary $(PACKAGE)$(ELF) $@
+	cp -r $(PACKAGE) $(LOCATION)
 
 $(BUILD_DIR)/%.o: %.S
 	@mkdir -p $(dir $@)
