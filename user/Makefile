@@ -18,21 +18,21 @@ NAME     := $(notdir $(CURDIR))
 ELF      := $(NAME).elf
 TARGET   := $(NAME).bin
 PACKAGE  := $(NAME).red
-LOCATION := ../fs/redos/user/$(NAME).red/
+LOCATION := ../fs/redos/user/
 
 
 .PHONY: prepare all clean
 
-all: prepare $(PACKAGE)$(TARGET)
+all: prepare $(PACKAGE)/$(TARGET)
 
 prepare:
 	mkdir -p $(BUILD_DIR)
 	mkdir -p $(PACKAGE)
 	cp -r resources $(PACKAGE)/resources
 
-$(PACKAGE)$(TARGET): ../shared/libshared.a $(OBJ)
-	$(VLD) $(LDFLAGS) -o $(PACKAGE)$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
-	$(OBJCOPY) -O binary $(PACKAGE)$(ELF) $@
+$(PACKAGE)/$(TARGET): ../shared/libshared.a $(OBJ)
+	$(VLD) $(LDFLAGS) -o $(PACKAGE)/$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
+	$(OBJCOPY) -O binary $(PACKAGE)/$(ELF) $@
 	cp -r $(PACKAGE) $(LOCATION)
 
 $(BUILD_DIR)/%.o: %.S
