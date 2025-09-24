@@ -59,6 +59,8 @@ typedef struct {
 // #define PROC_LR regs[11]
 // #define PROC_SP regs[10]
 
+#define PROC_PRIV spsr & 0x4
+
 #ifdef __cplusplus
 }
 #endif

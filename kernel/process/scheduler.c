@@ -106,9 +106,18 @@ uint16_t get_current_proc_pid(){
     return processes[current_proc].id;
 }
 
+void free_heap(uintptr_t ptr){
+    mem_page *info = (mem_page*)ptr;
+    if (info->next)
+        free_heap((uintptr_t)info->next);
+    pfree((void*)ptr, PAGE_SIZE);
+}
+
 void reset_process(process_t *proc){
     proc->sp = 0;
-    pfree((void*)proc->stack-proc->stack_size,proc->stack_size);
+    if (processes[current_proc].id != proc->id || !(processes[current_proc].PROC_PRIV))//Privileged processes use their own stack even in an exception. We'll free it when we reuse it
+        if (proc->stack) pfree((void*)proc->stack-proc->stack_size,proc->stack_size);
+    if (proc->heap) free_heap(proc->heap);//Sadly, full pages of alloc'd memory are not kept track and will not be freed
     proc->pc = 0;
     proc->spsr = 0;
     proc->exit_code = 0;
@@ -134,7 +143,6 @@ void reset_process(process_t *proc){
 void init_main_process(){
     proc_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
     process_t* proc = &processes[0];
-    reset_process(proc);
     proc->id = next_proc_index++;
     proc->state = BLOCKED;
     proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);

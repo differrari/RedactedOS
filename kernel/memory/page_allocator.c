@@ -35,21 +35,27 @@ void page_allocator_init() {
     }
 }
 
-void pfree(void* ptr, uint64_t size) {
-    //TODO: review this, we're not using size
-    uint64_t addr = (uint64_t)ptr;
-    addr /= PAGE_SIZE;
-    uint64_t table_index = addr/64;
-    uint64_t table_offset = addr % 64;
-    mem_bitmap[table_index] &= ~(1ULL << table_offset);
-}
-
 int count_pages(uint64_t i1,uint64_t i2){
     return (i1/i2) + (i1 % i2 > 0);
 }
 
+void pfree(void* ptr, uint64_t size) {
+    int pages = count_pages(size,PAGE_SIZE);
+    uint64_t addr = (uint64_t)ptr;
+    addr /= PAGE_SIZE;
+    for (int i = 0; i < pages; i++){
+        uint64_t index = addr + i;
+        uint64_t table_index = index/64;
+        uint64_t table_offset = index % 64;
+        mem_bitmap[table_index] &= ~(1ULL << table_offset);
+        mmu_unmap(index * PAGE_SIZE,index * PAGE_SIZE);
+    }
+}
+
 uint64_t start;
 uint64_t end;
+
+#include "console/kio.h"
 
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
     if (!start) start = count_pages(get_user_ram_start(),PAGE_SIZE);
@@ -57,6 +63,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
     uint64_t page_count = count_pages(size,PAGE_SIZE);
 
     if (page_count > 64){
+        kprintfv("Large allocation > 64p");
         uint64_t reg_count = page_count/64;
         uint8_t fractional = page_count % 64;
         reg_count += fractional > 0;
@@ -87,6 +94,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
                     else
                         register_proc_memory(address, address, attributes, level);
                 }
+                kprintfv("[page_alloc] Final address %x", (i * 64 * PAGE_SIZE));
                 return (void*)(i * 64 * PAGE_SIZE);
             }
         }
@@ -96,6 +104,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
 
     for (uint64_t i = start/64; i < end/64; i++) {
         if (mem_bitmap[i] != UINT64_MAX) {
+            kprintfv("Normal allocation");
             uint64_t inv = ~mem_bitmap[i];
             uint64_t bit = __builtin_ctzll(inv);
             if (bit > (64 - page_count)){ 
@@ -139,7 +148,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
                 }
             }
 
-            // kprintfv("[page_alloc] Final address %x", first_address);
+            kprintfv("[page_alloc] Final address %x", first_address);
 
             return (void*)first_address;
         } else if (!skipped_regs) start = (i + 1) * 64;
@@ -147,6 +156,14 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
 
     uart_puts("[page_alloc error] Could not allocate");
     return 0;
+}
+
+bool page_used(uintptr_t ptr){
+    uint64_t addr = (uint64_t)ptr;
+    addr /= PAGE_SIZE;
+    uint64_t table_index = addr/64;
+    uint64_t table_offset = addr % 64;
+    return (mem_bitmap[table_index] >> table_offset) & 1;
 }
 
 void mark_used(uintptr_t address, size_t pages)
@@ -173,8 +190,6 @@ void mark_used(uintptr_t address, size_t pages)
 //TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
 void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
-    if (size > UINT32_MAX)//TODO: This serves to catch an issue, except if we put this if in, the issue does not happen
-        panic("Faulty allocation", size);
     
     size = (size + alignment - 1) & ~(alignment - 1);
 

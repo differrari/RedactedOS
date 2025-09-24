@@ -145,7 +145,7 @@ uint64_t syscall_read_packet(process_t *ctx){
 uint64_t syscall_fopen(process_t *ctx){
     char *req_path = (char *)ctx->PROC_X0;
     char path[255];
-    if (!(ctx->spsr & 0x200)){
+    if (!(ctx->PROC_PRIV)){
         // path = 
         if (strstart("/resources/", req_path, true)){
             string_format_buf("%s%s", path, ctx->bundle, req_path);

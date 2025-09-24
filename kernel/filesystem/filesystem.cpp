@@ -80,8 +80,9 @@ FS_RESULT open_file(const char* path, file* descriptor){
     if (!mod) return FS_RESULT_NOTFOUND;
     FS_RESULT result = mod->open(search_path, descriptor);
     if (!open_files){
-        open_files = new LinkedList<open_file_descriptors>();
         page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
+        LinkedList<open_file_descriptors> *ptr = (LinkedList<open_file_descriptors>*)kalloc(page, sizeof(LinkedList<open_file_descriptors>), ALIGN_64B, MEM_PRIV_KERNEL);
+        open_files = new (ptr) LinkedList<open_file_descriptors>();
         open_files->set_allocator(
         [](size_t size) -> void* {
             return kalloc(page, size, ALIGN_64B, MEM_PRIV_KERNEL);
