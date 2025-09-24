@@ -41,9 +41,13 @@ typedef struct {
     file out_fd;
     uint64_t exit_code;
     bool focused;
+    void *code;
+    size_t code_size;
+    bool use_va;
+    uintptr_t va;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
-    input_buffer_t input_buffer;
-    packet_buffer_t packet_buffer;
+    __attribute__((aligned(16))) input_buffer_t input_buffer;
+    __attribute__((aligned(16))) packet_buffer_t packet_buffer;
     uint8_t priority;
     char *bundle;
     char name[MAX_PROC_NAME_LENGTH];

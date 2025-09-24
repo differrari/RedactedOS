@@ -9,6 +9,7 @@
 #include "networking/network.h"
 #include "hw/hw.h"
 #include "audio/audio.h"
+#include "process/syscall.h"
 
 #define IRQ_TIMER 30
 #define SLEEP_TIMER 27
@@ -75,6 +76,7 @@ void disable_interrupt(){
 void irq_el1_handler() {
     save_context_registers();
     save_return_address_interrupt();
+    syscall_depth++;
     uint32_t irq;
     if (RPI_BOARD == 3){
         irq = 31 - __builtin_clz(read32(GICD_BASE + 0x204));

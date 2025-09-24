@@ -12,6 +12,8 @@
 #include "data_struct/linked_list.h"
 #include "std/memory.h"
 #include "math/math.h"
+#include "memory/mmu.h"
+#include "process/syscall.h"
 
 extern void save_context(process_t* proc);
 extern void save_pc_interrupt(process_t* proc);
@@ -71,6 +73,7 @@ void save_syscall_return(uint64_t value){
 }
 
 void process_restore(){
+    syscall_depth--;
     restore_context(&processes[current_proc]);
 }
 
@@ -121,6 +124,14 @@ void reset_process(process_t *proc){
     proc->pc = 0;
     proc->spsr = 0;
     proc->exit_code = 0;
+    if (proc->code && proc->code_size){
+        if (proc->use_va){
+            for (uintptr_t i = 0; i < proc->code_size; i += PAGE_SIZE){
+                mmu_unmap(proc->va + i, (uintptr_t)proc->code + i);
+            }
+        } 
+        pfree(proc->code, proc->code_size);
+    }
     for (int j = 0; j < 31; j++)
         proc->regs[j] = 0;
     for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++)
