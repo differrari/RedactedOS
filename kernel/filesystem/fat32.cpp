@@ -89,7 +89,7 @@ void FAT32FS::parse_longnames(f32longname entries[], uint16_t count, char* out){
             out[f++] = buffer[14+(j*2)];
         }
         for (int j = 0; j < 2; j++){
-            out[f++] = buffer[18+(j*2)];
+            out[f++] = buffer[28+(j*2)];
         }
     }
     out[f++] = '\0';
@@ -99,8 +99,13 @@ void FAT32FS::parse_shortnames(f32file_entry* entry, char* out){
     int j = 0;
     bool ext_found = false;
     for (int i = 0; i < 11 && entry->filename[i]; i++){
-        if (entry->filename[i] != ' ')
+        if (entry->filename[i] != ' '){
             out[j++] = entry->filename[i];
+            if (i == 7 && !ext_found){
+                out[j++] = '.';
+                ext_found = true;
+            }
+        }
         else if (!ext_found){
             out[j++] = '.';
             ext_found = true;

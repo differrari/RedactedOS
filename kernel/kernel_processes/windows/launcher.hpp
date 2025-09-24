@@ -11,9 +11,9 @@ struct LaunchEntry {
     char* path;
 };
 
-class Desktop {
+class Launcher {
 public:
-    Desktop();
+    Launcher();
 
     void draw_desktop();
 

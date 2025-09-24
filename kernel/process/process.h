@@ -45,6 +45,7 @@ typedef struct {
     input_buffer_t input_buffer;
     packet_buffer_t packet_buffer;
     uint8_t priority;
+    char *bundle;
     char name[MAX_PROC_NAME_LENGTH];
 } process_t;
 

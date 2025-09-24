@@ -260,12 +260,14 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     kprintfv("Finished translation");
 }
 
-process_t* create_process(const char *name, void *content, uint64_t content_size, uintptr_t entry, uintptr_t va_base) {
+process_t* create_process(const char *name, const char *bundle, void *content, uint64_t content_size, uintptr_t entry, uintptr_t va_base) {
     
     disable_interrupt();
     process_t* proc = init_process();
 
     name_process(proc, name);
+
+    proc->bundle = (char*)bundle;
 
     //TODO: keep track of code size so we can free up allocated code pages
     uint8_t* dest = (uint8_t*)palloc(content_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true);

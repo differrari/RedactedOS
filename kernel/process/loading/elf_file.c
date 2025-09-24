@@ -49,7 +49,7 @@ typedef struct elf_section_header
   uint64_t	sh_entsize;		/* Entry size if section holds table */
 } elf_section_header;
 
-process_t* load_elf_file(const char *name, void* file, size_t filesize){
+process_t* load_elf_file(const char *name, const char *bundle, void* file, size_t filesize){
     elf_header *header = (elf_header*)file;
 
     if (header->magic[0] != 0x7f){
@@ -85,5 +85,5 @@ process_t* load_elf_file(const char *name, void* file, size_t filesize){
 
     // while (1);
 
-    return create_process(name, (void*)file, filesize, header->program_entry_offset, first_program_header->p_vaddr);
+    return create_process(name, bundle, (void*)file, filesize, header->program_entry_offset, first_program_header->p_vaddr);
 }
