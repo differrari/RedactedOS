@@ -170,6 +170,12 @@ uint64_t syscall_fwrite(process_t *ctx){
     return write_file(descriptor, buf, size);
 }
 
+uint64_t syscall_fclose(process_t *ctx){
+    file *descriptor = (file*)ctx->PROC_X0;
+    close_file(descriptor);
+    return 0;
+}
+
 uint64_t syscall_dir_list(process_t *ctx){
     kprintf("[SYSCALL implementation error] directory listing not implemented yet");
     // char *path = (char *)ctx->PROC_X0;
@@ -198,6 +204,7 @@ syscall_entry syscalls[] = {
     {FILE_OPEN_CODE, syscall_fopen},
     {FILE_READ_CODE, syscall_fread},
     {FILE_WRITE_CODE, syscall_fwrite},
+    {FILE_CLOSE_CODE, syscall_fclose},
     {DIR_LIST_CODE, syscall_dir_list},
 };
 

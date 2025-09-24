@@ -115,6 +115,10 @@ size_t read_file(file *descriptor, char* buf, size_t size){
     return amount_read;
 }
 
+void close_file(file *descriptor){
+    
+}
+
 size_t write_file(file *descriptor, const char* buf, size_t size){
     if (!open_files) return 0;
     open_file_descriptors file = open_files->find([descriptor](open_file_descriptors kvp){

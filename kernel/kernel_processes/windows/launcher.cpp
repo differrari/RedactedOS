@@ -125,7 +125,9 @@ void Launcher::activate_current(){
         }
         char *file = (char*)malloc(fd.size);
         kprintf("[LAUNCHER] opened file");
-        if (read_file(&fd, file, fd.size) != fd.size){
+        size_t read_size = read_file(&fd, file, fd.size);
+        close_file(&fd);
+        if (read_size != fd.size){
             kprintf("[LAUNCHER] Failed to read full elf file");
             rendered_full = false;
             return;
