@@ -52,6 +52,7 @@ void Launcher::draw_desktop(){
     if (process_active){
         active_proc = nullptr;
         sys_focus_current();
+        get_window_ctx(&ctx);
         rendered_full = false;
         process_active = false;
     }
