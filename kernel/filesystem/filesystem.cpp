@@ -21,8 +21,7 @@ LinkedList<open_file_descriptors> *open_files;
 bool boot_partition_init(){
     uint32_t f32_partition = mbr_find_partition(0xC);
     fs_driver = new FAT32FS();
-    fs_driver->init(f32_partition);
-    return true;
+    return fs_driver->init(f32_partition);
 }
 
 bool boot_partition_fini(){
@@ -65,11 +64,57 @@ driver_module boot_fs_module = (driver_module){
     .readdir = boot_partition_readdir,
 };
 
-bool init_boot_filesystem(){
+#include "virtio_9p_pci.hpp"
+Virtio9PDriver *p9Driver;
+
+bool shared_init(){
+    p9Driver = new Virtio9PDriver();
+    return p9Driver->init(0);
+}
+
+bool shared_fini(){
+    return false;
+}
+
+FS_RESULT shared_open(const char *path, file *out_fd){
+    return p9Driver->open_file(path, out_fd);
+}
+
+size_t shared_read(file *fd, char *out_buf, size_t size, file_offset offset){
+    return p9Driver->read_file(fd, out_buf, size);
+}
+
+size_t shared_write(file *fd, const char *buf, size_t size, file_offset offset){
+    return 0;
+}
+
+file_offset shared_seek(file *fd, file_offset offset){
+    return 0;
+}
+
+sizedptr shared_readdir(const char* path){
+    //TODO: Need to pass a buffer and write to that, returning size
+    return p9Driver->list_contents(path);
+}
+
+driver_module p9_fs_module = (driver_module){
+    .name = "9PFS",
+    .mount = "shared",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = shared_init,
+    .fini = shared_fini,
+    .open = shared_open,
+    .read = shared_read,
+    .write = shared_write,
+    .seek = shared_seek,
+    .readdir = shared_readdir,
+};
+
+bool init_filesystem(){
     const char *path = "/disk";
     driver_module *disk_mod = get_module(&path);
     if (!disk_mod) return false;
-    return load_module(&boot_fs_module);
+    return load_module(&boot_fs_module) && load_module(&p9_fs_module);
 }
 
 void* page;

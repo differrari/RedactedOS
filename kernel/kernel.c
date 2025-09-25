@@ -71,7 +71,7 @@ void kernel_main() {
     
     kprint("Starting processes");
     
-    init_boot_filesystem();
+    init_filesystem();
     if (input_available) init_input_process();
 
     if (network_available) launch_net_process();

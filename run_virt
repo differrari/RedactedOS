@@ -61,6 +61,8 @@ $PRIVILEGE qemu-system-aarch64 \
   -serial mon:stdio \
   -drive file=disk.img,if=none,format=raw,id=hd0 \
   -device virtio-blk-pci,drive=hd0 \
+  -fsdev local,path=./user,security_model=mapped-xattr,id=sharedfs \
+  -device virtio-9p-pci,fsdev=sharedfs,mount_tag=shared \
   -device qemu-xhci,${MSI_CAPABILITIES}id=usb \
   -device usb-kbd,bus=usb.0 \
   -device usb-mouse,bus=usb.0 \
