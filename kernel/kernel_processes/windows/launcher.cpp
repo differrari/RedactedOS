@@ -28,6 +28,11 @@ uint16_t Launcher::find_extension(char *path){
 
 Launcher::Launcher() {
     entries = Array<LaunchEntry>(9);
+    load_entries();
+}
+
+void Launcher::load_entries(){
+    entries.empty();
     sizedptr list_ptr = list_directory_contents("/shared/redos/user/");
     string_list *list = (string_list*)list_ptr.ptr;
     if (list && list_ptr.size){
@@ -43,8 +48,6 @@ Launcher::Launcher() {
             reader++;
         }
         //TODO: The list of strings needs to be freed, but this class is not its owner
-    } else {
-        kprint("Failed to get list");
     }
 }
 
@@ -54,6 +57,7 @@ void Launcher::draw_desktop(){
     if (process_active){
         active_proc = nullptr;
         sys_focus_current();
+        load_entries();
         get_window_ctx(&ctx);
         rendered_full = false;
         process_active = false;
