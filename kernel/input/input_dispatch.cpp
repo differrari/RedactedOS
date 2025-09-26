@@ -170,8 +170,6 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
     return false;
 }
 
-// TODO: discard input before DOOM
-
 bool input_init(){
     for (int i = 0; i < 16; i++) shortcuts[i] = {};
     if (BOARD_TYPE == 2 && RPI_BOARD != 5){

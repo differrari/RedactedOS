@@ -93,7 +93,6 @@ file_offset shared_seek(file *fd, file_offset offset){
 }
 
 sizedptr shared_readdir(const char* path){
-    kprintf("Here?");
     //TODO: Need to pass a buffer and write to that, returning size
     return p9Driver->list_contents(path);
 }
@@ -176,7 +175,6 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
 
 sizedptr list_directory_contents(const char *path){
     const char *search_path = path;
-    kprintf("Searching in %s",search_path);
     driver_module *mod = get_module(&search_path);
     if (!mod){
         kprintf("No module for path");

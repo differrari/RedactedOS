@@ -32,7 +32,6 @@
 
 #define VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM 1
 
-//TODO: format logs
 VirtioGPUDriver* VirtioGPUDriver::try_init(gpu_size preferred_screen_size){
     VirtioGPUDriver* driver = new VirtioGPUDriver();
     if (driver->init(preferred_screen_size))
@@ -483,7 +482,6 @@ void VirtioGPUDriver::set_cursor_pressed(bool pressed){
 }
 
 void VirtioGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *new_ctx){
-    // TODO: use separate resources for windows. Will probably make rendering a lot faster. Do before DOOM
     new_ctx->fb = (uint32_t*)palloc(width * height * BPP, MEM_PRIV_SHARED, MEM_RW, true);
     new_ctx->width = width;
     new_ctx->height = height;

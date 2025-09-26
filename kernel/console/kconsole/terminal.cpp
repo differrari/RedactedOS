@@ -104,8 +104,6 @@ void Terminal::run_command(){
     command_running = true;
 }
 
-//TODO: implement the full state machine explained at https://vt100.net/emu/dec_ansi_parser & https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
-//The current implementation is not standard compliant and uses hex colors as [FF0000;
 void Terminal::TMP_test(int argc, const char* args[]){
     // const char *term = seek_to(args, '\033');
     // if (*term == 0) return;
