@@ -3,8 +3,7 @@
 typedef struct wav_data {
     uint32_t channels;
     uint32_t smpls_per_channel;
-    sizedptr file_content;
-    int16_t* samples;
+    sizedptr samples;
 } wav_data;
 
 
@@ -12,7 +11,7 @@ typedef struct wav_data {
 extern "C" {
 #endif
 
-bool wav_load(const char*path, wav_data *wav);
+bool wav_load_as_int16(const char*path, wav_data *wav);
 
 #ifdef __cplusplus
 }

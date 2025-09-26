@@ -77,8 +77,8 @@ static inline uint32_t int16_to_uint32(int16_t sample, uint32_t amplitude){
     return (uint64_t)(((int64_t)sample * amplitude) >> 16) + WAVE_MID_VALUE;
 }
 
-void play_int16_samples(int16_t *samples, size_t smpl_per_channel, size_t channels, uint32_t amplitude){
-    size_t samples_remaining = smpl_per_channel * channels;
+void play_int16_samples(int16_t *samples, size_t smpls_per_channel, size_t channels, uint32_t amplitude){
+    size_t samples_remaining = smpls_per_channel * channels;
     while (samples_remaining > 0){
         sizedptr buf = audio_request_buffer(audio_driver->out_dev->stream_id);
         uint32_t* buffer = (uint32_t*)buf.ptr;
@@ -93,16 +93,15 @@ void play_int16_samples(int16_t *samples, size_t smpl_per_channel, size_t channe
             buffer[slot++] = WAVE_MID_VALUE;
         }
         audio_submit_buffer();
-        samples_remaining -= samples_in_buffer;
+        samples_remaining -= samples_in_buffer / (3 - channels);  // TODO: There must be a better way...
     }
 }
 
 void play_startup(){
     wav_data wav = {};
-    if (wav_load("/boot/redos/startup.wav", &wav)){
-        // TODO: other WAV formats are available
-        play_int16_samples(wav.samples, wav.smpls_per_channel, wav.channels, AUDIO_LEVEL_MAX/2);
-        free((void*)wav.file_content.ptr, wav.file_content.size);
+    if (wav_load_as_int16("/boot/redos/startup.wav", &wav)){
+        play_int16_samples((int16_t*)wav.samples.ptr, wav.smpls_per_channel, wav.channels, AUDIO_LEVEL_MAX/2);
+        free((void*)wav.samples.ptr, wav.samples.size);
     }else{
         play_wave(WAVE_SAW, 440, 0.1, AUDIO_LEVEL_MAX/2);
         play_silence(0.05);
