@@ -31,6 +31,8 @@ int run_cat(int argc, char* argv[]){
     read_file(&fd, buf, size);
 
     write_file(&fd2, buf, size);
+    close_file(&fd);
+    close_file(&fd2);
     free(s.data, s.mem_length);
     return 0;
 }

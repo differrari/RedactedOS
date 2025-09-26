@@ -172,7 +172,6 @@ void mmu_unmap(uint64_t va, uint64_t pa){
 
 void mmu_alloc(){
     page_table_l0 = (uint64_t*)talloc(PAGE_SIZE);
-    //TODO: use palloc, but consider it won't be able to add sections to MMU during that init
 }
 
 extern uint64_t shared_start;
@@ -195,13 +194,13 @@ void mmu_init() {
         mmu_map_4kb(addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
 
     for (uint64_t addr = (uintptr_t)&shared_start; addr < (uintptr_t)&shared_code_end; addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO, MEM_PRIV_SHARED);//TODO: separate into sections and mark as shared
+        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO, MEM_PRIV_SHARED);
 
     for (uint64_t addr = (uintptr_t)&shared_code_end; addr < (uintptr_t)&shared_ro_end; addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_RO, MEM_PRIV_SHARED);//TODO: separate into sections and mark as share
+        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_RO, MEM_PRIV_SHARED);
 
     for (uint64_t addr = (uintptr_t)&shared_ro_end; addr < (uintptr_t)&shared_end; addr += GRANULE_4KB)
-        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_SHARED);//TODO: separate into sections and mark as shared
+        mmu_map_4kb(addr, addr, MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_SHARED);
 
     if (XHCI_BASE)
     for (uint64_t addr = XHCI_BASE; addr <= XHCI_BASE + 0x1000; addr += GRANULE_4KB)

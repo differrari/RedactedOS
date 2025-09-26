@@ -9,6 +9,7 @@
 #include "networking/network.h"
 #include "hw/hw.h"
 #include "audio/audio.h"
+#include "process/syscall.h"
 
 #define IRQ_TIMER 30
 #define SLEEP_TIMER 27
@@ -48,7 +49,6 @@ void irq_init() {
     gic_enable_irq(MSI_OFFSET + NET_IRQ, 0x80, 0);
     gic_enable_irq(MSI_OFFSET + NET_IRQ + 1, 0x80, 0);
     gic_enable_irq(SLEEP_TIMER, 0x80, 0);
-    gic_enable_irq(MSI_OFFSET + AUDIO_IRQ, 0x80, 0);
 
     if (RPI_BOARD != 3){
         write32(GICC_BASE + 0x004, 0xF0); //Priority
@@ -75,6 +75,7 @@ void disable_interrupt(){
 void irq_el1_handler() {
     save_context_registers();
     save_return_address_interrupt();
+    syscall_depth++;
     uint32_t irq;
     if (RPI_BOARD == 3){
         irq = 31 - __builtin_clz(read32(GICD_BASE + 0x204));
@@ -97,10 +98,6 @@ void irq_el1_handler() {
         process_restore();
     } else if (irq == MSI_OFFSET + NET_IRQ + 1){
         network_handle_upload_interrupt();
-        if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
-        process_restore();
-    } else if (irq == MSI_OFFSET + AUDIO_IRQ){
-        audio_handle_interrupt();
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         process_restore();
     } else {

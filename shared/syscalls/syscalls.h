@@ -41,10 +41,10 @@ extern bool dispatch_enqueue_frame(const sizedptr *frame);
 
 void printf(const char *fmt, ...);
 
-FS_RESULT fopen(const char* path, file* descriptor);
-size_t fread(file *descriptor, char* buf, size_t size);
-size_t fwrite(file *descriptor, const char* buf, size_t size);
-void fclose(file *descriptor);
+extern FS_RESULT fopen(const char* path, file* descriptor);
+extern size_t fread(file *descriptor, char* buf, size_t size);
+extern size_t fwrite(file *descriptor, const char* buf, size_t size);
+extern void fclose(file *descriptor);
 void seek(file *descriptor, int64_t offset, SEEK_TYPE type);
 uintptr_t realloc(uintptr_t old_ptr, size_t old_size, size_t new_size);
 

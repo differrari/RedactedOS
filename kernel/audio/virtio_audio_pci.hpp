@@ -15,7 +15,6 @@ typedef struct virtio_snd_config {
 class VirtioAudioDriver: public AudioDriver {
 public:
     bool init();
-    void handle_interrupt();
     void send_buffer(sizedptr buf) override;
 
     AudioDevice *out_dev;//TODO: proper device management

@@ -18,15 +18,17 @@
 #define MEM_DEV     (1 << 2)
 #define MEM_NORM    (0 << 2)
 
-void page_alloc_enable_verbose();
 void page_allocator_init();
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+void page_alloc_enable_verbose();
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full);
 void pfree(void* ptr, uint64_t size);
 void mark_used(uintptr_t address, size_t pages);
+
+bool page_used(uintptr_t ptr);
 
 void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level);
 void kfree(void* ptr, uint64_t size);

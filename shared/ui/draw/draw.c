@@ -82,17 +82,21 @@ void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_
 }
 
 void fb_draw_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t img_width, uint32_t img_height){
+    fb_draw_partial_img(ctx, x, y, img, img_width, img_height, 0, 0, img_width);
+}
+
+void fb_draw_partial_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t img_width, uint32_t img_height, uint32_t start_x, uint32_t start_y, uint32_t full_width){
     uint32_t adj_img_width = img_width;
     uint32_t adj_img_height = img_height;
     if (x + adj_img_width >= ctx->width)   
         adj_img_width -= (x + adj_img_width - ctx->width);
     if (y + adj_img_height >= ctx->height)
         adj_img_height -= (y + adj_img_height - ctx->height);
-    if (adj_img_width == ctx->width && x == 0){
+    if (full_width == ctx->width && x == 0){
         memcpy(ctx->fb + (y * (ctx->width)), img, ctx->stride * img_height);
     } else {
         for (uint32_t dy = 0; dy < adj_img_height; dy++)
-            memcpy(ctx->fb + ((y+dy) * (ctx->width)) + x, img + (dy * img_width), adj_img_width*4);
+            memcpy(ctx->fb + ((y+dy) * (ctx->width)) + x, img + ((dy + start_y) * full_width) + start_x, adj_img_width*4);
     }
     mark_dirty(ctx, x,y,adj_img_width,adj_img_height);
 }

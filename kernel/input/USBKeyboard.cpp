@@ -39,7 +39,6 @@ void USBKeyboard::process_keypress(keypress *rkp){
         //TODO: review this code. It's here to prevent qemu's duplicate keyboard input
         if (is_new_keypress(rkp, &last_keypress)){
             repeated_keypresses = 0;
-            remove_double_keypresses(rkp, &last_keypress);
         }
         kp.modifier = rkp->modifier;
         // kprintf("Mod: %i", kp.modifier);

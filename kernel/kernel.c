@@ -57,7 +57,8 @@ void kernel_main() {
     bool network_available = false;
 
     if (BOARD_TYPE == 1){
-        network_available = load_module(&net_module);
+        //TODO: disabling networking until it is refactored to prevent memory issues
+        network_available = false;// load_module(&net_module);
         
         load_module(&audio_module);
 
@@ -70,7 +71,7 @@ void kernel_main() {
     
     kprint("Starting processes");
     
-    init_boot_filesystem();
+    init_filesystem();
     if (input_available) init_input_process();
 
     if (network_available) launch_net_process();

@@ -31,7 +31,7 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
     
     proc->pc = (uintptr_t)func;
     kprintf("Kernel process %s allocated with address at %x, stack at %x, heap at %x. %i argument(s)", (uintptr_t)name, proc->pc, proc->sp, proc->heap, argc);
-    proc->spsr = 0x205;
+    proc->spsr = 0x205;//TODO: we can use 0x204 instead of 05 to use sp_el0 always maybe?
     proc->state = READY;
     proc->PROC_X0 = argc;
     proc->PROC_X1 = (uintptr_t)argv;

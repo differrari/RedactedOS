@@ -28,7 +28,7 @@ void USBMouse::process_data(USBDriver *driver){
     process_mouse_input((mouse_input*)buffer);
 
     if (driver->use_interrupts){
-        delay(8);
+        delay(interval);
         request_data(driver);
     }
 }

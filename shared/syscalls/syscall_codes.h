@@ -29,5 +29,6 @@
 #define FILE_OPEN_CODE              60
 #define FILE_READ_CODE              61
 #define FILE_WRITE_CODE             62
+#define FILE_CLOSE_CODE             63
 
 #define DIR_LIST_CODE               70

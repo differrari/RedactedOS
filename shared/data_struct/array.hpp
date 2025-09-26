@@ -37,6 +37,14 @@ public:
         return true;
     }
 
+    void empty(){
+        if (count == 0) return;
+        for (uint32_t i = 0; i < count; i++)
+            items[i].~T();
+        memset(items, 0, sizeof(T) * count);
+        count = 0;
+    }
+
     T& operator[](uint32_t i) { return items[i]; }
     const T& operator[](uint32_t i) const { return items[i]; }
     uint32_t size() const { return count; }

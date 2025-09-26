@@ -14,7 +14,7 @@ DISPLAY_MODE="default"
 if [ "$OS_TYPE" = "Darwin" ]; then
     NETARG="vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
-    DISPLAY_MODE="sdl"
+    DISPLAY_MODE="cocoa"
 elif [ "$OS_TYPE" = "Linux" ]; then
     NETARG="user,id=net0"
     PRIVILEGE=""

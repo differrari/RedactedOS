@@ -143,7 +143,15 @@ uint64_t syscall_read_packet(process_t *ctx){
 }
 
 uint64_t syscall_fopen(process_t *ctx){
-    char *path = (char *)ctx->PROC_X0;
+    char *req_path = (char *)ctx->PROC_X0;
+    char path[255];
+    if (!(ctx->PROC_PRIV)){
+        // path = 
+        if (strstart("/resources/", req_path, true)){
+            string_format_buf("%s%s", path, ctx->bundle, req_path);
+        } else return 0;//In the future, we'll allow a documents path as well as privilege escalation for full-ish filesystem access
+    } else memcpy(path, req_path, strlen(req_path, 0));
+    kprint(path);
     file *descriptor = (file*)ctx->PROC_X1;
     return open_file(path, descriptor);
 }
@@ -160,6 +168,12 @@ uint64_t syscall_fwrite(process_t *ctx){
     char *buf = (char*)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
     return write_file(descriptor, buf, size);
+}
+
+uint64_t syscall_fclose(process_t *ctx){
+    file *descriptor = (file*)ctx->PROC_X0;
+    close_file(descriptor);
+    return 0;
 }
 
 uint64_t syscall_dir_list(process_t *ctx){
@@ -190,6 +204,7 @@ syscall_entry syscalls[] = {
     {FILE_OPEN_CODE, syscall_fopen},
     {FILE_READ_CODE, syscall_fread},
     {FILE_WRITE_CODE, syscall_fwrite},
+    {FILE_CLOSE_CODE, syscall_fclose},
     {DIR_LIST_CODE, syscall_dir_list},
 };
 
@@ -267,11 +282,16 @@ void sync_el0_handler_c(){
         if (!found)
             panic("Unknown syscall %i", iss);
     } else {
+        uint64_t far;
+        asm volatile ("mrs %0, far_el1" : "=r"(far));
+        if (far == 0 && elr == 0 && currentEL == 0){
+            kprintf("Process has exited %x",x0);
+            syscall_depth--;
+            stop_current_process(x0);
+        }// else kprintf("ELR %x FAR %x",elr,far);
         switch (ec) {
             case 0x20:
             case 0x21: {
-                uint64_t far;
-                asm volatile ("mrs %0, far_el1" : "=r"(far));
                 if (far == 0){
                     kprintf("Process has exited %x",x0);
                     syscall_depth--;
@@ -279,8 +299,6 @@ void sync_el0_handler_c(){
                 }
             }
         }
-        uint64_t far;
-        asm volatile ("mrs %0, far_el1" : "=r"(far));
         //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
         if (currentEL == 1){
             kprintf("System has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);

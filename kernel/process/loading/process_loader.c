@@ -260,27 +260,34 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     kprintfv("Finished translation");
 }
 
-process_t* create_process(const char *name, void *content, uint64_t content_size, uintptr_t entry, uintptr_t va_base) {
+process_t* create_process(const char *name, const char *bundle, void *content, uint64_t content_size, uintptr_t entry, uintptr_t va_base) {
     
     disable_interrupt();
     process_t* proc = init_process();
 
     name_process(proc, name);
 
-    //TODO: keep track of code size so we can free up allocated code pages
+    proc->bundle = (char*)bundle;
+
     uint8_t* dest = (uint8_t*)palloc(content_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true);
     if (!dest) return 0;
 
     if (va_base + content_size >= LOWEST_ADDR){
         kprintf("[PROCESS_LOADING IMPLEMENTATION WARNING] virtual addressing currently not supported for this process. Would overwrite %x",LOWEST_ADDR);
         entry += (uintptr_t)dest;
+        proc->use_va = false;
     } else {
         //TODO: multiple TTBRs
         for (uint32_t i = 0; i < content_size; i+= GRANULE_4KB){
             register_proc_memory(va_base + i, (uintptr_t)dest + i, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
         }
+        proc->use_va = true;
     }
     memcpy(dest, content, content_size);
+
+    proc->va = va_base;
+    proc->code = dest;
+    proc->code_size = content_size;
     
     uint64_t stack_size = 0x1000;
 

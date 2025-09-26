@@ -15,10 +15,6 @@ bool init_audio(){
     return audio_driver->init();
 }
 
-void audio_handle_interrupt(){
-    audio_driver->handle_interrupt();
-}
-
 sizedptr audio_request_buffer(uint32_t device){
     return audio_driver->out_dev->request_buffer();
 }

@@ -43,9 +43,9 @@ void BootSM::AdvanceToState(BootStates next_state){
 
 BootSM::BootStates BootSM::GetNextState(){
     switch (current_state){
-        case Login:
-            return Desktop;
+        // case Login:
+        //     return Desktop;
         default:
-            return Login;
+            return Desktop;
     }
 }

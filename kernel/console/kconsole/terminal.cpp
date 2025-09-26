@@ -36,6 +36,7 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
         put_string(buf);
         free(buf, amount);
     }
+    close_file(&fd);
     string exit_msg = string_format("Process %i ended with exit code %i.",proc->id, proc->exit_code);
     //TODO: format message
     put_string(exit_msg.data);
@@ -103,8 +104,6 @@ void Terminal::run_command(){
     command_running = true;
 }
 
-//TODO: implement the full state machine explained at https://vt100.net/emu/dec_ansi_parser & https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
-//The current implementation is not standard compliant and uses hex colors as [FF0000;
 void Terminal::TMP_test(int argc, const char* args[]){
     // const char *term = seek_to(args, '\033');
     // if (*term == 0) return;
