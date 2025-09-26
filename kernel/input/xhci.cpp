@@ -8,6 +8,7 @@
 #include "std/memory_access.h"
 #include "std/memory.h"
 #include "async.h"
+#include "memory/page_allocator.h"
 
 uint64_t awaited_addr;
 uint32_t awaited_type;

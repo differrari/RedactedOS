@@ -42,6 +42,8 @@ typedef struct proc_open_file {
     size_t file_size;
     uintptr_t buffer;
     uint16_t pid;
+    bool ignore_cursor;
+    bool read_only;
 } proc_open_file;
 
 void* proc_page;
@@ -117,8 +119,9 @@ void free_heap(uintptr_t ptr){
 }
 
 void reset_process(process_t *proc){
+    bool just_finished = processes[current_proc].id == proc->id;
     proc->sp = 0;
-    if (processes[current_proc].id != proc->id || !(processes[current_proc].PROC_PRIV))//Privileged processes use their own stack even in an exception. We'll free it when we reuse it
+    if (!just_finished || !(processes[current_proc].PROC_PRIV))//Privileged processes use their own stack even in an exception. We'll free it when we reuse it
         if (proc->stack) pfree((void*)proc->stack-proc->stack_size,proc->stack_size);
     if (proc->heap) free_heap(proc->heap);//Sadly, full pages of alloc'd memory are not kept track and will not be freed
     proc->pc = 0;
@@ -132,6 +135,8 @@ void reset_process(process_t *proc){
         } 
         pfree(proc->code, proc->code_size);
     }
+    if (!just_finished && proc->output)
+        kfree((void*)proc->output, PROC_OUT_BUF);
     for (int j = 0; j < 31; j++)
         proc->regs[j] = 0;
     for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++)
@@ -294,7 +299,9 @@ sizedptr list_processes(const char *path){
     return (sizedptr){(uintptr_t)list_buffer,size};
 }
 
-#define PROC_OUT_BUF 0x1000
+void* list_alloc(size_t size){
+    kalloc(proc_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+}
 
 FS_RESULT open_proc(const char *path, file *descriptor){
     const char *pid_s = seek_to(path, '/');
@@ -302,24 +309,41 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     uint64_t pid = parse_int_u64(pid_s, path - pid_s);
     process_t *proc = get_proc_by_pid(pid);
     descriptor->id = reserve_fd_id();
-    descriptor->size = PROC_OUT_BUF;
     descriptor->cursor = 0;
-    if (!proc_opened_files) 
+    if (!proc_opened_files) {
         proc_opened_files = kalloc(proc_page, sizeof(clinkedlist_t), ALIGN_64B, MEM_PRIV_KERNEL);
+        proc_opened_files->free = kfree;
+        proc_opened_files->alloc = list_alloc;
+    }
     proc_open_file *file = kalloc(proc_page, sizeof(proc_open_file), ALIGN_64B, MEM_PRIV_KERNEL);
     file->fid = descriptor->id;
-    file->buffer = proc->output;
     file->pid = proc->id;
+    
+    if (strcmp(path, "out", true) == 0){
+        descriptor->size = 0;//TODO: sizeof buffer, could already have data
+        file->buffer = proc->output;
+    } else if (strcmp(path, "state", true) == 0){
+        descriptor->size = sizeof(int);
+        file->buffer = (uintptr_t)&proc->state;
+        file->ignore_cursor = true;
+        file->read_only = true;
+    } else return FS_RESULT_NOTFOUND;
     file->file_size = descriptor->size;
     clinkedlist_push_front(proc_opened_files, (void*)file);
     return FS_RESULT_SUCCESS;
 }
 
-
 int find_open_proc_file(void *node, void* key){
     uint64_t *fid = (uint64_t*)key;
     proc_open_file *file = (proc_open_file*)node;
     if (file->fid == *fid) return 0;
+    return -1;
+}
+
+int find_open_proc_file_buffer(void *node, void* key){
+    uint64_t *buf = (uint64_t*)key;
+    proc_open_file *file = (proc_open_file*)node;
+    if (file->buffer == *buf) return 0;
     return -1;
 }
 
@@ -331,8 +355,9 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
     clinkedlist_node_t *node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
     if (!node->data) return 0;
     proc_open_file *file = (proc_open_file*)node->data;
-    size = min(size, file->file_size);
-    memcpy(buf, (void*)(file->buffer + fd->cursor), size);
+    uint64_t cursor = file->ignore_cursor ? 0 : fd->cursor;
+    size = min(size, file->file_size - cursor);
+    memcpy(buf, (void*)(file->buffer + cursor), size);
     return size;
 }
 
@@ -344,6 +369,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     clinkedlist_node_t *node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
     if (!node->data) return 0;
     proc_open_file *file = (proc_open_file*)node->data;
+    if (file->read_only) return 0;
     if (size >= PROC_OUT_BUF){
         kprint("Output buffer too large");
         return 0;
@@ -354,7 +380,15 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     }
     memcpy((void*)(file->buffer + fd->cursor), buf, size);
     fd->cursor += size;
-    kprintf("Wrote %i bytes into process %i's output buffer", size, file->pid);
+    //TODO: Need a better way to handle opening a file multiple times
+    for (clinkedlist_node_t *start = proc_opened_files->head; start != proc_opened_files->tail; start = start->next){
+        if (start != node){
+            proc_open_file *n_file = (proc_open_file*)start->data;
+            if (n_file && n_file->buffer == file->buffer){
+                n_file->file_size += size;
+            } 
+        }
+    }
     return size;
 }
 

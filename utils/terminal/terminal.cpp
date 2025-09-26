@@ -1,8 +1,10 @@
 #include "terminal.hpp"
-#include "input/input_dispatch.h"
 #include "std/std.h"
-#include "filesystem/filesystem.h"
-#include "bin/bin_mod.h"
+#include "input_keycodes.h"
+
+Terminal::Terminal() : Console() {
+    char_scale = 2;
+}
 
 void Terminal::update(){
     if (!command_running) handle_input();
@@ -21,21 +23,28 @@ void Terminal::end_command(){
 }
 
 bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
-    process_t *proc = exec(cmd, argc, argv);
+    uint16_t proc = exec(cmd, argc, argv);
     if (!proc) return false;
-    string s = string_format("/proc/%i/out",proc->id);
-    file fd;
-    open_file(s.data, &fd);
-    free(s.data, s.mem_length);
-    while (proc->state != process_t::STOPPED){
+    string s1 = string_format("/proc/%i/out",proc);
+    string s2 = string_format("/proc/%i/state",proc);
+    file out_fd, state_fd;
+    fopen(s1.data, &out_fd);
+    free(s1.data, s1.mem_length);
+    fopen(s2.data, &state_fd);
+    free(s2.data, s2.mem_length);
+    int state;
+    fread(&state_fd, (char*)&state, sizeof(int));
+    while (state) {
+        fread(&state_fd, (char*)&state, sizeof(int));
         size_t amount = 0x100;
         char *buf = (char*)malloc(amount);
-        read_file(&fd, buf, amount);
+        fread(&out_fd, buf, amount);
         put_string(buf);
         free(buf, amount);
     }
-    close_file(&fd);
-    string exit_msg = string_format("Process %i ended with exit code %i.",proc->id, proc->exit_code);
+    fclose(&out_fd);
+    fclose(&state_fd);
+    string exit_msg = string_format("\nProcess %i ended.",proc);
     //TODO: format message
     put_string(exit_msg.data);
     free(exit_msg.data, exit_msg.mem_length);
@@ -113,7 +122,7 @@ void Terminal::TMP_test(int argc, const char* args[]){
 
 void Terminal::handle_input(){
     keypress kp;
-    if (sys_read_input_current(&kp)){
+    if (read_key(&kp)){
         for (int i = 0; i < 6; i++){
             char key = kp.keys[i];
             char readable = hid_to_char((uint8_t)key);

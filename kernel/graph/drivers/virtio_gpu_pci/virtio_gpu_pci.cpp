@@ -4,6 +4,7 @@
 #include "ui/draw/draw.h"
 #include "std/std.h"
 #include "theme/theme.h"
+#include "memory/page_allocator.h"
 
 #define VIRTIO_GPU_CMD_GET_DISPLAY_INFO         0x0100
 #define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D       0x0101

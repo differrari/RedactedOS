@@ -154,8 +154,7 @@ size_t read_file(file *descriptor, char* buf, size_t size){
         return descriptor->id == kvp.file_id;
     })->data;
     if (!file.mod) return 0;
-    size_t adj_size = min(size,file.file_size);
-    size_t amount_read = file.mod->read(descriptor, buf, adj_size, 0);
+    size_t amount_read = file.mod->read(descriptor, buf, size, 0);
     descriptor->cursor += amount_read;
     return amount_read;
 }

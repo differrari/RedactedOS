@@ -8,6 +8,7 @@
 #include "process/loading/elf_file.h"
 #include "ui/uno/uno.h"
 #include "graph/tres.h"
+#include "process/scheduler.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3

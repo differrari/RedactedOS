@@ -18,6 +18,7 @@
 #define SLEEP_CODE                  30
 #define PROCESS_YIELD_CODE          31
 #define HALT_CODE                   33
+#define EXEC_CODE                   34
 
 #define GET_TIME_CODE               40
 

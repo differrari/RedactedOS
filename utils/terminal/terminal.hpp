@@ -1,10 +1,10 @@
 #pragma once
 
-#include "kconsole.hpp"
+#include "utils/console.hpp"
 
 class Terminal: public Console {
 public:
-    Terminal() : Console(){};
+    Terminal();
     void update();
 protected:
     void handle_input();

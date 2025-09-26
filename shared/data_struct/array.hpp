@@ -4,8 +4,6 @@
 
 #include "std/allocator.hpp"
 #include "syscalls/syscalls.h"
-#include "process/scheduler.h"
-#include "memory/page_allocator.h"
 
 template<typename T>
 class Array {

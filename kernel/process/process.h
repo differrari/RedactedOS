@@ -11,6 +11,7 @@ extern "C" {
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
+#define PROC_OUT_BUF 0x1000
 
 typedef struct {
     volatile uint32_t write_index;

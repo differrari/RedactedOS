@@ -11,7 +11,6 @@ BootSM::BootSM(){
 }
 
 void BootSM::initialize(){
-    start_terminal();
     disable_visual();
     input_start_polling();
     gpu_size screen_size = gpu_get_screen_size();

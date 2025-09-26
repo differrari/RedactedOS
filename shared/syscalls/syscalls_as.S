@@ -27,6 +27,7 @@ syscall_def gpu_char_size, GPU_CHAR_SIZE_CODE
 syscall_def sleep, SLEEP_CODE
 syscall_def process_yield, PROCESS_YIELD_CODE
 syscall_def halt, HALT_CODE
+syscall_def exec, EXEC_CODE
 
 syscall_def get_time, GET_TIME_CODE
 

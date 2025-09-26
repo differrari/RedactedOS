@@ -2,6 +2,7 @@
 #include "std/std.h"
 #include "console/kio.h"
 #include "theme/theme.h"
+#include "memory/page_allocator.h"
 
 #define cursor_dim 64
 #define cursor_size cursor_dim*cursor_dim*bpp

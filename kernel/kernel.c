@@ -33,7 +33,7 @@ void kernel_main() {
 
     init_main_process();
 
-   if (BOARD_TYPE == 1) disable_visual();
+//    if (BOARD_TYPE == 1) disable_visual();
 
     load_module(&console_module);
 

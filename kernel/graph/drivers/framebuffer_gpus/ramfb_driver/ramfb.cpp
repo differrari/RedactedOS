@@ -5,6 +5,7 @@
 #include "std/std.h"
 #include "std/memory.h"
 #include "theme/theme.h"
+#include "memory/page_allocator.h"
 
 typedef struct {
     uint64_t addr;

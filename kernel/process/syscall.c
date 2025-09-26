@@ -18,6 +18,7 @@
 #include "graph/tres.h"
 #include "memory/mmu.h"
 #include "loading/process_loader.h"
+#include "bin/bin_mod.h"
 
 int syscall_depth = 0;
 
@@ -104,6 +105,14 @@ uint64_t syscall_halt(process_t *ctx){
     return 0;
 }
 
+uint64_t syscall_exec(process_t *ctx){
+    const char *prog_name = (const char*)ctx->PROC_X0;
+    int argc = ctx->PROC_X1;
+    const char **argv = (const char**)ctx->PROC_X2;
+    process_t *p = execute(prog_name, argc, argv);
+    return p->id;
+}
+
 uint64_t syscall_get_time(process_t *ctx){
     return timer_now_msec();
 }
@@ -145,13 +154,10 @@ uint64_t syscall_read_packet(process_t *ctx){
 uint64_t syscall_fopen(process_t *ctx){
     char *req_path = (char *)ctx->PROC_X0;
     char path[255];
-    if (!(ctx->PROC_PRIV)){
-        // path = 
-        if (strstart("/resources/", req_path, true)){
-            string_format_buf("%s%s", path, ctx->bundle, req_path);
-        } else return 0;//In the future, we'll allow a documents path as well as privilege escalation for full-ish filesystem access
+    if (!(ctx->PROC_PRIV) && strstart("/resources/", req_path, true) == 11){
+        string_format_buf("%s%s", path, ctx->bundle, req_path);
     } else memcpy(path, req_path, strlen(req_path, 0));
-    kprint(path);
+    //TODO: Restrict access to own bundle, own fs and require privilege escalation for full-ish filesystem access
     file *descriptor = (file*)ctx->PROC_X1;
     return open_file(path, descriptor);
 }
@@ -196,6 +202,7 @@ syscall_entry syscalls[] = {
     { RESIZE_DRAW_CTX_CODE, syscall_gpu_resize_ctx},
     { SLEEP_CODE, syscall_sleep},
     { HALT_CODE, syscall_halt},
+    { EXEC_CODE, syscall_exec},
     { GET_TIME_CODE, syscall_get_time},
     { BIND_PORT_CODE, syscall_bind_port},
     { UNBIND_PORT_CODE, syscall_unbind_port},

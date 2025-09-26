@@ -1,4 +1,5 @@
 #include "linked_list.h"
+#include "syscalls/syscalls.h"
 
 clinkedlist_t *clinkedlist_create(){
     uintptr_t mem = (uintptr_t)malloc(sizeof(clinkedlist_t));
@@ -10,15 +11,25 @@ clinkedlist_t *clinkedlist_create(){
     return list;
 }
 
+void* clinkedlist_alloc(clinkedlist_t *list, size_t size){
+    if (list->alloc) return list->alloc(size);
+    return malloc(size);
+}
+
+void clinkedlist_free(clinkedlist_t *list, void*ptr, size_t size){
+    if (list->free) list->free(ptr,size);
+    return free(ptr,size);
+}
+
 void clinkedlist_destroy(clinkedlist_t *list){
     if(list == NULL) return;
     clinkedlist_node_t *node = list->head;
     while(node){
         clinkedlist_node_t *next = node->next;
-        free(node, sizeof(clinkedlist_node_t));
+        clinkedlist_free(list, node, sizeof(clinkedlist_node_t));
         node = next;
     }
-    free(list, sizeof(clinkedlist_t));
+    clinkedlist_free(list, list, sizeof(clinkedlist_t));
 }
 
 clinkedlist_t *clinkedlist_clone(const clinkedlist_t *list){
@@ -44,7 +55,7 @@ clinkedlist_t *clinkedlist_clone(const clinkedlist_t *list){
 
 void clinkedlist_push_front(clinkedlist_t *list, void *data){
     if(list == NULL) return;
-    clinkedlist_node_t *node = (clinkedlist_node_t *)malloc(sizeof(clinkedlist_node_t));
+    clinkedlist_node_t *node = (clinkedlist_node_t *)clinkedlist_alloc(list, sizeof(clinkedlist_node_t));
     node->data = data;
     node->next = list->head;
     list->head = node;
@@ -59,7 +70,7 @@ void *clinkedlist_pop_front(clinkedlist_t *list){
     list->head = node->next;
     if (list->head == NULL) list->tail = NULL;
     list->length--;
-    free(node, sizeof(clinkedlist_node_t));
+    clinkedlist_free(list, node, sizeof(clinkedlist_node_t));
     return data;
 }
 
@@ -69,7 +80,7 @@ clinkedlist_node_t *clinkedlist_insert_after(clinkedlist_t *list, clinkedlist_no
         clinkedlist_push_front(list, data);
         return list->head;
     }
-    clinkedlist_node_t *new_node = (clinkedlist_node_t *)malloc(sizeof(clinkedlist_node_t));
+    clinkedlist_node_t *new_node = (clinkedlist_node_t *)clinkedlist_alloc(list, sizeof(clinkedlist_node_t));
     new_node->data = data;
     new_node->next = node->next;
     node->next = new_node;
@@ -92,7 +103,7 @@ void *clinkedlist_remove(clinkedlist_t *list, clinkedlist_node_t *node){
     if(node == list->tail) list->tail = prev;
     void *data = node->data;
     list->length--;
-    free(node, sizeof(clinkedlist_node_t));
+    clinkedlist_free(list, node, sizeof(clinkedlist_node_t));
     return data;
 }
 

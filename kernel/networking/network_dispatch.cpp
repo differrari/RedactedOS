@@ -6,6 +6,7 @@
 #include "net/network_types.h"
 #include "port_manager.h"
 #include "std/memory.h"
+#include "process/scheduler.h"
 
 extern void      sleep(uint64_t ms);
 extern void* malloc(uint64_t size);

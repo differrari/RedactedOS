@@ -2,7 +2,6 @@
 #include "kconsole.h"
 #include "graph/graphics.h"
 #include "input/input_dispatch.h"
-#include "terminal.hpp"
 #include "memory/page_allocator.h"
 #include "std/allocator.hpp"
 
@@ -25,33 +24,4 @@ extern "C" void kconsole_puts(const char *s) {
 extern "C" void kconsole_clear() {
     if (!kconsole) kconsole_init();
     kconsole->clear();
-}
-
-extern "C" int toggle_visual(int argc, char* argv[]){
-    keypress kp = {
-        .modifier = KEY_MOD_LALT,
-        .rsvd = 0,
-        .keys = {0x13},
-    };
-    uint16_t shortcut = sys_subscribe_shortcut_current(kp);
-    bool active = false;
-    Terminal *terminal = new Terminal();
-    while (1){
-        if (sys_shortcut_triggered_current(shortcut)){
-            active = !active;
-            if (active){
-                sys_focus_current();
-                terminal->refresh();
-            } else {
-                terminal->clear();
-            }
-        }
-        if (active)
-            terminal->update();
-    }
-    return 1;
-}
-
-process_t* start_terminal(){
-    return create_kernel_process("terminal",toggle_visual, 0, 0);
 }
