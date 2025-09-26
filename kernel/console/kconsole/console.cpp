@@ -3,20 +3,28 @@
 #include "graph/graphics.h"
 #include "input/input_dispatch.h"
 #include "terminal.hpp"
+#include "memory/page_allocator.h"
+#include "std/allocator.hpp"
 
-KernelConsole kconsole;
+KernelConsole *kconsole;
+void kconsole_init(){
+    kconsole = new KernelConsole();
+}
 
 extern "C" void kconsole_putc(char c) {
-    kconsole.put_char(c);
+    if (!kconsole) kconsole_init();
+    kconsole->put_char(c);
     gpu_flush();
 }
 
 extern "C" void kconsole_puts(const char *s) {
-    kconsole.put_string(s);
+    if (!kconsole) kconsole_init();
+    kconsole->put_string(s);
 }
 
 extern "C" void kconsole_clear() {
-    kconsole.clear();
+    if (!kconsole) kconsole_init();
+    kconsole->clear();
 }
 
 extern "C" int toggle_visual(int argc, char* argv[]){

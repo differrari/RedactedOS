@@ -1,7 +1,5 @@
 #include "terminal.hpp"
 #include "input/input_dispatch.h"
-#include "../kio.h"
-#include "../serial/uart.h"
 #include "std/std.h"
 #include "filesystem/filesystem.h"
 #include "bin/bin_mod.h"
@@ -18,7 +16,7 @@ void Terminal::end_command(){
     put_char('\r');
     put_char('\n');
     draw_cursor();
-    gpu_flush();
+    flush(dctx);
     set_text_color(default_text_color);
 }
 
@@ -55,12 +53,10 @@ const char** Terminal::parse_arguments(char *args, int *count){
         (*count)++;
         prev = next_args;
         *(next_args - 1) = 0;
-        kprintf("Found an argument %s",prev);
     } while(prev != next_args);
     if (*next_args){
         argv[*count] = prev;
         (*count)++;
-        kprintf("Ended at %s",next_args);
     }
     return argv;
 }
@@ -100,7 +96,7 @@ void Terminal::run_command(){
     if (args_copy.mem_length) free(args_copy.data, args_copy.mem_length);
     
     draw_cursor();
-    gpu_flush();
+    flush(dctx);
     command_running = true;
 }
 
@@ -126,7 +122,7 @@ void Terminal::handle_input(){
             } else if (readable){
                 put_char(readable);
                 draw_cursor();
-                gpu_flush();
+                flush(dctx);
             } else if (key == KEY_BACKSPACE){
                 delete_last_char();
             }

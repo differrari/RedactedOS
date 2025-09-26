@@ -2,7 +2,6 @@
 
 #include "types.h"
 #include "data_struct/ring_buffer.hpp"
-#include "graph/graphics.h"
 #include "ui/draw/draw.h"
 
 class KernelConsole{
@@ -31,6 +30,10 @@ protected:
     void draw_cursor();
     const char* get_current_line();
 
+    draw_ctx* get_ctx();
+    void flush(draw_ctx *ctx);
+    bool screen_ready();
+
     void set_text_color(uint32_t color);
 
     uint32_t cursor_x, cursor_y;
@@ -50,8 +53,7 @@ protected:
     uint32_t gap_start, gap_end;
     uint32_t buffer_data_size;
 
-    void *mem_page;
+    draw_ctx *dctx;
+
     bool active = true;
 };
-
-extern KernelConsole kconsole;

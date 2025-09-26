@@ -1,17 +1,17 @@
 #include "kconsole.hpp"
-#include "console/serial/uart.h"
-#include "memory/page_allocator.h"
-#include "filesystem/filesystem.h"
-#include "theme/theme.h"
 #include "std/memory.h"
+#include "syscalls/syscalls.h"
+
+#define COLOR_WHITE 0xFFFFFFFF
+#define COLOR_BLACK 0
 
 KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false){
-    initialize();
+
 }
 
 void KernelConsole::initialize(){
     is_initialized = true;
-    mem_page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
+    dctx = get_ctx();
     resize();
     clear();
     default_text_color = COLOR_WHITE;
@@ -19,7 +19,7 @@ void KernelConsole::initialize(){
 }
 
 bool KernelConsole::check_ready(){
-    if (!gpu_ready()) return false;
+    if (!screen_ready()) return false;
     if (!is_initialized){
         initialize();
     }
@@ -27,13 +27,13 @@ bool KernelConsole::check_ready(){
 }
 
 void KernelConsole::resize(){
-    gpu_size screen_size = gpu_get_screen_size();
+    gpu_size screen_size = {dctx->width,dctx->height};
     columns = screen_size.width / char_width;
     rows = screen_size.height / line_height;
 
-    if (row_data) kfree(row_data, buffer_data_size);
+    if (row_data) free(row_data, buffer_data_size);
     buffer_data_size = rows * columns;
-    row_data = (char*)kalloc(mem_page, buffer_data_size, ALIGN_16B, MEM_PRIV_KERNEL);
+    row_data = (char*)malloc(buffer_data_size);
     if (!row_data){
         rows = columns = 0;
         return;
@@ -46,7 +46,7 @@ void KernelConsole::put_char(char c){
     if (!check_ready()) return;
     if (c == '\n'){
         newline(); 
-        gpu_flush();
+        flush(dctx);
         return;
     }
     if (cursor_x >= columns) newline();
@@ -54,7 +54,7 @@ void KernelConsole::put_char(char c){
     uint32_t row_index = (scroll_row_offset + cursor_y) % rows;
     char* line = row_data + row_index * columns;
     line[cursor_x] = c;
-    gpu_draw_char({cursor_x * char_width, (cursor_y * line_height)+(line_height/2)}, c, 1, text_color);
+    fb_draw_char(dctx, cursor_x * char_width, (cursor_y * line_height)+(line_height/2), c, 1, text_color);
     cursor_x++;
 }
 
@@ -71,24 +71,24 @@ void KernelConsole::delete_last_char(){
             cursor_x++;
         } 
         draw_cursor();
-        gpu_flush();
+        flush(dctx);
         return;
     } else return;
     
     char* line = row_data + cursor_y * columns;
     line[cursor_x] = 0;
-    gpu_fill_rect({{cursor_x*char_width, cursor_y * line_height}, {char_width, line_height}}, COLOR_BLACK);
+    fb_fill_rect(dctx, cursor_x*char_width, cursor_y * line_height, char_width, line_height, COLOR_BLACK);
     draw_cursor();
-    gpu_flush();
+    flush(dctx);
 }
 
 void KernelConsole::draw_cursor(){
     if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0){
-        gpu_fill_rect({{last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height}, {char_width, line_height}}, COLOR_BLACK);
+        fb_fill_rect(dctx, last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height, char_width, line_height, COLOR_BLACK);
         char *line = row_data + (last_drawn_cursor_y * columns);
-        gpu_draw_char({last_drawn_cursor_x * char_width, (last_drawn_cursor_y * line_height)+(line_height/2)}, line[last_drawn_cursor_x], 1, text_color);
+        fb_draw_char(dctx, last_drawn_cursor_x * char_width, (last_drawn_cursor_y * line_height)+(line_height/2), line[last_drawn_cursor_x], 1, text_color);
     }
-    gpu_fill_rect({{cursor_x*char_width, cursor_y * line_height}, {char_width, line_height}}, COLOR_WHITE);
+    fb_fill_rect(dctx, cursor_x*char_width, cursor_y * line_height, char_width, line_height, COLOR_WHITE);
     last_drawn_cursor_x = cursor_x;
     last_drawn_cursor_y = cursor_y;
 }
@@ -100,7 +100,7 @@ void KernelConsole::put_string(const char* str){
         put_char(c);
     } 
     draw_cursor();
-    gpu_flush();
+    flush(dctx);
 }
 
 void KernelConsole::newline(){
@@ -129,7 +129,7 @@ void KernelConsole::refresh(){
     resize();
     clear();
     redraw();
-    gpu_flush();
+    flush(dctx);
 }
 
 void KernelConsole::redraw(){
@@ -138,14 +138,14 @@ void KernelConsole::redraw(){
         uint32_t row_index = (scroll_row_offset + y) % rows;
         char* line = row_data + row_index * columns;
         for (uint32_t x = 0; x < columns; x++){
-            gpu_draw_char({x * char_width, (y * line_height)+(line_height/2)}, line[x], 1, text_color);
+            fb_draw_char(dctx, x * char_width, (y * line_height)+(line_height/2), line[x], 1, text_color);
         }
     }
     draw_cursor();
 }
 
 void KernelConsole::screen_clear(){
-    gpu_clear(COLOR_BLACK);
+    fb_clear(dctx, COLOR_BLACK);
     last_drawn_cursor_x = -1;
     last_drawn_cursor_y = -1;
 }
@@ -163,4 +163,18 @@ const char* KernelConsole::get_current_line(){
 
 void KernelConsole::set_text_color(uint32_t hex){
     text_color = hex | 0xFF000000;
+}
+
+#include "graph/graphics.h"
+
+draw_ctx* KernelConsole::get_ctx(){
+    return gpu_get_ctx();
+}
+
+void KernelConsole::flush(draw_ctx *ctx){
+    gpu_flush();
+}
+
+bool KernelConsole::screen_ready(){
+    return gpu_ready();
 }
