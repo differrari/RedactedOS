@@ -280,26 +280,3 @@ bool VirtioAudioDriver::send_simple_stream_cmd(uint32_t stream_id, uint32_t comm
 void VirtioAudioDriver::config_channel_maps(){
 
 }
-
-//TODO: remove interrupts if they're really not needed
-void VirtioAudioDriver::handle_interrupt(){
-    select_queue(&audio_dev, EVENT_QUEUE);
-    struct virtq_used* used = (struct virtq_used*)(uintptr_t)audio_dev.common_cfg->queue_device;
-    struct virtq_avail* avail = (struct virtq_avail*)(uintptr_t)audio_dev.common_cfg->queue_driver;
-
-    uint16_t new_idx = used->idx;
-    if (new_idx != last_used_idx) {
-        uint16_t used_ring_index = last_used_idx % 128;
-        last_used_idx = new_idx;
-        struct virtq_used_elem* e = &used->ring[used_ring_index];
-        uint32_t desc_index = e->id;
-        uint32_t len = e->len;
-        kprintf("Received audio event %i at index %i (len %i - %i)",used->idx, desc_index, len);
-
-        avail->ring[avail->idx % 128] = desc_index;
-        avail->idx++;
-
-        *(volatile uint16_t*)(uintptr_t)(audio_dev.notify_cfg + audio_dev.notify_off_multiplier * EVENT_QUEUE) = 0;
-    }
-    select_queue(&audio_dev, CONTROL_QUEUE);
-}

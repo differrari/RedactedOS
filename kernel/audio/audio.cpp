@@ -14,10 +14,6 @@ bool init_audio(){
     return audio_driver->init();
 }
 
-void audio_handle_interrupt(){
-    audio_driver->handle_interrupt();
-}
-
 sizedptr audio_request_buffer(uint32_t device){
     return audio_driver->out_dev->request_buffer();
 }
@@ -28,17 +24,11 @@ void audio_submit_buffer(){
 
 void make_wave(WAVE_TYPE type, float freq, float seconds, uint32_t amplitude){
     gpu_clear(0x1fb03f);
-    uint32_t period = 441/((freq/100.f) * 2);//TODO: improve this formula
-    kprintf("Period %i",period);
+    uint32_t period = 441/(freq/50.f);
     uint32_t accumulator = 0;
     uint32_t increment = (uint32_t)(freq * (float)UINT32_MAX / 44100.0);
     gpu_size size = gpu_get_screen_size();
     uint32_t previous_pixel = UINT32_MAX;
-
-    //TODO: distorsion
-    //size of the buffer should be bigger, 
-    //palloc should be 64 pages
-    //in the virtio driver, cmd_index is waiting for the device to catch up
     
     for (int i = 0; i < seconds * 100; i++){
         sizedptr buf = audio_request_buffer(audio_driver->out_dev->stream_id);

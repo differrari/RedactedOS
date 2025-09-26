@@ -101,10 +101,6 @@ void irq_el1_handler() {
         network_handle_upload_interrupt();
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         process_restore();
-    } else if (irq == MSI_OFFSET + AUDIO_IRQ){
-        audio_handle_interrupt();
-        if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
-        process_restore();
     } else {
         kprintf("[GIC error] Received unknown interrupt %i",irq);
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
