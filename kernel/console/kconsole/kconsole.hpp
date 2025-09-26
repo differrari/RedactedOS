@@ -4,9 +4,9 @@
 #include "data_struct/ring_buffer.hpp"
 #include "ui/draw/draw.h"
 
-class KernelConsole{
+class Console{
 public:
-    KernelConsole();
+    Console();
 
     void initialize();
 
@@ -30,9 +30,9 @@ protected:
     void draw_cursor();
     const char* get_current_line();
 
-    draw_ctx* get_ctx();
-    void flush(draw_ctx *ctx);
-    bool screen_ready();
+    virtual draw_ctx* get_ctx() = 0;
+    virtual void flush(draw_ctx *ctx) = 0;
+    virtual bool screen_ready() = 0;
 
     void set_text_color(uint32_t color);
 
@@ -56,4 +56,10 @@ protected:
     draw_ctx *dctx;
 
     bool active = true;
+};
+
+class KernelConsole: public Console {
+    draw_ctx* get_ctx() override;
+    void flush(draw_ctx *ctx) override;
+    bool screen_ready() override;
 };

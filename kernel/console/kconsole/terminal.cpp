@@ -130,3 +130,17 @@ void Terminal::handle_input(){
     }
 }
 
+draw_ctx* Terminal::get_ctx(){
+    if (dctx) free(dctx, sizeof(draw_ctx));
+    draw_ctx *ctx = (draw_ctx*)malloc(sizeof(draw_ctx));
+    request_draw_ctx(ctx);
+    return ctx;
+}
+
+void Terminal::flush(draw_ctx *ctx){
+    commit_draw_ctx(ctx);
+}
+
+bool Terminal::screen_ready(){
+    return true;
+}

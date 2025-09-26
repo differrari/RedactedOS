@@ -5,11 +5,11 @@
 #define COLOR_WHITE 0xFFFFFFFF
 #define COLOR_BLACK 0
 
-KernelConsole::KernelConsole() : cursor_x(0), cursor_y(0), is_initialized(false){
+Console::Console() : cursor_x(0), cursor_y(0), is_initialized(false){
 
 }
 
-void KernelConsole::initialize(){
+void Console::initialize(){
     is_initialized = true;
     dctx = get_ctx();
     resize();
@@ -18,7 +18,7 @@ void KernelConsole::initialize(){
     text_color = default_text_color;
 }
 
-bool KernelConsole::check_ready(){
+bool Console::check_ready(){
     if (!screen_ready()) return false;
     if (!is_initialized){
         initialize();
@@ -26,7 +26,7 @@ bool KernelConsole::check_ready(){
     return true;
 }
 
-void KernelConsole::resize(){
+void Console::resize(){
     gpu_size screen_size = {dctx->width,dctx->height};
     columns = screen_size.width / char_width;
     rows = screen_size.height / line_height;
@@ -42,7 +42,7 @@ void KernelConsole::resize(){
     scroll_row_offset = 0;
 }
 
-void KernelConsole::put_char(char c){
+void Console::put_char(char c){
     if (!check_ready()) return;
     if (c == '\n'){
         newline(); 
@@ -59,7 +59,7 @@ void KernelConsole::put_char(char c){
 }
 
 //TODO: generalize this function to handle movement in general
-void KernelConsole::delete_last_char(){
+void Console::delete_last_char(){
     if (cursor_x > 0){
         cursor_x--;
     } else if (cursor_y > 0){
@@ -82,7 +82,7 @@ void KernelConsole::delete_last_char(){
     flush(dctx);
 }
 
-void KernelConsole::draw_cursor(){
+void Console::draw_cursor(){
     if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0){
         fb_fill_rect(dctx, last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height, char_width, line_height, COLOR_BLACK);
         char *line = row_data + (last_drawn_cursor_y * columns);
@@ -93,7 +93,7 @@ void KernelConsole::draw_cursor(){
     last_drawn_cursor_y = cursor_y;
 }
 
-void KernelConsole::put_string(const char* str){
+void Console::put_string(const char* str){
     if (!check_ready()) return;
     for (uint32_t i = 0; str[i]; i++){
         char c = str[i];
@@ -103,7 +103,7 @@ void KernelConsole::put_string(const char* str){
     flush(dctx);
 }
 
-void KernelConsole::newline(){
+void Console::newline(){
     if (!check_ready()) return;
     uint32_t row_index = (scroll_row_offset + cursor_y) % rows;
     char* line = row_data + row_index * columns;
@@ -116,7 +116,7 @@ void KernelConsole::newline(){
     }
 }
 
-void KernelConsole::scroll(){
+void Console::scroll(){
     if (!check_ready()) return;
     scroll_row_offset = (scroll_row_offset + 1) % rows;
     uint32_t row_index = (scroll_row_offset + cursor_y) % rows;
@@ -125,14 +125,14 @@ void KernelConsole::scroll(){
     redraw();
 }
 
-void KernelConsole::refresh(){
+void Console::refresh(){
     resize();
     clear();
     redraw();
     flush(dctx);
 }
 
-void KernelConsole::redraw(){
+void Console::redraw(){
     screen_clear();
     for (uint32_t y = 0; y < rows; y++){
         uint32_t row_index = (scroll_row_offset + y) % rows;
@@ -144,24 +144,24 @@ void KernelConsole::redraw(){
     draw_cursor();
 }
 
-void KernelConsole::screen_clear(){
+void Console::screen_clear(){
     fb_clear(dctx, COLOR_BLACK);
     last_drawn_cursor_x = -1;
     last_drawn_cursor_y = -1;
 }
 
-void KernelConsole::clear(){
+void Console::clear(){
     screen_clear();
     memset(row_data, 0, buffer_data_size);
     cursor_x = cursor_y = 0;
 }
 
-const char* KernelConsole::get_current_line(){
+const char* Console::get_current_line(){
     uint32_t row_index = (scroll_row_offset + cursor_y) % rows;
     return row_data + row_index * columns;
 }
 
-void KernelConsole::set_text_color(uint32_t hex){
+void Console::set_text_color(uint32_t hex){
     text_color = hex | 0xFF000000;
 }
 
