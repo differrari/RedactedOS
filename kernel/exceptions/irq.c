@@ -49,7 +49,6 @@ void irq_init() {
     gic_enable_irq(MSI_OFFSET + NET_IRQ, 0x80, 0);
     gic_enable_irq(MSI_OFFSET + NET_IRQ + 1, 0x80, 0);
     gic_enable_irq(SLEEP_TIMER, 0x80, 0);
-    gic_enable_irq(MSI_OFFSET + AUDIO_IRQ, 0x80, 0);
 
     if (RPI_BOARD != 3){
         write32(GICC_BASE + 0x004, 0xF0); //Priority

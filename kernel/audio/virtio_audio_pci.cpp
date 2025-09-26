@@ -91,19 +91,7 @@ bool VirtioAudioDriver::init(){
 
     virtio_get_capabilities(&audio_dev, addr, &audio_device_address, &audio_device_size);
     pci_register(audio_device_address, audio_device_size);
-
-    uint8_t interrupts_ok = pci_setup_interrupts(addr, AUDIO_IRQ, 1);
-    switch(interrupts_ok){
-        case 0:
-            kprintf("[VIRTIO_AUDIO] Failed to setup interrupts");
-            return false;
-        case 1:
-            kprintf("[VIRTIO_AUDIO] Interrupts setup with MSI-X %i",AUDIO_IRQ);
-            break;
-        default:
-            kprintf("[VIRTIO_AUDIO] Interrupts setup with MSI %i",AUDIO_IRQ);
-            break;
-    }
+    
     pci_enable_device(addr);
 
     if (!virtio_init_device(&audio_dev)){
