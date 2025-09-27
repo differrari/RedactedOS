@@ -12,7 +12,12 @@ typedef struct {
     char keys[6];
 } keypress;
 
-//TODO: make a bool key_pressed(KEYCODE, keypress*), maybe event-based too
+typedef enum in_event_type { KEY_RELEASE, KEY_PRESS } in_event_type;
+
+typedef struct {
+    in_event_type type;
+    char key;
+} kbd_event;
 
 #ifdef __cplusplus
 }

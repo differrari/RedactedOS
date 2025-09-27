@@ -5,6 +5,7 @@
 #include "syscalls/syscalls.h"
 #include "console/kio.h"
 
+//TODO: Move to /os/bin
 int run_cat(int argc, char* argv[]){
     uint16_t pid = get_current_proc_pid();
     string s = string_format("/proc/%i/out",pid);

@@ -17,6 +17,7 @@ typedef enum mouse_button {
 } mouse_button;
 
 void register_keypress(keypress kp);
+void register_event(kbd_event event);
 void mouse_config(gpu_point point, gpu_size size);
 void register_mouse_input(mouse_input *rat);
 
@@ -36,6 +37,9 @@ void sys_set_secure(bool secure);
 
 bool sys_read_input(int pid, keypress *out);
 bool sys_read_input_current(keypress *out);
+
+bool sys_read_event(int pid, kbd_event *out);
+bool sys_read_event_current(kbd_event *out);
 
 bool sys_shortcut_triggered_current(uint16_t sid);
 bool sys_shortcut_triggered(uint16_t pid, uint16_t sid);

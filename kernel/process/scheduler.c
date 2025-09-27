@@ -300,7 +300,7 @@ sizedptr list_processes(const char *path){
 }
 
 void* list_alloc(size_t size){
-    kalloc(proc_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+    return kalloc(proc_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
 }
 
 FS_RESULT open_proc(const char *path, file *descriptor){
