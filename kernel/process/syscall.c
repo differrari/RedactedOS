@@ -21,6 +21,7 @@
 #include "bin/bin_mod.h"
 
 int syscall_depth = 0;
+uintptr_t cpec;
 
 //TODO: What happens if we pass another process' data in here?
 //TODO: make indexmap in c and it can be used here

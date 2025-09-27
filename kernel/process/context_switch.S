@@ -1,7 +1,8 @@
 .global save_context
 save_context:
-    // x0: pointer to process_t
 
+    ldr x0, =cpec
+    ldr x0, [x0]
     // Save general-purpose registers x1-x30 (excluding x0 which holds the pointer)
     stp x1, x2, [x0, #(8 * 0)]
     stp x3, x4, [x0, #(8 * 2)]
@@ -37,6 +38,8 @@ save_pc_interrupt:
 
 .global restore_context
 restore_context:
+    ldr x0, =cpec
+    ldr x0, [x0]
     // Restore general-purpose registers
     ldp x1, x2, [x0, #(8 * 0)]
     ldp x3, x4, [x0, #(8 * 2)]
