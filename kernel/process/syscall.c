@@ -18,6 +18,7 @@
 #include "graph/tres.h"
 #include "memory/mmu.h"
 #include "loading/process_loader.h"
+#include "networking/interface_manager.h"
 
 int syscall_depth = 0;
 
@@ -89,18 +90,30 @@ uint64_t syscall_get_time(process_t *ctx){
 }
 
 uint64_t syscall_bind_port(process_t *ctx){
-    uint16_t port     = (uint16_t)ctx->PROC_X0;
-    port_recv_handler_t handler = (port_recv_handler_t)ctx->PROC_X1;
-    protocol_t proto  = (protocol_t)ctx->PROC_X2;
+    ip_version_t ipver= (ip_version_t)ctx->PROC_X0;
+    uint8_t l3_id     = (uint8_t)ctx->PROC_X1;
+    uint16_t port     = (uint16_t)ctx->PROC_X2;
+    port_recv_handler_t handler = (port_recv_handler_t)ctx->PROC_X3;
+    protocol_t proto  = (protocol_t)ctx->PROC_X4;
     uint16_t pid      = get_current_proc_pid();
-    return port_bind_manual(port, pid, proto, handler);
+
+    port_manager_t* pm = (ipver == IP_VER6) ? ifmgr_pm_v6(l3_id) : ifmgr_pm_v4(l3_id);
+    if (!pm) return 0;
+
+    return port_bind_manual(pm, proto, port, pid, handler);
 }
 
 uint64_t syscall_unbind_port(process_t *ctx){
-    uint16_t port    = (uint16_t)ctx->PROC_X0;
-    protocol_t proto = (protocol_t)ctx->PROC_X2;
+    ip_version_t ipver = (ip_version_t)ctx->PROC_X0;
+    uint8_t l3_id    = (uint8_t)ctx->PROC_X1;
+    uint16_t port    = (uint16_t)ctx->PROC_X2;
+    protocol_t proto = (protocol_t)ctx->PROC_X3;
     uint16_t pid     = get_current_proc_pid();
-    return port_unbind(port, proto, pid);
+
+    port_manager_t* pm = (ipver == IP_VER6) ? ifmgr_pm_v6(l3_id) : ifmgr_pm_v4(l3_id);
+    if (!pm) return 0;
+
+    return port_unbind(pm, proto, port, pid);
 }
 
 uint64_t syscall_send_packet(process_t *ctx){

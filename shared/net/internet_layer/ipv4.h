@@ -23,9 +23,14 @@ typedef struct __attribute__((packed)) ipv4_hdr_t {
     uint32_t dst_ip;
 } ipv4_hdr_t;
 
+typedef enum { IPV4_TX_AUTO=0,
+    IPV4_TX_BOUND_L2=1, 
+    IPV4_TX_BOUND_L3=2 
+} ipv4_tx_scope_t;
+
 typedef struct {
     uint8_t index;
-    bool int_type; //0 = l2 index, 1= l3 index 
+    ipv4_tx_scope_t scope;
 } ipv4_tx_opts_t;
 
 void ipv4_to_string(uint32_t ip, char* buf);
@@ -38,24 +43,6 @@ void ipv4_send_packet(uint32_t dst_ip,
 void ipv4_input(uint16_t ifindex, uintptr_t ip_ptr,
               uint32_t ip_len,
               const uint8_t src_mac[6]);
-
-
-
-
-
-
-//LEGACY
-
-typedef struct net_cfg {
-    uint32_t ip;
-    uint32_t mask;
-    uint32_t gw;
-    int8_t mode;
-    net_runtime_opts_t *rt;
-} net_cfg_t;
-void ipv4_cfg_init(void);
-void ipv4_set_cfg(const net_cfg_t *src);
-const net_cfg_t* ipv4_get_cfg(void); 
 
 #ifdef __cplusplus
 }

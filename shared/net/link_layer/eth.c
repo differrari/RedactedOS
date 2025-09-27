@@ -3,12 +3,10 @@
 #include "networking/network.h"
 #include "arp.h"
 #include "net/internet_layer/ipv4.h"
-#include "networking/network.h"
 //#include "net/internet_layer/ipv6.h"
 #include "console/kio.h"
+#include "syscalls/syscalls.h"
 
-extern uintptr_t malloc(uint64_t size);
-extern void      free(void *ptr, uint64_t size);
 
 uintptr_t create_eth_packet(uintptr_t p,
                             const uint8_t src_mac[6],

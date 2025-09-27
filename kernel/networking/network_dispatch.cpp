@@ -9,10 +9,7 @@
 #include "std/std.h"
 #include "console/kio.h"
 #include "networking/interface_manager.h"
-
-extern void      sleep(uint64_t ms);
-extern uintptr_t malloc(uint64_t size);
-extern void      free(void *ptr, uint64_t size);
+#include "syscalls/syscalls.h"
 
 #define RX_INTR_BATCH_LIMIT 32
 #define TASK_RX_BATCH_LIMIT 32
@@ -343,15 +340,33 @@ void NetworkDispatch::dump_interfaces()
         for (int s = 0; s < (int)MAX_IPV4_PER_INTERFACE; ++s){
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
             if (!v4) continue;
+
             char ip[16], mask[16], gw[16], bc[16];
             ipv4_to_string(v4->ip, ip);
             ipv4_to_string(v4->mask, mask);
             ipv4_to_string(v4->gw, gw);
             ipv4_to_string(v4->broadcast, bc);
-            kprintf("  - slot=%u l3_id=%u mode=%i ip=%s mask=%s gw=%s bcast=%s rt=%x localhost=%u",
-                    (unsigned)s, (unsigned)v4->l3_id, (int)v4->mode, ip, mask, gw, bc,
-                    (uint64_t)(uintptr_t)v4->runtime_opts_v4, v4->is_localhost?1:0);
+
+            char dns0[16], dns1[16], ntp0[16], ntp1[16];
+            if (v4->runtime_opts_v4.dns[0]) ipv4_to_string(v4->runtime_opts_v4.dns[0], dns0); else { dns0[0]='-'; dns0[1]=0; }
+            if (v4->runtime_opts_v4.dns[1]) ipv4_to_string(v4->runtime_opts_v4.dns[1], dns1); else { dns1[0]='-'; dns1[1]=0; }
+            if (v4->runtime_opts_v4.ntp[0]) ipv4_to_string(v4->runtime_opts_v4.ntp[0], ntp0); else { ntp0[0]='-'; ntp0[1]=0; }
+            if (v4->runtime_opts_v4.ntp[1]) ipv4_to_string(v4->runtime_opts_v4.ntp[1], ntp1); else { ntp1[0]='-'; ntp1[1]=0; }
+
+            kprintf("  - slot=%u l3_id=%u mode=%i ip=%s mask=%s gw=%s bcast=%s "
+                    "mtu=%u dns=[%s,%s] ntp=[%s,%s] xid=%u lease=%us t1=%us t2=%us localhost=%u",
+                    (unsigned)s, (unsigned)v4->l3_id, (int)v4->mode,
+                    ip, mask, gw, bc,
+                    (unsigned)v4->runtime_opts_v4.mtu,
+                    dns0, dns1,
+                    ntp0, ntp1,
+                    (unsigned)v4->runtime_opts_v4.xid,
+                    (unsigned)v4->runtime_opts_v4.lease,
+                    (unsigned)v4->runtime_opts_v4.t1,
+                    (unsigned)v4->runtime_opts_v4.t2,
+                    v4->is_localhost ? 1u : 0u);
         }
+
 
         kprintf(" int ipv6:");
         for (int s = 0; s < (int)MAX_IPV6_PER_INTERFACE; ++s){

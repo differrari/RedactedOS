@@ -2,6 +2,11 @@
 #include "std/memory.h"
 #include "net/link_layer/arp.h"
 #include "net/internet_layer/ipv4_route.h"
+#include "networking/port_manager.h"
+#include "process/scheduler.h"
+#include "memory/page_allocator.h"
+
+static void* g_kmem_page = NULL;
 
 //TODO: add network settings
 static inline void mem_zero(void *p, size_t n){ if (p) memset(p,0,n); }
@@ -298,11 +303,14 @@ uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
         if (v4_overlap_intra_l2(ifindex, ip, mask)) return 0;
     }
     if (l2->ipv4_count >= MAX_IPV4_PER_INTERFACE) return 0;
+
     int loc = alloc_local_slot_v4(l2);
     int g = alloc_global_v4_slot();
     if (loc < 0 || g < 0) return 0;
+
     g_v4[g].used = true;
     g_v4[g].slot_in_l2 = (uint8_t)loc;
+
     l3_ipv4_interface_t *n = &g_v4[g].node;
     mem_zero(n, sizeof(*n));
     n->l2 = l2;
@@ -311,13 +319,38 @@ uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
     n->mask = (mode==IPV4_CFG_STATIC) ? mask : 0;
     n->gw = (mode==IPV4_CFG_STATIC) ? gw : 0;
     n->broadcast = (mode==IPV4_CFG_STATIC) ? ipv4_broadcast_calc(ip, mask) : 0;
-    n->runtime_opts_v4 = runtime_opts;
+
+    mem_zero(&n->runtime_opts_v4, sizeof(n->runtime_opts_v4));
+    if (runtime_opts) {
+        n->runtime_opts_v4 = *runtime_opts;
+    }
+
     n->routing_table = ipv4_rt_create();
+    if (!n->routing_table) {
+        g_v4[g].used = false;
+        mem_zero(&g_v4[g], sizeof(g_v4[g]));
+        return 0;
+    }
     ipv4_rt_ensure_basics((ipv4_rt_table_t*)n->routing_table, n->ip, n->mask, n->gw, l2->base_metric);
+
     n->is_localhost = (l2->name[0]=='l' && l2->name[1]=='o');
     n->l3_id = make_l3_id(l2->ifindex, (uint8_t)loc);
     l2->l3_v4[loc] = n;
     l2->ipv4_count++;
+
+    if (!g_kmem_page) g_kmem_page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, false);
+    n->port_manager = (port_manager_t*)kalloc(g_kmem_page, sizeof(port_manager_t), ALIGN_16B, MEM_PRIV_KERNEL);
+    if (!n->port_manager) {
+        l2->l3_v4[loc] = NULL;
+        if (l2->ipv4_count) l2->ipv4_count--;
+        ipv4_rt_destroy((ipv4_rt_table_t*)n->routing_table);
+        n->routing_table = NULL;
+        g_v4[g].used = false;
+        mem_zero(&g_v4[g], sizeof(g_v4[g]));
+        return 0;
+    }
+    port_manager_init(n->port_manager);
+
     return n->l3_id;
 }
 
@@ -327,9 +360,7 @@ bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
     l2_interface_t *l2 = n->l2;
     if (!l2) return false;
     if (mode == IPV4_CFG_DHCP && n->mode != IPV4_CFG_DHCP) {
-        if (v4_has_dhcp_on_l2(l2->ifindex)) {
-            return false;
-        }
+        if (v4_has_dhcp_on_l2(l2->ifindex)) return false;
     }
     if (mode == IPV4_CFG_STATIC){
         if (ipv4_is_unspecified(ip)) return false;
@@ -350,8 +381,13 @@ bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
             if (ipv4_net(ip, m) == ipv4_net(x->ip, m)) return false;
         }
     }
+
     n->mode = mode;
-    n->runtime_opts_v4 = runtime_opts;
+
+    if (runtime_opts) {
+        n->runtime_opts_v4 = *runtime_opts;
+    }
+
     if (mode == IPV4_CFG_STATIC || mode == IPV4_CFG_DHCP) {
         n->ip = ip;
         n->mask = mask;
@@ -363,6 +399,7 @@ bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
         n->gw = 0;
         n->broadcast = 0;
     }
+
     if (!n->routing_table) n->routing_table = ipv4_rt_create();
     ipv4_rt_sync_basics((ipv4_rt_table_t*)n->routing_table, n->ip, n->mask, n->gw, l2->base_metric);
     return true;
@@ -374,19 +411,31 @@ bool l3_ipv4_remove_from_interface(uint8_t l3_id){
     l2_interface_t *l2 = n->l2;
     if (!l2) return false;
     if (l2->ipv4_count <= 1) return false;
+
+    int g = -1;
+    for (int i=0;i<V4_POOL_SIZE;i++){
+        if (g_v4[i].used && &g_v4[i].node == n){ g = i; break; }
+    }
+    if (g < 0) return false;
+
+    if (n->port_manager) {
+        kfree(n->port_manager, sizeof(port_manager_t));
+        n->port_manager = NULL;
+    }
+
     uint8_t slot = l3_local_slot_from_id(l3_id);
     if (slot < MAX_IPV4_PER_INTERFACE && l2->l3_v4[slot] == n){
         l2->l3_v4[slot] = NULL;
         if (l2->ipv4_count) l2->ipv4_count--;
     }
-    if (n->routing_table) { ipv4_rt_destroy((ipv4_rt_table_t*)n->routing_table); n->routing_table = 0; }
-    for (int i=0;i<V4_POOL_SIZE;i++){
-        if (g_v4[i].used && &g_v4[i].node == n){
-            g_v4[i].used = false;
-            mem_zero(&g_v4[i], sizeof(g_v4[i]));
-            break;
-        }
+
+    if (n->routing_table) {
+        ipv4_rt_destroy((ipv4_rt_table_t*)n->routing_table);
+        n->routing_table = 0;
     }
+
+    g_v4[g].used = false;
+    mem_zero(&g_v4[g], sizeof(g_v4[g]));
     return true;
 }
 
@@ -462,6 +511,7 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
 
     g_v6[g].used = true;
     g_v6[g].slot_in_l2 = (uint8_t)loc;
+
     l3_ipv6_interface_t *n = &g_v6[g].node;
     mem_zero(n, sizeof(*n));
     n->l2 = l2;
@@ -474,6 +524,18 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     n->l3_id = make_l3_id(l2->ifindex, (uint8_t)loc);
     l2->l3_v6[loc] = n;
     l2->ipv6_count++;
+
+    if (!g_kmem_page) g_kmem_page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, false);
+    n->port_manager = (port_manager_t*)kalloc(g_kmem_page, sizeof(port_manager_t), ALIGN_16B, MEM_PRIV_KERNEL);
+    if (!n->port_manager){
+        l2->l3_v6[loc] = NULL;
+        if (l2->ipv6_count) l2->ipv6_count--;
+        g_v6[g].used = false;
+        mem_zero(&g_v6[g], sizeof(g_v6[g]));
+        return 0;
+    }
+    port_manager_init(n->port_manager);
+
     return n->l3_id;
 }
 
@@ -557,18 +619,26 @@ bool l3_ipv6_remove_from_interface(uint8_t l3_id){
         }
     }
     if (l2->ipv6_count <= 1) return false;
+
+    int g = -1;
+    for (int i=0;i<V6_POOL_SIZE;i++){
+        if (g_v6[i].used && &g_v6[i].node == n){ g = i; break; }
+    }
+    if (g < 0) return false;
+
+    if (n->port_manager) {
+        kfree(n->port_manager, sizeof(port_manager_t));
+        n->port_manager = NULL;
+    }
+
     uint8_t slot = l3_local_slot_from_id(l3_id);
     if (slot < MAX_IPV6_PER_INTERFACE && l2->l3_v6[slot] == n){
         l2->l3_v6[slot] = NULL;
         if (l2->ipv6_count) l2->ipv6_count--;
     }
-    for (int i=0;i<V6_POOL_SIZE;i++){
-        if (g_v6[i].used && &g_v6[i].node == n){
-            g_v6[i].used = false;
-            mem_zero(&g_v6[i], sizeof(g_v6[i]));
-            break;
-        }
-    }
+
+    g_v6[g].used = false;
+    mem_zero(&g_v6[g], sizeof(g_v6[g]));
     return true;
 }
 

@@ -28,6 +28,8 @@ bool ipv4_rt_lookup_in(const ipv4_rt_table_t* t, uint32_t dst, uint32_t *next_ho
 void ipv4_rt_ensure_basics(ipv4_rt_table_t* t, uint32_t ip, uint32_t mask, uint32_t gw, uint16_t base_metric);
 void ipv4_rt_sync_basics(ipv4_rt_table_t* t, uint32_t ip, uint32_t mask, uint32_t gw, uint16_t base_metric);
 
+bool ipv4_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, uint32_t dst, uint8_t* out_l3);
+
 #ifdef __cplusplus
 }
 #endif

@@ -4,10 +4,8 @@
 #include "networking/interface_manager.h"
 #include "net/internet_layer/ipv4.h"
 #include "net/internet_layer/ipv4_route.h"
+#include "syscalls/syscalls.h"
 
-extern uintptr_t malloc(uint64_t size);
-extern void      free(void *ptr, uint64_t size);
-extern void      sleep(uint64_t ms);
 
 #define MAX_PENDING 16
 #define POLL_MS 1
@@ -109,9 +107,9 @@ void icmp_input(uintptr_t ptr,
         create_icmp_packet(buf, &d);
         ((icmp_packet*)buf)->checksum = checksum16((uint16_t*)buf, reply_len);
 
-        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(dst_ip); // nostro IP
+        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(dst_ip);
         if (l3 && l3->l2) {
-            ipv4_tx_opts_t o = { .index = l3->l3_id, .int_type = 1 };
+            ipv4_tx_opts_t o = { .index = l3->l3_id, .scope = IPV4_TX_BOUND_L2 };
 
             char sbuf[16], dbuf[16];
             ipv4_to_string(src_ip, sbuf);

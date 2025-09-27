@@ -98,6 +98,10 @@ uint16_t network_net_get_pid() {
     return dispatch ? dispatch->get_net_pid() : UINT16_MAX;
 }
 
+void network_dump_interfaces() {
+    if (dispatch) dispatch->dump_interfaces();
+}
+
 driver_module net_module = (driver_module){
     .name = "net",
     .mount = "/net",

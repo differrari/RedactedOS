@@ -1,8 +1,7 @@
 #include "ipv4_route.h"
 #include "std/memory.h"
-
-extern uintptr_t malloc(uint64_t size);
-extern void free(void* ptr, uint64_t size);
+#include "networking/interface_manager.h"
+#include "syscalls/syscalls.h"
 
 struct ipv4_rt_table {
     ipv4_rt_entry_t e[IPV4_RT_PER_IF_MAX];
@@ -108,4 +107,43 @@ void ipv4_rt_sync_basics(ipv4_rt_table_t* t, uint32_t ip, uint32_t mask, uint32_
         uint32_t net = ip & mask;
         (void)ipv4_rt_add_in(t, net, mask, 0, base_metric);
     }
+}
+bool ipv4_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, uint32_t dst, uint8_t* out_l3){
+    int best_pl = -1;
+    int best_cost = 0x7FFFFFFF;
+    uint8_t best_l3 = 0;
+    for (int i=0;i<n_ids;i++){
+        l3_ipv4_interface_t* x = l3_ipv4_find_by_id(l3_ids[i]);
+        if (!x || !x->l2) continue;
+        if (x->mode == IPV4_CFG_DISABLED) continue;
+        int l2base = (int)x->l2->base_metric;
+        int pl_conn = -1;
+        if (x->mask){
+            uint32_t netx = x->ip & x->mask;
+            if ((dst & x->mask) == netx) pl_conn = prefix_len(x->mask);
+        }
+        int pl_tab = -1, met_tab = 0x7FFF;
+        if (x->routing_table){
+            int out_pl = -1, out_met = 0x7FFF;
+            uint32_t nh;
+            if (ipv4_rt_lookup_in((const ipv4_rt_table_t*)x->routing_table, dst, &nh, &out_pl, &out_met)){
+                pl_tab = out_pl;
+                met_tab = out_met;
+            }
+        }
+        int cand_pl = pl_conn;
+        int cand_cost = l2base;
+        if (pl_tab > cand_pl || (pl_tab == cand_pl && (l2base + met_tab) < cand_cost)){
+            cand_pl = pl_tab;
+            cand_cost = l2base + met_tab;
+        }
+        if (cand_pl > best_pl || (cand_pl == best_pl && cand_cost < best_cost) || (cand_pl == best_pl && cand_cost == best_cost && l3_ids[i] < best_l3)){
+            best_pl = cand_pl;
+            best_cost = cand_cost;
+            best_l3 = l3_ids[i];
+        }
+    }
+    if (best_pl < 0) return false;
+    if (out_l3) *out_l3 = best_l3;
+    return true;
 }

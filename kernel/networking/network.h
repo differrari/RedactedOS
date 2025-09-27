@@ -36,6 +36,8 @@ size_t network_nic_count(void);
 
 void network_update_local_ip(uint32_t ip);
 
+void network_dump_interfaces(void);
+
 extern driver_module net_module;
 
 #ifdef __cplusplus

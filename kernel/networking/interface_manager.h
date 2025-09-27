@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "networking/port_manager.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,6 +35,18 @@ struct l2_interface;
 struct l3_ipv4_interface;
 struct l3_ipv6_interface;
 
+typedef struct net_runtime_opts {
+    uint16_t mtu;
+    uint32_t t1;
+    uint32_t t2;
+    uint32_t dns[2];
+    uint32_t ntp[2];
+    uint16_t xid;
+    uint32_t server_ip;
+    uint32_t lease;
+    uint32_t lease_start_time;
+} net_runtime_opts_t;
+
 typedef struct l2_interface {
     uint8_t ifindex;
     char name[16];
@@ -60,23 +73,11 @@ typedef struct l3_ipv4_interface {
     uint32_t broadcast;
     ipv4_cfg_t mode;
     bool is_localhost;
-    void *runtime_opts_v4;
+    net_runtime_opts_t runtime_opts_v4;
     void *routing_table;
-    void *port_manager;
+    port_manager_t *port_manager;
     l2_interface_t *l2;
 } l3_ipv4_interface_t;
-
-typedef struct net_runtime_opts {
-    uint16_t mtu;
-    uint32_t t1;
-    uint32_t t2;
-    uint32_t dns[2];
-    uint32_t ntp[2];
-    uint16_t xid;
-    uint32_t server_ip;
-    uint32_t lease;
-    uint32_t lease_start_time;
-} net_runtime_opts_t;
 
 typedef struct l3_ipv6_interface {
     uint8_t l3_id;
@@ -91,7 +92,7 @@ typedef struct l3_ipv6_interface {
     uint32_t timestamp_created;
     uint8_t prefix[16];
     uint8_t interface_id[8];
-    void *port_manager;
+    port_manager_t *port_manager;
     l2_interface_t *l2;
 } l3_ipv6_interface_t;
 
@@ -141,6 +142,16 @@ bool check_ipv6_overlap(const uint8_t new_ip[16], uint8_t prefix_len, uint8_t if
 
 static inline uint32_t ipv4_net(uint32_t ip, uint32_t mask){ return ip & mask; }
 static inline uint32_t ipv4_broadcast_calc(uint32_t ip, uint32_t mask){ return (mask==0)?0:((ip & mask) | ~mask); }
+
+
+static inline port_manager_t* ifmgr_pm_v4(uint8_t l3_id){
+    l3_ipv4_interface_t* n = l3_ipv4_find_by_id(l3_id);
+    return n ? n->port_manager : NULL;
+}
+static inline port_manager_t* ifmgr_pm_v6(uint8_t l3_id){
+    l3_ipv6_interface_t* n = l3_ipv6_find_by_id(l3_id);
+    return n ? n->port_manager : NULL;
+}
 
 #ifdef __cplusplus
 }

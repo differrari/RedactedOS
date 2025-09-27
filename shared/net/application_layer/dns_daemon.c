@@ -1,8 +1,6 @@
 #include "dns_daemon.h"
 #include "process/scheduler.h"
-#include "std/memory.h"
-
-extern void sleep(uint64_t ms);
+#include "syscalls/syscalls.h"
 
 static uint16_t g_pid_dnsd = 0xFFFF;
 static socket_handle_t g_sock = 0;

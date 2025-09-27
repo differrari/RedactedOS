@@ -6,9 +6,7 @@
 #include "process/scheduler.h"
 #include "console/kio.h"
 #include "net/internet_layer/ipv4.h"
-extern void      sleep(uint64_t ms);
-extern uintptr_t malloc(uint64_t size);
-extern void      free(void *ptr, uint64_t size);
+#include "syscalls/syscalls.h"
 
 typedef struct arp_table {
     arp_entry_t entries[ARP_TABLE_MAX];
