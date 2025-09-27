@@ -20,10 +20,6 @@ void FBGPUDriver::flush(){
         cursor_x = 0;
         cursor_y = 0;
         cursor_updated = false;
-        if (cursor_backup){
-            restore_below_cursor();
-            memset(cursor_backup, 0, cursor_size);
-        }
         return;
     }
     
@@ -60,7 +56,6 @@ draw_ctx FBGPUDriver::new_cursor(uint32_t color){
 }
 
 void FBGPUDriver::setup_cursor(){
-    cursor_backup = (uint32_t*)kalloc(mem_page, cursor_size, ALIGN_4KB, MEM_PRIV_KERNEL);
     cursor_pressed_ctx = new_cursor(CURSOR_COLOR_SELECTED);
     cursor_unpressed_ctx = new_cursor(CURSOR_COLOR_DESELECTED);
 }
@@ -83,11 +78,8 @@ void FBGPUDriver::update_cursor(uint32_t x, uint32_t y, bool full){
     for (unsigned int cy = 0; cy < cursor_dim; cy++){
         for (unsigned int cx = 0; cx < cursor_dim; cx++){
             uint32_t val = cursor_ctx.fb[cursor_loc(0, 0, cursor_dim)];
-            uint32_t screen = framebuffer[cursor_loc(x,y,screen_size.width)];
-            if (val){
+            if (val)
                 framebuffer[cursor_loc(x, y, screen_size.width)] = val;
-                cursor_backup[cursor_loc(0, 0, cursor_dim)] = screen;
-            } else cursor_backup[cursor_loc(0, 0, cursor_dim)] = 0;
         }
     }
     cursor_x = x;
