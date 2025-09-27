@@ -10,7 +10,7 @@ BUILD_DIR := ./build
 COMMON_FLAGS  ?= -ffreestanding -nostdlib -fno-exceptions -fno-unwind-tables \
                  -fno-asynchronous-unwind-tables -g -O0 -Wall -Wextra \
                  -Wno-unused-parameter -Wno-address-of-packed-member \
-                 -mcpu=cortex-a72
+                 -mcpu=cortex-a72 -Werror=return-type
 
 CFLAGS_BASE   ?= $(COMMON_FLAGS) -std=c99
 CXXFLAGS_BASE ?= $(COMMON_FLAGS) -fno-rtti
