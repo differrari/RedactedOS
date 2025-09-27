@@ -155,7 +155,7 @@ uint64_t syscall_fopen(process_t *ctx){
     char *req_path = (char *)ctx->PROC_X0;
     char path[255];
     if (!(ctx->PROC_PRIV) && strstart("/resources/", req_path, true) == 11){
-        string_format_buf("%s%s", path, ctx->bundle, req_path);
+        string_format_buf(path,"%s%s", ctx->bundle, req_path);
     } else memcpy(path, req_path, strlen(req_path, 0));
     //TODO: Restrict access to own bundle, own fs and require privilege escalation for full-ish filesystem access
     file *descriptor = (file*)ctx->PROC_X1;
