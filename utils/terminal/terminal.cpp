@@ -94,6 +94,8 @@ void Terminal::run_command(){
     if (!exec_cmd(cmd.data, argc, argv)){
         if (strcmp(cmd.data, "test", true) == 0){
             TMP_test(argc, argv);
+        } else if (strcmp(cmd.data, "exit", true) == 0){
+            halt(0);
         } else {
             string s = string_format("Unknown command %s with args %s", cmd.data, args);
             put_string(s.data);

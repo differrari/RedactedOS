@@ -77,7 +77,7 @@ void Launcher::draw_desktop(){
                 case KEY_DOWN: selected.y = (selected.y + 1 ) % MAX_ROWS; break;
                 case KEY_UP: selected.y = (selected.y - 1 + MAX_ROWS) % MAX_ROWS; break;
             }
-        } else kprintf("Wrong type: %i",event.type);
+        }
     }
     if (!rendered_full){
         rendered_full = true;
