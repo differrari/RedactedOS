@@ -52,6 +52,11 @@ uint64_t syscall_read_key(process_t *ctx){
     return sys_read_input_current(kp);
 }
 
+uint64_t syscall_read_event(process_t *ctx){
+    kbd_event *ev = (kbd_event*)ctx->PROC_X0;
+    return sys_read_event_current(ev);
+}
+
 uint64_t syscall_read_shortcut(process_t *ctx){
     kprint("[SYSCALL implementation error] Shortcut syscalls are not implemented yet");
     return 0;
@@ -194,6 +199,7 @@ syscall_entry syscalls[] = {
     { FREE_CODE, syscall_free},
     { PRINTL_CODE, syscall_printl},
     { READ_KEY_CODE, syscall_read_key},
+    { READ_EVENT_CODE, syscall_read_event },
     { READ_SHORTCUT_CODE, syscall_read_shortcut},
     { GET_MOUSE_STATUS_CODE, syscall_get_mouse },
     { REQUEST_DRAW_CTX_CODE, syscall_gpu_request_ctx},

@@ -19,6 +19,7 @@ extern void* malloc(size_t size);
 extern void free(void *ptr, size_t size);
 
 extern bool read_key(keypress *kp);
+extern bool read_event(kbd_event *event);
 extern void get_mouse_status(mouse_input *in);
 
 extern void sleep(uint64_t time);
