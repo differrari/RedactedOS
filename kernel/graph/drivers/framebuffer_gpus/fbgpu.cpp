@@ -68,12 +68,9 @@ void FBGPUDriver::setup_cursor(){
 #define cursor_loc(x,y,row) (((y + cy) * row) + (cx + x))
 
 void FBGPUDriver::restore_below_cursor(){
-    for (int cy = 0; cy < cursor_dim; cy++){
-        for (int cx = 0; cx < cursor_dim; cx++){
-            uint32_t val = cursor_backup[cursor_loc(0, 0, cursor_dim)];
-            if (val)
-                framebuffer[((cursor_y + cy) * screen_size.width) + (cursor_x + cx)] = val;
-        }
+    if (!ctx.full_redraw){
+        mark_dirty(&ctx, cursor_x, cursor_y, cursor_dim, cursor_dim);
+        flush();
     }
 }
 
@@ -85,12 +82,12 @@ void FBGPUDriver::update_cursor(uint32_t x, uint32_t y, bool full){
     }
     for (unsigned int cy = 0; cy < cursor_dim; cy++){
         for (unsigned int cx = 0; cx < cursor_dim; cx++){
-                uint32_t val = cursor_ctx.fb[cursor_loc(0, 0, cursor_dim)];
-                uint32_t screen = framebuffer[cursor_loc(x,y,screen_size.width)];
-                if (val){
-                    framebuffer[cursor_loc(x, y, screen_size.width)] = val;
-                    cursor_backup[cursor_loc(0, 0, cursor_dim)] = screen;
-                } else cursor_backup[cursor_loc(0, 0, cursor_dim)] = 0;
+            uint32_t val = cursor_ctx.fb[cursor_loc(0, 0, cursor_dim)];
+            uint32_t screen = framebuffer[cursor_loc(x,y,screen_size.width)];
+            if (val){
+                framebuffer[cursor_loc(x, y, screen_size.width)] = val;
+                cursor_backup[cursor_loc(0, 0, cursor_dim)] = screen;
+            } else cursor_backup[cursor_loc(0, 0, cursor_dim)] = 0;
         }
     }
     cursor_x = x;
