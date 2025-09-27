@@ -3,6 +3,7 @@
 #include "console/kio.h"
 #include "memory/page_allocator.h"
 #include "std/memory_access.h"
+#include "syscalls/syscalls.h"
 #include "audio.h"
 #include "std/memory.h"
 #include "OutputAudioDevice.hpp"
@@ -26,7 +27,8 @@
 #define VIRTIO_SND_PCM_RATE_44100   6
 #define VIRTIO_SND_PCM_RATE_48000   7
 
-#define SND_44100_BUFFER_SIZE 441
+#define SND_44100_BUFFER_SIZE       256
+static_assert((SND_44100_BUFFER_SIZE & 0x01) == 0x00, "Audio buffer size must be even.");
 #define SND_U32_BYTES 4
 #define SND_PERIOD 1
 #define TOTAL_PERIOD_SIZE SND_44100_BUFFER_SIZE * SND_U32_BYTES * channels
@@ -83,7 +85,7 @@ typedef struct virtio_snd_event {
 bool VirtioAudioDriver::init(){
     uint64_t addr = find_pci_device(VIRTIO_VENDOR, VIRTIO_AUDIO_ID);
     if (!addr){ 
-        kprintf("Disk device not found");
+        kprintf("Audio device not found");
         return false;
     }
 
@@ -95,7 +97,7 @@ bool VirtioAudioDriver::init(){
     pci_enable_device(addr);
 
     if (!virtio_init_device(&audio_dev)){
-        kprintf("Failed disk initialization");
+        kprintf("[VIRTIO_AUDIO] Failed initialization");
         return false;
     }
 
@@ -103,7 +105,7 @@ bool VirtioAudioDriver::init(){
 
     audio_dev.common_cfg->queue_msix_vector = 0;
     if (audio_dev.common_cfg->queue_msix_vector != 0){
-        kprintf("[VIRTIO_AUDIO error] failed to setup interrupts for event queue");
+        kprintf("[VIRTIO_AUDIO] failed to setup interrupts for event queue");
         return false;
     }
     //TODO: This should (probably) be for input devices only
@@ -169,7 +171,7 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
         kprintf("[VIRTIO_AUDIO] Stream %i (%s): Features %x. Format %x. Sample %x. Channels %i-%i",stream, (uintptr_t)(stream_info[stream].direction ? "IN" : "OUT"), stream_info[stream].features, format, rate, stream_info->channels_min, stream_info->channels_max);
 
         if (!(format & (1 << VIRTIO_SND_PCM_FMT_U32))){
-            kprintf("[VIRTIO_AUDIO implementation error] stream does not support Float32 format");
+            kprintf("[VIRTIO_AUDIO implementation error] stream does not support Uint32 format");
             return false;
         }
 
@@ -179,7 +181,7 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
         }
 
         //TODO: Stereo
-        uint8_t channels = 1;//stream_info->channels_max;
+        uint8_t channels = 2; // 1;//stream_info->channels_max;
 
         if (!stream_set_params(stream, stream_info[stream].features, VIRTIO_SND_PCM_FMT_U32, VIRTIO_SND_PCM_RATE_44100, channels)){
             kprintf("[VIRTIO_AUDIO error] Failed to configure stream %i",stream);
