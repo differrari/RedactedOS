@@ -1,3 +1,5 @@
+#include "context.inc"
+
 .global sync_el0_handler_as
 
 //TODO: Rethink the registers used to be sequential both here and in context_switch and exception_vectors_as
@@ -29,5 +31,8 @@ sync_el0_handler_as:
     mov x16, x3
     mov x13, x29
     mov x12, x30
+
+    save_ctx
+
     b sync_el0_handler_c
     eret

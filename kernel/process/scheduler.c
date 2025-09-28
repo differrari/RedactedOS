@@ -15,7 +15,6 @@
 #include "memory/mmu.h"
 #include "process/syscall.h"
 
-extern void save_context(uintptr_t ptr);
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
 
@@ -47,10 +46,6 @@ typedef struct proc_open_file {
 } proc_open_file;
 
 void* proc_page;
-
-void save_context_registers(){
-    save_context(cpec);
-}
 
 void save_return_address_interrupt(){
     save_pc_interrupt(cpec);

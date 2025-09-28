@@ -261,7 +261,6 @@ void coredump(uint64_t esr, uint64_t elr, uint64_t far){
 }
 
 void sync_el0_handler_c(){
-    save_context_registers();
     save_return_address_interrupt();
 
     syscall_depth++;

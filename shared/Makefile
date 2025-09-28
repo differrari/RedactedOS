@@ -40,8 +40,8 @@ $(BUILD_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
-# Might want to also delete the directories created inside BUILD_DIR
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
+	$(RM) -r $(BUILD_DIR)
 
 -include $(DEP)

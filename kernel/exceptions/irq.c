@@ -73,7 +73,6 @@ void disable_interrupt(){
 }
 
 void irq_el1_handler() {
-    save_context_registers();
     save_return_address_interrupt();
     syscall_depth++;
     uint32_t irq;

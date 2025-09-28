@@ -1,3 +1,5 @@
+#include "process/context.inc"
+
 .section .vectors, "a", %progbits
 .align 11
 .global exception_vectors
@@ -58,5 +60,8 @@ irq_el1_asm_handler:
     mov x16, x3
     mov x13, x29
     mov x12, x30
+
+    save_ctx 
+    
     b irq_el1_handler
     eret
