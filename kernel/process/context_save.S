@@ -21,11 +21,6 @@ msr daifset, #2
 
 3:
     mov x15, x0
-    mov x14, x1
-    mov x9, x2
-    mov x16, x3
-    mov x13, x29
-    mov x12, x30
     
 ldr x0, =cpec
 ldr x0, [x0]
@@ -50,7 +45,6 @@ stp x29, x30, [x0, #(8 * 28)]
 str x11, [x0, #(8 * 31)]
 
 //Status bits
-and x10, x10, 0xFFF
 str x10, [x0, #(8 * 33)]
 
 .endm

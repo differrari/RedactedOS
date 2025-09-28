@@ -50,9 +50,5 @@ restore_context:
     msr elr_el1, x11
     
     mov x0, x15
-    mov x1, x14
-    mov x30, x12
-    mov x2, x9
-    mov x3, x16
 
     eret
