@@ -54,12 +54,12 @@ void kernel_main() {
     load_module(&disk_module);
 
     bool input_available = load_module(&input_module);
-    bool network_available = false;
-
+    bool network_available = true;
     if (BOARD_TYPE == 1){
         //TODO: disabling networking until it is refactored to prevent memory issues
-        network_available = false;// load_module(&net_module);
-        
+        //network_available = false;
+        load_module(&net_module);
+
         load_module(&audio_module);
 
         init_audio_mixer();

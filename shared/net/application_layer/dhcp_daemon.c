@@ -167,7 +167,7 @@ static bool udp_wait_for_type_on(socket_handle_t sock, uint8_t wanted, uint32_t 
             uint8_t len = p->options[idx+1];
             if (len < 1) { continue; }
             if (p->options[idx+2] != wanted) { continue; }
-            uintptr_t copy = malloc((uint32_t)r);
+            uintptr_t copy = (uintptr_t)malloc((uint32_t)r);
             memcpy((void*)copy, buf, (size_t)r);
             if (outp) *outp= (dhcp_packet*)copy;
             if (outsp) *outsp = (sizedptr){ copy, (uint32_t)r };
@@ -199,7 +199,7 @@ static bool udp_wait_for_ack_or_nak(socket_handle_t sock, uint32_t expect_xid, c
             if (idx == UINT16_MAX || p->options[idx+1] < 1) { continue; }
             uint8_t mtype = p->options[idx+2];
             if (mtype != DHCPACK && mtype != DHCPNAK) { continue; }
-            uintptr_t copy = malloc((uint32_t)r);
+            uintptr_t copy = (uintptr_t)malloc((uint32_t)r);
             memcpy((void*)copy, buf, (size_t)r);
             if (outp) *outp = (dhcp_packet*)copy;
             if (outsp) *outsp = (sizedptr){ copy, (uint32_t)r };

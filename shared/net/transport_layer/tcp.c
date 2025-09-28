@@ -28,7 +28,7 @@ static uint16_t tcp_compute_checksum_v4(const void *segment, uint16_t seg_len, u
     const uint8_t *seg = (const uint8_t*)segment;
     const uint64_t total_len = 12 + seg_len;
 
-    uintptr_t raw = malloc(total_len);
+    uintptr_t raw = (uintptr_t)malloc(total_len);
     if (!raw) return 0;
 
     uint8_t *buf = (uint8_t *)raw;
