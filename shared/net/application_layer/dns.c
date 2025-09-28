@@ -109,8 +109,15 @@ static dns_result_t perform_dns_query_once_a(socket_handle_t sock, uint32_t dns_
     wr_be16(request_buffer+offset+0, 1);
     wr_be16(request_buffer+offset+2, 1);
     offset += 4;
-    int64_t sent = socket_sendto_udp_ex(sock, DST_ENDPOINT, &dns_ip_host, 53, request_buffer, offset);
+
+    net_l4_endpoint dst = {0};
+    dst.ver = IP_VER4;
+    memcpy(dst.ip, &dns_ip_host, 4);
+    dst.port = 53;
+
+    int64_t sent = socket_sendto_udp_ex(sock, DST_ENDPOINT, &dst, 0, request_buffer, offset);
     if (sent < 0) return DNS_ERR_SEND;
+
     uint32_t waited_ms = 0;
     while (waited_ms < timeout_ms){
         uint8_t response_buffer[512];
@@ -141,8 +148,15 @@ static dns_result_t perform_dns_query_once_aaaa(socket_handle_t sock, uint32_t d
     wr_be16(request_buffer+offset+0, 28);
     wr_be16(request_buffer+offset+2, 1);
     offset += 4;
-    int64_t sent = socket_sendto_udp_ex(sock, DST_ENDPOINT, &dns_ip_host, 53, request_buffer, offset);
+
+    net_l4_endpoint dst = {0};
+    dst.ver = IP_VER4;
+    memcpy(dst.ip, &dns_ip_host, 4);
+    dst.port = 53;
+
+    int64_t sent = socket_sendto_udp_ex(sock, DST_ENDPOINT, &dst, 0, request_buffer, offset);
     if (sent < 0) return DNS_ERR_SEND;
+
     uint32_t waited_ms = 0;
     while (waited_ms < timeout_ms){
         uint8_t response_buffer[512];
