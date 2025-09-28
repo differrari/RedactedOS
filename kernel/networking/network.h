@@ -16,8 +16,6 @@ void network_net_set_pid(uint16_t pid);
 uint16_t network_net_get_pid();
 
 bool network_init();
-void network_handle_download_interrupt();
-void network_handle_upload_interrupt();
 void network_handle_download_interrupt_nic(uint16_t nic_id);
 void network_handle_upload_interrupt_nic(uint16_t nic_id);
 int network_net_task_entry(int argc, char* argv[]);

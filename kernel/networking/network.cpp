@@ -10,14 +10,6 @@ bool network_init() {
     return dispatch->init();
 }
 
-void network_handle_download_interrupt() {
-    if (dispatch) dispatch->handle_rx_irq(0);//legacy
-}
-
-void network_handle_upload_interrupt() {
-    if (dispatch) dispatch->handle_tx_irq(0); //legacy
-}
-
 void network_handle_download_interrupt_nic(uint16_t nic_id) {
     if (dispatch) dispatch->handle_rx_irq((size_t)nic_id);
 }
