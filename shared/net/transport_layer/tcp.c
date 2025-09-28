@@ -5,6 +5,8 @@
 #include "std/memory.h"
 #include "math/rng.h"
 #include "syscalls/syscalls.h"
+//TODO: add mtu check and fragmentation. also fragment rebuild
+
 
 static tcp_flow_t tcp_flows[MAX_TCP_FLOWS];
 
@@ -28,6 +30,7 @@ static uint16_t tcp_compute_checksum_v4(const void *segment, uint16_t seg_len, u
 
     uintptr_t raw = malloc(total_len);
     if (!raw) return 0;
+
     uint8_t *buf = (uint8_t *)raw;
 
     buf[0] = (src_ip >> 24) & 0xFF;

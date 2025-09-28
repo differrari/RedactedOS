@@ -2,7 +2,7 @@
 #include "types.h"
 
 cchunked_list_t* cchunked_list_create(uint64_t chunkSize){
-    uintptr_t raw = malloc(sizeof(cchunked_node_t) + chunkSize * sizeof(void*));
+    uintptr_t raw = (uintptr_t)malloc(sizeof(cchunked_node_t) + chunkSize * sizeof(void*));
     if (!raw) return NULL;
 
     cchunked_list_t* list = (cchunked_list_t*)malloc(sizeof(cchunked_list_t));
@@ -47,7 +47,7 @@ void cchunked_list_push_back(cchunked_list_t* list, void* data){
     if (!list) return;
 
     if (!list->tail) {
-        uintptr_t m = malloc(sizeof(cchunked_node_t) + list->chunkSize * sizeof(void*));
+        uintptr_t m = (uintptr_t)malloc(sizeof(cchunked_node_t) + list->chunkSize * sizeof(void*));
         if (!m) return;
         cchunked_node_t* node = (cchunked_node_t*)m;
         node->count = 0;
@@ -56,7 +56,7 @@ void cchunked_list_push_back(cchunked_list_t* list, void* data){
     }
 
     if (list->tail->count == list->chunkSize) {
-        uintptr_t m = malloc(sizeof(cchunked_node_t) + list->chunkSize * sizeof(void*));
+        uintptr_t m = (uintptr_t)malloc(sizeof(cchunked_node_t) + list->chunkSize * sizeof(void*));
         if (!m) return;
         cchunked_node_t* node = (cchunked_node_t*)m;
         node->count = 0;
@@ -82,7 +82,7 @@ cchunked_node_t* cchunked_list_insert_after(cchunked_list_t* list, cchunked_node
         return node;
     }
 
-    uintptr_t m = malloc(sizeof(cchunked_node_t) + list->chunkSize * sizeof(void*));
+    uintptr_t m = (uintptr_t)malloc(sizeof(cchunked_node_t) + list->chunkSize * sizeof(void*));
     if (!m) return NULL;
     cchunked_node_t* new_node = (cchunked_node_t*)m;
     new_node->count = 1;

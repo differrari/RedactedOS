@@ -25,6 +25,12 @@ extern "C" void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t h
     main_gpu_driver->create_window(x,y, width, height, &test_window.win_ctx);
 }
 
+void resize_window(uint32_t width, uint32_t height){
+    main_gpu_driver->resize_window(width, height, &test_window.win_ctx);
+    test_window.win_ctx.width = width;
+    test_window.win_ctx.height = height;
+}
+
 void get_window_ctx(draw_ctx* out_ctx){
     *out_ctx = test_window.win_ctx;
     test_window.pid = get_current_proc_pid();
@@ -46,7 +52,7 @@ void commit_frame(draw_ctx* frame_ctx){
         for (uint32_t dr = 0; dr < frame_ctx->dirty_count; dr++){
             gpu_rect r = frame_ctx->dirty_rects[dr];
             for (uint32_t dy = 0; dy < r.size.height; dy++)
-                memcpy(screen_ctx->fb + ((sy + dy + r.point.y) * screen_ctx->width) + sx + r.point.x, frame_ctx->fb + (dy * win_ctx.width), r.size.width * 4);
+                memcpy(screen_ctx->fb + ((sy + dy + r.point.y) * screen_ctx->width) + sx + r.point.x, frame_ctx->fb + ((dy + r.point.y) * win_ctx.width) + r.point.x, r.size.width * 4);
             mark_dirty(screen_ctx, sx + r.point.x, sy + r.point.y, r.size.width, r.size.height);
         }
     }

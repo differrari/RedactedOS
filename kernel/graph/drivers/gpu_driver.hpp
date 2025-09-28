@@ -5,6 +5,8 @@
 #include "ui/graphic_types.h"
 #include "ui/draw/draw.h"
 
+#define bpp 4
+
 class GPUDriver {
 public:
     GPUDriver(){}
@@ -26,7 +28,8 @@ public:
     virtual void set_cursor_pressed(bool pressed){};
 
     virtual void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *ctx) = 0;
-
+    virtual void resize_window(uint32_t width, uint32_t height, draw_ctx *win_ctx){}
+    
     virtual draw_ctx* get_ctx() = 0;
 
     virtual ~GPUDriver() = default;

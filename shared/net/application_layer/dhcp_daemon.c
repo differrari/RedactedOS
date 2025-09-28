@@ -156,6 +156,7 @@ static bool udp_wait_for_type_on(socket_handle_t sock, uint8_t wanted, uint32_t 
             if (src.port != 67) { continue; }
             if ((size_t)r < sizeof(dhcp_packet) - sizeof(((dhcp_packet*)0)->options) + 4) { continue; }
             dhcp_packet *p = (dhcp_packet*)buf;
+
             if (p->htype != 1) { continue; }
             if (p->hlen != 6) { continue; }
             if (!dhcp_has_valid_cookie(p)) { continue; }

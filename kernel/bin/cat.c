@@ -10,6 +10,7 @@ int run_cat(int argc, char* argv[]){
     string s = string_format("/proc/%i/out",pid);
     file fd2;
     open_file(s.data, &fd2);
+    free(s.data, s.mem_length);
     if (argc != 2){
         string err_msg = string_from_literal("Usage cat <path> <size>");
         write_file(&fd2, err_msg.data, err_msg.length);
@@ -29,8 +30,8 @@ int run_cat(int argc, char* argv[]){
     if (size == 0) size = fd.size;
     char* buf = (char*)malloc(size);
     read_file(&fd, buf, size);
-
     write_file(&fd2, buf, size);
-    free(s.data, s.mem_length);
+    close_file(&fd);
+    close_file(&fd2);
     return 0;
 }

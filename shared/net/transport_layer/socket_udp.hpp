@@ -9,6 +9,7 @@
 #include "net/internet_layer/ipv4_route.h"
 #include "syscalls/syscalls.h"
 
+
 static constexpr int32_t UDP_RING_CAP = 1024;
 static constexpr dns_server_sel_t UDP_DNS_SEL = DNS_USE_BOTH;
 static constexpr uint32_t UDP_DNS_TIMEOUT_MS = 3000;
@@ -75,7 +76,8 @@ class UDPSocket : public Socket {
     }
 
     void on_receive(ip_version_t ver, const void* src_ip_addr, uint16_t src_port, uintptr_t ptr, uint32_t len) {
-        uintptr_t copy = malloc(len);
+        uintptr_t copy = (uintptr_t)malloc(len);
+
         if (!copy) {
             if (ptr && len) free((void*)ptr, len);
             return;

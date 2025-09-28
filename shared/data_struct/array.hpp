@@ -4,8 +4,6 @@
 
 #include "std/allocator.hpp"
 #include "syscalls/syscalls.h"
-#include "process/scheduler.h"
-#include "memory/page_allocator.h"
 
 template<typename T>
 class Array {
@@ -27,7 +25,7 @@ public:
         if (count == 0) return;
         for (uint32_t i = 0; i < count; i++)
             items[i].~T();
-        ::operator delete(items, sizeof(T) * count);
+        free(items, sizeof(T) * count);
     }
 
     bool add(const T& value) {
@@ -35,6 +33,14 @@ public:
         items[count] = value;
         count++;
         return true;
+    }
+
+    void empty(){
+        if (count == 0) return;
+        for (uint32_t i = 0; i < count; i++)
+            items[i].~T();
+        memset(items, 0, sizeof(T) * count);
+        count = 0;
     }
 
     T& operator[](uint32_t i) { return items[i]; }

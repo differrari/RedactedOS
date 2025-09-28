@@ -1,7 +1,7 @@
 #include "gpio.h"
 #include "hw/hw.h"
 #include "async.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 
 void reset_gpio(){
     write32(GPIO_BASE + GPIO_PIN_BASE + 0x94, 0x0);

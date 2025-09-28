@@ -2,8 +2,8 @@
 #include "console/kio.h"
 
 #include "drivers/virtio_gpu_pci/virtio_gpu_pci.hpp"
-#include "drivers/ramfb_driver/ramfb.hpp"
-#include "drivers/videocore/videocore.hpp"
+#include "drivers/framebuffer_gpus/ramfb_driver/ramfb.hpp"
+#include "drivers/framebuffer_gpus/videocore/videocore.hpp"
 
 #include "std/std.h"
 #include "hw/hw.h"
@@ -16,8 +16,8 @@ static bool _gpu_ready;
 GPUDriver *gpu_driver;
 
 bool gpu_init(){
-    kprint("Initializing GPU");
-    gpu_size preferred_screen_size = {1920,1080};
+    kprint("[GRAPH] Initializing GPU");
+    gpu_size preferred_screen_size = {1080,720};
     if (BOARD_TYPE == 1){
         if (VirtioGPUDriver *vgd = VirtioGPUDriver::try_init(preferred_screen_size)){
             gpu_driver = vgd;
@@ -29,7 +29,7 @@ bool gpu_init(){
     } else return false;
     screen_size = preferred_screen_size;
     _gpu_ready = true;
-    kprintf("Selected and initialized GPU %x", (uintptr_t)gpu_driver);
+    kprintf("[GRAPH] Selected and initialized GPU %x", (uintptr_t)gpu_driver);
 
     //TODO: make window manager its own module and access the driver by exposing it through /dev/gpu
     init_window_manager((uintptr_t)gpu_driver);

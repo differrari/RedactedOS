@@ -3,6 +3,7 @@
 #include "console/kio.h"
 #include "memory/page_allocator.h"
 #include "usb.hpp"
+#include "async.h"
 
 void USBMouse::request_data(USBDriver *driver){
     requesting = true;
@@ -26,8 +27,10 @@ void USBMouse::process_data(USBDriver *driver){
     
     process_mouse_input((mouse_input*)buffer);
 
-    if (driver->use_interrupts)
+    if (driver->use_interrupts){
+        delay(interval);
         request_data(driver);
+    }
 }
 
 void USBMouse::process_mouse_input(mouse_input *rat){

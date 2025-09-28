@@ -17,19 +17,23 @@ DEP     := $(C_SRC:%.c=$(BUILD_DIR)/%.d) $(CPP_SRC:%.cpp=.$(BUILD_DIR)/%.d)
 NAME     := $(notdir $(CURDIR))
 ELF      := $(NAME).elf
 TARGET   := $(NAME).bin
+PACKAGE  := $(NAME).red
 LOCATION := ../fs/redos/user/
+
 
 .PHONY: prepare all clean
 
-all: prepare $(LOCATION)$(TARGET)
+all: prepare $(PACKAGE)/$(TARGET)
 
 prepare:
 	mkdir -p $(BUILD_DIR)
+	mkdir -p $(PACKAGE)
+	cp -r resources $(PACKAGE)
 
-$(LOCATION)$(TARGET): ../shared/libshared.a $(OBJ)
-	echo $(LDFLAGS) -o $(LOCATION)$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
-	$(VLD) $(LDFLAGS) -o $(LOCATION)$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
-	$(OBJCOPY) -O binary $(LOCATION)$(ELF) $@
+$(PACKAGE)/$(TARGET): ../shared/libshared.a $(OBJ)
+	$(VLD) $(LDFLAGS) -o $(PACKAGE)/$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
+	$(OBJCOPY) -O binary $(PACKAGE)/$(ELF) $@
+	cp -r $(PACKAGE) $(LOCATION)
 
 $(BUILD_DIR)/%.o: %.S
 	@mkdir -p $(dir $@)
@@ -43,8 +47,8 @@ $(BUILD_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
-# Might want to also delete the directories created inside BUILD_DIR
 clean:
-	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
+	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET) 
+	$(RM) -r $(PACKAGE) $(BUILD_DIR)
 
 -include $(DEP)

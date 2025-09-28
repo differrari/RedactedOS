@@ -15,7 +15,7 @@ open_bin_ref available_cmds[] = {
     { "cat", run_cat }
 };
 
-process_t* exec(const char* prog_name, int argc, const char* argv[]){
+process_t* execute(const char* prog_name, int argc, const char* argv[]){
     for (uint32_t i = 0; i < N_ARR(available_cmds); i++){
         if (strcmp(available_cmds[i].name, prog_name, false) == 0){
             return create_kernel_process(available_cmds[i].name, available_cmds[i].func, argc, argv);

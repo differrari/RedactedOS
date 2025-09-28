@@ -25,6 +25,7 @@
 #include "exceptions/timer.h"
 #include "syscalls/syscalls.h"
 
+
 static inline int ipv4_is_loopback_u32(uint32_t ip) {
     return ((ip & 0xFF000000u) == 0x7F000000u);
 }

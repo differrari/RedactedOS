@@ -15,7 +15,7 @@ typedef struct CQueue {
     uint64_t length;
 } CQueue;
 
-extern uintptr_t malloc(uint64_t);
+extern void* malloc(uint64_t);
 extern void free(void*, uint64_t);
 
 void     cqueue_init(CQueue* q, uint64_t max_capacity, uint64_t elem_size);

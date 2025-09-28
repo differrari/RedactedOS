@@ -3,7 +3,7 @@
 #include "exceptions/exception_handler.h"
 #include "memory/talloc.h"
 #include "memory/mmu.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "hw/hw.h"
 
 #define PCI_BUS_MAX 256
@@ -254,7 +254,7 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
                 uint64_t vendor_device = read32(device_address);
                 if ((vendor_device & 0xFFFF) == vendor_id && ((vendor_device >> 16) & 0xFFFF) == device_id) {
 
-                    kprintf("[PCI] Found device at bus %i, slot %i, func %i", bus, slot, func);
+                    kprintf("[PCI] Found device at bus %i, slot %i, func %i -> %x", bus, slot, func, device_address);
 
                     return device_address;
                 }// else if (((vendor_device >> 16) & 0xFFFF) != 0xFFFF)
@@ -269,7 +269,7 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
 void dump_pci_config(uint64_t base) {
     kprintf("[PCI] Dumping PCI Configuration Space:");
     for (uint32_t offset = 0; offset < 0x40; offset += 4) {
-        uint64_t val = read(base + offset);
+        uint64_t val = read64(base + offset);
         kprintf("Offset %x: %x",offset, val);
     }
 }

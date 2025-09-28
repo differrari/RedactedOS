@@ -77,7 +77,8 @@ public:
     void set_cursor_pressed(bool pressed) override;
 
     void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *ctx) override;
-    
+    void resize_window(uint32_t width, uint32_t height, draw_ctx *win_ctx) override;
+
     ~VirtioGPUDriver() = default;
     
 private: 

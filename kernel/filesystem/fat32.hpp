@@ -65,14 +65,14 @@ typedef struct f32file_entry {
 }__attribute__((packed)) f32file_entry;
 
 typedef struct f32longname {
-        uint8_t order;
-        uint16_t name1[5];
-        uint8_t attribute;
-        uint8_t long_type;
-        uint8_t checksum;
-        uint16_t name2[6];
-        uint16_t rsvd2;
-        uint16_t name3[2];
+    uint8_t order;
+    uint16_t name1[5];
+    uint8_t attribute;
+    uint8_t long_type;
+    uint8_t checksum;
+    uint16_t name2[6];
+    uint16_t rsvd2;
+    uint16_t name3[2];
 }__attribute__((packed)) f32longname;
 
 class FAT32FS;

@@ -55,7 +55,6 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector){
     } else {
         kprintfv("[virtio-net] interrupts MSI base=%u",(unsigned)irq_base_vector);
     }
-
     pci_enable_device(addr);
     kprintfv("[virtio-net] device enabled");
 

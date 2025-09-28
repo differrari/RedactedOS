@@ -4,8 +4,6 @@
 
 #include "std/allocator.hpp"
 #include "syscalls/syscalls.h"
-#include "process/scheduler.h"
-#include "memory/page_allocator.h"
 
 template<typename T>
 class IndexMap {
@@ -28,7 +26,7 @@ public:
         if (count == 0) return;
         for (uint32_t i = 0; i < count; i++)
             items[i].~T();
-        ::operator delete(items, sizeof(T) * count);
+        free(items, sizeof(T) * count);
     }
 
     bool add(const uint32_t index, const T& value) {

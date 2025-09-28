@@ -19,7 +19,7 @@ private:
     uint64_t length;
 
     Node* alloc_node(const T& value) {
-        uintptr_t raw = malloc(sizeof(Node));
+        uintptr_t raw = (uintptr_t)malloc(sizeof(Node));
         if (raw == 0) return nullptr;
         Node* n = reinterpret_cast<Node*>(raw);
         n->data = value;

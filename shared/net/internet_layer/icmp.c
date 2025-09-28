@@ -6,7 +6,6 @@
 #include "net/internet_layer/ipv4_route.h"
 #include "syscalls/syscalls.h"
 
-
 #define MAX_PENDING 16
 #define POLL_MS 1
 

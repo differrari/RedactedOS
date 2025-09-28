@@ -6,7 +6,7 @@
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
 #include "graph/graphics.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "input/input_dispatch.h"
 #include "std/memory.h"
 #include "std/string.h"
@@ -19,6 +19,7 @@
 #include "memory/mmu.h"
 #include "loading/process_loader.h"
 #include "networking/interface_manager.h"
+#include "bin/bin_mod.h"
 
 int syscall_depth = 0;
 
@@ -57,6 +58,14 @@ uint64_t syscall_read_shortcut(process_t *ctx){
     return 0;
 }
 
+uint64_t syscall_get_mouse(process_t *ctx){
+    //TODO: do we want to prevent the process from knowing what the mouse is doing outside the window unless it's explicitly allowed?
+    if (get_current_proc_pid() != ctx->id) return 0;
+    mouse_input *inp = (mouse_input*)ctx->PROC_X0;
+    *inp = get_raw_mouse_in();
+    return 0;
+}
+
 uintptr_t syscall_gpu_request_ctx(process_t *ctx){
     draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
     get_window_ctx(d_ctx);
@@ -70,19 +79,39 @@ uint64_t syscall_gpu_flush(process_t *ctx){
     return 0;
 }
 
+uint64_t syscall_gpu_resize_ctx(process_t *ctx){
+    draw_ctx *d_ctx = (draw_ctx*)ctx->PROC_X0;
+    uint32_t width = (uint32_t)ctx->PROC_X1;
+    uint32_t height = (uint32_t)ctx->PROC_X2;
+    resize_window(width, height);
+    get_window_ctx(d_ctx);
+    gpu_flush();
+    return 0;
+}
+
 uint64_t syscall_char_size(process_t *ctx){
     return gpu_get_char_size(ctx->PROC_X0);;
 }
 
 uint64_t syscall_sleep(process_t *ctx){
+    syscall_depth--;
     sleep_process(ctx->PROC_X0);
     return 0;
 }
 
 uint64_t syscall_halt(process_t *ctx){
     kprintf("Process has ended with code %i",ctx->PROC_X0);
+    syscall_depth--;
     stop_current_process(ctx->PROC_X0);
     return 0;
+}
+
+uint64_t syscall_exec(process_t *ctx){
+    const char *prog_name = (const char*)ctx->PROC_X0;
+    int argc = ctx->PROC_X1;
+    const char **argv = (const char**)ctx->PROC_X2;
+    process_t *p = execute(prog_name, argc, argv);
+    return p->id;
 }
 
 uint64_t syscall_get_time(process_t *ctx){
@@ -90,6 +119,7 @@ uint64_t syscall_get_time(process_t *ctx){
 }
 
 uint64_t syscall_bind_port(process_t *ctx){
+
     ip_version_t ipver= (ip_version_t)ctx->PROC_X0;
     uint8_t l3_id     = (uint8_t)ctx->PROC_X1;
     uint16_t port     = (uint16_t)ctx->PROC_X2;
@@ -113,18 +143,60 @@ uint64_t syscall_unbind_port(process_t *ctx){
     port_manager_t* pm = (ipver == IP_VER6) ? ifmgr_pm_v6(l3_id) : ifmgr_pm_v4(l3_id);
     if (!pm) return 0;
 
-    return port_unbind(pm, proto, port, pid);
+    return port_unbind(pm, proto, port, pid); 
 }
 
 uint64_t syscall_send_packet(process_t *ctx){
-    uintptr_t frame_ptr = ctx->PROC_X0;
-    uint32_t  frame_len = (uint32_t)ctx->PROC_X1;
-    return net_tx_frame(frame_ptr, frame_len);
+    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
+    // uintptr_t frame_ptr = ctx->PROC_X0;
+    // uint32_t  frame_len = (uint32_t)ctx->PROC_X1;
+    // return net_tx_frame(frame_ptr, frame_len);
+    return 0;
 }
 
 uint64_t syscall_read_packet(process_t *ctx){
-    sizedptr *user_out = (sizedptr*)ctx->PROC_X0;
-    return net_rx_frame(user_out);
+    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
+    // sizedptr *user_out = (sizedptr*)ctx->PROC_X0;
+    // return net_rx_frame(user_out);
+    return 0;
+}
+
+uint64_t syscall_fopen(process_t *ctx){
+    char *req_path = (char *)ctx->PROC_X0;
+    char path[255];
+    if (!(ctx->PROC_PRIV) && strstart("/resources/", req_path, true) == 11){
+        string_format_buf("%s%s", path, ctx->bundle, req_path);
+    } else memcpy(path, req_path, strlen(req_path, 0));
+    //TODO: Restrict access to own bundle, own fs and require privilege escalation for full-ish filesystem access
+    file *descriptor = (file*)ctx->PROC_X1;
+    return open_file(path, descriptor);
+}
+
+uint64_t syscall_fread(process_t *ctx){
+    file *descriptor = (file*)ctx->PROC_X0;
+    char *buf = (char*)ctx->PROC_X1;
+    size_t size = (size_t)ctx->PROC_X2;
+    return read_file(descriptor, buf, size);
+}
+
+uint64_t syscall_fwrite(process_t *ctx){
+    file *descriptor = (file*)ctx->PROC_X0;
+    char *buf = (char*)ctx->PROC_X1;
+    size_t size = (size_t)ctx->PROC_X2;
+    return write_file(descriptor, buf, size);
+}
+
+uint64_t syscall_fclose(process_t *ctx){
+    file *descriptor = (file*)ctx->PROC_X0;
+    close_file(descriptor);
+    return 0;
+}
+
+uint64_t syscall_dir_list(process_t *ctx){
+    kprintf("[SYSCALL implementation error] directory listing not implemented yet");
+    // char *path = (char *)ctx->PROC_X0;
+    // return list_directory_contents(path);
+    return 0;
 }
 
 syscall_entry syscalls[] = {
@@ -133,20 +205,28 @@ syscall_entry syscalls[] = {
     { PRINTL_CODE, syscall_printl},
     { READ_KEY_CODE, syscall_read_key},
     { READ_SHORTCUT_CODE, syscall_read_shortcut},
+    { GET_MOUSE_STATUS_CODE, syscall_get_mouse },
     { REQUEST_DRAW_CTX_CODE, syscall_gpu_request_ctx},
     { GPU_FLUSH_DATA_CODE, syscall_gpu_flush},
     { GPU_CHAR_SIZE_CODE, syscall_char_size},
+    { RESIZE_DRAW_CTX_CODE, syscall_gpu_resize_ctx},
     { SLEEP_CODE, syscall_sleep},
     { HALT_CODE, syscall_halt},
+    { EXEC_CODE, syscall_exec},
     { GET_TIME_CODE, syscall_get_time},
     { BIND_PORT_CODE, syscall_bind_port},
     { UNBIND_PORT_CODE, syscall_unbind_port},
     { SEND_PACKET_CODE, syscall_send_packet},
     { READ_PACKET_CODE, syscall_read_packet},
+    {FILE_OPEN_CODE, syscall_fopen},
+    {FILE_READ_CODE, syscall_fread},
+    {FILE_WRITE_CODE, syscall_fwrite},
+    {FILE_CLOSE_CODE, syscall_fclose},
+    {DIR_LIST_CODE, syscall_dir_list},
 };
 
 void coredump(uint64_t esr, uint64_t elr, uint64_t far){
-    uint8_t ifsc = esr & 0x3F;
+    // uint8_t ifsc = esr & 0x3F;
     // 0b000000	Address size fault in TTBR0 or TTBR1.
 
     // 0b000101	Translation fault, 1st level.
@@ -174,9 +254,9 @@ void coredump(uint64_t esr, uint64_t elr, uint64_t far){
     // 0b100010	Debug event.
     //TODO: Can parse instruction class, fault cause, etc
     decode_instruction(*(uint32_t*)elr);
-    process_t *proc = get_current_proc();
-    for (int i = 0; i < 31; i++)
-        kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
+    // process_t *proc = get_current_proc();
+    // for (int i = 0; i < 31; i++)
+    //     kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
     if (far > 0) 
         debug_mmu_address(far);
     else 
@@ -219,31 +299,36 @@ void sync_el0_handler_c(){
         if (!found)
             panic("Unknown syscall %i", iss);
     } else {
+        uint64_t far;
+        asm volatile ("mrs %0, far_el1" : "=r"(far));
+        if (far == 0 && elr == 0 && currentEL == 0){
+            kprintf("Process has exited %x",x0);
+            syscall_depth--;
+            stop_current_process(x0);
+        }// else kprintf("ELR %x FAR %x",elr,far);
         switch (ec) {
             case 0x20:
             case 0x21: {
-                uint64_t far;
-                asm volatile ("mrs %0, far_el1" : "=r"(far));
                 if (far == 0){
                     kprintf("Process has exited %x",x0);
+                    syscall_depth--;
                     stop_current_process(x0);
                 }
             }
         }
-        uint64_t far;
-        asm volatile ("mrs %0, far_el1" : "=r"(far));
         //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
         if (currentEL == 1){
+            kprintf("System has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
             coredump(esr, elr, far);
             handle_exception("UNEXPECTED EXCEPTION",ec);
         } else {
             kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
             coredump(esr, elr, far);
+            syscall_depth--;
             stop_current_process(ec);
         }
     }
     syscall_depth--;
-    if (result > 0)
-        save_syscall_return(result);
+    save_syscall_return(result);
     process_restore();
 }

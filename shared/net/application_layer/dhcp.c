@@ -16,6 +16,7 @@ static size_t dhcp_options_write_param_req_list(uint8_t *opt, size_t idx) {
 }
 
 sizedptr dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t xid, dhcp_req_kind kind, bool broadcast) {
+
     dhcp_packet p;
     memset(&p, 0, sizeof(p));
     size_t idx = 0;
@@ -63,7 +64,8 @@ sizedptr dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t x
     p.options[idx++] = 255;
 
     size_t dhcp_len = sizeof(dhcp_packet) - (sizeof(p.options) - idx);
-    uintptr_t buf = malloc(dhcp_len);
+    uintptr_t buf = (uintptr_t)malloc(dhcp_len);
+
     memcpy((void*)buf, &p, dhcp_len);
     return (sizedptr){ .ptr = buf, .size = (uint32_t)dhcp_len };
 }

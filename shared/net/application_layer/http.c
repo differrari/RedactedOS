@@ -3,6 +3,7 @@
 #include "std/memory.h"
 #include "syscalls/syscalls.h"
 
+
 static inline bool is_space(char c) {
     return c == ' ' || c == '\t';
 }

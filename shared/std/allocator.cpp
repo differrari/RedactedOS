@@ -2,6 +2,10 @@
 #include "syscalls/syscalls.h"
 #include "console/kio.h"
 
+void* operator new(size_t size, void* ptr) noexcept {
+    return ptr;
+}
+
 void* operator new(size_t size) { 
     return (void*)malloc(size);
 }

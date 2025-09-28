@@ -104,15 +104,17 @@ void kprintf(const char *fmt, ...){
     *(char*)(cursor++) = '\n';
 }
 
-void kprint(const char *fmt){
-    puts(fmt);
+void kprint(const char *s){
+    puts(s);
     putc('\r');
     putc('\n');
 
-     while (*fmt != '\0') {
-        *(char*)(cursor++) = *fmt;
-        fmt++;
-    }
+    if (cursor + strlen(s, 0) >= ((uint64_t)print_buf + CONSOLE_BUF_SIZE))
+        reset_buffer();
+
+    while (*s)
+        *(char*)(cursor++) = *s++;
+    
     *(char*)(cursor++) = '\r';
     *(char*)(cursor++) = '\n';
 }

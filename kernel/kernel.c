@@ -17,6 +17,7 @@
 #include "filesystem/filesystem.h"
 #include "dev/module_loader.h" 
 #include "audio/audio.h"
+#include "mailbox/mailbox.h"
 
 void kernel_main() {
 
@@ -24,11 +25,15 @@ void kernel_main() {
 
     mmu_alloc();
     
+    if (BOARD_TYPE == 2) mailbox_init();
+
     page_allocator_init();
 
     set_exception_vectors();
 
     init_main_process();
+
+//    if (BOARD_TYPE == 1) disable_visual();
 
     load_module(&console_module);
 
@@ -49,12 +54,16 @@ void kernel_main() {
     load_module(&disk_module);
 
     bool input_available = load_module(&input_module);
+    bool network_available = false;
 
-    bool network_available = load_module(&net_module);
-    
-    load_module(&audio_module);
+    if (BOARD_TYPE == 1){
+        //TODO: disabling networking until it is refactored to prevent memory issues
+        network_available = false;// load_module(&net_module);
+        
+        load_module(&audio_module);
 
-    init_audio_mixer();
+        init_audio_mixer();
+    }
     
     mmu_init();
 
@@ -62,7 +71,7 @@ void kernel_main() {
     
     kprint("Starting processes");
     
-    init_boot_filesystem();
+    init_filesystem();
     if (input_available) init_input_process();
 
     if (network_available) launch_net_process();

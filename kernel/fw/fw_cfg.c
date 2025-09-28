@@ -1,7 +1,7 @@
 #include "fw_cfg.h"
 #include "console/kio.h"
-#include "memory/memory_access.h"
-#include "std/string.h"
+#include "std/memory_access.h"
+#include "memory/mmu.h"
 
 #define FW_CFG_DATA  0x09020000
 #define FW_CFG_CTL   (FW_CFG_DATA + 0x8)
@@ -26,6 +26,9 @@ struct fw_cfg_dma_access {
 bool fw_cfg_check(){
     if (checked) return true;
     checked = read64(FW_CFG_DATA) == 0x554D4551;
+    if (checked){
+        register_device_memory(FW_CFG_DATA, FW_CFG_DATA);
+    }
     return checked;
 }
 

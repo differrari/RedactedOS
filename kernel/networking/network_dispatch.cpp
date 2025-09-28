@@ -15,6 +15,7 @@
 #define TASK_RX_BATCH_LIMIT 32
 #define TASK_TX_BATCH_LIMIT 32
 
+
 NetworkDispatch::NetworkDispatch()
 {
     nic_num = 0;

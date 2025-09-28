@@ -214,6 +214,25 @@ void USBDriver::hub_enumerate(uint8_t address){
     }
 }
 
+uint32_t USBDriver::calculate_interval(uint32_t speed, uint32_t received_interval){
+    if (speed >= USB_SPEED_HIGH_SPEED)
+	{
+		if (received_interval < 1)
+			received_interval = 1;
+
+		if (received_interval > 16)
+			received_interval = 16;
+
+		return 2<<min(5,received_interval-1);
+	}
+
+	uint32_t i;
+	for (i = 3; i < 11; i++)
+		if (125u * (1 << i) >= 1000 * received_interval) break;
+
+	return i;
+}
+
 void USBDriver::poll_inputs(){
     usb_manager->poll_inputs(this);
 }

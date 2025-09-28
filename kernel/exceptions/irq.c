@@ -1,6 +1,6 @@
 #include "irq.h"
 #include "console/kio.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "process/scheduler.h"
 #include "input/input_dispatch.h"
 #include "input/usb_types.h"
@@ -10,6 +10,7 @@
 #include "hw/hw.h"
 #include "audio/audio.h"
 #include "networking/interface_manager.h"
+#include "process/syscall.h"
 
 #define IRQ_TIMER 30
 #define SLEEP_TIMER 27
@@ -52,7 +53,6 @@ void irq_init() {
         gic_enable_irq(MSI_OFFSET + NET_IRQ_BASE + (2*i+1), 0x80, 0);
     }
     gic_enable_irq(SLEEP_TIMER, 0x80, 0);
-    gic_enable_irq(MSI_OFFSET + AUDIO_IRQ, 0x80, 0);
 
     if (RPI_BOARD != 3){
         write32(GICC_BASE + 0x004, 0xF0); //Priority
@@ -79,6 +79,7 @@ void disable_interrupt(){
 void irq_el1_handler() {
     save_context_registers();
     save_return_address_interrupt();
+    syscall_depth++;
     uint32_t irq;
     if (RPI_BOARD == 3){
         irq = 31 - __builtin_clz(read32(GICD_BASE + 0x204));
@@ -101,10 +102,6 @@ void irq_el1_handler() {
         uint8_t is_rx = (rel & 1) == 0;
         if (is_rx) network_handle_download_interrupt_nic(nic_id);
         else network_handle_upload_interrupt_nic(nic_id);
-        if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
-        process_restore();
-    } else if (irq == MSI_OFFSET + AUDIO_IRQ){
-        audio_handle_interrupt();
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         process_restore();
     } else {

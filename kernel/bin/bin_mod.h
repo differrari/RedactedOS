@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-process_t* exec(const char* prog_name, int argc, const char* argv[]);
+process_t* execute(const char* prog_name, int argc, const char* argv[]);
 
 #ifdef __cplusplus
 }

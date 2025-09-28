@@ -3,13 +3,18 @@
 #include "login_screen.h"
 #include "../windows/dos.h"
 #include "console/kio.h"
+#include "input/input_dispatch.h"
+#include "graph/graphics.h"
 
 BootSM::BootSM(){
 
 }
 
 void BootSM::initialize(){
-    start_terminal();
+    disable_visual();
+    input_start_polling();
+    gpu_size screen_size = gpu_get_screen_size();
+    mouse_config((gpu_point){screen_size.width/2,screen_size.height/2}, screen_size);
     AdvanceToState(Bootscreen);
 }
 
@@ -37,9 +42,9 @@ void BootSM::AdvanceToState(BootStates next_state){
 
 BootSM::BootStates BootSM::GetNextState(){
     switch (current_state){
-        case Login:
-            return Desktop;
+        // case Login:
+        //     return Desktop;
         default:
-            return Login;
+            return Desktop;
     }
 }

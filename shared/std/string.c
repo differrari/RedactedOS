@@ -95,7 +95,6 @@ string string_from_hex(uint64_t value){
     return (string){ .data = buf, .length = len, .mem_length = 18 };
 }
 
-//TODO: Can lead to a crash
 uint32_t parse_bin(uint64_t value, char* buf){
     uint32_t len = 0;
     buf[len++] = '0';
@@ -149,6 +148,14 @@ string string_format_va(const char *fmt, va_list args){
     char *buf = (char*)malloc(STRING_MAX_LEN);
     size_t len = string_format_va_buf(fmt, buf, args);
     return (string){ .data = buf, .length = len, .mem_length = STRING_MAX_LEN };
+}
+
+size_t string_format_buf(const char *fmt, char *out, ...){
+    __attribute__((aligned(16))) va_list args;
+    va_start(args, fmt);
+    size_t size = string_format_va_buf(fmt, out, args);
+    va_end(args);
+    return size;
 }
 
 size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
@@ -251,6 +258,11 @@ char tolower(char c){
     return c;
 }
 
+char toupper(char c){
+    if (c >= 'a' && c <= 'z') return c - ('a' - 'A');
+    return c;
+}
+
 int strcmp(const char *a, const char *b, bool case_insensitive){
     if (a == NULL && b == NULL) return 0;
     if (a == NULL) return -1;  
@@ -265,6 +277,25 @@ int strcmp(const char *a, const char *b, bool case_insensitive){
         }
         if (ca != cb) return ca - cb;
         a++; b++;
+    }
+    if (case_insensitive) return tolower((unsigned char)*a) - tolower((unsigned char)*b);
+    
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
+int strncmp(const char *a, const char *b, bool case_insensitive, int max){
+    if (a == NULL && b == NULL) return 0;
+    if (a == NULL) return -1;  
+    if (b == NULL) return  1;
+
+    for (int i = 0; i < max && *a && *b; i++, a++, b++){
+        char ca = *a;
+        char cb = *b;
+        if (case_insensitive){
+            ca = tolower((unsigned char)ca);
+            cb = tolower((unsigned char)cb);
+        }
+        if (ca != cb || i == max - 1) return ca - cb;
     }
     if (case_insensitive) return tolower((unsigned char)*a) - tolower((unsigned char)*b);
     
@@ -399,7 +430,7 @@ void string_concat_inplace(string *dest, string src)
     uint32_t new_len = dest->length + src.length;
     uint32_t new_cap = new_len + 1;
 
-    uintptr_t raw = malloc(new_cap);
+    uintptr_t raw = (uintptr_t)malloc(new_cap);
     if (!raw) return;
     char *dst = (char *)raw;
 

@@ -1,10 +1,10 @@
 #pragma once
 
-#include "kconsole.hpp"
+#include "utils/console.hpp"
 
-class Terminal: public KernelConsole {
+class Terminal: public Console {
 public:
-    Terminal() : KernelConsole(){};
+    Terminal();
     void update();
 protected:
     void handle_input();
@@ -14,6 +14,10 @@ protected:
 
     bool exec_cmd(const char *cmd, int argc, const char *args[]);
     void TMP_test(int argc, const char *args[]);
+
+    draw_ctx* get_ctx() override;
+    void flush(draw_ctx *ctx) override;
+    bool screen_ready() override;
 
     bool command_running;
 };

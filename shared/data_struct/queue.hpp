@@ -11,7 +11,7 @@ public:
         max_capacity = capacity;
         this->capacity = capacity;
         if (capacity > 0) {
-            uintptr_t mem = malloc(capacity * sizeof(T));
+            uintptr_t mem = (uintptr_t)malloc(capacity * sizeof(T));
             if (mem) {
                 buffer = reinterpret_cast<T*>(mem);
             }
@@ -65,7 +65,7 @@ private:
 
     void grow_if_needed() {
         uint64_t new_cap = (capacity > 0) ? capacity * 2 : 4;
-        uintptr_t new_mem = malloc(new_cap * sizeof(T));
+        uintptr_t new_mem = (uintptr_t)malloc(new_cap * sizeof(T));
         if (!new_mem) return;
 
         T* new_buf = reinterpret_cast<T*>(new_mem);

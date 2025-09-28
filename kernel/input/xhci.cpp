@@ -5,10 +5,10 @@
 #include "pci.h"
 #include "usb_types.h"
 #include "hw/hw.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "std/memory.h"
 #include "async.h"
-#include "memory/memory_access.h"
+#include "memory/page_allocator.h"
 
 uint64_t awaited_addr;
 uint32_t awaited_type;
@@ -45,13 +45,6 @@ bool XHCIDriver::check_fatal_error() {
 #define XHCI_EP_TYPE_INT_OUT 3
 #define XHCI_EP_TYPE_ISO_IN 5
 #define XHCI_EP_TYPE_ISO_OUT 1
-
-#define XHCI_SPEED_UNDEFINED            0
-#define XHCI_SPEED_FULL_SPEED           1
-#define XHCI_SPEED_LOW_SPEED            2
-#define XHCI_SPEED_HIGH_SPEED           3
-#define XHCI_SPEED_SUPER_SPEED          4
-#define XHCI_SPEED_SUPER_SPEED_PLUS     5
 
 #define XHCI_EP_DISABLED 0 
 #define XHCI_EP_CONTROL 4
@@ -466,25 +459,6 @@ uint8_t XHCIDriver::get_ep_type(usb_endpoint_descriptor* descriptor) {
     return (descriptor->bEndpointAddress & 0x80 ? 1 << 2 : 0) | (descriptor->bmAttributes & 0x3);
 }
 
-uint32_t XHCIDriver::calculate_interval(uint32_t speed, uint32_t received_interval){
-    if (speed >= XHCI_SPEED_HIGH_SPEED)
-	{
-		if (received_interval < 1)
-			received_interval = 1;
-
-		if (received_interval > 16)
-			received_interval = 16;
-
-		return received_interval-1;
-	}
-
-	uint32_t i;
-	for (i = 3; i < 11; i++)
-		if (125u * (1 << i) >= 1000 * received_interval) break;
-
-	return i;
-}
-
 bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value, usb_device_types type){
     kprintfv("[xHCI] endpoint address %x",endpoint->bEndpointAddress);
     uint8_t ep_address = endpoint->bEndpointAddress;
@@ -507,7 +481,6 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
         ctx->device_context.slot_f0.context_entries = ep_num;
     ctx->device_context.slot_f0.speed = context->slot_f0.speed;
     ctx->device_context.endpoints[ep_num-1].endpoint_f0.interval = calculate_interval(context->slot_f0.speed, endpoint->bInterval);
-    
     ctx->device_context.endpoints[ep_num-1].endpoint_f0.endpoint_state = XHCI_EP_DISABLED;
     ctx->device_context.endpoints[ep_num-1].endpoint_f1.endpoint_type = get_ep_type(endpoint);
     ctx->device_context.endpoints[ep_num-1].endpoint_f1.max_packet_size = endpoint->wMaxPacketSize;
@@ -528,7 +501,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
         return false;
     }
 
-    usb_manager->register_endpoint(address, ep_num, type, endpoint->wMaxPacketSize);
+    usb_manager->register_endpoint(address, ep_num, ctx->device_context.endpoints[ep_num-1].endpoint_f0.interval, type, endpoint->wMaxPacketSize);
     
     return true;
 }

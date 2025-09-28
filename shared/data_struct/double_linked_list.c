@@ -1,7 +1,7 @@
 #include "double_linked_list.h"
 
 cdouble_linked_list_t* cdouble_linked_list_create() {
-    uintptr_t raw = malloc((uint64_t)sizeof(cdouble_linked_list_t));
+    uintptr_t raw = (uintptr_t)malloc((uint64_t)sizeof(cdouble_linked_list_t));
     if (!raw) return NULL;
     cdouble_linked_list_t* list = (cdouble_linked_list_t*)raw;
     list->head = list->tail = NULL;
@@ -26,7 +26,7 @@ cdouble_linked_list_t* cdouble_linked_list_clone(const cdouble_linked_list_t* li
     if (!clone) return NULL;
     cdouble_linked_list_node_t* it = list->head;
     for (uint64_t i = 0; i < list->length; ++i) {
-        uintptr_t raw = malloc(sizeof(cdouble_linked_list_node_t));
+        uintptr_t raw = (uintptr_t)malloc(sizeof(cdouble_linked_list_node_t));
         if (raw) {
             cdouble_linked_list_node_t* node = (cdouble_linked_list_node_t*)raw;
             node->data = it->data;
@@ -49,7 +49,7 @@ cdouble_linked_list_t* cdouble_linked_list_clone(const cdouble_linked_list_t* li
 
 void cdouble_linked_list_push_front(cdouble_linked_list_t* list, void* data) {
     if (!list) return;
-    uintptr_t raw = malloc(sizeof(cdouble_linked_list_node_t));
+    uintptr_t raw = (uintptr_t)malloc(sizeof(cdouble_linked_list_node_t));
     if (!raw) return;
     cdouble_linked_list_node_t* node = (cdouble_linked_list_node_t*)raw;
     node->data = data;
@@ -68,7 +68,7 @@ void cdouble_linked_list_push_front(cdouble_linked_list_t* list, void* data) {
 
 void cdouble_linked_list_push_back(cdouble_linked_list_t* list, void* data) {
     if (!list) return;
-    uintptr_t raw = malloc(sizeof(cdouble_linked_list_node_t));
+    uintptr_t raw = (uintptr_t)malloc(sizeof(cdouble_linked_list_node_t));
     if (!raw) return;
     cdouble_linked_list_node_t* node = (cdouble_linked_list_node_t*)raw;
     node->data = data;
@@ -123,7 +123,7 @@ cdouble_linked_list_node_t* cdouble_linked_list_insert_after(cdouble_linked_list
         cdouble_linked_list_push_front(list, data);
         return list->head;
     }
-    uintptr_t raw = malloc(sizeof(cdouble_linked_list_node_t));
+    uintptr_t raw = (uintptr_t)malloc(sizeof(cdouble_linked_list_node_t));
     if (!raw) return NULL;
     cdouble_linked_list_node_t* new_node = (cdouble_linked_list_node_t*)raw;
     new_node->data = data;

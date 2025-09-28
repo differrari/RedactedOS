@@ -1,11 +1,11 @@
 #include "page_allocator.h"
-#include "memory_access.h"
 #include "memory/talloc.h"
 #include "console/serial/uart.h"
 #include "mmu.h"
 #include "exceptions/exception_handler.h"
 #include "std/memory.h"
 #include "math/math.h"
+#include "console/kio.h"
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01
@@ -36,29 +36,33 @@ void page_allocator_init() {
     }
 }
 
-void pfree(void* ptr, uint64_t size) {
-    //TODO: review this, we're not using size
-    uint64_t addr = (uint64_t)ptr;
-    addr /= PAGE_SIZE;
-    uint64_t table_index = addr/64;
-    uint64_t table_offset = addr % 64;
-    mem_bitmap[table_index] &= ~(1ULL << table_offset);
-}
-
 int count_pages(uint64_t i1,uint64_t i2){
     return (i1/i2) + (i1 % i2 > 0);
+}
+
+void pfree(void* ptr, uint64_t size) {
+    int pages = count_pages(size,PAGE_SIZE);
+    uint64_t addr = (uint64_t)ptr;
+    addr /= PAGE_SIZE;
+    for (int i = 0; i < pages; i++){
+        uint64_t index = addr + i;
+        uint64_t table_index = index/64;
+        uint64_t table_offset = index % 64;
+        mem_bitmap[table_index] &= ~(1ULL << table_offset);
+        mmu_unmap(index * PAGE_SIZE,index * PAGE_SIZE);
+    }
 }
 
 uint64_t start;
 uint64_t end;
 
-//TODO: prepare for allocating more than 64 bits by marking full registers at a time
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
     if (!start) start = count_pages(get_user_ram_start(),PAGE_SIZE);
     if (!end) end = count_pages(get_user_ram_end(),PAGE_SIZE);
     uint64_t page_count = count_pages(size,PAGE_SIZE);
 
     if (page_count > 64){
+        kprintfv("Large allocation > 64p");
         uint64_t reg_count = page_count/64;
         uint8_t fractional = page_count % 64;
         reg_count += fractional > 0;
@@ -89,6 +93,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
                     else
                         register_proc_memory(address, address, attributes, level);
                 }
+                kprintfv("[page_alloc] Final address %x", (i * 64 * PAGE_SIZE));
                 return (void*)(i * 64 * PAGE_SIZE);
             }
         }
@@ -98,6 +103,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
 
     for (uint64_t i = start/64; i < end/64; i++) {
         if (mem_bitmap[i] != UINT64_MAX) {
+            kprintfv("Normal allocation");
             uint64_t inv = ~mem_bitmap[i];
             uint64_t bit = __builtin_ctzll(inv);
             if (bit > (64 - page_count)){ 
@@ -141,7 +147,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
                 }
             }
 
-            // kprintfv("[page_alloc] Final address %x", first_address);
+            kprintfv("[page_alloc] Final address %x", first_address);
 
             return (void*)first_address;
         } else if (!skipped_regs) start = (i + 1) * 64;
@@ -151,10 +157,18 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
     return 0;
 }
 
+bool page_used(uintptr_t ptr){
+    uint64_t addr = (uint64_t)ptr;
+    addr /= PAGE_SIZE;
+    uint64_t table_index = addr/64;
+    uint64_t table_offset = addr % 64;
+    return (mem_bitmap[table_index] >> table_offset) & 1;
+}
+
 void mark_used(uintptr_t address, size_t pages)
 {
     if ((address & (PAGE_SIZE - 1)) != 0) {
-        // kprintf("[mark_used error] address %x not aligned", address);
+        kprintf("[mark_used error] address %x not aligned", address);
         return;
     }
     if (pages == 0) return;
@@ -172,14 +186,13 @@ void mark_used(uintptr_t address, size_t pages)
     }
 }
 
+//TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
 void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
-    if (size > UINT32_MAX)//TODO: This serves to catch an issue, except if we put this if in, the issue does not happen
-        panic("Faulty allocation", size);
     
     size = (size + alignment - 1) & ~(alignment - 1);
 
-    // kprintfv("[in_page_alloc] Requested size: %x", size);
+    kprintfv("[in_page_alloc] Requested size: %x", size);
 
     mem_page *info = (mem_page*)page;
 
@@ -192,7 +205,7 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     FreeBlock** curr = &info->free_list;
     while (*curr) {
         if ((*curr)->size >= size) {
-            // kprintfv("[in_page_alloc] Reusing free block at %x",(uintptr_t)*curr);
+            kprintfv("[in_page_alloc] Reusing free block at %x",(uintptr_t)*curr);
 
             uint64_t result = (uint64_t)*curr;
             *curr = (*curr)->next;
@@ -200,27 +213,27 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
             info->size += size;
             return (void*)result;
         }
-        // kprintfv("-> %x",(uintptr_t)&(*curr)->next);
+        kprintfv("-> %x",(uintptr_t)&(*curr)->next);
         curr = &(*curr)->next;
     }
 
-    // kprintfv("[in_page_alloc] Current next pointer %x",info->next_free_mem_ptr);
+    kprintfv("[in_page_alloc] Current next pointer %x",info->next_free_mem_ptr);
 
     info->next_free_mem_ptr = (info->next_free_mem_ptr + alignment - 1) & ~(alignment - 1);
 
-    // kprintfv("[in_page_alloc] Aligned next pointer %x",info->next_free_mem_ptr);
+    kprintfv("[in_page_alloc] Aligned next pointer %x",info->next_free_mem_ptr);
 
     if (info->next_free_mem_ptr + size > (((uintptr_t)page) + PAGE_SIZE)) {
         if (!info->next)
             info->next = palloc(PAGE_SIZE, level, info->attributes, false);
-        // kprintfv("[in_page_alloc] Page full. Moving to %x",(uintptr_t)info->next);
+        kprintfv("[in_page_alloc] Page full. Moving to %x",(uintptr_t)info->next);
         return kalloc(info->next, size, alignment, level);
     }
 
     uint64_t result = info->next_free_mem_ptr;
     info->next_free_mem_ptr += size;
 
-    // kprintfv("[in_page_alloc] Allocated address %x",result);
+    kprintfv("[in_page_alloc] Allocated address %x",result);
 
     memset((void*)result, 0, size);
     info->size += size;
@@ -228,7 +241,7 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
 }
 
 void kfree(void* ptr, uint64_t size) {
-    // kprintfv("[page_alloc_free] Freeing block at %x size %x",(uintptr_t)ptr, size);
+    kprintfv("[page_alloc_free] Freeing block at %x size %x",(uintptr_t)ptr, size);
 
     memset((void*)ptr,0,size);
 

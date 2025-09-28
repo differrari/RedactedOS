@@ -2,7 +2,7 @@
 #include "pci.h"
 #include "console/kio.h"
 #include "memory/page_allocator.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "audio.h"
 #include "std/memory.h"
 #include "OutputAudioDevice.hpp"
@@ -91,19 +91,7 @@ bool VirtioAudioDriver::init(){
 
     virtio_get_capabilities(&audio_dev, addr, &audio_device_address, &audio_device_size);
     pci_register(audio_device_address, audio_device_size);
-
-    uint8_t interrupts_ok = pci_setup_interrupts(addr, AUDIO_IRQ, 1);
-    switch(interrupts_ok){
-        case 0:
-            kprintf("[VIRTIO_AUDIO] Failed to setup interrupts");
-            return false;
-        case 1:
-            kprintf("[VIRTIO_AUDIO] Interrupts setup with MSI-X %i",AUDIO_IRQ);
-            break;
-        default:
-            kprintf("[VIRTIO_AUDIO] Interrupts setup with MSI %i",AUDIO_IRQ);
-            break;
-    }
+    
     pci_enable_device(addr);
 
     if (!virtio_init_device(&audio_dev)){
@@ -201,7 +189,7 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
             out_dev = new OutputAudioDevice();
             out_dev->stream_id = stream;
             out_dev->channels = channels;
-            out_dev->packet_size = sizeof(virtio_snd_pcm_status) + sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
+            out_dev->packet_size = sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
             out_dev->buf_size = TOTAL_BUF_SIZE/SND_U32_BYTES;
             out_dev->header_size = sizeof(virtio_snd_pcm_xfer);
             out_dev->populate();
@@ -212,16 +200,12 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
 }
 
 void VirtioAudioDriver::send_buffer(sizedptr buf){
-    select_queue(&audio_dev, TRANSMIT_QUEUE);
+    virtio_add_buffer(&audio_dev, cmd_index % audio_dev.common_cfg->queue_size, buf.ptr, buf.size, true);
     struct virtq_used* u = (struct virtq_used*)(uintptr_t)audio_dev.common_cfg->queue_device;
-    
-    virtio_add_buffer(&audio_dev, cmd_index, buf.ptr, buf.size, true);
-    if (cmd_index == audio_dev.common_cfg->queue_size - 1){
-        while (u->idx % audio_dev.common_cfg->queue_size < cmd_index);
-        cmd_index = 0;
+    if (u->idx < cmd_index-20){
+        while (u->idx < cmd_index-5);
     }
-    else cmd_index++;
-    // select_queue(&audio_dev, CONTROL_QUEUE);
+    cmd_index++;
 }
 
 typedef struct virtio_snd_pcm_set_params { 
@@ -283,27 +267,4 @@ bool VirtioAudioDriver::send_simple_stream_cmd(uint32_t stream_id, uint32_t comm
 
 void VirtioAudioDriver::config_channel_maps(){
 
-}
-
-//TODO: remove interrupts if they're really not needed
-void VirtioAudioDriver::handle_interrupt(){
-    select_queue(&audio_dev, EVENT_QUEUE);
-    struct virtq_used* used = (struct virtq_used*)(uintptr_t)audio_dev.common_cfg->queue_device;
-    struct virtq_avail* avail = (struct virtq_avail*)(uintptr_t)audio_dev.common_cfg->queue_driver;
-
-    uint16_t new_idx = used->idx;
-    if (new_idx != last_used_idx) {
-        uint16_t used_ring_index = last_used_idx % 128;
-        last_used_idx = new_idx;
-        struct virtq_used_elem* e = &used->ring[used_ring_index];
-        uint32_t desc_index = e->id;
-        uint32_t len = e->len;
-        kprintf("Received audio event %i at index %i (len %i - %i)",used->idx, desc_index, len);
-
-        avail->ring[avail->idx % 128] = desc_index;
-        avail->idx++;
-
-        *(volatile uint16_t*)(uintptr_t)(audio_dev.notify_cfg + audio_dev.notify_off_multiplier * EVENT_QUEUE) = 0;
-    }
-    select_queue(&audio_dev, CONTROL_QUEUE);
 }

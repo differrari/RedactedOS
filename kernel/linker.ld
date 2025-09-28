@@ -27,7 +27,7 @@ SECTIONS {
 
     . = ALIGN(0x1000);
     heap_bottom = .;
-    .heap_fill : { FILL(0); . = . + 0x30000; }
+    .heap_fill : { FILL(0); . = . + 0xFF000; }
     heap_limit = .;
 
     . = ALIGN(0x200000);

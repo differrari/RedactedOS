@@ -14,10 +14,9 @@ typedef struct clinkedlist {
     clinkedlist_node_t *head;
     clinkedlist_node_t *tail;
     uint64_t length;
+    void* (*alloc)(size_t size);
+    void (*free)(void *ptr, size_t size);
 } clinkedlist_t;
-
-extern uintptr_t malloc(uint64_t size);
-extern void free(void *ptr, uint64_t size);
 
 clinkedlist_t *clinkedlist_create();
 void clinkedlist_destroy(clinkedlist_t *list);

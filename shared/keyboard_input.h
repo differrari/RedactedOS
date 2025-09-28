@@ -12,6 +12,8 @@ typedef struct {
     char keys[6];
 } keypress;
 
+//TODO: make a bool key_pressed(KEYCODE, keypress*), maybe event-based too
+
 #ifdef __cplusplus
 }
 #endif 

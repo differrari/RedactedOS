@@ -8,7 +8,7 @@ void cqueue_init(CQueue* q, uint64_t max_capacity, uint64_t elem_size) {
     q->elem_size = elem_size;
     q->head = q->tail = q->length = 0;
     if (max_capacity > 0) {
-        uintptr_t b = malloc(max_capacity * elem_size);
+        uintptr_t b = (uintptr_t)malloc(max_capacity * elem_size);
         if (b) q->buffer = (void*)b;
     }
 }
@@ -20,7 +20,7 @@ int32_t cqueue_enqueue(CQueue* q, const void* item) {
     } else {
         if (q->length == q->capacity) {
             uint64_t nc = q->capacity > 0 ? q->capacity * 2 : 4;
-            uintptr_t nb = malloc(nc * q->elem_size);
+            uintptr_t nb = (uintptr_t)malloc(nc * q->elem_size);
             if (!nb) return 0;
             void* newb = (void*)nb;
             for (uint64_t i = 0; i < q->length; ++i) {

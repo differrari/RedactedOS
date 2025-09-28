@@ -11,9 +11,9 @@ struct LaunchEntry {
     char* path;
 };
 
-class Desktop {
+class Launcher {
 public:
-    Desktop();
+    Launcher();
 
     void draw_desktop();
 
@@ -26,6 +26,7 @@ private:
     Array<LaunchEntry> entries;
     bool process_active = false;
 
+    void load_entries();
     void draw_tile(uint32_t column, uint32_t row);
     bool await_gpu();
     void draw_full();

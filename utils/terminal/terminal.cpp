@@ -1,10 +1,10 @@
 #include "terminal.hpp"
-#include "input/input_dispatch.h"
-#include "../kio.h"
-#include "../serial/uart.h"
 #include "std/std.h"
-#include "filesystem/filesystem.h"
-#include "bin/bin_mod.h"
+#include "input_keycodes.h"
+
+Terminal::Terminal() : Console() {
+    char_scale = 2;
+}
 
 void Terminal::update(){
     if (!command_running) handle_input();
@@ -18,25 +18,33 @@ void Terminal::end_command(){
     put_char('\r');
     put_char('\n');
     draw_cursor();
-    gpu_flush();
+    flush(dctx);
     set_text_color(default_text_color);
 }
 
 bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
-    process_t *proc = exec(cmd, argc, argv);
+    uint16_t proc = exec(cmd, argc, argv);
     if (!proc) return false;
-    string s = string_format("/proc/%i/out",proc->id);
-    file fd;
-    open_file(s.data, &fd);
-    free(s.data, s.mem_length);
-    while (proc->state != process_t::STOPPED){
+    string s1 = string_format("/proc/%i/out",proc);
+    string s2 = string_format("/proc/%i/state",proc);
+    file out_fd, state_fd;
+    fopen(s1.data, &out_fd);
+    free(s1.data, s1.mem_length);
+    fopen(s2.data, &state_fd);
+    free(s2.data, s2.mem_length);
+    int state;
+    fread(&state_fd, (char*)&state, sizeof(int));
+    while (state) {
+        fread(&state_fd, (char*)&state, sizeof(int));
         size_t amount = 0x100;
         char *buf = (char*)malloc(amount);
-        read_file(&fd, buf, amount);
+        fread(&out_fd, buf, amount);
         put_string(buf);
         free(buf, amount);
     }
-    string exit_msg = string_format("Process %i ended with exit code %i.",proc->id, proc->exit_code);
+    fclose(&out_fd);
+    fclose(&state_fd);
+    string exit_msg = string_format("\nProcess %i ended.",proc);
     //TODO: format message
     put_string(exit_msg.data);
     free(exit_msg.data, exit_msg.mem_length);
@@ -54,12 +62,10 @@ const char** Terminal::parse_arguments(char *args, int *count){
         (*count)++;
         prev = next_args;
         *(next_args - 1) = 0;
-        kprintf("Found an argument %s",prev);
     } while(prev != next_args);
     if (*next_args){
         argv[*count] = prev;
         (*count)++;
-        kprintf("Ended at %s",next_args);
     }
     return argv;
 }
@@ -99,12 +105,10 @@ void Terminal::run_command(){
     if (args_copy.mem_length) free(args_copy.data, args_copy.mem_length);
     
     draw_cursor();
-    gpu_flush();
+    flush(dctx);
     command_running = true;
 }
 
-//TODO: implement the full state machine explained at https://vt100.net/emu/dec_ansi_parser & https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
-//The current implementation is not standard compliant and uses hex colors as [FF0000;
 void Terminal::TMP_test(int argc, const char* args[]){
     // const char *term = seek_to(args, '\033');
     // if (*term == 0) return;
@@ -118,7 +122,7 @@ void Terminal::TMP_test(int argc, const char* args[]){
 
 void Terminal::handle_input(){
     keypress kp;
-    if (sys_read_input_current(&kp)){
+    if (read_key(&kp)){
         for (int i = 0; i < 6; i++){
             char key = kp.keys[i];
             char readable = hid_to_char((uint8_t)key);
@@ -127,7 +131,7 @@ void Terminal::handle_input(){
             } else if (readable){
                 put_char(readable);
                 draw_cursor();
-                gpu_flush();
+                flush(dctx);
             } else if (key == KEY_BACKSPACE){
                 delete_last_char();
             }
@@ -135,3 +139,17 @@ void Terminal::handle_input(){
     }
 }
 
+draw_ctx* Terminal::get_ctx(){
+    if (dctx) free(dctx, sizeof(draw_ctx));
+    draw_ctx *ctx = (draw_ctx*)malloc(sizeof(draw_ctx));
+    request_draw_ctx(ctx);
+    return ctx;
+}
+
+void Terminal::flush(draw_ctx *ctx){
+    commit_draw_ctx(ctx);
+}
+
+bool Terminal::screen_ready(){
+    return true;
+}

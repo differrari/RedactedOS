@@ -1,10 +1,10 @@
 #include "virtio_gpu_pci.hpp"
 #include "pci.h"
-#include "memory/talloc.h"
 #include "console/kio.h"
 #include "ui/draw/draw.h"
 #include "std/std.h"
 #include "theme/theme.h"
+#include "memory/page_allocator.h"
 
 #define VIRTIO_GPU_CMD_GET_DISPLAY_INFO         0x0100
 #define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D       0x0101
@@ -31,7 +31,8 @@
 #define CONTROL_QUEUE 0
 #define CURSOR_QUEUE 1
 
-//TODO: format logs
+#define VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM 1
+
 VirtioGPUDriver* VirtioGPUDriver::try_init(gpu_size preferred_screen_size){
     VirtioGPUDriver* driver = new VirtioGPUDriver();
     if (driver->init(preferred_screen_size))
@@ -160,8 +161,8 @@ gpu_size VirtioGPUDriver::get_display_info(){
             scanout_id = i;
             scanout_found = true;
             gpu_size size = {resp->pmodes[i].rect.width, resp->pmodes[i].rect.height};
-            temp_free(cmd, sizeof(virtio_gpu_ctrl_hdr));
-            temp_free(resp, sizeof(virtio_gpu_resp_display_info));
+            kfree(cmd, sizeof(virtio_gpu_ctrl_hdr));
+            kfree(resp, sizeof(virtio_gpu_resp_display_info));
             return size;
         }
     }
@@ -184,7 +185,7 @@ bool VirtioGPUDriver::create_2d_resource(uint32_t resource_id, gpu_size size) {
     cmd->hdr.padding[1] = 0;
     cmd->hdr.padding[2] = 0;
     cmd->resource_id = resource_id;
-    cmd->format = 1; // VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM
+    cmd->format = VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM;
     cmd->width = size.width;
     cmd->height = size.height;
 
@@ -482,10 +483,14 @@ void VirtioGPUDriver::set_cursor_pressed(bool pressed){
 }
 
 void VirtioGPUDriver::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *new_ctx){
-    // TODO: use this once we can ensure we can alloc continuous.
-    // new_ctx->fb = (uint32_t*)palloc(width * height * BPP, MEM_PRIV_SHARED, MEM_RW, true);
-    new_ctx->fb = (uint32_t*)kalloc(gpu_dev.memory_page, width * height * BPP, ALIGN_4KB, MEM_PRIV_SHARED);
+    new_ctx->fb = (uint32_t*)palloc(width * height * BPP, MEM_PRIV_SHARED, MEM_RW, true);
     new_ctx->width = width;
     new_ctx->height = height;
     new_ctx->stride = width * BPP;
+}
+
+void VirtioGPUDriver::resize_window(uint32_t width, uint32_t height, draw_ctx *win_ctx){
+    size_t old_size = win_ctx->width * win_ctx->height * BPP;
+    pfree(win_ctx->fb, old_size);
+    create_window(0, 0, width, height, win_ctx);
 }

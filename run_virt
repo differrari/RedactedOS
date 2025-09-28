@@ -18,14 +18,16 @@ fi
 OS_TYPE="$(uname)"
 
 DISPLAY_MODE="default"
+AUDIO_BACKEND="sdl"
 VIRTIO_GPU_VARS=",xres=1920,yres=1080"
 GL="on"
 
 if [ "$OS_TYPE" = "Darwin" ]; then
     NETDEV="-netdev vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
-    DISPLAY_MODE="sdl"
+    DISPLAY_MODE="cocoa"
     SELECTED_GPU="virtio-gpu-pci"
+    AUDIO_BACKEND="coreaudio"
     GL="off"
 elif [ "$OS_TYPE" = "Linux" ]; then
     NETDEV="-netdev user,id=net0"
@@ -54,17 +56,21 @@ $PRIVILEGE qemu-system-aarch64 \
   -kernel kernel.elf \
   -device $SELECTED_GPU \
   -display $DISPLAY_MODE${GL:+,gl=$GL} \
+  -device ramfb \
   $NETDEV \
   -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56,speed=10000,duplex=full \
   $DUMP \
   -serial mon:stdio \
   -drive file=disk.img,if=none,format=raw,id=hd0 \
   -device virtio-blk-pci,drive=hd0 \
+  -fsdev local,path=./fs,security_model=mapped-xattr,id=sharedfs \
+  -device virtio-9p-pci,fsdev=sharedfs,mount_tag=shared \
   -device qemu-xhci,${MSI_CAPABILITIES}id=usb \
   -device usb-kbd,bus=usb.0 \
   -device usb-mouse,bus=usb.0 \
-  -device virtio-sound-pci,audiodev=sdl_audio \
-  -audiodev sdl,id=sdl_audio \
+  -device virtio-sound-pci,audiodev=audio \
+  -trace file=./trace \
+  -audiodev ${AUDIO_BACKEND},id=audio \
   -d guest_errors \
   #-netdev tap,id=net1,ifname=tap1,script=no,downscript=no,vnet_hdr=off \
   #-device virtio-net-pci,netdev=net1,mac=52:54:00:12:34:57

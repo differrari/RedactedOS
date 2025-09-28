@@ -3,6 +3,7 @@
 #include "types.h"
 
 void* operator new(size_t size);
+void* operator new(size_t size, void* ptr) noexcept;
 void* operator new[](size_t size);
 
 void operator delete(void* ptr) noexcept;

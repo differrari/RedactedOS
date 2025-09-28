@@ -1,6 +1,6 @@
 #include "mbr.h"
 #include "memory/page_allocator.h"
-#include "memory/memory_access.h"
+#include "std/memory_access.h"
 #include "disk.h"
 #include "console/kio.h"
 

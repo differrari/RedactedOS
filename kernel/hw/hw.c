@@ -21,6 +21,7 @@ uintptr_t GPIO_BASE;
 uintptr_t GPIO_PIN_BASE;
 uintptr_t DWC2_BASE;
 uint32_t MSI_OFFSET;
+uintptr_t LOWEST_ADDR;
 
 void detect_hardware(){
     if (BOARD_TYPE == 1){
@@ -33,6 +34,7 @@ void detect_hardware(){
         GICD_BASE = 0x08000000;
         GICC_BASE = 0x08010000;
         MSI_OFFSET = 50;
+        LOWEST_ADDR = GICD_BASE;
     } else {
         uint32_t reg;
         asm volatile ("mrs %x0, midr_el1" : "=r" (reg));
@@ -75,6 +77,7 @@ void detect_hardware(){
         RAM_START       = 0x10000000;
         CRAM_START      = 0x13600000;
         MSI_OFFSET = 0;
+        LOWEST_ADDR = MMIO_BASE;
         if (RPI_BOARD != 5) reset_gpio();
     }
 }
