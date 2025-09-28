@@ -7,48 +7,51 @@ save_pc_interrupt:
 
 .global restore_context
 restore_context:
-    ldr x0, =cpec
-    ldr x0, [x0]
+    ldr x18, =cpec
+    ldr x18, [x18]
     // Restore general-purpose registers
-    ldp x1, x2, [x0, #(8 * 0)]
-    ldp x3, x4, [x0, #(8 * 2)]
-    ldp x5, x6, [x0, #(8 * 4)]
-    ldp x7, x8, [x0, #(8 * 6)]
-    ldp x9, x10, [x0, #(8 * 8)]
-    ldp x11, x12, [x0, #(8 * 10)]
-    ldp x13, x14, [x0, #(8 * 12)]
-    ldp x15, x16, [x0, #(8 * 14)]
-    ldp x17, x18, [x0, #(8 * 16)]
-    ldp x19, x20, [x0, #(8 * 18)]
-    ldp x21, x22, [x0, #(8 * 20)]
-    ldp x23, x24, [x0, #(8 * 22)]
-    ldp x25, x26, [x0, #(8 * 24)]
-    ldp x27, x28, [x0, #(8 * 26)]
-    ldp x29, x30, [x0, #(8 * 28)]    
+    ldp x0, x1, [x18, #(8 * 0)]
+    ldp x2, x3, [x18, #(8 * 2)]
+    ldp x4, x5, [x18, #(8 * 4)]
+    ldp x6, x7, [x18, #(8 * 6)]
+    ldp x8, x9, [x18, #(8 * 8)]
+    ldp x10, x11, [x18, #(8 * 10)]
+    ldp x12, x13, [x18, #(8 * 12)]
+    ldp x14, x15, [x18, #(8 * 14)]
+    ldr x16,      [x18, #(8 * 16)]
+    ldr      x19, [x18, #(8 * 19)]
+    ldp x20, x21, [x18, #(8 * 20)]
+    ldp x22, x23, [x18, #(8 * 22)]
+    ldp x24, x25, [x18, #(8 * 24)]
+    ldp x26, x27, [x18, #(8 * 26)]
+    ldp x28, x29, [x18, #(8 * 28)]
+    ldr x30,      [x18, #(8 * 30)]    
 
-    ldr x11, [x0, #(8 * 31)]
-    ldr x10, [x0, #(8 * 33)]
-    msr spsr_el1, x10
-    lsr     x18, x10, #2
-    and     x18, x18, #0b11
+    ldr x17, [x18, #(8 * 33)]
+    msr spsr_el1, x17
+    lsr     x17, x17, #2
+    and     x17, x17, #0b11
 
-    cmp     x18, #1
+    cmp     x17, #1
     b.eq    1f
-    cmp     x18, #0
+    cmp     x17, #0
     b.eq    2f
 
     b       3f
 
-1:  mov     sp, x11
+1:  ldr x17, [x18, #(8 * 31)]
+    mov     sp, x17
     b       3f
 
-2:  msr     sp_el0, x11
+2:  ldr x17, [x18, #(8 * 31)]
+    msr     sp_el0, x17
 
 3:
-    mov x29, x11
-    ldr x11, [x0, #(8 * 32)]
-    msr elr_el1, x11
-    
-    mov x0, x15
+    mov x29, x17
+    ldr x17, [x18, #(8 * 32)]
+    msr elr_el1, x17
+
+    mov x17, #0
+    mov x18, #0
 
     eret
