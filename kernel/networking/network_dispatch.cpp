@@ -252,8 +252,8 @@ bool NetworkDispatch::register_all_from_bus() {
         new ((void*)&c->tx) Queue<sizedptr>(QUEUE_CAPACITY);
         new ((void*)&c->rx) Queue<sizedptr>(QUEUE_CAPACITY);
 
-        strcpy(c->ifname_str, (int)sizeof(c->ifname_str), name);
-        strcpy(c->hwname_str, (int)sizeof(c->hwname_str), hw);
+        strncpy(c->ifname_str, (int)sizeof(c->ifname_str), name);
+        strncpy(c->hwname_str, (int)sizeof(c->hwname_str), hw);
         memcpy(c->mac_addr, macbuf, 6);
         c->mtu_val = m;
         c->hdr_sz = hs;

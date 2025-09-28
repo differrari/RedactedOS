@@ -462,7 +462,7 @@ const char* seek_to(const char *string, char character){
     return string;
 }
 
-size_t strcpy(char* dst, size_t cap, const char* src){
+size_t strncpy(char* dst, size_t cap, const char* src){
     size_t i=0;
     if (!dst || !src || cap==0) return 0;
     while (i<cap-1 && src[i]!=0){ dst[i]=src[i]; i++; }
