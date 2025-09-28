@@ -14,6 +14,7 @@ syscall_def free, FREE_CODE
 syscall_def printl, PRINTL_CODE
 
 syscall_def read_key, READ_KEY_CODE
+syscall_def read_event, READ_EVENT_CODE
 syscall_def register_shortcut, REGISTER_SHORTCUT_CODE
 syscall_def read_shortcut, READ_SHORTCUT_CODE
 syscall_def get_mouse_status, GET_MOUSE_STATUS_CODE

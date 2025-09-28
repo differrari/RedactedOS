@@ -28,7 +28,7 @@ string string_from_hex(uint64_t value);
 bool string_equals(string a, string b);
 string string_replace(const char *str, char orig, char repl);
 string string_format(const char *fmt, ...);
-size_t string_format_buf(const char *fmt, char *out, ...);
+size_t string_format_buf(char *out, const char *fmt, ...);
 string string_format_va(const char *fmt, va_list args);
 __attribute__((used))
 size_t string_format_va_buf(const char *fmt, char *out, va_list args);

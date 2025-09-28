@@ -42,6 +42,7 @@ extern "C" {
 #define DRAW(item, children)\
 ({\
 common_ui_config parent = item;\
+(void)parent;\
 children;\
 })
 

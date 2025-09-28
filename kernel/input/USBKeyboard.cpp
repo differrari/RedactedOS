@@ -34,7 +34,34 @@ void USBKeyboard::process_data(USBDriver *driver){
 }
 
 void USBKeyboard::process_keypress(keypress *rkp){
-    keypress kp;
+    for (int i = 0; i < 8; i++){
+        char oldkey = (last_keypress.modifier & (1 << i));
+        char newkey = (rkp->modifier & (1 << i));
+        if (oldkey != newkey){
+            kbd_event event;
+            event.type = oldkey ? KEY_RELEASE : KEY_PRESS;
+            event.key = oldkey ? oldkey : newkey;
+            register_event(event);
+        }
+    }
+    for (int i = 0; i < 6; i++) {
+        if (rkp->keys[i] != last_keypress.keys[i]){
+            if (last_keypress.keys[i]){
+                kbd_event event = {};
+                event.type = KEY_RELEASE;
+                event.key = last_keypress.keys[i];
+                register_event(event);
+            }
+            if (rkp->keys[i]) {
+                kbd_event event = {};
+                event.type = KEY_PRESS;
+                event.key = rkp->keys[i];
+                register_event(event);
+            }
+        }
+    }
+    
+    keypress kp = {};
     if (is_new_keypress(rkp, &last_keypress) || repeated_keypresses > 2){
         //TODO: review this code. It's here to prevent qemu's duplicate keyboard input
         if (is_new_keypress(rkp, &last_keypress)){
@@ -46,10 +73,10 @@ void USBKeyboard::process_keypress(keypress *rkp){
             kp.keys[i] = rkp->keys[i];
             // if (i == 0) kprintf("Key [%i]: %x", i, kp.keys[i]);
         }
-        last_keypress = kp;
         register_keypress(kp);
     } else
         repeated_keypresses++;
+    last_keypress = kp;
 
     requesting = false;
 }

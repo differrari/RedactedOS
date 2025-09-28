@@ -150,7 +150,7 @@ string string_format_va(const char *fmt, va_list args){
     return (string){ .data = buf, .length = len, .mem_length = STRING_MAX_LEN };
 }
 
-size_t string_format_buf(const char *fmt, char *out, ...){
+size_t string_format_buf(char *out, const char *fmt, ...){
     __attribute__((aligned(16))) va_list args;
     va_start(args, fmt);
     size_t size = string_format_va_buf(fmt, out, args);

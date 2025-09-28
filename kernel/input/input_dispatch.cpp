@@ -52,6 +52,21 @@ void register_keypress(keypress kp) {
         buf->read_index = (buf->read_index + 1) % INPUT_BUFFER_CAPACITY;
 }
 
+void register_event(kbd_event event){
+    //TODO: shortcuts
+
+    if (!(uintptr_t)focused_proc) return;
+
+    event_buffer_t* buf = &focused_proc->event_buffer;
+    uint32_t next_index = (buf->write_index + 1) % INPUT_BUFFER_CAPACITY;
+
+    buf->entries[buf->write_index] = event;
+    buf->write_index = next_index;
+
+    if (buf->write_index == buf->read_index)
+        buf->read_index = (buf->read_index + 1) % INPUT_BUFFER_CAPACITY;
+}
+
 void mouse_config(gpu_point point, gpu_size size){
     gpu_setup_cursor(point);
     mouse_loc = point;
@@ -121,6 +136,10 @@ void sys_set_secure(bool secure){
     secure_mode = secure;
 }
 
+bool sys_read_event_current(kbd_event *out){
+    return sys_read_event(get_current_proc_pid(), out);
+}
+
 bool sys_read_input_current(keypress *out){
     return sys_read_input(get_current_proc_pid(), out);
 }
@@ -146,6 +165,15 @@ bool keypress_contains(keypress *kp, char key, uint8_t modifier){
         if (kp->keys[i] == key)
             return true;
     return false;
+}
+
+bool sys_read_event(int pid, kbd_event *out){
+     process_t *process = get_proc_by_pid(pid);
+    if (process->event_buffer.read_index == process->event_buffer.write_index) return false;
+
+    *out = process->event_buffer.entries[process->event_buffer.read_index];
+    process->event_buffer.read_index = (process->event_buffer.read_index + 1) % INPUT_BUFFER_CAPACITY;
+    return true;
 }
 
 bool sys_read_input(int pid, keypress *out){

@@ -94,6 +94,8 @@ void Terminal::run_command(){
     if (!exec_cmd(cmd.data, argc, argv)){
         if (strcmp(cmd.data, "test", true) == 0){
             TMP_test(argc, argv);
+        } else if (strcmp(cmd.data, "exit", true) == 0){
+            halt(0);
         } else {
             string s = string_format("Unknown command %s with args %s", cmd.data, args);
             put_string(s.data);
@@ -121,10 +123,10 @@ void Terminal::TMP_test(int argc, const char* args[]){
 }
 
 void Terminal::handle_input(){
-    keypress kp;
-    if (read_key(&kp)){
-        for (int i = 0; i < 6; i++){
-            char key = kp.keys[i];
+    kbd_event event;
+    if (read_event(&event)){
+        if (event.type == KEY_PRESS){
+            char key = event.key;
             char readable = hid_to_char((uint8_t)key);
             if (key == KEY_ENTER || key == KEY_KPENTER){
                 run_command();

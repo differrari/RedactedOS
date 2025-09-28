@@ -22,6 +22,12 @@ typedef struct {
 typedef struct {
     volatile uint32_t write_index;
     volatile uint32_t read_index;
+    kbd_event entries[INPUT_BUFFER_CAPACITY];
+} event_buffer_t;
+
+typedef struct {
+    volatile uint32_t write_index;
+    volatile uint32_t read_index;
     sizedptr entries[PACKET_BUFFER_CAPACITY];
 } packet_buffer_t;
 
@@ -48,6 +54,7 @@ typedef struct {
     uintptr_t va;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     __attribute__((aligned(16))) input_buffer_t input_buffer;
+    __attribute__((aligned(16))) event_buffer_t event_buffer;
     __attribute__((aligned(16))) packet_buffer_t packet_buffer;
     uint8_t priority;
     char *bundle;

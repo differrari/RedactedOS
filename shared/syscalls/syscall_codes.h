@@ -5,10 +5,11 @@
 
 #define PRINTL_CODE                 3
 
-#define READ_KEY_CODE               5
-#define REGISTER_SHORTCUT_CODE      6
-#define READ_SHORTCUT_CODE          7
-#define GET_MOUSE_STATUS_CODE       8
+#define READ_KEY_CODE               10
+#define REGISTER_SHORTCUT_CODE      11
+#define READ_SHORTCUT_CODE          12
+#define GET_MOUSE_STATUS_CODE       13
+#define READ_EVENT_CODE             14
 
 #define REQUEST_DRAW_CTX_CODE       20
 #define GPU_FLUSH_DATA_CODE         21

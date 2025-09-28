@@ -53,6 +53,11 @@ uint64_t syscall_read_key(process_t *ctx){
     return sys_read_input_current(kp);
 }
 
+uint64_t syscall_read_event(process_t *ctx){
+    kbd_event *ev = (kbd_event*)ctx->PROC_X0;
+    return sys_read_event_current(ev);
+}
+
 uint64_t syscall_read_shortcut(process_t *ctx){
     kprint("[SYSCALL implementation error] Shortcut syscalls are not implemented yet");
     return 0;
@@ -165,7 +170,7 @@ uint64_t syscall_fopen(process_t *ctx){
     char *req_path = (char *)ctx->PROC_X0;
     char path[255];
     if (!(ctx->PROC_PRIV) && strstart("/resources/", req_path, true) == 11){
-        string_format_buf("%s%s", path, ctx->bundle, req_path);
+        string_format_buf(path,"%s%s", ctx->bundle, req_path);
     } else memcpy(path, req_path, strlen(req_path, 0));
     //TODO: Restrict access to own bundle, own fs and require privilege escalation for full-ish filesystem access
     file *descriptor = (file*)ctx->PROC_X1;
@@ -204,6 +209,7 @@ syscall_entry syscalls[] = {
     { FREE_CODE, syscall_free},
     { PRINTL_CODE, syscall_printl},
     { READ_KEY_CODE, syscall_read_key},
+    { READ_EVENT_CODE, syscall_read_event },
     { READ_SHORTCUT_CODE, syscall_read_shortcut},
     { GET_MOUSE_STATUS_CODE, syscall_get_mouse },
     { REQUEST_DRAW_CTX_CODE, syscall_gpu_request_ctx},

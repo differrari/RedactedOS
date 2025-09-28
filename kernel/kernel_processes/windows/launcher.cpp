@@ -63,19 +63,20 @@ void Launcher::draw_desktop(){
         rendered_full = false;
         process_active = false;
     }
-    keypress kp;
     gpu_point old_selected = selected;
-    while (sys_read_input_current(&kp)){
-        for (int i = 0; i < 6; i++){
-            char key = kp.keys[i];
-            if (key == KEY_ENTER || key == KEY_KPENTER){
-                activate_current();
-                return;
+    kbd_event event;
+    while (sys_read_event_current(&event)){
+        if (event.type == KEY_PRESS){
+            switch (event.key) {
+                case KEY_ENTER:
+                case KEY_KPENTER:
+                    activate_current();
+                    return;
+                case KEY_RIGHT: selected.x = (selected.x + 1) % MAX_COLS; break;
+                case KEY_LEFT: selected.x = (selected.x - 1 + MAX_COLS) % MAX_COLS; break;
+                case KEY_DOWN: selected.y = (selected.y + 1 ) % MAX_ROWS; break;
+                case KEY_UP: selected.y = (selected.y - 1 + MAX_ROWS) % MAX_ROWS; break;
             }
-            if (key == KEY_RIGHT) selected.x = (selected.x + 1) % MAX_COLS;
-            if (key == KEY_LEFT) selected.x = (selected.x - 1 + MAX_COLS) % MAX_COLS; 
-            if (key == KEY_DOWN) selected.y = (selected.y + 1) % MAX_ROWS; 
-            if (key == KEY_UP) selected.y = (selected.y - 1 + MAX_ROWS) % MAX_ROWS; 
         }
     }
     if (!rendered_full){
