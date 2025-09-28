@@ -11,10 +11,10 @@ msr daifset, #2
 
     b       3f
 
-1:  mov     x11, sp
+1:  mov     x16, sp
     b       3f
 
-2:  mrs     x11, sp_el0
+2:  mrs     x16, sp_el0
     ldr x18, =ksp
     //TODO: in order to ensure we don't ovewrite any stack data, save it to its own global variable
     mov sp, x18
@@ -42,7 +42,7 @@ stp x27, x28, [x0, #(8 * 26)]
 stp x29, x30, [x0, #(8 * 28)]
 
 // SP
-str x11, [x0, #(8 * 31)]
+str x16, [x0, #(8 * 31)]
 
 //Status bits
 str x10, [x0, #(8 * 33)]
