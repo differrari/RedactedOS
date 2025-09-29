@@ -82,6 +82,3 @@ Once interfaces and dispatcher are initialized, the system starts ARP, DHCP, DNS
 The stack supports UDP and TCP sockets, and an HTTP socket is implemented on top of TCP. ICMP is also supported with the system able to respond to ping requests. DNS resolution can be called directly by applications and is also used by sockets.
 An embedded HTTP server is included and listens on port 80, serving a minimal page. Also discovery mechanism is available: the system probes the local network via UDP broadcast on port 8080, and when a responder replies it connects via HTTP on port 80, though it currently does nothing noteworthy.
 An implementation of the server can be found at the [RedactedOS Firmware Server Repository](https://github.com/differrari/RedactedOS_firmware_server/tree/main)
-
-
-
