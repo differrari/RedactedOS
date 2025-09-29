@@ -18,7 +18,6 @@ typedef enum {
 
 void switch_proc(ProcSwitchReason reason);
 bool start_scheduler();
-void save_context_registers();
 void save_return_address_interrupt();
 void init_main_process();
 process_t* init_process();

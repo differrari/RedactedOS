@@ -50,5 +50,6 @@ $(BUILD_DIR)/%.o: %.cpp
 
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(ELF) $(TARGET)
+	$(RM) -r $(BUILD_DIR)
 
 -include $(DEP)

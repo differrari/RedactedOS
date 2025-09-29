@@ -60,4 +60,4 @@ jobs:
             shared/libshared.a
             shared/*.h
             shared/**/*.h
-            fs/redos/user/*.elf
+            fs/*
