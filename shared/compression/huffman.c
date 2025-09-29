@@ -17,26 +17,6 @@ int* huff_count_entries(sizedptr input){
     return entries;
 }
 
-typedef struct huff_tree_node {
-    struct huff_tree_node *left, *right;
-    uint8_t entry;
-    uint8_t depth;
-    char byte;
-    int index;
-} huff_tree_node;
-
-typedef struct p_queue_item {
-    void* ptr;
-    uint64_t val;
-} p_queue_item;
-
-typedef struct p_queue_t {
-    p_queue_item *array;
-    int size;
-    uint64_t max_priority;
-    int max_priority_index;
-} p_queue_t;
-
 void p_queue_insert(p_queue_t *root, void* ptr, uint8_t value){
     root->array[root->size] = (p_queue_item){ptr, value};
     if (value < root->max_priority){
@@ -84,6 +64,36 @@ p_queue_t* p_queue_create(int max){
      root->max_priority = UINT64_MAX; 
      root->array = malloc(sizeof(p_queue_item) * max);
      return root;
+}
+
+void huffman_populate(huff_tree_node *root, uint64_t code, uint8_t code_len, uint8_t value){
+    if (code_len == 0){
+        if (root->entry) printf("HUFFMAN TREE ERROR overwriting value %i with %i",root->entry,value);
+        root->entry = value;
+        if (root->right || root->left) printf("[HUFFMAN TREE ERROR] ending at non-leaf node");
+        return;
+    }
+    bool right = ((code >> (code_len-1)) & 1);
+    huff_tree_node *child = right ? root->right : root->left;
+    if (!child){
+        child = (huff_tree_node*)malloc(sizeof(huff_tree_node));
+        if (right)
+            root->right = child;
+        else  
+            root->left = child;
+    }
+    huffman_populate(child, code, code_len-1, value);
+}
+
+static char *pad = "                                                                ";
+
+void huffman_viz(huff_tree_node *root, uint8_t depth, uint64_t val){
+    if (!root->left && !root->right) printf("%s Leaf node %i = %b", pad + (63-depth), root->entry, val);
+    else {
+        if (root->entry) printf("[HUFFMAN TREE ERROR] non-leaf node has value %i",root->entry);
+        if (root->left) huffman_viz(root->left, depth+1, (val << 1) | 0);
+        if (root->right) huffman_viz(root->right, depth+1, (val << 1) | 1);
+    }
 }
 
 int node_index = 0;
