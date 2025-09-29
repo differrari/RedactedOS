@@ -36,7 +36,7 @@ extern uint32_t gpu_char_size(uint32_t scale);
 
 extern uint64_t get_time();
 
-extern bool socket_create(ip_version_t ipv, int protocol, uint16_t port, SockBindSpec *spec);
+extern bool socket_create(ip_version_t ipv, protocol_t protocol, uint16_t port, SockBindSpec *spec);
 extern bool socket_bind(SockBindSpec *spec);
 extern bool socket_listen(SockBindSpec *spec);
 extern bool socket_accept(SockBindSpec *spec);

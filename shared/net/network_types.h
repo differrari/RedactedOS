@@ -17,6 +17,11 @@ typedef struct net_l4_endpoint {
     uint16_t port;
 } net_l4_endpoint;
 
+typedef enum {
+    PROTO_UDP = 0,
+    PROTO_TCP = 1
+} protocol_t;
+
 #ifdef __cplusplus
 }
 #endif

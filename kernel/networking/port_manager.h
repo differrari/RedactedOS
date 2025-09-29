@@ -11,11 +11,6 @@ extern "C" {
 #define PORT_MAX_EPHEMERAL 65535
 #define PORT_FREE_OWNER 0xFFFF
 
-typedef enum {
-    PROTO_UDP = 0,
-    PROTO_TCP = 1
-} protocol_t;
-
 #define PROTO_COUNT 2
 
 typedef void (*port_recv_handler_t)(
