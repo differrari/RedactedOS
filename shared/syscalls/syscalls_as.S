@@ -32,10 +32,13 @@ syscall_def exec, EXEC_CODE
 
 syscall_def get_time, GET_TIME_CODE
 
-syscall_def bind_port, BIND_PORT_CODE
-syscall_def unbind_port, UNBIND_PORT_CODE
-syscall_def send_packet, SEND_PACKET_CODE
-syscall_def read_packet, READ_PACKET_CODE
+syscall_def socket_create, SOCKET_CREATE_CODE
+syscall_def socket_bind, SOCKET_BIND_CODE
+syscall_def socket_listen, SOCKET_LISTEN_CODE
+syscall_def socket_accept, SOCKET_ACCEPT_CODE
+syscall_def socket_send, SOCKET_SEND_CODE
+syscall_def socket_receive, SOCKET_RECEIVE_CODE
+syscall_def socket_close, SOCKET_CLOSE_CODE
 
 syscall_def fopen, FILE_OPEN_CODE
 syscall_def fread, FILE_READ_CODE

@@ -123,48 +123,41 @@ uint64_t syscall_get_time(process_t *ctx){
     return timer_now_msec();
 }
 
-uint64_t syscall_bind_port(process_t *ctx){
-
-    ip_version_t ipver= (ip_version_t)ctx->PROC_X0;
-    uint8_t l3_id     = (uint8_t)ctx->PROC_X1;
-    uint16_t port     = (uint16_t)ctx->PROC_X2;
-    port_recv_handler_t handler = (port_recv_handler_t)ctx->PROC_X3;
-    protocol_t proto  = (protocol_t)ctx->PROC_X4;
-    uint16_t pid      = get_current_proc_pid();
-
-    port_manager_t* pm = (ipver == IP_VER6) ? ifmgr_pm_v6(l3_id) : ifmgr_pm_v4(l3_id);
-    if (!pm) return 0;
-
-    return port_bind_manual(pm, proto, port, pid, handler);
-}
-
-uint64_t syscall_unbind_port(process_t *ctx){
-    ip_version_t ipver = (ip_version_t)ctx->PROC_X0;
-    uint8_t l3_id    = (uint8_t)ctx->PROC_X1;
-    uint16_t port    = (uint16_t)ctx->PROC_X2;
-    protocol_t proto = (protocol_t)ctx->PROC_X3;
-    uint16_t pid     = get_current_proc_pid();
-
-    port_manager_t* pm = (ipver == IP_VER6) ? ifmgr_pm_v6(l3_id) : ifmgr_pm_v4(l3_id);
-    if (!pm) return 0;
-
-    return port_unbind(pm, proto, port, pid); 
-}
-
-uint64_t syscall_send_packet(process_t *ctx){
-    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
-    // uintptr_t frame_ptr = ctx->PROC_X0;
-    // uint32_t  frame_len = (uint32_t)ctx->PROC_X1;
-    // return net_tx_frame(frame_ptr, frame_len);
+uint64_t syscall_socket_create(process_t *ctx){
+    kprintf("Syscall %s not implemented",__func__);
     return 0;
 }
 
-uint64_t syscall_read_packet(process_t *ctx){
-    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
-    // sizedptr *user_out = (sizedptr*)ctx->PROC_X0;
-    // return net_rx_frame(user_out);
+uint64_t syscall_socket_bind(process_t *ctx){
+    kprintf("Syscall %s not implemented",__func__);
     return 0;
 }
+
+uint64_t syscall_socket_listen(process_t *ctx){
+    kprintf("Syscall %s not implemented",__func__);
+    return 0;
+}
+
+uint64_t syscall_socket_accept(process_t *ctx){
+    kprintf("Syscall %s not implemented",__func__);
+    return 0;
+}
+
+uint64_t syscall_socket_send(process_t *ctx){
+    kprintf("Syscall %s not implemented",__func__);
+    return 0;
+}
+
+uint64_t syscall_socket_receive(process_t *ctx){
+    kprintf("Syscall %s not implemented",__func__);
+    return 0;
+}
+
+uint64_t syscall_socket_close(process_t *ctx){
+    kprintf("Syscall %s not implemented",__func__);
+    return 0;
+}
+
 
 uint64_t syscall_fopen(process_t *ctx){
     char *req_path = (char *)ctx->PROC_X0;
@@ -219,11 +212,13 @@ syscall_entry syscalls[] = {
     { SLEEP_CODE, syscall_sleep},
     { HALT_CODE, syscall_halt},
     { EXEC_CODE, syscall_exec},
-    { GET_TIME_CODE, syscall_get_time},
-    { BIND_PORT_CODE, syscall_bind_port},
-    { UNBIND_PORT_CODE, syscall_unbind_port},
-    { SEND_PACKET_CODE, syscall_send_packet},
-    { READ_PACKET_CODE, syscall_read_packet},
+    { SOCKET_CREATE_CODE, syscall_socket_create}, 
+    { SOCKET_BIND_CODE, syscall_socket_bind}, 
+    { SOCKET_LISTEN_CODE, syscall_socket_listen}, 
+    { SOCKET_ACCEPT_CODE, syscall_socket_accept}, 
+    { SOCKET_SEND_CODE, syscall_socket_send}, 
+    { SOCKET_RECEIVE_CODE, syscall_socket_receive}, 
+    { SOCKET_CLOSE_CODE, syscall_socket_close}, 
     {FILE_OPEN_CODE, syscall_fopen},
     {FILE_READ_CODE, syscall_fread},
     {FILE_WRITE_CODE, syscall_fwrite},
