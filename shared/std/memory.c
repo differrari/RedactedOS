@@ -9,7 +9,7 @@ int memcmp(const void *s1, const void *s2, unsigned long count) {
     return 0;
 }
 
-void* memset(void* dest, uint32_t val, size_t count) {
+void* memset32(void* dest, uint32_t val, size_t count) {
     uint8_t *d8 = (uint8_t *)dest;
     uint64_t pattern = ((uint64_t)val << 32) | val;
 
@@ -59,6 +59,51 @@ void* memset(void* dest, uint32_t val, size_t count) {
     }
     if (count == 1)
         *d8 = val & 0xFF;
+
+    return dest;
+}
+
+void* memset(void* dest, uint8_t byte, size_t count) {
+    uint8_t *d8 = (uint8_t *)dest;
+
+    while (((uintptr_t)d8 & 7) && count > 0) {
+        *d8++ = byte;
+        count--;
+    }
+
+    if (count >= 8) {
+        uint64_t pattern = 0;
+        for (int i = 0; i < 8; i++) {
+            pattern <<= 8;
+            pattern |= byte;
+        }
+        size_t blocks = count / 8;
+        for (size_t i = 0; i < blocks; i++) {
+            *((uint64_t *)d8) = pattern;
+            d8 += 8;
+        }
+        count %= 8;
+    }
+
+    if (count >= 4) {
+        uint32_t pattern32 = byte;
+        pattern32 |= pattern32 << 8;
+        pattern32 |= pattern32 << 16;
+        *((uint32_t *)d8) = pattern32;
+        d8 += 4;
+        count -= 4;
+    }
+
+    if (count >= 2) {
+        uint16_t pattern16 = (uint16_t)byte | ((uint16_t)byte << 8);
+        *((uint16_t *)d8) = pattern16;
+        d8 += 2;
+        count -= 2;
+    }
+
+    if (count == 1) {
+        *d8 = byte;
+    }
 
     return dest;
 }

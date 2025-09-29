@@ -77,6 +77,8 @@ The Raspberry Pi emulation has the following limitations:
 
 ## Networking
 
-The system has basic networking support. Currently, it performs DHCP discovery and request to receive an IP address on the local network, is capable of responding to Ping and ARP, and can connect to a server running on ports 8080 and 80, though it currently does nothing noteworthy.
+The system provides medium level networking support. At startup, it scans for available network cards, loads the matching driver if present and creates a logical L2 interface for each device; a loopback interface is also added for both IPv4 and IPv6, though the current loopback implementation is partial and rejects all localhost packets. IPv4 networking is fully implemented, while IPv6 support is limited to interface structures and it cannot perform real communication.
+Once interfaces and dispatcher are initialized, the system starts ARP, DHCP, DNS and SNTP processes. At the moment, SNTP sets the unix time and the time zone is configured manually since DHCP options 100 and 101 are not always included.
+The stack supports UDP and TCP sockets, and an HTTP socket is implemented on top of TCP. ICMP is also supported with the system able to respond to ping requests. DNS resolution can be called directly by applications and is also used by sockets.
+An embedded HTTP server is included and listens on port 80, serving a minimal page. Also discovery mechanism is available: the system probes the local network via UDP broadcast on port 8080, and when a responder replies it connects via HTTP on port 80, though it currently does nothing noteworthy.
 An implementation of the server can be found at the [RedactedOS Firmware Server Repository](https://github.com/differrari/RedactedOS_firmware_server/tree/main)
-

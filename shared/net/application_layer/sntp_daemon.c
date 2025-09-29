@@ -3,9 +3,9 @@
 #include "exceptions/timer.h"
 #include "process/scheduler.h"
 #include "net/internet_layer/ipv4.h"
-#include "process/scheduler.h"
+#include "networking/interface_manager.h"
+#include "syscalls/syscalls.h"
 
-extern void sleep(uint64_t ms);
 
 static uint16_t g_pid_sntp = 0xFFFF;
 static socket_handle_t g_sock = 0;
@@ -19,6 +19,26 @@ socket_handle_t sntp_socket_handle(void){ return g_sock; }
 #define SNTP_QUERY_TIMEOUT_MS 1200u
 #define SNTP_BOOTSTRAP_MAX_RETRY 5u
 
+static inline int ipv4_is_loopback_u32(uint32_t ip){ return ((ip & 0xFF000000u) == 0x7F000000u); }
+
+static bool any_ipv4_configured_nonlocal(void){
+    uint8_t n = l2_interface_count();
+    for (uint8_t i = 0; i < n; i++) {
+        l2_interface_t* l2 = l2_interface_at(i);
+        if (!l2 || !l2->is_up) continue;
+        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; s++) {
+            l3_ipv4_interface_t* v4 = l2->l3_v4[s];
+            if (!v4) continue;
+            if (v4->mode == IPV4_CFG_DISABLED) continue;
+            if (!v4->ip) continue;
+            if (v4->is_localhost) continue;
+            if (ipv4_is_loopback_u32(v4->ip)) continue;
+            return true;
+        }
+    }
+    return false;
+}
+
 int sntp_daemon_entry(int argc, char* argv[]){
     (void)argc; (void)argv;
     g_pid_sntp = (uint16_t)get_current_proc_pid();
@@ -26,12 +46,10 @@ int sntp_daemon_entry(int argc, char* argv[]){
     sntp_set_pid(get_current_proc_pid());
     uint32_t attempts = 0;
     while (attempts < SNTP_BOOTSTRAP_MAX_RETRY){
-        const net_cfg_t* cfg = ipv4_get_cfg();
-        if (!cfg || cfg->mode == NET_MODE_DISABLED || cfg->ip == 0){
+        if (!any_ipv4_configured_nonlocal()){
             sleep(500);
             continue;
         }
-
         sntp_result_t r = sntp_poll_once(SNTP_QUERY_TIMEOUT_MS);
         if (r == SNTP_OK){
             break;
@@ -41,7 +59,6 @@ int sntp_daemon_entry(int argc, char* argv[]){
         uint32_t jitter = backoff_ms / 10u;
         sleep(backoff_ms + (jitter / 2u));
     }
-
     for(;;){
         sntp_poll_once(SNTP_QUERY_TIMEOUT_MS);
         sleep(SNTP_POLL_INTERVAL_MS);
