@@ -55,6 +55,7 @@ debug:
 dump:
 	$(OBJCOPY) -O binary kernel.elf kernel.img
 	$(ARCH)-objdump -D kernel.elf > dump
+	$(MAKE) -C user $@
 
 install:
 	$(MAKE) clean
