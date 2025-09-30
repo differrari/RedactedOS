@@ -40,8 +40,8 @@ extern bool socket_create(ip_version_t ipv, protocol_t protocol, uint16_t port, 
 extern bool socket_bind(SockBindSpec *spec);
 extern bool socket_listen(SockBindSpec *spec);
 extern bool socket_accept(SockBindSpec *spec);
-extern bool socket_send(SockBindSpec *spec);
-extern bool socket_receive(SockBindSpec *spec);
+extern bool socket_send(SockBindSpec *spec, sizedptr packet);
+extern bool socket_receive(SockBindSpec *spec, sizedptr *packet);
 extern bool socket_close(SockBindSpec *spec);
 
 void printf(const char *fmt, ...);
