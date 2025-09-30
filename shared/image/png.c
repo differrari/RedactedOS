@@ -2,6 +2,7 @@
 #include "syscalls/syscalls.h"
 #include "std/memory_access.h"
 #include "compression/huffman.h"
+#include "std/memory.h"
 
 typedef struct png_chunk_hdr {
     uint32_t length;
@@ -81,8 +82,8 @@ huff_tree_node* deflate_decode_codes(uint8_t max_code_length, uint16_t alphabet_
 #define ADVANCE_BIT(bs, c, a) do { \
     bs += a;\
     if (bs > 7){\
+        c += (bs/8);\
         bs %= 8;\
-        c++;\
     } \
 } while(0)
 
@@ -92,13 +93,46 @@ huff_tree_node* deflate_decode_codes(uint8_t max_code_length, uint16_t alphabet_
 } while(0)
 
 #define READ_BITS(from, to, amount, bs, c) do { \
-if (bs > (8-amount))\
-    to = (from[c+1] << (8-bs) & ((1 << amount) - 1)) | ((from[c] >> bs) & ((1 << amount) - 1));\
-else \
-    to = (from[c] >> bs) & ((1 << amount) - 1);\
-} while(0)
+    if (bs+amount > 16) \
+        to = (((uint16_t)from[c+2] << (16-bs)) & ((1 << amount) - 1)) |  \
+             (((uint16_t)from[c+1] << (8-bs))  & ((1 << amount) - 1)) |  \
+             (((uint16_t)from[c]   >> bs)      & ((1 << amount) - 1) ); \
+    else if (bs+amount > 8) \
+        to = (((uint16_t)from[c+1] << (8-bs))  & ((1 << amount) - 1)) |  \
+             (((uint16_t)from[c]   >> bs)      & ((1 << amount) - 1) ); \
+    else  \
+        to = (((uint16_t)from[c]   >> bs)      & ((1 << amount) - 1) ); \
+} while (0)
 
-void png_load_idat(void* ptr, size_t size){
+uint32_t base_lengths[] = {
+    3, 4, 5, 6, 7, 8, 9, 10, //257 - 264
+    11, 13, 15, 17,          //265 - 268
+    19, 23, 27, 31,          //269 - 273 
+    35, 43, 51, 59,          //274 - 276
+    67, 83, 99, 115,         //278 - 280
+    131, 163, 195, 227,      //281 - 284
+    258                      //285
+};
+
+uint32_t dist_bases[] = {
+    /*0*/ 1, 2, 3, 4,    //0-3
+    /*1*/ 5, 7,          //4-5
+    /*2*/ 9, 13,         //6-7
+    /*3*/ 17, 25,        //8-9
+    /*4*/ 33, 49,        //10-11
+    /*5*/ 65, 97,        //12-13
+    /*6*/ 129, 193,      //14-15
+    /*7*/ 257, 385,      //16-17
+    /*8*/ 513, 769,      //18-19
+    /*9*/ 1025, 1537,    //20-21
+    /*10*/ 2049, 3073,   //22-23
+    /*11*/ 4097, 6145,   //24-25
+    /*12*/ 8193, 12289,  //26-27
+    /*13*/ 16385, 24577  //28-29
+};
+
+size_t png_load_idat(void* ptr, size_t size, uint8_t *output_buf){
+    //DEFLATE func
     zlib_hdr hdr = *(zlib_hdr*)ptr;
     if (hdr.cm != 8){
         printf("Only DEFLATE is supported");
@@ -126,7 +160,6 @@ void png_load_idat(void* ptr, size_t size){
     huffman_viz(huff_decode_nodes, 0, 0);
     
     int tree_data_size = dyn_hdr.hlit + dyn_hdr.hdist + 258;
-    // size_t tree_data_bytes = tree_data_size/8 + (tree_data_size % 8 > 0);
 
     printf("Expecting to read %i",tree_data_size);
 
@@ -143,7 +176,7 @@ void png_load_idat(void* ptr, size_t size){
         tree_root = huffman_traverse(tree_root, next_bit);
         if (!tree_root) {
             printf("DEFLATE ERROR: no tree found");
-            return;
+            return 0;
         }
         if (!tree_root->left && !tree_root->right){
             uint8_t extra = 0;
@@ -181,7 +214,7 @@ void png_load_idat(void* ptr, size_t size){
         }
     }
     printf("Finished processing data");
-    huffman_free(huff_decode_nodes);
+    // huffman_free(huff_decode_nodes);
 
     printf("**** LITERAL/LENGTH ****");
     huff_tree_node *litlen_tree = deflate_decode_codes(dyn_hdr.hlit + 257, dyn_hdr.hlit + 257, full_huffman);
@@ -193,13 +226,75 @@ void png_load_idat(void* ptr, size_t size){
     huffman_viz(dist_tree, 0, 0);
     printf("**** WOO ****");
 
-    free(full_huffman, tree_data_size * sizeof(uint16_t));
+    // free(full_huffman, tree_data_size * sizeof(uint16_t));
 
-    //Decode distances
-    //Decode image
+    tree_root = litlen_tree;
 
-    huffman_free(litlen_tree);
-    huffman_free(dist_tree);
+    uintptr_t out_cursor = 0;
+
+    printf("Compressed data at %x",bytes + c);
+    
+    uint16_t val = 0;
+    while (val != 0x100){
+        uint8_t next_bit;
+        READ_BITS(bytes, next_bit, 1, bs, c);
+        ADVANCE_BIT(bs, c, 1);
+        tree_root = huffman_traverse(tree_root, next_bit);
+        if (!tree_root) {
+            printf("DEFLATE ERROR: no tree found");
+            return 0;
+        }
+        if (!tree_root->left && !tree_root->right){
+            val = tree_root->entry;
+            if (val < 0x100){
+                output_buf[out_cursor] = (val & 0xFF);
+                // printf("Literal %x",val);
+                out_cursor++;
+            } else if (val == 0x100){
+                break;
+            } else {
+                uint8_t extra = 0;
+                if (val > 264 && val < 285)
+                    extra = (val-261)/4;
+                uint16_t extra_val = 0;
+                READ_BITS(bytes, extra_val, extra, bs, c);
+                ADVANCE_BIT(bs, c, extra);
+                uint16_t length = base_lengths[val - 257] + extra_val;
+                huff_tree_node *dist_node = dist_tree;
+                while (dist_node->left || dist_node->right){
+                    READ_BITS(bytes, next_bit, 1, bs, c);
+                    ADVANCE_BIT(bs, c, 1);
+                    dist_node = huffman_traverse(dist_node, next_bit);
+                    if (!dist_node){
+                        printf("DEFLATE ERROR: no tree found");
+                        return 0;
+                    }
+                }
+                uint16_t dist_base = dist_node->entry;
+                uint8_t extra_dist = 0;
+                uint16_t extra_dist_val = 0;
+                if (dist_base > 3){
+                    extra_dist = (dist_base-2)/2;
+                    READ_BITS(bytes, extra_dist_val, extra_dist, bs, c);
+                    ADVANCE_BIT(bs, c, extra_dist);
+                }
+                // printf("Dista base %i + extra %i",dist_base,extra_dist);
+                uint32_t distance = dist_bases[dist_base] + extra_dist_val;
+                // printf("Copying %i bytes from %i bytes back. %x + %x",length,distance,output_buf, out_cursor);
+                memcpy(output_buf - distance + out_cursor, output_buf + out_cursor, length);
+                out_cursor += length;
+            }
+            tree_root = litlen_tree;
+        }
+    }
+
+    // huffman_free(litlen_tree);
+    // huffman_free(dist_tree);
+
+    //TODO: other DEFLATE blocks
+    //TODO: generalize to DEFLATE funcs
+
+    return out_cursor;
 }
 
 image_info png_get_info(void * file, size_t size){
@@ -226,15 +321,31 @@ uint64_t header = *(uint64_t*)file;
         printf("Wrong PNG header %x",header);
         return;
     }
+    printf("File size %x",size);
     uintptr_t p = (uintptr_t)file + sizeof(uint64_t);
     png_chunk_hdr *hdr;
+    image_info info = {};
+    uintptr_t out_buf = 0;
+    uintptr_t out_off = 0;
     do {
         hdr = (png_chunk_hdr*)p;
         uint32_t length = __builtin_bswap32(hdr->length);
+        if (strstart(hdr->type, "IHDR", true) == 4){
+            png_ihdr *ihdr = (png_ihdr*)(p + sizeof(png_chunk_hdr));
+            printf("Couldn't find png IHDR");
+            info = (image_info){__builtin_bswap32(ihdr->width),__builtin_bswap32(ihdr->height)};
+        }
         if (strstart(hdr->type, "IDAT", true) == 4){
+            if (info.width == 0 || info.height == 0){
+                printf("Wrong image size");
+                return;
+            }
+            if (!out_buf) out_buf = (uintptr_t)malloc(info.width * info.height * system_bpp);//TODO: bpp might be too big, read image format
             printf("Found some idat %x",p + sizeof(png_chunk_hdr) - (uintptr_t)file);
-            png_load_idat((void*)(p + sizeof(png_chunk_hdr)), length);
-            return;
+            uintptr_t prev_off = out_off;
+            out_off += png_load_idat((void*)(p + sizeof(png_chunk_hdr)), length, (uint8_t*)(out_buf + out_off));
+            memcpy(buf + prev_off, (void*)out_buf, out_off);
+            // return;
         }
         p += sizeof(png_chunk_hdr) + __builtin_bswap32(hdr->length) + sizeof(uint32_t);
     } while(strstart(hdr->type, "IEND", true) != 4);
