@@ -9,10 +9,10 @@
 
 typedef struct huff_tree_node {
     struct huff_tree_node *left, *right;
-    uint8_t entry;
-    uint8_t depth;
-    char byte;
-    int index;
+    uint16_t entry;
+    uint8_t depth;//DEBUG
+    char byte;//DEBUG
+    int index;//DEBUG
 } huff_tree_node;
 
 typedef struct p_queue_item {
@@ -28,5 +28,5 @@ typedef struct p_queue_t {
 } p_queue_t;
 
 void huffman_encode(sizedptr input, sizedptr output);
-void huffman_populate(huff_tree_node *root, uint64_t code, uint8_t code_len, uint8_t value);
+void huffman_populate(huff_tree_node *root, uint64_t code, uint8_t code_len, uint16_t value);
 void huffman_viz(huff_tree_node *root, uint8_t depth, uint64_t val);

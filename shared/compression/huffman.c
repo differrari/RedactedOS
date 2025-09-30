@@ -66,11 +66,11 @@ p_queue_t* p_queue_create(int max){
      return root;
 }
 
-void huffman_populate(huff_tree_node *root, uint64_t code, uint8_t code_len, uint8_t value){
+void huffman_populate(huff_tree_node *root, uint64_t code, uint8_t code_len, uint16_t value){
     if (code_len == 0){
         if (root->entry) printf("HUFFMAN TREE ERROR overwriting value %i with %i",root->entry,value);
         root->entry = value;
-        if (root->right || root->left) printf("[HUFFMAN TREE ERROR] ending at non-leaf node");
+        if (root->right || root->left) printf("[HUFFMAN TREE ERROR] ending at non-leaf node for value %i. L %x R %x ROOT %x",value,root->left,root->right,root);
         return;
     }
     bool right = ((code >> (code_len-1)) & 1);

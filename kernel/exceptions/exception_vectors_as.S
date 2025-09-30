@@ -16,7 +16,6 @@ msr daifset, #2
 
 2:  mrs     x17, sp_el0
     ldr x18, =ksp
-    //TODO: in order to ensure we don't ovewrite any stack data, save it to its own global variable
     mov sp, x18
 
 3:

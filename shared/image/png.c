@@ -50,6 +50,34 @@ typedef union deflate_dynamic_hdr {
     uint32_t value;
 } deflate_dynamic_hdr;
 
+huff_tree_node* deflate_decode_codes(uint8_t max_code_length, uint16_t alphabet_length, uint16_t alphabet[], uint16_t lengths[]){
+    uint8_t bl_count[max_code_length] = {};
+    for (int i = 0; i < max_code_length; i++){
+        for (int j = 0; j < alphabet_length; j++){
+            if (lengths[j] == i){
+                bl_count[i]++;
+            } 
+        }
+        // printf("%i appears %i times",i,bl_count[i]);
+    }
+    uint16_t next_code[max_code_length+1] = {}; 
+    uint16_t code = 0;
+    bl_count[0] = 0;
+    for (int bits = 1; bits <= max_code_length; bits++) {
+        // printf("Bit %i: %i (i-1) appeared %i times",bits, bits-1, bl_count[bits-1]);
+        code = (code + bl_count[bits-1]) << 1;
+        next_code[bits] = code;
+        // printf("Next code [%i] = %i",bits,next_code[bits]);
+    }
+    huff_tree_node *root = malloc(sizeof(huff_tree_node));
+    for (int i = 0; i < alphabet_length; i++){
+        if (lengths[i]){
+            huffman_populate(root, next_code[lengths[i]]++, lengths[i], alphabet[i]);
+        }
+    }
+    return root;
+}
+
 void png_load_idat(void* ptr, size_t size){
     zlib_hdr hdr = *(zlib_hdr*)ptr;
     if (hdr.cm != 8){
@@ -67,7 +95,8 @@ void png_load_idat(void* ptr, size_t size){
     uint8_t *bytes = (uint8_t*)p;
     int c = 0;
     uint8_t code_order[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
-    uint8_t permuted[19];
+    uint16_t permuted[19];
+    uint16_t alphabet[19] = {0, 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18};
     for (uint8_t i = 0; i < hclen+4; i++){
         if (bs > 5)
             permuted[code_order[i]] = (bytes[c+1] << (8-bs) & 0b111) | ((bytes[c] >> bs) & 0b111);
@@ -80,29 +109,16 @@ void png_load_idat(void* ptr, size_t size){
             c++;
         }
     }
-    //Generalize this part to construct a huffman tree from a symbol:code_length kvp
-    uint8_t bl_count[8];
-    for (int i = 0; i < 8; i++){
-        for (int j = 0; j < 19; j++){
-            if (permuted[j] == i) bl_count[i]++;
-        }
-        printf("%i appears %i times",i,bl_count[i]);
-    }
-    int next_code[9];
-    int code = 0;
-    bl_count[0] = 0;
-    for (int bits = 1; bits <= 8; bits++) {
-        printf("Bit %i: %i (i-1) appeared %i times",bits, bits-1, bl_count[bits-1]);
-        code = (code + bl_count[bits-1]) << 1;
-        next_code[bits] = code;
-        printf("Next code [%i] = %i",bits,next_code[bits]);
-    }
-    huff_tree_node *root = malloc(sizeof(huff_tree_node));
-    for (int i = 0; i < 19; i++){
-        if (permuted[i])
-            huffman_populate(root, next_code[permuted[i]]++, permuted[i], i);
-    }
-    huffman_viz(root, 0, 0);
+    huff_tree_node *huff_decode_nodes = deflate_decode_codes(8, 19, alphabet, permuted);
+    
+    huffman_viz(huff_decode_nodes, 0, 0);
+    while(1);
+    //The next HLIT + HDIST + 258 (verify this num pls) bits are the encoded huffman codes
+    //Use a parser to navigate a tree from bits read until a leaf is found, at which point output a node and continue from root. Obtaining code lengths for the huffman
+    //Apply special rules for when the parsed value is 16, 17 or 18
+    //Use the new huffman lengths + known alphabet to create a new tree
+    //Use the new tree to decode the block
+
 }
 
 image_info png_get_info(void * file, size_t size){
