@@ -85,6 +85,12 @@ void huffman_populate(huff_tree_node *root, uint64_t code, uint8_t code_len, uin
     huffman_populate(child, code, code_len-1, value);
 }
 
+void huffman_free(huff_tree_node *root){
+    if (root->right) huffman_free(root->right);
+    if (root->left) huffman_free(root->left);
+    free(root, sizeof(huff_tree_node));
+}
+
 static char *pad = "                                                                ";
 
 void huffman_viz(huff_tree_node *root, uint8_t depth, uint64_t val){
