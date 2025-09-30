@@ -47,7 +47,6 @@ restore_context:
     msr     sp_el0, x17
 
 3:
-    mov x29, x17
     ldr x17, [x18, #(8 * 32)]
     msr elr_el1, x17
 
