@@ -38,9 +38,9 @@ void USBKeyboard::process_keypress(keypress *rkp){
         char oldkey = (last_keypress.modifier & (1 << i));
         char newkey = (rkp->modifier & (1 << i));
         if (oldkey != newkey){
-            kbd_event event;
-            event.type = oldkey ? KEY_RELEASE : KEY_PRESS;
-            event.key = oldkey ? oldkey : newkey;
+            kbd_event event = {};
+            event.type = oldkey ? MOD_RELEASE : MOD_PRESS;
+            event.modifier = oldkey ? oldkey : newkey;
             register_event(event);
         }
     }
