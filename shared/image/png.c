@@ -36,7 +36,7 @@ typedef union zlib_hdr {
 }__attribute__((packed)) zlib_hdr;
 
 huff_tree_node* deflate_decode_codes(uint8_t max_code_length, uint16_t alphabet_length, uint16_t lengths[]){
-    uint8_t bl_count[max_code_length] = {};
+    uint16_t bl_count[max_code_length] = {};
     for (int i = 0; i < max_code_length; i++){
         for (int j = 0; j < alphabet_length; j++){
             if (lengths[j] == i){
@@ -63,29 +63,22 @@ huff_tree_node* deflate_decode_codes(uint8_t max_code_length, uint16_t alphabet_
     return root;
 }
 
-#define ADVANCE_BIT(bs, c, a) do { \
-    bs += a;\
+#define READ_BITS(from, to, amount, bs, c) do { \
+    if (bs + amount > 16){ \
+        to = (((uint16_t)from[c+2] << (16-bs)) & ((1 << amount) - 1)) |  \
+             (((uint16_t)from[c+1] << (8-bs))  & ((1 << amount) - 1)) |  \
+             (((uint16_t)from[c]   >> bs)      & ((1 << amount) - 1) ); \
+    } else if (bs+amount > 8){ \
+        to = (((uint16_t)from[c+1] << (8-bs))  & ((1 << amount) - 1)) |  \
+             (((uint16_t)from[c]   >> bs)      & ((1 << amount) - 1) ); \
+    } else { \
+        to = (((uint16_t)from[c]   >> bs)      & ((1 << amount) - 1) ); \
+    } \
+    bs += amount;\
     if (bs > 7){\
         c += (bs/8);\
         bs %= 8;\
     } \
-} while(0)
-
-#define ADVANCE_BIT_COUNTER(bs, c, a, d) do { \
-    ADVANCE_BIT(bs, c, a);\
-    d -= a;\
-} while(0)
-
-#define READ_BITS(from, to, amount, bs, c) do { \
-    if (bs + amount > 16) \
-        to = (((uint16_t)from[c+2] << (16-bs)) & ((1 << amount) - 1)) |  \
-             (((uint16_t)from[c+1] << (8-bs))  & ((1 << amount) - 1)) |  \
-             (((uint16_t)from[c]   >> bs)      & ((1 << amount) - 1) ); \
-    else if (bs+amount > 8) \
-        to = (((uint16_t)from[c+1] << (8-bs))  & ((1 << amount) - 1)) |  \
-             (((uint16_t)from[c]   >> bs)      & ((1 << amount) - 1) ); \
-    else  \
-        to = (((uint16_t)from[c]   >> bs)      & ((1 << amount) - 1) ); \
 } while (0)
 
 uint32_t base_lengths[] = {
@@ -134,22 +127,16 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
         uint8_t hlit = 0;//5
         uint8_t btype = 0;//2
         READ_BITS(bytes, final, 1, bs, c);
-        ADVANCE_BIT(bs, c, 1);
         READ_BITS(bytes, btype, 2, bs, c);
-        ADVANCE_BIT(bs, c, 2);
         READ_BITS(bytes, hlit, 5, bs, c);
-        ADVANCE_BIT(bs, c, 5);
         READ_BITS(bytes, hdist, 5, bs, c);
-        ADVANCE_BIT(bs, c, 5);
         READ_BITS(bytes, hclen, 4, bs, c);
-        ADVANCE_BIT(bs, c, 4);
         printf("DEFLATE DYNAMIC HEADER. LAST? %i. Type %i. HLIT %i, HDIST %i, HCLEN %i", final, btype, hlit, hdist, hclen);
         
         uint8_t code_order[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
         uint16_t permuted[19] = {};
         for (uint8_t i = 0; i < hclen+4; i++){
             READ_BITS(bytes, permuted[code_order[i]], 3, bs, c);
-            ADVANCE_BIT(bs, c, 3);
         }
         huff_tree_node *huff_decode_nodes = deflate_decode_codes(8, 19, permuted);
         
@@ -168,7 +155,6 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
         for (int i = 0; i < tree_data_size;){
             uint8_t next_bit = 0;
             READ_BITS(bytes, next_bit, 1, bs, c);
-            ADVANCE_BIT(bs, c, 1);
             tree_root = huffman_traverse(tree_root, next_bit);
             if (!tree_root) {
                 printf("DEFLATE ERROR: no tree found");
@@ -180,43 +166,40 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
                     case 16:
                     READ_BITS(bytes, extra, 2, bs, c);
                     extra += 3;
-                    ADVANCE_BIT(bs, c, 2);
                     for (int j = 0; j < extra; j++)
                         full_huffman[i+j] = last_code_len;
                     break;
                     case 17:
                     READ_BITS(bytes, extra, 3, bs, c);
                     extra += 3;
-                    ADVANCE_BIT(bs, c, 3);
                     for (int j = 0; j < extra; j++)
                         full_huffman[i+j] = 0;
                     break;
                     case 18:
                     READ_BITS(bytes, extra, 7, bs, c);
                     extra += 11;
-                    ADVANCE_BIT(bs, c, 7);
                     for (int j = 0; j < extra; j++)
                         full_huffman[i+j] = 0;
                     break;
                     default:
                     full_huffman[i] = tree_root->entry;
+                    last_code_len = tree_root->entry;
                     break;
                 }
                 tree_root = huff_decode_nodes;
                 if (extra) 
                     i+= extra;
                 else i++;
-                last_code_len = tree_root->entry;
             }
         }
         // huffman_free(huff_decode_nodes);
 
         printf("**** LITERAL/LENGTH ****");
-        huff_tree_node *litlen_tree = deflate_decode_codes(hlit + 257, hlit + 257, full_huffman);
+        huff_tree_node *litlen_tree = deflate_decode_codes(15, hlit + 257, full_huffman);
         huffman_viz(litlen_tree, 0, 0);
 
         printf("**** DISTANCE ****");
-        huff_tree_node *dist_tree = deflate_decode_codes(hdist + 1, hdist + 1, full_huffman + hlit + 257);
+        huff_tree_node *dist_tree = deflate_decode_codes(15, hdist + 1, full_huffman + hlit + 257);
 
         huffman_viz(dist_tree, 0, 0);
         // printf("**** WOO ****");
@@ -231,7 +214,6 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
         while (val != 0x100){
             uint8_t next_bit = 0;
             READ_BITS(bytes, next_bit, 1, bs, c);
-            ADVANCE_BIT(bs, c, 1);
             printf("%x",next_bit);
             tree_root = huffman_traverse(tree_root, next_bit);
             if (!tree_root) {
@@ -252,12 +234,10 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
                         extra = (val-261)/4;
                     uint16_t extra_val = 0;
                     READ_BITS(bytes, extra_val, extra, bs, c);
-                    ADVANCE_BIT(bs, c, extra);
                     uint16_t length = base_lengths[val - 257] + extra_val;
                     huff_tree_node *dist_node = dist_tree;
                     while (dist_node->left || dist_node->right){
                         READ_BITS(bytes, next_bit, 1, bs, c);
-                        ADVANCE_BIT(bs, c, 1);
                         dist_node = huffman_traverse(dist_node, next_bit);
                         if (!dist_node){
                             printf("DEFLATE ERROR: no tree found");
@@ -270,7 +250,6 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
                     if (dist_base > 3){
                         extra_dist = (dist_base-2)/2;
                         READ_BITS(bytes, extra_dist_val, extra_dist, bs, c);
-                        ADVANCE_BIT(bs, c, extra_dist);
                     }
                     // printf("Dista base %i + extra %i",dist_base,extra_dist);
                     uint32_t distance = dist_bases[dist_base] + extra_dist_val;
