@@ -10,6 +10,8 @@
 #include "syscalls/syscalls.h"
 #include "filesystem/filesystem.h"
 #include "ui/uno/uno.h"
+#include "../shared/audio/cuatro.h"
+#include "../shared/audio/wav.h"
 
 file boot_fd;
 
@@ -102,6 +104,13 @@ int bootscreen(){
     sys_focus_current();
     gpu_size screen_size = gpu_get_screen_size();
     mouse_config((gpu_point){screen_size.width/2,screen_size.height/2}, screen_size);
+    audio_samples audio = { 0 };
+    file mixin = { 0 };
+    if (FS_RESULT_SUCCESS == open_file("/dev/audio/output", &mixin)){
+        if (wav_load_as_int16("/boot/redos/startup.wav", &audio)){
+            play_audio_async(&audio, AUDIO_LEVEL_MAX / 2, &mixin);
+        }
+    }
     while (1)
     {
         gpu_clear(BG_COLOR);
@@ -116,6 +125,12 @@ int bootscreen(){
             current_point = next_point;
         }
         sleep(1000);
+        if (mixin.id && play_completed(&mixin)){
+            mixer_command cmd = { MIXER_CLOSE_LINE, 0 };
+            write_file(&mixin, (char*)&cmd, sizeof(mixer_command));
+            free((char*)audio.samples.ptr, audio.samples.size);
+            mixin.id = 0; // close_file(&mixin)
+        }
     }
     return 0;
 }

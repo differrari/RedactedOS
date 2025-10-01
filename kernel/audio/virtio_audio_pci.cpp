@@ -20,6 +20,7 @@
 #define VIRTIO_SND_S_NOT_SUPP   0x8002
 #define VIRTIO_SND_S_IO_ERR     0x8003
 
+#define VIRTIO_SND_PCM_FMT_S16       6
 #define VIRTIO_SND_PCM_FMT_U32      18 
 #define VIRTIO_SND_PCM_FMT_FLOAT    19
 #define VIRTIO_SND_PCM_FMT_FLOAT64  20
@@ -27,8 +28,7 @@
 #define VIRTIO_SND_PCM_RATE_44100   6
 #define VIRTIO_SND_PCM_RATE_48000   7
 
-#define SND_44100_BUFFER_SIZE       256
-static_assert((SND_44100_BUFFER_SIZE & 0x01) == 0x00, "Audio buffer size must be even.");
+#define SND_44100_BUFFER_SIZE       AUDIO_DRIVER_BUFFER_SIZE
 #define SND_U32_BYTES 4
 #define SND_PERIOD 1
 #define TOTAL_PERIOD_SIZE SND_44100_BUFFER_SIZE * SND_U32_BYTES * channels
@@ -175,13 +175,13 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
             return false;
         }
 
+        uint32_t sample_rate = 44100;
         if (!(rate & (1 << VIRTIO_SND_PCM_RATE_44100))){
             kprintf("[VIRTIO_AUDIO implementation error] stream does not support 44.1 kHz sample rate");
             return false;
         }
 
-        //TODO: Stereo
-        uint8_t channels = 2; // 1;//stream_info->channels_max;
+        uint8_t channels = stream_info->channels_max;
 
         if (!stream_set_params(stream, stream_info[stream].features, VIRTIO_SND_PCM_FMT_U32, VIRTIO_SND_PCM_RATE_44100, channels)){
             kprintf("[VIRTIO_AUDIO error] Failed to configure stream %i",stream);
@@ -190,6 +190,7 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
         if (stream_info[stream].direction == VIRTIO_SND_D_OUTPUT){
             out_dev = new OutputAudioDevice();
             out_dev->stream_id = stream;
+            out_dev->rate = sample_rate;
             out_dev->channels = channels;
             out_dev->packet_size = sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
             out_dev->buf_size = TOTAL_BUF_SIZE/SND_U32_BYTES;
@@ -205,6 +206,7 @@ void VirtioAudioDriver::send_buffer(sizedptr buf){
     virtio_add_buffer(&audio_dev, cmd_index % audio_dev.common_cfg->queue_size, buf.ptr, buf.size, true);
     struct virtq_used* u = (struct virtq_used*)(uintptr_t)audio_dev.common_cfg->queue_device;
     if (u->idx < cmd_index-20){
+        // TODO: yield cpu
         while (u->idx < cmd_index-5);
     }
     cmd_index++;
