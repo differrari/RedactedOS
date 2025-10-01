@@ -255,7 +255,7 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
                     uint32_t distance = dist_bases[dist_base] + extra_dist_val;
                     // printf("Last %x",output_buf[out_cursor-1]);
                     // printf("Copying %i bytes from %i bytes back. %x + %x",length,distance,output_buf, out_cursor);
-                    memcpy(output_buf - distance + out_cursor - 1, output_buf + out_cursor, length);
+                    memcpy(output_buf - distance + out_cursor, output_buf + out_cursor, length);
                     printf("Sanity check 1 %x",output_buf[distance + out_cursor]);
                     out_cursor += length;
                     // printf("Sanity check 2 %x",output_buf[out_cursor-1]);
@@ -320,8 +320,9 @@ uint64_t header = *(uint64_t*)file;
             uintptr_t prev_off = out_off;
             out_off += deflate_decode((void*)(p + sizeof(png_chunk_hdr)), length, (uint8_t*)(out_buf + out_off));
             memcpy(buf + prev_off, (void*)out_buf, min(out_off, size-prev_off));
-            // for (uint32_t i = 0; i < out_off; i++){
-            //     printf("[%i] = %x",i, out_buf[i]);
+            // for (uint32_t i = out_off-1; i < out_off ; i--){
+            printf("%x", buf[prev_off]);
+            printf("%x", buf[prev_off+1]);
             // }
             return;
         }
