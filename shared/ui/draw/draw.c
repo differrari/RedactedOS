@@ -71,14 +71,19 @@ void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
 }
 
 void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
-    if (x + width >= ctx->width || y + height >= ctx->height) return;
-    if (width == ctx->width && x == 0){
-        memset(ctx->fb + (y * (ctx->width)) , color, ctx->stride * height);
+    uint32_t adj_img_width = width;
+    uint32_t adj_img_height = height;
+    if (x + adj_img_width >= ctx->width)   
+        adj_img_width -= (x + adj_img_width - ctx->width);
+    if (y + adj_img_height >= ctx->height)
+        adj_img_height -= (y + adj_img_height - ctx->height);
+    if (adj_img_width == ctx->width && x == 0){
+        memset(ctx->fb + (y * (ctx->width)) , color, ctx->stride * adj_img_height);
     } else {
-        for (uint32_t dy = 0; dy < height; dy++)
-            memset(ctx->fb + ((y+dy) * (ctx->width)) + x, color, width*4);
+        for (uint32_t dy = 0; dy < adj_img_height; dy++)
+            memset(ctx->fb + ((y+dy) * (ctx->width)) + x, color, adj_img_width*4);
     }
-    mark_dirty(ctx, x,y,width,height);
+    mark_dirty(ctx, x,y,adj_img_width,adj_img_height);
 }
 
 void fb_draw_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t img_width, uint32_t img_height){
