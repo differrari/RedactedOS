@@ -10,6 +10,7 @@
 extern "C" {
 #endif
 
+//TODO: replace with enum
 #define SOCK_ROLE_CLIENT 0
 #define SOCK_ROLE_SERVER 1
 

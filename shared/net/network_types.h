@@ -22,6 +22,17 @@ typedef enum {
     PROTO_TCP = 1
 } protocol_t;
 
+typedef enum Socket_Role {
+    SOCKET_CLIENT,
+    SOCKET_SERVER,
+} Socket_Role;
+
+typedef struct SocketHandle {
+    uint16_t id;
+    net_l4_endpoint connection;
+    protocol_t protocol;
+} SocketHandle;
+
 #ifdef __cplusplus
 }
 #endif

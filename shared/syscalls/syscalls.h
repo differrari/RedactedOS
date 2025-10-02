@@ -36,13 +36,14 @@ extern uint32_t gpu_char_size(uint32_t scale);
 
 extern uint64_t get_time();
 
-extern bool socket_create(ip_version_t ipv, protocol_t protocol, uint16_t port, SockBindSpec *spec);
-extern bool socket_bind(SockBindSpec *spec);
-extern bool socket_listen(SockBindSpec *spec);
+extern bool socket_create(Socket_Role role, protocol_t protocol, SocketHandle *out_handle);
+extern bool socket_bind(SocketHandle *handle, uint16_t port);
+extern bool socket_connect(SocketHandle *handle, ip_version_t ip_version);
+extern bool socket_listen(SocketHandle *handle);
 extern bool socket_accept(SockBindSpec *spec);
-extern bool socket_send(SockBindSpec *spec, sizedptr packet);
-extern bool socket_receive(SockBindSpec *spec, sizedptr *packet);
-extern bool socket_close(SockBindSpec *spec);
+extern bool socket_send(SocketHandle *handle, sizedptr packet);
+extern bool socket_receive(SocketHandle *handle, sizedptr *packet);
+extern bool socket_close(SocketHandle *handle);
 
 void printf(const char *fmt, ...);
 

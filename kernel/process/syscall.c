@@ -20,6 +20,7 @@
 #include "loading/process_loader.h"
 #include "networking/interface_manager.h"
 #include "bin/bin_mod.h"
+#include "net/transport_layer/csocket.h"
 
 int syscall_depth = 0;
 
@@ -124,8 +125,11 @@ uint64_t syscall_get_time(process_t *ctx){
 }
 
 uint64_t syscall_socket_create(process_t *ctx){
-    kprintf("Syscall %s not implemented",__func__);
-    return 0;
+    Socket_Role role = (Socket_Role)ctx->PROC_X0;
+    protocol_t protocol = (protocol_t)ctx->PROC_X1;
+    SocketHandle *out_handle = (SocketHandle*)ctx->PROC_X2;
+    
+    return create_socket(role, protocol, get_current_proc_pid(), out_handle);
 }
 
 uint64_t syscall_socket_bind(process_t *ctx){
