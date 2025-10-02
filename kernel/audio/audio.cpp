@@ -32,10 +32,22 @@ void audio_get_info(uint32_t* rate, uint8_t* channels) {
 
 #define MIX_LINES 4
 
-typedef struct {
-    mixer_input u;  // user process can r/w this - reliant on no memory protection!
+typedef struct mixer_buf {
+    int16_t* samples;
+    size_t   sample_count;
+    uint32_t left_level;
+    uint32_t right_level;
+} mixer_buf;
+
+typedef struct mixer_input {
+    mixer_buf buf[2];
+    uint8_t   channels;
+} mixer_input;
+
+typedef struct mixer_line {
+    mixer_input u;
     uint8_t     bix;
-    uint64_t    id;
+    bool        in_use;
 } mixer_line;
 
 static mixer_line mixin[MIX_LINES];
@@ -50,7 +62,7 @@ static void mixer_reset_line(mixer_line* line){
     line->u.buf[1].left_level = 0;
     line->u.buf[1].right_level = 0;
     line->bix = 0;
-    line->id = 0;  // 0 as 'unused' is ok - filesystem allocates id's > 255
+    line->in_use = false;
 }
 
 static void mixer_reset(){
@@ -76,23 +88,23 @@ static void mixer_run(){
         while (output < limit){
             int64_t left_signal = 0;
             int64_t right_signal = 0;
-            mixer_line* input = mixin;
-            while (input < mixin+MIX_LINES){
-                mixer_buf* buf = &input->u.buf[input->bix];
+            mixer_line* line = mixin;
+            while (line < mixin+MIX_LINES){
+                mixer_buf* buf = &line->u.buf[line->bix];
                 if (buf->samples != NULL){
                     left_signal += (int64_t)*buf->samples * buf->left_level;
-                    if (input->u.channels == 2){
+                    if (line->u.channels == 2){
                         buf->samples++;
                         buf->sample_count--;
                     }
                     right_signal += (int64_t)*buf->samples++ * buf->right_level;
                     if (--buf->sample_count < 1){
                         buf->samples = NULL;
-                        input->bix = 1 - input->bix;
+                        line->bix = 1 - line->bix;
                     }
                     have_audio = true;
                 }
-                ++input;
+                ++line;
             }
             *output++ = normalise_int64_to_uint32(left_signal);
             *output++ = normalise_int64_to_uint32(right_signal);
@@ -106,6 +118,7 @@ static void mixer_run(){
     } while (1);
 }
 
+
 static int audio_mixer(int argc, char* argv[]){
     mixer_reset();
     mixer_run();
@@ -117,25 +130,22 @@ process_t* init_audio_mixer(){
 }
 
 
-static FS_RESULT audio_open(const char *path, file *out_fd){
+static FS_RESULT audio_open(const char *path, file *fd){
     if (0 == strcmp(path, "/output", true)){
-        for (int i = 0; i < MIX_LINES; ++i){
-            if (mixin[i].id == 0){
-                mixer_reset_line(&mixin[i]);
-                out_fd->id = reserve_fd_id();
-                mixin[i].id = out_fd->id;
-                out_fd->size = sizeof(intptr_t);
-                out_fd->cursor = 0; // TODO: check if necessary?  not done by filesystem??
-                return FS_RESULT_SUCCESS;
-            }
-        }
+        fd->id = reserve_fd_id();
+        fd->size = UINT16_MAX;  // dummy value
+        fd->cursor = 0;         // TODO: check if necessary?  not done by filesystem??
+        return FS_RESULT_SUCCESS;
     }
     return FS_RESULT_NOTFOUND;
 }
 
-static mixer_line* find_line(uint64_t id){
+static mixer_line* audio_get_free_line(){
+    // TODO: protect against multi-processing
     for (int i = 0; i < MIX_LINES; ++i){
-        if (mixin[i].id == id){
+        if (mixin[i].in_use == false){
+            mixer_reset_line(&mixin[i]);
+            mixin[i].in_use = true;
             return &mixin[i];
         }
     }
@@ -143,19 +153,31 @@ static mixer_line* find_line(uint64_t id){
 }
 
 static size_t audio_read(file *fd, char *out_buf, size_t size, file_offset offset){
-    // reads ptr to fd's mixer line
-    size = min(size, sizeof(intptr_t));
-    mixer_line* line = find_line(fd->id);
-    memcpy(out_buf, &line, size);
+    if (size != sizeof(mixer_line_data)){
+        return 0;
+    }
+    mixer_line_data* data = (mixer_line_data*)out_buf;  // passed buffer has 'line' set
+    mixer_line* line = (mixer_line*)(data->line);
+    if (line == NULL){
+        // request is for a free input line
+        data->line = (intptr_t)audio_get_free_line();
+        data->buf[0] = NULL;
+        data->buf[1] = NULL;
+    }else{
+        // request is for line data
+        if (line < mixin || line >= (mixin + MIX_LINES)){
+            return 0;
+        }
+        data->buf[0] = (intptr_t)line->u.buf[0].samples;
+        data->buf[1] = (intptr_t)line->u.buf[1].samples;
+    }
+    fd->cursor = 0; // never moves
     return size;
 }
 
 static size_t audio_write(file *fd, const char *buf, size_t size, file_offset offset){
-    mixer_line* line = find_line(fd->id);
-    if (line == NULL || size != sizeof(mixer_command)){
-        return 0;
-    }
     mixer_command* cmd = (mixer_command*)buf;
+    mixer_line* line = (mixer_line*)cmd->line;
     switch (cmd->command){
         case MIXER_SETLEVEL:
             {
@@ -180,12 +202,20 @@ static size_t audio_write(file *fd, const char *buf, size_t size, file_offset of
                 master_muted = false;
             }
             break;
+        case MIXER_PLAY:
+            line->u.channels = cmd->audio->channels;
+            line->u.buf[0].left_level = cmd->audio->amplitude;
+            line->u.buf[0].right_level = cmd->audio->amplitude;
+            line->u.buf[0].sample_count = cmd->audio->smpls_per_channel * cmd->audio->channels;
+            line->u.buf[0].samples = (int16_t*)cmd->audio->samples.ptr;  // this must be last mutation of 'line'.
+            break;
         case MIXER_CLOSE_LINE:
             mixer_reset_line(line);
             break;
         default:
             return 0;
     }
+    fd->cursor = 0;  // never moves
     return size;
 }
 

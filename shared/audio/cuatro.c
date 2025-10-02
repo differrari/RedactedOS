@@ -23,46 +23,68 @@ uint32_t sample_wave(WAVE_TYPE type, uint32_t phase, uint32_t amplitude){
     return sample_raw_wave(type, phase) * amplitude;
 }
 
-static void play_int16_async(mixer_input *line, audio_samples* audio, uint32_t amplitude){
-    line->channels = audio->channels;
-    line->buf[0].left_level = amplitude;
-    line->buf[0].right_level = amplitude;
-    line->buf[0].sample_count = audio->smpls_per_channel * audio->channels;
-    line->buf[0].samples = (int16_t*)audio->samples.ptr;  // this must be last mutation of 'line'.
+bool play_audio_sync(audio_samples *audio, uint32_t amplitude){
+    intptr_t line = (intptr_t)mixer_open_line();
+    if (line != NULL){
+        audio->amplitude = amplitude;
+        mixer_play_async(line, audio);
+        do {
+            // TODO: yield cpu
+        } while (mixer_still_playing(line));
+        mixer_close_line(line);
+        return true;
+    }
+    return false;
 }
 
-bool play_audio_sync(audio_samples *audio, uint32_t amplitude){
-    file mixin;
-    if (FS_RESULT_SUCCESS == open_file("/dev/audio/output", &mixin)){
-        mixer_input* line = NULL;
-        if (sizeof(mixer_input*) == read_file(&mixin, (char*)&line, sizeof(mixer_input*))){
-            play_int16_async(line, audio, amplitude);
-            while (line->buf[0].samples != NULL){
-                // TODO: yield cpu
-            }
-            // close_file(&mixin);
-            mixer_command cmd = { MIXER_CLOSE_LINE, 0 };
-            write_file(&mixin, (char*)&cmd, sizeof(mixer_command));
-            free((char*)audio->samples.ptr, audio->samples.size);
+intptr_t play_audio_async(audio_samples *audio, uint32_t amplitude){
+    intptr_t line = (intptr_t)mixer_open_line();
+    if (line != NULL){
+        audio->amplitude = amplitude;
+        mixer_play_async(line, audio);
+        return line;
+    }
+    return NULL;
+}
+
+
+static file mixer = { .id = 0 };  // 0 ok as filesystem ids > 256
+
+static bool mixer_open_file(){
+    if (mixer.id == 0 && FS_RESULT_SUCCESS != open_file("/dev/audio/output", &mixer)) return false;
+    return true;
+}
+
+intptr_t mixer_open_line(){
+    if (!mixer_open_file()) return NULL;
+    mixer_line_data data = { 0, {0, 0} };
+    size_t size = read_file(&mixer, (char*)&data, sizeof(mixer_line_data));
+    if (sizeof(mixer_line_data) != size){
+        return NULL;
+    }
+    return data.line;
+}
+
+void mixer_close_line(intptr_t line){
+    if (!mixer_open_file()) return;
+    mixer_command command = { line, MIXER_CLOSE_LINE, .value=0 };
+    write_file(&mixer, (char*)&command, sizeof(mixer_command));
+}
+
+void mixer_play_async(intptr_t line, audio_samples* audio){
+    if (!mixer_open_file()) return;
+    mixer_command command = { line, MIXER_PLAY, .audio=audio };
+    write_file(&mixer, (char*)&command, sizeof(mixer_command));
+}
+
+bool mixer_still_playing(intptr_t line){
+    if (!mixer_open_file()) return NULL;
+    mixer_line_data data = { line, {0, 0} };
+    if (FS_RESULT_SUCCESS == read_file(&mixer, (char*)&data, sizeof(mixer_line_data))){
+        if (data.buf[0] != NULL || data.buf[1] != NULL){
             return true;
         }
     }
     return false;
 }
 
-bool play_audio_async(audio_samples *audio, uint32_t amplitude, file *mixin){
-    mixer_input* line = NULL;
-    if (sizeof(mixer_input*) == read_file(mixin, (char*)&line, sizeof(mixer_input*))){
-        play_int16_async(line, audio, amplitude);
-        return true;
-    }
-    return false;
-}
-
-bool play_completed(file *mixin){
-    mixer_input* line = NULL;
-    if (sizeof(mixer_input*) == read_file(mixin, (char*)&line, sizeof(mixer_input*))){
-        return line->buf[0].samples == NULL;
-    }
-    return true;
-}

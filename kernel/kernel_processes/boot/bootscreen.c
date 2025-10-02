@@ -105,11 +105,9 @@ int bootscreen(){
     gpu_size screen_size = gpu_get_screen_size();
     mouse_config((gpu_point){screen_size.width/2,screen_size.height/2}, screen_size);
     audio_samples audio = { 0 };
-    file mixin = { 0 };
-    if (FS_RESULT_SUCCESS == open_file("/dev/audio/output", &mixin)){
-        if (wav_load_as_int16("/boot/redos/startup.wav", &audio)){
-            play_audio_async(&audio, AUDIO_LEVEL_MAX / 2, &mixin);
-        }
+    intptr_t mixin = NULL;
+    if (wav_load_as_int16("/boot/redos/startup.wav", &audio)){
+        mixin = play_audio_async(&audio, AUDIO_LEVEL_MAX / 2);
     }
     while (1)
     {
@@ -125,11 +123,11 @@ int bootscreen(){
             current_point = next_point;
         }
         sleep(1000);
-        if (mixin.id && play_completed(&mixin)){
-            mixer_command cmd = { MIXER_CLOSE_LINE, 0 };
-            write_file(&mixin, (char*)&cmd, sizeof(mixer_command));
-            free((char*)audio.samples.ptr, audio.samples.size);
-            mixin.id = 0; // close_file(&mixin)
+        if (mixin != NULL){
+            if (mixer_still_playing(mixin) == false){
+                mixin = NULL;
+                free((char*)audio.samples.ptr, audio.samples.size);
+            }
         }
     }
     return 0;
