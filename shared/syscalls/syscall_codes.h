@@ -25,11 +25,12 @@
 
 #define SOCKET_CREATE_CODE          50
 #define SOCKET_BIND_CODE            51
-#define SOCKET_LISTEN_CODE          52
-#define SOCKET_ACCEPT_CODE          53
-#define SOCKET_SEND_CODE            54
-#define SOCKET_RECEIVE_CODE         55
-#define SOCKET_CLOSE_CODE           56
+#define SOCKET_CONNECT_CODE         52
+#define SOCKET_LISTEN_CODE          53
+#define SOCKET_ACCEPT_CODE          54
+#define SOCKET_SEND_CODE            55
+#define SOCKET_RECEIVE_CODE         56
+#define SOCKET_CLOSE_CODE           57
 
 #define FILE_OPEN_CODE              60
 #define FILE_READ_CODE              61

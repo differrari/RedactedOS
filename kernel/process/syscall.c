@@ -133,33 +133,51 @@ uint64_t syscall_socket_create(process_t *ctx){
 }
 
 uint64_t syscall_socket_bind(process_t *ctx){
-    kprintf("Syscall %s not implemented",__func__);
-    return 0;
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    uint16_t port = (uint16_t)ctx->PROC_X1;
+    return bind_socket(handle, port);
+}
+
+uint64_t syscall_socket_connect(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
+    void* dst = (void*)ctx->PROC_X2;
+    uint16_t port = (uint16_t)ctx->PROC_X3;
+    return connect_socket(handle, dst_kind, dst, port);
 }
 
 uint64_t syscall_socket_listen(process_t *ctx){
-    kprintf("Syscall %s not implemented",__func__);
-    return 0;
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    int32_t backlog = (int32_t)ctx->PROC_X1;
+    return listen_on(handle, backlog);
 }
 
 uint64_t syscall_socket_accept(process_t *ctx){
-    kprintf("Syscall %s not implemented",__func__);
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    accept_on_socket(handle);
     return 0;
 }
 
 uint64_t syscall_socket_send(process_t *ctx){
-    kprintf("Syscall %s not implemented",__func__);
-    return 0;
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
+    void* dst = (void*)ctx->PROC_X2;
+    uint16_t port = (uint16_t)ctx->PROC_X3;
+    sizedptr *ptr = (sizedptr*)ctx->PROC_X4;
+    return send_on_socket(handle, dst_kind, dst, port, *ptr);
 }
 
 uint64_t syscall_socket_receive(process_t *ctx){
-    kprintf("Syscall %s not implemented",__func__);
-    return 0;
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    void* buf = (void*)ctx->PROC_X1;
+    size_t size = (size_t)ctx->PROC_X2;
+    net_l4_endpoint* out_src = (net_l4_endpoint*)ctx->PROC_X3;
+    return receive_from_socket(handle, buf, size, out_src);
 }
 
 uint64_t syscall_socket_close(process_t *ctx){
-    kprintf("Syscall %s not implemented",__func__);
-    return 0;
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    return close_socket(handle);
 }
 
 
@@ -218,6 +236,7 @@ syscall_entry syscalls[] = {
     { EXEC_CODE, syscall_exec},
     { SOCKET_CREATE_CODE, syscall_socket_create}, 
     { SOCKET_BIND_CODE, syscall_socket_bind}, 
+    { SOCKET_CONNECT_CODE, syscall_socket_connect},
     { SOCKET_LISTEN_CODE, syscall_socket_listen}, 
     { SOCKET_ACCEPT_CODE, syscall_socket_accept}, 
     { SOCKET_SEND_CODE, syscall_socket_send}, 
