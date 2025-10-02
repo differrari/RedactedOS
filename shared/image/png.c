@@ -214,7 +214,7 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
         while (val != 0x100){
             uint8_t next_bit = 0;
             READ_BITS(bytes, next_bit, 1, bs, c);
-            printf("%x",next_bit);
+            // printf("%x",next_bit);
             tree_root = huffman_traverse(tree_root, next_bit);
             if (!tree_root) {
                 printf("DEFLATE ERROR: no tree found");
@@ -224,7 +224,7 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
                 val = tree_root->entry;
                 if (val < 0x100){
                     output_buf[out_cursor] = (val & 0xFF);
-                    printf("Literal %x",output_buf[out_cursor]);
+                    // printf("Literal %x",output_buf[out_cursor]);
                     out_cursor++;
                 } else if (val == 0x100){
                     break;
@@ -256,7 +256,7 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
                     // printf("Last %x",output_buf[out_cursor-1]);
                     // printf("Copying %i bytes from %i bytes back. %x + %x",length,distance,output_buf, out_cursor);
                     memcpy(output_buf - distance + out_cursor, output_buf + out_cursor, length);
-                    printf("Sanity check 1 %x",output_buf[distance + out_cursor]);
+                    // printf("Sanity check 1 %x",output_buf[distance + out_cursor]);
                     out_cursor += length;
                     // printf("Sanity check 2 %x",output_buf[out_cursor-1]);
                 }
@@ -291,8 +291,51 @@ image_info png_get_info(void * file, size_t size){
     return (image_info){__builtin_bswap32(ihdr->width),__builtin_bswap32(ihdr->height)};
 }
 
+void png_process_raw(uintptr_t raw_img, uint32_t w, uint32_t h, uint16_t bpp, uint32_t *buf){
+    const uint8_t bytes = bpp/8;
+    for (uint32_t y = 0; y < h; y++){
+        uint8_t filter_type = *(uint8_t*)(raw_img + (w * bytes * y));
+        printf("Filter type %i = %i",y, filter_type);
+        for (uint32_t x = 0; x < w; x++){
+            uint32_t current = __builtin_bswap32(convert_color_bpp(bpp, (raw_img + (w * bytes * y) + 1 + (x*bytes))));
+            if (y == 0) printf("%x",current);
+            switch (filter_type) {
+                case 0: 
+                break;
+                case 1:
+                if (x > 0) current += buf[(y * w) + x - 1];
+                    break;
+                case 2:
+                    if (y > 0){ 
+                        current += buf[((y-1) * system_bpp * w) + x];
+                    }
+                    break;
+                case 3:
+                    if (x > 0) current += buf[(y * w) * system_bpp + x - 1]/2;
+                    if (y > 0) current += buf[((y-1) * system_bpp * w) + x]/2;
+                    break;
+                case 4:
+                    printf("[PNG] implementation error. Paeth not yet supporter");
+                    return;
+            }
+            buf[(y * w) + x] = current; 
+        }
+    }
+}
+
+uint16_t png_decode_bpp(png_ihdr *ihdr){
+    switch (ihdr->color_type) {
+        case 0: return ihdr->depth;//Greyscale
+        case 2: return 3 * ihdr->depth;//TrueColor
+        case 3: return ihdr->depth;//IndexedColor
+        case 4: return 2 * ihdr->depth;//GrayScale with Alpha
+        case 6: return 4 * ihdr->depth;//Truecolor with alpha
+    }
+    return 0;
+}
+
 void png_read_image(void *file, size_t size, uint32_t *buf){
-uint64_t header = *(uint64_t*)file;
+    uint64_t header = *(uint64_t*)file;
     if (header != 0xA1A0A0D474E5089){
         printf("Wrong PNG header %x",header);
         return;
@@ -303,11 +346,13 @@ uint64_t header = *(uint64_t*)file;
     image_info info = {};
     uintptr_t out_buf = 0;
     uintptr_t out_off = 0;
+    uint16_t bpp = 0;
     do {
         hdr = (png_chunk_hdr*)p;
         uint32_t length = __builtin_bswap32(hdr->length);
         if (strstart(hdr->type, "IHDR", true) == 4){
             png_ihdr *ihdr = (png_ihdr*)(p + sizeof(png_chunk_hdr));
+            bpp = png_decode_bpp(ihdr);
             info = (image_info){__builtin_bswap32(ihdr->width),__builtin_bswap32(ihdr->height)};
         }
         if (strstart(hdr->type, "IDAT", true) == 4){
@@ -315,17 +360,13 @@ uint64_t header = *(uint64_t*)file;
                 printf("Wrong image size");
                 return;
             }
-            if (!out_buf) out_buf = (uintptr_t)malloc(info.width * info.height * system_bpp);//TODO: bpp might be too big, read image format
+            if (!out_buf) out_buf = (uintptr_t)malloc((info.width * info.height * system_bpp) + info.height);//TODO: bpp might be too big, read image format
             printf("Found some idat %x",p + sizeof(png_chunk_hdr) - (uintptr_t)file);
             uintptr_t prev_off = out_off;
             out_off += deflate_decode((void*)(p + sizeof(png_chunk_hdr)), length, (uint8_t*)(out_buf + out_off));
             memcpy(buf + prev_off, (void*)out_buf, min(out_off, size-prev_off));
-            // for (uint32_t i = out_off-1; i < out_off ; i--){
-            printf("%x", buf[prev_off]);
-            printf("%x", buf[prev_off+1]);
-            // }
-            return;
         }
         p += sizeof(png_chunk_hdr) + __builtin_bswap32(hdr->length) + sizeof(uint32_t);
     } while(strstart(hdr->type, "IEND", true) != 4);
+    png_process_raw(out_buf, info.width, info.height, bpp, buf);
 }

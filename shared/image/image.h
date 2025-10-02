@@ -14,5 +14,6 @@ typedef struct image_info {
     uint32_t width, height;
 } image_info;
 
+//TODO: expand image conversion to handle all cases (palette, grayscale, gs-alpha...)
 uint32_t convert_color_bpp(uint16_t bpp, uintptr_t value_ptr);
 void* load_image(char *path, image_info *info, IMAGE_FORMATS format);
