@@ -153,23 +153,19 @@ static mixer_line* audio_get_free_line(){
 }
 
 static size_t audio_read(file *fd, char *out_buf, size_t size, file_offset offset){
-    if (size != sizeof(mixer_line_data)){
-        return 0;
-    }
+    if (size != sizeof(mixer_line_data)) return 0;
     mixer_line_data* data = (mixer_line_data*)out_buf;  // passed buffer has 'line' set
     mixer_line* line = (mixer_line*)(data->line);
     if (line == NULL){
         // request is for a free input line
         data->line = (intptr_t)audio_get_free_line();
-        data->buf[0] = NULL;
-        data->buf[1] = NULL;
+        data->count[0] = 0;
+        data->count[1] = 0;
     }else{
         // request is for line data
-        if (line < mixin || line >= (mixin + MIX_LINES)){
-            return 0;
-        }
-        data->buf[0] = (intptr_t)line->u.buf[0].samples;
-        data->buf[1] = (intptr_t)line->u.buf[1].samples;
+        if (line < mixin || line >= (mixin + MIX_LINES)) return 0;
+        data->count[0] = (intptr_t)line->u.buf[0].sample_count;
+        data->count[1] = (intptr_t)line->u.buf[1].sample_count;
     }
     fd->cursor = 0; // never moves
     return size;

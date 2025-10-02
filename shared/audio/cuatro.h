@@ -29,7 +29,7 @@ typedef struct mixer_command {
 
 typedef struct mixer_line_data {
     intptr_t line;
-    intptr_t buf[2];
+    size_t   count[2];
 } mixer_line_data;
 
 typedef enum WAVE_TYPE {

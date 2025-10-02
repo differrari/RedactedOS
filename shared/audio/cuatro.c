@@ -66,23 +66,26 @@ intptr_t mixer_open_line(){
 }
 
 void mixer_close_line(intptr_t line){
-    if (!mixer_open_file()) return;
-    mixer_command command = { line, MIXER_CLOSE_LINE, .value=0 };
-    write_file(&mixer, (char*)&command, sizeof(mixer_command));
+    if (mixer_open_file()){
+        mixer_command command = { line, MIXER_CLOSE_LINE, .value=0 };
+        write_file(&mixer, (char*)&command, sizeof(mixer_command));
+    }
 }
 
 void mixer_play_async(intptr_t line, audio_samples* audio){
-    if (!mixer_open_file()) return;
-    mixer_command command = { line, MIXER_PLAY, .audio=audio };
-    write_file(&mixer, (char*)&command, sizeof(mixer_command));
+    if (mixer_open_file()){
+        mixer_command command = { line, MIXER_PLAY, .audio=audio };
+        write_file(&mixer, (char*)&command, sizeof(mixer_command));
+    }
 }
 
 bool mixer_still_playing(intptr_t line){
-    if (!mixer_open_file()) return NULL;
-    mixer_line_data data = { line, {0, 0} };
-    if (FS_RESULT_SUCCESS == read_file(&mixer, (char*)&data, sizeof(mixer_line_data))){
-        if (data.buf[0] != NULL || data.buf[1] != NULL){
-            return true;
+    if (mixer_open_file()){
+        mixer_line_data data = { line, {1, 1} };
+        if (sizeof(mixer_line_data) == read_file(&mixer, (char*)&data, sizeof(mixer_line_data))){
+            if (data.count[0] != 0 || data.count[1] != 0){
+                return true;
+            }
         }
     }
     return false;
