@@ -163,8 +163,9 @@ uint64_t syscall_socket_send(process_t *ctx){
     uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
     void* dst = (void*)ctx->PROC_X2;
     uint16_t port = (uint16_t)ctx->PROC_X3;
-    sizedptr *ptr = (sizedptr*)ctx->PROC_X4;
-    return send_on_socket(handle, dst_kind, dst, port, *ptr);
+    void *ptr = (void*)ctx->PROC_X4;
+    size_t size = (size_t)ctx->regs[5];
+    return send_on_socket(handle, dst_kind, dst, port, ptr, size);
 }
 
 uint64_t syscall_socket_receive(process_t *ctx){

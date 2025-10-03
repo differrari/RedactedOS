@@ -7,16 +7,19 @@
 #define BORDER 20
 
 int proc_func() {
-    SockBindSpec spec = {};
-    socket_create(IP_VER4, PROTO_UDP, 80, &spec);
-    socket_bind(&spec);
+    SocketHandle spec = {};
+    socket_create(SOCKET_CLIENT, PROTO_UDP, &spec);
+    socket_bind(&spec, 9000);
     socket_listen(&spec);
 
-    while (!socket_receive(&spec)){}
+    void *ptr = malloc(0x1000);
+    while (!socket_receive(&spec, ptr, 0x1000, 0)){
+        printf("Received data");
+    }
 
     socket_accept(&spec);
 
-    socket_send(&spec);
+    socket_send(&spec, 0, 0);
 
     socket_close(&spec);
 

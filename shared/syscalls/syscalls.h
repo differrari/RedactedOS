@@ -40,9 +40,9 @@ extern bool socket_create(Socket_Role role, protocol_t protocol, SocketHandle *o
 extern int32_t socket_bind(SocketHandle *handle, uint16_t port);
 extern int32_t socket_connect(SocketHandle *handle, ip_version_t ip_version);
 extern int32_t socket_listen(SocketHandle *handle);
-extern bool socket_accept(SockBindSpec *spec);
-extern bool socket_send(SocketHandle *handle, sizedptr packet);
-extern bool socket_receive(SocketHandle *handle, sizedptr *packet, net_l4_endpoint* out_src);
+extern bool socket_accept(SocketHandle *spec);
+extern bool socket_send(SocketHandle *handle, void *packet, size_t size);
+extern bool socket_receive(SocketHandle *handle, void *packet, size_t size, net_l4_endpoint* out_src);
 extern int32_t socket_close(SocketHandle *handle);
 
 void printf(const char *fmt, ...);

@@ -68,19 +68,19 @@ int32_t connect_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, 
     return -1;
 }
 
-int64_t send_on_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, uint16_t port, sizedptr packet){
+int64_t send_on_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, uint16_t port, void* buf, uint64_t len){
     check_mem();
     socket_handle_t *sh = 0;
     protocol_t protocol = 0;//TODO: From handle
     switch (protocol) {
         case PROTO_TCP:
-        return socket_send_tcp(sh, (void*)packet.ptr, packet.size);
+        return socket_send_tcp(sh, buf, len);
         break;
         case PROTO_UDP:
-        return socket_sendto_udp_ex(sh, dst_kind, dst, port, (void*)packet.ptr, packet.size);
+        return socket_sendto_udp_ex(sh, dst_kind, dst, port, buf, len);
         break;
     }
-    return packet.size;
+    return 0;
 }
 
 int64_t receive_from_socket(SocketHandle *handle, void* buf, uint64_t len, net_l4_endpoint* out_src){
