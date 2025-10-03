@@ -131,7 +131,11 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
         READ_BITS(bytes, hlit, 5, bs, c);
         READ_BITS(bytes, hdist, 5, bs, c);
         READ_BITS(bytes, hclen, 4, bs, c);
-        printf("DEFLATE DYNAMIC HEADER. LAST? %i. Type %i. HLIT %i, HDIST %i, HCLEN %i", final, btype, hlit, hdist, hclen);
+        if (btype != 0b10){
+            printf("Only dynamic compression supported right now %i",btype);
+            return 0;
+        }
+        // printf("DEFLATE DYNAMIC HEADER. LAST? %i. Type %i. HLIT %i, HDIST %i, HCLEN %i", final, btype, hlit, hdist, hclen);
         
         uint8_t code_order[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
         uint16_t permuted[19] = {};
@@ -140,11 +144,11 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
         }
         huff_tree_node *huff_decode_nodes = deflate_decode_codes(8, 19, permuted);
         
-        huffman_viz(huff_decode_nodes, 0, 0);
+        // huffman_viz(huff_decode_nodes, 0, 0);
         
         int tree_data_size = hlit + hdist + 258;
 
-        printf("Expecting to read %i",tree_data_size);
+        // printf("Expecting to read %i",tree_data_size);
 
         huff_tree_node *tree_root = huff_decode_nodes;
 
@@ -192,23 +196,21 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
                 else i++;
             }
         }
-        // huffman_free(huff_decode_nodes);
+        huffman_free(huff_decode_nodes);
 
-        printf("**** LITERAL/LENGTH ****");
+        // printf("**** LITERAL/LENGTH ****");
         huff_tree_node *litlen_tree = deflate_decode_codes(15, hlit + 257, full_huffman);
-        huffman_viz(litlen_tree, 0, 0);
+        // huffman_viz(litlen_tree, 0, 0);
 
-        printf("**** DISTANCE ****");
+        // printf("**** DISTANCE ****");
         huff_tree_node *dist_tree = deflate_decode_codes(15, hdist + 1, full_huffman + hlit + 257);
 
-        huffman_viz(dist_tree, 0, 0);
+        // huffman_viz(dist_tree, 0, 0);
         // printf("**** WOO ****");
 
-        // free(full_huffman, tree_data_size * sizeof(uint16_t));
+        free(full_huffman, tree_data_size * sizeof(uint16_t));
 
         tree_root = litlen_tree;
-
-        printf("Compressed data at %x",bytes + c);
         
         uint16_t val = 0;
         while (val != 0x100){
@@ -224,7 +226,6 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
                 val = tree_root->entry;
                 if (val < 0x100){
                     output_buf[out_cursor] = (val & 0xFF);
-                    // printf("Literal %x",output_buf[out_cursor]);
                     out_cursor++;
                 } else if (val == 0x100){
                     break;
@@ -251,24 +252,19 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
                         extra_dist = (dist_base-2)/2;
                         READ_BITS(bytes, extra_dist_val, extra_dist, bs, c);
                     }
-                    // printf("Dista base %i + extra %i",dist_base,extra_dist);
                     uint32_t distance = dist_bases[dist_base] + extra_dist_val;
-                    // printf("Last %x",output_buf[out_cursor-1]);
-                    // printf("Copying %i bytes from %i bytes back. %x + %x",length,distance,output_buf, out_cursor);
-                    memcpy(output_buf - distance + out_cursor, output_buf + out_cursor, length);
-                    // printf("Sanity check 1 %x",output_buf[distance + out_cursor]);
+                    memcpy(output_buf + out_cursor, output_buf - distance + out_cursor, length);
                     out_cursor += length;
-                    // printf("Sanity check 2 %x",output_buf[out_cursor-1]);
                 }
                 tree_root = litlen_tree;
             }
         }
+        huffman_free(litlen_tree);
+        huffman_free(dist_tree);
     }
 
-    printf("Wrote a total of %i bytes",out_cursor);
+    // printf("Wrote a total of %i bytes",out_cursor);
 
-    // huffman_free(litlen_tree);
-    // huffman_free(dist_tree);
 
     return out_cursor;
 }
@@ -294,11 +290,10 @@ image_info png_get_info(void * file, size_t size){
 void png_process_raw(uintptr_t raw_img, uint32_t w, uint32_t h, uint16_t bpp, uint32_t *buf){
     const uint8_t bytes = bpp/8;
     for (uint32_t y = 0; y < h; y++){
-        uint8_t filter_type = *(uint8_t*)(raw_img + (w * bytes * y));
-        printf("Filter type %i = %i",y, filter_type);
+        uint8_t filter_type = *(uint8_t*)(raw_img + (((w * bytes) + 1) * y));
         for (uint32_t x = 0; x < w; x++){
-            uint32_t current = __builtin_bswap32(convert_color_bpp(bpp, (raw_img + (w * bytes * y) + 1 + (x*bytes))));
-            if (y == 0) printf("%x",current);
+            uint32_t current = convert_color_bpp(bpp, (raw_img + (((w * bytes) + 1) * y) + 1 + (x*bytes)));
+            // if (y == 0) printf("%x",current);
             switch (filter_type) {
                 case 0: 
                 break;
@@ -306,13 +301,11 @@ void png_process_raw(uintptr_t raw_img, uint32_t w, uint32_t h, uint16_t bpp, ui
                 if (x > 0) current += buf[(y * w) + x - 1];
                     break;
                 case 2:
-                    if (y > 0){ 
-                        current += buf[((y-1) * system_bpp * w) + x];
-                    }
+                    if (y > 0) current += buf[((y-1) * w) + x];
                     break;
                 case 3:
-                    if (x > 0) current += buf[(y * w) * system_bpp + x - 1]/2;
-                    if (y > 0) current += buf[((y-1) * system_bpp * w) + x]/2;
+                    if (x > 0) current += buf[(y * w) + x - 1]/2;
+                    if (y > 0) current += buf[((y-1) * w) + x]/2;
                     break;
                 case 4:
                     printf("[PNG] implementation error. Paeth not yet supporter");
