@@ -35,8 +35,8 @@ void audio_get_info(uint32_t* rate, uint8_t* channels) {
 typedef struct mixer_buf {
     int16_t* samples;
     size_t   sample_count;
-    uint32_t left_level;
-    uint32_t right_level;
+    uint16_t left_level;
+    uint16_t right_level;
 } mixer_buf;
 
 typedef struct mixer_input {
@@ -71,20 +71,21 @@ static void mixer_reset(){
     }
 }
 
-static uint32_t master_level   = AUDIO_LEVEL_MAX / 2;
-static uint32_t master_premute = 0;
-static bool     master_muted   = false;
+static int16_t master_level    = AUDIO_LEVEL_MAX / 2;
+static int16_t master_premute  = 0;
+static bool    master_muted    = false;
 
-static inline uint32_t normalise_int64_to_uint32(int64_t input){
-    return (uint32_t)(((input / UINT16_MAX) * (int64_t)master_level / (int64_t)AUDIO_LEVEL_MAX) + (int64_t)WAVE_MID_VALUE);
+static inline int16_t normalise_int64_to_int16(int64_t input){
+    int signal = input * master_level / (AUDIO_LEVEL_MAX * AUDIO_LEVEL_MAX);
+    return (int16_t)max(min(signal, AUDIO_LEVEL_MAX), -AUDIO_LEVEL_MAX);
 }
 
 static void mixer_run(){
     sizedptr buf = audio_request_buffer(audio_driver->out_dev->stream_id);
     do{
         bool have_audio = false;
-        uint32_t* output = (uint32_t*)buf.ptr;
-        uint32_t* limit = output + buf.size;
+        int16_t* output = (int16_t*)buf.ptr;
+        int16_t* limit = output + buf.size;
         while (output < limit){
             int64_t left_signal = 0;
             int64_t right_signal = 0;
@@ -92,12 +93,12 @@ static void mixer_run(){
             while (line < mixin+MIX_LINES){
                 mixer_buf* buf = &line->u.buf[line->bix];
                 if (buf->samples != NULL){
-                    left_signal += (int64_t)*buf->samples * buf->left_level;
+                    left_signal += *buf->samples * buf->left_level;
                     if (line->u.channels == 2){
                         buf->samples++;
                         buf->sample_count--;
                     }
-                    right_signal += (int64_t)*buf->samples++ * buf->right_level;
+                    right_signal += *buf->samples++ * buf->right_level;
                     if (--buf->sample_count < 1){
                         buf->samples = NULL;
                         line->bix = 1 - line->bix;
@@ -106,8 +107,8 @@ static void mixer_run(){
                 }
                 ++line;
             }
-            *output++ = normalise_int64_to_uint32(left_signal);
-            *output++ = normalise_int64_to_uint32(right_signal);
+            *output++ = normalise_int64_to_int16(left_signal);
+            *output++ = normalise_int64_to_int16(right_signal);
         }
         if (have_audio){
             audio_submit_buffer();
@@ -156,6 +157,7 @@ static size_t audio_read(file *fd, char *out_buf, size_t size, file_offset offse
     if (size != sizeof(mixer_line_data)) return 0;
     mixer_line_data* data = (mixer_line_data*)out_buf;  // passed buffer has 'line' set
     mixer_line* line = (mixer_line*)(data->line);
+    fd->cursor = 0; // never moves
     if (line == NULL){
         // request is for a free input line
         data->line = (intptr_t)audio_get_free_line();
@@ -167,16 +169,15 @@ static size_t audio_read(file *fd, char *out_buf, size_t size, file_offset offse
         data->count[0] = (intptr_t)line->u.buf[0].sample_count;
         data->count[1] = (intptr_t)line->u.buf[1].sample_count;
     }
-    fd->cursor = 0; // never moves
     return size;
 }
 
 static size_t audio_write(file *fd, const char *buf, size_t size, file_offset offset){
     mixer_command* cmd = (mixer_command*)buf;
     mixer_line* line = (mixer_line*)cmd->line;
+    fd->cursor = 0;  // never moves
     switch (cmd->command){
-        case MIXER_SETLEVEL:
-            {
+        case MIXER_SETLEVEL: {
                 uint32_t value = min(UINT32_MAX, max(0, cmd->value));
                 if (master_muted == false){
                     master_level = value;
@@ -211,7 +212,6 @@ static size_t audio_write(file *fd, const char *buf, size_t size, file_offset of
         default:
             return 0;
     }
-    fd->cursor = 0;  // never moves
     return size;
 }
 

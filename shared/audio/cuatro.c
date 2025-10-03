@@ -19,11 +19,12 @@ float sample_raw_wave(WAVE_TYPE type, uint32_t phase){
     return 0;
 }
 
-uint32_t sample_wave(WAVE_TYPE type, uint32_t phase, uint32_t amplitude){
+uint32_t sample_wave(WAVE_TYPE type, uint32_t phase, int16_t amplitude){
     return sample_raw_wave(type, phase) * amplitude;
 }
 
-bool play_audio_sync(audio_samples *audio, uint32_t amplitude){
+
+bool play_audio_sync(audio_samples *audio, int16_t amplitude){
     intptr_t line = (intptr_t)mixer_open_line();
     if (line != NULL){
         audio->amplitude = amplitude;
@@ -37,7 +38,7 @@ bool play_audio_sync(audio_samples *audio, uint32_t amplitude){
     return false;
 }
 
-intptr_t play_audio_async(audio_samples *audio, uint32_t amplitude){
+intptr_t play_audio_async(audio_samples *audio, int16_t amplitude){
     intptr_t line = (intptr_t)mixer_open_line();
     if (line != NULL){
         audio->amplitude = amplitude;
@@ -58,10 +59,7 @@ static bool mixer_open_file(){
 intptr_t mixer_open_line(){
     if (!mixer_open_file()) return NULL;
     mixer_line_data data = { 0, {0, 0} };
-    size_t size = read_file(&mixer, (char*)&data, sizeof(mixer_line_data));
-    if (sizeof(mixer_line_data) != size){
-        return NULL;
-    }
+    if (sizeof(mixer_line_data) != read_file(&mixer, (char*)&data, sizeof(mixer_line_data))) return NULL;
     return data.line;
 }
 

@@ -71,11 +71,10 @@ static void transform_8bit(wav_header* hdr, audio_samples* audio, uint32_t upsam
 
 bool wav_load_as_int16(const char* path, audio_samples* audio){
     file fd = {};
-    FS_RESULT result = open_file(path, &fd);
 
-    if (result != FS_RESULT_SUCCESS)
+    if (FS_RESULT_SUCCESS != open_file(path, &fd))
     {
-        kprintf("[WAV] File not found: %s", path);
+        //printf("[WAV] File not found: %s", path);
         return false;
     }
 
@@ -94,7 +93,7 @@ bool wav_load_as_int16(const char* path, audio_samples* audio){
         hdr.data_size == 0
         )
     {
-        // close_file(&fd)
+        close_file(&fd);
         printf("[WAV] Unsupported file format %s", path);
         printf("=== Sizes       %i, %i, %i", read_size, fd.size, hdr.data_size);
         printf("=== id          %x", hdr.id);
@@ -108,6 +107,7 @@ bool wav_load_as_int16(const char* path, audio_samples* audio){
     }
 
     uint32_t upsample = 44100 / hdr.sample_rate;
+    bool result = true;
 
     if (hdr.sample_bits == 16 && upsample == 1){
         // simple case: slurp samples direct from file to wav buffer
@@ -122,9 +122,8 @@ bool wav_load_as_int16(const char* path, audio_samples* audio){
     }else if (hdr.sample_bits == 8){
         transform_8bit(&hdr, audio, upsample, &fd);
     }else{
-        // close_file(&fd);
-        return false;
+        result = false;
     }
-    // close_file(&fd);
-    return true;
+    close_file(&fd);
+    return result;
 }

@@ -20,7 +20,7 @@
 #define VIRTIO_SND_S_NOT_SUPP   0x8002
 #define VIRTIO_SND_S_IO_ERR     0x8003
 
-#define VIRTIO_SND_PCM_FMT_S16       6
+#define VIRTIO_SND_PCM_FMT_S16       5
 #define VIRTIO_SND_PCM_FMT_U32      18 
 #define VIRTIO_SND_PCM_FMT_FLOAT    19
 #define VIRTIO_SND_PCM_FMT_FLOAT64  20
@@ -28,11 +28,13 @@
 #define VIRTIO_SND_PCM_RATE_44100   6
 #define VIRTIO_SND_PCM_RATE_48000   7
 
-#define SND_44100_BUFFER_SIZE       AUDIO_DRIVER_BUFFER_SIZE
-#define SND_U32_BYTES 4
-#define SND_PERIOD 1
-#define TOTAL_PERIOD_SIZE SND_44100_BUFFER_SIZE * SND_U32_BYTES * channels
-#define TOTAL_BUF_SIZE TOTAL_PERIOD_SIZE * SND_PERIOD
+#define SND_SAMPLE_RATE     VIRTIO_SND_PCM_RATE_44100
+#define SND_BUFFER_SIZE     AUDIO_DRIVER_BUFFER_SIZE
+#define SND_SAMPLE_FORMAT   VIRTIO_SND_PCM_FMT_S16
+#define SND_SAMPLE_BYTES    sizeof(int16_t)
+#define SND_PERIOD          1
+#define TOTAL_PERIOD_SIZE   SND_BUFFER_SIZE * SND_SAMPLE_BYTES * channels
+#define TOTAL_BUF_SIZE      TOTAL_PERIOD_SIZE * SND_PERIOD
 
 #define CONTROL_QUEUE   0
 #define EVENT_QUEUE     1
@@ -170,20 +172,20 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
 
         kprintf("[VIRTIO_AUDIO] Stream %i (%s): Features %x. Format %x. Sample %x. Channels %i-%i",stream, (uintptr_t)(stream_info[stream].direction ? "IN" : "OUT"), stream_info[stream].features, format, rate, stream_info->channels_min, stream_info->channels_max);
 
-        if (!(format & (1 << VIRTIO_SND_PCM_FMT_U32))){
-            kprintf("[VIRTIO_AUDIO implementation error] stream does not support Uint32 format");
+        if (!(format & (1 << SND_SAMPLE_FORMAT))){
+            kprintf("[VIRTIO_AUDIO implementation error] stream does not support int16 format");
             return false;
         }
 
         uint32_t sample_rate = 44100;
-        if (!(rate & (1 << VIRTIO_SND_PCM_RATE_44100))){
+        if (!(rate & (1 << SND_SAMPLE_RATE))){
             kprintf("[VIRTIO_AUDIO implementation error] stream does not support 44.1 kHz sample rate");
             return false;
         }
 
         uint8_t channels = stream_info->channels_max;
 
-        if (!stream_set_params(stream, stream_info[stream].features, VIRTIO_SND_PCM_FMT_U32, VIRTIO_SND_PCM_RATE_44100, channels)){
+        if (!stream_set_params(stream, stream_info[stream].features, SND_SAMPLE_FORMAT, SND_SAMPLE_RATE, channels)){
             kprintf("[VIRTIO_AUDIO error] Failed to configure stream %i",stream);
         }
 
@@ -193,7 +195,7 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
             out_dev->rate = sample_rate;
             out_dev->channels = channels;
             out_dev->packet_size = sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
-            out_dev->buf_size = TOTAL_BUF_SIZE/SND_U32_BYTES;
+            out_dev->buf_size = TOTAL_BUF_SIZE/SND_SAMPLE_BYTES;
             out_dev->header_size = sizeof(virtio_snd_pcm_xfer);
             out_dev->populate();
         }
