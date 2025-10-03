@@ -1,6 +1,6 @@
 #include "types.h"
 #include "hashmap.h"
-#include "memory.h"
+#include "std/memory.h"
 
 static int chm_bytewise_eq(const void* a, uint64_t alen, const void* b, uint64_t blen){
     if (alen!= blen) return 0;
@@ -49,9 +49,9 @@ static void chm_update_threshold(chashmap_t* map){
     map->resize_threshold = (map->capacity*3)/4;
 }
 
-chashmap_t* chashmap_create(uint64_t initial_capacity){
+chashmap_t* chashmap_create_alloc(uint64_t initial_capacity, void* (*alloc)(uint64_t size)){
     uint64_t cap = chm_next_pow2(initial_capacity ? initial_capacity : 8);
-    chashmap_t* m = (chashmap_t*)malloc((uint64_t)sizeof(chashmap_t));
+    chashmap_t* m = (chashmap_t*)alloc((uint64_t)sizeof(chashmap_t));
 
     if (!m) return 0;
 
@@ -61,7 +61,7 @@ chashmap_t* chashmap_create(uint64_t initial_capacity){
     m->value_dispose = 0;
     m->capacity = cap;
     m->size = 0;
-    m->buckets = (chashmap_entry_t**)malloc((uint64_t)sizeof(chashmap_entry_t*)*cap);
+    m->buckets = (chashmap_entry_t**)alloc((uint64_t)sizeof(chashmap_entry_t*)*cap);
 
     if (!m->buckets) {
         free(m, (uint64_t)sizeof(chashmap_t));
@@ -71,6 +71,10 @@ chashmap_t* chashmap_create(uint64_t initial_capacity){
     memset(m->buckets, 0, (uint64_t)sizeof(chashmap_entry_t*)*cap);
     chm_update_threshold(m);
     return m;
+}
+
+chashmap_t* chashmap_create(uint64_t initial_capacity){
+    return chashmap_create_alloc(initial_capacity, malloc);
 }
 
 void chashmap_destroy(chashmap_t* map){

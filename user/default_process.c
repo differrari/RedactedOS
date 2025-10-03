@@ -9,6 +9,7 @@
 int proc_func() {
     SocketHandle spec = {};
     socket_create(SOCKET_CLIENT, PROTO_UDP, &spec);
+    printf("Created socket for type %i",spec.protocol);
     socket_bind(&spec, 9000);
     socket_listen(&spec);
 

@@ -129,13 +129,13 @@ uint64_t syscall_socket_create(process_t *ctx){
     protocol_t protocol = (protocol_t)ctx->PROC_X1;
     SocketHandle *out_handle = (SocketHandle*)ctx->PROC_X2;
     
-    return create_socket(role, protocol, get_current_proc_pid(), out_handle);
+    return create_socket(role, protocol, ctx->id, out_handle);
 }
 
 uint64_t syscall_socket_bind(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
     uint16_t port = (uint16_t)ctx->PROC_X1;
-    return bind_socket(handle, port);
+    return bind_socket(handle, port, ctx->id);
 }
 
 uint64_t syscall_socket_connect(process_t *ctx){
@@ -143,18 +143,18 @@ uint64_t syscall_socket_connect(process_t *ctx){
     uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
     void* dst = (void*)ctx->PROC_X2;
     uint16_t port = (uint16_t)ctx->PROC_X3;
-    return connect_socket(handle, dst_kind, dst, port);
+    return connect_socket(handle, dst_kind, dst, port, ctx->id);
 }
 
 uint64_t syscall_socket_listen(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
     int32_t backlog = (int32_t)ctx->PROC_X1;
-    return listen_on(handle, backlog);
+    return listen_on(handle, backlog, ctx->id);
 }
 
 uint64_t syscall_socket_accept(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
-    accept_on_socket(handle);
+    accept_on_socket(handle, ctx->id);
     return 0;
 }
 
@@ -165,7 +165,7 @@ uint64_t syscall_socket_send(process_t *ctx){
     uint16_t port = (uint16_t)ctx->PROC_X3;
     void *ptr = (void*)ctx->PROC_X4;
     size_t size = (size_t)ctx->regs[5];
-    return send_on_socket(handle, dst_kind, dst, port, ptr, size);
+    return send_on_socket(handle, dst_kind, dst, port, ptr, size, ctx->id);
 }
 
 uint64_t syscall_socket_receive(process_t *ctx){
@@ -173,12 +173,12 @@ uint64_t syscall_socket_receive(process_t *ctx){
     void* buf = (void*)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
     net_l4_endpoint* out_src = (net_l4_endpoint*)ctx->PROC_X3;
-    return receive_from_socket(handle, buf, size, out_src);
+    return receive_from_socket(handle, buf, size, out_src, ctx->id);
 }
 
 uint64_t syscall_socket_close(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
-    return close_socket(handle);
+    return close_socket(handle, ctx->id);
 }
 
 
