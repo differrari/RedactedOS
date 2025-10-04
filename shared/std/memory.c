@@ -16,6 +16,7 @@ void* memset32(void* dest, uint32_t val, size_t count) {
     while (((uintptr_t)d8 & 7) % 8 != 0 && count > 0) {
         *d8++ = (uint8_t)(val & 0xFF);
         count--;
+        val = (val << 24) | (val >> 8);
     }
 
     size_t blocks = count / 128;
