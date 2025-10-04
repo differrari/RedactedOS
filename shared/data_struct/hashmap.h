@@ -32,7 +32,7 @@ typedef struct chashmap {
 } chashmap_t;
 
 chashmap_t* chashmap_create(uint64_t initial_capacity);
-chashmap_t* chashmap_create_alloc(uint64_t initial_capacity, void* (*alloc)(uint64_t size));
+chashmap_t* chashmap_create_alloc(uint64_t initial_capacity, void* (*alloc)(uint64_t size),void (*mfree)(void* ptr, size_t size));
 void chashmap_destroy(chashmap_t* map);
 void chashmap_set_allocator(chashmap_t* map, void* (*alloc)(uint64_t), void (*dealloc)(void*, uint64_t));
 void chashmap_set_hash(chashmap_t* map, chashmap_hash_fn hash_fn, chashmap_keyeq_fn keyeq_fn);

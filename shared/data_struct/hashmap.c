@@ -49,13 +49,13 @@ static void chm_update_threshold(chashmap_t* map){
     map->resize_threshold = (map->capacity*3)/4;
 }
 
-chashmap_t* chashmap_create_alloc(uint64_t initial_capacity, void* (*alloc)(uint64_t size)){
+chashmap_t* chashmap_create_alloc(uint64_t initial_capacity, void* (*alloc)(uint64_t size),void (*mfree)(void* ptr, size_t size)){
     uint64_t cap = chm_next_pow2(initial_capacity ? initial_capacity : 8);
     chashmap_t* m = (chashmap_t*)alloc((uint64_t)sizeof(chashmap_t));
 
     if (!m) return 0;
 
-    m->alloc = 0; m->free = 0;
+    m->alloc = alloc; m->free = mfree;
     m->hash_fn = chashmap_fnv1a64;
     m->keyeq_fn = chm_bytewise_eq;
     m->value_dispose = 0;
@@ -64,7 +64,7 @@ chashmap_t* chashmap_create_alloc(uint64_t initial_capacity, void* (*alloc)(uint
     m->buckets = (chashmap_entry_t**)alloc((uint64_t)sizeof(chashmap_entry_t*)*cap);
 
     if (!m->buckets) {
-        free(m, (uint64_t)sizeof(chashmap_t));
+        m->free(m, (uint64_t)sizeof(chashmap_t));
         return 0;
     }
 
@@ -74,7 +74,7 @@ chashmap_t* chashmap_create_alloc(uint64_t initial_capacity, void* (*alloc)(uint
 }
 
 chashmap_t* chashmap_create(uint64_t initial_capacity){
-    return chashmap_create_alloc(initial_capacity, malloc);
+    return chashmap_create_alloc(initial_capacity, malloc, free);
 }
 
 void chashmap_destroy(chashmap_t* map){

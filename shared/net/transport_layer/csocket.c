@@ -27,38 +27,40 @@ static inline void check_mem(){
     if (!sock_mem_page)
         sock_mem_page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
     if (!map){
-        map = chashmap_create_alloc(128, custom_alloc);
-        map->alloc = custom_alloc;
-        map->free = kfree;
+        map = chashmap_create_alloc(128, custom_alloc, kfree);
     }
 }
 
 bool create_socket(Socket_Role role, protocol_t protocol, uint16_t pid, SocketHandle *out_handle){
     check_mem();
-    socket_handle_t *in_handle;
+    socket_handle_t *in_handle = {};
     switch (protocol) {
         case PROTO_UDP:
-            in_handle = udp_socket_create(role, pid);
+        in_handle = udp_socket_create(role, pid);
         break;
         case PROTO_TCP:
-            in_handle = socket_tcp_create(role, pid);
+        in_handle = socket_tcp_create(role, pid);
         break;
     }
     if (!in_handle){
         kprintf("[SOCKET] failed to create socket for %i",pid);
         return false;
     }
-    //Hold a reference to the pointer, since that's the internal handle, and fill out_handle
-    *out_handle = (SocketHandle){
-        .id = socket_ids++,
-        .connection = {},
-        .protocol = protocol
-    };
+    out_handle->id = socket_ids;
+    out_handle->connection = (net_l4_endpoint){};
+    out_handle->protocol = protocol;
+
+    kprintf("Allocating");
     ksock_handle_t *sh = (ksock_handle_t*)custom_alloc(sizeof(ksock_handle_t));
+    sh->sh = in_handle;
     sh->id = out_handle->id;
     sh->protocol = protocol;
     sh->pid = pid;
-    chashmap_put(map, &out_handle->id, sizeof(uint16_t), sh);
+
+    if (chashmap_put(map, &out_handle->id, sizeof(uint16_t), sh) < 0){
+        kprint("Failed to save socket");
+        return false;
+    }
     return true;
 }
 
