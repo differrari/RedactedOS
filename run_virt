@@ -33,7 +33,8 @@ elif [ "$OS_TYPE" = "Linux" ]; then
     NETDEV="-netdev user,id=net0"
     PRIVILEGE=""
     DISPLAY_MODE="sdl"
-    SELECTED_GPU="virtio-gpu-gl$VIRTIO_GPU_VARS"
+    SELECTED_GPU="virtio-gpu-pci$VIRTIO_GPU_VARS"
+    GL="off"
 else
     echo "Unknown OS: $OS_TYPE" >&2
     exit 1
@@ -53,10 +54,11 @@ $PRIVILEGE qemu-system-aarch64 \
   -cpu cortex-a72 \
   -m 512M \
   -kernel kernel.elf \
+  -device $SELECTED_GPU \
+  -display $DISPLAY_MODE${GL:+,gl=$GL} \
   -device ramfb \
-  -display $DISPLAY_MODE,gl=$GL \
   $NETDEV \
-  -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56 \
+  -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56,speed=10000,duplex=full \
   $DUMP \
   -serial mon:stdio \
   -drive file=disk.img,if=none,format=raw,id=hd0 \
@@ -70,4 +72,5 @@ $PRIVILEGE qemu-system-aarch64 \
   -trace file=./trace \
   -audiodev ${AUDIO_BACKEND},id=audio \
   -d guest_errors \
+  #-netdev tap,id=net1,ifname=tap1,script=no,downscript=no,vnet_hdr=off \
   $ARGS

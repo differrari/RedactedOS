@@ -120,3 +120,42 @@ void* memcpy(void *dest, const void *src, uint64_t count) {
 
     return dest;
 }
+
+void memreverse(void *ptr, size_t n) {
+    if (n <= 1) return;
+
+    uint8_t *l = (uint8_t*)ptr;
+    uint8_t *r = l + n - 1;
+
+    while (((uintptr_t)l & 7) &&l < r) {
+        uint8_t t = *l;
+        *l++ = *r;
+        *r-- = t;
+    }
+
+    while (((uintptr_t)r & 7) && l < r) {
+        uint8_t t = *l;
+        *l++ = *r;
+        *r-- = t;
+    }
+
+    while ((size_t)(r - l + 1) >= 16) {
+        uint64_t *pl = (uint64_t*)l;
+        uint64_t *pr = (uint64_t*)(r-7);
+
+        uint64_t vl = *pl;
+        uint64_t vr = *pr;
+
+        *pl = bswap64(vr);
+        *pr = bswap64(vl);
+
+        l += 8;
+        r -= 8;
+    }
+
+    while (l < r) {
+        uint8_t t = *l;
+        *l++ = *r;
+        *r-- = t;
+    }
+}
