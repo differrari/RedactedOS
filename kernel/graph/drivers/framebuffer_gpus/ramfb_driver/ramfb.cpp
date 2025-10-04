@@ -17,6 +17,7 @@ typedef struct {
 }__attribute__((packed)) ramfb_structure;
 
 #define RGB_FORMAT_XRGB8888 ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
+#define RGB_FORMAT_ARGB8888 ((uint32_t)('A') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
 
 #define bpp 4
 
@@ -68,7 +69,7 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
 void RamFBGPUDriver::update_gpu_fb(){
     ramfb_structure fb = {
         .addr = __builtin_bswap64((uintptr_t)framebuffer),
-        .fourcc = __builtin_bswap32(RGB_FORMAT_XRGB8888),
+        .fourcc = __builtin_bswap32(RGB_FORMAT_ARGB8888),
         .flags = __builtin_bswap32(0),
         .width = __builtin_bswap32(screen_size.width),
         .height = __builtin_bswap32(screen_size.height),
