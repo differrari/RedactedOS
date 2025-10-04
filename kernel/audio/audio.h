@@ -4,8 +4,7 @@
 #include "dev/driver_base.h"
 #include "process/process.h"
 
-#define AUDIO_DRIVER_BUFFER_SIZE    256
-// TODO: static_assert((AUDIO_DRIVER_BUFFER_SIZE & 0x01) == 0x00, "Audio buffer size must be even.");
+#define AUDIO_DRIVER_BUFFER_SIZE    441
 
 #ifdef __cplusplus
 extern "C" {

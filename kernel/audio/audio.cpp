@@ -81,6 +81,8 @@ static inline int16_t normalise_int64_to_int16(int64_t input){
 }
 
 static void mixer_run(){
+    uint64_t earliest_buffer_time = 0;
+    uint64_t pacing_offset = (AUDIO_DRIVER_BUFFER_SIZE * 1000 / 44100) - 2;
     sizedptr buf = audio_request_buffer(audio_driver->out_dev->stream_id);
     do{
         bool have_audio = false;
@@ -111,9 +113,13 @@ static void mixer_run(){
             *output++ = normalise_int64_to_int16(right_signal);
         }
         if (have_audio){
+            uint64_t this_buffer_time;
+            while ((this_buffer_time = get_time()) < earliest_buffer_time);
+            earliest_buffer_time = this_buffer_time + pacing_offset;
             audio_submit_buffer();
             buf = audio_request_buffer(audio_driver->out_dev->stream_id);
         }else{
+            earliest_buffer_time = 0;
             // TODO: yield cpu
         }
     } while (1);
