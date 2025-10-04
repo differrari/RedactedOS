@@ -363,3 +363,21 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
     } while(strstart(hdr->type, "IEND", true) != 4);
     png_process_raw(out_buf, info.width, info.height, bpp, buf);
 }
+
+void* load_png(char *path, image_info *info){
+    file descriptor;
+    FS_RESULT res = fopen(path, &descriptor);
+    void *img = 0;
+    void* file_img = malloc(descriptor.size);
+    fread(&descriptor, file_img, descriptor.size);
+    if (res != FS_RESULT_SUCCESS){ 
+        printf("Couldn't open image");
+        return 0;
+    }
+
+    *info = png_get_info(file_img, descriptor.size);
+    printf("info %ix%i",info->width,info->height);
+    img = malloc(info->width*info->height*system_bpp);
+    png_read_image(file_img, descriptor.size, img);
+    return img;
+}
