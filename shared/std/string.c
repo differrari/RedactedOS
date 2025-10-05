@@ -33,12 +33,6 @@ static inline uint32_t u64_to_dec(char *tmp, uint64_t v) {
     return n;
 }
 
-static inline uint32_t i64_to_dec(char *tmp, int64_t vv, int *neg) {
-    *neg = (vv < 0);
-    uint64_t v = (uint64_t)(*neg ? -vv : vv);
-    return u64_to_dec(tmp, v);
-}
-
 static inline uint32_t u64_to_base(char *tmp, uint64_t v, unsigned base, int upper) {
     const char *digs = upper ? "0123456789ABCDEF" : "0123456789abcdef";
     uint32_t n = 0;
@@ -167,6 +161,7 @@ uint32_t parse_bin(uint64_t value, char* buf){
 
 string string_from_bin(uint64_t value){
     char *buf = (char*)malloc(66);
+    if (!buf) return (string){0};
     uint32_t len = parse_bin(value, buf);
     return (string){ .data = buf, .length = len, .mem_length = 66 };
 }
@@ -300,7 +295,7 @@ size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args
             continue;
         } else if (spec == 'c') {
             int ch = va_arg(args, int);
-            outtmp[0] = (char)ch;
+            outtmp[0] = ch ? (char)ch : ' ';
             outlen = 1;
         } else if (spec == 's') {
             const char *s = va_arg(args, char *);
@@ -370,8 +365,8 @@ size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args
 
                 if (base == 10) {
                     char dtmp[32];
-                    int neg = 0;
-                    uint32_t dn = i64_to_dec(dtmp, sv, &neg);
+                    int neg = (sv < 0);
+                    uint32_t dn = u64_to_dec(dtmp, neg ? (uint64_t)(-(sv + 1)) + 1 : (uint64_t)sv);
                     for (uint32_t k = 0; k < dn && k < sizeof(outtmp); k++) outtmp[k] = dtmp[k];
                     outlen = dn;
                     negative = neg;
@@ -951,7 +946,7 @@ uint64_t parse_int_u64(const char* str, size_t size){
 string string_from_const(const char *lit)
 {
     uint32_t len = strlen(lit, 0);
-    return (string){ (char *)lit, len, len };
+    return (string){ (char *)lit, len, len + 1};
 }
 
 string string_concat(string a, string b)
@@ -998,6 +993,6 @@ void string_append_bytes(string *dest, const void *buf, uint32_t len)
 const char* seek_to(const char *string, char character){
     while (*string != character && *string != '\0')
         string++;
-    string++;
+    if (*string == character) string++;
     return string;
 }
