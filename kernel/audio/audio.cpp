@@ -80,9 +80,12 @@ static inline int16_t normalise_int64_to_int16(int64_t input){
     return (int16_t)max(min(signal, AUDIO_LEVEL_MAX), -AUDIO_LEVEL_MAX);
 }
 
+#define SUBMIT_SEPARATION_ACTUAL_MSECS (AUDIO_DRIVER_BUFFER_SIZE * 1000 / 44100)    // Ideally no remainder from division!
+#define SUBMIT_SEPARATION_SAFE_MSECS   (SUBMIT_SEPARATION_ACTUAL_MSECS - 5)         // -5 for wiggle room.  Enough?
+
 static void mixer_run(){
-    uint64_t earliest_buffer_time = 0;
-    uint64_t pacing_offset = (AUDIO_DRIVER_BUFFER_SIZE * 1000 / 44100) - 2;
+    uint64_t buffer_run_start_time = 0;
+    uint32_t buffer_run_count = 0;
     sizedptr buf = audio_request_buffer(audio_driver->out_dev->stream_id);
     do{
         bool have_audio = false;
@@ -113,13 +116,18 @@ static void mixer_run(){
             *output++ = normalise_int64_to_int16(right_signal);
         }
         if (have_audio){
-            uint64_t this_buffer_time;
-            while ((this_buffer_time = get_time()) < earliest_buffer_time);
-            earliest_buffer_time = this_buffer_time + pacing_offset;
+            if (buffer_run_count == 0){
+                buffer_run_start_time = get_time();
+            }else{
+                uint64_t this_buffer_time = buffer_run_start_time + 
+                                            (buffer_run_count * SUBMIT_SEPARATION_ACTUAL_MSECS) + SUBMIT_SEPARATION_SAFE_MSECS;
+                while (get_time() < this_buffer_time);
+            }
             audio_submit_buffer();
+            ++buffer_run_count;
             buf = audio_request_buffer(audio_driver->out_dev->stream_id);
         }else{
-            earliest_buffer_time = 0;
+            buffer_run_count = 0;
             // TODO: yield cpu
         }
     } while (1);
