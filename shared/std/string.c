@@ -1,6 +1,7 @@
 #include "std/string.h"
 #include "syscalls/syscalls.h"
 #include "std/memory.h"
+#include "types.h"
 
 #define TRUNC_MARKER "[…]"
 
@@ -208,7 +209,7 @@ size_t string_format_buf(char *out, size_t cap, const char *fmt, ...){
     va_end(args);
     return size;
 }
-
+//TODO unifdy %s and %c handling with the generic padding
 size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args) {
     char *p = out;
     size_t rem = cap ? cap : 1;
@@ -258,28 +259,44 @@ size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args
                 }
             }
         }
+        if (precision_set && precision < 0) {
+            precision_set = 0;
+        }
+        int had_precision = precision_set;
 
-        enum { LEN_DEF, LEN_HH, LEN_H, LEN_L, LEN_LL, LEN_Z, LEN_T } len = LEN_DEF;
+        enum { LEN_DEF, LEN_HH, LEN_H, LEN_L, LEN_LL, LEN_Z, LEN_T, LEN_J } len = LEN_DEF;
         if (fmt[i] == 'h') { if (fmt[i + 1] == 'h') { len = LEN_HH; i += 2; } else { len = LEN_H; i++; } }
         else if (fmt[i] == 'l') { if (fmt[i + 1] == 'l') { len = LEN_LL; i += 2; } else { len = LEN_L; i++; } }
         else if (fmt[i] == 'z') { len = LEN_Z; i++; }
         else if (fmt[i] == 't') { len = LEN_T; i++; }
+        else if (fmt[i] == 'j') { len = LEN_J; i++; }
 
         if (width_star) {
             width = va_arg(args, int);
             if (width < 0) { flag_minus = 1; width = -width; }
         }
-
+        if (!fmt[i]) {
+            append_char(&p, &rem, '%', &truncated_all);
+            break;
+        }
         char spec = fmt[i++];
 
         char numtmp[66];
-        char outtmp[128];
+        char outtmp[256];
         uint32_t outlen = 0;
         int is_num = 0;
         int negative = 0;
 
         if (spec == '%') {
-            append_char(&p, &rem, '%', &truncated_all);
+            uint32_t padlen = (width > 1) ? (uint32_t)(width - 1) : 0;
+            char padc = (flag_zero && !had_precision) ? '0' : ' ';
+            if (!flag_minus) {
+                for (uint32_t z = 0; z < padlen; z++) append_char(&p, &rem, padc, &truncated_all);
+                append_char(&p, &rem, '%', &truncated_all);
+            } else {
+                append_char(&p, &rem, '%', &truncated_all);
+                for (uint32_t z = 0; z < padlen; z++) append_char(&p, &rem, ' ', &truncated_all);
+            }
             continue;
         } else if (spec == 'c') {
             int ch = va_arg(args, int);
@@ -301,7 +318,8 @@ size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args
             }
             continue;
         } else if (spec == 'S') {
-            string sv = *(string *)va_arg(args, void *);
+            const string *sp = va_arg(args, const string *);
+            string sv = sp ? *sp : (string){ .data = NULL, .length = 0, .mem_length = 0};
             const char *s = sv.data ? sv.data : "(null)";
             uint32_t sl = sv.data ? sv.length : 6;
             if (precision_set && (uint32_t)precision < sl) sl = (uint32_t)precision;
@@ -347,6 +365,7 @@ size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args
                 else if (len == LEN_LL) sv = va_arg(args, long long);
                 else if (len == LEN_Z) sv = (long long)va_arg(args, size_t);
                 else if (len == LEN_T) sv = (long long)va_arg(args, intptr_t);
+                else if (len == LEN_J) sv = va_arg(args, int64_t);
                 else sv = va_arg(args, int);
 
                 if (base == 10) {
@@ -369,6 +388,7 @@ size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args
                 else if (len == LEN_LL) u = va_arg(args, unsigned long long);
                 else if (len == LEN_Z) u = (uint64_t)va_arg(args, size_t);
                 else if (len == LEN_T) u = (uint64_t)va_arg(args, uintptr_t);
+                else if (len == LEN_J) u = (uint64_t)va_arg(args, uint64_t);
                 else u = va_arg(args, unsigned int);
 
                 if (base == 10) {
@@ -394,10 +414,14 @@ size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args
                     }
                 }
             }
+            if (spec == 'o' && flag_hash && outlen == 0) {
+                outtmp[0] = '0';
+                outlen = 1;
+            }
 
             if (flag_hash && outlen) {
                 if (spec == 'o') {
-                    if (!(outlen == 1 && outtmp[0] == '0')) {
+                    if (outtmp[0] != '0') {
                         if (outlen + 1 < sizeof(outtmp)) {
                             for (uint32_t k = outlen; k > 0; k--) outtmp[k] = outtmp[k - 1];
                             outtmp[0] = '0';
@@ -415,39 +439,294 @@ size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args
                 }
             }
             is_num = 1;
-        } else if (spec == 'f' || spec == 'F') {
+        } else if (spec == 'f' || spec == 'F' || spec == 'e' || spec == 'E' || spec == 'g' || spec == 'G' || spec == 'a' || spec == 'A') {
             double dv = va_arg(args, double);
-            if (!precision_set) precision = 6;
-            if (precision < 0) precision = 0;
-            if (dv < 0) { negative = 1; dv = -dv; }
+            int upper = (spec == 'F' || spec == 'E' || spec == 'G' || spec == 'A');
 
-            uint64_t whole = (uint64_t)dv;
-            double frac = dv - (double)whole;
+            uint64_t bits; memcpy(&bits, &dv, sizeof(bits));
+            int is_nan = ((bits & 0x7FF0000000000000ULL) == 0x7FF0000000000000ULL) && (bits & 0x000FFFFFFFFFFFFFULL);
+            int is_inf = ((bits & 0x7FFFFFFFFFFFFFFFULL) == 0x7FF0000000000000ULL);
+            int signbit = (int)((bits >> 63) & 1);
 
-            int prec = precision;
-            if (prec > 9) prec = 9;
+            if (is_nan) {
+                if (signbit) negative = 1;
+                outtmp[0] = 'n'; outtmp[1] = 'a'; outtmp[2] = 'n';
+                outlen = 3;
+                is_num = 1;
+            } else if (is_inf) {
+                negative = signbit;
+                outtmp[0] = 'i'; outtmp[1] = 'n'; outtmp[2] = 'f';
+                outlen = 3;
+                is_num = 1;
+            } else {
+                if (!precision_set) precision = 6;
+                if (precision < 0) precision = 0;
 
-            uint64_t scale = 1;
-            for (int d = 0; d < prec; d++) scale *= 10ull;
+                if (spec == 'a' || spec == 'A') {
+                    int neg_local = (int)((bits >> 63) & 1);
+                    uint64_t exp = (bits >> 52) & 0x7FFULL;
+                    uint64_t frac = (bits & 0xFFFFFFFFFFFFFULL);
 
-            uint64_t frac_scaled = (prec > 0) ? (uint64_t)(frac * (double)scale + 0.5) : 0ull;
-            if (prec > 0 && frac_scaled >= scale) { whole += 1; frac_scaled -= scale; }
+                    negative = neg_local;
 
-            char dtmp[32];
-            uint32_t dn = u64_to_dec(dtmp, whole);
-            for (uint32_t k = 0; k < dn && k < sizeof(outtmp); k++) outtmp[k] = dtmp[k];
-            outlen = dn;
+                    if ((exp | frac) == 0) {
+                        outtmp[outlen++] = '0';
+                        outtmp[outlen++] = 'x';
+                        outtmp[outlen++] = '0';
+                        if (precision > 0) {
+                            outtmp[outlen++] = '.';
+                            for (int z = 0; z < precision && outlen < sizeof(outtmp); z++) outtmp[outlen++] = '0';
+                        } else if (flag_hash) outtmp[outlen++] = '.';
+                        outtmp[outlen++] = upper ? 'P' : 'p';
+                        outtmp[outlen++] = '+';
+                        outtmp[outlen++] = '0';
+                    } else {
+                        int e = 0;
+                        uint64_t mant = 0;
+                        if (exp == 0) {
+                            e = -1022;
+                            mant = frac;
+                            while (mant && (mant & (1ULL << 52)) == 0) { mant <<= 1; e--; }
+                        } else {
+                            e = (int)exp - 1023;
+                            mant = (1ULL << 52) | frac;
+                        }
 
-            if (precision > 0 && outlen < sizeof(outtmp)) outtmp[outlen++] = '.';
-            if (precision > 0) {
-                char ftmp[16];
-                uint32_t fn = 0;
-                uint64_t t = frac_scaled;
-                for (int d = 0; d < prec; d++) { ftmp[prec - 1 - d] = (char)('0' + (t % 10)); t /= 10; }
-                fn = (uint32_t)prec;
-                for (uint32_t k = 0; k < fn && outlen < sizeof(outtmp); k++) outtmp[outlen++] = ftmp[k];
+                        uint64_t hex_frac = mant & ((1ULL << 52) - 1);
+                        outtmp[outlen++] = '0';
+                        outtmp[outlen++] = 'x';
+                        outtmp[outlen++] = '1';
+                        if (precision > 0) {
+                            outtmp[outlen++] = '.';
+                            int hex_digits = precision;
+                            for (int d = 0; d < hex_digits && outlen < sizeof(outtmp); d++) {
+                                uint8_t nib = (uint8_t)((hex_frac >> (52 - 4 - 4*d)) & 0xF);
+                                outtmp[outlen++] = upper ? "0123456789ABCDEF"[nib] : "0123456789abcdef"[nib];
+                            }
+                        } else if (flag_hash) outtmp[outlen++] = '.';
+                        outtmp[outlen++] = upper ? 'P' : 'p';
+                        outtmp[outlen++] = (e >= 0) ? '+' : '-';
+                        char etmp[32];
+                        uint32_t en = u64_to_dec(etmp, (uint64_t)(e >= 0 ? e : -e));
+                        for (uint32_t k = 0; k < en; k++) outtmp[outlen++] = etmp[k];
+                    }
+                    is_num = 1;
+                } else if (spec == 'f' || spec == 'F') {
+                    if (dv < 0) {
+                        negative = 1; dv = -dv;
+                    }
+
+                    uint64_t whole = (uint64_t)dv;
+                    double frac = dv - (double)whole;
+
+                    int prec = precision;
+                    if (prec > 9) prec = 9;
+
+                    uint64_t scale = 1;
+                    for (int d = 0; d < prec; d++) scale *= 10ull;
+
+                    uint64_t frac_scaled = (prec > 0) ? (uint64_t)(frac * (double)scale + 0.5) : 0ull;
+                    if (prec > 0 && frac_scaled >= scale) { whole += 1; frac_scaled -= scale; }
+
+                    char dtmp[32];
+                    uint32_t dn = u64_to_dec(dtmp, whole);
+                    for (uint32_t k = 0; k < dn && k < sizeof(outtmp); k++) outtmp[k] = dtmp[k];
+                    outlen = dn;
+
+                    if (precision > 0 && outlen < sizeof(outtmp)) outtmp[outlen++] = '.';
+                    else if (flag_hash && outlen < sizeof(outtmp)) outtmp[outlen++] = '.';
+                    if (precision > 0) {
+                        char ftmp[16];
+                        uint32_t fn = 0;
+                        uint64_t t = frac_scaled;
+                        for (int d = 0; d < prec; d++) { ftmp[prec - 1 - d] = (char)('0' + (t % 10)); t /= 10; }
+                        fn = (uint32_t)prec;
+                        for (uint32_t k = 0; k < fn && outlen < sizeof(outtmp); k++) outtmp[outlen++] = ftmp[k];
+                    }
+                    is_num = 1;
+                } else if (spec == 'e' || spec == 'E') {
+                    int exp10 = 0;
+                    double v = dv;
+                    if (v == 0.0) {
+                        exp10 = 0;
+                    }else {
+                        double av = v < 0 ? -v : v;
+                        while (av >= 10.0) { av /= 10.0; exp10++; }
+                        while (av < 1.0) { av *= 10.0; exp10--; }
+                    }
+                    double m = dv;
+                    for (int k = 0; k < (exp10 > 0 ? exp10 : -exp10); k++) {
+                        if (exp10 > 0) m /= 10.0; 
+                        else m *= 10.0;
+                    }
+                    if (m < 0) { negative = 1; m = -m; }
+
+                    int prec = precision; if (prec > 9) prec = 9;
+
+                    uint64_t whole = (uint64_t)m;
+                    double frac = m - (double)whole;
+
+                    uint64_t scale = 1;
+                    for (int d = 0; d < prec; d++) scale *= 10ull;
+
+                    uint64_t frac_scaled = (prec > 0) ? (uint64_t)(frac * (double)scale + 0.5) : 0ull;
+                    if (prec > 0 && frac_scaled >= scale) { whole += 1; frac_scaled -= scale; if (whole >= 10) { whole = 1; exp10++; } }
+
+                    char dtmp[32];
+                    uint32_t dn = u64_to_dec(dtmp, whole);
+                    for (uint32_t k = 0; k < dn && k < sizeof(outtmp); k++) outtmp[k] = dtmp[k];
+                    outlen = dn;
+
+                    if (precision > 0 && outlen < sizeof(outtmp)) outtmp[outlen++] = '.';
+                    else if (flag_hash && outlen < sizeof(outtmp)) outtmp[outlen++] = '.';
+
+                    if (precision > 0) {
+                        char ftmp[16];
+                        for (int d = prec - 1; d >= 0; d--) { ftmp[d] = (char)('0' + (frac_scaled % 10)); frac_scaled /= 10; }
+                        for (int d = 0; d < prec && outlen < sizeof(outtmp); d++) outtmp[outlen++] = ftmp[d];
+                    }
+
+                    outtmp[outlen++] = upper ? 'E' : 'e';
+                    outtmp[outlen++] = (exp10 >= 0) ? '+' : '-';
+                    uint32_t aexp = (uint32_t)(exp10 >= 0 ? exp10 : -exp10);
+                    char etmp[32];
+                    uint32_t en = u64_to_dec(etmp, aexp);
+                    if (en < 2) outtmp[outlen++] = '0';
+                    for (uint32_t k = 0; k < en; k++) outtmp[outlen++] = etmp[k];
+                    is_num = 1;
+                } else {
+                    int use_e = 0;
+                    double av = dv < 0 ? -dv : dv;
+                    int exp10 = 0;
+                    if (av != 0.0) {
+                        double t = av;
+                        while (t >= 10.0) { t /= 10.0; exp10++; }
+                        while (t < 1.0) { t *= 10.0; exp10--; }
+                    }
+                    int p = precision == 0 ? 1 : precision;
+                    if (exp10 < -4 || exp10 >= p) use_e = 1;
+
+                    if (use_e) {
+                        char tmp[256];
+                        char *tp = tmp;
+                        size_t trem = sizeof(tmp);
+                        va_list ap_copy;
+                        va_copy(ap_copy, args);
+                        double dv_copy = dv;
+                        int prec_local = p - 1;
+                        if (!precision_set) prec_local = 6 - 1;
+                        if (prec_local < 0) prec_local = 0;
+                        int prc = prec_local;
+                        int loc_upper = (spec == 'G');
+                        double m = dv_copy;
+                        uint64_t b2;
+                        memcpy(&b2, &m, sizeof(b2));
+                        int exp10l = 0;
+                        if (m == 0.0) exp10l = 0;
+                        else {
+                            double av2 = m < 0 ? -m : m;
+                            while (av2 >= 10.0) { av2 /= 10.0; exp10l++; }
+                            while (av2 < 1.0) { av2 *= 10.0; exp10l--; }
+                        }
+                        double mm = m;
+                        for (int k = 0; k < (exp10l > 0 ? exp10l : -exp10l); k++) {
+                            if (exp10l > 0) mm /= 10.0; 
+                            else mm *= 10.0;
+                        }
+                        if (mm < 0) mm = -mm;
+                        if (prc > 9) prc = 9;
+                        uint64_t whole = (uint64_t)mm;
+                        double frac = mm - (double)whole;
+                        uint64_t scale = 1;
+                        for (int d = 0; d < prc; d++) scale *= 10ull;
+                        uint64_t frac_scaled = (prc > 0) ? (uint64_t)(frac * (double)scale + 0.5) : 0ull;
+                        if (prc > 0 && frac_scaled >= scale) {
+                            whole += 1;
+                            frac_scaled -= scale;
+                            if (whole >= 10) { whole = 1; exp10l++; } 
+                        }
+                        char dtmp2[32]; uint32_t dn2 = u64_to_dec(dtmp2, whole);
+                        for (uint32_t k = 0; k < dn2 && trem > 1; k++) { *tp++ = dtmp2[k]; trem--; }
+                        if (prc > 0 && trem > 1) {
+                            *tp++ = '.';
+                            trem--;
+                        } else if (flag_hash && trem > 1) {
+                            *tp++ = '.';
+                            trem--;
+                        }
+                        for (int d = prc - 1; d >= 0 && trem > 1; d--) {
+                            *tp++ = (char)('0' + (frac_scaled % 10));
+                            frac_scaled /= 10;
+                            trem--;
+                        }
+                        *tp++ = loc_upper ? 'E' : 'e'; trem--;
+                        *tp++ = (exp10l >= 0) ? '+' : '-'; trem--;
+                        uint32_t aexp = (uint32_t)(exp10l >= 0 ? exp10l : -exp10l);
+                        char etmp2[32]; uint32_t en2 = u64_to_dec(etmp2, aexp);
+                        if (en2 < 2 && trem > 2) { *tp++ = '0'; trem--; }
+                        for (uint32_t k = 0; k < en2 && trem > 1; k++) { *tp++ = etmp2[k]; trem--; }
+                        *tp = 0;
+                        uint32_t tl = strlen(tmp, 0);
+                        uint32_t cut = tl;
+                        if (!flag_hash) {
+                            int dotpos = -1, ep = -1;
+                            for (uint32_t k = 0; k < tl; k++) { if (tmp[k] == '.' && dotpos < 0) dotpos = (int)k; if (tmp[k] == 'e' || tmp[k] == 'E') { ep = (int)k; break; } }
+                            if (dotpos >= 0 && ep > dotpos) {
+                                int end = ep - 1;
+                                while (end > dotpos && tmp[end] == '0') end--;
+                                if (tmp[end] == '.') end--;
+                                uint32_t nout = (uint32_t)(end + 1);
+                                for (uint32_t k = 0; k < (uint32_t)ep - nout; k++) tmp[nout + k] = tmp[ep + k];
+                                cut = nout + (uint32_t)(tl - ep);
+                            }
+                        }
+                        for (uint32_t k = 0; k < cut && k < sizeof(outtmp); k++) outtmp[k] = (spec == 'G' ? (tmp[k] == 'e' ? 'E' : tmp[k]) : tmp[k]);
+                        outlen = cut;
+                        is_num = 1;
+                    } else {
+                        char tmp[256];
+                        double m = dv;
+                        int neg = 0;
+                        if (m < 0) { neg = 1; m = -m; }
+                        int pr = p - 1 - exp10;
+                        if (pr < 0) pr = 0;
+                        if (pr > 9) pr = 9;
+                        if (!precision_set) pr = 6;
+                        if (pr > 9) pr = 9;
+
+                        uint64_t whole = (uint64_t)m;
+                        double frac = m - (double)whole;
+
+                        uint64_t scale = 1;
+                        for (int d = 0; d < pr; d++) scale *= 10ull;
+
+                        uint64_t frac_scaled = (pr > 0) ? (uint64_t)(frac * (double)scale + 0.5) : 0ull;
+                        if (pr > 0 && frac_scaled >= scale) { whole += 1; frac_scaled -= scale; }
+
+                        char dtmp[32]; uint32_t dn = u64_to_dec(dtmp, whole);
+                        uint32_t tp = 0;
+                        for (uint32_t k = 0; k < dn && tp < sizeof(tmp); k++) tmp[tp++] = dtmp[k];
+                        if (pr > 0 && tp < sizeof(tmp)) tmp[tp++] = '.';
+                        else if (flag_hash && tp < sizeof(tmp)) tmp[tp++] = '.';
+                        for (int d = pr - 1; d >= 0 && tp < sizeof(tmp); d--) { tmp[tp + d] = (char)('0' + (frac_scaled % 10)); frac_scaled /= 10; }
+                        tp += (uint32_t)pr;
+                        if (!flag_hash && pr > 0) {
+                            while (tp > 0 && tmp[tp - 1] == '0') tp--;
+                            if (tp > 0 && tmp[tp - 1] == '.') tp--;
+                        }
+                        for (uint32_t k = 0; k < tp && k < sizeof(outtmp); k++) outtmp[k] = tmp[k];
+                        outlen = tp;
+                        negative = neg;
+                        is_num = 1;
+                    }
+                }
             }
-            is_num = 1;
+
+            if ((spec == 'F' || spec == 'E' || spec == 'G' || spec == 'A') && outlen) {
+                for (uint32_t ui = 0; ui < outlen; ui++) {
+                    if (outtmp[ui] >= 'a' && outtmp[ui] <= 'z') outtmp[ui] -= ('a' - 'A');
+                }
+            }
         } else {
             append_char(&p, &rem, '%', &truncated_all);
             append_char(&p, &rem, spec, &truncated_all);
@@ -458,10 +737,11 @@ size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args
         int need_sign = 0;
         char signch = 0;
 
-        if (is_num) {
+        int allow_sign = (spec == 'd' || spec == 'i' || spec == 'f' || spec == 'F' || spec == 'e' || spec == 'E' || spec == 'g' || spec == 'G' ||spec == 'a' || spec == 'A');
+        if (is_num && allow_sign) {
             if (negative) { need_sign = 1; signch = '-'; }
             else if (flag_plus) { need_sign = 1; signch = '+';}
-            else if (flag_space){ need_sign = 1; signch = ' '; }
+            else if (flag_space) { need_sign = 1; signch = ' '; }
         }
 
         if (need_sign) {
@@ -475,20 +755,17 @@ size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args
         if (width > (int)outlen) padlen = (uint32_t)width - outlen;
 
         if (!flag_minus) {
-            char padc = (flag_zero && !precision_set) ? '0' : ' ';
+            if ((spec == 'd' || spec == 'i' || spec == 'u' || spec == 'o' || spec == 'x' || spec == 'X' || spec == 'b') && had_precision) flag_zero = 0;
+            char padc = (flag_zero && !had_precision) ? '0' : ' ';
+            if ((spec == 'f' || spec == 'F' || spec == 'e' || spec == 'E' || spec == 'g' || spec == 'G' || spec == 'a' || spec == 'A') && flag_zero) padc = '0';
             if (padc == '0' && padlen && outlen) {
                 uint32_t prelen = 0;
                 if (outtmp[0] == '+' || outtmp[0] == '-' || outtmp[0] == ' ') prelen = 1;
-                if (outlen >= 2 && outtmp[0] == '0' && (outtmp[1] == 'x' || outtmp[1] == 'X' || outtmp[1] == 'b')) prelen += 2;
+                if (outlen >= prelen + 2 && outtmp[prelen] == '0' && (outtmp[prelen + 1] == 'x' || outtmp[prelen + 1] == 'X' || outtmp[prelen + 1] == 'b')) prelen += 2;
 
-                if (prelen) {
-                    append_strn(&p, &rem, outtmp, prelen, &truncated_all);
-                    for (uint32_t z = 0; z < padlen; z++) append_char(&p, &rem, '0', &truncated_all);
-                    append_strn(&p, &rem, outtmp + prelen, outlen - prelen, &truncated_all);
-                } else {
-                    for (uint32_t z = 0; z < padlen; z++) append_char(&p, &rem, '0', &truncated_all);
-                    append_strn(&p, &rem, outtmp, outlen, &truncated_all);
-                }
+                append_strn(&p, &rem, outtmp, prelen, &truncated_all);
+                for (uint32_t z = 0; z < padlen; z++) append_char(&p, &rem, '0', &truncated_all);
+                append_strn(&p, &rem, outtmp + prelen, outlen - prelen, &truncated_all);
             } else {
                 for (uint32_t z = 0; z < padlen; z++) append_char(&p, &rem, ' ', &truncated_all);
                 append_strn(&p, &rem, outtmp, outlen, &truncated_all);
@@ -513,7 +790,7 @@ size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args
         }
     }
 
-    if (rem) *p = 0;
+    if (cap > 0 && out) *p = 0;
     return (size_t)(p - out);
 }
 
