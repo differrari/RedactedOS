@@ -1,11 +1,15 @@
 #include "net/transport_layer/socket_tcp.hpp"
 #include "net/transport_layer/socket.hpp"
 #include "csocket_tcp.h"
+#include "process/scheduler.h"
+#include "memory/page_allocator.h"
+#include "std/allocator.hpp"
 
 extern "C" {
 
 socket_handle_t socket_tcp_create(uint8_t role, uint32_t pid) {
-    return reinterpret_cast<socket_handle_t>(new TCPSocket(role, pid));
+    TCPSocket *sock = (TCPSocket*)kalloc((void*)get_proc_by_pid(1)->heap, sizeof(TCPSocket), ALIGN_64B, MEM_PRIV_KERNEL);
+    return reinterpret_cast<socket_handle_t>(new (sock) TCPSocket(role, pid));
 }
 
 int32_t socket_bind_tcp_ex(socket_handle_t sh, const SockBindSpec* spec, uint16_t port) {

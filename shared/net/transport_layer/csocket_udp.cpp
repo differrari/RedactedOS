@@ -1,9 +1,13 @@
 #include "net/transport_layer/socket_udp.hpp"
 #include "net/transport_layer/socket.hpp"
 #include "csocket_udp.h"
+#include "process/scheduler.h"
+#include "memory/page_allocator.h"
+#include "std/allocator.hpp"
 
 extern "C" socket_handle_t udp_socket_create(uint8_t role, uint32_t pid) {
-    return reinterpret_cast<socket_handle_t>(new UDPSocket(role, pid));
+    UDPSocket *sock = (UDPSocket*)kalloc((void*)get_proc_by_pid(1)->heap, sizeof(UDPSocket), ALIGN_64B, MEM_PRIV_KERNEL);
+    return reinterpret_cast<socket_handle_t>(new (sock) UDPSocket(role, pid));
 }
 
 extern "C" int32_t socket_bind_udp_ex(socket_handle_t sh, const SockBindSpec* spec, uint16_t port) {
