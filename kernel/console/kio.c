@@ -12,26 +12,53 @@ static bool use_visual = true;
 #define CONSOLE_BUF_SIZE 0x3000
 #define CONSOLE_WRITE_CHUNK 256
 
+#define CR '\r'
+#define LF '\n'
+static const char CRLF[2] = { CR, LF };
+
 static CRingBuffer console_rb;
 static uint8_t *console_storage;
 static volatile uint64_t console_drop_count;
 
 static void console_out_crlf(){
-    uart_raw_putc('\r');
-    uart_raw_putc('\n');
+    uart_raw_putc(CR);
+    uart_raw_putc(LF);
     if (use_visual) {
-        kconsole_putc('\r');
-        kconsole_putc('\n');
+        kconsole_putc(CR);
+        kconsole_putc(LF);
     }
 }
 
-static void console_ring_write(const char *src,size_t n){
-    for (size_t i = 0; i < n; i++) {
-        if (cring_push(&console_rb, &src[i]) < 0) {
-            console_drop_count++;
+static void console_ring_write(const char *src, size_t n) {
+    size_t i = 0;
+
+    while (i < n) {
+        const uint64_t sz = cring_capacity(&console_rb);
+        const uint64_t head = console_rb.head;
+        const uint64_t tail = console_rb.tail;
+        const bool full = console_rb.full;
+
+        const uint64_t used = full ? sz : (head >= tail ? (head - tail) : (sz - (tail - head)));
+        const uint64_t free = sz - used;
+
+        if (free == 0) {
+            break;
         }
+
+        const size_t chunk = (size_t)((n - i) < free ? (n - i) : free);
+
+        for (size_t k = 0; k < chunk; ++k) {
+            cring_push(&console_rb, &src[i + k]);
+        }
+
+        i += chunk;
+    }
+
+    if (i < n) {
+        console_drop_count += (uint64_t)(n - i);
     }
 }
+
 
 static void init_print_buf(){
     if (!console_storage) {
@@ -60,25 +87,30 @@ FS_RESULT console_open(const char *path, file *out_fd){
 
 size_t console_read(file *fd, char *out_buf, size_t size, file_offset offset){
     if (!console_storage) init_print_buf();
+    if (!out_buf || size == 0) return 0;
 
-    uint64_t off = (uint64_t)offset;
-    uint64_t sz = cring_capacity(&console_rb);
-    uint64_t head = console_rb.head;
-    uint64_t tail = console_rb.tail;
-    uint64_t avail = console_rb.full ? sz : (head >= tail ? head - tail : sz - (tail - head));
+    const uint64_t off = (uint64_t)offset;
+    const uint64_t sz = cring_capacity(&console_rb);
+    const uint64_t head = console_rb.head;
+    const uint64_t tail = console_rb.tail;
+    const bool full = console_rb.full;
 
+    const uint64_t avail = full ? sz : (head >= tail ? head - tail : sz - (tail - head));
     if (off >= avail) return 0;
 
-    uint64_t start = console_rb.full ? head : tail; 
-    uint64_t base = (start + off) % sz;
+    const uint64_t start = full ? head : tail; 
+    const uint64_t base = (start + off) % sz;
 
     size_t to_read = size;
     if (to_read > CONSOLE_BUF_SIZE) to_read = CONSOLE_BUF_SIZE;
     if (to_read > (size_t)(avail- off)) to_read = (size_t)(avail - off);
 
-    for (size_t i = 0; i < to_read; i++) {
-        out_buf[i] = ((uint8_t *)console_rb.buffer)[(base + i) % sz];
-    }
+    uint8_t *basep = (uint8_t*)console_rb.buffer;
+
+    const size_t first = (size_t)min((uint64_t)to_read, sz - base);
+    memcpy(out_buf, basep + base, first);
+    if (first < to_read) memcpy(out_buf + first, basep, to_read - first);
+
     return to_read;
 }
 
@@ -86,13 +118,12 @@ size_t console_write(file *fd, const char *buf, size_t size, file_offset offset)
     if (!console_storage) init_print_buf();
     if (!buf || size == 0) return 0;
 
-    size_t i = 0;
-    while (i < size) {
-        size_t take = size - i;
-        if (take > CONSOLE_WRITE_CHUNK) take = CONSOLE_WRITE_CHUNK;
+    for (size_t i = 0; i < size;) {
+        const size_t remain = size - i;
+        const size_t take = remain > CONSOLE_WRITE_CHUNK ? CONSOLE_WRITE_CHUNK : remain;
 
         char tmp[CONSOLE_WRITE_CHUNK + 1];
-        for (size_t j = 0; j < take; j++) tmp[j] = buf[i + j];
+        memcpy(tmp, buf + i, take);
         tmp[take] = '\0';
 
         uart_raw_puts(tmp);
@@ -131,13 +162,19 @@ void puts(const char *s){
     if (!s) return;
 
     size_t n = strlen(s, 0);
-    if (n) console_write(NULL, s, n, 0);
+    if (!n) return;
+
+    uart_raw_puts(s);
+    if (use_visual) kconsole_puts(s);
+    console_ring_write(s, n);
 }
 
 void putc(const char c){
     if (!console_storage) init_print_buf();
-    char t[1] = {c};
-    console_write(NULL, t, 1, 0);
+
+    uart_raw_putc(c);
+    if (use_visual) kconsole_putc(c);
+    console_ring_write(&c, 1);
 }
 
 void kprintf(const char *fmt, ...){
@@ -153,8 +190,7 @@ void kprintf(const char *fmt, ...){
     va_end(args);
     console_write(NULL, buf, n, 0);
     console_out_crlf();
-    const char crlf[2] = {'\r','\n'};
-    console_ring_write(crlf, 2);
+    console_ring_write(CRLF, 2);
 }
 
 void kprint(const char *s){
@@ -165,9 +201,7 @@ void kprint(const char *s){
     if (n) console_write(NULL, s, n, 0);
 
     console_out_crlf();
-
-    const char crlf[2] = {'\r', '\n'};
-    console_ring_write(crlf, 2);
+    console_ring_write(CRLF, 2);
 }
 
 void kputf(const char *fmt, ...){
