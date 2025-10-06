@@ -1,4 +1,3 @@
-
 #include "types.h"
 #include "syscalls/syscalls.h"
 #include "math/math.h"
@@ -32,12 +31,6 @@ static int16_t wave_sample(WAVE_TYPE type, uint32_t phase, rng_t* rng){
         }
     }
     return (int16_t)(wave * UINT16_MAX);
-}
-
-static inline float ratio_to_phase(uint16_t ratio){
-    ratio = min(90, max(10, ratio));
-    float result = ((float)PHASE_MAX * ratio) / 100.f;
-    return result;
 }
 
 static void wave_generate(sound_defn* sound, int16_t* sample, size_t count){
@@ -87,27 +80,3 @@ void sound_shape(envelope_defn* env, audio_samples* audio){
         }
     }
 }
-
-
-
-
-
-// float sample_raw_wave(WAVE_TYPE type, uint32_t phase){
-//     switch (type) {
-//         case WAVE_TRIG: {
-//             float t = ((float)phase/(float)PHASE_MAX);
-//             float trig = 2*(absf(t-floor(t + 0.5f)));
-//             return trig;
-//         }
-//         case WAVE_SAW:
-//             return (float)(PHASE_MAX - phase) / (float)PHASE_MAX;
-//         case WAVE_SQUARE:
-//             return (phase < PHASE_MID) ? 0.f : 1.f;
-//     }
-//     return 0;
-// }
-
-// uint32_t sample_wave(WAVE_TYPE type, uint32_t phase, int16_t amplitude){
-//     return sample_raw_wave(type, phase) * amplitude;
-// }
-

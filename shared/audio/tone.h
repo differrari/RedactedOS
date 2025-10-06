@@ -29,6 +29,14 @@ typedef struct envelope_defn {
     float     sustain; // ditto
 } envelope_defn;
 
-void sound_initrng();
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void sound_create(float seconds, float delay, sound_defn *sound, audio_samples *audio);
 void sound_shape(envelope_defn* env, audio_samples* audio);
+
+#ifdef __cplusplus
+}
+#endif

@@ -33,7 +33,7 @@ typedef struct mixer_line_data {
 } mixer_line_data;
 
 
-#define AUDIO_LEVEL_MAX ((int16_t)0x7FFF)
+#define AUDIO_LEVEL_MAX INT16_MAX
 #define MIXER_INPUTS 4
 
 #ifdef __cplusplus
