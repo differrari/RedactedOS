@@ -11,17 +11,22 @@ endif
 
 .PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
 
-all: shared kernel user utils
+all: kshared kernel shared user utils
 	@echo "Build complete."
 	./createfs
 
-shared:
+kshared:
+	$(MAKE) -C shared clean
+	$(MAKE) -C shared SH_FLAGS=-DKERNEL
+
+shared: 
+	$(MAKE) -C shared clean
 	$(MAKE) -C shared
 
 user: shared prepare-fs
 	$(MAKE) -C user
 
-kernel: shared
+kernel: kshared
 	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU)
 
 utils: shared prepare-fs

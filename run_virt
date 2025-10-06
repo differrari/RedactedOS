@@ -72,5 +72,5 @@ $PRIVILEGE qemu-system-aarch64 \
   -trace file=./trace \
   -audiodev ${AUDIO_BACKEND},id=audio \
   -d guest_errors \
-  #-netdev tap,id=net1,ifname=tap1,script=no,downscript=no,vnet_hdr=off \
   $ARGS
+  #-netdev tap,id=net1,ifname=tap1,script=no,downscript=no,vnet_hdr=off \

@@ -8,8 +8,10 @@
     ret
 .endm
 
+#ifndef KERNEL
 syscall_def malloc, MALLOC_CODE
 syscall_def free, FREE_CODE
+#endif
 
 syscall_def printl, PRINTL_CODE
 
