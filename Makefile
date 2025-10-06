@@ -16,12 +16,10 @@ all: kshared kernel shared user utils
 	./createfs
 
 kshared:
-	$(MAKE) -C shared clean
-	$(MAKE) -C shared SH_FLAGS=-DKERNEL
+	$(MAKE) -C shared SH_FLAGS=-DKERNEL BUILD_DIR=./kbuild TARGET=klibshared.a
 
 shared: 
-	$(MAKE) -C shared clean
-	$(MAKE) -C shared
+	$(MAKE) -C shared BUILD_DIR=./build
 
 user: shared prepare-fs
 	$(MAKE) -C user
