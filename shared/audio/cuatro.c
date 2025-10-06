@@ -3,49 +3,27 @@
 #include "syscalls/syscalls.h"
 #include "cuatro.h"
 #include "wav.h"
-
-float sample_raw_wave(WAVE_TYPE type, uint32_t phase){
-    switch (type) {
-        case WAVE_TRIG: {
-            float t = ((float)phase/(float)PHASE_MAX);
-            float trig = 2*(absf(t-floor(t + 0.5f)));
-            return trig;
-        }
-        case WAVE_SAW:
-            return (float)(PHASE_MAX - phase) / (float)PHASE_MAX;
-        case WAVE_SQUARE:
-            return (phase < PHASE_MID) ? 0.f : 1.f;
-    }
-    return 0;
-}
-
-uint32_t sample_wave(WAVE_TYPE type, uint32_t phase, int16_t amplitude){
-    return sample_raw_wave(type, phase) * amplitude;
-}
+#include "tone.h"
 
 
 bool play_audio_sync(audio_samples *audio, int16_t amplitude){
-    intptr_t line = (intptr_t)mixer_open_line();
-    if (line != NULL){
-        audio->amplitude = amplitude;
-        mixer_play_async(line, audio);
-        do {
-            // TODO: yield cpu
-        } while (mixer_still_playing(line));
-        mixer_close_line(line);
-        return true;
-    }
-    return false;
+    int8_t lineId = mixer_open_line();
+    if (lineId < 0 || lineId > MIXER_INPUTS) return false;
+    audio->amplitude = amplitude;
+    mixer_play_async(lineId, audio);
+    do {
+        sleep(100);
+    } while (mixer_still_playing(lineId));
+    mixer_close_line(lineId);
+    return true;
 }
 
-intptr_t play_audio_async(audio_samples *audio, int16_t amplitude){
-    intptr_t line = (intptr_t)mixer_open_line();
-    if (line != NULL){
-        audio->amplitude = amplitude;
-        mixer_play_async(line, audio);
-        return line;
-    }
-    return NULL;
+int8_t play_audio_async(audio_samples *audio, int16_t amplitude){
+    int8_t lineId = mixer_open_line();
+    if (lineId < 0 || lineId > MIXER_INPUTS) return -1;
+    audio->amplitude = amplitude;
+    mixer_play_async(lineId, audio);
+    return lineId;
 }
 
 
@@ -56,32 +34,33 @@ static bool mixer_open_file(){
     return true;
 }
 
-intptr_t mixer_open_line(){
+int8_t mixer_open_line(){
     if (!mixer_open_file()) return NULL;
-    mixer_line_data data = { 0, {0, 0} };
+    mixer_line_data data = { -1, {0, 0} };
     if (sizeof(mixer_line_data) != read_file(&mixer, (char*)&data, sizeof(mixer_line_data))) return NULL;
-    return data.line;
+    return data.lineId;
 }
 
-void mixer_close_line(intptr_t line){
+void mixer_close_line(int8_t lineId){
     if (mixer_open_file()){
-        mixer_command command = { line, MIXER_CLOSE_LINE, .value=0 };
+        mixer_command command = { lineId, MIXER_CLOSE_LINE, .value = 0 };
         write_file(&mixer, (char*)&command, sizeof(mixer_command));
     }
 }
 
-void mixer_play_async(intptr_t line, audio_samples* audio){
+void mixer_play_async(int8_t lineId, audio_samples* audio){
     if (mixer_open_file()){
-        mixer_command command = { line, MIXER_PLAY, .audio=audio };
+        mixer_command command = { lineId, MIXER_PLAY, .audio = audio };
         write_file(&mixer, (char*)&command, sizeof(mixer_command));
     }
 }
 
-bool mixer_still_playing(intptr_t line){
+bool mixer_still_playing(int8_t lineId){
     if (mixer_open_file()){
-        mixer_line_data data = { line, {1, 1} };
+        mixer_line_data data = { lineId, {1, 1} };
         if (sizeof(mixer_line_data) == read_file(&mixer, (char*)&data, sizeof(mixer_line_data))){
             if (data.count[0] != 0 || data.count[1] != 0){
+                // TODO: this won't work for streaming outputs (when implemented) - race condition
                 return true;
             }
         }
@@ -89,3 +68,26 @@ bool mixer_still_playing(intptr_t line){
     return false;
 }
 
+bool mixer_mute(){
+    if (mixer_open_file()){
+        mixer_command command = { -1, MIXER_MUTE, .value=0 };
+        write_file(&mixer, (char*)&command, sizeof(mixer_command));
+    }
+    return false; // TODO: return prev setting
+}
+
+bool mixer_unmute(){
+    if (mixer_open_file()){
+        mixer_command command = { -1, MIXER_UNMUTE, .value=0 };
+        write_file(&mixer, (char*)&command, sizeof(mixer_command));
+    }
+    return true; // TODO: return prev setting
+}
+
+uint32_t mixer_set_level(int16_t level){
+    if (mixer_open_file()){
+        mixer_command command = { -1, MIXER_SETLEVEL, .value = (uintptr_t)level };
+        write_file(&mixer, (char*)&command, sizeof(mixer_command));
+    }
+    return level; // TODO: return prev setting
+}

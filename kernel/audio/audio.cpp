@@ -30,8 +30,6 @@ void audio_get_info(uint32_t* rate, uint8_t* channels) {
 }
 
 
-#define MIX_LINES 4
-
 typedef struct mixer_buf {
     int16_t* samples;
     size_t   sample_count;
@@ -50,9 +48,11 @@ typedef struct mixer_line {
     bool        in_use;
 } mixer_line;
 
-static mixer_line mixin[MIX_LINES];
+static mixer_line mixin[MIXER_INPUTS];
 
-static void mixer_reset_line(mixer_line* line){
+static void mixer_reset_line(int8_t lineId){
+    if (lineId < 0 || lineId >= MIXER_INPUTS) return;
+    mixer_line* line = &mixin[lineId];
     line->u.buf[0].samples = 0;
     line->u.buf[0].sample_count = 0;
     line->u.buf[0].left_level = 0;
@@ -66,8 +66,8 @@ static void mixer_reset_line(mixer_line* line){
 }
 
 static void mixer_reset(){
-    for (int i = 0; i < MIX_LINES; i++){
-        mixer_reset_line(&mixin[i]);
+    for (int i = 0; i < MIXER_INPUTS; i++){
+        mixer_reset_line(i);
     }
 }
 
@@ -81,7 +81,7 @@ static inline int16_t normalise_int64_to_int16(int64_t input){
 }
 
 #define SUBMIT_SEPARATION_ACTUAL_MSECS (AUDIO_DRIVER_BUFFER_SIZE * 1000 / 44100)    // Ideally no remainder from division!
-#define SUBMIT_SEPARATION_SAFE_MSECS   (SUBMIT_SEPARATION_ACTUAL_MSECS - 5)         // -5 for wiggle room.  Enough?
+#define SUBMIT_SEPARATION_SAFE_MSECS   (SUBMIT_SEPARATION_ACTUAL_MSECS - 5)
 
 static void mixer_run(){
     uint64_t buffer_run_start_time = 0;
@@ -95,7 +95,7 @@ static void mixer_run(){
             int64_t left_signal = 0;
             int64_t right_signal = 0;
             mixer_line* line = mixin;
-            while (line < mixin+MIX_LINES){
+            while (line < mixin + MIXER_INPUTS){
                 mixer_buf* buf = &line->u.buf[line->bix];
                 if (buf->samples != NULL){
                     left_signal += *buf->samples * buf->left_level;
@@ -106,7 +106,7 @@ static void mixer_run(){
                     right_signal += *buf->samples++ * buf->right_level;
                     if (--buf->sample_count < 1){
                         buf->samples = NULL;
-                        line->bix = 1 - line->bix;
+                        // line->bix = 1 - line->bix;   // TODO: double-buffering for streaming support
                     }
                     have_audio = true;
                 }
@@ -121,7 +121,9 @@ static void mixer_run(){
             }else{
                 uint64_t this_buffer_time = buffer_run_start_time + 
                                             (buffer_run_count * SUBMIT_SEPARATION_ACTUAL_MSECS) + SUBMIT_SEPARATION_SAFE_MSECS;
-                while (get_time() < this_buffer_time);
+                while (get_time() < this_buffer_time)
+                    // TODO: yield cpu?
+                    ;
             }
             audio_submit_buffer();
             ++buffer_run_count;
@@ -132,7 +134,6 @@ static void mixer_run(){
         }
     } while (1);
 }
-
 
 static int audio_mixer(int argc, char* argv[]){
     mixer_reset();
@@ -149,37 +150,38 @@ static FS_RESULT audio_open(const char *path, file *fd){
     if (0 == strcmp(path, "/output", true)){
         fd->id = reserve_fd_id();
         fd->size = UINT16_MAX;  // dummy value
-        fd->cursor = 0;         // TODO: check if necessary?  not done by filesystem??
+        fd->cursor = 0;
         return FS_RESULT_SUCCESS;
     }
     return FS_RESULT_NOTFOUND;
 }
 
-static mixer_line* audio_get_free_line(){
+static int audio_get_free_line(){
     // TODO: protect against multi-processing
-    for (int i = 0; i < MIX_LINES; ++i){
+    for (int i = 0; i < MIXER_INPUTS; ++i){
         if (mixin[i].in_use == false){
-            mixer_reset_line(&mixin[i]);
+            mixer_reset_line(i);
             mixin[i].in_use = true;
-            return &mixin[i];
+            return i;
         }
     }
-    return NULL;
+    return -1;
 }
 
 static size_t audio_read(file *fd, char *out_buf, size_t size, file_offset offset){
     if (size != sizeof(mixer_line_data)) return 0;
     mixer_line_data* data = (mixer_line_data*)out_buf;  // passed buffer has 'line' set
-    mixer_line* line = (mixer_line*)(data->line);
+    int8_t lineId = data->lineId;
     fd->cursor = 0; // never moves
-    if (line == NULL){
+    if (lineId < 0){
         // request is for a free input line
-        data->line = (intptr_t)audio_get_free_line();
+        data->lineId = audio_get_free_line();
         data->count[0] = 0;
         data->count[1] = 0;
     }else{
         // request is for line data
-        if (line < mixin || line >= (mixin + MIX_LINES)) return 0;
+        if (lineId < 0 || lineId >=  MIXER_INPUTS) return 0;
+        mixer_line* line = &mixin[data->lineId];
         data->count[0] = (intptr_t)line->u.buf[0].sample_count;
         data->count[1] = (intptr_t)line->u.buf[1].sample_count;
     }
@@ -188,18 +190,18 @@ static size_t audio_read(file *fd, char *out_buf, size_t size, file_offset offse
 
 static size_t audio_write(file *fd, const char *buf, size_t size, file_offset offset){
     mixer_command* cmd = (mixer_command*)buf;
-    mixer_line* line = (mixer_line*)cmd->line;
+    int8_t lineId = cmd->lineId;
     fd->cursor = 0;  // never moves
     switch (cmd->command){
         case MIXER_SETLEVEL: {
-                uint32_t value = min(UINT32_MAX, max(0, cmd->value));
-                if (master_muted == false){
-                    master_level = value;
-                }else{
-                    master_premute = value;
-                }
-                break;
+            int16_t value = min(INT16_MAX, max(0, (int)cmd->value));
+            if (master_muted == false){
+                master_level = value;
+            }else{
+                master_premute = value;  // not being able to change volume without un-muting is a UI/UX failure
             }
+            break;
+        }
         case MIXER_MUTE:
             if (master_muted == false){
                 master_premute = master_level;
@@ -213,15 +215,18 @@ static size_t audio_write(file *fd, const char *buf, size_t size, file_offset of
                 master_muted = false;
             }
             break;
-        case MIXER_PLAY:
+        case MIXER_PLAY: {
+            if (lineId < 0 || lineId >=  MIXER_INPUTS) return 0;
+            mixer_line* line = &mixin[cmd->lineId];
             line->u.channels = cmd->audio->channels;
             line->u.buf[0].left_level = cmd->audio->amplitude;
             line->u.buf[0].right_level = cmd->audio->amplitude;
             line->u.buf[0].sample_count = cmd->audio->smpls_per_channel * cmd->audio->channels;
             line->u.buf[0].samples = (int16_t*)cmd->audio->samples.ptr;  // this must be last mutation of 'line'.
             break;
+        }
         case MIXER_CLOSE_LINE:
-            mixer_reset_line(line);
+            mixer_reset_line(lineId);
             break;
         default:
             return 0;
