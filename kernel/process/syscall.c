@@ -26,11 +26,7 @@ int syscall_depth = 0;
 uintptr_t cpec;
 
 //TODO: What happens if we pass another process' data in here?
-//TODO: make indexmap in c and it can be used here
-typedef struct {
-    uint16_t syscall_num;
-    uint64_t (*syscall)(process_t *ctx);
-} syscall_entry;
+typedef uint64_t (*syscall_entry)(process_t *ctx);
 
 uint64_t syscall_malloc(process_t *ctx){
     void* page_ptr = syscall_depth > 1 ? (void*)get_proc_by_pid(1)->heap : (void*)get_current_heap();
@@ -223,33 +219,33 @@ uint64_t syscall_dir_list(process_t *ctx){
 }
 
 syscall_entry syscalls[] = {
-    { MALLOC_CODE, syscall_malloc},
-    { FREE_CODE, syscall_free},
-    { PRINTL_CODE, syscall_printl},
-    { READ_KEY_CODE, syscall_read_key},
-    { READ_EVENT_CODE, syscall_read_event },
-    { READ_SHORTCUT_CODE, syscall_read_shortcut},
-    { GET_MOUSE_STATUS_CODE, syscall_get_mouse },
-    { REQUEST_DRAW_CTX_CODE, syscall_gpu_request_ctx},
-    { GPU_FLUSH_DATA_CODE, syscall_gpu_flush},
-    { GPU_CHAR_SIZE_CODE, syscall_char_size},
-    { RESIZE_DRAW_CTX_CODE, syscall_gpu_resize_ctx},
-    { SLEEP_CODE, syscall_sleep},
-    { HALT_CODE, syscall_halt},
-    { EXEC_CODE, syscall_exec},
-    { SOCKET_CREATE_CODE, syscall_socket_create}, 
-    { SOCKET_BIND_CODE, syscall_socket_bind}, 
-    { SOCKET_CONNECT_CODE, syscall_socket_connect},
-    { SOCKET_LISTEN_CODE, syscall_socket_listen}, 
-    { SOCKET_ACCEPT_CODE, syscall_socket_accept}, 
-    { SOCKET_SEND_CODE, syscall_socket_send}, 
-    { SOCKET_RECEIVE_CODE, syscall_socket_receive}, 
-    { SOCKET_CLOSE_CODE, syscall_socket_close}, 
-    {FILE_OPEN_CODE, syscall_fopen},
-    {FILE_READ_CODE, syscall_fread},
-    {FILE_WRITE_CODE, syscall_fwrite},
-    {FILE_CLOSE_CODE, syscall_fclose},
-    {DIR_LIST_CODE, syscall_dir_list},
+    [MALLOC_CODE] = syscall_malloc,
+    [FREE_CODE] = syscall_free,
+    [PRINTL_CODE] = syscall_printl,
+    [READ_KEY_CODE] = syscall_read_key,
+    [READ_EVENT_CODE] = syscall_read_event ,
+    [READ_SHORTCUT_CODE] = syscall_read_shortcut,
+    [GET_MOUSE_STATUS_CODE] = syscall_get_mouse ,
+    [REQUEST_DRAW_CTX_CODE] = syscall_gpu_request_ctx,
+    [GPU_FLUSH_DATA_CODE] = syscall_gpu_flush,
+    [GPU_CHAR_SIZE_CODE] = syscall_char_size,
+    [RESIZE_DRAW_CTX_CODE] = syscall_gpu_resize_ctx,
+    [SLEEP_CODE] = syscall_sleep,
+    [HALT_CODE] = syscall_halt,
+    [EXEC_CODE] = syscall_exec,
+    [SOCKET_CREATE_CODE] = syscall_socket_create,
+    [SOCKET_BIND_CODE] = syscall_socket_bind,
+    [SOCKET_CONNECT_CODE] = syscall_socket_connect,
+    [SOCKET_LISTEN_CODE] = syscall_socket_listen,
+    [SOCKET_ACCEPT_CODE] = syscall_socket_accept,
+    [SOCKET_SEND_CODE] = syscall_socket_send,
+    [SOCKET_RECEIVE_CODE] = syscall_socket_receive,
+    [SOCKET_CLOSE_CODE] = syscall_socket_close,
+    [FILE_OPEN_CODE] = syscall_fopen,
+    [FILE_READ_CODE] = syscall_fread,
+    [FILE_WRITE_CODE] = syscall_fwrite,
+    [FILE_CLOSE_CODE] = syscall_fclose,
+    [DIR_LIST_CODE] = syscall_dir_list,
 };
 
 void backtrace(uintptr_t fp, uintptr_t elr) {
@@ -267,35 +263,33 @@ void backtrace(uintptr_t fp, uintptr_t elr) {
     }
 }
 
+const char* fault_messages[] = {
+    [0b000000] = "Address size fault in TTBR0 or TTBR1",
+    [0b000101] = "Translation fault, 1st level",
+    [0b000110] = "Translation fault, 2nd level",
+    [0b000111] = "Translation fault, 3rd level",
+    [0b001001] = "Access flag fault, 1st level",
+    [0b001010] = "Access flag fault, 2nd level",
+    [0b001011] = "Access flag fault, 3rd level",
+    [0b001101] = "Permission fault, 1st level",
+    [0b001110] = "Permission fault, 2nd level",
+    [0b001111] = "Permission fault, 3rd level",
+    [0b010000] = "Synchronous external abort",
+    [0b011000] = "Synchronous parity error on memory access",
+    [0b010101] = "Synchronous external abort on translation table walk, 1st level",
+    [0b010110] = "Synchronous external abort on translation table walk, 2nd level",
+    [0b010111] = "Synchronous external abort on translation table walk, 3rd level",
+    [0b011101] = "Synchronous parity error on memory access on translation table walk, 1st level",
+    [0b011110] = "Synchronous parity error on memory access on translation table walk, 2nd level",
+    [0b011111] = "Synchronous parity error on memory access on translation table walk, 3rd level",
+    [0b100001] = "Alignment fault",
+    [0b100010] = "Debug event",
+};
+
 void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
-    // uint8_t ifsc = esr & 0x3F;
-    // 0b000000	Address size fault in TTBR0 or TTBR1.
-
-    // 0b000101	Translation fault, 1st level.
-    // 00b00110	Translation fault, 2nd level.
-    // 00b00111	Translation fault, 3rd level.
-
-    // 0b001001	Access flag fault, 1st level.
-    // 0b001010	Access flag fault, 2nd level.
-    // 0b001011	Access flag fault, 3rd level.
-
-    // 0b001101	Permission fault, 1st level.
-    // 0b001110	Permission fault, 2nd level.
-    // 0b001111	Permission fault, 3rd level.
-
-    // 0b010000	Synchronous external abort.
-    // 0b011000	Synchronous parity error on memory access.
-    // 0b010101	Synchronous external abort on translation table walk, 1st level.
-    // 0b010110	Synchronous external abort on translation table walk, 2nd level.
-    // 0b010111	Synchronous external abort on translation table walk, 3rd level.
-    // 0b011101	Synchronous parity error on memory access on translation table walk, 1st level.
-    // 0b011110	Synchronous parity error on memory access on translation table walk, 2nd level.
-    // 0b011111	Synchronous parity error on memory access on translation table walk, 3rd level.
+    uint8_t ifsc = esr & 0x3F;
     
-    // 0b100001	Alignment fault.
-    // 0b100010	Debug event.
-    //TODO: Can parse instruction class, fault cause, etc
-    // decode_instruction(*(uint32_t*)elr);
+    kprint(fault_messages[ifsc]);
     backtrace(sp, elr);
     // process_t *proc = get_current_proc();
     // for (int i = 0; i < 31; i++)
@@ -332,17 +326,10 @@ void sync_el0_handler_c(){
 
     uint64_t result = 0;
     if (ec == 0x15) {
-        uint16_t num_syscalls = N_ARR(syscalls);
-        bool found = false;
-        for (uint16_t i = 0; i < num_syscalls; i++){
-            if (syscalls[i].syscall_num == iss){
-                found = true;
-                result = syscalls[i].syscall(proc);
-                break;
-            }
-        }
-        if (!found){
-             kprintf("Unknown syscall in process. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
+        if (syscalls[iss]){
+            result = syscalls[iss](proc);
+        } else {
+            kprintf("Unknown syscall in process. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
             coredump(esr, elr, far, proc->sp);
             syscall_depth--;
             stop_current_process(ec);
