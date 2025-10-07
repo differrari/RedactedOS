@@ -252,7 +252,22 @@ syscall_entry syscalls[] = {
     {DIR_LIST_CODE, syscall_dir_list},
 };
 
-void coredump(uint64_t esr, uint64_t elr, uint64_t far){
+void backtrace(uintptr_t fp, uintptr_t elr) {
+
+    for (uint8_t depth = 0; depth < 3 && fp; depth++) {
+        uintptr_t return_address = (*(uintptr_t*)(fp + 8))-4;
+
+        kprintf("%i: caller address: %x", depth, return_address, return_address);
+
+        fp = *(uintptr_t*)fp;
+
+        if (!fp){
+            kprintf("Exception triggered by %x",(elr-4));
+        }
+    }
+}
+
+void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
     // uint8_t ifsc = esr & 0x3F;
     // 0b000000	Address size fault in TTBR0 or TTBR1.
 
@@ -280,7 +295,8 @@ void coredump(uint64_t esr, uint64_t elr, uint64_t far){
     // 0b100001	Alignment fault.
     // 0b100010	Debug event.
     //TODO: Can parse instruction class, fault cause, etc
-    decode_instruction(*(uint32_t*)elr);
+    // decode_instruction(*(uint32_t*)elr);
+    backtrace(sp, elr);
     // process_t *proc = get_current_proc();
     // for (int i = 0; i < 31; i++)
     //     kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
@@ -311,6 +327,9 @@ void sync_el0_handler_c(){
     uint64_t ec = (esr >> 26) & 0x3F;
     uint64_t iss = esr & 0xFFFFFF;
     
+    uint64_t far;
+    asm volatile ("mrs %0, far_el1" : "=r"(far));
+
     uint64_t result = 0;
     if (ec == 0x15) {
         uint16_t num_syscalls = N_ARR(syscalls);
@@ -322,36 +341,39 @@ void sync_el0_handler_c(){
                 break;
             }
         }
-        if (!found)
-            panic("Unknown syscall %i", iss);
+        if (!found){
+             kprintf("Unknown syscall in process. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
+            coredump(esr, elr, far, proc->sp);
+            syscall_depth--;
+            stop_current_process(ec);
+        }
     } else {
-        uint64_t far;
-        asm volatile ("mrs %0, far_el1" : "=r"(far));
         if (far == 0 && elr == 0 && currentEL == 0){
             kprintf("Process has exited %x",x0);
             syscall_depth--;
             stop_current_process(x0);
-        }// else kprintf("ELR %x FAR %x",elr,far);
-        switch (ec) {
-            case 0x20:
-            case 0x21: {
-                if (far == 0){
-                    kprintf("Process has exited %x",x0);
-                    syscall_depth--;
-                    stop_current_process(x0);
+        } else {
+            switch (ec) {
+                case 0x20:
+                case 0x21: {
+                    if (far == 0){
+                        kprintf("Process has exited %x",x0);
+                        syscall_depth--;
+                        stop_current_process(x0);
+                    }
                 }
             }
-        }
-        //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
-        if (currentEL == 1){
-            kprintf("System has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
-            coredump(esr, elr, far);
-            handle_exception("UNEXPECTED EXCEPTION",ec);
-        } else {
-            kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
-            coredump(esr, elr, far);
-            syscall_depth--;
-            stop_current_process(ec);
+            //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
+            if (currentEL == 1){
+                kprintf("System has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
+                coredump(esr, elr, far, proc->sp);
+                handle_exception("UNEXPECTED EXCEPTION",ec);
+            } else {
+                kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
+                coredump(esr, elr, far, proc->sp);
+                syscall_depth--;
+                stop_current_process(ec);
+            }
         }
     }
     syscall_depth--;
