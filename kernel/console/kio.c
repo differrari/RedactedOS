@@ -98,12 +98,15 @@ size_t console_read(file *fd, char *out_buf, size_t size, file_offset offset){
     const uint64_t avail = full ? sz : (head >= tail ? head - tail : sz - (tail - head));
     if (off >= avail) return 0;
 
-    const uint64_t start = full ? head : tail; 
-    const uint64_t base = (start + off) % sz;
+    const uint64_t start_oldest = full ? head : tail;
 
     size_t to_read = size;
     if (to_read > CONSOLE_BUF_SIZE) to_read = CONSOLE_BUF_SIZE;
-    if (to_read > (size_t)(avail- off)) to_read = (size_t)(avail - off);
+
+    const uint64_t rem = avail - off;
+    if (to_read > rem) to_read = (size_t)rem;
+
+    const uint64_t base = (start_oldest + (rem - to_read)) % sz;
 
     uint8_t *basep = (uint8_t*)console_rb.buffer;
 
@@ -121,13 +124,27 @@ size_t console_write(file *fd, const char *buf, size_t size, file_offset offset)
     for (size_t i = 0; i < size;) {
         const size_t remain = size - i;
         const size_t take = remain > CONSOLE_WRITE_CHUNK ? CONSOLE_WRITE_CHUNK : remain;
+        const char *chunk = buf + i;
 
-        char tmp[CONSOLE_WRITE_CHUNK + 1];
-        memcpy(tmp, buf + i, take);
-        tmp[take] = '\0';
 
-        uart_raw_puts(tmp);
-        if (use_visual) kconsole_puts(tmp);
+        size_t k = 0;
+        while (k < take){
+            size_t run = 0;
+            while (k + run < take && chunk[k + run] != '\0') run++;
+
+            if (run) {
+                char tmp[CONSOLE_WRITE_CHUNK + 1];
+                memcpy(tmp, chunk + k, run);
+                tmp[run] = '\0';
+
+                uart_raw_puts(tmp);
+                if (use_visual) kconsole_puts(tmp);
+                k += run;
+            }
+            if (k < take && chunk[k] == '\0') {
+                k++;
+            }
+        }
 
         i += take;
     }
