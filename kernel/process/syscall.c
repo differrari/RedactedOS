@@ -18,7 +18,9 @@
 #include "graph/tres.h"
 #include "memory/mmu.h"
 #include "loading/process_loader.h"
+#include "networking/interface_manager.h"
 #include "bin/bin_mod.h"
+#include "net/transport_layer/csocket.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -123,39 +125,64 @@ uint64_t syscall_get_time(process_t *ctx){
     return timer_now_msec();
 }
 
-uint64_t syscall_bind_port(process_t *ctx){
-    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
-    // uint16_t port     = (uint16_t)ctx->PROC_X0;
-    // port_recv_handler_t handler = (port_recv_handler_t)ctx->PROC_X1;
-    // protocol_t proto  = (protocol_t)ctx->PROC_X2;
-    // uint16_t pid      = get_current_proc_pid();
-    // return port_bind_manual(port, pid, proto, handler);
+uint64_t syscall_socket_create(process_t *ctx){
+    Socket_Role role = (Socket_Role)ctx->PROC_X0;
+    protocol_t protocol = (protocol_t)ctx->PROC_X1;
+    SocketHandle *out_handle = (SocketHandle*)ctx->PROC_X2;
+    
+    return create_socket(role, protocol, ctx->id, out_handle);
+}
+
+uint64_t syscall_socket_bind(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    ip_version_t ip_version = (ip_version_t)ctx->PROC_X1;
+    uint16_t port = (uint16_t)ctx->PROC_X2;
+    return bind_socket(handle, port, ip_version, ctx->id);
+}
+
+uint64_t syscall_socket_connect(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
+    void* dst = (void*)ctx->PROC_X2;
+    uint16_t port = (uint16_t)ctx->PROC_X3;
+    return connect_socket(handle, dst_kind, dst, port, ctx->id);
+}
+
+uint64_t syscall_socket_listen(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    int32_t backlog = (int32_t)ctx->PROC_X1;
+    return listen_on(handle, backlog, ctx->id);
+}
+
+uint64_t syscall_socket_accept(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    accept_on_socket(handle, ctx->id);
     return 0;
 }
 
-uint64_t syscall_unbind_port(process_t *ctx){
-    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
-    // uint16_t port    = (uint16_t)ctx->PROC_X0;
-    // protocol_t proto = (protocol_t)ctx->PROC_X2;
-    // uint16_t pid     = get_current_proc_pid();
-    // return port_unbind(port, proto, pid);
-    return 0;
+uint64_t syscall_socket_send(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
+    void* dst = (void*)ctx->PROC_X2;
+    uint16_t port = (uint16_t)ctx->PROC_X3;
+    void *ptr = (void*)ctx->PROC_X4;
+    size_t size = (size_t)ctx->regs[5];
+    return send_on_socket(handle, dst_kind, dst, port, ptr, size, ctx->id);
 }
 
-uint64_t syscall_send_packet(process_t *ctx){
-    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
-    // uintptr_t frame_ptr = ctx->PROC_X0;
-    // uint32_t  frame_len = (uint32_t)ctx->PROC_X1;
-    // return net_tx_frame(frame_ptr, frame_len);
-    return 0;
+uint64_t syscall_socket_receive(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    void* buf = (void*)ctx->PROC_X1;
+    size_t size = (size_t)ctx->PROC_X2;
+    net_l4_endpoint* out_src = (net_l4_endpoint*)ctx->PROC_X3;
+    return receive_from_socket(handle, buf, size, out_src, ctx->id);
 }
 
-uint64_t syscall_read_packet(process_t *ctx){
-    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
-    // sizedptr *user_out = (sizedptr*)ctx->PROC_X0;
-    // return net_rx_frame(user_out);
-    return 0;
+uint64_t syscall_socket_close(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    return close_socket(handle, ctx->id);
 }
+
 
 uint64_t syscall_fopen(process_t *ctx){
     char *req_path = (char *)ctx->PROC_X0;
@@ -210,11 +237,14 @@ syscall_entry syscalls[] = {
     { SLEEP_CODE, syscall_sleep},
     { HALT_CODE, syscall_halt},
     { EXEC_CODE, syscall_exec},
-    { GET_TIME_CODE, syscall_get_time},
-    { BIND_PORT_CODE, syscall_bind_port},
-    { UNBIND_PORT_CODE, syscall_unbind_port},
-    { SEND_PACKET_CODE, syscall_send_packet},
-    { READ_PACKET_CODE, syscall_read_packet},
+    { SOCKET_CREATE_CODE, syscall_socket_create}, 
+    { SOCKET_BIND_CODE, syscall_socket_bind}, 
+    { SOCKET_CONNECT_CODE, syscall_socket_connect},
+    { SOCKET_LISTEN_CODE, syscall_socket_listen}, 
+    { SOCKET_ACCEPT_CODE, syscall_socket_accept}, 
+    { SOCKET_SEND_CODE, syscall_socket_send}, 
+    { SOCKET_RECEIVE_CODE, syscall_socket_receive}, 
+    { SOCKET_CLOSE_CODE, syscall_socket_close}, 
     {FILE_OPEN_CODE, syscall_fopen},
     {FILE_READ_CODE, syscall_fread},
     {FILE_WRITE_CODE, syscall_fwrite},

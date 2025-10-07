@@ -1,9 +1,8 @@
 #include "http.h"
 #include "std/string.h"
 #include "std/memory.h"
-extern void* malloc(uint64_t size);
-extern void      free(void *ptr, uint64_t size);
-extern void      sleep(uint64_t ms);
+#include "syscalls/syscalls.h"
+
 
 static inline bool is_space(char c) {
     return c == ' ' || c == '\t';

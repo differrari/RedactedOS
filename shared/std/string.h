@@ -56,6 +56,7 @@ string string_concat(string a, string b);
 void string_concat_inplace(string *dest, string src);
 void string_append_bytes(string *dest, const void *buf, uint32_t len);
 const char* seek_to(const char *string, char character);
+size_t strncpy(char* dst, size_t cap, const char* src);
 
 #ifdef __cplusplus
 }
