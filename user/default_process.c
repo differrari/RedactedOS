@@ -45,10 +45,11 @@ int net_example() {
     SocketHandle spec = {};
     socket_create(SOCKET_SERVER, PROTO_UDP, &spec);
     printf("Created socket for type %i",spec.protocol);
-    spec.connection.ip[0] = 192;
-    spec.connection.ip[1] = 168;
-    spec.connection.ip[2] = 1;
-    spec.connection.ip[3] = 108;
+    //Fill in manually with your local IP. A syscall will be added soon to get it for you
+    spec.connection.ip[0] = 0;
+    spec.connection.ip[1] = 0;
+    spec.connection.ip[2] = 0;
+    spec.connection.ip[3] = 0;
     if (socket_bind(&spec, IP_VER4, 9000) < 0) return -1;
 
     // socket_listen(&spec);
