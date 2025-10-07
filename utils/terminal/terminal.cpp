@@ -73,17 +73,17 @@ const char** Terminal::parse_arguments(char *args, int *count){
 void Terminal::run_command(){
     const char* fullcmd = get_current_line();
     const char* args = seek_to(fullcmd, ' ');
-    
+
     string cmd;
     int argc = 0;
-    const char** argv; 
+    const char** argv = nullptr;
     string args_copy = {};
-    
-    if (fullcmd == args){
+
+    if (*args == '\0'){
         cmd = string_from_literal(fullcmd);
-        argv = 0;
     } else {
-        cmd = string_from_literal_length(fullcmd, args - fullcmd - 1);
+        size_t cmd_len = (size_t)((args - fullcmd) - 1);
+        cmd = string_from_literal_length(fullcmd, cmd_len);
         args_copy = string_from_literal(args);
         argv = parse_arguments(args_copy.data, &argc);
     }
