@@ -8,7 +8,7 @@
 #include "net/transport_layer/socket_types.h"
 #include "net/internet_layer/ipv4_route.h"
 #include "syscalls/syscalls.h"
-
+#include "net/net.h"
 
 static constexpr int32_t UDP_RING_CAP = 1024;
 static constexpr dns_server_sel_t UDP_DNS_SEL = DNS_USE_BOTH;
@@ -216,6 +216,7 @@ public:
             if (spec.ver == IP_VER4) {
                 uint32_t v4;
                 memcpy(&v4, spec.ip, 4);
+                v4 = __builtin_bswap32(v4);
                 ip_resolution_result_t r = resolve_ipv4_to_interface(v4);
                 if (!r.found || !r.ipv4) return SOCK_ERR_INVAL;
                 ids[n++] = r.ipv4->l3_id;

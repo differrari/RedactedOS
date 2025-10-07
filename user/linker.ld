@@ -1,4 +1,4 @@
-ENTRY(proc_func)
+ENTRY(main)
 
 SECTIONS {
     . = 0x1000;

@@ -37,11 +37,11 @@ extern uint32_t gpu_char_size(uint32_t scale);
 extern uint64_t get_time();
 
 extern bool socket_create(Socket_Role role, protocol_t protocol, SocketHandle *out_handle);
-extern int32_t socket_bind(SocketHandle *handle, uint16_t port);
+extern int32_t socket_bind(SocketHandle *handle, ip_version_t ip_version, uint16_t port);
 extern int32_t socket_connect(SocketHandle *handle, ip_version_t ip_version);
 extern int32_t socket_listen(SocketHandle *handle);
 extern bool socket_accept(SocketHandle *spec);
-extern bool socket_send(SocketHandle *handle, void *packet, size_t size);
+extern size_t socket_send(SocketHandle *handle, SockDstKind dst_kind, const void* dst, uint16_t port, void *packet, size_t size);
 extern bool socket_receive(SocketHandle *handle, void *packet, size_t size, net_l4_endpoint* out_src);
 extern int32_t socket_close(SocketHandle *handle);
 

@@ -134,8 +134,9 @@ uint64_t syscall_socket_create(process_t *ctx){
 
 uint64_t syscall_socket_bind(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
-    uint16_t port = (uint16_t)ctx->PROC_X1;
-    return bind_socket(handle, port, ctx->id);
+    ip_version_t ip_version = (ip_version_t)ctx->PROC_X1;
+    uint16_t port = (uint16_t)ctx->PROC_X2;
+    return bind_socket(handle, port, ip_version, ctx->id);
 }
 
 uint64_t syscall_socket_connect(process_t *ctx){

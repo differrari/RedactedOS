@@ -64,37 +64,41 @@ bool create_socket(Socket_Role role, protocol_t protocol, uint16_t pid, SocketHa
     return true;
 }
 
-int32_t bind_socket(SocketHandle *handle, uint16_t port, uint16_t pid){
+int32_t bind_socket(SocketHandle *handle, uint16_t port, ip_version_t ip_version, uint16_t pid){
     check_mem();
     ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
-    if (sh->id != pid){
+    if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket binding");
         return 0;
     }
     protocol_t protocol = sh->protocol;
     SockBindSpec *spec = kalloc(sock_mem_page, sizeof(SockBindSpec), ALIGN_64B, MEM_PRIV_KERNEL);
+    spec->kind = BIND_IP;
+    spec->ver = ip_version;
+    memcpy(&spec->ip, handle->connection.ip, 4);
+    int32_t res = -1;
     switch (protocol) {
         case PROTO_TCP:
-            return socket_bind_tcp_ex(sh, spec, port);
+            res = socket_bind_tcp_ex(sh->sh, spec, port);
         break;
         case PROTO_UDP:
-            return socket_bind_udp_ex(sh, spec, port);
+            res = socket_bind_udp_ex(sh->sh, spec, port);
         break;
     }
-    return -1;
+    return res;
 }
 
 int32_t connect_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, uint16_t port, uint16_t pid){
     check_mem();
     ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
-    if (sh->id != pid){
+    if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket connection");
         return 0;
     }
     protocol_t protocol = sh->protocol;
     switch (protocol) {
         case PROTO_TCP:
-            return socket_connect_tcp_ex(sh, dst_kind, dst, port);
+            return socket_connect_tcp_ex(sh->sh, dst_kind, dst, port);
         break;
         case PROTO_UDP:
             kprintf("[SOCKET] connect is a TCP-only function and isn't needed in UDP sockets");
@@ -106,17 +110,17 @@ int32_t connect_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, 
 int64_t send_on_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, uint16_t port, void* buf, uint64_t len, uint16_t pid){
     check_mem();
     ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
-    if (sh->id != pid){
+    if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket send");
         return 0;
     }
     protocol_t protocol = sh->protocol;
     switch (protocol) {
         case PROTO_TCP:
-        return socket_send_tcp(sh, buf, len);
+        return socket_send_tcp(sh->sh, buf, len);
         break;
         case PROTO_UDP:
-        return socket_sendto_udp_ex(sh, dst_kind, dst, port, buf, len);
+        return socket_sendto_udp_ex(sh->sh, dst_kind, dst, port, buf, len);
         break;
     }
     return 0;
@@ -125,17 +129,17 @@ int64_t send_on_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, 
 int64_t receive_from_socket(SocketHandle *handle, void* buf, uint64_t len, net_l4_endpoint* out_src, uint16_t pid){
     check_mem();
     ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
-    if (sh->id != pid){
-        kprintf("[SOCKET, error] illegal socket receive");
+    if (sh->pid != pid){
+        kprintf("[SOCKET, error] illegal socket receive %i, %i",sh->id,pid);
         return 0;
     }
     protocol_t protocol = sh->protocol;
     switch (protocol) {
         case PROTO_TCP:
-        return socket_recv_tcp(sh, buf, len);
+        return socket_recv_tcp(sh->sh, buf, len);
         break;
         case PROTO_UDP:
-        return socket_recvfrom_udp_ex(sh, buf, len, out_src);
+        return socket_recvfrom_udp_ex(sh->sh, buf, len, out_src);
         break;
     }
     return 0;
@@ -144,17 +148,17 @@ int64_t receive_from_socket(SocketHandle *handle, void* buf, uint64_t len, net_l
 int32_t close_socket(SocketHandle *handle, uint16_t pid){
     check_mem();
     ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
-    if (sh->id != pid){
+    if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket close");
         return 0;
     }
     protocol_t protocol = sh->protocol;
     switch (protocol) {
         case PROTO_TCP:
-        return socket_close_tcp(sh);
+        return socket_close_tcp(sh->sh);
         break;
         case PROTO_UDP:
-        return socket_close_udp(sh);
+        return socket_close_udp(sh->sh);
         break;
     }
     return 0;
@@ -163,14 +167,14 @@ int32_t close_socket(SocketHandle *handle, uint16_t pid){
 int32_t listen_on(SocketHandle *handle, int32_t backlog, uint16_t pid){
     check_mem();
     ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
-    if (sh->id != pid){
+    if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket listen");
         return 0;
     }
     protocol_t protocol = sh->protocol;
     switch (protocol) {
         case PROTO_TCP:
-            return socket_listen_tcp(sh, backlog);
+            return socket_listen_tcp(sh->sh, backlog);
         break;
         case PROTO_UDP:
             kprintf("[SOCKET] listen is a TCP-only function and isn't needed in UDP sockets");
@@ -182,14 +186,14 @@ int32_t listen_on(SocketHandle *handle, int32_t backlog, uint16_t pid){
 void accept_on_socket(SocketHandle *handle, uint16_t pid){
     check_mem();
     ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
-    if (sh->id != pid){
+    if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket accept");
         return;
     }
     protocol_t protocol = sh->protocol;
     switch (protocol) {
         case PROTO_TCP:
-            socket_accept_tcp(sh);
+            socket_accept_tcp(sh->sh);
         break;
         case PROTO_UDP:
             kprintf("[SOCKET] accept is a TCP-only function and isn't needed in UDP sockets");

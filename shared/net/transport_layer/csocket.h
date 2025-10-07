@@ -4,7 +4,7 @@
 #include "net/network_types.h"
 
 bool create_socket(Socket_Role role, protocol_t protocol, uint16_t pid, SocketHandle *out_handle);
-int32_t bind_socket(SocketHandle *handle, uint16_t port, uint16_t pid);
+int32_t bind_socket(SocketHandle *handle, uint16_t port, ip_version_t ip_vers, uint16_t pid);
 int32_t connect_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, uint16_t port, uint16_t pid);
 
 int64_t send_on_socket(SocketHandle *sh, uint8_t dst_kind, const void* dst, uint16_t port, void* buf, uint64_t len, uint16_t pid);
