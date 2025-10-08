@@ -3,6 +3,7 @@
 #include "http.h"
 #include "std/string.h"
 #include "std/memory.h"
+#include "net/transport_layer/socket_types.h"
 
 class HTTPServer {
 private:
@@ -13,7 +14,7 @@ public:
 
     ~HTTPServer() { close(); }
 
-    int32_t bind(uint16_t port) { return sock.bind(port); }
+    int32_t bind(const SockBindSpec& spec, uint16_t port) { return sock.bind(spec, port); }
     int32_t listen(int backlog = 4) { return sock.listen(backlog); }
     TCPSocket* accept() { return sock.accept(); }
 

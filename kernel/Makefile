@@ -31,9 +31,9 @@ all: $(TARGET)
 prepare:
 	mkdir -p $(BUILD_DIR)
 
-$(TARGET): ../shared/libshared.a prepare $(OBJ)
+$(TARGET): ../shared/klibshared.a prepare $(OBJ)
 	echo $(LDFLAGS)
-	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/libshared.a $(BUILD_DIR)/boot.o
+	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/klibshared.a $(BUILD_DIR)/boot.o
 	$(OBJCOPY) -O binary $(ELF) $@
 
 $(BUILD_DIR)/%.o: %.S

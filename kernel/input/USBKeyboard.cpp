@@ -4,6 +4,7 @@
 #include "memory/page_allocator.h"
 #include "usb.hpp"
 #include "async.h"
+#include "exceptions/timer.h"
 
 void USBKeyboard::request_data(USBDriver *driver){
     requesting = true;
@@ -33,6 +34,8 @@ void USBKeyboard::process_data(USBDriver *driver){
     }
 }
 
+uint64_t last_registered[256];
+
 void USBKeyboard::process_keypress(keypress *rkp){
     for (int i = 0; i < 8; i++){
         char oldkey = (last_keypress.modifier & (1 << i));
@@ -50,13 +53,17 @@ void USBKeyboard::process_keypress(keypress *rkp){
                 kbd_event event = {};
                 event.type = KEY_RELEASE;
                 event.key = last_keypress.keys[i];
+                last_registered[(uint8_t)event.key] = timer_now_msec();
                 register_event(event);
             }
             if (rkp->keys[i]) {
                 kbd_event event = {};
                 event.type = KEY_PRESS;
                 event.key = rkp->keys[i];
-                register_event(event);
+                if (timer_now_msec()-last_registered[(uint8_t)event.key] > 50){
+                    last_registered[(uint8_t)event.key] = timer_now_msec();
+                    register_event(event);
+                }
             }
         }
     }

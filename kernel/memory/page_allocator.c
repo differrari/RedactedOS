@@ -6,6 +6,7 @@
 #include "std/memory.h"
 #include "math/math.h"
 #include "console/kio.h"
+#include "process/scheduler.h"
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01
@@ -184,6 +185,14 @@ void mark_used(uintptr_t address, size_t pages)
 
         mem_bitmap[i] |= (1ULL << bit);
     }
+}
+
+void* malloc(size_t size){
+    return kalloc((void*)get_proc_by_pid(1)->heap, size, ALIGN_16B, get_current_privilege());
+}
+
+void free(void*ptr, size_t size){
+    kfree(ptr, size);
 }
 
 //TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
