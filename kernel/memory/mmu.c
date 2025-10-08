@@ -8,11 +8,7 @@
 #include "pci.h"
 #include "filesystem/disk.h"
 #include "memory/page_allocator.h"
-
-#define MAIR_DEVICE_nGnRnE 0b00000000
-#define MAIR_NORMAL_NOCACHE 0b01000100
-#define MAIR_IDX_DEVICE 0
-#define MAIR_IDX_NORMAL 1
+#include "sysregs.h"
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01
@@ -26,7 +22,6 @@
 
 #define PAGE_TABLE_ENTRIES 512
 
-#define HIGH_VA 0xFFFF000000000000ULL
 #define VIRT_TO_PHYS(x) ((VirtualAddr)x - HIGH_VA)
 #define PHYS_TO_VIRT(x) ((PhysicalAddr)x + HIGH_VA)
 
@@ -190,6 +185,8 @@ extern uint64_t shared_code_end;
 extern uint64_t shared_ro_end;
 extern uint64_t shared_end;
 
+extern void mmu_start(uint64_t *low, uint64_t *high);
+
 void mmu_init() {
     //TODO: Move these hardcoded mappings to their own file
     uint64_t kstart = mem_get_kmem_start();
@@ -224,28 +221,8 @@ void mmu_init() {
             mmu_map_4kb(kernel_hi_page, HIGH_VA + addr, addr, MAIR_IDX_NORMAL, MEM_RO, MEM_PRIV_KERNEL);
         }
     }
-
-    uint64_t mair = (MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_NOCACHE << (MAIR_IDX_NORMAL * 8));
-    asm volatile ("msr mair_el1, %0" :: "r"(mair));
-
-    //30 = Translation granule EL1. 10 = 4kb | 14 = TG EL0 00 = 4kb
-    uint64_t tcr = ((64 - 48) << 0) | ((64 - 48) << 16) | (0b00 << 14) | (0b10 << 30);
-    asm volatile ("msr tcr_el1, %0" :: "r"(tcr));
-
-    asm volatile ("dsb ish");
-    asm volatile ("isb");
-
-    asm volatile ("msr ttbr0_el1, %0" :: "r"(kernel_lo_page));
-    asm volatile ("msr ttbr1_el1, %0" :: "r"(kernel_hi_page));
     
-    asm volatile (
-        "mrs x0, sctlr_el1\n"
-        "orr x0, x0, #0x1\n"
-        "bic x0, x0, #(1 << 19)\n"
-        "msr sctlr_el1, x0\n"
-        "isb\n"
-        ::: "x0", "memory"
-    );
+    mmu_start(kernel_lo_page, kernel_hi_page);
 
     kprintf("Finished MMU init");
 }
