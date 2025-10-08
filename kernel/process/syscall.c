@@ -233,6 +233,7 @@ syscall_entry syscalls[] = {
     [SLEEP_CODE] = syscall_sleep,
     [HALT_CODE] = syscall_halt,
     [EXEC_CODE] = syscall_exec,
+    [GET_TIME_CODE] = syscall_get_time,
     [SOCKET_CREATE_CODE] = syscall_socket_create,
     [SOCKET_BIND_CODE] = syscall_socket_bind,
     [SOCKET_CONNECT_CODE] = syscall_socket_connect,
