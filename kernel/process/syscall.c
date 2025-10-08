@@ -249,16 +249,16 @@ syscall_entry syscalls[] = {
 };
 
 void backtrace(uintptr_t fp, uintptr_t elr) {
+    for (uint8_t depth = 0; depth < 10 && fp; depth++) {
+        uintptr_t return_address = (*(uintptr_t*)(fp + 8));
 
-    for (uint8_t depth = 0; depth < 3 && fp; depth++) {
-        uintptr_t return_address = (*(uintptr_t*)(fp + 8))-4;
-
-        kprintf("%i: caller address: %x", depth, return_address, return_address);
-
-        fp = *(uintptr_t*)fp;
-
-        if (!fp){
-            kprintf("Exception triggered by %x",(elr-4));
+        if (return_address != 0){
+            kprintf("%i: caller address: %x", depth, return_address, return_address);
+            fp = *(uintptr_t*)fp;
+        }
+        if (return_address == 0 || !fp){
+            kprintf("Exception triggered by %x",(elr));
+            return;
         }
     }
 }
