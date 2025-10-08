@@ -20,3 +20,4 @@ void mmu_enable_verbose();
 #endif
 
 void mmu_unmap(uint64_t va, uint64_t pa);
+void mmu_init_kernel();

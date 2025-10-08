@@ -23,7 +23,7 @@ void kernel_main() {
 
     detect_hardware();
 
-    mmu_alloc();
+    mmu_init_kernel();
     
     if (BOARD_TYPE == 2) mailbox_init();
 

@@ -30,9 +30,6 @@ SECTIONS {
     .heap_fill : { FILL(0); . = . + 0xFF000; }
     heap_limit = .;
 
-    . = ALIGN(0x200000);
-    kcode_end = .;
-
     .shared : ALIGN(0x1000) {
         shared_start = .;
         *libshared.a:*(.text*)
@@ -49,5 +46,5 @@ SECTIONS {
     }
 
     . = ALIGN(0x200000);
-    kfull_end = .;
+    kcode_end = .;
 }
