@@ -5,7 +5,7 @@
 #define GRANULE_4KB 0x1000
 #define GRANULE_2MB 0x200000
 
-void mmu_alloc();
+uint64_t* mmu_alloc();
 void mmu_init();
 #ifdef __cplusplus
 extern "C" {
