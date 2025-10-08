@@ -56,7 +56,6 @@ debug:
 	./rundebug MODE=$(MODE) $(ARGS)
 
 dump:
-	$(OBJCOPY) -O binary kernel.elf kernel.img
 	$(ARCH)-objdump -D kernel.elf > dump
 	$(MAKE) -C user $@
 
