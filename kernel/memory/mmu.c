@@ -224,6 +224,7 @@ void mmu_init() {
     
     mmu_start(kernel_lo_page, kernel_hi_page);
 
+    asm volatile (".global mmu_finish\nmmu_finish:");
     kprintf("Finished MMU init");
 }
 

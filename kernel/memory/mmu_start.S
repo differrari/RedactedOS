@@ -24,4 +24,6 @@ mmu_start://(uint64_t *low x0, uint64_t *high x1)
     orr x0, x0, x1
     msr vbar_el1, x0
 
-    ret
+    ldr x0, =mmu_finish
+    orr x0, x0, x1
+    br x0
