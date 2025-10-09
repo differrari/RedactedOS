@@ -3,16 +3,18 @@
 #include "std/memory.h"
 #include "math/math.h"
 
-#define line_height char_size + 2
 
 int try_merge(gpu_rect* a, gpu_rect* b) {
-    //TODO: drawing to full height is not working, needs to be -1
-    uint32_t ax2 = a->point.x + a->size.width;
-    uint32_t ay2 = a->point.y + a->size.height;
-    uint32_t bx2 = b->point.x + b->size.width;
-    uint32_t by2 = b->point.y + b->size.height;
+    uint32_t ax1 = a->point.x;
+    uint32_t ay1 = a->point.y;
+    uint32_t ax2 = ax1 + a->size.width;
+    uint32_t ay2 = ay1 + a->size.height;
+    uint32_t bx1 = b->point.x;
+    uint32_t by1 = b->point.y;
+    uint32_t bx2 = bx1 + b->size.width;
+    uint32_t by2 = by1 + b->size.height;
 
-    if (a->point.x > bx2 || b->point.x > ax2 || a->point.y > by2 || b->point.y > ay2)
+    if (ax1 >= bx2 || bx1 >= ax2 || ay1 >= by2 || by1 >= ay2)
         return false;
 
     uint32_t min_x = a->point.x < b->point.x ? a->point.x : b->point.x;
@@ -45,24 +47,72 @@ void mark_dirty(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
 
     gpu_rect new_rect = { {x, y}, {w, h} };
 
-    for (uint32_t i = 0; i < ctx->dirty_count; i++)
-        if (try_merge(&ctx->dirty_rects[i], &new_rect))
-            return;
+    for (uint32_t i = 0; i < ctx->dirty_count; i++) {
+        if (try_merge(&ctx->dirty_rects[i], &new_rect)) {
+            for (uint32_t j = 0; j < ctx->dirty_count; ++j) {
+                for (uint32_t k = j + 1; k < ctx->dirty_count;) {
+                    if (try_merge(&ctx->dirty_rects[j], &ctx->dirty_rects[k])) {
+                        for (uint32_t l = k + 1; l < ctx->dirty_count; ++l) ctx->dirty_rects[l - 1] = ctx->dirty_rects[l];
+                        ctx->dirty_count--;
+                    } else {
+                        ++k;
+                    }
+                }
+            }
+            uint64_t area_sum = 0;
+            for (uint32_t i = 0; i < ctx->dirty_count; ++i)
+                area_sum += (uint64_t)ctx->dirty_rects[i].size.width * (uint64_t)ctx->dirty_rects[i].size.height;
 
-    if (ctx->dirty_count < MAX_DIRTY_RECTS)
+            const uint64_t screen_area = (uint64_t)ctx->width * (uint64_t)ctx->height;
+            if (area_sum * 100 >= screen_area * FULL_REDRAW_THRESHOLD_PCT) ctx->full_redraw = 1;
+        }
+    }
+
+    if (ctx->dirty_count < MAX_DIRTY_RECTS){
         ctx->dirty_rects[ctx->dirty_count++] = new_rect;
-    else
-        ctx->full_redraw = true;
+        for (uint32_t i = 0; i < ctx->dirty_count; ++i) {
+            for (uint32_t j = i + 1; j < ctx->dirty_count; ) {
+                if (try_merge(&ctx->dirty_rects[i], &ctx->dirty_rects[j])) {
+                    for (uint32_t k = j + 1; k < ctx->dirty_count; ++k)
+                        ctx->dirty_rects[k - 1] = ctx->dirty_rects[k];
+                    ctx->dirty_count--;
+                } else {
+                    ++j;
+                }
+            }
+        }
+    } else {
+        ctx->full_redraw = 1;
+        return;
+    }
 }
 
 void fb_clear(draw_ctx *ctx, uint32_t color) {
-    memset32(ctx->fb, color, ctx->stride * ctx->height);
-    ctx->full_redraw = true;
+    uint32_t* row = ctx->fb;
+    const uint32_t w = ctx->width;
+    const uint32_t h = ctx->height;
+    const uint32_t pitch = ctx->stride >> 2;
+
+    for (uint32_t y = 0; y < h; ++y) {
+        uint32_t *p = row;
+        uint32_t n = w;
+
+        if (((uintptr_t)p & 7) && n) { *p++ = color; --n; }
+        uint64_t pat = ((uint64_t)color << 32) | color;
+        uint64_t *q = (uint64_t*)p;
+        for (uint32_t i = 0; i < (n >> 1); ++i) q[i] = pat;
+        p = (uint32_t*)(q + (n >> 1));
+        if (n & 1) *p = color;
+
+        row += pitch;
+    }
+
+    ctx->full_redraw = 1;
 }
 
 void fb_draw_raw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
     if (x >= ctx->width || y >= ctx->height) return;
-    ctx->fb[y * (ctx->stride / 4) + x] = color;
+    ctx->fb[y * (ctx->stride >> 2) + x] = color;
 }
 
 void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
@@ -71,19 +121,31 @@ void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
 }
 
 void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
-    uint32_t adj_img_width = width;
-    uint32_t adj_img_height = height;
-    if (x + adj_img_width >= ctx->width)   
-        adj_img_width -= (x + adj_img_width - ctx->width);
-    if (y + adj_img_height >= ctx->height)
-        adj_img_height -= (y + adj_img_height - ctx->height);
-    if (adj_img_width == ctx->width && x == 0){
-        memset32(ctx->fb + (y * (ctx->width)) , color, ctx->stride * adj_img_height);
-    } else {
-        for (uint32_t dy = 0; dy < adj_img_height; dy++)
-            memset32(ctx->fb + ((y+dy) * (ctx->width)) + x, color, adj_img_width*4);
+    if (x >= ctx->width || y >= ctx->height) return;
+
+    uint32_t w = width;
+    uint32_t h = height;
+    if (x + w > ctx->width) w = ctx->width - x;
+    if (y + h > ctx->height) h = ctx->height - y;
+    if (!w || !h) return;
+
+    const uint32_t dst_pitch_px = (ctx->stride >> 2);
+    uint32_t* dst_row = ctx->fb + y * dst_pitch_px + x;
+    for (uint32_t row = 0; row < h; ++row) {
+        uint32_t *p = dst_row;
+        uint32_t n = w;
+        uint32_t col = (uint32_t)color;
+
+        if (((uintptr_t)p & 7) && n) { *p++ = col; --n; }
+        uint64_t pat = ((uint64_t)col << 32) | (uint64_t)col;
+        uint64_t *q = (uint64_t*)p;
+        for (uint32_t i = 0; i < (n >> 1); ++i) q[i] = pat;
+        p = (uint32_t*)(q + (n >> 1));
+        if (n & 1) *p = col;
+
+        dst_row += dst_pitch_px;
     }
-    mark_dirty(ctx, x,y,adj_img_width,adj_img_height);
+    mark_dirty(ctx, x,y,w,h);
 }
 
 void fb_draw_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t img_width, uint32_t img_height){
@@ -91,22 +153,33 @@ void fb_draw_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t 
 }
 
 void fb_draw_partial_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t img_width, uint32_t img_height, uint32_t start_x, uint32_t start_y, uint32_t full_width){
-    uint32_t adj_img_width = img_width;
-    uint32_t adj_img_height = img_height;
-    if (x + adj_img_width >= ctx->width)   
-        adj_img_width -= (x + adj_img_width - ctx->width);
-    if (y + adj_img_height >= ctx->height)
-        adj_img_height -= (y + adj_img_height - ctx->height);
-    if (full_width == ctx->width && x == 0){
-        memcpy(ctx->fb + (y * (ctx->width)), img, ctx->stride * img_height);
-    } else {
-        for (uint32_t dy = 0; dy < adj_img_height; dy++)
-            memcpy(ctx->fb + ((y+dy) * (ctx->width)) + x, img + ((dy + start_y) * full_width) + start_x, adj_img_width*4);
+    if (x >= ctx->width || y >= ctx->height) return;
+
+    uint32_t w = img_width;
+    uint32_t h = img_height;
+
+    if (x + w > ctx->width) w = ctx->width - x;
+    if (y + h > ctx->height) h= ctx->height - y;
+    if (!w || !h) return;
+
+    const uint32_t dst_pitch_px = (ctx->stride >> 2);
+    uint32_t* dst = ctx->fb + y * dst_pitch_px + x;
+
+    const uint32_t src_pitch_px = full_width;
+    const uint32_t* src = img + (start_y * full_width) + start_x;
+
+    for (uint32_t row = 0; row < h; ++row) {
+        memcpy(dst, src, (size_t)w * sizeof(uint32_t));
+        dst += dst_pitch_px;
+        src += src_pitch_px;
     }
-    mark_dirty(ctx, x,y,adj_img_width,adj_img_height);
+
+    mark_dirty(ctx, x,y,w, h);
 }
 
 gpu_rect fb_draw_line(draw_ctx *ctx, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, color color){
+    const uint32_t ox0 = x0, oy0 = y0, ox1 = x1, oy1 = y1;
+
     int dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
     int sx = (x0 < x1) ? 1 : -1;
     int dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
@@ -121,23 +194,33 @@ gpu_rect fb_draw_line(draw_ctx *ctx, uint32_t x0, uint32_t y0, uint32_t x1, uint
         if (e2 < dy) { err += dx; y0 += sy; }
     }
 
-    int min_x = (x0 < x1) ? x0 : x1;
-    int min_y = (y0 < y1) ? y0 : y1;
-    int max_x = (x0 > x1) ? x0 : x1;
-    int max_y = (y0 > y1) ? y0 : y1;
+    uint32_t min_x = (ox0 < ox1) ? ox0 : ox1;
+    uint32_t min_y = (oy0 < oy1) ? oy0 : oy1;
+    uint32_t max_x = (ox0 > ox1) ? ox0 : ox1;
+    uint32_t max_y = (oy0 > oy1) ? oy0 : oy1;
 
-    mark_dirty(ctx, min_x,min_y,max_x - min_x + 1,max_y - min_y + 1);
+    if (max_x >= ctx->width) max_x = ctx->width - 1;
+    if (max_y >= ctx->height) max_y = ctx->height - 1;
 
-    return (gpu_rect) { {min_x, min_y}, {max_x - min_x + 1, max_y - min_y + 1}};
+    const uint32_t bw = (max_x >= min_x) ? (max_x - min_x + 1) : 0;
+    const uint32_t bh = (max_y >= min_y) ? (max_y - min_y + 1) : 0;
+
+    if (bw && bh) mark_dirty(ctx, min_x, min_y, bw, bh);
+
+    return (gpu_rect) { {min_x, min_y}, {bw, bh} };
 }
 
 void fb_draw_raw_char(draw_ctx *ctx, uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
     const uint8_t* glyph = get_font8x8((uint8_t)c);
-    for (uint32_t row = 0; row < (CHAR_SIZE * scale); row++) {
+    const uint32_t char_size = CHAR_SIZE * scale;
+    const uint32_t row_pitch = (ctx->stride >> 2);
+
+    for (uint32_t row = 0; row < char_size; row++) {
         uint8_t bits = glyph[row/scale];
-        for (uint32_t col = 0; col < (CHAR_SIZE * scale); col++) {
-            if (bits & (1 << (7 - (col / scale)))) {
-                fb_draw_raw_pixel(ctx, x + col, y + row, color);
+        uint32_t* dst = ctx->fb + (y + row) * row_pitch + x;
+        for (uint32_t col = 0; col < char_size; col++) {
+            if ((x + col < ctx->width) && (y + row < ctx->height) && (bits & (1u << (7 - (col / scale))))) {
+                dst[col] = color;
             }
         }
     }
@@ -149,22 +232,26 @@ void fb_draw_char(draw_ctx *ctx, uint32_t x, uint32_t y, char c, uint32_t scale,
 }
 
 gpu_size fb_draw_string(draw_ctx *ctx, const char* s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
-    int char_size = fb_get_char_size(scale);
-    int str_length = strlen(s,0);
+    const uint32_t char_size = fb_get_char_size(scale);
+    const int str_length = strlen(s,0);
     
     uint32_t xoff = 0;
     uint32_t xSize = 0;
     uint32_t xRowSize = 0;
-    uint32_t ySize = line_height;
-    for (int i = 0; i < str_length; i++){    
+    uint32_t ySize = 0;
+
+    const uint32_t start_y = y0;
+    uint32_t rows = 1;
+
+    for (int i = 0; i < str_length; ++i){    
         char c = s[i];
         if (c == '\n'){
-            y0 += line_height; 
-            ySize += line_height;
             if (xRowSize > xSize)
                 xSize = xRowSize;
             xRowSize = 0;
             xoff = 0;
+            y0 += (char_size + 2);
+            rows++;
         } else {
             fb_draw_raw_char(ctx, x0 + (xoff * char_size),y0,c,scale, color);
             xoff++;
@@ -174,7 +261,15 @@ gpu_size fb_draw_string(draw_ctx *ctx, const char* s, uint32_t x0, uint32_t y0, 
     if (xRowSize > xSize)
         xSize = xRowSize;
 
-    mark_dirty(ctx, x0,y0,xSize,ySize);
+    ySize = rows * (char_size + 2);
+
+    uint32_t bbox_w = xSize;
+    uint32_t bbox_h = ySize;
+
+    if (x0 + bbox_w > ctx->width) bbox_w = ctx->width - x0;
+    if (start_y + bbox_h > ctx->height) bbox_h = ctx->height - start_y;
+
+    if (bbox_w && bbox_h) mark_dirty(ctx, x0,start_y,bbox_w,bbox_h);
 
     return (gpu_size){xSize,ySize};
 }
@@ -211,12 +306,14 @@ void fb_draw_cursor(draw_ctx *ctx, uint32_t color) {
         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
     };
 
+    const uint32_t row_pitch = (ctx->stride >> 2);
     for (uint32_t y = 0; y < 22; y++){
+        uint32_t* dst = ctx->fb + y * row_pitch;
         for (uint32_t x = 0; x < 24; x++)
         {
-            if (cursor_bitmap[y][x] == 1)
+            if (cursor_bitmap[y][x])
             {
-                fb_draw_raw_pixel(ctx, x, y, color);
+                dst[x] = color;
             }
         }
     }

@@ -11,6 +11,7 @@ extern "C" {
 #define CHAR_SIZE 8
 
 #define MAX_DIRTY_RECTS 64
+#define FULL_REDRAW_THRESHOLD_PCT 35u
 
 typedef struct draw_ctx {
     gpu_rect dirty_rects[MAX_DIRTY_RECTS];
