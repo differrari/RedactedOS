@@ -39,3 +39,4 @@ extern uintptr_t LOWEST_ADDR;
 
 void detect_hardware();
 void print_hardware();
+void hw_high_va();
