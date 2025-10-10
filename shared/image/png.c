@@ -200,7 +200,7 @@ bool deflate_block(huff_tree_node *litlen_tree, huff_tree_node *dist_tree, defla
 
 size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
     zlib_hdr hdr = *(zlib_hdr*)ptr;
-    if (hdr.cm != 8){
+    if (hdr.cm != 8){//TODO: May not be 100% accurate. Most likely this is an IDAT that contains a continuation of a block, but maybe the hdr.cm may happen to be 8 while not being deflate
         // printf("Continuation of previous block %i %x",size, size);
         memcpy(output_buf, ptr, size);
         return size;
