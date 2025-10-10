@@ -114,26 +114,36 @@ typedef struct {
     int c;
     uintptr_t out_cursor;
     uint8_t *output_buf;
+    bool partial_block;
 } deflate_read_ctx;
 
-bool deflate_uncommpressed(deflate_read_ctx *ctx, size_t max_size) {
+size_t deflate_uncommpressed(deflate_read_ctx *ctx, size_t max_size) {
     if (ctx->bs) {
         ctx->bs = 0;
         ctx->c++;
         max_size--;
     }
 
+    // printf("Next bytes %x %x %x %x",ctx->bytes[ctx->c],ctx->bytes[ctx->c+1],ctx->bytes[ctx->c+2],ctx->bytes[ctx->c+3]);
+
     uint16_t len = 0;
     uint16_t nlen = 0;
     READ_BITS(ctx->bytes, len, 16, ctx->bs, ctx->c);
     READ_BITS(ctx->bytes, nlen, 16, ctx->bs, ctx->c);
 
+    // printf("Actual read values %x %x",len, nlen);
+
     if (len != (uint16_t)(~nlen)) {
         printf("Wrong checksum %.16b %.16b %.16b\n", len, nlen, (uint16_t)(~nlen));
-        return false;
+        return 0;
     }
 
     max_size -= 4;
+
+    if (len > max_size){ 
+        // printf("Block exceeds IDAT boundary");
+        ctx->partial_block = true;
+    }
 
     len = min(len,max_size);
 
@@ -143,7 +153,7 @@ bool deflate_uncommpressed(deflate_read_ctx *ctx, size_t max_size) {
     ctx->c += len;
     ctx->out_cursor += len;
 
-    return true;
+    return len;
 }
 
 bool deflate_block(huff_tree_node *litlen_tree, huff_tree_node *dist_tree, deflate_read_ctx *ctx){
@@ -226,10 +236,13 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
         READ_BITS(ctx.bytes, btype, 2, ctx.bs, ctx.c);
 
         if (btype == 0b00){
-            if (!deflate_uncommpressed(&ctx, size-sizeof(zlib_hdr))){
+            size_t max_size = size-sizeof(zlib_hdr);
+            size_t read_size = deflate_uncommpressed(&ctx, max_size);
+            // printf("Uncompressed block read %x out of a max total %x",read_size, max_size);
+            if (!read_size){
                 return 0;
             }
-            if (final) return ctx.out_cursor;
+            if (final || ctx.partial_block) return ctx.out_cursor;
             continue;
         }
 
