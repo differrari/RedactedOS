@@ -114,7 +114,7 @@ bool virtio_init_device(virtio_device *dev) {
 
     kprintfv("Features %llx",(unsigned long long)features);
 
-    uint64_t negotiated = (feature_mask != 0) ? (features & feature_mask) : features;
+    uint64_t negotiated = (features & feature_mask);
 
     kprintfv("Negotiated features %llx",(unsigned long long)negotiated);
 
