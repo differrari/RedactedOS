@@ -32,59 +32,48 @@ int try_merge(gpu_rect* a, gpu_rect* b) {
 
 void mark_dirty(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     if (ctx->full_redraw) return;
-    
-    if (x >= ctx->width || y >= ctx->height)
-        return;
+    if (x >= ctx->width || y >= ctx->height) return;
 
-    if (x + w > ctx->width)
-        w = ctx->width - x;
+    if (x + w > ctx->width) w = ctx->width - x;
+    if (y + h > ctx->height) h = ctx->height - y;
+    if (w == 0 || h == 0) return;
 
-    if (y + h > ctx->height)
-        h = ctx->height - y;
+    gpu_rect new_rect = (gpu_rect){{x, y}, {w, h}};
 
-    if (w == 0 || h == 0)
-        return;
-
-    gpu_rect new_rect = { {x, y}, {w, h} };
-
+    int merged = 0;
     for (uint32_t i = 0; i < ctx->dirty_count; i++) {
         if (try_merge(&ctx->dirty_rects[i], &new_rect)) {
-            for (uint32_t j = 0; j < ctx->dirty_count; ++j) {
-                for (uint32_t k = j + 1; k < ctx->dirty_count;) {
-                    if (try_merge(&ctx->dirty_rects[j], &ctx->dirty_rects[k])) {
-                        for (uint32_t l = k + 1; l < ctx->dirty_count; ++l) ctx->dirty_rects[l - 1] = ctx->dirty_rects[l];
-                        ctx->dirty_count--;
-                    } else {
-                        ++k;
-                    }
-                }
-            }
-            uint64_t area_sum = 0;
-            for (uint32_t i = 0; i < ctx->dirty_count; ++i)
-                area_sum += (uint64_t)ctx->dirty_rects[i].size.width * (uint64_t)ctx->dirty_rects[i].size.height;
-
-            const uint64_t screen_area = (uint64_t)ctx->width * (uint64_t)ctx->height;
-            if (area_sum * 100 >= screen_area * FULL_REDRAW_THRESHOLD_PCT) ctx->full_redraw = 1;
+            merged = 1;
+            break;
+        }
+    }
+    if (!merged) {
+        if (ctx->dirty_count < MAX_DIRTY_RECTS) {
+            ctx->dirty_rects[ctx->dirty_count++] = new_rect;
+        } else {
+            ctx->full_redraw = 1;
+            return;
         }
     }
 
-    if (ctx->dirty_count < MAX_DIRTY_RECTS){
-        ctx->dirty_rects[ctx->dirty_count++] = new_rect;
-        for (uint32_t i = 0; i < ctx->dirty_count; ++i) {
-            for (uint32_t j = i + 1; j < ctx->dirty_count; ) {
-                if (try_merge(&ctx->dirty_rects[i], &ctx->dirty_rects[j])) {
-                    for (uint32_t k = j + 1; k < ctx->dirty_count; ++k)
-                        ctx->dirty_rects[k - 1] = ctx->dirty_rects[k];
-                    ctx->dirty_count--;
-                } else {
-                    ++j;
-                }
+    for (uint32_t i = 0; i < ctx->dirty_count; ++i) {
+        for (uint32_t j = i + 1; j < ctx->dirty_count; ) {
+            if (try_merge(&ctx->dirty_rects[i], &ctx->dirty_rects[j])) {
+                for (uint32_t k = j + 1; k < ctx->dirty_count; ++k)
+                    ctx->dirty_rects[k - 1] = ctx->dirty_rects[k];
+                ctx->dirty_count--;
+            } else {
+                ++j;
             }
         }
-    } else {
-        ctx->full_redraw = 1;
-        return;
     }
+
+    uint64_t area_sum = 0;
+    for (uint32_t r = 0; r < ctx->dirty_count; ++r)
+        area_sum += (uint64_t)ctx->dirty_rects[r].size.width * (uint64_t)ctx->dirty_rects[r].size.height;
+
+    const uint64_t screen_area = (uint64_t)ctx->width * (uint64_t)ctx->height;
+    if (area_sum * 100 >= screen_area * FULL_REDRAW_THRESHOLD_PCT) ctx->full_redraw = 1;
 }
 
 void fb_clear(draw_ctx *ctx, uint32_t color) {
@@ -97,7 +86,10 @@ void fb_clear(draw_ctx *ctx, uint32_t color) {
         uint32_t *p = row;
         uint32_t n = w;
 
-        if (((uintptr_t)p & 7) && n) { *p++ = color; --n; }
+        if (((uintptr_t)p & 7) && n) {
+            *p++ = color;
+            --n;
+        }
         uint64_t pat = ((uint64_t)color << 32) | color;
         uint64_t *q = (uint64_t*)p;
         for (uint32_t i = 0; i < (n >> 1); ++i) q[i] = pat;
@@ -155,11 +147,16 @@ void fb_draw_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t 
 void fb_draw_partial_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t img_width, uint32_t img_height, uint32_t start_x, uint32_t start_y, uint32_t full_width){
     if (x >= ctx->width || y >= ctx->height) return;
 
+    if (start_x >= full_width || start_y >= img_height) return;
+
     uint32_t w = img_width;
     uint32_t h = img_height;
 
+    if (w > full_width - start_x) w = full_width - start_x;
+    if (h > img_height - start_y) h = img_height - start_y;
+
     if (x + w > ctx->width) w = ctx->width - x;
-    if (y + h > ctx->height) h= ctx->height - y;
+    if (y + h > ctx->height) h = ctx->height - y;
     if (!w || !h) return;
 
     const uint32_t dst_pitch_px = (ctx->stride >> 2);
@@ -182,7 +179,8 @@ gpu_rect fb_draw_line(draw_ctx *ctx, uint32_t x0, uint32_t y0, uint32_t x1, uint
 
     int dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
     int sx = (x0 < x1) ? 1 : -1;
-    int dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
+    int dy = (y1 > y0) ? (y0 - y1) : (y1 - y0);
+    dy = dy < 0 ? -dy : dy;
     int sy = (y0 < y1) ? 1 : -1;
     int err = (dx > dy ? dx : -dy) / 2, e2;
 
@@ -213,14 +211,32 @@ gpu_rect fb_draw_line(draw_ctx *ctx, uint32_t x0, uint32_t y0, uint32_t x1, uint
 void fb_draw_raw_char(draw_ctx *ctx, uint32_t x, uint32_t y, char c, uint32_t scale, uint32_t color){
     const uint8_t* glyph = get_font8x8((uint8_t)c);
     const uint32_t char_size = CHAR_SIZE * scale;
-    const uint32_t row_pitch = (ctx->stride >> 2);
+    if (x >= ctx->width || y >= ctx->height) return;
 
-    for (uint32_t row = 0; row < char_size; row++) {
-        uint8_t bits = glyph[row/scale];
-        uint32_t* dst = ctx->fb + (y + row) * row_pitch + x;
-        for (uint32_t col = 0; col < char_size; col++) {
-            if ((x + col < ctx->width) && (y + row < ctx->height) && (bits & (1u << (7 - (col / scale))))) {
-                dst[col] = color;
+    uint32_t max_w = ctx->width - x;
+    uint32_t max_h = ctx->height - y;
+    uint32_t draw_w = char_size <= max_w ? char_size : max_w;
+    uint32_t draw_h = char_size <= max_h ? char_size : max_h;
+
+    const uint32_t row_pitch = ctx->stride >> 2;
+
+    for (uint32_t gy = 0; gy < 8; ++gy) {
+        uint32_t base_y = gy * scale;
+        if (base_y >= draw_h) break;
+        uint32_t ry_lim = scale;
+        if (base_y + ry_lim > draw_h) ry_lim = draw_h - base_y;
+        uint8_t bits = glyph[gy];
+        for (uint32_t ry = 0; ry < ry_lim; ++ry) {
+            uint32_t* dst = ctx->fb + (y + base_y + ry) * row_pitch + x;
+            for (uint32_t gx = 0; gx < 8; ++gx) {
+                uint32_t base_x = gx * scale;
+                if (base_x >= draw_w) break;
+                if (bits & (1u << (7 - gx))) {
+                    uint32_t rx_lim = scale;
+                    if (base_x + rx_lim > draw_w) rx_lim = draw_w - base_x;
+                    uint32_t* p = dst + base_x;
+                    for (uint32_t rx = 0; rx < rx_lim; ++rx) p[rx] = color;
+                }
             }
         }
     }
