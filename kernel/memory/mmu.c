@@ -194,27 +194,27 @@ void mmu_init() {
 
     for (uint64_t addr = kstart; addr < kend; addr += GRANULE_2MB){
         mmu_map_2mb(kernel_lo_page, addr, addr, MAIR_IDX_NORMAL);
-        mmu_map_2mb(kernel_hi_page, HIGH_VA + addr, addr, MAIR_IDX_NORMAL);
+        mmu_map_2mb(kernel_hi_page, addr, addr, MAIR_IDX_NORMAL);
     }
 
     for (uint64_t addr = get_uart_base(); addr <= get_uart_base(); addr += GRANULE_4KB){
-        mmu_map_4kb(kernel_hi_page, HIGH_VA + addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
+        mmu_map_4kb(kernel_hi_page, addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
     }
 
     for (uint64_t addr = GICD_BASE; addr <= GICC_BASE + 0x1000; addr += GRANULE_4KB){
-        mmu_map_4kb(kernel_hi_page, HIGH_VA + addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
+        mmu_map_4kb(kernel_hi_page, addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
     }
 
     if (XHCI_BASE)
         for (uint64_t addr = XHCI_BASE; addr <= XHCI_BASE + 0x1000; addr += GRANULE_4KB){
-            mmu_map_4kb(kernel_hi_page, HIGH_VA + addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
+            mmu_map_4kb(kernel_hi_page, addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
         }
 
     uint64_t dstart;
     uint64_t dsize;
     if (dtb_addresses(&dstart,&dsize)){
         for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB){
-            mmu_map_4kb(kernel_hi_page, HIGH_VA + addr, addr, MAIR_IDX_NORMAL, MEM_RO, MEM_PRIV_KERNEL);
+            mmu_map_4kb(kernel_hi_page, addr, addr, MAIR_IDX_NORMAL, MEM_RO, MEM_PRIV_KERNEL);
         }
     }
 
@@ -222,10 +222,10 @@ void mmu_init() {
     
     mmu_start(kernel_lo_page, kernel_hi_page);
 
-    for (uint64_t addr = kstart; addr < kend; addr += GRANULE_2MB)
-        mmu_unmap(addr, addr);
-
     asm volatile (".global mmu_finish\nmmu_finish:");
+    // for (uint64_t addr = kstart; addr < kend; addr += GRANULE_2MB)
+    //     mmu_unmap(addr, addr);
+
     kprintf("Finished MMU init");
 }
 
