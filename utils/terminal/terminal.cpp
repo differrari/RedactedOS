@@ -5,6 +5,7 @@
 Terminal::Terminal() : Console() {
     char_scale = 2;
     put_string("> ");
+    prompt_length = 2; // saves the prompt lenght
     draw_cursor();
     flush(dctx);
 }
@@ -21,6 +22,7 @@ void Terminal::end_command(){
     put_char('\r');
     put_char('\n');
     put_string("> "); //prompt
+    prompt_length = 2; // this saves the prompt lenght
     draw_cursor();
     flush(dctx);
     set_text_color(default_text_color);
@@ -84,6 +86,21 @@ void Terminal::run_command(){
     if (fullcmd[0] == '>' && fullcmd[1] == ' ') {
         fullcmd += 2;
     } // skip the > and the space
+
+    //looks for a emtpy input
+    const char* check = fullcmd;
+    while (*check == ' ' || *check == '\t') check++;
+    if (*check == '\0') {   // (enter)
+        // it just starts a new line
+        put_char('\r');
+        //put_char('\n');    // this is disabled due
+        //put_string("> ");  // the bug which prints it 2 times
+        prompt_length = 2 ;
+        draw_cursor();
+        flush(dctx);
+        command_running = true;
+        return;
+    }
 
     //the promt needs to be here
     // otherwise it won't work because the args would be on the old position without fullcmd += 2;
@@ -150,7 +167,10 @@ void Terminal::handle_input(){
                 draw_cursor();
                 flush(dctx);
             } else if (key == KEY_BACKSPACE){
-                delete_last_char();
+                //this is for the promt so you can't delete it
+                if (strlen(get_current_line(), 1024) > (uint32_t)prompt_length) { // the 1024 is a must because of strlen in RedOS (for safety)
+                    delete_last_char();
+                }
             }
         }
     }
@@ -170,4 +190,3 @@ void Terminal::flush(draw_ctx *ctx){
 bool Terminal::screen_ready(){
     return true;
 }
-
