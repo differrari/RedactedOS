@@ -199,6 +199,20 @@ size_t string_format_va_buf(const char *fmt, char *buf, va_list args){
                 for (int j = temp_len - 1; j >= 0 && len < STRING_MAX_LEN - 1; j--){
                     buf[len++] = temp[j];
                 }
+
+            } else if (fmt[i] == 'u') {
+                uint64_t val = va_arg(args, unsigned int);
+                char temp[21];
+                uint32_t temp_len = 0;
+
+                do {
+                    temp[temp_len++] = '0' + (val % 10);
+                    val /= 10;
+                } while (val && temp_len < 20);
+
+                for (int j = temp_len - 1; j >= 0 && len < STRING_MAX_LEN - 1; j--) {
+                    buf[len++] = temp[j];
+                }
             } else if (fmt[i] == 'f' || fmt[i] == 'd') {
                 double val = va_arg(args, double);
                 if (val < 0){
@@ -446,4 +460,12 @@ const char* seek_to(const char *string, char character){
         string++;
     string++;
     return string;
+}
+
+size_t strncpy(char* dst, size_t cap, const char* src){
+    size_t i=0;
+    if (!dst || !src || cap==0) return 0;
+    while (i<cap-1 && src[i]!=0){ dst[i]=src[i]; i++; }
+    dst[i]=0;
+    return i;
 }

@@ -1,15 +1,10 @@
 #include "icmp.h"
-#include "net/internet_layer/ipv4.h"
-#include "net/network_types.h"
 #include "net/checksums.h"
 #include "std/memory.h"
-#include "console/kio.h"
-#include "ipv4.h"
-#include "networking/network.h"
-
-extern void* malloc(uint64_t size);
-extern void      free(void *ptr, uint64_t size);
-extern void      sleep(uint64_t ms);
+#include "networking/interface_manager.h"
+#include "net/internet_layer/ipv4.h"
+#include "net/internet_layer/ipv4_route.h"
+#include "syscalls/syscalls.h"
 
 #define MAX_PENDING 16
 #define POLL_MS 1
@@ -43,15 +38,13 @@ static void free_slot(int i){
 }
 
 void create_icmp_packet(uintptr_t p,
-                        const net_l2l3_endpoint *src,
-                        const net_l2l3_endpoint *dst,
                         const icmp_data *d)
 {
     icmp_packet *pkt = (icmp_packet*)p;
     pkt->type = d->response ? ICMP_ECHO_REPLY : ICMP_ECHO_REQUEST;
     pkt->code = 0;
-    pkt->id   = __builtin_bswap16(d->id);
-    pkt->seq  = __builtin_bswap16(d->seq);
+    pkt->id   = bswap16(d->id);
+    pkt->seq  = bswap16(d->seq);
 
     memset(pkt->payload, 0, sizeof(pkt->payload));
     memcpy(pkt->payload, d->payload, sizeof(pkt->payload));
@@ -73,12 +66,11 @@ void icmp_send_echo(uint32_t dst_ip,
     uintptr_t buf = (uintptr_t)malloc(icmp_len);
     if(!buf) return;
 
-    const net_l2l3_endpoint *local = network_get_local_endpoint();
-    create_icmp_packet(buf, local, NULL, &d);
+    create_icmp_packet(buf, &d);
 
     ((icmp_packet*)buf)->checksum = checksum16((uint16_t*)buf, icmp_len);
 
-    ipv4_send_segment(local->ip, dst_ip, 1, (sizedptr){ buf, icmp_len });
+    ipv4_send_packet(dst_ip, 1, (sizedptr){ buf, icmp_len}, NULL);
 
     free((void*)buf, icmp_len);
 }
@@ -88,22 +80,22 @@ void icmp_input(uintptr_t ptr,
                 uint32_t  src_ip,
                 uint32_t  dst_ip)
 {
-    if(len < 8) return;
+    if (len < 8) return;
 
     icmp_packet *pkt = (icmp_packet*)ptr;
     uint16_t recv_ck = pkt->checksum;
     pkt->checksum = 0;
-    if(checksum16((uint16_t*)pkt, len) != recv_ck) return;
+    if (checksum16((uint16_t*)pkt, len) != recv_ck) return;
     pkt->checksum = recv_ck;
 
     uint8_t type = pkt->type;
-    uint16_t id = __builtin_bswap16(pkt->id);
-    uint16_t sq = __builtin_bswap16(pkt->seq);
+    uint16_t id = bswap16(pkt->id);
+    uint16_t sq = bswap16(pkt->seq);
     uint32_t pay = len - 8;
-    if(pay > 56) pay = 56;
+    if (pay > 56) pay = 56;
 
-    if(type == ICMP_ECHO_REQUEST){
-        icmp_data d = { .response=true, .id=id, .seq=sq };
+    if (type == ICMP_ECHO_REQUEST) {
+        icmp_data d = { .response = true, .id = id, .seq = sq };
         memcpy(d.payload, pkt->payload, pay);
         memset(d.payload + pay, 0, 56 - pay);
 
@@ -111,18 +103,29 @@ void icmp_input(uintptr_t ptr,
         uintptr_t buf = (uintptr_t)malloc(reply_len);
         if(!buf) return;
 
-        const net_l2l3_endpoint *local = network_get_local_endpoint();
-        create_icmp_packet(buf, local, NULL, &d);
+        create_icmp_packet(buf, &d);
         ((icmp_packet*)buf)->checksum = checksum16((uint16_t*)buf, reply_len);
 
-        ipv4_send_segment(local->ip, src_ip, 1, (sizedptr){ buf, reply_len });
+        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(dst_ip);
+        if (l3 && l3->l2) {
+            ipv4_tx_opts_t o = { .index = l3->l3_id, .scope = IPV4_TX_BOUND_L2 };
+
+            char sbuf[16], dbuf[16];
+            ipv4_to_string(src_ip, sbuf);
+            ipv4_to_string(dst_ip, dbuf);
+
+            ipv4_send_packet(src_ip, 1, (sizedptr){ buf, reply_len }, &o);
+        }
+
         free((void*)buf, reply_len);
         return;
     }
 
-    if(type == ICMP_ECHO_REPLY)
+    if(type == ICMP_ECHO_REPLY) {
         mark_received(id, sq);
+    }
 }
+
 
 bool icmp_ping(uint32_t dst_ip,
                uint16_t id,

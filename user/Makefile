@@ -51,4 +51,8 @@ clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET) 
 	$(RM) -r $(PACKAGE) $(BUILD_DIR)
 
+dump: all
+	$(ARCH)-objdump -D $(NAME).red/$(NAME).elf > dump
+
+
 -include $(DEP)

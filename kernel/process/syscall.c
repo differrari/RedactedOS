@@ -18,16 +18,15 @@
 #include "graph/tres.h"
 #include "memory/mmu.h"
 #include "loading/process_loader.h"
+#include "networking/interface_manager.h"
 #include "bin/bin_mod.h"
+#include "net/transport_layer/csocket.h"
 
 int syscall_depth = 0;
+uintptr_t cpec;
 
 //TODO: What happens if we pass another process' data in here?
-//TODO: make indexmap in c and it can be used here
-typedef struct {
-    uint16_t syscall_num;
-    uint64_t (*syscall)(process_t *ctx);
-} syscall_entry;
+typedef uint64_t (*syscall_entry)(process_t *ctx);
 
 uint64_t syscall_malloc(process_t *ctx){
     void* page_ptr = syscall_depth > 1 ? (void*)get_proc_by_pid(1)->heap : (void*)get_current_heap();
@@ -122,39 +121,64 @@ uint64_t syscall_get_time(process_t *ctx){
     return timer_now_msec();
 }
 
-uint64_t syscall_bind_port(process_t *ctx){
-    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
-    // uint16_t port     = (uint16_t)ctx->PROC_X0;
-    // port_recv_handler_t handler = (port_recv_handler_t)ctx->PROC_X1;
-    // protocol_t proto  = (protocol_t)ctx->PROC_X2;
-    // uint16_t pid      = get_current_proc_pid();
-    // return port_bind_manual(port, pid, proto, handler);
+uint64_t syscall_socket_create(process_t *ctx){
+    Socket_Role role = (Socket_Role)ctx->PROC_X0;
+    protocol_t protocol = (protocol_t)ctx->PROC_X1;
+    SocketHandle *out_handle = (SocketHandle*)ctx->PROC_X2;
+    
+    return create_socket(role, protocol, ctx->id, out_handle);
+}
+
+uint64_t syscall_socket_bind(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    ip_version_t ip_version = (ip_version_t)ctx->PROC_X1;
+    uint16_t port = (uint16_t)ctx->PROC_X2;
+    return bind_socket(handle, port, ip_version, ctx->id);
+}
+
+uint64_t syscall_socket_connect(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
+    void* dst = (void*)ctx->PROC_X2;
+    uint16_t port = (uint16_t)ctx->PROC_X3;
+    return connect_socket(handle, dst_kind, dst, port, ctx->id);
+}
+
+uint64_t syscall_socket_listen(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    int32_t backlog = (int32_t)ctx->PROC_X1;
+    return listen_on(handle, backlog, ctx->id);
+}
+
+uint64_t syscall_socket_accept(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    accept_on_socket(handle, ctx->id);
     return 0;
 }
 
-uint64_t syscall_unbind_port(process_t *ctx){
-    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
-    // uint16_t port    = (uint16_t)ctx->PROC_X0;
-    // protocol_t proto = (protocol_t)ctx->PROC_X2;
-    // uint16_t pid     = get_current_proc_pid();
-    // return port_unbind(port, proto, pid);
-    return 0;
+uint64_t syscall_socket_send(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
+    void* dst = (void*)ctx->PROC_X2;
+    uint16_t port = (uint16_t)ctx->PROC_X3;
+    void *ptr = (void*)ctx->PROC_X4;
+    size_t size = (size_t)ctx->regs[5];
+    return send_on_socket(handle, dst_kind, dst, port, ptr, size, ctx->id);
 }
 
-uint64_t syscall_send_packet(process_t *ctx){
-    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
-    // uintptr_t frame_ptr = ctx->PROC_X0;
-    // uint32_t  frame_len = (uint32_t)ctx->PROC_X1;
-    // return net_tx_frame(frame_ptr, frame_len);
-    return 0;
+uint64_t syscall_socket_receive(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    void* buf = (void*)ctx->PROC_X1;
+    size_t size = (size_t)ctx->PROC_X2;
+    net_l4_endpoint* out_src = (net_l4_endpoint*)ctx->PROC_X3;
+    return receive_from_socket(handle, buf, size, out_src, ctx->id);
 }
 
-uint64_t syscall_read_packet(process_t *ctx){
-    kprintf("[SYSCALL implementation error] syscall %s not implemented",__func__);
-    // sizedptr *user_out = (sizedptr*)ctx->PROC_X0;
-    // return net_rx_frame(user_out);
-    return 0;
+uint64_t syscall_socket_close(process_t *ctx){
+    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    return close_socket(handle, ctx->id);
 }
+
 
 uint64_t syscall_fopen(process_t *ctx){
     char *req_path = (char *)ctx->PROC_X0;
@@ -195,61 +219,79 @@ uint64_t syscall_dir_list(process_t *ctx){
 }
 
 syscall_entry syscalls[] = {
-    { MALLOC_CODE, syscall_malloc},
-    { FREE_CODE, syscall_free},
-    { PRINTL_CODE, syscall_printl},
-    { READ_KEY_CODE, syscall_read_key},
-    { READ_EVENT_CODE, syscall_read_event },
-    { READ_SHORTCUT_CODE, syscall_read_shortcut},
-    { GET_MOUSE_STATUS_CODE, syscall_get_mouse },
-    { REQUEST_DRAW_CTX_CODE, syscall_gpu_request_ctx},
-    { GPU_FLUSH_DATA_CODE, syscall_gpu_flush},
-    { GPU_CHAR_SIZE_CODE, syscall_char_size},
-    { RESIZE_DRAW_CTX_CODE, syscall_gpu_resize_ctx},
-    { SLEEP_CODE, syscall_sleep},
-    { HALT_CODE, syscall_halt},
-    { EXEC_CODE, syscall_exec},
-    { GET_TIME_CODE, syscall_get_time},
-    { BIND_PORT_CODE, syscall_bind_port},
-    { UNBIND_PORT_CODE, syscall_unbind_port},
-    { SEND_PACKET_CODE, syscall_send_packet},
-    { READ_PACKET_CODE, syscall_read_packet},
-    {FILE_OPEN_CODE, syscall_fopen},
-    {FILE_READ_CODE, syscall_fread},
-    {FILE_WRITE_CODE, syscall_fwrite},
-    {FILE_CLOSE_CODE, syscall_fclose},
-    {DIR_LIST_CODE, syscall_dir_list},
+    [MALLOC_CODE] = syscall_malloc,
+    [FREE_CODE] = syscall_free,
+    [PRINTL_CODE] = syscall_printl,
+    [READ_KEY_CODE] = syscall_read_key,
+    [READ_EVENT_CODE] = syscall_read_event ,
+    [READ_SHORTCUT_CODE] = syscall_read_shortcut,
+    [GET_MOUSE_STATUS_CODE] = syscall_get_mouse ,
+    [REQUEST_DRAW_CTX_CODE] = syscall_gpu_request_ctx,
+    [GPU_FLUSH_DATA_CODE] = syscall_gpu_flush,
+    [GPU_CHAR_SIZE_CODE] = syscall_char_size,
+    [RESIZE_DRAW_CTX_CODE] = syscall_gpu_resize_ctx,
+    [SLEEP_CODE] = syscall_sleep,
+    [HALT_CODE] = syscall_halt,
+    [EXEC_CODE] = syscall_exec,
+    [GET_TIME_CODE] = syscall_get_time,
+    [SOCKET_CREATE_CODE] = syscall_socket_create,
+    [SOCKET_BIND_CODE] = syscall_socket_bind,
+    [SOCKET_CONNECT_CODE] = syscall_socket_connect,
+    [SOCKET_LISTEN_CODE] = syscall_socket_listen,
+    [SOCKET_ACCEPT_CODE] = syscall_socket_accept,
+    [SOCKET_SEND_CODE] = syscall_socket_send,
+    [SOCKET_RECEIVE_CODE] = syscall_socket_receive,
+    [SOCKET_CLOSE_CODE] = syscall_socket_close,
+    [FILE_OPEN_CODE] = syscall_fopen,
+    [FILE_READ_CODE] = syscall_fread,
+    [FILE_WRITE_CODE] = syscall_fwrite,
+    [FILE_CLOSE_CODE] = syscall_fclose,
+    [DIR_LIST_CODE] = syscall_dir_list,
 };
 
-void coredump(uint64_t esr, uint64_t elr, uint64_t far){
-    // uint8_t ifsc = esr & 0x3F;
-    // 0b000000	Address size fault in TTBR0 or TTBR1.
+void backtrace(uintptr_t fp, uintptr_t elr) {
+    for (uint8_t depth = 0; depth < 10 && fp; depth++) {
+        uintptr_t return_address = (*(uintptr_t*)(fp + 8));
 
-    // 0b000101	Translation fault, 1st level.
-    // 00b00110	Translation fault, 2nd level.
-    // 00b00111	Translation fault, 3rd level.
+        if (return_address != 0){
+            kprintf("%i: caller address: %x", depth, return_address, return_address);
+            fp = *(uintptr_t*)fp;
+        }
+        if (return_address == 0 || !fp){
+            kprintf("Exception triggered by %x",(elr));
+            return;
+        }
+    }
+}
 
-    // 0b001001	Access flag fault, 1st level.
-    // 0b001010	Access flag fault, 2nd level.
-    // 0b001011	Access flag fault, 3rd level.
+const char* fault_messages[] = {
+    [0b000000] = "Address size fault in TTBR0 or TTBR1",
+    [0b000101] = "Translation fault, 1st level",
+    [0b000110] = "Translation fault, 2nd level",
+    [0b000111] = "Translation fault, 3rd level",
+    [0b001001] = "Access flag fault, 1st level",
+    [0b001010] = "Access flag fault, 2nd level",
+    [0b001011] = "Access flag fault, 3rd level",
+    [0b001101] = "Permission fault, 1st level",
+    [0b001110] = "Permission fault, 2nd level",
+    [0b001111] = "Permission fault, 3rd level",
+    [0b010000] = "Synchronous external abort",
+    [0b011000] = "Synchronous parity error on memory access",
+    [0b010101] = "Synchronous external abort on translation table walk, 1st level",
+    [0b010110] = "Synchronous external abort on translation table walk, 2nd level",
+    [0b010111] = "Synchronous external abort on translation table walk, 3rd level",
+    [0b011101] = "Synchronous parity error on memory access on translation table walk, 1st level",
+    [0b011110] = "Synchronous parity error on memory access on translation table walk, 2nd level",
+    [0b011111] = "Synchronous parity error on memory access on translation table walk, 3rd level",
+    [0b100001] = "Alignment fault",
+    [0b100010] = "Debug event",
+};
 
-    // 0b001101	Permission fault, 1st level.
-    // 0b001110	Permission fault, 2nd level.
-    // 0b001111	Permission fault, 3rd level.
-
-    // 0b010000	Synchronous external abort.
-    // 0b011000	Synchronous parity error on memory access.
-    // 0b010101	Synchronous external abort on translation table walk, 1st level.
-    // 0b010110	Synchronous external abort on translation table walk, 2nd level.
-    // 0b010111	Synchronous external abort on translation table walk, 3rd level.
-    // 0b011101	Synchronous parity error on memory access on translation table walk, 1st level.
-    // 0b011110	Synchronous parity error on memory access on translation table walk, 2nd level.
-    // 0b011111	Synchronous parity error on memory access on translation table walk, 3rd level.
+void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
+    uint8_t ifsc = esr & 0x3F;
     
-    // 0b100001	Alignment fault.
-    // 0b100010	Debug event.
-    //TODO: Can parse instruction class, fault cause, etc
-    decode_instruction(*(uint32_t*)elr);
+    kprint(fault_messages[ifsc]);
+    backtrace(sp, elr);
     // process_t *proc = get_current_proc();
     // for (int i = 0; i < 31; i++)
     //     kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
@@ -260,7 +302,6 @@ void coredump(uint64_t esr, uint64_t elr, uint64_t far){
 }
 
 void sync_el0_handler_c(){
-    save_context_registers();
     save_return_address_interrupt();
 
     syscall_depth++;
@@ -281,47 +322,46 @@ void sync_el0_handler_c(){
     uint64_t ec = (esr >> 26) & 0x3F;
     uint64_t iss = esr & 0xFFFFFF;
     
+    uint64_t far;
+    asm volatile ("mrs %0, far_el1" : "=r"(far));
+
     uint64_t result = 0;
     if (ec == 0x15) {
-        uint16_t num_syscalls = N_ARR(syscalls);
-        bool found = false;
-        for (uint16_t i = 0; i < num_syscalls; i++){
-            if (syscalls[i].syscall_num == iss){
-                found = true;
-                result = syscalls[i].syscall(proc);
-                break;
-            }
+        if (syscalls[iss]){
+            result = syscalls[iss](proc);
+        } else {
+            kprintf("Unknown syscall in process. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
+            coredump(esr, elr, far, proc->sp);
+            syscall_depth--;
+            stop_current_process(ec);
         }
-        if (!found)
-            panic("Unknown syscall %i", iss);
     } else {
-        uint64_t far;
-        asm volatile ("mrs %0, far_el1" : "=r"(far));
         if (far == 0 && elr == 0 && currentEL == 0){
             kprintf("Process has exited %x",x0);
             syscall_depth--;
             stop_current_process(x0);
-        }// else kprintf("ELR %x FAR %x",elr,far);
-        switch (ec) {
-            case 0x20:
-            case 0x21: {
-                if (far == 0){
-                    kprintf("Process has exited %x",x0);
-                    syscall_depth--;
-                    stop_current_process(x0);
+        } else {
+            switch (ec) {
+                case 0x20:
+                case 0x21: {
+                    if (far == 0){
+                        kprintf("Process has exited %x",x0);
+                        syscall_depth--;
+                        stop_current_process(x0);
+                    }
                 }
             }
-        }
-        //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
-        if (currentEL == 1){
-            kprintf("System has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
-            coredump(esr, elr, far);
-            handle_exception("UNEXPECTED EXCEPTION",ec);
-        } else {
-            kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
-            coredump(esr, elr, far);
-            syscall_depth--;
-            stop_current_process(ec);
+            //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
+            if (currentEL == 1){
+                kprintf("System has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
+                coredump(esr, elr, far, proc->sp);
+                handle_exception("UNEXPECTED EXCEPTION",ec);
+            } else {
+                kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
+                coredump(esr, elr, far, proc->sp);
+                syscall_depth--;
+                stop_current_process(ec);
+            }
         }
     }
     syscall_depth--;

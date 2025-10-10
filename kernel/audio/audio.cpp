@@ -53,7 +53,6 @@ void make_wave(WAVE_TYPE type, float freq, float seconds, uint32_t amplitude){
         audio_submit_buffer();
     }
     gpu_flush();
-    while(1);
 }
 
 int play_test_audio(int argc, char* argv[]){      
