@@ -4,6 +4,9 @@
 
 Terminal::Terminal() : Console() {
     char_scale = 2;
+    put_string("> ");
+    draw_cursor();
+    flush(dctx);
 }
 
 void Terminal::update(){
@@ -17,6 +20,7 @@ void Terminal::end_command(){
     command_running = false;
     put_char('\r');
     put_char('\n');
+    put_string("> "); //prompt
     draw_cursor();
     flush(dctx);
     set_text_color(default_text_color);
@@ -71,14 +75,25 @@ const char** Terminal::parse_arguments(char *args, int *count){
 }
 
 void Terminal::run_command(){
-    const char* fullcmd = get_current_line();
+    const char* line_with_prompt = get_current_line();
+
+    const char* fullcmd = line_with_prompt;
+    //promt
+
+
+    if (fullcmd[0] == '>' && fullcmd[1] == ' ') {
+        fullcmd += 2;
+    } // skip the > and the space
+
+    //the promt needs to be here
+    // otherwise it won't work because the args would be on the old position without fullcmd += 2;
     const char* args = seek_to(fullcmd, ' ');
-    
+
     string cmd;
     int argc = 0;
-    const char** argv; 
+    const char** argv;
     string args_copy = {};
-    
+
     if (fullcmd == args){
         cmd = string_from_literal(fullcmd);
         argv = 0;
@@ -102,10 +117,10 @@ void Terminal::run_command(){
             free(s.data, s.mem_length);
         }
     }
-    
+
     free(cmd.data, cmd.mem_length);
     if (args_copy.mem_length) free(args_copy.data, args_copy.mem_length);
-    
+
     draw_cursor();
     flush(dctx);
     command_running = true;
@@ -155,3 +170,4 @@ void Terminal::flush(draw_ctx *ctx){
 bool Terminal::screen_ready(){
     return true;
 }
+
