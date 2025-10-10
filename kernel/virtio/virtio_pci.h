@@ -63,6 +63,7 @@ typedef struct virtio_device {
     uint8_t* isr_cfg;
     uint32_t notify_off_multiplier;
     void *memory_page;
+    uint8_t* status_dma;
 } virtio_device;
 
 void virtio_set_feature_mask(uint32_t mask);
