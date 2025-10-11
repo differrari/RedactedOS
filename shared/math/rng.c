@@ -39,6 +39,10 @@ uint16_t rng_next16(rng_t* rng){
     return (uint16_t)(rng_next64(rng) >> 48);
 }
 
+float rng_next01f(rng_t* rng){
+    return (float)rng_next16(rng)/UINT16_MAX;
+}
+
 uint8_t rng_next8(rng_t* rng){
     return (uint8_t)(rng_next64(rng) >> 56);
 }
