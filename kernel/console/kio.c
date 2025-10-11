@@ -164,7 +164,7 @@ sizedptr console_readdir(const char* path){
 driver_module console_module = (driver_module){
     .name = "console",
     .mount = "/dev/console",
-    .version = VERSION_NUM(0,1,1,0),
+    .version = VERSION_NUM(0,1,0,0),
     .init = console_init,
     .fini = console_fini,
     .open = console_open,
