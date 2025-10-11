@@ -1,3 +1,5 @@
+#pragma once
+
 #include <arm_neon.h>
 
 typedef struct vector2 {
@@ -14,4 +16,21 @@ static inline float magnitude_vector2(vector2 v)
     float32x2_t rinv = vrsqrte_f32(s);       // ~1/sqrt(s)
 
     return 1.f/rinv[0];
+}
+
+static inline vector2 vector2_sub(vector2 a, vector2 b){
+    return (vector2){a.x-b.x,a.y-b.y};
+}
+
+static inline vector2 vector2_add(vector2 a, vector2 b){
+    return (vector2){a.x+b.x,a.y+b.y};
+}
+
+static inline vector2 vector2_norm(vector2 in){
+    float len = magnitude_vector2(in);
+    return (vector2){in.x/len,in.y/len};
+}
+
+static inline vector2 vector2_scale(vector2 in, float s){
+    return (vector2){ in.x * s, in.y * s};
 }
