@@ -6,11 +6,23 @@
 extern "C" {
 #endif
 
+#ifndef INFINITY
+#define INFINITY __builtin_inff()
+#endif
+
 static inline int min(int a, int b){
     return a < b ? a : b;
 }
 
+static inline float minf(float a, float b){
+    return a < b ? a : b;
+}
+
 static inline int max(int a, int b){
+    return a > b ? a : b;
+}
+
+static inline float maxf(float a, float b){
     return a > b ? a : b;
 }
 
