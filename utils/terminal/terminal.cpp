@@ -5,7 +5,7 @@
 Terminal::Terminal() : Console() {
     char_scale = 2;
     put_string("> ");
-    prompt_length = 2; // saves the prompt lenght
+    prompt_length = 2;
     draw_cursor();
     flush(dctx);
 }
@@ -21,8 +21,8 @@ void Terminal::end_command(){
     command_running = false;
     put_char('\r');
     put_char('\n');
-    put_string("> "); //prompt
-    prompt_length = 2; // this saves the prompt lenght
+    put_string("> ");
+    prompt_length = 2;
     draw_cursor();
     flush(dctx);
     set_text_color(default_text_color);
@@ -78,23 +78,16 @@ const char** Terminal::parse_arguments(char *args, int *count){
 
 void Terminal::run_command(){
     const char* line_with_prompt = get_current_line();
-
     const char* fullcmd = line_with_prompt;
-    //promt
-
 
     if (fullcmd[0] == '>' && fullcmd[1] == ' ') {
         fullcmd += 2;
-    } // skip the > and the space
-
-    //looks for a emtpy input
+    }
+    
     const char* check = fullcmd;
     while (*check == ' ' || *check == '\t') check++;
-    if (*check == '\0') {   // (enter)
-        // it just starts a new line
+    if (*check == '\0') { 
         put_char('\r');
-        //put_char('\n');    // this is disabled due
-        //put_string("> ");  // the bug which prints it 2 times
         prompt_length = 2 ;
         draw_cursor();
         flush(dctx);
@@ -102,8 +95,6 @@ void Terminal::run_command(){
         return;
     }
 
-    //the promt needs to be here
-    // otherwise it won't work because the args would be on the old position without fullcmd += 2;
     const char* args = seek_to(fullcmd, ' ');
 
     string cmd;
@@ -167,8 +158,7 @@ void Terminal::handle_input(){
                 draw_cursor();
                 flush(dctx);
             } else if (key == KEY_BACKSPACE){
-                //this is for the promt so you can't delete it
-                if (strlen(get_current_line(), 1024) > (uint32_t)prompt_length) { // the 1024 is a must because of strlen in RedOS (for safety)
+                if (strlen(get_current_line(), 1024) > (uint32_t)prompt_length) {
                     delete_last_char();
                 }
             }
