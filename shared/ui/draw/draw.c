@@ -114,8 +114,8 @@ gpu_rect fb_draw_line(draw_ctx *ctx, uint32_t x0, uint32_t y0, uint32_t x1, uint
     int err = (dx > dy ? dx : -dy) / 2, e2;
 
     for (;;) {
-        fb_draw_raw_pixel(ctx, x0, y0, color);
         if (x0 == x1 && y0 == y1) break;
+        fb_draw_raw_pixel(ctx, x0, y0, color);
         e2 = err;
         if (e2 > -dx) { err -= dy; x0 += sx; }
         if (e2 < dy) { err += dx; y0 += sy; }
