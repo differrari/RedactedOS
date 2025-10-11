@@ -45,7 +45,7 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
         return false;
     }
 
-    uint8_t* fb_block = (uint8_t*)palloc(framebuffer_size*2, MEM_PRIV_KERNEL, MEM_RW, true);
+    uint8_t* fb_block = (uint8_t*)palloc(framebuffer_size*2, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, true);
 
     if (!fb_block) return false;
 
