@@ -4,6 +4,8 @@
 #include "dev/driver_base.h"
 #include "process/process.h"
 
+#define AUDIO_DRIVER_BUFFER_SIZE    441
+
 #ifdef __cplusplus
 extern "C" {
 #endif

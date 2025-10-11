@@ -2,27 +2,55 @@
 
 #include "types.h"
 
-typedef enum WAVE_TYPE {
-    WAVE_SQUARE,
-    WAVE_TRIG,
-    WAVE_SAW,
-} WAVE_TYPE;
+typedef struct audio_samples {
+    sizedptr samples;
+    uint32_t smpls_per_channel;
+    uint8_t  channels;
+    int16_t  amplitude;
+    float    secs;
+} audio_samples;
 
-#define PHASE_MASK 0x00FFFFFF
-#define PHASE_MAX  PHASE_MASK
-#define PHASE_MID  (PHASE_MAX >> 1)
+typedef enum MIXER_CMND {
+    MIXER_SETLEVEL,
+    MIXER_MUTE,
+    MIXER_UNMUTE,
+    MIXER_PLAY,
+    MIXER_CLOSE_LINE,
+} MIXER_CMND;
 
-#define WAVE_MID_VALUE  0x80000000
+typedef struct mixer_command {
+    int8_t   lineId;
+    uint32_t command;
+    union {
+        intptr_t value;
+        audio_samples *audio;
+    };
+} mixer_command;
 
-#define AUDIO_LEVEL_MAX UINT32_MAX
+typedef struct mixer_line_data {
+    int8_t   lineId;
+    size_t   count[2];
+} mixer_line_data;
 
+
+#define AUDIO_LEVEL_MAX INT16_MAX
+#define MIXER_INPUTS 4
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-float sample_raw_wave(WAVE_TYPE type, uint32_t phase);
-uint32_t sample_wave(WAVE_TYPE type, uint32_t phase, uint32_t amplitude);
-// void make_wave(WAVE_TYPE type, float freq, float seconds);
+
+bool play_audio_sync(audio_samples *audio, int16_t amplitude);
+int8_t play_audio_async(audio_samples *audio, int16_t amplitude);
+
+int8_t mixer_open_line();
+void mixer_close_line(int8_t line);
+bool mixer_still_playing(int8_t line);
+void mixer_play_async(int8_t line, audio_samples* audio);
+bool mixer_mute();
+bool mixer_unmute();
+uint32_t mixer_set_level(int16_t level);
+
 #ifdef __cplusplus
 }
 #endif
