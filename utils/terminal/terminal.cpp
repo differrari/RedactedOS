@@ -86,9 +86,6 @@ void Terminal::run_command(){
     const char* check = fullcmd;
     while (*check == ' ' || *check == '\t') check++;
     if (*check == '\0') { 
-        put_char('\r');
-        put_char('\n');
-        put_string("> ");
         prompt_length = 2;
         draw_cursor();
         flush(dctx);
