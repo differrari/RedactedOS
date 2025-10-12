@@ -7,8 +7,9 @@ void printf(const char *fmt, ...){
     __attribute__((aligned(16))) va_list args;
     va_start(args, fmt);
     char li[256]; 
-    string_format_va_buf(fmt, li, args);
+    size_t n = string_format_va_buf(fmt, li, sizeof(li), args);
     va_end(args);
+    if (n >= sizeof(li)) li[sizeof(li)-1] = '\0';
     printl(li);
 }
 

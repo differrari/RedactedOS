@@ -108,31 +108,162 @@ uint32_t dist_bases[] = {
     /*13*/ 16385, 24577  //28-29
 };
 
-size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
-    zlib_hdr hdr = *(zlib_hdr*)ptr;
-    if (hdr.cm != 8){
-        printf("Only DEFLATE is supported");
-    }
-    uintptr_t p = (uintptr_t)ptr + sizeof(zlib_hdr);
+typedef struct {
+    uint8_t *bytes;
+    uint8_t bs;
+    int c;
+    uintptr_t out_cursor;
+    uint8_t *output_buf;
+    bool final_block;
+    size_t cur_block;
+} deflate_read_ctx;
 
-    uint8_t *bytes = (uint8_t*)p;
-    uint8_t bs = 0;
-    int c = 0;
+size_t deflate_uncommpressed(deflate_read_ctx *ctx, size_t max_size) {
+    if (ctx->bs) {
+        ctx->bs = 0;
+        ctx->c++;
+        max_size--;
+    }
+
+    // printf("Next bytes %x %x %x %x",ctx->bytes[ctx->c],ctx->bytes[ctx->c+1],ctx->bytes[ctx->c+2],ctx->bytes[ctx->c+3]);
+
+    uint16_t len = 0;
+    uint16_t nlen = 0;
+    READ_BITS(ctx->bytes, len, 16, ctx->bs, ctx->c);
+    READ_BITS(ctx->bytes, nlen, 16, ctx->bs, ctx->c);
+
+    // printf("Actual read values %x %x",len, nlen);
+
+    if (len != (uint16_t)(~nlen)) {
+        printf("Wrong checksum %.16b %.16b %.16b\n", len, nlen, (uint16_t)(~nlen));
+        return 0;
+    }
+
+    ctx->cur_block = len;
+    printf("Found new block with %x len", len);
+
+    max_size -= 4;
+
+    len = min(len,max_size);
+
+    // printf("Reading %#x bytes from uncompressed deflate block",len);
+
+    memcpy(ctx->output_buf + ctx->out_cursor, &ctx->bytes[ctx->c], len);
+    ctx->c += len;
+    ctx->out_cursor += len;
+
+    return len;
+}
+
+bool deflate_block(huff_tree_node *litlen_tree, huff_tree_node *dist_tree, deflate_read_ctx *ctx){
+    huff_tree_node *tree_root = litlen_tree;
+    uint16_t val = 0;
+    while (val != 0x100){
+        uint8_t next_bit = 0;
+        READ_BITS(ctx->bytes, next_bit, 1, ctx->bs, ctx->c);
+        // printf("%x",next_bit);
+        tree_root = huffman_traverse(tree_root, next_bit);
+        if (!tree_root) {
+            printf("DEFLATE ERROR: no tree found");
+            return false;
+        }
+        if (!tree_root->left && !tree_root->right){
+            val = tree_root->entry;
+            if (val < 0x100){
+                ctx->output_buf[ctx->out_cursor] = (val & 0xFF);
+                ctx->out_cursor++;
+            } else if (val == 0x100){
+                break;
+            } else {
+                uint8_t extra = 0;
+                if (val > 264 && val < 285)
+                    extra = (val-261)/4;
+                uint16_t extra_val = 0;
+                READ_BITS(ctx->bytes, extra_val, extra, ctx->bs, ctx->c);
+                uint16_t length = base_lengths[val - 257] + extra_val;
+                huff_tree_node *dist_node = dist_tree;
+                while (dist_node->left || dist_node->right){
+                    READ_BITS(ctx->bytes, next_bit, 1, ctx->bs, ctx->c);
+                    dist_node = huffman_traverse(dist_node, next_bit);
+                    if (!dist_node){
+                        printf("DEFLATE ERROR: no tree found");
+                        return false;
+                    }
+                }
+                uint16_t dist_base = dist_node->entry;
+                uint8_t extra_dist = 0;
+                uint16_t extra_dist_val = 0;
+                if (dist_base > 3){
+                    extra_dist = (dist_base-2)/2;
+                    READ_BITS(ctx->bytes, extra_dist_val, extra_dist, ctx->bs, ctx->c);
+                }
+                uint32_t distance = dist_bases[dist_base] + extra_dist_val;
+                memcpy(ctx->output_buf + ctx->out_cursor, ctx->output_buf - distance + ctx->out_cursor, length);
+                ctx->out_cursor += length;
+            }
+            tree_root = litlen_tree;
+        }
+    }
+    return true;
+}
+
+size_t deflate_decode(void* ptr, size_t size, deflate_read_ctx *ctx){
+    if (ctx->cur_block > 0){//TODO: Can a compressed deflate block cross boundaries? 
+        // printf("Continuation of previous block %i %x",size, size);
+        size_t amount = min(size,ctx->cur_block);
+        memcpy(ctx->output_buf + ctx->out_cursor, ptr, amount);
+        ctx->out_cursor += amount;
+        ctx->cur_block -= amount;
+        printf("Reduced current block by %x to %x",amount, ctx->cur_block);
+        if (amount >= size || ctx->final_block)
+            return size;
+        ptr += amount;
+        size -= amount;
+    } else {
+        zlib_hdr hdr = *(zlib_hdr*)ptr;
+        if (hdr.cm != 8){
+            printf("Error. Non-DEFLATE block");
+            return 0;
+        }
+        ptr += sizeof(zlib_hdr);
+        size -= sizeof(zlib_hdr);
+    }
+    uintptr_t p = (uintptr_t)ptr;
+
     bool final = false;
-    uintptr_t out_cursor = 0;
+    
+    ctx->bytes = (uint8_t*)p;
+    ctx->c = 0;
+    ctx->bs = 0;
 
     while (!final){
         uint8_t hclen = 0;//4
         uint8_t hdist = 0;//5
         uint8_t hlit = 0;//5
         uint8_t btype = 0;//2
-        READ_BITS(bytes, final, 1, bs, c);
-        READ_BITS(bytes, btype, 2, bs, c);
-        READ_BITS(bytes, hlit, 5, bs, c);
-        READ_BITS(bytes, hdist, 5, bs, c);
-        READ_BITS(bytes, hclen, 4, bs, c);
+        READ_BITS(ctx->bytes, final, 1, ctx->bs, ctx->c);
+        READ_BITS(ctx->bytes, btype, 2, ctx->bs, ctx->c);
+
+        ctx->final_block = final;
+
+        if (btype == 0b00){
+            size_t read_size = deflate_uncommpressed(ctx, size);
+            // printf("Uncompressed block read %x out of a max total %x",read_size, max_size);
+            if (!read_size){
+                return 0;
+            }
+            ctx->cur_block -= read_size;
+            printf("Got new block and read %x with %x remaining",read_size, ctx->cur_block);
+            if (final || ctx->cur_block) return ctx->out_cursor;
+            continue;
+        }
+
+        READ_BITS(ctx->bytes, hlit, 5, ctx->bs, ctx->c);
+        READ_BITS(ctx->bytes, hdist, 5, ctx->bs, ctx->c);
+        READ_BITS(ctx->bytes, hclen, 4, ctx->bs, ctx->c);
+
         if (btype != 0b10){
-            printf("Only dynamic compression supported right now %i",btype);
+            printf("Only non-dynamic compression not supported right now %i",btype);
             return 0;
         }
         // printf("DEFLATE DYNAMIC HEADER. LAST? %i. Type %i. HLIT %i, HDIST %i, HCLEN %i", final, btype, hlit, hdist, hclen);
@@ -140,7 +271,7 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
         uint8_t code_order[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
         uint16_t permuted[19] = {};
         for (uint8_t i = 0; i < hclen+4; i++){
-            READ_BITS(bytes, permuted[code_order[i]], 3, bs, c);
+            READ_BITS(ctx->bytes, permuted[code_order[i]], 3, ctx->bs, ctx->c);
         }
         huff_tree_node *huff_decode_nodes = deflate_decode_codes(8, 19, permuted);
         
@@ -158,7 +289,7 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
 
         for (int i = 0; i < tree_data_size;){
             uint8_t next_bit = 0;
-            READ_BITS(bytes, next_bit, 1, bs, c);
+            READ_BITS(ctx->bytes, next_bit, 1, ctx->bs, ctx->c);
             tree_root = huffman_traverse(tree_root, next_bit);
             if (!tree_root) {
                 printf("DEFLATE ERROR: no tree found");
@@ -168,19 +299,19 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
                 uint8_t extra = 0;
                 switch (tree_root->entry){
                     case 16:
-                    READ_BITS(bytes, extra, 2, bs, c);
+                    READ_BITS(ctx->bytes, extra, 2, ctx->bs, ctx->c);
                     extra += 3;
                     for (int j = 0; j < extra; j++)
                         full_huffman[i+j] = last_code_len;
                     break;
                     case 17:
-                    READ_BITS(bytes, extra, 3, bs, c);
+                    READ_BITS(ctx->bytes, extra, 3, ctx->bs, ctx->c);
                     extra += 3;
                     for (int j = 0; j < extra; j++)
                         full_huffman[i+j] = 0;
                     break;
                     case 18:
-                    READ_BITS(bytes, extra, 7, bs, c);
+                    READ_BITS(ctx->bytes, extra, 7, ctx->bs, ctx->c);
                     extra += 11;
                     for (int j = 0; j < extra; j++)
                         full_huffman[i+j] = 0;
@@ -212,61 +343,19 @@ size_t deflate_decode(void* ptr, size_t size, uint8_t *output_buf){
 
         tree_root = litlen_tree;
         
-        uint16_t val = 0;
-        while (val != 0x100){
-            uint8_t next_bit = 0;
-            READ_BITS(bytes, next_bit, 1, bs, c);
-            // printf("%x",next_bit);
-            tree_root = huffman_traverse(tree_root, next_bit);
-            if (!tree_root) {
-                printf("DEFLATE ERROR: no tree found");
-                return 0;
-            }
-            if (!tree_root->left && !tree_root->right){
-                val = tree_root->entry;
-                if (val < 0x100){
-                    output_buf[out_cursor] = (val & 0xFF);
-                    out_cursor++;
-                } else if (val == 0x100){
-                    break;
-                } else {
-                    uint8_t extra = 0;
-                    if (val > 264 && val < 285)
-                        extra = (val-261)/4;
-                    uint16_t extra_val = 0;
-                    READ_BITS(bytes, extra_val, extra, bs, c);
-                    uint16_t length = base_lengths[val - 257] + extra_val;
-                    huff_tree_node *dist_node = dist_tree;
-                    while (dist_node->left || dist_node->right){
-                        READ_BITS(bytes, next_bit, 1, bs, c);
-                        dist_node = huffman_traverse(dist_node, next_bit);
-                        if (!dist_node){
-                            printf("DEFLATE ERROR: no tree found");
-                            return 0;
-                        }
-                    }
-                    uint16_t dist_base = dist_node->entry;
-                    uint8_t extra_dist = 0;
-                    uint16_t extra_dist_val = 0;
-                    if (dist_base > 3){
-                        extra_dist = (dist_base-2)/2;
-                        READ_BITS(bytes, extra_dist_val, extra_dist, bs, c);
-                    }
-                    uint32_t distance = dist_bases[dist_base] + extra_dist_val;
-                    memcpy(output_buf + out_cursor, output_buf - distance + out_cursor, length);
-                    out_cursor += length;
-                }
-                tree_root = litlen_tree;
-            }
+        if (!deflate_block(litlen_tree, dist_tree, ctx)){
+            huffman_free(litlen_tree);
+            huffman_free(dist_tree);
+            return 0;
         }
+        
         huffman_free(litlen_tree);
         huffman_free(dist_tree);
     }
 
     // printf("Wrote a total of %i bytes",out_cursor);
 
-
-    return out_cursor;
+    return ctx->out_cursor;
 }
 
 image_info png_get_info(void * file, size_t size){
@@ -287,10 +376,33 @@ image_info png_get_info(void * file, size_t size){
     return (image_info){__builtin_bswap32(ihdr->width),__builtin_bswap32(ihdr->height)};
 }
 
+uint32_t paeth_predict(uint32_t a, uint32_t b, uint32_t c) {
+    uint32_t p = a + b - c;
+    uint32_t pa = abs(p - a);
+    uint32_t pb = abs(p - b);
+    uint32_t pc = abs(p - c);
+
+    if (pa <= pb && pa <= pc)
+        return a;
+    else if (pb <= pc)
+        return b;
+    else
+        return c;
+}
+
 void png_process_raw(uintptr_t raw_img, uint32_t w, uint32_t h, uint16_t bpp, uint32_t *buf){
     const uint8_t bytes = bpp/8;
     for (uint32_t y = 0; y < h; y++){
         uint8_t filter_type = *(uint8_t*)(raw_img + (((w * bytes) + 1) * y));
+        // printf("%i Filter type %i",y,filter_type);
+        if (filter_type == 0){
+            printf("Wrong filter type. Dumping row and returning");
+            for (uint32_t x = 0; x < w; x++){
+                uint32_t current = convert_color_bpp(bpp, (raw_img + (((w * bytes) + 1) * y) + 1 + (x*bytes)));
+                printf("%x",current);
+            }
+            return;
+        }
         for (uint32_t x = 0; x < w; x++){
             uint32_t current = convert_color_bpp(bpp, (raw_img + (((w * bytes) + 1) * y) + 1 + (x*bytes)));
             // if (y == 0) printf("%x",current);
@@ -308,7 +420,12 @@ void png_process_raw(uintptr_t raw_img, uint32_t w, uint32_t h, uint16_t bpp, ui
                     if (y > 0) current += buf[((y-1) * w) + x]/2;
                     break;
                 case 4:
-                    printf("[PNG] implementation error. Paeth not yet supporter");
+                    if (x > 0 && y > 0) {
+                        uint32_t prev = buf[(y * w) + x - 1];
+                        uint32_t top = buf[((y - 1) * w) + x];
+                        uint32_t diag = buf[((y - 1) * w) + x - 1];
+                        current += paeth_predict(prev, top, diag);
+                    }
                     return;
             }
             buf[(y * w) + x] = current; 
@@ -340,6 +457,7 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
     uintptr_t out_buf = 0;
     uintptr_t out_off = 0;
     uint16_t bpp = 0;
+    deflate_read_ctx ctx = {};
     do {
         hdr = (png_chunk_hdr*)p;
         uint32_t length = __builtin_bswap32(hdr->length);
@@ -353,11 +471,12 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
                 printf("Wrong image size");
                 return;
             }
-            if (!out_buf) out_buf = (uintptr_t)malloc((info.width * info.height * system_bpp) + info.height);//TODO: bpp might be too big, read image format
-            printf("Found some idat %x",p + sizeof(png_chunk_hdr) - (uintptr_t)file);
-            uintptr_t prev_off = out_off;
-            out_off += deflate_decode((void*)(p + sizeof(png_chunk_hdr)), length, (uint8_t*)(out_buf + out_off));
-            memcpy(buf + prev_off, (void*)out_buf, min(out_off, size-prev_off));
+            if (!out_buf){ 
+                out_buf = (uintptr_t)malloc((info.width * info.height * system_bpp) + info.height);//TODO: bpp might be too big, read image format
+                ctx.output_buf = (uint8_t*)out_buf;
+            }
+            printf("Found some idat %#x - %#x",p + sizeof(png_chunk_hdr) - (uintptr_t)file, length);
+            out_off += deflate_decode((void*)(p + sizeof(png_chunk_hdr)), length, &ctx);
         }
         p += sizeof(png_chunk_hdr) + __builtin_bswap32(hdr->length) + sizeof(uint32_t);
     } while(strstart(hdr->type, "IEND", true) != 4);
