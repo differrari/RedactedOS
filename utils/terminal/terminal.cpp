@@ -77,9 +77,8 @@ const char** Terminal::parse_arguments(char *args, int *count){
 }
 
 void Terminal::run_command(){
-    const char* line_with_prompt = get_current_line();
-    const char* fullcmd = line_with_prompt;
-
+    const char* fullcmd = get_current_line();
+    
     if (fullcmd[0] == '>' && fullcmd[1] == ' ') {
         fullcmd += 2;
     }
@@ -88,7 +87,9 @@ void Terminal::run_command(){
     while (*check == ' ' || *check == '\t') check++;
     if (*check == '\0') { 
         put_char('\r');
-        prompt_length = 2 ;
+        put_char('\n');
+        put_string("> ");
+        prompt_length = 2;
         draw_cursor();
         flush(dctx);
         command_running = true;
@@ -99,14 +100,14 @@ void Terminal::run_command(){
 
     string cmd;
     int argc = 0;
-    const char** argv;
+    const char** argv = nullptr;
     string args_copy = {};
 
-    if (fullcmd == args){
+    if (*args == '\0'){
         cmd = string_from_literal(fullcmd);
-        argv = 0;
     } else {
-        cmd = string_from_literal_length(fullcmd, args - fullcmd - 1);
+        size_t cmd_len = (size_t)((args - fullcmd) - 1);
+        cmd = string_from_literal_length(fullcmd, cmd_len);
         args_copy = string_from_literal(args);
         argv = parse_arguments(args_copy.data, &argc);
     }

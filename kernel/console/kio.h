@@ -8,10 +8,10 @@
 extern "C" {
 #endif
 
-void kprintf(const char *fmt, ...);
+void kprintf(const char *fmt, ...); //TODO __attribute__((format(printf, 1, 2)));
 void kprint(const char *fmt);
 
-void kputf(const char *fmt, ...);
+void kputf(const char *fmt, ...); //TODO __attribute__((format(printf, 1, 2)));
 void puts(const char *s);
 void putc(const char c);
 
