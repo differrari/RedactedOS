@@ -12,7 +12,7 @@
 #include "memory/page_allocator.h"
 #include "mailbox/vc_mbox.h"
 
-#define RGB_FORMAT_XRGB8888 ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
+static constexpr uint32_t RGB_FORMAT_XRGB8888 = ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24));
 
 #define BUS_ADDRESS(addr)   ((addr) & ~0xC0000000)
 
@@ -33,8 +33,13 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
         return false;
     }
 
-    if (bpp != depth/8){
+    if (depth != bpp*8){
         kprintf("[VIDEOCORE] failed to initialize. Wrong BPP (%i), should be %i. Check your config.txt file",depth/8, bpp);
+        return false;
+    }
+
+    if (pitch == 0) {
+        kprintf("[VIDEOCORE] Invalid pitch");
         return false;
     }
 
@@ -48,7 +53,6 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
     }
     framebuffer = (uint32_t*)(uintptr_t)BUS_ADDRESS(fb_bus);
     framebuffer_size = fb_size/2;
-    mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
     back_framebuffer = (uint32_t*)((uintptr_t)framebuffer + framebuffer_size);
 
     kprintf("[VIDEOCORE] Size %ix%i (%ix%i) (%ix%i) | %i (%i)",phys_w,phys_h,virt_w,virt_h,screen_size.width,screen_size.height,depth, stride);
@@ -72,6 +76,7 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
 }
 
 void VideoCoreGPUDriver::update_gpu_fb(){
+    if (screen_size.height == 0) return;
     last_offset = screen_size.height - last_offset;
     if (!mbox_set_offset(last_offset)){
         kprintf("[VIDEOCORE] failed to swap buffer");
