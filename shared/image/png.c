@@ -455,7 +455,6 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
     png_chunk_hdr *hdr;
     image_info info = {};
     uintptr_t out_buf = 0;
-    uintptr_t out_off = 0;
     uint16_t bpp = 0;
     deflate_read_ctx ctx = {};
     do {
@@ -476,7 +475,7 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
                 ctx.output_buf = (uint8_t*)out_buf;
             }
             printf("Found some idat %#x - %#x",p + sizeof(png_chunk_hdr) - (uintptr_t)file, length);
-            out_off += deflate_decode((void*)(p + sizeof(png_chunk_hdr)), length, &ctx);
+            deflate_decode((void*)(p + sizeof(png_chunk_hdr)), length, &ctx);
         }
         p += sizeof(png_chunk_hdr) + __builtin_bswap32(hdr->length) + sizeof(uint32_t);
     } while(strstart(hdr->type, "IEND", true) != 4);
