@@ -60,9 +60,35 @@ void fb_clear(draw_ctx *ctx, uint32_t color) {
     ctx->full_redraw = true;
 }
 
+//TODO: all functions should include this with the (if alpha < 0xFF) check
+uint32_t pixel_blend(uint32_t p1, uint32_t p2){
+    uint8_t a1 = (p1 >> 24) & 0xFF;
+    uint8_t a2 = (p2 >> 24) & 0xFF;
+
+    uint8_t r1 = (p1 >> 16) & 0xFF;
+    uint8_t r2 = (p2 >> 16) & 0xFF;
+
+    uint8_t g1 = (p1 >> 8) & 0xFF;
+    uint8_t g2 = (p2 >> 8) & 0xFF;
+
+    uint8_t b1 = p1        & 0xFF;
+    uint8_t b2 = p2        & 0xFF;
+
+    uint8_t a = a1 + ((255 - a1) * a2) / 255;
+
+    uint8_t r = r1 * a1 + (r2 * (255 - a1))/255;
+    uint8_t g = g1 * a1 + (g2 * (255 - a1))/255;
+    uint8_t b = b1 * a1 + (b2 * (255 - a1))/255;
+
+    return (a << 24) | (r << 16) | (g << 8) | (b);
+}
+
 void fb_draw_raw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
     if (x >= ctx->width || y >= ctx->height) return;
-    ctx->fb[y * (ctx->stride / 4) + x] = color;
+    if (((color >> 24) & 0xFF) < 0xFF)
+        ctx->fb[y * (ctx->stride / 4) + x] = pixel_blend(color,ctx->fb[y * (ctx->stride / 4) + x]);
+    else
+        ctx->fb[y * (ctx->stride / 4) + x] = color;
 }
 
 void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
@@ -97,12 +123,13 @@ void fb_draw_partial_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, u
         adj_img_width -= (x + adj_img_width - ctx->width);
     if (y + adj_img_height >= ctx->height)
         adj_img_height -= (y + adj_img_height - ctx->height);
-    if (full_width == ctx->width && x == 0){
-        memcpy(ctx->fb + (y * (ctx->width)), img, ctx->stride * img_height);
-    } else {
-        for (uint32_t dy = 0; dy < adj_img_height; dy++)
-            memcpy(ctx->fb + ((y+dy) * (ctx->width)) + x, img + ((dy + start_y) * full_width) + start_x, adj_img_width*4);
-    }
+    for (uint32_t dy = 0; dy < adj_img_height; dy++)
+        for (uint32_t dx = 0; dx < adj_img_width; dx++){
+            uint32_t pix = img[((dy + start_y) * full_width) + start_x + dx];
+            if (((pix >> 24) & 0xFF) < 0xFF)
+                ctx->fb[((y+dy) * ctx->width) + x + dx] = pixel_blend(pix, ctx->fb[((y+dy) * ctx->width) + x + dx]);
+            else ctx->fb[((y+dy) * ctx->width) + x + dx] = pix;
+        }
     mark_dirty(ctx, x,y,adj_img_width,adj_img_height);
 }
 
