@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "data_struct/p_queue.h"
 
 /*
     This compression algorithm is (very experimental). 
@@ -14,18 +15,6 @@ typedef struct huff_tree_node {
     char byte;//DEBUG
     int index;//DEBUG
 } huff_tree_node;
-
-typedef struct p_queue_item {
-    void* ptr;
-    uint64_t val;
-} p_queue_item;
-
-typedef struct p_queue_t {
-    p_queue_item *array;
-    int size;
-    uint64_t max_priority;
-    int max_priority_index;
-} p_queue_t;
 
 void huffman_encode(sizedptr input, sizedptr output);
 void huffman_populate(huff_tree_node *root, uint64_t code, uint8_t code_len, uint16_t value);

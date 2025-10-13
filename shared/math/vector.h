@@ -1,6 +1,8 @@
 #pragma once
 
 #include <arm_neon.h>
+#include "types.h"
+#include "math.h"
 
 typedef struct vector2 {
     float x,y;
@@ -33,4 +35,12 @@ static inline vector2 vector2_norm(vector2 in){
 
 static inline vector2 vector2_scale(vector2 in, float s){
     return (vector2){ in.x * s, in.y * s};
+}
+
+static inline bool vector2_zero(vector2 a){
+    return float_zero(a.x) && float_zero(a.y);
+}
+
+static inline float dot_product(vector2 a, vector2 b) {
+    return (a.x*b.x) + (a.y*b.y);
 }

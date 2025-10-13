@@ -51,6 +51,11 @@ static inline int lerp(int i, int start, int end, int steps) {
     return start + (end - start) * i / steps;
 }
 
+static inline bool float_zero(float a){
+    const float epsilon = 1e-6f;
+    return absf(a) < epsilon;
+}
+
 static inline float lerpf(float a, float b, float t) {
   // Exact, monotonic, bounded, determinate, and (for a=b=0) consistent:
   if((a<=0 && b>=0) || (a>=0 && b<=0)) return t*b + (1-t)*a;
