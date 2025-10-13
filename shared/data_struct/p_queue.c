@@ -52,3 +52,7 @@ p_queue_t* p_queue_create(int max){
      root->array = (p_queue_item*)((uintptr_t)root + sizeof(p_queue_t));
      return root;
 }
+
+void p_queue_free(p_queue_t *root){
+    free(root, sizeof(p_queue_t) + (sizeof(p_queue_item) * root->max_size));
+}

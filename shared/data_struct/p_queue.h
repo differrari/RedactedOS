@@ -22,3 +22,4 @@ int p_queue_peek(p_queue_t*root);
 void* p_queue_pop(p_queue_t *root);
 void p_queue_traverse(p_queue_t *root);
 p_queue_t* p_queue_create(int max);
+void p_queue_free(p_queue_t *root);
