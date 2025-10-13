@@ -21,7 +21,6 @@ uint32_t convert_color_bpp(uint16_t bpp, uintptr_t value_ptr){
 
 void* load_image(char *path, image_info *info, IMAGE_FORMATS format){
     file descriptor;
-    printf(path);
     FS_RESULT res = fopen(path, &descriptor);
     void *img;
     image_info img_info;
