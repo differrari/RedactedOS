@@ -46,14 +46,20 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
     stride = pitch;
     screen_size = {phys_w, phys_h};
 
+    virt_h *= 2;
+
     uint32_t fb_bus, fb_size;
-    if (!mbox_alloc_fb(virt_w, virt_h * 2, &fb_bus, &fb_size)){
+    if (!mbox_alloc_fb(virt_w, virt_h, &fb_bus, &fb_size)){
         kprintf("[VIDEOCORE] Failed updating mailbox");
         return false;
     }
     framebuffer = (uint32_t*)(uintptr_t)BUS_ADDRESS(fb_bus);
     framebuffer_size = fb_size/2;
-    back_framebuffer = (uint32_t*)((uintptr_t)framebuffer + framebuffer_size);
+    if (fb_size < virt_h * virt_w * bpp){
+        kprintf("[VIDEOCORE] Fallback to one framebuffer with copying. Expected %i, got %i",virt_h * virt_w * bpp,fb_size);
+        mailbox_fallback = true;
+        back_framebuffer = (uint32_t*)palloc(virt_h * virt_w * bpp, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, true);
+    } else back_framebuffer = (uint32_t*)((uintptr_t)framebuffer + framebuffer_size);
 
     kprintf("[VIDEOCORE] Size %ix%i (%ix%i) (%ix%i) | %i (%i)",phys_w,phys_h,virt_w,virt_h,screen_size.width,screen_size.height,depth, stride);
     kprintf("[VIDEOCORE] Framebuffer allocated to %x (%i). BPP %i. Stride %i. Backbuffer at %x",framebuffer, framebuffer_size, bpp, stride/bpp,back_framebuffer);
@@ -76,10 +82,11 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
 }
 
 void VideoCoreGPUDriver::update_gpu_fb(){
-    if (screen_size.height == 0) return;
+    if (screen_size.height == 0 || mailbox_fallback) return;
     last_offset = screen_size.height - last_offset;
     if (!mbox_set_offset(last_offset)){
         kprintf("[VIDEOCORE] failed to swap buffer");
+        mailbox_fallback = true;
     }
 }
 

@@ -16,4 +16,5 @@ public:
     
 protected:
     uint32_t last_offset = 0;
+    bool mailbox_fallback = false;//Used if swapping framebuffers fails. Pi 5
 };
