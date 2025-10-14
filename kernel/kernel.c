@@ -18,6 +18,7 @@
 #include "dev/module_loader.h" 
 #include "audio/audio.h"
 #include "mailbox/mailbox.h"
+#include "math/vector.h"
 
 void kernel_main() {
 
