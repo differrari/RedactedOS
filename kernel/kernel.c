@@ -49,15 +49,14 @@ void kernel_main() {
 
     load_module(&graphics_module);
     
-    if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
-        pci_setup_rp1();
+    // if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
+    //     pci_setup_rp1();
 
     load_module(&disk_module);
 
     bool input_available = load_module(&input_module);
     bool network_available = false;
     if (BOARD_TYPE == 1){
-        //TODO: disabling networking until it is refactored to prevent memory issues
         network_available = load_module(&net_module);
 
         load_module(&audio_module);
