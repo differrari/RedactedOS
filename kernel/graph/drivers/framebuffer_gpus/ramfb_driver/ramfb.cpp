@@ -44,8 +44,8 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
         kprintf("Ramfb not found");
         return false;
     }
-
-    uint8_t* fb_block = (uint8_t*)palloc(framebuffer_size*2, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, true);
+    mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
+    uint8_t* fb_block = (uint8_t*)palloc(framebuffer_size*2, MEM_PRIV_SHARED, MEM_RW, true);
 
     if (!fb_block) return false;
 

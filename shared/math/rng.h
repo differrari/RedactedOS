@@ -19,6 +19,8 @@ static inline uint64_t rotl(uint64_t x, int k){
 void rng_init_random(rng_t* rng);
 void rng_seed(rng_t* rng, uint64_t seed);
 
+float rng_next01f(rng_t* rng);
+
 uint8_t  rng_next8(rng_t* rng);
 uint16_t rng_next16(rng_t* rng);
 uint32_t rng_next32(rng_t* rng);

@@ -1,5 +1,6 @@
 #pragma once
 #include "types.h"
+#include "math.h"
 
 typedef int8_t int8x8_t __attribute__((vector_size(8)));
 typedef int8_t int8x16_t __attribute__((vector_size(16)));
@@ -151,11 +152,45 @@ static __inline__ __attribute__((always_inline)) float32x2_t vrsqrte_f32_b(float
 #endif
 }
 
-static __inline__ __attribute__((always_inline)) float magnitude_vector2(float32x2_t v)
+typedef struct vector2 {
+    float x,y;
+} vector2;
+
+static __inline__ __attribute__((always_inline)) float vmagnitude_vector2(float32x2_t v)
 {
     float32x2_t sq = vmul_f32_b(v, v);
     float32x2_t s = vpadd_f32_b(sq, sq);
     s = vmax_f32_b(s, vdup_n_f32_b(1e-20f));
     float32x2_t rinv = vrsqrte_f32_b(s);
     return 1.f/rinv[0];
+}
+
+static inline float magnitude_vector2(vector2 v)
+{
+    float32x2_t xy = vld1_f32_b(&v.x);  // [x, y]
+    return vmagnitude_vector2(xy);
+}
+static inline vector2 vector2_sub(vector2 a, vector2 b){
+    return (vector2){a.x-b.x,a.y-b.y};
+}
+
+static inline vector2 vector2_add(vector2 a, vector2 b){
+    return (vector2){a.x+b.x,a.y+b.y};
+}
+
+static inline vector2 vector2_norm(vector2 in){
+    float len = magnitude_vector2(in);
+    return (vector2){in.x/len,in.y/len};
+}
+
+static inline vector2 vector2_scale(vector2 in, float s){
+    return (vector2){ in.x * s, in.y * s};
+}
+
+static inline bool vector2_zero(vector2 a){
+    return float_zero(a.x) && float_zero(a.y);
+}
+
+static inline float dot_product(vector2 a, vector2 b) {
+    return (a.x*b.x) + (a.y*b.y);
 }

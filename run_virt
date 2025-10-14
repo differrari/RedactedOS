@@ -54,7 +54,6 @@ $PRIVILEGE qemu-system-aarch64 \
   -cpu cortex-a72 \
   -m 512M \
   -kernel kernel.elf \
-  -device $SELECTED_GPU \
   -display $DISPLAY_MODE${GL:+,gl=$GL} \
   -device ramfb \
   $NETDEV \

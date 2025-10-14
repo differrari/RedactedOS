@@ -15,5 +15,5 @@ public:
     ~VideoCoreGPUDriver() = default;
     
 protected:
-    uint32_t last_offset;
+    uint32_t last_offset = 0;
 };

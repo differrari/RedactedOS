@@ -3,7 +3,6 @@
 #include "std/memory.h"
 #include "math/math.h"
 
-
 int try_merge(gpu_rect* a, gpu_rect* b) {
     uint32_t ax1 = a->point.x;
     uint32_t ay1 = a->point.y;
@@ -102,9 +101,35 @@ void fb_clear(draw_ctx *ctx, uint32_t color) {
     ctx->full_redraw = 1;
 }
 
+//TODO: all functions should include this with the (if alpha < 0xFF) check
+uint32_t pixel_blend(uint32_t p1, uint32_t p2){
+    uint8_t a1 = (p1 >> 24) & 0xFF;
+    uint8_t a2 = (p2 >> 24) & 0xFF;
+
+    uint8_t r1 = (p1 >> 16) & 0xFF;
+    uint8_t r2 = (p2 >> 16) & 0xFF;
+
+    uint8_t g1 = (p1 >> 8) & 0xFF;
+    uint8_t g2 = (p2 >> 8) & 0xFF;
+
+    uint8_t b1 = p1        & 0xFF;
+    uint8_t b2 = p2        & 0xFF;
+
+    uint8_t a = a1 + ((255 - a1) * a2) / 255;
+
+    uint8_t r = r1 * a1 + (r2 * (255 - a1))/255;
+    uint8_t g = g1 * a1 + (g2 * (255 - a1))/255;
+    uint8_t b = b1 * a1 + (b2 * (255 - a1))/255;
+
+    return (a << 24) | (r << 16) | (g << 8) | (b);
+}
+
 void fb_draw_raw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
     if (x >= ctx->width || y >= ctx->height) return;
-    ctx->fb[y * (ctx->stride >> 2) + x] = color;
+    if (((color >> 24) & 0xFF) < 0xFF)
+        ctx->fb[y * (ctx->stride >> 2) + x] = pixel_blend(color, ctx->fb[y * (ctx->stride >> 2) + x]);
+    else
+        ctx->fb[y * (ctx->stride >> 2) + x] = color;
 }
 
 void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
@@ -160,15 +185,23 @@ void fb_draw_partial_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, u
     if (!w || !h) return;
 
     const uint32_t dst_pitch_px = (ctx->stride >> 2);
-    uint32_t* dst = ctx->fb + y * dst_pitch_px + x;
+    uint32_t* dst_row = ctx->fb + y * dst_pitch_px + x;
 
     const uint32_t src_pitch_px = full_width;
-    const uint32_t* src = img + (start_y * full_width) + start_x;
+    const uint32_t* src_row = img + (start_y * full_width) + start_x;
 
     for (uint32_t row = 0; row < h; ++row) {
-        memcpy(dst, src, (size_t)w * sizeof(uint32_t));
-        dst += dst_pitch_px;
-        src += src_pitch_px;
+        const uint32_t* src = src_row;
+        uint32_t* dst = dst_row;
+        for (uint32_t col = 0; col < w; ++col) {
+            uint32_t pix = src[col];
+            if (((pix >> 24) & 0xFF) < 0xFF)
+                dst[col] = pixel_blend(pix, dst[col]);
+            else
+                dst[col] = pix;
+        }
+        dst_row += dst_pitch_px;
+        src_row += src_pitch_px;
     }
 
     mark_dirty(ctx, x,y,w, h);
