@@ -4,7 +4,37 @@
 #include "bmp.h"
 #include "png.h"
 
-uint32_t convert_color_bpp(uint16_t bpp, uintptr_t value_ptr){
+uint32_t get_color_bpp(uint16_t bpp, uintptr_t value_ptr){
+    switch (bpp) {
+        case 1: return 0;
+
+        case 4: return 0;
+
+        case 8: return 0;
+
+        case 24: return ARGB(0, read8(value_ptr + 2), read8(value_ptr + 1), read8(value_ptr)); 
+
+        case 32: return value_ptr % 8 == 0 ? *(uint32_t*)value_ptr : read_unaligned32((uint32_t*)value_ptr);
+    }
+    return 0;
+}
+
+uint32_t convert_bpp_color(uint16_t bpp, uint32_t color){
+    switch (bpp) {
+        case 1: return 0;
+
+        case 4: return 0;
+
+        case 8: return 0;
+
+        case 24: return (0xFF << 24) | color; 
+
+        case 32: return color;
+    }
+    return 0;
+}
+
+uint32_t get_bpp_converted_color(uint16_t bpp, uintptr_t value_ptr){
     switch (bpp) {
         case 1: return 0;
 

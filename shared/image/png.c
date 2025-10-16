@@ -398,13 +398,13 @@ void png_process_raw(uintptr_t raw_img, uint32_t w, uint32_t h, uint16_t bpp, ui
         if (filter_type == 0){
             printf("Wrong filter type. Dumping row and returning");
             for (uint32_t x = 0; x < w; x++){
-                uint32_t current = convert_color_bpp(bpp, (raw_img + (((w * bytes) + 1) * y) + 1 + (x*bytes)));
+                uint32_t current = get_color_bpp(bpp, (raw_img + (((w * bytes) + 1) * y) + 1 + (x*bytes)));
                 printf("%x",current);
             }
             return;
         }
         for (uint32_t x = 0; x < w; x++){
-            uint32_t current = convert_color_bpp(bpp, (raw_img + (((w * bytes) + 1) * y) + 1 + (x*bytes)));
+            uint32_t current = get_color_bpp(bpp, (raw_img + (((w * bytes) + 1) * y) + 1 + (x*bytes)));
             // if (y == 0) printf("%x",current);
             switch (filter_type) {
                 case 0: 
@@ -428,7 +428,7 @@ void png_process_raw(uintptr_t raw_img, uint32_t w, uint32_t h, uint16_t bpp, ui
                     }
                     return;
             }
-            buf[(y * w) + x] = current; 
+            buf[(y * w) + x] = convert_bpp_color(bpp, current); 
         }
     }
 }
