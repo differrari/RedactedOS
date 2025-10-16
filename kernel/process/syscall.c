@@ -93,7 +93,7 @@ uint64_t syscall_gpu_resize_ctx(process_t *ctx){
 }
 
 uint64_t syscall_char_size(process_t *ctx){
-    return gpu_get_char_size(ctx->PROC_X0);;
+    return gpu_get_char_size(ctx->PROC_X0);
 }
 
 uint64_t syscall_sleep(process_t *ctx){
@@ -153,7 +153,7 @@ uint64_t syscall_socket_listen(process_t *ctx){
 uint64_t syscall_socket_accept(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
     accept_on_socket(handle, ctx->id);
-    return 0;
+    return 1;
 }
 
 uint64_t syscall_socket_send(process_t *ctx){

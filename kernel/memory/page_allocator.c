@@ -187,14 +187,6 @@ void mark_used(uintptr_t address, size_t pages)
     }
 }
 
-void* malloc(size_t size){
-    return kalloc((void*)get_proc_by_pid(1)->heap, size, ALIGN_16B, get_current_privilege());
-}
-
-void free(void*ptr, size_t size){
-    kfree(ptr, size);
-}
-
 //TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
 void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
