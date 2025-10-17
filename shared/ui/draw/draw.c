@@ -172,13 +172,12 @@ void fb_draw_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t 
 void fb_draw_partial_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t img_width, uint32_t img_height, uint32_t start_x, uint32_t start_y, uint32_t full_width){
     if (x >= ctx->width || y >= ctx->height) return;
 
-    if (start_x >= full_width || start_y >= img_height) return;
+    if (start_x >= full_width) return;
 
     uint32_t w = img_width;
     uint32_t h = img_height;
 
     if (w > full_width - start_x) w = full_width - start_x;
-    if (h > img_height - start_y) h = img_height - start_y;
 
     if (x + w > ctx->width) w = ctx->width - x;
     if (y + h > ctx->height) h = ctx->height - y;
