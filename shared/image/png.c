@@ -146,7 +146,7 @@ size_t deflate_uncommpressed(deflate_read_ctx *ctx, size_t max_size) {
 
     len = min(len,max_size);
 
-    // printf("Reading %#x bytes from uncompressed deflate block",len);
+    // printf("Reading %x bytes from uncompressed deflate block",len);
 
     memcpy(ctx->output_buf + ctx->out_cursor, &ctx->bytes[ctx->c], len);
     ctx->c += len;
@@ -474,7 +474,7 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
                 out_buf = (uintptr_t)malloc((info.width * info.height * system_bpp) + info.height);//TODO: bpp might be too big, read image format
                 ctx.output_buf = (uint8_t*)out_buf;
             }
-            printf("Found some idat %#x - %#x",p + sizeof(png_chunk_hdr) - (uintptr_t)file, length);
+            printf("Found some idat %x - %x",p + sizeof(png_chunk_hdr) - (uintptr_t)file, length);
             deflate_decode((void*)(p + sizeof(png_chunk_hdr)), length, &ctx);
         }
         p += sizeof(png_chunk_hdr) + __builtin_bswap32(hdr->length) + sizeof(uint32_t);

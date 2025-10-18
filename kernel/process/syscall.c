@@ -254,7 +254,7 @@ bool decode_crash_address_with_info(uint8_t depth, uintptr_t address, sizedptr d
     if (!debug_line.ptr || !debug_line.size) return false;
     debug_line_info info = dwarf_decode_lines(debug_line.ptr, debug_line.size, debug_line_str.ptr, debug_line_str.size, address);
     if (info.address == address){
-        kprintf("%i: %s %i:%i [%x]", depth, info.file, info.line, info.column, address);
+        kprintf("[%.16x] %i: %s %i:%i", address, depth, info.file, info.line, info.column);
         return true;
     }
     return false;

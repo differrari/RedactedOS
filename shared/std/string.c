@@ -912,15 +912,15 @@ size_t string_format_va_buf(const char *restrict fmt, char *restrict out, size_t
             plen = 2;
         }
         else switch (spec) {
-            case 'b': if (flag_hash && outlen > 0) {
+            case 'b': if (!flag_hash && outlen > 0) {
                 prefix = "0b";
                 plen = 2;
             } break;
-            case 'x': if (flag_hash && !(outlen == 0 || (outlen == 1 && obuf[0] == '0'))) {
+            case 'x': if (!flag_hash && !(outlen == 0 || (outlen == 1 && obuf[0] == '0'))) {
                 prefix = "0x";
                 plen = 2;
             } break;
-            case 'X': if (flag_hash && !(outlen == 0 || (outlen == 1 && obuf[0] == '0'))) {
+            case 'X': if (!flag_hash && !(outlen == 0 || (outlen == 1 && obuf[0] == '0'))) {
                 prefix = "0X";
                 plen = 2;
             } break;
