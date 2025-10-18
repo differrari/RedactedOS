@@ -21,6 +21,7 @@
 #include "networking/interface_manager.h"
 #include "bin/bin_mod.h"
 #include "net/transport_layer/csocket.h"
+#include "loading/dwarf.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -249,16 +250,28 @@ syscall_entry syscalls[] = {
     [DIR_LIST_CODE] = syscall_dir_list,
 };
 
-void backtrace(uintptr_t fp, uintptr_t elr) {
+bool decode_crash_address(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
+    if (!debug_line.ptr || !debug_line.size) return false;
+    debug_line_info info = dwarf_decode_lines(debug_line.ptr, debug_line.size, debug_line_str.ptr, debug_line_str.size, address);
+    if (info.address == address){
+        kprintf("%i: %s %i:%i", depth, info.file, info.line, info.column);
+        return true;
+    }
+    return false;
+}
+
+void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_line_str) {
     for (uint8_t depth = 0; depth < 10 && fp; depth++) {
         uintptr_t return_address = (*(uintptr_t*)(fp + 8));
 
         if (return_address != 0){
-            kprintf("%i: caller address: %x", depth, return_address, return_address);
+            if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
+                kprintf("%i: caller address: %x", depth, return_address, return_address);
             fp = *(uintptr_t*)fp;
         }
         if (return_address == 0 || !fp){
-            kprintf("Exception triggered by %x",(elr));
+            if (!decode_crash_address(depth, elr, debug_line, debug_line_str))
+                kprintf("Exception triggered by %x",(elr));
             return;
         }
     }
@@ -291,8 +304,9 @@ void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
     uint8_t ifsc = esr & 0x3F;
     
     kprint(fault_messages[ifsc]);
-    backtrace(sp, elr);
-    // process_t *proc = get_current_proc();
+    process_t *proc = get_current_proc();
+    backtrace(sp, elr, proc->debug_lines, proc->debug_line_str);
+
     // for (int i = 0; i < 31; i++)
     //     kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
     if (far > 0) 

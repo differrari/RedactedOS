@@ -3,7 +3,7 @@
 include ../common.mk
 
 CPPFLAGS := -I. -I../shared
-CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
+CFLAGS   := $(CFLAGS_BASE) -g $(CPPFLAGS)
 CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
 LDFLAGS  := -T $(shell ls *.ld)
 
@@ -31,7 +31,7 @@ prepare:
 	cp -r resources $(PACKAGE)
 
 $(PACKAGE)/$(TARGET): ../shared/libshared.a $(OBJ)
-	$(VLD) $(LDFLAGS) -o $(PACKAGE)/$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
+	$(VLD) $(LDFLAGS) -o $(PACKAGE)/$(ELF) -g $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
 	$(OBJCOPY) -O binary $(PACKAGE)/$(ELF) $@
 	cp -r $(PACKAGE) $(LOCATION)
 
@@ -52,7 +52,7 @@ clean:
 	$(RM) -r $(PACKAGE) $(BUILD_DIR)
 
 dump: all
-	$(ARCH)-objdump -D $(NAME).red/$(NAME).elf > dump
+	$(ARCH)-objdump -S $(NAME).red/$(NAME).elf > dump
 
 
 -include $(DEP)

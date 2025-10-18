@@ -59,6 +59,8 @@ typedef struct {
     uint8_t priority;
     char *bundle;
     char name[MAX_PROC_NAME_LENGTH];
+    sizedptr debug_lines;
+    sizedptr debug_line_str;
 } process_t;
 
 //Helper functions for accessing registers mapped to scratch regs
