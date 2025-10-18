@@ -250,7 +250,7 @@ syscall_entry syscalls[] = {
     [DIR_LIST_CODE] = syscall_dir_list,
 };
 
-bool decode_crash_address(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
+bool decode_crash_address_with_info(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
     if (!debug_line.ptr || !debug_line.size) return false;
     debug_line_info info = dwarf_decode_lines(debug_line.ptr, debug_line.size, debug_line_str.ptr, debug_line_str.size, address);
     if (info.address == address){
@@ -258,6 +258,11 @@ bool decode_crash_address(uint8_t depth, uintptr_t address, sizedptr debug_line,
         return true;
     }
     return false;
+}
+
+bool decode_crash_address(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
+    return decode_crash_address_with_info(depth, address, debug_line, debug_line_str) ||
+    decode_crash_address_with_info(depth, address, get_proc_by_pid(0)->debug_lines, get_proc_by_pid(0)->debug_line_str);
 }
 
 void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_line_str) {

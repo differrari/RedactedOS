@@ -19,6 +19,7 @@
 #include "audio/audio.h"
 #include "mailbox/mailbox.h"
 #include "math/vector.h"
+#include "process/debug.h"
 
 void kernel_main() {
 
@@ -71,6 +72,9 @@ void kernel_main() {
     kprint("Starting processes");
     
     init_filesystem();
+
+    debug_load();
+
     if (input_available) init_input_process();
 
     if (network_available) launch_net_process();

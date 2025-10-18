@@ -209,7 +209,7 @@ uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, siz
 					if (array) array[i] = str;
 					break;
 				}
-				case DW_FORM_sdata: decode_sleb128(&p);break;
+				case DW_FORM_sdata: decode_sleb128(&p); break;
 				case DW_FORM_sec_offset: kprintf("Great, now I gotta decipher whatever the fuck a DW_FORM_sec_offset is"); return ptr;
 				case DW_FORM_string: 
 					str = (const char *)p;

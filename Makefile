@@ -65,6 +65,7 @@ install:
 	cp kernel.img $(BOOTFS)/kernel8.img
 	cp kernel.img $(BOOTFS)/kernel_2712.img
 	cp config.txt $(BOOTFS)/config.txt
+	cp kernel.elf $(BOOTFS)/kernel.elf
 
 prepare-fs:
 	@echo "creating dirs"

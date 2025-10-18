@@ -53,6 +53,43 @@ typedef struct elf_section_header
   uint64_t	sh_entsize;		/* Entry size if section holds table */
 } elf_section_header;
 
+void get_elf_debug_info(process_t* proc, void* file, size_t filesize){
+     elf_header *header = (elf_header*)file;
+
+    if (header->magic[0] != 0x7f){
+        kprintf("Failed to read header file");
+        return;
+    }
+
+    elf_section_header *sections = (elf_section_header*)(file + header->section_header_offset);
+
+    sizedptr debug_line = {};
+    sizedptr debug_line_str = {};
+
+    for (int i = 1; i < header->section_num_entries; i++){
+        char *section_name = (char*)(file + sections[header->string_table_section_index].sh_offset + sections[i].sh_name);
+        if (strcmp(".debug_line", section_name, true) == 0){
+            debug_line = (sizedptr){(uintptr_t)file + sections[i].sh_offset,sections[i].sh_size};
+        }
+        if (strcmp(".debug_line_str", file + sections[header->string_table_section_index].sh_offset + sections[i].sh_name, true) == 0) {
+            debug_line_str = (sizedptr){(uintptr_t)file + sections[i].sh_offset,sections[i].sh_size};
+        }
+    }
+    
+    if (debug_line.ptr && debug_line.size){ 
+        proc->debug_lines.size = debug_line.size;
+        void* dl = palloc(debug_line.size, MEM_PRIV_SHARED, MEM_RO, true);
+        memcpy(dl, (void*)debug_line.ptr, debug_line.size);
+        proc->debug_lines.ptr = (uintptr_t)dl;
+    }
+    if (debug_line_str.ptr && debug_line_str.size){ 
+        proc->debug_line_str.size = debug_line_str.size;
+        void* dls = palloc(debug_line_str.size, MEM_PRIV_SHARED, MEM_RO, true);
+        memcpy(dls, (void*)debug_line_str.ptr, debug_line_str.size);
+        proc->debug_line_str.ptr = (uintptr_t)dls;
+    }
+}
+
 process_t* load_elf_file(const char *name, const char *bundle, void* file, size_t filesize){
     elf_header *header = (elf_header*)file;
 
