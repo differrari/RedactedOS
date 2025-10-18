@@ -1,5 +1,5 @@
 #include "types.h"
-#include "filesystem/filesystem.h"
+#include "files/fs.h"
 #include "memory/talloc.h"
 #include "std/memory.h"
 #include "math/math.h"
@@ -31,7 +31,7 @@ typedef struct wav_header {
 
 static void transform_16bit(wav_header* hdr, audio_samples* audio, uint32_t upsample, file* fd){
     int16_t* tbuf = (int16_t*)malloc(hdr->data_size);
-    read_file(fd, (char*)tbuf, hdr->data_size);
+    fread(fd, (char*)tbuf, hdr->data_size);
     audio->samples.size = hdr->data_size * upsample;
     audio->samples.ptr = (uintptr_t)malloc(audio->samples.size);
     audio->smpls_per_channel = audio->samples.size / (sizeof(int16_t) * hdr->channels);
@@ -51,7 +51,7 @@ static void transform_16bit(wav_header* hdr, audio_samples* audio, uint32_t upsa
 
 static void transform_8bit(wav_header* hdr, audio_samples* audio, uint32_t upsample, file* fd){
     uint8_t* tbuf = (uint8_t*)malloc(hdr->data_size);
-    read_file(fd, (char*)tbuf, hdr->data_size);
+    fread(fd, (char*)tbuf, hdr->data_size);
     audio->samples.size = hdr->data_size * upsample * sizeof(int16_t);
     audio->samples.ptr = (uintptr_t)malloc(audio->samples.size);
     audio->smpls_per_channel = audio->samples.size / (sizeof(int16_t) * hdr->channels);
@@ -72,14 +72,14 @@ static void transform_8bit(wav_header* hdr, audio_samples* audio, uint32_t upsam
 bool wav_load_as_int16(const char* path, audio_samples* audio){
     file fd = {};
 
-    if (FS_RESULT_SUCCESS != open_file(path, &fd))
+    if (FS_RESULT_SUCCESS != fopen(path, &fd))
     {
         //printf("[WAV] File not found: %s", path);
         return false;
     }
 
     wav_header hdr = {};
-    size_t read_size = read_file(&fd, (char*)&hdr, sizeof(wav_header));
+    size_t read_size = fread(&fd, (char*)&hdr, sizeof(wav_header));
     if (read_size != sizeof(wav_header) ||
         hdr.id != 0x46464952 ||      // 'RIFF'
         hdr.wave_id != 0x45564157 || // 'WAVE'
@@ -93,7 +93,7 @@ bool wav_load_as_int16(const char* path, audio_samples* audio){
         hdr.data_size == 0
         )
     {
-        close_file(&fd);
+        fclose(&fd);
         printf("[WAV] Unsupported file format %s", path);
         printf("=== Sizes       %i, %i, %i", read_size, fd.size, hdr.data_size);
         printf("=== id          %x", hdr.id);
@@ -113,7 +113,7 @@ bool wav_load_as_int16(const char* path, audio_samples* audio){
         // simple case: slurp samples direct from file to wav buffer
         audio->samples.size = hdr.data_size;
         audio->samples.ptr = (uintptr_t)malloc(audio->samples.size);
-        read_file(&fd, (char*)audio->samples.ptr, audio->samples.size);
+        fread(&fd, (char*)audio->samples.ptr, audio->samples.size);
         audio->smpls_per_channel = hdr.data_size / (sizeof(int16_t) * hdr.channels);
         audio->channels = hdr.channels;
         audio->secs = audio->smpls_per_channel / 44100.f;
@@ -124,6 +124,6 @@ bool wav_load_as_int16(const char* path, audio_samples* audio){
     }else{
         result = false;
     }
-    close_file(&fd);
+    fclose(&fd);
     return result;
 }
