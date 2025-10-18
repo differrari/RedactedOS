@@ -254,26 +254,29 @@ bool decode_crash_address(uint8_t depth, uintptr_t address, sizedptr debug_line,
     if (!debug_line.ptr || !debug_line.size) return false;
     debug_line_info info = dwarf_decode_lines(debug_line.ptr, debug_line.size, debug_line_str.ptr, debug_line_str.size, address);
     if (info.address == address){
-        kprintf("%i: %s %i:%i", depth, info.file, info.line, info.column);
+        kprintf("%i: %s %i:%i [%x]", depth, info.file, info.line, info.column, address);
         return true;
     }
     return false;
 }
 
 void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_line_str) {
-    for (uint8_t depth = 0; depth < 10 && fp; depth++) {
+
+    if (elr){
+        if (!decode_crash_address(0, elr, debug_line, debug_line_str))
+            kprintf("Exception triggered by %x",(elr));
+    }
+
+    for (uint8_t depth = 1; depth < 10 && fp; depth++) {
         uintptr_t return_address = (*(uintptr_t*)(fp + 8));
 
         if (return_address != 0){
+            return_address -= 4;//Return address is the next instruction after branching
             if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
                 kprintf("%i: caller address: %x", depth, return_address, return_address);
             fp = *(uintptr_t*)fp;
-        }
-        if (return_address == 0 || !fp){
-            if (!decode_crash_address(depth, elr, debug_line, debug_line_str))
-                kprintf("Exception triggered by %x",(elr));
-            return;
-        }
+        } else return;
+        
     }
 }
 
