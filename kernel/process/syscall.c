@@ -103,6 +103,12 @@ uint64_t syscall_sleep(process_t *ctx){
     return 0;
 }
 
+uint64_t syscall_yield(process_t *ctx){
+    syscall_depth--;
+    switch_proc(YIELD);
+    return 0;
+}
+
 uint64_t syscall_halt(process_t *ctx){
     kprintf("Process has ended with code %i",ctx->PROC_X0);
     syscall_depth--;
@@ -186,7 +192,7 @@ uint64_t syscall_fopen(process_t *ctx){
     char path[255];
     if (!(ctx->PROC_PRIV) && strstart("/resources/", req_path, true) == 11){
         string_format_buf(path, sizeof(path),"%s%s", ctx->bundle, req_path);
-    } else memcpy(path, req_path, strlen(req_path, 0));
+    } else memcpy(path, req_path, strlen(req_path, 0) + 1);
     //TODO: Restrict access to own bundle, own fs and require privilege escalation for full-ish filesystem access
     file *descriptor = (file*)ctx->PROC_X1;
     return open_file(path, descriptor);
@@ -232,6 +238,7 @@ syscall_entry syscalls[] = {
     [GPU_CHAR_SIZE_CODE] = syscall_char_size,
     [RESIZE_DRAW_CTX_CODE] = syscall_gpu_resize_ctx,
     [SLEEP_CODE] = syscall_sleep,
+    [PROCESS_YIELD_CODE] = syscall_yield,
     [HALT_CODE] = syscall_halt,
     [EXEC_CODE] = syscall_exec,
     [GET_TIME_CODE] = syscall_get_time,
