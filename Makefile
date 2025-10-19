@@ -11,17 +11,20 @@ endif
 
 .PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
 
-all: shared kernel user utils
+all: kshared kernel shared user utils
 	@echo "Build complete."
 	./createfs
 
-shared:
-	$(MAKE) -C shared
+kshared:
+	$(MAKE) -C shared SH_FLAGS=-DKERNEL BUILD_DIR=./kbuild TARGET=klibshared.a
+
+shared: 
+	$(MAKE) -C shared BUILD_DIR=./build
 
 user: shared prepare-fs
 	$(MAKE) -C user
 
-kernel: shared
+kernel: kshared
 	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU)
 
 utils: shared prepare-fs
@@ -53,8 +56,8 @@ debug:
 	./rundebug MODE=$(MODE) $(ARGS)
 
 dump:
-	$(OBJCOPY) -O binary kernel.elf kernel.img
 	$(ARCH)-objdump -D kernel.elf > dump
+	$(MAKE) -C user $@
 
 install:
 	$(MAKE) clean
@@ -62,6 +65,7 @@ install:
 	cp kernel.img $(BOOTFS)/kernel8.img
 	cp kernel.img $(BOOTFS)/kernel_2712.img
 	cp config.txt $(BOOTFS)/config.txt
+	cp kernel.elf $(BOOTFS)/kernel.elf
 
 prepare-fs:
 	@echo "creating dirs"

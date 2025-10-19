@@ -9,6 +9,8 @@
 #include "ui/draw/draw.h"
 #include "files/fs.h"
 
+#include "net/transport_layer/socket_types.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -34,12 +36,14 @@ extern uint32_t gpu_char_size(uint32_t scale);
 
 extern uint64_t get_time();
 
-extern bool bind_port(uint16_t port);
-extern bool unbind_port(uint16_t port);
-extern int network_alloc_ephemeral_port_current();
-extern int send_packet(uintptr_t frame_ptr, uint32_t frame_len);
-extern int read_packet(sizedptr *out_frame);
-extern bool dispatch_enqueue_frame(const sizedptr *frame);
+extern bool socket_create(Socket_Role role, protocol_t protocol, SocketHandle *out_handle);
+extern int32_t socket_bind(SocketHandle *handle, ip_version_t ip_version, uint16_t port);
+extern int32_t socket_connect(SocketHandle *handle, SockDstKind dst_kind, void* dst, uint16_t port);
+extern int32_t socket_listen(SocketHandle *handle);
+extern bool socket_accept(SocketHandle *spec);
+extern size_t socket_send(SocketHandle *handle, SockDstKind dst_kind, const void* dst, uint16_t port, void *packet, size_t size);
+extern bool socket_receive(SocketHandle *handle, void *packet, size_t size, net_l4_endpoint* out_src);
+extern int32_t socket_close(SocketHandle *handle);
 
 void printf(const char *fmt, ...);
 

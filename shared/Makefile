@@ -30,18 +30,18 @@ $(TARGET): $(OBJ)
 
 $(BUILD_DIR)/%.o: %.S
 	@mkdir -p $(dir $@)
-	$(VAS) $(CFLAGS) -c $< -o $@
+	$(VAS) $(CFLAGS) $(SH_FLAGS) -c $< -o $@
 
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
+	$(VCC) $(CFLAGS) $(SH_FLAGS) -c -MMD -MP $< -o $@
 
 $(BUILD_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
+	$(VCXX) $(CXXFLAGS) $(SH_FLAGS) -c -MMD -MP $< -o $@
 
-# Might want to also delete the directories created inside BUILD_DIR
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
+	$(RM) -r $(BUILD_DIR)
 
 -include $(DEP)

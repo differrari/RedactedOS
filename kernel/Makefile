@@ -31,10 +31,11 @@ all: $(TARGET)
 prepare:
 	mkdir -p $(BUILD_DIR)
 
-$(TARGET): ../shared/libshared.a prepare $(OBJ)
+$(TARGET): ../shared/klibshared.a prepare $(OBJ)
 	echo $(LDFLAGS)
-	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/libshared.a $(BUILD_DIR)/boot.o
+	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/klibshared.a $(BUILD_DIR)/boot.o
 	$(OBJCOPY) -O binary $(ELF) $@
+	cp $(ELF) ../fs/kernel.elf
 
 $(BUILD_DIR)/%.o: %.S
 	@mkdir -p $(dir $@)
@@ -50,5 +51,6 @@ $(BUILD_DIR)/%.o: %.cpp
 
 clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(ELF) $(TARGET)
+	$(RM) -r $(BUILD_DIR)
 
 -include $(DEP)

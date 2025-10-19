@@ -38,7 +38,7 @@ struct virtio_pci_cap {
 
 static bool virtio_verbose = false;
 
-uint32_t feature_mask;
+static uint64_t feature_mask = 0;
 
 void virtio_enable_verbose(){
     virtio_verbose = true;
@@ -60,29 +60,35 @@ void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mm
     while (offset) {
         uint64_t cap_addr = pci_addr + offset;
         struct virtio_pci_cap* cap = (struct virtio_pci_cap*)(uintptr_t)cap_addr;
-        uint64_t bar_addr = pci_get_bar_address(pci_addr, 0x10, cap->bar);
-        uint64_t val = read32(bar_addr) & ~0xF;
+
+        uint64_t bar_reg = pci_get_bar_address(pci_addr, 0x10, cap->bar);
+        uint32_t raw_lo = read32(bar_reg);
+        uint64_t bar_base = (uint64_t)(raw_lo & ~0xFULL);
+        if (raw_lo & 0x4) {
+            uint32_t raw_hi = read32(bar_reg + 4);
+            bar_base |= ((uint64_t)raw_hi) << 32;
+        }
 
         if (cap->cap_vndr == 0x9) {
-            if (cap->cfg_type < VIRTIO_PCI_CAP_PCI_CFG && val == 0){
+            if (cap->cfg_type < VIRTIO_PCI_CAP_PCI_CFG && bar_base == 0){
                 kprintfv("[VIRTIO] Setting up bar");
-                val = pci_setup_bar(pci_addr, cap->bar, mmio_start, mmio_size);
-                kprintfv("[VIRTIO] Bar @ %x", val);
+                bar_base = pci_setup_bar(pci_addr, cap->bar, mmio_start, mmio_size);
+                kprintfv("[VIRTIO] Bar @ %llx", (unsigned long long)bar_base);
             }
 
             if (cap->cfg_type == VIRTIO_PCI_CAP_COMMON_CFG){
-                kprintfv("[VIRTIO] Common CFG @ %x",val + cap->offset);
-                dev->common_cfg = (struct virtio_pci_common_cfg*)(uintptr_t)(val + cap->offset);
+                kprintfv("[VIRTIO] Common CFG @ %llx",(unsigned long long)(bar_base + cap->offset));
+                dev->common_cfg = (struct virtio_pci_common_cfg*)(uintptr_t)(bar_base + cap->offset);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_NOTIFY_CFG) {
-                kprintfv("[VIRTIO] Notify CFG @ %x",val + cap->offset);
-                dev->notify_cfg = (uint8_t*)(uintptr_t)(val + cap->offset);
+                kprintfv("[VIRTIO] Notify CFG @ %llx",(unsigned long long)(bar_base + cap->offset));
+                dev->notify_cfg = (uint8_t*)(uintptr_t)(bar_base + cap->offset);
                 dev->notify_off_multiplier = *(uint32_t*)(uintptr_t)(cap_addr + sizeof(struct virtio_pci_cap));
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_DEVICE_CFG){
-                kprintfv("[VIRTIO] Device CFG @ %x",val + cap->offset);
-                dev->device_cfg = (uint8_t*)(uintptr_t)(val + cap->offset);
+                kprintfv("[VIRTIO] Device CFG @ %llx",(unsigned long long)(bar_base + cap->offset));
+                dev->device_cfg = (uint8_t*)(uintptr_t)(bar_base + cap->offset);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_ISR_CFG){
-                kprintfv("[VIRTIO] ISR CFG @ %x",val + cap->offset);
-                dev->isr_cfg = (uint8_t*)(uintptr_t)(val + cap->offset);
+                kprintfv("[VIRTIO] ISR CFG @ %llx",(unsigned long long)(bar_base + cap->offset));
+                dev->isr_cfg = (uint8_t*)(uintptr_t)(bar_base + cap->offset);
             }
         }
 
@@ -101,40 +107,58 @@ bool virtio_init_device(virtio_device *dev) {
     cfg->device_status |= VIRTIO_STATUS_DRIVER;
 
     cfg->device_feature_select = 0;
-    uint32_t features = cfg->device_feature;
+    uint32_t f_lo = cfg->device_feature;
+    cfg->device_feature_select = 1;
+    uint32_t f_hi = cfg->device_feature;
+    uint64_t features = ((uint64_t)f_hi << 32) | f_lo;
 
-    kprintfv("Features %x",features);
+    kprintfv("Features %llx",(unsigned long long)features);
 
-    features &= feature_mask;
+    uint64_t negotiated = (features & feature_mask);
 
-    kprintfv("Negotiated features %x",features);
+    kprintfv("Negotiated features %llx",(unsigned long long)negotiated);
 
     cfg->driver_feature_select = 0;
-    cfg->driver_feature = features;
+    cfg->driver_feature = (uint32_t)(negotiated & 0xFFFFFFFFULL);
+    cfg->driver_feature_select = 1;
+    cfg->driver_feature = (uint32_t)(negotiated >> 32);
 
     cfg->device_status |= VIRTIO_STATUS_FEATURES_OK;
     if (!(cfg->device_status & VIRTIO_STATUS_FEATURES_OK)){
-        kprintf("Failed to negotiate features. Supported features %x",features);
+        kprintf("Failed to negotiate features. Supported features %llx",(unsigned long long)features);
         return false;
     }
 
     dev->memory_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, false);
+    if (!dev->memory_page) return false;
+
+    dev->status_dma = (uint8_t*)kalloc(dev->memory_page, 64, ALIGN_4KB, MEM_PRIV_KERNEL);
+    if (!dev->status_dma) return false;
+    *dev->status_dma = 0;
 
     uint32_t queue_index = 0;
     uint32_t size;
     while ((size = select_queue(dev,queue_index))){
-        uint64_t base = (uintptr_t)kalloc(dev->memory_page, 16 * size, ALIGN_4KB, MEM_PRIV_KERNEL);
-        uint64_t avail = (uintptr_t)kalloc(dev->memory_page, 4 + (2 * size), ALIGN_4KB, MEM_PRIV_KERNEL);
-        uint64_t used = (uintptr_t)kalloc(dev->memory_page, sizeof(uint16_t) * (2 + size), ALIGN_4KB, MEM_PRIV_KERNEL);
+        uint64_t desc_sz  = 16ULL * size;
+        uint64_t avail_sz = 4ULL + 2ULL * size;
+        uint64_t used_sz  = 4ULL + 8ULL * size;
+        uint64_t base = (uintptr_t)kalloc(dev->memory_page, desc_sz,  ALIGN_4KB, MEM_PRIV_KERNEL);
+        uint64_t avail = (uintptr_t)kalloc(dev->memory_page, avail_sz, ALIGN_4KB, MEM_PRIV_KERNEL);
+        uint64_t used = (uintptr_t)kalloc(dev->memory_page, used_sz,  ALIGN_4KB, MEM_PRIV_KERNEL);
 
-        kprintfv("[VIRTIO QUEUE %i] Device base %x",queue_index,base);
-        kprintfv("[VIRTIO QUEUE %i] Device avail %x",queue_index,avail);
-        kprintfv("[VIRTIO QUEUE %i] Device used %x",queue_index,used);
+        dev->common_cfg->queue_desc = base;
+        dev->common_cfg->queue_driver = avail;
+        dev->common_cfg->queue_device = used;
 
-        cfg->queue_desc = base;
-        cfg->queue_driver = avail;
-        cfg->queue_device = used;
-        cfg->queue_enable = 1;
+        volatile struct virtq_avail* A = (volatile struct virtq_avail*)(uintptr_t)avail;
+        A->flags = 0;
+        A->idx = 0;
+
+        volatile struct virtq_used* U = (volatile struct virtq_used*)(uintptr_t)used;
+        U->flags = 0;
+        U->idx = 0;
+
+        dev->common_cfg->queue_enable = 1;
         queue_index++;
     }
 
@@ -167,8 +191,8 @@ bool virtio_send_3d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t
     d[1].flags = VIRTQ_DESC_F_NEXT | flags;
     d[1].next = 2;
     
-    uint8_t status = 0;
-    d[2].addr = (uint64_t)&status;
+    *dev->status_dma = 0;
+    d[2].addr = (uint64_t)dev->status_dma;
     d[2].len = 1;
     d[2].flags = VIRTQ_DESC_F_WRITE;
     d[2].next = 0;
@@ -180,7 +204,8 @@ bool virtio_send_3d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t
     *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
 
     while (last_used_idx == u->idx);//TODO: OPT
-    
+
+    uint8_t status = *dev->status_dma;
     if (status != 0)
         kprintf("[VIRTIO OPERATION ERROR]: Wrong status %x",status);
     

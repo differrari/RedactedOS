@@ -27,11 +27,10 @@ string string_from_char(const char c);
 string string_from_hex(uint64_t value);
 bool string_equals(string a, string b);
 string string_replace(const char *str, char orig, char repl);
-string string_format(const char *fmt, ...);
-size_t string_format_buf(char *out, const char *fmt, ...);
-string string_format_va(const char *fmt, va_list args);
-__attribute__((used))
-size_t string_format_va_buf(const char *fmt, char *out, va_list args);
+string string_format(const char *fmt, ...); //TODO __attribute__((format(printf, 1, 2)));
+size_t string_format_buf(char *out, size_t cap, const char *fmt, ...); //TODO __attribute__((format(printf, 3, 4)));
+string string_format_va(const char *fmt, va_list args); //TODO __attribute__((format(printf, 1, 0)));
+size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args); //TODO __attribute__((format(printf, 1, 0)));
 string string_tail(const char *array, uint32_t max_length);
 string string_repeat(char symbol, uint32_t amount);
 
@@ -56,6 +55,7 @@ string string_concat(string a, string b);
 void string_concat_inplace(string *dest, string src);
 void string_append_bytes(string *dest, const void *buf, uint32_t len);
 const char* seek_to(const char *string, char character);
+size_t strncpy(char* dst, size_t cap, const char* src);
 
 #ifdef __cplusplus
 }

@@ -1,11 +1,8 @@
 #include "csocket_http_server.h"
 #include "socket_http_server.hpp"
+#include "net/transport_layer/socket_tcp.hpp"
+#include "net/transport_layer/socket.hpp"
 
-extern "C" {
-    extern void* malloc(uint64_t size);
-    extern void      free(void *ptr, uint64_t size);
-    extern void      sleep(uint64_t ms);
-}
 
 extern "C" {
 
@@ -21,10 +18,10 @@ void http_server_destroy(http_server_handle_t h) {
     delete srv;
 }
 
-int32_t http_server_bind(http_server_handle_t h, uint16_t port) {
-    if (!h) return (int32_t)SOCK_ERR_INVAL;
+int32_t http_server_bind_ex(http_server_handle_t h, const SockBindSpec *spec, uint16_t port) {
+    if (!h || !spec) return (int32_t)SOCK_ERR_INVAL;
     HTTPServer* srv = reinterpret_cast<HTTPServer*>(h);
-    return srv->bind(port);
+    return srv->bind(*spec, port);
 }
 
 int32_t http_server_listen(http_server_handle_t h, int backlog) {
@@ -40,22 +37,15 @@ http_connection_handle_t http_server_accept(http_server_handle_t h) {
     return reinterpret_cast<http_connection_handle_t>(cli);
 }
 
-HTTPRequestMsg http_server_recv_request(http_server_handle_t h,
-                                        http_connection_handle_t c)
-{
+HTTPRequestMsg http_server_recv_request(http_server_handle_t h, http_connection_handle_t c) {
     HTTPRequestMsg empty{};
-    if (!h || !c) {
-        return empty;
-    }
+    if (!h || !c) return empty;
     HTTPServer* srv = reinterpret_cast<HTTPServer*>(h);
     TCPSocket* conn = reinterpret_cast<TCPSocket*>(c);
     return srv->recv_request(conn);
 }
 
-int32_t http_server_send_response(http_server_handle_t h,
-                                http_connection_handle_t c,
-                                const HTTPResponseMsg* res)
-{
+int32_t http_server_send_response(http_server_handle_t h, http_connection_handle_t c, const HTTPResponseMsg *res) {
     if (!h || !c || !res) return (int32_t)SOCK_ERR_INVAL;
     HTTPServer* srv = reinterpret_cast<HTTPServer*>(h);
     TCPSocket* conn = reinterpret_cast<TCPSocket*>(c);

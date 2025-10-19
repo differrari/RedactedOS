@@ -2,19 +2,20 @@
 #include "network_dispatch.hpp"
 #include "process/scheduler.h"
 
-static NetworkDispatch *dispatch = nullptr;
+static NetworkDispatch *dispatch = 0;
 
 bool network_init() {
     dispatch = new NetworkDispatch();
-    return dispatch && dispatch->init();
+    if (!dispatch) return false;
+    return dispatch->init();
 }
 
-void network_handle_download_interrupt() {
-    if (dispatch) dispatch->handle_download_interrupt();
+void network_handle_download_interrupt_nic(uint16_t nic_id) {
+    if (dispatch) dispatch->handle_rx_irq((size_t)nic_id);
 }
 
-void network_handle_upload_interrupt() {
-    if (dispatch) dispatch->handle_upload_interrupt();
+void network_handle_upload_interrupt_nic(uint16_t nic_id) {
+    if (dispatch) dispatch->handle_tx_irq((size_t)nic_id);
 }
 
 int network_net_task_entry(int argc, char* argv[]) {
@@ -24,19 +25,61 @@ int network_net_task_entry(int argc, char* argv[]) {
 
 int net_tx_frame(uintptr_t frame_ptr, uint32_t frame_len) {
     if (!dispatch || !frame_ptr || !frame_len) return -1;
-    return dispatch->enqueue_frame({frame_ptr, frame_len}) ? 0 : -1;
+    uint8_t ix = 1; //legacy
+    if (ix == 0xFF) return -1;
+    return dispatch->enqueue_frame(ix, {frame_ptr, frame_len}) ? 0 : -1;
 }
 
-int net_rx_frame(sizedptr *out_frame) {
-    extern uint16_t get_current_proc_pid();
-    if (!dispatch || !out_frame) return -1;
-    int sz = dispatch->dequeue_packet_for(get_current_proc_pid(), out_frame) ? (int)out_frame->size : 0;
-    return sz;
+int net_tx_frame_on(uint16_t ifindex, uintptr_t frame_ptr, uint32_t frame_len) {
+    if (!dispatch || !frame_ptr || !frame_len) return -1;
+    return dispatch->enqueue_frame(ifindex, {frame_ptr, frame_len}) ? 0 : -1;
 }
 
-const net_l2l3_endpoint* network_get_local_endpoint() {
-    static net_l2l3_endpoint dummy = {};
-    return dispatch ? &dispatch->get_local_ep() : &dummy;
+int net_rx_frame(sizedptr* out_frame) {
+    if (!out_frame) return -1;
+    out_frame->ptr = 0;
+    out_frame->size = 0;
+    return 0;
+}
+
+const uint8_t* network_get_local_mac() {
+    static uint8_t dummy[6] = {0,0,0,0,0,0};
+    if (!dispatch) return dummy;
+    if (1 == 0xFF) return dummy;
+    const uint8_t* m = dispatch->mac(1); //kegacy
+    return m ? m : dummy;
+}
+
+const uint8_t* network_get_mac(uint16_t ifindex) {
+    static uint8_t dummy[6] = {0,0,0,0,0,0};
+    if (!dispatch) return dummy;
+    const uint8_t* m = dispatch->mac(ifindex);
+    return m ? m : dummy;
+}
+
+uint16_t network_get_mtu(uint16_t ifindex) {
+    if (!dispatch) return 0;
+    return dispatch->mtu(ifindex);
+}
+
+uint16_t network_get_header_size(uint16_t ifindex) {
+    if (!dispatch) return 0;
+    return dispatch->header_size(ifindex);
+}
+
+const char* network_get_ifname(uint16_t ifindex) {
+    if (!dispatch) return 0;
+    return dispatch->ifname(ifindex);
+}
+
+const char* network_get_hw_ifname(uint16_t ifindex) {
+    if (!dispatch) return 0;
+    return dispatch->hw_ifname(ifindex);
+}
+
+size_t network_nic_count() {
+    if (!dispatch) return 0;
+    return dispatch->nic_count();
 }
 
 void network_net_set_pid(uint16_t pid) {
@@ -45,6 +88,10 @@ void network_net_set_pid(uint16_t pid) {
 
 uint16_t network_net_get_pid() {
     return dispatch ? dispatch->get_net_pid() : UINT16_MAX;
+}
+
+void network_dump_interfaces() {
+    if (dispatch) dispatch->dump_interfaces();
 }
 
 driver_module net_module = (driver_module){

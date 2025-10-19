@@ -8,6 +8,7 @@
     ret
 .endm
 
+#ifndef KERNEL
 syscall_def malloc, MALLOC_CODE
 syscall_def free, FREE_CODE
 
@@ -25,20 +26,27 @@ syscall_def resize_draw_ctx, RESIZE_DRAW_CTX_CODE
 
 syscall_def gpu_char_size, GPU_CHAR_SIZE_CODE
 
-syscall_def sleep, SLEEP_CODE
-syscall_def process_yield, PROCESS_YIELD_CODE
-syscall_def halt, HALT_CODE
 syscall_def exec, EXEC_CODE
 
 syscall_def get_time, GET_TIME_CODE
 
-syscall_def bind_port, BIND_PORT_CODE
-syscall_def unbind_port, UNBIND_PORT_CODE
-syscall_def send_packet, SEND_PACKET_CODE
-syscall_def read_packet, READ_PACKET_CODE
+syscall_def socket_create, SOCKET_CREATE_CODE
+syscall_def socket_bind, SOCKET_BIND_CODE
+syscall_def socket_connect, SOCKET_CONNECT_CODE
+syscall_def socket_listen, SOCKET_LISTEN_CODE
+syscall_def socket_accept, SOCKET_ACCEPT_CODE
+syscall_def socket_send, SOCKET_SEND_CODE
+syscall_def socket_receive, SOCKET_RECEIVE_CODE
+syscall_def socket_close, SOCKET_CLOSE_CODE
 
 syscall_def fopen, FILE_OPEN_CODE
 syscall_def fread, FILE_READ_CODE
 syscall_def fwrite, FILE_WRITE_CODE
 syscall_def fclose, FILE_CLOSE_CODE
 syscall_def dir_list, DIR_LIST_CODE
+
+#endif
+
+syscall_def sleep, SLEEP_CODE
+syscall_def process_yield, PROCESS_YIELD_CODE
+syscall_def halt, HALT_CODE

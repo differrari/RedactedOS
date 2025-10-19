@@ -8,6 +8,7 @@
 #include "memory/page_allocator.h"
 #include "math/math.h"
 #include "virtio_9p_pci.hpp"
+#include "hw/hw.h"
 
 FAT32FS *fs_driver;
 
@@ -68,6 +69,7 @@ driver_module boot_fs_module = (driver_module){
 Virtio9PDriver *p9Driver;
 
 bool shared_init(){
+    if (BOARD_TYPE != 1) return false;
     p9Driver = new Virtio9PDriver();
     return p9Driver->init(0);
 }

@@ -6,6 +6,7 @@
 #include "std/memory.h"
 #include "math/math.h"
 #include "console/kio.h"
+#include "process/scheduler.h"
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01

@@ -15,9 +15,8 @@
 #include "memory/mmu.h"
 #include "process/syscall.h"
 
-extern void save_context(process_t* proc);
-extern void save_pc_interrupt(process_t* proc);
-extern void restore_context(process_t* proc);
+extern void save_pc_interrupt(uintptr_t ptr);
+extern void restore_context(uintptr_t ptr);
 
 //TODO: use queues, eliminate the max procs limitation
 process_t processes[MAX_PROCS];
@@ -48,12 +47,8 @@ typedef struct proc_open_file {
 
 void* proc_page;
 
-void save_context_registers(){
-    save_context(&processes[current_proc]);
-}
-
 void save_return_address_interrupt(){
-    save_pc_interrupt(&processes[current_proc]);
+    save_pc_interrupt(cpec);
 }
 
 void switch_proc(ProcSwitchReason reason) {
@@ -66,6 +61,7 @@ void switch_proc(ProcSwitchReason reason) {
     }
 
     current_proc = next_proc;
+    cpec = (uintptr_t)&processes[current_proc];
     timer_reset(processes[current_proc].priority);
     process_restore();
 }
@@ -76,7 +72,7 @@ void save_syscall_return(uint64_t value){
 
 void process_restore(){
     syscall_depth--;
-    restore_context(&processes[current_proc]);
+    restore_context(cpec);
 }
 
 bool start_scheduler(){
@@ -159,6 +155,7 @@ void reset_process(process_t *proc){
 void init_main_process(){
     proc_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
     process_t* proc = &processes[0];
+    cpec = (uintptr_t)&processes[0];
     proc->id = next_proc_index++;
     proc->state = BLOCKED;
     proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);

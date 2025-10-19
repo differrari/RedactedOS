@@ -15,6 +15,6 @@ public:
     ~VideoCoreGPUDriver() = default;
     
 protected:
-    uintptr_t original_fb;
-    uint32_t last_offset;
+    uint32_t last_offset = 0;
+    bool mailbox_fallback = false;//Used if swapping framebuffers fails. Pi 5
 };

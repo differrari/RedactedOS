@@ -53,7 +53,7 @@ void bmp_read_image(void *file, size_t size, uint32_t *buf){
     uint32_t padded = ((header->bpp/8) * width) + padding;
     for (uint32_t y = 0; y < height; y++){
         for (uint32_t x = 0; x < (uint32_t)header->width; x++)
-            buf[(y * header->width) + x] = convert_color_bpp(header->bpp, color_data + ((flipped ? height - y - 1 : y) * padded) + x * increment);   
+            buf[(y * header->width) + x] = get_bpp_converted_color(header->bpp, color_data + ((flipped ? height - y - 1 : y) * padded) + x * increment);   
     }
 }
 

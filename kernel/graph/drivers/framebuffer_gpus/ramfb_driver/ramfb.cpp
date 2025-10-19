@@ -17,6 +17,7 @@ typedef struct {
 }__attribute__((packed)) ramfb_structure;
 
 #define RGB_FORMAT_XRGB8888 ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
+#define RGB_FORMAT_ARGB8888 ((uint32_t)('A') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24))
 
 #define bpp 4
 
@@ -32,7 +33,10 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
     file = {};
     screen_size = preferred_screen_size;
 
+    if (!screen_size.width || !screen_size.height) return false;
+
     stride = bpp * screen_size.width;
+    framebuffer_size = (size_t)(stride * screen_size.height);
 
     fw_find_file("etc/ramfb", &file);
     
@@ -40,18 +44,18 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
         kprintf("Ramfb not found");
         return false;
     }
-
-    framebuffer_size = screen_size.width * screen_size.height * bpp;
-
     mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
+    uint8_t* fb_block = (uint8_t*)palloc(framebuffer_size*2, MEM_PRIV_SHARED, MEM_RW, true);
 
-    framebuffer = (uint32_t*)palloc(framebuffer_size, MEM_PRIV_SHARED, MEM_RW, true);
-    back_framebuffer = (uint32_t*)palloc(framebuffer_size, MEM_PRIV_SHARED, MEM_RW, true);
+    if (!fb_block) return false;
+
+    framebuffer = (uint32_t*)fb_block;
+    back_framebuffer = (uint32_t*)(fb_block + framebuffer_size);
 
     ctx = {
         .dirty_rects = {},
         .fb = (uint32_t*)back_framebuffer,
-        .stride = screen_size.width * bpp,
+        .stride = stride,
         .width = screen_size.width,
         .height = screen_size.height,
         .dirty_count = 0,
@@ -68,7 +72,7 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
 void RamFBGPUDriver::update_gpu_fb(){
     ramfb_structure fb = {
         .addr = __builtin_bswap64((uintptr_t)framebuffer),
-        .fourcc = __builtin_bswap32(RGB_FORMAT_XRGB8888),
+        .fourcc = __builtin_bswap32(RGB_FORMAT_ARGB8888),
         .flags = __builtin_bswap32(0),
         .width = __builtin_bswap32(screen_size.width),
         .height = __builtin_bswap32(screen_size.height),

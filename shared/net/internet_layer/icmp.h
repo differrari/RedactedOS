@@ -26,9 +26,7 @@ typedef struct {
 } icmp_data;
 
 void create_icmp_packet(uintptr_t p,
-                        const net_l2l3_endpoint *src,
-                        const net_l2l3_endpoint *dst,
-                        const icmp_data *data);
+                        const icmp_data *d);
 
 void icmp_input(uintptr_t ptr,
                 uint32_t len,

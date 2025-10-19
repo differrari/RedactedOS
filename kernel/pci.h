@@ -11,6 +11,16 @@ typedef struct {
     uint64_t size;
 } pci_device_mmio;
 
+typedef struct {
+    uint64_t addr;
+    uint16_t vendor;
+    uint16_t device;
+    uint8_t class_code;
+    uint8_t subclass;
+    uint8_t prog_if;
+} pci_device_info;
+
+size_t pci_enumerate(pci_device_info* out, size_t max);
 uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id);
 uint64_t pci_get_bar_address(uint64_t base, uint8_t offset, uint8_t index);
 uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_start, uint64_t *mmio_size);

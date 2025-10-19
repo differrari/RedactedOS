@@ -22,6 +22,10 @@ enum {
 };
 
 #define DHCP_FRAME_MAX ( sizeof(eth_hdr_t) + sizeof(ipv4_hdr_t) + sizeof(udp_hdr_t) + sizeof(dhcp_packet) )
+#define DHCP_MAGIC_COOKIE_0 0x63
+#define DHCP_MAGIC_COOKIE_1 0x82
+#define DHCP_MAGIC_COOKIE_2 0x53
+#define DHCP_MAGIC_COOKIE_3 0x63
 
 typedef struct __attribute__((packed)) {
     uint8_t  op;
@@ -47,13 +51,21 @@ typedef struct {
     uint32_t offered_ip;
 } dhcp_request;
 
-sizedptr dhcp_build_packet(const dhcp_request *req,
-                                uint8_t msg_type,
-                                uint32_t xid);
+typedef enum {
+    DHCPK_SELECT = 0,
+    DHCPK_RENEW = 1,
+    DHCPK_REBIND = 2,
+    DHCPK_INFORM = 3,
+    DHCPK_DISCOVER = 4
+} dhcp_req_kind;
+
+sizedptr dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t xid, dhcp_req_kind kind, bool broadcast);
 
 dhcp_packet* dhcp_parse_frame_payload(uintptr_t frame_ptr);
 
-uint16_t dhcp_parse_option(const dhcp_packet *p, uint16_t wanted);
+bool dhcp_has_valid_cookie(const dhcp_packet *p);
+
+uint16_t dhcp_parse_option_bounded(const dhcp_packet *p, uint32_t payload_len, uint8_t wanted);
 
 uint8_t dhcp_option_len(const dhcp_packet *p, uint16_t idx);
 
