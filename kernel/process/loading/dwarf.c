@@ -427,7 +427,7 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 						.column = state.column,
 						.file = files[state.file]
 					};
-				} else if (state.address > address) {
+				} else if (state.address > address) {//TODO: This can report false positives. Often at math.h:1 it seems
 				    return (debug_line_info){
 						.address = address,
 						.line = previous_state.line,

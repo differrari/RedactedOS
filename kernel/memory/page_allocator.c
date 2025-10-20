@@ -95,7 +95,9 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
                         register_proc_memory(address, address, attributes, level);
                 }
                 kprintfv("[page_alloc] Final address %x", (i * 64 * PAGE_SIZE));
-                return (void*)(i * 64 * PAGE_SIZE);
+                void* addr = (void*)(i * 64 * PAGE_SIZE);
+                if (full) memset(addr, 0, size);
+                return addr;
             }
         }
     }
@@ -149,7 +151,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
             }
 
             kprintfv("[page_alloc] Final address %x", first_address);
-
+            if (full) memset((void*)first_address,0,size);
             return (void*)first_address;
         } else if (!skipped_regs) start = (i + 1) * 64;
     }
@@ -199,7 +201,6 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
 
     if (size >= PAGE_SIZE){
         void* ptr = palloc(size, level, info->attributes, true);
-        memset((void*)ptr, 0, size);
         return ptr;
     }
 
