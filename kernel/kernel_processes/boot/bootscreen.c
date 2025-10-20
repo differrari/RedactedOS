@@ -91,11 +91,9 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
                 gpu_draw_pixel(interpolated, 0xFFFFFFFF);
             }
         }
-        keypress kp;
-        if (sys_read_input_current(&kp))
-            if (kp.keys[0] != 0){
-                stop_current_process(0);
-            }
+        kbd_event kbd = {};
+        if (sys_read_event_current(&kbd))
+            stop_current_process(0);
         gpu_flush();
     }
 }
@@ -120,7 +118,7 @@ static void play_startup_sound(){
     for (int i = 0; i < MIXER_INPUTS; ++i) mixin[i] = -1;
     mixer_set_level(AUDIO_LEVEL_MAX * 0.75f);
     if (wav_load_as_int16("/boot/redos/startup.wav", audio)){
-        mixin[0] = play_audio_async(&audio[0], AUDIO_LEVEL_MAX);
+        mixin[0] = play_audio_async(&audio[0], AUDIO_LEVEL_MAX/4);
     }else{
         static envelope_defn env = { ENV_ASD, 0.025, 0.03 };
         static sound_defn s0 = { WAVE_SQUARE, 440, 440 };
@@ -132,9 +130,9 @@ static void play_startup_sound(){
         sound_shape(&env, &audio[1]);
         sound_create(4.f, 0.30f, &s2, &audio[2]);
         sound_shape(&env, &audio[2]);
-        mixin[0] = play_audio_async(&audio[0], AUDIO_LEVEL_MAX);
-        mixin[1] = play_audio_async(&audio[1], AUDIO_LEVEL_MAX * 0.8);
-        mixin[2] = play_audio_async(&audio[2], AUDIO_LEVEL_MAX * 0.7);
+        mixin[0] = play_audio_async(&audio[0], AUDIO_LEVEL_MAX/4);
+        mixin[1] = play_audio_async(&audio[1], AUDIO_LEVEL_MAX/5);
+        mixin[2] = play_audio_async(&audio[2], AUDIO_LEVEL_MAX/6);
     }
 }
 

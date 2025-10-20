@@ -83,7 +83,7 @@ void USBKeyboard::process_keypress(keypress *rkp){
         register_keypress(kp);
     } else
         repeated_keypresses++;
-    last_keypress = kp;
+    memcpy(&last_keypress, rkp, sizeof(keypress));
 
     requesting = false;
 }
