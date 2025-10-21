@@ -58,7 +58,7 @@ void Launcher::draw_desktop(){
     if (process_active){
         active_proc = nullptr;
         sys_focus_current();
-        load_entries();
+        // load_entries();//TODO: Bring this back once list directories is done better
         get_window_ctx(&ctx);
         rendered_full = false;
         process_active = false;
