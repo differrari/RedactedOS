@@ -426,7 +426,7 @@ void png_process_raw(uintptr_t raw_img, uint32_t w, uint32_t h, uint16_t bpp, ui
                         uint32_t diag = buf[((y - 1) * w) + x - 1];
                         current += paeth_predict(prev, top, diag);
                     }
-                    return;
+                    break;
             }
             buf[(y * w) + x] = convert_bpp_color(bpp, current); 
         }
