@@ -56,6 +56,8 @@ uintptr_t realloc(uintptr_t old_ptr, size_t old_size, size_t new_size);
 
 sizedptr dir_list(const char *path);
 
+extern bool icmp_ping_sys(ip_version_t ver, const void* ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, void* out_result);
+
 #ifdef __cplusplus
 }
 #endif

@@ -55,7 +55,7 @@ $PRIVILEGE qemu-system-aarch64 \
   -m 512M \
   -kernel kernel.elf \
   -display $DISPLAY_MODE${GL:+,gl=$GL} \
-  -device ramfb \
+  -device $SELECTED_GPU \
   $NETDEV \
   -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56,speed=10000,duplex=full \
   $DUMP \

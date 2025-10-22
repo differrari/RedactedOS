@@ -48,3 +48,5 @@ syscall_def fread, FILE_READ_CODE
 syscall_def fwrite, FILE_WRITE_CODE
 syscall_def fclose, FILE_CLOSE_CODE
 syscall_def dir_list, DIR_LIST_CODE
+
+syscall_def icmp_ping_sys, ICMP_PING_CODE
