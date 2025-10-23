@@ -219,38 +219,6 @@ uint64_t syscall_dir_list(process_t *ctx){
     return 0;
 }
 
-static uint64_t syscall_icmp_ping(process_t *ctx) {
-    ip_version_t ver = (ip_version_t)ctx->PROC_X0;
-    const void *ip_ptr = (const void*)ctx->PROC_X1;
-    uint16_t id = (uint16_t)ctx->PROC_X2;
-    uint16_t seq = (uint16_t)ctx->PROC_X3;
-    uint32_t toMs = (uint32_t)ctx->PROC_X4;
-
-    if (!ip_ptr) return ((uint64_t)PING_UNKNOWN_ERROR << 32);
-    //return 0-31 rtt_ms 32-47 status 48-55 icmp_type 56-63 icmp_code
-    switch (ver) {
-        case IP_VER4: {
-            uint32_t dst_ip_v4 = 0;
-            memcpy(&dst_ip_v4, ip_ptr, sizeof(uint32_t));
-            ping_result_t res = {0};
-            icmp_ping(dst_ip_v4, id, seq, toMs, &res);
-            uint64_t ret = 0;
-            ret |= (uint64_t)res.rtt_ms;
-            ret |= ((uint64_t)res.status << 32);
-            ret |= ((uint64_t)res.icmp_type << 48);
-            ret |= ((uint64_t)res.icmp_code << 56);
-            return ret;
-        }
-        case IP_VER6: { //TODO unimplemented
-            uint64_t ret = 0;
-            ret |= ((uint64_t)PING_UNKNOWN_ERROR << 32);
-            ret |= ((uint64_t)0xFF << 48);
-            ret |= ((uint64_t)0xFF << 56);
-            return ret;
-        }
-        default: return ((uint64_t)PING_UNKNOWN_ERROR << 32);
-    }
-}
 
 syscall_entry syscalls[] = {
     [MALLOC_CODE] = syscall_malloc,
@@ -281,7 +249,6 @@ syscall_entry syscalls[] = {
     [FILE_WRITE_CODE] = syscall_fwrite,
     [FILE_CLOSE_CODE] = syscall_fclose,
     [DIR_LIST_CODE] = syscall_dir_list,
-    [ICMP_PING_CODE] = syscall_icmp_ping,
 };
 
 void backtrace(uintptr_t fp, uintptr_t elr) {

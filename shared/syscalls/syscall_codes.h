@@ -38,5 +38,3 @@
 #define FILE_CLOSE_CODE             63
 
 #define DIR_LIST_CODE               70
-
-#define ICMP_PING_CODE              80

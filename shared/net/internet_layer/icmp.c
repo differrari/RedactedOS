@@ -21,7 +21,7 @@ typedef struct {
 
 static ping_slot_t g_pending[MAX_PENDING] = {0};
 
-static int  alloc_slot(uint16_t id, uint16_t seq){
+static int alloc_slot(uint16_t id, uint16_t seq) {
     for(int i=0;i<MAX_PENDING;i++){
         if(!g_pending[i].in_use){
             g_pending[i].in_use = true;
@@ -92,7 +92,10 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
     icmp_packet *pkt = (icmp_packet*)ptr;
     uint16_t recv_ck = pkt->checksum;
     pkt->checksum = 0;
-    if (checksum16((uint16_t*)pkt, len) != recv_ck) return;
+    if (checksum16((uint16_t*)pkt, len) != recv_ck) {
+        pkt->checksum = recv_ck;
+        return;
+    }
     pkt->checksum = recv_ck;
 
     uint8_t type = pkt->type;
@@ -124,7 +127,7 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
         return;
     }
 
-    if(type == ICMP_ECHO_REPLY) {
+    if (type == ICMP_ECHO_REPLY) {
         mark_received(id, sq, type, 0);
         return;
     }
@@ -171,7 +174,7 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
 
     uint32_t waited = 0;
     while(waited < timeout_ms){
-        if(g_pending[slot].received){
+        if (g_pending[slot].received) {
             if (out) {
                 out->icmp_type = g_pending[slot].rx_type;
                 out->icmp_code = g_pending[slot].rx_code;

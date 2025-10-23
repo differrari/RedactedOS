@@ -9,10 +9,12 @@ SECTIONS {
     }
     .data : { *(.data) }
     __bss_start = .;
-    .bss :
-    {
-        bss = .;
-        *(.bss)
+    .bss : {
+        . = ALIGN(16);
+        __bss_start = .;
+        *(.bss .bss.* COMMON)
+        . = ALIGN(16);
+        __bss_end = .;
     }
     . = ALIGN(0x1000);
     __bss_end = .;

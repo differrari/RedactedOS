@@ -11,6 +11,7 @@
 #include "networking/interface_manager.h"
 #include "syscalls/syscalls.h"
 #include "process/scheduler.h"
+#include "net/internet_layer/ipv4_utils.h"
 
 #define RX_INTR_BATCH_LIMIT 32
 #define TASK_RX_BATCH_LIMIT 32

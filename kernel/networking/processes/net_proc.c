@@ -12,6 +12,7 @@
 #include "net/link_layer/arp.h"
 
 #include "net/internet_layer/ipv4.h"
+#include "net/internet_layer/ipv4_utils.h"
 
 #include "net/transport_layer/csocket_udp.h"
 

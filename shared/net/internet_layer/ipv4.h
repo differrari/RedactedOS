@@ -33,8 +33,6 @@ typedef struct {
     ipv4_tx_scope_t scope;
 } ipv4_tx_opts_t;
 
-void ipv4_to_string(uint32_t ip, char* buf);
-
 void ipv4_send_packet(uint32_t dst_ip,
                       uint8_t proto,
                       sizedptr segment,
