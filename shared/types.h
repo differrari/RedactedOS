@@ -54,6 +54,8 @@ typedef unsigned char uint8_t;
 #define UINT32_MAX 0xFFFFFFFF
 #define UINT8_MAX 0xFF
 
+#define INT16_MAX 0x7FFF
+
 #define N_ARR(arr) (sizeof(arr)/sizeof((arr)[0]))
 
 typedef signed int int32_t;
@@ -61,8 +63,6 @@ typedef signed long int64_t;
 typedef signed long intptr_t;
 typedef signed short int16_t;
 typedef signed char int8_t;
-
-#define INT16_MAX  0x7FFF
 
 typedef struct sizedptr {
     uintptr_t ptr;
