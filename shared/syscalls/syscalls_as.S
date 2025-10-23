@@ -48,5 +48,4 @@ syscall_def dir_list, DIR_LIST_CODE
 #endif
 
 syscall_def sleep, SLEEP_CODE
-syscall_def process_yield, PROCESS_YIELD_CODE
 syscall_def halt, HALT_CODE

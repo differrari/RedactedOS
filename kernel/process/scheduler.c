@@ -228,6 +228,7 @@ process_t *get_all_processes(){
 }
 
 void sleep_process(uint64_t msec){
+    if (!msec) switch_proc(YIELD);
     if (sleep_count < MAX_PROCS){
         processes[current_proc].state = BLOCKED;
         sleeping[sleep_count++] = (sleep_tracker){
