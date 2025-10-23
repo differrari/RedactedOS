@@ -1,7 +1,7 @@
 #include "OutputAudioDevice.hpp"
 #include "memory/page_allocator.h"
 
-#define BUF_SIZE PAGE_SIZE * 3
+#define BUF_SIZE PAGE_SIZE * 2
 
 void OutputAudioDevice::populate(){
     buffer = (uintptr_t)palloc(BUF_SIZE, MEM_PRIV_KERNEL, MEM_RW, true);
