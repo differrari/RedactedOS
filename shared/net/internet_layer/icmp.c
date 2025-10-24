@@ -10,7 +10,8 @@
 
 typedef struct {
     bool in_use;
-    uint16_t id, seq;
+    uint16_t id;
+    uint16_t seq;
     bool received;
     uint8_t rx_type;
     uint8_t rx_code;
@@ -21,8 +22,8 @@ typedef struct {
 static ping_slot_t g_pending[MAX_PENDING] = {0};
 
 static int alloc_slot(uint16_t id, uint16_t seq) {
-    for(int i=0;i<MAX_PENDING;i++){
-        if(!g_pending[i].in_use){
+    for (int i = 0; i < MAX_PENDING; i++) {
+        if (!g_pending[i].in_use) {
             g_pending[i].in_use = true;
             g_pending[i].id = id;
             g_pending[i].seq = seq;
@@ -37,13 +38,13 @@ static int alloc_slot(uint16_t id, uint16_t seq) {
     return -1;
 }
 
-static void mark_received(uint16_t id,uint16_t seq,uint8_t type,uint8_t code) {
-    for (int i=0; i < MAX_PENDING; i++) {
-        if (g_pending[i].in_use && g_pending[i].id==id && g_pending[i].seq==seq) {
-            g_pending[i].received=true;
-            g_pending[i].rx_type=type;
-            g_pending[i].rx_code=code;
-            g_pending[i].end_ms=(uint32_t)get_time();
+static void mark_received(uint16_t id, uint16_t seq, uint8_t type, uint8_t code) {
+    for (int i = 0; i < MAX_PENDING; i++) {
+        if (g_pending[i].in_use && g_pending[i].id == id && g_pending[i].seq == seq) {
+            g_pending[i].received = true;
+            g_pending[i].rx_type = type;
+            g_pending[i].rx_code = code;
+            g_pending[i].end_ms = (uint32_t)get_time();
             return;
         }
     }
@@ -68,9 +69,7 @@ static uintptr_t build_echo(uint16_t id, uint16_t seq, const uint8_t* payload, u
     return buf;
 }
 
-bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, const void* tx_opts_or_null, uint32_t ttl, ping_result_t* out){
-    (void)ttl;
-
+bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, const void* tx_opts_or_null, uint32_t ttl, ping_result_t* out) {
     int slot = alloc_slot(id, seq);
     if (slot < 0) {
         if (out) {
@@ -91,12 +90,12 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
             out->icmp_type = 0xFF;
             out->icmp_code = 0xFF;
         }
-        if (slot >= 0 && slot < MAX_PENDING) g_pending[slot].in_use = false;
+        g_pending[slot].in_use = false;
         return false;
     }
 
-    ipv4_send_packet(dst_ip, 1, (sizedptr){buf, tot_len}, (const ipv4_tx_opts_t*)tx_opts_or_null);
-    free((void*)buf, 8+56);
+    ipv4_send_packet(dst_ip, 1, (sizedptr){buf, tot_len}, (const ipv4_tx_opts_t*)tx_opts_or_null, ttl);
+    free((void*)buf, 8 + 56);
 
     uint32_t start = (uint32_t)get_time();
     for (;;) {
@@ -104,22 +103,36 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
             if (out) {
                 out->icmp_type = g_pending[slot].rx_type;
                 out->icmp_code = g_pending[slot].rx_code;
-                if (g_pending[slot].rx_type == ICMP_ECHO_REPLY) out->status = PING_OK;
-                else if (g_pending[slot].rx_type == ICMP_TIME_EXCEEDED) out->status = PING_TTL_EXPIRED;
-                else if (g_pending[slot].rx_type == ICMP_PARAM_PROBLEM) out->status = PING_PARAM_PROBLEM;
-                else if (g_pending[slot].rx_type == ICMP_REDIRECT) out->status = PING_REDIRECT;
-                else if (g_pending[slot].rx_type == ICMP_DEST_UNREACH) out->status = PING_UNKNOWN_ERROR;
-                else out->status = PING_UNKNOWN_ERROR;
+                switch (g_pending[slot].rx_type) {
+                    case ICMP_ECHO_REPLY: out->status = PING_OK; break;
+                    case ICMP_DEST_UNREACH:
+                        switch (g_pending[slot].rx_code) {
+                            case 0: out->status = PING_NET_UNREACH; break;
+                            case 1: out->status = PING_HOST_UNREACH; break;
+                            case 2: out->status = PING_PROTO_UNREACH; break;
+                            case 3: out->status = PING_PORT_UNREACH; break;
+                            case 4: out->status = PING_FRAG_NEEDED; break;
+                            case 5: out->status = PING_SRC_ROUTE_FAILED; break;
+                            case 13: out->status = PING_ADMIN_PROHIBITED; break;
+                            default: out->status = PING_UNKNOWN_ERROR; break;
+                        }
+                        break;
+                    case ICMP_TIME_EXCEEDED: out->status = PING_TTL_EXPIRED; break;
+                    case ICMP_PARAM_PROBLEM: out->status = PING_PARAM_PROBLEM; break;
+                    case ICMP_REDIRECT: out->status = PING_REDIRECT; break;
+                    default: out->status = PING_UNKNOWN_ERROR; break;
+                }
 
                 if (g_pending[slot].end_ms >= g_pending[slot].start_ms) out->rtt_ms = g_pending[slot].end_ms - g_pending[slot].start_ms;
                 else out->rtt_ms = 0;
             }
             bool ok = (g_pending[slot].rx_type == ICMP_ECHO_REPLY);
-            if (slot >= 0 && slot < MAX_PENDING) g_pending[slot].in_use = false;
+            g_pending[slot].in_use = false;
             return ok;
         }
+
         uint32_t now = (uint32_t)get_time();
-        if(now - start >= timeout_ms) break;
+        if (now - start >= timeout_ms) break;
         sleep(5);
     }
 
@@ -129,7 +142,7 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
         out->icmp_type = 0xFF;
         out->icmp_code = 0xFF;
     }
-    if ( slot >= 0 && slot < MAX_PENDING) g_pending[slot].in_use = false;
+    g_pending[slot].in_use = false;
     return false;
 }
 
@@ -139,12 +152,9 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
     icmp_packet* pkt = (icmp_packet*)ptr;
     uint16_t recv_ck = pkt->checksum;
     pkt->checksum = 0;
-    uint16_t calc = checksum16((uint16_t*)pkt,len);
-    if (calc != recv_ck) {
-        pkt->checksum = recv_ck;
-        return;
-    }
+    uint16_t calc = checksum16((uint16_t*)pkt, len);
     pkt->checksum = recv_ck;
+    if (calc != recv_ck) return;
 
     uint8_t type = pkt->type;
     uint8_t code = pkt->code;
@@ -153,10 +163,10 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
     uint32_t pay = len - 8;
     if (pay > 56) pay = 56;
 
-    if (type==ICMP_ECHO_REQUEST) {
+    if (type == ICMP_ECHO_REQUEST) {
         uintptr_t buf = (uintptr_t)malloc(8 + 56);
         if (!buf) return;
-        icmp_packet *rp = (icmp_packet *)buf;
+        icmp_packet *rp = (icmp_packet*)buf;
         rp->type = ICMP_ECHO_REPLY;
         rp->code = 0;
         rp->id = bswap16(id);
@@ -165,23 +175,17 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
         if (pay) memcpy(rp->payload, pkt->payload, pay);
         rp->checksum = 0;
         uint32_t rlen = 8 + pay;
-        rp->checksum = checksum16((uint16_t *)rp, rlen);
+        rp->checksum = checksum16((uint16_t*)rp, rlen);
 
         l3_ipv4_interface_t* l3 = l3_ipv4_find_by_ip(dst_ip);
         if (l3 && l3->l2) {
-            ipv4_tx_opts_t o = { .index=l3->l3_id, .scope=IPV4_TX_BOUND_L3 };
-            ipv4_send_packet(src_ip, 1, (sizedptr){buf, rlen}, &o);
+            ipv4_tx_opts_t o = { .index = l3->l3_id, .scope = IPV4_TX_BOUND_L3 };
+            ipv4_send_packet(src_ip, 1, (sizedptr){buf, rlen}, &o, IP_TTL_DEFAULT);
         }
-        free((void*)buf,8 + 56);
+        free((void*)buf, 8 + 56);
         return;
     }
 
-    if (type == ICMP_ECHO_REPLY) {
-        mark_received(id, sq, type, 0);
-        return;
-    }
-    if(type == ICMP_DEST_UNREACH || type == ICMP_TIME_EXCEEDED || type == ICMP_PARAM_PROBLEM || type == ICMP_REDIRECT) {
+    if (type == ICMP_ECHO_REPLY || type == ICMP_DEST_UNREACH || type == ICMP_TIME_EXCEEDED || type == ICMP_PARAM_PROBLEM || type == ICMP_REDIRECT)
         mark_received(id, sq, type, code);
-        return;
-    }
 }

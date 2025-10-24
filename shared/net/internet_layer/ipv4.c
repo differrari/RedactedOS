@@ -9,10 +9,6 @@
 #include "console/kio.h"
 #include "syscalls/syscalls.h"
 
-#define IP_IHL_NOOPTS 5
-#define IP_VERSION_4 4
-#define IP_TTL_DEFAULT 64
-
 static uint16_t g_ip_ident = 1;
 
 static int mask_prefix_len(uint32_t m) {
@@ -258,7 +254,7 @@ static bool pick_route(uint32_t dst, const ipv4_tx_opts_t* opts, uint8_t* out_if
 }
 
 
-void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, sizedptr segment, const ipv4_tx_opts_t* opts) {
+void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, sizedptr segment, const ipv4_tx_opts_t* opts, uint8_t ttl) {
     if (!segment.ptr || !segment.size) return;
 
     uint8_t ifx = 0;
@@ -295,7 +291,7 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, sizedptr segment, const ip
     ip->total_length = bswap16((uint16_t)total);
     ip->identification = bswap16(g_ip_ident++);
     ip->flags_frag_offset = bswap16(0);
-    ip->ttl = IP_TTL_DEFAULT;
+    ip->ttl = ttl ? ttl : IP_TTL_DEFAULT;
     ip->protocol = proto;
     ip->header_checksum = 0;
     ip->src_ip = bswap32(src_ip);
