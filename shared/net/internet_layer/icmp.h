@@ -39,13 +39,6 @@ typedef struct __attribute__((packed)) {
 } icmp_packet;
 
 typedef struct {
-    bool response; //1 replay 0 request
-    uint16_t id;
-    uint16_t seq;
-    uint8_t payload[56];
-} icmp_data;
-
-typedef struct {
     uint32_t rtt_ms;
     uint8_t status;
     uint8_t icmp_type;
@@ -53,11 +46,8 @@ typedef struct {
     uint8_t _pad;
 } ping_result_t;
 
-void create_icmp_packet(uintptr_t p, const icmp_data *d);
-void icmp_input(uintptr_t ptr,uint32_t len, uint32_t src_ip, uint32_t dst_ip);
-void icmp_send_echo(uint32_t dst_ip, uint16_t id, uint16_t seq, const uint8_t payload[56]);
-
-bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, ping_result_t* out);
+bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint32_t ttl, ping_result_t *out);
+void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip);
 
 #ifdef __cplusplus
 }

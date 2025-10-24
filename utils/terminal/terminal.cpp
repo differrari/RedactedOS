@@ -59,18 +59,15 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
 
 const char** Terminal::parse_arguments(char *args, int *count){
     *count = 0;
-    const char* prev = args;
-    char* next_args;
     const char **argv = (const char**)malloc(16 * sizeof(uintptr_t));
-    do {
-        next_args = (char*)seek_to(args, ' ');
-        argv[*count] = prev;
-        (*count)++;
-        prev = next_args;
-        *(next_args - 1) = 0;
-    } while(prev != next_args);
-    if (*next_args){
-        argv[*count] = prev;
+    char* p = args;
+    while (*p && *count < 16){
+        while (*p == ' ' || *p == '\t') p++;
+        if (!*p) break;
+        char* start = p;
+        while (*p && *p != ' ' && *p != '\t') p++;
+        if (*p) { *p = '\0'; p++; }
+        argv[*count] = start;
         (*count)++;
     }
     return argv;
@@ -78,14 +75,9 @@ const char** Terminal::parse_arguments(char *args, int *count){
 
 void Terminal::run_command(){
     const char* fullcmd = get_current_line();
-    
-    if (fullcmd[0] == '>' && fullcmd[1] == ' ') {
-        fullcmd += 2;
-    }
-    
-    const char* check = fullcmd;
-    while (*check == ' ' || *check == '\t') check++;
-    if (*check == '\0') { 
+    if (fullcmd[0] == '>' && fullcmd[1] == ' ') fullcmd += 2;
+    while (*fullcmd == ' ' || *fullcmd == '\t') fullcmd++;
+    if (*fullcmd == '\0') { 
         put_char('\r');
         put_char('\n');
         put_string("> ");
@@ -96,7 +88,8 @@ void Terminal::run_command(){
         return;
     }
 
-    const char* args = seek_to(fullcmd, ' ');
+    const char* args = fullcmd;
+    while (*args && *args != ' ' && *args != '\t') args++;
 
     string cmd;
     int argc = 0;
@@ -106,9 +99,11 @@ void Terminal::run_command(){
     if (*args == '\0'){
         cmd = string_from_literal(fullcmd);
     } else {
-        size_t cmd_len = (size_t)((args - fullcmd) - 1);
+        size_t cmd_len = (size_t)(args - fullcmd);
         cmd = string_from_literal_length(fullcmd, cmd_len);
-        args_copy = string_from_literal(args);
+        const char* argstart = args;
+        while (*argstart == ' ' || *argstart == '\t') argstart++;
+        args_copy = string_from_literal(argstart);
         argv = parse_arguments(args_copy.data, &argc);
     }
 
