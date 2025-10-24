@@ -17,6 +17,7 @@ typedef struct {
     uint8_t rx_code;
     uint32_t start_ms;
     uint32_t end_ms;
+    uint32_t rx_src_ip;
 } ping_slot_t;
 
 static ping_slot_t g_pending[MAX_PENDING] = {0};
@@ -32,19 +33,21 @@ static int alloc_slot(uint16_t id, uint16_t seq) {
             g_pending[i].rx_code = 0xFF;
             g_pending[i].start_ms = (uint32_t)get_time();
             g_pending[i].end_ms = 0;
+            g_pending[i].rx_src_ip = 0;
             return i;
         }
     }
     return -1;
 }
 
-static void mark_received(uint16_t id, uint16_t seq, uint8_t type, uint8_t code) {
+static void mark_received(uint16_t id, uint16_t seq, uint8_t type, uint8_t code, uint32_t src_ip) {
     for (int i = 0; i < MAX_PENDING; i++) {
         if (g_pending[i].in_use && g_pending[i].id == id && g_pending[i].seq == seq) {
             g_pending[i].received = true;
             g_pending[i].rx_type = type;
             g_pending[i].rx_code = code;
             g_pending[i].end_ms = (uint32_t)get_time();
+            g_pending[i].rx_src_ip = src_ip;
             return;
         }
     }
@@ -77,6 +80,7 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
             out->status = PING_UNKNOWN_ERROR;
             out->icmp_type = 0xFF;
             out->icmp_code = 0xFF;
+            out->responder_ip = 0;
         }
         return false;
     }
@@ -89,12 +93,13 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
             out->status = PING_UNKNOWN_ERROR;
             out->icmp_type = 0xFF;
             out->icmp_code = 0xFF;
+            out->responder_ip = 0;
         }
         g_pending[slot].in_use = false;
         return false;
     }
 
-    ipv4_send_packet(dst_ip, 1, (sizedptr){buf, tot_len}, (const ipv4_tx_opts_t*)tx_opts_or_null, ttl);
+    ipv4_send_packet(dst_ip, 1, (sizedptr){buf, tot_len}, (const ipv4_tx_opts_t*)tx_opts_or_null, (uint8_t)ttl);
     free((void*)buf, 8 + 56);
 
     uint32_t start = (uint32_t)get_time();
@@ -103,6 +108,7 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
             if (out) {
                 out->icmp_type = g_pending[slot].rx_type;
                 out->icmp_code = g_pending[slot].rx_code;
+                out->responder_ip = g_pending[slot].rx_src_ip;
                 switch (g_pending[slot].rx_type) {
                     case ICMP_ECHO_REPLY: out->status = PING_OK; break;
                     case ICMP_DEST_UNREACH:
@@ -141,6 +147,7 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
         out->status = PING_TIMEOUT;
         out->icmp_type = 0xFF;
         out->icmp_code = 0xFF;
+        out->responder_ip = 0;
     }
     g_pending[slot].in_use = false;
     return false;
@@ -179,13 +186,37 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
 
         l3_ipv4_interface_t* l3 = l3_ipv4_find_by_ip(dst_ip);
         if (l3 && l3->l2) {
-            ipv4_tx_opts_t o = { .index = l3->l3_id, .scope = IPV4_TX_BOUND_L3 };
+            ipv4_tx_opts_t o = {.index = l3->l3_id, .scope = IPV4_TX_BOUND_L3};
             ipv4_send_packet(src_ip, 1, (sizedptr){buf, rlen}, &o, IP_TTL_DEFAULT);
         }
         free((void*)buf, 8 + 56);
         return;
     }
 
-    if (type == ICMP_ECHO_REPLY || type == ICMP_DEST_UNREACH || type == ICMP_TIME_EXCEEDED || type == ICMP_PARAM_PROBLEM || type == ICMP_REDIRECT)
-        mark_received(id, sq, type, code);
+    if (type == ICMP_ECHO_REPLY) {
+        mark_received(id, sq, type, code, src_ip);
+        return;
+    }
+
+    if (type == ICMP_TIME_EXCEEDED || type == ICMP_DEST_UNREACH || type == ICMP_PARAM_PROBLEM || type == ICMP_REDIRECT) {
+        if (pay >= 28) {
+        const uint8_t *ip = pkt->payload;
+        uint8_t ihl = (uint8_t)(ip[0] & 0x0F);
+        uint32_t iphdr = (uint32_t)ihl * 4;
+
+        if (pay >= iphdr + 8) {
+            uint8_t proto = ip[9];
+            if (proto == 1) {
+                const uint8_t *ic = pkt->payload + iphdr;
+                uint8_t t = ic[0];
+                if (t == ICMP_ECHO_REQUEST || t == ICMP_ECHO_REPLY) {
+                    uint16_t iid = (uint16_t)((ic[4] << 8) | ic[5]);
+                    uint16_t isq = (uint16_t)((ic[6] << 8) | ic[7]);
+                    mark_received(iid, isq, type, code, src_ip);
+                }
+            }
+        }
+    }
+        return;
+    }
 }

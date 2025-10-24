@@ -1199,3 +1199,12 @@ size_t strncpy(char* dst, size_t cap, const char* src){
     dst[i]=0;
     return i;
 }
+
+bool parse_uint32_dec(const char *s, uint32_t *out) {
+    if (!s || !*s) return false;
+    uint64_t v = parse_int_u64(s, UINT32_MAX);
+    if (v == 0 && s[0] != '0') return false;
+    if (v > UINT32_MAX) return false;
+    *out = (uint32_t)v;
+    return true;
+}

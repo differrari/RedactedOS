@@ -13,43 +13,30 @@
 #include "net/application_layer/dns.h"
 #include "net/internet_layer/ipv4_utils.h"
 
-typedef struct
-{
+typedef struct {
     ip_version_t ver;
     uint32_t count;
     uint32_t timeout_ms;
     uint32_t interval_ms;
     uint32_t ttl;
-    uint32_t src_ip_be;
+    uint32_t src_ip;
     bool src_set;
     const char *host;
 } ping_opts_t;
 
-static void help(file *fd)
-{
+static void help(file *fd) {
     const char *a = "usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host";
     write_file(fd, a, strlen(a, STRING_MAX_LEN));
     write_file(fd, "\n", 1);
 }
 
-static bool parse_uint32_dec(const char *s, uint32_t *out)
-{
-    if (!s || !*s) return false;
-    uint64_t v = parse_int_u64(s, UINT32_MAX);
-    if (v == 0 && s[0] != '0') return false;
-    if (v > UINT32_MAX) return false;
-    *out = (uint32_t)v;
-    return true;
-}
-
-static bool parse_args(int argc, char *argv[], ping_opts_t *o)
-{
+static bool parse_args(int argc, char *argv[], ping_opts_t *o) {
     o->ver = IP_VER4;
     o->count = 4;
     o->timeout_ms = 1000;
     o->interval_ms = 1000;
     o->ttl = 64;
-    o->src_ip_be = 0;
+    o->src_ip = 0;
     o->src_set = false;
     o->host = NULL;
 
@@ -74,7 +61,7 @@ static bool parse_args(int argc, char *argv[], ping_opts_t *o)
                 if (++i >= argc) return false;
                 uint32_t src = 0;
                 if (!ipv4_parse(argv[i], &src)) return false;
-                o->src_ip_be = src;
+                o->src_ip = src;
                 o->src_set = true;
             }
             else return false;
@@ -125,7 +112,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
     ipv4_tx_opts_t txo = {0};
     const ipv4_tx_opts_t *txop = NULL;
     if (o->src_set) {
-        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(o->src_ip_be);
+        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(o->src_ip);
         //kprintf("%d", l3);
         if (!l3) {
             const char *em = "ping: invalid source (no local ip match)\n";
@@ -138,7 +125,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
         txo.scope = IPV4_TX_BOUND_L3;
         txop = &txo;
         char ssrc[16];
-        ipv4_to_string(o->src_ip_be, ssrc);
+        ipv4_to_string(o->src_ip, ssrc);
     }
 
     for (uint32_t i = 0; i < o->count; i++) {
@@ -233,8 +220,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
     return (received > 0) ? 0 : 1;
 }
 
-int run_ping(int argc, char *argv[])
-{
+int run_ping(int argc, char *argv[]) {
     uint16_t pid = get_current_proc_pid();
     string p = string_format("/proc/%u/out", pid);
     file fd = {0};
@@ -249,10 +235,10 @@ int run_ping(int argc, char *argv[])
     }
 
     if (opts.ver == IP_VER4 && opts.src_set) {
-        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(opts.src_ip_be);
+        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(opts.src_ip);
         if (!l3) {
             char ssrc[16];
-            ipv4_to_string(opts.src_ip_be, ssrc);
+            ipv4_to_string(opts.src_ip, ssrc);
             string em = string_format("ping: invalid source %s (no local ip match)", ssrc);
             write_file(&fd, em.data, em.length);
             write_file(&fd, "\n", 1);

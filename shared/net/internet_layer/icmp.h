@@ -44,6 +44,7 @@ typedef struct {
     uint8_t icmp_type;
     uint8_t icmp_code;
     uint8_t _pad;
+    uint32_t responder_ip;
 } ping_result_t;
 
 bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint32_t ttl, ping_result_t *out);
