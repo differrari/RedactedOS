@@ -212,7 +212,7 @@ bool deflate_block(huff_tree_node *litlen_tree, huff_tree_node *dist_tree, defla
 }
 
 size_t deflate_decode(void* ptr, size_t size, deflate_read_ctx *ctx){
-    if (ctx->cur_block > 0){//TODO: Can a compressed deflate block cross boundaries? 
+    if (ctx->cur_block > 0){//TODO: this is no longer needed since we put IDATs together
         // printf("Continuation of previous block %i %x",size, size);
         size_t amount = min(size,ctx->cur_block);
         memcpy(ctx->output_buf + ctx->out_cursor, ptr, amount);
