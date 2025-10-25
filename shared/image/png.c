@@ -500,7 +500,7 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
             }
             memcpy((void*)((uintptr_t)data_buf + data_cursor), (void*)(p + sizeof(png_chunk_hdr)), length);
             data_cursor += length;
-            printf("Found some idat %x - %x",p + sizeof(png_chunk_hdr) - (uintptr_t)file, length);
+            // printf("Found some idat %x - %x",p + sizeof(png_chunk_hdr) - (uintptr_t)file, length);
         }
         p += sizeof(png_chunk_hdr) + __builtin_bswap32(hdr->length) + sizeof(uint32_t);
     } while(strstart(hdr->type, "IEND", true) != 4);
