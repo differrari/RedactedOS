@@ -3,6 +3,9 @@
 #include "input_keycodes.h"
 #include "std/string.h"
 #include "image/png.h"
+#include "image/bmp.h"
+#include "audio/cuatro.h"
+#include "audio/wav.h"
 
 #define BORDER 20
 
@@ -73,6 +76,22 @@ int net_example() {
     socket_close(&spec);
 
     return 1;
+}
+
+static int8_t mixin[MIXER_INPUTS] = { NULL };
+static audio_samples audio[MIXER_INPUTS];
+
+int audio_example(){
+    for (int i = 0; i < MIXER_INPUTS; ++i) mixin[i] = -1;
+    mixer_set_level(AUDIO_LEVEL_MAX * 0.75f);
+    if (wav_load_as_int16("/resources/scale.wav", audio)){
+        mixin[0] = play_audio_sync(&audio[0], AUDIO_LEVEL_MAX/4);
+        return 0;
+    }else{
+        printf("Could not load wav");
+        return -1;
+    }
+    return 0;
 }
 
 int main(){
