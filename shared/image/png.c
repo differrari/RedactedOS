@@ -474,6 +474,8 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
     png_chunk_hdr *hdr;
     image_info info = {};
     uintptr_t out_buf = 0;
+    void *data_buf = 0;
+    uintptr_t data_cursor = 0;
     uint16_t bpp = 0;
     deflate_read_ctx ctx = {};
     do {
@@ -493,11 +495,16 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
                 out_buf = (uintptr_t)malloc((info.width * info.height * system_bpp) + info.height);//TODO: bpp might be too big, read image format
                 ctx.output_buf = (uint8_t*)out_buf;
             }
+            if (!data_buf){
+                data_buf = malloc(size);
+            }
+            memcpy((void*)((uintptr_t)data_buf + data_cursor), (void*)(p + sizeof(png_chunk_hdr)), length);
+            data_cursor += length;
             printf("Found some idat %x - %x",p + sizeof(png_chunk_hdr) - (uintptr_t)file, length);
-            deflate_decode((void*)(p + sizeof(png_chunk_hdr)), length, &ctx);
         }
         p += sizeof(png_chunk_hdr) + __builtin_bswap32(hdr->length) + sizeof(uint32_t);
     } while(strstart(hdr->type, "IEND", true) != 4);
+    deflate_decode(data_buf, data_cursor, &ctx);
     png_process_raw(out_buf, info.width, info.height, bpp, buf);
 }
 
