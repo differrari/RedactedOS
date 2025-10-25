@@ -101,25 +101,28 @@ void fb_clear(draw_ctx *ctx, uint32_t color) {
     ctx->full_redraw = 1;
 }
 
+
 //TODO: all functions should include this with the (if alpha < 0xFF) check
 uint32_t pixel_blend(uint32_t p1, uint32_t p2){
-    uint8_t a1 = (p1 >> 24) & 0xFF;
-    uint8_t a2 = (p2 >> 24) & 0xFF;
+    uint16_t a1 = (p1 >> 24) & 0xFF;
+    uint16_t a2 = (p2 >> 24) & 0xFF;
+    if (a2 == 0) return p1;
+    if (a1 == 0) return p2;
 
-    uint8_t r1 = (p1 >> 16) & 0xFF;
-    uint8_t r2 = (p2 >> 16) & 0xFF;
+    uint16_t r1 = (p1 >> 16) & 0xFF;
+    uint16_t r2 = (p2 >> 16) & 0xFF;
 
-    uint8_t g1 = (p1 >> 8) & 0xFF;
-    uint8_t g2 = (p2 >> 8) & 0xFF;
+    uint16_t g1 = (p1 >> 8) & 0xFF;
+    uint16_t g2 = (p2 >> 8) & 0xFF;
 
-    uint8_t b1 = p1        & 0xFF;
-    uint8_t b2 = p2        & 0xFF;
+    uint16_t b1 = p1        & 0xFF;
+    uint16_t b2 = p2        & 0xFF;
 
-    uint8_t a = a1 + ((255 - a1) * a2) / 255;
+    uint8_t a = a1 + ((255 - a1) * a2)/255;
 
-    uint8_t r = r1 * a1 + (r2 * (255 - a1))/255;
-    uint8_t g = g1 * a1 + (g2 * (255 - a1))/255;
-    uint8_t b = b1 * a1 + (b2 * (255 - a1))/255;
+    uint8_t r = ((r1 * a1) + (r2 * a2 * (255 - a1))/255)/a;
+    uint8_t g = ((g1 * a1) + (g2 * a2 * (255 - a1))/255)/a;
+    uint8_t b = ((b1 * a1) + (b2 * a2 * (255 - a1))/255)/a;
 
     return (a << 24) | (r << 16) | (g << 8) | (b);
 }
