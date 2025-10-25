@@ -54,6 +54,8 @@ typedef unsigned char uint8_t;
 #define UINT32_MAX 0xFFFFFFFF
 #define UINT8_MAX 0xFF
 
+#define FLOAT_MAX 3.40282347e+38F
+
 #define N_ARR(arr) (sizeof(arr)/sizeof((arr)[0]))
 
 typedef signed int int32_t;

@@ -165,7 +165,7 @@ static __inline__ __attribute__((always_inline)) float vmagnitude_vector2(float3
     return 1.f/rinv[0];
 }
 
-static inline float magnitude_vector2(vector2 v)
+static inline float vector2_magnitude(vector2 v)
 {
     float32x2_t xy = vld1_f32_b(&v.x);  // [x, y]
     return vmagnitude_vector2(xy);
@@ -179,7 +179,7 @@ static inline vector2 vector2_add(vector2 a, vector2 b){
 }
 
 static inline vector2 vector2_norm(vector2 in){
-    float len = magnitude_vector2(in);
+    float len = vector2_magnitude(in);
     return (vector2){in.x/len,in.y/len};
 }
 
