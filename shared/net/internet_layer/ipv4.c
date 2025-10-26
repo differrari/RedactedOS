@@ -8,37 +8,27 @@
 #include "net/transport_layer/udp.h"
 #include "console/kio.h"
 #include "syscalls/syscalls.h"
+#include "ipv4_utils.h"
 
 static uint16_t g_ip_ident = 1;
 
-static int mask_prefix_len(uint32_t m) {
-    int n = 0;
-    while (m & 0x80000000u) { n++; m <<= 1; }
-    return n;
-}
-
-static inline bool is_lbcast(uint32_t ip) { return ip == 0xFFFFFFFFu; }
-static inline bool is_mcast(uint32_t ip) { return (ip & 0xF0000000u) == 0xE0000000u; }
-static inline bool is_directed_bcast_for(const l3_ipv4_interface_t* v4, uint32_t dst) {
-    if (!v4) return false;
-    if (!v4->mask) return false;
-    uint32_t b = ipv4_broadcast_calc(v4->ip, v4->mask);
-    return b == dst;
-}
 static l3_ipv4_interface_t* best_v4_on_l2_for_dst(l2_interface_t* l2, uint32_t dst) {
     l3_ipv4_interface_t* best = NULL;
-    int best_pl = -1;
+    uint32_t best_mask = 0;
     for (int s = 0; s < MAX_IPV4_PER_INTERFACE; s++) {
         l3_ipv4_interface_t* v4 = l2->l3_v4[s];
         if (!v4) continue;
         if (v4->mode == IPV4_CFG_DISABLED) continue;
         if (!v4->ip) continue;
         uint32_t m = v4->mask;
-        if (m && ((dst & m) == (v4->ip & m))) {
-            int pl = mask_prefix_len(m);
-            if (pl > best_pl) { best_pl = pl; best = v4; }
+        if (m && (ipv4_net(dst, m) == ipv4_net(v4->ip, m))) {
+            if (!best || m > best_mask) {
+                best = v4;
+                best_mask = m;
+            }
         } else if (!best) {
             best = v4;
+            best_mask = m;
         }
     }
     return best;
@@ -89,8 +79,7 @@ static bool pick_broadcast_bound_l3(uint8_t l3_id, uint8_t* out_ifx, uint32_t* o
     if (v4->mode == IPV4_CFG_DISABLED) return false;
 
     if (out_ifx) *out_ifx = v4->l2->ifindex;
-    if (out_src) *out_src = v4->ip;
-    if (!v4->ip && v4->mode == IPV4_CFG_DHCP && out_src) *out_src = 0;
+    if (out_src) *out_src = v4->ip ? v4->ip : 0;
     if (out_nh) *out_nh = 0xFFFFFFFFu;
     return true;
 }
@@ -146,12 +135,12 @@ static bool pick_broadcast_global(uint8_t* out_ifx, uint32_t* out_src, uint32_t*
 }
 
 static bool pick_route_global(uint32_t dst, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    if (is_lbcast(dst)) return pick_broadcast_global(out_ifx, out_src, out_nh);
+    if (dst == 0xFFFFFFFFu) return pick_broadcast_global(out_ifx, out_src, out_nh);
 
     ip_resolution_result_t r = resolve_ipv4_to_interface(dst);
     if (r.found && r.ipv4 && r.l2) {
         uint32_t m = r.ipv4->mask;
-        if (m && ((dst & m) == (r.ipv4->ip & m))) {
+        if (m && (ipv4_net(dst, m) == ipv4_net(r.ipv4->ip, m))) {
             if (out_ifx) *out_ifx = r.l2->ifindex;
             if (out_src) *out_src = r.ipv4->ip;
             if (out_nh) *out_nh = dst;
@@ -177,7 +166,7 @@ static bool pick_route_global(uint32_t dst, uint8_t* out_ifx, uint32_t* out_src,
 }
 
 static bool pick_route_bound_l3(uint8_t l3_id, uint32_t dst, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    if (is_lbcast(dst)) return pick_broadcast_bound_l3(l3_id, out_ifx, out_src, out_nh);
+    if (dst == 0xFFFFFFFFu) return pick_broadcast_bound_l3(l3_id, out_ifx, out_src, out_nh);
 
     l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
     if (!v4 || !v4->l2) return false;
@@ -185,7 +174,7 @@ static bool pick_route_bound_l3(uint8_t l3_id, uint32_t dst, uint8_t* out_ifx, u
     if (!v4->ip) return false;
 
     uint32_t m = v4->mask;
-    if (m && ((dst & m) == (v4->ip & m))) {
+    if (m && (ipv4_net(dst, m) == ipv4_net(v4->ip, m))) {
         if (out_ifx) *out_ifx = v4->l2->ifindex;
         if (out_src) *out_src = v4->ip;
         if (out_nh) *out_nh = dst;
@@ -210,7 +199,7 @@ static bool pick_route_bound_l3(uint8_t l3_id, uint32_t dst, uint8_t* out_ifx, u
 }
 
 static bool pick_route_bound_l2(uint8_t ifindex, uint32_t dst, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    if (is_lbcast(dst)) return pick_broadcast_bound_l2(ifindex, out_ifx, out_src, out_nh);
+    if (dst == 0xFFFFFFFFu) return pick_broadcast_bound_l2(ifindex, out_ifx, out_src, out_nh);
 
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return false;
@@ -220,7 +209,7 @@ static bool pick_route_bound_l2(uint8_t ifindex, uint32_t dst, uint8_t* out_ifx,
     if (v4->mode == IPV4_CFG_DISABLED) return false;
 
     uint32_t m = v4->mask;
-    if (m && ((dst & m) == (v4->ip & m))) {
+    if (m && (ipv4_net(dst, m) == ipv4_net(v4->ip, m))) {
         if (out_ifx) *out_ifx = l2->ifindex;
         if (out_src) *out_src = v4->ip;
         if (out_nh) *out_nh = dst;
@@ -269,7 +258,7 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, sizedptr segment, const ip
         for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
             if (!v4 || v4->mode == IPV4_CFG_DISABLED) continue;
-            if (is_directed_bcast_for(v4, dst_ip)) { is_dbcast = true; break; }
+            if (v4->mask && ipv4_broadcast_calc(v4->ip, v4->mask) == dst_ip) { is_dbcast = true; break; }
         }
     }
 
@@ -361,9 +350,9 @@ void ipv4_input(uint16_t ifindex, uintptr_t ip_ptr, uint32_t ip_len, const uint8
     }
     if (ccount == 0) return;
 
-    if (is_mcast(dst)) return;
+    if (ipv4_is_multicast(dst)) return;
 
-    if (is_lbcast(dst)) {
+    if (dst == 0xFFFFFFFFu) {
         if (ccount == 1) {
             uint8_t l3id = cand[0]->l3_id;
             switch (proto) {
@@ -427,7 +416,7 @@ void ipv4_input(uint16_t ifindex, uintptr_t ip_ptr, uint32_t ip_len, const uint8
             l3_ipv4_interface_t* v4 = l2x->l3_v4[s];
             if (!v4) continue;
             if (v4->mode == IPV4_CFG_DISABLED) continue;
-            if (is_directed_bcast_for(v4, dst)) {
+            if (v4->mask && ipv4_broadcast_calc(v4->ip, v4->mask) == dst) {
                 any_dbcast = 1;
                 uint8_t l3id = v4->l3_id;
                 switch (proto) {

@@ -11,6 +11,7 @@
 #include "networking/interface_manager.h"
 #include "process/scheduler.h"
 #include "net/internet_layer/ipv4_utils.h"
+#include "net/internet_layer/ipv6_utils.h"
 
 #define RX_INTR_BATCH_LIMIT 64
 #define TASK_RX_BATCH_LIMIT 256
@@ -315,20 +316,6 @@ void NetworkDispatch::dump_interfaces()
 {
     kprintf("[net]interface dump start");
 
-    auto ipv6_to_str = [&](const uint8_t ip[16], char out[41]){ //TODO: move this to ipv6 file
-        static const char HEX[] = "0123456789abcdef";
-        int p = 0;
-        for (int g = 0; g < 8; ++g) {
-            uint16_t w = (uint16_t(ip[g*2]) << 8) | uint16_t(ip[g*2 + 1]);
-            out[p++] = HEX[(w >> 12) & 0xF];
-            out[p++] = HEX[(w >> 8) & 0xF];
-            out[p++] = HEX[(w >> 4) & 0xF];
-            out[p++] = HEX[w & 0xF];
-            if (g != 7) out[p++] = ':';
-        }
-        out[p] = 0;
-    };
-
     for (uint8_t ifx = 1; ifx <= (uint8_t)MAX_L2_INTERFACES; ++ifx){
         l2_interface_t* l2 = l2_interface_find_by_index(ifx);
         if (!l2) continue;
@@ -404,12 +391,15 @@ void NetworkDispatch::dump_interfaces()
         for (int s = 0; s < (int)MAX_IPV6_PER_INTERFACE; ++s){
             l3_ipv6_interface_t* v6 = l2->l3_v6[s];
             if (!v6) continue;
+
             char ip6[41], gw6[41];
-            ipv6_to_str(v6->ip, ip6);
-            ipv6_to_str(v6->gateway, gw6);
+            ipv6_to_string(v6->ip, ip6, (int)sizeof(ip6));
+            ipv6_to_string(v6->gateway, gw6, (int)sizeof(gw6));
+
             uint32_t llc = (v6->kind & IPV6_ADDRK_LINK_LOCAL) ? 1u : 0u;
             uint32_t gua = (v6->kind & IPV6_ADDRK_GLOBAL) ? 1u : 0u;
             uint32_t en = (v6->cfg != IPV6_CFG_DISABLE) ? 1u : 0u;
+
             kprintf("  - slot=%u l3_id=%u kind=%u cfg=%i llc=%u gua=%u en=%u ip=%s/%u gw=%s vlft=%u plft=%u tsc=%u localhost=%u",
                     (unsigned)s, (unsigned)v6->l3_id, (unsigned)v6->kind, (int)v6->cfg, llc, gua, en,
                     ip6, (unsigned)v6->prefix_len, gw6,

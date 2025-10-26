@@ -5,6 +5,7 @@
 #include "std/memory.h"
 #include "math/rng.h"
 #include "syscalls/syscalls.h"
+#include "net/internet_layer/ipv4_utils.h"
 //TODO: add mtu check and fragmentation. also fragment rebuild
 
 

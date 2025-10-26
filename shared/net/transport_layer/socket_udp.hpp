@@ -9,6 +9,7 @@
 #include "net/internet_layer/ipv4_route.h"
 #include "syscalls/syscalls.h"
 #include "net/net.h"
+#include "net/internet_layer/ipv4_utils.h"
 
 static constexpr int32_t UDP_RING_CAP = 1024;
 static constexpr dns_server_sel_t UDP_DNS_SEL = DNS_USE_BOTH;

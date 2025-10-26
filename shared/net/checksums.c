@@ -33,3 +33,21 @@ uint16_t checksum16_pipv4(uint32_t src_ip,
 
     return (uint16_t)~sum;
 }
+
+uint16_t checksum16_pipv6(const uint8_t src_ip[16],
+                          const uint8_t dst_ip[16],
+                          uint8_t protocol,
+                          const uint8_t *payload,
+                          uint32_t length)
+{
+    uint32_t sum = 0;
+    for (int i=0;i<16;i+=2) sum += (uint32_t)((src_ip[i] << 8) | src_ip[i+1]);
+    for (int i=0;i<16;i+=2) sum += (uint32_t)((dst_ip[i] << 8) | dst_ip[i+1]);
+    sum += (length >> 16) & 0xFFFF;
+    sum += length & 0xFFFF;
+    sum += protocol;
+    for (uint32_t i = 0; i + 1 < length; i += 2) sum += (uint32_t)((payload[i] << 8) | payload[i + 1]);
+    if (length & 1) sum += (uint32_t)(payload[length - 1] << 8);
+    while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+    return (uint16_t)~sum;
+}

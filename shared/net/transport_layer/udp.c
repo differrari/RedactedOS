@@ -5,7 +5,7 @@
 #include "std/memory.h"
 #include "types.h"
 #include "syscalls/syscalls.h"
-
+#include "net/internet_layer/ipv4_utils.h"
 static inline uint32_t v4_u32_from_arr(const uint8_t ip16[16]) {
     uint32_t v = 0;
     memcpy(&v, ip16, 4);

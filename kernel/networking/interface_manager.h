@@ -140,10 +140,6 @@ ip_resolution_result_t resolve_ipv6_to_interface(const uint8_t dst_ip[16]);
 bool check_ipv4_overlap(uint32_t new_ip, uint32_t mask, uint8_t ifindex);
 bool check_ipv6_overlap(const uint8_t new_ip[16], uint8_t prefix_len, uint8_t ifindex);
 
-static inline uint32_t ipv4_net(uint32_t ip, uint32_t mask){ return ip & mask; }
-static inline uint32_t ipv4_broadcast_calc(uint32_t ip, uint32_t mask){ return (mask==0)?0:((ip & mask) | ~mask); }
-
-
 static inline port_manager_t* ifmgr_pm_v4(uint8_t l3_id){
     l3_ipv4_interface_t* n = l3_ipv4_find_by_id(l3_id);
     return n ? n->port_manager : NULL;
