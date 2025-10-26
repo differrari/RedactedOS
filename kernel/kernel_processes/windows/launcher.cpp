@@ -13,11 +13,12 @@
 #define MAX_COLS 3
 #define MAX_ROWS 3
 
-void Launcher::add_entry(char* name, char *ext, char* path){
+void Launcher::add_entry(string name, string ext, string path, package_info info){
     entries.add({
         .name = name,
         .ext = ext,
         .path = path,
+        .info = info,
     });
 }
 
@@ -32,7 +33,26 @@ Launcher::Launcher() {
     load_entries();
 }
 
+package_info Launcher::get_pkg_info(char* info_path){
+    file fd;
+    FS_RESULT res = fopen(info_path, &fd);
+    if (res != FS_RESULT_SUCCESS) return (package_info){};
+
+    char *info = (char*)malloc(fd.size);
+    fread(&fd, info, fd.size);
+
+    return parse_package_info(info, fd.size);
+}
+
 void Launcher::load_entries(){
+    for (uint32_t i = 0; i < entries.size(); i++){
+        string_free(entries[i].name);
+        string_free(entries[i].ext);
+        string_free(entries[i].path);
+        string_free(entries[i].info.name);
+        string_free(entries[i].info.version);
+        string_free(entries[i].info.author);
+    }
     entries.empty();
     sizedptr list_ptr = list_directory_contents("/shared/redos/user/");
     string_list *list = (string_list*)list_ptr.ptr;
@@ -44,8 +64,11 @@ void Launcher::load_entries(){
                 string fullpath = string_format("/shared/redos/user/%s",(uintptr_t)file);
                 string name = string_from_literal_length(file,find_extension(file));
                 string ext = string_from_literal(file + find_extension(file));
-                if (strcmp(ext.data,".red", true) == 0)
-                    add_entry(name.data, ext.data, fullpath.data);
+                if (strcmp(ext.data,".red", true) == 0){
+                    string pkg_info = string_concat(fullpath, string_from_literal("/package.info"));
+                    add_entry(name, ext, fullpath, get_pkg_info(pkg_info.data));
+                    free(pkg_info.data, pkg_info.mem_length);
+                }
                 while (*reader) reader++;
                 reader++;
             }
@@ -119,11 +142,11 @@ void Launcher::activate_current(){
     uint32_t index = (selected.y * MAX_COLS) + selected.x;
 
     if (index < entries.size()){
-        if (strcmp(".red",entries[index].ext, true) != 0){
+        if (strcmp(".red",entries[index].ext.data, true) != 0){
             kprintf("[LAUNCHER] Wrong format. Must be a .red package");
             return;
         }
-        string s = string_format("%s/%s.elf",entries[index].path, entries[index].name);
+        string s = string_format("%s/%s.elf",entries[index].path.data, entries[index].name.data);
         file fd = {};
         FS_RESULT rest = open_file(s.data, &fd);
         free(s.data, s.mem_length);
@@ -145,7 +168,7 @@ void Launcher::activate_current(){
         fb_clear(&ctx, 0);
         commit_draw_ctx(&ctx);
         kprintf("[LAUNCHER] read file %x",fd.size);
-        active_proc = load_elf_file(entries[index].name,entries[index].path, file,fd.size);
+        active_proc = load_elf_file(entries[index].name.data,entries[index].path.data, file,fd.size);
         if (!active_proc){
             kprintf("[LAUNCHER] Failed to load ELF file");
             rendered_full = false;
@@ -183,7 +206,7 @@ void Launcher::draw_tile(uint32_t column, uint32_t row){
         if (index < entries.size()){
             
             label(&ctx, (text_ui_config){
-                .text = entries[index].name,
+                .text = entries[index].info.name.data ? entries[index].info.name.data : entries[index].name.data,
                 .font_size = 3,
             }, (common_ui_config){
                 .point = RELATIVE(0,0),
@@ -195,7 +218,7 @@ void Launcher::draw_tile(uint32_t column, uint32_t row){
             });
 
             label(&ctx, (text_ui_config){
-                .text = entries[index].ext,
+                .text = entries[index].info.version.data ? entries[index].info.version.data : entries[index].ext.data,
                 .font_size = 1,
             }, (common_ui_config){
                 .point = RELATIVE(5, 5),
