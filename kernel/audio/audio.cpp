@@ -49,27 +49,12 @@ static mixer_line mixin[MIXER_INPUTS];
 
 static void mixer_reset_line(int8_t lineId){
     if (lineId < 0 || lineId >= MIXER_INPUTS) return;
-    mixer_line* line = &mixin[lineId];
-    line->dbl.buf[0].ptr = NULL;
-    line->dbl.buf[0].size = 0;
-    line->dbl.buf[1].ptr = NULL;
-    line->dbl.buf[1].size = 0;
-    line->dbl.buf_idx = 0;
-    line->source.ptr = NULL;
-    line->source.size = 0;
-    line->level = 0;
-    line->pan = 0;
-    line->left_lvl = 0;
-    line->right_lvl = 0;
-    line->start_time = 0;
-    line->life = AUDIO_OFF;
-    line->in_use = false;
+    memset(mixin + lineId, 0, sizeof(mixer_line));
+    mixin[lineId].life = AUDIO_OFF;
 }
 
 static void mixer_reset(){
-    for (int i = 0; i < MIXER_INPUTS; i++){
-        mixer_reset_line(i);
-    }
+    for (int i = 0; i < MIXER_INPUTS; i++) mixer_reset_line(i);
 }
 
 static int16_t master_level    = AUDIO_LEVEL_MAX / 2;
