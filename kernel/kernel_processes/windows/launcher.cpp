@@ -216,9 +216,12 @@ void Launcher::draw_tile(uint32_t column, uint32_t row){
                 .background_color = 0,
                 .foreground_color = COLOR_WHITE,
             });
-
+            char *subtext;
+            if (entries[index].info.version.data) subtext = entries[index].info.version.data;
+            else if (entries[index].info.author.data) subtext = entries[index].info.author.data;
+            else subtext = entries[index].ext.data;
             label(&ctx, (text_ui_config){
-                .text = entries[index].info.version.data ? entries[index].info.version.data : entries[index].ext.data,
+                .text = subtext,
                 .font_size = 1,
             }, (common_ui_config){
                 .point = RELATIVE(5, 5),
