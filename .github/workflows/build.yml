@@ -44,6 +44,8 @@ jobs:
       - name: Build
         run: |
           mkdir -pv fs/redos/user
+          CC="$RUNNER_TEMP/arm-toolchain/aarch64-none-elf-gcc"
+          CXX="$RUNNER_TEMP/arm-toolchain/aarch64-none-elf-g++"
           make all
 
       - name: Upload artifacts
