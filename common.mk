@@ -1,6 +1,10 @@
 ARCH       ?= aarch64-none-elf
-CC         ?= $(ARCH)-gcc
-CXX        ?= $(ARCH)-g++
+ifeq "$(origin CC)" "default"
+CC         := $(ARCH)-gcc
+endif
+ifeq "$(origin CXX)" "default"
+CXX        := $(ARCH)-g++
+endif
 LD         := $(ARCH)-ld
 AR         := $(ARCH)-ar
 OBJCOPY    := $(ARCH)-objcopy
