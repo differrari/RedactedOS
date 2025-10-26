@@ -40,13 +40,15 @@ void Launcher::load_entries(){
         char* reader = (char*)list->array;
         for (uint32_t i = 0; i < list->count; i++){
             char *file = reader;
-            string fullpath = string_format("/shared/redos/user/%s",(uintptr_t)file);
-            string name = string_from_literal_length(file,find_extension(file));
-            string ext = string_from_literal(file + find_extension(file));
-            if (strcmp(ext.data,".red", true) == 0)
-                add_entry(name.data, ext.data, fullpath.data);
-            while (*reader) reader++;
-            reader++;
+            if (*file){
+                string fullpath = string_format("/shared/redos/user/%s",(uintptr_t)file);
+                string name = string_from_literal_length(file,find_extension(file));
+                string ext = string_from_literal(file + find_extension(file));
+                if (strcmp(ext.data,".red", true) == 0)
+                    add_entry(name.data, ext.data, fullpath.data);
+                while (*reader) reader++;
+                reader++;
+            }
         }
         //TODO: The list of strings needs to be freed, but this class is not its owner
     }

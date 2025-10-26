@@ -5,7 +5,7 @@ uint16_t read_unaligned16(const uint16_t *up) {
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
 }
 
-uint32_t read_unaligned32(const uint32_t *up) {
+uint32_t read_unaligned32(const void *up) {
     uint8_t *p = (uint8_t*)up;
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }

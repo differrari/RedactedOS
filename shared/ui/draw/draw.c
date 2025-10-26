@@ -101,25 +101,28 @@ void fb_clear(draw_ctx *ctx, uint32_t color) {
     ctx->full_redraw = 1;
 }
 
+
 //TODO: all functions should include this with the (if alpha < 0xFF) check
 uint32_t pixel_blend(uint32_t p1, uint32_t p2){
-    uint8_t a1 = (p1 >> 24) & 0xFF;
-    uint8_t a2 = (p2 >> 24) & 0xFF;
+    uint16_t a1 = (p1 >> 24) & 0xFF;
+    uint16_t a2 = (p2 >> 24) & 0xFF;
+    if (a2 == 0) return p1;
+    if (a1 == 0) return p2;
 
-    uint8_t r1 = (p1 >> 16) & 0xFF;
-    uint8_t r2 = (p2 >> 16) & 0xFF;
+    uint16_t r1 = (p1 >> 16) & 0xFF;
+    uint16_t r2 = (p2 >> 16) & 0xFF;
 
-    uint8_t g1 = (p1 >> 8) & 0xFF;
-    uint8_t g2 = (p2 >> 8) & 0xFF;
+    uint16_t g1 = (p1 >> 8) & 0xFF;
+    uint16_t g2 = (p2 >> 8) & 0xFF;
 
-    uint8_t b1 = p1        & 0xFF;
-    uint8_t b2 = p2        & 0xFF;
+    uint16_t b1 = p1        & 0xFF;
+    uint16_t b2 = p2        & 0xFF;
 
-    uint8_t a = a1 + ((255 - a1) * a2) / 255;
+    uint8_t a = a1 + ((255 - a1) * a2)/255;
 
-    uint8_t r = r1 * a1 + (r2 * (255 - a1))/255;
-    uint8_t g = g1 * a1 + (g2 * (255 - a1))/255;
-    uint8_t b = b1 * a1 + (b2 * (255 - a1))/255;
+    uint8_t r = ((r1 * a1) + (r2 * a2 * (255 - a1))/255)/a;
+    uint8_t g = ((g1 * a1) + (g2 * a2 * (255 - a1))/255)/a;
+    uint8_t b = ((b1 * a1) + (b2 * a2 * (255 - a1))/255)/a;
 
     return (a << 24) | (r << 16) | (g << 8) | (b);
 }
@@ -166,42 +169,45 @@ void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_
 }
 
 void fb_draw_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t img_width, uint32_t img_height){
-    fb_draw_partial_img(ctx, x, y, img, img_width, img_height, 0, 0, img_width);
+    fb_draw_partial_img(ctx, img, x, y, img_width, img_height, (image_transform){});
 }
 
-void fb_draw_partial_img(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t *img, uint32_t img_width, uint32_t img_height, uint32_t start_x, uint32_t start_y, uint32_t full_width){
+void fb_draw_partial_img(draw_ctx *ctx, uint32_t *img, uint32_t x, uint32_t y, uint32_t full_width, uint32_t full_height, image_transform transform){
     if (x >= ctx->width || y >= ctx->height) return;
 
-    if (start_x >= full_width || start_y >= img_height) return;
+    if (transform.start_x >= full_width) return;
 
-    uint32_t w = img_width;
-    uint32_t h = img_height;
+    uint32_t w = transform.img_width == 0 ? full_width : transform.img_width;
+    uint32_t h = transform.img_height == 0 ? full_height : transform.img_height;
 
-    if (w > full_width - start_x) w = full_width - start_x;
-    if (h > img_height - start_y) h = img_height - start_y;
+    if (w > full_width - transform.start_x) w = full_width - transform.start_x;
 
     if (x + w > ctx->width) w = ctx->width - x;
     if (y + h > ctx->height) h = ctx->height - y;
     if (!w || !h) return;
 
+    uint32_t y_sind = transform.flip_y ? (full_height-transform.start_y) : transform.start_y;
+
     const uint32_t dst_pitch_px = (ctx->stride >> 2);
     uint32_t* dst_row = ctx->fb + y * dst_pitch_px + x;
 
     const uint32_t src_pitch_px = full_width;
-    const uint32_t* src_row = img + (start_y * full_width) + start_x;
+    const uint32_t* src_row = img + (y_sind * full_width);
 
     for (uint32_t row = 0; row < h; ++row) {
         const uint32_t* src = src_row;
         uint32_t* dst = dst_row;
         for (uint32_t col = 0; col < w; ++col) {
-            uint32_t pix = src[col];
+            uint32_t x_ind = transform.flip_x ? full_width-transform.start_x-col : transform.start_x + col;
+            uint32_t pix = src[x_ind];
             if (((pix >> 24) & 0xFF) < 0xFF)
                 dst[col] = pixel_blend(pix, dst[col]);
             else
                 dst[col] = pix;
         }
         dst_row += dst_pitch_px;
-        src_row += src_pitch_px;
+        if (transform.flip_y) src_row -= src_pitch_px;
+        else src_row += src_pitch_px;
     }
 
     mark_dirty(ctx, x,y,w, h);

@@ -262,7 +262,6 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
 
 process_t* create_process(const char *name, const char *bundle, void *content, uint64_t content_size, uintptr_t entry, uintptr_t va_base) {
     
-    disable_interrupt();
     process_t* proc = init_process();
 
     name_process(proc, name);
@@ -309,8 +308,6 @@ process_t* create_process(const char *name, const char *bundle, void *content, u
     proc->state = READY;
 
     proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_USER, MEM_RW, true);
-
-    enable_interrupt();
     
     return proc;
 }

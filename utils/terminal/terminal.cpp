@@ -75,9 +75,11 @@ const char** Terminal::parse_arguments(char *args, int *count){
 
 void Terminal::run_command(){
     const char* fullcmd = get_current_line();
-    if (fullcmd[0] == '>' && fullcmd[1] == ' ') fullcmd += 2;
+    if (fullcmd[0] == '>' && fullcmd[1] == ' ') {
+        fullcmd += 2;
+    }
     while (*fullcmd == ' ' || *fullcmd == '\t') fullcmd++;
-    if (*fullcmd == '\0') { 
+    if (*fullcmd == '\0') {
         put_char('\r');
         put_char('\n');
         put_string("> ");

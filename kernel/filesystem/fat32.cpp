@@ -257,6 +257,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
 }
 
 size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
+    //TODO: Here and elsewhere, we're not checking the cursor's validity within the file
     uintptr_t file = (uintptr_t)open_files[descriptor->id];
     memcpy(buf, (void*)(file + descriptor->cursor), size);
     return size;

@@ -13,6 +13,7 @@ public:
     virtual sizedptr request_buffer() = 0;
     virtual void submit_buffer(AudioDriver *driver) = 0;
     uint32_t stream_id;
+    uint32_t rate;
     uint8_t channels;
     uintptr_t buffer;
     uintptr_t write_ptr;

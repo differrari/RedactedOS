@@ -21,7 +21,8 @@
 #include "networking/interface_manager.h"
 #include "bin/bin_mod.h"
 #include "net/transport_layer/csocket.h"
-#include "net/internet_layer/icmp.h"
+#include "loading/dwarf.h"
+
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -94,7 +95,7 @@ uint64_t syscall_gpu_resize_ctx(process_t *ctx){
 }
 
 uint64_t syscall_char_size(process_t *ctx){
-    return gpu_get_char_size(ctx->PROC_X0);;
+    return gpu_get_char_size(ctx->PROC_X0);
 }
 
 uint64_t syscall_sleep(process_t *ctx){
@@ -154,7 +155,7 @@ uint64_t syscall_socket_listen(process_t *ctx){
 uint64_t syscall_socket_accept(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
     accept_on_socket(handle, ctx->id);
-    return 0;
+    return 1;
 }
 
 uint64_t syscall_socket_send(process_t *ctx){
@@ -251,18 +252,38 @@ syscall_entry syscalls[] = {
     [DIR_LIST_CODE] = syscall_dir_list,
 };
 
-void backtrace(uintptr_t fp, uintptr_t elr) {
-    for (uint8_t depth = 0; depth < 10 && fp; depth++) {
+bool decode_crash_address_with_info(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
+    if (!debug_line.ptr || !debug_line.size) return false;
+    debug_line_info info = dwarf_decode_lines(debug_line.ptr, debug_line.size, debug_line_str.ptr, debug_line_str.size, address);
+    if (info.address == address){
+        kprintf("[%.16x] %i: %s %i:%i", address, depth, info.file, info.line, info.column);
+        return true;
+    }
+    return false;
+}
+
+bool decode_crash_address(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
+    return decode_crash_address_with_info(depth, address, debug_line, debug_line_str) ||
+    decode_crash_address_with_info(depth, address, get_proc_by_pid(0)->debug_lines, get_proc_by_pid(0)->debug_line_str);
+}
+
+void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_line_str) {
+
+    if (elr){
+        if (!decode_crash_address(0, elr, debug_line, debug_line_str))
+            kprintf("Exception triggered by %x",(elr));
+    }
+
+    for (uint8_t depth = 1; depth < 10 && fp; depth++) {
         uintptr_t return_address = (*(uintptr_t*)(fp + 8));
 
         if (return_address != 0){
-            kprintf("%i: caller address: %x", depth, return_address, return_address);
+            return_address -= 4;//Return address is the next instruction after branching
+            if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
+                kprintf("%i: caller address: %x", depth, return_address, return_address);
             fp = *(uintptr_t*)fp;
-        }
-        if (return_address == 0 || !fp){
-            kprintf("Exception triggered by %x",(elr));
-            return;
-        }
+        } else return;
+        
     }
 }
 
@@ -293,8 +314,9 @@ void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
     uint8_t ifsc = esr & 0x3F;
     
     kprint(fault_messages[ifsc]);
-    backtrace(sp, elr);
-    // process_t *proc = get_current_proc();
+    process_t *proc = get_current_proc();
+    backtrace(sp, elr, proc->debug_lines, proc->debug_line_str);
+
     // for (int i = 0; i < 31; i++)
     //     kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
     if (far > 0) 

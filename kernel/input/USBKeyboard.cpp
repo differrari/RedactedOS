@@ -60,7 +60,7 @@ void USBKeyboard::process_keypress(keypress *rkp){
                 kbd_event event = {};
                 event.type = KEY_PRESS;
                 event.key = rkp->keys[i];
-                if (timer_now_msec()-last_registered[(uint8_t)event.key] > 50){
+                if (timer_now_msec()-last_registered[(uint8_t)event.key] > 75){
                     last_registered[(uint8_t)event.key] = timer_now_msec();
                     register_event(event);
                 }
@@ -83,7 +83,7 @@ void USBKeyboard::process_keypress(keypress *rkp){
         register_keypress(kp);
     } else
         repeated_keypresses++;
-    last_keypress = kp;
+    memcpy(&last_keypress, rkp, sizeof(keypress));
 
     requesting = false;
 }

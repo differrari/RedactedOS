@@ -56,6 +56,10 @@ uintptr_t realloc(uintptr_t old_ptr, size_t old_size, size_t new_size);
 
 sizedptr dir_list(const char *path);
 
+static inline void yield(){
+    sleep(0);
+}
+
 #ifdef __cplusplus
 }
 #endif

@@ -17,9 +17,8 @@
 #define RESIZE_DRAW_CTX_CODE        24
 
 #define SLEEP_CODE                  30
-#define PROCESS_YIELD_CODE          31
-#define HALT_CODE                   33
-#define EXEC_CODE                   34
+#define HALT_CODE                   31
+#define EXEC_CODE                   32
 
 #define GET_TIME_CODE               40
 
