@@ -1,6 +1,6 @@
 ARCH       ?= aarch64-none-elf
-CC         := $(ARCH)-gcc
-CXX        := $(ARCH)-g++
+CC         ?= $(ARCH)-gcc
+CXX        ?= $(ARCH)-g++
 LD         := $(ARCH)-ld
 AR         := $(ARCH)-ar
 OBJCOPY    := $(ARCH)-objcopy
