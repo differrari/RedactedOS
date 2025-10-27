@@ -245,7 +245,7 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
 void kfree(void* ptr, uint64_t size) {
     kprintfv("[page_alloc_free] Freeing block at %x size %x",(uintptr_t)ptr, size);
 
-    memset((void*)ptr,0,size);
+    memset32((void*)ptr,0xDEADBEEF,size);
 
     mem_page *page = (mem_page *)(((uintptr_t)ptr) & ~0xFFF);
 

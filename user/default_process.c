@@ -10,6 +10,12 @@
 #define BORDER 20
 
 int img_example() {
+    uint64_t *a = malloc(64);
+    printf("Initiali value %x",a[3]);
+    a[3] = 12345678;
+    printf("Set value %x",a[3]);
+    free(a,64);
+    printf("After-free value %x",a[3]);
     draw_ctx ctx = {};
     request_draw_ctx(&ctx);
     file descriptor;
