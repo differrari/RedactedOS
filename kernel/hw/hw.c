@@ -1,6 +1,7 @@
 #include "hw.h"
 #include "console/kio.h"
 #include "gpio.h"
+#include "sysregs.h"
 
 uint8_t BOARD_TYPE;
 uint8_t RPI_BOARD;
@@ -80,6 +81,18 @@ void detect_hardware(){
         LOWEST_ADDR = MMIO_BASE;
         if (RPI_BOARD != 5) reset_gpio();
     }
+}
+
+void hw_high_va(){
+    UART0_BASE |= HIGH_VA;
+    MMIO_BASE |= HIGH_VA;
+    if (BOARD_TYPE != 1)//virt is probably doing some weird PCI address stuff already
+        PCI_BASE |= HIGH_VA;
+    GICD_BASE |= HIGH_VA;
+    GICC_BASE |= HIGH_VA;
+    MAILBOX_BASE |= HIGH_VA;
+    SDHCI_BASE |= HIGH_VA;
+    XHCI_BASE |= HIGH_VA;
 }
 
 void print_hardware(){
