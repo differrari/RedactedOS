@@ -9,19 +9,35 @@
 #include "std/std.h"
 #include "console/kio.h"
 #include "networking/interface_manager.h"
-#include "syscalls/syscalls.h"
 #include "process/scheduler.h"
+#include "net/internet_layer/ipv4_utils.h"
 
-#define RX_INTR_BATCH_LIMIT 32
-#define TASK_RX_BATCH_LIMIT 32
-#define TASK_TX_BATCH_LIMIT 32
-
+#define RX_INTR_BATCH_LIMIT 64
+#define TASK_RX_BATCH_LIMIT 256
+#define TASK_TX_BATCH_LIMIT 256
 
 NetworkDispatch::NetworkDispatch()
 {
     nic_num = 0;
     g_net_pid = 0xFFFF;
     for (int i = 0; i <= (int)MAX_L2_INTERFACES; ++i) ifindex_to_nicid[i] = 0xFF;
+    for (size_t i = 0; i < MAX_NIC; ++i) {
+        nics[i].drv = nullptr;
+        nics[i].ifindex = 0;
+        nics[i].ifname_str[0] = 0;
+        nics[i].hwname_str[0] = 0;
+        nics[i].mtu_val = 0;
+        nics[i].hdr_sz = 0;
+        nics[i].speed_mbps = 0xFFFFFFFFu;
+        nics[i].duplex_mode = 0xFFu;
+        nics[i].kind_val = 0xFFu;
+        nics[i].rx_produced = 0;
+        nics[i].rx_consumed = 0;
+        nics[i].tx_produced = 0;
+        nics[i].tx_consumed = 0;
+        nics[i].rx_dropped = 0;
+        nics[i].tx_dropped = 0;
+    }
 }
 
 bool NetworkDispatch::init()
@@ -50,11 +66,17 @@ void NetworkDispatch::handle_rx_irq(size_t nic_id)
     if (nic_id >= nic_num) return;
     NetDriver* driver = nics[nic_id].drv;
     if (!driver) return;
+
     for (int i = 0; i < RX_INTR_BATCH_LIMIT; ++i) {
         sizedptr raw = driver->handle_receive_packet();
         if (!raw.ptr || raw.size == 0) break;
         if (raw.size < sizeof(eth_hdr_t)) { free_frame(raw); continue; }
-        if (!nics[nic_id].rx.enqueue(raw)) free_frame(raw);
+        if (!nics[nic_id].rx.push(raw)) {
+            free_frame(raw);
+            nics[nic_id].rx_dropped++;
+            continue;
+        }
+        nics[nic_id].rx_produced++;
     }
 }
 
@@ -81,7 +103,12 @@ bool NetworkDispatch::enqueue_frame(uint8_t ifindex, const sizedptr& frame)
     void* dst = (void*)(pkt.ptr + hs);
     memcpy(dst, (const void*)frame.ptr, frame.size);
 
-    if (!nics[nic_id].tx.enqueue(pkt)) { free_frame(pkt); return false; }
+    if (!nics[nic_id].tx.push(pkt)) {
+        free_frame(pkt);
+        nics[nic_id].tx_dropped++;
+        return false;
+    }
+    nics[nic_id].tx_produced++;
     return true;
 }
 
@@ -92,29 +119,35 @@ int NetworkDispatch::net_task()
         bool did_work = false;
 
         for (size_t n = 0; n < nic_num; ++n) {
+            int processed = 0;
             for (int i = 0; i < TASK_RX_BATCH_LIMIT; ++i) {
                 if (nics[n].rx.is_empty()) break;
                 sizedptr pkt{0,0};
-                if (!nics[n].rx.dequeue(pkt)) break;
-                did_work = true;
+                if (!nics[n].rx.pop(pkt)) break;
                 eth_input(nics[n].ifindex, pkt.ptr, pkt.size);
                 free_frame(pkt);
+                nics[n].rx_consumed++;
+                processed++;
             }
+            if (processed) did_work = true;
         }
 
         for (size_t n = 0; n < nic_num; ++n) {
             NetDriver* driver = nics[n].drv;
             if (!driver) continue;
+            int processed = 0;
             for (int i = 0; i < TASK_TX_BATCH_LIMIT; ++i) {
                 if (nics[n].tx.is_empty()) break;
                 sizedptr pkt{0,0};
-                if (!nics[n].tx.dequeue(pkt)) break;
-                did_work = true;
+                if (!nics[n].tx.pop(pkt)) break;
                 driver->send_packet(pkt);
+                nics[n].tx_consumed++;
+                processed++;
             }
+            if (processed) did_work = true;
         }
 
-        if (!did_work) sleep(10);//TODO: manage it with an event
+        if (!did_work) sleep(0);//TODO: manage it with an event
     }
 }
 
@@ -248,9 +281,6 @@ bool NetworkDispatch::register_all_from_bus() {
 
         NICCtx* c = &nics[nic_num];
         c->drv = drv;
-
-        new ((void*)&c->tx) Queue<sizedptr>(QUEUE_CAPACITY);
-        new ((void*)&c->rx) Queue<sizedptr>(QUEUE_CAPACITY);
 
         strncpy(c->ifname_str, (int)sizeof(c->ifname_str), name);
         strncpy(c->hwname_str, (int)sizeof(c->hwname_str), hw);

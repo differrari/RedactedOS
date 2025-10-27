@@ -23,6 +23,7 @@
 #include "net/transport_layer/csocket.h"
 #include "loading/dwarf.h"
 
+
 int syscall_depth = 0;
 uintptr_t cpec;
 
@@ -218,6 +219,7 @@ uint64_t syscall_dir_list(process_t *ctx){
     // return list_directory_contents(path);
     return 0;
 }
+
 
 syscall_entry syscalls[] = {
     [MALLOC_CODE] = syscall_malloc,

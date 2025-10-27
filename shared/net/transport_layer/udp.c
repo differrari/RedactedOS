@@ -44,7 +44,7 @@ void udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, si
         size_t written = create_udp_segment(buf, src, dst, payload);
         uint32_t dst_ip = v4_u32_from_arr(dst->ip);
 
-        ipv4_send_packet(dst_ip, 0x11, (sizedptr){ buf, (uint32_t)written }, tx_opts);
+        ipv4_send_packet(dst_ip, 0x11, (sizedptr){ buf, (uint32_t)written }, tx_opts, 0);
         free((void *)buf, udp_len);
     } else if (src->ver == IP_VER6) {
         //TODO IPV6

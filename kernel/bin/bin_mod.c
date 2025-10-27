@@ -1,5 +1,7 @@
 #include "bin_mod.h"
 #include "cat.h"
+#include "ping.h"
+#include "tracert.h"
 #include "kernel_processes/kprocess_loader.h"
 
 bool init_bin(){
@@ -12,7 +14,9 @@ typedef struct open_bin_ref {
 } open_bin_ref;
 
 open_bin_ref available_cmds[] = {
-    { "cat", run_cat }
+    { "cat", run_cat },
+    { "ping", run_ping },
+    { "tracert", run_tracert },
 };
 
 process_t* execute(const char* prog_name, int argc, const char* argv[]){
