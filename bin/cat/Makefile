@@ -46,4 +46,8 @@ clean:
 	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET) $(ELF)
 	$(RM) -r $(BUILD_DIR)
 
+
+dump: all
+	$(ARCH)-objdump -S $(ELF) > dump
+
 -include $(DEP)

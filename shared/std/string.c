@@ -1208,3 +1208,8 @@ bool parse_uint32_dec(const char *s, uint32_t *out) {
     *out = (uint32_t)v;
     return true;
 }
+
+void strcat(const char *a, const char *b, char *dest){
+    while (*a) *dest++ = *a++;
+    while (*b) *dest++ = *b++;
+}

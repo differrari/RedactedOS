@@ -56,6 +56,7 @@ uint64_t parse_int_u64(const char* str, size_t size);
 
 bool utf16tochar(uint16_t* str_in, char* out_str, size_t max_len);
 
+void strcat(const char *a, const char *b, char *dest);
 string string_from_const(const char *literal);
 string string_concat(string a, string b);
 void string_concat_inplace(string *dest, string src);

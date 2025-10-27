@@ -178,6 +178,7 @@ void Launcher::activate_current(){
         kprintf("[LAUNCHER] process launched");
         process_active = true;
         sys_set_focus(active_proc->id);
+        active_proc->state = process_t::process_state::READY;
     }
     
 }
