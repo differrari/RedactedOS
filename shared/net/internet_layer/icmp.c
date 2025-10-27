@@ -186,7 +186,7 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
 
         l3_ipv4_interface_t* l3 = l3_ipv4_find_by_ip(dst_ip);
         if (l3 && l3->l2) {
-            ipv4_tx_opts_t o = {.index = l3->l3_id, .scope = IPV4_TX_BOUND_L3};
+            ipv4_tx_opts_t o = {.index = l3->l3_id, .scope = IP_TX_BOUND_L3};
             ipv4_send_packet(src_ip, 1, (sizedptr){buf, rlen}, &o, IP_TTL_DEFAULT);
         }
         free((void*)buf, 8 + 56);

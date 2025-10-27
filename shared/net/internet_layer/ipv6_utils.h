@@ -22,6 +22,7 @@ int ipv6_common_prefix_len(const uint8_t a[16], const uint8_t b[16]);
 void ipv6_make_multicast(uint8_t scope, ipv6_mcast_kind_t kind, const uint8_t unicast[16], uint8_t out[16]);
 void ipv6_to_string(const uint8_t ip[16], char* buf, int buflen);
 bool ipv6_parse(const char* s, uint8_t out[16]);
+void ipv6_multicast_mac(const uint8_t ip[16], uint8_t mac[6]);
 
 #ifdef __cplusplus
 }

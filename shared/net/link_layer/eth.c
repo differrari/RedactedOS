@@ -3,7 +3,7 @@
 #include "networking/network.h"
 #include "arp.h"
 #include "net/internet_layer/ipv4.h"
-//#include "net/internet_layer/ipv6.h"
+#include "net/internet_layer/ipv6.h"
 #include "console/kio.h"
 #include "syscalls/syscalls.h"
 
@@ -70,6 +70,7 @@ void eth_input(uint16_t ifindex, uintptr_t frame_ptr, uint32_t frame_len){
             ipv4_input(ifindex, payload_ptr, payload_len, src_mac);
             break;
         case ETHERTYPE_IPV6: //TODO IPV6
+            ipv6_input(ifindex, payload_ptr, payload_len, src_mac);
             break;
         case ETHERTYPE_VLAN1Q: //TODO vlan
             break;

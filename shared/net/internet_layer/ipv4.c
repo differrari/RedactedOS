@@ -9,6 +9,7 @@
 #include "console/kio.h"
 #include "syscalls/syscalls.h"
 #include "ipv4_utils.h"
+#include "net/network_types.h"
 
 static uint16_t g_ip_ident = 1;
 
@@ -235,8 +236,8 @@ static bool pick_route_bound_l2(uint8_t ifindex, uint32_t dst, uint8_t* out_ifx,
 
 static bool pick_route(uint32_t dst, const ipv4_tx_opts_t* opts, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
     if (opts) {
-        if (opts->scope == IPV4_TX_BOUND_L3) return pick_route_bound_l3(opts->index, dst, out_ifx, out_src, out_nh);
-        if (opts->scope == IPV4_TX_BOUND_L2) return pick_route_bound_l2(opts->index, dst, out_ifx, out_src, out_nh);
+        if (opts->scope == IP_TX_BOUND_L3) return pick_route_bound_l3(opts->index, dst, out_ifx, out_src, out_nh);
+        if (opts->scope == IP_TX_BOUND_L2) return pick_route_bound_l2(opts->index, dst, out_ifx, out_src, out_nh);
         return pick_route_global(dst, out_ifx, out_src, out_nh);
     }
     return pick_route_global(dst, out_ifx, out_src, out_nh);

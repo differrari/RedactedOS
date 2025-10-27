@@ -137,7 +137,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             return 2;
         }
         txo.index = l3->l3_id;
-        txo.scope = IPV4_TX_BOUND_L3;
+        txo.scope = IP_TX_BOUND_L3;
         txop = &txo;
     }
 

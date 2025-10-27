@@ -33,6 +33,17 @@ typedef struct SocketHandle {
     protocol_t protocol;
 } SocketHandle;
 
+typedef enum {
+    IP_TX_AUTO = 0,
+    IP_TX_BOUND_L2 = 1,
+    IP_TX_BOUND_L3 = 2
+} ip_tx_scope_t;
+
+typedef struct {
+    uint8_t index;
+    ip_tx_scope_t scope;
+} ip_tx_opts_t;
+
 #ifdef __cplusplus
 }
 #endif

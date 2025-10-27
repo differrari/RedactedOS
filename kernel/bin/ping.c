@@ -122,7 +122,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
 
         bound_index = (int8_t)l3->l3_id;
         txo.index = (uint8_t)bound_index;
-        txo.scope = IPV4_TX_BOUND_L3;
+        txo.scope = IP_TX_BOUND_L3;
         txop = &txo;
         char ssrc[16];
         ipv4_to_string(o->src_ip, ssrc);

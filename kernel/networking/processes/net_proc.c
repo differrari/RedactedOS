@@ -14,6 +14,9 @@
 #include "net/internet_layer/ipv4.h"
 #include "net/internet_layer/ipv4_utils.h"
 
+#include "net/internet_layer/ipv6.h"
+#include "net/internet_layer/ipv6_utils.h"
+
 #include "net/transport_layer/csocket_udp.h"
 
 #include "net/application_layer/csocket_http_client.h"

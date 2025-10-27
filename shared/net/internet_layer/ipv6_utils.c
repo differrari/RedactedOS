@@ -182,3 +182,12 @@ void ipv6_to_string(const uint8_t ip[16], char* buf, int buflen) {
     if (n < buflen) buf[n] = 0;
     else if (buflen > 0) buf[buflen - 1] = 0;
 }
+
+void ipv6_multicast_mac(const uint8_t ip[16], uint8_t mac[6]) {
+    mac[0] = 0x33;
+    mac[1] = 0x33;
+    mac[2] = ip[12];
+    mac[3] = ip[13];
+    mac[4] = ip[14];
+    mac[5] = ip[15];
+}

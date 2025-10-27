@@ -28,7 +28,7 @@ typedef enum {
     IPV6_CFG_DISABLE = -1,
     IPV6_CFG_STATIC = 0x01,
     IPV6_CFG_SLAAC = 0x02,
-    IPV6_CFG_DHCPV6 = 0x04
+    IPV6_CFG_DHCPV6 = 0x04 
 } ipv6_cfg_t;
 
 struct l2_interface;

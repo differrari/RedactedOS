@@ -317,7 +317,7 @@ public:
                         memcpy(src.ip, &v4->ip, 4);
                         src.port = localPort;
                         sizedptr pay{ (uintptr_t)buf, (uint32_t)len };
-                        ipv4_tx_opts_t tx; tx.scope = IPV4_TX_BOUND_L3; tx.index = bl3;
+                        ipv4_tx_opts_t tx; tx.scope = IP_TX_BOUND_L3; tx.index = bl3;
                         udp_send_segment(&src, &d, pay, &tx);
                     }
                     remoteEP = d;
@@ -346,7 +346,7 @@ public:
                     memcpy(src.ip, &v4->ip, 4);
                     src.port = localPort;
                     sizedptr pay{ (uintptr_t)buf, (uint32_t)len };
-                    ipv4_tx_opts_t tx; tx.scope = IPV4_TX_BOUND_L3; tx.index = chosen_l3;
+                    ipv4_tx_opts_t tx; tx.scope = IP_TX_BOUND_L3; tx.index = chosen_l3;
                     udp_send_segment(&src, &d, pay, &tx);
                     remoteEP = d;
                     return (int64_t)len;
@@ -414,7 +414,7 @@ public:
                     memcpy(src.ip, &v4->ip, 4);
                     src.port = localPort;
                     sizedptr pay{ (uintptr_t)buf, (uint32_t)len };
-                    ipv4_tx_opts_t tx; tx.scope = IPV4_TX_BOUND_L3; tx.index = chosen_l3;
+                    ipv4_tx_opts_t tx; tx.scope = IP_TX_BOUND_L3; tx.index = chosen_l3;
                     udp_send_segment(&src, &d, pay, &tx);
                     remoteEP = d;
                     return (int64_t)len;

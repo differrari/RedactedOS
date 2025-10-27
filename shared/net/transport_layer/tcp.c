@@ -135,10 +135,10 @@ static bool build_tx_opts_from_local_v4(const void* src_ip_addr, ipv4_tx_opts_t*
     uint32_t lip = v4_u32_from_ptr(src_ip_addr);
     l3_ipv4_interface_t* v4 = l3_ipv4_find_by_ip(lip);
     if (v4){
-        out->scope = IPV4_TX_BOUND_L3;
+        out->scope = IP_TX_BOUND_L3;
         out->index = v4->l3_id;
     } else {
-        out->scope = IPV4_TX_AUTO;
+        out->scope = IP_TX_AUTO;
         out->index = 0;
     }
     return true;
@@ -146,7 +146,7 @@ static bool build_tx_opts_from_local_v4(const void* src_ip_addr, ipv4_tx_opts_t*
 
 static bool build_tx_opts_from_l3(uint8_t l3_id, ipv4_tx_opts_t* out){
     if (!out) return false;
-    out->scope = IPV4_TX_BOUND_L3;
+    out->scope = IP_TX_BOUND_L3;
     out->index = l3_id;
     return true;
 }
