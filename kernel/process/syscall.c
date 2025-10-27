@@ -184,7 +184,7 @@ uint64_t syscall_socket_close(process_t *ctx){
 
 uint64_t syscall_fopen(process_t *ctx){
     char *req_path = (char *)ctx->PROC_X0;
-    char path[255];
+    char path[255] = {};
     if (!(ctx->PROC_PRIV) && strstart("/resources/", req_path, true) == 11){
         string_format_buf(path, sizeof(path),"%s%s", ctx->bundle, req_path);
     } else memcpy(path, req_path, strlen(req_path, 0));
