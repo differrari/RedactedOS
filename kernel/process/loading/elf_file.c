@@ -133,7 +133,7 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
 
     disable_interrupt();
 
-    process_t *proc = create_process(name, bundle, (void*)file, filesize, header->program_entry_offset, first_program_header->p_vaddr);
+    process_t *proc = create_process(name, bundle, (void*)(file + first_program_header->p_offset), filesize, header->program_entry_offset, first_program_header->p_vaddr);
     
     if (debug_line.ptr && debug_line.size){ 
         proc->debug_lines.size = debug_line.size;
