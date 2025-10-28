@@ -1,5 +1,4 @@
 #include "bin_mod.h"
-#include "cat.h"
 #include "ping.h"
 #include "tracert.h"
 #include "kernel_processes/kprocess_loader.h"
@@ -18,7 +17,6 @@ typedef struct open_bin_ref {
 } open_bin_ref;
 
 open_bin_ref available_cmds[] = {
-    { "cat", run_cat },
     { "ping", run_ping },
     { "tracert", run_tracert },
 };
