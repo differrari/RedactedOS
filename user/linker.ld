@@ -11,14 +11,14 @@ SECTIONS {
         *(.rodata .rodata.*)
     }
 
-    .data : {
-        *(.data .data.*)
-    }
-
     .bss : {
         __bss_start = .;
         *(.bss .bss.* COMMON)
         __bss_end = .;
+    }
+
+    .data : {
+        *(.data .data.*)
     }
 
     /DISCARD/ : {

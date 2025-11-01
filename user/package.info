@@ -1,0 +1,10 @@
+# Name
+app_name = "Demo"
+app_author="[REDACTED]"
+
+# Comments are allowed
+"unknown values"="will be ignored"
+
+// C-style comments are allowed too
+
+        "indentation"=and no quotes

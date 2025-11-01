@@ -20,6 +20,8 @@ typedef struct string_list {
     char array[];
 } string_list;
 
+extern void free(void*,size_t);
+
 uint32_t strlen(const char *s, uint32_t max_length);
 string string_from_literal(const char *literal);
 string string_from_literal_length(const char *array, uint32_t max_length);
@@ -33,6 +35,10 @@ string string_format_va(const char *fmt, va_list args); //TODO __attribute__((fo
 size_t string_format_va_buf(const char *fmt, char *out, size_t cap, va_list args); //TODO __attribute__((format(printf, 1, 0)));
 string string_tail(const char *array, uint32_t max_length);
 string string_repeat(char symbol, uint32_t amount);
+
+static inline void string_free(string str){
+    if (str.data && str.mem_length) free(str.data, str.mem_length);
+}
 
 char tolower(char c);
 char toupper(char c);

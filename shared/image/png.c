@@ -1,4 +1,5 @@
 #include "png.h"
+#include "image.h"
 #include "syscalls/syscalls.h"
 #include "std/memory_access.h"
 #include "compression/huffman.h"
@@ -37,6 +38,9 @@ typedef union zlib_hdr {
 
 huff_tree_node* deflate_decode_codes(uint8_t max_code_length, uint16_t alphabet_length, uint16_t lengths[]){
     uint16_t bl_count[max_code_length] = {};
+    for (int i = 0; i < max_code_length; i++){
+        bl_count[i] = 0;
+    }
     for (int i = 0; i < max_code_length; i++){
         for (int j = 0; j < alphabet_length; j++){
             if (lengths[j] == i){
@@ -208,7 +212,7 @@ bool deflate_block(huff_tree_node *litlen_tree, huff_tree_node *dist_tree, defla
 }
 
 size_t deflate_decode(void* ptr, size_t size, deflate_read_ctx *ctx){
-    if (ctx->cur_block > 0){//TODO: Can a compressed deflate block cross boundaries? 
+    if (ctx->cur_block > 0){//TODO: this is no longer needed since we put IDATs together
         // printf("Continuation of previous block %i %x",size, size);
         size_t amount = min(size,ctx->cur_block);
         memcpy(ctx->output_buf + ctx->out_cursor, ptr, amount);
@@ -374,63 +378,78 @@ image_info png_get_info(void * file, size_t size){
     png_ihdr *ihdr = (png_ihdr*)p;
     //Check the crc
     return (image_info){__builtin_bswap32(ihdr->width),__builtin_bswap32(ihdr->height)};
+}   
+
+uint8_t paeth_byte(uint8_t a, uint8_t b, uint8_t c){
+    int16_t p = a + b - c;
+    uint16_t pa = abs(p - a);
+    uint16_t pb = abs(p - b);
+    uint16_t pc = abs(p - c);
+
+    if (pa <= pb && pa <= pc)
+        return a % 256;
+    else if (pb <= pc)
+        return b % 256;
+    else
+        return c % 256;
 }
 
 uint32_t paeth_predict(uint32_t a, uint32_t b, uint32_t c) {
-    uint32_t p = a + b - c;
-    uint32_t pa = abs(p - a);
-    uint32_t pb = abs(p - b);
-    uint32_t pc = abs(p - c);
+    uint8_t alpha = paeth_byte((a >> 24) & 0xFF, (b >> 24) & 0xFF, (c >> 24) & 0xFF);
+    uint8_t red = paeth_byte((a >> 16) & 0xFF, (b >> 16) & 0xFF, (c >> 16) & 0xFF);
+    uint8_t green = paeth_byte((a >> 8) & 0xFF, (b >> 8) & 0xFF, (c >> 8) & 0xFF);
+    uint8_t blue = paeth_byte(a & 0xFF, b & 0xFF, c & 0xFF);
+    return (alpha << 24) | (red << 16) | (green << 8) | blue;
+}
 
-    if (pa <= pb && pa <= pc)
-        return a;
-    else if (pb <= pc)
-        return b;
-    else
-        return c;
+uint32_t png_filter_apply(uint32_t a, uint32_t b){
+    uint8_t alpha = (((a >> 24) & 0xFF) + ((b >> 24) & 0xFF)) % 256;
+    uint8_t red = (((a >> 16) & 0xFF) + ((b >> 16) & 0xFF)) % 256;
+    uint8_t green = (((a >> 8) & 0xFF) + ((b >> 8) & 0xFF)) % 256;
+    uint8_t blue = ((a & 0xFF) + (b & 0xFF)) % 256;
+    return (alpha << 24) | (red << 16) | (green << 8) | blue;
+}
+
+uint32_t png_average_apply(uint32_t a, uint32_t b){
+    uint8_t alpha = (((a >> 24) & 0xFF) + ((b >> 24) & 0xFF))/2;
+    uint8_t red = (((a >> 16) & 0xFF) + ((b >> 16) & 0xFF))/2;
+    uint8_t green = (((a >> 8) & 0xFF) + ((b >> 8) & 0xFF))/2;
+    uint8_t blue = ((a & 0xFF) + (b & 0xFF))/2;
+    return ((alpha % 256) << 24) | ((red % 256) << 16) | ((green % 256) << 8) | (blue % 256);
 }
 
 void png_process_raw(uintptr_t raw_img, uint32_t w, uint32_t h, uint16_t bpp, uint32_t *buf){
     const uint8_t bytes = bpp/8;
     for (uint32_t y = 0; y < h; y++){
         uint8_t filter_type = *(uint8_t*)(raw_img + (((w * bytes) + 1) * y));
-        // printf("%i Filter type %i",y,filter_type);
-        if (filter_type == 0){
-            printf("Wrong filter type. Dumping row and returning");
-            for (uint32_t x = 0; x < w; x++){
-                uint32_t current = get_color_bpp(bpp, (raw_img + (((w * bytes) + 1) * y) + 1 + (x*bytes)));
-                printf("%x",current);
-            }
-            return;
-        }
         for (uint32_t x = 0; x < w; x++){
             uint32_t current = get_color_bpp(bpp, (raw_img + (((w * bytes) + 1) * y) + 1 + (x*bytes)));
-            // if (y == 0) printf("%x",current);
+            // if (y == 0) printf("%.8x",current);
             switch (filter_type) {
                 case 0: 
                 break;
                 case 1:
-                if (x > 0) current += buf[(y * w) + x - 1];
+                    if (x > 0) current = png_filter_apply(current,buf[(y * w) + x - 1]);
                     break;
                 case 2:
-                    if (y > 0) current += buf[((y-1) * w) + x];
+                    if (y > 0) current = png_filter_apply(current,buf[((y-1) * w) + x]);
                     break;
                 case 3:
-                    if (x > 0) current += buf[(y * w) + x - 1]/2;
-                    if (y > 0) current += buf[((y-1) * w) + x]/2;
+                    uint32_t raw = x == 0 ? 0 : buf[(y * w) + x - 1];
+                    uint32_t prior = y == 0 ? 0 : buf[((y-1) * w) + x];
+                    current = png_filter_apply(current, png_average_apply(raw,prior));
                     break;
                 case 4:
-                    if (x > 0 && y > 0) {
-                        uint32_t prev = buf[(y * w) + x - 1];
-                        uint32_t top = buf[((y - 1) * w) + x];
-                        uint32_t diag = buf[((y - 1) * w) + x - 1];
-                        current += paeth_predict(prev, top, diag);
-                    }
+                    uint32_t prev = x == 0 ? 0 : buf[(y * w) + x - 1];
+                    uint32_t top = y == 0 ? 0 : buf[((y - 1) * w) + x];
+                    uint32_t diag = y == 0 || x == 0 ? 0 : buf[((y - 1) * w) + x - 1];
+                    current = png_filter_apply(current,paeth_predict(prev, top, diag));
                     break;
             }
-            buf[(y * w) + x] = convert_bpp_color(bpp, current); 
+            buf[(y * w) + x] = current; 
         }
     }
+    for (uint32_t i = 0; i < h*w; i++) buf[i] = convert_bpp_color(bpp, buf[i]);
 }
 
 uint16_t png_decode_bpp(png_ihdr *ihdr){
@@ -455,6 +474,8 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
     png_chunk_hdr *hdr;
     image_info info = {};
     uintptr_t out_buf = 0;
+    void *data_buf = 0;
+    uintptr_t data_cursor = 0;
     uint16_t bpp = 0;
     deflate_read_ctx ctx = {};
     do {
@@ -474,11 +495,16 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
                 out_buf = (uintptr_t)malloc((info.width * info.height * system_bpp) + info.height);//TODO: bpp might be too big, read image format
                 ctx.output_buf = (uint8_t*)out_buf;
             }
-            printf("Found some idat %x - %x",p + sizeof(png_chunk_hdr) - (uintptr_t)file, length);
-            deflate_decode((void*)(p + sizeof(png_chunk_hdr)), length, &ctx);
+            if (!data_buf){
+                data_buf = malloc(size);
+            }
+            memcpy((void*)((uintptr_t)data_buf + data_cursor), (void*)(p + sizeof(png_chunk_hdr)), length);
+            data_cursor += length;
+            // printf("Found some idat %x - %x",p + sizeof(png_chunk_hdr) - (uintptr_t)file, length);
         }
         p += sizeof(png_chunk_hdr) + __builtin_bswap32(hdr->length) + sizeof(uint32_t);
     } while(strstart(hdr->type, "IEND", true) != 4);
+    deflate_decode(data_buf, data_cursor, &ctx);
     png_process_raw(out_buf, info.width, info.height, bpp, buf);
 }
 

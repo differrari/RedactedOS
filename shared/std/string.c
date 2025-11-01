@@ -168,7 +168,7 @@ uint32_t strlen(const char *s, uint32_t max_length){
     if (s == NULL) return 0;
     
     uint32_t len = 0;
-    while ((max_length == 0 || len < max_length) && s[len] != '\0') len++;
+    while ((max_length == 0 || len < max_length) && s[len]) len++;
     
     return len;
 }
