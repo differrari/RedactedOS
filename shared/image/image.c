@@ -12,9 +12,13 @@ uint32_t get_color_bpp(uint16_t bpp, uintptr_t value_ptr){
 
         case 8: return 0;
 
-        case 24: return ARGB(0, read8(value_ptr), read8(value_ptr + 1), read8(value_ptr + 2)); 
+        case 24: return ARGB(0, read8(value_ptr + 0), read8(value_ptr + 1), read8(value_ptr + 2)); 
 
-        case 32: return value_ptr % 8 == 0 ? *(uint32_t*)value_ptr : read_unaligned32((uint32_t*)value_ptr);
+        case 32: {
+            uint32_t pix = value_ptr % 8 == 0 ? *(uint32_t*)value_ptr : read_unaligned32((uint32_t*)value_ptr);
+            pix = (((pix >> 24) & 0xFF) << 24) | (((pix >> 0) & 0xFF) << 16) | (((pix >> 8) & 0xFF) << 8) | (((pix >> 16) & 0xFF) << 0);
+            return pix;
+        }
     }
     return 0;
 }
