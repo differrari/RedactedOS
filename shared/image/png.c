@@ -94,17 +94,19 @@ void png_process_raw(uintptr_t raw_img, uint32_t w, uint32_t h, uint16_t bpp, ui
                 case 2:
                     if (y > 0) current = png_filter_apply(current,buf[((y-1) * w) + x]);
                     break;
-                case 3:
+                case 3: {
                     uint32_t raw = x == 0 ? 0 : buf[(y * w) + x - 1];
                     uint32_t prior = y == 0 ? 0 : buf[((y-1) * w) + x];
                     current = png_filter_apply(current, png_average_apply(raw,prior));
                     break;
-                case 4:
+                }
+                case 4: {
                     uint32_t prev = x == 0 ? 0 : buf[(y * w) + x - 1];
                     uint32_t top = y == 0 ? 0 : buf[((y - 1) * w) + x];
                     uint32_t diag = y == 0 || x == 0 ? 0 : buf[((y - 1) * w) + x - 1];
-                    current = png_filter_apply(current,paeth_predict(prev, top, diag));
+                    current = png_filter_apply(current, paeth_predict(prev, top, diag));
                     break;
+                }
             }
             buf[(y * w) + x] = current; 
         }

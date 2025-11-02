@@ -183,6 +183,8 @@ bool deflate_block(huff_tree_node *litlen_tree, huff_tree_node *dist_tree, defla
     return true;
 }
 
+uint16_t lit_lengths[288];
+
 size_t deflate_decode(void* ptr, size_t size, deflate_read_ctx *ctx){
     if (ctx->cur_block > 0){//TODO: this is no longer needed since we put IDATs together
         // printf("Continuation of previous block %i %x",size, size);
@@ -238,10 +240,8 @@ size_t deflate_decode(void* ptr, size_t size, deflate_read_ctx *ctx){
         READ_BITS(ctx->bytes, hdist, 5, ctx->bs, ctx->c);
         READ_BITS(ctx->bytes, hclen, 4, ctx->bs, ctx->c);
 
-        if (btype != 0b10){
-            printf("Only non-dynamic compression not supported right now %i",btype);
-            return 0;
-        }
+        huff_tree_node *litlen_tree, *dist_tree;
+        if (btype == 0b10){//Dynamic huffman
         // printf("DEFLATE DYNAMIC HEADER. LAST? %i. Type %i. HLIT %i, HDIST %i, HCLEN %i", final, btype, hlit, hdist, hclen);
         
         uint8_t code_order[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
@@ -306,11 +306,11 @@ size_t deflate_decode(void* ptr, size_t size, deflate_read_ctx *ctx){
         huffman_free(huff_decode_nodes);
 
         // printf("**** LITERAL/LENGTH ****");
-        huff_tree_node *litlen_tree = deflate_decode_codes(15, hlit + 257, full_huffman);
+        litlen_tree = deflate_decode_codes(15, hlit + 257, full_huffman);
         // huffman_viz(litlen_tree, 0, 0);
 
         // printf("**** DISTANCE ****");
-        huff_tree_node *dist_tree = deflate_decode_codes(15, hdist + 1, full_huffman + hlit + 257);
+        dist_tree = deflate_decode_codes(15, hdist + 1, full_huffman + hlit + 257);
 
         // huffman_viz(dist_tree, 0, 0);
         // printf("**** WOO ****");
@@ -318,6 +318,32 @@ size_t deflate_decode(void* ptr, size_t size, deflate_read_ctx *ctx){
         free(full_huffman, tree_data_size * sizeof(uint16_t));
 
         tree_root = litlen_tree;
+        } else if (btype == 0b01){//Static huffman
+            if (lit_lengths[0] == 0){
+                int l = 0;
+                for (; l <= 143; l++)
+                    lit_lengths[l] = 8;
+                for (; l <= 255; l++)
+                    lit_lengths[l] = 9;
+                for (; l <= 279; l++)
+                    lit_lengths[l] = 7;
+                for (; l <= 287; l++)
+                    lit_lengths[l] = 8;
+            }
+
+            litlen_tree = deflate_decode_codes(15, 288, lit_lengths);
+
+            uint16_t dist_lengths[32] = {};
+            for (int i = 0; i < 32; i++) dist_lengths[i] = i;
+                dist_tree = deflate_decode_codes(5, 32, dist_lengths);
+            // printf("**** LITERAL/LENGTH ****");
+            // huffman_viz(litlen_tree, 0, 0);
+            // printf("**** DISTANCE ****");
+            // huffman_viz(dist_tree, 0, 0);
+        } else {
+            printf("Unknown btype %.3b",btype);
+            return 0;
+        }
         
         if (!deflate_block(litlen_tree, dist_tree, ctx)){
             huffman_free(litlen_tree);
