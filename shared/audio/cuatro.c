@@ -30,7 +30,7 @@ int8_t play_audio_async(audio_samples *audio, int16_t amplitude){
 static file mixer = { .id = 0 };  // 0 ok as filesystem ids > 256
 
 static bool mixer_open_file(){
-    if (mixer.id == 0 && FS_RESULT_SUCCESS != fopen("/dev/audio/output", &mixer)) return false;
+    if (mixer.id == 0 && FS_RESULT_SUCCESS != fopen("/audio/output", &mixer)) return false;
     return true;
 }
 

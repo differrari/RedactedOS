@@ -246,7 +246,7 @@ static size_t audio_write(file *fd, const char *buf, size_t size, file_offset of
 
 driver_module audio_module = (driver_module){
     .name = "audio",
-    .mount = "/dev/audio",
+    .mount = "/audio",
     .version = VERSION_NUM(0, 1, 0, 1),
     .init = init_audio,
     .fini = 0,
