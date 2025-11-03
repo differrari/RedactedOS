@@ -33,7 +33,9 @@ void resize_window(uint32_t width, uint32_t height){
     uint32_t win_resize[2];
     win_resize[0] = width;
     win_resize[1] = height;
-    simple_write("/window/resize", win_resize, 2 * sizeof(uint32_t));
+    string path = string_format("/window/%i/resize",1);
+    simple_write(path.data, win_resize, 2 * sizeof(uint32_t));
+    string_free(path);
 }
 
 void get_window_ctx(draw_ctx* out_ctx){

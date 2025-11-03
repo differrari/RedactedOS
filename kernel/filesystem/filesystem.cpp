@@ -182,7 +182,7 @@ size_t simple_read(const char *path, void *buf, size_t size){
     driver_module *mod = get_module(&search_path);
     if (!mod) return 0;
     if (!mod->sread) return 0;
-    return mod->sread(path, buf, size);
+    return mod->sread(search_path, buf, size);
 }
 
 size_t simple_write(const char *path, const void *buf, size_t size){
@@ -190,7 +190,7 @@ size_t simple_write(const char *path, const void *buf, size_t size){
     driver_module *mod = get_module(&search_path);
     if (!mod) return 0;
     if (!mod->swrite) return 0;
-    return mod->swrite(path, buf, size);
+    return mod->swrite(search_path, buf, size);
 }
 
 sizedptr list_directory_contents(const char *path){
