@@ -50,6 +50,7 @@ driver_module disk_module = (driver_module){
     .open = 0,
     .read = 0,
     .write = 0,
-    .seek = 0,
+    .sread = 0,
+    .swrite = 0,
     .readdir = 0,
 };

@@ -1035,6 +1035,7 @@ int strncmp(const char *a, const char *b, bool case_insensitive, int max){
 
 int strstart(const char *a, const char *b, bool case_insensitive){
     int index = 0;
+    if (!a || !b) return 0;
     while (*a && *b){
         char ca = *a;
         char cb = *b;

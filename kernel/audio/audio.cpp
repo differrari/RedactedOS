@@ -253,6 +253,7 @@ driver_module audio_module = (driver_module){
     .open = audio_open,
     .read = audio_read,
     .write = audio_write,
-    .seek = 0,
+    .sread = 0,
+    .swrite = 0,
     .readdir = 0,
 };

@@ -2,6 +2,7 @@
 #include "console/kio.h"
 #include "filesystem/filesystem.h"
 
+//TODO: use hashmaps
 clinkedlist_t* modules;
 
 bool load_module(driver_module *module){

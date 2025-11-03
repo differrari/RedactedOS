@@ -8,8 +8,41 @@
 #include "math/math.h"
 #include "graph/tres.h"
 #include "launcher.h"
+#include "dev/driver_base.h"
+#include "dev/module_loader.h"
 
 #define BORDER_SIZE 3
+
+bool init_window_system(){
+    return true;
+}
+
+size_t window_cmd_read(const char *path, void *buf, size_t size){
+    return 0;
+}
+
+size_t window_cmd_write(const char *path, const void *buf, size_t size){
+    kprintf("Received command");
+    return 0;
+}
+
+driver_module window_module = (driver_module){
+    .name = "dos",
+    .mount = "/window",
+    .version = VERSION_NUM(0, 1, 0, 0),
+
+    .init = init_window_system,
+    .fini = 0,
+
+    .open = 0,
+    .read = 0,
+    .write = 0,
+
+    .sread = window_cmd_read,
+    .swrite = window_cmd_write,
+
+    .readdir = 0,
+};
 
 void draw_window(gpu_point location, gpu_size size){
     gpu_point fixed_point = {location.x - BORDER_SIZE, location.y - BORDER_SIZE};
@@ -29,6 +62,7 @@ void draw_window(gpu_point location, gpu_size size){
 }
 
 int window_system(){
+    load_module(&window_module);
     disable_visual();
     gpu_clear(BG_COLOR);
     gpu_point start_point = {0,0};

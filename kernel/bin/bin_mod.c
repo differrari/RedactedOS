@@ -94,6 +94,7 @@ driver_module bin_module = (driver_module){
     .open = 0,
     .read = read_bin,
     .write = 0,
-    .seek = 0,
+    .sread = 0,
+    .swrite = 0,
     .readdir = list_bin,
 };

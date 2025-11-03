@@ -170,7 +170,8 @@ driver_module console_module = (driver_module){
     .open = console_open,
     .read = console_read,
     .write = console_write,
-    .seek = console_seek,
+    .sread = 0,
+    .swrite = 0,//TODO implement simple io
     .readdir = console_readdir,
 };
 
