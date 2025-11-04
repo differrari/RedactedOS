@@ -1,6 +1,6 @@
 #include "syscalls/syscalls.h"
 
-int main(int argc, char* argv[]){
+int main(int argc, const char* argv[]){
     file fd2 = { .id = 2 };
     if (argc != 2){
         string err_msg = string_from_literal("Usage cat <path> <size>");
