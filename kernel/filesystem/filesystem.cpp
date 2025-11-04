@@ -146,9 +146,11 @@ size_t read_file(file *descriptor, char* buf, size_t size){
         kprintf("[FS] No open files");
         return 0;
     }
-    open_file_descriptors file = open_files->find([descriptor](open_file_descriptors kvp){
+    auto file_node = open_files->find([descriptor](open_file_descriptors kvp){
         return descriptor->id == kvp.file_id;
-    })->data;
+    });
+    if (!file_node) return 0;
+    open_file_descriptors file = file_node->data;
     if (!file.mod) return 0;
     if (!file.mod->read) return 0;
     size_t amount_read = file.mod->read(descriptor, buf, size, 0);
