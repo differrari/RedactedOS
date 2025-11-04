@@ -142,15 +142,15 @@ int window_system(){
             create_win(fixed_point.x, fixed_point.y, size.width, size.height);
             drawing = false;
         }
+        disable_interrupt();
         if (dirty_windows){
-            disable_interrupt();
             gpu_clear(BG_COLOR);
             res = false;
             clinkedlist_for_each(window_list, redraw_win);
             dirty_windows = false;
-            enable_interrupt();
         }
         gpu_flush();
+        enable_interrupt();
     }
     return 0;
 }
