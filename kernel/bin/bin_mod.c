@@ -6,6 +6,8 @@
 #include "syscalls/syscalls.h"
 #include "console/kio.h"
 #include "process/loading/elf_file.h"
+#include "memory/page_allocator.h"
+#include "std/memory.h"
 
 bool init_bin(){
     return true;
@@ -51,12 +53,15 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
                     string_free(path);
                     free(full_name,name_len);
                     proc->PROC_X0 = argc;
-                    //TODO: copy the arguments, don't just pass them
-                    // kalloc(proc->heap, uint64_t size, uint16_t alignment, uint8_t level)
-                    proc->PROC_X1 = (uintptr_t)argv;
+                    size_t total = 0;
+                    for (int i = 0; i < argc; i++)
+                        total += strlen(argv[i], 0);
+                    char **nargv = (char **)kalloc((void*)proc->heap, total, ALIGN_16B, MEM_PRIV_USER);
+                    memcpy(nargv, argv, total);
+                    proc->PROC_X1 = (uintptr_t)nargv;
                     proc->state = READY;
                     return proc;
-                } else kprintf("Different file %s %s", f, full_name);
+                }
                 while (*reader) reader++;
                 reader++;
             }
