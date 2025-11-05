@@ -9,6 +9,7 @@
 #include "ui/uno/uno.h"
 #include "graph/tres.h"
 #include "process/scheduler.h"
+#include "exceptions/irq.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3
@@ -168,6 +169,7 @@ void Launcher::activate_current(){
         fb_clear(&ctx, 0);
         commit_draw_ctx(&ctx);
         kprintf("[LAUNCHER] read file %x",fd.size);
+        disable_interrupt();
         active_proc = load_elf_file(entries[index].name.data,entries[index].path.data, file,fd.size);
         if (!active_proc){
             kprintf("[LAUNCHER] Failed to load ELF file");
@@ -176,6 +178,7 @@ void Launcher::activate_current(){
         }
         active_proc->priority = PROC_PRIORITY_FULL;
         kprintf("[LAUNCHER] process launched");
+        enable_interrupt();
         process_active = true;
         sys_set_focus(active_proc->id);
         active_proc->state = process_t::process_state::READY;

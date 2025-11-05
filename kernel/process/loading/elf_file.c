@@ -157,8 +157,6 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
         //.got/.got.plt = unresolved addresses to be determined by dynamic linking
     }
 
-    disable_interrupt();
-
     // kprintf("FILE %x + %x, %x. Entry %x",file, first_program_header->p_offset,filesize, header->program_entry_offset);
 
     process_t *proc = create_process(name, bundle, text, text_va, data, data_va, rodata, rodata_va, bss, bss_va, header->program_entry_offset);
@@ -175,8 +173,6 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
         memcpy(dls, (void*)debug_line_str.ptr, debug_line_str.size);
         proc->debug_line_str.ptr = (uintptr_t)dls;
     }
-
-    enable_interrupt();
 
     return proc;
 }
