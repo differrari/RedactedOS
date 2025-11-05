@@ -116,7 +116,7 @@ uint64_t syscall_exec(process_t *ctx){
     int argc = ctx->PROC_X1;
     const char **argv = (const char**)ctx->PROC_X2;
     process_t *p = execute(prog_name, argc, argv);
-    return p->id;
+    return p ? p->id : 0;
 }
 
 uint64_t syscall_get_time(process_t *ctx){
