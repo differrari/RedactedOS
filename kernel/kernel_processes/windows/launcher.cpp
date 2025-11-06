@@ -55,9 +55,15 @@ void Launcher::load_entries(){
         string_free(entries[i].info.author);
     }
     entries.empty();
-    sizedptr list_ptr = list_directory_contents("/shared/redos/user/");
-    string_list *list = (string_list*)list_ptr.ptr;
-    if (list && list_ptr.size){
+    size_t listsize = 0x1000;
+    void *listptr = malloc(0x1000);
+    if (!list_directory_contents("/boot/redos/user/", listptr, listsize, 0)){
+        kprintf("Failed to read contents of directory");
+        return;
+    }
+    string_list *list = (string_list*)listptr;
+    if (list){
+        kprintf("%i entries in the array",list->count);
         char* reader = (char*)list->array;
         for (uint32_t i = 0; i < list->count; i++){
             char *file = reader;

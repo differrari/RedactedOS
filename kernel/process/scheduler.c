@@ -268,13 +268,11 @@ void wake_processes(){
     }
 }
 
-sizedptr list_processes(const char *path){
-    size_t size = 0x1000;
-    void *list_buffer = (char*)malloc(size);
+size_t list_processes(const char *path, void *buf, size_t size, file_offset offset){
     if (strlen(path, 100) == 0){
         uint32_t count = 0;
     
-        char *write_ptr = (char*)list_buffer + 4;
+        char *write_ptr = (char*)buf + 4;
         process_t *processes = get_all_processes();
         for (int i = 0; i < MAX_PROCS; i++){
             process_t *proc = &processes[i];
@@ -288,13 +286,13 @@ sizedptr list_processes(const char *path){
                 *write_ptr++ = 0;
             }
         }
-        *(uint32_t*)list_buffer = count;
+        *(uint32_t*)buf = count;
     }
     //TODO:
     //else advance to / and get the pid
         //if that's it print that
         //else open the file (out, in, etc)
-    return (sizedptr){(uintptr_t)list_buffer,size};
+    return size;
 }
 
 void* list_alloc(size_t size){

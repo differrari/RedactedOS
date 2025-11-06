@@ -279,10 +279,17 @@ sizedptr FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, 
     return { 0, 0 };
 }
 
-sizedptr FAT32FS::list_contents(const char *path){
-    if (!mbs) return { 0, 0 };
+size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t offset){
+    if (!mbs) return 0;
     path = seek_to(path, '/');
 
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
-    return walk_directory(count, mbs->first_cluster_of_root_directory, path, list_entries_handler);
+    sizedptr ptr = walk_directory(count, mbs->first_cluster_of_root_directory, path, list_entries_handler);
+    
+    size_t actual_size = min(size, ptr.size);
+    memcpy(buf, (void*)ptr.ptr, size);
+
+    free_sized(ptr);
+    
+    return actual_size;
 }

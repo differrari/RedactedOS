@@ -25,13 +25,13 @@ open_bin_ref available_cmds[] = {
 
 process_t* execute(const char* prog_name, int argc, const char* argv[]){
 
-    sizedptr dir = list_directory_contents("/boot/redos/bin/");
-
-    if (dir.ptr && dir.size){
+    size_t listsize = 0x1000;
+    void *listptr = malloc(listsize);
+    if (list_directory_contents("/boot/redos/bin/", listptr, listsize, 0)){
         size_t name_len = strlen(prog_name,0) + 4;
         char *full_name = (char*)malloc(name_len);
         strcat(prog_name, ".elf", full_name);
-        string_list *list = (string_list*)dir.ptr;
+        string_list *list = (string_list*)listptr;
         char* reader = (char*)list->array;
         kprintf("Directory contains %i files",list->count);
         for (uint32_t i = 0; i < list->count; i++){
@@ -89,8 +89,8 @@ size_t read_bin(){
     return 0;
 }
 
-sizedptr list_bin(const char *path){
-    return (sizedptr){0,0};
+size_t list_bin(const char *path, void *buf, size_t size, file_offset offset){
+    return 0;
 }
 
 driver_module bin_module = (driver_module){
