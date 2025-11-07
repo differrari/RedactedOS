@@ -20,6 +20,7 @@
 #include "mailbox/mailbox.h"
 #include "math/vector.h"
 #include "process/debug.h"
+#include "theme/theme.h"
 
 void kernel_main() {
 
@@ -74,6 +75,8 @@ void kernel_main() {
     init_filesystem();
 
     debug_load();
+    
+    load_theme();
 
     if (input_available) init_input_process();
 

@@ -31,7 +31,7 @@ int login_screen(){
         draw_ctx *ctx = gpu_get_ctx();
 
         label(ctx, (text_ui_config){
-            .text = boot_theme.system_name,
+            .text = system_config.system_name,
             .font_size = 2,
         }, (common_ui_config){
             .point = {0, yo - char_size*9},

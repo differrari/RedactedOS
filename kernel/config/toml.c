@@ -13,9 +13,9 @@ void read_toml(char *info, size_t size, toml_handler on_kvp, void *context){
                 char *prop = (char*)seek_to(line.data, '=');
                 if (prop && prop > line.data){
                     string prop_name = string_from_literal_length(line.data, prop-line.data-(prop > line.data && *(prop-1) == '='));
-                    while (*prop <= ' ' || *prop > '~' || *prop == '\"') prop++;
+                    while (*prop && (*prop <= ' ' || *prop > '~' || *prop == '\"')) prop++;
                     size_t len = strlen(prop,0);
-                    while (*(prop + len - 1) <= ' ' || *(prop + len - 1) > '~' || *(prop + len - 1) == '\"') len--;
+                    while (len && (*(prop + len - 1) <= ' ' || *(prop + len - 1) > '~' || *(prop + len - 1) == '\"')) len--;
                     size_t name_offset = 0;
                     while (prop_name.data[name_offset] <= ' ' || prop_name.data[name_offset] > '~' || prop_name.data[name_offset] == '\"') name_offset++;
                     on_kvp(prop_name.data + name_offset, prop, len, context);
