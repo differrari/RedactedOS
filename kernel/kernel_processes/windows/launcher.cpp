@@ -56,14 +56,13 @@ void Launcher::load_entries(){
     }
     entries.empty();
     size_t listsize = 0x1000;
-    void *listptr = malloc(0x1000);
-    if (!list_directory_contents("/boot/redos/user/", listptr, listsize, 0)){
+    void *listptr = malloc(listsize);
+    if (!list_directory_contents("/shared/redos/user/", listptr, listsize, 0)){
         kprintf("Failed to read contents of directory");
         return;
     }
     string_list *list = (string_list*)listptr;
     if (list){
-        kprintf("%i entries in the array",list->count);
         char* reader = (char*)list->array;
         for (uint32_t i = 0; i < list->count; i++){
             char *file = reader;
@@ -80,8 +79,8 @@ void Launcher::load_entries(){
                 reader++;
             }
         }
-        //TODO: The list of strings needs to be freed, but this class is not its owner
     }
+    free(listptr, listsize);
 }
 
 void Launcher::draw_desktop(){
