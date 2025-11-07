@@ -1,8 +1,7 @@
 #include "OutputAudioDevice.hpp"
 #include "memory/page_allocator.h"
 
-//TODO: We should allocate at least 40 pages, possibly 64 to have more than a second at once
-#define BUF_SIZE PAGE_SIZE * 10
+#define BUF_SIZE PAGE_SIZE * 3
 
 void OutputAudioDevice::populate(){
     buffer = (uintptr_t)palloc(BUF_SIZE, MEM_PRIV_KERNEL, MEM_RW, true);

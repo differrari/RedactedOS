@@ -77,16 +77,17 @@ size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
     return size;
 }
 
-sizedptr Virtio9PDriver::list_contents(const char *path){
+size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, uint64_t offset){
     uint32_t d = walk_dir(root, (char*)path);
     if (d == INVALID_FID){
         kprintf("[VIRTIO 9P error] failed to navigate to directory");
-        return {0,0};
+        return 0;
     }
     if (open(d) == INVALID_FID){
         kprintf("[VIRTIO 9P error] failed to open directory");
     }
-    return list_contents(d, 0);
+    kprintf("Directory opened and being read from %x",size);
+    return list_contents(d, buf, size, offset);
 }
 
 typedef struct p9_packet_header {
@@ -295,17 +296,16 @@ typedef struct r_readdir {
     // Followed by data
 }__attribute__((packed)) r_readdir;
 
-sizedptr Virtio9PDriver::list_contents(uint32_t fid, uint64_t offset){
-    uint32_t amount = 1000;
+size_t Virtio9PDriver::list_contents(uint32_t fid, void *buf, size_t size, uint64_t offset){
     t_readdir *cmd = (t_readdir*)kalloc(np_dev.memory_page, sizeof(t_readdir), ALIGN_4KB, MEM_PRIV_KERNEL);
-    uintptr_t resp = (uintptr_t)kalloc(np_dev.memory_page, sizeof(r_readdir) + amount, ALIGN_4KB, MEM_PRIV_KERNEL);
+    uintptr_t resp = (uintptr_t)kalloc(np_dev.memory_page, sizeof(r_readdir) + size, ALIGN_4KB, MEM_PRIV_KERNEL);
     
     cmd->header.size = sizeof(t_readdir);
     cmd->header.id = P9_TREADDIR;
     cmd->header.tag = mid++;
     
     cmd->fid = fid;
-    cmd->count = amount;
+    cmd->count = size;
     cmd->offset = offset;
 
     virtio_send_2d(&np_dev, (uintptr_t)cmd, sizeof(t_readdir), resp, sizeof(r_readdir) + cmd->count,VIRTQ_DESC_F_NEXT);
@@ -313,18 +313,18 @@ sizedptr Virtio9PDriver::list_contents(uint32_t fid, uint64_t offset){
     kfree(cmd, sizeof(t_readdir));
     
     if (((r_readdir*)resp)->header.id == P9_RLERROR){
-        kfree((void*)resp, sizeof(r_readdir) + amount);
+        kfree((void*)resp, sizeof(r_readdir) + size);
         kprintf("[VIRTIO 9P error] failed to get directory entries");
-        return (sizedptr){0,0};
+        return 0;
     }
 
-    void *list_buffer = (char*)kalloc(np_dev.memory_page,amount, ALIGN_64B, MEM_PRIV_KERNEL);
-
-    char *write_ptr = (char*)list_buffer + 4;
+    char *write_ptr = (char*)buf + 4;
 
     uintptr_t p = resp + sizeof(r_readdir);
 
     uint32_t count = ((r_readdir*)resp)->count;
+
+    kprintf("%x entries from 9p", count);
 
     while (p < resp + count){
         r_readdir_data *data = (r_readdir_data*)p;
@@ -341,14 +341,14 @@ sizedptr Virtio9PDriver::list_contents(uint32_t fid, uint64_t offset){
         p += sizeof(r_readdir_data) + data->name_len;
     }
 
-    *(uint32_t*)list_buffer = count;
+    *(uint32_t*)buf = count;
 
     //TODO: once list_directory is redesigned, re-introduce this
     // if (count > 0) list_contents(fid, offset);
 
-    kfree((void*)resp, sizeof(r_readdir) + amount);
+    kfree((void*)resp, sizeof(r_readdir) + size);
 
-    return {(uintptr_t)list_buffer,amount};
+    return size;
 
 }
 

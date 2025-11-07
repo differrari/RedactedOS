@@ -25,8 +25,11 @@ typedef struct driver_module {
     FS_RESULT (*open)(const char*, file*);
     size_t (*read)(file*, char*, size_t, file_offset);
     size_t (*write)(file*, const char *, size_t, file_offset);
+    //TODO: close
 
-    file_offset (*seek)(file*, file_offset);
-    sizedptr (*readdir)(const char* path);
+    size_t (*sread)(const char*, void*, size_t);
+    size_t (*swrite)(const char*, const void*, size_t);
+
+    size_t (*readdir)(const char*, void*, size_t, file_offset);
 
 } driver_module;

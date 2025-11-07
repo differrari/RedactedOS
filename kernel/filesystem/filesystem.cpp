@@ -8,6 +8,7 @@
 #include "memory/page_allocator.h"
 #include "math/math.h"
 #include "virtio_9p_pci.hpp"
+#include "hw/hw.h"
 
 FAT32FS *fs_driver;
 
@@ -42,14 +43,8 @@ size_t boot_partition_write(file *fd, const char *buf, size_t size, file_offset 
     return 0;
 }
 
-
-file_offset boot_partition_seek(file *fd, file_offset offset){
-    return 0;
-}
-
-sizedptr boot_partition_readdir(const char* path){
-    //TODO: Need to pass a buffer and write to that, returning size
-    return fs_driver->list_contents(path);
+size_t boot_partition_readdir(const char* path, void *out_buf, size_t size, file_offset offset){
+    return fs_driver->list_contents(path, out_buf, size, offset);
 }
 
 driver_module boot_fs_module = (driver_module){
@@ -61,13 +56,15 @@ driver_module boot_fs_module = (driver_module){
     .open = boot_partition_open,
     .read = boot_partition_read,
     .write = boot_partition_write,
-    .seek = boot_partition_seek,
+    .sread = 0,
+    .swrite = 0,
     .readdir = boot_partition_readdir,
 };
 
 Virtio9PDriver *p9Driver;
 
 bool shared_init(){
+    if (BOARD_TYPE != 1) return false;
     p9Driver = new Virtio9PDriver();
     return p9Driver->init(0);
 }
@@ -88,13 +85,8 @@ size_t shared_write(file *fd, const char *buf, size_t size, file_offset offset){
     return 0;
 }
 
-file_offset shared_seek(file *fd, file_offset offset){
-    return 0;
-}
-
-sizedptr shared_readdir(const char* path){
-    //TODO: Need to pass a buffer and write to that, returning size
-    return p9Driver->list_contents(path);
+size_t shared_readdir(const char* path, void *out_buf, size_t size, file_offset offset){
+    return p9Driver->list_contents(path, out_buf, size, offset);
 }
 
 driver_module p9_fs_module = (driver_module){
@@ -106,7 +98,8 @@ driver_module p9_fs_module = (driver_module){
     .open = shared_open,
     .read = shared_read,
     .write = shared_write,
-    .seek = shared_seek,
+    .sread = 0,
+    .swrite = 0,
     .readdir = shared_readdir,
 };
 
@@ -123,6 +116,7 @@ FS_RESULT open_file(const char* path, file* descriptor){
     const char *search_path = path;
     driver_module *mod = get_module(&search_path);
     if (!mod) return FS_RESULT_NOTFOUND;
+    if (!mod->open) return FS_RESULT_NOTFOUND;
     FS_RESULT result = mod->open(search_path, descriptor);
     if (!open_files){
         page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
@@ -150,10 +144,13 @@ size_t read_file(file *descriptor, char* buf, size_t size){
         kprintf("[FS] No open files");
         return 0;
     }
-    open_file_descriptors file = open_files->find([descriptor](open_file_descriptors kvp){
+    auto file_node = open_files->find([descriptor](open_file_descriptors kvp){
         return descriptor->id == kvp.file_id;
-    })->data;
+    });
+    if (!file_node) return 0;
+    open_file_descriptors file = file_node->data;
     if (!file.mod) return 0;
+    if (!file.mod->read) return 0;
     size_t amount_read = file.mod->read(descriptor, buf, size, 0);
     descriptor->cursor += amount_read;
     return amount_read;
@@ -165,19 +162,44 @@ void close_file(file *descriptor){
 
 size_t write_file(file *descriptor, const char* buf, size_t size){
     if (!open_files) return 0;
-    open_file_descriptors file = open_files->find([descriptor](open_file_descriptors kvp){
+    if (descriptor->id == FD_OUT){
+        const char *search_path = "/proc/";//TODO: This is ugly
+        driver_module *mod = get_module(&search_path);
+        mod->write(descriptor, buf, size, descriptor->cursor);
+    }
+    LinkedList<open_file_descriptors>::Node *result = open_files->find([descriptor](open_file_descriptors kvp){
         return descriptor->id == kvp.file_id;
-    })->data;
+    });
+    if (!result) return 0;
+    open_file_descriptors file = result->data;
     if (!file.mod) return 0;
+    if (!file.mod->write) return 0;
     return file.mod->write(descriptor, buf, size, 0);
 }
 
-sizedptr list_directory_contents(const char *path){
+size_t simple_read(const char *path, void *buf, size_t size){
+    const char *search_path = path;
+    driver_module *mod = get_module(&search_path);
+    if (!mod) return 0;
+    if (!mod->sread) return 0;
+    return mod->sread(search_path, buf, size);
+}
+
+size_t simple_write(const char *path, const void *buf, size_t size){
+    const char *search_path = path;
+    driver_module *mod = get_module(&search_path);
+    if (!mod) return 0;
+    if (!mod->swrite) return 0;
+    return mod->swrite(search_path, buf, size);
+}
+
+size_t list_directory_contents(const char *path, void* buf, size_t size, uint64_t offset){
     const char *search_path = path;
     driver_module *mod = get_module(&search_path);
     if (!mod){
         kprintf("No module for path");
-        return {0,0};
+        return 0;
     }
-    return mod->readdir(search_path);
+    if (!mod->readdir) return 0;
+    return mod->readdir(search_path, buf, size, offset);
 }

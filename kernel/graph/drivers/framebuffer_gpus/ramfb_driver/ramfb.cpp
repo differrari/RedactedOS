@@ -33,7 +33,10 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
     file = {};
     screen_size = preferred_screen_size;
 
+    if (!screen_size.width || !screen_size.height) return false;
+
     stride = bpp * screen_size.width;
+    framebuffer_size = (size_t)(stride * screen_size.height);
 
     fw_find_file("etc/ramfb", &file);
     
@@ -41,18 +44,18 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
         kprintf("Ramfb not found");
         return false;
     }
-
-    framebuffer_size = screen_size.width * screen_size.height * bpp;
-
     mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
+    uint8_t* fb_block = (uint8_t*)palloc(framebuffer_size*2, MEM_PRIV_SHARED, MEM_RW, true);
 
-    framebuffer = (uint32_t*)palloc(framebuffer_size, MEM_PRIV_SHARED, MEM_RW, true);
-    back_framebuffer = (uint32_t*)palloc(framebuffer_size, MEM_PRIV_SHARED, MEM_RW, true);
+    if (!fb_block) return false;
+
+    framebuffer = (uint32_t*)fb_block;
+    back_framebuffer = (uint32_t*)(fb_block + framebuffer_size);
 
     ctx = {
         .dirty_rects = {},
         .fb = (uint32_t*)back_framebuffer,
-        .stride = screen_size.width * bpp,
+        .stride = stride,
         .width = screen_size.width,
         .height = screen_size.height,
         .dirty_count = 0,

@@ -38,7 +38,7 @@ extern uint64_t get_time();
 
 extern bool socket_create(Socket_Role role, protocol_t protocol, SocketHandle *out_handle);
 extern int32_t socket_bind(SocketHandle *handle, ip_version_t ip_version, uint16_t port);
-extern int32_t socket_connect(SocketHandle *handle, ip_version_t ip_version);
+extern int32_t socket_connect(SocketHandle *handle, SockDstKind dst_kind, void* dst, uint16_t port);
 extern int32_t socket_listen(SocketHandle *handle);
 extern bool socket_accept(SocketHandle *spec);
 extern size_t socket_send(SocketHandle *handle, SockDstKind dst_kind, const void* dst, uint16_t port, void *packet, size_t size);
@@ -55,6 +55,10 @@ void seek(file *descriptor, int64_t offset, SEEK_TYPE type);
 uintptr_t realloc(uintptr_t old_ptr, size_t old_size, size_t new_size);
 
 sizedptr dir_list(const char *path);
+
+static inline void yield(){
+    sleep(0);
+}
 
 #ifdef __cplusplus
 }

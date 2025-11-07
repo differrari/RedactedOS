@@ -3,10 +3,19 @@
 #include "input_keycodes.h"
 #include "std/string.h"
 #include "image/png.h"
+#include "image/bmp.h"
+#include "audio/cuatro.h"
+#include "audio/wav.h"
 
 #define BORDER 20
 
 int img_example() {
+    uint64_t *a = malloc(64);
+    printf("Initiali value %x",a[3]);
+    a[3] = 12345678;
+    printf("Set value %x",a[3]);
+    free(a,64);
+    printf("After-free value %x",a[3]);
     draw_ctx ctx = {};
     request_draw_ctx(&ctx);
     file descriptor;
@@ -22,7 +31,7 @@ int img_example() {
         img = malloc(info.width*info.height*system_bpp);
         png_read_image(file_img, descriptor.size, img);
     }
-    // resize_draw_ctx(&ctx, info.width+BORDER*2, info.height+BORDER*2);
+    resize_draw_ctx(&ctx, info.width+BORDER*2, info.height+BORDER*2);
     while (1) {
         mouse_input mouse = {};
         get_mouse_status(&mouse);
@@ -73,6 +82,22 @@ int net_example() {
     socket_close(&spec);
 
     return 1;
+}
+
+static int8_t mixin[MIXER_INPUTS] = { NULL };
+static audio_samples audio[MIXER_INPUTS];
+
+int audio_example(){
+    for (int i = 0; i < MIXER_INPUTS; ++i) mixin[i] = -1;
+    mixer_set_level(AUDIO_LEVEL_MAX * 0.75f);
+    if (wav_load_as_int16("/resources/scale.wav", audio)){
+        mixin[0] = play_audio_sync(&audio[0], AUDIO_LEVEL_MAX/4);
+        return 0;
+    }else{
+        printf("Could not load wav");
+        return -1;
+    }
+    return 0;
 }
 
 int main(){

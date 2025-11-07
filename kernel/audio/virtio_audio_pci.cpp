@@ -3,6 +3,7 @@
 #include "console/kio.h"
 #include "memory/page_allocator.h"
 #include "std/memory_access.h"
+#include "syscalls/syscalls.h"
 #include "audio.h"
 #include "std/memory.h"
 #include "OutputAudioDevice.hpp"
@@ -19,6 +20,7 @@
 #define VIRTIO_SND_S_NOT_SUPP   0x8002
 #define VIRTIO_SND_S_IO_ERR     0x8003
 
+#define VIRTIO_SND_PCM_FMT_S16       5
 #define VIRTIO_SND_PCM_FMT_U32      18 
 #define VIRTIO_SND_PCM_FMT_FLOAT    19
 #define VIRTIO_SND_PCM_FMT_FLOAT64  20
@@ -26,11 +28,13 @@
 #define VIRTIO_SND_PCM_RATE_44100   6
 #define VIRTIO_SND_PCM_RATE_48000   7
 
-#define SND_44100_BUFFER_SIZE 441
-#define SND_U32_BYTES 4
-#define SND_PERIOD 1
-#define TOTAL_PERIOD_SIZE SND_44100_BUFFER_SIZE * SND_U32_BYTES * channels
-#define TOTAL_BUF_SIZE TOTAL_PERIOD_SIZE * SND_PERIOD
+#define SND_SAMPLE_RATE     VIRTIO_SND_PCM_RATE_44100
+#define SND_BUFFER_SIZE     AUDIO_DRIVER_BUFFER_SIZE
+#define SND_SAMPLE_FORMAT   VIRTIO_SND_PCM_FMT_S16
+#define SND_SAMPLE_BYTES    sizeof(int16_t)
+#define SND_PERIOD          1
+#define TOTAL_PERIOD_SIZE   SND_BUFFER_SIZE * SND_SAMPLE_BYTES * channels
+#define TOTAL_BUF_SIZE      TOTAL_PERIOD_SIZE * SND_PERIOD
 
 #define CONTROL_QUEUE   0
 #define EVENT_QUEUE     1
@@ -83,7 +87,7 @@ typedef struct virtio_snd_event {
 bool VirtioAudioDriver::init(){
     uint64_t addr = find_pci_device(VIRTIO_VENDOR, VIRTIO_AUDIO_ID);
     if (!addr){ 
-        kprintf("Disk device not found");
+        kprintf("Audio device not found");
         return false;
     }
 
@@ -95,7 +99,7 @@ bool VirtioAudioDriver::init(){
     pci_enable_device(addr);
 
     if (!virtio_init_device(&audio_dev)){
-        kprintf("Failed disk initialization");
+        kprintf("[VIRTIO_AUDIO] Failed initialization");
         return false;
     }
 
@@ -103,7 +107,7 @@ bool VirtioAudioDriver::init(){
 
     audio_dev.common_cfg->queue_msix_vector = 0;
     if (audio_dev.common_cfg->queue_msix_vector != 0){
-        kprintf("[VIRTIO_AUDIO error] failed to setup interrupts for event queue");
+        kprintf("[VIRTIO_AUDIO] failed to setup interrupts for event queue");
         return false;
     }
     //TODO: This should (probably) be for input devices only
@@ -168,29 +172,30 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
 
         kprintf("[VIRTIO_AUDIO] Stream %i (%s): Features %x. Format %x. Sample %x. Channels %i-%i",stream, (uintptr_t)(stream_info[stream].direction ? "IN" : "OUT"), stream_info[stream].features, format, rate, stream_info->channels_min, stream_info->channels_max);
 
-        if (!(format & (1 << VIRTIO_SND_PCM_FMT_U32))){
-            kprintf("[VIRTIO_AUDIO implementation error] stream does not support Float32 format");
+        if (!(format & (1 << SND_SAMPLE_FORMAT))){
+            kprintf("[VIRTIO_AUDIO implementation error] stream does not support int16 format");
             return false;
         }
 
-        if (!(rate & (1 << VIRTIO_SND_PCM_RATE_44100))){
+        uint32_t sample_rate = 44100;
+        if (!(rate & (1 << SND_SAMPLE_RATE))){
             kprintf("[VIRTIO_AUDIO implementation error] stream does not support 44.1 kHz sample rate");
             return false;
         }
 
-        //TODO: Stereo
-        uint8_t channels = 1;//stream_info->channels_max;
+        uint8_t channels = stream_info->channels_max;
 
-        if (!stream_set_params(stream, stream_info[stream].features, VIRTIO_SND_PCM_FMT_U32, VIRTIO_SND_PCM_RATE_44100, channels)){
+        if (!stream_set_params(stream, stream_info[stream].features, SND_SAMPLE_FORMAT, SND_SAMPLE_RATE, channels)){
             kprintf("[VIRTIO_AUDIO error] Failed to configure stream %i",stream);
         }
 
         if (stream_info[stream].direction == VIRTIO_SND_D_OUTPUT){
             out_dev = new OutputAudioDevice();
             out_dev->stream_id = stream;
+            out_dev->rate = sample_rate;
             out_dev->channels = channels;
             out_dev->packet_size = sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
-            out_dev->buf_size = TOTAL_BUF_SIZE/SND_U32_BYTES;
+            out_dev->buf_size = TOTAL_BUF_SIZE/SND_SAMPLE_BYTES;
             out_dev->header_size = sizeof(virtio_snd_pcm_xfer);
             out_dev->populate();
         }
@@ -202,9 +207,8 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
 void VirtioAudioDriver::send_buffer(sizedptr buf){
     virtio_add_buffer(&audio_dev, cmd_index % audio_dev.common_cfg->queue_size, buf.ptr, buf.size, true);
     struct virtq_used* u = (struct virtq_used*)(uintptr_t)audio_dev.common_cfg->queue_device;
-    if (u->idx < cmd_index-20){
-        while (u->idx < cmd_index-5);
-    }
+    while (u->idx < cmd_index-2)
+        ; // TODO: yield cpu
     cmd_index++;
 }
 

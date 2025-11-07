@@ -34,6 +34,7 @@ driver_module rng_module = {
     .fini = 0,
     .read = rng_read,
     .write = 0,
-    .seek = 0,
+    .sread = 0,
+    .swrite = 0,//TODO implement simple io
     .readdir = 0,
 };

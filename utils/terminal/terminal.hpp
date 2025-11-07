@@ -9,6 +9,7 @@ public:
 protected:
     void handle_input();
     void end_command();
+    int prompt_length;
     void run_command();
     const char** parse_arguments(char *args, int *count);
 

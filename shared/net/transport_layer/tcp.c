@@ -168,7 +168,7 @@ static bool send_tcp_segment(ip_version_t ver, const void *src_ip_addr, const vo
         uint32_t s = v4_u32_from_ptr(src_ip_addr);
         uint32_t d = v4_u32_from_ptr(dst_ip_addr);
         hdr_on_buf->checksum = tcp_compute_checksum_v4(segment, tcp_len, s, d);
-        ipv4_send_packet(d, 6, (sizedptr){ (uintptr_t)segment, tcp_len }, txp);
+        ipv4_send_packet(d, 6, (sizedptr){ (uintptr_t)segment, tcp_len }, txp, 0);
     } else {
         free(segment, tcp_len);
         return false;

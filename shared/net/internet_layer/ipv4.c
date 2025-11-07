@@ -9,25 +9,6 @@
 #include "console/kio.h"
 #include "syscalls/syscalls.h"
 
-static char* u8_to_str(uint8_t val, char* out) {
-    if (val >= 100) {
-        *out++ = '0' + (val / 100);
-        val %= 100;
-        *out++ = '0' + (val / 10);
-        *out++ = '0' + (val % 10);
-    } else if (val >= 10) {
-        *out++ = '0' + (val / 10);
-        *out++ = '0' + (val % 10);
-    } else {
-        *out++ = '0' + val;
-    }
-    return out;
-}
-
-#define IP_IHL_NOOPTS 5
-#define IP_VERSION_4 4
-#define IP_TTL_DEFAULT 64
-
 static uint16_t g_ip_ident = 1;
 
 static int mask_prefix_len(uint32_t m) {
@@ -272,21 +253,8 @@ static bool pick_route(uint32_t dst, const ipv4_tx_opts_t* opts, uint8_t* out_if
     return pick_route_global(dst, out_ifx, out_src, out_nh);
 }
 
-void ipv4_to_string(uint32_t ip, char* buf) {
-    uint8_t a = (ip >> 24) & 0xFF;
-    uint8_t b = (ip >> 16) & 0xFF;
-    uint8_t c = (ip >> 8) & 0xFF;
-    uint8_t d = ip & 0xFF;
 
-    char* p = buf;
-    p = u8_to_str(a, p); *p++ = '.';
-    p = u8_to_str(b, p); *p++ = '.';
-    p = u8_to_str(c, p); *p++ = '.';
-    p = u8_to_str(d, p);
-    *p = '\0';
-}
-
-void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, sizedptr segment, const ipv4_tx_opts_t* opts) {
+void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, sizedptr segment, const ipv4_tx_opts_t* opts, uint8_t ttl) {
     if (!segment.ptr || !segment.size) return;
 
     uint8_t ifx = 0;
@@ -323,7 +291,7 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, sizedptr segment, const ip
     ip->total_length = bswap16((uint16_t)total);
     ip->identification = bswap16(g_ip_ident++);
     ip->flags_frag_offset = bswap16(0);
-    ip->ttl = IP_TTL_DEFAULT;
+    ip->ttl = ttl ? ttl : IP_TTL_DEFAULT;
     ip->protocol = proto;
     ip->header_checksum = 0;
     ip->src_ip = bswap32(src_ip);

@@ -4,6 +4,10 @@
 
 Terminal::Terminal() : Console() {
     char_scale = 2;
+    put_string("> ");
+    prompt_length = 2;
+    draw_cursor();
+    flush(dctx);
 }
 
 void Terminal::update(){
@@ -17,6 +21,8 @@ void Terminal::end_command(){
     command_running = false;
     put_char('\r');
     put_char('\n');
+    put_string("> ");
+    prompt_length = 2;
     draw_cursor();
     flush(dctx);
     set_text_color(default_text_color);
@@ -53,18 +59,15 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
 
 const char** Terminal::parse_arguments(char *args, int *count){
     *count = 0;
-    const char* prev = args;
-    char* next_args;
     const char **argv = (const char**)malloc(16 * sizeof(uintptr_t));
-    do {
-        next_args = (char*)seek_to(args, ' ');
-        argv[*count] = prev;
-        (*count)++;
-        prev = next_args;
-        *(next_args - 1) = 0;
-    } while(prev != next_args);
-    if (*next_args){
-        argv[*count] = prev;
+    char* p = args;
+    while (*p && *count < 16){
+        while (*p == ' ' || *p == '\t') p++;
+        if (!*p) break;
+        char* start = p;
+        while (*p && *p != ' ' && *p != '\t') p++;
+        if (*p) { *p = '\0'; p++; }
+        argv[*count] = start;
         (*count)++;
     }
     return argv;
@@ -72,19 +75,37 @@ const char** Terminal::parse_arguments(char *args, int *count){
 
 void Terminal::run_command(){
     const char* fullcmd = get_current_line();
-    const char* args = seek_to(fullcmd, ' ');
-    
+    if (fullcmd[0] == '>' && fullcmd[1] == ' ') {
+        fullcmd += 2;
+    }
+    while (*fullcmd == ' ' || *fullcmd == '\t') fullcmd++;
+    if (*fullcmd == '\0') {
+        put_char('\r');
+        put_char('\n');
+        put_string("> ");
+        prompt_length = 2;
+        draw_cursor();
+        flush(dctx);
+        command_running = true;
+        return;
+    }
+
+    const char* args = fullcmd;
+    while (*args && *args != ' ' && *args != '\t') args++;
+
     string cmd;
     int argc = 0;
-    const char** argv; 
+    const char** argv = nullptr;
     string args_copy = {};
-    
-    if (fullcmd == args){
+
+    if (*args == '\0'){
         cmd = string_from_literal(fullcmd);
-        argv = 0;
     } else {
-        cmd = string_from_literal_length(fullcmd, args - fullcmd - 1);
-        args_copy = string_from_literal(args);
+        size_t cmd_len = (size_t)(args - fullcmd);
+        cmd = string_from_literal_length(fullcmd, cmd_len);
+        const char* argstart = args;
+        while (*argstart == ' ' || *argstart == '\t') argstart++;
+        args_copy = string_from_literal(argstart);
         argv = parse_arguments(args_copy.data, &argc);
     }
 
@@ -102,10 +123,10 @@ void Terminal::run_command(){
             free(s.data, s.mem_length);
         }
     }
-    
+
     free(cmd.data, cmd.mem_length);
     if (args_copy.mem_length) free(args_copy.data, args_copy.mem_length);
-    
+
     draw_cursor();
     flush(dctx);
     command_running = true;
@@ -135,7 +156,9 @@ void Terminal::handle_input(){
                 draw_cursor();
                 flush(dctx);
             } else if (key == KEY_BACKSPACE){
-                delete_last_char();
+                if (strlen(get_current_line(), 1024) > (uint32_t)prompt_length) {
+                    delete_last_char();
+                }
             }
         }
     }

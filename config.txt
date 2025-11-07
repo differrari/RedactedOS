@@ -20,7 +20,7 @@ camera_auto_detect=1
 display_auto_detect=1
 
 # Automatically load initramfs files, if found
-auto_initramfs=1
+#auto_initramfs=1
 
 # Enable DRM VC4 V3D driver
 dtoverlay=vc4-kms-v3d

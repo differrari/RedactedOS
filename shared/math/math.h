@@ -6,11 +6,23 @@
 extern "C" {
 #endif
 
+#ifndef INFINITY
+#define INFINITY __builtin_inff()
+#endif
+
 static inline int min(int a, int b){
     return a < b ? a : b;
 }
 
+static inline float minf(float a, float b){
+    return a < b ? a : b;
+}
+
 static inline int max(int a, int b){
+    return a > b ? a : b;
+}
+
+static inline float maxf(float a, float b){
     return a > b ? a : b;
 }
 
@@ -37,6 +49,11 @@ static inline int signf(float x) {
 
 static inline int lerp(int i, int start, int end, int steps) {
     return start + (end - start) * i / steps;
+}
+
+static inline bool float_zero(float a){
+    const float epsilon = 1e-6f;
+    return absf(a) < epsilon;
 }
 
 static inline float lerpf(float a, float b, float t) {

@@ -11,7 +11,7 @@ endif
 
 .PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
 
-all: kshared kernel shared user utils
+all: kshared kernel shared user utils bins
 	@echo "Build complete."
 	./createfs
 
@@ -30,11 +30,15 @@ kernel: kshared
 utils: shared prepare-fs
 	$(MAKE) -C utils
 
+bins: shared prepare-fs
+	$(MAKE) -C bin
+
 clean:
 	$(MAKE) -C shared $@
 	$(MAKE) -C user   $@
 	$(MAKE) -C kernel $@
 	$(MAKE) -C utils  $@
+	$(MAKE) -C bin  $@
 	@echo "removing fs dirs"
 	$(RM) -r $(FS_DIRS)
 	@echo "removing images"
@@ -56,7 +60,6 @@ debug:
 	./rundebug MODE=$(MODE) $(ARGS)
 
 dump:
-	$(OBJCOPY) -O binary kernel.elf kernel.img
 	$(ARCH)-objdump -D kernel.elf > dump
 	$(MAKE) -C user $@
 
@@ -66,6 +69,7 @@ install:
 	cp kernel.img $(BOOTFS)/kernel8.img
 	cp kernel.img $(BOOTFS)/kernel_2712.img
 	cp config.txt $(BOOTFS)/config.txt
+	cp kernel.elf $(BOOTFS)/kernel.elf
 
 prepare-fs:
 	@echo "creating dirs"

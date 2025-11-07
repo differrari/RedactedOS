@@ -228,6 +228,7 @@ process_t *get_all_processes(){
 }
 
 void sleep_process(uint64_t msec){
+    if (!msec) switch_proc(YIELD);
     if (sleep_count < MAX_PROCS){
         processes[current_proc].state = BLOCKED;
         sleeping[sleep_count++] = (sleep_tracker){
@@ -267,13 +268,11 @@ void wake_processes(){
     }
 }
 
-sizedptr list_processes(const char *path){
-    size_t size = 0x1000;
-    void *list_buffer = (char*)malloc(size);
+size_t list_processes(const char *path, void *buf, size_t size, file_offset offset){
     if (strlen(path, 100) == 0){
         uint32_t count = 0;
     
-        char *write_ptr = (char*)list_buffer + 4;
+        char *write_ptr = (char*)buf + 4;
         process_t *processes = get_all_processes();
         for (int i = 0; i < MAX_PROCS; i++){
             process_t *proc = &processes[i];
@@ -287,13 +286,13 @@ sizedptr list_processes(const char *path){
                 *write_ptr++ = 0;
             }
         }
-        *(uint32_t*)list_buffer = count;
+        *(uint32_t*)buf = count;
     }
     //TODO:
     //else advance to / and get the pid
         //if that's it print that
         //else open the file (out, in, etc)
-    return (sizedptr){(uintptr_t)list_buffer,size};
+    return size;
 }
 
 void* list_alloc(size_t size){
@@ -352,6 +351,7 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
     clinkedlist_node_t *node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
     if (!node->data) return 0;
     proc_open_file *file = (proc_open_file*)node->data;
+    if (!file) return 0;
     uint64_t cursor = file->ignore_cursor ? 0 : fd->cursor;
     size = min(size, file->file_size - cursor);
     memcpy(buf, (void*)(file->buffer + cursor), size);
@@ -359,29 +359,38 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
 }
 
 size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
-    if (!proc_opened_files){
+    if (!proc_opened_files && fd->id != FD_OUT){
         kprint("No files open");
         return 0;
     }
-    clinkedlist_node_t *node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
-    if (!node->data) return 0;
-    proc_open_file *file = (proc_open_file*)node->data;
-    if (file->read_only) return 0;
+    uintptr_t pbuf;
+    clinkedlist_node_t *node;
+    if (fd->id == FD_OUT){
+        process_t *proc = get_current_proc();
+        pbuf = proc->output;
+    } else {
+        node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
+        if (!node->data) return 0;
+        proc_open_file *file = (proc_open_file*)node->data;
+        if (file->read_only) return 0;
+        pbuf = file->buffer;
+    }
+    
     if (size >= PROC_OUT_BUF){
-        kprint("Output buffer too large");
+        kprint("Output too large");
         return 0;
     }
     if (fd->cursor + size >= PROC_OUT_BUF){
         fd->cursor = 0;
-        memset((void*)file->buffer, 0, file->file_size);
+        memset((void*)pbuf, 0, PROC_OUT_BUF);
     }
-    memcpy((void*)(file->buffer + fd->cursor), buf, size);
+    memcpy((void*)(pbuf + fd->cursor), buf, size);
     fd->cursor += size;
     //TODO: Need a better way to handle opening a file multiple times
     for (clinkedlist_node_t *start = proc_opened_files->head; start != proc_opened_files->tail; start = start->next){
         if (start != node){
             proc_open_file *n_file = (proc_open_file*)start->data;
-            if (n_file && n_file->buffer == file->buffer){
+            if (n_file && n_file->buffer == pbuf){
                 n_file->file_size += size;
             } 
         }
@@ -398,6 +407,7 @@ driver_module scheduler_module = (driver_module){
     .open = open_proc,
     .read = read_proc,
     .write = write_proc,
-    .seek = 0,
+    .sread = 0,
+    .swrite = 0,//TODO implement simple io
     .readdir = list_processes,
 };

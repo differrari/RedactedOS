@@ -260,34 +260,68 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     kprintfv("Finished translation");
 }
 
-process_t* create_process(const char *name, const char *bundle, void *content, uint64_t content_size, uintptr_t entry, uintptr_t va_base) {
+size_t map_section(process_t *proc, uintptr_t base, uintptr_t off, uintptr_t va, sizedptr orig){
+    // kprintf("Mapping section %x (%x) to %x %x. Final %x",orig.ptr, orig.size, base + (va - off),(va - off),base + (va - off) + orig.size);
+    if (orig.size) memcpy((void*)base + (va - off), (void*)orig.ptr, orig.size);
+    return orig.size;
+}
+
+process_t* create_process(const char *name, const char *bundle, sizedptr text, uintptr_t text_va, sizedptr data, uintptr_t data_va, sizedptr rodata, uintptr_t rodata_va, sizedptr bss, uintptr_t bss_va, uintptr_t entry) {
     
-    disable_interrupt();
+    if (!text.size) return 0;
+
     process_t* proc = init_process();
 
     name_process(proc, name);
 
     proc->bundle = (char*)bundle;
 
-    uint8_t* dest = (uint8_t*)palloc(content_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true);
+    uintptr_t min_addr = text_va;
+    uintptr_t max_addr = 0;
+    if (data.size){
+        if (data.ptr < min_addr) min_addr = data_va;
+        if (data.ptr > max_addr) max_addr = data_va;
+    } 
+    if (rodata.size){
+        if (rodata.ptr < min_addr) min_addr = rodata_va;
+        if (rodata.ptr > max_addr) max_addr = rodata_va;
+    } 
+    if (bss.size){
+        if (bss.ptr < min_addr) min_addr = bss_va;
+        if (bss.ptr > max_addr) max_addr = bss_va;
+    } 
+
+    // max_addr = (max_addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+    size_t code_size = max_addr-min_addr;
+
+    // kprintf("Code takes %x from %x to %x",code_size, min_addr, max_addr);
+
+    uintptr_t dest = (uintptr_t)palloc(code_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true);
     if (!dest) return 0;
 
-    if (va_base + content_size >= LOWEST_ADDR){
+    // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
+
+    if (text_va + code_size >= LOWEST_ADDR){
         kprintf("[PROCESS_LOADING IMPLEMENTATION WARNING] virtual addressing currently not supported for this process. Would overwrite %x",LOWEST_ADDR);
-        entry += (uintptr_t)dest;
+        entry += dest;
         proc->use_va = false;
     } else {
         //TODO: multiple TTBRs
-        for (uint32_t i = 0; i < content_size; i+= GRANULE_4KB){
-            register_proc_memory(va_base + i, (uintptr_t)dest + i, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
+        for (uint32_t i = min_addr; i < max_addr; i += GRANULE_4KB){
+            register_proc_memory( i, (uintptr_t)dest + (i - min_addr), MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
         }
         proc->use_va = true;
     }
-    memcpy(dest, content, content_size);
+    
+    map_section(proc, dest, min_addr, text_va, text);
+    map_section(proc, dest, min_addr, data_va, data);
+    map_section(proc, dest, min_addr, rodata_va, rodata);
+    map_section(proc, dest, min_addr, bss_va, bss);
 
-    proc->va = va_base;
-    proc->code = dest;
-    proc->code_size = content_size;
+    proc->va = min_addr;
+    proc->code = (void*)dest;
+    proc->code_size = (code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     
     uint64_t stack_size = 0x1000;
 
@@ -306,11 +340,9 @@ process_t* create_process(const char *name, const char *bundle, void *content, u
     proc->pc = (uintptr_t)(entry);
     kprintf("User process %s allocated with address at %x, stack at %x, heap at %x",(uintptr_t)name,proc->pc, proc->sp, proc->heap);
     proc->spsr = 0;
-    proc->state = READY;
+    proc->state = BLOCKED;
 
     proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_USER, MEM_RW, true);
-
-    enable_interrupt();
     
     return proc;
 }

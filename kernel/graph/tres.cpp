@@ -3,6 +3,7 @@
 #include "drivers/gpu_driver.hpp"
 #include "std/memory.h"
 #include "process/scheduler.h"
+#include "filesystem/filesystem.h"
 
 // clinkedlist_t windows;
 typedef struct window_tab {
@@ -29,6 +30,12 @@ void resize_window(uint32_t width, uint32_t height){
     main_gpu_driver->resize_window(width, height, &test_window.win_ctx);
     test_window.win_ctx.width = width;
     test_window.win_ctx.height = height;
+    uint32_t win_resize[2];
+    win_resize[0] = width;
+    win_resize[1] = height;
+    string path = string_format("/window/%i/resize",1);
+    simple_write(path.data, win_resize, 2 * sizeof(uint32_t));
+    string_free(path);
 }
 
 void get_window_ctx(draw_ctx* out_ctx){
