@@ -31,7 +31,7 @@ int img_example() {
         img = malloc(info.width*info.height*system_bpp);
         png_read_image(file_img, descriptor.size, img);
     }
-    // resize_draw_ctx(&ctx, info.width+BORDER*2, info.height+BORDER*2);
+    resize_draw_ctx(&ctx, info.width+BORDER*2, info.height+BORDER*2);
     while (1) {
         mouse_input mouse = {};
         get_mouse_status(&mouse);

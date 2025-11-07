@@ -119,7 +119,7 @@ static inline void redraw_win(void *node){
 }
 
 int window_system(){
-    // load_module(&window_module);//TODO: create a process-specific function for this, that keeps track of modules and unloads them on exit/crash
+    load_module(&window_module);//TODO: create a process-specific function for this, that keeps track of modules and unloads them on exit/crash
     init_window_system();
     disable_visual();
     gpu_clear(BG_COLOR);
