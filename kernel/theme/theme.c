@@ -30,57 +30,32 @@ system_config_t system_config = {
     .panic_text = PANIC_TEXT,
     .default_pwd = DEFAULT_PWD,
     .system_name = SYSTEM_NAME,
+    .use_net = true,
 };
 
+#define parse_toml(k,dest,func) if (strcmp(#k, key, true) == 0) dest.k = func(value,value_len)
+#define parse_toml_str(k,dest) if (strcmp(#k, key, true) == 0) dest.k = string_from_literal_length(value,value_len).data
+
 void parse_theme_kvp(const char *key, char *value, size_t value_len, void *context){
-    if (strcmp("bg_color", key, true) == 0){
-        system_theme.bg_color = parse_hex_u64(value, value_len);
-    }
-    if (strcmp("cursor_color_deselected", key, true) == 0){
-        system_theme.cursor_color_deselected = parse_hex_u64(value, value_len);
-    }
-    if (strcmp("cursor_color_selected", key, true) == 0){
-        system_theme.cursor_color_selected = parse_hex_u64(value, value_len);
-    }
-    if (strcmp("panic_text", key, true) == 0){
-        system_config.panic_text = string_from_literal_length(value, value_len).data;
-    }
-    if (strcmp("system_name", key, true) == 0){
-        system_config.system_name = string_from_literal_length(value, value_len).data;
-    }
-    if (strcmp("logo_points_count", key, true) == 0){
-        boot_theme.logo_points_count = parse_int_u64(value, value_len);
-    }
-    if (strcmp("logo_repeat", key, true) == 0){
-        boot_theme.logo_repeat = parse_int_u64(value, value_len);
-    }
-    if (strcmp("logo_repeat", key, true) == 0){
-        boot_theme.logo_repeat = parse_int_u64(value, value_len);
-    }
-    if (strcmp("logo_screen_div", key, true) == 0){
-        boot_theme.logo_screen_div = parse_int_u64(value, value_len);
-    }
-    if (strcmp("logo_padding", key, true) == 0){
-        boot_theme.logo_padding = parse_int_u64(value, value_len);
-    }
-    if (strcmp("logo_inner_x_const", key, true) == 0){
-        boot_theme.logo_inner_x_const = parse_int_u64(value, value_len);
-    }
-    if (strcmp("logo_outer_x_div", key, true) == 0){
-        boot_theme.logo_outer_x_div = parse_int_u64(value, value_len);
-    }
-    if (strcmp("logo_upper_y_div", key, true) == 0){
-        boot_theme.logo_upper_y_div = parse_int_u64(value, value_len);
-    }
-    if (strcmp("logo_lower_y_const", key, true) == 0){
-        boot_theme.logo_lower_y_const = parse_int_u64(value, value_len);
-    }
-    if (strcmp("use_window_shadows", key, true) == 0){
-        system_theme.use_window_shadows = parse_int_u64(value, value_len);//TODO: boolean parsing
-    }
-    if (strcmp("play_startup_sound", key, true) == 0){
-        boot_theme.play_startup_sound = parse_int_u64(value, value_len);//TODO: boolean parsing
-    }
+    parse_toml(bg_color,                system_theme, parse_hex_u64);
+    parse_toml(cursor_color_deselected, system_theme, parse_hex_u64);
+    parse_toml(cursor_color_selected,   system_theme, parse_hex_u64);
+    parse_toml(use_window_shadows,      system_theme,parse_int_u64);
+    
+    parse_toml_str(panic_text,  system_config);
+    parse_toml_str(system_name, system_config);
+    parse_toml(use_net, system_config, parse_int_u64);
+    
+    parse_toml(logo_points_count,   boot_theme,parse_int_u64);
+    parse_toml(logo_repeat,         boot_theme,parse_int_u64);
+    parse_toml(logo_screen_div,     boot_theme,parse_int_u64);
+    parse_toml(logo_padding,        boot_theme,parse_int_u64);
+    parse_toml(logo_inner_x_const,  boot_theme,parse_int_u64);
+    parse_toml(logo_outer_x_div,    boot_theme,parse_int_u64);
+    parse_toml(logo_upper_y_div,    boot_theme,parse_int_u64);
+    parse_toml(logo_lower_y_const,  boot_theme,parse_int_u64);
+    parse_toml(play_startup_sound,  boot_theme,parse_int_u64);
+
 }
 
 bool load_theme(){

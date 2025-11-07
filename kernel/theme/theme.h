@@ -28,6 +28,7 @@ typedef struct {
     char *panic_text;
     char *default_pwd;
     char *system_name;
+    bool use_net;
 } system_config_t;
 
 bool load_theme();

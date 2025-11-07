@@ -59,7 +59,8 @@ void kernel_main() {
     bool input_available = load_module(&input_module);
     bool network_available = false;
     if (BOARD_TYPE == 1){
-        network_available = load_module(&net_module);
+        if (system_config.use_net)
+            network_available = load_module(&net_module);
 
         load_module(&audio_module);
 
@@ -80,7 +81,7 @@ void kernel_main() {
 
     if (input_available) init_input_process();
 
-    if (network_available) launch_net_process();
+    if (network_available && system_config.use_net) launch_net_process();
 
     init_bootprocess();
 
