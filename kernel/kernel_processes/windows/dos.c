@@ -102,11 +102,11 @@ void draw_window(window_frame *frame){
     draw_ctx *ctx = gpu_get_ctx();
     DRAW(rectangle(ctx, (rect_ui_config){
         .border_size = 3,
-        .border_color = BG_COLOR + 0x222222
+        .border_color = system_theme.bg_color + 0x222222
     }, (common_ui_config){
         .point = fixed_point,
         .size = fixed_size,
-        .background_color = BG_COLOR,
+        .background_color = system_theme.bg_color,
         .foreground_color = COLOR_WHITE,
     }),{
         
@@ -122,7 +122,7 @@ int window_system(){
     load_module(&window_module);//TODO: create a process-specific function for this, that keeps track of modules and unloads them on exit/crash
     init_window_system();
     disable_visual();
-    gpu_clear(BG_COLOR);
+    gpu_clear(system_theme.bg_color);
     gpu_point start_point = {0,0};
     bool drawing = false;
     while (1){
@@ -144,7 +144,7 @@ int window_system(){
         }
         disable_interrupt();
         if (dirty_windows){
-            gpu_clear(BG_COLOR);
+            gpu_clear(system_theme.bg_color);
             res = false;
             clinkedlist_for_each(window_list, redraw_win);
             dirty_windows = false;

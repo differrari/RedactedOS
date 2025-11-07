@@ -16,7 +16,7 @@ int login_screen(){
     char* buf = (char*)malloc(256);
     int len = 0;
     keypress old_kp;
-    gpu_clear(BG_COLOR);
+    gpu_clear(system_theme.bg_color);
     while (1)
     {
         gpu_size screen_size = gpu_get_screen_size();
@@ -31,7 +31,7 @@ int login_screen(){
         draw_ctx *ctx = gpu_get_ctx();
 
         label(ctx, (text_ui_config){
-            .text = BOOTSCREEN_TEXT,
+            .text = boot_theme.system_name,
             .font_size = 2,
         }, (common_ui_config){
             .point = {0, yo - char_size*9},
@@ -62,7 +62,7 @@ int login_screen(){
             .size = { screen_size.width/3, height },
             .horizontal_align = Leading,
             .vertical_align = VerticalCenter,
-            .background_color = BG_COLOR+0x111111,
+            .background_color = system_theme.bg_color+0x111111,
             .foreground_color = COLOR_WHITE,
         });
 
@@ -72,7 +72,7 @@ int login_screen(){
                 char key = kp.keys[i];
                 if (hid_keycode_to_char[(uint8_t)key]){
                     if (key == KEY_ENTER || key == KEY_KPENTER){
-                        if (strcmp(buf,default_pwd, false) == 0){
+                        if (strcmp(buf,system_config.default_pwd, false) == 0){
                             free(buf, 256);
                             free(s.data,s.mem_length);
                             sys_set_secure(false);

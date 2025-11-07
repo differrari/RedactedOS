@@ -27,26 +27,24 @@ void boot_draw_name(gpu_size screen_size, int xoffset, int yoffset){
 
     draw_ctx *ctx = gpu_get_ctx();
     label(ctx, (text_ui_config){
-        .text = BOOTSCREEN_TEXT,
+        .text = boot_theme.system_name,
         .font_size = 2,
     }, (common_ui_config){
         .point = {0, screen_size.height/2 + yoffset},
         .size = { screen_size.width, (screen_size.height/2) - yoffset},
         .horizontal_align = HorizontalCenter,
         .vertical_align = Top,
-        .background_color = BG_COLOR,
+        .background_color = system_theme.bg_color,
         .foreground_color = COLOR_WHITE,
     });
 }
 
-const gpu_point offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
-
 gpu_point boot_calc_point(gpu_point offset, gpu_size screen_size, gpu_point screen_middle){
-    int xoff = (screen_size.width/BOOTSCREEN_DIV) * offset.x;
-    int yoff = (screen_size.height/BOOTSCREEN_DIV) * offset.y;
-    int xloc = BOOTSCREEN_PADDING + xoff;
-    int yloc = BOOTSCREEN_PADDING + yoff;
-    return (gpu_point){screen_middle.x + xloc - (abs(offset.x) == 1 ? BOOTSCREEN_ASYMM.x : 0),  screen_middle.y + yloc - (abs(offset.y) == 1 ? BOOTSCREEN_ASYMM.y : 0)};
+    int xoff = (screen_size.width/boot_theme.logo_div) * offset.x;
+    int yoff = (screen_size.height/boot_theme.logo_div) * offset.y;
+    int xloc = boot_theme.logo_padding + xoff;
+    int yloc = boot_theme.logo_padding + yoff;
+    return (gpu_point){screen_middle.x + xloc - (abs(offset.x) == 1 ? boot_theme.logo_asymmetry.x : 0),  screen_middle.y + yloc - (abs(offset.y) == 1 ? boot_theme.logo_asymmetry.y : 0)};
 }
 
 void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size size, int num_lines, int separation){
@@ -144,15 +142,15 @@ int bootscreen(){
     // play_startup_sound();
     while (1)
     {
-        gpu_clear(BG_COLOR);
+        gpu_clear(system_theme.bg_color);
         gpu_point screen_middle = {screen_size.width/2,screen_size.height/2};
         
-        gpu_point current_point = boot_calc_point(offsets[BOOTSCREEN_NUM_SYMBOLS-1],screen_size,screen_middle);
-        for (int i = 0; i < BOOTSCREEN_NUM_STEPS; i++){
-            gpu_point offset = offsets[i];
+        gpu_point current_point = boot_calc_point(boot_theme.logo_points[boot_theme.logo_symbols_count-1],screen_size,screen_middle);
+        for (int i = 0; i < boot_theme.logo_symbols_count-1; i++){
+            gpu_point offset = boot_theme.logo_points[i];
             gpu_point next_point = boot_calc_point(offset,screen_size,screen_middle);
-            boot_draw_name(screen_size, 0, BOOTSCREEN_PADDING + screen_size.height/BOOTSCREEN_UPPER_Y_DIV + 10);
-            boot_draw_lines(current_point, next_point, screen_size, BOOTSCREEN_REPEAT, 5);
+            boot_draw_name(screen_size, 0, boot_theme.logo_padding + screen_size.height/boot_theme.logo_upper_y_div + 10);
+            boot_draw_lines(current_point, next_point, screen_size, boot_theme.logo_repeat, 5);
             current_point = next_point;
         }
         sleep(1000);

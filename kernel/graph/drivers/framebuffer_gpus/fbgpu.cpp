@@ -56,8 +56,8 @@ draw_ctx FBGPUDriver::new_cursor(uint32_t color){
 }
 
 void FBGPUDriver::setup_cursor(){
-    cursor_pressed_ctx = new_cursor(CURSOR_COLOR_SELECTED);
-    cursor_unpressed_ctx = new_cursor(CURSOR_COLOR_DESELECTED);
+    cursor_pressed_ctx = new_cursor(system_theme.cursor_color_selected);
+    cursor_unpressed_ctx = new_cursor(system_theme.cursor_color_deselected);
 }
 
 #define cursor_loc(x,y,row) (((y + cy) * row) + (cx + x))

@@ -47,7 +47,7 @@ void panic(const char* msg, uint64_t info) {
     bool old_panic_triggered = panic_triggered;
     panic_triggered = true;
     uart_raw_puts("*** ");
-    uart_raw_puts(PANIC_TEXT);
+    uart_raw_puts(system_config.panic_text);
     uart_raw_puts(" ***\r\n");
     uart_raw_puts(msg);
     uart_raw_puts("\r\n");
@@ -56,7 +56,7 @@ void panic(const char* msg, uint64_t info) {
     uart_raw_puts("\r\n");
     uart_raw_puts("System Halted\r\n");
     if (!old_panic_triggered){
-        string s = string_format("%s\r\n%s\r\nError code: %x\r\nSystem Halted",(uint64_t)PANIC_TEXT,(uint64_t)msg,info);
+        string s = string_format("%s\r\n%s\r\nError code: %x\r\nSystem Halted",(uint64_t)system_config.panic_text,(uint64_t)msg,info);
         draw_panic_screen(s);
     }
     while (1);
