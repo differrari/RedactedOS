@@ -96,10 +96,7 @@ driver_module window_module = (driver_module){
     .readdir = 0,
 };
 
-void draw_window(window_frame *frame){
-    gpu_point fixed_point = { frame->x - BORDER_SIZE, frame->y - BORDER_SIZE };
-    gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 };
-    draw_ctx *ctx = gpu_get_ctx();
+static void draw_solid_window(draw_ctx *ctx, gpu_point fixed_point, gpu_size fixed_size){
     DRAW(rectangle(ctx, (rect_ui_config){
         .border_size = 3,
         .border_color = system_theme.bg_color + 0x222222
@@ -110,6 +107,24 @@ void draw_window(window_frame *frame){
         .foreground_color = COLOR_WHITE,
     }),{
         
+    });
+}
+
+void draw_window(window_frame *frame){
+    gpu_point fixed_point = { frame->x - BORDER_SIZE, frame->y - BORDER_SIZE };
+    gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 };
+    draw_ctx *ctx = gpu_get_ctx();
+    if (!system_theme.use_window_shadows){
+        draw_solid_window(ctx, fixed_point, fixed_size);
+        return;
+    }
+    DRAW(rectangle(ctx, (rect_ui_config){}, (common_ui_config){
+        .point = fixed_point,
+        .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5},
+        .background_color = 0x44000000,
+        .foreground_color = 0,
+    }),{
+        draw_solid_window(ctx, fixed_point, fixed_size);
     });
 }
 

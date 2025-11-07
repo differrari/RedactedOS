@@ -14,12 +14,14 @@ typedef struct {
     int logo_lower_y_const;
     int logo_points_count;
     gpu_point *logo_points;
+    bool play_startup_sound;
 } boot_theme_t;
 
 typedef struct {
     uint32_t bg_color;
     uint32_t cursor_color_deselected;
     uint32_t cursor_color_selected;
+    bool use_window_shadows;
 } system_theme_t;
 
 typedef struct {

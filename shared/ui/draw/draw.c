@@ -143,6 +143,17 @@ void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
 void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
     if (x >= ctx->width || y >= ctx->height) return;
 
+    uint8_t alpha = ((color >> 24) & 0xFF);
+
+    if (alpha < 0xFF && alpha > 0){
+        for (uint32_t dy = 0; dy < height; dy++){
+            for (uint32_t dx = 0; dx < width; dx++){
+                fb_draw_raw_pixel(ctx, x + dx, y + dy, color);  
+            }
+        }
+        return;
+    }
+
     uint32_t w = width;
     uint32_t h = height;
     if (x + w > ctx->width) w = ctx->width - x;

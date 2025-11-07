@@ -16,12 +16,14 @@ boot_theme_t boot_theme = {
     .logo_lower_y_const = BOOTSCREEN_LOWER_Y_CONST,
     .logo_points_count = BOOTSCREEN_NUM_SYMBOLS,
     .logo_points = default_boot_offsets,
+    .play_startup_sound = true,
 };
 
 system_theme_t system_theme = {
     .bg_color = BG_COLOR,
     .cursor_color_deselected = CURSOR_COLOR_DESELECTED,
     .cursor_color_selected = CURSOR_COLOR_SELECTED,
+    .use_window_shadows = true,
 };
 
 system_config_t system_config = {
@@ -72,6 +74,12 @@ void parse_theme_kvp(const char *key, char *value, size_t value_len, void *conte
     }
     if (strcmp("logo_lower_y_const", key, true) == 0){
         boot_theme.logo_lower_y_const = parse_int_u64(value, value_len);
+    }
+    if (strcmp("use_window_shadows", key, true) == 0){
+        system_theme.use_window_shadows = parse_int_u64(value, value_len);//TODO: boolean parsing
+    }
+    if (strcmp("play_startup_sound", key, true) == 0){
+        boot_theme.play_startup_sound = parse_int_u64(value, value_len);//TODO: boolean parsing
     }
 }
 

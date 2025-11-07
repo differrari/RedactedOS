@@ -139,7 +139,9 @@ int bootscreen(){
     sys_focus_current();
     gpu_size screen_size = gpu_get_screen_size();
     mouse_config((gpu_point){screen_size.width/2,screen_size.height/2}, screen_size);
-    // play_startup_sound();
+    if (boot_theme.play_startup_sound){
+        play_startup_sound();
+    }
     while (1)
     {
         gpu_clear(system_theme.bg_color);
@@ -154,7 +156,9 @@ int bootscreen(){
             current_point = next_point;
         }
         sleep(1000);
-        // close_idle_mixer_inputs();
+        if (boot_theme.play_startup_sound){
+            close_idle_mixer_inputs();
+        }
     }
     return 0;
 }
