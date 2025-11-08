@@ -279,16 +279,16 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
     uintptr_t min_addr = text_va;
     uintptr_t max_addr = 0;
     if (data.size){
-        if (data.ptr < min_addr) min_addr = data_va;
-        if (data.ptr > max_addr) max_addr = data_va;
+        if (data_va < min_addr) min_addr = data_va;
+        if (data_va + data.size > max_addr) max_addr = data_va + data.size;
     } 
     if (rodata.size){
-        if (rodata.ptr < min_addr) min_addr = rodata_va;
-        if (rodata.ptr > max_addr) max_addr = rodata_va;
+        if (rodata_va < min_addr) min_addr = rodata_va;
+        if (rodata_va + rodata.size > max_addr) max_addr = rodata_va + rodata.size;
     } 
     if (bss.size){
-        if (bss.ptr < min_addr) min_addr = bss_va;
-        if (bss.ptr > max_addr) max_addr = bss_va;
+        if (bss_va < min_addr) min_addr = bss_va;
+        if (bss_va + bss.size > max_addr) max_addr = bss_va + bss.size;
     } 
 
     // max_addr = (max_addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
