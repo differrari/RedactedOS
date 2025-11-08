@@ -13,6 +13,7 @@ typedef struct {
     int logo_upper_y_div;
     int logo_lower_y_const;
     int logo_points_count;
+    int logo_steps;
     gpu_point *logo_points;
     bool play_startup_sound;
 } boot_theme_t;

@@ -15,6 +15,7 @@ boot_theme_t boot_theme = {
     .logo_upper_y_div = BOOTSCREEN_UPPER_Y_DIV,
     .logo_lower_y_const = BOOTSCREEN_LOWER_Y_CONST,
     .logo_points_count = BOOTSCREEN_NUM_SYMBOLS,
+    .logo_steps = BOOTSCREEN_NUM_SYMBOLS-1,
     .logo_points = default_boot_offsets,
     .play_startup_sound = true,
 };
@@ -32,6 +33,46 @@ system_config_t system_config = {
     .system_name = SYSTEM_NAME,
     .use_net = true,
 };
+
+gpu_point parse_gpu_point(char *value, size_t value_len){
+    const char *cursor = value;
+    cursor = seek_to(cursor, ',');
+    uint32_t x = parse_int64(value, cursor-value-1) & UINT32_MAX;
+    uint32_t y = parse_int64(cursor, value_len-(cursor-value)) & UINT32_MAX;
+    return (gpu_point){x,y};
+}
+
+gpu_point* parse_gpu_point_array(char *value, size_t value_len){
+    int depth = 0;
+    int count = 0;
+    char *orig = value;
+    char *last_comma = value;
+    do {
+        if (*value == '[') depth++;
+        if (*value == ']') depth--;
+        if (*value == ',' && depth == 0){ count++; last_comma = value + 1; }
+        value++;
+        value_len--;
+    } while (*value && value_len);
+    for (; last_comma < value; last_comma++){
+        if (*last_comma > ' ' && *last_comma < '~'){
+            count++;
+            break;
+        }
+    }
+    boot_theme.logo_points_count = count;
+    gpu_point *points = malloc(count * sizeof(gpu_point));
+    for (int i = 0; i < count; i++){
+        char *start_index = 0;
+        do {
+            if (*orig == '[') start_index = orig + 1;
+            if (*orig == ']' && start_index) { points[i] = parse_gpu_point(start_index, (orig-start_index)); break; } 
+            orig++;
+        } while (orig);
+    }
+    
+    return points;
+}
 
 #define parse_toml(k,dest,func) if (strcmp(#k, key, true) == 0) dest.k = func(value,value_len)
 #define parse_toml_str(k,dest) if (strcmp(#k, key, true) == 0) dest.k = string_from_literal_length(value,value_len).data
@@ -56,15 +97,19 @@ void parse_theme_kvp(const char *key, char *value, size_t value_len, void *conte
     parse_toml(logo_lower_y_const,  boot_theme,parse_int_u64);
     parse_toml(play_startup_sound,  boot_theme,parse_int_u64);
 
+    parse_toml(logo_asymmetry, boot_theme, parse_gpu_point);
+
+    parse_toml(logo_steps, boot_theme, parse_int_u64);
+
+    parse_toml(logo_points, boot_theme, parse_gpu_point_array);
+
 }
 
 bool load_theme(){
     file fd = {};
     if (fopen("/boot/redos/theme.config", &fd) != FS_RESULT_SUCCESS) return false;
-    kprintf("Opened file");
     char *buf = malloc(fd.size);
     if (fread(&fd, buf, fd.size) != fd.size) return false;
-    kprintf("Read file");
 
     read_toml(buf, fd.size, parse_theme_kvp, 0);
 

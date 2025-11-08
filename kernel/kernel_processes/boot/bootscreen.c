@@ -148,7 +148,7 @@ int bootscreen(){
         gpu_point screen_middle = {screen_size.width/2,screen_size.height/2};
         
         gpu_point current_point = boot_calc_point(boot_theme.logo_points[boot_theme.logo_points_count-1],screen_size,screen_middle);
-        for (int i = 0; i < boot_theme.logo_points_count-1; i++){
+        for (int i = 0; i < boot_theme.logo_steps; i++){
             gpu_point offset = boot_theme.logo_points[i];
             gpu_point next_point = boot_calc_point(offset,screen_size,screen_middle);
             boot_draw_name(screen_size, 0, boot_theme.logo_padding + screen_size.height/boot_theme.logo_upper_y_div + 10);
