@@ -30,7 +30,7 @@ void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\r\n", 0); }
 void error_el1_handler(){ handle_exception("ERROR EXCEPTION\r\n", 0); }
 
 void draw_panic_screen(string s){
-    gpu_clear(0xFF0000FF);
+    gpu_clear(system_theme.err_color);
     uint32_t scale = 3;
     gpu_draw_string(*(string *)&s, (gpu_point){20,20}, scale, 0xFFFFFFFF);
     gpu_flush();

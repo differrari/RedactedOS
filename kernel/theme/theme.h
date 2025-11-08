@@ -20,6 +20,7 @@ typedef struct {
 
 typedef struct {
     uint32_t bg_color;
+    uint32_t err_color;
     uint32_t cursor_color_deselected;
     uint32_t cursor_color_selected;
     bool use_window_shadows;

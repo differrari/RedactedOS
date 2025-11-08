@@ -22,6 +22,7 @@ boot_theme_t boot_theme = {
 
 system_theme_t system_theme = {
     .bg_color = BG_COLOR,
+    .err_color = 0xFF000000,
     .cursor_color_deselected = CURSOR_COLOR_DESELECTED,
     .cursor_color_selected = CURSOR_COLOR_SELECTED,
     .use_window_shadows = true,
@@ -79,6 +80,7 @@ gpu_point* parse_gpu_point_array(char *value, size_t value_len){
 
 void parse_theme_kvp(const char *key, char *value, size_t value_len, void *context){
     parse_toml(bg_color,                system_theme, parse_hex_u64);
+    parse_toml(err_color,               system_theme, parse_hex_u64);
     parse_toml(cursor_color_deselected, system_theme, parse_hex_u64);
     parse_toml(cursor_color_selected,   system_theme, parse_hex_u64);
     parse_toml(use_window_shadows,      system_theme,parse_int_u64);

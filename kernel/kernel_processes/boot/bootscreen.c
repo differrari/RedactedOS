@@ -13,6 +13,7 @@
 #include "../shared/audio/cuatro.h"
 #include "../shared/audio/wav.h"
 #include "../shared/audio/tone.h"
+#include "async.h"
 
 file boot_fd;
 
@@ -47,6 +48,9 @@ gpu_point boot_calc_point(gpu_point offset, gpu_size screen_size, gpu_point scre
     return (gpu_point){screen_middle.x + xloc - (abs(offset.x) == 1 ? boot_theme.logo_asymmetry.x : 0),  screen_middle.y + yloc - (abs(offset.y) == 1 ? boot_theme.logo_asymmetry.y : 0)};
 }
 
+static float target_dt = (1.f/60)*1000;
+static float time = 0;
+
 void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size size, int num_lines, int separation){
     int steps = 0;
     for (int j = 0; j < num_lines; j++) {
@@ -67,6 +71,9 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
     }
     
     for (int i = 0; i <= steps; i++) {
+        float new_time = get_time();
+        float dt = new_time - time;
+        time = new_time;
         for (int j = 0; j < num_lines; j++){
             gpu_point ccurrent = current_point;
             gpu_point cnext = next_point;
@@ -89,6 +96,7 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
                 gpu_draw_pixel(interpolated, 0xFFFFFFFF);
             }
         }
+        if (dt < target_dt) delay(floor(target_dt-dt));
         kbd_event kbd = {};
         if (sys_read_event_current(&kbd))
             stop_current_process(0);
@@ -142,6 +150,7 @@ int bootscreen(){
     if (boot_theme.play_startup_sound){
         play_startup_sound();
     }
+    time = (float)get_time();
     while (1)
     {
         gpu_clear(system_theme.bg_color);
