@@ -205,7 +205,7 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     }
 
     FreeBlock** curr = &info->free_list;
-    while (*curr) {
+    while (*curr && (uintptr_t)(*curr) != 0xDEADBEEF && (uintptr_t)(*curr) != 0xDEADBEEFDEADBEEF) {
         if ((*curr)->size >= size) {
             kprintfv("[in_page_alloc] Reusing free block at %x",(uintptr_t)*curr);
 
