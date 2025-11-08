@@ -13,6 +13,7 @@
 #include "data_struct/linked_list.h"
 #include "syscalls/syscalls.h"
 #include "exceptions/irq.h"
+#include "image/bmp.h"
 
 #define BORDER_SIZE 3
 
@@ -133,11 +134,39 @@ static inline void redraw_win(void *node){
     draw_window(frame);
 }
 
+bool use_desktop_img = false;
+void *img;
+image_info img_info;
+
+static inline void draw_desktop(){
+    if (img)
+        fb_draw_img(gpu_get_ctx(), 0, 0, img, img_info.width, img_info.height);
+    else
+        gpu_clear(system_theme.bg_color);
+}
+
 int window_system(){
     load_module(&window_module);//TODO: create a process-specific function for this, that keeps track of modules and unloads them on exit/crash
     init_window_system();
     disable_visual();
-    gpu_clear(system_theme.bg_color);
+    file fd = {};
+    if (false && fopen("/boot/redos/desktop.bmp", &fd) == FS_RESULT_SUCCESS){
+        void *imgf = malloc(fd.size);
+        fread(&fd, imgf, fd.size);
+        image_info info = bmp_get_info(imgf, fd.size);
+        img_info = (image_info){max(info.width,gpu_get_ctx()->width),max(info.height,gpu_get_ctx()->height)};
+        bool need_resize = img_info.width != info.width || img_info.height != info.height;
+        img = malloc(img_info.width * img_info.height * sizeof(uint32_t));
+        void *oimg = need_resize ? malloc(info.width * info.height * sizeof(uint32_t)) : img;
+        bmp_read_image(imgf, fd.size, oimg);
+        if (need_resize){
+            rescale_image(info.width, info.height, img_info.width, img_info.height, oimg, img);
+            free(oimg, info.width * info.height * sizeof(uint32_t));
+        }
+        free(imgf, fd.size);
+        fclose(&fd);
+    }
+    draw_desktop();
     gpu_point start_point = {0,0};
     bool drawing = false;
     while (1){
@@ -159,7 +188,7 @@ int window_system(){
         }
         disable_interrupt();
         if (dirty_windows){
-            gpu_clear(system_theme.bg_color);
+            draw_desktop();
             res = false;
             clinkedlist_for_each(window_list, redraw_win);
             dirty_windows = false;
