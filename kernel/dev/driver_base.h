@@ -33,3 +33,4 @@ typedef struct driver_module {
     size_t (*readdir)(const char*, void*, size_t, file_offset);
 
 } driver_module;
+//TODO: for IPC, rename to system_module and create a dedicated loading function that attaches a module to a process so it can be cleaned up

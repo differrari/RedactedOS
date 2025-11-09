@@ -461,8 +461,8 @@ uint32_t VirtioGPUDriver::new_cursor(uint32_t color){
 
 void VirtioGPUDriver::setup_cursor()
 {
-    cursor_pressed_resource_id = new_cursor(CURSOR_COLOR_SELECTED);
-    cursor_unpressed_resource_id = new_cursor(CURSOR_COLOR_DESELECTED);
+    cursor_pressed_resource_id = new_cursor(system_theme.cursor_color_selected);
+    cursor_unpressed_resource_id = new_cursor(system_theme.cursor_color_deselected);
     set_cursor_pressed(false);
 }   
 

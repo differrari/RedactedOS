@@ -122,7 +122,7 @@ void Launcher::draw_desktop(){
 
 void Launcher::draw_full(){
     if (!await_gpu()) return;
-    fb_clear(&ctx, BG_COLOR+0x050505);
+    fb_clear(&ctx, system_theme.bg_color+0x050505);
     for (uint32_t column = 0; column < MAX_COLS; column++){
         for (uint32_t row = 0; row < MAX_ROWS; row++){
             draw_tile(column, row);
@@ -181,6 +181,7 @@ void Launcher::activate_current(){
             rendered_full = false;
             return;
         }
+        active_proc->win_id = get_current_proc()->win_id;
         active_proc->priority = PROC_PRIORITY_FULL;
         kprintf("[LAUNCHER] process launched");
         enable_interrupt();
@@ -202,13 +203,13 @@ void Launcher::draw_tile(uint32_t column, uint32_t row){
     DRAW(
         rectangle(&ctx, {
         .border_size = (uint8_t)(sel ? 4 : 0),
-        .border_color = BG_COLOR+0x333333,
+        .border_color = system_theme.bg_color+0x333333,
         }, (common_ui_config){
         .point = {10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row)},
         .size = {tile_size.width, tile_size.height},
         .horizontal_align = Leading,
         .vertical_align = Top,
-        .background_color = BG_COLOR+0x111111,
+        .background_color = system_theme.bg_color+0x111111,
         .foreground_color = 0
         }), {
         

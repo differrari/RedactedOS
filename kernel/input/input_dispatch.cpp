@@ -128,7 +128,7 @@ void sys_set_focus(int pid){
 }
 
 void sys_unset_focus(){
-    focused_proc->focused = false;
+    if (focused_proc) focused_proc->focused = false;
     focused_proc = 0;
 }
 

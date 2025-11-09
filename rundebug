@@ -17,4 +17,4 @@ done
 # end tell
 # EOF
 
-./run_$MODE debug & ./debug ${ARGS[*]}
+(./run_$MODE debug) & (./debug ${ARGS[*]})

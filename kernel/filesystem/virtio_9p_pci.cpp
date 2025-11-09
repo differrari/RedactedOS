@@ -324,8 +324,6 @@ size_t Virtio9PDriver::list_contents(uint32_t fid, void *buf, size_t size, uint6
 
     uint32_t count = ((r_readdir*)resp)->count;
 
-    kprintf("%x entries from 9p", count);
-
     while (p < resp + count){
         r_readdir_data *data = (r_readdir_data*)p;
     
