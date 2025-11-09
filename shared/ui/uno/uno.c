@@ -67,12 +67,10 @@ common_ui_config textbox(draw_ctx *ctx, text_ui_config text_config, common_ui_co
 
 common_ui_config rectangle(draw_ctx *ctx, rect_ui_config rect_config, common_ui_config common_config){
     uint32_t bx = common_config.point.x, by = common_config.point.y, bw = common_config.size.width, bh = common_config.size.height, b = rect_config.border_size;
-    if (rect_config.border_size > 0 && rect_config.border_size <= common_config.size.width && rect_config.border_size <= common_config.size.height){
-        fb_fill_rect(ctx, bx, by, b, bh, rect_config.border_color);
-        fb_fill_rect(ctx, bx + bw - b, by, b, bh, rect_config.border_color);
-        fb_fill_rect(ctx, bx, by, bw, b, rect_config.border_color);
-        fb_fill_rect(ctx, bx, by + bh - b, bw, b, rect_config.border_color);
-    }
+    fb_fill_rect(ctx, bx, by, b, bh, rect_config.border_color);
+    fb_fill_rect(ctx, bx + bw - b, by, b, bh, rect_config.border_color);
+    fb_fill_rect(ctx, bx, by, bw, b, rect_config.border_color);
+    fb_fill_rect(ctx, bx, by + bh - b, bw, b, rect_config.border_color);
     
     uint32_t inner_x = bx + b;
     uint32_t inner_y = by + b;

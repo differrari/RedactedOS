@@ -50,6 +50,7 @@ void draw_window(window_frame *frame){
 static inline void redraw_win(void *node){
     window_frame* frame = (window_frame*)node;
     draw_window(frame);
+    commit_frame(&frame->win_ctx);
 }
 
 bool use_desktop_img = false;
