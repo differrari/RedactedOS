@@ -15,9 +15,9 @@
 
 #define BORDER_SIZE 3
 
-static void draw_solid_window(draw_ctx *ctx, gpu_point fixed_point, gpu_size fixed_size){
+static void draw_solid_window(draw_ctx *ctx, gpu_point fixed_point, gpu_size fixed_size, bool fill){
     DRAW(rectangle(ctx, (rect_ui_config){
-        .border_size = 3,
+        .border_size = BORDER_SIZE,
         .border_color = system_theme.bg_color + 0x222222
     }, (common_ui_config){
         .point = fixed_point,
@@ -34,22 +34,21 @@ void draw_window(window_frame *frame){
     gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 };
     draw_ctx *ctx = gpu_get_ctx();
     if (!system_theme.use_window_shadows){
-        draw_solid_window(ctx, fixed_point, fixed_size);
+        draw_solid_window(ctx, fixed_point, fixed_size, !frame->pid);
         return;
     }
-    DRAW(rectangle(ctx, (rect_ui_config){}, (common_ui_config){
-        .point = fixed_point,
-        .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5},
-        .background_color = 0x44000000,
-        .foreground_color = 0,
-    }),{
-        draw_solid_window(ctx, fixed_point, fixed_size);
+    DRAW(rectangle(ctx, (rect_ui_config){
+        .border_size = BORDER_SIZE * 1.5,
+        .border_color = 0x44000000,
+    }, (common_ui_config){ .point = fixed_point, .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5}, }),{
+        draw_solid_window(ctx, fixed_point, fixed_size, !frame->pid);
     });
 }
 
 static inline void redraw_win(void *node){
     window_frame* frame = (window_frame*)node;
     draw_window(frame);
+    frame->win_ctx.full_redraw = true; 
     commit_frame(&frame->win_ctx);
 }
 
@@ -115,6 +114,7 @@ int window_system(){
                 continue;
             }
             gpu_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
+            disable_interrupt();
             create_window(fixed_point.x - global_win_offset.x,fixed_point.y - global_win_offset.y, size.width, size.height);
             drawing = false;
         }

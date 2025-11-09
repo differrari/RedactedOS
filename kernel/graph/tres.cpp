@@ -36,10 +36,10 @@ extern "C" void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t h
     frame->x = x;
     frame->y = y;
     clinkedlist_push_front(window_list, frame);
+    main_gpu_driver->create_window(x,y, width, height, &frame->win_ctx);
     process_t *p = launch_launcher();
     p->win_id = frame->win_id;
     frame->pid = p->id;
-    main_gpu_driver->create_window(x,y, width, height, &frame->win_ctx);
     dirty_windows = true;
 }
 
@@ -98,15 +98,17 @@ void commit_frame(draw_ctx* frame_ctx){
     else if (sy < 0){ h += sy; oy = -sy; sy = 0; }
     if (w <= 0 || h <= 0) return;
 
+    if (frame_ctx->fb != win_ctx.fb) memcpy(win_ctx.fb, frame_ctx->fb, frame_ctx->width * frame_ctx->height * sizeof(uint32_t));
+
     if (frame_ctx->full_redraw){
         for (int32_t dy = 0; dy < h; dy++)
-            memcpy(screen_ctx->fb + ((sy + dy) * screen_ctx->width) + sx, frame_ctx->fb + ((dy + oy) * win_ctx.width) + ox, w * 4);
+            memcpy(screen_ctx->fb + ((sy + dy) * screen_ctx->width) + sx, frame_ctx->fb + ((dy + oy) * win_ctx.width) + ox, w * sizeof(uint32_t));
         mark_dirty(screen_ctx, sx, sy, w, h);
     } else {
         for (uint32_t dr = 0; dr < frame_ctx->dirty_count; dr++){
             gpu_rect r = frame_ctx->dirty_rects[dr];
             for (uint32_t dy = 0; dy < r.size.height; dy++)
-                memcpy(screen_ctx->fb + ((sy + dy + r.point.y) * screen_ctx->width) + sx + r.point.x, frame_ctx->fb + ((dy + oy + r.point.y) * win_ctx.width) + r.point.x + ox, r.size.width * 4);
+                memcpy(screen_ctx->fb + ((sy + dy + r.point.y) * screen_ctx->width) + sx + r.point.x, frame_ctx->fb + ((dy + oy + r.point.y) * win_ctx.width) + r.point.x + ox, r.size.width * sizeof(uint32_t));
             mark_dirty(screen_ctx, sx + r.point.x, sy + r.point.y, r.size.width, r.size.height);
         }
     }
