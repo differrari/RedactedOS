@@ -18,6 +18,7 @@
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
 
+bool allow_va = true;
 //TODO: use queues, eliminate the max procs limitation
 process_t processes[MAX_PROCS];
 uint16_t current_proc = 0;
@@ -128,6 +129,7 @@ void reset_process(process_t *proc){
             for (uintptr_t i = 0; i < proc->code_size; i += PAGE_SIZE){
                 mmu_unmap(proc->va + i, (uintptr_t)proc->code + i);
             }
+            allow_va = true;
         } 
         pfree(proc->code, proc->code_size);
     }
