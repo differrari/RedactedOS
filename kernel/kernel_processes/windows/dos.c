@@ -30,7 +30,7 @@ static void draw_solid_window(draw_ctx *ctx, gpu_point fixed_point, gpu_size fix
 }
 
 void draw_window(window_frame *frame){
-    gpu_point fixed_point = { frame->x - BORDER_SIZE, frame->y - BORDER_SIZE };
+    gpu_point fixed_point = { global_win_offset.x + frame->x - BORDER_SIZE, global_win_offset.y + frame->y - BORDER_SIZE };
     gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 };
     draw_ctx *ctx = gpu_get_ctx();
     if (!system_theme.use_window_shadows){
@@ -85,9 +85,24 @@ int window_system(){
     draw_desktop();
     gpu_point start_point = {0,0};
     bool drawing = false;
+    bool dragging = false;
     while (1){
+        if (mouse_button_pressed(MMB)){
+            if (!dragging && !drawing){
+                dragging = true;
+                start_point = get_mouse_pos();
+            }
+            if (dragging){
+                gpu_point end_point = get_mouse_pos();
+                global_win_offset.x += end_point.x-start_point.x;
+                global_win_offset.y += end_point.y-start_point.y;
+                dirty_windows = true;
+                start_point = end_point;
+            }
+        } 
+        else dragging = false;
         if (mouse_button_pressed(LMB)){
-            if (!drawing){
+            if (!drawing && !dragging){
                 drawing = true;
                 start_point = get_mouse_pos();
             }

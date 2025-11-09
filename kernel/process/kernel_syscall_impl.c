@@ -33,7 +33,7 @@ extern bool read_event(kbd_event *event){
 }
 
 extern void get_mouse_status(mouse_input *in){
-    kprint("[SYSCALL implementation error] Shortcut syscalls are not implemented yet");
+    *in = get_raw_mouse_in();
 }
 
 extern uint16_t exec(const char* prog_name, int argc, const char* argv[]){

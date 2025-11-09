@@ -89,9 +89,9 @@ void register_mouse_input(mouse_input *rat){
     mouse_loc.x = min(max(0, mouse_loc.x), screen_bounds.width);
     mouse_loc.y = min(max(0, mouse_loc.y), screen_bounds.height);
     gpu_update_cursor(mouse_loc, false);
-    uint8_t lmb = rat->buttons & 1;
-    if (lmb != last_cursor_state){
-        last_cursor_state = lmb;
+    uint8_t cursor_state = rat->buttons;
+    if (cursor_state != last_cursor_state){
+        last_cursor_state = cursor_state;
         gpu_set_cursor_pressed(last_cursor_state);
         gpu_update_cursor(mouse_loc, true);
     }

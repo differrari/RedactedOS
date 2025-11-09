@@ -29,6 +29,7 @@ extern clinkedlist_t *window_list;
 
 extern uint16_t win_ids;
 extern bool dirty_windows;
+extern gpu_point global_win_offset;
 
 #ifdef __cplusplus
 }
