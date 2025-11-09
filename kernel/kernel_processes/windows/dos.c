@@ -114,7 +114,7 @@ int window_system(){
                 continue;
             }
             gpu_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
-            create_window(fixed_point.x, fixed_point.y, size.width, size.height);
+            create_window(fixed_point.x - global_win_offset.x,fixed_point.y - global_win_offset.y, size.width, size.height);
             drawing = false;
         }
         disable_interrupt();
