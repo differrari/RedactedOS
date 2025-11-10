@@ -12,6 +12,7 @@
 #include "exceptions/irq.h"
 #include "image/bmp.h"
 #include "graph/tres.h"
+#include "input_keycodes.h"
 
 #define BORDER_SIZE 3
 
@@ -82,11 +83,29 @@ int window_system(){
         free(imgf, fd.size);
         fclose(&fd);
     }
+    keypress kp_g = { 
+        .modifier = KEY_MOD_LCTRL,
+        .keys = { KEY_G, 0, 0, 0, 0, 0}
+    };
+    uint16_t sid_g = sys_subscribe_shortcut_current(kp_g);
+    keypress kp_f = { 
+        .modifier = KEY_MOD_LCTRL,
+        .keys = { KEY_F, 0, 0, 0, 0, 0}
+    };
+    uint16_t sid_f = sys_subscribe_shortcut_current(kp_f);
     draw_desktop();
     gpu_point start_point = {0,0};
     bool drawing = false;
     bool dragging = false;
     while (1){
+        if (sys_shortcut_triggered_current(sid_g)){
+            global_win_offset = (gpu_point){0,0};
+            dirty_windows = true;
+        }
+        if (sys_shortcut_triggered_current(sid_f) && focused_window){
+            global_win_offset = (gpu_point){-focused_window->x + BORDER_SIZE * 5,-focused_window->y + BORDER_SIZE * 5};
+            dirty_windows = true;
+        }
         if (mouse_button_pressed(MMB)){
             if (!dragging && !drawing){
                 dragging = true;

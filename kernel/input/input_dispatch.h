@@ -26,6 +26,7 @@ mouse_input get_raw_mouse_in();
 gpu_point get_mouse_pos();
 bool mouse_button_pressed(mouse_button mb);
 
+//TODO: shortcuts using function pointers entry points
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp);
 uint16_t sys_subscribe_shortcut_current(keypress kp);
 void sys_set_focus(int pid);

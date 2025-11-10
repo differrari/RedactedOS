@@ -8,6 +8,7 @@
 #include "console/kio.h"
 
 clinkedlist_t *window_list;
+window_frame *focused_window;
 
 uint16_t win_ids = 1;
 bool dirty_windows = false;
@@ -116,4 +117,14 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame){
     frame_ctx->dirty_count = 0;
     frame_ctx->full_redraw = false;
     
+}
+
+void set_window_focus(uint16_t win_id){
+    clinkedlist_node_t *node = clinkedlist_find(window_list, &win_id, find_window);
+    if (!node || !node->data) return;
+    focused_window = (window_frame*)node->data;
+}
+
+void unset_window_focus(){
+    focused_window = 0;
 }

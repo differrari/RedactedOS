@@ -26,12 +26,16 @@ void get_window_ctx(draw_ctx* out_ctx);
 
 void commit_frame(draw_ctx* frame_ctx, window_frame* frame);
 
+void set_window_focus(uint16_t win_id);
+void unset_window_focus();
 
 extern clinkedlist_t *window_list;
 
 extern uint16_t win_ids;
 extern bool dirty_windows;
 extern gpu_point global_win_offset;
+
+extern window_frame *focused_window;
 
 #ifdef __cplusplus
 }

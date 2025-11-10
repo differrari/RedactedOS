@@ -8,6 +8,7 @@
 #include "kernel_processes/kprocess_loader.h"
 #include "math/math.h"
 #include "graph/graphics.h"
+#include "graph/tres.h"
 
 process_t* focused_proc;
 
@@ -123,13 +124,16 @@ void sys_focus_current(){
 }
 
 void sys_set_focus(int pid){
+    if (focused_proc) focused_proc->focused = false;
     focused_proc = get_proc_by_pid(pid);
     focused_proc->focused = true;
+    set_window_focus(focused_proc->win_id);
 }
 
 void sys_unset_focus(){
     if (focused_proc) focused_proc->focused = false;
     focused_proc = 0;
+    unset_window_focus();
 }
 
 void sys_set_secure(bool secure){
