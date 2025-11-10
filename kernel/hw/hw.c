@@ -44,8 +44,10 @@ void detect_hardware(){
                 MMIO_BASE = 0xFE000000; 
                 RPI_BOARD = 4;
                 GPIO_PIN_BASE = 0x50;
+                SDHCI_BASE = MMIO_BASE + 0x340000;//EMMC2 direct, no routing needed
                 GICD_BASE = MMIO_BASE + 0x1841000;
                 GICC_BASE = MMIO_BASE + 0x1842000;
+                PCI_BASE = 0xFD500000;
             break;
             case 0xD0B:  //5. Cortex A76
                 MMIO_BASE = 0x107C000000UL;
@@ -61,6 +63,7 @@ void detect_hardware(){
             default:  
                 RPI_BOARD = 3;
                 MMIO_BASE = 0x3F000000; 
+                SDHCI_BASE = MMIO_BASE + 0x300000;
                 GICD_BASE = MMIO_BASE + 0xB200;
             break;
         }
@@ -68,7 +71,6 @@ void detect_hardware(){
             GPIO_BASE  = MMIO_BASE + 0x200000;
             MAILBOX_BASE = MMIO_BASE + 0xB880;
             UART0_BASE = MMIO_BASE + 0x201000;
-            SDHCI_BASE = MMIO_BASE + 0x300000;
             XHCI_BASE  = MMIO_BASE + 0x9C0000;
         }
         DWC2_BASE  = MMIO_BASE + 0x980000;

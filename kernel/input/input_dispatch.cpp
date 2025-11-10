@@ -200,13 +200,16 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
 
 bool input_init(){
     for (int i = 0; i < 16; i++) shortcuts[i] = {};
-    if (BOARD_TYPE == 2 && RPI_BOARD != 5){
-        input_driver = new DWC2Driver();//TODO: QEMU & 3 Only
-        return input_driver->init();
+    #ifdef QEMU
+    if (BOARD_TYPE == 2){
+    #else
+    if (BOARD_TYPE == 2 && RPI_BOARD == 3){
+    #endif
+        input_driver = new DWC2Driver();
     } else {
         input_driver = new XHCIDriver();
-        return input_driver->init();
     }
+    return input_driver->init();
 }
 
 int input_process_poll(int argc, char* argv[]){
