@@ -302,9 +302,12 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
 
     // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
 
-    if (text_va + code_size >= LOWEST_ADDR){
-        kprintf("[PROCESS_LOADING IMPLEMENTATION WARNING] virtual addressing currently not supported for this process. Would overwrite %x",LOWEST_ADDR);
-        entry += dest;
+    if (!allow_va || text_va + code_size >= LOWEST_ADDR){
+        if (!allow_va)
+            kprintf("[PROCESS_LOADING IMPLEMENTATION WARNING] virtual addressing currently not supported for this process. System is limited to one VA process at a time :(");
+        else 
+            kprintf("[PROCESS_LOADING IMPLEMENTATION WARNING] virtual addressing currently not supported for this process. Would overwrite %x",LOWEST_ADDR);
+        entry += dest - min_addr;
         proc->use_va = false;
     } else {
         //TODO: multiple TTBRs
@@ -312,6 +315,7 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
             register_proc_memory( i, (uintptr_t)dest + (i - min_addr), MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
         }
         proc->use_va = true;
+        allow_va = false;
     }
     
     map_section(proc, dest, min_addr, text_va, text);
