@@ -95,7 +95,7 @@ void Launcher::draw_desktop(){
             resize_draw_ctx(&ctx, max(512,ctx.width), max(256, ctx.height));
         }
         gpu_size screen_size = {ctx.width, ctx.height};
-        tile_size = {screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20};
+        tile_size = { screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20 };
         rendered_full = false;
         process_active = false;
     }

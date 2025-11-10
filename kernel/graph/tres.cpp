@@ -72,11 +72,13 @@ void get_window_ctx(draw_ctx* out_ctx){
     }
 }
 
-void commit_frame(draw_ctx* frame_ctx){
-    process_t *p = get_current_proc();
-    clinkedlist_node_t *node = clinkedlist_find(window_list, &p->win_id, find_window);
-    if (!node || !node->data) return;
-    window_frame* frame = (window_frame*)node->data;
+void commit_frame(draw_ctx* frame_ctx, window_frame* frame){
+    if (!frame){
+        process_t *p = get_current_proc();
+        clinkedlist_node_t *node = clinkedlist_find(window_list, &p->win_id, find_window);
+        if (!node || !node->data) return;
+        frame = (window_frame*)node->data;
+    }
 
     draw_ctx win_ctx = frame->win_ctx;
     draw_ctx *screen_ctx = main_gpu_driver->get_ctx();
@@ -97,18 +99,16 @@ void commit_frame(draw_ctx* frame_ctx){
     if (sy + h > (int32_t)screen_ctx->height) h = screen_ctx->height - sy;
     else if (sy < 0){ h += sy; oy = -sy; sy = 0; }
     if (w <= 0 || h <= 0) return;
-
-    if (frame_ctx->fb != win_ctx.fb) memcpy(win_ctx.fb, frame_ctx->fb, frame_ctx->width * frame_ctx->height * sizeof(uint32_t));
-
+    
     if (frame_ctx->full_redraw){
         for (int32_t dy = 0; dy < h; dy++)
-            memcpy(screen_ctx->fb + ((sy + dy) * screen_ctx->width) + sx, frame_ctx->fb + ((dy + oy) * win_ctx.width) + ox, w * sizeof(uint32_t));
+            memcpy(screen_ctx->fb + ((sy + dy) * screen_ctx->width) + sx, win_ctx.fb + ((dy + oy) * win_ctx.width) + ox, w * sizeof(uint32_t));
         mark_dirty(screen_ctx, sx, sy, w, h);
     } else {
         for (uint32_t dr = 0; dr < frame_ctx->dirty_count; dr++){
             gpu_rect r = frame_ctx->dirty_rects[dr];
             for (uint32_t dy = 0; dy < r.size.height; dy++)
-                memcpy(screen_ctx->fb + ((sy + dy + r.point.y) * screen_ctx->width) + sx + r.point.x, frame_ctx->fb + ((dy + oy + r.point.y) * win_ctx.width) + r.point.x + ox, r.size.width * sizeof(uint32_t));
+                memcpy(screen_ctx->fb + ((sy + dy + r.point.y) * screen_ctx->width) + sx + r.point.x, win_ctx.fb + ((dy + oy + r.point.y) * win_ctx.width) + r.point.x + ox, r.size.width * sizeof(uint32_t));
             mark_dirty(screen_ctx, sx + r.point.x, sy + r.point.y, r.size.width, r.size.height);
         }
     }
