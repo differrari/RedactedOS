@@ -79,7 +79,7 @@ uintptr_t syscall_gpu_request_ctx(process_t *ctx){
 
 uint64_t syscall_gpu_flush(process_t *ctx){
     draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
-    commit_frame(d_ctx);
+    commit_frame(d_ctx,0 );
     gpu_flush();
     return 0;
 }

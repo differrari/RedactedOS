@@ -8,6 +8,7 @@
 #include "kernel_processes/kprocess_loader.h"
 #include "math/math.h"
 #include "graph/graphics.h"
+#include "graph/tres.h"
 
 process_t* focused_proc;
 
@@ -89,9 +90,9 @@ void register_mouse_input(mouse_input *rat){
     mouse_loc.x = min(max(0, mouse_loc.x), screen_bounds.width);
     mouse_loc.y = min(max(0, mouse_loc.y), screen_bounds.height);
     gpu_update_cursor(mouse_loc, false);
-    uint8_t lmb = rat->buttons & 1;
-    if (lmb != last_cursor_state){
-        last_cursor_state = lmb;
+    uint8_t cursor_state = rat->buttons;
+    if (cursor_state != last_cursor_state){
+        last_cursor_state = cursor_state;
         gpu_set_cursor_pressed(last_cursor_state);
         gpu_update_cursor(mouse_loc, true);
     }
@@ -123,13 +124,16 @@ void sys_focus_current(){
 }
 
 void sys_set_focus(int pid){
+    if (focused_proc) focused_proc->focused = false;
     focused_proc = get_proc_by_pid(pid);
     focused_proc->focused = true;
+    set_window_focus(focused_proc->win_id);
 }
 
 void sys_unset_focus(){
     if (focused_proc) focused_proc->focused = false;
     focused_proc = 0;
+    unset_window_focus();
 }
 
 void sys_set_secure(bool secure){
@@ -200,13 +204,16 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
 
 bool input_init(){
     for (int i = 0; i < 16; i++) shortcuts[i] = {};
-    if (BOARD_TYPE == 2 && RPI_BOARD != 5){
-        input_driver = new DWC2Driver();//TODO: QEMU & 3 Only
-        return input_driver->init();
+    #ifdef QEMU
+    if (BOARD_TYPE == 2){
+    #else
+    if (BOARD_TYPE == 2 && RPI_BOARD == 3){
+    #endif
+        input_driver = new DWC2Driver();
     } else {
         input_driver = new XHCIDriver();
-        return input_driver->init();
     }
+    return input_driver->init();
 }
 
 int input_process_poll(int argc, char* argv[]){

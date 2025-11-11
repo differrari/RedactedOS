@@ -18,7 +18,7 @@ bool unload_module(driver_module *module){
 int fs_search(void *node, void *key){
     driver_module* module = (driver_module*)node;
     const char** path = (const char**)key;
-    int index = strstart(*path, module->mount, false);
+    int index = strstart(*path, module->mount, true);
     if (index == (int)strlen(module->mount,0)){ 
         *path += index;
         return 0;

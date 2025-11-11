@@ -90,7 +90,12 @@ void Launcher::draw_desktop(){
         active_proc = nullptr;
         sys_focus_current();
         load_entries();
-        get_window_ctx(&ctx);
+        request_draw_ctx(&ctx);
+        if (ctx.width < 512 || ctx.height < 256){
+            resize_draw_ctx(&ctx, max(512,ctx.width), max(256, ctx.height));
+        }
+        gpu_size screen_size = {ctx.width, ctx.height};
+        tile_size = { screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20 };
         rendered_full = false;
         process_active = false;
     }
@@ -116,8 +121,9 @@ void Launcher::draw_desktop(){
     } else if (old_selected.x != selected.x || old_selected.y != selected.y){
         draw_tile(old_selected.x, old_selected.y);
         draw_tile(selected.x, selected.y);
-        commit_frame(&ctx);
     }
+    ctx.full_redraw = true;
+    commit_draw_ctx(&ctx);
 }
 
 void Launcher::draw_full(){
@@ -128,14 +134,13 @@ void Launcher::draw_full(){
             draw_tile(column, row);
         }
     }
-    commit_frame(&ctx);
 }
 
 bool Launcher::await_gpu(){
     if (!gpu_ready())
         return false;
     if (!ready){
-        get_window_ctx(&ctx);
+        request_draw_ctx(&ctx);
         sys_focus_current();
         gpu_size screen_size = {ctx.width, ctx.height};
         tile_size = {screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20};
@@ -245,4 +250,18 @@ void Launcher::draw_tile(uint32_t column, uint32_t row){
     });
 
     
+}
+
+extern "C" int manage_window(int argc, char* argv[]){
+    Launcher *desktop = new Launcher();
+    while (1)
+    {
+        desktop->draw_desktop();
+    }
+}
+
+extern "C" process_t* launch_launcher(){
+    process_t *p = create_kernel_process("winmanager",manage_window, 0, 0);
+    p->priority = PROC_PRIORITY_FULL;
+    return p;
 }
