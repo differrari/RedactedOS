@@ -2,6 +2,7 @@
 #include "console/kio.h"
 #include "std/memory_access.h"
 #include "memory/mmu.h"
+#include "async.h"
 
 #define FW_CFG_DATA  0x09020000
 #define FW_CFG_CTL   (FW_CFG_DATA + 0x8)
@@ -41,9 +42,11 @@ void fw_cfg_dma_operation(void* dest, uint32_t size, uint32_t ctrl) {
 
     write64(FW_CFG_DMA, __builtin_bswap64((uint64_t)&access));
 
-    __asm__("ISB");
+    __asm__("isb");
 
-    while (__builtin_bswap32(access.control) & ~0x1) {}
+    if (!wait(&access.control, __builtin_bswap32(~0x1), false, 2000)){
+        kprintf("[FW_CFG error] failed to communicate with fw_cfg");
+    }
     
 }
 
