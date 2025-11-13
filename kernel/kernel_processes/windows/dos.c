@@ -34,7 +34,7 @@ void draw_window(window_frame *frame){
     gpu_point fixed_point = { global_win_offset.x + frame->x - BORDER_SIZE, global_win_offset.y + frame->y - BORDER_SIZE };
     gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 };
     draw_ctx *ctx = gpu_get_ctx();
-    if (!system_theme.use_window_shadows){
+    if (!system_theme.use_window_shadows || focused_window != frame){
         draw_solid_window(ctx, fixed_point, fixed_size, !frame->pid);
         return;
     }
@@ -44,6 +44,14 @@ void draw_window(window_frame *frame){
     }, (common_ui_config){ .point = fixed_point, .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5}, }),{
         draw_solid_window(ctx, fixed_point, fixed_size, !frame->pid);
     });
+}
+
+gpu_point click_loc;
+
+static inline void calc_click(void *node){
+    window_frame* frame = (window_frame*)node;
+    if (click_loc.x < frame->x || click_loc.y < frame->y || click_loc.x > frame->x + frame->width || click_loc.y > frame->y + frame->height) return;
+    sys_set_focus(frame->pid);
 }
 
 static inline void redraw_win(void *node){
@@ -128,6 +136,10 @@ int window_system(){
         } else if (drawing){
             gpu_point end_point = get_mouse_pos();
             gpu_size size = {abs(end_point.x - start_point.x), abs(end_point.y - start_point.y)};
+            if (size.width < 0x10 && size.height < 0x10){
+                click_loc = end_point;
+                clinkedlist_for_each(window_list, calc_click);
+            }
             if (size.width < 0x100 || size.height < 0x100){
                 drawing = false;
                 continue;
