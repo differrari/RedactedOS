@@ -44,7 +44,11 @@ void detect_hardware(){
                 MMIO_BASE = 0xFE000000; 
                 RPI_BOARD = 4;
                 GPIO_PIN_BASE = 0x50;
+                #if QEMU
+                SDHCI_BASE = MMIO_BASE + 0x300000;//EMMC2 direct, no routing needed
+                #else
                 SDHCI_BASE = MMIO_BASE + 0x340000;//EMMC2 direct, no routing needed
+                #endif
                 GICD_BASE = MMIO_BASE + 0x1841000;
                 GICC_BASE = MMIO_BASE + 0x1842000;
                 PCI_BASE = 0xFD500000;
