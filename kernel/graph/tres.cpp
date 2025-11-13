@@ -123,6 +123,7 @@ void set_window_focus(uint16_t win_id){
     clinkedlist_node_t *node = clinkedlist_find(window_list, &win_id, find_window);
     if (!node || !node->data) return;
     focused_window = (window_frame*)node->data;
+    dirty_windows = true;
 }
 
 void unset_window_focus(){
