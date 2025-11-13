@@ -442,8 +442,12 @@ bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_si
             if(!table_addr){
                 uint64_t bar_size = 0;
                 pci_setup_bar(pci_addr, bir, &table_addr, &bar_size);
+                pci_register(table_addr, bar_size);
                 kprintf("Setting up new bar for MSI-X %x + %x",table_addr, table_addr_offset);
-            } else kprintf("Bar %i setup at %x + %x",bir, table_addr, table_addr_offset);
+            } else {
+                kprintf("Bar %i setup at %x + %x",bir, table_addr, table_addr_offset);
+                pci_register(table_addr, GRANULE_4KB);
+            }
             
             volatile msix_table_entry *msix_start = (volatile msix_table_entry *)(uintptr_t)(table_addr + table_addr_offset);
 

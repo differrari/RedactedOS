@@ -57,6 +57,7 @@ void kernel_main() {
     load_module(&disk_module);
 
     bool input_available = load_module(&input_module);
+    mmu_init();
     bool network_available = false;
     if (BOARD_TYPE == 1){
         if (system_config.use_net)
@@ -65,7 +66,6 @@ void kernel_main() {
         load_module(&audio_module);
     }
     
-    mmu_init();
 
     kprint("Kernel initialization finished");
     

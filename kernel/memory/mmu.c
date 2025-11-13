@@ -211,6 +211,7 @@ void mmu_init() {
 
     if (XHCI_BASE)
         for (uint64_t addr = XHCI_BASE; addr <= XHCI_BASE + 0x1000; addr += GRANULE_4KB){
+            mmu_map_4kb(kernel_lo_page, addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
             mmu_map_4kb(kernel_hi_page, addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
         }
 
@@ -238,8 +239,8 @@ uintptr_t* mmu_new_ttrb(){
 }
 
 void register_device_memory(uint64_t va, uint64_t pa){
-    mmu_map_4kb(kernel_hi_page, va, pa, MAIR_IDX_DEVICE, MEM_RW, 1);
-    mmu_map_4kb(kernel_lo_page, va, pa, MAIR_IDX_DEVICE, MEM_RW, 1);
+    mmu_map_4kb(kernel_hi_page, va, pa, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
+    mmu_map_4kb(kernel_lo_page, va, pa, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
     mmu_flush_all();
     mmu_flush_icache();
 }
