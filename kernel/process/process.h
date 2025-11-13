@@ -51,6 +51,7 @@ typedef struct {
     void *code;
     size_t code_size;
     bool use_va;
+    uintptr_t *ttbr;
     uintptr_t va;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     __attribute__((aligned(16))) input_buffer_t input_buffer;

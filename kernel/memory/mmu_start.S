@@ -25,6 +25,11 @@ mmu_start://(uint64_t *low x0, uint64_t *high x1)
     adrp x3, ksp
     str x0, [x3]
 
+    ldr x0, =cpec
+    orr x0, x0, x1
+    adrp x3, cpec
+    str x0, [x3]
+
     mov x0, sp
     orr x0, x0, x1
     mov sp, x0

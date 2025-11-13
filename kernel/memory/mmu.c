@@ -9,6 +9,7 @@
 #include "filesystem/disk.h"
 #include "memory/page_allocator.h"
 #include "sysregs.h"
+#include "std/memory.h"
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01
@@ -185,6 +186,9 @@ extern uint64_t shared_code_end;
 extern uint64_t shared_ro_end;
 extern uint64_t shared_end;
 
+extern uintptr_t cpec;
+extern uintptr_t ksp;
+
 extern void mmu_start(uint64_t *low, uint64_t *high);
 
 void mmu_init() {
@@ -219,29 +223,37 @@ void mmu_init() {
     }
 
     hw_high_va();
-    
+
     mmu_start(kernel_lo_page, kernel_hi_page);
 
     asm volatile (".global mmu_finish\nmmu_finish:");
-    // for (uint64_t addr = kstart; addr < kend; addr += GRANULE_2MB)
-    //     mmu_unmap(addr, addr);
 
     kprintf("Finished MMU init");
 }
 
+uintptr_t* mmu_new_ttrb(){
+    uintptr_t *ttrb = (uintptr_t *)talloc(PAGE_SIZE);
+    memcpy(ttrb, kernel_lo_page, PAGE_SIZE);
+    return ttrb;
+}
+
 void register_device_memory(uint64_t va, uint64_t pa){
+    mmu_map_4kb(kernel_hi_page, va, pa, MAIR_IDX_DEVICE, MEM_RW, 1);
     mmu_map_4kb(kernel_lo_page, va, pa, MAIR_IDX_DEVICE, MEM_RW, 1);
     mmu_flush_all();
     mmu_flush_icache();
 }
 
 void register_device_memory_2mb(uint64_t va, uint64_t pa){
+    mmu_map_2mb(kernel_hi_page, va, pa, MAIR_IDX_DEVICE);
     mmu_map_2mb(kernel_lo_page, va, pa, MAIR_IDX_DEVICE);
     mmu_flush_all();
     mmu_flush_icache();
 }
 
 void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t level){
+    if (level == MEM_PRIV_KERNEL)
+        mmu_map_4kb(kernel_hi_page, va, pa, MAIR_IDX_NORMAL, attributes, level);
     mmu_map_4kb(kernel_lo_page, va, pa, MAIR_IDX_NORMAL, attributes, level);
     mmu_flush_all();
     mmu_flush_icache();
@@ -288,4 +300,12 @@ void debug_mmu_address(uint64_t va){
     }
     kprintf("Entry: %b", l4_val);
     return;
+}
+
+extern void mmu_swap(uintptr_t* ttbr);
+
+uintptr_t *pttrb;
+
+void mmu_swap_ttbr(uintptr_t* ttbr){
+    pttrb = ttbr ? ttbr : kernel_lo_page;
 }

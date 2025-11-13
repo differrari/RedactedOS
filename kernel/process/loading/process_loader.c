@@ -6,6 +6,8 @@
 #include "exceptions/exception_handler.h"
 #include "std/memory.h"
 #include "memory/mmu.h"
+#include "memory/talloc.h"
+#include "sysregs.h"
 
 typedef struct {
     uint64_t code_base_start;
@@ -302,21 +304,14 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
 
     // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
 
-    if (!allow_va || text_va + code_size >= LOWEST_ADDR){
-        if (!allow_va)
-            kprintf("[PROCESS_LOADING IMPLEMENTATION WARNING] virtual addressing currently not supported for this process. System is limited to one VA process at a time :(");
-        else 
-            kprintf("[PROCESS_LOADING IMPLEMENTATION WARNING] virtual addressing currently not supported for this process. Would overwrite %x",LOWEST_ADDR);
-        entry += dest - min_addr;
-        proc->use_va = false;
-    } else {
-        //TODO: multiple TTBRs
-        for (uint32_t i = min_addr; i < max_addr; i += GRANULE_4KB){
-            register_proc_memory( i, (uintptr_t)dest + (i - min_addr), MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
-        }
-        proc->use_va = true;
-        allow_va = false;
+    uintptr_t *ttbr = mmu_new_ttrb();
+
+    for (uintptr_t i = min_addr; i < max_addr; i += GRANULE_4KB){
+        mmu_map_4kb(ttbr, i, (uintptr_t)dest + (i - min_addr), MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
+        register_proc_memory(i, (uintptr_t)dest + (i - min_addr), MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
     }
+    proc->use_va = true;
+    allow_va = false;
     
     map_section(proc, dest, min_addr, text_va, text);
     map_section(proc, dest, min_addr, data_va, data);
@@ -332,12 +327,20 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
     uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_USER, MEM_RW, true);
     if (!stack) return 0;
 
+    //TODO: use VA stack & heap. And expand heap's mapping as it grows
+    for (uintptr_t i = stack; i < stack + stack_size; i += GRANULE_4KB)
+        mmu_map_4kb(ttbr, i, i, MAIR_IDX_NORMAL, MEM_RO | MEM_NORM, MEM_PRIV_USER);
+
     uintptr_t heap = (uintptr_t)palloc(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, false);
     if (!heap) return 0;
+
+    mmu_map_4kb(ttbr, heap, heap, MAIR_IDX_NORMAL, MEM_RO | MEM_NORM, MEM_PRIV_USER);
 
     proc->stack = (stack + stack_size);
     proc->stack_size = stack_size;
     proc->heap = heap;
+
+    proc->ttbr = ttbr;
 
     proc->sp = proc->stack;
     

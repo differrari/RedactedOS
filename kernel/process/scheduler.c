@@ -64,6 +64,7 @@ void switch_proc(ProcSwitchReason reason) {
     current_proc = next_proc;
     cpec = (uintptr_t)&processes[current_proc];
     timer_reset(processes[current_proc].priority);
+    mmu_swap_ttbr(processes[current_proc].ttbr);
     process_restore();
 }
 
