@@ -38,7 +38,7 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
             char *f = reader;
             if (*f){
                 if (strcmp(f, full_name, true) == 0){
-                    string path = string_format("/shared/redos/bin/%s",full_name);
+                    string path = string_format("/boot/redos/bin/%s",full_name);
                     file fd = {};
                     FS_RESULT op = fopen(path.data, &fd);
                     if (op != FS_RESULT_SUCCESS){
