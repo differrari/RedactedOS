@@ -3,6 +3,7 @@
 #include "gpio.h"
 #include "hw/hw.h"
 #include "mailbox/mailbox.h"
+#include "memory/mmu.h"
 
 #define UART0_DR   (UART0_BASE + 0x00)
 #define UART0_FR   (UART0_BASE + 0x18)
@@ -29,6 +30,8 @@ volatile uint32_t uart_mbox[9] __attribute__((aligned(16))) = {
 };
 
 void enable_uart() {
+    register_device_memory(UART0_CR, UART0_CR);
+
     write32(UART0_CR, 0x0);
 
     uint32_t ibrd = 1;

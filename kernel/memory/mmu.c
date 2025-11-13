@@ -192,7 +192,6 @@ extern uintptr_t ksp;
 extern void mmu_start(uint64_t *low, uint64_t *high);
 
 void mmu_init() {
-    //TODO: Move these hardcoded mappings to their own file
     uint64_t kstart = mem_get_kmem_start();
     uint64_t kend = mem_get_kmem_end();
 
@@ -200,20 +199,6 @@ void mmu_init() {
         mmu_map_2mb(kernel_lo_page, addr, addr, MAIR_IDX_NORMAL);
         mmu_map_2mb(kernel_hi_page, addr, addr, MAIR_IDX_NORMAL);
     }
-
-    for (uint64_t addr = get_uart_base(); addr <= get_uart_base(); addr += GRANULE_4KB){
-        mmu_map_4kb(kernel_hi_page, addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
-    }
-
-    for (uint64_t addr = GICD_BASE; addr <= GICC_BASE + 0x1000; addr += GRANULE_4KB){
-        mmu_map_4kb(kernel_hi_page, addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
-    }
-
-    if (XHCI_BASE)
-        for (uint64_t addr = XHCI_BASE; addr <= XHCI_BASE + 0x1000; addr += GRANULE_4KB){
-            mmu_map_4kb(kernel_lo_page, addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
-            mmu_map_4kb(kernel_hi_page, addr, addr, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
-        }
 
     uint64_t dstart;
     uint64_t dsize;
