@@ -12,8 +12,7 @@ OS_TYPE="$(uname)"
 DISPLAY_MODE="default"
 
 if [ "$OS_TYPE" = "Darwin" ]; then
-    NETARG="vmnet-bridged,id=net0,ifname=en0"
-    PRIVILEGE="sudo"
+    PRIVILEGE=""
     DISPLAY_MODE="cocoa"
 elif [ "$OS_TYPE" = "Linux" ]; then
     NETARG="user,id=net0"
@@ -28,7 +27,6 @@ $PRIVILEGE qemu-system-aarch64 \
 -kernel kernel.img \
 -display $DISPLAY_MODE \
 -device sd-card,drive=sd -drive id=sd,format=raw,file=disk.img,if=none \
--netdev $NETARG \
 -serial mon:stdio \
 -device usb-kbd \
 -device usb-mouse \
