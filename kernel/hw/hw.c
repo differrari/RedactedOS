@@ -46,7 +46,7 @@ void detect_hardware(){
                 RPI_BOARD = 4;
                 GPIO_PIN_BASE = 0x50;
                 #if QEMU
-                SDHCI_BASE = MMIO_BASE + 0x300000;//EMMC2 direct, no routing needed
+                SDHCI_BASE = MMIO_BASE + 0x300000;
                 #else
                 SDHCI_BASE = MMIO_BASE + 0x340000;//EMMC2 direct, no routing needed
                 #endif
