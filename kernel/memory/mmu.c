@@ -26,7 +26,7 @@
 #define VIRT_TO_PHYS(x) ((VirtualAddr)x - HIGH_VA)
 #define PHYS_TO_VIRT(x) ((PhysicalAddr)x + HIGH_VA)
 
-uint64_t *kernel_lo_page, *kernel_hi_page;
+uint64_t *kernel_mmu_page;
 
 static bool mmu_verbose;
 
@@ -143,7 +143,7 @@ static inline void mmu_flush_icache() {
 
 void mmu_unmap(uint64_t va, uint64_t pa){
 
-    uint64_t *table = kernel_lo_page;
+    uint64_t *table = kernel_mmu_page;
     
     uint64_t l0_index = (va >> 39) & 0x1FF;
     uint64_t l1_index = (va >> 30) & 0x1FF;
@@ -173,8 +173,7 @@ void mmu_unmap(uint64_t va, uint64_t pa){
 }
 
 void mmu_init_kernel(){
-    kernel_lo_page = mmu_alloc();
-    kernel_hi_page = mmu_alloc();
+    kernel_mmu_page = mmu_alloc();
 }
 
 uint64_t *mmu_alloc(){
@@ -189,28 +188,24 @@ extern uint64_t shared_end;
 extern uintptr_t cpec;
 extern uintptr_t ksp;
 
-extern void mmu_start(uint64_t *low, uint64_t *high);
+extern void mmu_start(uint64_t *mmu);
 
 void mmu_init() {
     uint64_t kstart = mem_get_kmem_start();
     uint64_t kend = mem_get_kmem_end();
 
-    for (uint64_t addr = kstart; addr < kend; addr += GRANULE_2MB){
-        mmu_map_2mb(kernel_lo_page, addr, addr, MAIR_IDX_NORMAL);
-        mmu_map_2mb(kernel_hi_page, addr, addr, MAIR_IDX_NORMAL);
-    }
+    for (uint64_t addr = kstart; addr < kend; addr += GRANULE_2MB)
+        mmu_map_2mb(kernel_mmu_page, addr, addr, MAIR_IDX_NORMAL);
 
     uint64_t dstart;
     uint64_t dsize;
-    if (dtb_addresses(&dstart,&dsize)){
-        for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB){
-            mmu_map_4kb(kernel_hi_page, addr, addr, MAIR_IDX_NORMAL, MEM_RO, MEM_PRIV_KERNEL);
-        }
-    }
+    if (dtb_addresses(&dstart,&dsize))
+        for (uint64_t addr = dstart; addr <= dstart + dsize; addr += GRANULE_4KB)
+            mmu_map_4kb(kernel_mmu_page, addr, addr, MAIR_IDX_NORMAL, MEM_RO, MEM_PRIV_KERNEL);
 
     hw_high_va();
 
-    mmu_start(kernel_lo_page, kernel_hi_page);
+    mmu_start(kernel_mmu_page);
 
     asm volatile (".global mmu_finish\nmmu_finish:");
 
@@ -219,35 +214,31 @@ void mmu_init() {
 
 uintptr_t* mmu_new_ttrb(){
     uintptr_t *ttrb = (uintptr_t *)talloc(PAGE_SIZE);
-    memcpy(ttrb, kernel_lo_page, PAGE_SIZE);
+    memcpy(ttrb, kernel_mmu_page, PAGE_SIZE);
     return ttrb;
 }
 
 void register_device_memory(uint64_t va, uint64_t pa){
-    mmu_map_4kb(kernel_hi_page, va, pa, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
-    mmu_map_4kb(kernel_lo_page, va, pa, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
+    mmu_map_4kb(kernel_mmu_page, va, pa, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
     mmu_flush_all();
     mmu_flush_icache();
 }
 
 void register_device_memory_2mb(uint64_t va, uint64_t pa){
-    mmu_map_2mb(kernel_hi_page, va, pa, MAIR_IDX_DEVICE);
-    mmu_map_2mb(kernel_lo_page, va, pa, MAIR_IDX_DEVICE);
+    mmu_map_2mb(kernel_mmu_page, va, pa, MAIR_IDX_DEVICE);
     mmu_flush_all();
     mmu_flush_icache();
 }
 
 void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t level){
-    if (level == MEM_PRIV_KERNEL)
-        mmu_map_4kb(kernel_hi_page, va, pa, MAIR_IDX_NORMAL, attributes, level);
-    mmu_map_4kb(kernel_lo_page, va, pa, MAIR_IDX_NORMAL, attributes, level);
+    mmu_map_4kb(kernel_mmu_page, va, pa, MAIR_IDX_NORMAL, attributes, level);
     mmu_flush_all();
     mmu_flush_icache();
 }
 
 void debug_mmu_address(uint64_t va){
 
-    uint64_t *table = kernel_lo_page;
+    uint64_t *table = kernel_mmu_page;
 
     uint64_t l0_index = (va >> 37) & 0x1FF;
     uint64_t l1_index = (va >> 30) & 0x1FF;
@@ -293,5 +284,5 @@ extern void mmu_swap(uintptr_t* ttbr);
 uintptr_t *pttrb;
 
 void mmu_swap_ttbr(uintptr_t* ttbr){
-    pttrb = ttbr ? ttbr : kernel_lo_page;
+    pttrb = ttbr ? ttbr : kernel_mmu_page;
 }

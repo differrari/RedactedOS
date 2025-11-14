@@ -1,7 +1,7 @@
 #include "sysregs.h"
 
 .global mmu_start
-mmu_start://(uint64_t *low x0, uint64_t *high x1)
+mmu_start://(uint64_t *page x0)
     ldr x3, =MAIR_VALUE
     msr mair_el1, x3
     ldr x3, =TCR_VALUE
@@ -10,7 +10,7 @@ mmu_start://(uint64_t *low x0, uint64_t *high x1)
     isb
 
     msr ttbr0_el1, x0
-    msr ttbr1_el1, x1
+    msr ttbr1_el1, x0
     
     mrs x0, sctlr_el1
     orr x0, x0, #0x1
