@@ -36,6 +36,8 @@ bool DWC2Driver::init() {
 
     use_interrupts = false;
 
+    register_device_memory(DWC2_BASE, DWC2_BASE);
+
     dwc2 = (dwc2_regs*)DWC2_BASE;
     host = (dwc2_host*)(DWC2_BASE + 0x400);
 
