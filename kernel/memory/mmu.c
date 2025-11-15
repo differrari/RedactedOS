@@ -212,25 +212,54 @@ void mmu_init() {
     kprintf("Finished MMU init");
 }
 
+void mmu_copy(uintptr_t *new_ttrb, uintptr_t *old_ttrb, int level){
+    for (int i = 0; i < PAGE_TABLE_ENTRIES; i++){
+        if (old_ttrb[i] & 1){
+            kprintf("TLE %b %x %i",old_ttrb[i] & 0b11,old_ttrb[i],level);
+            if (level == 3 || (old_ttrb[i] & 0b11) == PD_BLOCK){
+                new_ttrb[i] = old_ttrb[i];
+            } else {
+                kprintf("Old Entry %x",old_ttrb[i]);
+                uintptr_t *old_entry = (uintptr_t*)(old_ttrb[i] & 0xFFFFFFFFF000ULL);
+                uintptr_t *new_entry = mmu_alloc();
+                if (!old_entry || !new_entry) continue;
+                kprintf("[%i] %x -> %x",level,old_entry, new_entry);
+                uint64_t entry = old_ttrb[i] & ~(0xFFFFFFFFF000ULL);
+                kprintf("Entry %x",entry);
+                new_ttrb[i] = entry | ((uintptr_t)new_entry & 0xFFFFFFFFF000ULL);
+                kprintf("Full entry %x",new_ttrb[i]);
+                if (level < 3) mmu_copy(new_entry, old_entry, level+1);
+            }
+        }
+    }
+}
+
 uintptr_t* mmu_new_ttrb(){
-    uintptr_t *ttrb = (uintptr_t *)talloc(PAGE_SIZE);
-    memcpy(ttrb, kernel_mmu_page, PAGE_SIZE);
+    uintptr_t *ttrb = mmu_alloc();
+    mmu_copy(ttrb, kernel_mmu_page,0);
     return ttrb;
 }
 
 void register_device_memory(uint64_t va, uint64_t pa){
+    if (pttrb && pttrb != kernel_mmu_page)//TODO: This won't be necessary once kernel is exclusively in ttbr1
+        mmu_map_4kb(pttrb, va, pa, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
     mmu_map_4kb(kernel_mmu_page, va, pa, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
     mmu_flush_all();
     mmu_flush_icache();
 }
 
 void register_device_memory_2mb(uint64_t va, uint64_t pa){
+    if (pttrb && pttrb != kernel_mmu_page)//TODO: This won't be necessary once kernel is exclusively in ttbr1
+        mmu_map_4kb(pttrb, va, pa, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
     mmu_map_2mb(kernel_mmu_page, va, pa, MAIR_IDX_DEVICE);
     mmu_flush_all();
     mmu_flush_icache();
 }
 
 void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t level){
+    if (pttrb && pttrb != kernel_mmu_page)
+        mmu_map_4kb(pttrb, va, pa, MAIR_IDX_NORMAL, attributes, level);
+    
     mmu_map_4kb(kernel_mmu_page, va, pa, MAIR_IDX_NORMAL, attributes, level);
     mmu_flush_all();
     mmu_flush_icache();
@@ -238,7 +267,7 @@ void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t 
 
 void debug_mmu_address(uint64_t va){
 
-    uint64_t *table = kernel_mmu_page;
+    uint64_t *table = pttrb;
 
     uint64_t l0_index = (va >> 37) & 0x1FF;
     uint64_t l1_index = (va >> 30) & 0x1FF;
