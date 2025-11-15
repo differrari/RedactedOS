@@ -344,12 +344,11 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
 
     proc->sp = proc->stack;
     
+    proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_USER, MEM_RW, true);
     proc->pc = (uintptr_t)(entry);
     kprintf("User process %s allocated with address at %x, stack at %x, heap at %x",(uintptr_t)name,proc->pc, proc->sp, proc->heap);
     proc->spsr = 0;
     proc->state = BLOCKED;
-
-    proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_USER, MEM_RW, true);
     
     return proc;
 }

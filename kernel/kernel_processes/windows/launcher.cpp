@@ -188,11 +188,11 @@ void Launcher::activate_current(){
         }
         active_proc->win_id = get_current_proc()->win_id;
         active_proc->priority = PROC_PRIORITY_FULL;
-        kprintf("[LAUNCHER] process launched");
-        enable_interrupt();
         process_active = true;
         sys_set_focus(active_proc->id);
         active_proc->state = process_t::process_state::READY;
+        kprintf("[LAUNCHER] process launched");
+        enable_interrupt();
     }
     
 }
