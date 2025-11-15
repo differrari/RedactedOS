@@ -80,7 +80,7 @@ void kernel_main() {
     
     load_theme();
 
-#ifdef TEST
+#if TEST
     if (!run_tests()) panic("Test run failed",0);
 #endif
 

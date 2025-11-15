@@ -25,7 +25,7 @@ user: shared prepare-fs
 	$(MAKE) -C user
 
 kernel: kshared
-	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU)
+	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU) TEST=$(TEST)
 
 utils: shared prepare-fs
 	$(MAKE) -C utils
@@ -33,8 +33,8 @@ utils: shared prepare-fs
 bins: shared prepare-fs
 	$(MAKE) -C bin
 
-test: kshared
-	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=true TEST=true
+test:
+	$(MAKE) $(MODE) QEMU=true TEST=true all
 	./run_$(MODE)
 
 clean:
