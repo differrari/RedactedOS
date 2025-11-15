@@ -171,7 +171,7 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
 }
 
 void* load_png(char *path, image_info *info){
-    file descriptor;
+    file descriptor = {};
     FS_RESULT res = fopen(path, &descriptor);
     void *img = 0;
     void* file_img = malloc(descriptor.size);

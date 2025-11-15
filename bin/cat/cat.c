@@ -10,7 +10,7 @@ int main(int argc, const char* argv[]){
     }
     const char* path = argv[0];
     size_t size = parse_int_u64(argv[1], UINT32_MAX);
-    file fd;
+    file fd = {};
     fopen(path, &fd);
     if (fd.size == 0){
         string err_msg = string_format("Couldn't find file %s", argv[0]);
