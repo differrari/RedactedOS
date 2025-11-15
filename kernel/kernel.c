@@ -21,6 +21,7 @@
 #include "math/vector.h"
 #include "process/debug.h"
 #include "theme/theme.h"
+#include "tests/test_runner.h"
 
 void kernel_main() {
 
@@ -78,6 +79,10 @@ void kernel_main() {
     debug_load();
     
     load_theme();
+
+#ifdef TEST
+    if (!run_tests()) panic("Test run failed",0);
+#endif
 
     if (input_available) init_input_process();
 

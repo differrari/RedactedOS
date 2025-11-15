@@ -33,6 +33,10 @@ utils: shared prepare-fs
 bins: shared prepare-fs
 	$(MAKE) -C bin
 
+test: kshared
+	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=true TEST=true
+	./run_$(MODE)
+
 clean:
 	$(MAKE) -C shared $@
 	$(MAKE) -C user   $@
