@@ -308,7 +308,6 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
 
     for (uintptr_t i = min_addr; i < max_addr; i += GRANULE_4KB){
         mmu_map_4kb(ttbr, i, (uintptr_t)dest + (i - min_addr), MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
-        register_proc_memory(i, (uintptr_t)dest + (i - min_addr), MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
     }
     proc->use_va = true;
     allow_va = false;
