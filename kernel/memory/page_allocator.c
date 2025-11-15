@@ -54,6 +54,21 @@ void pfree(void* ptr, uint64_t size) {
     }
 }
 
+void free_page_list(page_index *index){
+    if (index->header.next) free_page_list(index->header.next);
+    for (size_t i = 0; i < index->header.size; i++)
+        pfree(index->ptrs[i].ptr, index->ptrs[i].size);
+}
+
+void free_managed_page(void* ptr){
+    mem_page *info = (mem_page*)ptr;
+    if (info->next)
+        free_managed_page(info->next);
+    if (info->page_alloc)
+        free_page_list(info->page_alloc);
+    pfree((void*)ptr, PAGE_SIZE);
+}
+
 uint64_t start;
 uint64_t end;
 
@@ -189,6 +204,8 @@ void mark_used(uintptr_t address, size_t pages)
     }
 }
 
+#define PAGE_INDEX_LIMIT (PAGE_SIZE-sizeof(page_index_hdr))/sizeof(page_index_entry)
+
 //TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
 void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
@@ -201,6 +218,20 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
 
     if (size >= PAGE_SIZE){
         void* ptr = palloc(size, level, info->attributes, true);
+        page_index *index = info->page_alloc;
+        if (!info->page_alloc){
+            info->page_alloc = palloc(PAGE_SIZE, level, info->attributes, true);
+            index = info->page_alloc;
+        }
+        while (index->header.next) {
+            index = index->header.next;
+        }
+        if (index->header.size >= PAGE_INDEX_LIMIT){
+            index->header.next = palloc(PAGE_SIZE, level, info->attributes, true);
+            index = index->header.next;
+        }
+        index->ptrs[index->header.size].ptr = ptr;
+        index->ptrs[index->header.size++].size = size;
         return ptr;
     }
 
