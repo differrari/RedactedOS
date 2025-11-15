@@ -22,7 +22,7 @@ bool test_page_kalloc_free(){
     void *page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
     void *mem = kalloc(page, sizeof(uint64_t), ALIGN_4KB, MEM_PRIV_KERNEL);
     pfree(page, PAGE_SIZE);
-    assert_eq(*(uint64_t*)mem, 0xDEADBEEFDEADBEEF, "Full page not freed: %x",mem);
+    assert_eq(*(uint64_t*)mem, 0xDEADBEEFDEADBEEF, "Full page not freed: %x",*(uint64_t*)mem);
     return true;
 }
 
