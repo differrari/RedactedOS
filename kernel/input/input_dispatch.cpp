@@ -204,7 +204,7 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
 
 bool input_init(){
     for (int i = 0; i < 16; i++) shortcuts[i] = {};
-    #ifdef QEMU
+    #if QEMU
     if (BOARD_TYPE == 2){
     #else
     if (BOARD_TYPE == 2 && RPI_BOARD == 3){

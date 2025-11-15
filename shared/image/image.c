@@ -54,9 +54,9 @@ uint32_t get_bpp_converted_color(uint16_t bpp, uintptr_t value_ptr){
 }
 
 void* load_image(char *path, image_info *info, IMAGE_FORMATS format){
-    file descriptor;
+    file descriptor = {};
     FS_RESULT res = fopen(path, &descriptor);
-    void *img;
+    void *img = 0;
     image_info img_info;
     if (res == FS_RESULT_SUCCESS){
         void *img_file = (void*)malloc(descriptor.size);

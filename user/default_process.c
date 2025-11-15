@@ -12,7 +12,7 @@
 int img_example() {
     draw_ctx ctx = {};
     request_draw_ctx(&ctx);
-    file descriptor;
+    file descriptor = {};
     FS_RESULT res = fopen("/resources/jest.bmp", &descriptor);
     void *img = 0;
     image_info info;

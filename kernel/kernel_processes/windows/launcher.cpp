@@ -35,7 +35,7 @@ Launcher::Launcher() {
 }
 
 package_info Launcher::get_pkg_info(char* info_path){
-    file fd;
+    file fd = {};
     FS_RESULT res = fopen(info_path, &fd);
     if (res != FS_RESULT_SUCCESS) return (package_info){};
 

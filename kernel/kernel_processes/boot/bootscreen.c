@@ -15,17 +15,7 @@
 #include "../shared/audio/tone.h"
 #include "async.h"
 
-file boot_fd;
-
 void boot_draw_name(gpu_size screen_size, int xoffset, int yoffset){
-    uint16_t pid = get_current_proc_pid();
-    if (boot_fd.size == 0){
-        string proc_out = string_format("/proc/%i/out",pid);
-        open_file(proc_out.data, &boot_fd);
-        free(proc_out.data, proc_out.mem_length);
-    }
-    write_file(&boot_fd, "hello buffer", 12);
-
     draw_ctx *ctx = gpu_get_ctx();
     label(ctx, (text_ui_config){
         .text = system_config.system_name,
