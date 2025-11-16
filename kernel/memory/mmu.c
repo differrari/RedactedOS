@@ -23,9 +23,6 @@
 
 #define PAGE_TABLE_ENTRIES 512
 
-#define VIRT_TO_PHYS(x) ((VirtualAddr)x - HIGH_VA)
-#define PHYS_TO_VIRT(x) ((PhysicalAddr)x + HIGH_VA)
-
 uint64_t *kernel_mmu_page;
 
 static bool mmu_verbose;
@@ -267,7 +264,7 @@ void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t 
 
 void debug_mmu_address(uint64_t va){
 
-    uint64_t *table = pttrb;
+    uint64_t *table = pttrb ? pttrb : kernel_mmu_page;
 
     uint64_t l0_index = (va >> 37) & 0x1FF;
     uint64_t l1_index = (va >> 30) & 0x1FF;
