@@ -4,6 +4,7 @@
 #include "memory/page_allocator.h"
 #include "virtio_pci.h"
 #include "async.h"
+#include "sysregs.h"
 
 #define VIRTIO_STATUS_RESET         0x0
 #define VIRTIO_STATUS_ACKNOWLEDGE   0x1
@@ -73,21 +74,22 @@ void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mm
             if (cap->cfg_type < VIRTIO_PCI_CAP_PCI_CFG && bar_base == 0){
                 kprintfv("[VIRTIO] Setting up bar");
                 bar_base = pci_setup_bar(pci_addr, cap->bar, mmio_start, mmio_size);
-                kprintfv("[VIRTIO] Bar @ %llx", (unsigned long long)bar_base);
+                bar_base = VIRT_TO_PHYS(bar_base);
+                kprintfv("[VIRTIO] Bar @ %llx", bar_base);
             }
 
             if (cap->cfg_type == VIRTIO_PCI_CAP_COMMON_CFG){
-                kprintfv("[VIRTIO] Common CFG @ %llx",(unsigned long long)(bar_base + cap->offset));
+                kprintfv("[VIRTIO] Common CFG @ %llx",(unsigned long long)(bar_base + cap->offset) >> 32);
                 dev->common_cfg = (struct virtio_pci_common_cfg*)(uintptr_t)(bar_base + cap->offset);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_NOTIFY_CFG) {
-                kprintfv("[VIRTIO] Notify CFG @ %llx",(unsigned long long)(bar_base + cap->offset));
+                kprintfv("[VIRTIO] Notify CFG @ %llx",(unsigned long long)(bar_base + cap->offset) >> 32);
                 dev->notify_cfg = (uint8_t*)(uintptr_t)(bar_base + cap->offset);
                 dev->notify_off_multiplier = *(uint32_t*)(uintptr_t)(cap_addr + sizeof(struct virtio_pci_cap));
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_DEVICE_CFG){
-                kprintfv("[VIRTIO] Device CFG @ %llx",(unsigned long long)(bar_base + cap->offset));
+                kprintfv("[VIRTIO] Device CFG @ %llx",(unsigned long long)(bar_base + cap->offset) >> 32);
                 dev->device_cfg = (uint8_t*)(uintptr_t)(bar_base + cap->offset);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_ISR_CFG){
-                kprintfv("[VIRTIO] ISR CFG @ %llx",(unsigned long long)(bar_base + cap->offset));
+                kprintfv("[VIRTIO] ISR CFG @ %llx",(unsigned long long)(bar_base + cap->offset) >> 32);
                 dev->isr_cfg = (uint8_t*)(uintptr_t)(bar_base + cap->offset);
             }
         }
@@ -146,9 +148,9 @@ bool virtio_init_device(virtio_device *dev) {
         uint64_t avail = (uintptr_t)kalloc(dev->memory_page, avail_sz, ALIGN_4KB, MEM_PRIV_KERNEL);
         uint64_t used = (uintptr_t)kalloc(dev->memory_page, used_sz,  ALIGN_4KB, MEM_PRIV_KERNEL);
 
-        dev->common_cfg->queue_desc = base;
-        dev->common_cfg->queue_driver = avail;
-        dev->common_cfg->queue_device = used;
+        dev->common_cfg->queue_desc = VIRT_TO_PHYS(base);
+        dev->common_cfg->queue_driver = VIRT_TO_PHYS(avail);
+        dev->common_cfg->queue_device = VIRT_TO_PHYS(used);
 
         volatile virtq_avail* A = (volatile virtq_avail*)(uintptr_t)avail;
         A->flags = 0;
@@ -181,18 +183,18 @@ bool virtio_send_3d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t
     volatile virtq_avail* a = (virtq_avail*)dev->common_cfg->queue_driver;
     volatile virtq_used* u = (virtq_used*)dev->common_cfg->queue_device;
     
-    d[0].addr = cmd;
+    d[0].addr = VIRT_TO_PHYS(cmd);
     d[0].len = cmd_len;
     d[0].flags = VIRTQ_DESC_F_NEXT;
     d[0].next = 1;
     
-    d[1].addr = resp;
+    d[1].addr = VIRT_TO_PHYS(resp);
     d[1].len = resp_len;
     d[1].flags = VIRTQ_DESC_F_NEXT | flags;
     d[1].next = 2;
     
     *dev->status_dma = 0;
-    d[2].addr = (uint64_t)dev->status_dma;
+    d[2].addr = VIRT_TO_PHYS((uint64_t)dev->status_dma);
     d[2].len = 1;
     d[2].flags = VIRTQ_DESC_F_WRITE;
     d[2].next = 0;
@@ -219,12 +221,12 @@ bool virtio_send_2d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t
     volatile virtq_used* u = (virtq_used*)dev->common_cfg->queue_device;
     uint16_t last_used_idx = u->idx;
 
-    d[0].addr = cmd;
+    d[0].addr = VIRT_TO_PHYS(cmd);
     d[0].len = cmd_len;
     d[0].flags = flags;
     d[0].next = 1;
     
-    d[1].addr = resp;
+    d[1].addr = VIRT_TO_PHYS(resp);
     d[1].len = resp_len;
     d[1].flags = VIRTQ_DESC_F_WRITE;
     d[1].next = 0;
@@ -246,7 +248,7 @@ bool virtio_send_1d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len) {
     volatile virtq_used* u = (virtq_used*)dev->common_cfg->queue_device;
     uint16_t last_used_idx = u->idx;
     
-    d[0].addr = cmd;
+    d[0].addr = VIRT_TO_PHYS(cmd);
     d[0].len = cmd_len;
     d[0].flags = 0;
     d[0].next = 0;
@@ -267,7 +269,7 @@ void virtio_add_buffer(virtio_device *dev, uint16_t index, uint64_t buf, uint32_
     volatile virtq_desc* d = (virtq_desc*)dev->common_cfg->queue_desc;
     volatile virtq_avail* a = (virtq_avail*)dev->common_cfg->queue_driver;
     
-    d[index].addr = buf;
+    d[index].addr = VIRT_TO_PHYS(buf);
     d[index].len = buf_len;
     d[index].flags = host_to_dev ? 0 : VIRTQ_DESC_F_WRITE;
     d[index].next = 0;
