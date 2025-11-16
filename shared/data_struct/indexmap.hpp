@@ -30,7 +30,7 @@ public:
     }
 
     bool add(const uint32_t index, const T& value) {
-        if (count >= capacity) return false;
+        if (count >= capacity || index > capacity) return false;
         items[index] = value;
         count++;
         return true;
