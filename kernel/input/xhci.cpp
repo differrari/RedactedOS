@@ -10,6 +10,7 @@
 #include "async.h"
 #include "memory/page_allocator.h"
 #include "memory/mmu.h"
+#include "sysregs.h"
 
 uint64_t awaited_addr;
 uint32_t awaited_type;
@@ -34,13 +35,13 @@ uint32_t awaited_type;
 bool XHCIDriver::check_fatal_error() {
     uint32_t sts = op->usbsts;
     if (sts & (XHCI_USBSTS_HSE | XHCI_USBSTS_CE)) {
-        kprintf("[xHCI ERROR] Fatal condition: USBSTS = %x", sts);
+        kprintf("[xHCI ERROR] Fatal condition: USBSTS = %llx", sts);
         return true;
     }
     return false;
 }
 
-#define CHECK_XHCI_FIELD(field) (op->field != 0 ? (kprintf("[xHCI Error] wrong " #field " %x", op->field), false) : (kprintfv("[xHCI] Correct " #field " value"), true))
+#define CHECK_XHCI_FIELD(field) (op->field != 0 ? (kprintf("[xHCI Error] wrong " #field " %llx", op->field), false) : (kprintfv("[xHCI] Correct " #field " value"), true))
 
 #define XHCI_EP_TYPE_INT_IN 7
 #define XHCI_EP_TYPE_INT_OUT 3
@@ -56,8 +57,8 @@ bool XHCIDriver::init(){
     use_interrupts = true;
     if (XHCI_BASE){
         addr = XHCI_BASE;
-        mmio = addr;
-        register_device_memory(mmio, mmio);
+        mmio = VIRT_TO_PHYS(addr);
+        register_device_memory(mmio, VIRT_TO_PHYS(mmio));
         if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
             quirk_simulate_interrupts = !pci_setup_msi_rp1(36, true);
     } else if (PCI_BASE) {
@@ -69,7 +70,7 @@ bool XHCIDriver::init(){
         return false;
     }
 
-    kprintfv("[xHCI] init %x",addr);
+    kprintfv("[xHCI] init %llx",addr);
     if (use_pci){
         if (!(*(uint16_t*)(addr + 0x06) & (1 << 4))){
             kprintf("[xHCI] Wrong capabilities list");
@@ -84,6 +85,8 @@ bool XHCIDriver::init(){
         }
     
         pci_register(mmio, mmio_size);
+
+        mmio = VIRT_TO_PHYS(mmio);
     
         uint8_t interrupts_ok = pci_setup_interrupts(addr, INPUT_IRQ, 1);
         switch(interrupts_ok){
@@ -99,18 +102,20 @@ bool XHCIDriver::init(){
                 break;
         }
     
-        kprintfv("[xHCI] BARs set up @ %x (%x)",mmio,mmio_size);
+        kprintfv("[xHCI] BARs set up @ %llx (%llx)",mmio,mmio_size);
     }
 
+    mmio = VIRT_TO_PHYS(mmio);
+
     cap = (xhci_cap_regs*)mmio;
-    kprintfv("[xHCI] caplength %x",cap->caplength);
+    kprintfv("[xHCI] caplength %llx",cap->caplength);
     uintptr_t op_base = mmio + cap->caplength;
     op = (xhci_op_regs*)op_base;
     ports = (xhci_port_regs*)(op_base + 0x400);
     db_base = mmio + (cap->dboff & ~0x1F);
     rt_base = mmio + (cap->rtsoff & ~0x1F);
 
-    kprintfv("[xHCI] Resetting controller");
+    kprintfv("[xHCI] Resetting controller %llx",&op->usbcmd);
     op->usbcmd &= ~1;
     wait(&op->usbcmd, 1, false, 16);
     kprintfv("[xHCI] Clear complete");
@@ -161,7 +166,7 @@ bool XHCIDriver::init(){
         scratchpad_array[i] = (uint64_t)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL);
     dcbaap[0] = (uint64_t)scratchpad_array;
 
-    kprintfv("[xHCI] dcbaap assigned at %x with %i scratchpads",dcbaap_addr,scratchpad_count);
+    kprintfv("[xHCI] dcbaap assigned at %llx with %i scratchpads",dcbaap_addr,scratchpad_count);
 
     command_ring.ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
 
@@ -169,7 +174,7 @@ bool XHCIDriver::init(){
 
     make_ring_link(command_ring.ring, command_ring.cycle_bit);
 
-    kprintfv("[xHCI] command ring allocated at %x. crcr now %x",(uintptr_t)command_ring.ring, op->crcr);
+    kprintfv("[xHCI] command ring allocated at %llx. crcr now %llx",(uintptr_t)command_ring.ring, op->crcr);
 
     if (!enable_events()){
         kprintf("[xHCI error] failed to enable events");
@@ -185,7 +190,7 @@ bool XHCIDriver::init(){
     endpoint_map = IndexMap<xhci_ring>(255 * 5);
     context_map = IndexMap<xhci_input_context*>(255 * 5);
 
-    kprintfv("[xHCI] Init complete with usbcmd %x, usbsts %x",op->usbcmd, op->usbsts);
+    kprintfv("[xHCI] Init complete with usbcmd %llx, usbsts %llx",op->usbcmd, op->usbsts);
     
     if (check_fatal_error()) return false;
 
@@ -207,7 +212,7 @@ bool XHCIDriver::port_reset(uint16_t port){
 
     kprintf("[xHCI] port %i",port);
 
-    xhci_port_regs* port_info = &ports[port];
+    xhci_port_regs* port_info = (xhci_port_regs*)VIRT_TO_PHYS_P(&ports[port]);
 
     if (port_info->portsc.pp == 0){
         port_info->portsc.pp = 1;
@@ -256,21 +261,21 @@ bool XHCIDriver::enable_events(){
     erst->ring_base = ev_ring;
     erst->ring_size = MAX_TRB_AMOUNT;
 
-    kprintfv("[xHCI] ERST ring_base: %x", ev_ring);
-    kprintfv("[xHCI] ERST ring_size: %x", erst[0].ring_size);
+    kprintfv("[xHCI] ERST ring_base: %llx", ev_ring);
+    kprintfv("[xHCI] ERST ring_size: %llx", erst[0].ring_size);
     event_ring.ring = (trb*)ev_ring;
     event_ring.cycle_bit = 1;
 
-    kprintfv("[xHCI] Interrupter register @ %x", rt_base + 0x20);
+    kprintfv("[xHCI] Interrupter register @ %llx", rt_base + 0x20);
     
     interrupter->erstsz = 1;
-    kprintfv("[xHCI] ERSTSZ set to: %x", interrupter->erstsz);
+    kprintfv("[xHCI] ERSTSZ set to: %llx", (uintptr_t)interrupter->erstsz);
     
     interrupter->erdp = ev_ring;
     interrupter->erstba = erst_addr;
-    kprintfv("[xHCI] ERSTBA set to: %x", interrupter->erstba);
+    kprintfv("[xHCI] ERSTBA set to: %llx", (uintptr_t)interrupter->erstba);
     
-    kprintfv("[xHCI] ERDP set to: %x", interrupter->erdp);
+    kprintfv("[xHCI] ERDP set to: %llx", (uintptr_t)interrupter->erdp);
     
     interrupter->iman |= 1 << 1;//Enable interrupt
 
@@ -295,26 +300,27 @@ void XHCIDriver::make_ring_link(trb* ring, bool cycle){
 
 void XHCIDriver::ring_doorbell(uint32_t slot, uint32_t endpoint) {
     volatile uint32_t* db = (uint32_t*)(uintptr_t)(db_base + (slot << 2));
-    kprintfv("[xHCI] Ringing doorbell at %x with value %x", db_base + (slot << 2),endpoint);
+    kprintfv("[xHCI] Ringing doorbell at %llx with value %llx", db_base + (slot << 2),endpoint);
     *db = endpoint;
 }
 
 bool XHCIDriver::await_response(uint64_t command, uint32_t type){
     while (1){
         if (check_fatal_error()){
-            kprintf("[xHCI error] USBSTS value %x",op->usbsts);
+            kprintf("[xHCI error] USBSTS value %llx",op->usbsts);
             awaited_type = 0;
             return false;
         }
         for (; event_ring.index < MAX_TRB_AMOUNT; event_ring.index++){
             last_event = &event_ring.ring[event_ring.index];
+            kprintf("LAST EVENT %llx",last_event);
             if (!wait(&last_event->control, event_ring.cycle_bit, true, 2000)){
-                kprintf("[xHCI error] Timeout awaiting response to %x command of type %x", command, type);
+                kprintf("[xHCI error] Timeout awaiting response to %llx command of type %llx", command, type);
                 awaited_type = 0;
                 return false;
             }
-            // kprintf("[xHCI] A response at %i of type %x as a response to %x",event_ring.index, (last_event->control & TRB_TYPE_MASK) >> 10, last_event->parameter);
-            // kprintf("[xHCI]  %x vs %x = %i and %x vs %x = %i", (ev->control & TRB_TYPE_MASK) >> 10, type, (ev->control & TRB_TYPE_MASK) >> 10 == type, ev->parameter, command, command == 0 || ev->parameter == command);
+            // kprintf("[xHCI] A response at %i of type %llx as a response to %llx",event_ring.index, (last_event->control & TRB_TYPE_MASK) >> 10, last_event->parameter);
+            // kprintf("[xHCI]  %llx vs %llx = %i and %llx vs %llx = %i", (ev->control & TRB_TYPE_MASK) >> 10, type, (ev->control & TRB_TYPE_MASK) >> 10 == type, ev->parameter, command, command == 0 || ev->parameter == command);
             if (event_ring.index == MAX_TRB_AMOUNT - 1){
                 event_ring.index = 0;
                 event_ring.cycle_bit = !event_ring.cycle_bit;
@@ -322,7 +328,7 @@ bool XHCIDriver::await_response(uint64_t command, uint32_t type){
             if ((((last_event->control & TRB_TYPE_MASK) >> 10) == type) && (command == 0 || last_event->parameter == command)){
                 uint8_t completion_code = (last_event->status >> 24) & 0xFF;
                 if (completion_code != 1) 
-                    kprintf("[xHCI error] wrong status %i on command type %x", completion_code, ((last_event->control & TRB_TYPE_MASK) >> 10) );
+                    kprintf("[xHCI error] wrong status %i on command type %llx", completion_code, ((last_event->control & TRB_TYPE_MASK) >> 10) );
                 interrupter->erdp = (uintptr_t)&event_ring.ring[event_ring.index+1] | (1 << 3);//Inform of latest processed event
                 interrupter->iman |= 1;//Clear interrupts
                 op->usbsts |= 1 << 3;//Clear interrupts
@@ -343,7 +349,7 @@ bool XHCIDriver::issue_command(uint64_t param, uint32_t status, uint32_t control
     cmd->control = control | command_ring.cycle_bit;
 
     uint64_t cmd_addr = (uintptr_t)cmd;
-    kprintfv("[xHCI] issuing command with control: %x from %x", cmd->control, cmd_addr);
+    kprintfv("[xHCI] issuing command with control: %llx from %llx", cmd->control, cmd_addr);
     if (command_ring.index == MAX_TRB_AMOUNT - 1){
         make_ring_link_control(command_ring.ring, command_ring.cycle_bit);
         command_ring.cycle_bit = !command_ring.cycle_bit;
@@ -360,7 +366,7 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
     }
 
     address = (last_event->control >> 24) & 0xFF;
-    kprintfv("[xHCI] Slot id %x", address);
+    kprintfv("[xHCI] Slot id %llx", address);
 
     if (address == 0){
         kprintf("[xHCI error]: Wrong slot id 0");
@@ -372,10 +378,10 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
     transfer_ring->cycle_bit = 1;
 
     xhci_input_context *ctx = (xhci_input_context*)kalloc(mem_page, sizeof(xhci_input_context), ALIGN_64B, MEM_PRIV_KERNEL);
-    kprintfv("[xHCI] Allocating input context at %x", (uintptr_t)ctx);
+    kprintfv("[xHCI] Allocating input context at %llx", (uintptr_t)ctx);
     context_map[address << 8] = ctx;
     void* output_ctx = (void*)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL);
-    kprintfv("[xHCI] Allocating output for context at %x", (uintptr_t)output_ctx);
+    kprintfv("[xHCI] Allocating output for context at %llx", (uintptr_t)output_ctx);
     
     ctx->control_context.add_flags = 0b11;
     
@@ -390,7 +396,7 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
     ctx->device_context.endpoints[0].endpoint_f1.max_packet_size = packet_size(ctx->device_context.slot_f0.speed);
     
     transfer_ring->ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
-    kprintfv("Transfer ring at %x %i",(uintptr_t)transfer_ring->ring, address << 8);
+    kprintfv("Transfer ring at %llx %i",(uintptr_t)transfer_ring->ring, address << 8);
     make_ring_link(transfer_ring->ring, transfer_ring->cycle_bit);
 
     ctx->device_context.endpoints[0].endpoint_f23.dcs = transfer_ring->cycle_bit;
@@ -411,7 +417,7 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
         .wLength = descriptor_size
     };
 
-    // kprintf("RT: %x R: %x V: %x I: %x L: %x",packet.bmRequestType,packet.bRequest,packet.wValue,packet.wIndex,packet.wLength);
+    // kprintf("RT: %llx R: %llx V: %llx I: %llx L: %llx",packet.bmRequestType,packet.bRequest,packet.wValue,packet.wIndex,packet.wLength);
 
     xhci_ring *transfer_ring = &endpoint_map[address << 8 | endpoint];
 
@@ -446,14 +452,14 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
 
 uint8_t XHCIDriver::address_device(uint8_t address){
     xhci_input_context* ctx = context_map[address << 8];
-    kprintfv("Addressing device %i with context %x", address, (uintptr_t)ctx);
+    kprintfv("Addressing device %i with context %llx", address, (uintptr_t)ctx);
     if (!issue_command((uintptr_t)ctx, 0, (address << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
-        kprintf("[xHCI error] failed addressing device at slot %x",address);
+        kprintf("[xHCI error] failed addressing device at slot %llx",address);
         return 0;
     }
     xhci_device_context* context = (xhci_device_context*)dcbaap[address];
 
-    kprintfv("[xHCI] ADDRESS_DEVICE %i command issued. dcbaap %x Received packet size %i",address, (uintptr_t)dcbaap, context->endpoints[0].endpoint_f1.max_packet_size);
+    kprintfv("[xHCI] ADDRESS_DEVICE %i command issued. dcbaap %llx Received packet size %i",address, (uintptr_t)dcbaap, context->endpoints[0].endpoint_f1.max_packet_size);
     return address;
 }
 
@@ -462,7 +468,7 @@ uint8_t XHCIDriver::get_ep_type(usb_endpoint_descriptor* descriptor) {
 }
 
 bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *endpoint, uint8_t configuration_value, usb_device_types type){
-    kprintfv("[xHCI] endpoint address %x",endpoint->bEndpointAddress);
+    kprintfv("[xHCI] endpoint address %llx",endpoint->bEndpointAddress);
     uint8_t ep_address = endpoint->bEndpointAddress;
     uint8_t ep_dir = (ep_address & 0x80) ? 1 : 0; // 1 IN, 0 OUT
     uint8_t ep_num = ((ep_address & 0x0F) * 2) + ep_dir;
@@ -539,7 +545,7 @@ void XHCIDriver::handle_interrupt(){
     uint64_t addr = ev->parameter;
     if (type == awaited_type && (awaited_addr == 0 || (awaited_addr & 0xFFFFFFFFFFFFFFFF) == addr))
         return;
-    kprintfv("[xHCI] >>> Unhandled interrupt %i %x",event_ring.index,type);
+    kprintfv("[xHCI] >>> Unhandled interrupt %i %llx",event_ring.index,type);
     uint8_t completion_code = (ev->status >> 24) & 0xFF;
     if (completion_code == 1 || completion_code == 4){
         switch (type){
@@ -560,14 +566,14 @@ void XHCIDriver::handle_interrupt(){
             }
         }
     } else {
-        kprintf("[xHCI error] wrong status %i on command type %x", completion_code, ((ev->control & TRB_TYPE_MASK) >> 10));
+        kprintf("[xHCI error] wrong status %i on command type %llx", completion_code, ((ev->control & TRB_TYPE_MASK) >> 10));
     }
     if (event_ring.index == MAX_TRB_AMOUNT - 1){
         event_ring.index = 0;
         event_ring.cycle_bit = !event_ring.cycle_bit;
     } else
         event_ring.index++;
-    interrupter->erdp = (uintptr_t)&event_ring.ring[event_ring.index] | (1 << 3);//Inform of latest processed event
+    interrupter->erdp = VIRT_TO_PHYS((uintptr_t)&event_ring.ring[event_ring.index]) | (1 << 3);//Inform of latest processed event
     interrupter->iman |= 1;//Clear interrupts
     op->usbsts |= 1 << 3;//Clear interrupts
 }

@@ -61,6 +61,9 @@ restore_context:
 
     ldr x18, [x18]
 
+    cmp x18, #0
+    b.eq 4f
+
     msr ttbr0_el1, x18
 
     tlbi vmalle1is
