@@ -206,7 +206,7 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
 
 void VirtioAudioDriver::send_buffer(sizedptr buf){
     virtio_add_buffer(&audio_dev, cmd_index % audio_dev.common_cfg->queue_size, buf.ptr, buf.size, true);
-    struct virtq_used* u = (struct virtq_used*)(uintptr_t)audio_dev.common_cfg->queue_device;
+    volatile virtq_used* u = (virtq_used*)audio_dev.common_cfg->queue_device;
     while (u->idx < cmd_index-2)
         ; // TODO: yield cpu
     cmd_index++;
