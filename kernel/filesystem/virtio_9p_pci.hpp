@@ -2,7 +2,7 @@
 
 #include "fsdriver.hpp"
 #include "virtio/virtio_pci.h"
-#include "data_struct/indexmap.hpp"
+#include "data_struct/hashmap.h"
 
 class Virtio9PDriver : public FSDriver {
 public:
@@ -25,5 +25,5 @@ private:
 
     uint32_t root;
 
-    IndexMap<void*> open_files;
+    chashmap_t *open_files;
 };

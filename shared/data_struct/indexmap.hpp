@@ -13,12 +13,15 @@ public:
     IndexMap() : items(0), count(0), capacity(0) {
     }
 
+    IndexMap(const IndexMap&) = delete;
+
     IndexMap<T>* operator=(const IndexMap<T>& orig){
         this->count = orig.count;
         this->capacity = orig.capacity;
         void *mem = (void*)malloc(sizeof(T) * (capacity + 1));
         items = reinterpret_cast<T*>(mem);
         memcpy(this->items, orig.items, sizeof(T) * (capacity + 1));
+        default_val = &items[capacity];
         return this;
     }
 
@@ -34,13 +37,13 @@ public:
 
     ~IndexMap() {
         if (capacity == 0) return;
-        for (uint32_t i = 0; i < capacity; i++)
+        for (uint32_t i = 0; i <= capacity; i++)
             items[i].~T();
         if (items) free(items, sizeof(T) * (capacity + 1));
     }
 
     bool add(const uint32_t index, const T& value) {
-        if (count >= capacity || index > capacity) return false;
+        if (count >= capacity || index >= capacity) return false;
         items[index] = value;
         count++;
         return true;

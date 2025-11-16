@@ -3,7 +3,7 @@
 #include "types.h"
 #include "std/string.h"
 #include "fsdriver.hpp"
-#include "std/std.h"
+#include "data_struct/hashmap.h"
 
 typedef struct fat32_mbs {
     uint8_t jumpboot[3];//3
@@ -111,5 +111,5 @@ protected:
 
     bool verbose = false;
 
-    IndexMap<void*> open_files;
+    chashmap_t *open_files;
 };
