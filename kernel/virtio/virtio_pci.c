@@ -150,11 +150,11 @@ bool virtio_init_device(virtio_device *dev) {
         dev->common_cfg->queue_driver = avail;
         dev->common_cfg->queue_device = used;
 
-        volatile struct virtq_avail* A = (volatile struct virtq_avail*)(uintptr_t)avail;
+        volatile virtq_avail* A = (volatile virtq_avail*)(uintptr_t)avail;
         A->flags = 0;
         A->idx = 0;
 
-        volatile struct virtq_used* U = (volatile struct virtq_used*)(uintptr_t)used;
+        volatile virtq_used* U = (volatile virtq_used*)(uintptr_t)used;
         U->flags = 0;
         U->idx = 0;
 
@@ -177,9 +177,9 @@ uint32_t select_queue(virtio_device *dev, uint32_t index){
 }
 
 bool virtio_send_3d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags) {
-    struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)dev->common_cfg->queue_desc;
-    struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)dev->common_cfg->queue_driver;
-    struct virtq_used* u = (struct virtq_used*)(uintptr_t)dev->common_cfg->queue_device;
+    volatile virtq_desc* d = (virtq_desc*)dev->common_cfg->queue_desc;
+    volatile virtq_avail* a = (virtq_avail*)dev->common_cfg->queue_driver;
+    volatile virtq_used* u = (virtq_used*)dev->common_cfg->queue_device;
     
     d[0].addr = cmd;
     d[0].len = cmd_len;
@@ -201,7 +201,7 @@ bool virtio_send_3d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t
     a->ring[a->idx % dev->common_cfg->queue_size] = 0;
     a->idx++;
 
-    *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
+    *(volatile uint16_t*)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
 
     while (last_used_idx == u->idx);//TODO: OPT
 
@@ -214,9 +214,9 @@ bool virtio_send_3d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t
 
 bool virtio_send_2d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags) {
 
-    struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)dev->common_cfg->queue_desc;
-    struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)dev->common_cfg->queue_driver;
-    struct virtq_used* u = (struct virtq_used*)(uintptr_t)dev->common_cfg->queue_device;
+    volatile virtq_desc* d = (virtq_desc*)dev->common_cfg->queue_desc;
+    volatile virtq_avail* a = (virtq_avail*)dev->common_cfg->queue_driver;
+    volatile virtq_used* u = (virtq_used*)dev->common_cfg->queue_device;
     uint16_t last_used_idx = u->idx;
 
     d[0].addr = cmd;
@@ -232,7 +232,7 @@ bool virtio_send_2d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t
     a->ring[a->idx % dev->common_cfg->queue_size] = 0;
     a->idx++;
 
-    *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
+    *(volatile uint16_t*)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
 
     while (last_used_idx == u->idx);//TODO: OPT
 
@@ -241,9 +241,9 @@ bool virtio_send_2d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t
 
 bool virtio_send_1d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len) {
 
-    struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)dev->common_cfg->queue_desc;
-    struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)dev->common_cfg->queue_driver;
-    struct virtq_used* u = (struct virtq_used*)(uintptr_t)dev->common_cfg->queue_device;
+    volatile virtq_desc* d = (virtq_desc*)dev->common_cfg->queue_desc;
+    volatile virtq_avail* a = (virtq_avail*)dev->common_cfg->queue_driver;
+    volatile virtq_used* u = (virtq_used*)dev->common_cfg->queue_device;
     uint16_t last_used_idx = u->idx;
     
     d[0].addr = cmd;
@@ -255,7 +255,7 @@ bool virtio_send_1d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len) {
 
     a->idx++;
 
-    *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
+    *(volatile uint16_t*)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
 
     while (last_used_idx == u->idx);//TODO: OPT
 
@@ -264,8 +264,8 @@ bool virtio_send_1d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len) {
 
 void virtio_add_buffer(virtio_device *dev, uint16_t index, uint64_t buf, uint32_t buf_len, bool host_to_dev) {
 
-    struct virtq_desc* d = (struct virtq_desc*)(uintptr_t)dev->common_cfg->queue_desc;
-    struct virtq_avail* a = (struct virtq_avail*)(uintptr_t)dev->common_cfg->queue_driver;
+    volatile virtq_desc* d = (virtq_desc*)dev->common_cfg->queue_desc;
+    volatile virtq_avail* a = (virtq_avail*)dev->common_cfg->queue_driver;
     
     d[index].addr = buf;
     d[index].len = buf_len;
@@ -275,5 +275,5 @@ void virtio_add_buffer(virtio_device *dev, uint16_t index, uint64_t buf, uint32_
     a->ring[a->idx % dev->common_cfg->queue_size] = index;
     a->idx++;
 
-    *(volatile uint16_t*)(uintptr_t)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
+    *(volatile uint16_t*)(dev->notify_cfg + dev->notify_off_multiplier * dev->common_cfg->queue_select) = 0;
 }

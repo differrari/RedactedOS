@@ -376,7 +376,6 @@ void sync_el0_handler_c(){
                     }
                 }
             }
-            //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
             if (currentEL == 1){
                 kprintf("System has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
                 coredump(esr, elr, far, proc->sp);

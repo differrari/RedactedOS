@@ -27,7 +27,7 @@ void kernel_main() {
 
     detect_hardware();
 
-    mmu_alloc();
+    mmu_init_kernel();
     
     if (BOARD_TYPE == 2) mailbox_init();
 
@@ -58,21 +58,21 @@ void kernel_main() {
     load_module(&disk_module);
 
     bool input_available = load_module(&input_module);
+    mmu_init();
     bool network_available = false;
     if (BOARD_TYPE == 1){
         if (system_config.use_net)
             network_available = load_module(&net_module);
 
         load_module(&audio_module);
-
-        init_audio_mixer();
     }
     
-    mmu_init();
 
     kprint("Kernel initialization finished");
     
     kprint("Starting processes");
+
+    if (BOARD_TYPE == 1) init_audio_mixer();
     
     init_filesystem();
 

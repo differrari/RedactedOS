@@ -158,9 +158,9 @@ sizedptr VirtioNetDriver::allocate_packet(size_t size){
 
 sizedptr VirtioNetDriver::handle_receive_packet(){
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
-    struct virtq_used* used = (struct virtq_used*)(uintptr_t)vnp_net_dev.common_cfg->queue_device;
-    struct virtq_desc* desc = (struct virtq_desc*)(uintptr_t)vnp_net_dev.common_cfg->queue_desc;
-    struct virtq_avail* avail = (struct virtq_avail*)(uintptr_t)vnp_net_dev.common_cfg->queue_driver;
+    volatile virtq_used* used = (virtq_used*)vnp_net_dev.common_cfg->queue_device;
+    volatile virtq_desc* desc = (virtq_desc*)vnp_net_dev.common_cfg->queue_desc;
+    volatile virtq_avail* avail = (virtq_avail*)vnp_net_dev.common_cfg->queue_driver;
 
     uint16_t qsz = vnp_net_dev.common_cfg->queue_size;
     uint16_t new_idx = used->idx;
@@ -169,7 +169,7 @@ sizedptr VirtioNetDriver::handle_receive_packet(){
     }
 
     uint16_t used_ring_index = (uint16_t)(last_used_receive_idx % qsz);
-    struct virtq_used_elem* e = &used->ring[used_ring_index];
+    volatile virtq_used_elem* e = &used->ring[used_ring_index];
     last_used_receive_idx++;
 
     uint32_t desc_index = e->id;
@@ -178,7 +178,7 @@ sizedptr VirtioNetDriver::handle_receive_packet(){
     {
         avail->ring[avail->idx % qsz] = (uint16_t)desc_index;
         avail->idx++;
-        *(volatile uint16_t*)(uintptr_t)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
+        *(volatile uint16_t*)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
         return (sizedptr){0,0};
     }
 
@@ -189,14 +189,14 @@ sizedptr VirtioNetDriver::handle_receive_packet(){
     if (!out_buf){
         avail->ring[avail->idx % qsz] = (uint16_t)desc_index;
         avail->idx++;
-        *(volatile uint16_t*)(uintptr_t)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
+        *(volatile uint16_t*)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
         return (sizedptr){0,0};
     }
     memcpy(out_buf, (void*)(packet_addr + header_size), payload_len);
 
     avail->ring[avail->idx % qsz] = (uint16_t)desc_index;
     avail->idx++;
-    *(volatile uint16_t*)(uintptr_t)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
+    *(volatile uint16_t*)(vnp_net_dev.notify_cfg + vnp_net_dev.notify_off_multiplier * RECEIVE_QUEUE) = 0;
 
     return (sizedptr){ (uintptr_t)out_buf, payload_len };
 }
@@ -204,15 +204,15 @@ sizedptr VirtioNetDriver::handle_receive_packet(){
 void VirtioNetDriver::handle_sent_packet(){
     select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
 
-    struct virtq_used* used = (struct virtq_used*)(uintptr_t)vnp_net_dev.common_cfg->queue_device;
-    struct virtq_desc* desc = (struct virtq_desc*)(uintptr_t)vnp_net_dev.common_cfg->queue_desc;
+    volatile virtq_used* used = (virtq_used*)vnp_net_dev.common_cfg->queue_device;
+    volatile virtq_desc* desc = (virtq_desc*)vnp_net_dev.common_cfg->queue_desc;
     uint16_t qsz = vnp_net_dev.common_cfg->queue_size;
 
     int cleaned = 0;
     while (last_used_sent_idx != used->idx && cleaned < 64) {
         uint16_t used_ring_index = (uint16_t)(last_used_sent_idx % qsz);
         last_used_sent_idx = (uint16_t)(last_used_sent_idx + 1);
-        struct virtq_used_elem* e = &used->ring[used_ring_index];
+        volatile virtq_used_elem* e = &used->ring[used_ring_index];
         uint32_t desc_index = e->id;
 
         if (desc_index < qsz) {

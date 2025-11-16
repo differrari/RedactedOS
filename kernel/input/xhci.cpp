@@ -9,6 +9,7 @@
 #include "std/memory.h"
 #include "async.h"
 #include "memory/page_allocator.h"
+#include "memory/mmu.h"
 
 uint64_t awaited_addr;
 uint32_t awaited_type;
@@ -56,6 +57,7 @@ bool XHCIDriver::init(){
     if (XHCI_BASE){
         addr = XHCI_BASE;
         mmio = addr;
+        register_device_memory(mmio, mmio);
         if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
             quirk_simulate_interrupts = !pci_setup_msi_rp1(36, true);
     } else if (PCI_BASE) {
