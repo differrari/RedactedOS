@@ -88,7 +88,7 @@ $PRIVILEGE qemu-system-aarch64 \
   -device usb-kbd,bus=usb.0 \
   -device usb-mouse,bus=usb.0 \
   -device virtio-sound-pci,audiodev=audio \
-  -trace file=./trace \
+  -trace events=./traceevents -trace file=./trace \
   -audiodev ${AUDIO_BACKEND},id=audio \
   -d guest_errors \
   $ARGS
