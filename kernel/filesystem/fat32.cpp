@@ -50,7 +50,7 @@ bool FAT32FS::init(uint32_t partition_sector){
     kprintf("Data start at %x",data_start_sector*512);
     read_FAT(mbs->reserved_sectors, mbs->sectors_per_fat, mbs->number_of_fats);
 
-    open_files = IndexMap<void*>(128);
+    open_files = IndexMap<void*>(512);
 
     return true;
 }
