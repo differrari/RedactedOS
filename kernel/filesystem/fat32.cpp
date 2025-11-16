@@ -50,7 +50,7 @@ bool FAT32FS::init(uint32_t partition_sector){
     kprintf("Data start at %x",data_start_sector*512);
     read_FAT(mbs->reserved_sectors, mbs->sectors_per_fat, mbs->number_of_fats);
 
-    open_files = IndexMap<void*>(512);
+    open_files = chashmap_create(128);
 
     return true;
 }
@@ -251,13 +251,12 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (!buf) return FS_RESULT_NOTFOUND;
     descriptor->id = reserve_fd_id();
     descriptor->size = buf_ptr.size;
-    //TODO: go back to using a linked list
-    return open_files.add(descriptor->id, buf) ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
+    return chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), buf) ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
 size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
     //TODO: Here and elsewhere, we're not checking the cursor's validity within the file
-    uintptr_t file = (uintptr_t)open_files[descriptor->id];
+    uintptr_t file = (uintptr_t)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!file) return 0;
     memcpy(buf, (void*)(file + descriptor->cursor), size);
     return size;
