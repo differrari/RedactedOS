@@ -257,8 +257,10 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     kprintfv("[in_page_alloc] Aligned next pointer %x",info->next_free_mem_ptr);
 
     if (info->next_free_mem_ptr + size > (((uintptr_t)page) + PAGE_SIZE)) {
-        if (!info->next)
+        if (!info->next){
             info->next = palloc(PAGE_SIZE, level, info->attributes, false);
+            kprintfv("[in_page_alloc] New page %x",info->next);
+        }
         kprintfv("[in_page_alloc] Page full. Moving to %x",(uintptr_t)info->next);
         return kalloc(info->next, size, alignment, level);
     }
