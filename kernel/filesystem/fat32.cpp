@@ -251,14 +251,14 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (!buf) return FS_RESULT_NOTFOUND;
     descriptor->id = reserve_fd_id();
     descriptor->size = buf_ptr.size;
-    open_files.add(descriptor->id, buf);
     //TODO: go back to using a linked list
-    return FS_RESULT_SUCCESS;
+    return open_files.add(descriptor->id, buf) ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
 size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
     //TODO: Here and elsewhere, we're not checking the cursor's validity within the file
     uintptr_t file = (uintptr_t)open_files[descriptor->id];
+    if (!file) return 0;
     memcpy(buf, (void*)(file + descriptor->cursor), size);
     return size;
 }

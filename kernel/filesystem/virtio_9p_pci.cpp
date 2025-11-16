@@ -32,7 +32,7 @@ bool Virtio9PDriver::init(uint32_t partition_sector){
 
     max_msize = choose_version(); 
 
-    open_files = IndexMap<void*>(128);
+    open_files = IndexMap<void*>(512);
 
     root = attach();
     if (root == INVALID_FID){
@@ -67,12 +67,12 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         kprintf("[VIRTIO 9P error] failed read file %s",path);
         return FS_RESULT_DRIVER_ERROR;
     } 
-    open_files[descriptor->id] = file;
-    return FS_RESULT_SUCCESS;
+    return open_files.add(descriptor->id, file) ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
 size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
     uintptr_t file = (uintptr_t)open_files[descriptor->id];
+    if (!file) return 0;
     memcpy(buf, (void*)(file + descriptor->cursor), size);
     return size;
 }
