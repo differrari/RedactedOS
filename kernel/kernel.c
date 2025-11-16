@@ -40,6 +40,7 @@ void kernel_main() {
 //    if (BOARD_TYPE == 1) disable_visual();
 
     load_module(&console_module);
+    mmu_init();
 
     print_hardware();
 
@@ -52,13 +53,12 @@ void kernel_main() {
 
     load_module(&graphics_module);
     
-    // if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
-    //     pci_setup_rp1();
+    if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
+        pci_setup_rp1();
 
     load_module(&disk_module);
 
     bool input_available = load_module(&input_module);
-    mmu_init();
     bool network_available = false;
     if (BOARD_TYPE == 1){
         if (system_config.use_net)
@@ -66,7 +66,6 @@ void kernel_main() {
 
         load_module(&audio_module);
     }
-    
 
     kprint("Kernel initialization finished");
     
