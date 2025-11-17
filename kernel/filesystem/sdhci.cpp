@@ -151,7 +151,7 @@ bool SDHCI::init() {
 
     setup_clock();
 
-    kprintf("[SDHCI] Controller ready CTL0 %x",regs->ctrl0);
+    kprintf("[SDHCI] Controller ready @ %x CTL0 %x",SDHCI_BASE, regs->ctrl0);
 
     regs->interrupt = 0;
     regs->irpt_en = 0xFFFFFFFF;

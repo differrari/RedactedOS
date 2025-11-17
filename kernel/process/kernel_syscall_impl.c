@@ -33,7 +33,7 @@ extern bool read_event(kbd_event *event){
 }
 
 extern void get_mouse_status(mouse_input *in){
-    kprint("[SYSCALL implementation error] Shortcut syscalls are not implemented yet");
+    *in = get_raw_mouse_in();
 }
 
 extern uint16_t exec(const char* prog_name, int argc, const char* argv[]){
@@ -46,7 +46,7 @@ extern void request_draw_ctx(draw_ctx* d_ctx){
 }
 
 extern void commit_draw_ctx(draw_ctx* d_ctx){
-    commit_frame(d_ctx);
+    commit_frame(d_ctx, 0);
 }
 
 extern void resize_draw_ctx(draw_ctx* d_ctx, uint32_t width, uint32_t height){

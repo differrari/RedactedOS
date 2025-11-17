@@ -9,6 +9,10 @@ ifeq ($(QEMU),true)
   CPPFLAGS += -DQEMU
 endif
 
+ifeq ($(TEST),true)
+  CPPFLAGS += -DTEST
+endif
+
 CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
 CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
 LDFLAGS  := $(LDFLAGS_BASE) -T $(shell ls *.ld) --defsym=LOAD_ADDR=$(LOAD_ADDR)

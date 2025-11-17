@@ -12,9 +12,13 @@ uint32_t get_color_bpp(uint16_t bpp, uintptr_t value_ptr){
 
         case 8: return 0;
 
-        case 24: return ARGB(0, read8(value_ptr), read8(value_ptr + 1), read8(value_ptr + 2)); 
+        case 24: return ARGB(0, read8(value_ptr + 0), read8(value_ptr + 1), read8(value_ptr + 2)); 
 
-        case 32: return value_ptr % 8 == 0 ? *(uint32_t*)value_ptr : read_unaligned32((uint32_t*)value_ptr);
+        case 32: {
+            uint32_t pix = value_ptr % 8 == 0 ? *(uint32_t*)value_ptr : read_unaligned32((uint32_t*)value_ptr);
+            pix = (((pix >> 24) & 0xFF) << 24) | (((pix >> 0) & 0xFF) << 16) | (((pix >> 8) & 0xFF) << 8) | (((pix >> 16) & 0xFF) << 0);
+            return pix;
+        }
     }
     return 0;
 }
@@ -50,9 +54,9 @@ uint32_t get_bpp_converted_color(uint16_t bpp, uintptr_t value_ptr){
 }
 
 void* load_image(char *path, image_info *info, IMAGE_FORMATS format){
-    file descriptor;
+    file descriptor = {};
     FS_RESULT res = fopen(path, &descriptor);
-    void *img;
+    void *img = 0;
     image_info img_info;
     if (res == FS_RESULT_SUCCESS){
         void *img_file = (void*)malloc(descriptor.size);

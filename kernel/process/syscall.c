@@ -23,6 +23,7 @@
 #include "net/transport_layer/csocket.h"
 #include "loading/dwarf.h"
 
+
 int syscall_depth = 0;
 uintptr_t cpec;
 
@@ -78,7 +79,7 @@ uintptr_t syscall_gpu_request_ctx(process_t *ctx){
 
 uint64_t syscall_gpu_flush(process_t *ctx){
     draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
-    commit_frame(d_ctx);
+    commit_frame(d_ctx,0 );
     gpu_flush();
     return 0;
 }
@@ -115,7 +116,8 @@ uint64_t syscall_exec(process_t *ctx){
     int argc = ctx->PROC_X1;
     const char **argv = (const char**)ctx->PROC_X2;
     process_t *p = execute(prog_name, argc, argv);
-    return p->id;
+    if (p) p->win_id = ctx->win_id;
+    return p ? p->id : 0;
 }
 
 uint64_t syscall_get_time(process_t *ctx){
@@ -183,7 +185,7 @@ uint64_t syscall_socket_close(process_t *ctx){
 
 uint64_t syscall_fopen(process_t *ctx){
     char *req_path = (char *)ctx->PROC_X0;
-    char path[255];
+    char path[255] = {};
     if (!(ctx->PROC_PRIV) && strstart("/resources/", req_path, true) == 11){
         string_format_buf(path, sizeof(path),"%s%s", ctx->bundle, req_path);
     } else memcpy(path, req_path, strlen(req_path, 0) + 1);
@@ -218,6 +220,7 @@ uint64_t syscall_dir_list(process_t *ctx){
     // return list_directory_contents(path);
     return 0;
 }
+
 
 syscall_entry syscalls[] = {
     [MALLOC_CODE] = syscall_malloc,

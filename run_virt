@@ -22,18 +22,29 @@ AUDIO_BACKEND="sdl"
 VIRTIO_GPU_VARS=",xres=1920,yres=1080"
 GL="on"
 
+USE_FB=true
+USE_NET=false
+
+if [ "$USE_FB" == true ]; then 
+  SELECTED_GPU="ramfb"
+fi
+
 if [ "$OS_TYPE" = "Darwin" ]; then
     NETDEV="-netdev vmnet-bridged,id=net0,ifname=en0"
     PRIVILEGE="sudo"
     DISPLAY_MODE="cocoa"
-    SELECTED_GPU="virtio-gpu-pci"
+    if [ "$USE_FB" != true ]; then
+      SELECTED_GPU="virtio-gpu-pci"
+    fi
     AUDIO_BACKEND="coreaudio"
     GL="off"
 elif [ "$OS_TYPE" = "Linux" ]; then
     NETDEV="-netdev user,id=net0"
     PRIVILEGE=""
     DISPLAY_MODE="sdl"
-    SELECTED_GPU="virtio-gpu-pci$VIRTIO_GPU_VARS"
+    if [ "$USE_FB" != true ]; then
+      SELECTED_GPU="virtio-gpu-pci$VIRTIO_GPU_VARS"
+    fi
     GL="off"
 else
     echo "Unknown OS: $OS_TYPE" >&2
@@ -46,8 +57,17 @@ if [ -d /sys/class/net/tap0 ] && [ -d /sys/class/net/br0 ]; then
     PRIVILEGE=""
 fi
 
+NETDRIV="-device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56,speed=10000,duplex=full"
+
 DUMP="-object filter-dump,id=f0,netdev=net0,file=/tmp/virtio.pcap"
-echo "Using networking mode: $NETDEV"
+if [ "$USE_NET" != true ]; then 
+  NETDEV=""
+  DUMP=""
+  PRIVILEGE=""
+  NETDRIV=""
+fi
+
+echo "Using networking mode: $NETDEV $NETDRIV $DUMP"
 
 $PRIVILEGE qemu-system-aarch64 \
   -M virt \
@@ -55,9 +75,9 @@ $PRIVILEGE qemu-system-aarch64 \
   -m 512M \
   -kernel kernel.elf \
   -display $DISPLAY_MODE${GL:+,gl=$GL} \
-  -device ramfb \
+  -device $SELECTED_GPU \
   $NETDEV \
-  -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56,speed=10000,duplex=full \
+  $NETDRIV \
   $DUMP \
   -serial mon:stdio \
   -drive file=disk.img,if=none,format=raw,id=hd0 \
@@ -72,4 +92,3 @@ $PRIVILEGE qemu-system-aarch64 \
   -audiodev ${AUDIO_BACKEND},id=audio \
   -d guest_errors \
   $ARGS
-  #-netdev tap,id=net1,ifname=tap1,script=no,downscript=no,vnet_hdr=off \

@@ -9,7 +9,7 @@
 static file mixer = { .id = 0 };  // 0 ok as filesystem ids > 256
 
 static inline bool mixer_open_file(){
-    return (mixer.id > 0) || (FS_RESULT_SUCCESS == fopen("/dev/audio/output", &mixer));
+    return (mixer.id > 0) || (FS_RESULT_SUCCESS == fopen("/audio/output", &mixer));
 }
 
 int8_t mixer_open_line(){

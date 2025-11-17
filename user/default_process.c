@@ -12,20 +12,20 @@
 int img_example() {
     draw_ctx ctx = {};
     request_draw_ctx(&ctx);
-    file descriptor;
-    FS_RESULT res = fopen("/resources/test.png", &descriptor);
+    file descriptor = {};
+    FS_RESULT res = fopen("/resources/jest.bmp", &descriptor);
     void *img = 0;
     image_info info;
     void* file_img = malloc(descriptor.size);
     fread(&descriptor, file_img, descriptor.size);
     if (res != FS_RESULT_SUCCESS) printf("Couldn't open image");
     else {
-        info = png_get_info(file_img, descriptor.size);
+        info = bmp_get_info(file_img, descriptor.size);
         printf("info %ix%i",info.width,info.height);
         img = malloc(info.width*info.height*system_bpp);
-        png_read_image(file_img, descriptor.size, img);
+        bmp_read_image(file_img, descriptor.size, img);
     }
-    // resize_draw_ctx(&ctx, info.width+BORDER*2, info.height+BORDER*2);
+    resize_draw_ctx(&ctx, info.width+BORDER*2, info.height+BORDER*2);
     while (1) {
         mouse_input mouse = {};
         get_mouse_status(&mouse);

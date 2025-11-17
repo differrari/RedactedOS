@@ -67,7 +67,7 @@ bool XHCIDriver::init(){
         return false;
     }
 
-    kprintfv("[xHCI] init");
+    kprintfv("[xHCI] init %x",addr);
     if (use_pci){
         if (!(*(uint16_t*)(addr + 0x06) & (1 << 4))){
             kprintf("[xHCI] Wrong capabilities list");

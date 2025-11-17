@@ -9,6 +9,7 @@
 #include "ui/uno/uno.h"
 #include "graph/tres.h"
 #include "process/scheduler.h"
+#include "exceptions/irq.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3
@@ -34,7 +35,7 @@ Launcher::Launcher() {
 }
 
 package_info Launcher::get_pkg_info(char* info_path){
-    file fd;
+    file fd = {};
     FS_RESULT res = fopen(info_path, &fd);
     if (res != FS_RESULT_SUCCESS) return (package_info){};
 
@@ -54,14 +55,19 @@ void Launcher::load_entries(){
         string_free(entries[i].info.author);
     }
     entries.empty();
-    sizedptr list_ptr = list_directory_contents("/shared/redos/user/");
-    string_list *list = (string_list*)list_ptr.ptr;
-    if (list && list_ptr.size){
+    size_t listsize = 0x1000;
+    void *listptr = malloc(listsize);
+    if (!list_directory_contents("/boot/redos/user/", listptr, listsize, 0)){
+        kprintf("Failed to read contents of directory");
+        return;
+    }
+    string_list *list = (string_list*)listptr;
+    if (list){
         char* reader = (char*)list->array;
         for (uint32_t i = 0; i < list->count; i++){
             char *file = reader;
             if (*file){
-                string fullpath = string_format("/shared/redos/user/%s",(uintptr_t)file);
+                string fullpath = string_format("/boot/redos/user/%s",(uintptr_t)file);
                 string name = string_from_literal_length(file,find_extension(file));
                 string ext = string_from_literal(file + find_extension(file));
                 if (strcmp(ext.data,".red", true) == 0){
@@ -73,8 +79,8 @@ void Launcher::load_entries(){
                 reader++;
             }
         }
-        //TODO: The list of strings needs to be freed, but this class is not its owner
     }
+    free(listptr, listsize);
 }
 
 void Launcher::draw_desktop(){
@@ -84,7 +90,12 @@ void Launcher::draw_desktop(){
         active_proc = nullptr;
         sys_focus_current();
         load_entries();
-        get_window_ctx(&ctx);
+        request_draw_ctx(&ctx);
+        if (ctx.width < 512 || ctx.height < 256){
+            resize_draw_ctx(&ctx, max(512,ctx.width), max(256, ctx.height));
+        }
+        gpu_size screen_size = {ctx.width, ctx.height};
+        tile_size = { screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20 };
         rendered_full = false;
         process_active = false;
     }
@@ -110,26 +121,26 @@ void Launcher::draw_desktop(){
     } else if (old_selected.x != selected.x || old_selected.y != selected.y){
         draw_tile(old_selected.x, old_selected.y);
         draw_tile(selected.x, selected.y);
-        commit_frame(&ctx);
     }
+    ctx.full_redraw = true;
+    commit_draw_ctx(&ctx);
 }
 
 void Launcher::draw_full(){
     if (!await_gpu()) return;
-    fb_clear(&ctx, BG_COLOR+0x050505);
+    fb_clear(&ctx, system_theme.bg_color+0x050505);
     for (uint32_t column = 0; column < MAX_COLS; column++){
         for (uint32_t row = 0; row < MAX_ROWS; row++){
             draw_tile(column, row);
         }
     }
-    commit_frame(&ctx);
 }
 
 bool Launcher::await_gpu(){
     if (!gpu_ready())
         return false;
     if (!ready){
-        get_window_ctx(&ctx);
+        request_draw_ctx(&ctx);
         sys_focus_current();
         gpu_size screen_size = {ctx.width, ctx.height};
         tile_size = {screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20};
@@ -168,16 +179,20 @@ void Launcher::activate_current(){
         fb_clear(&ctx, 0);
         commit_draw_ctx(&ctx);
         kprintf("[LAUNCHER] read file %x",fd.size);
+        disable_interrupt();
         active_proc = load_elf_file(entries[index].name.data,entries[index].path.data, file,fd.size);
         if (!active_proc){
             kprintf("[LAUNCHER] Failed to load ELF file");
             rendered_full = false;
             return;
         }
+        active_proc->win_id = get_current_proc()->win_id;
         active_proc->priority = PROC_PRIORITY_FULL;
         kprintf("[LAUNCHER] process launched");
+        enable_interrupt();
         process_active = true;
         sys_set_focus(active_proc->id);
+        active_proc->state = process_t::process_state::READY;
     }
     
 }
@@ -193,13 +208,13 @@ void Launcher::draw_tile(uint32_t column, uint32_t row){
     DRAW(
         rectangle(&ctx, {
         .border_size = (uint8_t)(sel ? 4 : 0),
-        .border_color = BG_COLOR+0x333333,
+        .border_color = system_theme.bg_color+0x333333,
         }, (common_ui_config){
         .point = {10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row)},
         .size = {tile_size.width, tile_size.height},
         .horizontal_align = Leading,
         .vertical_align = Top,
-        .background_color = BG_COLOR+0x111111,
+        .background_color = system_theme.bg_color+0x111111,
         .foreground_color = 0
         }), {
         
@@ -235,4 +250,18 @@ void Launcher::draw_tile(uint32_t column, uint32_t row){
     });
 
     
+}
+
+extern "C" int manage_window(int argc, char* argv[]){
+    Launcher *desktop = new Launcher();
+    while (1)
+    {
+        desktop->draw_desktop();
+    }
+}
+
+extern "C" process_t* launch_launcher(){
+    process_t *p = create_kernel_process("winmanager",manage_window, 0, 0);
+    p->priority = PROC_PRIORITY_FULL;
+    return p;
 }

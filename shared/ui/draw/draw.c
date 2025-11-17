@@ -140,18 +140,32 @@ void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
     mark_dirty(ctx, x,y,1,1);
 }
 
-void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
-    if (x >= ctx->width || y >= ctx->height) return;
+void fb_fill_rect(draw_ctx *ctx, int32_t x, int32_t y, uint32_t width, uint32_t height, color color){
+    if (x >= (int32_t)ctx->width || y >= (int32_t)ctx->height) return;
 
-    uint32_t w = width;
-    uint32_t h = height;
-    if (x + w > ctx->width) w = ctx->width - x;
-    if (y + h > ctx->height) h = ctx->height - y;
-    if (!w || !h) return;
+    int32_t w = width;
+    int32_t h = height;
+    if (x + w > (int32_t)ctx->width) w = ctx->width - x;
+    else if (x < 0){ w += x; x = 0; }
+    if (y + h > (int32_t)ctx->height) h = ctx->height - y;
+    else if (y < 0){ h += y; y = 0; }
+
+    if (w <= 0 || h <= 0) return;
+
+    uint8_t alpha = ((color >> 24) & 0xFF);
+
+    if (alpha < 0xFF && alpha > 0){
+        for (int32_t dy = 0; dy < h; dy++){
+            for (int32_t dx = 0; dx < w; dx++){
+                fb_draw_raw_pixel(ctx, x + dx, y + dy, color);  
+            }
+        }
+        return;
+    }
 
     const uint32_t dst_pitch_px = (ctx->stride >> 2);
     uint32_t* dst_row = ctx->fb + y * dst_pitch_px + x;
-    for (uint32_t row = 0; row < h; ++row) {
+    for (int32_t row = 0; row < h; ++row) {
         uint32_t *p = dst_row;
         uint32_t n = w;
         uint32_t col = (uint32_t)color;

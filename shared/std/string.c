@@ -1035,6 +1035,7 @@ int strncmp(const char *a, const char *b, bool case_insensitive, int max){
 
 int strstart(const char *a, const char *b, bool case_insensitive){
     int index = 0;
+    if (!a || !b) return 0;
     while (*a && *b){
         char ca = *a;
         char cb = *b;
@@ -1117,7 +1118,9 @@ uint64_t parse_hex_u64(const char* str, size_t size){
     for (uint32_t i = 0; i < size; i++){
         char c = str[i];
         uint8_t digit = 0;
-        if (c >= '0' && c <= '9') digit = c - '0';
+        if (i == 1 && (c == 'x' || c == 'X')) result = 0;
+        else if (i == 0 && c == '#') result = 0;
+        else if (c >= '0' && c <= '9') digit = c - '0';
         else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
         else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
         else break;
@@ -1136,6 +1139,20 @@ uint64_t parse_int_u64(const char* str, size_t size){
         result = (result * 10) + digit;
     }
     return result;
+}
+
+int64_t parse_int64(const char* str, size_t size){
+    uint64_t result = 0;
+    bool neg = false;
+    for (uint32_t i = 0; i < size; i++){
+        char c = str[i];
+        uint8_t digit = 0;
+        if (i == 0 && c == '-') neg = true;
+        else if (c >= '0' && c <= '9') digit = c - '0';
+        else break;
+        result = (result * 10) + digit;
+    }
+    return neg ? -result : result;
 }
 
 string string_from_const(const char *lit)
@@ -1198,4 +1215,18 @@ size_t strncpy(char* dst, size_t cap, const char* src){
     while (i<cap-1 && src[i]!=0){ dst[i]=src[i]; i++; }
     dst[i]=0;
     return i;
+}
+
+bool parse_uint32_dec(const char *s, uint32_t *out) {
+    if (!s || !*s) return false;
+    uint64_t v = parse_int_u64(s, UINT32_MAX);
+    if (v == 0 && s[0] != '0') return false;
+    if (v > UINT32_MAX) return false;
+    *out = (uint32_t)v;
+    return true;
+}
+
+void strcat(const char *a, const char *b, char *dest){
+    while (*a) *dest++ = *a++;
+    while (*b) *dest++ = *b++;
 }

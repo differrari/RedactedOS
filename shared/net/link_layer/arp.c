@@ -7,6 +7,7 @@
 #include "console/kio.h"
 #include "net/internet_layer/ipv4.h"
 #include "syscalls/syscalls.h"
+#include "net/internet_layer/ipv4_utils.h"
 
 typedef struct arp_table {
     arp_entry_t entries[ARP_TABLE_MAX];

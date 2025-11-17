@@ -53,15 +53,18 @@ int count_occurrences(const char* str, char c);
 
 uint64_t parse_hex_u64(const char* str, size_t size);
 uint64_t parse_int_u64(const char* str, size_t size);
+int64_t parse_int64(const char* str, size_t size);
 
 bool utf16tochar(uint16_t* str_in, char* out_str, size_t max_len);
 
+void strcat(const char *a, const char *b, char *dest);
 string string_from_const(const char *literal);
 string string_concat(string a, string b);
 void string_concat_inplace(string *dest, string src);
 void string_append_bytes(string *dest, const void *buf, uint32_t len);
 const char* seek_to(const char *string, char character);
 size_t strncpy(char* dst, size_t cap, const char* src);
+bool parse_uint32_dec(const char *s, uint32_t *out);
 
 #ifdef __cplusplus
 }

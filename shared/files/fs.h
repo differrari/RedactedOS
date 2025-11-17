@@ -1,5 +1,9 @@
 #pragma once
 
+#define FD_INVALID 0
+#define FD_IN 1
+#define FD_OUT 2
+
 typedef struct file {
     uint64_t id;
     size_t size;

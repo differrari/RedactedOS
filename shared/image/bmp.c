@@ -58,9 +58,9 @@ void bmp_read_image(void *file, size_t size, uint32_t *buf){
 }
 
 void* load_bmp(char *path, image_info *info){
-    file descriptor;
+    file descriptor = {};
     FS_RESULT res = fopen(path, &descriptor);
-    void *img;
+    void *img = 0;
     image_info img_info;
     if (res == FS_RESULT_SUCCESS){
         void *img_file = (void*)malloc(descriptor.size);

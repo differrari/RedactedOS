@@ -25,6 +25,7 @@ LOAD_ADDR      ?= 0x41000000
 XHCI_CTX_SIZE  ?= 32
 QEMU           ?= true
 MODE           ?= virt
+TEST           ?= false
 
 ifeq ($(V), 1)
   VAR  = $(AR)

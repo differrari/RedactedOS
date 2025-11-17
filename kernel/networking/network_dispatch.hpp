@@ -2,10 +2,10 @@
 #include "types.h"
 #include "std/std.h"
 #include "drivers/net_driver.hpp"
-#include "data_struct/queue.hpp"
 #include "net/network_types.h"
 #include "net/internet_layer/ipv4.h"
 #include "interface_manager.h"
+#include "data_struct/data_struct.hpp"
 
 class NetworkDispatch {
 public:
@@ -49,12 +49,17 @@ private:
         uint32_t speed_mbps;
         uint8_t duplex_mode;
         uint8_t kind_val;
-        Queue<sizedptr> tx;
-        Queue<sizedptr> rx;
+        RingBuffer<sizedptr, 1024> tx;
+        RingBuffer<sizedptr, 1024> rx;
+        uint64_t rx_produced;
+        uint64_t rx_consumed;
+        uint64_t tx_produced;
+        uint64_t tx_consumed;
+        uint64_t rx_dropped;
+        uint64_t tx_dropped;
     };
 
     static const size_t MAX_NIC = 16;
-    static const size_t QUEUE_CAPACITY = 1024;
 
     NICCtx nics[MAX_NIC];
     size_t nic_num;

@@ -11,7 +11,7 @@ endif
 
 .PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
 
-all: kshared kernel shared user utils
+all: kshared kernel shared user utils bins
 	@echo "Build complete."
 	./createfs
 
@@ -25,16 +25,24 @@ user: shared prepare-fs
 	$(MAKE) -C user
 
 kernel: kshared
-	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU)
+	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU) TEST=$(TEST)
 
 utils: shared prepare-fs
 	$(MAKE) -C utils
+
+bins: shared prepare-fs
+	$(MAKE) -C bin
+
+test:
+	$(MAKE) $(MODE) QEMU=true TEST=true all
+	./run_$(MODE)
 
 clean:
 	$(MAKE) -C shared $@
 	$(MAKE) -C user   $@
 	$(MAKE) -C kernel $@
 	$(MAKE) -C utils  $@
+	$(MAKE) -C bin  $@
 	@echo "removing fs dirs"
 	$(RM) -r $(FS_DIRS)
 	@echo "removing images"

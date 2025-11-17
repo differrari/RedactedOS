@@ -1,4 +1,4 @@
-#define BOOTSCREEN_TEXT "[REDACTED] Operating System"
+#define SYSTEM_NAME "[REDACTED] Operating System"
 
 #define BOOTSCREEN_NUM_SYMBOLS 8
 #define BOOTSCREEN_NUM_STEPS 7
@@ -29,11 +29,8 @@
 #define BOOTSCREEN_LOWER_Y_CONST 30
 
 #define PANIC_TEXT "FATAL ERROR"
-#define default_pwd "hi"
+#define DEFAULT_PWD "hi"
 
 #define BG_COLOR 0xFF222233
 #define CURSOR_COLOR_DESELECTED 0xFFFFFFFF
 #define CURSOR_COLOR_SELECTED 0xFF9714DE
-
-#define COLOR_WHITE 0xFFFFFFFF
-#define COLOR_BLACK 0

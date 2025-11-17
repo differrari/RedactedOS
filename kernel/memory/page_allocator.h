@@ -25,6 +25,7 @@ extern "C" {
 #endif
 void page_alloc_enable_verbose();
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full);
+void free_managed_page(void* ptr);
 void pfree(void* ptr, uint64_t size);
 void mark_used(uintptr_t address, size_t pages);
 

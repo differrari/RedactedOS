@@ -7,7 +7,7 @@ extern "C" {
 
 template <typename T>
 class LinkedList {
-private:
+public:
     struct Node {
         T data;
         Node* next;

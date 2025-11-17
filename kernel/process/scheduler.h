@@ -12,8 +12,8 @@ typedef enum {
 
 #define MAX_PROCS 64
 
-#define PROC_PRIORITY_FULL 250
-#define PROC_PRIORITY_HIGH 25
+#define PROC_PRIORITY_FULL 25
+#define PROC_PRIORITY_HIGH 10
 #define PROC_PRIORITY_LOW  1
 
 void switch_proc(ProcSwitchReason reason);
@@ -52,3 +52,5 @@ process_t *get_all_processes();
 extern driver_module scheduler_module;
 
 extern uint64_t ksp;
+
+extern bool allow_va;//TODO: this is a hack so processes don't overwrite each other's memory

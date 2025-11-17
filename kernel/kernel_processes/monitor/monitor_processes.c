@@ -64,15 +64,15 @@ void draw_memory(char *name,int x, int y, int width, int full_height, int used, 
 
     int used_height = max((used * height) / size,1);
 
-    gpu_fill_rect((gpu_rect){{stack_top.x + 1, stack_top.y + height - used_height + 1}, {width - 2, used_height-1}}, BG_COLOR);
+    gpu_fill_rect((gpu_rect){{stack_top.x + 1, stack_top.y + height - used_height + 1}, {width - 2, used_height-1}}, system_theme.bg_color);
 
     string str = string_format("%s\n%x",(uintptr_t)name, used);
-    gpu_draw_string(str, (gpu_point){stack_top.x, stack_top.y + height + 5}, 2, BG_COLOR);
+    gpu_draw_string(str, (gpu_point){stack_top.x, stack_top.y + height + 5}, 2, system_theme.bg_color);
     free(str.data,str.mem_length);
 }
 
 void draw_process_view(){
-    gpu_clear(BG_COLOR+0x112211);
+    gpu_clear(system_theme.bg_color+0x112211);
     process_t *processes = get_all_processes();
     gpu_size screen_size = gpu_get_screen_size();
     gpu_point screen_middle = {screen_size.width / 2, screen_size.height / 2};
@@ -120,11 +120,11 @@ void draw_process_view(){
 
         int xo = (i * (screen_size.width / PROCS_PER_SCREEN)) + 50;
 
-        gpu_draw_string(name, (gpu_point){xo, name_y}, scale, BG_COLOR);
-        gpu_draw_string(state, (gpu_point){xo, state_y}, scale, BG_COLOR);
+        gpu_draw_string(name, (gpu_point){xo, name_y}, scale, system_theme.bg_color);
+        gpu_draw_string(state, (gpu_point){xo, state_y}, scale, system_theme.bg_color);
         
         string pc = string_from_hex(proc->pc);
-        gpu_draw_string(pc, (gpu_point){xo, pc_y}, scale, BG_COLOR);
+        gpu_draw_string(pc, (gpu_point){xo, pc_y}, scale, system_theme.bg_color);
         free(pc.data, pc.mem_length);
         
         draw_memory("Stack", xo, stack_y, stack_width, stack_height, proc->stack - proc->sp, proc->stack_size);
@@ -133,7 +133,7 @@ void draw_process_view(){
         draw_memory("Heap", xo + stack_width + 50, stack_y, stack_width, stack_height, heap, heap_limit);
 
         string flags = string_format("Flags: %x", proc->spsr);
-        gpu_draw_string(flags, (gpu_point){xo, flags_y}, scale, BG_COLOR);
+        gpu_draw_string(flags, (gpu_point){xo, flags_y}, scale, system_theme.bg_color);
         free(name.data, name.mem_length);
         free(state.data, state.mem_length);
         free(flags.data, flags.mem_length);

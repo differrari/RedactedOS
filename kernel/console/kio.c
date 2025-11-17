@@ -157,8 +157,8 @@ file_offset console_seek(file *fd, file_offset offset){
     return 0;
 }
 
-sizedptr console_readdir(const char* path){
-    return (sizedptr){ 0, 0 };
+size_t console_readdir(const char* path, void *buf, size_t size, file_offset offset){
+    return 0;
 }
 
 driver_module console_module = (driver_module){
@@ -170,7 +170,8 @@ driver_module console_module = (driver_module){
     .open = console_open,
     .read = console_read,
     .write = console_write,
-    .seek = console_seek,
+    .sread = 0,
+    .swrite = 0,//TODO implement simple io
     .readdir = console_readdir,
 };
 

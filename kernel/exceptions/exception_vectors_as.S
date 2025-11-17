@@ -1,5 +1,5 @@
 .macro save_ctx
-msr daifset, #2
+    msr daifset, #2
     mrs     x18, spsr_el1
     lsr     x18, x18, #2
     and     x18, x18, #0b11
