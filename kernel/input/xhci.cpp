@@ -151,7 +151,7 @@ bool XHCIDriver::init(){
 
     mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
 
-    uintptr_t dcbaap_addr = (uintptr_t)kalloc(mem_page, (max_device_slots + 1) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL);
+    uintptr_t dcbaap_addr = VIRT_TO_PHYS((uintptr_t)kalloc(mem_page, (max_device_slots + 1) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL));
 
     op->dcbaap = dcbaap_addr;
 
@@ -159,7 +159,7 @@ bool XHCIDriver::init(){
 
     uint32_t scratchpad_count = ((cap->hcsparams2 >> 27) & 0x1F);
 
-    dcbaap = (uintptr_t*)dcbaap_addr;
+    dcbaap = (uintptr_t*)PHYS_TO_VIRT(dcbaap_addr);
 
     uint64_t* scratchpad_array = (uint64_t*)kalloc(mem_page, (scratchpad_count == 0 ? 1 : scratchpad_count) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL);
     for (uint32_t i = 0; i < scratchpad_count; i++)
@@ -168,7 +168,7 @@ bool XHCIDriver::init(){
 
     kprintfv("[xHCI] dcbaap assigned at %llx with %i scratchpads",dcbaap_addr,scratchpad_count);
 
-    command_ring.ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
+    command_ring.ring = (trb*)VIRT_TO_PHYS_P(kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL));
 
     op->crcr = (uintptr_t)command_ring.ring | command_ring.cycle_bit;
 
@@ -254,8 +254,8 @@ bool XHCIDriver::enable_events(){
     kprintfv("[xHCI] Allocating ERST");
     interrupter = (xhci_interrupter*)(rt_base + 0x20);
 
-    uint64_t ev_ring = (uintptr_t)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
-    uint64_t erst_addr = (uintptr_t)kalloc(mem_page, MAX_ERST_AMOUNT * sizeof(erst_entry), ALIGN_64B, MEM_PRIV_KERNEL);
+    uint64_t ev_ring = VIRT_TO_PHYS((uintptr_t)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL));
+    uint64_t erst_addr = VIRT_TO_PHYS((uintptr_t)kalloc(mem_page, MAX_ERST_AMOUNT * sizeof(erst_entry), ALIGN_64B, MEM_PRIV_KERNEL));
     erst_entry* erst = (erst_entry*)erst_addr;
 
     erst->ring_base = ev_ring;
@@ -377,10 +377,10 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
 
     transfer_ring->cycle_bit = 1;
 
-    xhci_input_context *ctx = (xhci_input_context*)kalloc(mem_page, sizeof(xhci_input_context), ALIGN_64B, MEM_PRIV_KERNEL);
+    xhci_input_context *ctx = (xhci_input_context*)VIRT_TO_PHYS_P(kalloc(mem_page, sizeof(xhci_input_context), ALIGN_64B, MEM_PRIV_KERNEL));
     kprintfv("[xHCI] Allocating input context at %llx", (uintptr_t)ctx);
-    context_map[address << 8] = ctx;
-    void* output_ctx = (void*)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL);
+    context_map[address << 8] = (xhci_input_context *)ctx;
+    void* output_ctx = VIRT_TO_PHYS_P((void*)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL));
     kprintfv("[xHCI] Allocating output for context at %llx", (uintptr_t)output_ctx);
     
     ctx->control_context.add_flags = 0b11;
@@ -400,10 +400,10 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
     make_ring_link(transfer_ring->ring, transfer_ring->cycle_bit);
 
     ctx->device_context.endpoints[0].endpoint_f23.dcs = transfer_ring->cycle_bit;
-    ctx->device_context.endpoints[0].endpoint_f23.ring_ptr = ((uintptr_t)transfer_ring->ring) >> 4;
+    ctx->device_context.endpoints[0].endpoint_f23.ring_ptr = VIRT_TO_PHYS((uintptr_t)transfer_ring->ring) >> 4;
     ctx->device_context.endpoints[0].endpoint_f4.average_trb_length = sizeof(trb);
 
-    dcbaap[address] = (uintptr_t)output_ctx;
+    dcbaap[address] = VIRT_TO_PHYS((uintptr_t)output_ctx);
 
     return USBDriver::setup_device(address, port);
 }
@@ -501,7 +501,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     ep_ring->cycle_bit = 1;
     make_ring_link(ep_ring->ring, ep_ring->cycle_bit);
     ctx->device_context.endpoints[ep_num-1].endpoint_f23.dcs = ep_ring->cycle_bit;
-    ctx->device_context.endpoints[ep_num-1].endpoint_f23.ring_ptr = ((uintptr_t)ep_ring->ring) >> 4;
+    ctx->device_context.endpoints[ep_num-1].endpoint_f23.ring_ptr = VIRT_TO_PHYS((uintptr_t)ep_ring->ring) >> 4;
     ctx->device_context.endpoints[ep_num-1].endpoint_f4.average_trb_length = sizeof(trb);
 
     if (!issue_command((uintptr_t)ctx, 0, (address << 24) | (TRB_TYPE_CONFIG_EP << 10))){

@@ -284,7 +284,7 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
                 kprintf("%i: caller address: %x", depth, return_address, return_address);
             fp = *(uintptr_t*)fp;
         } else return;
-        
+
     }
 }
 
@@ -378,11 +378,11 @@ void sync_el0_handler_c(){
             }
             if (currentEL == 1){
                 kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
-                coredump(esr, elr, far, proc->sp);
+                if (syscall_depth < 2) coredump(esr, elr, far, proc->sp);
                 handle_exception("UNEXPECTED EXCEPTION",ec);
             } else {
                 kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
-                coredump(esr, elr, far, proc->sp);
+                if (syscall_depth < 2) coredump(esr, elr, far, proc->sp);
                 syscall_depth--;
                 stop_current_process(ec);
             }

@@ -253,7 +253,6 @@ void register_device_memory_2mb(uint64_t va, uint64_t pa){
 void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t level){
     if (pttrb && pttrb != kernel_mmu_page)
         mmu_map_4kb(pttrb, va, pa, MAIR_IDX_NORMAL, attributes, level);
-    
     mmu_map_4kb(kernel_mmu_page, va, pa, MAIR_IDX_NORMAL, attributes, level);
     mmu_flush_all();
     mmu_flush_icache();

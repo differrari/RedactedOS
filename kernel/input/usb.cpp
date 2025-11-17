@@ -4,6 +4,7 @@
 #include "std/string.h"
 #include "memory/page_allocator.h"
 #include "usb_types.h"
+#include "sysregs.h"
 
 uint16_t USBDriver::packet_size(uint16_t speed){
     switch (speed) {
@@ -25,7 +26,7 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
     }
     usb_device_descriptor* descriptor = (usb_device_descriptor*)kalloc(mem_page, sizeof(usb_device_descriptor), ALIGN_64B, MEM_PRIV_KERNEL);
     
-    if (!request_descriptor(address, 0, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
+    if (!request_descriptor(address, 0, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, VIRT_TO_PHYS_P(descriptor))){
         kprintf("[USB error] failed to get device descriptor");
         return false;
     }
@@ -34,7 +35,7 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
 
     bool use_lang_desc = true;
 
-    if (!request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, 0, 0, lang_desc)){
+    if (!request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, 0, 0, VIRT_TO_PHYS_P(lang_desc))){
         kprintf("[USB warning] failed to get language descriptor");
         use_lang_desc = false;
     }
@@ -48,21 +49,21 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
         //TODO: we want to maintain the strings so we can have USB device information
         uint16_t langid = lang_desc->lang_ids[0];
         usb_string_descriptor* prod_name = (usb_string_descriptor*)kalloc(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, MEM_PRIV_KERNEL);
-        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){
+        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, VIRT_TO_PHYS_P(prod_name))){
             char name[128];
             if (utf16tochar(prod_name->unicode_string, name, sizeof(name))) {
                 kprintf("[USB device] Product name: %s", (uint64_t)name);
             }
         }
         usb_string_descriptor* man_name = (usb_string_descriptor*)kalloc(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, MEM_PRIV_KERNEL);
-        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, man_name)){
+        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, VIRT_TO_PHYS_P(man_name))){
             char name[128];
             if (utf16tochar(man_name->unicode_string, name, sizeof(name))) {
                 kprintf("[USB device] Manufacturer name: %s", (uint64_t)name);
             }
         }
         usb_string_descriptor* ser_name = (usb_string_descriptor*)kalloc(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, MEM_PRIV_KERNEL);
-        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, ser_name)){
+        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, VIRT_TO_PHYS_P(ser_name))){
             char name[128];
             if (utf16tochar(ser_name->unicode_string, name, sizeof(name))) {
                 kprintf("[USB device] Serial: %s", (uint64_t)name);
@@ -77,7 +78,7 @@ bool USBDriver::get_configuration(uint8_t address){
 
     usb_manager->register_device(address);
 
-    usb_configuration_descriptor* config = (usb_configuration_descriptor*)kalloc(mem_page, sizeof(usb_configuration_descriptor), ALIGN_64B, MEM_PRIV_KERNEL);
+    usb_configuration_descriptor* config = (usb_configuration_descriptor*)VIRT_TO_PHYS_P(kalloc(mem_page, sizeof(usb_configuration_descriptor), ALIGN_64B, MEM_PRIV_KERNEL));
     if (!request_sized_descriptor(address, 0, 0x80, 6, USB_CONFIGURATION_DESCRIPTOR, 0, 0, 8, config)){
         kprintf("[USB error] could not get config descriptor header");
         return false;

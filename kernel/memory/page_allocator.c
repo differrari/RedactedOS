@@ -7,6 +7,7 @@
 #include "math/math.h"
 #include "console/kio.h"
 #include "process/scheduler.h"
+#include "sysregs.h"
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01
@@ -207,7 +208,7 @@ void mark_used(uintptr_t address, size_t pages)
 #define PAGE_INDEX_LIMIT (PAGE_SIZE-sizeof(page_index_hdr))/sizeof(page_index_entry)
 
 //TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
-void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
+void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
     
     size = (size + alignment - 1) & ~(alignment - 1);
@@ -273,6 +274,13 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     memset((void*)result, 0, size);
     info->size += size;
     return (void*)result;
+}
+
+//TODO: rather than kalloc, it should be palloc that does translations
+void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
+    void* ptr = kalloc_inner(page, size, alignment, level);
+    if (level == MEM_PRIV_KERNEL) ptr = PHYS_TO_VIRT_P(ptr);
+    return ptr;
 }
 
 void kfree(void* ptr, uint64_t size) {
