@@ -377,11 +377,11 @@ void sync_el0_handler_c(){
                 }
             }
             if (currentEL == 1){
-                kprintf("System has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
+                kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
                 coredump(esr, elr, far, proc->sp);
                 handle_exception("UNEXPECTED EXCEPTION",ec);
             } else {
-                kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
+                kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
                 coredump(esr, elr, far, proc->sp);
                 syscall_depth--;
                 stop_current_process(ec);
