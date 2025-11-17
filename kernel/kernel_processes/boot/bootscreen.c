@@ -140,9 +140,6 @@ int bootscreen(){
             current_point = next_point;
         }
         sleep(1000);
-        if (boot_theme.play_startup_sound){
-            close_idle_mixer_inputs();
-        }
     }
     return 0;
 }
