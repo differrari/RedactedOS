@@ -2,6 +2,7 @@
 
 .global mmu_start
 mmu_start://(uint64_t *page x0)
+.type mmu_start, %function
     ldr x3, =MAIR_VALUE
     msr mair_el1, x3
     ldr x3, =TCR_VALUE
@@ -42,10 +43,12 @@ mmu_start://(uint64_t *page x0)
     orr x0, x0, x1
     mov x30, x0
 
+    ldr x0, [sp, #8]
+    orr x0, x0, x1
+    str x0, [sp, #8]
+
     mrs x0, vbar_el1
     orr x0, x0, x1
     msr vbar_el1, x0
-
-    ldr x0, =mmu_finish
-    orr x0, x0, x1
-    br x0
+    
+    ret

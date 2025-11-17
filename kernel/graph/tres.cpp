@@ -45,6 +45,7 @@ extern "C" void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t h
 }
 
 int find_window(void *node, void *key){
+    if (!node || !key) return -1;
     window_frame* frame = (window_frame*)node;
     uint16_t wid = *(uint16_t*)key;
     if (frame->win_id == wid) return 0;

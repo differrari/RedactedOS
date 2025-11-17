@@ -204,15 +204,12 @@ void mmu_init() {
 
     mmu_start(kernel_mmu_page);
 
-    asm volatile (".global mmu_finish\nmmu_finish:");
-
     kprintf("Finished MMU init");
 }
 
 void mmu_copy(uintptr_t *new_ttrb, uintptr_t *old_ttrb, int level){
     for (int i = 0; i < PAGE_TABLE_ENTRIES; i++){
         if (old_ttrb[i] & 1){
-            kprintf("TLE %b %x %i",old_ttrb[i] & 0b11,old_ttrb[i],level);
             if (level == 3 || (old_ttrb[i] & 0b11) == PD_BLOCK){
                 new_ttrb[i] = old_ttrb[i];
             } else {
@@ -247,7 +244,7 @@ void register_device_memory(uint64_t va, uint64_t pa){
 
 void register_device_memory_2mb(uint64_t va, uint64_t pa){
     if (pttrb && pttrb != kernel_mmu_page)//TODO: This won't be necessary once kernel is exclusively in ttbr1
-        mmu_map_4kb(pttrb, va, pa, MAIR_IDX_DEVICE, MEM_RW, MEM_PRIV_KERNEL);
+        mmu_map_2mb(pttrb, va, pa, MAIR_IDX_DEVICE);
     mmu_map_2mb(kernel_mmu_page, va, pa, MAIR_IDX_DEVICE);
     mmu_flush_all();
     mmu_flush_icache();
