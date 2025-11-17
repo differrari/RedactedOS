@@ -67,3 +67,4 @@
 #define PHYS_TO_VIRT(x) (x | HIGH_VA)
 
 #define VIRT_TO_PHYS_P(x) ((void*)(((uintptr_t)x) & ~HIGH_VA))
+#define PHYS_TO_VIRT_P(x) ((void*)(((uintptr_t)x) | HIGH_VA))
