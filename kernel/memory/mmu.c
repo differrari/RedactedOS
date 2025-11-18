@@ -213,15 +213,11 @@ void mmu_copy(uintptr_t *new_ttrb, uintptr_t *old_ttrb, int level){
             if (level == 3 || (old_ttrb[i] & 0b11) == PD_BLOCK){
                 new_ttrb[i] = old_ttrb[i];
             } else {
-                kprintf("Old Entry %x",old_ttrb[i]);
                 uintptr_t *old_entry = (uintptr_t*)(old_ttrb[i] & 0xFFFFFFFFF000ULL);
                 uintptr_t *new_entry = mmu_alloc();
                 if (!old_entry || !new_entry) continue;
-                kprintf("[%i] %x -> %x",level,old_entry, new_entry);
                 uint64_t entry = old_ttrb[i] & ~(0xFFFFFFFFF000ULL);
-                kprintf("Entry %x",entry);
                 new_ttrb[i] = entry | ((uintptr_t)new_entry & 0xFFFFFFFFF000ULL);
-                kprintf("Full entry %x",new_ttrb[i]);
                 if (level < 3) mmu_copy(new_entry, old_entry, level+1);
             }
         }

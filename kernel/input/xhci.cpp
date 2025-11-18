@@ -293,7 +293,7 @@ void XHCIDriver::make_ring_link_control(trb* ring, bool cycle){
 }
 
 void XHCIDriver::make_ring_link(trb* ring, bool cycle){
-    ring[MAX_TRB_AMOUNT-1].parameter = (uintptr_t)ring;
+    ring[MAX_TRB_AMOUNT-1].parameter = VIRT_TO_PHYS((uintptr_t)ring);
     ring[MAX_TRB_AMOUNT-1].status = 0;
     make_ring_link_control(ring, cycle);
 }
