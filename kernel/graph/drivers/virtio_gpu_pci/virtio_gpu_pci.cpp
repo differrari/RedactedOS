@@ -5,6 +5,7 @@
 #include "std/std.h"
 #include "theme/theme.h"
 #include "memory/page_allocator.h"
+#include "sysregs.h"
 
 #define VIRTIO_GPU_CMD_GET_DISPLAY_INFO         0x0100
 #define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D       0x0101
@@ -72,7 +73,7 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     resource_id_counter = 0;
     
     framebuffer_size = screen_size.width * screen_size.height * BPP;
-    framebuffer = (uintptr_t)kalloc(gpu_dev.memory_page, framebuffer_size, ALIGN_4KB, MEM_PRIV_KERNEL);
+    framebuffer = VIRT_TO_PHYS((uintptr_t)kalloc(gpu_dev.memory_page, framebuffer_size, ALIGN_4KB, MEM_PRIV_KERNEL));
 
     ctx = {
         .dirty_rects = {},
@@ -454,7 +455,7 @@ uint32_t VirtioGPUDriver::new_cursor(uint32_t color){
     uint32_t *cursor = (uint32_t*)kalloc(gpu_dev.memory_page, cursor_size, ALIGN_4KB, MEM_PRIV_KERNEL);
     draw_ctx ctx = {{},cursor, 64 * BPP, 64, 64, 0,0};
     fb_draw_cursor(&ctx, color);
-    attach_backing(id, (sizedptr){(uintptr_t)cursor, cursor_size});
+    attach_backing(id, (sizedptr){VIRT_TO_PHYS((uintptr_t)cursor), cursor_size});
     transfer_to_host(id, {{0,0},{64,64}});
     return id;
 }
