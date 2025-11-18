@@ -83,9 +83,9 @@ static audio_samples audio[MIXER_INPUTS];
 
 int audio_example(){
     for (int i = 0; i < MIXER_INPUTS; ++i) mixin[i] = -1;
-    mixer_set_level(AUDIO_LEVEL_MAX * 0.75f);
+    mixer_master_level(AUDIO_LEVEL_MAX * 0.75f);
     if (wav_load_as_int16("/resources/scale.wav", audio)){
-        mixin[0] = play_audio_sync(&audio[0], AUDIO_LEVEL_MAX/4);
+        mixin[0] = audio_play_sync(&audio[0], 0, AUDIO_ONESHOT, AUDIO_LEVEL_MAX/4, PAN_CENTRE);
         return 0;
     }else{
         printf("Could not load wav");
