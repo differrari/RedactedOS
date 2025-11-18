@@ -94,41 +94,26 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
     }
 }
 
-
-static int8_t mixin[MIXER_INPUTS] = { NULL };
-static audio_samples audio[MIXER_INPUTS];
-
-static void close_idle_mixer_inputs(){
-    for (int i = 0; i < MIXER_INPUTS; ++i){
-        if (mixin[i] >= 0){
-            if (mixer_still_playing(mixin[i]) == false){
-                mixer_close_line(mixin[i]);
-                mixin[i] = -1;
-                free((char*)audio[i].samples.ptr, audio[i].samples.size);
-            }
-        }
-    }
-}
+static audio_samples audio[3];
 
 static void play_startup_sound(){
-    for (int i = 0; i < MIXER_INPUTS; ++i) mixin[i] = -1;
-    mixer_set_level(AUDIO_LEVEL_MAX * 0.75f);
+    mixer_master_level(AUDIO_LEVEL_MAX / 2);
     if (wav_load_as_int16("/boot/redos/startup.wav", audio)){
-        mixin[0] = play_audio_async(&audio[0], AUDIO_LEVEL_MAX/4);
+        audio_play_async(&audio[0], 0, AUDIO_ONESHOT_FREE, AUDIO_LEVEL_MAX / 12, PAN_CENTRE);
     }else{
         static envelope_defn env = { ENV_ASD, 0.025, 0.03 };
         static sound_defn s0 = { WAVE_SQUARE, 440, 440 };
         static sound_defn s1 = { WAVE_SQUARE, 587.33, 587.33 };
         static sound_defn s2 = { WAVE_SQUARE, 659.25, 659.25 };
-        sound_create(4.f, 0.f, &s0, &audio[0]);
+        sound_create(3.f, &s0, &audio[0]);
         sound_shape(&env, &audio[0]);
-        sound_create(4.f, 0.15f, &s1, &audio[1]);
+        sound_create(3.f, &s1, &audio[1]);
         sound_shape(&env, &audio[1]);
-        sound_create(4.f, 0.30f, &s2, &audio[2]);
+        sound_create(3.f, &s2, &audio[2]);
         sound_shape(&env, &audio[2]);
-        mixin[0] = play_audio_async(&audio[0], AUDIO_LEVEL_MAX/4);
-        mixin[1] = play_audio_async(&audio[1], AUDIO_LEVEL_MAX/5);
-        mixin[2] = play_audio_async(&audio[2], AUDIO_LEVEL_MAX/6);
+        audio_play_async(&audio[0], 0, AUDIO_ONESHOT_FREE, AUDIO_LEVEL_MAX / 16, PAN_HALFLEFT);
+        audio_play_async(&audio[1], 150, AUDIO_ONESHOT_FREE, AUDIO_LEVEL_MAX / 16, PAN_CENTRE);
+        audio_play_async(&audio[2], 300, AUDIO_ONESHOT_FREE, AUDIO_LEVEL_MAX / 16, PAN_HALFRIGHT);
     }
 }
 
@@ -155,9 +140,6 @@ int bootscreen(){
             current_point = next_point;
         }
         sleep(1000);
-        if (boot_theme.play_startup_sound){
-            close_idle_mixer_inputs();
-        }
     }
     return 0;
 }

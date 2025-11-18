@@ -39,7 +39,6 @@ static void transform_16bit(wav_format_chunk *fmt_chunk, uint32_t data_size, aud
     audio->samples.ptr = (uintptr_t)malloc(audio->samples.size);
     audio->smpls_per_channel = audio->samples.size / (sizeof(int16_t) * fmt_chunk->channels);
     audio->channels = fmt_chunk->channels;
-    audio->secs = audio->smpls_per_channel / 44100.f;
     uint32_t samples_remaining = data_size / sizeof(int16_t);
     int16_t* source = tbuf;
     int16_t* dest = (int16_t*)audio->samples.ptr;
@@ -59,7 +58,6 @@ static void transform_8bit(wav_format_chunk *fmt_chunk, uint32_t data_size, audi
     audio->samples.ptr = (uintptr_t)malloc(audio->samples.size);
     audio->smpls_per_channel = audio->samples.size / (sizeof(int16_t) * fmt_chunk->channels);
     audio->channels = fmt_chunk->channels;
-    audio->secs = audio->smpls_per_channel / 44100.f;
     uint32_t samples_remaining = data_size;
     uint8_t* source = tbuf;
     int16_t* dest = (int16_t*)audio->samples.ptr;
@@ -128,7 +126,6 @@ bool wav_load_as_int16(const char* path, audio_samples* audio){
                     fread(&fd, (char*)audio->samples.ptr, audio->samples.size);
                     audio->smpls_per_channel = ch_hdr.ck_size / (sizeof(int16_t) * fmt_chunk.channels);
                     audio->channels = fmt_chunk.channels;
-                    audio->secs = audio->smpls_per_channel / 44100.f;
                 } else if (fmt_chunk.sample_bits == 16){
                     transform_16bit(&fmt_chunk, ch_hdr.ck_size, audio, upsample, &fd);
                 } else if (fmt_chunk.sample_bits == 8){

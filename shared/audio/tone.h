@@ -34,7 +34,7 @@ typedef struct envelope_defn {
 extern "C" {
 #endif
 
-void sound_create(float seconds, float delay, sound_defn *sound, audio_samples *audio);
+void sound_create(float seconds, sound_defn *sound, audio_samples *audio);
 void sound_shape(envelope_defn* env, audio_samples* audio);
 
 #ifdef __cplusplus
