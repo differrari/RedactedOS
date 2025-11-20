@@ -30,14 +30,14 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
 
     proc->sp = proc->stack;
     
-    proc->pc = ((uintptr_t)func) | HIGH_VA;
+    proc->pc = PHYS_TO_VIRT(((uintptr_t)func));
     kprintf("Kernel process %s (%i) allocated with address at %llx, stack at %llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->pc, proc->sp, proc->heap, argc);
     proc->spsr = 0x205;
     proc->state = READY;
     proc->PROC_X0 = argc;
     proc->PROC_X1 = (uintptr_t)argv;
 
-    proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, true);
+    proc->output = PHYS_TO_VIRT((uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, true));
 
     enable_interrupt();
     
