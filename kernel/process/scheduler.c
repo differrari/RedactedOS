@@ -365,10 +365,8 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     if (fd->id == FD_OUT){
         process_t *proc = get_current_proc();
         pbuf = proc->output;
-        if (size >= PROC_OUT_BUF){
-            kprint("Output too large");
-            return 0;
-        }
+        if (size > PROC_OUT_BUF)
+            size = PROC_OUT_BUF;
     } else {
         node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
         if (!node->data) return 0;
