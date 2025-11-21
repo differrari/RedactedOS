@@ -14,6 +14,7 @@
 #include "math/math.h"
 #include "memory/mmu.h"
 #include "process/syscall.h"
+#include "sysregs.h"
 
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
@@ -316,7 +317,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
         file->buffer = proc->output;
     } else if (strcmp(path, "state", true) == 0){
         descriptor->size = sizeof(int);
-        file->buffer = (uintptr_t)&proc->state;
+        file->buffer = PHYS_TO_VIRT((uintptr_t)&proc->state);
         file->ignore_cursor = true;
         file->read_only = true;
     } else return FS_RESULT_NOTFOUND;
@@ -364,6 +365,10 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     if (fd->id == FD_OUT){
         process_t *proc = get_current_proc();
         pbuf = proc->output;
+        if (size >= PROC_OUT_BUF){
+            kprint("Output too large");
+            return 0;
+        }
     } else {
         node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
         if (!node->data) return 0;
@@ -372,10 +377,6 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
         pbuf = file->buffer;
     }
     
-    if (size >= PROC_OUT_BUF){
-        kprint("Output too large");
-        return 0;
-    }
     if (fd->cursor + size >= PROC_OUT_BUF){
         fd->cursor = 0;
         memset((void*)pbuf, 0, PROC_OUT_BUF);
@@ -383,8 +384,8 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     memcpy((void*)(pbuf + fd->cursor), buf, size);
     fd->cursor += size;
     //TODO: Need a better way to handle opening a file multiple times
-    for (clinkedlist_node_t *start = proc_opened_files->head; start != proc_opened_files->tail; start = start->next){
-        if (start != node){
+    for (clinkedlist_node_t *start = proc_opened_files->head; start != 0; start = start->next){
+        if (fd->id == FD_OUT || start != node){
             proc_open_file *n_file = (proc_open_file*)start->data;
             if (n_file && n_file->buffer == pbuf){
                 n_file->file_size += size;

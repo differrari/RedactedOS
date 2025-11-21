@@ -313,7 +313,7 @@ bool XHCIDriver::await_response(uint64_t command, uint32_t type){
         }
         for (; event_ring.index < MAX_TRB_AMOUNT; event_ring.index++){
             last_event = &event_ring.ring[event_ring.index];
-            kprintf("LAST EVENT %llx",last_event);
+            // kprintf("LAST EVENT %llx",last_event);
             if (!wait(&last_event->control, event_ring.cycle_bit, true, 2000)){
                 kprintf("[xHCI error] Timeout awaiting response to %llx command of type %llx", command, type);
                 awaited_type = 0;
