@@ -22,6 +22,7 @@
 #include "bin/bin_mod.h"
 #include "net/transport_layer/csocket.h"
 #include "loading/dwarf.h"
+#include "sysregs.h"
 
 
 int syscall_depth = 0;
@@ -31,11 +32,12 @@ uintptr_t cpec;
 typedef uint64_t (*syscall_entry)(process_t *ctx);
 
 uint64_t syscall_malloc(process_t *ctx){
-    void* page_ptr = syscall_depth > 1 ? (void*)get_proc_by_pid(1)->heap : (void*)get_current_heap();
+    void* page_ptr = (void*)mmu_translate(syscall_depth > 1 ? get_proc_by_pid(1)->heap : ctx->heap);
     if ((uintptr_t)page_ptr == 0x0){
         handle_exception("Wrong process heap state", 0);
     }
-    return (uintptr_t)kalloc(page_ptr, ctx->PROC_X0, ALIGN_16B, get_current_privilege());
+    size_t size = ctx->PROC_X0;
+    return (uintptr_t)kalloc_inner(page_ptr, size, ALIGN_16B, get_current_privilege(), ctx->heap, &ctx->last_va_mapping, ctx->ttbr);
 }
 
 uint64_t syscall_free(process_t *ctx){
@@ -284,7 +286,7 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
                 kprintf("%i: caller address: %x", depth, return_address, return_address);
             fp = *(uintptr_t*)fp;
         } else return;
-        
+
     }
 }
 
@@ -376,14 +378,16 @@ void sync_el0_handler_c(){
                     }
                 }
             }
-            //We could handle more exceptions now, such as x25 (unmasked x96) = data abort. 0x21 at end of 0x25 = alignment fault
             if (currentEL == 1){
-                kprintf("System has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
-                coredump(esr, elr, far, proc->sp);
-                handle_exception("UNEXPECTED EXCEPTION",ec);
+                if (syscall_depth < 3){
+                    if (syscall_depth == 1) kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
+                    if (syscall_depth < 2) coredump(esr, elr, far, proc->sp);
+                    handle_exception("UNEXPECTED EXCEPTION",ec);
+                }
+                while (true);
             } else {
-                kprintf("Process has crashed. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
-                coredump(esr, elr, far, proc->sp);
+                kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
+                if (syscall_depth < 2) coredump(esr, elr, far, proc->sp);
                 syscall_depth--;
                 stop_current_process(ec);
             }

@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/bin/sh
 
-MODE="raspi"
+MODE="virt"
 ARGS=()
 
 for arg in "$@"; do
@@ -10,11 +10,15 @@ for arg in "$@"; do
   esac
 done
 
-# osascript <<EOF
-# tell application "Terminal"
-#     do script "cd \"$PWD\"; ./run_$MODE debug"
-#     do script "cd \"$PWD\"; ./debug ${ARGS[*]}"
-# end tell
-# EOF
+echo $OS_TYPE
 
-(./run_$MODE debug) & (./debug ${ARGS[*]})
+if [[ "$(uname)" = "Darwin" ]]; then
+osascript <<EOF
+tell application "Terminal"
+    do script "cd \"$PWD\"; ./run_$MODE debug"
+    do script "cd \"$PWD\"; ./debug ${ARGS[*]}"
+end tell
+EOF
+else
+  (./run_$MODE debug) & (./debug ${ARGS[*]})
+fi

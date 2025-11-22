@@ -6,6 +6,7 @@
 #include "std/memory.h"
 #include "theme/theme.h"
 #include "memory/page_allocator.h"
+#include "sysregs.h"
 
 typedef struct {
     uint64_t addr;
@@ -71,7 +72,7 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
 
 void RamFBGPUDriver::update_gpu_fb(){
     ramfb_structure fb = {
-        .addr = __builtin_bswap64((uintptr_t)framebuffer),
+        .addr = __builtin_bswap64(VIRT_TO_PHYS((uintptr_t)framebuffer)),
         .fourcc = __builtin_bswap32(RGB_FORMAT_ARGB8888),
         .flags = __builtin_bswap32(0),
         .width = __builtin_bswap32(screen_size.width),

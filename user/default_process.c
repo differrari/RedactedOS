@@ -27,9 +27,6 @@ int img_example() {
     }
     resize_draw_ctx(&ctx, info.width+BORDER*2, info.height+BORDER*2);
     while (1) {
-        mouse_input mouse = {};
-        get_mouse_status(&mouse);
-        // printf("Mouse %i",mouse.x);
         keypress kp = {};
         // printf("Print console test %f", (get_time()/1000.f));
         if (read_key(&kp))

@@ -14,6 +14,7 @@
 #include "math/math.h"
 #include "memory/mmu.h"
 #include "process/syscall.h"
+#include "sysregs.h"
 
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
@@ -64,6 +65,7 @@ void switch_proc(ProcSwitchReason reason) {
     current_proc = next_proc;
     cpec = (uintptr_t)&processes[current_proc];
     timer_reset(processes[current_proc].priority);
+    mmu_swap_ttbr(processes[current_proc].ttbr);
     process_restore();
 }
 
@@ -112,8 +114,8 @@ void reset_process(process_t *proc){
     bool just_finished = processes[current_proc].id == proc->id;
     proc->sp = 0;
     if (!just_finished || !(processes[current_proc].PROC_PRIV))//Privileged processes use their own stack even in an exception. We'll free it when we reuse it
-        if (proc->stack) pfree((void*)proc->stack-proc->stack_size,proc->stack_size);
-    if (proc->heap) free_managed_page((void*)proc->heap);//Sadly, full pages of alloc'd memory are not kept track and will not be freed
+        if (proc->stack_phys) pfree((void*)proc->stack_phys-proc->stack_size,proc->stack_size);
+    if (proc->heap_phys) free_managed_page((void*)proc->heap_phys);
     proc->pc = 0;
     proc->spsr = 0;
     proc->exit_code = 0;
@@ -311,11 +313,11 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     file->pid = proc->id;
     
     if (strcmp(path, "out", true) == 0){
-        descriptor->size = 0;//TODO: sizeof buffer, could already have data
+        descriptor->size = proc->output_size;
         file->buffer = proc->output;
     } else if (strcmp(path, "state", true) == 0){
         descriptor->size = sizeof(int);
-        file->buffer = (uintptr_t)&proc->state;
+        file->buffer = PHYS_TO_VIRT((uintptr_t)&proc->state);
         file->ignore_cursor = true;
         file->read_only = true;
     } else return FS_RESULT_NOTFOUND;
@@ -363,6 +365,8 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     if (fd->id == FD_OUT){
         process_t *proc = get_current_proc();
         pbuf = proc->output;
+        if (size > PROC_OUT_BUF)
+            size = PROC_OUT_BUF;
     } else {
         node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
         if (!node->data) return 0;
@@ -371,23 +375,25 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
         pbuf = file->buffer;
     }
     
-    if (size >= PROC_OUT_BUF){
-        kprint("Output too large");
-        return 0;
-    }
     if (fd->cursor + size >= PROC_OUT_BUF){
         fd->cursor = 0;
         memset((void*)pbuf, 0, PROC_OUT_BUF);
     }
     memcpy((void*)(pbuf + fd->cursor), buf, size);
     fd->cursor += size;
-    //TODO: Need a better way to handle opening a file multiple times
-    for (clinkedlist_node_t *start = proc_opened_files->head; start != proc_opened_files->tail; start = start->next){
-        if (start != node){
-            proc_open_file *n_file = (proc_open_file*)start->data;
-            if (n_file && n_file->buffer == pbuf){
-                n_file->file_size += size;
-            } 
+    if (fd->id == FD_OUT){
+        process_t *proc = get_current_proc();
+        proc->output_size += size;
+    }
+    if (proc_opened_files && proc_opened_files->head){
+        //TODO: Need a better way to handle opening a file multiple times
+        for (clinkedlist_node_t *start = proc_opened_files->head; start != 0; start = start->next){
+            if (fd->id == FD_OUT || start != node){
+                proc_open_file *n_file = (proc_open_file*)start->data;
+                if (n_file && n_file->buffer == pbuf){
+                    n_file->file_size += size;
+                } 
+            }
         }
     }
     return size;

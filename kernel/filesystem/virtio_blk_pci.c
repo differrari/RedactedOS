@@ -1,3 +1,4 @@
+#include "virtio_blk_pci.h"
 #include "disk.h"
 #include "std/string.h"
 #include "std/memory_access.h"
@@ -6,28 +7,16 @@
 #include "pci.h"
 #include "virtio/virtio_pci.h"
 #include "std/memory.h"
-#include "virtio_blk_pci.h"
+#include "sysregs.h"
 
 #define VIRTIO_BLK_T_IN   0
 #define VIRTIO_BLK_T_OUT  1
 
-struct virtio_blk_req {
+typedef struct {
     uint32_t type;
     uint32_t reserved;
     uint64_t sector;
-} __attribute__((packed));
-
-struct virtio_blk_config {
-    uint64_t capacity;//In number of sectors
-    uint32_t size_max;
-    uint32_t seg_max;
-    struct {
-        uint16_t cylinders;
-        uint8_t heads;
-        uint8_t sectors;
-    } geometry;
-    uint32_t blk_size;
-} __attribute__((packed));
+} __attribute__((packed)) virtio_blk_req;
 
 #define VIRTIO_BLK_SUPPORTED_FEATURES \
     ((1 << 0) | (1 << 1) | (1 << 4))
@@ -72,28 +61,28 @@ bool vblk_find_disk(){
 void* disk_cmd;
 
 void vblk_write(const void *buffer, uint32_t sector, uint32_t count) {
-    if (!disk_cmd) disk_cmd = kalloc(blk_dev.memory_page, sizeof(struct virtio_blk_req), ALIGN_64B, MEM_PRIV_KERNEL);
+    if (!disk_cmd) disk_cmd = kalloc(blk_dev.memory_page, sizeof(virtio_blk_req), ALIGN_64B, MEM_PRIV_KERNEL);
     void* data = kalloc(blk_dev.memory_page, count * 512, ALIGN_64B, MEM_PRIV_KERNEL);
 
     memcpy(data, buffer, count * 512);
 
-    struct virtio_blk_req *req = (struct virtio_blk_req *)(uintptr_t)disk_cmd;
+    virtio_blk_req *req = (virtio_blk_req *)disk_cmd;
     req->type = VIRTIO_BLK_T_OUT;
     req->reserved = 0;
     req->sector = sector;
 
-    virtio_send_3d(&blk_dev, (uintptr_t)disk_cmd, sizeof(struct virtio_blk_req), (uintptr_t)data, count * 512, 0);
+    virtio_send_3d(&blk_dev, (uintptr_t)disk_cmd, sizeof(virtio_blk_req), (uintptr_t)data, count * 512, 0);
 
     kfree((void *)data,count * 512);
 }
 
 void vblk_read(void *buffer, uint32_t sector, uint32_t count) {
-    if (!disk_cmd) disk_cmd = kalloc(blk_dev.memory_page, sizeof(struct virtio_blk_req), ALIGN_64B, MEM_PRIV_KERNEL);
+    if (!disk_cmd) disk_cmd = kalloc(blk_dev.memory_page, sizeof(virtio_blk_req), ALIGN_64B, MEM_PRIV_KERNEL);
 
-    struct virtio_blk_req *req = (struct virtio_blk_req *)disk_cmd;
+    virtio_blk_req *req = (virtio_blk_req *)disk_cmd;
     req->type = VIRTIO_BLK_T_IN;
     req->reserved = 0;
     req->sector = sector;
 
-    virtio_send_3d(&blk_dev, (uintptr_t)disk_cmd, sizeof(struct virtio_blk_req), (uintptr_t)buffer, count * 512, VIRTQ_DESC_F_WRITE);
+    virtio_send_3d(&blk_dev, VIRT_TO_PHYS((uintptr_t)disk_cmd), sizeof(virtio_blk_req), VIRT_TO_PHYS((uintptr_t)buffer), count * 512, VIRTQ_DESC_F_WRITE);
 }

@@ -7,6 +7,7 @@
 #include "math/math.h"
 #include "console/kio.h"
 #include "process/scheduler.h"
+#include "sysregs.h"
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01
@@ -207,7 +208,7 @@ void mark_used(uintptr_t address, size_t pages)
 #define PAGE_INDEX_LIMIT (PAGE_SIZE-sizeof(page_index_hdr))/sizeof(page_index_entry)
 
 //TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
-void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
+void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level, uintptr_t page_va, uintptr_t *next_va, uintptr_t *ttrb){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
     
     size = (size + alignment - 1) & ~(alignment - 1);
@@ -219,19 +220,27 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     if (size >= PAGE_SIZE){
         void* ptr = palloc(size, level, info->attributes, true);
         page_index *index = info->page_alloc;
-        if (!info->page_alloc){
-            info->page_alloc = palloc(PAGE_SIZE, level, info->attributes, true);
+        if (!index){
+            info->page_alloc = palloc(PAGE_SIZE, level, info->attributes, true);//TODO: HIGH_VA
             index = info->page_alloc;
         }
         while (index->header.next) {
             index = index->header.next;
         }
         if (index->header.size >= PAGE_INDEX_LIMIT){
-            index->header.next = palloc(PAGE_SIZE, level, info->attributes, true);
+            index->header.next = palloc(PAGE_SIZE, level, info->attributes, true);//TODO: HIGH_VA
             index = index->header.next;
         }
         index->ptrs[index->header.size].ptr = ptr;
         index->ptrs[index->header.size++].size = size;
+        if (page_va && next_va && ttrb){
+            uintptr_t va = *next_va;
+            for (uintptr_t i = (uintptr_t)ptr; i < (uintptr_t)ptr + size; i+= GRANULE_4KB){
+                mmu_map_4kb(ttrb, *next_va, (uintptr_t)i, (info->attributes & MEM_DEV) ? MAIR_IDX_DEVICE : MAIR_IDX_NORMAL, info->attributes, level);
+                *next_va += PAGE_SIZE;
+            }
+            return (void*)va;
+        }
         return ptr;
     }
 
@@ -244,6 +253,9 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
             *curr = (*curr)->next;
             memset((void*)result, 0, size);
             info->size += size;
+            if (page_va){
+                return (void*)(page_va | (result & 0xFFF));
+            } 
             return (void*)result;
         }
         kprintfv("-> %x",(uintptr_t)&(*curr)->next);
@@ -257,10 +269,16 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     kprintfv("[in_page_alloc] Aligned next pointer %x",info->next_free_mem_ptr);
 
     if (info->next_free_mem_ptr + size > (((uintptr_t)page) + PAGE_SIZE)) {
-        if (!info->next)
+        if (!info->next){
             info->next = palloc(PAGE_SIZE, level, info->attributes, false);
+            if (page_va && next_va && ttrb){
+                mmu_map_4kb(ttrb, *next_va, (uintptr_t)info->next, (info->attributes & MEM_DEV) ? MAIR_IDX_DEVICE : MAIR_IDX_NORMAL, info->attributes, level);
+                *next_va += PAGE_SIZE;
+            }
+            kprintfv("[in_page_alloc] Page %llx points to new page %llx",page,info->next);
+        }
         kprintfv("[in_page_alloc] Page full. Moving to %x",(uintptr_t)info->next);
-        return kalloc(info->next, size, alignment, level);
+        return kalloc_inner(info->next, size, alignment, level, page_va ? page_va + PAGE_SIZE : 0, next_va, ttrb);
     }
 
     uint64_t result = info->next_free_mem_ptr;
@@ -270,7 +288,17 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
 
     memset((void*)result, 0, size);
     info->size += size;
+    if (page_va){
+        return (void*)(page_va | (result & 0xFFF));
+    }
     return (void*)result;
+}
+
+//TODO: rather than kalloc, it should be palloc that does translations
+void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
+    void* ptr = kalloc_inner(page, size, alignment, level, 0, 0, 0);
+    if (level == MEM_PRIV_KERNEL) ptr = PHYS_TO_VIRT_P(ptr);
+    return ptr;
 }
 
 void kfree(void* ptr, uint64_t size) {
@@ -280,7 +308,9 @@ void kfree(void* ptr, uint64_t size) {
 
     mem_page *page = (mem_page *)(((uintptr_t)ptr) & ~0xFFF);
 
-    FreeBlock* block = (FreeBlock*)ptr;
+    uintptr_t phys_page = mmu_translate((uintptr_t)page);
+
+    FreeBlock* block = (FreeBlock*)((uintptr_t)phys_page | ((uintptr_t)ptr & 0xFFF));
     block->size = size;
     block->next = page->free_list;
     page->free_list = block;

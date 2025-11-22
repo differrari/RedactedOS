@@ -2,6 +2,8 @@
 #include "console/kio.h"
 #include "std/memory_access.h"
 #include "memory/mmu.h"
+#include "async.h"
+#include "sysregs.h"
 
 #define FW_CFG_DATA  0x09020000
 #define FW_CFG_CTL   (FW_CFG_DATA + 0x8)
@@ -25,25 +27,26 @@ struct fw_cfg_dma_access {
 
 bool fw_cfg_check(){
     if (checked) return true;
+    register_device_memory(FW_CFG_DATA, FW_CFG_DATA);
     checked = read64(FW_CFG_DATA) == 0x554D4551;
-    if (checked){
-        register_device_memory(FW_CFG_DATA, FW_CFG_DATA);
-    }
+    if (!checked) mmu_unmap(FW_CFG_DATA, FW_CFG_DATA);
     return checked;
 }
 
 void fw_cfg_dma_operation(void* dest, uint32_t size, uint32_t ctrl) {
     struct fw_cfg_dma_access access = {
-        .address = __builtin_bswap64((uint64_t)dest),
+        .address = __builtin_bswap64(VIRT_TO_PHYS((uint64_t)dest)),
         .length = __builtin_bswap32(size),
         .control = __builtin_bswap32(ctrl),
     };
 
-    write64(FW_CFG_DMA, __builtin_bswap64((uint64_t)&access));
+    write64(FW_CFG_DMA, __builtin_bswap64(VIRT_TO_PHYS((uint64_t)&access)));
 
-    __asm__("ISB");
+    __asm__("isb");
 
-    while (__builtin_bswap32(access.control) & ~0x1) {}
+    if (!wait(&access.control, __builtin_bswap32(~0x1), false, 2000)){
+        kprintf("[FW_CFG error] failed to communicate with fw_cfg");
+    }
     
 }
 
@@ -67,7 +70,7 @@ bool fw_find_file(const char* search, struct fw_cfg_file *file) {
         return false;
 
     uint32_t count;
-    fw_cfg_dma_read(&count, sizeof(count), FW_LIST_DIRECTORY);
+    fw_cfg_dma_read(VIRT_TO_PHYS_P(&count), sizeof(count), FW_LIST_DIRECTORY);
 
     count = __builtin_bswap32(count);
 

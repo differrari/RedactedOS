@@ -27,7 +27,7 @@ void kernel_main() {
 
     detect_hardware();
 
-    mmu_alloc();
+    mmu_init_kernel();
     
     if (BOARD_TYPE == 2) mailbox_init();
 
@@ -40,6 +40,7 @@ void kernel_main() {
 //    if (BOARD_TYPE == 1) disable_visual();
 
     load_module(&console_module);
+    mmu_init();
 
     print_hardware();
 
@@ -52,8 +53,8 @@ void kernel_main() {
 
     load_module(&graphics_module);
     
-    // if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
-    //     pci_setup_rp1();
+    if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
+        pci_setup_rp1();
 
     load_module(&disk_module);
 
@@ -64,15 +65,13 @@ void kernel_main() {
             network_available = load_module(&net_module);
 
         load_module(&audio_module);
-
-        init_audio_mixer();
     }
-    
-    mmu_init();
 
     kprint("Kernel initialization finished");
     
     kprint("Starting processes");
+
+    if (BOARD_TYPE == 1) init_audio_mixer();
     
     init_filesystem();
 

@@ -51,17 +51,30 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
                     }
                     process_t *proc = load_elf_file(prog_name, 0, program, fd.size);
                     string_free(path);
-                    free(full_name,name_len);
+                    free(full_name, name_len);
                     if (!proc){
                         kprintf("Failed to create process for %s",prog_name);
                     }
                     proc->PROC_X0 = argc;
-                    size_t total = 0;
-                    for (int i = 0; i < argc; i++)
-                        total += strlen(argv[i], 0);
-                    char **nargv = (char **)kalloc((void*)proc->heap, total, ALIGN_16B, MEM_PRIV_USER);
-                    memcpy(nargv, argv, total);
-                    proc->PROC_X1 = (uintptr_t)nargv;
+                    if (argc > 0){
+                        uintptr_t start = (uintptr_t)argv[0];
+                        uintptr_t end = (uintptr_t)argv;
+                        size_t total = end-start;
+                        size_t argvs = argc * sizeof(uintptr_t);
+                        char *nargvals = (char*)(proc->stack_phys-total-argvs);
+                        char *vnargvals = (char*)(proc->stack-total-argvs);
+                        char** nargv = (char**)(proc->stack_phys-argvs);
+                        uintptr_t strptr = 0;
+                        for (int i = 0; i < argc; i++){
+                            size_t strsize = strlen(argv[i],0);
+                            memcpy(nargvals + strptr, argv[i], strsize);
+                            *(char*)(nargvals + strptr + strsize) = 0;
+                            nargv[i] = vnargvals + strptr;
+                            strptr += strsize;
+                        }
+                        proc->PROC_X1 = (uintptr_t)proc->stack-argvs;
+                        proc->sp -= total+argvs;
+                    }
                     proc->state = READY;
                     return proc;
                 }

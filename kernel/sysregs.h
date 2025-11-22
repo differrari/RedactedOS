@@ -47,3 +47,24 @@
 #define TRAP_PHYS_TIMER_DISABLED (1 << 0) 
 #define TRAV_VIRT_TIMER_DISABLED (1 << 1) //Disable trapping of timer calls on hypervisor level
 #define CNTHCTL_VALUE (TRAP_PHYS_TIMER_DISABLED | TRAV_VIRT_TIMER_DISABLED)
+
+// ***************************************
+// MMU
+// ***************************************
+
+//30 = Translation granule EL1. 10 = 4kb | 14 = TG EL0 00 = 4kb. 0xFFFFFFFF to translate to 64
+#define TCR_VALUE ((0xFFFFFFFF << 32) | ((64 - 48) << 0) | ((64 - 48) << 16) | (0b00 << 14) | (0b10 << 30))
+
+#define MAIR_DEVICE_nGnRnE 0b00000000
+#define MAIR_NORMAL_NOCACHE 0b01000100
+#define MAIR_IDX_DEVICE 0
+#define MAIR_IDX_NORMAL 1
+
+#define MAIR_VALUE ((MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_NOCACHE << (MAIR_IDX_NORMAL * 8)))
+
+#define HIGH_VA 0xFFFF000000000000ULL
+#define VIRT_TO_PHYS(x) (x & ~HIGH_VA)
+#define PHYS_TO_VIRT(x) (x | HIGH_VA)
+
+#define VIRT_TO_PHYS_P(x) ((void*)(((uintptr_t)x) & ~HIGH_VA))
+#define PHYS_TO_VIRT_P(x) ((void*)(((uintptr_t)x) | HIGH_VA))

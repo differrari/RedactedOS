@@ -11,6 +11,7 @@
 #include "audio/audio.h"
 #include "networking/interface_manager.h"
 #include "process/syscall.h"
+#include "memory/mmu.h"
 
 #define IRQ_TIMER 30
 #define SLEEP_TIMER 27
@@ -40,6 +41,9 @@ static void gic_enable_irq(uint32_t irq, uint8_t priority, uint8_t cpu_target) {
 }
 
 void irq_init() {
+    register_device_memory(GICD_BASE, GICD_BASE);
+    register_device_memory(GICC_BASE, GICC_BASE);
+
     if (RPI_BOARD != 3){
         write32(GICD_BASE, 0); // Disable Distributor
         write32(GICC_BASE, 0); // Disable CPU Interface
