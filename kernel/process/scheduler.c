@@ -313,7 +313,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     file->pid = proc->id;
     
     if (strcmp(path, "out", true) == 0){
-        descriptor->size = 0;//TODO: sizeof buffer, could already have data
+        descriptor->size = proc->output_size;
         file->buffer = proc->output;
     } else if (strcmp(path, "state", true) == 0){
         descriptor->size = sizeof(int);
@@ -381,13 +381,19 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     }
     memcpy((void*)(pbuf + fd->cursor), buf, size);
     fd->cursor += size;
-    //TODO: Need a better way to handle opening a file multiple times
-    for (clinkedlist_node_t *start = proc_opened_files->head; start != 0; start = start->next){
-        if (fd->id == FD_OUT || start != node){
-            proc_open_file *n_file = (proc_open_file*)start->data;
-            if (n_file && n_file->buffer == pbuf){
-                n_file->file_size += size;
-            } 
+    if (fd->id == FD_OUT){
+        process_t *proc = get_current_proc();
+        proc->output_size += size;
+    }
+    if (proc_opened_files && proc_opened_files->head){
+        //TODO: Need a better way to handle opening a file multiple times
+        for (clinkedlist_node_t *start = proc_opened_files->head; start != 0; start = start->next){
+            if (fd->id == FD_OUT || start != node){
+                proc_open_file *n_file = (proc_open_file*)start->data;
+                if (n_file && n_file->buffer == pbuf){
+                    n_file->file_size += size;
+                } 
+            }
         }
     }
     return size;

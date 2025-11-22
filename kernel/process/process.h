@@ -47,6 +47,7 @@ typedef struct {
     uintptr_t heap;
     uintptr_t heap_phys;
     uintptr_t output;
+    size_t output_size;
     uintptr_t last_va_mapping;
     file out_fd;
     uint64_t exit_code;
