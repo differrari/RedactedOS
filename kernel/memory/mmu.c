@@ -254,11 +254,50 @@ void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t 
     mmu_flush_icache();
 }
 
+uintptr_t mmu_translate(uintptr_t va){
+    uint64_t *table = pttrb && (va >> 48) == 0 ? pttrb : kernel_mmu_page;
+
+    uint64_t l0_index = (va >> 39) & 0x1FF;
+    uint64_t l1_index = (va >> 30) & 0x1FF;
+    uint64_t l2_index = (va >> 21) & 0x1FF;
+    uint64_t l3_index = (va >> 12) & 0x1FF;
+
+    if (!(table[l0_index] & 1)) {
+        kprintf("L1 Table missing");
+        return 0;
+    }
+    uint64_t* l1 = (uint64_t*)(table[l0_index] & 0xFFFFFFFFF000ULL);
+    if (!(l1[l1_index] & 1)) {
+        kprintf("L2 Table missing");
+        return 0;
+    }
+    uint64_t* l2 = (uint64_t*)(l1[l1_index] & 0xFFFFFFFFF000ULL);
+    uint64_t l3_val = l2[l2_index];
+    if (!(l3_val & 1)) {
+        kprintf("L3 Table missing");
+        return 0;
+    }
+
+    if (!((l3_val >> 1) & 1)){
+        kprintf("Mapped as 2MB memory in L3");
+        kprintf("Entry: %b", l3_val);
+        return 0;
+    }
+
+    uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
+    uint64_t l4_val = l3[l3_index];
+    if (!(l4_val & 1)){
+        kprintf("L4 Table entry missing");
+        return 0;
+    }
+    return l4_val & 0xFFFFFFFFF000ULL;
+}
+
 void debug_mmu_address(uint64_t va){
 
     uint64_t *table = pttrb ? pttrb : kernel_mmu_page;
 
-    uint64_t l0_index = (va >> 37) & 0x1FF;
+    uint64_t l0_index = (va >> 39) & 0x1FF;
     uint64_t l1_index = (va >> 30) & 0x1FF;
     uint64_t l2_index = (va >> 21) & 0x1FF;
     uint64_t l3_index = (va >> 12) & 0x1FF;

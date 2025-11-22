@@ -22,6 +22,7 @@
 #include "bin/bin_mod.h"
 #include "net/transport_layer/csocket.h"
 #include "loading/dwarf.h"
+#include "sysregs.h"
 
 
 int syscall_depth = 0;
@@ -31,11 +32,12 @@ uintptr_t cpec;
 typedef uint64_t (*syscall_entry)(process_t *ctx);
 
 uint64_t syscall_malloc(process_t *ctx){
-    void* page_ptr = syscall_depth > 1 ? (void*)get_proc_by_pid(1)->heap : (void*)get_current_heap();
+    void* page_ptr = (void*)mmu_translate(syscall_depth > 1 ? get_proc_by_pid(1)->heap : ctx->heap);
     if ((uintptr_t)page_ptr == 0x0){
         handle_exception("Wrong process heap state", 0);
     }
-    return (uintptr_t)kalloc(page_ptr, ctx->PROC_X0, ALIGN_16B, get_current_privilege());
+    size_t size = ctx->PROC_X0;
+    return (uintptr_t)kalloc_inner(page_ptr, size, ALIGN_16B, get_current_privilege(), ctx->heap, &ctx->last_va_mapping, ctx->ttbr);
 }
 
 uint64_t syscall_free(process_t *ctx){

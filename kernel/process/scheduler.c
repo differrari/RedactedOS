@@ -114,8 +114,8 @@ void reset_process(process_t *proc){
     bool just_finished = processes[current_proc].id == proc->id;
     proc->sp = 0;
     if (!just_finished || !(processes[current_proc].PROC_PRIV))//Privileged processes use their own stack even in an exception. We'll free it when we reuse it
-        if (proc->stack) pfree((void*)proc->stack-proc->stack_size,proc->stack_size);
-    if (proc->heap) free_managed_page((void*)proc->heap);//Sadly, full pages of alloc'd memory are not kept track and will not be freed
+        if (proc->stack_phys) pfree((void*)proc->stack_phys-proc->stack_size,proc->stack_size);
+    if (proc->heap_phys) free_managed_page((void*)proc->heap_phys);
     proc->pc = 0;
     proc->spsr = 0;
     proc->exit_code = 0;

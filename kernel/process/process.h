@@ -42,9 +42,12 @@ typedef struct {
     //Not used in process saving
     uint16_t id;
     uintptr_t stack;
+    uintptr_t stack_phys;
     uint64_t stack_size;
     uintptr_t heap;
+    uintptr_t heap_phys;
     uintptr_t output;
+    uintptr_t last_va_mapping;
     file out_fd;
     uint64_t exit_code;
     bool focused;
