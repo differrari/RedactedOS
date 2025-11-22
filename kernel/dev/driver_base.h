@@ -10,6 +10,7 @@
 extern "C" {
 #endif
 uint64_t reserve_fd_id();
+uint64_t reserve_fd_gid(const char *path);
 #ifdef __cplusplus
 }
 #endif

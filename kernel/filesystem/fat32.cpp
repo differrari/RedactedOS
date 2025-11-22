@@ -249,7 +249,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     sizedptr buf_ptr = walk_directory(count, mbs->first_cluster_of_root_directory, path, read_entry_handler);
     void *buf = (void*)buf_ptr.ptr;
     if (!buf) return FS_RESULT_NOTFOUND;
-    descriptor->id = reserve_fd_id();
+    descriptor->id = reserve_fd_gid(path);
     descriptor->size = buf_ptr.size;
     return chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), buf) ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }

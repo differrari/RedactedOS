@@ -297,11 +297,12 @@ void* list_alloc(size_t size){
 }
 
 FS_RESULT open_proc(const char *path, file *descriptor){
+    const char *fullpath = path;
     const char *pid_s = seek_to(path, '/');
     path = seek_to(pid_s, '/');
     uint64_t pid = parse_int_u64(pid_s, path - pid_s);
     process_t *proc = get_proc_by_pid(pid);
-    descriptor->id = reserve_fd_id();
+    descriptor->id = reserve_fd_gid(fullpath);
     descriptor->cursor = 0;
     if (!proc_opened_files) {
         proc_opened_files = kalloc(proc_page, sizeof(clinkedlist_t), ALIGN_64B, MEM_PRIV_KERNEL);
@@ -356,24 +357,25 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
 }
 
 size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
-    if (!proc_opened_files && fd->id != FD_OUT){
+    if (fd->id == FD_OUT){
+        string fullpath = string_format("/%i/out",get_current_proc_pid());
+        open_proc(fullpath.data, fd);
+        string_free(fullpath);
+    }
+    if (!proc_opened_files){
         kprint("No files open");
         return 0;
     }
     uintptr_t pbuf;
     clinkedlist_node_t *node;
-    if (fd->id == FD_OUT){
-        process_t *proc = get_current_proc();
-        pbuf = proc->output;
-        if (size > PROC_OUT_BUF)
-            size = PROC_OUT_BUF;
-    } else {
-        node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
-        if (!node->data) return 0;
-        proc_open_file *file = (proc_open_file*)node->data;
-        if (file->read_only) return 0;
-        pbuf = file->buffer;
-    }
+    
+    node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
+    if (!node->data) return 0;
+    proc_open_file *file = (proc_open_file*)node->data;
+    if (file->read_only) return 0;
+    pbuf = file->buffer;
+
+    size = min(size, PROC_OUT_BUF);
     
     if (fd->cursor + size >= PROC_OUT_BUF){
         fd->cursor = 0;
@@ -381,21 +383,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     }
     memcpy((void*)(pbuf + fd->cursor), buf, size);
     fd->cursor += size;
-    if (fd->id == FD_OUT){
-        process_t *proc = get_current_proc();
-        proc->output_size += size;
-    }
-    if (proc_opened_files && proc_opened_files->head){
-        //TODO: Need a better way to handle opening a file multiple times
-        for (clinkedlist_node_t *start = proc_opened_files->head; start != 0; start = start->next){
-            if (fd->id == FD_OUT || start != node){
-                proc_open_file *n_file = (proc_open_file*)start->data;
-                if (n_file && n_file->buffer == pbuf){
-                    n_file->file_size += size;
-                } 
-            }
-        }
-    }
+    file->file_size += size;
     return size;
 }
 

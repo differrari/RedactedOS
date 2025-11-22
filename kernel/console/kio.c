@@ -80,7 +80,7 @@ bool console_fini(){
 }
 
 FS_RESULT console_open(const char *path, file *out_fd){
-    out_fd->id = reserve_fd_id();
+    out_fd->id = reserve_fd_gid("/console");
     out_fd->size = CONSOLE_BUF_SIZE;
     return FS_RESULT_SUCCESS;
 }

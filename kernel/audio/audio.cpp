@@ -166,7 +166,7 @@ process_t* init_audio_mixer(){
 
 static FS_RESULT audio_open(const char *path, file *fd){
     if (0 == strcmp(path, "/output", true)){
-        fd->id = reserve_fd_id();
+        fd->id = reserve_fd_gid("/audio/output");//TODO: Review
         fd->size = UINT16_MAX;  // dummy value
         fd->cursor = 0;
         return FS_RESULT_SUCCESS;

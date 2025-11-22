@@ -161,12 +161,11 @@ void close_file(file *descriptor){
 }
 
 size_t write_file(file *descriptor, const char* buf, size_t size){
-    if (!open_files) return 0;
     if (descriptor->id == FD_OUT){
         const char *search_path = "/proc/";//TODO: This is ugly
         driver_module *mod = get_module(&search_path);
         mod->write(descriptor, buf, size, descriptor->cursor);
-    }
+    } else if (!open_files) return 0;
     LinkedList<open_file_descriptors>::Node *result = open_files->find([descriptor](open_file_descriptors kvp){
         return descriptor->id == kvp.file_id;
     });

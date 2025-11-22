@@ -55,7 +55,7 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         return FS_RESULT_NOTFOUND;
     }
     descriptor->cursor = 0;
-    descriptor->id = reserve_fd_id();
+    descriptor->id = reserve_fd_gid(path);
     uint64_t size = get_attribute(f, 0x00000200ULL);
     descriptor->size = size;
     void* file = kalloc(np_dev.memory_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
