@@ -67,7 +67,8 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         kprintf("[VIRTIO 9P error] failed read file %s",path);
         return FS_RESULT_DRIVER_ERROR;
     } 
-    return chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), file) ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
+    int result = chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), file);
+    return result >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
 size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){

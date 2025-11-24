@@ -251,7 +251,8 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (!buf) return FS_RESULT_NOTFOUND;
     descriptor->id = reserve_fd_gid(path);
     descriptor->size = buf_ptr.size;
-    return chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), buf) ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
+    int result = chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), buf);
+    return result >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
 size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){

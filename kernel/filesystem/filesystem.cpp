@@ -123,14 +123,15 @@ FS_RESULT open_file(const char* path, file* descriptor){
         LinkedList<open_file_descriptors> *ptr = (LinkedList<open_file_descriptors>*)kalloc(page, sizeof(LinkedList<open_file_descriptors>), ALIGN_64B, MEM_PRIV_KERNEL);
         open_files = new (ptr) LinkedList<open_file_descriptors>();
         open_files->set_allocator(
-        [](size_t size) -> void* {
-            return kalloc(page, size, ALIGN_64B, MEM_PRIV_KERNEL);
-        },
-        [](void* ptr, size_t size) {
-            kfree(ptr, size);
-        }
-    );
+            [](size_t size) -> void* {
+                return kalloc(page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+            },
+            [](void* ptr, size_t size) {
+                kfree(ptr, size);
+            }
+        );
     }
+    descriptor->cursor = 0;
     open_files->push_front({
         .file_id = descriptor->id,
         .file_size = descriptor->size,
@@ -157,7 +158,7 @@ size_t read_file(file *descriptor, char* buf, size_t size){
 }
 
 void close_file(file *descriptor){
-    
+    //TODO: close files
 }
 
 size_t write_file(file *descriptor, const char* buf, size_t size){
@@ -173,7 +174,9 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     open_file_descriptors file = result->data;
     if (!file.mod) return 0;
     if (!file.mod->write) return 0;
-    return file.mod->write(descriptor, buf, size, 0);
+    size_t amount_written = file.mod->write(descriptor, buf, size, 0);
+    descriptor->cursor += amount_written;
+    return amount_written;
 }
 
 size_t simple_read(const char *path, void *buf, size_t size){
