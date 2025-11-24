@@ -3,7 +3,7 @@
 int main(int argc, const char* argv[]){
     file fd2 = { .id = 2 };
     if (argc < 1 || argc > 2){
-        string err_msg = string_from_literal("Usage cat <path> [size]");
+        string err_msg = string_from_literal("Usage: read <path> [size]");
         fwrite(&fd2, err_msg.data, err_msg.length);
         free(err_msg.data, err_msg.mem_length);
         return 2;
