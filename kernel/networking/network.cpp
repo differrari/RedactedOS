@@ -94,7 +94,7 @@ void network_dump_interfaces() {
     if (dispatch) dispatch->dump_interfaces();
 }
 
-driver_module net_module = (driver_module){
+system_module net_module = (system_module){
     .name = "net",
     .mount = "/net",
     .version = VERSION_NUM(0, 1, 0, 1),

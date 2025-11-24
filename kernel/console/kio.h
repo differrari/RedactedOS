@@ -18,7 +18,7 @@ void putc(const char c);
 void disable_visual();
 void enable_visual();
 
-extern driver_module console_module;
+extern system_module console_module;
 
 #ifdef __cplusplus
 }

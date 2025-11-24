@@ -15,7 +15,7 @@ FAT32FS *fs_driver;
 typedef struct {
     uint64_t file_id;
     size_t file_size;
-    driver_module* mod;
+    system_module* mod;
 } open_file_descriptors;
 
 LinkedList<open_file_descriptors> *open_files;
@@ -47,7 +47,7 @@ size_t boot_partition_readdir(const char* path, void *out_buf, size_t size, file
     return fs_driver->list_contents(path, out_buf, size, offset);
 }
 
-driver_module boot_fs_module = (driver_module){
+system_module boot_fs_module = (system_module){
     .name = "boot",
     .mount = "/boot",
     .version = VERSION_NUM(0, 1, 0, 0),
@@ -89,7 +89,7 @@ size_t shared_readdir(const char* path, void *out_buf, size_t size, file_offset 
     return p9Driver->list_contents(path, out_buf, size, offset);
 }
 
-driver_module p9_fs_module = (driver_module){
+system_module p9_fs_module = (system_module){
     .name = "9PFS",
     .mount = "/shared",
     .version = VERSION_NUM(0, 1, 0, 0),
@@ -105,7 +105,7 @@ driver_module p9_fs_module = (driver_module){
 
 bool init_filesystem(){
     const char *path = "/disk";
-    driver_module *disk_mod = get_module(&path);
+    system_module *disk_mod = get_module(&path);
     if (!disk_mod) return false;
     return load_module(&boot_fs_module) && load_module(&p9_fs_module);
 }
@@ -114,7 +114,7 @@ void* page;
 
 FS_RESULT open_file(const char* path, file* descriptor){
     const char *search_path = path;
-    driver_module *mod = get_module(&search_path);
+    system_module *mod = get_module(&search_path);
     if (!mod) return FS_RESULT_NOTFOUND;
     if (!mod->open) return FS_RESULT_NOTFOUND;
     FS_RESULT result = mod->open(search_path, descriptor);
@@ -164,7 +164,7 @@ void close_file(file *descriptor){
 size_t write_file(file *descriptor, const char* buf, size_t size){
     if (descriptor->id == FD_OUT){
         const char *search_path = "/proc/";//TODO: This is ugly
-        driver_module *mod = get_module(&search_path);
+        system_module *mod = get_module(&search_path);
         mod->write(descriptor, buf, size, descriptor->cursor);
     } else if (!open_files) return 0;
     LinkedList<open_file_descriptors>::Node *result = open_files->find([descriptor](open_file_descriptors kvp){
@@ -181,7 +181,7 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
 
 size_t simple_read(const char *path, void *buf, size_t size){
     const char *search_path = path;
-    driver_module *mod = get_module(&search_path);
+    system_module *mod = get_module(&search_path);
     if (!mod) return 0;
     if (!mod->sread) return 0;
     return mod->sread(search_path, buf, size);
@@ -189,7 +189,7 @@ size_t simple_read(const char *path, void *buf, size_t size){
 
 size_t simple_write(const char *path, const void *buf, size_t size){
     const char *search_path = path;
-    driver_module *mod = get_module(&search_path);
+    system_module *mod = get_module(&search_path);
     if (!mod) return 0;
     if (!mod->swrite) return 0;
     return mod->swrite(search_path, buf, size);
@@ -197,7 +197,7 @@ size_t simple_write(const char *path, const void *buf, size_t size){
 
 size_t list_directory_contents(const char *path, void* buf, size_t size, uint64_t offset){
     const char *search_path = path;
-    driver_module *mod = get_module(&search_path);
+    system_module *mod = get_module(&search_path);
     if (!mod){
         kprintf("No module for path");
         return 0;

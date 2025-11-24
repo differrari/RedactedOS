@@ -49,7 +49,7 @@ bool get_current_privilege();
 uint16_t process_count();
 process_t *get_all_processes();
 
-extern driver_module scheduler_module;
+extern system_module scheduler_module;
 
 extern uint64_t ksp;
 

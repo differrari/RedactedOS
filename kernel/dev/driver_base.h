@@ -15,7 +15,7 @@ uint64_t reserve_fd_gid(const char *path);
 }
 #endif
 
-typedef struct driver_module {
+typedef struct system_module {
     const char* name;
     const char* mount;
     uint64_t version;
@@ -33,7 +33,7 @@ typedef struct driver_module {
 
     size_t (*readdir)(const char*, void*, size_t, file_offset);
 
-} driver_module;
+} system_module;
 
 typedef struct module_file {
     uint64_t fid;
@@ -42,4 +42,4 @@ typedef struct module_file {
     bool ignore_cursor;
     bool read_only;
 } module_file;
-//TODO: for IPC, rename to system_module and create a dedicated loading function that attaches a module to a process so it can be cleaned up
+//TODO: for IPC create a dedicated loading function that attaches a module to a process so it can be cleaned up

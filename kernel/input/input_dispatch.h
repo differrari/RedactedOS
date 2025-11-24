@@ -54,7 +54,7 @@ void handle_input_interrupt();
 void init_input_process();
 void input_start_polling();
 
-extern driver_module input_module;
+extern system_module input_module;
 
 #ifdef __cplusplus
 }

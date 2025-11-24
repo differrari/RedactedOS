@@ -36,7 +36,7 @@ void network_update_local_ip(uint32_t ip);
 
 void network_dump_interfaces(void);
 
-extern driver_module net_module;
+extern system_module net_module;
 
 #ifdef __cplusplus
 }

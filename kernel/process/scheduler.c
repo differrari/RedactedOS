@@ -373,7 +373,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     return size;
 }
 
-driver_module scheduler_module = (driver_module){
+system_module scheduler_module = (system_module){
     .name = "scheduler",
     .mount = "/proc",
     .version = VERSION_NUM(0, 1, 0, 1),

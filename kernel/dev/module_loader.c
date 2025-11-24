@@ -5,18 +5,18 @@
 //TODO: use hashmaps
 clinkedlist_t* modules;
 
-bool load_module(driver_module *module){
+bool load_module(system_module *module){
     if (!modules) modules = clinkedlist_create();
     clinkedlist_push_front(modules, (void*)module);
     return module->init();
 }
 
-bool unload_module(driver_module *module){
+bool unload_module(system_module *module){
     return false;
 }
 
 int fs_search(void *node, void *key){
-    driver_module* module = (driver_module*)node;
+    system_module* module = (system_module*)node;
     const char** path = (const char**)key;
     int index = strstart(*path, module->mount, true);
     if (index == (int)strlen(module->mount,0)){ 
@@ -26,7 +26,7 @@ int fs_search(void *node, void *key){
     return -1;
 }
 
-driver_module* get_module(const char **full_path){
+system_module* get_module(const char **full_path){
     clinkedlist_node_t *node = clinkedlist_find(modules, (void*)full_path, fs_search);
-    return node ? ((driver_module*)node->data) : 0;
+    return node ? ((system_module*)node->data) : 0;
 }

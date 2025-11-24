@@ -161,7 +161,7 @@ size_t console_readdir(const char* path, void *buf, size_t size, file_offset off
     return 0;
 }
 
-driver_module console_module = (driver_module){
+system_module console_module = (system_module){
     .name = "console",
     .mount = "/dev/console",
     .version = VERSION_NUM(0,1,0,0),

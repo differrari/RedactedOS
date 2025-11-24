@@ -29,7 +29,7 @@ void gpu_setup_cursor(gpu_point initial_loc);
 void gpu_update_cursor(gpu_point new_loc, bool full);
 void gpu_set_cursor_pressed(bool pressed);
 
-extern driver_module graphics_module;
+extern system_module graphics_module;
 
 #ifdef __cplusplus
 }

@@ -106,16 +106,16 @@ size_t list_bin(const char *path, void *buf, size_t size, file_offset offset){
     return 0;
 }
 
-driver_module bin_module = (driver_module){
+system_module bin_module = (system_module){
     .name = "bin",
     .mount = "/bin",
     .version = VERSION_NUM(0, 1, 0, 1),
     .init = init_bin,
     .fini = 0,
     .open = 0,
-    .read = read_bin,
+    .read = 0,
     .write = 0,
     .sread = 0,
     .swrite = 0,
-    .readdir = list_bin,
-};
+    .readdir = 0,
+};//TODO: symlinks to link /bin to /boot/redos/bin

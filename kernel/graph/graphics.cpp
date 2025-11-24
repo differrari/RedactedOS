@@ -111,7 +111,7 @@ void gpu_set_cursor_pressed(bool pressed){
     gpu_driver->set_cursor_pressed(pressed);
 }
 
-driver_module graphics_module = {
+system_module graphics_module = {
     .name = "graphics",
     .mount = "/dev/graph",
     .version = VERSION_NUM(0, 1, 0, 0),

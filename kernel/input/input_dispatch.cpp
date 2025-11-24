@@ -245,7 +245,7 @@ void handle_input_interrupt(){
     if (input_driver->use_interrupts) input_driver->handle_interrupt();
 }
 
-driver_module input_module = (driver_module){
+system_module input_module = (system_module){
     .name = "input",
     .mount = "/in",
     .version = VERSION_NUM(0, 1, 0, 1),
