@@ -244,19 +244,26 @@ sizedptr FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, ch
 
 FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (!mbs) return FS_RESULT_DRIVER_ERROR;
+    uint64_t fid = reserve_fd_gid(path);
+    module_file *mfile = (module_file*)chashmap_get(open_files, &fid, sizeof(uint64_t));
+    if (mfile){
+        descriptor->id = mfile->fid;
+        descriptor->size = mfile->file_size;
+        return FS_RESULT_SUCCESS;
+    }
     path = seek_to(path, '/');
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
     sizedptr buf_ptr = walk_directory(count, mbs->first_cluster_of_root_directory, path, read_entry_handler);
     void *buf = (void*)buf_ptr.ptr;
     if (!buf) return FS_RESULT_NOTFOUND;
-    descriptor->id = reserve_fd_gid(path);
+    descriptor->id = fid;
     descriptor->size = buf_ptr.size;
-    module_file *mfile = (module_file*)kalloc(fs_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
+    mfile = (module_file*)kalloc(fs_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
     mfile->file_size = buf_ptr.size;
     mfile->buffer = (uintptr_t)buf;
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
-    return chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), mfile) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
+    return chashmap_put(open_files, &fid, sizeof(uint64_t), mfile) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
 size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
