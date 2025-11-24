@@ -9,16 +9,19 @@
 #include "math/math.h"
 #include "virtio_9p_pci.hpp"
 #include "hw/hw.h"
+#include "process/scheduler.h"
 
 FAT32FS *fs_driver;
 
 typedef struct {
+    uint64_t mfile_id;
     uint64_t file_id;
     size_t file_size;
+    uint16_t pid;
     system_module* mod;
 } open_file_descriptors;
 
-LinkedList<open_file_descriptors> *open_files;
+chashmap_t *open_files;
 
 bool boot_partition_init(){
     uint32_t f32_partition = mbr_find_partition(0xC);
@@ -30,7 +33,6 @@ bool boot_partition_fini(){
     return false;
 }
 
-//TODO: find a way to make this more elegant
 FS_RESULT boot_partition_open(const char *path, file *out_fd){
     return fs_driver->open_file(path, out_fd);
 }
@@ -103,14 +105,22 @@ system_module p9_fs_module = (system_module){
     .readdir = shared_readdir,
 };
 
+void* page;
+
+void* open_files_alloc(size_t size){
+    return kalloc(page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+}
+
 bool init_filesystem(){
+    page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
+    open_files = chashmap_create(256);
+    open_files->alloc = open_files_alloc;
+    open_files->free = kfree;
     const char *path = "/disk";
     system_module *disk_mod = get_module(&path);
     if (!disk_mod) return false;
     return load_module(&boot_fs_module) && load_module(&p9_fs_module);
 }
-
-void* page;
 
 FS_RESULT open_file(const char* path, file* descriptor){
     const char *search_path = path;
@@ -118,26 +128,17 @@ FS_RESULT open_file(const char* path, file* descriptor){
     if (!mod) return FS_RESULT_NOTFOUND;
     if (!mod->open) return FS_RESULT_NOTFOUND;
     FS_RESULT result = mod->open(search_path, descriptor);
-    if (!open_files){
-        page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
-        LinkedList<open_file_descriptors> *ptr = (LinkedList<open_file_descriptors>*)kalloc(page, sizeof(LinkedList<open_file_descriptors>), ALIGN_64B, MEM_PRIV_KERNEL);
-        open_files = new (ptr) LinkedList<open_file_descriptors>();
-        open_files->set_allocator(
-            [](size_t size) -> void* {
-                return kalloc(page, size, ALIGN_64B, MEM_PRIV_KERNEL);
-            },
-            [](void* ptr, size_t size) {
-                kfree(ptr, size);
-            }
-        );
-    }
+    if (result != FS_RESULT_SUCCESS) return result;
+    if (!open_files) return FS_RESULT_DRIVER_ERROR;
     descriptor->cursor = 0;
-    open_files->push_front({
-        .file_id = descriptor->id,
-        .file_size = descriptor->size,
-        .mod = mod
-    });
-    return result;
+    open_file_descriptors *of = (open_file_descriptors*)kalloc(page, sizeof(open_file_descriptors), ALIGN_16B, MEM_PRIV_KERNEL);
+    of->mfile_id = descriptor->id;
+    of->file_id = reserve_fd_id();
+    of->file_size = descriptor->size,
+    of->mod = mod;
+    of->pid = get_current_proc_pid();
+    descriptor->id = of->file_id;
+    return chashmap_put(open_files, &of->file_id, sizeof(uint64_t), of) == 1 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
 size_t read_file(file *descriptor, char* buf, size_t size){
@@ -145,15 +146,16 @@ size_t read_file(file *descriptor, char* buf, size_t size){
         kprintf("[FS] No open files");
         return 0;
     }
-    auto file_node = open_files->find([descriptor](open_file_descriptors kvp){
-        return descriptor->id == kvp.file_id;
-    });
-    if (!file_node) return 0;
-    open_file_descriptors file = file_node->data;
-    if (!file.mod) return 0;
-    if (!file.mod->read) return 0;
-    size_t amount_read = file.mod->read(descriptor, buf, size, 0);
+    open_file_descriptors *ofile = (open_file_descriptors *)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!ofile || !ofile->mod || !ofile->mod->read || ofile->pid != get_current_proc_pid()) return 0;
+    file gfd = (file){
+        .id = ofile->mfile_id,
+        .size = descriptor->size,
+        .cursor = descriptor->cursor,
+    };
+    size_t amount_read = ofile->mod->read(&gfd, buf, size, 0);
     descriptor->cursor += amount_read;
+    descriptor->size = gfd.size;
     return amount_read;
 }
 
@@ -167,15 +169,16 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
         system_module *mod = get_module(&search_path);
         mod->write(descriptor, buf, size, descriptor->cursor);
     } else if (!open_files) return 0;
-    LinkedList<open_file_descriptors>::Node *result = open_files->find([descriptor](open_file_descriptors kvp){
-        return descriptor->id == kvp.file_id;
-    });
-    if (!result) return 0;
-    open_file_descriptors file = result->data;
-    if (!file.mod) return 0;
-    if (!file.mod->write) return 0;
-    size_t amount_written = file.mod->write(descriptor, buf, size, 0);
+    open_file_descriptors *ofile = (open_file_descriptors *)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!ofile || !ofile->mod || !ofile->mod->read || ofile->pid != get_current_proc_pid()) return 0;
+    file gfd = (file){
+        .id = ofile->mfile_id,
+        .size = descriptor->size,
+        .cursor = descriptor->cursor,
+    };
+    size_t amount_written = ofile->mod->write(&gfd, buf, size, 0);
     descriptor->cursor += amount_written;
+    descriptor->size = gfd.size;
     return amount_written;
 }
 
