@@ -5,6 +5,7 @@
 #include "memory/page_allocator.h"
 #include "std/memory.h"
 #include "exceptions/irq.h"
+#include "sysregs.h"
 
 typedef struct elf_header {
     char magic[4];//should be " ELF"
@@ -163,13 +164,13 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
 
     if (debug_line.ptr && debug_line.size){ 
         proc->debug_lines.size = debug_line.size;
-        void* dl = palloc(debug_line.size, MEM_PRIV_SHARED, MEM_RO, true);
+        void* dl = PHYS_TO_VIRT_P(palloc(debug_line.size, MEM_PRIV_SHARED, MEM_RO, true));
         memcpy(dl, (void*)debug_line.ptr, debug_line.size);
         proc->debug_lines.ptr = (uintptr_t)dl;
     }
     if (debug_line_str.ptr && debug_line_str.size){ 
         proc->debug_line_str.size = debug_line_str.size;
-        void* dls = palloc(debug_line_str.size, MEM_PRIV_SHARED, MEM_RO, true);
+        void* dls = PHYS_TO_VIRT_P(palloc(debug_line_str.size, MEM_PRIV_SHARED, MEM_RO, true));
         memcpy(dls, (void*)debug_line_str.ptr, debug_line_str.size);
         proc->debug_line_str.ptr = (uintptr_t)dls;
     }
