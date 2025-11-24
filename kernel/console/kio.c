@@ -117,7 +117,7 @@ size_t console_read(file *fd, char *out_buf, size_t size, file_offset offset){
     return to_read;
 }
 
-size_t console_write(file *fd, const char *buf, size_t size, file_offset offset){
+size_t console_write(const char *buf, size_t size){
     if (!console_storage) init_print_buf();
     if (!buf || size == 0) return 0;
 
@@ -153,6 +153,14 @@ size_t console_write(file *fd, const char *buf, size_t size, file_offset offset)
     return size;
 }
 
+size_t console_write_fd(file *fd, const char *buf, size_t size, file_offset offset){
+    return console_write(buf, size);
+}
+
+size_t simple_console_write(const char *path, const void *buf, size_t size){
+    return console_write(buf, size);
+}
+
 file_offset console_seek(file *fd, file_offset offset){
     return 0;
 }
@@ -169,9 +177,9 @@ system_module console_module = (system_module){
     .fini = console_fini,
     .open = console_open,
     .read = console_read,
-    .write = console_write,
-    .sread = 0,
-    .swrite = 0,//TODO implement simple io
+    .write = console_write_fd,
+    .sread = 0,//TODO implement simple io
+    .swrite = simple_console_write,
     .readdir = console_readdir,
 };
 
@@ -206,7 +214,7 @@ void kprintf(const char *fmt, ...){
     size_t n = string_format_va_buf(fmt, buf, STRING_MAX_LEN, args);
 
     va_end(args);
-    console_write(NULL, buf, n, 0);
+    console_write(buf, n);
     console_out_crlf();
     console_ring_write(CRLF, 2);
 }
@@ -216,7 +224,7 @@ void kprint(const char *s){
     if (!s) return;
 
     size_t n = strlen(s, 0);
-    if (n) console_write(NULL, s, n, 0);
+    if (n) console_write(s, n);
 
     console_out_crlf();
     console_ring_write(CRLF, 2);
@@ -234,7 +242,7 @@ void kputf(const char *fmt, ...){
 
     va_end(args);
 
-    console_write(NULL, buf, n, 0);
+    console_write(buf, n);
 }
 
 void disable_visual(){
