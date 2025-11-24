@@ -251,14 +251,20 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (!buf) return FS_RESULT_NOTFOUND;
     descriptor->id = reserve_fd_gid(path);
     descriptor->size = buf_ptr.size;
-    return chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), buf) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
+    module_file *mfile = (module_file*)kalloc(fs_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
+    mfile->file_size = buf_ptr.size;
+    mfile->buffer = (uintptr_t)buf;
+    mfile->ignore_cursor = false;
+    mfile->fid = descriptor->id;
+    return chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), mfile) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
 size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
-    //TODO: Here and elsewhere, we're not checking the cursor's validity within the file
-    uintptr_t file = (uintptr_t)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
-    if (!file) return 0;
-    memcpy(buf, (void*)(file + descriptor->cursor), size);
+    if (descriptor->cursor > size) return 0;
+    module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!mfile) return 0;
+    if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
+    memcpy(buf, (void*)(mfile->buffer + descriptor->cursor), size);
     return size;
 }
 
