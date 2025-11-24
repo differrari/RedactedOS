@@ -9,7 +9,7 @@
 #include "console/kconsole/kconsole.h"
 #include "syscalls/syscalls.h"
 #include "std/string.h"
-#include "data_struct/linked_list.h"
+#include "data_struct/hashmap.h"
 #include "std/memory.h"
 #include "math/math.h"
 #include "memory/mmu.h"
@@ -36,16 +36,7 @@ typedef struct sleep_tracker {
 sleep_tracker sleeping[MAX_PROCS];
 uint16_t sleep_count;
 
-clinkedlist_t *proc_opened_files;
-
-typedef struct proc_open_file {
-    uint64_t fid;
-    size_t file_size;
-    uintptr_t buffer;
-    uint16_t pid;
-    bool ignore_cursor;
-    bool read_only;
-} proc_open_file;
+chashmap_t *proc_opened_files;
 
 void* proc_page;
 
@@ -86,6 +77,20 @@ bool start_scheduler(){
     switch_proc(YIELD);
     return true;
 }
+
+void* list_alloc(size_t size){
+    return kalloc(proc_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+}
+
+bool init_scheduler_module(){
+    if (!proc_opened_files) {
+        proc_opened_files = chashmap_create(64);
+        proc_opened_files->free = kfree;
+        proc_opened_files->alloc = list_alloc;
+    }
+    return start_scheduler();
+}
+
 
 uintptr_t get_current_heap(){
     return processes[current_proc].heap;
@@ -292,10 +297,6 @@ size_t list_processes(const char *path, void *buf, size_t size, file_offset offs
     return size;
 }
 
-void* list_alloc(size_t size){
-    return kalloc(proc_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
-}
-
 FS_RESULT open_proc(const char *path, file *descriptor){
     const char *fullpath = path;
     const char *pid_s = seek_to(path, '/');
@@ -304,15 +305,8 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     process_t *proc = get_proc_by_pid(pid);
     descriptor->id = reserve_fd_gid(fullpath);
     descriptor->cursor = 0;
-    if (!proc_opened_files) {
-        proc_opened_files = kalloc(proc_page, sizeof(clinkedlist_t), ALIGN_64B, MEM_PRIV_KERNEL);
-        proc_opened_files->free = kfree;
-        proc_opened_files->alloc = list_alloc;
-    }
-    proc_open_file *file = kalloc(proc_page, sizeof(proc_open_file), ALIGN_64B, MEM_PRIV_KERNEL);
+    module_file *file = kalloc(proc_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
     file->fid = descriptor->id;
-    file->pid = proc->id;
-    
     if (strcmp(path, "out", true) == 0){
         descriptor->size = proc->output_size;
         file->buffer = proc->output;
@@ -323,20 +317,19 @@ FS_RESULT open_proc(const char *path, file *descriptor){
         file->read_only = true;
     } else return FS_RESULT_NOTFOUND;
     file->file_size = descriptor->size;
-    clinkedlist_push_front(proc_opened_files, (void*)file);
-    return FS_RESULT_SUCCESS;
+    return chashmap_put(proc_opened_files, &descriptor->id, sizeof(uint64_t), file) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
 int find_open_proc_file(void *node, void* key){
     uint64_t *fid = (uint64_t*)key;
-    proc_open_file *file = (proc_open_file*)node;
+    module_file *file = (module_file*)node;
     if (file->fid == *fid) return 0;
     return -1;
 }
 
 int find_open_proc_file_buffer(void *node, void* key){
     uint64_t *buf = (uint64_t*)key;
-    proc_open_file *file = (proc_open_file*)node;
+    module_file *file = (module_file*)node;
     if (file->buffer == *buf) return 0;
     return -1;
 }
@@ -346,9 +339,7 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
         kprint("No files open");
         return 0;
     }
-    clinkedlist_node_t *node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
-    if (!node->data) return 0;
-    proc_open_file *file = (proc_open_file*)node->data;
+    module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
     if (!file) return 0;
     uint64_t cursor = file->ignore_cursor ? 0 : fd->cursor;
     size = min(size, file->file_size - cursor);
@@ -367,11 +358,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
         return 0;
     }
     uintptr_t pbuf;
-    clinkedlist_node_t *node;
-    
-    node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
-    if (!node->data) return 0;
-    proc_open_file *file = (proc_open_file*)node->data;
+    module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
     if (file->read_only) return 0;
     pbuf = file->buffer;
 
@@ -390,7 +377,7 @@ driver_module scheduler_module = (driver_module){
     .name = "scheduler",
     .mount = "/proc",
     .version = VERSION_NUM(0, 1, 0, 1),
-    .init = start_scheduler,
+    .init = init_scheduler_module,
     .fini = 0,
     .open = open_proc,
     .read = read_proc,
