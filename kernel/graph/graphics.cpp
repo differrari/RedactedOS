@@ -113,7 +113,7 @@ void gpu_set_cursor_pressed(bool pressed){
 
 system_module graphics_module = {
     .name = "graphics",
-    .mount = "/dev/graph",
+    .mount = "/graph",
     .version = VERSION_NUM(0, 1, 0, 0),
     .init = gpu_init,
     .fini = 0,
