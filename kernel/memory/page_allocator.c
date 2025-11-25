@@ -44,7 +44,7 @@ int count_pages(uint64_t i1,uint64_t i2){
 
 void pfree(void* ptr, uint64_t size) {
     int pages = count_pages(size,PAGE_SIZE);
-    uint64_t addr = (uint64_t)ptr;
+    uint64_t addr = VIRT_TO_PHYS((uint64_t)ptr);
     addr /= PAGE_SIZE;
     for (int i = 0; i < pages; i++){
         uint64_t index = addr + i;
@@ -73,13 +73,13 @@ void free_managed_page(void* ptr){
 uint64_t start;
 uint64_t end;
 
-void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
+void* palloc_raw(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map) {
     if (!start) start = count_pages(get_user_ram_start(),PAGE_SIZE);
     if (!end) end = count_pages(get_user_ram_end(),PAGE_SIZE);
     uint64_t page_count = count_pages(size,PAGE_SIZE);
 
     if (page_count > 64){
-        kprintfv("Large allocation > 64p");
+        kprintfv("[page_alloc] Large allocation > 64p");
         uint64_t reg_count = page_count/64;
         uint8_t fractional = page_count % 64;
         reg_count += fractional > 0;
@@ -105,14 +105,16 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
                 start = (i + (reg_count - (fractional > 0))) * 64;
                 for (uint32_t p = 0; p < page_count; p++){
                     uintptr_t address = ((i * 64) + p) * PAGE_SIZE;
-                    if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
-                        register_device_memory(address, address);
-                    else
-                        register_proc_memory(address, address, attributes, level);
+                    if (map){
+                        if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
+                            register_device_memory(address, address);
+                        else
+                            register_proc_memory(address, address, attributes, level);
+                    }
                 }
                 kprintfv("[page_alloc] Final address %x", (i * 64 * PAGE_SIZE));
                 void* addr = (void*)(i * 64 * PAGE_SIZE);
-                if (full) memset(addr, 0, size);
+                memset(addr, 0, size);
                 return addr;
             }
         }
@@ -151,12 +153,14 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
                 uintptr_t address = page_index * PAGE_SIZE;
                 if (!first_address) first_address = address;
 
-                if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
-                    register_device_memory(address, address);
-                else
-                    register_proc_memory(address, address, attributes, level);
+                if (map){
+                    if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
+                        register_device_memory(address, address);
+                    else
+                        register_proc_memory(address, address, attributes, level);
+                }
 
-                if (!full) {
+                if (!full && map) {
                     mem_page* new_info = (mem_page*)address;
                     new_info->next = NULL;
                     new_info->free_list = NULL;
@@ -174,6 +178,10 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
 
     uart_puts("[page_alloc error] Could not allocate");
     return 0;
+}
+
+void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full){
+    return PHYS_TO_VIRT_P(palloc_raw(size, level, attributes, full, true));
 }
 
 bool page_used(uintptr_t ptr){
@@ -268,7 +276,7 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
 
     kprintfv("[in_page_alloc] Aligned next pointer %x",info->next_free_mem_ptr);
 
-    if (info->next_free_mem_ptr + size > (((uintptr_t)page) + PAGE_SIZE)) {
+    if (info->next_free_mem_ptr + size > ((VIRT_TO_PHYS((uintptr_t)page)) + PAGE_SIZE)) {
         if (!info->next){
             info->next = palloc(PAGE_SIZE, level, info->attributes, false);
             if (page_va && next_va && ttrb){

@@ -26,6 +26,7 @@ uintptr_t mmu_translate(uintptr_t va);
 #endif
 
 extern uintptr_t *pttrb;
+extern bool mmu_active;
 
 void mmu_unmap(uint64_t va, uint64_t pa);
 void mmu_init_kernel();

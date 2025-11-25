@@ -523,7 +523,7 @@ bool XHCIDriver::poll(uint8_t address, uint8_t endpoint, void *out_buf, uint16_t
 
     trb* ev = &ep_ring->ring[ep_ring->index++];
 
-    ev->parameter = (uintptr_t)out_buf;
+    ev->parameter = VIRT_TO_PHYS((uintptr_t)out_buf);
     ev->status = size;
     ev->control = (TRB_TYPE_NORMAL << 10) | (1 << 5) | ep_ring->cycle_bit;
 
@@ -543,7 +543,7 @@ void XHCIDriver::handle_interrupt(){
     if (!((ev->control & 1) == event_ring.cycle_bit)) return;
     uint32_t type = (ev->control & TRB_TYPE_MASK) >> 10;
     uint64_t addr = ev->parameter;
-    if (type == awaited_type && (awaited_addr == 0 || (awaited_addr & 0xFFFFFFFFFFFFFFFF) == addr))
+    if (type == awaited_type && (awaited_addr == 0 || (awaited_addr & 0xFFFFFFFF) == addr))
         return;
     kprintfv("[xHCI] >>> Unhandled interrupt %i %llx",event_ring.index,type);
     uint8_t completion_code = (ev->status >> 24) & 0xFF;

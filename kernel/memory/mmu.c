@@ -26,6 +26,7 @@
 uint64_t *kernel_mmu_page;
 
 static bool mmu_verbose;
+bool mmu_active;
 
 void mmu_enable_verbose(){
     mmu_verbose = true;
@@ -203,6 +204,8 @@ void mmu_init() {
     hw_high_va();
 
     mmu_start(kernel_mmu_page);
+
+    mmu_active = true;
 
     kprintf("Finished MMU init");
 }

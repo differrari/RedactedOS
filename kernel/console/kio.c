@@ -62,7 +62,7 @@ static void console_ring_write(const char *src, size_t n) {
 
 static void init_print_buf(){
     if (!console_storage) {
-        console_storage = palloc(CONSOLE_BUF_SIZE,MEM_PRIV_KERNEL, MEM_RW, true);
+        console_storage = palloc_raw(CONSOLE_BUF_SIZE,MEM_PRIV_KERNEL, MEM_RW, true, true);
         cring_init(&console_rb, console_storage, CONSOLE_BUF_SIZE, 1);
         console_drop_count = 0;
     }
