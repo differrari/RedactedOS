@@ -32,6 +32,7 @@ system_config_t system_config = {
     .panic_text = PANIC_TEXT,
     .default_pwd = DEFAULT_PWD,
     .system_name = SYSTEM_NAME,
+    .app_directory = "shared",
     .use_net = true,
 };
 
@@ -87,6 +88,7 @@ void parse_theme_kvp(const char *key, char *value, size_t value_len, void *conte
     
     parse_toml_str(panic_text,  system_config);
     parse_toml_str(system_name, system_config);
+    parse_toml_str(app_directory, system_config);
     parse_toml(use_net, system_config, parse_int_u64);
     
     parse_toml(logo_points_count,   boot_theme,parse_int_u64);

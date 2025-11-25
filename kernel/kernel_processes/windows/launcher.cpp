@@ -57,7 +57,8 @@ void Launcher::load_entries(){
     entries.empty();
     size_t listsize = 0x1000;
     void *listptr = malloc(listsize);
-    if (!list_directory_contents("/shared/redos/user/", listptr, listsize, 0)){
+    string app_path = string_format("/%s/redos/user", system_config.app_directory);
+    if (!list_directory_contents(app_path.data, listptr, listsize, 0)){
         kprintf("Failed to read contents of directory");
         return;
     }
@@ -67,7 +68,7 @@ void Launcher::load_entries(){
         for (uint32_t i = 0; i < list->count; i++){
             char *file = reader;
             if (*file){
-                string fullpath = string_format("/shared/redos/user/%s",(uintptr_t)file);
+                string fullpath = string_format("%s/%s",app_path.data, (uintptr_t)file);
                 string name = string_from_literal_length(file,find_extension(file));
                 string ext = string_from_literal(file + find_extension(file));
                 if (strcmp(ext.data,".red", true) == 0){
@@ -80,6 +81,7 @@ void Launcher::load_entries(){
             }
         }
     }
+    string_free(app_path);
     free(listptr, listsize);
 }
 
