@@ -1,0 +1,5 @@
+# Package info for echo command
+name = "echo"
+description = "Prints its arguments to the console."
+version = "0.1"
+author = "tacheraSasi"
