@@ -51,7 +51,7 @@ void pfree(void* ptr, uint64_t size) {
         uint64_t table_index = index/64;
         uint64_t table_offset = index % 64;
         mem_bitmap[table_index] &= ~(1ULL << table_offset);
-        mmu_unmap(index * PAGE_SIZE,index * PAGE_SIZE);
+        mmu_unmap(index * PAGE_SIZE, index * PAGE_SIZE);
     }
 }
 

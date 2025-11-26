@@ -139,10 +139,7 @@ static inline void mmu_flush_icache() {
     );
 }
 
-void mmu_unmap(uint64_t va, uint64_t pa){
-
-    uint64_t *table = kernel_mmu_page;
-    
+void mmu_unmap_table(uintptr_t *table, uintptr_t va, uintptr_t pa){
     uint64_t l0_index = (va >> 39) & 0x1FF;
     uint64_t l1_index = (va >> 30) & 0x1FF;
     uint64_t l2_index = (va >> 21) & 0x1FF;
@@ -168,6 +165,11 @@ void mmu_unmap(uint64_t va, uint64_t pa){
 
     mmu_flush_all();
     mmu_flush_icache();
+}
+
+void mmu_unmap(uint64_t va, uint64_t pa){
+    mmu_unmap_table(kernel_mmu_page, va, pa);
+    mmu_unmap_table(pttrb, va, pa);
 }
 
 void mmu_init_kernel(){
