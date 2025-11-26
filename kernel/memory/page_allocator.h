@@ -18,8 +18,6 @@
 #define MEM_DEV     (1 << 2)
 #define MEM_NORM    (0 << 2)
 
-void page_allocator_init();
-
 #ifdef __cplusplus
 extern "C" {
 #endif

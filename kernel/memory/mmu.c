@@ -26,7 +26,6 @@
 uint64_t *kernel_mmu_page;
 
 static bool mmu_verbose;
-bool mmu_active;
 
 void mmu_enable_verbose(){
     mmu_verbose = true;
@@ -172,10 +171,6 @@ void mmu_unmap(uint64_t va, uint64_t pa){
     mmu_unmap_table(pttrb, va, pa);
 }
 
-void mmu_init_kernel(){
-    kernel_mmu_page = mmu_alloc();
-}
-
 uint64_t *mmu_alloc(){
     return (uint64_t*)talloc(PAGE_SIZE);
 }
@@ -191,6 +186,7 @@ extern uintptr_t ksp;
 extern void mmu_start(uint64_t *mmu);
 
 void mmu_init() {
+    kernel_mmu_page = mmu_alloc();
     uint64_t kstart = mem_get_kmem_start();
     uint64_t kend = mem_get_kmem_end();
 
@@ -207,9 +203,7 @@ void mmu_init() {
 
     mmu_start(kernel_mmu_page);
 
-    mmu_active = true;
-
-    kprintf("Finished MMU init");
+    // kprintf("Finished MMU init");
 }
 
 void mmu_copy(uintptr_t *new_ttrb, uintptr_t *old_ttrb, int level){

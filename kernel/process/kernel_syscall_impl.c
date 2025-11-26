@@ -11,17 +11,12 @@
 #include "net/transport_layer/socket_types.h"
 #include "net/network_types.h"
 #include "filesystem/filesystem.h"
-#include "memory/mmu.h"
 #include "sysregs.h"
 
 void* malloc(size_t size){
     uintptr_t heap = get_proc_by_pid(1)->heap;
     heap = VIRT_TO_PHYS(heap);
-    void* a = kalloc((void*)heap, size, ALIGN_16B, MEM_PRIV_KERNEL);
-    if (!mmu_active){
-        a = VIRT_TO_PHYS_P(a);
-    }
-    return a;
+    return kalloc((void*)heap, size, ALIGN_16B, MEM_PRIV_KERNEL);
 }
 
 void free(void*ptr, size_t size){

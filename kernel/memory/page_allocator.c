@@ -32,12 +32,6 @@ void page_alloc_enable_verbose(){
         }\
     })
 
-void page_allocator_init() {
-    for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) {
-        mem_bitmap[i] = 0;
-    }
-}
-
 int count_pages(uint64_t i1,uint64_t i2){
     return (i1/i2) + (i1 % i2 > 0);
 }
