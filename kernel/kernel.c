@@ -26,12 +26,9 @@
 void kernel_main() {
 
     detect_hardware();
-
-    mmu_init_kernel();
     
+    mmu_init();
     if (BOARD_TYPE == 2) mailbox_init();
-
-    page_allocator_init();
 
     set_exception_vectors();
 
@@ -40,7 +37,6 @@ void kernel_main() {
 //    if (BOARD_TYPE == 1) disable_visual();
 
     load_module(&console_module);
-    mmu_init();
 
     print_hardware();
 
