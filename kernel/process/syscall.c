@@ -257,8 +257,8 @@ syscall_entry syscalls[] = {
 
 bool decode_crash_address_with_info(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
     if (!debug_line.ptr || !debug_line.size) return false;
-    debug_line_info info = dwarf_decode_lines(debug_line.ptr, debug_line.size, debug_line_str.ptr, debug_line_str.size, address);
-    if (info.address == address){
+    debug_line_info info = dwarf_decode_lines(debug_line.ptr, debug_line.size, debug_line_str.ptr, debug_line_str.size, VIRT_TO_PHYS(address));
+    if (info.address == VIRT_TO_PHYS(address)){
         kprintf("[%.16x] %i: %s %i:%i", address, depth, info.file, info.line, info.column);
         return true;
     }
@@ -380,7 +380,7 @@ void sync_el0_handler_c(){
             }
             if (currentEL == 1){
                 if (syscall_depth < 3){
-                    if (syscall_depth == 1) kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
+                    if (syscall_depth < 1) kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
                     if (syscall_depth < 2) coredump(esr, elr, far, proc->sp);
                     handle_exception("UNEXPECTED EXCEPTION",ec);
                 }
