@@ -179,9 +179,9 @@ uint32_t select_queue(virtio_device *dev, uint32_t index){
 }
 
 bool virtio_send_3d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags) {
-    volatile virtq_desc* d = (virtq_desc*)dev->common_cfg->queue_desc;
-    volatile virtq_avail* a = (virtq_avail*)dev->common_cfg->queue_driver;
-    volatile virtq_used* u = (virtq_used*)dev->common_cfg->queue_device;
+    volatile virtq_desc* d = PHYS_TO_VIRT_P((virtq_desc*)dev->common_cfg->queue_desc);
+    volatile virtq_avail* a = PHYS_TO_VIRT_P((virtq_avail*)dev->common_cfg->queue_driver);
+    volatile virtq_used* u = PHYS_TO_VIRT_P((virtq_used*)dev->common_cfg->queue_device);
     
     d[0].addr = VIRT_TO_PHYS(cmd);
     d[0].len = cmd_len;
@@ -216,9 +216,9 @@ bool virtio_send_3d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t
 
 bool virtio_send_2d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t resp, uint32_t resp_len, uint8_t flags) {
 
-    volatile virtq_desc* d = (virtq_desc*)dev->common_cfg->queue_desc;
-    volatile virtq_avail* a = (virtq_avail*)dev->common_cfg->queue_driver;
-    volatile virtq_used* u = (virtq_used*)dev->common_cfg->queue_device;
+    volatile virtq_desc* d = PHYS_TO_VIRT_P((virtq_desc*)dev->common_cfg->queue_desc);
+    volatile virtq_avail* a = PHYS_TO_VIRT_P((virtq_avail*)dev->common_cfg->queue_driver);
+    volatile virtq_used* u = PHYS_TO_VIRT_P((virtq_used*)dev->common_cfg->queue_device);
     uint16_t last_used_idx = u->idx;
 
     d[0].addr = VIRT_TO_PHYS(cmd);
@@ -243,9 +243,9 @@ bool virtio_send_2d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len, uint64_t
 
 bool virtio_send_1d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len) {
 
-    volatile virtq_desc* d = (virtq_desc*)dev->common_cfg->queue_desc;
-    volatile virtq_avail* a = (virtq_avail*)dev->common_cfg->queue_driver;
-    volatile virtq_used* u = (virtq_used*)dev->common_cfg->queue_device;
+    volatile virtq_desc* d = PHYS_TO_VIRT_P((virtq_desc*)dev->common_cfg->queue_desc);
+    volatile virtq_avail* a = PHYS_TO_VIRT_P((virtq_avail*)dev->common_cfg->queue_driver);
+    volatile virtq_used* u = PHYS_TO_VIRT_P((virtq_used*)dev->common_cfg->queue_device);
     uint16_t last_used_idx = u->idx;
     
     d[0].addr = VIRT_TO_PHYS(cmd);
@@ -266,8 +266,8 @@ bool virtio_send_1d(virtio_device *dev, uint64_t cmd, uint32_t cmd_len) {
 
 void virtio_add_buffer(virtio_device *dev, uint16_t index, uint64_t buf, uint32_t buf_len, bool host_to_dev) {
 
-    volatile virtq_desc* d = (virtq_desc*)dev->common_cfg->queue_desc;
-    volatile virtq_avail* a = (virtq_avail*)dev->common_cfg->queue_driver;
+    volatile virtq_desc* d = PHYS_TO_VIRT_P((virtq_desc*)dev->common_cfg->queue_desc);
+    volatile virtq_avail* a = PHYS_TO_VIRT_P((virtq_avail*)dev->common_cfg->queue_driver);
     
     d[index].addr = VIRT_TO_PHYS(buf);
     d[index].len = buf_len;
