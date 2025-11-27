@@ -40,7 +40,7 @@ void fw_cfg_dma_operation(void* dest, uint32_t size, uint32_t ctrl) {
         .control = __builtin_bswap32(ctrl),
     };
 
-    write64(FW_CFG_DMA, __builtin_bswap64(VIRT_TO_PHYS((uint64_t)&access)));
+    write64(PHYS_TO_VIRT(FW_CFG_DMA), __builtin_bswap64(VIRT_TO_PHYS((uint64_t)&access)));
 
     __asm__("isb");
 
