@@ -79,18 +79,18 @@ void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mm
             }
 
             if (cap->cfg_type == VIRTIO_PCI_CAP_COMMON_CFG){
-                kprintfv("[VIRTIO] Common CFG @ %llx",(unsigned long long)(bar_base + cap->offset) >> 32);
-                dev->common_cfg = (struct virtio_pci_common_cfg*)(uintptr_t)(bar_base + cap->offset);
+                dev->common_cfg = (struct virtio_pci_common_cfg*)PHYS_TO_VIRT((bar_base + cap->offset));
+                kprintfv("[VIRTIO] Common CFG @ %llx",dev->common_cfg);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_NOTIFY_CFG) {
-                kprintfv("[VIRTIO] Notify CFG @ %llx",(unsigned long long)(bar_base + cap->offset) >> 32);
-                dev->notify_cfg = (uint8_t*)(uintptr_t)(bar_base + cap->offset);
-                dev->notify_off_multiplier = *(uint32_t*)(uintptr_t)(cap_addr + sizeof(struct virtio_pci_cap));
+                dev->notify_cfg = (uint8_t*)PHYS_TO_VIRT((bar_base + cap->offset));
+                kprintfv("[VIRTIO] Notify CFG @ %llx",dev->notify_cfg);
+                dev->notify_off_multiplier = *(uint32_t*)PHYS_TO_VIRT((cap_addr + sizeof(struct virtio_pci_cap)));
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_DEVICE_CFG){
-                kprintfv("[VIRTIO] Device CFG @ %llx",(unsigned long long)(bar_base + cap->offset) >> 32);
-                dev->device_cfg = (uint8_t*)(uintptr_t)(bar_base + cap->offset);
+                dev->device_cfg = (uint8_t*)PHYS_TO_VIRT((bar_base + cap->offset));
+                kprintfv("[VIRTIO] Device CFG @ %llx",dev->device_cfg);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_ISR_CFG){
-                kprintfv("[VIRTIO] ISR CFG @ %llx",(unsigned long long)(bar_base + cap->offset) >> 32);
-                dev->isr_cfg = (uint8_t*)(uintptr_t)(bar_base + cap->offset);
+                dev->isr_cfg = (uint8_t*)PHYS_TO_VIRT((bar_base + cap->offset));
+                kprintfv("[VIRTIO] ISR CFG @ %llx",dev->isr_cfg);
             }
         }
 
