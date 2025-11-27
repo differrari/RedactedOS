@@ -274,7 +274,7 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
 
     if (elr){
         if (!decode_crash_address(0, elr, debug_line, debug_line_str))
-            kprintf("Exception triggered by %x",(elr));
+            kprintf("Exception triggered by %llx",(elr));
     }
 
     for (uint8_t depth = 1; depth < 10 && fp; depth++) {
@@ -283,7 +283,7 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
         if (return_address != 0){
             return_address -= 4;//Return address is the next instruction after branching
             if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
-                kprintf("%i: caller address: %x", depth, return_address, return_address);
+                kprintf("%i: caller address: %llx", depth, return_address, return_address);
             fp = *(uintptr_t*)fp;
         } else return;
 
