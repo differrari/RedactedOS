@@ -217,7 +217,7 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
 
     kprintfv("[in_page_alloc] Requested size: %x", size);
 
-    mem_page *info = (mem_page*)page;
+    mem_page *info = (mem_page*)PHYS_TO_VIRT_P(page);
 
     if (size >= PAGE_SIZE){
         void* ptr = palloc(size, level, info->attributes, true);
@@ -246,13 +246,14 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
         return ptr;
     }
 
-    FreeBlock** curr = &info->free_list;
-    while (*curr && (uintptr_t)(*curr) != 0xDEADBEEF && (uintptr_t)(*curr) != 0xDEADBEEFDEADBEEF) {
-        if ((*curr)->size >= size) {
+    FreeBlock** curr = PHYS_TO_VIRT_P(&info->free_list);
+    FreeBlock *cblock = PHYS_TO_VIRT_P(*curr);
+    while (*curr && (uintptr_t)cblock != 0xDEADBEEF && (uintptr_t)cblock != 0xDEADBEEFDEADBEEF) {
+        if (cblock->size >= size) {
             kprintfv("[in_page_alloc] Reusing free block at %x",(uintptr_t)*curr);
 
-            uint64_t result = (uint64_t)*curr;
-            *curr = (*curr)->next;
+            uint64_t result = (uint64_t)cblock;
+            *curr = VIRT_TO_PHYS_P(cblock->next);
             memset((void*)result, 0, size);
             info->size += size;
             if (page_va){
@@ -260,8 +261,9 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
             } 
             return (void*)result;
         }
-        kprintfv("-> %x",(uintptr_t)&(*curr)->next);
-        curr = &(*curr)->next;
+        kprintfv("-> %x",(uintptr_t)&cblock->next);
+        curr = &(cblock)->next;
+        cblock = PHYS_TO_VIRT_P(*curr);
     }
 
     kprintfv("[in_page_alloc] Current next pointer %x",info->next_free_mem_ptr);

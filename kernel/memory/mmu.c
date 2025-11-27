@@ -301,7 +301,7 @@ void debug_mmu_address(uint64_t va){
     uint64_t l2_index = (va >> 21) & 0x1FF;
     uint64_t l3_index = (va >> 12) & 0x1FF;
 
-    kprintf("Address %x is meant to be mapped to [%i][%i][%i][%i]",va, l0_index,l1_index,l2_index,l3_index);
+    kprintf("Address %llx is meant to be mapped to [%i][%i][%i][%i]",va, l0_index,l1_index,l2_index,l3_index);
 
     if (!(table[l0_index] & 1)) {
         kprintf("L1 Table missing");

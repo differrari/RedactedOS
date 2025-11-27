@@ -92,7 +92,7 @@ void detect_hardware(){
 void hw_high_va(){
     if (UART0_BASE) UART0_BASE |= HIGH_VA;
     if (MMIO_BASE) MMIO_BASE |= HIGH_VA;
-    if (BOARD_TYPE != 1 && PCI_BASE)//virt is probably doing some weird PCI address stuff already
+    if (BOARD_TYPE != 1 && PCI_BASE)
         PCI_BASE |= HIGH_VA;
     if (GICD_BASE) GICD_BASE |= HIGH_VA;
     if (GICC_BASE) GICC_BASE |= HIGH_VA;
