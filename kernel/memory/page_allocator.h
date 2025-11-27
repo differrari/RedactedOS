@@ -22,7 +22,7 @@
 extern "C" {
 #endif
 void page_alloc_enable_verbose();
-void* palloc_raw(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map);
+void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map);
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full);
 void free_managed_page(void* ptr);
 void pfree(void* ptr, uint64_t size);

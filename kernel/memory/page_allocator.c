@@ -67,7 +67,7 @@ void free_managed_page(void* ptr){
 uint64_t start;
 uint64_t end;
 
-void* palloc_raw(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map) {
+void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map) {
     if (!start) start = count_pages(get_user_ram_start(),PAGE_SIZE);
     if (!end) end = count_pages(get_user_ram_end(),PAGE_SIZE);
     uint64_t page_count = count_pages(size,PAGE_SIZE);
@@ -108,7 +108,7 @@ void* palloc_raw(uint64_t size, uint8_t level, uint8_t attributes, bool full, bo
                 }
                 kprintfv("[page_alloc] Final address %x", (i * 64 * PAGE_SIZE));
                 void* addr = (void*)(i * 64 * PAGE_SIZE);
-                memset(addr, 0, size);
+                memset(PHYS_TO_VIRT_P(addr), 0, size);
                 return addr;
             }
         }
@@ -165,7 +165,7 @@ void* palloc_raw(uint64_t size, uint8_t level, uint8_t attributes, bool full, bo
             }
 
             kprintfv("[page_alloc] Final address %x", first_address);
-            if (full) memset((void*)first_address,0,size);
+            if (full) memset((void*)PHYS_TO_VIRT(first_address),0,size);
             return (void*)first_address;
         } else if (!skipped_regs) start = (i + 1) * 64;
     }
@@ -175,7 +175,7 @@ void* palloc_raw(uint64_t size, uint8_t level, uint8_t attributes, bool full, bo
 }
 
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full){
-    return PHYS_TO_VIRT_P(palloc_raw(size, level, attributes, full, true));
+    return PHYS_TO_VIRT_P(palloc_inner(size, level, attributes, full, true));
 }
 
 bool page_used(uintptr_t ptr){
@@ -254,7 +254,7 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
 
             uint64_t result = (uint64_t)cblock;
             *curr = VIRT_TO_PHYS_P(cblock->next);
-            memset((void*)result, 0, size);
+            memset((void*)PHYS_TO_VIRT(result), 0, size);
             info->size += size;
             if (page_va){
                 return (void*)(page_va | (result & 0xFFF));
@@ -290,7 +290,7 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
 
     kprintfv("[in_page_alloc] Allocated address %x",result);
 
-    memset((void*)result, 0, size);
+    memset((void*)PHYS_TO_VIRT(result), 0, size);
     info->size += size;
     if (page_va){
         return (void*)(page_va | (result & 0xFFF));
