@@ -302,7 +302,6 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
 
     uintptr_t dest = (uintptr_t)palloc_inner(code_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true, false);
     if (!dest) return 0;
-
     
     // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
     
@@ -310,14 +309,14 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
         mmu_map_4kb(kttbr, (uintptr_t)dest + (i - min_addr), (uintptr_t)dest + (i - min_addr), MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
         mmu_map_4kb(ttbr, i, (uintptr_t)dest + (i - min_addr), MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
     }
-    memset((void*)dest, 0, code_size);
+    memset(PHYS_TO_VIRT_P(dest), 0, code_size);
     proc->use_va = true;
     allow_va = false;
     
-    map_section(proc, dest, min_addr, text_va, text);
-    map_section(proc, dest, min_addr, data_va, data);
-    map_section(proc, dest, min_addr, rodata_va, rodata);
-    map_section(proc, dest, min_addr, bss_va, bss);
+    map_section(proc, PHYS_TO_VIRT(dest), min_addr, text_va, text);
+    map_section(proc, PHYS_TO_VIRT(dest), min_addr, data_va, data);
+    map_section(proc, PHYS_TO_VIRT(dest), min_addr, rodata_va, rodata);
+    map_section(proc, PHYS_TO_VIRT(dest), min_addr, bss_va, bss);
 
     proc->va = min_addr;
     proc->code = (void*)dest;
@@ -343,7 +342,7 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
         kprintf("Stack %llx -> %llx",proc->last_va_mapping, i);
         proc->last_va_mapping += PAGE_SIZE;
     }
-    memset((void*)stack, 0, stack_size);
+    memset(PHYS_TO_VIRT_P(stack), 0, stack_size);
 
     proc->last_va_mapping += PAGE_SIZE;//Unmapped page to catch stack overflows
 
@@ -358,9 +357,9 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
     mmu_map_4kb(ttbr, heap, heap, MAIR_IDX_NORMAL, heapattr | MEM_NORM, MEM_PRIV_USER);
     mmu_map_4kb(kttbr, heap, heap, MAIR_IDX_NORMAL, heapattr | MEM_NORM, MEM_PRIV_USER);
 
-    setup_page(heap, heapattr);
+    setup_page(PHYS_TO_VIRT(heap), heapattr);
 
-    memset((void*)heap + sizeof(mem_page), 0, PAGE_SIZE - sizeof(mem_page));
+    memset(PHYS_TO_VIRT_P(heap + sizeof(mem_page)), 0, PAGE_SIZE - sizeof(mem_page));
 
     proc->last_va_mapping += PAGE_SIZE;
 
@@ -372,7 +371,7 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
     
     proc->output = PHYS_TO_VIRT((uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false));
     mmu_map_4kb(kttbr, proc->output, proc->output, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
-    memset((void*)proc->output, 0, PAGE_SIZE);
+    memset(PHYS_TO_VIRT_P(proc->output), 0, PAGE_SIZE);
     proc->pc = (uintptr_t)(entry);
     kprintf("User process %s allocated with address at %llx, stack at %llx (%llx), heap at %llx (%llx)",(uintptr_t)name,proc->pc, proc->sp, proc->stack_phys, proc->heap, proc->heap_phys);
     proc->spsr = 0;
