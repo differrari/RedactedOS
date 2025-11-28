@@ -285,6 +285,7 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
             if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
                 kprintf("%i: caller address: %llx", depth, return_address, return_address);
             fp = *(uintptr_t*)fp;
+            if (!mmu_translate(fp)) return;
         } else return;
 
     }
