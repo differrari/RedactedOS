@@ -169,7 +169,19 @@ size_t read_file(file *descriptor, char* buf, size_t size){
 }
 
 void close_file(file *descriptor){
-    //TODO: close files. Don't close it in module unless all references are gone
+    open_file_descriptors *ofile;
+    chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), (void**)&ofile);
+    if (!ofile || !ofile->mod || !ofile->mod->read || ofile->pid != get_current_proc_pid()) return;
+    file gfd = (file){
+        .id = ofile->mfile_id,
+        .size = descriptor->size,
+        .cursor = descriptor->cursor,
+    };
+    close_file_global(&gfd);
+}
+
+void close_file_global(file *descriptor){
+
 }
 
 size_t write_file(file *descriptor, const char* buf, size_t size){
@@ -236,7 +248,7 @@ void close_file_proc(void *key, uint64_t keylen, void *value){
 
 void close_files_for_process(uint16_t pid){
     close_pid = pid;
-    chashmap_for_each(open_files, close_file_proc, false);
+    chashmap_for_each(open_files, close_file_proc, true);
     close_pipes_for_process(pid);
     close_pid = -1;
 }

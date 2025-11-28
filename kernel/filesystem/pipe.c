@@ -53,6 +53,27 @@ void update_pipes(uint64_t mfid, const char *buf, size_t size){
     }
 }
 
-void close_pipes_for_process(uint16_t pid){
+static int32_t close_pid;
 
+void close_pipe_list(void *key, uint64_t keylen, void *value){
+    clinkedlist_t *list = (clinkedlist_t*)value;
+    clinkedlist_node_t *prev = 0;
+    for (clinkedlist_node_t *node = list->head; node; node = node->next){
+        pipe_t *pipe = (pipe_t*)node->data;
+        if (pipe->pid == close_pid){
+            if (prev) prev->next = node->next;
+            else list->head = node->next;
+
+            close_file_global(&pipe->write_fd);
+            close_file(&pipe->read_fd);
+            free(node->data, sizeof(pipe_t));
+            free(node, sizeof(clinkedlist_node_t));
+        }
+    }
+}
+
+void close_pipes_for_process(uint16_t pid){
+    close_pid = pid;
+    chashmap_for_each(pipe_map, close_pipe_list, true);
+    close_pid = -1;
 }
