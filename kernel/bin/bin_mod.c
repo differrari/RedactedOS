@@ -8,6 +8,7 @@
 #include "process/loading/elf_file.h"
 #include "memory/page_allocator.h"
 #include "std/memory.h"
+#include "sysregs.h"
 
 bool init_bin(){
     return true;
@@ -61,9 +62,9 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
                         uintptr_t end = (uintptr_t)argv;
                         size_t total = end-start;
                         size_t argvs = argc * sizeof(uintptr_t);
-                        char *nargvals = (char*)(proc->stack_phys-total-argvs);
+                        char *nargvals = (char*)(PHYS_TO_VIRT_P(proc->stack_phys)-total-argvs);
                         char *vnargvals = (char*)(proc->stack-total-argvs);
-                        char** nargv = (char**)(proc->stack_phys-argvs);
+                        char** nargv = (char**)(PHYS_TO_VIRT_P(proc->stack_phys)-argvs);
                         uintptr_t strptr = 0;
                         for (int i = 0; i < argc; i++){
                             size_t strsize = strlen(argv[i],0);
