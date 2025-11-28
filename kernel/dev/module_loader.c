@@ -1,13 +1,14 @@
 #include "module_loader.h"
 #include "console/kio.h"
 #include "filesystem/filesystem.h"
+#include "sysregs.h"
 
 //TODO: use hashmaps
 clinkedlist_t* modules;
 
 bool load_module(system_module *module){
     if (!modules) modules = clinkedlist_create();
-    clinkedlist_push_front(modules, (void*)module);
+    clinkedlist_push_front(modules, PHYS_TO_VIRT_P(module));
     return module->init();
 }
 

@@ -32,26 +32,20 @@ void page_alloc_enable_verbose(){
         }\
     })
 
-void page_allocator_init() {
-    for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) {
-        mem_bitmap[i] = 0;
-    }
-}
-
 int count_pages(uint64_t i1,uint64_t i2){
     return (i1/i2) + (i1 % i2 > 0);
 }
 
 void pfree(void* ptr, uint64_t size) {
     int pages = count_pages(size,PAGE_SIZE);
-    uint64_t addr = (uint64_t)ptr;
+    uint64_t addr = VIRT_TO_PHYS((uint64_t)ptr);
     addr /= PAGE_SIZE;
     for (int i = 0; i < pages; i++){
         uint64_t index = addr + i;
         uint64_t table_index = index/64;
         uint64_t table_offset = index % 64;
         mem_bitmap[table_index] &= ~(1ULL << table_offset);
-        mmu_unmap(index * PAGE_SIZE,index * PAGE_SIZE);
+        mmu_unmap(index * PAGE_SIZE, index * PAGE_SIZE);
     }
 }
 
@@ -73,13 +67,13 @@ void free_managed_page(void* ptr){
 uint64_t start;
 uint64_t end;
 
-void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
+void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map) {
     if (!start) start = count_pages(get_user_ram_start(),PAGE_SIZE);
     if (!end) end = count_pages(get_user_ram_end(),PAGE_SIZE);
     uint64_t page_count = count_pages(size,PAGE_SIZE);
 
     if (page_count > 64){
-        kprintfv("Large allocation > 64p");
+        kprintfv("[page_alloc] Large allocation > 64p");
         uint64_t reg_count = page_count/64;
         uint8_t fractional = page_count % 64;
         reg_count += fractional > 0;
@@ -105,14 +99,16 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
                 start = (i + (reg_count - (fractional > 0))) * 64;
                 for (uint32_t p = 0; p < page_count; p++){
                     uintptr_t address = ((i * 64) + p) * PAGE_SIZE;
-                    if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
-                        register_device_memory(address, address);
-                    else
-                        register_proc_memory(address, address, attributes, level);
+                    if (map){
+                        if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
+                            register_device_memory(address, address);
+                        else
+                            register_proc_memory(address, address, attributes, level);
+                    }
                 }
                 kprintfv("[page_alloc] Final address %x", (i * 64 * PAGE_SIZE));
                 void* addr = (void*)(i * 64 * PAGE_SIZE);
-                if (full) memset(addr, 0, size);
+                memset(PHYS_TO_VIRT_P(addr), 0, size);
                 return addr;
             }
         }
@@ -151,12 +147,14 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
                 uintptr_t address = page_index * PAGE_SIZE;
                 if (!first_address) first_address = address;
 
-                if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
-                    register_device_memory(address, address);
-                else
-                    register_proc_memory(address, address, attributes, level);
+                if (map){
+                    if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
+                        register_device_memory(address, address);
+                    else
+                        register_proc_memory(address, address, attributes, level);
+                }
 
-                if (!full) {
+                if (!full && map) {
                     mem_page* new_info = (mem_page*)address;
                     new_info->next = NULL;
                     new_info->free_list = NULL;
@@ -167,13 +165,17 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
             }
 
             kprintfv("[page_alloc] Final address %x", first_address);
-            if (full) memset((void*)first_address,0,size);
+            if (full) memset((void*)PHYS_TO_VIRT(first_address),0,size);
             return (void*)first_address;
         } else if (!skipped_regs) start = (i + 1) * 64;
     }
 
     uart_puts("[page_alloc error] Could not allocate");
     return 0;
+}
+
+void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full){
+    return PHYS_TO_VIRT_P(palloc_inner(size, level, attributes, full, true));
 }
 
 bool page_used(uintptr_t ptr){
@@ -215,7 +217,7 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
 
     kprintfv("[in_page_alloc] Requested size: %x", size);
 
-    mem_page *info = (mem_page*)page;
+    mem_page *info = (mem_page*)PHYS_TO_VIRT_P(page);
 
     if (size >= PAGE_SIZE){
         void* ptr = palloc(size, level, info->attributes, true);
@@ -244,22 +246,24 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
         return ptr;
     }
 
-    FreeBlock** curr = &info->free_list;
-    while (*curr && (uintptr_t)(*curr) != 0xDEADBEEF && (uintptr_t)(*curr) != 0xDEADBEEFDEADBEEF) {
-        if ((*curr)->size >= size) {
+    FreeBlock** curr = PHYS_TO_VIRT_P(&info->free_list);
+    FreeBlock *cblock = PHYS_TO_VIRT_P(*curr);
+    while (*curr && (uintptr_t)cblock != 0xDEADBEEF && (uintptr_t)cblock != 0xDEADBEEFDEADBEEF) {
+        if (cblock->size >= size) {
             kprintfv("[in_page_alloc] Reusing free block at %x",(uintptr_t)*curr);
 
-            uint64_t result = (uint64_t)*curr;
-            *curr = (*curr)->next;
-            memset((void*)result, 0, size);
+            uint64_t result = (uint64_t)cblock;
+            *curr = VIRT_TO_PHYS_P(cblock->next);
+            memset((void*)PHYS_TO_VIRT(result), 0, size);
             info->size += size;
             if (page_va){
                 return (void*)(page_va | (result & 0xFFF));
             } 
             return (void*)result;
         }
-        kprintfv("-> %x",(uintptr_t)&(*curr)->next);
-        curr = &(*curr)->next;
+        kprintfv("-> %x",(uintptr_t)&cblock->next);
+        curr = &(cblock)->next;
+        cblock = PHYS_TO_VIRT_P(*curr);
     }
 
     kprintfv("[in_page_alloc] Current next pointer %x",info->next_free_mem_ptr);
@@ -268,7 +272,7 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
 
     kprintfv("[in_page_alloc] Aligned next pointer %x",info->next_free_mem_ptr);
 
-    if (info->next_free_mem_ptr + size > (((uintptr_t)page) + PAGE_SIZE)) {
+    if (info->next_free_mem_ptr + size > ((VIRT_TO_PHYS((uintptr_t)page)) + PAGE_SIZE)) {
         if (!info->next){
             info->next = palloc(PAGE_SIZE, level, info->attributes, false);
             if (page_va && next_va && ttrb){
@@ -286,7 +290,7 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
 
     kprintfv("[in_page_alloc] Allocated address %x",result);
 
-    memset((void*)result, 0, size);
+    memset((void*)PHYS_TO_VIRT(result), 0, size);
     info->size += size;
     if (page_va){
         return (void*)(page_va | (result & 0xFFF));

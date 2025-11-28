@@ -8,7 +8,7 @@ typedef enum IMAGE_FORMATS {
 } IMAGE_FORMATS;
 
 #define ARGB(a,r,g,b) ((a & 0xFF) << 24) | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF)
-#define system_bpp 32
+#define system_bpp 4
 
 typedef struct image_info {
     uint32_t width, height;

@@ -11,9 +11,12 @@
 #include "net/transport_layer/socket_types.h"
 #include "net/network_types.h"
 #include "filesystem/filesystem.h"
+#include "sysregs.h"
 
 void* malloc(size_t size){
-    return kalloc((void*)get_proc_by_pid(1)->heap, size, ALIGN_16B, get_current_privilege());
+    uintptr_t heap = get_proc_by_pid(1)->heap;
+    heap = VIRT_TO_PHYS(heap);
+    return kalloc((void*)heap, size, ALIGN_16B, MEM_PRIV_KERNEL);
 }
 
 void free(void*ptr, size_t size){

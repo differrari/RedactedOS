@@ -30,7 +30,7 @@ volatile uint32_t uart_mbox[9] __attribute__((aligned(16))) = {
 };
 
 void enable_uart() {
-    register_device_memory(UART0_CR, UART0_CR);
+    register_device_memory(UART0_BASE, UART0_BASE);
 
     write32(UART0_CR, 0x0);
 

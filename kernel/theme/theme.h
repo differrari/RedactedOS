@@ -30,6 +30,7 @@ typedef struct {
     char *panic_text;
     char *default_pwd;
     char *system_name;
+    char *app_directory;
     bool use_net;
 } system_config_t;
 

@@ -138,10 +138,7 @@ static inline void mmu_flush_icache() {
     );
 }
 
-void mmu_unmap(uint64_t va, uint64_t pa){
-
-    uint64_t *table = kernel_mmu_page;
-    
+void mmu_unmap_table(uintptr_t *table, uintptr_t va, uintptr_t pa){
     uint64_t l0_index = (va >> 39) & 0x1FF;
     uint64_t l1_index = (va >> 30) & 0x1FF;
     uint64_t l2_index = (va >> 21) & 0x1FF;
@@ -169,8 +166,9 @@ void mmu_unmap(uint64_t va, uint64_t pa){
     mmu_flush_icache();
 }
 
-void mmu_init_kernel(){
-    kernel_mmu_page = mmu_alloc();
+void mmu_unmap(uint64_t va, uint64_t pa){
+    mmu_unmap_table(kernel_mmu_page, va, pa);
+    mmu_unmap_table(pttrb, va, pa);
 }
 
 uint64_t *mmu_alloc(){
@@ -188,6 +186,7 @@ extern uintptr_t ksp;
 extern void mmu_start(uint64_t *mmu);
 
 void mmu_init() {
+    kernel_mmu_page = mmu_alloc();
     uint64_t kstart = mem_get_kmem_start();
     uint64_t kend = mem_get_kmem_end();
 
@@ -204,7 +203,7 @@ void mmu_init() {
 
     mmu_start(kernel_mmu_page);
 
-    kprintf("Finished MMU init");
+    // kprintf("Finished MMU init");
 }
 
 void mmu_copy(uintptr_t *new_ttrb, uintptr_t *old_ttrb, int level){
@@ -302,7 +301,7 @@ void debug_mmu_address(uint64_t va){
     uint64_t l2_index = (va >> 21) & 0x1FF;
     uint64_t l3_index = (va >> 12) & 0x1FF;
 
-    kprintf("Address %x is meant to be mapped to [%i][%i][%i][%i]",va, l0_index,l1_index,l2_index,l3_index);
+    kprintf("Address %llx is meant to be mapped to [%i][%i][%i][%i]",va, l0_index,l1_index,l2_index,l3_index);
 
     if (!(table[l0_index] & 1)) {
         kprintf("L1 Table missing");

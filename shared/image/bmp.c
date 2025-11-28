@@ -29,7 +29,7 @@ image_info bmp_get_info(void * file, size_t size){
     bmp_header *header = (bmp_header*)file;
     return (image_info){
         .width = header->width,
-        .height = header->height
+        .height = abs(header->height)
     };
 }
 
