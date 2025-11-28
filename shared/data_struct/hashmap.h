@@ -42,7 +42,7 @@ void* chashmap_get(const chashmap_t* map, const void* key, uint64_t key_len);
 int chashmap_remove(chashmap_t* map, const void* key, uint64_t key_len, void** out_value);
 uint64_t chashmap_size(const chashmap_t* map);
 uint64_t chashmap_capacity(const chashmap_t* map);
-void chashmap_for_each(const chashmap_t* map, void (*func)(void* key, uint64_t key_len, void* value), bool reverse);
+void chashmap_for_each(const chashmap_t* map, void (*func)(void* key, uint64_t key_len, void* value));
 uint64_t chashmap_fnv1a64(const void* data, uint64_t len);
 
 #ifdef __cplusplus

@@ -15,6 +15,7 @@
 #include "memory/mmu.h"
 #include "process/syscall.h"
 #include "sysregs.h"
+#include "filesystem/filesystem.h"
 
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
@@ -152,6 +153,7 @@ void reset_process(process_t *proc){
             free_sized(p);
         proc->packet_buffer.entries[k] = (sizedptr){0};
     }
+    close_files_for_process(proc->id);
 }
 
 void init_main_process(){

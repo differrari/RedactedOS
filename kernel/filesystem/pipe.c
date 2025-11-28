@@ -74,6 +74,6 @@ void close_pipe_list(void *key, uint64_t keylen, void *value){
 
 void close_pipes_for_process(uint16_t pid){
     close_pid = pid;
-    chashmap_for_each(pipe_map, close_pipe_list, true);
+    chashmap_for_each(pipe_map, close_pipe_list);
     close_pid = -1;
 }

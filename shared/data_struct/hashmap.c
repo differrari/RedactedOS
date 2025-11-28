@@ -227,14 +227,15 @@ uint64_t chashmap_capacity(const chashmap_t* map){
     return map->capacity;
 }
 
-void chashmap_for_each(const chashmap_t* map, void (*func)(void* key, uint64_t key_len, void* value), bool reverse){
+void chashmap_for_each(const chashmap_t* map, void (*func)(void* key, uint64_t key_len, void* value)){
     if (!map || !func) return;
 
     for (uint64_t i = 0; i < map->capacity; i++){
-        chashmap_entry_t* e = map->buckets[reverse ? map->capacity - 1 - i : i];
+        chashmap_entry_t* e = map->buckets[i];
         while(e){
+            chashmap_entry_t* next = e->next;
             func(e->key, e->key_len, e->value);
-            e = e->next;
+            e = next;
         }
     }
 }

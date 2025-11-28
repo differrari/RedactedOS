@@ -242,13 +242,12 @@ void close_file_proc(void *key, uint64_t keylen, void *value){
         file fd = {};
         fd.id = f->file_id;
         close_file(&fd);
-        chashmap_remove(open_files, key, keylen, &value);
     }
 }
 
 void close_files_for_process(uint16_t pid){
     close_pid = pid;
-    chashmap_for_each(open_files, close_file_proc, true);
+    chashmap_for_each(open_files, close_file_proc);
     close_pipes_for_process(pid);
     close_pid = -1;
 }
