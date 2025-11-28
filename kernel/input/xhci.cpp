@@ -110,10 +110,10 @@ bool XHCIDriver::init(){
     cap = (xhci_cap_regs*)mmio;
     kprintfv("[xHCI] caplength %llx",cap->caplength);
     uintptr_t op_base = mmio + cap->caplength;
-    op = (xhci_op_regs*)op_base;
-    ports = (xhci_port_regs*)(op_base + 0x400);
-    db_base = mmio + (cap->dboff & ~0x1F);
-    rt_base = mmio + (cap->rtsoff & ~0x1F);
+    op = (xhci_op_regs*)PHYS_TO_VIRT(op_base);
+    ports = (xhci_port_regs*)PHYS_TO_VIRT((op_base + 0x400));
+    db_base = PHYS_TO_VIRT((mmio + (cap->dboff & ~0x1F)));
+    rt_base = PHYS_TO_VIRT((mmio + (cap->rtsoff & ~0x1F)));
 
     kprintfv("[xHCI] Resetting controller %llx",&op->usbcmd);
     op->usbcmd &= ~1;
@@ -539,7 +539,7 @@ bool XHCIDriver::poll(uint8_t address, uint8_t endpoint, void *out_buf, uint16_t
 }
 
 void XHCIDriver::handle_interrupt(){
-    trb* ev = &event_ring.ring[event_ring.index];
+    trb* ev = (trb*)PHYS_TO_VIRT_P(&event_ring.ring[event_ring.index]);
     if (!((ev->control & 1) == event_ring.cycle_bit)) return;
     uint32_t type = (ev->control & TRB_TYPE_MASK) >> 10;
     uint64_t addr = ev->parameter;
