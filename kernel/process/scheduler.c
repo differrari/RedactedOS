@@ -384,6 +384,7 @@ system_module scheduler_module = (system_module){
     .open = open_proc,
     .read = read_proc,
     .write = write_proc,
+    .close = 0,
     .sread = 0,
     .swrite = 0,//TODO implement simple io
     .readdir = list_processes,

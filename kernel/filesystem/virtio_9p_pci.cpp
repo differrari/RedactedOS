@@ -54,8 +54,9 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         kprintf("[VIRTIO 9P error] failed to navigate to %s",path);
         return FS_RESULT_NOTFOUND;
     }
+    uint64_t fid = reserve_fd_gid(path);
     descriptor->cursor = 0;
-    descriptor->id = reserve_fd_gid(path);
+    descriptor->id = fid;
     uint64_t size = get_attribute(f, 0x00000200ULL);
     descriptor->size = size;
     void* file = kalloc(np_dev.memory_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
@@ -67,12 +68,19 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         kprintf("[VIRTIO 9P error] failed read file %s",path);
         return FS_RESULT_DRIVER_ERROR;
     } 
-    module_file *mfile = (module_file*)kalloc(np_dev.memory_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
+    module_file *mfile = (module_file*)chashmap_get(open_files, &fid, sizeof(uint64_t));
+    if (!mfile){
+        mfile = (module_file*)kalloc(np_dev.memory_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
+        if (chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), mfile) < 0) return FS_RESULT_DRIVER_ERROR;
+    } else {
+        kfree((void*)mfile->buffer, mfile->file_size);
+    }
     mfile->file_size = size;
     mfile->buffer = (uintptr_t)file;
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
-    return chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), mfile) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
+    mfile->references++;
+    return FS_RESULT_SUCCESS;
 }
 
 size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
@@ -82,6 +90,16 @@ size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
     if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
     memcpy(buf, (void*)(mfile->buffer + descriptor->cursor), size);
     return size;
+}
+
+void Virtio9PDriver::close_file(file* descriptor){
+    module_file *mfile = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!mfile) return;
+    mfile->references--;
+    if (mfile->references == 0){
+        chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
+        kfree((void*)mfile->buffer, mfile->file_size);
+    }
 }
 
 size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, uint64_t offset){

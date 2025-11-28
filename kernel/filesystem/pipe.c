@@ -13,8 +13,7 @@ FS_RESULT create_pipe(const char *source, const char* destination, PIPE_OPTIONS 
     if (!pipe_page) pipe_page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
     pipe_t *pipe = (pipe_t*)kalloc(pipe_page, sizeof(pipe_t), ALIGN_16B, MEM_PRIV_KERNEL);
     pipe->pid = get_current_proc_pid();
-    system_module *mod = 0;
-    FS_RESULT result = open_file_global(source, &pipe->write_fd, &mod);
+    FS_RESULT result = open_file_global(source, &pipe->write_fd, &pipe->write_mod);
     if (result == FS_RESULT_SUCCESS){
         result = open_file(destination, &pipe->read_fd);
         if (result == FS_RESULT_SUCCESS){
@@ -64,7 +63,7 @@ void close_pipe_list(void *key, uint64_t keylen, void *value){
             if (prev) prev->next = node->next;
             else list->head = node->next;
 
-            close_file_global(&pipe->write_fd);
+            close_file_global(&pipe->write_fd, pipe->write_mod);
             close_file(&pipe->read_fd);
             free(node->data, sizeof(pipe_t));
             free(node, sizeof(clinkedlist_node_t));

@@ -120,6 +120,7 @@ system_module graphics_module = {
     .open = 0,
     .read = 0,
     .write = 0,
+    .close = 0,
     .sread = 0,
     .swrite = 0,//TODO implement simple io
     .readdir = 0

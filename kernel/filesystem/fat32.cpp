@@ -249,6 +249,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (mfile){
         descriptor->id = mfile->fid;
         descriptor->size = mfile->file_size;
+        mfile->references++;
         return FS_RESULT_SUCCESS;
     }
     path = seek_to(path, '/');
@@ -263,6 +264,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     mfile->buffer = (uintptr_t)buf;
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
+    mfile->references = 1;
     return chashmap_put(open_files, &fid, sizeof(uint64_t), mfile) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
@@ -273,6 +275,17 @@ size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
     if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
     memcpy(buf, (void*)(mfile->buffer + descriptor->cursor), size);
     return size;
+}
+
+void FAT32FS::close_file(file* descriptor){
+    module_file *mfile = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!mfile) return;
+    mfile->references--;
+    if (mfile->references == 0){
+        chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
+        kfree((void*)mfile->buffer, mfile->file_size);
+        kprintf("File closed entirely");
+    } else kprintf("File closed but still %i references to it %i",mfile->references);
 }
 
 sizedptr FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {

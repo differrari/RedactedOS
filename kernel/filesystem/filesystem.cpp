@@ -50,6 +50,10 @@ size_t boot_partition_readdir(const char* path, void *out_buf, size_t size, file
     return fs_driver->list_contents(path, out_buf, size, offset);
 }
 
+void boot_partition_close(file *descriptor){
+    fs_driver->close_file(descriptor);
+}
+
 system_module boot_fs_module = (system_module){
     .name = "boot",
     .mount = "/boot",
@@ -59,6 +63,7 @@ system_module boot_fs_module = (system_module){
     .open = boot_partition_open,
     .read = boot_partition_read,
     .write = boot_partition_write,
+    .close = boot_partition_close,
     .sread = 0,
     .swrite = 0,
     .readdir = boot_partition_readdir,
@@ -92,6 +97,11 @@ size_t shared_readdir(const char* path, void *out_buf, size_t size, file_offset 
     return p9Driver->list_contents(path, out_buf, size, offset);
 }
 
+void shared_close(file *descriptor){
+    kprintf("9P will close file");
+    p9Driver->close_file(descriptor);
+}
+
 system_module p9_fs_module = (system_module){
     .name = "9PFS",
     .mount = "/shared",
@@ -101,6 +111,7 @@ system_module p9_fs_module = (system_module){
     .open = shared_open,
     .read = shared_read,
     .write = shared_write,
+    .close = shared_close,
     .sread = 0,
     .swrite = 0,
     .readdir = shared_readdir,
@@ -177,11 +188,12 @@ void close_file(file *descriptor){
         .size = descriptor->size,
         .cursor = descriptor->cursor,
     };
-    close_file_global(&gfd);
+    close_file_global(&gfd, ofile->mod);
 }
 
-void close_file_global(file *descriptor){
-
+void close_file_global(file *descriptor, system_module *mod){
+    if (!mod) return;
+    mod->close(descriptor);
 }
 
 size_t write_file(file *descriptor, const char* buf, size_t size){

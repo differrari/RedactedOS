@@ -10,6 +10,7 @@ public:
     FS_RESULT open_file(const char* path, file* descriptor) override;
     size_t read_file(file *descriptor, void* buf, size_t size) override;
     size_t list_contents(const char *path, void* buf, size_t size, uint64_t offset = 0) override;
+    void close_file(file* descriptor) override;
 private:
     virtio_device np_dev;
     size_t choose_version();

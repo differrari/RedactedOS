@@ -1,7 +1,6 @@
 #pragma once
 
 #include "types.h"
-#include "std/string.h"
 #include "files/fs.h"
 
 #define VERSION_NUM(major,minor,patch,build) (uint64_t)((((uint64_t)major) << 48) | (((uint64_t)minor) << 32) | (((uint64_t)patch) << 16) | ((uint64_t)build))
@@ -26,7 +25,7 @@ typedef struct system_module {
     FS_RESULT (*open)(const char*, file*);
     size_t (*read)(file*, char*, size_t, file_offset);
     size_t (*write)(file*, const char *, size_t, file_offset);
-    //TODO: close
+    void (*close)(file *descriptor);
 
     size_t (*sread)(const char*, void*, size_t);
     size_t (*swrite)(const char*, const void*, size_t);
@@ -41,5 +40,6 @@ typedef struct module_file {
     uintptr_t buffer;
     bool ignore_cursor;
     bool read_only;
+    uint64_t references;
 } module_file;
 //TODO: for IPC create a dedicated loading function that attaches a module to a process so it can be cleaned up

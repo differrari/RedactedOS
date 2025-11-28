@@ -176,6 +176,7 @@ system_module console_module = (system_module){
     .init = console_init,
     .fini = console_fini,
     .open = console_open,
+    .close = 0,
     .read = console_read,
     .write = console_write_fd,
     .sread = 0,//TODO implement simple io

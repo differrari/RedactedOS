@@ -8,6 +8,7 @@ typedef struct {
     file write_fd;
     file read_fd;
     uint16_t pid;
+    system_module* write_mod;
 } pipe_t;
 
 typedef enum {

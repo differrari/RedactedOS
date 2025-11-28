@@ -288,6 +288,7 @@ system_module audio_module = (system_module){
     .open = audio_open,
     .read = audio_read,
     .write = audio_write,
+    .close = 0,
     .sread = 0,
     .swrite = 0,
     .readdir = 0,

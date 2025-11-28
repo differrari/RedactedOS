@@ -31,6 +31,7 @@ system_module rng_module = {
     .version = VERSION_NUM(0, 1, 0, 0),
     .init = rng_init_global,
     .open = rng_open,
+    .close = 0,
     .fini = 0,
     .read = rng_read,
     .write = 0,
