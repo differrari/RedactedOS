@@ -297,16 +297,20 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
 
     // kprintf("Code takes %x from %x to %x",code_size, min_addr, max_addr);
 
-    uintptr_t dest = (uintptr_t)palloc(code_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true);
+    uintptr_t *ttbr = mmu_new_ttrb();
+    uintptr_t *kttbr = mmu_default_ttbr();
+
+    uintptr_t dest = (uintptr_t)palloc_inner(code_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true, false);
     if (!dest) return 0;
 
+    
     // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
-
-    uintptr_t *ttbr = mmu_new_ttrb();
-
+    
     for (uintptr_t i = min_addr; i < max_addr; i += GRANULE_4KB){
+        mmu_map_4kb(kttbr, (uintptr_t)dest + (i - min_addr), (uintptr_t)dest + (i - min_addr), MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
         mmu_map_4kb(ttbr, i, (uintptr_t)dest + (i - min_addr), MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
     }
+    memset((void*)dest, 0, code_size);
     proc->use_va = true;
     allow_va = false;
     
@@ -322,31 +326,41 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
     max_addr = (max_addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     proc->last_va_mapping = max_addr;
     
-    uint64_t stack_size = 0x1000;
+    uint64_t stack_size = PAGE_SIZE;
 
-    uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_USER, MEM_RW, true);
+    uintptr_t stack = (uintptr_t)palloc_inner(stack_size, MEM_PRIV_USER, MEM_RW, true, false);
     if (!stack) return 0;
+    
     
     proc->last_va_mapping += PAGE_SIZE;//Unmapped page to catch stack overflows
     proc->stack = (proc->last_va_mapping + stack_size);
     proc->stack_phys = (stack + stack_size);
     
     for (uintptr_t i = stack; i < stack + stack_size; i += GRANULE_4KB){
+        mmu_map_4kb(kttbr, i, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
         mmu_map_4kb(ttbr, proc->last_va_mapping, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
         mmu_map_4kb(ttbr, i, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
         kprintf("Stack %llx -> %llx",proc->last_va_mapping, i);
         proc->last_va_mapping += PAGE_SIZE;
     }
+    memset((void*)stack, 0, stack_size);
 
     proc->last_va_mapping += PAGE_SIZE;//Unmapped page to catch stack overflows
 
-    uintptr_t heap = (uintptr_t)palloc(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, false);
+    uint8_t heapattr = MEM_RW;
+
+    uintptr_t heap = (uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, false, false);
     if (!heap) return 0;
 
     proc->heap = proc->last_va_mapping;
     proc->heap_phys = heap;
-    mmu_map_4kb(ttbr, proc->last_va_mapping, heap, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
-    mmu_map_4kb(ttbr, heap, heap, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+    mmu_map_4kb(ttbr, proc->last_va_mapping, heap, MAIR_IDX_NORMAL, heapattr | MEM_NORM, MEM_PRIV_USER);
+    mmu_map_4kb(ttbr, heap, heap, MAIR_IDX_NORMAL, heapattr | MEM_NORM, MEM_PRIV_USER);
+    mmu_map_4kb(kttbr, heap, heap, MAIR_IDX_NORMAL, heapattr | MEM_NORM, MEM_PRIV_USER);
+
+    setup_page(heap, heapattr);
+
+    memset((void*)heap + sizeof(mem_page), 0, PAGE_SIZE - sizeof(mem_page));
 
     proc->last_va_mapping += PAGE_SIZE;
 
@@ -356,7 +370,9 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
 
     proc->sp = proc->stack;
     
-    proc->output = PHYS_TO_VIRT((uintptr_t)palloc(0x1000, MEM_PRIV_USER, MEM_RW, true));
+    proc->output = PHYS_TO_VIRT((uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false));
+    mmu_map_4kb(kttbr, proc->output, proc->output, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+    memset((void*)proc->output, 0, PAGE_SIZE);
     proc->pc = (uintptr_t)(entry);
     kprintf("User process %s allocated with address at %llx, stack at %llx (%llx), heap at %llx (%llx)",(uintptr_t)name,proc->pc, proc->sp, proc->stack_phys, proc->heap, proc->heap_phys);
     proc->spsr = 0;

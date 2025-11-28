@@ -95,7 +95,7 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & 0xFFFFFFFFF000ULL);
     
     if (l3[l3_index] & 1){
-        kprintf("[MMU warning]: Section already mapped %x",va);
+        kprintf("[MMU warning]: Section already mapped %llx in %llx",va,table);
         return;
     }
     
@@ -136,6 +136,10 @@ static inline void mmu_flush_icache() {
         "ic iallu\n"         // Invalidate all instruction caches to PoU
         "isb\n"              // Ensure completion before continuing
     );
+}
+
+uintptr_t* mmu_default_ttbr(){
+    return kernel_mmu_page;
 }
 
 void mmu_unmap_table(uintptr_t *table, uintptr_t va, uintptr_t pa){

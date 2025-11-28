@@ -19,7 +19,7 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
 void debug_mmu_address(uint64_t va);
 void mmu_enable_verbose();
 void mmu_swap_ttbr(uintptr_t* ttbr);
-void mmu_default_ttbr();
+uintptr_t* mmu_default_ttbr();
 //TODO: mmu_free_ttbr
 uintptr_t mmu_translate(uintptr_t va);
 #ifdef __cplusplus
