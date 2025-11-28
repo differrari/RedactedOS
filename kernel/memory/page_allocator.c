@@ -319,7 +319,7 @@ void kfree(void* ptr, uint64_t size) {
 
     mem_page *page = (mem_page *)(((uintptr_t)ptr) & ~0xFFF);
 
-    uintptr_t phys_page = mmu_translate((uintptr_t)page);
+    uintptr_t phys_page = PHYS_TO_VIRT(mmu_translate((uintptr_t)page));
 
     FreeBlock* block = (FreeBlock*)((uintptr_t)phys_page | ((uintptr_t)ptr & 0xFFF));
     block->size = size;
