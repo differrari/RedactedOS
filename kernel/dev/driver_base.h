@@ -30,7 +30,7 @@ typedef struct system_module {
     size_t (*sread)(const char*, void*, size_t);
     size_t (*swrite)(const char*, const void*, size_t);
 
-    size_t (*readdir)(const char*, void*, size_t, file_offset);
+    size_t (*readdir)(const char*, void*, size_t, file_offset*);
 
 } system_module;
 

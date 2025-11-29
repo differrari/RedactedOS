@@ -272,30 +272,36 @@ void wake_processes(){
     }
 }
 
-size_t list_processes(const char *path, void *buf, size_t size, file_offset offset){
-    if (strlen(path, 100) == 0){
-        uint32_t count = 0;
+size_t list_processes(const char *path, void *buf, size_t size, file_offset *offset){
     
-        char *write_ptr = (char*)buf + 4;
-        process_t *processes = get_all_processes();
+   	int proc_index = 0;
+    if (*offset){
         for (int i = 0; i < MAX_PROCS; i++){
-            process_t *proc = &processes[i];
-            if (proc->id != 0 && proc->state != STOPPED){
-                count++;
-                char* name = proc->name;
-                while (*name) {
-                    *write_ptr++ = *name;
-                    name++;
-                }
-                *write_ptr++ = 0;
+            if (processes[i].id == *offset){
+                proc_index = i+1;
+                break;
             }
         }
-        *(uint32_t*)buf = count;
     }
-    //TODO:
-    //else advance to / and get the pid
-        //if that's it print that
-        //else open the file (out, in, etc)
+
+	uint32_t count = 0;
+	
+    char *write_ptr = (char*)buf + 4;
+    for (; proc_index < MAX_PROCS; proc_index++){
+    	if (size - (uintptr_t)write_ptr - (uintptr_t)buf - 4 < MAX_PROC_NAME_LENGTH) break;
+   		process_t *proc = &processes[proc_index];
+        if (proc->id != 0 && proc->state != STOPPED){
+            count++;
+            char* name = proc->name;
+            while (*name) *write_ptr++ = *name++;
+            *write_ptr++ = 0;
+            *offset = proc->id;
+        }
+    }
+
+    *(uint32_t*)buf = count;
+
+    //TODO: allow seeing files belonging to a proc (/out, /in, etc)
     return size;
 }
 

@@ -16,14 +16,14 @@ public:
     bool init(uint32_t partition_sector) override;
     FS_RESULT open_file(const char* path, file* descriptor) override;
     size_t read_file(file *descriptor, void* buf, size_t size) override;
-    size_t list_contents(const char *path, void* buf, size_t size, uint64_t offset = 0) override;
+    size_t list_contents(const char *path, void* buf, size_t size, uint64_t *offset) override;
     void close_file(file* descriptor) override;
 private:
     virtio_device np_dev;
     size_t choose_version();
     uint32_t open(uint32_t fid);
     uint32_t attach();
-    size_t list_contents(uint32_t fid, void *buf, size_t size, uint64_t offset = 0);
+    size_t list_contents(uint32_t fid, void *buf, size_t size, uint64_t *offset);
     uint32_t walk_dir(uint32_t fid, char *path);
     uint64_t read(uint32_t fid, uint64_t offset, void* file);
     uint64_t get_attribute(uint32_t fid, uint64_t mask);

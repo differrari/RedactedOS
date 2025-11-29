@@ -47,7 +47,7 @@ size_t boot_partition_write(file *fd, const char *buf, size_t size, file_offset 
     return 0;
 }
 
-size_t boot_partition_readdir(const char* path, void *out_buf, size_t size, file_offset offset){
+size_t boot_partition_readdir(const char* path, void *out_buf, size_t size, file_offset *offset){
     return fs_driver->list_contents(path, out_buf, size, offset);
 }
 
@@ -97,7 +97,7 @@ size_t shared_write(file *fd, const char *buf, size_t size, file_offset offset){
     return 0;
 }
 
-size_t shared_readdir(const char* path, void *out_buf, size_t size, file_offset offset){
+size_t shared_readdir(const char* path, void *out_buf, size_t size, file_offset *offset){
     return p9Driver->list_contents(path, out_buf, size, offset);
 }
 
@@ -239,11 +239,11 @@ size_t simple_write(const char *path, const void *buf, size_t size){
     return amount_written;
 }
 
-size_t list_directory_contents(const char *path, void* buf, size_t size, uint64_t offset){
+size_t list_directory_contents(const char *path, void* buf, size_t size, uint64_t *offset){
     const char *search_path = path;
     system_module *mod = get_module(&search_path);
     if (!mod){
-        kprintf("No module for path");
+        kprintf("No module for path %s",search_path);
         return 0;
     }
     if (!mod->readdir) return 0;

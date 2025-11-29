@@ -103,7 +103,7 @@ void Virtio9PDriver::close_file(file* descriptor){
     }
 }
 
-size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, uint64_t offset){
+size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, uint64_t *offset){
     uint32_t d = walk_dir(root, (char*)path);
     if (d == INVALID_FID){
         kprintf("[VIRTIO 9P error] failed to navigate to directory");
@@ -323,7 +323,7 @@ typedef struct r_readdir {
     // Followed by data
 }__attribute__((packed)) r_readdir;
 
-size_t Virtio9PDriver::list_contents(uint32_t fid, void *buf, size_t size, uint64_t offset){
+size_t Virtio9PDriver::list_contents(uint32_t fid, void *buf, size_t size, uint64_t *offset){
     t_readdir *cmd = (t_readdir*)kalloc(np_dev.memory_page, sizeof(t_readdir), ALIGN_4KB, MEM_PRIV_KERNEL);
     uintptr_t resp = (uintptr_t)kalloc(np_dev.memory_page, sizeof(r_readdir) + size, ALIGN_4KB, MEM_PRIV_KERNEL);
     
@@ -333,7 +333,7 @@ size_t Virtio9PDriver::list_contents(uint32_t fid, void *buf, size_t size, uint6
     
     cmd->fid = fid;
     cmd->count = size;
-    cmd->offset = offset;
+    cmd->offset = *offset;
 
     virtio_send_2d(&np_dev, (uintptr_t)cmd, sizeof(t_readdir), resp, sizeof(r_readdir) + cmd->count,VIRTQ_DESC_F_NEXT);
 
@@ -349,9 +349,9 @@ size_t Virtio9PDriver::list_contents(uint32_t fid, void *buf, size_t size, uint6
 
     uintptr_t p = resp + sizeof(r_readdir);
 
-    uint32_t count = ((r_readdir*)resp)->count;
+    uint32_t count = 0;
 
-    while (p < resp + count){
+    while (p < resp + ((r_readdir*)resp)->count){
         r_readdir_data *data = (r_readdir_data*)p;
     
         char *name = (char*)(p + sizeof(r_readdir_data));
@@ -361,19 +361,17 @@ size_t Virtio9PDriver::list_contents(uint32_t fid, void *buf, size_t size, uint6
         write_ptr += data->name_len;
         *write_ptr++ = 0;
 
-        offset = data->offset;
+        *offset = data->offset;
         
         p += sizeof(r_readdir_data) + data->name_len;
     }
 
     *(uint32_t*)buf = count;
 
-    //TODO: once list_directory is redesigned, re-introduce this
-    // if (count > 0) list_contents(fid, offset);
 
     kfree((void*)resp, sizeof(r_readdir) + size);
 
-    return size;
+    return (uintptr_t)write_ptr-(uintptr_t)buf;
 
 }
 
