@@ -5,6 +5,7 @@
 #include "memory/page_allocator.h"
 #include "exceptions/exception_handler.h"
 #include "std/memory.h"
+#include "std/memory_access.h"
 
 #define VIRTIO_9P_ID 0x1009
 
@@ -90,13 +91,6 @@ size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, u
     return list_contents(d, buf, size, offset);
 }
 
-typedef struct p9_packet_header {
-    uint32_t size;
-    uint8_t id;
-    uint16_t tag;
-}__attribute__((packed)) p9_packet_header;
-static_assert(sizeof(p9_packet_header) == 7, "Wrong size of packet header");
-
 enum {
     P9_TLERROR = 6,
     P9_RLERROR,
@@ -176,13 +170,21 @@ typedef struct p9_version_packet {
 }__attribute__((packed)) p9_version_packet;
 static_assert(sizeof(p9_version_packet) == 21, "Wrong version packet size");
 
+void Virtio9PDriver::p9_max_tag(p9_packet_header* header){
+    write_unaligned16(&header->tag,UINT16_MAX);
+}
+
+void Virtio9PDriver::p9_inc_tag(p9_packet_header* header){
+    write_unaligned16(&header->tag,mid++);
+}
+
 size_t Virtio9PDriver::choose_version(){
     p9_version_packet *cmd = (p9_version_packet*)kalloc(np_dev.memory_page, sizeof(p9_packet_header), ALIGN_4KB, MEM_PRIV_KERNEL);
     p9_version_packet *resp = (p9_version_packet*)kalloc(np_dev.memory_page, sizeof(p9_packet_header), ALIGN_4KB, MEM_PRIV_KERNEL);
     
     cmd->header.size = sizeof(p9_version_packet);
     cmd->header.id = P9_TVERSION;
-    cmd->header.tag = UINT16_MAX;
+    p9_max_tag(&cmd->header);
     
     cmd->msize = 0x1000000;
     cmd->str_size = 8;
@@ -220,7 +222,7 @@ uint32_t Virtio9PDriver::attach(){
 
     cmd->header.size = sizeof(t_attach);
     cmd->header.id = P9_TATTACH;
-    cmd->header.tag = mid++;
+    p9_inc_tag(&cmd->header);
     
     uint32_t fid = vfid++;
     cmd->fid = fid;
@@ -260,7 +262,7 @@ uint32_t Virtio9PDriver::open(uint32_t fid){
     
     cmd->header.size = sizeof(t_lopen);
     cmd->header.id = P9_TLOPEN;
-    cmd->header.tag = mid++;
+    p9_inc_tag(&cmd->header);
 
     cmd->fid = fid;
     cmd->flags = O_RDONLY;
@@ -302,7 +304,7 @@ size_t Virtio9PDriver::list_contents(uint32_t fid, void *buf, size_t size, uint6
     
     cmd->header.size = sizeof(t_readdir);
     cmd->header.id = P9_TREADDIR;
-    cmd->header.tag = mid++;
+    p9_inc_tag(&cmd->header);
     
     cmd->fid = fid;
     cmd->count = size;
@@ -363,7 +365,7 @@ uint32_t Virtio9PDriver::walk_dir(uint32_t fid, char *path){
     uintptr_t resp = (uintptr_t)kalloc(np_dev.memory_page, amount, ALIGN_4KB, MEM_PRIV_KERNEL);
     
     cmd->header.id = P9_TWALK;
-    cmd->header.tag = mid++;
+    p9_inc_tag(&cmd->header);
 
     uint32_t nfid = vfid++;
     
@@ -425,7 +427,7 @@ uint64_t Virtio9PDriver::get_attribute(uint32_t fid, uint64_t mask){
     r_getattr *resp = (r_getattr*)kalloc(np_dev.memory_page, sizeof(r_getattr), ALIGN_4KB, MEM_PRIV_KERNEL);
     
     cmd->header.id = P9_TGETATTR;
-    cmd->header.tag = mid++;
+    p9_inc_tag(&cmd->header);
     cmd->header.size = sizeof(t_getattr);
     cmd->fid = fid;
     cmd->mask = mask;
@@ -455,7 +457,7 @@ uint64_t Virtio9PDriver::read(uint32_t fid, uint64_t offset, void *file){
     
     cmd->header.size = sizeof(t_read);
     cmd->header.id = P9_TREAD;
-    cmd->header.tag = mid++;
+    p9_inc_tag(&cmd->header);
     
     cmd->fid = fid;
     cmd->offset = offset;
