@@ -11,6 +11,7 @@
 #include "hw/hw.h"
 #include "process/scheduler.h"
 #include "pipe.h"
+#include "theme/theme.h"
 
 FAT32FS *fs_driver;
 
@@ -74,7 +75,10 @@ Virtio9PDriver *p9Driver;
 bool shared_init(){
     if (BOARD_TYPE != 1) return false;
     p9Driver = new Virtio9PDriver();
-    return p9Driver->init(0);
+    bool success = p9Driver->init(0);
+    if (!success)
+        system_config.app_directory = (char*)"boot";
+    return success;
 }
 
 bool shared_fini(){

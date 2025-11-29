@@ -2,6 +2,7 @@
 #include "types.h"
 #include "console/kio.h"
 #include "std/memory_access.h"
+#include "std/string.h"
 
 typedef struct {
     uint32_t unit_length;

@@ -4,6 +4,7 @@
 #include "memory/mmu.h"
 #include "async.h"
 #include "sysregs.h"
+#include "std/string.h"
 
 #define FW_CFG_DATA  0x09020000
 #define FW_CFG_CTL   (FW_CFG_DATA + 0x8)
