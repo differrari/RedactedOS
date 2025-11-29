@@ -73,7 +73,7 @@ struct acpi_mcfg_t {
     uint32_t creator_revision;
     uint64_t reserved;
     struct {
-        uint64_t base_address; // <<<< This is what you want
+        uint64_t base_address;
         uint16_t pci_segment_group_number;
         uint8_t start_bus_number;
         uint8_t end_bus_number;

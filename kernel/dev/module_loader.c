@@ -24,6 +24,7 @@ int fs_search(void *node, void *key){
         *path += index;
         return 0;
     }
+    kprintf("No match %s and %s",module->mount,*path);
     return -1;
 }
 

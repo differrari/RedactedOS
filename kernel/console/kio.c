@@ -165,10 +165,6 @@ file_offset console_seek(file *fd, file_offset offset){
     return 0;
 }
 
-size_t console_readdir(const char* path, void *buf, size_t size, file_offset offset){
-    return 0;
-}
-
 system_module console_module = (system_module){
     .name = "console",
     .mount = "/console",
@@ -181,7 +177,7 @@ system_module console_module = (system_module){
     .write = console_write_fd,
     .sread = 0,//TODO implement simple io
     .swrite = simple_console_write,
-    .readdir = console_readdir,
+    .readdir = 0,
 };
 
 void puts(const char *s){
