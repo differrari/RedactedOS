@@ -333,6 +333,9 @@ void sync_el0_handler_c(){
     save_return_address_interrupt();
 
     syscall_depth++;
+#if TEST
+    if (syscall_depth > 10 || syscall_depth < 0) panic("Too much syscall recursion", syscall_depth);
+#endif
 
     process_t *proc = get_current_proc();
 
