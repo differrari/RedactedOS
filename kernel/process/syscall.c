@@ -398,3 +398,15 @@ void sync_el0_handler_c(){
     save_syscall_return(result);
     process_restore();
 }
+
+void trace(){
+    uint64_t elr;
+    asm volatile ("mrs %0, elr_el1" : "=r"(elr));
+    uint64_t esr;
+    asm volatile ("mrs %0, esr_el1" : "=r"(esr));
+    uint64_t far;
+    asm volatile ("mrs %0, far_el1" : "=r"(far));
+    uint64_t sp;
+    asm volatile ("mov %0, sp" : "=r"(sp));
+    backtrace(sp, elr, (sizedptr){0,0}, (sizedptr){0,0});
+}
