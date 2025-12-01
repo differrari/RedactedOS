@@ -66,7 +66,6 @@ void save_syscall_return(uint64_t value){
 }
 
 void process_restore(){
-    syscall_depth--;
     restore_context(cpec);
 }
 
