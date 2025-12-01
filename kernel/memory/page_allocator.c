@@ -69,11 +69,9 @@ uint64_t end;
 
 void setup_page(uintptr_t address, uint8_t attributes){
     mem_page* new_info = (mem_page*)address;
-    new_info->next = NULL;
-    new_info->free_list = NULL;
+    memset(new_info, 0, sizeof(mem_page));
     new_info->next_free_mem_ptr = address + sizeof(mem_page);
     new_info->attributes = attributes;
-    new_info->size = 0;
 }
 
 void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map) {
