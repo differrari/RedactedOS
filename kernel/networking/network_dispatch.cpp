@@ -2,7 +2,7 @@
 #include "drivers/virtio_net_pci/virtio_net_pci.hpp"
 #include "drivers/net_bus.hpp"
 #include "memory/page_allocator.h"
-#include "net/link_layer/eth.h"
+#include "networking/link_layer/eth.h"
 #include "net/network_types.h"
 #include "port_manager.h"
 #include "std/memory.h"
@@ -10,7 +10,7 @@
 #include "console/kio.h"
 #include "networking/interface_manager.h"
 #include "process/scheduler.h"
-#include "net/internet_layer/ipv4_utils.h"
+#include "networking/internet_layer/ipv4_utils.h"
 
 #define RX_INTR_BATCH_LIMIT 64
 #define TASK_RX_BATCH_LIMIT 256
@@ -190,7 +190,7 @@ uint16_t NetworkDispatch::mtu(uint8_t ifindex) const
     return nic_id < 0 ? 0 : nics[nic_id].mtu_val;
 }
 
-uint16_t NetworkDispatch::header_size(uint8_t ifindex) const 
+uint16_t NetworkDispatch::header_size(uint8_t ifindex) const
 {
     int nic_id = nic_for_ifindex(ifindex);
     return nic_id < 0 ? 0 : nics[nic_id].hdr_sz;

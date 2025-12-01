@@ -20,7 +20,7 @@
 #include "loading/process_loader.h"
 #include "networking/interface_manager.h"
 #include "bin/bin_mod.h"
-#include "net/transport_layer/csocket.h"
+#include "networking/transport_layer/csocket.h"
 #include "loading/dwarf.h"
 #include "sysregs.h"
 
@@ -130,7 +130,7 @@ uint64_t syscall_socket_create(process_t *ctx){
     Socket_Role role = (Socket_Role)ctx->PROC_X0;
     protocol_t protocol = (protocol_t)ctx->PROC_X1;
     SocketHandle *out_handle = (SocketHandle*)ctx->PROC_X2;
-    
+
     return create_socket(role, protocol, ctx->id, out_handle);
 }
 
@@ -316,16 +316,16 @@ const char* fault_messages[] = {
 
 void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
     uint8_t ifsc = esr & 0x3F;
-    
+
     kprint(fault_messages[ifsc]);
     process_t *proc = get_current_proc();
     backtrace(sp, elr, proc->debug_lines, proc->debug_line_str);
 
     // for (int i = 0; i < 31; i++)
     //     kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
-    if (far > 0) 
+    if (far > 0)
         debug_mmu_address(far);
-    else 
+    else
         kprintf("Null pointer accessed at %x",elr);
 }
 
@@ -346,13 +346,13 @@ void sync_el0_handler_c(){
     asm volatile ("mrs %0, spsr_el1" : "=r"(spsr));
 
     uint64_t currentEL = (spsr >> 2) & 3;
-    
+
     uint64_t esr;
     asm volatile ("mrs %0, esr_el1" : "=r"(esr));
 
     uint64_t ec = (esr >> 26) & 0x3F;
     uint64_t iss = esr & 0xFFFFFF;
-    
+
     uint64_t far;
     asm volatile ("mrs %0, far_el1" : "=r"(far));
 

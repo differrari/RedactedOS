@@ -2,7 +2,7 @@
 
 include ../common.mk
 
-CPPFLAGS := -I. -I../kernel
+CPPFLAGS := -I.
 CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
 CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
 

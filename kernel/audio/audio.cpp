@@ -6,7 +6,7 @@
 #include "console/kio.h"
 #include "math/math.h"
 #include "audio/cuatro.h"
-#include "mixer.h"
+#include "audio/mixer.h"
 #include "audio/wav.h"
 #include "std/memory.h"
 #include "theme/theme.h"
