@@ -3,7 +3,7 @@
 #include "console/kio.h"
 #include "std/memory.h"
 #include "process/scheduler.h"
-#include "math/rng.h"
+#include "dev/random/random.h"
 
 #include "networking/application_layer/dhcp.h"
 #include "networking/internet_layer/ipv4.h"

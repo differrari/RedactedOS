@@ -3,3 +3,5 @@
 
 extern rng_t global_rng;
 extern driver_module rng_module;
+
+void rng_init_random(rng_t *rng);

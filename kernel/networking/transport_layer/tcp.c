@@ -3,7 +3,7 @@
 #include "networking/port_manager.h"
 #include "networking/internet_layer/ipv4.h"
 #include "std/memory.h"
-#include "math/rng.h"
+#include "dev/random/random.h"
 #include "syscalls/syscalls.h"
 //TODO: add mtu check and fragmentation. also fragment rebuild
 

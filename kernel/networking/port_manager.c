@@ -1,6 +1,6 @@
 #include "networking/port_manager.h"
 #include "types.h"
-#include "math/rng.h"
+#include "dev/random/random.h"
 #include "net/network_types.h"
 
 static inline bool proto_valid(protocol_t proto) {
