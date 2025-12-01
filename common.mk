@@ -1,13 +1,13 @@
-ARCH       ?= aarch64-none-elf
+ARCH       ?= aarch64-none-elf-
 ifeq "$(origin CC)" "default"
-CC         := $(ARCH)-gcc
+CC         := $(ARCH)gcc
 endif
 ifeq "$(origin CXX)" "default"
-CXX        := $(ARCH)-g++
+CXX        := $(ARCH)g++
 endif
-LD         := $(ARCH)-ld
-AR         := $(ARCH)-ar
-OBJCOPY    := $(ARCH)-objcopy
+LD         := $(ARCH)ld
+AR         := $(ARCH)ar
+OBJCOPY    := $(ARCH)objcopy
 
 BUILD_DIR := ./build
 
