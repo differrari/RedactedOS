@@ -14,8 +14,12 @@ BUILD_DIR := ./build
 COMMON_FLAGS  ?= -ffreestanding -nostdlib -fno-exceptions -fno-unwind-tables \
                  -fno-asynchronous-unwind-tables -g -O0 -Wall -Wextra \
                  -Wno-unused-parameter -Wno-address-of-packed-member \
-                 -mcpu=cortex-a72 -Werror -Wno-error=sized-deallocation \
+                 -Werror -Wno-error=sized-deallocation \
                  -Wno-unused-function
+
+ifeq ($(ARCH), aarch64-none-elf-)
+COMMON_FLAGS += -mcpu=cortex-a72 
+endif
 
 CFLAGS_BASE   ?= $(COMMON_FLAGS) -std=c99
 CXXFLAGS_BASE ?= $(COMMON_FLAGS) -fno-rtti
