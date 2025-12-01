@@ -313,21 +313,21 @@ size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t
     
     size = min(size, ptr.size);
 
-	uint32_t count = 0;
-	uint32_t total_count = *(uint32_t*)ptr.ptr;
+    uint32_t count = 0;
+    uint32_t total_count = *(uint32_t*)ptr.ptr;
 	
     char *write_ptr = (char*)buf + 4;
     char *cursor = (char*)ptr.ptr + 4;
 
-	bool offset_found = *offset == 0 ? true : false;
+    bool offset_found = !offset || *offset == 0 ? true : false;
 
     for (uint32_t i = 0; i < total_count; i++){
     	size_t len = strlen(cursor,0);
     	uint64_t hash = chashmap_fnv1a64(cursor, len);
     	if (!offset_found){
-			if (hash == *offset) offset_found = true;
-			else kprintf("File hash %llx for %s",hash,cursor);
-			cursor += len + 1;
+		if (hash == *offset) offset_found = true;
+		else kprintf("File hash %llx for %s",hash,cursor);
+		cursor += len + 1;
     		continue;
     	}
     	kprintf("Cursor %s",cursor);
