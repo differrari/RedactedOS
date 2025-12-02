@@ -72,7 +72,7 @@ int login_screen(){
                 char key = kp.keys[i];
                 if (hid_keycode_to_char[(uint8_t)key]){
                     if (key == KEY_ENTER || key == KEY_KPENTER){
-                        if (strcmp(buf,system_config.default_pwd, false) == 0){
+                        if (strcmp(buf,system_config.default_pwd) == 0){
                             free(buf, 256);
                             free(s.data,s.mem_length);
                             sys_set_secure(false);

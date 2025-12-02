@@ -173,8 +173,6 @@ size_t strlen_max(const char *s, uint32_t max_length){
     return len;
 }
 
-size_t strlen(const char *s) { return strlen_max(s,0); }
-
 string string_from_literal(const char *literal){
     if (literal == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0};
     
@@ -289,7 +287,7 @@ string string_from_bin(uint64_t value){
 }
 
 bool string_equals(string a, string b){
-    return strcmp(a.data,b.data, false) == 0;
+    return strcmp(a.data,b.data) == 0;
 }
 
 string string_replace(const char *str, char orig, char repl){
@@ -996,7 +994,7 @@ int toupper(int c){
     return c;
 }
 
-int strcmp(const char *a, const char *b, bool case_insensitive){
+int strcmp_case(const char *a, const char *b, bool case_insensitive){
     if (a == NULL && b == NULL) return 0;
     if (a == NULL) return -1;  
     if (b == NULL) return  1;
@@ -1016,7 +1014,7 @@ int strcmp(const char *a, const char *b, bool case_insensitive){
     return (unsigned char)*a - (unsigned char)*b;
 }
 
-int strncmp(const char *a, const char *b, bool case_insensitive, int max){
+int strncmp_case(const char *a, const char *b, bool case_insensitive, int max){
     if (a == NULL && b == NULL) return 0;
     if (a == NULL) return -1;  
     if (b == NULL) return  1;
@@ -1035,7 +1033,7 @@ int strncmp(const char *a, const char *b, bool case_insensitive, int max){
     return (unsigned char)*a - (unsigned char)*b;
 }
 
-int strstart(const char *a, const char *b, bool case_insensitive){
+int strstart_case(const char *a, const char *b, bool case_insensitive){
     int index = 0;
     if (!a || !b) return 0;
     while (*a && *b){
@@ -1062,7 +1060,7 @@ int strindex(const char *a, const char *b){
     return -1;
 }
 
-int strend(const char *a, const char *b, bool case_insensitive){
+int strend_case(const char *a, const char *b, bool case_insensitive){
     while (*a && *b){
         char ca = case_insensitive ? tolower((unsigned char)*a) : *a;
         char cb = case_insensitive ? tolower((unsigned char)*b) : *b;

@@ -76,8 +76,8 @@ gpu_point* parse_gpu_point_array(char *value, size_t value_len){
     return points;
 }
 
-#define parse_toml(k,dest,func) if (strcmp(#k, key, true) == 0) dest.k = func(value,value_len)
-#define parse_toml_str(k,dest) if (strcmp(#k, key, true) == 0) dest.k = string_from_literal_length(value,value_len).data
+#define parse_toml(k,dest,func) if (strcmp_case(#k, key,true) == 0) dest.k = func(value,value_len)
+#define parse_toml_str(k,dest) if (strcmp_case(#k, key,true) == 0) dest.k = string_from_literal_length(value,value_len).data
 
 void parse_theme_kvp(const char *key, char *value, size_t value_len, void *context){
     parse_toml(bg_color,                system_theme, parse_hex_u64);

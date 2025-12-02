@@ -44,26 +44,26 @@ static bool parse_args(int argc, char *argv[], tr_opts_t *o) {
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
         if (a && a[0] == '-') {
-            if (strcmp(a, "-4", true) == 0) {
+            if (strcmp_case(a, "-4",true) == 0) {
                 o->ver = IP_VER4;
-            } else if (strcmp(a, "-6", true) == 0) {
+            } else if (strcmp_case(a, "-6",true) == 0) {
                 o->ver = IP_VER6;
-            } else if (strcmp(a, "-m", true) == 0) {
+            } else if (strcmp_case(a, "-m",true) == 0) {
                 if (++i >= argc) return false;
                 if (!parse_uint32_dec(argv[i], &o->max_ttl) || o->max_ttl == 0) return false;
-            } else if (strcmp(a, "-n", true) == 0) {
+            } else if (strcmp_case(a, "-n",true) == 0) {
                 if (++i >= argc) return false;
                 if (!parse_uint32_dec(argv[i], &o->count) || o->count == 0) return false;
-            } else if (strcmp(a, "-w", true) == 0) {
+            } else if (strcmp_case(a, "-w",true) == 0) {
                 if (++i >= argc) return false;
                 if (!parse_uint32_dec(argv[i], &o->timeout_ms) || o->timeout_ms == 0) return false;
-            } else if (strcmp(a, "-i", true) == 0) {
+            } else if (strcmp_case(a, "-i",true) == 0) {
                 if (++i >= argc) return false;
                 if (!parse_uint32_dec(argv[i], &o->interval_ms)) return false;
-            } else if (strcmp(a, "-x", true) == 0) {
+            } else if (strcmp_case(a, "-x",true) == 0) {
                 if (++i >= argc) return false;
                 if (!parse_uint32_dec(argv[i], &o->timeout_streak_limit) || o->timeout_streak_limit == 0) return false;
-            } else if (strcmp(a, "-s", true) == 0) {
+            } else if (strcmp_case(a, "-s",true) == 0) {
                 if (++i >= argc) return false;
                 uint32_t src = 0;
                 if (!ipv4_parse(argv[i], &src)) return false;

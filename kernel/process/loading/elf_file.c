@@ -69,10 +69,10 @@ void get_elf_debug_info(process_t* proc, void* file, size_t filesize){
 
     for (int i = 1; i < header->section_num_entries; i++){
         char *section_name = (char*)(file + sections[header->string_table_section_index].sh_offset + sections[i].sh_name);
-        if (strcmp(".debug_line", section_name, true) == 0){
+        if (strcmp_case(".debug_line", section_name,true) == 0){
             debug_line = (sizedptr){(uintptr_t)file + sections[i].sh_offset,sections[i].sh_size};
         }
-        if (strcmp(".debug_line_str", file + sections[header->string_table_section_index].sh_offset + sections[i].sh_name, true) == 0) {
+        if (strcmp_case(".debug_line_str", file + sections[header->string_table_section_index].sh_offset + sections[i].sh_name,true) == 0) {
             debug_line_str = (sizedptr){(uintptr_t)file + sections[i].sh_offset,sections[i].sh_size};
         }
     }
@@ -133,26 +133,26 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
         // kprintf("%i. %s. Starts at %x. Virt %x Align %x. Size %x",i, section_name, sections[i].sh_offset,sections[i].sh_addr,sections[i].sh_addralign, sections[i].sh_size);
         // kprintf("Flags %b",sections[i].sh_flags);
         sizedptr sectionptr = (sizedptr){(uintptr_t)file + sections[i].sh_offset,sections[i].sh_size};;
-        if (strcmp(".text", section_name, true) == 0){
+        if (strcmp_case(".text", section_name,true) == 0){
             text = sectionptr;
             text_va = sections[i].sh_addr;
         }
-        if (strcmp(".rodata", section_name, true) == 0){
+        if (strcmp_case(".rodata", section_name,true) == 0){
             rodata = sectionptr;
             rodata_va = sections[i].sh_addr;
         }
-        if (strcmp(".data", section_name, true) == 0){
+        if (strcmp_case(".data", section_name,true) == 0){
             data = sectionptr;
             data_va = sections[i].sh_addr;
         }
-        if (strcmp(".bss", section_name, true) == 0){
+        if (strcmp_case(".bss", section_name,true) == 0){
             bss = sectionptr;
             bss_va = sections[i].sh_addr;
         }
-        if (strcmp(".debug_line", section_name, true) == 0){
+        if (strcmp_case(".debug_line", section_name,true) == 0){
             debug_line = sectionptr;
         }
-        if (strcmp(".debug_line_str", file + sections[header->string_table_section_index].sh_offset + sections[i].sh_name, true) == 0) {
+        if (strcmp_case(".debug_line_str", file + sections[header->string_table_section_index].sh_offset + sections[i].sh_name,true) == 0) {
             debug_line_str = sectionptr;
         }
         //.got/.got.plt = unresolved addresses to be determined by dynamic linking

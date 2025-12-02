@@ -82,7 +82,7 @@ bool fw_find_file(const char* search, struct fw_cfg_file *file) {
         file->size = __builtin_bswap32(file->size);
         file->selector = __builtin_bswap16(file->selector);
 
-        if (strcmp(file->name, search, false) == 0){
+        if (strcmp(file->name, search) == 0){
             kprintf("Found device at selector %x", file->selector);
             return true;
         }

@@ -23,7 +23,7 @@ typedef struct string_list {
 extern void free(void*,size_t);
 
 size_t strlen_max(const char *s, uint32_t max_length);
-size_t strlen(const char *s);
+static inline size_t strlen(const char *s) { return strlen_max(s,0); }
 string string_from_literal(const char *literal);
 string string_from_literal_length(const char *array, uint32_t max_length);
 string string_from_char(const char c);
@@ -44,11 +44,15 @@ static inline void string_free(string str){
 int tolower(int c);
 int toupper(int c);
 
-int strcmp(const char *a, const char *b, bool case_insensitive);
-int strncmp(const char *a, const char *b, bool case_insensitive, int length);
+int strcmp_case(const char *a, const char *b, bool case_insensitive);
+static inline int strcmp(const char *a, const char *b){ return strcmp_case(a, b, false); }
+int strncmp_case(const char *a, const char *b, bool case_insensitive, int length);
+static inline int strncmp(const char *a, const char *b, int length) { return strncmp_case(a,b, false, length); }
 bool strcont(const char *a, const char *b);
-int strstart(const char *a, const char *b, bool case_insensitive);
-int strend(const char *a, const char *b, bool case_insensitive);
+int strstart_case(const char *a, const char *b, bool case_insensitive);
+static inline int strstart(const char *a, const char *b) { return strstart_case(a,b,false); }
+int strend_case(const char *a, const char *b, bool case_insensitive);
+static inline int strend(const char *a, const char *b) { return strend_case(a,b,false); }
 int strindex(const char *a, const char *b);
 int count_occurrences(const char* str, char c);
 

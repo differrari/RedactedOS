@@ -38,7 +38,7 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
         for (uint32_t i = 0; i < list->count; i++){
             char *f = reader;
             if (*f){
-                if (strcmp(f, full_name, true) == 0){
+                if (strcmp_case(f, full_name,true) == 0){
                     string path = string_format("/boot/redos/bin/%s",full_name);
                     file fd = {};
                     FS_RESULT op = fopen(path.data, &fd);
@@ -88,7 +88,7 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
     }
 
     for (uint32_t i = 0; i < N_ARR(available_cmds); i++){
-        if (strcmp(available_cmds[i].name, prog_name, false) == 0){
+        if (strcmp(available_cmds[i].name, prog_name) == 0){
             return create_kernel_process(available_cmds[i].name, available_cmds[i].func, argc, argv);
         }
     }

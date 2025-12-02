@@ -139,19 +139,19 @@ void http_header_parser(const char *buf, uint32_t len,
         }
         key_tmp[copy_len] = '\0';
 
-        if (copy_len == 14 && strcmp(key_tmp, "content-length", true) == 0) {
+        if (copy_len == 14 && strcmp_case(key_tmp, "content-length",true) == 0) {
             C->length = parse_u32(buf + val_start, val_len);
         }
-        else if (copy_len == 12 && strcmp(key_tmp, "content-type", true) == 0) {
+        else if (copy_len == 12 && strcmp_case(key_tmp, "content-type",true) == 0) {
             C->type = string_from_literal_length((char*)(buf + val_start), val_len);
         }
-        else if (copy_len == 4 && strcmp(key_tmp, "date", true) == 0) {
+        else if (copy_len == 4 && strcmp_case(key_tmp, "date",true) == 0) {
             C->date = string_from_literal_length((char*)(buf + val_start), val_len);
         }
-        else if (copy_len == 10 && strcmp(key_tmp, "connection", true) == 0) {
+        else if (copy_len == 10 && strcmp_case(key_tmp, "connection",true) == 0) {
             C->connection = string_from_literal_length((char*)(buf + val_start), val_len);
         }
-        else if (copy_len == 10 && strcmp(key_tmp, "keep-alive", true) == 0) {
+        else if (copy_len == 10 && strcmp_case(key_tmp, "keep-alive",true) == 0) {
             C->keep_alive = string_from_literal_length((char*)(buf + val_start), val_len);
         }
         else {

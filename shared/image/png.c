@@ -30,7 +30,7 @@ image_info png_get_info(void * file, size_t size){
     }
     uintptr_t p = (uintptr_t)file + sizeof(uint64_t);
     png_chunk_hdr *hdr = (png_chunk_hdr*)p;
-    if (strstart(hdr->type, "IHDR", true) != 4){
+    if (strstart_case(hdr->type, "IHDR",true) != 4){
         printf("Couldn't find png IHDR");
         return (image_info){0,0};
     }
@@ -143,12 +143,12 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
     do {
         hdr = (png_chunk_hdr*)p;
         uint32_t length = __builtin_bswap32(hdr->length);
-        if (strstart(hdr->type, "IHDR", true) == 4){
+        if (strstart_case(hdr->type, "IHDR",true) == 4){
             png_ihdr *ihdr = (png_ihdr*)(p + sizeof(png_chunk_hdr));
             bpp = png_decode_bpp(ihdr);
             info = (image_info){__builtin_bswap32(ihdr->width),__builtin_bswap32(ihdr->height)};
         }
-        if (strstart(hdr->type, "IDAT", true) == 4){
+        if (strstart_case(hdr->type, "IDAT",true) == 4){
             if (info.width == 0 || info.height == 0){
                 printf("Wrong image size");
                 return;
@@ -165,7 +165,7 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
             // printf("Found some idat %x - %x",p + sizeof(png_chunk_hdr) - (uintptr_t)file, length);
         }
         p += sizeof(png_chunk_hdr) + __builtin_bswap32(hdr->length) + sizeof(uint32_t);
-    } while(strstart(hdr->type, "IEND", true) != 4);
+    } while(strstart_case(hdr->type, "IEND",true) != 4);
     deflate_decode(data_buf, data_cursor, &ctx);
     png_process_raw(out_buf, info.width, info.height, bpp, buf);
 }

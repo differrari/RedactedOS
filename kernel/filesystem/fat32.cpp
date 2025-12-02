@@ -228,8 +228,8 @@ sizedptr FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, ch
     if (entry->flags.volume_id) return {0,0};
     
     bool is_last = *seek_to(seek, '/') == '\0';
-    if (!is_last && strstart(seek, filename, true) < (int)(strlen_max(filename, 0)-1)) return {0, 0};
-    if (is_last && strcmp(seek, filename, true) != 0) return {0, 0};
+    if (!is_last && strstart_case(seek, filename,true) < (int)(strlen_max(filename, 0)-1)) return {0, 0};
+    if (is_last && strcmp_case(seek, filename,true) != 0) return {0, 0};
 
     uint32_t filecluster = (entry->hi_first_cluster << 16) | entry->lo_first_cluster;
     uint32_t bps = instance->bytes_per_sector;
@@ -291,7 +291,7 @@ void FAT32FS::close_file(file* descriptor){
 sizedptr FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {
 
     if (entry->flags.volume_id) return { 0, 0 };
-    if (strstart(seek, filename, true) != (int)(strlen_max(filename, 0)-1)) return { 0, 0 };
+    if (strstart_case(seek, filename,true) != (int)(strlen_max(filename, 0)-1)) return { 0, 0 };
     
     bool is_last = *seek_to(seek, '/') == '\0';
     

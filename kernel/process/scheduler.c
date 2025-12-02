@@ -314,10 +314,10 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     descriptor->cursor = 0;
     module_file *file = kalloc(proc_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
     file->fid = descriptor->id;
-    if (strcmp(path, "out", true) == 0){
+    if (strcmp_case(path, "out",true) == 0){
         descriptor->size = proc->output_size;
         file->buffer = proc->output;
-    } else if (strcmp(path, "state", true) == 0){
+    } else if (strcmp_case(path, "state",true) == 0){
         descriptor->size = sizeof(int);
         file->buffer = PHYS_TO_VIRT((uintptr_t)&proc->state);
         file->ignore_cursor = true;

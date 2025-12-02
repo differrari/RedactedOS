@@ -72,7 +72,7 @@ void Launcher::load_entries(){
                 string fullpath = string_format("%s/%s",app_path.data, (uintptr_t)file);
                 string name = string_from_literal_length(file,find_extension(file));
                 string ext = string_from_literal(file + find_extension(file));
-                if (strcmp(ext.data,".red", true) == 0){
+                if (strcmp_case(ext.data,".red",true) == 0){
                     string pkg_info = string_concat(fullpath, string_from_literal("/package.info"));
                     add_entry(name, ext, fullpath, get_pkg_info(pkg_info.data));
                     free(pkg_info.data, pkg_info.mem_length);
@@ -156,7 +156,7 @@ void Launcher::activate_current(){
     uint32_t index = (selected.y * MAX_COLS) + selected.x;
 
     if (index < entries.size()){
-        if (strcmp(".red",entries[index].ext.data, true) != 0){
+        if (strcmp_case(".red",entries[index].ext.data,true) != 0){
             kprintf("[LAUNCHER] Wrong format. Must be a .red package");
             return;
         }
