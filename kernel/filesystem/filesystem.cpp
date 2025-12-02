@@ -196,7 +196,7 @@ void close_file(file *descriptor){
 }
 
 void close_file_global(file *descriptor, system_module *mod){
-    if (!mod) return;
+    if (!mod || !mod->close) return;
     mod->close(descriptor);
 }
 

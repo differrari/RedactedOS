@@ -333,7 +333,7 @@ size_t Virtio9PDriver::list_contents(uint32_t fid, void *buf, size_t size, uint6
     
     cmd->fid = fid;
     cmd->count = size;
-    cmd->offset = *offset;
+    cmd->offset = offset ? *offset : 0;
 
     virtio_send_2d(&np_dev, (uintptr_t)cmd, sizeof(t_readdir), resp, sizeof(r_readdir) + cmd->count,VIRTQ_DESC_F_NEXT);
 
@@ -361,7 +361,7 @@ size_t Virtio9PDriver::list_contents(uint32_t fid, void *buf, size_t size, uint6
         write_ptr += data->name_len;
         *write_ptr++ = 0;
 
-        *offset = data->offset;
+        if (offset) *offset = data->offset;
         
         p += sizeof(r_readdir_data) + data->name_len;
     }

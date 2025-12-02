@@ -8,8 +8,7 @@
 #include "net/network_types.h"
 #include "ui/draw/draw.h"
 #include "files/fs.h"
-
-#include "net/transport_layer/socket_types.h"
+#include "net/socket_types.h"
 
 #ifdef __cplusplus
 extern "C" {

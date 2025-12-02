@@ -17,11 +17,14 @@ size_t rng_read(file *fd, char* buf, size_t count, file_offset offset){
     return count;
 }
 
-bool rng_init_global() {
+void rng_init_random(rng_t *rng){
     uint64_t seed;
     asm volatile("mrs %0, cntvct_el0" : "=r"(seed));
-    rng_seed(&global_rng, seed);
-    kprintf("[RNG] Random init. seed: %i", seed);
+    rng_seed(rng, seed);
+}
+
+bool rng_init_global() {
+    rng_init_random(&global_rng);
     return true;
 }
 

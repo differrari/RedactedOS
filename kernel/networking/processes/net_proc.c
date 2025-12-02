@@ -9,19 +9,19 @@
 #include "networking/network.h"
 #include "networking/interface_manager.h"
 
-#include "net/link_layer/arp.h"
+#include "networking/link_layer/arp.h"
 
-#include "net/internet_layer/ipv4.h"
-#include "net/internet_layer/ipv4_utils.h"
+#include "networking/internet_layer/ipv4.h"
+#include "networking/internet_layer/ipv4_utils.h"
 
-#include "net/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket_udp.h"
 
-#include "net/application_layer/csocket_http_client.h"
-#include "net/application_layer/csocket_http_server.h"
-#include "net/application_layer/dhcp_daemon.h"
-#include "net/application_layer/dns_daemon.h"
-#include "net/application_layer/dns.h"
-#include "net/application_layer/sntp_daemon.h"
+#include "networking/application_layer/csocket_http_client.h"
+#include "networking/application_layer/csocket_http_server.h"
+#include "networking/application_layer/dhcp_daemon.h"
+#include "networking/application_layer/dns_daemon.h"
+#include "networking/application_layer/dns.h"
+#include "networking/application_layer/sntp_daemon.h"
 
 #include "exceptions/timer.h"
 #include "syscalls/syscalls.h"
@@ -182,12 +182,12 @@ static void test_http(const net_l4_endpoint* ep) {
     http_client_handle_t cli = http_client_create(pid);
     if (!cli) {
         kprintf("[HTTP] http_client_create FAIL");
-        return; 
+        return;
     }
 
     net_l4_endpoint e = {0};
     e.ver = IP_VER4;
-    memcpy(e.ip, ep->ip, 4); 
+    memcpy(e.ip, ep->ip, 4);
     e.port = 80;
 
     int rc = http_client_connect_ex(cli, DST_ENDPOINT, &e, 0);

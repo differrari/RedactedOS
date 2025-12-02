@@ -1,5 +1,5 @@
 #include "ping.h"
-#include "net/internet_layer/icmp.h"
+#include "networking/internet_layer/icmp.h"
 #include "net/network_types.h"
 #include "std/string.h"
 #include "std/memory.h"
@@ -8,10 +8,10 @@
 #include "filesystem/filesystem.h"
 #include "process/scheduler.h"
 #include "syscalls/syscalls.h"
-#include "net/internet_layer/ipv4.h"
-#include "net/internet_layer/ipv4_route.h"
-#include "net/application_layer/dns.h"
-#include "net/internet_layer/ipv4_utils.h"
+#include "networking/internet_layer/ipv4.h"
+#include "networking/internet_layer/ipv4_route.h"
+#include "networking/application_layer/dns.h"
+#include "networking/internet_layer/ipv4_utils.h"
 
 typedef struct {
     ip_version_t ver;
