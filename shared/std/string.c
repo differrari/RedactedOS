@@ -164,16 +164,16 @@ static inline void emit_padded(char **restrict p, size_t *restrict rem,
     if (flag_minus) append_repeat(p, rem, ' ', pad, truncated);
 }
 
-uint32_t strlen_max(const char *s, uint32_t max_length){
+size_t strlen_max(const char *s, uint32_t max_length){
     if (s == NULL) return 0;
     
-    uint32_t len = 0;
+    size_t len = 0;
     while ((max_length == 0 || len < max_length) && s[len]) len++;
     
     return len;
 }
 
-uint32_t strlen(const char *s) { return strlen_max(s,0); }
+size_t strlen(const char *s) { return strlen_max(s,0); }
 
 string string_from_literal(const char *literal){
     if (literal == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0};

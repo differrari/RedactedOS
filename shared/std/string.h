@@ -22,8 +22,8 @@ typedef struct string_list {
 
 extern void free(void*,size_t);
 
-uint32_t strlen_max(const char *s, uint32_t max_length);
-uint32_t strlen(const char *s);
+size_t strlen_max(const char *s, uint32_t max_length);
+size_t strlen(const char *s);
 string string_from_literal(const char *literal);
 string string_from_literal_length(const char *array, uint32_t max_length);
 string string_from_char(const char c);
