@@ -20,7 +20,7 @@ int fs_search(void *node, void *key){
     system_module* module = (system_module*)node;
     const char** path = (const char**)key;
     int index = strstart(*path, module->mount, true);
-    if (index == (int)strlen(module->mount,0)){ 
+    if (index == (int)strlen(module->mount)){ 
         *path += index;
         return 0;
     }

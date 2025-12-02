@@ -26,7 +26,7 @@ typedef struct {
 
 static void help(file *fd) {
     const char *a = "usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host";
-    write_file(fd, a, strlen(a, STRING_MAX_LEN));
+    write_file(fd, a, strlen_max(a, STRING_MAX_LEN));
     write_file(fd, "\n", 1);
 }
 
@@ -97,9 +97,9 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
     ipv4_to_string(dst_ip_be, ipstr);
 
     write_file(fd, "PING ", 5);
-    write_file(fd, host, strlen(host, STRING_MAX_LEN));
+    write_file(fd, host, strlen_max(host, STRING_MAX_LEN));
     write_file(fd, " (", 2);
-    write_file(fd, ipstr, strlen(ipstr, STRING_MAX_LEN));
+    write_file(fd, ipstr, strlen_max(ipstr, STRING_MAX_LEN));
     write_file(fd, ") with 32 bytes of data:", 25);
     write_file(fd, "\n", 1);
 
@@ -116,7 +116,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
         //kprintf("%d", l3);
         if (!l3) {
             const char *em = "ping: invalid source (no local ip match)\n";
-            write_file(fd, em, strlen(em, STRING_MAX_LEN));
+            write_file(fd, em, strlen_max(em, STRING_MAX_LEN));
             return 2;
         }
 
@@ -185,7 +185,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
                     break;
                 }
             }
-            write_file(fd, msg, strlen(msg, STRING_MAX_LEN));
+            write_file(fd, msg, strlen_max(msg, STRING_MAX_LEN));
             write_file(fd, "\n", 1);
         }
 

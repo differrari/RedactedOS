@@ -22,7 +22,8 @@ typedef struct string_list {
 
 extern void free(void*,size_t);
 
-uint32_t strlen(const char *s, uint32_t max_length);
+uint32_t strlen_max(const char *s, uint32_t max_length);
+uint32_t strlen(const char *s);
 string string_from_literal(const char *literal);
 string string_from_literal_length(const char *array, uint32_t max_length);
 string string_from_char(const char c);
@@ -40,8 +41,8 @@ static inline void string_free(string str){
     if (str.data && str.mem_length) free(str.data, str.mem_length);
 }
 
-char tolower(char c);
-char toupper(char c);
+int tolower(int c);
+int toupper(int c);
 
 int strcmp(const char *a, const char *b, bool case_insensitive);
 int strncmp(const char *a, const char *b, bool case_insensitive, int length);

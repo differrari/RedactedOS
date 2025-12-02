@@ -228,7 +228,7 @@ sizedptr FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, ch
     if (entry->flags.volume_id) return {0,0};
     
     bool is_last = *seek_to(seek, '/') == '\0';
-    if (!is_last && strstart(seek, filename, true) < (int)(strlen(filename, 0)-1)) return {0, 0};
+    if (!is_last && strstart(seek, filename, true) < (int)(strlen_max(filename, 0)-1)) return {0, 0};
     if (is_last && strcmp(seek, filename, true) != 0) return {0, 0};
 
     uint32_t filecluster = (entry->hi_first_cluster << 16) | entry->lo_first_cluster;
@@ -291,7 +291,7 @@ void FAT32FS::close_file(file* descriptor){
 sizedptr FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {
 
     if (entry->flags.volume_id) return { 0, 0 };
-    if (strstart(seek, filename, true) != (int)(strlen(filename, 0)-1)) return { 0, 0 };
+    if (strstart(seek, filename, true) != (int)(strlen_max(filename, 0)-1)) return { 0, 0 };
     
     bool is_last = *seek_to(seek, '/') == '\0';
     
@@ -322,7 +322,7 @@ size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t
     bool offset_found = !offset || *offset == 0 ? true : false;
 
     for (uint32_t i = 0; i < total_count; i++){
-    	size_t len = strlen(cursor,0);
+    	size_t len = strlen(cursor);
     	uint64_t hash = chashmap_fnv1a64(cursor, len);
     	if (!offset_found){
 		if (hash == *offset) offset_found = true;

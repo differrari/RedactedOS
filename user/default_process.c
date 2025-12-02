@@ -69,7 +69,7 @@ int net_example() {
 
     char *str = "Hello node";
 
-    printf("Sent %i",socket_send(&spec, DST_ENDPOINT, &rc.ip, rc.port, str, strlen(str, 0)));
+    printf("Sent %i",socket_send(&spec, DST_ENDPOINT, &rc.ip, rc.port, str, strlen(str)));
 
     socket_close(&spec);
 

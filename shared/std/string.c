@@ -164,7 +164,7 @@ static inline void emit_padded(char **restrict p, size_t *restrict rem,
     if (flag_minus) append_repeat(p, rem, ' ', pad, truncated);
 }
 
-uint32_t strlen(const char *s, uint32_t max_length){
+uint32_t strlen_max(const char *s, uint32_t max_length){
     if (s == NULL) return 0;
     
     uint32_t len = 0;
@@ -173,10 +173,12 @@ uint32_t strlen(const char *s, uint32_t max_length){
     return len;
 }
 
+uint32_t strlen(const char *s) { return strlen_max(s,0); }
+
 string string_from_literal(const char *literal){
     if (literal == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0};
     
-    uint32_t len = strlen(literal, 0);
+    uint32_t len = strlen(literal);
     char *buf = (char*)malloc(len + 1);
     if (!buf) return (string){ .data = NULL, .length = 0, .mem_length = 0 };
 
@@ -198,7 +200,7 @@ string string_tail(const char *array, uint32_t max_length){
     
     if (array == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0 };
 
-    uint32_t len = strlen(array, 0);
+    uint32_t len = strlen(array);
     int offset = (int)len - (int)max_length;
     if (offset < 0) offset = 0;
     
@@ -215,7 +217,7 @@ string string_tail(const char *array, uint32_t max_length){
 string string_from_literal_length(const char *array, uint32_t max_length){
     if (array == NULL) return (string){.data = NULL, .length = 0, .mem_length= 0 };
 
-    uint32_t len = strlen(array, max_length);
+    uint32_t len = strlen_max(array, max_length);
     char *buf = (char*)malloc(len + 1);
     if(!buf) return (string){ .data = NULL, .length = 0, .mem_length=0 };
 
@@ -291,7 +293,7 @@ bool string_equals(string a, string b){
 }
 
 string string_replace(const char *str, char orig, char repl){
-    size_t str_size = strlen(str, 0);
+    size_t str_size = strlen(str);
     char *buf = (char*)malloc(str_size+1);
     for (size_t i = 0; i < str_size && str[i]; i++){
         buf[i] = str[i] == orig ? repl : str[i];
@@ -424,7 +426,7 @@ size_t string_format_va_buf(const char *restrict fmt, char *restrict out, size_t
         if (!flag_plus && !flag_space && !flag_zero && !flag_hash && !had_precision && width == 0) {
             if (spec == 's') {
                 const char *s = va_arg(args, char *); if (!s) s = "(null)";
-                append_block(&p, &rem, s, strlen(s, 0), &truncated_all);
+                append_block(&p, &rem, s, strlen(s), &truncated_all);
                 continue;
             } else if (spec == 'c') {
                 int ch = va_arg(args, int);
@@ -451,7 +453,7 @@ size_t string_format_va_buf(const char *restrict fmt, char *restrict out, size_t
             case 's': {
                 const char *s = va_arg(args, char *);
                 if (!s) s = "(null)";
-                uint32_t sl = strlen(s, 0);
+                uint32_t sl = strlen(s);
                 if (precision_set && (uint32_t)precision < sl) sl = (uint32_t)precision;
                 emit_padded(&p, &rem, s, sl, width, flag_minus, &truncated_all);
             } continue;
@@ -971,7 +973,7 @@ size_t string_format_va_buf(const char *restrict fmt, char *restrict out, size_t
     if (truncated_all) {
         size_t w = (size_t)(p - out);
         const char *m = TRUNC_MARKER;
-        size_t ml = strlen(m, 0);
+        size_t ml = strlen(m);
         if (w >= ml) {
             for (size_t i = 0; i < ml; i++) p[-(intptr_t)ml + i] = m[i];
         } else if (w) {
@@ -984,12 +986,12 @@ size_t string_format_va_buf(const char *restrict fmt, char *restrict out, size_t
     return (size_t)(p - out);
 }
 
-char tolower(char c){
+int tolower(int c){
     if (c >= 'A' && c <= 'Z') return c + 'a' - 'A';
     return c;
 }
 
-char toupper(char c){
+int toupper(int c){
     if (c >= 'a' && c <= 'z') return c - ('a' - 'A');
     return c;
 }
@@ -1157,7 +1159,7 @@ int64_t parse_int64(const char* str, size_t size){
 
 string string_from_const(const char *lit)
 {
-    uint32_t len = strlen(lit, 0);
+    uint32_t len = strlen(lit);
     return (string){ (char *)lit, len, len + 1};
 }
 

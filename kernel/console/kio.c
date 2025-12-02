@@ -184,7 +184,7 @@ void puts(const char *s){
     if (!console_storage) init_print_buf();
     if (!s) return;
 
-    size_t n = strlen(s, 0);
+    size_t n = strlen(s);
     if (!n) return;
 
     uart_raw_puts(s);
@@ -220,7 +220,7 @@ void kprint(const char *s){
     if (!console_storage) init_print_buf();
     if (!s) return;
 
-    size_t n = strlen(s, 0);
+    size_t n = strlen(s);
     if (n) console_write(s, n);
 
     console_out_crlf();

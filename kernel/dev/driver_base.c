@@ -9,5 +9,5 @@ uint64_t reserve_fd_id(){
 }
 
 uint64_t reserve_fd_gid(const char *path){
-    return chashmap_fnv1a64(path, strlen(path, 0));
+    return chashmap_fnv1a64(path, strlen(path));
 }

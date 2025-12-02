@@ -155,7 +155,7 @@ void Terminal::handle_input(){
                 draw_cursor();
                 flush(dctx);
             } else if (key == KEY_BACKSPACE){
-                if (strlen(get_current_line(), 1024) > (uint32_t)prompt_length) {
+                if (strlen_max(get_current_line(), 1024) > (uint32_t)prompt_length) {
                     delete_last_char();
                 }
             }

@@ -26,7 +26,7 @@ typedef struct {
 
 static void help(file *fd) {
     const char *a = "usage: tracert [-4/-6] [-m max_ttl] [-n probes] [-w timeout] [-i interval] [-x dead_hops] [-s src_local_ip] host";
-    write_file(fd, a, strlen(a, STRING_MAX_LEN));
+    write_file(fd, a, strlen_max(a, STRING_MAX_LEN));
     write_file(fd, "\n", 1);
 }
 
@@ -108,9 +108,9 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
     char dip[16];
     ipv4_to_string(dst, dip);
     write_file(fd, "Tracing route to ", 17);
-    write_file(fd, o->host, strlen(o->host, STRING_MAX_LEN));
+    write_file(fd, o->host, strlen_max(o->host, STRING_MAX_LEN));
     write_file(fd, " [", 2);
-    write_file(fd, dip, strlen(dip, STRING_MAX_LEN));
+    write_file(fd, dip, strlen_max(dip, STRING_MAX_LEN));
     write_file(fd, "]", 1);
     write_file(fd, "\n", 1);
 
@@ -185,7 +185,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             if (hop_ip) {
                 char hip[16];
                 ipv4_to_string(hop_ip, hip);
-                write_file(fd, hip, strlen(hip, STRING_MAX_LEN));
+                write_file(fd, hip, strlen_max(hip, STRING_MAX_LEN));
             } else {
                 write_file(fd, "???", 3);
             }

@@ -48,6 +48,10 @@ clean:
 	@echo "removing images"
 	$(RM) kernel.img kernel.elf disk.img dump
 
+cross:
+	$(MAKE) -C shared clean
+	$(MAKE) -C shared ARCH= SH_FLAGS=-DCROSS
+
 raspi:
 	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true all
 	./run_raspi

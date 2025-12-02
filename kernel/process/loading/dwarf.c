@@ -216,7 +216,7 @@ uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, siz
 					str = (const char *)p;
 					// kprintf("Directory %s", str);
 					if (array) array[i] = str;
-					p += strlen(str, 0) + 1;
+					p += strlen(str) + 1;
 				break;
 				case DW_FORM_strp: p += 4; break;
 				case DW_FORM_strx: decode_uleb128(&p); break;

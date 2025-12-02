@@ -29,7 +29,7 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
     size_t listsize = 0x1000;
     void *listptr = malloc(listsize);
     if (list_directory_contents("/boot/redos/bin/", listptr, listsize, 0)){
-        size_t name_len = strlen(prog_name,0) + 4;
+        size_t name_len = strlen(prog_name) + 4;
         char *full_name = (char*)malloc(name_len);
         strcat(prog_name, ".elf", full_name);
         string_list *list = (string_list*)listptr;
@@ -67,7 +67,7 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
                         char** nargv = (char**)(PHYS_TO_VIRT_P(proc->stack_phys)-argvs);
                         uintptr_t strptr = 0;
                         for (int i = 0; i < argc; i++){
-                            size_t strsize = strlen(argv[i],0);
+                            size_t strsize = strlen(argv[i]);
                             memcpy(nargvals + strptr, argv[i], strsize);
                             *(char*)(nargvals + strptr + strsize) = 0;
                             nargv[i] = vnargvals + strptr;

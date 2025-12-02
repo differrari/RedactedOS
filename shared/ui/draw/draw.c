@@ -302,7 +302,7 @@ void fb_draw_char(draw_ctx *ctx, uint32_t x, uint32_t y, char c, uint32_t scale,
 
 gpu_size fb_draw_string(draw_ctx *ctx, const char* s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
     const uint32_t char_size = fb_get_char_size(scale);
-    const int str_length = strlen(s,0);
+    const int str_length = strlen(s);
     
     uint32_t xoff = 0;
     uint32_t xSize = 0;
