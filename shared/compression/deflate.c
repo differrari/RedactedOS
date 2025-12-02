@@ -315,7 +315,7 @@ size_t deflate_decode(void* ptr, size_t size, deflate_read_ctx *ctx){
         // huffman_viz(dist_tree, 0, 0);
         // printf("**** WOO ****");
 
-        free(full_huffman, tree_data_size * sizeof(uint16_t));
+        free_sized(full_huffman, tree_data_size * sizeof(uint16_t));
 
         tree_root = litlen_tree;
         } else if (btype == 0b01){//Static huffman

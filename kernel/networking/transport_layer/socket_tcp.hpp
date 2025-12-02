@@ -153,7 +153,7 @@ class TCPSocket : public Socket {
             return;
         }
         if (frame_ptr && frame_len){
-            free((void*)frame_ptr, frame_len);
+            free_sized((void*)frame_ptr, frame_len);
         }
     }
 
@@ -165,7 +165,7 @@ class TCPSocket : public Socket {
         if (!ring.push(packet)) {
             sizedptr dropped;
             ring.pop(dropped);
-            free((void*)dropped.ptr, dropped.size);
+            free_sized((void*)dropped.ptr, dropped.size);
             ring.push(packet);
         }
     }
@@ -401,7 +401,7 @@ public:
         if (!ring.pop(p)) return 0;
         uint32_t tocpy = p.size < (uint32_t)len ? p.size : (uint32_t)len;
         memcpy(buf, (void*)p.ptr, tocpy);
-        free((void*)p.ptr, p.size);
+        free_sized((void*)p.ptr, p.size);
         return tocpy;
     }
 
@@ -412,7 +412,7 @@ public:
             flow = nullptr;
         }
         sizedptr pkt;
-        while (ring.pop(pkt)){ free((void*)pkt.ptr, pkt.size); }
+        while (ring.pop(pkt)){ free_sized((void*)pkt.ptr, pkt.size); }
         for (int i=0;i<backlogLen;++i){ delete pending[i]; }
         backlogLen = 0;
 

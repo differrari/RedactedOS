@@ -71,7 +71,7 @@ void Console::resize(){
         }
     }
 
-    if (old_data) free(old_data, old_rows * old_cols);
+    if (old_data) free_sized(old_data, old_rows * old_cols);
 
     row_data = new_data;
     rows = new_rows;

@@ -20,7 +20,7 @@ public:
 
     ~Queue() {
         if (buffer) {
-            free(buffer, capacity * sizeof(T));
+            free_sized(buffer, capacity * sizeof(T));
         }
     }
 
@@ -75,7 +75,7 @@ private:
         }
 
         if (buffer) {
-            free(buffer, capacity * sizeof(T));
+            free_sized(buffer, capacity * sizeof(T));
         }
 
         buffer = new_buf;

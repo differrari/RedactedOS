@@ -46,7 +46,7 @@ static void transform_16bit(wav_format_chunk *fmt_chunk, uint32_t data_size, aud
         }
         ++source;
     }
-    free(tbuf, data_size);
+    free_sized(tbuf, data_size);
 }
 
 static void transform_8bit(wav_format_chunk *fmt_chunk, uint32_t data_size, audio_samples* audio, uint32_t upsample, file* fd){
@@ -65,7 +65,7 @@ static void transform_8bit(wav_format_chunk *fmt_chunk, uint32_t data_size, audi
             *dest++ = sample;  // TODO: interpolate
         }
     }
-    free(tbuf, data_size);
+    free_sized(tbuf, data_size);
 }
 
 bool wav_load_as_int16(const char* path, audio_samples* audio){

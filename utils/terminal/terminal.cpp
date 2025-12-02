@@ -35,9 +35,9 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
     string s2 = string_format("/proc/%i/state",proc);
     file out_fd, state_fd;
     fopen(s1.data, &out_fd);
-    free(s1.data, s1.mem_length);
+    free_sized(s1.data, s1.mem_length);
     fopen(s2.data, &state_fd);
-    free(s2.data, s2.mem_length);
+    free_sized(s2.data, s2.mem_length);
     int state = 1;
     size_t amount = 0x100;
     char *buf = (char*)malloc(amount);
@@ -46,13 +46,13 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
         put_string(buf);
         fread(&state_fd, (char*)&state, sizeof(int));
     } while (state);
-    free(buf, amount);
+    free_sized(buf, amount);
     fclose(&out_fd);
     fclose(&state_fd);
     string exit_msg = string_format("\nProcess %i ended.",proc);
     //TODO: format message
     put_string(exit_msg.data);
-    free(exit_msg.data, exit_msg.mem_length);
+    free_sized(exit_msg.data, exit_msg.mem_length);
     return true;
 }
 
@@ -119,12 +119,12 @@ void Terminal::run_command(){
         } else {
             string s = string_format("Unknown command %s with args %s", cmd.data, args);
             put_string(s.data);
-            free(s.data, s.mem_length);
+            free_sized(s.data, s.mem_length);
         }
     }
 
-    free(cmd.data, cmd.mem_length);
-    if (args_copy.mem_length) free(args_copy.data, args_copy.mem_length);
+    free_sized(cmd.data, cmd.mem_length);
+    if (args_copy.mem_length) free_sized(args_copy.data, args_copy.mem_length);
 
     draw_cursor();
     flush(dctx);
@@ -164,7 +164,7 @@ void Terminal::handle_input(){
 }
 
 draw_ctx* Terminal::get_ctx(){
-    if (dctx) free(dctx, sizeof(draw_ctx));
+    if (dctx) free_sized(dctx, sizeof(draw_ctx));
     draw_ctx *ctx = (draw_ctx*)malloc(sizeof(draw_ctx));
     request_draw_ctx(ctx);
     return ctx;

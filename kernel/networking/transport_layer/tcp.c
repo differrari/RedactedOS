@@ -60,7 +60,7 @@ static uint16_t tcp_compute_checksum_v4(const void *segment, uint16_t seg_len, u
     }
 
     uint16_t res = (uint16_t)(~sum & 0xFFFF);
-    free((void *)raw, total_len);
+    free_sized((void *)raw, total_len);
     return bswap16(res);
 }
 
@@ -170,11 +170,11 @@ static bool send_tcp_segment(ip_version_t ver, const void *src_ip_addr, const vo
         hdr_on_buf->checksum = tcp_compute_checksum_v4(segment, tcp_len, s, d);
         ipv4_send_packet(d, 6, (sizedptr){ (uintptr_t)segment, tcp_len }, txp, 0);
     } else {
-        free(segment, tcp_len);
+        free_sized(segment, tcp_len);
         return false;
     }
 
-    free(segment, tcp_len);
+    free_sized(segment, tcp_len);
     return true;
 }
 

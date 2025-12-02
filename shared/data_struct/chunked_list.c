@@ -7,7 +7,7 @@ cchunked_list_t* cchunked_list_create(uint64_t chunkSize){
 
     cchunked_list_t* list = (cchunked_list_t*)malloc(sizeof(cchunked_list_t));
     if (!list) {
-        free((void*)raw, sizeof(cchunked_node_t) + chunkSize * sizeof(void*));
+        free_sized((void*)raw, sizeof(cchunked_node_t) + chunkSize * sizeof(void*));
         return NULL;
     }
 
@@ -25,10 +25,10 @@ void cchunked_list_destroy(cchunked_list_t* list){
     cchunked_node_t* node = list->head;
     while (node) {
         cchunked_node_t* next = node->next;
-        free(node, sizeof(cchunked_node_t) + list->chunkSize * sizeof(void*));
+        free_sized(node, sizeof(cchunked_node_t) + list->chunkSize * sizeof(void*));
         node = next;
     }
-    free(list, sizeof(cchunked_list_t));
+    free_sized(list, sizeof(cchunked_list_t));
 }
 
 cchunked_list_t* cchunked_list_clone(const cchunked_list_t* list){
@@ -107,7 +107,7 @@ void* cchunked_list_pop_front(cchunked_list_t* list){
         cchunked_node_t* old = list->head;
         list->head = old->next;
         if (!list->head) list->tail = NULL;
-        free(old, sizeof(cchunked_node_t) + list->chunkSize * sizeof(void*));
+        free_sized(old, sizeof(cchunked_node_t) + list->chunkSize * sizeof(void*));
     }
 
     list->length--;
@@ -133,7 +133,7 @@ void* cchunked_list_remove_node(cchunked_list_t* list, cchunked_node_t* node){
     if (node->count == 0) {
         prev->next = node->next;
         if (list->tail == node) list->tail = prev;
-        free(node, sizeof(cchunked_node_t) + list->chunkSize * sizeof(void*));
+        free_sized(node, sizeof(cchunked_node_t) + list->chunkSize * sizeof(void*));
     }
 
     return data;

@@ -99,7 +99,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             write_file(fd, m.data, m.length);
             write_file(fd, "\n", 1);
             //write_file(fd, "\t", 1);
-            free(m.data, m.mem_length);
+            free_sized(m.data, m.mem_length);
             return 2;
         }
         dst = r;
@@ -118,7 +118,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
     for (uint32_t p = 0; p < o->count; p++) {
         string col = string_format("rtt%u  ", (uint32_t)(p + 1));
         write_file(fd, col.data, col.length);
-        free(col.data, col.mem_length);
+        free_sized(col.data, col.mem_length);
     }
     write_file(fd, "address", 7);
     write_file(fd, "\n", 1);
@@ -133,7 +133,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             string em = string_format("tracert: invalid source %s (no local ip match)", ssrc);
             write_file(fd, em.data, em.length);
             write_file(fd, "\n", 1);
-            free(em.data, em.mem_length);
+            free_sized(em.data, em.mem_length);
             return 2;
         }
         txo.index = l3->l3_id;
@@ -148,7 +148,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
     for (uint32_t ttl = 1; ttl <= o->max_ttl; ttl++) {
         string hdr = string_format("%2u  ", ttl);
         write_file(fd, hdr.data, hdr.length);
-        free(hdr.data, hdr.mem_length);
+        free_sized(hdr.data, hdr.mem_length);
 
         uint32_t hop_ip = 0;
         bool any = false;
@@ -163,7 +163,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
                 any = true;
                 string ms = string_format("%ums  ", r.rtt_ms);
                 write_file(fd, ms.data, ms.length);
-                free(ms.data, ms.mem_length);
+                free_sized(ms.data, ms.mem_length);
             } else {
                 if (r.status == PING_TTL_EXPIRED || r.status == PING_REDIRECT || r.status == PING_PARAM_PROBLEM ||
                     r.status == PING_NET_UNREACH || r.status == PING_HOST_UNREACH || r.status == PING_ADMIN_PROHIBITED ||
@@ -171,7 +171,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
                     any = true;
                     string ms = string_format("%ums  ", r.rtt_ms);
                     write_file(fd, ms.data, ms.length);
-                    free(ms.data, ms.mem_length);
+                    free_sized(ms.data, ms.mem_length);
                 } else {
                     write_file(fd, "*  ", 3);
                 }
@@ -200,7 +200,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             string note = string_format("stopping after %u consecutive timeout hops", dead_streak);
             write_file(fd, note.data, note.length);
             write_file(fd, "\n", 1);
-            free(note.data, note.mem_length);
+            free_sized(note.data, note.mem_length);
             break;
         }
     }
@@ -213,7 +213,7 @@ int run_tracert(int argc, char *argv[]) {
     string p = string_format("/proc/%u/out", pid);
     file fd = (file){0};
     open_file(p.data, &fd);
-    free(p.data, p.mem_length);
+    free_sized(p.data, p.mem_length);
 
     tr_opts_t o;
     if (!parse_args(argc, argv, &o)) {

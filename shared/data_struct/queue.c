@@ -29,7 +29,7 @@ int32_t cqueue_enqueue(CQueue* q, const void* item) {
                        (uint8_t*)q->buffer + idx * q->elem_size,
                        q->elem_size);
             }
-            if (q->buffer) free(q->buffer, q->capacity * q->elem_size);
+            if (q->buffer) free_sized(q->buffer, q->capacity * q->elem_size);
             q->buffer = newb;
             q->capacity = nc;
             q->head = q->length;
@@ -65,5 +65,5 @@ void cqueue_clear(CQueue* q) {
 
 void cqueue_destroy(CQueue* q) {
     if (!q) return;
-    if (q->buffer) free(q->buffer, q->capacity * q->elem_size);
+    if (q->buffer) free_sized(q->buffer, q->capacity * q->elem_size);
 }

@@ -100,7 +100,7 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
     }
 
     ipv4_send_packet(dst_ip, 1, (sizedptr){buf, tot_len}, (const ipv4_tx_opts_t*)tx_opts_or_null, (uint8_t)ttl);
-    free((void*)buf, 8 + 56);
+    free_sized((void*)buf, 8 + 56);
 
     uint32_t start = (uint32_t)get_time();
     for (;;) {
@@ -189,7 +189,7 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
             ipv4_tx_opts_t o = {.index = l3->l3_id, .scope = IPV4_TX_BOUND_L3};
             ipv4_send_packet(src_ip, 1, (sizedptr){buf, rlen}, &o, IP_TTL_DEFAULT);
         }
-        free((void*)buf, 8 + 56);
+        free_sized((void*)buf, 8 + 56);
         return;
     }
 

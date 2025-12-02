@@ -107,7 +107,7 @@ void* load_image_resized(char *path, image_info *info, IMAGE_FORMATS format, uin
         printf("[IMG warning] image downscaling is not properly implemented or tested. Use at your own risk");
     }
     rescale_image(old_info.width, old_info.height, new_width, new_height, old_img, new_img);
-    free(old_img, old_info.width * old_info.height * sizeof(uint32_t));
+    free_sized(old_img, old_info.width * old_info.height * sizeof(uint32_t));
     return new_img;
 }
 

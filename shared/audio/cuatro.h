@@ -7,7 +7,7 @@ typedef int16_t audio_sample_t;
 typedef enum AUDIO_LIFETIME {
     AUDIO_OFF = 0,
     AUDIO_ONESHOT,          // play samples once
-    AUDIO_ONESHOT_FREE,     // play samples once then free() their memory
+    AUDIO_ONESHOT_FREE,     // play samples once then free_sized() their memory
     AUDIO_LOOP,             // play samples repeatedly - with delay, if set
     AUDIO_STREAM,           // assign samples to available dblbuf entry
 } AUDIO_LIFETIME;

@@ -149,7 +149,7 @@ void reset_process(process_t *proc){
     for (int k = 0; k < PACKET_BUFFER_CAPACITY; k++){
         sizedptr p = proc->packet_buffer.entries[k];
         if (p.ptr)
-            free_sized(p);
+            free_sizedptr(p);
         proc->packet_buffer.entries[k] = (sizedptr){0};
     }
     close_files_for_process(proc->id);

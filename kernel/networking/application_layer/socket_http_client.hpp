@@ -19,7 +19,7 @@ public:
     HTTPResponseMsg send_request(const HTTPRequestMsg &req) {
         string out = http_request_builder(&req);
         int64_t sent = sock.send(out.data, out.length);
-        free(out.data, out.mem_length);
+        free_sized(out.data, out.mem_length);
 
         HTTPResponseMsg resp{};
         if (sent < 0) {
@@ -34,7 +34,7 @@ public:
         while (true) {
             int64_t r = sock.recv(tmp, sizeof(tmp));
             if (r < 0) {
-                free(buf.data, buf.mem_length);
+                free_sized(buf.data, buf.mem_length);
                 resp.status_code = (HttpError)SOCK_ERR_SYS;
                 return resp;
             }
@@ -44,7 +44,7 @@ public:
             hdr_end = find_crlfcrlf(buf.data, buf.length);
             if (hdr_end >= 0) break;
             if (++attempts > 50) {
-                free(buf.data, buf.mem_length);
+                free_sized(buf.data, buf.mem_length);
                 resp.status_code = (HttpError)SOCK_ERR_PROTO;
                 return resp;
             }
@@ -113,7 +113,7 @@ public:
                 resp.body.size = have;
             }
         }
-        free(buf.data, buf.mem_length);
+        free_sized(buf.data, buf.mem_length);
         return resp;
     }
 

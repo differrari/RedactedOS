@@ -39,7 +39,7 @@ public:
         if (capacity == 0) return;
         for (uint32_t i = 0; i <= capacity; i++)
             items[i].~T();
-        if (items) free(items, sizeof(T) * (capacity + 1));
+        if (items) free_sized(items, sizeof(T) * (capacity + 1));
     }
 
     bool add(const uint32_t index, const T& value) {

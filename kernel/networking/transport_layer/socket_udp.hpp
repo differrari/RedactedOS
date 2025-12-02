@@ -72,22 +72,22 @@ class UDPSocket : public Socket {
                 return;
             }
         }
-        if (frame_ptr && frame_len) free((void*)frame_ptr, frame_len);
+        if (frame_ptr && frame_len) free_sized((void*)frame_ptr, frame_len);
     }
 
     void on_receive(ip_version_t ver, const void* src_ip_addr, uint16_t src_port, uintptr_t ptr, uint32_t len) {
         uintptr_t copy = (uintptr_t)malloc(len);
 
         if (!copy) {
-            if (ptr && len) free((void*)ptr, len);
+            if (ptr && len) free_sized((void*)ptr, len);
             return;
         }
         memcpy((void*)copy, (void*)ptr, len);
-        if (ptr && len) free((void*)ptr, len);
+        if (ptr && len) free_sized((void*)ptr, len);
 
         int nexti = (r_tail + 1) % UDP_RING_CAP;
         if (nexti == r_head) {
-            free((void*)ring[r_head].ptr, ring[r_head].size);
+            free_sized((void*)ring[r_head].ptr, ring[r_head].size);
             r_head = (r_head + 1) % UDP_RING_CAP;
         }
 
@@ -434,14 +434,14 @@ public:
         uint32_t tocpy = p.size < len ? p.size : (uint32_t)len;
         memcpy(buf, (void*)p.ptr, tocpy);
         if (src) *src = se;
-        free((void*)p.ptr, p.size);
+        free_sized((void*)p.ptr, p.size);
         remoteEP = se;
         return tocpy;
     }
 
     int32_t close() override {
         while (r_head != r_tail) {
-            free((void*)ring[r_head].ptr, ring[r_head].size);
+            free_sized((void*)ring[r_head].ptr, ring[r_head].size);
             r_head = (r_head + 1) % UDP_RING_CAP;
         }
         return Socket::close();

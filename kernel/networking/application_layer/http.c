@@ -38,7 +38,7 @@ string http_header_builder(const HTTPHeadersCommon *C,
         string tmp = string_format("Content-Length: %i\r\n",
                                 (int)C->length);
         string_append_bytes(&out, tmp.data, tmp.length);
-        free(tmp.data, tmp.mem_length);
+        free_sized(tmp.data, tmp.mem_length);
     }
 
     if (C->date.length) {
@@ -180,12 +180,12 @@ string http_request_builder(const HTTPRequestMsg *R)
         &R->headers_common,
         R->extra_headers, R->extra_header_count);
     string_append_bytes(&out, hdrs.data, hdrs.length);
-    free(hdrs.data, hdrs.mem_length);
+    free_sized(hdrs.data, hdrs.mem_length);
 
     if (R->body.ptr && R->body.size) {
         string body = string_from_literal_length((char*)R->body.ptr, R->body.size);
         string_append_bytes(&out, body.data, body.length);
-        free(body.data, body.mem_length);
+        free_sized(body.data, body.mem_length);
     }
 
     return out;
@@ -204,7 +204,7 @@ string http_response_builder(const HTTPResponseMsg *R) {
         R->extra_header_count
     );
     string_append_bytes(&out, hdrs.data, hdrs.length);
-    free(hdrs.data, hdrs.mem_length);
+    free_sized(hdrs.data, hdrs.mem_length);
 
     if (R->body.ptr && R->body.size) {
         string_append_bytes(&out,

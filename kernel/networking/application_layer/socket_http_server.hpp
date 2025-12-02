@@ -104,7 +104,7 @@ public:
             }
         }
 
-        free(buf.data, buf.mem_length);
+        free_sized(buf.data, buf.mem_length);
         return req;
     }
 
@@ -113,7 +113,7 @@ public:
         if (!client) return SOCK_ERR_STATE;
         string out = http_response_builder(&res);
         int64_t sent = client->send(out.data, out.length);
-        free(out.data, out.mem_length);
+        free_sized(out.data, out.mem_length);
         return sent < 0 ? (int32_t)sent : SOCK_OK;
     }
 

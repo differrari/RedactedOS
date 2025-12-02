@@ -50,7 +50,7 @@ bool eth_send_frame_on(uint16_t ifindex, uint16_t ethertype, const uint8_t dst_m
     if (payload.size) memcpy((void*)ptr, (const void*)payload.ptr, payload.size);
 
     bool ok = (net_tx_frame_on(ifindex, buf, total) == 0);
-    free((void*)buf, total);
+    free_sized((void*)buf, total);
     return ok;
 }
 

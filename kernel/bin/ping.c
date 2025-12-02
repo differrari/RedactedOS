@@ -87,7 +87,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
             string m = string_format("ping: dns lookup failed (%d) for '%s'", (int)dr, host);
             write_file(fd, m.data, m.length);
             write_file(fd, "\n", 1);
-            free(m.data, m.mem_length);
+            free_sized(m.data, m.mem_length);
             return 2;
         }
         dst_ip_be = r;
@@ -144,7 +144,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
             string ln = string_format("Reply from %s: bytes=32 time=%ums", ipstr, (uint32_t)rtt);
             write_file(fd, ln.data, ln.length);
             write_file(fd, "\n", 1);
-            free(ln.data, ln.mem_length);
+            free_sized(ln.data, ln.mem_length);
         } else {
             const char *msg = NULL;
             if (res.status == PING_TIMEOUT) msg = "Request timed out.";
@@ -197,7 +197,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
     string h = string_format("--- %s ping statistics ---", host);
     write_file(fd, h.data, h.length);
     write_file(fd, "\n", 1);
-    free(h.data, h.mem_length);
+    free_sized(h.data, h.mem_length);
 
 
     uint32_t loss = (sent == 0) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
@@ -206,7 +206,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
     string s = string_format("%u packets transmitted, %u received, %u%% packet loss, time %ums", sent, received, loss, total_time);
     write_file(fd, s.data, s.length);
     write_file(fd, "\n", 1);
-    free(s.data, s.mem_length);
+    free_sized(s.data, s.mem_length);
 
     if (received > 0) {
         uint32_t avg = (uint32_t)(sum_ms / received);
@@ -214,7 +214,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
         string r = string_format("rtt min/avg/max = %u/%u/%u ms", min_ms, avg, max_ms);
         write_file(fd, r.data, r.length);
         write_file(fd, "\n", 1);
-        free(r.data, r.mem_length);
+        free_sized(r.data, r.mem_length);
     }
 
     return (received > 0) ? 0 : 1;
@@ -225,7 +225,7 @@ int run_ping(int argc, char *argv[]) {
     string p = string_format("/proc/%u/out", pid);
     file fd = {0};
     open_file(p.data, &fd);
-    free(p.data, p.mem_length);
+    free_sized(p.data, p.mem_length);
 
     ping_opts_t opts;
     if (!parse_args(argc, argv, &opts)) {
@@ -242,7 +242,7 @@ int run_ping(int argc, char *argv[]) {
             string em = string_format("ping: invalid source %s (no local ip match)", ssrc);
             write_file(&fd, em.data, em.length);
             write_file(&fd, "\n", 1);
-            free(em.data, em.mem_length);
+            free_sized(em.data, em.mem_length);
             close_file(&fd);
             return 2;
         }

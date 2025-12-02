@@ -86,9 +86,9 @@ int window_system(){
         bmp_read_image(imgf, fd.size, oimg);
         if (need_resize){
             rescale_image(info.width, info.height, img_info.width, img_info.height, oimg, img);
-            free(oimg, info.width * info.height * sizeof(uint32_t));
+            free_sized(oimg, info.width * info.height * sizeof(uint32_t));
         }
-        free(imgf, fd.size);
+        free_sized(imgf, fd.size);
         fclose(&fd);
     }
     keypress kp_g = { 

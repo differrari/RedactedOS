@@ -227,7 +227,7 @@ uint8_t NetworkDispatch::kind(uint8_t ifindex) const
 
 void NetworkDispatch::free_frame(const sizedptr &f)
 {
-    if (f.ptr) free_sized(f);
+    if (f.ptr) free_sizedptr(f);
 }
 
 bool NetworkDispatch::register_all_from_bus() {

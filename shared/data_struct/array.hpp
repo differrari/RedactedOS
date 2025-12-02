@@ -25,7 +25,7 @@ public:
         if (count == 0) return;
         for (uint32_t i = 0; i < count; i++)
             items[i].~T();
-        free(items, sizeof(T) * capacity);
+        free_sized(items, sizeof(T) * capacity);
     }
 
     bool add(const T& value) {

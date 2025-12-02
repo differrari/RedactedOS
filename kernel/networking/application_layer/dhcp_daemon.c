@@ -346,7 +346,7 @@ static void dhcp_send_discover_for(dhcp_if_state_t* st) {
     memcpy(dst.ip, &bcast, 4);
     dst.port = 67;
     socket_sendto_udp_ex(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
-    free((void*)pkt.ptr, pkt.size);
+    free_sized((void*)pkt.ptr, pkt.size);
 }
 
 static void dhcp_send_request_select_for(dhcp_if_state_t* st, const dhcp_request* base) {
@@ -358,7 +358,7 @@ static void dhcp_send_request_select_for(dhcp_if_state_t* st, const dhcp_request
     memcpy(dst.ip, &dip, 4);
     dst.port = 67;
     socket_sendto_udp_ex(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
-    free((void*)pkt.ptr, pkt.size);
+    free_sized((void*)pkt.ptr, pkt.size);
 }
 
 static void dhcp_send_renew_for(dhcp_if_state_t* st) {
@@ -381,7 +381,7 @@ static void dhcp_send_renew_for(dhcp_if_state_t* st) {
     memcpy(dst.ip, &dip, 4);
     dst.port = 67;
     socket_sendto_udp_ex(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
-    free((void*)pkt.ptr, pkt.size);
+    free_sized((void*)pkt.ptr, pkt.size);
 }
 
 static void dhcp_send_rebind_for(dhcp_if_state_t* st) {
@@ -404,7 +404,7 @@ static void dhcp_send_rebind_for(dhcp_if_state_t* st) {
     memcpy(dst.ip, &dip, 4);
     dst.port = 67;
     socket_sendto_udp_ex(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
-    free((void*)pkt.ptr, pkt.size);
+    free_sized((void*)pkt.ptr, pkt.size);
 }
 
 static void dhcp_send_inform_for(dhcp_if_state_t* st) {
@@ -427,7 +427,7 @@ static void dhcp_send_inform_for(dhcp_if_state_t* st) {
     memcpy(dst.ip, &dip, 4);
     dst.port = 67;
     socket_sendto_udp_ex(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
-    free((void*)pkt.ptr, pkt.size);
+    free_sized((void*)pkt.ptr, pkt.size);
 }
 
 static void schedule_retry(dhcp_if_state_t* st) {
@@ -457,7 +457,7 @@ static void fsm_once_for(dhcp_if_state_t* st) {
         if (idx54 != UINT16_MAX && offer->options[idx54+1] >= 4) memcpy(&st->server_ip_net, &offer->options[idx54+2], 4);
         memcpy(&req.offered_ip, &offer->yiaddr, 4);
         req.server_ip = st->server_ip_net;
-        free((void*)sp.ptr, sp.size);
+        free_sized((void*)sp.ptr, sp.size);
         dhcp_send_request_select_for(st, &req);
         st->state = DHCP_S_REQUESTING;
         dhcp_reset_backoff(st);
@@ -470,11 +470,11 @@ static void fsm_once_for(dhcp_if_state_t* st) {
         } else {
             if (mtype == DHCPACK) {
                 apply_offer_to_l3(st->ifindex, st->l3_id, resp, sp, st->last_xid, st);
-                free((void*)sp.ptr, sp.size);
+                free_sized((void*)sp.ptr, sp.size);
                 st->state = DHCP_S_BOUND;
                 dhcp_reset_backoff(st);
             } else {
-                free((void*)sp.ptr, sp.size);
+                free_sized((void*)sp.ptr, sp.size);
                 l3_ipv4_update(st->l3_id, 0, 0, 0, IPV4_CFG_DHCP, NULL);
                 st->t1_left_ms = 0;
                 st->t2_left_ms = 0;
@@ -506,11 +506,11 @@ static void fsm_once_for(dhcp_if_state_t* st) {
         if (udp_wait_for_ack_or_nak(st->sock, st->last_xid, st->mac_ok ? st->mac : NULL, &p, &sp, 2000, &mtype)) {
             if (mtype == DHCPACK) {
                 apply_offer_to_l3(st->ifindex, st->l3_id, p, sp, st->last_xid, st);
-                free((void*)sp.ptr, sp.size);
+                free_sized((void*)sp.ptr, sp.size);
                 st->state = DHCP_S_BOUND;
                 dhcp_reset_backoff(st);
             } else {
-                free((void*)sp.ptr, sp.size);
+                free_sized((void*)sp.ptr, sp.size);
                 l3_ipv4_update(st->l3_id, 0, 0, 0, IPV4_CFG_DHCP, NULL);
                 st->t1_left_ms = 0;
                 st->t2_left_ms = 0;
@@ -530,11 +530,11 @@ static void fsm_once_for(dhcp_if_state_t* st) {
         if (udp_wait_for_ack_or_nak(st->sock, st->last_xid, st->mac_ok ? st->mac : NULL, &p, &sp, 2000, &mtype)) {
             if (mtype == DHCPACK) {
                 apply_offer_to_l3(st->ifindex, st->l3_id, p, sp, st->last_xid, st);
-                free((void*)sp.ptr, sp.size);
+                free_sized((void*)sp.ptr, sp.size);
                 st->state = DHCP_S_BOUND;
                 dhcp_reset_backoff(st);
             } else {
-                free((void*)sp.ptr, sp.size);
+                free_sized((void*)sp.ptr, sp.size);
                 l3_ipv4_update(st->l3_id, 0, 0, 0, IPV4_CFG_DHCP, NULL);
                 st->t1_left_ms = 0;
                 st->t2_left_ms = 0;

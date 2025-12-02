@@ -326,6 +326,6 @@ void kfree(void* ptr, uint64_t size) {
     page->size -= size;
 }
 
-void free_sized(sizedptr ptr){
+void free_sizedptr(sizedptr ptr){
     kfree((void*)ptr.ptr, ptr.size);
 }

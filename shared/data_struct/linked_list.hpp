@@ -18,7 +18,7 @@ public:
     uint64_t length = 0;
 
     void* (*alloc_func)(size_t) = malloc;
-    void (*free_func)(void*,size_t) = free;
+    void (*free_func)(void*,size_t) = free_sized;
 
     Node* alloc_node(const T& value) {
         Node* n = reinterpret_cast<Node*>(alloc_func(sizeof(Node)));

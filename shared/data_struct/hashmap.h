@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 extern void* malloc(uint64_t size);
-extern void free(void* ptr, uint64_t size);
+extern void free_sized(void* ptr, uint64_t size);
 
 typedef uint64_t (*chashmap_hash_fn)(const void* key, uint64_t len);
 typedef int (*chashmap_keyeq_fn)(const void* a, uint64_t alen, const void* b, uint64_t blen);

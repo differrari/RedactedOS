@@ -19,7 +19,7 @@ void* malloc(size_t size){
     return kalloc((void*)heap, size, ALIGN_16B, MEM_PRIV_KERNEL);
 }
 
-void free(void*ptr, size_t size){
+void free_sized(void*ptr, size_t size){
     kfree(ptr, size);
 }
 

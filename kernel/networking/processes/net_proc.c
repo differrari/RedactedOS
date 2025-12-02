@@ -78,18 +78,18 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
 
 static void free_request(HTTPRequestMsg *req) {
     if (req->path.mem_length)
-        free(req->path.data, req->path.mem_length);
+        free_sized(req->path.data, req->path.mem_length);
     for (uint32_t i = 0; i < req->extra_header_count; i++) {
         HTTPHeader *h = &req->extra_headers[i];
         if (h->key.mem_length)
-            free(h->key.data, h->key.mem_length);
+            free_sized(h->key.data, h->key.mem_length);
         if (h->value.mem_length)
-            free(h->value.data, h->value.mem_length);
+            free_sized(h->value.data, h->value.mem_length);
     }
     if (req->extra_headers)
-        free(req->extra_headers, req->extra_header_count * sizeof(HTTPHeader));
+        free_sized(req->extra_headers, req->extra_header_count * sizeof(HTTPHeader));
     if (req->body.ptr && req->body.size)
-        free((void*)req->body.ptr, req->body.size);
+        free_sized((void*)req->body.ptr, req->body.size);
 }
 
 static void run_http_server() {
@@ -220,7 +220,7 @@ static void test_http(const net_l4_endpoint* ep) {
             body_str[resp.body.size] = '\0';
             kprintf("[HTTP] %i %i bytes of body", resp.status_code, resp.body.size);
             kprintf("%s", body_str);
-            free(body_str, resp.body.size + 1);
+            free_sized(body_str, resp.body.size + 1);
         }
     }
 
@@ -228,18 +228,18 @@ static void test_http(const net_l4_endpoint* ep) {
     http_client_destroy(cli);
 
     if (resp.reason.data && resp.reason.mem_length)
-        free(resp.reason.data, resp.reason.mem_length);
+        free_sized(resp.reason.data, resp.reason.mem_length);
 
     for (uint32_t i = 0; i < resp.extra_header_count; i++) {
         HTTPHeader *h = &resp.extra_headers[i];
         if (h->key.mem_length)
-            free(h->key.data, h->key.mem_length);
+            free_sized(h->key.data, h->key.mem_length);
         if (h->value.mem_length)
-            free(h->value.data, h->value.mem_length);
+            free_sized(h->value.data, h->value.mem_length);
     }
 
     if (resp.extra_headers)
-        free(resp.extra_headers, resp.extra_header_count * sizeof(HTTPHeader));
+        free_sized(resp.extra_headers, resp.extra_header_count * sizeof(HTTPHeader));
 }
 
 

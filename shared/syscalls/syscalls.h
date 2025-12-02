@@ -17,7 +17,7 @@ extern "C" {
 extern void printl(const char *str);
 
 extern void* malloc(size_t size);
-extern void free(void *ptr, size_t size);
+extern void free_sized(void *ptr, size_t size);
 
 extern bool read_key(keypress *kp);
 extern bool read_event(kbd_event *event);

@@ -73,8 +73,8 @@ int login_screen(){
                 if (hid_keycode_to_char[(uint8_t)key]){
                     if (key == KEY_ENTER || key == KEY_KPENTER){
                         if (strcmp(buf,system_config.default_pwd) == 0){
-                            free(buf, 256);
-                            free(s.data,s.mem_length);
+                            free_sized(buf, 256);
+                            free_sized(s.data,s.mem_length);
                             sys_set_secure(false);
                             stop_current_process(0);
                         } else
@@ -95,7 +95,7 @@ int login_screen(){
 
         old_kp = kp;
         gpu_flush();
-        free(s.data,s.mem_length);
+        free_sized(s.data,s.mem_length);
     }
     return 1;
 }

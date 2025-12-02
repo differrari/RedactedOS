@@ -19,7 +19,7 @@ public:
     ~ChunkedList() {
         while (head) {
             Node* next = head->next;
-            ::free(head, sizeof(Node) + chunkSize * sizeof(T));
+            ::free_sized(head, sizeof(Node) + chunkSize * sizeof(T));
             head = next;
         }
     }
@@ -63,7 +63,7 @@ public:
         } else {
             Node* old = head;
             head = head->next;
-            ::free(old, sizeof(Node) + chunkSize * sizeof(T));
+            ::free_sized(old, sizeof(Node) + chunkSize * sizeof(T));
             if (!head) tail = nullptr;
         }
         --length_;
@@ -94,7 +94,7 @@ public:
             T val = head->data[0];
             uint64_t removed = head->count;
             Node* nxt = head->next;
-            ::free(head, sizeof(Node) + chunkSize * sizeof(T));
+            ::free_sized(head, sizeof(Node) + chunkSize * sizeof(T));
             head = nxt;
             if (!head) tail = nullptr;
             length_ -= removed;
@@ -107,7 +107,7 @@ public:
         uint64_t removed = node->count;
         prev->next = node->next;
         if (tail == node) tail = prev;
-        ::free(node, sizeof(Node) + chunkSize * sizeof(T));
+        ::free_sized(node, sizeof(Node) + chunkSize * sizeof(T));
         length_ -= removed;
         return val;
     }

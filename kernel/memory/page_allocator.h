@@ -37,7 +37,7 @@ void kfree(void* ptr, uint64_t size);
 
 int count_pages(uint64_t i1,uint64_t i2);
 
-void free_sized(sizedptr ptr);
+void free_sizedptr(sizedptr ptr);
 
 #ifdef __cplusplus
 }

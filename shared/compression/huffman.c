@@ -39,7 +39,7 @@ void huffman_populate(huff_tree_node *root, uint64_t code, uint8_t code_len, uin
 void huffman_free(huff_tree_node *root){
     if (root->right) huffman_free(root->right);
     if (root->left) huffman_free(root->left);
-    free(root, sizeof(huff_tree_node));
+    free_sized(root, sizeof(huff_tree_node));
 }
 
 static char *pad = "                                                                ";

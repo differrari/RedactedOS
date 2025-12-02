@@ -75,7 +75,7 @@ void Launcher::load_entries(){
                 if (strcmp_case(ext.data,".red",true) == 0){
                     string pkg_info = string_concat(fullpath, string_from_literal("/package.info"));
                     add_entry(name, ext, fullpath, get_pkg_info(pkg_info.data));
-                    free(pkg_info.data, pkg_info.mem_length);
+                    free_sized(pkg_info.data, pkg_info.mem_length);
                 }
                 while (*reader) reader++;
                 reader++;
@@ -83,7 +83,7 @@ void Launcher::load_entries(){
         }
     }
     string_free(app_path);
-    free(listptr, listsize);
+    free_sized(listptr, listsize);
 }
 
 void Launcher::draw_desktop(){
@@ -163,7 +163,7 @@ void Launcher::activate_current(){
         string s = string_format("%s/%s.elf",entries[index].path.data, entries[index].name.data);
         file fd = {};
         FS_RESULT rest = open_file(s.data, &fd);
-        free(s.data, s.mem_length);
+        free_sized(s.data, s.mem_length);
         kprintf(" Open file %i", rest);
         if (rest != FS_RESULT_SUCCESS)
         {

@@ -51,7 +51,7 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
                     }
                     process_t *proc = load_elf_file(prog_name, 0, program, fd.size);
                     string_free(path);
-                    free(full_name, name_len);
+                    free_sized(full_name, name_len);
                     if (!proc){
                         kprintf("Failed to create process for %s",prog_name);
                     }
@@ -82,7 +82,7 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
                 reader++;
             }
         }
-        free(full_name,name_len);
+        free_sized(full_name,name_len);
         //TODO: The list of strings needs to be freed, but this class is not its owner
     }
 

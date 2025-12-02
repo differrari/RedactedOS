@@ -30,7 +30,7 @@ static void chm_free(const chashmap_t* map, void* ptr, uint64_t sz){
         map->free(ptr, sz);
         return;
     }
-    free(ptr,sz);
+    free_sized(ptr,sz);
 }
 
 static uint64_t chm_next_pow2(uint64_t x){
@@ -74,7 +74,7 @@ chashmap_t* chashmap_create_alloc(uint64_t initial_capacity, void* (*alloc)(uint
 }
 
 chashmap_t* chashmap_create(uint64_t initial_capacity){
-    return chashmap_create_alloc(initial_capacity, malloc, free);
+    return chashmap_create_alloc(initial_capacity, malloc, free_sized);
 }
 
 void chashmap_destroy(chashmap_t* map){

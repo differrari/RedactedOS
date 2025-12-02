@@ -303,7 +303,7 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, sizedptr segment, const ip
     sizedptr payload = { buf, total };
     eth_send_frame_on(ifx, ETHERTYPE_IPV4, dst_mac, payload);
 
-    free((void*)buf, total);
+    free_sized((void*)buf, total);
 }
 
 void ipv4_input(uint16_t ifindex, uintptr_t ip_ptr, uint32_t ip_len, const uint8_t src_mac[6]) {

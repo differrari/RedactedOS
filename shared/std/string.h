@@ -20,7 +20,7 @@ typedef struct string_list {
     char array[];
 } string_list;
 
-extern void free(void*,size_t);
+extern void free_sized(void*,size_t);
 
 size_t strlen_max(const char *s, uint32_t max_length);
 static inline size_t strlen(const char *s) { return strlen_max(s,0); }
@@ -38,7 +38,7 @@ string string_tail(const char *array, uint32_t max_length);
 string string_repeat(char symbol, uint32_t amount);
 
 static inline void string_free(string str){
-    if (str.data && str.mem_length) free(str.data, str.mem_length);
+    if (str.data && str.mem_length) free_sized(str.data, str.mem_length);
 }
 
 int tolower(int c);

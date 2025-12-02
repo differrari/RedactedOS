@@ -18,7 +18,7 @@ void* clinkedlist_alloc(clinkedlist_t *list, size_t size){
 
 void clinkedlist_free(clinkedlist_t *list, void*ptr, size_t size){
     if (list->free) list->free(ptr,size);
-    return free(ptr,size);
+    return free_sized(ptr,size);
 }
 
 void clinkedlist_destroy(clinkedlist_t *list){

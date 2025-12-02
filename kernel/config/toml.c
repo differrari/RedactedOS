@@ -55,8 +55,8 @@ void read_toml(char *info, size_t size, toml_handler on_kvp, void *context){
                     }
                     while (prop_name.data[name_offset] <= ' ' || prop_name.data[name_offset] > '~' || prop_name.data[name_offset] == '\"') name_offset++;
                     on_kvp(prop_name.data + name_offset, prop, len, context);
-                    free(line.data, line.mem_length);
-                    free(prop_name.data, prop_name.mem_length);
+                    free_sized(line.data, line.mem_length);
+                    free_sized(prop_name.data, prop_name.mem_length);
                 }
             }
         }

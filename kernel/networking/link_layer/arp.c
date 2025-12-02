@@ -31,7 +31,7 @@ arp_table_t* arp_table_create(void){
 }
 
 void arp_table_destroy(arp_table_t* t){
-    if (t) free(t, sizeof(*t));
+    if (t) free_sized(t, sizeof(*t));
 }
 
 void arp_table_init_static_defaults(arp_table_t* t){
@@ -165,7 +165,7 @@ void arp_send_request_on(uint8_t ifindex, uint32_t target_ip){
     memcpy((void*)buf, &hdr, sizeof(hdr));
     sizedptr payload = { buf, sizeof(hdr) };
     (void)eth_send_frame_on(ifindex, ETHERTYPE_ARP, dst_mac, payload);
-    free((void*)buf, sizeof(hdr));
+    free_sized((void*)buf, sizeof(hdr));
 }
 
 static bool l2_has_ip(uint8_t ifindex, uint32_t ip){
@@ -196,7 +196,7 @@ static void arp_send_reply_on(uint8_t ifindex, const arp_hdr_t* in_arp, const ui
     memcpy((void*)buf, &reply, sizeof(reply));
     sizedptr payload = { buf, sizeof(reply) };
     (void)eth_send_frame_on(ifindex, ETHERTYPE_ARP, in_src_mac, payload);
-    free((void*)buf, sizeof(reply));
+    free_sized((void*)buf, sizeof(reply));
 }
 
 void arp_input(uint16_t ifindex, uintptr_t frame_ptr, uint32_t frame_len){

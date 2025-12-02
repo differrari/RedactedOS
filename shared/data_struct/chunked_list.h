@@ -19,7 +19,7 @@ typedef struct cchunked_list {
 } cchunked_list_t;
 
 void* malloc(uint64_t size);
-void free(void* ptr, uint64_t size);
+void free_sized(void* ptr, uint64_t size);
 
 cchunked_list_t* cchunked_list_create(uint64_t chunkSize);
 void cchunked_list_destroy(cchunked_list_t* list);

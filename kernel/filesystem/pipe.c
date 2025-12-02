@@ -65,8 +65,8 @@ void close_pipe_list(void *key, uint64_t keylen, void *value){
 
             close_file_global(&pipe->write_fd, pipe->write_mod);
             close_file(&pipe->read_fd);
-            free(node->data, sizeof(pipe_t));
-            free(node, sizeof(clinkedlist_node_t));
+            free_sized(node->data, sizeof(pipe_t));
+            free_sized(node, sizeof(clinkedlist_node_t));
         }
     }
 }

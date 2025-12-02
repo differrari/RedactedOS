@@ -23,7 +23,7 @@ ipv4_rt_table_t* ipv4_rt_create(void) {
 
 void ipv4_rt_destroy(ipv4_rt_table_t* t) {
     if (!t) return;
-    free(t, sizeof(*t));
+    free_sized(t, sizeof(*t));
 }
 
 void ipv4_rt_clear(ipv4_rt_table_t* t) {
