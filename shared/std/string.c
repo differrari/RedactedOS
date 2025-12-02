@@ -1209,12 +1209,12 @@ const char* seek_to(const char *string, char character){
     return string;
 }
 
-size_t strncpy(char* dst, size_t cap, const char* src){
+char* strncpy(char* dst, const char* src, size_t cap){
     size_t i=0;
     if (!dst || !src || cap==0) return 0;
     while (i<cap-1 && src[i]!=0){ dst[i]=src[i]; i++; }
     dst[i]=0;
-    return i;
+    return dst;
 }
 
 bool parse_uint32_dec(const char *s, uint32_t *out) {
@@ -1226,7 +1226,13 @@ bool parse_uint32_dec(const char *s, uint32_t *out) {
     return true;
 }
 
-void strcat(const char *a, const char *b, char *dest){
+void strcat_buf(const char *a, const char *b, char *dest){
     while (*a) *dest++ = *a++;
     while (*b) *dest++ = *b++;
+}
+
+char* strcat_new(const char *a, const char *b){
+    char* dest = (char*)malloc(strlen(a) + strlen(b));
+    strcat_buf(a,b,dest);
+    return dest;
 }

@@ -30,8 +30,7 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
     void *listptr = malloc(listsize);
     if (list_directory_contents("/boot/redos/bin/", listptr, listsize, 0)){
         size_t name_len = strlen(prog_name) + 4;
-        char *full_name = (char*)malloc(name_len);
-        strcat(prog_name, ".elf", full_name);
+        char *full_name = strcat_new(prog_name, ".elf");
         string_list *list = (string_list*)listptr;
         char* reader = (char*)list->array;
         kprintf("Directory contains %i files",list->count);

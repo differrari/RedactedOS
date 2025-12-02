@@ -282,8 +282,8 @@ bool NetworkDispatch::register_all_from_bus() {
         NICCtx* c = &nics[nic_num];
         c->drv = drv;
 
-        strncpy(c->ifname_str, (int)sizeof(c->ifname_str), name);
-        strncpy(c->hwname_str, (int)sizeof(c->hwname_str), hw);
+        strncpy(c->ifname_str, name, (int)sizeof(c->ifname_str));
+        strncpy(c->hwname_str, hw, (int)sizeof(c->hwname_str));
         memcpy(c->mac_addr, macbuf, 6);
         c->mtu_val = m;
         c->hdr_sz = hs;

@@ -53,7 +53,7 @@ static void make_ifname(char* dst, size_t cap, const char* prefix){
     else if (prefix && prefix[0]=='w'){ idx = g_wif_next++; }
     else { idx = g_net_next++; }
     size_t j=0;
-    if (prefix){ j = strncpy(dst, cap, prefix); } else { dst[0]='n'; dst[1]='i'; dst[2]='c'; dst[3]=0; j=3; }
+    if (prefix){ strncpy(dst, prefix, cap); j = strlen(dst); } else { dst[0]='n'; dst[1]='i'; dst[2]='c'; dst[3]=0; j=3; }
     if (j<cap-1) u32_to_dec(dst+j, cap-j, (unsigned)idx);
 }
 
@@ -141,7 +141,7 @@ int net_bus_init(){
             make_ifname(e->ifname, sizeof(e->ifname), if_prefix);
 
             const char* hw = d->hw_ifname();
-            strncpy(e->hw_ifname, sizeof(e->hw_ifname), (hw && hw[0]) ? hw : "vnet");
+            strncpy(e->hw_ifname, (hw && hw[0]) ? hw : "vnet", sizeof(e->hw_ifname));
 
             kprintfv("[net-bus] added if=%s mac=%x:%x:%x:%x:%x:%x mtu=%u hdr=%u hw=%s irq_base=%u spd=%u dup=%u",
                      e->ifname, e->mac[0],e->mac[1],e->mac[2],e->mac[3],e->mac[4],e->mac[5],
