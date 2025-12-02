@@ -13,11 +13,11 @@ int img_example() {
     draw_ctx ctx = {};
     request_draw_ctx(&ctx);
     file descriptor = {};
-    FS_RESULT res = fopen("/resources/jest.bmp", &descriptor);
+    FS_RESULT res = open("/resources/jest.bmp", &descriptor);
     void *img = 0;
     image_info info;
     void* file_img = malloc(descriptor.size);
-    fread(&descriptor, file_img, descriptor.size);
+    read(&descriptor, file_img, descriptor.size);
     fclose(&descriptor);
     if (res != FS_RESULT_SUCCESS) printf("Couldn't open image");
     else {

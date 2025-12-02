@@ -36,11 +36,11 @@ Launcher::Launcher() {
 
 package_info Launcher::get_pkg_info(char* info_path){
     file fd = {};
-    FS_RESULT res = fopen(info_path, &fd);
+    FS_RESULT res = open(info_path, &fd);
     if (res != FS_RESULT_SUCCESS) return (package_info){};
 
     char *info = (char*)malloc(fd.size);
-    fread(&fd, info, fd.size);
+    read(&fd, info, fd.size);
 
     return parse_package_info(info, fd.size);
 }

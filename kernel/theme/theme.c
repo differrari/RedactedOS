@@ -111,9 +111,9 @@ void parse_theme_kvp(const char *key, char *value, size_t value_len, void *conte
 
 bool load_theme(){
     file fd = {};
-    if (fopen("/boot/redos/theme.config", &fd) != FS_RESULT_SUCCESS) return false;
+    if (open("/boot/redos/theme.config", &fd) != FS_RESULT_SUCCESS) return false;
     char *buf = malloc(fd.size);
-    if (fread(&fd, buf, fd.size) != fd.size) return false;
+    if (read(&fd, buf, fd.size) != fd.size) return false;
 
     read_toml(buf, fd.size, parse_theme_kvp, 0);
 

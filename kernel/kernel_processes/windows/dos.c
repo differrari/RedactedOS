@@ -75,9 +75,9 @@ static inline void draw_desktop(){
 int window_system(){
     disable_visual();
     file fd = {};
-    if (false && fopen("/boot/redos/desktop.bmp", &fd) == FS_RESULT_SUCCESS){
+    if (false && open("/boot/redos/desktop.bmp", &fd) == FS_RESULT_SUCCESS){
         void *imgf = malloc(fd.size);
-        fread(&fd, imgf, fd.size);
+        read(&fd, imgf, fd.size);
         image_info info = bmp_get_info(imgf, fd.size);
         img_info = (image_info){max(info.width,gpu_get_ctx()->width),max(info.height,gpu_get_ctx()->height)};
         bool need_resize = img_info.width != info.width || img_info.height != info.height;

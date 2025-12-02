@@ -32,7 +32,7 @@ typedef struct wav_format_chunk {
 
 static void transform_16bit(wav_format_chunk *fmt_chunk, uint32_t data_size, audio_samples* audio, uint32_t upsample, file* fd){
     int16_t* tbuf = (int16_t*)malloc(data_size);
-    fread(fd, (char*)tbuf, data_size);
+    read(fd, (char*)tbuf, data_size);
     audio->samples.size = data_size * upsample;
     audio->samples.ptr = (uintptr_t)malloc(audio->samples.size);
     audio->smpls_per_channel = audio->samples.size / (sizeof(int16_t) * fmt_chunk->channels);
@@ -51,7 +51,7 @@ static void transform_16bit(wav_format_chunk *fmt_chunk, uint32_t data_size, aud
 
 static void transform_8bit(wav_format_chunk *fmt_chunk, uint32_t data_size, audio_samples* audio, uint32_t upsample, file* fd){
     uint8_t* tbuf = (uint8_t*)malloc(data_size);
-    fread(fd, (char*)tbuf, data_size);
+    read(fd, (char*)tbuf, data_size);
     audio->samples.size = data_size * upsample * sizeof(int16_t);
     audio->samples.ptr = (uintptr_t)malloc(audio->samples.size);
     audio->smpls_per_channel = audio->samples.size / (sizeof(int16_t) * fmt_chunk->channels);
@@ -71,14 +71,14 @@ static void transform_8bit(wav_format_chunk *fmt_chunk, uint32_t data_size, audi
 bool wav_load_as_int16(const char* path, audio_samples* audio){
     file fd = {};
 
-    if (FS_RESULT_SUCCESS != fopen(path, &fd))
+    if (FS_RESULT_SUCCESS != open(path, &fd))
     {
         printf("[WAV] Could not open file: %s", path);
         return false;
     }
 
     wav_header hdr = {};
-    size_t read_size = fread(&fd, (char*)&hdr, sizeof(wav_header));
+    size_t read_size = read(&fd, (char*)&hdr, sizeof(wav_header));
     if (read_size != sizeof(wav_header) ||
         hdr.id != 0x46464952 ||      // 'RIFF'
         hdr.wave_id != 0x45564157){ // 'WAVE'
@@ -89,11 +89,11 @@ bool wav_load_as_int16(const char* path, audio_samples* audio){
     wav_format_chunk fmt_chunk = {};
     while (fd.cursor < fd.size){
         wav_chunk_hdr ch_hdr = {};
-        read_size = fread(&fd, (char*)&ch_hdr, sizeof(wav_chunk_hdr));
+        read_size = read(&fd, (char*)&ch_hdr, sizeof(wav_chunk_hdr));
         switch (ch_hdr.ck_id){
             case 0x20746D66://fmt format
                 {
-                    read_size = fread(&fd, (char*)&fmt_chunk, ch_hdr.ck_size);
+                    read_size = read(&fd, (char*)&fmt_chunk, ch_hdr.ck_size);
                     if (fmt_chunk.channels < 1 || fmt_chunk.channels > 2 ||
                         fmt_chunk.sample_rate > 44100 ||
                         (44100 % fmt_chunk.sample_rate != 0) ||
@@ -121,7 +121,7 @@ bool wav_load_as_int16(const char* path, audio_samples* audio){
                     // simple case: slurp samples direct from file to wav buffer
                     audio->samples.size = ch_hdr.ck_size;
                     audio->samples.ptr = (uintptr_t)malloc(audio->samples.size);
-                    fread(&fd, (char*)audio->samples.ptr, audio->samples.size);
+                    read(&fd, (char*)audio->samples.ptr, audio->samples.size);
                     audio->smpls_per_channel = ch_hdr.ck_size / (sizeof(int16_t) * fmt_chunk.channels);
                     audio->channels = fmt_chunk.channels;
                 } else if (fmt_chunk.sample_bits == 16){

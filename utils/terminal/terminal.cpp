@@ -34,17 +34,17 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
     string s1 = string_format("/proc/%i/out",proc);
     string s2 = string_format("/proc/%i/state",proc);
     file out_fd, state_fd;
-    fopen(s1.data, &out_fd);
+    open(s1.data, &out_fd);
     free_sized(s1.data, s1.mem_length);
-    fopen(s2.data, &state_fd);
+    open(s2.data, &state_fd);
     free_sized(s2.data, s2.mem_length);
     int state = 1;
     size_t amount = 0x100;
     char *buf = (char*)malloc(amount);
     do {
-        fread(&out_fd, buf, amount);
+        read(&out_fd, buf, amount);
         put_string(buf);
-        fread(&state_fd, (char*)&state, sizeof(int));
+        read(&state_fd, (char*)&state, sizeof(int));
     } while (state);
     free_sized(buf, amount);
     fclose(&out_fd);

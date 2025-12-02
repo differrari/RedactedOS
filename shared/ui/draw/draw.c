@@ -75,6 +75,8 @@ void mark_dirty(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     if (area_sum * 100 >= screen_area * FULL_REDRAW_THRESHOLD_PCT) ctx->full_redraw = 1;
 }
 
+#ifndef CROSS
+
 void fb_clear(draw_ctx *ctx, uint32_t color) {
     uint32_t* row = ctx->fb;
     const uint32_t w = ctx->width;
@@ -387,3 +389,5 @@ void fb_draw_cursor(draw_ctx *ctx, uint32_t color) {
         }
     }
 }
+
+#endif

@@ -40,13 +40,13 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
                 if (strcmp_case(f, full_name,true) == 0){
                     string path = string_format("/boot/redos/bin/%s",full_name);
                     file fd = {};
-                    FS_RESULT op = fopen(path.data, &fd);
+                    FS_RESULT op = open(path.data, &fd);
                     if (op != FS_RESULT_SUCCESS){
                         kprintf("Failed to open file %s",path.data);
                         return 0;
                     }
                     char *program = malloc(fd.size);
-                    if (fread(&fd, program, fd.size) != fd.size){
+                    if (read(&fd, program, fd.size) != fd.size){
                         kprintf("Failed to read file %s", path.data);
                     }
                     process_t *proc = load_elf_file(prog_name, 0, program, fd.size);

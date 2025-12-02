@@ -185,7 +185,7 @@ uint64_t syscall_socket_close(process_t *ctx){
 }
 
 
-uint64_t syscall_fopen(process_t *ctx){
+uint64_t syscall_open(process_t *ctx){
     char *req_path = (char *)ctx->PROC_X0;
     char path[255] = {};
     if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path,true) == 11){
@@ -196,14 +196,14 @@ uint64_t syscall_fopen(process_t *ctx){
     return open_file(path, descriptor);
 }
 
-uint64_t syscall_fread(process_t *ctx){
+uint64_t syscall_read(process_t *ctx){
     file *descriptor = (file*)ctx->PROC_X0;
     char *buf = (char*)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
     return read_file(descriptor, buf, size);
 }
 
-uint64_t syscall_fwrite(process_t *ctx){
+uint64_t syscall_write(process_t *ctx){
     file *descriptor = (file*)ctx->PROC_X0;
     char *buf = (char*)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;

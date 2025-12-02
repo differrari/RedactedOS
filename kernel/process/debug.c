@@ -7,7 +7,7 @@
 void debug_load(){
     kprint("[DEBUG] Loading debug information for kernel");
     file fd = {};
-    if (fopen("/boot/kernel.elf", &fd) != FS_RESULT_SUCCESS) {
+    if (open("/boot/kernel.elf", &fd) != FS_RESULT_SUCCESS) {
         kprintf("[DEBUG] failed to open debug files");
         return;
     }
@@ -18,7 +18,7 @@ void debug_load(){
 
     kprintf("[DEBUG] Malloced %x",fd.size);
 
-    fread(&fd, file, fd.size);
+    read(&fd, file, fd.size);
 
     kprintf("[DEBUG] Reading debug info from %x",file);
 
