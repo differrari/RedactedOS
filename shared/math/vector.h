@@ -111,6 +111,8 @@ static __inline__ __attribute__((always_inline)) float32x2_t vpadd_f32_b(float32
   return (float32x2_t)__builtin_neon_vpaddv2sf(a, b);
 #elif defined(__clang__)
   return (float32x2_t)__builtin_neon_vpadd_v((int8x8_t)a, (int8x8_t)b, 9);
+#elif defined(__x86_64__)
+  return a;
 #else
 # error "no vpadd_f32_b builtin"
 #endif
@@ -123,6 +125,8 @@ static __inline__ __attribute__((always_inline)) float32x2_t vmax_f32_b(float32x
   return (float32x2_t)__builtin_neon_vmaxfv2sf(a, b);
 #elif defined(__clang__)
   return (float32x2_t)__builtin_neon_vmax_v((int8x8_t)a, (int8x8_t)b, 9);
+#elif defined(__x86_64__)
+  return a;
 #else
 # error "no vmax_f32_b builtin"
 #endif
@@ -135,6 +139,8 @@ static __inline__ __attribute__((always_inline)) float32x2_t vdup_n_f32_b(float 
   return (float32x2_t)__builtin_neon_vdup_nv2sf(x);
 #elif defined(__clang__)
   return (float32x2_t)__builtin_neon_vdup_n_v(9, x);
+#elif defined(__x86_64__)
+  return (float32x2_t){ x, x };
 #else
 # error "no vdup_n_f32_b builtin"
 #endif
@@ -147,6 +153,8 @@ static __inline__ __attribute__((always_inline)) float32x2_t vrsqrte_f32_b(float
   return (float32x2_t)__builtin_neon_vrsqrtev2sf(s);
 #elif defined(__clang__)
   return (float32x2_t)__builtin_neon_vrsqrte_v((int8x8_t)s, 9);
+#elif defined(__x86_64__)
+  return s;
 #else
 # error "no vrsqrte_f32_b builtin"
 #endif

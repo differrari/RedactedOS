@@ -1,3 +1,4 @@
+#ifndef CROSS
 #include "syscall_codes.h"
 
 .macro syscall_def name:req, id:req
@@ -46,6 +47,6 @@ syscall_def fclose, FILE_CLOSE_CODE
 syscall_def dir_list, DIR_LIST_CODE
 
 #endif
-
 syscall_def sleep, SLEEP_CODE
 syscall_def halt, HALT_CODE
+#endif
