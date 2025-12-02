@@ -58,7 +58,7 @@ void Launcher::load_entries(){
     size_t listsize = 0x1000;
     void *listptr = malloc(listsize);
     string app_path = string_format("/%s/redos/user", system_config.app_directory);
-    uint64_t offset;
+    uint64_t offset = 0;
     if (!list_directory_contents(app_path.data, listptr, listsize, &offset)){
         kprintf("Failed to read contents of directory");
         return;
