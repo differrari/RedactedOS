@@ -1,12 +1,6 @@
 #include "rng.h"
 #include "std/memory.h"
 
-void rng_init_random(rng_t *rng){
-    uint64_t seed;
-    asm volatile("mrs %0, cntvct_el0" : "=r"(seed));
-    rng_seed(rng, seed);
-}
-
 void rng_seed(rng_t* rng, uint64_t seed){ 
     uint64_t z = seed + 0x9E3779B97F4A7C15;
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9;

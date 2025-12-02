@@ -64,7 +64,7 @@ debug:
 	./rundebug MODE=$(MODE) $(ARGS)
 
 dump:
-	$(ARCH)-objdump -D kernel.elf > dump
+	$(ARCH)objdump -D kernel.elf > dump
 	$(MAKE) -C user $@
 
 install:

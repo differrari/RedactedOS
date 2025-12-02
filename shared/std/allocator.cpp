@@ -1,6 +1,5 @@
 #include "allocator.hpp"
 #include "syscalls/syscalls.h"
-#include "console/kio.h"
 
 void* operator new(size_t size, void* ptr) noexcept {
     return ptr;
