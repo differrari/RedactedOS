@@ -24,7 +24,7 @@ prepare:
 	mkdir -p $(BUILD_DIR)
 
 $(TARGET): $(OBJ)
-	echo "Finishing build"
+	@echo "Finishing build $(ARCH)"
 	echo $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ)))
 	$(VAR) rcs $@ $(OBJ)
 
