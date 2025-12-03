@@ -3,7 +3,7 @@
 #include "math/math.h"
 #include "std/memory.h"
 
-void printf(const char *fmt, ...){
+int printf(const char *fmt, ...){
     __attribute__((aligned(16))) va_list args;
     va_start(args, fmt);
     char li[256]; 
@@ -11,6 +11,7 @@ void printf(const char *fmt, ...){
     va_end(args);
     if (n >= sizeof(li)) li[sizeof(li)-1] = '\0';
     printl(li);
+    return 0;
 }
 
 void seek(file *descriptor, int64_t offset, SEEK_TYPE type){
@@ -27,9 +28,9 @@ void seek(file *descriptor, int64_t offset, SEEK_TYPE type){
     descriptor->cursor = new_cursor;
 }
 
-uintptr_t realloc(uintptr_t old_ptr, size_t old_size, size_t new_size){
-    uintptr_t new_ptr = (uintptr_t)malloc(new_size);
-    memcpy((void*)new_ptr, (void*)old_ptr, min(old_size,new_size));
-    free_sized((void*)old_ptr, old_size);
+void* realloc_sized(void* old_ptr, size_t old_size, size_t new_size){
+    void* new_ptr = malloc(new_size);
+    memcpy(new_ptr, old_ptr, min(old_size,new_size));
+    free_sized(old_ptr, old_size);
     return new_ptr;
 }

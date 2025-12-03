@@ -44,14 +44,14 @@ extern size_t socket_send(SocketHandle *handle, SockDstKind dst_kind, const void
 extern bool socket_receive(SocketHandle *handle, void *packet, size_t size, net_l4_endpoint* out_src);
 extern int32_t socket_close(SocketHandle *handle);
 
-void printf(const char *fmt, ...);
+int printf(const char *fmt, ...);
 
 extern FS_RESULT open(const char* path, file* descriptor);
 extern size_t read(file *descriptor, char* buf, size_t size);
 extern size_t write(file *descriptor, const char* buf, size_t size);
 extern void fclose(file *descriptor);
 void seek(file *descriptor, int64_t offset, SEEK_TYPE type);
-uintptr_t realloc(uintptr_t old_ptr, size_t old_size, size_t new_size);
+void* realloc_sized(void* old_ptr, size_t old_size, size_t new_size);
 
 sizedptr dir_list(const char *path);
 
