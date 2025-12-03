@@ -210,7 +210,7 @@ uint64_t syscall_write(process_t *ctx){
     return write_file(descriptor, buf, size);
 }
 
-uint64_t syscall_fclose(process_t *ctx){
+uint64_t syscall_close(process_t *ctx){
     file *descriptor = (file*)ctx->PROC_X0;
     close_file(descriptor);
     return 0;
@@ -248,10 +248,10 @@ syscall_entry syscalls[] = {
     [SOCKET_SEND_CODE] = syscall_socket_send,
     [SOCKET_RECEIVE_CODE] = syscall_socket_receive,
     [SOCKET_CLOSE_CODE] = syscall_socket_close,
-    [FILE_OPEN_CODE] = syscall_fopen,
-    [FILE_READ_CODE] = syscall_fread,
-    [FILE_WRITE_CODE] = syscall_fwrite,
-    [FILE_CLOSE_CODE] = syscall_fclose,
+    [FILE_OPEN_CODE] = syscall_open,
+    [FILE_READ_CODE] = syscall_read,
+    [FILE_WRITE_CODE] = syscall_write,
+    [FILE_CLOSE_CODE] = syscall_close,
     [DIR_LIST_CODE] = syscall_dir_list,
 };
 

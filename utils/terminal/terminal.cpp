@@ -47,8 +47,8 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
         read(&state_fd, (char*)&state, sizeof(int));
     } while (state);
     free_sized(buf, amount);
-    fclose(&out_fd);
-    fclose(&state_fd);
+    close(&out_fd);
+    close(&state_fd);
     string exit_msg = string_format("\nProcess %i ended.",proc);
     //TODO: format message
     put_string(exit_msg.data);

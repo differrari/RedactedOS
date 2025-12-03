@@ -22,7 +22,7 @@ int main(int argc, const char* argv[]){
     char* buf = (char*)malloc(size);
     read(&fd, buf, size);
     write(&fd2, buf, size);
-    fclose(&fd);
-    fclose(&fd2);
+    close(&fd);
+    close(&fd2);
     return 0;
 }

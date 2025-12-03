@@ -40,10 +40,10 @@ syscall_def socket_send, SOCKET_SEND_CODE
 syscall_def socket_receive, SOCKET_RECEIVE_CODE
 syscall_def socket_close, SOCKET_CLOSE_CODE
 
-syscall_def fopen, FILE_OPEN_CODE
-syscall_def fread, FILE_READ_CODE
-syscall_def fwrite, FILE_WRITE_CODE
-syscall_def fclose, FILE_CLOSE_CODE
+syscall_def open, FILE_OPEN_CODE
+syscall_def read, FILE_READ_CODE
+syscall_def write, FILE_WRITE_CODE
+syscall_def close, FILE_CLOSE_CODE
 syscall_def dir_list, DIR_LIST_CODE
 
 #endif

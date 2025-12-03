@@ -49,7 +49,7 @@ int printf(const char *fmt, ...);
 extern FS_RESULT open(const char* path, file* descriptor);
 extern size_t read(file *descriptor, char* buf, size_t size);
 extern size_t write(file *descriptor, const char* buf, size_t size);
-extern void fclose(file *descriptor);
+extern void close(file *descriptor);
 void seek(file *descriptor, int64_t offset, SEEK_TYPE type);
 void* realloc_sized(void* old_ptr, size_t old_size, size_t new_size);
 

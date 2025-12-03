@@ -100,7 +100,7 @@ bool wav_load_as_int16(const char* path, audio_samples* audio){
                         (fmt_chunk.sample_bits != 8 && fmt_chunk.sample_bits != 16)
                         )
                     {
-                        fclose(&fd);
+                        close(&fd);
                         printf("[WAV] Unsupported file format %s", path);
                         printf("=== Sizes       %i, %i", read_size, fd.size);
                         printf("=== id          %x", hdr.id);
@@ -132,7 +132,7 @@ bool wav_load_as_int16(const char* path, audio_samples* audio){
                     result = false;
                 }
                 
-                fclose(&fd);
+                close(&fd);
                 return result;
             }
             default:

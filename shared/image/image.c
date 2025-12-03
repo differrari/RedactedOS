@@ -70,7 +70,7 @@ void* load_image(char *path, image_info *info, IMAGE_FORMATS format){
             break;
             //Unknown can be handled by reading magic bytes
         }
-        fclose(&descriptor);
+        close(&descriptor);
         if (img_info.width > 0 && img_info.height > 0){
             size_t image_size = img_info.width * img_info.height * system_bpp;
             img = (void*)malloc(image_size);

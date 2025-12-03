@@ -18,7 +18,7 @@ int img_example() {
     image_info info;
     void* file_img = malloc(descriptor.size);
     read(&descriptor, file_img, descriptor.size);
-    fclose(&descriptor);
+    close(&descriptor);
     if (res != FS_RESULT_SUCCESS) printf("Couldn't open image");
     else {
         info = bmp_get_info(file_img, descriptor.size);

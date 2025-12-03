@@ -112,7 +112,7 @@ extern size_t write(file *descriptor, const char* buf, size_t size){
     return write_file(descriptor, buf, size);
 }
 
-extern void fclose(file *descriptor){
+extern void close(file *descriptor){
     close_file(descriptor);
 }
 

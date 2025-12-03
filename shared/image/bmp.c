@@ -66,7 +66,7 @@ void* load_bmp(char *path, image_info *info){
         void *img_file = (void*)malloc(descriptor.size);
         read(&descriptor, img_file, descriptor.size);
         img_info = bmp_get_info(img_file, descriptor.size);
-        fclose(&descriptor);
+        close(&descriptor);
         if (img_info.width > 0 && img_info.height > 0){
             size_t image_size = img_info.width * img_info.height * system_bpp;
             img = (void*)malloc(image_size);

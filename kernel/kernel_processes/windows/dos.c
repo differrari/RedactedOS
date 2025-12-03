@@ -89,7 +89,7 @@ int window_system(){
             free_sized(oimg, info.width * info.height * sizeof(uint32_t));
         }
         free_sized(imgf, fd.size);
-        fclose(&fd);
+        close(&fd);
     }
     keypress kp_g = { 
         .modifier = KEY_MOD_LCTRL,
