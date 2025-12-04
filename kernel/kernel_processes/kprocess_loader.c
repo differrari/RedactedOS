@@ -13,7 +13,7 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
 
     name_process(proc, name);
 
-    uint64_t stack_size = 0x1000;
+    uint64_t stack_size = 0x10000;
 
     uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_KERNEL, MEM_RW, false);
     kprintf("Stack size %llx. Start %llx", stack_size,stack);
