@@ -48,6 +48,6 @@ clean:
 
 
 dump: all
-	$(ARCH)-objdump -S $(ELF) > dump
+	$(ARCH)objdump -S $(ELF) > dump
 
 -include $(DEP)

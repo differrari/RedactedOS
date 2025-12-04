@@ -53,7 +53,7 @@ clean:
 	$(RM) -r $(PACKAGE) $(BUILD_DIR)
 
 dump: all
-	$(ARCH)-objdump -S $(NAME).red/$(NAME).elf > dump
+	$(ARCH)objdump -S $(NAME).red/$(NAME).elf > dump
 
 
 -include $(DEP)
