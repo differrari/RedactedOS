@@ -325,11 +325,10 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
     max_addr = (max_addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     proc->last_va_mapping = max_addr;
     
-    uint64_t stack_size = PAGE_SIZE;
+    uint64_t stack_size = 0x10000;
 
     uintptr_t stack = (uintptr_t)palloc_inner(stack_size, MEM_PRIV_USER, MEM_RW, true, false);
     if (!stack) return 0;
-    
     
     proc->last_va_mapping += PAGE_SIZE;//Unmapped page to catch stack overflows
     proc->stack = (proc->last_va_mapping + stack_size);
