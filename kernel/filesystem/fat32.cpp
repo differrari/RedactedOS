@@ -269,9 +269,9 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
 }
 
 size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
-    if (descriptor->cursor > size) return 0;
     module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) return 0;
+    if (descriptor->cursor > mfile->file_size) return 0;
     if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
     memcpy(buf, (void*)(mfile->buffer + descriptor->cursor), size);
     return size;
