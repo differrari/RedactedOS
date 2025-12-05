@@ -1014,12 +1014,12 @@ int strcmp_case(const char *a, const char *b, bool case_insensitive){
     return (unsigned char)*a - (unsigned char)*b;
 }
 
-int strncmp_case(const char *a, const char *b, bool case_insensitive, int max){
+int strncmp_case(const char *a, const char *b, bool case_insensitive, size_t max){
     if (a == NULL && b == NULL) return 0;
     if (a == NULL) return -1;  
     if (b == NULL) return  1;
 
-    for (int i = 0; i < max && *a && *b; i++, a++, b++){
+    for (size_t i = 0; i < max && *a && *b; i++, a++, b++){
         char ca = *a;
         char cb = *b;
         if (case_insensitive){

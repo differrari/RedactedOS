@@ -95,7 +95,7 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
     elf_header *header = (elf_header*)file;
 
     if (header->magic[0] != 0x7f){
-        kprintf("Failed to read header file");
+        kprintf("Failed to read header file %x",header->magic[0]);
         return 0;
     }
 

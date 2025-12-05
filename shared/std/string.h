@@ -46,8 +46,8 @@ int toupper(int c);
 
 int strcmp_case(const char *a, const char *b, bool case_insensitive);
 static inline int strcmp(const char *a, const char *b){ return strcmp_case(a, b, false); }
-int strncmp_case(const char *a, const char *b, bool case_insensitive, int length);
-static inline int strncmp(const char *a, const char *b, int length) { return strncmp_case(a,b, false, length); }
+int strncmp_case(const char *a, const char *b, bool case_insensitive, size_t length);
+static inline int strncmp(const char *a, const char *b, size_t length) { return strncmp_case(a,b, false, length); }
 bool strcont(const char *a, const char *b);
 int strstart_case(const char *a, const char *b, bool case_insensitive);
 static inline int strstart(const char *a, const char *b) { return strstart_case(a,b,false); }
