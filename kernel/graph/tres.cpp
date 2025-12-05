@@ -70,6 +70,8 @@ void get_window_ctx(draw_ctx* out_ctx){
     clinkedlist_node_t *node = clinkedlist_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
+        if (out_ctx->width && out_ctx->height)
+            main_gpu_driver->resize_window(out_ctx->width, out_ctx->height, &frame->win_ctx);
         *out_ctx = frame->win_ctx;
         frame->pid = p->id;
     }

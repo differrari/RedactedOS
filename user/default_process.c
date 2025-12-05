@@ -11,7 +11,6 @@
 
 int img_example() {
     draw_ctx ctx = {};
-    request_draw_ctx(&ctx);
     file descriptor = {};
     FS_RESULT res = open("/resources/jest.bmp", &descriptor);
     void *img = 0;
@@ -26,7 +25,9 @@ int img_example() {
         img = malloc(info.width*info.height*system_bpp);
         bmp_read_image(file_img, descriptor.size, img);
     }
-    resize_draw_ctx(&ctx, info.width+BORDER*2, info.height+BORDER*2);
+    ctx.width = info.width+BORDER*2;
+    ctx.height = info.height+BORDER*2;
+    request_draw_ctx(&ctx);
     while (1) {
         keypress kp = {};
         // printf("Print console test %f", (get_time()/1000.f));

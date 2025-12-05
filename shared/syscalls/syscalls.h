@@ -33,6 +33,8 @@ extern void commit_draw_ctx(draw_ctx*);
 extern void resize_draw_ctx(draw_ctx*, uint32_t width, uint32_t height);
 extern void destroy_draw_ctx(draw_ctx *ctx);
 
+extern bool should_close_ctx();
+
 extern uint32_t gpu_char_size(uint32_t scale);
 
 extern uint64_t get_time();

@@ -45,4 +45,8 @@ void destroy_draw_ctx(draw_ctx *ctx){
 
 }
 
+bool should_close_ctx(){
+    return false;
+}
+
 #endif
