@@ -28,8 +28,10 @@ extern void halt(uint32_t exit_code);
 extern uint16_t exec(const char* prog_name, int argc, const char* argv[]);
 
 extern void request_draw_ctx(draw_ctx*);
+extern void begin_drawing(draw_ctx *);
 extern void commit_draw_ctx(draw_ctx*);
 extern void resize_draw_ctx(draw_ctx*, uint32_t width, uint32_t height);
+extern void destroy_draw_ctx(draw_ctx *ctx);
 
 extern uint32_t gpu_char_size(uint32_t scale);
 

@@ -34,3 +34,15 @@ void* realloc_sized(void* old_ptr, size_t old_size, size_t new_size){
     free_sized(old_ptr, old_size);
     return new_ptr;
 }
+
+#ifndef CROSS
+
+void begin_drawing(draw_ctx *ctx){
+
+}
+
+void destroy_draw_ctx(draw_ctx *ctx){
+
+}
+
+#endif
