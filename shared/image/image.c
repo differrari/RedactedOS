@@ -53,6 +53,8 @@ uint32_t get_bpp_converted_color(uint16_t bpp, uintptr_t value_ptr){
     return 0;
 }
 
+#ifndef CROSS
+
 void* load_image(char *path, image_info *info, IMAGE_FORMATS format){
     file descriptor = {};
     FS_RESULT res = openf(path, &descriptor);
@@ -123,3 +125,5 @@ void rescale_image(uint32_t old_width, uint32_t old_height, uint32_t new_width, 
         }   
     }
 }
+
+#endif
