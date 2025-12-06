@@ -59,14 +59,14 @@ void bmp_read_image(void *file, size_t size, uint32_t *buf){
 
 void* load_bmp(char *path, image_info *info){
     file descriptor = {};
-    FS_RESULT res = open(path, &descriptor);
+    FS_RESULT res = openf(path, &descriptor);
     void *img = 0;
     image_info img_info;
     if (res == FS_RESULT_SUCCESS){
         void *img_file = (void*)malloc(descriptor.size);
-        read(&descriptor, img_file, descriptor.size);
+        readf(&descriptor, img_file, descriptor.size);
         img_info = bmp_get_info(img_file, descriptor.size);
-        close(&descriptor);
+        closef(&descriptor);
         if (img_info.width > 0 && img_info.height > 0){
             size_t image_size = img_info.width * img_info.height * system_bpp;
             img = (void*)malloc(image_size);

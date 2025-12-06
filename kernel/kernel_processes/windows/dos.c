@@ -75,9 +75,9 @@ static inline void draw_desktop(){
 int window_system(){
     disable_visual();
     file fd = {};
-    if (false && open("/boot/redos/desktop.bmp", &fd) == FS_RESULT_SUCCESS){
+    if (false && openf("/boot/redos/desktop.bmp", &fd) == FS_RESULT_SUCCESS){
         void *imgf = malloc(fd.size);
-        read(&fd, imgf, fd.size);
+        readf(&fd, imgf, fd.size);
         image_info info = bmp_get_info(imgf, fd.size);
         img_info = (image_info){max(info.width,gpu_get_ctx()->width),max(info.height,gpu_get_ctx()->height)};
         bool need_resize = img_info.width != info.width || img_info.height != info.height;
@@ -89,7 +89,7 @@ int window_system(){
             free_sized(oimg, info.width * info.height * sizeof(uint32_t));
         }
         free_sized(imgf, fd.size);
-        close(&fd);
+        closef(&fd);
     }
     keypress kp_g = { 
         .modifier = KEY_MOD_LCTRL,

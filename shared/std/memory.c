@@ -64,7 +64,8 @@ void* memset32(void* dest, uint32_t val, size_t count) {
     return dest;
 }
 
-void* memset(void* dest, uint8_t byte, size_t count) {
+void* memset(void* dest, int byte, size_t count) {
+    byte = byte & 0xFF;
     uint8_t *d8 = (uint8_t *)dest;
 
     while (((uintptr_t)d8 & 7) && count > 0) {

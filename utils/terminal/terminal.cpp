@@ -34,21 +34,21 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
     string s1 = string_format("/proc/%i/out",proc);
     string s2 = string_format("/proc/%i/state",proc);
     file out_fd, state_fd;
-    open(s1.data, &out_fd);
+    openf(s1.data, &out_fd);
     free_sized(s1.data, s1.mem_length);
-    open(s2.data, &state_fd);
+    openf(s2.data, &state_fd);
     free_sized(s2.data, s2.mem_length);
     int state = 1;
     size_t amount = 0x100;
     char *buf = (char*)malloc(amount);
     do {
-        read(&out_fd, buf, amount);
+        readf(&out_fd, buf, amount);
         put_string(buf);
-        read(&state_fd, (char*)&state, sizeof(int));
+        readf(&state_fd, (char*)&state, sizeof(int));
     } while (state);
     free_sized(buf, amount);
-    close(&out_fd);
-    close(&state_fd);
+    closef(&out_fd);
+    closef(&state_fd);
     string exit_msg = string_format("\nProcess %i ended.",proc);
     //TODO: format message
     put_string(exit_msg.data);

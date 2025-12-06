@@ -185,7 +185,7 @@ uint64_t syscall_socket_close(process_t *ctx){
 }
 
 
-uint64_t syscall_open(process_t *ctx){
+uint64_t syscall_openf(process_t *ctx){
     char *req_path = (char *)ctx->PROC_X0;
     char path[255] = {};
     if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path,true) == 11){
@@ -196,21 +196,21 @@ uint64_t syscall_open(process_t *ctx){
     return open_file(path, descriptor);
 }
 
-uint64_t syscall_read(process_t *ctx){
+uint64_t syscall_readf(process_t *ctx){
     file *descriptor = (file*)ctx->PROC_X0;
     char *buf = (char*)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
     return read_file(descriptor, buf, size);
 }
 
-uint64_t syscall_write(process_t *ctx){
+uint64_t syscall_writef(process_t *ctx){
     file *descriptor = (file*)ctx->PROC_X0;
     char *buf = (char*)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
     return write_file(descriptor, buf, size);
 }
 
-uint64_t syscall_close(process_t *ctx){
+uint64_t syscall_closef(process_t *ctx){
     file *descriptor = (file*)ctx->PROC_X0;
     close_file(descriptor);
     return 0;
@@ -248,10 +248,10 @@ syscall_entry syscalls[] = {
     [SOCKET_SEND_CODE] = syscall_socket_send,
     [SOCKET_RECEIVE_CODE] = syscall_socket_receive,
     [SOCKET_CLOSE_CODE] = syscall_socket_close,
-    [FILE_OPEN_CODE] = syscall_open,
-    [FILE_READ_CODE] = syscall_read,
-    [FILE_WRITE_CODE] = syscall_write,
-    [FILE_CLOSE_CODE] = syscall_close,
+    [FILE_OPEN_CODE] = syscall_openf,
+    [FILE_READ_CODE] = syscall_readf,
+    [FILE_WRITE_CODE] = syscall_writef,
+    [FILE_CLOSE_CODE] = syscall_closef,
     [DIR_LIST_CODE] = syscall_dir_list,
 };
 

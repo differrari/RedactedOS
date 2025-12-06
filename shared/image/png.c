@@ -172,15 +172,16 @@ void png_read_image(void *file, size_t size, uint32_t *buf){
 
 void* load_png(char *path, image_info *info){
     file descriptor = {};
-    FS_RESULT res = open(path, &descriptor);
+    FS_RESULT res = openf(path, &descriptor);
     void *img = 0;
     void* file_img = malloc(descriptor.size);
-    read(&descriptor, file_img, descriptor.size);
+    readf(&descriptor, file_img, descriptor.size);
     if (res != FS_RESULT_SUCCESS){ 
+        closef(&descriptor);
         printf("Couldn't open image");
         return 0;
     }
-
+    closef(&descriptor);
     *info = png_get_info(file_img, descriptor.size);
     printf("info %ix%i",info->width,info->height);
     img = malloc(info->width*info->height*system_bpp);

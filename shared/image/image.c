@@ -55,12 +55,12 @@ uint32_t get_bpp_converted_color(uint16_t bpp, uintptr_t value_ptr){
 
 void* load_image(char *path, image_info *info, IMAGE_FORMATS format){
     file descriptor = {};
-    FS_RESULT res = open(path, &descriptor);
+    FS_RESULT res = openf(path, &descriptor);
     void *img = 0;
     image_info img_info;
     if (res == FS_RESULT_SUCCESS){
         void *img_file = (void*)malloc(descriptor.size);
-        read(&descriptor, img_file, descriptor.size);
+        readf(&descriptor, img_file, descriptor.size);
         switch (format) {
             case PNG:
             img_info = png_get_info(img_file, descriptor.size);
@@ -70,7 +70,7 @@ void* load_image(char *path, image_info *info, IMAGE_FORMATS format){
             break;
             //Unknown can be handled by reading magic bytes
         }
-        close(&descriptor);
+        closef(&descriptor);
         if (img_info.width > 0 && img_info.height > 0){
             size_t image_size = img_info.width * img_info.height * system_bpp;
             img = (void*)malloc(image_size);

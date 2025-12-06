@@ -100,19 +100,19 @@ extern int32_t socket_close(SocketHandle *handle){
     return close_socket(handle, get_current_proc_pid());
 }
 
-extern FS_RESULT open(const char* path, file* descriptor){
+extern FS_RESULT openf(const char* path, file* descriptor){
     return open_file(path, descriptor);
 }
 
-extern size_t read(file *descriptor, char* buf, size_t size){
+extern size_t readf(file *descriptor, char* buf, size_t size){
     return read_file(descriptor, buf, size);
 }
 
-extern size_t write(file *descriptor, const char* buf, size_t size){
+extern size_t writef(file *descriptor, const char* buf, size_t size){
     return write_file(descriptor, buf, size);
 }
 
-extern void close(file *descriptor){
+extern void closef(file *descriptor){
     close_file(descriptor);
 }
 
