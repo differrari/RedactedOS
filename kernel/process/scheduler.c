@@ -203,7 +203,7 @@ void name_process(process_t *proc, const char *name){
         proc->name[i] = name[i];
 }
 
-void stop_process(uint16_t pid, uint32_t exit_code){
+void stop_process(uint16_t pid, int32_t exit_code){
     disable_interrupt();
     process_t *proc = get_proc_by_pid(pid);
     if (proc->state != READY) return;
@@ -217,7 +217,7 @@ void stop_process(uint16_t pid, uint32_t exit_code){
     switch_proc(HALT);
 }
 
-void stop_current_process(uint32_t exit_code){
+void stop_current_process(int32_t exit_code){
     disable_interrupt();
     stop_process(processes[current_proc].id, exit_code);
 }

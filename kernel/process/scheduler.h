@@ -24,8 +24,8 @@ process_t* init_process();
 void save_syscall_return(uint64_t value);
 void process_restore();
 
-void stop_process(uint16_t pid, uint32_t exit_code);
-void stop_current_process(uint32_t exit_code);
+void stop_process(uint16_t pid, int32_t exit_code);
+void stop_current_process(int32_t exit_code);
 
 void name_process(process_t *proc, const char *name);
 

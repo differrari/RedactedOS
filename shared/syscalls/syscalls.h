@@ -24,7 +24,7 @@ extern bool read_event(kbd_event *event);
 extern void get_mouse_status(mouse_input *in);
 
 extern void sleep(uint64_t time);
-extern void halt(uint32_t exit_code);
+extern void halt(int32_t exit_code);
 extern uint16_t exec(const char* prog_name, int argc, const char* argv[]);
 
 extern void request_draw_ctx(draw_ctx*);

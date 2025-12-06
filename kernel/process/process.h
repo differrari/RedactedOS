@@ -50,7 +50,7 @@ typedef struct {
     size_t output_size;
     uintptr_t last_va_mapping;
     file out_fd;
-    uint64_t exit_code;
+    int32_t exit_code;
     bool focused;
     void *code;
     size_t code_size;
