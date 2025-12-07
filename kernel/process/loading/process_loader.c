@@ -316,7 +316,7 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
     map_section(proc, PHYS_TO_VIRT(dest), min_addr, text_va, text);
     map_section(proc, PHYS_TO_VIRT(dest), min_addr, data_va, data);
     map_section(proc, PHYS_TO_VIRT(dest), min_addr, rodata_va, rodata);
-    map_section(proc, PHYS_TO_VIRT(dest), min_addr, bss_va, bss);
+    // map_section(proc, PHYS_TO_VIRT(dest), min_addr, bss_va, bss);
 
     proc->va = min_addr;
     proc->code = (void*)dest;
