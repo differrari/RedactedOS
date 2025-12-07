@@ -85,7 +85,6 @@ void detect_hardware(){
         CRAM_START      = 0x13600000;
         MSI_OFFSET = 0;
         LOWEST_ADDR = MMIO_BASE;
-        if (RPI_BOARD != 5) reset_gpio();
     }
 }
 

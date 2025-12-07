@@ -40,6 +40,7 @@ void enable_uart() {
 
     if (BOARD_TYPE == 2){
         if (RPI_BOARD != 5){
+            reset_gpio();
             enable_gpio_pin(14);
             enable_gpio_pin(15);
         }
