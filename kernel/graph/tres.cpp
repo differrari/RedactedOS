@@ -71,7 +71,7 @@ void get_window_ctx(draw_ctx* out_ctx){
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
         if (out_ctx->width && out_ctx->height)
-            main_gpu_driver->resize_window(out_ctx->width, out_ctx->height, &frame->win_ctx);
+            resize_window(out_ctx->width, out_ctx->height);
         *out_ctx = frame->win_ctx;
         frame->pid = p->id;
     }
