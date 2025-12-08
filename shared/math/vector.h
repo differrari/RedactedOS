@@ -206,3 +206,7 @@ static inline bool vector2_zero(vector2 a){
 static inline float dot_product(vector2 a, vector2 b) {
     return (a.x*b.x) + (a.y*b.y);
 }
+
+static inline vector2 vector2_lerp(vector2 a, vector2 b, float f){
+    return (vector2){ lerpf(a.x, b.x, f), lerpf(a.y, b.y, f)};
+}
