@@ -62,6 +62,7 @@ void get_elf_debug_info(process_t* proc, void* file, size_t filesize){
         return;
     }
 
+    //TODO: use segments for loading, sections for linking
     elf_section_header *sections = (elf_section_header*)(file + header->section_header_offset);
 
     sizedptr debug_line = {};

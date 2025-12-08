@@ -1,4 +1,5 @@
 #include "talloc.h"
+#include "sysregs.h"
 #include "types.h"
 #include "exceptions/exception_handler.h"
 #include "console/kio.h"
@@ -73,7 +74,7 @@ uint64_t talloc(uint64_t size) {
         curr = &(*curr)->next;
     }
 
-    if (next_free_temp_memory + size > (uintptr_t)&heap_limit) {
+    if (next_free_temp_memory + size > VIRT_TO_PHYS((uintptr_t)&heap_limit)) {
         panic("Kernel allocator overflow", next_free_temp_memory);
     }
 
