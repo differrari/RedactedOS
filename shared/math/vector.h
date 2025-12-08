@@ -1,6 +1,9 @@
 #pragma once
 #include "types.h"
 #include "math.h"
+#if defined(__x86_64__)
+#include "ammintrin.h"
+#endif
 
 typedef int8_t int8x8_t __attribute__((vector_size(8)));
 typedef int8_t int8x16_t __attribute__((vector_size(16)));
@@ -112,7 +115,7 @@ static __inline__ __attribute__((always_inline)) float32x2_t vpadd_f32_b(float32
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
   return (float32x2_t)__builtin_neon_vpaddv2sf(a, b);
 #elif defined(__x86_64__)
-  return a;
+  return (float32x2_t){a[0] + b[0], a[1] + b[1]};
 #else
 # error "no vpadd_f32_b builtin"
 #endif
@@ -126,7 +129,7 @@ static __inline__ __attribute__((always_inline)) float32x2_t vmax_f32_b(float32x
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
   return (float32x2_t)__builtin_neon_vmaxfv2sf(a, b);
 #elif defined(__x86_64__)
-  return a;
+  return a;//TODO: not implemented
 #else
 # error "no vmax_f32_b builtin"
 #endif
@@ -154,7 +157,8 @@ static __inline__ __attribute__((always_inline)) float32x2_t vrsqrte_f32_b(float
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
   return (float32x2_t)__builtin_neon_vrsqrtev2sf(s);
 #elif defined(__x86_64__)
-  return s;
+  float32x4_t r =_mm_rsqrt_ps((float32x4_t){s[0],s[1],0,0});
+  return (float32x2_t){r[0],r[1]};
 #else
 # error "no vrsqrte_f32_b builtin"
 #endif
