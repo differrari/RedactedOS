@@ -8,6 +8,8 @@
 #include "pci.h"
 #include "filesystem/disk.h"
 #include "memory/page_allocator.h"
+#include "process/process.h"
+#include "process/scheduler.h"
 #include "sysregs.h"
 #include "std/memory.h"
 
@@ -238,6 +240,17 @@ void mmu_free_ttbr_l(uintptr_t *ttbr, int level){
         }
     }
     temp_free(ttbr, PAGE_SIZE);
+}
+
+void mmu_map_all(uintptr_t pa){
+    process_t *processes = get_all_processes();
+    for (int i = 0; i < MAX_PROCS; i++){
+        if (processes[i].state != STOPPED && processes[i].ttbr){
+            mmu_map_2mb(processes[i].ttbr, pa, pa, MAIR_IDX_DEVICE);
+        }
+    }
+    mmu_flush_all();
+    mmu_flush_icache();
 }
 
 void mmu_free_ttbr(uintptr_t *ttbr){

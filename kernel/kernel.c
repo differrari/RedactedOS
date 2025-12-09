@@ -2,6 +2,7 @@
 #include "console/serial/uart.h"
 #include "graph/graphics.h"
 #include "hw/hw.h"
+#include "memory/talloc.h"
 #include "pci.h"
 #include "memory/mmu.h"
 #include "exceptions/exception_handler.h"
@@ -33,6 +34,8 @@ void kernel_main() {
     set_exception_vectors();
 
     init_main_process();
+    
+    pre_talloc();
 
 //    if (BOARD_TYPE == 1) disable_visual();
 

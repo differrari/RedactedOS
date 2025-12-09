@@ -27,9 +27,9 @@ SECTIONS {
     ksp = .;
     stack_top = .;
 
-    . = ALIGN(0x1000);
+    . = ALIGN(0x200000);
     heap_bottom = .;
-    .heap_fill : { FILL(0); . = . + 0xFF000; }
+    .heap_fill : { FILL(0); . = . + 0x200000; }
     heap_limit = .;
 
     .shared : ALIGN(0x1000) {

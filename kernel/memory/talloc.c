@@ -1,4 +1,6 @@
 #include "talloc.h"
+#include "memory/mmu.h"
+#include "memory/page_allocator.h"
 #include "sysregs.h"
 #include "types.h"
 #include "exceptions/exception_handler.h"
@@ -47,6 +49,17 @@ static bool talloc_verbose = false;
 
 uint64_t next_free_temp_memory = (uint64_t)&heap_bottom;
 
+uintptr_t talloc_mem_limit = (uintptr_t)&heap_limit;
+
+void* pre_talloc_ptr = 0;
+uintptr_t pre_talloc_mem_limit = 0;
+
+void pre_talloc(){
+    pre_talloc_ptr = palloc(GRANULE_2MB, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, true);
+    pre_talloc_mem_limit = (uintptr_t)pre_talloc_ptr + GRANULE_2MB;
+    mmu_map_all((uintptr_t)pre_talloc_ptr);
+}
+
 uint64_t talloc(uint64_t size) {
 
     size = (size + 0xFFF) & ~0xFFF;
@@ -74,8 +87,12 @@ uint64_t talloc(uint64_t size) {
         curr = &(*curr)->next;
     }
 
-    if (next_free_temp_memory + size > VIRT_TO_PHYS((uintptr_t)&heap_limit)) {
-        panic("Kernel allocator overflow", next_free_temp_memory);
+    if (next_free_temp_memory + size > talloc_mem_limit) {
+        if (!pre_talloc_ptr)
+            panic("Kernel allocator overflow", next_free_temp_memory);
+        next_free_temp_memory = (uintptr_t)pre_talloc_ptr;
+        talloc_mem_limit = pre_talloc_mem_limit;
+        pre_talloc();
     }
 
     uint64_t result = next_free_temp_memory;
