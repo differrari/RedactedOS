@@ -290,7 +290,12 @@ void fb_draw_raw_char(draw_ctx *ctx, uint32_t x, uint32_t y, char c, uint32_t sc
                     uint32_t rx_lim = scale;
                     if (base_x + rx_lim > draw_w) rx_lim = draw_w - base_x;
                     uint32_t* p = dst + base_x;
-                    for (uint32_t rx = 0; rx < rx_lim; ++rx) p[rx] = color;
+                    for (uint32_t rx = 0; rx < rx_lim; ++rx) { 
+                        if (((color >> 24) & 0xFF) < 0xFF)
+                            p[rx] = pixel_blend(color, p[rx]);
+                        else
+                            p[rx] = color;
+                    }
                 }
             }
         }

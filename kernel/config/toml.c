@@ -22,7 +22,6 @@ void read_toml(char *info, size_t size, toml_handler on_kvp, void *context){
                         bool multiline = len >= 3 && *(prop+1) == *(prop+2) && *(prop+2) == *(prop);
                         if (!multiline){
                             if (*(prop+len-1) != '\"'){
-                                kprintf("Non-terminated string");
                                 path = nl;
                                 continue;
                             }

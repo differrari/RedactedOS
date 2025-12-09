@@ -284,8 +284,7 @@ void FAT32FS::close_file(file* descriptor){
     if (mfile->references == 0){
         chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
         kfree((void*)mfile->buffer, mfile->file_size);
-        kprintf("File closed entirely");
-    } else kprintf("File closed but still %i references to it %i",mfile->references);
+    }
 }
 
 sizedptr FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {
@@ -330,7 +329,6 @@ size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t
 		cursor += len + 1;
     		continue;
     	}
-    	kprintf("Cursor %s",cursor);
     	if ((uintptr_t)write_ptr + len < (uintptr_t)buf + size){
     		memcpy(write_ptr, cursor, len);
     		write_ptr += len;
