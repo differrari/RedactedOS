@@ -197,6 +197,8 @@ void mmu_init() {
     kernel_mmu_page = mmu_alloc();
     uint64_t kstart = mem_get_kmem_start();
     uint64_t kend = mem_get_kmem_end();
+    
+    mmu_map_2mb(kernel_mmu_page, (uintptr_t)kernel_mmu_page, (uintptr_t)kernel_mmu_page, MAIR_IDX_DEVICE);
 
     for (uint64_t addr = kstart; addr < kend; addr += GRANULE_2MB)
         mmu_map_2mb(kernel_mmu_page, addr, addr, MAIR_IDX_NORMAL);

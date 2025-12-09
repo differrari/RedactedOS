@@ -54,9 +54,16 @@ uintptr_t talloc_mem_limit = (uintptr_t)&heap_limit;
 void* pre_talloc_ptr = 0;
 uintptr_t pre_talloc_mem_limit = 0;
 
+bool can_automap = false;
+
 void pre_talloc(){
-    pre_talloc_ptr = palloc(GRANULE_2MB, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, true);
+    pre_talloc_ptr = palloc_inner(GRANULE_2MB, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, true, can_automap);
     pre_talloc_mem_limit = (uintptr_t)pre_talloc_ptr + GRANULE_2MB;
+    if (!can_automap){
+        can_automap = true;
+        next_free_temp_memory = (uintptr_t)pre_talloc_ptr;
+        talloc_mem_limit = pre_talloc_mem_limit;
+    }
     mmu_map_all((uintptr_t)pre_talloc_ptr);
 }
 

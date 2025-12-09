@@ -28,6 +28,7 @@ void kernel_main() {
 
     detect_hardware();
     
+    pre_talloc();
     mmu_init();
     if (BOARD_TYPE == 2) mailbox_init();
 
@@ -35,7 +36,6 @@ void kernel_main() {
 
     init_main_process();
     
-    pre_talloc();
 
 //    if (BOARD_TYPE == 1) disable_visual();
 
