@@ -183,11 +183,6 @@ uint64_t *mmu_alloc(){
     return (uint64_t*)talloc(PAGE_SIZE);
 }
 
-extern uint64_t shared_start;
-extern uint64_t shared_code_end;
-extern uint64_t shared_ro_end;
-extern uint64_t shared_end;
-
 extern uintptr_t cpec;
 extern uintptr_t ksp;
 
