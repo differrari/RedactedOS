@@ -42,14 +42,12 @@ bool is_mmio_allocated(uint64_t addr){
 }
 
 extern uint64_t kernel_start;
-extern uint64_t heap_bottom;
-extern uint64_t heap_limit;
 extern uint64_t kcode_end;
 static bool talloc_verbose = false;
 
-uint64_t next_free_temp_memory = (uint64_t)&heap_bottom;
+uint64_t next_free_temp_memory;
 
-uintptr_t talloc_mem_limit = (uintptr_t)&heap_limit;
+uintptr_t talloc_mem_limit;
 
 void* pre_talloc_ptr = 0;
 uintptr_t pre_talloc_mem_limit = 0;
