@@ -215,7 +215,7 @@ void mark_used(uintptr_t address, size_t pages)
 #define PAGE_INDEX_LIMIT (PAGE_SIZE-sizeof(page_index_hdr))/sizeof(page_index_entry)
 
 //TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
-void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level, uintptr_t page_va, uintptr_t *next_va, uintptr_t *ttrb){
+void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level, uintptr_t page_va, uintptr_t *next_va, uintptr_t *ttbr){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
     
     size = (size + alignment - 1) & ~(alignment - 1);
@@ -240,10 +240,10 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
         }
         index->ptrs[index->header.size].ptr = ptr;
         index->ptrs[index->header.size++].size = size;
-        if (page_va && next_va && ttrb){
+        if (page_va && next_va && ttbr){
             uintptr_t va = *next_va;
             for (uintptr_t i = (uintptr_t)ptr; i < (uintptr_t)ptr + size; i+= GRANULE_4KB){
-                mmu_map_4kb(ttrb, *next_va, (uintptr_t)i, (info->attributes & MEM_DEV) ? MAIR_IDX_DEVICE : MAIR_IDX_NORMAL, info->attributes, level);
+                mmu_map_4kb(ttbr, *next_va, (uintptr_t)i, (info->attributes & MEM_DEV) ? MAIR_IDX_DEVICE : MAIR_IDX_NORMAL, info->attributes, level);
                 *next_va += PAGE_SIZE;
             }
             return (void*)va;
@@ -280,14 +280,14 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
     if (info->next_free_mem_ptr + size > ((VIRT_TO_PHYS((uintptr_t)page)) + PAGE_SIZE)) {
         if (!info->next){
             info->next = palloc(PAGE_SIZE, level, info->attributes, false);
-            if (page_va && next_va && ttrb){
-                mmu_map_4kb(ttrb, *next_va, (uintptr_t)info->next, (info->attributes & MEM_DEV) ? MAIR_IDX_DEVICE : MAIR_IDX_NORMAL, info->attributes, level);
+            if (page_va && next_va && ttbr){
+                mmu_map_4kb(ttbr, *next_va, (uintptr_t)info->next, (info->attributes & MEM_DEV) ? MAIR_IDX_DEVICE : MAIR_IDX_NORMAL, info->attributes, level);
                 *next_va += PAGE_SIZE;
             }
             kprintfv("[in_page_alloc] Page %llx points to new page %llx",page,info->next);
         }
         kprintfv("[in_page_alloc] Page full. Moving to %x",(uintptr_t)info->next);
-        return kalloc_inner(info->next, size, alignment, level, page_va ? page_va + PAGE_SIZE : 0, next_va, ttrb);
+        return kalloc_inner(info->next, size, alignment, level, page_va ? page_va + PAGE_SIZE : 0, next_va, ttbr);
     }
 
     uint64_t result = info->next_free_mem_ptr;

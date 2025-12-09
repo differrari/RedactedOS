@@ -10,8 +10,8 @@ void mmu_init();
 #ifdef __cplusplus
 extern "C" {
 #endif
-void mmu_map_kernel(uintptr_t *ttrb);
-uintptr_t* mmu_new_ttrb();
+void mmu_map_kernel(uintptr_t *ttbr);
+uintptr_t* mmu_new_ttbr();
 void register_device_memory(uint64_t va, uint64_t pa);
 void register_device_memory_2mb(uint64_t va, uint64_t pa);
 void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t level);
@@ -20,13 +20,13 @@ void debug_mmu_address(uint64_t va);
 void mmu_enable_verbose();
 void mmu_swap_ttbr(uintptr_t* ttbr);
 uintptr_t* mmu_default_ttbr();
-//TODO: mmu_free_ttbr
+void mmu_free_ttbr(uintptr_t *ttbr);
 uintptr_t mmu_translate(uintptr_t va);
 #ifdef __cplusplus
 }
 #endif
 
-extern uintptr_t *pttrb;
+extern uintptr_t *pttbr;
 
 void mmu_unmap(uint64_t va, uint64_t pa);
 void mmu_init_kernel();

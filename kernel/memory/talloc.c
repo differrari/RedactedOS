@@ -101,12 +101,12 @@ void temp_free(void* ptr, uint64_t size) {
         uart_raw_putc('\n');
     }
 
-    memset((void*)ptr,0,size);
+    memset(PHYS_TO_VIRT_P(ptr),0,size);
 
-    FreeBlock* block = (FreeBlock*)ptr;
+    FreeBlock* block = VIRT_TO_PHYS_P(ptr);
     block->size = size;
     block->next = temp_free_list;
-    temp_free_list = block;
+    temp_free_list = ptr;
 }
 
 void enable_talloc_verbose(){

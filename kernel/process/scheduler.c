@@ -2,12 +2,10 @@
 #include "console/kio.h"
 #include "memory/page_allocator.h"
 #include "exceptions/irq.h"
-#include "console/serial/uart.h"
 #include "input/input_dispatch.h"
 #include "exceptions/exception_handler.h"
 #include "exceptions/timer.h"
 #include "console/kconsole/kconsole.h"
-#include "syscalls/syscalls.h"
 #include "std/string.h"
 #include "data_struct/hashmap.h"
 #include "std/memory.h"
@@ -44,6 +42,8 @@ void* proc_page;
 void save_return_address_interrupt(){
     save_pc_interrupt(cpec);
 }
+
+extern void mmu_swap();
 
 void switch_proc(ProcSwitchReason reason) {
     // kprintf("Stopping execution of process %i at %x",current_proc, processes[current_proc].spsr);
@@ -125,12 +125,6 @@ void reset_process(process_t *proc){
     proc->spsr = 0;
     proc->exit_code = 0;
     if (proc->code && proc->code_size){
-        if (proc->use_va){
-            for (uintptr_t i = 0; i < proc->code_size; i += PAGE_SIZE){
-                mmu_unmap(proc->va + i, (uintptr_t)proc->code + i);
-            }
-            allow_va = true;
-        } 
         pfree(proc->code, proc->code_size);
     }
     if (!just_finished && proc->output)
@@ -153,6 +147,10 @@ void reset_process(process_t *proc){
         proc->packet_buffer.entries[k] = (sizedptr){0};
     }
     close_files_for_process(proc->id);
+    if (proc->ttbr) {
+        if (pttbr == proc->ttbr) panic("Trying to free process while mapped", (uintptr_t)proc->ttbr);
+        mmu_free_ttbr(proc->ttbr);
+    }
 }
 
 void init_main_process(){
@@ -211,6 +209,10 @@ void stop_process(uint16_t pid, int32_t exit_code){
     proc->exit_code = exit_code;
     if (proc->focused)
         sys_unset_focus();
+    if (proc->ttbr) {
+        mmu_swap_ttbr(0);
+        mmu_swap();
+    }
     reset_process(proc);
     proc_count--;
     // kprintf("Stopped %i process %i",pid,proc_count);

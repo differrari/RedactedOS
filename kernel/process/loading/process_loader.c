@@ -297,7 +297,7 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
 
     // kprintf("Code takes %x from %x to %x",code_size, min_addr, max_addr);
 
-    uintptr_t *ttbr = mmu_new_ttrb();
+    uintptr_t *ttbr = mmu_new_ttbr();
     uintptr_t *kttbr = mmu_default_ttbr();
 
     uintptr_t dest = (uintptr_t)palloc_inner(code_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true, false);

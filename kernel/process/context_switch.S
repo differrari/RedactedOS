@@ -54,7 +54,7 @@ restore_context:
 
     mov x17, #0
 
-    ldr x18, =pttrb
+    ldr x18, =pttbr
     
     cmp x18, #0
     b.eq 4f
@@ -73,3 +73,23 @@ restore_context:
     mov x18, #0
 
     eret
+    
+.global mmu_swap
+mmu_swap:
+    ldr x18, =pttbr
+    
+    cmp x18, #0
+    b.eq 4f
+
+    ldr x18, [x18]
+
+    cmp x18, #0
+    b.eq 4f
+
+    msr ttbr0_el1, x18
+
+    tlbi vmalle1is
+4: dsb ish
+    isb
+    
+    ret
