@@ -48,6 +48,7 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
 
     virt_h *= 2;
 
+    mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
     uint32_t fb_bus, fb_size;
     if (!mbox_alloc_fb(virt_w, virt_h, &fb_bus, &fb_size)){
         kprintf("[VIDEOCORE] Failed updating mailbox");
