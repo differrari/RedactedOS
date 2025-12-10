@@ -22,6 +22,7 @@ typedef struct string_list {
 
 extern void free_sized(void*,size_t);
 
+uint32_t u64_to_base(char *tmp, uint64_t v, unsigned base, int upper);
 size_t strlen_max(const char *s, uint32_t max_length);
 static inline size_t strlen(const char *s) { return strlen_max(s,0); }
 string string_from_literal(const char *literal);

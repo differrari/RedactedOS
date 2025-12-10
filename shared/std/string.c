@@ -103,7 +103,7 @@ static inline uint32_t u64_to_dec(char *tmp, uint64_t v) {
     return n;
 }
 
-static inline uint32_t u64_to_base(char *tmp, uint64_t v, unsigned base, int upper) {
+uint32_t u64_to_base(char *tmp, uint64_t v, unsigned base, int upper) {
     const char *hx = upper ? "0123456789ABCDEF" : "0123456789abcdef";
     uint32_t n = 0;
 
