@@ -22,6 +22,7 @@ void mmu_swap_ttbr(uintptr_t* ttbr);
 uintptr_t* mmu_default_ttbr();
 void mmu_free_ttbr(uintptr_t *ttbr);
 uintptr_t mmu_translate(uintptr_t va);
+void mmu_map_all(uintptr_t pa);
 #ifdef __cplusplus
 }
 #endif

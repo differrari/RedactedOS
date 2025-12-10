@@ -8,8 +8,11 @@
 #include "pci.h"
 #include "filesystem/disk.h"
 #include "memory/page_allocator.h"
+#include "process/process.h"
+#include "process/scheduler.h"
 #include "sysregs.h"
 #include "std/memory.h"
+#include <stdint.h>
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01
@@ -90,14 +93,20 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
         uint64_t* l3 = (uint64_t*)talloc(PAGE_SIZE);
         l2[l2_index] = ((uint64_t)l3 & ADDR_MASK) | PD_TABLE;
     } else if ((l2_val & 0b11) == PD_BLOCK){
-        kprintf("[MMU error]: Region not mapped for address %x, already mapped at higher granularity [%i][%i][%i][%i]",va, l0_index,l1_index,l2_index,l3_index);
+        uart_puts("[MMU error]: Region not mapped for address ");
+        uart_puthex(va);
+        uart_puts("already mapped at higher granularity\n");
         return;
     }
     
     uint64_t* l3 = (uint64_t*)(l2[l2_index] & ADDR_MASK);
     
     if (l3[l3_index] & 1){
-        kprintf("[MMU warning]: Section already mapped %llx in %llx",va,table);
+        uart_puts("[MMU warning]: Section already mapped ");
+        uart_puthex(va);
+        uart_puts(" ");
+        uart_puthex((uintptr_t)table);
+        uart_putc('\n');
         return;
     }
     
@@ -181,23 +190,26 @@ uint64_t *mmu_alloc(){
     return (uint64_t*)talloc(PAGE_SIZE);
 }
 
-extern uint64_t shared_start;
-extern uint64_t shared_code_end;
-extern uint64_t shared_ro_end;
-extern uint64_t shared_end;
-
 extern uintptr_t cpec;
 extern uintptr_t ksp;
 
 extern void mmu_start(uint64_t *mmu);
 
+uintptr_t heap_end;
+
 void mmu_init() {
     kernel_mmu_page = mmu_alloc();
-    uint64_t kstart = mem_get_kmem_start();
-    uint64_t kend = mem_get_kmem_end();
+    uintptr_t kstart = mem_get_kmem_start();
+    uintptr_t kend = mem_get_kmem_end();
+    uintptr_t heapstart = get_user_ram_start();
 
     for (uint64_t addr = kstart; addr < kend; addr += GRANULE_2MB)
         mmu_map_2mb(kernel_mmu_page, addr, addr, MAIR_IDX_NORMAL);
+    
+    for (uint64_t addr = heapstart; addr < heap_end; addr += GRANULE_4KB)
+        mmu_map_4kb(kernel_mmu_page, addr, addr, MAIR_IDX_NORMAL, MEM_DEV | MEM_RW, MEM_PRIV_KERNEL);
+    
+    mmu_map_2mb(kernel_mmu_page, (uintptr_t)kernel_mmu_page, (uintptr_t)kernel_mmu_page, MAIR_IDX_DEVICE);
 
     uint64_t dstart;
     uint64_t dsize;
@@ -238,6 +250,17 @@ void mmu_free_ttbr_l(uintptr_t *ttbr, int level){
         }
     }
     temp_free(ttbr, PAGE_SIZE);
+}
+
+void mmu_map_all(uintptr_t pa){
+    process_t *processes = get_all_processes();
+    for (int i = 0; i < MAX_PROCS; i++){
+        if (processes[i].state != STOPPED && processes[i].ttbr){
+            mmu_map_2mb(processes[i].ttbr, pa, pa, MAIR_IDX_DEVICE);
+        }
+    }
+    mmu_flush_all();
+    mmu_flush_icache();
 }
 
 void mmu_free_ttbr(uintptr_t *ttbr){

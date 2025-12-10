@@ -19,6 +19,7 @@ uint64_t get_total_ram();
 uint64_t get_total_user_ram();
 uint64_t get_user_ram_start();
 uint64_t get_user_ram_end();
+void pre_talloc();
 
 uint64_t alloc_mmio_region(uint64_t size);
 
