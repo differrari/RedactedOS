@@ -17,7 +17,7 @@
 
 #define PAGE_TABLE_ENTRIES 65536
 
-uint64_t mem_bitmap[PAGE_TABLE_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
+uintptr_t *mem_bitmap;
 
 static bool page_alloc_verbose = false;
 
@@ -74,9 +74,16 @@ void setup_page(uintptr_t address, uint8_t attributes){
     new_info->attributes = attributes;
 }
 
+extern uintptr_t heap_end;
+
 void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map) {
-    if (!start) start = count_pages(get_user_ram_start(),PAGE_SIZE);
-    if (!end) end = count_pages(get_user_ram_end(),PAGE_SIZE);
+    if (!start || !end) {
+        start = count_pages(get_user_ram_start(),PAGE_SIZE); 
+        end = count_pages(get_user_ram_end(),PAGE_SIZE);
+        mem_bitmap = (uintptr_t*)(start * PAGE_SIZE);
+        start += count_pages(65536*8,PAGE_SIZE);
+        heap_end = start*PAGE_SIZE;
+    }
     uint64_t page_count = count_pages(size,PAGE_SIZE);
 
     if (page_count > 64){
