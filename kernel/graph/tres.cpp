@@ -7,6 +7,7 @@
 #include "kernel_processes/windows/launcher.h"
 #include "console/kio.h"
 #include "sysregs.h"
+#include "ui/graphic_types.h"
 
 clinkedlist_t *window_list;
 window_frame *focused_window;
@@ -29,6 +30,25 @@ void init_window_manager(uintptr_t gpu_driver){
     main_gpu_driver = (GPUDriver*)gpu_driver;
 }
 
+int find_window(void *node, void *key){
+    if (!node || !key) return -1;
+    window_frame* frame = (window_frame*)node;
+    uint16_t wid = *(uint16_t*)key;
+    if (frame->win_id == wid) return 0;
+    return -1;
+}
+
+gpu_point convert_mouse_position(gpu_point point){
+    process_t *p = get_current_proc();
+    clinkedlist_node_t *node = clinkedlist_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
+    if (node && node->data){
+        window_frame* frame = (window_frame*)node->data;
+        if (point.x > frame->x && point.x < frame->x + frame->width && point.y > frame->y && point.y < frame->y + frame->height)
+            return (gpu_point){ point.x-frame->x, point.y-frame->y};
+    }
+    return (gpu_point){};
+}
+
 extern "C" void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height){
     if (win_ids == UINT16_MAX) return;
     window_frame *frame = (window_frame*)malloc(sizeof(window_frame));
@@ -43,14 +63,6 @@ extern "C" void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t h
     p->win_id = frame->win_id;
     frame->pid = p->id;
     dirty_windows = true;
-}
-
-int find_window(void *node, void *key){
-    if (!node || !key) return -1;
-    window_frame* frame = (window_frame*)node;
-    uint16_t wid = *(uint16_t*)key;
-    if (frame->win_id == wid) return 0;
-    return -1;
 }
 
 void resize_window(uint32_t width, uint32_t height){

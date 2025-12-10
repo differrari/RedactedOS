@@ -1,6 +1,7 @@
 #pragma once
 
 #include "process/process.h"
+#include "ui/graphic_types.h"
 
 #ifdef __cplusplus
 extern "C" {

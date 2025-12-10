@@ -35,8 +35,9 @@ extern bool read_event(kbd_event *event){
     return sys_read_event_current(event);
 }
 
-extern void get_mouse_status(mouse_input *in){
-    *in = get_raw_mouse_in();
+extern void get_mouse_status(mouse_data *in){
+    in->raw = get_raw_mouse_in();
+    in->position = convert_mouse_position(get_mouse_pos());
 }
 
 extern uint16_t exec(const char* prog_name, int argc, const char* argv[]){

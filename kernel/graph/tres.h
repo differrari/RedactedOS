@@ -29,6 +29,8 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame);
 void set_window_focus(uint16_t win_id);
 void unset_window_focus();
 
+gpu_point convert_mouse_position(gpu_point p);
+
 extern clinkedlist_t *window_list;
 
 extern uint16_t win_ids;

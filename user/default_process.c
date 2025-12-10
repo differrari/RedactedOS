@@ -1,4 +1,5 @@
 #include "default_process.h"
+#include "mouse_input.h"
 #include "syscalls/syscalls.h"
 #include "input_keycodes.h"
 #include "std/string.h"
@@ -29,6 +30,9 @@ int img_example() {
     ctx.height = info.height+BORDER*2;
     request_draw_ctx(&ctx);
     while (1) {
+        mouse_data data;
+        get_mouse_status(&data);
+        printf("data.position %ix%i",data.position.x,data.position.y);
         keypress kp = {};
         // printf("Print console test %f", (get_time()/1000.f));
         if (read_key(&kp))

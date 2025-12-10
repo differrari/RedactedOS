@@ -3,6 +3,8 @@
 #include "exceptions/exception_handler.h"
 #include "console/serial/uart.h"
 #include "exceptions/irq.h"
+#include "mouse_input.h"
+#include "process/process.h"
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
 #include "graph/graphics.h"
@@ -23,6 +25,7 @@
 #include "networking/transport_layer/csocket.h"
 #include "loading/dwarf.h"
 #include "sysregs.h"
+#include "ui/graphic_types.h"
 
 
 int syscall_depth = 0;
@@ -68,8 +71,9 @@ uint64_t syscall_read_shortcut(process_t *ctx){
 uint64_t syscall_get_mouse(process_t *ctx){
     //TODO: do we want to prevent the process from knowing what the mouse is doing outside the window unless it's explicitly allowed?
     if (get_current_proc_pid() != ctx->id) return 0;
-    mouse_input *inp = (mouse_input*)ctx->PROC_X0;
-    *inp = get_raw_mouse_in();
+    mouse_data *inp = (mouse_data*)ctx->PROC_X0;
+    inp->raw = get_raw_mouse_in();
+    inp->position = convert_mouse_position(get_mouse_pos());
     return 0;
 }
 
@@ -229,9 +233,9 @@ syscall_entry syscalls[] = {
     [FREE_CODE] = syscall_free,
     [PRINTL_CODE] = syscall_printl,
     [READ_KEY_CODE] = syscall_read_key,
-    [READ_EVENT_CODE] = syscall_read_event ,
+    [READ_EVENT_CODE] = syscall_read_event,
     [READ_SHORTCUT_CODE] = syscall_read_shortcut,
-    [GET_MOUSE_STATUS_CODE] = syscall_get_mouse ,
+    [GET_MOUSE_STATUS_CODE] = syscall_get_mouse,
     [REQUEST_DRAW_CTX_CODE] = syscall_gpu_request_ctx,
     [GPU_FLUSH_DATA_CODE] = syscall_gpu_flush,
     [GPU_CHAR_SIZE_CODE] = syscall_char_size,

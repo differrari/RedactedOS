@@ -21,7 +21,7 @@ extern void free_sized(void *ptr, size_t size);
 
 extern bool read_key(keypress *kp);
 extern bool read_event(kbd_event *event);
-extern void get_mouse_status(mouse_input *in);
+extern void get_mouse_status(mouse_data *in);
 
 extern void sleep(uint64_t time);
 extern void halt(int32_t exit_code);
