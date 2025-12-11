@@ -22,8 +22,9 @@ typedef struct text_ui_config {
 } text_ui_config;
 
 typedef struct rect_ui_config {
-    uint8_t border_size;
+    uint32_t border_size;
     color border_color;
+    uint32_t border_padding;
 } rect_ui_config;
 
 typedef struct common_ui_config {

@@ -213,6 +213,7 @@ void Launcher::draw_tile(uint32_t column, uint32_t row){
         rectangle(&ctx, {
         .border_size = (uint8_t)(sel ? 4 : 0),
         .border_color = system_theme.bg_color+0x333333,
+        .border_padding = 0,
         }, (common_ui_config){
         .point = {10 + ((tile_size.width + 10)*column), 50 + ((tile_size.height + 10) *row)},
         .size = {tile_size.width, tile_size.height},
