@@ -57,6 +57,7 @@ JsonError json_parse(const char *buf, uint32_t len, JsonValue **out);
 JsonError json_serialize(const JsonValue *value, string *out, uint32_t indent);
 void json_free(JsonValue *v);
 
+JsonValue *json_obj_get(const JsonValue *obj, const char *key);
 static inline bool json_is_null(const JsonValue *v) { return v && v->kind == JSON_NULL; }
 static inline bool json_is_bool(const JsonValue *v) { return v && v->kind == JSON_BOOL; }
 static inline bool json_is_int(const JsonValue *v) { return v && v->kind == JSON_INT; }
@@ -74,12 +75,6 @@ bool json_get_number_as_double(const JsonValue *v, double *out);
 
 uint32_t json_array_size(const JsonValue *v);
 JsonValue *json_array_get(const JsonValue *v, uint32_t index);
-
-JsonValue *json_obj_get(const JsonValue *obj, const char *key);
-bool json_obj_get_bool(const JsonValue *obj, const char *key, bool *out);
-bool json_obj_get_int(const JsonValue *obj, const char *key, int64_t *out);
-bool json_obj_get_double(const JsonValue *obj, const char *key, double *out);
-bool json_obj_get_string(const JsonValue *obj, const char *key, string *out);
 
 JsonValue *json_new_null();
 JsonValue *json_new_bool(bool v);

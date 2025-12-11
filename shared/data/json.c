@@ -1,24 +1,24 @@
 #include "json.h"
 #include "std/std.h"
+#include "std/string.h"
 #include "syscalls/syscalls.h"
+#include "data/scanner/scanner.h"
+#include "data/tokenizer/tokenizer.h"
+#include "helpers/token_stream.h"
+#include "helpers/token_utils.h"
 
-JsonError parse_value(const char *buf, uint32_t len, uint32_t *pos, JsonValue **out);
+static JsonError json_parse_value(TokenStream *ts, JsonValue **out);
 
-static void json_skip_whitespace(const char *buf, uint32_t len, uint32_t *pos) {
-    while (*pos < len) {
-        char c = buf[*pos];
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') (*pos)++;
-        else break;
-    }
-}
+static JsonError json_parse_string_token(Token *tok, JsonValue **out) {
+    const char *buf = tok->start;
+    uint32_t len = tok->length;
+    if (len < 2 || buf[0] != '"' || buf[len - 1] != '"') return JSON_ERR_INVALID;
 
-JsonError parse_string(const char *buf, uint32_t len, uint32_t *pos, JsonValue **out) {
-    if (!(*pos < len && buf[*pos] == '"')) return JSON_ERR_INVALID;
-    (*pos)++;
+    uint32_t pos = 1;
     string s = string_repeat('\0', 0);
 
-    while (*pos < len) {
-        char c = buf[(*pos)++];
+    while (pos < len) {
+        char c = buf[pos++];
         if (c == '"') {
             JsonValue *v = malloc(sizeof(JsonValue));
             if (!v) {
@@ -31,11 +31,11 @@ JsonError parse_string(const char *buf, uint32_t len, uint32_t *pos, JsonValue *
             return JSON_OK;
         }
         if (c == '\\') {
-            if (*pos >= len) {
+            if (pos >= len) {
                 free_sized(s.data, s.mem_length);
                 return JSON_ERR_INVALID;
             }
-            char e = buf[(*pos)++];
+            char e = buf[pos++];
             char r = e;
             if (e == 'b') r = '\b';
             else if (e == 'f') r = '\f';
@@ -56,106 +56,69 @@ JsonError parse_string(const char *buf, uint32_t len, uint32_t *pos, JsonValue *
     return JSON_ERR_INVALID;
 }
 
-JsonError parse_number(const char *buf, uint32_t len, uint32_t *pos, JsonValue **out) {
-    uint32_t start = *pos;
-    bool neg = false;
-
-    if (*pos < len && buf[*pos] == '-') {
-        neg = true;
-        (*pos)++;
+static JsonError json_parse_number_tokens(TokenStream *ts, JsonValue **out){
+    Token a, b;
+    if (!ts_peek(ts, &a)) {
+        if (ts->tz->failed) return JSON_ERR_INVALID;
+        return JSON_ERR_INVALID;
     }
 
-    if (!(*pos < len && buf[*pos] >= '0' && buf[*pos] <= '9')) return JSON_ERR_INVALID;
-    while (*pos < len && buf[*pos] >= '0' && buf[*pos] <= '9') (*pos)++;
+    bool negative = false;
+    Token num;
 
-    bool has_frac = false;
-    uint32_t frac_start = 0;
-
-    if (*pos < len && buf[*pos] == '.') {
-        has_frac = true;
-        (*pos)++;
-        if (!(*pos < len && buf[*pos] >= '0' && buf[*pos] <= '9')) return JSON_ERR_INVALID;
-        frac_start = *pos;
-        while (*pos < len && buf[*pos] >= '0' && buf[*pos] <= '9') (*pos)++;
-    }
-
-    bool has_exp = false;
-    bool exp_neg = false;
-    int exp_val = 0;
-
-    if (*pos < len && (buf[*pos] == 'e' || buf[*pos] == 'E')) {
-        has_exp = true;
-        (*pos)++;
-        if (*pos < len && (buf[*pos] == '+' || buf[*pos] == '-')) {
-            if (buf[*pos] == '-') exp_neg = true;
-            (*pos)++;
+    if (a.kind == TOK_OPERATOR && token_is_operator_token(&a, "-")) {
+        ts_next(ts, &a);
+        if (!ts_next(ts, &b)) {
+            if (ts->tz->failed)return JSON_ERR_INVALID;
+            return JSON_ERR_INVALID;
         }
-        if (!(*pos < len && buf[*pos] >= '0' && buf[*pos] <= '9')) return JSON_ERR_INVALID;
-        while (*pos < len && buf[*pos] >= '0' && buf[*pos] <= '9') {
-            exp_val = exp_val * 10 + (buf[*pos] - '0');
-            (*pos)++;
+        if (!token_is_number(&b)) return JSON_ERR_INVALID;
+        negative = true;
+        num = b;
+    } else {
+        if (!ts_next(ts, &a)) {
+            if (ts->tz->failed) return JSON_ERR_INVALID;
+            return JSON_ERR_INVALID;
         }
-        if (exp_neg) exp_val = -exp_val;
+        if (!token_is_number(&a)) return JSON_ERR_INVALID;
+        num = a;
     }
 
-    uint32_t end = *pos;
-    if (end <= start) return JSON_ERR_INVALID;
+    bool is_int = true;
+    for (uint32_t i = 0; i < num.length; i++) {
+        char c = num.start[i];
+        if (c == '.' || c == 'e' || c == 'E') {
+            is_int = false;
+            break;
+        }
+    }
 
-    if (!has_frac && !has_exp) {
-        int64_t x = 0;
-        uint32_t i = start + (neg ? 1u : 0u);
-        for (; i < end; i++) x = x * 10 + (buf[i] - '0');
-        if (neg) x = -x;
-
+    if (is_int) {
+        int64_t iv;
+        if (!token_to_int64(&num, &iv)) return JSON_ERR_INVALID;
+        if (negative) iv =-iv;
         JsonValue *v = malloc(sizeof(JsonValue));
         if (!v) return JSON_ERR_OOM;
         v->kind = JSON_INT;
-        v->u.integer = x;
+        v->u.integer = iv;
         *out = v;
         return JSON_OK;
     }
 
-    double ip = 0.0;
-    uint32_t i = start + (neg ? 1u : 0u);
-    for (; i < end; i++) {
-        char c = buf[i];
-        if (c == '.' || c == 'e' || c == 'E') break;
-        ip = ip * 10.0 + (double)(c - '0');
-    }
-
-    double fp = 0.0;
-    if (has_frac) {
-        double base = 0.1;
-        for (i = frac_start; i < end; i++) {
-            char c = buf[i];
-            if (c == 'e' || c == 'E') break;
-            fp += (double)(c - '0') * base;
-            base *= 0.1;
-        }
-    }
-
-    double val = ip + fp;
-    if (neg) val = -val;
-
-    if (has_exp) {
-        double y = 1.0;
-        if (exp_val > 0) while (exp_val--) y *= 10.0;
-        else while (exp_val++) y /= 10.0;
-        val *= y;
-    }
-
+    double d;
+    if (!token_to_double(&num, &d)) return JSON_ERR_INVALID;
+    if (negative) d = -d;
     JsonValue *v = malloc(sizeof(JsonValue));
     if (!v) return JSON_ERR_OOM;
     v->kind = JSON_DOUBLE;
-    v->u.real = val;
+    v->u.real = d;
     *out = v;
     return JSON_OK;
 }
 
-JsonError parse_array(const char *buf, uint32_t len, uint32_t *pos, JsonValue **out) {
-    if (!(*pos < len && buf[*pos] == '[')) return JSON_ERR_INVALID;
-    (*pos)++;
-    json_skip_whitespace(buf, len, pos);
+static JsonError json_parse_array(TokenStream *ts, JsonValue **out) {
+    Token t;
+    if (!ts_expect(ts, TOK_LBRACKET, &t)) return JSON_ERR_INVALID;
 
     JsonValue *arr = malloc(sizeof(JsonValue));
     if (!arr) return JSON_ERR_OOM;
@@ -163,15 +126,22 @@ JsonError parse_array(const char *buf, uint32_t len, uint32_t *pos, JsonValue **
     arr->u.array.items = 0;
     arr->u.array.count = 0;
 
-    if (*pos < len && buf[*pos] == ']') {
-        (*pos)++;
+    Token p;
+    if (!ts_peek(ts, &p)) {
+        json_free(arr);
+        if (ts->tz->failed) return JSON_ERR_INVALID;
+        return JSON_ERR_INVALID;
+    }
+
+    if (p.kind == TOK_RBRACKET) {
+        ts_next(ts, &p);
         *out = arr;
         return JSON_OK;
     }
 
     for (;;) {
         JsonValue *elem = 0;
-        JsonError e = parse_value(buf, len, pos, &elem);
+        JsonError e = json_parse_value(ts, &elem);
         if (e != JSON_OK) {
             json_free(arr);
             return e;
@@ -180,8 +150,8 @@ JsonError parse_array(const char *buf, uint32_t len, uint32_t *pos, JsonValue **
         uint32_t n = arr->u.array.count;
         JsonValue **tmp = malloc((n + 1) * sizeof(JsonValue *));
         if (!tmp) {
-            json_free(elem);
             json_free(arr);
+            json_free(elem);
             return JSON_ERR_OOM;
         }
 
@@ -192,68 +162,75 @@ JsonError parse_array(const char *buf, uint32_t len, uint32_t *pos, JsonValue **
         arr->u.array.items = tmp;
         arr->u.array.count = n + 1;
 
-        json_skip_whitespace(buf, len, pos);
-
-        if (*pos < len && buf[*pos] == ']') {
-            (*pos)++;
-            break;
-        }
-
-        if (!(*pos < len && buf[*pos] == ',')) {
+        if (!ts_peek(ts, &p)) {
             json_free(arr);
+            if (ts->tz->failed) return JSON_ERR_INVALID;
             return JSON_ERR_INVALID;
         }
 
-        (*pos)++;
-        json_skip_whitespace(buf, len, pos);
+        if (p.kind == TOK_RBRACKET) {
+            ts_next(ts, &p);
+            break;
+        }
+
+        if (!ts_expect(ts, TOK_COMMA, &t)) {
+            json_free(arr);
+            if (ts->tz->failed) return JSON_ERR_INVALID;
+            return JSON_ERR_INVALID;
+        }
     }
 
     *out = arr;
     return JSON_OK;
 }
 
-JsonError parse_object(const char *buf, uint32_t len, uint32_t *pos, JsonValue **out) {
-    if (!(*pos < len && buf[*pos] == '{')) return JSON_ERR_INVALID;
-    (*pos)++;
-    json_skip_whitespace(buf, len, pos);
+static JsonError json_parse_object(TokenStream *ts, JsonValue **out) {
+    Token t;
+    if (!ts_expect(ts, TOK_LBRACE, &t)) return JSON_ERR_INVALID;
 
-    JsonValue *obj = malloc(sizeof(JsonValue));
+    JsonValue *obj =malloc(sizeof(JsonValue));
     if (!obj) return JSON_ERR_OOM;
     obj->kind = JSON_OBJECT;
     obj->u.object.pairs = 0;
     obj->u.object.count = 0;
 
-    if (*pos < len && buf[*pos] == '}') {
-        (*pos)++;
+    Token p;
+    if (!ts_peek(ts, &p)) {
+        json_free(obj);
+        if (ts->tz->failed) return JSON_ERR_INVALID;
+        return JSON_ERR_INVALID;
+    }
+
+    if (p.kind == TOK_RBRACE) {
+        ts_next(ts, &p);
         *out = obj;
         return JSON_OK;
     }
 
     for (;;) {
-        JsonValue *ks = 0;
-        JsonError e = parse_string(buf, len, pos, &ks);
-        if (e != JSON_OK) {
-            if (ks) json_free(ks);
+        Token keytok;
+        if (!ts_expect(ts, TOK_STRING, &keytok)) {
+            json_free(obj);
+            if (ts->tz->failed) return JSON_ERR_INVALID;
+            return JSON_ERR_INVALID;
+        }
+
+        if (keytok.length < 2) {
             json_free(obj);
             return JSON_ERR_INVALID;
         }
 
-        string key = ks->u.string;
-        free_sized(ks, sizeof(JsonValue));
+        string key = string_from_literal_length(keytok.start + 1, keytok.length - 2);
 
-        json_skip_whitespace(buf, len, pos);
-
-        if (!(*pos < len && buf[*pos] == ':')) {
+        if (!ts_expect(ts, TOK_COLON, &t)) {
             free_sized(key.data, key.mem_length);
             json_free(obj);
+            if (ts->tz->failed) return JSON_ERR_INVALID;
             return JSON_ERR_INVALID;
         }
 
-        (*pos)++;
-        json_skip_whitespace(buf, len, pos);
-
         JsonValue *val = 0;
-        e = parse_value(buf, len, pos, &val);
+        JsonError e = json_parse_value(ts, &val);
         if (e != JSON_OK) {
             free_sized(key.data, key.mem_length);
             json_free(obj);
@@ -277,40 +254,49 @@ JsonError parse_object(const char *buf, uint32_t len, uint32_t *pos, JsonValue *
         obj->u.object.pairs = tmp;
         obj->u.object.count = n + 1;
 
-        json_skip_whitespace(buf, len, pos);
-
-        if (*pos < len && buf[*pos] == '}') {
-            (*pos)++;
-            break;
-        }
-
-        if (!(*pos < len && buf[*pos] == ',')) {
+        if (!ts_peek(ts, &p)) {
             json_free(obj);
+            if (ts->tz->failed) return JSON_ERR_INVALID;
             return JSON_ERR_INVALID;
         }
 
-        (*pos)++;
-        json_skip_whitespace(buf, len, pos);
+        if (p.kind == TOK_RBRACE) {
+            ts_next(ts, &p);
+            break;
+        }
+
+        if (!ts_expect(ts, TOK_COMMA, &t)) {
+            json_free(obj);
+            if (ts->tz->failed) return JSON_ERR_INVALID;
+            return JSON_ERR_INVALID;
+        }
     }
 
     *out = obj;
     return JSON_OK;
 }
 
-JsonError parse_value(const char *buf, uint32_t len, uint32_t *pos, JsonValue **out) {
-    json_skip_whitespace(buf, len, pos);
-    if (*pos >= len) return JSON_ERR_INVALID;
+static JsonError json_parse_value(TokenStream *ts, JsonValue **out) {
+    Token t;
+    if (!ts_peek(ts, &t)) {
+        if (ts->tz->failed) return JSON_ERR_INVALID;
+        return JSON_ERR_INVALID;
+    }
 
-    char c = buf[*pos];
+    if (t.kind == TOK_STRING) {
+        ts_next(ts,&t);
+        return json_parse_string_token(&t, out);
+    }
 
-    if (c == '"') return parse_string(buf, len, pos, out);
-    if (c == '{') return parse_object(buf, len, pos, out);
-    if (c == '[') return parse_array(buf, len, pos, out);
-    if (c == '-' || (c >= '0' && c <= '9')) return parse_number(buf, len, pos, out);
+    if (t.kind == TOK_NUMBER || (t.kind == TOK_OPERATOR && token_is_operator_token(&t, "-"))) {
+        return json_parse_number_tokens(ts, out);
+    }
 
-    if (c == 't' && *pos + 4 <= len &&
-        buf[*pos] == 't' && buf[*pos+1] == 'r' && buf[*pos+2] == 'u' && buf[*pos+3] == 'e') {
-        *pos += 4;
+    if (t.kind == TOK_LBRACE) return json_parse_object(ts, out);
+    if (t.kind == TOK_LBRACKET) return json_parse_array(ts, out);
+
+    if (t.kind == TOK_IDENTIFIER && t.length == 4 && strncmp(t.start, "true", 4) == 0) {
+        ts_next(ts, &t);
         JsonValue *v = malloc(sizeof(JsonValue));
         if (!v) return JSON_ERR_OOM;
         v->kind = JSON_BOOL;
@@ -319,9 +305,8 @@ JsonError parse_value(const char *buf, uint32_t len, uint32_t *pos, JsonValue **
         return JSON_OK;
     }
 
-    if (c == 'f' && *pos + 5 <= len &&
-        buf[*pos] == 'f' && buf[*pos+1] == 'a' && buf[*pos+2] == 'l' && buf[*pos+3] == 's' && buf[*pos+4] == 'e') {
-        *pos += 5;
+    if (t.kind == TOK_IDENTIFIER && t.length ==5 &&strncmp(t.start, "false", 5) == 0) {
+        ts_next(ts, &t);
         JsonValue *v = malloc(sizeof(JsonValue));
         if (!v) return JSON_ERR_OOM;
         v->kind = JSON_BOOL;
@@ -330,9 +315,9 @@ JsonError parse_value(const char *buf, uint32_t len, uint32_t *pos, JsonValue **
         return JSON_OK;
     }
 
-    if (c == 'n' && *pos + 4 <= len &&
-        buf[*pos] == 'n' && buf[*pos+1] == 'u' && buf[*pos+2] == 'l' && buf[*pos+3] == 'l') {
-        *pos += 4;
+    if (t.kind == TOK_IDENTIFIER && t.length == 4 &&
+        strncmp(t.start, "null", 4) == 0) {
+        ts_next(ts, &t);
         JsonValue *v = malloc(sizeof(JsonValue));
         if (!v) return JSON_ERR_OOM;
         v->kind = JSON_NULL;
@@ -344,14 +329,24 @@ JsonError parse_value(const char *buf, uint32_t len, uint32_t *pos, JsonValue **
 }
 
 JsonError json_parse(const char *buf, uint32_t len, JsonValue **out) {
-    uint32_t pos = 0;
-    JsonError e = parse_value(buf, len, &pos, out);
+    Scanner s = scanner_make(buf, len);
+    Tokenizer tz = tokenizer_make(&s);
+    TokenStream ts;
+    ts_init(&ts, &tz);
+
+    JsonError e =json_parse_value(&ts, out);
     if (e != JSON_OK) return e;
-    json_skip_whitespace(buf, len, &pos);
-    if (pos != len) {
+
+    Token t;
+    if (!ts_peek(&ts, &t)) {
         json_free(*out);
         return JSON_ERR_INVALID;
     }
+    if (t.kind != TOK_EOF) {
+        json_free(*out);
+        return JSON_ERR_INVALID;
+    }
+
     return JSON_OK;
 }
 
@@ -360,15 +355,11 @@ void json_free(JsonValue *v) {
 
     if (v->kind == JSON_STRING) {
         free_sized(v->u.string.data, v->u.string.mem_length);
-    }
-
-    else if (v->kind == JSON_ARRAY) {
+    } else if (v->kind == JSON_ARRAY) {
         for (uint32_t i = 0; i < v->u.array.count; i++) json_free(v->u.array.items[i]);
         if (v->u.array.items)
             free_sized(v->u.array.items, v->u.array.count * sizeof(JsonValue *));
-    }
-
-    else if (v->kind == JSON_OBJECT) {
+    } else if (v->kind == JSON_OBJECT) {
         for (uint32_t i = 0; i < v->u.object.count; i++) {
             free_sized(v->u.object.pairs[i].key.data, v->u.object.pairs[i].key.mem_length);
             json_free(v->u.object.pairs[i].value);
@@ -437,22 +428,6 @@ JsonValue *json_obj_get(const JsonValue *obj, const char *key) {
     return 0;
 }
 
-bool json_obj_get_bool(const JsonValue *obj, const char *key, bool *out) {
-    return json_get_bool(json_obj_get(obj, key), out);
-}
-
-bool json_obj_get_int(const JsonValue *obj, const char *key, int64_t *out) {
-    return json_get_int(json_obj_get(obj, key), out);
-}
-
-bool json_obj_get_double(const JsonValue *obj, const char *key, double *out) {
-    return json_get_double(json_obj_get(obj, key), out);
-}
-
-bool json_obj_get_string(const JsonValue *obj, const char *key, string *out) {
-    return json_get_string(json_obj_get(obj, key), out);
-}
-
 JsonValue *json_new_null() {
     JsonValue *x = malloc(sizeof(JsonValue));
     if (!x) return 0;
@@ -519,7 +494,7 @@ bool json_array_push(JsonValue *arr, JsonValue *elem) {
     tmp[n] = elem;
     if (arr->u.array.items) free_sized(arr->u.array.items, n * sizeof(JsonValue *));
     arr->u.array.items = tmp;
-    arr-> u.array.count = n + 1;
+    arr->u.array.count = n + 1;
     return true;
 }
 
@@ -533,7 +508,7 @@ bool json_obj_set(JsonValue *obj, const char *key, JsonValue *value) {
             free_sized(obj->u.object.pairs[i].key.data, obj->u.object.pairs[i].key.mem_length);
             obj->u.object.pairs[i].key = string_from_literal_length((char *)key, klen);
             json_free(obj->u.object.pairs[i].value);
-            obj->u.object.pairs[i ].value = value;
+            obj->u.object.pairs[i].value = value;
             return true;
         }
     }
@@ -599,7 +574,7 @@ JsonValue *json_clone(const JsonValue *src) {
     return 0;
 }
 
-void serialize_string(const string *s, string *out) {
+static void serialize_string(const string *s, string *out) {
     string_append_bytes(out, "\"", 1);
     for (uint32_t i = 0; i < s->length; i++) {
         char c = s->data[i];
@@ -616,9 +591,9 @@ void serialize_string(const string *s, string *out) {
     string_append_bytes(out, "\"", 1);
 }
 
-void serialize_value(const JsonValue *v, string *out, uint32_t indent, uint32_t level);
+static void serialize_value(const JsonValue *v, string *out, uint32_t indent, uint32_t level);
 
-void serialize_array(const JsonValue *v, string *out, uint32_t indent, uint32_t level) {
+static void serialize_array(const JsonValue *v, string *out, uint32_t indent, uint32_t level) {
     string_append_bytes(out, "[", 1);
 
     uint32_t n = v->u.array.count;
@@ -647,7 +622,7 @@ void serialize_array(const JsonValue *v, string *out, uint32_t indent, uint32_t 
     string_append_bytes(out, "]", 1);
 }
 
-void serialize_object(const JsonValue *v, string *out, uint32_t indent, uint32_t level) {
+static void serialize_object(const JsonValue *v, string *out, uint32_t indent, uint32_t level) {
     string_append_bytes(out, "{", 1);
 
     uint32_t n = v->u.object.count;
@@ -682,7 +657,7 @@ void serialize_object(const JsonValue *v, string *out, uint32_t indent, uint32_t
     string_append_bytes(out, "}", 1);
 }
 
-void serialize_value(const JsonValue *v, string *out, uint32_t indent, uint32_t level) {
+static void serialize_value(const JsonValue *v, string *out, uint32_t indent, uint32_t level) {
     if (v->kind == JSON_NULL) {
         string_append_bytes(out, "null", 4);
         return;
