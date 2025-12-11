@@ -66,6 +66,7 @@ common_ui_config textbox(draw_ctx *ctx, text_ui_config text_config, common_ui_co
 }
 
 common_ui_config rectangle(draw_ctx *ctx, rect_ui_config rect_config, common_ui_config common_config){
+    if ((common_config.background_color >> 24 | rect_config.border_color >> 24) == 0) return common_config;
     uint32_t bx = common_config.point.x;
     uint32_t by = common_config.point.y;
     uint32_t bw = common_config.size.width;
@@ -87,8 +88,8 @@ common_ui_config rectangle(draw_ctx *ctx, rect_ui_config rect_config, common_ui_
     fb_fill_rect(ctx, bx + p,          by - p + bh - b ,  bw - b - twice_p,    b, rect_config.border_color);
     
     return (common_ui_config){
-        .point = {inner_x, inner_y},
-        .size = {inner_w, inner_h},
+        .point = {inner_x + p + b, inner_y + p + b},
+        .size = {inner_w + ((p + b) << 1), inner_h + ((p + b) << 1)},
         .background_color = common_config.background_color,
         .foreground_color = common_config.foreground_color,
         .horizontal_align = common_config.horizontal_align,

@@ -1158,7 +1158,9 @@ int64_t parse_int64(const char* str, size_t size){
 string string_from_const(const char *lit)
 {
     uint32_t len = strlen(lit);
-    return (string){ (char *)lit, len, len + 1};
+    char* nlit = malloc(len+1);
+    strncpy(nlit, lit, len);
+    return (string){ nlit, len, len + 1};
 }
 
 string string_concat(string a, string b)
