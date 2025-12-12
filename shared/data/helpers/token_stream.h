@@ -19,4 +19,5 @@ bool ts_next(TokenStream *ts, Token *t);
 bool ts_expect(TokenStream *ts, TokenKind k, Token *out);
 bool ts_expect_operator(TokenStream *ts, const char *op);
 bool ts_expect_identifier(TokenStream *ts, string *out);
-bool ts_expect_number(TokenStream *ts, double *out_double);
+bool ts_expect_double(TokenStream *ts, double *out_double);
+bool ts_expect_int(TokenStream *ts, int64_t *out_int);

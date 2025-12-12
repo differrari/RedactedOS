@@ -45,7 +45,7 @@ bool ts_expect_identifier(TokenStream *ts, string *out) {
     return true;
 }
 
-bool ts_expect_number(TokenStream *ts,double *out_double) {
+bool ts_expect_double(TokenStream *ts,double *out_double) {
     Token a, b;
     if (!ts_peek(ts, &a))return false;
 
@@ -72,4 +72,47 @@ bool ts_expect_number(TokenStream *ts,double *out_double) {
     ts_next(ts, &a);
     if (!token_is_number(&a)) return false;
     return token_to_double(&a, out_double);
+}
+
+bool ts_expect_int(TokenStream *ts, int64_t *out_int) {
+    Token a, b;
+
+    if (!ts_peek(ts, &a)) return false;
+
+    if (a.kind == TOK_OPERATOR && token_is_operator_token(&a, "-")) {
+        ts_next(ts, &a);
+
+        if (!ts_peek(ts, &b)) return false;
+        if (!token_is_number(&b)) return false;
+
+        ts_next(ts, &b);
+
+        string merged;
+        if (!token_merge_negative_number(&a, &b, &merged)) return false;
+
+        Token tmp;
+        tmp.kind = TOK_NUMBER;
+        tmp.start = merged.data;
+        tmp.length = merged.length;
+        tmp.pos = a.pos;
+
+        int64_t iv;
+        bool ok = token_to_int64(&tmp, &iv);
+
+        string_free(merged);
+        if (!ok) return false;
+
+        *out_int = iv;
+        return true;
+    }
+
+    ts_next(ts, &a);
+    if (!token_is_number(&a)) return false;
+
+    for (uint32_t i = 0; i < a.length; i++) {
+        char c = a.start[i];
+        if (c == '.' || c == 'e' || c == 'E') return false; 
+    }
+
+    return token_to_int64(&a, out_int);
 }
