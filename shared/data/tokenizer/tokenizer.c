@@ -1,13 +1,5 @@
 #include "data/tokenizer/tokenizer.h"
 
-static bool is_alpha(char c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-}
-
-static bool is_alnum(char c) {
-    return is_alpha(c) || (c >= '0' && c <= '9');
-}
-
 static void tokenizer_fail(Tokenizer *t, TokenizerError err) {
     if (t->failed) return;
 

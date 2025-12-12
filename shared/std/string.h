@@ -22,6 +22,18 @@ typedef struct string_list {
 
 extern void free_sized(void*,size_t);
 
+static inline bool is_alpha(char c) {
+    return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'));
+}
+
+static inline bool is_digit(char c) {
+    return (c >= '0' && c <= '9');
+}
+
+static inline bool is_alnum(char c) {
+    return is_alpha(c) || is_digit(c);
+}
+
 uint32_t u64_to_base(char *tmp, uint64_t v, unsigned base, int upper);
 size_t strlen_max(const char *s, uint32_t max_length);
 static inline size_t strlen(const char *s) { return strlen_max(s,0); }
