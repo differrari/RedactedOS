@@ -154,7 +154,8 @@ FS_RESULT open_file_global(const char* path, file* descriptor, system_module **m
 //TODO: exclusive write. Keep track of permissions for opening, if writing is already taken, don't grant. Could allow non-exclusive write as well with manual cursor seek
 FS_RESULT open_file(const char* path, file* descriptor){
     system_module *mod = 0;
-    open_file_global(path, descriptor, &mod);
+    FS_RESULT result = open_file_global(path, descriptor, &mod);
+    if (result != FS_RESULT_SUCCESS) return result;
     open_file_descriptors *of = (open_file_descriptors*)kalloc(page, sizeof(open_file_descriptors), ALIGN_16B, MEM_PRIV_KERNEL);
     of->mfile_id = descriptor->id;
     of->file_id = reserve_fd_id();

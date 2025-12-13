@@ -256,7 +256,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
     sizedptr buf_ptr = walk_directory(count, mbs->first_cluster_of_root_directory, path, read_entry_handler);
     void *buf = (void*)buf_ptr.ptr;
-    if (!buf) return FS_RESULT_NOTFOUND;
+    if (!buf || !buf_ptr.size) return FS_RESULT_NOTFOUND;
     descriptor->id = fid;
     descriptor->size = buf_ptr.size;
     mfile = (module_file*)kalloc(fs_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
