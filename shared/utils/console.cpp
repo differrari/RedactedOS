@@ -207,7 +207,7 @@ void Console::redraw(){
 }
 
 void Console::screen_clear(){
-    fb_clear(dctx, bg_color);
+    if (dctx) fb_clear(dctx, bg_color);
     last_drawn_cursor_x = -1;
     last_drawn_cursor_y = -1;
 }
