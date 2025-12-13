@@ -72,10 +72,34 @@ static inline void draw_desktop(){
         gpu_clear(system_theme.bg_color);
 }
 
+uint32_t calc_average(uint32_t *color, size_t count){
+    uint64_t pixr = 0;
+    uint64_t pixg = 0;
+    uint64_t pixb = 0;
+    for (size_t i = 0; i < count; i++) {
+        pixr += (color[i] >> 16) & 0xFF;
+        pixg += (color[i] >> 8) & 0xFF;
+        pixb += (color[i] >> 0) & 0xFF;
+    }
+    pixr /= count;
+    pixg /= count;
+    pixb /= count;
+    return (0xFF << 24) | ((pixr & 0xFF) << 16) | ((pixg & 0xFF) << 8) | ((pixb & 0xFF) << 0);
+}
+
+uint32_t text_color_for_base(uint32_t base){
+    uint8_t r = (base & 0xFF);
+    uint8_t g = ((base << 8) & 0xFF);
+    uint8_t b = ((base << 16) & 0xFF);
+    uint8_t avg = (r+g+b)/3;
+    if (avg < 0x77) avg = 255-avg;
+    return (0xFF << 24) | (avg << 16) | (avg << 8) | avg; 
+}
+
 int window_system(){
     disable_visual();
     file fd = {};
-    if (false && openf("/boot/redos/desktop.bmp", &fd) == FS_RESULT_SUCCESS){
+    if (openf("/boot/redos/desktop.bmp", &fd) == FS_RESULT_SUCCESS){
         void *imgf = malloc(fd.size);
         readf(&fd, imgf, fd.size);
         image_info info = bmp_get_info(imgf, fd.size);
@@ -88,6 +112,8 @@ int window_system(){
             rescale_image(info.width, info.height, img_info.width, img_info.height, oimg, img);
             free_sized(oimg, info.width * info.height * sizeof(uint32_t));
         }
+        system_theme.bg_color = calc_average(img, img_info.width * img_info.height);
+        system_theme.accent_color = text_color_for_base(system_theme.bg_color);
         free_sized(imgf, fd.size);
         closef(&fd);
     }
