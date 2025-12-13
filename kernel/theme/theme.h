@@ -2,6 +2,7 @@
 
 #include "types.h"
 #include "ui/graphic_types.h"
+#include "dev/driver_base.h"
 
 typedef struct {
     int logo_repeat;
@@ -20,6 +21,7 @@ typedef struct {
 
 typedef struct {
     uint32_t bg_color;
+    uint32_t accent_color;
     uint32_t err_color;
     uint32_t cursor_color_deselected;
     uint32_t cursor_color_selected;
@@ -34,11 +36,10 @@ typedef struct {
     bool use_net;
 } system_config_t;
 
-bool load_theme();
-
 extern boot_theme_t boot_theme;
 extern system_theme_t system_theme;
 extern system_config_t system_config;
+extern system_module theme_mod;
 
 #define COLOR_WHITE 0xFFFFFFFF
 #define COLOR_BLACK 0

@@ -214,6 +214,20 @@ uint64_t syscall_writef(process_t *ctx){
     return write_file(descriptor, buf, size);
 }
 
+uint64_t syscall_sreadf(process_t *ctx){
+    const char *path = (const char*)ctx->PROC_X0;
+    void *buf = (void*)ctx->PROC_X1;
+    size_t size = (size_t)ctx->PROC_X2;
+    return simple_read(path, buf, size);
+}
+
+uint64_t syscall_swritef(process_t *ctx){
+    const char *path = (const char*)ctx->PROC_X0;
+    const void *buf = (void*)ctx->PROC_X1;
+    size_t size = (size_t)ctx->PROC_X2;
+    return simple_write(path, buf, size);
+}
+
 uint64_t syscall_closef(process_t *ctx){
     file *descriptor = (file*)ctx->PROC_X0;
     close_file(descriptor);
@@ -256,6 +270,8 @@ syscall_entry syscalls[] = {
     [FILE_READ_CODE] = syscall_readf,
     [FILE_WRITE_CODE] = syscall_writef,
     [FILE_CLOSE_CODE] = syscall_closef,
+    [FILE_SIMPLE_READ_CODE] = syscall_sreadf,
+    [FILE_SIMPLE_WRITE_CODE] = syscall_swritef,
     [DIR_LIST_CODE] = syscall_dir_list,
 };
 

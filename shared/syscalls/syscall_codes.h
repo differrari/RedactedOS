@@ -35,5 +35,7 @@
 #define FILE_READ_CODE              61
 #define FILE_WRITE_CODE             62
 #define FILE_CLOSE_CODE             63
+#define FILE_SIMPLE_READ_CODE       64
+#define FILE_SIMPLE_WRITE_CODE      65
 
 #define DIR_LIST_CODE               70

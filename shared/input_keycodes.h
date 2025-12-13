@@ -10,6 +10,8 @@
  */
 #pragma once
 
+#include "types.h"
+
 /**
  * Modifier masks - used for the first byte in the HID report.
  * NOTE: The second byte in the report is reserved, 0x00
@@ -304,6 +306,11 @@ static const char hid_keycode_to_char[256] = {
 extern "C" {
 #endif
 char hid_to_char(unsigned char c);
+
+static inline bool printable(unsigned char c){
+    return c >= 'A' && c <='z';
+}
+
 #ifdef __cplusplus
 }
 #endif

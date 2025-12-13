@@ -45,6 +45,8 @@ syscall_def readf, FILE_READ_CODE
 syscall_def writef, FILE_WRITE_CODE
 syscall_def closef, FILE_CLOSE_CODE
 syscall_def dir_list, DIR_LIST_CODE
+syscall_def sreadf, FILE_SIMPLE_READ_CODE
+syscall_def swritef, FILE_SIMPLE_WRITE_CODE
 
 #endif
 syscall_def sleep, SLEEP_CODE

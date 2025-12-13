@@ -3,9 +3,6 @@
 #include "syscalls/syscalls.h"
 #include "math/math.h"
 
-#define COLOR_WHITE 0xFFFFFFFF
-#define COLOR_BLACK 0
-
 #define char_width (char_scale*CHAR_SIZE)
 #define line_height (char_scale*CHAR_SIZE*2)
 
@@ -23,8 +20,6 @@ void Console::initialize(){
     is_initialized = true;
     dctx = get_ctx();
     resize();
-    default_text_color = COLOR_WHITE;
-    text_color = default_text_color;
     screen_clear();
 }
 
@@ -129,7 +124,7 @@ void Console::delete_last_char(){
 
     char* line = row_data + (((scroll_row_offset + cursor_y) % rows) * columns);
     line[cursor_x] = 0;
-    fb_fill_rect(dctx, cursor_x*char_width, cursor_y * line_height, char_width, line_height, COLOR_BLACK);
+    fb_fill_rect(dctx, cursor_x*char_width, cursor_y * line_height, char_width, line_height, bg_color);
     draw_cursor();
     flush(dctx);
 }
@@ -137,13 +132,13 @@ void Console::delete_last_char(){
 void Console::draw_cursor(){
     if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0){
         if ((uint32_t)last_drawn_cursor_x < columns && (uint32_t)last_drawn_cursor_y < rows){
-            fb_fill_rect(dctx, last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height, char_width, line_height, COLOR_BLACK);
+            fb_fill_rect(dctx, last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height, char_width, line_height, bg_color);
             char *prev_line = row_data + (((scroll_row_offset + (uint32_t)last_drawn_cursor_y) % rows) * columns);
             char ch = prev_line[last_drawn_cursor_x];
             if (ch) fb_draw_char(dctx, last_drawn_cursor_x * char_width, (last_drawn_cursor_y * line_height)+(line_height/2), ch, char_scale, text_color);
         }
     }
-    fb_fill_rect(dctx, cursor_x*char_width, cursor_y * line_height, char_width, line_height, COLOR_WHITE);
+    fb_fill_rect(dctx, cursor_x*char_width, cursor_y * line_height, char_width, line_height, text_color);
     last_drawn_cursor_x = (int32_t)cursor_x;
     last_drawn_cursor_y = (int32_t)cursor_y;
 }
@@ -175,7 +170,7 @@ void Console::scroll(){
     char* line = row_data + clear_index * columns;
     memset(line, 0, columns);
 
-    fb_clear(dctx, COLOR_BLACK);
+    fb_clear(dctx, bg_color);
     for (uint32_t y = 0; y < rows; y++) {
         char* l = row_data + (((scroll_row_offset + y) % rows) * columns);
         uint32_t len = line_len(l, columns);
@@ -212,7 +207,7 @@ void Console::redraw(){
 }
 
 void Console::screen_clear(){
-    fb_clear(dctx, COLOR_BLACK);
+    fb_clear(dctx, bg_color);
     last_drawn_cursor_x = -1;
     last_drawn_cursor_y = -1;
 }

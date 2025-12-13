@@ -3,6 +3,12 @@
 #include "input_keycodes.h"
 
 Terminal::Terminal() : Console() {
+    uint32_t color_buf[2] = {};
+    sreadf("/theme", &color_buf, sizeof(uint64_t));
+    default_bg_color = color_buf[0];
+    bg_color = color_buf[0];
+    default_text_color = color_buf[1];
+    text_color = color_buf[1];
     char_scale = 2;
     put_string("> ");
     prompt_length = 2;

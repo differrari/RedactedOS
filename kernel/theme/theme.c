@@ -3,6 +3,8 @@
 #include "config/toml.h"
 #include "default.h"
 #include "console/kio.h"
+#include "math/math.h"
+#include "std/memory.h"
 
 gpu_point default_boot_offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
 boot_theme_t boot_theme = {
@@ -22,6 +24,7 @@ boot_theme_t boot_theme = {
 
 system_theme_t system_theme = {
     .bg_color = BG_COLOR,
+    .accent_color = COLOR_WHITE,
     .err_color = 0xFF000000,
     .cursor_color_deselected = CURSOR_COLOR_DESELECTED,
     .cursor_color_selected = CURSOR_COLOR_SELECTED,
@@ -81,6 +84,7 @@ gpu_point* parse_gpu_point_array(char *value, size_t value_len){
 
 void parse_theme_kvp(const char *key, char *value, size_t value_len, void *context){
     parse_toml(bg_color,                system_theme, parse_hex_u64);
+    parse_toml(accent_color,            system_theme, parse_hex_u64);
     parse_toml(err_color,               system_theme, parse_hex_u64);
     parse_toml(cursor_color_deselected, system_theme, parse_hex_u64);
     parse_toml(cursor_color_selected,   system_theme, parse_hex_u64);
@@ -120,3 +124,21 @@ bool load_theme(){
 
     return true;
 }
+
+size_t read_theme(const char *path, void* buf, size_t size){
+    size = min(size, sizeof(system_theme));
+    kprintf("Accent color %x",system_theme.cursor_color_selected);
+    memcpy(buf, (void*)&system_theme, size);
+    return size;
+}
+
+system_module theme_mod = (system_module){
+    .name = "theme",
+    .mount = "/theme",
+    .init = load_theme,
+    .open = 0,
+    .write = 0,
+    .swrite = 0,
+    .read = 0,
+    .sread = read_theme,
+};

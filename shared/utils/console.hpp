@@ -4,6 +4,9 @@
 #include "data_struct/ring_buffer.hpp"
 #include "ui/draw/draw.h"
 
+#define COLOR_WHITE 0xFFFFFFFF
+#define COLOR_BLACK 0
+
 class Console{
 public:
     Console();
@@ -43,9 +46,11 @@ protected:
     
     static constexpr uint32_t max_rows=128;
 
-    uint32_t default_text_color = 0xFFFFFFFF;
+    uint32_t default_bg_color = COLOR_BLACK;
+    uint32_t default_text_color = COLOR_WHITE;
+    uint32_t bg_color = default_bg_color;
     uint32_t text_color = default_text_color;
-
+    
     int32_t scroll_row_offset = 0;
     char* row_data;
     uint32_t gap_start, gap_end;
