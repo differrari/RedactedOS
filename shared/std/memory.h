@@ -4,7 +4,7 @@ extern "C" {
 
 #include "types.h"
 
-int memcmp(const void *s1, const void *s2, unsigned long count);
+int memcmp(const void *s1, const void *s2, size_t count);
 void* memset(void* dest, int byte, size_t count);
 void* memset32(void* dest, uint32_t val, size_t count);
 void* memcpy(void *dest, const void *src, uint64_t count);

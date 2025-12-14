@@ -1,9 +1,9 @@
 #include "memory.h"
 
-int memcmp(const void *s1, const void *s2, unsigned long count) {
+int memcmp(const void *s1, const void *s2, size_t count) {
     const unsigned char *a = s1;
     const unsigned char *b = s2;
-    for (unsigned long i = 0; i < count; i++) {
+    for (size_t i = 0; i < count; i++) {
         if (a[i] != b[i]) return a[i] - b[i];
     }
     return 0;
