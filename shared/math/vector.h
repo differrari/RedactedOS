@@ -108,7 +108,7 @@ static __inline__ __attribute__((always_inline)) void vst1_f32_b(float* p, float
 static __inline__ __attribute__((always_inline)) float32x2_t vmul_f32_b(float32x2_t a, float32x2_t b) { return a * b; }
 
 static __inline__ __attribute__((always_inline)) float32x2_t vpadd_f32_b(float32x2_t a, float32x2_t b){
-#if defined(__clang__)
+#if defined(__APPLE__)
   return (float32x2_t)__builtin_neon_vpadd_v((int8x8_t)a, (int8x8_t)b, 9);
 #elif defined(__aarch64__)
   return __builtin_aarch64_faddpv2sf(a, b);
@@ -122,7 +122,7 @@ static __inline__ __attribute__((always_inline)) float32x2_t vpadd_f32_b(float32
 }
 
 static __inline__ __attribute__((always_inline)) float32x2_t vmax_f32_b(float32x2_t a, float32x2_t b){
-#if defined(__clang__)
+#if defined(__APPLE__)
   return (float32x2_t)__builtin_neon_vmax_v((int8x8_t)a, (int8x8_t)b, 9);
 #elif defined(__aarch64__)
   return __builtin_aarch64_fmax_nanv2sf(a, b);
@@ -136,7 +136,7 @@ static __inline__ __attribute__((always_inline)) float32x2_t vmax_f32_b(float32x
 }
 
 static __inline__ __attribute__((always_inline)) float32x2_t vdup_n_f32_b(float x){
-#if defined(__clang__)
+#if defined(__APPLE__)
   return (float32x2_t){ x, x };
 #elif defined(__aarch64__)
   return (float32x2_t){ x, x };
@@ -150,7 +150,7 @@ static __inline__ __attribute__((always_inline)) float32x2_t vdup_n_f32_b(float 
 }
 
 static __inline__ __attribute__((always_inline)) float32x2_t vrsqrte_f32_b(float32x2_t s){
-#if defined(__clang__)
+#if defined(__APPLE__)
   return (float32x2_t)__builtin_neon_vrsqrte_v((int8x8_t)s, 9);
 #elif defined(__aarch64__)
   return __builtin_aarch64_rsqrtev2sf(s);
