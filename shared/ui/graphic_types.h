@@ -24,6 +24,11 @@ typedef struct {
 } gpu_point;
 
 typedef struct {
+    int32_t x;
+    int32_t y;
+} int_point;
+
+typedef struct {
     uint32_t width;
     uint32_t height;
 } gpu_size;

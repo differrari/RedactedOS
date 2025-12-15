@@ -31,18 +31,18 @@ static void draw_solid_window(draw_ctx *ctx, gpu_point fixed_point, gpu_size fix
 }
 
 void draw_window(window_frame *frame){
-    gpu_point fixed_point = { global_win_offset.x + frame->x - BORDER_SIZE, global_win_offset.y + frame->y - BORDER_SIZE };
+    int_point fixed_point = { global_win_offset.x + frame->x - BORDER_SIZE, global_win_offset.y + frame->y - BORDER_SIZE };
     gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 };
     draw_ctx *ctx = gpu_get_ctx();
     if (!system_theme.use_window_shadows || focused_window != frame){
-        draw_solid_window(ctx, fixed_point, fixed_size, !frame->pid);
+        draw_solid_window(ctx, (gpu_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
         return;
     }
     DRAW(rectangle(ctx, (rect_ui_config){
         .border_size = BORDER_SIZE * 1.5,
         .border_color = 0x44000000,
-    }, (common_ui_config){ .point = fixed_point, .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5}, }),{
-        draw_solid_window(ctx, fixed_point, fixed_size, !frame->pid);
+    }, (common_ui_config){ .point = (gpu_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5}, }),{
+        draw_solid_window(ctx, (gpu_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
     });
 }
 
@@ -50,7 +50,8 @@ gpu_point click_loc;
 
 static inline void calc_click(void *node){
     window_frame* frame = (window_frame*)node;
-    if (click_loc.x < frame->x || click_loc.y < frame->y || click_loc.x > frame->x + frame->width || click_loc.y > frame->y + frame->height) return;
+    gpu_point p = win_to_screen(frame, click_loc);
+    if (!p.x || !p.y) return;
     sys_set_focus(frame->pid);
 }
 
@@ -133,11 +134,11 @@ int window_system(){
     bool dragging = false;
     while (1){
         if (sys_shortcut_triggered_current(sid_g)){
-            global_win_offset = (gpu_point){0,0};
+            global_win_offset = (int_point){0,0};
             dirty_windows = true;
         }
         if (sys_shortcut_triggered_current(sid_f) && focused_window){
-            global_win_offset = (gpu_point){-focused_window->x + BORDER_SIZE * 5,-focused_window->y + BORDER_SIZE * 5};
+            global_win_offset = (int_point){-focused_window->x + BORDER_SIZE * 5,-focused_window->y + BORDER_SIZE * 5};
             dirty_windows = true;
         }
         if (mouse_button_pressed(MMB)){
@@ -166,11 +167,7 @@ int window_system(){
                 click_loc = end_point;
                 clinkedlist_for_each(window_list, calc_click);
             }
-            if (size.width < 0x100 || size.height < 0x100){
-                drawing = false;
-                continue;
-            }
-            gpu_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
+            int_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
             disable_interrupt();
             create_window(fixed_point.x - global_win_offset.x,fixed_point.y - global_win_offset.y, size.width, size.height);
             drawing = false;

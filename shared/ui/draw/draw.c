@@ -83,7 +83,7 @@ void fb_clear(draw_ctx *ctx, uint32_t color) {
     const uint32_t h = ctx->height;
     const uint32_t pitch = ctx->stride >> 2;
 
-    for (uint32_t y = 0; y < h; ++y) {
+    for (uint32_t y = 0; y < h; y++) {
         uint32_t *p = row;
         uint32_t n = w;
 
@@ -93,7 +93,7 @@ void fb_clear(draw_ctx *ctx, uint32_t color) {
         }
         uint64_t pat = ((uint64_t)color << 32) | color;
         uint64_t *q = (uint64_t*)p;
-        for (uint32_t i = 0; i < (n >> 1); ++i) q[i] = pat;
+        for (uint32_t i = 0; i < (n >> 1); i++) q[i] = pat;
         p = (uint32_t*)(q + (n >> 1));
         if (n & 1) *p = color;
 

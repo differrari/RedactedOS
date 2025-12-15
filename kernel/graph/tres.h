@@ -10,7 +10,7 @@ extern "C" {
 
 typedef struct {
     uint16_t win_id;
-    uint32_t x, y;
+    int32_t x, y;
     uint32_t width, height;
     draw_ctx win_ctx;
     uint16_t pid;
@@ -18,7 +18,9 @@ typedef struct {
 
 void init_window_manager(uintptr_t gpu_driver);
 
-void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+void create_window(int32_t x, int32_t y, uint32_t width, uint32_t height);
+
+gpu_point win_to_screen(window_frame *frame, gpu_point point);
 
 void resize_window(uint32_t width, uint32_t height);
 
@@ -35,7 +37,7 @@ extern clinkedlist_t *window_list;
 
 extern uint16_t win_ids;
 extern bool dirty_windows;
-extern gpu_point global_win_offset;
+extern int_point global_win_offset;
 
 extern window_frame *focused_window;
 

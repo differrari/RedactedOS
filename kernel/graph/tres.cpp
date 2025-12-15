@@ -15,10 +15,10 @@ window_frame *focused_window;
 uint16_t win_ids = 1;
 bool dirty_windows = false;
 
-gpu_point global_win_offset;
+int_point global_win_offset;
 
 typedef struct window_tab {
-    gpu_point offset;
+    int_point offset;
     draw_ctx win_ctx;
     uint16_t pid;
 } window_tab;
@@ -38,18 +38,24 @@ int find_window(void *node, void *key){
     return -1;
 }
 
+gpu_point win_to_screen(window_frame *frame, gpu_point point){
+    int_point frame_loc = (int_point){frame->x+global_win_offset.x, frame->y+global_win_offset.y};
+    if ((int32_t)point.x > frame_loc.x && (int32_t)point.x < frame_loc.x + (int32_t)frame->width && (int32_t)point.y > frame_loc.y && (int32_t)point.y < frame_loc.y + (int32_t)frame->height)
+        return (gpu_point){ point.x-frame->x, point.y-frame->y};
+    return (gpu_point){};
+}
+
 gpu_point convert_mouse_position(gpu_point point){
     process_t *p = get_current_proc();
     clinkedlist_node_t *node = clinkedlist_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
-        if (point.x > frame->x && point.x < frame->x + frame->width && point.y > frame->y && point.y < frame->y + frame->height)
-            return (gpu_point){ point.x-frame->x, point.y-frame->y};
+        return win_to_screen(frame, point);
     }
     return (gpu_point){};
 }
 
-extern "C" void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height){
+extern "C" void create_window(int32_t x, int32_t y, uint32_t width, uint32_t height){
     if (win_ids == UINT16_MAX) return;
     window_frame *frame = (window_frame*)malloc(sizeof(window_frame));
     frame->win_id = win_ids++;
