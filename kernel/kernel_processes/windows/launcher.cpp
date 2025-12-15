@@ -94,6 +94,7 @@ void Launcher::draw_desktop(){
         active_proc = nullptr;
         sys_focus_current();
         load_entries();
+        memset(&ctx, 0, sizeof(draw_ctx));
         request_draw_ctx(&ctx);
         if (ctx.width < 512 || ctx.height < 256){
             resize_draw_ctx(&ctx, max(512,ctx.width), max(256, ctx.height));
