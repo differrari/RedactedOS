@@ -262,15 +262,13 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     kprintfv("Finished translation");
 }
 
-size_t map_section(process_t *proc, uintptr_t base, uintptr_t off, uintptr_t va, sizedptr orig){
-    // kprintf("Mapping section %x (%x) to %x %x. Final %x",orig.ptr, orig.size, base + (va - off),(va - off),base + (va - off) + orig.size);
-    if (orig.size) memcpy((void*)base + (va - off), (void*)orig.ptr, orig.size);
-    return orig.size;
+size_t map_section(process_t *proc, uintptr_t base, uintptr_t off, program_load_data data){
+    // kprintf("Copying %llx from %llx to %llx, representing %llx",data.file_cpy.size,data.file_cpy.ptr,base + (data.virt_mem.ptr - off), data.virt_mem.size);
+    if (data.file_cpy.size) memcpy((void*)base + (data.virt_mem.ptr - off), (void*)data.file_cpy.ptr, data.file_cpy.size);
+    return data.virt_mem.size;
 }
 
-process_t* create_process(const char *name, const char *bundle, sizedptr text, uintptr_t text_va, sizedptr data, uintptr_t data_va, sizedptr rodata, uintptr_t rodata_va, sizedptr bss, uintptr_t bss_va, uintptr_t entry) {
-    
-    if (!text.size) return 0;
+process_t* create_process(const char *name, const char *bundle, program_load_data *data, size_t data_count, uintptr_t entry) {
 
     process_t* proc = init_process();
 
@@ -278,19 +276,12 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
 
     proc->bundle = (char*)bundle;
 
-    uintptr_t min_addr = text_va;
+    uintptr_t min_addr = UINT64_MAX;
     uintptr_t max_addr = 0;
-    if (data.size){
-        if (data_va < min_addr) min_addr = data_va;
-        if (data_va + data.size > max_addr) max_addr = data_va + data.size;
-    } 
-    if (rodata.size){
-        if (rodata_va < min_addr) min_addr = rodata_va;
-        if (rodata_va + rodata.size > max_addr) max_addr = rodata_va + rodata.size;
-    } 
-    if (bss.size){
-        if (bss_va < min_addr) min_addr = bss_va;
-        if (bss_va + bss.size > max_addr) max_addr = bss_va + bss.size;
+    //TODO: This + mapping + alloc + permissions + copy can be unified
+    for (size_t i = 0; i < data_count; i++){
+        if (data[i].virt_mem.ptr < min_addr) min_addr = data[i].virt_mem.ptr;
+        if (data[i].virt_mem.ptr + data[i].virt_mem.size > max_addr) max_addr = data[i].virt_mem.ptr + data[i].virt_mem.size;
     } 
 
     size_t code_size = max_addr-min_addr;
@@ -313,10 +304,8 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
     proc->use_va = true;
     allow_va = false;
     
-    map_section(proc, PHYS_TO_VIRT(dest), min_addr, text_va, text);
-    map_section(proc, PHYS_TO_VIRT(dest), min_addr, data_va, data);
-    map_section(proc, PHYS_TO_VIRT(dest), min_addr, rodata_va, rodata);
-    // map_section(proc, PHYS_TO_VIRT(dest), min_addr, bss_va, bss);
+    for (size_t i = 0; i < data_count; i++)
+        map_section(proc, PHYS_TO_VIRT(dest), min_addr, data[i]);
 
     proc->va = min_addr;
     proc->code = (void*)dest;
@@ -338,7 +327,6 @@ process_t* create_process(const char *name, const char *bundle, sizedptr text, u
         mmu_map_4kb(kttbr, i, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
         mmu_map_4kb(ttbr, proc->last_va_mapping, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
         mmu_map_4kb(ttbr, i, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
-        kprintf("Stack %llx -> %llx",proc->last_va_mapping, i);
         proc->last_va_mapping += PAGE_SIZE;
     }
     memset(PHYS_TO_VIRT_P(stack), 0, stack_size);

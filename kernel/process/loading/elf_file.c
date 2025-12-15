@@ -62,7 +62,6 @@ void get_elf_debug_info(process_t* proc, void* file, size_t filesize){
         return;
     }
 
-    //TODO: use segments for loading, sections for linking
     elf_section_header *sections = (elf_section_header*)(file + header->section_header_offset);
 
     sizedptr debug_line = {};
@@ -92,6 +91,13 @@ void get_elf_debug_info(process_t* proc, void* file, size_t filesize){
     }
 }
 
+uint8_t elf_to_red_permissions(uint8_t flags){
+    uint8_t mem = 0;
+    if ((flags >> 0) & 1) mem |= MEM_EXEC;
+    if ((flags >> 1) & 1) mem |= MEM_RW;
+    return mem;
+}
+
 process_t* load_elf_file(const char *name, const char *bundle, void* file, size_t filesize){
     elf_header *header = (elf_header*)file;
 
@@ -113,68 +119,22 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
 
     // kprintf("Sections %i. String at %i. Offset %x",header->section_num_entries,header->string_table_section_index,header->section_header_offset);
 
-    elf_section_header *sections = (elf_section_header*)(file + header->section_header_offset);
-    // kprintf("String table %s",file + sections[header->string_table_section_index].sh_offset);
-
-    sizedptr debug_line = {};
-    sizedptr debug_line_str = {};
-
-    sizedptr text = {};
-    uintptr_t text_va = 0;
-    sizedptr rodata = {};
-    uintptr_t rodata_va = 0;
-    sizedptr data = {};
-    uintptr_t data_va = 0;
-    sizedptr bss = {};
-    uintptr_t bss_va = 0;
-
-    for (int i = 1; i < header->section_num_entries; i++){
-        // kprintf("Offset %i",sections[i].sh_name);
-        char *section_name = (char*)(file + sections[header->string_table_section_index].sh_offset + sections[i].sh_name);
-        // kprintf("%i. %s. Starts at %x. Virt %x Align %x. Size %x",i, section_name, sections[i].sh_offset,sections[i].sh_addr,sections[i].sh_addralign, sections[i].sh_size);
-        // kprintf("Flags %b",sections[i].sh_flags);
-        sizedptr sectionptr = (sizedptr){(uintptr_t)file + sections[i].sh_offset,sections[i].sh_size};;
-        if (strcmp_case(".text", section_name,true) == 0){
-            text = sectionptr;
-            text_va = sections[i].sh_addr;
-        }
-        if (strcmp_case(".rodata", section_name,true) == 0){
-            rodata = sectionptr;
-            rodata_va = sections[i].sh_addr;
-        }
-        if (strcmp_case(".data", section_name,true) == 0){
-            data = sectionptr;
-            data_va = sections[i].sh_addr;
-        }
-        if (strcmp_case(".bss", section_name,true) == 0){
-            bss = sectionptr;
-            bss_va = sections[i].sh_addr;
-        }
-        if (strcmp_case(".debug_line", section_name,true) == 0){
-            debug_line = sectionptr;
-        }
-        if (strcmp_case(".debug_line_str", file + sections[header->string_table_section_index].sh_offset + sections[i].sh_name,true) == 0) {
-            debug_line_str = sectionptr;
-        }
-        //.got/.got.plt = unresolved addresses to be determined by dynamic linking
+    elf_program_header* program_headers = (elf_program_header*)(file + header->program_header_offset);
+    
+    program_load_data data[header->program_header_num_entries] = {}; 
+    
+    for (int i = 0; i < header->program_header_num_entries; i++){
+        // kprintf("Load to %llx (%llx + %llx) for %llx (%llx) %b at %x", program_headers[i].p_vaddr, program_headers[i].p_offset, program_headers[i].p_offset, program_headers[i].p_memsz, program_headers[i].p_filez, program_headers[i].flags, program_headers[i].alignment);
+        data[i] = (program_load_data){
+            .permissions = elf_to_red_permissions(program_headers[i].flags),
+            .file_cpy = (sizedptr){(uintptr_t)file + program_headers[i].p_offset,program_headers[i].p_filez},
+            .virt_mem = (sizedptr){program_headers[i].p_vaddr,program_headers[i].p_memsz}
+        };
     }
 
-    // kprintf("FILE %x + %x, %x. Entry %x",file, first_program_header->p_offset,filesize, header->program_entry_offset);
+    process_t *proc = create_process(name, bundle, data, header->program_header_num_entries, header->program_entry_offset);
 
-    process_t *proc = create_process(name, bundle, text, text_va, data, data_va, rodata, rodata_va, bss, bss_va, header->program_entry_offset);
-
-    if (debug_line.ptr && debug_line.size){ 
-        proc->debug_lines.size = debug_line.size;
-        void* dl = PHYS_TO_VIRT_P(palloc(debug_line.size, MEM_PRIV_SHARED, MEM_RO, true));
-        memcpy(dl, (void*)debug_line.ptr, debug_line.size);
-        proc->debug_lines.ptr = (uintptr_t)dl;
-    }
-    if (debug_line_str.ptr && debug_line_str.size){ 
-        proc->debug_line_str.size = debug_line_str.size;
-        void* dls = PHYS_TO_VIRT_P(palloc(debug_line_str.size, MEM_PRIV_SHARED, MEM_RO, true));
-        memcpy(dls, (void*)debug_line_str.ptr, debug_line_str.size);
-        proc->debug_line_str.ptr = (uintptr_t)dls;
-    }
+    get_elf_debug_info(proc, file, filesize);
 
     return proc;
 }
