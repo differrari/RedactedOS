@@ -6,11 +6,11 @@ CPPFLAGS := -I.
 CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
 CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
 
-CLEAN_OBJS := $(shell find . -name '*.o')
-CLEAN_DEPS := $(shell find . -name '*.d')
-C_SRC   := $(shell find . -name '*.c')
-CPP_SRC := $(shell find . -name '*.cpp')
-ASM_SRC := $(shell find . -name '*.S')
+CLEAN_OBJS := $(shell find . -name "*.o")
+CLEAN_DEPS := $(shell find . -name "*.d")
+C_SRC   := $(shell find . -name "*.c")
+CPP_SRC := $(shell find . -name "*.cpp")
+ASM_SRC := $(shell find . -name "*.S")
 OBJ     := $(C_SRC:%.c=$(BUILD_DIR)/%.o) $(ASM_SRC:%.S=$(BUILD_DIR)/%.o) $(CPP_SRC:%.cpp=$(BUILD_DIR)/%.o)
 DEP     := $(C_SRC:%.c=$(BUILD_DIR)/%.d) $(ASM_SRC:%.S=$(BUILD_DIR)/%.d) $(CPP_SRC:%.cpp=$(BUILD_DIR)/%.d)
 
