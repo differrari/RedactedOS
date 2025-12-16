@@ -166,10 +166,11 @@ int window_system(){
             if (size.width < 0x10 && size.height < 0x10){
                 click_loc = end_point;
                 clinkedlist_for_each(window_list, calc_click);
+            } else {
+                int_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
+                disable_interrupt();
+                create_window(fixed_point.x - global_win_offset.x,fixed_point.y - global_win_offset.y, size.width, size.height);
             }
-            int_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
-            disable_interrupt();
-            create_window(fixed_point.x - global_win_offset.x,fixed_point.y - global_win_offset.y, size.width, size.height);
             drawing = false;
         }
         disable_interrupt();
