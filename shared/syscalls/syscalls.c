@@ -49,4 +49,8 @@ bool should_close_ctx(){
     return false;
 }
 
+void* calloc(size_t nitems, size_t size){
+    return malloc(nitems * size);
+}
+
 #endif

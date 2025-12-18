@@ -59,6 +59,8 @@ extern void closef(file *descriptor);
 void seek(file *descriptor, int64_t offset, SEEK_TYPE type);
 void* realloc_sized(void* old_ptr, size_t old_size, size_t new_size);
 
+void *calloc(size_t nitems, size_t size);
+
 sizedptr dir_list(const char *path);
 
 static inline void yield(){
