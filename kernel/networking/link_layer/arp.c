@@ -139,7 +139,7 @@ bool arp_resolve_on(uint8_t ifindex, uint32_t ip, uint8_t mac_out[6], uint32_t t
     while (waited < timeout_ms) {
         arp_table_tick_for_l2(ifindex, POLL_MS);
         if (arp_table_get_for_l2(ifindex, ip, mac_out)) return true;
-        sleep(POLL_MS);
+        msleep(POLL_MS);
         waited += POLL_MS;
     }
     return false;
@@ -235,6 +235,6 @@ int arp_daemon_entry(int argc, char* argv[]){
     const uint32_t tick_ms = 10000;
     while (1){
         arp_tick_all(tick_ms);
-        sleep(tick_ms);
+        msleep(tick_ms);
     }
 }

@@ -47,7 +47,7 @@ int sntp_daemon_entry(int argc, char* argv[]){
     uint32_t attempts = 0;
     while (attempts < SNTP_BOOTSTRAP_MAX_RETRY){
         if (!any_ipv4_configured_nonlocal()){
-            sleep(500);
+            msleep(500);
             continue;
         }
         sntp_result_t r = sntp_poll_once(SNTP_QUERY_TIMEOUT_MS);
@@ -57,11 +57,11 @@ int sntp_daemon_entry(int argc, char* argv[]){
         attempts++;
         uint32_t backoff_ms = (1u << (attempts <= 4 ? attempts : 4)) * 250u;
         uint32_t jitter = backoff_ms / 10u;
-        sleep(backoff_ms + (jitter / 2u));
+        msleep(backoff_ms + (jitter / 2u));
     }
     for(;;){
         sntp_poll_once(SNTP_QUERY_TIMEOUT_MS);
-        sleep(SNTP_POLL_INTERVAL_MS);
+        msleep(SNTP_POLL_INTERVAL_MS);
     }
     return 1;
 }

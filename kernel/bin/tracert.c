@@ -177,7 +177,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
                 }
             }
 
-            if (p + 1 < o->count) sleep(o->interval_ms);
+            if (p + 1 < o->count) msleep(o->interval_ms);
         }
 
         if (any) {

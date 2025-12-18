@@ -318,7 +318,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
                     free_flow_entry(idx);
                     return false;
                 }
-                sleep(interval);
+                msleep(interval);
                 elapsed += interval;
             }
         }
@@ -380,7 +380,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx) {
             while (elapsed < wait_ms) {
                 if (flow_ctx->ack_received >= flow_ctx->expected_ack) break;
                 if (flow->state == TCP_STATE_CLOSED) return TCP_RESET;
-                sleep(interval);
+                msleep(interval);
                 elapsed += interval;
             }
             if (flow_ctx->ack_received >= flow_ctx->expected_ack) break;
@@ -429,7 +429,7 @@ tcp_result_t tcp_flow_close(tcp_data *flow_ctx) {
         uint64_t elapsed = 0;
         while (elapsed < max_wait) {
             if (flow->state == TCP_STATE_CLOSED) break;
-            sleep(interval);
+            msleep(interval);
             elapsed += interval;
         }
 

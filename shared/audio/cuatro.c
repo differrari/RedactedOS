@@ -88,7 +88,7 @@ bool audio_play_sync(audio_samples *audio, uint32_t delay_ms, AUDIO_LIFETIME lif
     int8_t lineId = mixer_open_line();
     if (lineId < 0 || false == mixer_play_async(lineId, audio, delay_ms, life, level, pan)) return false;
     do {
-        sleep(5);
+        msleep(5);
     } while (mixer_still_playing(lineId));
     mixer_close_line(lineId);
     return true;

@@ -23,7 +23,7 @@ extern bool read_key(keypress *kp);
 extern bool read_event(kbd_event *event);
 extern void get_mouse_status(mouse_data *in);
 
-extern void sleep(uint64_t time);
+extern void msleep(uint64_t time);
 extern void halt(int32_t exit_code);
 extern uint16_t exec(const char* prog_name, int argc, const char* argv[]);
 
@@ -64,7 +64,7 @@ void *calloc(size_t nitems, size_t size);
 sizedptr dir_list(const char *path);
 
 static inline void yield(){
-    sleep(0);
+    msleep(0);
 }
 
 #ifdef __cplusplus

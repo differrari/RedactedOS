@@ -12,7 +12,6 @@
 #include "process/scheduler.h"
 #include "sysregs.h"
 #include "std/memory.h"
-#include <stdint.h>
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01

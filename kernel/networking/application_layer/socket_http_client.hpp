@@ -48,7 +48,7 @@ public:
                 resp.status_code = (HttpError)SOCK_ERR_PROTO;
                 return resp;
             }
-            sleep(10);
+            msleep(10);
         }
 
         {
@@ -100,7 +100,7 @@ public:
                     idle = 0;
                 } else {
                     ++idle;
-                    sleep(20);
+                    msleep(20);
                 }
             }
         }

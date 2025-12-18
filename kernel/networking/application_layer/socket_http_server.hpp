@@ -34,7 +34,7 @@ public:
             hdr_end = find_crlfcrlf(buf.data, buf.length);
             if (hdr_end >= 0) break;
             if (++attempts > 100) return req;
-            sleep(10);
+            msleep(10);
         }
 
         uint32_t i = 0;
@@ -89,7 +89,7 @@ public:
                     idle = 0;
                 } else {
                     ++idle;
-                    sleep(20);
+                    msleep(20);
                 }
             }
         }

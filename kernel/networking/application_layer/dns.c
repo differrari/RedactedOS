@@ -129,7 +129,7 @@ static dns_result_t perform_dns_query_once_a(socket_handle_t sock, uint32_t dns_
             if (pr == DNS_OK){ *out_ip = ip_host; return DNS_OK; }
             if (pr == DNS_ERR_NXDOMAIN) return pr;
         } else {
-            sleep(50);
+            msleep(50);
             waited_ms += 50;
         }
     }
@@ -167,7 +167,7 @@ static dns_result_t perform_dns_query_once_aaaa(socket_handle_t sock, uint32_t d
             if (pr == DNS_OK) return DNS_OK;
             if (pr == DNS_ERR_NXDOMAIN) return pr;
         } else {
-            sleep(50);
+            msleep(50);
             waited_ms += 50;
         }
     }

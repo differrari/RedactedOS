@@ -189,7 +189,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
             write_file(fd, "\n", 1);
         }
 
-        if (i + 1 < o->count) sleep(o->interval_ms);
+        if (i + 1 < o->count) msleep(o->interval_ms);
     }
 
     write_file(fd, "\n", 1);
