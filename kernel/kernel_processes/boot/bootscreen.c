@@ -139,7 +139,7 @@ int bootscreen(){
             boot_draw_lines(current_point, next_point, screen_size, boot_theme.logo_repeat, 5);
             current_point = next_point;
         }
-        sleep(1000);
+        msleep(1000);
     }
     return 0;
 }

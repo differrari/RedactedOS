@@ -173,7 +173,7 @@ static bool udp_wait_for_type_on(socket_handle_t sock, uint8_t wanted, uint32_t 
             if (outsp) *outsp = (sizedptr){ copy, (uint32_t)r };
             return true;
         } else {
-            sleep(50);
+            msleep(50);
             waited += 50;
         }
     }
@@ -206,7 +206,7 @@ static bool udp_wait_for_ack_or_nak(socket_handle_t sock, uint32_t expect_xid, c
             if (out_msg_type) *out_msg_type = mtype;
             return true;
         } else {
-            sleep(50);
+            msleep(50);
             waited += 50;
         }
     }
@@ -584,14 +584,14 @@ int dhcp_daemon_entry(int argc, char* argv[]) {
     dhcp_set_pid(g_pid_dhcpd);
     for (;;) {
         ensure_inventory();
-        if (g_if_count == 0) { sleep(250); continue; }
+        if (g_if_count == 0) { msleep(250); continue; }
         for (int i = 0; i < g_if_count; i++) {
             l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(g_if[i].l3_id);
             if (!v4) continue;
             if (v4->mode == IPV4_CFG_DHCP) fsm_once_for(&g_if[i]);
         }
         maybe_send_inform();
-        sleep(100);
+        msleep(100);
         tick_timers();
     }
 }

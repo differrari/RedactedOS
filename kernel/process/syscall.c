@@ -104,7 +104,7 @@ uint64_t syscall_char_size(process_t *ctx){
     return gpu_get_char_size(ctx->PROC_X0);
 }
 
-uint64_t syscall_sleep(process_t *ctx){
+uint64_t syscall_msleep(process_t *ctx){
     syscall_depth--;
     sleep_process(ctx->PROC_X0);
     return 0;
@@ -254,7 +254,7 @@ syscall_entry syscalls[] = {
     [GPU_FLUSH_DATA_CODE] = syscall_gpu_flush,
     [GPU_CHAR_SIZE_CODE] = syscall_char_size,
     [RESIZE_DRAW_CTX_CODE] = syscall_gpu_resize_ctx,
-    [SLEEP_CODE] = syscall_sleep,
+    [SLEEP_CODE] = syscall_msleep,
     [HALT_CODE] = syscall_halt,
     [EXEC_CODE] = syscall_exec,
     [GET_TIME_CODE] = syscall_get_time,

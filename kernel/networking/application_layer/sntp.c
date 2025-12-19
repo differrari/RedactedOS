@@ -155,7 +155,7 @@ sntp_result_t sntp_poll_once(uint32_t timeout_ms){
                 }
             }
         } else {
-            sleep(50);
+            msleep(50);
             waited += 50;
         }
 

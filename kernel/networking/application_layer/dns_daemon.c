@@ -15,6 +15,6 @@ int dns_deamon_entry(int argc, char* argv[]){
     (void)argc; (void)argv;
     dns_set_pid(get_current_proc_pid());
     g_sock = udp_socket_create(SOCK_ROLE_CLIENT, g_pid_dnsd);
-    for(;;){ sleep(250); }
+    for(;;){ msleep(250); }
     return 1;
 }

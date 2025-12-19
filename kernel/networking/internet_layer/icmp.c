@@ -139,7 +139,7 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
 
         uint32_t now = (uint32_t)get_time();
         if (now - start >= timeout_ms) break;
-        sleep(5);
+        msleep(5);
     }
 
     if (out) {

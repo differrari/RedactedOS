@@ -64,7 +64,7 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
         recvd = socket_recvfrom_udp_ex(sock, recv_buf, sizeof(recv_buf), &src);
         if (recvd > 0)
             break;
-        sleep(INTERVAL_MS);
+        msleep(INTERVAL_MS);
         waited += INTERVAL_MS;
     }
 
@@ -298,7 +298,7 @@ static void print_info() {
         const uint32_t timeout = 10000;
         while (!timer_is_synchronised() && waited < timeout) {
             if ((waited % 1000) == 0) kprintf("[TIME] waiting SNTP sync...");
-            sleep(step);
+            msleep(step);
             waited += step;
 
         }
@@ -379,7 +379,7 @@ static int ip_waiter_entry(int argc, char* argv[]) {
     uint32_t waited = 0;
     while (!any_ipv4_ready()) {
         if ((waited % 1000) == 0) kprintf("[NET] ip_waiter: waiting for ipv4...");
-        sleep(200);
+        msleep(200);
         waited += 200;
     }
     create_kernel_process("net_test", net_test_entry, 0, 0);

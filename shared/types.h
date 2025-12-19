@@ -69,8 +69,8 @@ typedef signed int int32_t;
 typedef signed long long int64_t;
 typedef signed long long intptr_t;
 #else
-typedef signed long int int64_t;
-typedef signed long int intptr_t;
+typedef long long int64_t;
+typedef long long intptr_t;
 #endif
 typedef signed short int16_t;
 typedef signed char int8_t;

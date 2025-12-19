@@ -147,7 +147,7 @@ int NetworkDispatch::net_task()
             if (processed) did_work = true;
         }
 
-        if (!did_work) sleep(0);//TODO: manage it with an event
+        if (!did_work) msleep(0);//TODO: manage it with an event
     }
 }
 
