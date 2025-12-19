@@ -29,6 +29,9 @@ void gpu_setup_cursor(gpu_point initial_loc);
 void gpu_update_cursor(gpu_point new_loc, bool full);
 void gpu_set_cursor_pressed(bool pressed);
 
+void gpu_create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *ctx);
+void gpu_resize_window(uint32_t width, uint32_t height, draw_ctx *win_ctx);
+
 extern system_module graphics_module;
 
 #ifdef __cplusplus

@@ -5,6 +5,8 @@ include ../common.mk
 
 CPPFLAGS := -I. -I../shared -I../user -DXHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
 
+MODULES := $(wildcard ../modules/*.a)
+
 ifeq ($(QEMU),true)
   CPPFLAGS += -DQEMU
 endif
@@ -36,8 +38,8 @@ prepare:
 	mkdir -p $(BUILD_DIR)
 
 $(TARGET): ../shared/klibshared.a prepare $(OBJ)
-	echo $(LDFLAGS)
-	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/klibshared.a $(BUILD_DIR)/boot.o
+	echo $(LIBMODULES)
+	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/klibshared.a $(MODULES) $(BUILD_DIR)/boot.o
 	$(OBJCOPY) -O binary $(ELF) $@
 	cp $(ELF) ../fs/kernel.elf
 

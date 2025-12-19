@@ -1,14 +1,13 @@
-#include "graphics.h"
+#include "graph/graphics.h"
 #include "console/kio.h"
 
 #include "drivers/virtio_gpu_pci/virtio_gpu_pci.hpp"
 #include "drivers/framebuffer_gpus/ramfb_driver/ramfb.hpp"
 #include "drivers/framebuffer_gpus/videocore/videocore.hpp"
 
-#include "std/std.h"
 #include "hw/hw.h"
 
-#include "tres.h"
+#include "graph/tres.h"
 
 static gpu_size screen_size;
 static bool _gpu_ready;
@@ -109,6 +108,14 @@ void gpu_update_cursor(gpu_point new_loc, bool full){
 
 void gpu_set_cursor_pressed(bool pressed){
     gpu_driver->set_cursor_pressed(pressed);
+}
+
+void gpu_create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *ctx){
+    gpu_driver->create_window(x, y, width, height, ctx);
+}
+
+void gpu_resize_window(uint32_t width, uint32_t height, draw_ctx *win_ctx){
+    gpu_driver->resize_window(width, height, win_ctx);
 }
 
 system_module graphics_module = {
