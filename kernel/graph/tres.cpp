@@ -106,13 +106,24 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame){
     int32_t sx = global_win_offset.x + frame->x;
     int32_t sy = global_win_offset.y + frame->y;
 
-    if (sx >= (int32_t)screen_ctx->width || sy >= (int32_t)screen_ctx->height) return;
+    if (sx >= (int32_t)screen_ctx->width || sy >= (int32_t)screen_ctx->height || sx + win_ctx.width <= 0 || sy + win_ctx.height <= 0) return;
 
     int32_t w = win_ctx.width;
     int32_t h = win_ctx.height;
 
     uint32_t ox = 0;
     uint32_t oy = 0;
+    
+    if (sx < 0){
+        w -= -sx;
+        ox = -sx;
+        sx = 0;
+    }
+    if (sy < 0){
+        h -= -sy;
+        oy = -sy;
+        sy = 0;
+    }
 
     if (sx + w > (int32_t)screen_ctx->width) w = screen_ctx->width - sx;
     else if (sx < 0){ w += sx; ox = -sx; sx = 0; }

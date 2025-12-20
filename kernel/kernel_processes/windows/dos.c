@@ -6,8 +6,6 @@
 #include "console/kio.h"
 #include "math/math.h"
 #include "graph/tres.h"
-#include "dev/driver_base.h"
-#include "dev/module_loader.h"
 #include "syscalls/syscalls.h"
 #include "exceptions/irq.h"
 #include "image/bmp.h"
@@ -16,7 +14,7 @@
 
 #define BORDER_SIZE 3
 
-static void draw_solid_window(draw_ctx *ctx, gpu_point fixed_point, gpu_size fixed_size, bool fill){
+static void draw_solid_window(draw_ctx *ctx, int_point fixed_point, gpu_size fixed_size, bool fill){
     DRAW(rectangle(ctx, (rect_ui_config){
         .border_size = BORDER_SIZE,
         .border_color = system_theme.bg_color + 0x222222
@@ -35,14 +33,14 @@ void draw_window(window_frame *frame){
     gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 };
     draw_ctx *ctx = gpu_get_ctx();
     if (!system_theme.use_window_shadows || focused_window != frame){
-        draw_solid_window(ctx, (gpu_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
+        draw_solid_window(ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
         return;
     }
     DRAW(rectangle(ctx, (rect_ui_config){
         .border_size = BORDER_SIZE * 1.5,
         .border_color = 0x44000000,
-    }, (common_ui_config){ .point = (gpu_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5}, }),{
-        draw_solid_window(ctx, (gpu_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
+    }, (common_ui_config){ .point = (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5}, }),{
+        draw_solid_window(ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
     });
 }
 
@@ -124,7 +122,7 @@ int window_system(){
     };
     uint16_t sid_g = sys_subscribe_shortcut_current(kp_g);
     keypress kp_f = { 
-        .modifier = KEY_MOD_LCTRL,
+        .modifier = KEY_MOD_RCTRL,
         .keys = { KEY_F, 0, 0, 0, 0, 0}
     };
     uint16_t sid_f = sys_subscribe_shortcut_current(kp_f);
@@ -132,6 +130,7 @@ int window_system(){
     gpu_point start_point = {0,0};
     bool drawing = false;
     bool dragging = false;
+    
     while (1){
         if (sys_shortcut_triggered_current(sid_g)){
             global_win_offset = (int_point){0,0};

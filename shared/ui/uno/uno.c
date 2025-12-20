@@ -22,16 +22,16 @@ gpu_size calculate_label_size(text_ui_config text_config){
     return (gpu_size){size * num_chars, (size + 2) * num_lines };
 }
 
-gpu_point calculate_label_pos(text_ui_config text_config, common_ui_config common_config){
+int_point calculate_label_pos(text_ui_config text_config, common_ui_config common_config){
     gpu_size s = calculate_label_size(text_config);
-    gpu_point point = common_config.point;
+    int_point point = common_config.point;
     switch (common_config.horizontal_align)
     {
     case Trailing:
-        point.x = (s.width>=common_config.size.width) ? common_config.point.x : (common_config.point.x + (common_config.size.width - s.width));
+        point.x = (s.width>=common_config.size.width) ? common_config.point.x : (int32_t)(common_config.point.x + (common_config.size.width - s.width));
         break;
     case HorizontalCenter:
-        point.x = (s.width>=common_config.size.width) ? common_config.point.x : (common_config.point.x + ((common_config.size.width - s.width)/2));
+        point.x = (s.width>=common_config.size.width) ? common_config.point.x : (int32_t)(common_config.point.x + ((common_config.size.width - s.width)/2));
         break;
     default:
         break;
@@ -40,10 +40,10 @@ gpu_point calculate_label_pos(text_ui_config text_config, common_ui_config commo
     switch (common_config.vertical_align)
     {
     case Bottom:
-        point.y = (s.height>=common_config.size.height) ? common_config.point.y : (common_config.point.y + (common_config.size.height - s.height));
+        point.y = (s.height>=common_config.size.height) ? common_config.point.y : (int32_t)(common_config.point.y + (common_config.size.height - s.height));
         break;
     case VerticalCenter:
-        point.y = (s.height>=common_config.size.height) ? common_config.point.y : (common_config.point.y + ((common_config.size.height - s.height)/2));
+        point.y = (s.height>=common_config.size.height) ? common_config.point.y : (int32_t)(common_config.point.y + ((common_config.size.height - s.height)/2));
         break;
     default:
         break;
@@ -54,7 +54,7 @@ gpu_point calculate_label_pos(text_ui_config text_config, common_ui_config commo
 
 common_ui_config label(draw_ctx *ctx, text_ui_config text_config, common_ui_config common_config){
     if (!text_config.text || text_config.font_size==0) return common_config;
-    gpu_point p = calculate_label_pos(text_config, common_config);
+    int_point p = calculate_label_pos(text_config, common_config);
     fb_draw_string(ctx, text_config.text, p.x, p.y, text_config.font_size, common_config.foreground_color);
     return common_config;
 }
@@ -67,16 +67,16 @@ common_ui_config textbox(draw_ctx *ctx, text_ui_config text_config, common_ui_co
 
 common_ui_config rectangle(draw_ctx *ctx, rect_ui_config rect_config, common_ui_config common_config){
     if ((common_config.background_color >> 24 | rect_config.border_color >> 24) == 0) return common_config;
-    uint32_t bx = common_config.point.x;
-    uint32_t by = common_config.point.y;
+    int32_t bx = common_config.point.x;
+    int32_t by = common_config.point.y;
     uint32_t bw = common_config.size.width;
     uint32_t bh = common_config.size.height;
     uint32_t b = rect_config.border_size;
     uint32_t p = rect_config.border_padding;
     uint32_t twice_p = p << 1;
     
-    uint32_t inner_x = bx + (rect_config.border_padding ? 0 : b);
-    uint32_t inner_y = by + (rect_config.border_padding ? 0 : b);
+    int32_t inner_x = bx + (rect_config.border_padding ? 0 : b);
+    int32_t inner_y = by + (rect_config.border_padding ? 0 : b);
     uint32_t twice_b = rect_config.border_padding ? 0 : b << 1;
     uint32_t inner_w = (bw > twice_b) ? (bw - twice_b) : 0;
     uint32_t inner_h = (bh > twice_b) ? (bh - twice_b) : 0;

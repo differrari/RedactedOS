@@ -1,7 +1,6 @@
 #include "draw.h"
 #include "ui/font8x8_bridge.h"
 #include "std/memory.h"
-#include "math/math.h"
 
 int try_merge(gpu_rect* a, gpu_rect* b) {
     uint32_t ax1 = a->point.x;
@@ -143,10 +142,18 @@ void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
 }
 
 void fb_fill_rect(draw_ctx *ctx, int32_t x, int32_t y, uint32_t width, uint32_t height, color color){
-    if (x >= (int32_t)ctx->width || y >= (int32_t)ctx->height) return;
+    if (x >= (int32_t)ctx->width || y >= (int32_t)ctx->height || x + (int32_t)width < 0 || y + (int32_t)height < 0) return;
 
     int32_t w = width;
     int32_t h = height;
+    if (x < 0){
+        width -= -x;
+        x = 0;
+    }
+    if (y < 0){
+        height -= -y;
+        y = 0;
+    }
     if (x + w > (int32_t)ctx->width) w = ctx->width - x;
     else if (x < 0){ w += x; x = 0; }
     if (y + h > (int32_t)ctx->height) h = ctx->height - y;

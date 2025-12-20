@@ -28,7 +28,7 @@ typedef struct rect_ui_config {
 } rect_ui_config;
 
 typedef struct common_ui_config {
-    gpu_point point;
+    int_point point;
     gpu_size size;
     HorizontalAlignment horizontal_align;
     VerticalAlignment vertical_align;
