@@ -65,9 +65,9 @@ typedef unsigned char uint8_t;
 #define N_ARR(arr) (sizeof(arr)/sizeof((arr)[0]))
 
 typedef signed int int32_t;
-#ifdef _WIN32
-typedef signed long long int64_t;
-typedef signed long long intptr_t;
+#ifdef __linux__
+typedef long int int64_t;
+typedef long int intptr_t;
 #else
 typedef long long int64_t;
 typedef long long intptr_t;
