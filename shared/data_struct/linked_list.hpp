@@ -5,6 +5,7 @@ extern "C" {
 #include "linked_list.h"
 }
 
+//TODO: review allocs & C
 template <typename T>
 class LinkedList {
 public:

@@ -53,4 +53,8 @@ void* calloc(size_t nitems, size_t size){
     return malloc(nitems * size);
 }
 
+void* zalloc(size_t size){
+    return malloc(size);
+}
+
 #endif

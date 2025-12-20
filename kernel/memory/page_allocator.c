@@ -222,7 +222,7 @@ void mark_used(uintptr_t address, size_t pages)
 #define PAGE_INDEX_LIMIT (PAGE_SIZE-sizeof(page_index_hdr))/sizeof(page_index_entry)
 
 //TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
-void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level, uintptr_t page_va, uintptr_t *next_va, uintptr_t *ttbr){
+void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, uintptr_t page_va, uintptr_t *next_va, uintptr_t *ttbr){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
     if (!page) return 0;
     size = (size + alignment - 1) & ~(alignment - 1);
@@ -311,13 +311,13 @@ void* kalloc_inner(void *page, uint64_t size, uint16_t alignment, uint8_t level,
 }
 
 //TODO: rather than kalloc, it should be palloc that does translations
-void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
+void* kalloc(void *page, size_t size, uint16_t alignment, uint8_t level){
     void* ptr = kalloc_inner(page, size, alignment, level, 0, 0, 0);
     if (level == MEM_PRIV_KERNEL) ptr = PHYS_TO_VIRT_P(ptr);
     return ptr;
 }
 
-void kfree(void* ptr, uint64_t size) {
+void kfree(void* ptr, size_t size) {
     kprintfv("[page_alloc_free] Freeing block at %x size %x",(uintptr_t)ptr, size);
 
     memset32((void*)ptr,0xDEADBEEF,size);

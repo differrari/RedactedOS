@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+//TODO: review allocs & C
 typedef struct cchunked_node {
     uint64_t count;
     struct cchunked_node* next;
@@ -18,8 +19,8 @@ typedef struct cchunked_list {
     cchunked_node_t* tail;
 } cchunked_list_t;
 
-void* malloc(uint64_t size);
-void free_sized(void* ptr, uint64_t size);
+void* malloc(size_t size);
+void free_sized(void* ptr, size_t size);
 
 cchunked_list_t* cchunked_list_create(uint64_t chunkSize);
 void cchunked_list_destroy(cchunked_list_t* list);

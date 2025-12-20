@@ -49,7 +49,7 @@ static void chm_update_threshold(chashmap_t* map){
     map->resize_threshold = (map->capacity*3)/4;
 }
 
-chashmap_t* chashmap_create_alloc(uint64_t initial_capacity, void* (*alloc)(uint64_t size),void (*mfree)(void* ptr, size_t size)){
+chashmap_t* chashmap_create_alloc(uint64_t initial_capacity, void* (*alloc)(size_t size),void (*mfree)(void* ptr, size_t size)){
     uint64_t cap = chm_next_pow2(initial_capacity ? initial_capacity : 8);
     chashmap_t* m = (chashmap_t*)alloc((uint64_t)sizeof(chashmap_t));
 
@@ -94,7 +94,7 @@ void chashmap_destroy(chashmap_t* map){
     chm_free(map, map, (uint64_t)sizeof(chashmap_t));
 }
 
-void chashmap_set_allocator(chashmap_t* map, void* (*alloc)(uint64_t), void (*dealloc)(void*, uint64_t)){
+void chashmap_set_allocator(chashmap_t* map, void* (*alloc)(size_t), void (*dealloc)(void*, size_t)){
     if (!map) return;
     map->alloc = alloc;
     map->free = dealloc;

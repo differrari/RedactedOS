@@ -5,6 +5,7 @@
 #include "std/allocator.hpp"
 #include "syscalls/syscalls.h"
 
+//TODO: review allocs & C
 template<typename T>
 class Array {
 public:

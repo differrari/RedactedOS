@@ -4,6 +4,7 @@
 #include "std/memory.h"
 #include "queue.h"
 
+//TODO: review allocs & C
 template<typename T>
 class Queue {
 public:

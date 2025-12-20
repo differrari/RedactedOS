@@ -2,7 +2,7 @@
 #include "syscalls/syscalls.h"
 
 clinkedlist_t *clinkedlist_create(){
-    uintptr_t mem = (uintptr_t)malloc(sizeof(clinkedlist_t));
+    uintptr_t mem = (uintptr_t)zalloc(sizeof(clinkedlist_t));
     if((void *)mem == NULL) return NULL;
     clinkedlist_t *list = (clinkedlist_t *)mem;
     list->head = NULL;
@@ -13,7 +13,7 @@ clinkedlist_t *clinkedlist_create(){
 
 void* clinkedlist_alloc(clinkedlist_t *list, size_t size){
     if (list->alloc) return list->alloc(size);
-    return malloc(size);
+    return zalloc(size);
 }
 
 void clinkedlist_free(clinkedlist_t *list, void*ptr, size_t size){
@@ -39,7 +39,7 @@ clinkedlist_t *clinkedlist_clone(const clinkedlist_t *list){
     clinkedlist_node_t *it = list->head;
     while(it){
         if(clone->tail){
-            clinkedlist_node_t *new_node = (clinkedlist_node_t *)malloc(sizeof(clinkedlist_node_t));
+            clinkedlist_node_t *new_node = (clinkedlist_node_t *)zalloc(sizeof(clinkedlist_node_t));
             new_node->data = it->data;
             new_node->next = NULL;
             clone->tail->next = new_node;

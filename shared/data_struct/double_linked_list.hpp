@@ -5,6 +5,7 @@ extern "C" {
 #include "double_linked_list.h"
 }
 
+//TODO: review allocs & C
 template<typename T>
 class DoubleLinkedList {
 private:

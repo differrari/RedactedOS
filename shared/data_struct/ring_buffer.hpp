@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 
+//TODO: review allocs & C
 template<typename T, uint64_t Capacity>
 class RingBuffer {
 private:

@@ -43,46 +43,44 @@ extern "C" {
 } while(0)
 
 typedef unsigned int uint32_t;
-#ifdef _WIN32
-typedef unsigned long long size_t;
+#ifndef CROSS
+typedef unsigned long int size_t;
 typedef unsigned long long uint64_t;
 typedef unsigned long long uintptr_t;
-#else
-typedef unsigned long int size_t;
-typedef unsigned long int uint64_t;
-typedef unsigned long int uintptr_t;
-#endif
-typedef unsigned short uint16_t;
-typedef unsigned char uint8_t;
 
 #define UINT64_MAX 0xFFFFFFFFFFFFFFFFULL
 #define UINT16_MAX 0xFFFF
 #define UINT32_MAX 0xFFFFFFFF
 #define UINT8_MAX 0xFF
 
+typedef unsigned short uint16_t;
+typedef unsigned char uint8_t;
+
 #define FLOAT_MAX 3.40282347e+38F
 
-#define N_ARR(arr) (sizeof(arr)/sizeof((arr)[0]))
-
 typedef signed int int32_t;
-#ifdef __linux__
-typedef long int int64_t;
-typedef long int intptr_t;
-#else
 typedef long long int64_t;
 typedef long long intptr_t;
-#endif
 typedef signed short int16_t;
 typedef signed char int8_t;
 
 #define INT16_MAX 0x7FFF
 
+#define NULL 0
+
+#else
+
+#include <stdint.h>
+#include <stddef.h>
+
+#endif
+
+#define N_ARR(arr) (sizeof(arr)/sizeof((arr)[0]))
+
 typedef struct sizedptr {
     uintptr_t ptr;
     size_t size;
 } sizedptr;
-
-#define NULL 0
 
 #ifdef __cplusplus
 }
