@@ -1,7 +1,9 @@
 #include "interface_manager.h"
 #include "std/memory.h"
 #include "net/link_layer/arp.h"
+#include "net/link_layer/ndp.h"
 #include "net/internet_layer/ipv4_route.h"
+#include "net/internet_layer/ipv6_route.h"
 #include "networking/port_manager.h"
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
@@ -77,7 +79,7 @@ uint8_t l2_interface_create(const char *name, void *driver_ctx, uint16_t base_me
     itf->driver_context = driver_ctx;
     itf->base_metric = base_metric;
     itf->arp_table = arp_table_create();
-    itf->nd_table = NULL;
+    itf->nd_table = ndp_table_create();
 
     g_l2_used[slot] = 1;
     g_l2_count += 1;
@@ -90,7 +92,14 @@ bool l2_interface_destroy(uint8_t ifindex){
     l2_interface_t* itf = &g_l2[slot];
     if (itf->ipv4_count || itf->ipv6_count) return false;
 
-    if (itf->arp_table) { arp_table_destroy((arp_table_t*)itf->arp_table); itf->arp_table = NULL; }
+    if (itf->arp_table) {
+        arp_table_destroy((arp_table_t*)itf->arp_table);
+        itf->arp_table = NULL;
+    }
+    if (itf->nd_table) {
+        ndp_table_destroy((ndp_table_t*)itf->nd_table);
+        itf->nd_table = NULL;
+    }
 
     memset(&g_l2[slot], 0, sizeof(l2_interface_t));
     g_l2_used[slot] = 0;
@@ -414,8 +423,8 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
                 placeholder_gua=0;
                 break;
             }
-        } 
-    }        
+        }
+    }
 
     if (kind & IPV6_ADDRK_LINK_LOCAL){
         if (!(cfg & (IPV6_CFG_SLAAC | IPV6_CFG_DHCPV6))){
@@ -481,10 +490,34 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     n->l2 = l2;
     n->cfg = cfg;
     n->kind = kind;
-    ipv6_cpy(n->ip, ip);
+
+    uint8_t final_ip[16];
+    ipv6_cpy(final_ip, ip);
+    if ((kind & IPV6_ADDRK_LINK_LOCAL) && placeholder_ll){
+        ipv6_make_lla_from_mac(ifindex, final_ip);
+        prefix_len = 64;
+    }
+
+    ipv6_cpy(n->ip, final_ip);
     n->prefix_len = prefix_len;
     ipv6_cpy(n->gateway, gw);
     n->is_localhost = (l2->name[0]=='l' && l2->name[1]=='o');
+    n->valid_lifetime = 0;
+    n->preferred_lifetime = 0;
+    n->timestamp_created = 0;
+    memset(n->prefix, 0, sizeof(n->prefix));
+    memset(n->interface_id, 0, sizeof(n->interface_id));
+    n->dad_probes_sent = 0;
+    n->dad_timer_ms = 0;
+
+    if (!ipv6_is_unspecified(n->ip) && !ipv6_is_multicast(n->ip)) {
+        n->dad_state = IPV6_DAD_NONE;
+        n->dad_requested = 1;
+    } else {
+        n->dad_state = IPV6_DAD_NONE;
+        n->dad_requested = 0;
+    }
+
     n->l3_id = make_l3_id(l2->ifindex, (uint8_t)loc);
     l2->l3_v6[loc] = n;
     l2->ipv6_count++;
@@ -499,6 +532,17 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
         return 0;
     }
     port_manager_init(n->port_manager);
+
+    n->routing_table = ipv6_rt_create();
+    if (n->routing_table){
+        ipv6_rt_ensure_basics((ipv6_rt_table_t*)n->routing_table, n->ip, n->prefix_len, n->gateway, l2->base_metric);
+    }
+    
+    uint8_t sn[16];
+    ipv6_make_multicast(2, IPV6_MCAST_ALL_NODES, n->ip, sn);
+    (void)l2_ipv6_mcast_join(ifindex, sn);
+    ipv6_make_multicast(2, IPV6_MCAST_ALL_ROUTERS, n->ip, sn);
+    (void)l2_ipv6_mcast_join(ifindex, sn);
 
     return n->l3_id;
 }
@@ -536,7 +580,7 @@ bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
             if (ipv6_is_unspecified(ip)) return false;
         }
         if (!ipv6_is_unspecified(ip)){
-            if (ipv6_is_multicast(ip) || ipv6_is_loopback(ip) || ipv6_is_ula(ip)) return false;
+            if (ipv6_is_multicast(ip) || ipv6_is_loopback(ip)) return false;
             if (ipv6_cmp(ip,n->ip)!=0 && v6_ip_exists_anywhere(ip)) return false;
             if (v6_overlap_intra_l2(l2->ifindex, ip, prefix_len)){
                 for (int i=0;i<V6_POOL_SIZE;i++){
@@ -561,11 +605,28 @@ bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
         return false;
     }
 
+    uint8_t old_ip[16];
+    ipv6_cpy(old_ip, n->ip);
+
     n->cfg = cfg;
     n->kind = kind;
     ipv6_cpy(n->ip, ip);
     n->prefix_len = prefix_len;
     ipv6_cpy(n->gateway, gw);
+
+    if (ipv6_cmp(old_ip, n->ip) != 0) {
+        if (ipv6_is_unspecified(n->ip) || ipv6_is_multicast(n->ip) || n->cfg == IPV6_CFG_DISABLE) {
+            n->dad_requested = 0;
+        } else {
+            n->dad_requested = 1;
+        }
+    }
+
+    if (!n->routing_table) n->routing_table = ipv6_rt_create();
+    if (n->routing_table){
+        ipv6_rt_sync_basics((ipv6_rt_table_t*)n->routing_table, n->ip, n->prefix_len, n->gateway, l2->base_metric);
+    }
+
     return true;
 }
 
@@ -601,6 +662,11 @@ bool l3_ipv6_remove_from_interface(uint8_t l3_id){
         if (l2->ipv6_count) l2->ipv6_count--;
     }
 
+    if (n->routing_table){
+        ipv6_rt_destroy((ipv6_rt_table_t*)n->routing_table);
+        n->routing_table = NULL;
+    }
+
     g_v6[g].used = false;
     memset(&g_v6[g], 0, sizeof(g_v6[g]));
     return true;
@@ -623,6 +689,9 @@ bool l3_ipv6_set_enabled(uint8_t l3_id, bool enable){
             }
         }
         n->cfg = IPV6_CFG_DISABLE;
+        n->dad_state = IPV6_DAD_NONE;
+        n->dad_probes_sent = 0;
+        n->dad_timer_ms = 0;
         return true;
     }
 }
@@ -672,6 +741,12 @@ void l3_init_localhost_ipv6(void){
     }
     uint8_t zero16[16]={0};
     (void)l3_ipv6_add_to_interface(lo->ifindex, loop6, 128, zero16, IPV6_CFG_STATIC, IPV6_ADDRK_GLOBAL);
+
+    uint8_t multi[16];
+    ipv6_make_multicast(2, IPV6_MCAST_ALL_NODES, loop6, multi);
+    (void)l2_ipv6_mcast_join(lo->ifindex, multi);
+    ipv6_make_multicast(2, IPV6_MCAST_SOLICITED_NODE, loop6, multi);
+    (void)l2_ipv6_mcast_join(lo->ifindex, multi);
 }
 
 void ifmgr_autoconfig_l2(uint8_t ifindex){
@@ -694,25 +769,13 @@ void ifmgr_autoconfig_l2(uint8_t ifindex){
         if (ipv6_is_linklocal(x->ip) && x->cfg != IPV6_CFG_DISABLE){ has_lla=true; break; }
     }
     if (!has_lla){
-        uint8_t fe80_0[16]={0}; fe80_0[0]=0xFE; fe80_0[1]=0x80;
-        uint8_t zero16[16]={0};
-        (void)l3_ipv6_add_to_interface(ifindex, fe80_0, 64, zero16, IPV6_CFG_SLAAC, IPV6_ADDRK_LINK_LOCAL);
+        uint8_t lla[16];
+        ipv6_make_lla_from_mac(ifindex, lla);
+        uint8_t ip[16] = {0};
+        (void)l3_ipv6_add_to_interface(ifindex, lla, 64, ip, IPV6_CFG_SLAAC, IPV6_ADDRK_LINK_LOCAL);
+        ipv6_make_multicast(2, IPV6_MCAST_ALL_NODES, lla, ip);
+        (void)l2_ipv6_mcast_join(ifindex, ip);
     }
-
-    bool has_gua=false;
-    for (int i=0;i<V6_POOL_SIZE;i++){
-        if (!g_v6[i].used) continue;
-        l3_ipv6_interface_t *x=&g_v6[i].node;
-        if (!x->l2 || x->l2->ifindex != ifindex) continue;
-        if (!ipv6_is_linklocal(x->ip) && x->cfg != IPV6_CFG_DISABLE){ has_gua=true; break; }
-    }
-    if (!has_gua){
-        uint8_t g2000_0[16]={0}; g2000_0[0]=0x20; g2000_0[1]=0x00;
-        uint8_t zero16[16]={0};
-        (void)l3_ipv6_add_to_interface(ifindex, g2000_0, 64, zero16, IPV6_CFG_SLAAC, IPV6_ADDRK_GLOBAL);
-    }
-
-    //TODO: add autoconfig settings/policy
 }
 
 void ifmgr_autoconfig_all_l2(void){
@@ -744,18 +807,69 @@ ip_resolution_result_t resolve_ipv4_to_interface(uint32_t dst_ip){
     return r;
 }
 
-ip_resolution_result_t resolve_ipv6_to_interface(const uint8_t dst_ip[16]){
-    ip_resolution_result_t r; r.found=false; r.ipv4=NULL; r.ipv6=NULL; r.l2=NULL;
-    int best = -1;
-    for (int i=0;i<V6_POOL_SIZE;i++){
+ip_resolution_result_t resolve_ipv6_to_interface(const uint8_t dst_ip[16]) {
+    ip_resolution_result_t r;
+    r.found = false;
+    r.ipv4 = NULL;
+    r.ipv6 = NULL;
+    r.l2= NULL;
+
+    int dst_is_ll = ipv6_is_linklocal(dst_ip);
+    int best_pl = -1;
+    uint16_t best_cost = 0x7FFF;
+
+    for (int i = 0; i < V6_POOL_SIZE; i++) {
         if (!g_v6[i].used) continue;
         l3_ipv6_interface_t *x = &g_v6[i].node;
         if (!x->l2) continue;
         if (x->cfg == IPV6_CFG_DISABLE) continue;
         if (ipv6_is_unspecified(x->ip)) continue;
+
+        int src_is_ll = ipv6_is_linklocal(x->ip);
+
+        if (dst_is_ll != src_is_ll)
+            continue;
+
+        int pl_conn = -1;
         int match = ipv6_common_prefix_len(dst_ip, x->ip);
-        if (match >= x->prefix_len && match > best){ best = match; r.found=true; r.ipv6=x; r.l2=x->l2; }
+        if (match >= x->prefix_len) pl_conn = x->prefix_len;
+
+        int pl_tab = -1;
+        uint16_t met_tab = 0x7FFF;
+        uint8_t via[16] = {0};
+
+        if (x->routing_table) {
+            int out_pl = -1;
+            int out_met = 0x7FFF;
+            if (ipv6_rt_lookup_in((const ipv6_rt_table_t*)x->routing_table,dst_ip, via, &out_pl, &out_met))
+            {
+                pl_tab = out_pl;
+                met_tab = out_met;
+            }
+        }
+
+        int cand_pl = pl_conn;
+        uint16_t cand_cost = x->l2->base_metric;
+
+        if (pl_tab > cand_pl || (pl_tab == cand_pl && (x->l2->base_metric + met_tab) < cand_cost)) {
+            cand_pl = pl_tab;
+            cand_cost = x->l2->base_metric + met_tab;
+        }
+
+        if (cand_pl > best_pl || (cand_pl == best_pl && cand_cost < best_cost)) {
+            best_pl = cand_pl;
+            best_cost = cand_cost;
+            r.found = true;
+            r.ipv6 = x;
+            r.l2 = x->l2;
+        }
     }
+    if (best_pl < 0) {
+        r.found = false;
+        r.ipv6 = NULL;
+        r.l2 = NULL;
+    }
+
     return r;
 }
 

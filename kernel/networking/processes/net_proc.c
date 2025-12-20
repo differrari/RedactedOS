@@ -10,12 +10,14 @@
 #include "networking/interface_manager.h"
 
 #include "net/link_layer/arp.h"
+#include "net/link_layer/ndp.h"
 
 #include "net/internet_layer/ipv4.h"
 #include "net/internet_layer/ipv4_utils.h"
 
 #include "net/internet_layer/ipv6.h"
 #include "net/internet_layer/ipv6_utils.h"
+#include "net/checksums.h"
 
 #include "net/transport_layer/csocket_udp.h"
 
@@ -25,6 +27,7 @@
 #include "net/application_layer/dns_daemon.h"
 #include "net/application_layer/dns.h"
 #include "net/application_layer/sntp_daemon.h"
+#include "net/application_layer/ipv6_addr_manager.h"
 
 #include "exceptions/timer.h"
 #include "syscalls/syscalls.h"
@@ -392,10 +395,11 @@ static int ip_waiter_entry(int argc, char* argv[]) {
 process_t* launch_net_process() {
     create_kernel_process("net_net", network_net_task_entry, 0, 0);
     create_kernel_process("arp_daemon", arp_daemon_entry, 0, 0);
+    create_kernel_process("ndp_daemon", ndp_daemon_entry, 0, 0);
     create_kernel_process("dhcp_daemon", dhcp_daemon_entry, 0, 0);
-
+    create_kernel_process("addr_manager", ipv6_addr_manager_daemon_entry, 0, 0);
     create_kernel_process("dns_daemon", dns_deamon_entry, 0, 0);
-
+    
     if (any_ipv4_ready()) {
         kprintf("[NET] ipv4 ready, starting net_test");
         create_kernel_process("net_test", net_test_entry, 0, 0);

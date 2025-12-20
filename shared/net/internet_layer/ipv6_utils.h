@@ -23,6 +23,21 @@ void ipv6_make_multicast(uint8_t scope, ipv6_mcast_kind_t kind, const uint8_t un
 void ipv6_to_string(const uint8_t ip[16], char* buf, int buflen);
 bool ipv6_parse(const char* s, uint8_t out[16]);
 void ipv6_multicast_mac(const uint8_t ip[16], uint8_t mac[6]);
+void ipv6_make_lla_from_mac(uint8_t ifindex, uint8_t out[16]);
+
+static inline int ipv6_is_placeholder_gua(const uint8_t ip[16]) {
+    if (!ip) return 0;
+    if (ip[0] != 0x20 || ip[1] != 0x00) return 0;
+    for (int i = 2; i < 16; i++) if (ip[i] != 0) return 0;
+    return 1;
+}
+
+static inline void ipv6_make_placeholder_gua(uint8_t out[16]) {
+    if (!out) return;
+    for (int i = 0; i < 16; i++) out[i] = 0;
+    out[0] = 0x20;
+    out[1] = 0x00;
+}
 
 #ifdef __cplusplus
 }

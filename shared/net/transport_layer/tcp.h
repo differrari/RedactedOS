@@ -5,6 +5,7 @@
 #include "net/link_layer/eth.h"
 #include "std/memory.h"
 #include "net/network_types.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -68,19 +69,19 @@ typedef enum {
     TCP_TIME_WAIT
 } tcp_state_t;
 
-typedef struct {
-    uint16_t local_port;
-    net_l4_endpoint local;
-    net_l4_endpoint remote;
-    tcp_state_t state;
-    tcp_data ctx;
-    uint8_t retries;
-} tcp_flow_t;
-
 #define MAX_TCP_FLOWS 512
 #define TCP_SYN_RETRIES 5
 #define TCP_DATA_RETRIES 5
 #define TCP_RETRY_TIMEOUT_MS 1000
+#define TCP_RECV_WINDOW 65535
+#define TCP_MAX_TX_SEGS 16
+#define TCP_INIT_RTO 1000
+#define TCP_MIN_RTO 200
+#define TCP_MAX_RTO 60000
+#define TCP_MSL_MS 30000
+#define TCP_2MSL_MS (2 * TCP_MSL_MS)
+#define TCP_MAX_RETRANS 8
+#define TCP_MAX_PERSIST_PROBES 8
 
 int find_flow(uint16_t local_port, ip_version_t ver, const void *remote_ip, uint16_t remote_port);
 tcp_data* tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *remote_ip, uint16_t remote_port);
@@ -94,6 +95,9 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx);
 tcp_result_t tcp_flow_close(tcp_data *flow_ctx);
 
 void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, uintptr_t ptr, uint32_t len);
+
+void tcp_tick_all(uint32_t elapsed_ms);
+int tcp_daemon_entry(int argc, char *argv[]);
 
 #ifdef __cplusplus
 }

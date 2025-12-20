@@ -20,6 +20,13 @@ typedef enum {
 } ipv4_cfg_t;
 
 typedef enum {
+    IPV6_DAD_NONE = 0,
+    IPV6_DAD_IN_PROGRESS = 1,
+    IPV6_DAD_FAILED = 2,
+    IPV6_DAD_OK = 3
+} ipv6_dad_state_t;
+
+typedef enum {
     IPV6_ADDRK_GLOBAL = 0x01,
     IPV6_ADDRK_LINK_LOCAL = 0x02
 } ipv6_addr_kind_t;
@@ -89,11 +96,23 @@ typedef struct l3_ipv6_interface {
     bool is_localhost;
     uint32_t valid_lifetime;
     uint32_t preferred_lifetime;
+    uint32_t dhcpv6_lease;
+    uint32_t dhcpv6_lease_start_time;
     uint32_t timestamp_created;
     uint8_t prefix[16];
     uint8_t interface_id[8];
+    uint8_t dad_requested;
+    ipv6_dad_state_t dad_state;
+    uint8_t dad_probes_sent;
+    uint32_t dad_timer_ms;
+    void *routing_table;
     port_manager_t *port_manager;
     l2_interface_t *l2;
+    uint8_t ra_has;
+    uint8_t ra_autonomous;
+    uint8_t ra_is_default;
+    uint8_t ra_reserved;
+    uint32_t ra_last_update_ms;
 } l3_ipv6_interface_t;
 
 typedef struct ip_resolution_result {

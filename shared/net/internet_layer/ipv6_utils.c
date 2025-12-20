@@ -1,5 +1,6 @@
 #include "ipv6_utils.h"
 #include "std/std.h"
+#include "networking/network.h"
 
 bool ipv6_is_unspecified(const uint8_t ip[16]) {
     for (int i = 0; i < 16; i++) if (ip[i] != 0) return false;
@@ -190,4 +191,30 @@ void ipv6_multicast_mac(const uint8_t ip[16], uint8_t mac[6]) {
     mac[3] = ip[13];
     mac[4] = ip[14];
     mac[5] = ip[15];
+}
+
+void ipv6_make_lla_from_mac(uint8_t ifindex, uint8_t out[16]) {
+    const uint8_t* mac = network_get_mac(ifindex);
+    memset(out, 0, 16);
+    out[0] = 0xFE;
+    out[1] = 0x80;
+    if (!mac) {
+        out[8] = 0x02 ^ 0x02;
+        out[9] = ifindex;
+        out[10] = 0x00;
+        out[11] = 0xFF;
+        out[12] = 0xFE;
+        out[13] = ifindex;
+        out[14] = 0x00;
+        out[15] = 0x01;
+        return;
+    }
+    out[8] = mac[0]^ 0x02;
+    out[9] = mac[1];
+    out[10] = mac[2];
+    out[11] = 0xFF;
+    out[12] = 0xFE;
+    out[13] = mac[3];
+    out[14] = mac[4];
+    out[15] = mac[5];
 }

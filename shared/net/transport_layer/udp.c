@@ -1,11 +1,13 @@
 #include "udp.h"
 #include "net/checksums.h"
 #include "net/internet_layer/ipv4.h"
+#include "net/internet_layer/ipv6.h"
 #include "networking/port_manager.h"
 #include "std/memory.h"
 #include "types.h"
 #include "syscalls/syscalls.h"
 #include "net/internet_layer/ipv4_utils.h"
+
 static inline uint32_t v4_u32_from_arr(const uint8_t ip16[16]) {
     uint32_t v = 0;
     memcpy(&v, ip16, 4);
@@ -28,27 +30,28 @@ size_t create_udp_segment(uintptr_t buf, const net_l4_endpoint *src, const net_l
         uint16_t csum = checksum16_pipv4(s, d, 0x11, (const uint8_t *)udp, full_len);
         udp->checksum = bswap16(csum);
     } else if (src->ver == IP_VER6) {
-        //TODO IPV6
-        udp->checksum = 0;
+        uint16_t csum = checksum16_pipv6(src->ip, dst->ip, 17, (const uint8_t *)udp, full_len);
+        udp->checksum = bswap16(csum);
     }
 
     return full_len;
 }
 
-void udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload, const ipv4_tx_opts_t* tx_opts) {
+void udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload, const ip_tx_opts_t* tx_opts) {
+    uint32_t udp_len = (uint32_t)(sizeof(udp_hdr_t) + payload.size);
+    uintptr_t buf = (uintptr_t)malloc(udp_len);
+    if (!buf) return;
+
+    size_t written = create_udp_segment(buf, src, dst, payload);
+
     if (src->ver == IP_VER4) {
-        uint32_t udp_len = (uint32_t)(sizeof(udp_hdr_t) + payload.size);
-        uintptr_t buf = (uintptr_t)malloc(udp_len);
-        if (!buf) return;
-
-        size_t written = create_udp_segment(buf, src, dst, payload);
         uint32_t dst_ip = v4_u32_from_arr(dst->ip);
-
-        ipv4_send_packet(dst_ip, 0x11, (sizedptr){ buf, (uint32_t)written }, tx_opts, 0);
-        free((void *)buf, udp_len);
+        ipv4_send_packet(dst_ip, 0x11, (sizedptr){ buf, (uint32_t)written }, (const ipv4_tx_opts_t*)tx_opts, 0);
     } else if (src->ver == IP_VER6) {
-        //TODO IPV6
+        ipv6_send_packet(dst->ip, 0x11, (sizedptr){ buf, (uint32_t)written }, (const ipv6_tx_opts_t*)tx_opts, 0);
     }
+
+    free((void*)buf, udp_len);
 }
 
 sizedptr udp_strip_header(uintptr_t ptr, uint32_t len) {
@@ -83,7 +86,11 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             hdr->checksum = recv;
             if (calc != bswap16(recv)) return;
         } else if (ipver == IP_VER6) {
-            //TODO IPV&
+            uint16_t recv = hdr->checksum;
+            hdr->checksum = 0;
+            uint16_t calc = checksum16_pipv6( (const uint8_t*)src_ip_addr, (const uint8_t*)dst_ip_addr, 0x11, (const uint8_t*)hdr, (uint32_t)(pl.size + sizeof(*hdr)));
+            hdr->checksum = recv;
+            if (calc != bswap16(recv)) return;
         }
     }
 
