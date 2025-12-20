@@ -110,7 +110,7 @@ void* memset(void* dest, int byte, size_t count) {
     return dest;
 }
 
-void* memcpy(void *dest, const void *src, uint64_t count) {
+void* memcpy(void *dest, const void *src, size_t count) {
     uint8_t *d8 = (uint8_t *)dest;
     const uint8_t *s8 = (const uint8_t *)src;
 
@@ -206,7 +206,7 @@ void memreverse(void *ptr, size_t n) {
         *r-- = t;
     }
 }
-void* memmove(void *dest, const void *src, uint64_t count) {
+void* memmove(void *dest, const void *src, size_t count) {
     if (dest == src || count == 0) return dest;
 
     uint8_t *d8 = (uint8_t *)dest;
