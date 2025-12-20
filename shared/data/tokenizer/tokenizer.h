@@ -1,7 +1,7 @@
 #pragma once
 #include "types.h"
 #include "data/scanner/scanner.h"
-#include "std/stringview.h"
+#include "std/string_slice.h"
 
 typedef enum {
     TOK_EOF = 0,
@@ -75,6 +75,6 @@ static inline bool tokenizer_ok(const Tokenizer *t) {
 
 bool tokenizer_next(Tokenizer *t, Token *out);
 
-static inline stringview token_to_slice(Token t){
-    return (stringview){ .data = (char*)t.start, .length = t.length };
+static inline string_slice token_to_slice(Token t){
+    return (string_slice){ .data = (char*)t.start, .length = t.length };
 }

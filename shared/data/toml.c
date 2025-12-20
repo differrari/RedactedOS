@@ -15,7 +15,7 @@ void read_toml_value(TokenStream *ts, Token key, toml_handler on_kvp, void *cont
         break;
         case TOK_STRING: {
 
-            on_kvp(token_to_slice(key), delimited_stringview(t.start+1, 0, t.length-2), context);
+            on_kvp(token_to_slice(key), make_string_slice(t.start+1, 0, t.length-2), context);
         }
         break;
         case TOK_NUMBER: {
@@ -34,7 +34,7 @@ void read_toml_value(TokenStream *ts, Token key, toml_handler on_kvp, void *cont
                     if (depth) 
                         depth--; 
                     else {
-                        on_kvp(token_to_slice(key), delimited_stringview((char*)t.start, 1, t2.start - t.start - 1), 0);
+                        on_kvp(token_to_slice(key), make_string_slice((char*)t.start, 1, t2.start - t.start - 1), 0);
                         break;
                     }
                 }

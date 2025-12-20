@@ -2,7 +2,7 @@
 #include "syscalls/syscalls.h"
 #include "std/memory.h"
 #include "types.h"
-#include "stringview.h"
+#include "string_slice.h"
 
 #define TRUNC_MARKER "[…]"
 
@@ -466,7 +466,7 @@ size_t string_format_va_buf(const char *restrict fmt, char *restrict out, size_t
             } continue;
                 
             case 'v': {
-                const stringview sv = va_arg(args, stringview);
+                const string_slice sv = va_arg(args, string_slice);
                 append_strn(&p, &rem, sv.data, sv.length, &truncated_all);
             } continue;
 
@@ -1250,6 +1250,6 @@ string string_replace_character(char* original, char symbol, char *value){
     if (next == original+fulllen){
         return string_from_literal(original);
     }
-    stringview start = delimited_stringview(original, 0, next-original-1);
+    string_slice start = make_string_slice(original, 0, next-original-1);
     return string_format("%v%s%s",start, value, next);
 }

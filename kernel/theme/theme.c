@@ -82,7 +82,7 @@ gpu_point* parse_gpu_point_array(char *value, size_t value_len){
 #define parse_toml(k,dest,func) if ((size_t)strstart_case(#k, key.data,true) == key.length) dest.k = func(value.data,value.length)
 #define parse_toml_str(k,dest) if ((size_t)strstart_case(#k, key.data,true) == key.length) dest.k = string_from_literal_length(value.data,value.length).data
 
-void parse_theme_kvp(stringview key, stringview value, void *context){
+void parse_theme_kvp(string_slice key, string_slice value, void *context){
     parse_toml(bg_color,                system_theme, parse_hex_u64);
     parse_toml(accent_color,            system_theme, parse_hex_u64);
     parse_toml(err_color,               system_theme, parse_hex_u64);
