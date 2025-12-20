@@ -2,6 +2,7 @@
 #include "syscalls/syscalls.h"
 #include "std/memory.h"
 #include "types.h"
+#include "stringview.h"
 
 #define TRUNC_MARKER "[…]"
 
@@ -457,12 +458,16 @@ size_t string_format_va_buf(const char *restrict fmt, char *restrict out, size_t
             } continue;
 
             case 'S': {
-                const string *sp = va_arg(args, const string *);
-                string sv = sp ? *sp : (string){ .data = NULL, .length = 0, .mem_length = 0};
+                const string sv = va_arg(args, string);
                 const char *s = sv.data ? sv.data : "(null)";
                 uint32_t sl = sv.data ? sv.length : 6;
                 if (precision_set && (uint32_t)precision < sl) sl = (uint32_t)precision;
                 emit_padded(&p, &rem, s, sl, width, flag_minus, &truncated_all);
+            } continue;
+                
+            case 'v': {
+                const stringview sv = va_arg(args, stringview);
+                append_strn(&p, &rem, sv.data, sv.length, &truncated_all);
             } continue;
 
             case 'p': {
@@ -1237,4 +1242,14 @@ char* strcat_new(const char *a, const char *b){
     char* dest = (char*)malloc(strlen(a) + strlen(b));
     strcat_buf(a,b,dest);
     return dest;
+}
+
+string string_replace_character(char* original, char symbol, char *value){
+    size_t fulllen = strlen(original);
+    const char *next = seek_to(original, symbol);
+    if (next == original+fulllen){
+        return string_from_literal(original);
+    }
+    stringview start = delimited_stringview(original, 0, next-original-1);
+    return string_format("%v%s%s",start, value, next);
 }

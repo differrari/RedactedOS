@@ -92,6 +92,8 @@ const char* seek_to(const char *string, char character);
 char* strncpy(char* dst, const char* src, size_t cap);
 bool parse_uint32_dec(const char *s, uint32_t *out);
 
+string string_replace_character(char* original, char symbol, char *value);
+
 #ifdef __cplusplus
 }
 #endif
