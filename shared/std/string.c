@@ -1071,7 +1071,7 @@ int strend_case(const char *a, const char *b, bool case_insensitive){
                 char cpa = case_insensitive ? tolower((unsigned char)*pa) : *pa;
                 char cpb = case_insensitive ? tolower((unsigned char)*pb) : *pb;
 
-                if (!cpa) return 0;
+                if (!cpa) return cpb;
                 if (cpa != cpb) break;
 
                 pa++; pb++;
