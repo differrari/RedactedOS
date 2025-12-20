@@ -1,7 +1,8 @@
 #pragma once
 
 #include "types.h"
+#include "std/stringview.h"
 
-typedef void (*toml_handler)(const char *key, char *value, size_t value_len, void *context);
+typedef void (*toml_handler)(stringview key, stringview value, void *context);
 
-void read_toml(char *info, size_t size, toml_handler on_kvp, void *context);
+void read_toml(char *info, toml_handler on_kvp, void *context);

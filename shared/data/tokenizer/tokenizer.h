@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include "data/scanner/scanner.h"
+#include "std/stringview.h"
 
 typedef enum {
     TOK_EOF = 0,
@@ -24,7 +25,9 @@ typedef enum {
     TOK_COMMA,
     TOK_COLON,
     TOK_SEMICOLON,
-    TOK_DOT
+    TOK_DOT, 
+    
+    TOK_NEWLINE
 } TokenKind;
 
 typedef struct {
@@ -53,6 +56,7 @@ typedef struct {
     TokenizerError err;
     uint32_t err_pos;
     bool skip_type_check;
+    bool parse_newline;
     TokenizerComment comment_type;
 } Tokenizer;
 
@@ -70,3 +74,7 @@ static inline bool tokenizer_ok(const Tokenizer *t) {
 }
 
 bool tokenizer_next(Tokenizer *t, Token *out);
+
+static inline stringview token_to_slice(Token t){
+    return (stringview){ .data = (char*)t.start, .length = t.length };
+}

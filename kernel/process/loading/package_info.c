@@ -4,18 +4,18 @@
 #include "console/kio.h"
 #include "data/toml.h"
 
-static inline void handle_package_kvp(const char *key, char *value, size_t value_len, void* ctx){
+static inline void handle_package_kvp(stringview key, stringview value, void* ctx){
     package_info *pkg_info = (package_info*)ctx;
-    if (strstart_case("app_name", key,true) == 8) 
-        pkg_info->name = string_from_literal_length(value, value_len);
-    if (strstart_case("app_author", key,true) == 10)
-        pkg_info->author = string_from_literal_length(value, value_len);
-    if (strstart_case("app_version", key,true) == 11)
-        pkg_info->version = string_from_literal_length(value, value_len);
+    if ((size_t)strstart_case("app_name", key.data,true) == key.length) 
+        pkg_info->name = string_from_literal_length(value.data, value.length);
+    if ((size_t)strstart_case("app_author", key.data,true) == key.length)
+        pkg_info->author = string_from_literal_length(value.data, value.length);
+    if ((size_t)strstart_case("app_version", key.data,true) == key.length)
+        pkg_info->version = string_from_literal_length(value.data, value.length);
 }
 
-package_info parse_package_info(char *info, size_t size){
+package_info parse_package_info(char *info){
     package_info pkg_info = {};
-    read_toml(info, size, handle_package_kvp, (void*)&pkg_info);
+    read_toml(info, handle_package_kvp, (void*)&pkg_info);
     return pkg_info;
 }

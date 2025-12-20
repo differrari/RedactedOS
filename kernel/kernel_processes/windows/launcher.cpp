@@ -43,7 +43,7 @@ package_info Launcher::get_pkg_info(char* info_path){
     readf(&fd, info, fd.size);
     closef(&fd);
 
-    return parse_package_info(info, fd.size);
+    return parse_package_info(info);
 }
 
 void Launcher::load_entries(){

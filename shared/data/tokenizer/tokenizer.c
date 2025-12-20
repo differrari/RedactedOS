@@ -8,14 +8,21 @@ static void tokenizer_fail(Tokenizer *t, TokenizerError err) {
     t->err_pos = t->s->pos;
 }
 
-static void skip_ws_and_comments(Tokenizer *t) {
+static bool skip_ws_and_comments(Tokenizer *t, Token *out) {
     Scanner *s = t-> s;
     for (;;) {
-        scan_skip_ws(s);
-        if (scan_eof(s)) return;
+        scan_skip_ws(s, !t->parse_newline);
+        if (scan_eof(s)) return false;
 
         uint32_t pos =s->pos;
 
+        if (scan_match(s, '\n')){
+            out->kind = TOK_NEWLINE;
+            out->start = s->buf + s->pos;
+            out->length = 1;
+            out->pos = s->pos;
+            return true;
+        }
         if (t->comment_type == TOKENIZER_COMMENT_TYPE_SLASH){
             if (scan_match(s, '/')) {
                 if (scan_match(s, '/')) {
@@ -36,7 +43,7 @@ static void skip_ws_and_comments(Tokenizer *t) {
                     }
                     if (!found) {
                         tokenizer_fail(t, TOKENIZER_ERR_UNTERMINATED_COMMENT);
-                        return;
+                        return false;
                     }
                     continue;
                 } else {
@@ -55,6 +62,7 @@ static void skip_ws_and_comments(Tokenizer *t) {
 
         break;
     }
+    return false;
 }
 
 static void read_identifier(Scanner *s, Token *tok) {
@@ -341,7 +349,9 @@ bool tokenizer_next(Tokenizer *t, Token *out) {
         return false;
     }
 
-    skip_ws_and_comments(t);
+    if (skip_ws_and_comments(t, out)){
+        return true;
+    }
     if (t->failed) {
         out->kind = TOK_INVALID;
         out->start = 0;

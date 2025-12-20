@@ -77,6 +77,8 @@ char *read_full_file(const char *path){
     
     readf(&fd, fcontent, fd.size);
     
+    closef(&fd);
+    
     return fcontent;
 }
 

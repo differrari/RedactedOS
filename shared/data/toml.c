@@ -9,15 +9,18 @@ void read_toml_value(TokenStream *ts, Token key, toml_handler on_kvp, void *cont
     
     switch (t.kind){
         case TOK_IDENTIFIER: {
-            on_kvp(s.data, (char*)t.start, t.length, context);
+
+            on_kvp(token_to_slice(key), token_to_slice(t), context);
         }
         break;
         case TOK_STRING: {
-            on_kvp(s.data, (char*)t.start + 1, t.length - 2, context);
+
+            on_kvp(token_to_slice(key), delimited_stringview(t.start+1, 0, t.length-2), context);
         }
         break;
         case TOK_NUMBER: {
-            on_kvp(s.data, (char*)t.start, t.length, context);
+
+            on_kvp(token_to_slice(key), token_to_slice(t), context);
         }
         break;
         
@@ -31,7 +34,7 @@ void read_toml_value(TokenStream *ts, Token key, toml_handler on_kvp, void *cont
                     if (depth) 
                         depth--; 
                     else {
-                        on_kvp(s.data, (char*)t.start+1, t2.start - t.start - 1, 0);
+                        on_kvp(token_to_slice(key), delimited_stringview((char*)t.start, 1, t2.start - t.start - 1), 0);
                         break;
                     }
                 }
@@ -48,10 +51,11 @@ void read_toml_value(TokenStream *ts, Token key, toml_handler on_kvp, void *cont
     
 }
 
-void read_toml(char *info, size_t size, toml_handler on_kvp, void *context){
-    Scanner s = scanner_make(info, size);
+void read_toml(char *info, toml_handler on_kvp, void *context){
+    Scanner s = scanner_make(info, strlen(info));
     Tokenizer tk = tokenizer_make(&s);
     tk.comment_type = TOKENIZER_COMMENT_TYPE_HASH;
+    tk.skip_type_check = false;
     TokenStream ts;
     ts_init(&ts, &tk);
     

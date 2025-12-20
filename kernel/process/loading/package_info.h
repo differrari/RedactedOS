@@ -13,7 +13,7 @@ typedef struct {
 #ifdef __cplusplus
 extern "C" {
 #endif
-package_info parse_package_info(char *info, size_t size);
+package_info parse_package_info(char *info);
 #ifdef __cplusplus
 }
 #endif

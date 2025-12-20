@@ -79,10 +79,10 @@ gpu_point* parse_gpu_point_array(char *value, size_t value_len){
     return points;
 }
 
-#define parse_toml(k,dest,func) if (strcmp_case(#k, key,true) == 0) dest.k = func(value,value_len)
-#define parse_toml_str(k,dest) if (strcmp_case(#k, key,true) == 0) dest.k = string_from_literal_length(value,value_len).data
+#define parse_toml(k,dest,func) if ((size_t)strstart_case(#k, key.data,true) == key.length) dest.k = func(value.data,value.length)
+#define parse_toml_str(k,dest) if ((size_t)strstart_case(#k, key.data,true) == key.length) dest.k = string_from_literal_length(value.data,value.length).data
 
-void parse_theme_kvp(const char *key, char *value, size_t value_len, void *context){
+void parse_theme_kvp(stringview key, stringview value, void *context){
     parse_toml(bg_color,                system_theme, parse_hex_u64);
     parse_toml(accent_color,            system_theme, parse_hex_u64);
     parse_toml(err_color,               system_theme, parse_hex_u64);
@@ -120,7 +120,7 @@ bool load_theme(){
     if (readf(&fd, buf, fd.size) != fd.size) return false;
     closef(&fd);
 
-    read_toml(buf, fd.size, parse_theme_kvp, 0);
+    read_toml(buf, parse_theme_kvp, 0);
 
     return true;
 }
