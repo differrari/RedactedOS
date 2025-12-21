@@ -56,8 +56,6 @@ typedef unsigned long long uintptr_t;
 typedef unsigned short uint16_t;
 typedef unsigned char uint8_t;
 
-#define FLOAT_MAX 3.40282347e+38F
-
 typedef signed int int32_t;
 typedef long long int64_t;
 typedef long long intptr_t;
@@ -74,6 +72,8 @@ typedef signed char int8_t;
 #include <stddef.h>
 
 #endif
+
+#define FLOAT_MAX 3.40282347e+38F
 
 #define N_ARR(arr) (sizeof(arr)/sizeof((arr)[0]))
 
