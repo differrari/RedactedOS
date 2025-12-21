@@ -1,7 +1,7 @@
 #pragma once 
 
 #include "virtio/virtio_pci.h"
-#include "../gpu_driver.hpp"
+#include "common/gpu_driver.hpp"
 
 #define VIRTIO_GPU_ID 0x1050
 

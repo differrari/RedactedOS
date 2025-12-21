@@ -19,7 +19,7 @@ kshared:
 	$(MAKE) -C shared SH_FLAGS=-DKERNEL BUILD_DIR=./kbuild TARGET=klibshared.a
 	
 modules: kshared
-	$(MAKE) -C modules
+	$(MAKE) -C modules DRIVER_TARGET=$(MODE)
 
 shared: 
 	$(MAKE) -C shared BUILD_DIR=./build
@@ -57,11 +57,11 @@ cross:
 	$(MAKE) -C shared ARCH= SH_FLAGS=-DCROSS
 
 raspi:
-	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true all
+	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true MODE=raspi all
 	./run_raspi
 
 virt:
-	$(MAKE) LOAD_ADDR=0x41000000 XHCI_CTX_SIZE=32 QEMU=true all
+	$(MAKE) LOAD_ADDR=0x41000000 XHCI_CTX_SIZE=32 QEMU=true MODE=virt all
 
 run:
 	$(MAKE) $(MODE)

@@ -1,6 +1,6 @@
 #pragma once 
 
-#include "../fbgpu.hpp"
+#include "common/framebuffer/fbgpu.hpp"
 #include "exceptions/exception_handler.h"
 #include "fw/fw_cfg.h"
 
