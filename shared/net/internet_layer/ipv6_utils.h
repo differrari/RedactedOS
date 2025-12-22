@@ -8,7 +8,8 @@ extern "C" {
 typedef enum {
     IPV6_MCAST_SOLICITED_NODE = 0,
     IPV6_MCAST_ALL_NODES= 1,
-    IPV6_MCAST_ALL_ROUTERS = 2
+    IPV6_MCAST_ALL_ROUTERS = 2,
+    IPV6_MCAST_DHCPV6_SERVERS = 3
 } ipv6_mcast_kind_t;
 
 bool ipv6_is_unspecified(const uint8_t ip[16]);
@@ -37,6 +38,13 @@ static inline void ipv6_make_placeholder_gua(uint8_t out[16]) {
     for (int i = 0; i < 16; i++) out[i] = 0;
     out[0] = 0x20;
     out[1] = 0x00;
+}
+
+static inline bool ipv6_is_linkscope_mcast(const uint8_t ip[16]){
+    if (!ip) return false;
+    if (ip[0] != 0xFF) return false;
+    uint8_t scope = (uint8_t)(ip[1] & 0x0F);
+    return scope == 0x02;
 }
 
 #ifdef __cplusplus

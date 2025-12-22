@@ -20,6 +20,9 @@ uint64_t mem_bitmap[PAGE_TABLE_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
 
 static bool page_alloc_verbose = false;
 
+uint64_t start;
+uint64_t end;
+
 void page_alloc_enable_verbose(){
     page_alloc_verbose = true;
 }
@@ -32,32 +35,30 @@ void page_alloc_enable_verbose(){
     })
 
 void page_allocator_init() {
-    for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) {
-        mem_bitmap[i] = 0;
-    }
+    memset(mem_bitmap, 0, sizeof(mem_bitmap));
 }
 
-int count_pages(uint64_t i1,uint64_t i2){
+uint64_t count_pages(uint64_t i1,uint64_t i2){
     return (i1/i2) + (i1 % i2 > 0);
 }
 
 void pfree(void* ptr, uint64_t size) {
-    int pages = count_pages(size,PAGE_SIZE);
+    uint64_t  pages = count_pages(size,PAGE_SIZE);
     uint64_t addr = (uint64_t)ptr;
     addr /= PAGE_SIZE;
-    for (int i = 0; i < pages; i++){
+    for (uint64_t i = 0; i < pages; i++){
         uint64_t index = addr + i;
         uint64_t table_index = index/64;
         uint64_t table_offset = index % 64;
         mem_bitmap[table_index] &= ~(1ULL << table_offset);
         mmu_unmap(index * PAGE_SIZE,index * PAGE_SIZE);
     }
+    if (addr < start) start = addr;
 }
 
-uint64_t start;
-uint64_t end;
-
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
+    if (!size) return 0;
+
     if (!start) start = count_pages(get_user_ram_start(),PAGE_SIZE);
     if (!end) end = count_pages(get_user_ram_end(),PAGE_SIZE);
     uint64_t page_count = count_pages(size,PAGE_SIZE);
@@ -65,84 +66,43 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
     if (page_count > 64){
         kprintfv("Large allocation > 64p");
         uint64_t reg_count = page_count/64;
-        uint8_t fractional = page_count % 64;
-        reg_count += fractional > 0;
-        
-        for (uint64_t i = start/64; i < end/64; i++) {
+        uint64_t fractional = page_count % 64;
+        reg_count += (fractional > 0);
+
+        uint64_t i_begin = (start + 63) / 64;
+
+        for (uint64_t i = i_begin; i < end/64; i++) {
             bool found = true;
             for (uint64_t j = 0; j < reg_count; j++){
                 if (fractional && j == reg_count-1)
-                    found &= (mem_bitmap[i + j] & ((1ULL << (fractional + 1)) - 1)) == 0;
+                    found &= (mem_bitmap[i + j] & ((1ULL << fractional) - 1)) == 0;
                 else
                     found &= mem_bitmap[i + j] == 0;
-                
+
                 if (!found) break;
             }
-            if (found){
-                for (uint64_t j = 0; j < reg_count; j++){
-                    if (fractional && j == reg_count-1)
-                        mem_bitmap[i+j] |= ((1ULL << (fractional + 1)) - 1);
-                    else
-                        mem_bitmap[i+j] = UINT64_MAX;
-                }
-                
-                start = (i + (reg_count - (fractional > 0))) * 64;
-                for (uint32_t p = 0; p < page_count; p++){
-                    uintptr_t address = ((i * 64) + p) * PAGE_SIZE;
-                    if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
-                        register_device_memory(address, address);
-                    else
-                        register_proc_memory(address, address, attributes, level);
-                }
-                kprintfv("[page_alloc] Final address %x", (i * 64 * PAGE_SIZE));
-                void* addr = (void*)(i * 64 * PAGE_SIZE);
-                if (full) memset(addr, 0, size);
-                return addr;
-            }
-        }
-    }
+            if (!found) continue;
 
-    bool skipped_regs = false;
-
-    for (uint64_t i = start/64; i < end/64; i++) {
-        if (mem_bitmap[i] != UINT64_MAX) {
-            kprintfv("Normal allocation");
-            uint64_t inv = ~mem_bitmap[i];
-            uint64_t bit = __builtin_ctzll(inv);
-            if (bit > (64 - page_count)){ 
-                skipped_regs = true;
-                continue;
+            for (uint64_t j = 0; j < reg_count; j++){
+                if (fractional && j == reg_count-1)
+                    mem_bitmap[i+j] |= ((1ULL << fractional) - 1);
+                else
+                    mem_bitmap[i+j] = UINT64_MAX;
             }
-            do {
-                bool found = true;
-                for (uint64_t b = bit; b < (uint64_t)min(64,bit + (page_count - 1)); b++){
-                    if (((mem_bitmap[i] >> b) & 1)){
-                        bit += page_count;
-                        found = false;
-                    }
-                }
-                if (found) break;
-            } while (bit < 64);
-            if (bit == 64){ 
-                skipped_regs = true;
-                continue;
-            }
-            
-            uintptr_t first_address = 0;
-            for (uint64_t j = 0; j < page_count; j++){
-                mem_bitmap[i] |= (1ULL << (bit + j));
-                uint64_t page_index = (i * 64) + (bit + j);
-                uintptr_t address = page_index * PAGE_SIZE;
-                if (!first_address) first_address = address;
 
-                if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
+            uintptr_t addr = (i * 64) * PAGE_SIZE;
+
+            for (uint64_t p = 0; p < page_count; p++){
+                uintptr_t address = addr + (p * PAGE_SIZE);
+
+                if ((attributes & MEM_DEV) && (level == MEM_PRIV_KERNEL))
                     register_device_memory(address, address);
                 else
                     register_proc_memory(address, address, attributes, level);
 
                 if (!full) {
-                    mem_page* new_info = (mem_page*)address;
-                    new_info->next = NULL;
+                    mem_page *new_info = (mem_page*)address;
+                    new_info->next = ((p + 1) < page_count) ? (mem_page*)(address + PAGE_SIZE) : NULL;
                     new_info->free_list = NULL;
                     new_info->next_free_mem_ptr = address + sizeof(mem_page);
                     new_info->attributes = attributes;
@@ -150,10 +110,72 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full) {
                 }
             }
 
-            kprintfv("[page_alloc] Final address %x", first_address);
-            if (full) memset((void*)first_address,0,size);
-            return (void*)first_address;
-        } else if (!skipped_regs) start = (i + 1) * 64;
+            uint64_t next = (i * 64) + page_count;
+            if (next > start) start = next;
+            if (full) memset((void*)addr, 0, size);
+            return (void*)addr;
+        }
+    }
+
+    bool skipped_regs = false;
+    uint64_t end_reg = (end + 63) / 64;
+    for (uint64_t i = start/64; i < end_reg; i++) {
+        if (mem_bitmap[i] == UINT64_MAX) {
+            kprintfv("Normal allocation");
+            if (!skipped_regs) start = (i + 1) * 64;
+            continue;
+        }
+
+        uint64_t b_begin = 0;
+
+        if (i == (start / 64)) b_begin = start % 64;
+
+        uint64_t run = 0;
+        uint64_t run_start = 0;
+
+        for (uint64_t b = b_begin; b < 64; b++){
+            if (((mem_bitmap[i] >> b) & 1) == 0){
+                if (!run) run_start = b;
+                run++;
+                if (run == page_count) break;
+            } else run = 0;
+        }
+
+        if (run < page_count){
+            skipped_regs = true;
+            continue;
+        }
+
+        uintptr_t first_address = 0;
+
+        for (uint64_t j = 0; j < page_count; j++){
+            mem_bitmap[i] |= (1ULL << (run_start + j));
+            uint64_t page_index = (i * 64) + run_start + j;
+            uintptr_t address = page_index * PAGE_SIZE;
+            if (!first_address) first_address = address;
+
+                if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
+                    register_device_memory(address, address);
+                else
+                    register_proc_memory(address, address, attributes, level);
+
+            if (!full) {
+                mem_page* new_info = (mem_page*)address;
+
+                new_info->next = ((j + 1) < page_count) ? (mem_page*)(address + PAGE_SIZE) : NULL;
+                new_info->free_list = NULL;
+                new_info->next_free_mem_ptr = address + sizeof(mem_page);
+                new_info->attributes = attributes;
+                new_info->size = 0;
+            }
+        }
+
+        kprintfv("[page_alloc] Final address %x", first_address);
+
+        start = (i * 64) + run_start + page_count;
+
+        if (full) memset((void*)first_address,0,size);
+        return (void*)first_address;
     }
 
     uart_puts("[page_alloc error] Could not allocate");
@@ -174,16 +196,14 @@ void mark_used(uintptr_t address, size_t pages)
         kprintf("[mark_used error] address %x not aligned", address);
         return;
     }
-    if (pages == 0) return;
+    if (!pages) return;
 
-    uint64_t start = count_pages(get_user_ram_start(),PAGE_SIZE);
-
-    uint64_t page_index = (address / (PAGE_SIZE * 64)) - (start/64);
+    uint64_t first_page = address / PAGE_SIZE;
 
     for (size_t j = 0; j < pages; j++) {
-        uint64_t idx = page_index + j;
-        uint64_t i = idx / 64;
-        uint64_t bit  = idx % 64;
+        uint64_t page = first_page + j;
+        uint64_t i = page / 64;
+        uint64_t bit = page % 64;
 
         mem_bitmap[i] |= (1ULL << bit);
     }
@@ -192,12 +212,21 @@ void mark_used(uintptr_t address, size_t pages)
 //TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
 void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
-    
+    if (!alignment || (alignment & (alignment - 1))) alignment = 16;
+
     size = (size + alignment - 1) & ~(alignment - 1);
 
     kprintfv("[in_page_alloc] Requested size: %x", size);
 
     mem_page *info = (mem_page*)page;
+
+    if (info->next_free_mem_ptr == 0 || info->next_free_mem_ptr < (uintptr_t)page || info->next_free_mem_ptr > ((uintptr_t)page + PAGE_SIZE)) {
+        info->next = NULL;
+        info->free_list = NULL;
+        info->next_free_mem_ptr = (uintptr_t)page + sizeof(mem_page);
+        info->attributes = MEM_RW | MEM_NORM;
+        info->size = 0;
+    }
 
     if (size >= PAGE_SIZE){
         void* ptr = palloc(size, level, info->attributes, true);
@@ -245,15 +274,46 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
 void kfree(void* ptr, uint64_t size) {
     kprintfv("[page_alloc_free] Freeing block at %x size %x",(uintptr_t)ptr, size);
 
+    if (!ptr || !size) return;
+
+    if ((((uintptr_t)ptr & (PAGE_SIZE - 1)) == 0) && (size >= PAGE_SIZE)){
+        pfree(ptr,size);
+        return;
+    }
+
     memset((void*)ptr,0,size);
 
-    mem_page *page = (mem_page *)(((uintptr_t)ptr) & ~0xFFF);
+    mem_page *page = (mem_page *)(((uintptr_t)ptr) & ~(PAGE_SIZE - 1));
+
+    if (!page_used((uintptr_t)page))return;
+
 
     FreeBlock* block = (FreeBlock*)ptr;
     block->size = size;
-    block->next = page->free_list;
-    page->free_list = block;
-    page->size -= size;
+
+    FreeBlock **curr = &page->free_list;
+    while (*curr && *curr < block) curr = &(*curr)->next;
+
+    block->next = *curr;
+    *curr = block;
+
+    if (block->next && ((uintptr_t)block + block->size == (uintptr_t)block->next)) {
+        block->size += block->next->size;
+        block->next = block->next->next;
+    }
+
+    if (curr != &page->free_list) {
+        FreeBlock *prev = page->free_list;
+        while (prev && prev->next != block) prev = prev->next;
+
+        if (prev && ((uintptr_t)prev + prev->size == (uintptr_t)block)) {
+            prev->size += block->size;
+            prev->next = block->next;
+        }
+    }
+
+    if (page->size >= size) page->size -= size;
+    else page->size = 0;
 }
 
 void free_sized(sizedptr ptr){

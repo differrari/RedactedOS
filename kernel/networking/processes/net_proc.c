@@ -27,7 +27,7 @@
 #include "net/application_layer/dns_daemon.h"
 #include "net/application_layer/dns.h"
 #include "net/application_layer/sntp_daemon.h"
-#include "net/application_layer/ipv6_addr_manager.h"
+#include "net/application_layer/dhcpv6_daemon.h"
 
 #include "exceptions/timer.h"
 #include "syscalls/syscalls.h"
@@ -397,7 +397,7 @@ process_t* launch_net_process() {
     create_kernel_process("arp_daemon", arp_daemon_entry, 0, 0);
     create_kernel_process("ndp_daemon", ndp_daemon_entry, 0, 0);
     create_kernel_process("dhcp_daemon", dhcp_daemon_entry, 0, 0);
-    create_kernel_process("addr_manager", ipv6_addr_manager_daemon_entry, 0, 0);
+    create_kernel_process("dhcpv6_daemon", dhcpv6_daemon_entry, 0, 0);
     create_kernel_process("dns_daemon", dns_deamon_entry, 0, 0);
     
     if (any_ipv4_ready()) {

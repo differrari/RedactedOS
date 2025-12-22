@@ -8,8 +8,7 @@ port_manager_t *tcp_pm_for_l3(uint8_t l3_id){
 
 bool tcp_build_tx_opts_from_local_v4(const void *src_ip_addr, ipv4_tx_opts_t *out){
     if (!out) return false;
-    uint32_t lip = tcp_v4_u32_from_ptr(src_ip_addr);
-    l3_ipv4_interface_t *v4 = l3_ipv4_find_by_ip(lip);
+    l3_ipv4_interface_t *v4 = l3_ipv4_find_by_ip(*(const uint32_t *)src_ip_addr);
     if (v4) {
         out->scope = IP_TX_BOUND_L3;
         out->index = v4->l3_id;

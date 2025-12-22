@@ -50,7 +50,7 @@ bool FAT32FS::init(uint32_t partition_sector){
     kprintf("Data start at %x",data_start_sector*512);
     read_FAT(mbs->reserved_sectors, mbs->sectors_per_fat, mbs->number_of_fats);
 
-    open_files = IndexMap<void*>(128);
+    open_files = IndexMap<void*>(4096);
 
     return true;
 }
@@ -251,7 +251,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (!buf) return FS_RESULT_NOTFOUND;
     descriptor->id = reserve_fd_id();
     descriptor->size = buf_ptr.size;
-    open_files.add(descriptor->id, buf);
+    if (!open_files.add(descriptor->id, buf)) return FS_RESULT_NO_RESOURCES;
     //TODO: go back to using a linked list
     return FS_RESULT_SUCCESS;
 }

@@ -92,11 +92,15 @@ class UDPSocket : public Socket {
         }
 
         if (ver == IP_VER6) {
+            bool mcast = ipv6_is_multicast((const uint8_t*)dst_ip_addr);
+
             for (int i = 0; i < s->bound_l3_count; ++i) {
                 uint8_t id = s->bound_l3[i];
                 l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
                 if (!is_valid_v6_l3_for_bind(v6)) continue;
                 if (v6->l2->ifindex != ifx) continue;
+
+                if (mcast) return true;
                 if (memcmp(v6->ip, dst_ip_addr, 16) == 0) return true;
             }
             return false;
@@ -533,7 +537,35 @@ public:
         }
 
         if (d.ver == IP_VER6) {
-            if (ipv6_is_multicast(d.ip)) return SOCK_ERR_PROTO;
+            bool is_mcast = ipv6_is_multicast(d.ip);
+
+            if (is_mcast) {
+                if (!bound) return SOCK_ERR_BOUND;
+                if (!localPort) return SOCK_ERR_BOUND;
+                if (bound_l3_count == 0) return SOCK_ERR_SYS;
+
+                for (int i = 0; i < bound_l3_count; ++i) {
+                    uint8_t bl3 = bound_l3[i];
+                    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(bl3);
+                    if (!is_valid_v6_l3_for_bind(v6)) continue;
+
+                    net_l4_endpoint src;
+                    src.ver = IP_VER6;
+                    memset(src.ip, 0, 16);
+                    memcpy(src.ip, v6->ip, 16);
+                    src.port = localPort;
+
+                    ipv6_tx_opts_t tx;
+                    tx.scope = IP_TX_BOUND_L3;
+                    tx.index = bl3;
+
+                    udp_send_segment(&src, &d, pay, &tx);
+                }
+
+                remoteEP = d;
+                return (int64_t)len;
+            }
+
 
             uint8_t chosen_l3 = 0;
 

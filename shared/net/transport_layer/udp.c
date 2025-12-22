@@ -97,9 +97,24 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     uint16_t dst_port = bswap16(hdr->dst_port);
     uint16_t src_port = bswap16(hdr->src_port);
 
-    l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(l3_id);
-    l3_ipv6_interface_t *v6 = v4 ? NULL : l3_ipv6_find_by_id(l3_id);
-    port_manager_t *pm = v4 ? ifmgr_pm_v4(l3_id) : (v6 ? ifmgr_pm_v6(l3_id) : NULL);
+    l3_ipv4_interface_t *v4 = NULL;
+    l3_ipv6_interface_t *v6 = NULL;
+    port_manager_t *pm = NULL;
+
+    if (ipver == IP_VER4) {
+        v4 = l3_ipv4_find_by_id(l3_id);
+        if (v4) pm = ifmgr_pm_v4(l3_id);
+    } else if (ipver == IP_VER6) {
+        v6 = l3_ipv6_find_by_id(l3_id);
+
+        if (v6) pm = ifmgr_pm_v6(l3_id);
+        else {
+            l2_interface_t* l2 = l2_interface_find_by_index(v4 ? v4->l2->ifindex : (v6 && v6->l2 ? v6->l2->ifindex : 0));
+
+            if (l2) pm = ifmgr_pm_v6(l2->ifindex << 4);
+        }
+    }
+
     if (!pm) return;
 
     port_recv_handler_t handler = port_get_handler(pm, PROTO_UDP, dst_port);
@@ -108,7 +123,11 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
         if (!copy) return;
         memcpy((void*)copy, (const void*)pl.ptr, pl.size);
 
-        uint8_t ifx = v4 ? v4->l2->ifindex : (v6 && v6->l2 ? v6->l2->ifindex : 0);
+        uint8_t ifx = 0;
+        if (v4 && v4->l2) ifx = v4->l2->ifindex;
+        else if (v6 && v6->l2) ifx = v6->l2->ifindex;
+        else if (ipver == IP_VER6) ifx = l3_id >> 4;
+
         handler(ifx, ipver, src_ip_addr, dst_ip_addr, copy, pl.size, src_port, dst_port);
     }
 }

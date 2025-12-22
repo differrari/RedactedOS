@@ -33,7 +33,7 @@ bool page_used(uintptr_t ptr);
 void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level);
 void kfree(void* ptr, uint64_t size);
 
-int count_pages(uint64_t i1,uint64_t i2);
+uint64_t count_pages(uint64_t i1,uint64_t i2);
 
 void free_sized(sizedptr ptr);
 

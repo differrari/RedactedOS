@@ -49,6 +49,13 @@ void ipv6_make_multicast(uint8_t scope, ipv6_mcast_kind_t kind, const uint8_t un
         case IPV6_MCAST_ALL_ROUTERS:
             out[15] = 0x02;
             break;
+        case IPV6_MCAST_DHCPV6_SERVERS:
+            out[11] = 0x00;
+            out[12] = 0x01;
+            out[13] = 0x00;
+            out[14] = 0x00;
+            out[15] = 0x02;
+            break;
         case IPV6_MCAST_SOLICITED_NODE:
         default:
             out[11] = 0x01;

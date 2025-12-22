@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define MAX_L2_INTERFACES 16
+#define MAX_L2_INTERFACES 15
 #define MAX_IPV4_PER_INTERFACE 4
 #define MAX_IPV6_PER_INTERFACE 4
 #define MAX_IPV4_MCAST_PER_INTERFACE 12
@@ -86,8 +86,30 @@ typedef struct l3_ipv4_interface {
     l2_interface_t *l2;
 } l3_ipv4_interface_t;
 
+typedef struct net_runtime_opts_v6 {
+    uint32_t t1;
+    uint32_t t2;
+
+    uint8_t dns[2][16];
+    uint8_t ntp[2][16];
+
+    uint32_t iaid;
+
+    uint32_t lease;
+    uint32_t lease_start_time;
+
+    uint16_t server_id_len;
+    uint8_t server_id[128];
+
+    uint8_t pd_prefix[16];
+    uint8_t pd_prefix_len;
+    uint32_t pd_preferred_lft;
+    uint32_t pd_valid_lft;
+} net_runtime_opts_v6_t;
+
 typedef struct l3_ipv6_interface {
     uint8_t l3_id;
+
     uint8_t ip[16];
     uint8_t prefix_len;
     uint8_t gateway[16];
@@ -96,8 +118,6 @@ typedef struct l3_ipv6_interface {
     bool is_localhost;
     uint32_t valid_lifetime;
     uint32_t preferred_lifetime;
-    uint32_t dhcpv6_lease;
-    uint32_t dhcpv6_lease_start_time;
     uint32_t timestamp_created;
     uint8_t prefix[16];
     uint8_t interface_id[8];
@@ -113,6 +133,9 @@ typedef struct l3_ipv6_interface {
     uint8_t ra_is_default;
     uint8_t ra_reserved;
     uint32_t ra_last_update_ms;
+
+    net_runtime_opts_v6_t runtime_opts_v6;
+    uint8_t dhcpv6_state;
 } l3_ipv6_interface_t;
 
 typedef struct ip_resolution_result {

@@ -17,7 +17,7 @@ static l3_ipv6_interface_t* best_v6_on_l2_for_dst(l2_interface_t* l2, const uint
     l3_ipv6_interface_t* best = NULL;
     int best_cmp = -1;
     int best_cost = 0x7FFFFFFF;
-    int dst_is_ll = ipv6_is_linklocal(dst) ? 1 : 0;
+    int dst_is_ll = (ipv6_is_linklocal(dst) || ipv6_is_linkscope_mcast(dst)) ? 1 : 0;
 
     for (int s = 0; s < MAX_IPV6_PER_INTERFACE; s++) {
         l3_ipv6_interface_t* v6 = l2->l3_v6[s];
@@ -47,7 +47,7 @@ static bool pick_route_bound_l3(uint8_t l3_id, const uint8_t dst[16], uint8_t* o
     if (ipv6_is_unspecified(v6->ip)) return false;
     if (v6->dad_state != IPV6_DAD_OK) return false;
 
-    int dst_is_ll = ipv6_is_linklocal(dst) ? 1 : 0;
+    int dst_is_ll = (ipv6_is_linklocal(dst) || ipv6_is_linkscope_mcast(dst)) ? 1 : 0;
     int src_is_ll = ipv6_is_linklocal(v6->ip) ? 1 : 0;
     if (dst_is_ll != src_is_ll) return false;
 
