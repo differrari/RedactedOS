@@ -615,10 +615,12 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
                     if (p.t2) v6->runtime_opts_v6.t2 = p.t2;
 
                     if (p.has_addr) {
-                        uint8_t zero16[16];
-                        memset(zero16, 0, 16);
+                        uint8_t gw[16];
 
-                        (void)l3_ipv6_update(v6->l3_id, p.addr, 128, zero16, IPV6_CFG_DHCPV6, v6->kind);
+                        if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) ipv6_cpy(gw, v6->gateway);
+                        else memset(gw, 0, 16);
+
+                        (void)l3_ipv6_update(v6->l3_id, p.addr, 128, gw, IPV6_CFG_DHCPV6, v6->kind);
 
                         uint32_t lease_s = p.valid_lft;
                         v6->runtime_opts_v6.lease = lease_s;
@@ -684,10 +686,12 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
                         if (p.t2) v6->runtime_opts_v6.t2 = p.t2;
 
                         if (p.has_addr) {
-                            uint8_t zero16[16];
-                            memset(zero16, 0, 16);
+                            uint8_t gw[16];
 
-                            (void)l3_ipv6_update(v6->l3_id, p.addr, 128, zero16, IPV6_CFG_DHCPV6, v6->kind);
+                            if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) ipv6_cpy(gw, v6->gateway);
+                            else memset(gw, 0, 16);
+
+                            (void)l3_ipv6_update(v6->l3_id, p.addr, 128, gw, IPV6_CFG_DHCPV6, v6->kind);
 
                             uint32_t lease_s = p.valid_lft;
                             v6->runtime_opts_v6.lease = lease_s;
@@ -734,10 +738,12 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
                         if (p.t2) v6->runtime_opts_v6.t2 = p.t2;
 
                         if (p.has_addr) {
-                            uint8_t zero16[16];
-                            memset(zero16, 0, 16);
+                            uint8_t gw[16];
 
-                            (void)l3_ipv6_update(v6->l3_id, p.addr, 128, zero16, IPV6_CFG_DHCPV6, v6->kind);
+                            if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) ipv6_cpy(gw, v6->gateway);
+                            else memset(gw, 0, 16);
+
+                            (void)l3_ipv6_update(v6->l3_id, p.addr, 128, gw, IPV6_CFG_DHCPV6, v6->kind);
 
                             uint32_t lease_s = p.valid_lft;
                             v6->runtime_opts_v6.lease = lease_s;

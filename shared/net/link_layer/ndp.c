@@ -177,17 +177,19 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
         uint8_t o = (v6->ra_flags & RA_FLAG_O) ? 1u : 0u;
         if (!v6->ra_autonomous) {
             if (m) {
+                uint8_t gw[16];
+
+                if (v6->ra_is_default) ipv6_cpy(gw, v6->gateway);
+                else memset(gw, 0, 16);
+
+                v6->dhcpv6_stateless = 0;
+                v6->dhcpv6_stateless_done = 0;
+
                 if (v6->cfg != IPV6_CFG_DHCPV6 || ipv6_is_placeholder_gua(v6->ip)) {
                     uint8_t z[16] = {0};
-                    uint8_t gw[16];
-
-                    if (v6->ra_is_default) ipv6_cpy(gw, v6->gateway);
-                    else memset(gw, 0, 16);
-
-                    v6->dhcpv6_stateless = 0;
-                    v6->dhcpv6_stateless_done = 0;
-
                     (void)l3_ipv6_update(v6->l3_id, z, 0, gw, IPV6_CFG_DHCPV6, v6->kind);
+                } else {
+                    (void)l3_ipv6_update(v6->l3_id, v6->ip, v6->prefix_len, gw, IPV6_CFG_DHCPV6, v6->kind);
                 }
             } else {
                 v6->dhcpv6_stateless = o ? 1 : 0;
@@ -195,7 +197,7 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
             }
 
             continue;
-        } 
+        }
         v6->dhcpv6_stateless = o ? 1 : 0;
         v6->dhcpv6_stateless_done = 0;
 

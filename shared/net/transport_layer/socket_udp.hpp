@@ -41,6 +41,8 @@ class UDPSocket : public Socket {
         if (!v6->l2) return false;
         if (!v6->l2->is_up) return false;
         if (v6->cfg == IPV6_CFG_DISABLE) return false;
+        if (v6->dad_state != IPV6_DAD_OK) return false;
+        if (!v6->port_manager) return false;
         return true;
     }
 
@@ -110,12 +112,20 @@ class UDPSocket : public Socket {
     }
 
     static void dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uintptr_t frame_ptr, uint32_t frame_len, uint16_t src_port, uint16_t dst_port) {
+    bool delivered = false;
+
         for (UDPSocket* s = s_list_head; s; s = s->next) {
-            if (!socket_matches_dst(s, ifindex, ipver, dst_ip_addr, dst_port)) continue;
-            s->on_receive(ipver, src_ip_addr, src_port, frame_ptr, frame_len);
-            return;
+            if (!socket_matches_dst(s, ifindex, ipver, dst_ip_addr, dst_port))
+                continue;
+
+            delivered = true;
+            uintptr_t copy = (uintptr_t)malloc(frame_len);
+            if (!copy) continue;
+
+            memcpy((void*)copy, (const void*)frame_ptr, frame_len);
+            s->on_receive(ipver, src_ip_addr, src_port, copy, frame_len);
         }
-        if (frame_ptr && frame_len) free((void*)frame_ptr, frame_len);
+    if (frame_ptr && frame_len) free((void*)frame_ptr, frame_len);
     }
 
     void on_receive(ip_version_t ver, const void* src_ip_addr, uint16_t src_port, uintptr_t ptr, uint32_t len) {
@@ -219,33 +229,18 @@ class UDPSocket : public Socket {
 
     static bool pick_v4_l3_for_unicast(uint32_t dip, const uint8_t* candidates, int n, uint8_t* out_l3) {
         if (!out_l3) return false;
-        if (n <= 0) return false;
-        if (!ipv4_rt_pick_best_l3_in(candidates, n, dip, out_l3)) return false;
-        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(*out_l3);
-        if (!is_valid_v4_l3_for_bind(v4)) return false;
+        ipv4_tx_plan_t plan;
+        if (!ipv4_build_tx_plan(dip, nullptr, candidates, n, &plan)) return false;
+        *out_l3 = plan.l3_id;
         return true;
     }
 
     static bool pick_v6_l3_for_unicast(const uint8_t dst_ip[16], const uint8_t* candidates, int n, uint8_t* out_l3) {
         if (!out_l3) return false;
-
-        ip_resolution_result_t r = resolve_ipv6_to_interface(dst_ip);
-        if (!r.found) return false;
-        if (!r.ipv6) return false;
-
-        if (n <= 0) {
-            *out_l3 = r.ipv6->l3_id;
-            return true;
-        }
-
-        for (int i = 0; i < n; ++i) {
-            if (candidates[i] == r.ipv6->l3_id) {
-                *out_l3 = r.ipv6->l3_id;
-                return true;
-            }
-        }
-
-        return false;
+        ipv6_tx_plan_t plan;
+        if (!ipv6_build_tx_plan(dst_ip, nullptr, candidates, n, &plan)) return false;
+        *out_l3 = plan.l3_id;
+        return true;
     }
 
 public:
@@ -340,13 +335,45 @@ public:
         } else if (kind == DST_DOMAIN) {
             const char* host = (const char*)dst;
             if (!port) return SOCK_ERR_INVAL;
+
+            uint8_t a6[16];
+            memset(a6, 0, 16);
             uint32_t a4 = 0;
-            dns_result_t dr = dns_resolve_a(host, &a4, UDP_DNS_SEL, UDP_DNS_TIMEOUT_MS);
-            if (dr != DNS_OK) return SOCK_ERR_DNS;
-            d.ver = IP_VER4;
-            memset(d.ip, 0, 16);
-            memcpy(d.ip, &a4, 4);
-            d.port = port;
+
+            dns_result_t dr6 = dns_resolve_aaaa(host, a6, UDP_DNS_SEL, UDP_DNS_TIMEOUT_MS);
+            dns_result_t dr4 = dns_resolve_a(host, &a4, UDP_DNS_SEL, UDP_DNS_TIMEOUT_MS);
+            if (dr6 != DNS_OK && dr4 != DNS_OK) return SOCK_ERR_DNS;
+
+            uint8_t allow_v4[SOCK_MAX_L3];
+            uint8_t allow_v6[SOCK_MAX_L3];
+            int n4 = 0;
+            int n6 = 0;
+            for (int i = 0; i < bound_l3_count; ++i) {
+                uint8_t id = bound_l3[i];
+                if (n4 < SOCK_MAX_L3 && l3_ipv4_find_by_id(id)) allow_v4[n4++] = id;
+                if (n6 < SOCK_MAX_L3 && l3_ipv6_find_by_id(id)) allow_v6[n6++] = id;
+            }
+
+            if (dr6 == DNS_OK) {
+                ipv6_tx_plan_t p6;
+                if (ipv6_build_tx_plan(a6, nullptr, n6 ? allow_v6 : nullptr, n6, &p6)) {
+                    d.ver = IP_VER6;
+                    memcpy(d.ip, a6, 16);
+                    d.port = port;
+                }
+            }
+
+            if (d.ver == 0 && dr4 == DNS_OK) {
+                ipv4_tx_plan_t p4;
+                if (ipv4_build_tx_plan(a4, nullptr, n4 ? allow_v4 : nullptr, n4, &p4)) {
+                    d.ver = IP_VER4;
+                    memset(d.ip, 0, 16);
+                    memcpy(d.ip, &a4, 4);
+                    d.port = port;
+                }
+            }
+
+            if (d.ver == 0) return SOCK_ERR_SYS;
         } else {
             return SOCK_ERR_INVAL;
         }
@@ -441,81 +468,28 @@ public:
 
             if (ipv4_is_multicast(dip)) return SOCK_ERR_PROTO;
 
-            uint8_t chosen_l3 = 0;
-
-            if (bound_l3_count == 0) {
-                uint8_t ids[SOCK_MAX_L3];
-                int n = 0;
-
-                uint8_t cnt = l2_interface_count();
-                for (uint8_t i = 0; i < cnt && n < SOCK_MAX_L3; ++i) {
-                    l2_interface_t* l2 = l2_interface_at(i);
-                    if (!l2) continue;
-                    if (!l2->is_up) continue;
-
-                    for (int s = 0; s < MAX_IPV4_PER_INTERFACE && n < SOCK_MAX_L3; ++s) {
-                        l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-                        if (!is_valid_v4_l3_for_bind(v4)) continue;
-                        ids[n++] = v4->l3_id;
-                    }
-                }
-
-                if (!pick_v4_l3_for_unicast(dip, ids, n, &chosen_l3)) return SOCK_ERR_SYS;
-
-                l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
-                if (!is_valid_v4_l3_for_bind(v4)) return SOCK_ERR_SYS;
-
-                int p = udp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
-                if (p < 0) return SOCK_ERR_NO_PORT;
-
-                localPort = (uint16_t)p;
-                add_bound_l3(chosen_l3);
-                bound = true;
-
-                net_l4_endpoint src;
-                src.ver = IP_VER4;
-                memset(src.ip, 0, 16);
-                memcpy(src.ip, &v4->ip, 4);
-                src.port = localPort;
-
-                udp_send_segment(&src, &d, pay, nullptr);
-                remoteEP = d;
-                return (int64_t)len;
+            uint8_t allowed_v4[SOCK_MAX_L3];
+            int n_allowed = 0;
+            for (int i = 0; i < bound_l3_count && n_allowed < SOCK_MAX_L3; ++i) {
+                uint8_t id = bound_l3[i];
+                if (l3_ipv4_find_by_id(id)) allowed_v4[n_allowed++] = id;
             }
+            if (bound_l3_count > 0 && n_allowed == 0) return SOCK_ERR_SYS;
 
-            if (bound_l3_count == 1) {
-                chosen_l3 = bound_l3[0];
+            ipv4_tx_plan_t plan;
+            if (!ipv4_build_tx_plan(dip, nullptr, n_allowed ? allowed_v4 : nullptr, n_allowed, &plan)) return SOCK_ERR_SYS;
 
-                l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
-                if (!is_valid_v4_l3_for_bind(v4)) return SOCK_ERR_SYS;
-
-                if (localPort == 0) {
-                    int p = udp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
-                    if (p < 0) return SOCK_ERR_NO_PORT;
-                    localPort = (uint16_t)p;
-                }
-
-                net_l4_endpoint src;
-                src.ver = IP_VER4;
-                memset(src.ip, 0, 16);
-                memcpy(src.ip, &v4->ip, 4);
-                src.port = localPort;
-
-                udp_send_segment(&src, &d, pay, nullptr);
-                remoteEP = d;
-                return (int64_t)len;
-            }
-
-            uint8_t ids[SOCK_MAX_L3];
-            int n = 0;
-            for (int i = 0; i < bound_l3_count && n < SOCK_MAX_L3; ++i) ids[n++] = bound_l3[i];
-
-            if (!pick_v4_l3_for_unicast(dip, ids, n, &chosen_l3)) return SOCK_ERR_SYS;
-
+            uint8_t chosen_l3 = plan.l3_id;
             l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
             if (!is_valid_v4_l3_for_bind(v4)) return SOCK_ERR_SYS;
 
-            if (localPort == 0) {
+            if (!bound) {
+                int p = udp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
+                if (p < 0) return SOCK_ERR_NO_PORT;
+                localPort = (uint16_t)p;
+                add_bound_l3(chosen_l3);
+                bound = true;
+            } else if (localPort == 0) {
                 int p = udp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
                 if (p < 0) return SOCK_ERR_NO_PORT;
                 localPort = (uint16_t)p;
@@ -528,8 +502,8 @@ public:
             src.port = localPort;
 
             ipv4_tx_opts_t tx;
-            tx.scope = IP_TX_BOUND_L3;
-            tx.index = chosen_l3;
+            tx.scope = (ip_tx_scope_t)plan.fixed_opts.scope;
+            tx.index = plan.fixed_opts.index;
 
             udp_send_segment(&src, &d, pay, &tx);
             remoteEP = d;
@@ -566,22 +540,18 @@ public:
                 return (int64_t)len;
             }
 
-
-            uint8_t chosen_l3 = 0;
-
-            if (bound_l3_count == 0) {
-                if (!pick_v6_l3_for_unicast(d.ip, nullptr, 0, &chosen_l3)) return SOCK_ERR_SYS;
-            } else if (bound_l3_count == 1) {
-                uint8_t cand = bound_l3[0];
-                l3_ipv6_interface_t* v6c = l3_ipv6_find_by_id(cand);
-                if (!is_valid_v6_l3_for_bind(v6c)) return SOCK_ERR_SYS;
-                chosen_l3 = cand;
-            } else {
-                uint8_t ids[SOCK_MAX_L3];
-                int n = 0;
-                for (int i = 0; i < bound_l3_count && n < SOCK_MAX_L3; ++i) ids[n++] = bound_l3[i];
-                if (!pick_v6_l3_for_unicast(d.ip, ids, n, &chosen_l3)) return SOCK_ERR_SYS;
+            uint8_t allowed_v6[SOCK_MAX_L3];
+            int n_allowed = 0;
+            for (int i = 0; i < bound_l3_count && n_allowed < SOCK_MAX_L3; ++i) {
+                uint8_t id = bound_l3[i];
+                if (l3_ipv6_find_by_id(id)) allowed_v6[n_allowed++] = id;
             }
+            if (bound_l3_count > 0 && n_allowed == 0) return SOCK_ERR_SYS;
+
+            ipv6_tx_plan_t plan;
+            if (!ipv6_build_tx_plan(d.ip, nullptr, n_allowed ? allowed_v6 : nullptr, n_allowed, &plan)) return SOCK_ERR_SYS;
+
+            uint8_t chosen_l3 = plan.l3_id;
 
             l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen_l3);
             if (!is_valid_v6_l3_for_bind(v6)) return SOCK_ERR_SYS;
@@ -605,8 +575,8 @@ public:
             src.port = localPort;
 
             ipv6_tx_opts_t tx;
-            tx.scope = IP_TX_BOUND_L3;
-            tx.index = chosen_l3;
+            tx.scope = (ip_tx_scope_t)plan.fixed_opts.scope;
+            tx.index = plan.fixed_opts.index;
 
             udp_send_segment(&src, &d, pay, &tx);
             remoteEP = d;

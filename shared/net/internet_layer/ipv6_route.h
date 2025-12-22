@@ -1,5 +1,6 @@
 #pragma once
 #include "types.h"
+#include "net/network_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,6 +29,14 @@ void ipv6_rt_ensure_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t ple
 void ipv6_rt_sync_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t plen, const uint8_t gw[16], uint16_t base_metric);
 
 bool ipv6_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, const uint8_t dst[16], uint8_t* out_l3);
+
+typedef struct {
+    uint8_t l3_id;
+    uint8_t src_ip[16];
+    ip_tx_opts_t fixed_opts;
+} ipv6_tx_plan_t;
+
+bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const uint8_t* allowed_l3, int allowed_n, ipv6_tx_plan_t* out);
 
 #ifdef __cplusplus
 }

@@ -5,6 +5,88 @@
 #include "networking/interface_manager.h"
 #include "syscalls/syscalls.h"
 
+static bool v6_l3_ok_for_tx(l3_ipv6_interface_t* v6, int dst_is_ll) {
+    if (!v6 || !v6->l2) return false;
+    if (!v6->l2->is_up) return false;
+    if (v6->cfg == IPV6_CFG_DISABLE) return false;
+    if (v6->is_localhost) return false;
+    if (ipv6_is_unspecified(v6->ip)) return false;
+    if (v6->dad_state != IPV6_DAD_OK)return false;
+    if (!v6->port_manager) return false;
+
+    int src_is_ll = ipv6_is_linklocal(v6->ip) ? 1 : 0;
+    if (src_is_ll != dst_is_ll) return false;
+    return true;
+}
+
+static bool l3_allowed(uint8_t id, const uint8_t* allowed, int n) {
+    if (!allowed || n <= 0) return true;
+    for (int i = 0; i < n; ++i) if (allowed[i] == id) return true;
+    return false;
+}
+
+bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const uint8_t* allowed_l3, int allowed_n, ipv6_tx_plan_t* out) {
+    if (!dst || !out) return false;
+
+    memset(out, 0, sizeof(*out));
+    out->fixed_opts.scope = IP_TX_AUTO;
+    out->fixed_opts.index = 0;
+
+    int dst_is_ll = (ipv6_is_linklocal(dst) || ipv6_is_linkscope_mcast(dst)) ? 1 : 0;
+
+    if (hint && hint->scope == IP_TX_BOUND_L3) {
+        uint8_t id = hint->index;
+        if (!l3_allowed(id, allowed_l3, allowed_n)) return false;
+        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
+        if (!v6_l3_ok_for_tx(v6, dst_is_ll)) return false;
+        out->l3_id = id;
+        memcpy(out->src_ip, v6->ip, 16);
+        out->fixed_opts.scope = IP_TX_BOUND_L3;
+        out->fixed_opts.index = id;
+        return true;
+    }
+
+    uint8_t cand[64];
+    int n = 0;
+
+    if (hint && hint->scope == IP_TX_BOUND_L2) {
+        l2_interface_t* l2 = l2_interface_find_by_index(hint->index);
+        if (!l2 || !l2->is_up) return false;
+        for (int s = 0; s < MAX_IPV6_PER_INTERFACE && n < (int)sizeof(cand); ++s){
+            l3_ipv6_interface_t* v6 = l2->l3_v6[s];
+            if (!v6_l3_ok_for_tx(v6, dst_is_ll)) continue;
+            if (!l3_allowed(v6->l3_id, allowed_l3, allowed_n)) continue;
+            cand[n++] = v6->l3_id;
+        }
+    } else {
+        uint8_t cnt = l2_interface_count();
+        for (uint8_t i = 0; i < cnt && n < (int)sizeof(cand); ++i){
+            l2_interface_t* l2 = l2_interface_at(i);
+            if (!l2 || !l2->is_up) continue;
+            for (int s = 0; s < MAX_IPV6_PER_INTERFACE && n < (int)sizeof(cand); ++s){
+                l3_ipv6_interface_t* v6 = l2->l3_v6[s];
+                if (!v6_l3_ok_for_tx(v6, dst_is_ll)) continue;
+                if (!l3_allowed(v6->l3_id, allowed_l3, allowed_n)) continue;
+                cand[n++] = v6->l3_id;
+            }
+        }
+    }
+
+    if (n == 0) return false;
+
+    uint8_t chosen = 0;
+    if (!ipv6_rt_pick_best_l3_in(cand, n, dst, &chosen)) chosen = cand[0];
+
+    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen);
+    if (!v6_l3_ok_for_tx(v6, dst_is_ll)) return false;
+
+    out->l3_id = chosen;
+    memcpy(out->src_ip, v6->ip, 16);
+    out->fixed_opts.scope = IP_TX_BOUND_L3;
+    out->fixed_opts.index = chosen;
+    return true;
+}
+
 struct ipv6_rt_table {
     ipv6_rt_entry_t e[IPV6_RT_PER_IF_MAX];
     int len;

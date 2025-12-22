@@ -46,6 +46,8 @@ class TCPSocket : public Socket {
         if (v6->is_localhost) return false;
         if (v6->cfg == IPV6_CFG_DISABLE) return false;
         if (ipv6_is_unspecified(v6->ip)) return false;
+        if (v6->dad_state != IPV6_DAD_OK) return false;
+        if (!v6->port_manager) return false;
         return true;
     }
 
@@ -72,8 +74,10 @@ class TCPSocket : public Socket {
                         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
                         if (!is_valid_v6_l3_for_bind(v6)) continue;
                         if (v6->l2->ifindex != ifindex) continue;
-                        matches_dst = true;
-                        break;
+                        if (memcmp(v6->ip, dst_ip_addr, 16) == 0){
+                            matches_dst = true;
+                            break;
+                        }
                     }
                 }
 
@@ -382,6 +386,7 @@ public:
         if (!dst) return SOCK_ERR_INVAL;
 
         net_l4_endpoint d{};
+        uint8_t chosen_l3 = 0;
 
         if (kind == DST_ENDPOINT){
             const net_l4_endpoint* ed = (const net_l4_endpoint*)dst;
@@ -392,122 +397,99 @@ public:
             const char* host = (const char*)dst;
             if (!port) return SOCK_ERR_INVAL;
 
+            uint8_t v6[16];
+            memset(v6, 0, 16);
             uint32_t v4 = 0;
-            dns_result_t dr = dns_resolve_a(host, &v4, TCP_DNS_SEL, TCP_DNS_TIMEOUT_MS);
-            if (dr != DNS_OK) return SOCK_ERR_DNS;
 
-            d.ver = IP_VER4;
-            memset(d.ip, 0, 16);
-            memcpy(d.ip, &v4, 4);
-            d.port = port;
+            dns_result_t dr6 = dns_resolve_aaaa(host, v6, TCP_DNS_SEL, TCP_DNS_TIMEOUT_MS);
+            dns_result_t dr4 = dns_resolve_a(host, &v4, TCP_DNS_SEL, TCP_DNS_TIMEOUT_MS);
+
+            if (dr6 != DNS_OK && dr4 != DNS_OK) return SOCK_ERR_DNS;
+
+            net_l4_endpoint d6{};
+            net_l4_endpoint d4{};
+
+            if (dr6 == DNS_OK){
+                d6.ver = IP_VER6;
+                memcpy(d6.ip, v6, 16);
+                d6.port = port;
+            }
+
+            if (dr4 == DNS_OK){
+                d4.ver = IP_VER4;
+                memcpy(d4.ip, &v4, 4);
+                d4.port = port;
+            }
+
+            uint8_t allow_v4[SOCK_MAX_L3];
+            uint8_t allow_v6[SOCK_MAX_L3];
+            int n4 = 0;
+            int n6 = 0;
+            for (int i = 0; i < bound_l3_count; ++i) {
+                uint8_t id = bound_l3[i];
+                if (n4 < SOCK_MAX_L3 && l3_ipv4_find_by_id(id)) allow_v4[n4++] = id;
+                if (n6 < SOCK_MAX_L3 && l3_ipv6_find_by_id(id)) allow_v6[n6++] = id;
+            }
+
+            if (dr6 == DNS_OK) {
+                ipv6_tx_plan_t p6;
+                if (ipv6_build_tx_plan(d6.ip, nullptr, n6 ? allow_v6 : nullptr, n6, &p6)) {
+                    d = d6;
+                    chosen_l3 = p6.l3_id;
+                }
+            }
+            if (!chosen_l3 && dr4 == DNS_OK) {
+                uint32_t dip = 0;
+                memcpy(&dip, d4.ip, 4);
+                ipv4_tx_plan_t p4;
+                if (ipv4_build_tx_plan(dip, nullptr, n4 ? allow_v4 : nullptr, n4, &p4)) {
+                    d = d4;
+                    chosen_l3 = p4.l3_id;
+                }
+            }
+
+            if (!chosen_l3) return SOCK_ERR_SYS;
         } else return SOCK_ERR_INVAL;
 
         if (d.ver != IP_VER4 && d.ver != IP_VER6) return SOCK_ERR_INVAL;
 
-        uint8_t chosen_l3 = 0;
-
-        if (d.ver == IP_VER4) {
-            if (bound_l3_count == 0){
-                uint8_t ids[SOCK_MAX_L3];
-                int n = 0;
-
-                uint8_t cnt = l2_interface_count();
-                for (uint8_t i = 0; i < cnt; ++i){
-                    l2_interface_t* l2 = l2_interface_at(i);
-                    if (!l2 || !l2->is_up) continue;
-
-                    for (int s = 0; s < MAX_IPV4_PER_INTERFACE && n < SOCK_MAX_L3; ++s){
-                        l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-                        if (!is_valid_v4_l3_for_bind(v4)) continue;
-                        ids[n++] = v4->l3_id;
-                    }
-                }
-
-                if (n == 0) return SOCK_ERR_SYS;
-
-                uint32_t dip = 0;
-                memcpy(&dip, d.ip, 4);
-                if (!ipv4_rt_pick_best_l3_in(ids, n, dip, &chosen_l3)) return SOCK_ERR_SYS;
-
-                l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
-                if (!is_valid_v4_l3_for_bind(v4)) return SOCK_ERR_SYS;
-
-                int p = tcp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
-                if (p < 0) return SOCK_ERR_NO_PORT;
-
-                localPort = (uint16_t)p;
-                clear_bound_l3();
-                add_bound_l3(chosen_l3);
-            } else if (bound_l3_count == 1){
-                chosen_l3 = bound_l3[0];
-
-                l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
-                if (!is_valid_v4_l3_for_bind(v4)) return SOCK_ERR_SYS;
-
-                if (localPort == 0){
-                    int p = tcp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
-                    if (p < 0) return SOCK_ERR_NO_PORT;
-                    localPort = (uint16_t)p;
-                }
-            } else {
-                uint32_t dip = 0;
-                memcpy(&dip, d.ip, 4);
-                if (!ipv4_rt_pick_best_l3_in(bound_l3, bound_l3_count, dip, &chosen_l3)) return SOCK_ERR_SYS;
-
-                l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
-                if (!is_valid_v4_l3_for_bind(v4)) return SOCK_ERR_SYS;
-
-                if (localPort == 0) {
-                    int p = tcp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
-                    if (p < 0) return SOCK_ERR_NO_PORT;
-                    localPort = (uint16_t)p;
-                }
-            }
-        } else {
-            if (bound_l3_count == 0) {
-                ip_resolution_result_t r = resolve_ipv6_to_interface(d.ip);
-                if (!r.found || !r.ipv6 || !r.l2) return SOCK_ERR_SYS;
-
-                l3_ipv6_interface_t* v6 = r.ipv6;
-                if (!is_valid_v6_l3_for_bind(v6)) return SOCK_ERR_SYS;
-
-                chosen_l3 = v6->l3_id;
-
-                int p = tcp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
-                if (p < 0) return SOCK_ERR_NO_PORT;
-
-                localPort = (uint16_t)p;
-                clear_bound_l3();
-                add_bound_l3(chosen_l3);
-            } else if (bound_l3_count == 1) {
-                chosen_l3 = bound_l3[0];
-
-                l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen_l3);
-                if (!is_valid_v6_l3_for_bind(v6)) return SOCK_ERR_SYS;
-
-                if (localPort == 0) {
-                    int p = tcp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
-                    if (p < 0) return SOCK_ERR_NO_PORT;
-                    localPort = (uint16_t)p;
-                }
-            } else {
-                for (int i = 0; i < bound_l3_count; ++i) {
+        if (!chosen_l3) {
+            if (d.ver == IP_VER4) {
+                uint8_t allow_v4[SOCK_MAX_L3];
+                int n4 = 0;
+                for (int i = 0; i < bound_l3_count && n4 < SOCK_MAX_L3; ++i) {
                     uint8_t id = bound_l3[i];
-                    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
-                    if (is_valid_v6_l3_for_bind(v6)) {
-                        chosen_l3 = id;
-                        break;
-                    }
+                    if (l3_ipv4_find_by_id(id)) allow_v4[n4++] = id;
                 }
-
-                if (!chosen_l3) return SOCK_ERR_SYS;
-
-                if (localPort == 0) {
-                    int p = tcp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
-                    if (p < 0) return SOCK_ERR_NO_PORT;
-                    localPort = (uint16_t)p;
+                uint32_t dip = 0;
+                memcpy(&dip, d.ip, 4);
+                ipv4_tx_plan_t p4;
+                if (!ipv4_build_tx_plan(dip, nullptr, n4 ? allow_v4 : nullptr, n4, &p4)) return SOCK_ERR_SYS;
+                chosen_l3 = p4.l3_id;
+            } else {
+                uint8_t allow_v6[SOCK_MAX_L3];
+                int n6 = 0;
+                for (int i = 0; i < bound_l3_count && n6 < SOCK_MAX_L3; ++i) {
+                    uint8_t id = bound_l3[i];
+                    if (l3_ipv6_find_by_id(id)) allow_v6[n6++] = id;
                 }
+                ipv6_tx_plan_t p6;
+                if (!ipv6_build_tx_plan(d.ip, nullptr, n6 ? allow_v6 : nullptr, n6, &p6)) return SOCK_ERR_SYS;
+                chosen_l3 = p6.l3_id;
             }
+        }
+
+        if (!chosen_l3) return SOCK_ERR_SYS;
+
+        if (localPort == 0) {
+            int p = tcp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
+            if (p < 0) return SOCK_ERR_NO_PORT;
+            localPort = (uint16_t)p;
+        }
+
+        if (bound_l3_count == 0) {
+            clear_bound_l3();
+            add_bound_l3(chosen_l3);
         }
 
         tcp_data ctx_copy{};
