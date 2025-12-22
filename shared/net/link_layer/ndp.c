@@ -170,22 +170,34 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
         if (!v6) continue;
         if (v6->cfg == IPV6_CFG_DISABLE) continue;
         if (!(v6->kind & IPV6_ADDRK_GLOBAL)) continue;
-        if (v6->cfg != IPV6_CFG_SLAAC) continue;
+        if (!(v6->cfg & (IPV6_CFG_SLAAC | IPV6_CFG_DHCPV6))) continue;
         if (!v6->ra_has)continue;
         if (memcmp(v6->prefix, zero16, 16) == 0) continue;
-
+        uint8_t m = (v6->ra_flags & RA_FLAG_M) ? 1u : 0u;
+        uint8_t o = (v6->ra_flags & RA_FLAG_O) ? 1u : 0u;
         if (!v6->ra_autonomous) {
-            if (v6->cfg != IPV6_CFG_DHCPV6 || ipv6_is_placeholder_gua(v6->ip)) {
-                uint8_t z[16] = {0};
-                uint8_t gw[16];
+            if (m) {
+                if (v6->cfg != IPV6_CFG_DHCPV6 || ipv6_is_placeholder_gua(v6->ip)) {
+                    uint8_t z[16] = {0};
+                    uint8_t gw[16];
 
-                if (v6->ra_is_default) ipv6_cpy(gw, v6->gateway);
-                else memset(gw, 0, 16);
+                    if (v6->ra_is_default) ipv6_cpy(gw, v6->gateway);
+                    else memset(gw, 0, 16);
 
-                (void)l3_ipv6_update(v6->l3_id, z, 0, gw, IPV6_CFG_DHCPV6, v6->kind);
+                    v6->dhcpv6_stateless = 0;
+                    v6->dhcpv6_stateless_done = 0;
+
+                    (void)l3_ipv6_update(v6->l3_id, z, 0, gw, IPV6_CFG_DHCPV6, v6->kind);
+                }
+            } else {
+                v6->dhcpv6_stateless = o ? 1 : 0;
+                v6->dhcpv6_stateless_done = 0;
             }
+
             continue;
-        }
+        } 
+        v6->dhcpv6_stateless = o ? 1 : 0;
+        v6->dhcpv6_stateless_done = 0;
 
         if (v6->cfg != IPV6_CFG_SLAAC) {
             uint8_t ph[16];
@@ -207,7 +219,7 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
             ipv6_cpy(ip, v6->prefix);
             memcpy(ip + 8, iid, 8);
 
-            (void)l3_ipv6_update(v6->l3_id, ip, 64, v6->gateway, v6->cfg, v6->kind);
+            (void)l3_ipv6_update(v6->l3_id, ip, 64, v6->gateway, IPV6_CFG_SLAAC, v6->kind);
 
             v6->timestamp_created = now_ms;
             memcpy(v6->interface_id, ip + 8, 8);
@@ -220,14 +232,14 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
         if (v6->ra_is_default) ipv6_cpy(gw, v6->gateway);
         else memset(gw, 0, 16);
 
-        (void)l3_ipv6_update(v6->l3_id, v6->ip, v6->prefix_len, gw, v6->cfg, v6->kind);
+        (void)l3_ipv6_update(v6->l3_id, v6->ip, v6->prefix_len, gw, IPV6_CFG_SLAAC, v6->kind);
 
         v6->timestamp_created = now_ms;
         memcpy(v6->interface_id, v6->ip + 8, 8);
     }
 }
 
-static void ndp_on_ra(uint8_t ifindex, const uint8_t router_ip[16], uint16_t router_lifetime, const uint8_t prefix[16], uint8_t prefix_len, uint32_t valid_lft, uint32_t preferred_lft, uint8_t autonomous) {
+static void ndp_on_ra(uint8_t ifindex, const uint8_t router_ip[16], uint16_t router_lifetime, const uint8_t prefix[16], uint8_t prefix_len, uint32_t valid_lft, uint32_t preferred_lft, uint8_t autonomous, uint8_t ra_flags) {
     if (!ifindex) return;
     if (prefix_len != 64) return;
     if (ipv6_is_unspecified(prefix) || ipv6_is_multicast(prefix) || ipv6_is_linklocal(prefix)) return;
@@ -281,6 +293,7 @@ static void ndp_on_ra(uint8_t ifindex, const uint8_t router_ip[16], uint16_t rou
     slot->ra_autonomous = autonomous ? 1 : 0;
     slot->ra_is_default = router_lifetime != 0;
     slot->ra_last_update_ms = now_ms;
+    slot->ra_flags = ra_flags;
 
     ipv6_cpy(slot->prefix, prefix);
 
@@ -986,7 +999,66 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
                 uint8_t pfx[16];
                 memcpy(pfx, pio->prefix, 16);
 
-                if (pfx_len != 0) ndp_on_ra((uint8_t)ifindex, src_ip, router_lifetime, pfx, pfx_len, valid_lft, pref_lft, autonomous);
+                if (pfx_len != 0) ndp_on_ra((uint8_t)ifindex, src_ip, router_lifetime, pfx, pfx_len, valid_lft, pref_lft, autonomous, ra->flags);
+            } else if (opt_type == 25 && opt_size >= 24u) {
+                l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
+                if (l2) {
+                    uint32_t addr_bytes = opt_size - 8u;
+                    uint32_t addr_count = addr_bytes / 16u;
+
+                    uint8_t zero16[16] = {0};
+
+                    const uint8_t* a0 = (addr_count >= 1) ? (opt + 8) : zero16;
+                    const uint8_t* a1 = (addr_count >= 2) ? (opt + 24) : zero16;
+
+                    l3_ipv6_interface_t* slot = NULL;
+
+                    for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+                        l3_ipv6_interface_t* v6 = l2->l3_v6[i];
+                        if (!v6) continue;
+                        if (v6->cfg == IPV6_CFG_DISABLE) continue;
+                        if (!(v6->kind & IPV6_ADDRK_GLOBAL)) continue;
+                        if (!(v6->cfg & (IPV6_CFG_SLAAC | IPV6_CFG_DHCPV6))) continue;
+
+                        if (memcmp(v6->prefix, zero16, 16) != 0) {
+                            if (ipv6_common_prefix_len(v6->prefix, src_ip) >= 64) {
+                                slot = v6;
+                                break;
+                            }
+                        } else {
+                            if (ipv6_is_placeholder_gua(v6->ip)) {
+                                slot = v6;
+                                break;
+                            }
+                            if (!ipv6_is_unspecified(v6->ip) && !ipv6_is_multicast(v6->ip) && !ipv6_is_linklocal(v6->ip)) {
+                                if (ipv6_common_prefix_len(v6->ip, src_ip) >= 64) {
+                                    slot = v6;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!slot) {
+                        for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+                            l3_ipv6_interface_t* v6 = l2->l3_v6[i];
+                            if (!v6) continue;
+                            if (v6->cfg == IPV6_CFG_DISABLE) continue;
+                            if (!(v6->kind & IPV6_ADDRK_GLOBAL)) continue;
+                            if (!(v6->cfg & (IPV6_CFG_SLAAC | IPV6_CFG_DHCPV6))) continue;
+                            slot = v6;
+                            break;
+                        }
+                    }
+
+                    if (slot) {
+                        if (addr_count >= 1) memcpy(slot->runtime_opts_v6.dns[0], a0, 16);
+                        else memset(slot->runtime_opts_v6.dns[0], 0, 16);
+
+                        if (addr_count >= 2) memcpy(slot->runtime_opts_v6.dns[1], a1, 16);
+                        else memset(slot->runtime_opts_v6.dns[1], 0, 16);
+                    }
+                }
             }
 
             opt += opt_size;

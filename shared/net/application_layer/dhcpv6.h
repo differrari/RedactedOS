@@ -16,7 +16,8 @@ enum {
     DHCPV6_MSG_REBIND = 6,
     DHCPV6_MSG_REPLY = 7,
     DHCPV6_MSG_RELEASE = 8,
-    DHCPV6_MSG_DECLINE = 9
+    DHCPV6_MSG_DECLINE = 9,
+    DHCPV6_MSG_INFORMATION_REQUEST = 11
 };
 
 #define DHCPV6_CLIENT_PORT 546
@@ -80,7 +81,7 @@ uint32_t dhcpv6_make_xid24(uint32_t r32);
 void dhcpv6_duid_ll_from_mac(uint8_t out_duid[10], const uint8_t mac[6]);
 uint32_t dhcpv6_iaid_from_mac(const uint8_t mac[6]);
 
-bool dhcpv6_build_message(uint8_t* out, uint32_t out_cap, uint32_t* out_len, const net_runtime_opts_v6_t* rt, const uint8_t mac[6], uint8_t type, dhcpv6_req_kind kind, uint32_t xid24);
+bool dhcpv6_build_message(uint8_t* out, uint32_t out_cap, uint32_t* out_len, const net_runtime_opts_v6_t* rt, const uint8_t mac[6], uint8_t type, dhcpv6_req_kind kind, uint32_t xid24, bool want_address);
 
 bool dhcpv6_parse_message(const uint8_t *msg, uint32_t msg_len, uint32_t expect_xid24, uint32_t expect_iaid, dhcpv6_parsed_t *out);
 

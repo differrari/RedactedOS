@@ -131,7 +131,9 @@ typedef struct l3_ipv6_interface {
     uint8_t ra_has;
     uint8_t ra_autonomous;
     uint8_t ra_is_default;
-    uint8_t ra_reserved;
+    uint8_t ra_flags;
+    uint8_t dhcpv6_stateless;
+    uint8_t dhcpv6_stateless_done;
     uint32_t ra_last_update_ms;
 
     net_runtime_opts_v6_t runtime_opts_v6;

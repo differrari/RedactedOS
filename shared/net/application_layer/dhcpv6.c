@@ -29,7 +29,7 @@ uint32_t dhcpv6_iaid_from_mac(const uint8_t mac[6]){
     return ((uint32_t)mac[2] << 24) | ((uint32_t)mac[3] << 16) | ((uint32_t)mac[4] << 8) | (uint32_t)mac[5];
 }
 
-bool dhcpv6_build_message(uint8_t*out, uint32_t out_cap, uint32_t*out_len, const net_runtime_opts_v6_t*rt, const uint8_t mac[6], uint8_t msg_type, dhcpv6_req_kind kind, uint32_t xid24){
+bool dhcpv6_build_message(uint8_t*out, uint32_t out_cap, uint32_t*out_len, const net_runtime_opts_v6_t*rt, const uint8_t mac[6], uint8_t msg_type, dhcpv6_req_kind kind, uint32_t xid24, bool want_address) {
     if (!out || !out_len) return false;
     if (out_cap < 4) return false;
 
@@ -62,7 +62,7 @@ bool dhcpv6_build_message(uint8_t*out, uint32_t out_cap, uint32_t*out_len, const
 
     if (msg_type == DHCPV6_MSG_SOLICIT || msg_type == DHCPV6_MSG_REQUEST || msg_type == DHCPV6_MSG_RENEW ||
         msg_type == DHCPV6_MSG_REBIND || msg_type == DHCPV6_MSG_CONFIRM || msg_type == DHCPV6_MSG_RELEASE ||
-        msg_type == DHCPV6_MSG_DECLINE){
+        msg_type == DHCPV6_MSG_INFORMATION_REQUEST || msg_type == DHCPV6_MSG_DECLINE){
 
         uint16_t oro[2];
         uint16_t n = 0;
@@ -73,63 +73,11 @@ bool dhcpv6_build_message(uint8_t*out, uint32_t out_cap, uint32_t*out_len, const
         opt_append(out, out_cap, &off, DHCPV6_OPT_ORO, oro, (uint16_t)(n * 2));
     }
 
-    uint32_t iaid = rt ? rt->iaid : 0;
-    uint32_t iaid_pd = iaid ? (iaid ^ 0xA5A5A5A5u) : 0;
+    if (want_address) {
+        uint32_t iaid = rt ? rt->iaid : 0;
+        uint32_t iaid_pd = iaid ? (iaid ^ 0xA5A5A5A5u) : 0;
 
-    if (kind == DHCPV6K_SELECT){
-        uint8_t iana[12];
-
-        uint32_t iaid_net = bswap32(iaid);
-        uint32_t t1_net = 0;
-        uint32_t t2_net = 0;
-
-        memcpy(iana + 0, &iaid_net, 4);
-        memcpy(iana + 4, &t1_net, 4);
-        memcpy(iana + 8, &t2_net, 4);
-
-        opt_append(out, out_cap, &off, DHCPV6_OPT_IA_NA, iana, 12);
-
-        if (rt && rt->pd_prefix_len){
-            uint8_t iapd[12];
-
-            uint32_t pd_iaid_net = bswap32(iaid_pd);
-
-            memcpy(iapd + 0, &pd_iaid_net, 4);
-            memcpy(iapd + 4, &t1_net, 4);
-            memcpy(iapd + 8, &t2_net, 4);
-
-            opt_append(out, out_cap, &off, DHCPV6_OPT_IA_PD, iapd, 12);
-        }
-    } else {
-        if (rt && rt->lease){
-            uint8_t payload[40];
-            uint8_t addr[16];
-
-            memset(addr, 0, 16);
-
-            uint32_t iaid_net = bswap32(iaid);
-            uint32_t t1_net = 0;
-            uint32_t t2_net = 0;
-
-            memcpy(payload + 0, &iaid_net, 4);
-            memcpy(payload + 4, &t1_net, 4);
-            memcpy(payload + 8, &t2_net, 4);
-
-            uint16_t code_net = bswap16(DHCPV6_OPT_IAADDR);
-            uint16_t len_net = bswap16(24);
-
-            memcpy(payload + 12, &code_net, 2);
-            memcpy(payload + 14, &len_net, 2);
-            memcpy(payload + 16, addr, 16);
-
-            uint32_t pref_net = bswap32(rt->t1);
-            uint32_t valid_net = bswap32(rt->lease);
-
-            memcpy(payload + 32, &pref_net, 4);
-            memcpy(payload + 36, &valid_net, 4);
-
-            opt_append(out, out_cap, &off, DHCPV6_OPT_IA_NA, payload, 40);
-        } else {
+        if (kind == DHCPV6K_SELECT){
             uint8_t iana[12];
 
             uint32_t iaid_net = bswap32(iaid);
@@ -141,38 +89,91 @@ bool dhcpv6_build_message(uint8_t*out, uint32_t out_cap, uint32_t*out_len, const
             memcpy(iana + 8, &t2_net, 4);
 
             opt_append(out, out_cap, &off, DHCPV6_OPT_IA_NA, iana, 12);
-        }
 
-        if (rt && rt->pd_prefix_len){
-            uint8_t payload[41];
+            if (rt && rt->pd_prefix_len){
+                uint8_t iapd[12];
 
-            uint32_t iaid_net = bswap32(iaid_pd);
-            uint32_t t1_net = 0;
-            uint32_t t2_net = 0;
+                uint32_t pd_iaid_net = bswap32(iaid_pd);
 
-            memcpy(payload + 0, &iaid_net, 4);
-            memcpy(payload + 4, &t1_net, 4);
-            memcpy(payload + 8, &t2_net, 4);
+                memcpy(iapd + 0, &pd_iaid_net, 4);
+                memcpy(iapd + 4, &t1_net, 4);
+                memcpy(iapd + 8, &t2_net, 4);
 
-            uint16_t code_net = bswap16(DHCPV6_OPT_IAPREFIX);
-            uint16_t len_net = bswap16(25);
+                opt_append(out, out_cap, &off, DHCPV6_OPT_IA_PD, iapd, 12);
+            }
+        } else {
+            if (rt && rt->lease){
+                uint8_t payload[40];
+                uint8_t addr[16];
 
-            memcpy(payload + 12, &code_net, 2);
-            memcpy(payload + 14, &len_net, 2);
+                memset(addr, 0, 16);
 
-            uint32_t pref_net = bswap32(rt->pd_preferred_lft);
-            uint32_t valid_net = bswap32(rt->pd_valid_lft);
+                uint32_t iaid_net = bswap32(iaid);
+                uint32_t t1_net = 0;
+                uint32_t t2_net = 0;
 
-            memcpy(payload + 16, &pref_net, 4);
-            memcpy(payload + 20, &valid_net, 4);
+                memcpy(payload + 0, &iaid_net, 4);
+                memcpy(payload + 4, &t1_net, 4);
+                memcpy(payload + 8, &t2_net, 4);
 
-            payload[24] = rt->pd_prefix_len;
-            memcpy(payload + 25, rt->pd_prefix, 16);
+                uint16_t code_net = bswap16(DHCPV6_OPT_IAADDR);
+                uint16_t len_net = bswap16(24);
 
-            opt_append(out, out_cap, &off, DHCPV6_OPT_IA_PD, payload, 41);
+                memcpy(payload + 12, &code_net, 2);
+                memcpy(payload + 14, &len_net, 2);
+                memcpy(payload + 16, addr, 16);
+
+                uint32_t pref_net = bswap32(rt->t1);
+                uint32_t valid_net = bswap32(rt->lease);
+
+                memcpy(payload + 32, &pref_net, 4);
+                memcpy(payload + 36, &valid_net, 4);
+
+                opt_append(out, out_cap, &off, DHCPV6_OPT_IA_NA, payload, 40);
+            } else {
+                uint8_t iana[12];
+
+                uint32_t iaid_net = bswap32(iaid);
+                uint32_t t1_net = 0;
+                uint32_t t2_net = 0;
+
+                memcpy(iana + 0, &iaid_net, 4);
+                memcpy(iana + 4, &t1_net, 4);
+                memcpy(iana + 8, &t2_net, 4);
+
+                opt_append(out, out_cap, &off, DHCPV6_OPT_IA_NA, iana, 12);
+            }
+
+            if (rt && rt->pd_prefix_len){
+                uint8_t payload[41];
+
+                uint32_t iaid_net = bswap32(iaid_pd);
+                uint32_t t1_net = 0;
+                uint32_t t2_net = 0;
+
+                memcpy(payload + 0, &iaid_net, 4);
+                memcpy(payload + 4, &t1_net, 4);
+                memcpy(payload + 8, &t2_net, 4);
+
+                uint16_t code_net = bswap16(DHCPV6_OPT_IAPREFIX);
+                uint16_t len_net = bswap16(25);
+
+                memcpy(payload + 12, &code_net, 2);
+                memcpy(payload + 14, &len_net, 2);
+
+                uint32_t pref_net = bswap32(rt->pd_preferred_lft);
+                uint32_t valid_net = bswap32(rt->pd_valid_lft);
+
+                memcpy(payload + 16, &pref_net, 4);
+                memcpy(payload + 20, &valid_net, 4);
+
+                payload[24] = rt->pd_prefix_len;
+                memcpy(payload + 25, rt->pd_prefix, 16);
+
+                opt_append(out, out_cap, &off, DHCPV6_OPT_IA_PD, payload, 41);
+            }
         }
     }
-
     *out_len = off;
     return true;
 }

@@ -50,7 +50,14 @@ typedef struct {
     uint32_t t1_left_ms;
     uint32_t t2_left_ms;
     uint32_t lease_left_ms;
+    uint8_t last_state;
+    uint8_t tx_tries;
+    uint8_t done;
 } dhcpv6_bind_t;
+
+#define DHCPV6_MAX_INFOREQ_TX 3
+#define DHCPV6_MAX_REQUEST_TX 3
+#define DHCPV6_MAX_OTHER_TX 5
 
 static uint16_t g_dhcpv6_pid = 0xFFFF;
 static rng_t g_dhcpv6_rng;
@@ -137,6 +144,8 @@ static void reset_lease_state(l3_ipv6_interface_t* v6, dhcpv6_bind_t* b) {
         b->t2_left_ms = 0;
         b->lease_left_ms = 0;
         b->xid24 = 0;
+        b->last_state = 0xFF;
+        b->tx_tries = 0;
         reset_backoff(b);
     }
 }
@@ -166,7 +175,11 @@ static void ensure_binds() {
             if (!t) keep = false;
         }
 
-        if (keep) if (t->cfg != IPV6_CFG_DHCPV6) keep = false;
+        if (keep) {
+            bool stateful = (t->cfg == IPV6_CFG_DHCPV6);
+            bool stateless = (t->cfg == IPV6_CFG_SLAAC && t->dhcpv6_stateless);
+            if (!stateful && !stateless) keep = false;
+        }
         if (keep) if (!t->l2 || !t->l2->is_up) keep = false;
 
         l3_ipv6_interface_t* llv6 = NULL;
@@ -215,10 +228,16 @@ static void ensure_binds() {
         for (int s = 0; s < MAX_IPV6_PER_INTERFACE; s++) {
             l3_ipv6_interface_t* v6 = l2->l3_v6[s];
             if (!v6) continue;
-            if (v6->cfg != IPV6_CFG_DHCPV6) continue;
             if (!(v6->kind & IPV6_ADDRK_GLOBAL)) continue;
-            target = v6;
-            break;
+
+            if (v6->cfg == IPV6_CFG_DHCPV6) {
+                target = v6;
+                break;
+            }
+            if (v6->cfg == IPV6_CFG_SLAAC && v6->dhcpv6_stateless) {
+                target = v6;
+                break;
+            }
         }
         if (!target) continue;
 
@@ -278,11 +297,16 @@ static void ensure_binds() {
 
 static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     if (!b || !b->mac_ok || !b->sock) return;
+    if (b->done) return;
 
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(b->target_l3_id);
     if (!v6) return;
-    if (v6->cfg != IPV6_CFG_DHCPV6) return;
+    bool stateful = (v6->cfg == IPV6_CFG_DHCPV6);
+    bool stateless = (v6->cfg == IPV6_CFG_SLAAC && v6->dhcpv6_stateless);
+
+    if (!stateful && !stateless) return;
     if (!(v6->kind & IPV6_ADDRK_GLOBAL)) return;
+    if (stateless && v6->dhcpv6_stateless_done) return;
 
     if (v6->runtime_opts_v6.lease != 0 && v6->runtime_opts_v6.lease_start_time != 0 && !ipv6_is_unspecified(v6->ip) && v6->dhcpv6_state == DHCPV6_S_INIT) {
         uint32_t now_s = get_time();
@@ -385,6 +409,23 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     }
 
     if (v6->dhcpv6_state == DHCPV6_S_INIT) {
+        if (stateless) {
+            uint8_t zero16[16] = {0};
+            int has_dns = (memcmp(v6->runtime_opts_v6.dns[0], zero16, 16) != 0) || (memcmp(v6->runtime_opts_v6.dns[1], zero16, 16) != 0);
+
+            if (has_dns) {
+                v6->dhcpv6_stateless_done = 1;
+                b->retry_left_ms = 0;
+                reset_backoff(b);
+                return;
+            }
+
+            v6->dhcpv6_state = DHCPV6_S_SOLICIT;
+            b->retry_left_ms = 0;
+            reset_backoff(b);
+            return;
+        }
+
         v6->dhcpv6_state = DHCPV6_S_SOLICIT;
         b->retry_left_ms = 0;
         reset_backoff(b);
@@ -417,7 +458,49 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     }
 
     if (b->retry_left_ms) return;
+    if (b->last_state != (uint8_t)v6->dhcpv6_state) {
+        b->last_state = (uint8_t)v6->dhcpv6_state;
+        b->tx_tries = 0;
+    }
 
+    uint8_t type_peek = DHCPV6_MSG_SOLICIT;
+
+    if (stateless) type_peek = DHCPV6_MSG_INFORMATION_REQUEST;
+    else if (v6->dhcpv6_state == DHCPV6_S_SOLICIT) type_peek = DHCPV6_MSG_SOLICIT;
+    else if (v6->dhcpv6_state == DHCPV6_S_REQUEST) type_peek = DHCPV6_MSG_REQUEST;
+    else if (v6->dhcpv6_state == DHCPV6_S_RENEWING) type_peek = DHCPV6_MSG_RENEW;
+    else if (v6->dhcpv6_state == DHCPV6_S_REBINDING) type_peek = DHCPV6_MSG_REBIND;
+    else if (v6->dhcpv6_state == DHCPV6_S_CONFIRMING) type_peek = DHCPV6_MSG_CONFIRM;
+    else if (v6->dhcpv6_state == DHCPV6_S_RELEASING) type_peek = DHCPV6_MSG_RELEASE;
+    else if (v6->dhcpv6_state == DHCPV6_S_DECLINING) type_peek = DHCPV6_MSG_DECLINE;
+
+    uint8_t lim = DHCPV6_MAX_OTHER_TX;
+    if (type_peek == DHCPV6_MSG_INFORMATION_REQUEST) lim = DHCPV6_MAX_INFOREQ_TX;
+    else if (type_peek == DHCPV6_MSG_REQUEST) lim = DHCPV6_MAX_REQUEST_TX;
+
+    if (b->tx_tries >= lim) {
+        uint8_t zero16[16] = {0};
+        int has_dns =(memcmp(v6->runtime_opts_v6.dns[0], zero16, 16) != 0) || (memcmp(v6->runtime_opts_v6.dns[1], zero16, 16) != 0);
+
+        if (!has_dns) {
+            if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
+                memcpy(v6->runtime_opts_v6.dns[0], v6->gateway, 16);
+            }
+        }
+
+        if (stateless){
+            v6->dhcpv6_stateless_done = 1;
+            v6->dhcpv6_state = DHCPV6_S_INIT;
+            b->retry_left_ms = 0;
+            reset_backoff(b);
+            return;
+        }
+
+        b->done = 1;
+        v6->dhcpv6_state = DHCPV6_S_INIT;
+        reset_backoff(b);
+        return;
+    }
     uint8_t msg[DHCPV6_MAX_MSG];
     uint32_t msg_len = 0;
 
@@ -426,7 +509,10 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     uint8_t type = DHCPV6_MSG_SOLICIT;
     dhcpv6_req_kind kind = DHCPV6K_SELECT;
 
-    if (v6->dhcpv6_state == DHCPV6_S_SOLICIT) {
+    if (stateless) {
+        type = DHCPV6_MSG_INFORMATION_REQUEST;
+        kind = DHCPV6K_SELECT;
+    } else if (v6->dhcpv6_state == DHCPV6_S_SOLICIT) {
         type = DHCPV6_MSG_SOLICIT;
         kind = DHCPV6K_SELECT;
     } else if (v6->dhcpv6_state == DHCPV6_S_REQUEST) {
@@ -452,8 +538,9 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
         kind = DHCPV6K_SELECT;
         v6->dhcpv6_state = DHCPV6_S_SOLICIT;
     }
+    bool want_addr = !stateless;
 
-    if (!dhcpv6_build_message(msg, sizeof(msg), &msg_len, &v6->runtime_opts_v6, b->mac, type, kind, b->xid24)) {
+    if (!dhcpv6_build_message(msg, sizeof(msg), &msg_len, &v6->runtime_opts_v6, b->mac, type, kind, b->xid24, want_addr)) {
         b->retry_left_ms = next_backoff_ms(b);
         return;
     }
@@ -465,6 +552,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     dst.port = DHCPV6_SERVER_PORT;
 
     (void)socket_sendto_udp_ex(b->sock, DST_ENDPOINT, &dst, 0, (const void*)msg, (uint64_t)msg_len);
+    b->tx_tries++;
 
     uint8_t rx[DHCPV6_MAX_MSG];
     uint32_t rx_len = 0;
@@ -507,6 +595,14 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
                     if (p.has_dns) memcpy(v6->runtime_opts_v6.dns, p.dns, sizeof(v6->runtime_opts_v6.dns));
                     if (p.has_ntp) memcpy(v6->runtime_opts_v6.ntp, p.ntp, sizeof(v6->runtime_opts_v6.ntp));
+                    uint8_t zero16[16] = {0};
+                    int has_dns = (memcmp(v6->runtime_opts_v6.dns[0], zero16, 16) != 0) || (memcmp(v6->runtime_opts_v6.dns[1], zero16, 16) != 0);
+
+                    if (!has_dns) {
+                        if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
+                            memcpy(v6->runtime_opts_v6.dns[0], v6->gateway, 16);
+                        }
+                    }
 
                     if (p.has_pd) {
                         ipv6_cpy(v6->runtime_opts_v6.pd_prefix, p.pd_prefix);
@@ -543,6 +639,23 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
                     b->retry_left_ms = 0;
                     reset_backoff(b);
                 } else if (p.msg_type == DHCPV6_MSG_REPLY) {
+                    if (stateless) {
+                        if (p.has_dns) memcpy(v6->runtime_opts_v6.dns, p.dns, sizeof(v6->runtime_opts_v6.dns));
+                        if (p.has_ntp) memcpy(v6->runtime_opts_v6.ntp, p.ntp, sizeof(v6->runtime_opts_v6.ntp));
+
+                        uint8_t zero16[16] = {0};
+                        int has_dns = (memcmp(v6->runtime_opts_v6.dns[0], zero16, 16) != 0) || (memcmp(v6->runtime_opts_v6.dns[1], zero16, 16) != 0);
+
+                        if (!has_dns) {
+                            if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
+                                memcpy(v6->runtime_opts_v6.dns[0], v6->gateway, 16);
+                            }
+                        }
+
+                        v6->dhcpv6_stateless_done = 1;
+                        reset_backoff(b);
+                        return;
+                    }
                     if (v6->dhcpv6_state == DHCPV6_S_REQUEST || v6->dhcpv6_state == DHCPV6_S_RENEWING || v6->dhcpv6_state == DHCPV6_S_REBINDING || v6->dhcpv6_state == DHCPV6_S_CONFIRMING) {
                         if (p.has_server_id) {
                             v6->runtime_opts_v6.server_id_len = p.server_id_len;
@@ -551,6 +664,14 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
                         if (p.has_dns) memcpy(v6->runtime_opts_v6.dns, p.dns, sizeof(v6->runtime_opts_v6.dns));
                         if (p.has_ntp) memcpy(v6->runtime_opts_v6.ntp, p.ntp, sizeof(v6->runtime_opts_v6.ntp));
+                        uint8_t zero16[16] = {0};
+                        int has_dns = (memcmp(v6->runtime_opts_v6.dns[0], zero16, 16) != 0) || (memcmp(v6->runtime_opts_v6.dns[1], zero16, 16) != 0);
+
+                        if (!has_dns) {
+                            if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
+                                memcpy(v6->runtime_opts_v6.dns[0], v6->gateway, 16);
+                            }
+                        }
 
                         if (p.has_pd) {
                             ipv6_cpy(v6->runtime_opts_v6.pd_prefix, p.pd_prefix);
@@ -593,6 +714,14 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
                         if (p.has_dns) memcpy(v6->runtime_opts_v6.dns, p.dns, sizeof(v6->runtime_opts_v6.dns));
                         if (p.has_ntp) memcpy(v6->runtime_opts_v6.ntp, p.ntp, sizeof(v6->runtime_opts_v6.ntp));
+                        uint8_t zero16[16] = {0};
+                        int has_dns = (memcmp(v6->runtime_opts_v6.dns[0], zero16, 16) != 0) || (memcmp(v6->runtime_opts_v6.dns[1], zero16, 16) != 0);
+
+                        if (!has_dns) {
+                            if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
+                                memcpy(v6->runtime_opts_v6.dns[0], v6->gateway, 16);
+                            }
+                        }
 
                         if (p.has_pd) {
                             ipv6_cpy(v6->runtime_opts_v6.pd_prefix, p.pd_prefix);

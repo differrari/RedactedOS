@@ -8,6 +8,9 @@ extern "C" {
 
 typedef struct ndp_table ndp_table_t;
 
+#define RA_FLAG_M 0x80
+#define RA_FLAG_O 0x40
+
 typedef enum {
     NDP_STATE_UNUSED = 0,
     NDP_STATE_INCOMPLETE = 1,
