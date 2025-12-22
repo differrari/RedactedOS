@@ -1,4 +1,4 @@
-#include "mailbox.h"
+#include "mailbox/mailbox.h"
 #include "memory/mmu.h"
 #include "console/serial/uart.h"
 #include "async.h"

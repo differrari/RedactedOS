@@ -1,4 +1,4 @@
-#include "vc_mbox.h"
+#include "mailbox/vc_mbox.h"
 #include "mailbox/mailbox.h"
 
 #define MBOX_CH_PROP 8
