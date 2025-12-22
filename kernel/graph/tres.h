@@ -16,7 +16,7 @@ typedef struct {
     uint16_t pid;
 } window_frame;
 
-void init_window_manager(uintptr_t gpu_driver);
+void init_window_manager();
 
 void create_window(int32_t x, int32_t y, uint32_t width, uint32_t height);
 

@@ -23,7 +23,7 @@ bool gpu_init(){
     _gpu_ready = true;
     kprintf("[GRAPH] Selected and initialized GPU %x", (uintptr_t)gpu_driver);
 
-    init_window_manager((uintptr_t)gpu_driver);
+    init_window_manager();
 
     return true;
 }

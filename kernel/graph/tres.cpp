@@ -23,7 +23,7 @@ typedef struct window_tab {
     uint16_t pid;
 } window_tab;
 
-void init_window_manager(uintptr_t gpu_driver){
+void init_window_manager(){
     window_list = clinkedlist_create();
 }
 
