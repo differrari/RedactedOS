@@ -1,0 +1,1 @@
+void prepare_uart_hw() {}

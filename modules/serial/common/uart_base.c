@@ -21,41 +21,23 @@
 
 #define UART_8B_WLEN 0b11
 
-uint64_t get_uart_base(){
-    return UART0_BASE;
-}
-
-volatile uint32_t uart_mbox[9] __attribute__((aligned(16))) = {
-    36, 0, MBOX_CLKRATE_TAG, 12, 8, 2, 0, 0, 0
-};
+uint32_t uart_ibrd;
+uint32_t uart_fbrd;
+uint32_t uart_baud;
 
 void enable_uart() {
     register_device_memory(UART0_BASE, UART0_BASE);
 
     write32(UART0_CR, 0x0);
 
-    uint32_t ibrd = 1;
-    uint32_t fbrd = 40;
-    uint32_t baud = 115200;
+    uart_ibrd = 1;
+    uart_fbrd = 40;
+    uart_baud = 115200;
+    
+    prepare_uart_hw();
 
-    if (BOARD_TYPE == 2){
-        if (RPI_BOARD != 5){
-            reset_gpio();
-            enable_gpio_pin(14);
-            enable_gpio_pin(15);
-        }
-        if (RPI_BOARD >= 4) 
-            if (mailbox_call(uart_mbox,8)){
-                uint32_t uart_clk = uart_mbox[6];
-                ibrd = uart_clk / (16 * baud);
-                uint32_t rem = uart_clk % (16 * baud);
-                fbrd = (rem * 64 + baud/2) / baud;
-            }
-    }
-
-    write32(UART0_IBRD, ibrd);
-    write32(UART0_FBRD, fbrd);
-
+    write32(UART0_IBRD, uart_ibrd);
+    write32(UART0_FBRD, uart_fbrd);
 
     write32(UART0_LCRH, (1 << UART_FIFO) | (UART_8B_WLEN << UART_WLEN));
 
