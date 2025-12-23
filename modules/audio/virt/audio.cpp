@@ -1,15 +1,13 @@
-#include "audio.h"
+#include "audio/audio.h"
 #include "virtio_audio_pci.hpp"
 #include "kernel_processes/kprocess_loader.h"
 #include "syscalls/syscalls.h"
 #include "exceptions/timer.h"
-#include "console/kio.h"
 #include "math/math.h"
 #include "audio/cuatro.h"
 #include "audio/mixer.h"
-#include "audio/wav.h"
 #include "std/memory.h"
-#include "theme/theme.h"
+
 
 VirtioAudioDriver *audio_driver;
 

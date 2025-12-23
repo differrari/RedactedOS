@@ -2,7 +2,7 @@
 
 #include "types.h"
 #include "virtio/virtio_pci.h"
-#include "AudioDevice.hpp"
+#include "audio/AudioDevice.hpp"
 
 #define VIRTIO_AUDIO_ID 0x1059
 

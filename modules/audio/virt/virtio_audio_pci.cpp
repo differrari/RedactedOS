@@ -4,9 +4,9 @@
 #include "memory/page_allocator.h"
 #include "std/memory_access.h"
 #include "syscalls/syscalls.h"
-#include "audio.h"
+#include "audio/audio.h"
 #include "std/memory.h"
-#include "OutputAudioDevice.hpp"
+#include "audio/OutputAudioDevice.hpp"
 
 #define VIRTIO_SND_R_PCM_INFO       0x0100
 #define VIRTIO_SND_R_PCM_SET_PARAMS 0x0101 
