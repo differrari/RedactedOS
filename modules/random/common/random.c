@@ -1,5 +1,5 @@
 #include "math/rng.h"
-#include "random.h"
+#include "random/random.h"
 #include "dev/driver_base.h"
 #include "console/kio.h"
 

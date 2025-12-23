@@ -135,7 +135,7 @@ bool init_filesystem(){
     const char *path = "/disk";
     system_module *disk_mod = get_module(&path);
     if (!disk_mod) return false;
-    return load_module(&boot_fs_module) && load_module(&p9_fs_module);
+    return load_module(&boot_fs_module) && load_module(&p9_fs_module);//TODO
 }
 
 FS_RESULT open_file_global(const char* path, file* descriptor, system_module **mod){

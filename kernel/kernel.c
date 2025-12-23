@@ -14,7 +14,7 @@
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
-#include "dev/random/random.h"
+#include "random/random.h"
 #include "filesystem/filesystem.h"
 #include "dev/module_loader.h" 
 #include "audio/audio.h"
@@ -43,7 +43,7 @@ void kernel_main() {
 
     print_hardware();
 
-    load_module(&rng_module);
+    load_module(&rng_module);//TODO
     
     irq_init();
     kprintf("Interrupts initialized");
@@ -55,15 +55,15 @@ void kernel_main() {
     if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
         pci_setup_rp1();
 
-    load_module(&disk_module);
+    load_module(&disk_module);//TODO
 
-    bool input_available = load_module(&input_module);
+    bool input_available = load_module(&input_module);//TODO
     bool network_available = false;
     if (BOARD_TYPE == 1){
         if (system_config.use_net)
-            network_available = load_module(&net_module);
+            network_available = load_module(&net_module);//TODO
 
-        load_module(&audio_module);
+        load_module(&audio_module);//TODO
     }
 
     kprint("Kernel initialization finished");
@@ -76,7 +76,7 @@ void kernel_main() {
 
     debug_load();
     
-    load_module(&theme_mod);
+    load_module(&theme_mod);//TODO
 
 #if TEST
     if (!run_tests()) panic("Test run failed",0);
@@ -88,7 +88,7 @@ void kernel_main() {
 
     init_bootprocess();
 
-    load_module(&scheduler_module);
+    load_module(&scheduler_module);//TODO
 
     panic("Kernel did not activate any process", 0);
     
