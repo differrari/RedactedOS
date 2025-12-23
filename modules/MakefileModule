@@ -1,6 +1,15 @@
 include ../../common.mk
 
-CPPFLAGS := -I. -I../../kernel -I../../shared
+CPPFLAGS := -I. -I../../kernel -I../../shared -DXHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
+
+ifeq ($(TEST),true)
+  CPPFLAGS += -DTEST
+endif
+
+ifeq ($(QEMU),true)
+  CPPFLAGS += -DQEMU
+endif
+
 CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
 CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
 

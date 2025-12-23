@@ -19,7 +19,7 @@ kshared:
 	$(MAKE) -C shared SH_FLAGS=-DKERNEL BUILD_DIR=./kbuild TARGET=klibshared.a
 	
 modules: kshared
-	$(MAKE) -C modules DRIVER_TARGET=$(MODE)
+	$(MAKE) -C modules XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU) TEST=$(TEST) DRIVER_TARGET=$(MODE)
 
 shared: 
 	$(MAKE) -C shared BUILD_DIR=./build
