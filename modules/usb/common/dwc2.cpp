@@ -2,7 +2,6 @@
 #include "async.h"
 #include "console/kio.h"
 #include "memory/page_allocator.h"
-#include "std/string.h"
 #include "memory/mmu.h"
 #include "hw/hw.h"
 

@@ -11,7 +11,6 @@ extern "C" void disk_verbose(){
 
 extern "C" bool init_disk_device(){
     kprint("Initializing disk");
-    disk_verbose();
     return sdhci_driver.init();
 }
 

@@ -1,9 +1,9 @@
-#include "usb.hpp"
+#include "usb/usb.hpp"
 #include "console/kio.h"
 #include "async.h"
 #include "std/string.h"
 #include "memory/page_allocator.h"
-#include "usb_types.h"
+#include "usb/usb_types.h"
 #include "sysregs.h"
 
 uint16_t USBDriver::packet_size(uint16_t speed){

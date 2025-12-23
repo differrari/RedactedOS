@@ -1,6 +1,5 @@
 #include "USBKeyboard.hpp"
-#include "input_dispatch.h"
-#include "console/kio.h"
+#include "input/input_dispatch.h"
 #include "memory/page_allocator.h"
 #include "usb.hpp"
 #include "async.h"

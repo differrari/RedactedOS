@@ -1,11 +1,6 @@
 #include "input_dispatch.h"
 #include "process/process.h"
 #include "process/scheduler.h"
-#include "dwc2.hpp"
-#include "xhci.hpp"
-#include "hw/hw.h"
-#include "std/std.h"
-#include "kernel_processes/kprocess_loader.h"
 #include "math/math.h"
 #include "graph/graphics.h"
 #include "graph/tres.h"
@@ -18,13 +13,11 @@ typedef struct {
     bool triggered;
 } shortcut;
 
-shortcut shortcuts[16];
+shortcut shortcuts[16] = {};
 
 uint16_t shortcut_count = 0;
 
 bool secure_mode = false;
-
-USBDriver *input_driver = 0x0;
 
 gpu_point mouse_loc;
 gpu_size screen_bounds;
@@ -201,61 +194,3 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
     } 
     return false;
 }
-
-bool input_init(){
-    for (int i = 0; i < 16; i++) shortcuts[i] = {};
-    #if QEMU
-    if (BOARD_TYPE == 2){
-    #else
-    if (BOARD_TYPE == 2 && RPI_BOARD == 3){
-    #endif
-        input_driver = new DWC2Driver();
-    } else {
-        input_driver = new XHCIDriver();
-    }
-    return input_driver->init();
-}
-
-int input_process_poll(int argc, char* argv[]){
-    while (1){
-        if (input_driver) input_driver->poll_inputs();
-    }
-    return 1;
-}
-
-void input_start_polling(){
-    if (input_driver) input_driver->poll_inputs();
-}
-
-int input_process_fake_interrupts(int argc, char* argv[]){
-    while (1){
-        input_driver->handle_interrupt();
-    }
-    return 1;
-}
-
-void init_input_process(){
-    if (!input_driver->use_interrupts)
-        create_kernel_process("input_poll", &input_process_poll, 0, 0);
-    if (input_driver->quirk_simulate_interrupts)
-        create_kernel_process("input_int_mock", &input_process_fake_interrupts, 0, 0);
-}
-
-void handle_input_interrupt(){
-    if (input_driver->use_interrupts) input_driver->handle_interrupt();
-}
-
-system_module input_module = (system_module){
-    .name = "input",
-    .mount = "/in",
-    .version = VERSION_NUM(0, 1, 0, 1),
-    .init = input_init,
-    .fini = 0,
-    .open = 0,
-    .read = 0,
-    .write = 0,
-    .close = 0,
-    .sread = 0,
-    .swrite = 0,//TODO implement simple io
-    .readdir = 0,
-};

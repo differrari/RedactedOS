@@ -1,8 +1,7 @@
 #pragma once
 
-#include "usb.hpp"
-#include "std/std.h"
-#include "usb_types.h"
+#include "usb/usb.hpp"
+#include "usb/usb_types.h"
 
 typedef struct {
     uint32_t gotgctl;

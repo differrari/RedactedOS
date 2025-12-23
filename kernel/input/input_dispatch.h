@@ -49,13 +49,6 @@ bool is_new_keypress(keypress* current, keypress* previous);
 bool keypress_contains(keypress *kp, char key, uint8_t modifier);
 void remove_double_keypresses(keypress* current, keypress* previous);
 
-void handle_input_interrupt();
-
-void init_input_process();
-void input_start_polling();
-
-extern system_module input_module;
-
 #ifdef __cplusplus
 }
 #endif 

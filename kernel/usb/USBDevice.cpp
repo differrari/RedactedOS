@@ -2,7 +2,6 @@
 #include "USBKeyboard.hpp"
 #include "USBMouse.hpp"
 #include "usb_types.h"
-#include "console/kio.h"
 
 USBDevice::USBDevice(uint32_t capacity, uint8_t address) : address(address) {
     endpoints = IndexMap<USBEndpoint*>(capacity);

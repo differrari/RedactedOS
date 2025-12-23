@@ -1,7 +1,5 @@
 #include "USBManager.hpp"
 #include "USBDevice.hpp"
-#include "USBKeyboard.hpp"
-#include "console/kio.h"
 
 USBManager::USBManager(uint32_t capacity){
     devices = IndexMap<USBDevice*>(capacity);

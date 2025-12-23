@@ -10,7 +10,7 @@
 #include "process/scheduler.h"
 #include "filesystem/disk.h"
 #include "kernel_processes/boot/bootprocess.h"
-#include "input/input_dispatch.h"
+#include "usb/usb.h"
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
@@ -57,7 +57,7 @@ void kernel_main() {
 
     load_module(&disk_module);//TODO
 
-    bool input_available = load_module(&input_module);//TODO
+    bool usb_available = load_module(&usb_module);//TODO
     bool network_available = false;
     if (BOARD_TYPE == 1){
         if (system_config.use_net)
@@ -82,7 +82,7 @@ void kernel_main() {
     if (!run_tests()) panic("Test run failed",0);
 #endif
 
-    if (input_available) init_input_process();
+    if (usb_available) init_usb_process();
 
     if (network_available && system_config.use_net) launch_net_process();
 
