@@ -26,7 +26,7 @@ typedef struct sdhci_regs {
 class SDHCI {
 public:
     bool init();
-    void write(void *buffer, uint32_t sector, uint32_t count);
+    void write(const void *buffer, uint32_t sector, uint32_t count);
     bool read(void *buffer, uint32_t sector, uint32_t count);
     void enable_verbose();
 private:

@@ -1,13 +1,10 @@
-#include "virtio_blk_pci.h"
-#include "disk.h"
-#include "std/string.h"
-#include "std/memory_access.h"
-#include "memory/page_allocator.h"
+#include "filesystem/disk.h"
 #include "console/kio.h"
-#include "pci.h"
 #include "virtio/virtio_pci.h"
+#include "pci.h"
 #include "std/memory.h"
 #include "sysregs.h"
+#include "memory/page_allocator.h"
 
 #define VIRTIO_BLK_T_IN   0
 #define VIRTIO_BLK_T_OUT  1
@@ -21,9 +18,13 @@ typedef struct {
 #define VIRTIO_BLK_SUPPORTED_FEATURES \
     ((1 << 0) | (1 << 1) | (1 << 4))
 
-static bool blk_disk_enable_verbose;
 
-void vblk_disk_verbose(){
+static bool blk_disk_enable_verbose;
+static virtio_device blk_dev;
+
+#define VIRTIO_BLK_ID 0x1001
+
+void disk_verbose(){
     blk_disk_enable_verbose = true;
     virtio_enable_verbose();
 }
@@ -35,9 +36,8 @@ void vblk_disk_verbose(){
         }\
     })
 
-static virtio_device blk_dev;
-
-bool vblk_find_disk(){
+bool init_disk_device(){
+    kprint("Initializing disk");
     uint64_t addr = find_pci_device(VIRTIO_VENDOR, VIRTIO_BLK_ID);
     if (!addr){ 
         kprintf("Disk device not found");
@@ -60,7 +60,7 @@ bool vblk_find_disk(){
 
 void* disk_cmd;
 
-void vblk_write(const void *buffer, uint32_t sector, uint32_t count) {
+void disk_write(const void *buffer, uint32_t sector, uint32_t count){
     if (!disk_cmd) disk_cmd = kalloc(blk_dev.memory_page, sizeof(virtio_blk_req), ALIGN_64B, MEM_PRIV_KERNEL);
     void* data = kalloc(blk_dev.memory_page, count * 512, ALIGN_64B, MEM_PRIV_KERNEL);
 
@@ -76,7 +76,7 @@ void vblk_write(const void *buffer, uint32_t sector, uint32_t count) {
     kfree((void *)data,count * 512);
 }
 
-void vblk_read(void *buffer, uint32_t sector, uint32_t count) {
+void disk_read(void *buffer, uint32_t sector, uint32_t count){
     if (!disk_cmd) disk_cmd = kalloc(blk_dev.memory_page, sizeof(virtio_blk_req), ALIGN_64B, MEM_PRIV_KERNEL);
 
     virtio_blk_req *req = (virtio_blk_req *)disk_cmd;
@@ -86,3 +86,18 @@ void vblk_read(void *buffer, uint32_t sector, uint32_t count) {
 
     virtio_send_3d(&blk_dev, VIRT_TO_PHYS((uintptr_t)disk_cmd), sizeof(virtio_blk_req), VIRT_TO_PHYS((uintptr_t)buffer), count * 512, VIRTQ_DESC_F_WRITE);
 }
+
+system_module disk_module = (system_module){
+    .name = "virtio_blk",
+    .mount = "/disk",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = init_disk_device,
+    .fini = 0,
+    .open = 0,
+    .read = 0,
+    .write = 0,
+    .close = 0,
+    .sread = 0,
+    .swrite = 0,
+    .readdir = 0,
+};

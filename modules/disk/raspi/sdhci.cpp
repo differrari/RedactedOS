@@ -2,7 +2,6 @@
 #include "console/kio.h"
 #include "hw/hw.h"
 #include "mailbox/mailbox.h"
-#include "syscalls/syscalls.h"
 #include "memory/mmu.h"
 #include "std/memory.h"
 #include "async.h"
@@ -297,6 +296,10 @@ bool SDHCI::read(void *buffer, uint32_t sector, uint32_t count){
     }
 
     return true;
+}
+
+void SDHCI::write(const void *buffer, uint32_t sector, uint32_t count){
+    kprintf("[SDHCI error] write not implemented");
 }
 
 //TODO: Write (CMD24 block, CMD25 multiple). Read can be generalized.
