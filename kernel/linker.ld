@@ -18,8 +18,7 @@ SECTIONS {
     .vectors : { KEEP(*(.vectors)) }
 
     . = ALIGN(16);
-    .stack_fill : { FILL(0); . = . + 0x10000; }
-    ksp = .;
+    ksp = . + 0x10000;
 
-    kcode_end = .;
+    kcode_end = . + 0x10000;
 }
