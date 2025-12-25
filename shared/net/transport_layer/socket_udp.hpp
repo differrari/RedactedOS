@@ -112,13 +112,11 @@ class UDPSocket : public Socket {
     }
 
     static void dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uintptr_t frame_ptr, uint32_t frame_len, uint16_t src_port, uint16_t dst_port) {
-    bool delivered = false;
 
         for (UDPSocket* s = s_list_head; s; s = s->next) {
             if (!socket_matches_dst(s, ifindex, ipver, dst_ip_addr, dst_port))
                 continue;
 
-            delivered = true;
             uintptr_t copy = (uintptr_t)malloc(frame_len);
             if (!copy) continue;
 

@@ -174,6 +174,12 @@ void tcp_free_flow(int idx){
     f->rcv_wnd = TCP_RECV_WINDOW;
 
     f->mss = TCP_DEFAULT_MSS;
+
+    f->ws_send = 0;
+    f->ws_recv = 0;
+    f->ws_ok = 0;
+    f->sack_ok = 0;
+
     f->cwnd = f->mss;
     f->ssthresh = TCP_RECV_WINDOW;
     f->dup_acks = 0;
@@ -190,21 +196,26 @@ void tcp_free_flow(int idx){
     f->delayed_ack_timer_ms = 0;
 }
 
-bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp){
-    uint16_t tcp_len = (uint16_t)(sizeof(tcp_hdr_t) + payload_len);
-    uint8_t *segment = (uint8_t *)malloc(tcp_len);
+bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp){
+    if (!hdr) return false;
 
+    if (opts_len & 3u) return false;
+    if (opts_len > 40u) return false;
+
+    uint16_t tcp_len = (uint16_t)(sizeof(tcp_hdr_t) + opts_len + payload_len);
+    uint8_t *segment = (uint8_t *)malloc(tcp_len);
     if (!segment) return false;
 
     tcp_hdr_t h = *hdr;
 
-    uint8_t header_words = (uint8_t)(sizeof(tcp_hdr_t) / 4);
+    uint8_t header_words = (uint8_t)((sizeof(tcp_hdr_t) + opts_len) / 4);
     h.data_offset_reserved = (uint8_t)(header_words << 4);
     h.window = bswap16(h.window);
     h.checksum = 0;
 
     memcpy(segment, &h, sizeof(tcp_hdr_t));
-    if (payload_len) memcpy(segment + sizeof(tcp_hdr_t), payload, payload_len);
+    if (opts_len && opts) memcpy(segment + sizeof(tcp_hdr_t), opts, opts_len);
+    if (payload_len && payload) memcpy(segment + sizeof(tcp_hdr_t) + opts_len, payload, payload_len);
 
     if (ver == IP_VER4){
         uint32_t s = *(const uint32_t *)src_ip_addr;
@@ -247,12 +258,12 @@ void tcp_send_reset(ip_version_t ver, const void *src_ip_addr, const void *dst_i
         ipv4_tx_opts_t tx;
 
         tcp_build_tx_opts_from_local_v4(src_ip_addr, &tx);
-        tcp_send_segment(IP_VER4, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, (const ip_tx_opts_t *)&tx);
+        tcp_send_segment(IP_VER4, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx);
     } else if (ver == IP_VER6){
         ipv6_tx_opts_t tx;
 
         tcp_build_tx_opts_from_local_v6(src_ip_addr, &tx);
-        tcp_send_segment(IP_VER6, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, (const ip_tx_opts_t *)&tx);
+        tcp_send_segment(IP_VER6, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx);
     }
 }
 
@@ -322,6 +333,12 @@ bool tcp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t
         f->rcv_buf_used = 0;
         f->rcv_wnd = TCP_RECV_WINDOW;
         f->ctx.window = TCP_RECV_WINDOW;
+
+        f->mss = TCP_DEFAULT_MSS;
+        f->ws_send = 8;
+        f->ws_recv = 0;
+        f->ws_ok = 1;
+        f->sack_ok = 1;
 
         f->ctx.options.ptr = 0;
         f->ctx.options.size = 0;
@@ -410,7 +427,9 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->state = TCP_SYN_SENT;
     flow->retries = TCP_SYN_RETRIES;
 
-    uint32_t iss = 1;
+    rng_t rng;
+    rng_init_random(&rng);
+    uint32_t iss = rng_next32(&rng);
 
     flow->ctx.sequence = iss;
     flow->ctx.ack = 0;
@@ -419,7 +438,17 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->rcv_buf_used = 0;
     flow->rcv_wnd_max = TCP_RECV_WINDOW;
     flow->rcv_wnd = TCP_RECV_WINDOW;
-    flow->ctx.window = TCP_RECV_WINDOW;
+
+    flow->mss = (flow->local.ver == IP_VER6 ? 1440u : 1460u);
+
+    flow->ws_send = 8;
+    flow->ws_recv = 0;
+    flow->ws_ok = 0;
+    flow->sack_ok = 1;
+
+    uint32_t wnd = (uint32_t)TCP_RECV_WINDOW >> flow->ws_send;
+    if (wnd > 0xFFFFu) wnd = 0xFFFFu;
+    flow->ctx.window = (uint16_t)wnd;
 
     flow->ctx.options.ptr = 0;
     flow->ctx.options.size = 0;
@@ -434,7 +463,6 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->snd_nxt = iss;
     flow->snd_wnd = 0;
 
-    flow->mss = TCP_DEFAULT_MSS;
     flow->cwnd = flow->mss;
     flow->ssthresh = TCP_RECV_WINDOW;
     flow->dup_acks = 0;
@@ -475,17 +503,20 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     syn_hdr.window = flow->ctx.window;
     syn_hdr.urgent_ptr = 0;
 
+    uint8_t syn_opts[40];
+    uint8_t syn_opts_len = tcp_build_syn_options(syn_opts, (uint16_t)flow->mss, flow->ws_send, flow->sack_ok);
+
     if (dst->ver == IP_VER4){
         ipv4_tx_opts_t tx;
 
         tcp_build_tx_opts_from_l3(l3_id, &tx);
-        tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &syn_hdr, NULL, 0, (const ip_tx_opts_t *)&tx);
+        tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &syn_hdr, syn_opts, syn_opts_len, NULL, 0, (const ip_tx_opts_t *)&tx);
     } else{
         ipv6_tx_opts_t tx;
 
         tx.scope = IP_TX_BOUND_L3;
         tx.index = l3_id;
-        tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &syn_hdr, NULL, 0, (const ip_tx_opts_t *)&tx);
+        tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &syn_hdr, syn_opts, syn_opts_len, NULL, 0, (const ip_tx_opts_t *)&tx);
     }
 
     flow->snd_nxt += 1;
@@ -500,7 +531,10 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
     while (waited < max_wait){
         if (flow->state == TCP_ESTABLISHED){
-            *flow_ctx = flow->ctx;
+            tcp_data *ctx = tcp_get_ctx(local_port, dst->ver, dst->ip, dst->port);
+            if (!ctx) return false;
+
+            *flow_ctx = *ctx;
             return true;
         }
 

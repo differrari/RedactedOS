@@ -107,11 +107,11 @@ void tcp_tick_all(uint32_t elapsed_ms) {
                     if (f->remote.ver == IP_VER4) {
                         ipv4_tx_opts_t tx;
                         tcp_build_tx_opts_from_local_v4(f->local.ip, &tx);
-                        (void)tcp_send_segment(IP_VER4, f->local.ip, f->remote.ip, &hdr, pp, pl, (const ip_tx_opts_t *)&tx);
+                        (void)tcp_send_segment(IP_VER4, f->local.ip, f->remote.ip, &hdr, NULL, 0, pp, pl, (const ip_tx_opts_t *)&tx);
                     } else if (f->remote.ver == IP_VER6) {
                         ipv6_tx_opts_t tx;
                         tcp_build_tx_opts_from_local_v6(f->local.ip, &tx);
-                        (void)tcp_send_segment(IP_VER6, f->local.ip, f->remote.ip, &hdr, pp, pl, (const ip_tx_opts_t *)&tx);
+                        (void)tcp_send_segment(IP_VER6, f->local.ip, f->remote.ip, &hdr, NULL, 0, pp, pl, (const ip_tx_opts_t *)&tx);
                     }
 
                     if (f->persist_probe_cnt < UINT8_MAX) f->persist_probe_cnt++;

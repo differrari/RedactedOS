@@ -51,9 +51,16 @@ string http_header_builder(const HTTPHeadersCommon *C,
 
     if (C->host.length) {
         string_append_bytes(&out, "Host: ", 6);
-        string_append_bytes(&out,
-                            C->host.data,
-                            C->host.length);
+        bool has_colon = str_has_char(C->host.data, C->host.length, ':');
+        bool has_lb = str_has_char(C->host.data, C->host.length, '[');
+        bool has_rb = str_has_char(C->host.data, C->host.length, ']');
+        if (has_colon && !has_lb && !has_rb) {
+            string_append_bytes(&out, "[", 1);
+            string_append_bytes(&out, C->host.data, C->host.length);
+            string_append_bytes(&out, "]", 1);
+        } else {
+            string_append_bytes(&out, C->host.data, C->host.length);
+        }
         string_append_bytes(&out, "\r\n", 2);
     } else {
         string_append_bytes(&out, "Host: RedactedOS_0.1\r\n", 22);

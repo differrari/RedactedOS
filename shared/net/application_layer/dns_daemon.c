@@ -2,6 +2,7 @@
 #include "process/scheduler.h"
 #include "syscalls/syscalls.h"
 #include "net/transport_layer/socket_types.h"
+#include "dns.h"
 
 static uint16_t g_pid_dnsd = 0xFFFF;
 static socket_handle_t g_sock = 0;
@@ -15,6 +16,9 @@ int dns_deamon_entry(int argc, char* argv[]){
     (void)argc; (void)argv;
     dns_set_pid(get_current_proc_pid());
     g_sock = udp_socket_create(SOCK_ROLE_CLIENT, g_pid_dnsd);
-    for(;;){ sleep(250); }
+    for(;;){
+        dns_cache_tick(250);
+        sleep(250);
+    }
     return 1;
 }

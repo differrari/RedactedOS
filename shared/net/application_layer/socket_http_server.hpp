@@ -24,8 +24,9 @@ public:
 
         string buf = string_repeat('\0', 0);
         char tmp[512];
-        int attempts = 0;
         int hdr_end  = -1;
+        int attempts = 0;
+        const int max_attempts = 500;
 
         while (true) {
             int64_t r = client->recv(tmp, sizeof(tmp));
@@ -33,14 +34,25 @@ public:
             if (r > 0) string_append_bytes(&buf, tmp, (uint32_t)r);
             hdr_end = find_crlfcrlf(buf.data, buf.length);
             if (hdr_end >= 0) break;
-            if (++attempts > 100) return req;
+            if (++attempts > max_attempts) return req;
             sleep(10);
         }
 
-        uint32_t i = 0;
-        while (i < (uint32_t)hdr_end && buf.data[i] != ' ') ++i;
+        uint32_t line_end = 0;
+        while (line_end + 1u < (uint32_t)hdr_end) {
+            if (buf.data[line_end] == '\r' && buf.data[line_end + 1u] == '\n')
+                break;
+            ++line_end;
+        }
+
+        uint32_t p = 0;
+        while (p + 1u < line_end && buf.data[p] == '\r' && buf.data[p + 1u] == '\n')
+            p += 2;
+
+        uint32_t i = p;
+        while (i < line_end && buf.data[i] != ' ') ++i;
         string method_tok = string_repeat('\0', 0);
-        string_append_bytes(&method_tok, buf.data, i);
+        string_append_bytes(&method_tok, buf.data + p, i - p);
 
         if (method_tok.length == 3 && memcmp(method_tok.data, "GET",    3) == 0)
             req.method = HTTP_METHOD_GET;
@@ -53,16 +65,36 @@ public:
         else
             req.method = HTTP_METHOD_GET;
 
-        uint32_t j = i + 1;
+        uint32_t j = (i < line_end) ? (i + 1u) : line_end;
         uint32_t path_start = j;
-        while (j < (uint32_t)hdr_end && buf.data[j] != ' ') ++j;
+        while (j < line_end && buf.data[j] != ' ') ++j;
         req.path = string_repeat('\0', 0);
         string_append_bytes(&req.path, buf.data + path_start, j - path_start);
 
-        int status_line_end = strindex((char*)buf.data, "\r\n");
+        if (req.path.length >= 7 && memcmp(req.path.data, "http://", 7) == 0) {
+            uint32_t k = 7;
+            while (k < req.path.length && req.path.data[k] != '/') ++k;
+            if (k < req.path.length) {
+                string newp = string_repeat('\0', 0);
+                string_append_bytes(&newp, req.path.data + k, req.path.length - k);
+                free(req.path.data, req.path.mem_length);
+                req.path = newp;
+            }
+        } else if (req.path.length >= 8 && memcmp(req.path.data, "https://", 8) == 0) {
+            uint32_t k = 8;
+            while (k < req.path.length && req.path.data[k] != '/') ++k;
+            if (k < req.path.length) {
+                string newp = string_repeat('\0', 0);
+                string_append_bytes(&newp, req.path.data + k, req.path.length - k);
+                free(req.path.data, req.path.mem_length);
+                req.path = newp;
+            }
+        }
+
+        int status_line_end = (int)line_end;
         http_header_parser(
             (char*)buf.data + status_line_end + 2,
-            buf.length - (uint32_t)(status_line_end + 2),
+            (uint32_t)hdr_end - (uint32_t)(status_line_end + 2),
             &req.headers_common,
             &req.extra_headers,
             &req.extra_header_count

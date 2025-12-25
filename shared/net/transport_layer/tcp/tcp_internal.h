@@ -50,7 +50,7 @@ typedef struct {
     tcp_state_t state;
     tcp_data ctx;
     uint8_t retries;
-    uint16_t snd_wnd;
+    uint32_t snd_wnd;
     uint32_t snd_una;
     uint32_t snd_nxt;
     uint32_t srtt;
@@ -68,6 +68,11 @@ typedef struct {
     uint32_t cwnd;
     uint32_t ssthresh;
     uint32_t mss;
+
+    uint8_t ws_send;
+    uint8_t ws_recv;
+    uint8_t ws_ok;
+    uint8_t sack_ok;
     uint8_t dup_acks;
     uint8_t in_fast_recovery;
     uint32_t recover;
@@ -108,7 +113,7 @@ static inline uint16_t tcp_checksum_ipv6(const void *segment, uint16_t seg_len, 
     return bswap16(csum);
 }
 
-bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp);
+bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp);
 void tcp_send_reset(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port, uint32_t seq, uint32_t ack, bool ack_valid);
 tcp_tx_seg_t *tcp_find_first_unacked(tcp_flow_t *flow);
 void tcp_cc_on_timeout(tcp_flow_t *f);

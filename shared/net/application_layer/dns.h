@@ -25,6 +25,8 @@ dns_result_t dns_resolve_a_on_l3(uint8_t l3_id, const char* hostname, uint32_t* 
 dns_result_t dns_resolve_aaaa(const char* hostname, uint8_t out_ipv6[16], dns_server_sel_t which, uint32_t timeout_ms);
 dns_result_t dns_resolve_aaaa_on_l3(uint8_t l3_id, const char* hostname, uint8_t out_ipv6[16], dns_server_sel_t which, uint32_t timeout_ms);
 
+void dns_cache_tick(uint32_t ms);
+
 #ifdef __cplusplus
 }
 #endif

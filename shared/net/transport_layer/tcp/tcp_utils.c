@@ -39,3 +39,71 @@ bool tcp_build_tx_opts_from_local_v6(const void *src_ip_addr, ipv6_tx_opts_t *ou
     }
     return true;
 }
+
+void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out) {
+    if (!out) return;
+
+    out->mss = 0;
+    out->wscale = 0;
+    out->sack_permitted = 0;
+    out->has_mss = 0;
+    out->has_wscale = 0;
+
+    if (!opts || len == 0) return;
+
+    uint32_t i = 0;
+    while (i < len){
+        uint8_t kind = opts[i];
+        if (kind == 0) break;
+        if (kind == 1) {
+            i++;
+            continue;
+        }
+
+        if (i + 1 >= len) break;
+        uint8_t olen = opts[i + 1];
+        if (olen < 2) break;
+        if (i + olen > len) break;
+
+        if (kind == 2 && olen == 4) {
+            out->mss = (uint16_t)((opts[i + 2] << 8) | opts[i + 3]);
+            out->has_mss = 1;
+        } else if (kind == 3 && olen == 3) {
+            out->wscale =opts[i + 2];
+            out->has_wscale = 1;
+        } else if (kind == 4 && olen == 2) {
+            out->sack_permitted = 1;
+        }
+
+        i += olen;
+    }
+}
+
+uint8_t tcp_build_syn_options(uint8_t *out, uint16_t mss, uint8_t wscale, uint8_t sack_permitted) {
+    if (!out) return 0;
+
+    uint8_t i = 0;
+
+    out[i++] = 2;
+    out[i++] = 4;
+    out[i++] = (uint8_t)(mss >> 8);
+    out[i++] = (uint8_t)(mss & 0xff);
+
+    if (wscale != 0xffu){
+        out[i++] = 1;
+        out[i++] = 3;
+        out[i++] = 3;
+        out[i++] = wscale;
+    }
+
+    if (sack_permitted){
+        out[i++] = 1;
+        out[i++] = 1;
+        out[i++] = 4;
+        out[i++] = 2;
+    }
+
+    while (i & 3) out[i++] = 1;
+
+    return i;
+}

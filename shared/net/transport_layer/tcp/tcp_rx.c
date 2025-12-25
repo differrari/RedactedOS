@@ -9,6 +9,7 @@
 #include "syscalls/syscalls.h"
 #include "../tcp.h"
 
+
 static inline void tcp_update_rcv_window(tcp_flow_t *flow) {
     uint32_t maxw = flow->rcv_wnd_max;
     uint32_t used = flow->rcv_buf_used;
@@ -17,7 +18,11 @@ static inline void tcp_update_rcv_window(tcp_flow_t *flow) {
     if (freew > TCP_RECV_WINDOW) freew = TCP_RECV_WINDOW;
 
     flow->rcv_wnd = freew;
-    flow->ctx.window = (uint16_t)freew;
+
+    uint32_t adv = freew;
+    if (flow->ws_ok && flow->ws_send) adv >>= flow->ws_send;
+    if (adv > 65535u) adv = 65535u;
+    flow->ctx.window = (uint16_t)adv;
 }
 
 static void tcp_reass_insert(tcp_flow_t *flow, uint32_t seq, const uint8_t *data, uint32_t len) {
@@ -311,7 +316,28 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->state = TCP_SYN_RECEIVED;
             flow->retries = TCP_SYN_RETRIES;
 
-            flow->ctx.window = lf->ctx.window ? lf->ctx.window : TCP_RECV_WINDOW;
+            tcp_parsed_opts_t pop;
+            tcp_parse_options((const uint8_t *)(ptr + sizeof(tcp_hdr_t)), (uint32_t)(hdr_len > sizeof(tcp_hdr_t) ? hdr_len - sizeof(tcp_hdr_t) : 0), &pop);
+
+            flow->ws_send = lf->ws_send;
+            flow->ws_recv = 0;
+            flow->ws_ok = (lf->ws_ok && pop.has_wscale) ? 1 : 0;
+            if (flow->ws_ok) flow->ws_recv = pop.wscale;
+            else {
+                flow->ws_send = 0;
+                flow->ws_recv = 0;
+            }
+
+            flow->sack_ok = (lf->sack_ok && pop.sack_permitted) ? 1 : 0;
+
+            if (pop.has_mss && pop.mss){
+                uint32_t m = pop.mss;
+                uint32_t minm = ipver == IP_VER6 ? 1220u : 536u;
+                uint32_t maxm = ipver == IP_VER6 ? 1440u : 1460u;
+                if (m < minm) m = minm;
+                if (m > maxm) m = maxm;
+                flow->mss = m;
+            } else flow->mss = ipver == IP_VER6 ? 1440u : 1460u;
             flow->ctx.flags = 0;
             flow->ctx.options = lf->ctx.options;
             flow->ctx.payload.ptr = 0;
@@ -328,8 +354,9 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
             flow->ctx.expected_ack = iss + 1;
             flow->ctx.ack_received = 0;
-
-            flow->snd_wnd = window;
+            uint32_t new_wnd = window;
+            if (flow->ws_ok && flow->ws_recv) new_wnd <<= flow->ws_recv;
+            flow->snd_wnd = new_wnd;
 
             flow->persist_active = 0;
             flow->persist_timer_ms = 0;
@@ -342,7 +369,6 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->rcv_buf_used = 0;
             tcp_update_rcv_window(flow);
 
-            flow->mss = TCP_DEFAULT_MSS;
             flow->cwnd = flow->mss;
             flow->ssthresh = TCP_RECV_WINDOW;
             flow->dup_acks = 0;
@@ -362,16 +388,19 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             synack_hdr.window = flow->ctx.window;
             synack_hdr.urgent_ptr = 0;
 
+            uint8_t syn_opts[40];
+            uint8_t syn_opts_len = tcp_build_syn_options(syn_opts, (uint16_t)flow->mss, flow->ws_ok ? flow->ws_send : 0xffu, flow->sack_ok);
+
             if (ipver == IP_VER4 && v4){
                 ipv4_tx_opts_t tx;
                 tx.scope = IP_TX_BOUND_L3;
                 tx.index = v4->l3_id;
-                tcp_send_segment(IP_VER4, flow->local.ip, src_ip_addr, &synack_hdr, NULL, 0, (const ip_tx_opts_t *)&tx);
+                tcp_send_segment(IP_VER4, flow->local.ip, src_ip_addr, &synack_hdr, syn_opts, syn_opts_len, NULL, 0, (const ip_tx_opts_t *)&tx);
             } else if (ipver == IP_VER6 && v6){
                 ipv6_tx_opts_t tx;
                 tx.scope = IP_TX_BOUND_L3;
                 tx.index = v6->l3_id;
-                tcp_send_segment(IP_VER6, flow->local.ip, src_ip_addr, &synack_hdr, NULL, 0, (const ip_tx_opts_t *)&tx);
+                tcp_send_segment(IP_VER6, flow->local.ip, src_ip_addr, &synack_hdr, syn_opts, syn_opts_len, NULL, 0, (const ip_tx_opts_t *)&tx);
             }
 
             tcp_daemon_kick();
@@ -411,8 +440,9 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
         return;
     }
-
-    flow->snd_wnd = window;
+    uint32_t new_wnd = window;
+    if (flow->ws_ok && flow->ws_recv) new_wnd <<= flow->ws_recv;
+    flow->snd_wnd = new_wnd;
 
     if (flow->snd_wnd > 0){
         flow->persist_active = 0;
@@ -469,7 +499,6 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     }
 
     uint32_t seg_seq = seq;
-    uint32_t seg_data_end = seg_seq + data_len;
 
     switch (flow->state){
     case TCP_SYN_SENT:
@@ -478,8 +507,38 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->rcv_nxt = seq + 1;
             flow->ctx.ack_received = ack;
             flow->snd_una = ack;
-            flow->snd_nxt = flow->ctx.sequence + 1;
+            flow->snd_nxt = flow->ctx.sequence;
             flow->ctx.sequence = flow->snd_nxt;
+            flow->ctx.flags = 0;
+
+            tcp_parsed_opts_t pop;
+            tcp_parse_options((const uint8_t *)(ptr + sizeof(tcp_hdr_t)), (uint32_t)(hdr_len > sizeof(tcp_hdr_t) ? hdr_len - sizeof(tcp_hdr_t) : 0), &pop);
+
+            flow->ws_recv = pop.has_wscale ? pop.wscale : 0;
+            flow->ws_ok = (flow->ws_send != 0) && pop.has_wscale ? 1 : 0;
+            if (!flow->ws_ok) {
+                flow->ws_send = 0;
+                flow->ws_recv = 0;
+            }
+
+            flow->sack_ok = pop.sack_permitted ? 1 : 0;
+
+            if (pop.has_mss && pop.mss){
+                uint32_t m = pop.mss;
+                uint32_t minm = ipver == IP_VER6 ? 1220u : 536u;
+                uint32_t maxm = ipver == IP_VER6 ? 1440u : 1460u;
+                if (m < minm) m = minm;
+                if (m > maxm) m = maxm;
+                flow->mss = m;
+            } else {
+                flow->mss = ipver == IP_VER6 ? 1440u : 1460u;
+            }
+
+            uint32_t new_wnd = window;
+            if (flow->ws_ok && flow->ws_recv) new_wnd <<= flow->ws_recv;
+            flow->snd_wnd = new_wnd;
+
+            tcp_update_rcv_window(flow);
 
             tcp_hdr_t final_ack;
             final_ack.src_port = bswap16(flow->local_port);
@@ -493,14 +552,16 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             if (flow->remote.ver == IP_VER4){
                 ipv4_tx_opts_t tx;
                 tcp_build_tx_opts_from_local_v4(flow->local.ip, &tx);
-                tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &final_ack, NULL, 0, (const ip_tx_opts_t *)&tx);
+                tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &final_ack, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx);
             } else {
                 ipv6_tx_opts_t tx;
                 tcp_build_tx_opts_from_local_v6(flow->local.ip, &tx);
-                tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &final_ack, NULL, 0, (const ip_tx_opts_t *)&tx);
+                tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &final_ack, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx);
             }
 
             flow->state = TCP_ESTABLISHED;
+            flow->delayed_ack_pending = 0;
+            flow->delayed_ack_timer_ms = 0;
             tcp_daemon_kick();
         } else if (flags & (1u << RST_F)){
             flow->state = TCP_STATE_CLOSED;
@@ -514,6 +575,8 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->snd_una = ack;
             flow->snd_nxt = flow->ctx.sequence;
             flow->state = TCP_ESTABLISHED;
+            flow->delayed_ack_pending = 0;
+            flow->delayed_ack_timer_ms = 0;
             flow->ctx.ack_received = ack;
 
             port_recv_handler_t h = port_get_handler(pm, PROTO_TCP, dst_port);
@@ -535,7 +598,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
         return;
     }
 
-    int need_ack = 0;
+        int need_ack = 0;
     int ack_immediate = 0;
     int ack_defer = 0;
 
@@ -543,15 +606,15 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
         uint32_t rcv_nxt = flow->rcv_nxt;
         uint32_t rcv_wnd = flow->rcv_wnd;
 
+        uint32_t wnd_end = rcv_nxt + rcv_wnd;
         uint32_t seg_end = seg_seq + data_len + (fin ? 1u : 0u);
 
-        if (seg_end <= rcv_nxt || seg_seq >= rcv_nxt + rcv_wnd){
+        if (seg_end <= rcv_nxt || seg_seq >= wnd_end){
             need_ack = 1;
             ack_immediate = 1;
         } else if (seg_seq == rcv_nxt) {
             if (data_len){
                 uintptr_t buf = (uintptr_t)malloc(data_len);
-
                 if (buf){
                     memcpy((void *)buf, (const void *)(ptr + hdr_len), data_len);
 
@@ -559,9 +622,12 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                     if (h) h(ifx, ipver, src_ip_addr, dst_ip_addr, buf, data_len, src_port, dst_port);
                     else free((void *)buf, data_len);
                 }
+
+                flow->rcv_nxt += data_len;
+                flow->ctx.ack = flow->rcv_nxt;
             }
 
-            if (fin && seg_data_end == flow->rcv_nxt) {
+            if (fin && (seg_seq + data_len) == flow->rcv_nxt) {
                 flow->rcv_nxt += 1;
                 flow->ctx.ack = flow->rcv_nxt;
 
@@ -569,15 +635,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
                 if (old == TCP_ESTABLISHED) flow->state =TCP_CLOSE_WAIT;
                 else if (old == TCP_FIN_WAIT_1) flow->state = TCP_CLOSING;
-                else if (old == TCP_FIN_WAIT_2){
-                    flow->state = TCP_TIME_WAIT;
-                    flow->time_wait_ms = 0;
-                    tcp_daemon_kick();
-                } else if (old == TCP_CLOSING){
-                    flow->state = TCP_TIME_WAIT;
-                    flow->time_wait_ms = 0;
-                    tcp_daemon_kick();
-                } else if (old == TCP_LAST_ACK){
+                else if (old == TCP_FIN_WAIT_2 || old == TCP_CLOSING || old == TCP_LAST_ACK){
                     flow->state = TCP_TIME_WAIT;
                     flow->time_wait_ms = 0;
                     tcp_daemon_kick();
@@ -588,7 +646,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
             tcp_reass_drain_inseq(flow, pm, ifx, ipver, src_ip_addr, dst_ip_addr, src_port, dst_port);
 
-            if (flow->fin_pending && flow->fin_seq == flow->rcv_nxt) {
+            if (flow->fin_pending && flow->fin_seq == flow->rcv_nxt){
                 flow->fin_pending = 0;
                 flow->rcv_nxt += 1;
                 flow->ctx.ack = flow->rcv_nxt;
@@ -607,12 +665,9 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             }
 
             tcp_update_rcv_window(flow);
-            need_ack = 1;
 
-            if (!ack_immediate && data_len){
-                ack_defer = 1;
-                need_ack = 0;
-            }
+            if (!ack_immediate && data_len) ack_defer = 1;
+            need_ack = 1;
         } else {
             if (data_len) tcp_reass_insert(flow, seg_seq, (const uint8_t *)(ptr + hdr_len), data_len);
 
@@ -626,9 +681,17 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
         }
     }
 
-    if (need_ack) {
+    if (need_ack){
         if (ack_immediate){
             tcp_send_ack_now(flow);
+        } else if (ack_defer){
+            if (!flow->delayed_ack_pending){
+                flow->delayed_ack_pending = 1;
+                flow->delayed_ack_timer_ms = 0;
+                tcp_daemon_kick();
+            } else {
+                tcp_send_ack_now(flow);
+            }
         } else {
             if (!flow->delayed_ack_pending){
                 flow->delayed_ack_pending = 1;
@@ -637,14 +700,6 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             } else {
                 tcp_send_ack_now(flow);
             }
-        }
-    } else if (ack_defer) {
-        if (!flow->delayed_ack_pending){
-            flow->delayed_ack_pending = 1;
-            flow->delayed_ack_timer_ms = 0;
-            tcp_daemon_kick();
-        } else {
-            tcp_send_ack_now(flow);
         }
     }
 }

@@ -11,6 +11,17 @@
 extern "C" {
 #endif
 
+typedef struct {
+    uint16_t mss;
+    uint8_t wscale;
+    uint8_t sack_permitted;
+    uint8_t has_mss;
+    uint8_t has_wscale;
+} tcp_parsed_opts_t;
+
+void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out);
+uint8_t tcp_build_syn_options(uint8_t *out, uint16_t mss, uint8_t wscale, uint8_t sack_permitted);
+
 port_manager_t *tcp_pm_for_l3(uint8_t l3_id);
 
 bool tcp_build_tx_opts_from_local_v4(const void *src_ip_addr, ipv4_tx_opts_t *out);

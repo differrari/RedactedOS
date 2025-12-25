@@ -1137,7 +1137,19 @@ uint64_t parse_int_u64(const char* str, size_t size){
     }
     return result;
 }
-
+int64_t parse_int64(const char* str, size_t size){
+    uint64_t result = 0;
+    bool neg = false;
+    for (uint32_t i = 0; i < size; i++){
+        char c = str[i];
+        uint8_t digit = 0;
+        if (i == 0 && c == '-') neg = true;
+        else if (c >= '0' && c <= '9') digit = c - '0';
+        else break;
+        result = (result * 10) + digit;
+    }
+    return neg ? -result : result;
+}
 string string_from_const(const char *lit)
 {
     uint32_t len = strlen(lit, 0);

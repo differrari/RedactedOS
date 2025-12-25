@@ -19,6 +19,29 @@ typedef struct string_list {
     uint32_t count;
     char array[];
 } string_list;
+static inline bool is_alpha(char c) {
+    return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'));
+}
+
+static inline bool is_digit(char c) {
+    return (c >= '0' && c <= '9');
+}
+
+static inline bool is_alnum(char c) {
+    return is_alpha(c) || is_digit(c);
+}
+
+static inline int hex_val(char c) {
+    if (is_digit(c)) return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    return -1;
+}
+
+static inline bool str_has_char(const char* s, uint32_t n, char c){
+    for (uint32_t i = 0; i < n; i++) if (s[i] == c) return true;
+    return false;
+}
 
 uint32_t strlen(const char *s, uint32_t max_length);
 string string_from_literal(const char *literal);
@@ -47,6 +70,7 @@ int count_occurrences(const char* str, char c);
 
 uint64_t parse_hex_u64(const char* str, size_t size);
 uint64_t parse_int_u64(const char* str, size_t size);
+int64_t parse_int64(const char* str, size_t size);
 
 bool utf16tochar(uint16_t* str_in, char* out_str, size_t max_len);
 

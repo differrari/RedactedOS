@@ -75,7 +75,9 @@ int32_t bind_socket(SocketHandle *handle, uint16_t port, ip_version_t ip_version
     SockBindSpec *spec = kalloc(sock_mem_page, sizeof(SockBindSpec), ALIGN_64B, MEM_PRIV_KERNEL);
     spec->kind = BIND_IP;
     spec->ver = ip_version;
-    memcpy(&spec->ip, handle->connection.ip, 4);
+    memset(spec->ip, 0, sizeof(spec->ip));
+    if (ip_version == IP_VER4) memcpy(spec->ip, handle->connection.ip, 4);
+    else if (ip_version == IP_VER6) memcpy(spec->ip, handle->connection.ip, 16);
     int32_t res = -1;
     switch (protocol) {
         case PROTO_TCP:
