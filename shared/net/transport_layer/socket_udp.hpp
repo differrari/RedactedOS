@@ -252,16 +252,30 @@ public:
         remove_from_list();
     }
 
-    int32_t bind(const SockBindSpec& spec, uint16_t port) override {
+    int32_t bind(const SockBindSpec& spec_in, uint16_t port) override {
         if (role != SOCK_ROLE_SERVER) return SOCK_ERR_PERM;
         if (bound) return SOCK_ERR_BOUND;
+
+        SockBindSpec spec = spec_in;
+        bool empty = spec.kind == BIND_L3 && spec.l3_id == 0 && spec.ifindex == 0 && spec.ver == 0 && ipv6_is_unspecified(spec.ip);
+        if (empty) spec.kind = BIND_ANY;
 
         uint8_t ids[SOCK_MAX_L3];
         int n = 0;
 
         if (spec.kind == BIND_L3) {
-            if (spec.l3_id) ids[n++] = spec.l3_id;
-            if (n == 0) return SOCK_ERR_INVAL;
+            if (!spec.l3_id) return SOCK_ERR_INVAL;
+
+            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(spec.l3_id);
+            l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(spec.l3_id);
+
+            bool ok4 = is_valid_v4_l3_for_bind(v4);
+            bool ok6 = is_valid_v6_l3_for_bind(v6);
+
+            if (!ok4 && !ok6) return SOCK_ERR_INVAL;
+
+            if (ok4 && n < SOCK_MAX_L3) ids[n++] = spec.l3_id;
+            if (ok6 && n < SOCK_MAX_L3) ids[n++] = spec.l3_id;
         } else if (spec.kind == BIND_L2) {
             if (!add_all_l3_on_l2(spec.ifindex, ids, n)) return SOCK_ERR_INVAL;
         } else if (spec.kind == BIND_IP) {
@@ -270,11 +284,11 @@ public:
                 memcpy(&v4ip, spec.ip, 4);
                 l3_ipv4_interface_t* ipif = l3_ipv4_find_by_ip(v4ip);
                 if (!is_valid_v4_l3_for_bind(ipif)) return SOCK_ERR_INVAL;
-                ids[n++] = ipif->l3_id;
+                if (n < SOCK_MAX_L3) ids[n++] = ipif->l3_id;
             } else if (spec.ver == IP_VER6) {
                 l3_ipv6_interface_t* ipif6 = l3_ipv6_find_by_ip(spec.ip);
                 if (!is_valid_v6_l3_for_bind(ipif6)) return SOCK_ERR_INVAL;
-                ids[n++] = ipif6->l3_id;
+                if (n < SOCK_MAX_L3) ids[n++] = ipif6->l3_id;
             } else {
                 return SOCK_ERR_INVAL;
             }
@@ -296,7 +310,7 @@ public:
                     break;
                 }
             }
-            if (!seen) dedup[m++] = ids[i];
+            if (!seen && m < SOCK_MAX_L3) dedup[m++] = ids[i];
         }
         if (m == 0) return SOCK_ERR_INVAL;
 

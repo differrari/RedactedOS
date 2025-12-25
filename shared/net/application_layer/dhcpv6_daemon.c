@@ -80,9 +80,10 @@ void dhcpv6_force_confirm_all() { g_force_confirm_all = true; }
 
 static int l3id_to_bit(uint8_t l3_id) {
     if (!l3_id) return -1;
+    if ((l3_id & 0x08) == 0) return -1;
 
     uint8_t ifx = (uint8_t)((l3_id >> 4) & 0x0F);
-    uint8_t sl = (uint8_t)(l3_id & 0x0F);
+    uint8_t sl = (uint8_t)(l3_id & 0x03);
     int idx = ((int)(ifx - 1) * MAX_IPV6_PER_INTERFACE) + (int)sl;
 
     if (idx < 0 || idx >= 64) return -1;

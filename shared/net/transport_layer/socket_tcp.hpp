@@ -13,9 +13,6 @@
 #include "net/internet_layer/ipv6_route.h"
 #include "net/internet_layer/ipv6_utils.h"
 #include "syscalls/syscalls.h"
-//TODO bind() is broken in dual-stack scenarios
-//ipv4 and v6 l3_id values collides numerically but tcp_bind_l3() is not version aware
-//interface IDs must be de-unified
 
 static constexpr int TCP_MAX_BACKLOG = 8;
 static constexpr dns_server_sel_t TCP_DNS_SEL = DNS_USE_BOTH;
@@ -88,7 +85,6 @@ class TCPSocket : public Socket {
                 if (srv->backlogLen >= srv->backlogCap) break;
 
                 TCPSocket* child = new TCPSocket(SOCK_ROLE_CLIENT, srv->pid);
-                child->remove_from_list();
 
                 child->localPort = dst_port;
                 child->connected = true;

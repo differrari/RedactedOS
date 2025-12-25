@@ -41,9 +41,11 @@ static inline int l2_slot_from_ifindex(uint8_t ifindex){
     if (!g_l2_used[s]) return -1;
     return s;
 }
-static inline uint8_t make_l3_id(uint8_t ifindex, uint8_t local_slot){ return (uint8_t)((ifindex<<4) | (local_slot & 0x0F)); }
+static inline uint8_t make_l3_id_v4(uint8_t ifindex, uint8_t local_slot){ return (uint8_t)((ifindex<<4) | (local_slot & 0x03)); }
+static inline uint8_t make_l3_id_v6(uint8_t ifindex, uint8_t local_slot){ return (uint8_t)((ifindex<<4) | 0x08 | (local_slot & 0x03)); }
 static inline uint8_t l3_ifindex_from_id(uint8_t l3_id){ return (uint8_t)((l3_id >> 4) & 0x0F); }
-static inline uint8_t l3_local_slot_from_id(uint8_t l3_id){ return (uint8_t)(l3_id & 0x0F); }
+static inline uint8_t l3_is_v6_from_id(uint8_t l3_id){ return (uint8_t)((l3_id & 0x08) ? 1 : 0); }
+static inline uint8_t l3_slot_from_id(uint8_t l3_id){ return (uint8_t)(l3_id & 0x03); }
 
 static bool v4_has_dhcp_on_l2(uint8_t ifindex){
     for (int i = 0; i < V4_POOL_SIZE; i++){
@@ -286,7 +288,7 @@ uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
     ipv4_rt_ensure_basics((ipv4_rt_table_t*)n->routing_table, n->ip, n->mask, n->gw, l2->base_metric);
 
     n->is_localhost = (l2->name[0]=='l' && l2->name[1]=='o');
-    n->l3_id = make_l3_id(l2->ifindex, (uint8_t)loc);
+    n->l3_id = make_l3_id_v4(l2->ifindex, (uint8_t)loc);
     l2->l3_v4[loc] = n;
     l2->ipv4_count++;
 
@@ -375,7 +377,7 @@ bool l3_ipv4_remove_from_interface(uint8_t l3_id){
         n->port_manager = NULL;
     }
 
-    uint8_t slot = l3_local_slot_from_id(l3_id);
+    uint8_t slot = l3_slot_from_id(l3_id);
     if (slot < MAX_IPV4_PER_INTERFACE && l2->l3_v4[slot] == n){
         l2->l3_v4[slot] = NULL;
         if (l2->ipv4_count) l2->ipv4_count--;
@@ -392,8 +394,9 @@ bool l3_ipv4_remove_from_interface(uint8_t l3_id){
 }
 
 l3_ipv4_interface_t* l3_ipv4_find_by_id(uint8_t l3_id){
+    if (!l3_id || l3_is_v6_from_id(l3_id)) return NULL;
     uint8_t ifx = l3_ifindex_from_id(l3_id);
-    uint8_t loc = l3_local_slot_from_id(l3_id);
+    uint8_t loc = l3_slot_from_id(l3_id);
     l2_interface_t *l2 = l2_interface_find_by_index(ifx);
     if (!l2) return NULL;
     if (loc >= MAX_IPV4_PER_INTERFACE) return NULL;
@@ -521,7 +524,7 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
         n->dad_requested = 0;
     }
 
-    n->l3_id = make_l3_id(l2->ifindex, (uint8_t)loc);
+    n->l3_id = make_l3_id_v6(l2->ifindex, (uint8_t)loc);
     l2->l3_v6[loc] = n;
     l2->ipv6_count++;
 
@@ -701,7 +704,7 @@ bool l3_ipv6_remove_from_interface(uint8_t l3_id){
         n->port_manager = NULL;
     }
 
-    uint8_t slot = l3_local_slot_from_id(l3_id);
+    uint8_t slot = l3_slot_from_id(l3_id);
     if (slot < MAX_IPV6_PER_INTERFACE && l2->l3_v6[slot] == n){
         l2->l3_v6[slot] = NULL;
         if (l2->ipv6_count) l2->ipv6_count--;
@@ -741,8 +744,9 @@ bool l3_ipv6_set_enabled(uint8_t l3_id, bool enable){
 }
 
 l3_ipv6_interface_t* l3_ipv6_find_by_id(uint8_t l3_id){
+    if (!l3_id || !l3_is_v6_from_id(l3_id)) return NULL;
     uint8_t ifx = l3_ifindex_from_id(l3_id);
-    uint8_t loc = l3_local_slot_from_id(l3_id);
+    uint8_t loc = l3_slot_from_id(l3_id);
     l2_interface_t *l2 = l2_interface_find_by_index(ifx);
     if (!l2) return NULL;
     if (loc >= MAX_IPV6_PER_INTERFACE) return NULL;
