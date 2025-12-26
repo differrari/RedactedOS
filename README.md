@@ -1,9 +1,9 @@
-# \[Redacted\] Operating System
+# \[REDACTED\] Operating System
 
 ## Summary
 
 The \[REDACTED\] Operating System is a 64 bit operating system meant to run on ARM processors. 
-It can run entirely in QEMU, either in an entirely virtual machine using QEMU's `virt` board, or emulating a Raspberry Pi 4B.
+It can run entirely in QEMU, either in an entirely virtual machine using QEMU's `virt` board, or emulating a Raspberry Pi 4B, it can also be installed on a Raspberry Pi (with limited support).
 It also has preliminary support for the Raspberry Pi 5, and possibly 4B and 3B, though these last two are largely untested.
 Its GUI is heavily inspired by video game consoles, and the OS is entirely controllable via keyboard (with future mouse and possibly gamepad support)
 It has limited support for third party processes, currently limited to entirely self-contained programs. The `shared` library is provided for syscalls and common functions but it should be used as a static library embedded into the final executable `.elf` file.
