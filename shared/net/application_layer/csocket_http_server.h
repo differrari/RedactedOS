@@ -13,7 +13,7 @@ typedef void* http_connection_handle_t;
 http_server_handle_t http_server_create(uint16_t pid);
 void http_server_destroy(http_server_handle_t srv);
 
-int32_t http_server_bind_ex(http_server_handle_t srv, const struct SockBindSpec *spec, uint16_t port);
+int32_t http_server_bind(http_server_handle_t srv, const struct SockBindSpec *spec, uint16_t port);
 
 int32_t http_server_listen(http_server_handle_t srv, int backlog);
 

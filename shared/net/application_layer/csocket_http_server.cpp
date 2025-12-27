@@ -18,7 +18,7 @@ void http_server_destroy(http_server_handle_t h) {
     delete srv;
 }
 
-int32_t http_server_bind_ex(http_server_handle_t h, const SockBindSpec *spec, uint16_t port) {
+int32_t http_server_bind(http_server_handle_t h, const SockBindSpec *spec, uint16_t port) {
     if (!h || !spec) return (int32_t)SOCK_ERR_INVAL;
     HTTPServer* srv = reinterpret_cast<HTTPServer*>(h);
     return srv->bind(*spec, port);

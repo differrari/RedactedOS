@@ -439,7 +439,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->rcv_wnd_max = TCP_RECV_WINDOW;
     flow->rcv_wnd = TCP_RECV_WINDOW;
 
-    flow->mss = (flow->local.ver == IP_VER6 ? 1440u : 1460u);
+    flow->mss = tcp_calc_mss_for_l3(l3_id, dst->ver, dst->ip);
 
     flow->ws_send = 8;
     flow->ws_recv = 0;

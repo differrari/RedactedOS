@@ -333,11 +333,11 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             if (pop.has_mss && pop.mss){
                 uint32_t m = pop.mss;
                 uint32_t minm = ipver == IP_VER6 ? 1220u : 536u;
-                uint32_t maxm = ipver == IP_VER6 ? 1440u : 1460u;
+                uint32_t maxm = tcp_calc_mss_for_l3(l3_id, ipver, src_ip_addr);
                 if (m < minm) m = minm;
                 if (m > maxm) m = maxm;
                 flow->mss = m;
-            } else flow->mss = ipver == IP_VER6 ? 1440u : 1460u;
+            } else flow->mss = tcp_calc_mss_for_l3(l3_id, ipver, src_ip_addr);
             flow->ctx.flags = 0;
             flow->ctx.options = lf->ctx.options;
             flow->ctx.payload.ptr = 0;
@@ -526,12 +526,12 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             if (pop.has_mss && pop.mss){
                 uint32_t m = pop.mss;
                 uint32_t minm = ipver == IP_VER6 ? 1220u : 536u;
-                uint32_t maxm = ipver == IP_VER6 ? 1440u : 1460u;
+                uint32_t maxm = tcp_calc_mss_for_l3(l3_id, ipver, src_ip_addr);
                 if (m < minm) m = minm;
                 if (m > maxm) m = maxm;
                 flow->mss = m;
             } else {
-                flow->mss = ipver == IP_VER6 ? 1440u : 1460u;
+                flow->mss = tcp_calc_mss_for_l3(l3_id, ipver, src_ip_addr);
             }
 
             uint32_t new_wnd = window;

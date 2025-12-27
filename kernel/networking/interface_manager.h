@@ -109,6 +109,7 @@ typedef struct net_runtime_opts_v6 {
 
 typedef struct l3_ipv6_interface {
     uint8_t l3_id;
+    uint16_t mtu;
 
     uint8_t ip[16];
     uint8_t prefix_len;

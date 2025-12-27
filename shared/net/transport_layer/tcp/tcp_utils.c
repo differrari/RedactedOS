@@ -6,6 +6,27 @@ port_manager_t *tcp_pm_for_l3(uint8_t l3_id){
     return NULL;
 }
 
+uint32_t tcp_calc_mss_for_l3(uint8_t l3_id, ip_version_t ver, const void *remote_ip){
+    uint32_t mtu = 1500;
+    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
+    if (v6) mtu =v6->mtu ? v6->mtu : 1500;
+
+    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
+    if (v4)  mtu = v4->runtime_opts_v4.mtu ? v4->runtime_opts_v4.mtu : 1500;
+
+    if (ver == IP_VER6 && remote_ip){
+        uint16_t pmtu =ipv6_pmtu_get((const uint8_t*)remote_ip);
+        if (pmtu && pmtu < mtu) mtu = pmtu;
+    }
+
+    uint32_t ih = (ver == IP_VER6) ? 40u : 20u;
+    uint32_t th = 20u;
+    if (mtu <= ih + th) return 256;
+    uint32_t mss = mtu - ih - th;
+    if (mss < 256u) mss = 256u;
+    return mss;
+}
+
 bool tcp_build_tx_opts_from_local_v4(const void *src_ip_addr, ipv4_tx_opts_t *out){
     if (!out) return false;
     l3_ipv4_interface_t *v4 = l3_ipv4_find_by_ip(*(const uint32_t *)src_ip_addr);

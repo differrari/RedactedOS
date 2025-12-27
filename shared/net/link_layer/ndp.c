@@ -61,6 +61,13 @@ typedef struct __attribute__((packed)) {
     uint8_t prefix[16];
 } ndp_opt_prefix_info_t;
 
+typedef struct __attribute__((packed)) {
+    uint8_t type;
+    uint8_t length;
+    uint16_t reserved;
+    uint32_t mtu;
+} ndp_opt_mtu_t;
+
 static uint8_t g_rs_tries[MAX_L2_INTERFACES];
 static uint32_t g_rs_timer_ms[MAX_L2_INTERFACES];
 
@@ -1002,6 +1009,23 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
                 memcpy(pfx, pio->prefix, 16);
 
                 if (pfx_len != 0) ndp_on_ra((uint8_t)ifindex, src_ip, router_lifetime, pfx, pfx_len, valid_lft, pref_lft, autonomous, ra->flags);
+            } else if (opt_type == 5 && opt_size >= (uint32_t)sizeof(ndp_opt_mtu_t)) {
+                uint32_t mtu32 = 0;
+                memcpy(&mtu32, opt + 4, 4);
+                mtu32= bswap32(mtu32);
+
+                if (mtu32 >= 1280u && mtu32 <= 65535u) {
+                    l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
+                    if (l2) {
+                        for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+                            l3_ipv6_interface_t* v6 = l2->l3_v6[i];
+                            if (!v6) continue;
+                            if (v6->cfg == IPV6_CFG_DISABLE) continue;
+                            if (v6->mtu < 1280) continue;
+                            v6->mtu = mtu32;
+                        }
+                    }
+                }
             } else if (opt_type == 25 && opt_size >= 24u) {
                 l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
                 if (l2) {

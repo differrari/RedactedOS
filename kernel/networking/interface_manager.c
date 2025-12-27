@@ -496,6 +496,7 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     n->l2 = l2;
     n->cfg = cfg;
     n->kind = kind;
+    n->mtu = 1500;
 
     uint8_t final_ip[16];
     ipv6_cpy(final_ip, ip);

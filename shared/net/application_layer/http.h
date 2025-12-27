@@ -38,6 +38,7 @@ typedef struct {
     string connection;
     string keep_alive;
     string host;
+    string content_type;
 } HTTPHeadersCommon;
 
 typedef struct {
