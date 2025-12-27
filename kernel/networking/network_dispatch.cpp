@@ -12,6 +12,7 @@
 #include "process/scheduler.h"
 #include "net/internet_layer/ipv4_utils.h"
 #include "net/internet_layer/ipv6_utils.h"
+#include "net/netpkt.h"
 
 #define RX_INTR_BATCH_LIMIT 64
 #define TASK_RX_BATCH_LIMIT 256
@@ -125,8 +126,13 @@ int NetworkDispatch::net_task()
                 if (nics[n].rx.is_empty()) break;
                 sizedptr pkt{0,0};
                 if (!nics[n].rx.pop(pkt)) break;
-                eth_input(nics[n].ifindex, pkt.ptr, pkt.size);
-                free_frame(pkt);
+                netpkt_t* np = netpkt_wrap(pkt.ptr, pkt.size, pkt.size, NULL, 0);
+                if (np) {
+                    eth_input(nics[n].ifindex, np);
+                    netpkt_unref(np);
+                } else {
+                    free_frame(pkt);
+                }
                 nics[n].rx_consumed++;
                 processed++;
             }

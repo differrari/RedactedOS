@@ -2,6 +2,7 @@
 
 #include "types.h"
 #include "net/network_types.h"
+#include "net/netpkt.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,8 +20,8 @@ typedef struct __attribute__((packed)) {
 typedef ip_tx_scope_t ipv6_tx_scope_t;
 typedef ip_tx_opts_t ipv6_tx_opts_t;
 
-void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, sizedptr segment, const ipv6_tx_opts_t* opts, uint8_t hop_limit);
-void ipv6_input(uint16_t ifindex, uintptr_t ip_ptr, uint32_t ip_len, const uint8_t src_mac[6]);
+void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ipv6_tx_opts_t* opts, uint8_t hop_limit);
+void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]);
 
 uint16_t ipv6_pmtu_get(const uint8_t dst[16]);
 void ipv6_pmtu_note(const uint8_t dst[16], uint16_t mtu);

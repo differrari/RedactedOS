@@ -203,8 +203,14 @@ bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst
     if (opts_len > 40u) return false;
 
     uint16_t tcp_len = (uint16_t)(sizeof(tcp_hdr_t) + opts_len + payload_len);
-    uint8_t *segment = (uint8_t *)malloc(tcp_len);
-    if (!segment) return false;
+    uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + (uint32_t)(ver == IP_VER4 ? sizeof(ipv4_hdr_t) : sizeof(ipv6_hdr_t));
+    netpkt_t *pkt = netpkt_alloc(tcp_len, headroom, 0);
+    if (!pkt) return false;
+    uint8_t *segment = (uint8_t*)netpkt_put(pkt, tcp_len);
+    if (!segment) {
+        netpkt_unref(pkt);
+        return false;
+    }
 
     tcp_hdr_t h = *hdr;
 
@@ -222,17 +228,16 @@ bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst
         uint32_t d = *(const uint32_t *)dst_ip_addr;
 
         ((tcp_hdr_t *)segment)->checksum = tcp_checksum_ipv4(segment, tcp_len, s, d);
-        ipv4_send_packet(d, 6, (sizedptr){ (uintptr_t)segment, tcp_len }, (const ipv4_tx_opts_t *)txp, 0);
+        ipv4_send_packet(d, 6, pkt, (const ipv4_tx_opts_t *)txp, 0);
+        return true;
     } else if (ver == IP_VER6){
         ((tcp_hdr_t *)segment)->checksum = tcp_checksum_ipv6(segment, tcp_len, (const uint8_t *)src_ip_addr, (const uint8_t *)dst_ip_addr);
-        ipv6_send_packet((const uint8_t *)dst_ip_addr, 6, (sizedptr){ (uintptr_t)segment, tcp_len }, (const ipv6_tx_opts_t *)txp, 0);
-    } else{
-        free(segment, tcp_len);
-        return false;
+        ipv6_send_packet((const uint8_t *)dst_ip_addr, 6, pkt, (const ipv6_tx_opts_t *)txp, 0);
+        return true;
     }
 
-    free(segment, tcp_len);
-    return true;
+    netpkt_unref(pkt);
+    return false;
 }
 
 void tcp_send_reset(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port, uint32_t seq, uint32_t ack, bool ack_valid){

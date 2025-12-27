@@ -39,19 +39,27 @@ size_t create_udp_segment(uintptr_t buf, const net_l4_endpoint *src, const net_l
 
 void udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload, const ip_tx_opts_t* tx_opts) {
     uint32_t udp_len = (uint32_t)(sizeof(udp_hdr_t) + payload.size);
-    uintptr_t buf = (uintptr_t)malloc(udp_len);
-    if (!buf) return;
+    uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + (uint32_t)(src->ver == IP_VER4 ? sizeof(ipv4_hdr_t) : sizeof(ipv6_hdr_t));
+    netpkt_t* pkt = netpkt_alloc(udp_len, headroom, 0);
+    if (!pkt) return;
+    void* buf = netpkt_put(pkt, udp_len);
+    if (!buf) {
+        netpkt_unref(pkt);
+        return;
+    }
 
-    size_t written = create_udp_segment(buf, src, dst, payload);
+    size_t written = create_udp_segment((uintptr_t)buf, src, dst, payload);
 
     if (src->ver == IP_VER4) {
         uint32_t dst_ip = v4_u32_from_arr(dst->ip);
-        ipv4_send_packet(dst_ip, 0x11, (sizedptr){ buf, (uint32_t)written }, (const ipv4_tx_opts_t*)tx_opts, 0);
+        (void)netpkt_trim(pkt, (uint32_t)written);
+        ipv4_send_packet(dst_ip, 0x11, pkt, (const ipv4_tx_opts_t*)tx_opts, 0);
     } else if (src->ver == IP_VER6) {
-        ipv6_send_packet(dst->ip, 0x11, (sizedptr){ buf, (uint32_t)written }, (const ipv6_tx_opts_t*)tx_opts, 0);
+        (void)netpkt_trim(pkt, (uint32_t)written);
+        ipv6_send_packet(dst->ip, 0x11, pkt, (const ipv6_tx_opts_t*)tx_opts, 0);
+    } else {
+        netpkt_unref(pkt);
     }
-
-    free((void*)buf, udp_len);
 }
 
 sizedptr udp_strip_header(uintptr_t ptr, uint32_t len) {

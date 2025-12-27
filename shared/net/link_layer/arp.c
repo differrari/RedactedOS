@@ -160,12 +160,15 @@ void arp_send_request_on(uint8_t ifindex, uint32_t target_ip){
     memcpy(hdr.sender_mac, local_mac, 6);
     hdr.sender_ip = bswap32(spa);
     hdr.target_ip = bswap32(target_ip);
-    uintptr_t buf = (uintptr_t)malloc(sizeof(hdr));
-    if (!buf) return;
-    memcpy((void*)buf, &hdr, sizeof(hdr));
-    sizedptr payload = { buf, sizeof(hdr) };
-    (void)eth_send_frame_on(ifindex, ETHERTYPE_ARP, dst_mac, payload);
-    free((void*)buf, sizeof(hdr));
+    netpkt_t* pkt = netpkt_alloc((uint32_t)sizeof(hdr), (uint32_t)sizeof(eth_hdr_t), 0);
+    if (!pkt) return;
+    void* p = netpkt_put(pkt, (uint32_t)sizeof(hdr));
+    if (!p) {
+        netpkt_unref(pkt);
+        return;
+    }
+    memcpy(p, &hdr, sizeof(hdr));
+    (void)eth_send_frame_on(ifindex, ETHERTYPE_ARP, dst_mac, pkt);
 }
 
 static bool l2_has_ip(uint8_t ifindex, uint32_t ip){
@@ -191,16 +194,22 @@ static void arp_send_reply_on(uint8_t ifindex, const arp_hdr_t* in_arp, const ui
     reply.target_ip = in_arp->sender_ip;
     reply.sender_ip = bswap32(spa);
     reply.opcode    = bswap16(ARP_OPCODE_REPLY);
-    uintptr_t buf = (uintptr_t)malloc(sizeof(reply));
-    if (!buf) return;
-    memcpy((void*)buf, &reply, sizeof(reply));
-    sizedptr payload = { buf, sizeof(reply) };
-    (void)eth_send_frame_on(ifindex, ETHERTYPE_ARP, in_src_mac, payload);
-    free((void*)buf, sizeof(reply));
+    netpkt_t* pkt = netpkt_alloc((uint32_t)sizeof(reply), (uint32_t)sizeof(eth_hdr_t), 0);
+    if (!pkt) return;
+    void* p = netpkt_put(pkt, (uint32_t)sizeof(reply));
+    if (!p) {
+        netpkt_unref(pkt);
+        return;
+    }
+    memcpy(p, &reply, sizeof(reply));
+    (void)eth_send_frame_on(ifindex, ETHERTYPE_ARP, in_src_mac, pkt);
 }
 
-void arp_input(uint16_t ifindex, uintptr_t frame_ptr, uint32_t frame_len){
-    if (frame_len < sizeof(eth_hdr_t) + sizeof(arp_hdr_t)) return;
+void arp_input(uint16_t ifindex, netpkt_t* pkt) {
+    if (!pkt) return;
+    uint32_t frame_len = netpkt_len(pkt);
+    uintptr_t frame_ptr = netpkt_data(pkt);
+    if (frame_len < (uint32_t)sizeof(eth_hdr_t) + (uint32_t)sizeof(arp_hdr_t)) return;
 
     const eth_hdr_t* eth = (const eth_hdr_t*)frame_ptr;
     const uint8_t* src_mac = eth->src_mac;

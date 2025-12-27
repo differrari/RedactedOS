@@ -341,37 +341,61 @@ static bool pick_route(const uint8_t dst[16], const ipv6_tx_opts_t* opts, uint8_
     return pick_route_global(dst, out_ifx, out_src, out_nh);
 }
 
-void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, sizedptr segment, const ipv6_tx_opts_t* opts, uint8_t hop_limit) {
-    if (!dst || !segment.ptr || !segment.size) return;
+void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ipv6_tx_opts_t* opts, uint8_t hop_limit) {
+    if (!dst || !pkt || !netpkt_len(pkt)) {
+        if (pkt) netpkt_unref(pkt);
+        return;
+    }
 
     uint8_t ifx = 0;
     uint8_t src[16] = {0};
     uint8_t nh[16] = {0};
 
-    if (!pick_route(dst, opts, &ifx, src, nh)) return;
+    if (!pick_route(dst, opts, &ifx, src, nh)) {
+        netpkt_unref(pkt);
+        return;
+    }
 
     if (!ipv6_is_unspecified(src)) {
         l2_interface_t* l2 = l2_interface_find_by_index(ifx);
-        if (!l2) return;
+        if (!l2) {
+            netpkt_unref(pkt);
+            return;
+        }
 
         int ok = 0;
         for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
             l3_ipv6_interface_t* v6 = l2->l3_v6[i];
             if (!v6) continue;
             if (ipv6_cmp(v6->ip, src) != 0) continue;
-            if (v6->cfg == IPV6_CFG_DISABLE) return;
-            if (v6->dad_state != IPV6_DAD_OK) return;
+            if (v6->cfg == IPV6_CFG_DISABLE) {
+                netpkt_unref(pkt);
+                return;
+            }
+            if (v6->dad_state != IPV6_DAD_OK) {
+                netpkt_unref(pkt);
+                return;
+            }
             ok = 1;
             break;
         }
-        if (!ok) return;
+        if (!ok) {
+            netpkt_unref(pkt);
+            return;
+        }
     }
 
-    if (ipv6_is_linklocal(src) && !ipv6_is_linklocal(dst) && !ipv6_is_multicast(dst)) return;
+    if (ipv6_is_linklocal(src) && !ipv6_is_linklocal(dst) && !ipv6_is_multicast(dst)) {
+        netpkt_unref(pkt);
+        return;
+    }
 
     uint8_t dst_mac[6];
     if (ipv6_is_multicast(dst)) ipv6_multicast_mac(dst, dst_mac);
-    else if (!ndp_resolve_on(ifx, nh, dst_mac, 200)) return;
+    else if (!ndp_resolve_on(ifx, nh, dst_mac, 200)) {
+        netpkt_unref(pkt);
+        return;
+    }
 
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(ifx);
 
@@ -384,41 +408,48 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, sizedptr segme
 
     if (mtu < IPV6_MIN_MTU) mtu = IPV6_MIN_MTU;
     uint32_t hdr_len = (uint32_t)sizeof(ipv6_hdr_t);
-    uint32_t total_l3 = hdr_len + (uint32_t)segment.size;
+    uint32_t seg_len = netpkt_len(pkt);
+    uint32_t total_l3 = hdr_len + seg_len;
 
     if (total_l3 <= (uint32_t)mtu) {
-        uintptr_t buf = (uintptr_t)malloc(total_l3);
-        if (!buf) return;
+        void* hdrp = netpkt_push(pkt, hdr_len);
+        if (!hdrp) {
+            netpkt_unref(pkt);
+            return;
+        }
 
-        ipv6_hdr_t* ip6 = (ipv6_hdr_t*)buf;
+        ipv6_hdr_t* ip6 = (ipv6_hdr_t*)hdrp;
         ip6->ver_tc_fl = bswap32((uint32_t)(6u << 28));
-        ip6->payload_len = bswap16((uint16_t)segment.size);
+        ip6->payload_len = bswap16((uint16_t)seg_len);
         ip6->next_header = next_header;
         ip6->hop_limit = hop_limit ? hop_limit : 64;
         memcpy(ip6->src, src, 16);
         memcpy(ip6->dst, dst, 16);
 
-        memcpy((void*)(buf + hdr_len), (const void*)segment.ptr, segment.size);
-
-        eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, (sizedptr){buf, total_l3});
-        free((void*)buf, total_l3);
+        eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, pkt);
         return;
     }
 
     uint32_t frag_hdr_len = (uint32_t)sizeof(ipv6_frag_hdr_t);
-    if ((uint32_t)mtu < hdr_len + frag_hdr_len + 8u) return;
+    if ((uint32_t)mtu < hdr_len + frag_hdr_len + 8u) {
+        netpkt_unref(pkt);
+        return;
+    }
 
     uint32_t max_chunk = (uint32_t)mtu - hdr_len - frag_hdr_len;
     max_chunk = (max_chunk / 8u) * 8u;
-    if (max_chunk == 0) return;
+    if (max_chunk == 0) {
+        netpkt_unref(pkt);
+        return;
+    }
 
     rng_t rng;
     rng_init_random(&rng);
     uint32_t ident = rng_next32(&rng);
 
     uint32_t off = 0;
-    const uint8_t* data = (const uint8_t*)segment.ptr;
-    uint32_t data_len = (uint32_t)segment.size;
+    const uint8_t* data = (const uint8_t*)netpkt_data(pkt);
+    uint32_t data_len = seg_len;
 
     while (off < data_len) {
         uint32_t remain = data_len - off;
@@ -428,8 +459,13 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, sizedptr segme
         uint32_t payload_len = frag_hdr_len + chunk;
         uint32_t frame_len = hdr_len + payload_len;
 
-        uintptr_t buf = (uintptr_t)malloc(frame_len);
-        if (!buf) return;
+        netpkt_t* fpkt = netpkt_alloc(frame_len, (uint32_t)sizeof(eth_hdr_t), 0);
+        if (!fpkt) break;
+        void* buf = netpkt_put(fpkt, frame_len);
+        if (!buf) {
+            netpkt_unref(fpkt);
+            break;
+        }
 
         ipv6_hdr_t* ip6 = (ipv6_hdr_t*)buf;
         ip6->ver_tc_fl = bswap32((uint32_t)(6u << 28));
@@ -439,7 +475,7 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, sizedptr segme
         memcpy(ip6->src, src, 16);
         memcpy(ip6->dst, dst, 16);
 
-        ipv6_frag_hdr_t* fh = (ipv6_frag_hdr_t*)(buf + hdr_len);
+        ipv6_frag_hdr_t* fh = (ipv6_frag_hdr_t*)((uintptr_t)buf + hdr_len);
         fh->next_header = next_header;
         fh->reserved = 0;
         uint16_t off_flags = (uint16_t)(((off / 8u) & 0x1FFFu) << 3);
@@ -449,14 +485,18 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, sizedptr segme
 
         memcpy((uint8_t*)(fh + 1), data + off, chunk);
 
-        eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, (sizedptr){ buf, frame_len });
-        free((void*)buf, frame_len);
+        eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, fpkt);
 
         off += chunk;
     }
+
+    netpkt_unref(pkt);
 }
 
-void ipv6_input(uint16_t ifindex, uintptr_t ip_ptr, uint32_t ip_len, const uint8_t src_mac[6]) {
+void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
+    if (!pkt) return;
+    uint32_t ip_len = netpkt_len(pkt);
+    uintptr_t ip_ptr = netpkt_data(pkt);
     if (ip_len < sizeof(ipv6_hdr_t)) return;
 
     ipv6_hdr_t* ip6 = (ipv6_hdr_t*)ip_ptr;
@@ -478,6 +518,8 @@ void ipv6_input(uint16_t ifindex, uintptr_t ip_ptr, uint32_t ip_len, const uint8
 
     uint16_t payload_len = bswap16(ip6->payload_len);
     if ((uint32_t)payload_len + sizeof(ipv6_hdr_t) > ip_len) return;
+    (void)netpkt_trim(pkt, (uint32_t)payload_len + (uint32_t)sizeof(ipv6_hdr_t));
+    ip_len = netpkt_len(pkt);
 
     if (ipv6_is_linklocal(ip6->src) &&
         !ipv6_is_linklocal(ip6->dst) &&

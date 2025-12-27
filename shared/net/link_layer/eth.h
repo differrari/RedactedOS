@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include "net/network_types.h"
+#include "net/netpkt.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,9 +23,9 @@ uint16_t eth_parse_type(uintptr_t frame_ptr);
 const uint8_t* eth_src(uintptr_t frame_ptr);
 const uint8_t* eth_dst(uintptr_t frame_ptr);
 
-bool eth_send_frame_on(uint16_t ifindex, uint16_t ethertype, const uint8_t dst_mac[6], sizedptr payload);
+bool eth_send_frame_on(uint16_t ifindex, uint16_t ethertype, const uint8_t dst_mac[6], netpkt_t* pkt);
 
-void eth_input(uint16_t ifindex, uintptr_t frame_ptr, uint32_t frame_len);
+void eth_input(uint16_t ifindex, netpkt_t* pkt);
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include "networking/interface_manager.h"
+#include "net/netpkt.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,7 +44,7 @@ void arp_tick_all(uint32_t ms);
 bool arp_resolve_on(uint8_t ifindex, uint32_t ip, uint8_t mac_out[6], uint32_t timeout_ms);
 void arp_send_request_on(uint8_t ifindex, uint32_t target_ip);
 
-void arp_input(uint16_t ifindex, uintptr_t frame_ptr, uint32_t frame_len);
+void arp_input(uint16_t ifindex, netpkt_t* pkt);
 
 void arp_set_pid(uint16_t pid);
 uint16_t arp_get_pid(void);

@@ -99,8 +99,23 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
         return false;
     }
 
-    ipv4_send_packet(dst_ip, 1, (sizedptr){buf, tot_len}, (const ipv4_tx_opts_t*)tx_opts_or_null, (uint8_t)ttl);
+    uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + (uint32_t)sizeof(ipv4_hdr_t);
+    netpkt_t* pkt = netpkt_alloc(tot_len, headroom, 0);
+    if (!pkt) {
+        free((void*)buf, 8 + 56);
+        g_pending[slot].in_use = false;
+        return false;
+    }
+    void* p = netpkt_put(pkt, tot_len);
+    if (!p) {
+        netpkt_unref(pkt);
+        free((void*)buf, 8 + 56);
+        g_pending[slot].in_use = false;
+        return false;
+    }
+    memcpy(p, (const void*)buf, tot_len);
     free((void*)buf, 8 + 56);
+    ipv4_send_packet(dst_ip, 1, pkt, (const ipv4_tx_opts_t*)tx_opts_or_null, (uint8_t)ttl);
 
     uint32_t start = (uint32_t)get_time();
     for (;;) {
@@ -187,7 +202,17 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
         l3_ipv4_interface_t* l3 = l3_ipv4_find_by_ip(dst_ip);
         if (l3 && l3->l2) {
             ipv4_tx_opts_t o = {.index = l3->l3_id, .scope = IP_TX_BOUND_L3};
-            ipv4_send_packet(src_ip, 1, (sizedptr){buf, rlen}, &o, IP_TTL_DEFAULT);
+            uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + (uint32_t)sizeof(ipv4_hdr_t);
+            netpkt_t* pkt = netpkt_alloc(rlen, headroom, 0);
+            if (pkt) {
+                void* p = netpkt_put(pkt, rlen);
+                if (p) {
+                    memcpy(p, (const void*)buf, rlen);
+                    ipv4_send_packet(src_ip, 1, pkt, &o, IP_TTL_DEFAULT);
+                } else {
+                    netpkt_unref(pkt);
+                }
+            }
         }
         free((void*)buf, 8 + 56);
         return;

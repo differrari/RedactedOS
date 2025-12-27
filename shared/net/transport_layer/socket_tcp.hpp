@@ -21,8 +21,8 @@ static constexpr uint32_t TCP_DNS_TIMEOUT_MS = 3000;
 class TCPSocket : public Socket {
     inline static TCPSocket* s_list_head = nullptr;
 
-    static constexpr int TCP_RING_CAP = 1024;
-    RingBuffer<sizedptr, TCP_RING_CAP> ring;
+    static constexpr uint32_t TCP_RING_CAP = 64 * 1024;
+    RingBuffer<uint8_t, TCP_RING_CAP> ring;
     tcp_data* flow = nullptr;
 
     TCPSocket* pending[TCP_MAX_BACKLOG] = { nullptr };
@@ -196,21 +196,16 @@ class TCPSocket : public Socket {
     void on_receive(uintptr_t ptr, uint32_t len) {
         if (!ptr || !len) return;
 
-        uint8_t* data = (uint8_t*)malloc(len);
-        if (!data) {
-            free((void*)ptr, len);
-            return;
+        const uint8_t* src = (const uint8_t*)ptr;
+        for (uint32_t i = 0; i < len; ++i) {
+            if (ring.push(src[i])) continue;
+
+            uint8_t drop;
+            ring.pop(drop);
+            ring.push(src[i]);
         }
 
-        memcpy(data, (void*)ptr, len);
         free((void*)ptr, len);
-
-        sizedptr packet{ (uintptr_t)data, len };
-        if (ring.push(packet)) return;
-
-        sizedptr dropped;
-        if (ring.pop(dropped)) free((void*)dropped.ptr, dropped.size);
-        (void)ring.push(packet);
     }
 
     void insert_in_list() {
@@ -565,13 +560,18 @@ public:
     }
 
     int64_t recv(void* buf, uint64_t len){
-        sizedptr p;
-        if (!ring.pop(p)) return 0;
+        if (!buf || !len) return 0;
 
-        uint32_t tocpy = p.size < (uint32_t)len ? p.size : (uint32_t)len;
-        memcpy(buf, (void*)p.ptr, tocpy);
-        free((void*)p.ptr, p.size);
-        return tocpy;
+        uint8_t* out = (uint8_t*)buf;
+        uint64_t n = 0;
+
+        while (n < len) {
+            uint8_t b;
+            if (!ring.pop(b)) break;
+            out[n++] = b;
+        }
+
+        return (int64_t)n;
     }
 
     int32_t close() override {
@@ -581,9 +581,7 @@ public:
             flow = nullptr;
         }
 
-        sizedptr pkt;
-        while (ring.pop(pkt)) free((void*)pkt.ptr, pkt.size);
-
+        ring.clear();
         for (int i = 0; i < backlogLen; ++i) delete pending[i];
         backlogLen = 0;
 

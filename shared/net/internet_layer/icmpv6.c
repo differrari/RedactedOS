@@ -65,8 +65,13 @@ bool icmpv6_send_on_l2(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t 
     if (!ifindex || !dst_ip || !src_ip || !dst_mac || !icmp || !icmp_len) return false;
 
     uint32_t total = (uint32_t)sizeof(ipv6_hdr_t) + icmp_len;
-    uintptr_t buf =(uintptr_t)malloc(total);
-    if (!buf) return false;
+    netpkt_t* pkt = netpkt_alloc(total, (uint32_t)sizeof(eth_hdr_t), 0);
+    if (!pkt) return false;
+    void* buf = netpkt_put(pkt, total);
+    if (!buf) {
+        netpkt_unref(pkt);
+        return false;
+    }
 
     ipv6_hdr_t *ip6 = (ipv6_hdr_t*)buf;
     ip6->ver_tc_fl = bswap32((uint32_t)(6u << 28));
@@ -76,13 +81,9 @@ bool icmpv6_send_on_l2(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t 
     memcpy(ip6->src, src_ip, 16);
     memcpy(ip6->dst, dst_ip, 16);
 
-    memcpy((void*)(buf + sizeof(ipv6_hdr_t)), icmp, icmp_len);
+    memcpy((void*)((uintptr_t)buf + sizeof(ipv6_hdr_t)), icmp, icmp_len);
 
-    sizedptr payload = (sizedptr){ buf, total };
-    eth_send_frame_on(ifindex, ETHERTYPE_IPV6, dst_mac, payload);
-
-    free((void*)buf, total);
-    return true;
+    return eth_send_frame_on(ifindex, ETHERTYPE_IPV6, dst_mac, pkt);
 }
 
 static bool icmpv6_send_echo_reply(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], const uint8_t *icmp, uint32_t icmp_len, const uint8_t src_mac[6], uint8_t hop_limit) {
@@ -116,8 +117,14 @@ static bool icmpv6_send_echo_request(const uint8_t dst_ip[16], uint16_t id, uint
     if (!dst_ip) return false;
 
     uint32_t len = (uint32_t)sizeof(icmpv6_echo_t) + payload_len;
-    uintptr_t buf = (uintptr_t)malloc(len);
-    if (!buf) return false;
+    uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + (uint32_t)sizeof(ipv6_hdr_t);
+    netpkt_t* pkt = netpkt_alloc(len, headroom, 0);
+    if (!pkt) return false;
+    void* buf = netpkt_put(pkt, len);
+    if (!buf) {
+        netpkt_unref(pkt);
+        return false;
+    }
 
     icmpv6_echo_t *e = (icmpv6_echo_t*)buf;
     e->hdr.type = ICMPV6_ECHO_REQUEST;
@@ -126,18 +133,16 @@ static bool icmpv6_send_echo_request(const uint8_t dst_ip[16], uint16_t id, uint
     e->id = bswap16(id);
     e->seq = bswap16(seq);
 
-    if (payload_len) memcpy((void*)(buf + sizeof(icmpv6_echo_t)), payload, payload_len);
+    if (payload_len) memcpy((void*)((uintptr_t)buf + sizeof(icmpv6_echo_t)), payload, payload_len);
 
     ipv6_tx_plan_t plan;
     if (!ipv6_build_tx_plan(dst_ip, tx_opts_or_null, 0, 0, &plan)) {
-        free((void*)buf, len);
+        netpkt_unref(pkt);
         return false;
     }
     e->hdr.checksum = bswap16(checksum16_pipv6(plan.src_ip, dst_ip, 58, (const uint8_t*)buf, len));
 
-    ipv6_send_packet(dst_ip, 58, (sizedptr){ buf, len }, (const ipv6_tx_opts_t*)tx_opts_or_null, hop_limit ? hop_limit : 64);
-
-    free((void*)buf, len);
+    ipv6_send_packet(dst_ip, 58, pkt, (const ipv6_tx_opts_t*)tx_opts_or_null, hop_limit ? hop_limit : 64);
     return true;
 }
 
