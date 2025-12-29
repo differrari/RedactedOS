@@ -3,6 +3,7 @@
 #include "networking/drivers/net_driver.hpp"
 #include "virtio/virtio_pci.h"
 #include "std/memory.h"
+#include "net/link_layer/nic_types.h"
 
 typedef struct __attribute__((packed)) virtio_net_hdr_t {
     uint8_t flags;
@@ -25,12 +26,6 @@ typedef struct __attribute__((packed)) virtio_net_config {
     uint32_t supported_hash_types;
 } virtio_net_config;
 
-enum class LinkDuplex : uint8_t {
-    Unknown = 0xFF,
-    Half = 0,
-    Full = 1
-};
-
 class VirtioNetDriver : public NetDriver {
 public:
     VirtioNetDriver();
@@ -49,7 +44,7 @@ public:
     sizedptr allocate_packet(size_t size) override;
     sizedptr handle_receive_packet() override;
     void handle_sent_packet() override;
-    void send_packet(sizedptr packet) override;
+    bool send_packet(sizedptr packet) override;
 
 private:
     virtio_device vnp_net_dev;

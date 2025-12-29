@@ -25,6 +25,7 @@ static void dns_cache_put(const char* name, uint8_t rr_type, const uint8_t addr[
     if (!name || !addr) return;
     uint32_t nlen = strlen(name, 128);
     if (!nlen) return;
+    if (nlen >= 128) return;
     if (!ttl_ms) return;
 
     int free_i = -1;
@@ -35,7 +36,7 @@ static void dns_cache_put(const char* name, uint8_t rr_type, const uint8_t addr[
         }
         if (g_dns_cache[i].rr_type != rr_type) continue;
         if (g_dns_cache[i].name_len != nlen) continue;
-        if (memcmp(g_dns_cache[i].name, name, nlen) != 0) continue;
+        if (strncmp(g_dns_cache[i].name, name, true, (int)nlen) != 0) continue;
         memcpy(g_dns_cache[i].addr, addr, 16);
         g_dns_cache[i].ttl_ms = ttl_ms;
         return;
@@ -57,12 +58,13 @@ static bool dns_cache_get(const char* name, uint8_t rr_type, uint8_t out_addr[16
     if (!name || !out_addr) return false;
     uint32_t nlen = strlen(name, 128);
     if (!nlen) return false;
+    if (nlen >= 128) return false;
     for (int i = 0; i < 32; i++) {
         if (!g_dns_cache[i].in_use) continue;
         if (g_dns_cache[i].rr_type != rr_type) continue;
         if (g_dns_cache[i].ttl_ms == 0) continue;
         if (g_dns_cache[i].name_len != nlen) continue;
-        if (memcmp(g_dns_cache[i].name, name, nlen) != 0) continue;
+        if (strncmp(g_dns_cache[i].name, name, true, (int)nlen) != 0) continue;
         memcpy(out_addr, g_dns_cache[i].addr, 16);
         return true;
     }
@@ -417,6 +419,18 @@ static dns_result_t query_with_selection_aaaa(const net_l4_endpoint* primary, co
 }
 
 dns_result_t dns_resolve_a(const char* hostname, uint32_t* out_ip, dns_server_sel_t which, uint32_t timeout_ms){
+    if (hostname && out_ip) {
+        uint32_t nlen = strlen(hostname, 128);
+        if (nlen == 9u && strncmp(hostname, "localhost", true, 9) == 0) {
+            uint8_t a[16];
+            memset(a, 0, 16);
+            a[0] = 127;
+            a[3] = 1;
+            *out_ip = 0x7F000001u;
+            dns_cache_put(hostname, 1, a, 3600u * 1000u);
+            return DNS_OK;
+        }
+    }
     uint8_t cached[16];
     if (dns_cache_get(hostname, 1, cached)) {
         memcpy(out_ip, cached, 4);
@@ -429,6 +443,18 @@ dns_result_t dns_resolve_a(const char* hostname, uint32_t* out_ip, dns_server_se
 }
 
 dns_result_t dns_resolve_a_on_l3(uint8_t l3_id, const char* hostname, uint32_t* out_ip, dns_server_sel_t which, uint32_t timeout_ms){
+    if (hostname && out_ip) {
+        uint32_t nlen = strlen(hostname, 128);
+        if (nlen == 9u && strncmp(hostname, "localhost", true, 9) == 0) {
+            uint8_t a[16];
+            memset(a, 0, 16);
+            a[0] = 127;
+            a[3] = 1;
+            *out_ip = 0x7F000001u;
+            dns_cache_put(hostname, 1, a, 3600u * 1000u);
+            return DNS_OK;
+        }
+    }
     uint8_t cached[16];
     if (dns_cache_get(hostname, 1, cached)) {
         memcpy(out_ip, cached, 4);
@@ -440,6 +466,15 @@ dns_result_t dns_resolve_a_on_l3(uint8_t l3_id, const char* hostname, uint32_t* 
 }
 
 dns_result_t dns_resolve_aaaa(const char* hostname, uint8_t out_ipv6[16], dns_server_sel_t which, uint32_t timeout_ms){
+    if (hostname && out_ipv6) {
+        uint32_t nlen = strlen(hostname, 128);
+        if (nlen == 9u && strncmp(hostname, "localhost", true, 9) == 0) {
+            memset(out_ipv6, 0, 16);
+            out_ipv6[15] = 1;
+            dns_cache_put(hostname, 28, out_ipv6, 3600u * 1000u);
+            return DNS_OK;
+        }
+    }
     if (dns_cache_get(hostname, 28, out_ipv6)) return DNS_OK;
     uint8_t l3 = 0;
     net_l4_endpoint p, s;
@@ -448,6 +483,15 @@ dns_result_t dns_resolve_aaaa(const char* hostname, uint8_t out_ipv6[16], dns_se
 }
 
 dns_result_t dns_resolve_aaaa_on_l3(uint8_t l3_id, const char* hostname, uint8_t out_ipv6[16], dns_server_sel_t which, uint32_t timeout_ms){
+    if (hostname && out_ipv6) {
+        uint32_t nlen = strlen(hostname, 128);
+        if (nlen == 9u && strncmp(hostname, "localhost", true, 9) == 0) {
+            memset(out_ipv6, 0, 16);
+            out_ipv6[15] = 1;
+            dns_cache_put(hostname, 28, out_ipv6, 3600u * 1000u);
+            return DNS_OK;
+        }
+    }
     if (dns_cache_get(hostname, 28, out_ipv6)) return DNS_OK;
     net_l4_endpoint p, s;
     if (!pick_dns_on_l3(l3_id, &p, &s)) return DNS_ERR_NO_DNS;

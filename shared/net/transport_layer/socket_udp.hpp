@@ -8,7 +8,6 @@
 #include "net/internet_layer/ipv4_route.h"
 #include "net/internet_layer/ipv6_route.h"
 #include "syscalls/syscalls.h"
-#include "net/net.h"
 #include "net/internet_layer/ipv4_utils.h"
 #include "net/internet_layer/ipv6_utils.h"
 #include "net/internet_layer/ipv6.h"

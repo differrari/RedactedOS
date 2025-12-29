@@ -5,11 +5,11 @@
 #include "networking/interface_manager.h"
 #include "syscalls/syscalls.h"
 
-static bool v6_l3_ok_for_tx(l3_ipv6_interface_t* v6, int dst_is_ll) {
+static bool v6_l3_ok_for_tx(l3_ipv6_interface_t* v6, int dst_is_ll, int dst_is_loop) {
     if (!v6 || !v6->l2) return false;
     if (!v6->l2->is_up) return false;
     if (v6->cfg == IPV6_CFG_DISABLE) return false;
-    if (v6->is_localhost) return false;
+    if (v6->is_localhost && !dst_is_loop) return false;
     if (ipv6_is_unspecified(v6->ip)) return false;
     if (v6->dad_state != IPV6_DAD_OK)return false;
     if (!v6->port_manager) return false;
@@ -33,12 +33,13 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const u
     out->fixed_opts.index = 0;
 
     int dst_is_ll = (ipv6_is_linklocal(dst) || ipv6_is_linkscope_mcast(dst)) ? 1 : 0;
+    int dst_is_loop = ipv6_is_loopback(dst) ? 1 : 0;
 
     if (hint && hint->scope == IP_TX_BOUND_L3) {
         uint8_t id = hint->index;
         if (!l3_allowed(id, allowed_l3, allowed_n)) return false;
         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
-        if (!v6_l3_ok_for_tx(v6, dst_is_ll)) return false;
+        if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) return false;
         out->l3_id = id;
         memcpy(out->src_ip, v6->ip, 16);
         out->fixed_opts.scope = IP_TX_BOUND_L3;
@@ -54,7 +55,7 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const u
         if (!l2 || !l2->is_up) return false;
         for (int s = 0; s < MAX_IPV6_PER_INTERFACE && n < (int)sizeof(cand); ++s){
             l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-            if (!v6_l3_ok_for_tx(v6, dst_is_ll)) continue;
+            if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) continue;
             if (!l3_allowed(v6->l3_id, allowed_l3, allowed_n)) continue;
             cand[n++] = v6->l3_id;
         }
@@ -65,7 +66,7 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const u
             if (!l2 || !l2->is_up) continue;
             for (int s = 0; s < MAX_IPV6_PER_INTERFACE && n < (int)sizeof(cand); ++s){
                 l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-                if (!v6_l3_ok_for_tx(v6, dst_is_ll)) continue;
+            if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) continue;
                 if (!l3_allowed(v6->l3_id, allowed_l3, allowed_n)) continue;
                 cand[n++] = v6->l3_id;
             }
@@ -78,7 +79,7 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const u
     if (!ipv6_rt_pick_best_l3_in(cand, n, dst, &chosen)) chosen = cand[0];
 
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen);
-    if (!v6_l3_ok_for_tx(v6, dst_is_ll)) return false;
+    if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) return false;
 
     out->l3_id = chosen;
     memcpy(out->src_ip, v6->ip, 16);

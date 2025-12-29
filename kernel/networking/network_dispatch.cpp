@@ -13,6 +13,8 @@
 #include "net/internet_layer/ipv4_utils.h"
 #include "net/internet_layer/ipv6_utils.h"
 #include "net/netpkt.h"
+#include "net/link_layer/link_utils.h"
+#include "networking/drivers/loopback/loopback_driver.hpp"
 
 #define RX_INTR_BATCH_LIMIT 64
 #define TASK_RX_BATCH_LIMIT 256
@@ -121,6 +123,25 @@ int NetworkDispatch::net_task()
         bool did_work = false;
 
         for (size_t n = 0; n < nic_num; ++n) {
+            if (nics[n].kind_val == NET_IFK_LOCALHOST) {
+                NetDriver* driver = nics[n].drv;
+                if (driver) {
+                    for (int i = 0; i < TASK_RX_BATCH_LIMIT; ++i) {
+                        sizedptr raw = driver->handle_receive_packet();
+                        if (!raw.ptr || raw.size == 0) break;
+                        if (raw.size < sizeof(eth_hdr_t)) {
+                            free_frame(raw);
+                            continue;
+                        }
+                        if (!nics[n].rx.push(raw)) {
+                            free_frame(raw);
+                            nics[n].rx_dropped++;
+                            continue;
+                        }
+                        nics[n].rx_produced++;
+                    }
+                }
+            }
             int processed = 0;
             for (int i = 0; i < TASK_RX_BATCH_LIMIT; ++i) {
                 if (nics[n].rx.is_empty()) break;
@@ -147,7 +168,10 @@ int NetworkDispatch::net_task()
                 if (nics[n].tx.is_empty()) break;
                 sizedptr pkt{0,0};
                 if (!nics[n].tx.pop(pkt)) break;
-                driver->send_packet(pkt);
+                if (!driver->send_packet(pkt)) {
+                    free_frame(pkt);
+                    nics[n].tx_dropped++;
+                }
                 nics[n].tx_consumed++;
                 processed++;
             }
@@ -255,11 +279,16 @@ bool NetworkDispatch::register_all_from_bus() {
         if (!name) continue;
 
         if (!drv) {
-            bool is_lo0 = (name[0]=='l' && name[1]=='o' && name[2]=='0' && name[3]==0);
-            if (!is_lo0) continue;
-            uint8_t ix = l2_interface_create(name, nullptr, 0);
-            l2_interface_set_up(ix, true);
-            continue;
+            if (kd != NET_IFK_LOCALHOST) continue;
+			LoopbackDriver* lo_drv = new LoopbackDriver();
+			if (!lo_drv) continue;
+			if (!lo_drv->init_at(0, 0)) {
+                delete lo_drv;
+                continue;
+            }
+			drv = lo_drv;
+            if (!hs) hs = 0;
+            if (!m) m = 65535;
         }
 
         uint16_t type_cost =
@@ -298,7 +327,7 @@ bool NetworkDispatch::register_all_from_bus() {
         c->duplex_mode = dp;
         c->kind_val = kd;
 
-        uint8_t ix = l2_interface_create(c->ifname_str, (void*)drv, base_metric);
+        uint8_t ix = l2_interface_create(c->ifname_str, (void*)drv, base_metric, kd);
         l2_interface_set_up(ix, true);
         c->ifindex = ix;
 
@@ -335,20 +364,9 @@ void NetworkDispatch::dump_interfaces()
 
         if (nid >= 0){
             char macs[18];
-            {
-                static const char HEX[] = "0123456789abcdef";
-                int p = 0;
-                for (int i = 0; i < 6; ++i) {
-                    uint8_t b = nics[nid].mac_addr[i];
-                    macs[p++] = HEX[b >> 4];
-                    macs[p++] = HEX[b & 0x0F];
-                    if (i != 5) macs[p++] = ':';
-                }
-                macs[p] = 0;
-            }
+            mac_to_string(nics[nid].mac_addr, macs);
 
-            const char* dpx = (nics[nid].duplex_mode == 0) ? "half" :
-                              (nics[nid].duplex_mode == 1) ? "full" : "unknown";
+            const char* dpx = (nics[nid].duplex_mode == 0) ? "half" : (nics[nid].duplex_mode == 1) ? "full" : "unknown";
 
             kprintf(" driver: nic_id=%u ifname=%s hw=%s mtu=%u hdr=%u mac=%s drv=%x spd=%u dup=%s kind=%u",
                     (unsigned)nid,

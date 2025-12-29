@@ -391,7 +391,9 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     }
 
     uint8_t dst_mac[6];
+    l2_interface_t* l2 = l2_interface_find_by_index(ifx);
     if (ipv6_is_multicast(dst)) ipv6_multicast_mac(dst, dst_mac);
+    else if (l2 && l2->kind == NET_IFK_LOCALHOST) memset(dst_mac, 0, 6);
     else if (!ndp_resolve_on(ifx, nh, dst_mac, 200)) {
         netpkt_unref(pkt);
         return;

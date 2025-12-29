@@ -71,7 +71,7 @@ static void add_loopback(){
     d->header_size = 0;
     d->kind = NET_IFK_LOCALHOST;
     d->speed_mbps = 0xFFFFFFFFu;
-    d->duplex = NET_IFK_LOCALHOST;
+    d->duplex = LINK_DUPLEX_UNKNOWN;
     g_lo_added = true;
     kprintfv("[net-bus] added loopback ifname=%s",d->ifname);
 }

@@ -1,13 +1,7 @@
 #pragma once
 #include "net_driver.hpp"
 
-enum NetIfKind : uint8_t {
-    NET_IFK_ETH = 0x00,
-    NET_IFK_WIFI = 0x01,
-    NET_IFK_OTHER = 0x02,
-    NET_IFK_LOCALHOST = 0xFE,
-    NET_IFK_UNKNOWN = 0xFF
-};
+#include "net/link_layer/nic_types.h"
 
 int net_bus_init();
 int net_bus_count();

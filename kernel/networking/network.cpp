@@ -23,13 +23,6 @@ int network_net_task_entry(int argc, char* argv[]) {
     return 0;
 }
 
-int net_tx_frame(uintptr_t frame_ptr, uint32_t frame_len) {
-    if (!dispatch || !frame_ptr || !frame_len) return -1;
-    uint8_t ix = 1; //legacy
-    if (ix == 0xFF) return -1;
-    return dispatch->enqueue_frame(ix, {frame_ptr, frame_len}) ? 0 : -1;
-}
-
 int net_tx_frame_on(uint16_t ifindex, uintptr_t frame_ptr, uint32_t frame_len) {
     if (!dispatch || !frame_ptr || !frame_len) return -1;
     return dispatch->enqueue_frame(ifindex, {frame_ptr, frame_len}) ? 0 : -1;
@@ -40,14 +33,6 @@ int net_rx_frame(sizedptr* out_frame) {
     out_frame->ptr = 0;
     out_frame->size = 0;
     return 0;
-}
-
-const uint8_t* network_get_local_mac() {
-    static uint8_t dummy[6] = {0,0,0,0,0,0};
-    if (!dispatch) return dummy;
-    if (1 == 0xFF) return dummy;
-    const uint8_t* m = dispatch->mac(1); //kegacy
-    return m ? m : dummy;
 }
 
 const uint8_t* network_get_mac(uint16_t ifindex) {

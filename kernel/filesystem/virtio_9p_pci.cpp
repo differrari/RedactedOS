@@ -32,7 +32,7 @@ bool Virtio9PDriver::init(uint32_t partition_sector){
 
     max_msize = choose_version(); 
 
-    open_files = IndexMap<void*>(128);
+    open_files = IndexMap<void*>(1024);
 
     root = attach();
     if (root == INVALID_FID){
@@ -68,6 +68,10 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         return FS_RESULT_DRIVER_ERROR;
     } 
     open_files[descriptor->id] = file;
+    if (!open_files.add(descriptor->id, file)){
+        kfree(file, size);
+        return FS_RESULT_NO_RESOURCES;
+    }
     return FS_RESULT_SUCCESS;
 }
 

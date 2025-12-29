@@ -25,7 +25,7 @@ VirtioNetDriver::VirtioNetDriver() {
     header_size = sizeof(virtio_net_hdr_t);
     mtu = 1500;
     speed_mbps = 0xFFFFFFFFu;
-    duplex = LinkDuplex::Unknown;
+    duplex = LINK_DUPLEX_UNKNOWN;
     last_used_receive_idx = 0;
     last_used_sent_idx = 0;
     hw_name[0] = 0;
@@ -43,7 +43,7 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector){
     if (vnp_net_dev.common_cfg) pci_register(((uintptr_t)vnp_net_dev.common_cfg) & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
     if (vnp_net_dev.device_cfg) pci_register(((uintptr_t)vnp_net_dev.device_cfg) & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
     if (vnp_net_dev.notify_cfg) pci_register(((uintptr_t)vnp_net_dev.notify_cfg) & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
-    if (vnp_net_dev.isr_cfg)    pci_register(((uintptr_t)vnp_net_dev.isr_cfg)    & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
+    if (vnp_net_dev.isr_cfg) pci_register(((uintptr_t)vnp_net_dev.isr_cfg) & ~(uintptr_t)(PAGE_SIZE-1), PAGE_SIZE);
 
     uint8_t interrupts_ok = pci_setup_interrupts(addr, irq_base_vector, 2);
     if (!interrupts_ok){
@@ -62,8 +62,7 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector){
         kprintf("[virtio-net][err] virtio_init_device failed");
         return false;
     }
-    kprintfv("[virtio-net] common_cfg=%x device_cfg=%x",
-             (uintptr_t)vnp_net_dev.common_cfg,(uintptr_t)vnp_net_dev.device_cfg);
+    kprintfv("[virtio-net] common_cfg=%x device_cfg=%x", (uintptr_t)vnp_net_dev.common_cfg,(uintptr_t)vnp_net_dev.device_cfg);
 
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
     uint16_t rx_qsz = vnp_net_dev.common_cfg->queue_size;
@@ -102,14 +101,14 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector){
 
     speed_mbps = cfg->speed;
     switch (cfg->duplex) {
-        case 0: duplex = LinkDuplex::Half; break;
-        case 1: duplex = LinkDuplex::Full; break;
-        default: duplex = LinkDuplex::Unknown; break;
+        case 0: duplex = LINK_DUPLEX_HALF; break;
+        case 1: duplex = LINK_DUPLEX_FULL; break;
+        default: duplex = LINK_DUPLEX_UNKNOWN; break;
     }
 
     hw_name[0] = 'v'; hw_name[1] = 'i'; hw_name[2] = 'r'; hw_name[3] = 't'; hw_name[4] = 'i'; hw_name[5] = 'o'; hw_name[6] = 0;
 
-    const char* dpx_str = (duplex == LinkDuplex::Full) ? "full" : (duplex == LinkDuplex::Half) ? "half" : "unknown";
+    const char* dpx_str = (duplex == LINK_DUPLEX_FULL) ? "full" : (duplex == LINK_DUPLEX_HALF) ? "half" : "unknown";
     if (speed_mbps != 0xFFFFFFFF) {
         kprintfv("[virtio-net] mac=%x:%x:%x:%x:%x:%x mtu=%u hdr=%u speed=%uMbps duplex=%s",
                  mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
@@ -146,8 +145,8 @@ uint32_t VirtioNetDriver::get_speed_mbps() const { return speed_mbps; }
 
 uint8_t VirtioNetDriver::get_duplex() const {
     switch (duplex) {
-        case LinkDuplex::Half: return 0;
-        case LinkDuplex::Full: return 1;
+        case LINK_DUPLEX_HALF: return 0;
+        case LINK_DUPLEX_FULL: return 1;
         default: return 0xFF;
     }
 }
@@ -222,13 +221,13 @@ void VirtioNetDriver::handle_sent_packet(){
     }
 }
 
-void VirtioNetDriver::send_packet(sizedptr packet){
+bool VirtioNetDriver::send_packet(sizedptr packet){
     select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
-    if (packet.ptr && packet.size){
-        if (header_size <= packet.size) memset((void*)packet.ptr, 0, header_size);
-        virtio_send_1d(&vnp_net_dev, packet.ptr, packet.size);
-        kprintfv("[virtio-net] tx queued len=%u",(unsigned)packet.size);
-    }
+    if (!packet.ptr || !packet.size) return false;
+    if (header_size <= packet.size) memset((void*)packet.ptr, 0, header_size);
+    bool ok = virtio_send_1d(&vnp_net_dev, packet.ptr, packet.size);
+    kprintfv("[virtio-net] tx queued len=%u",(unsigned)packet.size);
+    return ok;
 }
 
 void VirtioNetDriver::enable_verbose(){

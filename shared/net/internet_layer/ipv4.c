@@ -272,7 +272,9 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
     if (is_dbcast) {
         memset(dst_mac, 0xFF, 6);
     } else {
-        if (!arp_resolve_on(ifx, nh, dst_mac, 200)) {
+        if (l2 && l2->kind == NET_IFK_LOCALHOST) {
+            memset(dst_mac, 0, 6);
+        } else if (!arp_resolve_on(ifx, nh, dst_mac, 200)) {
             netpkt_unref(pkt);
             return;
         }
