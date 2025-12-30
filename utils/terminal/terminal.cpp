@@ -4,17 +4,140 @@
 
 Terminal::Terminal() : Console() {
     char_scale = 2;
-    put_string("> ");
     prompt_length = 2;
-    draw_cursor();
-    flush(dctx);
+    command_running = false;
+
+    input_len = 0;
+    input_cursor = 0;
+    input_buf[0] = 0;
+
+    history_len = 0;
+    history_index = 0;
+    for (uint32_t i = 0; i < history_max; i++) history[i] = nullptr;
+
+    last_blink_ms = get_time();
+    cursor_visible = true;
+
+    dirty = false;
+
+    put_string("> ");
+    redraw_input_line();
+    if (dirty) {
+        flush(dctx);
+        dirty = false;
+    }
 }
 
 void Terminal::update(){
-    if (!command_running) handle_input();
-    else {
+    if (!command_running) {
+        bool did = handle_input();
+        if (!did) cursor_tick();
+    } else {
         end_command();
     }
+
+    if (dirty) {
+        flush(dctx);
+        dirty =false;
+    }
+}
+
+void Terminal::cursor_set_visible(bool visible){
+    if (visible == cursor_visible) return;
+    cursor_visible = visible;
+
+    uint32_t cw = (uint32_t)char_scale * CHAR_SIZE;
+    uint32_t lh = (uint32_t)char_scale * CHAR_SIZE*2;
+
+    if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0) {
+        if ((uint32_t)last_drawn_cursor_x < columns && (uint32_t)last_drawn_cursor_y < rows) {
+            fb_fill_rect(dctx, (uint32_t)last_drawn_cursor_x * cw, (uint32_t)last_drawn_cursor_y * lh, cw, lh, 0);
+
+            char *prev_line = row_data + (((scroll_row_offset + (uint32_t)last_drawn_cursor_y) % rows) * columns);
+            char ch = prev_line[last_drawn_cursor_x];
+            if (ch) {
+                uint32_t py = ((uint32_t)last_drawn_cursor_y * lh) + (lh / 2);
+                fb_draw_char(dctx, (uint32_t)last_drawn_cursor_x * cw, py, ch, char_scale, text_color);
+            }
+        }
+        last_drawn_cursor_x = -1;
+        last_drawn_cursor_y = -1;
+    }
+
+    if (cursor_visible) {
+        fb_fill_rect(dctx, cursor_x * cw, cursor_y * lh, cw, lh, 0xFFFFFFFF);
+        last_drawn_cursor_x = (int32_t)cursor_x;
+        last_drawn_cursor_y = (int32_t)cursor_y;
+    }
+
+    dirty = true;
+}
+
+void Terminal::cursor_tick(){
+    uint64_t now = get_time();
+    if ((now - last_blink_ms) < 500) return;
+    last_blink_ms = now;
+    cursor_set_visible(!cursor_visible);
+}
+
+void Terminal::redraw_input_line(){
+    if (!check_ready()) return;
+
+    uint32_t cw = (uint32_t)char_scale * CHAR_SIZE;
+    uint32_t lh = (uint32_t)char_scale * CHAR_SIZE * 2;
+
+    fb_fill_rect(dctx, 0, cursor_y * lh, columns * cw, lh, 0);
+
+    char* line = row_data + (((scroll_row_offset + cursor_y) % rows) * columns);
+    memset(line, 0, columns);
+
+    if (columns == 0) return;
+    if (prompt_length >= (int)columns) return;
+
+    line[0] = '>';
+    line[1] = ' ';
+
+    uint32_t max_input = columns - (uint32_t)prompt_length - 1;
+    uint32_t draw_len = input_len;
+    if (draw_len > max_input) draw_len = max_input;
+
+    for (uint32_t i = 0; i < draw_len; i++) line[prompt_length + i] = input_buf[i];
+    line[prompt_length + draw_len] = 0;
+
+    uint32_t ypix = (cursor_y * lh) + (lh / 2);
+    fb_draw_char(dctx, 0, ypix, '>', char_scale, text_color);
+    fb_draw_char(dctx, cw, ypix, ' ', char_scale, text_color);
+    for (uint32_t i = 0; i < draw_len; i++) fb_draw_char(dctx, (prompt_length + i) * cw, ypix, input_buf[i], char_scale, text_color);
+
+    if (input_cursor > draw_len) input_cursor = draw_len;
+    cursor_x = (uint32_t)prompt_length + input_cursor;
+
+    last_blink_ms = get_time();
+    if (!cursor_visible) cursor_visible = true;
+
+    last_drawn_cursor_x = -1;
+    last_drawn_cursor_y = -1;
+    cursor_set_visible(true);
+
+    dirty = true;
+}
+
+void Terminal::set_input_line(const char *s){
+    input_len = 0;
+    input_cursor = 0;
+
+    if (s) {
+        uint32_t i = 0;
+        while (s[i] && (i + 1) < input_max) {
+            input_buf[i] = s[i];
+            i++;
+        }
+        input_len = i;
+    }
+
+    input_buf[input_len] = 0;
+    input_cursor = input_len;
+    redraw_input_line();
 }
 
 void Terminal::end_command(){
@@ -23,8 +146,8 @@ void Terminal::end_command(){
     put_char('\n');
     put_string("> ");
     prompt_length = 2;
-    draw_cursor();
-    flush(dctx);
+
+    set_input_line("");
     set_text_color(default_text_color);
 }
 
@@ -74,18 +197,27 @@ const char** Terminal::parse_arguments(char *args, int *count){
 }
 
 void Terminal::run_command(){
-    const char* fullcmd = get_current_line();
-    if (fullcmd[0] == '>' && fullcmd[1] == ' ') {
-        fullcmd += 2;
+    if (input_len) {
+        if (history_len == history_max) {
+            if (history[0]) free(history[0], strlen(history[0], input_max) + 1);
+            for (uint32_t i = 1; i < history_max; i++) history[i - 1] = history[i];
+            history_len = history_max - 1;
+        }
+        uint32_t n = input_len;
+        char *copy = (char*)malloc(n + 1);
+        if (copy) {
+            memcpy(copy, input_buf, n);
+            copy[n] = 0;
+            history[history_len++] = copy;
+        }
     }
+    history_index = history_len;
+
+    const char* fullcmd = input_buf;
     while (*fullcmd == ' ' || *fullcmd == '\t') fullcmd++;
-    if (*fullcmd == '\0') {
-        put_char('\r');
-        put_char('\n');
-        put_string("> ");
-        prompt_length = 2;
-        draw_cursor();
-        flush(dctx);
+    put_char('\r');
+    put_char('\n');
+    if (*fullcmd == 0) {
         command_running = true;
         return;
     }
@@ -109,9 +241,6 @@ void Terminal::run_command(){
         argv = parse_arguments(args_copy.data, &argc);
     }
 
-    put_char('\r');
-    put_char('\n');
-
     if (!exec_cmd(cmd.data, argc, argv)){
         if (strcmp(cmd.data, "test", true) == 0){
             TMP_test(argc, argv);
@@ -127,8 +256,6 @@ void Terminal::run_command(){
     free(cmd.data, cmd.mem_length);
     if (args_copy.mem_length) free(args_copy.data, args_copy.mem_length);
 
-    draw_cursor();
-    flush(dctx);
     command_running = true;
 }
 
@@ -143,25 +270,87 @@ void Terminal::TMP_test(int argc, const char* args[]){
     put_string(next);
 }
 
-void Terminal::handle_input(){
+bool Terminal::handle_input(){
     kbd_event event;
-    if (read_event(&event)){
-        if (event.type == KEY_PRESS){
-            char key = event.key;
-            char readable = hid_to_char((uint8_t)key);
-            if (key == KEY_ENTER || key == KEY_KPENTER){
-                run_command();
-            } else if (readable){
-                put_char(readable);
-                draw_cursor();
-                flush(dctx);
-            } else if (key == KEY_BACKSPACE){
-                if (strlen(get_current_line(), 1024) > (uint32_t)prompt_length) {
-                    delete_last_char();
-                }
+    if (!read_event(&event)) return false;
+    if (event.type != KEY_PRESS) return false;
+
+    char key = event.key;
+    char readable = hid_to_char((uint8_t)key);
+    if (key == KEY_ENTER || key == KEY_KPENTER){
+        run_command();
+        return true;
+    }
+
+    if (key == KEY_LEFT) {
+        if (input_cursor) input_cursor--;
+        cursor_x = (uint32_t)prompt_length + input_cursor;
+        last_blink_ms = get_time();
+        cursor_set_visible(true);
+        return true;
+    }
+
+    if (key == KEY_RIGHT) {
+        if (input_cursor < input_len) input_cursor++;
+        cursor_x = (uint32_t)prompt_length + input_cursor;
+        last_blink_ms = get_time();
+        cursor_set_visible(true);
+        return true;
+    }
+
+    if (key == KEY_UP) {
+        if (history_len && history_index) {
+            history_index--;
+            set_input_line(history[history_index]);
+        }
+        return true;
+    }
+
+    if (key == KEY_DOWN) {
+        if (history_len) {
+            if (history_index + 1 < history_len) {
+                history_index++;
+                set_input_line(history[history_index]);
+            } else {
+                history_index = history_len;
+                set_input_line("");
             }
         }
+        return true;
     }
+
+    if (key == KEY_BACKSPACE){
+        if (!input_cursor) return true;
+        for (uint32_t i = input_cursor; i < input_len; i++) input_buf[i - 1] = input_buf[i];
+        input_len--;
+        input_cursor--;
+        input_buf[input_len] = 0;
+        redraw_input_line();
+        return true;
+    }
+
+    if (key == KEY_DELETE) {
+        if (input_cursor >= input_len) return true;
+        for (uint32_t i = input_cursor + 1; i <= input_len; i++) input_buf[i - 1] = input_buf[i];
+        input_len--;
+        redraw_input_line();
+        return true;
+    }
+
+    if (!readable) return true;
+
+    uint32_t max_visible = 0;
+    if (columns > (uint32_t)prompt_length + 1) max_visible = columns - (uint32_t)prompt_length - 1;
+    if (input_len >= input_max - 1) return true;
+    if (max_visible && input_len >= max_visible) return true;
+
+    for (uint32_t i = input_len; i > input_cursor; i--) input_buf[i] = input_buf[i - 1];
+    input_buf[input_cursor] = readable;
+    input_len++;
+    input_cursor++;
+    input_buf[input_len] = 0;
+    redraw_input_line();
+    return true;
 }
 
 draw_ctx* Terminal::get_ctx(){

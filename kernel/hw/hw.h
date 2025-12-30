@@ -36,6 +36,7 @@ extern uintptr_t DWC2_BASE;
 extern uint32_t MSI_OFFSET;
 
 extern uintptr_t LOWEST_ADDR;
+extern uintptr_t PM_BASE;
 
 void detect_hardware();
 void print_hardware();

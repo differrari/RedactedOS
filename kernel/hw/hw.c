@@ -22,6 +22,7 @@ uintptr_t GPIO_PIN_BASE;
 uintptr_t DWC2_BASE;
 uint32_t MSI_OFFSET;
 uintptr_t LOWEST_ADDR;
+uintptr_t PM_BASE;
 
 void detect_hardware(){
     if (BOARD_TYPE == 1){
@@ -78,6 +79,7 @@ void detect_hardware(){
         CRAM_START      = 0x13600000;
         MSI_OFFSET = 0;
         LOWEST_ADDR = MMIO_BASE;
+        PM_BASE = MMIO_BASE + 0x100000u;
         if (RPI_BOARD != 5) reset_gpio();
     }
 }
