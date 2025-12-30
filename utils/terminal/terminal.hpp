@@ -8,6 +8,7 @@ public:
     void update();
 protected:
     bool handle_input();
+    void repeat_tick();
     void end_command();
     int prompt_length;
     void run_command();
@@ -42,4 +43,8 @@ protected:
 
     bool dirty;
 
+    char repeat_key;
+    bool repeat_down;
+    uint64_t repeat_start_ms;
+    uint64_t repeat_last_ms;
 };

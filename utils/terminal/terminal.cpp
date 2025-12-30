@@ -20,6 +20,11 @@ Terminal::Terminal() : Console() {
 
     dirty = false;
 
+    repeat_key = 0;
+    repeat_down = false;
+    repeat_start_ms = 0;
+    repeat_last_ms = 0;
+
     put_string("> ");
     redraw_input_line();
     if (dirty) {
@@ -31,7 +36,10 @@ Terminal::Terminal() : Console() {
 void Terminal::update(){
     if (!command_running) {
         bool did = handle_input();
-        if (!did) cursor_tick();
+        if (!did) {
+            repeat_tick();
+            cursor_tick();
+        }
     } else {
         end_command();
     }
@@ -39,6 +47,33 @@ void Terminal::update(){
     if (dirty) {
         flush(dctx);
         dirty =false;
+    }
+}
+
+void Terminal::repeat_tick() { //could be done on all the keys but i think it's better to do it in the keyboard drivers
+    if (!repeat_down) return;
+    if (repeat_key != KEY_BACKSPACE && repeat_key != KEY_DELETE) return;
+    uint64_t now =get_time();
+    if ((now - repeat_start_ms) < 250) return;
+    if ((now - repeat_last_ms) < 35) return;
+    repeat_last_ms = now;
+
+    if (repeat_key == KEY_BACKSPACE) {
+        if (!input_cursor) return;
+        for (uint32_t i = input_cursor; i < input_len; i++) input_buf[i-1] = input_buf[i];
+        input_len--;
+        input_cursor--;
+        input_buf[input_len] = 0;
+        redraw_input_line();
+        return;
+    }
+
+    if (repeat_key == KEY_DELETE) {
+        if (input_cursor >= input_len) return;
+        for (uint32_t i = input_cursor + 1; i <= input_len; i++) input_buf[i-1] = input_buf[i];
+        input_len--;
+        redraw_input_line();
+        return;
     }
 }
 
@@ -270,6 +305,10 @@ void Terminal::TMP_test(int argc, const char* args[]){
 bool Terminal::handle_input(){
     kbd_event event;
     if (!read_event(&event)) return false;
+    if (event.type == KEY_RELEASE) {
+        if (repeat_down && event.key == repeat_key) repeat_down = false;
+        return true;
+    }
     if (event.type != KEY_PRESS) return false;
 
     char key = event.key;
@@ -317,6 +356,10 @@ bool Terminal::handle_input(){
     }
 
     if (key == KEY_BACKSPACE){
+        repeat_key = key;
+        repeat_down = true;
+        repeat_start_ms = get_time();
+        repeat_last_ms = repeat_start_ms;
         if (!input_cursor) return true;
         for (uint32_t i = input_cursor; i < input_len; i++) input_buf[i - 1] = input_buf[i];
         input_len--;
@@ -327,12 +370,17 @@ bool Terminal::handle_input(){
     }
 
     if (key == KEY_DELETE) {
+        repeat_key = key;
+        repeat_down = true;
+        repeat_start_ms = get_time();
+        repeat_last_ms = repeat_start_ms;
         if (input_cursor >= input_len) return true;
         for (uint32_t i = input_cursor + 1; i <= input_len; i++) input_buf[i - 1] = input_buf[i];
         input_len--;
         redraw_input_line();
         return true;
     }
+    if (repeat_down) repeat_down = false;
 
     if (!readable) return true;
 
