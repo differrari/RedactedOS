@@ -41,4 +41,5 @@ protected:
     bool cursor_visible;
 
     bool dirty;
+
 };

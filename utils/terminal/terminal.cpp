@@ -43,11 +43,14 @@ void Terminal::update(){
 }
 
 void Terminal::cursor_set_visible(bool visible){
-    if (visible == cursor_visible) return;
-    cursor_visible = visible;
+    if (visible == cursor_visible) {
+        if (!visible) return;
+        if (last_drawn_cursor_x == (int32_t)cursor_x && last_drawn_cursor_y== (int32_t)cursor_y) return;
+    }
 
     uint32_t cw = (uint32_t)char_scale * CHAR_SIZE;
     uint32_t lh = (uint32_t)char_scale * CHAR_SIZE*2;
+    cursor_visible = visible;
 
     if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0) {
         if ((uint32_t)last_drawn_cursor_x < columns && (uint32_t)last_drawn_cursor_y < rows) {
@@ -113,13 +116,7 @@ void Terminal::redraw_input_line(){
     cursor_x = (uint32_t)prompt_length + input_cursor;
 
     last_blink_ms = get_time();
-    if (!cursor_visible) cursor_visible = true;
-
-    last_drawn_cursor_x = -1;
-    last_drawn_cursor_y = -1;
     cursor_set_visible(true);
-
-    dirty = true;
 }
 
 void Terminal::set_input_line(const char *s){
