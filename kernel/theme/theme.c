@@ -35,7 +35,7 @@ system_config_t system_config = {
     .panic_text = PANIC_TEXT,
     .default_pwd = DEFAULT_PWD,
     .system_name = SYSTEM_NAME,
-    .app_directory = "shared",
+    .app_directory = "boot",
     .use_net = true,
 };
 
