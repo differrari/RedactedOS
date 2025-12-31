@@ -18,6 +18,21 @@ typedef enum {
     DST_DOMAIN = 1
 } SockDstKind;
 
+typedef enum {
+    SOCK_OPT_DEBUG = 1u << 0,
+    SOCK_OPT_KEEPALIVE = 1u << 1,
+    SOCK_OPT_BUF_SIZE = 1u << 2,
+    SOCK_OPT_DONTFRAG = 1u << 3,
+    SOCK_OPT_TTL = 1u << 4
+} SockOptFlags;
+
+typedef struct SocketExtraOptions {
+    uint32_t flags;
+    uint32_t buf_size;
+    uint32_t keepalive_ms;
+    uint8_t ttl;
+} SocketExtraOptions;
+
 typedef struct SockBindSpec{
     SockBindKind kind;
     ip_version_t ver;
