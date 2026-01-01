@@ -6,8 +6,8 @@
 
 extern "C" {
 
-http_client_handle_t http_client_create(uint16_t pid) {
-    HTTPClient* cli = new HTTPClient(pid);
+http_client_handle_t http_client_create(uint16_t pid, const SocketExtraOptions* extra) {
+    HTTPClient* cli = new HTTPClient(pid, extra);
     if (!cli) return nullptr;
     return reinterpret_cast<http_client_handle_t>(cli);
 }

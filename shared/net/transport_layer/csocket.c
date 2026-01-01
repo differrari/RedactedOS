@@ -31,15 +31,15 @@ static inline void check_mem(){
     }
 }
 
-bool create_socket(Socket_Role role, protocol_t protocol, uint16_t pid, SocketHandle *out_handle){
+bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptions* extra, uint16_t pid, SocketHandle *out_handle){
     check_mem();
     socket_handle_t *in_handle = {};
     switch (protocol) {
         case PROTO_UDP:
-        in_handle = udp_socket_create(role, pid);
+        in_handle = udp_socket_create(role, pid, extra);
         break;
         case PROTO_TCP:
-        in_handle = socket_tcp_create(role, pid);
+        in_handle = socket_tcp_create(role, pid, extra);
         break;
     }
     if (!in_handle){

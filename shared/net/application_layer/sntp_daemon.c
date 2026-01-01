@@ -42,7 +42,7 @@ static bool any_ipv4_configured_nonlocal(void){
 int sntp_daemon_entry(int argc, char* argv[]){
     (void)argc; (void)argv;
     g_pid_sntp = (uint16_t)get_current_proc_pid();
-    g_sock = udp_socket_create(0, g_pid_sntp);
+    g_sock = udp_socket_create(0, g_pid_sntp, NULL);
     sntp_set_pid(get_current_proc_pid());
     uint32_t attempts = 0;
     while (attempts < SNTP_BOOTSTRAP_MAX_RETRY){

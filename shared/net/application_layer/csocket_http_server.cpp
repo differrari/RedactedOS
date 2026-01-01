@@ -6,8 +6,8 @@
 
 extern "C" {
 
-http_server_handle_t http_server_create(uint16_t pid) {
-    HTTPServer* srv = new HTTPServer(pid);
+http_server_handle_t http_server_create(uint16_t pid, const SocketExtraOptions* extra) {
+    HTTPServer* srv = new HTTPServer(pid, extra);
     if (!srv) return nullptr;
     return reinterpret_cast<http_server_handle_t>(srv);
 }

@@ -64,8 +64,8 @@ extern uint64_t get_time(){
     return timer_now_msec();
 }
 
-extern bool socket_create(Socket_Role role, protocol_t protocol, SocketHandle *out_handle){
-    return create_socket(role, protocol, get_current_proc_pid(), out_handle);
+extern bool socket_create(Socket_Role role, protocol_t protocol, const SocketExtraOptions* extra, SocketHandle *out_handle){
+    return create_socket(role, protocol, extra, get_current_proc_pid(), out_handle);
 }
 
 extern int32_t socket_bind(SocketHandle *handle, ip_version_t ip_version, uint16_t port){

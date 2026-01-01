@@ -269,7 +269,7 @@ static void ensure_binds() {
         const uint8_t* mac = network_get_mac(b->ifindex);
         if (mac) { memcpy(b->mac, mac, 6); b->mac_ok = 1; }
 
-        b->sock = udp_socket_create(SOCKET_SERVER, g_dhcpv6_pid);
+        b->sock = udp_socket_create(SOCKET_SERVER, g_dhcpv6_pid, NULL);
         if (!b->sock) {
             free(b, sizeof(*b));
             continue;

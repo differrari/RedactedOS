@@ -123,7 +123,7 @@ static void ensure_inventory() {
             const uint8_t* m = network_get_mac(st.ifindex);
             if (m) { memcpy(st.mac, m, 6); st.mac_ok = true; }
             st.needs_inform = (v4->mode == IPV4_CFG_STATIC && v4->ip != 0);
-            st.sock = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dhcpd);
+            st.sock = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dhcpd, NULL);
             SockBindSpec spec;
             memset(&spec, 0, sizeof(spec));
             spec.kind = BIND_L3;

@@ -46,7 +46,7 @@ int img_example() {
 
 int net_example() {
     SocketHandle spec = {};
-    socket_create(SOCKET_SERVER, PROTO_UDP, &spec);
+    socket_create(SOCKET_SERVER, PROTO_UDP, NULL, &spec);
     printf("Created socket for type %i",spec.protocol);
     //Fill in manually with your local IP. A syscall will be added soon to get it for you
     spec.connection.ip[0] = 0;

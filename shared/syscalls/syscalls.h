@@ -36,7 +36,7 @@ extern uint32_t gpu_char_size(uint32_t scale);
 
 extern uint64_t get_time();
 
-extern bool socket_create(Socket_Role role, protocol_t protocol, SocketHandle *out_handle);
+extern bool socket_create(Socket_Role role, protocol_t protocol, const SocketExtraOptions* extra, SocketHandle *out_handle);
 extern int32_t socket_bind(SocketHandle *handle, ip_version_t ip_version, uint16_t port);
 extern int32_t socket_connect(SocketHandle *handle, SockDstKind dst_kind, void* dst, uint16_t port);
 extern int32_t socket_listen(SocketHandle *handle);

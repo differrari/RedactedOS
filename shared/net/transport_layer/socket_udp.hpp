@@ -241,7 +241,7 @@ class UDPSocket : public Socket {
     }
 
 public:
-    UDPSocket(uint8_t r, uint32_t pid_) : Socket(PROTO_UDP, r) {
+    UDPSocket(uint8_t r, uint32_t pid_, const SocketExtraOptions* extra = nullptr) : Socket(PROTO_UDP, r, extra) {
         pid = pid_;
         insert_in_list();
     }
@@ -252,6 +252,7 @@ public:
     }
 
     int32_t bind(const SockBindSpec& spec_in, uint16_t port) override {
+        if (debug) kprintf("[SOCKET][UDP] bind port=%u", (uint32_t)port);
         if (role != SOCK_ROLE_SERVER) return SOCK_ERR_PERM;
         if (bound) return SOCK_ERR_BOUND;
 
@@ -333,6 +334,7 @@ public:
     }
 
     int64_t sendto(SockDstKind kind, const void* dst, uint16_t port, const void* buf, uint64_t len) {
+        if (debug) kprintf("[SOCKET][UDP] sendto kind=%u port=%u len=%u", (uint32_t)kind, (uint32_t)port, (uint32_t)len);
         if (!dst) return SOCK_ERR_INVAL;
         if (!buf) return SOCK_ERR_INVAL;
         if (len == 0) return SOCK_ERR_INVAL;
@@ -598,6 +600,7 @@ public:
     }
 
     int64_t recvfrom(void* buf, uint64_t len, net_l4_endpoint* src) {
+        if (debug) kprintf("[SOCKET][UDP] recvfrom cap=%u", (uint32_t)len);
         if (r_head == r_tail) return 0;
 
         sizedptr p = ring[r_head];
@@ -616,6 +619,7 @@ public:
     }
 
     int32_t close() override {
+        if (debug) kprintf("[SOCKET][UDP] close");
         while (r_head != r_tail) {
             free((void*)ring[r_head].ptr, ring[r_head].size);
             r_head = (r_head + 1) % UDP_RING_CAP;

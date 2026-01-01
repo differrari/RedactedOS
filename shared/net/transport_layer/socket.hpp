@@ -5,6 +5,7 @@
 #include "tcp.h"
 #include "udp.h"
 #include "net/transport_layer/socket_types.h"
+#include "console/kio.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,10 +45,16 @@ protected:
     bool connected = false;
     uint16_t pid = 0;
 
+    SocketExtraOptions extraOpts = {};
+    bool debug = false;
+
     uint8_t bound_l3[SOCK_MAX_L3] = {0};
     int bound_l3_count = 0;
 
-    Socket(uint8_t protocol, uint8_t r) : proto(protocol), role(r) {}
+    Socket(uint8_t protocol, uint8_t r, const SocketExtraOptions* extra) : proto(protocol), role(r) {
+        if (extra) extraOpts = *extra;
+        debug = (extraOpts.flags & SOCK_OPT_DEBUG) != 0;
+    }
 
     virtual void do_unbind_one(uint8_t l3_id, uint16_t port, uint16_t pid) = 0;
 

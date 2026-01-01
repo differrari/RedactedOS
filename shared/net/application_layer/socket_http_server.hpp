@@ -1,22 +1,57 @@
+#pragma once
 #include "console/kio.h"
 #include "net/transport_layer/socket_tcp.hpp"
 #include "http.h"
-#include "std/string.h"
-#include "std/memory.h"
+#include "std/std.h"
 #include "net/transport_layer/socket_types.h"
 
 class HTTPServer {
 private:
-    TCPSocket sock;
+    TCPSocket* sock;
+    bool http_log;
+    SocketExtraOptions* tcp_extra;
 
 public:
-    explicit HTTPServer(uint16_t pid) : sock(SOCK_ROLE_SERVER, pid) {}
+    explicit HTTPServer(uint16_t pid, const SocketExtraOptions* extra) : sock(nullptr), http_log(false), tcp_extra(nullptr) {
+        uint32_t flags = 0;
+        if (extra) flags = extra->flags;
+        http_log = (flags & SOCK_OPT_DEBUG) != 0;
+
+        const SocketExtraOptions* tcp_ptr = extra;
+        if (http_log && extra) {
+            tcp_extra = (SocketExtraOptions*)malloc(sizeof(SocketExtraOptions));
+            if (tcp_extra) {
+                *tcp_extra = *extra;
+                tcp_extra->flags &= ~SOCK_OPT_DEBUG;
+                tcp_ptr = tcp_extra;
+            }
+        }
+
+        sock = (TCPSocket*)malloc(sizeof(TCPSocket));
+        if (sock) new (sock) TCPSocket(SOCK_ROLE_SERVER, pid, tcp_ptr);
+    }
 
     ~HTTPServer() { close(); }
 
-    int32_t bind(const SockBindSpec& spec, uint16_t port) { return sock.bind(spec, port); }
-    int32_t listen(int backlog = 4) { return sock.listen(backlog); }
-    TCPSocket* accept() { return sock.accept(); }
+    int32_t bind(const SockBindSpec& spec, uint16_t port) {
+        uint16_t p = port;
+        int32_t r = sock ? sock->bind(spec, p) : SOCK_ERR_STATE;
+        if (http_log) kprintf("[HTTP] server bind port=%u r=%d", (uint32_t)p, (int32_t)r);
+        return r;
+    }
+
+    int32_t listen(int backlog = 4) {
+        int b = backlog;
+        int32_t r = sock ? sock->listen(b) : SOCK_ERR_STATE;
+        if (http_log) kprintf("[HTTP] server listen backlog=%d r=%d", (int32_t)b, (int32_t)r);
+        return r;
+    }
+
+    TCPSocket* accept() {
+        TCPSocket* c = sock ? sock->accept() : nullptr;
+        if (http_log && c) kprintf("[HTTP] server accept client=%p", c);
+        return c;
+    }
 
     HTTPRequestMsg recv_request(TCPSocket* client) {
         HTTPRequestMsg req{};
@@ -24,17 +59,25 @@ public:
 
         string buf = string_repeat('\0', 0);
         char tmp[512];
-        int hdr_end  = -1;
+        int hdr_end = -1;
         int attempts = 0;
         const int max_attempts = 500;
 
         while (true) {
             int64_t r = client->recv(tmp, sizeof(tmp));
-            if (r < 0) return req;
+            if (r < 0) {
+                if (http_log) kprintf("[HTTP] server recv_request recv fail=%lld", (long long)r);
+                free(buf.data, buf.mem_length);
+                return req;
+            }
             if (r > 0) string_append_bytes(&buf, tmp, (uint32_t)r);
             hdr_end = find_crlfcrlf(buf.data, buf.length);
             if (hdr_end >= 0) break;
-            if (++attempts > max_attempts) return req;
+            if (++attempts > max_attempts) {
+                if (http_log) kprintf("[HTTP] server recv_request timeout");
+                free(buf.data, buf.mem_length);
+                return req;
+            }
             sleep(10);
         }
 
@@ -54,16 +97,11 @@ public:
         string method_tok = string_repeat('\0', 0);
         string_append_bytes(&method_tok, buf.data + p, i - p);
 
-        if (method_tok.length == 3 && memcmp(method_tok.data, "GET",    3) == 0)
-            req.method = HTTP_METHOD_GET;
-        else if (method_tok.length == 4 && memcmp(method_tok.data, "POST",   4) == 0)
-            req.method = HTTP_METHOD_POST;
-        else if (method_tok.length == 3 && memcmp(method_tok.data, "PUT",    3) == 0)
-            req.method = HTTP_METHOD_PUT;
-        else if (method_tok.length == 6 && memcmp(method_tok.data, "DELETE", 6) == 0)
-            req.method = HTTP_METHOD_DELETE;
-        else
-            req.method = HTTP_METHOD_GET;
+        if (method_tok.length == 3 && memcmp(method_tok.data, "GET", 3) == 0) req.method = HTTP_METHOD_GET;
+        else if (method_tok.length == 4 && memcmp(method_tok.data, "POST", 4) == 0) req.method = HTTP_METHOD_POST;
+        else if (method_tok.length == 3 && memcmp(method_tok.data, "PUT", 3) == 0) req.method = HTTP_METHOD_PUT;
+        else if (method_tok.length == 6 && memcmp(method_tok.data, "DELETE", 6) == 0) req.method = HTTP_METHOD_DELETE;
+        else req.method = HTTP_METHOD_GET;
 
         uint32_t j = (i < line_end) ? (i + 1u) : line_end;
         uint32_t path_start = j;
@@ -131,23 +169,42 @@ public:
             if (body_copy) {
                 memcpy(body_copy, buf.data + body_start, have);
                 body_copy[have] = '\0';
-                req.body.ptr   = (uintptr_t)body_copy;
-                req.body.size  = have;
+                req.body.ptr = (uintptr_t)body_copy;
+                req.body.size = have;
             }
         }
 
+        if (http_log) kprintf("[HTTP] server recv_request method=%u path_len=%u body=%u", (uint32_t)req.method, (uint32_t)req.path.length, (uint32_t)req.body.size);
+        free(method_tok.data, method_tok.mem_length);
         free(buf.data, buf.mem_length);
         return req;
     }
 
-
     int32_t send_response(TCPSocket* client, const HTTPResponseMsg& res) {
         if (!client) return SOCK_ERR_STATE;
+        uint32_t code = (uint32_t)res.status_code;
         string out = http_response_builder(&res);
+        uint32_t out_len = out.length;
         int64_t sent = client->send(out.data, out.length);
+        if (http_log) kprintf("[HTTP] server send_response code=%u bytes=%u sent=%lld", code, (uint32_t)out_len, (long long)sent);
         free(out.data, out.mem_length);
         return sent < 0 ? (int32_t)sent : SOCK_OK;
     }
 
-    int32_t close() { return sock.close(); }
+    int32_t close() {
+        int32_t r = SOCK_ERR_STATE;
+
+        if (sock) r = sock->close();
+        if (http_log) kprintf("[HTTP] server close r=%d", (int32_t)r);
+
+        if (sock) sock->~TCPSocket();
+        if (sock) free(sock, sizeof(TCPSocket));
+        sock = nullptr;
+
+        if (tcp_extra) free(tcp_extra, sizeof(SocketExtraOptions));
+        tcp_extra = nullptr;
+
+        http_log = false;
+        return r;
+    }
 };

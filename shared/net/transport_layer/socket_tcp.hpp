@@ -84,7 +84,7 @@ class TCPSocket : public Socket {
                 if (!matches_dst) continue;
                 if (srv->backlogLen >= srv->backlogCap) break;
 
-                TCPSocket* child = new TCPSocket(SOCK_ROLE_CLIENT, srv->pid);
+                TCPSocket* child = new TCPSocket(SOCK_ROLE_CLIENT, srv->pid, &srv->extraOpts);
 
                 child->localPort = dst_port;
                 child->connected = true;
@@ -295,7 +295,7 @@ class TCPSocket : public Socket {
     }
 
 public:
-    explicit TCPSocket(uint8_t r = SOCK_ROLE_CLIENT, uint32_t pid_ = 0) : Socket(PROTO_TCP, r) {
+    explicit TCPSocket(uint8_t r = SOCK_ROLE_CLIENT, uint32_t pid_ = 0, const SocketExtraOptions* extra = nullptr) : Socket(PROTO_TCP, r, extra) {
         pid = pid_;
         insert_in_list();
     }
@@ -306,6 +306,7 @@ public:
     }
 
     int32_t bind(const SockBindSpec& spec_in, uint16_t port) override {
+        if (debug) kprintf("[SOCKET][TCP] bind port=%u", (uint32_t)port);
         if (role != SOCK_ROLE_SERVER) return SOCK_ERR_PERM;
         if (bound) return SOCK_ERR_BOUND;
 
@@ -434,6 +435,7 @@ public:
     }
 
     int32_t connect(SockDstKind kind, const void* dst, uint16_t port) {
+        if (debug) kprintf("[SOCKET][TCP] connect kind=%u port=%u", (uint32_t)kind, (uint32_t)port);
         if (role != SOCK_ROLE_CLIENT) return SOCK_ERR_PERM;
         if (connected) return SOCK_ERR_STATE;
         if (!dst) return SOCK_ERR_INVAL;
@@ -546,10 +548,12 @@ public:
 
         remoteEP = d;
         connected = true;
+        if (debug) kprintf("[SOCKET][TCP] connected local=%u remote=%u", (uint32_t)localPort, (uint32_t)remoteEP.port);
         return SOCK_OK;
     }
 
     int64_t send(const void* buf, uint64_t len) {
+        if (debug) kprintf("[SOCKET][TCP] send len=%u", (uint32_t)len);
         if (!connected || !flow) return SOCK_ERR_STATE;
 
         flow->payload = { (uintptr_t)buf, (uint32_t)len };
@@ -560,6 +564,7 @@ public:
     }
 
     int64_t recv(void* buf, uint64_t len){
+        if (debug) kprintf("[SOCKET][TCP] recv cap=%u", (uint32_t)len);
         if (!buf || !len) return 0;
 
         uint8_t* out = (uint8_t*)buf;
@@ -575,6 +580,7 @@ public:
     }
 
     int32_t close() override {
+        if (debug) kprintf("[SOCKET][TCP] close");
         if (connected && flow){
             tcp_flow_close(flow);
             connected = false;

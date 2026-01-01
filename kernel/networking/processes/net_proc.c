@@ -35,7 +35,7 @@
 
 
 static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpoint *out_l4) {
-    socket_handle_t sock = udp_socket_create(SOCK_ROLE_CLIENT, (uint16_t)get_current_proc_pid());
+    socket_handle_t sock = udp_socket_create(SOCK_ROLE_CLIENT, (uint16_t)get_current_proc_pid(), NULL);
     if (!sock)
         return 0;
 
@@ -91,9 +91,10 @@ static void free_request(HTTPRequestMsg *req) {
 }
 
 static void run_http_server() {
-    kprintf("[HTTP] server bootstrap");
     uint16_t pid = get_current_proc_pid();
-    http_server_handle_t srv = http_server_create(pid);
+    SocketExtraOptions opt = {0};
+    opt.flags = SOCK_OPT_DEBUG;
+    http_server_handle_t srv = http_server_create(pid, &opt);
     if (!srv) {
         stop_current_process(1);
         return;
@@ -113,7 +114,6 @@ static void run_http_server() {
         return;
     }
 
-    kprintf("[HTTP] listening on port 80");
 
     static const char HTML_ROOT[] =
         "<h1>Hello, world!</h1>\n"
@@ -139,7 +139,6 @@ static void run_http_server() {
             char tmp[128] = {0};
             uint32_t n = req.path.length < sizeof(tmp) - 1 ? req.path.length : sizeof(tmp) - 1;
             memcpy(tmp, req.path.data, n);
-            kprintf("[HTTP] GET %s", tmp);
         }
 
         HTTPResponseMsg res = (HTTPResponseMsg){0};
@@ -179,7 +178,7 @@ static void test_http(const net_l4_endpoint* ep) {
     }
 
     uint16_t pid = get_current_proc_pid();
-    http_client_handle_t cli = http_client_create(pid);
+    http_client_handle_t cli = http_client_create(pid, NULL);
     if (!cli) {
         kprintf("[HTTP] http_client_create FAIL");
         return; 

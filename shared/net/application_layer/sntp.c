@@ -92,7 +92,7 @@ sntp_result_t sntp_poll_once(uint32_t timeout_ms){
 
     if (s0 == 0 && s1 == 0) return SNTP_ERR_NO_SERVER;
 
-    socket_handle_t sock = udp_socket_create(0, (uint32_t)get_current_proc_pid());
+    socket_handle_t sock = udp_socket_create(0, (uint32_t)get_current_proc_pid(), NULL);
     if (sock == 0) return SNTP_ERR_SOCKET;
 
     uint64_t t1_0 = 0, t1_1 = 0;
