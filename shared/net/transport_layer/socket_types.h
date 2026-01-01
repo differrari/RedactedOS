@@ -26,8 +26,15 @@ typedef enum {
     SOCK_OPT_TTL = 1u << 4
 } SockOptFlags;
 
+typedef enum {
+    SOCK_DBG_LOW = 0,
+    SOCK_DBG_MEDIUM = 1,
+    SOCK_DBG_ALL = 2
+} SockDebugLevel;
+
 typedef struct SocketExtraOptions {
     uint32_t flags;
+    SockDebugLevel debug_level;
     uint32_t buf_size;
     uint32_t keepalive_ms;
     uint8_t ttl;

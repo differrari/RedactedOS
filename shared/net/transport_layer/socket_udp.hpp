@@ -252,7 +252,13 @@ public:
     }
 
     int32_t bind(const SockBindSpec& spec_in, uint16_t port) override {
-        if (debug) kprintf("[SOCKET][UDP] bind port=%u", (uint32_t)port);
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_UDP;
+        ev.action = NETLOG_ACT_BIND;
+        ev.pid = pid;
+        ev.u0 = port;
+        ev.bind_spec = spec_in;
+        netlog_socket_event(&extraOpts, &ev);
         if (role != SOCK_ROLE_SERVER) return SOCK_ERR_PERM;
         if (bound) return SOCK_ERR_BOUND;
 
@@ -334,7 +340,16 @@ public:
     }
 
     int64_t sendto(SockDstKind kind, const void* dst, uint16_t port, const void* buf, uint64_t len) {
-        if (debug) kprintf("[SOCKET][UDP] sendto kind=%u port=%u len=%u", (uint32_t)kind, (uint32_t)port, (uint32_t)len);
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_UDP;
+        ev.action = NETLOG_ACT_SENDTO;
+        ev.pid = pid;
+        ev.dst_kind = kind;
+        ev.u0 = port;
+        ev.u1 = (uint32_t)len;
+        if (kind == DST_ENDPOINT && dst) ev.dst_ep = *(const net_l4_endpoint*)dst;
+        if (kind == DST_DOMAIN) ev.s0 = (const char*)dst;
+        netlog_socket_event(&extraOpts, &ev);
         if (!dst) return SOCK_ERR_INVAL;
         if (!buf) return SOCK_ERR_INVAL;
         if (len == 0) return SOCK_ERR_INVAL;
@@ -600,7 +615,14 @@ public:
     }
 
     int64_t recvfrom(void* buf, uint64_t len, net_l4_endpoint* src) {
-        if (debug) kprintf("[SOCKET][UDP] recvfrom cap=%u", (uint32_t)len);
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_UDP;
+        ev.action = NETLOG_ACT_RECVFROM;
+        ev.pid = pid;
+        ev.u0 = (uint32_t)len;
+        ev.local_port = localPort;
+        ev.remote_ep = remoteEP;
+        netlog_socket_event(&extraOpts, &ev);
         if (r_head == r_tail) return 0;
 
         sizedptr p = ring[r_head];
@@ -619,7 +641,13 @@ public:
     }
 
     int32_t close() override {
-        if (debug) kprintf("[SOCKET][UDP] close");
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_UDP;
+        ev.action = NETLOG_ACT_CLOSE;
+        ev.pid = pid;
+        ev.local_port = localPort;
+        ev.remote_ep = remoteEP;
+        netlog_socket_event(&extraOpts, &ev);
         while (r_head != r_tail) {
             free((void*)ring[r_head].ptr, ring[r_head].size);
             r_head = (r_head + 1) % UDP_RING_CAP;

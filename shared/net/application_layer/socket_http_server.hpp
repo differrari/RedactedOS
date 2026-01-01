@@ -7,18 +7,17 @@
 
 class HTTPServer {
 private:
+    uint16_t pid;
     TCPSocket* sock;
-    bool http_log;
+    SocketExtraOptions log_opts;
     SocketExtraOptions* tcp_extra;
 
 public:
-    explicit HTTPServer(uint16_t pid, const SocketExtraOptions* extra) : sock(nullptr), http_log(false), tcp_extra(nullptr) {
-        uint32_t flags = 0;
-        if (extra) flags = extra->flags;
-        http_log = (flags & SOCK_OPT_DEBUG) != 0;
+    explicit HTTPServer(uint16_t pid_, const SocketExtraOptions* extra) : pid(pid_), sock(nullptr), log_opts{}, tcp_extra(nullptr) {
+        if (extra) log_opts = *extra;
 
         const SocketExtraOptions* tcp_ptr = extra;
-        if (http_log && extra) {
+        if (extra && (log_opts.flags & SOCK_OPT_DEBUG)) {
             tcp_extra = (SocketExtraOptions*)malloc(sizeof(SocketExtraOptions));
             if (tcp_extra) {
                 *tcp_extra = *extra;
@@ -36,20 +35,43 @@ public:
     int32_t bind(const SockBindSpec& spec, uint16_t port) {
         uint16_t p = port;
         int32_t r = sock ? sock->bind(spec, p) : SOCK_ERR_STATE;
-        if (http_log) kprintf("[HTTP] server bind port=%u r=%d", (uint32_t)p, (int32_t)r);
+
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_HTTP_SERVER;
+        ev.action = NETLOG_ACT_BIND;
+        ev.pid = pid;
+        ev.u0 = p;
+        ev.i0 = r;
+        netlog_socket_event(&log_opts, &ev);
         return r;
     }
 
     int32_t listen(int backlog = 4) {
         int b = backlog;
         int32_t r = sock ? sock->listen(b) : SOCK_ERR_STATE;
-        if (http_log) kprintf("[HTTP] server listen backlog=%d r=%d", (int32_t)b, (int32_t)r);
+
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_HTTP_SERVER;
+        ev.action = NETLOG_ACT_LISTEN;
+        ev.pid = pid;
+        ev.u0 = (uint32_t)b;
+        ev.i0 = r;
+        netlog_socket_event(&log_opts, &ev);
         return r;
     }
 
     TCPSocket* accept() {
         TCPSocket* c = sock ? sock->accept() : nullptr;
-        if (http_log && c) kprintf("[HTTP] server accept client=%p", c);
+        if (c) {
+            netlog_socket_event_t ev{};
+            ev.comp = NETLOG_COMP_HTTP_SERVER;
+            ev.action = NETLOG_ACT_ACCEPT;
+            ev.pid = pid;
+            ev.i0 = (int64_t)(uintptr_t)c;
+            ev.local_port = c->get_local_port();
+            ev.remote_ep = c->get_remote_ep();
+            netlog_socket_event(&log_opts, &ev);
+        }
         return c;
     }
 
@@ -66,7 +88,6 @@ public:
         while (true) {
             int64_t r = client->recv(tmp, sizeof(tmp));
             if (r < 0) {
-                if (http_log) kprintf("[HTTP] server recv_request recv fail=%lld", (long long)r);
                 free(buf.data, buf.mem_length);
                 return req;
             }
@@ -74,7 +95,6 @@ public:
             hdr_end = find_crlfcrlf(buf.data, buf.length);
             if (hdr_end >= 0) break;
             if (++attempts > max_attempts) {
-                if (http_log) kprintf("[HTTP] server recv_request timeout");
                 free(buf.data, buf.mem_length);
                 return req;
             }
@@ -174,7 +194,27 @@ public:
             }
         }
 
-        if (http_log) kprintf("[HTTP] server recv_request method=%u path_len=%u body=%u", (uint32_t)req.method, (uint32_t)req.path.length, (uint32_t)req.body.size);
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_HTTP_SERVER;
+        ev.action = NETLOG_ACT_HTTP_RECV_REQUEST;
+        ev.pid = pid;
+        ev.u0 = (uint32_t)req.method;
+        ev.u1 = (uint32_t)req.path.length;
+        ev.i0 = (int64_t)req.body.size;
+        ev.local_port = client->get_local_port();
+        ev.remote_ep = client->get_remote_ep();
+
+        char pathbuf[128];
+        if (req.path.length && req.path.data) {
+            uint32_t n = req.path.length;
+            if (n > sizeof(pathbuf) - 1) n = sizeof(pathbuf) - 1;
+            memcpy(pathbuf, req.path.data, n);
+            pathbuf[n] = 0;
+            ev.s0 = pathbuf;
+        }
+
+        netlog_socket_event(&log_opts, &ev);
+
         free(method_tok.data, method_tok.mem_length);
         free(buf.data, buf.mem_length);
         return req;
@@ -186,7 +226,18 @@ public:
         string out = http_response_builder(&res);
         uint32_t out_len = out.length;
         int64_t sent = client->send(out.data, out.length);
-        if (http_log) kprintf("[HTTP] server send_response code=%u bytes=%u sent=%lld", code, (uint32_t)out_len, (long long)sent);
+        
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_HTTP_SERVER;
+        ev.action = NETLOG_ACT_HTTP_SEND_RESPONSE;
+        ev.pid = pid;
+        ev.u0 = code;
+        ev.u1 = out_len;
+        ev.i0 = sent;
+        ev.local_port = client->get_local_port();
+        ev.remote_ep = client->get_remote_ep();
+        netlog_socket_event(&log_opts, &ev);
+
         free(out.data, out.mem_length);
         return sent < 0 ? (int32_t)sent : SOCK_OK;
     }
@@ -195,7 +246,17 @@ public:
         int32_t r = SOCK_ERR_STATE;
 
         if (sock) r = sock->close();
-        if (http_log) kprintf("[HTTP] server close r=%d", (int32_t)r);
+
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_HTTP_SERVER;
+        ev.action = NETLOG_ACT_CLOSE;
+        ev.pid = pid;
+        ev.i0 = r;
+        if (sock) {
+            ev.local_port = sock->get_local_port();
+            ev.remote_ep = sock->get_remote_ep();
+        }
+        netlog_socket_event(&log_opts, &ev);
 
         if (sock) sock->~TCPSocket();
         if (sock) free(sock, sizeof(TCPSocket));
@@ -204,7 +265,7 @@ public:
         if (tcp_extra) free(tcp_extra, sizeof(SocketExtraOptions));
         tcp_extra = nullptr;
 
-        http_log = false;
+        log_opts.flags &= ~SOCK_OPT_DEBUG;
         return r;
     }
 };

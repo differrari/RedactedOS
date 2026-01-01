@@ -306,7 +306,13 @@ public:
     }
 
     int32_t bind(const SockBindSpec& spec_in, uint16_t port) override {
-        if (debug) kprintf("[SOCKET][TCP] bind port=%u", (uint32_t)port);
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_TCP;
+        ev.action = NETLOG_ACT_BIND;
+        ev.pid = pid;
+        ev.u0 = port;
+        ev.bind_spec = spec_in;
+        netlog_socket_event(&extraOpts, &ev);
         if (role != SOCK_ROLE_SERVER) return SOCK_ERR_PERM;
         if (bound) return SOCK_ERR_BOUND;
 
@@ -435,7 +441,15 @@ public:
     }
 
     int32_t connect(SockDstKind kind, const void* dst, uint16_t port) {
-        if (debug) kprintf("[SOCKET][TCP] connect kind=%u port=%u", (uint32_t)kind, (uint32_t)port);
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_TCP;
+        ev.action = NETLOG_ACT_CONNECT;
+        ev.pid = pid;
+        ev.dst_kind = kind;
+        ev.u0 = port;
+        if (kind == DST_ENDPOINT && dst) ev.dst_ep = *(const net_l4_endpoint*)dst;
+        if (kind == DST_DOMAIN) ev.s0 = (const char*)dst;
+        netlog_socket_event(&extraOpts, &ev);
         if (role != SOCK_ROLE_CLIENT) return SOCK_ERR_PERM;
         if (connected) return SOCK_ERR_STATE;
         if (!dst) return SOCK_ERR_INVAL;
@@ -548,12 +562,27 @@ public:
 
         remoteEP = d;
         connected = true;
-        if (debug) kprintf("[SOCKET][TCP] connected local=%u remote=%u", (uint32_t)localPort, (uint32_t)remoteEP.port);
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_TCP;
+        ev.action = NETLOG_ACT_CONNECTED;
+        ev.pid = pid;
+        ev.u0 = localPort;
+        ev.u1 = remoteEP.port;
+        ev.local_port = localPort;
+        ev.remote_ep = remoteEP;
+        netlog_socket_event(&extraOpts, &ev);
         return SOCK_OK;
     }
 
     int64_t send(const void* buf, uint64_t len) {
-        if (debug) kprintf("[SOCKET][TCP] send len=%u", (uint32_t)len);
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_TCP;
+        ev.action = NETLOG_ACT_SEND;
+        ev.pid = pid;
+        ev.u0 = (uint32_t)len;
+        ev.local_port = localPort;
+        ev.remote_ep = remoteEP;
+        netlog_socket_event(&extraOpts, &ev);
         if (!connected || !flow) return SOCK_ERR_STATE;
 
         flow->payload = { (uintptr_t)buf, (uint32_t)len };
@@ -564,7 +593,14 @@ public:
     }
 
     int64_t recv(void* buf, uint64_t len){
-        if (debug) kprintf("[SOCKET][TCP] recv cap=%u", (uint32_t)len);
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_TCP;
+        ev.action = NETLOG_ACT_RECV;
+        ev.pid = pid;
+        ev.u0 = (uint32_t)len;
+        ev.local_port = localPort;
+        ev.remote_ep = remoteEP;
+        netlog_socket_event(&extraOpts, &ev);
         if (!buf || !len) return 0;
 
         uint8_t* out = (uint8_t*)buf;
@@ -580,7 +616,13 @@ public:
     }
 
     int32_t close() override {
-        if (debug) kprintf("[SOCKET][TCP] close");
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_TCP;
+        ev.action = NETLOG_ACT_CLOSE;
+        ev.pid = pid;
+        ev.local_port = localPort;
+        ev.remote_ep = remoteEP;
+        netlog_socket_event(&extraOpts, &ev);
         if (connected && flow){
             tcp_flow_close(flow);
             connected = false;

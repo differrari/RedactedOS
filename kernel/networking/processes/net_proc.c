@@ -93,6 +93,7 @@ static void free_request(HTTPRequestMsg *req) {
 static void run_http_server() {
     uint16_t pid = get_current_proc_pid();
     SocketExtraOptions opt = {0};
+    opt.debug_level = SOCK_DBG_ALL;
     opt.flags = SOCK_OPT_DEBUG;
     http_server_handle_t srv = http_server_create(pid, &opt);
     if (!srv) {
