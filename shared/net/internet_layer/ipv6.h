@@ -20,7 +20,7 @@ typedef struct __attribute__((packed)) {
 typedef ip_tx_scope_t ipv6_tx_scope_t;
 typedef ip_tx_opts_t ipv6_tx_opts_t;
 
-void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ipv6_tx_opts_t* opts, uint8_t hop_limit);
+void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ipv6_tx_opts_t* opts, uint8_t hop_limit, uint8_t dontfrag);
 void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]);
 
 uint16_t ipv6_pmtu_get(const uint8_t dst[16]);

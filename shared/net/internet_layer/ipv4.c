@@ -244,7 +244,7 @@ static bool pick_route(uint32_t dst, const ipv4_tx_opts_t* opts, uint8_t* out_if
 }
 
 
-void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_tx_opts_t* opts, uint8_t ttl) {
+void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_tx_opts_t* opts, uint8_t ttl, uint8_t dontfrag) {
     if (!pkt || !netpkt_len(pkt)) {
         if (pkt) netpkt_unref(pkt);
         return;
@@ -280,6 +280,18 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
         }
     }
 
+    uint16_t mtu = 1500;
+    if (l2) {
+        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
+            l3_ipv4_interface_t* v4 = l2->l3_v4[s];
+            if (!v4) continue;
+            if (v4->mode == IPV4_CFG_DISABLED) continue;
+            if (v4->ip != src_ip) continue;
+            if (v4->runtime_opts_v4.mtu) mtu = v4->runtime_opts_v4.mtu;
+            break;
+        }
+    }
+
     uint32_t hdr_len = IP_IHL_NOOPTS * 4;
     uint32_t seg_len = netpkt_len(pkt);
     void* hdrp = netpkt_push(pkt, hdr_len);
@@ -289,12 +301,18 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
     }
 
     uint32_t total = hdr_len + seg_len;
+    if (dontfrag && total > (uint32_t)mtu) {
+        netpkt_unref(pkt);
+        return;
+    }
     ipv4_hdr_t* ip = (ipv4_hdr_t*)hdrp;
     ip->version_ihl = (uint8_t)((IP_VERSION_4 << 4) | IP_IHL_NOOPTS);
     ip->dscp_ecn = 0;
     ip->total_length = bswap16((uint16_t)total);
     ip->identification = bswap16(g_ip_ident++);
-    ip->flags_frag_offset = bswap16(0);
+    uint16_t ff = 0;
+    if (dontfrag) ff |= 0x4000u;
+    ip->flags_frag_offset = bswap16(ff);
     ip->ttl = ttl ? ttl : IP_TTL_DEFAULT;
     ip->protocol = proto;
     ip->header_checksum = 0;

@@ -5,6 +5,7 @@
 #include "net/link_layer/eth.h"
 #include "std/memory.h"
 #include "net/network_types.h"
+#include "net/transport_layer/socket_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -86,10 +87,10 @@ typedef enum {
 int find_flow(uint16_t local_port, ip_version_t ver, const void *remote_ip, uint16_t remote_port);
 tcp_data* tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *remote_ip, uint16_t remote_port);
 
-bool tcp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t handler);
+bool tcp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t handler, const SocketExtraOptions* extra);
 int tcp_alloc_ephemeral_l3(uint8_t l3_id, uint16_t pid, port_recv_handler_t handler);
 bool tcp_unbind_l3(uint8_t l3_id, uint16_t port, uint16_t pid);
-bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, uint16_t pid);
+bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, uint16_t pid, const SocketExtraOptions* extra);
 
 tcp_result_t tcp_flow_send(tcp_data *flow_ctx);
 tcp_result_t tcp_flow_close(tcp_data *flow_ctx);

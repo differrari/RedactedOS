@@ -341,7 +341,7 @@ static bool pick_route(const uint8_t dst[16], const ipv6_tx_opts_t* opts, uint8_
     return pick_route_global(dst, out_ifx, out_src, out_nh);
 }
 
-void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ipv6_tx_opts_t* opts, uint8_t hop_limit) {
+void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ipv6_tx_opts_t* opts, uint8_t hop_limit, uint8_t dontfrag) {
     if (!dst || !pkt || !netpkt_len(pkt)) {
         if (pkt) netpkt_unref(pkt);
         return;
@@ -350,6 +350,8 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     uint8_t ifx = 0;
     uint8_t src[16] = {0};
     uint8_t nh[16] = {0};
+
+    l3_ipv6_interface_t* src_v6 = NULL;
 
     if (!pick_route(dst, opts, &ifx, src, nh)) {
         netpkt_unref(pkt);
@@ -377,6 +379,7 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
                 return;
             }
             ok = 1;
+            src_v6 = v6;
             break;
         }
         if (!ok) {
@@ -399,11 +402,10 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         return;
     }
 
-    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(ifx);
-
     uint16_t mtu = 1500;
 
-    if (v6 && v6->mtu) mtu = v6->mtu;
+    if (!src_v6 && opts && opts->scope == IP_TX_BOUND_L3) src_v6 = l3_ipv6_find_by_id(opts->index);
+    if (src_v6 && src_v6->mtu) mtu = src_v6->mtu;
 
     uint16_t pmtu = ipv6_pmtu_get(dst);
     if (pmtu && pmtu  <mtu) mtu = pmtu;
@@ -429,6 +431,11 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         memcpy(ip6->dst, dst, 16);
 
         eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, pkt);
+        return;
+    }
+
+    if (dontfrag) {
+        netpkt_unref(pkt);
         return;
     }
 

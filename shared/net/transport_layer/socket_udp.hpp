@@ -23,6 +23,7 @@ class UDPSocket : public Socket {
     net_l4_endpoint src_eps[UDP_RING_CAP];
     int32_t r_head = 0;
     int32_t r_tail = 0;
+    uint32_t rx_bytes = 0;
 
     UDPSocket* next = nullptr;
 
@@ -126,6 +127,18 @@ class UDPSocket : public Socket {
     }
 
     void on_receive(ip_version_t ver, const void* src_ip_addr, uint16_t src_port, uintptr_t ptr, uint32_t len) {
+        uint32_t limit = 0xFFFFFFFFu;
+        if ((extraOpts.flags & SOCK_OPT_BUF_SIZE) && extraOpts.buf_size) limit = extraOpts.buf_size;
+        if (len > limit) {
+            if (ptr && len) free((void*)ptr, len);
+            return;
+        }
+
+        while (rx_bytes + len > limit && r_head != r_tail) {
+            rx_bytes -= ring[r_head].size;
+            free((void*)ring[r_head].ptr, ring[r_head].size);
+            r_head = (r_head + 1) % UDP_RING_CAP;
+        }
         uintptr_t copy = (uintptr_t)malloc(len);
         if (!copy) {
             if (ptr && len) free((void*)ptr, len);
@@ -137,12 +150,14 @@ class UDPSocket : public Socket {
 
         int nexti = (r_tail + 1) % UDP_RING_CAP;
         if (nexti == r_head) {
+            rx_bytes -= ring[r_head].size;
             free((void*)ring[r_head].ptr, ring[r_head].size);
             r_head = (r_head + 1) % UDP_RING_CAP;
         }
 
         ring[r_tail].ptr = copy;
         ring[r_tail].size = len;
+        rx_bytes += len;
 
         src_eps[r_tail].ver = ver;
         memset(src_eps[r_tail].ip, 0, 16);
@@ -453,7 +468,7 @@ public:
                         tx.scope = IP_TX_BOUND_L3;
                         tx.index = bl3;
 
-                        udp_send_segment(&src, &d, pay, &tx);
+                        udp_send_segment(&src, &d, pay, &tx, (extraOpts.flags & SOCK_OPT_TTL) ? extraOpts.ttl : 0, (extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
                     }
 
                     remoteEP = d;
@@ -489,7 +504,7 @@ public:
                 tx.scope = IP_TX_BOUND_L3;
                 tx.index = db_l3;
 
-                udp_send_segment(&src, &d, pay, &tx);
+                udp_send_segment(&src, &d, pay, &tx, (extraOpts.flags & SOCK_OPT_TTL) ? extraOpts.ttl : 0, (extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
                 remoteEP = d;
                 return (int64_t)len;
             }
@@ -533,7 +548,7 @@ public:
             tx.scope = (ip_tx_scope_t)plan.fixed_opts.scope;
             tx.index = plan.fixed_opts.index;
 
-            udp_send_segment(&src, &d, pay, &tx);
+            udp_send_segment(&src, &d, pay, &tx, (extraOpts.flags & SOCK_OPT_TTL) ? extraOpts.ttl : 0, (extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
             remoteEP = d;
             return (int64_t)len;
         }
@@ -561,7 +576,7 @@ public:
                     tx.scope = IP_TX_BOUND_L3;
                     tx.index = bl3;
 
-                    udp_send_segment(&src, &d, pay, &tx);
+                    udp_send_segment(&src, &d, pay, &tx, (extraOpts.flags & SOCK_OPT_TTL) ? extraOpts.ttl : 0, (extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
                 }
 
                 remoteEP = d;
@@ -606,7 +621,7 @@ public:
             tx.scope = (ip_tx_scope_t)plan.fixed_opts.scope;
             tx.index = plan.fixed_opts.index;
 
-            udp_send_segment(&src, &d, pay, &tx);
+            udp_send_segment(&src, &d, pay, &tx, (extraOpts.flags & SOCK_OPT_TTL) ? extraOpts.ttl : 0, (extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
             remoteEP = d;
             return (int64_t)len;
         }
@@ -628,6 +643,7 @@ public:
         sizedptr p = ring[r_head];
         net_l4_endpoint se = src_eps[r_head];
         r_head = (r_head + 1) % UDP_RING_CAP;
+        rx_bytes -= p.size;
 
         uint32_t tocpy = p.size;
         if (tocpy > len) tocpy = (uint32_t)len;
@@ -649,6 +665,7 @@ public:
         ev.remote_ep = remoteEP;
         netlog_socket_event(&extraOpts, &ev);
         while (r_head != r_tail) {
+            rx_bytes -= ring[r_head].size;
             free((void*)ring[r_head].ptr, ring[r_head].size);
             r_head = (r_head + 1) % UDP_RING_CAP;
         }

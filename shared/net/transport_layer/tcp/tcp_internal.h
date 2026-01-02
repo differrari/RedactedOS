@@ -91,6 +91,12 @@ typedef struct {
     tcp_tx_seg_t txq[TCP_MAX_TX_SEGS];
     uint8_t fin_pending;
     uint32_t fin_seq;
+
+    uint8_t ip_ttl;
+    uint8_t ip_dontfrag;
+    uint8_t keepalive_on;
+    uint32_t keepalive_ms;
+    uint32_t keepalive_idle_ms;
 } tcp_flow_t;
 
 extern tcp_flow_t tcp_flows[MAX_TCP_FLOWS];
@@ -113,7 +119,7 @@ static inline uint16_t tcp_checksum_ipv6(const void *segment, uint16_t seg_len, 
     return bswap16(csum);
 }
 
-bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp);
+bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp, uint8_t ttl, uint8_t dontfrag);
 void tcp_send_reset(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port, uint32_t seq, uint32_t ack, bool ack_valid);
 tcp_tx_seg_t *tcp_find_first_unacked(tcp_flow_t *flow);
 void tcp_cc_on_timeout(tcp_flow_t *f);
@@ -121,6 +127,7 @@ void tcp_cc_on_timeout(tcp_flow_t *f);
 int tcp_has_pending_timers(void);
 
 void tcp_daemon_kick(void);
+uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow);
 
 #ifdef __cplusplus
 }

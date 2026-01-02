@@ -193,8 +193,19 @@ class TCPSocket : public Socket {
     void on_receive(uintptr_t ptr, uint32_t len) {
         if (!ptr || !len) return;
 
+        uint64_t limit = ring.capacity();
+        if ((extraOpts.flags & SOCK_OPT_BUF_SIZE) && extraOpts.buf_size) {
+            uint64_t m = extraOpts.buf_size;
+            if (m < limit) limit = m;
+        }
+
         const uint8_t* src = (const uint8_t*)ptr;
         for (uint32_t i = 0; i < len; ++i) {
+            while (ring.size() >= limit) {
+                uint8_t drop;
+                if (!ring.pop(drop)) break;
+            }
+
             if (ring.push(src[i])) continue;
 
             uint8_t drop;
@@ -392,7 +403,7 @@ public:
 
         for (int i = 0; i < m; ++i){
             uint8_t id = dedup_ids[i];
-            bool ok = tcp_bind_l3(id, port, pid, dispatch);
+            bool ok = tcp_bind_l3(id, port, pid, dispatch, &extraOpts);
             if (!ok){
                 for (int j=0;j<bdone;++j) (void)tcp_unbind_l3(bound_ids[j], port, pid);
                 return SOCK_ERR_SYS;
@@ -552,7 +563,7 @@ public:
         }
 
         tcp_data ctx_copy{};
-        if (!tcp_handshake_l3(chosen_l3, localPort, &d, &ctx_copy, pid)) return SOCK_ERR_SYS;
+        if (!tcp_handshake_l3(chosen_l3, localPort, &d, &ctx_copy, pid, &extraOpts)) return SOCK_ERR_SYS;
 
         flow = tcp_get_ctx(localPort, d.ver, (const void*)d.ip, d.port);
         if (!flow) return SOCK_ERR_SYS;

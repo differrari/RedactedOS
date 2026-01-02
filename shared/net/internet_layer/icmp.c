@@ -115,7 +115,7 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
     }
     memcpy(p, (const void*)buf, tot_len);
     free((void*)buf, 8 + 56);
-    ipv4_send_packet(dst_ip, 1, pkt, (const ipv4_tx_opts_t*)tx_opts_or_null, (uint8_t)ttl);
+    ipv4_send_packet(dst_ip, 1, pkt, (const ipv4_tx_opts_t*)tx_opts_or_null, (uint8_t)ttl, 0);
 
     uint32_t start = (uint32_t)get_time();
     for (;;) {
@@ -208,7 +208,7 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
                 void* p = netpkt_put(pkt, rlen);
                 if (p) {
                     memcpy(p, (const void*)buf, rlen);
-                    ipv4_send_packet(src_ip, 1, pkt, &o, IP_TTL_DEFAULT);
+                    ipv4_send_packet(src_ip, 1, pkt, &o, IP_TTL_DEFAULT, 0);
                 } else {
                     netpkt_unref(pkt);
                 }

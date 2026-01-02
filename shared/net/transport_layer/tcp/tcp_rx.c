@@ -275,6 +275,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
     int idx = find_flow(dst_port, ipver, src_ip_addr, src_port);
     tcp_flow_t *flow = idx >= 0 ? &tcp_flows[idx] : NULL;
+    if (flow) flow->keepalive_idle_ms = 0;
 
     l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(l3_id);
     l3_ipv6_interface_t *v6 = v4 ? NULL : l3_ipv6_find_by_id(l3_id);
@@ -365,9 +366,15 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->delayed_ack_pending = 0;
             flow->delayed_ack_timer_ms = 0;
 
-            flow->rcv_wnd_max = TCP_RECV_WINDOW;
+            flow->rcv_wnd_max = lf->rcv_wnd_max;
             flow->rcv_buf_used = 0;
             tcp_update_rcv_window(flow);
+
+            flow->ip_ttl = lf->ip_ttl;
+            flow->ip_dontfrag = lf->ip_dontfrag;
+            flow->keepalive_on = lf->keepalive_on;
+            flow->keepalive_ms = lf->keepalive_ms;
+            flow->keepalive_idle_ms = 0;
 
             flow->cwnd = flow->mss;
             flow->ssthresh = TCP_RECV_WINDOW;
@@ -395,12 +402,12 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 ipv4_tx_opts_t tx;
                 tx.scope = IP_TX_BOUND_L3;
                 tx.index = v4->l3_id;
-                tcp_send_segment(IP_VER4, flow->local.ip, src_ip_addr, &synack_hdr, syn_opts, syn_opts_len, NULL, 0, (const ip_tx_opts_t *)&tx);
+                tcp_send_segment(IP_VER4, flow->local.ip, src_ip_addr, &synack_hdr, syn_opts, syn_opts_len, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
             } else if (ipver == IP_VER6 && v6){
                 ipv6_tx_opts_t tx;
                 tx.scope = IP_TX_BOUND_L3;
                 tx.index = v6->l3_id;
-                tcp_send_segment(IP_VER6, flow->local.ip, src_ip_addr, &synack_hdr, syn_opts, syn_opts_len, NULL, 0, (const ip_tx_opts_t *)&tx);
+                tcp_send_segment(IP_VER6, flow->local.ip, src_ip_addr, &synack_hdr, syn_opts, syn_opts_len, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
             }
 
             tcp_daemon_kick();
@@ -552,11 +559,11 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             if (flow->remote.ver == IP_VER4){
                 ipv4_tx_opts_t tx;
                 tcp_build_tx_opts_from_local_v4(flow->local.ip, &tx);
-                tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &final_ack, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx);
+                tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &final_ack, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
             } else {
                 ipv6_tx_opts_t tx;
                 tcp_build_tx_opts_from_local_v6(flow->local.ip, &tx);
-                tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &final_ack, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx);
+                tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &final_ack, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
             }
 
             flow->state = TCP_ESTABLISHED;

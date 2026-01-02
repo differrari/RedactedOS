@@ -1,6 +1,6 @@
 #include "tcp_internal.h"
 
-static uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow) {
+uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow) {
     uint32_t wnd = flow->rcv_wnd;
     if (wnd > flow->rcv_wnd_max) wnd = flow->rcv_wnd_max;
 
@@ -47,6 +47,7 @@ tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow){
 }
 
 void tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
+    if (flow) flow->keepalive_idle_ms = 0;
     tcp_hdr_t hdr;
 
     hdr.src_port = bswap16(flow->local_port);
@@ -65,11 +66,11 @@ void tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
     if (flow->remote.ver == IP_VER4) {
         ipv4_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v4(flow->local.ip, &tx);
-        (void)tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &hdr,NULL, 0, seg->buf ? (const uint8_t *)seg->buf : NULL, seg->len, (const ip_tx_opts_t *)&tx);
+        (void)tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &hdr, NULL, 0, seg->buf ? (const uint8_t *)seg->buf : NULL, seg->len, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
     } else if (flow->remote.ver == IP_VER6) {
         ipv6_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v6(flow->local.ip, &tx);
-        (void)tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &hdr,NULL, 0, seg->buf ? (const uint8_t *)seg->buf : NULL, seg->len, (const ip_tx_opts_t *)&tx);
+        (void)tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &hdr, NULL, 0, seg->buf ? (const uint8_t *)seg->buf : NULL, seg->len, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
     }
 
     tcp_daemon_kick();
@@ -142,11 +143,11 @@ void tcp_send_ack_now(tcp_flow_t *flow){
     if (flow->remote.ver == IP_VER4) {
         ipv4_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v4(flow->local.ip, &tx);
-        (void)tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &ackhdr, opts_len ? opts : NULL, opts_len, NULL, 0, (const ip_tx_opts_t *)&tx);
+        (void)tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &ackhdr, opts_len ? opts : NULL, opts_len, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
     } else if (flow->remote.ver == IP_VER6) {
         ipv6_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v6(flow->local.ip, &tx);
-        (void)tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &ackhdr, opts_len ? opts : NULL, opts_len, NULL, 0, (const ip_tx_opts_t *)&tx);
+        (void)tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &ackhdr, opts_len ? opts : NULL, opts_len, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
     }
 
     flow->delayed_ack_pending = 0;
