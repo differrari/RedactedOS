@@ -63,7 +63,8 @@ static void read_identifier(Scanner *s, Token *tok) {
     tok->pos = start;
 }
 
-static bool read_number(Scanner *s, Token *tok) {
+static bool read_number(Tokenizer *t, Token *tok) {
+    Scanner *s = t->s;
     uint32_t start = s->pos;
     const char *buf = s->buf;
     uint32_t len = s->len;
@@ -89,7 +90,7 @@ static bool read_number(Scanner *s, Token *tok) {
             if (!ok) return false;
 
             s->pos = pos;
-            tok->kind = TOK_NUMBER;
+            tok->kind = t->skip_type_check ? TOK_CONST : TOK_NUMBER;
             tok->start = buf + start;
             tok->length = pos - start;
             tok->pos = start;
@@ -112,7 +113,7 @@ static bool read_number(Scanner *s, Token *tok) {
             if (!ok) return false;
 
             s->pos = pos;
-            tok->kind = TOK_NUMBER;
+            tok->kind = t->skip_type_check ? TOK_CONST : TOK_NUMBER;
             tok->start = buf + start;
             tok->length = pos - start;
             tok->pos = start;
@@ -136,7 +137,7 @@ static bool read_number(Scanner *s, Token *tok) {
             if (!ok) return false;
 
             s->pos = pos;
-            tok->kind = TOK_NUMBER;
+            tok->kind = t->skip_type_check ? TOK_CONST : TOK_NUMBER;
             tok->start = buf + start;
             tok->length = pos - start;
             tok->pos= start;
@@ -174,7 +175,7 @@ static bool read_number(Scanner *s, Token *tok) {
     }
 
     s->pos = mant_end;
-    tok->kind = TOK_NUMBER;
+    tok->kind = t->skip_type_check ? TOK_CONST : TOK_NUMBER;
     tok->start = buf + start;
     tok->length = mant_end - start;
     tok->pos = start;
@@ -190,7 +191,7 @@ static bool read_string(Tokenizer *t, Token *tok) {
     while (!scan_eof(s)) {
         char c = scan_next(s);
         if (c == '"') {
-            tok->kind = TOK_STRING;
+            tok->kind = t->skip_type_check ? TOK_CONST : TOK_STRING;
             tok->start = s->buf + start;
             tok->length = s->pos - start;
             tok->pos = start;
@@ -358,7 +359,7 @@ bool tokenizer_next(Tokenizer *t, Token *out) {
 
     if (c >= '0' && c <= '9') {
         uint32_t pos_before = s->pos;
-        if (read_number(s, out)) return true;
+        if (read_number(t, out)) return true;
 
         tokenizer_fail(t, TOKENIZER_ERR_INVALID_NUMBER);
         out->kind = TOK_INVALID;

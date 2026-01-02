@@ -64,6 +64,9 @@ void *calloc(size_t nitems, size_t size);
 
 sizedptr dir_list(const char *path);
 
+int print(const char *fmt, ...);
+char *read_full_file(const char *path);
+
 static inline void yield(){
     msleep(0);
 }
