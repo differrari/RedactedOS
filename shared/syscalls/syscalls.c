@@ -3,6 +3,18 @@
 #include "math/math.h"
 #include "std/memory.h"
 
+static char log_buf[1024];
+
+int print(const char *fmt, ...){
+    __attribute__((aligned(16))) va_list args;
+    va_start(args, fmt); 
+    size_t n = string_format_va_buf(fmt, log_buf, sizeof(log_buf), args);
+    va_end(args);
+    if (n >= sizeof(log_buf)) log_buf[sizeof(log_buf)-1] = '\0';
+    printl(log_buf);
+    return 0;
+}
+
 int printf(const char *fmt, ...){
     __attribute__((aligned(16))) va_list args;
     va_start(args, fmt);
@@ -55,6 +67,17 @@ void* calloc(size_t nitems, size_t size){
 
 void* zalloc(size_t size){
     return malloc(size);
+}
+
+char *read_full_file(const char *path){
+    
+    file fd = {};
+    fopen(path, &fd);
+    char *fcontent = (char*)malloc(fd.size + 1);
+    
+    fread(&fd, fcontent, fd.size);
+    
+    return fcontent;
 }
 
 #endif

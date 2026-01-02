@@ -76,7 +76,7 @@ void kernel_main() {
 
     debug_load();
     
-    load_module(&theme_mod);//TODO
+    load_module(&theme_mod);
 
 #if TEST
     if (!run_tests()) panic("Test run failed",0);

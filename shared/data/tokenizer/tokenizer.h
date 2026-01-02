@@ -9,6 +9,7 @@ typedef enum {
     TOK_IDENTIFIER,
     TOK_NUMBER,
     TOK_STRING,
+    TOK_CONST,
 
     TOK_OPERATOR,
 
@@ -45,6 +46,7 @@ typedef struct {
     bool failed;
     TokenizerError err;
     uint32_t err_pos;
+    bool skip_type_check;
 } Tokenizer;
 
 static inline Tokenizer tokenizer_make(Scanner *s) {
