@@ -11,6 +11,7 @@
 #include "net/internet_layer/ipv4_utils.h"
 #include "net/internet_layer/ipv6_utils.h"
 #include "net/internet_layer/ipv6.h"
+#include "net/internet_layer/igmp.h"
 
 static constexpr int32_t UDP_RING_CAP = 1024;
 static constexpr dns_server_sel_t UDP_DNS_SEL = DNS_USE_BOTH;
@@ -509,7 +510,46 @@ public:
                 return (int64_t)len;
             }
 
-            if (ipv4_is_multicast(dip)) return SOCK_ERR_PROTO;
+            if (ipv4_is_multicast(dip)) {
+                if (bound_l3_count == 0) return SOCK_ERR_SYS;
+
+                for (int i = 0; i < bound_l3_count; ++i) {
+                    uint8_t bl3 = bound_l3[i];
+                    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(bl3);
+                    if (!is_valid_v4_l3_for_bind(v4)) continue;
+                    if (!v4->l2) continue;
+
+                    if (!bound) {
+                        int p = udp_alloc_ephemeral_l3(bl3, pid, dispatch);
+                        if (p < 0) continue;
+                        localPort = (uint16_t)p;
+                        add_bound_l3(bl3);
+                        bound = true;
+                    } else if (localPort == 0) {
+                        int p = udp_alloc_ephemeral_l3(bl3, pid, dispatch);
+                        if (p < 0) continue;
+                        localPort = (uint16_t)p;
+                    }
+
+                    (void)l2_ipv4_mcast_join(v4->l2->ifindex, dip);
+                    (void)igmp_send_join(v4->l2->ifindex, dip);
+
+                    net_l4_endpoint src;
+                    src.ver = IP_VER4;
+                    memset(src.ip, 0, 16);
+                    memcpy(src.ip, &v4->ip, 4);
+                    src.port = localPort;
+
+                    ipv4_tx_opts_t tx;
+                    tx.scope = IP_TX_BOUND_L3;
+                    tx.index = bl3;
+
+                    udp_send_segment(&src, &d, pay, &tx, (extraOpts.flags & SOCK_OPT_TTL) ? extraOpts.ttl : 0, (extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
+                }
+
+                remoteEP = d;
+                return (int64_t)len;
+            }
 
             uint8_t allowed_v4[SOCK_MAX_L3];
             int n_allowed = 0;

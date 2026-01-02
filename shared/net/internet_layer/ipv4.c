@@ -2,6 +2,7 @@
 #include "ipv4_route.h"
 #include "net/link_layer/arp.h"
 #include "net/internet_layer/icmp.h"
+#include "net/internet_layer/igmp.h"
 #include "std/memory.h"
 #include "std/string.h"
 #include "net/transport_layer/tcp.h"
@@ -271,6 +272,8 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
 
     if (is_dbcast) {
         memset(dst_mac, 0xFF, 6);
+    } else if (ipv4_is_multicast(dst_ip)) {
+        ipv4_mcast_to_mac(dst_ip, dst_mac);
     } else {
         if (l2 && l2->kind == NET_IFK_LOCALHOST) {
             memset(dst_mac, 0, 6);
@@ -383,7 +386,25 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     }
     if (ccount == 0) return;
 
-    if (ipv4_is_multicast(dst)) return;
+    if (ipv4_is_multicast(dst)) {
+        bool joined = false;
+        for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) if (l2->ipv4_mcast[i] == dst) {
+            joined = true;
+            break;
+        }
+        if (!joined) return;
+        for (int i = 0; i < ccount; ++i) {
+            uint8_t l3id = cand[i]->l3_id;
+            switch (proto) {
+                case 2: igmp_input((uint8_t)ifindex, src, dst, (const void*)l4, l4_len); break;
+                case 6: tcp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
+                case 17: udp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
+                default: break;
+            }
+        }
+        return;
+    }
+
 
     if (dst == 0xFFFFFFFFu) {
         if (ccount == 1) {

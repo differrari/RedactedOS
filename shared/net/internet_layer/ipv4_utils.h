@@ -32,6 +32,8 @@ bool ipv4_same_subnet(uint32_t a, uint32_t b, uint32_t mask);
 void ipv4_to_string(uint32_t ip, char* buf);
 bool ipv4_parse(const char* s, uint32_t* out);
 
+void ipv4_mcast_to_mac(uint32_t group, uint8_t out_mac[6]);
+
 #ifdef __cplusplus
 }
 #endif

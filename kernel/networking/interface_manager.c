@@ -9,6 +9,7 @@
 #include "memory/page_allocator.h"
 #include "net/internet_layer/ipv4_utils.h"
 #include "net/internet_layer/ipv6_utils.h"
+#include "net/internet_layer/igmp.h"
 
 static void* g_kmem_page_v4 = NULL;
 static void* g_kmem_page_v6 = NULL;
@@ -54,6 +55,17 @@ static bool v4_has_dhcp_on_l2(uint8_t ifindex){
         if (!x->l2) continue;
         if (x->l2->ifindex != ifindex) continue;
         if (x->mode == IPV4_CFG_DHCP) return true;
+    }
+    return false;
+}
+
+static bool l2_has_active_v4(l2_interface_t* itf) {
+    if (!itf) return false;
+    for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
+        l3_ipv4_interface_t* v4 = itf->l3_v4[s];
+        if (!v4) continue;
+        if (v4->mode == IPV4_CFG_DISABLED) continue;
+        if (v4->ip) return true;
     }
     return false;
 }
@@ -153,6 +165,7 @@ bool l2_ipv4_mcast_join(uint8_t ifindex, uint32_t group) {
     if (find_ipv4_group_index(itf, group) >= 0) return true;
     if (itf->ipv4_mcast_count >= MAX_IPV4_MCAST_PER_INTERFACE) return false;
     itf->ipv4_mcast[itf->ipv4_mcast_count++] = group;
+    if (itf->kind != NET_IFK_LOCALHOST && l2_has_active_v4(itf)) (void)igmp_send_join(ifindex, group);
     return true;
 }
 
@@ -163,6 +176,7 @@ bool l2_ipv4_mcast_leave(uint8_t ifindex, uint32_t group) {
     if (idx < 0) return true;
     for (int i = idx + 1; i < (int)itf->ipv4_mcast_count; ++i) itf->ipv4_mcast[i-1] = itf->ipv4_mcast[i];
     if (itf->ipv4_mcast_count) itf->ipv4_mcast_count -= 1;
+    if (itf->kind != NET_IFK_LOCALHOST && l2_has_active_v4(itf)) (void)igmp_send_leave(ifindex, group);
     return true;
 }
 
@@ -320,6 +334,8 @@ uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
     }
     port_manager_init(n->port_manager);
 
+    if (n->mode != IPV4_CFG_DISABLED && n->ip && l2->kind != NET_IFK_LOCALHOST) (void)l2_ipv4_mcast_join(ifindex, 0xE0000001u);
+
     return n->l3_id;
 }
 
@@ -362,6 +378,7 @@ bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
         n->mask = mask;
         n->gw = gw;
         n->broadcast = ipv4_broadcast_calc(ip, mask);
+        if (n->ip && l2->kind != NET_IFK_LOCALHOST) (void)l2_ipv4_mcast_join(l2->ifindex, 0xE0000001u);
     } else {
         n->ip = 0;
         n->mask = 0;

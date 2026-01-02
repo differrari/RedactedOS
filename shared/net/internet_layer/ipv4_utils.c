@@ -137,3 +137,13 @@ bool ipv4_parse(const char* s, uint32_t* out) {
     *out = ip;
     return true;
 }
+
+void ipv4_mcast_to_mac(uint32_t group, uint8_t out_mac[6]) {
+    if (!out_mac) return;
+    out_mac[0] = 0x01;
+    out_mac[1] = 0x00;
+    out_mac[2] = 0x5e;
+    out_mac[3] = (uint8_t)((group >> 16) & 0x7Fu);
+    out_mac[4] = (uint8_t)((group >> 8) & 0xFFu);
+    out_mac[5] = (uint8_t)(group & 0xFFu);
+}
