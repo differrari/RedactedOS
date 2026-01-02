@@ -188,9 +188,6 @@ class TCPSocket : public Socket {
             s->on_receive(frame_ptr, frame_len);
             return;
         }
-        if (frame_ptr && frame_len){
-            free((void*)frame_ptr, frame_len);
-        }
     }
 
     void on_receive(uintptr_t ptr, uint32_t len) {
@@ -205,7 +202,7 @@ class TCPSocket : public Socket {
             ring.push(src[i]);
         }
 
-        free((void*)ptr, len);
+        //free((void*)ptr, len);
     }
 
     void insert_in_list() {
@@ -562,15 +559,15 @@ public:
 
         remoteEP = d;
         connected = true;
-        netlog_socket_event_t ev{};
-        ev.comp = NETLOG_COMP_TCP;
-        ev.action = NETLOG_ACT_CONNECTED;
-        ev.pid = pid;
-        ev.u0 = localPort;
-        ev.u1 = remoteEP.port;
-        ev.local_port = localPort;
-        ev.remote_ep = remoteEP;
-        netlog_socket_event(&extraOpts, &ev);
+        netlog_socket_event_t ev1{};
+        ev1.comp = NETLOG_COMP_TCP;
+        ev1.action = NETLOG_ACT_CONNECTED;
+        ev1.pid = pid;
+        ev1.u0 = localPort;
+        ev1.u1 = remoteEP.port;
+        ev1.local_port = localPort;
+        ev1.remote_ep = remoteEP;
+        netlog_socket_event(&extraOpts, &ev1);
         return SOCK_OK;
     }
 
