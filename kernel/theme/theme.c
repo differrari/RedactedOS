@@ -1,6 +1,6 @@
 #include "theme.h"
 #include "syscalls/syscalls.h"
-#include "config/toml.h"
+#include "data/toml.h"
 #include "default.h"
 #include "console/kio.h"
 #include "math/math.h"

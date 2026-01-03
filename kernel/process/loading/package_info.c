@@ -2,7 +2,7 @@
 #include "std/string.h"
 #include "syscalls/syscalls.h"
 #include "console/kio.h"
-#include "config/toml.h"
+#include "data/toml.h"
 
 static inline void handle_package_kvp(const char *key, char *value, size_t value_len, void* ctx){
     package_info *pkg_info = (package_info*)ctx;
