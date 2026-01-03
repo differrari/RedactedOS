@@ -62,7 +62,7 @@ void read_toml(char *info, size_t size, toml_handler on_kvp, void *context){
         switch (t.kind) {
             case TOK_IDENTIFIER:{
                 Token op;
-                if (!ts_expect(&ts, TOK_OPERATOR, &op)){
+                if (!ts_expect(&ts, TOK_ASSIGN, &op)){
                     return;
                 }
                 read_toml_value(&ts, t, on_kvp, context);
