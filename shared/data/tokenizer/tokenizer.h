@@ -41,12 +41,18 @@ typedef enum {
     TOKENIZER_ERR_UNTERMINATED_COMMENT
 } TokenizerError;
 
+typedef enum {
+    TOKENIZER_COMMENT_TYPE_SLASH,
+    TOKENIZER_COMMENT_TYPE_HASH,
+} TokenizerComment;
+
 typedef struct {
     Scanner *s;
     bool failed;
     TokenizerError err;
     uint32_t err_pos;
     bool skip_type_check;
+    TokenizerComment comment_type;
 } Tokenizer;
 
 static inline Tokenizer tokenizer_make(Scanner *s) {

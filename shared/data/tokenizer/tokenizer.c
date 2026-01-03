@@ -16,30 +16,40 @@ static void skip_ws_and_comments(Tokenizer *t) {
 
         uint32_t pos =s->pos;
 
-        if (scan_match(s, '/')) {
+        if (t->comment_type == TOKENIZER_COMMENT_TYPE_SLASH){
             if (scan_match(s, '/')) {
+                if (scan_match(s, '/')) {
+                    while (!scan_eof(s)) {
+                        char c = scan_next(s);
+                        if (c == '\n' || c == '\r') break;
+                    }
+                    continue;
+                } else if (scan_match(s, '*')) {
+                    int found = 0;
+                    while (!scan_eof(s)) {
+                        char c = scan_next(s);
+                        if (c == '*' && !scan_eof(s) && scan_peek(s) == '/') {
+                            scan_next(s);
+                            found = 1;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        tokenizer_fail(t, TOKENIZER_ERR_UNTERMINATED_COMMENT);
+                        return;
+                    }
+                    continue;
+                } else {
+                    s->pos = pos;
+                }
+            }
+        } else if (t->comment_type == TOKENIZER_COMMENT_TYPE_HASH){
+            if (scan_match(s, '#')) {
                 while (!scan_eof(s)) {
                     char c = scan_next(s);
                     if (c == '\n' || c == '\r') break;
                 }
                 continue;
-            } else if (scan_match(s, '*')) {
-                int found = 0;
-                while (!scan_eof(s)) {
-                    char c = scan_next(s);
-                    if (c == '*' && !scan_eof(s) && scan_peek(s) == '/') {
-                        scan_next(s);
-                        found = 1;
-                        break;
-                    }
-                }
-                if (!found) {
-                    tokenizer_fail(t, TOKENIZER_ERR_UNTERMINATED_COMMENT);
-                    return;
-                }
-                continue;
-            } else {
-                s->pos = pos;
             }
         }
 
