@@ -334,7 +334,7 @@ uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
     }
     port_manager_init(n->port_manager);
 
-    if (n->mode != IPV4_CFG_DISABLED && n->ip && l2->kind != NET_IFK_LOCALHOST) (void)l2_ipv4_mcast_join(ifindex, 0xE0000001u);
+    if (n->mode != IPV4_CFG_DISABLED && n->ip && l2->kind != NET_IFK_LOCALHOST) (void)l2_ipv4_mcast_join(ifindex, IPV4_MCAST_ALL_HOSTS);
 
     return n->l3_id;
 }
@@ -378,7 +378,7 @@ bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
         n->mask = mask;
         n->gw = gw;
         n->broadcast = ipv4_broadcast_calc(ip, mask);
-        if (n->ip && l2->kind != NET_IFK_LOCALHOST) (void)l2_ipv4_mcast_join(l2->ifindex, 0xE0000001u);
+        if (n->ip && l2->kind != NET_IFK_LOCALHOST) (void)l2_ipv4_mcast_join(l2->ifindex, IPV4_MCAST_ALL_HOSTS);
     } else {
         n->ip = 0;
         n->mask = 0;

@@ -3,8 +3,11 @@
 #include "net/internet_layer/ipv4_utils.h"
 #include "net/checksums.h"
 #include "networking/interface_manager.h"
+#include "kernel_processes/kprocess_loader.h"
+#include "math/rng.h"
 #include "std/memory.h"
 #include "std/string.h"
+#include "syscalls/syscalls.h"
 
 #define IGMP_TYPE_QUERY 0x11
 #define IGMP_TYPE_V2_REPORT 0x16
@@ -16,6 +19,25 @@ typedef struct __attribute__((packed)) igmp_hdr_t {
     uint16_t checksum;
     uint32_t group;
 } igmp_hdr_t;
+
+typedef struct {
+    uint8_t used;
+    uint8_t ifindex;
+    uint32_t group;
+    uint32_t refresh_ms;
+    uint32_t query_due_ms;
+    uint8_t query_pending;
+} igmp_state_t;
+
+static volatile int igmp_daemon_running = 0;
+static uint32_t igmp_uptime_ms = 0;
+static rng_t igmp_rng;
+static int igmp_rng_inited = 0;
+
+#define IGMP_MAX_TRACK 64
+#define IGMP_REFRESH_PERIOD_MS 60000
+
+static igmp_state_t igmp_states[IGMP_MAX_TRACK];
 
 static bool send_igmp(uint8_t ifindex, uint32_t dst, uint8_t type, uint32_t group) {
     uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + (uint32_t)sizeof(ipv4_hdr_t);
@@ -42,23 +64,131 @@ static bool send_igmp(uint8_t ifindex, uint32_t dst, uint8_t type, uint32_t grou
     return true;
 }
 
+static igmp_state_t* igmp_find_state(uint8_t ifindex, uint32_t group) {
+    for (int i = 0; i < IGMP_MAX_TRACK; ++i) {
+        igmp_state_t* s = &igmp_states[i];
+        if (!s->used) continue;
+        if (s->ifindex == ifindex &&s->group == group) return s;
+    }
+    return 0;
+}
+
+static igmp_state_t* igmp_get_state(uint8_t ifindex, uint32_t group) {
+    igmp_state_t* s = igmp_find_state(ifindex, group);
+    if (s) return s;
+    for (int i = 0; i < IGMP_MAX_TRACK; ++i) {
+        if (!igmp_states[i].used) {
+            igmp_states[i].used = 1;
+            igmp_states[i].ifindex = ifindex;
+            igmp_states[i].group = group;
+            igmp_states[i].refresh_ms = 0;
+            igmp_states[i].query_due_ms = 0;
+            igmp_states[i].query_pending = 0;
+            return &igmp_states[i];
+        }
+    }
+    return 0;
+}
+
+static int igmp_has_pending_timers(void) {
+    for (int i = 0; i < IGMP_MAX_TRACK; ++i) {
+        igmp_state_t* s = &igmp_states[i];
+        if (!s->used) continue;
+        if (s->query_pending) return 1;
+        if (s->refresh_ms < IGMP_REFRESH_PERIOD_MS) return 1;
+    }
+    return 0;
+}
+
+static int igmp_daemon_entry(int argc, char* argv[]) {
+    (void)argc;
+    (void)argv;
+
+    igmp_daemon_running = 1;
+
+    if (!igmp_rng_inited) {
+        rng_init_random(&igmp_rng);
+        igmp_rng_inited = 1;
+    }
+
+    const uint32_t tick_ms = 100;
+
+    while (igmp_has_pending_timers()) {
+        igmp_uptime_ms += tick_ms;
+
+        for (int i = 0; i < IGMP_MAX_TRACK; ++i) {
+            igmp_state_t* s = &igmp_states[i];
+            if (!s->used) continue;
+
+            l2_interface_t* l2 = l2_interface_find_by_index(s->ifindex);
+            bool still_joined = false;
+            if (l2) {
+                for (int j = 0; j < (int)l2->ipv4_mcast_count; ++j) {
+                    if (l2->ipv4_mcast[j] == s->group) {
+                        still_joined = true;
+                        break;
+                    }
+                }
+            }
+            if (!still_joined) {
+                s->used = 0;
+                continue;
+            }
+
+            s->refresh_ms+= tick_ms;
+            if (s->refresh_ms>= IGMP_REFRESH_PERIOD_MS) {
+                s->refresh_ms = 0;
+                (void)send_igmp(s->ifindex, s->group, IGMP_TYPE_V2_REPORT, s->group);
+            }
+
+            if (s->query_pending && igmp_uptime_ms >= s->query_due_ms) {
+                s->query_pending = 0;
+                (void)send_igmp(s->ifindex, s->group, IGMP_TYPE_V2_REPORT, s->group);
+            }
+        }
+        sleep(tick_ms);
+    }
+
+    igmp_daemon_running = 0;
+    return 0;
+}
+
+static void igmp_daemon_kick(void) {
+    if (igmp_daemon_running) return;
+    if (!igmp_has_pending_timers()) return;
+    create_kernel_process("igmp_daemon", igmp_daemon_entry, 0, 0);
+}
+
 bool igmp_send_join(uint8_t ifindex, uint32_t group) {
     if (!ipv4_is_multicast(group)) return false;
+    igmp_state_t* s = igmp_get_state(ifindex, group);
+    if (s) s->refresh_ms = 0;
+    igmp_daemon_kick();
     return send_igmp(ifindex, group, IGMP_TYPE_V2_REPORT, group);
 }
 
 bool igmp_send_leave(uint8_t ifindex, uint32_t group) {
     if (!ipv4_is_multicast(group)) return false;
-    return send_igmp(ifindex, 0xE0000002u, IGMP_TYPE_V2_LEAVE, group);
+    igmp_state_t* s = igmp_find_state(ifindex, group);
+    if (s) s->used = 0;
+    igmp_daemon_kick();
+    return send_igmp(ifindex, IPV4_MCAST_ALL_ROUTERS, IGMP_TYPE_V2_LEAVE, group);
 }
 
-static void send_reports_for_interface(uint8_t ifindex) {
-    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-    if (!l2) return;
-    for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) {
-        uint32_t g = l2->ipv4_mcast[i];
-        if (ipv4_is_multicast(g)) (void)send_igmp(ifindex,g, IGMP_TYPE_V2_REPORT, g);
+static void schedule_report(uint8_t ifindex, uint32_t group, uint32_t max_resp_ds) {
+    if (!ipv4_is_multicast(group)) return;
+    igmp_state_t* s = igmp_get_state(ifindex, group);
+    
+    if (!s) return;
+    uint32_t max_ms = (uint32_t)max_resp_ds * 100;
+    if (max_ms == 0) max_ms = 100;
+    uint32_t delay = rng_between32(&igmp_rng, 0, max_ms);
+    uint32_t due = igmp_uptime_ms + delay;
+    if (!s->query_pending || due < s->query_due_ms) {
+        s->query_pending = 1;
+        s->query_due_ms = due;
     }
+    igmp_daemon_kick();
 }
 
 void igmp_input(uint8_t ifindex, uint32_t src, uint32_t dst, const void* l4, uint32_t l4_len) {
@@ -73,10 +203,17 @@ void igmp_input(uint8_t ifindex, uint32_t src, uint32_t dst, const void* l4, uin
     uint8_t type = h->type;
     uint32_t group = bswap32(h->group);
 
+    uint32_t max_resp_ds = (uint32_t)h->max_resp_time;
+
     if (type != IGMP_TYPE_QUERY) return;
 
     if (group == 0) {
-        send_reports_for_interface(ifindex);
+        l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
+        if (!l2) return;
+        for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) {
+            uint32_t g = l2->ipv4_mcast[i];
+            if (ipv4_is_multicast(g)) schedule_report(ifindex, g, max_resp_ds);
+        }
         return;
     }
 
@@ -85,7 +222,7 @@ void igmp_input(uint8_t ifindex, uint32_t src, uint32_t dst, const void* l4, uin
 
     for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) {
         if (l2->ipv4_mcast[i] == group) {
-            (void)send_igmp(ifindex, group, IGMP_TYPE_V2_REPORT, group);
+            schedule_report(ifindex, group, max_resp_ds);
             return;
         }
     }

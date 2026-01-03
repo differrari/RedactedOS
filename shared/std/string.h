@@ -81,6 +81,7 @@ void string_append_bytes(string *dest, const void *buf, uint32_t len);
 const char* seek_to(const char *string, char character);
 size_t strncpy(char* dst, size_t cap, const char* src);
 bool parse_uint32_dec(const char *s, uint32_t *out);
+char* strcasestr(const char* haystack, const char* needle);
 
 #ifdef __cplusplus
 }

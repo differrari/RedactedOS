@@ -76,6 +76,7 @@ class UDPSocket : public Socket {
         if (ver == IP_VER4) {
             uint32_t dip = *(const uint32_t*)dst_ip_addr;
             bool lb = dip == 0xFFFFFFFFu;
+            bool mc = ipv4_is_multicast(dip);
 
             for (int i = 0; i < s->bound_l3_count; ++i) {
                 uint8_t id = s->bound_l3[i];
@@ -83,6 +84,7 @@ class UDPSocket : public Socket {
                 if (!is_valid_v4_l3_for_bind(v4)) continue;
                 if (v4->l2->ifindex != ifx) continue;
                 if (lb) return true;
+                if (mc) return true;
 
                 if (v4->mask) {
                     uint32_t b = ipv4_broadcast_calc(v4->ip, v4->mask);
@@ -263,6 +265,29 @@ public:
     }
 
     ~UDPSocket() override {
+        if ((extraOpts.flags & SOCK_OPT_MCAST_JOIN) && extraOpts.mcast_ver) {
+            if (extraOpts.mcast_ver == IP_VER4) {
+                uint32_t g = 0;
+                memcpy(&g, extraOpts.mcast_group, 4);
+                if (ipv4_is_multicast(g)) {
+                    for (int i = 0; i < bound_l3_count; ++i) {
+                        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(bound_l3[i]);
+                        if (!is_valid_v4_l3_for_bind(v4)) continue;
+                        if (!v4->l2) continue;
+                        (void)l2_ipv4_mcast_leave(v4->l2->ifindex, g);
+                    }
+                }
+            } else if (extraOpts.mcast_ver == IP_VER6) {
+                if (ipv6_is_multicast(extraOpts.mcast_group)) {
+                    for (int i = 0; i < bound_l3_count; ++i) {
+                        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(bound_l3[i]);
+                        if (!is_valid_v6_l3_for_bind(v6)) continue;
+                        if (!v6->l2) continue;
+                        (void)l2_ipv6_mcast_leave(v6->l2->ifindex, extraOpts.mcast_group);
+                    }
+                }
+            }
+        }
         close();
         remove_from_list();
     }
@@ -349,6 +374,30 @@ public:
 
         clear_bound_l3();
         for (int i = 0; i < m; ++i) add_bound_l3(dedup[i]);
+
+        if ((extraOpts.flags & SOCK_OPT_MCAST_JOIN) && extraOpts.mcast_ver) {
+            if (extraOpts.mcast_ver == IP_VER4) {
+                uint32_t g = 0;
+                memcpy(&g, extraOpts.mcast_group, 4);
+                if (ipv4_is_multicast(g)) {
+                    for (int i = 0; i < bound_l3_count; ++i) {
+                        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(bound_l3[i]);
+                        if (!is_valid_v4_l3_for_bind(v4)) continue;
+                        if (!v4->l2) continue;
+                        (void)l2_ipv4_mcast_join(v4->l2->ifindex, g);
+                    }
+                }
+            } else if (extraOpts.mcast_ver == IP_VER6) {
+                if (ipv6_is_multicast(extraOpts.mcast_group)) {
+                    for (int i = 0; i < bound_l3_count; ++i) {
+                        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(bound_l3[i]);
+                        if (!is_valid_v6_l3_for_bind(v6)) continue;
+                        if (!v6->l2) continue;
+                        (void)l2_ipv6_mcast_join(v6->l2->ifindex, extraOpts.mcast_group);
+                    }
+                }
+            }
+        }
 
         localPort = port;
         bound = true;

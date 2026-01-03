@@ -1,5 +1,7 @@
 #pragma once
 #include "types.h"
+#define IPV4_MCAST_ALL_HOSTS 0xE0000001u
+#define IPV4_MCAST_ALL_ROUTERS 0xE0000002u
 
 #ifdef __cplusplus
 extern "C" {

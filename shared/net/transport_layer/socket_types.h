@@ -23,7 +23,8 @@ typedef enum {
     SOCK_OPT_KEEPALIVE = 1u << 1,
     SOCK_OPT_BUF_SIZE = 1u << 2,
     SOCK_OPT_DONTFRAG = 1u << 3,
-    SOCK_OPT_TTL = 1u << 4
+    SOCK_OPT_TTL = 1u << 4,
+    SOCK_OPT_MCAST_JOIN = 1u << 5
 } SockOptFlags;
 
 typedef enum {
@@ -38,6 +39,8 @@ typedef struct SocketExtraOptions {
     uint32_t buf_size;
     uint32_t keepalive_ms;
     uint8_t ttl;
+    ip_version_t mcast_ver;
+    uint8_t mcast_group[16];
 } SocketExtraOptions;
 
 typedef struct SockBindSpec{

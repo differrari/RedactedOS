@@ -9,7 +9,8 @@ typedef enum {
     IPV6_MCAST_SOLICITED_NODE = 0,
     IPV6_MCAST_ALL_NODES= 1,
     IPV6_MCAST_ALL_ROUTERS = 2,
-    IPV6_MCAST_DHCPV6_SERVERS = 3
+    IPV6_MCAST_DHCPV6_SERVERS = 3,
+    IPV6_MCAST_SSDP = 4
 } ipv6_mcast_kind_t;
 
 bool ipv6_is_unspecified(const uint8_t ip[16]);

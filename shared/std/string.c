@@ -1220,3 +1220,26 @@ bool parse_uint32_dec(const char *s, uint32_t *out) {
     *out = (uint32_t)v;
     return true;
 }
+
+char* strcasestr(const char* haystack, const char* needle) {
+	if(!haystack) return 0;
+	if(!needle) return (char*)haystack;
+	if(!*needle) return (char*)haystack;
+
+	for(const char* h = haystack; *h; h++) {
+		const char* hp = h;
+		const char*np = needle;
+
+		while(*hp && *np){
+			char a = tolower(*hp);
+			char b = tolower(*np);
+			if(a != b) break;
+			hp++;
+			np++;
+		}
+
+		if(!*np) return (char*)h;
+	}
+
+	return 0;
+}
