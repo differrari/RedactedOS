@@ -243,7 +243,7 @@ static bool read_string(Tokenizer *t, Token *tok) {
 
 static const char *ops3[] = {">>>", "<<=", ">>=", "===", 0};
 static const char *ops2[] = {"==", "!=", "<=", ">=", "&&", "||", "<<", ">>", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "::", "->", 0};
-static const char ops1[] = "+-*/%<>=!&|^~?";
+static const char ops1[] = "+-*/%<>!&|^~?";
 
 static bool read_operator(Scanner *s, Token *tok) {
     const char *buf = s->buf;
@@ -392,6 +392,15 @@ bool tokenizer_next(Tokenizer *t, Token *out) {
     }
 
     if (read_delim(s, out)) return true;
+    
+    if (c == '=') {
+        out->kind = TOK_ASSIGN;
+        out->start = s->buf + s->pos;
+        out->length = 1;
+        out->pos = s->pos;
+        scan_next(s);
+        return true;
+    }
 
     if (read_operator(s, out)) return true;
 
