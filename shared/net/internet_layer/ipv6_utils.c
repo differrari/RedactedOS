@@ -46,6 +46,9 @@ void ipv6_make_multicast(uint8_t scope, ipv6_mcast_kind_t kind, const uint8_t un
         case IPV6_MCAST_ALL_NODES:
             out[15] = 0x01;
             break;
+        case IPV6_MCAST_MDNS:
+            out[15] = 0xFB;
+            break;
         case IPV6_MCAST_ALL_ROUTERS:
             out[15] = 0x02;
             break;
