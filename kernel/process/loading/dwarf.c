@@ -8,7 +8,6 @@ typedef struct {
     uint32_t unit_length;
     uint16_t version;
     uint8_t address_size;
-	//TODO: to support DWARF 4, separate everything from here out into a separate header
     uint8_t segment_selector;
     uint32_t header_length;
     uint8_t minimum_instruction_length;

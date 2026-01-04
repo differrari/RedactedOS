@@ -235,14 +235,14 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
         void* ptr = palloc(size, level, info->attributes, true);
         page_index *index = info->page_alloc;
         if (!index){
-            info->page_alloc = palloc(PAGE_SIZE, level, info->attributes, true);//TODO: HIGH_VA
+            info->page_alloc = palloc(PAGE_SIZE, level, info->attributes, true);
             index = info->page_alloc;
         }
         while (index->header.next) {
             index = index->header.next;
         }
         if (index->header.size >= PAGE_INDEX_LIMIT){
-            index->header.next = palloc(PAGE_SIZE, level, info->attributes, true);//TODO: HIGH_VA
+            index->header.next = palloc(PAGE_SIZE, level, info->attributes, true);
             index = index->header.next;
         }
         index->ptrs[index->header.size].ptr = ptr;

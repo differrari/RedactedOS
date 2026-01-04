@@ -24,17 +24,17 @@ gpu_size screen_bounds;
 
 bool mouse_setup;
 
-void register_keypress(keypress kp) {
+bool register_keypress(keypress kp) {
     if (!secure_mode){
         for (int i = 0; i < shortcut_count; i++){
             if (shortcuts[i].pid != -1 && !is_new_keypress(&shortcuts[i].kp, &kp)){
                 shortcuts[i].triggered = true;
-                return;
+                return true;
             }
         }
     }
 
-    if (!(uintptr_t)focused_proc) return;
+    if (!(uintptr_t)focused_proc) return false;
 
     input_buffer_t* buf = &focused_proc->input_buffer;
     uint32_t next_index = (buf->write_index + 1) % INPUT_BUFFER_CAPACITY;
@@ -44,11 +44,11 @@ void register_keypress(keypress kp) {
 
     if (buf->write_index == buf->read_index)
         buf->read_index = (buf->read_index + 1) % INPUT_BUFFER_CAPACITY;
+    
+    return false;
 }
 
 void register_event(kbd_event event){
-    //TODO: shortcuts
-
     if (!(uintptr_t)focused_proc) return;
 
     event_buffer_t* buf = &focused_proc->event_buffer;

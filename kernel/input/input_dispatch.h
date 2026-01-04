@@ -16,7 +16,7 @@ typedef enum mouse_button {
     MMB,
 } mouse_button;
 
-void register_keypress(keypress kp);
+bool register_keypress(keypress kp);
 void register_event(kbd_event event);
 void mouse_config(gpu_point point, gpu_size size);
 void register_mouse_input(mouse_input *rat);

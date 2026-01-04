@@ -84,7 +84,6 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
             }
         }
         free_sized(full_name,name_len);
-        //TODO: The list of strings needs to be freed, but this class is not its owner
     }
 
     for (uint32_t i = 0; i < N_ARR(available_cmds); i++){

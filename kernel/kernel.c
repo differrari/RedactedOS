@@ -43,7 +43,7 @@ void kernel_main() {
 
     print_hardware();
 
-    load_module(&rng_module);//TODO
+    load_module(&rng_module);
     
     irq_init();
     kprintf("Interrupts initialized");
@@ -55,15 +55,15 @@ void kernel_main() {
     if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
         pci_setup_rp1();
 
-    load_module(&disk_module);//TODO
+    load_module(&disk_module);
 
-    bool usb_available = load_module(&usb_module);//TODO
+    bool usb_available = load_module(&usb_module);
     bool network_available = false;
     if (BOARD_TYPE == 1){
         if (system_config.use_net)
-            network_available = load_module(&net_module);//TODO
+            network_available = load_module(&net_module);
 
-        load_module(&audio_module);//TODO
+        load_module(&audio_module);
     }
 
     kprint("Kernel initialization finished");
@@ -88,7 +88,7 @@ void kernel_main() {
 
     init_bootprocess();
 
-    load_module(&scheduler_module);//TODO
+    load_module(&scheduler_module);
 
     panic("Kernel did not activate any process", 0);
     
