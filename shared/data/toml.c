@@ -1,7 +1,6 @@
 #include "toml.h"
 #include "data/scanner/scanner.h"
 #include "data/helpers/token_stream.h"
-#include "std/stringview.h"
 
 void read_toml_value(TokenStream *ts, Token key, toml_handler on_kvp, void *context){
     Token t;
@@ -14,7 +13,6 @@ void read_toml_value(TokenStream *ts, Token key, toml_handler on_kvp, void *cont
         }
         break;
         case TOK_STRING: {
-            print("String %s = %v",s.data,delimited_stringview(t.start, 1, t.length-2));
             on_kvp(s.data, (char*)t.start + 1, t.length - 2, context);
         }
         break;
@@ -64,7 +62,7 @@ void read_toml(char *info, size_t size, toml_handler on_kvp, void *context){
         switch (t.kind) {
             case TOK_IDENTIFIER:{
                 Token op;
-                if (!ts_expect(&ts, TOK_OPERATOR, &op)){
+                if (!ts_expect(&ts, TOK_ASSIGN, &op)){
                     return;
                 }
                 read_toml_value(&ts, t, on_kvp, context);
