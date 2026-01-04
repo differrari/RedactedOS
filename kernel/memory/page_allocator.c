@@ -260,7 +260,7 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
 
     FreeBlock** curr = PHYS_TO_VIRT_P(&info->free_list);
     FreeBlock *cblock = PHYS_TO_VIRT_P(*curr);
-    while (*curr && (uintptr_t)cblock != 0xDEADBEEF && (uintptr_t)cblock != 0xDEADBEEFDEADBEEF) {
+    while (*curr && ((uintptr_t)*curr & 0xFFFFFFFF) != 0xDEADBEEF && (uintptr_t)cblock != 0xDEADBEEF && (uintptr_t)cblock != 0xDEADBEEFDEADBEEF) {
         if (cblock->size >= size) {
             kprintfv("[in_page_alloc] Reusing free block at %x",(uintptr_t)*curr);
 
