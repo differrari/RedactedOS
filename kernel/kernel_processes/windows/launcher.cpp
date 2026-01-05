@@ -123,12 +123,14 @@ void Launcher::draw_desktop(){
     if (!rendered_full){
         rendered_full = true;
         draw_full();
+        ctx.full_redraw = true;
+        commit_draw_ctx(&ctx);
     } else if (old_selected.x != selected.x || old_selected.y != selected.y){
         draw_tile(old_selected.x, old_selected.y);
         draw_tile(selected.x, selected.y);
+        ctx.full_redraw = true;
+        commit_draw_ctx(&ctx);
     }
-    ctx.full_redraw = true;
-    commit_draw_ctx(&ctx);
 }
 
 void Launcher::draw_full(){

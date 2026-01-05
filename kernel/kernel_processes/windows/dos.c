@@ -131,7 +131,7 @@ int window_system(){
     
     uint16_t newwin_s = sys_subscribe_shortcut_current((keypress){
         .modifier = KEY_MOD_LMETA,
-        .keys = { KEY_SPACE, 0, 0, 0, 0, 0}
+        .keys = { KEY_ENTER, 0, 0, 0, 0, 0}
     });
     
     uint16_t winl = sys_subscribe_shortcut_current((keypress){
