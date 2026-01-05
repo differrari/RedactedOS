@@ -25,6 +25,7 @@
 #include "net/application_layer/csocket_http_server.h"
 #include "net/application_layer/dhcp_daemon.h"
 #include "net/application_layer/dns_daemon.h"
+#include "net/application_layer/mdns_responder.h"
 #include "net/application_layer/dns.h"
 #include "net/application_layer/sntp_daemon.h"
 #include "net/application_layer/dhcpv6_daemon.h"
@@ -116,6 +117,7 @@ static void run_http_server() {
         return;
     }
 
+    mdns_register_service("RedactedOS","http","tcp",80,"path=/");
 
     static const char HTML_ROOT[] =
         "<h1>Hello, world!</h1>\n"

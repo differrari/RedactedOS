@@ -1,31 +1,9 @@
 #include "dns_mdns.h"
 #include "dns_daemon.h"
+#include "net/internet_layer/ipv6_utils.h"
 #include "std/std.h"
 
 #define MDNS_PORT 5353
-
-static uint32_t encode_dns_qname(uint8_t* dst, const char* name) {
-    uint32_t index = 0;
-    uint32_t label_len = 0;
-    uint32_t label_pos = 0;
-    dst[index++] = 0;
-    while (*name) {
-        if (*name == '.') {
-            dst[label_pos] = (uint8_t)label_len;
-            label_len = 0;
-            label_pos = index;
-            dst[index++] = 0;
-            name++;
-            continue;
-        }
-        dst[index++] = (uint8_t)(*name);
-        label_len++;
-        name++;
-    }
-    dst[label_pos]= (uint8_t)label_len;
-    dst[index++] = 0;
-    return index;
-}
 
 static uint32_t skip_dns_name(const uint8_t* message, uint32_t message_len, uint32_t offset) {
     if (offset >= message_len) return message_len + 1;
@@ -166,7 +144,22 @@ static dns_result_t perform_mdns_query_once(socket_handle_t sock, const net_l4_e
     wr_be16(request_buffer + 4, 1);
 
     uint32_t offset = 12;
-    offset += encode_dns_qname(request_buffer + offset, name);
+    uint32_t qn_label_len = 0;
+    uint32_t qn_label_pos = offset;
+    request_buffer[offset++] = 0;
+    for (const char* p = name; *p; ++p) {
+        if (*p == '.') {
+            request_buffer[qn_label_pos] = (uint8_t)qn_label_len;
+            qn_label_len = 0;
+            qn_label_pos = offset;
+            request_buffer[offset++] = 0;
+            continue;
+        }
+        request_buffer[offset++] = (uint8_t)(*p);
+        qn_label_len++;
+    }
+    request_buffer[qn_label_pos] = (uint8_t)qn_label_len;
+    request_buffer[offset++] = 0;
     wr_be16(request_buffer + offset + 0, qtype);
     wr_be16(request_buffer + offset + 2, 0x0001);
     offset += 4;
@@ -225,9 +218,8 @@ dns_result_t mdns_resolve_aaaa(const char* name, uint32_t timeout_ms, uint8_t ou
 
     net_l4_endpoint dst;
     memset(&dst, 0, sizeof(dst));
-    dst.ver = IP_VER4;
-    uint32_t group = 0xE00000FBu;
-    memcpy(dst.ip, &group, 4);
+    dst.ver = IP_VER6;
+    ipv6_make_multicast(0x02, IPV6_MCAST_MDNS, 0, dst.ip);
     dst.port = MDNS_PORT;
 
     uint32_t ttl_s = 0;

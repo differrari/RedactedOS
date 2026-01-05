@@ -60,7 +60,8 @@ $PRIVILEGE qemu-system-aarch64 \
   $NETDEV \
   -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56,speed=10000,duplex=full \
   $DUMP \
-  -serial mon:stdio \
+  -chardev stdio,id=char0, logfile=serial.log, signal=off \
+  -serial chardev:char0\
   -drive file=disk.img,if=none,format=raw,id=hd0 \
   -device virtio-blk-pci,drive=hd0 \
   -fsdev local,path=./fs,security_model=mapped-xattr,id=sharedfs \

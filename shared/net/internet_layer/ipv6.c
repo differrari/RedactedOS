@@ -502,6 +502,43 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     netpkt_unref(pkt);
 }
 
+static bool ipv6_skip_ext_headers(uint8_t* nh, uintptr_t* l4, uint32_t* l4_len) {
+    if (!nh || !l4 || !l4_len) return false;
+
+    for(;;) {
+        uint8_t h = *nh;
+        if (h == 44) return true;
+
+        if (h == 0 ||h == 43 || h == 60) {
+            if (*l4_len < 2) return false;
+            const uint8_t* p = (const uint8_t*)(*l4);
+            uint8_t next = p[0];
+            uint8_t hlen = p[1];
+            uint32_t bytes = (uint32_t)(hlen + 1u)*8;
+            if (bytes > *l4_len) return false;
+            *nh = next;
+            *l4 += bytes;
+            *l4_len -= bytes;
+            continue;
+        }
+
+        if (h == 51) {
+            if (*l4_len < 2) return false;
+            const uint8_t* p = (const uint8_t*)(*l4);
+            uint8_t next = p[0];
+            uint8_t plen = p[1];
+            uint32_t bytes = ((uint32_t)plen + 2u)*4;
+            if (bytes > *l4_len) return false;
+            *nh = next;
+            *l4 += bytes;
+            *l4_len -= bytes;
+            continue;
+        }
+
+        return true;
+    }
+}
+
 void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if (!pkt) return;
     uint32_t ip_len = netpkt_len(pkt);
@@ -560,6 +597,8 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if (ifindex && !ipv6_is_unspecified(ip6->src) && src_mac) ndp_table_put_for_l2((uint8_t)ifindex, ip6->src, src_mac, 180000, false);
 
     uint8_t nh = ip6->next_header;
+
+    if (!ipv6_skip_ext_headers(&nh, &l4, &l4_len)) return;
 
     if (nh == 44) {//b
         if (l4_len < sizeof(ipv6_frag_hdr_t)) return;
@@ -762,6 +801,10 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
         uintptr_t payload_ptr = (uintptr_t)s->buf;
         uint32_t payload_size = s->total_len;
+        if (!ipv6_skip_ext_headers(&inner_nh, &payload_ptr, &payload_size)) {
+            reass_free(s);
+            return;
+        }
 
         if (inner_nh == 58) {
             icmpv6_input(ifindex, ip6->src, ip6->dst, ip6->hop_limit, src_mac, (const uint8_t*)payload_ptr, payload_size);

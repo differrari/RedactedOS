@@ -6,6 +6,7 @@
 #include "net/internet_layer/ipv6_route.h"
 #include "net/link_layer/eth.h"
 #include "net/link_layer/ndp.h"
+#include "net/internet_layer/mld.h"
 #include "syscalls/syscalls.h"
 
 #define MAX_PENDING 16
@@ -265,6 +266,11 @@ void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_
     if (calc != 0) return;
 
     if ((h->type == 133 || h->type == 134 || h->type == 135 || h->type == 136 || h->type == 137) && hop_limit != 255) return;
+    if (h->type == 130 || h->type == 131 || h->type == 132 || h->type == 143) {
+        mld_input((uint8_t)ifindex, src_ip, dst_ip, icmp, icmp_len);
+        return;
+    }
+
 
     if (h->type == ICMPV6_ECHO_REQUEST) {
         icmpv6_send_echo_reply(ifindex, src_ip, dst_ip, icmp, icmp_len, src_mac, hop_limit);

@@ -1,5 +1,6 @@
 #include "dns.h"
 #include "dns_mdns.h"
+#include "dns_cache.h"
 #include "std/std.h"
 #include "math/rng.h"
 #include "process/scheduler.h"
@@ -13,17 +14,6 @@
 #define MDNS_TIMEOUT_A_MS 500u
 #define MDNS_TIMEOUT_AAAA_MS 300u
 
-typedef struct {
-    uint8_t in_use;
-    uint8_t rr_type;
-    uint32_t name_len;
-    char name[128];
-    uint32_t ttl_ms;
-    uint8_t addr[16];
-} dns_cache_entry_t;
-
-static dns_cache_entry_t g_dns_cache[32];
-
 static bool dns_is_local_name(const char* hostname) {
     if (!hostname) return false;
     uint32_t nlen = strlen(hostname, 128);
@@ -32,87 +22,7 @@ static bool dns_is_local_name(const char* hostname) {
     return true;
 }
 
-static void dns_cache_put(const char* name, uint8_t rr_type, const uint8_t addr[16], uint32_t ttl_ms) {
-    if (!name || !addr) return;
-    uint32_t nlen = strlen(name, 128);
-    if (!nlen) return;
-    if (nlen >= 128) return;
-    if (!ttl_ms) return;
 
-    int free_i = -1;
-    for (int i = 0; i < 32; i++) {
-        if (!g_dns_cache[i].in_use) {
-            if (free_i < 0) free_i = i;
-            continue;
-        }
-        if (g_dns_cache[i].rr_type != rr_type) continue;
-        if (g_dns_cache[i].name_len != nlen) continue;
-        if (strncmp(g_dns_cache[i].name, name, true, (int)nlen) != 0) continue;
-        memcpy(g_dns_cache[i].addr, addr, 16);
-        g_dns_cache[i].ttl_ms = ttl_ms;
-        return;
-    }
-
-    int idx = free_i;
-    if (idx < 0) idx = 0;
-    memset(&g_dns_cache[idx], 0, sizeof(g_dns_cache[idx]));
-    g_dns_cache[idx].in_use = 1;
-    g_dns_cache[idx].rr_type = rr_type;
-    g_dns_cache[idx].name_len = nlen;
-    memcpy(g_dns_cache[idx].name, name, nlen);
-    g_dns_cache[idx].name[nlen] = 0;
-    g_dns_cache[idx].ttl_ms = ttl_ms;
-    memcpy(g_dns_cache[idx].addr, addr, 16);
-}
-
-static bool dns_cache_get(const char* name, uint8_t rr_type, uint8_t out_addr[16]){
-    if (!name || !out_addr) return false;
-    uint32_t nlen = strlen(name, 128);
-    if (!nlen) return false;
-    if (nlen >= 128) return false;
-    for (int i = 0; i < 32; i++) {
-        if (!g_dns_cache[i].in_use) continue;
-        if (g_dns_cache[i].rr_type != rr_type) continue;
-        if (g_dns_cache[i].ttl_ms == 0) continue;
-        if (g_dns_cache[i].name_len != nlen) continue;
-        if (strncmp(g_dns_cache[i].name, name, true, (int)nlen) != 0) continue;
-        memcpy(out_addr, g_dns_cache[i].addr, 16);
-        return true;
-    }
-    return false;
-}
-
-void dns_cache_tick(uint32_t ms){
-    for (int i = 0; i < 32; i++) {
-        if (!g_dns_cache[i].in_use) continue;
-        if (!g_dns_cache[i].ttl_ms) {
-            g_dns_cache[i].in_use = 0;
-            continue;
-        }
-        if (g_dns_cache[i].ttl_ms <= ms) {
-            memset(&g_dns_cache[i], 0, sizeof(g_dns_cache[i]));
-        } else {
-            g_dns_cache[i].ttl_ms -= ms;
-        }
-    }
-}
-
-
-static uint32_t encode_dns_qname(uint8_t* dst, const char* name){
-    uint32_t index = 0;
-    uint32_t label_len = 0;
-    uint32_t label_pos = 0;
-    dst[index++] = 0;
-    while (*name) {
-        if (*name == '.') { dst[label_pos] = (uint8_t)label_len; label_len = 0; label_pos = index; dst[index++] = 0; name++; continue; }
-        dst[index++] = (uint8_t)(*name);
-        label_len++;
-        name++;
-    }
-    dst[label_pos] = (uint8_t)label_len;
-    dst[index++] = 0;
-    return index;
-}
 
 static uint32_t skip_dns_name(const uint8_t* message, uint32_t message_len, uint32_t offset){
     if (offset >= message_len) return message_len + 1;
@@ -206,7 +116,23 @@ static dns_result_t perform_dns_query_once_a(socket_handle_t sock, const net_l4_
     wr_be16(request_buffer+2, 0x0100);
     wr_be16(request_buffer+4, 1);
     uint32_t offset = 12;
-    offset += encode_dns_qname(request_buffer+offset, name);
+    uint32_t qn0 = offset;
+    uint32_t qn_label_len = 0;
+    uint32_t qn_label_pos = qn0;
+    request_buffer[offset++] = 0;
+    for (const char* p = name; *p; ++p) {
+        if (*p == '.') {
+            request_buffer[qn_label_pos] = (uint8_t)qn_label_len;
+            qn_label_len = 0;
+            qn_label_pos = offset;
+            request_buffer[offset++] = 0;
+            continue;
+        }
+        request_buffer[offset++] = (uint8_t)(*p);
+        qn_label_len++;
+    }
+    request_buffer[qn_label_pos] = (uint8_t)qn_label_len;
+    request_buffer[offset++] = 0;
     wr_be16(request_buffer+offset+0, 1);
     wr_be16(request_buffer+offset+2, 1);
     offset += 4;
@@ -255,7 +181,23 @@ static dns_result_t perform_dns_query_once_aaaa(socket_handle_t sock, const net_
     wr_be16(request_buffer+2, 0x0100);
     wr_be16(request_buffer+4, 1);
     uint32_t offset = 12;
-    offset += encode_dns_qname(request_buffer+offset, name);
+    uint32_t qn0 = offset;
+    uint32_t qn_label_len = 0;
+    uint32_t qn_label_pos = qn0;
+    request_buffer[offset++] = 0;
+    for (const char* p = name; *p; ++p) {
+        if (*p == '.') {
+            request_buffer[qn_label_pos] = (uint8_t)qn_label_len;
+            qn_label_len = 0;
+            qn_label_pos = offset;
+            request_buffer[offset++] = 0;
+            continue;
+        }
+        request_buffer[offset++] = (uint8_t)(*p);
+        qn_label_len++;
+    }
+    request_buffer[qn_label_pos] = (uint8_t)qn_label_len;
+    request_buffer[offset++] = 0;
     wr_be16(request_buffer+offset+0, 28);
     wr_be16(request_buffer+offset+2, 1);
     offset += 4;
@@ -411,7 +353,7 @@ static dns_result_t query_with_selection_a(const net_l4_endpoint* primary, const
         uint8_t addr[16];
         memset(addr, 0, 16);
         memcpy(addr, out_ip, 4);
-        dns_cache_put(hostname, 1, addr, ttl_ms);
+        dns_cache_put_ip(hostname, 1, addr, ttl_ms);
     }
     return res;
 }
@@ -434,7 +376,7 @@ static dns_result_t query_with_selection_aaaa(const net_l4_endpoint* primary, co
     }
     if (res == DNS_OK) {
         uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
-        dns_cache_put(hostname, 28, out_ipv6, ttl_ms);
+        dns_cache_put_ip(hostname, 28, out_ipv6, ttl_ms);
     }
     return res;
 }
@@ -448,13 +390,13 @@ dns_result_t dns_resolve_a(const char* hostname, uint32_t* out_ip, dns_server_se
             a[0] = 127;
             a[3] = 1;
             *out_ip = 0x7F000001u;
-            dns_cache_put(hostname, 1, a, 3600u * 1000u);
+            dns_cache_put_ip(hostname, 1, a, 3600u * 1000u);
             return DNS_OK;
         }
     }
 
     uint8_t cached[16];
-    if (dns_cache_get(hostname, 1, cached)) {
+    if (dns_cache_get_ip(hostname, 1, cached)) {
         memcpy(out_ip, cached, 4);
         return DNS_OK;
     }
@@ -469,7 +411,7 @@ dns_result_t dns_resolve_a(const char* hostname, uint32_t* out_ip, dns_server_se
             memset(a, 0, 16);
             memcpy(a, out_ip, 4);
             uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
-            dns_cache_put(hostname, 1, a, ttl_ms);
+            dns_cache_put_ip(hostname, 1, a, ttl_ms);
         }
         return mr;
     }
@@ -487,7 +429,7 @@ dns_result_t dns_resolve_a(const char* hostname, uint32_t* out_ip, dns_server_se
             memset(a,0, 16);
             memcpy(a, out_ip, 4);
             uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
-            dns_cache_put(hostname, 1, a, ttl_ms);
+            dns_cache_put_ip(hostname, 1, a, ttl_ms);
             return DNS_OK;
         }
     }
@@ -504,12 +446,12 @@ dns_result_t dns_resolve_a_on_l3(uint8_t l3_id, const char* hostname, uint32_t* 
             a[0] = 127;
             a[3] = 1;
             *out_ip = 0x7F000001u;
-            dns_cache_put(hostname, 1, a, 3600u * 1000u);
+            dns_cache_put_ip(hostname, 1, a, 3600u * 1000u);
             return DNS_OK;
         }
     }
     uint8_t cached[16];
-    if (dns_cache_get(hostname, 1, cached)) {
+    if (dns_cache_get_ip(hostname, 1, cached)) {
         memcpy(out_ip, cached, 4);
         return DNS_OK;
     }
@@ -524,7 +466,7 @@ dns_result_t dns_resolve_a_on_l3(uint8_t l3_id, const char* hostname, uint32_t* 
             memset(a, 0, 16);
             memcpy(a, out_ip, 4);
             uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
-            dns_cache_put(hostname, 1, a, ttl_ms);
+            dns_cache_put_ip(hostname, 1, a, ttl_ms);
         }
         return mr;
     }
@@ -536,13 +478,13 @@ dns_result_t dns_resolve_a_on_l3(uint8_t l3_id, const char* hostname, uint32_t* 
 
     if (res != DNS_OK && is_local) {
         uint32_t ttl_s = 0;
-        dns_result_t mr = mdns_resolve_a_on_l3(l3_id, hostname, timeout_ms > MDNS_TIMEOUT_A_MS ? MDNS_TIMEOUT_A_MS : timeout_ms, out_ip, &ttl_s);
+        dns_result_t mr = mdns_resolve_a(hostname, timeout_ms > MDNS_TIMEOUT_A_MS ? MDNS_TIMEOUT_A_MS : timeout_ms, out_ip, &ttl_s);
         if (mr == DNS_OK) {
             uint8_t a[16];
             memset(a, 0, 16);
             memcpy(a, out_ip, 4);
             uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
-            dns_cache_put(hostname, 1, a, ttl_ms);
+            dns_cache_put_ip(hostname, 1, a, ttl_ms);
             return DNS_OK;
         }
     }
@@ -556,11 +498,11 @@ dns_result_t dns_resolve_aaaa(const char* hostname, uint8_t out_ipv6[16], dns_se
         if (nlen == 9u && strncmp(hostname, "localhost", true, 9) == 0) {
             memset(out_ipv6, 0, 16);
             out_ipv6[15] = 1;
-            dns_cache_put(hostname, 28, out_ipv6, 3600u * 1000u);
+            dns_cache_put_ip(hostname, 28, out_ipv6, 3600u * 1000u);
             return DNS_OK;
         }
     }
-    if (dns_cache_get(hostname, 28, out_ipv6)) return DNS_OK;
+    if (dns_cache_get_ip(hostname, 28, out_ipv6)) return DNS_OK;
 
     bool is_local = dns_is_local_name(hostname);
 
@@ -569,7 +511,7 @@ dns_result_t dns_resolve_aaaa(const char* hostname, uint8_t out_ipv6[16], dns_se
         dns_result_t mr = mdns_resolve_aaaa(hostname, timeout_ms > MDNS_TIMEOUT_AAAA_MS ? MDNS_TIMEOUT_AAAA_MS : timeout_ms, out_ipv6, &ttl_s);
         if (mr == DNS_OK) {
             uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
-            dns_cache_put(hostname, 28, out_ipv6, ttl_ms);
+            dns_cache_put_ip(hostname, 28, out_ipv6, ttl_ms);
         }
         return mr;
     }
@@ -584,7 +526,7 @@ dns_result_t dns_resolve_aaaa(const char* hostname, uint8_t out_ipv6[16], dns_se
         dns_result_t mr = mdns_resolve_aaaa(hostname, timeout_ms > MDNS_TIMEOUT_AAAA_MS ? MDNS_TIMEOUT_AAAA_MS : timeout_ms, out_ipv6, &ttl_s);
         if (mr == DNS_OK) {
             uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
-            dns_cache_put(hostname, 28, out_ipv6, ttl_ms);
+            dns_cache_put_ip(hostname, 28, out_ipv6, ttl_ms);
             return DNS_OK;
         }
     }
@@ -598,18 +540,18 @@ dns_result_t dns_resolve_aaaa_on_l3(uint8_t l3_id, const char* hostname, uint8_t
         if (nlen == 9u && strncmp(hostname, "localhost", true, 9) == 0) {
             memset(out_ipv6, 0, 16);
             out_ipv6[15] = 1;
-            dns_cache_put(hostname, 28, out_ipv6, 3600u * 1000u);
+            dns_cache_put_ip(hostname, 28, out_ipv6, 3600u * 1000u);
             return DNS_OK;
         }
     }
-    if (dns_cache_get(hostname, 28, out_ipv6)) return DNS_OK;
+    if (dns_cache_get_ip(hostname, 28, out_ipv6)) return DNS_OK;
     bool is_local = dns_is_local_name(hostname);
     if (is_local) {
         uint32_t ttl_s = 0;
-        dns_result_t mr = mdns_resolve_aaaa_on_l3(l3_id, hostname, timeout_ms > MDNS_TIMEOUT_AAAA_MS ? MDNS_TIMEOUT_AAAA_MS : timeout_ms, out_ipv6, &ttl_s);
+        dns_result_t mr = mdns_resolve_aaaa(hostname, timeout_ms > MDNS_TIMEOUT_AAAA_MS ? MDNS_TIMEOUT_AAAA_MS : timeout_ms, out_ipv6, &ttl_s);
         if (mr == DNS_OK) {
             uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
-            dns_cache_put(hostname, 28, out_ipv6, ttl_ms);
+            dns_cache_put_ip(hostname, 28, out_ipv6, ttl_ms);
         }
         return mr;
     }
@@ -620,10 +562,10 @@ dns_result_t dns_resolve_aaaa_on_l3(uint8_t l3_id, const char* hostname, uint8_t
 
     if (res != DNS_OK && is_local) {
         uint32_t ttl_s = 0;
-        dns_result_t mr = mdns_resolve_aaaa_on_l3(l3_id, hostname, timeout_ms > MDNS_TIMEOUT_AAAA_MS ? MDNS_TIMEOUT_AAAA_MS : timeout_ms, out_ipv6, &ttl_s);
+        dns_result_t mr = mdns_resolve_aaaa(hostname, timeout_ms > MDNS_TIMEOUT_AAAA_MS ? MDNS_TIMEOUT_AAAA_MS : timeout_ms, out_ipv6, &ttl_s);
         if (mr == DNS_OK) {
             uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
-            dns_cache_put(hostname, 28, out_ipv6, ttl_ms);
+            dns_cache_put_ip(hostname, 28, out_ipv6, ttl_ms);
             return DNS_OK;
         }
     }
