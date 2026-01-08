@@ -49,6 +49,7 @@ typedef struct {
     uint16_t local_port;
     net_l4_endpoint local;
     net_l4_endpoint remote;
+    uint8_t l3_id;
     tcp_state_t state;
     tcp_data ctx;
     uint8_t retries;

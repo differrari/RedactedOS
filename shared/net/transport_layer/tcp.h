@@ -95,6 +95,9 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 tcp_result_t tcp_flow_send(tcp_data *flow_ctx);
 tcp_result_t tcp_flow_close(tcp_data *flow_ctx);
 
+void tcp_flow_window_update(tcp_data *flow_ctx);
+void tcp_flow_on_app_read(tcp_data *flow_ctx, uint32_t bytes_read);
+
 void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, uintptr_t ptr, uint32_t len);
 
 void tcp_tick_all(uint32_t elapsed_ms);

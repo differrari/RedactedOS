@@ -335,6 +335,7 @@ bool tcp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t
     }
     if (f){
         f->local_port = port;
+        f->l3_id = l3_id;
 
         f->local.ver = l3_is_v6_from_id(l3_id) ? IP_VER6 : IP_VER4;
         memset(f->local.ip, 0, sizeof(f->local.ip));
@@ -434,6 +435,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     if (idx < 0) return false;
 
     flow->local_port = local_port;
+    flow->l3_id = l3_id;
 
     flow->remote.ver = dst->ver;
     memcpy(flow->remote.ip, dst->ip, (size_t)(dst->ver == IP_VER6 ? 16 : 4));

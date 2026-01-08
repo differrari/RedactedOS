@@ -115,7 +115,7 @@ class UDPSocket : public Socket {
         return false;
     }
 
-    static void dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uintptr_t frame_ptr, uint32_t frame_len, uint16_t src_port, uint16_t dst_port) {
+    static uint32_t dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uintptr_t frame_ptr, uint32_t frame_len, uint16_t src_port, uint16_t dst_port) {
 
         for (UDPSocket* s = s_list_head; s; s = s->next) {
             if (!socket_matches_dst(s, ifindex, ipver, dst_ip_addr, dst_port))
@@ -127,7 +127,8 @@ class UDPSocket : public Socket {
             memcpy((void*)copy, (const void*)frame_ptr, frame_len);
             s->on_receive(ipver, src_ip_addr, src_port, copy, frame_len);
         }
-    if (frame_ptr && frame_len) free((void*)frame_ptr, frame_len);
+        if (frame_ptr && frame_len) free((void*)frame_ptr, frame_len);
+        return frame_len;
     }
 
     void on_receive(ip_version_t ver, const void* src_ip_addr, uint16_t src_port, uintptr_t ptr, uint32_t len) {

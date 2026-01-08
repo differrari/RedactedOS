@@ -22,7 +22,7 @@ static constexpr uint32_t TCP_DNS_TIMEOUT_MS = 3000;
 class TCPSocket : public Socket {
     inline static TCPSocket* s_list_head = nullptr;
 
-    static constexpr uint32_t TCP_RING_CAP = 64 * 1024;
+    static constexpr uint32_t TCP_RING_CAP = 96 * 1024;
     RingBuffer<uint8_t, TCP_RING_CAP> ring;
     tcp_data* flow = nullptr;
 
@@ -52,7 +52,7 @@ class TCPSocket : public Socket {
         return true;
     }
 
-    static void dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uintptr_t frame_ptr, uint32_t frame_len, uint16_t src_port, uint16_t dst_port) {
+    static uint32_t dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uintptr_t frame_ptr, uint32_t frame_len, uint16_t src_port, uint16_t dst_port) {
         if (frame_len == 0){
             for (TCPSocket* srv = s_list_head; srv; srv = srv->next){
                 if (srv->role != SOCK_ROLE_SERVER) continue;
@@ -173,7 +173,7 @@ class TCPSocket : public Socket {
                 srv->pending[srv->backlogLen++] = child;
                 break;
             }
-            return;
+            return 0;
         }
 
         for (TCPSocket* s = s_list_head; s; s = s->next) {
@@ -213,13 +213,14 @@ class TCPSocket : public Socket {
                 if (memcmp(s->remoteEP.ip, src_ip_addr, 16) != 0) continue;
             }
 
-            s->on_receive(frame_ptr, frame_len);
-            return;
+            return s->on_receive(frame_ptr, frame_len);
         }
-    }
 
-    void on_receive(uintptr_t ptr, uint32_t len) {
-        if (!ptr || !len) return;
+        return 0;
+    }
+    
+    uint32_t on_receive(uintptr_t ptr, uint32_t len) {
+        if (!ptr || !len) return 0;
 
         uint64_t limit = ring.capacity();
         if ((extraOpts.flags & SOCK_OPT_BUF_SIZE) && extraOpts.buf_size) {
@@ -227,21 +228,21 @@ class TCPSocket : public Socket {
             if (m < limit) limit = m;
         }
 
+        uint64_t sz = ring.size();
+        if (sz >= limit) return 0;
+
+        uint64_t free = limit - sz;
+        uint32_t accept = len;
+        if ((uint64_t)accept > free) accept = (uint32_t)free;
+
         const uint8_t* src = (const uint8_t*)ptr;
-        for (uint32_t i = 0; i < len; ++i) {
-            while (ring.size() >= limit) {
-                uint8_t drop;
-                if (!ring.pop(drop)) break;
-            }
-
-            if (ring.push(src[i])) continue;
-
-            uint8_t drop;
-            ring.pop(drop);
-            ring.push(src[i]);
+        uint32_t pushed = 0;
+        for (uint32_t i = 0; i < accept; ++i) {
+            if (!ring.push(src[i])) break;
+            ++pushed;
         }
 
-        //free((void*)ptr, len);
+        return pushed;
     }
 
     void insert_in_list() {
@@ -657,6 +658,7 @@ public:
             out[n++] = b;
         }
 
+        if (n && flow) tcp_flow_on_app_read(flow, (uint32_t)n);
         return (int64_t)n;
     }
 
