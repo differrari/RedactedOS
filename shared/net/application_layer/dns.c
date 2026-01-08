@@ -10,6 +10,7 @@
 #include "networking/interface_manager.h"
 #include "dns_daemon.h"
 #include "syscalls/syscalls.h"
+#include "net/transport_layer/trans_utils.h"
 
 #define MDNS_TIMEOUT_A_MS 500u
 #define MDNS_TIMEOUT_AAAA_MS 300u
@@ -22,7 +23,36 @@ static bool dns_is_local_name(const char* hostname) {
     return true;
 }
 
-
+static dns_result_t dns_write_qname(uint8_t* buf, uint32_t buf_len, uint32_t* offset, const char* name) {
+    if (!buf || !offset || !name) return DNS_ERR_FORMAT;
+    uint32_t off = *offset;
+    if (off >= buf_len) return DNS_ERR_FORMAT;
+    uint32_t label_len = 0;
+    uint32_t label_pos = off;
+    buf[off++] = 0;
+    for (const char* p = name; *p; ++p) {
+        char c = *p;
+        if (c =='.') {
+            if (!label_len || label_len > 63u) return DNS_ERR_FORMAT;
+            buf[label_pos] = (uint8_t)label_len;
+            label_len = 0;
+            label_pos = off;
+            if (off >= buf_len) return DNS_ERR_FORMAT;
+            buf[off++] = 0;
+            continue;
+        }
+        if (label_len >= 63u) return DNS_ERR_FORMAT;
+        if (off >= buf_len) return DNS_ERR_FORMAT;
+        buf[off++] = (uint8_t)c;
+        label_len++;
+    }
+    if (!label_len || label_len > 63u) return DNS_ERR_FORMAT;
+    buf[label_pos] = (uint8_t)label_len;
+    if (off >= buf_len) return DNS_ERR_FORMAT;
+    buf[off++]= 0;
+    *offset = off;
+    return DNS_OK;
+}
 
 static uint32_t skip_dns_name(const uint8_t* message, uint32_t message_len, uint32_t offset){
     if (offset >= message_len) return message_len + 1;
@@ -116,23 +146,11 @@ static dns_result_t perform_dns_query_once_a(socket_handle_t sock, const net_l4_
     wr_be16(request_buffer+2, 0x0100);
     wr_be16(request_buffer+4, 1);
     uint32_t offset = 12;
-    uint32_t qn0 = offset;
-    uint32_t qn_label_len = 0;
-    uint32_t qn_label_pos = qn0;
-    request_buffer[offset++] = 0;
-    for (const char* p = name; *p; ++p) {
-        if (*p == '.') {
-            request_buffer[qn_label_pos] = (uint8_t)qn_label_len;
-            qn_label_len = 0;
-            qn_label_pos = offset;
-            request_buffer[offset++] = 0;
-            continue;
-        }
-        request_buffer[offset++] = (uint8_t)(*p);
-        qn_label_len++;
-    }
-    request_buffer[qn_label_pos] = (uint8_t)qn_label_len;
-    request_buffer[offset++] = 0;
+    dns_result_t qnr=dns_write_qname(request_buffer, sizeof(request_buffer), &offset, name);
+    if (qnr != DNS_OK) return qnr;
+
+    if (offset+ 4 > sizeof(request_buffer)) return DNS_ERR_FORMAT;
+
     wr_be16(request_buffer+offset+0, 1);
     wr_be16(request_buffer+offset+2, 1);
     offset += 4;
@@ -181,23 +199,11 @@ static dns_result_t perform_dns_query_once_aaaa(socket_handle_t sock, const net_
     wr_be16(request_buffer+2, 0x0100);
     wr_be16(request_buffer+4, 1);
     uint32_t offset = 12;
-    uint32_t qn0 = offset;
-    uint32_t qn_label_len = 0;
-    uint32_t qn_label_pos = qn0;
-    request_buffer[offset++] = 0;
-    for (const char* p = name; *p; ++p) {
-        if (*p == '.') {
-            request_buffer[qn_label_pos] = (uint8_t)qn_label_len;
-            qn_label_len = 0;
-            qn_label_pos = offset;
-            request_buffer[offset++] = 0;
-            continue;
-        }
-        request_buffer[offset++] = (uint8_t)(*p);
-        qn_label_len++;
-    }
-    request_buffer[qn_label_pos] = (uint8_t)qn_label_len;
-    request_buffer[offset++] = 0;
+    dns_result_t qnr=dns_write_qname(request_buffer, sizeof(request_buffer), &offset, name);
+    if (qnr != DNS_OK) return qnr;
+
+    if (offset+ 4 > sizeof(request_buffer)) return DNS_ERR_FORMAT;
+
     wr_be16(request_buffer+offset+0, 28);
     wr_be16(request_buffer+offset+2, 1);
     offset += 4;
@@ -352,7 +358,7 @@ static dns_result_t query_with_selection_a(const net_l4_endpoint* primary, const
         uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
         uint8_t addr[16];
         memset(addr, 0, 16);
-        memcpy(addr, out_ip, 4);
+        wr_be32(addr, *out_ip);
         dns_cache_put_ip(hostname, 1, addr, ttl_ms);
     }
     return res;
@@ -382,22 +388,10 @@ static dns_result_t query_with_selection_aaaa(const net_l4_endpoint* primary, co
 }
 
 dns_result_t dns_resolve_a(const char* hostname, uint32_t* out_ip, dns_server_sel_t which, uint32_t timeout_ms){
-    if (hostname && out_ip) {
-        uint32_t nlen = strlen(hostname, 128);
-        if (nlen == 9u && strncmp(hostname, "localhost", true, 9) == 0) {
-            uint8_t a[16];
-            memset(a, 0, 16);
-            a[0] = 127;
-            a[3] = 1;
-            *out_ip = 0x7F000001u;
-            dns_cache_put_ip(hostname, 1, a, 3600u * 1000u);
-            return DNS_OK;
-        }
-    }
-
+    if (!hostname || !out_ip) return DNS_ERR_FORMAT;
     uint8_t cached[16];
     if (dns_cache_get_ip(hostname, 1, cached)) {
-        memcpy(out_ip, cached, 4);
+        *out_ip = rd_be32(cached);
         return DNS_OK;
     }
 
@@ -409,7 +403,7 @@ dns_result_t dns_resolve_a(const char* hostname, uint32_t* out_ip, dns_server_se
         if (mr == DNS_OK) {
             uint8_t a[16];
             memset(a, 0, 16);
-            memcpy(a, out_ip, 4);
+            wr_be32(a, *out_ip);
             uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
             dns_cache_put_ip(hostname, 1, a, ttl_ms);
         }
@@ -427,7 +421,7 @@ dns_result_t dns_resolve_a(const char* hostname, uint32_t* out_ip, dns_server_se
         if (mr == DNS_OK) {
             uint8_t a[16];
             memset(a,0, 16);
-            memcpy(a, out_ip, 4);
+            wr_be32(a, *out_ip);
             uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
             dns_cache_put_ip(hostname, 1, a, ttl_ms);
             return DNS_OK;
@@ -438,21 +432,10 @@ dns_result_t dns_resolve_a(const char* hostname, uint32_t* out_ip, dns_server_se
 }
 
 dns_result_t dns_resolve_a_on_l3(uint8_t l3_id, const char* hostname, uint32_t* out_ip, dns_server_sel_t which, uint32_t timeout_ms){
-    if (hostname && out_ip) {
-        uint32_t nlen = strlen(hostname, 128);
-        if (nlen == 9u && strncmp(hostname, "localhost", true, 9) == 0) {
-            uint8_t a[16];
-            memset(a, 0, 16);
-            a[0] = 127;
-            a[3] = 1;
-            *out_ip = 0x7F000001u;
-            dns_cache_put_ip(hostname, 1, a, 3600u * 1000u);
-            return DNS_OK;
-        }
-    }
+    if (!hostname || !out_ip) return DNS_ERR_FORMAT;
     uint8_t cached[16];
     if (dns_cache_get_ip(hostname, 1, cached)) {
-        memcpy(out_ip, cached, 4);
+        *out_ip = rd_be32(cached);
         return DNS_OK;
     }
 
@@ -464,7 +447,7 @@ dns_result_t dns_resolve_a_on_l3(uint8_t l3_id, const char* hostname, uint32_t* 
         if (mr == DNS_OK) {
             uint8_t a[16];
             memset(a, 0, 16);
-            memcpy(a, out_ip, 4);
+            wr_be32(a, *out_ip);
             uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
             dns_cache_put_ip(hostname, 1, a, ttl_ms);
         }
@@ -482,7 +465,7 @@ dns_result_t dns_resolve_a_on_l3(uint8_t l3_id, const char* hostname, uint32_t* 
         if (mr == DNS_OK) {
             uint8_t a[16];
             memset(a, 0, 16);
-            memcpy(a, out_ip, 4);
+            wr_be32(a, *out_ip);
             uint32_t ttl_ms = ttl_s > (0xFFFFFFFFu / 1000u) ? 0xFFFFFFFFu : ttl_s * 1000u;
             dns_cache_put_ip(hostname, 1, a, ttl_ms);
             return DNS_OK;
@@ -493,15 +476,7 @@ dns_result_t dns_resolve_a_on_l3(uint8_t l3_id, const char* hostname, uint32_t* 
 }
 
 dns_result_t dns_resolve_aaaa(const char* hostname, uint8_t out_ipv6[16], dns_server_sel_t which, uint32_t timeout_ms){
-    if (hostname && out_ipv6) {
-        uint32_t nlen = strlen(hostname, 128);
-        if (nlen == 9u && strncmp(hostname, "localhost", true, 9) == 0) {
-            memset(out_ipv6, 0, 16);
-            out_ipv6[15] = 1;
-            dns_cache_put_ip(hostname, 28, out_ipv6, 3600u * 1000u);
-            return DNS_OK;
-        }
-    }
+    if (!hostname || !out_ipv6) return DNS_ERR_FORMAT;
     if (dns_cache_get_ip(hostname, 28, out_ipv6)) return DNS_OK;
 
     bool is_local = dns_is_local_name(hostname);
@@ -535,15 +510,7 @@ dns_result_t dns_resolve_aaaa(const char* hostname, uint8_t out_ipv6[16], dns_se
 }
 
 dns_result_t dns_resolve_aaaa_on_l3(uint8_t l3_id, const char* hostname, uint8_t out_ipv6[16], dns_server_sel_t which, uint32_t timeout_ms){
-    if (hostname && out_ipv6) {
-        uint32_t nlen = strlen(hostname, 128);
-        if (nlen == 9u && strncmp(hostname, "localhost", true, 9) == 0) {
-            memset(out_ipv6, 0, 16);
-            out_ipv6[15] = 1;
-            dns_cache_put_ip(hostname, 28, out_ipv6, 3600u * 1000u);
-            return DNS_OK;
-        }
-    }
+    if (!hostname || !out_ipv6) return DNS_ERR_FORMAT;
     if (dns_cache_get_ip(hostname, 28, out_ipv6)) return DNS_OK;
     bool is_local = dns_is_local_name(hostname);
     if (is_local) {

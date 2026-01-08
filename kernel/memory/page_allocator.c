@@ -214,6 +214,8 @@ void* kalloc(void *page, uint64_t size, uint16_t alignment, uint8_t level){
     //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
     if (!alignment || (alignment & (alignment - 1))) alignment = 16;
 
+    if (size < sizeof(FreeBlock)) size = sizeof(FreeBlock);
+    
     size = (size + alignment - 1) & ~(alignment - 1);
 
     kprintfv("[in_page_alloc] Requested size: %x", size);
@@ -276,6 +278,7 @@ void kfree(void* ptr, uint64_t size) {
 
     if (!ptr || !size) return;
 
+    if (size < sizeof(FreeBlock)) size = sizeof(FreeBlock);
     if ((((uintptr_t)ptr & (PAGE_SIZE - 1)) == 0) && (size >= PAGE_SIZE)){
         pfree(ptr,size);
         return;

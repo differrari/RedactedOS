@@ -43,11 +43,6 @@ static inline int l2_slot_from_ifindex(uint8_t ifindex){
     if (!g_l2_used[s]) return -1;
     return s;
 }
-static inline uint8_t make_l3_id_v4(uint8_t ifindex, uint8_t local_slot){ return (uint8_t)((ifindex<<4) | (local_slot & 0x03)); }
-static inline uint8_t make_l3_id_v6(uint8_t ifindex, uint8_t local_slot){ return (uint8_t)((ifindex<<4) | 0x08 | (local_slot & 0x03)); }
-static inline uint8_t l3_ifindex_from_id(uint8_t l3_id){ return (uint8_t)((l3_id >> 4) & 0x0F); }
-static inline uint8_t l3_is_v6_from_id(uint8_t l3_id){ return (uint8_t)((l3_id & 0x08) ? 1 : 0); }
-static inline uint8_t l3_slot_from_id(uint8_t l3_id){ return (uint8_t)(l3_id & 0x03); }
 
 static bool v4_has_dhcp_on_l2(uint8_t ifindex){
     for (int i = 0; i < V4_POOL_SIZE; i++){

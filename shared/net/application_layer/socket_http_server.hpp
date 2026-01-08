@@ -185,10 +185,9 @@ public:
         }
 
         if (have > 0) {
-            char* body_copy = (char*)malloc(have + 1);
+            char* body_copy = (char*)malloc(have);
             if (body_copy) {
                 memcpy(body_copy, buf.data + body_start, have);
-                body_copy[have] = '\0';
                 req.body.ptr = (uintptr_t)body_copy;
                 req.body.size = have;
             }
@@ -243,10 +242,7 @@ public:
     }
 
     int32_t close() {
-        int32_t r = SOCK_ERR_STATE;
-
-        if (sock) r = sock->close();
-
+        int32_t r = sock ? SOCK_OK : SOCK_ERR_STATE;
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_HTTP_SERVER;
         ev.action = NETLOG_ACT_CLOSE;

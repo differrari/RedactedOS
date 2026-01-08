@@ -19,6 +19,8 @@ extern "C" {
 
 #define TCP_REASS_MAX_SEGS 32
 #define TCP_DEFAULT_MSS 1460
+#define TCP_DEFAULT_RCV_BUF (256u * 1024u)
+#define TCP_PERSIST_PROBE_BUFSZ 1
 
 #define TCP_DELAYED_ACK_MS 200
 #define TCP_PERSIST_MIN_MS 500
@@ -64,6 +66,7 @@ typedef struct {
     uint32_t rcv_buf_used;
     uint32_t rcv_wnd;
     uint32_t rcv_wnd_max;
+    uint32_t rcv_adv_edge;
 
     uint32_t cwnd;
     uint32_t ssthresh;
@@ -99,7 +102,7 @@ typedef struct {
     uint32_t keepalive_idle_ms;
 } tcp_flow_t;
 
-extern tcp_flow_t tcp_flows[MAX_TCP_FLOWS];
+extern tcp_flow_t *tcp_flows[MAX_TCP_FLOWS];
 
 tcp_flow_t *tcp_alloc_flow(void);
 void tcp_free_flow(int idx);
@@ -127,7 +130,7 @@ void tcp_cc_on_timeout(tcp_flow_t *f);
 int tcp_has_pending_timers(void);
 
 void tcp_daemon_kick(void);
-uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow);
+uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow, uint8_t apply_scale);
 
 #ifdef __cplusplus
 }

@@ -14,7 +14,8 @@ int tcp_has_pending_timers(void) { //TODO mhh this should be event driven to avo
 
 
     for (int i = 0; i < MAX_TCP_FLOWS; i++) {
-        tcp_flow_t *f = &tcp_flows[i];
+        tcp_flow_t *f = tcp_flows[i];
+        if (!f) continue;
         if (f->state == TCP_STATE_CLOSED) continue;
 
         if (f->state == TCP_TIME_WAIT) return 1;
@@ -24,7 +25,10 @@ int tcp_has_pending_timers(void) { //TODO mhh this should be event driven to avo
         if (f->keepalive_on && f->state == TCP_ESTABLISHED && f->keepalive_ms) return 1;
 
         for (int j = 0; j < TCP_MAX_TX_SEGS; j++) {
-            if (f->txq[j].used) return 1;
+            tcp_tx_seg_t *s = &f->txq[j];
+            if (!s->used) continue;
+            uint32_t end = s->seq + s->len + (s->syn ? 1u : 0u) + (s->fin ? 1u : 0u);
+            if (end > f->snd_una) return 1;
         }
     }
 
@@ -33,7 +37,8 @@ int tcp_has_pending_timers(void) { //TODO mhh this should be event driven to avo
 
 void tcp_tick_all(uint32_t elapsed_ms) {
     for (int i = 0; i < MAX_TCP_FLOWS; i++) {
-        tcp_flow_t *f = &tcp_flows[i];//b
+        tcp_flow_t *f = tcp_flows[i];
+        if (!f) continue;
         if (f->state == TCP_STATE_CLOSED) continue;
 
         if (f->state == TCP_TIME_WAIT) {
@@ -68,14 +73,14 @@ void tcp_tick_all(uint32_t elapsed_ms) {
                 hdr.sequence = bswap32(seq);
                 hdr.ack = bswap32(f->ctx.ack);
                 hdr.flags = (uint8_t)(1u << ACK_F);
-                hdr.window = tcp_calc_adv_wnd_field(f);
+                hdr.window = tcp_calc_adv_wnd_field(f, 1);
                 hdr.urgent_ptr = 0;
 
-                if (f->remote.ver == IP_VER4) {
+                if (f->local.ver == IP_VER4) {
                     ipv4_tx_opts_t tx;
                     tcp_build_tx_opts_from_local_v4(f->local.ip, &tx);
                     (void)tcp_send_segment(IP_VER4, f->local.ip, f->remote.ip, &hdr, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, f->ip_ttl, f->ip_dontfrag);
-                } else if (f->remote.ver == IP_VER6) {
+                } else if (f->local.ver == IP_VER6) {
                     ipv6_tx_opts_t tx;
                     tcp_build_tx_opts_from_local_v6(f->local.ip, &tx);
                     (void)tcp_send_segment(IP_VER6, f->local.ip, f->remote.ip, &hdr, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, f->ip_ttl, f->ip_dontfrag);
@@ -129,14 +134,14 @@ void tcp_tick_all(uint32_t elapsed_ms) {
                     hdr.sequence = bswap32(probe_seq);
                     hdr.ack = bswap32(f->ctx.ack);
                     hdr.flags = (uint8_t)(1u << ACK_F);
-                    hdr.window = f->ctx.window ? f->ctx.window : TCP_RECV_WINDOW;
+                    hdr.window = tcp_calc_adv_wnd_field(f, 1);
                     hdr.urgent_ptr = 0;
 
-                    if (f->remote.ver == IP_VER4) {
+                    if (f->local.ver == IP_VER4) {
                         ipv4_tx_opts_t tx;
                         tcp_build_tx_opts_from_local_v4(f->local.ip, &tx);
                         (void)tcp_send_segment(IP_VER4, f->local.ip, f->remote.ip, &hdr, NULL, 0, pp, pl, (const ip_tx_opts_t *)&tx, f->ip_ttl, f->ip_dontfrag);
-                    } else if (f->remote.ver == IP_VER6) {
+                    } else if (f->local.ver == IP_VER6) {
                         ipv6_tx_opts_t tx;
                         tcp_build_tx_opts_from_local_v6(f->local.ip, &tx);
                         (void)tcp_send_segment(IP_VER6, f->local.ip, f->remote.ip, &hdr, NULL, 0, pp, pl, (const ip_tx_opts_t *)&tx, f->ip_ttl, f->ip_dontfrag);

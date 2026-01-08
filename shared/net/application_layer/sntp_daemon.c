@@ -1,8 +1,9 @@
-#include "sntp_daemon.h"
+#include "sntp_daemon.h"//deprecated, use ntp
 #include "sntp.h"
 #include "exceptions/timer.h"
 #include "process/scheduler.h"
 #include "net/internet_layer/ipv4.h"
+#include "net/internet_layer/ipv4_utils.h"
 #include "networking/interface_manager.h"
 #include "syscalls/syscalls.h"
 
@@ -19,8 +20,6 @@ socket_handle_t sntp_socket_handle(void){ return g_sock; }
 #define SNTP_QUERY_TIMEOUT_MS 1200u
 #define SNTP_BOOTSTRAP_MAX_RETRY 5u
 
-static inline int ipv4_is_loopback_u32(uint32_t ip){ return ((ip & 0xFF000000u) == 0x7F000000u); }
-
 static bool any_ipv4_configured_nonlocal(void){
     uint8_t n = l2_interface_count();
     for (uint8_t i = 0; i < n; i++) {
@@ -32,7 +31,7 @@ static bool any_ipv4_configured_nonlocal(void){
             if (v4->mode == IPV4_CFG_DISABLED) continue;
             if (!v4->ip) continue;
             if (v4->is_localhost) continue;
-            if (ipv4_is_loopback_u32(v4->ip)) continue;
+            if (ipv4_is_loopback(v4->ip)) continue;
             return true;
         }
     }

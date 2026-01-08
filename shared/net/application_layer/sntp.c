@@ -1,4 +1,4 @@
-#include "sntp.h"
+#include "sntp.h" //deprecated, use ntp
 #include "exceptions/timer.h"
 #include "std/memory.h"
 #include "net/internet_layer/ipv4.h"
@@ -7,6 +7,7 @@
 #include "types.h"
 #include "net/transport_layer/csocket_udp.h"
 #include "syscalls/syscalls.h"
+#include "net/transport_layer/trans_utils.h"
 
 #define NTP_PORT 123
 #define NTP_UNIX_EPOCH_DELTA 2208988800UL
@@ -42,22 +43,15 @@ static uint64_t ntp64_be_to_unix_us(uint64_t ntp_be){
     return sec * 1000000ULL + ((frac * 1000000ULL) >> 32);
 }
 
-static void make_v4_ep(uint32_t ip_host, uint16_t port, net_l4_endpoint* ep){
-    memset(ep, 0, sizeof(*ep));
-    ep->ver = IP_VER4;
-    memcpy(ep->ip, &ip_host, 4);
-    ep->port = port;
-}
-
 static sntp_result_t sntp_send_query(socket_handle_t sock, uint32_t server_ip_host, uint64_t* t1_us_out) {
     ntp_packet_t p;
     memset(&p, 0, sizeof(p));
     p.li_vn_mode = (0u<<6) | (4u<<3) | 3u;
-    uint64_t t1_us = timer_now_usec();
+    uint64_t t1_us = timer_wall_time_us();
     p.txTs = unix_us_to_ntp64_be(t1_us);
     net_l4_endpoint dst;
-    make_v4_ep(server_ip_host, 0, &dst);
-    int64_t sent = socket_sendto_udp_ex(sock, DST_ENDPOINT, &dst, NTP_PORT, &p, sizeof(p));
+    make_ep(server_ip_host, NTP_PORT, IP_VER4, &dst);
+    int64_t sent = socket_sendto_udp_ex(sock, DST_ENDPOINT, &dst, 0, &p, sizeof(p));
     if (sent < 0) return SNTP_ERR_SEND;
     *t1_us_out = t1_us;
     return SNTP_OK;
@@ -118,7 +112,7 @@ sntp_result_t sntp_poll_once(uint32_t timeout_ms){
             memcpy(&rip, src.ip, 4);
             if (rip == s0 || rip == s1){
                 ntp_packet_t* r = (ntp_packet_t*)buf;
-                uint64_t t4_us = timer_now_usec();
+                uint64_t t4_us = timer_wall_time_us();
 
                 uint64_t T1 = ntp64_be_to_unix_us(r->origTs);
                 uint64_t T2 = ntp64_be_to_unix_us(r->recvTs);

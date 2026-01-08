@@ -68,6 +68,9 @@ void http_header_parser(const char *buf, uint32_t len,
                         HTTPHeader **out_extra,
                         uint32_t *out_extra_count);
 
+void http_headers_common_free(HTTPHeadersCommon *common);
+void http_headers_extra_free(HTTPHeader *extra, uint32_t extra_count);
+
 string http_request_builder(const HTTPRequestMsg *req);
 
 string http_response_builder(const HTTPResponseMsg *res);

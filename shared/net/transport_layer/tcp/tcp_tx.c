@@ -1,21 +1,41 @@
 #include "tcp_internal.h"
 
-uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow) {
-    uint32_t wnd = flow->rcv_wnd;
-    if (wnd > flow->rcv_wnd_max) wnd = flow->rcv_wnd_max;
+uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow, uint8_t apply_scale) {
+    if (!flow) return 0;
 
-    if (!flow->ws_ok || flow->ws_send == 0) {
-        if (wnd > 0xFFFF) return 0xFFFF;
-        return (uint16_t)wnd;
+    uint32_t quantum = 1;
+    if (apply_scale && flow->ws_ok && flow->ws_send) quantum = 1u << flow->ws_send;
+
+    uint32_t maxw = flow->rcv_wnd_max;
+    uint32_t used = flow->rcv_buf_used;
+    uint32_t freew = maxw > used ? maxw - used: 0;
+
+    uint32_t free_q = quantum == 1 ? freew : (freew & ~(quantum - 1));
+
+    if (flow->rcv_adv_edge < flow->rcv_nxt) flow->rcv_adv_edge = flow->rcv_nxt;
+    uint32_t candidate_edge = flow->rcv_nxt + free_q;
+    if (candidate_edge > flow->rcv_adv_edge) flow->rcv_adv_edge = candidate_edge;
+
+    uint32_t adv = flow->rcv_adv_edge - flow->rcv_nxt;
+
+    uint32_t field = adv;
+    if (!apply_scale || !flow->ws_ok || flow->ws_send == 0) {
+        if (field > 65535u) field = 65535u;
+        adv = field;
+    } else {
+        field = adv >> flow->ws_send;
+        if (field > 65535u) field = 65535u;
+        adv = field << flow->ws_send;
     }
 
-    uint32_t field = wnd >> flow->ws_send;
-    if (field == 0 && wnd) field = 1;
-    if (field > 0xFFFF) field = 0xFFFF;
+    flow->rcv_wnd = adv;
+    flow->rcv_adv_edge = flow->rcv_nxt + adv;
+    flow->ctx.window = (uint16_t)field;
     return (uint16_t)field;
 }
 
-static void tcp_persist_arm(tcp_flow_t *flow){
+
+static void tcp_persist_arm(tcp_flow_t *flow) {
     if (!flow) return;
     flow->persist_active = 1;
     flow->persist_timer_ms = 0;
@@ -55,19 +75,20 @@ void tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
     hdr.sequence = bswap32(seg->seq);
     hdr.ack = bswap32(flow->ctx.ack);
 
-    uint8_t flags = (uint8_t)(1u << ACK_F);
+    uint8_t flags = 0;
+    if (!(flow->state == TCP_SYN_SENT && seg->syn && flow->ctx.ack == 0)) flags |= (uint8_t)(1u << ACK_F);
     if (seg->syn) flags |= (uint8_t)(1u << SYN_F);
     if (seg->fin) flags |= (uint8_t)(1u << FIN_F);
     hdr.flags = flags;
 
-    hdr.window = tcp_calc_adv_wnd_field(flow);
+    hdr.window = tcp_calc_adv_wnd_field(flow, seg->syn ? 0 : 1);
     hdr.urgent_ptr = 0;
 
-    if (flow->remote.ver == IP_VER4) {
+    if (flow->local.ver == IP_VER4) {
         ipv4_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v4(flow->local.ip, &tx);
         (void)tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &hdr, NULL, 0, seg->buf ? (const uint8_t *)seg->buf : NULL, seg->len, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
-    } else if (flow->remote.ver == IP_VER6) {
+    } else if (flow->local.ver == IP_VER6) {
         ipv6_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v6(flow->local.ip, &tx);
         (void)tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &hdr, NULL, 0, seg->buf ? (const uint8_t *)seg->buf : NULL, seg->len, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
@@ -85,7 +106,7 @@ void tcp_send_ack_now(tcp_flow_t *flow){
     ackhdr.sequence = bswap32(flow->ctx.sequence);
     ackhdr.ack = bswap32(flow->ctx.ack);
     ackhdr.flags = (uint8_t)(1u << ACK_F);
-    ackhdr.window = tcp_calc_adv_wnd_field(flow);
+    ackhdr.window = tcp_calc_adv_wnd_field(flow, 1);
     ackhdr.urgent_ptr = 0;
 
     uint8_t opts[64];
@@ -110,7 +131,7 @@ void tcp_send_ack_now(tcp_flow_t *flow){
 
             for (uint32_t i = 0; i + 1 < n; i++) {
                 for (uint32_t j = i + 1; j < n; j++) {
-                    if (flow->reass[idx[j]].seq > flow->reass[idx[i]].seq) {
+                    if ((int32_t)(flow->reass[idx[j]].seq > flow->reass[idx[i]].seq)) {
                         uint32_t t = idx[i];
                         idx[i] = idx[j];
                         idx[j] = t;
@@ -121,7 +142,7 @@ void tcp_send_ack_now(tcp_flow_t *flow){
             for (uint32_t i = 0; i < n; i++) {
                 const tcp_reass_seg_t *s = &flow->reass[idx[i]];
                 uint32_t left = s->seq;
-                uint32_t right = s->seq + s->end;
+                uint32_t right = s->end;
 
                 opts[o + 0] = (uint8_t)(left >> 24);
                 opts[o + 1] = (uint8_t)(left >> 16);
@@ -140,11 +161,11 @@ void tcp_send_ack_now(tcp_flow_t *flow){
         }
     }
 
-    if (flow->remote.ver == IP_VER4) {
+    if (flow->local.ver == IP_VER4) {
         ipv4_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v4(flow->local.ip, &tx);
         (void)tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &ackhdr, opts_len ? opts : NULL, opts_len, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
-    } else if (flow->remote.ver == IP_VER6) {
+    } else if (flow->local.ver == IP_VER6) {
         ipv6_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v6(flow->local.ip, &tx);
         (void)tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &ackhdr, opts_len ? opts : NULL, opts_len, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
@@ -160,7 +181,11 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
 
     tcp_flow_t *flow = NULL;
     for (int i = 0; i < MAX_TCP_FLOWS; i++) {
-        if (&tcp_flows[i].ctx == flow_ctx) { flow = &tcp_flows[i]; break; }
+        if (!tcp_flows[i]) continue;
+        if (&tcp_flows[i]->ctx == flow_ctx) {
+            flow = tcp_flows[i];
+            break;
+        }
     }
     if (!flow) return TCP_INVALID;
 
@@ -259,14 +284,18 @@ tcp_result_t tcp_flow_close(tcp_data *flow_ctx){
 
     tcp_flow_t *flow = NULL;
     for (int i = 0; i < MAX_TCP_FLOWS; i++) {
-        if (&tcp_flows[i].ctx == flow_ctx) { flow = &tcp_flows[i]; break; }
+        if (!tcp_flows[i]) continue;
+        if (&tcp_flows[i]->ctx == flow_ctx) {
+            flow = tcp_flows[i];
+            break;
+        }
     }
     if (!flow) return TCP_INVALID;
 
     if (flow->state == TCP_ESTABLISHED || flow->state == TCP_CLOSE_WAIT) {
         flow_ctx->sequence = flow->snd_nxt;
         flow_ctx->ack = flow->ctx.ack;
-        flow_ctx->window = tcp_calc_adv_wnd_field(flow);
+        flow_ctx->window = tcp_calc_adv_wnd_field(flow, 1);
         flow_ctx->payload.ptr = 0;
         flow_ctx->payload.size = 0;
         flow_ctx->flags = (uint8_t)((1u << FIN_F) | (1u << ACK_F));

@@ -1,4 +1,4 @@
-#pragma once
+#pragma once//deprecated, use ntp
 #include "types.h"
 #include "net/transport_layer/csocket_udp.h"
 

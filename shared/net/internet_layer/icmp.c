@@ -68,7 +68,7 @@ static uintptr_t build_echo(uint16_t id, uint16_t seq, const uint8_t* payload, u
     memset(pkt->payload, 0, 56);
     if (payload && pay_len) memcpy(pkt->payload, payload, (pay_len > 56 ? 56 : pay_len));
     pkt->checksum = 0;
-    pkt->checksum = checksum16((uint16_t*)pkt, len);
+    pkt->checksum = checksum16((uint16_t*)pkt, (len+1)/2);
     return buf;
 }
 
@@ -174,7 +174,7 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
     icmp_packet* pkt = (icmp_packet*)ptr;
     uint16_t recv_ck = pkt->checksum;
     pkt->checksum = 0;
-    uint16_t calc = checksum16((uint16_t*)pkt, len);
+    uint16_t calc = checksum16((uint16_t*)pkt, (len+1)/2);
     pkt->checksum = recv_ck;
     if (calc != recv_ck) return;
 
@@ -197,7 +197,7 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
         if (pay) memcpy(rp->payload, pkt->payload, pay);
         rp->checksum = 0;
         uint32_t rlen = 8 + pay;
-        rp->checksum = checksum16((uint16_t*)rp, rlen);
+        rp->checksum = checksum16((uint16_t*)rp, (rlen+1)/2);
 
         l3_ipv4_interface_t* l3 = l3_ipv4_find_by_ip(dst_ip);
         if (l3 && l3->l2) {

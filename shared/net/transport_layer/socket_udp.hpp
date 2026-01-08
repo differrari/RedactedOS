@@ -10,6 +10,7 @@
 #include "syscalls/syscalls.h"
 #include "net/internet_layer/ipv4_utils.h"
 #include "net/internet_layer/ipv6_utils.h"
+#include "net/transport_layer/trans_utils.h"
 #include "net/internet_layer/ipv6.h"
 #include "net/internet_layer/igmp.h"
 
@@ -459,10 +460,7 @@ public:
             if (d.ver == 0 && dr4 == DNS_OK) {
                 ipv4_tx_plan_t p4;
                 if (ipv4_build_tx_plan(a4, nullptr, n4 ? allow_v4 : nullptr, n4, &p4)) {
-                    d.ver = IP_VER4;
-                    memset(d.ip, 0, 16);
-                    memcpy(d.ip, &a4, 4);
-                    d.port = port;
+                    make_ep(a4, port, IP_VER4, &d);
                 }
             }
 

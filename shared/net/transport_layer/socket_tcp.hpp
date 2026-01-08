@@ -12,6 +12,7 @@
 #include "net/internet_layer/ipv4_route.h"
 #include "net/internet_layer/ipv6_route.h"
 #include "net/internet_layer/ipv6_utils.h"
+#include "net/transport_layer/trans_utils.h"
 #include "syscalls/syscalls.h"
 
 static constexpr int TCP_MAX_BACKLOG = 8;
@@ -160,12 +161,14 @@ class TCPSocket : public Socket {
                     }
                 }
 
-                child->flow = tcp_get_ctx(dst_port, ipver, child->remoteEP.ip, src_port);
+                child->flow = tcp_get_ctx(dst_port, ipver, dst_ip_addr, child->remoteEP.ip, src_port);
                 if (!child->flow){
                     child->close();
                     delete child;
                     break;
                 }
+
+			    child->insert_in_list();
 
                 srv->pending[srv->backlogLen++] = child;
                 break;
@@ -178,6 +181,31 @@ class TCPSocket : public Socket {
             if (s->localPort != dst_port) continue;
             if (s->remoteEP.port != src_port) continue;
             if (s->remoteEP.ver != ipver) continue;
+
+            bool matches_dst = (s->bound_l3_count == 0);
+            for (int i = 0; !matches_dst && i < s->bound_l3_count; ++i) {
+                uint8_t id = s->bound_l3[i];
+
+                if (ipver == IP_VER4) {
+                    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
+                    if (!is_valid_v4_l3_for_bind(v4)) continue;
+                    if (v4->l2->ifindex != ifindex) continue;
+                    if (v4->ip == *(const uint32_t*)dst_ip_addr) {
+                        matches_dst = true;
+                        break;
+                    }
+                } else {
+                    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
+                    if (!is_valid_v6_l3_for_bind(v6)) continue;
+                    if (v6->l2->ifindex != ifindex) continue;
+                    if (memcmp(v6->ip, dst_ip_addr, 16) == 0) {
+                        matches_dst = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!matches_dst) continue;
 
             if (ipver == IP_VER4) {
                 if (*(const uint32_t*)s->remoteEP.ip != *(const uint32_t*)src_ip_addr) continue;
@@ -444,7 +472,6 @@ public:
         for (int i = 1; i < backlogLen; ++i) pending[i - 1] = pending[i];
         pending[--backlogLen] = nullptr;
 
-        client->insert_in_list();
         return client;
     }
 
@@ -525,9 +552,7 @@ public:
 
             if (!chosen_l3 && dr4 == DNS_OK) {
                 net_l4_endpoint d4{};
-                d4.ver = IP_VER4;
-                memcpy(d4.ip, &v4addr, 4);
-                d4.port = port;
+                make_ep(v4addr, port, IP_VER4, &d4);
 
                 uint32_t dip = 0;
                 memcpy(&dip, d4.ip, 4);
@@ -565,7 +590,19 @@ public:
         tcp_data ctx_copy{};
         if (!tcp_handshake_l3(chosen_l3, localPort, &d, &ctx_copy, pid, &extraOpts)) return SOCK_ERR_SYS;
 
-        flow = tcp_get_ctx(localPort, d.ver, (const void*)d.ip, d.port);
+        uint8_t local_ip[16];
+        memset(local_ip, 0, sizeof(local_ip));
+        if (d.ver == IP_VER4) {
+            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
+            if (!is_valid_v4_l3_for_bind(v4)) return SOCK_ERR_SYS;
+            memcpy(local_ip, &v4->ip, 4);
+        } else {
+            l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen_l3);
+            if (!is_valid_v6_l3_for_bind(v6)) return SOCK_ERR_SYS;
+            memcpy(local_ip, v6->ip, 16);
+        }
+
+        flow = tcp_get_ctx(localPort, d.ver, local_ip, (const void*)d.ip, d.port);
         if (!flow) return SOCK_ERR_SYS;
 
         remoteEP = d;

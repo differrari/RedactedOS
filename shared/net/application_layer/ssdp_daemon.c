@@ -9,6 +9,8 @@
 #include "net/application_layer/ssdp.h"
 #include "net/internet_layer/ipv6_utils.h"
 #include "math/rng.h"
+#include "net/transport_layer/trans_utils.h"
+
 //at the moment it's a very basic version. it's a protocol still in use but only in few cases
 //it;s used in some printers, upnp, local video streaming and various other things 
 //eventually if needed, reactivate the process in net_proc
@@ -49,10 +51,8 @@ static void ssdp_schedule_response(const net_l4_endpoint* src, uint32_t mx_ms) {
 static void ssdp_send_notify(socket_handle_t s4, socket_handle_t s6, bool alive) {
     if (s4) {
         string msg = ssdp_build_notify(alive, false);
-        net_l4_endpoint dst = (net_l4_endpoint){0};
-        dst.ver = IP_VER4;
-        memcpy(dst.ip, &ssdp_host_v4, 4);
-        dst.port = 1900;
+        net_l4_endpoint dst;
+        make_ep(ssdp_host_v4, 1900, IP_VER4, &dst);
         (void)socket_sendto_udp_ex(s4, DST_ENDPOINT, &dst, 0, msg.data, msg.length);
         free(msg.data, msg.mem_length);
     }

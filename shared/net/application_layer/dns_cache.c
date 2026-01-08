@@ -11,6 +11,22 @@ typedef struct {
 } dns_cache_entry_t;
 
 static dns_cache_entry_t g_dns_cache[32];
+static bool g_dns_cache_inited = false;
+
+static void dns_cache_ensure_init(void) {
+    if (g_dns_cache_inited) return;
+    g_dns_cache_inited= true;
+
+    uint8_t a[16];
+    memset(a, 0, sizeof(a));
+    wr_be32(a, 0x7F000001u);
+    dns_cache_put_ip("localhost", 1, a, 0xFFFFFFFFu);
+
+    uint8_t v6[16];
+    memset(v6, 0, sizeof(v6));
+    v6[15] = 1;
+    dns_cache_put_ip("localhost", 28, v6, 0xFFFFFFFFu);
+}
 
 void dns_cache_put_ip(const char* name, uint8_t rr_type,const uint8_t addr[16], uint32_t ttl_ms) {
     if (!name || !addr) return;
@@ -18,6 +34,8 @@ void dns_cache_put_ip(const char* name, uint8_t rr_type,const uint8_t addr[16], 
     if (!nlen) return;
     if (nlen >= 128) return;
     if (!ttl_ms) return;
+
+    if (nlen == 9u&& strncmp(name, "localhost", true, 9) == 0 && (rr_type == 1 || rr_type == 28))ttl_ms = 0xFFFFFFFFu;
 
     int free_i = -1;
     for (int i = 0; i < 32; i++) {
@@ -46,6 +64,7 @@ void dns_cache_put_ip(const char* name, uint8_t rr_type,const uint8_t addr[16], 
 }
 
 bool dns_cache_get_ip(const char* name, uint8_t rr_type, uint8_t out_addr[16]) {
+    dns_cache_ensure_init();
     if (!name || !out_addr) return false;
     uint32_t nlen = strlen(name, 128);
     if (!nlen) return false;
@@ -63,12 +82,14 @@ bool dns_cache_get_ip(const char* name, uint8_t rr_type, uint8_t out_addr[16]) {
 }
 
 void dns_cache_tick(uint32_t ms) {
+    dns_cache_ensure_init();
     for (int i = 0; i < 32; i++) {
         if (!g_dns_cache[i].in_use) continue;
         if (!g_dns_cache[i].ttl_ms) {
             g_dns_cache[i].in_use = 0;
             continue;
         }
+        if (g_dns_cache[i].ttl_ms == 0xFFFFFFFFu) continue;
         if (g_dns_cache[i].ttl_ms <= ms) {
             memset(&g_dns_cache[i], 0, sizeof(g_dns_cache[i]));
         } else {

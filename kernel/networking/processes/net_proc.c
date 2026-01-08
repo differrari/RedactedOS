@@ -20,6 +20,7 @@
 #include "net/checksums.h"
 
 #include "net/transport_layer/csocket_udp.h"
+#include "net/transport_layer/trans_utils.h"
 
 #include "net/application_layer/csocket_http_client.h"
 #include "net/application_layer/csocket_http_server.h"
@@ -28,6 +29,8 @@
 #include "net/application_layer/mdns_responder.h"
 #include "net/application_layer/dns.h"
 #include "net/application_layer/sntp_daemon.h"
+#include "net/application_layer/ntp.h"
+#include "net/application_layer/ntp_daemon.h"
 #include "net/application_layer/dhcpv6_daemon.h"
 #include "net/application_layer/ssdp_daemon.h"
 
@@ -41,10 +44,8 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
     if (!sock)
         return 0;
 
-    net_l4_endpoint dst = (net_l4_endpoint){0};
-    dst.ver = IP_VER4;
-    memcpy(dst.ip, &probe_ip, 4);
-    dst.port = probe_port;
+    net_l4_endpoint dst;
+    make_ep(probe_ip, probe_port, IP_VER4, &dst);
 
     static const char greeting[] = "hello";
     if (socket_sendto_udp_ex(sock, DST_ENDPOINT, &dst, 0, greeting, sizeof(greeting)) < 0) {
@@ -77,20 +78,21 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
 }
 
 static void free_request(HTTPRequestMsg *req) {
-    if (req->path.mem_length)
-        free(req->path.data, req->path.mem_length);
-    for (uint32_t i = 0; i < req->extra_header_count; i++) {
-        HTTPHeader *h = &req->extra_headers[i];
-        if (h->key.mem_length)
-            free(h->key.data, h->key.mem_length);
-        if (h->value.mem_length)
-            free(h->value.data, h->value.mem_length);
-    }
-    if (req->extra_headers)
-        free(req->extra_headers, req->extra_header_count * sizeof(HTTPHeader));
-    if (req->body.ptr && req->body.size)
-        free((void*)req->body.ptr, req->body.size);
+    if (!req) return;
+
+    if (req->path.mem_length) free(req->path.data, req->path.mem_length);
+
+    http_headers_common_free(&req->headers_common);
+    http_headers_extra_free(req->extra_headers, req->extra_header_count);
+    req->extra_headers = NULL;
+    req->extra_header_count = 0;
+
+    if (req->body.ptr && req->body.size) free((void*)req->body.ptr, req->body.size);
+
+    req->path = (string){0};
+    req->body = (sizedptr){0};
 }
+
 
 static void run_http_server() {
     uint16_t pid = get_current_proc_pid();
@@ -146,7 +148,7 @@ static void run_http_server() {
         }
 
         HTTPResponseMsg res = (HTTPResponseMsg){0};
-
+        
         if (req.path.length == 1 && req.path.data[0] == '/') {
             res.status_code = HTTP_OK;
             res.reason = STR_OK;
@@ -232,19 +234,13 @@ static void test_http(const net_l4_endpoint* ep) {
     http_client_close(cli);
     http_client_destroy(cli);
 
+    if (resp.body.ptr && resp.body.size) free((void*)resp.body.ptr, resp.body.size);
+
+    http_headers_common_free(&resp.headers_common);
+
     if (resp.reason.data && resp.reason.mem_length)
         free(resp.reason.data, resp.reason.mem_length);
-
-    for (uint32_t i = 0; i < resp.extra_header_count; i++) {
-        HTTPHeader *h = &resp.extra_headers[i];
-        if (h->key.mem_length)
-            free(h->key.data, h->key.mem_length);
-        if (h->value.mem_length)
-            free(h->value.data, h->value.mem_length);
-    }
-
-    if (resp.extra_headers)
-        free(resp.extra_headers, resp.extra_header_count * sizeof(HTTPHeader));
+    http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
 }
 
 static int ifv4_is_ready_nonlocal(const l3_ipv4_interface_t* ifv4) {
@@ -292,21 +288,20 @@ static int any_ipv6_ready(void) {
     return 0;
 }
 
-static void print_info() {
-    network_dump_interfaces();
-    if (!sntp_is_running()) {
-        kprintf("[TIME] starting SNTP...");
-        create_kernel_process("sntpd", sntp_daemon_entry, 0, 0);
+static int ntp(int argc, char* argv[]) {
+    if (!ntp_is_running()) {
+        kprintf("[TIME] starting NTP...");
+        create_kernel_process("ntpd", ntp_daemon_entry, 0, 0);
         uint32_t waited = 0;
         const uint32_t step = 200;
         const uint32_t timeout = 10000;
         while (!timer_is_synchronised() && waited < timeout) {
-            if ((waited % 1000) == 0) kprintf("[TIME] waiting SNTP sync...");
+            if ((waited % 1000) == 0) kprintf("[TIME] waiting NTP sync...");
             sleep(step);
             waited += step;
 
         }
-        if (!timer_is_synchronised()) kprintf("[TIME] SNTP sync timeout, continuing");
+        if (!timer_is_synchronised()) kprintf("[TIME] NTP sync timeout, continuing");
     }
     timer_set_timezone_minutes(120);
     kprintf("[TIME]timezone offset %i minutes", (int32_t)timer_get_timezone_minutes());
@@ -322,6 +317,7 @@ static void print_info() {
         timer_datetime_to_string(&now_dt_loc, s, sizeof s);
         kprintf("[TIME] LOCAL: %s (TZ %i min)", s, (int32_t)timer_get_timezone_minutes());
     }
+    return 0;
 }
 
 static void test_net_for_interface(l3_ipv4_interface_t* ifv4) {
@@ -346,7 +342,7 @@ static void test_net_for_interface(l3_ipv4_interface_t* ifv4) {
 }
 
 static void test_net() {
-    print_info();
+    create_kernel_process("ntp", ntp, 0, NULL);
     uint8_t n_if = l2_interface_count();
     int tested_any = 0;
     for (uint8_t i = 0; i < n_if; i++) {

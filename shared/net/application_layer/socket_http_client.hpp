@@ -171,10 +171,9 @@ public:
             }
         }
         if (have > 0) {
-            char *body_copy = (char*)malloc(have + 1);
+            char *body_copy = (char*)malloc(have);
             if (body_copy) {
                 memcpy(body_copy, buf.data + body_start, have);
-                body_copy[have] = '\0';
                 resp.body.ptr = (uintptr_t)body_copy;
                 resp.body.size = have;
             }

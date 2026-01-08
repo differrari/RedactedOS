@@ -1,4 +1,4 @@
-#pragma once
+#pragma once//deprecated, use ntp
 #include "types.h"
 
 #ifdef __cplusplus

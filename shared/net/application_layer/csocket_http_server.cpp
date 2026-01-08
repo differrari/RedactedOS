@@ -55,9 +55,8 @@ int32_t http_server_send_response(http_server_handle_t h, http_connection_handle
 int32_t http_connection_close(http_connection_handle_t c) {
     if (!c) return (int32_t)SOCK_ERR_INVAL;
     TCPSocket* conn = reinterpret_cast<TCPSocket*>(c);
-    int32_t r = conn->close();
     delete conn;
-    return r;
+    return (int32_t)SOCK_OK;
 }
 
 int32_t http_server_close(http_server_handle_t h) {

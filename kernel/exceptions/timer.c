@@ -1,7 +1,15 @@
 #include "timer.h"
+#include "math/math.h"
 
-static int64_t g_wall_offset_us = 0;
+#define TIMER_SLEW_MAX_PPM 500
+#define TIMER_FREQ_MAX_PPM 500
+
 static int g_sync = 0;
+
+static uint64_t g_wall_base_mono_us = 0;
+static int64_t g_wall_base_unix_us = 0;
+static int32_t g_freq_ppm = 0;
+static int64_t g_slew_rem_us = 0;
 
 static int32_t g_tz_offset_min = 0;
 
@@ -31,6 +39,12 @@ void permanent_disable_timer(){
 void timer_init(uint64_t msecs) {
     timer_reset(msecs);
     timer_enable();
+
+    g_wall_base_mono_us = timer_now_usec();
+    g_wall_base_unix_us = 0;
+    g_freq_ppm = 0;
+    g_slew_rem_us = 0;
+    g_sync = 0;
 }
 
 void virtual_timer_reset(uint64_t smsecs) {
@@ -75,12 +89,69 @@ uint64_t timer_now_usec(void) {
     return us;
 }
 
-void timer_apply_sntp_sample_us(uint64_t server_unix_us) {
-    int64_t mono_us = (int64_t)timer_now_usec();
-    int64_t off = (int64_t)server_unix_us - mono_us;
+static int64_t wall_advance_to(uint64_t mono_now_us) {
+    if (!g_wall_base_mono_us) g_wall_base_mono_us = mono_now_us;
 
-    g_wall_offset_us = off;
+    uint64_t dt_u = mono_now_us-g_wall_base_mono_us;
+    if (dt_u) {
+        int64_t dt = (int64_t)dt_u;
+
+        int64_t base = g_wall_base_unix_us;
+        int64_t adj = dt +(dt * (int64_t)g_freq_ppm)/1000000LL;
+        base += adj;
+
+        int64_t max_slew = (dt * (int64_t)TIMER_SLEW_MAX_PPM) / 1000000LL;
+        if (max_slew < 1)max_slew = 1;
+
+        if (g_slew_rem_us) {
+            int64_t apply = clamp_i64(g_slew_rem_us, -max_slew, max_slew);
+            g_slew_rem_us -= apply;
+            base += apply;
+        }
+
+        g_wall_base_mono_us = mono_now_us;
+        g_wall_base_unix_us = base;
+        return base;
+    }
+
+    return g_wall_base_unix_us;
+}
+
+uint64_t timer_wall_time_us(void) {
+    return (uint64_t)wall_advance_to(timer_now_usec());
+}
+
+uint64_t timer_unix_time_us(void) {
+    if (!g_sync) return 0;
+    int64_t u = wall_advance_to( timer_now_usec());
+    if (u < 0) return 0;
+    return (uint64_t)u;
+}
+
+void timer_sync_set_unix_us(uint64_t unix_us) {
+    uint64_t now_us = timer_now_usec();
+    g_wall_base_mono_us = now_us;
+    g_wall_base_unix_us= (int64_t)unix_us;
+    g_slew_rem_us = 0;
     g_sync = 1;
+}
+
+void timer_sync_slew_us(int64_t delta_us){
+    const int64_t cap = 60LL * 1000000LL;
+    int64_t v = g_slew_rem_us + delta_us;
+    g_slew_rem_us = clamp_i64(v, -cap, cap);
+}
+
+void timer_sync_set_freq_ppm(int32_t ppm) {
+    g_freq_ppm = clamp_i64((int32_t)ppm, -TIMER_FREQ_MAX_PPM, TIMER_FREQ_MAX_PPM);
+}
+
+int32_t timer_sync_get_freq_ppm(void) {
+    return g_freq_ppm;
+}
+
+void timer_apply_sntp_sample_us(uint64_t server_unix_us) {
+    timer_sync_set_unix_us(server_unix_us);
 }
 
 int timer_is_synchronised(void) {
@@ -88,13 +159,9 @@ int timer_is_synchronised(void) {
 }
 
 uint64_t timer_unix_time_ms(void) {
-    if (!g_sync) return 0;
-    uint64_t now_us = timer_now_usec();
-    int64_t off = g_wall_offset_us;
-
-    int64_t unix_us = (int64_t)now_us + off;
-    if (unix_us < 0) return 0;
-    return (uint64_t)unix_us / 1000ULL;
+    uint64_t us = timer_unix_time_us();
+    if (us ==0) return 0;
+    return us / 1000ULL;
 }
 
 void timer_set_timezone_minutes(int32_t minutes){
@@ -116,8 +183,8 @@ uint64_t timer_local_time_ms(void){
 int timer_set_manual_unix_time_ms(uint64_t unix_ms){
     if (g_sync) return -1;
     uint64_t now_us = timer_now_usec();
-    int64_t off = (int64_t)(unix_ms * 1000ULL) - (int64_t)now_us;
-    g_wall_offset_us = off;
+    g_wall_base_mono_us = now_us;
+    g_wall_base_unix_us = (int64_t)(unix_ms * 1000ULL);
     return 0;
 }
 

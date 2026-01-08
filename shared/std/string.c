@@ -1153,7 +1153,7 @@ int64_t parse_int64(const char* str, size_t size){
 string string_from_const(const char *lit)
 {
     uint32_t len = strlen(lit, 0);
-    return (string){ (char *)lit, len, len + 1};
+    return (string){ (char *)lit, len, 0};
 }
 
 string string_concat(string a, string b)
@@ -1182,7 +1182,7 @@ void string_concat_inplace(string *dest, string src)
     }
     memcpy(dst + dest->length, src.data, src.length);
     dst[new_len] = '\0';
-    if (dest->data) {
+    if (dest->data && dest->mem_length) {
         free(dest->data, dest->mem_length);
     }
     dest->data = dst;

@@ -99,6 +99,26 @@ string http_header_builder(const HTTPHeadersCommon *C,
 }
 
 
+void http_headers_common_free(HTTPHeadersCommon *C) {
+    if (!C) return;
+    if (C->type.mem_length) free(C->type.data, C->type.mem_length);
+    if (C->date.mem_length) free(C->date.data, C->date.mem_length);
+    if (C->connection.mem_length) free(C->connection.data, C->connection.mem_length);
+    if (C->keep_alive.mem_length) free(C->keep_alive.data, C->keep_alive.mem_length);
+    if (C->host.mem_length) free(C->host.data, C->host.mem_length);
+    if (C->content_type.mem_length) free(C->content_type.data, C->content_type.mem_length);
+    *C = (HTTPHeadersCommon){0};
+}
+
+void http_headers_extra_free(HTTPHeader *extra, uint32_t extra_count) {
+    if (!extra) return;
+    for (uint32_t i = 0; i < extra_count; i++) {
+        if (extra[i].key.mem_length)free(extra[i].key.data, extra[i].key.mem_length);
+        if (extra[i].value.mem_length)free(extra[i].value.data, extra[i].value.mem_length);
+    }
+    free(extra, extra_count * sizeof(HTTPHeader));
+}
+
 void http_header_parser(const char *buf, uint32_t len,
                         HTTPHeadersCommon *C,
                         HTTPHeader **out_extra,
@@ -112,12 +132,16 @@ void http_header_parser(const char *buf, uint32_t len,
             max_lines++;
     }
 
-    HTTPHeader *extras = (HTTPHeader*)(uintptr_t)malloc(sizeof(*extras) * max_lines);
-    if (!extras) {
-        *out_extra = NULL;
-        *out_extra_count = 0;
-        return;
+    HTTPHeader *extras = NULL;
+    if (max_lines) {
+        extras = (HTTPHeader*)(uintptr_t)malloc(sizeof(*extras) * max_lines);
+        if (!extras) {
+            *out_extra = NULL;
+            *out_extra_count = 0;
+            return;
+        }
     }
+
     uint32_t extra_i = 0;
     uint32_t pos = 0;
 
@@ -150,28 +174,72 @@ void http_header_parser(const char *buf, uint32_t len,
             C->length = parse_u32(buf + val_start, val_len);
         }
         else if (copy_len == 12 && strcmp(key_tmp, "content-type", true) == 0) {
+            if (C->type.data && C->type.mem_length) free(C->type.data, C->type.mem_length);
+            C->type = (string){0};
             C->type = string_from_literal_length((char*)(buf + val_start), val_len);
         }
         else if (copy_len == 4 && strcmp(key_tmp, "date", true) == 0) {
+            if (C->date.data && C->date.mem_length) free(C->date.data, C->date.mem_length);
+            C->date = (string){0};
             C->date = string_from_literal_length((char*)(buf + val_start), val_len);
         }
         else if (copy_len == 10 && strcmp(key_tmp, "connection", true) == 0) {
+            if (C->connection.data && C->connection.mem_length) free(C->connection.data, C->connection.mem_length);
+            C->connection = (string){0};
             C->connection = string_from_literal_length((char*)(buf + val_start), val_len);
         }
         else if (copy_len == 10 && strcmp(key_tmp, "keep-alive", true) == 0) {
+            if (C->keep_alive.data && C->keep_alive.mem_length) free(C->keep_alive.data, C->keep_alive.mem_length);
+            C->keep_alive = (string){0};
             C->keep_alive = string_from_literal_length((char*)(buf + val_start), val_len);
+        }
+        else if (copy_len == 4 && strcmp(key_tmp, "host", true) == 0) {
+            if (C->host.data && C->host.mem_length) free(C->host.data, C->host.mem_length);
+            C->host = (string){0};
+            C->host = string_from_literal_length((char*)(buf + val_start), val_len);
         }
         else {
             string key = string_from_literal_length((char*)(buf + pos), key_len);
             string value = string_from_literal_length((char*)(buf + val_start), val_len);
-            extras[extra_i++] = (HTTPHeader){ key, value };
+            if (extras && extra_i< max_lines) extras[extra_i++] = (HTTPHeader){ key, value };
+            else {
+                if (key.mem_length) free(key.data, key.mem_length);
+                if (value.mem_length) free(value.data, value.mem_length);
+            }
         }
 
         pos = eol + 2;
     }
 
-    *out_extra = extras;
-    *out_extra_count = extra_i;
+    if (!extras || extra_i == 0) {
+        if (extras) free(extras, sizeof(*extras) * max_lines);
+        *out_extra = NULL;
+        *out_extra_count = 0;
+        return;
+    }
+
+    if (extra_i == max_lines){
+        *out_extra = extras;
+        *out_extra_count = extra_i;
+        return;
+    }
+
+    HTTPHeader *shr = (HTTPHeader*)(uintptr_t)malloc(sizeof(*shr) *extra_i);
+    if (shr) {
+        memcpy(shr, extras, sizeof(*shr) * extra_i);
+        free(extras,sizeof(*extras) * max_lines);
+        *out_extra = shr;
+        *out_extra_count = extra_i;
+        return;
+    }
+
+    for (uint32_t i = 0; i < extra_i; i++) {
+        if (extras[i].key.mem_length) free(extras[i].key.data, extras[i].key.mem_length);
+        if (extras[i].value.mem_length) free(extras[i].value.data, extras[i].value.mem_length);
+    }
+    free(extras, sizeof(*extras) * max_lines);
+    *out_extra = NULL;
+    *out_extra_count = 0;
 }
 
 string http_request_builder(const HTTPRequestMsg *R)

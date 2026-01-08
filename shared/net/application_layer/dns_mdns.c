@@ -2,6 +2,7 @@
 #include "dns_daemon.h"
 #include "net/internet_layer/ipv6_utils.h"
 #include "std/std.h"
+#include "net/transport_layer/trans_utils.h"
 
 #define MDNS_PORT 5353
 
@@ -129,6 +130,37 @@ static dns_result_t parse_mdns_ip_record(const uint8_t* buffer, uint32_t buffer_
     return DNS_ERR_NO_ANSWER;
 }
 
+static bool dns_write_qname(uint8_t* buf, uint32_t buf_len, uint32_t*inout_off, const char* name) {
+    if (!buf || !inout_off || !name) return false;
+    uint32_t off = *inout_off;
+    if (off >= buf_len) return false;
+    uint32_t label_len = 0;
+    uint32_t label_pos = off;
+    buf[off++] = 0;
+    for (const char* p = name; *p; ++p) {
+        char c = *p;
+        if (c =='.') {
+            if (!label_len || label_len > 63u) return false;
+            buf[label_pos] = (uint8_t)label_len;
+            label_len = 0;
+            label_pos = off;
+            if (off >= buf_len) return false;
+            buf[off++] = 0;
+            continue;
+        }
+        if (label_len >= 63u) return false;
+        if (off >= buf_len) return false;
+        buf[off++]= (uint8_t)c;
+        label_len++;
+    }
+    if (!label_len || label_len > 63u) return false;
+    buf[label_pos] = (uint8_t)label_len;
+    if (off >= buf_len) return false;
+    buf[off++] = 0;
+    *inout_off = off;
+    return true;
+}
+
 static dns_result_t perform_mdns_query_once(socket_handle_t sock, const net_l4_endpoint* dst, const char* name, uint16_t qtype, uint32_t timeout_ms, uint8_t* out_rdata, uint32_t out_len, uint32_t* out_ttl_s) {
     if (!sock) return DNS_ERR_NO_DNS;
     if (!dst) return DNS_ERR_NO_DNS;
@@ -144,22 +176,8 @@ static dns_result_t perform_mdns_query_once(socket_handle_t sock, const net_l4_e
     wr_be16(request_buffer + 4, 1);
 
     uint32_t offset = 12;
-    uint32_t qn_label_len = 0;
-    uint32_t qn_label_pos = offset;
-    request_buffer[offset++] = 0;
-    for (const char* p = name; *p; ++p) {
-        if (*p == '.') {
-            request_buffer[qn_label_pos] = (uint8_t)qn_label_len;
-            qn_label_len = 0;
-            qn_label_pos = offset;
-            request_buffer[offset++] = 0;
-            continue;
-        }
-        request_buffer[offset++] = (uint8_t)(*p);
-        qn_label_len++;
-    }
-    request_buffer[qn_label_pos] = (uint8_t)qn_label_len;
-    request_buffer[offset++] = 0;
+	if (!dns_write_qname(request_buffer, (uint32_t)sizeof(request_buffer), &offset, name)) return DNS_ERR_FORMAT;
+	if (offset + 4 > (uint32_t)sizeof(request_buffer)) return DNS_ERR_FORMAT;
     wr_be16(request_buffer + offset + 0, qtype);
     wr_be16(request_buffer + offset + 2, 0x0001);
     offset += 4;
@@ -192,12 +210,9 @@ dns_result_t mdns_resolve_a(const char* name, uint32_t timeout_ms, uint32_t* out
     socket_handle_t sock = mdns_socket_handle_v4();
     if (!sock) return DNS_ERR_NO_DNS;
 
-    net_l4_endpoint dst;
-    memset(&dst, 0,sizeof(dst));
-    dst.ver = IP_VER4;
     uint32_t group = 0xE00000FBu;
-    memcpy(dst.ip, &group, 4);
-    dst.port = MDNS_PORT;
+    net_l4_endpoint dst;
+    make_ep(group, MDNS_PORT, IP_VER4, &dst);
 
     uint8_t rdata[4];
     uint32_t ttl_s = 0;
