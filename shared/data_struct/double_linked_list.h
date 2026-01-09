@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+//TODO: review allocs & C
 typedef struct cdouble_linked_list_node {
     void* data;
     struct cdouble_linked_list_node* next;
@@ -17,8 +18,8 @@ typedef struct cdouble_linked_list {
     uint64_t length;
 } cdouble_linked_list_t;
 
-extern void* malloc(uint64_t size);
-extern void free(void* ptr, uint64_t size);
+extern void* malloc(size_t size);
+extern void free_sized(void* ptr, size_t size);
 
 cdouble_linked_list_t* cdouble_linked_list_create();
 void cdouble_linked_list_destroy(cdouble_linked_list_t* list);

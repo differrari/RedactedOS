@@ -16,7 +16,7 @@ typedef enum mouse_button {
     MMB,
 } mouse_button;
 
-void register_keypress(keypress kp);
+bool register_keypress(keypress kp);
 void register_event(kbd_event event);
 void mouse_config(gpu_point point, gpu_size size);
 void register_mouse_input(mouse_input *rat);
@@ -26,6 +26,7 @@ mouse_input get_raw_mouse_in();
 gpu_point get_mouse_pos();
 bool mouse_button_pressed(mouse_button mb);
 
+//TODO: shortcuts using function pointers entry points
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp);
 uint16_t sys_subscribe_shortcut_current(keypress kp);
 void sys_set_focus(int pid);
@@ -47,13 +48,6 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid);
 bool is_new_keypress(keypress* current, keypress* previous);
 bool keypress_contains(keypress *kp, char key, uint8_t modifier);
 void remove_double_keypresses(keypress* current, keypress* previous);
-
-void handle_input_interrupt();
-
-void init_input_process();
-void input_start_polling();
-
-extern driver_module input_module;
 
 #ifdef __cplusplus
 }

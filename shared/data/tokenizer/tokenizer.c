@@ -8,43 +8,61 @@ static void tokenizer_fail(Tokenizer *t, TokenizerError err) {
     t->err_pos = t->s->pos;
 }
 
-static void skip_ws_and_comments(Tokenizer *t) {
+static bool skip_ws_and_comments(Tokenizer *t, Token *out) {
     Scanner *s = t-> s;
     for (;;) {
-        scan_skip_ws(s);
-        if (scan_eof(s)) return;
+        scan_skip_ws(s, !t->parse_newline);
+        if (scan_eof(s)) return false;
 
         uint32_t pos =s->pos;
 
-        if (scan_match(s, '/')) {
+        if (scan_match(s, '\n')){
+            out->kind = TOK_NEWLINE;
+            out->start = s->buf + s->pos;
+            out->length = 1;
+            out->pos = s->pos;
+            return true;
+        }
+        if (t->comment_type == TOKENIZER_COMMENT_TYPE_SLASH){
             if (scan_match(s, '/')) {
+                if (scan_match(s, '/')) {
+                    while (!scan_eof(s)) {
+                        char c = scan_next(s);
+                        if (c == '\n' || c == '\r') break;
+                    }
+                    continue;
+                } else if (scan_match(s, '*')) {
+                    int found = 0;
+                    while (!scan_eof(s)) {
+                        char c = scan_next(s);
+                        if (c == '*' && !scan_eof(s) && scan_peek(s) == '/') {
+                            scan_next(s);
+                            found = 1;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        tokenizer_fail(t, TOKENIZER_ERR_UNTERMINATED_COMMENT);
+                        return false;
+                    }
+                    continue;
+                } else {
+                    s->pos = pos;
+                }
+            }
+        } else if (t->comment_type == TOKENIZER_COMMENT_TYPE_HASH){
+            if (scan_match(s, '#')) {
                 while (!scan_eof(s)) {
                     char c = scan_next(s);
                     if (c == '\n' || c == '\r') break;
                 }
                 continue;
-            } else if (scan_match(s, '*')) {
-                int found = 0;
-                while (!scan_eof(s)) {
-                    char c = scan_next(s);
-                    if (c == '*' && !scan_eof(s) && scan_peek(s) == '/') {
-                        scan_next(s);
-                        found = 1;
-                        break;
-                    }
-                }
-                if (!found) {
-                    tokenizer_fail(t, TOKENIZER_ERR_UNTERMINATED_COMMENT);
-                    return;
-                }
-                continue;
-            } else {
-                s->pos = pos;
             }
         }
 
         break;
     }
+    return false;
 }
 
 static void read_identifier(Scanner *s, Token *tok) {
@@ -63,7 +81,8 @@ static void read_identifier(Scanner *s, Token *tok) {
     tok->pos = start;
 }
 
-static bool read_number(Scanner *s, Token *tok) {
+static bool read_number(Tokenizer *t, Token *tok) {
+    Scanner *s = t->s;
     uint32_t start = s->pos;
     const char *buf = s->buf;
     uint32_t len = s->len;
@@ -89,7 +108,7 @@ static bool read_number(Scanner *s, Token *tok) {
             if (!ok) return false;
 
             s->pos = pos;
-            tok->kind = TOK_NUMBER;
+            tok->kind = t->skip_type_check ? TOK_CONST : TOK_NUMBER;
             tok->start = buf + start;
             tok->length = pos - start;
             tok->pos = start;
@@ -112,7 +131,7 @@ static bool read_number(Scanner *s, Token *tok) {
             if (!ok) return false;
 
             s->pos = pos;
-            tok->kind = TOK_NUMBER;
+            tok->kind = t->skip_type_check ? TOK_CONST : TOK_NUMBER;
             tok->start = buf + start;
             tok->length = pos - start;
             tok->pos = start;
@@ -136,7 +155,7 @@ static bool read_number(Scanner *s, Token *tok) {
             if (!ok) return false;
 
             s->pos = pos;
-            tok->kind = TOK_NUMBER;
+            tok->kind = t->skip_type_check ? TOK_CONST : TOK_NUMBER;
             tok->start = buf + start;
             tok->length = pos - start;
             tok->pos= start;
@@ -174,7 +193,7 @@ static bool read_number(Scanner *s, Token *tok) {
     }
 
     s->pos = mant_end;
-    tok->kind = TOK_NUMBER;
+    tok->kind = t->skip_type_check ? TOK_CONST : TOK_NUMBER;
     tok->start = buf + start;
     tok->length = mant_end - start;
     tok->pos = start;
@@ -190,7 +209,7 @@ static bool read_string(Tokenizer *t, Token *tok) {
     while (!scan_eof(s)) {
         char c = scan_next(s);
         if (c == '"') {
-            tok->kind = TOK_STRING;
+            tok->kind = t->skip_type_check ? TOK_CONST : TOK_STRING;
             tok->start = s->buf + start;
             tok->length = s->pos - start;
             tok->pos = start;
@@ -232,7 +251,7 @@ static bool read_string(Tokenizer *t, Token *tok) {
 
 static const char *ops3[] = {">>>", "<<=", ">>=", "===", 0};
 static const char *ops2[] = {"==", "!=", "<=", ">=", "&&", "||", "<<", ">>", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "::", "->", 0};
-static const char ops1[] = "+-*/%<>=!&|^~?";
+static const char ops1[] = "+-*/%<>!&|^~?";
 
 static bool read_operator(Scanner *s, Token *tok) {
     const char *buf = s->buf;
@@ -330,7 +349,9 @@ bool tokenizer_next(Tokenizer *t, Token *out) {
         return false;
     }
 
-    skip_ws_and_comments(t);
+    if (skip_ws_and_comments(t, out)){
+        return true;
+    }
     if (t->failed) {
         out->kind = TOK_INVALID;
         out->start = 0;
@@ -358,7 +379,7 @@ bool tokenizer_next(Tokenizer *t, Token *out) {
 
     if (c >= '0' && c <= '9') {
         uint32_t pos_before = s->pos;
-        if (read_number(s, out)) return true;
+        if (read_number(t, out)) return true;
 
         tokenizer_fail(t, TOKENIZER_ERR_INVALID_NUMBER);
         out->kind = TOK_INVALID;
@@ -381,6 +402,15 @@ bool tokenizer_next(Tokenizer *t, Token *out) {
     }
 
     if (read_delim(s, out)) return true;
+    
+    if (c == '=') {
+        out->kind = TOK_ASSIGN;
+        out->start = s->buf + s->pos;
+        out->length = 1;
+        out->pos = s->pos;
+        scan_next(s);
+        return true;
+    }
 
     if (read_operator(s, out)) return true;
 

@@ -1,9 +1,9 @@
 #include "memory.h"
 
-int memcmp(const void *s1, const void *s2, unsigned long count) {
+int memcmp(const void *s1, const void *s2, size_t count) {
     const unsigned char *a = s1;
     const unsigned char *b = s2;
-    for (unsigned long i = 0; i < count; i++) {
+    for (size_t i = 0; i < count; i++) {
         if (a[i] != b[i]) return a[i] - b[i];
     }
     return 0;
@@ -64,7 +64,8 @@ void* memset32(void* dest, uint32_t val, size_t count) {
     return dest;
 }
 
-void* memset(void* dest, uint8_t byte, size_t count) {
+void* memset(void* dest, int byte, size_t count) {
+    byte = byte & 0xFF;
     uint8_t *d8 = (uint8_t *)dest;
 
     while (((uintptr_t)d8 & 7) && count > 0) {
@@ -109,7 +110,7 @@ void* memset(void* dest, uint8_t byte, size_t count) {
     return dest;
 }
 
-void* memcpy(void *dest, const void *src, uint64_t count) {
+void* memcpy(void *dest, const void *src, size_t count) {
     uint8_t *d8 = (uint8_t *)dest;
     const uint8_t *s8 = (const uint8_t *)src;
 
@@ -205,7 +206,7 @@ void memreverse(void *ptr, size_t n) {
         *r-- = t;
     }
 }
-void* memmove(void *dest, const void *src, uint64_t count) {
+void* memmove(void *dest, const void *src, size_t count) {
     if (dest == src || count == 0) return dest;
 
     uint8_t *d8 = (uint8_t *)dest;

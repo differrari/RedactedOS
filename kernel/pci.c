@@ -5,6 +5,7 @@
 #include "memory/mmu.h"
 #include "std/memory_access.h"
 #include "hw/hw.h"
+#include "sysregs.h"
 
 #define PCI_BUS_MAX 256
 #define PCI_SLOT_MAX 32
@@ -72,7 +73,7 @@ struct acpi_mcfg_t {
     uint32_t creator_revision;
     uint64_t reserved;
     struct {
-        uint64_t base_address; // <<<< This is what you want
+        uint64_t base_address;
         uint16_t pci_segment_group_number;
         uint8_t start_bus_number;
         uint8_t end_bus_number;
@@ -210,6 +211,8 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
         *mmio_start = config_base;
         *mmio_size = size;
 
+        config_base = VIRT_TO_PHYS(config_base);
+
         write32(bar_addr, config_base & 0xFFFFFFFF);
         write32(bar_addr_hi, config_base >> 32);
 
@@ -230,6 +233,8 @@ uint64_t pci_setup_bar(uint64_t pci_addr, uint32_t bar_index, uint64_t *mmio_sta
         uint64_t config_base = alloc_mmio_region(size32);
         *mmio_start = config_base;
         *mmio_size = size32;
+
+        config_base = VIRT_TO_PHYS(config_base);
 
         write32(bar_addr, config_base & 0xFFFFFFFF);
     }
@@ -284,7 +289,7 @@ void pci_register(uint64_t mmio_addr, uint64_t mmio_size){
     uint64_t start = mmio_addr & ~(GRANULE_4KB - 1);
     uint64_t end = (mmio_addr + mmio_size + GRANULE_4KB - 1) & ~(GRANULE_4KB - 1);
     for (uint64_t addr = start; addr < end; addr += GRANULE_4KB)
-        register_device_memory(addr,addr);
+        register_device_memory(PHYS_TO_VIRT(addr), VIRT_TO_PHYS(addr));
 }
 
 #pragma region Interrupts
@@ -442,8 +447,12 @@ bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_si
             if(!table_addr){
                 uint64_t bar_size = 0;
                 pci_setup_bar(pci_addr, bir, &table_addr, &bar_size);
+                pci_register(table_addr, bar_size);
                 kprintf("Setting up new bar for MSI-X %x + %x",table_addr, table_addr_offset);
-            } else kprintf("Bar %i setup at %x + %x",bir, table_addr, table_addr_offset);
+            } else {
+                kprintf("Bar %i setup at %x + %x",bir, table_addr, table_addr_offset);
+                pci_register(table_addr, GRANULE_4KB);
+            }
             
             volatile msix_table_entry *msix_start = (volatile msix_table_entry *)(uintptr_t)(table_addr + table_addr_offset);
 

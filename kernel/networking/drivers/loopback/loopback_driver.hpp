@@ -1,7 +1,7 @@
 #pragma once
 
 #include "networking/drivers/net_driver.hpp"
-#include "net/link_layer/nic_types.h"
+#include "networking/link_layer/nic_types.h"
 
 class LoopbackDriver : public NetDriver {
 public:

@@ -3,8 +3,6 @@
 #include "types.h"
 #include "networking/port_manager.h"
 
-#include "net/link_layer/nic_types.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -1,6 +1,9 @@
 #pragma once
 #include "types.h"
 #include "math.h"
+#if defined(__x86_64__)
+#include "ammintrin.h"
+#endif
 
 typedef int8_t int8x8_t __attribute__((vector_size(8)));
 typedef int8_t int8x16_t __attribute__((vector_size(16)));
@@ -105,48 +108,57 @@ static __inline__ __attribute__((always_inline)) void vst1_f32_b(float* p, float
 static __inline__ __attribute__((always_inline)) float32x2_t vmul_f32_b(float32x2_t a, float32x2_t b) { return a * b; }
 
 static __inline__ __attribute__((always_inline)) float32x2_t vpadd_f32_b(float32x2_t a, float32x2_t b){
-#if defined(__aarch64__)
+#if defined(__APPLE__)
+  return (float32x2_t)__builtin_neon_vpadd_v((int8x8_t)a, (int8x8_t)b, 9);
+#elif defined(__aarch64__)
   return __builtin_aarch64_faddpv2sf(a, b);
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
   return (float32x2_t)__builtin_neon_vpaddv2sf(a, b);
-#elif defined(__clang__)
-  return (float32x2_t)__builtin_neon_vpadd_v((int8x8_t)a, (int8x8_t)b, 9);
+#elif defined(__x86_64__)
+  return (float32x2_t){a[0] + b[0], a[1] + b[1]};
 #else
 # error "no vpadd_f32_b builtin"
 #endif
 }
 
 static __inline__ __attribute__((always_inline)) float32x2_t vmax_f32_b(float32x2_t a, float32x2_t b){
-#if defined(__aarch64__)
+#if defined(__APPLE__)
+  return (float32x2_t)__builtin_neon_vmax_v((int8x8_t)a, (int8x8_t)b, 9);
+#elif defined(__aarch64__)
   return __builtin_aarch64_fmax_nanv2sf(a, b);
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
   return (float32x2_t)__builtin_neon_vmaxfv2sf(a, b);
-#elif defined(__clang__)
-  return (float32x2_t)__builtin_neon_vmax_v((int8x8_t)a, (int8x8_t)b, 9);
+#elif defined(__x86_64__)
+  return a;//TODO: not implemented
 #else
 # error "no vmax_f32_b builtin"
 #endif
 }
 
 static __inline__ __attribute__((always_inline)) float32x2_t vdup_n_f32_b(float x){
-#if defined(__aarch64__)
+#if defined(__APPLE__)
+  return (float32x2_t){ x, x };
+#elif defined(__aarch64__)
   return (float32x2_t){ x, x };
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
   return (float32x2_t)__builtin_neon_vdup_nv2sf(x);
-#elif defined(__clang__)
-  return (float32x2_t)__builtin_neon_vdup_n_v(9, x);
+#elif defined(__x86_64__)
+  return (float32x2_t){ x, x };
 #else
 # error "no vdup_n_f32_b builtin"
 #endif
 }
 
 static __inline__ __attribute__((always_inline)) float32x2_t vrsqrte_f32_b(float32x2_t s){
-#if defined(__aarch64__)
+#if defined(__APPLE__)
+  return (float32x2_t)__builtin_neon_vrsqrte_v((int8x8_t)s, 9);
+#elif defined(__aarch64__)
   return __builtin_aarch64_rsqrtev2sf(s);
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
   return (float32x2_t)__builtin_neon_vrsqrtev2sf(s);
-#elif defined(__clang__)
-  return (float32x2_t)__builtin_neon_vrsqrte_v((int8x8_t)s, 9);
+#elif defined(__x86_64__)
+  float32x4_t r =_mm_rsqrt_ps((float32x4_t){s[0],s[1],0,0});
+  return (float32x2_t){r[0],r[1]};
 #else
 # error "no vrsqrte_f32_b builtin"
 #endif
@@ -193,4 +205,8 @@ static inline bool vector2_zero(vector2 a){
 
 static inline float dot_product(vector2 a, vector2 b) {
     return (a.x*b.x) + (a.y*b.y);
+}
+
+static inline vector2 vector2_lerp(vector2 a, vector2 b, float f){
+    return (vector2){ lerpf(a.x, b.x, f), lerpf(a.y, b.y, f)};
 }

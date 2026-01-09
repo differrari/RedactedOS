@@ -1,4 +1,7 @@
 #include "talloc.h"
+#include "memory/mmu.h"
+#include "memory/page_allocator.h"
+#include "sysregs.h"
 #include "types.h"
 #include "exceptions/exception_handler.h"
 #include "console/kio.h"
@@ -17,18 +20,21 @@ static uint64_t calculated_ram_end = 0;
 
 FreeBlock* temp_free_list = 0;
 
-#define PCI_MMIO_LIMIT  MMIO_BASE + 0xFFFFFFF
+#define PCI_MMIO_LIMIT  (MMIO_BASE + 0xFFFFFFF)
 
 static uint64_t next_mmio_base;
 
 //TODO: come up with a fix for hardcoded MMIO for some devices
-uint64_t alloc_mmio_region(uint64_t size) {
+uint64_t alloc_mmio_region(uint64_t size){
     if (next_mmio_base == 0) next_mmio_base = MMIO_BASE;
+
     size = (size + 0xFFF) & ~0xFFF;
+
     if (next_mmio_base + size > PCI_MMIO_LIMIT){
-        panic("MMIO alloc overflow",next_mmio_base+size);
+        panic("MMIO alloc overflow", next_mmio_base + size);
         return 0;
     }
+
     uint64_t addr = next_mmio_base;
     next_mmio_base += size;
     return addr;
@@ -39,16 +45,33 @@ bool is_mmio_allocated(uint64_t addr){
 }
 
 extern uint64_t kernel_start;
-extern uint64_t heap_bottom;
-extern uint64_t heap_limit;
 extern uint64_t kcode_end;
-extern uint64_t kfull_end;
+
 static bool talloc_verbose = false;
 
-uint64_t next_free_temp_memory = (uint64_t)&heap_bottom;
+uint64_t next_free_temp_memory;
 
-uint64_t talloc(uint64_t size) {
+uintptr_t talloc_mem_limit;
 
+void* pre_talloc_ptr = 0;
+uintptr_t pre_talloc_mem_limit = 0;
+
+bool can_automap = false;
+
+void pre_talloc(){
+    pre_talloc_ptr = palloc_inner(GRANULE_2MB, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, true, can_automap);
+    pre_talloc_mem_limit = (uintptr_t)pre_talloc_ptr + GRANULE_2MB;
+
+    if (!can_automap){
+        can_automap = true;
+        next_free_temp_memory = (uintptr_t)pre_talloc_ptr;
+        talloc_mem_limit = pre_talloc_mem_limit;
+    }
+
+    mmu_map_all((uintptr_t)pre_talloc_ptr);
+}
+
+uint64_t talloc(uint64_t size){
     size = (size + 0xFFF) & ~0xFFF;
 
     if (talloc_verbose){
@@ -58,8 +81,9 @@ uint64_t talloc(uint64_t size) {
     }
 
     FreeBlock** curr = &temp_free_list;
-    while (*curr) {
-        if ((*curr)->size >= size) {
+
+    while (*curr){
+        if ((*curr)->size >= size){
             if (talloc_verbose){
                 uart_raw_puts("[talloc] Reusing free block at ");
                 uart_puthex((uint64_t)*curr);
@@ -71,11 +95,17 @@ uint64_t talloc(uint64_t size) {
             memset((void*)result, 0, size);
             return result;
         }
+
         curr = &(*curr)->next;
     }
 
-    if (next_free_temp_memory + size > (uintptr_t)&heap_limit) {
-        panic("Kernel allocator overflow", next_free_temp_memory);
+    if (next_free_temp_memory + size > talloc_mem_limit){
+        if (!pre_talloc_ptr)
+            panic("Kernel allocator overflow", next_free_temp_memory);
+
+        next_free_temp_memory = (uintptr_t)pre_talloc_ptr;
+        talloc_mem_limit = pre_talloc_mem_limit;
+        pre_talloc();
     }
 
     uint64_t result = next_free_temp_memory;
@@ -91,8 +121,9 @@ uint64_t talloc(uint64_t size) {
     return result;
 }
 
-void temp_free(void* ptr, uint64_t size) {
+void temp_free(void* ptr, uint64_t size){
     size = (size + 0xFFF) & ~0xFFF;
+
     if (talloc_verbose){
         uart_raw_puts("[temp_free] Freeing block at ");
         uart_puthex((uint64_t)ptr);
@@ -101,12 +132,12 @@ void temp_free(void* ptr, uint64_t size) {
         uart_raw_putc('\n');
     }
 
-    memset((void*)ptr,0,size);
+    memset(PHYS_TO_VIRT_P(ptr), 0, size);
 
-    FreeBlock* block = (FreeBlock*)ptr;
+    FreeBlock* block = VIRT_TO_PHYS_P(ptr);
     block->size = size;
     block->next = temp_free_list;
-    temp_free_list = block;
+    temp_free_list = ptr;
 }
 
 void enable_talloc_verbose(){
@@ -121,48 +152,54 @@ uint64_t mem_get_kmem_end(){
     return (uint64_t)&kcode_end;
 }
 
-int handle_mem_node(const char *propname, const void *prop, uint32_t len, dtb_match_t *match) {
-    if (strcmp(propname, "reg", false) == 0 && len >= 16) {
+int handle_mem_node(const char *propname, const void *prop, uint32_t len, dtb_match_t *match){
+    if (strcmp(propname, "reg") == 0 && len >= 16){
         uint32_t *p = (uint32_t *)prop;
         match->reg_base = ((uint64_t)__builtin_bswap32(p[0]) << 32) | __builtin_bswap32(p[1]);
         match->reg_size = ((uint64_t)__builtin_bswap32(p[2]) << 32) | __builtin_bswap32(p[3]);
-        
         return 1;
     }
-    if (strcmp(propname, "device_type", false) == 0 && strcmp(prop,"memory", false) == 0){
+
+    if (strcmp(propname, "device_type") == 0 && strcmp(prop, "memory") == 0){
         match->found = true;
     }
+
     return 0;
 }
 
-int get_memory_region(uint64_t *out_base, uint64_t *out_size) {
+int get_memory_region(uint64_t *out_base, uint64_t *out_size){
     dtb_match_t match = {0};
-    if (dtb_scan("memory",handle_mem_node, &match)) {
+
+    if (dtb_scan("memory", handle_mem_node, &match)){
         *out_base = match.reg_base;
         *out_size = match.reg_size;
         return 1;
     }
+
     return 0;
 }
 
 void calc_ram(){
-    if (get_memory_region(&total_ram_start, &total_ram_size)) {
-            calculated_ram_end = total_ram_start + total_ram_size;
-            calculated_ram_start = ((uint64_t)&kfull_end) + 0x1;
-            calculated_ram_start = ((calculated_ram_start + ((1ULL<<21) - 1)) & ~((1ULL << 21) - 1));
-            calculated_ram_end = ((calculated_ram_end) & ~((1ULL << 21) - 1));
+    if (USE_DTB && get_memory_region(&total_ram_start, &total_ram_size)){
+        calculated_ram_end = total_ram_start + total_ram_size;
+
+        calculated_ram_start = ((uint64_t)&kcode_end) + 0x1;
+        calculated_ram_start = (calculated_ram_start + ((1ULL << 21) - 1)) & ~((1ULL << 21) - 1);
+
+        calculated_ram_end = calculated_ram_end & ~((1ULL << 21) - 1);
     } else {
         total_ram_start = RAM_START;
         total_ram_size = RAM_SIZE;
         calculated_ram_end = CRAM_END;
         calculated_ram_start = CRAM_START;
     }
+
     calculated_ram_size = calculated_ram_end - calculated_ram_start;
 }
 
-#define calcvar(var)\
-    if (var == 0)\
-        calc_ram();\
+#define calcvar(var) \
+    if (var == 0) \
+        calc_ram(); \
     return var;
 
 uint64_t get_total_ram(){

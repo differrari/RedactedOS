@@ -22,7 +22,7 @@ static JsonError json_parse_string_token(Token *tok, JsonValue **out) {
         if (c == '"') {
             JsonValue *v = malloc(sizeof(JsonValue));
             if (!v) {
-                free(s.data, s.mem_length);
+                free_sized(s.data, s.mem_length);
                 return JSON_ERR_OOM;
             }
             v->kind = JSON_STRING;
@@ -32,7 +32,7 @@ static JsonError json_parse_string_token(Token *tok, JsonValue **out) {
         }
         if (c == '\\') {
             if (pos >= len) {
-                free(s.data, s.mem_length);
+                free_sized(s.data, s.mem_length);
                 return JSON_ERR_INVALID;
             }
             char e = buf[pos++];
@@ -43,7 +43,7 @@ static JsonError json_parse_string_token(Token *tok, JsonValue **out) {
             else if (e == 'r') r = '\r';
             else if (e == 't') r = '\t';
             else if (!(e == '"' || e == '\\' || e == '/')) {
-                free(s.data, s.mem_length);
+                free_sized(s.data, s.mem_length);
                 return JSON_ERR_INVALID;
             }
             string_append_bytes(&s, &r, 1);
@@ -52,7 +52,7 @@ static JsonError json_parse_string_token(Token *tok, JsonValue **out) {
         string_append_bytes(&s, &c, 1);
     }
 
-    free(s.data, s.mem_length);
+    free_sized(s.data, s.mem_length);
     return JSON_ERR_INVALID;
 }
 
@@ -158,7 +158,7 @@ static JsonError json_parse_array(TokenStream *ts, JsonValue **out) {
         for (uint32_t i = 0; i < n; i++) tmp[i] = arr->u.array.items[i];
         tmp[n] = elem;
 
-        if (arr->u.array.items) free(arr->u.array.items, n * sizeof(JsonValue *));
+        if (arr->u.array.items) free_sized(arr->u.array.items, n * sizeof(JsonValue *));
         arr->u.array.items = tmp;
         arr->u.array.count = n + 1;
 
@@ -223,7 +223,7 @@ static JsonError json_parse_object(TokenStream *ts, JsonValue **out) {
         string key = string_from_literal_length(keytok.start + 1, keytok.length - 2);
 
         if (!ts_expect(ts, TOK_COLON, &t)) {
-            free(key.data, key.mem_length);
+            free_sized(key.data, key.mem_length);
             json_free(obj);
             if (ts->tz->failed) return JSON_ERR_INVALID;
             return JSON_ERR_INVALID;
@@ -232,7 +232,7 @@ static JsonError json_parse_object(TokenStream *ts, JsonValue **out) {
         JsonValue *val = 0;
         JsonError e = json_parse_value(ts, &val);
         if (e != JSON_OK) {
-            free(key.data, key.mem_length);
+            free_sized(key.data, key.mem_length);
             json_free(obj);
             return e;
         }
@@ -240,7 +240,7 @@ static JsonError json_parse_object(TokenStream *ts, JsonValue **out) {
         uint32_t n = obj->u.object.count;
         JsonPair *tmp = malloc((n + 1) * sizeof(JsonPair));
         if (!tmp) {
-            free(key.data, key.mem_length);
+            free_sized(key.data, key.mem_length);
             json_free(val);
             json_free(obj);
             return JSON_ERR_OOM;
@@ -250,7 +250,7 @@ static JsonError json_parse_object(TokenStream *ts, JsonValue **out) {
         tmp[n].key = key;
         tmp[n].value = val;
 
-        if (obj->u.object.pairs) free(obj->u.object.pairs, n * sizeof(JsonPair));
+        if (obj->u.object.pairs) free_sized(obj->u.object.pairs, n * sizeof(JsonPair));
         obj->u.object.pairs = tmp;
         obj->u.object.count = n + 1;
 
@@ -295,7 +295,7 @@ static JsonError json_parse_value(TokenStream *ts, JsonValue **out) {
     if (t.kind == TOK_LBRACE) return json_parse_object(ts, out);
     if (t.kind == TOK_LBRACKET) return json_parse_array(ts, out);
 
-    if (t.kind == TOK_IDENTIFIER && t.length == 4 && strcmp(t.start, "true", 4) == 0) {
+    if (t.kind == TOK_IDENTIFIER && t.length == 4 && strncmp(t.start, "true", 4) == 0) {
         ts_next(ts, &t);
         JsonValue *v = malloc(sizeof(JsonValue));
         if (!v) return JSON_ERR_OOM;
@@ -305,7 +305,7 @@ static JsonError json_parse_value(TokenStream *ts, JsonValue **out) {
         return JSON_OK;
     }
 
-    if (t.kind == TOK_IDENTIFIER && t.length ==5 &&strcmp(t.start, "false", 5) == 0) {
+    if (t.kind == TOK_IDENTIFIER && t.length ==5 &&strncmp(t.start, "false", 5) == 0) {
         ts_next(ts, &t);
         JsonValue *v = malloc(sizeof(JsonValue));
         if (!v) return JSON_ERR_OOM;
@@ -316,7 +316,7 @@ static JsonError json_parse_value(TokenStream *ts, JsonValue **out) {
     }
 
     if (t.kind == TOK_IDENTIFIER && t.length == 4 &&
-        strcmp(t.start, "null", 4) == 0) {
+        strncmp(t.start, "null", 4) == 0) {
         ts_next(ts, &t);
         JsonValue *v = malloc(sizeof(JsonValue));
         if (!v) return JSON_ERR_OOM;
@@ -354,21 +354,21 @@ void json_free(JsonValue *v) {
     if (!v) return;
 
     if (v->kind == JSON_STRING) {
-        free(v->u.string.data, v->u.string.mem_length);
+        free_sized(v->u.string.data, v->u.string.mem_length);
     } else if (v->kind == JSON_ARRAY) {
         for (uint32_t i = 0; i < v->u.array.count; i++) json_free(v->u.array.items[i]);
         if (v->u.array.items)
-            free(v->u.array.items, v->u.array.count * sizeof(JsonValue *));
+            free_sized(v->u.array.items, v->u.array.count * sizeof(JsonValue *));
     } else if (v->kind == JSON_OBJECT) {
         for (uint32_t i = 0; i < v->u.object.count; i++) {
-            free(v->u.object.pairs[i].key.data, v->u.object.pairs[i].key.mem_length);
+            free_sized(v->u.object.pairs[i].key.data, v->u.object.pairs[i].key.mem_length);
             json_free(v->u.object.pairs[i].value);
         }
         if (v->u.object.pairs)
-            free(v->u.object.pairs, v->u.object.count * sizeof(JsonPair));
+            free_sized(v->u.object.pairs, v->u.object.count * sizeof(JsonPair));
     }
 
-    free(v, sizeof(JsonValue));
+    free_sized(v, sizeof(JsonValue));
 }
 
 bool json_get_bool(const JsonValue *v, bool *out) {
@@ -422,7 +422,7 @@ JsonValue *json_array_get(const JsonValue *v, uint32_t index) {
 JsonValue *json_obj_get(const JsonValue *obj, const char *key) {
     if (!obj || obj->kind != JSON_OBJECT) return 0;
     for (uint32_t i = 0; i < obj->u.object.count; i++) {
-        if (strcmp(obj->u.object.pairs[i].key.data, key, 0) == 0)
+        if (strcmp(obj->u.object.pairs[i].key.data, key) == 0)
             return obj->u.object.pairs[i].value;
     }
     return 0;
@@ -492,7 +492,7 @@ bool json_array_push(JsonValue *arr, JsonValue *elem) {
     if (!tmp) return false;
     for (uint32_t i = 0; i < n; i++) tmp[i] = arr->u.array.items[i];
     tmp[n] = elem;
-    if (arr->u.array.items) free(arr->u.array.items, n * sizeof(JsonValue *));
+    if (arr->u.array.items) free_sized(arr->u.array.items, n * sizeof(JsonValue *));
     arr->u.array.items = tmp;
     arr->u.array.count = n + 1;
     return true;
@@ -501,11 +501,11 @@ bool json_array_push(JsonValue *arr, JsonValue *elem) {
 bool json_obj_set(JsonValue *obj, const char *key, JsonValue *value) {
     if (!obj || obj->kind != JSON_OBJECT) return false;
 
-    uint32_t klen = strlen(key, 256);
+    uint32_t klen = strlen(key);
 
     for (uint32_t i = 0; i < obj->u.object.count; i++) {
-        if (strcmp(obj->u.object.pairs[i].key.data, key, 0) == 0) {
-            free(obj->u.object.pairs[i].key.data, obj->u.object.pairs[i].key.mem_length);
+        if (strcmp(obj->u.object.pairs[i].key.data, key) == 0) {
+            free_sized(obj->u.object.pairs[i].key.data, obj->u.object.pairs[i].key.mem_length);
             obj->u.object.pairs[i].key = string_from_literal_length((char *)key, klen);
             json_free(obj->u.object.pairs[i].value);
             obj->u.object.pairs[i].value = value;
@@ -518,7 +518,7 @@ bool json_obj_set(JsonValue *obj, const char *key, JsonValue *value) {
 
     JsonPair *tmp = malloc((n + 1) * sizeof(JsonPair));
     if (!tmp) {
-        free(sk.data, sk.mem_length);
+        free_sized(sk.data, sk.mem_length);
         return false;
     }
 
@@ -526,7 +526,7 @@ bool json_obj_set(JsonValue *obj, const char *key, JsonValue *value) {
     tmp[n].key = sk;
     tmp[n].value = value;
 
-    if (obj-> u.object.pairs) free(obj->u.object.pairs, n * sizeof(JsonPair));
+    if (obj-> u.object.pairs) free_sized(obj->u.object.pairs, n * sizeof(JsonPair));
     obj->u.object.pairs = tmp;
     obj->u.object.count = n + 1;
 
@@ -672,14 +672,14 @@ static void serialize_value(const JsonValue *v, string *out, uint32_t indent, ui
     if (v->kind == JSON_INT) {
         string s = string_format("%lli", (long long)v->u.integer);
         string_append_bytes(out, s.data, s.length);
-        free(s.data, s.mem_length);
+        free_sized(s.data, s.mem_length);
         return;
     }
 
     if (v->kind == JSON_DOUBLE) {
         string s = string_format("%.17g", v->u.real);
         string_append_bytes(out, s.data, s.length);
-        free(s.data, s.mem_length);
+        free_sized(s.data, s.mem_length);
         return;
     }
 

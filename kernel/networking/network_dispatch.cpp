@@ -2,7 +2,7 @@
 #include "drivers/virtio_net_pci/virtio_net_pci.hpp"
 #include "drivers/net_bus.hpp"
 #include "memory/page_allocator.h"
-#include "net/link_layer/eth.h"
+#include "networking/link_layer/eth.h"
 #include "net/network_types.h"
 #include "port_manager.h"
 #include "std/memory.h"
@@ -10,10 +10,10 @@
 #include "console/kio.h"
 #include "networking/interface_manager.h"
 #include "process/scheduler.h"
-#include "net/internet_layer/ipv4_utils.h"
-#include "net/internet_layer/ipv6_utils.h"
-#include "net/netpkt.h"
-#include "net/link_layer/link_utils.h"
+#include "networking/internet_layer/ipv4_utils.h"
+#include "networking/internet_layer/ipv6_utils.h"
+#include "networking/netpkt.h"
+#include "networking/link_layer/link_utils.h"
 #include "networking/drivers/loopback/loopback_driver.hpp"
 
 #define RX_INTR_BATCH_LIMIT 64
@@ -178,7 +178,7 @@ int NetworkDispatch::net_task()
             if (processed) did_work = true;
         }
 
-        if (!did_work) sleep(0);//TODO: manage it with an event
+        if (!did_work) msleep(0);//TODO: manage it with an event
     }
 }
 
@@ -258,7 +258,7 @@ uint8_t NetworkDispatch::kind(uint8_t ifindex) const
 
 void NetworkDispatch::free_frame(const sizedptr &f)
 {
-    if (f.ptr) free_sized(f);
+    if (f.ptr) free_sized((void*)f.ptr, f.size);
 }
 
 bool NetworkDispatch::register_all_from_bus() {
@@ -318,8 +318,8 @@ bool NetworkDispatch::register_all_from_bus() {
         NICCtx* c = &nics[nic_num];
         c->drv = drv;
 
-        strncpy(c->ifname_str, (int)sizeof(c->ifname_str), name);
-        strncpy(c->hwname_str, (int)sizeof(c->hwname_str), hw);
+        strncpy(c->ifname_str, name, (int)sizeof(c->ifname_str));
+        strncpy(c->hwname_str, hw, (int)sizeof(c->hwname_str));
         memcpy(c->mac_addr, macbuf, 6);
         c->mtu_val = m;
         c->hdr_sz = hs;

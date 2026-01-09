@@ -17,7 +17,7 @@ void audio_submit_buffer();//TODO: this should be automatic
 
 process_t* init_audio_mixer();
 
-extern driver_module audio_module;
+extern system_module audio_module;
 
 #ifdef __cplusplus
 }

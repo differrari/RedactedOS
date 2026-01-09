@@ -5,6 +5,7 @@ extern "C" {
 #include "double_linked_list.h"
 }
 
+//TODO: review allocs & C
 template<typename T>
 class DoubleLinkedList {
 private:
@@ -29,7 +30,7 @@ private:
 
     void free_node(Node* n) {
         if (!n) return;
-        free(n, sizeof(Node));
+        free_sized(n, sizeof(Node));
     }
 
     static void swap(DoubleLinkedList& a, DoubleLinkedList& b) noexcept {

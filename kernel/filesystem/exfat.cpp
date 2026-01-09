@@ -123,7 +123,7 @@ bool ExFATFS::init(uint32_t partition_sector){
         kprintf("[exfat] Wrong boot signature %x",mbs->bootsignature);
         return false;
     }
-    if (strcmp("EXFAT   ", mbs->fsname, false) != 0){
+    if (strcmp("EXFAT   ", mbs->fsname) != 0){
         kprintf("[exfat error] Wrong filesystem type %s",(uintptr_t)mbs->fsname);
         return false;
     }
@@ -149,7 +149,7 @@ void* ExFATFS::read_entry_handler(ExFATFS *instance, file_entry *entry, fileinfo
     char filename[15];
     utf16tochar(name->name, filename, 15);
 
-    if (strstart(seek, filename, false) != 0)
+    if (strstart(seek, filename) != 0)
         return 0;
 
     uint32_t filecluster = info->first_cluster;
@@ -173,7 +173,7 @@ void* ExFATFS::list_entries_handler(ExFATFS *instance, file_entry *entry, filein
     char filename[15];
     utf16tochar(name->name, filename, 15);
 
-    if (strstart(seek, filename, false) != 0)
+    if (strstart(seek, filename) != 0)
         return 0;
 
     bool is_last = *seek_to(seek, '/') == '\0';

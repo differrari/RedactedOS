@@ -7,9 +7,9 @@
 extern "C" {
 #endif
 
-bool load_module(driver_module *module);
-bool unload_module(driver_module *module);
-driver_module* get_module(const char **full_path);
+bool load_module(system_module *module);
+bool unload_module(system_module *module);
+system_module* get_module(const char **full_path);
 
 extern clinkedlist_t* modules;
 

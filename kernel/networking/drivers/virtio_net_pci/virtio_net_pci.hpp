@@ -3,7 +3,7 @@
 #include "networking/drivers/net_driver.hpp"
 #include "virtio/virtio_pci.h"
 #include "std/memory.h"
-#include "net/link_layer/nic_types.h"
+#include "networking/link_layer/nic_types.h"
 
 typedef struct __attribute__((packed)) virtio_net_hdr_t {
     uint8_t flags;

@@ -11,12 +11,15 @@ endif
 
 .PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
 
-all: kshared kernel shared user utils
+all: kshared modules kernel shared user utils bins
 	@echo "Build complete."
 	./createfs
 
 kshared:
 	$(MAKE) -C shared SH_FLAGS=-DKERNEL BUILD_DIR=./kbuild TARGET=klibshared.a
+	
+modules: kshared
+	$(MAKE) -C modules XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU) TEST=$(TEST) DRIVER_TARGET=$(MODE)
 
 shared: 
 	$(MAKE) -C shared BUILD_DIR=./build
@@ -24,28 +27,41 @@ shared:
 user: shared prepare-fs
 	$(MAKE) -C user
 
-kernel: kshared
-	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU)
+kernel: kshared modules
+	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU) TEST=$(TEST)
 
 utils: shared prepare-fs
 	$(MAKE) -C utils
+
+bins: shared prepare-fs
+	$(MAKE) -C bin
+
+test:
+	$(MAKE) $(MODE) QEMU=true TEST=true all
+	./run_$(MODE)
 
 clean:
 	$(MAKE) -C shared $@
 	$(MAKE) -C user   $@
 	$(MAKE) -C kernel $@
 	$(MAKE) -C utils  $@
+	$(MAKE) -C bin  $@
+	$(MAKE) -C modules $@
 	@echo "removing fs dirs"
 	$(RM) -r $(FS_DIRS)
 	@echo "removing images"
 	$(RM) kernel.img kernel.elf disk.img dump
 
+cross:
+	$(MAKE) -C shared clean
+	$(MAKE) -C shared ARCH= SH_FLAGS=-DCROSS
+
 raspi:
-	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true all
+	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true MODE=raspi all
 	./run_raspi
 
 virt:
-	$(MAKE) LOAD_ADDR=0x41000000 XHCI_CTX_SIZE=32 QEMU=true all
+	$(MAKE) LOAD_ADDR=0x41000000 XHCI_CTX_SIZE=32 QEMU=true MODE=virt all
 
 run:
 	$(MAKE) $(MODE)
@@ -56,7 +72,7 @@ debug:
 	./rundebug MODE=$(MODE) $(ARGS)
 
 dump:
-	$(ARCH)-objdump -D kernel.elf > dump
+	$(ARCH)objdump -D kernel.elf > dump
 	$(MAKE) -C user $@
 
 install:

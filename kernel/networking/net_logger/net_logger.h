@@ -1,7 +1,7 @@
 #pragma once
 #include "types.h"
 #include "net/network_types.h"
-#include "net/transport_layer/socket_types.h"
+#include "net/socket_types.h"
 
 #ifdef __cplusplus
 extern "C" {

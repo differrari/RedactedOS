@@ -4,6 +4,7 @@
 #include "std/memory.h"
 #include "queue.h"
 
+//TODO: review allocs & C
 template<typename T>
 class Queue {
 public:
@@ -20,7 +21,7 @@ public:
 
     ~Queue() {
         if (buffer) {
-            free(buffer, capacity * sizeof(T));
+            free_sized(buffer, capacity * sizeof(T));
         }
     }
 
@@ -75,7 +76,7 @@ private:
         }
 
         if (buffer) {
-            free(buffer, capacity * sizeof(T));
+            free_sized(buffer, capacity * sizeof(T));
         }
 
         buffer = new_buf;

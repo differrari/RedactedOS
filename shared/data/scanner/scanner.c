@@ -32,10 +32,10 @@ bool scan_match_string(Scanner *s, const char *str) {
     return true;
 }
 
-void scan_skip_ws(Scanner *s) {
+void scan_skip_ws(Scanner *s, bool skip_nl) {
     while (!scan_eof(s)) {
         char c = s->buf[s->pos];
-        if (c==' '||c=='\n'||c=='\t'||c=='\r') s->pos++;
+        if (c==' '||(skip_nl && c=='\n')||c=='\t'||c=='\r') s->pos++;
         else break;
     }
 }

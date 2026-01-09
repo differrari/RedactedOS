@@ -23,4 +23,4 @@ char scan_next(Scanner *s);
 bool scan_match(Scanner *s, char c);
 bool scan_match_string(Scanner *s, const char *str);
 
-void scan_skip_ws(Scanner *s);
+void scan_skip_ws(Scanner *s, bool skip_nl);

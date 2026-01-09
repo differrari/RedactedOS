@@ -1,13 +1,9 @@
 #include "input_dispatch.h"
 #include "process/process.h"
 #include "process/scheduler.h"
-#include "dwc2.hpp"
-#include "xhci.hpp"
-#include "hw/hw.h"
-#include "std/std.h"
-#include "kernel_processes/kprocess_loader.h"
 #include "math/math.h"
 #include "graph/graphics.h"
+#include "graph/tres.h"
 
 process_t* focused_proc;
 
@@ -17,30 +13,28 @@ typedef struct {
     bool triggered;
 } shortcut;
 
-shortcut shortcuts[16];
+shortcut shortcuts[16] = {};
 
 uint16_t shortcut_count = 0;
 
 bool secure_mode = false;
-
-USBDriver *input_driver = 0x0;
 
 gpu_point mouse_loc;
 gpu_size screen_bounds;
 
 bool mouse_setup;
 
-void register_keypress(keypress kp) {
+bool register_keypress(keypress kp) {
     if (!secure_mode){
         for (int i = 0; i < shortcut_count; i++){
             if (shortcuts[i].pid != -1 && !is_new_keypress(&shortcuts[i].kp, &kp)){
                 shortcuts[i].triggered = true;
-                return;
+                return true;
             }
         }
     }
 
-    if (!(uintptr_t)focused_proc) return;
+    if (!(uintptr_t)focused_proc) return false;
 
     input_buffer_t* buf = &focused_proc->input_buffer;
     uint32_t next_index = (buf->write_index + 1) % INPUT_BUFFER_CAPACITY;
@@ -50,11 +44,11 @@ void register_keypress(keypress kp) {
 
     if (buf->write_index == buf->read_index)
         buf->read_index = (buf->read_index + 1) % INPUT_BUFFER_CAPACITY;
+    
+    return false;
 }
 
 void register_event(kbd_event event){
-    //TODO: shortcuts
-
     if (!(uintptr_t)focused_proc) return;
 
     event_buffer_t* buf = &focused_proc->event_buffer;
@@ -89,9 +83,9 @@ void register_mouse_input(mouse_input *rat){
     mouse_loc.x = min(max(0, mouse_loc.x), screen_bounds.width);
     mouse_loc.y = min(max(0, mouse_loc.y), screen_bounds.height);
     gpu_update_cursor(mouse_loc, false);
-    uint8_t lmb = rat->buttons & 1;
-    if (lmb != last_cursor_state){
-        last_cursor_state = lmb;
+    uint8_t cursor_state = rat->buttons;
+    if (cursor_state != last_cursor_state){
+        last_cursor_state = cursor_state;
         gpu_set_cursor_pressed(last_cursor_state);
         gpu_update_cursor(mouse_loc, true);
     }
@@ -123,13 +117,16 @@ void sys_focus_current(){
 }
 
 void sys_set_focus(int pid){
+    if (focused_proc) focused_proc->focused = false;
     focused_proc = get_proc_by_pid(pid);
     focused_proc->focused = true;
+    set_window_focus(focused_proc->win_id);
 }
 
 void sys_unset_focus(){
-    focused_proc->focused = false;
+    if (focused_proc) focused_proc->focused = false;
     focused_proc = 0;
+    unset_window_focus();
 }
 
 void sys_set_secure(bool secure){
@@ -197,56 +194,3 @@ bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
     } 
     return false;
 }
-
-bool input_init(){
-    for (int i = 0; i < 16; i++) shortcuts[i] = {};
-    if (BOARD_TYPE == 2 && RPI_BOARD != 5){
-        input_driver = new DWC2Driver();//TODO: QEMU & 3 Only
-        return input_driver->init();
-    } else {
-        input_driver = new XHCIDriver();
-        return input_driver->init();
-    }
-}
-
-int input_process_poll(int argc, char* argv[]){
-    while (1){
-        if (input_driver) input_driver->poll_inputs();
-    }
-    return 1;
-}
-
-void input_start_polling(){
-    if (input_driver) input_driver->poll_inputs();
-}
-
-int input_process_fake_interrupts(int argc, char* argv[]){
-    while (1){
-        input_driver->handle_interrupt();
-    }
-    return 1;
-}
-
-void init_input_process(){
-    if (!input_driver->use_interrupts)
-        create_kernel_process("input_poll", &input_process_poll, 0, 0);
-    if (input_driver->quirk_simulate_interrupts)
-        create_kernel_process("input_int_mock", &input_process_fake_interrupts, 0, 0);
-}
-
-void handle_input_interrupt(){
-    if (input_driver->use_interrupts) input_driver->handle_interrupt();
-}
-
-driver_module input_module = (driver_module){
-    .name = "input",
-    .mount = "/in",
-    .version = VERSION_NUM(0, 1, 0, 1),
-    .init = input_init,
-    .fini = 0,
-    .open = 0,
-    .read = 0,
-    .write = 0,
-    .seek = 0,
-    .readdir = 0,
-};

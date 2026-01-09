@@ -3,7 +3,7 @@
 #include "std/std.h"
 #include "drivers/net_driver.hpp"
 #include "net/network_types.h"
-#include "net/internet_layer/ipv4.h"
+#include "networking/internet_layer/ipv4.h"
 #include "interface_manager.h"
 #include "data_struct/data_struct.hpp"
 
@@ -34,7 +34,7 @@ public:
     uint32_t speed(uint8_t ifindex) const;
     uint8_t duplex(uint8_t ifindex) const;
     uint8_t kind(uint8_t ifindex) const;
-    
+
     void dump_interfaces();
 
 private:
@@ -70,6 +70,6 @@ private:
     void free_frame(const sizedptr&);
     bool register_all_from_bus();
     void copy_str(char* dst, int cap, const char* src);
-    
+
     int nic_for_ifindex(uint8_t ifindex) const;
 };

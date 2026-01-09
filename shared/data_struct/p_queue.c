@@ -54,5 +54,5 @@ p_queue_t* p_queue_create(int max){
 }
 
 void p_queue_free(p_queue_t *root){
-    free(root, sizeof(p_queue_t) + (sizeof(p_queue_item) * root->max_size));
+    free_sized(root, sizeof(p_queue_t) + (sizeof(p_queue_item) * root->max_size));
 }

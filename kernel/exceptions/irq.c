@@ -3,7 +3,8 @@
 #include "std/memory_access.h"
 #include "process/scheduler.h"
 #include "input/input_dispatch.h"
-#include "input/usb_types.h"
+#include "usb/usb.h"
+#include "usb/usb_types.h"
 #include "pci.h"
 #include "console/serial/uart.h"
 #include "networking/network.h"
@@ -11,6 +12,7 @@
 #include "audio/audio.h"
 #include "networking/interface_manager.h"
 #include "process/syscall.h"
+#include "memory/mmu.h"
 
 #define IRQ_TIMER 30
 #define SLEEP_TIMER 27
@@ -40,6 +42,9 @@ static void gic_enable_irq(uint32_t irq, uint8_t priority, uint8_t cpu_target) {
 }
 
 void irq_init() {
+    register_device_memory(GICD_BASE, GICD_BASE);
+    register_device_memory(GICC_BASE, GICC_BASE);
+
     if (RPI_BOARD != 3){
         write32(GICD_BASE, 0); // Disable Distributor
         write32(GICC_BASE, 0); // Disable CPU Interface
@@ -86,14 +91,17 @@ void irq_el1_handler() {
 
     if (irq == IRQ_TIMER) {
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
+        syscall_depth--;
         switch_proc(INTERRUPT);
     } else if (irq == MSI_OFFSET + INPUT_IRQ){
-        handle_input_interrupt();
+        handle_usb_interrupt();
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
+        syscall_depth--;
         process_restore();
     } else if (irq == SLEEP_TIMER){
         wake_processes();
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
+        syscall_depth--;
         process_restore();
     } else if (irq >= MSI_OFFSET + NET_IRQ_BASE && irq <  MSI_OFFSET + NET_IRQ_BASE + (2*MAX_L2_INTERFACES)){
         uint32_t rel = irq - (MSI_OFFSET + NET_IRQ_BASE);
@@ -102,10 +110,12 @@ void irq_el1_handler() {
         if (is_rx) network_handle_download_interrupt_nic(nic_id);
         else network_handle_upload_interrupt_nic(nic_id);
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
+        syscall_depth--;
         process_restore();
     } else {
         kprintf("[GIC error] Received unknown interrupt %i",irq);
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
+        syscall_depth--;
         process_restore();
     }
 }

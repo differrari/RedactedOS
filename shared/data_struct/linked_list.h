@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+//TODO: review allocs & C
 typedef struct clinkedlist_node {
     void *data;
     struct clinkedlist_node *next;

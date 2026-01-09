@@ -5,6 +5,7 @@
 #include "std/allocator.hpp"
 #include "syscalls/syscalls.h"
 
+//TODO: review allocs & C
 template<typename T>
 class Array {
 public:
@@ -25,7 +26,7 @@ public:
         if (count == 0) return;
         for (uint32_t i = 0; i < count; i++)
             items[i].~T();
-        free(items, sizeof(T) * count);
+        free_sized(items, sizeof(T) * capacity);
     }
 
     bool add(const T& value) {

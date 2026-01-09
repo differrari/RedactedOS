@@ -6,7 +6,13 @@ extern "C" {
 #include "types.h"
 #include "process/process.h"
 
-process_t* create_process(const char *name, const char *bundle,  void *content, uint64_t content_size, uintptr_t entry, uintptr_t va_base);
+typedef struct {
+    sizedptr file_cpy;
+    sizedptr virt_mem;
+    uint8_t permissions;
+} program_load_data;
+
+process_t* create_process(const char *name, const char *bundle, program_load_data *data, size_t data_count, uintptr_t entry);
 void translate_enable_verbose();
 void decode_instruction(uint32_t instruction);
 #ifdef __cplusplus

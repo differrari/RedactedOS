@@ -40,3 +40,4 @@ extern uintptr_t PM_BASE;
 
 void detect_hardware();
 void print_hardware();
+void hw_high_va();

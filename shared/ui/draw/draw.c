@@ -1,7 +1,6 @@
 #include "draw.h"
 #include "ui/font8x8_bridge.h"
 #include "std/memory.h"
-#include "math/math.h"
 
 int try_merge(gpu_rect* a, gpu_rect* b) {
     uint32_t ax1 = a->point.x;
@@ -75,13 +74,15 @@ void mark_dirty(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     if (area_sum * 100 >= screen_area * FULL_REDRAW_THRESHOLD_PCT) ctx->full_redraw = 1;
 }
 
+#ifndef CROSS
+
 void fb_clear(draw_ctx *ctx, uint32_t color) {
     uint32_t* row = ctx->fb;
     const uint32_t w = ctx->width;
     const uint32_t h = ctx->height;
     const uint32_t pitch = ctx->stride >> 2;
 
-    for (uint32_t y = 0; y < h; ++y) {
+    for (uint32_t y = 0; y < h; y++) {
         uint32_t *p = row;
         uint32_t n = w;
 
@@ -91,7 +92,7 @@ void fb_clear(draw_ctx *ctx, uint32_t color) {
         }
         uint64_t pat = ((uint64_t)color << 32) | color;
         uint64_t *q = (uint64_t*)p;
-        for (uint32_t i = 0; i < (n >> 1); ++i) q[i] = pat;
+        for (uint32_t i = 0; i < (n >> 1); i++) q[i] = pat;
         p = (uint32_t*)(q + (n >> 1));
         if (n & 1) *p = color;
 
@@ -140,18 +141,40 @@ void fb_draw_pixel(draw_ctx *ctx, uint32_t x, uint32_t y, color color){
     mark_dirty(ctx, x,y,1,1);
 }
 
-void fb_fill_rect(draw_ctx *ctx, uint32_t x, uint32_t y, uint32_t width, uint32_t height, color color){
-    if (x >= ctx->width || y >= ctx->height) return;
+void fb_fill_rect(draw_ctx *ctx, int32_t x, int32_t y, uint32_t width, uint32_t height, color color){
+    if (x >= (int32_t)ctx->width || y >= (int32_t)ctx->height || x + (int32_t)width < 0 || y + (int32_t)height < 0) return;
 
-    uint32_t w = width;
-    uint32_t h = height;
-    if (x + w > ctx->width) w = ctx->width - x;
-    if (y + h > ctx->height) h = ctx->height - y;
-    if (!w || !h) return;
+    int32_t w = width;
+    int32_t h = height;
+    if (x < 0){
+        width -= -x;
+        x = 0;
+    }
+    if (y < 0){
+        height -= -y;
+        y = 0;
+    }
+    if (x + w > (int32_t)ctx->width) w = ctx->width - x;
+    else if (x < 0){ w += x; x = 0; }
+    if (y + h > (int32_t)ctx->height) h = ctx->height - y;
+    else if (y < 0){ h += y; y = 0; }
+
+    if (w <= 0 || h <= 0) return;
+
+    uint8_t alpha = ((color >> 24) & 0xFF);
+
+    if (alpha < 0xFF && alpha > 0){
+        for (int32_t dy = 0; dy < h; dy++){
+            for (int32_t dx = 0; dx < w; dx++){
+                fb_draw_raw_pixel(ctx, x + dx, y + dy, color);  
+            }
+        }
+        return;
+    }
 
     const uint32_t dst_pitch_px = (ctx->stride >> 2);
     uint32_t* dst_row = ctx->fb + y * dst_pitch_px + x;
-    for (uint32_t row = 0; row < h; ++row) {
+    for (int32_t row = 0; row < h; ++row) {
         uint32_t *p = dst_row;
         uint32_t n = w;
         uint32_t col = (uint32_t)color;
@@ -274,7 +297,12 @@ void fb_draw_raw_char(draw_ctx *ctx, uint32_t x, uint32_t y, char c, uint32_t sc
                     uint32_t rx_lim = scale;
                     if (base_x + rx_lim > draw_w) rx_lim = draw_w - base_x;
                     uint32_t* p = dst + base_x;
-                    for (uint32_t rx = 0; rx < rx_lim; ++rx) p[rx] = color;
+                    for (uint32_t rx = 0; rx < rx_lim; ++rx) { 
+                        if (((color >> 24) & 0xFF) < 0xFF)
+                            p[rx] = pixel_blend(color, p[rx]);
+                        else
+                            p[rx] = color;
+                    }
                 }
             }
         }
@@ -288,7 +316,7 @@ void fb_draw_char(draw_ctx *ctx, uint32_t x, uint32_t y, char c, uint32_t scale,
 
 gpu_size fb_draw_string(draw_ctx *ctx, const char* s, uint32_t x0, uint32_t y0, uint32_t scale, uint32_t color){
     const uint32_t char_size = fb_get_char_size(scale);
-    const int str_length = strlen(s,0);
+    const int str_length = strlen(s);
     
     uint32_t xoff = 0;
     uint32_t xSize = 0;
@@ -373,3 +401,5 @@ void fb_draw_cursor(draw_ctx *ctx, uint32_t color) {
         }
     }
 }
+
+#endif

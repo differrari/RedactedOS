@@ -65,7 +65,7 @@ bool ts_expect_double(TokenStream *ts,double *out_double) {
         tmp.pos = 0;
 
         bool ok = token_to_double(&tmp, out_double);
-        if (merged.data && merged.mem_length) free((void*)merged.data, (size_t)merged.mem_length);
+        string_free(merged);
         return ok;
     }
 
@@ -99,7 +99,7 @@ bool ts_expect_int(TokenStream *ts, int64_t *out_int) {
         int64_t iv;
         bool ok = token_to_int64(&tmp, &iv);
 
-        if (merged.data && merged.mem_length) free((void*)merged.data, (size_t)merged.mem_length);
+        string_free(merged);
         if (!ok) return false;
 
         *out_int = iv;

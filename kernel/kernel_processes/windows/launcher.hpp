@@ -4,11 +4,13 @@
 #include "graph/graphics.h"
 #include "process/process.h"
 #include "std/std.h"
+#include "process/loading/package_info.h"
 
 struct LaunchEntry {
-    char* name;
-    char* ext;
-    char* path;
+    string name;
+    string ext;
+    string path;
+    package_info info;
 };
 
 class Launcher {
@@ -30,7 +32,8 @@ private:
     void draw_tile(uint32_t column, uint32_t row);
     bool await_gpu();
     void draw_full();
-    void add_entry(char* name, char* ext, char* path);
+    void add_entry(string name, string ext, string path, package_info info);
+    package_info get_pkg_info(char* info_path);
     void activate_current();
     uint16_t find_extension(char *path);
     draw_ctx ctx;

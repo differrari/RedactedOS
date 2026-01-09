@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include "data/scanner/scanner.h"
+#include "std/string_slice.h"
 
 typedef enum {
     TOK_EOF = 0,
@@ -9,8 +10,10 @@ typedef enum {
     TOK_IDENTIFIER,
     TOK_NUMBER,
     TOK_STRING,
+    TOK_CONST,
 
     TOK_OPERATOR,
+    TOK_ASSIGN,
 
     TOK_LPAREN,
     TOK_RPAREN,
@@ -22,7 +25,9 @@ typedef enum {
     TOK_COMMA,
     TOK_COLON,
     TOK_SEMICOLON,
-    TOK_DOT
+    TOK_DOT, 
+    
+    TOK_NEWLINE
 } TokenKind;
 
 typedef struct {
@@ -40,11 +45,19 @@ typedef enum {
     TOKENIZER_ERR_UNTERMINATED_COMMENT
 } TokenizerError;
 
+typedef enum {
+    TOKENIZER_COMMENT_TYPE_SLASH,
+    TOKENIZER_COMMENT_TYPE_HASH,
+} TokenizerComment;
+
 typedef struct {
     Scanner *s;
     bool failed;
     TokenizerError err;
     uint32_t err_pos;
+    bool skip_type_check;
+    bool parse_newline;
+    TokenizerComment comment_type;
 } Tokenizer;
 
 static inline Tokenizer tokenizer_make(Scanner *s) {
@@ -61,3 +74,7 @@ static inline bool tokenizer_ok(const Tokenizer *t) {
 }
 
 bool tokenizer_next(Tokenizer *t, Token *out);
+
+static inline string_slice token_to_slice(Token t){
+    return (string_slice){ .data = (char*)t.start, .length = t.length };
+}

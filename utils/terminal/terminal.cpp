@@ -189,26 +189,26 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
     string s1 = string_format("/proc/%i/out",proc);
     string s2 = string_format("/proc/%i/state",proc);
     file out_fd, state_fd;
-    fopen(s1.data, &out_fd);
-    free(s1.data, s1.mem_length);
-    fopen(s2.data, &state_fd);
-    free(s2.data, s2.mem_length);
+    openf(s1.data, &out_fd);
+    free_sized(s1.data, s1.mem_length);
+    openf(s2.data, &state_fd);
+    free_sized(s2.data, s2.mem_length);
     int state;
-    fread(&state_fd, (char*)&state, sizeof(int));
+    readf(&state_fd, (char*)&state, sizeof(int));
     while (state) {
-        fread(&state_fd, (char*)&state, sizeof(int));
+        readf(&state_fd, (char*)&state, sizeof(int));
         size_t amount = 0x100;
         char *buf = (char*)malloc(amount);
-        fread(&out_fd, buf, amount);
+        readf(&out_fd, buf, amount);
         put_string(buf);
-        free(buf, amount);
+        free_sized(buf, amount);
     }
-    fclose(&out_fd);
-    fclose(&state_fd);
+    closef(&out_fd);
+    closef(&state_fd);
     string exit_msg = string_format("\nProcess %i ended.",proc);
     //TODO: format message
     put_string(exit_msg.data);
-    free(exit_msg.data, exit_msg.mem_length);
+    free_sized(exit_msg.data, exit_msg.mem_length);
     return true;
 }
 
@@ -231,7 +231,7 @@ const char** Terminal::parse_arguments(char *args, int *count){
 void Terminal::run_command(){
     if (input_len) {
         if (history_len == history_max) {
-            if (history[0]) free(history[0], strlen(history[0], input_max) + 1);
+            if (history[0]) free_sized(history[0], strlen(history[0]) + 1);
             for (uint32_t i = 1; i < history_max; i++) history[i - 1] = history[i];
             history_len = history_max - 1;
         }
@@ -274,19 +274,19 @@ void Terminal::run_command(){
     }
 
     if (!exec_cmd(cmd.data, argc, argv)){
-        if (strcmp(cmd.data, "test", true) == 0){
+        if (strcmp(cmd.data, "test") == 0){
             TMP_test(argc, argv);
-        } else if (strcmp(cmd.data, "exit", true) == 0){
+        } else if (strcmp(cmd.data, "exit") == 0){
             halt(0);
         } else {
             string s = string_format("Unknown command %s with args %s", cmd.data, args);
             put_string(s.data);
-            free(s.data, s.mem_length);
+            free_sized(s.data, s.mem_length);
         }
     }
 
-    free(cmd.data, cmd.mem_length);
-    if (args_copy.mem_length) free(args_copy.data, args_copy.mem_length);
+    free_sized(cmd.data, cmd.mem_length);
+    if (args_copy.mem_length) free_sized(args_copy.data, args_copy.mem_length);
 
     command_running = true;
 }
@@ -399,7 +399,7 @@ bool Terminal::handle_input(){
 }
 
 draw_ctx* Terminal::get_ctx(){
-    if (dctx) free(dctx, sizeof(draw_ctx));
+    if (dctx) free_sized(dctx, sizeof(draw_ctx));
     draw_ctx *ctx = (draw_ctx*)malloc(sizeof(draw_ctx));
     request_draw_ctx(ctx);
     return ctx;

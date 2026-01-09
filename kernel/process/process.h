@@ -42,21 +42,27 @@ typedef struct {
     //Not used in process saving
     uint16_t id;
     uintptr_t stack;
+    uintptr_t stack_phys;
     uint64_t stack_size;
     uintptr_t heap;
+    uintptr_t heap_phys;
     uintptr_t output;
+    size_t output_size;
+    uintptr_t last_va_mapping;
     file out_fd;
-    uint64_t exit_code;
+    int32_t exit_code;
     bool focused;
     void *code;
     size_t code_size;
     bool use_va;
+    uintptr_t *ttbr;
     uintptr_t va;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     __attribute__((aligned(16))) input_buffer_t input_buffer;
     __attribute__((aligned(16))) event_buffer_t event_buffer;
     __attribute__((aligned(16))) packet_buffer_t packet_buffer;
     uint8_t priority;
+    uint16_t win_id;
     char *bundle;
     char name[MAX_PROC_NAME_LENGTH];
     sizedptr debug_lines;

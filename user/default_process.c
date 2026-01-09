@@ -1,4 +1,5 @@
 #include "default_process.h"
+#include "mouse_input.h"
 #include "syscalls/syscalls.h"
 #include "input_keycodes.h"
 #include "std/string.h"
@@ -11,25 +12,26 @@
 
 int img_example() {
     draw_ctx ctx = {};
-    request_draw_ctx(&ctx);
-    file descriptor;
-    FS_RESULT res = fopen("/resources/test.png", &descriptor);
+    file descriptor = {};
+    FS_RESULT res = openf("/resources/jest.bmp", &descriptor);
     void *img = 0;
     image_info info;
     void* file_img = malloc(descriptor.size);
-    fread(&descriptor, file_img, descriptor.size);
+    readf(&descriptor, file_img, descriptor.size);
+    closef(&descriptor);
     if (res != FS_RESULT_SUCCESS) printf("Couldn't open image");
     else {
-        info = png_get_info(file_img, descriptor.size);
+        info = bmp_get_info(file_img, descriptor.size);
         printf("info %ix%i",info.width,info.height);
         img = malloc(info.width*info.height*system_bpp);
-        png_read_image(file_img, descriptor.size, img);
+        bmp_read_image(file_img, descriptor.size, img);
     }
-    // resize_draw_ctx(&ctx, info.width+BORDER*2, info.height+BORDER*2);
+    ctx.width = info.width+BORDER*2;
+    ctx.height = info.height+BORDER*2;
+    request_draw_ctx(&ctx);
     while (1) {
-        mouse_input mouse = {};
-        get_mouse_status(&mouse);
-        // printf("Mouse %i",mouse.x);
+        mouse_data data;
+        get_mouse_status(&data);
         keypress kp = {};
         // printf("Print console test %f", (get_time()/1000.f));
         if (read_key(&kp))
@@ -71,7 +73,7 @@ int net_example() {
 
     char *str = "Hello node";
 
-    printf("Sent %i",socket_send(&spec, DST_ENDPOINT, &rc.ip, rc.port, str, strlen(str, 0)));
+    printf("Sent %i",socket_send(&spec, DST_ENDPOINT, &rc.ip, rc.port, str, strlen(str)));
 
     socket_close(&spec);
 
@@ -83,9 +85,9 @@ static audio_samples audio[MIXER_INPUTS];
 
 int audio_example(){
     for (int i = 0; i < MIXER_INPUTS; ++i) mixin[i] = -1;
-    mixer_set_level(AUDIO_LEVEL_MAX * 0.75f);
+    mixer_master_level(AUDIO_LEVEL_MAX * 0.75f);
     if (wav_load_as_int16("/resources/scale.wav", audio)){
-        mixin[0] = play_audio_sync(&audio[0], AUDIO_LEVEL_MAX/4);
+        mixin[0] = audio_play_sync(&audio[0], 0, AUDIO_ONESHOT, AUDIO_LEVEL_MAX/4, PAN_CENTRE);
         return 0;
     }else{
         printf("Could not load wav");

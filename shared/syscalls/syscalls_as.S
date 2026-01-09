@@ -1,3 +1,4 @@
+#ifndef CROSS
 #include "syscall_codes.h"
 
 .macro syscall_def name:req, id:req
@@ -10,7 +11,7 @@
 
 #ifndef KERNEL
 syscall_def malloc, MALLOC_CODE
-syscall_def free, FREE_CODE
+syscall_def free_sized, FREE_CODE
 
 syscall_def printl, PRINTL_CODE
 
@@ -39,13 +40,15 @@ syscall_def socket_send, SOCKET_SEND_CODE
 syscall_def socket_receive, SOCKET_RECEIVE_CODE
 syscall_def socket_close, SOCKET_CLOSE_CODE
 
-syscall_def fopen, FILE_OPEN_CODE
-syscall_def fread, FILE_READ_CODE
-syscall_def fwrite, FILE_WRITE_CODE
-syscall_def fclose, FILE_CLOSE_CODE
+syscall_def openf, FILE_OPEN_CODE
+syscall_def readf, FILE_READ_CODE
+syscall_def writef, FILE_WRITE_CODE
+syscall_def closef, FILE_CLOSE_CODE
 syscall_def dir_list, DIR_LIST_CODE
+syscall_def sreadf, FILE_SIMPLE_READ_CODE
+syscall_def swritef, FILE_SIMPLE_WRITE_CODE
 
 #endif
-
-syscall_def sleep, SLEEP_CODE
+syscall_def msleep, SLEEP_CODE
 syscall_def halt, HALT_CODE
+#endif

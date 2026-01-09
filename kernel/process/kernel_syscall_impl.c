@@ -7,16 +7,21 @@
 #include "graph/graphics.h"
 #include "graph/tres.h"
 #include "exceptions/timer.h"
-#include "net/transport_layer/csocket.h"
-#include "net/transport_layer/socket_types.h"
+#include "networking/transport_layer/csocket.h"
+#include "net/socket_types.h"
 #include "net/network_types.h"
 #include "filesystem/filesystem.h"
+#include "sysregs.h"
+#include "memory/mmu.h"
 
 void* malloc(size_t size){
-    return kalloc((void*)get_proc_by_pid(1)->heap, size, ALIGN_16B, get_current_privilege());
+    process_t* k = get_proc_by_pid(1);
+    uintptr_t heap_pa = mmu_translate(k->heap);
+    if (!heap_pa) return 0;
+    return kalloc((void*)heap_pa, size, ALIGN_16B, MEM_PRIV_KERNEL);
 }
 
-void free(void*ptr, size_t size){
+void free_sized(void*ptr, size_t size){
     kfree(ptr, size);
 }
 
@@ -32,8 +37,9 @@ extern bool read_event(kbd_event *event){
     return sys_read_event_current(event);
 }
 
-extern void get_mouse_status(mouse_input *in){
-    kprint("[SYSCALL implementation error] Shortcut syscalls are not implemented yet");
+extern void get_mouse_status(mouse_data *in){
+    in->raw = get_raw_mouse_in();
+    in->position = convert_mouse_position(get_mouse_pos());
 }
 
 extern uint16_t exec(const char* prog_name, int argc, const char* argv[]){
@@ -46,7 +52,7 @@ extern void request_draw_ctx(draw_ctx* d_ctx){
 }
 
 extern void commit_draw_ctx(draw_ctx* d_ctx){
-    commit_frame(d_ctx);
+    commit_frame(d_ctx, 0);
 }
 
 extern void resize_draw_ctx(draw_ctx* d_ctx, uint32_t width, uint32_t height){
@@ -97,19 +103,19 @@ extern int32_t socket_close(SocketHandle *handle){
     return close_socket(handle, get_current_proc_pid());
 }
 
-extern FS_RESULT fopen(const char* path, file* descriptor){
+extern FS_RESULT openf(const char* path, file* descriptor){
     return open_file(path, descriptor);
 }
 
-extern size_t fread(file *descriptor, char* buf, size_t size){
+extern size_t readf(file *descriptor, char* buf, size_t size){
     return read_file(descriptor, buf, size);
 }
 
-extern size_t fwrite(file *descriptor, const char* buf, size_t size){
+extern size_t writef(file *descriptor, const char* buf, size_t size){
     return write_file(descriptor, buf, size);
 }
 
-extern void fclose(file *descriptor){
+extern void closef(file *descriptor){
     close_file(descriptor);
 }
 

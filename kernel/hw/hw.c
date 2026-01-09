@@ -1,6 +1,7 @@
 #include "hw.h"
 #include "console/kio.h"
 #include "gpio.h"
+#include "sysregs.h"
 
 uint8_t BOARD_TYPE;
 uint8_t RPI_BOARD;
@@ -45,8 +46,14 @@ void detect_hardware(){
                 MMIO_BASE = 0xFE000000; 
                 RPI_BOARD = 4;
                 GPIO_PIN_BASE = 0x50;
+                #if QEMU
+                SDHCI_BASE = MMIO_BASE + 0x300000;
+                #else
+                SDHCI_BASE = MMIO_BASE + 0x340000;//EMMC2 direct, no routing needed
+                #endif
                 GICD_BASE = MMIO_BASE + 0x1841000;
                 GICC_BASE = MMIO_BASE + 0x1842000;
+                PCI_BASE = 0xFD500000;
             break;
             case 0xD0B:  //5. Cortex A76
                 MMIO_BASE = 0x107C000000UL;
@@ -62,6 +69,7 @@ void detect_hardware(){
             default:  
                 RPI_BOARD = 3;
                 MMIO_BASE = 0x3F000000; 
+                SDHCI_BASE = MMIO_BASE + 0x300000;
                 GICD_BASE = MMIO_BASE + 0xB200;
             break;
         }
@@ -69,7 +77,6 @@ void detect_hardware(){
             GPIO_BASE  = MMIO_BASE + 0x200000;
             MAILBOX_BASE = MMIO_BASE + 0xB880;
             UART0_BASE = MMIO_BASE + 0x201000;
-            SDHCI_BASE = MMIO_BASE + 0x300000;
             XHCI_BASE  = MMIO_BASE + 0x9C0000;
         }
         DWC2_BASE  = MMIO_BASE + 0x980000;
@@ -82,6 +89,18 @@ void detect_hardware(){
         PM_BASE = MMIO_BASE + 0x100000u;
         if (RPI_BOARD != 5) reset_gpio();
     }
+}
+
+void hw_high_va(){
+    if (UART0_BASE) UART0_BASE |= HIGH_VA;
+    if (MMIO_BASE) MMIO_BASE |= HIGH_VA;
+    if (BOARD_TYPE != 1 && PCI_BASE)
+        PCI_BASE |= HIGH_VA;
+    if (GICD_BASE) GICD_BASE |= HIGH_VA;
+    if (GICC_BASE) GICC_BASE |= HIGH_VA;
+    if (MAILBOX_BASE) MAILBOX_BASE |= HIGH_VA;
+    if (SDHCI_BASE) SDHCI_BASE |= HIGH_VA;
+    if (XHCI_BASE) XHCI_BASE |= HIGH_VA;
 }
 
 void print_hardware(){

@@ -50,7 +50,7 @@ bool FAT32FS::init(uint32_t partition_sector){
     kprintf("Data start at %x",data_start_sector*512);
     read_FAT(mbs->reserved_sectors, mbs->sectors_per_fat, mbs->number_of_fats);
 
-    open_files = IndexMap<void*>(4096);
+    open_files = chashmap_create(128);
 
     return true;
 }
@@ -228,8 +228,8 @@ sizedptr FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, ch
     if (entry->flags.volume_id) return {0,0};
     
     bool is_last = *seek_to(seek, '/') == '\0';
-    if (!is_last && strstart(seek, filename, true) == 0) return {0, 0};
-    if (is_last && strcmp(seek, filename, true) != 0) return {0, 0};
+    if (!is_last && strstart_case(seek, filename,true) < (int)(strlen_max(filename, 0)-1)) return {0, 0};
+    if (is_last && strcmp_case(seek, filename,true) != 0) return {0, 0};
 
     uint32_t filecluster = (entry->hi_first_cluster << 16) | entry->lo_first_cluster;
     uint32_t bps = instance->bytes_per_sector;
@@ -244,29 +244,53 @@ sizedptr FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, ch
 
 FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (!mbs) return FS_RESULT_DRIVER_ERROR;
+    uint64_t fid = reserve_fd_gid(path);
+    module_file *mfile = (module_file*)chashmap_get(open_files, &fid, sizeof(uint64_t));
+    if (mfile){
+        descriptor->id = mfile->fid;
+        descriptor->size = mfile->file_size;
+        mfile->references++;
+        return FS_RESULT_SUCCESS;
+    }
     path = seek_to(path, '/');
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
     sizedptr buf_ptr = walk_directory(count, mbs->first_cluster_of_root_directory, path, read_entry_handler);
     void *buf = (void*)buf_ptr.ptr;
-    if (!buf) return FS_RESULT_NOTFOUND;
-    descriptor->id = reserve_fd_id();
+    if (!buf || !buf_ptr.size) return FS_RESULT_NOTFOUND;
+    descriptor->id = fid;
     descriptor->size = buf_ptr.size;
-    if (!open_files.add(descriptor->id, buf)) return FS_RESULT_NO_RESOURCES;
-    //TODO: go back to using a linked list
-    return FS_RESULT_SUCCESS;
+    mfile = (module_file*)kalloc(fs_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
+    mfile->file_size = buf_ptr.size;
+    mfile->buffer = (uintptr_t)buf;
+    mfile->ignore_cursor = false;
+    mfile->fid = descriptor->id;
+    mfile->references = 1;
+    return chashmap_put(open_files, &fid, sizeof(uint64_t), mfile) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
 size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
-    //TODO: Here and elsewhere, we're not checking the cursor's validity within the file
-    uintptr_t file = (uintptr_t)open_files[descriptor->id];
-    memcpy(buf, (void*)(file + descriptor->cursor), size);
+    module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!mfile) return 0;
+    if (descriptor->cursor > mfile->file_size) return 0;
+    if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
+    memcpy(buf, (void*)(mfile->buffer + descriptor->cursor), size);
     return size;
+}
+
+void FAT32FS::close_file(file* descriptor){
+    module_file *mfile = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!mfile) return;
+    mfile->references--;
+    if (mfile->references == 0){
+        chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
+        kfree((void*)mfile->buffer, mfile->file_size);
+    }
 }
 
 sizedptr FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {
 
     if (entry->flags.volume_id) return { 0, 0 };
-    if (strstart(seek, filename, true) == 0) return { 0, 0 };
+    if (strstart_case(seek, filename,true) != (int)(strlen_max(filename, 0)-1)) return { 0, 0 };
     
     bool is_last = *seek_to(seek, '/') == '\0';
     
@@ -279,10 +303,45 @@ sizedptr FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, 
     return { 0, 0 };
 }
 
-sizedptr FAT32FS::list_contents(const char *path){
-    if (!mbs) return { 0, 0 };
+size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t *offset){
+    if (!mbs) return 0;
     path = seek_to(path, '/');
 
-    uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
-    return walk_directory(count, mbs->first_cluster_of_root_directory, path, list_entries_handler);
+    uint32_t count_sectors = count_FAT(mbs->first_cluster_of_root_directory);
+    sizedptr ptr = walk_directory(count_sectors, mbs->first_cluster_of_root_directory, path, list_entries_handler);
+    
+    size = min(size, ptr.size);
+
+    uint32_t count = 0;
+    uint32_t total_count = *(uint32_t*)ptr.ptr;
+	
+    char *write_ptr = (char*)buf + 4;
+    char *cursor = (char*)ptr.ptr + 4;
+
+    bool offset_found = !offset || *offset == 0 ? true : false;
+
+    for (uint32_t i = 0; i < total_count; i++){
+    	size_t len = strlen(cursor);
+    	uint64_t hash = chashmap_fnv1a64(cursor, len);
+    	if (!offset_found){
+		if (hash == *offset) offset_found = true;
+		else kprintf("File hash %llx for %s",hash,cursor);
+		cursor += len + 1;
+    		continue;
+    	}
+    	if ((uintptr_t)write_ptr + len < (uintptr_t)buf + size){
+    		memcpy(write_ptr, cursor, len);
+    		write_ptr += len;
+    		*write_ptr++ = 0;
+    		cursor += len + 1;
+    		count++;
+    	} else {
+    		*offset = hash;
+    		break;
+    	}
+    }
+
+    *(uint32_t*)buf = count;
+
+    return (uintptr_t)write_ptr-(uintptr_t)buf;
 }

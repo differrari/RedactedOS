@@ -7,7 +7,7 @@
 #include "math/math.h"
 #include "data_struct/ring_buffer.h"
 
-static bool use_visual = true;
+static bool use_visual = false;
 
 #define CONSOLE_BUF_SIZE 0x3000
 #define CONSOLE_WRITE_CHUNK 256
@@ -80,7 +80,7 @@ bool console_fini(){
 }
 
 FS_RESULT console_open(const char *path, file *out_fd){
-    out_fd->id = reserve_fd_id();
+    out_fd->id = reserve_fd_gid("/console");
     out_fd->size = CONSOLE_BUF_SIZE;
     return FS_RESULT_SUCCESS;
 }
@@ -117,7 +117,7 @@ size_t console_read(file *fd, char *out_buf, size_t size, file_offset offset){
     return to_read;
 }
 
-size_t console_write(file *fd, const char *buf, size_t size, file_offset offset){
+size_t console_write(const char *buf, size_t size){
     if (!console_storage) init_print_buf();
     if (!buf || size == 0) return 0;
 
@@ -153,32 +153,38 @@ size_t console_write(file *fd, const char *buf, size_t size, file_offset offset)
     return size;
 }
 
+size_t console_write_fd(file *fd, const char *buf, size_t size, file_offset offset){
+    return console_write(buf, size);
+}
+
+size_t simple_console_write(const char *path, const void *buf, size_t size){
+    return console_write(buf, size);
+}
+
 file_offset console_seek(file *fd, file_offset offset){
     return 0;
 }
 
-sizedptr console_readdir(const char* path){
-    return (sizedptr){ 0, 0 };
-}
-
-driver_module console_module = (driver_module){
+system_module console_module = (system_module){
     .name = "console",
-    .mount = "/dev/console",
+    .mount = "/console",
     .version = VERSION_NUM(0,1,0,0),
     .init = console_init,
     .fini = console_fini,
     .open = console_open,
+    .close = 0,
     .read = console_read,
-    .write = console_write,
-    .seek = console_seek,
-    .readdir = console_readdir,
+    .write = console_write_fd,
+    .sread = 0,//TODO implement simple io
+    .swrite = simple_console_write,
+    .readdir = 0,
 };
 
 void puts(const char *s){
     if (!console_storage) init_print_buf();
     if (!s) return;
 
-    size_t n = strlen(s, 0);
+    size_t n = strlen(s);
     if (!n) return;
 
     uart_raw_puts(s);
@@ -205,7 +211,7 @@ void kprintf(const char *fmt, ...){
     size_t n = string_format_va_buf(fmt, buf, STRING_MAX_LEN, args);
 
     va_end(args);
-    console_write(NULL, buf, n, 0);
+    console_write(buf, n);
     console_out_crlf();
     console_ring_write(CRLF, 2);
 }
@@ -214,8 +220,8 @@ void kprint(const char *s){
     if (!console_storage) init_print_buf();
     if (!s) return;
 
-    size_t n = strlen(s, 0);
-    if (n) console_write(NULL, s, n, 0);
+    size_t n = strlen(s);
+    if (n) console_write(s, n);
 
     console_out_crlf();
     console_ring_write(CRLF, 2);
@@ -233,7 +239,7 @@ void kputf(const char *fmt, ...){
 
     va_end(args);
 
-    console_write(NULL, buf, n, 0);
+    console_write(buf, n);
 }
 
 void disable_visual(){

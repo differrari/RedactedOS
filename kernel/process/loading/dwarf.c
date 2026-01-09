@@ -2,12 +2,12 @@
 #include "types.h"
 #include "console/kio.h"
 #include "std/memory_access.h"
+#include "std/string.h"
 
 typedef struct {
     uint32_t unit_length;
     uint16_t version;
     uint8_t address_size;
-	//TODO: to support DWARF 4, separate everything from here out into a separate header
     uint8_t segment_selector;
     uint32_t header_length;
     uint8_t minimum_instruction_length;
@@ -215,7 +215,7 @@ uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, siz
 					str = (const char *)p;
 					// kprintf("Directory %s", str);
 					if (array) array[i] = str;
-					p += strlen(str, 0) + 1;
+					p += strlen(str) + 1;
 				break;
 				case DW_FORM_strp: p += 4; break;
 				case DW_FORM_strx: decode_uleb128(&p); break;
@@ -427,7 +427,7 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 						.column = state.column,
 						.file = files[state.file]
 					};
-				} else if (state.address > address) {//TODO: This can report false positives. Often at math.h:1 it seems
+				} else if (state.address > address && previous_state.address && previous_state.address < address) {
 				    return (debug_line_info){
 						.address = address,
 						.line = previous_state.line,

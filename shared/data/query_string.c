@@ -61,6 +61,6 @@ void query_parse_z(const char *buf, QueryParam **out_params, uint32_t *out_count
         *out_count = 0;
         return;
     }
-    size_t n = strlen(buf, 256);
+    size_t n = strlen(buf);
     query_parse(buf, (uint32_t)n, out_params, out_count);
 }

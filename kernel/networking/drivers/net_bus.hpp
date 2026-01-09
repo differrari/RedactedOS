@@ -1,7 +1,7 @@
 #pragma once
 #include "net_driver.hpp"
 
-#include "net/link_layer/nic_types.h"
+#include "networking/link_layer/nic_types.h"
 
 int net_bus_init();
 int net_bus_count();

@@ -1,7 +1,7 @@
 #include "net_logger.h"
 #include "console/kio.h"
-#include "net/transport_layer/trans_utils.h"
-#include "net/application_layer/http.h"
+#include "networking/transport_layer/trans_utils.h"
+#include "networking/application_layer/http.h"
 
 static const char* http_method_str(uint32_t m) {
     switch ((HTTPMethod)m) {

@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+//TODO: review allocs & C
 typedef struct CRingBuffer {
     void* buffer;
     uint64_t capacity;

@@ -67,14 +67,14 @@ static inline float lerpf(float a, float b, float t) {
   return (t>1) == (b>a) ? max(b,x) : min(b,x);  // monotonic near t=1
 }
 
-static inline int ceil(float val){
+static inline double ceil(double val){
     uint64_t whole = (uint64_t)val;
     double frac = val - (double)whole;
 
-    return frac > 0 ? val + 1 : val;
+    return frac > 0 ? whole + 1 : whole;
 }
 
-static inline int floor(float val){
+static inline double floor(double val){
     return (uint64_t)val;
 }
 

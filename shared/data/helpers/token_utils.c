@@ -7,9 +7,9 @@ bool token_is_number(const Token *t) {
 
 bool token_is_operator_token(const Token *t, const char *op) {
     if (!t || t->kind != TOK_OPERATOR) return false;
-    uint32_t n = (uint32_t)strlen(op, 1024);
+    uint32_t n = (uint32_t)strlen(op);
     if (t->length != n) return false;
-    return strncmp(t->start, op, n, 1024) == 0;
+    return strncmp(t->start, op, n) == 0;
 }
 
 bool token_is_negative_number(const Token *op, const Token *num) {
@@ -30,8 +30,7 @@ bool token_to_int64(const Token *t, int64_t *out) {
     if (!t || !token_is_number(t)) return false;
     string tmp = string_from_literal_length(t->start, t->length);
     int64_t v = parse_int64(tmp.data, tmp.length);
-        if (tmp.data && tmp.mem_length) free((void*)tmp.data, (size_t)tmp.mem_length);
-
+    string_free(tmp);
     *out = v;
     return true;
 }
@@ -40,7 +39,7 @@ bool token_to_uint64(const Token *t, uint64_t *out) {
     if (!t || !token_is_number(t)) return false;
     string tmp = string_from_literal_length(t->start, t->length);
     uint64_t v= parse_int_u64(tmp.data, tmp.length);
-    if (tmp.data && tmp.mem_length) free((void*)tmp.data, (size_t)tmp.mem_length);
+    string_free(tmp);
     *out = v;
     return true;
 }
@@ -121,7 +120,7 @@ bool token_to_double(const Token *t, double *out) {
     string tmp = string_from_literal_length(t->start, t->length);
     double v = 0.0;
     bool ok = parse_double_literal(tmp.data, tmp.length, &v);
-    if (tmp.data && tmp.mem_length) free((void*)tmp.data, (size_t)tmp.mem_length);
+    string_free(tmp);
     if (!ok) return false;
     *out = v;
     return true;

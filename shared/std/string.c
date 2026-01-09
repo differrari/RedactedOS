@@ -2,6 +2,7 @@
 #include "syscalls/syscalls.h"
 #include "std/memory.h"
 #include "types.h"
+#include "string_slice.h"
 
 #define TRUNC_MARKER "[…]"
 
@@ -103,7 +104,7 @@ static inline uint32_t u64_to_dec(char *tmp, uint64_t v) {
     return n;
 }
 
-static inline uint32_t u64_to_base(char *tmp, uint64_t v, unsigned base, int upper) {
+uint32_t u64_to_base(char *tmp, uint64_t v, unsigned base, int upper) {
     const char *hx = upper ? "0123456789ABCDEF" : "0123456789abcdef";
     uint32_t n = 0;
 
@@ -164,11 +165,11 @@ static inline void emit_padded(char **restrict p, size_t *restrict rem,
     if (flag_minus) append_repeat(p, rem, ' ', pad, truncated);
 }
 
-uint32_t strlen(const char *s, uint32_t max_length){
+size_t strlen_max(const char *s, uint32_t max_length){
     if (s == NULL) return 0;
     
-    uint32_t len = 0;
-    while ((max_length == 0 || len < max_length) && s[len] != '\0') len++;
+    size_t len = 0;
+    while ((max_length == 0 || len < max_length) && s[len]) len++;
     
     return len;
 }
@@ -176,7 +177,7 @@ uint32_t strlen(const char *s, uint32_t max_length){
 string string_from_literal(const char *literal){
     if (literal == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0};
     
-    uint32_t len = strlen(literal, 0);
+    uint32_t len = strlen(literal);
     char *buf = (char*)malloc(len + 1);
     if (!buf) return (string){ .data = NULL, .length = 0, .mem_length = 0 };
 
@@ -198,7 +199,7 @@ string string_tail(const char *array, uint32_t max_length){
     
     if (array == NULL) return (string){ .data = NULL, .length = 0, .mem_length = 0 };
 
-    uint32_t len = strlen(array, 0);
+    uint32_t len = strlen(array);
     int offset = (int)len - (int)max_length;
     if (offset < 0) offset = 0;
     
@@ -215,7 +216,7 @@ string string_tail(const char *array, uint32_t max_length){
 string string_from_literal_length(const char *array, uint32_t max_length){
     if (array == NULL) return (string){.data = NULL, .length = 0, .mem_length= 0 };
 
-    uint32_t len = strlen(array, max_length);
+    uint32_t len = strlen_max(array, max_length);
     char *buf = (char*)malloc(len + 1);
     if(!buf) return (string){ .data = NULL, .length = 0, .mem_length=0 };
 
@@ -287,11 +288,11 @@ string string_from_bin(uint64_t value){
 }
 
 bool string_equals(string a, string b){
-    return strcmp(a.data,b.data, false) == 0;
+    return strcmp(a.data,b.data) == 0;
 }
 
 string string_replace(const char *str, char orig, char repl){
-    size_t str_size = strlen(str, 0);
+    size_t str_size = strlen(str);
     char *buf = (char*)malloc(str_size+1);
     for (size_t i = 0; i < str_size && str[i]; i++){
         buf[i] = str[i] == orig ? repl : str[i];
@@ -424,7 +425,7 @@ size_t string_format_va_buf(const char *restrict fmt, char *restrict out, size_t
         if (!flag_plus && !flag_space && !flag_zero && !flag_hash && !had_precision && width == 0) {
             if (spec == 's') {
                 const char *s = va_arg(args, char *); if (!s) s = "(null)";
-                append_block(&p, &rem, s, strlen(s, 0), &truncated_all);
+                append_block(&p, &rem, s, strlen(s), &truncated_all);
                 continue;
             } else if (spec == 'c') {
                 int ch = va_arg(args, int);
@@ -451,18 +452,22 @@ size_t string_format_va_buf(const char *restrict fmt, char *restrict out, size_t
             case 's': {
                 const char *s = va_arg(args, char *);
                 if (!s) s = "(null)";
-                uint32_t sl = strlen(s, 0);
+                uint32_t sl = strlen(s);
                 if (precision_set && (uint32_t)precision < sl) sl = (uint32_t)precision;
                 emit_padded(&p, &rem, s, sl, width, flag_minus, &truncated_all);
             } continue;
 
             case 'S': {
-                const string *sp = va_arg(args, const string *);
-                string sv = sp ? *sp : (string){ .data = NULL, .length = 0, .mem_length = 0};
+                const string sv = va_arg(args, string);
                 const char *s = sv.data ? sv.data : "(null)";
                 uint32_t sl = sv.data ? sv.length : 6;
                 if (precision_set && (uint32_t)precision < sl) sl = (uint32_t)precision;
                 emit_padded(&p, &rem, s, sl, width, flag_minus, &truncated_all);
+            } continue;
+                
+            case 'v': {
+                const string_slice sv = va_arg(args, string_slice);
+                append_strn(&p, &rem, sv.data, sv.length, &truncated_all);
             } continue;
 
             case 'p': {
@@ -971,7 +976,7 @@ size_t string_format_va_buf(const char *restrict fmt, char *restrict out, size_t
     if (truncated_all) {
         size_t w = (size_t)(p - out);
         const char *m = TRUNC_MARKER;
-        size_t ml = strlen(m, 0);
+        size_t ml = strlen(m);
         if (w >= ml) {
             for (size_t i = 0; i < ml; i++) p[-(intptr_t)ml + i] = m[i];
         } else if (w) {
@@ -984,17 +989,17 @@ size_t string_format_va_buf(const char *restrict fmt, char *restrict out, size_t
     return (size_t)(p - out);
 }
 
-char tolower(char c){
+int tolower(int c){
     if (c >= 'A' && c <= 'Z') return c + 'a' - 'A';
     return c;
 }
 
-char toupper(char c){
+int toupper(int c){
     if (c >= 'a' && c <= 'z') return c - ('a' - 'A');
     return c;
 }
 
-int strcmp(const char *a, const char *b, bool case_insensitive){
+int strcmp_case(const char *a, const char *b, bool case_insensitive){
     if (a == NULL && b == NULL) return 0;
     if (a == NULL) return -1;  
     if (b == NULL) return  1;
@@ -1014,12 +1019,12 @@ int strcmp(const char *a, const char *b, bool case_insensitive){
     return (unsigned char)*a - (unsigned char)*b;
 }
 
-int strncmp(const char *a, const char *b, bool case_insensitive, int max){
+int strncmp_case(const char *a, const char *b, bool case_insensitive, size_t max){
     if (a == NULL && b == NULL) return 0;
     if (a == NULL) return -1;  
     if (b == NULL) return  1;
 
-    for (int i = 0; i < max && *a && *b; i++, a++, b++){
+    for (size_t i = 0; i < max && *a && *b; i++, a++, b++){
         char ca = *a;
         char cb = *b;
         if (case_insensitive){
@@ -1033,8 +1038,9 @@ int strncmp(const char *a, const char *b, bool case_insensitive, int max){
     return (unsigned char)*a - (unsigned char)*b;
 }
 
-int strstart(const char *a, const char *b, bool case_insensitive){
+int strstart_case(const char *a, const char *b, bool case_insensitive){
     int index = 0;
+    if (!a || !b) return 0;
     while (*a && *b){
         char ca = *a;
         char cb = *b;
@@ -1059,7 +1065,7 @@ int strindex(const char *a, const char *b){
     return -1;
 }
 
-int strend(const char *a, const char *b, bool case_insensitive){
+int strend_case(const char *a, const char *b, bool case_insensitive){
     while (*a && *b){
         char ca = case_insensitive ? tolower((unsigned char)*a) : *a;
         char cb = case_insensitive ? tolower((unsigned char)*b) : *b;
@@ -1070,7 +1076,7 @@ int strend(const char *a, const char *b, bool case_insensitive){
                 char cpa = case_insensitive ? tolower((unsigned char)*pa) : *pa;
                 char cpb = case_insensitive ? tolower((unsigned char)*pb) : *pb;
 
-                if (!cpa) return 0;
+                if (!cpa) return cpb;
                 if (cpa != cpb) break;
 
                 pa++; pb++;
@@ -1117,7 +1123,9 @@ uint64_t parse_hex_u64(const char* str, size_t size){
     for (uint32_t i = 0; i < size; i++){
         char c = str[i];
         uint8_t digit = 0;
-        if (c >= '0' && c <= '9') digit = c - '0';
+        if (i == 1 && (c == 'x' || c == 'X')) result = 0;
+        else if (i == 0 && c == '#') result = 0;
+        else if (c >= '0' && c <= '9') digit = c - '0';
         else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
         else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
         else break;
@@ -1137,6 +1145,7 @@ uint64_t parse_int_u64(const char* str, size_t size){
     }
     return result;
 }
+
 int64_t parse_int64(const char* str, size_t size){
     uint64_t result = 0;
     bool neg = false;
@@ -1150,10 +1159,13 @@ int64_t parse_int64(const char* str, size_t size){
     }
     return neg ? -result : result;
 }
+
 string string_from_const(const char *lit)
 {
-    uint32_t len = strlen(lit, 0);
-    return (string){ (char *)lit, len, 0};
+    uint32_t len = strlen(lit);
+    char* nlit = malloc(len+1);
+    strncpy(nlit, lit, len+1);
+    return (string){ nlit, len, len + 1};
 }
 
 string string_concat(string a, string b)
@@ -1182,8 +1194,8 @@ void string_concat_inplace(string *dest, string src)
     }
     memcpy(dst + dest->length, src.data, src.length);
     dst[new_len] = '\0';
-    if (dest->data && dest->mem_length) {
-        free(dest->data, dest->mem_length);
+    if (dest->data) {
+        free_sized(dest->data, dest->mem_length);
     }
     dest->data = dst;
     dest->length = new_len;
@@ -1204,12 +1216,12 @@ const char* seek_to(const char *string, char character){
     return string;
 }
 
-size_t strncpy(char* dst, size_t cap, const char* src){
+char* strncpy(char* dst, const char* src, size_t cap){
     size_t i=0;
     if (!dst || !src || cap==0) return 0;
     while (i<cap-1 && src[i]!=0){ dst[i]=src[i]; i++; }
     dst[i]=0;
-    return i;
+    return dst;
 }
 
 bool parse_uint32_dec(const char *s, uint32_t *out) {
@@ -1221,25 +1233,48 @@ bool parse_uint32_dec(const char *s, uint32_t *out) {
     return true;
 }
 
+
 char* strcasestr(const char* haystack, const char* needle) {
-	if(!haystack) return 0;
-	if(!needle) return (char*)haystack;
-	if(!*needle) return (char*)haystack;
+    if (!haystack) return 0;
+    if (!needle) return (char*)haystack;
+    if (!*needle) return (char*)haystack;
 
-	for(const char* h = haystack; *h; h++) {
-		const char* hp = h;
-		const char*np = needle;
+    for (const char* h = haystack; *h; h++) {
+        const char* hp = h;
+        const char* np = needle;
 
-		while(*hp && *np){
-			char a = tolower(*hp);
-			char b = tolower(*np);
-			if(a != b) break;
-			hp++;
-			np++;
-		}
+        while (*hp && *np) {
+            char a = tolower(*hp);
+            char b = tolower(*np);
+            if (a != b) break;
+            hp++;
+            np++;
+        }
 
-		if(!*np) return (char*)h;
-	}
+        if (!*np) return (char*)h;
+    }
 
-	return 0;
+    return 0;
+}
+
+void strcat_buf(const char *a, const char *b, char *dest){
+    while (*a) *dest++ = *a++;
+    while (*b) *dest++ = *b++;
+    *dest = 0;
+}
+
+char* strcat_new(const char *a, const char *b){
+    char* dest = (char*)malloc(strlen(a) + strlen(b) + 1);
+    strcat_buf(a,b,dest);
+    return dest;
+}
+
+string string_replace_character(char* original, char symbol, char *value){
+    size_t fulllen = strlen(original);
+    const char *next = seek_to(original, symbol);
+    if (next == original+fulllen){
+        return string_from_literal(original);
+    }
+    string_slice start = make_string_slice(original, 0, next-original-1);
+    return string_format("%v%s%s",start, value, next);
 }

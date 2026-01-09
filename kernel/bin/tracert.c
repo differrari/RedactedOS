@@ -1,4 +1,4 @@
-#include "net/internet_layer/icmp.h"
+#include "networking/internet_layer/icmp.h"
 #include "net/network_types.h"
 #include "std/string.h"
 #include "std/memory.h"
@@ -7,10 +7,10 @@
 #include "filesystem/filesystem.h"
 #include "process/scheduler.h"
 #include "syscalls/syscalls.h"
-#include "net/internet_layer/ipv4.h"
-#include "net/internet_layer/ipv4_route.h"
-#include "net/application_layer/dns.h"
-#include "net/internet_layer/ipv4_utils.h"
+#include "networking/internet_layer/ipv4.h"
+#include "networking/internet_layer/ipv4_route.h"
+#include "networking/application_layer/dns.h"
+#include "networking/internet_layer/ipv4_utils.h"
 
 typedef struct {
     ip_version_t ver;
@@ -26,7 +26,7 @@ typedef struct {
 
 static void help(file *fd) {
     const char *a = "usage: tracert [-4/-6] [-m max_ttl] [-n probes] [-w timeout] [-i interval] [-x dead_hops] [-s src_local_ip] host";
-    write_file(fd, a, strlen(a, STRING_MAX_LEN));
+    write_file(fd, a, strlen_max(a, STRING_MAX_LEN));
     write_file(fd, "\n", 1);
 }
 
@@ -44,26 +44,26 @@ static bool parse_args(int argc, char *argv[], tr_opts_t *o) {
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
         if (a && a[0] == '-') {
-            if (strcmp(a, "-4", true) == 0) {
+            if (strcmp_case(a, "-4",true) == 0) {
                 o->ver = IP_VER4;
-            } else if (strcmp(a, "-6", true) == 0) {
+            } else if (strcmp_case(a, "-6",true) == 0) {
                 o->ver = IP_VER6;
-            } else if (strcmp(a, "-m", true) == 0) {
+            } else if (strcmp_case(a, "-m",true) == 0) {
                 if (++i >= argc) return false;
                 if (!parse_uint32_dec(argv[i], &o->max_ttl) || o->max_ttl == 0) return false;
-            } else if (strcmp(a, "-n", true) == 0) {
+            } else if (strcmp_case(a, "-n",true) == 0) {
                 if (++i >= argc) return false;
                 if (!parse_uint32_dec(argv[i], &o->count) || o->count == 0) return false;
-            } else if (strcmp(a, "-w", true) == 0) {
+            } else if (strcmp_case(a, "-w",true) == 0) {
                 if (++i >= argc) return false;
                 if (!parse_uint32_dec(argv[i], &o->timeout_ms) || o->timeout_ms == 0) return false;
-            } else if (strcmp(a, "-i", true) == 0) {
+            } else if (strcmp_case(a, "-i",true) == 0) {
                 if (++i >= argc) return false;
                 if (!parse_uint32_dec(argv[i], &o->interval_ms)) return false;
-            } else if (strcmp(a, "-x", true) == 0) {
+            } else if (strcmp_case(a, "-x",true) == 0) {
                 if (++i >= argc) return false;
                 if (!parse_uint32_dec(argv[i], &o->timeout_streak_limit) || o->timeout_streak_limit == 0) return false;
-            } else if (strcmp(a, "-s", true) == 0) {
+            } else if (strcmp_case(a, "-s",true) == 0) {
                 if (++i >= argc) return false;
                 uint32_t src = 0;
                 if (!ipv4_parse(argv[i], &src)) return false;
@@ -99,7 +99,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             write_file(fd, m.data, m.length);
             write_file(fd, "\n", 1);
             //write_file(fd, "\t", 1);
-            free(m.data, m.mem_length);
+            free_sized(m.data, m.mem_length);
             return 2;
         }
         dst = r;
@@ -108,9 +108,9 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
     char dip[16];
     ipv4_to_string(dst, dip);
     write_file(fd, "Tracing route to ", 17);
-    write_file(fd, o->host, strlen(o->host, STRING_MAX_LEN));
+    write_file(fd, o->host, strlen_max(o->host, STRING_MAX_LEN));
     write_file(fd, " [", 2);
-    write_file(fd, dip, strlen(dip, STRING_MAX_LEN));
+    write_file(fd, dip, strlen_max(dip, STRING_MAX_LEN));
     write_file(fd, "]", 1);
     write_file(fd, "\n", 1);
 
@@ -118,7 +118,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
     for (uint32_t p = 0; p < o->count; p++) {
         string col = string_format("rtt%u  ", (uint32_t)(p + 1));
         write_file(fd, col.data, col.length);
-        free(col.data, col.mem_length);
+        free_sized(col.data, col.mem_length);
     }
     write_file(fd, "address", 7);
     write_file(fd, "\n", 1);
@@ -133,7 +133,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             string em = string_format("tracert: invalid source %s (no local ip match)", ssrc);
             write_file(fd, em.data, em.length);
             write_file(fd, "\n", 1);
-            free(em.data, em.mem_length);
+            free_sized(em.data, em.mem_length);
             return 2;
         }
         txo.index = l3->l3_id;
@@ -148,7 +148,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
     for (uint32_t ttl = 1; ttl <= o->max_ttl; ttl++) {
         string hdr = string_format("%2u  ", ttl);
         write_file(fd, hdr.data, hdr.length);
-        free(hdr.data, hdr.mem_length);
+        free_sized(hdr.data, hdr.mem_length);
 
         uint32_t hop_ip = 0;
         bool any = false;
@@ -163,7 +163,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
                 any = true;
                 string ms = string_format("%ums  ", r.rtt_ms);
                 write_file(fd, ms.data, ms.length);
-                free(ms.data, ms.mem_length);
+                free_sized(ms.data, ms.mem_length);
             } else {
                 if (r.status == PING_TTL_EXPIRED || r.status == PING_REDIRECT || r.status == PING_PARAM_PROBLEM ||
                     r.status == PING_NET_UNREACH || r.status == PING_HOST_UNREACH || r.status == PING_ADMIN_PROHIBITED ||
@@ -171,13 +171,13 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
                     any = true;
                     string ms = string_format("%ums  ", r.rtt_ms);
                     write_file(fd, ms.data, ms.length);
-                    free(ms.data, ms.mem_length);
+                    free_sized(ms.data, ms.mem_length);
                 } else {
                     write_file(fd, "*  ", 3);
                 }
             }
 
-            if (p + 1 < o->count) sleep(o->interval_ms);
+            if (p + 1 < o->count) msleep(o->interval_ms);
         }
 
         if (any) {
@@ -185,7 +185,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             if (hop_ip) {
                 char hip[16];
                 ipv4_to_string(hop_ip, hip);
-                write_file(fd, hip, strlen(hip, STRING_MAX_LEN));
+                write_file(fd, hip, strlen_max(hip, STRING_MAX_LEN));
             } else {
                 write_file(fd, "???", 3);
             }
@@ -200,7 +200,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             string note = string_format("stopping after %u consecutive timeout hops", dead_streak);
             write_file(fd, note.data, note.length);
             write_file(fd, "\n", 1);
-            free(note.data, note.mem_length);
+            free_sized(note.data, note.mem_length);
             break;
         }
     }
@@ -213,7 +213,7 @@ int run_tracert(int argc, char *argv[]) {
     string p = string_format("/proc/%u/out", pid);
     file fd = (file){0};
     open_file(p.data, &fd);
-    free(p.data, p.mem_length);
+    free_sized(p.data, p.mem_length);
 
     tr_opts_t o;
     if (!parse_args(argc, argv, &o)) {

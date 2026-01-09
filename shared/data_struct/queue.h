@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+//TODO: review allocs & C
 typedef struct CQueue {
     void*    buffer;
     uint64_t capacity;      // current queue size
@@ -15,8 +16,8 @@ typedef struct CQueue {
     uint64_t length;
 } CQueue;
 
-extern void* malloc(uint64_t);
-extern void free(void*, uint64_t);
+extern void* malloc(size_t);
+extern void free_sized(void*, size_t);
 
 void     cqueue_init(CQueue* q, uint64_t max_capacity, uint64_t elem_size);
 int32_t  cqueue_enqueue(CQueue* q, const void* item);

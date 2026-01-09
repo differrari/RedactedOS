@@ -29,6 +29,7 @@ prepare:
 	mkdir -p $(BUILD_DIR)
 	mkdir -p $(PACKAGE)
 	cp -r resources $(PACKAGE)
+	cp package.info $(PACKAGE)
 
 $(PACKAGE)/$(TARGET): ../shared/libshared.a $(OBJ)
 	$(VLD) $(LDFLAGS) -o $(PACKAGE)/$(ELF) -g $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
@@ -52,7 +53,7 @@ clean:
 	$(RM) -r $(PACKAGE) $(BUILD_DIR)
 
 dump: all
-	$(ARCH)-objdump -S $(NAME).red/$(NAME).elf > dump
+	$(ARCH)objdump -S $(NAME).red/$(NAME).elf > dump
 
 
 -include $(DEP)

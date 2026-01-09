@@ -15,13 +15,13 @@ int run_shutdown(int argc, char* argv[]){
     string p = string_format("/proc/%i/out", pid);
     file out;
     FS_RESULT r = open_file(p.data, &out);
-    free(p.data, p.mem_length);
+    free_sized(p.data, p.mem_length);
 
     if (r != FS_RESULT_SUCCESS){
         return 2;
     }
     if (argc <= 0){
-        write_file(&out, u,strlen(u, STRING_MAX_LEN));
+        write_file(&out, u,strlen(u));
          return 0;
     }
 
@@ -31,19 +31,19 @@ int run_shutdown(int argc, char* argv[]){
         const char *a = argv[i];
         if (!a || a[0] == 0) continue;
 
-        if (strcmp(a, "-r", true) == 0) mode = SHUTDOWN_REBOOT;
-        else if (strcmp(a, "-p", true) == 0) mode = SHUTDOWN_POWEROFF;
+        if (strcmp(a, "-r") == 0) mode = SHUTDOWN_REBOOT;
+        else if (strcmp(a, "-p") == 0) mode = SHUTDOWN_POWEROFF;
         else{
-            write_file(&out, u,strlen(u, STRING_MAX_LEN));
-            sleep(100);
+            write_file(&out, u,strlen(u));
+            msleep(100);
             close_file(&out);
             return 2;
         }
     }
 
     if (mode == -1){
-        write_file(&out, u,strlen(u, STRING_MAX_LEN));
-        sleep(100);
+        write_file(&out, u,strlen(u));
+        msleep(100);
         close_file(&out);
         return 2;
     }
@@ -51,7 +51,7 @@ int run_shutdown(int argc, char* argv[]){
     if (mode == SHUTDOWN_REBOOT) write_file(&out, "Rebooting...\n", 13);
     else write_file(&out, "Powering off...\n", 16);
 
-    sleep(100);
+    msleep(100);
     close_file(&out);
     hw_shutdown(mode);
     return 0;

@@ -6,6 +6,8 @@
 #include "exceptions/exception_handler.h"
 #include "std/memory.h"
 #include "memory/mmu.h"
+#include "memory/talloc.h"
+#include "sysregs.h"
 
 typedef struct {
     uint64_t code_base_start;
@@ -260,54 +262,107 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     kprintfv("Finished translation");
 }
 
-process_t* create_process(const char *name, const char *bundle, void *content, uint64_t content_size, uintptr_t entry, uintptr_t va_base) {
-    
+size_t map_section(process_t *proc, uintptr_t base, uintptr_t off, program_load_data data){
+    // kprintf("Copying %llx from %llx to %llx, representing %llx",data.file_cpy.size,data.file_cpy.ptr,base + (data.virt_mem.ptr - off), data.virt_mem.size);
+    if (data.file_cpy.size) memcpy((void*)base + (data.virt_mem.ptr - off), (void*)data.file_cpy.ptr, data.file_cpy.size);
+    return data.virt_mem.size;
+}
+
+process_t* create_process(const char *name, const char *bundle, program_load_data *data, size_t data_count, uintptr_t entry) {
+
     process_t* proc = init_process();
 
     name_process(proc, name);
 
     proc->bundle = (char*)bundle;
 
-    uint8_t* dest = (uint8_t*)palloc(content_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true);
+    uintptr_t min_addr = UINT64_MAX;
+    uintptr_t max_addr = 0;
+    //TODO: This + mapping + alloc + permissions + copy can be unified
+    for (size_t i = 0; i < data_count; i++){
+        if (data[i].virt_mem.ptr < min_addr) min_addr = data[i].virt_mem.ptr;
+        if (data[i].virt_mem.ptr + data[i].virt_mem.size > max_addr) max_addr = data[i].virt_mem.ptr + data[i].virt_mem.size;
+    } 
+
+    size_t code_size = max_addr-min_addr;
+
+    // kprintf("Code takes %x from %x to %x",code_size, min_addr, max_addr);
+
+    uintptr_t *ttbr = mmu_new_ttbr();
+    uintptr_t *kttbr = mmu_default_ttbr();
+
+    uintptr_t dest = (uintptr_t)palloc_inner(code_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true, false);
     if (!dest) return 0;
-
-    if (va_base + content_size >= LOWEST_ADDR){
-        kprintf("[PROCESS_LOADING IMPLEMENTATION WARNING] virtual addressing currently not supported for this process. Would overwrite %x",LOWEST_ADDR);
-        entry += (uintptr_t)dest;
-        proc->use_va = false;
-    } else {
-        //TODO: multiple TTBRs
-        for (uint32_t i = 0; i < content_size; i+= GRANULE_4KB){
-            register_proc_memory(va_base + i, (uintptr_t)dest + i, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
-        }
-        proc->use_va = true;
-    }
-    memcpy(dest, content, content_size);
-
-    proc->va = va_base;
-    proc->code = dest;
-    proc->code_size = content_size;
     
-    uint64_t stack_size = 0x1000;
+    // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
+    
+    for (uintptr_t i = min_addr; i < max_addr; i += GRANULE_4KB){
+        mmu_map_4kb(kttbr, (uintptr_t)dest + (i - min_addr), (uintptr_t)dest + (i - min_addr), MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
+        mmu_map_4kb(ttbr, i, (uintptr_t)dest + (i - min_addr), MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
+    }
+    memset(PHYS_TO_VIRT_P(dest), 0, code_size);
+    proc->use_va = true;
+    allow_va = false;
+    
+    for (size_t i = 0; i < data_count; i++)
+        map_section(proc, PHYS_TO_VIRT(dest), min_addr, data[i]);
 
-    uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_USER, MEM_RW, true);
+    proc->va = min_addr;
+    proc->code = (void*)dest;
+    proc->code_size = (code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+    max_addr = (max_addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    proc->last_va_mapping = max_addr;
+    
+    uint64_t stack_size = 0x10000;
+
+    uintptr_t stack = (uintptr_t)palloc_inner(stack_size, MEM_PRIV_USER, MEM_RW, true, false);
     if (!stack) return 0;
+    
+    proc->last_va_mapping += PAGE_SIZE;//Unmapped page to catch stack overflows
+    proc->stack = (proc->last_va_mapping + stack_size);
+    proc->stack_phys = (stack + stack_size);
+    
+    for (uintptr_t i = stack; i < stack + stack_size; i += GRANULE_4KB){
+        mmu_map_4kb(kttbr, i, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+        mmu_map_4kb(ttbr, proc->last_va_mapping, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+        mmu_map_4kb(ttbr, i, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+        proc->last_va_mapping += PAGE_SIZE;
+    }
+    memset(PHYS_TO_VIRT_P(stack), 0, stack_size);
 
-    uintptr_t heap = (uintptr_t)palloc(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, false);
+    proc->last_va_mapping += PAGE_SIZE;//Unmapped page to catch stack overflows
+
+    uint8_t heapattr = MEM_RW;
+
+    uintptr_t heap = (uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, false, false);
     if (!heap) return 0;
 
-    proc->stack = (stack + stack_size);
+    proc->heap = proc->last_va_mapping;
+    proc->heap_phys = heap;
+    mmu_map_4kb(ttbr, proc->last_va_mapping, heap, MAIR_IDX_NORMAL, heapattr | MEM_NORM, MEM_PRIV_USER);
+    mmu_map_4kb(ttbr, heap, heap, MAIR_IDX_NORMAL, heapattr | MEM_NORM, MEM_PRIV_USER);
+    mmu_map_4kb(kttbr, heap, heap, MAIR_IDX_NORMAL, heapattr | MEM_NORM, MEM_PRIV_USER);
+
+    setup_page(PHYS_TO_VIRT(heap), heapattr);
+
+    memset(PHYS_TO_VIRT_P(heap + sizeof(mem_page)), 0, PAGE_SIZE - sizeof(mem_page));
+
+    proc->last_va_mapping += PAGE_SIZE;
+
     proc->stack_size = stack_size;
-    proc->heap = heap;
+
+    proc->ttbr = ttbr;
 
     proc->sp = proc->stack;
     
+    proc->output = PHYS_TO_VIRT((uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false));
+    mmu_map_4kb(kttbr, proc->output, proc->output, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+    memset(PHYS_TO_VIRT_P(proc->output), 0, PAGE_SIZE);
     proc->pc = (uintptr_t)(entry);
-    kprintf("User process %s allocated with address at %x, stack at %x, heap at %x",(uintptr_t)name,proc->pc, proc->sp, proc->heap);
+    kprintf("User process %s allocated with address at %llx, stack at %llx (%llx), heap at %llx (%llx)",(uintptr_t)name,proc->pc, proc->sp, proc->stack_phys, proc->heap, proc->heap_phys);
     proc->spsr = 0;
-    proc->state = READY;
-
-    proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_USER, MEM_RW, true);
+    proc->state = BLOCKED;
     
     return proc;
 }

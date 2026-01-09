@@ -2,8 +2,10 @@
 #include "hw/hw.h"
 #include "async.h"
 #include "std/memory_access.h"
+#include "memory/mmu.h"
 
 void reset_gpio(){
+    register_device_memory(GPIO_BASE, GPIO_BASE);
     write32(GPIO_BASE + GPIO_PIN_BASE + 0x94, 0x0);
     delay(150);
 }

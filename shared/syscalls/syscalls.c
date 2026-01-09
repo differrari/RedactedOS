@@ -3,7 +3,19 @@
 #include "math/math.h"
 #include "std/memory.h"
 
-void printf(const char *fmt, ...){
+static char log_buf[1024];
+
+int print(const char *fmt, ...){
+    __attribute__((aligned(16))) va_list args;
+    va_start(args, fmt); 
+    size_t n = string_format_va_buf(fmt, log_buf, sizeof(log_buf), args);
+    va_end(args);
+    if (n >= sizeof(log_buf)) log_buf[sizeof(log_buf)-1] = '\0';
+    printl(log_buf);
+    return 0;
+}
+
+int printf(const char *fmt, ...){
     __attribute__((aligned(16))) va_list args;
     va_start(args, fmt);
     char li[256]; 
@@ -11,6 +23,7 @@ void printf(const char *fmt, ...){
     va_end(args);
     if (n >= sizeof(li)) li[sizeof(li)-1] = '\0';
     printl(li);
+    return 0;
 }
 
 void seek(file *descriptor, int64_t offset, SEEK_TYPE type){
@@ -27,9 +40,46 @@ void seek(file *descriptor, int64_t offset, SEEK_TYPE type){
     descriptor->cursor = new_cursor;
 }
 
-uintptr_t realloc(uintptr_t old_ptr, size_t old_size, size_t new_size){
-    uintptr_t new_ptr = (uintptr_t)malloc(new_size);
-    memcpy((void*)new_ptr, (void*)old_ptr, min(old_size,new_size));
-    free((void*)old_ptr, old_size);
+void* realloc_sized(void* old_ptr, size_t old_size, size_t new_size){
+    void* new_ptr = malloc(new_size);
+    memcpy(new_ptr, old_ptr, min(old_size,new_size));
+    free_sized(old_ptr, old_size);
     return new_ptr;
 }
+
+#ifndef CROSS
+
+void begin_drawing(draw_ctx *ctx){
+
+}
+
+void destroy_draw_ctx(draw_ctx *ctx){
+
+}
+
+bool should_close_ctx(){
+    return false;
+}
+
+void* calloc(size_t nitems, size_t size){
+    return malloc(nitems * size);
+}
+
+void* zalloc(size_t size){
+    return malloc(size);
+}
+
+char *read_full_file(const char *path){
+    
+    file fd = {};
+    openf(path, &fd);
+    char *fcontent = (char*)malloc(fd.size + 1);
+    
+    readf(&fd, fcontent, fd.size);
+    
+    closef(&fd);
+    
+    return fcontent;
+}
+
+#endif

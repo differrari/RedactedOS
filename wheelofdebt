@@ -1,0 +1,1 @@
+find . \( -name "*.c" -o -name "*.cpp" -o -name "*.h" -o -name "*.hpp" -o -name "*.S" \) -print0 | xargs -0 cat | grep "TODO" | awk 'BEGIN{srand()} {print rand(), $0}' | sort -n | head -n 1 | cut -d' ' -f2-

@@ -2,22 +2,23 @@
 #include "console/kio.h"
 #include "memory/page_allocator.h"
 #include "exceptions/irq.h"
-#include "console/serial/uart.h"
 #include "input/input_dispatch.h"
 #include "exceptions/exception_handler.h"
 #include "exceptions/timer.h"
 #include "console/kconsole/kconsole.h"
-#include "syscalls/syscalls.h"
 #include "std/string.h"
-#include "data_struct/linked_list.h"
+#include "data_struct/hashmap.h"
 #include "std/memory.h"
 #include "math/math.h"
 #include "memory/mmu.h"
 #include "process/syscall.h"
+#include "sysregs.h"
+#include "filesystem/filesystem.h"
 
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
 
+bool allow_va = true;
 //TODO: use queues, eliminate the max procs limitation
 process_t processes[MAX_PROCS];
 uint16_t current_proc = 0;
@@ -34,22 +35,15 @@ typedef struct sleep_tracker {
 sleep_tracker sleeping[MAX_PROCS];
 uint16_t sleep_count;
 
-clinkedlist_t *proc_opened_files;
-
-typedef struct proc_open_file {
-    uint64_t fid;
-    size_t file_size;
-    uintptr_t buffer;
-    uint16_t pid;
-    bool ignore_cursor;
-    bool read_only;
-} proc_open_file;
+chashmap_t *proc_opened_files;
 
 void* proc_page;
 
 void save_return_address_interrupt(){
     save_pc_interrupt(cpec);
 }
+
+extern void mmu_swap();
 
 void switch_proc(ProcSwitchReason reason) {
     // kprintf("Stopping execution of process %i at %x",current_proc, processes[current_proc].spsr);
@@ -63,6 +57,7 @@ void switch_proc(ProcSwitchReason reason) {
     current_proc = next_proc;
     cpec = (uintptr_t)&processes[current_proc];
     timer_reset(processes[current_proc].priority);
+    mmu_swap_ttbr(processes[current_proc].ttbr);
     process_restore();
 }
 
@@ -71,7 +66,6 @@ void save_syscall_return(uint64_t value){
 }
 
 void process_restore(){
-    syscall_depth--;
     restore_context(cpec);
 }
 
@@ -83,6 +77,20 @@ bool start_scheduler(){
     switch_proc(YIELD);
     return true;
 }
+
+void* list_alloc(size_t size){
+    return kalloc(proc_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+}
+
+bool init_scheduler_module(){
+    if (!proc_opened_files) {
+        proc_opened_files = chashmap_create(64);
+        proc_opened_files->free = kfree;
+        proc_opened_files->alloc = list_alloc;
+    }
+    return start_scheduler();
+}
+
 
 uintptr_t get_current_heap(){
     return processes[current_proc].heap;
@@ -107,28 +115,16 @@ uint16_t get_current_proc_pid(){
     return processes[current_proc].id;
 }
 
-void free_heap(uintptr_t ptr){
-    mem_page *info = (mem_page*)ptr;
-    if (info->next)
-        free_heap((uintptr_t)info->next);
-    pfree((void*)ptr, PAGE_SIZE);
-}
-
 void reset_process(process_t *proc){
     bool just_finished = processes[current_proc].id == proc->id;
     proc->sp = 0;
     if (!just_finished || !(processes[current_proc].PROC_PRIV))//Privileged processes use their own stack even in an exception. We'll free it when we reuse it
-        if (proc->stack) pfree((void*)proc->stack-proc->stack_size,proc->stack_size);
-    if (proc->heap) free_heap(proc->heap);//Sadly, full pages of alloc'd memory are not kept track and will not be freed
+        if (proc->stack_phys) pfree((void*)proc->stack_phys-proc->stack_size,proc->stack_size);
+    if (proc->heap_phys) free_managed_page((void*)proc->heap_phys);
     proc->pc = 0;
     proc->spsr = 0;
     proc->exit_code = 0;
     if (proc->code && proc->code_size){
-        if (proc->use_va){
-            for (uintptr_t i = 0; i < proc->code_size; i += PAGE_SIZE){
-                mmu_unmap(proc->va + i, (uintptr_t)proc->code + i);
-            }
-        } 
         pfree(proc->code, proc->code_size);
     }
     if (!just_finished && proc->output)
@@ -147,8 +143,13 @@ void reset_process(process_t *proc){
     for (int k = 0; k < PACKET_BUFFER_CAPACITY; k++){
         sizedptr p = proc->packet_buffer.entries[k];
         if (p.ptr)
-            free_sized(p);
+            free_sizedptr(p);
         proc->packet_buffer.entries[k] = (sizedptr){0};
+    }
+    close_files_for_process(proc->id);
+    if (proc->ttbr) {
+        if (pttbr == proc->ttbr) panic("Trying to free process while mapped", (uintptr_t)proc->ttbr);
+        mmu_free_ttbr(proc->ttbr);
     }
 }
 
@@ -159,7 +160,7 @@ void init_main_process(){
     proc->id = next_proc_index++;
     proc->state = BLOCKED;
     proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
-    proc->stack_size = 0x1000;
+    proc->stack_size = 0x10000;
     proc->stack = (uintptr_t)palloc(proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
     proc->sp = ksp;
     proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, true);
@@ -200,7 +201,7 @@ void name_process(process_t *proc, const char *name){
         proc->name[i] = name[i];
 }
 
-void stop_process(uint16_t pid, uint32_t exit_code){
+void stop_process(uint16_t pid, int32_t exit_code){
     disable_interrupt();
     process_t *proc = get_proc_by_pid(pid);
     if (proc->state != READY) return;
@@ -208,13 +209,17 @@ void stop_process(uint16_t pid, uint32_t exit_code){
     proc->exit_code = exit_code;
     if (proc->focused)
         sys_unset_focus();
+    if (proc->ttbr) {
+        mmu_swap_ttbr(0);
+        mmu_swap();
+    }
     reset_process(proc);
     proc_count--;
     // kprintf("Stopped %i process %i",pid,proc_count);
     switch_proc(HALT);
 }
 
-void stop_current_process(uint32_t exit_code){
+void stop_current_process(int32_t exit_code){
     disable_interrupt();
     stop_process(processes[current_proc].id, exit_code);
 }
@@ -268,79 +273,72 @@ void wake_processes(){
     }
 }
 
-sizedptr list_processes(const char *path){
-    size_t size = 0x1000;
-    void *list_buffer = (char*)malloc(size);
-    if (strlen(path, 100) == 0){
-        uint32_t count = 0;
+size_t list_processes(const char *path, void *buf, size_t size, file_offset *offset){
     
-        char *write_ptr = (char*)list_buffer + 4;
-        process_t *processes = get_all_processes();
+   	int proc_index = 0;
+    if (*offset){
         for (int i = 0; i < MAX_PROCS; i++){
-            process_t *proc = &processes[i];
-            if (proc->id != 0 && proc->state != STOPPED){
-                count++;
-                char* name = proc->name;
-                while (*name) {
-                    *write_ptr++ = *name;
-                    name++;
-                }
-                *write_ptr++ = 0;
+            if (processes[i].id == *offset){
+                proc_index = i+1;
+                break;
             }
         }
-        *(uint32_t*)list_buffer = count;
     }
-    //TODO:
-    //else advance to / and get the pid
-        //if that's it print that
-        //else open the file (out, in, etc)
-    return (sizedptr){(uintptr_t)list_buffer,size};
-}
 
-void* list_alloc(size_t size){
-    return kalloc(proc_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+	uint32_t count = 0;
+	
+    char *write_ptr = (char*)buf + 4;
+    for (; proc_index < MAX_PROCS; proc_index++){
+    	if (size - (uintptr_t)write_ptr - (uintptr_t)buf - 4 < MAX_PROC_NAME_LENGTH) break;
+   		process_t *proc = &processes[proc_index];
+        if (proc->id != 0 && proc->state != STOPPED){
+            count++;
+            char* name = proc->name;
+            while (*name) *write_ptr++ = *name++;
+            *write_ptr++ = 0;
+            *offset = proc->id;
+        }
+    }
+
+    *(uint32_t*)buf = count;
+
+    //TODO: allow seeing files belonging to a proc (/out, /in, etc)
+    return size;
 }
 
 FS_RESULT open_proc(const char *path, file *descriptor){
+    const char *fullpath = path;
     const char *pid_s = seek_to(path, '/');
     path = seek_to(pid_s, '/');
     uint64_t pid = parse_int_u64(pid_s, path - pid_s);
     process_t *proc = get_proc_by_pid(pid);
-    descriptor->id = reserve_fd_id();
+    descriptor->id = reserve_fd_gid(fullpath);
     descriptor->cursor = 0;
-    if (!proc_opened_files) {
-        proc_opened_files = kalloc(proc_page, sizeof(clinkedlist_t), ALIGN_64B, MEM_PRIV_KERNEL);
-        proc_opened_files->free = kfree;
-        proc_opened_files->alloc = list_alloc;
-    }
-    proc_open_file *file = kalloc(proc_page, sizeof(proc_open_file), ALIGN_64B, MEM_PRIV_KERNEL);
+    module_file *file = kalloc(proc_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
     file->fid = descriptor->id;
-    file->pid = proc->id;
-    
-    if (strcmp(path, "out", true) == 0){
-        descriptor->size = 0;//TODO: sizeof buffer, could already have data
+    if (strcmp_case(path, "out",true) == 0){
+        descriptor->size = proc->output_size;
         file->buffer = proc->output;
-    } else if (strcmp(path, "state", true) == 0){
+    } else if (strcmp_case(path, "state",true) == 0){
         descriptor->size = sizeof(int);
-        file->buffer = (uintptr_t)&proc->state;
+        file->buffer = PHYS_TO_VIRT((uintptr_t)&proc->state);
         file->ignore_cursor = true;
         file->read_only = true;
     } else return FS_RESULT_NOTFOUND;
     file->file_size = descriptor->size;
-    clinkedlist_push_front(proc_opened_files, (void*)file);
-    return FS_RESULT_SUCCESS;
+    return chashmap_put(proc_opened_files, &descriptor->id, sizeof(uint64_t), file) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
 int find_open_proc_file(void *node, void* key){
     uint64_t *fid = (uint64_t*)key;
-    proc_open_file *file = (proc_open_file*)node;
+    module_file *file = (module_file*)node;
     if (file->fid == *fid) return 0;
     return -1;
 }
 
 int find_open_proc_file_buffer(void *node, void* key){
     uint64_t *buf = (uint64_t*)key;
-    proc_open_file *file = (proc_open_file*)node;
+    module_file *file = (module_file*)node;
     if (file->buffer == *buf) return 0;
     return -1;
 }
@@ -350,9 +348,8 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
         kprint("No files open");
         return 0;
     }
-    clinkedlist_node_t *node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
-    if (!node->data) return 0;
-    proc_open_file *file = (proc_open_file*)node->data;
+    module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
+    if (!file) return 0;
     uint64_t cursor = file->ignore_cursor ? 0 : fd->cursor;
     size = min(size, file->file_size - cursor);
     memcpy(buf, (void*)(file->buffer + cursor), size);
@@ -360,45 +357,42 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
 }
 
 size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
+    if (fd->id == FD_OUT){
+        string fullpath = string_format("/%i/out",get_current_proc_pid());
+        open_proc(fullpath.data, fd);
+        string_free(fullpath);
+    }
     if (!proc_opened_files){
         kprint("No files open");
         return 0;
     }
-    clinkedlist_node_t *node = clinkedlist_find(proc_opened_files, (void*)&fd->id, find_open_proc_file);
-    if (!node->data) return 0;
-    proc_open_file *file = (proc_open_file*)node->data;
+    uintptr_t pbuf;
+    module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
     if (file->read_only) return 0;
-    if (size >= PROC_OUT_BUF){
-        kprint("Output buffer too large");
-        return 0;
-    }
+    pbuf = file->buffer;
+
+    size = min(size, PROC_OUT_BUF);
+    
     if (fd->cursor + size >= PROC_OUT_BUF){
         fd->cursor = 0;
-        memset((void*)file->buffer, 0, file->file_size);
+        memset((void*)pbuf, 0, PROC_OUT_BUF);
     }
-    memcpy((void*)(file->buffer + fd->cursor), buf, size);
-    fd->cursor += size;
-    //TODO: Need a better way to handle opening a file multiple times
-    for (clinkedlist_node_t *start = proc_opened_files->head; start != proc_opened_files->tail; start = start->next){
-        if (start != node){
-            proc_open_file *n_file = (proc_open_file*)start->data;
-            if (n_file && n_file->buffer == file->buffer){
-                n_file->file_size += size;
-            } 
-        }
-    }
+    memcpy((void*)(pbuf + fd->cursor), buf, size);
+    file->file_size += size;
     return size;
 }
 
-driver_module scheduler_module = (driver_module){
+system_module scheduler_module = (system_module){
     .name = "scheduler",
     .mount = "/proc",
     .version = VERSION_NUM(0, 1, 0, 1),
-    .init = start_scheduler,
+    .init = init_scheduler_module,
     .fini = 0,
     .open = open_proc,
     .read = read_proc,
     .write = write_proc,
-    .seek = 0,
+    .close = 0,
+    .sread = 0,
+    .swrite = 0,//TODO implement simple io
     .readdir = list_processes,
 };

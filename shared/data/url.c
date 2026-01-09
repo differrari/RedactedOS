@@ -145,6 +145,6 @@ ParsedURL parse_url_z(const char *buf) {
         ParsedURL r = {0};
         return r;
     }
-    size_t n = strlen(buf, 256);
+    size_t n = strlen(buf);
     return parse_url(buf, (uint32_t)n);
 }

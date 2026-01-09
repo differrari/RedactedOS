@@ -9,30 +9,30 @@
 #include "networking/network.h"
 #include "networking/interface_manager.h"
 
-#include "net/link_layer/arp.h"
-#include "net/link_layer/ndp.h"
+#include "networking/link_layer/arp.h"
+#include "networking/link_layer/ndp.h"
 
-#include "net/internet_layer/ipv4.h"
-#include "net/internet_layer/ipv4_utils.h"
+#include "networking/internet_layer/ipv4.h"
+#include "networking/internet_layer/ipv4_utils.h"
 
-#include "net/internet_layer/ipv6.h"
-#include "net/internet_layer/ipv6_utils.h"
+#include "networking/internet_layer/ipv6.h"
+#include "networking/internet_layer/ipv6_utils.h"
 #include "net/checksums.h"
 
-#include "net/transport_layer/csocket_udp.h"
-#include "net/transport_layer/trans_utils.h"
+#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/trans_utils.h"
 
-#include "net/application_layer/csocket_http_client.h"
-#include "net/application_layer/csocket_http_server.h"
-#include "net/application_layer/dhcp_daemon.h"
-#include "net/application_layer/dns_daemon.h"
-#include "net/application_layer/mdns_responder.h"
-#include "net/application_layer/dns.h"
-#include "net/application_layer/sntp_daemon.h"
-#include "net/application_layer/ntp.h"
-#include "net/application_layer/ntp_daemon.h"
-#include "net/application_layer/dhcpv6_daemon.h"
-#include "net/application_layer/ssdp_daemon.h"
+#include "networking/application_layer/csocket_http_client.h"
+#include "networking/application_layer/csocket_http_server.h"
+#include "networking/application_layer/dhcp_daemon.h"
+#include "networking/application_layer/dns_daemon.h"
+#include "networking/application_layer/mdns_responder.h"
+#include "networking/application_layer/dns.h"
+#include "networking/application_layer/sntp_daemon.h"
+#include "networking/application_layer/ntp.h"
+#include "networking/application_layer/ntp_daemon.h"
+#include "networking/application_layer/dhcpv6_daemon.h"
+#include "networking/application_layer/ssdp_daemon.h"
 
 #include "exceptions/timer.h"
 #include "syscalls/syscalls.h"
@@ -65,7 +65,7 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
         recvd = socket_recvfrom_udp_ex(sock, recv_buf, sizeof(recv_buf), &src);
         if (recvd > 0)
             break;
-        sleep(INTERVAL_MS);
+        msleep(INTERVAL_MS);
         waited += INTERVAL_MS;
     }
 
@@ -80,14 +80,14 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
 static void free_request(HTTPRequestMsg *req) {
     if (!req) return;
 
-    if (req->path.mem_length) free(req->path.data, req->path.mem_length);
+    if (req->path.mem_length) free_sized(req->path.data, req->path.mem_length);
 
     http_headers_common_free(&req->headers_common);
     http_headers_extra_free(req->extra_headers, req->extra_header_count);
     req->extra_headers = NULL;
     req->extra_header_count = 0;
 
-    if (req->body.ptr && req->body.size) free((void*)req->body.ptr, req->body.size);
+    if (req->body.ptr && req->body.size) free_sized((void*)req->body.ptr, req->body.size);
 
     req->path = (string){0};
     req->body = (sizedptr){0};
@@ -137,7 +137,7 @@ static void run_http_server() {
     while (1) {
         http_connection_handle_t conn = http_server_accept(srv);
         if (!conn){
-            sleep(10);
+            msleep(10);
             continue;
         }
         HTTPRequestMsg req = http_server_recv_request(srv, conn);
@@ -187,7 +187,7 @@ static void test_http(const net_l4_endpoint* ep) {
     http_client_handle_t cli = http_client_create(pid, NULL);
     if (!cli) {
         kprintf("[HTTP] http_client_create FAIL");
-        return; 
+        return;
     }
 
     net_l4_endpoint e = {0};
@@ -227,19 +227,18 @@ static void test_http(const net_l4_endpoint* ep) {
             body_str[resp.body.size] = '\0';
             kprintf("[HTTP] %i %i bytes of body", resp.status_code, resp.body.size);
             kprintf("%s", body_str);
-            free(body_str, resp.body.size + 1);
+            free_sized(body_str, resp.body.size + 1);
         }
     }
 
     http_client_close(cli);
     http_client_destroy(cli);
 
-    if (resp.body.ptr && resp.body.size) free((void*)resp.body.ptr, resp.body.size);
+    if (resp.body.ptr && resp.body.size) free_sized((void*)resp.body.ptr, resp.body.size);
 
     http_headers_common_free(&resp.headers_common);
 
-    if (resp.reason.data && resp.reason.mem_length)
-        free(resp.reason.data, resp.reason.mem_length);
+    if (resp.reason.data && resp.reason.mem_length) free_sized(resp.reason.data, resp.reason.mem_length);
     http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
 }
 
@@ -297,7 +296,7 @@ static int ntp(int argc, char* argv[]) {
         const uint32_t timeout = 10000;
         while (!timer_is_synchronised() && waited < timeout) {
             if ((waited % 1000) == 0) kprintf("[TIME] waiting NTP sync...");
-            sleep(step);
+            msleep(step);
             waited += step;
 
         }
@@ -377,7 +376,7 @@ static int ip_waiter_entry(int argc, char* argv[]) {
     uint32_t waited = 0;
     while (!any_ipv4_ready() && !any_ipv6_ready()) {
         if ((waited % 1000) == 0) kprintf("[NET] ip_waiter: waiting for ip...");
-        sleep(200);
+        msleep(200);
         waited += 200;
     }
     create_kernel_process("net_test", net_test_entry, 0, 0);

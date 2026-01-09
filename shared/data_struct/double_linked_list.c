@@ -14,10 +14,10 @@ void cdouble_linked_list_destroy(cdouble_linked_list_t* list) {
     cdouble_linked_list_node_t* node = list->head;
     for (uint64_t i = 0; i < list->length; ++i) {
         cdouble_linked_list_node_t* next = node->next;
-        free(node, sizeof(cdouble_linked_list_node_t));
+        free_sized(node, sizeof(cdouble_linked_list_node_t));
         node = next;
     }
-    free(list, sizeof(cdouble_linked_list_t));
+    free_sized(list, sizeof(cdouble_linked_list_t));
 }
 
 cdouble_linked_list_t* cdouble_linked_list_clone(const cdouble_linked_list_t* list) {
@@ -97,7 +97,7 @@ void* cdouble_linked_list_pop_front(cdouble_linked_list_t* list) {
         list->tail->next = list->head;
     }
     --list->length;
-    free(node, sizeof(cdouble_linked_list_node_t));
+    free_sized(node, sizeof(cdouble_linked_list_node_t));
     return data;
 }
 
@@ -113,7 +113,7 @@ void* cdouble_linked_list_pop_back(cdouble_linked_list_t* list) {
         list->head->prev = list->tail;
     }
     --list->length;
-    free(node, sizeof(cdouble_linked_list_node_t));
+    free_sized(node, sizeof(cdouble_linked_list_node_t));
     return data;
 }
 
@@ -153,7 +153,7 @@ void* cdouble_linked_list_remove(cdouble_linked_list_t* list, cdouble_linked_lis
     node->next->prev = node->prev;
     void* data = node->data;
     --list->length;
-    free(node, sizeof(cdouble_linked_list_node_t));
+    free_sized(node, sizeof(cdouble_linked_list_node_t));
     return data;
 }
 
