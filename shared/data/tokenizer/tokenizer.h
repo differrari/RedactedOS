@@ -13,7 +13,6 @@ typedef enum {
     TOK_CONST,
 
     TOK_OPERATOR,
-    TOK_ASSIGN,
 
     TOK_LPAREN,
     TOK_RPAREN,
