@@ -53,8 +53,7 @@ clean:
 	$(RM) kernel.img kernel.elf disk.img dump
 
 cross:
-	$(MAKE) -C shared clean
-	$(MAKE) -C shared ARCH= SH_FLAGS=-DCROSS
+	$(MAKE) -C shared ARCH= SH_FLAGS=-DCROSS BUILD_DIR=./cbuild TARGET=clibshared.a
 
 raspi:
 	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true MODE=raspi all
