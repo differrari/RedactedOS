@@ -379,6 +379,8 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     }
     memcpy((void*)(pbuf + fd->cursor), buf, size);
     file->file_size += size;
+    if (file->buffer == get_current_proc()->output)
+        get_current_proc()->output_size += size;
     return size;
 }
 

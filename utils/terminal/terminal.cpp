@@ -48,10 +48,13 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
     size_t amount = 0x100;
     char *buf = (char*)malloc(amount);
     do {
-        readf(&out_fd, buf, amount);
+        size_t n = readf(&out_fd, buf, amount);
         put_string(buf);
+        memset(buf,0,n);
         readf(&state_fd, (char*)&state, sizeof(int));
     } while (state);
+    readf(&out_fd, buf, amount);
+    put_string(buf);
     free_sized(buf, amount);
     closef(&out_fd);
     closef(&state_fd);
