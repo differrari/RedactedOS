@@ -13,7 +13,6 @@ typedef enum {
     TOK_CONST,
 
     TOK_OPERATOR,
-    TOK_ASSIGN,
 
     TOK_LPAREN,
     TOK_RPAREN,
@@ -61,7 +60,7 @@ typedef struct {
 } Tokenizer;
 
 static inline Tokenizer tokenizer_make(Scanner *s) {
-    Tokenizer t;
+    Tokenizer t = {};
     t.s = s;
     t.failed = false;
     t.err = TOKENIZER_ERR_NONE;

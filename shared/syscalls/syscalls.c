@@ -12,6 +12,8 @@ int print(const char *fmt, ...){
     va_end(args);
     if (n >= sizeof(log_buf)) log_buf[sizeof(log_buf)-1] = '\0';
     printl(log_buf);
+    file fd2 = { .id = 2 };
+    writef(&fd2, log_buf, sizeof(log_buf));
     return 0;
 }
 
@@ -23,6 +25,8 @@ int printf(const char *fmt, ...){
     va_end(args);
     if (n >= sizeof(li)) li[sizeof(li)-1] = '\0';
     printl(li);
+    file fd2 = { .id = 2 };
+    writef(&fd2, li, sizeof(li));
     return 0;
 }
 

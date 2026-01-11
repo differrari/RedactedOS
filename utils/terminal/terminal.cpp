@@ -3,6 +3,13 @@
 #include "input_keycodes.h"
 
 Terminal::Terminal() : Console() {
+    uint32_t color_buf[2] = {};
+    sreadf("/theme", &color_buf, sizeof(uint64_t));
+    default_bg_color = color_buf[0];
+    bg_color = color_buf[0];
+    default_text_color = color_buf[1];
+    text_color = color_buf[1];
+
     char_scale = 2;
     prompt_length = 2;
     command_running = false;
@@ -20,11 +27,6 @@ Terminal::Terminal() : Console() {
 
     dirty = false;
 
-    repeat_key = 0;
-    repeat_down = false;
-    repeat_start_ms = 0;
-    repeat_last_ms = 0;
-
     put_string("> ");
     redraw_input_line();
     if (dirty) {
@@ -36,60 +38,34 @@ Terminal::Terminal() : Console() {
 void Terminal::update(){
     if (!command_running) {
         bool did = handle_input();
-        if (!did) {
-            repeat_tick();
-            cursor_tick();
-        }
+        if (!did) cursor_tick();
     } else {
         end_command();
     }
 
     if (dirty) {
         flush(dctx);
-        dirty =false;
-    }
-}
-
-void Terminal::repeat_tick() { //could be done on all the keys but i think it's better to do it in the keyboard drivers
-    if (!repeat_down) return;
-    if (repeat_key != KEY_BACKSPACE && repeat_key != KEY_DELETE) return;
-    uint64_t now =get_time();
-    if ((now - repeat_start_ms) < 250) return;
-    if ((now - repeat_last_ms) < 35) return;
-    repeat_last_ms = now;
-
-    if (repeat_key == KEY_BACKSPACE) {
-        if (!input_cursor) return;
-        for (uint32_t i = input_cursor; i < input_len; i++) input_buf[i-1] = input_buf[i];
-        input_len--;
-        input_cursor--;
-        input_buf[input_len] = 0;
-        redraw_input_line();
-        return;
-    }
-
-    if (repeat_key == KEY_DELETE) {
-        if (input_cursor >= input_len) return;
-        for (uint32_t i = input_cursor + 1; i <= input_len; i++) input_buf[i-1] = input_buf[i];
-        input_len--;
-        redraw_input_line();
-        return;
+        dirty = false;
     }
 }
 
 void Terminal::cursor_set_visible(bool visible){
     if (visible == cursor_visible) {
         if (!visible) return;
-        if (last_drawn_cursor_x == (int32_t)cursor_x && last_drawn_cursor_y== (int32_t)cursor_y) return;
+        if (last_drawn_cursor_x == (int32_t)cursor_x && last_drawn_cursor_y == (int32_t)cursor_y) return;
     }
 
     uint32_t cw = (uint32_t)char_scale * CHAR_SIZE;
-    uint32_t lh = (uint32_t)char_scale * CHAR_SIZE*2;
+    uint32_t lh = (uint32_t)char_scale * CHAR_SIZE * 2;
     cursor_visible = visible;
 
     if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0) {
         if ((uint32_t)last_drawn_cursor_x < columns && (uint32_t)last_drawn_cursor_y < rows) {
-            fb_fill_rect(dctx, (uint32_t)last_drawn_cursor_x * cw, (uint32_t)last_drawn_cursor_y * lh, cw, lh, 0);
+            fb_fill_rect(dctx,
+                (uint32_t)last_drawn_cursor_x * cw,
+                (uint32_t)last_drawn_cursor_y * lh,
+                cw, lh, bg_color
+            );
 
             char *prev_line = row_data + (((scroll_row_offset + (uint32_t)last_drawn_cursor_y) % rows) * columns);
             char ch = prev_line[last_drawn_cursor_x];
@@ -124,7 +100,7 @@ void Terminal::redraw_input_line(){
     uint32_t cw = (uint32_t)char_scale * CHAR_SIZE;
     uint32_t lh = (uint32_t)char_scale * CHAR_SIZE * 2;
 
-    fb_fill_rect(dctx, 0, cursor_y * lh, columns * cw, lh, 0);
+    fb_fill_rect(dctx, 0, cursor_y * lh, columns * cw, lh, bg_color);
 
     char* line = row_data + (((scroll_row_offset + cursor_y) % rows) * columns);
     memset(line, 0, columns);
@@ -186,27 +162,45 @@ void Terminal::end_command(){
 bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
     uint16_t proc = exec(cmd, argc, argv);
     if (!proc) return false;
-    string s1 = string_format("/proc/%i/out",proc);
-    string s2 = string_format("/proc/%i/state",proc);
+
+    string s1 = string_format("/proc/%i/out", proc);
+    string s2 = string_format("/proc/%i/state", proc);
+
     file out_fd, state_fd;
     openf(s1.data, &out_fd);
     free_sized(s1.data, s1.mem_length);
     openf(s2.data, &state_fd);
     free_sized(s2.data, s2.mem_length);
-    int state;
-    readf(&state_fd, (char*)&state, sizeof(int));
-    while (state) {
-        readf(&state_fd, (char*)&state, sizeof(int));
-        size_t amount = 0x100;
-        char *buf = (char*)malloc(amount);
-        readf(&out_fd, buf, amount);
-        put_string(buf);
-        free_sized(buf, amount);
+
+    int state = 1;
+    size_t amount = 0x100;
+    char *buf = (char*)malloc(amount + 1);
+    if (!buf) {
+        closef(&out_fd);
+        closef(&state_fd);
+        return true;
     }
+
+    do {
+        size_t n = readf(&out_fd, buf, amount);
+        buf[n] = 0;
+        if (n) put_string(buf);
+
+        readf(&state_fd, (char*)&state, sizeof(int));
+    } while (state);
+
+    for (;;) {
+        size_t n = readf(&out_fd, buf, amount);
+        if (!n) break;
+        buf[n] = 0;
+        put_string(buf);
+    }
+
+    free_sized(buf, amount + 1);
     closef(&out_fd);
     closef(&state_fd);
-    string exit_msg = string_format("\nProcess %i ended.",proc);
-    //TODO: format message
+
+    string exit_msg = string_format("\nProcess %i ended.", proc);
     put_string(exit_msg.data);
     free_sized(exit_msg.data, exit_msg.mem_length);
     return true;
@@ -216,12 +210,15 @@ const char** Terminal::parse_arguments(char *args, int *count){
     *count = 0;
     const char **argv = (const char**)malloc(16 * sizeof(uintptr_t));
     char* p = args;
+
     while (*p && *count < 16){
         while (*p == ' ' || *p == '\t') p++;
         if (!*p) break;
+
         char* start = p;
         while (*p && *p != ' ' && *p != '\t') p++;
         if (*p) { *p = '\0'; p++; }
+
         argv[*count] = start;
         (*count)++;
     }
@@ -235,6 +232,7 @@ void Terminal::run_command(){
             for (uint32_t i = 1; i < history_max; i++) history[i - 1] = history[i];
             history_len = history_max - 1;
         }
+
         uint32_t n = input_len;
         char *copy = (char*)malloc(n + 1);
         if (copy) {
@@ -247,8 +245,10 @@ void Terminal::run_command(){
 
     const char* fullcmd = input_buf;
     while (*fullcmd == ' ' || *fullcmd == '\t') fullcmd++;
+
     put_char('\r');
     put_char('\n');
+
     if (*fullcmd == 0) {
         command_running = true;
         return;
@@ -267,52 +267,40 @@ void Terminal::run_command(){
     } else {
         size_t cmd_len = (size_t)(args - fullcmd);
         cmd = string_from_literal_length(fullcmd, cmd_len);
+
         const char* argstart = args;
         while (*argstart == ' ' || *argstart == '\t') argstart++;
+
         args_copy = string_from_literal(argstart);
         argv = parse_arguments(args_copy.data, &argc);
     }
 
     if (!exec_cmd(cmd.data, argc, argv)){
-        if (strcmp(cmd.data, "test") == 0){
-            TMP_test(argc, argv);
-        } else if (strcmp(cmd.data, "exit") == 0){
+        if (strcmp_case(cmd.data, "exit", true) == 0){
             halt(0);
         } else {
-            string s = string_format("Unknown command %s with args %s", cmd.data, args);
+            string s = string_format("Unknown command %s", cmd.data);
             put_string(s.data);
             free_sized(s.data, s.mem_length);
         }
     }
 
+    if (argv) free_sized((void*)argv, 16 * sizeof(uintptr_t));
     free_sized(cmd.data, cmd.mem_length);
     if (args_copy.mem_length) free_sized(args_copy.data, args_copy.mem_length);
 
     command_running = true;
 }
 
-void Terminal::TMP_test(int argc, const char* args[]){
-    // const char *term = seek_to(args, '\033');
-    // if (*term == 0) return;
-    const char *term = seek_to(*args, '[');
-    if (*term == 0) return;
-    const char *next = seek_to(term, ';');
-    uint64_t color = parse_hex_u64(term, next - term);
-    set_text_color(color & UINT32_MAX);
-    put_string(next);
-}
-
 bool Terminal::handle_input(){
     kbd_event event;
     if (!read_event(&event)) return false;
-    if (event.type == KEY_RELEASE) {
-        if (repeat_down && event.key == repeat_key) repeat_down = false;
-        return true;
-    }
+    if (event.type == KEY_RELEASE) return true;
     if (event.type != KEY_PRESS) return false;
 
     char key = event.key;
     char readable = hid_to_char((uint8_t)key);
+
     if (key == KEY_ENTER || key == KEY_KPENTER){
         run_command();
         return true;
@@ -356,10 +344,6 @@ bool Terminal::handle_input(){
     }
 
     if (key == KEY_BACKSPACE){
-        repeat_key = key;
-        repeat_down = true;
-        repeat_start_ms = get_time();
-        repeat_last_ms = repeat_start_ms;
         if (!input_cursor) return true;
         for (uint32_t i = input_cursor; i < input_len; i++) input_buf[i - 1] = input_buf[i];
         input_len--;
@@ -370,17 +354,12 @@ bool Terminal::handle_input(){
     }
 
     if (key == KEY_DELETE) {
-        repeat_key = key;
-        repeat_down = true;
-        repeat_start_ms = get_time();
-        repeat_last_ms = repeat_start_ms;
         if (input_cursor >= input_len) return true;
         for (uint32_t i = input_cursor + 1; i <= input_len; i++) input_buf[i - 1] = input_buf[i];
         input_len--;
         redraw_input_line();
         return true;
     }
-    if (repeat_down) repeat_down = false;
 
     if (!readable) return true;
 
