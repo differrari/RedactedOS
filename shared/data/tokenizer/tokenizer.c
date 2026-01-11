@@ -405,10 +405,9 @@ bool tokenizer_next(Tokenizer *t, Token *out) {
 
     if (read_operator(s, out)) return true;
 
-    tokenizer_fail(t, TOKENIZER_ERR_INVALID_CHAR);
-    out->kind = TOK_INVALID;
+    out->kind = TOK_SYMBOL;
     out->start = s->buf + s->pos;
-    out->length = 0;
+    out->length = 1;
     out->pos = s->pos;
-    return false;
+    return true;
 }

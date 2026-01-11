@@ -26,6 +26,8 @@ typedef enum {
     TOK_SEMICOLON,
     TOK_DOT, 
     
+    TOK_SYMBOL,
+    
     TOK_NEWLINE
 } TokenKind;
 
