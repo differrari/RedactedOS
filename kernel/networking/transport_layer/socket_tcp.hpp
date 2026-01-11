@@ -22,7 +22,7 @@ static constexpr uint32_t TCP_DNS_TIMEOUT_MS = 3000;
 class TCPSocket : public Socket {
     inline static TCPSocket* s_list_head = nullptr;
 
-    static constexpr uint32_t TCP_RING_CAP = 96 * 1024;
+    static constexpr uint32_t TCP_RING_CAP = 256 * 1024;
     RingBuffer<uint8_t, TCP_RING_CAP> ring;
     tcp_data* flow = nullptr;
 
@@ -47,7 +47,8 @@ class TCPSocket : public Socket {
         if (v6->is_localhost) return false;
         if (v6->cfg == IPV6_CFG_DISABLE) return false;
         if (ipv6_is_unspecified(v6->ip)) return false;
-        if (v6->dad_state != IPV6_DAD_OK) return false;
+        if (v6->dad_state == IPV6_DAD_FAILED) return false;
+        if (!(v6->kind & IPV6_ADDRK_LINK_LOCAL) && v6->dad_state != IPV6_DAD_OK) return false;
         if (!v6->port_manager) return false;
         return true;
     }
@@ -232,8 +233,8 @@ class TCPSocket : public Socket {
         if (sz >= limit) return 0;
 
         uint64_t free = limit - sz;
+        if ((uint64_t)len > free) return 0;
         uint32_t accept = len;
-        if ((uint64_t)accept > free) accept = (uint32_t)free;
 
         const uint8_t* src = (const uint8_t*)ptr;
         uint32_t pushed = 0;
@@ -334,6 +335,10 @@ class TCPSocket : public Socket {
 public:
     explicit TCPSocket(uint8_t r = SOCK_ROLE_CLIENT, uint32_t pid_ = 0, const SocketExtraOptions* extra = nullptr) : Socket(PROTO_TCP, r, extra) {
         pid = pid_;
+        if (extraOpts.flags & SOCK_OPT_BUF_SIZE) {
+            if (!extraOpts.buf_size) extraOpts.buf_size = TCP_RING_CAP;
+            if (extraOpts.buf_size > TCP_RING_CAP) extraOpts.buf_size = TCP_RING_CAP;
+        }
         insert_in_list();
     }
 
@@ -583,28 +588,39 @@ public:
             localPort = (uint16_t)p;
         }
 
-        if (bound_l3_count == 0) {
-            clear_bound_l3();
-            add_bound_l3(chosen_l3);
-        }
+        clear_bound_l3();
+        add_bound_l3(chosen_l3);
+        bound = true;
 
         tcp_data ctx_copy{};
-        if (!tcp_handshake_l3(chosen_l3, localPort, &d, &ctx_copy, pid, &extraOpts)) return SOCK_ERR_SYS;
+        if (!tcp_handshake_l3(chosen_l3, localPort, &d, &ctx_copy, pid, &extraOpts)) {
+            Socket::close();
+            return SOCK_ERR_SYS;
+        }
 
         uint8_t local_ip[16];
         memset(local_ip, 0, sizeof(local_ip));
         if (d.ver == IP_VER4) {
             l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
-            if (!is_valid_v4_l3_for_bind(v4)) return SOCK_ERR_SYS;
+            if (!is_valid_v4_l3_for_bind(v4)) {
+                Socket::close();
+                return SOCK_ERR_SYS;
+            }
             memcpy(local_ip, &v4->ip, 4);
         } else {
             l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen_l3);
-            if (!is_valid_v6_l3_for_bind(v6)) return SOCK_ERR_SYS;
+            if (!is_valid_v6_l3_for_bind(v6)) {
+                Socket::close();
+                return SOCK_ERR_SYS;
+                }
             memcpy(local_ip, v6->ip, 16);
         }
 
         flow = tcp_get_ctx(localPort, d.ver, local_ip, (const void*)d.ip, d.port);
-        if (!flow) return SOCK_ERR_SYS;
+        if (!flow) {
+            Socket::close();
+            return SOCK_ERR_SYS;
+        }
 
         remoteEP = d;
         connected = true;
@@ -631,11 +647,29 @@ public:
         netlog_socket_event(&extraOpts, &ev);
         if (!connected || !flow) return SOCK_ERR_STATE;
 
-        flow->payload = { (uintptr_t)buf, (uint32_t)len };
-        flow->flags = (1u<<PSH_F) | (1u<<ACK_F);
-        tcp_result_t res = tcp_flow_send(flow);
-        if (res == TCP_OK) return (int64_t)len;
-        else return (int64_t)res;
+        const uint8_t* p = (const uint8_t*)buf;
+        uint64_t sent_total = 0;
+
+        while (sent_total < len) {
+            uint64_t remain = len - sent_total;
+            uint32_t chunk = remain > UINT32_MAX ? UINT32_MAX : (uint32_t)remain;
+            flow->payload.ptr = (uintptr_t)(p + sent_total);
+            flow->payload.size = chunk;
+            flow->flags = (1u<<PSH_F) | (1u<<ACK_F);
+
+            tcp_result_t res = tcp_flow_send(flow);
+            if (res != TCP_OK) {
+                if (sent_total) return (int64_t)sent_total;
+                return (int64_t)res;
+            }
+
+            uint32_t pushed = flow->payload.size;
+            if (!pushed) break;
+            sent_total += pushed;
+        }
+
+        if (sent_total) return (int64_t)sent_total;
+        return TCP_WOULDBLOCK;
     }
 
     int64_t recv(void* buf, uint64_t len){
@@ -658,8 +692,12 @@ public:
             out[n++] = b;
         }
 
-        if (n && flow) tcp_flow_on_app_read(flow, (uint32_t)n);
-        return (int64_t)n;
+        if (n) {
+            if (flow) tcp_flow_on_app_read(flow, (uint32_t)n);
+            return (int64_t)n;
+        }
+        if (connected) return TCP_WOULDBLOCK;
+        return 0;
     }
 
     int32_t close() override {
@@ -680,12 +718,7 @@ public:
         for (int i = 0; i < backlogLen; ++i) delete pending[i];
         backlogLen = 0;
 
-        if (role == SOCK_ROLE_SERVER) return Socket::close();
-
-        bound = false;
-        localPort = 0;
-        clear_bound_l3();
-        return SOCK_OK;
+        return Socket::close();
     }
 
     net_l4_endpoint get_remote_ep() const { return remoteEP; }

@@ -110,9 +110,6 @@ static void tcp_reass_drain_inseq(tcp_flow_t *flow, port_manager_t *pm, uint8_t 
         uint32_t seg_len = seg->end - seg->seq;
 
         if (seg_len && pm){
-            uint32_t free_space = (flow->rcv_buf_used < flow->rcv_wnd_max) ? (flow->rcv_wnd_max - flow->rcv_buf_used) : 0;
-            if (free_space < seg_len) break;
-
             port_recv_handler_t h = port_get_handler(pm, PROTO_TCP, dst_port);
             uint32_t accepted = 0;
             if (h) accepted = h(ifx, ipver, src_ip_addr, dst_ip_addr, seg->buf, seg_len, src_port, dst_port);

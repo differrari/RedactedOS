@@ -41,9 +41,4 @@ protected:
     bool cursor_visible;
 
     bool dirty;
-
-    char repeat_key;
-    bool repeat_down;
-    uint64_t repeat_start_ms;
-    uint64_t repeat_last_ms;
 };

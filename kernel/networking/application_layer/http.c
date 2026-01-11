@@ -3,20 +3,6 @@
 #include "std/memory.h"
 #include "syscalls/syscalls.h"
 
-static inline bool is_space(char c){
-    return c==' ' || c=='\t';
-}
-
-static inline uint32_t parse_u32(const char *s, uint32_t len){
-    uint32_t r = 0;
-    for (uint32_t i = 0; i < len; i++){
-        char c = s[i];
-        if (c>='0' && c<='9') r = r * 10 + (uint32_t)(c - '0');
-        else break;
-    }
-    return r;
-}
-
 string http_header_builder(const HTTPHeadersCommon *C, const HTTPHeader *H, uint32_t N){
     string out = string_repeat('\0', 0);
 
@@ -26,11 +12,9 @@ string http_header_builder(const HTTPHeadersCommon *C, const HTTPHeader *H, uint
         string_append_bytes(&out, "\r\n", 2);
     }
 
-    if (C->length){
-        string tmp = string_format("Content-Length: %i\r\n", (int)C->length);
-        string_append_bytes(&out, tmp.data, tmp.length);
-        free_sized(tmp.data, tmp.mem_length);
-    }
+    string tmp = string_format("Content-Length: %i\r\n", (int)C->length);
+    string_append_bytes(&out, tmp.data, tmp.length);
+    free_sized(tmp.data, tmp.mem_length);
 
     if (C->date.length){
         string_append_bytes(&out, "Date: ", 6);
@@ -145,7 +129,7 @@ void http_header_parser(const char *buf, uint32_t len,
 
         uint32_t key_len = sep - pos;
         uint32_t val_start = sep + 1;
-        while (val_start < eol && is_space((unsigned char)buf[val_start])) val_start++;
+        while (val_start < eol && (buf[val_start]==' ' || buf[val_start]=='\t')) val_start++;
 
         uint32_t val_len = eol - val_start;
 
@@ -156,7 +140,7 @@ void http_header_parser(const char *buf, uint32_t len,
         key_tmp[copy_len] = '\0';
 
         if (copy_len == 14 && strcmp_case(key_tmp, "content-length", true) == 0){
-            C->length = parse_u32(buf + val_start, val_len);
+            C->length = (uint32_t)parse_int_u64(buf + val_start, val_len);
         }
         else if (copy_len == 12 && strcmp_case(key_tmp, "content-type", true) == 0){
             C->type = string_from_literal_length((char*)(buf + val_start), val_len);

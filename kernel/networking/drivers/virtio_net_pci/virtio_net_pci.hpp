@@ -4,6 +4,12 @@
 #include "virtio/virtio_pci.h"
 #include "std/memory.h"
 #include "networking/link_layer/nic_types.h"
+#define VIRTIO_F_VERSION_1 32
+
+#define VIRTIO_NET_F_MRG_RXBUF 15
+#define VIRTIO_NET_F_MAC 5
+#define VIRTIO_NET_F_STATUS 16
+#define VIRTIO_NET_F_MTU 3
 
 typedef struct __attribute__((packed)) virtio_net_hdr_t {
     uint8_t flags;
@@ -13,6 +19,11 @@ typedef struct __attribute__((packed)) virtio_net_hdr_t {
     uint16_t csum_start;
     uint16_t csum_offset;
 } virtio_net_hdr_t;
+
+typedef struct __attribute__((packed)) virtio_net_hdr_mrg_rxbuf_t {
+    virtio_net_hdr_t hdr;
+    uint16_t num_buffers;
+} virtio_net_hdr_mrg_rxbuf_t;
 
 typedef struct __attribute__((packed)) virtio_net_config {
     uint8_t mac[6];
@@ -40,6 +51,7 @@ public:
 
     uint32_t get_speed_mbps() const override;
     uint8_t get_duplex() const override;
+    bool sync_multicast(const uint8_t* macs, uint32_t count) override;
 
     sizedptr allocate_packet(size_t size) override;
     sizedptr handle_receive_packet() override;
@@ -49,7 +61,17 @@ public:
 private:
     virtio_device vnp_net_dev;
 
+    volatile virtq_desc* rx_desc;
+    volatile virtq_avail* rx_avail;
+    volatile virtq_used* rx_used;
+    uint16_t rx_qsz;
+
     bool verbose;
+    bool mrg_rxbuf;
+
+    bool ctrl_vq;
+    bool ctrl_rx;
+
     uint16_t header_size;
     uint16_t mtu;
     uint32_t speed_mbps;

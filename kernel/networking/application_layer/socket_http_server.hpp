@@ -83,23 +83,19 @@ public:
         string buf = string_repeat('\0', 0);
         char tmp[512];
         int hdr_end = -1;
-        int attempts = 0;
-        const int max_attempts = 500;
 
-        while (true) {
+        while (hdr_end < 0) {
             int64_t r = client->recv(tmp, sizeof(tmp));
-            if (r < 0) {
+            if (r == TCP_WOULDBLOCK) {
+                msleep(10);
+                continue;
+            }
+            if (r <= 0) {
                 free_sized(buf.data, buf.mem_length);
                 return req;
             }
-            if (r > 0) string_append_bytes(&buf, tmp, (uint32_t)r);
+            string_append_bytes(&buf, tmp, (uint32_t)r);
             hdr_end = find_crlfcrlf(buf.data, buf.length);
-            if (hdr_end >= 0) break;
-            if (++attempts > max_attempts) {
-                free_sized(buf.data, buf.mem_length);
-                return req;
-            }
-            msleep(10);
         }
 
         uint32_t line_end = 0;
@@ -115,13 +111,14 @@ public:
 
         uint32_t i = p;
         while (i < line_end && buf.data[i] != ' ') ++i;
-        string method_tok = string_repeat('\0', 0);
-        string_append_bytes(&method_tok, buf.data + p, i - p);
 
-        if (method_tok.length == 3 && memcmp(method_tok.data, "GET", 3) == 0) req.method = HTTP_METHOD_GET;
-        else if (method_tok.length == 4 && memcmp(method_tok.data, "POST", 4) == 0) req.method = HTTP_METHOD_POST;
-        else if (method_tok.length == 3 && memcmp(method_tok.data, "PUT", 3) == 0) req.method = HTTP_METHOD_PUT;
-        else if (method_tok.length == 6 && memcmp(method_tok.data, "DELETE", 6) == 0) req.method = HTTP_METHOD_DELETE;
+        const char* method_tok = buf.data + p;
+        uint32_t mlen = i > p ? (i - p) : 0;
+
+        if (mlen == 3 && memcmp(method_tok, "GET", 3) == 0) req.method = HTTP_METHOD_GET;
+        else if (mlen == 4 && memcmp(method_tok, "POST", 4) == 0) req.method = HTTP_METHOD_POST;
+        else if (mlen == 3 && memcmp(method_tok, "PUT", 3) == 0) req.method = HTTP_METHOD_PUT;
+        else if (mlen == 6 && memcmp(method_tok, "DELETE", 6) == 0) req.method = HTTP_METHOD_DELETE;
         else req.method = HTTP_METHOD_GET;
 
         uint32_t j = (i < line_end) ? (i + 1u) : line_end;
@@ -166,22 +163,14 @@ public:
         if (need > 0) {
             while (have < need) {
                 int64_t r = client->recv(tmp, sizeof(tmp));
-                if (r <= 0) break;
+                if (r == TCP_WOULDBLOCK) {
+                    msleep(10);
+                    continue;
+                }
+                if (r < 0) break;
+                if (r == 0) break;
                 string_append_bytes(&buf, tmp, (uint32_t)r);
                 have += (uint32_t)r;
-            }
-        } else {
-            int idle = 0;
-            while (idle < 5) {
-                int64_t r = client->recv(tmp, sizeof(tmp));
-                if (r > 0) {
-                    string_append_bytes(&buf, tmp, (uint32_t)r);
-                    have += (uint32_t)r;
-                    idle = 0;
-                } else {
-                    ++idle;
-                    msleep(20);
-                }
             }
         }
 
@@ -215,7 +204,6 @@ public:
 
         netlog_socket_event(&log_opts, &ev);
 
-        free_sized(method_tok.data, method_tok.mem_length);
         free_sized(buf.data, buf.mem_length);
         return req;
     }
@@ -225,7 +213,21 @@ public:
         uint32_t code = (uint32_t)res.status_code;
         string out = http_response_builder(&res);
         uint32_t out_len = out.length;
-        int64_t sent = client->send(out.data, out.length);
+        uint32_t off = 0;
+        int64_t sent = 0;
+        while (off < out_len) {
+            int64_t r = client->send(out.data + off, out_len - off);
+            if (r == TCP_WOULDBLOCK) {
+                msleep(5);
+                continue;
+            }
+            if (r < 0) {
+                sent = r;
+                break;
+            }
+            off += (uint32_t)r;
+        }
+        if (sent >= 0) sent = (int64_t)off;
         
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_HTTP_SERVER;

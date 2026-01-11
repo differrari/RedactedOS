@@ -157,7 +157,8 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
     
     uintptr_t resp = (uintptr_t)kalloc(audio_dev.memory_page, resp_size, ALIGN_64B, MEM_PRIV_KERNEL);
 
-    if (!virtio_send_3d(&audio_dev, (uintptr_t)cmd, sizeof(virtio_snd_query_info), resp, resp_size, VIRTQ_DESC_F_WRITE)){
+    virtio_buf b[2] = {VBUF(cmd, sizeof(virtio_snd_query_info), 0), VBUF((void*)resp, resp_size, VIRTQ_DESC_F_WRITE)};
+    if(!virtio_send_nd(&audio_dev, b, 2)){
         kfree(cmd, sizeof(virtio_snd_query_info));
         kfree((void*)resp, resp_size);
         return false;
@@ -239,8 +240,8 @@ bool VirtioAudioDriver::stream_set_params(uint32_t stream_id, uint32_t features,
 
     virtio_snd_info_hdr *resp = (virtio_snd_info_hdr*)kalloc(audio_dev.memory_page, sizeof(virtio_snd_info_hdr), ALIGN_64B, MEM_PRIV_KERNEL);
 
-    bool result = virtio_send_3d(&audio_dev, (uintptr_t)cmd, sizeof(virtio_snd_pcm_set_params), (uintptr_t)resp, sizeof(virtio_snd_info_hdr), VIRTQ_DESC_F_WRITE);
-    
+    virtio_buf b[2] = {VBUF(cmd, sizeof(virtio_snd_pcm_set_params), 0), VBUF(resp, sizeof(virtio_snd_info_hdr), VIRTQ_DESC_F_WRITE)};
+    bool result=virtio_send_nd(&audio_dev, b, 2);    
     kfree(cmd, sizeof(virtio_snd_query_info));
     kfree((void*)resp, sizeof(virtio_snd_info_hdr));
 
@@ -261,7 +262,8 @@ bool VirtioAudioDriver::send_simple_stream_cmd(uint32_t stream_id, uint32_t comm
     
     virtio_snd_info_hdr *resp = (virtio_snd_info_hdr*)kalloc(audio_dev.memory_page, sizeof(virtio_snd_info_hdr), ALIGN_64B, MEM_PRIV_KERNEL);
     
-    bool result = virtio_send_3d(&audio_dev, (uintptr_t)cmd, sizeof(virtio_snd_pcm_hdr), (uintptr_t)resp, sizeof(virtio_snd_info_hdr), VIRTQ_DESC_F_WRITE);
+    virtio_buf b[2] = {VBUF(cmd, sizeof(virtio_snd_pcm_hdr), 0), VBUF(resp, sizeof(virtio_snd_info_hdr), VIRTQ_DESC_F_WRITE)};
+    bool result=virtio_send_nd(&audio_dev, b, 2);
 
     kfree(cmd, sizeof(virtio_snd_query_info));
     kfree((void*)resp, sizeof(virtio_snd_info_hdr));

@@ -18,4 +18,5 @@ public:
     virtual const char* hw_ifname() const = 0;
     virtual uint32_t get_speed_mbps() const = 0;
     virtual uint8_t get_duplex() const = 0;
+    virtual bool sync_multicast(const uint8_t* macs, uint32_t count) {(void)macs; (void)count; return true; }
 };

@@ -79,6 +79,13 @@ void network_dump_interfaces() {
     if (dispatch) dispatch->dump_interfaces();
 }
 
+bool network_sync_multicast(uint16_t ifindex, const uint8_t* macs, uint32_t count) {
+    if (!dispatch) return false;
+    NetDriver* drv = dispatch->driver_at((uint8_t)ifindex);
+    if (!drv) return false;
+    return drv->sync_multicast(macs, count);
+}
+
 system_module net_module = (system_module){
     .name = "net",
     .mount = "/net",

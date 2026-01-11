@@ -425,10 +425,10 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
     flow->mss = tcp_calc_mss_for_l3(l3_id, dst->ver, dst->ip);
 
-        if (flow->rcv_wnd_max > 65535u) {
+    if (flow->rcv_wnd_max > 65535u) {
         flow->ws_send = 8;
         flow->ws_recv = 0;
-        flow->ws_ok = 0;
+        flow->ws_ok = 1;
     } else {
         flow->ws_send = 0;
         flow->ws_recv = 0;

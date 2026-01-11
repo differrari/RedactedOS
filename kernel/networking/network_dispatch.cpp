@@ -68,20 +68,7 @@ bool NetworkDispatch::init()
 void NetworkDispatch::handle_rx_irq(size_t nic_id)
 {
     if (nic_id >= nic_num) return;
-    NetDriver* driver = nics[nic_id].drv;
-    if (!driver) return;
-
-    for (int i = 0; i < RX_INTR_BATCH_LIMIT; ++i) {
-        sizedptr raw = driver->handle_receive_packet();
-        if (!raw.ptr || raw.size == 0) break;
-        if (raw.size < sizeof(eth_hdr_t)) { free_frame(raw); continue; }
-        if (!nics[nic_id].rx.push(raw)) {
-            free_frame(raw);
-            nics[nic_id].rx_dropped++;
-            continue;
-        }
-        nics[nic_id].rx_produced++;
-    }
+    if (!nics[nic_id].drv) return;
 }
 
 void NetworkDispatch::handle_tx_irq(size_t nic_id)
@@ -123,23 +110,22 @@ int NetworkDispatch::net_task()
         bool did_work = false;
 
         for (size_t n = 0; n < nic_num; ++n) {
-            if (nics[n].kind_val == NET_IFK_LOCALHOST) {
-                NetDriver* driver = nics[n].drv;
-                if (driver) {
-                    for (int i = 0; i < TASK_RX_BATCH_LIMIT; ++i) {
-                        sizedptr raw = driver->handle_receive_packet();
-                        if (!raw.ptr || raw.size == 0) break;
-                        if (raw.size < sizeof(eth_hdr_t)) {
-                            free_frame(raw);
-                            continue;
-                        }
-                        if (!nics[n].rx.push(raw)) {
-                            free_frame(raw);
-                            nics[n].rx_dropped++;
-                            continue;
-                        }
-                        nics[n].rx_produced++;
+            NetDriver* driver = nics[n].drv;
+            if (driver) {
+                int lim = nics[n].kind_val == NET_IFK_LOCALHOST ? TASK_RX_BATCH_LIMIT : RX_INTR_BATCH_LIMIT;
+                for (int i = 0; i < lim; ++i) {
+                    sizedptr raw = driver->handle_receive_packet();
+                    if (!raw.ptr || raw.size == 0) break;
+                    if (raw.size < sizeof(eth_hdr_t)) {
+                        free_frame(raw);
+                        continue;
                     }
+                    if (!nics[n].rx.push(raw)) {
+                        free_frame(raw);
+                        nics[n].rx_dropped++;
+                        continue;
+                    }
+                    nics[n].rx_produced++;
                 }
             }
             int processed = 0;

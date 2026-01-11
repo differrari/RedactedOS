@@ -71,8 +71,9 @@ void disk_write(const void *buffer, uint32_t sector, uint32_t count){
     req->reserved = 0;
     req->sector = sector;
 
-    virtio_send_3d(&blk_dev, (uintptr_t)disk_cmd, sizeof(virtio_blk_req), (uintptr_t)data, count * 512, 0);
-
+    uint8_t status = 0;
+    virtio_buf b[3] = {VBUF(disk_cmd, sizeof(virtio_blk_req), 0), VBUF(data, count * 512, 0), VBUF(&status, 1, VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&blk_dev, b, 3);
     kfree((void *)data,count * 512);
 }
 
@@ -84,7 +85,9 @@ void disk_read(void *buffer, uint32_t sector, uint32_t count){
     req->reserved = 0;
     req->sector = sector;
 
-    virtio_send_3d(&blk_dev, VIRT_TO_PHYS((uintptr_t)disk_cmd), sizeof(virtio_blk_req), VIRT_TO_PHYS((uintptr_t)buffer), count * 512, VIRTQ_DESC_F_WRITE);
+    uint8_t status = 0;
+    virtio_buf b[3] = {VBUF(disk_cmd, sizeof(virtio_blk_req), 0), VBUF(buffer, count * 512, VIRTQ_DESC_F_WRITE), VBUF(&status, 1, VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&blk_dev, b, 3);
 }
 
 system_module disk_module = (system_module){

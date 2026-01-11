@@ -66,7 +66,21 @@ public:
         string out = http_request_builder(&req);
         uint32_t out_len = out.length;
 
-        int64_t sent = sock->send(out.data, out.length);
+        uint32_t off = 0;
+        int64_t sent = 0;
+        while (off < out_len) {
+            int64_t r = sock->send(out.data + off, out_len - off);
+            if (r == TCP_WOULDBLOCK) {
+                msleep(5);
+                continue;
+            }
+            if (r < 0) {
+                sent = r;
+                break;
+            }
+            off += (uint32_t)r;
+        }
+        if (sent >= 0) sent = (int64_t)off;
 
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_HTTP_CLIENT;
@@ -96,41 +110,41 @@ public:
 
         string buf = string_repeat('\0', 0);
         char tmp[512];
-        int attempts = 0;
         int hdr_end = -1;
-        while (true) {
+
+        while (hdr_end < 0) {
             int64_t r = sock->recv(tmp, sizeof(tmp));
+            if (r == TCP_WOULDBLOCK) {
+                msleep(10);
+                continue;
+            }
             if (r < 0) {
                 free_sized(buf.data, buf.mem_length);
-                resp.status_code = (HttpError)SOCK_ERR_SYS;
+                resp.status_code = (HttpError)r;
                 return resp;
             }
-            if (r > 0) string_append_bytes(&buf, tmp, (uint32_t)r);
-            hdr_end = find_crlfcrlf(buf.data, buf.length);
-            if (hdr_end >= 0) break;
-            if (++attempts > 50) {
+            if (r == 0) {
                 free_sized(buf.data, buf.mem_length);
                 resp.status_code = (HttpError)SOCK_ERR_PROTO;
                 return resp;
             }
-            msleep(10);
+            string_append_bytes(&buf, tmp, (uint32_t)r);
+            hdr_end = find_crlfcrlf(buf.data, buf.length);
         }
 
-        {
-            uint32_t i = 0;
-            while (i < (uint32_t)hdr_end && buf.data[i] != ' ') i++;
-            uint32_t code = 0, j = i+1;
-            while (j < (uint32_t)hdr_end && buf.data[j] >= '0' && buf.data[j] <= '9') {
-                code = code*10 + (buf.data[j]-'0');
-                ++j;
-            }
-            resp.status_code = (HttpError)code;
-            while (j < (uint32_t)hdr_end && buf.data[j]==' ') ++j;
-            if (j < (uint32_t)hdr_end) {
-                uint32_t rlen = hdr_end - j;
-                resp.reason = string_repeat('\0', 0);
-                string_append_bytes(&resp.reason, buf.data+j, rlen);
-            }
+        uint32_t i = 0;
+        while (i < (uint32_t)hdr_end && buf.data[i] != ' ') i++;
+        uint32_t code = 0, j = i+1;
+        while (j < (uint32_t)hdr_end && buf.data[j] >= '0' && buf.data[j] <= '9') {
+            code = code*10 + (buf.data[j]-'0');
+            ++j;
+        }
+        resp.status_code = (HttpError)code;
+        while (j < (uint32_t)hdr_end && buf.data[j]==' ') ++j;
+        if (j < (uint32_t)hdr_end) {
+            uint32_t rlen = hdr_end - j;
+            resp.reason = string_repeat('\0', 0);
+            string_append_bytes(&resp.reason, buf.data+j, rlen);
         }
 
         HTTPHeader *extras = nullptr;
@@ -152,22 +166,11 @@ public:
         if (need > 0) {
             while (have < need) {
                 int64_t r = sock->recv(tmp, sizeof(tmp));
-                if (r <= 0) break;
+                if (r == TCP_WOULDBLOCK) { msleep(10); continue; }
+                if (r < 0) break;
+                if (r == 0) break;
                 string_append_bytes(&buf, tmp, (uint32_t)r);
                 have += (uint32_t)r;
-            }
-        } else {
-            int idle = 0;
-            while (idle < 5) {
-                int64_t r = sock->recv(tmp, sizeof(tmp));
-                if (r > 0) {
-                    string_append_bytes(&buf, tmp, (uint32_t)r);
-                    have += (uint32_t)r;
-                    idle = 0;
-                } else {
-                    ++idle;
-                    msleep(20);
-                }
             }
         }
         if (have > 0) {

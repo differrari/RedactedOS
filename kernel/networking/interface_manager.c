@@ -12,6 +12,7 @@
 #include "networking/internet_layer/igmp.h"
 #include "networking/internet_layer/mld.h"
 #include "networking/link_layer/nic_types.h"
+#include "networking/network.h"
 
 static void* g_kmem_page_v4 = NULL;
 static void* g_kmem_page_v6 = NULL;
@@ -161,6 +162,46 @@ bool l2_interface_set_up(uint8_t ifindex, bool up) {
     return true;
 }
 
+static bool l2_sync_multicast_filters(l2_interface_t* itf) {
+    if (!itf) return false;
+    uint8_t macs[(MAX_IPV4_MCAST_PER_INTERFACE + MAX_IPV6_MCAST_PER_INTERFACE) * 6];
+    uint32_t count = 0;
+
+    for (int i = 0; i < (int)itf->ipv4_mcast_count; ++i) {
+        uint8_t m[6];
+        ipv4_mcast_to_mac(itf->ipv4_mcast[i], m);
+        bool exists = false;
+        for (uint32_t j = 0; j < count; ++j) {
+            if (memcmp(&macs[j * 6], m, 6) == 0) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) {
+            memcpy(&macs[count * 6], m, 6);
+            count++;
+        }
+    }
+
+    for (int i = 0; i < (int)itf->ipv6_mcast_count; ++i) {
+        uint8_t m[6];
+        ipv6_multicast_mac(itf->ipv6_mcast[i], m);
+        bool exists = false;
+        for (uint32_t j = 0; j < count; ++j) {
+            if (memcmp(&macs[j*6], m, 6) == 0) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) {
+            memcpy(&macs[count * 6], m, 6);
+            count++;
+        }
+    }
+
+    return network_sync_multicast(itf->ifindex, macs, count);
+}
+
 static int find_ipv4_group_index(l2_interface_t* itf, uint32_t group) {
     for (int i = 0; i < (int)itf->ipv4_mcast_count; ++i) if (itf->ipv4_mcast[i] == group) return i;
     return -1;
@@ -173,6 +214,7 @@ bool l2_ipv4_mcast_join(uint8_t ifindex, uint32_t group) {
     if (find_ipv4_group_index(itf, group) >= 0) return true;
     if (itf->ipv4_mcast_count >= MAX_IPV4_MCAST_PER_INTERFACE) return false;
     itf->ipv4_mcast[itf->ipv4_mcast_count++] = group;
+    if (itf->kind != NET_IFK_LOCALHOST) (void)l2_sync_multicast_filters(itf);
     if (itf->kind != NET_IFK_LOCALHOST && l2_has_active_v4(itf)) (void)igmp_send_join(ifindex, group);
     return true;
 }
@@ -184,6 +226,7 @@ bool l2_ipv4_mcast_leave(uint8_t ifindex, uint32_t group) {
     if (idx < 0) return true;
     for (int i = idx + 1; i < (int)itf->ipv4_mcast_count; ++i) itf->ipv4_mcast[i-1] = itf->ipv4_mcast[i];
     if (itf->ipv4_mcast_count) itf->ipv4_mcast_count -= 1;
+    if (itf->kind != NET_IFK_LOCALHOST) (void)l2_sync_multicast_filters(itf);
     if (itf->kind != NET_IFK_LOCALHOST && l2_has_active_v4(itf)) (void)igmp_send_leave(ifindex, group);
     return true;
 }
@@ -200,6 +243,7 @@ bool l2_ipv6_mcast_join(uint8_t ifindex, const uint8_t group[16]) {
     if (itf->ipv6_mcast_count >= MAX_IPV6_MCAST_PER_INTERFACE) return false;
     ipv6_cpy(itf->ipv6_mcast[itf->ipv6_mcast_count], group);
     itf->ipv6_mcast_count += 1;
+    if (itf->kind != NET_IFK_LOCALHOST) (void)l2_sync_multicast_filters(itf);
     if (itf->kind != NET_IFK_LOCALHOST && l2_has_active_v6(itf)) (void)mld_send_join(ifindex, group);
     return true;
 }
@@ -211,6 +255,7 @@ bool l2_ipv6_mcast_leave(uint8_t ifindex, const uint8_t group[16]) {
     if (itf->kind != NET_IFK_LOCALHOST && l2_has_active_v6(itf)) (void)mld_send_leave(ifindex, group);
     for (int i = idx + 1; i < (int)itf->ipv6_mcast_count; ++i) ipv6_cpy(itf->ipv6_mcast[i-1], itf->ipv6_mcast[i]);
     if (itf->ipv6_mcast_count) itf->ipv6_mcast_count -= 1;
+    if (itf->kind != NET_IFK_LOCALHOST) (void)l2_sync_multicast_filters(itf);
     return true;
 }
 

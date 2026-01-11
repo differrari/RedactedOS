@@ -147,7 +147,8 @@ gpu_size VirtioGPUDriver::get_display_info(){
 
     scanout_found = false;
 
-    if (!virtio_send_3d(&gpu_dev, (uintptr_t)cmd, sizeof(virtio_gpu_ctrl_hdr), (uintptr_t)resp, sizeof(virtio_gpu_resp_display_info), VIRTQ_DESC_F_WRITE)){
+    virtio_buf b[2] = {VBUF(cmd, sizeof(virtio_gpu_ctrl_hdr), 0), VBUF(resp, sizeof(virtio_gpu_resp_display_info), VIRTQ_DESC_F_WRITE)};
+    if(!virtio_send_nd(&gpu_dev, b, 2)){
         kfree(cmd, sizeof(virtio_gpu_ctrl_hdr));
         kfree(resp, sizeof(virtio_gpu_resp_display_info));
         return (gpu_size){0, 0};
@@ -193,7 +194,8 @@ bool VirtioGPUDriver::create_2d_resource(uint32_t resource_id, gpu_size size) {
 
     virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
 
-    if (!virtio_send_3d(&gpu_dev, (uintptr_t)cmd, sizeof(virtio_2d_resource), (uintptr_t)resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE)){
+    virtio_buf b[2] = {VBUF(cmd, sizeof(virtio_2d_resource), 0), VBUF(resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE)};
+    if(!virtio_send_nd(&gpu_dev, b, 2)){
         kfree((void*)cmd, sizeof(virtio_2d_resource));
         kfree((void*)resp, sizeof(virtio_gpu_ctrl_hdr));
         return false;
@@ -242,7 +244,8 @@ bool VirtioGPUDriver::attach_backing(uint32_t resource_id, sizedptr ptr) {
 
     virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
 
-    if (!virtio_send_2d(&gpu_dev, (uintptr_t)cmd, sizeof(*cmd), (uintptr_t)resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_NEXT)){
+    virtio_buf b[2] = {VBUF(cmd, sizeof(*cmd), 0), VBUF(resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE)};
+    if (!virtio_send_nd(&gpu_dev, b, 2)){
         kfree((void*)cmd, sizeof(*cmd));
         kfree((void*)resp, sizeof(virtio_gpu_ctrl_hdr));
         return false;
@@ -288,7 +291,8 @@ bool VirtioGPUDriver::set_scanout() {
 
     virtio_gpu_ctrl_hdr* resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
 
-    if (!virtio_send_3d(&gpu_dev, (uintptr_t)cmd, sizeof(*cmd), (uintptr_t)resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE)){
+    virtio_buf b[2] = {VBUF(cmd, sizeof(*cmd), 0), VBUF(resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE)};
+    if (!virtio_send_nd(&gpu_dev, b, 2)){
         kfree((void*)cmd, sizeof(virtio_scanout_cmd));
         kfree((void*)resp, sizeof(virtio_gpu_ctrl_hdr));
         return false;
@@ -326,7 +330,8 @@ bool VirtioGPUDriver::transfer_to_host(uint32_t resource_id, gpu_rect rect) {
     if (!trans_resp)
         trans_resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
 
-    return virtio_send_3d(&gpu_dev,(uintptr_t)trans_cmd, sizeof(virtio_transfer_cmd), (uintptr_t)trans_resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE);
+    virtio_buf b[2] = {VBUF(trans_cmd, sizeof(virtio_transfer_cmd), 0), VBUF(trans_resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE)};
+    return virtio_send_nd(&gpu_dev, b, 2);
 }
 
 void VirtioGPUDriver::flush() {
@@ -363,7 +368,8 @@ void VirtioGPUDriver::flush() {
     if (!flush_resp)
         flush_resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
     
-    virtio_send_3d(&gpu_dev, (uintptr_t)flush_cmd, sizeof(virtio_flush_cmd), (uintptr_t)flush_resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE);
+    virtio_buf b[2] = {VBUF(flush_cmd, sizeof(virtio_flush_cmd), 0), VBUF(flush_resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&gpu_dev, b, 2);
 }
 
 struct virtio_gpu_get_capset_info { 
@@ -391,7 +397,8 @@ void VirtioGPUDriver::get_capset(uint32_t capset){
 
     virtio_gpu_resp_capset_info* resp = (virtio_gpu_resp_capset_info*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_resp_capset_info), ALIGN_4KB, MEM_PRIV_KERNEL);
 
-    if (!virtio_send_3d(&gpu_dev, (uintptr_t)cmd, sizeof(virtio_gpu_get_capset_info), (uintptr_t)resp, sizeof(virtio_gpu_resp_capset_info), VIRTQ_DESC_F_WRITE)){
+    virtio_buf b[2] = {VBUF(cmd, sizeof(virtio_gpu_get_capset_info), 0), VBUF(resp, sizeof(virtio_gpu_resp_capset_info), VIRTQ_DESC_F_WRITE)};
+    if (!virtio_send_nd(&gpu_dev, b, 2)){
         kprintf("Could not send command");
         kfree((void*)cmd, sizeof(virtio_gpu_get_capset_info));
         kfree((void*)resp, sizeof(virtio_gpu_resp_capset_info));
@@ -489,7 +496,8 @@ void VirtioGPUDriver::update_cursor(uint32_t x, uint32_t y, bool full)
     if (!cursor_resp)
         cursor_resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
 
-    virtio_send_3d(&gpu_dev, (uintptr_t)cursor_cmd, sizeof(virtio_gpu_update_cursor), (uintptr_t)cursor_resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE);
+    virtio_buf b[2] = {VBUF(cursor_cmd, sizeof(virtio_gpu_update_cursor), 0), VBUF(cursor_resp, sizeof(virtio_gpu_ctrl_hdr), VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&gpu_dev, b, 2);
     select_queue(&gpu_dev, CONTROL_QUEUE);
 }
 

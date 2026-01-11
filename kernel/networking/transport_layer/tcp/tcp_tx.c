@@ -192,6 +192,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
     uint8_t flags = flow_ctx->flags;
     uint8_t *payload_ptr = (uint8_t *)flow_ctx->payload.ptr;
     uint16_t payload_len = flow_ctx->payload.size;
+    flow_ctx->payload.size = 0;
 
     if (flow->state != TCP_ESTABLISHED && !(flags & (1u << FIN_F))) {
         if (!(flow->state == TCP_CLOSE_WAIT && (flags & (1u << FIN_F)))) return TCP_INVALID;
@@ -276,6 +277,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
 
     tcp_daemon_kick();
 
+    flow_ctx->payload.size = sent_bytes;
     return sent_bytes || (flags & (1u << FIN_F)) ? TCP_OK : TCP_WOULDBLOCK;
 }
 
