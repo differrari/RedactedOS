@@ -19,3 +19,4 @@ static inline bool assert_true_func(bool condition, char *fmt, ...){
 #define assert_false(cond, fmt, ...) if (!assert_true_func(!cond, fmt, ##__VA_ARGS__)) return false;
 #define assert_eq(el1, el2, fmt, ...) if (!assert_true_func(el1 == el2, fmt, ##__VA_ARGS__)) return false;
 #define assert_neq(el1, el2, fmt, ...) if (!assert_true_func(el1 != el2, fmt, ##__VA_ARGS__)) return false;
+#define test_fail(fmt, ...) if (!assert_true_func(false, fmt, ##__VA_ARGS__)) return false;

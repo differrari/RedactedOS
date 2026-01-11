@@ -48,10 +48,13 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
     size_t amount = 0x100;
     char *buf = (char*)malloc(amount);
     do {
-        readf(&out_fd, buf, amount);
+        size_t n = readf(&out_fd, buf, amount);
         put_string(buf);
+        memset(buf,0,n);
         readf(&state_fd, (char*)&state, sizeof(int));
     } while (state);
+    readf(&out_fd, buf, amount);
+    put_string(buf);
     free_sized(buf, amount);
     closef(&out_fd);
     closef(&state_fd);
@@ -118,9 +121,7 @@ void Terminal::run_command(){
     put_char('\n');
 
     if (!exec_cmd(cmd.data, argc, argv)){
-        if (strcmp_case(cmd.data, "test",true) == 0){
-            TMP_test(argc, argv);
-        } else if (strcmp_case(cmd.data, "exit",true) == 0){
+        if (strcmp_case(cmd.data, "exit",true) == 0){
             halt(0);
         } else {
             string s = string_format("Unknown command %s with args %s", cmd.data, args);
@@ -135,17 +136,6 @@ void Terminal::run_command(){
     draw_cursor();
     flush(dctx);
     command_running = true;
-}
-
-void Terminal::TMP_test(int argc, const char* args[]){
-    // const char *term = seek_to(args, '\033');
-    // if (*term == 0) return;
-    const char *term = seek_to(*args, '[');
-    if (*term == 0) return;
-    const char *next = seek_to(term, ';');
-    uint64_t color = parse_hex_u64(term, next - term);
-    set_text_color(color & UINT32_MAX);
-    put_string(next);
 }
 
 void Terminal::handle_input(){
