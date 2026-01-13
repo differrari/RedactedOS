@@ -1,8 +1,11 @@
 #include "monitor_processes.h"
 #include "process/scheduler.h"
 #include "console/kio.h"
+#include "keyboard_input.h"
+#include "input_keycodes.h"
+#include "syscalls/syscalls.h"
 #include "input/input_dispatch.h"
-#include "graph/graphics.h"
+#include "ui/draw/draw.h"
 #include "std/string.h"
 #include "theme/theme.h"
 #include "math/math.h"
@@ -27,6 +30,7 @@ char* parse_proc_state(int state){
 
 uint64_t calc_heap(uintptr_t ptr){
     mem_page *info = (mem_page*)ptr;
+    if (!info) return 0;
     uint64_t size = info->size;
     if (info->next)
         size += calc_heap((uintptr_t)info->next);
@@ -39,8 +43,8 @@ void print_process_info(){
         process_t *proc = &processes[i];
         if (proc->id != 0 && proc->state != STOPPED){
             printf("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uintptr_t)parse_proc_state(proc->state));
-            // printf("Stack: %x (%x). SP: %x",proc->stack, proc->stack_size, proc->sp);
-            // printf("Heap: %x (%x)",proc->heap, calc_heap(proc->heap));
+            printf("Stack: %x (%x). SP: %x",proc->stack, proc->stack_size, proc->sp);
+            printf("Heap: %x (%x)",proc->heap, calc_heap(proc->heap_phys));
             printf("Flags: %x", proc->spsr);
             printf("PC: %x",proc->pc);
         }
@@ -51,37 +55,38 @@ void print_process_info(){
 
 uint16_t scroll_index = 0;
 
+draw_ctx ctx;
 
 void draw_memory(char *name,int x, int y, int width, int full_height, int used, int size){
-    int height = full_height - (gpu_get_char_size(2)*2) - 10;
+    int height = full_height - (fb_get_char_size(2)*2) - 10;
     gpu_point stack_top = {x, y};
-    gpu_draw_line(stack_top, (gpu_point){stack_top.x + width, stack_top.y}, 0xFFFFFF);
-    gpu_draw_line(stack_top, (gpu_point){stack_top.x, stack_top.y + height}, 0xFFFFFF);
-    gpu_draw_line((gpu_point){stack_top.x + width, stack_top.y}, (gpu_point){stack_top.x + width, stack_top.y + height}, 0xFFFFFF);
-    gpu_draw_line((gpu_point){stack_top.x, stack_top.y + height}, (gpu_point){stack_top.x + width, stack_top.y + height}, 0xFFFFFF);
-
+    fb_draw_line(&ctx,stack_top.x, stack_top.y, stack_top.x + width, stack_top.y, 0xFFFFFFFF);
+    fb_draw_line(&ctx,stack_top.x, stack_top.y, stack_top.x, stack_top.y + height, 0xFFFFFFFF);
+    fb_draw_line(&ctx,stack_top.x + width, stack_top.y, stack_top.x + width, stack_top.y + height, 0xFFFFFFFF);
+    fb_draw_line(&ctx,stack_top.x, stack_top.y + height, stack_top.x + width, stack_top.y + height, 0xFFFFFFFF);
+    
     int used_height = max((used * height) / size,1);
 
-    gpu_fill_rect((gpu_rect){{stack_top.x + 1, stack_top.y + height - used_height + 1}, {width - 2, used_height-1}}, system_theme.bg_color);
+    fb_fill_rect(&ctx,stack_top.x + 1, stack_top.y + height - used_height + 1, width - 2, used_height-1, system_theme.bg_color);
 
     string str = string_format("%s\n%x",(uintptr_t)name, used);
-    gpu_draw_string(str, (gpu_point){stack_top.x, stack_top.y + height + 5}, 2, system_theme.bg_color);
+    fb_draw_string(&ctx,str.data, stack_top.x, stack_top.y + height + 5, 2, system_theme.bg_color);
     free_sized(str.data,str.mem_length);
 }
 
 void draw_process_view(){
-    gpu_clear(system_theme.bg_color+0x112211);
+    fb_clear(&ctx,system_theme.bg_color+0x112211);
     process_t *processes = get_all_processes();
-    gpu_size screen_size = gpu_get_screen_size();
+    gpu_size screen_size = (gpu_size){ctx.width,ctx.height};
     gpu_point screen_middle = {screen_size.width / 2, screen_size.height / 2};
 
     sys_focus_current();
-
-    keypress kp;
-    while (sys_read_input_current(&kp)){
-        if (kp.keys[0] == KEY_LEFT)
+    
+    kbd_event ev;
+    if (read_event(&ev)){
+        if (ev.key == KEY_LEFT)
             scroll_index = max(scroll_index - 1, 0);
-        if (kp.keys[0] == KEY_RIGHT)
+        if (ev.key == KEY_RIGHT)
             scroll_index = min(scroll_index + 1,MAX_PROCS);
     }
 
@@ -118,49 +123,42 @@ void draw_process_view(){
 
         int xo = (i * (screen_size.width / PROCS_PER_SCREEN)) + 50;
 
-        gpu_draw_string(name, (gpu_point){xo, name_y}, scale, system_theme.bg_color);
-        gpu_draw_string(state, (gpu_point){xo, state_y}, scale, system_theme.bg_color);
+        fb_draw_string(&ctx,name.data, xo, name_y, scale, system_theme.bg_color);
+        fb_draw_string(&ctx,state.data, xo, state_y, scale, system_theme.bg_color);
         
         string pc = string_from_hex(proc->pc);
-        gpu_draw_string(pc, (gpu_point){xo, pc_y}, scale, system_theme.bg_color);
+        fb_draw_string(&ctx,pc.data, xo, pc_y, scale, system_theme.bg_color);
         free_sized(pc.data, pc.mem_length);
         
         draw_memory("Stack", xo, stack_y, stack_width, stack_height, proc->stack - proc->sp, proc->stack_size);
-        uint64_t heap = calc_heap(proc->heap);
+        uint64_t heap = calc_heap(proc->heap_phys);
         uint64_t heap_limit = ((heap + 0xFFF) & ~0xFFF);
         draw_memory("Heap", xo + stack_width + 50, stack_y, stack_width, stack_height, heap, heap_limit);
 
         string flags = string_format("Flags: %x", proc->spsr);
-        gpu_draw_string(flags, (gpu_point){xo, flags_y}, scale, system_theme.bg_color);
+        fb_draw_string(&ctx, flags.data, xo, flags_y, scale, system_theme.bg_color);
         free_sized(name.data, name.mem_length);
         free_sized(state.data, state.mem_length);
         free_sized(flags.data, flags.mem_length);
 
     }
-    gpu_flush();
-    print_process_info();
+    commit_draw_ctx(&ctx);
 }
 
 int monitor_procs(int argc, char* argv[]){
-    // keypress kp = {
-    //     .modifier = KEY_MOD_LALT,
-    //     .keys[0] = 0x15//R
-    // };
-    // uint16_t shortcut = sys_subscribe_shortcut_current(kp);
-    // bool active = false;
+    bool visual = false;
+    if (argc){ //TODO: make this a proper parser once argv is fixed
+        visual = true;
+        request_draw_ctx(&ctx);
+    }
     while (1){
-        print_process_info();
+        if (visual)
+            draw_process_view();
+        else 
+            print_process_info();
+        kbd_event ev;
+        if (read_event(&ev) && ev.key == KEY_ESC) return 0;
         msleep(1000);
-        // if (sys_shortcut_triggered_current(shortcut)){
-        //     //TODO: restore this functionality with the new window system or put the process in a window
-        //     // if (active)
-        //     //     pause_window_draw();
-        //     // else 
-        //     //     resume_window_draw();
-        //     active = !active;
-        // }
-        // if (active)
-        //     draw_process_view();
     }
     return 1;
 }
