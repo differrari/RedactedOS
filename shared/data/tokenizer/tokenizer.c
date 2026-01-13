@@ -409,6 +409,7 @@ bool tokenizer_next(Tokenizer *t, Token *out) {
     out->start = s->buf + s->pos;
     out->length = 1;
     out->pos = s->pos;
+    s->pos++;
     return true;
 }
 
