@@ -119,8 +119,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
     write_file(fd, host, strlen_max(host, STRING_MAX_LEN));
     write_file(fd, " (", 2);
     write_file(fd, ipstr, strlen_max(ipstr, STRING_MAX_LEN));
-    write_file(fd, ") with 32 bytes of data:", 25);
-    write_file(fd, "\n", 1);
+    write_file(fd, ") with 32 bytes of data:\n", 26);
 
     uint32_t sent = 0, received = 0, min_ms = UINT32_MAX, max_ms = 0;
     uint64_t sum_ms = 0;

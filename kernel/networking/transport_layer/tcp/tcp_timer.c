@@ -1,13 +1,26 @@
 #include "tcp_internal.h"
 #include "kernel_processes/kprocess_loader.h"
+#include "exceptions/irq.h"
 
 static volatile int tcp_daemon_running = 0;
 //TODO make tcp_daemon_running atomic or use a lock, this may end in a double deamon process
 void tcp_daemon_kick(void) {
-    if (tcp_daemon_running) return;
-    if (!tcp_has_pending_timers()) return;
+    if(!tcp_has_pending_timers()) return;
 
-    create_kernel_process("tcp_daemon", tcp_daemon_entry, 0, 0);
+    disable_interrupt();
+    if(tcp_daemon_running){
+        enable_interrupt();
+        return;
+    }
+    tcp_daemon_running = 1;
+    enable_interrupt();
+
+    process_t *p = create_kernel_process("tcp_timer", tcp_daemon_entry, 0, 0);
+    if(!p){
+        disable_interrupt();
+        tcp_daemon_running = 0;
+        enable_interrupt();
+    }
 }
 
 int tcp_has_pending_timers(void) { //TODO mhh this should be event driven to avoid MAX_TCP_FLOWS*TCP_MAX_TX_SEGS scans.
@@ -183,24 +196,41 @@ void tcp_tick_all(uint32_t elapsed_ms) {
             s->retransmit_cnt++;
             s->timer_ms = 0;
 
-            if (s->timeout_ms < TCP_MAX_RTO)s->timeout_ms <<= 1;
+            if (s->timeout_ms == 0) {
+                uint32_t rto = f->rto ? f->rto : TCP_INIT_RTO;
+                if (rto < TCP_MIN_RTO) rto = TCP_MIN_RTO;
+                s->timeout_ms = rto;
+            } else if (s->timeout_ms < TCP_MAX_RTO) {
+                uint32_t next = s->timeout_ms << 1;
+                if (next > TCP_MAX_RTO) next = TCP_MAX_RTO;
+                s->timeout_ms = next;
+            }
         }
     }
 }
+
 
 int tcp_daemon_entry(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
 
-    tcp_daemon_running = 1;
+    const uint32_t tick_ms = 25;
+    const uint32_t grace_ms = 10000;
+    uint32_t idle_ms = 0;
 
-    const uint32_t tick_ms = 100;
-
-    while (tcp_has_pending_timers()) {
-        tcp_tick_all(tick_ms);
+    while (1) {
+        if (tcp_has_pending_timers()) {
+            tcp_tick_all(tick_ms);
+            idle_ms = 0;
+        } else {
+            idle_ms += tick_ms;
+            if(idle_ms >= grace_ms) break;
+        }
         msleep(tick_ms);
     }
 
+    disable_interrupt();
     tcp_daemon_running = 0;
+    enable_interrupt();
     return 0;
 }

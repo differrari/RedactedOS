@@ -485,7 +485,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     seg->len = 0;
     seg->buf = 0;
     seg->timer_ms = 0;
-    seg->timeout_ms = flow->rto;
+    seg->timeout_ms = flow->rto ? flow->rto : TCP_INIT_RTO;
 
     tcp_hdr_t syn_hdr;
 

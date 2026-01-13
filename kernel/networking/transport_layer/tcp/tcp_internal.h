@@ -33,7 +33,7 @@ typedef struct {
     uint8_t rtt_sample;
     uint8_t retransmit_cnt;
     uint32_t seq;
-    uint16_t len;
+    uint64_t len;
     uintptr_t buf;
     uint32_t timer_ms;
     uint32_t timeout_ms;

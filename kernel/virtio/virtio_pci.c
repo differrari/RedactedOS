@@ -221,7 +221,7 @@ bool virtio_send_nd(virtio_device *dev, const virtio_buf *bufs, uint16_t n) {
     asm volatile ("dmb ishst" ::: "memory");
     virtio_notify(dev);
 
-    while (last_used_idx == u->idx);
+    while (last_used_idx == u->idx);//TODO: OPT
 
     return true;
 }

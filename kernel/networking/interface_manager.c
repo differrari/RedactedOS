@@ -16,6 +16,7 @@
 
 static void* g_kmem_page_v4 = NULL;
 static void* g_kmem_page_v6 = NULL;
+//TODO: add network settings
 
 static l2_interface_t g_l2[MAX_L2_INTERFACES];
 static uint8_t g_l2_used[MAX_L2_INTERFACES];
@@ -934,6 +935,7 @@ void l3_init_localhost_ipv6(void){
     (void)l2_ipv6_mcast_join(lo->ifindex, multi);
 }
 
+//TODO: add autoconfig settings/policy
 void ifmgr_autoconfig_l2(uint8_t ifindex){
     l2_interface_t *l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return;

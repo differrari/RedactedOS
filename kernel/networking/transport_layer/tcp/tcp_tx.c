@@ -191,7 +191,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
 
     uint8_t flags = flow_ctx->flags;
     uint8_t *payload_ptr = (uint8_t *)flow_ctx->payload.ptr;
-    uint16_t payload_len = flow_ctx->payload.size;
+    uint64_t payload_len = flow_ctx->payload.size;
     flow_ctx->payload.size = 0;
 
     if (flow->state != TCP_ESTABLISHED && !(flags & (1u << FIN_F))) {
@@ -203,7 +203,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
         return TCP_WOULDBLOCK;
     }
 
-    uint32_t in_flight = flow->snd_nxt - flow->snd_una;
+    uint64_t in_flight = flow->snd_nxt - flow->snd_una;
     uint32_t wnd = flow->snd_wnd;
     uint32_t cwnd = flow->cwnd ? flow->cwnd : (flow->mss ? flow->mss : TCP_DEFAULT_MSS);
     uint32_t eff_wnd = wnd < cwnd ? wnd : cwnd;
@@ -211,16 +211,16 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
     if (eff_wnd == 0) eff_wnd = 1;
     if (in_flight >= eff_wnd && !(flags & (1u << FIN_F))) return TCP_WOULDBLOCK;
 
-    uint32_t can_send = eff_wnd - in_flight;
+    uint64_t can_send = eff_wnd - in_flight;
     if (can_send == 0 && !(flags & (1u << FIN_F))) return TCP_WOULDBLOCK;
 
-    uint32_t remaining = payload_len;
-    uint32_t sent_bytes = 0;
+    uint64_t remaining = payload_len;
+    uint64_t sent_bytes = 0;
     int first_segment = 1;
 
     while (remaining > 0 && can_send > 0) {
-        uint16_t seg_len = (uint16_t)(remaining > can_send ? can_send : remaining);
-        if (flow->mss && seg_len > flow->mss) seg_len = (uint16_t)flow->mss;
+        uint64_t seg_len = (uint64_t)(remaining > can_send ? can_send : remaining);
+        if (flow->mss && seg_len > flow->mss) seg_len = (uint64_t)flow->mss;
 
         tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow);
         if (!seg) break;
@@ -238,7 +238,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
         seg->syn = 0;
         seg->fin = 0;
         seg->timer_ms = 0;
-        seg->timeout_ms = flow->rto;
+        seg->timeout_ms = flow->rto ? flow->rto : TCP_INIT_RTO;
         seg->retransmit_cnt = 0;
         seg->rtt_sample = 0;
         if (!flow->rtt_valid && first_segment) seg->rtt_sample = 1;
@@ -262,7 +262,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
         seg->syn = 0;
         seg->fin = 1;
         seg->timer_ms = 0;
-        seg->timeout_ms = flow->rto;
+        seg->timeout_ms = flow->rto ? flow->rto : TCP_INIT_RTO;
         seg->retransmit_cnt = 0;
         seg->rtt_sample = 0;
 

@@ -388,8 +388,11 @@ void VirtioNetDriver::handle_sent_packet(){
 }
 
 bool VirtioNetDriver::send_packet(sizedptr packet){
-    select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
     if (!packet.ptr || !packet.size) return false;
+
+    disable_interrupt();
+    select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
+
     if ((size_t)header_size <= packet.size) memset((void*)packet.ptr, 0, (size_t)header_size);
     if (mrg_rxbuf) ((virtio_net_hdr_mrg_rxbuf_t*)packet.ptr)->num_buffers = 0;
     virtio_buf b;
@@ -397,6 +400,8 @@ bool VirtioNetDriver::send_packet(sizedptr packet){
     b.len = (uint32_t)packet.size;
     b.flags = 0;
     bool ok = virtio_send_nd(&vnp_net_dev, &b, 1);
+    enable_interrupt();
+
     kprintfv("[virtio-net] tx queued len=%u",(unsigned)packet.size);
     kfree((void*)packet.ptr, packet.size);
     return ok;

@@ -178,16 +178,15 @@ static dns_result_t perform_dns_query_once_a(socket_handle_t sock, const net_l4_
             uint32_t ip_host;
             uint32_t ttl_s = 0;
             dns_result_t pr = parse_dns_a_record(response_buffer, (uint32_t)received, message_id, &ip_host, &ttl_s);
-            if (pr == DNS_OK){
+            if(pr == DNS_OK){
                 *out_ip = ip_host;
-                if (out_ttl_s) *out_ttl_s = ttl_s;
+                if(out_ttl_s) *out_ttl_s = ttl_s;
                 return DNS_OK;
             }
             if (pr == DNS_ERR_NXDOMAIN) return pr;
-        } else {
-            msleep(50);
-            waited_ms += 50;
         }
+        msleep(50);
+        waited_ms += 50;
     }
     return DNS_ERR_TIMEOUT;
 }

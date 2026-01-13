@@ -221,26 +221,26 @@ class TCPSocket : public Socket {
     }
     
     uint32_t on_receive(uintptr_t ptr, uint32_t len) {
-        if (!ptr || !len) return 0;
+        if(!ptr || !len) return 0;
 
         uint64_t limit = ring.capacity();
         if ((extraOpts.flags & SOCK_OPT_BUF_SIZE) && extraOpts.buf_size) {
             uint64_t m = extraOpts.buf_size;
             if (m < limit) limit = m;
         }
-
-        uint64_t sz = ring.size();
-        if (sz >= limit) return 0;
-
-        uint64_t free = limit - sz;
-        if ((uint64_t)len > free) return 0;
-        uint32_t accept = len;
+        if (!limit) return 0;
 
         const uint8_t* src = (const uint8_t*)ptr;
         uint32_t pushed = 0;
-        for (uint32_t i = 0; i < accept; ++i) {
-            if (!ring.push(src[i])) break;
-            ++pushed;
+
+        uint64_t sz = ring.size();
+        if (sz < limit) {
+            uint64_t free = limit - sz;
+
+            uint32_t accept = len;
+            if((uint64_t)accept > free) accept = (uint32_t)free;
+
+            pushed = (uint32_t)ring.push_buf(src, accept);
         }
 
         return pushed;
@@ -335,10 +335,13 @@ class TCPSocket : public Socket {
 public:
     explicit TCPSocket(uint8_t r = SOCK_ROLE_CLIENT, uint32_t pid_ = 0, const SocketExtraOptions* extra = nullptr) : Socket(PROTO_TCP, r, extra) {
         pid = pid_;
-        if (extraOpts.flags & SOCK_OPT_BUF_SIZE) {
-            if (!extraOpts.buf_size) extraOpts.buf_size = TCP_RING_CAP;
-            if (extraOpts.buf_size > TCP_RING_CAP) extraOpts.buf_size = TCP_RING_CAP;
+        if (!(extraOpts.flags & SOCK_OPT_BUF_SIZE)) {
+            extraOpts.flags |= SOCK_OPT_BUF_SIZE;
+            extraOpts.buf_size = TCP_RING_CAP;
         }
+
+        if (!extraOpts.buf_size) extraOpts.buf_size = TCP_RING_CAP;
+        if (extraOpts.buf_size > TCP_RING_CAP) extraOpts.buf_size = TCP_RING_CAP;
         insert_in_list();
     }
 
@@ -686,11 +689,7 @@ public:
         uint8_t* out = (uint8_t*)buf;
         uint64_t n = 0;
 
-        while (n < len) {
-            uint8_t b;
-            if (!ring.pop(b)) break;
-            out[n++] = b;
-        }
+        n = ring.pop_buf(out, len);
 
         if (n) {
             if (flow) tcp_flow_on_app_read(flow, (uint32_t)n);

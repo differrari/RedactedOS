@@ -278,7 +278,7 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
     } else {
         if (l2 && l2->kind == NET_IFK_LOCALHOST) {
             memset(dst_mac, 0, 6);
-        } else if (!arp_resolve_on(ifx, nh, dst_mac, 200)) {
+        } else if (!arp_resolve_on(ifx, nh, dst_mac, 1000)) {
             netpkt_unref(pkt);
             return;
         }
