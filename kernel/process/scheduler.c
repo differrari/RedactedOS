@@ -373,7 +373,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     pbuf = file->buffer;
 
     if (is_output){//TODO: probably better to make these files be held by this module, and created only when needed
-        size = min(size, PROC_OUT_BUF);
+        size = min(size+1, PROC_OUT_BUF);
         
         fd->cursor = file->file_size;
         
@@ -382,7 +382,8 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
             memset((void*)pbuf, 0, PROC_OUT_BUF);
         }
 
-        memcpy((void*)(pbuf + fd->cursor), buf, size);
+        memcpy((void*)(pbuf + fd->cursor), buf, size-1);
+        *(char*)(pbuf + fd->cursor + size-1) = '\n';
         fd->cursor += size;
 
         file->file_size += size;
