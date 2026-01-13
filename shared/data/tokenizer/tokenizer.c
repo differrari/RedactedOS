@@ -411,3 +411,28 @@ bool tokenizer_next(Tokenizer *t, Token *out) {
     out->pos = s->pos;
     return true;
 }
+
+char* token_name(TokenKind kind){
+    switch (kind) {
+    case TOK_EOF: return "eof";
+    case TOK_INVALID: return "invalid";
+    case TOK_IDENTIFIER: return "identifier";
+    case TOK_NUMBER: return "number";
+    case TOK_STRING: return "string";
+    case TOK_CONST: return "const";
+    case TOK_OPERATOR: return "operator";
+    case TOK_LPAREN: return "lparen";
+    case TOK_RPAREN: return "rparen";
+    case TOK_LBRACE: return "lbrace";
+    case TOK_RBRACE: return "rbrace";
+    case TOK_LBRACKET: return "lbracket";
+    case TOK_RBRACKET: return "rbracket";
+    case TOK_COMMA: return "comma";
+    case TOK_COLON: return "colon";
+    case TOK_SEMICOLON: return "semicolon";
+    case TOK_DOT: return "dot";
+    case TOK_SYMBOL: return "symbol";
+    case TOK_NEWLINE: return "newline";
+      default: return "";
+    }
+}
