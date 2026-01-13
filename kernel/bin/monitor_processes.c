@@ -1,6 +1,5 @@
 #include "monitor_processes.h"
 #include "process/scheduler.h"
-#include "../kprocess_loader.h"
 #include "console/kio.h"
 #include "input/input_dispatch.h"
 #include "graph/graphics.h"
@@ -40,13 +39,12 @@ void print_process_info(){
         process_t *proc = &processes[i];
         if (proc->id != 0 && proc->state != STOPPED){
             printf("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uintptr_t)parse_proc_state(proc->state));
-            printf("Stack: %x (%x). SP: %x",proc->stack, proc->stack_size, proc->sp);
-            printf("Heap: %x (%x)",proc->heap, calc_heap(proc->heap));
+            // printf("Stack: %x (%x). SP: %x",proc->stack, proc->stack_size, proc->sp);
+            // printf("Heap: %x (%x)",proc->heap, calc_heap(proc->heap));
             printf("Flags: %x", proc->spsr);
             printf("PC: %x",proc->pc);
         }
     }
-    msleep(1000);
 }
 
 #define PROCS_PER_SCREEN 2
@@ -143,33 +141,26 @@ void draw_process_view(){
     print_process_info();
 }
 
-int monitor_procs(){
-    keypress kp = {
-        .modifier = KEY_MOD_LALT,
-        .keys[0] = 0x15//R
-    };
-    uint16_t shortcut = sys_subscribe_shortcut_current(kp);
-    bool active = false;
+int monitor_procs(int argc, char* argv[]){
+    // keypress kp = {
+    //     .modifier = KEY_MOD_LALT,
+    //     .keys[0] = 0x15//R
+    // };
+    // uint16_t shortcut = sys_subscribe_shortcut_current(kp);
+    // bool active = false;
     while (1){
-        if (sys_shortcut_triggered_current(shortcut)){
-            //TODO: restore this functionality with the new window system or put the process in a window
-            // if (active)
-            //     pause_window_draw();
-            // else 
-            //     resume_window_draw();
-            active = !active;
-        }
-        if (active)
-            draw_process_view();
+        print_process_info();
+        msleep(1000);
+        // if (sys_shortcut_triggered_current(shortcut)){
+        //     //TODO: restore this functionality with the new window system or put the process in a window
+        //     // if (active)
+        //     //     pause_window_draw();
+        //     // else 
+        //     //     resume_window_draw();
+        //     active = !active;
+        // }
+        // if (active)
+        //     draw_process_view();
     }
     return 1;
-}
-
-process_t* start_process_monitor(){
-#if QEMU
-    return create_kernel_process("procmonitor",monitor_procs, 0, 0);
-#else 
-    //TODO: disabled process monitor since shortcuts seem broken on rpi
-    return 0x0;//create_kernel_process("procmonitor",monitor_procs, 0, 0);
-#endif
 }

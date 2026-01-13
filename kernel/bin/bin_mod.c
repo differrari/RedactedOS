@@ -1,6 +1,7 @@
 #include "bin_mod.h"
 #include "ping.h"
 #include "tracert.h"
+#include "monitor_processes.h"
 #include "kernel_processes/kprocess_loader.h"
 #include "filesystem/filesystem.h"
 #include "syscalls/syscalls.h"
@@ -22,6 +23,7 @@ typedef struct open_bin_ref {
 open_bin_ref available_cmds[] = {
     { "ping", run_ping },
     { "tracert", run_tracert },
+    { "monitor", monitor_procs },
 };
 
 process_t* execute(const char* prog_name, int argc, const char* argv[]){
