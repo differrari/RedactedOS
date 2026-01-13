@@ -12,8 +12,10 @@ int print(const char *fmt, ...){
     va_end(args);
     if (n >= sizeof(log_buf)) log_buf[sizeof(log_buf)-1] = '\0';
     printl(log_buf);
+#ifndef CROSS
     file fd2 = { .id = 2 };
     writef(&fd2, log_buf, sizeof(log_buf));
+#endif
     return 0;
 }
 
@@ -25,8 +27,10 @@ int printf(const char *fmt, ...){
     va_end(args);
     if (n >= sizeof(li)) li[sizeof(li)-1] = '\0';
     printl(li);
+#ifndef CROSS
     file fd2 = { .id = 2 };
     writef(&fd2, li, sizeof(li));
+#endif
     return 0;
 }
 
@@ -76,7 +80,7 @@ void* zalloc(size_t size){
 char *read_full_file(const char *path){
     
     file fd = {};
-    openf(path, &fd);
+    if (openf(path, &fd) != FS_RESULT_SUCCESS) return false;
     char *fcontent = (char*)malloc(fd.size + 1);
     
     readf(&fd, fcontent, fd.size);
@@ -84,6 +88,17 @@ char *read_full_file(const char *path){
     closef(&fd);
     
     return fcontent;
+}
+
+bool write_full_file(const char *path, void* buf, size_t size){
+    file fd = {};
+    if (openf(path, &fd) != FS_RESULT_SUCCESS) return false;
+    
+    size_t res = writef(&fd, buf, size);
+    
+    closef(&fd);
+    
+    return res > 0;
 }
 
 #endif
