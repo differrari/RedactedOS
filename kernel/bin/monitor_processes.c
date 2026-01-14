@@ -37,11 +37,13 @@ uint64_t calc_heap(uintptr_t ptr){
     return size;
 }
 
+char *procname;
+
 void print_process_info(){
     process_t *processes = get_all_processes();
     for (int i = 0; i < MAX_PROCS; i++){
         process_t *proc = &processes[i];
-        if (proc->id != 0 && proc->state != STOPPED){
+        if (proc->id != 0 && proc->state != STOPPED && (!procname || strcmp_case(procname,proc->name,true) == 0)){
             print("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uintptr_t)parse_proc_state(proc->state));
             print("Stack: %x (%x). SP: %x",proc->stack, proc->stack_size, proc->sp);
             print("Heap: %x (%x)",proc->heap, calc_heap(proc->heap_phys));
@@ -145,20 +147,38 @@ void draw_process_view(){
     commit_draw_ctx(&ctx);
 }
 
-int monitor_procs(int argc, char* argv[]){
-    bool visual = false;
-    if (argc > 1){ //TODO: make this a proper parser once argv is fixed
-        visual = true;
-        request_draw_ctx(&ctx);
+bool visual;
+void show_help(char* name){
+    print("Usage: %s [gui] <filter>",name);
+}
+
+bool parse_args(int argc, char* argv[]){
+    for (int i = 1; i < argc; i++){
+        if (strcmp(argv[i],"gui") == 0){ 
+            visual = true;
+            request_draw_ctx(&ctx);
+        }
+        else if (strcmp(argv[i],"-help") == 0 || strcmp(argv[i],"-h") == 0){ 
+            show_help(argv[0]);
+            return false;
+        }
+        else if (strlen(argv[i])) procname = argv[i];
     }
+    return true;
+}
+
+int monitor_procs(int argc, char* argv[]){
+    visual = false;
+    if (!parse_args(argc, argv)) return 0;
     while (1){
         if (visual)
             draw_process_view();
-        else 
+        else {
             print_process_info();
+            msleep(5000);
+        }
         kbd_event ev;
         if (read_event(&ev) && ev.key == KEY_ESC) return 0;
-        msleep(5000);
     }
     return 1;
 }
