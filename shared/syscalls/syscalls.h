@@ -67,6 +67,8 @@ sizedptr dir_list(const char *path);
 int print(const char *fmt, ...);
 char *read_full_file(const char *path);
 
+bool write_full_file(const char *path, void* buf, size_t size);
+
 static inline void yield(){
     msleep(0);
 }

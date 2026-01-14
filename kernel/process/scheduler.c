@@ -369,18 +369,26 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     uintptr_t pbuf;
     module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
     if (file->read_only) return 0;
+    bool is_output = file->buffer == get_current_proc()->output;
     pbuf = file->buffer;
 
-    size = min(size, PROC_OUT_BUF);
-    
-    if (fd->cursor + size >= PROC_OUT_BUF){
-        fd->cursor = 0;
-        memset((void*)pbuf, 0, PROC_OUT_BUF);
-    }
-    memcpy((void*)(pbuf + fd->cursor), buf, size);
-    file->file_size += size;
-    if (file->buffer == get_current_proc()->output)
+    if (is_output){//TODO: probably better to make these files be held by this module, and created only when needed
+        size = min(size+1, PROC_OUT_BUF);
+        
+        fd->cursor = file->file_size;
+        
+        if (fd->cursor + size >= PROC_OUT_BUF){
+            fd->cursor = 0;
+            memset((void*)pbuf, 0, PROC_OUT_BUF);
+        }
+
+        memcpy((void*)(pbuf + fd->cursor), buf, size-1);
+        *(char*)(pbuf + fd->cursor + size-1) = '\n';
+        fd->cursor += size;
+
+        file->file_size += size;
         get_current_proc()->output_size += size;
+    }
     return size;
 }
 

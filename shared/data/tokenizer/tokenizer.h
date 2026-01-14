@@ -26,6 +26,8 @@ typedef enum {
     TOK_SEMICOLON,
     TOK_DOT, 
     
+    TOK_SYMBOL,
+    
     TOK_NEWLINE
 } TokenKind;
 
@@ -77,3 +79,5 @@ bool tokenizer_next(Tokenizer *t, Token *out);
 static inline string_slice token_to_slice(Token t){
     return (string_slice){ .data = (char*)t.start, .length = t.length };
 }
+
+char* token_name(TokenKind kind);

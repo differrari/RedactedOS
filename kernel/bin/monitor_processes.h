@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 
-process_t* start_process_monitor();
+int monitor_procs(int argc, char* argv[]);
 
 #ifdef __cplusplus
 }
