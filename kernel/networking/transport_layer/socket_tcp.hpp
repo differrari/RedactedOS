@@ -5,7 +5,7 @@
 #include "socket.hpp"
 #include "networking/transport_layer/tcp.h"
 #include "networking/internet_layer/ipv4.h"
-#include "networking/application_layer/dns.h"
+#include "networking/application_layer/dns/dns.h"
 #include "types.h"
 #include "data_struct/ring_buffer.hpp"
 #include "net/socket_types.h"

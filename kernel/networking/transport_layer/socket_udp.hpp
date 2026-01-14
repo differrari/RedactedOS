@@ -3,7 +3,7 @@
 #include "networking/transport_layer/udp.h"
 #include "types.h"
 #include "std/memory.h"
-#include "networking/application_layer/dns.h"
+#include "networking/application_layer/dns/dns.h"
 #include "net/socket_types.h"
 #include "networking/internet_layer/ipv4_route.h"
 #include "networking/internet_layer/ipv6_route.h"

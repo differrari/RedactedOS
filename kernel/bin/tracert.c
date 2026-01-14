@@ -9,7 +9,7 @@
 #include "syscalls/syscalls.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv4_route.h"
-#include "networking/application_layer/dns.h"
+#include "networking/application_layer/dns/dns.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/internet_layer/icmpv6.h"
