@@ -101,4 +101,9 @@ bool write_full_file(const char *path, void* buf, size_t size){
     return res > 0;
 }
 
+int system(const char *command){
+    print("[SYS implementation error] system not implemented");
+    return -1;
+}
+
 #endif

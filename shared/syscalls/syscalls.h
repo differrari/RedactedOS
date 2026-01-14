@@ -69,6 +69,8 @@ char *read_full_file(const char *path);
 
 bool write_full_file(const char *path, void* buf, size_t size);
 
+int system(const char *command);
+
 static inline void yield(){
     msleep(0);
 }

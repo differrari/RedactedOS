@@ -88,6 +88,7 @@ bool utf16tochar(uint16_t* str_in, char* out_str, size_t max_len);
 
 void strcat_buf(const char *a, const char *b, char *dest);
 char* strcat_new(const char *a, const char *b);
+//@DEPRECATED
 string string_from_const(const char *literal);
 string string_concat(string a, string b);
 void string_concat_inplace(string *dest, string src);
