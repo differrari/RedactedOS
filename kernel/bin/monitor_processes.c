@@ -147,7 +147,7 @@ void draw_process_view(){
 
 int monitor_procs(int argc, char* argv[]){
     bool visual = false;
-    if (argc){ //TODO: make this a proper parser once argv is fixed
+    if (argc > 1){ //TODO: make this a proper parser once argv is fixed
         visual = true;
         request_draw_ctx(&ctx);
     }

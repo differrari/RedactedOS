@@ -2,14 +2,14 @@
 
 int main(int argc, const char* argv[]){
     file fd2 = { .id = 2 };
-    if (argc < 1 || argc > 2){
+    if (argc < 2 || argc > 3){
         string err_msg = string_from_literal("Usage: read <path> [size]");
         writef(&fd2, err_msg.data, err_msg.length);
         free_sized(err_msg.data, err_msg.mem_length);
         return 2;
     }
-    const char* path = argv[0];
-    size_t size = argc < 2 ? 0 : parse_int_u64(argv[1], UINT32_MAX);
+    const char* path = argv[1];
+    size_t size = argc < 2 ? 0 : parse_int_u64(argv[2], UINT32_MAX);
     file fd = {};
     openf(path, &fd);
     if (fd.size == 0){

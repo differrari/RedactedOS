@@ -262,18 +262,17 @@ void Terminal::run_command(){
     const char** argv = nullptr;
     string args_copy = {};
 
-    if (*args == '\0'){
+    if (*args == '\0')
         cmd = string_from_literal(fullcmd);
-    } else {
-        size_t cmd_len = (size_t)(args - fullcmd);
-        cmd = string_from_literal_length(fullcmd, cmd_len);
+    else
+        cmd = string_from_literal_length(fullcmd, (size_t)(args - fullcmd));
+    
+    const char* argstart = fullcmd;
+    
+    while (*argstart && (*argstart == ' ' || *argstart == '\t')) argstart++;
 
-        const char* argstart = args;
-        while (*argstart == ' ' || *argstart == '\t') argstart++;
-
-        args_copy = string_from_literal(argstart);
-        argv = parse_arguments(args_copy.data, &argc);
-    }
+    args_copy = string_from_literal(argstart);
+    argv = parse_arguments(args_copy.data, &argc);
 
     if (!exec_cmd(cmd.data, argc, argv)){
         if (strcmp_case(cmd.data, "exit", true) == 0){

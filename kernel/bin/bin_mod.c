@@ -73,7 +73,7 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
                         for (int i = 0; i < argc; i++){
                             size_t strsize = strlen(argv[i]);
                             memcpy(nargvals + strptr, argv[i], strsize);
-                            *(char*)(nargvals + strptr + strsize) = 0;
+                            *(char*)(nargvals + strptr + strsize++) = 0;
                             nargv[i] = vnargvals + strptr;
                             strptr += strsize;
                         }
