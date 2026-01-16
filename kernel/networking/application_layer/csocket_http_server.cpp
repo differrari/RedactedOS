@@ -6,8 +6,8 @@
 
 extern "C" {
 
-http_server_handle_t http_server_create(uint16_t pid) {
-    HTTPServer* srv = new HTTPServer(pid);
+http_server_handle_t http_server_create(uint16_t pid, const SocketExtraOptions* extra) {
+    HTTPServer* srv = new HTTPServer(pid, extra);
     if (!srv) return nullptr;
     return reinterpret_cast<http_server_handle_t>(srv);
 }
@@ -18,7 +18,7 @@ void http_server_destroy(http_server_handle_t h) {
     delete srv;
 }
 
-int32_t http_server_bind_ex(http_server_handle_t h, const SockBindSpec *spec, uint16_t port) {
+int32_t http_server_bind(http_server_handle_t h, const SockBindSpec *spec, uint16_t port) {
     if (!h || !spec) return (int32_t)SOCK_ERR_INVAL;
     HTTPServer* srv = reinterpret_cast<HTTPServer*>(h);
     return srv->bind(*spec, port);
@@ -55,9 +55,8 @@ int32_t http_server_send_response(http_server_handle_t h, http_connection_handle
 int32_t http_connection_close(http_connection_handle_t c) {
     if (!c) return (int32_t)SOCK_ERR_INVAL;
     TCPSocket* conn = reinterpret_cast<TCPSocket*>(c);
-    int32_t r = conn->close();
     delete conn;
-    return r;
+    return (int32_t)SOCK_OK;
 }
 
 int32_t http_server_close(http_server_handle_t h) {

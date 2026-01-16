@@ -28,7 +28,6 @@ volatile uint32_t uart_mbox[9] __attribute__((aligned(16))) = {
 void prepare_uart_hw() {
     
     if (RPI_BOARD != 5){
-        reset_gpio();
         enable_gpio_pin(14);
         enable_gpio_pin(15);
     }

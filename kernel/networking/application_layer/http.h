@@ -38,6 +38,7 @@ typedef struct {
     string connection;
     string keep_alive;
     string host;
+    string content_type;
 } HTTPHeadersCommon;
 
 typedef struct {
@@ -66,6 +67,9 @@ void http_header_parser(const char *buf, uint32_t len,
                         HTTPHeadersCommon *out_common,
                         HTTPHeader **out_extra,
                         uint32_t *out_extra_count);
+
+void http_headers_common_free(HTTPHeadersCommon *common);
+void http_headers_extra_free(HTTPHeader *extra, uint32_t extra_count);
 
 string http_request_builder(const HTTPRequestMsg *req);
 

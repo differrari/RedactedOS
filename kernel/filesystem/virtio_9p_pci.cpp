@@ -215,8 +215,9 @@ size_t Virtio9PDriver::choose_version(){
     cmd->str_size = 8;
     memcpy(cmd->buffer,"9P2000.L",8);
     
-    virtio_send_2d(&np_dev, (uintptr_t)cmd, sizeof(p9_version_packet), (uintptr_t)resp, sizeof(p9_version_packet),VIRTQ_DESC_F_NEXT);
-    
+    virtio_buf b[2]={VBUF(cmd, sizeof(p9_version_packet), 0), VBUF(resp, sizeof(p9_version_packet), VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&np_dev, b, 2); 
+
     uint64_t msize = resp->msize;
 
     kfree(cmd, sizeof(p9_packet_header));
@@ -255,7 +256,8 @@ uint32_t Virtio9PDriver::attach(){
     cmd->n_uname = 12345;//TODO: hash (name+timestamp) or random
     memcpy(cmd->uname,"REDACTED",8);
     
-    virtio_send_2d(&np_dev, (uintptr_t)cmd, sizeof(t_attach), (uintptr_t)resp, sizeof(r_attach),VIRTQ_DESC_F_NEXT);
+    virtio_buf b[2]= {VBUF(cmd, sizeof(t_attach), 0), VBUF(resp, sizeof(r_attach), VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&np_dev, b, 2);
 
     uint32_t rid = resp->header.id == P9_RLERROR ? INVALID_FID : fid;
 
@@ -292,8 +294,8 @@ uint32_t Virtio9PDriver::open(uint32_t fid){
     cmd->fid = fid;
     cmd->flags = O_RDONLY;
     
-    virtio_send_2d(&np_dev, (uintptr_t)cmd, sizeof(t_lopen), (uintptr_t)resp, sizeof(r_lopen),VIRTQ_DESC_F_NEXT);
-
+    virtio_buf b[2] = {VBUF(cmd, sizeof(t_lopen), 0), VBUF(resp, sizeof(r_lopen), VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&np_dev, b, 2);
     uint32_t rid = resp->header.id == P9_RLERROR ? INVALID_FID : fid;
     
     kfree(cmd, sizeof(t_lopen));
@@ -335,7 +337,8 @@ size_t Virtio9PDriver::list_contents(uint32_t fid, void *buf, size_t size, uint6
     cmd->count = size;
     cmd->offset = offset ? *offset : 0;
 
-    virtio_send_2d(&np_dev, (uintptr_t)cmd, sizeof(t_readdir), resp, sizeof(r_readdir) + cmd->count,VIRTQ_DESC_F_NEXT);
+    virtio_buf b[2]={VBUF(cmd, sizeof(t_readdir) ,0), VBUF((void*)resp, sizeof(r_readdir) + cmd->count, VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&np_dev, b, 2);
 
     kfree(cmd, sizeof(t_readdir));
     
@@ -413,7 +416,8 @@ uint32_t Virtio9PDriver::walk_dir(uint32_t fid, char *path){
     
     cmd->header.size = p-(uintptr_t)cmd;
 
-    virtio_send_2d(&np_dev, (uintptr_t)cmd, cmd->header.size, resp, amount,VIRTQ_DESC_F_NEXT);
+    virtio_buf b[2] = { VBUF(cmd, cmd->header.size, 0), VBUF((void*)resp, amount, VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&np_dev, b, 2);
 
     uint32_t rid =  ((p9_packet_header*)resp)->id == P9_RLERROR ? INVALID_FID : nfid;
     kfree((void*)cmd, sizeof(t_walk) + amount);
@@ -455,8 +459,8 @@ uint64_t Virtio9PDriver::get_attribute(uint32_t fid, uint64_t mask){
     cmd->fid = fid;
     cmd->mask = mask;
 
-    virtio_send_2d(&np_dev, (uintptr_t)cmd, cmd->header.size, (uintptr_t)resp, sizeof(r_getattr), VIRTQ_DESC_F_NEXT);
-
+    virtio_buf b[2] = {VBUF(cmd, cmd->header.size, 0), VBUF(resp, sizeof(r_getattr), VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&np_dev, b, 2);
     uint64_t attr = resp->header.id == P9_RLERROR ? 0 : resp->size;
     
     kfree((void*)cmd, sizeof(t_getattr));
@@ -486,7 +490,8 @@ uint64_t Virtio9PDriver::read(uint32_t fid, uint64_t offset, void *file){
     cmd->offset = offset;
     cmd->count = amount - sizeof(p9_packet_header) - sizeof(uint32_t);
 
-    virtio_send_2d(&np_dev, (uintptr_t)cmd, sizeof(t_read), resp, amount,VIRTQ_DESC_F_NEXT);
+    virtio_buf b[2] = {VBUF(cmd, sizeof(t_read), 0) ,VBUF((void*)resp, amount, VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&np_dev, b, 2);
     
     if (((p9_packet_header*)resp)->id == P9_RLERROR) return 0;
 

@@ -19,9 +19,6 @@ typedef struct string_list {
     uint32_t count;
     char array[];
 } string_list;
-
-extern void free_sized(void*,size_t);
-
 static inline bool is_alpha(char c) {
     return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'));
 }
@@ -33,6 +30,13 @@ static inline bool is_digit(char c) {
 static inline bool is_alnum(char c) {
     return is_alpha(c) || is_digit(c);
 }
+
+static inline int32_t str_has_char(const char* s, uint32_t n, char c){
+    for (uint32_t i = 0; i < n && s[i] != '\0'; i++) if (s[i] == c) return i;
+    return -1;
+}
+
+extern void free_sized(void*,size_t);
 
 static inline int hex_val(char c) {
     if (is_digit(c)) return c - '0';
@@ -91,6 +95,7 @@ void string_append_bytes(string *dest, const void *buf, uint32_t len);
 const char* seek_to(const char *string, char character);
 char* strncpy(char* dst, const char* src, size_t cap);
 bool parse_uint32_dec(const char *s, uint32_t *out);
+char* strcasestr(const char* haystack, const char* needle);
 
 string string_replace_character(char* original, char symbol, char *value);
 

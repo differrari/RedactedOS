@@ -4,8 +4,8 @@
 
 extern "C" {
 
-socket_handle_t socket_tcp_create(uint8_t role, uint32_t pid) {
-    return reinterpret_cast<socket_handle_t>(new TCPSocket(role, pid));
+socket_handle_t socket_tcp_create(uint8_t role, uint32_t pid, const SocketExtraOptions* extra) {
+    return reinterpret_cast<socket_handle_t>(new TCPSocket(role, pid, extra));
 }
 
 int32_t socket_bind_tcp_ex(socket_handle_t sh, const SockBindSpec* spec, uint16_t port) {

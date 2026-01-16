@@ -32,7 +32,7 @@ void page_alloc_enable_verbose(){
         }\
     })
 
-int count_pages(uint64_t i1,uint64_t i2){
+uint64_t count_pages(uint64_t i1,uint64_t i2){
     return (i1/i2) + (i1 % i2 > 0);
 }
 
@@ -187,7 +187,9 @@ void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, 
 }
 
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full){
-    return PHYS_TO_VIRT_P(palloc_inner(size, level, attributes, full, true));
+    void* phys = palloc_inner(size, level, attributes, full, true);
+    if(!phys) return 0;
+    return PHYS_TO_VIRT_P(phys);
 }
 
 bool page_used(uintptr_t ptr){
@@ -230,7 +232,14 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
     kprintfv("[in_page_alloc] Requested size: %x", size);
 
     mem_page *info = (mem_page*)PHYS_TO_VIRT_P(page);
+    if (!info->next_free_mem_ptr){
+        uintptr_t page_phys = (uintptr_t)page;
+        if ((page_phys & HIGH_VA) == HIGH_VA) page_phys = VIRT_TO_PHYS(page_phys);
+        setup_page(page_phys, info->attributes);
 
+        info = (mem_page*)PHYS_TO_VIRT_P((void*)page_phys);
+    }
+    
     if (size >= PAGE_SIZE){
         void* ptr = palloc(size, level, info->attributes, true);
         page_index *index = info->page_alloc;
@@ -265,7 +274,8 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
             kprintfv("[in_page_alloc] Reusing free block at %x",(uintptr_t)*curr);
 
             uint64_t result = (uint64_t)cblock;
-            *curr = VIRT_TO_PHYS_P(cblock->next);
+            //*curr = VIRT_TO_PHYS_P(cblock->next);
+            *curr = cblock->next;
             memset((void*)PHYS_TO_VIRT(result), 0, size);
             info->size += size;
             if (page_va){
@@ -318,18 +328,22 @@ void* kalloc(void *page, size_t size, uint16_t alignment, uint8_t level){
 }
 
 void kfree(void* ptr, size_t size) {
+    if(!ptr || size == 0) return;
     kprintfv("[page_alloc_free] Freeing block at %x size %x",(uintptr_t)ptr, size);
+
+    if(size & 0xF) size = (size + 15) & ~0xFULL;
 
     memset32((void*)ptr,0xDEADBEEF,size);
 
-    mem_page *page = (mem_page *)(((uintptr_t)ptr) & ~0xFFF);
+    mem_page *page = (mem_page *)(((uintptr_t)ptr) & ~0xFFFULL);
+    uintptr_t phys_page = mmu_translate((uintptr_t)page);
+    uintptr_t off = (uintptr_t)ptr & 0xFFFULL;
+    uintptr_t block_phys = phys_page | off;
 
-    uintptr_t phys_page = PHYS_TO_VIRT(mmu_translate((uintptr_t)page));
-
-    FreeBlock* block = (FreeBlock*)((uintptr_t)phys_page | ((uintptr_t)ptr & 0xFFF));
+    FreeBlock* block = (FreeBlock*)PHYS_TO_VIRT(block_phys);
     block->size = size;
     block->next = page->free_list;
-    page->free_list = block;
+    page->free_list = (FreeBlock*)block_phys;
     page->size -= size;
 }
 

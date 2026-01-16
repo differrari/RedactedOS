@@ -133,9 +133,9 @@ uint64_t syscall_get_time(process_t *ctx){
 uint64_t syscall_socket_create(process_t *ctx){
     Socket_Role role = (Socket_Role)ctx->PROC_X0;
     protocol_t protocol = (protocol_t)ctx->PROC_X1;
-    SocketHandle *out_handle = (SocketHandle*)ctx->PROC_X2;
-
-    return create_socket(role, protocol, ctx->id, out_handle);
+    const SocketExtraOptions* extra = (const SocketExtraOptions*)ctx->PROC_X2;
+    SocketHandle *out_handle = (SocketHandle*)ctx->PROC_X3;
+    return create_socket(role, protocol, extra, ctx->id, out_handle);
 }
 
 uint64_t syscall_socket_bind(process_t *ctx){

@@ -10,7 +10,7 @@ extern "C" {
 
 typedef void* socket_handle_t;
 
-socket_handle_t socket_tcp_create(uint8_t role, uint32_t pid);
+socket_handle_t socket_tcp_create(uint8_t role, uint32_t pid, const SocketExtraOptions* extra);
 int32_t socket_bind_tcp_ex(socket_handle_t sh, const SockBindSpec* spec, uint16_t port);
 int32_t socket_listen_tcp(socket_handle_t sh, int32_t backlog);
 socket_handle_t socket_accept_tcp(socket_handle_t sh);

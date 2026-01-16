@@ -78,6 +78,33 @@ static inline double floor(double val){
     return (uint64_t)val;
 }
 
+static inline int64_t abs_i64(int64_t v){
+    return v < 0 ? -v : v;
+}
+
+static inline int64_t clamp_i64(int64_t v, int64_t lo, int64_t hi){
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+static uint64_t sqrt_u64(uint64_t x){
+    uint64_t op = x;
+    uint64_t res = 0;
+    uint64_t one = 1ULL << 62;
+    while (one > op) one >>= 2;
+    while (one != 0) {
+        if (op >= res + one) {
+            op -= res + one;
+            res = (res >> 1) + one;
+        } else {
+            res >>= 1;
+        }
+        one >>= 2;
+    }
+    return res;
+}
+
 #ifdef __cplusplus
 }
 #endif

@@ -39,6 +39,7 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     AUDIO_BACKEND="coreaudio"
     GL="off"
 elif [ "$OS_TYPE" = "Linux" ]; then
+    fuser -k -KILL ./disk.img
     NETDEV="-netdev user,id=net0"
     PRIVILEGE=""
     DISPLAY_MODE="sdl"
@@ -55,6 +56,7 @@ if [ -d /sys/class/net/tap0 ] && [ -d /sys/class/net/br0 ]; then
     #tap bridge
     NETDEV="-netdev tap,id=net0,ifname=tap0,script=no,downscript=no,vnet_hdr=off"
     PRIVILEGE=""
+    sudo lsof /dev/net/tun >/dev/null 2>&1 && sudo fuser -k /dev/net/tun
 fi
 
 NETDRIV="-device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56,speed=10000,duplex=full"

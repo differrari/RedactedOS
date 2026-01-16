@@ -1,5 +1,6 @@
 #include "bin_mod.h"
 #include "ping.h"
+#include "shutdown.h"
 #include "tracert.h"
 #include "monitor_processes.h"
 #include "kernel_processes/kprocess_loader.h"
@@ -22,6 +23,7 @@ typedef struct open_bin_ref {
 
 open_bin_ref available_cmds[] = {
     { "ping", run_ping },
+    { "shutdown", run_shutdown },
     { "tracert", run_tracert },
     { "monitor", monitor_procs },
 };

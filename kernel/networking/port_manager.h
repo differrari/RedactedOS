@@ -13,7 +13,7 @@ extern "C" {
 
 #define PROTO_COUNT 2
 
-typedef void (*port_recv_handler_t)(
+typedef uint32_t (*port_recv_handler_t)(
     uint8_t ifindex,
     ip_version_t ipver,
     const void* src_ip_addr,
@@ -21,7 +21,8 @@ typedef void (*port_recv_handler_t)(
     uintptr_t frame_ptr,
     uint32_t frame_len,
     uint16_t src_port,
-    uint16_t dst_port);
+    uint16_t dst_port
+);
 
 typedef struct {
     uint16_t pid;

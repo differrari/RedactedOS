@@ -1164,7 +1164,7 @@ string string_from_const(const char *lit)
 {
     uint32_t len = strlen(lit);
     char* nlit = malloc(len+1);
-    strncpy(nlit, lit, len);
+    strncpy(nlit, lit, len+1);
     return (string){ nlit, len, len + 1};
 }
 
@@ -1233,13 +1233,38 @@ bool parse_uint32_dec(const char *s, uint32_t *out) {
     return true;
 }
 
+
+char* strcasestr(const char* haystack, const char* needle) {
+    if (!haystack) return 0;
+    if (!needle) return (char*)haystack;
+    if (!*needle) return (char*)haystack;
+
+    for (const char* h = haystack; *h; h++) {
+        const char* hp = h;
+        const char* np = needle;
+
+        while (*hp && *np) {
+            char a = tolower(*hp);
+            char b = tolower(*np);
+            if (a != b) break;
+            hp++;
+            np++;
+        }
+
+        if (!*np) return (char*)h;
+    }
+
+    return 0;
+}
+
 void strcat_buf(const char *a, const char *b, char *dest){
     while (*a) *dest++ = *a++;
     while (*b) *dest++ = *b++;
+    *dest = 0;
 }
 
 char* strcat_new(const char *a, const char *b){
-    char* dest = (char*)malloc(strlen(a) + strlen(b));
+    char* dest = (char*)malloc(strlen(a) + strlen(b) + 1);
     strcat_buf(a,b,dest);
     return dest;
 }

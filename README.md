@@ -77,8 +77,21 @@ The Raspberry Pi emulation has the following limitations:
 
 ## Networking
 
-The system provides medium level networking support. At startup, it scans for available network cards, loads the matching driver if present and creates a logical L2 interface for each device; a loopback interface is also added for both IPv4 and IPv6, though the current loopback implementation is partial and rejects all localhost packets. IPv4 networking is fully implemented, while IPv6 support is limited to interface structures and it cannot perform real communication.
-Once interfaces and dispatcher are initialized, the system starts ARP, DHCP, DNS and SNTP processes. At the moment, SNTP sets the unix time and the time zone is configured manually since DHCP options 100 and 101 are not always included.
-The stack supports UDP and TCP sockets, and an HTTP socket is implemented on top of TCP. ICMP is also supported with the system able to respond to ping requests. DNS resolution can be called directly by applications and is also used by sockets.
+The system provides medium level networking support. At startup, it scans for available network cards, loads the matching driver if present and creates a logical L2 interface for each device; a loopback interface is also added for both IPv4 and IPv6.
+
+The stack follows a layered design. At link level it handles basic neighbor resolution (ARP for IPv4 and NDP for IPv6).
+
+on top of that the stack provides full IPv4 support and a solid IPv6 implementation. Both protocols include routing support and the related control via ICMP and ICMPv6. IPv6 is already usable in practice and covers the core features needed for normal operation; some more advanced pieces are missing (such as full SLAAC support, router preference handling, complete set of extension header features, ULA)
+
+Multicast is supported and traffic is filtered at the NIC level to avoid unnecessary delivery and group membership; announcements are made through IGMP for Ipv4 and MLD for IPv6 keeping multicast use clean and controlled
+
+For address config the system provides small APIs based on DHCP for IPv4 and DHCPv6 stateful, stateless and SLAAC for IPv6, allowing interfaces to be configured automatically without special handling in applications.
+
+For name resolution a DNS resolver is available, backed by an internal cache to reduce latency and unnecessary network interrupts. also service discovery on the local network is supported in a lightweight form via DNS SD/mDNS responders and SSDP utilities(currently disabled).
+
+time sync is provided through an NTP based service. The current implementation is not fully standards compliant but it is designed to be as accurate as possible for the time being, focusing on correct offset calculation and stable clock adjustments rather than full protocol coverage. SNTP is also present for compatibility, but it is considered deprecated and kept for legacy.
+
+apps can interact with the network through a socket-oriented interface. UDP and TCP sockets are supported and a small HTTP layer is available both as a client and server
+
 An embedded HTTP server is included and listens on port 80, serving a minimal page. Also discovery mechanism is available: the system probes the local network via UDP broadcast on port 8080, and when a responder replies it connects via HTTP on port 80, though it currently does nothing noteworthy.
 An implementation of the server can be found at the [RedactedOS Firmware Server Repository](https://github.com/differrari/RedactedOS_firmware_server/tree/main)

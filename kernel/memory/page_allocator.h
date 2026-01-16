@@ -35,7 +35,7 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
 void* kalloc(void *page, size_t size, uint16_t alignment, uint8_t level);
 void kfree(void* ptr, size_t size);
 
-int count_pages(uint64_t i1,uint64_t i2);
+uint64_t count_pages(uint64_t i1,uint64_t i2);
 
 void free_sizedptr(sizedptr ptr);
 

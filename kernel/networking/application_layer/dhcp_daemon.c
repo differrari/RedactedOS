@@ -12,6 +12,7 @@
 #include "networking/transport_layer/udp.h"
 
 #include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/trans_utils.h"
 
 #include "types.h"
 #include "networking/interface_manager.h"
@@ -123,7 +124,7 @@ static void ensure_inventory() {
             const uint8_t* m = network_get_mac(st.ifindex);
             if (m) { memcpy(st.mac, m, 6); st.mac_ok = true; }
             st.needs_inform = (v4->mode == IPV4_CFG_STATIC && v4->ip != 0);
-            st.sock = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dhcpd);
+            st.sock = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dhcpd, NULL);
             SockBindSpec spec;
             memset(&spec, 0, sizeof(spec));
             spec.kind = BIND_L3;
@@ -339,24 +340,18 @@ static void dhcp_send_discover_for(dhcp_if_state_t* st) {
     memset(&req, 0, sizeof(req));
     if (st->mac_ok) memcpy(req.mac, st->mac, 6);
     sizedptr pkt = dhcp_build_packet(&req, DHCPDISCOVER, xid, DHCPK_DISCOVER, true);
-    net_l4_endpoint dst;
-    memset(&dst, 0, sizeof(dst));
-    dst.ver = IP_VER4;
     uint32_t bcast = 0xFFFFFFFFu;
-    memcpy(dst.ip, &bcast, 4);
-    dst.port = 67;
+    net_l4_endpoint dst;
+    make_ep(bcast, 67, IP_VER4, &dst);
     socket_sendto_udp_ex(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
 
 static void dhcp_send_request_select_for(dhcp_if_state_t* st, const dhcp_request* base) {
     sizedptr pkt = dhcp_build_packet(base, DHCPREQUEST, st->trans_xid, DHCPK_SELECT, true);
-    net_l4_endpoint dst;
-    memset(&dst, 0, sizeof(dst));
-    dst.ver = IP_VER4;
     uint32_t dip = 0xFFFFFFFFu;
-    memcpy(dst.ip, &dip, 4);
-    dst.port = 67;
+    net_l4_endpoint dst;
+    make_ep(dip, 67, IP_VER4, &dst);
     socket_sendto_udp_ex(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
@@ -374,12 +369,9 @@ static void dhcp_send_renew_for(dhcp_if_state_t* st) {
     rng_init_random(&rng);
     st->trans_xid = rng_next32(&rng);
     sizedptr pkt = dhcp_build_packet(&req, DHCPREQUEST, st->trans_xid, DHCPK_RENEW, st->server_ip_net == 0);
-    net_l4_endpoint dst;
-    memset(&dst, 0, sizeof(dst));
-    dst.ver = IP_VER4;
     uint32_t dip = st->server_ip_net ? st->server_ip_net : 0xFFFFFFFFu;
-    memcpy(dst.ip, &dip, 4);
-    dst.port = 67;
+    net_l4_endpoint dst;
+    make_ep(dip, 67, IP_VER4, &dst);
     socket_sendto_udp_ex(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
@@ -397,12 +389,9 @@ static void dhcp_send_rebind_for(dhcp_if_state_t* st) {
     rng_init_random(&rng);
     st->trans_xid = rng_next32(&rng);
     sizedptr pkt = dhcp_build_packet(&req, DHCPREQUEST, st->trans_xid, DHCPK_REBIND, true);
-    net_l4_endpoint dst;
-    memset(&dst, 0, sizeof(dst));
-    dst.ver = IP_VER4;
     uint32_t dip = 0xFFFFFFFFu;
-    memcpy(dst.ip, &dip, 4);
-    dst.port = 67;
+    net_l4_endpoint dst;
+    make_ep(dip, 67, IP_VER4, &dst);
     socket_sendto_udp_ex(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
@@ -420,12 +409,9 @@ static void dhcp_send_inform_for(dhcp_if_state_t* st) {
     rng_init_random(&rng);
     uint32_t xid = rng_next32(&rng);
     sizedptr pkt = dhcp_build_packet(&req, DHCPINFORM, xid, DHCPK_INFORM, true);
-    net_l4_endpoint dst;
-    memset(&dst, 0, sizeof(dst));
-    dst.ver = IP_VER4;
     uint32_t dip = 0xFFFFFFFFu;
-    memcpy(dst.ip, &dip, 4);
-    dst.port = 67;
+    net_l4_endpoint dst;
+    make_ep(dip, 67, IP_VER4, &dst);
     socket_sendto_udp_ex(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }

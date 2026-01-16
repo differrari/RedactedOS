@@ -2,8 +2,8 @@
 #include "networking/transport_layer/socket.hpp"
 #include "csocket_udp.h"
 
-extern "C" socket_handle_t udp_socket_create(uint8_t role, uint32_t pid) {
-    return reinterpret_cast<socket_handle_t>(new UDPSocket(role, pid));
+extern "C" socket_handle_t udp_socket_create(uint8_t role, uint32_t pid, const SocketExtraOptions* extra) {
+    return reinterpret_cast<socket_handle_t>(new UDPSocket(role, pid, extra));
 }
 
 extern "C" int32_t socket_bind_udp_ex(socket_handle_t sh, const SockBindSpec* spec, uint16_t port) {

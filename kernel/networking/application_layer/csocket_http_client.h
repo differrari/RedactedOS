@@ -8,7 +8,7 @@ extern "C" {
 
 typedef void* http_client_handle_t;
 
-http_client_handle_t http_client_create(uint16_t pid);
+http_client_handle_t http_client_create(uint16_t pid, const SocketExtraOptions* extra);
 void http_client_destroy(http_client_handle_t h);
 
 int32_t http_client_connect_ex(http_client_handle_t h, uint8_t dst_kind, const void *dst, uint16_t port);

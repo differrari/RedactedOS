@@ -63,8 +63,8 @@
 #define MAIR_VALUE ((MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_NOCACHE << (MAIR_IDX_NORMAL * 8)))
 
 #define HIGH_VA 0xFFFF000000000000ULL
-#define VIRT_TO_PHYS(x) (x & ~HIGH_VA)
-#define PHYS_TO_VIRT(x) (x | HIGH_VA)
+#define PHYS_TO_VIRT(x) (((uintptr_t)(x) != 0) ? ((uintptr_t)(x) | HIGH_VA) : 0)
+#define VIRT_TO_PHYS(x) (((uintptr_t)(x) != 0) ? ((uintptr_t)(x) & ~HIGH_VA) : 0)
 
-#define VIRT_TO_PHYS_P(x) ((void*)(((uintptr_t)x) & ~HIGH_VA))
-#define PHYS_TO_VIRT_P(x) ((void*)(((uintptr_t)x) | HIGH_VA))
+#define PHYS_TO_VIRT_P(x) (((uintptr_t)(x) != 0) ? (void*)(((uintptr_t)(x)) | HIGH_VA) : 0)
+#define VIRT_TO_PHYS_P(x) (((uintptr_t)(x) != 0) ? (void*)(((uintptr_t)(x)) & ~HIGH_VA) : 0)

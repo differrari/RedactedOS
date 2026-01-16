@@ -16,11 +16,11 @@ typedef struct __attribute__((packed)) {
 } udp_hdr_t;
 
 size_t create_udp_segment(uintptr_t buf,
-                        const net_l4_endpoint *src,
-                        const net_l4_endpoint *dst,
-                        sizedptr payload);
+                          const net_l4_endpoint *src,
+                          const net_l4_endpoint *dst,
+                          sizedptr payload);
 
-void udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload, const ipv4_tx_opts_t* tx_opts);
+void udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload, const ip_tx_opts_t* tx_opts, uint8_t ttl, uint8_t dontfrag);
 
 void udp_input(ip_version_t ipver,
                const void *src_ip_addr,

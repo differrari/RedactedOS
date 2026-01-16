@@ -263,3 +263,20 @@ void* memmove(void *dest, const void *src, size_t count) {
         return dest;
     }
 }
+
+void* memmem(const void* haystack, size_t haystack_len, const void* needle, size_t needle_len) {
+	if(!haystack || !needle) return 0;
+	if(!needle_len) return (void*)haystack;
+	if(haystack_len < needle_len) return 0;
+
+	const unsigned char* h = (const unsigned char*)haystack;
+	const unsigned char* n = (const unsigned char*)needle;
+
+	size_t last = haystack_len - needle_len;
+	for(size_t i = 0; i <= last; i++) {
+		if(h[i] != n[0]) continue;
+		if(!memcmp(h + i, n, needle_len)) return (void*)(h+i);
+	}
+
+	return 0;
+}
