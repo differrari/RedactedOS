@@ -50,7 +50,7 @@ void hw_shutdown(shutdown_mode mode){
     disable_interrupt();
 
     if (RPI_BOARD != 0){
-        //TODO raspi shutdown isnt testes
+        //TODO raspi shutdown isn't tested
         //(im not fully confident raspi is correct)
         if (mode == SHUTDOWN_REBOOT) rpi_full_reset();
         if (mode == SHUTDOWN_POWEROFF){

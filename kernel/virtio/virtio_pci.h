@@ -14,25 +14,6 @@ extern "C" {
 #define VIRTIO_F_VERSION_1 32
 #define VIRTIO_F_NOTIFICATION_DATA 38
 
-#define VIRTIO_NET_F_CSUM 0
-#define VIRTIO_NET_F_GUEST_CSUM 1
-#define VIRTIO_NET_F_CTRL_GUEST_OFFLOADS 2
-#define VIRTIO_NET_F_MTU 3
-#define VIRTIO_NET_F_MAC 5
-#define VIRTIO_NET_F_GSO 6
-#define VIRTIO_NET_F_GUEST_TSO4 7
-#define VIRTIO_NET_F_GUEST_TSO6 8
-#define VIRTIO_NET_F_GUEST_ECN 9
-#define VIRTIO_NET_F_GUEST_UFO 10
-#define VIRTIO_NET_F_HOST_TSO4 11
-#define VIRTIO_NET_F_HOST_TSO6 12
-#define VIRTIO_NET_F_HOST_ECN 13
-#define VIRTIO_NET_F_HOST_UFO 14
-#define VIRTIO_NET_F_MRG_RXBUF 15
-#define VIRTIO_NET_F_STATUS 16
-#define VIRTIO_NET_F_CTRL_VQ 17
-#define VIRTIO_NET_F_CTRL_RX 18
-
 typedef struct virtio_pci_common_cfg {
     uint32_t device_feature_select;
     uint32_t device_feature;

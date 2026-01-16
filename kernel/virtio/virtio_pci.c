@@ -6,7 +6,7 @@
 #include "async.h"
 #include "sysregs.h"
 
-//TODO implement proper virtqueue handling w/ descriptor allocation, reuse and support for multiple in-lfight requests using used.ring completions
+//TODO implement proper virtqueue handling w/ descriptor allocation, reuse and support for multiple in-flight requests using used.ring completions
 
 #define VIRTIO_STATUS_RESET         0x0
 #define VIRTIO_STATUS_ACKNOWLEDGE   0x1

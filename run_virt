@@ -6,7 +6,6 @@ ARGS=""
 if [ "$1" = "debug" ]; then
   ARGS="-monitor unix:/tmp/qemu-monitor-socket,server,nowait -s -S"
 fi
-fuser -k -KILL ./disk.img
 
 MSI_CAPABILITIES=""
 
@@ -23,8 +22,8 @@ AUDIO_BACKEND="sdl"
 VIRTIO_GPU_VARS=",xres=1920,yres=1080"
 GL="on"
 
-USE_FB=false
-USE_NET=true
+USE_FB=true
+USE_NET=false
 
 if [ "$USE_FB" == true ]; then 
   SELECTED_GPU="ramfb"
@@ -40,6 +39,7 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     AUDIO_BACKEND="coreaudio"
     GL="off"
 elif [ "$OS_TYPE" = "Linux" ]; then
+    fuser -k -KILL ./disk.img
     NETDEV="-netdev user,id=net0"
     PRIVILEGE=""
     DISPLAY_MODE="sdl"

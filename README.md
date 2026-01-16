@@ -79,15 +79,15 @@ The Raspberry Pi emulation has the following limitations:
 
 The system provides medium level networking support. At startup, it scans for available network cards, loads the matching driver if present and creates a logical L2 interface for each device; a loopback interface is also added for both IPv4 and IPv6.
 
-The stack follows a layered design. At link level it handles basic neighbor resolution (ARP for IPv4 and NDP for Ipv6).
+The stack follows a layered design. At link level it handles basic neighbor resolution (ARP for IPv4 and NDP for IPv6).
 
-on top of that the stack provides full IPv4 support and a solid IPv6 implementation. Both protocols include routing support and the related control via ICMP and ICMPv6. IPv6 is already usable in practice and covers the core features needed for normal operaton; some more advanced pieces are missing (such as full SLAAC support, router preference handling, complete set of extension header features, ULA)
+on top of that the stack provides full IPv4 support and a solid IPv6 implementation. Both protocols include routing support and the related control via ICMP and ICMPv6. IPv6 is already usable in practice and covers the core features needed for normal operation; some more advanced pieces are missing (such as full SLAAC support, router preference handling, complete set of extension header features, ULA)
 
 Multicast is supported and traffic is filtered at the NIC level to avoid unnecessary delivery and group membership; announcements are made through IGMP for Ipv4 and MLD for IPv6 keeping multicast use clean and controlled
 
-For address config the system provides small APIs based on DHCP for IPv4 and DHCPv6 statefull, stateless and SLAAC for IPv6, allowing interfaces to be configured automatically without special handling in applications.
+For address config the system provides small APIs based on DHCP for IPv4 and DHCPv6 stateful, stateless and SLAAC for IPv6, allowing interfaces to be configured automatically without special handling in applications.
 
-For name resolution a DNS resolver is available, backed by an internl cache to reduce latency and unnecessary network interrupts. also service discovery on the local network is supported in a lightweight form via DNS SD/mDNS responders and SSDP utilities(currently disabled).
+For name resolution a DNS resolver is available, backed by an internal cache to reduce latency and unnecessary network interrupts. also service discovery on the local network is supported in a lightweight form via DNS SD/mDNS responders and SSDP utilities(currently disabled).
 
 time sync is provided through an NTP based service. The current implementation is not fully standards compliant but it is designed to be as accurate as possible for the time being, focusing on correct offset calculation and stable clock adjustments rather than full protocol coverage. SNTP is also present for compatibility, but it is considered deprecated and kept for legacy.
 

@@ -31,9 +31,9 @@ static inline bool is_alnum(char c) {
     return is_alpha(c) || is_digit(c);
 }
 
-static inline bool str_has_char(const char* s, uint32_t n, char c){
-    for (uint32_t i = 0; i < n; i++) if (s[i] == c) return true;
-    return false;
+static inline int32_t str_has_char(const char* s, uint32_t n, char c){
+    for (uint32_t i = 0; i < n && s[i] != '\0'; i++) if (s[i] == c) return i;
+    return -1;
 }
 
 extern void free_sized(void*,size_t);

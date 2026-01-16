@@ -24,9 +24,9 @@ string http_header_builder(const HTTPHeadersCommon *C, const HTTPHeader *H, uint
 
     if (C->host.length){
         string_append_bytes(&out, "Host: ", 6);
-        bool has_colon = str_has_char(C->host.data, C->host.length, ':');
-        bool has_lb = str_has_char(C->host.data, C->host.length, '[');
-        bool has_rb = str_has_char(C->host.data, C->host.length, ']');
+        bool has_colon = str_has_char(C->host.data, C->host.length, ':') >= 0;
+        bool has_lb = str_has_char(C->host.data, C->host.length, '[') >= 0;
+        bool has_rb = str_has_char(C->host.data, C->host.length, ']') >= 0;
         if (has_colon && !has_lb && !has_rb){
             string_append_bytes(&out, "[", 1);
             string_append_bytes(&out, C->host.data, C->host.length);
