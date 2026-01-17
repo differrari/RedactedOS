@@ -357,7 +357,8 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->sp = proc->stack;
     
     proc->output = PHYS_TO_VIRT((uintptr_t)palloc_inner(PROC_OUT_BUF, MEM_PRIV_USER, MEM_RW, true, false));
-    mmu_map_4kb(kttbr, proc->output, proc->output, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+    for (uintptr_t i = proc->output; i < proc->output + PROC_OUT_BUF; i += GRANULE_4KB)
+        mmu_map_4kb(kttbr, i, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
     memset(PHYS_TO_VIRT_P(proc->output), 0, PAGE_SIZE);
     proc->pc = (uintptr_t)(entry);
     kprintf("User process %s allocated with address at %llx, stack at %llx (%llx), heap at %llx (%llx)",(uintptr_t)name,proc->pc, proc->sp, proc->stack_phys, proc->heap, proc->heap_phys);

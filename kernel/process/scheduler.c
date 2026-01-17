@@ -389,7 +389,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
             memset((void*)pbuf, 0, PROC_OUT_BUF);
         }
 
-        memcpy((void*)(pbuf + fd->cursor), buf, size-1);
+        memcpy((void*)(pbuf + fd->cursor), buf, size ? size-1 : 0);
         *(char*)(pbuf + fd->cursor + size-1) = '\n';
         fd->cursor += size;
 
