@@ -25,6 +25,11 @@ clinkedlist_t *clinkedlist_clone(const clinkedlist_t *list);
 void clinkedlist_push_front(clinkedlist_t *list, void *data);
 void *clinkedlist_pop_front(clinkedlist_t *list);
 clinkedlist_node_t *clinkedlist_insert_after(clinkedlist_t *list, clinkedlist_node_t *node, void *data);
+
+void clinkedlist_push(clinkedlist_t *list, void *data){
+    clinkedlist_insert_after(list, list->tail, data);
+}
+
 void *clinkedlist_remove(clinkedlist_t *list, clinkedlist_node_t *node);
 void clinkedlist_update(clinkedlist_t *list, clinkedlist_node_t *node, void *new_data);
 uint64_t clinkedlist_length(const clinkedlist_t *list);
