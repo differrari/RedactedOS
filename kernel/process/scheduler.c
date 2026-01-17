@@ -163,7 +163,7 @@ void init_main_process(){
     proc->stack_size = 0x10000;
     proc->stack = (uintptr_t)palloc(proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
     proc->sp = ksp;
-    proc->output = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, true);
+    proc->output = (uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
     proc->priority = PROC_PRIORITY_LOW;
     name_process(proc, "kernel");
     proc_count++;

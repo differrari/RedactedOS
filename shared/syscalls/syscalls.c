@@ -14,7 +14,7 @@ int print(const char *fmt, ...){
     printl(log_buf);
 #ifndef CROSS
     file fd2 = { .id = 2 };
-    writef(&fd2, log_buf, sizeof(log_buf));
+    writef(&fd2, log_buf, strlen(log_buf));
 #endif
     return 0;
 }
@@ -29,7 +29,7 @@ int printf(const char *fmt, ...){
     printl(li);
 #ifndef CROSS
     file fd2 = { .id = 2 };
-    writef(&fd2, li, sizeof(li));
+    writef(&fd2, li, strlen(li));
 #endif
     return 0;
 }

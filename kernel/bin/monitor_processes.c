@@ -42,11 +42,11 @@ void print_process_info(){
     for (int i = 0; i < MAX_PROCS; i++){
         process_t *proc = &processes[i];
         if (proc->id != 0 && proc->state != STOPPED){
-            printf("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uintptr_t)parse_proc_state(proc->state));
-            printf("Stack: %x (%x). SP: %x",proc->stack, proc->stack_size, proc->sp);
-            printf("Heap: %x (%x)",proc->heap, calc_heap(proc->heap_phys));
-            printf("Flags: %x", proc->spsr);
-            printf("PC: %x",proc->pc);
+            print("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uintptr_t)parse_proc_state(proc->state));
+            print("Stack: %x (%x). SP: %x",proc->stack, proc->stack_size, proc->sp);
+            print("Heap: %x (%x)",proc->heap, calc_heap(proc->heap_phys));
+            print("Flags: %x", proc->spsr);
+            print("PC: %x",proc->pc);
         }
     }
 }
@@ -158,7 +158,7 @@ int monitor_procs(int argc, char* argv[]){
             print_process_info();
         kbd_event ev;
         if (read_event(&ev) && ev.key == KEY_ESC) return 0;
-        msleep(1000);
+        msleep(5000);
     }
     return 1;
 }

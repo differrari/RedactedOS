@@ -84,7 +84,7 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
         }
     }
 
-    proc->output = PHYS_TO_VIRT((uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, true));
+    proc->output = PHYS_TO_VIRT((uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true));
 
     enable_interrupt();
     
