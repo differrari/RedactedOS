@@ -26,7 +26,7 @@ void clinkedlist_push_front(clinkedlist_t *list, void *data);
 void *clinkedlist_pop_front(clinkedlist_t *list);
 clinkedlist_node_t *clinkedlist_insert_after(clinkedlist_t *list, clinkedlist_node_t *node, void *data);
 
-void clinkedlist_push(clinkedlist_t *list, void *data){
+static inline void clinkedlist_push(clinkedlist_t *list, void *data){
     clinkedlist_insert_after(list, list->tail, data);
 }
 
