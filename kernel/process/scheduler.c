@@ -307,15 +307,22 @@ size_t list_processes(const char *path, void *buf, size_t size, file_offset *off
 }
 
 FS_RESULT open_proc(const char *path, file *descriptor){
-    const char *fullpath = path;
+    uint64_t fid = reserve_fd_gid(path);
+    module_file *mfile = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(uint64_t));
+    if (mfile){
+        descriptor->id = mfile->fid;
+        descriptor->size = mfile->file_size;
+        mfile->references++;
+        return FS_RESULT_SUCCESS;
+    }
     const char *pid_s = seek_to(path, '/');
     path = seek_to(pid_s, '/');
     uint64_t pid = parse_int_u64(pid_s, path - pid_s);
     process_t *proc = get_proc_by_pid(pid);
-    descriptor->id = reserve_fd_gid(fullpath);
+    descriptor->id = fid;
     descriptor->cursor = 0;
     module_file *file = kalloc(proc_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
-    file->fid = descriptor->id;
+    file->fid = fid;
     if (strcmp_case(path, "out",true) == 0){
         descriptor->size = proc->output_size;
         file->buffer = proc->output;
