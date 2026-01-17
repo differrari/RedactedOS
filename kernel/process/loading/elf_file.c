@@ -134,6 +134,24 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
 
     process_t *proc = create_process(name, bundle, data, header->program_header_num_entries, header->program_entry_offset);
 
+    proc->PROC_X0 = 1;
+    
+    string s = string_format("%s/%s.elf",bundle,name);
+    
+    char *nargvals = (char*)(PHYS_TO_VIRT_P(proc->stack_phys)-s.length-1-sizeof(uintptr_t));
+    
+    memcpy(nargvals, s.data, s.length);
+    
+    *(char*)(nargvals+s.length) = 0;
+    
+    *(uintptr_t*)PHYS_TO_VIRT_P(proc->stack_phys-sizeof(uintptr_t)) = (uintptr_t)nargvals;
+    
+    proc->PROC_X1 = proc->stack_phys-sizeof(uintptr_t);
+    
+    proc->sp -= s.length+1+sizeof(uintptr_t);
+    
+    string_free(s);
+    
     get_elf_debug_info(proc, file, filesize);
 
     return proc;

@@ -96,7 +96,7 @@ int audio_example(){
     return 0;
 }
 
-int main(){
+int main(int argc, char* argv[]){
     img_example();
     return 0;
 }
