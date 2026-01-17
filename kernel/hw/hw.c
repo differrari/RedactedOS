@@ -87,7 +87,6 @@ void detect_hardware(){
         MSI_OFFSET = 0;
         LOWEST_ADDR = MMIO_BASE;
         PM_BASE = MMIO_BASE + 0x100000u;
-        if (RPI_BOARD != 5) reset_gpio();
     }
 }
 
