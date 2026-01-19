@@ -89,7 +89,7 @@ int audio_example(){
     if (wav_load_as_int16("/resources/scale.wav", audio)){
         mixin[0] = audio_play_sync(&audio[0], 0, AUDIO_ONESHOT, AUDIO_LEVEL_MAX/4, PAN_CENTRE);
         return 0;
-    }else{
+    } else {
         printf("Could not load wav");
         return -1;
     }
