@@ -16,7 +16,7 @@ all: kshared modules kernel shared user utils bins
 	./createfs
 
 kshared:
-	$(MAKE) -C shared SH_FLAGS=-DKERNEL BUILD_DIR=./kbuild TARGET=klibshared.a
+	$(MAKE) -C shared kern
 	
 modules: kshared
 	$(MAKE) -C modules XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU) TEST=$(TEST) DRIVER_TARGET=$(MODE)
@@ -51,9 +51,6 @@ clean:
 	$(RM) -r $(FS_DIRS)
 	@echo "removing images"
 	$(RM) kernel.img kernel.elf disk.img dump
-
-cross:
-	$(MAKE) -C shared ARCH= SH_FLAGS=-DCROSS BUILD_DIR=./cbuild TARGET=clibshared.a
 
 raspi:
 	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true MODE=raspi all
