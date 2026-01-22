@@ -82,6 +82,7 @@ void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, 
         end = count_pages(get_user_ram_end(),PAGE_SIZE);
         mem_bitmap = (uintptr_t*)(start * PAGE_SIZE);
         start += count_pages(65536*8,PAGE_SIZE);
+        memset(mem_bitmap, 0, 65536*8);
         heap_end = start*PAGE_SIZE;
     }
     uint64_t page_count = count_pages(size,PAGE_SIZE);
