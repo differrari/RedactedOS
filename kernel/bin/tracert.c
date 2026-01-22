@@ -43,7 +43,7 @@ static bool parse_args(int argc, char *argv[], tr_opts_t *o) {
     o->src_set = false;
     o->host = NULL;
 
-    for (int i = 0; i < argc; i++) {
+    for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         if (a && a[0] == '-') {
             if (strcmp_case(a, "-4",true) == 0) {
