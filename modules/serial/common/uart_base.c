@@ -11,6 +11,7 @@
 #define UART0_FBRD (UART0_BASE + 0x28)
 #define UART0_LCRH (UART0_BASE + 0x2C)
 #define UART0_CR   (UART0_BASE + 0x30)
+#define UART0_IMSC (UART0_BASE + 0x38)
 
 #define UART_FIFO 4
 #define UART_WLEN 5
@@ -42,6 +43,8 @@ void enable_uart() {
     write32(UART0_LCRH, (1 << UART_FIFO) | (UART_8B_WLEN << UART_WLEN));
 
     write32(UART0_CR, (1 << UART_EN) | (1 << UART_TXE) | (1 << UART_RXE));
+    
+    write32(UART0_IMSC, 1 << 4);
 }
 
 void uart_raw_putc(const char c) {
