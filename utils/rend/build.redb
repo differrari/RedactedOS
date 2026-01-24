@@ -1,0 +1,17 @@
+@includeC("redbuild.h")
+@includeC("syscalls/syscalls.h")
+
+gpu {
+    new_module("gpu");
+    set_name("rend");
+    
+    set_package_type(package_red);
+    
+    source("main.c");
+    
+    compile();
+}
+
+main {
+    gpu();
+}
