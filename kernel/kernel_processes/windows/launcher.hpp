@@ -3,7 +3,7 @@
 #include "types.h"
 #include "graph/graphics.h"
 #include "process/process.h"
-#include "std/std.h"
+#include "data/struct/array.hpp"
 #include "process/loading/package_info.h"
 
 struct LaunchEntry {

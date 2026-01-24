@@ -10,6 +10,7 @@
 #include "graph/tres.h"
 #include "process/scheduler.h"
 #include "exceptions/irq.h"
+#include "math/math.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3

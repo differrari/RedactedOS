@@ -6,7 +6,7 @@
 #include "process/scheduler.h"
 #include "math/rng.h"
 
-#include "data_struct/linked_list.h"
+#include "data/struct/linked_list.h"
 
 #include "networking/interface_manager.h"
 #include "networking/network.h"

@@ -2,7 +2,7 @@
 
 #include "fsdriver.hpp"
 #include "virtio/virtio_pci.h"
-#include "data_struct/hashmap.h"
+#include "data/struct/hashmap.h"
 
 typedef struct p9_packet_header {
     uint32_t size;

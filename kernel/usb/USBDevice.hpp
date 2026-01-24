@@ -3,6 +3,7 @@
 #include "usb_types.h"
 #include "std/std.h"
 #include "console/kio.h"
+#include "data/struct/indexmap.hpp"
 
 class USBDriver;
 

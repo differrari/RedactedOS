@@ -3,7 +3,7 @@
 #include "csocket_udp.h"
 #include "memory/page_allocator.h"
 #include "console/kio.h"
-#include "data_struct/hashmap.h"
+#include "data/struct/hashmap.h"
 
 uint16_t socket_ids;
 
