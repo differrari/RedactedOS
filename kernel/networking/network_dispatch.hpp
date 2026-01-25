@@ -5,7 +5,7 @@
 #include "net/network_types.h"
 #include "networking/internet_layer/ipv4.h"
 #include "interface_manager.h"
-#include "data/struct/data_struct.hpp"
+#include "data/struct/ring_buffer.hpp"
 
 class NetworkDispatch {
 public:
