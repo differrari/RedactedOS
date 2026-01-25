@@ -1,5 +1,5 @@
 #include "syscalls/syscalls.h"
-#include "../kernel/tests/test.h"
+#include "test.h"
 
 bool test_wrong_file_descriptor(){
     file descriptor = {};
