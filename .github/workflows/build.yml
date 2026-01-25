@@ -46,6 +46,7 @@ jobs:
           mkdir -pv fs/redos/user
           export CC="$RUNNER_TEMP/arm-toolchain/bin/aarch64-none-elf-gcc"
           export CXX="$RUNNER_TEMP/arm-toolchain/bin/aarch64-none-elf-g++"
+          git submodule update --remote --merge
           make all
 
       - name: Upload artifacts
