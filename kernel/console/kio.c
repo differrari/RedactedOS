@@ -5,7 +5,7 @@
 #include "memory/page_allocator.h"
 #include "std/memory.h"
 #include "math/math.h"
-#include "data_struct/ring_buffer.h"
+#include "data/struct/ring_buffer.h"
 
 static bool use_visual = false;
 

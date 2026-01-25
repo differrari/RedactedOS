@@ -1,8 +1,8 @@
 #include "pipe.h"
 #include "filesystem.h"
 #include "memory/page_allocator.h"
-#include "data_struct/hashmap.h"
-#include "data_struct/linked_list.h"
+#include "data/struct/hashmap.h"
+#include "data/struct/linked_list.h"
 #include "process/scheduler.h"
 
 static void *pipe_page;

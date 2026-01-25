@@ -7,7 +7,7 @@
 #include "exceptions/timer.h"
 #include "console/kconsole/kconsole.h"
 #include "std/string.h"
-#include "data_struct/hashmap.h"
+#include "data/struct/hashmap.h"
 #include "std/memory.h"
 #include "math/math.h"
 #include "memory/mmu.h"

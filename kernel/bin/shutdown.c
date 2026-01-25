@@ -27,7 +27,7 @@ int run_shutdown(int argc, char* argv[]){
 
     int mode = -1;
 
-    for (int i = 0; i < argc; ++i){
+    for (int i = 1; i < argc; ++i){
         const char *a = argv[i];
         if (!a || a[0] == 0) continue;
 
