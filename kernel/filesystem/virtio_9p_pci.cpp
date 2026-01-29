@@ -74,10 +74,10 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         mfile = (module_file*)kalloc(np_dev.memory_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
         if (chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), mfile) < 0) return FS_RESULT_DRIVER_ERROR;
     } else {
-        kfree((void*)mfile->buffer, mfile->file_size);
+        kfree((void*)mfile->buf, mfile->file_size);
     }
     mfile->file_size = size;
-    mfile->buffer = (uintptr_t)file;
+    mfile->buf = (uintptr_t)file;
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
     mfile->references++;
@@ -89,7 +89,7 @@ size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
     if (!mfile) return 0;
     if (descriptor->cursor > mfile->file_size) return 0;
     if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
-    memcpy(buf, (void*)(mfile->buffer + descriptor->cursor), size);
+    memcpy(buf, (void*)(mfile->buf + descriptor->cursor), size);
     return size;
 }
 
@@ -99,7 +99,7 @@ void Virtio9PDriver::close_file(file* descriptor){
     mfile->references--;
     if (mfile->references == 0){
         chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
-        kfree((void*)mfile->buffer, mfile->file_size);
+        kfree((void*)mfile->buf, mfile->file_size);
     }
 }
 

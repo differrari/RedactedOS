@@ -325,12 +325,20 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     file->fid = fid;
     if (strcmp_case(path, "out",true) == 0){
         descriptor->size = proc->output_size;
-        file->buffer = proc->output;
+        file->file_buffer = (buffer){
+            .buffer = (char*)proc->output,
+            .limit = PROC_OUT_BUF,
+            .options = buffer_circular
+        };
     } else if (strcmp_case(path, "state",true) == 0){
         descriptor->size = sizeof(int);
-        file->buffer = PHYS_TO_VIRT((uintptr_t)&proc->state);
-        file->ignore_cursor = true;
         file->read_only = true;
+        file->file_buffer = (buffer){
+            .buffer = (char*)PHYS_TO_VIRT((uintptr_t)&proc->state),
+            .limit = sizeof(int),
+            .options = buffer_static,
+            .buffer_size = sizeof(int),
+        };
     } else return FS_RESULT_NOTFOUND;
     file->file_size = descriptor->size;
     return chashmap_put(proc_opened_files, &descriptor->id, sizeof(uint64_t), file) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
@@ -344,9 +352,9 @@ int find_open_proc_file(void *node, void* key){
 }
 
 int find_open_proc_file_buffer(void *node, void* key){
-    uint64_t *buf = (uint64_t*)key;
+    uintptr_t *buf = (uintptr_t*)key;
     module_file *file = (module_file*)node;
-    if (file->buffer == *buf) return 0;
+    if ((uintptr_t)file->file_buffer.buffer == *buf) return 0;
     return -1;
 }
 
@@ -357,10 +365,7 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
     }
     module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
     if (!file) return 0;
-    uint64_t cursor = file->ignore_cursor ? 0 : fd->cursor;
-    size = min(size, file->file_size - cursor);
-    memcpy(buf, (void*)(file->buffer + cursor), size);
-    return size;
+    return buffer_read(&file->file_buffer, buf, size, offset);
 }
 
 size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
@@ -373,27 +378,19 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
         kprint("No files open");
         return 0;
     }
-    uintptr_t pbuf;
     module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
     if (file->read_only) return 0;
-    bool is_output = file->buffer == get_current_proc()->output;
-    pbuf = file->buffer;
+    bool is_output = (uintptr_t)file->file_buffer.buffer == get_current_proc()->output;
 
+    size = min(size+1, file->file_buffer.limit);
     if (is_output){//TODO: probably better to make these files be held by this module, and created only when needed
-        size = min(size+1, PROC_OUT_BUF);
-        
         fd->cursor = file->file_size;
-        
-        if (fd->cursor + size >= PROC_OUT_BUF){
-            fd->cursor = 0;
-            memset((void*)pbuf, 0, PROC_OUT_BUF);
-        }
-
-        memcpy((void*)(pbuf + fd->cursor), buf, size ? size-1 : 0);
-        *(char*)(pbuf + fd->cursor + size-1) = '\n';
-        fd->cursor += size;
-
+    
+        fd->cursor += buffer_write_lim(&file->file_buffer, buf, size);
+        fd->cursor += buffer_write(&file->file_buffer, "\n");
+    
         file->file_size += size;
+    
         get_current_proc()->output_size += size;
     }
     return size;
