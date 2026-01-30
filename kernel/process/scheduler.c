@@ -365,7 +365,9 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
     }
     module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
     if (!file) return 0;
-    return buffer_read(&file->file_buffer, buf, size, offset);
+    size_t s = buffer_read(&file->file_buffer, buf, size, offset);
+    if (s && !(file->file_buffer.options & buffer_static)) fd->cursor += s; 
+    return s;
 }
 
 size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
