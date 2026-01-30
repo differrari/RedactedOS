@@ -261,7 +261,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     descriptor->size = buf_ptr.size;
     mfile = (module_file*)kalloc(fs_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
     mfile->file_size = buf_ptr.size;
-    mfile->buffer = (uintptr_t)buf;
+    mfile->buf = (uintptr_t)buf;
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
     mfile->references = 1;
@@ -273,7 +273,7 @@ size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
     if (!mfile) return 0;
     if (descriptor->cursor > mfile->file_size) return 0;
     if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
-    memcpy(buf, (void*)(mfile->buffer + descriptor->cursor), size);
+    memcpy(buf, (void*)(mfile->buf + descriptor->cursor), size);
     return size;
 }
 
@@ -283,7 +283,7 @@ void FAT32FS::close_file(file* descriptor){
     mfile->references--;
     if (mfile->references == 0){
         chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
-        kfree((void*)mfile->buffer, mfile->file_size);
+        kfree((void*)mfile->buf, mfile->file_size);
     }
 }
 
