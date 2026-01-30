@@ -178,7 +178,7 @@ size_t read_file(file *descriptor, char* buf, size_t size){
         .size = descriptor->size,
         .cursor = descriptor->cursor,
     };
-    size_t amount_read = ofile->mod->read(&gfd, buf, size, 0);
+    size_t amount_read = ofile->mod->read(&gfd, buf, size, descriptor->cursor);
     descriptor->cursor += amount_read;
     descriptor->size = gfd.size;
     return amount_read;

@@ -6,7 +6,6 @@
 #include "exceptions/exception_handler.h"
 #include "exceptions/timer.h"
 #include "console/kconsole/kconsole.h"
-#include "std/string.h"
 #include "data/struct/hashmap.h"
 #include "std/memory.h"
 #include "math/math.h"
@@ -366,7 +365,6 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
     module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
     if (!file) return 0;
     size_t s = buffer_read(&file->file_buffer, buf, size, offset);
-    if (s && !(file->file_buffer.options & buffer_static)) fd->cursor += s; 
     return s;
 }
 

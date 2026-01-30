@@ -189,8 +189,9 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
         readf(&state_fd, (char*)&state, sizeof(int));
     } while (state);
 
-    size_t n = readf(&out_fd, buf, amount);
-    if (n){
+    for (;;) {
+        size_t n = readf(&out_fd, buf, amount);
+        if (!n) break;
         buf[n] = 0;
         put_string(buf);
     }
