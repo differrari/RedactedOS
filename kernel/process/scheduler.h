@@ -32,6 +32,8 @@ void name_process(process_t *proc, const char *name);
 void sleep_process(uint64_t msec);
 void wake_processes();
 
+bool load_process_module(process_t *p, system_module *m);
+
 #ifdef __cplusplus
 extern "C" {
 #endif

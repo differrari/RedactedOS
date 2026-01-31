@@ -21,7 +21,7 @@ void handle_exception(const char* type, uint64_t info) {
 
     disable_visual();//Disable visual kprintf, since it has additional memory accesses that could be faulting
 
-    string s = string_format("%s \r\nESR_EL1: %x\r\nELR_EL1: %x\r\nFAR_EL1: %x",(uintptr_t)type,esr,elr,far);
+    string s = string_format("%s \r\nESR_EL1: %llx\r\nELR_EL1: %llx\r\nFAR_EL1: %llx",(uintptr_t)type,esr,elr,far);
     panic(s.data, info);
 }
 

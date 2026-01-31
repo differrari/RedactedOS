@@ -26,7 +26,7 @@
 #include "loading/dwarf.h"
 #include "sysregs.h"
 #include "ui/graphic_types.h"
-
+#include "dev/module_loader.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -241,6 +241,14 @@ uint64_t syscall_dir_list(process_t *ctx){
     return 0;
 }
 
+// uint64_t syscall_load_fsmod(process_t *ctx){
+//     system_module *mod = (system_module*)ctx->PROC_X0;
+//     return load_process_module(ctx,mod);
+// }
+
+// uint64_t syscall_unload_fsmod(process_t *ctx){
+//     return unload_module(&ctx->exposed_fs);
+// }
 
 syscall_entry syscalls[] = {
     [MALLOC_CODE] = syscall_malloc,
@@ -273,6 +281,8 @@ syscall_entry syscalls[] = {
     [FILE_SIMPLE_READ_CODE] = syscall_sreadf,
     [FILE_SIMPLE_WRITE_CODE] = syscall_swritef,
     [DIR_LIST_CODE] = syscall_dir_list,
+    // [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
+    // [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
 };
 
 bool decode_crash_address_with_info(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){

@@ -8,12 +8,9 @@ clinkedlist_t* modules;
 
 bool load_module(system_module *module){
     if (!modules) modules = clinkedlist_create();
+    if (!module->init) return false;
     clinkedlist_push_front(modules, PHYS_TO_VIRT_P(module));
     return module->init();
-}
-
-bool unload_module(system_module *module){
-    return false;
 }
 
 int fs_search(void *node, void *key){
@@ -25,6 +22,16 @@ int fs_search(void *node, void *key){
         return 0;
     }
     return -1;
+}
+
+bool unload_module(system_module *module){
+    if (!modules) return false;
+    if (!module->init) return false;
+    if (module->fini) module->fini();
+    const char *name = module->mount;
+    clinkedlist_node_t *node = clinkedlist_find(modules, (void*)&name, fs_search);
+    clinkedlist_remove(modules, node);
+    return false;
 }
 
 system_module* get_module(const char **full_path){

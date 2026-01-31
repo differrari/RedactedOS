@@ -13,6 +13,7 @@
 #include "process/syscall.h"
 #include "sysregs.h"
 #include "filesystem/filesystem.h"
+#include "dev/module_loader.h"
 
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
@@ -150,6 +151,9 @@ void reset_process(process_t *proc){
         if (pttbr == proc->ttbr) panic("Trying to free process while mapped", (uintptr_t)proc->ttbr);
         mmu_free_ttbr(proc->ttbr);
     }
+    if (proc->exposed_fs.init){
+        unload_module(&proc->exposed_fs);
+    }
 }
 
 void init_main_process(){
@@ -270,6 +274,19 @@ void wake_processes(){
         virtual_timer_reset(next - now);
         virtual_timer_enable();
     }
+}
+
+bool load_process_module(process_t *p, system_module *m){
+    p->exposed_fs = *m;
+    p->exposed_fs.init = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.init - p->va));
+    p->exposed_fs.fini = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.fini - p->va));
+    p->exposed_fs.open = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.open - p->va));
+    p->exposed_fs.read = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.read - p->va));
+    p->exposed_fs.write = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.write - p->va));
+    p->exposed_fs.close = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.close - p->va));
+    p->exposed_fs.sread = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.sread - p->va));
+    p->exposed_fs.swrite = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.swrite - p->va));
+    return load_module(&p->exposed_fs);
 }
 
 size_t list_processes(const char *path, void *buf, size_t size, file_offset *offset){

@@ -67,6 +67,7 @@ typedef struct {
     char name[MAX_PROC_NAME_LENGTH];
     sizedptr debug_lines;
     sizedptr debug_line_str;
+    system_module exposed_fs;
 } process_t;
 
 //Helper functions for accessing registers mapped to scratch regs
