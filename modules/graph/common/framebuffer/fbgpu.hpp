@@ -39,6 +39,5 @@ protected:
     void* mem_page;
     bool cursor_pressed, cursor_updated;
     draw_ctx ctx, cursor_unpressed_ctx, cursor_pressed_ctx;
-    uint32_t* cursor_backup;//TODO: remove this, it leads to a crash if i do it right now (yes, again)
     uint32_t cursor_x, cursor_y;
 };

@@ -361,10 +361,6 @@ void VirtioGPUDriver::flush() {
     flush_cmd->rect.width = screen_size.width;
     flush_cmd->rect.height = screen_size.height;
     
-    //TODO: 
-    // ctx.dirty_count = 0;
-    // ctx.full_redraw = false;
-    
     if (!flush_resp)
         flush_resp = (virtio_gpu_ctrl_hdr*)kalloc(gpu_dev.memory_page, sizeof(virtio_gpu_ctrl_hdr), ALIGN_4KB, MEM_PRIV_KERNEL);
     

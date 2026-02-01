@@ -25,4 +25,3 @@ typedef struct module_file {
     buffer file_buffer;
     uint64_t references;
 } module_file;
-//TODO: for IPC create a dedicated loading function that attaches a module to a process so it can be cleaned up

@@ -278,7 +278,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
 
     uintptr_t min_addr = UINT64_MAX;
     uintptr_t max_addr = 0;
-    //TODO: This + mapping + alloc + permissions + copy can be unified
+    
     for (size_t i = 0; i < data_count; i++){
         if (data[i].virt_mem.ptr < min_addr) min_addr = data[i].virt_mem.ptr;
         if (data[i].virt_mem.ptr + data[i].virt_mem.size > max_addr) max_addr = data[i].virt_mem.ptr + data[i].virt_mem.size;
@@ -302,7 +302,6 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     }
     memset(PHYS_TO_VIRT_P(dest), 0, code_size);
     proc->use_va = true;
-    allow_va = false;
     
     for (size_t i = 0; i < data_count; i++)
         map_section(proc, PHYS_TO_VIRT(dest), min_addr, data[i]);

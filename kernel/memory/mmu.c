@@ -121,11 +121,7 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
     default:
         break;
     }
-    //TODO:
-    //Kernel always rw (0 << 1)
-    //Kernel-only (0 << 0)
-    //User rw (01)
-    //User ro (11) - makes kernel ro too
+    //TODO: tests for permissions
     uint64_t attr = ((uint64_t)(level == MEM_PRIV_KERNEL) << UXN_BIT) | ((uint64_t)(level == MEM_PRIV_USER) << PXN_BIT) | (1 << AF_BIT) | (0b01 << SH_BIT) | (permission << AP_BIT) | (attr_index << MAIR_BIT) | 0b11;
     kprintfv("[MMU] Mapping 4kb memory %x at [%i][%i][%i][%i] for EL%i = %x | %x permission: %i", va, l0_index,l1_index,l2_index,l3_index,level,pa,attr,permission);
     

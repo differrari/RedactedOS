@@ -54,5 +54,3 @@ process_t *get_all_processes();
 extern system_module scheduler_module;
 
 extern uint64_t ksp;
-
-extern bool allow_va;//TODO: this is a hack so processes don't overwrite each other's memory

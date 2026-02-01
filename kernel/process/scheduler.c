@@ -18,7 +18,6 @@
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
 
-bool allow_va = true;
 //TODO: use queues, eliminate the max procs limitation
 process_t processes[MAX_PROCS];
 uint16_t current_proc = 0;

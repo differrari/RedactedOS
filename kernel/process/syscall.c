@@ -31,7 +31,7 @@
 int syscall_depth = 0;
 uintptr_t cpec;
 
-//TODO: What happens if we pass another process' data in here?
+//TEST: What happens if we pass another process' data in here?
 typedef uint64_t (*syscall_entry)(process_t *ctx);
 
 uint64_t syscall_malloc(process_t *ctx){
@@ -69,7 +69,7 @@ uint64_t syscall_read_shortcut(process_t *ctx){
 }
 
 uint64_t syscall_get_mouse(process_t *ctx){
-    //TODO: do we want to prevent the process from knowing what the mouse is doing outside the window unless it's explicitly allowed?
+    //TEST: are we preventing the mouse from being read outside of window?
     if (get_current_proc_pid() != ctx->id) return 0;
     mouse_data *inp = (mouse_data*)ctx->PROC_X0;
     inp->raw = get_raw_mouse_in();

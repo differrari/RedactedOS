@@ -88,7 +88,6 @@ irq_el1_asm_handler:
     eret
 
 .global sync_el0_handler_as
-//TODO: Rethink the registers used to be sequential both here and in context_switch and exception_vectors_as
 sync_el0_handler_as:
     save_ctx
 
