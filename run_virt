@@ -22,7 +22,7 @@ AUDIO_BACKEND="sdl"
 VIRTIO_GPU_VARS=",xres=1920,yres=1080"
 GL="on"
 
-USE_FB=false
+USE_FB=true
 USE_NET=false
 
 if [ "$USE_FB" == true ]; then 

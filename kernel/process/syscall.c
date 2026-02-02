@@ -250,6 +250,11 @@ uint64_t syscall_dir_list(process_t *ctx){
 //     return unload_module(&ctx->exposed_fs);
 // }
 
+uint64_t syscall_in_case_of_js(process_t *ctx){
+    panic("Shame on you",0);
+    return 0;
+}
+
 syscall_entry syscalls[] = {
     [MALLOC_CODE] = syscall_malloc,
     [FREE_CODE] = syscall_free,
@@ -283,6 +288,7 @@ syscall_entry syscalls[] = {
     [DIR_LIST_CODE] = syscall_dir_list,
     // [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
     // [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
+    [IN_CASE_OF_JS_CODE] = syscall_in_case_of_js,
 };
 
 bool decode_crash_address_with_info(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
