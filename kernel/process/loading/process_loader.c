@@ -360,7 +360,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
         mmu_map_4kb(kttbr, i, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
     memset(PHYS_TO_VIRT_P(proc->output), 0, PAGE_SIZE);
     proc->pc = (uintptr_t)(entry);
-    kprintf("User process %s allocated with address at %llx, stack at %llx (%llx), heap at %llx (%llx)",(uintptr_t)name,proc->pc, proc->sp, proc->stack_phys, proc->heap, proc->heap_phys);
+    kprintf("User process %s allocated with address at %llx, stack at %llx-%llx (%llx-%llx), heap at %llx (%llx)",(uintptr_t)name,proc->pc, proc->sp - proc->stack_size, proc->sp, proc->stack_phys - proc->stack_size, proc->stack_phys, proc->heap, proc->heap_phys);
     proc->spsr = 0;
     proc->state = BLOCKED;
     

@@ -296,8 +296,10 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
     kprintfv("[in_page_alloc] Aligned next pointer %llx",info->next_free_mem_ptr);
 
     if (info->next_free_mem_ptr + size > ((VIRT_TO_PHYS((uintptr_t)page)) + PAGE_SIZE)) {
+        uintptr_t next_page_va = page_va + PAGE_SIZE;//TEST: not fully accurate. Write tests to see if it can accurately predict info->next's va address for existing pages (with some large allocs in between)
         if (!info->next){
             info->next = palloc(PAGE_SIZE, level, info->attributes, false);
+            if (next_va) next_page_va = *next_va;
             if (page_va && next_va && ttbr){
                 mmu_map_4kb(ttbr, *next_va, (uintptr_t)info->next, (info->attributes & MEM_DEV) ? MAIR_IDX_DEVICE : MAIR_IDX_NORMAL, info->attributes, level);
                 *next_va += PAGE_SIZE;
@@ -305,7 +307,7 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
             kprintfv("[in_page_alloc] Page %llx points to new page %llx",page,info->next);
         }
         kprintfv("[in_page_alloc] Page full. Moving to %x",(uintptr_t)info->next);
-        return kalloc_inner(info->next, size, alignment, level, page_va ? page_va + PAGE_SIZE : 0, next_va, ttbr);
+        return kalloc_inner(info->next, size, alignment, level, page_va ? next_page_va : 0, next_va, ttbr);
     }
 
     uint64_t result = info->next_free_mem_ptr;

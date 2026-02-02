@@ -32,7 +32,7 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
     proc->sp = proc->stack;
     
     proc->pc = PHYS_TO_VIRT(((uintptr_t)func));
-    kprintf("Kernel process %s (%i) allocated with address at %llx, stack at %llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->pc, proc->sp, proc->heap, argc);
+    kprintf("Kernel process %s (%i) allocated with address at %llx, stack at %llx-%llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->pc, proc->sp - proc->stack_size, proc->sp, proc->heap, argc);
     proc->spsr = 0x205;
     proc->state = READY;
 
