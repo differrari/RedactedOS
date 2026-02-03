@@ -1,16 +1,18 @@
 #include "syscalls/syscalls.h"
 #include "test.h"
+#include "alloc/allocate.h"
 
-bool test_malloc(){
+bool test_zalloc(){
+    
     uintptr_t first = (uintptr_t)zalloc(0xCF8);//Heap + 0
-    assert_eq(first & 0xFF, 0x30, "First allocation in wrong place. Make sure this is the first test that runs");
-    print("First allocation at %llx",(first & ~(0xFFF)));
+    assert_eq(first & 0xFF, 0x30, "First allocation in wrong place %llx",first);
+    print("First allocation at %llx",first);
     uintptr_t three_pages = (uintptr_t)zalloc(0x29f8);//Heap + 1 to Heap + 3
-    assert_false(three_pages & 0xFFF, "Multi-page allocation not aligned correctly");
-    assert_eq((three_pages & ~(0xFFF)), (first & ~(0xFFF)) + 0x1000, "Multi-page allocation not aligned correctly");
+    assert_false(three_pages & 0xFFF, "Multi-page allocation not aligned correctly %x",three_pages & 0xFFF);
+    assert_eq((three_pages & ~(0xFFF)), (first & ~(0xFFF)) + 0x1000, "Multi-page allocation not allocated in correct place %llx",three_pages);
     print("Multi-page allocation at %llx - %llx",(three_pages & ~(0xFFF)),(three_pages & ~(0xFFF)) + 0x3000);
     uintptr_t overflow = (uintptr_t)zalloc(0x3f8);//Heap + 4
-    assert_eq(overflow & 0xFF, 0x30, "Overflown allocation not placed in new page");
+    assert_eq(overflow & 0xFF, 0x30, "Overflown allocation not placed in new page %llx",overflow);
     assert_eq((overflow & ~(0xFFF)), (first & ~(0xFFF)) + 0x4000, "Multi-page allocation not aligned correctly");
     print("Second in-page alloc page at %llx",(overflow & ~(0xFFF)));
     uintptr_t in_page = (uintptr_t)zalloc(0x3f8);

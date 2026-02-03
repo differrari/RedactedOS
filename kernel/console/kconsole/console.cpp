@@ -3,7 +3,7 @@
 #include "graph/graphics.h"
 #include "input/input_dispatch.h"
 #include "memory/page_allocator.h"
-#include "std/allocator.hpp"
+#include "alloc/allocator.hpp"
 
 KernelConsole *kconsole;
 void kconsole_init(){
