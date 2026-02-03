@@ -296,7 +296,7 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
     kprintfv("[in_page_alloc] Aligned next pointer %llx",info->next_free_mem_ptr);
 
     if (info->next_free_mem_ptr + size > ((VIRT_TO_PHYS((uintptr_t)page)) + PAGE_SIZE)) {
-        uintptr_t next_page_va = page_va + PAGE_SIZE;//TEST: not fully accurate. Write tests to see if it can accurately predict info->next's va address for existing pages (with some large allocs in between)
+        uintptr_t next_page_va = page_va + PAGE_SIZE;
         if (!info->next){
             info->next = palloc(PAGE_SIZE, level, info->attributes, false);
             if (next_va) next_page_va = *next_va;
