@@ -23,6 +23,7 @@
 #include "process/debug.h"
 #include "theme/theme.h"
 #include "tests/test_runner.h"
+#include "pci/pcie.h"
 
 void kernel_main() {
 
@@ -52,12 +53,19 @@ void kernel_main() {
 
     load_module(&graphics_module);
     
-    if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
-        pci_setup_rp1();
+    bool can_init_usb = true;
+    
+#if !QEMU
+    if (BOARD_TYPE == 2){
+       if (!init_hostbridge()) can_init_usb = false;
+       if (RPI_BOARD >= 5)
+           pci_setup_rp1();
+    }
+#endif
 
     load_module(&disk_module);
 
-    bool usb_available = load_module(&usb_module);
+    bool usb_available = can_init_usb ? load_module(&usb_module) : false;
     bool network_available = false;
     if (BOARD_TYPE == 1){
         if (system_config.use_net)
