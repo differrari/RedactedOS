@@ -4,6 +4,7 @@
 #include "console/kio.h"
 #include "memory/mmu.h"
 #include "async.h"
+#include "sysregs.h"
 
 #define PCIE_STATUS                                             0x4068
 
@@ -14,7 +15,7 @@
 #define  MISC_CTRL_MAX_BURST_SIZE_MASK                          0x300000
 #define  MISC_CTRL_MAX_BURST_SIZE_128                           0x0
 #define  MISC_CTRL_SCB0_SIZE_MASK                               0xf8000000
-#define PCIE_RGR1_SW_INIT_1 0x9210
+#define  PCIE_RGR1_SW_INIT_1                                    0x9210
 
 #define PCIE_MISC_HARD_PCIE_HARD_DEBUG                          0x4304
 #define PCIE_MISC_HARD_PCIE_HARD_DEBUG_SERDES_IDDQ_MASK         0x08000000
@@ -23,25 +24,37 @@
 #define PCIE_MISC_HARD_PCIE_HARD_DEBUG_CLKREQ_DEBUG_ENABLE_MASK 0x00000002
 
 #define PCIE_RGR1_SW_INIT_1_INIT_MASK                           0x2
+#define PCIE_RGR1_SW_INIT_1_INIT_SHIFT                          0x1
 #define PCIE_RGR1_SW_INIT_1_PERST_MASK                          0x1
+#define PCIE_RGR1_SW_INIT_1_PERST_SHIFT                         0x0
 
-bool pcie_link_up(){
-    return read32(PCI_BASE + PCIE_STATUS) == 1;
+bool pcie_link_up(uintptr_t base){
+    kprintf("Address %llx",base + PCIE_STATUS);
+    return read32(base + PCIE_STATUS) == 1;
 }
+
+void pcie_reg_set(pointer addr, u32 mask, u32 shift, u32 val){
+    uint32_t sw = read32(addr);
+
+    sw = (sw & ~mask) | ((val << shift) & mask);
+    
+    write32(addr, sw);
+}
+
+#define REG_SET(m_base, reg, field, val) pcie_reg_set(m_base + reg, reg##_##field##_MASK, reg##_##field##_SHIFT, val)
+
 
 bool init_hostbridge(){
     
-    register_device_memory_2mb(PCI_BASE, PCI_BASE);
-    
-    if (pcie_link_up()){
-        kprint("Link already configured");
-        return false;
+    for (int i = 0; i < 40; i++){
+        kprintf("Mapping %llx",PCI_BASE + (i * 0x1000));
+        register_device_memory(PCI_BASE + (i * 0x1000), PCI_BASE + (i * 0x1000));
     }
     
-    uint32_t *sw_init = (uint32_t*)PCI_BASE + PCIE_RGR1_SW_INIT_1;
+    uintptr_t base = VIRT_TO_PHYS(PCI_BASE);
     
-    //Reset
-    *sw_init |= PCIE_RGR1_SW_INIT_1_INIT_MASK | PCIE_RGR1_SW_INIT_1_PERST_MASK;
+    REG_SET(base, PCIE_RGR1_SW_INIT_1, INIT, 1);
+    REG_SET(base, PCIE_RGR1_SW_INIT_1, PERST, 1);
     
     kprintf("Reset");
     
@@ -49,32 +62,33 @@ bool init_hostbridge(){
     
     kprintf("Delay");
     
-    *sw_init &= ~PCIE_RGR1_SW_INIT_1_INIT_MASK;
+    REG_SET(base, PCIE_RGR1_SW_INIT_1, INIT, 0);
     kprintf("Hard Debug");
     
-    u32 *tmp = (u32*)(PCI_BASE + PCIE_MISC_HARD_PCIE_HARD_DEBUG);
-	*tmp &= ~PCIE_MISC_HARD_PCIE_HARD_DEBUG_SERDES_IDDQ_MASK;
+    REG_SET(base, PCIE_MISC_HARD_PCIE_HARD_DEBUG, SERDES_IDDQ, 0);
 
 	delay(200);
 	
 	kprintf("Configure");
     
-    u32 *misc_ctrl = (u32*)(PCI_BASE + PCIE_MISC_MISC_CTRL);
-    *misc_ctrl &= ~MISC_CTRL_MAX_BURST_SIZE_MASK;
-    *misc_ctrl |=   MISC_CTRL_SCB_ACCESS_EN_MASK |
-                    MISC_CTRL_CFG_READ_UR_MODE_MASK |
-                    MISC_CTRL_MAX_BURST_SIZE_128;
+    // u32 *misc_ctrl = (u32*)(base + PCIE_MISC_MISC_CTRL);
+    // *misc_ctrl &= ~MISC_CTRL_MAX_BURST_SIZE_MASK;
+    // *misc_ctrl |=   MISC_CTRL_SCB_ACCESS_EN_MASK |
+    //                 MISC_CTRL_CFG_READ_UR_MODE_MASK |
+    //                 MISC_CTRL_MAX_BURST_SIZE_128;
     
     kprintf("Clearing perst");
     
-    *sw_init &= ~PCIE_RGR1_SW_INIT_1_PERST_MASK;
+    REG_SET(base, PCIE_RGR1_SW_INIT_1, PERST, 0);
 
-    kprintf("Link stat now %i",pcie_link_up());
+    kprintf("Link stat now %i",pcie_link_up(base));
     
-    for (int i = 0; i < 100 && !pcie_link_up(); i += 5)
+    for (int i = 0; i < 5 && !pcie_link_up(base); i++){
+        kprint("Waiting for link...");
 		delay(5);
+    }
        
-	if (!pcie_link_up()) {
+	if (!pcie_link_up(base)) {
 		kprintf("PCIe BRCM: link down");
 		return false;
 	}
