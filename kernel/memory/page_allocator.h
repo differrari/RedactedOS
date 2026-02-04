@@ -1,12 +1,7 @@
 #pragma once
 
 #include "types.h"
-#include "memory_types.h"
-
-#define ALIGN_4KB 0x1000
-#define ALIGN_16B 0x10
-#define ALIGN_64B 0x40
-#define PAGE_SIZE 4096
+#include "alloc/mem_types.h"
 
 #define MEM_PRIV_USER   0
 #define MEM_PRIV_KERNEL 1
@@ -31,6 +26,7 @@ void mark_used(uintptr_t address, size_t pages);
 
 bool page_used(uintptr_t ptr);
 
+//DEADLINE: 13/02/2026 - will be merged with alloc/allocate
 void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, uintptr_t page_va, uintptr_t *next_va, uintptr_t *ttbr);
 void* kalloc(void *page, size_t size, uint16_t alignment, uint8_t level);
 void kfree(void* ptr, size_t size);

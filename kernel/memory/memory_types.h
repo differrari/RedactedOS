@@ -2,6 +2,8 @@
 
 #include "types.h"
 
+//DEADLINE: 01/03/2026 - will merge with alloc/mem_types.h
+
 typedef struct FreeBlock {
     uint64_t size;
     struct FreeBlock* next;

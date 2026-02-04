@@ -1,4 +1,5 @@
 #include "terminal.hpp"
+#include "alloc/allocate.h"
 #include "std/std.h"
 #include "input_keycodes.h"
 
@@ -174,7 +175,7 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
 
     int state = 1;
     size_t amount = 0x100;
-    char *buf = (char*)malloc(amount + 1);
+    char *buf = (char*)zalloc(amount + 1);
     if (!buf) {
         closef(&out_fd);
         closef(&state_fd);
@@ -208,7 +209,7 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
 
 const char** Terminal::parse_arguments(char *args, int *count){
     *count = 0;
-    const char **argv = (const char**)malloc(16 * sizeof(uintptr_t));
+    const char **argv = (const char**)zalloc(16 * sizeof(uintptr_t));
     char* p = args;
 
     while (*p && *count < 16){
@@ -280,11 +281,11 @@ void Terminal::run_command(){
         } else {
             string s = string_format("Unknown command %s", cmd.data);
             put_string(s.data);
-            free_sized(s.data, s.mem_length);
+            string_free(s);
         }
     }
 
-    if (argv) free_sized((void*)argv, 16 * sizeof(uintptr_t));
+    if (argv) release((void*)argv);
     free_sized(cmd.data, cmd.mem_length);
     if (args_copy.mem_length) free_sized(args_copy.data, args_copy.mem_length);
 
