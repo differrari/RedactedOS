@@ -5,32 +5,16 @@
 #include "memory/mmu.h"
 #include "async.h"
 #include "sysregs.h"
+#include "pcie_types.h"
 
-#define PCIE_STATUS                                             0x4068
+#define REG_SET(base, reg, field, val) pcie_reg_set(base + reg, reg##_##field##_MASK, reg##_##field##_SHIFT, val)
 
-#define PCIE_MISC_MISC_CTRL                                     0x4008
-
-#define  MISC_CTRL_SCB_ACCESS_EN_MASK                           0x1000
-#define  MISC_CTRL_CFG_READ_UR_MODE_MASK                        0x2000
-#define  MISC_CTRL_MAX_BURST_SIZE_MASK                          0x300000
-#define  MISC_CTRL_MAX_BURST_SIZE_128                           0x0
-#define  MISC_CTRL_SCB0_SIZE_MASK                               0xf8000000
-#define  PCIE_RGR1_SW_INIT_1                                    0x9210
-
-#define PCIE_MISC_HARD_PCIE_HARD_DEBUG                          0x4304
-#define PCIE_MISC_HARD_PCIE_HARD_DEBUG_SERDES_IDDQ_MASK         0x08000000
-#define PCIE_MISC_HARD_PCIE_HARD_DEBUG_SERDES_IDDQ_SHIFT        0x1b
-#define PCIE_MISC_HARD_PCIE_HARD_DEBUG_CLKREQ_L1SS_ENABLE_MASK  0x00200000
-#define PCIE_MISC_HARD_PCIE_HARD_DEBUG_CLKREQ_DEBUG_ENABLE_MASK 0x00000002
-
-#define PCIE_RGR1_SW_INIT_1_INIT_MASK                           0x2
-#define PCIE_RGR1_SW_INIT_1_INIT_SHIFT                          0x1
-#define PCIE_RGR1_SW_INIT_1_PERST_MASK                          0x1
-#define PCIE_RGR1_SW_INIT_1_PERST_SHIFT                         0x0
+#define INSERT_FIELD(val, reg, field, field_val) ((val & ~reg##_##field##_MASK) | (reg##_##field##_MASK & (field_val << reg##_##field##_SHIFT)))
 
 bool pcie_link_up(uintptr_t base){
-    kprintf("Address %llx",base + PCIE_STATUS);
-    return read32(base + PCIE_STATUS) == 1;
+    u32 val = read32(base + PCIE_STATUS);
+    kprintf("Link status %x",val);
+    return (val & STATUS_PCIE_DL_ACTIVE_MASK) >> STATUS_PCIE_DL_ACTIVE_SHIFT && (val & STATUS_PCIE_PHYLINKUP_MASK) >> STATUS_PCIE_PHYLINKUP_SHIFT;
 }
 
 void pcie_reg_set(pointer addr, u32 mask, u32 shift, u32 val){
@@ -41,17 +25,33 @@ void pcie_reg_set(pointer addr, u32 mask, u32 shift, u32 val){
     write32(addr, sw);
 }
 
-#define REG_SET(m_base, reg, field, val) pcie_reg_set(m_base + reg, reg##_##field##_MASK, reg##_##field##_SHIFT, val)
+int ilog2(u64 v)
+{
+	int l = 0;
+	while (((u64) 1 << l) < v)
+		l++;
+	return l;
+}
 
+int encode_ibar_size(u64 size)
+{
+	int log2_in = ilog2(size);
+
+	if (log2_in >= 12 && log2_in <= 15)
+		return (log2_in - 12) + 0x1c;
+	else if (log2_in >= 16 && log2_in <= 37)
+		return log2_in - 15;
+	return 0;
+}
 
 bool init_hostbridge(){
     
-    for (int i = 0; i < 40; i++){
-        kprintf("Mapping %llx",PCI_BASE + (i * 0x1000));
+    for (int i = 0; i < 10; i++){
         register_device_memory(PCI_BASE + (i * 0x1000), PCI_BASE + (i * 0x1000));
     }
     
     uintptr_t base = VIRT_TO_PHYS(PCI_BASE);
+    kprint("Starting");
     
     REG_SET(base, PCIE_RGR1_SW_INIT_1, INIT, 1);
     REG_SET(base, PCIE_RGR1_SW_INIT_1, PERST, 1);
@@ -59,7 +59,6 @@ bool init_hostbridge(){
     kprintf("Reset");
     
     delay(100);
-    
     kprintf("Delay");
     
     REG_SET(base, PCIE_RGR1_SW_INIT_1, INIT, 0);
@@ -71,11 +70,57 @@ bool init_hostbridge(){
 	
 	kprintf("Configure");
     
-    // u32 *misc_ctrl = (u32*)(base + PCIE_MISC_MISC_CTRL);
-    // *misc_ctrl &= ~MISC_CTRL_MAX_BURST_SIZE_MASK;
-    // *misc_ctrl |=   MISC_CTRL_SCB_ACCESS_EN_MASK |
-    //                 MISC_CTRL_CFG_READ_UR_MODE_MASK |
-    //                 MISC_CTRL_MAX_BURST_SIZE_128;
+    u32 tmp = read32(base + PCIE_MISC_MISC_CTRL);
+    tmp = INSERT_FIELD(tmp, PCIE_MISC_MISC_CTRL, MAX_BURST_SIZE, 1);
+    tmp = INSERT_FIELD(tmp, PCIE_MISC_MISC_CTRL, CFG_READ_UR_MODE, 1);
+    tmp = INSERT_FIELD(tmp, PCIE_MISC_MISC_CTRL, MAX_BURST_SIZE, BURST_SIZE_128);//256 pi 5
+    write32(base + PCIE_MISC_MISC_CTRL, tmp);
+    
+    kprint("Beginning dump");
+    delay(1000);
+    
+    for (int i = 0; i < 1024; i++){
+        kprintf("[%i] = %x",i, *(uint8_t*)(base + i));
+    }
+    
+    kprint("End dump");
+    delay(5000);
+    
+    size_t rc_bar2_size = MEM_PCIE_RANGE_SIZE;
+    uintptr_t rc_bar2_offset = MEM_PCIE_RANGE_START;
+    
+    tmp = rc_bar2_offset & UINT32_MAX;
+    tmp = INSERT_FIELD(tmp, PCIE_MISC_RC_BAR2_CONFIG_LO, SIZE, encode_ibar_size(rc_bar2_size));
+    write32(base + PCIE_MISC_RC_BAR2_CONFIG_LO, tmp);
+	write32(base + PCIE_MISC_RC_BAR2_CONFIG_HI, (rc_bar2_offset >> 32) & UINT32_MAX);
+	
+	REG_SET(base, PCIE_MISC_MISC_CTRL, SCB0_SIZE, 0xf);
+	
+	REG_SET(base, PCIE_MISC_RC_BAR1_CONFIG_LO, SIZE, 0);
+	REG_SET(base, PCIE_MISC_RC_BAR3_CONFIG_LO, SIZE, 0);
+	
+	write32(base + PCIE_INTR2_CPU_BASE + CLR, 0xffffffff);
+	write32(base + PCIE_MSI_INTR2_MASK_SET, 0xffffffff);
+	write32(base + PCIE_MSI_INTR2_CLR, 0xffffffff);
+    
+	/* disable the PCIe->GISB memory window (RC_BAR1) */
+	tmp = read32(base + PCIE_MISC_RC_BAR1_CONFIG_LO);
+	tmp &= ~PCIE_MISC_RC_BAR1_CONFIG_LO_SIZE_MASK;
+	write32(base + PCIE_MISC_RC_BAR1_CONFIG_LO, tmp);
+    
+	/* disable the PCIe->SCB memory window (RC_BAR3) */
+	tmp = read32(base + PCIE_MISC_RC_BAR3_CONFIG_LO);
+	tmp &= ~PCIE_MISC_RC_BAR3_CONFIG_LO_SIZE_MASK;
+	write32(base + PCIE_MISC_RC_BAR3_CONFIG_LO, tmp);
+	
+	u32 lnkcap = read32(base + BRCM_PCIE_CAP_REGS + PCI_EXP_LNKCAP);
+	u16 lnkctl2 = read16(base + BRCM_PCIE_CAP_REGS + PCI_EXP_LNKCTL2);
+
+	lnkcap = (lnkcap & ~PCI_EXP_LNKCAP_SLS) | PCIE_GEN;
+	write32(base + BRCM_PCIE_CAP_REGS + PCI_EXP_LNKCAP, lnkcap);
+
+	lnkctl2 = (lnkctl2 & ~0xf) | PCIE_GEN;
+	write16(base + BRCM_PCIE_CAP_REGS + PCI_EXP_LNKCTL2, lnkctl2);
     
     kprintf("Clearing perst");
     
@@ -92,128 +137,6 @@ bool init_hostbridge(){
 		kprintf("PCIe BRCM: link down");
 		return false;
 	}
-    
-    return true;
-    
- //    pci_get_dma_regions(dev, &region, 0);
-	// rc_bar2_offset = region.bus_start - region.phys_start;
-	// rc_bar2_size = 1ULL << fls64(region.size - 1);
-    
-	// tmp = lower_32_bits(rc_bar2_offset);
-	// u32p_replace_bits(&tmp, brcm_pcie_encode_ibar_size(rc_bar2_size),
-	// 		  RC_BAR2_CONFIG_LO_SIZE_MASK);
-	// writel(tmp, base + PCIE_MISC_RC_BAR2_CONFIG_LO);
-	// writel(upper_32_bits(rc_bar2_offset),
-	//        base + PCIE_MISC_RC_BAR2_CONFIG_HI);
-    
-	// scb_size_val = rc_bar2_size ?
-	// 	       ilog2(rc_bar2_size) - 15 : 0xf; /* 0xf is 1GB */
-    
-	// tmp = readl(base + PCIE_MISC_MISC_CTRL);
-	// u32p_replace_bits(&tmp, scb_size_val,
-	// 		  MISC_CTRL_SCB0_SIZE_MASK);
-	// writel(tmp, base + PCIE_MISC_MISC_CTRL);
-    
-	// /* Disable the PCIe->GISB memory window (RC_BAR1) */
-	// clrbits_le32(base + PCIE_MISC_RC_BAR1_CONFIG_LO,
-	// 	     RC_BAR1_CONFIG_LO_SIZE_MASK);
-    
-	// /* Disable the PCIe->SCB memory window (RC_BAR3) */
-	// clrbits_le32(base + PCIE_MISC_RC_BAR3_CONFIG_LO,
-	// 	     RC_BAR3_CONFIG_LO_SIZE_MASK);
-    
-	// /* Mask all interrupts since we are not handling any yet */
-	// write32(PCI_BASE + PCIE_MSI_INTR2_MASK_SET,0xffffffff);
-    
-	// /* Clear any interrupts we find on boot */
-	// write32(PCI_BASE + PCIE_MSI_INTR2_CLR,0xffffffff);
-    
-	// // if (pcie->gen)
-	// // 	brcm_pcie_set_gen(pcie, pcie->gen);
-    
-	// /* Unassert the fundamental reset */
-	// clrbits_le32(pcie->base + PCIE_RGR1_SW_INIT_1,
-	// 	     PCIE_RGR1_SW_INIT_1_PERST_MASK);
-    
-	// /*
-	//  * Wait for 100ms after PERST# deassertion; see PCIe CEM specification
-	//  * sections 2.2, PCIe r5.0, 6.6.1.
-	//  */
-	// delay(100);
-    
-	// /* Give the RC/EP time to wake up, before trying to configure RC.
-	//  * Intermittently check status for link-up, up to a total of 100ms.
-	//  */
-	// for (i = 0; i < 100 && !brcm_pcie_link_up(pcie); i += 5)
-	// 	delay(5);
-    
-	// if (!brcm_pcie_link_up(pcie)) {
-	// 	printf("PCIe BRCM: link down\n");
-	// 	return false;
-	// }
-    
-	// if (!brcm_pcie_rc_mode(pcie)) {
-	// 	printf("PCIe misconfigured; is in EP mode\n");
-	// 	return false;
-	// }
-    
-	// for (i = 0; i < hose->region_count; i++) {
-	// 	struct pci_region *reg = &hose->regions[i];
-    
-	// 	if (reg->flags != PCI_REGION_MEM)
-	// 		continue;
-    
-	// 	if (num_out_wins >= BRCM_NUM_PCIE_OUT_WINS)
-	// 		return false;
-    
-	// 	brcm_pcie_set_outbound_win(pcie, num_out_wins, reg->phys_start,
-	// 				   reg->bus_start, reg->size);
-    
-	// 	num_out_wins++;
-	// }
-	
-	while (true){ }
-    
-	// /*
-	//  * For config space accesses on the RC, show the right class for
-	//  * a PCIe-PCIe bridge (the default setting is to be EP mode).
-	//  */
-	// clrsetbits_le32(base + PCIE_RC_CFG_PRIV1_ID_VAL3,
-	// 		PCIE_RC_CFG_PRIV1_ID_VAL3_CLASS_CODE_MASK, 0x060400);
-    
-	// if (pcie->ssc) {
-	// 	ret = brcm_pcie_set_ssc(pcie->base);
-	// 	if (!ret)
-	// 		ssc_good = true;
-	// 	else
-	// 		printf("PCIe BRCM: failed attempt to enter SSC mode\n");
-	// }
-    
-	// lnksta = readw(base + BRCM_PCIE_CAP_REGS + PCI_EXP_LNKSTA);
-	// cls = lnksta & PCI_EXP_LNKSTA_CLS;
-	// nlw = (lnksta & PCI_EXP_LNKSTA_NLW) >> PCI_EXP_LNKSTA_NLW_SHIFT;
-    
-	// printf("PCIe BRCM: link up, %s Gbps x%u %s\n", link_speed_to_str(cls),
-	//        nlw, ssc_good ? "(SSC)" : "(!SSC)");
-    
-	// /* PCIe->SCB endian mode for BAR */
-	// clrsetbits_le32(base + PCIE_RC_CFG_VENDOR_VENDOR_SPECIFIC_REG1,
-	// 		PCIE_RC_CFG_VENDOR_VENDOR_SPECIFIC_REG1_ENDIAN_MODE_BAR2_MASK,
-	// 		VENDOR_SPECIFIC_REG1_LITTLE_ENDIAN);
-    
-	// /*
-	//  * We used to enable the CLKREQ# input here, but a few PCIe cards don't
-	//  * attach anything to the CLKREQ# line, so we shouldn't assume that
-	//  * it's connected and working. The controller does allow detecting
-	//  * whether the port on the other side of our link is/was driving this
-	//  * signal, so we could check before we assume. But because this signal
-	//  * is for power management, which doesn't make sense in a bootloader,
-	//  * let's instead just unadvertise ASPM support.
-	//  */
-	// clrbits_le32(base + PCIE_RC_CFG_PRIV1_LINK_CAPABILITY,
-	// 	     LINK_CAPABILITY_ASPM_SUPPORT_MASK);
-    
-    while (true);
     
     return true;
 }
