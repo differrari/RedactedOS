@@ -77,7 +77,7 @@
 #define PCI_EXP_LNKCAP_SLS_8_0GB    0x00000003
 #define PCI_EXP_LNKCAP_SLS_16_0GB   0x00000004
 #define BRCM_PCIE_CAP_REGS			0x00a
-#define PCIE_GEN	
+#define PCIE_GEN	                2
 #define PCI_EXP_LNKCAP		        12
 #define PCI_EXP_LNKCTL2		        48
 #define PCI_EXP_LNKCTL2_TLS		    0x000
