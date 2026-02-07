@@ -2,11 +2,9 @@
 #include "memory/talloc.h"
 #include "console/serial/uart.h"
 #include "mmu.h"
-#include "exceptions/exception_handler.h"
 #include "std/memory.h"
 #include "math/math.h"
 #include "console/kio.h"
-#include "process/scheduler.h"
 #include "sysregs.h"
 
 #define PD_TABLE 0b11
@@ -336,7 +334,7 @@ void kfree(void* ptr, size_t size) {
 
     if(size & 0xF) size = (size + 15) & ~0xFULL;
 
-    memset32((void*)ptr,0xDEADBEEF,size);
+    memset32((void*)ptr,0,size);
 
     mem_page *page = (mem_page *)(((uintptr_t)ptr) & ~0xFFFULL);
     uintptr_t phys_page = mmu_translate((uintptr_t)page);
