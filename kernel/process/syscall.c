@@ -34,6 +34,21 @@ uintptr_t cpec;
 //TEST: What happens if we pass another process' data in here?
 typedef uint64_t (*syscall_entry)(process_t *ctx);
 
+static bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr) {
+    if (!proc) return false;
+    uint8_t ifsc = esr & 0x3f;
+    if (ifsc < 0x4 || ifsc > 0x7) return false;
+    vma *m = mm_find_vma(&proc->mm, far);
+    if (!m) return false;
+    if (!(m->flags & VMA_FLAG_DEMAND)) return false;
+    uintptr_t va = far & ~(PAGE_SIZE - 1);
+    uintptr_t phys = (uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false);
+    if (!phys) return false;
+    memset(PHYS_TO_VIRT_P((void*)phys), 0, PAGE_SIZE);
+    register_proc_memory(va, phys, m->prot, MEM_PRIV_USER);
+    return true;
+}
+
 uint64_t syscall_malloc(process_t *ctx){
     int tr;
     uintptr_t page_ptr = mmu_translate(syscall_depth > 1 ? get_proc_by_pid(1)->heap : ctx->heap, &tr);
@@ -386,6 +401,12 @@ void sync_el0_handler_c(){
 
     uint64_t far;
     asm volatile ("mrs %0, far_el1" : "=r"(far));
+    if (ec == 0x24 || ec == 0x20){
+        if (mm_try_handle_page_fault(proc, far, esr)){
+            syscall_depth--;
+            process_restore();
+        }
+    }
 
     uint64_t result = 0;
     if (ec == 0x15) {

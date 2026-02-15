@@ -38,7 +38,7 @@ static inline uint64_t make_pte(uint64_t pa, uint64_t attr_index, uint8_t mem_at
     uint64_t ap = 0;
 
     if (level == MEM_PRIV_KERNEL) ap = (mem_attr & MEM_RW) ? 0 : 0b10;
-    else if (level == MEM_PRIV_SHARED) ap = (mem_attr & MEM_EXEC) ? 0b11 : 1;
+    else if (level == MEM_PRIV_SHARED) ap = (mem_attr & MEM_RW) ? 1 : 0b11;
     else ap = (mem_attr & MEM_RW) ? 1 : 0b11;
 
     uint64_t attr = PTE_AF | (sh << PTE_SH_SHIFT) | (ap << PTE_AP_SHIFT) | (attr_index << PTE_ATTR_SHIFT);
@@ -51,7 +51,8 @@ static inline uint64_t make_pte(uint64_t pa, uint64_t attr_index, uint8_t mem_at
         if (!(mem_attr & MEM_EXEC)) attr |= PTE_UXN;
     } else if (level == MEM_PRIV_SHARED) {
 
-        if (!(mem_attr & MEM_EXEC)) attr |= PTE_PXN | PTE_UXN;
+        attr |= PTE_PXN;
+        if (!(mem_attr & MEM_EXEC)) attr |= PTE_UXN;
     }
 
     return (pa & PTE_ADDR_MASK) | attr | type;
@@ -159,7 +160,7 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
 
     uint8_t permission = 0;
     if (level == MEM_PRIV_KERNEL) permission = (mem_attributes & MEM_RW) ? 0 : 0b10;
-    else if (level == MEM_PRIV_SHARED) permission = (mem_attributes & MEM_EXEC) ? 0b11 : 1;
+    else if (level == MEM_PRIV_SHARED) permission = (mem_attributes & MEM_RW) ? 1 : 0b11;
     else permission = (mem_attributes & MEM_RW) ? 1 : 0b11;
 
     //TODO: proper memory permissions, including accounting for WXN
@@ -364,7 +365,7 @@ void mmu_unmap(uint64_t va, uint64_t pa){
     if (va >= ram_start && va < ram_end) panic("mmu_unmap directmap ram", va);
 
     mmu_unmap_table((uint64_t*)kernel_ttbr0, va, pa);
-    if (pttbr) mmu_unmap_table((uint64_t*)pttbr, va, pa);
+    //if (pttbr) mmu_unmap_table((uint64_t*)pttbr, va, pa);
 
     mmu_flush_all();
     mmu_flush_icache();
@@ -489,12 +490,6 @@ void mmu_map_all(uintptr_t pa){
     mmu_map_2mb((uint64_t*)kernel_ttbr0, base, base, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
     mmu_map_2mb((uint64_t*)kernel_ttbr1, base | HIGH_VA, base, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
 
-    process_t *processes = get_all_processes();
-    for (int i = 0; i < MAX_PROCS; i++){
-        if (processes[i].state != STOPPED && processes[i].ttbr){
-            mmu_map_2mb((uint64_t*)processes[i].ttbr, base, base, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
-        }
-    }
     mmu_flush_all();
     mmu_flush_icache();
 }
@@ -535,7 +530,7 @@ void mmu_free_ttbr(uintptr_t *ttbr){
 
 uintptr_t* mmu_new_ttbr(){
     uintptr_t *ttbr = (uintptr_t*)mmu_alloc();
-    if (!kernel_ttbr0) panic("mmu_new_ttbr no kernel_ttbr0", (uintptr_t)ttbr);
+    //if (!kernel_ttbr0) panic("mmu_new_ttbr no kernel_ttbr0", (uintptr_t)ttbr);
     mmu_copy(ttbr, kernel_ttbr0, 0);
     return ttbr;
 }
@@ -546,7 +541,7 @@ void register_device_memory(uint64_t va, uint64_t pa){
     uint64_t vhigh = phys | HIGH_VA;
     mmu_map_4kb((uint64_t*)kernel_ttbr0, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
     mmu_map_4kb((uint64_t*)kernel_ttbr1, vhigh, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-    if (pttbr) mmu_map_4kb((uint64_t*)pttbr, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+    //if (pttbr) mmu_map_4kb((uint64_t*)pttbr, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
 
     mmu_flush_all();
     mmu_flush_icache();
@@ -559,7 +554,7 @@ void register_device_memory_2mb(uint64_t va, uint64_t pa){
 
     mmu_map_2mb((uint64_t*)kernel_ttbr0, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
     mmu_map_2mb((uint64_t*)kernel_ttbr1, vhigh, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-    if (pttbr) mmu_map_2mb((uint64_t*)pttbr, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+    //if (pttbr) mmu_map_2mb((uint64_t*)pttbr, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
 
     mmu_flush_all();
     mmu_flush_icache();
@@ -585,7 +580,7 @@ void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t 
 
     mmu_map_4kb((uint64_t*)kernel_ttbr1, vhigh, phys, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
 
-    if (pttbr && ((va >> 47) & 1ULL) == 0) mmu_map_4kb((uint64_t*)pttbr, vlow, phys, MAIR_IDX_NORMAL, attributes | MEM_NORM, level);
+    //if (pttbr && ((va >> 47) & 1ULL) == 0) mmu_map_4kb((uint64_t*)pttbr, vlow, phys, MAIR_IDX_NORMAL, attributes | MEM_NORM, level);
 
     mmu_flush_all();
     mmu_flush_icache();
@@ -747,5 +742,5 @@ extern void mmu_swap(uintptr_t* ttbr);
 uintptr_t *pttbr;
 
 void mmu_swap_ttbr(uintptr_t* ttbr){
-    pttbr = ttbr;
+    pttbr = ttbr ? ttbr : (uintptr_t*)kernel_ttbr0;
 }

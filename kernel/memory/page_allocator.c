@@ -185,7 +185,7 @@ void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, 
                     if (map){
                         if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
                             register_device_memory(address, address);
-                        else
+                        else if (level != MEM_PRIV_USER)
                             register_proc_memory(address, address, attributes, level);
                         if (!full){
                             setup_page(address, attributes);
@@ -245,7 +245,7 @@ void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, 
                 if (map){
                     if ((attributes & MEM_DEV) != 0 && level == MEM_PRIV_KERNEL)
                         register_device_memory(address, address);
-                    else
+                    else if (level != MEM_PRIV_USER)
                         register_proc_memory(address, address, attributes, level);
 
                     if (!full) {

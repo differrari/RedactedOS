@@ -1,0 +1,32 @@
+#pragma once
+
+#include "types.h"
+#include "memory/page_allocator.h"
+
+#define VMA_FLAG_DEMAND 1
+#define VMA_KIND_ELF 1
+#define VMA_KIND_HEAP 2
+#define VMA_KIND_STACK 3
+#define VMA_KIND_ANON 4
+
+#define MAX_VMAS 32
+
+typedef struct vma {
+    uintptr_t start;
+    uintptr_t end;
+    uint8_t prot;
+    uint8_t kind;
+    uint8_t flags;
+} vma;
+
+typedef struct mm_struct {
+    uintptr_t *ttbr0;
+    vma vmas[MAX_VMAS];
+    uint16_t vma_count;
+    uintptr_t brk;
+    uintptr_t stack_top;
+    uintptr_t stack_bottom;
+} mm_struct;
+
+vma* mm_find_vma(mm_struct *mm, uintptr_t va);
+bool mm_add_vma(mm_struct *mm, uintptr_t start, uintptr_t end, uint8_t prot, uint8_t kind, uint8_t flags);

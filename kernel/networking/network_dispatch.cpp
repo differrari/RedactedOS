@@ -137,9 +137,8 @@ int NetworkDispatch::net_task()
                 if (np) {
                     eth_input(nics[n].ifindex, np);
                     netpkt_unref(np);
-                } else {
-                    free_frame(pkt);
                 }
+                free_frame(pkt);
                 nics[n].rx_consumed++;
                 processed++;
             }

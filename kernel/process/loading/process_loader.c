@@ -283,40 +283,72 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     uintptr_t max_addr = 0;
     
     for (size_t i = 0; i < data_count; i++){
-        if (data[i].virt_mem.ptr < min_addr) min_addr = data[i].virt_mem.ptr;
-        if (data[i].virt_mem.ptr + data[i].virt_mem.size > max_addr) max_addr = data[i].virt_mem.ptr + data[i].virt_mem.size;
+        uintptr_t s0 = data[i].virt_mem.ptr;
+        uintptr_t s1 = data[i].virt_mem.ptr + data[i].virt_mem.size;
+        if (s0 < min_addr) min_addr = s0;
+        if (s1 > max_addr) max_addr = s1;
     } 
+    uintptr_t min_map = min_addr & ~(GRANULE_4KB - 1);
+    uintptr_t max_map = (max_addr + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
 
-    size_t code_size = max_addr-min_addr;
+    size_t code_size = max_map -min_map;
 
     // kprintf("Code takes %x from %x to %x",code_size, min_addr, max_addr);
 
     uintptr_t *ttbr = mmu_new_ttbr();
 
-    uintptr_t dest = (uintptr_t)palloc_inner(code_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true, false);
+    memset(&proc->mm, 0, sizeof(proc->mm));
+    proc->mm.ttbr0 = ttbr;
+    uintptr_t dest = (uintptr_t)palloc_inner(code_size, MEM_PRIV_USER, MEM_RW, false, false);
     if (!dest) return 0;
     
     // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
     
-    for (uintptr_t i = min_addr; i < max_addr; i += GRANULE_4KB){
-        mmu_map_4kb(ttbr, i, (uintptr_t)dest + (i - min_addr), MAIR_IDX_NORMAL, MEM_EXEC | MEM_RO | MEM_NORM, MEM_PRIV_USER);
+    for (uintptr_t va = min_map; va < max_map; va += GRANULE_4KB) {
+        bool any = 0;
+        bool rw = 0;
+        bool ex = 0;
+
+        for (size_t s = 0; s < data_count; s++){
+            uintptr_t s0 = data[s].virt_mem.ptr;
+            uintptr_t s1 = data[s].virt_mem.ptr + data[s].virt_mem.size;
+            if (va + GRANULE_4KB <= s0) continue;
+            if (va >= s1) continue;
+            any = true;
+            if (data[s].permissions & MEM_RW) rw = true;
+            if (data[s].permissions & MEM_EXEC) ex = true;
+        }
+
+        if (!any) continue;
+        if (rw) ex = false;
+
+        uint8_t attr = MEM_NORM;
+        if (rw) attr |= MEM_RW;
+        if (ex) attr |= MEM_EXEC;
+        mmu_map_4kb(ttbr, va, dest + (va - min_map), MAIR_IDX_NORMAL, attr, MEM_PRIV_USER);
     }
     memset(PHYS_TO_VIRT_P(dest), 0, code_size);
+
+    for (size_t i = 0; i < data_count; i++) {
+        uint8_t prot = MEM_NORM;
+        if (data[i].permissions & MEM_RW) prot |= MEM_RW;
+        if (data[i].permissions & MEM_EXEC) prot |= MEM_EXEC;
+        mm_add_vma(&proc->mm, data[i].virt_mem.ptr, data[i].virt_mem.ptr + data[i].virt_mem.size, prot, VMA_KIND_ELF, 0);
+    }
     proc->use_va = true;
     
     for (size_t i = 0; i < data_count; i++)
-        map_section(proc, PHYS_TO_VIRT(dest), min_addr, data[i]);
+        map_section(proc, PHYS_TO_VIRT(dest), min_map, data[i]);
 
-    proc->va = min_addr;
+    proc->va = min_map;
     proc->code = (void*)dest;
-    proc->code_size = (code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    proc->code_size = code_size;
 
-    max_addr = (max_addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-    proc->last_va_mapping = max_addr;
+    proc->last_va_mapping = max_map;
     
     uint64_t stack_size = 0x10000;
 
-    uintptr_t stack = (uintptr_t)palloc_inner(stack_size, MEM_PRIV_USER, MEM_RW, true, false);
+    uintptr_t stack = (uintptr_t)palloc_inner(stack_size, MEM_PRIV_USER, MEM_RW, false, false);
     if (!stack) return 0;
     
     proc->last_va_mapping += PAGE_SIZE;//Unmapped page to catch stack overflows
@@ -329,6 +361,10 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     }
     memset(PHYS_TO_VIRT_P(stack), 0, stack_size);
 
+    proc->mm.stack_top = proc->stack;
+    proc->mm.stack_bottom = proc->stack - stack_size;
+    mm_add_vma(&proc->mm, proc->mm.stack_bottom, proc->mm.stack_top, MEM_RW | MEM_NORM, VMA_KIND_STACK, 0);
+
     proc->last_va_mapping += PAGE_SIZE;//Unmapped page to catch stack overflows
 
     uint8_t heapattr = MEM_RW;
@@ -339,6 +375,9 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->heap = proc->last_va_mapping;
     proc->heap_phys = heap;
     mmu_map_4kb(ttbr, proc->last_va_mapping, heap, MAIR_IDX_NORMAL, heapattr | MEM_NORM, MEM_PRIV_USER);
+
+    proc->mm.brk = proc->heap + PAGE_SIZE;
+    mm_add_vma(&proc->mm, proc->heap, proc->mm.brk, heapattr | MEM_NORM, VMA_KIND_HEAP, 0);
 
     setup_page(heap, heapattr);
 

@@ -8,6 +8,7 @@ extern "C" {
 #include "keyboard_input.h"
 #include "net/network_types.h"
 #include "dev/driver_base.h"
+#include "memory/mm_process.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
@@ -68,6 +69,7 @@ typedef struct {
     sizedptr debug_lines;
     sizedptr debug_line_str;
     system_module exposed_fs;
+    mm_struct mm;
 } process_t;
 
 //Helper functions for accessing registers mapped to scratch regs

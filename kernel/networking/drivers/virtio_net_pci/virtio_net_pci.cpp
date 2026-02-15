@@ -403,7 +403,7 @@ bool VirtioNetDriver::send_packet(sizedptr packet){
     enable_interrupt();
 
     kprintfv("[virtio-net] tx queued len=%u",(unsigned)packet.size);
-    kfree((void*)packet.ptr, packet.size);
+    if (ok) kfree((void*)packet.ptr, packet.size);
     return ok;
 }
 
