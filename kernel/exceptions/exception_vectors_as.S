@@ -12,13 +12,12 @@
 1:
     add x17, sp, #16
 2:
-    ldr x18, =cpec
+    adrp x18, cpec
+    add x18, x18, :lo12:cpec
     ldr x18, [x18]
 
 3:
     
-ldr x18, =cpec
-ldr x18, [x18]
 // Save general-purpose registers x1-x30
 stp x0, x1, [x18, #(8 * 0)]
 stp x2, x3, [x18, #(8 * 2)]
@@ -55,7 +54,8 @@ lsr x17, x17, #2
 and x17, x17,#0b11
 cmp x17, #0
 b.ne 4f
-ldr x18, =ksp
+adrp x18, ksp
+add x18, x18, :lo12:ksp
 mov sp, x18
 4:
 .endm

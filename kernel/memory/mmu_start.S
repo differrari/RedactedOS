@@ -31,15 +31,15 @@ mmu_start:  //fn(uint64_t *ttbr1 x0, uint64_t *ttbr0 x1)
 
     ldr x1, =HIGH_VA
 
-    ldr x0, =ksp
+    adr x0, 2f
     orr x0, x0, x1
-    adrp x3, ksp
-    str x0, [x3]
+    br x0
 
-    ldr x0, =cpec
+2:
+    ldr x0, =exception_vectors
     orr x0, x0, x1
-    adrp x3, cpec
-    str x0, [x3]
+    msr vbar_el1, x0
+    isb
 
     mov x0, sp
     orr x0, x0, x1
@@ -52,13 +52,5 @@ mmu_start:  //fn(uint64_t *ttbr1 x0, uint64_t *ttbr0 x1)
     mov x0, x30
     orr x0, x0, x1
     mov x30, x0
-
-    ldr x0, [sp, #8]
-    orr x0, x0, x1
-    str x0, [sp, #8]
-
-    mrs x0, vbar_el1
-    orr x0, x0, x1
-    msr vbar_el1, x0
     
     ret

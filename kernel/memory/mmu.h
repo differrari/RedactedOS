@@ -24,6 +24,7 @@ void register_device_memory(uint64_t va, uint64_t pa);
 void register_device_memory_2mb(uint64_t va, uint64_t pa);
 void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t level);
 void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index, uint8_t mem_attributes, uint8_t level);
+void mmu_unmap_table(uint64_t *table, uint64_t va, uint64_t pa);
 void debug_mmu_address(uint64_t va);
 void mmu_enable_verbose();
 void mmu_swap_ttbr(uintptr_t* ttbr);

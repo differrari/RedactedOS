@@ -146,6 +146,12 @@ void reset_process(process_t *proc){
         proc->packet_buffer.entries[k] = (sizedptr){0};
     }
     close_files_for_process(proc->id);
+    if (proc->ttbr && proc->win_fb_size && proc->win_fb_phys) {
+        for (uint64_t off = 0; off < proc->win_fb_size; off += GRANULE_4KB) mmu_unmap_table((uint64_t*)proc->ttbr, proc->win_fb_va + off, proc->win_fb_phys + off);
+        proc->win_fb_va = 0;
+        proc->win_fb_phys = 0;
+        proc->win_fb_size = 0;
+    }
     if (proc->ttbr) {
         if (pttbr == proc->ttbr) panic("Trying to free process while mapped", (uintptr_t)proc->ttbr);
         mmu_free_ttbr(proc->ttbr);
@@ -165,9 +171,12 @@ void init_main_process(){
     proc->heap_phys = VIRT_TO_PHYS(proc->heap);
     proc->stack_size = 0x10000;
     proc->stack = (uintptr_t)palloc(proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
-    proc->sp = ksp;
+    proc->sp = PHYS_TO_VIRT((uintptr_t)ksp);
     proc->output = (uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
     proc->priority = PROC_PRIORITY_LOW;
+    proc->win_fb_va = 0;
+    proc->win_fb_phys = 0;
+    proc->win_fb_size = 0;
     name_process(proc, "kernel");
     proc_count++;
 }
@@ -182,6 +191,9 @@ process_t* init_process(){
                 proc->state = READY;
                 proc->id = next_proc_index++;
                 proc_count++;
+                proc->win_fb_va = 0;
+                proc->win_fb_phys = 0;
+                proc->win_fb_size = 0;
                 return proc;
             }
         }
@@ -193,6 +205,9 @@ process_t* init_process(){
     proc->id = next_proc_index++;
     proc->state = READY;
     proc->priority = PROC_PRIORITY_LOW;
+    proc->win_fb_va = 0;
+    proc->win_fb_phys = 0;
+    proc->win_fb_size = 0;
     proc_count++;
     return proc;
 }

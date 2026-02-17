@@ -26,6 +26,7 @@ void process_restore();
 
 void stop_process(uint16_t pid, int32_t exit_code);
 void stop_current_process(int32_t exit_code);
+void reset_process(process_t *proc);
 
 void name_process(process_t *proc, const char *name);
 
@@ -53,4 +54,4 @@ process_t *get_all_processes();
 
 extern system_module scheduler_module;
 
-extern uint64_t ksp;
+extern char ksp[];

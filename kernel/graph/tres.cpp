@@ -8,6 +8,10 @@
 #include "sysregs.h"
 #include "graphics.h"
 #include "ui/graphic_types.h"
+#include "memory/mmu.h"
+#include "memory/page_allocator.h"
+
+#define WIN_FB_USER_BASE 0x100000000ULL
 
 clinkedlist_t *window_list;
 window_frame *focused_window;
@@ -85,9 +89,37 @@ void get_window_ctx(draw_ctx* out_ctx){
     clinkedlist_node_t *node = clinkedlist_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
-        if (out_ctx->width && out_ctx->height)
-            resize_window(out_ctx->width, out_ctx->height);
         *out_ctx = frame->win_ctx;
+
+        uint64_t phys = VIRT_TO_PHYS((uintptr_t)frame->win_ctx.fb);
+        uint64_t size = (uint64_t)frame->win_ctx.width * (uint64_t)frame->win_ctx.height * 4;
+        size = (size + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
+
+        if (!p->win_fb_va) p->win_fb_va = WIN_FB_USER_BASE;
+
+        if (p->ttbr && size && (p->win_fb_phys != phys || p->win_fb_size != size)) {
+            if (p->win_fb_size && p->win_fb_phys) {
+                for (uint64_t off = 0; off < p->win_fb_size; off += GRANULE_4KB) mmu_unmap_table((uint64_t*)p->ttbr, p->win_fb_va + off, p->win_fb_phys + off);
+            }
+
+            for (uint64_t off = 0; off < size; off += GRANULE_4KB) mmu_map_4kb((uint64_t*)p->ttbr, p->win_fb_va + off, phys + off, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+
+            uint64_t flush = p->win_fb_size;
+            if (size > flush) flush = size;
+
+            asm volatile("dsb ishst\n":::"memory");
+            for (uint64_t off = 0; off < flush; off += GRANULE_4KB) {
+                uint64_t v = (p->win_fb_va + off) >> 12;
+                asm volatile("tlbi vae1is, %0\n"::"r"(v):"memory");
+            }
+            asm volatile("dsb ish\n"
+                        "isb\n":::"memory");
+
+            p->win_fb_phys = phys;
+            p->win_fb_size = size;
+        }
+
+        if (p->ttbr && size) out_ctx->fb = (uint32_t*)p->win_fb_va;
         frame->pid = p->id;
     }
 }

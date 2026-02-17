@@ -38,7 +38,6 @@ static inline uint64_t make_pte(uint64_t pa, uint64_t attr_index, uint8_t mem_at
     uint64_t ap = 0;
 
     if (level == MEM_PRIV_KERNEL) ap = (mem_attr & MEM_RW) ? 0 : 0b10;
-    else if (level == MEM_PRIV_SHARED) ap = (mem_attr & MEM_RW) ? 1 : 0b11;
     else ap = (mem_attr & MEM_RW) ? 1 : 0b11;
 
     uint64_t attr = PTE_AF | (sh << PTE_SH_SHIFT) | (ap << PTE_AP_SHIFT) | (attr_index << PTE_ATTR_SHIFT);

@@ -64,6 +64,9 @@ typedef struct {
     __attribute__((aligned(16))) packet_buffer_t packet_buffer;
     uint8_t priority;
     uint16_t win_id;
+    uintptr_t win_fb_va;
+    uintptr_t win_fb_phys;
+    uint64_t win_fb_size;
     char *bundle;
     char name[MAX_PROC_NAME_LENGTH];
     sizedptr debug_lines;

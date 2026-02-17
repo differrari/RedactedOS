@@ -299,6 +299,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
 
     memset(&proc->mm, 0, sizeof(proc->mm));
     proc->mm.ttbr0 = ttbr;
+    proc->ttbr = ttbr;
     uintptr_t dest = (uintptr_t)palloc_inner(code_size, MEM_PRIV_USER, MEM_RW, false, false);
     if (!dest) return 0;
     
@@ -320,6 +321,13 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
         }
 
         if (!any) continue;
+        if (rw && ex) {
+            //kprintf("WX overlap at page %llx", va);
+            if (dest) pfree((void*)dest, code_size);
+            reset_process(proc);
+            proc->state = STOPPED;
+            return 0;
+        }
         if (rw) ex = false;
 
         uint8_t attr = MEM_NORM;
