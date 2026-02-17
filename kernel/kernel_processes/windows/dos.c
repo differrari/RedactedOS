@@ -46,12 +46,13 @@ void draw_window(window_frame *frame){
 }
 
 gpu_point click_loc;
+window_frame* clicked_frame;
 
 static inline void calc_click(void *node){
     window_frame* frame = (window_frame*)node;
     gpu_point p = win_to_screen(frame, click_loc);
     if (!p.x || !p.y) return;
-    sys_set_focus(frame->pid);
+    clicked_frame = frame;
 }
 
 static inline void redraw_win(void *node){
@@ -199,10 +200,12 @@ int window_system(){
         } else if (drawing){
             gpu_point end_point = get_mouse_pos();
             gpu_size size = {abs(end_point.x - start_point.x), abs(end_point.y - start_point.y)};
+            clicked_frame = 0;
+            click_loc = end_point;
+            linked_list_for_each(window_list, calc_click);
             if (size.width < 0x10 && size.height < 0x10){
-                click_loc = end_point;
-                clinkedlist_for_each(window_list, calc_click);
-            } else {
+                if (clicked_frame) sys_set_focus(clicked_frame->pid);
+            } else if (!clicked_frame) {
                 int_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
                 disable_interrupt();
                 create_window(fixed_point.x - global_win_offset.x,fixed_point.y - global_win_offset.y, size.width, size.height);

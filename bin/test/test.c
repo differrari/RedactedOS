@@ -1,5 +1,6 @@
 #include "syscalls/syscalls.h"
-#include "test.h"
+#include "debug/assert.h"
+#include "alloc/allocate.h"
 
 bool test_wrong_file_descriptor(){
     file descriptor = {};
@@ -19,5 +20,5 @@ bool test_wrong_file_descriptor(){
 }
 
 int main(int argc, char *argv[]){
-    return test_wrong_file_descriptor() ? 0 : 1;
+    return test_zalloc() && test_wrong_file_descriptor() ? 0 : 1;
 }

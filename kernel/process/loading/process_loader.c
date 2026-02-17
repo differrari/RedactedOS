@@ -235,7 +235,6 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     uint64_t dst_base = (uint64_t)dst32;
     uint32_t count = size / 4;
 
-    
     process_layout source_layout = {
         .code_base_start = src_base,
         .code_size = size,
@@ -278,6 +277,8 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     name_process(proc, name);
 
     proc->bundle = (char*)bundle;
+    
+    proc->alloc_map = make_page_index();
 
     uintptr_t min_addr = UINT64_MAX;
     uintptr_t max_addr = 0;
@@ -300,7 +301,9 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     memset(&proc->mm, 0, sizeof(proc->mm));
     proc->mm.ttbr0 = ttbr;
     proc->ttbr = ttbr;
-    uintptr_t dest = (uintptr_t)palloc_inner(code_size, MEM_PRIV_USER, MEM_RW, false, false);
+
+    uintptr_t dest = (uintptr_t)palloc_inner(code_size, MEM_PRIV_USER, MEM_RW, true, false);
+    if (dest) register_allocation(proc->alloc_map, (void*)dest, code_size);
     if (!dest) return 0;
     
     // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
@@ -356,7 +359,8 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     
     uint64_t stack_size = 0x10000;
 
-    uintptr_t stack = (uintptr_t)palloc_inner(stack_size, MEM_PRIV_USER, MEM_RW, false, false);
+    uintptr_t stack = (uintptr_t)palloc_inner(stack_size, MEM_PRIV_USER, MEM_RW, true, false);
+    if (stack) register_allocation(proc->alloc_map, (void*)stack, stack_size);
     if (!stack) return 0;
     
     proc->last_va_mapping += PAGE_SIZE;//Unmapped page to catch stack overflows
@@ -398,12 +402,13 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->ttbr = ttbr;
 
     proc->sp = proc->stack;
-    
+
     proc->output = (uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
     if (!proc->output) return 0;
     proc->output_size = 0;
+
     proc->pc = (uintptr_t)(entry);
-    kprintf("User process %s allocated with address at %llx, stack at %llx (%llx), heap at %llx (%llx)",name,proc->pc, proc->sp, proc->stack_phys, proc->heap, proc->heap_phys);
+    kprintf("User process %s pc=%llx stack=%llx-%llx (phys=%llx-%llx) heap=%llx (phys=%llx)", name, (uint64_t)proc->pc, (uint64_t)(proc->sp - proc->stack_size), (uint64_t)proc->sp, (uint64_t)(proc->stack_phys - proc->stack_size), (uint64_t)proc->stack_phys, (uint64_t)proc->heap, (uint64_t)proc->heap_phys);
     proc->spsr = 0;
     proc->state = BLOCKED;
     

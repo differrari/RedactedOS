@@ -58,6 +58,7 @@ typedef struct {
     bool use_va;
     uintptr_t *ttbr;
     uintptr_t va;
+    page_index *alloc_map;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     __attribute__((aligned(16))) input_buffer_t input_buffer;
     __attribute__((aligned(16))) event_buffer_t event_buffer;

@@ -87,7 +87,7 @@ bool init_scheduler_module(){
         proc_opened_files->free = kfree;
         proc_opened_files->alloc = list_alloc;
     }
-    return start_scheduler();
+    return true;
 }
 
 
@@ -117,15 +117,9 @@ uint16_t get_current_proc_pid(){
 void reset_process(process_t *proc){
     bool just_finished = processes[current_proc].id == proc->id;
     proc->sp = 0;
-    if (!just_finished || !(processes[current_proc].PROC_PRIV))//Privileged processes use their own stack even in an exception. We'll free it when we reuse it
-        if (proc->stack_phys) pfree((void*)proc->stack_phys-proc->stack_size,proc->stack_size);
-    if (proc->heap_phys) free_managed_page((void*)proc->heap_phys);
     proc->pc = 0;
     proc->spsr = 0;
     proc->exit_code = 0;
-    if (proc->code && proc->code_size){
-        pfree(proc->code, proc->code_size);
-    }
     if (!just_finished && proc->output)
         pfree((void*)proc->output, PROC_OUT_BUF);
     for (int j = 0; j < 31; j++)
@@ -145,6 +139,8 @@ void reset_process(process_t *proc){
             free_sizedptr(p);
         proc->packet_buffer.entries[k] = (sizedptr){0};
     }
+    if (!just_finished && proc->alloc_map) release_page_index(proc->alloc_map);
+    if (!just_finished && proc->id != 1 && proc->heap_phys) free_managed_page(PHYS_TO_VIRT_P((void*)proc->heap_phys));
     close_files_for_process(proc->id);
     if (proc->ttbr && proc->win_fb_size && proc->win_fb_phys) {
         for (uint64_t off = 0; off < proc->win_fb_size; off += GRANULE_4KB) mmu_unmap_table((uint64_t*)proc->ttbr, proc->win_fb_va + off, proc->win_fb_phys + off);
@@ -153,12 +149,17 @@ void reset_process(process_t *proc){
         proc->win_fb_size = 0;
     }
     if (proc->ttbr) {
-        if (pttbr == proc->ttbr) panic("Trying to free process while mapped", (uintptr_t)proc->ttbr);
+        if (pttbr == proc->ttbr) {
+            kprintf("[PROC error] Trying to free process while mapped", (uintptr_t)proc->ttbr);
+            return;
+        }
         mmu_free_ttbr(proc->ttbr);
     }
     if (proc->exposed_fs.init){
         unload_module(&proc->exposed_fs);
     }
+    if (!just_finished)
+        memset(proc, 0, sizeof(process_t));
 }
 
 void init_main_process(){
@@ -166,13 +167,15 @@ void init_main_process(){
     process_t* proc = &processes[0];
     cpec = (uintptr_t)&processes[0];
     proc->id = next_proc_index++;
+    proc->alloc_map = make_page_index();
     proc->state = BLOCKED;
     proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
     proc->heap_phys = VIRT_TO_PHYS(proc->heap);
     proc->stack_size = 0x10000;
     proc->stack = (uintptr_t)palloc(proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
-    proc->sp = PHYS_TO_VIRT((uintptr_t)ksp);
+    proc->sp = (uintptr_t)ksp;
     proc->output = (uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
+    proc->output_size = 0;
     proc->priority = PROC_PRIORITY_LOW;
     proc->win_fb_va = 0;
     proc->win_fb_phys = 0;
@@ -355,6 +358,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     module_file *file = kalloc(proc_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
     file->fid = fid;
     if (strcmp_case(path, "out",true) == 0){
+        if (!proc->output) proc->output = (uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
         descriptor->size = proc->output_size;
         file->file_buffer = (buffer){
             .buffer = (char*)proc->output,

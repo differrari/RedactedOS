@@ -16,14 +16,32 @@
 
 void* malloc(size_t size){
     process_t* k = get_proc_by_pid(1);
-    int tr;
+    if (!k) return 0;
+
+    int tr = 0;
     uintptr_t heap_pa = mmu_translate(k->heap, &tr);
     if (tr) return 0;
-    return kalloc((void*)heap_pa, size, ALIGN_16B, MEM_PRIV_KERNEL);
+
+    void* ptr = kalloc((void*)heap_pa, size, ALIGN_16B, MEM_PRIV_KERNEL);
+    if (ptr && size >= PAGE_SIZE && k->alloc_map)
+        register_allocation(k->alloc_map, ptr, size);
+    return ptr;
 }
 
 void free_sized(void*ptr, size_t size){
     kfree(ptr, size);
+}
+
+void* page_alloc(size_t size){
+    process_t* k = get_proc_by_pid(1);//TODO: can we make this more fragmented? This inside a syscall, current proc outside
+    void *ptr = palloc(size, MEM_PRIV_KERNEL, MEM_RW, true);
+    register_allocation(k->alloc_map, ptr, size);
+    return ptr;
+}
+
+void page_free(void *ptr){
+    process_t* k = get_proc_by_pid(1);//TODO: can we make this more fragmented? This inside a syscall, current proc outside
+    free_registered(k->alloc_map, ptr);
 }
 
 extern void printl(const char *str){
@@ -120,7 +138,6 @@ extern void closef(file *descriptor){
     close_file(descriptor);
 }
 
-sizedptr dir_list(const char *path){
-    kprintf("[SYSCALL implementation error] directory listing not implemented yet");
-    return (sizedptr){0,0};
+size_t dir_list(const char *path, void *buf, size_t size, u64 *offset){
+    return list_directory_contents(path, buf, size, offset);
 }

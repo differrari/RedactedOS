@@ -36,53 +36,83 @@ typedef uint64_t (*syscall_entry)(process_t *ctx);
 
 static bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr) {
     if (!proc) return false;
+
     uint8_t ifsc = esr & 0x3f;
     if (ifsc < 0x4 || ifsc > 0x7) return false;
+
     vma *m = mm_find_vma(&proc->mm, far);
     if (!m) return false;
     if (!(m->flags & VMA_FLAG_DEMAND)) return false;
+
     uintptr_t va = far & ~(PAGE_SIZE - 1);
     uintptr_t phys = (uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false);
     if (!phys) return false;
+
     memset(PHYS_TO_VIRT_P((void*)phys), 0, PAGE_SIZE);
     register_proc_memory(va, phys, m->prot, MEM_PRIV_USER);
+
+    // Track the backing page so it's released when the process exits.
+    if (proc->alloc_map) register_allocation(proc->alloc_map, (void*)phys, PAGE_SIZE);
     return true;
 }
 
-uint64_t syscall_malloc(process_t *ctx){
-    int tr;
-    uintptr_t page_ptr = mmu_translate(syscall_depth > 1 ? get_proc_by_pid(1)->heap : ctx->heap, &tr);
+u64 syscall_malloc(process_t *ctx){
+    int tr = 0;
+    uintptr_t heap_va = (syscall_depth > 1) ? get_proc_by_pid(1)->heap : ctx->heap;
+    uintptr_t page_ptr = mmu_translate(heap_va, &tr);
     if (tr) handle_exception("Wrong process heap state", 0);
+
     size_t size = ctx->PROC_X0;
     return (uintptr_t)kalloc_inner((void*)page_ptr, size, ALIGN_16B, get_current_privilege(), ctx->heap, &ctx->last_va_mapping, ctx->ttbr);
 }
 
-uint64_t syscall_free(process_t *ctx){
+uptr syscall_palloc(process_t *ctx){
+    size_t size = ctx->PROC_X0;
+    void *ptr = palloc(size, MEM_PRIV_USER, MEM_RW, true);
+    register_allocation(ctx->alloc_map, ptr, size);
+    if (ctx->use_va){
+        uptr va = ctx->last_va_mapping;
+        u64 pages = count_pages(size, PAGE_SIZE);
+        for (u64 i = 0; i < pages; i++){
+            mmu_map_4kb(ctx->ttbr, va + (i * PAGE_SIZE), (uptr)ptr + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
+        }
+        ptr = (void*)ctx->last_va_mapping;
+        ctx->last_va_mapping += (pages * PAGE_SIZE);
+    }
+    return (uptr)ptr;
+}
+
+u64 syscall_pfree(process_t *ctx){
+    free_registered(ctx->alloc_map, (void*)ctx->PROC_X0);
+    return 0;
+}
+
+u64 syscall_free(process_t *ctx){
     kfree((void*)ctx->PROC_X0, ctx->PROC_X1);
     return 0;
 }
 
-uint64_t syscall_printl(process_t *ctx){
+u64 syscall_printl(process_t *ctx){
     kprint((const char *)ctx->PROC_X0);
     return 0;
 }
 
-uint64_t syscall_read_key(process_t *ctx){
+u64 syscall_read_key(process_t *ctx){
     keypress *kp = (keypress*)ctx->PROC_X0;
     return sys_read_input_current(kp);
 }
 
-uint64_t syscall_read_event(process_t *ctx){
+u64 syscall_read_event(process_t *ctx){
     kbd_event *ev = (kbd_event*)ctx->PROC_X0;
     return sys_read_event_current(ev);
 }
 
-uint64_t syscall_read_shortcut(process_t *ctx){
+u64 syscall_read_shortcut(process_t *ctx){
     kprint("[SYSCALL implementation error] Shortcut syscalls are not implemented yet");
     return 0;
 }
 
-uint64_t syscall_get_mouse(process_t *ctx){
+u64 syscall_get_mouse(process_t *ctx){
     //TEST: are we preventing the mouse from being read outside of window?
     if (get_current_proc_pid() != ctx->id) return 0;
     mouse_data *inp = (mouse_data*)ctx->PROC_X0;
@@ -91,20 +121,20 @@ uint64_t syscall_get_mouse(process_t *ctx){
     return 0;
 }
 
-uintptr_t syscall_gpu_request_ctx(process_t *ctx){
+uptr syscall_gpu_request_ctx(process_t *ctx){
     draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
     get_window_ctx(d_ctx);
     return 0;
 }
 
-uint64_t syscall_gpu_flush(process_t *ctx){
+u64 syscall_gpu_flush(process_t *ctx){
     draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
     commit_frame(d_ctx,0 );
     gpu_flush();
     return 0;
 }
 
-uint64_t syscall_gpu_resize_ctx(process_t *ctx){
+u64 syscall_gpu_resize_ctx(process_t *ctx){
     draw_ctx *d_ctx = (draw_ctx*)ctx->PROC_X0;
     uint32_t width = (uint32_t)ctx->PROC_X1;
     uint32_t height = (uint32_t)ctx->PROC_X2;
@@ -114,24 +144,24 @@ uint64_t syscall_gpu_resize_ctx(process_t *ctx){
     return 0;
 }
 
-uint64_t syscall_char_size(process_t *ctx){
+u64 syscall_char_size(process_t *ctx){
     return gpu_get_char_size(ctx->PROC_X0);
 }
 
-uint64_t syscall_msleep(process_t *ctx){
+u64 syscall_msleep(process_t *ctx){
     syscall_depth--;
     sleep_process(ctx->PROC_X0);
     return 0;
 }
 
-uint64_t syscall_halt(process_t *ctx){
+u64 syscall_halt(process_t *ctx){
     kprintf("Process has ended with code %i",ctx->PROC_X0);
     syscall_depth--;
     stop_current_process(ctx->PROC_X0);
     return 0;
 }
 
-uint64_t syscall_exec(process_t *ctx){
+u64 syscall_exec(process_t *ctx){
     const char *prog_name = (const char*)ctx->PROC_X0;
     int argc = ctx->PROC_X1;
     const char **argv = (const char**)ctx->PROC_X2;
@@ -140,11 +170,11 @@ uint64_t syscall_exec(process_t *ctx){
     return p ? p->id : 0;
 }
 
-uint64_t syscall_get_time(process_t *ctx){
+u64 syscall_get_time(process_t *ctx){
     return timer_now_msec();
 }
 
-uint64_t syscall_socket_create(process_t *ctx){
+u64 syscall_socket_create(process_t *ctx){
     Socket_Role role = (Socket_Role)ctx->PROC_X0;
     protocol_t protocol = (protocol_t)ctx->PROC_X1;
     const SocketExtraOptions* extra = (const SocketExtraOptions*)ctx->PROC_X2;
@@ -152,14 +182,14 @@ uint64_t syscall_socket_create(process_t *ctx){
     return create_socket(role, protocol, extra, ctx->id, out_handle);
 }
 
-uint64_t syscall_socket_bind(process_t *ctx){
+u64 syscall_socket_bind(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
     ip_version_t ip_version = (ip_version_t)ctx->PROC_X1;
     uint16_t port = (uint16_t)ctx->PROC_X2;
     return bind_socket(handle, port, ip_version, ctx->id);
 }
 
-uint64_t syscall_socket_connect(process_t *ctx){
+u64 syscall_socket_connect(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
     uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
     void* dst = (void*)ctx->PROC_X2;
@@ -167,19 +197,19 @@ uint64_t syscall_socket_connect(process_t *ctx){
     return connect_socket(handle, dst_kind, dst, port, ctx->id);
 }
 
-uint64_t syscall_socket_listen(process_t *ctx){
+u64 syscall_socket_listen(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
     int32_t backlog = (int32_t)ctx->PROC_X1;
     return listen_on(handle, backlog, ctx->id);
 }
 
-uint64_t syscall_socket_accept(process_t *ctx){
+u64 syscall_socket_accept(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
     accept_on_socket(handle, ctx->id);
     return 1;
 }
 
-uint64_t syscall_socket_send(process_t *ctx){
+u64 syscall_socket_send(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
     uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
     void* dst = (void*)ctx->PROC_X2;
@@ -189,7 +219,7 @@ uint64_t syscall_socket_send(process_t *ctx){
     return send_on_socket(handle, dst_kind, dst, port, ptr, size, ctx->id);
 }
 
-uint64_t syscall_socket_receive(process_t *ctx){
+u64 syscall_socket_receive(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
     void* buf = (void*)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
@@ -197,13 +227,12 @@ uint64_t syscall_socket_receive(process_t *ctx){
     return receive_from_socket(handle, buf, size, out_src, ctx->id);
 }
 
-uint64_t syscall_socket_close(process_t *ctx){
+u64 syscall_socket_close(process_t *ctx){
     SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
     return close_socket(handle, ctx->id);
 }
 
-
-uint64_t syscall_openf(process_t *ctx){
+u64 syscall_openf(process_t *ctx){
     char *req_path = (char *)ctx->PROC_X0;
     char path[255] = {};
     if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path,true) == 11){
@@ -214,45 +243,46 @@ uint64_t syscall_openf(process_t *ctx){
     return open_file(path, descriptor);
 }
 
-uint64_t syscall_readf(process_t *ctx){
+u64 syscall_readf(process_t *ctx){
     file *descriptor = (file*)ctx->PROC_X0;
     char *buf = (char*)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
     return read_file(descriptor, buf, size);
 }
 
-uint64_t syscall_writef(process_t *ctx){
+u64 syscall_writef(process_t *ctx){
     file *descriptor = (file*)ctx->PROC_X0;
     char *buf = (char*)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
     return write_file(descriptor, buf, size);
 }
 
-uint64_t syscall_sreadf(process_t *ctx){
+u64 syscall_sreadf(process_t *ctx){
     const char *path = (const char*)ctx->PROC_X0;
     void *buf = (void*)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
     return simple_read(path, buf, size);
 }
 
-uint64_t syscall_swritef(process_t *ctx){
+u64 syscall_swritef(process_t *ctx){
     const char *path = (const char*)ctx->PROC_X0;
     const void *buf = (void*)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
     return simple_write(path, buf, size);
 }
 
-uint64_t syscall_closef(process_t *ctx){
+u64 syscall_closef(process_t *ctx){
     file *descriptor = (file*)ctx->PROC_X0;
     close_file(descriptor);
     return 0;
 }
 
-uint64_t syscall_dir_list(process_t *ctx){
-    kprintf("[SYSCALL implementation error] directory listing not implemented yet");
-    // char *path = (char *)ctx->PROC_X0;
-    // return list_directory_contents(path);
-    return 0;
+u64 syscall_dir_list(process_t *ctx){
+    const char *path = (char *)ctx->PROC_X0;
+    void *buf = (void*)ctx->PROC_X1;
+    size_t size = (size_t)ctx->PROC_X2;
+    u64 *offset = (u64*)ctx->PROC_X3;
+    return list_directory_contents(path, buf, size, offset);
 }
 
 // uint64_t syscall_load_fsmod(process_t *ctx){
@@ -264,9 +294,27 @@ uint64_t syscall_dir_list(process_t *ctx){
 //     return unload_module(&ctx->exposed_fs);
 // }
 
+u64 syscall_in_case_of_js(process_t *ctx){
+    panic("Shame on you\r\n\
+Don't ever do that again\r\n\
+....................../´¯/) \r\n\
+....................,/¯../ \r\n\
+.................../..../ \r\n\
+............./´¯/'...'/´¯¯`·¸ \r\n\
+........../'/.../..../......./¨¯\\\r\n\
+........('(...´...´.... ¯~/'...') \r\n\
+.........\\.................'...../\r\n\
+..........''...\\.......... _.·´\r\n\
+............\\..............(\r\n\
+..............\\.............\\...",0);
+    return 0;
+}
+
 syscall_entry syscalls[] = {
     [MALLOC_CODE] = syscall_malloc,
     [FREE_CODE] = syscall_free,
+    [PALLOC_CODE] = syscall_palloc,
+    [PFREE_CODE] = syscall_pfree,
     [PRINTL_CODE] = syscall_printl,
     [READ_KEY_CODE] = syscall_read_key,
     [READ_EVENT_CODE] = syscall_read_event,
@@ -297,6 +345,7 @@ syscall_entry syscalls[] = {
     [DIR_LIST_CODE] = syscall_dir_list,
     // [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
     // [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
+    [IN_CASE_OF_JS_CODE] = syscall_in_case_of_js,
 };
 
 bool decode_crash_address_with_info(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
@@ -442,7 +491,7 @@ void sync_el0_handler_c(){
                 }
                 while (true);
             } else {
-                kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
+                kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", esr, elr, far, proc->sp);
                 if (syscall_depth < 2) coredump(esr, elr, far, proc->sp);
                 syscall_depth--;
                 stop_current_process(ec);

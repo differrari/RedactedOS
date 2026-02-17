@@ -2,12 +2,11 @@
 #include "memory/talloc.h"
 #include "console/serial/uart.h"
 #include "mmu.h"
-#include "exceptions/exception_handler.h"
 #include "std/memory.h"
 #include "math/math.h"
 #include "console/kio.h"
-#include "process/scheduler.h"
 #include "sysregs.h"
+#include "exceptions/exception_handler.h"
 
 #define PD_TABLE 0b11
 #define PD_BLOCK 0b01
@@ -304,18 +303,19 @@ void mark_used(uintptr_t address, size_t pages)
         mem_bitmap[i] |= (1ULL << bit);
     }
 }
-//TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
-//TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
 void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, uintptr_t page_va, uintptr_t *next_va, uintptr_t *ttbr){
-    if (!page || !size) return 0;
+    if (!page) return 0;
+    if (!size) return 0;
     if (!alignment || (alignment & (alignment - 1))) {
         kprintfv("[kalloc] bad alignment %x", alignment);
         return 0;
     }
 
+    size_t req_size = size;
+    size = (size + alignment - 1) & ~(alignment - 1);
+
     if ((uintptr_t)page < LOW_ADDR_WARN) kprintfv("[kalloc an] low page=%llx size=%llx align=%x", (uint64_t)(uintptr_t)page, (uint64_t)size, (uint32_t)alignment);
 
-    size_t req_size = size;
     if (size & 0xFULL) size = (size + 15) & ~0xFULL;
 
     mem_page *info = (mem_page*)PHYS_TO_VIRT_P(page);
@@ -437,9 +437,14 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
     if (user_phys & (alignment - 1)) user_phys = (user_phys + alignment - 1) & ~(uintptr_t)(alignment - 1);
     uintptr_t tag_phys = user_phys - ALLOC_TAG_SIZE;
 
+    kprintfv("[in_page_alloc] Aligned next pointer %llx", base_phys);
+
     if (base_phys + small_need > page_phys + PAGE_SIZE) {
+        uintptr_t next_page_va = page_va ? (page_va + PAGE_SIZE) : 0;
+        if (next_va) next_page_va = *next_va;
         if (!info->next){
             info->next = palloc(PAGE_SIZE, level, info->attributes, false);
+            if (next_va) next_page_va = *next_va;
             if (page_va && next_va && ttbr){
                 uintptr_t phys_next = VIRT_TO_PHYS((uintptr_t)info->next);
                 register_proc_memory((uintptr_t)*next_va, phys_next, info->attributes, level);
@@ -447,7 +452,8 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
             }
             kprintfv("[in_page_alloc] Page %llx points to new page %llx",page,info->next);
         }
-        return kalloc_inner(info->next, req_size, alignment, level, page_va ? page_va + PAGE_SIZE : 0, next_va, ttbr);
+        kprintfv("[in_page_alloc] Page full. Moving to %x", (uintptr_t)info->next);
+        return kalloc_inner(info->next, req_size, alignment, level, next_page_va, next_va, ttbr);
     }
 
     info->next_free_mem_ptr = base_phys + small_need;
@@ -482,6 +488,65 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
         return (void*)(page_va | (user_phys & 0xFFF));
     }
     return (void*)user_phys;
+}
+
+void* make_page_index(){
+    return palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, true);
+}
+
+void register_allocation(page_index *index, void* ptr, size_t size){
+    if (!index){
+        kprint("[ALLOC error] registering allocation with no index");
+        return;
+    }
+    if (!ptr || !size){
+        kprint("[ALLOC error] trying to register null allocation");
+        return;
+    }
+    while (index->header.next) {
+        index = index->header.next;
+    }
+    if (index->header.size >= PAGE_INDEX_LIMIT){
+        index->header.next = make_page_index();
+        index = index->header.next;
+    }
+    index->ptrs[index->header.size].ptr = ptr;
+    index->ptrs[index->header.size++].size = size;
+}
+
+void free_registered(page_index *index, void *ptr){
+    if (!index){
+        kprint("[ALLOC error] freeing allocation with no index");
+        return;
+    }
+    if (!ptr){
+        kprint("[ALLOC error] trying to un-register null allocation");
+        return;
+    }
+    for (page_index *ind = index; ind; ind = ind->header.next){
+        for (u64 i = 0; i < ind->header.size; i++){
+            if (ind->ptrs[i].ptr == ptr){
+                pfree(ind->ptrs[i].ptr, ind->ptrs[i].size);
+                ind->ptrs[i] = ind->ptrs[ind->header.size - 1];
+                ind->header.size--;
+                return;
+            }
+        }
+    }
+    kprint("[ALLOC error] trying to free non-registered page");
+}
+
+void release_page_index(page_index *index){
+    if (!index){
+        kprint("[ALLOC error] no page index");
+        return;
+    }
+    if (index->header.next)
+        release_page_index(index->header.next);
+    for (u64 i = 0; i < index->header.size; i++){
+        pfree(index->ptrs[i].ptr, index->ptrs[i].size);
+    }
+    pfree(index, PAGE_SIZE);
 }
 
 void* kalloc(void *page, size_t size, uint16_t alignment, uint8_t level){

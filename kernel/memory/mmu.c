@@ -13,6 +13,7 @@
 #include "sysregs.h"
 #include "std/memory.h"
 #include "exceptions/exception_handler.h"
+#include "alloc/mem_types.h"
 
 #define PAGE_TABLE_ENTRIES 512
 #define PD_TABLE 0b11
@@ -121,7 +122,6 @@ void mmu_map_2mb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
     if ((old & 0b11) == PD_TABLE){
         uint64_t* l3 = (uint64_t*)(old & PTE_ADDR_MASK);
         uint64_t base = pa;
-        //For now we make this not executable. We'll need to to separate read_write, read_only and executable sections
         uint64_t attr = (want & ~PTE_ADDR_MASK) & ~0b11;
 
         for (uint64_t i = 0; i < PAGE_TABLE_ENTRIES; i++) {

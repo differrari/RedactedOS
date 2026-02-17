@@ -69,6 +69,13 @@ if [ "$USE_NET" != true ]; then
   NETDRIV=""
 fi
 
+SHARED_FOLDER="../os_repo"
+if [ -d "$SHARED_FOLDER" ]; then
+    echo "EXISTS $SHARED_FOLDER";
+  SHAREDFS="-fsdev local,path=$SHARED_FOLDER,security_model=mapped-xattr,id=sharedfs \
+  -device virtio-9p-pci,fsdev=sharedfs,mount_tag=shared"
+fi
+
 echo "Using networking mode: $NETDEV $NETDRIV $DUMP"
 
 $PRIVILEGE qemu-system-aarch64 \
@@ -84,8 +91,7 @@ $PRIVILEGE qemu-system-aarch64 \
   -serial stdio \
   -drive file=disk.img,if=none,format=raw,id=hd0 \
   -device virtio-blk-pci,drive=hd0 \
-  -fsdev local,path=./fs,security_model=mapped-xattr,id=sharedfs \
-  -device virtio-9p-pci,fsdev=sharedfs,mount_tag=shared \
+  $SHAREDFS \
   -device qemu-xhci,${MSI_CAPABILITIES}id=usb \
   -device usb-kbd,bus=usb.0 \
   -device usb-mouse,bus=usb.0 \

@@ -41,6 +41,7 @@ $(TARGET): ../shared/klibshared.a prepare $(OBJ)
 	echo $(LIBMODULES)
 	$(VLD) $(LDFLAGS) -o $(ELF) $(OBJL) ../shared/klibshared.a $(MODULES) $(BUILD_DIR)/boot.o
 	$(OBJCOPY) -O binary $(ELF) $@
+	mkdir -p ../fs
 	cp $(ELF) ../fs/kernel.elf
 
 $(BUILD_DIR)/%.o: %.S

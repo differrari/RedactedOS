@@ -29,7 +29,6 @@ open_bin_ref available_cmds[] = {
 };
 
 process_t* execute(const char* prog_name, int argc, const char* argv[]){
-
     size_t listsize = 0x1000;
     void *listptr = malloc(listsize);
     if (list_directory_contents("/boot/redos/bin/", listptr, listsize, 0)){
