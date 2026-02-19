@@ -13,6 +13,7 @@
 #include "filesystem/filesystem.h"
 #include "sysregs.h"
 #include "memory/mmu.h"
+extern page_index *p_index;
 
 void* malloc(size_t size){
     process_t* k = get_proc_by_pid(1);
@@ -33,15 +34,26 @@ void free_sized(void*ptr, size_t size){
 }
 
 void* page_alloc(size_t size){
+    if (!size) return 0;
     process_t* k = get_proc_by_pid(1);//TODO: can we make this more fragmented? This inside a syscall, current proc outside
-    void *ptr = palloc(size, MEM_PRIV_KERNEL, MEM_RW, true);
-    register_allocation(k->alloc_map, ptr, size);
+    void *ptr = palloc(size, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, true);
+    if (k && k->alloc_map && ptr) register_allocation(k->alloc_map, ptr, size);
     return ptr;
 }
 
 void page_free(void *ptr){
+    if (!ptr) return;
+    if (((uintptr_t)ptr & (PAGE_SIZE - 1)) != 0) return;
     process_t* k = get_proc_by_pid(1);//TODO: can we make this more fragmented? This inside a syscall, current proc outside
-    free_registered(k->alloc_map, ptr);
+    if (k && k->alloc_map) {
+        free_registered(k->alloc_map, ptr);
+        return;
+    }
+
+    size_t size = 0;
+    if (p_index) size = get_alloc_size(p_index, ptr);
+    if (!size) size = PAGE_SIZE;
+    pfree(ptr, size);
 }
 
 extern void printl(const char *str){

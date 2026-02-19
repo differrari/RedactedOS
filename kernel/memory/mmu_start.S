@@ -16,6 +16,14 @@ mmu_start:  //fn(uint64_t *ttbr1 x0, uint64_t *ttbr0 x1)
 
     ldr x3, =TCR_VALUE_BASE
     orr x3, x3, x2
+
+    mrs x4, id_aa64mmfr0_el1
+    ubfx x4, x4, #4, #4
+    cmp x4, #2
+    b.lo 2f
+    movz x4, #0x10, lsl #32
+    orr x3, x3, x4
+2:
     msr tcr_el1, x3
     dsb ish
     isb

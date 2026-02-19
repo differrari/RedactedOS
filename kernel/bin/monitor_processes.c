@@ -73,7 +73,7 @@ void draw_memory(char *name,int x, int y, int width, int full_height, int used, 
 
     string str = string_format("%s\n%x",(uintptr_t)name, used);
     fb_draw_string(&ctx,str.data, stack_top.x, stack_top.y + height + 5, 2, system_theme.bg_color);
-    free_sized(str.data,str.mem_length);
+    string_free(str);
 }
 
 void draw_process_view(){
@@ -130,7 +130,7 @@ void draw_process_view(){
         
         string pc = string_from_hex(proc->pc);
         fb_draw_string(&ctx,pc.data, xo, pc_y, scale, system_theme.bg_color);
-        free_sized(pc.data, pc.mem_length);
+        string_free(pc);
         
         draw_memory("Stack", xo, stack_y, stack_width, stack_height, proc->stack - proc->sp, proc->stack_size);
         uint64_t heap = calc_heap(proc->heap_phys);
@@ -139,9 +139,9 @@ void draw_process_view(){
 
         string flags = string_format("Flags: %x", proc->spsr);
         fb_draw_string(&ctx, flags.data, xo, flags_y, scale, system_theme.bg_color);
-        free_sized(name.data, name.mem_length);
-        free_sized(state.data, state.mem_length);
-        free_sized(flags.data, flags.mem_length);
+        string_free(name);
+        string_free(state);
+        string_free(flags);
 
     }
     commit_draw_ctx(&ctx);

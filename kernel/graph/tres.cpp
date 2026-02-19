@@ -104,16 +104,7 @@ void get_window_ctx(draw_ctx* out_ctx){
 
             for (uint64_t off = 0; off < size; off += GRANULE_4KB) mmu_map_4kb((uint64_t*)p->ttbr, p->win_fb_va + off, phys + off, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
 
-            uint64_t flush = p->win_fb_size;
-            if (size > flush) flush = size;
-
-            asm volatile("dsb ishst\n":::"memory");
-            for (uint64_t off = 0; off < flush; off += GRANULE_4KB) {
-                uint64_t v = (p->win_fb_va + off) >> 12;
-                asm volatile("tlbi vae1is, %0\n"::"r"(v):"memory");
-            }
-            asm volatile("dsb ish\n"
-                        "isb\n":::"memory");
+            mmu_flush_asid(p->asid);
 
             p->win_fb_phys = phys;
             p->win_fb_size = size;

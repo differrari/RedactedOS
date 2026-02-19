@@ -15,7 +15,7 @@ int run_shutdown(int argc, char* argv[]){
     string p = string_format("/proc/%i/out", pid);
     file out;
     FS_RESULT r = open_file(p.data, &out);
-    free_sized(p.data, p.mem_length);
+    string_free(p);
 
     if (r != FS_RESULT_SUCCESS){
         return 2;

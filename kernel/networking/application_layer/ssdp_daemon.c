@@ -54,7 +54,7 @@ static void ssdp_send_notify(socket_handle_t s4, socket_handle_t s6, bool alive)
         net_l4_endpoint dst;
         make_ep(ssdp_host_v4, 1900, IP_VER4, &dst);
         (void)socket_sendto_udp_ex(s4, DST_ENDPOINT, &dst, 0, msg.data, msg.length);
-        free_sized(msg.data, msg.mem_length);
+        string_free(msg);
     }
 
     if (s6) {
@@ -64,7 +64,7 @@ static void ssdp_send_notify(socket_handle_t s4, socket_handle_t s6, bool alive)
         memcpy(dst.ip, ssdp_host_v6, 16);
         dst.port = 1900;
         (void)socket_sendto_udp_ex(s6, DST_ENDPOINT, &dst, 0, msg.data, msg.length);
-        free_sized(msg.data, msg.mem_length);
+        string_free(msg);
     }
 }
 
@@ -160,7 +160,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
             string resp = ssdp_build_search_response();
             socket_handle_t sock = (ssdp_pending[i].dst.ver == IP_VER6) ? s6 : s4;
             if (sock) (void)socket_sendto_udp_ex(sock, DST_ENDPOINT, &ssdp_pending[i].dst, 0, resp.data, resp.length);
-            free_sized(resp.data, resp.mem_length);
+            string_free(resp);
             break;
         }
 

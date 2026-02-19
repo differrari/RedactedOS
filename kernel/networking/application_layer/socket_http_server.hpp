@@ -91,7 +91,7 @@ public:
                 continue;
             }
             if (r <= 0) {
-                free_sized(buf.data, buf.mem_length);
+                string_free(buf);
                 return req;
             }
             string_append_bytes(&buf, tmp, (uint32_t)r);
@@ -133,7 +133,7 @@ public:
             if (k < req.path.length) {
                 string newp = string_repeat('\0', 0);
                 string_append_bytes(&newp, req.path.data + k, req.path.length - k);
-                free_sized(req.path.data, req.path.mem_length);
+                string_free(req.path);
                 req.path = newp;
             }
         } else if (req.path.length >= 8 && memcmp(req.path.data, "https://", 8) == 0) {
@@ -142,7 +142,7 @@ public:
             if (k < req.path.length) {
                 string newp = string_repeat('\0', 0);
                 string_append_bytes(&newp, req.path.data + k, req.path.length - k);
-                free_sized(req.path.data, req.path.mem_length);
+                string_free(req.path);
                 req.path = newp;
             }
         }
@@ -204,7 +204,7 @@ public:
 
         netlog_socket_event(&log_opts, &ev);
 
-        free_sized(buf.data, buf.mem_length);
+        string_free(buf);
         return req;
     }
 
@@ -240,7 +240,7 @@ public:
         ev.remote_ep = client->get_remote_ep();
         netlog_socket_event(&log_opts, &ev);
 
-        free_sized(out.data, out.mem_length);
+        string_free(out);
         return sent < 0 ? (int32_t)sent : SOCK_OK;
     }
 

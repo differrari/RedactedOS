@@ -52,16 +52,13 @@ restore_context:
     ldr x17, [x18, #(8 * 32)]
     msr elr_el1, x17
 
-    ldr x17, =pttbr
+    ldr x17, =pttbr_hw
 
     ldr x17, [x17]
 
-    cbz x17, 4f
-
     msr ttbr0_el1, x17
 
-    tlbi vmalle1is
-4: dsb ish
+    dsb ish
     isb
 
     ldr x17,[x18, #(8 * 17)]
@@ -71,14 +68,12 @@ restore_context:
     
 .global mmu_swap
 mmu_swap:
-    ldr x18, =pttbr
+    ldr x18, =pttbr_hw
     ldr x18, [x18]
-    cbz x18, 4f
 
     msr ttbr0_el1, x18
 
-    tlbi vmalle1is
-4: dsb ish
+    dsb ish
     isb
     
     ret

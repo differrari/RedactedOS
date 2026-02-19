@@ -56,7 +56,7 @@ void switch_proc(ProcSwitchReason reason) {
     current_proc = next_proc;
     cpec = (uintptr_t)&processes[current_proc];
     timer_reset(processes[current_proc].priority);
-    mmu_swap_ttbr(processes[current_proc].ttbr);
+    mmu_swap_ttbr(processes[current_proc].ttbr, processes[current_proc].asid);
     process_restore();
 }
 
@@ -122,6 +122,10 @@ void reset_process(process_t *proc){
     proc->exit_code = 0;
     if (!just_finished && proc->output)
         pfree((void*)proc->output, PROC_OUT_BUF);
+    if (!just_finished && proc->debug_lines.ptr)
+        pfree((void*)proc->debug_lines.ptr, proc->debug_lines.size);
+    if (!just_finished && proc->debug_line_str.ptr)
+        pfree((void*)proc->debug_line_str.ptr, proc->debug_line_str.size);
     for (int j = 0; j < 31; j++)
         proc->regs[j] = 0;
     for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++)
@@ -153,6 +157,7 @@ void reset_process(process_t *proc){
             kprintf("[PROC error] Trying to free process while mapped", (uintptr_t)proc->ttbr);
             return;
         }
+        if (proc->asid) mmu_flush_asid(proc->asid);
         mmu_free_ttbr(proc->ttbr);
     }
     if (proc->exposed_fs.init){
@@ -168,6 +173,7 @@ void init_main_process(){
     cpec = (uintptr_t)&processes[0];
     proc->id = next_proc_index++;
     proc->alloc_map = make_page_index();
+    proc->asid = 0;
     proc->state = BLOCKED;
     proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
     proc->heap_phys = VIRT_TO_PHYS(proc->heap);
@@ -193,6 +199,8 @@ process_t* init_process(){
                 reset_process(proc);
                 proc->state = READY;
                 proc->id = next_proc_index++;
+                proc->asid = proc->id ? proc->id : 1; //TODO asid must be globally unique otherwise it may cause conflicting in mm
+                //also reusing it too early can result in unclean mappings
                 proc_count++;
                 proc->win_fb_va = 0;
                 proc->win_fb_phys = 0;
@@ -206,6 +214,7 @@ process_t* init_process(){
     proc = &processes[next_proc_index];
     reset_process(proc);
     proc->id = next_proc_index++;
+    proc->asid = proc->id ? proc->id : 1;
     proc->state = READY;
     proc->priority = PROC_PRIORITY_LOW;
     proc->win_fb_va = 0;
@@ -231,7 +240,7 @@ void stop_process(uint16_t pid, int32_t exit_code){
     if (proc->focused)
         sys_unset_focus();
     if (proc->ttbr) {
-        mmu_swap_ttbr(0);
+        mmu_swap_ttbr(0, 0);
         mmu_swap();
     }
     reset_process(proc);
@@ -353,17 +362,24 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     path = seek_to(pid_s, '/');
     uint64_t pid = parse_int_u64(pid_s, path - pid_s);
     process_t *proc = get_proc_by_pid(pid);
+    if (!proc) return FS_RESULT_NOTFOUND;
     descriptor->id = fid;
     descriptor->cursor = 0;
     module_file *file = kalloc(proc_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
+    if (!file) return FS_RESULT_DRIVER_ERROR;
+    memset(file, 0, sizeof(module_file));
     file->fid = fid;
+    file->references = 1;
     if (strcmp_case(path, "out",true) == 0){
         if (!proc->output) proc->output = (uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
+        if (!proc->output) { kfree(file, sizeof(module_file)); return FS_RESULT_DRIVER_ERROR; }
         descriptor->size = proc->output_size;
         file->file_buffer = (buffer){
             .buffer = (char*)proc->output,
+            .buffer_size = proc->output_size,
             .limit = PROC_OUT_BUF,
-            .options = buffer_circular
+            .options = buffer_circular,
+            .cursor = proc->output_size,
         };
     } else if (strcmp_case(path, "state",true) == 0){
         descriptor->size = sizeof(int);
@@ -373,8 +389,9 @@ FS_RESULT open_proc(const char *path, file *descriptor){
             .limit = sizeof(int),
             .options = buffer_static,
             .buffer_size = sizeof(int),
+            .cursor = 0,
         };
-    } else return FS_RESULT_NOTFOUND;
+    } else { kfree(file, sizeof(module_file)); return FS_RESULT_NOTFOUND; }
     file->file_size = descriptor->size;
     return chashmap_put(proc_opened_files, &descriptor->id, sizeof(uint64_t), file) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
@@ -401,6 +418,7 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
     module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
     if (!file) return 0;
     size_t s = buffer_read(&file->file_buffer, buf, size, offset);
+    fd->size = file->file_size;
     return s;
 }
 
@@ -415,21 +433,35 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
         return 0;
     }
     module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
+    if (!file) return 0;
     if (file->read_only) return 0;
     bool is_output = (uintptr_t)file->file_buffer.buffer == get_current_proc()->output;
 
-    size = min(size+1, file->file_buffer.limit);
+    size = min(size, file->file_buffer.limit);
     if (is_output){//TODO: probably better to make these files be held by this module, and created only when needed
-        fd->cursor = file->file_size;
+        size_t written= buffer_write_lim(&file->file_buffer, buf, size);
     
-        fd->cursor += buffer_write_lim(&file->file_buffer, buf, size);
-        fd->cursor += buffer_write(&file->file_buffer, "\n");
-    
-        file->file_size += size;
-    
-        get_current_proc()->output_size += size;
+        file->file_size = file->file_buffer.buffer_size;
+        get_current_proc()->output_size = file->file_size;
+        fd->size = file->file_size;
+        return written;
     }
-    return size;
+    return 0;
+}
+
+void close_proc(file *fd) {
+    if (!fd) return;
+    if (!proc_opened_files) return;
+
+    uint64_t fid = fd->id;
+    module_file *mfile = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(fid));
+    if (!mfile) return;
+
+    if (mfile->references > 0) mfile->references--;
+    if (mfile->references == 0) {
+        chashmap_remove(proc_opened_files, &fid, sizeof(fid), 0);
+        kfree(mfile, sizeof(module_file));
+    }
 }
 
 system_module scheduler_module = (system_module){
@@ -441,7 +473,7 @@ system_module scheduler_module = (system_module){
     .open = open_proc,
     .read = read_proc,
     .write = write_proc,
-    .close = 0,
+    .close = close_proc,
     .sread = 0,
     .swrite = 0,//TODO implement simple io
     .readdir = list_processes,

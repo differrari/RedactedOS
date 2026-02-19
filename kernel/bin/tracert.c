@@ -101,7 +101,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             write_file(fd, m.data, m.length);
             write_file(fd, "\n", 1);
             //write_file(fd, "\t", 1);
-            free_sized(m.data, m.mem_length);
+            string_free(m);
             return 2;
         }
         dst = r;
@@ -120,7 +120,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
     for (uint32_t p = 0; p < o->count; p++) {
         string col = string_format("rtt%u  ", (uint32_t)(p + 1));
         write_file(fd, col.data, col.length);
-        free_sized(col.data, col.mem_length);
+        string_free(col);
     }
     write_file(fd, "address", 7);
     write_file(fd, "\n", 1);
@@ -135,7 +135,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             string em = string_format("tracert: invalid source %s (no local ip match)", ssrc);
             write_file(fd, em.data, em.length);
             write_file(fd, "\n", 1);
-            free_sized(em.data, em.mem_length);
+            string_free(em);
             return 2;
         }
         txo.index = l3->l3_id;
@@ -150,7 +150,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
     for (uint32_t ttl = 1; ttl <= o->max_ttl; ttl++) {
         string hdr = string_format("%2u  ", ttl);
         write_file(fd, hdr.data, hdr.length);
-        free_sized(hdr.data, hdr.mem_length);
+        string_free(hdr);
 
         uint32_t hop_ip = 0;
         bool any = false;
@@ -165,7 +165,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
                 any = true;
                 string ms = string_format("%ums  ", r.rtt_ms);
                 write_file(fd, ms.data, ms.length);
-                free_sized(ms.data, ms.mem_length);
+                string_free(ms);
             } else {
                 if (r.status == PING_TTL_EXPIRED || r.status == PING_REDIRECT || r.status == PING_PARAM_PROBLEM ||
                     r.status == PING_NET_UNREACH || r.status == PING_HOST_UNREACH || r.status == PING_ADMIN_PROHIBITED ||
@@ -173,7 +173,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
                     any = true;
                     string ms = string_format("%ums  ", r.rtt_ms);
                     write_file(fd, ms.data, ms.length);
-                    free_sized(ms.data, ms.mem_length);
+                    string_free(ms);
                 } else {
                     write_file(fd, "*  ", 3);
                 }
@@ -202,7 +202,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             string note = string_format("stopping after %u consecutive timeout hops", dead_streak);
             write_file(fd, note.data, note.length);
             write_file(fd, "\n", 1);
-            free_sized(note.data, note.mem_length);
+            string_free(note);
             break;
         }
     }
@@ -219,7 +219,7 @@ static int tracert_v6(file *fd, const tr_opts_t *o) {
             string m = string_format("tracert: dns lookup failed (%d) for '%s'", (int)dr, o->host);
             write_file(fd, m.data, m.length);
             write_file(fd, "\n", 1);
-            free_sized(m.data, m.mem_length);
+            string_free(m);
             return 2;
         }
     }
@@ -236,7 +236,7 @@ static int tracert_v6(file *fd, const tr_opts_t *o) {
     for (uint32_t p = 0; p < o->count; p++) {
         string col = string_format("rtt%u  ", p + 1);
         write_file(fd, col.data, col.length);
-        free_sized(col.data, col.mem_length);
+        string_free(col);
     }
     write_file(fd, "address\n", 8);
 
@@ -247,7 +247,7 @@ static int tracert_v6(file *fd, const tr_opts_t *o) {
     for (uint32_t hl = 1; hl <= o->max_ttl; hl++) {
         string h = string_format("%2u  ", hl);
         write_file(fd, h.data, h.length);
-        free_sized(h.data, h.mem_length);
+        string_free(h);
 
         uint8_t hop_ip[16];
         for (int i = 0; i < 16; i++) hop_ip[i] = 0;
@@ -264,7 +264,7 @@ static int tracert_v6(file *fd, const tr_opts_t *o) {
                 any = true;
                 string ms = string_format("%ums  ", r.rtt_ms);
                 write_file(fd, ms.data, ms.length);
-                free_sized(ms.data, ms.mem_length);
+                string_free(ms);
             } else {
                 if (r.status == PING_TTL_EXPIRED || r.status == PING_REDIRECT ||
                     r.status == PING_PARAM_PROBLEM || r.status == PING_NET_UNREACH ||
@@ -273,7 +273,7 @@ static int tracert_v6(file *fd, const tr_opts_t *o) {
                     any = true;
                     string ms = string_format("%ums  ", r.rtt_ms);
                     write_file(fd, ms.data, ms.length);
-                    free_sized(ms.data, ms.mem_length);
+                    string_free(ms);
                 } else {
                     write_file(fd, "*  ", 3);
                 }
@@ -302,7 +302,7 @@ static int tracert_v6(file *fd, const tr_opts_t *o) {
             string note = string_format("stopping after %u consecutive timeout hops", dead_streak);
             write_file(fd, note.data, note.length);
             write_file(fd, "\n", 1);
-            free_sized(note.data, note.mem_length);
+            string_free(note);
             break;
         }
     }
@@ -315,7 +315,7 @@ int run_tracert(int argc, char *argv[]) {
     string p = string_format("/proc/%u/out", pid);
     file fd = (file){0};
     open_file(p.data, &fd);
-    free_sized(p.data, p.mem_length);
+    string_free(p);
 
     tr_opts_t o;
     if (!parse_args(argc, argv, &o)) {

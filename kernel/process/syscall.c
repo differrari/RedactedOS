@@ -68,22 +68,50 @@ u64 syscall_malloc(process_t *ctx){
 
 uptr syscall_palloc(process_t *ctx){
     size_t size = ctx->PROC_X0;
-    void *ptr = palloc(size, MEM_PRIV_USER, MEM_RW, true);
-    register_allocation(ctx->alloc_map, ptr, size);
+    if(!size) return 0;
+    u64 pages = count_pages(size, PAGE_SIZE);
+    size_t alloc_size = pages * PAGE_SIZE;
+
+    void *ptr = palloc_inner(alloc_size, MEM_PRIV_USER, MEM_RW, true, true);
+    if(!ptr) return 0;
+    register_allocation(ctx->alloc_map, ptr, alloc_size);
     if (ctx->use_va){
         uptr va = ctx->last_va_mapping;
-        u64 pages = count_pages(size, PAGE_SIZE);
         for (u64 i = 0; i < pages; i++){
             mmu_map_4kb(ctx->ttbr, va + (i * PAGE_SIZE), (uptr)ptr + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
         }
-        ptr = (void*)ctx->last_va_mapping;
-        ctx->last_va_mapping += (pages * PAGE_SIZE);
+        ctx->last_va_mapping += alloc_size;
+        mmu_flush_asid(ctx->asid);
+        return va;
     }
-    return (uptr)ptr;
+    mmu_flush_asid(ctx->asid);
+    return (uptr)PHYS_TO_VIRT_P(ptr);
 }
 
 u64 syscall_pfree(process_t *ctx){
-    free_registered(ctx->alloc_map, (void*)ctx->PROC_X0);
+    uptr va = ctx->PROC_X0;
+    if (!va) return 0;
+
+    int tr = 0;
+    uptr phys = mmu_translate(va, &tr);
+    if (tr) return 0;
+
+    for (page_index *ind = ctx->alloc_map; ind; ind = ind->header.next) {
+        for (u64 i = 0; i < ind->header.size; i++) {
+            if ((uptr)ind->ptrs[i].ptr == phys) {
+                size_t size = ind->ptrs[i].size;
+                u64 pages = count_pages(size, PAGE_SIZE);
+                for (u64 p = 0; p < pages; p++) mmu_unmap_table(ctx->ttbr, va + (p * PAGE_SIZE), phys + (p * PAGE_SIZE));
+
+                mmu_flush_asid(ctx->asid);
+                pfree((void*)phys, size);
+
+                ind->ptrs[i] = ind->ptrs[ind->header.size - 1];
+                ind->header.size--;
+                return 0;
+            }
+        }
+    }
     return 0;
 }
 

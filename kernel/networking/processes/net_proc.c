@@ -81,7 +81,7 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
 static void free_request(HTTPRequestMsg *req) {
     if (!req) return;
 
-    if (req->path.mem_length) free_sized(req->path.data, req->path.mem_length);
+    if (req->path.mem_length) string_free(req->path);
 
     http_headers_common_free(&req->headers_common);
     http_headers_extra_free(req->extra_headers, req->extra_header_count);
@@ -241,7 +241,7 @@ static void test_http(const net_l4_endpoint* ep) {
 
     http_headers_common_free(&resp.headers_common);
 
-    if (resp.reason.data && resp.reason.mem_length) free_sized(resp.reason.data, resp.reason.mem_length);
+    if (resp.reason.data && resp.reason.mem_length) string_free(resp.reason);
     http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
 }
 

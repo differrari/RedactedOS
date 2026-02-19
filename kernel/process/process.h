@@ -42,6 +42,7 @@ typedef struct {
     uint64_t spsr; 
     //Not used in process saving
     uint16_t id;
+    uint16_t asid;
     uintptr_t stack;
     uintptr_t stack_phys;
     uint64_t stack_size;

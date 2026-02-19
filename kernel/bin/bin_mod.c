@@ -9,6 +9,7 @@
 #include "console/kio.h"
 #include "process/loading/elf_file.h"
 #include "memory/page_allocator.h"
+#include "alloc/allocate.h"
 #include "std/memory.h"
 #include "sysregs.h"
 
@@ -30,64 +31,83 @@ open_bin_ref available_cmds[] = {
 
 process_t* execute(const char* prog_name, int argc, const char* argv[]){
     size_t listsize = 0x1000;
-    void *listptr = malloc(listsize);
-    if (list_directory_contents("/boot/redos/bin/", listptr, listsize, 0)){
-        size_t name_len = strlen(prog_name) + 4;
-        char *full_name = strcat_new(prog_name, ".elf");
+    void *listptr = zalloc(listsize);
+    char *full_name = 0;
+
+    if (listptr && list_directory_contents("/boot/redos/bin/", listptr, listsize, 0)){
+        full_name = strcat_new(prog_name, ".elf");
         string_list *list = (string_list*)listptr;
         char* reader = (char*)list->array;
         kprintf("Directory contains %i files",list->count);
         for (uint32_t i = 0; i < list->count; i++){
             char *f = reader;
-            if (*f){
-                if (strcmp_case(f, full_name,true) == 0){
-                    string path = string_format("/boot/redos/bin/%s",full_name);
-                    file fd = {};
-                    FS_RESULT op = openf(path.data, &fd);
-                    if (op != FS_RESULT_SUCCESS){
-                        kprintf("Failed to open file %s",path.data);
-                        return 0;
-                    }
-                    char *program = malloc(fd.size);
-                    if (readf(&fd, program, fd.size) != fd.size){
-                        kprintf("Failed to read file %s", path.data);
-                    }
-                    process_t *proc = load_elf_file(prog_name, 0, program, fd.size);
-                    string_free(path);
-                    free_sized(full_name, name_len);
-                    closef(&fd);
-                    if (!proc){
-                        kprintf("Failed to create process for %s",prog_name);
-                    }
-                    proc->PROC_X0 = argc;
-                    if (argc > 0){
-                        uintptr_t start = (uintptr_t)argv[0];
-                        uintptr_t end = (uintptr_t)argv;
-                        size_t total = end-start;
-                        size_t argvs = argc * sizeof(uintptr_t);
-                        char *nargvals = (char*)(PHYS_TO_VIRT_P(proc->stack_phys)-total-argvs);
-                        char *vnargvals = (char*)(proc->stack-total-argvs);
-                        char** nargv = (char**)(PHYS_TO_VIRT_P(proc->stack_phys)-argvs);
-                        uintptr_t strptr = 0;
-                        for (int i = 0; i < argc; i++){
-                            size_t strsize = strlen(argv[i]);
-                            memcpy(nargvals + strptr, argv[i], strsize);
-                            *(char*)(nargvals + strptr + strsize++) = 0;
-                            nargv[i] = vnargvals + strptr;
-                            strptr += strsize;
-                        }
-                        proc->PROC_X1 = (uintptr_t)proc->stack-argvs;
-                        proc->sp -= total+argvs;
-                    }
-                    proc->state = READY;
-                    return proc;
-                }
-                while (*reader) reader++;
-                reader++;
+            while (*reader) reader++;
+            reader++;
+
+            if (!*f) continue;
+            if (!full_name) continue;
+            if (strcmp_case(f, full_name,true) != 0) continue;
+
+            string path = string_format("/boot/redos/bin/%s",full_name);
+            file fd = {};
+            FS_RESULT op = openf(path.data, &fd);
+            if (op != FS_RESULT_SUCCESS){
+                kprintf("Failed to open file %s",path.data);
+                string_free(path);
+                release(full_name);
+                release(listptr);
+                return 0;
             }
+            char *program = zalloc(fd.size);
+            if (!program){
+                kprintf("Failed to read file %s", path.data);
+                closef(&fd);
+                string_free(path);
+                release(full_name);
+                release(listptr);
+                return 0;
+            }
+            if (readf(&fd, program, fd.size) != fd.size){
+                kprintf("Failed to read file %s", path.data);
+            }
+            process_t *proc = load_elf_file(prog_name, 0, program, fd.size);
+            closef(&fd);
+            release(program);
+            string_free(path);
+            if (!proc){
+                kprintf("Failed to create process for %s",prog_name);
+                release(full_name);
+                release(listptr);
+                return 0;
+            }
+            proc->PROC_X0 = argc;
+            if (argc > 0){
+                uintptr_t start = (uintptr_t)argv[0];
+                uintptr_t end = (uintptr_t)argv;
+                size_t total = end-start;
+                size_t argvs = argc * sizeof(uintptr_t);
+                char *nargvals = (char*)(PHYS_TO_VIRT_P(proc->stack_phys)-total-argvs);
+                char *vnargvals = (char*)(proc->stack-total-argvs);
+                char** nargv = (char**)(PHYS_TO_VIRT_P(proc->stack_phys)-argvs);
+                uintptr_t strptr = 0;
+                for (int j = 0; j < argc; j++){
+                    size_t strsize = strlen(argv[j]);
+                    memcpy(nargvals + strptr, argv[j], strsize);
+                    *(char*)(nargvals + strptr + strsize++) = 0;
+                    nargv[j] = vnargvals + strptr;
+                    strptr += strsize;
+                }
+                proc->PROC_X1 = (uintptr_t)proc->stack-argvs;
+                proc->sp -= total+argvs;
+            }
+            proc->state = READY;
+            release(full_name);
+            release(listptr);
+            return proc;
         }
-        free_sized(full_name,name_len);
     }
+    if (full_name) release(full_name);
+    if (listptr) release(listptr);
 
     for (uint32_t i = 0; i < N_ARR(available_cmds); i++){
         if (strcmp(available_cmds[i].name, prog_name) == 0){

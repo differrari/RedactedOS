@@ -21,6 +21,7 @@
 
 #define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL
 #define PTE_AF (1ULL << 10)
+#define PTE_NG (1ULL << 11)
 #define PTE_SH_SHIFT 8
 #define PTE_AP_SHIFT 6
 #define PTE_ATTR_SHIFT 2
@@ -33,6 +34,13 @@ static uintptr_t *kernel_ttbr1;
 static bool mmu_verbose;
 static inline void mmu_flush_icache();
 static inline void mmu_flush_all();
+
+static uint64_t asid_shift;
+static uint16_t asid_mask;
+
+uint64_t pttbr_hw;
+uint16_t pttbr_asid;
+uintptr_t *pttbr;
 
 static inline uint64_t make_pte(uint64_t pa, uint64_t attr_index, uint8_t mem_attr, uint8_t level, uint64_t type) {
     uint64_t sh = (mem_attr & MEM_DEV) ? 0 : 0b11;
@@ -47,10 +55,11 @@ static inline uint64_t make_pte(uint64_t pa, uint64_t attr_index, uint8_t mem_at
         attr |= PTE_UXN;
         if (!(mem_attr & MEM_EXEC)) attr |= PTE_PXN;
     } else if (level == MEM_PRIV_USER) {
+        attr |= PTE_NG;
         attr |= PTE_PXN;
         if (!(mem_attr & MEM_EXEC)) attr |= PTE_UXN;
     } else if (level == MEM_PRIV_SHARED) {
-
+        attr |= PTE_NG;
         attr |= PTE_PXN;
         if (!(mem_attr & MEM_EXEC)) attr |= PTE_UXN;
     }
@@ -383,6 +392,19 @@ extern void mmu_start(uint64_t *ttbr1, uint64_t *ttbr0);
 uintptr_t heap_end;
 
 void mmu_init() {
+    uint64_t mmfr0 = 0;
+    asm volatile("mrs %0, id_aa64mmfr0_el1" : "=r"(mmfr0));
+    uint64_t asidbits = (mmfr0 >> 4) & 0xF;
+    if (asidbits >= 2) {
+        asid_mask = 0xFFFF;
+        asid_shift = 48;
+    } else {
+        ///TODO is asid in bits 55-48 or 63-56 when asid bits == 8?
+        //https://developer.arm.com/documentation/ddi0601/2022-06/AArch64-Registers/TTBR1-EL1--Translation-Table-Base-Register-1--EL1-
+        asid_mask = 0xFF;
+        asid_shift = 56;
+    }
+
     kernel_ttbr0 = (uintptr_t*)mmu_alloc();
     kernel_ttbr1 = (uintptr_t*)mmu_alloc();
     uintptr_t kstart = mem_get_kmem_start();
@@ -447,6 +469,9 @@ void mmu_init() {
 
     hw_high_va();
     mmu_start((uint64_t*)kernel_ttbr1, (uint64_t*)kernel_ttbr0);
+    pttbr = kernel_ttbr0;
+    pttbr_asid = 0;
+    pttbr_hw = (uint64_t)kernel_ttbr0;
 
     mmu_flush_all();
     mmu_flush_icache();
@@ -565,7 +590,7 @@ void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t 
     if (level == MEM_PRIV_USER){
         if (!pttbr) panic("register_proc_memory no pttbr for user", va);
         mmu_map_4kb((uint64_t*)pttbr, va, phys, MAIR_IDX_NORMAL, attributes | MEM_NORM, level);
-        mmu_flush_all();
+        mmu_flush_asid(pttbr_asid);
         mmu_flush_icache();
         return;
     }
@@ -736,10 +761,15 @@ void debug_mmu_address(uint64_t va){
     return;
 }
 
-extern void mmu_swap(uintptr_t* ttbr);
-
-uintptr_t *pttbr;
-
-void mmu_swap_ttbr(uintptr_t* ttbr){
+void mmu_swap_ttbr(uintptr_t* ttbr, uint16_t asid){
     pttbr = ttbr ? ttbr : (uintptr_t*)kernel_ttbr0;
+    pttbr_asid = ttbr ? (asid & asid_mask) : 0;
+    pttbr_hw = ((uint64_t)pttbr_asid << asid_shift) | (uint64_t)(uintptr_t)pttbr;
+}
+
+void mmu_flush_asid(uint16_t asid) {
+    uint64_t v = (uint64_t)(asid & asid_mask) << asid_shift;
+    asm volatile("dsb ishst" ::: "memory");
+    asm volatile("tlbi aside1is, %0":: "r"(v) : "memory");
+    asm volatile("dsb ish\n\tisb" ::: "memory");
 }

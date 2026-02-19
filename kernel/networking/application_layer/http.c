@@ -14,7 +14,7 @@ string http_header_builder(const HTTPHeadersCommon *C, const HTTPHeader *H, uint
 
     string tmp = string_format("Content-Length: %i\r\n", (int)C->length);
     string_append_bytes(&out, tmp.data, tmp.length);
-    free_sized(tmp.data, tmp.mem_length);
+    string_free(tmp);
 
     if (C->date.length){
         string_append_bytes(&out, "Date: ", 6);
@@ -65,20 +65,20 @@ string http_header_builder(const HTTPHeadersCommon *C, const HTTPHeader *H, uint
 
 void http_headers_common_free(HTTPHeadersCommon *C){
     if (!C) return;
-    if (C->type.mem_length) free_sized(C->type.data, C->type.mem_length);
-    if (C->date.mem_length) free_sized(C->date.data, C->date.mem_length);
-    if (C->connection.mem_length) free_sized(C->connection.data, C->connection.mem_length);
-    if (C->keep_alive.mem_length) free_sized(C->keep_alive.data, C->keep_alive.mem_length);
-    if (C->host.mem_length) free_sized(C->host.data, C->host.mem_length);
-    if (C->content_type.mem_length) free_sized(C->content_type.data, C->content_type.mem_length);
+    if (C->type.mem_length) string_free(C->type);
+    if (C->date.mem_length) string_free(C->date);
+    if (C->connection.mem_length) string_free(C->connection);
+    if (C->keep_alive.mem_length) string_free(C->keep_alive);
+    if (C->host.mem_length) string_free(C->host);
+    if (C->content_type.mem_length) string_free(C->content_type);
     *C = (HTTPHeadersCommon){0};
 }
 
 void http_headers_extra_free(HTTPHeader *extra, uint32_t extra_count){
     if (!extra) return;
     for (uint32_t i = 0; i < extra_count; i++){
-        if (extra[i].key.mem_length) free_sized(extra[i].key.data, extra[i].key.mem_length);
-        if (extra[i].value.mem_length) free_sized(extra[i].value.data, extra[i].value.mem_length);
+        if (extra[i].key.mem_length) string_free(extra[i].key);
+        if (extra[i].value.mem_length) string_free(extra[i].value);
     }
     free_sized(extra, extra_count * sizeof(HTTPHeader));
 }
@@ -164,8 +164,8 @@ void http_header_parser(const char *buf, uint32_t len,
             if (extras && extra_i < max_lines){
                 extras[extra_i++] = (HTTPHeader){ key, value };
             } else {
-                if (key.mem_length) free_sized(key.data, key.mem_length);
-                if (value.mem_length) free_sized(value.data, value.mem_length);
+                if (key.mem_length) string_free(key);
+                if (value.mem_length) string_free(value);
             }
         }
 
@@ -195,8 +195,8 @@ void http_header_parser(const char *buf, uint32_t len,
     }
 
     for (uint32_t i = 0; i < extra_i; i++){
-        if (extras[i].key.mem_length) free_sized(extras[i].key.data, extras[i].key.mem_length);
-        if (extras[i].value.mem_length) free_sized(extras[i].value.data, extras[i].value.mem_length);
+        if (extras[i].key.mem_length) string_free(extras[i].key);
+        if (extras[i].value.mem_length) string_free(extras[i].value);
     }
     free_sized(extras, sizeof(*extras) * max_lines);
     *out_extra = NULL;
@@ -212,12 +212,12 @@ string http_request_builder(const HTTPRequestMsg *R){
 
     string hdrs = http_header_builder(&R->headers_common, R->extra_headers, R->extra_header_count);
     string_append_bytes(&out, hdrs.data, hdrs.length);
-    free_sized(hdrs.data, hdrs.mem_length);
+    string_free(hdrs);
 
     if (R->body.ptr && R->body.size){
         string body = string_from_literal_length((char*)R->body.ptr, R->body.size);
         string_append_bytes(&out, body.data, body.length);
-        free_sized(body.data, body.mem_length);
+        string_free(body);
     }
 
     return out;
@@ -230,7 +230,7 @@ string http_response_builder(const HTTPResponseMsg *R){
 
     string hdrs = http_header_builder(&R->headers_common, R->extra_headers, R->extra_header_count);
     string_append_bytes(&out, hdrs.data, hdrs.length);
-    free_sized(hdrs.data, hdrs.mem_length);
+    string_free(hdrs);
 
     if (R->body.ptr && R->body.size){
         string_append_bytes(&out, (char*)R->body.ptr, (uint32_t)R->body.size);

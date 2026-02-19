@@ -60,7 +60,15 @@ typedef struct big_alloc_page {
 uintptr_t *mem_bitmap;
 static big_alloc_page* big_alloc_meta = 0;
 
+static uint64_t alloc_min_page = 0;
+static uint64_t alloc_max_page = 0;
+static uint64_t alloc_hint_page = 0;
+static uint64_t bitmap_page_count = 0;
+
 static bool page_alloc_verbose = false;
+
+extern uintptr_t heap_end;
+static void page_alloc_init();
 
 void page_alloc_enable_verbose(){
     page_alloc_verbose = true;
@@ -84,15 +92,24 @@ static inline uint64_t lowmask64(uint64_t bits) {
 }
 
 void pfree(void* ptr, uint64_t size) {
-    int pages = count_pages(size,PAGE_SIZE);
+    if (!ptr || !size) return;
+    if (!alloc_max_page) page_alloc_init();
+    if (!mem_bitmap || !alloc_max_page) panic("pfree init failed", (uintptr_t)ptr);
+
+    uint64_t pages = count_pages(size,PAGE_SIZE);
     uint64_t addr = VIRT_TO_PHYS((uint64_t)ptr);
     addr /= PAGE_SIZE;
-    for (int i = 0; i < pages; i++){
+    if (addr < alloc_min_page || addr + pages > alloc_max_page) panic("pfree out of range", (uintptr_t)ptr);
+
+    for (uint64_t i = 0; i < pages; i++){
         uint64_t index = addr + i;
         uint64_t table_index = index/64;
         uint64_t table_offset = index % 64;
         mem_bitmap[table_index] &= ~(1ULL << table_offset);
     }
+
+    if (addr < alloc_hint_page) alloc_hint_page = addr;
+    if (alloc_hint_page < alloc_min_page) alloc_hint_page = alloc_min_page;
 }
 
 void free_managed_page(void* ptr){
@@ -127,8 +144,31 @@ void free_managed_page(void* ptr){
     pfree((void*)ptr, PAGE_SIZE);
 }
 
-uint64_t start;
-uint64_t end;
+static void page_alloc_init(){
+    uint64_t ram_start = get_user_ram_start();
+    uint64_t ram_end = get_user_ram_end();
+    uint64_t start_page = ram_start / PAGE_SIZE;
+    uint64_t end_page = ram_end / PAGE_SIZE;
+
+    uint64_t words = (end_page + 63) /64;
+    uint64_t bytes = words * sizeof(uint64_t);
+    bitmap_page_count = count_pages(bytes, PAGE_SIZE);
+
+    mem_bitmap = (uintptr_t*)ram_start;
+    memset(mem_bitmap, 0, bitmap_page_count * PAGE_SIZE);
+
+    if (end_page & 63) {
+        uint64_t tail = end_page & 63;
+        mem_bitmap[words - 1] |= ~lowmask64(tail);
+    }
+
+    alloc_min_page = start_page + bitmap_page_count;
+    alloc_max_page = end_page;
+    alloc_hint_page = alloc_min_page;
+
+    heap_end = alloc_min_page * PAGE_SIZE;
+    mark_used(ram_start, bitmap_page_count);
+}
 
 void setup_page(uintptr_t address, uint8_t attributes){
     mem_page* new_info = (mem_page*)address;
@@ -137,18 +177,12 @@ void setup_page(uintptr_t address, uint8_t attributes){
     new_info->attributes = attributes;
 }
 
-extern uintptr_t heap_end;
-
 void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map) {
-    if (!start || !end) {
-        start = count_pages(get_user_ram_start(),PAGE_SIZE); 
-        end = count_pages(get_user_ram_end(),PAGE_SIZE);
-        mem_bitmap = (uintptr_t*)(start * PAGE_SIZE);
-        start += count_pages(65536*8,PAGE_SIZE);
-        memset(mem_bitmap, 0, 65536*8);
-        heap_end = start*PAGE_SIZE;
-    }
+    if (!alloc_max_page) page_alloc_init();
     uint64_t page_count = count_pages(size,PAGE_SIZE);
+    uint64_t reg_min = alloc_min_page / 64;
+    uint64_t reg_end = (alloc_max_page + 63) / 64;
+    uint64_t reg_hint = alloc_hint_page / 64;
 
     if (page_count > 64){
         kprintfv("[page_alloc] Large allocation > 64p");
@@ -158,7 +192,10 @@ void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, 
         uint64_t align_regs = 1;
         if (size >= GRANULE_2MB && (size & (GRANULE_2MB - 1)) == 0) align_regs = GRANULE_2MB / (PAGE_SIZE * 64);
 
-        for (uint64_t i = start/64; i < end/64; i++) {
+        for (int pass = 0; pass < 2; pass++) {
+        uint64_t i0 = pass == 0 ? reg_hint : reg_min;
+        uint64_t i1 = pass == 0 ? reg_end : reg_hint;
+        for (uint64_t i = i0; i + reg_count <= i1; i++) {
             if (align_regs > 1 && (i % align_regs) != 0) continue;
             bool found = true;
             for (uint64_t j = 0; j < reg_count; j++){
@@ -177,7 +214,8 @@ void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, 
                         mem_bitmap[i+j] = UINT64_MAX;
                 }
 
-                start = (i * 64) + page_count;
+                alloc_hint_page = (i * 64) + page_count;
+                if (alloc_hint_page < alloc_min_page) alloc_hint_page = alloc_min_page;
                 mem_page* prev_page = 0;
                 for (uint32_t p = 0; p < page_count; p++){
                     uintptr_t address = ((i * 64) + p) * PAGE_SIZE;
@@ -203,22 +241,25 @@ void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, 
                 return (void*)(i * 64 * PAGE_SIZE);
             }
         }
+        }
+        return 0;
     }
 
-    bool skipped_regs = false;
+    for (int pass = 0; pass < 2; pass++) {
+        uint64_t i0 = pass == 0 ? reg_hint : reg_min;
+        uint64_t i1 = pass == 0 ? reg_end : reg_hint;
 
-    for (uint64_t i = start/64; i < end/64; i++) {
-        if (mem_bitmap[i] != UINT64_MAX) {
-            kprintfv("Normal allocation");
+        for (uint64_t i = i0; i < i1; i++) {
+            if (mem_bitmap[i] == UINT64_MAX) continue;
+
             uint64_t inv = ~mem_bitmap[i];
             uint64_t bit = __builtin_ctzll(inv);
             if (bit > (64 - page_count)){ 
-                skipped_regs = true;
                 continue;
             }
-            do {
+            while (bit < 64) {
                 bool found = true;
-                for (uint64_t b = bit; b < (uint64_t)min(64,bit + page_count); b++){
+                for (uint64_t b = bit; b < bit + page_count; b++){
                     if ((mem_bitmap[i] >> b) & 1ull){
                         bit = b + 1;
                         found = false;
@@ -226,12 +267,8 @@ void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, 
                     }
                 }
                 if (found) break;
-            } while (bit < 64);
-            if (bit == 64){ 
-                skipped_regs = true;
-                continue;
             }
-            
+            if (bit >= 64) continue;
             uintptr_t first_address = 0;
             mem_page* prev_page = 0;
 
@@ -260,9 +297,12 @@ void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, 
                 }
             }
 
+            alloc_hint_page = (first_address / PAGE_SIZE) + page_count;
+            if (alloc_hint_page < alloc_min_page) alloc_hint_page = alloc_min_page;
+
             kprintfv("[page_alloc] Final address %x", first_address);
             return (void*)first_address;
-        } else if (!skipped_regs) start = (i + 1) * 64;
+        } 
     }
 
     uart_puts("[page_alloc error] Could not allocate");
@@ -276,8 +316,9 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full){
 }
 
 bool page_used(uintptr_t ptr){
-    uint64_t addr = (uint64_t)ptr;
-    addr /= PAGE_SIZE;
+    if (!mem_bitmap || !alloc_max_page) return false;
+    uint64_t addr = VIRT_TO_PHYS((uint64_t)ptr) / PAGE_SIZE;
+    if (addr >= alloc_max_page) return false;
     uint64_t table_index = addr/64;
     uint64_t table_offset = addr % 64;
     return (mem_bitmap[table_index] >> table_offset) & 1;
@@ -285,16 +326,15 @@ bool page_used(uintptr_t ptr){
 
 void mark_used(uintptr_t address, size_t pages)
 {
+    if (!mem_bitmap) return;
+    address = VIRT_TO_PHYS(address);
     if ((address & (PAGE_SIZE - 1)) != 0) {
         kprintf("[mark_used error] address %x not aligned", address);
         return;
     }
     if (pages == 0) return;
 
-    uint64_t start = count_pages(get_user_ram_start(),PAGE_SIZE);
-
-    uint64_t page_index = (address / (PAGE_SIZE * 64)) - (start/64);
-
+    uint64_t page_index = address / PAGE_SIZE;
     for (size_t j = 0; j < pages; j++) {
         uint64_t idx = page_index + j;
         uint64_t i = idx / 64;
@@ -654,21 +694,7 @@ void kfree(void* ptr, size_t size) {
                 panic("kfree bitmap not init", va);
             }
 
-            uintptr_t va_base = va & ~0xFFFULL;
-            uint64_t pages = count_pages(big_size, PAGE_SIZE);
-
-            for(uint64_t p = 0; p < pages; p++) {
-                uintptr_t pa = phys_base + (p*PAGE_SIZE);
-                uintptr_t va_p = va_base + (p*PAGE_SIZE);
-
-
-                uint64_t page_idx = pa / PAGE_SIZE;
-                uint64_t table_index = page_idx / 64;
-                uint64_t table_offset = page_idx % 64;
-
-                mem_bitmap[table_index] &= ~(1ULL << table_offset);
-            }
-
+            pfree(PHYS_TO_VIRT_P((void*)phys_base), big_size);
             return;
         }
         mp = mp->next;

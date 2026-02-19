@@ -29,10 +29,10 @@ void *launcher_page = 0;
 
 void* alloc_launcher(size_t size){
     if (!launcher_page) {
-        launcher_page = malloc(PAGE_SIZE);
+        launcher_page = zalloc(PAGE_SIZE);
         print("Launcher has been given %llx",launcher_page);
     }
-    return allocate(launcher_page, size, malloc);
+    return allocate(launcher_page, size, zalloc);
 }
 
 void add_entry(string_slice name, string_slice ext, string path, package_info info){
@@ -54,10 +54,11 @@ uint16_t find_extension(char *path){
 
 package_info get_pkg_info(char* info_path){
     package_info pkg = {};
-    char *info = read_full_file(info_path, 0);
+    size_t info_size = 0;
+    char *info = read_full_file(info_path, &info_size);
     if (!info) return pkg;
-    parse_package_info(info);
-    // release(info);
+    pkg = parse_package_info(info);
+    release(info);
     return pkg;
 }
 
@@ -70,7 +71,7 @@ void handle_entry(const char *directory, const char *file) {
     if (slice_lit_match(ext,"red",true)){
         string pkg_info = string_concat(fullpath, string_from_literal("/package.info"));
         add_entry(name, ext, fullpath, get_pkg_info(pkg_info.data));
-        // string_free(pkg_info);
+        string_free(pkg_info);
     }
 }
 
@@ -167,18 +168,24 @@ void activate_current(){
             return;
         }
         string s = string_format("%s/%v.elf",entry->path.data, entry->name);
-        file fd = {};
-        char *file = read_full_file(s.data, 0);
-        // string_free(s);
+        size_t elf_size = 0;
+        char *file = read_full_file(s.data, &elf_size);
+        string_free(s);
+        if (!file || !elf_size) {
+            rendered_full = false;
+            return;
+        }
+
         fb_clear(&ctx, 0);
         commit_draw_ctx(&ctx);
-        kprintf("[LAUNCHER] read file %x",fd.size);
+        kprintf("[LAUNCHER] read file %x", elf_size);
         disable_interrupt();
-        active_proc = load_elf_file(entry->name.data, entry->path.data, file,fd.size);
-        // release(file);
+        active_proc = load_elf_file(entry->name.data, entry->path.data, file, elf_size);
+        release(file);
         if (!active_proc){
             kprintf("[LAUNCHER] Failed to load ELF file");
             rendered_full = false;
+            enable_interrupt();
             return;
         }
         active_proc->win_id = get_current_proc()->win_id;
