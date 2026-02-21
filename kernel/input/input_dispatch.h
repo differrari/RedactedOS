@@ -44,6 +44,9 @@ bool sys_read_event_current(kbd_event *out);
 bool sys_shortcut_triggered_current(uint16_t sid);
 bool sys_shortcut_triggered(uint16_t pid, uint16_t sid);
 
+i8 sys_read_scroll(int pid);
+i8 sys_read_scroll_current();
+
 bool is_new_keypress(keypress* current, keypress* previous);
 bool keypress_contains(keypress *kp, char key, uint8_t modifier);
 void remove_double_keypresses(keypress* current, keypress* previous);

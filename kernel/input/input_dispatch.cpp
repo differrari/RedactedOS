@@ -48,6 +48,22 @@ bool register_keypress(keypress kp) {
     return false;
 }
 
+bool register_scroll(i8 scroll){
+    if (!(uintptr_t)focused_proc) return false;
+    
+    scroll_buffer_t* buf = &focused_proc->scroll_buffer;
+    
+    uint32_t next_index = (buf->write_index + 1) % INPUT_BUFFER_CAPACITY;
+
+    buf->entries[buf->write_index] = scroll;
+    buf->write_index = next_index;
+
+    if (buf->write_index == buf->read_index)
+        buf->read_index = (buf->read_index + 1) % INPUT_BUFFER_CAPACITY;
+    
+    return true;
+}
+
 void register_event(kbd_event event){
     if (!(uintptr_t)focused_proc) return;
 
@@ -83,6 +99,7 @@ void register_mouse_input(mouse_input *rat){
     mouse_loc.x = min(max(0, mouse_loc.x), screen_bounds.width);
     mouse_loc.y = min(max(0, mouse_loc.y), screen_bounds.height);
     gpu_update_cursor(mouse_loc, false);
+    if (rat->scroll != 0) register_scroll(rat->scroll);
     uint8_t cursor_state = rat->buttons;
     if (cursor_state != last_cursor_state){
         last_cursor_state = cursor_state;
@@ -169,12 +186,25 @@ bool keypress_contains(keypress *kp, char key, uint8_t modifier){
 }
 
 bool sys_read_event(int pid, kbd_event *out){
-     process_t *process = get_proc_by_pid(pid);
+    process_t *process = get_proc_by_pid(pid);
     if (process->event_buffer.read_index == process->event_buffer.write_index) return false;
 
     *out = process->event_buffer.entries[process->event_buffer.read_index];
     process->event_buffer.read_index = (process->event_buffer.read_index + 1) % INPUT_BUFFER_CAPACITY;
     return true;
+}
+
+i8 sys_read_scroll(int pid){
+    process_t *process = get_proc_by_pid(pid);
+    if (process->scroll_buffer.read_index == process->scroll_buffer.write_index) return false;
+
+    i8 ret = process->scroll_buffer.entries[process->scroll_buffer.read_index];
+    process->scroll_buffer.read_index = (process->scroll_buffer.read_index + 1) % INPUT_BUFFER_CAPACITY;
+    return ret;
+}
+
+i8 sys_read_scroll_current(){
+    return sys_read_scroll(get_current_proc_pid());
 }
 
 bool sys_read_input(int pid, keypress *out){

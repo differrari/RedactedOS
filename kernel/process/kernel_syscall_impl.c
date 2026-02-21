@@ -52,6 +52,7 @@ extern bool read_event(kbd_event *event){
 
 extern void get_mouse_status(mouse_data *in){
     in->raw = get_raw_mouse_in();
+    in->raw.scroll = sys_read_scroll_current();
     in->position = convert_mouse_position(get_mouse_pos());
 }
 
