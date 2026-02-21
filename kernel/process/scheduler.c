@@ -764,6 +764,7 @@ size_t readdir_proc(const char *path, void *buf, size_t size, file_offset *offse
         irq_restore(irq);
         return res;
     }
+    irq_restore(irq);
     return false;
 }
 
