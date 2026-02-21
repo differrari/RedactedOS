@@ -38,6 +38,11 @@ static inline void mmu_flush_all();
 static uint64_t asid_shift;
 static uint16_t asid_mask;
 
+static uint32_t asid_gen;
+static uint32_t asid_max;
+static uint32_t asid_next;
+static uint64_t asid_used[65536/64];
+
 uint64_t pttbr_hw;
 uint16_t pttbr_asid;
 uintptr_t *pttbr;
@@ -395,15 +400,13 @@ void mmu_init() {
     uint64_t mmfr0 = 0;
     asm volatile("mrs %0, id_aa64mmfr0_el1" : "=r"(mmfr0));
     uint64_t asidbits = (mmfr0 >> 4) & 0xF;
-    if (asidbits >= 2) {
-        asid_mask = 0xFFFF;
-        asid_shift = 48;
-    } else {
-        ///TODO is asid in bits 55-48 or 63-56 when asid bits == 8?
-        //https://developer.arm.com/documentation/ddi0601/2022-06/AArch64-Registers/TTBR1-EL1--Translation-Table-Base-Register-1--EL1-
-        asid_mask = 0xFF;
-        asid_shift = 56;
-    }
+    asid_shift = 48;
+    asid_mask = (asidbits >= 2) ? 0xFFFF : 0xFF;
+    asid_gen = 1;
+    asid_max = (uint32_t)asid_mask + 1;
+    asid_next = 1;
+    memset(asid_used, 0, sizeof(asid_used));
+    asid_used[0] = 1;
 
     kernel_ttbr0 = (uintptr_t*)mmu_alloc();
     kernel_ttbr1 = (uintptr_t*)mmu_alloc();
@@ -764,7 +767,8 @@ void debug_mmu_address(uint64_t va){
 void mmu_swap_ttbr(uintptr_t* ttbr, uint16_t asid){
     pttbr = ttbr ? ttbr : (uintptr_t*)kernel_ttbr0;
     pttbr_asid = ttbr ? (asid & asid_mask) : 0;
-    pttbr_hw = ((uint64_t)pttbr_asid << asid_shift) | (uint64_t)(uintptr_t)pttbr;
+    uint64_t root_pa = VIRT_TO_PHYS((uintptr_t)pttbr) & PTE_ADDR_MASK;
+    pttbr_hw = ((uint64_t)pttbr_asid << asid_shift) | root_pa;
 }
 
 void mmu_flush_asid(uint16_t asid) {
@@ -772,4 +776,71 @@ void mmu_flush_asid(uint16_t asid) {
     asm volatile("dsb ishst" ::: "memory");
     asm volatile("tlbi aside1is, %0":: "r"(v) : "memory");
     asm volatile("dsb ish\n\tisb" ::: "memory");
+}
+
+void mmu_asid_ensure(uint16_t *asid, uint32_t *asid_generation) {
+    if (!asid || !asid_generation) return;
+    if (!asid_max) return;
+    if (*asid && *asid_generation == asid_gen) return;
+
+    for (;;) {
+        if (asid_next >= asid_max) {
+            asid_gen++;
+            mmu_flush_all();
+            memset(asid_used, 0, sizeof(asid_used));
+            asid_used[0] = 1;
+            asid_next = 1;
+        }
+        uint32_t a = asid_next++;
+        uint32_t w = a >> 6;
+        uint32_t b = a & 63;
+        if (asid_used[w] & (1ULL << b)) continue;
+        asid_used[w] |= 1ULL << b;
+        *asid = (uint16_t)a;
+        *asid_generation = asid_gen;
+        return;
+    }
+}
+
+bool mmu_unmap_and_get_pa(uint64_t *table, uint64_t va, uint64_t *pa) {
+    if (!table) return false;
+    va &= ~(GRANULE_4KB-1);
+
+    uint64_t l0_index = (va >> 39) & 0x1FF;
+    uint64_t l1_index = (va >> 30) & 0x1FF;
+    uint64_t l2_index = (va >> 21) & 0x1FF;
+    uint64_t l3_index = (va >> 12) & 0x1FF;
+
+    uint64_t l1_val = table[l0_index];
+    if (!(l1_val & 1)) return false;
+    if ((l1_val & 0b11) != PD_TABLE) return false;
+    uint64_t* l1 = (uint64_t*)(l1_val & PTE_ADDR_MASK);
+
+    uint64_t l2_val = l1[l1_index];
+    if (!(l2_val & 1)) return false;
+    if ((l2_val & 0b11) != PD_TABLE) return false;
+    uint64_t* l2 = (uint64_t*)(l2_val & PTE_ADDR_MASK);
+
+    uint64_t l3_val = l2[l2_index];
+    if (!(l3_val & 1)) return false;
+
+    if ((l3_val & 0b11) == PD_BLOCK) {
+        uint64_t base = l3_val & PTE_ADDR_MASK;
+        uint64_t off = va & (GRANULE_2MB - 1);
+        uint64_t p = (base & ~(GRANULE_2MB - 1)) + off;
+
+        if (pa) *pa = p;
+        mmu_unmap_table(table, va, p);
+        return true;
+    }
+
+    if ((l3_val & 0b11) != PD_TABLE) return false;
+    uint64_t* l3 = (uint64_t*)(l3_val & PTE_ADDR_MASK);
+
+    uint64_t l4_val = l3[l3_index];
+    if (!(l4_val & 1)) return false;
+
+    if (pa) *pa = l4_val & PTE_ADDR_MASK;
+    l3[l3_index] = 0;
+    return true;
 }

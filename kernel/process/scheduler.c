@@ -56,6 +56,7 @@ void switch_proc(ProcSwitchReason reason) {
     current_proc = next_proc;
     cpec = (uintptr_t)&processes[current_proc];
     timer_reset(processes[current_proc].priority);
+    if (processes[current_proc].ttbr) mmu_asid_ensure(&processes[current_proc].asid, &processes[current_proc].asid_gen);
     mmu_swap_ttbr(processes[current_proc].ttbr, processes[current_proc].asid);
     process_restore();
 }
@@ -115,21 +116,18 @@ uint16_t get_current_proc_pid(){
 }
 
 void reset_process(process_t *proc){
-    bool just_finished = processes[current_proc].id == proc->id;
+    uint16_t pid = proc->id;
+    int32_t exit_code = proc->exit_code;
+    uint8_t state = proc->state;
+
+    bool just_finished = processes[current_proc].id == pid;
     proc->sp = 0;
     proc->pc = 0;
     proc->spsr = 0;
-    proc->exit_code = 0;
-    if (!just_finished && proc->output)
-        pfree((void*)proc->output, PROC_OUT_BUF);
-    if (!just_finished && proc->debug_lines.ptr)
-        pfree((void*)proc->debug_lines.ptr, proc->debug_lines.size);
-    if (!just_finished && proc->debug_line_str.ptr)
-        pfree((void*)proc->debug_line_str.ptr, proc->debug_line_str.size);
     for (int j = 0; j < 31; j++)
         proc->regs[j] = 0;
-    for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++)
-        proc->name[k] = 0;
+    //for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++)
+        //proc->name[k] = 0;
     proc->input_buffer.read_index = 0;
     proc->input_buffer.write_index = 0;
     for (int k = 0; k < INPUT_BUFFER_CAPACITY; k++){
@@ -143,9 +141,49 @@ void reset_process(process_t *proc){
             free_sizedptr(p);
         proc->packet_buffer.entries[k] = (sizedptr){0};
     }
-    if (!just_finished && proc->alloc_map) release_page_index(proc->alloc_map);
-    if (!just_finished && proc->id != 1 && proc->heap_phys) free_managed_page(PHYS_TO_VIRT_P((void*)proc->heap_phys));
-    close_files_for_process(proc->id);
+    close_files_for_process(pid);
+
+    if (proc->debug_lines.ptr) {
+        pfree((void*)proc->debug_lines.ptr, proc->debug_lines.size);
+        proc->debug_lines = (sizedptr){0};
+    }
+    if (proc->debug_line_str.ptr) {
+        pfree((void*)proc->debug_line_str.ptr, proc->debug_line_str.size);
+        proc->debug_line_str = (sizedptr){0};
+    }
+
+    if (proc->output) {
+        pfree((void*)proc->output, PROC_OUT_BUF);
+        proc->output = 0;
+        proc->output_size = 0;
+    }
+
+    if (proc->id != 1 && proc->ttbr) {
+        for (uint16_t i = 0; i < proc->mm.vma_count; i++) {
+            vma *m = &proc->mm.vmas[i];
+            for (uintptr_t va = m->start; va < m->end; va += GRANULE_4KB) {
+                uint64_t pa = 0;
+                if (!mmu_unmap_and_get_pa((uint64_t*)proc->ttbr, va, &pa)) continue;
+                if (m->kind == VMA_KIND_HEAP) continue;
+                pfree((void*)pa, GRANULE_4KB);
+            }
+        }
+        proc->mm.vma_count = 0;
+
+        if (proc->heap_phys) {
+            free_managed_page(PHYS_TO_VIRT_P((void*)proc->heap_phys));
+            proc->heap_phys = 0;
+            proc->heap = 0;
+        }
+    }
+
+    if (proc->alloc_map) {
+        if (proc->id != 1) {
+            for (page_index *ind = proc->alloc_map; ind; ind = ind->header.next) ind->header.size = 0;
+        }
+        release_page_index(proc->alloc_map);
+        proc->alloc_map = 0;
+    }
     if (proc->ttbr && proc->win_fb_size && proc->win_fb_phys) {
         for (uint64_t off = 0; off < proc->win_fb_size; off += GRANULE_4KB) mmu_unmap_table((uint64_t*)proc->ttbr, proc->win_fb_va + off, proc->win_fb_phys + off);
         proc->win_fb_va = 0;
@@ -159,12 +197,29 @@ void reset_process(process_t *proc){
         }
         if (proc->asid) mmu_flush_asid(proc->asid);
         mmu_free_ttbr(proc->ttbr);
+        proc->ttbr = 0;
     }
     if (proc->exposed_fs.init){
         unload_module(&proc->exposed_fs);
     }
-    if (!just_finished)
+    proc->exposed_fs = (system_module){0};
+
+    for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++) proc->name[k] = 0;
+
+    proc->stack = 0;
+    proc->stack_phys = 0;
+    proc->stack_size = 0;
+
+    proc->win_id = 0;
+
+    if (!just_finished) {
         memset(proc, 0, sizeof(process_t));
+        return;
+    }
+
+    proc->id = pid;
+    proc->exit_code = exit_code;
+    proc->state = state;
 }
 
 void init_main_process(){
@@ -174,6 +229,7 @@ void init_main_process(){
     proc->id = next_proc_index++;
     proc->alloc_map = make_page_index();
     proc->asid = 0;
+    proc->asid_gen = 0;
     proc->state = BLOCKED;
     proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
     proc->heap_phys = VIRT_TO_PHYS(proc->heap);
@@ -197,10 +253,11 @@ process_t* init_process(){
             if (processes[i].state == STOPPED){
                 proc = &processes[i];
                 reset_process(proc);
+                for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++) proc->name[k] = 0;
                 proc->state = READY;
                 proc->id = next_proc_index++;
-                proc->asid = proc->id ? proc->id : 1; //TODO asid must be globally unique otherwise it may cause conflicting in mm
-                //also reusing it too early can result in unclean mappings
+                proc->asid = 0;
+                proc->asid_gen = 0;
                 proc_count++;
                 proc->win_fb_va = 0;
                 proc->win_fb_phys = 0;
@@ -213,8 +270,10 @@ process_t* init_process(){
 
     proc = &processes[next_proc_index];
     reset_process(proc);
+    for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++) proc->name[k] = 0;
     proc->id = next_proc_index++;
-    proc->asid = proc->id ? proc->id : 1;
+    proc->asid = 0;
+    proc->asid_gen = 0;
     proc->state = READY;
     proc->priority = PROC_PRIORITY_LOW;
     proc->win_fb_va = 0;
@@ -372,7 +431,10 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     file->references = 1;
     if (strcmp_case(path, "out",true) == 0){
         if (!proc->output) proc->output = (uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
-        if (!proc->output) { kfree(file, sizeof(module_file)); return FS_RESULT_DRIVER_ERROR; }
+        if (!proc->output) {
+            kfree(file, sizeof(module_file));
+            return FS_RESULT_DRIVER_ERROR;
+        }
         descriptor->size = proc->output_size;
         file->file_buffer = (buffer){
             .buffer = (char*)proc->output,
@@ -391,7 +453,10 @@ FS_RESULT open_proc(const char *path, file *descriptor){
             .buffer_size = sizeof(int),
             .cursor = 0,
         };
-    } else { kfree(file, sizeof(module_file)); return FS_RESULT_NOTFOUND; }
+    } else {
+        kfree(file, sizeof(module_file));
+        return FS_RESULT_NOTFOUND;
+    }
     file->file_size = descriptor->size;
     return chashmap_put(proc_opened_files, &descriptor->id, sizeof(uint64_t), file) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }

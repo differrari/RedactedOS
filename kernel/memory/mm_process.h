@@ -23,10 +23,16 @@ typedef struct mm_struct {
     uintptr_t *ttbr0;
     vma vmas[MAX_VMAS];
     uint16_t vma_count;
+    uintptr_t heap_start;
     uintptr_t brk;
+    uintptr_t brk_max;
+    uintptr_t mmap_top;
+    uintptr_t mmap_cursor;
     uintptr_t stack_top;
     uintptr_t stack_bottom;
 } mm_struct;
 
 vma* mm_find_vma(mm_struct *mm, uintptr_t va);
 bool mm_add_vma(mm_struct *mm, uintptr_t start, uintptr_t end, uint8_t prot, uint8_t kind, uint8_t flags);
+bool mm_update_vma(mm_struct *mm, uintptr_t start, uintptr_t end);
+uintptr_t mm_alloc_mmap(mm_struct *mm, size_t size, uint8_t prot, uint8_t kind, uint8_t flags);

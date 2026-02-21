@@ -355,47 +355,45 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->code = (void*)dest;
     proc->code_size = code_size;
 
-    proc->last_va_mapping = max_map;
-    
     uint64_t stack_size = 0x10000;
+    uintptr_t stack_top = 0x00007FFFFFFFF000ULL;
+    uintptr_t stack_bottom = stack_top - stack_size;
+    
+    uintptr_t mmap_top = stack_bottom - PAGE_SIZE;
+
+    uintptr_t heap_start = (max_map + (PAGE_SIZE*4) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    if (heap_start + PAGE_SIZE >= mmap_top) return 0;
+
+    uintptr_t heap = (uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER,MEM_RW, false, false);
+    if (!heap) return 0;
+    proc->heap = heap_start;
+    proc->heap_phys = heap;
+    mmu_map_4kb(ttbr, heap_start, heap, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+    setup_page(heap, MEM_RW);
+    memset(PHYS_TO_VIRT_P(heap + sizeof(mem_page)),0, PAGE_SIZE - sizeof(mem_page));
+
+    proc->mm.heap_start = heap_start;
+    proc->mm.brk = heap_start + PAGE_SIZE;
+    proc->mm.mmap_top = mmap_top;
+    proc->mm.mmap_cursor = mmap_top;
+    proc->mm.brk_max = mmap_top - (PAGE_SIZE*16);
+    mm_add_vma(&proc->mm, proc->mm.heap_start, proc->mm.brk, MEM_RW, VMA_KIND_HEAP, 0);
 
     uintptr_t stack = (uintptr_t)palloc_inner(stack_size, MEM_PRIV_USER, MEM_RW, true, false);
     if (stack) register_allocation(proc->alloc_map, (void*)stack, stack_size);
     if (!stack) return 0;
     
-    proc->last_va_mapping += PAGE_SIZE;//Unmapped page to catch stack overflows
-    proc->stack = (proc->last_va_mapping + stack_size);
-    proc->stack_phys = (stack + stack_size);
+    proc->stack = stack_top;
+    proc->stack_phys = stack + stack_size;
     
-    for (uintptr_t i = stack; i < stack + stack_size; i += GRANULE_4KB){
-        mmu_map_4kb(ttbr, proc->last_va_mapping, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
-        proc->last_va_mapping += PAGE_SIZE;
+    for (uintptr_t i = stack, va = stack_bottom; i < stack + stack_size; i += GRANULE_4KB, va += GRANULE_4KB){
+        mmu_map_4kb(ttbr, va, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
     }
     memset(PHYS_TO_VIRT_P(stack), 0, stack_size);
 
-    proc->mm.stack_top = proc->stack;
-    proc->mm.stack_bottom = proc->stack - stack_size;
-    mm_add_vma(&proc->mm, proc->mm.stack_bottom, proc->mm.stack_top, MEM_RW | MEM_NORM, VMA_KIND_STACK, 0);
-
-    proc->last_va_mapping += PAGE_SIZE;//Unmapped page to catch stack overflows
-
-    uint8_t heapattr = MEM_RW;
-
-    uintptr_t heap = (uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, false, false);
-    if (!heap) return 0;
-
-    proc->heap = proc->last_va_mapping;
-    proc->heap_phys = heap;
-    mmu_map_4kb(ttbr, proc->last_va_mapping, heap, MAIR_IDX_NORMAL, heapattr | MEM_NORM, MEM_PRIV_USER);
-
-    proc->mm.brk = proc->heap + PAGE_SIZE;
-    mm_add_vma(&proc->mm, proc->heap, proc->mm.brk, heapattr | MEM_NORM, VMA_KIND_HEAP, 0);
-
-    setup_page(heap, heapattr);
-
-    memset(PHYS_TO_VIRT_P(heap + sizeof(mem_page)), 0, PAGE_SIZE - sizeof(mem_page));
-
-    proc->last_va_mapping += PAGE_SIZE;
+    proc->mm.stack_top = stack_top;
+    proc->mm.stack_bottom = stack_bottom;
+    mm_add_vma(&proc->mm, proc->mm.stack_bottom, proc->mm.stack_top, MEM_RW, VMA_KIND_STACK, 0);
 
     proc->stack_size = stack_size;
 

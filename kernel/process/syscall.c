@@ -57,13 +57,17 @@ static bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t es
 }
 
 u64 syscall_malloc(process_t *ctx){
-    int tr = 0;
-    uintptr_t heap_va = (syscall_depth > 1) ? get_proc_by_pid(1)->heap : ctx->heap;
-    uintptr_t page_ptr = mmu_translate(heap_va, &tr);
-    if (tr) handle_exception("Wrong process heap state", 0);
+    if (syscall_depth > 1) {
+        process_t *k = get_proc_by_pid(1);
+        if (!k) return 0;
+        return (u64)kalloc(PHYS_TO_VIRT_P((void*)k->heap_phys), ctx->PROC_X0, ALIGN_16B, MEM_PRIV_KERNEL);
+    }
 
     size_t size = ctx->PROC_X0;
-    return (uintptr_t)kalloc_inner((void*)page_ptr, size, ALIGN_16B, get_current_privilege(), ctx->heap, &ctx->last_va_mapping, ctx->ttbr);
+    void *page_ptr = PHYS_TO_VIRT_P((void*)ctx->heap_phys);
+    uintptr_t ptr = (uintptr_t)kalloc_inner(page_ptr, size, ALIGN_16B, MEM_PRIV_USER, ctx->heap, &ctx->mm.brk, ctx->ttbr);
+    if (ptr) mm_update_vma(&ctx->mm, ctx->mm.heap_start, ctx->mm.brk);
+    return ptr;
 }
 
 uptr syscall_palloc(process_t *ctx){
@@ -76,11 +80,14 @@ uptr syscall_palloc(process_t *ctx){
     if(!ptr) return 0;
     register_allocation(ctx->alloc_map, ptr, alloc_size);
     if (ctx->use_va){
-        uptr va = ctx->last_va_mapping;
+        uptr va = mm_alloc_mmap(&ctx->mm, alloc_size, MEM_RW, VMA_KIND_ANON, 0);
+        if (!va) {
+            pfree(ptr, alloc_size);
+            return 0;
+        }
         for (u64 i = 0; i < pages; i++){
             mmu_map_4kb(ctx->ttbr, va + (i * PAGE_SIZE), (uptr)ptr + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
         }
-        ctx->last_va_mapping += alloc_size;
         mmu_flush_asid(ctx->asid);
         return va;
     }
@@ -399,18 +406,19 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
     }
 
     for (uint8_t depth = 1; depth < 10 && fp; depth++) {
-        uintptr_t return_address = (*(uintptr_t*)(fp + 8));
+        int tr_ra = 0;
+        uintptr_t ra_pa = mmu_translate(fp + 8, &tr_ra);
+        if (tr_ra) return;
 
-        if (return_address != 0){
-            return_address -= 4;//Return address is the next instruction after branching
-            if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
-                kprintf("%i: caller address: %llx", depth, return_address, return_address);
-            fp = *(uintptr_t*)fp;
-            int tr;
-            mmu_translate(fp, &tr);
-            if (tr) return;
-        } else return;
-
+        uintptr_t return_address = (*(uintptr_t*)PHYS_TO_VIRT_P(ra_pa));
+        if (!return_address) return;
+        return_address -= 4;//Return address is the next instruction after branching
+        if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
+            kprintf("%i: caller address: %llx", depth, return_address, return_address);
+        int tr = 0;
+        uintptr_t fp_pa = mmu_translate(fp, &tr);
+        if (tr) return;
+        fp = *(uintptr_t*)PHYS_TO_VIRT_P(fp_pa);
     }
 }
 
