@@ -74,6 +74,15 @@ void page_alloc_enable_verbose(){
     page_alloc_verbose = true;
 }
 
+void page_alloc_enable_high_va(){
+    uint64_t sctlr = 0;
+    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+    if ((sctlr & 1) == 0) return;
+    if (!mem_bitmap) return;
+    if (((uintptr_t)mem_bitmap & HIGH_VA) == HIGH_VA) return;
+    mem_bitmap = (uintptr_t*)PHYS_TO_VIRT((uintptr_t)mem_bitmap);
+}
+
 #define kprintfv(fmt, ...) \
     ({ \
         if (page_alloc_verbose){\
@@ -94,6 +103,7 @@ static inline uint64_t lowmask64(uint64_t bits) {
 void pfree(void* ptr, uint64_t size) {
     if (!ptr || !size) return;
     if (!alloc_max_page) page_alloc_init();
+    page_alloc_enable_high_va();
     if (!mem_bitmap || !alloc_max_page) panic("pfree init failed", (uintptr_t)ptr);
 
     uint64_t pages = count_pages(size,PAGE_SIZE);
@@ -154,7 +164,10 @@ static void page_alloc_init(){
     uint64_t bytes = words * sizeof(uint64_t);
     bitmap_page_count = count_pages(bytes, PAGE_SIZE);
 
-    mem_bitmap = (uintptr_t*)ram_start;
+    uint64_t sctlr = 0;
+    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+    if ((sctlr & 1) != 0) mem_bitmap = (uintptr_t*)PHYS_TO_VIRT(ram_start);
+    else mem_bitmap = (uintptr_t*)ram_start;
     memset(mem_bitmap, 0, bitmap_page_count * PAGE_SIZE);
 
     if (end_page & 63) {
@@ -171,7 +184,9 @@ static void page_alloc_init(){
 }
 
 void setup_page(uintptr_t address, uint8_t attributes){
-    mem_page* new_info = (mem_page*)address;
+    uint64_t sctlr = 0;
+    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+    mem_page* new_info = (mem_page*)(((sctlr & 1) != 0) ? PHYS_TO_VIRT(address) : address);
     memset(new_info, 0, sizeof(mem_page));
     new_info->next_free_mem_ptr = address + sizeof(mem_page);
     new_info->attributes = attributes;
@@ -179,6 +194,7 @@ void setup_page(uintptr_t address, uint8_t attributes){
 
 void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map) {
     if (!alloc_max_page) page_alloc_init();
+    page_alloc_enable_high_va();
     uint64_t page_count = count_pages(size,PAGE_SIZE);
     uint64_t reg_min = alloc_min_page / 64;
     uint64_t reg_end = (alloc_max_page + 63) / 64;
@@ -316,6 +332,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full){
 }
 
 bool page_used(uintptr_t ptr){
+    page_alloc_enable_high_va();
     if (!mem_bitmap || !alloc_max_page) return false;
     uint64_t addr = VIRT_TO_PHYS((uint64_t)ptr) / PAGE_SIZE;
     if (addr >= alloc_max_page) return false;
@@ -326,6 +343,7 @@ bool page_used(uintptr_t ptr){
 
 void mark_used(uintptr_t address, size_t pages)
 {
+    page_alloc_enable_high_va();
     if (!mem_bitmap) return;
     address = VIRT_TO_PHYS(address);
     if ((address & (PAGE_SIZE - 1)) != 0) {

@@ -18,6 +18,7 @@
 extern "C" {
 #endif
 void page_alloc_enable_verbose();
+void page_alloc_enable_high_va();
 void* make_page_index();
 void register_allocation(page_index *index, void* ptr, size_t size);//DEADLINE: 01/03/2026 - can be merged with alloc/page_index.h
 void free_registered(page_index *index, void *ptr);

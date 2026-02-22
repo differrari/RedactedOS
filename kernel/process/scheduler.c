@@ -195,10 +195,12 @@ void reset_process(process_t *proc){
             kprintf("[PROC error] Trying to free process while mapped", (uintptr_t)proc->ttbr);
             return;
         }
-        if (proc->asid) mmu_flush_asid(proc->asid);
+        if (proc->asid) mmu_asid_release(proc->asid, proc->asid_gen);
         mmu_free_ttbr(proc->ttbr);
         proc->ttbr = 0;
     }
+    proc->asid = 0;
+    proc->asid_gen = 0;
     if (proc->exposed_fs.init){
         unload_module(&proc->exposed_fs);
     }

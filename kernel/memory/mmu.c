@@ -14,6 +14,7 @@
 #include "std/memory.h"
 #include "exceptions/exception_handler.h"
 #include "alloc/mem_types.h"
+#include "memory/talloc.h"
 
 #define PAGE_TABLE_ENTRIES 512
 #define PD_TABLE 0b11
@@ -34,6 +35,24 @@ static uintptr_t *kernel_ttbr1;
 static bool mmu_verbose;
 static inline void mmu_flush_icache();
 static inline void mmu_flush_all();
+
+static inline void* pt_pa_to_va(uint64_t pa) {
+    uint64_t sctlr = 0;
+    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+
+    if ((sctlr & 1) == 0) return (void*)pa;
+    return (void*)PHYS_TO_VIRT(pa);
+}
+
+static inline uint64_t pt_va_to_pa(const void* va) {
+    uintptr_t v = (uintptr_t)va;
+
+    uint64_t sctlr = 0;
+    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+
+    if ((sctlr & 1) == 0) return (uint64_t)v;
+    return (uint64_t)VIRT_TO_PHYS(v);
+}
 
 static uint64_t asid_shift;
 static uint16_t asid_mask;
@@ -77,7 +96,7 @@ static uint64_t *walk_or_alloc(uint64_t *table, uint64_t index, int level, uint6
 
     if (!(e & 1)){
         uint64_t *n = mmu_alloc();
-        table[index] = ((uint64_t)n & PTE_ADDR_MASK) | PD_TABLE;
+        table[index] = (pt_va_to_pa(n) & PTE_ADDR_MASK) | PD_TABLE;
         return n;
     }
 
@@ -86,7 +105,7 @@ static uint64_t *walk_or_alloc(uint64_t *table, uint64_t index, int level, uint6
         panic("mmu *walk_or_alloc bad type", va);
     }
 
-    return (uint64_t*)(e & PTE_ADDR_MASK);
+    return (uint64_t*)pt_pa_to_va(e & PTE_ADDR_MASK);
 }
 
 void mmu_enable_verbose(){
@@ -134,7 +153,7 @@ void mmu_map_2mb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
     }
 
     if ((old & 0b11) == PD_TABLE){
-        uint64_t* l3 = (uint64_t*)(old & PTE_ADDR_MASK);
+        uint64_t* l3 = (uint64_t*)pt_pa_to_va(old & PTE_ADDR_MASK);
         uint64_t base = pa;
         uint64_t attr = (want & ~PTE_ADDR_MASK) & ~0b11;
 
@@ -187,7 +206,7 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
     uint64_t l2_val = l2[l2_index];
     if (!(l2_val & 1)) {
         uint64_t* l3 = mmu_alloc();
-        l2[l2_index] = ((uint64_t)l3 & PTE_ADDR_MASK) | PD_TABLE;
+        l2[l2_index] = (pt_va_to_pa(l3) & PTE_ADDR_MASK) | PD_TABLE;
         l2_val = l2[l2_index];
     } else if ((l2_val & 0b11) == PD_BLOCK){
         uint64_t base = (l2_val & PTE_ADDR_MASK) & ~(GRANULE_2MB - 1);
@@ -215,7 +234,7 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
                 l3[i] = (p & PTE_ADDR_MASK) | attr | PD_TABLE;
             }
 
-            l2[l2_index] = ((uint64_t)l3 & PTE_ADDR_MASK) | PD_TABLE;
+            l2[l2_index] = (pt_va_to_pa(l3) & PTE_ADDR_MASK) | PD_TABLE;
         }
 
         l2_val = l2[l2_index];
@@ -226,7 +245,7 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
         panic("mmu_map_4kb l2 bad type", va);
     }
 
-    uint64_t *l3 = (uint64_t*)(l2_val & PTE_ADDR_MASK);
+    uint64_t *l3 = (uint64_t*)pt_pa_to_va(l2_val & PTE_ADDR_MASK);
 
     uint64_t want = make_pte(pa, attr_index, mem_attributes, level, PD_TABLE);
     uint64_t old = l3[l3_index];
@@ -321,12 +340,12 @@ void mmu_unmap_table(uint64_t *table, uint64_t va, uint64_t pa){
     if (!(e0 & 1)) return;
     if ((e0 & 0b11) != PD_TABLE) panic("mmu_unmap l0 bad type", va);
 
-    uint64_t* l1 = (uint64_t*)(e0 & PTE_ADDR_MASK);
+    uint64_t* l1 = (uint64_t*)pt_pa_to_va(e0 & PTE_ADDR_MASK);
     uint64_t e1 = l1[l1_index];
     if (!(e1 & 1)) return;
     if ((e1 & 0b11) != PD_TABLE) panic("mmu_unmap l1 bad type", va);
 
-    uint64_t* l2 = (uint64_t*)(e1 & PTE_ADDR_MASK);
+    uint64_t* l2 = (uint64_t*)pt_pa_to_va(e1 & PTE_ADDR_MASK);
     uint64_t e2 = l2[l2_index];
     if (!(e2 & 1)) return;
 
@@ -346,7 +365,7 @@ void mmu_unmap_table(uint64_t *table, uint64_t va, uint64_t pa){
             l3[i] = (p & PTE_ADDR_MASK) | attr | PD_TABLE;
         }
 
-        l2[l2_index] = ((uint64_t)l3 & PTE_ADDR_MASK) | PD_TABLE;
+        l2[l2_index] = (pt_va_to_pa(l3) & PTE_ADDR_MASK) | PD_TABLE;
 
         e2 = l2[l2_index];
         if (!(e2 & 1)) panic("mmu_unmap split vanished", va);
@@ -354,7 +373,7 @@ void mmu_unmap_table(uint64_t *table, uint64_t va, uint64_t pa){
 
     if ((e2 & 0b11) != PD_TABLE) panic("mmu_unmap l2 bad type", va);
 
-    uint64_t *l3 = (uint64_t*)(e2 & PTE_ADDR_MASK);
+    uint64_t *l3 = (uint64_t*)pt_pa_to_va(e2 & PTE_ADDR_MASK);
     uint64_t old = l3[l3_index];
     if (!(old & 1)) return;
 
@@ -472,9 +491,14 @@ void mmu_init() {
 
     hw_high_va();
     mmu_start((uint64_t*)kernel_ttbr1, (uint64_t*)kernel_ttbr0);
-    pttbr = kernel_ttbr0;
-    pttbr_asid = 0;
-    pttbr_hw = (uint64_t)kernel_ttbr0;
+
+    kernel_ttbr0 = (uintptr_t*)PHYS_TO_VIRT((uintptr_t)kernel_ttbr0);
+    kernel_ttbr1 = (uintptr_t*)PHYS_TO_VIRT((uintptr_t)kernel_ttbr1);
+
+    talloc_enable_high_va();
+    page_alloc_enable_high_va();
+
+    mmu_swap_ttbr(0, 0);
 
     mmu_flush_all();
     mmu_flush_icache();
@@ -496,10 +520,10 @@ void mmu_copy(uintptr_t *new_ttbr, uintptr_t *old_ttbr, int level){
             panic("mmu_copy bad type", (uint64_t)old_ttbr);
         }
 
-        uintptr_t *old_entry = (uintptr_t*)(old_ttbr[i] & PTE_ADDR_MASK);
+        uintptr_t *old_entry = (uintptr_t*)pt_pa_to_va(old_ttbr[i] & PTE_ADDR_MASK);
         uintptr_t *new_entry = (uintptr_t*)mmu_alloc();
         uint64_t entry = old_ttbr[i] & ~PTE_ADDR_MASK;
-        new_ttbr[i] = entry | ((uintptr_t)new_entry & PTE_ADDR_MASK);
+        new_ttbr[i] = entry | (pt_va_to_pa(new_entry) & PTE_ADDR_MASK);
         mmu_copy(new_entry, old_entry, level+1);
     }
 }
@@ -544,7 +568,7 @@ void mmu_free_ttbr(uintptr_t *ttbr){
         if (f->level == 2 && ((e & 0b11) == PD_BLOCK)) continue;
         if ((e & 0b11) != PD_TABLE) continue;
 
-        uintptr_t *child = (uintptr_t*)(e & PTE_ADDR_MASK);
+        uintptr_t *child = (uintptr_t*)pt_pa_to_va(e & PTE_ADDR_MASK);
 
         if (sp >= 4){
             kprintf("[mmu] free_ttbr stack overflow lvl=%d e=%llx", f->level, (uint64_t)e);
@@ -558,7 +582,7 @@ void mmu_free_ttbr(uintptr_t *ttbr){
 uintptr_t* mmu_new_ttbr(){
     uintptr_t *ttbr = (uintptr_t*)mmu_alloc();
     //if (!kernel_ttbr0) panic("mmu_new_ttbr no kernel_ttbr0", (uintptr_t)ttbr);
-    mmu_copy(ttbr, kernel_ttbr0, 0);
+    if (kernel_ttbr0) mmu_copy(ttbr, kernel_ttbr0, 0);
     return ttbr;
 }
 
@@ -648,7 +672,7 @@ uintptr_t mmu_translate(uintptr_t va, int *status){
         return 0;
     }
 
-    uint64_t* l1 = (uint64_t*)(e0 & PTE_ADDR_MASK);
+    uint64_t* l1 = (uint64_t*)pt_pa_to_va(e0 & PTE_ADDR_MASK);
     uint64_t e1 = l1[l1_index];
     if ((e1 & 1) == 0){
         *status = MMU_TR_ERR_L2;
@@ -660,7 +684,7 @@ uintptr_t mmu_translate(uintptr_t va, int *status){
         kprintfv("L2 Table missing");
         return 0;
     }
-    uint64_t* l2 = (uint64_t*)(e1 & PTE_ADDR_MASK);
+    uint64_t* l2 = (uint64_t*)pt_pa_to_va(e1 & PTE_ADDR_MASK);
     uint64_t e2 = l2[l2_index];
     if (!(e2 & 1)) {
         *status = MMU_TR_ERR_L3;
@@ -679,7 +703,7 @@ uintptr_t mmu_translate(uintptr_t va, int *status){
         return 0;
     }
 
-    uint64_t* l3 = (uint64_t*)(e2 & PTE_ADDR_MASK);
+    uint64_t* l3 = (uint64_t*)pt_pa_to_va(e2 & PTE_ADDR_MASK);
     uint64_t e3 = l3[l3_index];
     if ((e3 & 1) == 0){
         *status = MMU_TR_ERR_L4;
@@ -729,14 +753,14 @@ void debug_mmu_address(uint64_t va){
         return;
     }
 
-    uint64_t* l1 = (uint64_t*)(e0 & PTE_ADDR_MASK);
+    uint64_t* l1 = (uint64_t*)pt_pa_to_va(e0 & PTE_ADDR_MASK);
     uint64_t e1 = l1[l1_index];
     if (!(e1 & 1) || ((e1 & 0b11) != PD_TABLE)) {
         kprintf("L2 Table missing");
         return;
     }
 
-    uint64_t* l2 = (uint64_t*)(e1 & PTE_ADDR_MASK);
+    uint64_t* l2 = (uint64_t*)pt_pa_to_va(e1 & PTE_ADDR_MASK);
     uint64_t e2 = l2[l2_index];
     if (!(e2 & 1)){
         kprintf("L3 Table missing");
@@ -754,7 +778,7 @@ void debug_mmu_address(uint64_t va){
         return;
     }
 
-    uint64_t* l3 = (uint64_t*)(e2 & PTE_ADDR_MASK);
+    uint64_t* l3 = (uint64_t*)pt_pa_to_va(e2 & PTE_ADDR_MASK);
     uint64_t e3 = l3[l3_index];
     if (!(e3 & 1)){
         kprintf("L4 Table entry missing");
@@ -784,22 +808,41 @@ void mmu_asid_ensure(uint16_t *asid, uint32_t *asid_generation) {
     if (*asid && *asid_generation == asid_gen) return;
 
     for (;;) {
-        if (asid_next >= asid_max) {
-            asid_gen++;
-            mmu_flush_all();
-            memset(asid_used, 0, sizeof(asid_used));
-            asid_used[0] = 1;
-            asid_next = 1;
+        uint32_t scanned = 0;
+        while (scanned + 1 < asid_max) {
+            if (asid_next >= asid_max) asid_next = 1;
+
+            uint32_t a = asid_next++;
+            scanned++;
+
+            uint32_t w = a >> 6;
+            uint32_t b = a & 63;
+            if (asid_used[w] & (1ULL << b)) continue;
+
+            asid_used[w] |= 1ULL << b;
+            *asid = (uint16_t)a;
+            *asid_generation = asid_gen;
+            return;
         }
-        uint32_t a = asid_next++;
-        uint32_t w = a >> 6;
-        uint32_t b = a & 63;
-        if (asid_used[w] & (1ULL << b)) continue;
-        asid_used[w] |= 1ULL << b;
-        *asid = (uint16_t)a;
-        *asid_generation = asid_gen;
-        return;
+
+        asid_gen++;
+        mmu_flush_all();
+        memset(asid_used, 0, sizeof(asid_used));
+        asid_used[0] = 1;
+        asid_next = 1;
     }
+}
+
+void mmu_asid_release(uint16_t asid, uint32_t asid_generation){
+    if (!asid) return;
+    if (!asid_max) return;
+    if (asid_generation != asid_gen) return;
+
+    uint32_t a = (uint32_t)(asid & asid_mask);
+    uint32_t w = a >> 6;
+    uint32_t b = a & 63;
+    asid_used[w] &= ~(1ULL << b);
+    mmu_flush_asid(asid);
 }
 
 bool mmu_unmap_and_get_pa(uint64_t *table, uint64_t va, uint64_t *pa) {
@@ -814,12 +857,12 @@ bool mmu_unmap_and_get_pa(uint64_t *table, uint64_t va, uint64_t *pa) {
     uint64_t l1_val = table[l0_index];
     if (!(l1_val & 1)) return false;
     if ((l1_val & 0b11) != PD_TABLE) return false;
-    uint64_t* l1 = (uint64_t*)(l1_val & PTE_ADDR_MASK);
+    uint64_t* l1 = (uint64_t*)pt_pa_to_va(l1_val & PTE_ADDR_MASK);
 
     uint64_t l2_val = l1[l1_index];
     if (!(l2_val & 1)) return false;
     if ((l2_val & 0b11) != PD_TABLE) return false;
-    uint64_t* l2 = (uint64_t*)(l2_val & PTE_ADDR_MASK);
+    uint64_t* l2 = (uint64_t*)pt_pa_to_va(l2_val & PTE_ADDR_MASK);
 
     uint64_t l3_val = l2[l2_index];
     if (!(l3_val & 1)) return false;
@@ -835,7 +878,7 @@ bool mmu_unmap_and_get_pa(uint64_t *table, uint64_t va, uint64_t *pa) {
     }
 
     if ((l3_val & 0b11) != PD_TABLE) return false;
-    uint64_t* l3 = (uint64_t*)(l3_val & PTE_ADDR_MASK);
+    uint64_t* l3 = (uint64_t*)pt_pa_to_va(l3_val & PTE_ADDR_MASK);
 
     uint64_t l4_val = l3[l3_index];
     if (!(l4_val & 1)) return false;

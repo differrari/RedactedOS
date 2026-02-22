@@ -9,7 +9,8 @@ save_pc_interrupt:
 
 .global restore_context
 restore_context:
-    ldr x18, =cpec
+    adrp x18, cpec
+    add x18, x18, :lo12:cpec
     ldr x18, [x18]
     // Restore general-purpose registers
     ldp x0, x1, [x18, #(8 * 0)]
@@ -52,7 +53,8 @@ restore_context:
     ldr x17, [x18, #(8 * 32)]
     msr elr_el1, x17
 
-    ldr x17, =pttbr_hw
+    adrp x17, pttbr_hw
+    add x17, x17, :lo12:pttbr_hw
 
     ldr x17, [x17]
 
@@ -68,7 +70,8 @@ restore_context:
     
 .global mmu_swap
 mmu_swap:
-    ldr x18, =pttbr_hw
+    adrp x18, pttbr_hw
+    add x18, x18, :lo12:pttbr_hw
     ldr x18, [x18]
 
     msr ttbr0_el1, x18

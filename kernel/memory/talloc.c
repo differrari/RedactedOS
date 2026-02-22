@@ -56,9 +56,14 @@ void* pre_talloc_ptr = 0;
 uintptr_t pre_talloc_mem_limit = 0;
 
 bool can_automap = false;
+static bool talloc_high_va = false;
 
 void pre_talloc(){
-    pre_talloc_ptr = palloc_inner(GRANULE_2MB, MEM_PRIV_KERNEL, MEM_RW, true, can_automap);
+    void* phys = palloc_inner(GRANULE_2MB, MEM_PRIV_KERNEL, MEM_RW, true, can_automap);
+    pre_talloc_ptr = phys;
+    uint64_t sctlr = 0;
+    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+    if ((sctlr & 1) != 0) pre_talloc_ptr = PHYS_TO_VIRT_P(phys);
     pre_talloc_mem_limit = (uintptr_t)pre_talloc_ptr + GRANULE_2MB;
 
     if (!can_automap){
@@ -67,11 +72,36 @@ void pre_talloc(){
         talloc_mem_limit = pre_talloc_mem_limit;
     }
 
-    mmu_map_all((uintptr_t)pre_talloc_ptr);
+    mmu_map_all((uintptr_t)phys);
+}
+
+void talloc_enable_high_va(){
+    if (talloc_high_va) return;
+
+    uint64_t sctlr = 0;
+    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+    if ((sctlr & 1) == 0) return;
+
+    if (pre_talloc_ptr && (((uintptr_t)pre_talloc_ptr & HIGH_VA) != HIGH_VA)) pre_talloc_ptr = PHYS_TO_VIRT_P(pre_talloc_ptr);
+    if (pre_talloc_mem_limit && ((pre_talloc_mem_limit & HIGH_VA) != HIGH_VA)) pre_talloc_mem_limit = PHYS_TO_VIRT(pre_talloc_mem_limit);
+    if (next_free_temp_memory && ((next_free_temp_memory & HIGH_VA) != HIGH_VA)) next_free_temp_memory = PHYS_TO_VIRT(next_free_temp_memory);
+    if (talloc_mem_limit && ((talloc_mem_limit & HIGH_VA) != HIGH_VA)) talloc_mem_limit = PHYS_TO_VIRT(talloc_mem_limit);
+
+    if (temp_free_list && (((uintptr_t)temp_free_list & HIGH_VA) != HIGH_VA)){
+        temp_free_list = (FreeBlock*)PHYS_TO_VIRT((uintptr_t)temp_free_list);
+        FreeBlock* b = temp_free_list;
+        while (b && b->next && (((uintptr_t)b->next & HIGH_VA) != HIGH_VA)){
+            b->next = (FreeBlock*)PHYS_TO_VIRT((uintptr_t)b->next);
+            b = b->next;
+        }
+    }
+
+    talloc_high_va = true;
 }
 
 uint64_t talloc(uint64_t size){
     size = (size + 0xFFF) & ~0xFFF;
+    if (!talloc_high_va) talloc_enable_high_va();
 
     if (talloc_verbose){
         uart_raw_puts("[talloc] Requested size: ");
@@ -131,12 +161,12 @@ void temp_free(void* ptr, uint64_t size){
         uart_raw_putc('\n');
     }
 
-    memset(PHYS_TO_VIRT_P(ptr), 0, size);
+    memset(ptr, 0, size);
 
-    FreeBlock* block = VIRT_TO_PHYS_P(ptr);
+    FreeBlock* block = (FreeBlock*)ptr;
     block->size = size;
     block->next = temp_free_list;
-    temp_free_list = ptr;
+    temp_free_list = block;
 }
 
 void enable_talloc_verbose(){

@@ -448,7 +448,11 @@ const char* fault_messages[] = {
 void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
     uint8_t ifsc = esr & 0x3F;
 
-    kprint(fault_messages[ifsc]);
+    const char *m = fault_messages[ifsc];
+    uint64_t sctlr = 0;
+    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+    if (sctlr & 1) m = (const char*)(((uintptr_t)m) | HIGH_VA);
+    kprint(m);
     process_t *proc = get_current_proc();
     backtrace(sp, elr, proc->debug_lines, proc->debug_line_str);
 
@@ -495,8 +499,12 @@ void sync_el0_handler_c(){
 
     uint64_t result = 0;
     if (ec == 0x15) {
-        if (syscalls[iss]){
-            result = syscalls[iss](proc);
+        syscall_entry entry = syscalls[iss];
+        if (entry){
+            uint64_t sctlr = 0;
+            asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+            if (sctlr & 1) entry = (syscall_entry)(((uintptr_t)entry) | HIGH_VA);
+            result = entry(proc);
         } else {
             kprintf("Unknown syscall in process. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
             coredump(esr, elr, far, proc->sp);

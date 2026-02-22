@@ -9,6 +9,7 @@ extern "C" {
 uint64_t talloc(uint64_t size);
 void temp_free(void* ptr, uint64_t size);
 void enable_talloc_verbose();
+void talloc_enable_high_va();
 #ifdef __cplusplus
 }
 #endif

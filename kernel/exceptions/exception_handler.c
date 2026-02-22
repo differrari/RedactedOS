@@ -5,12 +5,18 @@
 #include "timer.h"
 #include "theme/theme.h"
 #include "std/string.h"
+#include "sysregs.h"
 
 static bool panic_triggered = false;
 
 void set_exception_vectors(){
     extern char exception_vectors[];
-    asm volatile ("msr vbar_el1, %0" :: "r"(exception_vectors));
+    uintptr_t vbar = (uintptr_t)exception_vectors;
+    uint64_t sctlr = 0;
+    asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
+    if (sctlr & 1) vbar |= HIGH_VA;
+    asm volatile ("msr vbar_el1, %0" :: "r"(vbar));
+    asm volatile ("isb");
 }
 
 void handle_exception(const char* type, uint64_t info) {
@@ -18,11 +24,16 @@ void handle_exception(const char* type, uint64_t info) {
     asm volatile ("mrs %0, esr_el1" : "=r"(esr));
     asm volatile ("mrs %0, elr_el1" : "=r"(elr));
     asm volatile ("mrs %0, far_el1" : "=r"(far));
+    uint64_t sctlr = 0;
+    asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
+    if (sctlr & 1) type = (const char*)(((uintptr_t)type) | HIGH_VA);
 
     disable_visual();//Disable visual kprintf, since it has additional memory accesses that could be faulting
 
     char buf[STRING_MAX_LEN];//no heap to avoid corruption
-    string_format_buf(buf, sizeof(buf), "%s \r\nESR_EL1: %llx\r\nELR_EL1: %llx\r\nFAR_EL1: %llx",type,esr,elr,far);
+    const char *fmt = "%s \r\nESR_EL1: %llx\r\nELR_EL1: %llx\r\nFAR_EL1: %llx";
+    if (sctlr & 1) fmt = (const char*)(((uintptr_t)fmt) | HIGH_VA);
+    string_format_buf(buf, sizeof(buf), fmt,type,esr,elr,far);
     panic(buf, info);
 }
 
@@ -47,8 +58,16 @@ void panic(const char* msg, uint64_t info) {
 
     bool old_panic_triggered = panic_triggered;
     panic_triggered = true;
+
+    uint64_t sctlr = 0;
+    asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
+    const char *title = system_config.panic_text;
+    if (sctlr & 1){
+        if (title) title = (const char*)(((uintptr_t)title) | HIGH_VA);
+        if (msg) msg = (const char*)(((uintptr_t)msg) | HIGH_VA);
+    }
     uart_raw_puts("*** ");
-    uart_raw_puts(system_config.panic_text);
+    uart_raw_puts(title);
     uart_raw_puts(" ***\r\n");
     uart_raw_puts(msg);
     uart_raw_puts("\r\n");
@@ -57,7 +76,11 @@ void panic(const char* msg, uint64_t info) {
     uart_raw_puts("\r\n");
     uart_raw_puts("System Halted\r\n");
     if (!old_panic_triggered){
-        string s = string_format("%s\r\n%s\r\nError code: %x\r\nSystem Halted",(uint64_t)system_config.panic_text,(uint64_t)msg,info);
+        char buf[STRING_MAX_LEN];
+        const char *fmt = "%s\r\n%s\r\nError code: %x\r\nSystem Halted";
+        if (sctlr & 1) fmt = (const char*)(((uintptr_t)fmt) | HIGH_VA);
+        size_t len = string_format_buf(buf, sizeof(buf), fmt, title, msg, info);
+        string s = (string){ .data = buf, .length = (uint32_t)len, .mem_length = 0 };
         draw_panic_screen(s);
     }
     while (1);

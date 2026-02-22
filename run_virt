@@ -3,8 +3,17 @@
 echo "Running virt emulator"
 
 ARGS=""
+SERIAL_OPT="-serial stdio"
 if [ "$1" = "debug" ]; then
   ARGS="-monitor unix:/tmp/qemu-monitor-socket,server,nowait -s -S"
+
+  if [ -r /etc/os-release ]; then
+    . /etc/os-release
+    if [ "${ID:-}" = "ubuntu" ]; then
+      : > /tmp/serial.log 2>/dev/null || true
+      SERIAL_OPT="-serial file:/tmp/serial.log"
+    fi
+  fi
 fi
 
 MSI_CAPABILITIES=""
@@ -78,7 +87,7 @@ fi
 
 echo "Using networking mode: $NETDEV $NETDRIV $DUMP"
 
-$PRIVILEGE qemu-system-aarch64 \
+exec $PRIVILEGE qemu-system-aarch64 \
   -M virt \
   -cpu cortex-a72 \
   -m 512M \
@@ -88,7 +97,7 @@ $PRIVILEGE qemu-system-aarch64 \
   $NETDEV \
   $NETDRIV \
   $DUMP \
-  -serial stdio \
+  $SERIAL_OPT \
   -drive file=disk.img,if=none,format=raw,id=hd0 \
   -device virtio-blk-pci,drive=hd0 \
   $SHAREDFS \
