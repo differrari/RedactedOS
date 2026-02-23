@@ -885,5 +885,82 @@ bool mmu_unmap_and_get_pa(uint64_t *table, uint64_t va, uint64_t *pa) {
 
     if (pa) *pa = l4_val & PTE_ADDR_MASK;
     l3[l3_index] = 0;
+    if (table == (uint64_t*)kernel_ttbr0 || table == (uint64_t*)kernel_ttbr1) return true;
+
+    bool any = false;
+    for (uint64_t i = 0; i < PAGE_TABLE_ENTRIES; i++) {
+        if (l3[i] & 1) {
+            any = true;
+            break;
+        }
+    }
+
+    if (any) return true;
+    temp_free(l3, GRANULE_4KB);
+    l2[l2_index] = 0;
+
+    any = false;
+    for (uint64_t i = 0; i < PAGE_TABLE_ENTRIES; i++) {
+        if (l2[i] & 1) {
+            any = true;
+            break;
+        }
+    }
+
+    if (any) return true;
+    temp_free(l2, GRANULE_4KB);
+    l1[l1_index] = 0;
+
+    any = false;
+    for (uint64_t i = 0; i < PAGE_TABLE_ENTRIES; i++) {
+        if (l1[i] & 1) {
+            any = true;
+            break;
+        }
+    }
+
+    if (any) return true;
+    temp_free(l1, GRANULE_4KB);
+    table[l0_index] = 0;
+
+    return true;
+}
+
+bool mmu_set_access_flag(uint64_t *table, uint64_t va) {
+    if (!table) return false;
+    va &= ~(GRANULE_4KB-1);
+
+    uint64_t l0_index = (va >> 39) & 0x1FF;
+    uint64_t l1_index = (va >> 30) & 0x1FF;
+    uint64_t l2_index = (va >> 21) & 0x1FF;
+    uint64_t l3_index = (va >> 12) & 0x1FF;
+
+    uint64_t e0 = table[l0_index];
+    if (!(e0 & 1)) return false;
+    if ((e0 & 0b11) != PD_TABLE) return false;
+    uint64_t *l1 = (uint64_t*)pt_pa_to_va(e0 & PTE_ADDR_MASK);
+
+    uint64_t e1 = l1[l1_index];
+    if (!(e1 & 1)) return false;
+    if ((e1 & 0b11) != PD_TABLE) return false;
+    uint64_t *l2 = (uint64_t*)pt_pa_to_va(e1 & PTE_ADDR_MASK);
+
+    uint64_t e2 = l2[l2_index];
+    if (!(e2 & 1)) return false;
+
+    if ((e2 & 0b11) == PD_BLOCK) {
+        if (e2 & PTE_AF) return true;
+        l2[l2_index] = e2 | PTE_AF;
+        return true;
+    }
+
+    if ((e2 & 0b11) != PD_TABLE) return false;
+    uint64_t *l3 = (uint64_t*)pt_pa_to_va(e2 & PTE_ADDR_MASK);
+
+    uint64_t e3 = l3[l3_index];
+    if (!(e3 & 1)) return false;
+    if ((e3 & 0b11) != PD_TABLE) return false;
+    if (e3 & PTE_AF) return true;
+    l3[l3_index] = e3 | PTE_AF;
     return true;
 }

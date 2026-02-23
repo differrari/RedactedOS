@@ -37,22 +37,65 @@ typedef uint64_t (*syscall_entry)(process_t *ctx);
 static bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr) {
     if (!proc) return false;
 
-    uint8_t ifsc = esr & 0x3f;
+    uint64_t ec = (esr >> 26) & 0x3F;
+    uint32_t iss = esr & 0xFFFFFF;
+    uint8_t ifsc = esr & 0x3F;
+
+    bool is_exec = ec == 0x20;
+    bool is_write = false;
+    if (!is_exec) is_write = ((iss >> 6) & 1) != 0;
+
+    if (ifsc >= 0x9 && ifsc <= 0xB) { 
+        if (!mmu_set_access_flag((uint64_t*)proc->ttbr, far)) return false;
+        mmu_flush_asid(proc->asid);
+        return true;
+    }
+
+    if (ifsc >= 0xD && ifsc <= 0xF) return false;
     if (ifsc < 0x4 || ifsc > 0x7) return false;
 
-    vma *m = mm_find_vma(&proc->mm, far);
+    uintptr_t va_page = far & ~(PAGE_SIZE - 1);
+    vma *m = mm_find_vma(&proc->mm, va_page);
     if (!m) return false;
+
+    if (is_exec) {
+        if (!(m->prot & MEM_EXEC)) return false;
+    } else if (is_write) {
+        if (!(m->prot & MEM_RW)) return false;
+    }
+
     if (!(m->flags & VMA_FLAG_DEMAND)) return false;
 
-    uintptr_t va = far & ~(PAGE_SIZE - 1);
+    if (m->kind == VMA_KIND_STACK) {
+        if (va_page < proc->mm.stack_limit) return false;
+        if (va_page >= proc->mm.stack_top) return false;
+
+        if (va_page + PAGE_SIZE == proc->mm.stack_commit) {
+            if (proc->mm.stack_commit <= proc->mm.stack_limit) return false;
+            if (proc->mm.rss_stack_pages >= proc->mm.cap_stack_pages) return false;
+            proc->mm.stack_commit -= PAGE_SIZE;
+        } else if (va_page < proc->mm.stack_commit) {
+            return false;
+        } else {
+            if (proc->mm.rss_stack_pages >= proc->mm.cap_stack_pages) return false;
+        }
+    } else if (m->kind == VMA_KIND_HEAP) {
+        if (proc->mm.rss_heap_pages >= proc->mm.cap_heap_pages) return false;
+    } else if (m->kind == VMA_KIND_ANON) {
+        if (proc->mm.rss_anon_pages >= proc->mm.cap_anon_pages) return false;
+    }
+
     uintptr_t phys = (uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false);
     if (!phys) return false;
 
     memset(PHYS_TO_VIRT_P((void*)phys), 0, PAGE_SIZE);
-    register_proc_memory(va, phys, m->prot, MEM_PRIV_USER);
+    mmu_map_4kb((uint64_t*)proc->ttbr, va_page, phys, MAIR_IDX_NORMAL, m->prot | MEM_NORM, MEM_PRIV_USER);
+    mmu_flush_asid(proc->asid);
 
-    // Track the backing page so it's released when the process exits.
-    if (proc->alloc_map) register_allocation(proc->alloc_map, (void*)phys, PAGE_SIZE);
+    if (m->kind == VMA_KIND_STACK) proc->mm.rss_stack_pages++;
+    else if (m->kind == VMA_KIND_HEAP) proc->mm.rss_heap_pages++;
+    else if (m->kind == VMA_KIND_ANON) proc->mm.rss_anon_pages++;
+
     return true;
 }
 
@@ -64,10 +107,27 @@ u64 syscall_malloc(process_t *ctx){
     }
 
     size_t size = ctx->PROC_X0;
-    void *page_ptr = PHYS_TO_VIRT_P((void*)ctx->heap_phys);
-    uintptr_t ptr = (uintptr_t)kalloc_inner(page_ptr, size, ALIGN_16B, MEM_PRIV_USER, ctx->heap, &ctx->mm.brk, ctx->ttbr);
-    if (ptr) mm_update_vma(&ctx->mm, ctx->mm.heap_start, ctx->mm.brk);
-    return ptr;
+    if (!size) return 0;
+
+    u64 pages = count_pages(size, PAGE_SIZE);
+    size_t alloc_size = pages * PAGE_SIZE;
+    if (ctx->mm.rss_anon_pages + pages > ctx->mm.cap_anon_pages) return 0;
+
+    void *ptr = palloc_inner(alloc_size, MEM_PRIV_USER, MEM_RW, true, false);
+    if (!ptr) return 0;
+
+    uptr va = mm_alloc_mmap(&ctx->mm, alloc_size, MEM_RW, VMA_KIND_ANON, 0);
+    if (!va) {
+        pfree(ptr, alloc_size);
+        return 0;
+    }
+
+    for (u64 i = 0; i < pages; i++) mmu_map_4kb(ctx->ttbr, va + (i * PAGE_SIZE), (uptr)ptr + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
+
+    register_allocation(ctx->alloc_map, ptr, alloc_size);
+    ctx->mm.rss_anon_pages += pages;
+    mmu_flush_asid(ctx->asid);
+    return va;
 }
 
 uptr syscall_palloc(process_t *ctx){
@@ -75,6 +135,8 @@ uptr syscall_palloc(process_t *ctx){
     if(!size) return 0;
     u64 pages = count_pages(size, PAGE_SIZE);
     size_t alloc_size = pages * PAGE_SIZE;
+
+    if (ctx->use_va &&ctx->mm.rss_anon_pages + pages > ctx->mm.cap_anon_pages) return 0;
 
     void *ptr = palloc_inner(alloc_size, MEM_PRIV_USER, MEM_RW, true, true);
     if(!ptr) return 0;
@@ -88,6 +150,7 @@ uptr syscall_palloc(process_t *ctx){
         for (u64 i = 0; i < pages; i++){
             mmu_map_4kb(ctx->ttbr, va + (i * PAGE_SIZE), (uptr)ptr + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
         }
+        ctx->mm.rss_anon_pages += pages;
         mmu_flush_asid(ctx->asid);
         return va;
     }
@@ -112,6 +175,8 @@ u64 syscall_pfree(process_t *ctx){
 
                 mmu_flush_asid(ctx->asid);
                 pfree((void*)phys, size);
+                if (ctx->mm.rss_anon_pages >= pages) ctx->mm.rss_anon_pages -= pages;
+                else ctx->mm.rss_anon_pages = 0;
 
                 ind->ptrs[i] = ind->ptrs[ind->header.size - 1];
                 ind->header.size--;
@@ -127,7 +192,40 @@ u64 syscall_free(process_t *ctx){
     return 0;
 }
 
+uptr syscall_brk(process_t *ctx) {
+    uptr req = ctx->PROC_X0;
+    uptr old = ctx->mm.brk;
+    if (!req) return old;
+
+    uptr new_brk = (req + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uptr min_brk = ctx->mm.heap_start + PAGE_SIZE;
+    if (new_brk < min_brk) new_brk = min_brk;
+
+    if (new_brk > ctx->mm.brk_max) return old;
+
+    uptr mmap_guard = ctx->mm.mmap_cursor - (MM_GAP_PAGES*PAGE_SIZE);
+    if (new_brk > mmap_guard)return old;
+
+    if (new_brk < old) {
+        for (uptr va = new_brk; va < old; va += PAGE_SIZE) {
+            uint64_t pa = 0;
+            if (!mmu_unmap_and_get_pa((uint64_t*)ctx->ttbr, va, &pa)) continue;
+            pfree((void*)pa, PAGE_SIZE);
+            if (ctx->mm.rss_heap_pages) ctx->mm.rss_heap_pages--;
+        }
+    }
+
+    if (new_brk != old) {
+        ctx->mm.brk = new_brk;
+        mm_update_vma(&ctx->mm, ctx->mm.heap_start, ctx->mm.brk);
+        mmu_flush_asid(ctx->asid);
+    }
+
+    return ctx->mm.brk;
+}
+
 u64 syscall_printl(process_t *ctx){
+    if (!ctx->PROC_X0) return 0;
     kprint((const char *)ctx->PROC_X0);
     return 0;
 }
@@ -348,6 +446,7 @@ Don't ever do that again\r\n\
 syscall_entry syscalls[] = {
     [MALLOC_CODE] = syscall_malloc,
     [FREE_CODE] = syscall_free,
+    [BRK_CODE] = syscall_brk,
     [PALLOC_CODE] = syscall_palloc,
     [PFREE_CODE] = syscall_pfree,
     [PRINTL_CODE] = syscall_printl,

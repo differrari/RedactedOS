@@ -32,6 +32,7 @@ void mmu_flush_asid(uint16_t asid);
 void mmu_asid_ensure(uint16_t *asid, uint32_t *asid_generation);
 void mmu_asid_release(uint16_t asid, uint32_t generation);
 bool mmu_unmap_and_get_pa(uint64_t *table, uint64_t va, uint64_t *pa);
+bool mmu_set_access_flag(uint64_t *table, uint64_t va);
 uintptr_t* mmu_default_ttbr();
 void mmu_free_ttbr(uintptr_t *ttbr);
 uintptr_t mmu_translate(uintptr_t va, int *status);

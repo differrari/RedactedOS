@@ -164,17 +164,17 @@ void reset_process(process_t *proc){
             for (uintptr_t va = m->start; va < m->end; va += GRANULE_4KB) {
                 uint64_t pa = 0;
                 if (!mmu_unmap_and_get_pa((uint64_t*)proc->ttbr, va, &pa)) continue;
-                if (m->kind == VMA_KIND_HEAP) continue;
                 pfree((void*)pa, GRANULE_4KB);
+                if (m->kind == VMA_KIND_HEAP) {
+                    if (proc->mm.rss_heap_pages) proc->mm.rss_heap_pages--;
+                } else if (m->kind == VMA_KIND_STACK) {
+                    if (proc->mm.rss_stack_pages) proc->mm.rss_stack_pages--;
+                } else if (m->kind == VMA_KIND_ANON) {
+                    if (proc->mm.rss_anon_pages) proc->mm.rss_anon_pages--;
+                }
             }
         }
         proc->mm.vma_count = 0;
-
-        if (proc->heap_phys) {
-            free_managed_page(PHYS_TO_VIRT_P((void*)proc->heap_phys));
-            proc->heap_phys = 0;
-            proc->heap = 0;
-        }
     }
 
     if (proc->alloc_map) {
@@ -211,6 +211,9 @@ void reset_process(process_t *proc){
     proc->stack = 0;
     proc->stack_phys = 0;
     proc->stack_size = 0;
+
+    proc->heap = 0;
+    proc->heap_phys = 0;
 
     proc->win_id = 0;
 

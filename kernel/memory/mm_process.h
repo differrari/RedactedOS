@@ -10,6 +10,7 @@
 #define VMA_KIND_ANON 4
 
 #define MAX_VMAS 32
+#define MM_GAP_PAGES 16
 
 typedef struct vma {
     uintptr_t start;
@@ -29,7 +30,14 @@ typedef struct mm_struct {
     uintptr_t mmap_top;
     uintptr_t mmap_cursor;
     uintptr_t stack_top;
-    uintptr_t stack_bottom;
+    uintptr_t stack_limit;
+    uintptr_t stack_commit;
+    uint64_t rss_heap_pages;
+    uint64_t rss_stack_pages;
+    uint64_t rss_anon_pages;
+    uint64_t cap_heap_pages;
+    uint64_t cap_stack_pages;
+    uint64_t cap_anon_pages;
 } mm_struct;
 
 vma* mm_find_vma(mm_struct *mm, uintptr_t va);

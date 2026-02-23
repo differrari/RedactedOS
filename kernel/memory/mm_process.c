@@ -1,14 +1,5 @@
 #include "memory/mm_process.h"
 
-static bool vma_can_merge(vma *a, vma *b) {
-    if (!a || !b) return false;
-    if (a->end != b->start) return false;
-    if (a->prot != b->prot) return false;
-    if (a->kind != b->kind) return false;
-    if (a->flags != b->flags) return false;
-    return true;
-}
-
 vma* mm_find_vma(mm_struct *mm, uintptr_t va){
     if (!mm) return 0;
     for (uint16_t i = 0; i < mm->vma_count; i++){
@@ -43,17 +34,25 @@ bool mm_add_vma(mm_struct *mm, uintptr_t start, uintptr_t end, uint8_t prot, uin
     mm->vmas[ins] = (vma){start, end, prot, kind, flags};
     mm->vma_count++;
 
-    if (ins > 0 && vma_can_merge (&mm->vmas[ins - 1], &mm->vmas[ins])) {
-        mm->vmas[ins - 1].end = mm->vmas[ins].end;
-        for (uint16_t i = ins; i + 1 < mm->vma_count; i++) mm->vmas[i] = mm->vmas[i + 1];
-        mm->vma_count--;
-        ins--;
+    if (ins > 0) {
+        vma *a = &mm->vmas[ins - 1];
+        vma *b = &mm->vmas[ins];
+        if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags) {
+            a->end = b->end;
+            for (uint16_t i = ins; i + 1 < mm->vma_count; i++) mm->vmas[i] = mm->vmas[i + 1];
+            mm->vma_count--;
+            ins--;
+        }
     }
 
-    if (ins + 1 < mm->vma_count && vma_can_merge(&mm->vmas[ins], &mm->vmas[ins + 1])) {
-        mm->vmas[ins].end = mm->vmas[ins + 1].end;
-        for (uint16_t i = ins + 1; i + 1 < mm->vma_count; i++)mm->vmas[i] = mm->vmas[i + 1];
-        mm->vma_count--;
+    if (ins + 1 < mm->vma_count) {
+        vma *a = &mm->vmas[ins];
+        vma *b = &mm->vmas[ins + 1];
+        if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags) {
+            a->end = b->end;
+            for (uint16_t i = ins + 1; i + 1 < mm->vma_count; i++)mm->vmas[i] = mm->vmas[i + 1];
+            mm->vma_count--;
+        }
     }
     return true;
 }
@@ -78,18 +77,26 @@ bool mm_update_vma(mm_struct *mm, uintptr_t start, uintptr_t end) {
         }
 
         m->end = end;
-        if (i > 0 && vma_can_merge(&mm->vmas[i - 1], m)) {
-            mm->vmas[i - 1].end = m->end;
-            for (uint16_t j = i; j + 1 < mm->vma_count; j++) mm->vmas[j] = mm->vmas[j + 1];
-            mm->vma_count--;
-            i--;
-            m = &mm->vmas[i];
+        if (i > 0) {
+            vma *a = &mm->vmas[i - 1];
+            vma *b = &mm->vmas[i];
+            if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags) {
+                a->end = b->end;
+                for (uint16_t j = i; j + 1 < mm->vma_count; j++) mm->vmas[j] = mm->vmas[j + 1];
+                mm->vma_count--;
+                i--;
+                m = &mm->vmas[i];
+            }
         }
 
-        if (i + 1 < mm->vma_count && vma_can_merge(m, &mm->vmas[i + 1])) {
-            m->end = mm->vmas[i + 1].end;
-            for (uint16_t j = i + 1; j + 1 < mm->vma_count; j++) mm->vmas[j] = mm->vmas[j + 1];
-            mm->vma_count--;
+        if (i + 1 < mm->vma_count) {
+            vma *a = &mm->vmas[i];
+            vma *b = &mm->vmas[i + 1];
+            if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags) {
+                a->end = b->end;
+                for (uint16_t j = i + 1; j + 1 < mm->vma_count; j++) mm->vmas[j] = mm->vmas[j + 1];
+                mm->vma_count--;
+            }
         }
         return true;
     }
@@ -103,7 +110,8 @@ uintptr_t mm_alloc_mmap(mm_struct *mm, size_t size, uint8_t prot, uint8_t kind, 
 
     if (!mm->mmap_cursor) return 0;
     uintptr_t base = (mm->mmap_cursor- size) & ~(PAGE_SIZE - 1);
-    if (base < mm->brk) return 0;
+    uintptr_t heap_guard = mm->brk + (MM_GAP_PAGES * PAGE_SIZE);
+    if (base < heap_guard) return 0;
     if (base + size > mm->mmap_top) return 0;
     if (!mm_add_vma(mm, base, base + size, prot, kind, flags)) return 0;
     mm->mmap_cursor = base;
