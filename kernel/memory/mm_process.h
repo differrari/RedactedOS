@@ -4,6 +4,8 @@
 #include "memory/page_allocator.h"
 
 #define VMA_FLAG_DEMAND 1
+#define VMA_FLAG_USERALLOC 2
+#define VMA_FLAG_ZERO 4
 #define VMA_KIND_ELF 1
 #define VMA_KIND_HEAP 2
 #define VMA_KIND_STACK 3
@@ -43,4 +45,5 @@ typedef struct mm_struct {
 vma* mm_find_vma(mm_struct *mm, uintptr_t va);
 bool mm_add_vma(mm_struct *mm, uintptr_t start, uintptr_t end, uint8_t prot, uint8_t kind, uint8_t flags);
 bool mm_update_vma(mm_struct *mm, uintptr_t start, uintptr_t end);
+bool mm_remove_vma(mm_struct *mm, uintptr_t start, uintptr_t end);
 uintptr_t mm_alloc_mmap(mm_struct *mm, size_t size, uint8_t prot, uint8_t kind, uint8_t flags);

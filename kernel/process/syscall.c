@@ -7,6 +7,7 @@
 #include "process/process.h"
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
+#include "memory/talloc.h"
 #include "graph/graphics.h"
 #include "std/memory_access.h"
 #include "input/input_dispatch.h"
@@ -45,7 +46,7 @@ static bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t es
     bool is_write = false;
     if (!is_exec) is_write = ((iss >> 6) & 1) != 0;
 
-    if (ifsc >= 0x9 && ifsc <= 0xB) { 
+    if (ifsc >= 0x9 && ifsc <= 0xB) {
         if (!mmu_set_access_flag((uint64_t*)proc->ttbr, far)) return false;
         mmu_flush_asid(proc->asid);
         return true;
@@ -88,13 +89,104 @@ static bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t es
     uintptr_t phys = (uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false);
     if (!phys) return false;
 
-    memset(PHYS_TO_VIRT_P((void*)phys), 0, PAGE_SIZE);
+    if (m->kind != VMA_KIND_ANON || (m->flags & VMA_FLAG_ZERO)) memset(PHYS_TO_VIRT_P((void*)phys), 0, PAGE_SIZE);
     mmu_map_4kb((uint64_t*)proc->ttbr, va_page, phys, MAIR_IDX_NORMAL, m->prot | MEM_NORM, MEM_PRIV_USER);
     mmu_flush_asid(proc->asid);
 
     if (m->kind == VMA_KIND_STACK) proc->mm.rss_stack_pages++;
     else if (m->kind == VMA_KIND_HEAP) proc->mm.rss_heap_pages++;
     else if (m->kind == VMA_KIND_ANON) proc->mm.rss_anon_pages++;
+
+    return true;
+}
+
+static bool uaccess_copyin(process_t *proc, void *dst, uintptr_t src, size_t size) {
+    if (!size) return true;
+
+    if ((src >> 47) & 1) {
+        memcpy(dst, (const void*)src, size);
+        return true;
+    }
+
+    uint8_t *d = (uint8_t*)dst;
+
+    while (size) {
+        size_t off = src & (PAGE_SIZE - 1);
+        size_t chunk = PAGE_SIZE - off;
+        if (chunk > size) chunk = size;
+
+        int st = 0;
+        uintptr_t pa = mmu_translate(src, &st);
+        if (st) {
+            uint64_t esr = (0x24ULL << 26) | 0x7ULL;
+            if (!mm_try_handle_page_fault(proc, src, esr)) return false;
+            pa = mmu_translate(src, &st);
+            if (st) return false;
+        }
+
+        memcpy(d, (const void*)PHYS_TO_VIRT_P((void*)pa), chunk);
+        d += chunk;
+        src += chunk;
+        size -= chunk;
+    }
+
+    return true;
+}
+
+static bool uaccess_copyout(process_t *proc, uintptr_t dst, const void *src, size_t size) {
+    if (!size) return true;
+
+    if ((dst >> 47) & 1) {
+        memcpy((void*)dst, src, size);
+        return true;
+    }
+
+    const uint8_t *s = (const uint8_t*)src;
+
+    while (size) {
+        size_t off = dst & (PAGE_SIZE - 1);
+        size_t chunk = PAGE_SIZE - off;
+        if (chunk > size) chunk = size;
+
+        int st = 0;
+        uintptr_t pa = mmu_translate(dst, &st);
+        if (st){
+            uint64_t esr = (0x24ULL << 26)| (1ULL << 6) | 0x7ULL;
+            if (!mm_try_handle_page_fault(proc, dst, esr)) return false;
+            pa = mmu_translate(dst, &st);
+            if (st) return false;
+        }
+
+        memcpy((void*)PHYS_TO_VIRT_P((void*)pa), s, chunk);
+        s += chunk;
+        dst += chunk;
+        size -= chunk;
+    }
+
+    return true;
+}
+
+static bool uaccess_copyinstr(process_t *proc, char *dst, size_t dst_size, uintptr_t src, size_t *out_copied, bool *out_terminated) {
+    if (!dst || dst_size < 2) return false;
+
+    size_t pos = 0;
+    bool term = false;
+
+    while (pos + 1 < dst_size) {
+        uint8_t c = 0;
+        if (!uaccess_copyin(proc, &c, src + pos, 1)) return false;
+        dst[pos] = (char)c;
+        pos++;
+        if (!c) {
+            term = true;
+            break;
+        }
+    }
+
+    if (!term) dst[dst_size - 1] = 0;
+
+    if (out_copied) *out_copied = term ? pos : (dst_size - 1);
+    if (out_terminated) *out_terminated = term;
 
     return true;
 }
@@ -113,19 +205,9 @@ u64 syscall_malloc(process_t *ctx){
     size_t alloc_size = pages * PAGE_SIZE;
     if (ctx->mm.rss_anon_pages + pages > ctx->mm.cap_anon_pages) return 0;
 
-    void *ptr = palloc_inner(alloc_size, MEM_PRIV_USER, MEM_RW, true, false);
-    if (!ptr) return 0;
+    uptr va = mm_alloc_mmap(&ctx->mm, alloc_size, MEM_RW, VMA_KIND_ANON, VMA_FLAG_DEMAND | VMA_FLAG_USERALLOC | VMA_FLAG_ZERO);
+    if (!va) return 0;
 
-    uptr va = mm_alloc_mmap(&ctx->mm, alloc_size, MEM_RW, VMA_KIND_ANON, 0);
-    if (!va) {
-        pfree(ptr, alloc_size);
-        return 0;
-    }
-
-    for (u64 i = 0; i < pages; i++) mmu_map_4kb(ctx->ttbr, va + (i * PAGE_SIZE), (uptr)ptr + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
-
-    register_allocation(ctx->alloc_map, ptr, alloc_size);
-    ctx->mm.rss_anon_pages += pages;
     mmu_flush_asid(ctx->asid);
     return va;
 }
@@ -136,24 +218,18 @@ uptr syscall_palloc(process_t *ctx){
     u64 pages = count_pages(size, PAGE_SIZE);
     size_t alloc_size = pages * PAGE_SIZE;
 
-    if (ctx->use_va &&ctx->mm.rss_anon_pages + pages > ctx->mm.cap_anon_pages) return 0;
+    if (ctx->use_va){
+        if (ctx->mm.rss_anon_pages + pages > ctx->mm.cap_anon_pages) return 0;
+        //TODO zalloc likely needs a dedicated syscall to request zeroed on fault explicitly
+        uptr va = mm_alloc_mmap(&ctx->mm, alloc_size, MEM_RW, VMA_KIND_ANON, VMA_FLAG_DEMAND | VMA_FLAG_USERALLOC | VMA_FLAG_ZERO);
+        if (!va) return 0;
+        mmu_flush_asid(ctx->asid);
+        return va;
+    }
 
     void *ptr = palloc_inner(alloc_size, MEM_PRIV_USER, MEM_RW, true, true);
     if(!ptr) return 0;
     register_allocation(ctx->alloc_map, ptr, alloc_size);
-    if (ctx->use_va){
-        uptr va = mm_alloc_mmap(&ctx->mm, alloc_size, MEM_RW, VMA_KIND_ANON, 0);
-        if (!va) {
-            pfree(ptr, alloc_size);
-            return 0;
-        }
-        for (u64 i = 0; i < pages; i++){
-            mmu_map_4kb(ctx->ttbr, va + (i * PAGE_SIZE), (uptr)ptr + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
-        }
-        ctx->mm.rss_anon_pages += pages;
-        mmu_flush_asid(ctx->asid);
-        return va;
-    }
     mmu_flush_asid(ctx->asid);
     return (uptr)PHYS_TO_VIRT_P(ptr);
 }
@@ -161,6 +237,27 @@ uptr syscall_palloc(process_t *ctx){
 u64 syscall_pfree(process_t *ctx){
     uptr va = ctx->PROC_X0;
     if (!va) return 0;
+
+    if (ctx->use_va) {
+        vma *m = mm_find_vma(&ctx->mm,va);
+        if (!m) return 0;
+        if (m->kind != VMA_KIND_ANON) return 0;
+        if (!(m->flags & VMA_FLAG_USERALLOC)) return 0;
+
+        uintptr_t start = m->start;
+        uintptr_t end = m->end;
+        if (!mm_remove_vma(&ctx->mm, start, end)) return 0;
+
+        for (uintptr_t a = start; a < end; a += PAGE_SIZE) {
+            uint64_t pa = 0;
+            if (!mmu_unmap_and_get_pa((uint64_t*)ctx->ttbr, a, &pa)) continue;
+            pfree((void*)pa, PAGE_SIZE);
+            if (ctx->mm.rss_anon_pages) ctx->mm.rss_anon_pages--;
+        }
+
+        mmu_flush_asid(ctx->asid);
+        return 0;
+    }
 
     int tr = 0;
     uptr phys = mmu_translate(va, &tr);
@@ -225,19 +322,38 @@ uptr syscall_brk(process_t *ctx) {
 }
 
 u64 syscall_printl(process_t *ctx){
-    if (!ctx->PROC_X0) return 0;
-    kprint((const char *)ctx->PROC_X0);
+    uintptr_t u = (uintptr_t)ctx->PROC_X0;
+    if (!u) return 0;
+
+    char buf[256] = {};
+
+    for (;;) {
+        size_t copied = 0;
+        bool term = false;
+        if (!uaccess_copyinstr(ctx, buf, sizeof(buf), u, &copied, &term)) return 0;
+        kprint(buf);
+        if (term) break;
+        if (!copied) break;
+        u += copied;
+    }
+
     return 0;
 }
 
 u64 syscall_read_key(process_t *ctx){
-    keypress *kp = (keypress*)ctx->PROC_X0;
-    return sys_read_input_current(kp);
+    uintptr_t up = (uintptr_t)ctx->PROC_X0;
+    keypress tmp = {};
+    u64 r = sys_read_input_current(&tmp);
+    if (!uaccess_copyout(ctx, up, &tmp, sizeof(tmp))) return 0;
+    return r;
 }
 
 u64 syscall_read_event(process_t *ctx){
-    kbd_event *ev = (kbd_event*)ctx->PROC_X0;
-    return sys_read_event_current(ev);
+    uintptr_t up = (uintptr_t)ctx->PROC_X0;
+    kbd_event tmp = {};
+    u64 r = sys_read_event_current(&tmp);
+    if (!uaccess_copyout(ctx, up, &tmp, sizeof(tmp))) return 0;
+    return r;
 }
 
 u64 syscall_read_shortcut(process_t *ctx){
@@ -248,31 +364,39 @@ u64 syscall_read_shortcut(process_t *ctx){
 u64 syscall_get_mouse(process_t *ctx){
     //TEST: are we preventing the mouse from being read outside of window?
     if (get_current_proc_pid() != ctx->id) return 0;
-    mouse_data *inp = (mouse_data*)ctx->PROC_X0;
-    inp->raw = get_raw_mouse_in();
-    inp->position = convert_mouse_position(get_mouse_pos());
+    uintptr_t up = (uintptr_t)ctx->PROC_X0;
+    mouse_data tmp = {};
+    tmp.raw = get_raw_mouse_in();
+    tmp.position = convert_mouse_position(get_mouse_pos());
+    if (!uaccess_copyout(ctx, up, &tmp, sizeof(tmp))) return 0;
     return 0;
 }
 
 uptr syscall_gpu_request_ctx(process_t *ctx){
-    draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
-    get_window_ctx(d_ctx);
+    uintptr_t up = (uintptr_t)ctx->PROC_X0;
+    draw_ctx tmp = {};
+    get_window_ctx(&tmp);
+    if (!uaccess_copyout(ctx, up, &tmp, sizeof(tmp))) return 0;
     return 0;
 }
 
 u64 syscall_gpu_flush(process_t *ctx){
-    draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
-    commit_frame(d_ctx,0 );
+    uintptr_t up = (uintptr_t)ctx->PROC_X0;
+    draw_ctx tmp = {};
+    if (!uaccess_copyin(ctx, &tmp, up, sizeof(tmp))) return 0;
+    commit_frame(&tmp, 0);
     gpu_flush();
     return 0;
 }
 
 u64 syscall_gpu_resize_ctx(process_t *ctx){
-    draw_ctx *d_ctx = (draw_ctx*)ctx->PROC_X0;
+    uintptr_t up = (uintptr_t)ctx->PROC_X0;
     uint32_t width = (uint32_t)ctx->PROC_X1;
     uint32_t height = (uint32_t)ctx->PROC_X2;
     resize_window(width, height);
-    get_window_ctx(d_ctx);
+    draw_ctx tmp = {};
+    get_window_ctx(&tmp);
+    if (!uaccess_copyout(ctx, up, &tmp, sizeof(tmp))) return 0;
     gpu_flush();
     return 0;
 }
@@ -310,112 +434,310 @@ u64 syscall_get_time(process_t *ctx){
 u64 syscall_socket_create(process_t *ctx){
     Socket_Role role = (Socket_Role)ctx->PROC_X0;
     protocol_t protocol = (protocol_t)ctx->PROC_X1;
-    const SocketExtraOptions* extra = (const SocketExtraOptions*)ctx->PROC_X2;
-    SocketHandle *out_handle = (SocketHandle*)ctx->PROC_X3;
-    return create_socket(role, protocol, extra, ctx->id, out_handle);
+    uintptr_t uextra = (uintptr_t)ctx->PROC_X2;
+    uintptr_t uout = (uintptr_t)ctx->PROC_X3;
+    SocketExtraOptions extra = {};
+    SocketExtraOptions *pe = 0;
+    if (uextra) {
+        if (!uaccess_copyin(ctx, &extra, uextra, sizeof(extra))) return 0;
+        pe = &extra;
+    }
+
+    SocketHandle out = {};
+    u64 r = create_socket(role, protocol, pe, ctx->id, &out);
+    if (!uaccess_copyout(ctx, uout, &out, sizeof(out))) return 0;
+    return r;
 }
 
 u64 syscall_socket_bind(process_t *ctx){
-    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
     ip_version_t ip_version = (ip_version_t)ctx->PROC_X1;
     uint16_t port = (uint16_t)ctx->PROC_X2;
-    return bind_socket(handle, port, ip_version, ctx->id);
+    SocketHandle handle = {};
+    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+    return bind_socket(&handle, port, ip_version, ctx->id);
 }
 
 u64 syscall_socket_connect(process_t *ctx){
-    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
     uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
-    void* dst = (void*)ctx->PROC_X2;
+    uintptr_t udst = (uintptr_t)ctx->PROC_X2;
     uint16_t port = (uint16_t)ctx->PROC_X3;
-    return connect_socket(handle, dst_kind, dst, port, ctx->id);
+
+    SocketHandle handle = {};
+    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+
+    net_l4_endpoint ep = {};
+    char domain[256] = {};
+    const void *dst = 0;
+
+    if (dst_kind == DST_ENDPOINT) {
+        if (!uaccess_copyin(ctx, &ep, udst, sizeof(ep))) return 0;
+        dst = &ep;
+    } else if (dst_kind == DST_DOMAIN) {
+        size_t copied = 0;
+        bool term = false;
+        if (!uaccess_copyinstr(ctx, domain, sizeof(domain), udst, &copied, &term)) return 0;
+        if (!term) return 0;
+        dst = domain;
+    } else {
+        return 0;
+    }
+
+    return connect_socket(&handle, dst_kind, dst, port, ctx->id);
 }
 
 u64 syscall_socket_listen(process_t *ctx){
-    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
     int32_t backlog = (int32_t)ctx->PROC_X1;
-    return listen_on(handle, backlog, ctx->id);
+
+    SocketHandle handle = {};
+    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+    return listen_on(&handle, backlog, ctx->id);
 }
 
 u64 syscall_socket_accept(process_t *ctx){
-    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
-    accept_on_socket(handle, ctx->id);
+    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
+    SocketHandle handle = {};
+    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+    accept_on_socket(&handle, ctx->id);
     return 1;
 }
 
 u64 syscall_socket_send(process_t *ctx){
-    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
+    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
     uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
-    void* dst = (void*)ctx->PROC_X2;
+    uintptr_t udst = (uintptr_t)ctx->PROC_X2;
     uint16_t port = (uint16_t)ctx->PROC_X3;
-    void *ptr = (void*)ctx->PROC_X4;
+    uintptr_t ubuf = (uintptr_t)ctx->PROC_X4;
     size_t size = (size_t)ctx->regs[5];
-    return send_on_socket(handle, dst_kind, dst, port, ptr, size, ctx->id);
+
+    SocketHandle handle = {};
+    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+
+    net_l4_endpoint ep = {};
+    char domain[256] = {};
+    const void *dst = 0;
+
+    if (dst_kind == DST_ENDPOINT){
+        if (!uaccess_copyin(ctx, &ep, udst, sizeof(ep))) return 0;
+        dst = &ep;
+    } else if (dst_kind == DST_DOMAIN){
+        size_t copied = 0;
+        bool term = false;
+        if (!uaccess_copyinstr(ctx, domain, sizeof(domain), udst, &copied, &term)) return 0;
+        if (!term) return 0;
+        dst = domain;
+    } else {
+        return 0;
+    }
+
+    if (!size) return 0;
+
+    uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
+    void *kbuf = (void*)talloc(alloc_size);
+    if (!kbuf) return 0;
+
+    if (!uaccess_copyin(ctx, kbuf, ubuf, size)){
+        temp_free(kbuf, alloc_size);
+        return 0;
+    }
+
+    u64 r = send_on_socket(&handle, dst_kind, dst, port, kbuf, size, ctx->id);
+    temp_free(kbuf, alloc_size);
+    return r;
 }
 
 u64 syscall_socket_receive(process_t *ctx){
-    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
-    void* buf = (void*)ctx->PROC_X1;
+    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
+    uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
-    net_l4_endpoint* out_src = (net_l4_endpoint*)ctx->PROC_X3;
-    return receive_from_socket(handle, buf, size, out_src, ctx->id);
+    uintptr_t uout_src = (uintptr_t)ctx->PROC_X3;
+
+    SocketHandle handle = {};
+    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+    if (!size) return 0;
+
+    uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
+    void *kbuf = (void*)talloc(alloc_size);
+    if (!kbuf) return 0;
+
+    net_l4_endpoint src = {};
+    int64_t r = receive_from_socket(&handle, kbuf, size, &src, ctx->id);
+    if (r > 0) {
+        if (!uaccess_copyout(ctx, ubuf, kbuf, (size_t)r)) r = 0;
+    }
+    if (!uaccess_copyout(ctx, uout_src, &src, sizeof(src))) r = 0;
+
+    temp_free(kbuf, alloc_size);
+    return (u64)r;
 }
 
 u64 syscall_socket_close(process_t *ctx){
-    SocketHandle *handle = (SocketHandle*)ctx->PROC_X0;
-    return close_socket(handle, ctx->id);
+    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
+    SocketHandle handle = {};
+    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+    return close_socket(&handle, ctx->id);
 }
 
 u64 syscall_openf(process_t *ctx){
-    char *req_path = (char *)ctx->PROC_X0;
+    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
+    uintptr_t udesc = (uintptr_t)ctx->PROC_X1;
+
+    char req_path[255] = {};
+    size_t copied = 0;
+    bool term = false;
+    if (!uaccess_copyinstr(ctx, req_path, sizeof(req_path), upath, &copied, &term)) return FS_RESULT_DRIVER_ERROR;
+    if (!term) return FS_RESULT_DRIVER_ERROR;
+
     char path[255] = {};
-    if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path,true) == 11){
-        string_format_buf(path, sizeof(path),"%s%s", ctx->bundle, req_path);
-    } else memcpy(path, req_path, strlen(req_path) + 1);
+    if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11){
+        string_format_buf(path, sizeof(path), "%s%s", ctx->bundle, req_path);
+    } else {
+        memcpy(path, req_path, strlen(req_path) + 1);
+    }
     //TODO: Restrict access to own bundle, own fs and require privilege escalation for full-ish filesystem access
-    file *descriptor = (file*)ctx->PROC_X1;
-    return open_file(path, descriptor);
+    file descriptor = {};
+    FS_RESULT r = open_file(path, &descriptor);
+    if (!uaccess_copyout(ctx, udesc, &descriptor, sizeof(descriptor))) return FS_RESULT_DRIVER_ERROR;
+    return r;
 }
 
 u64 syscall_readf(process_t *ctx){
-    file *descriptor = (file*)ctx->PROC_X0;
-    char *buf = (char*)ctx->PROC_X1;
+    uintptr_t udesc = (uintptr_t)ctx->PROC_X0;
+    uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
-    return read_file(descriptor, buf, size);
+    file descriptor = {};
+    if (!uaccess_copyin(ctx, &descriptor, udesc, sizeof(descriptor))) return 0;
+
+    uint8_t tmp[4096];
+    size_t done = 0;
+
+    while (done < size){
+        size_t chunk = size - done;
+        if (chunk > sizeof(tmp)) chunk = sizeof(tmp);
+
+        size_t r = read_file(&descriptor, (char*)tmp, chunk);
+        if (!r) break;
+
+        if (!uaccess_copyout(ctx, ubuf + done, tmp, r)) break;
+
+        done += r;
+        if (r < chunk) break;
+    }
+
+    uaccess_copyout(ctx, udesc, &descriptor, sizeof(descriptor));
+    return done;
 }
 
 u64 syscall_writef(process_t *ctx){
-    file *descriptor = (file*)ctx->PROC_X0;
-    char *buf = (char*)ctx->PROC_X1;
+    uintptr_t udesc = (uintptr_t)ctx->PROC_X0;
+    uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
-    return write_file(descriptor, buf, size);
+
+    file descriptor = {};
+    if (!uaccess_copyin(ctx, &descriptor, udesc, sizeof(descriptor))) return 0;
+
+    uint8_t tmp[4096];
+    size_t done = 0;
+
+    while (done < size) {
+        size_t chunk = size - done;
+        if (chunk > sizeof(tmp)) chunk = sizeof(tmp);
+
+        if (!uaccess_copyin(ctx, tmp, ubuf + done, chunk)) break;
+
+        size_t w = write_file(&descriptor, (const char*)tmp, chunk);
+        if (!w) break;
+
+        done += w;
+        if (w < chunk) break;
+    }
+
+    uaccess_copyout(ctx, udesc, &descriptor, sizeof(descriptor));
+    return done;
 }
 
 u64 syscall_sreadf(process_t *ctx){
-    const char *path = (const char*)ctx->PROC_X0;
-    void *buf = (void*)ctx->PROC_X1;
+    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
+    uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
-    return simple_read(path, buf, size);
+
+    char path[255] = {};
+    size_t copied = 0;
+    bool term = false;
+    if (!uaccess_copyinstr(ctx, path, sizeof(path), upath, &copied, &term)) return 0;
+    if (!term) return 0;
+
+    uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
+    void *kbuf = (void*)talloc(alloc_size);
+    if (!kbuf) return 0;
+
+    size_t r = simple_read(path, kbuf, size);
+    if (r) uaccess_copyout(ctx, ubuf, kbuf, r);
+
+    temp_free(kbuf, alloc_size);
+    return r;
 }
 
 u64 syscall_swritef(process_t *ctx){
-    const char *path = (const char*)ctx->PROC_X0;
-    const void *buf = (void*)ctx->PROC_X1;
+    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
+    uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
-    return simple_write(path, buf, size);
+
+    char path[255] = {};
+    size_t copied = 0;
+    bool term = false;
+    if (!uaccess_copyinstr(ctx, path, sizeof(path), upath, &copied, &term)) return 0;
+    if (!term) return 0;
+
+    uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
+    void *kbuf = (void*)talloc(alloc_size);
+    if (!kbuf) return 0;
+
+    if (!uaccess_copyin(ctx, kbuf, ubuf, size)){
+        temp_free(kbuf, alloc_size);
+        return 0;
+    }
+
+    size_t r = simple_write(path, kbuf, size);
+    temp_free(kbuf, alloc_size);
+    return r;
 }
 
 u64 syscall_closef(process_t *ctx){
-    file *descriptor = (file*)ctx->PROC_X0;
-    close_file(descriptor);
+    uintptr_t udesc = (uintptr_t)ctx->PROC_X0;
+    file descriptor = {};
+    if (!uaccess_copyin(ctx, &descriptor, udesc, sizeof(descriptor))) return 0;
+    close_file(&descriptor);
     return 0;
 }
 
 u64 syscall_dir_list(process_t *ctx){
-    const char *path = (char *)ctx->PROC_X0;
-    void *buf = (void*)ctx->PROC_X1;
+    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
+    uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
-    u64 *offset = (u64*)ctx->PROC_X3;
-    return list_directory_contents(path, buf, size, offset);
+    uintptr_t uoffset = (uintptr_t)ctx->PROC_X3;
+
+    char path[255] = {};
+    size_t copied = 0;
+    bool term = false;
+    if (!uaccess_copyinstr(ctx, path, sizeof(path), upath, &copied, &term)) return 0;
+    if (!term) return 0;
+
+    uint64_t off = 0;
+    if (!uaccess_copyin(ctx, &off, uoffset, sizeof(off))) return 0;
+
+    uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
+    void *kbuf = (void*)talloc(alloc_size);
+    if (!kbuf) return 0;
+
+    size_t r = list_directory_contents(path, kbuf, size, &off);
+    if (r) uaccess_copyout(ctx, ubuf, kbuf, r);
+    uaccess_copyout(ctx, uoffset, &off, sizeof(off));
+
+    temp_free(kbuf, alloc_size);
+    return r;
 }
 
 // uint64_t syscall_load_fsmod(process_t *ctx){
@@ -523,6 +845,7 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
 
 const char* fault_messages[] = {
     [0b000000] = "Address size fault in TTBR0 or TTBR1",
+    [0b000100] = "Translation fault, 0th level",
     [0b000101] = "Translation fault, 1st level",
     [0b000110] = "Translation fault, 2nd level",
     [0b000111] = "Translation fault, 3rd level",
@@ -547,7 +870,9 @@ const char* fault_messages[] = {
 void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
     uint8_t ifsc = esr & 0x3F;
 
-    const char *m = fault_messages[ifsc];
+    const char *m = 0;
+    if (ifsc < 64) m = fault_messages[ifsc];
+    if (!m) m = "Unknown fault";
     uint64_t sctlr = 0;
     asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
     if (sctlr & 1) m = (const char*)(((uintptr_t)m) | HIGH_VA);

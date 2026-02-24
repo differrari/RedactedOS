@@ -161,6 +161,106 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
 
     elf_program_header* program_headers = (elf_program_header*)(file + header->program_header_offset);
 
+    bool use_sections = false;
+    for (int i = 0; i < header->program_header_num_entries; i++) {
+        if (program_headers[i].segment_type != 1) continue;
+        if (program_headers[i].p_memsz == 0) continue;
+        if ((elf_to_red_permissions(program_headers[i].flags) & (MEM_RW | MEM_EXEC)) == (MEM_RW | MEM_EXEC)){
+            use_sections = true;
+            break;
+        }
+    }
+
+    if (use_sections){ //should this fallback be kept or should it be removed?
+        kprintf("ELF has RWX PT_LOAD, using fallback");
+        if (header->section_entry_size == sizeof(elf_section_header) && header->section_num_entries && header->section_header_offset < filesize) {
+            size_t sh_total = (size_t)header->section_num_entries * sizeof(elf_section_header);
+            if (header->section_header_offset + sh_total <= filesize) {
+                elf_section_header *sections = (elf_section_header*)(file + header->section_header_offset);
+                size_t sec_count = 0;
+                for (int i = 1; i < header->section_num_entries; i++) {
+                    if (!(sections[i].sh_flags & 2)) continue;
+                    if (!sections[i].sh_size) continue;
+                    if (sections[i].sh_type != 8) {
+                        if (sections[i].sh_offset >= filesize) continue;
+                        if (sections[i].sh_offset + sections[i].sh_size > filesize) continue;
+                    }
+                    sec_count++;
+                }
+                if (sec_count) {
+                    program_load_data *data = (program_load_data*)talloc(sec_count * sizeof(program_load_data));
+                    if (data){
+                        size_t di = 0;
+                        for (int i = 1; i < header->section_num_entries; i++) {
+                            if (!(sections[i].sh_flags & 2)) continue;
+                            if (!sections[i].sh_size) continue;
+                            if (sections[i].sh_type != 8) {
+                                if (sections[i].sh_offset >= filesize) continue;
+                                if (sections[i].sh_offset + sections[i].sh_size > filesize) continue;
+                            }
+
+                            uint8_t perm = 0;
+                            if (sections[i].sh_flags & 4) perm |= MEM_EXEC;
+                            if (sections[i].sh_flags & 1) perm |= MEM_RW;
+
+                            sizedptr file_cpy = {};
+                            if (sections[i].sh_type != 8) {
+                                file_cpy.ptr = (uintptr_t)file + sections[i].sh_offset;
+                                file_cpy.size = sections[i].sh_size;
+                            }
+
+                            data[di] = (program_load_data) {
+                                .permissions = perm,
+                                .file_cpy = file_cpy,
+                                .virt_mem = (sizedptr){sections[i].sh_addr,sections[i].sh_size}
+                            };
+                            di++;
+                        }
+
+                        if (di) {
+                            process_t *proc = create_process(name, bundle, data, di, header->program_entry_offset, true);
+                            temp_free(data, sec_count * sizeof(program_load_data));
+                            if (!proc) return 0;
+
+                            proc->PROC_X0 = 1;
+
+                            size_t blen = strlen(bundle);
+                            size_t nlen = strlen(name);
+                            size_t plen = blen + nlen + 5;
+                            uintptr_t sp = proc->stack - (plen+1);
+                            uintptr_t sp_phys = proc->stack_phys - (plen+1);
+
+                            char *nargvals = (char*)PHYS_TO_VIRT_P(sp_phys);
+
+                            memcpy(nargvals, bundle, blen);
+                            *(char*)(nargvals + blen) = '/';
+                            memcpy(nargvals + blen + 1, name, nlen);
+                            memcpy(nargvals + blen+  1+  nlen, ".elf", 4);
+
+                            *(char*)(nargvals + plen) = 0;
+
+                            uintptr_t pad = sp & 15;
+                            sp -= pad;
+                            sp_phys -= pad;
+                            sp -= 2 * sizeof(uintptr_t);
+                            sp_phys -= 2 * sizeof(uintptr_t);
+                            *(uintptr_t*)PHYS_TO_VIRT_P(sp_phys) = sp + 2 * sizeof(uintptr_t) + pad;
+
+                            *(uintptr_t*)PHYS_TO_VIRT_P(sp_phys + sizeof(uintptr_t)) = 0;
+
+                            proc->PROC_X1 = sp;
+                            proc->sp = sp;
+
+                            get_elf_debug_info(proc, file, filesize);
+
+                            return proc;
+                        }
+                        temp_free(data, sec_count * sizeof(program_load_data));
+                    }
+                }
+            }
+        }
+    }
     size_t load_count = 0;
     for (int i = 0; i < header->program_header_num_entries; i++) {
         if (program_headers[i].segment_type != 1) continue;
@@ -197,7 +297,7 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
         return 0;
     }
 
-    process_t *proc = create_process(name, bundle, data, di, header->program_entry_offset);
+    process_t *proc = create_process(name, bundle, data, di, header->program_entry_offset, false);
     temp_free(data, load_count * sizeof(program_load_data));
     if (!proc) return 0;
 

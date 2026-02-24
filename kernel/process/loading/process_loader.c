@@ -270,7 +270,7 @@ size_t map_section(process_t *proc, uintptr_t base, uintptr_t off, program_load_
     return data.virt_mem.size;
 }
 
-process_t* create_process(const char *name, const char *bundle, program_load_data *data, size_t data_count, uintptr_t entry) {
+process_t* create_process(const char *name, const char *bundle, program_load_data *data, size_t data_count, uintptr_t entry, bool allow_rwx) {
 
     process_t* proc = init_process();
 
@@ -324,14 +324,14 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
         }
 
         if (!any) continue;
-        if (rw && ex) {
+        if (rw && ex && !allow_rwx) {
             //kprintf("WX overlap at page %llx", va);
             if (dest) pfree((void*)dest, code_size);
             reset_process(proc);
             proc->state = STOPPED;
             return 0;
         }
-        if (rw) ex = false;
+        if (rw && !allow_rwx) ex = false;
 
         uint8_t attr = MEM_NORM;
         if (rw) attr |= MEM_RW;
@@ -364,6 +364,8 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
 
     uintptr_t heap_start = (max_map + (PAGE_SIZE*4) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     if (heap_start + PAGE_SIZE >= mmap_top) return 0;
+    proc->heap = heap_start;
+    proc->heap_phys = 0;
 
     proc->mm.heap_start = heap_start;
     proc->mm.brk = heap_start + PAGE_SIZE;
@@ -390,20 +392,17 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     uintptr_t stack = (uintptr_t)palloc_inner(stack_commit_size, MEM_PRIV_USER, MEM_RW, true, false);
     if (!stack) return 0;
 
+    proc->stack = stack_top;
+    proc->stack_phys = stack + stack_commit_size;
+
     for (uintptr_t i = stack, va = stack_commit; i < stack + stack_commit_size; i += GRANULE_4KB, va += GRANULE_4KB) mmu_map_4kb(ttbr, va, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
     memset(PHYS_TO_VIRT_P(stack), 0, stack_commit_size);
 
-    proc->stack = stack_top;
-    proc->stack_phys = stack + stack_commit_size;
     proc->stack_size = stack_commit_size;
-    proc->sp = proc->stack;
-
-    proc->heap = heap_start;
-    proc->heap_phys = 0;
-
     proc->mm.rss_stack_pages = stack_commit_size / PAGE_SIZE;
 
     proc->ttbr = ttbr;
+    proc->sp = proc->stack;
 
     proc->output = (uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
     if (!proc->output) return 0;

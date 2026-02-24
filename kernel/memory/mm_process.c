@@ -37,7 +37,7 @@ bool mm_add_vma(mm_struct *mm, uintptr_t start, uintptr_t end, uint8_t prot, uin
     if (ins > 0) {
         vma *a = &mm->vmas[ins - 1];
         vma *b = &mm->vmas[ins];
-        if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags) {
+        if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags && !(a->flags & VMA_FLAG_USERALLOC)) {
             a->end = b->end;
             for (uint16_t i = ins; i + 1 < mm->vma_count; i++) mm->vmas[i] = mm->vmas[i + 1];
             mm->vma_count--;
@@ -48,7 +48,7 @@ bool mm_add_vma(mm_struct *mm, uintptr_t start, uintptr_t end, uint8_t prot, uin
     if (ins + 1 < mm->vma_count) {
         vma *a = &mm->vmas[ins];
         vma *b = &mm->vmas[ins + 1];
-        if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags) {
+        if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags && !(a->flags & VMA_FLAG_USERALLOC)) {
             a->end = b->end;
             for (uint16_t i = ins + 1; i + 1 < mm->vma_count; i++)mm->vmas[i] = mm->vmas[i + 1];
             mm->vma_count--;
@@ -80,7 +80,7 @@ bool mm_update_vma(mm_struct *mm, uintptr_t start, uintptr_t end) {
         if (i > 0) {
             vma *a = &mm->vmas[i - 1];
             vma *b = &mm->vmas[i];
-            if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags) {
+            if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags && !(a->flags & VMA_FLAG_USERALLOC)) {
                 a->end = b->end;
                 for (uint16_t j = i; j + 1 < mm->vma_count; j++) mm->vmas[j] = mm->vmas[j + 1];
                 mm->vma_count--;
@@ -92,12 +92,29 @@ bool mm_update_vma(mm_struct *mm, uintptr_t start, uintptr_t end) {
         if (i + 1 < mm->vma_count) {
             vma *a = &mm->vmas[i];
             vma *b = &mm->vmas[i + 1];
-            if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags) {
+            if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags && !(a->flags & VMA_FLAG_USERALLOC)) {
                 a->end = b->end;
                 for (uint16_t j = i + 1; j + 1 < mm->vma_count; j++) mm->vmas[j] = mm->vmas[j + 1];
                 mm->vma_count--;
             }
         }
+        return true;
+    }
+    return false;
+}
+
+bool mm_remove_vma(mm_struct *mm, uintptr_t start, uintptr_t end) {
+    if (!mm) return false;
+    start &= ~(PAGE_SIZE - 1);
+    end = (end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    if (start >= end) return false;
+
+    for (uint16_t i = 0; i < mm->vma_count; i++) {
+        vma *m = &mm->vmas[i];
+        if (m->start != start) continue;
+        if (m->end != end) continue;
+        for (uint16_t j = i; j + 1 < mm->vma_count; j++) mm->vmas[j] = mm->vmas[j + 1];
+        mm->vma_count--;
         return true;
     }
     return false;
