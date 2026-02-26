@@ -26,6 +26,7 @@
 #include "networking/transport_layer/csocket.h"
 #include "loading/dwarf.h"
 #include "sysregs.h"
+#include "memory/addr.h"
 #include "ui/graphic_types.h"
 #include "dev/module_loader.h"
 
@@ -86,10 +87,10 @@ static bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t es
         if (proc->mm.rss_anon_pages >= proc->mm.cap_anon_pages) return false;
     }
 
-    uintptr_t phys = (uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false);
+    paddr_t phys = palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false);
     if (!phys) return false;
 
-    if (m->kind != VMA_KIND_ANON || (m->flags & VMA_FLAG_ZERO)) memset(PHYS_TO_VIRT_P((void*)phys), 0, PAGE_SIZE);
+    if (m->kind != VMA_KIND_ANON || (m->flags & VMA_FLAG_ZERO)) memset((void*)dmap_pa_to_kva(phys), 0, PAGE_SIZE);
     mmu_map_4kb((uint64_t*)proc->ttbr, va_page, phys, MAIR_IDX_NORMAL, m->prot | MEM_NORM, MEM_PRIV_USER);
     mmu_flush_asid(proc->asid);
 
@@ -227,11 +228,11 @@ uptr syscall_palloc(process_t *ctx){
         return va;
     }
 
-    void *ptr = palloc_inner(alloc_size, MEM_PRIV_USER, MEM_RW, true, true);
+    paddr_t ptr = palloc_inner(alloc_size, MEM_PRIV_USER, MEM_RW, true, true);
     if(!ptr) return 0;
-    register_allocation(ctx->alloc_map, ptr, alloc_size);
+    register_allocation(ctx->alloc_map, (void*)ptr, alloc_size);
     mmu_flush_asid(ctx->asid);
-    return (uptr)PHYS_TO_VIRT_P(ptr);
+    return (uptr)dmap_pa_to_kva(ptr);
 }
 
 u64 syscall_pfree(process_t *ctx){

@@ -24,7 +24,7 @@ void register_allocation(page_index *index, void* ptr, size_t size);//DEADLINE: 
 void free_registered(page_index *index, void *ptr);
 void release_page_index(page_index *index);
 void setup_page(uintptr_t address, uint8_t attributes);
-void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map);
+paddr_t palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map);
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full);
 void free_managed_page(void* ptr);
 void pfree(void* ptr, uint64_t size);

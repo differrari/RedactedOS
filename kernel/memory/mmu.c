@@ -11,6 +11,7 @@
 #include "process/process.h"
 #include "process/scheduler.h"
 #include "sysregs.h"
+#include "memory/addr.h"
 #include "std/memory.h"
 #include "exceptions/exception_handler.h"
 #include "alloc/mem_types.h"
@@ -36,23 +37,6 @@ static bool mmu_verbose;
 static inline void mmu_flush_icache();
 static inline void mmu_flush_all();
 
-static inline void* pt_pa_to_va(uint64_t pa) {
-    uint64_t sctlr = 0;
-    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-
-    if ((sctlr & 1) == 0) return (void*)pa;
-    return (void*)PHYS_TO_VIRT(pa);
-}
-
-static inline uint64_t pt_va_to_pa(const void* va) {
-    uintptr_t v = (uintptr_t)va;
-
-    uint64_t sctlr = 0;
-    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-
-    if ((sctlr & 1) == 0) return (uint64_t)v;
-    return (uint64_t)VIRT_TO_PHYS(v);
-}
 
 static uint64_t asid_shift;
 static uint16_t asid_mask;
@@ -534,7 +518,7 @@ typedef struct {
     int i;
 } mmu_free_frame_t;
 
-void mmu_map_all(uintptr_t pa){
+void mmu_map_all(paddr_t pa){
     if (!kernel_ttbr0 || !kernel_ttbr1) return;
     uintptr_t base = pa & ~(GRANULE_2MB - 1);
 

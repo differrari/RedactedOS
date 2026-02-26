@@ -2,6 +2,7 @@
 #include "memory/mmu.h"
 #include "memory/page_allocator.h"
 #include "sysregs.h"
+#include "memory/addr.h"
 #include "types.h"
 #include "exceptions/exception_handler.h"
 #include "console/kio.h"
@@ -59,11 +60,11 @@ bool can_automap = false;
 static bool talloc_high_va = false;
 
 void pre_talloc(){
-    void* phys = palloc_inner(GRANULE_2MB, MEM_PRIV_KERNEL, MEM_RW, true, can_automap);
-    pre_talloc_ptr = phys;
+    paddr_t phys = palloc_inner(GRANULE_2MB, MEM_PRIV_KERNEL, MEM_RW, true, can_automap);
+    pre_talloc_ptr = (void*)phys;
     uint64_t sctlr = 0;
     asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-    if ((sctlr & 1) != 0) pre_talloc_ptr = PHYS_TO_VIRT_P(phys);
+    if ((sctlr & 1) != 0) pre_talloc_ptr = (void*)dmap_pa_to_kva(phys);
     pre_talloc_mem_limit = (uintptr_t)pre_talloc_ptr + GRANULE_2MB;
 
     if (!can_automap){
@@ -72,7 +73,7 @@ void pre_talloc(){
         talloc_mem_limit = pre_talloc_mem_limit;
     }
 
-    mmu_map_all((uintptr_t)phys);
+    mmu_map_all(phys);
 }
 
 void talloc_enable_high_va(){

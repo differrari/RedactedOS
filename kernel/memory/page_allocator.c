@@ -6,6 +6,7 @@
 #include "math/math.h"
 #include "console/kio.h"
 #include "sysregs.h"
+#include "memory/addr.h"
 #include "exceptions/exception_handler.h"
 
 #define PD_TABLE 0b11
@@ -192,7 +193,7 @@ void setup_page(uintptr_t address, uint8_t attributes){
     new_info->attributes = attributes;
 }
 
-void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map) {
+paddr_t palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map) {
     if (!alloc_max_page) page_alloc_init();
     page_alloc_enable_high_va();
     uint64_t page_count = count_pages(size,PAGE_SIZE);
@@ -254,7 +255,7 @@ void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, 
                     }
                 }
                 kprintfv("[page_alloc] Final address %x", (i * 64 * PAGE_SIZE));
-                return (void*)(i * 64 * PAGE_SIZE);
+                return (paddr_t)(i * 64 * PAGE_SIZE);
             }
         }
         }
@@ -317,7 +318,7 @@ void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, 
             if (alloc_hint_page < alloc_min_page) alloc_hint_page = alloc_min_page;
 
             kprintfv("[page_alloc] Final address %x", first_address);
-            return (void*)first_address;
+            return (paddr_t)first_address;
         } 
     }
 
@@ -326,9 +327,9 @@ void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, 
 }
 
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full){
-    void* phys = palloc_inner(size, level, attributes, full, true);
+    paddr_t phys = palloc_inner(size, level, attributes, full, true);
     if(!phys) return 0;
-    return PHYS_TO_VIRT_P(phys);
+    return (void*)dmap_pa_to_kva(phys);
 }
 
 bool page_used(uintptr_t ptr){
@@ -408,9 +409,9 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
             mp = mp->next;
 
         if (!mp) {
-            void* meta_phys =palloc_inner(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, true, true);
+            paddr_t meta_phys =palloc_inner(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, true, true);
             if (!meta_phys) panic("kalloc no metadata page", alloc_size);
-            mp = (big_alloc_page*)PHYS_TO_VIRT_P(meta_phys);
+            mp = (big_alloc_page*)dmap_pa_to_kva(meta_phys);
             memset(mp, 0, PAGE_SIZE);
             mp->next = big_alloc_meta;
             big_alloc_meta = mp;

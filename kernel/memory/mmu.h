@@ -36,7 +36,7 @@ bool mmu_set_access_flag(uint64_t *table, uint64_t va);
 uintptr_t* mmu_default_ttbr();
 void mmu_free_ttbr(uintptr_t *ttbr);
 uintptr_t mmu_translate(uintptr_t va, int *status);
-void mmu_map_all(uintptr_t pa);
+void mmu_map_all(paddr_t pa);
 #ifdef __cplusplus
 }
 #endif

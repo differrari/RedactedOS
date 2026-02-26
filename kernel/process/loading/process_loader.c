@@ -8,6 +8,7 @@
 #include "memory/mmu.h"
 #include "memory/talloc.h"
 #include "sysregs.h"
+#include "memory/addr.h"
 
 typedef struct {
     uint64_t code_base_start;
@@ -302,7 +303,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->mm.ttbr0 = ttbr;
     proc->ttbr = ttbr;
 
-    uintptr_t dest = (uintptr_t)palloc_inner(code_size, MEM_PRIV_USER, MEM_RW, true, false);
+    paddr_t dest = palloc_inner(code_size, MEM_PRIV_USER, MEM_RW, true, false);
     if (dest) register_allocation(proc->alloc_map, (void*)dest, code_size);
     if (!dest) return 0;
     
@@ -338,7 +339,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
         if (ex) attr |= MEM_EXEC;
         mmu_map_4kb(ttbr, va, dest + (va - min_map), MAIR_IDX_NORMAL, attr, MEM_PRIV_USER);
     }
-    memset(PHYS_TO_VIRT_P(dest), 0, code_size);
+    memset((void*)dmap_pa_to_kva(dest), 0, code_size);
 
     for (size_t i = 0; i < data_count; i++) {
         uint8_t prot = MEM_NORM;
@@ -349,7 +350,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->use_va = true;
     
     for (size_t i = 0; i < data_count; i++)
-        map_section(proc, PHYS_TO_VIRT(dest), min_map, data[i]);
+        map_section(proc, dmap_pa_to_kva(dest), min_map, data[i]);
 
     proc->va = min_map;
     proc->code = (void*)dest;
@@ -389,14 +390,17 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     mm_add_vma(&proc->mm, proc->mm.heap_start, proc->mm.brk, MEM_RW, VMA_KIND_HEAP, VMA_FLAG_DEMAND);
     mm_add_vma(&proc->mm, proc->mm.stack_limit, proc->mm.stack_top, MEM_RW, VMA_KIND_STACK, VMA_FLAG_DEMAND);
 
-    uintptr_t stack = (uintptr_t)palloc_inner(stack_commit_size, MEM_PRIV_USER, MEM_RW, true, false);
+    paddr_t stack = palloc_inner(stack_commit_size, MEM_PRIV_USER, MEM_RW, true, false);
     if (!stack) return 0;
 
     proc->stack = stack_top;
     proc->stack_phys = stack + stack_commit_size;
 
-    for (uintptr_t i = stack, va = stack_commit; i < stack + stack_commit_size; i += GRANULE_4KB, va += GRANULE_4KB) mmu_map_4kb(ttbr, va, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
-    memset(PHYS_TO_VIRT_P(stack), 0, stack_commit_size);
+    for (paddr_t pa = stack; pa < stack + stack_commit_size; pa += GRANULE_4KB) {
+        uintptr_t va = stack_commit + (uintptr_t)(pa - stack);
+        mmu_map_4kb(ttbr, va, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+    }
+    memset((void*)dmap_pa_to_kva(stack), 0, stack_commit_size);
 
     proc->stack_size = stack_commit_size;
     proc->mm.rss_stack_pages = stack_commit_size / PAGE_SIZE;
