@@ -327,7 +327,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
         if (!any) continue;
         if (rw && ex && !allow_rwx) {
             //kprintf("WX overlap at page %llx", va);
-            if (dest) pfree((void*)dest, code_size);
+            if (dest) pfree((void*)dmap_pa_to_kva(dest), code_size);
             reset_process(proc);
             proc->state = STOPPED;
             return 0;

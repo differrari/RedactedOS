@@ -11,6 +11,7 @@
 #include "math/math.h"
 #include "memory/mmu.h"
 #include "process/syscall.h"
+#include "memory/addr.h"
 #include "sysregs.h"
 #include "filesystem/filesystem.h"
 #include "dev/module_loader.h"
@@ -164,7 +165,7 @@ void reset_process(process_t *proc){
             for (uintptr_t va = m->start; va < m->end; va += GRANULE_4KB) {
                 uint64_t pa = 0;
                 if (!mmu_unmap_and_get_pa((uint64_t*)proc->ttbr, va, &pa)) continue;
-                pfree((void*)pa, GRANULE_4KB);
+                pfree((void*)dmap_pa_to_kva((paddr_t)pa), GRANULE_4KB);
                 if (m->kind == VMA_KIND_HEAP) {
                     if (proc->mm.rss_heap_pages) proc->mm.rss_heap_pages--;
                 } else if (m->kind == VMA_KIND_STACK) {

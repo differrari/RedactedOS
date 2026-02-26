@@ -61,10 +61,7 @@ static bool talloc_high_va = false;
 
 void pre_talloc(){
     paddr_t phys = palloc_inner(GRANULE_2MB, MEM_PRIV_KERNEL, MEM_RW, true, can_automap);
-    pre_talloc_ptr = (void*)phys;
-    uint64_t sctlr = 0;
-    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-    if ((sctlr & 1) != 0) pre_talloc_ptr = (void*)dmap_pa_to_kva(phys);
+    pre_talloc_ptr = pt_pa_to_va(phys);
     pre_talloc_mem_limit = (uintptr_t)pre_talloc_ptr + GRANULE_2MB;
 
     if (!can_automap){

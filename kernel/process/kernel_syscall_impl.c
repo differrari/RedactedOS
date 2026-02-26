@@ -13,6 +13,7 @@
 #include "filesystem/filesystem.h"
 #include "sysregs.h"
 #include "memory/mmu.h"
+#include "memory/addr.h"
 extern page_index *p_index;
 
 void* malloc(size_t size){
@@ -23,7 +24,7 @@ void* malloc(size_t size){
     uintptr_t heap_pa = mmu_translate(k->heap, &tr);
     if (tr) return 0;
 
-    void* ptr = kalloc((void*)heap_pa, size, ALIGN_16B, MEM_PRIV_KERNEL);
+    void* ptr = kalloc((void*)dmap_pa_to_kva((paddr_t)heap_pa), size, ALIGN_16B, MEM_PRIV_KERNEL);
     if (ptr && size >= PAGE_SIZE && k->alloc_map)
         register_allocation(k->alloc_map, ptr, size);
     return ptr;

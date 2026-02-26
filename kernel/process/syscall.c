@@ -125,7 +125,7 @@ static bool uaccess_copyin(process_t *proc, void *dst, uintptr_t src, size_t siz
             if (st) return false;
         }
 
-        memcpy(d, (const void*)PHYS_TO_VIRT_P((void*)pa), chunk);
+        memcpy(d, (const void*)dmap_pa_to_kva((paddr_t)pa), chunk);
         d += chunk;
         src += chunk;
         size -= chunk;
@@ -158,7 +158,7 @@ static bool uaccess_copyout(process_t *proc, uintptr_t dst, const void *src, siz
             if (st) return false;
         }
 
-        memcpy((void*)PHYS_TO_VIRT_P((void*)pa), s, chunk);
+        memcpy((void*)dmap_pa_to_kva((paddr_t)pa), s, chunk);
         s += chunk;
         dst += chunk;
         size -= chunk;
@@ -196,7 +196,7 @@ u64 syscall_malloc(process_t *ctx){
     if (syscall_depth > 1) {
         process_t *k = get_proc_by_pid(1);
         if (!k) return 0;
-        return (u64)kalloc(PHYS_TO_VIRT_P((void*)k->heap_phys), ctx->PROC_X0, ALIGN_16B, MEM_PRIV_KERNEL);
+        return (u64)kalloc((void*)dmap_pa_to_kva((paddr_t)k->heap_phys), ctx->PROC_X0, ALIGN_16B, MEM_PRIV_KERNEL);
     }
 
     size_t size = ctx->PROC_X0;
@@ -230,9 +230,10 @@ uptr syscall_palloc(process_t *ctx){
 
     paddr_t ptr = palloc_inner(alloc_size, MEM_PRIV_USER, MEM_RW, true, true);
     if(!ptr) return 0;
-    register_allocation(ctx->alloc_map, (void*)ptr, alloc_size);
+    void* kva = (void*)dmap_pa_to_kva(ptr);
+    register_allocation(ctx->alloc_map, kva, alloc_size);
     mmu_flush_asid(ctx->asid);
-    return (uptr)dmap_pa_to_kva(ptr);
+    return (uptr)kva;
 }
 
 u64 syscall_pfree(process_t *ctx){
@@ -252,7 +253,7 @@ u64 syscall_pfree(process_t *ctx){
         for (uintptr_t a = start; a < end; a += PAGE_SIZE) {
             uint64_t pa = 0;
             if (!mmu_unmap_and_get_pa((uint64_t*)ctx->ttbr, a, &pa)) continue;
-            pfree((void*)pa, PAGE_SIZE);
+            pfree((void*)dmap_pa_to_kva((paddr_t)pa), PAGE_SIZE);
             if (ctx->mm.rss_anon_pages) ctx->mm.rss_anon_pages--;
         }
 
@@ -263,16 +264,17 @@ u64 syscall_pfree(process_t *ctx){
     int tr = 0;
     uptr phys = mmu_translate(va, &tr);
     if (tr) return 0;
+    void* phys_kva = (void*)dmap_pa_to_kva((paddr_t)phys);
 
     for (page_index *ind = ctx->alloc_map; ind; ind = ind->header.next) {
         for (u64 i = 0; i < ind->header.size; i++) {
-            if ((uptr)ind->ptrs[i].ptr == phys) {
+            if (ind->ptrs[i].ptr == phys_kva) {
                 size_t size = ind->ptrs[i].size;
                 u64 pages = count_pages(size, PAGE_SIZE);
                 for (u64 p = 0; p < pages; p++) mmu_unmap_table(ctx->ttbr, va + (p * PAGE_SIZE), phys + (p * PAGE_SIZE));
 
                 mmu_flush_asid(ctx->asid);
-                pfree((void*)phys, size);
+                pfree(phys_kva, size);
                 if (ctx->mm.rss_anon_pages >= pages) ctx->mm.rss_anon_pages -= pages;
                 else ctx->mm.rss_anon_pages = 0;
 
@@ -308,7 +310,7 @@ uptr syscall_brk(process_t *ctx) {
         for (uptr va = new_brk; va < old; va += PAGE_SIZE) {
             uint64_t pa = 0;
             if (!mmu_unmap_and_get_pa((uint64_t*)ctx->ttbr, va, &pa)) continue;
-            pfree((void*)pa, PAGE_SIZE);
+            pfree((void*)dmap_pa_to_kva((paddr_t)pa), PAGE_SIZE);
             if (ctx->mm.rss_heap_pages) ctx->mm.rss_heap_pages--;
         }
     }
@@ -832,7 +834,7 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
         uintptr_t ra_pa = mmu_translate(fp + 8, &tr_ra);
         if (tr_ra) return;
 
-        uintptr_t return_address = (*(uintptr_t*)PHYS_TO_VIRT_P(ra_pa));
+        uintptr_t return_address = (*(uintptr_t*)dmap_pa_to_kva((paddr_t)ra_pa));
         if (!return_address) return;
         return_address -= 4;//Return address is the next instruction after branching
         if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
@@ -840,7 +842,7 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
         int tr = 0;
         uintptr_t fp_pa = mmu_translate(fp, &tr);
         if (tr) return;
-        fp = *(uintptr_t*)PHYS_TO_VIRT_P(fp_pa);
+        fp = *(uintptr_t*)dmap_pa_to_kva((paddr_t)fp_pa);
     }
 }
 
