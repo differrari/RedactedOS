@@ -28,6 +28,8 @@ u16 newwin_s = 0;
 static dos_mode mode;
 static draw_ctx *dos_ctx;
 
+extern i32 zoom_scale;
+
 static void draw_solid_window(draw_ctx *ctx, int_point fixed_point, gpu_size fixed_size, bool fill){
     DRAW(rectangle(ctx, (rect_ui_config){
         .border_size = BORDER_SIZE,
@@ -45,6 +47,10 @@ static void draw_solid_window(draw_ctx *ctx, int_point fixed_point, gpu_size fix
 void draw_window(window_frame *frame){
     int_point fixed_point = { global_win_offset.x + frame->x - BORDER_SIZE, global_win_offset.y + frame->y - BORDER_SIZE };
     gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 };
+    fixed_point.x /= zoom_scale;
+    fixed_point.y /= zoom_scale;
+    fixed_size.width /= zoom_scale;
+    fixed_size.height /= zoom_scale;
     if (!system_theme.use_window_shadows || focused_window != frame){
         draw_solid_window(dos_ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
         return;
@@ -250,6 +256,12 @@ int window_system(){
             }
             drawing = false;
         }
+        // i8 scroll = get_raw_mouse_in().scroll;
+        // if (scroll){
+        //     zoom_scale += -scroll;
+        //     zoom_scale = clamp(zoom_scale, 1, 5);
+        //     dirty_windows = true;
+        // }
         disable_interrupt();
         if (dirty_windows){
             draw_desktop();
