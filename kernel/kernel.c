@@ -25,9 +25,14 @@
 #include "tests/test_runner.h"
 #include "pci/pcie.h"
 
-void kernel_main() {
+extern char __bss_start[];
+extern char __bss_end[];
+void kernel_main(uint64_t board_type) {
+    for (uintptr_t p = (uintptr_t)__bss_start; p < (uintptr_t)__bss_end; p += 8) *(uint64_t*)p = 0;
+    BOARD_TYPE = (uint8_t)board_type;
 
     detect_hardware();
+    hw_high_va();
     
     pre_talloc();
     mmu_init();

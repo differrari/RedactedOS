@@ -105,6 +105,7 @@ static bool uaccess_copyin(process_t *proc, void *dst, uintptr_t src, size_t siz
     if (!size) return true;
 
     if ((src >> 47) & 1) {
+        if (proc->id != 1) return false;
         memcpy(dst, (const void*)src, size);
         return true;
     }
@@ -138,6 +139,7 @@ static bool uaccess_copyout(process_t *proc, uintptr_t dst, const void *src, siz
     if (!size) return true;
 
     if ((dst >> 47) & 1) {
+        if (proc->id != 1) return false;
         memcpy((void*)dst, src, size);
         return true;
     }
@@ -230,10 +232,9 @@ uptr syscall_palloc(process_t *ctx){
 
     paddr_t ptr = palloc_inner(alloc_size, MEM_PRIV_USER, MEM_RW, true, true);
     if(!ptr) return 0;
-    void* kva = (void*)dmap_pa_to_kva(ptr);
-    register_allocation(ctx->alloc_map, kva, alloc_size);
+    register_allocation(ctx->alloc_map, (void*)ptr, alloc_size);
     mmu_flush_asid(ctx->asid);
-    return (uptr)kva;
+    return (uptr)dmap_pa_to_kva(ptr);
 }
 
 u64 syscall_pfree(process_t *ctx){
@@ -253,7 +254,7 @@ u64 syscall_pfree(process_t *ctx){
         for (uintptr_t a = start; a < end; a += PAGE_SIZE) {
             uint64_t pa = 0;
             if (!mmu_unmap_and_get_pa((uint64_t*)ctx->ttbr, a, &pa)) continue;
-            pfree((void*)dmap_pa_to_kva((paddr_t)pa), PAGE_SIZE);
+            pfree((void*)pa, PAGE_SIZE);
             if (ctx->mm.rss_anon_pages) ctx->mm.rss_anon_pages--;
         }
 
@@ -264,17 +265,16 @@ u64 syscall_pfree(process_t *ctx){
     int tr = 0;
     uptr phys = mmu_translate(va, &tr);
     if (tr) return 0;
-    void* phys_kva = (void*)dmap_pa_to_kva((paddr_t)phys);
 
     for (page_index *ind = ctx->alloc_map; ind; ind = ind->header.next) {
         for (u64 i = 0; i < ind->header.size; i++) {
-            if (ind->ptrs[i].ptr == phys_kva) {
+            if ((uptr)ind->ptrs[i].ptr == phys) {
                 size_t size = ind->ptrs[i].size;
                 u64 pages = count_pages(size, PAGE_SIZE);
                 for (u64 p = 0; p < pages; p++) mmu_unmap_table(ctx->ttbr, va + (p * PAGE_SIZE), phys + (p * PAGE_SIZE));
 
                 mmu_flush_asid(ctx->asid);
-                pfree(phys_kva, size);
+                pfree((void*)phys, size);
                 if (ctx->mm.rss_anon_pages >= pages) ctx->mm.rss_anon_pages -= pages;
                 else ctx->mm.rss_anon_pages = 0;
 
@@ -310,7 +310,7 @@ uptr syscall_brk(process_t *ctx) {
         for (uptr va = new_brk; va < old; va += PAGE_SIZE) {
             uint64_t pa = 0;
             if (!mmu_unmap_and_get_pa((uint64_t*)ctx->ttbr, va, &pa)) continue;
-            pfree((void*)dmap_pa_to_kva((paddr_t)pa), PAGE_SIZE);
+            pfree((void*)pa, PAGE_SIZE);
             if (ctx->mm.rss_heap_pages) ctx->mm.rss_heap_pages--;
         }
     }
@@ -838,7 +838,7 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
         if (!return_address) return;
         return_address -= 4;//Return address is the next instruction after branching
         if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
-            kprintf("%i: caller address: %llx", depth, return_address, return_address);
+            kprintf("%i: caller address: %llx", depth, return_address);
         int tr = 0;
         uintptr_t fp_pa = mmu_translate(fp, &tr);
         if (tr) return;
@@ -876,9 +876,6 @@ void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
     const char *m = 0;
     if (ifsc < 64) m = fault_messages[ifsc];
     if (!m) m = "Unknown fault";
-    uint64_t sctlr = 0;
-    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-    if (sctlr & 1) m = (const char*)(((uintptr_t)m) | HIGH_VA);
     kprint(m);
     process_t *proc = get_current_proc();
     backtrace(sp, elr, proc->debug_lines, proc->debug_line_str);
@@ -888,7 +885,7 @@ void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
     if (far > 0)
         debug_mmu_address(far);
     else
-        kprintf("Null pointer accessed at %x",elr);
+        kprintf("Null pointer accessed at %llx", elr);
 }
 
 void sync_el0_handler_c(){
@@ -928,19 +925,16 @@ void sync_el0_handler_c(){
     if (ec == 0x15) {
         syscall_entry entry = syscalls[iss];
         if (entry){
-            uint64_t sctlr = 0;
-            asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-            if (sctlr & 1) entry = (syscall_entry)(((uintptr_t)entry) | HIGH_VA);
             result = entry(proc);
         } else {
-            kprintf("Unknown syscall in process. ESR: %x. ELR: %x. FAR: %x", esr, elr, far);
+            kprintf("Unknown syscall in process. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
             coredump(esr, elr, far, proc->sp);
             syscall_depth--;
             stop_current_process(ec);
         }
     } else {
         if (far == 0 && elr == 0 && currentEL == 0){
-            kprintf("Process has exited %x",x0);
+            kprintf("Process has exited %llx", x0);
             syscall_depth--;
             stop_current_process(x0);
         } else {
@@ -948,7 +942,7 @@ void sync_el0_handler_c(){
                 case 0x20:
                 case 0x21: {
                     if (far == 0){
-                        kprintf("Process has exited %x",x0);
+                        kprintf("Process has exited %llx", x0);
                         syscall_depth--;
                         stop_current_process(x0);
                     }
@@ -957,7 +951,11 @@ void sync_el0_handler_c(){
             if (currentEL == 1){
                 if (syscall_depth < 3){
                     if (syscall_depth < 1) kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
-                    if (syscall_depth < 2) coredump(esr, elr, far, proc->sp);
+                    if (syscall_depth < 2) {
+                        uint64_t ksp = 0;
+                        asm volatile ("mov %0, sp" : "=r"(ksp));
+                        coredump(esr, elr, far, ksp);
+                    }
                     handle_exception("UNEXPECTED EXCEPTION",ec);
                 }
                 while (true);

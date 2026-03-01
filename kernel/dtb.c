@@ -1,6 +1,7 @@
 #include "dtb.h"
 #include "console/kio.h"
 #include "std/string.h"
+#include "sysregs.h"
 
 #define DTB_ADDR 0x40000000UL
 #define FDT_MAGIC 0xD00DFEED
@@ -26,9 +27,16 @@ struct fdt_header {
 
 static struct fdt_header *hdr;
 
+uintptr_t dtb_base() {
+    uint64_t sctlr = 0;
+    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+    if ((sctlr & 1) != 0) return PHYS_TO_VIRT(DTB_ADDR);
+    return DTB_ADDR;
+}
+
 bool dtb_get_header(){
-    if (!hdr)
-        hdr = (struct fdt_header *)DTB_ADDR;
+    uintptr_t base = dtb_base();
+    hdr = (struct fdt_header *)base;
     if (__builtin_bswap32(hdr->magic) != FDT_MAGIC) return false;
     return true;
 }
@@ -43,7 +51,8 @@ bool dtb_addresses(uint64_t *start, uint64_t *size){
 void dtb_debug_print_all() {
     if (!dtb_get_header()) return;
 
-    uint32_t *p = (uint32_t *)(DTB_ADDR + __builtin_bswap32(hdr->off_dt_struct));
+    uintptr_t base = dtb_base();
+    uint32_t *p = (uint32_t *)(base + __builtin_bswap32(hdr->off_dt_struct));
 
     while (1) {
         uint32_t token = __builtin_bswap32(*p++);
@@ -62,8 +71,9 @@ void dtb_debug_print_all() {
 bool dtb_scan(const char *search_name, dtb_node_handler handler, dtb_match_t *match) {
     if (!dtb_get_header()) return false;
 
-    uint32_t *p = (uint32_t *)(DTB_ADDR + __builtin_bswap32(hdr->off_dt_struct));
-    const char *strings = (const char *)(DTB_ADDR + __builtin_bswap32(hdr->off_dt_strings));
+    uintptr_t base = dtb_base();
+    uint32_t *p = (uint32_t *)(base + __builtin_bswap32(hdr->off_dt_struct));
+    const char *strings = (const char *)(base + __builtin_bswap32(hdr->off_dt_strings));
     int depth = 0;
     bool active = 0;
 

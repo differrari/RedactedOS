@@ -16,6 +16,7 @@
 #include "exceptions/exception_handler.h"
 #include "alloc/mem_types.h"
 #include "memory/talloc.h"
+#include "memory/va_layout.h"
 
 #define PAGE_TABLE_ENTRIES 512
 #define PD_TABLE 0b11
@@ -29,6 +30,20 @@
 #define PTE_ATTR_SHIFT 2
 #define PTE_PXN (1ULL << 53)
 #define PTE_UXN (1ULL << 54)
+extern char kcode_end;
+
+extern char __text_start[];
+extern char __text_end[];
+extern char __rodata_start[];
+extern char __rodata_end[];
+extern char __data_start[];
+extern char __data_end[];
+extern char __bss_start[];
+extern char __bss_end[];
+extern char __vectors_start[];
+extern char __vectors_end[];
+extern char __kstack_bottom[];
+extern char __kstack_top[];
 
 static uintptr_t *kernel_ttbr0;
 static uintptr_t *kernel_ttbr1;
@@ -146,9 +161,14 @@ void mmu_map_2mb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
             uint64_t e = l3[i];
             uint64_t expect = (p & PTE_ADDR_MASK) | attr | PD_TABLE;
 
+            if ((e & 1ULL) == 0) {
+                l3[i] = expect;
+                continue;
+            }
+
             uint64_t diff = (e ^ expect) & ~(PTE_ADDR_MASK | PTE_AF);
 
-            if ((e & 1ULL) == 0 || diff != 0 || (e & PTE_ADDR_MASK) != (expect & PTE_ADDR_MASK)) {
+            if (diff != 0 || (e & PTE_ADDR_MASK) != (expect & PTE_ADDR_MASK)) {
                 kprintf("[mmu] map2 table mismatch va=%llx i=%llu e=%llx", (uint64_t)va, (uint64_t)i, (uint64_t)e);
                 panic("mmu_map_2mb table mismatch", va);
             }
@@ -375,12 +395,7 @@ void mmu_unmap_table(uint64_t *table, uint64_t va, uint64_t pa){
 }
 
 void mmu_unmap(uint64_t va, uint64_t pa){
-    if (((va >> 47) & 1) != 0) panic("mmu_unmap high va", va);
-    uint64_t ram_start = get_user_ram_start();
-    uint64_t ram_end = get_user_ram_end();
-    if (va >= ram_start && va < ram_end) panic("mmu_unmap directmap ram", va);
-
-    mmu_unmap_table((uint64_t*)kernel_ttbr0, va, pa);
+    mmu_unmap_table((uint64_t*)kernel_ttbr1, va, pa);
     //if (pttbr) mmu_unmap_table((uint64_t*)pttbr, va, pa);
 
     mmu_flush_all();
@@ -413,20 +428,44 @@ void mmu_init() {
 
     kernel_ttbr0 = (uintptr_t*)mmu_alloc();
     kernel_ttbr1 = (uintptr_t*)mmu_alloc();
-    uintptr_t kstart = mem_get_kmem_start();
-    uintptr_t kend = mem_get_kmem_end();
+    uintptr_t kimg_base = KERNEL_IMAGE_VA_BASE;
+    uintptr_t kstart_pa = ((uintptr_t)__text_start) - kimg_base;
+    uintptr_t kend_pa = ((uintptr_t)&kcode_end) - kimg_base;
+    uintptr_t pa0 = kstart_pa & ~(GRANULE_4KB - 1);
+    uintptr_t pa1 = (kend_pa + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
 
-    for (uintptr_t addr = kstart & ~(GRANULE_4KB - 1); addr < kend; addr += GRANULE_4KB) {
-        mmu_map_4kb((uint64_t*)kernel_ttbr0, addr, addr, MAIR_IDX_NORMAL, MEM_RW | MEM_EXEC | MEM_NORM, MEM_PRIV_KERNEL);
-        mmu_map_4kb((uint64_t*)kernel_ttbr1, addr | HIGH_VA, addr, MAIR_IDX_NORMAL, MEM_RW | MEM_EXEC | MEM_NORM, MEM_PRIV_KERNEL);
-    }
+    for (uintptr_t pa = pa0; pa < pa1; pa += GRANULE_4KB) mmu_map_4kb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
+
+    uintptr_t v0 = ((uintptr_t)__text_start) & ~(GRANULE_4KB - 1);
+    uintptr_t v1 = (((uintptr_t)__text_end) + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
+    for (uintptr_t va = v0; va < v1; va += GRANULE_4KB) mmu_map_4kb((uint64_t*)kernel_ttbr1, va, va - kimg_base, MAIR_IDX_NORMAL, MEM_EXEC | MEM_NORM, MEM_PRIV_KERNEL);
+
+    v0 = ((uintptr_t)__vectors_start) & ~(GRANULE_4KB - 1);
+    v1 = (((uintptr_t)__vectors_end) + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
+    for (uintptr_t va = v0; va < v1; va += GRANULE_4KB) mmu_map_4kb((uint64_t*)kernel_ttbr1, va, va - kimg_base, MAIR_IDX_NORMAL, MEM_EXEC | MEM_NORM, MEM_PRIV_KERNEL);
+
+    v0 = ((uintptr_t)__rodata_start) & ~(GRANULE_4KB - 1);
+    v1 = (((uintptr_t)__rodata_end) + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
+    for (uintptr_t va = v0; va < v1; va += GRANULE_4KB) mmu_map_4kb((uint64_t*)kernel_ttbr1, va, va - kimg_base, MAIR_IDX_NORMAL, MEM_NORM, MEM_PRIV_KERNEL);
+
+    v0 = ((uintptr_t)__data_start) & ~(GRANULE_4KB - 1);
+    v1 = (((uintptr_t)__data_end) + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
+    for (uintptr_t va = v0; va < v1; va += GRANULE_4KB) mmu_map_4kb((uint64_t*)kernel_ttbr1, va, va - kimg_base, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
+
+    v0 = ((uintptr_t)__bss_start) & ~(GRANULE_4KB - 1);
+    v1 = (((uintptr_t)__bss_end) + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
+    for (uintptr_t va = v0; va < v1; va += GRANULE_4KB) mmu_map_4kb((uint64_t*)kernel_ttbr1, va, va - kimg_base, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
+
+    v0 = ((uintptr_t)__kstack_bottom) & ~(GRANULE_4KB - 1);
+    v1 = (((uintptr_t)__kstack_top) + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
+    for (uintptr_t va = v0; va < v1; va += GRANULE_4KB) mmu_map_4kb((uint64_t*)kernel_ttbr1, va, va - kimg_base, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
 
     uint64_t dstart = 0;
     uint64_t dsize = 0;
     if (dtb_addresses(&dstart,&dsize)) {
         uint64_t dend = (dstart + dsize + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
         for (uint64_t addr = dstart & ~(GRANULE_4KB - 1); addr < dend; addr += GRANULE_4KB) {
-            mmu_map_4kb((uint64_t*)kernel_ttbr0, addr, addr, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
+            //mmu_map_4kb((uint64_t*)kernel_ttbr0, addr, addr, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
             mmu_map_4kb((uint64_t*)kernel_ttbr1, addr | HIGH_VA, addr, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
         }
     }
@@ -436,11 +475,11 @@ void mmu_init() {
 
     for (uint64_t pa = ram_start; pa < ram_end;) {
         if ((!(pa & (GRANULE_2MB - 1))) && (ram_end - pa) >= GRANULE_2MB){
-            mmu_map_2mb((uint64_t*)kernel_ttbr0, pa, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
+            //mmu_map_2mb((uint64_t*)kernel_ttbr0, pa, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
             mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
             pa += GRANULE_2MB;
         } else {
-            mmu_map_4kb((uint64_t*)kernel_ttbr0, pa, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
+            //mmu_map_4kb((uint64_t*)kernel_ttbr0, pa, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
             mmu_map_4kb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
             pa += GRANULE_4KB;
         }
@@ -451,38 +490,50 @@ void mmu_init() {
 
     for (uint64_t pa = mmio_phys; pa < mmio_end; ) {
         if ((!(pa & (GRANULE_2MB - 1))) && (mmio_end - pa) >= GRANULE_2MB) {
-            mmu_map_2mb((uint64_t*)kernel_ttbr0, pa, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+            //mmu_map_2mb((uint64_t*)kernel_ttbr0, pa, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
             mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
             pa += GRANULE_2MB;
         } else {
-            mmu_map_4kb((uint64_t*)kernel_ttbr0, pa, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+            //mmu_map_4kb((uint64_t*)kernel_ttbr0, pa, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
             mmu_map_4kb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
             pa += GRANULE_4KB;
         }
     }
 
-    if (PCI_BASE && (PCI_BASE < mmio_phys || PCI_BASE >= mmio_end)) {
+    for (uint64_t pa = 0x09000000ULL; pa < 0x0A000000ULL; pa += GRANULE_2MB) mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+    for (uint64_t pa = 0x3F000000ULL; pa < 0x40000000ULL; pa += GRANULE_2MB) mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+    for (uint64_t pa = 0xFE000000ULL; pa < 0xFF000000ULL; pa += GRANULE_2MB) mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+
+    if (PCI_BASE && (PCI_BASE < (mmio_phys | HIGH_VA) || PCI_BASE >= (mmio_end | HIGH_VA))) {
         uint64_t p = VIRT_TO_PHYS(PCI_BASE) & ~(GRANULE_2MB - 1);
-        mmu_map_2mb((uint64_t*)kernel_ttbr0, p, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+        //mmu_map_2mb((uint64_t*)kernel_ttbr0, p, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
         mmu_map_2mb((uint64_t*)kernel_ttbr1, p | HIGH_VA, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
     }
 
-    if (XHCI_BASE && (XHCI_BASE < mmio_phys || XHCI_BASE >= mmio_end)) {
+    if (XHCI_BASE && (XHCI_BASE < (mmio_phys | HIGH_VA) || XHCI_BASE >= (mmio_end | HIGH_VA))) {
         uint64_t p = VIRT_TO_PHYS(XHCI_BASE) & ~(GRANULE_2MB - 1);
-        mmu_map_2mb((uint64_t*)kernel_ttbr0, p, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+        //mmu_map_2mb((uint64_t*)kernel_ttbr0, p, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
         mmu_map_2mb((uint64_t*)kernel_ttbr1, p | HIGH_VA, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
     }
 
-    hw_high_va();
-    mmu_start((uint64_t*)kernel_ttbr1, (uint64_t*)kernel_ttbr0);
+    //hw_high_va();
+    //mmu_start((uint64_t*)kernel_ttbr1, (uint64_t*)kernel_ttbr0);
 
-    kernel_ttbr0 = (uintptr_t*)PHYS_TO_VIRT((uintptr_t)kernel_ttbr0);
-    kernel_ttbr1 = (uintptr_t*)PHYS_TO_VIRT((uintptr_t)kernel_ttbr1);
+    //kernel_ttbr0 = (uintptr_t*)PHYS_TO_VIRT((uintptr_t)kernel_ttbr0);
+    //kernel_ttbr1 = (uintptr_t*)PHYS_TO_VIRT((uintptr_t)kernel_ttbr1);
 
     talloc_enable_high_va();
     page_alloc_enable_high_va();
 
+    uint64_t ttbr1_pa = pt_va_to_pa(kernel_ttbr1) & PTE_ADDR_MASK;
+    asm volatile("msr ttbr1_el1, %0" :: "r"(ttbr1_pa));
+    asm volatile("dsb ish");
+    asm volatile("isb");
+
     mmu_swap_ttbr(0, 0);
+    asm volatile("msr ttbr0_el1, %0" :: "r"((uint64_t)pttbr_hw));
+    asm volatile("dsb ish");
+    asm volatile("isb");
 
     mmu_flush_all();
     mmu_flush_icache();
@@ -519,10 +570,10 @@ typedef struct {
 } mmu_free_frame_t;
 
 void mmu_map_all(paddr_t pa){
-    if (!kernel_ttbr0 || !kernel_ttbr1) return;
+    if (!kernel_ttbr1) return;
     uintptr_t base = pa & ~(GRANULE_2MB - 1);
 
-    mmu_map_2mb((uint64_t*)kernel_ttbr0, base, base, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
+    //mmu_map_2mb((uint64_t*)kernel_ttbr0, base, base, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
     mmu_map_2mb((uint64_t*)kernel_ttbr1, base | HIGH_VA, base, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
 
     mmu_flush_all();
@@ -564,18 +615,15 @@ void mmu_free_ttbr(uintptr_t *ttbr){
 }
 
 uintptr_t* mmu_new_ttbr(){
-    uintptr_t *ttbr = (uintptr_t*)mmu_alloc();
-    //if (!kernel_ttbr0) panic("mmu_new_ttbr no kernel_ttbr0", (uintptr_t)ttbr);
-    if (kernel_ttbr0) mmu_copy(ttbr, kernel_ttbr0, 0);
-    return ttbr;
+    return (uintptr_t*)mmu_alloc();
 }
 
 void register_device_memory(uint64_t va, uint64_t pa){
     uint64_t phys = VIRT_TO_PHYS(pa);
-    uint64_t vlow = VIRT_TO_PHYS(va);
-    uint64_t vhigh = phys | HIGH_VA;
-    mmu_map_4kb((uint64_t*)kernel_ttbr0, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-    mmu_map_4kb((uint64_t*)kernel_ttbr1, vhigh, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+    uint64_t vlow = va;
+    if (((vlow >> 47) & 1ULL) == 0) vlow = phys | HIGH_VA;
+    mmu_map_4kb((uint64_t*)kernel_ttbr1, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+    //mmu_map_4kb((uint64_t*)kernel_ttbr1, vhigh, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
     //if (pttbr) mmu_map_4kb((uint64_t*)pttbr, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
 
     mmu_flush_all();
@@ -584,11 +632,12 @@ void register_device_memory(uint64_t va, uint64_t pa){
 
 void register_device_memory_2mb(uint64_t va, uint64_t pa){
     uint64_t phys = VIRT_TO_PHYS(pa) & ~(GRANULE_2MB - 1);
-    uint64_t vlow = VIRT_TO_PHYS(va) & ~(GRANULE_2MB - 1);
-    uint64_t vhigh = phys | HIGH_VA;
+    uint64_t vlow = va;
+    if (((vlow >> 47) & 1ULL) == 0) vlow = phys | HIGH_VA;
+    vlow &= ~(GRANULE_2MB - 1);
 
-    mmu_map_2mb((uint64_t*)kernel_ttbr0, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-    mmu_map_2mb((uint64_t*)kernel_ttbr1, vhigh, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+    //mmu_map_2mb((uint64_t*)kernel_ttbr0, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+    mmu_map_2mb((uint64_t*)kernel_ttbr1, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
     //if (pttbr) mmu_map_2mb((uint64_t*)pttbr, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
 
     mmu_flush_all();
@@ -606,14 +655,10 @@ void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t 
         return;
     }
 
-    uint64_t vlow = VIRT_TO_PHYS(va);
-    uint64_t vhigh = phys | HIGH_VA;
+    uint64_t vlow = va;
+    if (((vlow >> 47) & 1ULL) == 0) vlow = phys | HIGH_VA;
 
-    if (((va >> 47) & 1ULL) == 0)
-        mmu_map_4kb((uint64_t*)kernel_ttbr0, vlow, phys, MAIR_IDX_NORMAL, attributes | MEM_NORM, level);
-    else mmu_map_4kb((uint64_t*)kernel_ttbr1, va, phys, MAIR_IDX_NORMAL, attributes | MEM_NORM, level);
-
-    mmu_map_4kb((uint64_t*)kernel_ttbr1, vhigh, phys, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
+    mmu_map_4kb((uint64_t*)kernel_ttbr1, vlow, phys, MAIR_IDX_NORMAL, attributes | MEM_NORM, level);
 
     //if (pttbr && ((va >> 47) & 1ULL) == 0) mmu_map_4kb((uint64_t*)pttbr, vlow, phys, MAIR_IDX_NORMAL, attributes | MEM_NORM, level);
 
@@ -775,7 +820,7 @@ void debug_mmu_address(uint64_t va){
 void mmu_swap_ttbr(uintptr_t* ttbr, uint16_t asid){
     pttbr = ttbr ? ttbr : (uintptr_t*)kernel_ttbr0;
     pttbr_asid = ttbr ? (asid & asid_mask) : 0;
-    uint64_t root_pa = VIRT_TO_PHYS((uintptr_t)pttbr) & PTE_ADDR_MASK;
+    uint64_t root_pa = pt_va_to_pa(pttbr) & PTE_ADDR_MASK;
     pttbr_hw = ((uint64_t)pttbr_asid << asid_shift) | root_pa;
 }
 

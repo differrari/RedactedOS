@@ -3,6 +3,7 @@
 #include "memory/page_allocator.h"
 #include "sysregs.h"
 #include "memory/addr.h"
+#include "memory/va_layout.h"
 #include "types.h"
 #include "exceptions/exception_handler.h"
 #include "console/kio.h"
@@ -61,10 +62,14 @@ static bool talloc_high_va = false;
 
 void pre_talloc(){
     paddr_t phys = palloc_inner(GRANULE_2MB, MEM_PRIV_KERNEL, MEM_RW, true, can_automap);
-    pre_talloc_ptr = pt_pa_to_va(phys);
+    if (!phys) panic("pre_talloc palloc failed", 0);
+    pre_talloc_ptr = (void*)phys;
+    uint64_t sctlr = 0;
+    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+    if ((sctlr & 1) != 0) pre_talloc_ptr = (void*)dmap_pa_to_kva(phys);
     pre_talloc_mem_limit = (uintptr_t)pre_talloc_ptr + GRANULE_2MB;
 
-    if (!can_automap){
+    if (!can_automap || next_free_temp_memory == 0 || talloc_mem_limit == 0){
         can_automap = true;
         next_free_temp_memory = (uintptr_t)pre_talloc_ptr;
         talloc_mem_limit = pre_talloc_mem_limit;
@@ -100,6 +105,11 @@ void talloc_enable_high_va(){
 uint64_t talloc(uint64_t size){
     size = (size + 0xFFF) & ~0xFFF;
     if (!talloc_high_va) talloc_enable_high_va();
+
+    if (next_free_temp_memory == 0 || talloc_mem_limit == 0) {
+        if (!pre_talloc_ptr) pre_talloc();
+        if (next_free_temp_memory == 0 || talloc_mem_limit == 0) panic("talloc not initialized", next_free_temp_memory);
+    }
 
     if (talloc_verbose){
         uart_raw_puts("[talloc] Requested size: ");
@@ -210,7 +220,7 @@ void calc_ram(){
     if (USE_DTB && get_memory_region(&total_ram_start, &total_ram_size)){
         calculated_ram_end = total_ram_start + total_ram_size;
 
-        calculated_ram_start = ((uint64_t)&kcode_end) + 0x1;
+        calculated_ram_start = ((uint64_t)&kcode_end) - KERNEL_IMAGE_VA_BASE + 0x1;
         calculated_ram_start = (calculated_ram_start + ((1ULL << 21) - 1)) & ~((1ULL << 21) - 1);
 
         calculated_ram_end = calculated_ram_end & ~((1ULL << 21) - 1);

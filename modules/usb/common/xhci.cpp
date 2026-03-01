@@ -52,12 +52,14 @@ bool XHCIDriver::check_fatal_error() {
 
 bool XHCIDriver::init(){
     uint64_t addr = 0, mmio = 0, mmio_size = 0;
+    uintptr_t mmio_pa = 0;
     bool use_pci = false;
     use_interrupts = true;
     if (XHCI_BASE){
         addr = XHCI_BASE;
-        mmio = VIRT_TO_PHYS(addr);
-        register_device_memory(mmio, VIRT_TO_PHYS(mmio));
+        mmio = addr;
+        mmio_pa = VIRT_TO_PHYS(addr);
+        register_device_memory(mmio, mmio_pa);
         if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
             quirk_simulate_interrupts = !pci_setup_msi_rp1(36, true);
     } else if (PCI_BASE) {
@@ -78,14 +80,14 @@ bool XHCIDriver::init(){
     
         pci_enable_device(addr);
     
-        if (!pci_setup_bar(addr, 0, &mmio, &mmio_size)){
+        if (!pci_setup_bar(addr, 0, (uint64_t*)&mmio_pa, &mmio_size)){
             kprintf("[xHCI] BARs not set up");
             return false;
         }
     
-        pci_register(mmio, mmio_size);
+        pci_register(mmio_pa, mmio_size);
 
-        mmio = VIRT_TO_PHYS(mmio);
+        mmio = PHYS_TO_VIRT(mmio_pa);
     
         uint8_t interrupts_ok = pci_setup_interrupts(addr, INPUT_IRQ, 1);
         switch(interrupts_ok){
@@ -101,18 +103,16 @@ bool XHCIDriver::init(){
                 break;
         }
     
-        kprintfv("[xHCI] BARs set up @ %llx (%llx)",mmio,mmio_size);
+        kprintfv("[xHCI] BARs set up @ %llx (%llx)",(uint64_t)mmio_pa,mmio_size);
     }
-
-    mmio = VIRT_TO_PHYS(mmio);
 
     cap = (xhci_cap_regs*)mmio;
     kprintfv("[xHCI] caplength %llx",cap->caplength);
     uintptr_t op_base = mmio + cap->caplength;
-    op = (xhci_op_regs*)PHYS_TO_VIRT(op_base);
-    ports = (xhci_port_regs*)PHYS_TO_VIRT((op_base + 0x400));
-    db_base = PHYS_TO_VIRT((mmio + (cap->dboff & ~0x1F)));
-    rt_base = PHYS_TO_VIRT((mmio + (cap->rtsoff & ~0x1F)));
+    op = (xhci_op_regs*)op_base;
+    ports = (xhci_port_regs*)(op_base + 0x400);
+    db_base = mmio + (cap->dboff & ~0x1F);
+    rt_base = mmio + (cap->rtsoff & ~0x1F);
 
     kprintfv("[xHCI] Resetting controller %llx",&op->usbcmd);
     op->usbcmd &= ~1;
@@ -150,7 +150,8 @@ bool XHCIDriver::init(){
 
     mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
 
-    uintptr_t dcbaap_addr = VIRT_TO_PHYS((uintptr_t)kalloc(mem_page, (max_device_slots + 1) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL));
+    uintptr_t* dcbaap_ptr = (uintptr_t*)kalloc(mem_page, (max_device_slots + 1) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL);
+    uintptr_t dcbaap_addr = VIRT_TO_PHYS((uintptr_t)dcbaap_ptr);
 
     op->dcbaap = dcbaap_addr;
 
@@ -158,18 +159,22 @@ bool XHCIDriver::init(){
 
     uint32_t scratchpad_count = ((cap->hcsparams2 >> 27) & 0x1F);
 
-    dcbaap = (uintptr_t*)PHYS_TO_VIRT(dcbaap_addr);
+    dcbaap = dcbaap_ptr;
 
-    uint64_t* scratchpad_array = (uint64_t*)kalloc(mem_page, (scratchpad_count == 0 ? 1 : scratchpad_count) * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL);
-    for (uint32_t i = 0; i < scratchpad_count; i++)
-        scratchpad_array[i] = (uint64_t)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL);
-    dcbaap[0] = (uint64_t)scratchpad_array;
+    dcbaap[0] = 0;
+    if (scratchpad_count) {
+        uint64_t* scratchpad_array = (uint64_t*)kalloc(mem_page, scratchpad_count * sizeof(uintptr_t), ALIGN_64B, MEM_PRIV_KERNEL);
+        uintptr_t scratchpad_array_pa = VIRT_TO_PHYS((uintptr_t)scratchpad_array);
+        for (uint32_t i = 0; i < scratchpad_count; i++)
+            scratchpad_array[i] = VIRT_TO_PHYS((uintptr_t)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL));
+        dcbaap[0] = scratchpad_array_pa;
+    }
 
     kprintfv("[xHCI] dcbaap assigned at %llx with %i scratchpads",dcbaap_addr,scratchpad_count);
 
-    command_ring.ring = (trb*)VIRT_TO_PHYS_P(kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL));
+    command_ring.ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
 
-    op->crcr = (uintptr_t)command_ring.ring | command_ring.cycle_bit;
+    op->crcr = VIRT_TO_PHYS((uintptr_t)command_ring.ring) | command_ring.cycle_bit;
 
     make_ring_link(command_ring.ring, command_ring.cycle_bit);
 
@@ -211,7 +216,7 @@ bool XHCIDriver::port_reset(uint16_t port){
 
     kprintf("[xHCI] port %i",port);
 
-    xhci_port_regs* port_info = (xhci_port_regs*)VIRT_TO_PHYS_P(&ports[port]);
+    xhci_port_regs* port_info = &ports[port];
 
     if (port_info->portsc.pp == 0){
         port_info->portsc.pp = 1;
@@ -253,25 +258,27 @@ bool XHCIDriver::enable_events(){
     kprintfv("[xHCI] Allocating ERST");
     interrupter = (xhci_interrupter*)(rt_base + 0x20);
 
-    uint64_t ev_ring = VIRT_TO_PHYS((uintptr_t)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL));
-    uint64_t erst_addr = VIRT_TO_PHYS((uintptr_t)kalloc(mem_page, MAX_ERST_AMOUNT * sizeof(erst_entry), ALIGN_64B, MEM_PRIV_KERNEL));
-    erst_entry* erst = (erst_entry*)erst_addr;
+    trb* ev_ring = (trb*)kalloc(mem_page, MAX_TRB_AMOUNT * sizeof(trb), ALIGN_64B, MEM_PRIV_KERNEL);
+    erst_entry* erst = (erst_entry*)kalloc(mem_page, MAX_ERST_AMOUNT * sizeof(erst_entry), ALIGN_64B, MEM_PRIV_KERNEL);
+    uint64_t ev_ring_pa = VIRT_TO_PHYS((uintptr_t)ev_ring);
+    uint64_t erst_pa = VIRT_TO_PHYS((uintptr_t)erst);
 
-    erst->ring_base = ev_ring;
-    erst->ring_size = MAX_TRB_AMOUNT;
+    erst[0].ring_base = ev_ring_pa;
+    erst[0].ring_size = MAX_TRB_AMOUNT;
 
-    kprintfv("[xHCI] ERST ring_base: %llx", ev_ring);
+    kprintfv("[xHCI] ERST ring_base: %llx", ev_ring_pa);
     kprintfv("[xHCI] ERST ring_size: %llx", erst[0].ring_size);
     event_ring.ring = (trb*)ev_ring;
     event_ring.cycle_bit = 1;
+    event_ring.index = 0;
 
     kprintfv("[xHCI] Interrupter register @ %llx", rt_base + 0x20);
     
     interrupter->erstsz = 1;
     kprintfv("[xHCI] ERSTSZ set to: %llx", (uintptr_t)interrupter->erstsz);
     
-    interrupter->erdp = ev_ring;
-    interrupter->erstba = erst_addr;
+    interrupter->erdp = ev_ring_pa;
+    interrupter->erstba = erst_pa;
     kprintfv("[xHCI] ERSTBA set to: %llx", (uintptr_t)interrupter->erstba);
     
     kprintfv("[xHCI] ERDP set to: %llx", (uintptr_t)interrupter->erdp);
@@ -328,7 +335,9 @@ bool XHCIDriver::await_response(uint64_t command, uint32_t type){
                 uint8_t completion_code = (last_event->status >> 24) & 0xFF;
                 if (completion_code != 1) 
                     kprintf("[xHCI error] wrong status %i on command type %llx", completion_code, ((last_event->control & TRB_TYPE_MASK) >> 10) );
-                interrupter->erdp = (uintptr_t)&event_ring.ring[event_ring.index+1] | (1 << 3);//Inform of latest processed event
+                uint32_t erdp_index = event_ring.index + 1;
+                if (erdp_index >= MAX_TRB_AMOUNT) erdp_index = 0;
+                interrupter->erdp = VIRT_TO_PHYS((uintptr_t)&event_ring.ring[erdp_index]) | (1 << 3);//Inform of latest processed event
                 interrupter->iman |= 1;//Clear interrupts
                 op->usbsts |= 1 << 3;//Clear interrupts
                 awaited_type = 0;
@@ -347,7 +356,7 @@ bool XHCIDriver::issue_command(uint64_t param, uint32_t status, uint32_t control
     cmd->status = status;
     cmd->control = control | command_ring.cycle_bit;
 
-    uint64_t cmd_addr = (uintptr_t)cmd;
+    uint64_t cmd_addr = VIRT_TO_PHYS((uintptr_t)cmd);
     kprintfv("[xHCI] issuing command with control: %llx from %llx", cmd->control, cmd_addr);
     if (command_ring.index == MAX_TRB_AMOUNT - 1){
         make_ring_link_control(command_ring.ring, command_ring.cycle_bit);
@@ -376,10 +385,10 @@ bool XHCIDriver::setup_device(uint8_t address, uint16_t port){
 
     transfer_ring->cycle_bit = 1;
 
-    xhci_input_context *ctx = (xhci_input_context*)VIRT_TO_PHYS_P(kalloc(mem_page, sizeof(xhci_input_context), ALIGN_64B, MEM_PRIV_KERNEL));
+    xhci_input_context *ctx = (xhci_input_context*)kalloc(mem_page, sizeof(xhci_input_context), ALIGN_64B, MEM_PRIV_KERNEL);
     kprintfv("[xHCI] Allocating input context at %llx", (uintptr_t)ctx);
     context_map[address << 8] = (xhci_input_context *)ctx;
-    void* output_ctx = VIRT_TO_PHYS_P((void*)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL));
+    void* output_ctx = (void*)kalloc(mem_page, 0x1000, ALIGN_64B, MEM_PRIV_KERNEL);
     kprintfv("[xHCI] Allocating output for context at %llx", (uintptr_t)output_ctx);
     
     ctx->control_context.add_flags = 0b11;
@@ -428,7 +437,7 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
 
     if (descriptor_size > 0){
         trb* data = &transfer_ring->ring[transfer_ring->index++];
-        data->parameter = (uintptr_t)out_descriptor;
+        data->parameter = out_descriptor ? VIRT_TO_PHYS((uintptr_t)out_descriptor) : 0;
         data->status = packet.wLength;
         //bit 16 = direction
         data->control = (1 << 16) | (TRB_TYPE_DATA_STAGE << 10) | (0 << 4) | transfer_ring->cycle_bit;
@@ -452,11 +461,11 @@ bool XHCIDriver::request_sized_descriptor(uint8_t address, uint8_t endpoint, uin
 uint8_t XHCIDriver::address_device(uint8_t address){
     xhci_input_context* ctx = context_map[address << 8];
     kprintfv("Addressing device %i with context %llx", address, (uintptr_t)ctx);
-    if (!issue_command((uintptr_t)ctx, 0, (address << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
+    if (!issue_command(VIRT_TO_PHYS((uintptr_t)ctx), 0, (address << 24) | (TRB_TYPE_ADDRESS_DEV << 10))){
         kprintf("[xHCI error] failed addressing device at slot %llx",address);
         return 0;
     }
-    xhci_device_context* context = (xhci_device_context*)dcbaap[address];
+    xhci_device_context* context = (xhci_device_context*)PHYS_TO_VIRT(dcbaap[address]);
 
     kprintfv("[xHCI] ADDRESS_DEVICE %i command issued. dcbaap %llx Received packet size %i",address, (uintptr_t)dcbaap, context->endpoints[0].endpoint_f1.max_packet_size);
     return address;
@@ -481,7 +490,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     kprintf("[xHCI] endpoint %i info. Direction %i type %i",ep_num, ep_dir, ep_type);
 
     xhci_input_context* ctx = context_map[address << 8];
-    xhci_device_context* context = (xhci_device_context*)dcbaap[address];
+    xhci_device_context* context = (xhci_device_context*)PHYS_TO_VIRT(dcbaap[address]);
 
     ctx->control_context.add_flags = (1 << 0) | (1 << ep_num);
     if (ep_num > ctx->device_context.slot_f0.context_entries)
@@ -503,7 +512,7 @@ bool XHCIDriver::configure_endpoint(uint8_t address, usb_endpoint_descriptor *en
     ctx->device_context.endpoints[ep_num-1].endpoint_f23.ring_ptr = VIRT_TO_PHYS((uintptr_t)ep_ring->ring) >> 4;
     ctx->device_context.endpoints[ep_num-1].endpoint_f4.average_trb_length = sizeof(trb);
 
-    if (!issue_command((uintptr_t)ctx, 0, (address << 24) | (TRB_TYPE_CONFIG_EP << 10))){
+    if (!issue_command(VIRT_TO_PHYS((uintptr_t)ctx), 0, (address << 24) | (TRB_TYPE_CONFIG_EP << 10))){
         kprintf("[xHCI] Failed to configure endpoint %i for address %i",ep_num,address);
         return false;
     }
@@ -538,11 +547,11 @@ bool XHCIDriver::poll(uint8_t address, uint8_t endpoint, void *out_buf, uint16_t
 }
 
 void XHCIDriver::handle_interrupt(){
-    trb* ev = (trb*)PHYS_TO_VIRT_P(&event_ring.ring[event_ring.index]);
+    trb* ev = &event_ring.ring[event_ring.index];
     if (!((ev->control & 1) == event_ring.cycle_bit)) return;
     uint32_t type = (ev->control & TRB_TYPE_MASK) >> 10;
     uint64_t addr = ev->parameter;
-    if (type == awaited_type && (awaited_addr == 0 || (awaited_addr & 0xFFFFFFFF) == addr))
+    if (type == awaited_type && (awaited_addr == 0 || awaited_addr == addr))
         return;
     kprintfv("[xHCI] >>> Unhandled interrupt %i %llx",event_ring.index,type);
     uint8_t completion_code = (ev->status >> 24) & 0xFF;
