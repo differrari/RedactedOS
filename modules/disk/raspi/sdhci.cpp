@@ -134,7 +134,7 @@ bool SDHCI::setup_clock(){
 bool SDHCI::init() {
     if (!SDHCI_BASE) return false;
 
-    register_device_memory(SDHCI_BASE, SDHCI_BASE);
+    register_device_memory_dmap(SDHCI_BASE);
 
     regs = (sdhci_regs*)SDHCI_BASE;
 

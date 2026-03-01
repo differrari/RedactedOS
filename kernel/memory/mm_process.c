@@ -1,6 +1,6 @@
 #include "memory/mm_process.h"
 
-vma* mm_find_vma(mm_struct *mm, uintptr_t va){
+vma* mm_find_vma(mm_struct *mm, uaddr_t va){
     if (!mm) return 0;
     for (uint16_t i = 0; i < mm->vma_count; i++){
         vma *m = &mm->vmas[i];
@@ -10,7 +10,7 @@ vma* mm_find_vma(mm_struct *mm, uintptr_t va){
     return 0;
 }
 
-bool mm_add_vma(mm_struct *mm, uintptr_t start, uintptr_t end, uint8_t prot, uint8_t kind, uint8_t flags){
+bool mm_add_vma(mm_struct *mm, uaddr_t start, uaddr_t end, uint8_t prot, uint8_t kind, uint8_t flags){
     if (!mm) return false;
     start = start & ~(PAGE_SIZE - 1);
     end = (end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
@@ -57,7 +57,7 @@ bool mm_add_vma(mm_struct *mm, uintptr_t start, uintptr_t end, uint8_t prot, uin
     return true;
 }
 
-bool mm_update_vma(mm_struct *mm, uintptr_t start, uintptr_t end) {
+bool mm_update_vma(mm_struct *mm, uaddr_t start, uaddr_t end) {
     if (!mm) return false;
     start &= ~(PAGE_SIZE - 1);
     end = (end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
@@ -103,7 +103,7 @@ bool mm_update_vma(mm_struct *mm, uintptr_t start, uintptr_t end) {
     return false;
 }
 
-bool mm_remove_vma(mm_struct *mm, uintptr_t start, uintptr_t end) {
+bool mm_remove_vma(mm_struct *mm, uaddr_t start, uaddr_t end) {
     if (!mm) return false;
     start &= ~(PAGE_SIZE - 1);
     end = (end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
@@ -120,14 +120,14 @@ bool mm_remove_vma(mm_struct *mm, uintptr_t start, uintptr_t end) {
     return false;
 }
 
-uintptr_t mm_alloc_mmap(mm_struct *mm, size_t size, uint8_t prot, uint8_t kind, uint8_t flags) {
+uaddr_t mm_alloc_mmap(mm_struct *mm, size_t size, uint8_t prot, uint8_t kind, uint8_t flags) {
     if (!mm) return 0;
     if (!size) return 0;
     size = (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
     if (!mm->mmap_cursor) return 0;
-    uintptr_t base = (mm->mmap_cursor- size) & ~(PAGE_SIZE - 1);
-    uintptr_t heap_guard = mm->brk + (MM_GAP_PAGES * PAGE_SIZE);
+    uaddr_t base = (mm->mmap_cursor- size) & ~(PAGE_SIZE - 1);
+    uaddr_t heap_guard = mm->brk + (MM_GAP_PAGES * PAGE_SIZE);
     if (base < heap_guard) return 0;
     if (base + size > mm->mmap_top) return 0;
     if (!mm_add_vma(mm, base, base + size, prot, kind, flags)) return 0;

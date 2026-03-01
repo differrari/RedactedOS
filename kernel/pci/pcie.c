@@ -47,7 +47,7 @@ int encode_ibar_size(u64 size)
 bool init_hostbridge(){
     
     for (int i = 0; i < 10; i++){
-        register_device_memory(PCI_BASE + (i * 0x1000), PCI_BASE + (i * 0x1000));
+        register_device_memory_dmap(PCI_BASE + (i * 0x1000));
     }
     
     uintptr_t base = VIRT_TO_PHYS(PCI_BASE);

@@ -162,10 +162,10 @@ void reset_process(process_t *proc){
     if (proc->id != 1 && proc->ttbr) {
         for (uint16_t i = 0; i < proc->mm.vma_count; i++) {
             vma *m = &proc->mm.vmas[i];
-            for (uintptr_t va = m->start; va < m->end; va += GRANULE_4KB) {
-                uint64_t pa = 0;
-                if (!mmu_unmap_and_get_pa((uint64_t*)proc->ttbr, va, &pa)) continue;
-                pfree((void*)dmap_pa_to_kva((paddr_t)pa), GRANULE_4KB);
+            for (uaddr_t va = m->start; va < m->end; va += GRANULE_4KB) {
+                paddr_t pa = 0;
+                if (!mmu_unmap_and_get_pa((uint64_t*)proc->ttbr, (uint64_t)va, &pa)) continue;
+                pfree((void*)dmap_pa_to_kva(pa), GRANULE_4KB);
                 if (m->kind == VMA_KIND_HEAP) {
                     if (proc->mm.rss_heap_pages) proc->mm.rss_heap_pages--;
                 } else if (m->kind == VMA_KIND_STACK) {
@@ -238,11 +238,11 @@ void init_main_process(){
     proc->asid_gen = 0;
     proc->state = BLOCKED;
     proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
-    proc->heap_phys = VIRT_TO_PHYS(proc->heap);
+    proc->heap_phys = (paddr_t)VIRT_TO_PHYS(proc->heap);
     proc->stack_size = 0x10000;
     proc->stack = (uintptr_t)palloc(proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
     proc->sp = (uintptr_t)ksp;
-    proc->output = (uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
+    proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
     proc->output_size = 0;
     proc->priority = PROC_PRIORITY_LOW;
     proc->win_fb_va = 0;
@@ -370,14 +370,14 @@ void wake_processes(){
 
 bool load_process_module(process_t *p, system_module *m){
     p->exposed_fs = *m;
-    p->exposed_fs.init = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.init - p->va));
-    p->exposed_fs.fini = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.fini - p->va));
-    p->exposed_fs.open = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.open - p->va));
-    p->exposed_fs.read = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.read - p->va));
-    p->exposed_fs.write = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.write - p->va));
-    p->exposed_fs.close = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.close - p->va));
-    p->exposed_fs.sread = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.sread - p->va));
-    p->exposed_fs.swrite = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.swrite - p->va));
+    p->exposed_fs.init = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.init - (uintptr_t)p->va));
+    p->exposed_fs.fini = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.fini - (uintptr_t)p->va));
+    p->exposed_fs.open = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.open - (uintptr_t)p->va));
+    p->exposed_fs.read = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.read - (uintptr_t)p->va));
+    p->exposed_fs.write = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.write - (uintptr_t)p->va));
+    p->exposed_fs.close = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.close - (uintptr_t)p->va));
+    p->exposed_fs.sread = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.sread - (uintptr_t)p->va));
+    p->exposed_fs.swrite = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.swrite - (uintptr_t)p->va));
     return load_module(&p->exposed_fs);
 }
 
@@ -436,7 +436,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     file->fid = fid;
     file->references = 1;
     if (strcmp_case(path, "out",true) == 0){
-        if (!proc->output) proc->output = (uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
+        if (!proc->output) proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
         if (!proc->output) {
             kfree(file, sizeof(module_file));
             return FS_RESULT_DRIVER_ERROR;
@@ -506,7 +506,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
     if (!file) return 0;
     if (file->read_only) return 0;
-    bool is_output = (uintptr_t)file->file_buffer.buffer == get_current_proc()->output;
+    bool is_output = (uintptr_t)file->file_buffer.buffer == (uintptr_t)get_current_proc()->output;
 
     size = min(size, file->file_buffer.limit);
     if (is_output){//TODO: probably better to make these files be held by this module, and created only when needed

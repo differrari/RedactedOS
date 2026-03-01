@@ -3,6 +3,7 @@
 #include "exceptions/exception_handler.h"
 #include "memory/talloc.h"
 #include "memory/mmu.h"
+#include "memory/addr.h"
 #include "memory/va_layout.h"
 #include "std/memory_access.h"
 #include "hw/hw.h"
@@ -288,10 +289,11 @@ void pci_enable_device(uint64_t pci_addr){
 }
 
 void pci_register(uint64_t mmio_addr, uint64_t mmio_size){
+    if (kva_is_dmap((uintptr_t)mmio_addr)) mmio_addr = (uint64_t)dmap_kva_to_pa((uintptr_t)mmio_addr);
     uint64_t start = mmio_addr & ~(GRANULE_4KB - 1);
     uint64_t end = (mmio_addr + mmio_size + GRANULE_4KB - 1) & ~(GRANULE_4KB - 1);
     for (uint64_t addr = start; addr < end; addr += GRANULE_4KB)
-        register_device_memory((uintptr_t)mmio_pa_to_kva((paddr_t)addr), (paddr_t)addr);
+        register_device_memory_dmap(mmio_pa_to_kva((paddr_t)addr));
 }
 
 #pragma region Interrupts

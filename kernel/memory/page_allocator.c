@@ -425,7 +425,7 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
         if (page_va && next_va && ttbr){
             uintptr_t va = *next_va;
             for (uint64_t i = 0; i < alloc_size; i+= GRANULE_4KB){
-                mmu_map_4kb(ttbr, *next_va, phys_base + i, (info->attributes & MEM_DEV) ? MAIR_IDX_DEVICE : MAIR_IDX_NORMAL, info->attributes, level);
+                mmu_map_4kb((uint64_t*)ttbr, (uint64_t)*next_va, (paddr_t)(phys_base + i), (info->attributes & MEM_DEV) ? MAIR_IDX_DEVICE : MAIR_IDX_NORMAL, info->attributes, level);
                 *next_va += PAGE_SIZE;
             }
             return (void*)va;
@@ -506,7 +506,7 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
             if (next_va) next_page_va = *next_va;
             if (page_va && next_va && ttbr){
                 uintptr_t phys_next = VIRT_TO_PHYS((uintptr_t)info->next);
-                register_proc_memory((uintptr_t)*next_va, phys_next, info->attributes, level);
+                register_proc_memory((uintptr_t)*next_va, (paddr_t)phys_next, info->attributes, level);
                 *next_va += PAGE_SIZE;
             }
             kprintfv("[in_page_alloc] Page %llx points to new page %llx",page,info->next);

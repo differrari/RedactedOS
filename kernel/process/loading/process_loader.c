@@ -265,9 +265,9 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     kprintfv("Finished translation");
 }
 
-size_t map_section(process_t *proc, uintptr_t base, uintptr_t off, program_load_data data){
+size_t map_section(process_t *proc, kaddr_t base, uaddr_t off, program_load_data data){
     // kprintf("Copying %llx from %llx to %llx, representing %llx",data.file_cpy.size,data.file_cpy.ptr,base + (data.virt_mem.ptr - off), data.virt_mem.size);
-    if (data.file_cpy.size) memcpy((void*)base + (data.virt_mem.ptr - off), (void*)data.file_cpy.ptr, data.file_cpy.size);
+    if (data.file_cpy.size) memcpy((void*)(uintptr_t)base + ((uintptr_t)data.virt_mem.ptr - (uintptr_t)off), (void*)data.file_cpy.ptr, data.file_cpy.size);
     return data.virt_mem.size;
 }
 
@@ -281,17 +281,17 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     
     proc->alloc_map = make_page_index();
 
-    uintptr_t min_addr = UINT64_MAX;
-    uintptr_t max_addr = 0;
+    uaddr_t min_addr = UINT64_MAX;
+    uaddr_t max_addr = 0;
     
     for (size_t i = 0; i < data_count; i++){
-        uintptr_t s0 = data[i].virt_mem.ptr;
-        uintptr_t s1 = data[i].virt_mem.ptr + data[i].virt_mem.size;
+        uaddr_t s0 = (uaddr_t)data[i].virt_mem.ptr;
+        uaddr_t s1 = (uaddr_t)(data[i].virt_mem.ptr + data[i].virt_mem.size);
         if (s0 < min_addr) min_addr = s0;
         if (s1 > max_addr) max_addr = s1;
     } 
-    uintptr_t min_map = min_addr & ~(GRANULE_4KB - 1);
-    uintptr_t max_map = (max_addr + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
+    uaddr_t min_map = min_addr & ~(GRANULE_4KB - 1);
+    uaddr_t max_map = (max_addr + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
 
     size_t code_size = max_map -min_map;
 
@@ -309,14 +309,14 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     
     // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
     
-    for (uintptr_t va = min_map; va < max_map; va += GRANULE_4KB) {
+    for (uaddr_t va = min_map; va < max_map; va += GRANULE_4KB) {
         bool any = 0;
         bool rw = 0;
         bool ex = 0;
 
         for (size_t s = 0; s < data_count; s++){
-            uintptr_t s0 = data[s].virt_mem.ptr;
-            uintptr_t s1 = data[s].virt_mem.ptr + data[s].virt_mem.size;
+            uaddr_t s0 = (uaddr_t)data[s].virt_mem.ptr;
+            uaddr_t s1 = (uaddr_t)(data[s].virt_mem.ptr + data[s].virt_mem.size);
             if (va + GRANULE_4KB <= s0) continue;
             if (va >= s1) continue;
             any = true;
@@ -337,7 +337,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
         uint8_t attr = MEM_NORM;
         if (rw) attr |= MEM_RW;
         if (ex) attr |= MEM_EXEC;
-        mmu_map_4kb(ttbr, va, dest + (va - min_map), MAIR_IDX_NORMAL, attr, MEM_PRIV_USER);
+        mmu_map_4kb((uint64_t*)ttbr, (uint64_t)va, (paddr_t)(dest + (va - min_map)), MAIR_IDX_NORMAL, attr, MEM_PRIV_USER);
     }
     memset((void*)dmap_pa_to_kva(dest), 0, code_size);
 
@@ -353,17 +353,17 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
         map_section(proc, dmap_pa_to_kva(dest), min_map, data[i]);
 
     proc->va = min_map;
-    proc->code = (void*)dest;
+    proc->code = dest;
     proc->code_size = code_size;
 
     uint64_t stack_commit_size = 0x10000;
     uint64_t stack_max_size = 0x800000; //TODO it shouldnt be fix
-    uintptr_t stack_top = 0x00007FFFFFFFF000ULL;
-    uintptr_t stack_limit = stack_top - stack_max_size;
-    uintptr_t stack_commit = stack_top - stack_commit_size;
-    uintptr_t mmap_top = stack_limit - PAGE_SIZE;
+    uaddr_t stack_top = 0x00007FFFFFFFF000ULL;
+    uaddr_t stack_limit = stack_top - stack_max_size;
+    uaddr_t stack_commit = stack_top - stack_commit_size;
+    uaddr_t mmap_top = stack_limit - PAGE_SIZE;
 
-    uintptr_t heap_start = (max_map + (PAGE_SIZE*4) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uaddr_t heap_start = (max_map + (PAGE_SIZE*4) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     if (heap_start + PAGE_SIZE >= mmap_top) return 0;
     proc->heap = heap_start;
     proc->heap_phys = 0;
@@ -397,8 +397,8 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->stack_phys = stack + stack_commit_size;
 
     for (paddr_t pa = stack; pa < stack + stack_commit_size; pa += GRANULE_4KB) {
-        uintptr_t va = stack_commit + (uintptr_t)(pa - stack);
-        mmu_map_4kb(ttbr, va, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+        uaddr_t va = stack_commit + (uaddr_t)(pa - stack);
+        mmu_map_4kb((uint64_t*)ttbr, (uint64_t)va, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
     }
     memset((void*)dmap_pa_to_kva(stack), 0, stack_commit_size);
 
@@ -408,7 +408,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->ttbr = ttbr;
     proc->sp = proc->stack;
 
-    proc->output = (uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
+    proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
     if (!proc->output) return 0;
     proc->output_size = 0;
 

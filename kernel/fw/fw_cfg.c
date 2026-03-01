@@ -29,7 +29,7 @@ struct fw_cfg_dma_access {
 bool fw_cfg_check(){
     if (checked) return true;
     uintptr_t va = PHYS_TO_VIRT(FW_CFG_DATA);
-    register_device_memory(va, FW_CFG_DATA);
+    register_device_memory_dmap(va);
     checked = read64(va) == 0x554D4551;
     if (!checked) mmu_unmap(va, FW_CFG_DATA);
     return checked;

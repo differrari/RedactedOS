@@ -20,9 +20,10 @@ extern "C" {
 
 void mmu_map_kernel(uintptr_t *ttbr);
 uintptr_t* mmu_new_ttbr();
-void register_device_memory(uint64_t va, uint64_t pa);
-void register_device_memory_2mb(uint64_t va, uint64_t pa);
-void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t level);
+void register_device_memory(kaddr_t va, paddr_t pa);
+void register_device_memory_dmap(kaddr_t va);
+void register_device_memory_2mb(kaddr_t va, paddr_t pa);
+void register_proc_memory(uint64_t va, paddr_t pa, uint8_t attributes, uint8_t level);
 void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index, uint8_t mem_attributes, uint8_t level);
 void mmu_unmap_table(uint64_t *table, uint64_t va, uint64_t pa);
 void debug_mmu_address(uint64_t va);

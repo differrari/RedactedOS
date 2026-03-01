@@ -2,6 +2,7 @@
 #include "pci.h"
 #include "console/kio.h"
 #include "memory/page_allocator.h"
+#include "memory/addr.h"
 #include "std/memory_access.h"
 #include "syscalls/syscalls.h"
 #include "audio/audio.h"
@@ -206,11 +207,12 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
 }
 
 void VirtioAudioDriver::send_buffer(sizedptr buf){
-    virtio_add_buffer(&audio_dev, cmd_index % audio_dev.common_cfg->queue_size, buf.ptr, buf.size, true);
-    volatile virtq_used* u = (virtq_used*)audio_dev.common_cfg->queue_device;
-    while (u->idx < cmd_index-2)
-        yield();
+    uint16_t qsz = audio_dev.common_cfg->queue_size;
+    uint16_t index = cmd_index % qsz;
+    virtio_add_buffer(&audio_dev, index, buf.ptr, buf.size, true);
     cmd_index++;
+    volatile virtq_used* u = (volatile virtq_used*)dmap_pa_to_kva((paddr_t)audio_dev.common_cfg->queue_device);
+    while ((uint16_t)(cmd_index - u->idx) > 2) yield();
 }
 
 typedef struct virtio_snd_pcm_set_params { 

@@ -91,7 +91,7 @@ void get_window_ctx(draw_ctx* out_ctx){
         window_frame* frame = (window_frame*)node->data;
         *out_ctx = frame->win_ctx;
 
-        uint64_t phys = VIRT_TO_PHYS((uintptr_t)frame->win_ctx.fb);
+	    paddr_t phys = (paddr_t)VIRT_TO_PHYS((uintptr_t)frame->win_ctx.fb);
         uint64_t size = (uint64_t)frame->win_ctx.width * (uint64_t)frame->win_ctx.height * 4;
         size = (size + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
 
@@ -102,7 +102,7 @@ void get_window_ctx(draw_ctx* out_ctx){
                 for (uint64_t off = 0; off < p->win_fb_size; off += GRANULE_4KB) mmu_unmap_table((uint64_t*)p->ttbr, p->win_fb_va + off, p->win_fb_phys + off);
             }
 
-            for (uint64_t off = 0; off < size; off += GRANULE_4KB) mmu_map_4kb((uint64_t*)p->ttbr, p->win_fb_va + off, phys + off, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+            for (uint64_t off = 0; off < size; off += GRANULE_4KB) mmu_map_4kb((uint64_t*)p->ttbr, p->win_fb_va + off, (paddr_t)(phys + off), MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
 
             mmu_flush_asid(p->asid);
 

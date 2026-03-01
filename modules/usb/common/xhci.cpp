@@ -58,8 +58,7 @@ bool XHCIDriver::init(){
     if (XHCI_BASE){
         addr = XHCI_BASE;
         mmio = addr;
-        mmio_pa = VIRT_TO_PHYS(addr);
-        register_device_memory(mmio, mmio_pa);
+        register_device_memory_dmap(mmio);
         if (BOARD_TYPE == 2 && RPI_BOARD >= 5)
             quirk_simulate_interrupts = !pci_setup_msi_rp1(36, true);
     } else if (PCI_BASE) {

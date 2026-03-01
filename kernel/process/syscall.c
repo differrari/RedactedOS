@@ -422,11 +422,62 @@ u64 syscall_halt(process_t *ctx){
 }
 
 u64 syscall_exec(process_t *ctx){
-    const char *prog_name = (const char*)ctx->PROC_X0;
-    int argc = ctx->PROC_X1;
-    const char **argv = (const char**)ctx->PROC_X2;
-    process_t *p = execute(prog_name, argc, argv);
+    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
+    int argc = (int)ctx->PROC_X1;
+    uintptr_t uargv = (uintptr_t)ctx->PROC_X2;
+
+    if (argc < 0) return 0;
+
+    char prog_name[256] = {};
+    size_t copied = 0;
+    bool term = false;
+    if (!uaccess_copyinstr(ctx, prog_name, sizeof(prog_name), upath, &copied, &term)) return 0;
+    if (!term) return 0;
+
+    const int max_args = 64;
+    if (argc > max_args) return 0;
+
+    const char *argv[max_args + 1] = {};
+    char *bufs[max_args] = {};
+    uint64_t bufsz[max_args] = {};
+
+    bool ok = true;
+
+    for (int i = 0; i < argc; i++) {
+        uintptr_t up = 0;
+        if (!uaccess_copyin(ctx, &up, uargv + ((uintptr_t)i * sizeof(uintptr_t)), sizeof(up))) ok = false;
+        if (!ok || !up) {
+            ok = false;
+            break;
+        }
+
+        char tmp[256] = {};
+        size_t n = 0;
+        bool t = false;
+        if (!uaccess_copyinstr(ctx, tmp, sizeof(tmp), up, &n, &t)) ok = false;
+        if (!ok || !t) {
+            ok = false;
+            break;
+        }
+
+        uint64_t alloc = (n + 0xFFF) & ~0xFFFULL;
+        char *k = (char*)talloc(alloc);
+        if (!k) {
+            ok = false;
+            break;
+        }
+        memcpy(k, tmp, n);
+        bufs[i] = k;
+        bufsz[i] = alloc;
+        argv[i] = k;
+    }
+
+    process_t *p = 0;
+    if (ok) p = execute(prog_name, argc, argv);
     if (p) p->win_id = ctx->win_id;
+
+    for (int i = 0; i < argc; i++) if (bufs[i]) temp_free(bufs[i], bufsz[i]);
+
     return p ? p->id : 0;
 }
 

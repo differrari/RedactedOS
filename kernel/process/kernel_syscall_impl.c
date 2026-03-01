@@ -21,10 +21,10 @@ void* malloc(size_t size){
     if (!k) return 0;
 
     int tr = 0;
-    uintptr_t heap_pa = mmu_translate(k->heap, &tr);
+    paddr_t heap_pa = mmu_translate(k->heap, &tr);
     if (tr) return 0;
 
-    void* ptr = kalloc((void*)dmap_pa_to_kva((paddr_t)heap_pa), size, ALIGN_16B, MEM_PRIV_KERNEL);
+    void* ptr = kalloc((void*)dmap_pa_to_kva(heap_pa), size, ALIGN_16B, MEM_PRIV_KERNEL);
     if (ptr && size >= PAGE_SIZE && k->alloc_map)
         register_allocation(k->alloc_map, ptr, size);
     return ptr;

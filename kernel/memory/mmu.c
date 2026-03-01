@@ -618,8 +618,8 @@ uintptr_t* mmu_new_ttbr(){
     return (uintptr_t*)mmu_alloc();
 }
 
-void register_device_memory(uint64_t va, uint64_t pa){
-    uint64_t phys = VIRT_TO_PHYS(pa);
+void register_device_memory(kaddr_t va, paddr_t pa){
+    uint64_t phys = (uint64_t)pa;
     uint64_t vlow = va;
     if (((vlow >> 47) & 1ULL) == 0) vlow = phys | HIGH_VA;
     mmu_map_4kb((uint64_t*)kernel_ttbr1, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
@@ -630,8 +630,12 @@ void register_device_memory(uint64_t va, uint64_t pa){
     mmu_flush_icache();
 }
 
-void register_device_memory_2mb(uint64_t va, uint64_t pa){
-    uint64_t phys = VIRT_TO_PHYS(pa) & ~(GRANULE_2MB - 1);
+void register_device_memory_dmap(kaddr_t va) {
+    register_device_memory(va, kva_is_dmap(va) ? dmap_kva_to_pa(va) : (paddr_t)va);
+}
+
+void register_device_memory_2mb(kaddr_t va, paddr_t pa){
+    uint64_t phys = ((uint64_t)pa) & ~(GRANULE_2MB - 1);
     uint64_t vlow = va;
     if (((vlow >> 47) & 1ULL) == 0) vlow = phys | HIGH_VA;
     vlow &= ~(GRANULE_2MB - 1);
@@ -644,8 +648,8 @@ void register_device_memory_2mb(uint64_t va, uint64_t pa){
     mmu_flush_icache();
 }
 
-void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t level){
-    uint64_t phys = VIRT_TO_PHYS(pa);
+void register_proc_memory(uint64_t va, paddr_t pa, uint8_t attributes, uint8_t level){
+    uint64_t phys = (uint64_t)pa;
 
     if (level == MEM_PRIV_USER){
         if (!pttbr) panic("register_proc_memory no pttbr for user", va);

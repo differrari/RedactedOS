@@ -228,7 +228,7 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
                             size_t nlen = strlen(name);
                             size_t plen = blen + nlen + 5;
                             uintptr_t sp = proc->stack - (plen+1);
-                            uintptr_t sp_phys = proc->stack_phys - (plen+1);
+                            paddr_t sp_phys = proc->stack_phys - (plen+1);
 
                             char *nargvals = (char*)PHYS_TO_VIRT_P(sp_phys);
 
@@ -307,7 +307,7 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
     size_t nlen = strlen(name);
     size_t plen = blen + nlen + 1 + 4;
     uintptr_t sp = proc->stack - (plen+1);
-    uintptr_t sp_phys = proc->stack_phys - (plen+1);
+    paddr_t sp_phys = proc->stack_phys - (plen+1);
     
     char *nargvals = (char*)PHYS_TO_VIRT_P(sp_phys);
     
