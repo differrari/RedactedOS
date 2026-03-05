@@ -87,6 +87,16 @@ void detect_hardware(){
         MSI_OFFSET = 0;
         LOWEST_ADDR = MMIO_BASE;
         PM_BASE = MMIO_BASE + 0x100000u;
+
+        //https://www.qemu.org/docs/master/system/arm/raspi.html
+        //raspi4b has no pcie root
+        //TODO use DTB as source
+        #if QEMU
+        if (BOARD_TYPE != 1) {
+            PCI_BASE = 0;
+            XHCI_BASE = 0;
+        }
+        #endif
     }
 }
 
@@ -99,8 +109,31 @@ void hw_high_va(){
     if (MAILBOX_BASE) MAILBOX_BASE |= HIGH_VA;
     if (SDHCI_BASE) SDHCI_BASE |= HIGH_VA;
     if (XHCI_BASE) XHCI_BASE |= HIGH_VA;
+    if (GPIO_BASE) GPIO_BASE |= HIGH_VA;
+    if (DWC2_BASE) DWC2_BASE |= HIGH_VA;
+    if (PM_BASE) PM_BASE |= HIGH_VA;
 }
 
 void print_hardware(){
     kprintf("Board type %i",BOARD_TYPE);
+}
+
+void hw_mmio_hole_phys(uint64_t *start, uint64_t *end) {
+    if (!start || !end) return;
+    *start = 0;
+    *end = 0;
+
+    if (BOARD_TYPE == 1) {
+        *start = 0x08000000ULL;
+        *end = 0x0A000000ULL;
+        return;
+    }
+
+    uint64_t base = (uint64_t)MMIO_BASE;
+    if (base & HIGH_VA) base = VIRT_TO_PHYS(base);
+
+    if (base && base < 0x100000000ULL) {
+        *start = base;
+        *end = base + 0x01000000ULL;
+    }
 }

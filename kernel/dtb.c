@@ -3,7 +3,6 @@
 #include "std/string.h"
 #include "sysregs.h"
 
-#define DTB_ADDR 0x40000000UL
 #define FDT_MAGIC 0xD00DFEED
 
 #define FDT_BEGIN_NODE  0x00000001
@@ -27,15 +26,32 @@ struct fdt_header {
 
 static struct fdt_header *hdr;
 
+static uint64_t g_dtb_pa = 0;
+
+void dtb_set_pa(uint64_t dtb_pa) {
+    if (!dtb_pa) {
+        g_dtb_pa = 0;
+        return;
+    }
+    if (dtb_pa & HIGH_VA) dtb_pa = VIRT_TO_PHYS(dtb_pa);
+    g_dtb_pa = dtb_pa;
+}
+
+uint64_t dtb_get_pa() {
+    return g_dtb_pa;
+}
+
 uintptr_t dtb_base() {
+    if (!g_dtb_pa) return 0;
     uint64_t sctlr = 0;
     asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-    if ((sctlr & 1) != 0) return PHYS_TO_VIRT(DTB_ADDR);
-    return DTB_ADDR;
+    if ((sctlr & 1) != 0) return PHYS_TO_VIRT(g_dtb_pa);
+    return (uintptr_t)g_dtb_pa;
 }
 
 bool dtb_get_header(){
     uintptr_t base = dtb_base();
+    if (!base) return false;
     hdr = (struct fdt_header *)base;
     if (__builtin_bswap32(hdr->magic) != FDT_MAGIC) return false;
     return true;
@@ -43,7 +59,7 @@ bool dtb_get_header(){
 
 bool dtb_addresses(uint64_t *start, uint64_t *size){
     if (!dtb_get_header()) return false;
-    *start = (uint64_t)DTB_ADDR;
+    *start = g_dtb_pa;
     *size = __builtin_bswap32(hdr->totalsize);
     return true;
 }

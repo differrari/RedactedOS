@@ -7,6 +7,8 @@ SECTIONS {
     . = LOAD_ADDR;
     __boot_start = .;
     .boot : {
+        KEEP(*(.boot.entry .boot.entry.*))
+        KEEP(*(.boot.vectors .boot.vectors.*))
         *(.boot.text .boot.text.*)
         *(.boot.rodata .boot.rodata.*)
         *(.boot.data .boot.data.*)

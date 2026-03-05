@@ -144,8 +144,9 @@ void mmu_map_2mb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
 
     if ((old & 0b11) == PD_BLOCK){
         if ((old & PTE_ADDR_MASK) == (want & PTE_ADDR_MASK)){
-            uint64_t diff = (old ^ want) & ~(PTE_ADDR_MASK | PTE_AF);
-            if (diff == 0) return;
+            uint64_t diff = (want & ~PTE_AF) | (old & PTE_AF);
+            l2[l2_index] = diff;
+            return;
         }
         kprintf("[mmu] map2 conflict va=%llx old=%llx newpa=%llx root=%llx", (uint64_t)va, (uint64_t)old, (uint64_t)pa, (uint64_t)table);
         panic("mmu_map_2mb remap conflict", va);
@@ -472,8 +473,15 @@ void mmu_init() {
 
     uint64_t ram_start = get_user_ram_start();
     uint64_t ram_end = get_user_ram_end();
+    uint64_t mmio_skip_start = 0;
+    uint64_t mmio_skip_end = 0;
+    hw_mmio_hole_phys(&mmio_skip_start, &mmio_skip_end);
 
     for (uint64_t pa = ram_start; pa < ram_end;) {
+        if (mmio_skip_end && pa >= mmio_skip_start && pa < mmio_skip_end) {
+            pa = mmio_skip_end;
+            continue;
+        }
         if ((!(pa & (GRANULE_2MB - 1))) && (ram_end - pa) >= GRANULE_2MB){
             //mmu_map_2mb((uint64_t*)kernel_ttbr0, pa, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
             mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
@@ -485,32 +493,20 @@ void mmu_init() {
         }
     }
 
-    uint64_t mmio_phys = VIRT_TO_PHYS(MMIO_BASE);
-    uint64_t mmio_end = mmio_phys + 0x10000000ULL; //16mb for raspi 2/3, 64 pi4 TODO move to hw.c 
-
-    for (uint64_t pa = mmio_phys; pa < mmio_end; ) {
-        if ((!(pa & (GRANULE_2MB - 1))) && (mmio_end - pa) >= GRANULE_2MB) {
-            //mmu_map_2mb((uint64_t*)kernel_ttbr0, pa, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-            mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-            pa += GRANULE_2MB;
-        } else {
-            //mmu_map_4kb((uint64_t*)kernel_ttbr0, pa, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-            mmu_map_4kb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-            pa += GRANULE_4KB;
-        }
+    if (BOARD_TYPE == 1) {
+        for (uint64_t pa = 0x08000000ULL; pa < 0x0A000000ULL; pa += GRANULE_2MB) mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+    } else {
+        if (RPI_BOARD == 4) for (uint64_t pa = 0xFE000000ULL; pa < 0xFF000000ULL; pa += GRANULE_2MB) mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
+        else for (uint64_t pa = 0x3F000000ULL; pa < 0x40000000ULL; pa += GRANULE_2MB) mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
     }
 
-    for (uint64_t pa = 0x09000000ULL; pa < 0x0A000000ULL; pa += GRANULE_2MB) mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-    for (uint64_t pa = 0x3F000000ULL; pa < 0x40000000ULL; pa += GRANULE_2MB) mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-    for (uint64_t pa = 0xFE000000ULL; pa < 0xFF000000ULL; pa += GRANULE_2MB) mmu_map_2mb((uint64_t*)kernel_ttbr1, pa | HIGH_VA, pa, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-
-    if (PCI_BASE && (PCI_BASE < (mmio_phys | HIGH_VA) || PCI_BASE >= (mmio_end | HIGH_VA))) {
+    if (PCI_BASE && (PCI_BASE < (mmio_skip_start | HIGH_VA) || PCI_BASE >= (mmio_skip_end | HIGH_VA))) {
         uint64_t p = VIRT_TO_PHYS(PCI_BASE) & ~(GRANULE_2MB - 1);
         //mmu_map_2mb((uint64_t*)kernel_ttbr0, p, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
         mmu_map_2mb((uint64_t*)kernel_ttbr1, p | HIGH_VA, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
     }
 
-    if (XHCI_BASE && (XHCI_BASE < (mmio_phys | HIGH_VA) || XHCI_BASE >= (mmio_end | HIGH_VA))) {
+    if (XHCI_BASE && (XHCI_BASE < (mmio_skip_start | HIGH_VA) || XHCI_BASE >= (mmio_skip_end | HIGH_VA))) {
         uint64_t p = VIRT_TO_PHYS(XHCI_BASE) & ~(GRANULE_2MB - 1);
         //mmu_map_2mb((uint64_t*)kernel_ttbr0, p, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
         mmu_map_2mb((uint64_t*)kernel_ttbr1, p | HIGH_VA, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);

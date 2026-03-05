@@ -11,6 +11,7 @@
 #include "memory/mmu.h"
 #include "memory/page_allocator.h"
 #include "mailbox/vc_mbox.h"
+#include "sysregs.h"
 
 static constexpr uint32_t RGB_FORMAT_XRGB8888 = ((uint32_t)('X') | ((uint32_t)('R') << 8) | ((uint32_t)('2') << 16) | ((uint32_t)('4') << 24));
 
@@ -54,7 +55,8 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
         kprintf("[VIDEOCORE] Failed updating mailbox");
         return false;
     }
-    framebuffer = (uint32_t*)(uintptr_t)BUS_ADDRESS(fb_bus);
+    uint32_t fb_phys = BUS_ADDRESS(fb_bus);
+    framebuffer = (uint32_t*)(uintptr_t)PHYS_TO_VIRT(fb_phys);
     framebuffer_size = fb_size/2;
     if (fb_size < virt_h * virt_w * bpp){
         kprintf("[VIDEOCORE] Fallback to one framebuffer with copying. Expected %i, got %i",virt_h * virt_w * bpp,fb_size);
@@ -64,8 +66,8 @@ bool VideoCoreGPUDriver::init(gpu_size preferred_screen_size){
 
     kprintf("[VIDEOCORE] Size %ix%i (%ix%i) (%ix%i) | %i (%i)",phys_w,phys_h,virt_w,virt_h,screen_size.width,screen_size.height,depth, stride);
     kprintf("[VIDEOCORE] Framebuffer allocated to %x (%i). BPP %i. Stride %i. Backbuffer at %x",framebuffer, framebuffer_size, bpp, stride/bpp,back_framebuffer);
-    mark_used((uintptr_t)framebuffer,count_pages(fb_size,PAGE_SIZE));
-    for (size_t i = (uintptr_t)framebuffer; i < (uintptr_t)framebuffer + fb_size; i += GRANULE_4KB){
+    mark_used((uintptr_t)fb_phys,count_pages(fb_size,PAGE_SIZE));
+    for (size_t i = (size_t)fb_phys; i < (size_t)fb_phys + fb_size; i += GRANULE_4KB){
         register_device_memory(i,i);
     }
 

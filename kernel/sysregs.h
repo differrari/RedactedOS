@@ -37,7 +37,9 @@
 
 #define SPSR_MASK_ALL (7 << 6)
 #define SPSR_EL1h (5 << 0)
-#define SPSR3_VALUE (SPSR_MASK_ALL | SPSR_EL1h)
+#define SPSR_EL2h (9 << 0)
+#define SPSR3_VALUE (SPSR_MASK_ALL | SPSR_EL2h)
+#define SCTLR_VALUE_EARLY (SCTLR_RESERVED | SCTLR_EE_LITTLE_ENDIAN | SCTLR_I_CACHE_DISABLED | SCTLR_D_CACHE_DISABLED | SCTLR_MMU_DISABLED)
 
 // ***************************************
 // CNTHCTL_EL2, Counter-timer Hypervisor Control Register (EL2) Page 9569 of AArch64-Reference-Manual.

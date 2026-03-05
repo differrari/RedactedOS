@@ -42,10 +42,13 @@ static uint64_t boot_kimg_l2_3[PAGE_TABLE_ENTRIES];
 extern uint64_t __boot_kimg_pa_start;
 extern uint64_t __boot_kimg_pa_end;
 
-extern void kernel_main(uint64_t board_type);
+extern void boot_vectors_el1(void);
+extern void kernel_main(uint64_t board_type, uint64_t dtb_pa);
+extern uint64_t boot_args[3];
 
 __attribute__((section(".boot.text"), weak, noreturn))
 void boot_mmu_setup(uint64_t board_type) {
+    uint64_t dtb_pa = boot_args[2] ? boot_args[2] : boot_args[0];
     uint64_t mmfr0 = 0;
     asm volatile("mrs %0, id_aa64mmfr0_el1" : "=r"(mmfr0));
 
@@ -142,23 +145,25 @@ void boot_mmu_setup(uint64_t board_type) {
     sctlr |= 1ULL;
     sctlr &= ~(1ULL << 19);
     asm volatile("msr sctlr_el1, %0" :: "r"(sctlr));
+    asm volatile("dsb ish");
     asm volatile("isb");
 
     asm volatile(
-        "ldr x0, =exception_vectors\n"
+        "ldr x0, =boot_vectors_el1\n"
         "msr vbar_el1, x0\n"
         "isb\n"
         ::: "x0", "memory"
     );
 
     asm volatile(
-        "ldr x1, =ksp\n"
-        "mov sp, x1\n"
+        "ldr x2, =ksp\n"
+        "mov sp, x2\n"
         "mov x0, %0\n"
-        "ldr x1, =kernel_main\n"
-        "blr x1\n"
+        "mov x1, %1\n"
+        "ldr x2, =kernel_main\n"
+        "blr x2\n"
         "1: wfe\n"
         "b 1b\n"
-        :: "r"(board_type) : "x0", "x1", "memory"
+        :: "r"(board_type),"r"(dtb_pa) : "x0", "x1", "x2", "memory"
     );
 }
