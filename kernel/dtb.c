@@ -11,6 +11,17 @@
 #define FDT_NOP         0x00000004
 #define FDT_END         0x00000009
 
+/* TODO
+this file only validates and exposes dtb pointer passed in by the boot, but in boot x0 is supposed to contain the physical address of the dtb in memory
+https://docs.kernel.org/arch/arm64/booting.html
+on qemu-virt the location depends on the boot mode, for the non elf images the dtb address is passed in x0
+for boots with elf image, the dtb is placed at the start of ram instead, so using x0 isnt correct for the virt boot flow
+https://qemu-project.gitlab.io/qemu/system/arm/virt.html
+there's also a reported qemu raspi4b issue where no dtb is provided in x0 for -kernel boot and x0 may end up containing 0x100 rather than a dtb pointer
+https://gitlab.com/qemu-project/qemu/-/issues/2729  maybe -dtb hw.dtb/dts would fix? it could be tried, but to finish the mem pr quickly ill avoid it (i've already wasted about 10 hours on this)
+anyway, the probing policy should be decided in the hw path and not here or in talloc
+*/
+
 struct fdt_header {
     uint32_t magic;
     uint32_t totalsize;
@@ -62,26 +73,6 @@ bool dtb_addresses(uint64_t *start, uint64_t *size){
     *start = g_dtb_pa;
     *size = __builtin_bswap32(hdr->totalsize);
     return true;
-}
-
-void dtb_debug_print_all() {
-    if (!dtb_get_header()) return;
-
-    uintptr_t base = dtb_base();
-    uint32_t *p = (uint32_t *)(base + __builtin_bswap32(hdr->off_dt_struct));
-
-    while (1) {
-        uint32_t token = __builtin_bswap32(*p++);
-        if (token == FDT_END) break;
-        if (token == FDT_BEGIN_NODE) {
-            const char *name = (const char *)p;
-            uint32_t skip = 0;
-            while (((char *)p)[skip]) skip++;
-            skip = (skip + 4) & ~3;
-            p += skip / 4;
-            kprintf(name);
-        } 
-    }
 }
 
 bool dtb_scan(const char *search_name, dtb_node_handler handler, dtb_match_t *match) {

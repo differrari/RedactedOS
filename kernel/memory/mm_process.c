@@ -1,3 +1,7 @@
+#include "process/process.h"
+#include "memory/mmu.h"
+#include "memory/addr.h"
+#include "std/memory.h"
 #include "memory/mm_process.h"
 
 vma* mm_find_vma(mm_struct *mm, uaddr_t va){
@@ -133,4 +137,58 @@ uaddr_t mm_alloc_mmap(mm_struct *mm, size_t size, uint8_t prot, uint8_t kind, ui
     if (!mm_add_vma(mm, base, base + size, prot, kind, flags)) return 0;
     mm->mmap_cursor = base;
     return base;
+}
+
+bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr) {
+    if (!proc) return false;
+
+    uint64_t ec = (esr >> 26) & 0x3F;
+    uint32_t iss = esr & 0xFFFFFF;
+    uint8_t ifsc = esr & 0x3F;
+
+    bool is_exec = ec == 0x20;
+    bool is_write = false;
+    if (!is_exec) is_write = ((iss >> 6) & 1) != 0;
+
+    if (ifsc >= 0x9 && ifsc <= 0xB) {
+        if (!mmu_set_access_flag((uint64_t*)proc->ttbr, far)) return false;
+        mmu_flush_asid(proc->asid);
+        return true;
+    }
+
+    if (ifsc >= 0xD && ifsc <= 0xF) return false;
+    if (ifsc < 0x4 || ifsc > 0x7) return false;
+
+    uintptr_t va_page = far & ~(PAGE_SIZE-1);
+    vma *m = mm_find_vma(&proc->mm, va_page);
+    if (!m) return false;
+    if ((is_exec && !(m->prot & MEM_EXEC)) || (is_write && !(m->prot & MEM_RW))) return false;
+
+
+    if (!(m->flags & VMA_FLAG_DEMAND)) return false;
+
+    if (m->kind == VMA_KIND_STACK) {
+        if (va_page < proc->mm.stack_limit) return false;
+        if (va_page >= proc->mm.stack_top) return false;
+
+        if (va_page + PAGE_SIZE == proc->mm.stack_commit) {
+            if (proc->mm.stack_commit <= proc->mm.stack_limit) return false;
+            if (proc->mm.rss_stack_pages >= proc->mm.cap_stack_pages) return false;
+            proc->mm.stack_commit -= PAGE_SIZE;
+        } else if (va_page < proc->mm.stack_commit) return false;
+        else if (proc->mm.rss_stack_pages >= proc->mm.cap_stack_pages) return false;
+    } if ((m->kind == VMA_KIND_HEAP && proc->mm.rss_heap_pages >= proc->mm.cap_heap_pages) || (m->kind == VMA_KIND_ANON && proc->mm.rss_anon_pages >= proc->mm.cap_anon_pages)) return false;
+
+    paddr_t phys = palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false);
+    if (!phys) return false;
+
+    if (m->kind != VMA_KIND_ANON || (m->flags & VMA_FLAG_ZERO)) memset((void*)dmap_pa_to_kva(phys), 0, PAGE_SIZE);
+    mmu_map_4kb((uint64_t*)proc->ttbr, va_page, phys, MAIR_IDX_NORMAL, m->prot | MEM_NORM, MEM_PRIV_USER);
+    mmu_flush_asid(proc->asid);
+
+    if (m->kind == VMA_KIND_STACK) proc->mm.rss_stack_pages++;
+    else if (m->kind == VMA_KIND_HEAP) proc->mm.rss_heap_pages++;
+    else if (m->kind == VMA_KIND_ANON) proc->mm.rss_anon_pages++;
+
+    return true;
 }

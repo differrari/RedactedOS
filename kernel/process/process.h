@@ -34,7 +34,7 @@ typedef struct {
 
 #define MAX_PROC_NAME_LENGTH 256
 
-typedef struct {
+typedef struct process {
     //We use the addresses of these variables to save and restore process state
     uint64_t regs[31]; // x0–x30
     uintptr_t sp;

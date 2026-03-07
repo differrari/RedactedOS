@@ -3,13 +3,17 @@
 #include "types.h"
 #include "memory/page_allocator.h"
 
+typedef struct process process_t;
+
 #define VMA_FLAG_DEMAND 1
 #define VMA_FLAG_USERALLOC 2
 #define VMA_FLAG_ZERO 4
+#define VMA_FLAG_NOFREE 8
 #define VMA_KIND_ELF 1
 #define VMA_KIND_HEAP 2
 #define VMA_KIND_STACK 3
 #define VMA_KIND_ANON 4
+#define VMA_KIND_SPECIAL 5
 
 #define MAX_VMAS 32
 #define MM_GAP_PAGES 16
@@ -47,3 +51,4 @@ bool mm_add_vma(mm_struct *mm, uaddr_t start, uaddr_t end, uint8_t prot, uint8_t
 bool mm_update_vma(mm_struct *mm, uaddr_t start, uaddr_t end);
 bool mm_remove_vma(mm_struct *mm, uaddr_t start, uaddr_t end);
 uaddr_t mm_alloc_mmap(mm_struct *mm, size_t size, uint8_t prot, uint8_t kind, uint8_t flags);
+bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr);

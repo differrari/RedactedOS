@@ -100,9 +100,11 @@ void get_window_ctx(draw_ctx* out_ctx){
         if (p->ttbr && size && (p->win_fb_phys != phys || p->win_fb_size != size)) {
             if (p->win_fb_size && p->win_fb_phys) {
                 for (uint64_t off = 0; off < p->win_fb_size; off += GRANULE_4KB) mmu_unmap_table((uint64_t*)p->ttbr, p->win_fb_va + off, p->win_fb_phys + off);
+                mm_remove_vma(&p->mm, p->win_fb_va, p->win_fb_va + p->win_fb_size); 
             }
 
             for (uint64_t off = 0; off < size; off += GRANULE_4KB) mmu_map_4kb((uint64_t*)p->ttbr, p->win_fb_va + off, (paddr_t)(phys + off), MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+            mm_add_vma(&p->mm, p->win_fb_va, p->win_fb_va + size, MEM_RW, VMA_KIND_SPECIAL, VMA_FLAG_NOFREE);
 
             mmu_flush_asid(p->asid);
 

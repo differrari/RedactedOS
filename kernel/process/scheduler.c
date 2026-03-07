@@ -162,10 +162,11 @@ void reset_process(process_t *proc){
     if (proc->id != 1 && proc->ttbr) {
         for (uint16_t i = 0; i < proc->mm.vma_count; i++) {
             vma *m = &proc->mm.vmas[i];
+            bool nofree = (m->flags & VMA_FLAG_NOFREE) != 0;
             for (uaddr_t va = m->start; va < m->end; va += GRANULE_4KB) {
                 paddr_t pa = 0;
                 if (!mmu_unmap_and_get_pa((uint64_t*)proc->ttbr, (uint64_t)va, &pa)) continue;
-                pfree((void*)dmap_pa_to_kva(pa), GRANULE_4KB);
+                if (!nofree) pfree((void*)dmap_pa_to_kva(pa), GRANULE_4KB);
                 if (m->kind == VMA_KIND_HEAP) {
                     if (proc->mm.rss_heap_pages) proc->mm.rss_heap_pages--;
                 } else if (m->kind == VMA_KIND_STACK) {
@@ -184,12 +185,6 @@ void reset_process(process_t *proc){
         }
         release_page_index(proc->alloc_map);
         proc->alloc_map = 0;
-    }
-    if (proc->ttbr && proc->win_fb_size && proc->win_fb_phys) {
-        for (uint64_t off = 0; off < proc->win_fb_size; off += GRANULE_4KB) mmu_unmap_table((uint64_t*)proc->ttbr, proc->win_fb_va + off, proc->win_fb_phys + off);
-        proc->win_fb_va = 0;
-        proc->win_fb_phys = 0;
-        proc->win_fb_size = 0;
     }
     if (proc->ttbr) {
         if (pttbr == proc->ttbr) {

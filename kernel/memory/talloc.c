@@ -189,7 +189,7 @@ uint64_t mem_get_kmem_end(){
     return (uint64_t)&kcode_end;
 }
 
-int handle_mem_node(const char *propname, const void *prop, uint32_t len, dtb_match_t *match){
+/* int handle_mem_node(const char *propname, const void *prop, uint32_t len, dtb_match_t *match){
     if (strcmp(propname, "reg") == 0 && len >= 16){
         uint32_t *p = (uint32_t *)prop;
         match->reg_base = ((uint64_t)__builtin_bswap32(p[0]) << 32) | __builtin_bswap32(p[1]);
@@ -231,6 +231,16 @@ void calc_ram(){
         calculated_ram_start = CRAM_START;
     }
 
+    calculated_ram_size = calculated_ram_end - calculated_ram_start;
+}
+*/
+//TODO see dtb.c
+
+void calc_ram(){
+    total_ram_start = RAM_START;
+    total_ram_size = RAM_SIZE;
+    calculated_ram_end = CRAM_END;
+    calculated_ram_start = CRAM_START;
     calculated_ram_size = calculated_ram_end - calculated_ram_start;
 }
 

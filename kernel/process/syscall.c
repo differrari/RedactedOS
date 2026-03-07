@@ -29,170 +29,15 @@
 #include "memory/addr.h"
 #include "ui/graphic_types.h"
 #include "dev/module_loader.h"
+#include "alloc/page_index.h"
+#include "process/uaccess.h"
+#include "syscalls/errno.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
 
 //TEST: What happens if we pass another process' data in here?
 typedef uint64_t (*syscall_entry)(process_t *ctx);
-
-static bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr) {
-    if (!proc) return false;
-
-    uint64_t ec = (esr >> 26) & 0x3F;
-    uint32_t iss = esr & 0xFFFFFF;
-    uint8_t ifsc = esr & 0x3F;
-
-    bool is_exec = ec == 0x20;
-    bool is_write = false;
-    if (!is_exec) is_write = ((iss >> 6) & 1) != 0;
-
-    if (ifsc >= 0x9 && ifsc <= 0xB) {
-        if (!mmu_set_access_flag((uint64_t*)proc->ttbr, far)) return false;
-        mmu_flush_asid(proc->asid);
-        return true;
-    }
-
-    if (ifsc >= 0xD && ifsc <= 0xF) return false;
-    if (ifsc < 0x4 || ifsc > 0x7) return false;
-
-    uintptr_t va_page = far & ~(PAGE_SIZE - 1);
-    vma *m = mm_find_vma(&proc->mm, va_page);
-    if (!m) return false;
-
-    if (is_exec) {
-        if (!(m->prot & MEM_EXEC)) return false;
-    } else if (is_write) {
-        if (!(m->prot & MEM_RW)) return false;
-    }
-
-    if (!(m->flags & VMA_FLAG_DEMAND)) return false;
-
-    if (m->kind == VMA_KIND_STACK) {
-        if (va_page < proc->mm.stack_limit) return false;
-        if (va_page >= proc->mm.stack_top) return false;
-
-        if (va_page + PAGE_SIZE == proc->mm.stack_commit) {
-            if (proc->mm.stack_commit <= proc->mm.stack_limit) return false;
-            if (proc->mm.rss_stack_pages >= proc->mm.cap_stack_pages) return false;
-            proc->mm.stack_commit -= PAGE_SIZE;
-        } else if (va_page < proc->mm.stack_commit) {
-            return false;
-        } else {
-            if (proc->mm.rss_stack_pages >= proc->mm.cap_stack_pages) return false;
-        }
-    } else if (m->kind == VMA_KIND_HEAP) {
-        if (proc->mm.rss_heap_pages >= proc->mm.cap_heap_pages) return false;
-    } else if (m->kind == VMA_KIND_ANON) {
-        if (proc->mm.rss_anon_pages >= proc->mm.cap_anon_pages) return false;
-    }
-
-    paddr_t phys = palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false);
-    if (!phys) return false;
-
-    if (m->kind != VMA_KIND_ANON || (m->flags & VMA_FLAG_ZERO)) memset((void*)dmap_pa_to_kva(phys), 0, PAGE_SIZE);
-    mmu_map_4kb((uint64_t*)proc->ttbr, va_page, phys, MAIR_IDX_NORMAL, m->prot | MEM_NORM, MEM_PRIV_USER);
-    mmu_flush_asid(proc->asid);
-
-    if (m->kind == VMA_KIND_STACK) proc->mm.rss_stack_pages++;
-    else if (m->kind == VMA_KIND_HEAP) proc->mm.rss_heap_pages++;
-    else if (m->kind == VMA_KIND_ANON) proc->mm.rss_anon_pages++;
-
-    return true;
-}
-
-static bool uaccess_copyin(process_t *proc, void *dst, uintptr_t src, size_t size) {
-    if (!size) return true;
-
-    if ((src >> 47) & 1) {
-        if (proc->id != 1) return false;
-        memcpy(dst, (const void*)src, size);
-        return true;
-    }
-
-    uint8_t *d = (uint8_t*)dst;
-
-    while (size) {
-        size_t off = src & (PAGE_SIZE - 1);
-        size_t chunk = PAGE_SIZE - off;
-        if (chunk > size) chunk = size;
-
-        int st = 0;
-        uintptr_t pa = mmu_translate(src, &st);
-        if (st) {
-            uint64_t esr = (0x24ULL << 26) | 0x7ULL;
-            if (!mm_try_handle_page_fault(proc, src, esr)) return false;
-            pa = mmu_translate(src, &st);
-            if (st) return false;
-        }
-
-        memcpy(d, (const void*)dmap_pa_to_kva((paddr_t)pa), chunk);
-        d += chunk;
-        src += chunk;
-        size -= chunk;
-    }
-
-    return true;
-}
-
-static bool uaccess_copyout(process_t *proc, uintptr_t dst, const void *src, size_t size) {
-    if (!size) return true;
-
-    if ((dst >> 47) & 1) {
-        if (proc->id != 1) return false;
-        memcpy((void*)dst, src, size);
-        return true;
-    }
-
-    const uint8_t *s = (const uint8_t*)src;
-
-    while (size) {
-        size_t off = dst & (PAGE_SIZE - 1);
-        size_t chunk = PAGE_SIZE - off;
-        if (chunk > size) chunk = size;
-
-        int st = 0;
-        uintptr_t pa = mmu_translate(dst, &st);
-        if (st){
-            uint64_t esr = (0x24ULL << 26)| (1ULL << 6) | 0x7ULL;
-            if (!mm_try_handle_page_fault(proc, dst, esr)) return false;
-            pa = mmu_translate(dst, &st);
-            if (st) return false;
-        }
-
-        memcpy((void*)dmap_pa_to_kva((paddr_t)pa), s, chunk);
-        s += chunk;
-        dst += chunk;
-        size -= chunk;
-    }
-
-    return true;
-}
-
-static bool uaccess_copyinstr(process_t *proc, char *dst, size_t dst_size, uintptr_t src, size_t *out_copied, bool *out_terminated) {
-    if (!dst || dst_size < 2) return false;
-
-    size_t pos = 0;
-    bool term = false;
-
-    while (pos + 1 < dst_size) {
-        uint8_t c = 0;
-        if (!uaccess_copyin(proc, &c, src + pos, 1)) return false;
-        dst[pos] = (char)c;
-        pos++;
-        if (!c) {
-            term = true;
-            break;
-        }
-    }
-
-    if (!term) dst[dst_size - 1] = 0;
-
-    if (out_copied) *out_copied = term ? pos : (dst_size - 1);
-    if (out_terminated) *out_terminated = term;
-
-    return true;
-}
 
 u64 syscall_malloc(process_t *ctx){
     if (syscall_depth > 1) {
@@ -239,22 +84,22 @@ uptr syscall_palloc(process_t *ctx){
 
 u64 syscall_pfree(process_t *ctx){
     uptr va = ctx->PROC_X0;
-    if (!va) return 0;
+    if (!va) return SYSCALL_ERRNO(SYSCALL_EINVAL);
 
     if (ctx->use_va) {
         vma *m = mm_find_vma(&ctx->mm,va);
-        if (!m) return 0;
-        if (m->kind != VMA_KIND_ANON) return 0;
-        if (!(m->flags & VMA_FLAG_USERALLOC)) return 0;
+        if (!m) return SYSCALL_ERRNO(SYSCALL_EFAULT);
+        if (m->kind != VMA_KIND_ANON) return SYSCALL_ERRNO(SYSCALL_EPERM);
+        if (!(m->flags & VMA_FLAG_USERALLOC)) return SYSCALL_ERRNO(SYSCALL_EPERM);
 
         uintptr_t start = m->start;
         uintptr_t end = m->end;
-        if (!mm_remove_vma(&ctx->mm, start, end)) return 0;
+        if (!mm_remove_vma(&ctx->mm, start, end)) return SYSCALL_ERRNO(SYSCALL_EINVAL);
 
         for (uintptr_t a = start; a < end; a += PAGE_SIZE) {
             uint64_t pa = 0;
             if (!mmu_unmap_and_get_pa((uint64_t*)ctx->ttbr, a, &pa)) continue;
-            pfree((void*)pa, PAGE_SIZE);
+            pfree((void*)dmap_pa_to_kva((paddr_t)pa), PAGE_SIZE);
             if (ctx->mm.rss_anon_pages) ctx->mm.rss_anon_pages--;
         }
 
@@ -264,7 +109,7 @@ u64 syscall_pfree(process_t *ctx){
 
     int tr = 0;
     uptr phys = mmu_translate(va, &tr);
-    if (tr) return 0;
+    if (tr) return SYSCALL_ERRNO(SYSCALL_EFAULT);
 
     for (page_index *ind = ctx->alloc_map; ind; ind = ind->header.next) {
         for (u64 i = 0; i < ind->header.size; i++) {
@@ -274,7 +119,7 @@ u64 syscall_pfree(process_t *ctx){
                 for (u64 p = 0; p < pages; p++) mmu_unmap_table(ctx->ttbr, va + (p * PAGE_SIZE), phys + (p * PAGE_SIZE));
 
                 mmu_flush_asid(ctx->asid);
-                pfree((void*)phys, size);
+                pfree((void*)dmap_pa_to_kva((paddr_t)phys), size);
                 if (ctx->mm.rss_anon_pages >= pages) ctx->mm.rss_anon_pages -= pages;
                 else ctx->mm.rss_anon_pages = 0;
 
@@ -284,11 +129,22 @@ u64 syscall_pfree(process_t *ctx){
             }
         }
     }
-    return 0;
+    return SYSCALL_ERRNO(SYSCALL_EINVAL);
 }
 
 u64 syscall_free(process_t *ctx){
-    kfree((void*)ctx->PROC_X0, ctx->PROC_X1);
+    if (ctx->use_va) return syscall_pfree(ctx);
+
+    void *ptr = (void*)ctx->PROC_X0;
+    size_t size = (size_t)ctx->PROC_X1;
+    if (!ptr || !size) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+    if (!ctx->alloc_map) return SYSCALL_ERRNO(SYSCALL_EPERM);
+
+    size_t alloc_size = get_alloc_size(ctx->alloc_map, ptr);
+    if (!alloc_size) return SYSCALL_ERRNO(SYSCALL_EFAULT);
+    if (size && alloc_size != size) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+
+    free_registered(ctx->alloc_map, ptr);
     return 0;
 }
 
@@ -310,7 +166,7 @@ uptr syscall_brk(process_t *ctx) {
         for (uptr va = new_brk; va < old; va += PAGE_SIZE) {
             uint64_t pa = 0;
             if (!mmu_unmap_and_get_pa((uint64_t*)ctx->ttbr, va, &pa)) continue;
-            pfree((void*)pa, PAGE_SIZE);
+            pfree((void*)dmap_pa_to_kva((paddr_t)pa), PAGE_SIZE);
             if (ctx->mm.rss_heap_pages) ctx->mm.rss_heap_pages--;
         }
     }
@@ -326,14 +182,15 @@ uptr syscall_brk(process_t *ctx) {
 
 u64 syscall_printl(process_t *ctx){
     uintptr_t u = (uintptr_t)ctx->PROC_X0;
-    if (!u) return 0;
+    if (!u) return SYSCALL_ERRNO(SYSCALL_EINVAL);
 
     char buf[256] = {};
 
     for (;;) {
         size_t copied = 0;
         bool term = false;
-        if (!uaccess_copyinstr(ctx, buf, sizeof(buf), u, &copied, &term)) return 0;
+        uaccess_result_t ur = copy_str_from_user(ctx, buf, sizeof(buf), u, &copied, &term);
+        if (ur != UACCESS_OK && ur != UACCESS_ENAMETOOLONG) return ur;
         kprint(buf);
         if (term) break;
         if (!copied) break;
@@ -347,7 +204,9 @@ u64 syscall_read_key(process_t *ctx){
     uintptr_t up = (uintptr_t)ctx->PROC_X0;
     keypress tmp = {};
     u64 r = sys_read_input_current(&tmp);
-    if (!uaccess_copyout(ctx, up, &tmp, sizeof(tmp))) return 0;
+    if (!r) return 0;
+    uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
+    if (ur != UACCESS_OK) return ur;
     return r;
 }
 
@@ -355,7 +214,9 @@ u64 syscall_read_event(process_t *ctx){
     uintptr_t up = (uintptr_t)ctx->PROC_X0;
     kbd_event tmp = {};
     u64 r = sys_read_event_current(&tmp);
-    if (!uaccess_copyout(ctx, up, &tmp, sizeof(tmp))) return 0;
+    if (!r) return 0;
+    uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
+    if (ur != UACCESS_OK) return ur;
     return r;
 }
 
@@ -366,12 +227,13 @@ u64 syscall_read_shortcut(process_t *ctx){
 
 u64 syscall_get_mouse(process_t *ctx){
     //TEST: are we preventing the mouse from being read outside of window?
-    if (get_current_proc_pid() != ctx->id) return 0;
+    if (get_current_proc_pid() != ctx->id) return SYSCALL_ERRNO(SYSCALL_EPERM);
     uintptr_t up = (uintptr_t)ctx->PROC_X0;
     mouse_data tmp = {};
     tmp.raw = get_raw_mouse_in();
     tmp.position = convert_mouse_position(get_mouse_pos());
-    if (!uaccess_copyout(ctx, up, &tmp, sizeof(tmp))) return 0;
+    uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
+    if (ur != UACCESS_OK) return ur;
     return 0;
 }
 
@@ -379,14 +241,16 @@ uptr syscall_gpu_request_ctx(process_t *ctx){
     uintptr_t up = (uintptr_t)ctx->PROC_X0;
     draw_ctx tmp = {};
     get_window_ctx(&tmp);
-    if (!uaccess_copyout(ctx, up, &tmp, sizeof(tmp))) return 0;
+    uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
+    if (ur != UACCESS_OK) return ur;
     return 0;
 }
 
 u64 syscall_gpu_flush(process_t *ctx){
     uintptr_t up = (uintptr_t)ctx->PROC_X0;
     draw_ctx tmp = {};
-    if (!uaccess_copyin(ctx, &tmp, up, sizeof(tmp))) return 0;
+    uaccess_result_t ur = copy_from_user(ctx, &tmp, up, sizeof(tmp));
+    if (ur != UACCESS_OK) return ur;
     commit_frame(&tmp, 0);
     gpu_flush();
     return 0;
@@ -399,7 +263,8 @@ u64 syscall_gpu_resize_ctx(process_t *ctx){
     resize_window(width, height);
     draw_ctx tmp = {};
     get_window_ctx(&tmp);
-    if (!uaccess_copyout(ctx, up, &tmp, sizeof(tmp))) return 0;
+    uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
+    if (ur != UACCESS_OK) return ur;
     gpu_flush();
     return 0;
 }
@@ -426,44 +291,46 @@ u64 syscall_exec(process_t *ctx){
     int argc = (int)ctx->PROC_X1;
     uintptr_t uargv = (uintptr_t)ctx->PROC_X2;
 
-    if (argc < 0) return 0;
+    if (argc < 0) return SYSCALL_ERRNO(SYSCALL_EINVAL);
 
     char prog_name[256] = {};
     size_t copied = 0;
     bool term = false;
-    if (!uaccess_copyinstr(ctx, prog_name, sizeof(prog_name), upath, &copied, &term)) return 0;
-    if (!term) return 0;
+    uaccess_result_t ur = copy_str_from_user(ctx, prog_name, sizeof(prog_name), upath, &copied, &term);
+    if (ur != UACCESS_OK) return ur;
+    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
 
     const int max_args = 64;
-    if (argc > max_args) return 0;
+    if (argc > max_args) return SYSCALL_ERRNO(SYSCALL_EINVAL);
 
     const char *argv[max_args + 1] = {};
     char *bufs[max_args] = {};
     uint64_t bufsz[max_args] = {};
 
-    bool ok = true;
-
     for (int i = 0; i < argc; i++) {
         uintptr_t up = 0;
-        if (!uaccess_copyin(ctx, &up, uargv + ((uintptr_t)i * sizeof(uintptr_t)), sizeof(up))) ok = false;
-        if (!ok || !up) {
-            ok = false;
+        ur = copy_from_user(ctx, &up, uargv + ((uintptr_t)i * sizeof(uintptr_t)), sizeof(up));
+        if (ur != UACCESS_OK) break;
+        if (!up) {
+            ur = UACCESS_EINVAL;
             break;
         }
 
         char tmp[256] = {};
         size_t n = 0;
         bool t = false;
-        if (!uaccess_copyinstr(ctx, tmp, sizeof(tmp), up, &n, &t)) ok = false;
-        if (!ok || !t) {
-            ok = false;
+        ur = copy_str_from_user(ctx, tmp, sizeof(tmp), up, &n, &t);
+        if (ur != UACCESS_OK) break;
+
+        if (!t) {
+            ur = UACCESS_ENAMETOOLONG;
             break;
         }
 
         uint64_t alloc = (n + 0xFFF) & ~0xFFFULL;
         char *k = (char*)talloc(alloc);
         if (!k) {
-            ok = false;
+            ur = UACCESS_ENOMEM;
             break;
         }
         memcpy(k, tmp, n);
@@ -472,8 +339,12 @@ u64 syscall_exec(process_t *ctx){
         argv[i] = k;
     }
 
-    process_t *p = 0;
-    if (ok) p = execute(prog_name, argc, argv);
+    if (ur != UACCESS_OK) {
+        for (int i = 0; i < argc; i++) if (bufs[i]) temp_free(bufs[i], bufsz[i]);
+        return ur;
+    }
+
+    process_t *p = execute(prog_name, argc, argv);
     if (p) p->win_id = ctx->win_id;
 
     for (int i = 0; i < argc; i++) if (bufs[i]) temp_free(bufs[i], bufsz[i]);
@@ -493,13 +364,17 @@ u64 syscall_socket_create(process_t *ctx){
     SocketExtraOptions extra = {};
     SocketExtraOptions *pe = 0;
     if (uextra) {
-        if (!uaccess_copyin(ctx, &extra, uextra, sizeof(extra))) return 0;
+        uaccess_result_t ur = copy_from_user(ctx, &extra, uextra, sizeof(extra));
+        if (ur != UACCESS_OK) return ur;
         pe = &extra;
     }
 
     SocketHandle out = {};
-    u64 r = create_socket(role, protocol, pe, ctx->id, &out);
-    if (!uaccess_copyout(ctx, uout, &out, sizeof(out))) return 0;
+    i64 r = create_socket(role, protocol, pe, ctx->id, &out);
+    if (r < 0) return r;
+
+    uaccess_result_t ur = copy_to_user(ctx, uout, &out, sizeof(out));
+    if (ur != UACCESS_OK) return ur;
     return r;
 }
 
@@ -508,7 +383,8 @@ u64 syscall_socket_bind(process_t *ctx){
     ip_version_t ip_version = (ip_version_t)ctx->PROC_X1;
     uint16_t port = (uint16_t)ctx->PROC_X2;
     SocketHandle handle = {};
-    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
+    if (ur != UACCESS_OK) return ur;
     return bind_socket(&handle, port, ip_version, ctx->id);
 }
 
@@ -519,23 +395,26 @@ u64 syscall_socket_connect(process_t *ctx){
     uint16_t port = (uint16_t)ctx->PROC_X3;
 
     SocketHandle handle = {};
-    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
+    if (ur != UACCESS_OK) return ur;
 
     net_l4_endpoint ep = {};
     char domain[256] = {};
     const void *dst = 0;
 
     if (dst_kind == DST_ENDPOINT) {
-        if (!uaccess_copyin(ctx, &ep, udst, sizeof(ep))) return 0;
+        ur = copy_from_user(ctx, &ep, udst, sizeof(ep));
+        if (ur != UACCESS_OK) return ur;
         dst = &ep;
     } else if (dst_kind == DST_DOMAIN) {
         size_t copied = 0;
         bool term = false;
-        if (!uaccess_copyinstr(ctx, domain, sizeof(domain), udst, &copied, &term)) return 0;
-        if (!term) return 0;
+        ur = copy_str_from_user(ctx, domain, sizeof(domain), udst, &copied, &term);
+        if (ur != UACCESS_OK) return ur;
+        if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
         dst = domain;
     } else {
-        return 0;
+        return SYSCALL_ERRNO(SYSCALL_EINVAL);
     }
 
     return connect_socket(&handle, dst_kind, dst, port, ctx->id);
@@ -546,14 +425,16 @@ u64 syscall_socket_listen(process_t *ctx){
     int32_t backlog = (int32_t)ctx->PROC_X1;
 
     SocketHandle handle = {};
-    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
+    if (ur != UACCESS_OK) return ur;
     return listen_on(&handle, backlog, ctx->id);
 }
 
 u64 syscall_socket_accept(process_t *ctx){
     uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
     SocketHandle handle = {};
-    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
+    if (ur != UACCESS_OK) return ur;
     accept_on_socket(&handle, ctx->id);
     return 1;
 }
@@ -567,34 +448,38 @@ u64 syscall_socket_send(process_t *ctx){
     size_t size = (size_t)ctx->regs[5];
 
     SocketHandle handle = {};
-    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
+    if (ur != UACCESS_OK) return ur;
 
     net_l4_endpoint ep = {};
     char domain[256] = {};
     const void *dst = 0;
 
     if (dst_kind == DST_ENDPOINT){
-        if (!uaccess_copyin(ctx, &ep, udst, sizeof(ep))) return 0;
+        ur = copy_from_user(ctx, &ep, udst, sizeof(ep));
+        if (ur != UACCESS_OK) return ur;
         dst = &ep;
     } else if (dst_kind == DST_DOMAIN){
         size_t copied = 0;
         bool term = false;
-        if (!uaccess_copyinstr(ctx, domain, sizeof(domain), udst, &copied, &term)) return 0;
-        if (!term) return 0;
+        ur = copy_str_from_user(ctx, domain, sizeof(domain), udst, &copied, &term);
+        if (ur != UACCESS_OK) return ur;
+        if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
         dst = domain;
     } else {
-        return 0;
+        return SYSCALL_ERRNO(SYSCALL_EINVAL);
     }
 
     if (!size) return 0;
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     void *kbuf = (void*)talloc(alloc_size);
-    if (!kbuf) return 0;
+    if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
 
-    if (!uaccess_copyin(ctx, kbuf, ubuf, size)){
+    ur = copy_from_user(ctx, kbuf, ubuf, size);
+    if (ur != UACCESS_OK){
         temp_free(kbuf, alloc_size);
-        return 0;
+        return ur;
     }
 
     u64 r = send_on_socket(&handle, dst_kind, dst, port, kbuf, size, ctx->id);
@@ -609,28 +494,34 @@ u64 syscall_socket_receive(process_t *ctx){
     uintptr_t uout_src = (uintptr_t)ctx->PROC_X3;
 
     SocketHandle handle = {};
-    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
+    if (ur != UACCESS_OK) return ur;
     if (!size) return 0;
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     void *kbuf = (void*)talloc(alloc_size);
-    if (!kbuf) return 0;
+    if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
 
     net_l4_endpoint src = {};
-    int64_t r = receive_from_socket(&handle, kbuf, size, &src, ctx->id);
+    i64 r = receive_from_socket(&handle, kbuf, size, &src, ctx->id);
     if (r > 0) {
-        if (!uaccess_copyout(ctx, ubuf, kbuf, (size_t)r)) r = 0;
+        ur = copy_to_user(ctx, ubuf, kbuf, (size_t)r);
+        if (ur != UACCESS_OK) r = ur;
     }
-    if (!uaccess_copyout(ctx, uout_src, &src, sizeof(src))) r = 0;
+    if (r >= 0) {
+        ur = copy_to_user(ctx, uout_src, &src, sizeof(src));
+        if (ur != UACCESS_OK) r = ur;
+    }
 
     temp_free(kbuf, alloc_size);
-    return (u64)r;
+    return r;
 }
 
 u64 syscall_socket_close(process_t *ctx){
     uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
     SocketHandle handle = {};
-    if (!uaccess_copyin(ctx, &handle, uhandle, sizeof(handle))) return 0;
+    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
+    if (ur != UACCESS_OK) return ur;
     return close_socket(&handle, ctx->id);
 }
 
@@ -641,8 +532,9 @@ u64 syscall_openf(process_t *ctx){
     char req_path[255] = {};
     size_t copied = 0;
     bool term = false;
-    if (!uaccess_copyinstr(ctx, req_path, sizeof(req_path), upath, &copied, &term)) return FS_RESULT_DRIVER_ERROR;
-    if (!term) return FS_RESULT_DRIVER_ERROR;
+    uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
+    if (ur != UACCESS_OK) return ur;
+    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
 
     char path[255] = {};
     if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11){
@@ -650,10 +542,11 @@ u64 syscall_openf(process_t *ctx){
     } else {
         memcpy(path, req_path, strlen(req_path) + 1);
     }
-    //TODO: Restrict access to own bundle, own fs and require privilege escalation for full-ish filesystem access
     file descriptor = {};
     FS_RESULT r = open_file(path, &descriptor);
-    if (!uaccess_copyout(ctx, udesc, &descriptor, sizeof(descriptor))) return FS_RESULT_DRIVER_ERROR;
+    if (r != FS_RESULT_SUCCESS) return r;
+    ur = copy_to_user(ctx, udesc, &descriptor, sizeof(descriptor));
+    if (ur != UACCESS_OK) return ur;
     return r;
 }
 
@@ -662,7 +555,8 @@ u64 syscall_readf(process_t *ctx){
     uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
     file descriptor = {};
-    if (!uaccess_copyin(ctx, &descriptor, udesc, sizeof(descriptor))) return 0;
+    uaccess_result_t ur = copy_from_user(ctx, &descriptor, udesc, sizeof(descriptor));
+    if (ur != UACCESS_OK) return ur;
 
     uint8_t tmp[4096];
     size_t done = 0;
@@ -674,13 +568,18 @@ u64 syscall_readf(process_t *ctx){
         size_t r = read_file(&descriptor, (char*)tmp, chunk);
         if (!r) break;
 
-        if (!uaccess_copyout(ctx, ubuf + done, tmp, r)) break;
+        ur = copy_to_user(ctx, ubuf + (uintptr_t)done, tmp, r);
+        if (ur != UACCESS_OK) {
+            if (!done) done = ur;
+            break;
+        }
 
         done += r;
         if (r < chunk) break;
     }
 
-    uaccess_copyout(ctx, udesc, &descriptor, sizeof(descriptor));
+    ur = copy_to_user(ctx, udesc, &descriptor, sizeof(descriptor));
+    if (ur != UACCESS_OK) return ur;
     return done;
 }
 
@@ -690,7 +589,8 @@ u64 syscall_writef(process_t *ctx){
     size_t size = (size_t)ctx->PROC_X2;
 
     file descriptor = {};
-    if (!uaccess_copyin(ctx, &descriptor, udesc, sizeof(descriptor))) return 0;
+    uaccess_result_t ur = copy_from_user(ctx, &descriptor, udesc, sizeof(descriptor));
+    if (ur != UACCESS_OK) return ur;
 
     uint8_t tmp[4096];
     size_t done = 0;
@@ -699,7 +599,11 @@ u64 syscall_writef(process_t *ctx){
         size_t chunk = size - done;
         if (chunk > sizeof(tmp)) chunk = sizeof(tmp);
 
-        if (!uaccess_copyin(ctx, tmp, ubuf + done, chunk)) break;
+        ur = copy_from_user(ctx, tmp, ubuf + (uintptr_t)done, chunk);
+        if (ur != UACCESS_OK) {
+            if (!done) done = ur;
+            break;
+        }
 
         size_t w = write_file(&descriptor, (const char*)tmp, chunk);
         if (!w) break;
@@ -708,7 +612,8 @@ u64 syscall_writef(process_t *ctx){
         if (w < chunk) break;
     }
 
-    uaccess_copyout(ctx, udesc, &descriptor, sizeof(descriptor));
+    ur = copy_to_user(ctx, udesc, &descriptor, sizeof(descriptor));
+    if (ur != UACCESS_OK) return ur;
     return done;
 }
 
@@ -720,15 +625,22 @@ u64 syscall_sreadf(process_t *ctx){
     char path[255] = {};
     size_t copied = 0;
     bool term = false;
-    if (!uaccess_copyinstr(ctx, path, sizeof(path), upath, &copied, &term)) return 0;
-    if (!term) return 0;
+    uaccess_result_t ur = copy_str_from_user(ctx, path, sizeof(path), upath, &copied, &term);
+    if (ur != UACCESS_OK) return ur;
+    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     void *kbuf = (void*)talloc(alloc_size);
-    if (!kbuf) return 0;
+    if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
 
     size_t r = simple_read(path, kbuf, size);
-    if (r) uaccess_copyout(ctx, ubuf, kbuf, r);
+    if (r) {
+        ur = copy_to_user(ctx, ubuf, kbuf, r);
+        if (ur != UACCESS_OK) {
+            temp_free(kbuf, alloc_size);
+            return ur;
+        }
+    }
 
     temp_free(kbuf, alloc_size);
     return r;
@@ -742,16 +654,18 @@ u64 syscall_swritef(process_t *ctx){
     char path[255] = {};
     size_t copied = 0;
     bool term = false;
-    if (!uaccess_copyinstr(ctx, path, sizeof(path), upath, &copied, &term)) return 0;
-    if (!term) return 0;
+    uaccess_result_t ur = copy_str_from_user(ctx, path, sizeof(path), upath, &copied, &term);
+    if (ur != UACCESS_OK) return ur;
+    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     void *kbuf = (void*)talloc(alloc_size);
-    if (!kbuf) return 0;
+    if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
 
-    if (!uaccess_copyin(ctx, kbuf, ubuf, size)){
+    ur = copy_from_user(ctx, kbuf, ubuf, size);
+    if (ur != UACCESS_OK){
         temp_free(kbuf, alloc_size);
-        return 0;
+        return ur;
     }
 
     size_t r = simple_write(path, kbuf, size);
@@ -762,7 +676,8 @@ u64 syscall_swritef(process_t *ctx){
 u64 syscall_closef(process_t *ctx){
     uintptr_t udesc = (uintptr_t)ctx->PROC_X0;
     file descriptor = {};
-    if (!uaccess_copyin(ctx, &descriptor, udesc, sizeof(descriptor))) return 0;
+    uaccess_result_t ur = copy_from_user(ctx, &descriptor, udesc, sizeof(descriptor));
+    if (ur != UACCESS_OK) return ur;
     close_file(&descriptor);
     return 0;
 }
@@ -776,21 +691,29 @@ u64 syscall_dir_list(process_t *ctx){
     char path[255] = {};
     size_t copied = 0;
     bool term = false;
-    if (!uaccess_copyinstr(ctx, path, sizeof(path), upath, &copied, &term)) return 0;
-    if (!term) return 0;
+    uaccess_result_t ur = copy_str_from_user(ctx, path, sizeof(path), upath, &copied, &term);
+    if (ur != UACCESS_OK) return ur;
+    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
 
     uint64_t off = 0;
-    if (!uaccess_copyin(ctx, &off, uoffset, sizeof(off))) return 0;
+    ur = copy_from_user(ctx, &off, uoffset, sizeof(off));
+    if (ur != UACCESS_OK) return ur;
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     void *kbuf = (void*)talloc(alloc_size);
-    if (!kbuf) return 0;
+    if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
 
     size_t r = list_directory_contents(path, kbuf, size, &off);
-    if (r) uaccess_copyout(ctx, ubuf, kbuf, r);
-    uaccess_copyout(ctx, uoffset, &off, sizeof(off));
-
+    if (r) {
+        ur = copy_to_user(ctx, ubuf, kbuf, r);
+        if (ur != UACCESS_OK) {
+            temp_free(kbuf, alloc_size);
+            return ur;
+        }
+    }
+    ur = copy_to_user(ctx, uoffset, &off, sizeof(off));
     temp_free(kbuf, alloc_size);
+    if (ur != UACCESS_OK) return ur;
     return r;
 }
 
