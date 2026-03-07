@@ -106,6 +106,7 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     else
         kprintf("[VIRTIO_GPU error] GPU did not return valid scanout data");
 
+    gpu_dev.common_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
     return true;
 }
 

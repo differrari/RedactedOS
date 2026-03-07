@@ -73,25 +73,25 @@ public:
     bool send_packet(sizedptr packet) override;
 
 private:
-    virtio_device vnp_net_dev;
+    virtio_device vnp_net_dev = {};
 
-    volatile virtq_desc* rx_desc;
-    volatile virtq_avail* rx_avail;
-    volatile virtq_used* rx_used;
-    uint16_t rx_qsz;
+    volatile virtq_desc* rx_desc = nullptr;
+    volatile virtq_avail* rx_avail = nullptr;
+    volatile virtq_used* rx_used = nullptr;
+    uint16_t rx_qsz = 0;
 
-    bool verbose;
-    bool mrg_rxbuf;
+    bool verbose = false;
+    bool mrg_rxbuf = false;
 
-    bool ctrl_vq;
-    bool ctrl_rx;
+    bool ctrl_vq = false;
+    bool ctrl_rx = false;
 
-    uint16_t header_size;
-    uint16_t mtu;
-    uint32_t speed_mbps;
-    LinkDuplex duplex;
-    char hw_name[8];
+    uint16_t header_size = sizeof(virtio_net_hdr_t);
+    uint16_t mtu = 1500;
+    uint32_t speed_mbps = 0xFFFFFFFFu;
+    LinkDuplex duplex = LINK_DUPLEX_UNKNOWN;
+    char hw_name[8] = {};
 
-    uint16_t last_used_receive_idx;
-    uint16_t last_used_sent_idx;
+    uint16_t last_used_receive_idx = 0;
+    uint16_t last_used_sent_idx = 0;
 };

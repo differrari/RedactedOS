@@ -19,7 +19,7 @@ public:
     size_t list_contents(const char *path, void* buf, size_t size, uint64_t *offset) override;
     void close_file(file* descriptor) override;
 private:
-    virtio_device np_dev;
+    virtio_device np_dev = {};
     size_t choose_version();
     uint32_t open(uint32_t fid);
     uint32_t attach();
@@ -29,11 +29,11 @@ private:
     uint64_t get_attribute(uint32_t fid, uint64_t mask);
     void p9_max_tag(p9_packet_header* header);
     void p9_inc_tag(p9_packet_header* header);
-    size_t max_msize;
-    uint32_t vfid;
-    uint32_t mid;
+    size_t max_msize = 0;
+    uint32_t vfid = 0;
+    uint32_t mid = 0;
 
-    uint32_t root;
+    uint32_t root = 0;
 
-    chashmap_t *open_files;
+    chashmap_t *open_files = nullptr;
 };

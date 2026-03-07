@@ -55,6 +55,7 @@ bool init_disk_device(){
         return false;
     }
 
+    blk_dev.common_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
     return true;
 }
 

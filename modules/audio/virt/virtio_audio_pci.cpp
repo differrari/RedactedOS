@@ -119,7 +119,9 @@ bool VirtioAudioDriver::init(){
 
     select_queue(&audio_dev, CONTROL_QUEUE);
 
-    return get_config();
+    bool ok = get_config();
+    if (ok) audio_dev.common_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
+    return ok;
 }
 
 bool VirtioAudioDriver::get_config(){
@@ -207,12 +209,16 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
 }
 
 void VirtioAudioDriver::send_buffer(sizedptr buf){
-    uint16_t qsz = audio_dev.common_cfg->queue_size;
+    if (TRANSMIT_QUEUE >= audio_dev.num_queues) return;
+    if (!audio_dev.queues[TRANSMIT_QUEUE].valid || !audio_dev.queues[TRANSMIT_QUEUE].size) return;
+
+    select_queue(&audio_dev, TRANSMIT_QUEUE);
+    uint16_t qsz = audio_dev.queues[TRANSMIT_QUEUE].size;
     uint16_t index = cmd_index % qsz;
     virtio_add_buffer(&audio_dev, index, buf.ptr, buf.size, true);
     cmd_index++;
-    volatile virtq_used* u = (volatile virtq_used*)dmap_pa_to_kva((paddr_t)audio_dev.common_cfg->queue_device);
-    while ((uint16_t)(cmd_index - u->idx) > 2) yield();
+    volatile virtq_used* u = audio_dev.queues[TRANSMIT_QUEUE].device;
+    while (u && (uint16_t)(cmd_index - u->idx) > 2) yield();
 }
 
 typedef struct virtio_snd_pcm_set_params { 

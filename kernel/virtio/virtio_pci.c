@@ -1,5 +1,6 @@
 #include "console/kio.h"
 #include "pci.h"
+#include "std/memory.h"
 #include "std/memory_access.h"
 #include "memory/page_allocator.h"
 #include "virtio_pci.h"
@@ -8,12 +9,6 @@
 
 //TODO implement proper virtqueue handling w/ descriptor allocation, reuse and support for multiple in-flight requests using used.ring completions
 
-#define VIRTIO_STATUS_RESET         0x0
-#define VIRTIO_STATUS_ACKNOWLEDGE   0x1
-#define VIRTIO_STATUS_DRIVER        0x2
-#define VIRTIO_STATUS_DRIVER_OK     0x4
-#define VIRTIO_STATUS_FEATURES_OK   0x8
-#define VIRTIO_STATUS_FAILED        0x80
 
 #define VIRTIO_PCI_CAP_COMMON_CFG   1
 #define VIRTIO_PCI_CAP_NOTIFY_CFG   2
@@ -21,8 +16,6 @@
 #define VIRTIO_PCI_CAP_DEVICE_CFG   4
 #define VIRTIO_PCI_CAP_PCI_CFG      5
 #define VIRTIO_PCI_CAP_VENDOR_CFG   9
-
-#define VIRTQ_DESC_F_NEXT 1
 
 struct virtio_pci_cap {
     uint8_t cap_vndr;
@@ -36,12 +29,8 @@ struct virtio_pci_cap {
     uint32_t length;
 };
 
-#define VIRTQ_DESC_F_NEXT 1
-#define VIRTQ_DESC_F_WRITE 2
-
-static bool virtio_verbose = false;
-
-static uint64_t feature_mask = 0;
+bool virtio_verbose = false;
+uint64_t feature_mask = 0;
 
 void virtio_enable_verbose(){
     virtio_verbose = true;
@@ -59,6 +48,17 @@ void virtio_set_feature_mask(uint64_t mask){
 }
 
 void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mmio_start, uint64_t *mmio_size) {
+    if (!dev) return;
+
+    dev->common_cfg = 0;
+    dev->notify_cfg = 0;
+    dev->device_cfg = 0;
+    dev->isr_cfg = 0;
+    dev->notify_off_multiplier = 0;
+
+    if (mmio_start) *mmio_start = 0;
+    if (mmio_size) *mmio_size = 0;
+
     uint64_t offset = read32(pci_addr + 0x34);
     while (offset) {
         uint64_t cap_addr = pci_addr + offset;
@@ -81,17 +81,17 @@ void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mm
             }
 
             if (cap->cfg_type == VIRTIO_PCI_CAP_COMMON_CFG){
-                dev->common_cfg = (struct virtio_pci_common_cfg*)PHYS_TO_VIRT((bar_base + cap->offset));
+                dev->common_cfg = (volatile struct virtio_pci_common_cfg*)PHYS_TO_VIRT((bar_base + cap->offset));
                 kprintfv("[VIRTIO] Common CFG @ %llx",dev->common_cfg);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_NOTIFY_CFG) {
-                dev->notify_cfg = (uint8_t*)PHYS_TO_VIRT((bar_base + cap->offset));
+                dev->notify_cfg = (volatile uint8_t*)PHYS_TO_VIRT((bar_base + cap->offset));
                 kprintfv("[VIRTIO] Notify CFG @ %llx",dev->notify_cfg);
-                dev->notify_off_multiplier = *(uint32_t*)PHYS_TO_VIRT((cap_addr + sizeof(struct virtio_pci_cap)));
+                dev->notify_off_multiplier = *(volatile uint32_t*)PHYS_TO_VIRT((cap_addr + sizeof(struct virtio_pci_cap)));
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_DEVICE_CFG){
-                dev->device_cfg = (uint8_t*)PHYS_TO_VIRT((bar_base + cap->offset));
+                dev->device_cfg = (volatile uint8_t*)PHYS_TO_VIRT((bar_base + cap->offset));
                 kprintfv("[VIRTIO] Device CFG @ %llx",dev->device_cfg);
             } else if (cap->cfg_type == VIRTIO_PCI_CAP_ISR_CFG){
-                dev->isr_cfg = (uint8_t*)PHYS_TO_VIRT((bar_base + cap->offset));
+                dev->isr_cfg = (volatile uint8_t*)PHYS_TO_VIRT((bar_base + cap->offset));
                 kprintfv("[VIRTIO] ISR CFG @ %llx",dev->isr_cfg);
             }
         }
@@ -101,13 +101,22 @@ void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mm
 }
 
 bool virtio_init_device(virtio_device *dev) {
+    if (!dev || !dev->common_cfg) return false;
 
-    struct virtio_pci_common_cfg* cfg = dev->common_cfg;
+    volatile struct virtio_pci_common_cfg* cfg = dev->common_cfg;
 
-    cfg->device_status = 0;
-    if (!wait((uint32_t*)&cfg->device_status, 0, false, 2000)) return false;
+    memset(dev->queues, 0, sizeof(dev->queues));
+    dev->num_queues = 0;
+    dev->current_queue = 0;
+    dev->negotiated_features = 0;
+    uint32_t timeout = 2000;
+    while (cfg->device_status != 0) {
+        if (timeout == 0) return false;
+        timeout--;
+        delay(1);
+    }
 
-    cfg->device_status |= VIRTIO_STATUS_ACKNOWLEDGE;
+    cfg->device_status = VIRTIO_STATUS_ACKNOWLEDGE;
     cfg->device_status |= VIRTIO_STATUS_DRIVER;
 
     cfg->device_feature_select = 0;
@@ -142,9 +151,18 @@ bool virtio_init_device(virtio_device *dev) {
     if (!dev->status_dma) return false;
     *dev->status_dma = 0;
 
-    uint32_t queue_index = 0;
-    uint32_t size;
-    while ((size = select_queue(dev,queue_index))){
+    dev->num_queues = cfg->num_queues;
+    if (dev->num_queues > VIRTIO_MAX_QUEUES) dev->num_queues = VIRTIO_MAX_QUEUES;
+
+    for (uint16_t queue_index = 0; queue_index < dev->num_queues; queue_index++) {
+        cfg->queue_select = queue_index;
+        asm volatile ("dsb sy" ::: "memory");
+        uint16_t size = cfg->queue_size;
+        dev->queues[queue_index].size = size;
+        dev->queues[queue_index].notify_off = cfg->queue_notify_off;
+        dev->queues[queue_index].notify_data = cfg->queue_notify_data;
+
+        if (!size) continue;
         uint64_t desc_sz  = 16ULL * size;
         uint64_t avail_sz = 6ULL + 2ULL * size;
         uint64_t used_sz = 6ULL + 8ULL * size;
@@ -158,46 +176,82 @@ bool virtio_init_device(virtio_device *dev) {
         void* used = palloc(used_alloc, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, true);
         if (!base || !avail || !used) return false;
 
-        dev->common_cfg->queue_desc = VIRT_TO_PHYS((uint64_t)base);
-        dev->common_cfg->queue_driver = VIRT_TO_PHYS((uint64_t)avail);
-        dev->common_cfg->queue_device = VIRT_TO_PHYS((uint64_t)used);
+        memset(base, 0, desc_alloc);
+        memset(avail, 0, avail_alloc);
+        memset(used, 0, used_alloc);
+        uint64_t desc_pa = VIRT_TO_PHYS((uint64_t)base);
+        uint64_t driver_pa = VIRT_TO_PHYS((uint64_t)avail);
+        uint64_t device_pa = VIRT_TO_PHYS((uint64_t)used);
 
-        volatile virtq_avail* A = (volatile virtq_avail*)(uintptr_t)avail;
-        A->flags = 0;
-        A->idx = 0;
+        cfg->queue_size = size;
+        cfg->queue_desc_lo = (uint32_t)desc_pa;
+        cfg->queue_desc_hi = (uint32_t)(desc_pa >> 32);
+        cfg->queue_driver_lo = (uint32_t)driver_pa;
+        cfg->queue_driver_hi = (uint32_t)(driver_pa >> 32);
+        cfg->queue_device_lo = (uint32_t)device_pa;
+        cfg->queue_device_hi = (uint32_t)(device_pa >> 32);
+        cfg->queue_enable = 1;
 
-        volatile virtq_used* U = (volatile virtq_used*)(uintptr_t)used;
-        U->flags = 0;
-        U->idx = 0;
-
-        dev->common_cfg->queue_enable = 1;
-        queue_index++;
+        dev->queues[queue_index].valid = true;
+        dev->queues[queue_index].desc_pa = desc_pa;
+        dev->queues[queue_index].driver_pa = driver_pa;
+        dev->queues[queue_index].device_pa = device_pa;
+        dev->queues[queue_index].desc = (volatile virtq_desc*)base;
+        dev->queues[queue_index].driver = (volatile virtq_avail*)avail;
+        dev->queues[queue_index].device = (volatile virtq_used*)used;
     }
 
-    kprintfv("Device initialized %i virtqueues",queue_index);
+    kprintfv("Device initialized %i virtqueues", dev->num_queues);
 
-    select_queue(dev,0);
+    for (uint16_t queue_index = 0; queue_index < dev->num_queues; queue_index++) {
+        if (!dev->queues[queue_index].valid) continue;
+        dev->current_queue = queue_index;
+        cfg->queue_select = queue_index;
+        asm volatile ("dsb sy" ::: "memory");
+        return true;
+    }
 
-    cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
-    return true;
+    return false;
 }
 
 uint32_t select_queue(virtio_device *dev, uint32_t index){
-    dev->common_cfg->queue_select = index;
+    if (!dev || !dev->common_cfg) return 0;
+    dev->current_queue = (uint16_t)index;
+    dev->common_cfg->queue_select = (uint16_t)index;
     asm volatile ("dsb sy" ::: "memory");
-    return dev->common_cfg->queue_size;
+    if (index >= VIRTIO_MAX_QUEUES) return dev->common_cfg->queue_size;
+    return dev->queues[index].size;
+}
+
+void virtio_notify(virtio_device *dev) {
+    if (!dev || !dev->notify_cfg) return;
+    uint16_t index = dev->current_queue;
+    if (index >= VIRTIO_MAX_QUEUES) return;
+    if (!dev->queues[index].valid) return;
+
+    uint32_t mul = dev->notify_off_multiplier;
+    if (!mul) mul = 1;
+
+    uint16_t off = dev->queues[index].notify_off;
+    uint16_t value = (dev->negotiated_features & (1ULL << VIRTIO_F_NOTIFICATION_DATA)) ? dev->queues[index].notify_data : index;
+
+    *(volatile uint16_t*)((uintptr_t)dev->notify_cfg + (uint64_t)off * (uint64_t)mul) = value;
 }
 
 bool virtio_send_nd(virtio_device *dev, const virtio_buf *bufs, uint16_t n) {
 
     if (!dev || !bufs || !n) return false;
 
-    uint16_t qsz = dev->common_cfg->queue_size;
-    if (!qsz || n > qsz) return false;
+    if (dev->current_queue >= VIRTIO_MAX_QUEUES) return false;
+    virtio_queue *queue = &dev->queues[dev->current_queue];
+    if (!queue->valid || !queue->size || n > queue->size) return false;
 
-    volatile virtq_desc* d = PHYS_TO_VIRT_P((virtq_desc*)dev->common_cfg->queue_desc);
-    volatile virtq_avail* a = PHYS_TO_VIRT_P((virtq_avail*)dev->common_cfg->queue_driver);
-    volatile virtq_used* u = PHYS_TO_VIRT_P((virtq_used*)dev->common_cfg->queue_device);
+    volatile virtq_desc* d = queue->desc;
+    volatile virtq_avail* a = queue->driver;
+    volatile virtq_used* u = queue->device;
+    if (!d || !a || !u) return false;
+
+    uint16_t qsz = queue->size;
     uint16_t last_used_idx = u->idx;
 
     for (uint16_t i = 0; i < n; ++i) {
@@ -227,9 +281,15 @@ bool virtio_send_nd(virtio_device *dev, const virtio_buf *bufs, uint16_t n) {
 }
 
 void virtio_add_buffer(virtio_device *dev, uint16_t index, uint64_t buf, uint32_t buf_len, bool host_to_dev) {
+    if (!dev) return;
+    if (dev->current_queue >= VIRTIO_MAX_QUEUES) return;
 
-    volatile virtq_desc* d = PHYS_TO_VIRT_P((virtq_desc*)dev->common_cfg->queue_desc);
-    volatile virtq_avail* a = PHYS_TO_VIRT_P((virtq_avail*)dev->common_cfg->queue_driver);
+    virtio_queue *queue = &dev->queues[dev->current_queue];
+    if (!queue->valid || !queue->size) return;
+
+    volatile virtq_desc* d = queue->desc;
+    volatile virtq_avail* a = queue->driver;
+    if (!d || !a) return;
     
     d[index].addr = VIRT_TO_PHYS(buf);
     d[index].len = buf_len;
@@ -237,7 +297,7 @@ void virtio_add_buffer(virtio_device *dev, uint16_t index, uint64_t buf, uint32_
     d[index].next = 0;
 
     asm volatile ("dmb ishst" ::: "memory");
-    a->ring[a->idx % dev->common_cfg->queue_size] = index;
+    a->ring[a->idx % queue->size] = index;
     asm volatile ("dmb ishst" ::: "memory");
     a->idx++;
     asm volatile ("dmb ishst" ::: "memory");

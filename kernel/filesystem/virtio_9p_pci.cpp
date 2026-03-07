@@ -46,6 +46,7 @@ bool Virtio9PDriver::init(uint32_t partition_sector){
         return false;
     }
 
+    np_dev.common_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
     return true;
 }
 
