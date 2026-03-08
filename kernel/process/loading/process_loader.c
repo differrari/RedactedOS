@@ -301,11 +301,13 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
 
     memset(&proc->mm, 0, sizeof(proc->mm));
     proc->mm.ttbr0 = ttbr;
-    proc->ttbr = ttbr;
+    proc->mm.ttbr0_phys = pt_va_to_pa(ttbr);
 
     paddr_t dest = palloc_inner(code_size, MEM_PRIV_USER, MEM_RW, true, false);
-    if (dest) register_allocation(proc->alloc_map, (void*)dest, code_size);
-    if (!dest) return 0;
+    if (!dest) {
+        reset_process(proc);
+        return 0;
+    }
     
     // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
     
@@ -329,7 +331,6 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
             //kprintf("WX overlap at page %llx", va);
             if (dest) pfree((void*)dmap_pa_to_kva(dest), code_size);
             reset_process(proc);
-            proc->state = STOPPED;
             return 0;
         }
         if (rw && !allow_rwx) ex = false;
@@ -347,8 +348,6 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
         if (data[i].permissions & MEM_EXEC) prot |= MEM_EXEC;
         mm_add_vma(&proc->mm, data[i].virt_mem.ptr, data[i].virt_mem.ptr + data[i].virt_mem.size, prot, VMA_KIND_ELF, 0);
     }
-    proc->use_va = true;
-    
     for (size_t i = 0; i < data_count; i++)
         map_section(proc, dmap_pa_to_kva(dest), min_map, data[i]);
 
@@ -364,12 +363,15 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     uaddr_t mmap_top = stack_limit - PAGE_SIZE;
 
     uaddr_t heap_start = (max_map + (PAGE_SIZE*4) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-    if (heap_start + PAGE_SIZE >= mmap_top) return 0;
+    if (heap_start >= mmap_top) {
+        reset_process(proc);
+        return 0;
+    }
     proc->heap = heap_start;
     proc->heap_phys = 0;
 
     proc->mm.heap_start = heap_start;
-    proc->mm.brk = heap_start + PAGE_SIZE;
+    proc->mm.brk = heap_start;
     proc->mm.mmap_top = mmap_top;
     proc->mm.mmap_cursor = mmap_top;
     proc->mm.brk_max = mmap_top - (PAGE_SIZE * MM_GAP_PAGES);
@@ -377,7 +379,10 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->mm.stack_limit = stack_limit;
     proc->mm.stack_commit = stack_commit;
 
-    if (proc->mm.brk_max <= proc->mm.brk) return 0;
+    if (proc->mm.brk_max < proc->mm.brk) {
+        reset_process(proc);
+        return 0;
+    }
 
     uint64_t total_pages = get_total_user_ram() / PAGE_SIZE;
     if (!total_pages) total_pages = 1;
@@ -387,11 +392,13 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->mm.cap_anon_pages = total_pages / 2;
     if (proc->mm.cap_anon_pages < 128) proc->mm.cap_anon_pages = 128;
 
-    mm_add_vma(&proc->mm, proc->mm.heap_start, proc->mm.brk, MEM_RW, VMA_KIND_HEAP, VMA_FLAG_DEMAND);
     mm_add_vma(&proc->mm, proc->mm.stack_limit, proc->mm.stack_top, MEM_RW, VMA_KIND_STACK, VMA_FLAG_DEMAND);
 
     paddr_t stack = palloc_inner(stack_commit_size, MEM_PRIV_USER, MEM_RW, true, false);
-    if (!stack) return 0;
+    if (!stack) {
+        reset_process(proc);
+        return 0;
+    }
 
     proc->stack = stack_top;
     proc->stack_phys = stack + stack_commit_size;
@@ -405,11 +412,14 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->stack_size = stack_commit_size;
     proc->mm.rss_stack_pages = stack_commit_size / PAGE_SIZE;
 
-    proc->ttbr = ttbr;
+    proc->heap = proc->mm.brk;
     proc->sp = proc->stack;
 
     proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
-    if (!proc->output) return 0;
+    if (!proc->output) {
+        reset_process(proc);
+        return 0;
+    }
     proc->output_size = 0;
 
     proc->pc = (uintptr_t)(entry);

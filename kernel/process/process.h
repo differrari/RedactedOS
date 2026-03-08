@@ -42,8 +42,6 @@ typedef struct process {
     uint64_t spsr; 
     //Not used in process saving
     uint16_t id;
-    uint16_t asid;
-    uint32_t asid_gen;
     uintptr_t stack;
     paddr_t stack_phys;
     uint64_t stack_size;
@@ -56,8 +54,6 @@ typedef struct process {
     bool focused;
     paddr_t code;
     size_t code_size;
-    bool use_va;
-    uintptr_t *ttbr;
     uaddr_t va;
     page_index *alloc_map;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;

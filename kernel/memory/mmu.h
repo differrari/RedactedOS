@@ -2,6 +2,8 @@
 
 #include "types.h"
 
+typedef struct mm_struct mm_struct;
+
 #define GRANULE_4KB 0x1000
 #define GRANULE_2MB 0x200000
 
@@ -28,10 +30,10 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
 void mmu_unmap_table(uint64_t *table, uint64_t va, uint64_t pa);
 void debug_mmu_address(uint64_t va);
 void mmu_enable_verbose();
-void mmu_swap_ttbr(uintptr_t* ttbr, uint16_t asid);
+void mmu_swap_ttbr(mm_struct *mm);
 void mmu_flush_asid(uint16_t asid);
-void mmu_asid_ensure(uint16_t *asid, uint32_t *asid_generation);
-void mmu_asid_release(uint16_t asid, uint32_t generation);
+void mmu_asid_ensure(mm_struct *mm);
+void mmu_asid_release(mm_struct *mm);
 bool mmu_unmap_and_get_pa(uint64_t *table, uint64_t va, uint64_t *pa);
 bool mmu_set_access_flag(uint64_t *table, uint64_t va);
 uintptr_t* mmu_default_ttbr();
@@ -42,7 +44,6 @@ void mmu_map_all(paddr_t pa);
 }
 #endif
 
-extern uintptr_t *pttbr;
 
 void mmu_unmap(uint64_t va, uint64_t pa);
 void mmu_init_kernel();

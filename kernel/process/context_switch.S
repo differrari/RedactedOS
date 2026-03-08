@@ -52,31 +52,7 @@ restore_context:
 3:
     ldr x17, [x18, #(8 * 32)]
     msr elr_el1, x17
-
-    adrp x17, pttbr_hw
-    add x17, x17, :lo12:pttbr_hw
-
-    ldr x17, [x17]
-
-    msr ttbr0_el1, x17
-
-    dsb ish
-    isb
-
-    ldr x17,[x18, #(8 * 17)]
+    ldr x17, [x18, #(8 * 17)]
     ldr x18, [x18, #(8 * 18)]
 
     eret
-    
-.global mmu_swap
-mmu_swap:
-    adrp x18, pttbr_hw
-    add x18, x18, :lo12:pttbr_hw
-    ldr x18, [x18]
-
-    msr ttbr0_el1, x18
-
-    dsb ish
-    isb
-    
-    ret

@@ -43,7 +43,6 @@ void save_return_address_interrupt(){
     save_pc_interrupt(cpec);
 }
 
-extern void mmu_swap();
 
 void switch_proc(ProcSwitchReason reason) {
     // kprintf("Stopping execution of process %i at %x",current_proc, processes[current_proc].spsr);
@@ -57,8 +56,8 @@ void switch_proc(ProcSwitchReason reason) {
     current_proc = next_proc;
     cpec = (uintptr_t)&processes[current_proc];
     timer_reset(processes[current_proc].priority);
-    if (processes[current_proc].ttbr) mmu_asid_ensure(&processes[current_proc].asid, &processes[current_proc].asid_gen);
-    mmu_swap_ttbr(processes[current_proc].ttbr, processes[current_proc].asid);
+    if (processes[current_proc].mm.ttbr0) mmu_asid_ensure(&processes[current_proc].mm);
+    mmu_swap_ttbr(processes[current_proc].mm.ttbr0 ? &processes[current_proc].mm : 0);
     process_restore();
 }
 
@@ -94,6 +93,7 @@ bool init_scheduler_module(){
 
 
 uintptr_t get_current_heap(){
+    if (processes[current_proc].mm.ttbr0) return processes[current_proc].mm.brk;
     return processes[current_proc].heap;
 }
 
@@ -120,6 +120,7 @@ void reset_process(process_t *proc){
     uint16_t pid = proc->id;
     int32_t exit_code = proc->exit_code;
     uint8_t state = proc->state;
+    bool counted = state != STOPPED;
 
     bool just_finished = processes[current_proc].id == pid;
     proc->sp = 0;
@@ -159,13 +160,13 @@ void reset_process(process_t *proc){
         proc->output_size = 0;
     }
 
-    if (proc->id != 1 && proc->ttbr) {
+    if (proc->mm.ttbr0) {
         for (uint16_t i = 0; i < proc->mm.vma_count; i++) {
             vma *m = &proc->mm.vmas[i];
             bool nofree = (m->flags & VMA_FLAG_NOFREE) != 0;
             for (uaddr_t va = m->start; va < m->end; va += GRANULE_4KB) {
                 paddr_t pa = 0;
-                if (!mmu_unmap_and_get_pa((uint64_t*)proc->ttbr, (uint64_t)va, &pa)) continue;
+                if (!mmu_unmap_and_get_pa((uint64_t*)proc->mm.ttbr0, (uint64_t)va, &pa)) continue;
                 if (!nofree) pfree((void*)dmap_pa_to_kva(pa), GRANULE_4KB);
                 if (m->kind == VMA_KIND_HEAP) {
                     if (proc->mm.rss_heap_pages) proc->mm.rss_heap_pages--;
@@ -180,23 +181,18 @@ void reset_process(process_t *proc){
     }
 
     if (proc->alloc_map) {
-        if (proc->id != 1) {
+        if (!proc->mm.ttbr0) {
             for (page_index *ind = proc->alloc_map; ind; ind = ind->header.next) ind->header.size = 0;
         }
         release_page_index(proc->alloc_map);
         proc->alloc_map = 0;
     }
-    if (proc->ttbr) {
-        if (pttbr == proc->ttbr) {
-            kprintf("[PROC error] Trying to free process while mapped", (uintptr_t)proc->ttbr);
-            return;
-        }
-        if (proc->asid) mmu_asid_release(proc->asid, proc->asid_gen);
-        mmu_free_ttbr(proc->ttbr);
-        proc->ttbr = 0;
+    if (proc->mm.ttbr0) {
+        mmu_asid_release(&proc->mm);
+        mmu_free_ttbr(proc->mm.ttbr0);
+        proc->mm.ttbr0 = 0;
+        proc->mm.ttbr0_phys = 0;
     }
-    proc->asid = 0;
-    proc->asid_gen = 0;
     if (proc->exposed_fs.init){
         unload_module(&proc->exposed_fs);
     }
@@ -210,8 +206,10 @@ void reset_process(process_t *proc){
 
     proc->heap = 0;
     proc->heap_phys = 0;
+    memset(&proc->mm, 0, sizeof(proc->mm));
 
     proc->win_id = 0;
+    if (counted && proc_count) proc_count--;
 
     if (!just_finished) {
         memset(proc, 0, sizeof(process_t));
@@ -229,8 +227,6 @@ void init_main_process(){
     cpec = (uintptr_t)&processes[0];
     proc->id = next_proc_index++;
     proc->alloc_map = make_page_index();
-    proc->asid = 0;
-    proc->asid_gen = 0;
     proc->state = BLOCKED;
     proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
     proc->heap_phys = (paddr_t)VIRT_TO_PHYS(proc->heap);
@@ -257,12 +253,11 @@ process_t* init_process(){
                 for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++) proc->name[k] = 0;
                 proc->state = READY;
                 proc->id = next_proc_index++;
-                proc->asid = 0;
-                proc->asid_gen = 0;
-                proc_count++;
+                proc->priority = PROC_PRIORITY_LOW;
                 proc->win_fb_va = 0;
                 proc->win_fb_phys = 0;
                 proc->win_fb_size = 0;
+                proc_count++;
                 return proc;
             }
         }
@@ -273,8 +268,6 @@ process_t* init_process(){
     reset_process(proc);
     for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++) proc->name[k] = 0;
     proc->id = next_proc_index++;
-    proc->asid = 0;
-    proc->asid_gen = 0;
     proc->state = READY;
     proc->priority = PROC_PRIORITY_LOW;
     proc->win_fb_va = 0;
@@ -294,18 +287,23 @@ void name_process(process_t *proc, const char *name){
 void stop_process(uint16_t pid, int32_t exit_code){
     disable_interrupt();
     process_t *proc = get_proc_by_pid(pid);
-    if (proc->state != READY) return;
+    if (!proc || proc->state != READY) {
+        enable_interrupt();
+        return;
+    }
+
+    bool current = proc == &processes[current_proc];
     proc->state = STOPPED;
     proc->exit_code = exit_code;
     if (proc->focused)
         sys_unset_focus();
-    if (proc->ttbr) {
-        mmu_swap_ttbr(0, 0);
-        mmu_swap();
-    }
+    if (current && proc->mm.ttbr0) mmu_swap_ttbr(0);
     reset_process(proc);
-    proc_count--;
     // kprintf("Stopped %i process %i",pid,proc_count);
+    if (!current) {
+        enable_interrupt();
+        return;
+    }
     switch_proc(HALT);
 }
 

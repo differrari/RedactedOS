@@ -26,10 +26,20 @@ typedef struct vma {
     uint8_t flags;
 } vma;
 
+typedef struct mm_free_range {
+    uaddr_t start;
+    uaddr_t end;
+} mm_free_range;
+
 typedef struct mm_struct {
     uintptr_t *ttbr0;
+    paddr_t ttbr0_phys;
+    uint16_t asid;
+    uint32_t asid_gen;
     vma vmas[MAX_VMAS];
     uint16_t vma_count;
+    mm_free_range mmap_free[MAX_VMAS];
+    uint16_t mmap_free_count;
     uaddr_t heap_start;
     uaddr_t brk;
     uaddr_t brk_max;
@@ -48,7 +58,6 @@ typedef struct mm_struct {
 
 vma* mm_find_vma(mm_struct *mm, uaddr_t va);
 bool mm_add_vma(mm_struct *mm, uaddr_t start, uaddr_t end, uint8_t prot, uint8_t kind, uint8_t flags);
-bool mm_update_vma(mm_struct *mm, uaddr_t start, uaddr_t end);
 bool mm_remove_vma(mm_struct *mm, uaddr_t start, uaddr_t end);
 uaddr_t mm_alloc_mmap(mm_struct *mm, size_t size, uint8_t prot, uint8_t kind, uint8_t flags);
 bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr);

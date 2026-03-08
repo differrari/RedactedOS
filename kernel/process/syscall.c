@@ -56,7 +56,7 @@ u64 syscall_malloc(process_t *ctx){
     uptr va = mm_alloc_mmap(&ctx->mm, alloc_size, MEM_RW, VMA_KIND_ANON, VMA_FLAG_DEMAND | VMA_FLAG_USERALLOC | VMA_FLAG_ZERO);
     if (!va) return 0;
 
-    mmu_flush_asid(ctx->asid);
+    mmu_flush_asid(ctx->mm.asid);
     return va;
 }
 
@@ -66,27 +66,27 @@ uptr syscall_palloc(process_t *ctx){
     u64 pages = count_pages(size, PAGE_SIZE);
     size_t alloc_size = pages * PAGE_SIZE;
 
-    if (ctx->use_va){
+    if (ctx->mm.ttbr0){
         if (ctx->mm.rss_anon_pages + pages > ctx->mm.cap_anon_pages) return 0;
         //TODO zalloc likely needs a dedicated syscall to request zeroed on fault explicitly
         uptr va = mm_alloc_mmap(&ctx->mm, alloc_size, MEM_RW, VMA_KIND_ANON, VMA_FLAG_DEMAND | VMA_FLAG_USERALLOC | VMA_FLAG_ZERO);
         if (!va) return 0;
-        mmu_flush_asid(ctx->asid);
+        mmu_flush_asid(ctx->mm.asid);
         return va;
     }
 
     paddr_t ptr = palloc_inner(alloc_size, MEM_PRIV_USER, MEM_RW, true, true);
     if(!ptr) return 0;
-    register_allocation(ctx->alloc_map, (void*)ptr, alloc_size);
-    mmu_flush_asid(ctx->asid);
-    return (uptr)dmap_pa_to_kva(ptr);
+    void *kva = (void*)dmap_pa_to_kva(ptr);
+    register_allocation(ctx->alloc_map, kva, alloc_size);
+    return (uptr)kva;
 }
 
 u64 syscall_pfree(process_t *ctx){
     uptr va = ctx->PROC_X0;
     if (!va) return SYSCALL_ERRNO(SYSCALL_EINVAL);
 
-    if (ctx->use_va) {
+    if (ctx->mm.ttbr0) {
         vma *m = mm_find_vma(&ctx->mm,va);
         if (!m) return SYSCALL_ERRNO(SYSCALL_EFAULT);
         if (m->kind != VMA_KIND_ANON) return SYSCALL_ERRNO(SYSCALL_EPERM);
@@ -98,42 +98,27 @@ u64 syscall_pfree(process_t *ctx){
 
         for (uintptr_t a = start; a < end; a += PAGE_SIZE) {
             uint64_t pa = 0;
-            if (!mmu_unmap_and_get_pa((uint64_t*)ctx->ttbr, a, &pa)) continue;
+            if (!mmu_unmap_and_get_pa((uint64_t*)ctx->mm.ttbr0, a, &pa)) continue;
             pfree((void*)dmap_pa_to_kva((paddr_t)pa), PAGE_SIZE);
             if (ctx->mm.rss_anon_pages) ctx->mm.rss_anon_pages--;
         }
 
-        mmu_flush_asid(ctx->asid);
+        mmu_flush_asid(ctx->mm.asid);
         return 0;
     }
 
-    int tr = 0;
-    uptr phys = mmu_translate(va, &tr);
-    if (tr) return SYSCALL_ERRNO(SYSCALL_EFAULT);
-
-    for (page_index *ind = ctx->alloc_map; ind; ind = ind->header.next) {
-        for (u64 i = 0; i < ind->header.size; i++) {
-            if ((uptr)ind->ptrs[i].ptr == phys) {
-                size_t size = ind->ptrs[i].size;
-                u64 pages = count_pages(size, PAGE_SIZE);
-                for (u64 p = 0; p < pages; p++) mmu_unmap_table(ctx->ttbr, va + (p * PAGE_SIZE), phys + (p * PAGE_SIZE));
-
-                mmu_flush_asid(ctx->asid);
-                pfree((void*)dmap_pa_to_kva((paddr_t)phys), size);
-                if (ctx->mm.rss_anon_pages >= pages) ctx->mm.rss_anon_pages -= pages;
-                else ctx->mm.rss_anon_pages = 0;
-
-                ind->ptrs[i] = ind->ptrs[ind->header.size - 1];
-                ind->header.size--;
-                return 0;
-            }
-        }
-    }
+    size_t size = get_alloc_size(ctx->alloc_map, (void*)va);
+    if (!size) return SYSCALL_ERRNO(SYSCALL_EFAULT);
+    u64 pages = count_pages(size, PAGE_SIZE);
+    free_registered(ctx->alloc_map, (void*)va);
+    if (ctx->mm.rss_anon_pages >= pages) ctx->mm.rss_anon_pages -= pages;
+    else ctx->mm.rss_anon_pages = 0;
+    return 0;
     return SYSCALL_ERRNO(SYSCALL_EINVAL);
 }
 
 u64 syscall_free(process_t *ctx){
-    if (ctx->use_va) return syscall_pfree(ctx);
+    if (ctx->mm.ttbr0) return syscall_pfree(ctx);
 
     void *ptr = (void*)ctx->PROC_X0;
     size_t size = (size_t)ctx->PROC_X1;
@@ -154,27 +139,36 @@ uptr syscall_brk(process_t *ctx) {
     if (!req) return old;
 
     uptr new_brk = (req + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-    uptr min_brk = ctx->mm.heap_start + PAGE_SIZE;
+    uptr min_brk = ctx->mm.heap_start;
     if (new_brk < min_brk) new_brk = min_brk;
 
     if (new_brk > ctx->mm.brk_max) return old;
 
     uptr mmap_guard = ctx->mm.mmap_cursor - (MM_GAP_PAGES*PAGE_SIZE);
+    if (ctx->mm.mmap_free_count) {
+        for (uint16_t i = 0; i < ctx->mm.mmap_free_count; i++) if (ctx->mm.mmap_free[i].start >= ctx->mm.brk && ctx->mm.mmap_free[i].start < mmap_guard) mmap_guard = ctx->mm.mmap_free[i].start - (MM_GAP_PAGES * PAGE_SIZE);
+    }
     if (new_brk > mmap_guard)return old;
 
     if (new_brk < old) {
         for (uptr va = new_brk; va < old; va += PAGE_SIZE) {
             uint64_t pa = 0;
-            if (!mmu_unmap_and_get_pa((uint64_t*)ctx->ttbr, va, &pa)) continue;
+            if (!mmu_unmap_and_get_pa((uint64_t*)ctx->mm.ttbr0, va, &pa)) continue;
             pfree((void*)dmap_pa_to_kva((paddr_t)pa), PAGE_SIZE);
             if (ctx->mm.rss_heap_pages) ctx->mm.rss_heap_pages--;
         }
     }
 
     if (new_brk != old) {
+        if (old == ctx->mm.heap_start && new_brk > ctx->mm.heap_start) mm_add_vma(&ctx->mm, ctx->mm.heap_start, new_brk, MEM_RW, VMA_KIND_HEAP, VMA_FLAG_DEMAND);
+        else if (new_brk == ctx->mm.heap_start) mm_remove_vma(&ctx->mm, ctx->mm.heap_start, old);
+        else {
+            vma *heap = mm_find_vma(&ctx->mm, ctx->mm.heap_start);
+            if (heap && heap->kind == VMA_KIND_HEAP) heap->end = new_brk;
+        }
         ctx->mm.brk = new_brk;
-        mm_update_vma(&ctx->mm, ctx->mm.heap_start, ctx->mm.brk);
-        mmu_flush_asid(ctx->asid);
+        ctx->heap = new_brk;
+        mmu_flush_asid(ctx->mm.asid);
     }
 
     return ctx->mm.brk;
@@ -251,6 +245,20 @@ u64 syscall_gpu_flush(process_t *ctx){
     draw_ctx tmp = {};
     uaccess_result_t ur = copy_from_user(ctx, &tmp, up, sizeof(tmp));
     if (ur != UACCESS_OK) return ur;
+
+    draw_ctx win = {};
+    get_window_ctx(&win);
+    if (!tmp.full_redraw) {
+        if (tmp.dirty_count > MAX_DIRTY_RECTS) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+        if (!win.width || !win.height) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+        for (uint32_t i = 0; i < tmp.dirty_count; i++) {
+            gpu_rect r = tmp.dirty_rects[i];
+            if (r.point.x >= win.width || r.point.y >= win.height) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+            if (r.size.width > win.width - r.point.x) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+            if (r.size.height > win.height - r.point.y) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+        }
+    }
+
     commit_frame(&tmp, 0);
     gpu_flush();
     return 0;

@@ -12,6 +12,7 @@
 #include "alloc/allocate.h"
 #include "std/memory.h"
 #include "sysregs.h"
+#include "memory/addr.h"
 
 bool init_bin(){
     return true;
@@ -96,9 +97,9 @@ process_t* execute(const char* prog_name, int argc, const char* argv[]){
                 size_t total = total_str + argvs;
                 if (total + 16 > proc->stack_size) args_ok = false;
                 if (args_ok) {
-                    char *nargvals = (char*)(PHYS_TO_VIRT_P(proc->stack_phys)-total);
+                    char *nargvals = (char*)((void*)dmap_pa_to_kva(proc->stack_phys)-total);
                     char *vnargvals = (char*)(proc->stack-total);
-                    char** nargv = (char**)(PHYS_TO_VIRT_P(proc->stack_phys)-argvs);
+                    char** nargv = (char**)((void*)dmap_pa_to_kva(proc->stack_phys)-argvs);
                     size_t strptr = 0;
                     for (int j = 0; j < argc; j++){
                         size_t strsize = strlen(argv[j]);

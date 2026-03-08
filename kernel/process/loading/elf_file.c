@@ -7,6 +7,7 @@
 #include "std/memory.h"
 #include "exceptions/irq.h"
 #include "sysregs.h"
+#include "memory/addr.h"
 
 typedef struct elf_header {
     char magic[4];//should be " ELF"
@@ -230,7 +231,7 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
                             uintptr_t sp = proc->stack - (plen+1);
                             paddr_t sp_phys = proc->stack_phys - (plen+1);
 
-                            char *nargvals = (char*)PHYS_TO_VIRT_P(sp_phys);
+                            char *nargvals = (char*)dmap_pa_to_kva(sp_phys);
 
                             memcpy(nargvals, bundle, blen);
                             *(char*)(nargvals + blen) = '/';
@@ -244,9 +245,9 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
                             sp_phys -= pad;
                             sp -= 2 * sizeof(uintptr_t);
                             sp_phys -= 2 * sizeof(uintptr_t);
-                            *(uintptr_t*)PHYS_TO_VIRT_P(sp_phys) = sp + 2 * sizeof(uintptr_t) + pad;
+                            *(uintptr_t*)dmap_pa_to_kva(sp_phys) = sp + 2 * sizeof(uintptr_t) + pad;
 
-                            *(uintptr_t*)PHYS_TO_VIRT_P(sp_phys + sizeof(uintptr_t)) = 0;
+                            *(uintptr_t*)dmap_pa_to_kva(sp_phys + sizeof(uintptr_t)) = 0;
 
                             proc->PROC_X1 = sp;
                             proc->sp = sp;
@@ -309,7 +310,7 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
     uintptr_t sp = proc->stack - (plen+1);
     paddr_t sp_phys = proc->stack_phys - (plen+1);
     
-    char *nargvals = (char*)PHYS_TO_VIRT_P(sp_phys);
+    char *nargvals = (char*)dmap_pa_to_kva(sp_phys);
     
     memcpy(nargvals, bundle, blen);
     *(char*)(nargvals+blen) = '/';
@@ -323,9 +324,9 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
     sp_phys -= pad;
     sp -= 2 * sizeof(uintptr_t);
     sp_phys -= 2 * sizeof(uintptr_t);
-    *(uintptr_t*)PHYS_TO_VIRT_P(sp_phys) = sp + 2 * sizeof(uintptr_t) + pad;
+    *(uintptr_t*)dmap_pa_to_kva(sp_phys) = sp + 2 * sizeof(uintptr_t) + pad;
     
-    *(uintptr_t*)PHYS_TO_VIRT_P(sp_phys + sizeof(uintptr_t)) = 0;
+    *(uintptr_t*)dmap_pa_to_kva(sp_phys + sizeof(uintptr_t)) = 0;
     
     proc->PROC_X1 = sp;
     proc->sp = sp;

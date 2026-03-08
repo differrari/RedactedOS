@@ -8,6 +8,7 @@
 
 bool access_ok_range(process_t *proc, uintptr_t addr, size_t size, bool want_write) {
     if (!proc) return false;
+    if (!proc->mm.ttbr0) return false;
     if (!size) return true;
 
     if ((addr >> 47) & 1) return false;

@@ -19,12 +19,19 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
     uint64_t stack_size = 0x10000;
 
     uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_KERNEL, MEM_RW, true);
+    if (!stack) {
+        reset_process(proc);
+        return 0;
+    }
     register_allocation(proc->alloc_map, (void*)stack, stack_size);
-    if (!stack) return 0;
 
     uintptr_t heap = (uintptr_t)palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
+    if (!heap) {
+        free_registered(proc->alloc_map, (void*)stack);
+        reset_process(proc);
+        return 0;
+    }
     register_allocation(proc->alloc_map, (void*)heap, PAGE_SIZE);
-    if (!heap) return 0;
 
     proc->stack = (stack + stack_size);
     proc->stack_size = stack_size;

@@ -61,9 +61,9 @@ static uint32_t asid_max;
 static uint32_t asid_next;
 static uint64_t asid_used[65536/64];
 
-uint64_t pttbr_hw;
-uint16_t pttbr_asid;
-uintptr_t *pttbr;
+static uint64_t pttbr_hw;
+static uint16_t pttbr_asid;
+static uintptr_t *pttbr;
 
 static inline uint64_t make_pte(uint64_t pa, uint64_t attr_index, uint8_t mem_attr, uint8_t level, uint64_t type) {
     uint64_t sh = (mem_attr & MEM_DEV) ? 0 : 0b11;
@@ -526,10 +526,7 @@ void mmu_init() {
     asm volatile("dsb ish");
     asm volatile("isb");
 
-    mmu_swap_ttbr(0, 0);
-    asm volatile("msr ttbr0_el1, %0" :: "r"((uint64_t)pttbr_hw));
-    asm volatile("dsb ish");
-    asm volatile("isb");
+    mmu_swap_ttbr(0);
 
     mmu_flush_all();
     mmu_flush_icache();
@@ -817,11 +814,18 @@ void debug_mmu_address(uint64_t va){
     return;
 }
 
-void mmu_swap_ttbr(uintptr_t* ttbr, uint16_t asid){
-    pttbr = ttbr ? ttbr : (uintptr_t*)kernel_ttbr0;
-    pttbr_asid = ttbr ? (asid & asid_mask) : 0;
-    uint64_t root_pa = pt_va_to_pa(pttbr) & PTE_ADDR_MASK;
-    pttbr_hw = ((uint64_t)pttbr_asid << asid_shift) | root_pa;
+void mmu_swap_ttbr(mm_struct *mm){
+    if (mm && mm->ttbr0) {
+        pttbr = mm->ttbr0;
+        pttbr_asid = mm->asid & asid_mask;
+        pttbr_hw = ((uint64_t)pttbr_asid << asid_shift) | (mm->ttbr0_phys & PTE_ADDR_MASK);
+    } else {
+        pttbr = (uintptr_t*)kernel_ttbr0;
+        pttbr_asid = 0;
+        pttbr_hw = pt_va_to_pa(pttbr) & PTE_ADDR_MASK;
+    }
+    asm volatile("msr ttbr0_el1, %0" :: "r"((uint64_t)pttbr_hw));
+    asm volatile("dsb ish\n\tisb" ::: "memory");
 }
 
 void mmu_flush_asid(uint16_t asid) {
@@ -831,10 +835,10 @@ void mmu_flush_asid(uint16_t asid) {
     asm volatile("dsb ish\n\tisb" ::: "memory");
 }
 
-void mmu_asid_ensure(uint16_t *asid, uint32_t *asid_generation) {
-    if (!asid || !asid_generation) return;
+void mmu_asid_ensure(mm_struct *mm) {
+    if (!mm) return;
     if (!asid_max) return;
-    if (*asid && *asid_generation == asid_gen) return;
+    if (mm->asid && mm->asid_gen == asid_gen) return;
 
     for (;;) {
         uint32_t scanned = 0;
@@ -849,8 +853,8 @@ void mmu_asid_ensure(uint16_t *asid, uint32_t *asid_generation) {
             if (asid_used[w] & (1ULL << b)) continue;
 
             asid_used[w] |= 1ULL << b;
-            *asid = (uint16_t)a;
-            *asid_generation = asid_gen;
+            mm->asid = (uint16_t)a;
+            mm->asid_gen = asid_gen;
             return;
         }
 
@@ -862,16 +866,22 @@ void mmu_asid_ensure(uint16_t *asid, uint32_t *asid_generation) {
     }
 }
 
-void mmu_asid_release(uint16_t asid, uint32_t asid_generation){
-    if (!asid) return;
+void mmu_asid_release(mm_struct *mm){
+    if (!mm || !mm->asid) return;
     if (!asid_max) return;
-    if (asid_generation != asid_gen) return;
+    if (mm->asid_gen != asid_gen) {
+        mm->asid = 0;
+        mm->asid_gen = 0;
+        return;
+    }
 
-    uint32_t a = (uint32_t)(asid & asid_mask);
+    uint32_t a = (uint32_t)(mm->asid & asid_mask);
     uint32_t w = a >> 6;
     uint32_t b = a & 63;
+    mmu_flush_asid(mm->asid);
     asid_used[w] &= ~(1ULL << b);
-    mmu_flush_asid(asid);
+    mm->asid = 0;
+    mm->asid_gen = 0;
 }
 
 bool mmu_unmap_and_get_pa(uint64_t *table, uint64_t va, uint64_t *pa) {
