@@ -150,8 +150,8 @@ void boot_mmu_setup(uint64_t board_type) {
     asm volatile("dsb ish");
     asm volatile("isb");
 
-    asm volatile("msr boot_ttbr0_l0_el1, %0" :: "r"((uint64_t)boot_ttbr0_l0 & PTE_ADDR_MASK));
-    asm volatile("msr boot_ttbr1_l0_el1, %0" :: "r"((uint64_t)boot_ttbr1_l0 & PTE_ADDR_MASK));
+    asm volatile("msr ttbr0_el1, %0" :: "r"((uint64_t)boot_ttbr0_l0 & PTE_ADDR_MASK));
+    asm volatile("msr ttbr1_el1, %0" :: "r"((uint64_t)boot_ttbr1_l0 & PTE_ADDR_MASK));
 
     uint64_t sctlr = 0;
     asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
