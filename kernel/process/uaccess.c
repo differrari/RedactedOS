@@ -2,9 +2,7 @@
 #include "memory/mm_process.h"
 #include "memory/mmu.h"
 #include "memory/addr.h"
-#include "process/process.h"
 #include "std/memory.h"
-#include "syscalls/errno.h"
 
 bool access_ok_range(process_t *proc, uintptr_t addr, size_t size, bool want_write) {
     if (!proc) return false;
@@ -44,12 +42,12 @@ uaccess_result_t copy_from_user(process_t *proc, void *dst, uintptr_t src, size_
         if (chunk > size) chunk = size;
 
         int st = 0;
-        uintptr_t pa =mmu_translate(src, &st);
+        uintptr_t pa =mmu_translate((uint64_t*)proc->mm.ttbr0, src, &st);
         if (st) {
             uint64_t esr = (0x24ULL << 26) | 0x7ULL;
             if (!mm_try_handle_page_fault(proc, src, esr)) return UACCESS_EFAULT;
 
-            pa = mmu_translate(src, &st);
+            pa = mmu_translate((uint64_t*)proc->mm.ttbr0, src, &st);
             if (st) return UACCESS_EFAULT;
         }
 
@@ -75,13 +73,12 @@ uaccess_result_t copy_to_user(process_t *proc, uintptr_t dst, const void *src, s
         if (chunk > size) chunk = size;
 
         int st = 0;
-        uintptr_t pa = mmu_translate(dst, &st);
+        uintptr_t pa = mmu_translate((uint64_t*)proc->mm.ttbr0, dst, &st);
         if (st) {
-            uint64_t esr = (0x24ULL << 26) | 0x7ULL;
-            esr |= (1 << 6);
+            uint64_t esr = (0x24ULL << 26) | 0x7ULL | (1 << 6);
             if (!mm_try_handle_page_fault(proc, dst, esr)) return UACCESS_EFAULT;
 
-            pa = mmu_translate(dst, &st);
+            pa = mmu_translate((uint64_t*)proc->mm.ttbr0, dst, &st);
             if (st) return UACCESS_EFAULT;
         }
 
@@ -95,26 +92,38 @@ uaccess_result_t copy_to_user(process_t *proc, uintptr_t dst, const void *src, s
 }
 
 uaccess_result_t copy_str_from_user(process_t *proc, char *dst, size_t dst_size, uintptr_t src, size_t *out_copied, bool *out_terminated) {
-    if (!dst || dst_size < 2) return UACCESS_EINVAL;
+    if (out_copied) *out_copied = 0;
+    if (out_terminated) *out_terminated = false;
+    if (!dst || !dst_size) return UACCESS_EINVAL;
+    if (!proc || !proc->mm.ttbr0) return UACCESS_EFAULT;
+    if ((src >> 47) & 1) return UACCESS_EFAULT;
 
     size_t pos = 0;
-    bool term = false;
 
     while (pos + 1 < dst_size) {
-        uint8_t c = 0;
-        uaccess_result_t r = copy_from_user(proc, &c, src + pos, 1);
-        if (r != UACCESS_OK) return r;
-        dst[pos] = (char)c;
-        pos++;
-        if(!c) {
-            term = true;
-            break;
+        size_t chunk = PAGE_SIZE - ((src + pos) & (PAGE_SIZE - 1));
+        if (chunk > dst_size - 1 - pos) chunk = dst_size - 1 - pos;
+        if (!access_ok_range(proc, src + pos, chunk, false)) return UACCESS_EFAULT;
+
+        int st = 0;
+        uintptr_t pa = mmu_translate((uint64_t*)proc->mm.ttbr0, src + pos, &st);
+        if (st) {
+            if (!mm_try_handle_page_fault(proc, src + pos, (0x24ULL << 26) | 0x7ULL)) return UACCESS_EFAULT;
+            pa = mmu_translate((uint64_t*)proc->mm.ttbr0, src + pos, &st);
+            if (st) return UACCESS_EFAULT;
         }
+        memcpy(dst + pos, (const void*)dmap_pa_to_kva((paddr_t)pa), chunk);
+        for (size_t i = 0; i < chunk; i++) {
+            if (dst[pos + i]) continue;
+            if (out_copied) *out_copied = pos + i +1;
+            if (out_terminated) *out_terminated = true;
+            return UACCESS_OK;
+        }
+
+        pos += chunk;
     }
 
-    if (!term) dst[dst_size-1] = 0; 
-
-    if (out_copied) *out_copied = term ? pos : (dst_size - 1);
-    if (out_terminated) *out_terminated = term;
-    return term ? UACCESS_OK : UACCESS_ENAMETOOLONG;
+    dst[dst_size-1] = 0;
+    if (out_copied) *out_copied = dst_size - 1;
+    return UACCESS_ENAMETOOLONG;
 }

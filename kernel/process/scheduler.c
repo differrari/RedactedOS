@@ -46,6 +46,7 @@ void save_return_address_interrupt(){
 
 void switch_proc(ProcSwitchReason reason) {
     // kprintf("Stopping execution of process %i at %x",current_proc, processes[current_proc].spsr);
+    if (mmu_ttbr0_user_enabled()) panic("switch_proc with user ttbr0 active", current_proc);
     if (proc_count == 0)
         panic("No processes active", 0);
     int next_proc = (current_proc + 1) % MAX_PROCS;
@@ -66,6 +67,10 @@ void save_syscall_return(uint64_t value){
 }
 
 void process_restore(){
+    if ((processes[current_proc].spsr & 0xF) == 0) {
+        if (!processes[current_proc].mm.ttbr0) panic("process_restore user process without ttbr0", processes[current_proc].id);
+        mmu_ttbr0_enable_user();
+    } else mmu_ttbr0_disable_user();
     restore_context(cpec);
 }
 

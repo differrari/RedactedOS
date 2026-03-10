@@ -74,18 +74,19 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
 
     bool usb_available = can_init_usb ? load_module(&usb_module) : false;
     bool network_available = false;
+    bool audio_available = false;
     if (BOARD_TYPE == 1){
         if (system_config.use_net)
             network_available = load_module(&net_module);
 
-        load_module(&audio_module);
+        audio_available = load_module(&audio_module);
     }
 
     kprint("Kernel initialization finished");
     
     kprint("Starting processes");
 
-    if (BOARD_TYPE == 1) init_audio_mixer();
+    if (BOARD_TYPE == 1 && audio_available) init_audio_mixer();
     
     init_filesystem();
 

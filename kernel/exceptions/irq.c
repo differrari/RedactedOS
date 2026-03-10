@@ -83,6 +83,7 @@ void disable_interrupt(){
 
 void irq_el1_handler() {
     save_return_address_interrupt();
+    mmu_ttbr0_disable_user();
     syscall_depth++;
     uint32_t irq;
     if (RPI_BOARD == 3){

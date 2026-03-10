@@ -625,7 +625,7 @@ void kfree(void* ptr, size_t size) {
         phys = VIRT_TO_PHYS(va);
     } else {
         int tr = 0;
-        phys = mmu_translate(va, &tr);
+        phys = mmu_translate(0, va, &tr);
         if(tr){
             kprintf("[kfree] unmapped ptr=%llx size=%llx", (uint64_t)va, (uint64_t)size);
             panic("kfree unmapped pointer", va);
@@ -644,7 +644,7 @@ void kfree(void* ptr, size_t size) {
             phys_tag = VIRT_TO_PHYS(va - ALLOC_TAG_SIZE);
         } else {
             int tr = 0;
-            phys_tag = mmu_translate(va - ALLOC_TAG_SIZE, &tr);
+            phys_tag = mmu_translate(0, va - ALLOC_TAG_SIZE, &tr);
             if(tr) phys_tag = 0;
         }
 

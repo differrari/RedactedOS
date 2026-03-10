@@ -18,18 +18,6 @@
 #include "memory/talloc.h"
 #include "memory/va_layout.h"
 
-#define PAGE_TABLE_ENTRIES 512
-#define PD_TABLE 0b11
-#define PD_BLOCK 0b01
-
-#define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL
-#define PTE_AF (1ULL << 10)
-#define PTE_NG (1ULL << 11)
-#define PTE_SH_SHIFT 8
-#define PTE_AP_SHIFT 6
-#define PTE_ATTR_SHIFT 2
-#define PTE_PXN (1ULL << 53)
-#define PTE_UXN (1ULL << 54)
 extern char kcode_end;
 
 extern char __text_start[];
@@ -47,6 +35,8 @@ extern char __kstack_top[];
 
 static uintptr_t *kernel_ttbr0;
 static uintptr_t *kernel_ttbr1;
+static uint64_t kernel_ttbr0_hw;
+static bool ttbr0_user_on;
 
 static bool mmu_verbose;
 static inline void mmu_flush_icache();
@@ -520,6 +510,7 @@ void mmu_init() {
 
     talloc_enable_high_va();
     page_alloc_enable_high_va();
+    kernel_ttbr0_hw = pt_va_to_pa(kernel_ttbr0) & PTE_ADDR_MASK;
 
     uint64_t ttbr1_pa = pt_va_to_pa(kernel_ttbr1) & PTE_ADDR_MASK;
     asm volatile("msr ttbr1_el1, %0" :: "r"(ttbr1_pa));
@@ -663,7 +654,7 @@ void register_proc_memory(uint64_t va, paddr_t pa, uint8_t attributes, uint8_t l
     mmu_flush_icache();
 }
 
-uintptr_t mmu_translate(uintptr_t va, int *status){
+uintptr_t mmu_translate(uint64_t *root, uintptr_t va, int *status){
     int dummy;
     if (!status) status = &dummy;
 
@@ -672,9 +663,10 @@ uintptr_t mmu_translate(uintptr_t va, int *status){
         return 0;
     }
 
-    uint64_t *root;
-    if (((va >> 47) & 1) != 0) root = (uint64_t*)kernel_ttbr1;
-    else root = (uint64_t*)(pttbr ? pttbr : kernel_ttbr0);
+    if (!root) {
+        if (((va >> 47) & 1) != 0) root = (uint64_t*)kernel_ttbr1;
+        else root = (uint64_t*)(pttbr ? pttbr : kernel_ttbr0);
+    }
 
     if (!root){
         *status = MMU_TR_ERR_PARAM;
@@ -748,7 +740,7 @@ uintptr_t mmu_translate(uintptr_t va, int *status){
 
 void debug_mmu_address(uint64_t va){
     int tr = 0;
-    uintptr_t pa = mmu_translate((uintptr_t)va, &tr);
+    uintptr_t pa = mmu_translate(0, (uintptr_t)va, &tr);
 
     uart_raw_puts("[mmu dbg] VA=");
     uart_puthex(va);
@@ -814,6 +806,24 @@ void debug_mmu_address(uint64_t va){
     return;
 }
 
+void mmu_ttbr0_disable_user() {
+    asm volatile("msr ttbr0_el1, %0" :: "r"((uint64_t)kernel_ttbr0_hw));
+    asm volatile("dsb ish\n\tisb" ::: "memory");
+    ttbr0_user_on = false;
+}
+
+void mmu_ttbr0_enable_user() {
+    uint64_t hw = kernel_ttbr0_hw;
+    if (pttbr && pttbr != (uintptr_t*)kernel_ttbr0) hw = pttbr_hw;
+    asm volatile("msr ttbr0_el1, %0" :: "r"(hw));
+    asm volatile("dsb ish\n\tisb" ::: "memory");
+    ttbr0_user_on = pttbr && pttbr != (uintptr_t*)kernel_ttbr0;
+}
+
+bool mmu_ttbr0_user_enabled() {
+    return ttbr0_user_on;
+}
+
 void mmu_swap_ttbr(mm_struct *mm){
     if (mm && mm->ttbr0) {
         pttbr = mm->ttbr0;
@@ -822,10 +832,9 @@ void mmu_swap_ttbr(mm_struct *mm){
     } else {
         pttbr = (uintptr_t*)kernel_ttbr0;
         pttbr_asid = 0;
-        pttbr_hw = pt_va_to_pa(pttbr) & PTE_ADDR_MASK;
+        pttbr_hw = kernel_ttbr0_hw;
     }
-    asm volatile("msr ttbr0_el1, %0" :: "r"((uint64_t)pttbr_hw));
-    asm volatile("dsb ish\n\tisb" ::: "memory");
+    mmu_ttbr0_disable_user();
 }
 
 void mmu_flush_asid(uint16_t asid) {

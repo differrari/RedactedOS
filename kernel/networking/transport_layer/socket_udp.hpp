@@ -116,16 +116,25 @@ class UDPSocket : public Socket {
     }
 
     static uint32_t dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uintptr_t frame_ptr, uint32_t frame_len, uint16_t src_port, uint16_t dst_port) {
+        UDPSocket* first = nullptr;
 
         for (UDPSocket* s = s_list_head; s; s = s->next) {
-            if (!socket_matches_dst(s, ifindex, ipver, dst_ip_addr, dst_port))
+            if (!socket_matches_dst(s, ifindex, ipver, dst_ip_addr, dst_port)) continue;
+            if (!first) {
+                first = s;
                 continue;
+            }
 
             uintptr_t copy = (uintptr_t)malloc(frame_len);
             if (!copy) continue;
 
             memcpy((void*)copy, (const void*)frame_ptr, frame_len);
             s->on_receive(ipver, src_ip_addr, src_port, copy, frame_len);
+        }
+
+        if (first) {
+            first->on_receive(ipver, src_ip_addr, src_port, frame_ptr, frame_len);
+            return frame_len;
         }
         if (frame_ptr && frame_len) free_sized((void*)frame_ptr, frame_len);
         return frame_len;
@@ -144,14 +153,6 @@ class UDPSocket : public Socket {
             free_sized((void*)ring[r_head].ptr, ring[r_head].size);
             r_head = (r_head + 1) % UDP_RING_CAP;
         }
-        uintptr_t copy = (uintptr_t)malloc(len);
-        if (!copy) {
-            if (ptr && len) free_sized((void*)ptr, len);
-            return;
-        }
-
-        memcpy((void*)copy, (void*)ptr, len);
-        if (ptr && len) free_sized((void*)ptr, len);
 
         int nexti = (r_tail + 1) % UDP_RING_CAP;
         if (nexti == r_head) {
@@ -160,7 +161,7 @@ class UDPSocket : public Socket {
             r_head = (r_head + 1) % UDP_RING_CAP;
         }
 
-        ring[r_tail].ptr = copy;
+        ring[r_tail].ptr = ptr;
         ring[r_tail].size = len;
         rx_bytes += len;
 

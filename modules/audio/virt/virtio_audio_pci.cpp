@@ -170,40 +170,45 @@ bool VirtioAudioDriver::config_streams(uint32_t streams){
     uint8_t *streams_bytes = (uint8_t*)(resp + sizeof(virtio_snd_hdr));
     
     virtio_snd_pcm_info *stream_info = (virtio_snd_pcm_info*)streams_bytes;
+    bool found_output = false;
     for (uint32_t stream = 0; stream < streams; stream++){
         uint64_t format = read_unaligned64(&stream_info[stream].formats);
         uint64_t rate = read_unaligned64(&stream_info[stream].rates);
 
-        kprintf("[VIRTIO_AUDIO] Stream %i (%s): Features %x. Format %x. Sample %x. Channels %i-%i",stream, (uintptr_t)(stream_info[stream].direction ? "IN" : "OUT"), stream_info[stream].features, format, rate, stream_info->channels_min, stream_info->channels_max);
+        kprintf("[VIRTIO_AUDIO] Stream %i (%s): Features %x. Format %x. Sample %x. Channels %i-%i",stream, (uintptr_t)(stream_info[stream].direction ? "IN" : "OUT"), stream_info[stream].features, format, rate, stream_info[stream].channels_min, stream_info[stream].channels_max);
 
-        if (!(format & (1 << SND_SAMPLE_FORMAT))){
-            kprintf("[VIRTIO_AUDIO implementation error] stream does not support int16 format");
-            return false;
-        }
+        if (stream_info[stream].direction != VIRTIO_SND_D_OUTPUT) continue;
+        if (!(format & (1 << SND_SAMPLE_FORMAT))) continue;
 
         uint32_t sample_rate = 44100;
         if (!(rate & (1 << SND_SAMPLE_RATE))){
             kprintf("[VIRTIO_AUDIO implementation error] stream does not support 44.1 kHz sample rate");
-            return false;
+            continue;
         }
 
-        uint8_t channels = stream_info->channels_max;
+        uint8_t channels = stream_info[stream].channels_max;
 
         if (!stream_set_params(stream, stream_info[stream].features, SND_SAMPLE_FORMAT, SND_SAMPLE_RATE, channels)){
             kprintf("[VIRTIO_AUDIO error] Failed to configure stream %i",stream);
+            continue;
         }
 
-        if (stream_info[stream].direction == VIRTIO_SND_D_OUTPUT){
-            out_dev = new OutputAudioDevice();
-            out_dev->stream_id = stream;
-            out_dev->rate = sample_rate;
-            out_dev->channels = channels;
-            out_dev->packet_size = sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
-            out_dev->buf_size = TOTAL_BUF_SIZE/SND_SAMPLE_BYTES;
-            out_dev->header_size = sizeof(virtio_snd_pcm_xfer);
-            out_dev->populate();
-        }
+        out_dev = new OutputAudioDevice();
+        out_dev->stream_id = stream;
+        out_dev->rate = sample_rate;
+        out_dev->channels = channels;
+        out_dev->packet_size = sizeof(virtio_snd_pcm_xfer) + TOTAL_BUF_SIZE;
+        out_dev->buf_size = TOTAL_BUF_SIZE/SND_SAMPLE_BYTES;
+        out_dev->header_size = sizeof(virtio_snd_pcm_xfer);
+        out_dev->populate();
+        found_output = true;
+        break;
     }
+
+    kfree(cmd, sizeof(virtio_snd_query_info));
+    kfree((void*)resp, resp_size);
+    if (!found_output) return false;
+
     select_queue(&audio_dev, TRANSMIT_QUEUE);
     return true;
 }

@@ -7,6 +7,21 @@ typedef struct mm_struct mm_struct;
 #define GRANULE_4KB 0x1000
 #define GRANULE_2MB 0x200000
 
+#define MMU_MAP_EXEC 0x01
+
+#define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL
+#define PTE_PXN (1ULL << 53)
+#define PTE_UXN (1ULL << 54)
+#define PTE_AF (1ULL << 10)
+#define PTE_NG (1ULL << 11)
+#define PTE_SH_SHIFT 8
+#define PTE_AP_SHIFT 6
+#define PTE_ATTR_SHIFT 2
+
+#define PAGE_TABLE_ENTRIES 512
+#define PD_TABLE 0b11
+#define PD_BLOCK 0b01
+
 uint64_t* mmu_alloc();
 void mmu_init();
 #ifdef __cplusplus
@@ -31,6 +46,9 @@ void mmu_unmap_table(uint64_t *table, uint64_t va, uint64_t pa);
 void debug_mmu_address(uint64_t va);
 void mmu_enable_verbose();
 void mmu_swap_ttbr(mm_struct *mm);
+void mmu_ttbr0_disable_user();
+void mmu_ttbr0_enable_user();
+bool mmu_ttbr0_user_enabled();
 void mmu_flush_asid(uint16_t asid);
 void mmu_asid_ensure(mm_struct *mm);
 void mmu_asid_release(mm_struct *mm);
@@ -38,7 +56,7 @@ bool mmu_unmap_and_get_pa(uint64_t *table, uint64_t va, uint64_t *pa);
 bool mmu_set_access_flag(uint64_t *table, uint64_t va);
 uintptr_t* mmu_default_ttbr();
 void mmu_free_ttbr(uintptr_t *ttbr);
-uintptr_t mmu_translate(uintptr_t va, int *status);
+uintptr_t mmu_translate(uint64_t *root, uintptr_t va, int *status);
 void mmu_map_all(paddr_t pa);
 #ifdef __cplusplus
 }

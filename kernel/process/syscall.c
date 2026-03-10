@@ -813,7 +813,7 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
 
     for (uint8_t depth = 1; depth < 10 && fp; depth++) {
         int tr_ra = 0;
-        uintptr_t ra_pa = mmu_translate(fp + 8, &tr_ra);
+        uintptr_t ra_pa = mmu_translate(0, fp + 8, &tr_ra);
         if (tr_ra) return;
 
         uintptr_t return_address = (*(uintptr_t*)dmap_pa_to_kva((paddr_t)ra_pa));
@@ -822,7 +822,7 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
         if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
             kprintf("%i: caller address: %llx", depth, return_address);
         int tr = 0;
-        uintptr_t fp_pa = mmu_translate(fp, &tr);
+        uintptr_t fp_pa = mmu_translate(0, fp, &tr);
         if (tr) return;
         fp = *(uintptr_t*)dmap_pa_to_kva((paddr_t)fp_pa);
     }
@@ -872,6 +872,7 @@ void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
 
 void sync_el0_handler_c(){
     save_return_address_interrupt();
+    mmu_ttbr0_disable_user();
 
     syscall_depth++;
 #if TEST
