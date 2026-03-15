@@ -311,26 +311,14 @@ static int tracert_v6(file *fd, const tr_opts_t *o) {
 }
 
 int run_tracert(int argc, char *argv[]) {
-    uint16_t pid = get_current_proc_pid();
-    string p = string_format("/proc/%u/out", pid);
-    file fd = (file){0};
-    open_file(p.data, &fd);
-    string_free(p);
+    file fd = (file){.id = FD_OUT};
 
     tr_opts_t o;
     if (!parse_args(argc, argv, &o)) {
         help(&fd);
-        close_file(&fd);
         return 2;
     }
 
-    if (o.ver == IP_VER6) {
-        int rc = tracert_v6(&fd, &o);
-        close_file(&fd);
-        return rc;
-    }
-
-    int rc = tracert_v4(&fd, &o);
-    close_file(&fd);
-    return rc;
+    if (o.ver == IP_VER6) return tracert_v6(&fd, &o);
+    return tracert_v4(&fd, &o);
 }

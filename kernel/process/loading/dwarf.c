@@ -3,6 +3,8 @@
 #include "console/kio.h"
 #include "std/memory_access.h"
 #include "std/string.h"
+#include "std/memory.h"
+#define DWARF_ENTRY_CAP 256
 
 typedef struct {
     uint32_t unit_length;
@@ -160,12 +162,13 @@ uintptr_t decode_address(uint8_t **p, uint8_t address_size) {
     return result;
 }
 
-uint64_t type_codes[256];
-uint64_t form_codes[256];
 
-uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, size_t str_size, const char *array[]){
+uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, size_t str_size, uint64_t type_codes[DWARF_ENTRY_CAP], uint64_t form_codes[DWARF_ENTRY_CAP], const char *array[DWARF_ENTRY_CAP]){
 	uint8_t *p = (uint8_t*)ptr;
+	memset(type_codes, 0, sizeof(uint64_t) * DWARF_ENTRY_CAP);
+	memset(form_codes, 0, sizeof(uint64_t) * DWARF_ENTRY_CAP);
 	uint8_t directory_entry_format_count = *p++;
+	if (directory_entry_format_count > DWARF_ENTRY_CAP) return ptr;
 	// kprintf("Directory formats %i at %x",directory_entry_format_count, ptr);
 	
 	for (uint8_t i = 0; i < directory_entry_format_count; i++){
@@ -184,7 +187,7 @@ uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, siz
 
             const char *str = NULL;
 
-			switch (form_code) {
+			switch (form_code) { //should it have smt like 'p += n;' ? TODO
 				case DW_FORM_block: decode_uleb128(&p); break;
 				case DW_FORM_block1: p += 1; break;
 				case DW_FORM_block2: p += 2; break;
@@ -200,13 +203,13 @@ uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, siz
 					uint32_t offset = read_unaligned32(p);
 					// kprintf("Offset %x",offset);
 					p += 4;
-					if (offset > str_size){
+					if (offset >= str_size){
 						kprintf("Trying to read outside of section %x",offset);
 						return ptr;
 					}
 					str = (const char *)(debug_line_str_base + offset);
 					// kprintf("Directory %s", str);
-					if (array) array[i] = str;
+					if (array && (i + 1) < DWARF_ENTRY_CAP) array[i+1] = str;
 					break;
 				}
 				case DW_FORM_sdata: decode_sleb128(&p); break;
@@ -214,7 +217,7 @@ uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, siz
 				case DW_FORM_string: 
 					str = (const char *)p;
 					// kprintf("Directory %s", str);
-					if (array) array[i] = str;
+					if (array && (i + 1) < DWARF_ENTRY_CAP) array[i + 1] = str;
 					p += strlen(str) + 1;
 				break;
 				case DW_FORM_strp: p += 4; break;
@@ -230,9 +233,12 @@ uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, siz
 	return (uintptr_t)p;
 }
 
-const char *files[256];
 
 debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_line_str_base, size_t str_size, uintptr_t address){
+	const char *unknown_file = "?";
+	const char *files[DWARF_ENTRY_CAP] = {0};
+	uint64_t type_codes[DWARF_ENTRY_CAP] = {0};
+	uint64_t form_codes[DWARF_ENTRY_CAP] = {0};
 
 	uintptr_t end_section = ptr + size;
 
@@ -251,7 +257,11 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 			.isa = 0,
 			.discriminator = 0
 		};
+		if (ptr + sizeof(dwarf_debug_line_header) > end_section) return (debug_line_info){};
 		dwarf_debug_line_header *hdr = (dwarf_debug_line_header*)ptr;
+		uintptr_t unit_end = (uintptr_t)&hdr->unit_length + sizeof(hdr->unit_length) + hdr->unit_length;
+		if (unit_end <= ptr || unit_end > end_section) return (debug_line_info){};
+		if (!hdr->line_range || !hdr->opcode_base) return (debug_line_info){};
 
 		state.is_stmt = hdr->default_is_stmt;
 
@@ -264,10 +274,11 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 
 		// kprintf("Header is %x bytes",sizeof(dwarf_debug_line_header));
 
-		uintptr_t file_ptr = dwarf_decode_entries(ptr + sizeof(dwarf_debug_line_header) + hdr->opcode_base - 1, debug_line_str_base, str_size, 0);
+		memset(files, 0, sizeof(files));
+		uintptr_t file_ptr = dwarf_decode_entries(ptr + sizeof(dwarf_debug_line_header) + hdr->opcode_base - 1, debug_line_str_base, str_size, type_codes, form_codes, 0);
 		if (file_ptr != ptr){
 			// kprintf("Now files %x",file_ptr);
-			dwarf_decode_entries(file_ptr, debug_line_str_base, str_size, files);
+			dwarf_decode_entries(file_ptr, debug_line_str_base, str_size, type_codes, form_codes, files);
 		}
 
 		// for (int i = 0; i < 256; i++){
@@ -276,7 +287,7 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 
 		ptr = (uintptr_t)&hdr->header_length + sizeof(hdr->header_length) + hdr->header_length;
 		
-		uint8_t *end = (uint8_t*)&hdr->unit_length + sizeof(hdr->unit_length) + hdr->unit_length;
+		uint8_t *end = (uint8_t*)unit_end;
 		uint8_t *p = (uint8_t*)ptr;
 
 		// kprintf("Program starts at %x, ends at %x",p,end);
@@ -425,14 +436,14 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 						.address = address,
 						.line = state.line,
 						.column = state.column,
-						.file = files[state.file]
+						.file = (state.file < DWARF_ENTRY_CAP && files[state.file]) ? files[state.file] : unknown_file
 					};
 				} else if (state.address > address && previous_state.address && previous_state.address < address) {
 				    return (debug_line_info){
 						.address = address,
 						.line = previous_state.line,
 						.column = previous_state.column,
-						.file = files[previous_state.file]
+						.file =(previous_state.file < DWARF_ENTRY_CAP && files[previous_state.file]) ? files[previous_state.file] : unknown_file
 					};
 				}
 

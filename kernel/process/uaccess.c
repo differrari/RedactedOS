@@ -3,6 +3,7 @@
 #include "memory/mmu.h"
 #include "memory/addr.h"
 #include "std/memory.h"
+#include "memory/talloc.h"
 
 bool access_ok_range(process_t *proc, uintptr_t addr, size_t size, bool want_write) {
     if (!proc) return false;
@@ -126,4 +127,63 @@ uaccess_result_t copy_str_from_user(process_t *proc, char *dst, size_t dst_size,
     dst[dst_size-1] = 0;
     if (out_copied) *out_copied = dst_size - 1;
     return UACCESS_ENAMETOOLONG;
+}
+
+uaccess_result_t copy_argv_from_user(process_t *proc, int argc, uintptr_t uargv, user_argv_t *out) {
+    if (!out) return UACCESS_EINVAL;
+    if (argc < 0 || argc > UACCESS_MAX_ARGV) return UACCESS_EINVAL;
+
+    memset(out, 0,sizeof(*out));
+    out->argc = argc;
+
+    for (int i = 0; i < argc; i++) {
+        uintptr_t up = 0;
+        uaccess_result_t ur = copy_from_user(proc, &up, uargv + ((uintptr_t)i * sizeof(uintptr_t)), sizeof(up));
+        if (ur != UACCESS_OK) {
+            free_argv_from_user(out);
+            return ur;
+        }
+        if (!up) {
+            free_argv_from_user(out);
+            return UACCESS_EINVAL;
+        }
+
+        char tmp[256] = {};
+        size_t copied = 0;
+        bool term = false;
+        ur = copy_str_from_user(proc, tmp, sizeof(tmp), up, &copied, &term);
+        if (ur != UACCESS_OK) {
+            free_argv_from_user(out);
+            return ur;
+        }
+        if (!term) {
+            free_argv_from_user(out);
+            return UACCESS_ENAMETOOLONG;
+        }
+
+        uint64_t alloc = (copied + 0xFFF) & ~0xFFFULL;
+        char *k = (char*)talloc(alloc);
+        if (!k) {
+            free_argv_from_user(out);
+            return UACCESS_ENOMEM;
+        }
+
+        memcpy(k, tmp, copied);
+        out->bufs[i] = k;
+        out->bufsz[i] = alloc;
+        out->argv[i] = k;
+    }
+    return UACCESS_OK;
+}
+
+void free_argv_from_user(user_argv_t *argv) {
+    if (!argv) return;
+    for (int i = 0; i < argv->argc && i < UACCESS_MAX_ARGV; i++) {
+        if (!argv->bufs[i]) continue;
+        temp_free(argv->bufs[i], argv->bufsz[i]);
+        argv->bufs[i] = 0;
+        argv->bufsz[i] = 0;
+        argv->argv[i] = 0;
+    }
+    argv->argc = 0;
 }

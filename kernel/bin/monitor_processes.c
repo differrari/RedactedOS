@@ -46,7 +46,7 @@ void print_process_info(){
         if (proc->id != 0 && proc->state != STOPPED && (!procname || strcmp_case(procname,proc->name,true) == 0)){
             print("Process [%i]: %s [pid = %i | status = %s]",i,(uintptr_t)proc->name,proc->id,(uintptr_t)parse_proc_state(proc->state));
             print("Stack: %x (%x). SP: %x",proc->stack, proc->stack_size, proc->sp);
-            print("Heap: %x (%x)",proc->heap, calc_heap(proc->heap_phys));
+            print("Heap: %x (%x)",proc->mm.brk, calc_heap(proc->heap_phys));
             print("Flags: %x", proc->spsr);
             print("PC: %x",proc->pc);
         }
@@ -133,8 +133,8 @@ void draw_process_view(){
         string_free(pc);
         
         draw_memory("Stack", xo, stack_y, stack_width, stack_height, proc->stack - proc->sp, proc->stack_size);
-        uint64_t heap = calc_heap(proc->heap_phys);
-        uint64_t heap_limit = ((heap + 0xFFF) & ~0xFFF);
+        uint64_t heap = proc->mm.ttbr0 ? (proc->mm.rss_heap_pages * PAGE_SIZE) : calc_heap(proc->heap_phys);
+        uint64_t heap_limit = proc->mm.ttbr0 ? (proc->mm.brk > proc->mm.heap_start ? (uint64_t)(proc->mm.brk - proc->mm.heap_start) : (uint64_t)PAGE_SIZE) : ((heap + 0xFFF) & ~0xFFF);
         draw_memory("Heap", xo + stack_width + 50, stack_y, stack_width, stack_height, heap, heap_limit);
 
         string flags = string_format("Flags: %x", proc->spsr);

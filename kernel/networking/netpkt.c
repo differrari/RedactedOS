@@ -187,7 +187,7 @@ static void meta_slab_free(meta_slab_t* s, void* obj) {
         meta_slab_page_t* cur = s->full;
         while (cur && cur != page) {
             prev = cur;
-            cur = cur->next; //minchia fondamenti di informatica
+            cur = cur->next;
         }
         if (cur) {
             if (prev) prev->next = cur->next;

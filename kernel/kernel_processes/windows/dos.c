@@ -33,6 +33,7 @@ void draw_window(window_frame *frame){
     int_point fixed_point = { global_win_offset.x + frame->x - BORDER_SIZE, global_win_offset.y + frame->y - BORDER_SIZE };
     gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 };
     draw_ctx *ctx = gpu_get_ctx();
+    if (!ctx) return;
     if (!system_theme.use_window_shadows || focused_window != frame){
         draw_solid_window(ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
         return;
@@ -67,8 +68,10 @@ void *img;
 image_info img_info;
 
 static inline void draw_desktop(){
+    draw_ctx *ctx = gpu_get_ctx();
+    if (!ctx) return;
     if (img)
-        fb_draw_img(gpu_get_ctx(), 0, 0, img, img_info.width, img_info.height);
+        fb_draw_img(ctx, 0, 0, img, img_info.width, img_info.height);
     else
         gpu_clear(system_theme.bg_color);
 }
@@ -104,7 +107,13 @@ int window_system(){
         void *imgf = malloc(fd.size);
         readf(&fd, imgf, fd.size);
         image_info info = bmp_get_info(imgf, fd.size);
-        img_info = (image_info){max(info.width,gpu_get_ctx()->width),max(info.height,gpu_get_ctx()->height)};
+        draw_ctx *gpu = gpu_get_ctx();
+        if (!gpu) {
+            free_sized(imgf, fd.size);
+            closef(&fd);
+            return 0;
+        }
+        img_info = (image_info){max(info.width,gpu->width),max(info.height,gpu->height)};
         bool need_resize = img_info.width != info.width || img_info.height != info.height;
         img = malloc(img_info.width * img_info.height * sizeof(uint32_t));
         void *oimg = need_resize ? malloc(info.width * info.height * sizeof(uint32_t)) : img;

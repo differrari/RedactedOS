@@ -29,6 +29,7 @@ int login_screen(){
         int height = char_size * 2;
 
         draw_ctx *ctx = gpu_get_ctx();
+        if (!ctx) return 1;
 
         label(ctx, (text_ui_config){
             .text = system_config.system_name,

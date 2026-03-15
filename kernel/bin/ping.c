@@ -280,23 +280,17 @@ static int ping_v6(file *fd, const ping_opts_t *o) {
 }
 
 int run_ping(int argc, char *argv[]) {
-    uint16_t pid = get_current_proc_pid();
-    string p = string_format("/proc/%u/out", pid);
-    file fd = {0};
-    open_file(p.data, &fd);
-    string_free(p);
+    file fd = (file){.id = FD_OUT};
 
     ping_opts_t opts;
     if (!parse_args(argc, argv, &opts)) {
         help(&fd);
-        close_file(&fd);
         return 2;
     }
 
     if (opts.ver == IP_VER6 && opts.src_set) {
         const char *em = "ping: -s is only supported for IPv4\n";
         write_file(&fd, em, strlen(em));
-        close_file(&fd);
         return 2;
     }
 
@@ -309,7 +303,6 @@ int run_ping(int argc, char *argv[]) {
             write_file(&fd, em.data, em.length);
             write_file(&fd, "\n", 1);
             string_free(em);
-            close_file(&fd);
             return 2;
         }
     }
@@ -319,6 +312,5 @@ int run_ping(int argc, char *argv[]) {
     else if (opts.ver == IP_VER6) rc = ping_v6(&fd, &opts);
     else { help(&fd); rc = 2; }
 
-    close_file(&fd);
     return rc;
 }

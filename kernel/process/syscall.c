@@ -21,6 +21,7 @@
 #include "graph/tres.h"
 #include "memory/mmu.h"
 #include "loading/process_loader.h"
+#include "process/loading/elf_file.h"
 #include "networking/interface_manager.h"
 #include "bin/bin_mod.h"
 #include "networking/transport_layer/csocket.h"
@@ -167,7 +168,6 @@ uptr syscall_brk(process_t *ctx) {
             if (heap && heap->kind == VMA_KIND_HEAP) heap->end = new_brk;
         }
         ctx->mm.brk = new_brk;
-        ctx->heap = new_brk;
         mmu_flush_asid(ctx->mm.asid);
     }
 
@@ -311,53 +311,86 @@ u64 syscall_exec(process_t *ctx){
     const int max_args = 64;
     if (argc > max_args) return SYSCALL_ERRNO(SYSCALL_EINVAL);
 
-    const char *argv[max_args + 1] = {};
-    char *bufs[max_args] = {};
-    uint64_t bufsz[max_args] = {};
+    user_argv_t user_argv = {};
 
-    for (int i = 0; i < argc; i++) {
-        uintptr_t up = 0;
-        ur = copy_from_user(ctx, &up, uargv + ((uintptr_t)i * sizeof(uintptr_t)), sizeof(up));
-        if (ur != UACCESS_OK) break;
-        if (!up) {
-            ur = UACCESS_EINVAL;
-            break;
-        }
+    ur = copy_argv_from_user(ctx, argc, uargv, &user_argv);
+    if (ur != UACCESS_OK) return ur;
 
-        char tmp[256] = {};
-        size_t n = 0;
-        bool t = false;
-        ur = copy_str_from_user(ctx, tmp, sizeof(tmp), up, &n, &t);
-        if (ur != UACCESS_OK) break;
-
-        if (!t) {
-            ur = UACCESS_ENAMETOOLONG;
-            break;
-        }
-
-        uint64_t alloc = (n + 0xFFF) & ~0xFFFULL;
-        char *k = (char*)talloc(alloc);
-        if (!k) {
-            ur = UACCESS_ENOMEM;
-            break;
-        }
-        memcpy(k, tmp, n);
-        bufs[i] = k;
-        bufsz[i] = alloc;
-        argv[i] = k;
-    }
-
-    if (ur != UACCESS_OK) {
-        for (int i = 0; i < argc; i++) if (bufs[i]) temp_free(bufs[i], bufsz[i]);
-        return ur;
-    }
-
-    process_t *p = execute(prog_name, argc, argv);
+    process_t *p = execute(prog_name, argc, user_argv.argv);
     if (p) p->win_id = ctx->win_id;
 
-    for (int i = 0; i < argc; i++) if (bufs[i]) temp_free(bufs[i], bufsz[i]);
-
+    free_argv_from_user(&user_argv);
     return p ? p->id : 0;
+}
+
+u64 syscall_spawn(process_t *ctx) {
+    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
+    int argc = (int)ctx->PROC_X1;
+    uintptr_t uargv = (uintptr_t)ctx->PROC_X2;
+    if (argc < 0) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+
+    char path[512] = {};
+    size_t copied = 0;
+    bool term = false;
+    uaccess_result_t ur = copy_str_from_user(ctx, path, sizeof(path), upath, &copied, &term);
+    if (ur != UACCESS_OK) return ur;
+    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+
+    const int max_args = 64;
+    if (argc > max_args) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+
+    user_argv_t user_argv = {};
+    ur = copy_argv_from_user(ctx, argc, uargv, &user_argv);
+    if (ur != UACCESS_OK) return ur;
+
+
+    file probe = {};
+    FS_RESULT fr = open_file(path, &probe);
+    if (fr != FS_RESULT_SUCCESS) {
+        free_argv_from_user(&user_argv);
+        return SYSCALL_ERRNO(SYSCALL_ENOENT);
+    }
+    close_file(&probe);
+
+    const char *name = path;
+    for (const char *p = path; *p; p++) if (*p == '/') name = p + 1;
+
+    char proc_name[256] = {};
+    size_t proc_len = 0;
+    while (name[proc_len] && name[proc_len] != '.' && proc_len + 1 < sizeof(proc_name)) {
+        proc_name[proc_len] = name[proc_len];
+        proc_len++;
+    }
+    proc_name[proc_len] = 0;
+    if (!proc_len) {
+        free_argv_from_user(&user_argv);
+        return SYSCALL_ERRNO(SYSCALL_EINVAL);
+    }
+
+    process_t *p = load_elf_process_path(proc_name, 0,path, argc, user_argv.argv);
+    if (!p) {
+        free_argv_from_user(&user_argv);
+        return 0;
+    }
+
+    p->win_id = ctx->win_id;
+
+    free_argv_from_user(&user_argv);
+    return p->id;
+}
+
+u64 syscall_kill_process(process_t *ctx) {
+    uint16_t pid = (uint16_t)ctx->PROC_X0;
+    if (!pid) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+
+    process_t *target = get_proc_by_pid(pid);
+    if (!target || target->state == STOPPED) return SYSCALL_ERRNO(SYSCALL_ENOENT);
+    if (target->id == 1) return SYSCALL_ERRNO(SYSCALL_EPERM);
+    if ((target->spsr & 0xF) != 0) return SYSCALL_ERRNO(SYSCALL_EPERM);
+    if (!ctx->win_id || target->win_id != ctx->win_id) return SYSCALL_ERRNO(SYSCALL_EPERM);
+
+    stop_process(pid, -9);
+    return 0;
 }
 
 u64 syscall_get_time(process_t *ctx){
@@ -768,6 +801,8 @@ syscall_entry syscalls[] = {
     [SLEEP_CODE] = syscall_msleep,
     [HALT_CODE] = syscall_halt,
     [EXEC_CODE] = syscall_exec,
+    [SPAWN_CODE] = syscall_spawn,
+    [KILL_PROCESS_CODE] = syscall_kill_process,
     [GET_TIME_CODE] = syscall_get_time,
     [SOCKET_CREATE_CODE] = syscall_socket_create,
     [SOCKET_BIND_CODE] = syscall_socket_bind,

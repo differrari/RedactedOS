@@ -17,6 +17,7 @@
 
 void boot_draw_name(gpu_size screen_size, int xoffset, int yoffset){
     draw_ctx *ctx = gpu_get_ctx();
+    if (!ctx) return;
     label(ctx, (text_ui_config){
         .text = system_config.system_name,
         .font_size = 2,

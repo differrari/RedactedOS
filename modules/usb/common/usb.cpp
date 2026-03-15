@@ -195,23 +195,30 @@ bool USBDriver::request_descriptor(uint8_t address, uint8_t endpoint, uint8_t rT
 }
 
 void USBDriver::hub_enumerate(uint8_t address){
-    //TODO: actually support multiple devices
-    uint8_t port = 1;
-    uint32_t port_status;
-    request_sized_descriptor(address, 0, 0xA3, 0, 0, 0, port, sizeof(uint32_t), (void*)&port_status);
-    if (port_status & 1){
+    uint8_t hub_desc[16] = {};
+    uint8_t port_count = 0;
+    if (request_descriptor(address, 0, 0xA0, 6, 0x29, 0, 0, hub_desc)) {
+        usb_descriptor_header* header = (usb_descriptor_header*)hub_desc;
+        if (header->bLength >= 3) port_count = hub_desc[2]; //bNbrPorts
+    }
+
+    for (uint8_t port = 1; port <= port_count; port++) {
+        uint32_t port_status = 0;
+
+        if (!request_sized_descriptor(address, 0, 0xA3, 0, 0, 0, port, sizeof(port_status), &port_status)) continue;
+        if (!(port_status & 1)) continue;
         kprintf("Port %i status %b",port, port_status);
         request_sized_descriptor(address, 0, 0x23, 3, 0, 4, port, 0, 0);//Port Reset
         delay(50);
         request_sized_descriptor(address, 0, 0x23, 1, 0, 4, port, 0, 0);//Port Reset Clear
         delay(10);
-        request_sized_descriptor(address, 0, 0xA3, 0, 0, 0, port, sizeof(uint32_t), (void*)&port_status);
-        if (!(port_status & 0b11)){
-            kprintf("Port not enabled or device not connected");
-            return;
+        if (!request_sized_descriptor(address, 0, 0xA3, 0, 0, 0, port, sizeof(port_status), &port_status)) continue;
+        if ((port_status & 0b11) != 0b11){
+            kprintf("Port %i not enabled or device not connected", port);
+            continue;
         }
         handle_hub_routing(address,port);
-        setup_device(0,1);
+        setup_device(0, port);
     }
 }
 

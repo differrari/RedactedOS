@@ -11,15 +11,7 @@ int run_shutdown(int argc, char* argv[]){
     const char *u = "usage: shutdown [-r|-p]\n  -r  reboot\n  -p  power off\n";
 
 
-    uint16_t pid = get_current_proc_pid();
-    string p = string_format("/proc/%i/out", pid);
-    file out;
-    FS_RESULT r = open_file(p.data, &out);
-    string_free(p);
-
-    if (r != FS_RESULT_SUCCESS){
-        return 2;
-    }
+    file out = (file){.id = FD_OUT};
     if (argc <= 0){
         write_file(&out, u,strlen(u));
          return 0;
@@ -36,7 +28,6 @@ int run_shutdown(int argc, char* argv[]){
         else{
             write_file(&out, u,strlen(u));
             msleep(100);
-            close_file(&out);
             return 2;
         }
     }
@@ -44,7 +35,6 @@ int run_shutdown(int argc, char* argv[]){
     if (mode == -1){
         write_file(&out, u,strlen(u));
         msleep(100);
-        close_file(&out);
         return 2;
     }
 
@@ -52,7 +42,6 @@ int run_shutdown(int argc, char* argv[]){
     else write_file(&out, "Powering off...\n", 16);
 
     msleep(100);
-    close_file(&out);
     hw_shutdown(mode);
     return 0;
 }

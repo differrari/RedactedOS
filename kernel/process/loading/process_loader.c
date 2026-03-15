@@ -279,7 +279,6 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
 
     proc->bundle = (char*)bundle;
     
-    proc->alloc_map = make_page_index();
 
     uaddr_t min_addr = UINT64_MAX;
     uaddr_t max_addr = 0;
@@ -355,11 +354,10 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->code = dest;
     proc->code_size = code_size;
 
-    uint64_t stack_commit_size = 0x10000;
     uint64_t stack_max_size = 0x800000; //TODO it shouldnt be fix
     uaddr_t stack_top = 0x00007FFFFFFFF000ULL;
     uaddr_t stack_limit = stack_top - stack_max_size;
-    uaddr_t stack_commit = stack_top - stack_commit_size;
+    uaddr_t stack_commit = stack_top;
     uaddr_t mmap_top = stack_limit - PAGE_SIZE;
 
     uaddr_t heap_start = (max_map + (PAGE_SIZE*4) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
@@ -367,7 +365,6 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
         reset_process(proc);
         return 0;
     }
-    proc->heap = heap_start;
     proc->heap_phys = 0;
 
     proc->mm.heap_start = heap_start;
@@ -394,25 +391,11 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
 
     mm_add_vma(&proc->mm, proc->mm.stack_limit, proc->mm.stack_top, MEM_RW, VMA_KIND_STACK, VMA_FLAG_DEMAND);
 
-    paddr_t stack = palloc_inner(stack_commit_size, MEM_PRIV_USER, MEM_RW, true, false);
-    if (!stack) {
-        reset_process(proc);
-        return 0;
-    }
-
     proc->stack = stack_top;
-    proc->stack_phys = stack + stack_commit_size;
+    proc->stack_phys = 0;
+    proc->stack_size = stack_max_size;
+    proc->mm.rss_stack_pages = 0;
 
-    for (paddr_t pa = stack; pa < stack + stack_commit_size; pa += GRANULE_4KB) {
-        uaddr_t va = stack_commit + (uaddr_t)(pa - stack);
-        mmu_map_4kb((uint64_t*)ttbr, (uint64_t)va, pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
-    }
-    memset((void*)dmap_pa_to_kva(stack), 0, stack_commit_size);
-
-    proc->stack_size = stack_commit_size;
-    proc->mm.rss_stack_pages = stack_commit_size / PAGE_SIZE;
-
-    proc->heap = proc->mm.brk;
     proc->sp = proc->stack;
 
     proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
@@ -423,7 +406,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->output_size = 0;
 
     proc->pc = (uintptr_t)(entry);
-    kprintf("User process %s pc=%llx stack=%llx-%llx (phys=%llx-%llx) heap=%llx (phys=%llx)", name, (uint64_t)proc->pc, (uint64_t)(proc->sp - proc->stack_size), (uint64_t)proc->sp, (uint64_t)(proc->stack_phys - proc->stack_size), (uint64_t)proc->stack_phys, (uint64_t)proc->heap, (uint64_t)proc->heap_phys);
+    kprintf("User process %s pc=%llx stack=%llx-%llx (phys=%llx-%llx) heap=%llx (phys=%llx)", name, (uint64_t)proc->pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->stack_phys, (uint64_t)proc->stack_phys, (uint64_t)proc->mm.brk, (uint64_t)proc->heap_phys);
     proc->spsr = 0;
     proc->state = BLOCKED;
     

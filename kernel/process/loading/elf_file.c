@@ -8,6 +8,10 @@
 #include "exceptions/irq.h"
 #include "sysregs.h"
 #include "memory/addr.h"
+#include "memory/mmu.h"
+#include "process/scheduler.h"
+#include "filesystem/filesystem.h"
+#include "process/uaccess.h"
 
 typedef struct elf_header {
     char magic[4];//should be " ELF"
@@ -126,6 +130,108 @@ uint8_t elf_to_red_permissions(uint8_t flags){
     return mem;
 }
 
+bool setup_process_args(process_t *proc, int argc, const char *argv[]) {
+    if (!proc || argc < 0) return false;
+
+    proc->PROC_X0 = argc;
+    proc->PROC_X1 = 0;
+    proc->sp = proc->stack;
+
+    if (argc == 0) return true;
+    if (!argv) return false;
+
+    size_t stack_size = proc->mm.ttbr0 ? (size_t)(proc->mm.stack_top - proc->mm.stack_limit) : proc->stack_size;
+    if (!stack_size) return false;
+
+    size_t total_str = 0;
+    for (int i = 0; i < argc; i++) {
+        if (!argv[i]) return false;
+        size_t len = strlen(argv[i]);
+        if (len >= stack_size) return false;
+        if (total_str > stack_size - (len + 1)) return false;
+        total_str += len + 1;
+    }
+
+    size_t argv_size = (size_t)(argc + 1) * sizeof(uintptr_t);
+    if (argv_size > stack_size) return false;
+    if (total_str > stack_size - argv_size) return false;
+
+    uintptr_t str_base = proc->stack - total_str;
+    if (argc > UACCESS_MAX_ARGV) return false;
+    uintptr_t arg_ptrs[UACCESS_MAX_ARGV + 1] = {};
+    uintptr_t sp = str_base & ~0xFULL;
+    sp -= argv_size;
+
+    if (proc->mm.ttbr0) {
+        proc->PROC_X1 = sp;
+        proc->sp = sp;
+
+        size_t off = 0;
+        for (int i = 0; i < argc; i++) {
+            size_t len = strlen(argv[i]) + 1;
+            if (copy_to_user(proc, str_base + off, argv[i], len) != UACCESS_OK) return false;
+            arg_ptrs[i] = str_base + off;
+            off += len;
+        }
+        arg_ptrs[argc] = 0;
+
+        if (copy_to_user(proc, sp, arg_ptrs, argv_size) != UACCESS_OK) return false;
+        return true;
+    }
+
+    paddr_t str_phys = proc->stack_phys - total_str;
+    size_t off = 0;
+    for (int i = 0; i < argc; i++) {
+        size_t len = strlen(argv[i]);
+        memcpy((void*)((uintptr_t)dmap_pa_to_kva(str_phys) + off), argv[i], len);
+        *(char*)((uintptr_t)dmap_pa_to_kva(str_phys) + off + len) = 0;
+        arg_ptrs[i] = str_base + off;
+        off += len + 1;
+    }
+    arg_ptrs[argc] = 0;
+
+    paddr_t sp_phys = str_phys - (str_base - (sp + argv_size));
+    sp_phys -= argv_size;
+
+    uintptr_t *kargv = (uintptr_t*)dmap_pa_to_kva(sp_phys);
+    for (int i = 0; i <= argc; i++) kargv[i] = arg_ptrs[i];
+
+    proc->PROC_X1 = sp;
+    proc->sp = sp;
+    return true;
+}
+
+process_t* load_elf_process_path(const char *name, const char *bundle, const char *path, int argc, const char *argv[]) {
+    if (!path || !*path) return 0;
+    
+    file fd = {};
+    if (open_file(path, &fd) != FS_RESULT_SUCCESS) return 0;
+    
+    char *program = (char*)zalloc(fd.size);
+    if (!program) {
+        close_file(&fd);
+        return 0;
+    }
+    
+    bool ok = read_file(&fd, program, fd.size) == fd.size;
+    close_file(&fd);
+    if (!ok) {
+        release(program);
+        return 0;
+    }
+    
+    process_t *proc = load_elf_file(name, bundle,program, fd.size);
+    release(program);
+    if (!proc) return 0;
+    if (!setup_process_args(proc, argc, argv)) {
+        reset_process(proc);
+        return 0;
+    }
+    
+    proc->state = READY;
+    return proc;
+}
+
 process_t* load_elf_file(const char *name, const char *bundle, void* file, size_t filesize){
     if (!file) return 0;
     if (filesize < sizeof(elf_header)) return 0;
@@ -223,34 +329,14 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
                             temp_free(data, sec_count * sizeof(program_load_data));
                             if (!proc) return 0;
 
-                            proc->PROC_X0 = 1;
-
-                            size_t blen = strlen(bundle);
-                            size_t nlen = strlen(name);
-                            size_t plen = blen + nlen + 5;
-                            uintptr_t sp = proc->stack - (plen+1);
-                            paddr_t sp_phys = proc->stack_phys - (plen+1);
-
-                            char *nargvals = (char*)dmap_pa_to_kva(sp_phys);
-
-                            memcpy(nargvals, bundle, blen);
-                            *(char*)(nargvals + blen) = '/';
-                            memcpy(nargvals + blen + 1, name, nlen);
-                            memcpy(nargvals + blen+  1+  nlen, ".elf", 4);
-
-                            *(char*)(nargvals + plen) = 0;
-
-                            uintptr_t pad = sp & 15;
-                            sp -= pad;
-                            sp_phys -= pad;
-                            sp -= 2 * sizeof(uintptr_t);
-                            sp_phys -= 2 * sizeof(uintptr_t);
-                            *(uintptr_t*)dmap_pa_to_kva(sp_phys) = sp + 2 * sizeof(uintptr_t) + pad;
-
-                            *(uintptr_t*)dmap_pa_to_kva(sp_phys + sizeof(uintptr_t)) = 0;
-
-                            proc->PROC_X1 = sp;
-                            proc->sp = sp;
+                            char argv0[256] = {};
+                            if (bundle && *bundle) string_format_buf(argv0, sizeof(argv0), "%s/%s.elf", bundle, name);
+                            else string_format_buf(argv0, sizeof(argv0), "%s.elf", name);
+                            const char *default_argv[] = {argv0};
+                            if (!setup_process_args(proc, 1, default_argv)) {
+                                reset_process(proc);
+                                return 0;
+                            }
 
                             get_elf_debug_info(proc, file, filesize);
 
@@ -302,34 +388,14 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
     temp_free(data, load_count * sizeof(program_load_data));
     if (!proc) return 0;
 
-    proc->PROC_X0 = 1;
-    
-    size_t blen = strlen(bundle);
-    size_t nlen = strlen(name);
-    size_t plen = blen + nlen + 1 + 4;
-    uintptr_t sp = proc->stack - (plen+1);
-    paddr_t sp_phys = proc->stack_phys - (plen+1);
-    
-    char *nargvals = (char*)dmap_pa_to_kva(sp_phys);
-    
-    memcpy(nargvals, bundle, blen);
-    *(char*)(nargvals+blen) = '/';
-    memcpy(nargvals + blen + 1, name, nlen);
-    memcpy(nargvals + blen+  1+  nlen, ".elf", 4);
-    
-    *(char*)(nargvals+plen) = 0;
-    
-    uintptr_t pad = sp & 15;
-    sp -= pad;
-    sp_phys -= pad;
-    sp -= 2 * sizeof(uintptr_t);
-    sp_phys -= 2 * sizeof(uintptr_t);
-    *(uintptr_t*)dmap_pa_to_kva(sp_phys) = sp + 2 * sizeof(uintptr_t) + pad;
-    
-    *(uintptr_t*)dmap_pa_to_kva(sp_phys + sizeof(uintptr_t)) = 0;
-    
-    proc->PROC_X1 = sp;
-    proc->sp = sp;
+    char argv0[256] = {};
+    if (bundle && *bundle) string_format_buf(argv0, sizeof(argv0), "%s/%s.elf", bundle, name);
+    else string_format_buf(argv0, sizeof(argv0), "%s.elf", name);
+    const char *default_argv[] = { argv0 };
+    if (!setup_process_args(proc, 1, default_argv)) {
+        reset_process(proc);
+        return 0;
+    }
     
     get_elf_debug_info(proc, file, filesize);
 

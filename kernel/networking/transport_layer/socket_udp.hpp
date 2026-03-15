@@ -13,6 +13,7 @@
 #include "networking/transport_layer/trans_utils.h"
 #include "networking/internet_layer/ipv6.h"
 #include "networking/internet_layer/igmp.h"
+#include "exceptions/irq.h"
 
 static constexpr int32_t UDP_RING_CAP = 1024;
 static constexpr dns_server_sel_t UDP_DNS_SEL = DNS_USE_BOTH;
@@ -117,6 +118,8 @@ class UDPSocket : public Socket {
 
     static uint32_t dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uintptr_t frame_ptr, uint32_t frame_len, uint16_t src_port, uint16_t dst_port) {
         UDPSocket* first = nullptr;
+        uint32_t ret = frame_len;
+        disable_interrupt();
 
         for (UDPSocket* s = s_list_head; s; s = s->next) {
             if (!socket_matches_dst(s, ifindex, ipver, dst_ip_addr, dst_port)) continue;
@@ -132,12 +135,10 @@ class UDPSocket : public Socket {
             s->on_receive(ipver, src_ip_addr, src_port, copy, frame_len);
         }
 
-        if (first) {
-            first->on_receive(ipver, src_ip_addr, src_port, frame_ptr, frame_len);
-            return frame_len;
-        }
-        if (frame_ptr && frame_len) free_sized((void*)frame_ptr, frame_len);
-        return frame_len;
+        if (first) first->on_receive(ipver, src_ip_addr, src_port, frame_ptr, frame_len);
+        else if (frame_ptr && frame_len) free_sized((void*)frame_ptr, frame_len);
+        enable_interrupt();
+        return ret;
     }
 
     void on_receive(ip_version_t ver, const void* src_ip_addr, uint16_t src_port, uintptr_t ptr, uint32_t len) {
@@ -182,6 +183,7 @@ class UDPSocket : public Socket {
     }
 
     void insert_in_list() {
+        for (UDPSocket* it = s_list_head; it; it = it->next) if (it == this) return;
         next = s_list_head;
         s_list_head = this;
     }
@@ -264,10 +266,15 @@ class UDPSocket : public Socket {
 public:
     UDPSocket(uint8_t r, uint32_t pid_, const SocketExtraOptions* extra = nullptr) : Socket(PROTO_UDP, r, extra) {
         pid = pid_;
+        disable_interrupt();
         insert_in_list();
+        enable_interrupt();
     }
 
     ~UDPSocket() override {
+        disable_interrupt(); //TODO locking is needed asap
+        remove_from_list();
+        enable_interrupt();
         if ((extraOpts.flags & SOCK_OPT_MCAST_JOIN) && extraOpts.mcast_ver) {
             if (extraOpts.mcast_ver == IP_VER4) {
                 uint32_t g = 0;
@@ -292,7 +299,6 @@ public:
             }
         }
         close();
-        remove_from_list();
     }
 
     int32_t bind(const SockBindSpec& spec_in, uint16_t port) override {

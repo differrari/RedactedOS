@@ -166,7 +166,7 @@ void Terminal::end_command(){
 }
 
 bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
-    uint16_t proc = exec(cmd, argc, argv);
+    int32_t proc = exec(cmd, argc, argv);
     if (!proc) return false;
 
     string s1 = string_format("/proc/%i/out", proc);

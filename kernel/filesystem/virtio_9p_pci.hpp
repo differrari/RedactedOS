@@ -27,6 +27,7 @@ private:
     uint32_t walk_dir(uint32_t fid, char *path);
     uint64_t read(uint32_t fid, uint64_t offset, void* file);
     uint64_t get_attribute(uint32_t fid, uint64_t mask);
+    bool clunk(virtio_device *dev, uint32_t fid, uint16_t tag);
     void p9_max_tag(p9_packet_header* header);
     void p9_inc_tag(p9_packet_header* header);
     size_t max_msize = 0;

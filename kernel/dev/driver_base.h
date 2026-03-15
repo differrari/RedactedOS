@@ -22,6 +22,8 @@ typedef struct module_file {
     uintptr_t buf;//TODO: remove this (and other options)
     bool ignore_cursor;
     bool read_only;
+    bool owns_buf;
+    bool buf_is_page_alloc;
     buffer file_buffer;
     uint64_t references;
 } module_file;

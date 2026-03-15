@@ -15,6 +15,7 @@
 #include "sysregs.h"
 #include "filesystem/filesystem.h"
 #include "dev/module_loader.h"
+#include "string/string.h"
 
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
@@ -89,7 +90,7 @@ void* list_alloc(size_t size){
 
 bool init_scheduler_module(){
     if (!proc_opened_files) {
-        proc_opened_files = chashmap_create(64);
+        proc_opened_files = chashmap_create(1024);
         proc_opened_files->free = kfree;
         proc_opened_files->alloc = list_alloc;
     }
@@ -99,7 +100,7 @@ bool init_scheduler_module(){
 
 uintptr_t get_current_heap(){
     if (processes[current_proc].mm.ttbr0) return processes[current_proc].mm.brk;
-    return processes[current_proc].heap;
+    return processes[current_proc].mm.brk;
 }
 
 bool get_current_privilege(){
@@ -126,6 +127,10 @@ void reset_process(process_t *proc){
     int32_t exit_code = proc->exit_code;
     uint8_t state = proc->state;
     bool counted = state != STOPPED;
+    for (uint16_t i = 0; i < sleep_count; i++) {
+        if (sleeping[i].pid != pid) continue;
+        sleeping[i].valid = false;
+    }
 
     bool just_finished = processes[current_proc].id == pid;
     proc->sp = 0;
@@ -159,7 +164,58 @@ void reset_process(process_t *proc){
         proc->debug_line_str = (sizedptr){0};
     }
 
-    if (proc->output) {
+    if (proc_opened_files) {
+        irq_flags_t irq = irq_save_disable();
+        char proc_path[48] = {};
+        string_format_buf(proc_path, sizeof(proc_path), "/%i/out", pid);
+        uint64_t fid = reserve_fd_gid(proc_path);
+        module_file *out_file = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(fid));
+        if (out_file && (uintptr_t)out_file->file_buffer.buffer == (uintptr_t)proc->output) {
+            size_t snapshot_size = proc->output_size;
+            out_file->buf = 0;
+            out_file->owns_buf = false;
+            out_file->buf_is_page_alloc = false;
+            if (!snapshot_size) {
+                out_file->file_buffer = (buffer){0};
+                out_file->file_size = 0;
+            } else {
+                out_file->file_buffer = (buffer){
+                    .buffer = (char*)proc->output,
+                    .buffer_size = snapshot_size,
+                    .limit = snapshot_size,
+                    .options = buffer_opt_none,
+                    .cursor = 0,
+                };
+                out_file->buf = (uintptr_t)proc->output;
+                out_file->owns_buf = true;
+                out_file->buf_is_page_alloc = true;
+                out_file->file_size = snapshot_size;
+                proc->output = 0;
+                proc->output_size = 0;
+            }
+        }
+
+        string_format_buf(proc_path, sizeof(proc_path), "/%i/state", pid);
+        fid = reserve_fd_gid(proc_path);
+        module_file *state_file = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(fid));
+        if (state_file && (uintptr_t)state_file->file_buffer.buffer == (uintptr_t)&proc->state) {
+            memset(&state_file->buf, 0, sizeof(state_file->buf));
+            memcpy(&state_file->buf, &state, sizeof(state));
+            state_file->owns_buf = false;
+            state_file->buf_is_page_alloc = false;
+            state_file->file_buffer = (buffer){
+                .buffer = (char*)&state_file->buf,
+                .buffer_size = sizeof(state),
+                .limit = sizeof(state),
+                .options = buffer_static,
+                .cursor = 0,
+            };
+            state_file->file_size = sizeof(state);
+        }
+        irq_restore(irq);
+    }
+
+    if (proc->output && !just_finished) {
         pfree((void*)proc->output, PROC_OUT_BUF);
         proc->output = 0;
         proc->output_size = 0;
@@ -186,7 +242,7 @@ void reset_process(process_t *proc){
     }
 
     if (proc->alloc_map) {
-        if (!proc->mm.ttbr0) {
+        if (proc->mm.ttbr0) {
             for (page_index *ind = proc->alloc_map; ind; ind = ind->header.next) ind->header.size = 0;
         }
         release_page_index(proc->alloc_map);
@@ -209,7 +265,6 @@ void reset_process(process_t *proc){
     proc->stack_phys = 0;
     proc->stack_size = 0;
 
-    proc->heap = 0;
     proc->heap_phys = 0;
     memset(&proc->mm, 0, sizeof(proc->mm));
 
@@ -227,14 +282,15 @@ void reset_process(process_t *proc){
 }
 
 void init_main_process(){
-    proc_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
+    proc_page = palloc(PAGE_SIZE*16, MEM_PRIV_KERNEL, MEM_RW, false);
     process_t* proc = &processes[0];
     cpec = (uintptr_t)&processes[0];
     proc->id = next_proc_index++;
     proc->alloc_map = make_page_index();
     proc->state = BLOCKED;
-    proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
-    proc->heap_phys = (paddr_t)VIRT_TO_PHYS(proc->heap);
+    proc->heap_phys = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
+    proc->mm.heap_start = (uaddr_t)dmap_pa_to_kva(proc->heap_phys);
+    proc->mm.brk = proc->mm.heap_start;
     proc->stack_size = 0x10000;
     proc->stack = (uintptr_t)palloc(proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
     proc->sp = (uintptr_t)ksp;
@@ -292,7 +348,7 @@ void name_process(process_t *proc, const char *name){
 void stop_process(uint16_t pid, int32_t exit_code){
     disable_interrupt();
     process_t *proc = get_proc_by_pid(pid);
-    if (!proc || proc->state != READY) {
+    if (!proc || proc->state == STOPPED) {
         enable_interrupt();
         return;
     }
@@ -352,7 +408,7 @@ void wake_processes(){
         uint64_t wake = sleeping[i].timestamp + sleeping[i].sleep_time;
         if(wake <= now){
             process_t *p = get_proc_by_pid(sleeping[i].pid);
-            if(p) p->state = READY;
+            if(p && p->state == BLOCKED) p->state = READY;
         }else{
             if(wake < next) next = wake;
             sleeping[w++] = sleeping[i];
@@ -414,55 +470,65 @@ size_t list_processes(const char *path, void *buf, size_t size, file_offset *off
 
 FS_RESULT open_proc(const char *path, file *descriptor){
     uint64_t fid = reserve_fd_gid(path);
+    irq_flags_t irq = irq_save_disable();
     module_file *mfile = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(uint64_t));
     if (mfile){
         descriptor->id = mfile->fid;
         descriptor->size = mfile->file_size;
+        descriptor->cursor = 0;
         mfile->references++;
+        irq_restore(irq);
         return FS_RESULT_SUCCESS;
     }
     const char *pid_s = seek_to(path, '/');
     path = seek_to(pid_s, '/');
     uint64_t pid = parse_int_u64(pid_s, path - pid_s);
     process_t *proc = get_proc_by_pid(pid);
-    if (!proc) return FS_RESULT_NOTFOUND;
+    if (!proc) {
+        irq_restore(irq);
+        return FS_RESULT_NOTFOUND;
+    }
     descriptor->id = fid;
     descriptor->cursor = 0;
     module_file *file = kalloc(proc_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
-    if (!file) return FS_RESULT_DRIVER_ERROR;
+    if (!file) {
+        irq_restore(irq);
+        return FS_RESULT_DRIVER_ERROR;
+    }
     memset(file, 0, sizeof(module_file));
     file->fid = fid;
     file->references = 1;
     if (strcmp_case(path, "out",true) == 0){
-        if (!proc->output) proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
-        if (!proc->output) {
-            kfree(file, sizeof(module_file));
-            return FS_RESULT_DRIVER_ERROR;
-        }
         descriptor->size = proc->output_size;
-        file->file_buffer = (buffer){
-            .buffer = (char*)proc->output,
-            .buffer_size = proc->output_size,
-            .limit = PROC_OUT_BUF,
-            .options = buffer_circular,
-            .cursor = proc->output_size,
-        };
-    } else if (strcmp_case(path, "state",true) == 0){
-        descriptor->size = sizeof(int);
         file->read_only = true;
         file->file_buffer = (buffer){
-            .buffer = (char*)PHYS_TO_VIRT((uintptr_t)&proc->state),
-            .limit = sizeof(int),
+            .buffer = (char*)proc->output,
+            .buffer_size = proc->output ? proc->output_size : 0,
+            .limit = proc->output ? PROC_OUT_BUF : 0,
+            .options = proc->output ? buffer_circular : buffer_opt_none,
+            .cursor = proc->output ? proc->output_size : 0,
+        };
+    } else if (strcmp_case(path, "state",true) == 0){
+        descriptor->size = sizeof(proc->state);
+        file->read_only = true;
+        file->file_buffer = (buffer){
+            .buffer = (char*)&proc->state,
+            .limit = sizeof(proc->state),
             .options = buffer_static,
-            .buffer_size = sizeof(int),
+            .buffer_size = sizeof(proc->state),
             .cursor = 0,
         };
     } else {
+        irq_restore(irq);
         kfree(file, sizeof(module_file));
         return FS_RESULT_NOTFOUND;
     }
     file->file_size = descriptor->size;
-    return chashmap_put(proc_opened_files, &descriptor->id, sizeof(uint64_t), file) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
+    int put = chashmap_put(proc_opened_files, &descriptor->id, sizeof(uint64_t), file);
+    irq_restore(irq);
+    if (put >= 0) return FS_RESULT_SUCCESS;
+    kfree(file, sizeof(module_file));
+    return FS_RESULT_DRIVER_ERROR;
 }
 
 int find_open_proc_file(void *node, void* key){
@@ -484,37 +550,66 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
         kprint("No files open");
         return 0;
     }
+    irq_flags_t irq = irq_save_disable();
     module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
-    if (!file) return 0;
+    if (!file) {
+        irq_restore(irq);
+        return 0;
+    }
     size_t s = buffer_read(&file->file_buffer, buf, size, offset);
     fd->size = file->file_size;
+    irq_restore(irq);
     return s;
 }
 
 size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
+    process_t *proc = get_current_proc();
     if (fd->id == FD_OUT){
-        string fullpath = string_format("/%i/out",get_current_proc_pid());
-        open_proc(fullpath.data, fd);
-        string_free(fullpath);
+        if (!proc->output || !size) return 0;
+        irq_flags_t irq = irq_save_disable();
+
+        buffer file_buffer = {
+            .buffer = (char*)proc->output,
+            .buffer_size = proc->output_size,
+            .limit = PROC_OUT_BUF,
+            .options = buffer_circular,
+            .cursor = proc->output_size,
+        };
+
+        size = min(size, file_buffer.limit);
+        size_t written = buffer_write_lim(&file_buffer, buf, size);
+
+        proc->output_size = file_buffer.buffer_size;
+        fd->size = proc->output_size;
+
+        if (proc_opened_files){
+            char fullpath[48] = {};
+            string_format_buf(fullpath, sizeof(fullpath), "/%i/out", proc->id);
+            uint64_t fid = reserve_fd_gid(fullpath);
+            module_file *file = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(fid));
+            if (file && (uintptr_t)file->file_buffer.buffer == (uintptr_t)proc->output && !file->owns_buf) {
+                file->file_buffer.buffer_size = proc->output_size;
+                file->file_buffer.limit = PROC_OUT_BUF;
+                file->file_buffer.cursor = proc->output_size;
+                file->file_buffer.options = buffer_circular;
+                file->file_size = proc->output_size;
+            }
+        }
+
+        irq_restore(irq);
+        return written;
     }
+
     if (!proc_opened_files){
         kprint("No files open");
         return 0;
     }
+    irq_flags_t irq = irq_save_disable();
     module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
+    bool ro = file && file->read_only;
+    irq_restore(irq);
     if (!file) return 0;
-    if (file->read_only) return 0;
-    bool is_output = (uintptr_t)file->file_buffer.buffer == (uintptr_t)get_current_proc()->output;
-
-    size = min(size, file->file_buffer.limit);
-    if (is_output){//TODO: probably better to make these files be held by this module, and created only when needed
-        size_t written= buffer_write_lim(&file->file_buffer, buf, size);
-    
-        file->file_size = file->file_buffer.buffer_size;
-        get_current_proc()->output_size = file->file_size;
-        fd->size = file->file_size;
-        return written;
-    }
+    if (ro) return 0;
     return 0;
 }
 
@@ -523,14 +618,28 @@ void close_proc(file *fd) {
     if (!proc_opened_files) return;
 
     uint64_t fid = fd->id;
+    irq_flags_t irq = irq_save_disable();
     module_file *mfile = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(fid));
-    if (!mfile) return;
+    if (!mfile) {
+        irq_restore(irq);
+        return;
+    }
 
     if (mfile->references > 0) mfile->references--;
     if (mfile->references == 0) {
+        if (mfile->owns_buf && mfile->buf && mfile->file_buffer.buffer) {
+            if (mfile->buf_is_page_alloc) pfree((void*)mfile->buf, PROC_OUT_BUF);
+            else kfree((void*)mfile->buf, mfile->file_size);
+            mfile->buf = 0;
+            mfile->owns_buf = false;
+            mfile->buf_is_page_alloc = false;
+        }
         chashmap_remove(proc_opened_files, &fid, sizeof(fid), 0);
+        irq_restore(irq);
         kfree(mfile, sizeof(module_file));
+        return;
     }
+    irq_restore(irq);
 }
 
 system_module scheduler_module = (system_module){

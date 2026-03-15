@@ -21,7 +21,7 @@ void* malloc(size_t size){
     if (!k) return 0;
 
     int tr = 0;
-    paddr_t heap_pa = mmu_translate(0, k->heap, &tr);
+    paddr_t heap_pa = mmu_translate(0, k->mm.brk, &tr);
     if (tr) return 0;
 
     void* ptr = kalloc((void*)dmap_pa_to_kva(heap_pa), size, ALIGN_16B, MEM_PRIV_KERNEL);
@@ -74,9 +74,9 @@ extern void get_mouse_status(mouse_data *in){
     in->position = convert_mouse_position(get_mouse_pos());
 }
 
-extern uint16_t exec(const char* prog_name, int argc, const char* argv[]){
+extern int32_t exec(const char* prog_name, int argc, const char* argv[]){
     process_t *p = execute(prog_name, argc, argv);
-    return p->id;
+    return p ? (int32_t)p->id : -1;
 }
 
 extern void request_draw_ctx(draw_ctx* d_ctx){

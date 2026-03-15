@@ -35,7 +35,7 @@ bool mm_add_vma(mm_struct *mm, uaddr_t start, uaddr_t end, uint8_t prot, uint8_t
     if (ins > 0) {
         vma *a = &mm->vmas[ins - 1];
         vma *b = &mm->vmas[ins];
-        if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags && !(a->flags & VMA_FLAG_USERALLOC)) {
+        if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags && !(a->flags & VMA_FLAG_USERALLOC) && !(b->flags & VMA_FLAG_USERALLOC)) {
             a->end = b->end;
             for (uint16_t i = ins; i + 1 < mm->vma_count; i++) mm->vmas[i] = mm->vmas[i + 1];
             mm->vma_count--;
@@ -46,7 +46,7 @@ bool mm_add_vma(mm_struct *mm, uaddr_t start, uaddr_t end, uint8_t prot, uint8_t
     if (ins + 1 < mm->vma_count) {
         vma *a = &mm->vmas[ins];
         vma *b = &mm->vmas[ins + 1];
-        if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags && !(a->flags & VMA_FLAG_USERALLOC)) {
+        if (a->end == b->start && a->prot == b->prot && a->kind == b->kind && a->flags == b->flags && !(a->flags & VMA_FLAG_USERALLOC) && !(b->flags & VMA_FLAG_USERALLOC)) {
             a->end = b->end;
             for (uint16_t i = ins + 1; i + 1 < mm->vma_count; i++)mm->vmas[i] = mm->vmas[i + 1];
             mm->vma_count--;

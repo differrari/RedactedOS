@@ -5,14 +5,25 @@
 #include "exceptions/irq.h"
 #include "sysregs.h"
 #include "string/string.h"
+#include "memory/addr.h"
 #include "memory/memory.h"
 
 process_t *create_kernel_process(const char *name, int (*func)(int argc, char* argv[]), int argc, const char* argv[]){
 
-    disable_interrupt();
+    irq_flags_t irq = irq_save_disable();
     
     process_t* proc = init_process();
+    if (!proc) {
+        irq_restore(irq);
+        return 0;
+    }
+
     proc->alloc_map = make_page_index();
+    if (!proc->alloc_map) {
+        reset_process(proc);
+        irq_restore(irq);
+        return 0;
+    }
 
     name_process(proc, name);
 
@@ -21,6 +32,7 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
     uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_KERNEL, MEM_RW, true);
     if (!stack) {
         reset_process(proc);
+        irq_restore(irq);
         return 0;
     }
     register_allocation(proc->alloc_map, (void*)stack, stack_size);
@@ -29,21 +41,30 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
     if (!heap) {
         free_registered(proc->alloc_map, (void*)stack);
         reset_process(proc);
+        irq_restore(irq);
         return 0;
     }
-    register_allocation(proc->alloc_map, (void*)heap, PAGE_SIZE);
+    register_allocation(proc->alloc_map, (void*)dmap_pa_to_kva(heap), PAGE_SIZE);
 
     proc->stack = (stack + stack_size);
     proc->stack_size = stack_size;
 
-    proc->heap = heap;
+    proc->heap_phys = heap;
+    proc->mm.heap_start = (uaddr_t)dmap_pa_to_kva(heap);
+    proc->mm.brk = proc->mm.heap_start;
 
     proc->sp = proc->stack;
     
-    proc->pc = PHYS_TO_VIRT(((uintptr_t)func));
-    kprintf("Kernel process %s (%i) allocated with address at %llx, stack at %llx-%llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->pc, proc->sp - proc->stack_size, proc->sp, proc->heap, argc);
+    proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
+    if (!proc->output) {
+        reset_process(proc);
+        irq_restore(irq);
+        return 0;
+    }
+    proc->output_size = 0;
+    
+    proc->pc = PHYS_TO_VIRT((uintptr_t)func);
     proc->spsr = 0x205;
-    proc->state = READY;
 
     proc->PROC_X0 = 0;
     proc->PROC_X1 = 0;
@@ -93,7 +114,8 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
         }
     }
 
-    enable_interrupt();
+    kprintf("Kernel process %s (%i) allocated with address at %llx, stack at %llx-%llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->pc, proc->sp - proc->stack_size, proc->sp, proc->mm.brk, argc);
+    irq_restore(irq);
     
     return proc;
 }

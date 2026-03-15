@@ -15,7 +15,7 @@ typedef struct process process_t;
 #define VMA_KIND_ANON 4
 #define VMA_KIND_SPECIAL 5
 
-#define MAX_VMAS 32
+#define MAX_VMAS 128
 #define MM_GAP_PAGES 16
 
 typedef struct vma {

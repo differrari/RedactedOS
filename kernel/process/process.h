@@ -45,7 +45,6 @@ typedef struct process {
     uintptr_t stack;
     paddr_t stack_phys;
     uint64_t stack_size;
-    uintptr_t heap;
     paddr_t heap_phys;
     kaddr_t output;
     size_t output_size;

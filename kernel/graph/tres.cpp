@@ -58,7 +58,9 @@ gpu_point convert_mouse_position(gpu_point point){
 
 extern "C" void create_window(int32_t x, int32_t y, uint32_t width, uint32_t height){
     if (win_ids == UINT16_MAX) return;
-    window_frame *frame = (window_frame*)malloc(sizeof(window_frame));
+    window_frame *frame = (window_frame*)zalloc(sizeof(window_frame));
+    if (!frame) return;
+    memset(frame, 0, sizeof(window_frame));
     frame->win_id = win_ids++;
     frame->width = width;
     frame->height = height;
@@ -67,6 +69,15 @@ extern "C" void create_window(int32_t x, int32_t y, uint32_t width, uint32_t hei
     clinkedlist_push_front(window_list, PHYS_TO_VIRT_P(frame));
     gpu_create_window(x,y, width, height, &frame->win_ctx);
     process_t *p = launch_launcher();
+    if (!p) {
+        clinkedlist_node_t *node = clinkedlist_find(window_list, PHYS_TO_VIRT_P(&frame->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
+        if (node) clinkedlist_remove(window_list, node);
+        uint64_t size = (uint64_t)frame->win_ctx.width * (uint64_t)frame->win_ctx.height * 4;
+        size = (size + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
+        if (frame->win_ctx.fb && size)pfree(frame->win_ctx.fb, size);
+        release(frame);
+        return;
+    }
     p->win_id = frame->win_id;
     frame->pid = p->id;
     dirty_windows = true;
@@ -118,6 +129,7 @@ void get_window_ctx(draw_ctx* out_ctx){
 }
 
 void commit_frame(draw_ctx* frame_ctx, window_frame* frame){
+    if (!frame_ctx) return;
     if (!frame){
         process_t *p = get_current_proc();
         clinkedlist_node_t *node = clinkedlist_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
@@ -127,6 +139,7 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame){
 
     draw_ctx win_ctx = frame->win_ctx;
     draw_ctx *screen_ctx = gpu_get_ctx();
+    if (!screen_ctx || !screen_ctx->fb || !win_ctx.fb) return;
 
     int32_t sx = global_win_offset.x + frame->x;
     int32_t sy = global_win_offset.y + frame->y;

@@ -81,6 +81,18 @@ void disable_interrupt(){
     asm volatile ("isb");
 }
 
+irq_flags_t irq_save_disable(){
+    irq_flags_t flags;
+    asm volatile ("mrs %0, daif" : "=r"(flags));
+    disable_interrupt();
+    return flags;
+}
+
+void irq_restore(irq_flags_t flags){
+    asm volatile ("msr daif, %0" :: "r"(flags));
+    asm volatile ("isb");
+}
+
 void irq_el1_handler() {
     save_return_address_interrupt();
     mmu_ttbr0_disable_user();

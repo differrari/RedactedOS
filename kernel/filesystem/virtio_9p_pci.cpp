@@ -4,6 +4,7 @@
 #include "pci.h"
 #include "memory/page_allocator.h"
 #include "exceptions/exception_handler.h"
+#include "exceptions/irq.h"
 #include "std/memory.h"
 #include "std/memory_access.h"
 
@@ -33,7 +34,7 @@ bool Virtio9PDriver::init(uint32_t partition_sector){
 
     max_msize = choose_version(); 
 
-    open_files = chashmap_create(128);
+    open_files = chashmap_create(512);
 
     root = attach();
     if (root == INVALID_FID){
@@ -51,57 +52,106 @@ bool Virtio9PDriver::init(uint32_t partition_sector){
 }
 
 FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
+    uint64_t fid = reserve_fd_gid(path);
+    descriptor->cursor = 0;
+    descriptor->id = fid;
+
+    irq_flags_t irq = irq_save_disable();
+    module_file *cached = (module_file*)chashmap_get(open_files, &fid, sizeof(uint64_t));
+    if (cached) {
+        cached->references++;
+        descriptor->size = cached->file_size;
+        irq_restore(irq);
+        return FS_RESULT_SUCCESS;
+    }
+    irq_restore(irq);
     uint32_t f = walk_dir(root, (char*)path);
     if (f == INVALID_FID){
         kprintf("[VIRTIO 9P error] failed to navigate to %s",path);
         return FS_RESULT_NOTFOUND;
     }
-    uint64_t fid = reserve_fd_gid(path);
-    descriptor->cursor = 0;
-    descriptor->id = fid;
     uint64_t size = get_attribute(f, 0x00000200ULL);
     descriptor->size = size;
-    void* file = kalloc(np_dev.memory_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+    void* file = kalloc(np_dev.memory_page, size ? size : 1, ALIGN_64B, MEM_PRIV_KERNEL);
+    if (!file) {
+        clunk(&np_dev, f, mid++);
+        return FS_RESULT_DRIVER_ERROR;
+    }
     if (open(f) == INVALID_FID){
+        clunk(&np_dev, f, mid++);
+        kfree(file, size ? size : 1);
         kprintf("[VIRTIO 9P error] failed to open %s",path);
         return FS_RESULT_DRIVER_ERROR;
     }
-    if (read(f, 0, file) != size){
+    if (size && read(f, 0, file) != size){
+        clunk(&np_dev, f, mid++);
+        kfree(file, size ? size : 1);
         kprintf("[VIRTIO 9P error] failed read file %s",path);
         return FS_RESULT_DRIVER_ERROR;
     } 
+    clunk(&np_dev, f, mid++);
+    irq = irq_save_disable();
     module_file *mfile = (module_file*)chashmap_get(open_files, &fid, sizeof(uint64_t));
     if (!mfile){
         mfile = (module_file*)kalloc(np_dev.memory_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
-        if (chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), mfile) < 0) return FS_RESULT_DRIVER_ERROR;
+        if (!mfile) {
+            irq_restore(irq);
+            kfree(file, size ? size : 1);
+            return FS_RESULT_DRIVER_ERROR;
+        }
+        memset(mfile, 0, sizeof(module_file));
+        if (chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), mfile) < 0) {
+            irq_restore(irq);
+            kfree(mfile, sizeof(module_file));
+            kfree(file, size ? size : 1);
+            return FS_RESULT_DRIVER_ERROR;
+        }
+        mfile->references = 1;
     } else {
-        kfree((void*)mfile->buf, mfile->file_size);
+        if (mfile->buf) kfree((void*)mfile->buf, mfile->file_size ? mfile->file_size : 1);
+        mfile->references++;
     }
     mfile->file_size = size;
     mfile->buf = (uintptr_t)file;
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
-    mfile->references++;
+    irq_restore(irq);
     return FS_RESULT_SUCCESS;
 }
 
 size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
+    irq_flags_t irq = irq_save_disable();
     module_file *mfile = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
-    if (!mfile) return 0;
-    if (descriptor->cursor > mfile->file_size) return 0;
+    if (!mfile) {
+        irq_restore(irq);
+        return 0;
+    }
+    if (descriptor->cursor > mfile->file_size) {
+        irq_restore(irq);
+        return 0;
+    }
     if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
     memcpy(buf, (void*)(mfile->buf + descriptor->cursor), size);
+    irq_restore(irq);
     return size;
 }
 
 void Virtio9PDriver::close_file(file* descriptor){
+    irq_flags_t irq = irq_save_disable();
     module_file *mfile = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
-    if (!mfile) return;
-    mfile->references--;
+    if (!mfile) {
+        irq_restore(irq);
+        return;
+    }
+    if (mfile->references) mfile->references--;
     if (mfile->references == 0){
         chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
-        kfree((void*)mfile->buf, mfile->file_size);
+        irq_restore(irq);
+        if (mfile->buf) kfree((void*)mfile->buf, mfile->file_size ? mfile->file_size : 1);
+        kfree(mfile, sizeof(module_file));
+        return;
     }
+    irq_restore(irq);
 }
 
 size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, uint64_t *offset){
@@ -111,10 +161,14 @@ size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, u
         return 0;
     }
     if (open(d) == INVALID_FID){
+        clunk(&np_dev, d, mid++);
         kprintf("[VIRTIO 9P error] failed to open directory");
+        return 0;
     }
+    size_t amount = list_contents(d, buf, size, offset);
     kprintf("Directory opened and being read from %x",size);
-    return list_contents(d, buf, size, offset);
+    clunk(&np_dev, d, mid++);
+    return amount;
 }
 
 enum {
@@ -205,8 +259,8 @@ void Virtio9PDriver::p9_inc_tag(p9_packet_header* header){
 }
 
 size_t Virtio9PDriver::choose_version(){
-    p9_version_packet *cmd = (p9_version_packet*)kalloc(np_dev.memory_page, sizeof(p9_packet_header), ALIGN_4KB, MEM_PRIV_KERNEL);
-    p9_version_packet *resp = (p9_version_packet*)kalloc(np_dev.memory_page, sizeof(p9_packet_header), ALIGN_4KB, MEM_PRIV_KERNEL);
+    p9_version_packet *cmd = (p9_version_packet*)kalloc(np_dev.memory_page, sizeof(p9_version_packet), ALIGN_4KB, MEM_PRIV_KERNEL);
+    p9_version_packet *resp = (p9_version_packet*)kalloc(np_dev.memory_page, sizeof(p9_version_packet), ALIGN_4KB, MEM_PRIV_KERNEL);
     
     cmd->header.size = sizeof(p9_version_packet);
     cmd->header.id = P9_TVERSION;
@@ -221,8 +275,8 @@ size_t Virtio9PDriver::choose_version(){
 
     uint64_t msize = resp->msize;
 
-    kfree(cmd, sizeof(p9_packet_header));
-    kfree(resp, sizeof(p9_packet_header));
+    kfree(cmd, sizeof(p9_version_packet));
+    kfree(resp, sizeof(p9_version_packet));
 
     return msize;
 }
@@ -305,6 +359,34 @@ uint32_t Virtio9PDriver::open(uint32_t fid){
     return rid;
 }
 
+typedef struct t_clunk {
+    p9_packet_header header;
+    uint32_t fid;
+} __attribute__((packed)) t_clunk;
+
+bool Virtio9PDriver::clunk(virtio_device *dev, uint32_t fid, uint16_t tag) {
+    t_clunk *cmd = (t_clunk*)kalloc(dev->memory_page, sizeof(t_clunk), ALIGN_4KB, MEM_PRIV_KERNEL);
+    t_clunk *resp = (t_clunk*)kalloc(dev->memory_page, sizeof(t_clunk), ALIGN_4KB, MEM_PRIV_KERNEL);
+    if (!cmd || !resp) {
+        if (cmd) kfree(cmd, sizeof(t_clunk));
+        if (resp) kfree(resp, sizeof(t_clunk));
+        return false;
+    }
+
+    cmd->header.size = sizeof(t_clunk);
+    cmd->header.id = P9_TCLUNK;
+    write_unaligned16(&cmd->header.tag, tag);
+    cmd->fid = fid;
+
+    virtio_buf b[2] = {VBUF(cmd, sizeof(t_clunk), 0), VBUF(resp, sizeof(t_clunk), VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(dev, b, 2);
+
+    bool ok = resp->header.id == P9_RCLUNK;
+    kfree(cmd, sizeof(t_clunk));
+    kfree(resp, sizeof(t_clunk));
+    return ok;
+}
+
 typedef struct t_readdir {
     p9_packet_header header;
     uint32_t fid;
@@ -352,22 +434,26 @@ size_t Virtio9PDriver::list_contents(uint32_t fid, void *buf, size_t size, uint6
     char *write_ptr = (char*)buf + 4;
 
     uintptr_t p = resp + sizeof(r_readdir);
+    uintptr_t end = p + ((r_readdir*)resp)->count;
 
     uint32_t count = 0;
 
-    while (p < resp + ((r_readdir*)resp)->count){
+    while (p + sizeof(r_readdir_data) <= end){
         r_readdir_data *data = (r_readdir_data*)p;
+        uintptr_t name_ptr = p + sizeof(r_readdir_data);
+        uintptr_t next = name_ptr + data->name_len;
+        if (next > end) break;
     
-        char *name = (char*)(p + sizeof(r_readdir_data));
+        char *name = (char*)name_ptr;
 
-        count++;
         memcpy(write_ptr, name, data->name_len);
         write_ptr += data->name_len;
         *write_ptr++ = 0;
+        count++;
 
         if (offset) *offset = data->offset;
         
-        p += sizeof(r_readdir_data) + data->name_len;
+        p = next;
     }
 
     *(uint32_t*)buf = count;
@@ -398,21 +484,30 @@ uint32_t Virtio9PDriver::walk_dir(uint32_t fid, char *path){
     
     cmd->fid = fid;
     cmd->newfid = nfid;
+    cmd->num_names = 0;
 
     uintptr_t p = (uintptr_t)cmd + sizeof(t_walk);
 
-    char *new_path = path;
-    while (*new_path != 0) {
-        new_path = (char*)seek_to(new_path, '/');
-        uint8_t offset = new_path-path-(*new_path != 0 || *(new_path-1) == '/');
-        if (offset != 0){
+    while (*path == '/') path++;
+    while (*path != 0) {
+        char *end = path;
+        while (*end && *end != '/') end++;
+
+        uint16_t len = (uint16_t)(end - path);
+        if (len != 0) {
+            if (p + 2 + len > (uintptr_t)cmd + sizeof(t_walk) + amount) {
+                kfree((void*)cmd, sizeof(t_walk) + amount);
+                kfree((void*)resp, amount);
+                return INVALID_FID;
+            }
             cmd->num_names++;
-            *(uint16_t*)p = offset;
+            write_unaligned16((uint16_t*)p, len);
             p += 2;
-            memcpy((void*)p, path, offset);
-            p += offset;
+            memcpy((void*)p, path, len);
+            p += len;
         }
-        path = new_path;
+        path = end;
+        while (*path == '/') path++;
     }
     
     cmd->header.size = p-(uintptr_t)cmd;

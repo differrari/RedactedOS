@@ -62,9 +62,10 @@ void register_event(kbd_event event){
 }
 
 void mouse_config(gpu_point point, gpu_size size){
-    gpu_setup_cursor(point);
     mouse_loc = point;
     screen_bounds = size;
+    gpu_setup_cursor(point);
+    mouse_setup = true;
 }
 
 uint8_t last_cursor_state = 0;
@@ -76,6 +77,7 @@ mouse_input get_raw_mouse_in(){
 
 void register_mouse_input(mouse_input *rat){
     last_mouse_in = *rat;
+    if (!mouse_setup) return;
     int32_t dx = rat->x;
     int32_t dy = rat->y;
     mouse_loc.x += dx;
@@ -119,6 +121,7 @@ void sys_focus_current(){
 void sys_set_focus(int pid){
     if (focused_proc) focused_proc->focused = false;
     focused_proc = get_proc_by_pid(pid);
+    if (!focused_proc) return;
     focused_proc->focused = true;
     set_window_focus(focused_proc->win_id);
 }
@@ -166,6 +169,7 @@ bool keypress_contains(keypress *kp, char key, uint8_t modifier){
 
 bool sys_read_event(int pid, kbd_event *out){
      process_t *process = get_proc_by_pid(pid);
+    if (!process) return false;
     if (process->event_buffer.read_index == process->event_buffer.write_index) return false;
 
     *out = process->event_buffer.entries[process->event_buffer.read_index];
@@ -175,6 +179,7 @@ bool sys_read_event(int pid, kbd_event *out){
 
 bool sys_read_input(int pid, keypress *out){
     process_t *process = get_proc_by_pid(pid);
+    if (!process) return false;
     if (process->input_buffer.read_index == process->input_buffer.write_index) return false;
 
     *out = process->input_buffer.entries[process->input_buffer.read_index];

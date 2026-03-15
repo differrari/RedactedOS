@@ -5,6 +5,7 @@
 #include "std/memory.h"
 #include "sysregs.h"
 #include "memory/page_allocator.h"
+#include "exceptions/irq.h"
 
 #define VIRTIO_BLK_T_IN   0
 #define VIRTIO_BLK_T_OUT  1
@@ -21,6 +22,8 @@ typedef struct {
 
 static bool blk_disk_enable_verbose;
 static virtio_device blk_dev;
+static virtio_blk_req *disk_cmd;
+static uint8_t *disk_status;
 
 #define VIRTIO_BLK_ID 0x1001
 
@@ -55,40 +58,57 @@ bool init_disk_device(){
         return false;
     }
 
+    disk_cmd = (virtio_blk_req*)kalloc(blk_dev.memory_page, sizeof(virtio_blk_req), ALIGN_64B, MEM_PRIV_KERNEL);
+    disk_status = (uint8_t*)kalloc(blk_dev.memory_page, 64, ALIGN_64B, MEM_PRIV_KERNEL);
+    if (!disk_cmd || !disk_status) {
+        if (disk_cmd) kfree(disk_cmd, sizeof(virtio_blk_req));
+        if (disk_status) kfree(disk_status, 64);
+        kprintf("failed disk DMA buffer");
+        return false;
+    }
+
+    memset(disk_cmd, 0, sizeof(virtio_blk_req));
+    memset(disk_status, 0, 64);
+
     blk_dev.common_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
     return true;
 }
 
-void* disk_cmd;
-
 void disk_write(const void *buffer, uint32_t sector, uint32_t count){
-    if (!disk_cmd) disk_cmd = kalloc(blk_dev.memory_page, sizeof(virtio_blk_req), ALIGN_64B, MEM_PRIV_KERNEL);
+    if (!disk_cmd || !disk_status || !count) return;
+    irq_flags_t irq = irq_save_disable();
+    
     void* data = kalloc(blk_dev.memory_page, count * 512, ALIGN_64B, MEM_PRIV_KERNEL);
+    if (!data) {
+        irq_restore(irq);
+        return;
+    }
 
     memcpy(data, buffer, count * 512);
 
-    virtio_blk_req *req = (virtio_blk_req *)disk_cmd;
-    req->type = VIRTIO_BLK_T_OUT;
-    req->reserved = 0;
-    req->sector = sector;
+    disk_cmd->type = VIRTIO_BLK_T_OUT;
+    disk_cmd->reserved = 0;
+    disk_cmd->sector = sector;
 
-    uint8_t status = 0;
-    virtio_buf b[3] = {VBUF(disk_cmd, sizeof(virtio_blk_req), 0), VBUF(data, count * 512, 0), VBUF(&status, 1, VIRTQ_DESC_F_WRITE)};
+    disk_status[0] = 0;
+    virtio_buf b[3] = {VBUF(disk_cmd, sizeof(virtio_blk_req), 0), VBUF(data, count * 512, 0), VBUF(disk_status, 1, VIRTQ_DESC_F_WRITE)};
     virtio_send_nd(&blk_dev, b, 3);
     kfree((void *)data,count * 512);
+    irq_restore(irq);
 }
 
 void disk_read(void *buffer, uint32_t sector, uint32_t count){
-    if (!disk_cmd) disk_cmd = kalloc(blk_dev.memory_page, sizeof(virtio_blk_req), ALIGN_64B, MEM_PRIV_KERNEL);
+    if (!disk_cmd || !disk_status || !count) return;
 
-    virtio_blk_req *req = (virtio_blk_req *)disk_cmd;
-    req->type = VIRTIO_BLK_T_IN;
-    req->reserved = 0;
-    req->sector = sector;
+    irq_flags_t irq = irq_save_disable();
+    disk_cmd->type = VIRTIO_BLK_T_IN;
+    disk_cmd->reserved = 0;
+    disk_cmd->sector = sector;
 
-    uint8_t status = 0;
-    virtio_buf b[3] = {VBUF(disk_cmd, sizeof(virtio_blk_req), 0), VBUF(buffer, count * 512, VIRTQ_DESC_F_WRITE), VBUF(&status, 1, VIRTQ_DESC_F_WRITE)};
+    disk_status[0] = 0;
+    virtio_buf b[3] = {VBUF(disk_cmd, sizeof(virtio_blk_req), 0), VBUF(buffer, count * 512, VIRTQ_DESC_F_WRITE), VBUF(disk_status, 1, VIRTQ_DESC_F_WRITE)};
     virtio_send_nd(&blk_dev, b, 3);
+    irq_restore(irq);
 }
 
 system_module disk_module = (system_module){
