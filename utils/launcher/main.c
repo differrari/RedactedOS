@@ -197,7 +197,7 @@ void activate_current(){
 }
 
 void draw_tile(uint32_t column, uint32_t row){
-    bool sel = selected.x == column && selected.y == row;
+    bool sel = (u32)selected.x == column && (u32)selected.y == row;
     uint32_t index = (row * MAX_COLS) + column;
     
     int border = 4;

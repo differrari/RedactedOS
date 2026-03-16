@@ -11,7 +11,7 @@ bool load_module(system_module *module);
 bool unload_module(system_module *module);
 system_module* get_module(const char **full_path);
 
-extern clinkedlist_t* modules;
+extern linked_list_t* modules;
 
 #ifdef __cplusplus 
 }

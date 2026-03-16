@@ -34,7 +34,7 @@ void unset_window_focus();
 
 gpu_point convert_mouse_position(gpu_point p);
 
-extern clinkedlist_t *window_list;
+extern linked_list_t *window_list;
 
 extern uint16_t win_ids;
 extern bool dirty_windows;
