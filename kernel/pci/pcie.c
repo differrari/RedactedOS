@@ -15,6 +15,11 @@
 
 #define READ_FIELD(val, reg, field) ((val & reg##_##field##_MASK) >> reg##_##field##_SHIFT)
 
+static uptr base;
+static u64 pcie_addr;
+static u64 cpu_addr;
+static u64 win_size;
+
 bool pcie_link_up(uintptr_t base){
     u32 val = read32(base + PCIE_STATUS);
     kprintf("Link status %x",val);
@@ -50,13 +55,70 @@ int encode_ibar_size(u64 size)
 	return 0;
 }
 
+int cfg_index(int busnr, int devfn, int reg)
+{
+	return    ((PCI_SLOT(devfn) & 0x1f) << PCIE_SLOT_SHIFT)
+		| ((PCI_FUNC(devfn) & 0x07) << PCIE_FUNC_SHIFT)
+		| (busnr << PCIE_BUSNUM_SHIFT)
+		| (reg & ~3);
+}
+
+uptr pcie_map_conf(unsigned busnr, unsigned devfn, int where)
+{
+	/* Accesses to the RC go right to the RC registers if slot==0 */
+	if (busnr == 0)
+		return PCI_SLOT(devfn) ? 0 : base + where;
+
+	/* For devices, write to the config space index register */
+	int idx = cfg_index(busnr, devfn, 0);
+	write32(base + PCIE_EXT_CFG_INDEX, idx);
+	return base + PCIE_EXT_CFG_DATA + where;
+}
+
+bool enable_bridge(){
+	uptr conf = pcie_map_conf(0, PCI_DEVFN(0, 0), 0);
+	if (!conf){
+        kprint("[PCIe error] no config to enable bridge");
+		return false;
+	}
+    
+	if (read32(conf + PCI_CLASS_REVISION) >> 8 != 0x060400 || read8(conf + PCI_HEADER_TYPE) != PCI_HEADER_TYPE_BRIDGE){
+	    kprintf("[PCIe error] wrong class revision or header type");
+		return false;
+	}
+    
+	write8(conf + PCI_CACHE_LINE_SIZE, 64/4);
+    
+	write8(conf + PCI_SECONDARY_BUS, 1);
+	write8(conf + PCI_SUBORDINATE_BUS, 1);
+    
+	write16(conf + PCI_MEMORY_BASE, pcie_addr >> 16);
+	write16(conf + PCI_MEMORY_LIMIT, pcie_addr >> 16);
+    
+	write8(conf + PCI_BRIDGE_CONTROL, PCI_BRIDGE_CTL_PARITY);
+    
+	u8 cap = read8(conf + BRCM_PCIE_CAP_REGS + PCI_CAP_LIST_ID);
+	if (cap != PCI_CAP_ID_EXP){
+	    kprintf("Wrong capability id %i",cap);
+	    return false;
+	}
+	write8(conf + BRCM_PCIE_CAP_REGS + PCI_EXP_RTCTL, PCI_EXP_RTCTL_CRSSVE);
+    
+	write16(conf + PCI_COMMAND,   PCI_COMMAND_MEMORY
+				     | PCI_COMMAND_MASTER
+				     | PCI_COMMAND_PARITY
+				     | PCI_COMMAND_SERR);
+    
+	return true;
+}
+
 bool init_hostbridge(){
     
     for (int i = 0; i < 10; i++){
         register_device_memory(PCI_BASE + (i * 0x1000), PCI_BASE + (i * 0x1000));
     }
     
-    uintptr_t base = VIRT_TO_PHYS(PCI_BASE);
+    base = VIRT_TO_PHYS(PCI_BASE);
     kprint("Starting");
     
     REG_SET(base, PCIE_RGR1_SW_INIT_1, INIT, 1);
@@ -134,9 +196,9 @@ bool init_hostbridge(){
 	
 	u64 cpu_addr_mb, limit_addr_mb;
 	
-	u64 pcie_addr = MEM_PCIE_RANGE_PCIE_START;
-	u64 cpu_addr = MEM_PCIE_RANGE_START;
-	u64 win_size = MEM_PCIE_RANGE_SIZE;
+	pcie_addr = MEM_PCIE_RANGE_PCIE_START;
+	cpu_addr = MEM_PCIE_RANGE_START;
+	win_size = MEM_PCIE_RANGE_SIZE;
 
 	/* Set the m_base of the pcie_addr window */
 	write32(base + PCIE_MISC_CPU_2_PCIE_MEM_WIN0_LO, lo32(pcie_addr));
@@ -177,6 +239,6 @@ bool init_hostbridge(){
 	 * is enabled =>  setting the CLKREQ_DEBUG_ENABLE field to 1.
 	 */
 	REG_SET(base, PCIE_MISC_HARD_PCIE_HARD_DEBUG, CLKREQ_DEBUG_ENABLE, 1);
-    
-    return true;
+	
+	return enable_bridge();
 }
