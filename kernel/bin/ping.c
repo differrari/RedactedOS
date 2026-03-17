@@ -26,12 +26,6 @@ typedef struct {
     const char *host;
 } ping_opts_t;
 
-static void help(file *fd) {
-    const char *a = "usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host";
-    write_file(fd, a, strlen_max(a, STRING_MAX_LEN));
-    write_file(fd, "\n", 1);
-}
-
 static bool parse_args(int argc, char *argv[], ping_opts_t *o) {
     o->ver = IP_VER4;
     o->count = 4;
@@ -94,7 +88,7 @@ static const char *status_to_msg(uint8_t st) {
     }
 }
 
-static int ping_v4(file *fd, const ping_opts_t *o) {
+static int ping_v4(const ping_opts_t *o) {
     const char *host = o->host;
 
     uint32_t dst_ip_be = 0;
@@ -103,10 +97,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
         uint32_t r = 0;
         dns_result_t dr = dns_resolve_a(host, &r, DNS_USE_BOTH, o->timeout_ms);
         if (dr != DNS_OK) {
-            string m = string_format("ping: dns lookup failed (%d) for '%s'", (int)dr, host);
-            write_file(fd, m.data, m.length);
-            write_file(fd, "\n", 1);
-            string_free(m);
+            print("ping: dns lookup failed (%d) for '%s'\n", (int)dr, host);
             return 2;
         }
         dst_ip_be = r;
@@ -115,11 +106,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
     char ipstr[16];
     ipv4_to_string(dst_ip_be, ipstr);
 
-    write_file(fd, "PING ", 5);
-    write_file(fd, host, strlen_max(host, STRING_MAX_LEN));
-    write_file(fd, " (", 2);
-    write_file(fd, ipstr, strlen_max(ipstr, STRING_MAX_LEN));
-    write_file(fd, ") with 32 bytes of data:\n", 26);
+    print("PING %s (%s) with 32 bytes of data:\n", host, ipstr);
 
     uint32_t sent = 0, received = 0, min_ms = UINT32_MAX, max_ms = 0;
     uint64_t sum_ms = 0;
@@ -131,8 +118,7 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
     if (o->src_set) {
         l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(o->src_ip);
         if (!l3) {
-            const char *em = "ping: invalid source (no local ip match)\n";
-            write_file(fd, em, strlen_max(em, STRING_MAX_LEN));
+            print("ping: invalid source (no local ip match)\n");
             return 2;
         }
         txo.index = (uint8_t)l3->l3_id;
@@ -153,47 +139,32 @@ static int ping_v4(file *fd, const ping_opts_t *o) {
             if (rtt < min_ms) min_ms = rtt;
             if (rtt > max_ms) max_ms = rtt;
             sum_ms += rtt;
-            string ln = string_format("Reply from %s: bytes=32 time=%ums", ipstr, (uint32_t)rtt);
-            write_file(fd, ln.data, ln.length);
-            write_file(fd, "\n", 1);
-            string_free(ln);
+            print("Reply from %s: bytes=32 time=%ums\n", ipstr, rtt);
         } else {
-            const char *msg = status_to_msg(res.status);
-            write_file(fd, msg, strlen(msg));
-            write_file(fd, "\n", 1);
+            print("%s\n", status_to_msg(res.status));
         }
 
         if (i + 1 < o->count) msleep(o->interval_ms);
     }
 
-    write_file(fd, "\n", 1);
-
-    string h = string_format("--- %s ping statistics ---", host);
-    write_file(fd, h.data, h.length);
-    write_file(fd, "\n", 1);
-    string_free(h);
+    print("\n");
+    print("--- %s ping statistics ---\n", host);
 
     uint32_t loss = (sent == 0) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
     uint32_t total_time = (o->count > 0) ? (o->count - 1) * o->interval_ms : 0;
 
-    string s = string_format("%u packets transmitted, %u received, %u%% packet loss, time %ums", sent, received, loss, total_time);
-    write_file(fd, s.data, s.length);
-    write_file(fd, "\n", 1);
-    string_free(s);
+    print("%u packets transmitted, %u received, %u%% packet loss, time %ums\n", sent, received, loss, total_time);
 
     if (received > 0) {
         uint32_t avg = (uint32_t)(sum_ms / received);
         if (min_ms == UINT32_MAX) min_ms = avg;
-        string r = string_format("rtt min/avg/max = %u/%u/%u ms", min_ms, avg, max_ms);
-        write_file(fd, r.data, r.length);
-        write_file(fd, "\n", 1);
-        string_free(r);
+        print("rtt min/avg/max = %u/%u/%u ms\n", min_ms, avg, max_ms);
     }
 
     return (received > 0) ? 0 : 1;
 }
 
-static int ping_v6(file *fd, const ping_opts_t *o) {
+static int ping_v6(const ping_opts_t *o) {
     const char *host = o->host;
 
     uint8_t dst6[16] ={0};
@@ -201,10 +172,7 @@ static int ping_v6(file *fd, const ping_opts_t *o) {
     if (!is_lit) {
         dns_result_t dr = dns_resolve_aaaa(host, dst6, DNS_USE_BOTH, o->timeout_ms);
         if (dr != DNS_OK) {
-            string m = string_format("ping: dns lookup failed (%d) for '%s'",(int)dr, host);
-            write_file(fd, m.data, m.length);
-            write_file(fd, "\n", 1);
-            string_free(m);
+            print("ping: dns lookup failed (%d) for '%s'\n",(int)dr, host);
             return 2;
         }
     }
@@ -212,12 +180,7 @@ static int ping_v6(file *fd, const ping_opts_t *o) {
     char ipstr[64];
     ipv6_to_string(dst6, ipstr, (int)sizeof(ipstr));
 
-    write_file(fd, "PING ", 5);
-    write_file(fd, host, strlen(host));
-    write_file(fd, " (", 2);
-    write_file(fd, ipstr, strlen(ipstr));
-    write_file(fd, ") with 32 bytes of data:", 25);
-    write_file(fd, "\n", 1);
+    print("PING %s (%s) with 32 bytes of data:\n", host, ipstr);
 
     uint32_t sent = 0, received = 0, min_ms = UINT32_MAX, max_ms = 0;
     uint64_t sum_ms = 0;
@@ -237,60 +200,41 @@ static int ping_v6(file *fd, const ping_opts_t *o) {
             if (rtt < min_ms) min_ms = rtt;
             if (rtt > max_ms) max_ms = rtt;
             sum_ms += rtt;
-
-            string ln = string_format("Reply from %s: bytes=32 time=%ums", ipstr, (uint32_t)rtt);
-            write_file(fd, ln.data, ln.length);
-            write_file(fd, "\n", 1);
-            string_free(ln);
+            print("Reply from %s: bytes=32 time=%ums\n", ipstr, rtt);
         } else {
-            const char *msg = status_to_msg(res.status);
-            write_file(fd, msg, strlen(msg));
-            write_file(fd, "\n", 1);
+            print("%s\n", status_to_msg(res.status));
         }
 
         if (i + 1 < o->count) msleep(o->interval_ms);
     }
 
-    write_file(fd, "\n", 1);
+    print("\n");
 
-    string h = string_format("--- %s ping statistics ---", host);
-    write_file(fd, h.data, h.length);
-    write_file(fd, "\n", 1);
-    string_free(h);
-
+    print("--- %s ping statistics ---\n", host);
 
     uint32_t loss = (sent == 0) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
     uint32_t total_time = (o->count > 0) ? (o->count - 1) * o->interval_ms : 0;
 
-    string s = string_format("%u packets transmitted, %u received, %u%% packet loss, time %ums", sent, received, loss, total_time);
-    write_file(fd, s.data, s.length);
-    write_file(fd, "\n", 1);
-    string_free(s);
+    print("%u packets transmitted, %u received, %u%% packet loss, time %ums\n", sent, received, loss, total_time);
 
     if (received > 0) {
         uint32_t avg = (uint32_t)(sum_ms / received);
         if (min_ms == UINT32_MAX) min_ms = avg;
-        string r = string_format("rtt min/avg/max = %u/%u/%u ms", min_ms, avg, max_ms);
-        write_file(fd, r.data, r.length);
-        write_file(fd, "\n", 1);
-        string_free(r);
+        print("rtt min/avg/max = %u/%u/%u ms\n", min_ms, avg, max_ms);
     }
 
     return (received > 0) ? 0 : 1;
 }
 
 int run_ping(int argc, char *argv[]) {
-    file fd = (file){.id = FD_OUT};
-
     ping_opts_t opts;
     if (!parse_args(argc, argv, &opts)) {
-        help(&fd);
+        print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host\n");
         return 2;
     }
 
     if (opts.ver == IP_VER6 && opts.src_set) {
-        const char *em = "ping: -s is only supported for IPv4\n";
-        write_file(&fd, em, strlen(em));
+        print("ping: -s is only supported for IPv4\n");
         return 2;
     }
 
@@ -299,18 +243,14 @@ int run_ping(int argc, char *argv[]) {
         if (!l3) {
             char ssrc[16];
             ipv4_to_string(opts.src_ip, ssrc);
-            string em = string_format("ping: invalid source %s (no local ip match)", ssrc);
-            write_file(&fd, em.data, em.length);
-            write_file(&fd, "\n", 1);
-            string_free(em);
+            print("ping: invalid source %s (no local ip match)\n", ssrc);
             return 2;
         }
     }
 
-    int rc = 0;
-    if (opts.ver == IP_VER4) rc = ping_v4(&fd, &opts);
-    else if (opts.ver == IP_VER6) rc = ping_v6(&fd, &opts);
-    else { help(&fd); rc = 2; }
+    if (opts.ver == IP_VER4) return ping_v4(&opts);
+    if (opts.ver == IP_VER6) return ping_v6(&opts);
+    print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host\n");
 
-    return rc;
+    return 2;
 }

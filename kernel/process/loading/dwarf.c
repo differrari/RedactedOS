@@ -167,11 +167,11 @@ uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, siz
 	uint8_t *p = (uint8_t*)ptr;
 	memset(type_codes, 0, sizeof(uint64_t) * DWARF_ENTRY_CAP);
 	memset(form_codes, 0, sizeof(uint64_t) * DWARF_ENTRY_CAP);
-	uint8_t directory_entry_format_count = *p++;
+	uint64_t directory_entry_format_count = *p++;
 	if (directory_entry_format_count > DWARF_ENTRY_CAP) return ptr;
 	// kprintf("Directory formats %i at %x",directory_entry_format_count, ptr);
 	
-	for (uint8_t i = 0; i < directory_entry_format_count; i++){
+	for (uint64_t i = 0; i < directory_entry_format_count; i++){
 		type_codes[i] = decode_uleb128(&p);
 		form_codes[i] = decode_uleb128(&p);
 		// kprintf("Type code %i Form code %i",type_codes[i],form_codes[i]);
@@ -179,7 +179,7 @@ uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, siz
 	uint64_t directories_count = decode_uleb128(&p);
 	// kprintf("Directories %i", directories_count);
 	for (uint64_t i = 0; i < directories_count; i++){
-		for (uint8_t f = 0; f < directory_entry_format_count; f++) {
+		for (uint64_t f = 0; f < directory_entry_format_count; f++) {
             // uint64_t type_code = type_codes[f];
             uint64_t form_code = form_codes[f];
 
@@ -187,11 +187,27 @@ uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, siz
 
             const char *str = NULL;
 
-			switch (form_code) { //should it have smt like 'p += n;' ? TODO
-				case DW_FORM_block: decode_uleb128(&p); break;
-				case DW_FORM_block1: p += 1; break;
-				case DW_FORM_block2: p += 2; break;
-				case DW_FORM_block4: p += 4; break;
+			switch (form_code) {
+				case DW_FORM_block: {
+					uint64_t n = decode_uleb128(&p);
+					p += n;
+					break;
+				}
+				case DW_FORM_block1: {
+					uint8_t n = *p++;
+					p += n;
+					break;
+				}
+				case DW_FORM_block2: {
+					uint16_t n = read_unaligned16((const uint16_t*)p);
+					p += 2 + n;
+					break;
+				}
+				case DW_FORM_block4: {
+					uint32_t n = read_unaligned32((const uint32_t*)p);
+					p += 4 + n;
+					break;
+				}
 				case DW_FORM_data1: p += 1; break;
 				case DW_FORM_data2: p += 2; break;
 				case DW_FORM_data4: p += 4; break;

@@ -19,11 +19,8 @@ uint64_t reserve_fd_gid(const char *path);
 typedef struct module_file {
     uint64_t fid;
     size_t file_size;
-    uintptr_t buf;//TODO: remove this (and other options)
     bool ignore_cursor;
     bool read_only;
-    bool owns_buf;
-    bool buf_is_page_alloc;
     buffer file_buffer;
     uint64_t references;
 } module_file;

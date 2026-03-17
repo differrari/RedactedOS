@@ -108,11 +108,17 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         }
         mfile->references = 1;
     } else {
-        if (mfile->buf) kfree((void*)mfile->buf, mfile->file_size ? mfile->file_size : 1);
+        if (mfile->file_buffer.buffer) kfree(mfile->file_buffer.buffer, mfile->file_size ? mfile->file_size : 1);
         mfile->references++;
     }
     mfile->file_size = size;
-    mfile->buf = (uintptr_t)file;
+    mfile->file_buffer = (buffer){
+        .buffer = file,
+        .buffer_size = size,
+        .limit = size,
+        .options = buffer_opt_none,
+        .cursor = 0,
+    };
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
     irq_restore(irq);
@@ -131,7 +137,7 @@ size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
         return 0;
     }
     if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
-    memcpy(buf, (void*)(mfile->buf + descriptor->cursor), size);
+    memcpy(buf, (char*)mfile->file_buffer.buffer + descriptor->cursor, size);
     irq_restore(irq);
     return size;
 }
@@ -147,7 +153,7 @@ void Virtio9PDriver::close_file(file* descriptor){
     if (mfile->references == 0){
         chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
         irq_restore(irq);
-        if (mfile->buf) kfree((void*)mfile->buf, mfile->file_size ? mfile->file_size : 1);
+        if (mfile->file_buffer.buffer) kfree(mfile->file_buffer.buffer, mfile->file_size ? mfile->file_size : 1);
         kfree(mfile, sizeof(module_file));
         return;
     }

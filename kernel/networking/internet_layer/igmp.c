@@ -30,6 +30,7 @@ typedef struct {
 } igmp_state_t;
 
 static volatile int igmp_daemon_running = 0;
+static volatile int igmp_daemon_pending = 0;
 static uint32_t igmp_uptime_ms = 0;
 static rng_t igmp_rng;
 static int igmp_rng_inited = 0;
@@ -104,6 +105,7 @@ static int igmp_daemon_entry(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
 
+    igmp_daemon_pending = 0;
     igmp_daemon_running = 1;
 
     if (!igmp_rng_inited) {
@@ -156,9 +158,10 @@ static int igmp_daemon_entry(int argc, char* argv[]) {
 }
 
 static void igmp_daemon_kick(void) {
-    if (igmp_daemon_running) return;
+    if (igmp_daemon_running || igmp_daemon_pending) return;
     if (!igmp_has_pending_timers()) return;
-    create_kernel_process("igmp_daemon", igmp_daemon_entry, 0, 0);
+    igmp_daemon_pending = 1;
+    if (!create_kernel_process("igmp_daemon", igmp_daemon_entry, 0, 0)) igmp_daemon_pending = 0;
 }
 
 bool igmp_send_join(uint8_t ifindex, uint32_t group) {

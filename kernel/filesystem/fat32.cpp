@@ -327,7 +327,13 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     }
     memset(mfile, 0, sizeof(module_file));
     mfile->file_size = buf_ptr.size;
-    mfile->buf = (uintptr_t)buf;
+    mfile->file_buffer = (buffer){
+        .buffer = buf,
+        .buffer_size = buf_ptr.size,
+        .limit = buf_ptr.size,
+        .options = buffer_opt_none,
+        .cursor = 0,
+    };
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
     mfile->references = 1;
@@ -335,7 +341,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     int ok = chashmap_put(open_files, &fid, sizeof(uint64_t), mfile);
     irq_restore(irq);
     if (ok < 0) {
-        kfree((void*)mfile->buf, mfile->file_size ? mfile->file_size : 1);
+        kfree(mfile->file_buffer.buffer, mfile->file_size ? mfile->file_size : 1);
         kfree(mfile, sizeof(module_file));
         return FS_RESULT_DRIVER_ERROR;
     }
@@ -354,7 +360,7 @@ size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
         return 0;
     }
     if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
-    memcpy(buf, (void*)(mfile->buf + descriptor->cursor), size);
+    memcpy(buf, (char*)mfile->file_buffer.buffer + descriptor->cursor, size);
     irq_restore(irq);
     return size;
 }
@@ -370,7 +376,7 @@ void FAT32FS::close_file(file* descriptor){
     if (mfile->references == 0){
         chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
         irq_restore(irq);
-        kfree((void*)mfile->buf, mfile->file_size ? mfile->file_size : 1);
+        kfree(mfile->file_buffer.buffer, mfile->file_size ? mfile->file_size : 1);
         kfree(mfile, sizeof(module_file));
         return;
     }

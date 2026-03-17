@@ -91,6 +91,8 @@ bool test_kalloc_fragment_reuse() {
     void *a = kalloc(page, 64, ALIGN_16B, MEM_PRIV_KERNEL);
     void *b = kalloc(page, 128, ALIGN_16B, MEM_PRIV_KERNEL);
     void *c = kalloc(page, 64, ALIGN_16B, MEM_PRIV_KERNEL);
+    (void)a;
+    (void)c;
     kfree(b, 128);
     void *d = kalloc(page, 96, ALIGN_16B, MEM_PRIV_KERNEL);
     assert_true((uintptr_t)d >= (uintptr_t)b && (uintptr_t)d + 96 <= (uintptr_t)b + 128, "allocation not placed inside freed fragment: %llx", (uint64_t)d);

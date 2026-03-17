@@ -406,7 +406,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->output_size = 0;
 
     proc->pc = (uintptr_t)(entry);
-    kprintf("User process %s pc=%llx stack=%llx-%llx (phys=%llx-%llx) heap=%llx (phys=%llx)", name, (uint64_t)proc->pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->stack_phys, (uint64_t)proc->stack_phys, (uint64_t)proc->mm.brk, (uint64_t)proc->heap_phys);
+    kprintf("User process %s allocated at %llx entry=%llx stack=%llx-%llx (phys=%llx-%llx) heap=%llx (phys=%llx)", name, proc, (uint64_t)proc->pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->stack_phys, (uint64_t)proc->stack_phys, (uint64_t)proc->mm.brk, (uint64_t)proc->heap_phys);
     proc->spsr = 0;
     proc->state = BLOCKED;
     
