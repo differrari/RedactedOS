@@ -66,7 +66,7 @@ bool mm_remove_vma(mm_struct *mm, uaddr_t start, uaddr_t end) {
         if (end <= m->start) return false;
         if (start >= m->end) continue;
 
-        bool track_free = m->kind != VMA_KIND_HEAP && m->kind != VMA_KIND_STACK;
+        bool track_free = m->kind != VMA_KIND_STACK;
         uaddr_t free_start = 0;
         uaddr_t free_end = 0;
 
@@ -150,7 +150,7 @@ uaddr_t mm_alloc_mmap(mm_struct *mm, size_t size, uint8_t prot, uint8_t kind, ui
         return base;
     }
 
-    uaddr_t heap_guard = mm->brk + (MM_GAP_PAGES * PAGE_SIZE);
+    uaddr_t heap_guard = mm->mmap_bottom + (MM_GAP_PAGES * PAGE_SIZE);
     if (!mm->mmap_cursor) return 0;
     uaddr_t base = (mm->mmap_cursor - size) & ~(PAGE_SIZE - 1);
     if (base < heap_guard) return 0;
@@ -216,7 +216,7 @@ bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr) {
         return true;
     }
 
-    if ((m->kind == VMA_KIND_HEAP && proc->mm.rss_heap_pages >= proc->mm.cap_heap_pages) || (m->kind == VMA_KIND_ANON && proc->mm.rss_anon_pages >= proc->mm.cap_anon_pages)) return false;
+    if (m->kind == VMA_KIND_ANON && proc->mm.rss_anon_pages >= proc->mm.cap_anon_pages) return false;
 
     paddr_t phys = palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false);
     if (!phys) return false;
@@ -225,8 +225,7 @@ bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr) {
     mmu_map_4kb((uint64_t*)proc->mm.ttbr0, va_page, phys, MAIR_IDX_NORMAL, m->prot | MEM_NORM, MEM_PRIV_USER);
     mmu_flush_asid(proc->mm.asid);
 
-    if (m->kind == VMA_KIND_HEAP) proc->mm.rss_heap_pages++;
-    else if (m->kind == VMA_KIND_ANON) proc->mm.rss_anon_pages++;
+    if (m->kind == VMA_KIND_ANON) proc->mm.rss_anon_pages++;
 
     return true;
 }

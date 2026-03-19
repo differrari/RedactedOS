@@ -10,10 +10,9 @@ typedef struct process process_t;
 #define VMA_FLAG_ZERO 4
 #define VMA_FLAG_NOFREE 8
 #define VMA_KIND_ELF 1
-#define VMA_KIND_HEAP 2
-#define VMA_KIND_STACK 3
-#define VMA_KIND_ANON 4
-#define VMA_KIND_SPECIAL 5
+#define VMA_KIND_STACK 2
+#define VMA_KIND_ANON 3
+#define VMA_KIND_SPECIAL 4
 
 #define MAX_VMAS 128
 #define MM_GAP_PAGES 16
@@ -40,18 +39,14 @@ typedef struct mm_struct {
     uint16_t vma_count;
     mm_free_range mmap_free[MAX_VMAS];
     uint16_t mmap_free_count;
-    uaddr_t heap_start;
-    uaddr_t brk;
-    uaddr_t brk_max;
+    uaddr_t mmap_bottom;
     uaddr_t mmap_top;
     uaddr_t mmap_cursor;
     uaddr_t stack_top;
     uaddr_t stack_limit;
     uaddr_t stack_commit;
-    uint64_t rss_heap_pages;
     uint64_t rss_stack_pages;
     uint64_t rss_anon_pages;
-    uint64_t cap_heap_pages;
     uint64_t cap_stack_pages;
     uint64_t cap_anon_pages;
 } mm_struct;

@@ -51,9 +51,9 @@ void switch_proc(ProcSwitchReason reason) {
     if (proc_count == 0)
         panic("No processes active", 0);
     int next_proc = (current_proc + 1) % MAX_PROCS;
-    while (processes[next_proc].state != READY) {
+    while (processes[next_proc].state != READY && next_proc != current_proc) 
         next_proc = (next_proc + 1) % MAX_PROCS;
-    }
+    if (processes[next_proc].state != READY) panic("no runnable process", 0);
 
     current_proc = next_proc;
     cpec = (uintptr_t)&processes[current_proc];
@@ -99,8 +99,8 @@ bool init_scheduler_module(){
 
 
 uintptr_t get_current_heap(){
-    if (processes[current_proc].mm.ttbr0) return processes[current_proc].mm.brk;
-    return processes[current_proc].mm.brk;
+    if (processes[current_proc].heap_phys) return (uintptr_t)dmap_pa_to_kva(processes[current_proc].heap_phys);
+    return processes[current_proc].mm.mmap_bottom;
 }
 
 bool get_current_privilege(){
@@ -109,6 +109,17 @@ bool get_current_privilege(){
 
 process_t* get_current_proc(){
     return &processes[current_proc];
+}
+
+process_t* get_kernel_proc(){
+    return &processes[0];
+}
+
+void ready_process(process_t *proc){
+    if (!proc) return;
+    if (!proc->id) return;
+    if (proc->state == STOPPED) return;
+    proc->state = READY;
 }
 
 process_t* get_proc_by_pid(uint16_t pid){
@@ -231,9 +242,7 @@ void reset_process(process_t *proc){
                 paddr_t pa = 0;
                 if (!mmu_unmap_and_get_pa((uint64_t*)proc->mm.ttbr0, (uint64_t)va, &pa)) continue;
                 if (!nofree) pfree((void*)dmap_pa_to_kva(pa), GRANULE_4KB);
-                if (m->kind == VMA_KIND_HEAP) {
-                    if (proc->mm.rss_heap_pages) proc->mm.rss_heap_pages--;
-                } else if (m->kind == VMA_KIND_STACK) {
+                if (m->kind == VMA_KIND_STACK) {
                     if (proc->mm.rss_stack_pages) proc->mm.rss_stack_pages--;
                 } else if (m->kind == VMA_KIND_ANON) {
                     if (proc->mm.rss_anon_pages) proc->mm.rss_anon_pages--;
@@ -291,8 +300,6 @@ void init_main_process(){
     proc->alloc_map = make_page_index();
     proc->state = BLOCKED;
     proc->heap_phys = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
-    proc->mm.heap_start = (uaddr_t)dmap_pa_to_kva(proc->heap_phys);
-    proc->mm.brk = proc->mm.heap_start;
     proc->stack_size = 0x10000;
     proc->stack = (uintptr_t)palloc(proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
     proc->sp = (uintptr_t)ksp;
@@ -314,7 +321,7 @@ process_t* init_process(){
                 proc = &processes[i];
                 reset_process(proc);
                 for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++) proc->name[k] = 0;
-                proc->state = READY;
+                proc->state = BLOCKED;
                 proc->id = next_proc_index++;
                 proc->priority = PROC_PRIORITY_LOW;
                 proc->win_fb_va = 0;
@@ -331,7 +338,7 @@ process_t* init_process(){
     reset_process(proc);
     for (int k = 0; k < MAX_PROC_NAME_LENGTH; k++) proc->name[k] = 0;
     proc->id = next_proc_index++;
-    proc->state = READY;
+    proc->state = BLOCKED;
     proc->priority = PROC_PRIORITY_LOW;
     proc->win_fb_va = 0;
     proc->win_fb_phys = 0;
@@ -410,7 +417,7 @@ void wake_processes(){
         uint64_t wake = sleeping[i].timestamp + sleeping[i].sleep_time;
         if(wake <= now){
             process_t *p = get_proc_by_pid(sleeping[i].pid);
-            if(p && p->state == BLOCKED) p->state = READY;
+            if(p && p->state == BLOCKED) ready_process(p);
         }else{
             if(wake < next) next = wake;
             sleeping[w++] = sleeping[i];

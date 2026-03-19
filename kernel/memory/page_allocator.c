@@ -18,26 +18,14 @@
 #define LOW_ADDR_WARN 0x100000ULL
 
 #define ALLOC_TAG_MAGIC 0xCCDEC00ED00DAA0EULL
-#define ALLOC_TAG_MAGIC_INV (~ALLOC_TAG_MAGIC)
-#define ALLOC_TAG_SIZE 64
-#define ALLOC_KIND_SMALL 1
+#define ALLOC_TAG_SIZE sizeof(alloc_tag)
 
 typedef struct {
     uint64_t magic;
-    uint64_t magic_inv;
     uint64_t base_phys;
     uint64_t user_phys;
-    uint64_t owner_phys;
     uint32_t alloc_size;
-    uint32_t user_size;
-    uint16_t alignment;
-    uint8_t kind;
-    uint8_t level;
-    uint8_t attributes;
-    uint8_t reserved0;
-    uint16_t reserved1;
     uint32_t checksum;
-    uint32_t checksum_inv;
 } alloc_tag;
 
 typedef struct {
@@ -451,25 +439,11 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
 
                 alloc_tag* tag = (alloc_tag*)PHYS_TO_VIRT(tag_phys);
                 tag->magic = ALLOC_TAG_MAGIC;
-                tag->magic_inv = ALLOC_TAG_MAGIC_INV;
                 tag->base_phys = base_phys;
                 tag->user_phys = user_phys;
-                tag->owner_phys = owner_phys;
                 tag->alloc_size = (uint32_t)bsz;
-                tag->user_size = (uint32_t)req_size;
-                tag->alignment = alignment;
-                tag->kind = ALLOC_KIND_SMALL;
-                tag->level = level;
-                tag->attributes = info->attributes;
-                tag->reserved0 = 0;
-                tag->reserved1 = 0;
-
-                uint64_t mix = tag->base_phys ^ tag->user_phys ^ tag->owner_phys ^ ((uint64_t)tag->alloc_size << 32) ^ tag->user_size;
-                mix ^= ((uint64_t)tag->alignment << 48) ^ ((uint64_t)tag->kind << 40) ^ ((uint64_t)tag->level << 32) ^ ((uint64_t)tag->attributes << 24);
-                mix ^= ALLOC_TAG_MAGIC; //token
-                uint32_t c = (uint32_t)(mix ^ (mix >> 32));
-                tag->checksum = c;
-                tag->checksum_inv = ~c;
+                uint64_t mix = tag->base_phys ^ tag->user_phys ^ ((uint64_t)tag->alloc_size << 32) ^ ALLOC_TAG_MAGIC;
+                tag->checksum = (uint32_t)(mix ^ (mix >> 32));
 
                 memset((void*)PHYS_TO_VIRT(user_phys), 0, size);
                 info->size += bsz;
@@ -517,25 +491,11 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
 
     alloc_tag* tag = (alloc_tag*)PHYS_TO_VIRT(tag_phys);
     tag->magic = ALLOC_TAG_MAGIC;
-    tag->magic_inv = ALLOC_TAG_MAGIC_INV;
     tag->base_phys = base_phys;
     tag->user_phys = user_phys;
-    tag->owner_phys = owner_phys;
     tag->alloc_size = (uint32_t)small_need;
-    tag->user_size = (uint32_t)req_size;
-    tag->alignment = alignment;
-    tag->kind = ALLOC_KIND_SMALL;
-    tag->level = level;
-    tag->attributes = info->attributes;
-    tag->reserved0 = 0;
-    tag->reserved1 = 0;
-
-    uint64_t mix = tag->base_phys ^ tag->user_phys ^ tag->owner_phys ^ ((uint64_t)tag->alloc_size << 32) ^ tag->user_size;
-    mix ^= ((uint64_t)tag->alignment << 48) ^ ((uint64_t)tag->kind << 40) ^ ((uint64_t)tag->level << 32) ^ ((uint64_t)tag->attributes << 24);
-    mix ^= ALLOC_TAG_MAGIC;
-    uint32_t c = (uint32_t)(mix ^ (mix >> 32));
-    tag->checksum = c;
-    tag->checksum_inv = ~c;
+    uint64_t mix = tag->base_phys ^ tag->user_phys ^ ((uint64_t)tag->alloc_size << 32) ^ ALLOC_TAG_MAGIC;
+    tag->checksum = (uint32_t)(mix ^ (mix >> 32));
 
     memset((void*)PHYS_TO_VIRT(user_phys), 0, size);
     info->size += small_need;
@@ -648,22 +608,15 @@ void kfree(void* ptr, size_t size) {
 
         if(phys_tag) {
             tag = (alloc_tag*)PHYS_TO_VIRT(phys_tag);
-            if(tag->magic == ALLOC_TAG_MAGIC && tag->magic_inv == ALLOC_TAG_MAGIC_INV && tag->user_phys == phys){
-                uint64_t mix = tag->base_phys ^ tag->user_phys ^ tag->owner_phys ^ ((uint64_t)tag->alloc_size << 32) ^ tag->user_size;
-                mix ^= ((uint64_t)tag->alignment << 48) ^ ((uint64_t)tag->kind << 40) ^ ((uint64_t)tag->level << 32) ^ ((uint64_t)tag->attributes << 24);
-                mix ^= ALLOC_TAG_MAGIC; //token
+            if(tag->magic == ALLOC_TAG_MAGIC && tag->user_phys == phys){
+                uint64_t mix = tag->base_phys ^ tag->user_phys ^ ((uint64_t)tag->alloc_size << 32) ^ ALLOC_TAG_MAGIC;
                 uint32_t c = (uint32_t)(mix ^ (mix >> 32));
-                if(tag->checksum == c && tag->checksum_inv == ~c) tag_ok = true;
+                if(tag->checksum == c) tag_ok = true;
             }
         }
     }
 
     if(tag_ok) {
-        if(tag->kind != ALLOC_KIND_SMALL) {
-            kprintf("[kfree] bad tag kind ptr=%llx phys=%llx kind=%u size=%llx", (uint64_t)va, (uint64_t)phys, (unsigned)tag->kind, (uint64_t)size);
-            panic("kfree bad tag kind", va);
-        }
-
         uintptr_t base_phys = (uintptr_t)tag->base_phys;
         uint64_t alloc_size = tag->alloc_size;
 

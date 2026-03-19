@@ -228,7 +228,7 @@ process_t* load_elf_process_path(const char *name, const char *bundle, const cha
         return 0;
     }
     
-    proc->state = READY;
+    ready_process(proc);
     return proc;
 }
 

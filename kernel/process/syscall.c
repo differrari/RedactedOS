@@ -42,7 +42,7 @@ typedef uint64_t (*syscall_entry)(process_t *ctx);
 
 u64 syscall_malloc(process_t *ctx){
     if (syscall_depth > 1) {
-        process_t *k = get_proc_by_pid(1);
+        process_t *k = get_kernel_proc();
         if (!k) return 0;
         return (u64)kalloc((void*)dmap_pa_to_kva((paddr_t)k->heap_phys), ctx->PROC_X0, ALIGN_16B, MEM_PRIV_KERNEL);
     }
@@ -132,46 +132,6 @@ u64 syscall_free(process_t *ctx){
 
     free_registered(ctx->alloc_map, ptr);
     return 0;
-}
-
-uptr syscall_brk(process_t *ctx) {
-    uptr req = ctx->PROC_X0;
-    uptr old = ctx->mm.brk;
-    if (!req) return old;
-
-    uptr new_brk = (req + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-    uptr min_brk = ctx->mm.heap_start;
-    if (new_brk < min_brk) new_brk = min_brk;
-
-    if (new_brk > ctx->mm.brk_max) return old;
-
-    uptr mmap_guard = ctx->mm.mmap_cursor - (MM_GAP_PAGES*PAGE_SIZE);
-    if (ctx->mm.mmap_free_count) {
-        for (uint16_t i = 0; i < ctx->mm.mmap_free_count; i++) if (ctx->mm.mmap_free[i].start >= ctx->mm.brk && ctx->mm.mmap_free[i].start < mmap_guard) mmap_guard = ctx->mm.mmap_free[i].start - (MM_GAP_PAGES * PAGE_SIZE);
-    }
-    if (new_brk > mmap_guard)return old;
-
-    if (new_brk < old) {
-        for (uptr va = new_brk; va < old; va += PAGE_SIZE) {
-            uint64_t pa = 0;
-            if (!mmu_unmap_and_get_pa((uint64_t*)ctx->mm.ttbr0, va, &pa)) continue;
-            pfree((void*)dmap_pa_to_kva((paddr_t)pa), PAGE_SIZE);
-            if (ctx->mm.rss_heap_pages) ctx->mm.rss_heap_pages--;
-        }
-    }
-
-    if (new_brk != old) {
-        if (old == ctx->mm.heap_start && new_brk > ctx->mm.heap_start) mm_add_vma(&ctx->mm, ctx->mm.heap_start, new_brk, MEM_RW, VMA_KIND_HEAP, VMA_FLAG_DEMAND);
-        else if (new_brk == ctx->mm.heap_start) mm_remove_vma(&ctx->mm, ctx->mm.heap_start, old);
-        else {
-            vma *heap = mm_find_vma(&ctx->mm, ctx->mm.heap_start);
-            if (heap && heap->kind == VMA_KIND_HEAP) heap->end = new_brk;
-        }
-        ctx->mm.brk = new_brk;
-        mmu_flush_asid(ctx->mm.asid);
-    }
-
-    return ctx->mm.brk;
 }
 
 u64 syscall_printl(process_t *ctx){
@@ -786,7 +746,6 @@ Don't ever do that again\r\n\
 syscall_entry syscalls[] = {
     [MALLOC_CODE] = syscall_malloc,
     [FREE_CODE] = syscall_free,
-    [BRK_CODE] = syscall_brk,
     [PALLOC_CODE] = syscall_palloc,
     [PFREE_CODE] = syscall_pfree,
     [PRINTL_CODE] = syscall_printl,
@@ -836,7 +795,7 @@ bool decode_crash_address_with_info(uint8_t depth, uintptr_t address, sizedptr d
 
 bool decode_crash_address(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
     return decode_crash_address_with_info(depth, address, debug_line, debug_line_str) ||
-    decode_crash_address_with_info(depth, address, get_proc_by_pid(0)->debug_lines, get_proc_by_pid(0)->debug_line_str);
+    decode_crash_address_with_info(depth, address, get_kernel_proc()->debug_lines, get_kernel_proc()->debug_line_str);
 }
 
 void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_line_str) {

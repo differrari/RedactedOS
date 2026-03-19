@@ -50,8 +50,6 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
     proc->stack_size = stack_size;
 
     proc->heap_phys = heap;
-    proc->mm.heap_start = (uaddr_t)dmap_pa_to_kva(heap);
-    proc->mm.brk = proc->mm.heap_start;
 
     proc->sp = proc->stack;
     
@@ -114,7 +112,8 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
         }
     }
 
-    kprintf("Kernel process %s (%i) allocated with address at %llx, stack at %llx-%llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->pc, proc->sp - proc->stack_size, proc->sp, proc->mm.brk, argc);
+    ready_process(proc);
+    kprintf("Kernel process %s (%i) allocated with address at %llx, stack at %llx-%llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->pc, proc->sp - proc->stack_size, proc->sp, (uaddr_t)dmap_pa_to_kva(proc->heap_phys), argc);
     irq_restore(irq);
     
     return proc;

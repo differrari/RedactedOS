@@ -47,9 +47,11 @@ void add_entry(string_slice name, string_slice ext, string path, package_info in
 }
 
 uint16_t find_extension(char *path){
-    uint16_t count = 0;
-    while (*path && *path != '.'){ path++; count++; }
-    return path ? count : 0;
+    if (!path) return 0;
+    int32_t dot = -1;
+    for (uint16_t i = 0; path[i]; i++) if (path[i] == '.') dot = i;
+    if (dot <= 0) return 0;
+    return (uint16_t)dot;
 }
 
 package_info get_pkg_info(char* info_path){
@@ -65,9 +67,12 @@ package_info get_pkg_info(char* info_path){
 void handle_entry(const char *directory, const char *file) {
     string fullpath = string_format("%s/%s",directory, (uintptr_t)file);
     uint16_t ext_loc = find_extension((char*)file);
+    if (!ext_loc) {
+        string_free(fullpath);
+        return;
+    }
     string_slice name = make_string_slice(fullpath.data, fullpath.length - strlen(file), ext_loc);
-    uint16_t extra = ext_loc ? 1 : 0;
-    string_slice ext = make_string_slice(name.data + ext_loc + 1, 0, strlen(file)-ext_loc-extra);
+    string_slice ext = make_string_slice(file, ext_loc + 1, strlen(file)-ext_loc-1);
     if (slice_lit_match(ext,"red",true)){
         string pkg_info = string_concat(fullpath, string_from_literal("/package.info"));
         add_entry(name, ext, fullpath, get_pkg_info(pkg_info.data));
@@ -192,7 +197,7 @@ void activate_current(){
         active_proc->priority = PROC_PRIORITY_FULL;
         process_active = true;
         sys_set_focus(active_proc->id);
-        active_proc->state = READY;
+        ready_process(active_proc);
         kprintf("[LAUNCHER] process launched");
         enable_interrupt();
     }

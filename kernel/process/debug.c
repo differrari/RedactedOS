@@ -23,8 +23,8 @@ void debug_load(){
 
     kprintf("[DEBUG] Reading debug info from %x",file);
 
-    get_elf_debug_info(get_proc_by_pid(0), file, fd.size);
+    get_elf_debug_info(get_kernel_proc(), file, fd.size);
 
-    kprintf("[DEBUG] .debug_line %x .debug_line_str %x", get_proc_by_pid(0)->debug_lines.ptr, get_proc_by_pid(0)->debug_line_str.ptr);
+    kprintf("[DEBUG] .debug_line %x .debug_line_str %x", get_kernel_proc()->debug_lines.ptr, get_kernel_proc()->debug_line_str.ptr);
 
 }

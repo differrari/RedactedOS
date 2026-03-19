@@ -360,32 +360,25 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     uaddr_t stack_commit = stack_top;
     uaddr_t mmap_top = stack_limit - PAGE_SIZE;
 
-    uaddr_t heap_start = (max_map + (PAGE_SIZE*4) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-    if (heap_start >= mmap_top) {
+    uaddr_t mmap_bottom = (max_map + (PAGE_SIZE*4) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    if (mmap_bottom >= mmap_top) {
         reset_process(proc);
         return 0;
     }
     proc->heap_phys = 0;
 
-    proc->mm.heap_start = heap_start;
-    proc->mm.brk = heap_start;
+    proc->mm.mmap_bottom = mmap_bottom;
     proc->mm.mmap_top = mmap_top;
     proc->mm.mmap_cursor = mmap_top;
-    proc->mm.brk_max = mmap_top - (PAGE_SIZE * MM_GAP_PAGES);
     proc->mm.stack_top = stack_top;
     proc->mm.stack_limit = stack_limit;
     proc->mm.stack_commit = stack_commit;
 
-    if (proc->mm.brk_max < proc->mm.brk) {
-        reset_process(proc);
-        return 0;
-    }
 
     uint64_t total_pages = get_total_user_ram() / PAGE_SIZE;
     if (!total_pages) total_pages = 1;
 
     proc->mm.cap_stack_pages = stack_max_size / PAGE_SIZE;
-    proc->mm.cap_heap_pages = (proc->mm.brk_max - proc->mm.heap_start) / PAGE_SIZE;
     proc->mm.cap_anon_pages = total_pages / 2;
     if (proc->mm.cap_anon_pages < 128) proc->mm.cap_anon_pages = 128;
 
@@ -406,7 +399,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->output_size = 0;
 
     proc->pc = (uintptr_t)(entry);
-    kprintf("User process %s allocated at %llx entry=%llx stack=%llx-%llx (phys=%llx-%llx) heap=%llx (phys=%llx)", name, proc, (uint64_t)proc->pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->stack_phys, (uint64_t)proc->stack_phys, (uint64_t)proc->mm.brk, (uint64_t)proc->heap_phys);
+    kprintf("User process %s allocated at %llx entry=%llx stack=%llx-%llx (phys=%llx-%llx) anon=%llx (phys=%llx)", name, proc, (uint64_t)proc->pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->stack_phys, (uint64_t)proc->stack_phys, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);
     proc->spsr = 0;
     proc->state = BLOCKED;
     

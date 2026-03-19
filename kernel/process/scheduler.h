@@ -21,6 +21,7 @@ bool start_scheduler();
 void save_return_address_interrupt();
 void init_main_process();
 process_t* init_process();
+void ready_process(process_t *proc);
 void save_syscall_return(uint64_t value);
 void process_restore();
 
@@ -40,6 +41,7 @@ extern "C" {
 #endif
 
 process_t* get_current_proc();
+process_t* get_kernel_proc();
 process_t* get_proc_by_pid(uint16_t pid);
 uint16_t get_current_proc_pid();
 

@@ -17,14 +17,12 @@
 extern page_index *p_index;
 
 void* malloc(size_t size){
-    process_t* k = get_proc_by_pid(1);
+    process_t* k = get_kernel_proc();
     if (!k) return 0;
 
-    int tr = 0;
-    paddr_t heap_pa = mmu_translate(0, k->mm.brk, &tr);
-    if (tr) return 0;
+    if (!k->heap_phys) return 0;
 
-    void* ptr = kalloc((void*)dmap_pa_to_kva(heap_pa), size, ALIGN_16B, MEM_PRIV_KERNEL);
+    void* ptr = kalloc((void*)dmap_pa_to_kva(k->heap_phys), size, ALIGN_16B, MEM_PRIV_KERNEL);
     if (ptr && size >= PAGE_SIZE && k->alloc_map)
         register_allocation(k->alloc_map, ptr, size);
     return ptr;
@@ -36,7 +34,7 @@ void free_sized(void*ptr, size_t size){
 
 void* page_alloc(size_t size){
     if (!size) return 0;
-    process_t* k = get_proc_by_pid(1);//TODO: can we make this more fragmented? This inside a syscall, current proc outside
+    process_t* k = get_kernel_proc();//TODO: can we make this more fragmented? This inside a syscall, current proc outside
     void *ptr = palloc(size, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, true);
     if (k && k->alloc_map && ptr) register_allocation(k->alloc_map, ptr, size);
     return ptr;
@@ -45,7 +43,7 @@ void* page_alloc(size_t size){
 void page_free(void *ptr){
     if (!ptr) return;
     if (((uintptr_t)ptr & (PAGE_SIZE - 1)) != 0) return;
-    process_t* k = get_proc_by_pid(1);//TODO: can we make this more fragmented? This inside a syscall, current proc outside
+    process_t* k = get_kernel_proc();//TODO: can we make this more fragmented? This inside a syscall, current proc outside
     if (k && k->alloc_map) {
         free_registered(k->alloc_map, ptr);
         return;
