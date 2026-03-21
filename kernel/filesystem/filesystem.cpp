@@ -161,7 +161,6 @@ FS_RESULT open_file_global(const char* path, file* descriptor, system_module **m
     return FS_RESULT_SUCCESS;
 }
 
-//TODO: exclusive write. Keep track of permissions for opening, if writing is already taken, don't grant. Could allow non-exclusive write as well with manual cursor seek
 FS_RESULT open_file(const char* path, file* descriptor){
     system_module *mod = 0;
     FS_RESULT result = open_file_global(path, descriptor, &mod);
@@ -215,7 +214,8 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     if (descriptor->id == FD_OUT){
         const char *search_path = "/proc/";//TODO: This is ugly
         system_module *mod = get_module(&search_path);
-        mod->write(descriptor, buf, size, descriptor->cursor);
+        return mod->write(descriptor, buf, size, descriptor->cursor);
+        //TODO: this handles its own cursor movement, but with the new sync policies it shouldn't have to
     } else if (!open_files) return 0;
     open_file_descriptors *ofile = (open_file_descriptors *)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!ofile || !ofile->mod || !ofile->mod->read || ofile->pid != get_current_proc_pid()) return 0;

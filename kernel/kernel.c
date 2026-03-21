@@ -24,6 +24,7 @@
 #include "theme/theme.h"
 #include "tests/test_runner.h"
 #include "pci/pcie.h"
+#include "filesystem/tmp/tmp_fs.h"
 
 void kernel_main() {
 
@@ -94,6 +95,8 @@ void kernel_main() {
     if (network_available && system_config.use_net) launch_net_process();
 
     init_bootprocess();
+    
+    load_module(&tmp_mod);
 
     load_module(&scheduler_module);
     

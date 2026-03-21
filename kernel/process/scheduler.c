@@ -326,7 +326,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     module_file *mfile = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(uint64_t));
     if (mfile){
         descriptor->id = mfile->fid;
-        descriptor->size = mfile->file_size;
+        descriptor->size = mfile->file_buffer.buffer_size;
         mfile->references++;
         return FS_RESULT_SUCCESS;
     }
@@ -343,6 +343,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
         descriptor->size = proc->output_size;
         file->file_buffer = (buffer){
             .buffer = (char*)proc->output,
+            .buffer_size = proc->output_size,
             .limit = PROC_OUT_BUF,
             .options = buffer_circular
         };
@@ -356,7 +357,6 @@ FS_RESULT open_proc(const char *path, file *descriptor){
             .buffer_size = sizeof(int),
         };
     } else return FS_RESULT_NOTFOUND;
-    file->file_size = descriptor->size;
     return chashmap_put(proc_opened_files, &descriptor->id, sizeof(uint64_t), file) >= 0 ? FS_RESULT_SUCCESS : FS_RESULT_DRIVER_ERROR;
 }
 
@@ -401,12 +401,10 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
 
     size = min(size+1, file->file_buffer.limit);
     if (is_output){//TODO: probably better to make these files be held by this module, and created only when needed
-        fd->cursor = file->file_size;
+        fd->cursor = file->file_buffer.buffer_size;
     
         fd->cursor += buffer_write_lim(&file->file_buffer, buf, size);
         fd->cursor += buffer_write(&file->file_buffer, "\n");
-    
-        file->file_size += size;
     
         get_current_proc()->output_size += size;
     }
