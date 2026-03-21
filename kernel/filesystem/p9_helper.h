@@ -179,7 +179,7 @@ typedef struct r_getattr {
     p9_packet_header header;
     uint64_t valid;
     uint8_t qid[13];
-    uint32_t model;
+    uint32_t mode;
     uint32_t uid;
     uint32_t gid;
     uint64_t nlink;

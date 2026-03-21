@@ -135,3 +135,7 @@ extern void closef(file *descriptor){
 size_t dir_list(const char *path, void *buf, size_t size, u64 *offset){
     return list_directory_contents(path, buf, size, offset);
 }
+
+bool stat(const char *path, fs_stat *out_stat){
+    return get_stat(path, out_stat);
+}

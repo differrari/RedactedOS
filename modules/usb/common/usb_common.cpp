@@ -59,5 +59,6 @@ system_module usb_module = (system_module){
     .close = 0,
     .sread = 0,
     .swrite = 0,//TODO implement simple io
+    .getstat = 0,//TODO: stat
     .readdir = 0,
 };

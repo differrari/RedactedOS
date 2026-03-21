@@ -55,6 +55,10 @@ void boot_partition_close(file *descriptor){
     fs_driver->close_file(descriptor);
 }
 
+bool boot_stat(const char *path, fs_stat *out_stat){
+    return fs_driver->stat(path, out_stat);
+}
+
 system_module boot_fs_module = (system_module){
     .name = "boot",
     .mount = "/boot",
@@ -67,6 +71,7 @@ system_module boot_fs_module = (system_module){
     .close = boot_partition_close,
     .sread = 0,
     .swrite = 0,
+    .getstat = boot_stat,
     .readdir = boot_partition_readdir,
 };
 
@@ -101,6 +106,10 @@ size_t shared_readdir(const char* path, void *out_buf, size_t size, file_offset 
     return p9Driver->list_contents(path, out_buf, size, offset);
 }
 
+bool shared_stat(const char *path, fs_stat *out_stat){
+    return p9Driver->stat(path, out_stat);
+}
+
 void shared_close(file *descriptor){
     kprintf("9P will close file");
     p9Driver->close_file(descriptor);
@@ -118,6 +127,7 @@ system_module p9_fs_module = (system_module){
     .close = shared_close,
     .sread = 0,
     .swrite = 0,
+    .getstat = shared_stat,
     .readdir = shared_readdir,
 };
 
@@ -249,6 +259,17 @@ size_t list_directory_contents(const char *path, void* buf, size_t size, uint64_
     }
     if (!mod->readdir) return 0;
     return mod->readdir(search_path, buf, size, offset);
+}
+
+bool get_stat(const char *path, fs_stat *out_stat){
+    const char *search_path = path;
+    system_module *mod = get_module(&search_path);
+    if (!mod){
+        kprintf("No module for path %s",search_path);
+        return 0;
+    }
+    if (!mod->getstat) return false;
+    return mod->getstat(search_path, out_stat);
 }
 
 int32_t close_pid;

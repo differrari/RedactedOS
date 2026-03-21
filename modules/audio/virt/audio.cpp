@@ -289,5 +289,6 @@ system_module audio_module = (system_module){
     .close = 0,
     .sread = 0,
     .swrite = 0,
+    .getstat = 0,//TODO: stat
     .readdir = 0,
 };

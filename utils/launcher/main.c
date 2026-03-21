@@ -252,6 +252,8 @@ void draw_tile(uint32_t column, uint32_t row){
 
 int main(int argc, char* argv[]){
     load_entries();
+    selected.x = MAX_COLS/2;
+    selected.y = MAX_ROWS/2;
     while (1)
     {
         draw_desktop();

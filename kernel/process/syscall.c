@@ -266,6 +266,12 @@ u64 syscall_dir_list(process_t *ctx){
     return list_directory_contents(path, buf, size, offset);
 }
 
+u64 syscall_stat(process_t *ctx){
+    const char *path = (char*)ctx->PROC_X0;
+    fs_stat *out_stat = (fs_stat*)ctx->PROC_X1;
+    return get_stat(path, out_stat);
+}
+
 // uint64_t syscall_load_fsmod(process_t *ctx){
 //     system_module *mod = (system_module*)ctx->PROC_X0;
 //     return load_process_module(ctx,mod);
@@ -324,6 +330,7 @@ syscall_entry syscalls[] = {
     [FILE_SIMPLE_READ_CODE] = syscall_sreadf,
     [FILE_SIMPLE_WRITE_CODE] = syscall_swritef,
     [DIR_LIST_CODE] = syscall_dir_list,
+    [STAT_CODE] = syscall_stat,
     // [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
     // [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
     [IN_CASE_OF_JS_CODE] = syscall_in_case_of_js,

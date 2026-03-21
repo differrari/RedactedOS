@@ -345,3 +345,7 @@ size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t
 
     return (uintptr_t)write_ptr-(uintptr_t)buf;
 }
+
+bool FAT32FS::stat(const char *path, fs_stat *out_stat){
+    return false;//TODO: stat
+}

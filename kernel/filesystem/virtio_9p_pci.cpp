@@ -59,7 +59,9 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
     uint64_t fid = reserve_fd_gid(path);
     descriptor->cursor = 0;
     descriptor->id = fid;
-    uint64_t size = get_attribute(f, 0x00000200ULL);
+    r_getattr *attr = get_attribute(f, 0x00000200ULL);
+    if (!attr) return FS_RESULT_DRIVER_ERROR;
+    uint64_t size = read_unaligned64(&attr->size);
     descriptor->size = size;
     void* file = kalloc(np_dev.memory_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
     if (open(f) == INVALID_FID){
@@ -220,18 +222,17 @@ uint32_t Virtio9PDriver::walk_dir(uint32_t fid, char *path){
     return rid;
 }
 
-uint64_t Virtio9PDriver::get_attribute(u32 fid, u64 mask){
+r_getattr* Virtio9PDriver::get_attribute(u32 fid, u64 mask){
     t_getattr *cmd = make_p9_getattr_packet(fid, mask);
     r_getattr* resp = (r_getattr*)make_p9_response_buffer();
 
     virtio_buf b[2] = {VBUF(cmd, cmd->header.size, 0), VBUF(resp, sizeof(r_getattr), VIRTQ_DESC_F_WRITE)};
     virtio_send_nd(&np_dev, b, 2);
-    uint64_t attr = check_9p_success(resp) ? read_unaligned64(&resp->size) : 0;
     
     p9_free(cmd);
     p9_free(resp);
 
-    return attr;
+    return check_9p_success(resp) ? resp : 0;
 }
 
 uint64_t Virtio9PDriver::read(u32 fid, u64 offset, void *file){
@@ -256,4 +257,20 @@ uint64_t Virtio9PDriver::read(u32 fid, u64 offset, void *file){
 
     return size;
 
+}
+
+#define DIR_MASK 0x4000
+
+bool Virtio9PDriver::stat(const char *path, fs_stat *out_stat){
+    if (!path || !out_stat) return false;
+    uint32_t f = walk_dir(root, (char*)path);
+    if (f == INVALID_FID){
+        kprintf("[VIRTIO 9P error] failed to navigate to %s",path);
+        return false;
+    }
+    r_getattr *attr = get_attribute(f, 0x00000201ULL);
+    if (!attr) return false;
+    out_stat->size = read_unaligned64(&attr->size);
+    out_stat->type = read_unaligned32(&attr->mode) & DIR_MASK ? entry_directory : entry_file;
+    return false;
 }
