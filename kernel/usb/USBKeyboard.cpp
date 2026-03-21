@@ -107,6 +107,7 @@ void USBKeyboard::process_keypress(keypress *rkp){
             if (!held[key]) {
                 held[key] = 1;
                 next_repeat[key] = now + 500;
+                continue;
             }
 
             if (now < next_repeat[key]) continue;

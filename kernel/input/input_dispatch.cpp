@@ -45,6 +45,7 @@ bool register_keypress(keypress kp) {
     if (buf->write_index == buf->read_index)
         buf->read_index = (buf->read_index + 1) % INPUT_BUFFER_CAPACITY;
     
+    if (focused_proc->sleeping) wake_process(focused_proc);
     return false;
 }
 
@@ -59,6 +60,7 @@ void register_event(kbd_event event){
 
     if (buf->write_index == buf->read_index)
         buf->read_index = (buf->read_index + 1) % INPUT_BUFFER_CAPACITY;
+    if (focused_proc->sleeping) wake_process(focused_proc);
 }
 
 void mouse_config(gpu_point point, gpu_size size){
@@ -91,6 +93,7 @@ void register_mouse_input(mouse_input *rat){
         gpu_set_cursor_pressed(last_cursor_state);
         gpu_update_cursor(mouse_loc, true);
     }
+    if (focused_proc && focused_proc->sleeping) wake_process(focused_proc);
 }
 
 gpu_point get_mouse_pos(){

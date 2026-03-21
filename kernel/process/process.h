@@ -42,6 +42,9 @@ typedef struct process {
     uint64_t spsr; 
     //Not used in process saving
     uint16_t id;
+    bool in_ready_queue;
+    bool sleeping;
+    uint64_t wake_at_msec;
     uintptr_t stack;
     paddr_t stack_phys;
     uint64_t stack_size;
@@ -70,6 +73,7 @@ typedef struct process {
     sizedptr debug_line_str;
     system_module exposed_fs;
     mm_struct mm;
+    struct process *process_next;
 } process_t;
 
 //Helper functions for accessing registers mapped to scratch regs
