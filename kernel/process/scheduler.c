@@ -124,7 +124,7 @@ bool init_scheduler_module(){
         proc_opened_files->free = kfree;
         proc_opened_files->alloc = list_alloc;
     }
-    if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*));
+    if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*),0,0);
     return true;
 }
 
@@ -153,7 +153,7 @@ void ready_process(process_t *proc){
         return;
     }
 
-    if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*));
+    if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*),0,0);
     if (!cqueue_enqueue(&ready_queue, &proc)) panic("ready enqueue failed", proc->id);
 
     proc->in_ready_queue = true;
@@ -353,7 +353,7 @@ void reset_process(process_t *proc){
 
 void init_main_process(){
     proc_page = palloc(PAGE_SIZE*16, MEM_PRIV_KERNEL, MEM_RW, false);
-    if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*));
+    if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*),0,0);
     size_t kernel_proc_size = (sizeof(process_t) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     kernel_proc = (process_t*)palloc(kernel_proc_size, MEM_PRIV_KERNEL, MEM_RW, true);
     if (!kernel_proc) panic("kernel process alloc failed", 0);
@@ -509,7 +509,7 @@ void wake_process(process_t *proc){
 
             if (proc->state == BLOCKED) {
                 if (!proc->in_ready_queue) {
-                    if (!ready_queue.elem_size) cqueue_init(&ready_queue,0, sizeof(process_t*));
+                    if (!ready_queue.elem_size) cqueue_init(&ready_queue,0, sizeof(process_t*),0,0);
                     if (!cqueue_enqueue(&ready_queue, &proc)) panic("ready enqueue failed", proc->id);
                     proc->in_ready_queue = true;
                 }
@@ -546,7 +546,7 @@ void wake_processes(){
 
             if (proc->state != STOPPED) {
                 if (!proc->in_ready_queue) {
-                    if (!ready_queue.elem_size) cqueue_init(&ready_queue,0, sizeof(process_t*));
+                    if (!ready_queue.elem_size) cqueue_init(&ready_queue,0, sizeof(process_t*),0,0);
                     if (!cqueue_enqueue(&ready_queue, &proc)) panic("ready enqueue failed", proc->id);
                     proc->in_ready_queue = true;
                 }
