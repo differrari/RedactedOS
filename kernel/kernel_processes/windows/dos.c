@@ -224,7 +224,7 @@ int window_system(){
         disable_interrupt();
         if (dirty_windows){
             draw_desktop();
-            clinkedlist_for_each(window_list, redraw_win);
+            linked_list_for_each(window_list, redraw_win);
             dirty_windows = false;
         }
         gpu_flush();

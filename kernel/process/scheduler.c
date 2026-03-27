@@ -32,7 +32,6 @@ uint16_t next_proc_index = 1;
 //TODO maybe use a weighted ready queue based on process priority
 CQueue ready_queue = {};
 linked_list_t sleeping_list = {};
-process_t *reap_proc = 0;
 
 chashmap_t *proc_opened_files;
 
@@ -67,8 +66,10 @@ void switch_proc(ProcSwitchReason reason) {
         next_proc = queued;
         if (!next_proc) continue;
         next_proc->in_ready_queue = false;
-        if (next_proc->state != READY) continue;
-        if (next_proc->sleeping) continue;
+        if (next_proc->state != READY || next_proc->sleeping) {
+            next_proc = 0;
+            continue;
+        }
         break;
     }
 
@@ -83,12 +84,6 @@ void switch_proc(ProcSwitchReason reason) {
     timer_reset(current_proc->priority);
     if (current_proc->mm.ttbr0) mmu_asid_ensure(&current_proc->mm);
     mmu_swap_ttbr(current_proc->mm.ttbr0 ? &current_proc->mm : 0);
-
-    if (reap_proc &&reap_proc != current_proc && reap_proc != prev) {
-        process_t *dead = reap_proc;
-        reset_process(dead);
-        reap_proc= 0;
-    }
 
     process_restore();
 }
@@ -178,12 +173,13 @@ void reset_process(process_t *proc){
     uint16_t pid = proc->id;
     int32_t exit_code = proc->exit_code;
     uint8_t state = proc->state;
-    bool counted = state != STOPPED;
+    bool counted = proc->sp || proc->pc || proc->spsr || proc->stack || proc->heap_phys || proc->mm.ttbr0;
 
     irq_flags_t irq = irq_save_disable();
     proc->sleeping = false;
     proc->wake_at_msec = 0;
     proc->in_ready_queue = false;
+    proc->procfs_refs = 0;
 
     linked_list_node_t *sleep = sleeping_list.head;
     while (sleep) {
@@ -224,6 +220,20 @@ void reset_process(process_t *proc){
         proc->packet_buffer.entries[k] = (sizedptr){0};
     }
     close_files_for_process(pid);
+
+    if (proc->postmortem_output) {
+        kfree((void*)proc->postmortem_output, proc->postmortem_output_size ? proc->postmortem_output_size : 1);
+        proc->postmortem_output = 0;
+        proc->postmortem_output_size = 0;
+    }
+    if (proc->output && proc->output_size) {
+        void *snapshot = kalloc(proc_page, proc->output_size, ALIGN_64B, MEM_PRIV_KERNEL);
+        if (snapshot) {
+            memcpy(snapshot, (void*)proc->output, proc->output_size);
+            proc->postmortem_output = (kaddr_t)snapshot;
+            proc->postmortem_output_size = proc->output_size;
+        }
+    }
 
     if (proc->debug_lines.ptr) {
         pfree((void*)proc->debug_lines.ptr, proc->debug_lines.size);
@@ -297,7 +307,15 @@ void reset_process(process_t *proc){
         for (uint16_t i = 0; i < proc->mm.vma_count; i++) {
             vma *m = &proc->mm.vmas[i];
             bool nofree = (m->flags & VMA_FLAG_NOFREE) != 0;
-            for (uaddr_t va = m->start; va < m->end; va += GRANULE_4KB) {
+            uaddr_t start = m->start;
+            uaddr_t end = m->end;
+            if (m->kind == VMA_KIND_STACK) {
+                if (!proc->mm.rss_stack_pages) continue;
+                start = proc->mm.stack_commit;
+                if (start < m->start) start = m->start;
+                if (start >= end) continue;
+            } else if (m->kind == VMA_KIND_ANON && !proc->mm.rss_anon_pages) continue;
+            for (uaddr_t va = start; va < end; va += GRANULE_4KB) {
                 paddr_t pa = 0;
                 if (!mmu_unmap_and_get_pa((uint64_t*)proc->mm.ttbr0, (uint64_t)va, &pa)) continue;
                 if (!nofree) pfree((void*)dmap_pa_to_kva(pa), GRANULE_4KB);
@@ -371,19 +389,40 @@ void init_main_process(){
     kernel_proc->sp = (uintptr_t)ksp;
     kernel_proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
     kernel_proc->output_size = 0;
+    kernel_proc->postmortem_output = 0;
+    kernel_proc->postmortem_output_size = 0;
     kernel_proc->priority = PROC_PRIORITY_LOW;
     name_process(kernel_proc, "kernel");
     proc_count++;
 }
 
 process_t* init_process(){
-    process_t* proc = kalloc(proc_page, sizeof(process_t), ALIGN_64B, MEM_PRIV_KERNEL);
+    process_t* proc = process_list;
+    while (proc) {
+        if (proc != kernel_proc && proc->state == STOPPED && !proc->procfs_refs && !proc->sp && !proc->stack && !proc->heap_phys && !proc->mm.ttbr0) {
+            process_t *next = proc->process_next;
+            if (proc->postmortem_output) kfree((void*)proc->postmortem_output, proc->postmortem_output_size ? proc->postmortem_output_size : 1);
+            memset(proc, 0, sizeof(process_t));
+            proc->process_next = next;
+            proc->id = next_proc_index++;
+            proc->state = BLOCKED;
+            proc->priority = PROC_PRIORITY_LOW;
+            proc_count++;
+            return proc;
+        }
+        proc = proc->process_next;
+    }
+
+    size_t proc_size = (sizeof(process_t) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    proc = palloc(proc_size, MEM_PRIV_KERNEL, MEM_RW, true);
     if (!proc) panic("Out of process memory", 0);
 
     memset(proc, 0, sizeof(process_t));
     proc->id = next_proc_index++;
     proc->state = BLOCKED;
     proc->priority = PROC_PRIORITY_LOW;
+    proc->postmortem_output = 0;
+    proc->postmortem_output_size = 0;
     if (!process_list) process_list= proc;
     else {
         process_t *tail = process_list;
@@ -422,8 +461,18 @@ void stop_process(uint16_t pid, int32_t exit_code){
     //reset_process(proc);
     // kprintf("Stopped %i process %i",pid,proc_count);
     if (!current) {
-        reset_process(proc);
+        linked_list_node_t *sleep = sleeping_list.head;
+        while (sleep) {
+            linked_list_node_t *next = sleep->next;
+            process_t *sleep_proc = (process_t*)sleep->data;
+            if (sleep_proc == proc || (sleep_proc && sleep_proc->id == pid)) linked_list_remove(&sleeping_list, sleep);
+            sleep = next;
+        }
+
+        update_sleep_timer();
+        bool can_reset = !proc->procfs_refs;
         enable_interrupt();
+        if (can_reset) reset_process(proc);
         return;
     }
 
@@ -440,7 +489,6 @@ void stop_process(uint16_t pid, int32_t exit_code){
     update_sleep_timer();
 
     if (proc->mm.ttbr0) mmu_swap_ttbr(0);
-    reap_proc = proc;
     switch_proc(HALT);
 }
 
@@ -610,6 +658,14 @@ FS_RESULT open_proc(const char *path, file *descriptor){
         descriptor->size = mfile->file_size;
         descriptor->cursor = 0;
         mfile->references++;
+        process_t *open_proc = process_list;
+        while (open_proc) {
+            if ((uintptr_t)mfile->file_buffer.buffer == (uintptr_t)open_proc->output || (uintptr_t)mfile->file_buffer.buffer == (uintptr_t)open_proc->postmortem_output || (uintptr_t)mfile->file_buffer.buffer == (uintptr_t)&open_proc->state) {
+                open_proc->procfs_refs++;
+                break;
+            }
+            open_proc = open_proc->process_next;
+        }
         irq_restore(irq);
         return FS_RESULT_SUCCESS;
     }
@@ -632,15 +688,16 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     file->fid = fid;
     file->references = 1;
     if (strcmp_case(path, "out",true) == 0){
-        descriptor->size = proc->output_size;
+        descriptor->size = proc->output ? proc->output_size : proc->postmortem_output_size;
         file->read_only = true;
         file->file_buffer = (buffer){
-            .buffer = (char*)proc->output,
-            .buffer_size = proc->output ? proc->output_size : 0,
-            .limit = proc->output ? PROC_OUT_BUF : 0,
-            .options = proc->output ? buffer_circular : buffer_opt_none,
+            .buffer = (char*)(proc->output ? proc->output : proc->postmortem_output),
+            .buffer_size = proc->output ? proc->output_size : proc->postmortem_output_size,
+            .limit = proc->output ? PROC_OUT_BUF : proc->postmortem_output_size,
+            .options = proc->output ? buffer_circular : buffer_static,
             .cursor = proc->output ? proc->output_size : 0,
         };
+        proc->procfs_refs++;
     } else if (strcmp_case(path, "state",true) == 0){
         descriptor->size = sizeof(proc->state);
         file->read_only = true;
@@ -651,6 +708,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
             .buffer_size = sizeof(proc->state),
             .cursor = 0,
         };
+        proc->procfs_refs++;
     } else {
         irq_restore(irq);
         kfree(file, sizeof(module_file));
@@ -660,6 +718,9 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     int put = chashmap_put(proc_opened_files, &descriptor->id, sizeof(uint64_t), file);
     irq_restore(irq);
     if (put >= 0) return FS_RESULT_SUCCESS;
+    if ((uintptr_t)file->file_buffer.buffer == (uintptr_t)proc->output || (uintptr_t)file->file_buffer.buffer == (uintptr_t)proc->postmortem_output || (uintptr_t)file->file_buffer.buffer == (uintptr_t)&proc->state) {
+        if (proc->procfs_refs) proc->procfs_refs--;
+    }
     kfree(file, sizeof(module_file));
     return FS_RESULT_DRIVER_ERROR;
 }
@@ -751,11 +812,22 @@ void close_proc(file *fd) {
     if (!proc_opened_files) return;
 
     uint64_t fid = fd->id;
+    process_t *reset_proc = 0;
     irq_flags_t irq = irq_save_disable();
     module_file *mfile = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(fid));
     if (!mfile) {
         irq_restore(irq);
         return;
+    }
+
+    process_t *open_proc = process_list;
+    while (open_proc) {
+        if ((uintptr_t)mfile->file_buffer.buffer == (uintptr_t)open_proc->output || (uintptr_t)mfile->file_buffer.buffer == (uintptr_t)open_proc->postmortem_output || (uintptr_t)mfile->file_buffer.buffer == (uintptr_t)&open_proc->state) {
+            if (open_proc->procfs_refs) open_proc->procfs_refs--;
+            if (open_proc->state == STOPPED && !open_proc->procfs_refs && (open_proc->sp || open_proc->pc || open_proc->spsr || open_proc->stack || open_proc->heap_phys)) reset_proc = open_proc;
+            break;
+        }
+        open_proc = open_proc->process_next;
     }
 
     if (mfile->references > 0) mfile->references--;
@@ -767,6 +839,7 @@ void close_proc(file *fd) {
         irq_restore(irq);
         if (owned && options == buffer_opt_none) kfree(owned, owned_size ? owned_size : 1);
         kfree(mfile, sizeof(module_file));
+        if (reset_proc) reset_process(reset_proc);
         return;
     }
     irq_restore(irq);

@@ -71,8 +71,9 @@ void handle_entry(const char *directory, const char *file) {
         string_free(fullpath);
         return;
     }
-    string_slice name = make_string_slice(fullpath.data, fullpath.length - strlen(file), ext_loc);
-    string_slice ext = make_string_slice(file, ext_loc + 1, strlen(file)-ext_loc-1);
+    size_t file_off = fullpath.length - strlen(file);
+    string_slice name = make_string_slice(fullpath.data, file_off, ext_loc);
+    string_slice ext = make_string_slice(fullpath.data, file_off + ext_loc + 1, strlen(file)-ext_loc-1);
     if (slice_lit_match(ext,"red",true)){
         string pkg_info = string_concat(fullpath, string_from_literal("/package.info"));
         add_entry(name, ext, fullpath, get_pkg_info(pkg_info.data));

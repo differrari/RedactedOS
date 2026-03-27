@@ -192,7 +192,8 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
         buf[n] = 0;
         if (n) put_string(buf);
 
-        readf(&state_fd, (char*)&state, sizeof(int));
+        seek(&state_fd, 0, SEEK_ABSOLUTE);
+        if (readf(&state_fd, (char*)&state, sizeof(int)) != sizeof(int)) state = 0;
     } while (state);
 
     for (;;) {

@@ -61,7 +61,7 @@ typedef struct {
 
 static uint16_t g_dhcpv6_pid = 0xFFFF;
 static rng_t g_dhcpv6_rng;
-static clinkedlist_t* g_dhcpv6_binds = NULL;
+static linked_list_t* g_dhcpv6_binds = NULL;
 
 static volatile bool g_force_renew_all = false;
 static volatile bool g_force_rebind_all = false;
@@ -152,12 +152,12 @@ static void reset_lease_state(l3_ipv6_interface_t* v6, dhcpv6_bind_t* b) {
 }
 
 static void ensure_binds() {
-    if (!g_dhcpv6_binds) g_dhcpv6_binds = clinkedlist_create();
+    if (!g_dhcpv6_binds) g_dhcpv6_binds = linked_list_create();
     if (!g_dhcpv6_binds) return;
 
-    clinkedlist_node_t* it = g_dhcpv6_binds->head;
+    linked_list_node_t* it = g_dhcpv6_binds->head;
     while (it) {
-        clinkedlist_node_t* nxt = it->next;
+        linked_list_node_t* nxt = it->next;
         dhcpv6_bind_t* b = (dhcpv6_bind_t*)it->data;
 
         bool keep = true;
@@ -196,7 +196,7 @@ static void ensure_binds() {
         if (!keep) {
             if (t) reset_lease_state(t, b);
 
-            dhcpv6_bind_t* rb = (dhcpv6_bind_t*)clinkedlist_remove(g_dhcpv6_binds, it);
+            dhcpv6_bind_t* rb = (dhcpv6_bind_t*)linked_list_remove(g_dhcpv6_binds, it);
             if (rb) {
                 if (rb->sock) {
                     socket_close_udp(rb->sock);
@@ -216,7 +216,7 @@ static void ensure_binds() {
         if (!l2 || !l2->is_up) continue;
 
         bool already = false;
-        for (clinkedlist_node_t* it2 = g_dhcpv6_binds->head; it2; it2 = it2->next) {
+        for (linked_list_node_t* it2 = g_dhcpv6_binds->head; it2; it2 = it2->next) {
             dhcpv6_bind_t* b = (dhcpv6_bind_t*)it2->data;
             if (b && b->ifindex == l2->ifindex) {
                 already = true;
@@ -292,7 +292,7 @@ static void ensure_binds() {
         mcast_servers(m);
         (void)l2_ipv6_mcast_join(b->ifindex, m);
 
-        clinkedlist_push_front(g_dhcpv6_binds, b);
+        linked_list_push_front(g_dhcpv6_binds, b);
     }
 }
 
@@ -799,7 +799,7 @@ int dhcpv6_daemon_entry(int argc, char* argv[]) {
         ensure_binds();
 
         if (g_dhcpv6_binds) {
-            for (clinkedlist_node_t* it = g_dhcpv6_binds->head; it; it = it->next) {
+            for (linked_list_node_t* it = g_dhcpv6_binds->head; it; it = it->next) {
                 dhcpv6_bind_t* b = (dhcpv6_bind_t*)it->data;
                 if (b) fsm_once(b, tick_ms);
             }

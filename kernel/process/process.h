@@ -51,6 +51,9 @@ typedef struct process {
     paddr_t heap_phys;
     kaddr_t output;
     size_t output_size;
+    kaddr_t postmortem_output;
+    size_t postmortem_output_size;
+    uint16_t procfs_refs;
     file out_fd;
     int32_t exit_code;
     bool focused;

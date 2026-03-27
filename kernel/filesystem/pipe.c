@@ -18,13 +18,13 @@ FS_RESULT create_pipe(const char *source, const char* destination, PIPE_OPTIONS 
         result = open_file(destination, &pipe->read_fd);
         if (result == FS_RESULT_SUCCESS){
             if (!pipe_map) pipe_map = chashmap_create(64);
-            clinkedlist_t *list = chashmap_get(pipe_map, &pipe->write_fd.id, sizeof(uint64_t));
+            linked_list_t *list = chashmap_get(pipe_map, &pipe->write_fd.id, sizeof(uint64_t));
             bool add_entry = false;
             if (!list){
                 add_entry = true;
-                list = clinkedlist_create();
+                list = linked_list_create();
             }
-            clinkedlist_push_front(list, pipe);
+            linked_list_push_front(list, pipe);
             if (add_entry)
                 chashmap_put(pipe_map, &pipe->write_fd.id, sizeof(uint64_t), list);
             out_fd->cursor = 0;
@@ -42,9 +42,9 @@ FS_RESULT close_pipe(file *fd){
 
 void update_pipes(uint64_t mfid, const char *buf, size_t size){
     if (!pipe_map) return;
-    clinkedlist_t *list = chashmap_get(pipe_map, &mfid, sizeof(uint64_t));
+    linked_list_t *list = chashmap_get(pipe_map, &mfid, sizeof(uint64_t));
     if (!list || !list->head) return;
-    for (clinkedlist_node_t *head = list->head; head; head = head->next){
+    for (linked_list_node_t *head = list->head; head; head = head->next){
         if (!head->data) continue;
         pipe_t *pipe = (pipe_t*)head->data;
         if (!pipe) continue;
@@ -55,9 +55,9 @@ void update_pipes(uint64_t mfid, const char *buf, size_t size){
 static int32_t close_pid;
 
 void close_pipe_list(void *key, uint64_t keylen, void *value){
-    clinkedlist_t *list = (clinkedlist_t*)value;
-    clinkedlist_node_t *prev = 0;
-    for (clinkedlist_node_t *node = list->head; node; node = node->next){
+    linked_list_t *list = (linked_list_t*)value;
+    linked_list_node_t *prev = 0;
+    for (linked_list_node_t *node = list->head; node; node = node->next){
         pipe_t *pipe = (pipe_t*)node->data;
         if (pipe->pid == close_pid){
             if (prev) prev->next = node->next;
@@ -66,7 +66,7 @@ void close_pipe_list(void *key, uint64_t keylen, void *value){
             close_file_global(&pipe->write_fd, pipe->write_mod);
             close_file(&pipe->read_fd);
             free_sized(node->data, sizeof(pipe_t));
-            free_sized(node, sizeof(clinkedlist_node_t));
+            free_sized(node, sizeof(linked_list_node_t));
         }
     }
 }

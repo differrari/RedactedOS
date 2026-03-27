@@ -785,8 +785,8 @@ syscall_entry syscalls[] = {
 
 bool decode_crash_address_with_info(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
     if (!debug_line.ptr || !debug_line.size) return false;
-    debug_line_info info = dwarf_decode_lines(debug_line.ptr, debug_line.size, debug_line_str.ptr, debug_line_str.size, VIRT_TO_PHYS(address));
-    if (info.address == VIRT_TO_PHYS(address)){
+    debug_line_info info = dwarf_decode_lines(debug_line.ptr, debug_line.size, debug_line_str.ptr, debug_line_str.size, address);
+    if (info.address == address){
         kprintf("[%.16x] %i: %s %i:%i", address, depth, info.file, info.line, info.column);
         return true;
     }
@@ -910,22 +910,12 @@ void sync_el0_handler_c(){
             stop_current_process(ec);
         }
     } else {
-        if (far == 0 && elr == 0 && currentEL == 0){
+        if (far == 0 && elr == 0 && currentEL == 1 && ec == 0x21){
             kprintf("Process has exited %llx", x0);
             syscall_depth--;
             stop_current_process(x0);
-        } else {
-            switch (ec) {
-                case 0x20:
-                case 0x21: {
-                    if (far == 0){
-                        kprintf("Process has exited %llx", x0);
-                        syscall_depth--;
-                        stop_current_process(x0);
-                    }
-                }
-            }
-            if (currentEL == 1){
+        }
+        if (currentEL == 1){
                 if (syscall_depth < 3){
                     if (syscall_depth < 1) kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
                     if (syscall_depth < 2) {
@@ -936,12 +926,11 @@ void sync_el0_handler_c(){
                     handle_exception("UNEXPECTED EXCEPTION",ec);
                 }
                 while (true);
-            } else {
-                kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", esr, elr, far, proc->sp);
-                if (syscall_depth < 2) coredump(esr, elr, far, proc->sp);
-                syscall_depth--;
-                stop_current_process(ec);
-            }
+        } else {
+            kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", esr, elr, far, proc->sp);
+            if (syscall_depth < 2) coredump(esr, elr, far, proc->sp);
+            syscall_depth--;
+            stop_current_process(ec);
         }
     }
     syscall_depth--;

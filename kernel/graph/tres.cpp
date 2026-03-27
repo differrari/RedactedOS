@@ -13,7 +13,7 @@
 
 #define WIN_FB_USER_BASE 0x100000000ULL
 
-clinkedlist_t *window_list;
+linked_list_t *window_list;
 window_frame *focused_window;
 
 uint16_t win_ids = 1;
@@ -28,7 +28,7 @@ typedef struct window_tab {
 } window_tab;
 
 void init_window_manager(){
-    window_list = clinkedlist_create();
+    window_list = linked_list_create();
 }
 
 int find_window(void *node, void *key){
@@ -48,7 +48,7 @@ gpu_point win_to_screen(window_frame *frame, gpu_point point){
 
 gpu_point convert_mouse_position(gpu_point point){
     process_t *p = get_current_proc();
-    clinkedlist_node_t *node = clinkedlist_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
+    linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
         return win_to_screen(frame, point);
@@ -66,12 +66,12 @@ extern "C" void create_window(int32_t x, int32_t y, uint32_t width, uint32_t hei
     frame->height = height;
     frame->x = x;
     frame->y = y;
-    clinkedlist_push_front(window_list, PHYS_TO_VIRT_P(frame));
+    linked_list_push_front(window_list, PHYS_TO_VIRT_P(frame));
     gpu_create_window(x,y, width, height, &frame->win_ctx);
     process_t *p = launch_launcher();
     if (!p) {
-        clinkedlist_node_t *node = clinkedlist_find(window_list, PHYS_TO_VIRT_P(&frame->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
-        if (node) clinkedlist_remove(window_list, node);
+        linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&frame->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
+        if (node) linked_list_remove(window_list, node);
         uint64_t size = (uint64_t)frame->win_ctx.width * (uint64_t)frame->win_ctx.height * 4;
         size = (size + (GRANULE_4KB - 1)) & ~(GRANULE_4KB - 1);
         if (frame->win_ctx.fb && size)pfree(frame->win_ctx.fb, size);
@@ -85,7 +85,7 @@ extern "C" void create_window(int32_t x, int32_t y, uint32_t width, uint32_t hei
 
 void resize_window(uint32_t width, uint32_t height){
     process_t *p = get_current_proc();
-    clinkedlist_node_t *node = clinkedlist_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
+    linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
         gpu_resize_window(width, height, &frame->win_ctx);
@@ -97,7 +97,7 @@ void resize_window(uint32_t width, uint32_t height){
 
 void get_window_ctx(draw_ctx* out_ctx){
     process_t *p = get_current_proc();
-    clinkedlist_node_t *node = clinkedlist_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
+    linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
         *out_ctx = frame->win_ctx;
@@ -132,7 +132,7 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame){
     if (!frame_ctx) return;
     if (!frame){
         process_t *p = get_current_proc();
-        clinkedlist_node_t *node = clinkedlist_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
+        linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
         if (!node || !node->data) return;
         frame = (window_frame*)node->data;
     }
@@ -188,7 +188,7 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame){
 }
 
 void set_window_focus(uint16_t win_id){
-    clinkedlist_node_t *node = clinkedlist_find(window_list, PHYS_TO_VIRT_P(&win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
+    linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&win_id), (typeof(find_window)*)PHYS_TO_VIRT_P(find_window));
     if (!node || !node->data) return;
     focused_window = (window_frame*)node->data;
     dirty_windows = true;
