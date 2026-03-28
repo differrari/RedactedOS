@@ -98,5 +98,6 @@ system_module net_module = (system_module){
     .close = 0,
     .sread = 0,
     .swrite = 0,
+    .getstat = 0,
     .readdir = 0,
 };

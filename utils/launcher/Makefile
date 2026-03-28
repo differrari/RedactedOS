@@ -16,7 +16,7 @@ NAME     := $(notdir $(CURDIR))
 ELF      := $(NAME).elf
 TARGET   := $(NAME).bin
 PACKAGE  := $(NAME).red
-LOCATION := ../../fs/redos/user/
+LOCATION := ../../fs/redos/system/
 
 
 .PHONY: prepare all clean
@@ -27,6 +27,7 @@ prepare:
 	mkdir -p resources
 	mkdir -p $(BUILD_DIR)
 	mkdir -p $(PACKAGE)
+	mkdir -p $(LOCATION)
 	cp -r resources $(PACKAGE)
 
 $(PACKAGE)/$(TARGET): ../../shared/libshared.a $(OBJ)

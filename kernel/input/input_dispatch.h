@@ -30,7 +30,7 @@ uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp);
 uint16_t sys_subscribe_shortcut_current(keypress kp);
 void sys_set_focus(int pid);
 void sys_focus_current();
-void sys_unset_focus();
+void sys_unset_focus(bool close);
 
 ///A process can request for shortcuts and others to be disabled
 void sys_set_secure(bool secure);

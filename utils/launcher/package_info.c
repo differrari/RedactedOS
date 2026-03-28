@@ -1,7 +1,4 @@
 #include "package_info.h"
-#include "std/string.h"
-#include "syscalls/syscalls.h"
-#include "console/kio.h"
 #include "data/format/toml.h"
 
 static inline void handle_package_kvp(string_slice key, string_slice value, void* ctx){

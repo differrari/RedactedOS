@@ -70,6 +70,7 @@ debug:
 dump:
 	$(ARCH)objdump -D kernel.elf > dump
 	$(MAKE) -C user $@
+	$(MAKE) -C utils $@
 
 install:
 	$(MAKE) clean

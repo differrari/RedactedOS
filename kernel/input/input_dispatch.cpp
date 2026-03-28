@@ -15,7 +15,7 @@ typedef struct {
 
 shortcut shortcuts[16] = {};
 
-uint16_t shortcut_count = 0;
+u16 shortcut_count = 0;
 
 bool secure_mode = false;
 
@@ -129,10 +129,14 @@ void sys_set_focus(int pid){
     set_window_focus(focused_proc->win_id);
 }
 
-void sys_unset_focus(){
+void sys_unset_focus(bool close){
     if (focused_proc) focused_proc->focused = false;
-    focused_proc = 0;
-    unset_window_focus();
+    u16 npid = focused_proc->win_id ? window_fallback_focus(focused_proc->win_id, focused_proc->id) : 0;
+    if (npid)
+    {
+        focused_proc = get_proc_by_pid(npid);
+    }    
+    else focused_proc = 0;
 }
 
 void sys_set_secure(bool secure){
