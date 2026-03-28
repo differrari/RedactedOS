@@ -19,11 +19,12 @@ private:
     size_t choose_version();
     void sync(u32 serial, buffer buf);
     uint32_t open(uint32_t fid);
+    bool sync_file(module_file *mfile);
     uint32_t attach();
     size_t list_contents(uint32_t fid, void *buf, size_t size, uint64_t *offset);
     uint32_t walk_dir(uint32_t fid, char *path);
     uint64_t read(uint32_t fid, uint64_t offset, void* file);
-    uint64_t write(u32 fid, u64 offset, size_t amount, const char* buf);
+    size_t write(u32 fid, u64 offset, size_t amount, const char* buf);
     r_getattr* get_attribute(uint32_t fid, uint64_t mask);
     size_t max_msize;
     

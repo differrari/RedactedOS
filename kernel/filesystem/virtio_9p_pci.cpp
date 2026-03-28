@@ -79,6 +79,14 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
     } else {
         kfree((void*)mfile->buf, mfile->file_size);
     }
+    //TODO: file buffer should replace buf after PR #67
+    mfile->file_buffer = (buffer){
+        .buffer = file,
+        .buffer_size = size,
+        .limit = size,
+        .options = buffer_can_grow,
+        .cursor = 0
+    };
     mfile->file_size = size;
     mfile->buf = (uintptr_t)file;
     mfile->ignore_cursor = false;
@@ -91,6 +99,7 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
 size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
     module_file *mfile = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) return 0;
+    sync_file(mfile);
     if (descriptor->cursor > mfile->file_size) return 0;
     if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
     memcpy(buf, (void*)(mfile->buf + descriptor->cursor), size);
@@ -102,12 +111,7 @@ size_t Virtio9PDriver::write_file(file *descriptor, const char* buf, size_t size
     if (!mfile) return 0;
     if (mfile->read_only) return 0;
     
-    size_t written = buffer_write_to(&mfile->file_buffer, buf, size, descriptor->cursor);
-    //TODO: sync should read the file from the server and sync it to the version in ram, the version in ram is not a source of truth
-    
-    write(mfile->serial, descriptor->cursor, size, buf);
-    
-    return written;
+    return write(mfile->serial, descriptor->cursor, size, buf);
 }
 
 void Virtio9PDriver::close_file(file* descriptor){
@@ -273,7 +277,7 @@ uint64_t Virtio9PDriver::read(u32 fid, u64 offset, void *file){
 
 }
 
-uint64_t Virtio9PDriver::write(u32 fid, u64 offset, size_t amount, const char* buf){
+size_t Virtio9PDriver::write(u32 fid, u64 offset, size_t amount, const char* buf){
     t_write *cmd = make_p9_write_packet(fid, offset, amount, buf);
     void* resp = make_p9_response_buffer();
     
@@ -310,4 +314,25 @@ bool Virtio9PDriver::stat(const char *path, fs_stat *out_stat){
     out_stat->size = read_unaligned64(&attr->size);
     out_stat->type = read_unaligned32(&attr->mode) & DIR_MASK ? entry_directory : entry_file;
     return false;
+}
+
+bool Virtio9PDriver::sync_file(module_file *mfile){
+    if (!mfile || !mfile->serial) return false;
+    r_getattr *attr = get_attribute(mfile->serial, 0x00000201ULL);
+    if (!attr) return false;
+    size_t new_size = read_unaligned64(&attr->size);
+    if (new_size != mfile->file_buffer.buffer_size){
+        kfree(mfile->file_buffer.buffer, mfile->file_buffer.buffer_size);
+        mfile->file_buffer.buffer = kalloc(np_dev.memory_page, new_size, ALIGN_64B, MEM_PRIV_KERNEL);
+        mfile->file_buffer.buffer_size = new_size;
+        mfile->file_buffer.limit = new_size;
+        mfile->buf = (uptr)mfile->file_buffer.buffer;
+        mfile->file_size = mfile->file_buffer.buffer_size;
+    }
+    if (read(mfile->serial, 0, mfile->file_buffer.buffer) != new_size){
+        kprintf("[VIRTIO 9P error] failed to sync file with serial %x",mfile->serial);
+        return false;
+    }
+    
+    return true;
 }

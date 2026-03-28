@@ -7,6 +7,7 @@
 #include "image/bmp.h"
 #include "audio/cuatro.h"
 #include "audio/wav.h"
+#include "memory/memory.h"
 
 #define BORDER 20
 
@@ -96,15 +97,28 @@ int audio_example(){
     return 0;
 }
 
-int main(int argc, char* argv[]){
-    
+char reffub[256];
+
+void file_sync(){
     file testfd = {};
     openf("/shared/test", &testfd);
+    
+    readf(&testfd, reffub, 256);
+    
+    print("Initial contents of file: %s",reffub);
     
     testfd.cursor = testfd.size;
     
     writef(&testfd, "Ciao mond", 9);
     
+    testfd.cursor = 0;
+    
+    memset(reffub, 0, 256);
+    readf(&testfd, reffub, 256);
+    print("New contents of file: %s",reffub);
+}
+
+void concurrent_write(){
     file fd1 = {};
     file fd2 = {};
     
@@ -128,6 +142,11 @@ int main(int argc, char* argv[]){
     readf(&fd1, buf, 64);
     
     print("Buffer now %s",buf);
+}
+
+int main(int argc, char* argv[]){
+    
+    concurrent_write();
     
     return 0;
 }
