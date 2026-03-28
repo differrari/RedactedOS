@@ -39,6 +39,7 @@ typedef struct {
 extern boot_theme_t boot_theme;
 extern system_theme_t system_theme;
 extern system_config_t system_config;
+
 extern system_module theme_mod;
 
 #define COLOR_WHITE 0xFFFFFFFF

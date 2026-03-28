@@ -10,6 +10,8 @@ public:
     virtual FS_RESULT open_file(const char* path, file* descriptor) = 0;
     virtual size_t read_file(file *descriptor, void* buf, size_t size) = 0;
     virtual size_t write_file(file *descriptor, const char* buf, size_t size) = 0;
+    virtual size_t sread_file(const char *path, void *buf, size_t size) = 0;
+    virtual size_t swrite_file(const char *path, const void *buf, size_t size) = 0;
     virtual size_t list_contents(const char *path, void* buf, size_t size, file_offset *offset = 0) = 0;
     virtual void close_file(file* descriptor) = 0;
     virtual bool stat(const char *path, fs_stat *out_stat) = 0;

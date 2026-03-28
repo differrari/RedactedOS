@@ -106,12 +106,51 @@ size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
     return size;
 }
 
+size_t Virtio9PDriver::sread_file(const char *path, void *buf, size_t size){
+    uint32_t f = walk_dir(root, (char*)path);
+    if (f == INVALID_FID){
+        kprintf("[VIRTIO 9P error] failed to navigate to %s",path);
+        return FS_RESULT_NOTFOUND;
+    }
+    if (open(f) == INVALID_FID){
+        kprintf("[VIRTIO 9P error] failed to open %s",path);
+        return FS_RESULT_DRIVER_ERROR;
+    }
+    r_getattr *attr = get_attribute(f, 0x00000200ULL);
+    if (!attr) return FS_RESULT_DRIVER_ERROR;
+    uint64_t file_size = read_unaligned64(&attr->size);
+    if (file_size < size) size = file_size;
+    void *file = zalloc(file_size);
+    if (read(f, 0, file) != file_size){
+        kprintf("[VIRTIO 9P error] failed read file %s",path);
+        return FS_RESULT_DRIVER_ERROR;
+    } 
+    memcpy(buf,file,size);
+    //TODO: close
+    return size;
+}
+
 size_t Virtio9PDriver::write_file(file *descriptor, const char* buf, size_t size){
     module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) return 0;
     if (mfile->read_only) return 0;
     
     return write(mfile->serial, descriptor->cursor, size, buf);
+}
+
+
+size_t Virtio9PDriver::swrite_file(const char *path, const void *buf, size_t size){
+    uint32_t f = walk_dir(root, (char*)path);
+    if (f == INVALID_FID){
+        kprintf("[VIRTIO 9P error] failed to navigate to %s",path);
+        return FS_RESULT_NOTFOUND;
+    }
+    if (open(f) == INVALID_FID){
+        kprintf("[VIRTIO 9P error] failed to open %s",path);
+        return FS_RESULT_DRIVER_ERROR;
+    }
+    //TODO: close
+    return write(f, 0, size, (char*)buf);
 }
 
 void Virtio9PDriver::close_file(file* descriptor){

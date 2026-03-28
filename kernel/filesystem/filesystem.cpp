@@ -115,6 +115,14 @@ void shared_close(file *descriptor){
     p9Driver->close_file(descriptor);
 }
 
+size_t shared_sread(const char *path, void *buf, size_t size){
+    return p9Driver->sread_file(path, buf, size);
+}
+
+size_t shared_swrite(const char *path, const void *buf, size_t size){
+    return p9Driver->swrite_file(path, buf, size);
+}
+
 system_module p9_fs_module = (system_module){
     .name = "9PFS",
     .mount = "/shared",
@@ -125,8 +133,8 @@ system_module p9_fs_module = (system_module){
     .read = shared_read,
     .write = shared_write,
     .close = shared_close,
-    .sread = 0,
-    .swrite = 0,
+    .sread = shared_sread,
+    .swrite = shared_swrite,
     .getstat = shared_stat,
     .readdir = shared_readdir,
 };
