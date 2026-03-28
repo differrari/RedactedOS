@@ -98,6 +98,13 @@ int audio_example(){
 
 int main(int argc, char* argv[]){
     
+    file testfd = {};
+    openf("/shared/test", &testfd);
+    
+    testfd.cursor = testfd.size;
+    
+    writef(&testfd, "Ciao mond", 9);
+    
     file fd1 = {};
     file fd2 = {};
     
@@ -106,19 +113,15 @@ int main(int argc, char* argv[]){
     
     print("FD1: %i FD2: %i",fd1.id,fd2.id);
     
-    print("hello wrote %i. Now %i",writef(&fd1, "hello", 5), fd1.cursor);
-    print("world wrote %i. Now %i",writef(&fd2, "world", 5), fd2.cursor);
-    print("cruel wrote %i. Now %i",writef(&fd1, "cruel", 5), fd1.cursor);
+    print("one wrote %i. Now %i",writef(&fd1, "one", 3), fd1.cursor);
+    print("two wrote %i. Now %i",writef(&fd2, "two", 3), fd2.cursor);
+    print("three wrote %i. Now %i",writef(&fd1, "three", 5), fd1.cursor);
     
-    // worldcruelhello
-    
-    // worldcruelhello
-    // heyhiworldcruelhello
     char buf[64];
     
     seek(&fd1, 0, SEEK_ABSOLUTE);
     
-    print("heyhi wrote %i. Now %i",writef(&fd1, "heyhi", 5));
+    print("first wrote %i. Now %i",writef(&fd1, "first", 5));
     
     seek(&fd1, 0, SEEK_ABSOLUTE);
     

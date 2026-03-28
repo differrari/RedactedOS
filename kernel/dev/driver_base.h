@@ -20,6 +20,8 @@ typedef struct module_file {
     fs_entry_type entry_type;
     uint64_t fid;
     
+    uint64_t serial;
+    
     uptr buf;
     bool ignore_cursor;
     bool read_only;

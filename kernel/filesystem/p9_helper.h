@@ -203,6 +203,21 @@ typedef struct t_read {
 
 t_read* make_p9_read_packet(u32 fid, u64 offset, u64 amount);
 
+typedef struct t_write {
+    p9_packet_header header;
+    u32 fid;
+    u64 offset;
+    u32 count;
+    //Followed by data
+}__attribute__((packed)) t_write;
+
+typedef struct r_read {
+    p9_packet_header header;
+    u32 count;
+}__attribute__((packed)) r_write;
+
+t_write* make_p9_write_packet(u32 fid, u64 offset, size_t amount, const char* buf);
+
 #ifdef __cplusplus
 }
 #endif

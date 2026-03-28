@@ -27,8 +27,8 @@ void p9_free(void *ptr){
 }
 
 void* make_p9_packet(size_t full_size, u16 id, bool max_tag){
-    p9_packet_header *header = page_alloc(PAGE_SIZE);
-    header->size = sizeof(p9_version_packet);
+    p9_packet_header *header = page_alloc(full_size);
+    header->size = full_size;
     header->id = id;
     if (max_tag)
         p9_max_tag(header);
@@ -70,7 +70,7 @@ t_lopen* make_p9_open_packet(u32 fid){
     t_lopen *packet = make_p9_packet(sizeof(t_lopen),P9_TLOPEN, false);
 
     write_unaligned32(&packet->fid,fid);
-    write_unaligned32(&packet->flags,O_RDONLY);
+    write_unaligned32(&packet->flags,O_RDWR);
     
     return packet;
 }
@@ -126,5 +126,16 @@ t_read* make_p9_read_packet(u32 fid, u64 offset, u64 amount){
     write_unaligned32(&packet->fid,fid);
     write_unaligned64(&packet->offset,offset);
     write_unaligned32(&packet->count,amount - sizeof(p9_packet_header) - sizeof(u32));
+    return packet;
+}
+
+t_write* make_p9_write_packet(u32 fid, u64 offset, size_t amount, const char* buf){
+    t_write *packet = make_p9_packet(sizeof(t_write) + amount, P9_TWRITE, false);
+    write_unaligned32(&packet->fid,fid);
+    write_unaligned64(&packet->offset,offset);
+    write_unaligned32(&packet->count, amount);
+    
+    memcpy((void*)((uptr)packet + sizeof(t_write)), buf, amount);
+    
     return packet;
 }

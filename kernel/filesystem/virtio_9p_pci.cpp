@@ -83,6 +83,7 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
     mfile->buf = (uintptr_t)file;
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
+    mfile->serial = f;
     mfile->references++;
     return FS_RESULT_SUCCESS;
 }
@@ -94,6 +95,19 @@ size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
     if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
     memcpy(buf, (void*)(mfile->buf + descriptor->cursor), size);
     return size;
+}
+
+size_t Virtio9PDriver::write_file(file *descriptor, const char* buf, size_t size){
+    module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!mfile) return 0;
+    if (mfile->read_only) return 0;
+    
+    size_t written = buffer_write_to(&mfile->file_buffer, buf, size, descriptor->cursor);
+    //TODO: sync should read the file from the server and sync it to the version in ram, the version in ram is not a source of truth
+    
+    write(mfile->serial, descriptor->cursor, size, buf);
+    
+    return written;
 }
 
 void Virtio9PDriver::close_file(file* descriptor){
@@ -257,6 +271,29 @@ uint64_t Virtio9PDriver::read(u32 fid, u64 offset, void *file){
 
     return size;
 
+}
+
+uint64_t Virtio9PDriver::write(u32 fid, u64 offset, size_t amount, const char* buf){
+    t_write *cmd = make_p9_write_packet(fid, offset, amount, buf);
+    void* resp = make_p9_response_buffer();
+    
+    virtio_buf b[2] = {VBUF(cmd, cmd->header.size, 0), VBUF(resp, sizeof(r_write), VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&np_dev, b, 2);
+    
+    p9_free(cmd);
+    
+    if (!check_9p_success(resp)){
+        p9_free(resp);
+        return 0;
+    }
+    
+    r_write *response = (r_write*)resp;
+    
+    size_t written = response->count;
+    
+    p9_free(resp);
+    
+    return written;
 }
 
 #define DIR_MASK 0x4000

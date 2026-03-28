@@ -44,7 +44,7 @@ size_t boot_partition_read(file *fd, char *out_buf, size_t size, file_offset off
 }
 
 size_t boot_partition_write(file *fd, const char *buf, size_t size, file_offset offset){
-    return 0;
+    return fs_driver->write_file(fd, buf, size);
 }
 
 size_t boot_partition_readdir(const char* path, void *out_buf, size_t size, file_offset *offset){
@@ -99,7 +99,7 @@ size_t shared_read(file *fd, char *out_buf, size_t size, file_offset offset){
 }
 
 size_t shared_write(file *fd, const char *buf, size_t size, file_offset offset){
-    return 0;
+    return p9Driver->write_file(fd, buf, size);
 }
 
 size_t shared_readdir(const char* path, void *out_buf, size_t size, file_offset *offset){
