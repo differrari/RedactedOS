@@ -17,10 +17,16 @@ uint64_t reserve_fd_gid(const char *path);
 #endif
 
 typedef struct module_file {
+    const char* name;
+    fs_backing_type backing_type;
+    fs_entry_type entry_type;
     uint64_t fid;
-    size_t file_size;
+
+    uptr buf;
     bool ignore_cursor;
     bool read_only;
+    
+    size_t file_size;
     buffer file_buffer;
     uint64_t references;
 } module_file;

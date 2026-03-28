@@ -253,12 +253,14 @@ void reset_process(process_t *proc){
         if (out_file && (uintptr_t)out_file->file_buffer.buffer == (uintptr_t)proc->output) {
             size_t snapshot_size = proc->output_size;
             if (!snapshot_size) {
+                out_file->buf = 0;
                 out_file->file_buffer = (buffer){0};
                 out_file->file_size = 0;
             } else {
                 void *snapshot = kalloc(proc_page, snapshot_size, ALIGN_64B, MEM_PRIV_KERNEL);
                 if (snapshot) {
                     memcpy(snapshot, (void*)proc->output, snapshot_size);
+                    out_file->buf = (uptr)snapshot;
                     out_file->file_buffer = (buffer){
                         .buffer = snapshot,
                         .buffer_size = snapshot_size,
@@ -268,6 +270,7 @@ void reset_process(process_t *proc){
                     };
                     out_file->file_size = snapshot_size;
                 } else {
+                    out_file->buf = 0;
                     out_file->file_buffer = (buffer){0};
                     out_file->file_size = 0;
                 }
@@ -281,6 +284,7 @@ void reset_process(process_t *proc){
             uint8_t *snapshot = kalloc(proc_page, sizeof(state), ALIGN_64B, MEM_PRIV_KERNEL);
             if (snapshot) {
                 *snapshot = state;
+                state_file->buf = (uptr)snapshot;
                 state_file->file_buffer = (buffer){
                     .buffer = snapshot,
                     .buffer_size = sizeof(state),
@@ -290,6 +294,7 @@ void reset_process(process_t *proc){
                 };
                 state_file->file_size = sizeof(state);
             } else {
+                state_file->buf = 0;
                 state_file->file_buffer = (buffer){0};
                 state_file->file_size = 0;
             }
@@ -456,7 +461,7 @@ void stop_process(uint16_t pid, int32_t exit_code){
     proc->sleeping = false;
     proc->wake_at_msec = 0;
     if (proc->focused)
-        sys_unset_focus();
+        sys_unset_focus(false);
     //if (current && proc->mm.ttbr0) mmu_swap_ttbr(0);
     //reset_process(proc);
     // kprintf("Stopped %i process %i",pid,proc_count);
@@ -690,6 +695,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     if (strcmp_case(path, "out",true) == 0){
         descriptor->size = proc->output ? proc->output_size : proc->postmortem_output_size;
         file->read_only = true;
+        file->buf = (uptr)(proc->output ? proc->output : proc->postmortem_output);
         file->file_buffer = (buffer){
             .buffer = (char*)(proc->output ? proc->output : proc->postmortem_output),
             .buffer_size = proc->output ? proc->output_size : proc->postmortem_output_size,
@@ -701,6 +707,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     } else if (strcmp_case(path, "state",true) == 0){
         descriptor->size = sizeof(proc->state);
         file->read_only = true;
+        file->buf = (uptr)&proc->state;
         file->file_buffer = (buffer){
             .buffer = (char*)&proc->state,
             .limit = sizeof(proc->state),
@@ -782,6 +789,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
             uint64_t fid = reserve_fd_gid(fullpath);
             module_file *file = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(fid));
             if (file && (uintptr_t)file->file_buffer.buffer == (uintptr_t)proc->output) {
+                file->buf = (uptr)proc->output;
                 file->file_buffer.buffer_size = proc->output_size;
                 file->file_buffer.limit = PROC_OUT_BUF;
                 file->file_buffer.cursor = proc->output_size;

@@ -8,11 +8,10 @@
 #include "syscalls/syscalls.h"
 #include "console/kio.h"
 #include "process/loading/elf_file.h"
-#include "memory/page_allocator.h"
-#include "alloc/allocate.h"
 #include "std/memory.h"
+#include "process/scheduler.h"
 #include "sysregs.h"
-#include "memory/addr.h"
+#include "input/input_dispatch.h"
 
 bool init_bin(){
     return true;
@@ -32,16 +31,43 @@ open_bin_ref available_cmds[] = {
 
 process_t* execute(const char* prog_name, int argc, const char* argv[]){
     if (!prog_name || !*prog_name) return 0;
-    
-    char *full_name = 0;
-    full_name = (strend_case(prog_name, ".elf", true) == 0) ? string_from_literal(prog_name).data : strcat_new(prog_name, ".elf");
+
+    if (strcont(prog_name, "/")){
+        const char *name = prog_name;
+        for (const char *p = prog_name; *p; p++) if (*p == '/') name = p + 1;
+
+        char proc_name[256] = {};
+        size_t i = 0;
+        while (name[i] && name[i] != '.' && i + 1 < sizeof(proc_name)){
+            proc_name[i] = name[i];
+            i++;
+        }
+
+        string bundle = string_from_literal_length(prog_name, name - prog_name - 1);
+        process_t *proc = load_elf_process_path(proc_name, bundle.data, prog_name, argc, argv);
+        if (!proc) return 0;
+
+        process_t *cur = get_current_proc();
+        if (cur) proc->win_id = cur->win_id;
+        if (proc->state != READY || !proc->in_ready_queue) ready_process(proc);
+        if (cur && cur->win_id) sys_set_focus(proc->id);
+        return proc;
+    }
+
+    char *full_name = (strend_case(prog_name, ".elf", true) == 0) ? string_from_literal(prog_name).data : strcat_new(prog_name, ".elf");
     if (full_name) {
         char pathbuf[1024] = {};
         size_t pathlen = string_format_buf(pathbuf, sizeof(pathbuf), "/boot/redos/bin/%s",full_name);
         process_t *proc = 0;
         if (pathlen < sizeof(pathbuf) - 1) proc = load_elf_process_path(prog_name, 0, pathbuf, argc, argv);
         release(full_name);
-        if (proc) return proc;
+        if (proc) {
+            process_t *cur = get_current_proc();
+            if (cur) proc->win_id = cur->win_id;
+            if (proc->state != READY || !proc->in_ready_queue) ready_process(proc);
+            if (cur && cur->win_id) sys_set_focus(proc->id);
+            return proc;
+        }
     }
 
     for (uint32_t i = 0; i < N_ARR(available_cmds); i++){
@@ -76,4 +102,4 @@ system_module bin_module = (system_module){
     .sread = 0,
     .swrite = 0,
     .readdir = 0,
-};//TODO: symlinks to link /bin to /boot/redos/bin
+};

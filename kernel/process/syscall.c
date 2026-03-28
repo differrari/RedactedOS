@@ -114,7 +114,6 @@ u64 syscall_pfree(process_t *ctx){
     free_registered(ctx->alloc_map, (void*)va);
     if (ctx->mm.rss_anon_pages >= pages) ctx->mm.rss_anon_pages -= pages;
     else ctx->mm.rss_anon_pages = 0;
-    return 0;
     return SYSCALL_ERRNO(SYSCALL_EINVAL);
 }
 
@@ -538,7 +537,9 @@ u64 syscall_openf(process_t *ctx){
     if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
 
     char path[255] = {};
-    if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11){
+    if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
+        string_format_buf(path, sizeof(path), "%s/%s", ctx->bundle, req_path);
+    } else if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11 && ctx->bundle && *ctx->bundle) {
         string_format_buf(path, sizeof(path), "%s%s", ctx->bundle, req_path);
     } else {
         memcpy(path, req_path, strlen(req_path) + 1);
@@ -623,12 +624,21 @@ u64 syscall_sreadf(process_t *ctx){
     uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
 
-    char path[255] = {};
+    char req_path[255] = {};
     size_t copied = 0;
     bool term = false;
-    uaccess_result_t ur = copy_str_from_user(ctx, path, sizeof(path), upath, &copied, &term);
+    uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
     if (ur != UACCESS_OK) return ur;
     if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+
+    char path[255] = {};
+    if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
+        string_format_buf(path, sizeof(path), "%s/%s", ctx->bundle, req_path);
+    } else if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11 && ctx->bundle && *ctx->bundle) {
+        string_format_buf(path, sizeof(path), "%s%s", ctx->bundle, req_path);
+    } else {
+        memcpy(path, req_path, strlen(req_path) + 1);
+    }
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     void *kbuf = (void*)talloc(alloc_size);
@@ -652,12 +662,21 @@ u64 syscall_swritef(process_t *ctx){
     uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
 
-    char path[255] = {};
+    char req_path[255] = {};
     size_t copied = 0;
     bool term = false;
-    uaccess_result_t ur = copy_str_from_user(ctx, path, sizeof(path), upath, &copied, &term);
+    uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
     if (ur != UACCESS_OK) return ur;
     if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+
+    char path[255] = {};
+    if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
+        string_format_buf(path, sizeof(path), "%s/%s", ctx->bundle, req_path);
+    } else if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11 && ctx->bundle && *ctx->bundle) {
+        string_format_buf(path, sizeof(path), "%s%s", ctx->bundle, req_path);
+    } else {
+        memcpy(path, req_path, strlen(req_path) + 1);
+    }
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     void *kbuf = (void*)talloc(alloc_size);
@@ -689,12 +708,21 @@ u64 syscall_dir_list(process_t *ctx){
     size_t size = (size_t)ctx->PROC_X2;
     uintptr_t uoffset = (uintptr_t)ctx->PROC_X3;
 
-    char path[255] = {};
+    char req_path[255] = {};
     size_t copied = 0;
     bool term = false;
-    uaccess_result_t ur = copy_str_from_user(ctx, path, sizeof(path), upath, &copied, &term);
+    uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
     if (ur != UACCESS_OK) return ur;
     if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+
+    char path[255] = {};
+    if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
+        string_format_buf(path, sizeof(path), "%s/%s", ctx->bundle, req_path);
+    } else if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11 && ctx->bundle && *ctx->bundle) {
+        string_format_buf(path, sizeof(path), "%s%s", ctx->bundle, req_path);
+    } else {
+        memcpy(path, req_path, strlen(req_path) + 1);
+    }
 
     uint64_t off = 0;
     ur = copy_from_user(ctx, &off, uoffset, sizeof(off));
@@ -718,14 +746,34 @@ u64 syscall_dir_list(process_t *ctx){
     return r;
 }
 
-// uint64_t syscall_load_fsmod(process_t *ctx){
-//     system_module *mod = (system_module*)ctx->PROC_X0;
-//     return load_process_module(ctx,mod);
-// }
+u64 syscall_stat(process_t *ctx){
+    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
+    uintptr_t uout = (uintptr_t)ctx->PROC_X1;
 
-// uint64_t syscall_unload_fsmod(process_t *ctx){
-//     return unload_module(&ctx->exposed_fs);
-// }
+    char req_path[255] = {};
+    size_t copied = 0;
+    bool term = false;
+    uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
+    if (ur != UACCESS_OK) return ur;
+    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+
+    char path[255] = {};
+    if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
+        string_format_buf(path, sizeof(path), "%s/%s", ctx->bundle, req_path);
+    } else if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11 && ctx->bundle && *ctx->bundle) {
+        string_format_buf(path, sizeof(path), "%s%s", ctx->bundle, req_path);
+    } else {
+        memcpy(path, req_path, strlen(req_path) + 1);
+    }
+
+    fs_stat st = {};
+    FS_RESULT res = get_stat(path, &st);
+    if (res != FS_RESULT_SUCCESS) return res;
+
+    ur = copy_to_user(ctx, uout, &st, sizeof(st));
+    if (ur != UACCESS_OK) return ur;
+    return FS_RESULT_SUCCESS;
+}
 
 u64 syscall_in_case_of_js(process_t *ctx){
     panic("Shame on you\r\n\
@@ -778,6 +826,7 @@ syscall_entry syscalls[] = {
     [FILE_SIMPLE_READ_CODE] = syscall_sreadf,
     [FILE_SIMPLE_WRITE_CODE] = syscall_swritef,
     [DIR_LIST_CODE] = syscall_dir_list,
+    [STAT_CODE] = syscall_stat,
     // [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
     // [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
     [IN_CASE_OF_JS_CODE] = syscall_in_case_of_js,

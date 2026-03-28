@@ -97,6 +97,34 @@ int audio_example(){
 }
 
 int main(int argc, char* argv[]){
-    img_example();
+    
+    file fd1 = {};
+    file fd2 = {};
+    
+    openf("/tmp/std", &fd1);
+    openf("/tmp/std", &fd2);
+    
+    print("FD1: %i FD2: %i",fd1.id,fd2.id);
+    
+    print("hello wrote %i. Now %i",writef(&fd1, "hello", 5), fd1.cursor);
+    print("world wrote %i. Now %i",writef(&fd2, "world", 5), fd2.cursor);
+    print("cruel wrote %i. Now %i",writef(&fd1, "cruel", 5), fd1.cursor);
+    
+    // worldcruelhello
+    
+    // worldcruelhello
+    // heyhiworldcruelhello
+    char buf[64];
+    
+    seek(&fd1, 0, SEEK_ABSOLUTE);
+    
+    print("heyhi wrote %i. Now %i",writef(&fd1, "heyhi", 5));
+    
+    seek(&fd1, 0, SEEK_ABSOLUTE);
+    
+    readf(&fd1, buf, 64);
+    
+    print("Buffer now %s",buf);
+    
     return 0;
 }

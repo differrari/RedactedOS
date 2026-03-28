@@ -25,6 +25,7 @@
 #include "tests/test_runner.h"
 #include "pci/pcie.h"
 #include "dtb.h"
+#include "filesystem/tmp/tmp_fs.h"
 
 extern char __bss_start[];
 extern char __bss_end[];
@@ -103,6 +104,8 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     if (network_available && system_config.use_net) launch_net_process();
 
     init_bootprocess();
+    
+    load_module(&tmp_mod);
 
     load_module(&scheduler_module);
     

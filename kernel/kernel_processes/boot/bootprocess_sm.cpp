@@ -6,6 +6,7 @@
 #include "input/input_dispatch.h"
 #include "usb/usb.h"
 #include "graph/graphics.h"
+#include "exceptions/irq.h"
 
 BootSM::BootSM(){
 
@@ -13,9 +14,9 @@ BootSM::BootSM(){
 
 void BootSM::initialize(){
     disable_visual();
-    gpu_size screen_size = gpu_get_screen_size();
-    mouse_config((gpu_point){screen_size.width/2,screen_size.height/2}, screen_size);
     usb_start_polling();
+    gpu_size screen_size = gpu_get_screen_size();
+    mouse_config((gpu_point){(i32)screen_size.width/2,(i32)screen_size.height/2}, screen_size);
     AdvanceToState(Bootscreen);
 }
 
@@ -38,6 +39,7 @@ void BootSM::AdvanceToState(BootStates next_state){
             current_proc = create_windowing_system();
         break;
     }
+    enable_interrupt();
     current_state = next_state;
 }
 
