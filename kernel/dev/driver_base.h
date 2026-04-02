@@ -23,6 +23,7 @@ typedef struct module_file {
     uint64_t fid;
 
     uptr buf;
+    void *private_data;
     bool ignore_cursor;
     bool read_only;
     

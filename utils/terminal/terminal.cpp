@@ -2,7 +2,7 @@
 #include "alloc/allocate.h"
 #include "std/std.h"
 #include "input_keycodes.h"
-//TODO why do ping and tracert often block the terminal even if their process finishes?
+
 Terminal::Terminal() : Console() {
     uint32_t color_buf[2] = {};
     sreadf("/theme", &color_buf, sizeof(uint64_t));
@@ -166,7 +166,7 @@ void Terminal::end_command(){
 }
 
 bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
-    int32_t proc = exec(cmd, argc, argv);
+    int32_t proc = exec(cmd, argc, argv, EXEC_MODE_KEEP_FOCUS);
     if (!proc) return false;
 
     string s1 = string_format("/proc/%i/out", proc);

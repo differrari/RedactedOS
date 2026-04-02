@@ -104,7 +104,7 @@ void enter(const char *name){
 
     if (strend(name, ".red") == 0){
         string elf = string_format("%S/%v.elf", full_path, (string_slice){(char*)name, strlen(name) - 4});
-        exec(elf.data, 0, 0);
+        exec(elf.data, 0, 0, EXEC_MODE_DEFAULT);
         string_free(elf);
         string_free(full_path);
         halt(0);

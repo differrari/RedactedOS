@@ -67,8 +67,6 @@ bool init_disk_device(){
         return false;
     }
 
-    memset(disk_cmd, 0, sizeof(virtio_blk_req));
-    memset(disk_status, 0, 64);
 
     blk_dev.common_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
     return true;

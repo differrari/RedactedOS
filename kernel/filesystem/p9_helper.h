@@ -203,6 +203,13 @@ typedef struct t_read {
 
 t_read* make_p9_read_packet(u32 fid, u64 offset, u64 amount);
 
+typedef struct t_clunk {
+    p9_packet_header header;
+    uint32_t fid;
+}__attribute__((packed)) t_clunk;
+
+t_clunk* make_p9_clunk_packet(u32 fid);
+
 #ifdef __cplusplus
 }
 #endif

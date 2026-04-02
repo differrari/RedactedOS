@@ -90,7 +90,7 @@ static uint64_t *walk_or_alloc(uint64_t *table, uint64_t index, int level, uint6
     }
 
     if ((e & 0b11) != PD_TABLE){
-        kprintf("[mmu] *walk_or_alloc bad type l=%d va=%llx idx=%llu e=%llx", level, (uint64_t)va, (uint64_t)index, (uint64_t)e);
+        kprintf("[MMU error] *walk_or_alloc bad type l=%d va=%llx idx=%llu e=%llx", level, (uint64_t)va, (uint64_t)index, (uint64_t)e);
         panic("mmu *walk_or_alloc bad type", va);
     }
 
@@ -117,7 +117,7 @@ void mmu_map_2mb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
     kprintfv("[MMU] Mapping 2mb memory %llx at [%i][%i][%i] for EL%i", (uint64_t)va, (int)l0_index, (int)l1_index, (int)l2_index, (int)level);
 
     if ((va & (GRANULE_2MB - 1ULL)) || (pa & (GRANULE_2MB - 1ULL))) {
-        kprintf("[mmu] map2 align va=%llx pa=%llx", (uint64_t)va, (uint64_t)pa);
+        kprintf("[MMU error] map2 align va=%llx pa=%llx", (uint64_t)va, (uint64_t)pa);
         panic("mmu_map_2mb unaligned", va);
     }
 
@@ -138,7 +138,7 @@ void mmu_map_2mb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
             l2[l2_index] = diff;
             return;
         }
-        kprintf("[mmu] map2 conflict va=%llx old=%llx newpa=%llx root=%llx", (uint64_t)va, (uint64_t)old, (uint64_t)pa, (uint64_t)table);
+        kprintf("[MMU error] map2 conflict va=%llx old=%llx newpa=%llx root=%llx", (uint64_t)va, (uint64_t)old, (uint64_t)pa, (uint64_t)table);
         panic("mmu_map_2mb remap conflict", va);
     }
 
@@ -160,7 +160,7 @@ void mmu_map_2mb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
             uint64_t diff = (e ^ expect) & ~(PTE_ADDR_MASK | PTE_AF);
 
             if (diff != 0 || (e & PTE_ADDR_MASK) != (expect & PTE_ADDR_MASK)) {
-                kprintf("[mmu] map2 table mismatch va=%llx i=%llu e=%llx", (uint64_t)va, (uint64_t)i, (uint64_t)e);
+                kprintf("[MMU error] map2 table mismatch va=%llx i=%llu e=%llx", (uint64_t)va, (uint64_t)i, (uint64_t)e);
                 panic("mmu_map_2mb table mismatch", va);
             }
         }
@@ -168,7 +168,7 @@ void mmu_map_2mb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
         return;
     }
 
-    kprintf("[mmu] map2 bad type va=%llx old=%llx", (uint64_t)va, (uint64_t)old);
+    kprintf("[MMU error] map2 bad type va=%llx old=%llx", (uint64_t)va, (uint64_t)old);
     panic("mmu_map_2mb bad type", va);
 }
 
@@ -216,7 +216,7 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
         {
             uint64_t old = l2[l2_index];
             if ((old & 0b11) != PD_BLOCK){
-                kprintf("[mmu] split expected block va=%llx l2=%llu e=%llx", (uint64_t)va, (uint64_t)l2_index, (uint64_t)old);
+                kprintf("[MMU error] split expected block va=%llx l2=%llu e=%llx", (uint64_t)va, (uint64_t)l2_index, (uint64_t)old);
                 panic("mmu_split not a block", va);
             }
 
@@ -236,7 +236,7 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
     }
 
     if ((l2_val & 0b11) != PD_TABLE){
-        kprintf("[mmu] l2 bad type va=%llx e=%llx", (uint64_t)va, (uint64_t)l2_val);
+        kprintf("[MMU error] l2 bad type va=%llx e=%llx", (uint64_t)va, (uint64_t)l2_val);
         panic("mmu_map_4kb l2 bad type", va);
     }
 
@@ -247,7 +247,7 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
 
     if (old & 1){
         if ((old & 0b11) != PD_TABLE){
-            kprintf("[mmu] remap non-page va=%llx old=%llx", (uint64_t)va, (uint64_t)old);
+            kprintf("[MMU error] remap non-page va=%llx old=%llx", (uint64_t)va, (uint64_t)old);
             panic("mmu_map_4kb remap non-page", va);
         }
 
@@ -288,7 +288,7 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
             }
         }
 
-        kprintf("[mmu] remap conflict va=%llx old=%llx want=%llx newpa=%llx ttbr=%llx idx=%llu,%llu,%llu,%llu",
+        kprintf("[MMU error] remap conflict va=%llx old=%llx want=%llx newpa=%llx ttbr=%llx idx=%llu,%llu,%llu,%llu",
             (uint64_t)va, (uint64_t)old, (uint64_t)want, (uint64_t)pa, (uint64_t)table,
             (uint64_t)l0_index, (uint64_t)l1_index, (uint64_t)l2_index, (uint64_t)l3_index);
         panic("mmu_map_4kb remap conflict", va);
@@ -347,7 +347,7 @@ void mmu_unmap_table(uint64_t *table, uint64_t va, uint64_t pa){
     if ((e2 & 0b11) == PD_BLOCK) {
         uint64_t old = l2[l2_index];
         if ((old & 0b11) != PD_BLOCK){
-            kprintf("[mmu] split expected block va=%llx l2=%llu e=%llx", (uint64_t)va, (uint64_t)l2_index, (uint64_t)old);
+            kprintf("[MMU error] split expected block va=%llx l2=%llu e=%llx", (uint64_t)va, (uint64_t)l2_index, (uint64_t)old);
             panic("mmu_split not a block", va);
         }
 
@@ -373,12 +373,12 @@ void mmu_unmap_table(uint64_t *table, uint64_t va, uint64_t pa){
     if (!(old & 1)) return;
 
     if ((old & 0b11) != PD_TABLE) {
-        kprintf("[mmu] unmap non-page va=%llx old=%llx", (uint64_t)va, (uint64_t)old);
+        kprintf("[MMU error] unmap non-page va=%llx old=%llx", (uint64_t)va, (uint64_t)old);
         panic("mmu_unmap non-page", va);
     }
 
     if ((old & PTE_ADDR_MASK) != (pa & PTE_ADDR_MASK)) {
-        kprintf("[mmu] unmap pa mismatch va=%llx old=%llx want=%llx", (uint64_t)va, (uint64_t)(old & PTE_ADDR_MASK), (uint64_t)(pa & PTE_ADDR_MASK));
+        kprintf("[MMU error] unmap pa mismatch va=%llx old=%llx want=%llx", (uint64_t)va, (uint64_t)(old & PTE_ADDR_MASK), (uint64_t)(pa & PTE_ADDR_MASK));
         panic("mmu_unmap pa mismatch", va);
     }
 
@@ -492,21 +492,13 @@ void mmu_init() {
 
     if (PCI_BASE && (PCI_BASE < (mmio_skip_start | HIGH_VA) || PCI_BASE >= (mmio_skip_end | HIGH_VA))) {
         uint64_t p = VIRT_TO_PHYS(PCI_BASE) & ~(GRANULE_2MB - 1);
-        //mmu_map_2mb((uint64_t*)kernel_ttbr0, p, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
         mmu_map_2mb((uint64_t*)kernel_ttbr1, p | HIGH_VA, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
     }
 
     if (XHCI_BASE && (XHCI_BASE < (mmio_skip_start | HIGH_VA) || XHCI_BASE >= (mmio_skip_end | HIGH_VA))) {
         uint64_t p = VIRT_TO_PHYS(XHCI_BASE) & ~(GRANULE_2MB - 1);
-        //mmu_map_2mb((uint64_t*)kernel_ttbr0, p, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
         mmu_map_2mb((uint64_t*)kernel_ttbr1, p | HIGH_VA, p, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
     }
-
-    //hw_high_va();
-    //mmu_start((uint64_t*)kernel_ttbr1, (uint64_t*)kernel_ttbr0);
-
-    //kernel_ttbr0 = (uintptr_t*)PHYS_TO_VIRT((uintptr_t)kernel_ttbr0);
-    //kernel_ttbr1 = (uintptr_t*)PHYS_TO_VIRT((uintptr_t)kernel_ttbr1);
 
     talloc_enable_high_va();
     page_alloc_enable_high_va();
@@ -535,7 +527,7 @@ void mmu_copy(uintptr_t *new_ttbr, uintptr_t *old_ttbr, int level){
         }
 
         if ((old_ttbr[i] & 0b11) != PD_TABLE){
-            kprintf("[mmu] copy bad type lvl=%d i=%d e=%llx", level, i, (uint64_t)old_ttbr[i]);
+            kprintf("[MMU error] copy bad type lvl=%d i=%d e=%llx", level, i, (uint64_t)old_ttbr[i]);
             panic("mmu_copy bad type", (uint64_t)old_ttbr);
         }
 
@@ -557,7 +549,6 @@ void mmu_map_all(paddr_t pa){
     if (!kernel_ttbr1) return;
     uintptr_t base = pa & ~(GRANULE_2MB - 1);
 
-    //mmu_map_2mb((uint64_t*)kernel_ttbr0, base, base, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
     mmu_map_2mb((uint64_t*)kernel_ttbr1, base | HIGH_VA, base, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
 
     mmu_flush_all();
@@ -590,7 +581,7 @@ void mmu_free_ttbr(uintptr_t *ttbr){
         uintptr_t *child = (uintptr_t*)pt_pa_to_va(e & PTE_ADDR_MASK);
 
         if (sp >= 4){
-            kprintf("[mmu] free_ttbr stack overflow lvl=%d e=%llx", f->level, (uint64_t)e);
+            kprintf("[MMU error] free_ttbr stack overflow lvl=%d e=%llx", f->level, (uint64_t)e);
             panic("mmu_free_ttbr stack overflow", (uintptr_t)child);
         }
 
@@ -607,8 +598,6 @@ void register_device_memory(kaddr_t va, paddr_t pa){
     uint64_t vlow = va;
     if (((vlow >> 47) & 1ULL) == 0) vlow = phys | HIGH_VA;
     mmu_map_4kb((uint64_t*)kernel_ttbr1, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-    //mmu_map_4kb((uint64_t*)kernel_ttbr1, vhigh, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-    //if (pttbr) mmu_map_4kb((uint64_t*)pttbr, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
 
     mmu_flush_all();
     mmu_flush_icache();
@@ -624,9 +613,7 @@ void register_device_memory_2mb(kaddr_t va, paddr_t pa){
     if (((vlow >> 47) & 1ULL) == 0) vlow = phys | HIGH_VA;
     vlow &= ~(GRANULE_2MB - 1);
 
-    //mmu_map_2mb((uint64_t*)kernel_ttbr0, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
     mmu_map_2mb((uint64_t*)kernel_ttbr1, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
-    //if (pttbr) mmu_map_2mb((uint64_t*)pttbr, vlow, phys, MAIR_IDX_DEVICE, MEM_RW | MEM_DEV, MEM_PRIV_KERNEL);
 
     mmu_flush_all();
     mmu_flush_icache();
@@ -647,8 +634,6 @@ void register_proc_memory(uint64_t va, paddr_t pa, uint8_t attributes, uint8_t l
     if (((vlow >> 47) & 1ULL) == 0) vlow = phys | HIGH_VA;
 
     mmu_map_4kb((uint64_t*)kernel_ttbr1, vlow, phys, MAIR_IDX_NORMAL, attributes | MEM_NORM, level);
-
-    //if (pttbr && ((va >> 47) & 1ULL) == 0) mmu_map_4kb((uint64_t*)pttbr, vlow, phys, MAIR_IDX_NORMAL, attributes | MEM_NORM, level);
 
     mmu_flush_all();
     mmu_flush_icache();

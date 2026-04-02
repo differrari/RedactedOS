@@ -140,9 +140,9 @@ uint64_t talloc(uint64_t size){
         if (!pre_talloc_ptr)
             panic("Kernel allocator overflow", next_free_temp_memory);
 
+        pre_talloc();
         next_free_temp_memory = (uintptr_t)pre_talloc_ptr;
         talloc_mem_limit = pre_talloc_mem_limit;
-        pre_talloc();
     }
 
     uint64_t result = next_free_temp_memory;

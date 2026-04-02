@@ -19,7 +19,7 @@ typedef enum { right_move, left_move, down_move, up_move } dos_movement;
 u16 move_shortcuts[4];
 
 typedef enum { window_mode, doodle_mode, mode_count } dos_mode;
-u16 mode_shortcuts[mode_count-1];
+u16 mode_shortcuts[mode_count];
 
 u16 sid_g = 0;
 u16 sid_f = 0;

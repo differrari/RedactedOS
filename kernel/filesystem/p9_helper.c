@@ -23,12 +23,12 @@ void* make_p9_response_buffer(){
 }
 
 void p9_free(void *ptr){
-    // page_free(ptr);
+    page_free(ptr);
 }
 
 void* make_p9_packet(size_t full_size, u16 id, bool max_tag){
     p9_packet_header *header = page_alloc(PAGE_SIZE);
-    header->size = sizeof(p9_version_packet);
+    header->size = full_size;
     header->id = id;
     if (max_tag)
         p9_max_tag(header);
@@ -126,5 +126,11 @@ t_read* make_p9_read_packet(u32 fid, u64 offset, u64 amount){
     write_unaligned32(&packet->fid,fid);
     write_unaligned64(&packet->offset,offset);
     write_unaligned32(&packet->count,amount - sizeof(p9_packet_header) - sizeof(u32));
+    return packet;
+}
+
+t_clunk* make_p9_clunk_packet(u32 fid){
+    t_clunk *packet = make_p9_packet(sizeof(t_clunk), P9_TCLUNK, false);
+    write_unaligned32(&packet->fid, fid);
     return packet;
 }

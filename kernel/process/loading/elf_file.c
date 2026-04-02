@@ -67,13 +67,7 @@ void get_elf_debug_info(process_t* proc, void* file, size_t filesize){
 
      elf_header *header = (elf_header*)file;
 
-    if (header->magic[0] != 0x7f){
-        kprintf("Failed to read header file");
-        return;
-    }
-    if (header->magic[1] != 'E') return;
-    if (header->magic[2] != 'L') return;
-    if (header->magic[3] != 'F') return;
+    if (memcmp(header->magic, "\x7f" "ELF", 4) != 0) return;
 
     if (header->section_entry_size != sizeof(elf_section_header)) return;
     if (header->section_num_entries == 0) return;
@@ -238,14 +232,10 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
 
     elf_header *header = (elf_header*)file;
 
-    if (header->magic[0] != 0x7f){
+    if (memcmp(header->magic, "\x7f" "ELF", 4) != 0) {
         kprintf("Failed to read header file %x",header->magic[0]);
         return 0;
     }
-
-    if (header->magic[1] != 'E') return 0;
-    if (header->magic[2] != 'L') return 0;
-    if (header->magic[3] != 'F') return 0;
     // kprintf("ELF FILE VERSION %x HEADER VERSION %x (%x)",header->elf_version,header->header_version,header->header_size);
     // kprintf("There are %i program headers",header->program_header_num_entries);
     // kprintf("FILE %i for %x",header->type, header->instruction_set);

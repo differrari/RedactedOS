@@ -25,7 +25,6 @@ typedef struct {
     uint64_t base_phys;
     uint64_t user_phys;
     uint32_t alloc_size;
-    uint32_t checksum;
 } alloc_tag;
 
 typedef struct {
@@ -53,6 +52,7 @@ static uint64_t alloc_hint_page = 0;
 static uint64_t bitmap_page_count = 0;
 
 static bool page_alloc_verbose = false;
+static bool page_alloc_high_va = false;
 
 extern uintptr_t heap_end;
 static void page_alloc_init();
@@ -66,8 +66,9 @@ void page_alloc_enable_high_va(){
     asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
     if ((sctlr & 1) == 0) return;
     if (!mem_bitmap) return;
-    if (((uintptr_t)mem_bitmap & HIGH_VA) == HIGH_VA) return;
+    if (page_alloc_high_va) return;
     mem_bitmap = (uintptr_t*)PHYS_TO_VIRT((uintptr_t)mem_bitmap);
+    page_alloc_high_va = true;
 }
 
 #define kprintfv(fmt, ...) \
@@ -90,7 +91,7 @@ static inline uint64_t lowmask64(uint64_t bits) {
 void pfree(void* ptr, uint64_t size) {
     if (!ptr || !size) return;
     if (!alloc_max_page) page_alloc_init();
-    page_alloc_enable_high_va();
+    if (!page_alloc_high_va) page_alloc_enable_high_va();
     if (!mem_bitmap || !alloc_max_page) panic("pfree init failed", (uintptr_t)ptr);
 
     uint64_t pages = count_pages(size,PAGE_SIZE);
@@ -153,8 +154,13 @@ static void page_alloc_init(){
 
     uint64_t sctlr = 0;
     asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-    if ((sctlr & 1) != 0) mem_bitmap = (uintptr_t*)PHYS_TO_VIRT(ram_start);
-    else mem_bitmap = (uintptr_t*)ram_start;
+    if ((sctlr & 1) != 0) {
+        mem_bitmap = (uintptr_t*)PHYS_TO_VIRT(ram_start);
+        page_alloc_high_va = true;
+    } else {
+        mem_bitmap = (uintptr_t*)ram_start;
+        page_alloc_high_va = false;
+    }
     memset(mem_bitmap, 0, bitmap_page_count * PAGE_SIZE);
 
     if (end_page & 63) {
@@ -181,7 +187,7 @@ void setup_page(uintptr_t address, uint8_t attributes){
 
 paddr_t palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map) {
     if (!alloc_max_page) page_alloc_init();
-    page_alloc_enable_high_va();
+    if (!page_alloc_high_va) page_alloc_enable_high_va();
     uint64_t page_count = count_pages(size,PAGE_SIZE);
     uint64_t reg_min = alloc_min_page / 64;
     uint64_t reg_end = (alloc_max_page + 63) / 64;
@@ -319,7 +325,7 @@ void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full){
 }
 
 bool page_used(uintptr_t ptr){
-    page_alloc_enable_high_va();
+    if (!page_alloc_high_va) page_alloc_enable_high_va();
     if (!mem_bitmap || !alloc_max_page) return false;
     uint64_t addr = VIRT_TO_PHYS((uint64_t)ptr) / PAGE_SIZE;
     if (addr >= alloc_max_page) return false;
@@ -330,7 +336,7 @@ bool page_used(uintptr_t ptr){
 
 void mark_used(uintptr_t address, size_t pages)
 {
-    page_alloc_enable_high_va();
+    if (!page_alloc_high_va) page_alloc_enable_high_va();
     if (!mem_bitmap) return;
     address = VIRT_TO_PHYS(address);
     if ((address & (PAGE_SIZE - 1)) != 0) {
@@ -442,8 +448,6 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
                 tag->base_phys = base_phys;
                 tag->user_phys = user_phys;
                 tag->alloc_size = (uint32_t)bsz;
-                uint64_t mix = tag->base_phys ^ tag->user_phys ^ ((uint64_t)tag->alloc_size << 32) ^ ALLOC_TAG_MAGIC;
-                tag->checksum = (uint32_t)(mix ^ (mix >> 32));
 
                 memset((void*)PHYS_TO_VIRT(user_phys), 0, size);
                 info->size += bsz;
@@ -494,8 +498,6 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
     tag->base_phys = base_phys;
     tag->user_phys = user_phys;
     tag->alloc_size = (uint32_t)small_need;
-    uint64_t mix = tag->base_phys ^ tag->user_phys ^ ((uint64_t)tag->alloc_size << 32) ^ ALLOC_TAG_MAGIC;
-    tag->checksum = (uint32_t)(mix ^ (mix >> 32));
 
     memset((void*)PHYS_TO_VIRT(user_phys), 0, size);
     info->size += small_need;
@@ -609,9 +611,7 @@ void kfree(void* ptr, size_t size) {
         if(phys_tag) {
             tag = (alloc_tag*)PHYS_TO_VIRT(phys_tag);
             if(tag->magic == ALLOC_TAG_MAGIC && tag->user_phys == phys){
-                uint64_t mix = tag->base_phys ^ tag->user_phys ^ ((uint64_t)tag->alloc_size << 32) ^ ALLOC_TAG_MAGIC;
-                uint32_t c = (uint32_t)(mix ^ (mix >> 32));
-                if(tag->checksum == c) tag_ok = true;
+                tag_ok = true;
             }
         }
     }

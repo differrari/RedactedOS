@@ -14,6 +14,7 @@ typedef struct {
 } shortcut;
 
 shortcut shortcuts[16] = {};
+static const u16 shortcut_capacity = sizeof(shortcuts) / sizeof(shortcuts[0]);
 
 u16 shortcut_count = 0;
 
@@ -26,17 +27,33 @@ bool mouse_setup;
 
 bool register_keypress(keypress kp) {
     if (!secure_mode){
-        for (int i = 0; i < shortcut_count; i++){
-            if (shortcuts[i].pid != -1 && !is_new_keypress(&shortcuts[i].kp, &kp)){
+        for (u16 i = 0; i < shortcut_count; i++){
+            if (!is_new_keypress(&shortcuts[i].kp, &kp)){
                 shortcuts[i].triggered = true;
                 return true;
             }
         }
     }
 
-    if (!(uintptr_t)focused_proc) return false;
+    process_t *target = focused_proc;
+    if (!target || target->state == process::STOPPED || !target->id || !target->pc || !target->sp || (((target->spsr & 0xF) == 0) && !target->mm.ttbr0)) {
+        u16 win_id = target ? target->win_id : 0;
+        u16 skip_id = target ? target->id : 0;
+        focused_proc = 0;
 
-    input_buffer_t* buf = &focused_proc->input_buffer;
+        if (win_id) {
+            u16 pid = window_fallback_focus(win_id, skip_id);
+            if (pid) focused_proc = get_proc_by_pid(pid);
+        }
+
+        target = focused_proc;
+        if (!target || target->state == process::STOPPED || !target->id || !target->pc || !target->sp || (((target->spsr & 0xF) == 0) && !target->mm.ttbr0)) {
+            focused_proc = 0;
+            return false;
+        }
+    }
+
+    input_buffer_t* buf = &target->input_buffer;
     uint32_t next_index = (buf->write_index + 1) % INPUT_BUFFER_CAPACITY;
 
     buf->entries[buf->write_index] = kp;
@@ -45,14 +62,29 @@ bool register_keypress(keypress kp) {
     if (buf->write_index == buf->read_index)
         buf->read_index = (buf->read_index + 1) % INPUT_BUFFER_CAPACITY;
     
-    if (focused_proc->sleeping) wake_process(focused_proc);
     return false;
 }
 
 void register_event(kbd_event event){
-    if (!(uintptr_t)focused_proc) return;
+    process_t *target = focused_proc;
+    if (!target || target->state == process::STOPPED || !target->id || !target->pc || !target->sp || (((target->spsr & 0xF) == 0) && !target->mm.ttbr0)) {
+        u16 win_id = target ? target->win_id : 0;
+        u16 skip_id = target ? target->id : 0;
+        focused_proc = 0;
 
-    event_buffer_t* buf = &focused_proc->event_buffer;
+        if (win_id) {
+            u16 pid = window_fallback_focus(win_id, skip_id);
+            if (pid) focused_proc = get_proc_by_pid(pid);
+        }
+
+        target = focused_proc;
+        if (!target || target->state == process::STOPPED || !target->id || !target->pc || !target->sp || (((target->spsr & 0xF) == 0) && !target->mm.ttbr0)) {
+            focused_proc = 0;
+            return;
+        }
+    }
+
+    event_buffer_t* buf = &target->event_buffer;
     uint32_t next_index = (buf->write_index + 1) % INPUT_BUFFER_CAPACITY;
 
     buf->entries[buf->write_index] = event;
@@ -60,7 +92,6 @@ void register_event(kbd_event event){
 
     if (buf->write_index == buf->read_index)
         buf->read_index = (buf->read_index + 1) % INPUT_BUFFER_CAPACITY;
-    if (focused_proc->sleeping) wake_process(focused_proc);
 }
 
 void mouse_config(gpu_point point, gpu_size size){
@@ -93,7 +124,6 @@ void register_mouse_input(mouse_input *rat){
         gpu_set_cursor_pressed(last_cursor_state);
         gpu_update_cursor(mouse_loc, true);
     }
-    if (focused_proc && focused_proc->sleeping) wake_process(focused_proc);
 }
 
 gpu_point get_mouse_pos(){
@@ -109,6 +139,7 @@ uint16_t sys_subscribe_shortcut_current(keypress kp){
 }
 
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp){
+    if (shortcut_count >= shortcut_capacity) return UINT16_MAX;
     shortcuts[shortcut_count] = (shortcut){
         .kp = kp,
         .pid = pid,
@@ -122,21 +153,26 @@ void sys_focus_current(){
 }
 
 void sys_set_focus(int pid){
+    process_t *target = get_proc_by_pid(pid);
+    if (!target || target->state == process::STOPPED || !target->id || !target->pc || !target->sp || (((target->spsr & 0xF) == 0) && !target->mm.ttbr0)) return;
     if (focused_proc) focused_proc->focused = false;
-    focused_proc = get_proc_by_pid(pid);
-    if (!focused_proc) return;
+    focused_proc = target;
     focused_proc->focused = true;
     set_window_focus(focused_proc->win_id);
 }
 
 void sys_unset_focus(bool close){
-    if (focused_proc) focused_proc->focused = false;
-    u16 npid = focused_proc->win_id ? window_fallback_focus(focused_proc->win_id, focused_proc->id) : 0;
+    process_t *proc = focused_proc;
+    if (proc) proc->focused = false;
+    focused_proc = 0;
+    unset_window_focus();
+
+    u16 npid = proc && proc->win_id ? window_fallback_focus(proc->win_id, proc->id) : 0;
     if (npid)
     {
-        focused_proc = get_proc_by_pid(npid);
-    }    
-    else focused_proc = 0;
+        process_t *next = get_proc_by_pid(npid);
+        if (next && next->focused && next->state != process::STOPPED && next->id && next->pc && next->sp && ((((next->spsr & 0xF) != 0) || next->mm.ttbr0))) focused_proc = next;
+    }
 }
 
 void sys_set_secure(bool secure){
@@ -200,6 +236,7 @@ bool sys_shortcut_triggered_current(uint16_t sid){
 }
 
 bool sys_shortcut_triggered(uint16_t pid, uint16_t sid){
+    if (sid >= shortcut_count) return false;
     if (shortcuts[sid].pid == pid && shortcuts[sid].triggered){
         shortcuts[sid].triggered = false;
         return true;

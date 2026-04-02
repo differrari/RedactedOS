@@ -7,7 +7,6 @@
 #include "process/process.h"
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
-#include "memory/talloc.h"
 #include "graph/graphics.h"
 #include "std/memory_access.h"
 #include "input/input_dispatch.h"
@@ -114,7 +113,7 @@ u64 syscall_pfree(process_t *ctx){
     free_registered(ctx->alloc_map, (void*)va);
     if (ctx->mm.rss_anon_pages >= pages) ctx->mm.rss_anon_pages -= pages;
     else ctx->mm.rss_anon_pages = 0;
-    return SYSCALL_ERRNO(SYSCALL_EINVAL);
+    return 0;
 }
 
 u64 syscall_free(process_t *ctx){
@@ -212,9 +211,10 @@ u64 syscall_gpu_flush(process_t *ctx){
         if (!win.width || !win.height) return SYSCALL_ERRNO(SYSCALL_EINVAL);
         for (uint32_t i = 0; i < tmp.dirty_count; i++) {
             gpu_rect r = tmp.dirty_rects[i];
-            if (r.point.x >= win.width || r.point.y >= win.height) return SYSCALL_ERRNO(SYSCALL_EINVAL);
-            if (r.size.width > win.width - r.point.x) return SYSCALL_ERRNO(SYSCALL_EINVAL);
-            if (r.size.height > win.height - r.point.y) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+            if (r.point.x < 0 || r.point.y < 0) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+            if ((uint32_t)r.point.x >= win.width || (uint32_t)r.point.y >= win.height) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+            if (r.size.width > win.width - (uint32_t)r.point.x) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+            if (r.size.height > win.height - (uint32_t)r.point.y) return SYSCALL_ERRNO(SYSCALL_EINVAL);
         }
     }
 
@@ -253,10 +253,18 @@ u64 syscall_halt(process_t *ctx){
     return 0;
 }
 
+//TODO exec now has an argument to decide whether the spawned proc should take control of input or whether the caller should keep it
+//rn this is the cleanest way to make launch policy explicit, avoiding that a terminal attached child could steal input focus from the caller, waiting for return after spawn or hardcoding the policy by process name
+//the more standard design would be to handle this through a proper control terminal model later instead of deciding focus in exec
+//https://pubs.opengroup.org/onlinepubs/9699919799.orig/basedefs/V1_chap11.html
+//https://pubs.opengroup.org/onlinepubs/007904975/functions/tcsetpgrp.html
+//https://man7.org/linux/man-pages/man7/credentials.7.html
+///https://en.wikipedia.org/wiki/Job_control_(Unix)
 u64 syscall_exec(process_t *ctx){
     uintptr_t upath = (uintptr_t)ctx->PROC_X0;
     int argc = (int)ctx->PROC_X1;
     uintptr_t uargv = (uintptr_t)ctx->PROC_X2;
+    uint32_t mode = (uint32_t)ctx->PROC_X3;
 
     if (argc < 0) return SYSCALL_ERRNO(SYSCALL_EINVAL);
 
@@ -275,67 +283,10 @@ u64 syscall_exec(process_t *ctx){
     ur = copy_argv_from_user(ctx, argc, uargv, &user_argv);
     if (ur != UACCESS_OK) return ur;
 
-    process_t *p = execute(prog_name, argc, user_argv.argv);
-    if (p) p->win_id = ctx->win_id;
+    process_t *p = execute(prog_name, argc, user_argv.argv, mode);
 
     free_argv_from_user(&user_argv);
     return p ? p->id : 0;
-}
-
-u64 syscall_spawn(process_t *ctx) {
-    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
-    int argc = (int)ctx->PROC_X1;
-    uintptr_t uargv = (uintptr_t)ctx->PROC_X2;
-    if (argc < 0) return SYSCALL_ERRNO(SYSCALL_EINVAL);
-
-    char path[512] = {};
-    size_t copied = 0;
-    bool term = false;
-    uaccess_result_t ur = copy_str_from_user(ctx, path, sizeof(path), upath, &copied, &term);
-    if (ur != UACCESS_OK) return ur;
-    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
-
-    const int max_args = 64;
-    if (argc > max_args) return SYSCALL_ERRNO(SYSCALL_EINVAL);
-
-    user_argv_t user_argv = {};
-    ur = copy_argv_from_user(ctx, argc, uargv, &user_argv);
-    if (ur != UACCESS_OK) return ur;
-
-
-    file probe = {};
-    FS_RESULT fr = open_file(path, &probe);
-    if (fr != FS_RESULT_SUCCESS) {
-        free_argv_from_user(&user_argv);
-        return SYSCALL_ERRNO(SYSCALL_ENOENT);
-    }
-    close_file(&probe);
-
-    const char *name = path;
-    for (const char *p = path; *p; p++) if (*p == '/') name = p + 1;
-
-    char proc_name[256] = {};
-    size_t proc_len = 0;
-    while (name[proc_len] && name[proc_len] != '.' && proc_len + 1 < sizeof(proc_name)) {
-        proc_name[proc_len] = name[proc_len];
-        proc_len++;
-    }
-    proc_name[proc_len] = 0;
-    if (!proc_len) {
-        free_argv_from_user(&user_argv);
-        return SYSCALL_ERRNO(SYSCALL_EINVAL);
-    }
-
-    process_t *p = load_elf_process_path(proc_name, 0,path, argc, user_argv.argv);
-    if (!p) {
-        free_argv_from_user(&user_argv);
-        return 0;
-    }
-
-    p->win_id = ctx->win_id;
-
-    free_argv_from_user(&user_argv);
-    return p->id;
 }
 
 u64 syscall_kill_process(process_t *ctx) {
@@ -473,17 +424,17 @@ u64 syscall_socket_send(process_t *ctx){
     if (!size) return 0;
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
-    void *kbuf = (void*)talloc(alloc_size);
+    void *kbuf = zalloc(alloc_size);
     if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
 
     ur = copy_from_user(ctx, kbuf, ubuf, size);
     if (ur != UACCESS_OK){
-        temp_free(kbuf, alloc_size);
+        release(kbuf);
         return ur;
     }
 
     u64 r = send_on_socket(&handle, dst_kind, dst, port, kbuf, size, ctx->id);
-    temp_free(kbuf, alloc_size);
+    release(kbuf);
     return r;
 }
 
@@ -499,7 +450,7 @@ u64 syscall_socket_receive(process_t *ctx){
     if (!size) return 0;
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
-    void *kbuf = (void*)talloc(alloc_size);
+    void *kbuf = zalloc(alloc_size);
     if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
 
     net_l4_endpoint src = {};
@@ -513,7 +464,7 @@ u64 syscall_socket_receive(process_t *ctx){
         if (ur != UACCESS_OK) r = ur;
     }
 
-    temp_free(kbuf, alloc_size);
+    release(kbuf);
     return r;
 }
 
@@ -641,19 +592,19 @@ u64 syscall_sreadf(process_t *ctx){
     }
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
-    void *kbuf = (void*)talloc(alloc_size);
+    void *kbuf = zalloc(alloc_size);
     if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
 
     size_t r = simple_read(path, kbuf, size);
     if (r) {
         ur = copy_to_user(ctx, ubuf, kbuf, r);
         if (ur != UACCESS_OK) {
-            temp_free(kbuf, alloc_size);
+            release(kbuf);
             return ur;
         }
     }
 
-    temp_free(kbuf, alloc_size);
+    release(kbuf);
     return r;
 }
 
@@ -679,17 +630,17 @@ u64 syscall_swritef(process_t *ctx){
     }
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
-    void *kbuf = (void*)talloc(alloc_size);
+    void *kbuf = zalloc(alloc_size);
     if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
 
     ur = copy_from_user(ctx, kbuf, ubuf, size);
     if (ur != UACCESS_OK){
-        temp_free(kbuf, alloc_size);
+        release(kbuf);
         return ur;
     }
 
     size_t r = simple_write(path, kbuf, size);
-    temp_free(kbuf, alloc_size);
+    release(kbuf);
     return r;
 }
 
@@ -729,19 +680,19 @@ u64 syscall_dir_list(process_t *ctx){
     if (ur != UACCESS_OK) return ur;
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
-    void *kbuf = (void*)talloc(alloc_size);
+    void *kbuf = zalloc(alloc_size);
     if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
 
     size_t r = list_directory_contents(path, kbuf, size, &off);
     if (r) {
         ur = copy_to_user(ctx, ubuf, kbuf, r);
         if (ur != UACCESS_OK) {
-            temp_free(kbuf, alloc_size);
+            release(kbuf);
             return ur;
         }
     }
     ur = copy_to_user(ctx, uoffset, &off, sizeof(off));
-    temp_free(kbuf, alloc_size);
+    release(kbuf);
     if (ur != UACCESS_OK) return ur;
     return r;
 }
@@ -808,7 +759,6 @@ syscall_entry syscalls[] = {
     [SLEEP_CODE] = syscall_msleep,
     [HALT_CODE] = syscall_halt,
     [EXEC_CODE] = syscall_exec,
-    [SPAWN_CODE] = syscall_spawn,
     [KILL_PROCESS_CODE] = syscall_kill_process,
     [GET_TIME_CODE] = syscall_get_time,
     [SOCKET_CREATE_CODE] = syscall_socket_create,

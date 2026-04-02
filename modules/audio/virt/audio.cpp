@@ -27,17 +27,22 @@ bool init_audio(){
 }
 
 sizedptr audio_request_buffer(uint32_t device){
-    if (!audio_driver || !audio_driver->out_dev) panic("audio not ready", 0);
+    if (!audio_driver || !audio_driver->out_dev) return (sizedptr){0,0};
     return audio_driver->out_dev->request_buffer();
 }
 
 void audio_submit_buffer(){
-    if (!audio_driver || !audio_driver->out_dev) panic("audio not ready", 0);
+    if (!audio_driver || !audio_driver->out_dev) return;
     audio_driver->out_dev->submit_buffer(audio_driver);
 }
 
 void audio_get_info(uint32_t* rate, uint8_t* channels) {
-    if (!audio_driver || !audio_driver->out_dev) panic("audio not ready", 0);
+    if (!rate || !channels) return;
+    if (!audio_driver || !audio_driver->out_dev) {
+        *rate = 0;
+        *channels = 0;
+        return;
+    }
     *rate = audio_driver->out_dev->rate;
     *channels = audio_driver->out_dev->channels;
 }

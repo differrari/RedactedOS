@@ -14,6 +14,8 @@
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/internet_layer/icmpv6.h"
+//TODO add a print variant that does not append a newline automatically in serial
+//std printf behavior is useful here since output requires explicit \n
 
 typedef struct {
     ip_version_t ver;

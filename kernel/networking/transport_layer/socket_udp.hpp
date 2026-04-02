@@ -14,6 +14,7 @@
 #include "networking/internet_layer/ipv6.h"
 #include "networking/internet_layer/igmp.h"
 #include "exceptions/irq.h"
+#include "sysregs.h"
 
 static constexpr int32_t UDP_RING_CAP = 1024;
 static constexpr dns_server_sel_t UDP_DNS_SEL = DNS_USE_BOTH;
@@ -119,7 +120,7 @@ class UDPSocket : public Socket {
     static uint32_t dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uintptr_t frame_ptr, uint32_t frame_len, uint16_t src_port, uint16_t dst_port) {
         UDPSocket* first = nullptr;
         uint32_t ret = frame_len;
-        disable_interrupt();
+        irq_flags_t irq = irq_save_disable();
 
         for (UDPSocket* s = s_list_head; s; s = s->next) {
             if (!socket_matches_dst(s, ifindex, ipver, dst_ip_addr, dst_port)) continue;
@@ -137,7 +138,7 @@ class UDPSocket : public Socket {
 
         if (first) first->on_receive(ipver, src_ip_addr, src_port, frame_ptr, frame_len);
         else if (frame_ptr && frame_len) free_sized((void*)frame_ptr, frame_len);
-        enable_interrupt();
+        irq_restore(irq);
         return ret;
     }
 
@@ -190,12 +191,16 @@ class UDPSocket : public Socket {
 
     void remove_from_list() {
         UDPSocket** cur = &s_list_head;
-        while (*cur) {
-            if (*cur == this) {
-                *cur = (*cur)->next;
+        int hops = 0;
+        while (*cur && hops++ < UDP_RING_CAP * 4) {
+            UDPSocket* p = *cur;
+            if (((uintptr_t)p & HIGH_VA) != HIGH_VA) break; //TODO this check should be useless but for now it prevents crashes if someone modifies the list, remove it once the issue is fixed
+            if (p == this) {
+                *cur = p->next;
                 break;
             }
-            cur = &((*cur)->next);
+            if (p->next && (((uintptr_t)p->next & HIGH_VA) != HIGH_VA)) break;
+            cur = &(p->next);
         }
         next = nullptr;
     }
@@ -266,15 +271,15 @@ class UDPSocket : public Socket {
 public:
     UDPSocket(uint8_t r, uint32_t pid_, const SocketExtraOptions* extra = nullptr) : Socket(PROTO_UDP, r, extra) {
         pid = pid_;
-        disable_interrupt();
+        irq_flags_t irq = irq_save_disable();
         insert_in_list();
-        enable_interrupt();
+        irq_restore(irq);
     }
 
     ~UDPSocket() override {
-        disable_interrupt(); //TODO locking is needed asap
+        irq_flags_t irq = irq_save_disable(); //TODO locking is needed asap
         remove_from_list();
-        enable_interrupt();
+        irq_restore(irq);
         if ((extraOpts.flags & SOCK_OPT_MCAST_JOIN) && extraOpts.mcast_ver) {
             if (extraOpts.mcast_ver == IP_VER4) {
                 uint32_t g = 0;

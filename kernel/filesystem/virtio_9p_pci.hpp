@@ -22,9 +22,8 @@ private:
     uint32_t walk_dir(uint32_t fid, char *path);
     uint64_t read(uint32_t fid, uint64_t offset, void* file);
     r_getattr* get_attribute(uint32_t fid, uint64_t mask);
-    bool clunk(virtio_device *dev, uint32_t fid, uint16_t tag);
+    bool clunk(virtio_device *dev, uint32_t fid);
     size_t max_msize = 0;
-    uint32_t mid = 0;
 
     uint32_t root = 0;
 

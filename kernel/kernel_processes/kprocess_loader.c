@@ -8,6 +8,11 @@
 #include "memory/addr.h"
 #include "memory/memory.h"
 
+__attribute__((noreturn)) static void kernel_process_return_trampoline(int32_t exit_code) {
+    stop_current_process(exit_code);
+    while (1) {}
+}
+
 process_t *create_kernel_process(const char *name, int (*func)(int argc, char* argv[]), int argc, const char* argv[]){
 
     irq_flags_t irq = irq_save_disable();
@@ -53,15 +58,8 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
 
     proc->sp = proc->stack;
     
-    proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
-    if (!proc->output) {
-        reset_process(proc);
-        irq_restore(irq);
-        return 0;
-    }
-    proc->output_size = 0;
-    
-    proc->pc = PHYS_TO_VIRT((uintptr_t)func);
+    proc->pc = ((uintptr_t)func);
+    proc->regs[30] = ((uintptr_t)kernel_process_return_trampoline);
     proc->spsr = 0x205;
 
     proc->PROC_X0 = 0;

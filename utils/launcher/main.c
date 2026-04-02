@@ -182,7 +182,7 @@ void activate_current(){
         string s = string_format("%s/%v.elf",entry->path.data, entry->name);
         fb_clear(&ctx, 0);
         commit_draw_ctx(&ctx);
-        u16 pid = exec(s.data, 0, 0);
+        u16 pid = exec(s.data, 0, 0, EXEC_MODE_DEFAULT);
         string_free(s);
         if (!pid) {
             print("[LAUNCHER error] failed to launch process");

@@ -3,7 +3,7 @@
 #include "memory/mmu.h"
 #include "memory/addr.h"
 #include "std/memory.h"
-#include "memory/talloc.h"
+#include "alloc/allocate.h"
 
 bool access_ok_range(process_t *proc, uintptr_t addr, size_t size, bool want_write) {
     if (!proc) return false;
@@ -161,16 +161,16 @@ uaccess_result_t copy_argv_from_user(process_t *proc, int argc, uintptr_t uargv,
             return UACCESS_ENAMETOOLONG;
         }
 
-        uint64_t alloc = (copied + 0xFFF) & ~0xFFFULL;
-        char *k = (char*)talloc(alloc);
+        char *k = (char*)zalloc(copied+1);
         if (!k) {
             free_argv_from_user(out);
             return UACCESS_ENOMEM;
         }
 
         memcpy(k, tmp, copied);
+        k[copied] = 0;
         out->bufs[i] = k;
-        out->bufsz[i] = alloc;
+        out->bufsz[i] = copied+1;
         out->argv[i] = k;
     }
     return UACCESS_OK;
@@ -180,7 +180,7 @@ void free_argv_from_user(user_argv_t *argv) {
     if (!argv) return;
     for (int i = 0; i < argv->argc && i < UACCESS_MAX_ARGV; i++) {
         if (!argv->bufs[i]) continue;
-        temp_free(argv->bufs[i], argv->bufsz[i]);
+        release(argv->bufs[i]);
         argv->bufs[i] = 0;
         argv->bufsz[i] = 0;
         argv->argv[i] = 0;

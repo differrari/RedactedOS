@@ -10,7 +10,7 @@ typedef enum {
     HALT,
 } ProcSwitchReason;
 
-#define MAX_PROCS 64
+#define MAX_REUSABLE_EMPTY_PROCS 64
 
 #define PROC_PRIORITY_FULL 25
 #define PROC_PRIORITY_HIGH 10

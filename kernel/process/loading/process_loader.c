@@ -9,6 +9,7 @@
 #include "memory/talloc.h"
 #include "sysregs.h"
 #include "memory/addr.h"
+#include "string/string.h"
 
 typedef struct {
     uint64_t code_base_start;
@@ -277,7 +278,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
 
     name_process(proc, name);
 
-    proc->bundle = (char*)bundle;
+    proc->bundle = bundle && *bundle ? string_from_literal(bundle).data : 0;
     
 
     uaddr_t min_addr = UINT64_MAX;
@@ -390,13 +391,6 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->mm.rss_stack_pages = 0;
 
     proc->sp = proc->stack;
-
-    proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
-    if (!proc->output) {
-        reset_process(proc);
-        return 0;
-    }
-    proc->output_size = 0;
 
     proc->pc = (uintptr_t)(entry);
     kprintf("User process %s allocated at %llx entry=%llx stack=%llx-%llx (phys=%llx-%llx) anon=%llx (phys=%llx)", name, proc, (uint64_t)proc->pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->stack_phys, (uint64_t)proc->stack_phys, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);

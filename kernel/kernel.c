@@ -26,11 +26,12 @@
 #include "pci/pcie.h"
 #include "dtb.h"
 #include "filesystem/tmp/tmp_fs.h"
+#include "std/memory.h"
 
 extern char __bss_start[];
 extern char __bss_end[];
 void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
-    for (uintptr_t p = (uintptr_t)__bss_start; p < (uintptr_t)__bss_end; p += 8) *(uint64_t*)p = 0;
+    memset(__bss_start, 0, (size_t)((uintptr_t)__bss_end - (uintptr_t)__bss_start));
     BOARD_TYPE = (uint8_t)board_type;
     dtb_set_pa(dtb_pa);
     if (dtb_get_header()) USE_DTB = 1;

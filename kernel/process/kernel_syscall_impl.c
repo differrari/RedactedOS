@@ -44,14 +44,12 @@ void page_free(void *ptr){
     if (!ptr) return;
     if (((uintptr_t)ptr & (PAGE_SIZE - 1)) != 0) return;
     process_t* k = get_kernel_proc();//TODO: can we make this more fragmented? This inside a syscall, current proc outside
-    if (k && k->alloc_map) {
-        free_registered(k->alloc_map, ptr);
-        return;
-    }
 
     size_t size = 0;
-    if (p_index) size = get_alloc_size(p_index, ptr);
+    if (k && k->alloc_map) size = get_alloc_size(k->alloc_map, ptr);
+    if (!size && p_index) size = get_alloc_size(p_index, ptr);
     if (!size) size = PAGE_SIZE;
+    if (k && k->alloc_map) free_registered(k->alloc_map, ptr);
     pfree(ptr, size);
 }
 
@@ -72,9 +70,9 @@ extern void get_mouse_status(mouse_data *in){
     in->position = convert_mouse_position(get_mouse_pos());
 }
 
-extern int32_t exec(const char* prog_name, int argc, const char* argv[]){
-    process_t *p = execute(prog_name, argc, argv);
-    return p ? (int32_t)p->id : -1;
+extern int32_t exec(const char* prog_name, int argc, const char* argv[], uint32_t mode){
+    process_t *p = execute(prog_name, argc, argv, mode);
+    return p ? (int32_t)p->id : 0;
 }
 
 extern void request_draw_ctx(draw_ctx* d_ctx){

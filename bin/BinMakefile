@@ -3,7 +3,7 @@ include ../../common.mk
 CPPFLAGS := -I. -I../../shared
 CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
 CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
-LDFLAGS  := -T $(shell ls *.ld)
+LDFLAGS  := -T ../linker.ld
 
 CLEAN_OBJS := $(shell find . -name '*.o')
 CLEAN_DEPS := $(shell find . -name '*.d')

@@ -312,20 +312,28 @@ bool get_stat(const char *path, fs_stat *out_stat){
     return mod->getstat(search_path, out_stat);
 }
 
-int32_t close_pid;
-
-void close_file_proc(void *key, uint64_t keylen, void *value){
-    open_file_descriptors *f = (open_file_descriptors*)value;
-    if (f->pid == close_pid){
-        file fd = {};
-        fd.id = f->file_id;
-        close_file(&fd);
-    }
-}
-
 void close_files_for_process(uint16_t pid){
-    close_pid = pid;
-    chashmap_for_each(open_files, close_file_proc);
+    if (open_files) {
+        for (;;) {
+            uint64_t fid = 0;
+            bool found = false;
+            for (uint64_t i = 0; i < open_files->capacity && !found; i++) {
+                chashmap_entry_t *e = open_files->buckets[i];
+                while (e) {
+                    open_file_descriptors *f = (open_file_descriptors*)e->value;
+                    if (f && f->pid == pid) {
+                        fid = f->file_id;
+                        found = true;
+                        break;
+                    }
+                    e = e->next;
+                }
+            }
+            if (!found) break;
+            file fd = {};
+            fd.id = fid;
+            close_file(&fd);
+        }
+    }
     close_pipes_for_process(pid);
-    close_pid = -1;
 }
