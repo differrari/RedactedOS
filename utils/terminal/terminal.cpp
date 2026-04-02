@@ -300,7 +300,7 @@ bool Terminal::handle_input(){
     if (event.type != KEY_PRESS) return false;
 
     char key = event.key;
-    char readable = hid_to_char((uint8_t)key);
+    char readable = hid_to_char((uint8_t)key,0);
 
     if (key == KEY_ENTER || key == KEY_KPENTER){
         run_command();

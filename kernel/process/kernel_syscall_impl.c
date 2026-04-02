@@ -129,6 +129,10 @@ extern size_t writef(file *descriptor, const char* buf, size_t size){
     return write_file(descriptor, buf, size);
 }
 
+extern bool statf(const char *path, fs_stat *out_stat){
+    return get_stat(path, out_stat);
+}
+
 extern void closef(file *descriptor){
     close_file(descriptor);
 }
