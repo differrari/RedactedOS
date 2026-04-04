@@ -31,7 +31,6 @@
 #include "dev/module_loader.h"
 #include "alloc/page_index.h"
 #include "process/uaccess.h"
-#include "syscalls/errno.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -84,17 +83,17 @@ uptr syscall_palloc(process_t *ctx){
 
 u64 syscall_pfree(process_t *ctx){
     uptr va = ctx->PROC_X0;
-    if (!va) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+    if (!va) return 0;
 
     if (ctx->mm.ttbr0) {
         vma *m = mm_find_vma(&ctx->mm,va);
-        if (!m) return SYSCALL_ERRNO(SYSCALL_EFAULT);
-        if (m->kind != VMA_KIND_ANON) return SYSCALL_ERRNO(SYSCALL_EPERM);
-        if (!(m->flags & VMA_FLAG_USERALLOC)) return SYSCALL_ERRNO(SYSCALL_EPERM);
+        if (!m) return 0;
+        if (m->kind != VMA_KIND_ANON) return 0;
+        if (!(m->flags & VMA_FLAG_USERALLOC)) return 0;
 
         uintptr_t start = m->start;
         uintptr_t end = m->end;
-        if (!mm_remove_vma(&ctx->mm, start, end)) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+        if (!mm_remove_vma(&ctx->mm, start, end)) return 0;
 
         for (uintptr_t a = start; a < end; a += PAGE_SIZE) {
             uint64_t pa = 0;
@@ -108,7 +107,7 @@ u64 syscall_pfree(process_t *ctx){
     }
 
     size_t size = get_alloc_size(ctx->alloc_map, (void*)va);
-    if (!size) return SYSCALL_ERRNO(SYSCALL_EFAULT);
+    if (!size) return 0;
     u64 pages = count_pages(size, PAGE_SIZE);
     free_registered(ctx->alloc_map, (void*)va);
     if (ctx->mm.rss_anon_pages >= pages) ctx->mm.rss_anon_pages -= pages;
@@ -121,12 +120,12 @@ u64 syscall_free(process_t *ctx){
 
     void *ptr = (void*)ctx->PROC_X0;
     size_t size = (size_t)ctx->PROC_X1;
-    if (!ptr || !size) return SYSCALL_ERRNO(SYSCALL_EINVAL);
-    if (!ctx->alloc_map) return SYSCALL_ERRNO(SYSCALL_EPERM);
+    if (!ptr || !size) return 0;
+    if (!ctx->alloc_map) return 0;
 
     size_t alloc_size = get_alloc_size(ctx->alloc_map, ptr);
-    if (!alloc_size) return SYSCALL_ERRNO(SYSCALL_EFAULT);
-    if (size && alloc_size != size) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+    if (!alloc_size) return 0;
+    if (size && alloc_size != size) return 0;
 
     free_registered(ctx->alloc_map, ptr);
     return 0;
@@ -134,7 +133,7 @@ u64 syscall_free(process_t *ctx){
 
 u64 syscall_printl(process_t *ctx){
     uintptr_t u = (uintptr_t)ctx->PROC_X0;
-    if (!u) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+    if (!u) return 0;
 
     char buf[256] = {};
 
@@ -142,7 +141,7 @@ u64 syscall_printl(process_t *ctx){
         size_t copied = 0;
         bool term = false;
         uaccess_result_t ur = copy_str_from_user(ctx, buf, sizeof(buf), u, &copied, &term);
-        if (ur != UACCESS_OK && ur != UACCESS_ENAMETOOLONG) return ur;
+        if (ur != UACCESS_OK && ur != UACCESS_ENAMETOOLONG) return 0;
         kprint(buf);
         if (term) break;
         if (!copied) break;
@@ -158,7 +157,7 @@ u64 syscall_read_key(process_t *ctx){
     u64 r = sys_read_input_current(&tmp);
     if (!r) return 0;
     uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return r;
 }
 
@@ -168,7 +167,7 @@ u64 syscall_read_event(process_t *ctx){
     u64 r = sys_read_event_current(&tmp);
     if (!r) return 0;
     uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return r;
 }
 
@@ -179,13 +178,13 @@ u64 syscall_read_shortcut(process_t *ctx){
 
 u64 syscall_get_mouse(process_t *ctx){
     //TEST: are we preventing the mouse from being read outside of window?
-    if (get_current_proc_pid() != ctx->id) return SYSCALL_ERRNO(SYSCALL_EPERM);
+    if (get_current_proc_pid() != ctx->id) return 0;
     uintptr_t up = (uintptr_t)ctx->PROC_X0;
     mouse_data tmp = {};
     tmp.raw = get_raw_mouse_in();
     tmp.position = convert_mouse_position(get_mouse_pos());
     uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return 0;
 }
 
@@ -194,7 +193,7 @@ uptr syscall_gpu_request_ctx(process_t *ctx){
     draw_ctx tmp = {};
     get_window_ctx(&tmp);
     uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return 0;
 }
 
@@ -202,19 +201,19 @@ u64 syscall_gpu_flush(process_t *ctx){
     uintptr_t up = (uintptr_t)ctx->PROC_X0;
     draw_ctx tmp = {};
     uaccess_result_t ur = copy_from_user(ctx, &tmp, up, sizeof(tmp));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
 
     draw_ctx win = {};
     get_window_ctx(&win);
     if (!tmp.full_redraw) {
-        if (tmp.dirty_count > MAX_DIRTY_RECTS) return SYSCALL_ERRNO(SYSCALL_EINVAL);
-        if (!win.width || !win.height) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+        if (tmp.dirty_count > MAX_DIRTY_RECTS) return 0;
+        if (!win.width || !win.height) return 0;
         for (uint32_t i = 0; i < tmp.dirty_count; i++) {
             gpu_rect r = tmp.dirty_rects[i];
-            if (r.point.x < 0 || r.point.y < 0) return SYSCALL_ERRNO(SYSCALL_EINVAL);
-            if ((uint32_t)r.point.x >= win.width || (uint32_t)r.point.y >= win.height) return SYSCALL_ERRNO(SYSCALL_EINVAL);
-            if (r.size.width > win.width - (uint32_t)r.point.x) return SYSCALL_ERRNO(SYSCALL_EINVAL);
-            if (r.size.height > win.height - (uint32_t)r.point.y) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+            if (r.point.x < 0 || r.point.y < 0) return 0;
+            if ((uint32_t)r.point.x >= win.width || (uint32_t)r.point.y >= win.height) return 0;
+            if (r.size.width > win.width - (uint32_t)r.point.x) return 0;
+            if (r.size.height > win.height - (uint32_t)r.point.y) return 0;
         }
     }
 
@@ -231,7 +230,7 @@ u64 syscall_gpu_resize_ctx(process_t *ctx){
     draw_ctx tmp = {};
     get_window_ctx(&tmp);
     uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     gpu_flush();
     return 0;
 }
@@ -266,22 +265,22 @@ u64 syscall_exec(process_t *ctx){
     uintptr_t uargv = (uintptr_t)ctx->PROC_X2;
     uint32_t mode = (uint32_t)ctx->PROC_X3;
 
-    if (argc < 0) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+    if (argc < 0) return 0;
 
     char prog_name[256] = {};
     size_t copied = 0;
     bool term = false;
     uaccess_result_t ur = copy_str_from_user(ctx, prog_name, sizeof(prog_name), upath, &copied, &term);
-    if (ur != UACCESS_OK) return ur;
-    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+    if (ur != UACCESS_OK) return 0;
+    if (!term) return 0;
 
     const int max_args = 64;
-    if (argc > max_args) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+    if (argc > max_args) return 0;
 
     user_argv_t user_argv = {};
 
     ur = copy_argv_from_user(ctx, argc, uargv, &user_argv);
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
 
     process_t *p = execute(prog_name, argc, user_argv.argv, mode);
 
@@ -291,13 +290,13 @@ u64 syscall_exec(process_t *ctx){
 
 u64 syscall_kill_process(process_t *ctx) {
     uint16_t pid = (uint16_t)ctx->PROC_X0;
-    if (!pid) return SYSCALL_ERRNO(SYSCALL_EINVAL);
+    if (!pid) return 0;
 
     process_t *target = get_proc_by_pid(pid);
-    if (!target || target->state == STOPPED) return SYSCALL_ERRNO(SYSCALL_ENOENT);
-    if (target->id == 1) return SYSCALL_ERRNO(SYSCALL_EPERM);
-    if ((target->spsr & 0xF) != 0) return SYSCALL_ERRNO(SYSCALL_EPERM);
-    if (!ctx->win_id || target->win_id != ctx->win_id) return SYSCALL_ERRNO(SYSCALL_EPERM);
+    if (!target || target->state == STOPPED) return 0;
+    if (target->id == 1) return 0;
+    if ((target->spsr & 0xF) != 0) return 0;
+    if (!ctx->win_id || target->win_id != ctx->win_id) return 0;
 
     stop_process(pid, -9);
     return 0;
@@ -316,7 +315,7 @@ u64 syscall_socket_create(process_t *ctx){
     SocketExtraOptions *pe = 0;
     if (uextra) {
         uaccess_result_t ur = copy_from_user(ctx, &extra, uextra, sizeof(extra));
-        if (ur != UACCESS_OK) return ur;
+        if (ur != UACCESS_OK) return 0;
         pe = &extra;
     }
 
@@ -325,7 +324,7 @@ u64 syscall_socket_create(process_t *ctx){
     if (r < 0) return r;
 
     uaccess_result_t ur = copy_to_user(ctx, uout, &out, sizeof(out));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return r;
 }
 
@@ -335,7 +334,7 @@ u64 syscall_socket_bind(process_t *ctx){
     uint16_t port = (uint16_t)ctx->PROC_X2;
     SocketHandle handle = {};
     uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return bind_socket(&handle, port, ip_version, ctx->id);
 }
 
@@ -347,7 +346,7 @@ u64 syscall_socket_connect(process_t *ctx){
 
     SocketHandle handle = {};
     uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
 
     net_l4_endpoint ep = {};
     char domain[256] = {};
@@ -355,17 +354,17 @@ u64 syscall_socket_connect(process_t *ctx){
 
     if (dst_kind == DST_ENDPOINT) {
         ur = copy_from_user(ctx, &ep, udst, sizeof(ep));
-        if (ur != UACCESS_OK) return ur;
+        if (ur != UACCESS_OK) return 0;
         dst = &ep;
     } else if (dst_kind == DST_DOMAIN) {
         size_t copied = 0;
         bool term = false;
         ur = copy_str_from_user(ctx, domain, sizeof(domain), udst, &copied, &term);
-        if (ur != UACCESS_OK) return ur;
-        if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+        if (ur != UACCESS_OK) return 0;
+        if (!term) return 0;
         dst = domain;
     } else {
-        return SYSCALL_ERRNO(SYSCALL_EINVAL);
+        return 0;
     }
 
     return connect_socket(&handle, dst_kind, dst, port, ctx->id);
@@ -377,7 +376,7 @@ u64 syscall_socket_listen(process_t *ctx){
 
     SocketHandle handle = {};
     uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return listen_on(&handle, backlog, ctx->id);
 }
 
@@ -385,7 +384,7 @@ u64 syscall_socket_accept(process_t *ctx){
     uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
     SocketHandle handle = {};
     uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     accept_on_socket(&handle, ctx->id);
     return 1;
 }
@@ -400,7 +399,7 @@ u64 syscall_socket_send(process_t *ctx){
 
     SocketHandle handle = {};
     uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
 
     net_l4_endpoint ep = {};
     char domain[256] = {};
@@ -408,29 +407,29 @@ u64 syscall_socket_send(process_t *ctx){
 
     if (dst_kind == DST_ENDPOINT){
         ur = copy_from_user(ctx, &ep, udst, sizeof(ep));
-        if (ur != UACCESS_OK) return ur;
+        if (ur != UACCESS_OK) return 0;
         dst = &ep;
     } else if (dst_kind == DST_DOMAIN){
         size_t copied = 0;
         bool term = false;
         ur = copy_str_from_user(ctx, domain, sizeof(domain), udst, &copied, &term);
-        if (ur != UACCESS_OK) return ur;
-        if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+        if (ur != UACCESS_OK) return 0;
+        if (!term) return 0;
         dst = domain;
     } else {
-        return SYSCALL_ERRNO(SYSCALL_EINVAL);
+        return 0;
     }
 
     if (!size) return 0;
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     void *kbuf = zalloc(alloc_size);
-    if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
+    if (!kbuf) return 0;
 
     ur = copy_from_user(ctx, kbuf, ubuf, size);
     if (ur != UACCESS_OK){
         release(kbuf);
-        return ur;
+        return 0;
     }
 
     u64 r = send_on_socket(&handle, dst_kind, dst, port, kbuf, size, ctx->id);
@@ -446,12 +445,12 @@ u64 syscall_socket_receive(process_t *ctx){
 
     SocketHandle handle = {};
     uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     if (!size) return 0;
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     void *kbuf = zalloc(alloc_size);
-    if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
+    if (!kbuf) return 0;
 
     net_l4_endpoint src = {};
     i64 r = receive_from_socket(&handle, kbuf, size, &src, ctx->id);
@@ -472,7 +471,7 @@ u64 syscall_socket_close(process_t *ctx){
     uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
     SocketHandle handle = {};
     uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return close_socket(&handle, ctx->id);
 }
 
@@ -484,8 +483,8 @@ u64 syscall_openf(process_t *ctx){
     size_t copied = 0;
     bool term = false;
     uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
-    if (ur != UACCESS_OK) return ur;
-    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+    if (ur != UACCESS_OK) return 0;
+    if (!term) return 0;
 
     char path[255] = {};
     if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
@@ -499,7 +498,7 @@ u64 syscall_openf(process_t *ctx){
     FS_RESULT r = open_file(path, &descriptor);
     if (r != FS_RESULT_SUCCESS) return r;
     ur = copy_to_user(ctx, udesc, &descriptor, sizeof(descriptor));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return r;
 }
 
@@ -509,7 +508,7 @@ u64 syscall_readf(process_t *ctx){
     size_t size = (size_t)ctx->PROC_X2;
     file descriptor = {};
     uaccess_result_t ur = copy_from_user(ctx, &descriptor, udesc, sizeof(descriptor));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
 
     uint8_t tmp[4096];
     size_t done = 0;
@@ -532,7 +531,7 @@ u64 syscall_readf(process_t *ctx){
     }
 
     ur = copy_to_user(ctx, udesc, &descriptor, sizeof(descriptor));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return done;
 }
 
@@ -543,7 +542,7 @@ u64 syscall_writef(process_t *ctx){
 
     file descriptor = {};
     uaccess_result_t ur = copy_from_user(ctx, &descriptor, udesc, sizeof(descriptor));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
 
     uint8_t tmp[4096];
     size_t done = 0;
@@ -566,7 +565,7 @@ u64 syscall_writef(process_t *ctx){
     }
 
     ur = copy_to_user(ctx, udesc, &descriptor, sizeof(descriptor));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return done;
 }
 
@@ -579,8 +578,8 @@ u64 syscall_sreadf(process_t *ctx){
     size_t copied = 0;
     bool term = false;
     uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
-    if (ur != UACCESS_OK) return ur;
-    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+    if (ur != UACCESS_OK) return 0;
+    if (!term) return 0;
 
     char path[255] = {};
     if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
@@ -593,14 +592,14 @@ u64 syscall_sreadf(process_t *ctx){
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     void *kbuf = zalloc(alloc_size);
-    if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
+    if (!kbuf) return 0;
 
     size_t r = simple_read(path, kbuf, size);
     if (r) {
         ur = copy_to_user(ctx, ubuf, kbuf, r);
         if (ur != UACCESS_OK) {
             release(kbuf);
-            return ur;
+            return 0;
         }
     }
 
@@ -617,8 +616,8 @@ u64 syscall_swritef(process_t *ctx){
     size_t copied = 0;
     bool term = false;
     uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
-    if (ur != UACCESS_OK) return ur;
-    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+    if (ur != UACCESS_OK) return 0;
+    if (!term) return 0;
 
     char path[255] = {};
     if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
@@ -631,12 +630,12 @@ u64 syscall_swritef(process_t *ctx){
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     void *kbuf = zalloc(alloc_size);
-    if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
+    if (!kbuf) return 0;
 
     ur = copy_from_user(ctx, kbuf, ubuf, size);
     if (ur != UACCESS_OK){
         release(kbuf);
-        return ur;
+        return 0;
     }
 
     size_t r = simple_write(path, kbuf, size);
@@ -648,7 +647,7 @@ u64 syscall_closef(process_t *ctx){
     uintptr_t udesc = (uintptr_t)ctx->PROC_X0;
     file descriptor = {};
     uaccess_result_t ur = copy_from_user(ctx, &descriptor, udesc, sizeof(descriptor));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     close_file(&descriptor);
     return 0;
 }
@@ -663,8 +662,8 @@ u64 syscall_dir_list(process_t *ctx){
     size_t copied = 0;
     bool term = false;
     uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
-    if (ur != UACCESS_OK) return ur;
-    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+    if (ur != UACCESS_OK) return 0;
+    if (!term) return 0;
 
     char path[255] = {};
     if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
@@ -677,23 +676,23 @@ u64 syscall_dir_list(process_t *ctx){
 
     uint64_t off = 0;
     ur = copy_from_user(ctx, &off, uoffset, sizeof(off));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
 
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     void *kbuf = zalloc(alloc_size);
-    if (!kbuf) return SYSCALL_ERRNO(SYSCALL_ENOMEM);
+    if (!kbuf) return 0;
 
     size_t r = list_directory_contents(path, kbuf, size, &off);
     if (r) {
         ur = copy_to_user(ctx, ubuf, kbuf, r);
         if (ur != UACCESS_OK) {
             release(kbuf);
-            return ur;
+            return 0;
         }
     }
     ur = copy_to_user(ctx, uoffset, &off, sizeof(off));
     release(kbuf);
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return r;
 }
 
@@ -705,8 +704,8 @@ u64 syscall_stat(process_t *ctx){
     size_t copied = 0;
     bool term = false;
     uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
-    if (ur != UACCESS_OK) return ur;
-    if (!term) return SYSCALL_ERRNO(SYSCALL_ENAMETOOLONG);
+    if (ur != UACCESS_OK) return 0;
+    if (!term) return 0;
 
     char path[255] = {};
     if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
@@ -722,7 +721,7 @@ u64 syscall_stat(process_t *ctx){
     if (res != FS_RESULT_SUCCESS) return res;
 
     ur = copy_to_user(ctx, uout, &st, sizeof(st));
-    if (ur != UACCESS_OK) return ur;
+    if (ur != UACCESS_OK) return 0;
     return FS_RESULT_SUCCESS;
 }
 

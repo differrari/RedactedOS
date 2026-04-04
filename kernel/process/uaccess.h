@@ -1,18 +1,17 @@
 #pragma once
 
 #include "types.h"
-#include "syscalls/errno.h"
 #include "process/process.h"
 
 #define UACCESS_MAX_ARGV 128
 
 typedef enum uaccess_result {
     UACCESS_OK = 0,
-    UACCESS_EPERM = -SYSCALL_EPERM,
-    UACCESS_ENOMEM = -SYSCALL_ENOMEM,
-    UACCESS_EFAULT = -SYSCALL_EFAULT,
-    UACCESS_EINVAL = -SYSCALL_EINVAL,
-    UACCESS_ENAMETOOLONG = -SYSCALL_ENAMETOOLONG,
+    UACCESS_EPERM = -1,
+    UACCESS_ENOMEM = -2,
+    UACCESS_EFAULT = -3,
+    UACCESS_EINVAL = -4,
+    UACCESS_ENAMETOOLONG = -5,
 } uaccess_result_t;
 
 typedef struct user_argv {

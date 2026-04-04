@@ -5,15 +5,9 @@
 #include "sysregs.h"
 
 USBDriver *input_driver = 0x0;
-static uint8_t input_driver_type = 0;
 alignas(DWC2Driver) static uint8_t dwc2_driver_storage[sizeof(DWC2Driver)];
 alignas(XHCIDriver) static uint8_t xhci_driver_storage[sizeof(XHCIDriver)];
 
-static USBDriver *usb_driver(){
-    if (input_driver_type == 1) return (USBDriver*)dwc2_driver_storage;
-    if (input_driver_type == 2) return (USBDriver*)xhci_driver_storage;
-    return 0;
-}
 
 bool input_init(){
     #if QEMU
@@ -22,15 +16,12 @@ bool input_init(){
     if (BOARD_TYPE == 2 && RPI_BOARD == 3){
     #endif
         input_driver = new (dwc2_driver_storage)DWC2Driver();
-        input_driver_type = 1;
     } else {
         input_driver = new (xhci_driver_storage)XHCIDriver();
-        input_driver_type = 2;
     }
 
     if (!input_driver->init()) {
         input_driver = 0;
-        input_driver_type = 0;
         return false;
     }
 
@@ -39,50 +30,43 @@ bool input_init(){
 
 int usb_process_poll(int argc, char* argv[]){
     while (1){
-        USBDriver *driver = usb_driver();
-        if (driver) driver->poll_inputs();
+        if (input_driver) input_driver->poll_inputs();
     }
     return 1;
 }
 
 extern "C" void usb_start_polling(){
-    USBDriver *driver = usb_driver();
-    if (driver) driver->poll_inputs();
+    if (input_driver) input_driver->poll_inputs();
 }
 
 int usb_process_fake_interrupts(int argc, char* argv[]){
     while (1){
-        USBDriver *driver = usb_driver();
-        if (driver) driver->handle_interrupt();
+        if (input_driver) input_driver->handle_interrupt();
     }
     return 1;
 }
 
 extern "C" void init_usb_process(){
-    USBDriver *driver = usb_driver();
-    if (!driver) return;
-    if (!driver->use_interrupts)
+    if (!input_driver) return;
+    if (!input_driver->use_interrupts)
         create_kernel_process("input_poll", &usb_process_poll, 0, 0);
-    if (driver->quirk_simulate_interrupts)
+    if (input_driver->quirk_simulate_interrupts)
         create_kernel_process("input_int_mock", &usb_process_fake_interrupts, 0, 0);
 }
 
 extern "C" void handle_usb_interrupt(){
-    USBDriver *driver = usb_driver();
-    if (!driver) {
+    if (!input_driver) {
         input_driver = 0;
-        input_driver_type = 0;
         return;
     }
 
-    uintptr_t p = (uintptr_t)driver;
+    uintptr_t p = (uintptr_t)input_driver;
     if ((p & HIGH_VA) != HIGH_VA) {
         input_driver = 0;
-        input_driver_type = 0;
         return;
     }
 
-    if (driver->use_interrupts) driver->handle_interrupt();
+    if (input_driver->use_interrupts) input_driver->handle_interrupt();
 }
 
 system_module usb_module = (system_module){
