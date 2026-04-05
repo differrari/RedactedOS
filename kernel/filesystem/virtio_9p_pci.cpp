@@ -59,7 +59,7 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
     uint64_t fid = reserve_fd_gid(path);
     descriptor->cursor = 0;
     descriptor->id = fid;
-    r_getattr *attr = get_attribute(f, 0x00000200ULL);
+    r_getattr *attr = get_attribute(f, P9_GETATTR_SIZE);
     if (!attr) return FS_RESULT_DRIVER_ERROR;
     uint64_t size = read_unaligned64(&attr->size);
     descriptor->size = size;
@@ -116,7 +116,7 @@ size_t Virtio9PDriver::sread_file(const char *path, void *buf, size_t size){
         kprintf("[VIRTIO 9P error] failed to open %s",path);
         return FS_RESULT_DRIVER_ERROR;
     }
-    r_getattr *attr = get_attribute(f, 0x00000200ULL);
+    r_getattr *attr = get_attribute(f, P9_GETATTR_SIZE);
     if (!attr) return FS_RESULT_DRIVER_ERROR;
     uint64_t file_size = read_unaligned64(&attr->size);
     if (file_size < size) size = file_size;
@@ -174,6 +174,14 @@ size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, u
     }
     kprintf("Directory opened and being read from %x",size);
     return list_contents(d, buf, size, offset);
+}
+
+bool Virtio9PDriver::truncate(file *descriptor, size_t size){
+    module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!mfile) return 0;
+    if (mfile->read_only) return 0;
+    
+    return set_attribute(mfile->serial, P9_SETATTR_SIZE, size);
 }
 
 size_t Virtio9PDriver::choose_version(){
@@ -292,6 +300,19 @@ r_getattr* Virtio9PDriver::get_attribute(u32 fid, u64 mask){
     return check_9p_success(resp) ? resp : 0;
 }
 
+bool Virtio9PDriver::set_attribute(u32 fid, u64 mask, u64 value){
+    t_setattr *cmd = make_p9_setattr_packet(fid, mask, value);
+    void *resp = make_p9_response_buffer();
+
+    virtio_buf b[2] = {VBUF(cmd, cmd->header.size, 0), VBUF(resp, sizeof(p9_packet_header), VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&np_dev, b, 2);
+    
+    p9_free(cmd);
+    p9_free(resp);
+
+    return check_9p_success(resp);
+}
+
 uint64_t Virtio9PDriver::read(u32 fid, u64 offset, void *file){
     uint32_t amount = 0x10000;
     t_read *cmd = make_p9_read_packet(fid, offset, amount);
@@ -348,7 +369,7 @@ bool Virtio9PDriver::stat(const char *path, fs_stat *out_stat){
         kprintf("[VIRTIO 9P error] failed to navigate to %s",path);
         return false;
     }
-    r_getattr *attr = get_attribute(f, 0x00000201ULL);
+    r_getattr *attr = get_attribute(f, P9_GETATTR_SIZE | P9_GETATTR_MODE);
     if (!attr) return false;
     out_stat->size = read_unaligned64(&attr->size);
     out_stat->type = read_unaligned32(&attr->mode) & DIR_MASK ? entry_directory : entry_file;
@@ -357,7 +378,7 @@ bool Virtio9PDriver::stat(const char *path, fs_stat *out_stat){
 
 bool Virtio9PDriver::sync_file(module_file *mfile){
     if (!mfile || !mfile->serial) return false;
-    r_getattr *attr = get_attribute(mfile->serial, 0x00000201ULL);
+    r_getattr *attr = get_attribute(mfile->serial, P9_GETATTR_SIZE | P9_GETATTR_MODE);
     if (!attr) return false;
     size_t new_size = read_unaligned64(&attr->size);
     if (new_size != mfile->file_buffer.buffer_size){

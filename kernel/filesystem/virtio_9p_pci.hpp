@@ -16,6 +16,7 @@ public:
     size_t list_contents(const char *path, void* buf, size_t size, uint64_t *offset) override;
     void close_file(file* descriptor) override;
     bool stat(const char *path, fs_stat *out_stat) override;
+    bool truncate(file *descriptor, size_t size) override;
 private:
     virtio_device np_dev;
     size_t choose_version();
@@ -28,6 +29,7 @@ private:
     uint64_t read(uint32_t fid, uint64_t offset, void* file);
     size_t write(u32 fid, u64 offset, size_t amount, const char* buf);
     r_getattr* get_attribute(uint32_t fid, uint64_t mask);
+    bool set_attribute(u32 fid, u64 mask, u64 value);
     size_t max_msize;
     
     uint32_t root;

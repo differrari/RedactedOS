@@ -59,6 +59,10 @@ bool boot_stat(const char *path, fs_stat *out_stat){
     return fs_driver->stat(path, out_stat);
 }
 
+bool boot_truncate(file *descriptor, size_t size){
+    return fs_driver->truncate(descriptor, size);
+}
+
 system_module boot_fs_module = (system_module){
     .name = "boot",
     .mount = "/boot",
@@ -69,6 +73,7 @@ system_module boot_fs_module = (system_module){
     .read = boot_partition_read,
     .write = boot_partition_write,
     .close = boot_partition_close,
+    .truncate = boot_truncate,
     .sread = 0,
     .swrite = 0,
     .getstat = boot_stat,
@@ -123,6 +128,10 @@ size_t shared_swrite(const char *path, const void *buf, size_t size){
     return p9Driver->swrite_file(path, buf, size);
 }
 
+bool shared_truncate(file *descriptor, size_t size){
+    return p9Driver->truncate(descriptor, size);
+}
+
 system_module p9_fs_module = (system_module){
     .name = "9PFS",
     .mount = "/shared",
@@ -133,6 +142,7 @@ system_module p9_fs_module = (system_module){
     .read = shared_read,
     .write = shared_write,
     .close = shared_close,
+    .truncate = shared_truncate,
     .sread = shared_sread,
     .swrite = shared_swrite,
     .getstat = shared_stat,
@@ -278,6 +288,21 @@ bool get_stat(const char *path, fs_stat *out_stat){
     }
     if (!mod->getstat) return false;
     return mod->getstat(search_path, out_stat);
+}
+
+bool truncate(file *descriptor, size_t size){
+    if (!open_files){
+        kprintf("[FS] No open files");
+        return false;
+    }
+    open_file_descriptors *ofile = (open_file_descriptors *)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!ofile || !ofile->mod || !ofile->mod->truncate || ofile->pid != get_current_proc_pid()) return false;
+    file gfd = (file){
+        .id = ofile->mfile_id,
+        .size = descriptor->size,
+        .cursor = descriptor->cursor,
+    };
+    return ofile->mod->truncate(&gfd, size);
 }
 
 int32_t close_pid;

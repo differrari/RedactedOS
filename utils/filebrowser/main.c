@@ -59,8 +59,6 @@ void pop_dir(){
 }
 
 int main(){
-    print("Haigh a dhomhain");
-    
     request_draw_ctx(&ctx);
     enter("/shared");
     

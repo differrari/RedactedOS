@@ -358,3 +358,7 @@ size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t
 bool FAT32FS::stat(const char *path, fs_stat *out_stat){
     return false;//TODO: stat
 }
+
+bool FAT32FS::truncate(file *descriptor, size_t size){
+    return false;//TODO: truncate
+}

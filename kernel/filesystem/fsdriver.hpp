@@ -15,4 +15,5 @@ public:
     virtual size_t list_contents(const char *path, void* buf, size_t size, file_offset *offset = 0) = 0;
     virtual void close_file(file* descriptor) = 0;
     virtual bool stat(const char *path, fs_stat *out_stat) = 0;
+    virtual bool truncate(file *descriptor, size_t size) = 0;
 };

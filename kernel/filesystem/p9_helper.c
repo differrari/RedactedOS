@@ -121,6 +121,24 @@ t_getattr* make_p9_getattr_packet(u32 fid, u64 mask){
     return packet;
 }
 
+t_setattr* make_p9_setattr_packet(u32 fid, u64 mask, u64 value){
+    t_setattr *packet = make_p9_packet(sizeof(t_setattr), P9_TSETATTR, false);
+    
+    write_unaligned32(&packet->fid,fid);
+    
+    switch (mask) {
+        case P9_SETATTR_MODE: write_unaligned32(&packet->mode, value & UINT32_MAX); break;
+        case P9_SETATTR_UID: write_unaligned32(&packet->uid, value & UINT32_MAX); break;
+        case P9_SETATTR_GID: write_unaligned32(&packet->gid, value & UINT32_MAX); break;
+        case P9_SETATTR_SIZE: write_unaligned64(&packet->size, value); break;
+        default: break;
+    }
+    
+    write_unaligned32(&packet->valid, mask & UINT32_MAX);
+    
+    return packet;
+}
+
 t_read* make_p9_read_packet(u32 fid, u64 offset, u64 amount){
     t_read *packet = make_p9_packet(sizeof(t_read), P9_TREAD, false);
     write_unaligned32(&packet->fid,fid);

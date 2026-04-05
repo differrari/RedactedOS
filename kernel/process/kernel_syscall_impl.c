@@ -133,6 +133,10 @@ extern bool statf(const char *path, fs_stat *out_stat){
     return get_stat(path, out_stat);
 }
 
+extern bool truncatef(file *descriptor, size_t size){
+    return truncate(descriptor,size);
+}
+
 extern void closef(file *descriptor){
     close_file(descriptor);
 }
