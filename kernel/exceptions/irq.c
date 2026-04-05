@@ -103,9 +103,12 @@ void irq_el1_handler() {
     } else irq = read32(GICC_BASE + 0xC);
 
     if (irq == IRQ_TIMER) {
+        bool can_preempt = true;
+        if (get_current_proc() && get_current_proc()->mm.ttbr0 && (get_current_proc()->spsr & 0xF) != 0) can_preempt = false;
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         syscall_depth--;
-        switch_proc(INTERRUPT);
+        if (can_preempt) switch_proc(INTERRUPT);
+        process_restore();
     } else if (irq == MSI_OFFSET + INPUT_IRQ){
         handle_usb_interrupt();
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);

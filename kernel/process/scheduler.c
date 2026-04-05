@@ -42,10 +42,6 @@ typedef struct {
     uint16_t pid;
 } procfs_owner;
 
-static bool process_saved_context(process_t *proc){
-    return proc && proc->id && proc->state != STOPPED && !proc->sleeping && proc->pc && proc->sp;
-}
-
 static bool process_is_known(process_t *proc){
     process_t *it = process_list;
     while (it) {
@@ -53,6 +49,20 @@ static bool process_is_known(process_t *proc){
         it = it->process_next;
     }
     return false;
+}
+
+static bool process_has_runtime_state(process_t *proc){
+    return proc && (proc->sp || proc->pc || proc->spsr || proc->stack || proc->heap_phys || proc->mm.ttbr0 || proc->output || proc->alloc_map || proc->bundle || proc->code || proc->code_size || proc->va);
+}
+
+static bool process_can_run(process_t *proc){
+    if (!proc && proc->id && proc->state != STOPPED && !proc->sleeping && proc->pc && proc->sp || !process_is_known(proc) || proc->pending_reset) return false;
+    if ((proc->spsr & 0xF) == 0) return !!proc->mm.ttbr0;
+    return !proc->mm.ttbr0;
+}
+
+static bool process_can_reset(process_t *proc){
+    return proc && proc->state == STOPPED && proc->pending_reset && !proc->procfs_refs;
 }
 
 static void enqueue_ready_process(process_t *proc){
@@ -104,25 +114,16 @@ void switch_proc(ProcSwitchReason reason) {
     while (!cqueue_is_empty(&ready_queue)) {
         process_t *queued = 0;
         if (!cqueue_dequeue(&ready_queue, &queued)) break;
+        if (!queued) continue;
+        if (process_is_known(queued)) queued->in_ready_queue = false;
+        if (queued->state != READY || !process_can_run(queued)) continue;
         next_proc = queued;
-        if (!next_proc) continue;
-        if (process_is_known(next_proc)) next_proc->in_ready_queue = false;
-        if (!process_saved_context(next_proc) || next_proc->state != READY || !process_is_known(next_proc) || ((next_proc->spsr & 0xF) == 0 && !next_proc->mm.ttbr0)) {
-            next_proc = 0;
-            continue;
-        }
         break;
     }
 
-    if (!next_proc) {
-        if (current_proc && current_proc->state == RUNNING && process_saved_context(current_proc)) {
-            if (process_is_known(current_proc) && (((current_proc->spsr & 0xF) != 0) || current_proc->mm.ttbr0)) next_proc = current_proc;
-        }
-        if (!next_proc && kernel_proc && process_saved_context(kernel_proc)) {
-            if (process_is_known(kernel_proc) && (((kernel_proc->spsr & 0xF) != 0) || kernel_proc->mm.ttbr0)) next_proc = kernel_proc;
-        }
-        if (!next_proc) panic("no runnable process", 0);
-    }
+    if (!next_proc && current_proc && current_proc->state == RUNNING && process_can_run(current_proc)) next_proc = current_proc;
+    if (!next_proc && kernel_proc && kernel_proc->state != STOPPED && process_can_run(kernel_proc)) next_proc = kernel_proc;
+    if (!next_proc) panic("no runnable process", 0);
 
     next_proc->state = RUNNING;
     current_proc = next_proc;
@@ -130,7 +131,7 @@ void switch_proc(ProcSwitchReason reason) {
     timer_reset(current_proc->priority);
     if (current_proc->mm.ttbr0) mmu_asid_ensure(&current_proc->mm);
     mmu_swap_ttbr(current_proc->mm.ttbr0 ? &current_proc->mm : 0);
-    if (prev && prev != current_proc && prev->state == STOPPED && !prev->procfs_refs) reset_process(prev);
+    if (prev && prev != current_proc && process_can_reset(prev)) reset_process(prev);
 
     process_restore();
 }
@@ -140,8 +141,19 @@ void save_syscall_return(uint64_t value){
 }
 
 void process_restore(){
-    if (!process_saved_context(current_proc)) panic("process_restore invalid process", cpec);
-    if (!process_is_known(current_proc)) panic("process_restore invalid process", cpec);
+    if (!current_proc) panic("process_restore null process", 0);
+    if (!process_is_known(current_proc)) panic("process_restore unknown process", cpec);
+    if (current_proc->pending_reset || current_proc->state == STOPPED || !current_proc->pc || !current_proc->sp) {
+        if (current_proc->mm.ttbr0) {
+            current_proc->pending_reset = true;
+            current_proc->state = STOPPED;
+            current_proc->sleeping = false;
+            current_proc->in_ready_queue = false;
+            switch_proc(HALT);
+            panic("process_restore recovery returned", cpec);
+        }
+        panic("process_restore invalid process", cpec);
+    }
     if ((current_proc->spsr & 0xF) == 0) {
         if (!current_proc->mm.ttbr0) panic("process_restore user process without ttbr0", cpec);
         if (current_proc->pc >= HIGH_VA) panic("user pc in kernel VA", current_proc->pc);
@@ -193,7 +205,7 @@ process_t* get_kernel_proc(){
 
 void ready_process(process_t *proc){
     irq_flags_t irq = irq_save_disable();
-    if (!proc || !proc->id || proc->state == STOPPED || proc->sleeping || proc->in_ready_queue) {
+    if (!proc || !proc->id || proc->state == STOPPED || proc->sleeping || proc->in_ready_queue || proc->pending_reset) {
         irq_restore(irq);
         return;
     }
@@ -216,16 +228,19 @@ uint16_t get_current_proc_pid(){
 }
 
 void reset_process(process_t *proc){
+    if (!proc) panic("reset_process null", 0);
+    if (proc == current_proc) panic("reset_process current", proc->id);
+    if (proc->procfs_refs) panic("reset_process with procfs refs", proc->id);
+
     uint16_t pid = proc->id;
     int32_t exit_code = proc->exit_code;
-    enum process_state state = proc->state;
     bool counted = proc->sp || proc->pc || proc->spsr || proc->stack || proc->heap_phys || proc->mm.ttbr0;
 
     irq_flags_t irq = irq_save_disable();
+    proc->pending_reset = false;
     proc->sleeping = false;
     proc->wake_at_msec = 0;
     proc->in_ready_queue = false;
-    proc->procfs_refs = 0;
 
     remove_sleeping_process(proc, pid);
 
@@ -311,7 +326,7 @@ void reset_process(process_t *proc){
         if (state_file && (uintptr_t)state_file->file_buffer.buffer == (uintptr_t)&proc->state) {
             enum process_state *snapshot = (enum process_state*)zalloc(sizeof(proc->state));
             if (snapshot) {
-                *snapshot = state;
+                *snapshot = STOPPED;
                 state_file->buf = (uptr)snapshot;
                 state_file->file_buffer = (buffer){
                     .buffer = snapshot,
@@ -389,6 +404,11 @@ void reset_process(process_t *proc){
     proc->heap_phys = 0;
     memset(&proc->mm, 0, sizeof(proc->mm));
 
+    proc->code = 0;
+    proc->code_size = 0;
+    proc->va = 0;
+    proc->out_fd = (file){0};
+
     proc->win_id = 0;
     proc->win_fb_va = 0;
     proc->win_fb_phys = 0;
@@ -400,7 +420,7 @@ void reset_process(process_t *proc){
 
     proc->id = pid;
     proc->exit_code = exit_code;
-    proc->state = state;
+    proc->state = STOPPED;
 }
 
 void init_main_process(){
@@ -430,11 +450,16 @@ void init_main_process(){
 }
 
 process_t* init_process(){
+    irq_flags_t irq = irq_save_disable();
     process_t* proc = process_list;
     while (proc) {
         if (proc != kernel_proc && proc->state == STOPPED && !proc->procfs_refs) {
-            if (proc->sp || proc->pc || proc->spsr || proc->stack || proc->heap_phys || proc->mm.ttbr0 || proc->output || proc->alloc_map || proc->bundle) reset_process(proc);
-            if (!proc->sp && !proc->stack && !proc->heap_phys && !proc->mm.ttbr0 && !proc->output && !proc->alloc_map) {
+            if (process_has_runtime_state(proc)) {
+                irq_restore(irq);
+                reset_process(proc);
+                irq = irq_save_disable();
+            }
+            if (!process_has_runtime_state(proc)) {
                 if (proc->postmortem_output) {
                     release((void*)proc->postmortem_output);
                     proc->postmortem_output = 0;
@@ -444,7 +469,12 @@ process_t* init_process(){
                 proc->exit_code = 0;
                 proc->state = BLOCKED;
                 proc->priority = PROC_PRIORITY_LOW;
+                proc->in_ready_queue = false;
+                proc->sleeping = false;
+                proc->wake_at_msec = 0;
+                proc->pending_reset = false;
                 proc_count++;
+                irq_restore(irq);
                 return proc;
             }
         }
@@ -460,6 +490,7 @@ process_t* init_process(){
     proc->priority = PROC_PRIORITY_LOW;
     proc->postmortem_output = 0;
     proc->postmortem_output_size = 0;
+    proc->process_next = 0;
     if (!process_list) process_list= proc;
     else {
         process_t *tail = process_list;
@@ -468,6 +499,7 @@ process_t* init_process(){
     }
 
     proc_count++;
+    irq_restore(irq);
     return proc;
 }
 
@@ -504,10 +536,10 @@ void stop_process(uint16_t pid, int32_t exit_code){
 
     if (proc->mm.ttbr0) mmu_swap_ttbr(0);
     switch_proc(HALT);
+    panic("stop_process returned", pid);
 }
 
 void stop_current_process(int32_t exit_code){
-    disable_interrupt();
     stop_process(get_current_proc_pid(), exit_code);
 }
 
@@ -826,7 +858,7 @@ void close_proc(file *fd) {
     if (owner_info && owner_info->proc && owner_info->proc->id == owner_info->pid) owner = owner_info->proc;
     if (owner) {
         if (owner->procfs_refs) owner->procfs_refs--;
-        if (owner->state == STOPPED && !owner->procfs_refs && (owner->sp || owner->pc || owner->spsr || owner->stack || owner->heap_phys || owner->mm.ttbr0 || owner->output || owner->alloc_map || owner->bundle)) reset_proc = owner;
+        if (process_can_reset(owner) && process_has_runtime_state(owner)) reset_proc = owner;
     }
 
     if (mfile->references > 0) mfile->references--;

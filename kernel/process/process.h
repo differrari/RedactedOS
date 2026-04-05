@@ -54,6 +54,7 @@ typedef struct process {
     kaddr_t postmortem_output;
     size_t postmortem_output_size;
     uint16_t procfs_refs;
+    bool pending_reset;
     file out_fd;
     int32_t exit_code;
     bool focused;
