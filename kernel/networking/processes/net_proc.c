@@ -140,7 +140,7 @@ static void run_http_server() {
     while (1) {
         http_connection_handle_t conn = http_server_accept(srv);
         if (!conn){
-            msleep(10);
+            msleep(50);
             continue;
         }
         HTTPRequestMsg req = http_server_recv_request(srv, conn);

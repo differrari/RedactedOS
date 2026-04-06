@@ -223,7 +223,7 @@ void VirtioAudioDriver::send_buffer(sizedptr buf){
     virtio_add_buffer(&audio_dev, index, buf.ptr, buf.size, true);
     cmd_index++;
     volatile virtq_used* u = audio_dev.queues[TRANSMIT_QUEUE].device;
-    while (u && (uint16_t)(cmd_index - u->idx) > 2) yield();
+    while (u && (uint16_t)(cmd_index - u->idx) > 2) msleep(1);
 }
 
 typedef struct virtio_snd_pcm_set_params { 

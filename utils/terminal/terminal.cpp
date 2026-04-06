@@ -194,6 +194,7 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
 
         seek(&state_fd, 0, SEEK_ABSOLUTE);
         if (readf(&state_fd, (char*)&state, sizeof(int)) != sizeof(int)) state = 0;
+        if (state && !n) msleep(20);
     } while (state);
 
     for (;;) {

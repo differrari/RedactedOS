@@ -2,6 +2,7 @@
 #include "bootprocess.h"
 #include "../kprocess_loader.h"
 #include "console/kio.h"
+#include "syscalls/syscalls.h"
 
 BootSM *state_machine;
 
@@ -9,6 +10,7 @@ BootSM *state_machine;
 extern "C" int eval_bootscreen(int argc, char* argv[]) {
     while (1){
         state_machine->eval_state();
+        msleep(25);
     }
     return 1;
 }

@@ -207,8 +207,10 @@ int window_system(){
     bool dragging = false;
     
     while (1){
+        bool active = false;
         check_shortcuts();
         if (mouse_button_pressed(MMB)){
+            active = true;
             if (!dragging && !drawing){
                 dragging = true;
                 start_point = get_mouse_pos();
@@ -227,6 +229,7 @@ int window_system(){
                 drawing = true;
                 start_point = get_mouse_pos();
             }
+            active = true;
             switch (mode){
                 case doodle_mode: {
                     gpu_point p = get_mouse_pos();
@@ -266,12 +269,14 @@ int window_system(){
         // }
         disable_interrupt();
         if (dirty_windows){
+            active = true;
             draw_desktop();
             linked_list_for_each(window_list, redraw_win);
             dirty_windows = false;
         }
         gpu_flush();
         enable_interrupt();
+        if (!active && !dirty_windows && !mouse_button_pressed(LMB) && !mouse_button_pressed(MMB)) msleep(25);
     }
     return 0;
 }

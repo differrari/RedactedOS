@@ -97,6 +97,7 @@ int login_screen(){
         old_kp = kp;
         gpu_flush();
         string_free(s);
+        msleep(25);
     }
     return 1;
 }

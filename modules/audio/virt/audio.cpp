@@ -160,8 +160,12 @@ static void mixer_run(){
         }else{
             uint64_t this_buffer_due = buffers_start_time + 
                                         (buffers_output * BUFFER_SEPARATION_MSECS) + BUFFER_PREROLL_MSECS;
-            while (timer_now_msec() < this_buffer_due)
-                yield();
+            while (1) {
+                uint64_t now = timer_now_msec();
+                if (now >= this_buffer_due) break;
+                uint64_t wait_msec = this_buffer_due - now;
+                msleep(wait_msec ? wait_msec : 1);
+            }
         }
         audio_submit_buffer();
         ++buffers_output;

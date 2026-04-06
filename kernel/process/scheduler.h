@@ -43,6 +43,8 @@ bool load_process_module(process_t *p, system_module *m);
 
 process_t* get_current_proc();
 process_t* get_kernel_proc();
+process_t* get_idle_proc();
+bool scheduler_in_idle();
 process_t* get_proc_by_pid(uint16_t pid);
 uint16_t get_current_proc_pid();
 

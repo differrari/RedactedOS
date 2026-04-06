@@ -3,6 +3,7 @@
 #include "hw/hw.h"
 #include "kernel_processes/kprocess_loader.h"
 #include "sysregs.h"
+#include "syscalls/syscalls.h"
 
 USBDriver *input_driver = 0x0;
 alignas(DWC2Driver) static uint8_t dwc2_driver_storage[sizeof(DWC2Driver)];
@@ -31,6 +32,7 @@ bool input_init(){
 int usb_process_poll(int argc, char* argv[]){
     while (1){
         if (input_driver) input_driver->poll_inputs();
+        msleep(1);
     }
     return 1;
 }
@@ -42,6 +44,7 @@ extern "C" void usb_start_polling(){
 int usb_process_fake_interrupts(int argc, char* argv[]){
     while (1){
         if (input_driver) input_driver->handle_interrupt();
+        msleep(1);
     }
     return 1;
 }

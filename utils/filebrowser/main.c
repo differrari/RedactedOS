@@ -170,7 +170,10 @@ int main(){
 
     while (true){
         kbd_event ev = {};
-        if (!read_event(&ev)) continue;
+        if (!read_event(&ev)) {
+            msleep(25);
+            continue;
+        }
         if (ev.type != KEY_PRESS) continue;
         if (ev.key == KEY_ESC) halt(0);
         if (ev.key == KEY_BACKSPACE){

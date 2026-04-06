@@ -23,9 +23,10 @@
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
 
-process_t *current_proc = 0;
-process_t *kernel_proc = 0;
-process_t *process_list = 0;
+static process_t *current_proc = 0;
+static process_t *kernel_proc = 0;
+static process_t *idle_proc = 0;
+static process_t *process_list = 0;
 uint16_t proc_count = 0;
 uint16_t next_proc_index = 1;
 
@@ -42,7 +43,16 @@ typedef struct {
     uint16_t pid;
 } procfs_owner;
 
+__attribute__((noreturn)) static void idle_entry() {
+    for (;;) {
+        asm volatile("dsb sy" ::: "memory");
+        asm volatile("wfi");
+    }
+}
+
 static bool process_is_known(process_t *proc){
+    if (!proc) return false;
+    if (proc == idle_proc) return true;
     process_t *it = process_list;
     while (it) {
         if (it == proc) return true;
@@ -56,7 +66,9 @@ static bool process_has_runtime_state(process_t *proc){
 }
 
 static bool process_can_run(process_t *proc){
-    if (!proc && proc->id && proc->state != STOPPED && !proc->sleeping && proc->pc && proc->sp || !process_is_known(proc) || proc->pending_reset) return false;
+    if (!proc) return false;
+    if (!process_is_known(proc) || proc->pending_reset) return false;
+    if (proc->state == STOPPED || proc->sleeping || !proc->pc || !proc->sp) return false;
     if ((proc->spsr & 0xF) == 0) return !!proc->mm.ttbr0;
     return !proc->mm.ttbr0;
 }
@@ -66,7 +78,7 @@ static bool process_can_reset(process_t *proc){
 }
 
 static void enqueue_ready_process(process_t *proc){
-    if (!proc || proc->in_ready_queue) return;
+    if (!proc || proc == idle_proc || proc->in_ready_queue) return;
     if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*),0,0);
     if (!cqueue_enqueue(&ready_queue, &proc)) panic("ready enqueue failed", proc->id);
     proc->in_ready_queue = true;
@@ -105,12 +117,15 @@ void update_sleep_timer() {
 }
 
 void switch_proc(ProcSwitchReason reason) {
-    // kprintf("Stopping execution of process %i at %x",current_proc, processes[current_proc].spsr);
     if (mmu_ttbr0_user_enabled()) panic("switch_proc with user ttbr0 active", current_proc ? current_proc->id : 0);
     if (proc_count == 0)
         panic("No processes active", 0);
     process_t*prev = current_proc, *next_proc = 0;
-    if (prev && prev->state == RUNNING) ready_process(prev);
+    if (prev && prev->state == RUNNING) {
+        if (prev == idle_proc) prev->state = BLOCKED;
+        else ready_process(prev);
+    }
+
     while (!cqueue_is_empty(&ready_queue)) {
         process_t *queued = 0;
         if (!cqueue_dequeue(&ready_queue, &queued)) break;
@@ -121,17 +136,23 @@ void switch_proc(ProcSwitchReason reason) {
         break;
     }
 
-    if (!next_proc && current_proc && current_proc->state == RUNNING && process_can_run(current_proc)) next_proc = current_proc;
-    if (!next_proc && kernel_proc && kernel_proc->state != STOPPED && process_can_run(kernel_proc)) next_proc = kernel_proc;
-    if (!next_proc) panic("no runnable process", 0);
+    if (!next_proc && current_proc && current_proc != idle_proc && current_proc->state == RUNNING && process_can_run(current_proc)) next_proc = current_proc;
+    if (!next_proc) next_proc = idle_proc;
+    if (!next_proc || !process_can_run(next_proc)) panic("no runnable process", 0);
+    //if (next_proc == idle_proc && prev != idle_proc) kprint("entering idle");
 
     next_proc->state = RUNNING;
     current_proc = next_proc;
     cpec = (uintptr_t)current_proc;
-    timer_reset(current_proc->priority);
+    if (current_proc == idle_proc) timer_disable();
+    else {
+        timer_enable();
+        timer_reset(current_proc->priority);
+    }
+
     if (current_proc->mm.ttbr0) mmu_asid_ensure(&current_proc->mm);
     mmu_swap_ttbr(current_proc->mm.ttbr0 ? &current_proc->mm : 0);
-    if (prev && prev != current_proc && process_can_reset(prev)) reset_process(prev);
+    if (prev && prev != current_proc && prev != idle_proc && process_can_reset(prev)) reset_process(prev);
 
     process_restore();
 }
@@ -201,6 +222,14 @@ process_t* get_current_proc(){
 
 process_t* get_kernel_proc(){
     return kernel_proc;
+}
+
+process_t* get_idle_proc(){
+    return idle_proc;
+}
+
+bool scheduler_in_idle(){
+    return current_proc == idle_proc;
 }
 
 void ready_process(process_t *proc){
@@ -429,6 +458,8 @@ void init_main_process(){
     size_t kernel_proc_size = (sizeof(process_t) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     kernel_proc = (process_t*)palloc(kernel_proc_size, MEM_PRIV_KERNEL, MEM_RW, true);
     if (!kernel_proc) panic("kernel process alloc failed", 0);
+    idle_proc = (process_t*)palloc(kernel_proc_size, MEM_PRIV_KERNEL, MEM_RW, true);
+    if (!idle_proc) panic("idle process alloc failed", 0);
 
     current_proc = kernel_proc;
     process_list = kernel_proc;
@@ -446,6 +477,17 @@ void init_main_process(){
     kernel_proc->postmortem_output_size = 0;
     kernel_proc->priority = PROC_PRIORITY_LOW;
     name_process(kernel_proc, "kernel");
+    idle_proc->state = BLOCKED;
+    idle_proc->priority = PROC_PRIORITY_LOW;
+    idle_proc->stack_size = 0x4000;
+    uintptr_t idle_stack = (uintptr_t)palloc(idle_proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
+    if (!idle_stack) panic("idle stack alloc failed", 0);
+    idle_proc->stack = idle_stack + idle_proc->stack_size;
+    idle_proc->sp = idle_proc->stack;
+    idle_proc->pc = (uintptr_t)idle_entry;
+    idle_proc->spsr = 0x205;
+    name_process(idle_proc, "idle");
+
     proc_count++;
 }
 

@@ -261,5 +261,6 @@ int main(int argc, char* argv[]){
     while (1)
     {
         draw_desktop();
+        msleep(process_active ? 25 : 40);
     }
 }
