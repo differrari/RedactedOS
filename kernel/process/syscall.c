@@ -908,11 +908,6 @@ void sync_el0_handler_c(){
             stop_current_process(ec);
         }
     } else {
-        if (far == 0 && elr == 0 && currentEL == 1 && ec == 0x21){
-            kprintf("Process has exited %llx", x0);
-            syscall_depth--;
-            stop_current_process(x0);
-        }
         if (currentEL == 1){
                 if (syscall_depth < 3){
                     if (syscall_depth < 1) kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);

@@ -10,6 +10,7 @@
 #include "sysregs.h"
 #include "memory/addr.h"
 #include "string/string.h"
+#include "syscalls/syscall_codes.h"
 
 typedef struct {
     uint64_t code_base_start;
@@ -26,6 +27,11 @@ typedef struct {
 } instruction_entry;
 
 static bool translate_verbose = false;
+static paddr_t shared_page = 0;
+
+static inline uint32_t aarch64_svc(uint16_t imm16){
+    return 0xD4000001u | ((uint32_t)imm16 << 5);
+}
 
 void translate_enable_verbose(){
     translate_verbose = true;
@@ -308,6 +314,16 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
         reset_process(proc);
         return 0;
     }
+    if (!shared_page) {
+        shared_page = palloc_inner(PAGE_SIZE, MEM_PRIV_SHARED, MEM_EXEC, true, false);
+        if (!shared_page) {
+            pfree((void*)dmap_pa_to_kva(dest), code_size);
+            reset_process(proc);
+            return 0;
+        }
+        memset((void*)dmap_pa_to_kva(shared_page), 0, PAGE_SIZE);
+        *(uint32_t*)(uintptr_t)dmap_pa_to_kva(shared_page) = aarch64_svc(HALT_CODE);
+    }
     
     // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
     
@@ -356,13 +372,16 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->code_size = code_size;
 
     uint64_t stack_max_size = 0x800000; //TODO it shouldnt be fix
+    uint64_t shared_pages = 1;
+    size_t shared_size = shared_pages * PAGE_SIZE;
     uaddr_t stack_top = 0x00007FFFFFFFF000ULL;
     uaddr_t stack_limit = stack_top - stack_max_size;
     uaddr_t stack_commit = stack_top;
     uaddr_t mmap_top = stack_limit - PAGE_SIZE;
+    uaddr_t shared_base = mmap_top - (shared_size - PAGE_SIZE);
 
     uaddr_t mmap_bottom = (max_map + (PAGE_SIZE*4) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-    if (mmap_bottom >= mmap_top) {
+    if (mmap_bottom > shared_base) {
         reset_process(proc);
         return 0;
     }
@@ -370,7 +389,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
 
     proc->mm.mmap_bottom = mmap_bottom;
     proc->mm.mmap_top = mmap_top;
-    proc->mm.mmap_cursor = mmap_top;
+    proc->mm.mmap_cursor = shared_base;
     proc->mm.stack_top = stack_top;
     proc->mm.stack_limit = stack_limit;
     proc->mm.stack_commit = stack_commit;
@@ -383,6 +402,8 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->mm.cap_anon_pages = total_pages / 2;
     if (proc->mm.cap_anon_pages < 128) proc->mm.cap_anon_pages = 128;
 
+    for (uint64_t i = 0; i < shared_pages; i++) mmu_map_4kb((uint64_t*)ttbr, (uint64_t)(shared_base + (i * PAGE_SIZE)), (paddr_t)(shared_page + (i * PAGE_SIZE)), MAIR_IDX_NORMAL, MEM_EXEC | MEM_NORM, MEM_PRIV_SHARED);
+    mm_add_vma(&proc->mm, shared_base, shared_base + shared_size, MEM_EXEC | MEM_NORM, VMA_KIND_SPECIAL, VMA_FLAG_NOFREE);
     mm_add_vma(&proc->mm, proc->mm.stack_limit, proc->mm.stack_top, MEM_RW, VMA_KIND_STACK, VMA_FLAG_DEMAND);
 
     proc->stack = stack_top;
@@ -393,6 +414,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->sp = proc->stack;
 
     proc->pc = (uintptr_t)(entry);
+    proc->regs[30] = shared_base;
     kprintf("User process %s allocated at %llx entry=%llx stack=%llx-%llx (phys=%llx-%llx) anon=%llx (phys=%llx)", name, proc, (uint64_t)proc->pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->stack_phys, (uint64_t)proc->stack_phys, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);
     proc->spsr = 0;
     proc->state = BLOCKED;

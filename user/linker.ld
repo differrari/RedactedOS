@@ -1,4 +1,4 @@
-ENTRY(_start)
+ENTRY(main)
 PHDRS {
     text PT_LOAD FLAGS(5);
     data PT_LOAD FLAGS(6);

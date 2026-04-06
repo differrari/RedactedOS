@@ -158,6 +158,7 @@ void switch_proc(ProcSwitchReason reason) {
 }
 
 void save_syscall_return(uint64_t value){
+    if (!current_proc) return;
     current_proc->PROC_X0 = value;
 }
 
@@ -546,10 +547,16 @@ process_t* init_process(){
 }
 
 void name_process(process_t *proc, const char *name){
+    if (!proc) return;
+
+    memset(proc->name, 0, sizeof(proc->name));
+    if (!name) return;
+
     uint32_t len = 0;
-    while (len < MAX_PROC_NAME_LENGTH && name[len] != '\0') len++;
-    for (uint32_t i = 0; i < len; i++)
-        proc->name[i] = name[i];
+    while (len+1 < MAX_PROC_NAME_LENGTH && name[len] != '\0') {
+        proc->name[len] = name[len];
+        len++;
+    }
 }
 
 void stop_process(uint16_t pid, int32_t exit_code){
@@ -685,9 +692,10 @@ bool load_process_module(process_t *p, system_module *m){
 
 size_t list_processes(const char *path, void *buf, size_t size, file_offset *offset){
 
+    if (!buf || !offset || size < sizeof(uint32_t)) return 0;
 	uint32_t count = 0;
 	
-    char *write_ptr = (char*)buf + 4;
+    char *write_ptr = (char*)buf + sizeof(uint32_t);
     process_t *proc = process_list;
     if (*offset) {
         while (proc && proc->id != *offset) proc = proc->process_next;
@@ -695,13 +703,18 @@ size_t list_processes(const char *path, void *buf, size_t size, file_offset *off
     }
 
     while (proc) {
-    	if (size - (uintptr_t)write_ptr - (uintptr_t)buf - 4 < MAX_PROC_NAME_LENGTH) break;
-        if (proc->id != 0 && proc->state != STOPPED){
-            count++;
-            char* name = proc->name;
-            while (*name) *write_ptr++ = *name++;
+        if (proc->id != 0 && proc->state != STOPPED) {
+            size_t name_len = 0;
+            while (name_len + 1 < MAX_PROC_NAME_LENGTH && proc->name[name_len] != '\0') name_len++;
+
+            size_t used = (size_t)(write_ptr - (char*)buf);
+            if (used + name_len + 1 > size) break;
+
+            if (name_len) memcpy(write_ptr, proc->name, name_len);
+            write_ptr += name_len;
             *write_ptr++ = 0;
             *offset = proc->id;
+            count++;
         }
         proc = proc->process_next;
     }
@@ -709,7 +722,7 @@ size_t list_processes(const char *path, void *buf, size_t size, file_offset *off
     *(uint32_t*)buf = count;
 
     //TODO: allow seeing files belonging to a proc (/out, /in, etc)
-    return size;
+    return (size_t)(write_ptr - (char*)buf);
 }
 
 FS_RESULT open_proc(const char *path, file *descriptor){
