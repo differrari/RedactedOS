@@ -14,3 +14,6 @@ typedef int (*dtb_node_handler)(const char *propname, const void *prop, uint32_t
 
 bool dtb_addresses(uint64_t *start, uint64_t *size);
 bool dtb_scan(const char *search_name, dtb_node_handler handler, dtb_match_t *match);
+void dtb_set_pa(uint64_t dtb_pa);
+uint64_t dtb_get_pa();
+bool dtb_get_header();

@@ -2,6 +2,8 @@
 #include "memory/mmu.h"
 #include "memory/page_allocator.h"
 #include "sysregs.h"
+#include "memory/addr.h"
+#include "memory/va_layout.h"
 #include "types.h"
 #include "exceptions/exception_handler.h"
 #include "console/kio.h"
@@ -56,22 +58,58 @@ void* pre_talloc_ptr = 0;
 uintptr_t pre_talloc_mem_limit = 0;
 
 bool can_automap = false;
+static bool talloc_high_va = false;
 
 void pre_talloc(){
-    pre_talloc_ptr = palloc_inner(GRANULE_2MB, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, true, can_automap);
+    paddr_t phys = palloc_inner(GRANULE_2MB, MEM_PRIV_KERNEL, MEM_RW, true, can_automap);
+    if (!phys) panic("pre_talloc palloc failed", 0);
+    pre_talloc_ptr = (void*)phys;
+    uint64_t sctlr = 0;
+    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+    if ((sctlr & 1) != 0) pre_talloc_ptr = (void*)dmap_pa_to_kva(phys);
     pre_talloc_mem_limit = (uintptr_t)pre_talloc_ptr + GRANULE_2MB;
 
-    if (!can_automap){
+    if (!can_automap || next_free_temp_memory == 0 || talloc_mem_limit == 0){
         can_automap = true;
         next_free_temp_memory = (uintptr_t)pre_talloc_ptr;
         talloc_mem_limit = pre_talloc_mem_limit;
     }
 
-    mmu_map_all((uintptr_t)pre_talloc_ptr);
+    mmu_map_all(phys);
+}
+
+void talloc_enable_high_va(){
+    if (talloc_high_va) return;
+
+    uint64_t sctlr = 0;
+    asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+    if ((sctlr & 1) == 0) return;
+
+    if (pre_talloc_ptr && (((uintptr_t)pre_talloc_ptr & HIGH_VA) != HIGH_VA)) pre_talloc_ptr = PHYS_TO_VIRT_P(pre_talloc_ptr);
+    if (pre_talloc_mem_limit && ((pre_talloc_mem_limit & HIGH_VA) != HIGH_VA)) pre_talloc_mem_limit = PHYS_TO_VIRT(pre_talloc_mem_limit);
+    if (next_free_temp_memory && ((next_free_temp_memory & HIGH_VA) != HIGH_VA)) next_free_temp_memory = PHYS_TO_VIRT(next_free_temp_memory);
+    if (talloc_mem_limit && ((talloc_mem_limit & HIGH_VA) != HIGH_VA)) talloc_mem_limit = PHYS_TO_VIRT(talloc_mem_limit);
+
+    if (temp_free_list && (((uintptr_t)temp_free_list & HIGH_VA) != HIGH_VA)){
+        temp_free_list = (FreeBlock*)PHYS_TO_VIRT((uintptr_t)temp_free_list);
+        FreeBlock* b = temp_free_list;
+        while (b && b->next && (((uintptr_t)b->next & HIGH_VA) != HIGH_VA)){
+            b->next = (FreeBlock*)PHYS_TO_VIRT((uintptr_t)b->next);
+            b = b->next;
+        }
+    }
+
+    talloc_high_va = true;
 }
 
 uint64_t talloc(uint64_t size){
     size = (size + 0xFFF) & ~0xFFF;
+    if (!talloc_high_va) talloc_enable_high_va();
+
+    if (next_free_temp_memory == 0 || talloc_mem_limit == 0) {
+        if (!pre_talloc_ptr) pre_talloc();
+        if (next_free_temp_memory == 0 || talloc_mem_limit == 0) panic("talloc not initialized", next_free_temp_memory);
+    }
 
     if (talloc_verbose){
         uart_raw_puts("[talloc] Requested size: ");
@@ -102,9 +140,9 @@ uint64_t talloc(uint64_t size){
         if (!pre_talloc_ptr)
             panic("Kernel allocator overflow", next_free_temp_memory);
 
+        pre_talloc();
         next_free_temp_memory = (uintptr_t)pre_talloc_ptr;
         talloc_mem_limit = pre_talloc_mem_limit;
-        pre_talloc();
     }
 
     uint64_t result = next_free_temp_memory;
@@ -131,12 +169,12 @@ void temp_free(void* ptr, uint64_t size){
         uart_raw_putc('\n');
     }
 
-    memset(PHYS_TO_VIRT_P(ptr), 0, size);
+    memset(ptr, 0, size);
 
-    FreeBlock* block = VIRT_TO_PHYS_P(ptr);
+    FreeBlock* block = (FreeBlock*)ptr;
     block->size = size;
     block->next = temp_free_list;
-    temp_free_list = ptr;
+    temp_free_list = block;
 }
 
 void enable_talloc_verbose(){
@@ -151,7 +189,7 @@ uint64_t mem_get_kmem_end(){
     return (uint64_t)&kcode_end;
 }
 
-int handle_mem_node(const char *propname, const void *prop, uint32_t len, dtb_match_t *match){
+/* int handle_mem_node(const char *propname, const void *prop, uint32_t len, dtb_match_t *match){
     if (strcmp(propname, "reg") == 0 && len >= 16){
         uint32_t *p = (uint32_t *)prop;
         match->reg_base = ((uint64_t)__builtin_bswap32(p[0]) << 32) | __builtin_bswap32(p[1]);
@@ -182,7 +220,7 @@ void calc_ram(){
     if (USE_DTB && get_memory_region(&total_ram_start, &total_ram_size)){
         calculated_ram_end = total_ram_start + total_ram_size;
 
-        calculated_ram_start = ((uint64_t)&kcode_end) + 0x1;
+        calculated_ram_start = ((uint64_t)&kcode_end) - KERNEL_IMAGE_VA_BASE + 0x1;
         calculated_ram_start = (calculated_ram_start + ((1ULL << 21) - 1)) & ~((1ULL << 21) - 1);
 
         calculated_ram_end = calculated_ram_end & ~((1ULL << 21) - 1);
@@ -193,6 +231,16 @@ void calc_ram(){
         calculated_ram_start = CRAM_START;
     }
 
+    calculated_ram_size = calculated_ram_end - calculated_ram_start;
+}
+*/
+//TODO see dtb.c
+
+void calc_ram(){
+    total_ram_start = RAM_START;
+    total_ram_size = RAM_SIZE;
+    calculated_ram_end = CRAM_END;
+    calculated_ram_start = CRAM_START;
     calculated_ram_size = calculated_ram_end - calculated_ram_start;
 }
 

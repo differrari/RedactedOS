@@ -101,7 +101,7 @@ public:
         }
 
         netlog_socket_event(&log_opts, &ev);
-        free_sized(out.data, out.mem_length);
+        string_free(out);
 
         if (sent < 0) {
             resp.status_code = (HttpError)sent;
@@ -119,12 +119,12 @@ public:
                 continue;
             }
             if (r < 0) {
-                free_sized(buf.data, buf.mem_length);
+                string_free(buf);
                 resp.status_code = (HttpError)r;
                 return resp;
             }
             if (r == 0) {
-                free_sized(buf.data, buf.mem_length);
+                string_free(buf);
                 resp.status_code = (HttpError)SOCK_ERR_PROTO;
                 return resp;
             }
@@ -192,7 +192,7 @@ public:
         ev1.remote_ep = sock->get_remote_ep();
         netlog_socket_event(&log_opts, &ev1);
 
-        free_sized(buf.data, buf.mem_length);
+        string_free(buf);
         return resp;
     }
 

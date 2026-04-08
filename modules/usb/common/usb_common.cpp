@@ -2,8 +2,13 @@
 #include "xhci.hpp"
 #include "hw/hw.h"
 #include "kernel_processes/kprocess_loader.h"
+#include "sysregs.h"
+#include "syscalls/syscalls.h"
 
 USBDriver *input_driver = 0x0;
+alignas(DWC2Driver) static uint8_t dwc2_driver_storage[sizeof(DWC2Driver)];
+alignas(XHCIDriver) static uint8_t xhci_driver_storage[sizeof(XHCIDriver)];
+
 
 bool input_init(){
     #if QEMU
@@ -11,32 +16,41 @@ bool input_init(){
     #else
     if (BOARD_TYPE == 2 && RPI_BOARD == 3){
     #endif
-        input_driver = new DWC2Driver();
+        input_driver = new (dwc2_driver_storage)DWC2Driver();
     } else {
-        input_driver = new XHCIDriver();
+        input_driver = new (xhci_driver_storage)XHCIDriver();
     }
-    return input_driver->init();
+
+    if (!input_driver->init()) {
+        input_driver = 0;
+        return false;
+    }
+
+    return true;
 }
 
 int usb_process_poll(int argc, char* argv[]){
     while (1){
         if (input_driver) input_driver->poll_inputs();
+        msleep(1);
     }
     return 1;
 }
 
-void usb_start_polling(){
+extern "C" void usb_start_polling(){
     if (input_driver) input_driver->poll_inputs();
 }
 
 int usb_process_fake_interrupts(int argc, char* argv[]){
     while (1){
-        input_driver->handle_interrupt();
+        if (input_driver) input_driver->handle_interrupt();
+        msleep(1);
     }
     return 1;
 }
 
 extern "C" void init_usb_process(){
+    if (!input_driver) return;
     if (!input_driver->use_interrupts)
         create_kernel_process("input_poll", &usb_process_poll, 0, 0);
     if (input_driver->quirk_simulate_interrupts)
@@ -44,6 +58,17 @@ extern "C" void init_usb_process(){
 }
 
 extern "C" void handle_usb_interrupt(){
+    if (!input_driver) {
+        input_driver = 0;
+        return;
+    }
+
+    uintptr_t p = (uintptr_t)input_driver;
+    if ((p & HIGH_VA) != HIGH_VA) {
+        input_driver = 0;
+        return;
+    }
+
     if (input_driver->use_interrupts) input_driver->handle_interrupt();
 }
 

@@ -1,16 +1,20 @@
 #include "terminal.hpp"
 #include "alloc/allocate.h"
+#include "std/std.h"
 #include "input_keycodes.h"
-#include "syscalls/syscalls.h"
-#include "memory/memory.h"
 
 Terminal::Terminal() : Console() {
-    u32 color_buf[2] = {};
+    uint32_t color_buf[2] = {};
     sreadf("/theme", &color_buf, sizeof(uint64_t));
     default_bg_color = color_buf[0];
     bg_color = color_buf[0];
     default_text_color = color_buf[1];
-    text_color = color_buf[1];
+    if ((default_bg_color & 0xFF000000) == 0) default_bg_color |= 0xFF000000;
+    if ((default_text_color & 0xFF000000) == 0) default_text_color |= 0xFF000000;
+
+    bg_color = default_bg_color;
+    text_color = default_text_color;
+    if (text_color == bg_color) text_color = default_text_color = 0xFFFFFFFF;
 
     char_scale = 2;
     prompt_length = 2;
@@ -162,7 +166,7 @@ void Terminal::end_command(){
 }
 
 bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
-    uint16_t proc = exec(cmd, argc, argv);
+    int32_t proc = exec(cmd, argc, argv, EXEC_MODE_KEEP_FOCUS);
     if (!proc) return false;
 
     string s1 = string_format("/proc/%i/out", proc);
@@ -170,9 +174,9 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
 
     file out_fd, state_fd;
     openf(s1.data, &out_fd);
-    free_sized(s1.data, s1.mem_length);
+    string_free(s1);
     openf(s2.data, &state_fd);
-    free_sized(s2.data, s2.mem_length);
+    string_free(s2);
 
     int state = 1;
     size_t amount = 0x100;
@@ -188,7 +192,9 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
         buf[n] = 0;
         if (n) put_string(buf);
 
-        readf(&state_fd, (char*)&state, sizeof(int));
+        seek(&state_fd, 0, SEEK_ABSOLUTE);
+        if (readf(&state_fd, (char*)&state, sizeof(int)) != sizeof(int)) state = 0;
+        if (state && !n) msleep(20);
     } while (state);
 
     for (;;) {
@@ -198,13 +204,13 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
         put_string(buf);
     }
 
-    free_sized(buf, amount + 1);
+    release(buf);
     closef(&out_fd);
     closef(&state_fd);
 
     string exit_msg = string_format("\nProcess %i ended.", proc);
     put_string(exit_msg.data);
-    free_sized(exit_msg.data, exit_msg.mem_length);
+    string_free(exit_msg);
     return true;
 }
 
@@ -230,13 +236,13 @@ const char** Terminal::parse_arguments(char *args, int *count){
 void Terminal::run_command(){
     if (input_len) {
         if (history_len == history_max) {
-            if (history[0]) free_sized(history[0], strlen(history[0]) + 1);
+            if (history[0]) release(history[0]);
             for (uint32_t i = 1; i < history_max; i++) history[i - 1] = history[i];
             history_len = history_max - 1;
         }
 
         uint32_t n = input_len;
-        char *copy = (char*)malloc(n + 1);
+        char *copy = (char*)zalloc(n + 1);
         if (copy) {
             memcpy(copy, input_buf, n);
             copy[n] = 0;
@@ -287,8 +293,8 @@ void Terminal::run_command(){
     }
 
     if (argv) release((void*)argv);
-    free_sized(cmd.data, cmd.mem_length);
-    if (args_copy.mem_length) free_sized(args_copy.data, args_copy.mem_length);
+    string_free(cmd);
+    string_free(args_copy);
 
     command_running = true;
 }
@@ -379,8 +385,9 @@ bool Terminal::handle_input(){
 }
 
 draw_ctx* Terminal::get_ctx(){
-    if (dctx) free_sized(dctx, sizeof(draw_ctx));
-    draw_ctx *ctx = (draw_ctx*)malloc(sizeof(draw_ctx));
+    if (dctx) release(dctx);
+    draw_ctx *ctx = (draw_ctx*)zalloc(sizeof(draw_ctx));
+    if (!ctx) return nullptr;
     request_draw_ctx(ctx);
     return ctx;
 }

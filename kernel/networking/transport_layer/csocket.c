@@ -33,6 +33,7 @@ static inline void check_mem(){
 
 bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptions* extra, uint16_t pid, SocketHandle *out_handle){
     check_mem();
+    if (!out_handle) return false;
     socket_handle_t *in_handle = {};
     switch (protocol) {
         case PROTO_UDP:
@@ -46,7 +47,7 @@ bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptio
         kprintf("[SOCKET] failed to create socket for %i",pid);
         return false;
     }
-    out_handle->id = socket_ids;
+    out_handle->id = socket_ids++;
     out_handle->connection = (net_l4_endpoint){};
     out_handle->protocol = protocol;
 

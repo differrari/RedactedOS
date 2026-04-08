@@ -41,3 +41,4 @@ extern uintptr_t PM_BASE;
 void detect_hardware();
 void print_hardware();
 void hw_high_va();
+void hw_mmio_hole_phys(uint64_t *start, uint64_t *end);

@@ -8,9 +8,12 @@ extern "C" {
 
 void timer_init(uint64_t msecs);
 void timer_reset(uint64_t time);
+void timer_enable();
+void timer_disable();
 
 void virtual_timer_reset(uint64_t smsecs);
 void virtual_timer_enable();
+void virtual_timer_disable();
 uint64_t virtual_timer_remaining_msec();
 
 uint64_t timer_now();

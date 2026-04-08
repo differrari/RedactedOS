@@ -1,5 +1,4 @@
 #pragma once
-
 // ***************************************
 // SCTLR_EL1, System Control Register (EL1), Page 2654 of AArch64-Reference-Manual.
 // ***************************************
@@ -38,7 +37,9 @@
 
 #define SPSR_MASK_ALL (7 << 6)
 #define SPSR_EL1h (5 << 0)
-#define SPSR3_VALUE (SPSR_MASK_ALL | SPSR_EL1h)
+#define SPSR_EL2h (9 << 0)
+#define SPSR3_VALUE (SPSR_MASK_ALL | SPSR_EL2h)
+#define SCTLR_VALUE_EARLY (SCTLR_RESERVED | SCTLR_EE_LITTLE_ENDIAN | SCTLR_I_CACHE_DISABLED | SCTLR_D_CACHE_DISABLED | SCTLR_MMU_DISABLED)
 
 // ***************************************
 // CNTHCTL_EL2, Counter-timer Hypervisor Control Register (EL2) Page 9569 of AArch64-Reference-Manual.
@@ -52,17 +53,26 @@
 // MMU
 // ***************************************
 
-//30 = Translation granule EL1. 10 = 4kb | 14 = TG EL0 00 = 4kb. 0xFFFFFFFF to translate to 64
-#define TCR_VALUE ((0xFFFFFFFF << 32) | ((64 - 48) << 0) | ((64 - 48) << 16) | (0b00 << 14) | (0b10 << 30))
+#define TCR_T0SZ (64-48)
+#define TCR_T1SZ (64-48)
+#define TCR_TG0_4KB (0b00)
+#define TCR_TG1_4KB (0b10)
+#define TCR_SH_INNER (0b11)
+#define TCR_RGN_WBWA (0b01)
+
+#define TCR_VALUE_BASE (0ULL | (TCR_T0SZ << 0) | (TCR_T1SZ << 16) \
+        | (TCR_TG0_4KB << 14) | (TCR_TG1_4KB << 30) | (TCR_SH_INNER << 12) \
+        | (TCR_SH_INNER << 28) | (TCR_RGN_WBWA << 8) | (TCR_RGN_WBWA << 10) \
+        | (TCR_RGN_WBWA << 24) | (TCR_RGN_WBWA << 26))
 
 #define MAIR_DEVICE_nGnRnE 0b00000000
-#define MAIR_NORMAL_NOCACHE 0b01000100
+#define MAIR_NORMAL_WBWA 0xFF
 #define MAIR_IDX_DEVICE 0
 #define MAIR_IDX_NORMAL 1
 
-#define MAIR_VALUE ((MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_NOCACHE << (MAIR_IDX_NORMAL * 8)))
+#define MAIR_VALUE ((MAIR_DEVICE_nGnRnE << (MAIR_IDX_DEVICE * 8)) | (MAIR_NORMAL_WBWA << (MAIR_IDX_NORMAL * 8)))
 
-#define HIGH_VA 0xFFFF000000000000ULL
+#define HIGH_VA 0xFFFF800000000000ULL
 #define PHYS_TO_VIRT(x) (((uintptr_t)(x) != 0) ? ((uintptr_t)(x) | HIGH_VA) : 0)
 #define VIRT_TO_PHYS(x) (((uintptr_t)(x) != 0) ? ((uintptr_t)(x) & ~HIGH_VA) : 0)
 

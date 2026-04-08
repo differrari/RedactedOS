@@ -13,12 +13,18 @@
 #include "filesystem/filesystem.h"
 #include "sysregs.h"
 #include "memory/mmu.h"
+#include "memory/addr.h"
+extern page_index *p_index;
 
 void* malloc(size_t size){
-    process_t* k = get_proc_by_pid(1);
-    void* ptr = kalloc((void*)k->heap, size, ALIGN_16B, MEM_PRIV_KERNEL);
-    if (size >= PAGE_SIZE)
-        register_allocation(k->alloc_map, ptr, size);//TODO: not fully correct, but this will become a syscall for pages soon so it won't matter
+    process_t* k = get_kernel_proc();
+    if (!k) return 0;
+
+    if (!k->heap_phys) return 0;
+
+    void* ptr = kalloc((void*)dmap_pa_to_kva(k->heap_phys), size, ALIGN_16B, MEM_PRIV_KERNEL);
+    if (ptr && size >= PAGE_SIZE && k->alloc_map)
+        register_allocation(k->alloc_map, ptr, size);
     return ptr;
 }
 
@@ -27,15 +33,29 @@ void free_sized(void*ptr, size_t size){
 }
 
 void* page_alloc(size_t size){
-    process_t* k = get_proc_by_pid(1);//TODO: can we make this more fragmented? This inside a syscall, current proc outside
-    void *ptr = palloc(size, MEM_PRIV_KERNEL, MEM_RW, true);
-    register_allocation(k->alloc_map, ptr, size);
+    if (!size) return 0;
+    process_t* k = get_kernel_proc();//TODO: can we make this more fragmented? This inside a syscall, current proc outside
+    void *ptr = palloc(size, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, true);
+    if (k && k->alloc_map && ptr) register_allocation(k->alloc_map, ptr, size);
     return ptr;
 }
 
 void page_free(void *ptr){
-    process_t* k = get_proc_by_pid(1);//TODO: can we make this more fragmented? This inside a syscall, current proc outside
-    free_registered(k->alloc_map, ptr);
+    if (!ptr) return;
+    if (((uintptr_t)ptr & (PAGE_SIZE - 1)) != 0) return;
+    process_t* k = get_kernel_proc();//TODO: can we make this more fragmented? This inside a syscall, current proc outside
+
+    if (k && k->alloc_map && get_alloc_size(k->alloc_map, ptr)) {
+        free_registered(k->alloc_map, ptr);
+        return;
+    }
+
+    if (p_index && get_alloc_size(p_index, ptr)) {
+        free_registered(p_index, ptr);
+        return;
+    }
+
+    pfree(ptr, PAGE_SIZE);
 }
 
 extern void printl(const char *str){
@@ -56,9 +76,9 @@ extern void get_mouse_status(mouse_data *in){
     in->position = convert_mouse_position(get_mouse_pos());
 }
 
-extern uint16_t exec(const char* prog_name, int argc, const char* argv[]){
-    process_t *p = execute(prog_name, argc, argv);
-    return p->id;
+extern int32_t exec(const char* prog_name, int argc, const char* argv[], uint32_t mode){
+    process_t *p = execute(prog_name, argc, argv, mode);
+    return p ? (int32_t)p->id : 0;
 }
 
 extern void request_draw_ctx(draw_ctx* d_ctx){

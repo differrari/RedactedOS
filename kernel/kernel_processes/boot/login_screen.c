@@ -29,6 +29,7 @@ int login_screen(){
         int height = char_size * 2;
 
         draw_ctx *ctx = gpu_get_ctx();
+        if (!ctx) return 1;
 
         label(ctx, (text_ui_config){
             .text = system_config.system_name,
@@ -74,7 +75,7 @@ int login_screen(){
                     if (key == KEY_ENTER || key == KEY_KPENTER){
                         if (strcmp(buf,system_config.default_pwd) == 0){
                             free_sized(buf, 256);
-                            free_sized(s.data,s.mem_length);
+                            string_free(s);
                             sys_set_secure(false);
                             stop_current_process(0);
                         } else
@@ -95,7 +96,8 @@ int login_screen(){
 
         old_kp = kp;
         gpu_flush();
-        free_sized(s.data,s.mem_length);
+        string_free(s);
+        msleep(25);
     }
     return 1;
 }

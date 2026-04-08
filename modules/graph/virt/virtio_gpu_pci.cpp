@@ -73,7 +73,7 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     resource_id_counter = 0;
     
     framebuffer_size = screen_size.width * screen_size.height * BPP;
-    framebuffer = VIRT_TO_PHYS((uintptr_t)kalloc(gpu_dev.memory_page, framebuffer_size, ALIGN_4KB, MEM_PRIV_KERNEL));
+    framebuffer = (uintptr_t)kalloc(gpu_dev.memory_page, framebuffer_size, ALIGN_4KB, MEM_PRIV_KERNEL);
 
     ctx = {
         .dirty_rects = {},
@@ -96,7 +96,7 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
         return false;
     }
     
-    if (!attach_backing(fb_resource_id, (sizedptr){framebuffer,framebuffer_size})){ 
+    if (!attach_backing(fb_resource_id, (sizedptr){VIRT_TO_PHYS(framebuffer),framebuffer_size})){ 
         kprintf("[VIRTIO_GPU error] failed to attach backing");
         return false;
     }
@@ -106,6 +106,7 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
     else
         kprintf("[VIRTIO_GPU error] GPU did not return valid scanout data");
 
+    gpu_dev.common_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
     return true;
 }
 

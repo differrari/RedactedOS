@@ -24,11 +24,20 @@
 #include "theme/theme.h"
 #include "tests/test_runner.h"
 #include "pci/pcie.h"
+#include "dtb.h"
 #include "filesystem/tmp/tmp_fs.h"
+#include "std/memory.h"
 
-void kernel_main() {
+extern char __bss_start[];
+extern char __bss_end[];
+void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
+    memset(__bss_start, 0, (size_t)((uintptr_t)__bss_end - (uintptr_t)__bss_start));
+    BOARD_TYPE = (uint8_t)board_type;
+    dtb_set_pa(dtb_pa);
+    if (dtb_get_header()) USE_DTB = 1;
 
     detect_hardware();
+    hw_high_va();
     
     pre_talloc();
     mmu_init();
@@ -67,18 +76,19 @@ void kernel_main() {
 
     bool usb_available = can_init_usb ? load_module(&usb_module) : false;
     bool network_available = false;
+    bool audio_available = false;
     if (BOARD_TYPE == 1){
         if (system_config.use_net)
             network_available = load_module(&net_module);
 
-        load_module(&audio_module);
+        audio_available = load_module(&audio_module);
     }
 
     kprint("Kernel initialization finished");
     
     kprint("Starting processes");
 
-    if (BOARD_TYPE == 1) init_audio_mixer();
+    if (BOARD_TYPE == 1 && audio_available) init_audio_mixer();
     
     init_filesystem();
 

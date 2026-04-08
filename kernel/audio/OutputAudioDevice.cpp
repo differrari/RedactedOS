@@ -8,6 +8,7 @@ void OutputAudioDevice::populate(){
 }
 
 sizedptr OutputAudioDevice::request_buffer(){
+    *(uint32_t*)(buffer + write_ptr) = stream_id;
     sizedptr ptr = (sizedptr){buffer + write_ptr + header_size, buf_size};
     write_ptr += packet_size;
     if (write_ptr + packet_size >= BUF_SIZE) write_ptr = 0;

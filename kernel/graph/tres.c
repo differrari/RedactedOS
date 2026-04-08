@@ -7,6 +7,12 @@
 #include "ui/graphic_types.h"
 #include "bin/bin_mod.h"
 #include "math/math.h"
+#include "memory/mm_process.h"
+#include "memory/mmu.h"
+#include "memory/addr.h"
+#include "memory/page_allocator.h"
+#include "console/kio.h"
+#include "exceptions/irq.h"
 
 linked_list_t *window_list;
 window_frame *focused_window;
@@ -123,11 +129,19 @@ bool create_window(i32 x, i32 y, u32 width, u32 height){
     
     linked_list_push_front(window_list, PHYS_TO_VIRT_P(frame));
     gpu_create_window(x,y, width, height, &frame->win_ctx);
-    process_t *p = execute("/boot/redos/system/launcher.red/launcher.elf", 0, 0);
+
+    irq_flags_t irq = irq_save_disable();
+    process_t *p = execute("/boot/redos/system/launcher.red/launcher.elf", 0, 0, 0);
+    if (!p){
+        irq_restore(irq);
+        return false;
+    }
     p->win_id = frame->win_id;
     frame->pid = p->id;
     sys_set_focus(p->id);
     dirty_windows = true;
+    irq_restore(irq);
+
     return true;
 }
 
@@ -136,6 +150,18 @@ void resize_window(uint32_t width, uint32_t height){
     linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
+        process_t *proc = get_all_processes();
+        while (proc) {
+            if (proc->win_id == frame->win_id && proc->mm.ttbr0 && proc->win_fb_va && proc->win_fb_size){
+                mm_remove_vma(&proc->mm, proc->win_fb_va, proc->win_fb_va + proc->win_fb_size);
+                for (uintptr_t va = proc->win_fb_va; va < proc->win_fb_va + proc->win_fb_size; va += PAGE_SIZE) mmu_unmap_and_get_pa((uint64_t*)proc->mm.ttbr0, va, 0);
+                mmu_flush_asid(proc->mm.asid);
+                proc->win_fb_va = 0;
+                proc->win_fb_phys = 0;
+                proc->win_fb_size = 0;
+            }
+            proc = proc->process_next;
+        }
         gpu_resize_window(width, height, &frame->win_ctx);
         frame->width = width;
         frame->height = height;
@@ -147,13 +173,45 @@ void resize_window(uint32_t width, uint32_t height){
 void get_window_ctx(draw_ctx* out_ctx){
     process_t *p = get_current_proc();
     linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
-    if (node && node->data){
-        window_frame* frame = (window_frame*)node->data;
-        if (out_ctx->width && out_ctx->height)
-            resize_window(out_ctx->width, out_ctx->height);
-        *out_ctx = frame->win_ctx;
-        frame->pid = p->id;
+    if (!node || !node->data) return;
+
+    window_frame* frame = (window_frame*)node->data;
+    if (out_ctx->width && out_ctx->height)
+        resize_window(out_ctx->width, out_ctx->height);
+
+    frame->pid = p->id;
+    *out_ctx = frame->win_ctx;
+
+    if (!p || !p->mm.ttbr0) return;
+
+    size_t fb_size = (size_t)frame->win_ctx.width * (size_t)frame->win_ctx.height *sizeof(uint32_t);
+    if (!fb_size) return;
+
+    paddr_t pa = pt_va_to_pa(frame->win_ctx.fb);
+    size_t map_size = count_pages(fb_size, PAGE_SIZE) * PAGE_SIZE;
+
+    if (p->win_fb_va && (p->win_fb_size != map_size || p->win_fb_phys != pa)) {
+        mm_remove_vma(&p->mm, p->win_fb_va, p->win_fb_va + p->win_fb_size);
+        for (uintptr_t va = p->win_fb_va; va < p->win_fb_va + p->win_fb_size; va += PAGE_SIZE) mmu_unmap_and_get_pa((uint64_t*)p->mm.ttbr0, va, 0);
+        mmu_flush_asid(p->mm.asid);
+        p->win_fb_va = 0;
+        p->win_fb_phys = 0;
+        p->win_fb_size = 0;
     }
+
+    if (!p->win_fb_va) {
+        uintptr_t user_fb = mm_alloc_mmap(&p->mm, fb_size, MEM_RW, VMA_KIND_SPECIAL, 0);
+        if (!user_fb) return;
+
+        for (size_t off = 0; off < map_size; off += PAGE_SIZE) mmu_map_4kb((uint64_t*)p->mm.ttbr0, user_fb + off, pa + off, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
+        mmu_flush_asid(p->mm.asid);
+
+        p->win_fb_va = user_fb;
+        p->win_fb_phys = pa;
+        p->win_fb_size = map_size;
+    }
+
+    out_ctx->fb = (uint32_t*)p->win_fb_va;
 }
 
 void commit_frame(draw_ctx* frame_ctx, window_frame* frame){
@@ -228,14 +286,16 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame){
 u16 window_fallback_focus(u16 win_id, u16 skip_id){
     linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&win_id), PHYS_TO_VIRT_P(find_window));
     if (!node || !node->data) return 0;
-    process_t *procs = get_all_processes();
-    for (i16 i = MAX_PROCS - 1; i >= 0; i--){
-        if (procs[i].state != STOPPED && procs[i].win_id == win_id && procs[i].id != skip_id){
+
+    process_t *proc = get_all_processes();
+    while (proc) {
+        if (proc->state != STOPPED && proc->win_id == win_id && proc->id != skip_id){
             window_frame *frame = node->data;
-            frame->pid = procs[i].id;
-            sys_set_focus(procs[i].id);
-            return procs[i].id;
+            frame->pid = proc->id;
+            sys_set_focus(proc->id);
+            return proc->id;
         }
+        proc = proc->process_next;
     }
 
     release(node->data);

@@ -106,10 +106,7 @@ typedef struct t_attach {
     uint32_t fid;
     uint32_t afid;
     uint16_t uname_len;
-    char uname[8];
-    uint16_t aname_len;
-    char aname[1];
-    uint32_t n_uname;
+    char payload[1];
 }__attribute__((packed)) t_attach;
 
 t_attach* make_p9_attach_packet();
@@ -167,6 +164,12 @@ typedef struct t_walk {
     uint16_t num_names;
 }__attribute__((packed)) t_walk;
 
+typedef struct r_walk {
+    p9_packet_header header;
+    uint16_t num_qids;
+    uint8_t qids[13];
+}__attribute__((packed)) r_walk;
+
 t_walk* make_p9_walk_packet(u32 fid, literal path);
 
 #define P9_GETATTR_MODE         0x00000001ULL
@@ -180,13 +183,11 @@ t_walk* make_p9_walk_packet(u32 fid, literal path);
 #define P9_GETATTR_INO          0x00000100ULL
 #define P9_GETATTR_SIZE         0x00000200ULL
 #define P9_GETATTR_BLOCKS       0x00000400ULL
-
 #define P9_GETATTR_BTIME        0x00000800ULL
 #define P9_GETATTR_GEN          0x00001000ULL
 #define P9_GETATTR_DATA_VERSION 0x00002000ULL
-
-#define P9_GETATTR_BASIC        0x000007ffULL /* Mask for fields up to BLOCKS */
-#define P9_GETATTR_ALL          0x00003fffULL /* Mask for All fields above */
+#define P9_GETATTR_BASIC        0x000007ffULL
+#define P9_GETATTR_ALL          0x00003fffULL
 
 typedef struct t_getattr {
     p9_packet_header header;
@@ -262,6 +263,13 @@ typedef struct r_read {
 }__attribute__((packed)) r_write;
 
 t_write* make_p9_write_packet(u32 fid, u64 offset, size_t amount, const char* buf);
+
+typedef struct t_clunk {
+    p9_packet_header header;
+    uint32_t fid;
+}__attribute__((packed)) t_clunk;
+
+t_clunk* make_p9_clunk_packet(u32 fid);
 
 #ifdef __cplusplus
 }

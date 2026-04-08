@@ -26,7 +26,7 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
     }
     usb_device_descriptor* descriptor = (usb_device_descriptor*)kalloc(mem_page, sizeof(usb_device_descriptor), ALIGN_64B, MEM_PRIV_KERNEL);
     
-    if (!request_descriptor(address, 0, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, VIRT_TO_PHYS_P(descriptor))){
+    if (!request_descriptor(address, 0, 0x80, 6, USB_DEVICE_DESCRIPTOR, 0, 0, descriptor)){
         kprintf("[USB error] failed to get device descriptor");
         return false;
     }
@@ -35,7 +35,7 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
 
     bool use_lang_desc = true;
 
-    if (!request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, 0, 0, VIRT_TO_PHYS_P(lang_desc))){
+    if (!request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, 0, 0, lang_desc)){
         kprintf("[USB warning] failed to get language descriptor");
         use_lang_desc = false;
     }
@@ -49,21 +49,21 @@ bool USBDriver::setup_device(uint8_t address, uint16_t port){
         //TODO: we want to maintain the strings so we can have USB device information
         uint16_t langid = lang_desc->lang_ids[0];
         usb_string_descriptor* prod_name = (usb_string_descriptor*)kalloc(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, MEM_PRIV_KERNEL);
-        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, VIRT_TO_PHYS_P(prod_name))){
+        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iProduct, langid, prod_name)){
             char name[128];
             if (utf16tochar(prod_name->unicode_string, name, sizeof(name))) {
                 kprintf("[USB device] Product name: %s", (uint64_t)name);
             }
         }
         usb_string_descriptor* man_name = (usb_string_descriptor*)kalloc(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, MEM_PRIV_KERNEL);
-        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, VIRT_TO_PHYS_P(man_name))){
+        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iManufacturer, langid, man_name)){
             char name[128];
             if (utf16tochar(man_name->unicode_string, name, sizeof(name))) {
                 kprintf("[USB device] Manufacturer name: %s", (uint64_t)name);
             }
         }
         usb_string_descriptor* ser_name = (usb_string_descriptor*)kalloc(mem_page, sizeof(usb_string_descriptor), ALIGN_64B, MEM_PRIV_KERNEL);
-        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, VIRT_TO_PHYS_P(ser_name))){
+        if (request_descriptor(address, 0, 0x80, 6, USB_STRING_DESCRIPTOR, descriptor->iSerialNumber, langid, ser_name)){
             char name[128];
             if (utf16tochar(ser_name->unicode_string, name, sizeof(name))) {
                 kprintf("[USB device] Serial: %s", (uint64_t)name);
@@ -78,7 +78,7 @@ bool USBDriver::get_configuration(uint8_t address){
 
     usb_manager->register_device(address);
 
-    usb_configuration_descriptor* config = (usb_configuration_descriptor*)VIRT_TO_PHYS_P(kalloc(mem_page, sizeof(usb_configuration_descriptor), ALIGN_64B, MEM_PRIV_KERNEL));
+    usb_configuration_descriptor* config = (usb_configuration_descriptor*)kalloc(mem_page, sizeof(usb_configuration_descriptor), ALIGN_64B, MEM_PRIV_KERNEL);
     if (!request_sized_descriptor(address, 0, 0x80, 6, USB_CONFIGURATION_DESCRIPTOR, 0, 0, 8, config)){
         kprintf("[USB error] could not get config descriptor header");
         return false;
@@ -195,23 +195,30 @@ bool USBDriver::request_descriptor(uint8_t address, uint8_t endpoint, uint8_t rT
 }
 
 void USBDriver::hub_enumerate(uint8_t address){
-    //TODO: actually support multiple devices
-    uint8_t port = 1;
-    uint32_t port_status;
-    request_sized_descriptor(address, 0, 0xA3, 0, 0, 0, port, sizeof(uint32_t), (void*)&port_status);
-    if (port_status & 1){
+    uint8_t hub_desc[16] = {};
+    uint8_t port_count = 0;
+    if (request_descriptor(address, 0, 0xA0, 6, 0x29, 0, 0, hub_desc)) {
+        usb_descriptor_header* header = (usb_descriptor_header*)hub_desc;
+        if (header->bLength >= 3) port_count = hub_desc[2]; //bNbrPorts
+    }
+
+    for (uint8_t port = 1; port <= port_count; port++) {
+        uint32_t port_status = 0;
+
+        if (!request_sized_descriptor(address, 0, 0xA3, 0, 0, 0, port, sizeof(port_status), &port_status)) continue;
+        if (!(port_status & 1)) continue;
         kprintf("Port %i status %b",port, port_status);
         request_sized_descriptor(address, 0, 0x23, 3, 0, 4, port, 0, 0);//Port Reset
         delay(50);
         request_sized_descriptor(address, 0, 0x23, 1, 0, 4, port, 0, 0);//Port Reset Clear
         delay(10);
-        request_sized_descriptor(address, 0, 0xA3, 0, 0, 0, port, sizeof(uint32_t), (void*)&port_status);
-        if (!(port_status & 0b11)){
-            kprintf("Port not enabled or device not connected");
-            return;
+        if (!request_sized_descriptor(address, 0, 0xA3, 0, 0, 0, port, sizeof(port_status), &port_status)) continue;
+        if ((port_status & 0b11) != 0b11){
+            kprintf("Port %i not enabled or device not connected", port);
+            continue;
         }
         handle_hub_routing(address,port);
-        setup_device(0,1);
+        setup_device(0, port);
     }
 }
 

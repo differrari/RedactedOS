@@ -346,8 +346,8 @@ public:
     }
 
     ~TCPSocket() override {
-        close();
         remove_from_list();
+        close();
     }
 
     int32_t bind(const SockBindSpec& spec_in, uint16_t port) override {

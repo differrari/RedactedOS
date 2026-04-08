@@ -32,6 +32,7 @@ typedef struct {
 } mld_state_t;
 
 static volatile int mld_daemon_running = 0;
+static volatile int mld_daemon_pending = 0;
 static uint32_t mld_uptime_ms = 0;
 static rng_t mld_rng;
 static int mld_rng_inited = 0;
@@ -220,6 +221,7 @@ static int mld_daemon_entry(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
 
+    mld_daemon_pending = 0;
     mld_daemon_running = 1;
 
     if(! mld_rng_inited) {
@@ -263,9 +265,10 @@ static int mld_daemon_entry(int argc, char* argv[]) {
 }
 
 static void mld_daemon_kick(void) {
-    if(mld_daemon_running) return;
+    if(mld_daemon_running || mld_daemon_pending) return;
     if(!mld_has_pending_timers()) return;
-    create_kernel_process("mld_daemon", mld_daemon_entry, 0, 0);
+    mld_daemon_pending = 1;
+    if(!create_kernel_process("mld_daemon", mld_daemon_entry, 0, 0)) mld_daemon_pending = 0; 
 }
 
 bool mld_send_join(uint8_t ifindex, const uint8_t group[16]) {

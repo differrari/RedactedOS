@@ -18,9 +18,8 @@ public:
     bool stat(const char *path, fs_stat *out_stat) override;
     bool truncate(file *descriptor, size_t size) override;
 private:
-    virtio_device np_dev;
+    virtio_device np_dev = {};
     size_t choose_version();
-    void sync(u32 serial, buffer buf);
     uint32_t open(uint32_t fid);
     bool sync_file(module_file *mfile);
     uint32_t attach();
@@ -30,9 +29,10 @@ private:
     size_t write(u32 fid, u64 offset, size_t amount, const char* buf);
     r_getattr* get_attribute(uint32_t fid, uint64_t mask);
     bool set_attribute(u32 fid, u64 mask, u64 value);
-    size_t max_msize;
-    
-    uint32_t root;
+    bool clunk(virtio_device *dev, uint32_t fid);
+    size_t max_msize = 0;
 
-    chashmap_t *open_files;
+    uint32_t root = 0;
+
+    chashmap_t *open_files = nullptr;
 };

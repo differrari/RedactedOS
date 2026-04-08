@@ -1,3 +1,4 @@
+#include "tracert.h"
 #include "networking/internet_layer/icmp.h"
 #include "net/network_types.h"
 #include "std/string.h"
@@ -25,12 +26,6 @@ typedef struct {
     bool src_set;
     const char *host;
 } tr_opts_t;
-
-static void help(file *fd) {
-    const char *a = "usage: tracert [-4/-6] [-m max_ttl] [-n probes] [-w timeout] [-i interval] [-x dead_hops] [-s src_local_ip] host";
-    write_file(fd, a, strlen_max(a, STRING_MAX_LEN));
-    write_file(fd, "\n", 1);
-}
 
 static bool parse_args(int argc, char *argv[], tr_opts_t *o) {
     o->ver = IP_VER4;
@@ -90,40 +85,27 @@ static bool parse_args(int argc, char *argv[], tr_opts_t *o) {
     return true;
 }
 
-static int tracert_v4(file *fd, const tr_opts_t *o) {
+static int tracert_v4(const tr_opts_t *o) {
     uint32_t dst = 0;
     bool lit = ipv4_parse(o->host, &dst);
     if (!lit) {
         uint32_t r = 0;
         dns_result_t dr = dns_resolve_a(o->host, &r, DNS_USE_BOTH, o->timeout_ms);
         if (dr != DNS_OK) {
-            string m = string_format("tracert: dns lookup failed (%d) for '%s'", (int)dr, o->host);
-            write_file(fd, m.data, m.length);
-            write_file(fd, "\n", 1);
-            //write_file(fd, "\t", 1);
-            free_sized(m.data, m.mem_length);
+            print("tracert: dns lookup failed (%d) for '%s'\n", (int)dr, o->host);
             return 2;
         }
         dst = r;
     }
 
     char dip[16];
+    char line[256];
     ipv4_to_string(dst, dip);
-    write_file(fd, "Tracing route to ", 17);
-    write_file(fd, o->host, strlen_max(o->host, STRING_MAX_LEN));
-    write_file(fd, " [", 2);
-    write_file(fd, dip, strlen_max(dip, STRING_MAX_LEN));
-    write_file(fd, "]", 1);
-    write_file(fd, "\n", 1);
-
-    write_file(fd, "hop  ", 5);
-    for (uint32_t p = 0; p < o->count; p++) {
-        string col = string_format("rtt%u  ", (uint32_t)(p + 1));
-        write_file(fd, col.data, col.length);
-        free_sized(col.data, col.mem_length);
-    }
-    write_file(fd, "address", 7);
-    write_file(fd, "\n", 1);
+    print("Tracing route to %s [%s]\n", o->host, dip);
+    size_t len = string_format_buf(line, sizeof(line), "hop  ");
+    for (uint32_t p = 0; p < o->count && len < sizeof(line); p++) len += string_format_buf(line + len, sizeof(line) - len, "rtt%u  ", p + 1);
+    string_format_buf(line + len, sizeof(line) - len, "address");
+    print("%s\n", line);
 
     ipv4_tx_opts_t txo = (ipv4_tx_opts_t){0};
     const ipv4_tx_opts_t *txop = NULL;
@@ -132,10 +114,7 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
         if (!l3) {
             char ssrc[16];
             ipv4_to_string(o->src_ip, ssrc);
-            string em = string_format("tracert: invalid source %s (no local ip match)", ssrc);
-            write_file(fd, em.data, em.length);
-            write_file(fd, "\n", 1);
-            free_sized(em.data, em.mem_length);
+            print("tracert: invalid source %s (no local ip match)\n", ssrc);
             return 2;
         }
         txo.index = l3->l3_id;
@@ -148,35 +127,23 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
     uint32_t dead_streak = 0;
 
     for (uint32_t ttl = 1; ttl <= o->max_ttl; ttl++) {
-        string hdr = string_format("%2u  ", ttl);
-        write_file(fd, hdr.data, hdr.length);
-        free_sized(hdr.data, hdr.mem_length);
-
+        len = string_format_buf(line, sizeof(line), "%2u  ", ttl);
         uint32_t hop_ip = 0;
         bool any = false;
 
-        for (uint32_t p = 0; p < o->count; p++) {
+        for (uint32_t p = 0; p < o->count && len < sizeof(line); p++) {
             uint16_t seq = (uint16_t)(seq0 + (ttl << 6) + p);
             ping_result_t r = (ping_result_t){0};
             bool ok = icmp_ping(dst, id, seq, o->timeout_ms, txop, ttl, &r);
             if (r.responder_ip && hop_ip == 0) hop_ip = r.responder_ip;
 
-            if (ok) {
+            if (ok || r.status == PING_TTL_EXPIRED || r.status == PING_REDIRECT || r.status == PING_PARAM_PROBLEM ||
+                r.status == PING_NET_UNREACH || r.status == PING_HOST_UNREACH || r.status == PING_ADMIN_PROHIBITED ||
+                r.status == PING_FRAG_NEEDED || r.status == PING_SRC_ROUTE_FAILED) {
                 any = true;
-                string ms = string_format("%ums  ", r.rtt_ms);
-                write_file(fd, ms.data, ms.length);
-                free_sized(ms.data, ms.mem_length);
+                len += string_format_buf(line + len, sizeof(line) - len, "%ums  ", r.rtt_ms);
             } else {
-                if (r.status == PING_TTL_EXPIRED || r.status == PING_REDIRECT || r.status == PING_PARAM_PROBLEM ||
-                    r.status == PING_NET_UNREACH || r.status == PING_HOST_UNREACH || r.status == PING_ADMIN_PROHIBITED ||
-                    r.status == PING_FRAG_NEEDED || r.status == PING_SRC_ROUTE_FAILED) {
-                    any = true;
-                    string ms = string_format("%ums  ", r.rtt_ms);
-                    write_file(fd, ms.data, ms.length);
-                    free_sized(ms.data, ms.mem_length);
-                } else {
-                    write_file(fd, "*  ", 3);
-                }
+                len += string_format_buf(line + len, sizeof(line) - len, "*  ");
             }
 
             if (p + 1 < o->count) msleep(o->interval_ms);
@@ -187,22 +154,19 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
             if (hop_ip) {
                 char hip[16];
                 ipv4_to_string(hop_ip, hip);
-                write_file(fd, hip, strlen_max(hip, STRING_MAX_LEN));
+                string_format_buf(line + len, sizeof(line) - len, "%s", hip);
             } else {
-                write_file(fd, "???", 3);
+                string_format_buf(line + len, sizeof(line) - len, "???");
             }
         } else {
             dead_streak++;
-            write_file(fd, "Request timed out. ", 20);
+            string_format_buf(line + len, sizeof(line) - len, "Request timed out.");
         }
-        write_file(fd, " \n", 2);
+        print("%s\n", line);
 
         if (hop_ip == dst) break;
         if (dead_streak >= o->timeout_streak_limit) {
-            string note = string_format("stopping after %u consecutive timeout hops", dead_streak);
-            write_file(fd, note.data, note.length);
-            write_file(fd, "\n", 1);
-            free_sized(note.data, note.mem_length);
+            print("stopping after %u consecutive timeout hops\n", dead_streak);
             break;
         }
     }
@@ -210,73 +174,49 @@ static int tracert_v4(file *fd, const tr_opts_t *o) {
     return 0;
 }
 
-static int tracert_v6(file *fd, const tr_opts_t *o) {
-    uint8_t dst[16];
+static int tracert_v6(const tr_opts_t *o) {
+    uint8_t dst[16] = {0};
     bool lit = ipv6_parse(o->host, dst);
     if (!lit) {
         dns_result_t dr = dns_resolve_aaaa(o->host, dst, DNS_USE_BOTH, o->timeout_ms);
         if (dr != DNS_OK) {
-            string m = string_format("tracert: dns lookup failed (%d) for '%s'", (int)dr, o->host);
-            write_file(fd, m.data, m.length);
-            write_file(fd, "\n", 1);
-            free_sized(m.data, m.mem_length);
+            print("tracert: dns lookup failed (%d) for '%s'\n", (int)dr, o->host);
             return 2;
         }
     }
 
     char dip[64];
+    char line[256];
     ipv6_to_string(dst, dip, (int)sizeof(dip));
-    write_file(fd, "Tracing route to ", 17);
-    write_file(fd, o->host, strlen_max(o->host, STRING_MAX_LEN));
-    write_file(fd, " [", 2);
-    write_file(fd, dip, strlen_max(dip, STRING_MAX_LEN));
-    write_file(fd, "]\n", 2);
-
-    write_file(fd, "hop  ", 5);
-    for (uint32_t p = 0; p < o->count; p++) {
-        string col = string_format("rtt%u  ", p + 1);
-        write_file(fd, col.data, col.length);
-        free_sized(col.data, col.mem_length);
-    }
-    write_file(fd, "address\n", 8);
+    print("Tracing route to %s [%s]\n", o->host, dip);
+    size_t len = string_format_buf(line, sizeof(line), "hop  ");
+    for (uint32_t p = 0; p < o->count && len < sizeof(line); p++) len += string_format_buf(line + len, sizeof(line) - len, "rtt%u  ", p + 1);
+    string_format_buf(line + len, sizeof(line) - len, "address");
+    print("%s\n", line);
 
     uint16_t id = (uint16_t)(get_current_proc_pid() & 0xFFFF);
     uint16_t seq0 = (uint16_t)(get_time() & 0xFFFF);
     uint32_t dead_streak = 0;
 
     for (uint32_t hl = 1; hl <= o->max_ttl; hl++) {
-        string h = string_format("%2u  ", hl);
-        write_file(fd, h.data, h.length);
-        free_sized(h.data, h.mem_length);
-
-        uint8_t hop_ip[16];
-        for (int i = 0; i < 16; i++) hop_ip[i] = 0;
+        len = string_format_buf(line, sizeof(line), "%2u  ", hl);
+        uint8_t hop_ip[16] = {0};
         bool any = false;
 
-        for (uint32_t p = 0; p < o->count; p++) {
+        for (uint32_t p = 0; p < o->count && len < sizeof(line); p++) {
             uint16_t seq = (uint16_t)(seq0 + (hl << 6) + p);
             ping6_result_t r = (ping6_result_t){0};
             bool ok = icmpv6_ping(dst, id, seq, o->timeout_ms, NULL, (uint8_t)hl, &r);
 
             if (!ipv6_is_unspecified(r.responder_ip) && ipv6_is_unspecified(hop_ip)) ipv6_cpy(hop_ip, r.responder_ip);
 
-            if (ok) {
+            if (ok || r.status == PING_TTL_EXPIRED || r.status == PING_REDIRECT || r.status == PING_PARAM_PROBLEM ||
+                r.status == PING_NET_UNREACH || r.status == PING_HOST_UNREACH || r.status == PING_ADMIN_PROHIBITED ||
+                r.status == PING_FRAG_NEEDED || r.status == PING_SRC_ROUTE_FAILED) {
                 any = true;
-                string ms = string_format("%ums  ", r.rtt_ms);
-                write_file(fd, ms.data, ms.length);
-                free_sized(ms.data, ms.mem_length);
+                len += string_format_buf(line + len, sizeof(line) - len, "%ums  ", r.rtt_ms);
             } else {
-                if (r.status == PING_TTL_EXPIRED || r.status == PING_REDIRECT ||
-                    r.status == PING_PARAM_PROBLEM || r.status == PING_NET_UNREACH ||
-                    r.status == PING_HOST_UNREACH || r.status == PING_ADMIN_PROHIBITED ||
-                    r.status == PING_FRAG_NEEDED || r.status == PING_SRC_ROUTE_FAILED) {
-                    any = true;
-                    string ms = string_format("%ums  ", r.rtt_ms);
-                    write_file(fd, ms.data, ms.length);
-                    free_sized(ms.data, ms.mem_length);
-                } else {
-                    write_file(fd, "*  ", 3);
-                }
+                len += string_format_buf(line + len, sizeof(line) - len, "*  ");
             }
 
             if (p + 1 < o->count) msleep(o->interval_ms);
@@ -287,22 +227,19 @@ static int tracert_v6(file *fd, const tr_opts_t *o) {
             if (!ipv6_is_unspecified(hop_ip)) {
                 char hip[64];
                 ipv6_to_string(hop_ip, hip, (int)sizeof(hip));
-                write_file(fd, hip, strlen_max(hip, STRING_MAX_LEN));
+                string_format_buf(line + len, sizeof(line) - len, "%s", hip);
             } else {
-                write_file(fd, "???", 3);
+                string_format_buf(line + len, sizeof(line) - len, "???");
             }
         } else {
             dead_streak++;
-            write_file(fd, "Request timed out. ", 19);
+            string_format_buf(line + len, sizeof(line) - len, "Request timed out.");
         }
-        write_file(fd, "\n", 1);
+        print("%s\n", line);
 
         if (ipv6_cmp(hop_ip, dst) == 0) break;
         if (dead_streak >= o->timeout_streak_limit) {
-            string note = string_format("stopping after %u consecutive timeout hops", dead_streak);
-            write_file(fd, note.data, note.length);
-            write_file(fd, "\n", 1);
-            free_sized(note.data, note.mem_length);
+            print("stopping after %u consecutive timeout hops\n", dead_streak);
             break;
         }
     }
@@ -311,26 +248,12 @@ static int tracert_v6(file *fd, const tr_opts_t *o) {
 }
 
 int run_tracert(int argc, char *argv[]) {
-    uint16_t pid = get_current_proc_pid();
-    string p = string_format("/proc/%u/out", pid);
-    file fd = (file){0};
-    open_file(p.data, &fd);
-    free_sized(p.data, p.mem_length);
-
     tr_opts_t o;
     if (!parse_args(argc, argv, &o)) {
-        help(&fd);
-        close_file(&fd);
+        print("usage: tracert [-4/-6] [-m max_hops] [-n probes] [-w timeout_ms] [-i interval_ms] [-x stop_after_timeouts] [-s src_local_ip] host\n");
         return 2;
     }
 
-    if (o.ver == IP_VER6) {
-        int rc = tracert_v6(&fd, &o);
-        close_file(&fd);
-        return rc;
-    }
-
-    int rc = tracert_v4(&fd, &o);
-    close_file(&fd);
-    return rc;
+    if (o.ver == IP_VER6) return tracert_v6(&o);
+    return tracert_v4(&o);
 }

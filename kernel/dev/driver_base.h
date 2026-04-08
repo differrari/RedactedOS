@@ -19,14 +19,13 @@ typedef struct module_file {
     fs_backing_type backing_type;
     fs_entry_type entry_type;
     uint64_t fid;
-    
     uint64_t serial;
-    
     uptr buf;
+    void *private_data;
     bool ignore_cursor;
     bool read_only;
-    size_t file_size;
     
+    size_t file_size;
     buffer file_buffer;
     uint64_t references;
 } module_file;

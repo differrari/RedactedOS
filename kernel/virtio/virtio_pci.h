@@ -1,4 +1,4 @@
-#pragma once 
+#pragma once
 
 #include "types.h"
 
@@ -14,6 +14,15 @@ extern "C" {
 #define VIRTIO_F_VERSION_1 32
 #define VIRTIO_F_NOTIFICATION_DATA 38
 
+#define VIRTIO_STATUS_RESET         0x0
+#define VIRTIO_STATUS_ACKNOWLEDGE   0x1
+#define VIRTIO_STATUS_DRIVER        0x2
+#define VIRTIO_STATUS_DRIVER_OK     0x4
+#define VIRTIO_STATUS_FEATURES_OK   0x8
+#define VIRTIO_STATUS_FAILED        0x80
+
+#define VIRTIO_MAX_QUEUES 16
+
 typedef struct virtio_pci_common_cfg {
     uint32_t device_feature_select;
     uint32_t device_feature;
@@ -28,9 +37,12 @@ typedef struct virtio_pci_common_cfg {
     uint16_t queue_msix_vector;
     uint16_t queue_enable;
     uint16_t queue_notify_off;
-    uint64_t queue_desc;
-    uint64_t queue_driver;
-    uint64_t queue_device;
+    uint32_t queue_desc_lo;
+    uint32_t queue_desc_hi;
+    uint32_t queue_driver_lo;
+    uint32_t queue_driver_hi;
+    uint32_t queue_device_lo;
+    uint32_t queue_device_hi;
     uint16_t queue_notify_data;
     uint16_t queue_reset;
 }__attribute__((packed)) virtio_pci_common_cfg;
@@ -59,15 +71,31 @@ typedef struct {
     virtq_used_elem ring[];
 }__attribute__((packed)) virtq_used;
 
+typedef struct virtio_queue {
+    bool valid;
+    uint16_t size;
+    uint16_t notify_off;
+    uint16_t notify_data;
+    uint64_t desc_pa;
+    uint64_t driver_pa;
+    uint64_t device_pa;
+    volatile virtq_desc *desc;
+    volatile virtq_avail *driver;
+    volatile virtq_used *device;
+} virtio_queue;
+
 typedef struct virtio_device {
-    struct virtio_pci_common_cfg* common_cfg;
-    uint8_t* notify_cfg;
-    uint8_t* device_cfg;
-    uint8_t* isr_cfg;
+    volatile struct virtio_pci_common_cfg* common_cfg;
+    volatile uint8_t* notify_cfg;
+    volatile uint8_t* device_cfg;
+    volatile uint8_t* isr_cfg;
     uint32_t notify_off_multiplier;
     void *memory_page;
     uint8_t* status_dma;
     uint64_t negotiated_features;
+    uint16_t num_queues;
+    uint16_t current_queue;
+    virtio_queue queues[VIRTIO_MAX_QUEUES];
 } virtio_device;
 
 typedef struct {
@@ -78,19 +106,7 @@ typedef struct {
 
 #define VBUF(a,l,f) ((virtio_buf){.addr = (uint64_t)(a), .len = (uint32_t)(l), .flags = (uint16_t)(f)})
 
-static inline void virtio_notify(virtio_device *dev){
-    if(!dev) return;
-    if(!dev->common_cfg) return;
-    if(!dev->notify_cfg) return;
-
-    uint16_t off=dev->common_cfg->queue_notify_off;
-    uint32_t mul=dev->notify_off_multiplier;
-    if(!mul) mul=1;
-    
-    uint16_t v=(dev->negotiated_features&(1ULL<<VIRTIO_F_NOTIFICATION_DATA))?dev->common_cfg->queue_notify_data:dev->common_cfg->queue_select;
-    *(volatile uint16_t*)(dev->notify_cfg+(uint64_t)off*(uint64_t)mul)=v;
-}
-
+void virtio_notify(virtio_device *dev);
 void virtio_set_feature_mask(uint64_t mask);
 void virtio_enable_verbose();
 void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mmio_start, uint64_t *mmio_size);

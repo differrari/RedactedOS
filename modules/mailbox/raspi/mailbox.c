@@ -4,7 +4,7 @@
 #include "async.h"
 
 void mailbox_init(){
-    register_device_memory(MAILBOX_BASE, MAILBOX_BASE);
+    register_device_memory_dmap(MAILBOX_BASE);
 }
 
 int mailbox_call(volatile uint32_t* mbox, uint8_t channel) {

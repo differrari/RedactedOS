@@ -17,7 +17,7 @@ public:
     bool init();
     void send_buffer(sizedptr buf) override;
 
-    AudioDevice *out_dev;//TODO: proper device management
+    AudioDevice *out_dev = nullptr;//TODO: proper device management
 private:
     bool get_config();
     void config_jacks();
@@ -32,5 +32,5 @@ private:
 
     uint16_t cmd_index = 0;
 
-    virtio_device audio_dev;
+    virtio_device audio_dev = {};
 };

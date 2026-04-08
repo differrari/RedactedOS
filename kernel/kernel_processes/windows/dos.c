@@ -20,7 +20,7 @@ typedef enum { right_move, left_move, down_move, up_move } dos_movement;
 u16 move_shortcuts[4];
 
 typedef enum { window_mode, doodle_mode, mode_count } dos_mode;
-u16 mode_shortcuts[mode_count-1];
+u16 mode_shortcuts[mode_count];
 
 u16 sid_g = 0;
 u16 sid_f = 0;
@@ -87,6 +87,8 @@ draw_ctx img_draw_ctx;
 image_info img_info;
 
 static inline void draw_desktop(){
+    draw_ctx *ctx = gpu_get_ctx();
+    if (!ctx) return;
     if (img)
         fb_draw_img(dos_ctx, 0, 0, img, img_info.width, img_info.height);
     // else
@@ -197,8 +199,10 @@ int window_system(){
     bool dragging = false;
     
     while (1){
+        bool active = false;
         check_shortcuts();
         if (mouse_button_pressed(MMB)){
+            active = true;
             if (!dragging && !drawing){
                 dragging = true;
                 start_point = get_mouse_pos();
@@ -217,6 +221,7 @@ int window_system(){
                 drawing = true;
                 start_point = get_mouse_pos();
             }
+            active = true;
             switch (mode){
                 case doodle_mode: {
                     gpu_point p = get_mouse_pos();
@@ -256,12 +261,14 @@ int window_system(){
         // }
         disable_interrupt();
         if (dirty_windows){
+            active = true;
             draw_desktop();
             linked_list_for_each(window_list, redraw_win);
             dirty_windows = false;
         }
         gpu_flush();
         enable_interrupt();
+        if (!active && !dirty_windows && !mouse_button_pressed(LMB) && !mouse_button_pressed(MMB)) msleep(25);
     }
     return 0;
 }

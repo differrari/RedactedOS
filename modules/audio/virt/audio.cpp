@@ -3,6 +3,7 @@
 #include "kernel_processes/kprocess_loader.h"
 #include "syscalls/syscalls.h"
 #include "exceptions/timer.h"
+#include "exceptions/exception_handler.h"
 #include "math/math.h"
 #include "audio/cuatro.h"
 #include "audio/mixer.h"
@@ -13,18 +14,35 @@ VirtioAudioDriver *audio_driver;
 
 bool init_audio(){
     audio_driver = new VirtioAudioDriver();
-    return audio_driver->init();
+    if (!audio_driver) return false;
+    if (!audio_driver->init()) {
+        audio_driver = nullptr;
+        return false;
+    }
+    if (!audio_driver->out_dev) {
+        audio_driver = nullptr;
+        return false;
+    }
+    return true;
 }
 
 sizedptr audio_request_buffer(uint32_t device){
+    if (!audio_driver || !audio_driver->out_dev) return (sizedptr){0,0};
     return audio_driver->out_dev->request_buffer();
 }
 
 void audio_submit_buffer(){
+    if (!audio_driver || !audio_driver->out_dev) return;
     audio_driver->out_dev->submit_buffer(audio_driver);
 }
 
 void audio_get_info(uint32_t* rate, uint8_t* channels) {
+    if (!rate || !channels) return;
+    if (!audio_driver || !audio_driver->out_dev) {
+        *rate = 0;
+        *channels = 0;
+        return;
+    }
     *rate = audio_driver->out_dev->rate;
     *channels = audio_driver->out_dev->channels;
 }
@@ -142,8 +160,12 @@ static void mixer_run(){
         }else{
             uint64_t this_buffer_due = buffers_start_time + 
                                         (buffers_output * BUFFER_SEPARATION_MSECS) + BUFFER_PREROLL_MSECS;
-            while (timer_now_msec() < this_buffer_due)
-                yield();
+            while (1) {
+                uint64_t now = timer_now_msec();
+                if (now >= this_buffer_due) break;
+                uint64_t wait_msec = this_buffer_due - now;
+                msleep(wait_msec ? wait_msec : 1);
+            }
         }
         audio_submit_buffer();
         ++buffers_output;
@@ -158,6 +180,7 @@ static int audio_mixer(int argc, char* argv[]){
 }
 
 process_t* init_audio_mixer(){
+    if (!audio_driver || !audio_driver->out_dev) return 0;
     return create_kernel_process("Audio out", audio_mixer, 0, 0);
 }
 

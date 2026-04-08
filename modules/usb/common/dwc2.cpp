@@ -4,6 +4,7 @@
 #include "memory/page_allocator.h"
 #include "memory/mmu.h"
 #include "hw/hw.h"
+#include "sysregs.h"
 
 #define DWC2_INT_DATA 0b11
 
@@ -35,7 +36,7 @@ bool DWC2Driver::init() {
 
     use_interrupts = false;
 
-    register_device_memory(DWC2_BASE, DWC2_BASE);
+    register_device_memory_dmap(DWC2_BASE);
 
     dwc2 = (dwc2_regs*)DWC2_BASE;
     host = (dwc2_host*)(DWC2_BASE + 0x400);
@@ -81,7 +82,7 @@ bool DWC2Driver::init() {
 
     setup_device(0,0);
 
-    register_device_memory(DWC2_BASE, DWC2_BASE);
+    register_device_memory_dmap(DWC2_BASE);
 
     return true;
 }
@@ -95,7 +96,7 @@ uint8_t DWC2Driver::address_device(uint8_t address){
 }
 
 bool DWC2Driver::make_transfer(dwc2_host_channel *channel, bool in, uint8_t pid, sizedptr data){
-    channel->dma = data.ptr;
+    channel->dma = data.ptr ? VIRT_TO_PHYS(data.ptr) : 0;
     uint16_t max_size = packet_size(port_speed);
     uint32_t pkt_count = (data.size + max_size - 1)/max_size;
     channel->xfer_size = (pkt_count << 19) | (pid << 29) | data.size;
@@ -204,7 +205,7 @@ bool DWC2Driver::poll(uint8_t address, uint8_t endpoint, void *out_buf, uint16_t
     if (endpoint_channel->cchar & 1)
         return false;
 
-    endpoint_channel->dma = (uintptr_t)out_buf;
+    endpoint_channel->dma = out_buf ? VIRT_TO_PHYS((uintptr_t)out_buf) : 0;
 
     uint16_t max_size = endpoint_channel->cchar & 0x7FF;
     uint32_t pkt_count = (size + max_size - 1)/max_size;

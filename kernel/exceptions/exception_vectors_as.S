@@ -1,27 +1,23 @@
 .macro save_ctx
     msr daifset, #2
+    msr spsel, #1
+
+    stp x17, x18, [sp, #-16]!
     mrs     x18, spsr_el1
-    lsr     x18, x18, #2
-    and     x18, x18, #0b11
-
-    cmp     x18, #1
+    and     x18, x18, #0xF
+    cmp     x18, #0x5
     b.eq    1f
-    cmp     x18, #0
-    b.eq    2f
-
-    b       3f
-
-1:  mov     x17, sp
-    b       3f
-
-2:  mrs     x17, sp_el0
-    ldr x18, =ksp
-    mov sp, x18
+    mrs     x17, sp_el0
+    b 2f
+1:
+    add x17, sp, #16
+2:
+    adrp x18, cpec
+    add x18, x18, :lo12:cpec
+    ldr x18, [x18]
 
 3:
     
-ldr x18, =cpec
-ldr x18, [x18]
 // Save general-purpose registers x1-x30
 stp x0, x1, [x18, #(8 * 0)]
 stp x2, x3, [x18, #(8 * 2)]
@@ -32,6 +28,10 @@ stp x10, x11, [x18, #(8 * 10)]
 stp x12, x13, [x18, #(8 * 12)]
 stp x14, x15, [x18, #(8 * 14)]
 str x16,      [x18, #(8 * 16)]
+ldr x16, [sp, #0]
+str x16, [x18, #(8 * 17)]
+ldr x16, [sp, #8]
+str x16, [x18, #(8 * 18)]
 str      x19, [x18, #(8 * 19)]
 stp x20, x21, [x18, #(8 * 20)]
 stp x22, x23, [x18, #(8 * 22)]
@@ -47,6 +47,17 @@ str x17, [x18, #(8 * 31)]
 mrs x17, spsr_el1
 str x17, [x18, #(8 * 33)]
 
+add sp, sp, #16
+
+mrs x17, spsr_el1
+lsr x17, x17, #2
+and x17, x17,#0b11
+cmp x17, #0
+b.ne 4f
+adrp x18, ksp
+add x18, x18, :lo12:ksp
+mov sp, x18
+4:
 .endm
 
 .section .vectors, "a", %progbits

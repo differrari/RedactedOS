@@ -110,6 +110,7 @@ protected:
 
     static sizedptr read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
     static sizedptr list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
+    static sizedptr stat_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
 
     void parse_longnames(f32longname entries[], uint16_t count, char* out);
     void parse_shortnames(f32file_entry* entry, char* out);

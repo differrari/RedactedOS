@@ -27,7 +27,7 @@ uint32_t uart_fbrd;
 uint32_t uart_baud;
 
 void enable_uart() {
-    register_device_memory(UART0_BASE, UART0_BASE);
+    register_device_memory_dmap(UART0_BASE);
 
     write32(UART0_CR, 0x0);
 

@@ -63,8 +63,8 @@ package_info get_pkg_info(char* info_path){
     package_info pkg = {};
     char *info = read_full_file(info_path, 0);
     if (!info) return pkg;
-    parse_package_info(info);
-    // release(info);
+    pkg = parse_package_info(info);
+    release(info);
     return pkg;
 }
 
@@ -182,10 +182,14 @@ void activate_current(){
         string s = string_format("%s/%v.elf",entry->path.data, entry->name);
         fb_clear(&ctx, 0);
         commit_draw_ctx(&ctx);
-        u16 pid = exec(s.data, 0, 0);
+        u16 pid = exec(s.data, 0, 0, EXEC_MODE_DEFAULT);
         string_free(s);
+        if (!pid) {
+            print("[LAUNCHER error] failed to launch process");
+            return;
+        }
         string p = string_format("/proc/%i/state",pid);
-        if (!openf(p.data, &active_proc)){
+        if (openf(p.data, &active_proc) != FS_RESULT_SUCCESS){
             string_free(p);
             print("[LAUNCHER error] failed to get process state");
             return;
@@ -257,5 +261,6 @@ int main(int argc, char* argv[]){
     while (1)
     {
         draw_desktop();
+        msleep(process_active ? 25 : 40);
     }
 }

@@ -123,7 +123,7 @@ bool load_theme(){
     
     char *buf = read_full_file(path.data, 0);
     if (!buf) return false;
-    
+
     read_toml(buf, parse_theme_kvp, 0);
 
     return true;

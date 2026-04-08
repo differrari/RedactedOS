@@ -86,27 +86,34 @@ gpu_size gpu_get_screen_size(){
 
 draw_ctx* gpu_get_ctx(){
     if (!gpu_ready()) return 0;
-    return gpu_driver->get_ctx();
+    draw_ctx *ctx = gpu_driver->get_ctx();
+    if (!ctx) return 0;
+    return ctx;
 }
 
 void gpu_setup_cursor(gpu_point initial_loc){
+    if (!gpu_ready()) return;
     gpu_driver->setup_cursor();
     gpu_driver->update_cursor(initial_loc.x, initial_loc.y, true);
 }
 
 void gpu_update_cursor(gpu_point new_loc, bool full){
+    if (!gpu_ready()) return;
     gpu_driver->update_cursor(new_loc.x, new_loc.y, full);
 }
 
 void gpu_set_cursor_pressed(bool pressed){
+    if (!gpu_ready()) return;
     gpu_driver->set_cursor_pressed(pressed);
 }
 
 void gpu_create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *ctx){
+    if (!gpu_ready()) return;
     gpu_driver->create_window(x, y, width, height, ctx);
 }
 
 void gpu_resize_window(uint32_t width, uint32_t height, draw_ctx *win_ctx){
+    if (!gpu_ready()) return;
     gpu_driver->resize_window(width, height, win_ctx);
 }
 

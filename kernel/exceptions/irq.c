@@ -42,8 +42,8 @@ static void gic_enable_irq(uint32_t irq, uint8_t priority, uint8_t cpu_target) {
 }
 
 void irq_init() {
-    register_device_memory(GICD_BASE, GICD_BASE);
-    register_device_memory(GICC_BASE, GICC_BASE);
+    register_device_memory_dmap(GICD_BASE);
+    register_device_memory_dmap(GICC_BASE);
 
     if (RPI_BOARD != 3){
         write32(GICD_BASE, 0); // Disable Distributor
@@ -81,8 +81,21 @@ void disable_interrupt(){
     asm volatile ("isb");
 }
 
+irq_flags_t irq_save_disable(){
+    irq_flags_t flags;
+    asm volatile ("mrs %0, daif" : "=r"(flags));
+    disable_interrupt();
+    return flags;
+}
+
+void irq_restore(irq_flags_t flags){
+    asm volatile ("msr daif, %0" :: "r"(flags));
+    asm volatile ("isb");
+}
+
 void irq_el1_handler() {
     save_return_address_interrupt();
+    mmu_ttbr0_disable_user();
     syscall_depth++;
     uint32_t irq;
     if (RPI_BOARD == 3){
@@ -90,18 +103,23 @@ void irq_el1_handler() {
     } else irq = read32(GICC_BASE + 0xC);
 
     if (irq == IRQ_TIMER) {
+        bool can_preempt = true;
+        if (get_current_proc() && get_current_proc()->mm.ttbr0 && (get_current_proc()->spsr & 0xF) != 0) can_preempt = false;
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         syscall_depth--;
-        switch_proc(INTERRUPT);
+        if (can_preempt) switch_proc(INTERRUPT);
+        process_restore();
     } else if (irq == MSI_OFFSET + INPUT_IRQ){
         handle_usb_interrupt();
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         syscall_depth--;
+        if (scheduler_in_idle()) switch_proc(INTERRUPT);
         process_restore();
     } else if (irq == SLEEP_TIMER){
         wake_processes();
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         syscall_depth--;
+        if (scheduler_in_idle()) switch_proc(INTERRUPT);
         process_restore();
     } else if (irq >= MSI_OFFSET + NET_IRQ_BASE && irq <  MSI_OFFSET + NET_IRQ_BASE + (2*MAX_L2_INTERFACES)){
         uint32_t rel = irq - (MSI_OFFSET + NET_IRQ_BASE);
@@ -111,6 +129,7 @@ void irq_el1_handler() {
         else network_handle_upload_interrupt_nic(nic_id);
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         syscall_depth--;
+        if (scheduler_in_idle()) switch_proc(INTERRUPT);
         process_restore();
     } else {
         kprintf("[GIC error] Received unknown interrupt %i",irq);

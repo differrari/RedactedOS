@@ -9,6 +9,7 @@ int_point current_win_offset = {};
 
 void new_managed_window(){
     draw_ctx *cur = gpu_get_ctx();
+    if (!cur) return;
     create_window(10 - current_win_offset.x, 10 - current_win_offset.y, cur->width - 20, cur->height - 20);
     global_win_offset.x = current_win_offset.x;
     current_win_offset.x -= cur->width;
@@ -19,6 +20,7 @@ void switch_focus(int8_t x, int8_t y){
     y = min(max(y,-1),1);
     
     draw_ctx *cur = gpu_get_ctx();
+    if (!cur) return;
     global_win_offset.x += cur->width * x;
     global_win_offset.y += cur->height * y;
     

@@ -56,7 +56,7 @@ typedef struct virtio_transfer_cmd {
 class VirtioGPUDriver : public GPUDriver {
 public:
     static VirtioGPUDriver* try_init(gpu_size preferred_screen_size);
-    VirtioGPUDriver(){}
+    VirtioGPUDriver() = default;
     bool init(gpu_size preferred_screen_size) override;
 
     void flush() override;
@@ -83,9 +83,9 @@ public:
     
 private: 
     gpu_size screen_size;
-    virtio_device gpu_dev;
-    uintptr_t framebuffer;
-    uint64_t framebuffer_size;
+    virtio_device gpu_dev = {};
+    uintptr_t framebuffer = 0;
+    uint64_t framebuffer_size = 0;
 
     gpu_size get_display_info();
     bool create_2d_resource(uint32_t resource_id, gpu_size size);
@@ -96,20 +96,22 @@ private:
     uint32_t new_resource_id();
     uint32_t new_cursor(uint32_t color);
 
-    uint32_t resource_id_counter;
+    uint32_t resource_id_counter = 0;
 
-    uint32_t fb_resource_id;
-    uint32_t cursor_resource_id;
-    uint32_t cursor_pressed_resource_id;
-    uint32_t cursor_unpressed_resource_id;
+    uint32_t fb_resource_id = 0;
+    uint32_t cursor_resource_id = 0;
+    uint32_t cursor_pressed_resource_id = 0;
+    uint32_t cursor_unpressed_resource_id = 0;
 
-    virtio_gpu_ctrl_hdr *trans_resp, *flush_resp, *cursor_resp;
-    virtio_gpu_update_cursor *cursor_cmd;
-    virtio_transfer_cmd *trans_cmd;
-    virtio_flush_cmd *flush_cmd;
+    virtio_gpu_ctrl_hdr *trans_resp = nullptr;
+    virtio_gpu_ctrl_hdr *flush_resp = nullptr;
+    virtio_gpu_ctrl_hdr *cursor_resp = nullptr;
+    virtio_gpu_update_cursor *cursor_cmd = nullptr;
+    virtio_transfer_cmd *trans_cmd = nullptr;
+    virtio_flush_cmd *flush_cmd = nullptr;
 
-    draw_ctx ctx;
+    draw_ctx ctx = {};
 
-    bool scanout_found;
-    uint64_t scanout_id;
+    bool scanout_found = false;
+    uint64_t scanout_id = 0;
 };

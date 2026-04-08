@@ -3,6 +3,8 @@
 #include "exceptions/exception_handler.h"
 #include "memory/talloc.h"
 #include "memory/mmu.h"
+#include "memory/addr.h"
+#include "memory/va_layout.h"
 #include "std/memory_access.h"
 #include "hw/hw.h"
 #include "sysregs.h"
@@ -126,8 +128,9 @@ uint64_t pci_make_addr(uint32_t bus, uint32_t slot, uint32_t func, uint32_t offs
 void find_pci(){
     if (!initialized){
         initialized = true;
-        for (uint64_t addr = PCI_BASE; addr < PCI_BASE + 0x10000000; addr += GRANULE_2MB)
-            register_device_memory_2mb(addr, addr);
+        paddr_t ecam_pa = (paddr_t)VIRT_TO_PHYS(PCI_BASE);
+        for (uint64_t off = 0; off < 0x10000000; off += GRANULE_2MB)
+            register_device_memory_2mb(PCI_BASE + off, (uint64_t)ecam_pa + off);
     }
 
     if (!g_pci_scanned){
@@ -259,7 +262,7 @@ uint64_t find_pci_device(uint32_t vendor_id, uint32_t device_id) {
                 uint64_t vendor_device = read32(device_address);
                 if ((vendor_device & 0xFFFF) == vendor_id && ((vendor_device >> 16) & 0xFFFF) == device_id) {
 
-                    kprintf("[PCI] Found device at bus %i, slot %i, func %i -> %x", bus, slot, func, device_address);
+                    kprintf("[PCI] Found device at bus %i, slot %i, func %i -> %llx", bus, slot, func, device_address);
 
                     return device_address;
                 }// else if (((vendor_device >> 16) & 0xFFFF) != 0xFFFF)
@@ -275,7 +278,7 @@ void dump_pci_config(uint64_t base) {
     kprintf("[PCI] Dumping PCI Configuration Space:");
     for (uint32_t offset = 0; offset < 0x40; offset += 4) {
         uint64_t val = read64(base + offset);
-        kprintf("Offset %x: %x",offset, val);
+        kprintf("Offset %x: %llx", offset, val);
     }
 }
 
@@ -286,10 +289,11 @@ void pci_enable_device(uint64_t pci_addr){
 }
 
 void pci_register(uint64_t mmio_addr, uint64_t mmio_size){
+    if (kva_is_dmap((uintptr_t)mmio_addr)) mmio_addr = (uint64_t)dmap_kva_to_pa((uintptr_t)mmio_addr);
     uint64_t start = mmio_addr & ~(GRANULE_4KB - 1);
     uint64_t end = (mmio_addr + mmio_size + GRANULE_4KB - 1) & ~(GRANULE_4KB - 1);
     for (uint64_t addr = start; addr < end; addr += GRANULE_4KB)
-        register_device_memory(PHYS_TO_VIRT(addr), VIRT_TO_PHYS(addr));
+        register_device_memory_dmap(mmio_pa_to_kva((paddr_t)addr));
 }
 
 #pragma region Interrupts
@@ -448,13 +452,15 @@ bool pci_setup_msix(uint64_t pci_addr, msix_irq_line* irq_lines, uint8_t line_si
                 uint64_t bar_size = 0;
                 pci_setup_bar(pci_addr, bir, &table_addr, &bar_size);
                 pci_register(table_addr, bar_size);
-                kprintf("Setting up new bar for MSI-X %x + %x",table_addr, table_addr_offset);
+                kprintf("Setting up new bar for MSI-X %llx + %llx", table_addr, (uint64_t)table_addr_offset);
             } else {
-                kprintf("Bar %i setup at %x + %x",bir, table_addr, table_addr_offset);
-                pci_register(table_addr, GRANULE_4KB);
+                kprintf("Bar %i setup at %llx + %llx",bir, table_addr, (uint64_t)table_addr_offset);
+                uint64_t need = (uint64_t)table_addr_offset + ((uint64_t)line_size * sizeof(msix_table_entry));
+                pci_register(table_addr, need);
             }
             
-            volatile msix_table_entry *msix_start = (volatile msix_table_entry *)(uintptr_t)(table_addr + table_addr_offset);
+            paddr_t table_pa = (paddr_t)(table_addr + (uint64_t)table_addr_offset);
+            volatile msix_table_entry *msix_start = (volatile msix_table_entry *)(uintptr_t)mmio_pa_to_kva(table_pa);
 
             for (uint32_t i = 0; i < line_size; ++i){
                 volatile msix_table_entry *msix_entry = msix_start + i;

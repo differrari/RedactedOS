@@ -37,7 +37,8 @@
 #include "exceptions/timer.h"
 #include "syscalls/syscalls.h"
 
-
+#include "memory/page_allocator.h"
+#include "memory/mmu.h"
 
 static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpoint *out_l4) {
     socket_handle_t sock = udp_socket_create(SOCK_ROLE_CLIENT, (uint16_t)get_current_proc_pid(), NULL);
@@ -80,7 +81,7 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
 static void free_request(HTTPRequestMsg *req) {
     if (!req) return;
 
-    if (req->path.mem_length) free_sized(req->path.data, req->path.mem_length);
+    if (req->path.mem_length) string_free(req->path);
 
     http_headers_common_free(&req->headers_common);
     http_headers_extra_free(req->extra_headers, req->extra_header_count);
@@ -95,6 +96,8 @@ static void free_request(HTTPRequestMsg *req) {
 
 
 static void run_http_server() {
+    //mmu_enable_verbose();
+    //page_alloc_enable_verbose();
     uint16_t pid = get_current_proc_pid();
     SocketExtraOptions opt = {0};
     opt.debug_level = SOCK_DBG_ALL;
@@ -137,7 +140,7 @@ static void run_http_server() {
     while (1) {
         http_connection_handle_t conn = http_server_accept(srv);
         if (!conn){
-            msleep(10);
+            msleep(50);
             continue;
         }
         HTTPRequestMsg req = http_server_recv_request(srv, conn);
@@ -238,7 +241,7 @@ static void test_http(const net_l4_endpoint* ep) {
 
     http_headers_common_free(&resp.headers_common);
 
-    if (resp.reason.data && resp.reason.mem_length) free_sized(resp.reason.data, resp.reason.mem_length);
+    if (resp.reason.data && resp.reason.mem_length) string_free(resp.reason);
     http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
 }
 

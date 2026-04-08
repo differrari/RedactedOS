@@ -25,15 +25,23 @@ void timer_reset(uint64_t time) {
     asm volatile ("msr cntp_tval_el0, %0" :: "r"(interval));
 }
 
-static inline void timer_enable() {
+void timer_enable() {
     uint64_t val = 1;
     asm volatile ("msr cntp_ctl_el0, %0" :: "r"(val));
     asm volatile ("msr cntkctl_el1, %0" :: "r"(val));
 }
 
+void timer_disable() {
+    uint64_t ctl = 0;
+    asm volatile ("msr cntp_ctl_el0, %0" :: "r"(ctl));
+    asm volatile ("isb");
+}
+
 void permanent_disable_timer(){
     uint64_t ctl = 0;
     asm volatile ("msr cntp_ctl_el0, %0" :: "r"(ctl));
+    asm volatile ("msr cntv_ctl_el0, %0" :: "r"(ctl));
+    asm volatile ("isb");
 }
 
 void timer_init(uint64_t msecs) {
@@ -55,6 +63,11 @@ void virtual_timer_reset(uint64_t smsecs) {
 
 void virtual_timer_enable() {
     uint64_t val = 1;
+    asm volatile ("msr cntv_ctl_el0, %0" :: "r"(val));
+}
+
+void virtual_timer_disable() {
+    uint64_t val = 0;
     asm volatile ("msr cntv_ctl_el0, %0" :: "r"(val));
 }
 
