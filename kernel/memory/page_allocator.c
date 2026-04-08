@@ -404,7 +404,6 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
             paddr_t meta_phys =palloc_inner(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, true, true);
             if (!meta_phys) panic("kalloc no metadata page", alloc_size);
             mp = (big_alloc_page*)dmap_pa_to_kva(meta_phys);
-            memset(mp, 0, PAGE_SIZE);
             mp->next = big_alloc_meta;
             big_alloc_meta = mp;
         }
@@ -422,7 +421,6 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
             }
             return (void*)va;
         }
-        memset((void*)PHYS_TO_VIRT(phys_base), 0, alloc_size);
         return ptr;
     }
 

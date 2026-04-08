@@ -16,8 +16,7 @@ size_t viewed_size;
 
 draw_ctx ctx;
 
-void on_entry(const char *path, const char *name){
-    (void)path;
+void on_entry(const char* path, const char* name){
     if (!strcmp(name, "..") || !strcmp(name, ".")) return;
     if (file_count >= 16) return;
     files[file_count++] = string_from_const(name);
@@ -111,7 +110,7 @@ void enter(const char *name){
     }
 
     fs_stat st = {};
-    if (!stat(full_path.data, &st)){
+    if (!statf(full_path.data, &st)){
         string_free(full_path);
         return;
     }
@@ -163,8 +162,6 @@ void pop_dir(){
 }
 
 int main(){
-    print("Haigh a dhomhain");
-
     request_draw_ctx(&ctx);
     enter("/shared");
 
@@ -175,7 +172,7 @@ int main(){
             continue;
         }
         if (ev.type != KEY_PRESS) continue;
-        if (ev.key == KEY_ESC) halt(0);
+        if (ev.key == KEY_ESC) return 0;
         if (ev.key == KEY_BACKSPACE){
             pop_dir();
             continue;

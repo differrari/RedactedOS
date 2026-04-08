@@ -5,8 +5,6 @@
 #include "files/buffer.h"
 #include "files/system_module.h"
 
-#define VERSION_NUM(major,minor,patch,build) (uint64_t)((((uint64_t)major) << 48) | (((uint64_t)minor) << 32) | (((uint64_t)patch) << 16) | ((uint64_t)build))
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -21,7 +19,7 @@ typedef struct module_file {
     fs_backing_type backing_type;
     fs_entry_type entry_type;
     uint64_t fid;
-
+    uint64_t serial;
     uptr buf;
     void *private_data;
     bool ignore_cursor;

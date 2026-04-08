@@ -71,7 +71,7 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         kprintf("[VIRTIO 9P error] failed to navigate to %s",path);
         return FS_RESULT_NOTFOUND;
     }
-    r_getattr *attr = get_attribute(f, 0x00000200ULL);
+    r_getattr *attr = get_attribute(f, P9_GETATTR_SIZE);
     if (!attr) {
         clunk(&np_dev, f);
         return FS_RESULT_DRIVER_ERROR;
@@ -96,29 +96,31 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         kprintf("[VIRTIO 9P error] failed read file %s",path);
         return FS_RESULT_DRIVER_ERROR;
     } 
-    clunk(&np_dev, f);
     irq = irq_save_disable();
     module_file *mfile = (module_file*)chashmap_get(open_files, &fid, sizeof(uint64_t));
     if (!mfile){
         mfile = (module_file*)kalloc(np_dev.memory_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
         if (!mfile) {
             irq_restore(irq);
+            clunk(&np_dev, f);
             kfree(file, size ? size : 1);
             return FS_RESULT_DRIVER_ERROR;
         }
         memset(mfile, 0, sizeof(module_file));
+        mfile->serial = INVALID_FID;
         if (chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), mfile) < 0) {
             irq_restore(irq);
+            clunk(&np_dev, f);
             kfree(mfile, sizeof(module_file));
             kfree(file, size ? size : 1);
             return FS_RESULT_DRIVER_ERROR;
         }
-        mfile->references = 1;
     } else {
-        if (mfile->file_buffer.buffer) kfree(mfile->file_buffer.buffer, mfile->file_size ? mfile->file_size : 1);
-        mfile->references++;
+        if (mfile->serial != INVALID_FID) clunk(&np_dev, (uint32_t)mfile->serial);
+        if (mfile->file_buffer.buffer) kfree(mfile->file_buffer.buffer, mfile->file_buffer.buffer_size ? mfile->file_buffer.buffer_size : 1);
     }
     mfile->file_size = size;
+    mfile->buf = (uptr)file;
     mfile->file_buffer = (buffer){
         .buffer = file,
         .buffer_size = size,
@@ -128,6 +130,8 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
     };
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
+    mfile->serial = f;
+    mfile->references++;
     irq_restore(irq);
     return FS_RESULT_SUCCESS;
 }
@@ -135,19 +139,102 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
 size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
     irq_flags_t irq = irq_save_disable();
     module_file *mfile = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
-    if (!mfile) {
-        irq_restore(irq);
-        return 0;
-    }
-    if (descriptor->cursor > mfile->file_size) {
-        irq_restore(irq);
-        return 0;
-    }
+    irq_restore(irq);
+    if (!mfile) return 0;
+    if (!sync_file(mfile) && !mfile->file_buffer.buffer && mfile->file_size) return 0;
+    if (descriptor->cursor > mfile->file_size) return 0;
     if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
     memcpy(buf, (char*)mfile->file_buffer.buffer + descriptor->cursor, size);
     descriptor->cursor += size;
-    irq_restore(irq);
+    descriptor->size = mfile->file_size;
     return size;
+}
+
+size_t Virtio9PDriver::sread_file(const char *path, void *buf, size_t size){
+    uint32_t f = walk_dir(root, (char*)path);
+    if (f == INVALID_FID){
+        kprintf("[VIRTIO 9P error] failed to navigate to %s",path);
+        return FS_RESULT_NOTFOUND;
+    }
+    if (open(f) == INVALID_FID){
+        clunk(&np_dev, f);
+        kprintf("[VIRTIO 9P error] failed to open %s",path);
+        return FS_RESULT_DRIVER_ERROR;
+    }
+    r_getattr *attr = get_attribute(f, P9_GETATTR_SIZE);
+    if (!attr) {
+        clunk(&np_dev, f);
+        return FS_RESULT_DRIVER_ERROR;
+    }
+    uint64_t file_size = read_unaligned64(&attr->size);
+    p9_free(attr);
+
+    if (file_size < size) size = file_size;
+    if (!size) {
+        clunk(&np_dev, f);
+        return 0;
+    }
+
+    void *file_buf = zalloc(file_size ? file_size : 1);
+
+    if (read(f, 0, file_buf) != file_size){
+        clunk(&np_dev, f);
+        release(file_buf);
+        kprintf("[VIRTIO 9P error] failed read file %s",path);
+        return FS_RESULT_DRIVER_ERROR;
+    }
+
+    memcpy(buf, file_buf, size);
+    clunk(&np_dev, f);
+    release(file_buf);
+    return size;
+}
+
+size_t Virtio9PDriver::write_file(file *descriptor, const char* buf, size_t size){
+    module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!mfile) return 0;
+    if (mfile->read_only) return 0;
+
+    size_t start = descriptor->cursor;
+    size_t written = write((u32)mfile->serial, start, size, buf);
+    if (!written) return 0;
+
+    size_t end = start + written;
+    if (end > mfile->file_buffer.buffer_size) {
+        void *new_buf = kalloc(np_dev.memory_page, end ? end : 1, ALIGN_64B, MEM_PRIV_KERNEL);
+        if (new_buf) {
+            if (mfile->file_buffer.buffer && mfile->file_size) memcpy(new_buf, mfile->file_buffer.buffer, mfile->file_size);
+            if (mfile->file_buffer.buffer) kfree(mfile->file_buffer.buffer, mfile->file_buffer.buffer_size ? mfile->file_buffer.buffer_size : 1);
+
+            mfile->file_buffer.buffer = new_buf;
+            mfile->file_buffer.buffer_size = end;
+            mfile->buf = (uptr)new_buf;
+        }
+    }
+
+    if (end > mfile->file_size) mfile->file_size = end;
+    mfile->file_buffer.limit = mfile->file_size;
+
+    if (mfile->file_buffer.buffer && start + written <= mfile->file_buffer.buffer_size) memcpy((char*)mfile->file_buffer.buffer + start, buf, written);
+
+    descriptor->size = mfile->file_size;
+    return written;
+}
+
+size_t Virtio9PDriver::swrite_file(const char *path, const void *buf, size_t size){
+    uint32_t f = walk_dir(root, (char*)path);
+    if (f == INVALID_FID){
+        kprintf("[VIRTIO 9P error] failed to navigate to %s",path);
+        return FS_RESULT_NOTFOUND;
+    }
+    if (open(f) == INVALID_FID){
+        clunk(&np_dev, f);
+        kprintf("[VIRTIO 9P error] failed to open %s",path);
+        return FS_RESULT_DRIVER_ERROR;
+    }
+    size_t written = write(f, 0, size, (const char*)buf);
+    clunk(&np_dev, f);
+    return written;
 }
 
 void Virtio9PDriver::close_file(file* descriptor){
@@ -157,15 +244,22 @@ void Virtio9PDriver::close_file(file* descriptor){
         irq_restore(irq);
         return;
     }
-    if (mfile->references) mfile->references--;
-    if (mfile->references == 0){
-        chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
+    if (mfile->references > 1){
+        mfile->references--;
         irq_restore(irq);
-        if (mfile->file_buffer.buffer) kfree(mfile->file_buffer.buffer, mfile->file_size ? mfile->file_size : 1);
-        kfree(mfile, sizeof(module_file));
         return;
     }
+    
+    uint64_t serial = mfile->serial;
+    void *buf = mfile->file_buffer.buffer;
+    size_t buf_size = mfile->file_buffer.buffer_size ? mfile->file_buffer.buffer_size : 1;
+
+    chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
     irq_restore(irq);
+
+    if (serial != INVALID_FID) clunk(&np_dev, (u32)serial);
+    if (buf) kfree(buf, buf_size);
+    kfree(mfile, sizeof(module_file));
 }
 
 size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, uint64_t *offset){
@@ -184,14 +278,25 @@ size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, u
     return amount;
 }
 
+bool Virtio9PDriver::truncate(file *descriptor, size_t size){
+    module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!mfile) return false;
+    if (mfile->read_only) return false;
+    if (!set_attribute((u32)mfile->serial, P9_SETATTR_SIZE, size)) return false;
+    if (!sync_file(mfile)) return false;
+    descriptor->size = mfile->file_size;
+    if (descriptor->cursor > descriptor->size) descriptor->cursor = descriptor->size;
+    return true;
+}
+
 size_t Virtio9PDriver::choose_version(){
     p9_version_packet *cmd = make_p9_version_packet("9P2000.L", 0x1000000);
     p9_version_packet *resp = (p9_version_packet*)make_p9_response_buffer();
     
-    virtio_buf b[2]={VBUF(cmd, sizeof(p9_version_packet), 0), VBUF(resp, sizeof(p9_version_packet), VIRTQ_DESC_F_WRITE)};
+    virtio_buf b[2]={VBUF(cmd, read_unaligned32(&cmd->header.size), 0), VBUF(resp, PAGE_SIZE, VIRTQ_DESC_F_WRITE)};
     virtio_send_nd(&np_dev, b, 2); 
 
-    u32 msize = read_p9_version_max_size(resp);
+    u32 msize = check_9p_success(resp) ? read_p9_version_max_size(resp) : 0;
 
     p9_free(cmd);
     p9_free(resp);
@@ -203,7 +308,7 @@ uint32_t Virtio9PDriver::attach(){
     t_attach *cmd = make_p9_attach_packet();
     void *resp = make_p9_response_buffer();
     
-    virtio_buf b[2]= {VBUF(cmd, sizeof(t_attach), 0), VBUF(resp, sizeof(r_attach), VIRTQ_DESC_F_WRITE)};
+    virtio_buf b[2]= {VBUF(cmd, read_unaligned32(&cmd->header.size), 0), VBUF(resp, sizeof(r_attach), VIRTQ_DESC_F_WRITE)};
     virtio_send_nd(&np_dev, b, 2);
 
     uint32_t rid = check_9p_success(resp) ? read_unaligned32(&cmd->fid) : INVALID_FID;
@@ -218,7 +323,7 @@ u32 Virtio9PDriver::open(u32 fid){
     t_lopen *cmd = make_p9_open_packet(fid);
     void *resp = make_p9_response_buffer();
     
-    virtio_buf b[2] = {VBUF(cmd, sizeof(t_lopen), 0), VBUF(resp, sizeof(r_lopen), VIRTQ_DESC_F_WRITE)};
+    virtio_buf b[2] = {VBUF(cmd, read_unaligned32(&cmd->header.size), 0), VBUF(resp, sizeof(r_lopen), VIRTQ_DESC_F_WRITE)};
     virtio_send_nd(&np_dev, b, 2);
     u32 rid = check_9p_success(resp) ? fid : INVALID_FID;
     
@@ -237,7 +342,7 @@ bool Virtio9PDriver::clunk(virtio_device *dev, uint32_t fid) {
         return false;
     }
 
-    virtio_buf b[2] = {VBUF(cmd, sizeof(t_clunk), 0), VBUF(resp, sizeof(t_clunk), VIRTQ_DESC_F_WRITE)};
+    virtio_buf b[2] = {VBUF(cmd, read_unaligned32(&cmd->header.size), 0), VBUF(resp, sizeof(p9_packet_header), VIRTQ_DESC_F_WRITE)};
     virtio_send_nd(dev, b, 2);
 
     bool ok = check_9p_success(resp) && ((p9_packet_header*)resp)->id == P9_RCLUNK;
@@ -262,7 +367,7 @@ size_t Virtio9PDriver::list_contents(u32 fid, void *buf, size_t size, u64 *offse
     t_readdir *cmd = make_p9_readdir_packet(fid, request_size, offset ? *offset : 0);
     void* resp = make_p9_sized_buffer(sizeof(r_readdir) + request_size);
 
-    virtio_buf b[2]={VBUF(cmd, sizeof(t_readdir) ,0), VBUF((void*)resp, sizeof(r_readdir) + request_size, VIRTQ_DESC_F_WRITE)};
+    virtio_buf b[2]={VBUF(cmd, read_unaligned32(&cmd->header.size),0), VBUF((void*)resp, sizeof(r_readdir) + request_size, VIRTQ_DESC_F_WRITE)};
     virtio_send_nd(&np_dev, b, 2);
 
     p9_free(cmd);
@@ -277,6 +382,7 @@ size_t Virtio9PDriver::list_contents(u32 fid, void *buf, size_t size, u64 *offse
 
     uintptr_t p = (uptr)resp + sizeof(r_readdir);
     uintptr_t end = p + read_unaligned32(&((r_readdir*)resp)->count);
+    if (end > (uintptr_t)resp + sizeof(r_readdir) + request_size) end = (uintptr_t)resp + sizeof(r_readdir) + request_size;
 
     uint32_t count = 0;
     u64 next_offset = offset ? *offset : 0;
@@ -309,14 +415,18 @@ size_t Virtio9PDriver::list_contents(u32 fid, void *buf, size_t size, u64 *offse
 }
 
 uint32_t Virtio9PDriver::walk_dir(uint32_t fid, char *path){
-    uint32_t amount = 0x1000;
     t_walk *cmd = make_p9_walk_packet(fid, path);
-    void* resp = make_p9_response_buffer();
 
-    virtio_buf b[2] = { VBUF(cmd, cmd->header.size, 0), VBUF((void*)resp, amount, VIRTQ_DESC_F_WRITE)};
+    uint16_t expected = read_unaligned16(&cmd->num_names);
+    uint32_t amount = sizeof(p9_packet_header) + sizeof(uint16_t) + ((uint32_t)expected * 13);
+    if (amount < sizeof(r_walk)) amount = sizeof(r_walk);
+    void* resp = make_p9_sized_buffer(amount);
+
+    virtio_buf b[2] = { VBUF(cmd, read_unaligned32(&cmd->header.size), 0), VBUF((void*)resp, amount, VIRTQ_DESC_F_WRITE)};
     virtio_send_nd(&np_dev, b, 2);
 
-    uint32_t rid = check_9p_success(resp) ? read_unaligned32(&cmd->newfid) : INVALID_FID;
+    bool ok = check_9p_success(resp) && ((p9_packet_header*)resp)->id == P9_RWALK && read_unaligned16(&((r_walk*)resp)->num_qids) == expected;
+    uint32_t rid = ok ? read_unaligned32(&cmd->newfid) : INVALID_FID;
     p9_free(cmd);
     p9_free(resp);
 
@@ -327,7 +437,7 @@ r_getattr* Virtio9PDriver::get_attribute(u32 fid, u64 mask){
     t_getattr *cmd = make_p9_getattr_packet(fid, mask);
     r_getattr *resp = (r_getattr*)make_p9_response_buffer();
 
-    virtio_buf b[2] = {VBUF(cmd, cmd->header.size, 0), VBUF(resp, sizeof(r_getattr), VIRTQ_DESC_F_WRITE)};
+    virtio_buf b[2] = {VBUF(cmd, read_unaligned32(&cmd->header.size), 0), VBUF(resp, sizeof(r_getattr), VIRTQ_DESC_F_WRITE)};
     virtio_send_nd(&np_dev, b, 2);
     
     p9_free(cmd);
@@ -339,35 +449,94 @@ r_getattr* Virtio9PDriver::get_attribute(u32 fid, u64 mask){
     return resp;
 }
 
-uint64_t Virtio9PDriver::read(u32 fid, u64 offset, void *file){
-    uint32_t amount = 0x10000;
-    if (max_msize && max_msize < amount) amount = (uint32_t)max_msize;
-    if (amount <= sizeof(p9_packet_header) + sizeof(u32)) return 0;
+bool Virtio9PDriver::set_attribute(u32 fid, u64 mask, u64 value){
+    t_setattr *cmd = make_p9_setattr_packet(fid, mask, value);
+    void *resp = make_p9_response_buffer();
 
-    t_read *cmd = make_p9_read_packet(fid, offset, amount);
-    void* resp = make_p9_sized_buffer(amount);
-
-    virtio_buf b[2] = {VBUF(cmd, sizeof(t_read), 0) ,VBUF(resp, amount, VIRTQ_DESC_F_WRITE)};
+    virtio_buf b[2] = {VBUF(cmd, read_unaligned32(&cmd->header.size), 0),VBUF(resp, sizeof(p9_packet_header), VIRTQ_DESC_F_WRITE)};
     virtio_send_nd(&np_dev, b, 2);
-    
-    if (!check_9p_success(resp)) {
-        p9_free(cmd);
-        p9_free(resp);
-        return 0;
-    }
 
-    uint32_t size = read_unaligned32((void*)((uptr)resp + sizeof(p9_packet_header)));
-    
-    memcpy((void*)((uptr)file + offset), (void*)((uptr)resp + sizeof(u32) + sizeof(p9_packet_header)), size);
+    bool ok = check_9p_success(resp);
 
     p9_free(cmd);
     p9_free(resp);
 
-    if (size > 0) 
-        return size + read(fid, offset + size, file);
+    return ok;
+}
 
-    return size;
+uint64_t Virtio9PDriver::read(u32 fid, u64 offset, void *file){
+    uint32_t amount = 0x10000;
+    if (max_msize > sizeof(p9_packet_header) + sizeof(u32)) {
+        uint32_t transport_limit = (uint32_t)(max_msize - sizeof(p9_packet_header) - sizeof(u32));
+        if (transport_limit < amount) amount = transport_limit;
+    }
 
+    uint64_t total = 0;
+    while (1) {
+        t_read *cmd = make_p9_read_packet(fid, offset + total, amount);
+        void* resp = make_p9_sized_buffer(sizeof(p9_packet_header) + sizeof(u32) + amount);
+        
+        virtio_buf b[2] = {VBUF(cmd, read_unaligned32(&cmd->header.size), 0) ,VBUF(resp, sizeof(p9_packet_header) + sizeof(u32) + amount, VIRTQ_DESC_F_WRITE)};
+        virtio_send_nd(&np_dev, b, 2);
+    
+        if (!check_9p_success(resp)) {
+            p9_free(cmd);
+            p9_free(resp);
+            break;
+        }
+
+        uint32_t got = read_unaligned32((void*)((uptr)resp + sizeof(p9_packet_header)));
+        if (got > amount) {
+            p9_free(cmd);
+            p9_free(resp);
+            break;
+        }
+
+        memcpy((void*)((uptr)file + total), (void*)((uptr)resp + sizeof(p9_packet_header) + sizeof(u32)), got);
+
+        p9_free(cmd);
+        p9_free(resp);
+
+        total += got;
+        if (!got) break;
+    }
+
+    return total;
+}
+
+size_t Virtio9PDriver::write(u32 fid, u64 offset, size_t amount, const char* buf){
+    if (!amount) return 0;
+
+    size_t total_written = 0;
+    size_t max_payload = 0;
+    if (max_msize > sizeof(t_write)) max_payload = max_msize - sizeof(t_write);
+    if (!max_payload) max_payload = amount;
+
+    while (total_written < amount) {
+        size_t chunk = amount - total_written;
+        if (chunk > max_payload) chunk = max_payload;
+
+        t_write *cmd = make_p9_write_packet(fid, offset + total_written, chunk, buf + total_written);
+        void* resp = make_p9_response_buffer();
+        virtio_buf b[2] = {VBUF(cmd, read_unaligned32(&cmd->header.size), 0), VBUF(resp, sizeof(r_write), VIRTQ_DESC_F_WRITE)};
+        virtio_send_nd(&np_dev, b, 2);
+
+        p9_free(cmd);
+
+        if (!check_9p_success(resp)){
+            p9_free(resp);
+            break;
+        }
+
+        size_t written = read_unaligned32(&((r_write*)resp)->count);
+        if (written > chunk) written = chunk;
+        p9_free(resp);
+
+        total_written += written;
+        if (written != chunk) break;
+    }
+
+    return total_written;
 }
 
 #define DIR_MASK 0x4000
@@ -379,7 +548,7 @@ bool Virtio9PDriver::stat(const char *path, fs_stat *out_stat){
         kprintf("[VIRTIO 9P error] failed to navigate to %s",path);
         return false;
     }
-    r_getattr *attr = get_attribute(f, 0x00000201ULL);
+    r_getattr *attr = get_attribute(f, P9_GETATTR_SIZE | P9_GETATTR_MODE);
     if (!attr) {
         clunk(&np_dev, f);
         return false;
@@ -388,5 +557,49 @@ bool Virtio9PDriver::stat(const char *path, fs_stat *out_stat){
     out_stat->type = read_unaligned32(&attr->mode) & DIR_MASK ? entry_directory : entry_file;
     p9_free(attr);
     clunk(&np_dev, f);
+    return true;
+}
+
+bool Virtio9PDriver::sync_file(module_file *mfile){
+    if (!mfile || mfile->serial == INVALID_FID) return false;
+
+    r_getattr *attr = get_attribute((u32)mfile->serial, P9_GETATTR_SIZE | P9_GETATTR_MODE);
+    if (!attr) return false;
+
+    size_t new_size = read_unaligned64(&attr->size);
+    p9_free(attr);
+
+    if (!new_size) {
+        if (mfile->file_buffer.buffer) kfree(mfile->file_buffer.buffer, mfile->file_buffer.buffer_size ? mfile->file_buffer.buffer_size : 1);
+        mfile->file_buffer.buffer = 0;
+        mfile->file_buffer.buffer_size = 0;
+        mfile->file_buffer.limit = 0;
+        mfile->buf = 0;
+        mfile->file_size = 0;
+        return true;
+    }
+
+    bool replace_buffer = new_size != mfile->file_buffer.buffer_size;
+    void *new_buf = mfile->file_buffer.buffer;
+    if (replace_buffer) {
+        new_buf = kalloc(np_dev.memory_page, new_size, ALIGN_64B, MEM_PRIV_KERNEL);
+        if (!new_buf) return false;
+    }
+
+    if (read((u32)mfile->serial, 0, new_buf) != new_size) {
+        if (replace_buffer) kfree(new_buf, new_size);
+        kprintf("[VIRTIO 9P error] failed to sync file with serial %x", (u32)mfile->serial);
+        return false;
+    }
+
+    if (replace_buffer) {
+        if (mfile->file_buffer.buffer) kfree(mfile->file_buffer.buffer, mfile->file_buffer.buffer_size ? mfile->file_buffer.buffer_size : 1);
+        mfile->file_buffer.buffer = new_buf;
+        mfile->file_buffer.buffer_size = new_size;
+    }
+
+    mfile->file_buffer.limit = new_size;
+    mfile->buf = (uptr)mfile->file_buffer.buffer;
+    mfile->file_size = new_size;
     return true;
 }

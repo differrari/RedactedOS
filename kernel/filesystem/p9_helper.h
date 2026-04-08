@@ -106,10 +106,7 @@ typedef struct t_attach {
     uint32_t fid;
     uint32_t afid;
     uint16_t uname_len;
-    char uname[8];
-    uint16_t aname_len;
-    char aname[1];
-    uint32_t n_uname;
+    char payload[1];
 }__attribute__((packed)) t_attach;
 
 t_attach* make_p9_attach_packet();
@@ -167,7 +164,30 @@ typedef struct t_walk {
     uint16_t num_names;
 }__attribute__((packed)) t_walk;
 
+typedef struct r_walk {
+    p9_packet_header header;
+    uint16_t num_qids;
+    uint8_t qids[13];
+}__attribute__((packed)) r_walk;
+
 t_walk* make_p9_walk_packet(u32 fid, literal path);
+
+#define P9_GETATTR_MODE         0x00000001ULL
+#define P9_GETATTR_NLINK        0x00000002ULL
+#define P9_GETATTR_UID          0x00000004ULL
+#define P9_GETATTR_GID          0x00000008ULL
+#define P9_GETATTR_RDEV         0x00000010ULL
+#define P9_GETATTR_ATIME        0x00000020ULL
+#define P9_GETATTR_MTIME        0x00000040ULL
+#define P9_GETATTR_CTIME        0x00000080ULL
+#define P9_GETATTR_INO          0x00000100ULL
+#define P9_GETATTR_SIZE         0x00000200ULL
+#define P9_GETATTR_BLOCKS       0x00000400ULL
+#define P9_GETATTR_BTIME        0x00000800ULL
+#define P9_GETATTR_GEN          0x00001000ULL
+#define P9_GETATTR_DATA_VERSION 0x00002000ULL
+#define P9_GETATTR_BASIC        0x000007ffULL
+#define P9_GETATTR_ALL          0x00003fffULL
 
 typedef struct t_getattr {
     p9_packet_header header;
@@ -194,6 +214,32 @@ typedef struct r_getattr {
 
 t_getattr* make_p9_getattr_packet(u32 fid, u64 mask);
 
+#define P9_SETATTR_MODE         0x00000001UL
+#define P9_SETATTR_UID          0x00000002UL
+#define P9_SETATTR_GID          0x00000004UL
+#define P9_SETATTR_SIZE         0x00000008UL
+#define P9_SETATTR_ATIME        0x00000010UL
+#define P9_SETATTR_MTIME        0x00000020UL
+#define P9_SETATTR_CTIME        0x00000040UL
+#define P9_SETATTR_ATIME_SET    0x00000080UL
+#define P9_SETATTR_MTIME_SET    0x00000100UL
+
+typedef struct {
+     p9_packet_header header;
+     u32 fid;
+     u32 valid;
+     u32 mode;
+     u32 uid;
+     u32 gid;
+     u64 size;
+     u64 atime_sec;
+     u64 atime_nsec;
+     u64 mtime_sec;
+     u64 mtime_nsec;
+}__attribute__((packed)) t_setattr;
+
+t_setattr* make_p9_setattr_packet(u32 fid, u64 mask, u64 value);
+
 typedef struct t_read {
     p9_packet_header header;
     uint32_t fid;
@@ -202,6 +248,21 @@ typedef struct t_read {
 }__attribute__((packed)) t_read;
 
 t_read* make_p9_read_packet(u32 fid, u64 offset, u64 amount);
+
+typedef struct t_write {
+    p9_packet_header header;
+    u32 fid;
+    u64 offset;
+    u32 count;
+    //Followed by data
+}__attribute__((packed)) t_write;
+
+typedef struct r_read {
+    p9_packet_header header;
+    u32 count;
+}__attribute__((packed)) r_write;
+
+t_write* make_p9_write_packet(u32 fid, u64 offset, size_t amount, const char* buf);
 
 typedef struct t_clunk {
     p9_packet_header header;

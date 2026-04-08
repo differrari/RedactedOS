@@ -177,11 +177,12 @@ u64 syscall_read_shortcut(process_t *ctx){
 }
 
 u64 syscall_get_mouse(process_t *ctx){
-    //TEST: are we preventing the mouse from being read outside of window?
+    //TODO: we're not fully preventing the mouse from being read outside of proc's window (raw & buttons)
     if (get_current_proc_pid() != ctx->id) return 0;
     uintptr_t up = (uintptr_t)ctx->PROC_X0;
     mouse_data tmp = {};
     tmp.raw = get_raw_mouse_in();
+    tmp.raw.scroll = sys_read_scroll_current();
     tmp.position = convert_mouse_position(get_mouse_pos());
     uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
     if (ur != UACCESS_OK) return 0;
@@ -725,6 +726,28 @@ u64 syscall_stat(process_t *ctx){
     return FS_RESULT_SUCCESS;
 }
 
+u64 syscall_trunc(process_t* ctx){
+    uintptr_t udesc = (uintptr_t)ctx->PROC_X0;
+    size_t size = (size_t)ctx->PROC_X1;
+    file descriptor = {};
+    uaccess_result_t ur = copy_from_user(ctx, &descriptor, udesc, sizeof(descriptor));
+    if (ur != UACCESS_OK) return 0;
+    bool ok = truncate(&descriptor, size);
+    if (!ok) return 0;
+    ur = copy_to_user(ctx, udesc, &descriptor, sizeof(descriptor));
+    if (ur != UACCESS_OK) return 0;
+    return ok;
+}
+
+// uint64_t syscall_load_fsmod(process_t *ctx){
+//     system_module *mod = (system_module*)ctx->PROC_X0;
+//     return load_process_module(ctx,mod);
+// }
+
+// uint64_t syscall_unload_fsmod(process_t *ctx){
+//     return unload_module(&ctx->exposed_fs);
+// }
+
 u64 syscall_in_case_of_js(process_t *ctx){
     panic("Shame on you\r\n\
 Don't ever do that again\r\n\
@@ -775,7 +798,8 @@ syscall_entry syscalls[] = {
     [FILE_SIMPLE_READ_CODE] = syscall_sreadf,
     [FILE_SIMPLE_WRITE_CODE] = syscall_swritef,
     [DIR_LIST_CODE] = syscall_dir_list,
-    [STAT_CODE] = syscall_stat,
+    [FILE_STAT_CODE] = syscall_stat,
+    [FILE_TRNC_CODE] = syscall_trunc,
     // [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
     // [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
     [IN_CASE_OF_JS_CODE] = syscall_in_case_of_js,

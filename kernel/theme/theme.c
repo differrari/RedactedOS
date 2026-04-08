@@ -5,6 +5,7 @@
 #include "console/kio.h"
 #include "math/math.h"
 #include "std/memory.h"
+#include "files/helpers.h"
 
 gpu_point default_boot_offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
 boot_theme_t boot_theme = {
@@ -19,7 +20,7 @@ boot_theme_t boot_theme = {
     .logo_points_count = BOOTSCREEN_NUM_SYMBOLS,
     .logo_steps = BOOTSCREEN_NUM_SYMBOLS-1,
     .logo_points = default_boot_offsets,
-    .play_startup_sound = true,
+    .play_startup_sound = false,
 };
 
 system_theme_t system_theme = {
@@ -36,7 +37,7 @@ system_config_t system_config = {
     .default_pwd = DEFAULT_PWD,
     .system_name = SYSTEM_NAME,
     .app_directory = "boot",
-    .use_net = true,
+    .use_net = false,
 };
 
 gpu_point parse_gpu_point(char *value, size_t value_len){
@@ -114,15 +115,24 @@ void parse_theme_kvp(string_slice key, string_slice value, void *context){
 }
 
 bool load_theme(){
-    file fd = {};
-    if (openf("/boot/redos/theme.config", &fd) != FS_RESULT_SUCCESS) return false;
-    char *buf = malloc(fd.size);
-    if (readf(&fd, buf, fd.size) != fd.size) return false;
-    closef(&fd);
+    char *theme_name = read_full_file("/shared/theme", 0);
+    
+    if (!theme_name) theme_name = "theme.config";
+    
+    string path = string_format("/boot/redos/%s",theme_name);
+    
+    char *buf = read_full_file(path.data, 0);
+    if (!buf) return false;
 
     read_toml(buf, parse_theme_kvp, 0);
 
     return true;
+}
+
+size_t reload_theme(const char *path, const void* buf, size_t size){
+    print("Reloading theme? %s",path);
+    if (strcmp(path,"/reload") != 0) return 0;
+    return load_theme();
 }
 
 size_t read_theme(const char *path, void* buf, size_t size){
@@ -138,7 +148,7 @@ system_module theme_mod = (system_module){
     .init = load_theme,
     .open = 0,
     .write = 0,
-    .swrite = 0,
+    .swrite = reload_theme,
     .read = 0,
     .sread = read_theme,
 };

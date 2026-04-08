@@ -403,13 +403,13 @@ sizedptr FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, 
     if (*next == '/') next++;
     else if (*next != '\0') return {0, 0};
     
-    uint32_t filecluster = (entry->hi_first_cluster << 16) | entry->lo_first_cluster;
+    if (!entry->flags.directory) return { 0, 0 };
 
+    uint32_t filecluster = (read_unaligned16(&entry->hi_first_cluster) << 16) | read_unaligned16(&entry->lo_first_cluster);
     uint32_t count = instance->count_FAT(filecluster);
 
     if (*next == '\0') return instance->list_directory(count, filecluster);
-    if (entry->flags.directory) return instance->walk_directory(count, filecluster, next, list_entries_handler);
-    return { 0, 0 };
+    return instance->walk_directory(count, filecluster, next, list_entries_handler);
 }
 
 size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t *offset){

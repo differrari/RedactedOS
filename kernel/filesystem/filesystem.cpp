@@ -45,7 +45,7 @@ size_t boot_partition_read(file *fd, char *out_buf, size_t size, file_offset off
 }
 
 size_t boot_partition_write(file *fd, const char *buf, size_t size, file_offset offset){
-    return 0;
+    return fs_driver->write_file(fd, buf, size);
 }
 
 size_t boot_partition_readdir(const char* path, void *out_buf, size_t size, file_offset *offset){
@@ -60,6 +60,10 @@ bool boot_stat(const char *path, fs_stat *out_stat){
     return fs_driver->stat(path, out_stat);
 }
 
+bool boot_truncate(file *descriptor, size_t size){
+    return fs_driver->truncate(descriptor, size);
+}
+
 system_module boot_fs_module = (system_module){
     .name = "boot",
     .mount = "/boot",
@@ -70,6 +74,7 @@ system_module boot_fs_module = (system_module){
     .read = boot_partition_read,
     .write = boot_partition_write,
     .close = boot_partition_close,
+    .truncate = boot_truncate,
     .sread = 0,
     .swrite = 0,
     .getstat = boot_stat,
@@ -100,7 +105,7 @@ size_t shared_read(file *fd, char *out_buf, size_t size, file_offset offset){
 }
 
 size_t shared_write(file *fd, const char *buf, size_t size, file_offset offset){
-    return 0;
+    return p9Driver->write_file(fd, buf, size);
 }
 
 size_t shared_readdir(const char* path, void *out_buf, size_t size, file_offset *offset){
@@ -116,6 +121,18 @@ void shared_close(file *descriptor){
     p9Driver->close_file(descriptor);
 }
 
+size_t shared_sread(const char *path, void *buf, size_t size){
+    return p9Driver->sread_file(path, buf, size);
+}
+
+size_t shared_swrite(const char *path, const void *buf, size_t size){
+    return p9Driver->swrite_file(path, buf, size);
+}
+
+bool shared_truncate(file *descriptor, size_t size){
+    return p9Driver->truncate(descriptor, size);
+}
+
 system_module p9_fs_module = (system_module){
     .name = "9PFS",
     .mount = "/shared",
@@ -126,8 +143,9 @@ system_module p9_fs_module = (system_module){
     .read = shared_read,
     .write = shared_write,
     .close = shared_close,
-    .sread = 0,
-    .swrite = 0,
+    .truncate = shared_truncate,
+    .sread = shared_sread,
+    .swrite = shared_swrite,
     .getstat = shared_stat,
     .readdir = shared_readdir,
 };
@@ -171,7 +189,6 @@ FS_RESULT open_file(const char* path, file* descriptor){
         close_file_global(descriptor, mod);
         return FS_RESULT_DRIVER_ERROR;
     }
-    memset(of, 0, sizeof(open_file_descriptors));
     of->mfile_id = descriptor->id;
     of->file_id = reserve_fd_id();
     of->file_size = descriptor->size;
@@ -206,13 +223,14 @@ size_t read_file(file *descriptor, char* buf, size_t size){
     if (ofile) local = *ofile;
     irq_restore(irq);
     if (!ofile || !local.mod || !local.mod->read || local.pid != get_current_proc_pid()) return 0;
+    size_t start_cursor = descriptor->cursor;
     file gfd = (file){
         .id = local.mfile_id,
         .size = descriptor->size,
-        .cursor = descriptor->cursor,
+        .cursor = start_cursor,
     };
-    size_t amount_read = local.mod->read(&gfd, buf, size, descriptor->cursor);
-    descriptor->cursor += amount_read;
+    size_t amount_read = local.mod->read(&gfd, buf, size, start_cursor);
+    descriptor->cursor = gfd.cursor != start_cursor ? gfd.cursor : start_cursor + amount_read;
     descriptor->size = gfd.size;
     return amount_read;
 }
@@ -254,13 +272,14 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     if (ofile) local = *ofile;
     irq_restore(irq);
     if (!ofile || !local.mod || !local.mod->write || local.pid != get_current_proc_pid()) return 0;
+    size_t start_cursor = descriptor->cursor;
     file gfd = (file){
         .id = local.mfile_id,
         .size = descriptor->size,
-        .cursor = descriptor->cursor,
+        .cursor = start_cursor,
     };
     size_t amount_written = local.mod->write(&gfd, buf, size, 0);
-    descriptor->cursor += amount_written;
+    descriptor->cursor = gfd.cursor != start_cursor ? gfd.cursor : start_cursor + amount_written;
     descriptor->size = gfd.size;
     irq = irq_save_disable();
     ofile = (open_file_descriptors *)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
@@ -310,6 +329,38 @@ bool get_stat(const char *path, fs_stat *out_stat){
     }
     if (!mod->getstat) return false;
     return mod->getstat(search_path, out_stat);
+}
+
+bool truncate(file *descriptor, size_t size){
+    if (!open_files){
+        kprintf("[FS] No open files");
+        return false;
+    }
+
+    open_file_descriptors local = {};
+    irq_flags_t irq = irq_save_disable();
+    open_file_descriptors *ofile = (open_file_descriptors *)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (ofile) local = *ofile;
+    irq_restore(irq);
+    if (!ofile || !local.mod || !local.mod->truncate || local.pid != get_current_proc_pid()) return false;
+
+    file gfd = (file){
+        .id = local.mfile_id,
+        .size = descriptor->size,
+        .cursor = descriptor->cursor,
+    };
+    
+    if (!local.mod->truncate(&gfd, size)) return false;
+
+    descriptor->size = gfd.size;
+    descriptor->cursor = gfd.cursor;
+    if (descriptor->cursor > descriptor->size) descriptor->cursor = descriptor->size;
+
+    irq = irq_save_disable();
+    ofile = (open_file_descriptors *)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (ofile) ofile->file_size = gfd.size;
+    irq_restore(irq);
+    return true;
 }
 
 void close_files_for_process(uint16_t pid){

@@ -45,12 +45,17 @@ void page_free(void *ptr){
     if (((uintptr_t)ptr & (PAGE_SIZE - 1)) != 0) return;
     process_t* k = get_kernel_proc();//TODO: can we make this more fragmented? This inside a syscall, current proc outside
 
-    size_t size = 0;
-    if (k && k->alloc_map) size = get_alloc_size(k->alloc_map, ptr);
-    if (!size && p_index) size = get_alloc_size(p_index, ptr);
-    if (!size) size = PAGE_SIZE;
-    if (k && k->alloc_map) free_registered(k->alloc_map, ptr);
-    pfree(ptr, size);
+    if (k && k->alloc_map && get_alloc_size(k->alloc_map, ptr)) {
+        free_registered(k->alloc_map, ptr);
+        return;
+    }
+
+    if (p_index && get_alloc_size(p_index, ptr)) {
+        free_registered(p_index, ptr);
+        return;
+    }
+
+    pfree(ptr, PAGE_SIZE);
 }
 
 extern void printl(const char *str){
