@@ -63,7 +63,7 @@ t_attach* make_p9_attach_packet(){
     write_unaligned16(&packet->uname_len, 8); 
     memcpy(packet->payload,"REDACTED",8);
     
-    u8 *cursor = packet->payload + 8;
+    u8 *cursor = (u8 *)(packet->payload + 8);
     write_unaligned16((u16*)cursor, 0);
     cursor += sizeof(u16);
     write_unaligned32((u32*)cursor, 12345);//TODO: hash (name+timestamp) or random
@@ -90,7 +90,6 @@ t_readdir* make_p9_readdir_packet(u32 fid, u32 size, u64 offset){
 }
 
 t_walk* make_p9_walk_packet(u32 fid, literal path){
-    static char empty_path[] = "";
     const char *cursor = path;
     uint16_t names = 0;
     size_t full_size = sizeof(t_walk);
