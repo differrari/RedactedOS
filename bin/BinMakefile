@@ -3,10 +3,7 @@ include ../../common.mk
 CPPFLAGS := -I. -I../../shared
 CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
 CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
-LOCAL_LINKER := $(wildcard local.linker.ld)
-DEFAULT_LINKER := ../../user/linker.ld
-LINKER_SCRIPT := $(if $(LOCAL_LINKER),$(LOCAL_LINKER),$(DEFAULT_LINKER))
-LDFLAGS  := -T $(LINKER_SCRIPT)
+LDFLAGS  := -emain
 
 CLEAN_OBJS := $(shell find . -name '*.o')
 CLEAN_DEPS := $(shell find . -name '*.d')
