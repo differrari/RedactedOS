@@ -67,6 +67,7 @@ extern bool read_event(kbd_event *event){
 
 extern void get_mouse_status(mouse_data *in){
     in->raw = get_raw_mouse_in();
+    in->raw.scroll = sys_read_scroll_current();
     in->position = convert_mouse_position(get_mouse_pos());
 }
 
@@ -141,6 +142,14 @@ extern size_t readf(file *descriptor, char* buf, size_t size){
 
 extern size_t writef(file *descriptor, const char* buf, size_t size){
     return write_file(descriptor, buf, size);
+}
+
+extern bool statf(const char *path, fs_stat *out_stat){
+    return get_stat(path, out_stat);
+}
+
+extern bool truncatef(file *descriptor, size_t size){
+    return truncate(descriptor,size);
 }
 
 extern void closef(file *descriptor){

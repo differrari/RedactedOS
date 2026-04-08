@@ -12,6 +12,7 @@
 #include "graph/tres.h"
 #include "input_keycodes.h"
 #include "wincomp.h"
+#include "ui/color/color.h"
 
 #define BORDER_SIZE 3
 
@@ -107,15 +108,6 @@ uint32_t calc_average(uint32_t *color, size_t count){
     pixg /= count;
     pixb /= count;
     return (0xFF << 24) | ((pixr & 0xFF) << 16) | ((pixg & 0xFF) << 8) | ((pixb & 0xFF) << 0);
-}
-
-uint32_t text_color_for_base(uint32_t base){
-    uint8_t r = (base & 0xFF);
-    uint8_t g = ((base << 8) & 0xFF);
-    uint8_t b = ((base << 16) & 0xFF);
-    uint8_t avg = (r+g+b)/3;
-    if (avg < 0x77) avg = 255-avg;
-    return (0xFF << 24) | (avg << 16) | (avg << 8) | avg; 
 }
 
 void setup_desktop_bg(){

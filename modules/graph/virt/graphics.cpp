@@ -13,7 +13,7 @@ GPUDriver *gpu_driver;
 
 bool gpu_init(){
     kprint("[GRAPH] Initializing Virt GPU");
-    gpu_size preferred_screen_size = {1080,720};
+    gpu_size preferred_screen_size = {1920,1080};
     if (VirtioGPUDriver *vgd = VirtioGPUDriver::try_init(preferred_screen_size)){
         gpu_driver = vgd;
     } else if (RamFBGPUDriver *rfb = RamFBGPUDriver::try_init(preferred_screen_size)){
@@ -127,6 +127,7 @@ system_module graphics_module = {
     .read = 0,
     .write = 0,
     .close = 0,
+    .truncate = 0,
     .sread = 0,
     .swrite = 0,//TODO implement simple io
     .getstat = 0,//TODO: stat

@@ -15,10 +15,16 @@ extern "C" {
 #define PROC_OUT_BUF 0x10000
 
 typedef struct {
-    volatile uint32_t write_index;
-    volatile uint32_t read_index;
+    volatile u32 write_index;
+    volatile u32 read_index;
     keypress entries[INPUT_BUFFER_CAPACITY];
 } input_buffer_t;
+
+typedef struct {
+    volatile u32 write_index;
+    volatile u32 read_index;
+    i8 entries[INPUT_BUFFER_CAPACITY];
+} scroll_buffer_t;
 
 typedef struct {
     volatile uint32_t write_index;
@@ -66,6 +72,7 @@ typedef struct process {
     __attribute__((aligned(16))) input_buffer_t input_buffer;
     __attribute__((aligned(16))) event_buffer_t event_buffer;
     __attribute__((aligned(16))) packet_buffer_t packet_buffer;
+    __attribute__((aligned(16))) scroll_buffer_t scroll_buffer;
     uint8_t priority;
     uint16_t win_id;
     uaddr_t win_fb_va;

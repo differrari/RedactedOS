@@ -336,6 +336,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     };
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
+    // mfile->serial = ;//TODO: add serial once PR #67 is merged
     mfile->references = 1;
     irq = irq_save_disable();
     int ok = chashmap_put(open_files, &fid, sizeof(uint64_t), mfile);
@@ -363,6 +364,14 @@ size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
     memcpy(buf, (char*)mfile->file_buffer.buffer + descriptor->cursor, size);
     irq_restore(irq);
     return size;
+}
+
+size_t FAT32FS::write_file(file *descriptor, const char* buf, size_t size){
+    module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!mfile) return 0;
+    if (mfile->read_only) return 0;
+    
+    return buffer_write_to(&mfile->file_buffer, buf, size, descriptor->cursor);
 }
 
 void FAT32FS::close_file(file* descriptor){
@@ -455,4 +464,8 @@ size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t
 
 bool FAT32FS::stat(const char *path, fs_stat *out_stat){
     return false;//TODO: stat
+}
+
+bool FAT32FS::truncate(file *descriptor, size_t size){
+    return false;//TODO: truncate
 }

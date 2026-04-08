@@ -96,6 +96,7 @@ system_module net_module = (system_module){
     .read = 0,
     .write = 0,
     .close = 0,
+    .truncate = 0,
     .sread = 0,
     .swrite = 0,
     .getstat = 0,
