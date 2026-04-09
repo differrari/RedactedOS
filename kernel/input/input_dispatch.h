@@ -10,12 +10,6 @@
 extern "C" {
 #endif 
 
-typedef enum mouse_button {
-    LMB,
-    RMB,
-    MMB,
-} mouse_button;
-
 bool register_keypress(keypress kp);
 void register_event(kbd_event event);
 void mouse_config(gpu_point point, gpu_size size);
@@ -24,7 +18,7 @@ void register_mouse_input(mouse_input *rat);
 mouse_input get_raw_mouse_in();
 
 gpu_point get_mouse_pos();
-bool mouse_button_pressed(mouse_button mb);
+bool mouse_button_pressed(int mb);
 
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp);
 uint16_t sys_subscribe_shortcut_current(keypress kp);

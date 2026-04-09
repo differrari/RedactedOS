@@ -1,7 +1,10 @@
 #include "addr.h"
 
+#include "va_layout.h"
+
 bool kva_is_dmap(kaddr_t va){
-    return ((uint64_t)va & HIGH_VA) == HIGH_VA;
+    uint64_t v = (uint64_t)va;
+    return v >= HIGH_VA && v < KERNEL_IMAGE_VA_BASE;
 }
 
 kaddr_t dmap_pa_to_kva(paddr_t pa){
@@ -26,5 +29,6 @@ paddr_t pt_va_to_pa(const void* va){
     uint64_t sctlr = 0;
     asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
     if ((sctlr & 1) == 0) return (paddr_t)v;
+    if (v >= KERNEL_IMAGE_VA_BASE) return kimg_va_to_pa((kaddr_t)v);
     return dmap_kva_to_pa((kaddr_t)v);
 }

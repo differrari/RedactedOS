@@ -7,6 +7,7 @@
 #include "theme/theme.h"
 #include "memory/page_allocator.h"
 #include "sysregs.h"
+#include "memory/addr.h"
 
 typedef struct {
     uint64_t addr;
@@ -42,7 +43,7 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
     fw_find_file("etc/ramfb", &file);
     
     if (file.selector == 0x0){
-        kprintf("Ramfb not found");
+        kprintf("[RAMFB error] ramfb not found");
         return false;
     }
     mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
@@ -71,8 +72,9 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
 }
 
 void RamFBGPUDriver::update_gpu_fb(){
+    paddr_t fb_pa = pt_va_to_pa(framebuffer);
     ramfb_structure fb = {
-        .addr = __builtin_bswap64(VIRT_TO_PHYS((uintptr_t)framebuffer)),
+        .addr = __builtin_bswap64((uint64_t)fb_pa),
         .fourcc = __builtin_bswap32(RGB_FORMAT_ARGB8888),
         .flags = __builtin_bswap32(0),
         .width = __builtin_bswap32(screen_size.width),
