@@ -98,7 +98,8 @@ protected:
     sizedptr list_directory(uint32_t cluster_count, uint32_t root_index);
     f32file_entry* walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, f32_entry_handler handler);
     sizedptr read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index);
-
+    bool write_to_disk(u32 cluster_start, void* buf, size_t size);
+    
     fat32_mbs* mbs = 0x0;
     void *fs_page = 0x0;
     uint32_t cluster_count = 0;
