@@ -124,18 +124,18 @@ void FAT32FS::parse_shortnames(f32file_entry* entry, char* out){
     out[j] = '\0';
 }
 
-sizedptr FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, f32_entry_handler handler) {
-    if (!mbs || !handler) return {0, 0};
+f32file_entry* FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, f32_entry_handler handler) {
+    if (!mbs || !handler) return 0;
     uint32_t cluster_size = mbs->sectors_per_cluster;
     sizedptr buf_ptr = read_cluster(data_start_sector, cluster_size, cluster_count, root_index);
     char *buffer = (char*)buf_ptr.ptr;
     f32file_entry *entry = 0;
 
-    if (!buffer || !buf_ptr.size) return { 0, 0 };
+    if (!buffer || !buf_ptr.size) return 0;
     for (uint64_t i = 0; i + sizeof(f32file_entry) <= buf_ptr.size;) {
         if (buffer[i] == 0) {
             kfree(buffer, buf_ptr.size);
-            return {0 , 0};
+            return 0;
         }
         if (buffer[i] == 0xE5){
             i += sizeof(f32file_entry);
@@ -151,7 +151,7 @@ sizedptr FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, co
                 count++;
                 if (i + sizeof(f32file_entry) > buf_ptr.size) {
                     kfree(buffer, buf_ptr.size);
-                    return {0, 0};
+                    return 0;
                 }
             } while (buffer[i + 0xB] == 0xF);
             parse_longnames(first_longname, count, filename);
@@ -160,16 +160,21 @@ sizedptr FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_index, co
         if (!long_name)
             parse_shortnames(entry, filename);
         kprintfv("[fat32] found entry: %s", filename);
-        sizedptr result = handler(this, entry, filename, seek);
-        if (result.ptr && result.size) {
+        f32file_entry *found_entry = handler(this, entry, filename, seek);//TODO: should be possible to remove handlers altogether, moving their logic here
+        if (found_entry) {
+            if (found_entry == entry){
+                f32file_entry *result = (f32file_entry*)zalloc(sizeof(f32file_entry));
+                memcpy(result, found_entry, sizeof(f32file_entry));
+                found_entry = result;
+            }
             kfree(buffer, buf_ptr.size);
-            return result;
+            return found_entry;
         }
         i += sizeof(f32file_entry);
     }
 
     kfree(buffer, buf_ptr.size);
-    return { 0,0 };
+    return 0;
 }
 
 sizedptr FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
@@ -278,26 +283,26 @@ uint32_t FAT32FS::count_FAT(uint32_t first){
     return count;
 }
 
-sizedptr FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {
-    if (entry->flags.volume_id) return {0,0};
+f32file_entry* FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {
+    if (entry->flags.volume_id) return 0;
     
     size_t name_len = strlen_max(filename, 0);
     int matched = strstart_case(seek, filename, true);
-    if (matched != (int)name_len) return {0, 0};
+    if (matched != (int)name_len) return 0;
 
     const char *next = seek + name_len;
     if (*next == '/') next++;
-    else if (*next != '\0') return {0, 0};
+    else if (*next != '\0') return 0;
 
     uint32_t filecluster = (entry->hi_first_cluster << 16) | entry->lo_first_cluster;
     uint32_t bps = instance->bytes_per_sector;
     uint32_t spc = instance->mbs->sectors_per_cluster;
     uint32_t bpc = bps * spc;
     uint32_t count = entry->filesize > 0 ? ((entry->filesize + bpc - 1) / bpc) : instance->count_FAT(filecluster);
-
+    
     if (entry->flags.directory) return instance->walk_directory(count, filecluster, next, read_entry_handler);
-    if (*next != '\0') return {0,0};
-    return instance->read_full_file(instance->data_start_sector, instance->mbs->sectors_per_cluster, count, entry->filesize, filecluster);
+    if (*next != '\0') return 0;
+    return entry;
 }
 
 FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
@@ -315,7 +320,11 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     irq_restore(irq);
     path = seek_to(path, '/');
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
-    sizedptr buf_ptr = walk_directory(count, mbs->first_cluster_of_root_directory, path, read_entry_handler);
+    f32file_entry *entry = walk_directory(count, mbs->first_cluster_of_root_directory, path, read_entry_handler);
+    if (!entry) return FS_RESULT_NOTFOUND; 
+    uint32_t filecluster = (entry->hi_first_cluster << 16) | entry->lo_first_cluster;
+    uint32_t fat_count = count_FAT(filecluster);
+    sizedptr buf_ptr = read_full_file(data_start_sector, mbs->sectors_per_cluster, fat_count, entry->filesize, filecluster);
     void *buf = (void*)buf_ptr.ptr;
     if (!buf || !buf_ptr.size) return FS_RESULT_NOTFOUND;
     descriptor->id = fid;
@@ -336,7 +345,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     };
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
-    // mfile->serial = ;//TODO: add serial once PR #67 is merged
+    mfile->serial = filecluster;
     mfile->references = 1;
     irq = irq_save_disable();
     int ok = chashmap_put(open_files, &fid, sizeof(uint64_t), mfile);
@@ -392,32 +401,38 @@ void FAT32FS::close_file(file* descriptor){
     irq_restore(irq);
 }
 
-sizedptr FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {
+f32file_entry* FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {
 
-    if (entry->flags.volume_id) return { 0, 0 };
+    if (entry->flags.volume_id) return 0;
     size_t name_len = strlen_max(filename, 0);
     int matched = strstart_case(seek, filename,true);
-    if (matched != (int)name_len) return { 0, 0 };
+    if (matched != (int)name_len) return 0;
     
     const char *next = seek + name_len;
     if (*next == '/') next++;
-    else if (*next != '\0') return {0, 0};
+    else if (*next != '\0') return 0;
     
-    if (!entry->flags.directory) return { 0, 0 };
+    if (!entry->flags.directory) return 0;
 
     uint32_t filecluster = (read_unaligned16(&entry->hi_first_cluster) << 16) | read_unaligned16(&entry->lo_first_cluster);
     uint32_t count = instance->count_FAT(filecluster);
 
-    if (*next == '\0') return instance->list_directory(count, filecluster);
+    if (*next == '\0') return entry;
     return instance->walk_directory(count, filecluster, next, list_entries_handler);
 }
 
 size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t *offset){
-    if (!mbs || !buf || size < sizeof(uint32_t)) return 0;
+    if (!mbs || !buf || size < sizeof(u32)) return 0;
     path = seek_to(path, '/');
 
-    uint32_t count_sectors = count_FAT(mbs->first_cluster_of_root_directory);
-    sizedptr ptr = *path ? walk_directory(count_sectors, mbs->first_cluster_of_root_directory, path, list_entries_handler) : list_directory(count_sectors, mbs->first_cluster_of_root_directory);
+    u32 count_sectors = count_FAT(mbs->first_cluster_of_root_directory);
+    
+    f32file_entry *entry = walk_directory(count_sectors, mbs->first_cluster_of_root_directory, path, list_entries_handler);
+    
+    u32 filecluster = *path ? (read_unaligned16(&entry->hi_first_cluster) << 16) | read_unaligned16(&entry->lo_first_cluster) : mbs->first_cluster_of_root_directory;
+    u32 fat_count = count_FAT(filecluster);
+    
+    sizedptr ptr = list_directory(fat_count, filecluster);
 
     if (!ptr.ptr || !ptr.size) {
         *(uint32_t*)buf = 0;

@@ -77,7 +77,7 @@ typedef struct f32longname {
 
 class FAT32FS;
 
-typedef sizedptr (*f32_entry_handler)(FAT32FS *instance, f32file_entry*, char *filename, const char *seek);
+typedef f32file_entry* (*f32_entry_handler)(FAT32FS *instance, f32file_entry*, char *filename, const char *seek);
 
 class FAT32FS: public FSDriver {
 public:
@@ -96,7 +96,7 @@ protected:
     void read_FAT(uint32_t location, uint32_t size, uint8_t count);
     uint32_t count_FAT(uint32_t first);
     sizedptr list_directory(uint32_t cluster_count, uint32_t root_index);
-    sizedptr walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, f32_entry_handler handler);
+    f32file_entry* walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, f32_entry_handler handler);
     sizedptr read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index);
 
     fat32_mbs* mbs = 0x0;
@@ -108,8 +108,8 @@ protected:
     uint16_t bytes_per_sector = 0;
     uint32_t partition_first_sector = 0;
 
-    static sizedptr read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
-    static sizedptr list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
+    static f32file_entry* read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
+    static f32file_entry* list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
     static sizedptr stat_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
 
     void parse_longnames(f32longname entries[], uint16_t count, char* out);
