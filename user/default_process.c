@@ -8,6 +8,7 @@
 #include "audio/cuatro.h"
 #include "audio/wav.h"
 #include "memory/memory.h"
+#include "files/helpers.h"
 
 #define BORDER 20
 
@@ -144,9 +145,18 @@ void concurrent_write(){
     print("Buffer now %s",buf);
 }
 
+void write_large_file(){
+    void *buf = zalloc(1024);
+    
+    memset(buf, 'B', 1024);
+    
+    print("Wrote %x",write_full_file("/boot/redos/fattest", buf, 1024));
+    
+}
+
 int main(int argc, char* argv[]){
     
-    concurrent_write();
+    write_large_file();
     
     return 0;
 }

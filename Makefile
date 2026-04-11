@@ -47,10 +47,8 @@ clean:
 	$(MAKE) -C utils  $@
 	$(MAKE) -C bin  $@
 	$(MAKE) -C modules $@
-	@echo "removing fs dirs"
-	$(RM) -r $(FS_DIRS)
 	@echo "removing images"
-	$(RM) kernel.img kernel.elf disk.img dump
+	$(RM) kernel.img kernel.elf dump
 
 raspi:
 	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true MODE=raspi all
