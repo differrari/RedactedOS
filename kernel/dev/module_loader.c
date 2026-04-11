@@ -4,6 +4,7 @@
 #include "sysregs.h"
 #include "memory/page_allocator.h"
 #include "syscalls/syscalls.h"
+#include "files/dir_list.h"
 
 //TODO: use hashmaps
 linked_list_t* modules;
@@ -55,4 +56,27 @@ bool unload_module(system_module *module){
 system_module* get_module(const char **full_path){
     linked_list_node_t *node = linked_list_find(modules, (void*)full_path, fs_search);
     return node ? ((system_module*)node->data) : 0;
+}
+
+size_t list_root(void* buf, size_t size, uint64_t *offset){
+    
+    fs_dir_list_helper helper = create_dir_list_helper(buf, size);
+    
+    u64 index = offset ? *offset : 0;
+    
+    linked_list_node_t *node = linked_list_get(modules, index);
+    
+    do {
+        if (node && node->data){
+            system_module *mod = node->data;
+            if (!dir_list_fill(&helper, mod->mount)){
+                if (offset) *offset = index;
+                return dir_buf_size(&helper);
+            }
+            index++;
+        }
+        node = node->next;
+    } while(node);
+    
+    return dir_buf_size(&helper);
 }

@@ -74,7 +74,7 @@ extern "C" void handle_usb_interrupt(){
 
 system_module usb_module = (system_module){
     .name = "input",
-    .mount = "/in",
+    .mount = "in",
     .version = VERSION_NUM(0, 1, 0, 1),
     .init = input_init,
     .fini = 0,

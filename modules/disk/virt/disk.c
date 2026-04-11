@@ -111,7 +111,7 @@ void disk_read(void *buffer, uint32_t sector, uint32_t count){
 
 system_module disk_module = (system_module){
     .name = "virtio_blk",
-    .mount = "/disk",
+    .mount = "disk",
     .version = VERSION_NUM(0, 1, 0, 0),
     .init = init_disk_device,
     .fini = 0,

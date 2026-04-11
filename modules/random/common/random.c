@@ -28,9 +28,16 @@ bool rng_init_global() {
     return true;
 }
 
+bool rng_stat(const char *path, fs_stat *out_stat){
+    if (!out_stat) return false;
+    out_stat->size = 0;
+    out_stat->type = entry_file;
+    return true;
+}
+
 system_module rng_module = {
     .name = "random",
-    .mount = "/random",
+    .mount = "random",
     .version = VERSION_NUM(0, 1, 0, 0),
     .init = rng_init_global,
     .open = rng_open,
@@ -39,6 +46,7 @@ system_module rng_module = {
     .read = rng_read,
     .write = 0,
     .sread = 0,
+    .getstat = rng_stat,
     .swrite = 0,//TODO implement simple io
     .readdir = 0,
 };

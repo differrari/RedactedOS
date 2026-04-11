@@ -9,7 +9,7 @@ process_t* init_audio_mixer() { return 0; }
 
 system_module audio_module = (system_module){
     .name = "audio",
-    .mount = "/audio",
+    .mount = "audio",
     .version = VERSION_NUM(0, 1, 0, 1),
     .init = 0,
     .fini = 0,

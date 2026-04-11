@@ -98,7 +98,7 @@ size_t list_bin(const char *path, void *buf, size_t size, file_offset offset){
 
 system_module bin_module = (system_module){
     .name = "bin",
-    .mount = "/bin",
+    .mount = "bin",
     .version = VERSION_NUM(0, 1, 0, 1),
     .init = init_bin,
     .fini = 0,

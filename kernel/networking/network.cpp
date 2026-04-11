@@ -88,7 +88,7 @@ bool network_sync_multicast(uint16_t ifindex, const uint8_t* macs, uint32_t coun
 
 system_module net_module = (system_module){
     .name = "net",
-    .mount = "/net",
+    .mount = "net",
     .version = VERSION_NUM(0, 1, 0, 1),
     .init = network_init,
     .fini = 0,

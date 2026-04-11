@@ -142,13 +142,21 @@ size_t read_theme(const char *path, void* buf, size_t size){
     return size;
 }
 
+bool stat_theme(const char *path, fs_stat *out_stat){
+    if (!out_stat) return false;
+    out_stat->size = sizeof(system_theme);
+    out_stat->type = entry_file;
+    return true;
+}
+
 system_module theme_mod = (system_module){
     .name = "theme",
-    .mount = "/theme",
+    .mount = "theme",
     .init = load_theme,
     .open = 0,
-    .write = 0,
+    .write = 0,//TODO: can we merge swrite/write and sread/read
     .swrite = reload_theme,
     .read = 0,
+    .getstat = stat_theme,
     .sread = read_theme,
 };

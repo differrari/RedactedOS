@@ -119,7 +119,7 @@ void gpu_resize_window(uint32_t width, uint32_t height, draw_ctx *win_ctx){
 
 system_module graphics_module = {
     .name = "graphics",
-    .mount = "/graph",
+    .mount = "graph",
     .version = VERSION_NUM(0, 1, 0, 0),
     .init = gpu_init,
     .fini = 0,

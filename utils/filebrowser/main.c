@@ -4,7 +4,7 @@
 
 string directories[16];
 int dir_count;
-string files[16];
+string files[256];
 int file_count;
 
 int selected = 0;
@@ -18,7 +18,7 @@ draw_ctx ctx;
 
 void on_entry(const char* path, const char* name){
     if (!strcmp(name, "..") || !strcmp(name, ".")) return;
-    if (file_count >= 16) return;
+    if (file_count >= 256) return;
     files[file_count++] = string_from_const(name);
 }
 
@@ -96,9 +96,12 @@ void enter(const char *name){
     if (!name || !*name) return;
 
     string full_path;
-    if (dir_count)
-        full_path = string_format("%s/%s", directories[dir_count - 1].data, name);
-    else
+    if (dir_count){
+        if (directories[dir_count - 1].data[directories[dir_count - 1].length-1] == '/')
+            full_path = string_format("%s%s", directories[dir_count - 1].data, name);
+        else     
+            full_path = string_format("%s/%s", directories[dir_count - 1].data, name);
+    } else
         full_path = string_from_const(name);
 
     if (strend(name, ".red") == 0){
@@ -111,6 +114,7 @@ void enter(const char *name){
 
     fs_stat st = {};
     if (!statf(full_path.data, &st)){
+        print("Failed to get info for %s",full_path.data);
         string_free(full_path);
         return;
     }
@@ -163,7 +167,7 @@ void pop_dir(){
 
 int main(){
     request_draw_ctx(&ctx);
-    enter("/shared");
+    enter("/");
 
     while (true){
         kbd_event ev = {};

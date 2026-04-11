@@ -8,6 +8,7 @@
 #include "math/math.h"
 #include "syscalls/syscalls.h"
 #include "exceptions/irq.h"
+#include "files/dir_list.h"
 
 #define kprintfv(fmt, ...) \
     ({ \
@@ -557,7 +558,7 @@ size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t
     
     f32_walk_result walk_result = walk_directory(count_sectors, mbs->first_cluster_of_root_directory, path, list_entries_handler);
     
-    if (!walk_result.found) return 0;
+    if (strlen(path) && !walk_result.found) return 0;
     
     f32file_entry entry = walk_result.entry;
     
@@ -586,8 +587,8 @@ size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t
     	size_t len = strlen(cursor);
     	uint64_t hash = chashmap_fnv1a64(cursor, len);
     	if (!offset_found){
-		if (hash == *offset) offset_found = true;
-		cursor += len + 1;
+    		if (hash == *offset) offset_found = true;
+    		cursor += len + 1;
     		continue;
     	}
     	if ((uintptr_t)write_ptr + len < (uintptr_t)buf + size){
@@ -610,11 +611,15 @@ size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t
 
 bool FAT32FS::stat(const char *path, fs_stat *out_stat){
     path = seek_to(path, '/');
+    if (!strlen(path)){
+        return stat_dir(out_stat);
+    }
     uint32_t count = count_FAT(mbs->first_cluster_of_root_directory);
     f32_walk_result result = walk_directory(count, mbs->first_cluster_of_root_directory, path, read_entry_handler);
-    if (!result.found) return false;
+    if (!result.found){
+        return false;
+    }
     f32file_entry entry = result.entry;
-    if (!entry.filesize) return false;
     out_stat->size = entry.filesize;
     out_stat->type = entry.flags.directory ? entry_directory : entry_file;
     return true;
