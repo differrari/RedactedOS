@@ -2,7 +2,8 @@
 
 #include "std/string.h"
 #include "types.h"
-#include "dev/driver_base.h"
+#include "files/fs.h"
+#include "files/system_module.h"
 
 class FSDriver {
 public:

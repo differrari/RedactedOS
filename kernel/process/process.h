@@ -7,7 +7,7 @@ extern "C" {
 #include "types.h"
 #include "keyboard_input.h"
 #include "net/network_types.h"
-#include "dev/driver_base.h"
+#include "files/system_module.h"
 #include "memory/mm_process.h"
 
 #define INPUT_BUFFER_CAPACITY 64

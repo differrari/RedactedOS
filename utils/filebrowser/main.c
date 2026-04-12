@@ -1,19 +1,10 @@
 #include "syscalls/syscalls.h"
 #include "files/helpers.h"
 #include "input_keycodes.h"
+#include "data/struct/stack.h"
 
-string directories[16];
-int dir_count;
-string files[256];
-int file_count;
-    
-// #error unify swrite/sread and normal
-// #error stack
-
-// #error scroll in filebrowser
-// #error filebrowser ui
-// #error filebrowser lib
-// #error filebrowser hex files
+stack_t *directories;
+stack_t *files;
 
 int selected = 0;
 
@@ -24,19 +15,28 @@ size_t viewed_size;
 
 draw_ctx ctx;
 
+bool disable_multiverse;
+
+//TODO: preferences/settings system
+//TODO: put in library
+//TODO: design a system-wide method for opening files by extension
+
 void on_entry(const char* path, const char* name){
     if (!strcmp(name, "..") || !strcmp(name, ".")) return;
-    if (file_count >= 256) return;
-    files[file_count++] = string_from_const(name);
+    string s = string_from_const(name);
+    stack_push(files, &s);
 }
 
 void refresh(){
-    for (int i = 0; i < file_count; i++)
-        string_free(files[i]);
-    file_count = 0;
+    for (u64 i = 0; i < stack_count(files); i++)
+        string_free(STACK_GET(string,files,i));
+    stack_reset(files);
 
+    u64 dir_count = stack_count(directories);
     if (dir_count > 0)
-        traverse_directory(directories[dir_count - 1].data, false, on_entry);
+        traverse_directory(STACK_GET(string,directories,dir_count-1).data, false, on_entry);
+    
+    i64 file_count = stack_count(files);
 
     if (selected >= file_count)
         selected = file_count > 0 ? file_count - 1 : 0;
@@ -89,13 +89,13 @@ void refresh(){
     }
 
     if (dir_count > 0)
-        fb_draw_string(&ctx, directories[dir_count - 1].data, 4, 4, 2, 0xFFFFFFFF);
+        fb_draw_string(&ctx, STACK_GET(string,directories,dir_count - 1).data, 4, 4, 2, 0xFFFFFFFF);
 
     for (int i = 0; i < file_count; i++){
         int y = 40 + (i * 30);
         if (selected == i)
             fb_draw_string(&ctx, ">", 0, y, 3, 0xFFFFFFFF);
-        fb_draw_string(&ctx, files[i].data, 30, y, 3, 0xFFFFFFFF);
+        fb_draw_string(&ctx, STACK_GET(string,files,i).data, 30, y, 3, 0xFFFFFFFF);
     }
     commit_draw_ctx(&ctx);
 }
@@ -104,11 +104,13 @@ void enter(const char *name){
     if (!name || !*name) return;
 
     string full_path;
+    u64 dir_count = stack_count(directories);
     if (dir_count){
-        if (directories[dir_count - 1].data[directories[dir_count - 1].length-1] == '/')
-            full_path = string_format("%s%s", directories[dir_count - 1].data, name);
+        string parent = STACK_GET(string,directories,dir_count-1);
+        if (parent.data[parent.length-1] == '/')
+            full_path = string_format("%s%s", parent.data, name);
         else     
-            full_path = string_format("%s/%s", directories[dir_count - 1].data, name);
+            full_path = string_format("%s/%s", parent.data, name);
     } else
         full_path = string_from_const(name);
 
@@ -132,7 +134,7 @@ void enter(const char *name){
             string_free(full_path);
             return;
         }
-        directories[dir_count++] = full_path;
+        stack_push(directories,&full_path);
         selected = 0;
         viewing_file = false;
         refresh();
@@ -166,15 +168,21 @@ void pop_dir(){
         refresh();
         return;
     }
-    if (dir_count <= 0) return;
-    string_free(directories[dir_count - 1]);
-    dir_count--;
+    u64 dir_count = stack_count(directories);
+    if (dir_count <= disable_multiverse) return;
+    string last = STACK_GET(string, directories, dir_count-1);
+    string_free(last);
+    stack_remove(directories,1);
     selected = 0;
     refresh();
 }
 
 int main(){
     request_draw_ctx(&ctx);
+    
+    files = stack_create(sizeof(string),32);
+    directories = stack_create(sizeof(string),16);
+    
     enter("/");
 
     while (true){
@@ -191,8 +199,9 @@ int main(){
         }
         if (viewing_file)
             continue;
-        if (!file_count)
+        if (!stack_count(files))
             continue;
+        u64 file_count = stack_count(files);
         if (ev.key == KEY_UP){
             selected = (selected - 1 + file_count) % file_count;
             refresh();
@@ -204,7 +213,7 @@ int main(){
             continue;
         }
         if (ev.key == KEY_ENTER || ev.key == KEY_KPENTER)
-            enter(files[selected].data);
+            enter(STACK_GET(string,files,selected).data);
     }
 
     return 0;

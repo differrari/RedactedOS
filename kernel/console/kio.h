@@ -1,7 +1,6 @@
 #pragma once
 
 #include "types.h"
-#include "dev/driver_base.h"
 #include "kernel_processes/kprocess_loader.h"
 
 #ifdef __cplusplus

@@ -1,6 +1,5 @@
 #include "math/rng.h"
 #include "random/random.h"
-#include "dev/driver_base.h"
 #include "console/kio.h"
 
 rng_t global_rng;

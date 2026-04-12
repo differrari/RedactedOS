@@ -17,6 +17,12 @@
 
 FAT32FS *fs_driver;
 
+uint64_t fd_id = 256;//First byte reserved
+
+uint64_t reserve_fd_id(){
+    return ++fd_id;
+}
+
 typedef struct {
     uint64_t mfile_id;
     uint64_t file_id;

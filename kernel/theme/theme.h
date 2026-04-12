@@ -2,7 +2,7 @@
 
 #include "types.h"
 #include "ui/graphic_types.h"
-#include "dev/driver_base.h"
+#include "files/system_module.h"
 
 typedef struct {
     int logo_repeat;

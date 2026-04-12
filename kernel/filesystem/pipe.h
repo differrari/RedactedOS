@@ -2,7 +2,7 @@
 
 #include "types.h"
 #include "files/fs.h"
-#include "dev/driver_base.h"
+#include "files/system_module.h"
 
 typedef struct {
     file write_fd;

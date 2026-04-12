@@ -5,7 +5,7 @@ extern "C" {
 #endif
 
 #include "types.h"
-#include "dev/driver_base.h"
+#include "files/system_module.h"
 
 bool init_disk_device();
 void disk_verbose();

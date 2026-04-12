@@ -6,6 +6,7 @@
 #include "math/math.h"
 #include "std/memory.h"
 #include "files/helpers.h"
+#include "files/vfs.h"
 
 gpu_point default_boot_offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
 boot_theme_t boot_theme = {
@@ -114,6 +115,8 @@ void parse_theme_kvp(string_slice key, string_slice value, void *context){
 
 }
 
+u64 reload(void *ctx, size_t len);
+
 bool load_theme(){
     char *theme_name = read_full_file("/shared/theme", 0);
     
@@ -125,39 +128,31 @@ bool load_theme(){
     if (!buf) return false;
 
     read_toml(buf, parse_theme_kvp, 0);
+    
+    make_entry(DIR_AS_FILE, backing_virtual, entry_file, (buffer){
+       .buffer = &system_theme,
+       .buffer_size = sizeof(system_theme_t),
+       .limit = sizeof(system_theme_t),
+       .options = buffer_read_only
+    });
+    
+    make_cmd_entry("reload", backing_command, entry_file, reload);
 
     return true;
 }
 
-FS_RESULT open_theme(const char *path, file *descriptor){
-    descriptor->id = reserve_fd_gid("/theme");
-    descriptor->size = sizeof(system_theme);
-    return FS_RESULT_SUCCESS;
-}
-
-size_t reload_theme(file *descriptor, const char* buf, size_t size, file_offset offset){
-    return load_theme();
-}
-
-size_t read_theme(file *descriptor, char* buf, size_t size, file_offset offset){
-    size = min(size, sizeof(system_theme));
-    memcpy(buf, (void*)&system_theme, size);
-    return size;
-}
-
-bool stat_theme(const char *path, fs_stat *out_stat){
-    if (!out_stat) return false;
-    out_stat->size = sizeof(system_theme);
-    out_stat->type = entry_file;
-    return true;
+u64 reload(void *ctx, size_t len){
+    load_theme();
+    return 0;
 }
 
 system_module theme_mod = (system_module){
     .name = "theme",
     .mount = "theme",
     .init = load_theme,
-    .open = open_theme,
-    .write = reload_theme,
-    .read = read_theme,
-    .getstat = stat_theme,
+    .open = vfs_open,
+    .write = vfs_write,
+    .read = vfs_read,
+    .getstat = vfs_stat,
+    .readdir = vfs_list,
 };
