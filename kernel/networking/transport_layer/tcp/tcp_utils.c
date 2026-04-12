@@ -1,4 +1,5 @@
 #include "tcp_utils.h"
+#include "std/memory.h"
 
 uint32_t tcp_calc_mss_for_l3(uint8_t l3_id, ip_version_t ver, const void *remote_ip){
     uint32_t mtu = 1500;
@@ -23,7 +24,9 @@ uint32_t tcp_calc_mss_for_l3(uint8_t l3_id, ip_version_t ver, const void *remote
 
 bool tcp_build_tx_opts_from_local_v4(const void *src_ip_addr, ipv4_tx_opts_t *out){
     if (!out) return false;
-    l3_ipv4_interface_t *v4 = l3_ipv4_find_by_ip(*(const uint32_t *)src_ip_addr);
+    uint32_t src_ip = 0;
+    memcpy(&src_ip, src_ip_addr, sizeof(src_ip));
+    l3_ipv4_interface_t *v4 = l3_ipv4_find_by_ip(src_ip);
     if (v4) {
         out->scope = IP_TX_BOUND_L3;
         out->index = v4->l3_id;

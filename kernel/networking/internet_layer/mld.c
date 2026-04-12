@@ -133,22 +133,21 @@ static bool mld_send_report(uint8_t ifindex, const uint8_t group[16], uint8_t re
     netpkt_t* pkt = netpkt_alloc(total, headroom, 0);
     if(!pkt) return false;
 
-    ipv6_hdr_t* ip6 = (ipv6_hdr_t*)netpkt_put(pkt, (uint32_t)sizeof(ipv6_hdr_t));
-    if(!ip6) {
+    void* ip6p = netpkt_put(pkt, (uint32_t)sizeof(ipv6_hdr_t));
+    if(!ip6p) {
         netpkt_unref(pkt);
         return false;
     }
 
-    ((uint8_t*)&ip6->ver_tc_fl)[0] = 0x60;
-    ((uint8_t*)&ip6->ver_tc_fl)[1] = 0x00;
-    ((uint8_t*)&ip6->ver_tc_fl)[2] = 0x00;
-    ((uint8_t*)&ip6->ver_tc_fl)[3] = 0x00;
+    ipv6_hdr_t ip6;
+    ip6.ver_tc_fl = bswap32((uint32_t)(6 << 28));
 
-    ip6->payload_len = bswap16((uint16_t)payload_len);
-    ip6->next_header = 0;
-    ip6->hop_limit = 1;
-    memcpy(ip6->src, src_ip, 16);
-    memcpy(ip6->dst, dst_ip, 16);
+    ip6.payload_len = bswap16((uint16_t)payload_len);
+    ip6.next_header = 0;
+    ip6.hop_limit = 1;
+    memcpy(ip6.src, src_ip, 16);
+    memcpy(ip6.dst, dst_ip, 16);
+    memcpy(ip6p, &ip6, sizeof(ip6));
 
     uint8_t* hb = (uint8_t*)netpkt_put(pkt, (uint32_t)sizeof(hbh));
     if(!hb) {

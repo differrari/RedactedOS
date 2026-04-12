@@ -176,14 +176,18 @@ bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst
     if (payload_len && payload) memcpy(segment + sizeof(tcp_hdr_t) + opts_len, payload, payload_len);
 
     if (ver == IP_VER4){
-        uint32_t s = *(const uint32_t *)src_ip_addr;
-        uint32_t d = *(const uint32_t *)dst_ip_addr;
+        uint32_t s = 0;
+        uint32_t d = 0;
+        memcpy(&s, src_ip_addr, sizeof(s));
+        memcpy(&d, dst_ip_addr, sizeof(d));
 
-        ((tcp_hdr_t *)segment)->checksum = tcp_checksum_ipv4(segment, tcp_len, s, d);
+        h.checksum = tcp_checksum_ipv4(segment, tcp_len, s, d);
+        memcpy(segment, &h, sizeof(h));
         ipv4_send_packet(d, 6, pkt, (const ipv4_tx_opts_t *)txp, ttl, dontfrag);
         return true;
     } else if (ver == IP_VER6){
-        ((tcp_hdr_t *)segment)->checksum = tcp_checksum_ipv6(segment, tcp_len, (const uint8_t *)src_ip_addr, (const uint8_t *)dst_ip_addr);
+        h.checksum = tcp_checksum_ipv6(segment, tcp_len, (const uint8_t *)src_ip_addr, (const uint8_t *)dst_ip_addr);
+        memcpy(segment, &h, sizeof(h));
         ipv6_send_packet((const uint8_t *)dst_ip_addr, 6, pkt, (const ipv6_tx_opts_t *)txp, ttl, dontfrag);
         return true;
     }

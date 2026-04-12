@@ -15,25 +15,25 @@ static inline uint32_t v4_u32_from_arr(const uint8_t ip16[16]) {
 }
 
 size_t create_udp_segment(uintptr_t buf, const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload) {
-    udp_hdr_t *udp = (udp_hdr_t *)buf;
-    udp->src_port = bswap16(src->port);
-    udp->dst_port = bswap16(dst->port);
-    uint16_t full_len = (uint16_t)(sizeof(*udp) + payload.size);
-    udp->length = bswap16(full_len);
-    udp->checksum = 0;
+    udp_hdr_t udp;
+    udp.src_port = bswap16(src->port);
+    udp.dst_port = bswap16(dst->port);
+    uint16_t full_len = (uint16_t)(sizeof(udp) + payload.size);
+    udp.length = bswap16(full_len);
+    udp.checksum = 0;
 
-    memcpy((void *)(buf + sizeof(*udp)), (void *)payload.ptr, payload.size);
+    memcpy((void*)buf, &udp, sizeof(udp));
+    memcpy((void *)(buf + sizeof(udp)), (void *)payload.ptr, payload.size);
 
     if (src->ver == IP_VER4) {
         uint32_t s = v4_u32_from_arr(src->ip);
         uint32_t d = v4_u32_from_arr(dst->ip);
-        uint16_t csum = checksum16_pipv4(s, d, 0x11, (const uint8_t *)udp, full_len);
-        udp->checksum = bswap16(csum);
+        udp.checksum = bswap16(checksum16_pipv4(s, d, 0x11, (const uint8_t *)buf, full_len));
     } else if (src->ver == IP_VER6) {
-        uint16_t csum = checksum16_pipv6(src->ip, dst->ip, 17, (const uint8_t *)udp, full_len);
-        udp->checksum = bswap16(csum);
+        udp.checksum = bswap16(checksum16_pipv6(src->ip, dst->ip, 17, (const uint8_t *)buf, full_len));
     }
 
+    memcpy((void*)buf, &udp, sizeof(udp));
     return full_len;
 }
 
@@ -66,8 +66,9 @@ sizedptr udp_strip_header(uintptr_t ptr, uint32_t len) {
     if (len < sizeof(udp_hdr_t)) {
         return (sizedptr){ 0, 0 };
     }
-    udp_hdr_t *hdr = (udp_hdr_t *)ptr;
-    uint16_t total = bswap16(hdr->length);
+    udp_hdr_t hdr;
+    memcpy(&hdr, (const void*)ptr, sizeof(hdr));
+    uint16_t total = bswap16(hdr.length);
     if (total < sizeof(udp_hdr_t) || total > len) {
         return (sizedptr){ 0, 0 };
     }
@@ -81,29 +82,23 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     sizedptr pl = udp_strip_header(ptr, len);
     if (!pl.ptr) return;
 
-    udp_hdr_t *hdr = (udp_hdr_t *)ptr;
+    udp_hdr_t hdr;
+    memcpy(&hdr, (const void*)ptr, sizeof(hdr));
 
-    if (hdr->checksum) {
+    if (hdr.checksum) {
         if (ipver == IP_VER4) {
-            uint16_t recv = hdr->checksum;
-            hdr->checksum = 0;
-            uint16_t calc = checksum16_pipv4(
-                *(const uint32_t *)src_ip_addr, *(const uint32_t *)dst_ip_addr, 0x11,
-                (const uint8_t *)hdr, (uint16_t)(pl.size + sizeof(*hdr))
-            );
-            hdr->checksum = recv;
-            if (calc != bswap16(recv)) return;
+            uint32_t src_ip = 0;
+            uint32_t dst_ip = 0;
+            memcpy(&src_ip, src_ip_addr, sizeof(src_ip));
+            memcpy(&dst_ip, dst_ip_addr, sizeof(dst_ip));
+            if (checksum16_pipv4(src_ip, dst_ip, 0x11, (const uint8_t*)ptr, (uint16_t)(pl.size + sizeof(hdr))) != 0) return;
         } else if (ipver == IP_VER6) {
-            uint16_t recv = hdr->checksum;
-            hdr->checksum = 0;
-            uint16_t calc = checksum16_pipv6( (const uint8_t*)src_ip_addr, (const uint8_t*)dst_ip_addr, 0x11, (const uint8_t*)hdr, (uint32_t)(pl.size + sizeof(*hdr)));
-            hdr->checksum = recv;
-            if (calc != bswap16(recv)) return;
+            if (checksum16_pipv6((const uint8_t*)src_ip_addr, (const uint8_t*)dst_ip_addr, 0x11, (const uint8_t*)ptr, (uint32_t)(pl.size + sizeof(hdr))) != 0) return;
         }
     }
 
-    uint16_t dst_port = bswap16(hdr->dst_port);
-    uint16_t src_port = bswap16(hdr->src_port);
+    uint16_t dst_port = bswap16(hdr.dst_port);
+    uint16_t src_port = bswap16(hdr.src_port);
 
     l3_ipv4_interface_t *v4 = NULL;
     l3_ipv6_interface_t *v6 = NULL;

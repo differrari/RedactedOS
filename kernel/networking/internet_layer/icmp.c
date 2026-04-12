@@ -171,17 +171,17 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
 void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
     if (len < 8) return;
 
-    icmp_packet* pkt = (icmp_packet*)ptr;
-    uint16_t recv_ck = pkt->checksum;
-    pkt->checksum = 0;
-    uint16_t calc = checksum16((uint16_t*)pkt, (len+1)/2);
-    pkt->checksum = recv_ck;
-    if (calc != recv_ck) return;
+    const uint8_t* raw = (const uint8_t*)ptr;
+    uint32_t sum = 0;
+    for (uint32_t i = 0; i + 1 < len; i += 2) sum += (uint32_t)((raw[i] << 8) | raw[i + 1]);
+    if (len & 1u) sum += (uint32_t)(raw[len - 1] << 8);
+    while (sum >> 16) sum = (sum & 0xFFFFu) + (sum >> 16);
+    if ((uint16_t)sum != 0xFFFFu) return;
 
-    uint8_t type = pkt->type;
-    uint8_t code = pkt->code;
-    uint16_t id = bswap16(pkt->id);
-    uint16_t sq = bswap16(pkt->seq);
+    uint8_t type = raw[0];
+    uint8_t code = raw[1];
+    uint16_t id = rd_be16(raw + 4);
+    uint16_t sq = rd_be16(raw + 6);
     uint32_t pay = len - 8;
     if (pay > 56) pay = 56;
 
@@ -194,7 +194,7 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
         rp->id = bswap16(id);
         rp->seq = bswap16(sq);
         memset(rp->payload, 0, 56);
-        if (pay) memcpy(rp->payload, pkt->payload, pay);
+        if (pay) memcpy(rp->payload, raw + 8, pay);
         rp->checksum = 0;
         uint32_t rlen = 8 + pay;
         rp->checksum = checksum16((uint16_t*)rp, (rlen+1)/2);
@@ -225,14 +225,14 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
 
     if (type == ICMP_TIME_EXCEEDED || type == ICMP_DEST_UNREACH || type == ICMP_PARAM_PROBLEM || type == ICMP_REDIRECT) {
         if (pay >= 28) {
-        const uint8_t *ip = pkt->payload;
+        const uint8_t *ip = raw + 8;
         uint8_t ihl = (uint8_t)(ip[0] & 0x0F);
         uint32_t iphdr = (uint32_t)ihl * 4;
 
         if (pay >= iphdr + 8) {
             uint8_t proto = ip[9];
             if (proto == 1) {
-                const uint8_t *ic = pkt->payload + iphdr;
+                const uint8_t *ic = raw + 8 + iphdr;
                 uint8_t t = ic[0];
                 if (t == ICMP_ECHO_REQUEST || t == ICMP_ECHO_REPLY) {
                     uint16_t iid = (uint16_t)((ic[4] << 8) | ic[5]);

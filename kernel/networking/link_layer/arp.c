@@ -211,14 +211,14 @@ void arp_input(uint16_t ifindex, netpkt_t* pkt) {
     uintptr_t frame_ptr = netpkt_data(pkt);
     if (frame_len < (uint32_t)sizeof(eth_hdr_t) + (uint32_t)sizeof(arp_hdr_t)) return;
 
-    const eth_hdr_t* eth = (const eth_hdr_t*)frame_ptr;
-    const uint8_t* src_mac = eth->src_mac;
-    const arp_hdr_t* hdr = (const arp_hdr_t*)(frame_ptr + sizeof(eth_hdr_t));
-    uint16_t op = bswap16(hdr->opcode);
-    uint32_t sender_ip = bswap32(hdr->sender_ip);
-    uint32_t target_ip = bswap32(hdr->target_ip);
+    const uint8_t* src_mac = (const uint8_t*)(frame_ptr+6);
+    arp_hdr_t hdr;
+    memcpy(&hdr, (const void*)(frame_ptr + sizeof(eth_hdr_t)), sizeof(hdr));
+    uint16_t op = bswap16(hdr.opcode);
+    uint32_t sender_ip = bswap32(hdr.sender_ip);
+    uint32_t target_ip = bswap32(hdr.target_ip);
 
-    arp_table_put_for_l2((uint8_t)ifindex, sender_ip, hdr->sender_mac, 180000, false);
+    arp_table_put_for_l2((uint8_t)ifindex, sender_ip, hdr.sender_mac, 180000, false);
 
     if (op == ARP_OPCODE_REQUEST) {
         char tbuf[16], abuf[16];
@@ -229,7 +229,7 @@ void arp_input(uint16_t ifindex, netpkt_t* pkt) {
         uint32_t spa_guess = pick_spa_for_l2((uint8_t)ifindex, sender_ip);
         ipv4_to_string(spa_guess, abuf);
         if (has || (spa_guess == target_ip)) {
-            arp_send_reply_on((uint8_t)ifindex, hdr, src_mac);
+            arp_send_reply_on((uint8_t)ifindex, &hdr, src_mac);
         }
     }
 }

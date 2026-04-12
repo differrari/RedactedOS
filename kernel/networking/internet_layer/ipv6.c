@@ -132,7 +132,7 @@ static void icmpv6_send_error(uint8_t ifindex, const uint8_t src_ip[16], const u
     h->code = code;
     h->checksum = 0;
 
-    *(uint32_t*)(buf + sizeof(icmpv6_hdr_t)) = bswap32(param32);
+    wr_be32(buf + sizeof(icmpv6_hdr_t), param32);
 
     memcpy(buf + base, invoking, copy);
 
@@ -423,13 +423,14 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
             return;
         }
 
-        ipv6_hdr_t* ip6 = (ipv6_hdr_t*)hdrp;
-        ip6->ver_tc_fl = bswap32((uint32_t)(6u << 28));
-        ip6->payload_len = bswap16((uint16_t)seg_len);
-        ip6->next_header = next_header;
-        ip6->hop_limit = hop_limit ? hop_limit : 64;
-        memcpy(ip6->src, src, 16);
-        memcpy(ip6->dst, dst, 16);
+        ipv6_hdr_t ip6;
+        ip6.ver_tc_fl = bswap32((uint32_t)(6u << 28));
+        ip6.payload_len = bswap16((uint16_t)seg_len);
+        ip6.next_header = next_header;
+        ip6.hop_limit = hop_limit ? hop_limit : 64;
+        memcpy(ip6.src, src, 16);
+        memcpy(ip6.dst, dst, 16);
+        memcpy(hdrp, &ip6, sizeof(ip6));
 
         eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, pkt);
         return;
@@ -479,23 +480,25 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
             break;
         }
 
-        ipv6_hdr_t* ip6 = (ipv6_hdr_t*)buf;
-        ip6->ver_tc_fl = bswap32((uint32_t)(6u << 28));
-        ip6->payload_len = bswap16((uint16_t)payload_len);
-        ip6->next_header = 44;
-        ip6->hop_limit = hop_limit ? hop_limit : 64;
-        memcpy(ip6->src, src, 16);
-        memcpy(ip6->dst, dst, 16);
+        ipv6_hdr_t ip6;
+        ip6.ver_tc_fl = bswap32((uint32_t)(6u << 28));
+        ip6.payload_len = bswap16((uint16_t)payload_len);
+        ip6.next_header = 44;
+        ip6.hop_limit = hop_limit ? hop_limit : 64;
+        memcpy(ip6.src, src, 16);
+        memcpy(ip6.dst, dst, 16);
 
-        ipv6_frag_hdr_t* fh = (ipv6_frag_hdr_t*)((uintptr_t)buf + hdr_len);
-        fh->next_header = next_header;
-        fh->reserved = 0;
+        memcpy(buf, &ip6, sizeof(ip6));
+        ipv6_frag_hdr_t fh;
+        fh.next_header = next_header;
+        fh.reserved = 0;
         uint16_t off_flags = (uint16_t)(((off / 8u) & 0x1FFFu) << 3);
         if (more) off_flags |= 0x0001u;
-        fh->offset_flags = bswap16(off_flags);
-        fh->identification = bswap32(ident);
+        fh.offset_flags = bswap16(off_flags);
+        fh.identification = bswap32(ident);
+        memcpy((uint8_t*)buf + hdr_len, &fh, sizeof(fh));
 
-        memcpy((uint8_t*)(fh + 1), data + off, chunk);
+        memcpy((uint8_t*)buf + hdr_len + sizeof(fh), data + off, chunk);
 
         eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, fpkt);
 
@@ -548,7 +551,9 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     uintptr_t ip_ptr = netpkt_data(pkt);
     if (ip_len < sizeof(ipv6_hdr_t)) return;
 
-    ipv6_hdr_t* ip6 = (ipv6_hdr_t*)ip_ptr;
+    ipv6_hdr_t ip6_;
+    ipv6_hdr_t* ip6 = &ip6_;
+    memcpy(ip6, (const void*)ip_ptr, sizeof(*ip6));
     uint32_t v = bswap32(ip6->ver_tc_fl);
     if ((v >> 28) != 6) return;
     uint32_t now = (uint32_t)get_time();
@@ -606,15 +611,16 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if (nh == 44) {//b
         if (l4_len < sizeof(ipv6_frag_hdr_t)) return;
 
-        const ipv6_frag_hdr_t* fh = (const ipv6_frag_hdr_t*)l4;
-        uint8_t inner_nh = fh->next_header;
-        uint16_t off_flags = bswap16(fh->offset_flags);
-        uint32_t ident = bswap32(fh->identification);
+        ipv6_frag_hdr_t fh;
+        memcpy(&fh, (const void*)l4, sizeof(fh));
+        uint8_t inner_nh = fh.next_header;
+        uint16_t off_flags = bswap16(fh.offset_flags);
+        uint32_t ident = bswap32(fh.identification);
 
         uint32_t off = ((uint32_t)(off_flags >> 3) & 0x1FFFu) * 8u;
         uint8_t more = (off_flags & 0x0001u) ? 1u : 0u;
 
-        const uint8_t* frag = (const uint8_t*)(fh + 1);
+        const uint8_t* frag = (const uint8_t*)l4 + sizeof(ipv6_frag_hdr_t);
         uint32_t frag_len = l4_len-(uint32_t)sizeof(ipv6_frag_hdr_t);
 
         if (more && (frag_len & 7u)) {

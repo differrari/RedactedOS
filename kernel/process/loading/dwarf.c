@@ -274,14 +274,15 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 			.discriminator = 0
 		};
 		if (ptr + sizeof(dwarf_debug_line_header) > end_section) return (debug_line_info){};
-		dwarf_debug_line_header *hdr = (dwarf_debug_line_header*)ptr;
-		uintptr_t unit_end = (uintptr_t)&hdr->unit_length + sizeof(hdr->unit_length) + hdr->unit_length;
+		dwarf_debug_line_header hdr = {};
+		memcpy(&hdr, (const void*)ptr, sizeof(hdr));
+		uintptr_t unit_end = ptr + sizeof(hdr.unit_length) + hdr.unit_length;
 		if (unit_end <= ptr || unit_end > end_section) return (debug_line_info){};
-		if (!hdr->line_range || !hdr->opcode_base) return (debug_line_info){};
+		if (!hdr.line_range || !hdr.opcode_base) return (debug_line_info){};
 
-		state.is_stmt = hdr->default_is_stmt;
+		state.is_stmt = hdr.default_is_stmt;
 
-		if (hdr->version != 5) {
+		if (hdr.version != 5) {
 			kprintf("Only DWARF version 5 is supported");
 			return (debug_line_info){};
 		}
@@ -291,7 +292,7 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 		// kprintf("Header is %x bytes",sizeof(dwarf_debug_line_header));
 
 		memset(files, 0, sizeof(files));
-		uintptr_t file_ptr = dwarf_decode_entries(ptr + sizeof(dwarf_debug_line_header) + hdr->opcode_base - 1, debug_line_str_base, str_size, type_codes, form_codes, 0);
+		uintptr_t file_ptr = dwarf_decode_entries(ptr + sizeof(dwarf_debug_line_header) + hdr.opcode_base - 1, debug_line_str_base, str_size, type_codes, form_codes, 0);
 		if (file_ptr != ptr){
 			// kprintf("Now files %x",file_ptr);
 			dwarf_decode_entries(file_ptr, debug_line_str_base, str_size, type_codes, form_codes, files);
@@ -301,7 +302,7 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 		// 	if (files[i]) kprintf("File [%i] = %s",i,files[i]);
 		// }
 
-		ptr = (uintptr_t)&hdr->header_length + sizeof(hdr->header_length) + hdr->header_length;
+		ptr = ptr + sizeof(hdr.unit_length) + sizeof(hdr.version) + sizeof(hdr.address_size) + sizeof(hdr.segment_selector) + sizeof(hdr.header_length) + hdr.header_length;
 		
 		uint8_t *end = (uint8_t*)unit_end;
 		uint8_t *p = (uint8_t*)ptr;
@@ -331,7 +332,7 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 
 					case DW_LNE_set_address:
 						// kprintf("Address changed by DW_LNE_set_address from %x",state.address);
-						state.address = decode_address(&p, hdr->address_size);
+						state.address = decode_address(&p, hdr.address_size);
 						// kprintf(" to %x",state.address);
 						break;
 
@@ -343,7 +344,7 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 						kprintf("[DWARF ERROR] UNKNOWN EXTENDED OPCODE %i with length %i at %x",ex_opcode, len, p);
 						return (debug_line_info){};
 				}
-			} else if (opcode < hdr->opcode_base) { //Standard
+			} else if (opcode < hdr.opcode_base) { //Standard
 				switch (opcode) {
 					case DW_LNS_copy:
 						emit_row = true;
@@ -352,7 +353,7 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 					case DW_LNS_advance_pc: {
 						uint64_t operand = decode_uleb128(&p);
 						// kprintf("Advancing DW_LNS_advance_pc by %x",operand);
-						state.address += operand * hdr->minimum_instruction_length;
+						state.address += operand * hdr.minimum_instruction_length;
 						break;
 					}
 
@@ -380,15 +381,15 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 						break;
 
 					case DW_LNS_const_add_pc: {
-						uint8_t adjusted = 255 - hdr->opcode_base;
-						uint64_t addr_inc = (adjusted / hdr->line_range) * hdr->minimum_instruction_length;
+						uint8_t adjusted = 255 - hdr.opcode_base;
+						uint64_t addr_inc = (adjusted / hdr.line_range) * hdr.minimum_instruction_length;
 						state.address += addr_inc;
 						// kprintf("Advancing DW_LNS_const_add_pc by %x. New %x",addr_inc,state.address);
 						break;
 					}
 
 					case DW_LNS_fixed_advance_pc: {
-						uint16_t advance = *(uint16_t *)p;
+						uint16_t advance = read_unaligned16((const uint16_t*)p);
 						p += 2;
 						state.address += advance;
 						// kprintf("Advancing DW_LNS_fixed_advance_pc by %x. New %x",advance,state.address);
@@ -413,12 +414,12 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 				}
 
 			} else { //Special
-				uint8_t adj = opcode - hdr->opcode_base;//146 - 13 = 133
+				uint8_t adj = opcode - hdr.opcode_base;//146 - 13 = 133
 				// kprintf("Special opcode %i - %i = %i",opcode)
-				uint8_t op_adv = adj/hdr->line_range;//47/14 = 9.xxx
-				state.line += hdr->line_base + (adj % hdr->line_range);
+				uint8_t op_adv = adj/hdr.line_range;//47/14 = 9.xxx
+				state.line += hdr.line_base + (adj % hdr.line_range);
 				// kprintf("Advancing by special by %x",op_adv);
-				state.address += op_adv * hdr->minimum_instruction_length;
+				state.address += op_adv * hdr.minimum_instruction_length;
 				state.basic_block = false;
 				state.prologue_end = false;
 				state.epilogue_begin = false;
@@ -437,7 +438,7 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 						.file = 1,
 						.line = 1,
 						.column = 0,
-						.is_stmt = hdr->default_is_stmt,
+						.is_stmt = hdr.default_is_stmt,
 						.basic_block = false,
 						.end_sequence = false,
 						.prologue_end = false,

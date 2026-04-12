@@ -328,27 +328,27 @@ static void tcp_cc_on_dupack(tcp_flow_t *f) {
 void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, uintptr_t ptr, uint32_t len) {
     if (len < sizeof(tcp_hdr_t)) return;
 
-    tcp_hdr_t *hdr = (tcp_hdr_t *)ptr;
+    tcp_hdr_t hdr;
+    memcpy(&hdr, (const void*)ptr, sizeof(hdr));
 
-    uint16_t recv_checksum = hdr->checksum;
-    hdr->checksum = 0;
+    if (ipver == IP_VER4) {
+        uint32_t src_ip = 0;
+        uint32_t dst_ip = 0;
+        memcpy(&src_ip, src_ip_addr, sizeof(src_ip));
+        memcpy(&dst_ip, dst_ip_addr, sizeof(dst_ip));
+        if (tcp_checksum_ipv4((const void*)ptr, (uint16_t)len, src_ip, dst_ip) != 0) return;
+    } else {
+        if (tcp_checksum_ipv6((const void*)ptr, (uint16_t)len, (const uint8_t *)src_ip_addr, (const uint8_t *)dst_ip_addr) != 0) return;
+    }
 
-    uint16_t calc;
+    uint16_t src_port = bswap16(hdr.src_port);
+    uint16_t dst_port = bswap16(hdr.dst_port);
+    uint32_t seq = bswap32(hdr.sequence);
+    uint32_t ack = bswap32(hdr.ack);
+    uint8_t flags = hdr.flags;
+    uint16_t window = bswap16(hdr.window);
 
-    if (ipver == IP_VER4) calc = tcp_checksum_ipv4(hdr, (uint16_t)len, *(const uint32_t *)src_ip_addr, *(const uint32_t *)dst_ip_addr);
-    else calc = tcp_checksum_ipv6(hdr, (uint16_t)len, (const uint8_t *)src_ip_addr, (const uint8_t *)dst_ip_addr);
-
-    hdr->checksum = recv_checksum;
-    if (recv_checksum != calc) return;
-
-    uint16_t src_port = bswap16(hdr->src_port);
-    uint16_t dst_port = bswap16(hdr->dst_port);
-    uint32_t seq = bswap32(hdr->sequence);
-    uint32_t ack = bswap32(hdr->ack);
-    uint8_t flags = hdr->flags;
-    uint16_t window = bswap16(hdr->window);
-
-    uint8_t hdr_len = (uint8_t)((hdr->data_offset_reserved >> 4) * 4);
+    uint8_t hdr_len = (uint8_t)((hdr.data_offset_reserved >> 4) * 4);
     if (len < hdr_len) return;
 
     uint32_t data_len = len - hdr_len;

@@ -45,8 +45,9 @@ static bool send_igmp(uint8_t ifindex, uint32_t dst, uint8_t type, uint32_t grou
     netpkt_t* pkt = netpkt_alloc(sizeof(igmp_hdr_t),headroom, 0);
     if (!pkt) return false;
 
-    igmp_hdr_t* h = (igmp_hdr_t*)netpkt_put(pkt, sizeof(igmp_hdr_t));
-    if (!h) {
+    uint16_t igmp_words[sizeof(igmp_hdr_t)/sizeof(uint16_t)];
+    igmp_hdr_t* h = (igmp_hdr_t*)igmp_words;
+    if (!netpkt_put(pkt, sizeof(igmp_hdr_t))) {
         netpkt_unref(pkt);
         return false;
     }
@@ -55,7 +56,8 @@ static bool send_igmp(uint8_t ifindex, uint32_t dst, uint8_t type, uint32_t grou
     h->max_resp_time = 0;
     h->group = bswap32(group);
     h->checksum = 0;
-    h->checksum = checksum16((const uint16_t*)h, sizeof(igmp_hdr_t)/2);
+    h->checksum = checksum16(igmp_words, sizeof(igmp_hdr_t)/2);
+    memcpy((void*)netpkt_data(pkt), h, sizeof(*h));
 
     ipv4_tx_opts_t tx;
     tx.scope = IP_TX_BOUND_L2;
@@ -198,17 +200,16 @@ static void schedule_report(uint8_t ifindex, uint32_t group, uint32_t max_resp_d
 
 void igmp_input(uint8_t ifindex, uint32_t src, uint32_t dst, const void* l4, uint32_t l4_len) {
     if (!l4 || l4_len < sizeof(igmp_hdr_t)) return;
-    const igmp_hdr_t* h = (const igmp_hdr_t*)l4;
-    uint16_t saved = h->checksum;
-    igmp_hdr_t tmp;
-    memcpy(&tmp, h, sizeof(tmp));
-    tmp.checksum = 0;
-    if (checksum16((const uint16_t*)&tmp, sizeof(tmp) / 2) != saved) return;
+    const uint8_t* p = (const uint8_t*)l4;
+    uint32_t sum = 0;
+    for (uint32_t i = 0; i + 1 < sizeof(igmp_hdr_t); i += 2) sum += (uint32_t)((p[i] << 8) | p[i + 1]);
+    while (sum >> 16) sum = (sum & 0xFFFFu) + (sum >> 16);
+    if ((uint16_t)sum != 0xFFFFu) return;
 
-    uint8_t type = h->type;
-    uint32_t group = bswap32(h->group);
+    uint8_t type = p[0];
+    uint32_t group = rd_be32(p + 4);
 
-    uint32_t max_resp_ds = (uint32_t)h->max_resp_time;
+    uint32_t max_resp_ds = (uint32_t)p[1];
 
     if (type != IGMP_TYPE_QUERY) return;
 

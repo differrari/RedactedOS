@@ -74,14 +74,15 @@ bool icmpv6_send_on_l2(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t 
         return false;
     }
 
-    ipv6_hdr_t *ip6 = (ipv6_hdr_t*)buf;
-    ip6->ver_tc_fl = bswap32((uint32_t)(6u << 28));
-    ip6->payload_len = bswap16((uint16_t)icmp_len);
-    ip6->next_header = 58;
-    ip6->hop_limit = hop_limit ? hop_limit : 64;
-    memcpy(ip6->src, src_ip, 16);
-    memcpy(ip6->dst, dst_ip, 16);
+    ipv6_hdr_t ip6;
+    ip6.ver_tc_fl = bswap32((uint32_t)(6u << 28));
+    ip6.payload_len = bswap16((uint16_t)icmp_len);
+    ip6.next_header = 58;
+    ip6.hop_limit = hop_limit ? hop_limit : 64;
+    memcpy(ip6.src, src_ip, 16);
+    memcpy(ip6.dst, dst_ip, 16);
 
+    memcpy(buf, &ip6, sizeof(ip6));
     memcpy((void*)((uintptr_t)buf + sizeof(ipv6_hdr_t)), icmp, icmp_len);
 
     return eth_send_frame_on(ifindex, ETHERTYPE_IPV6, dst_mac, pkt);
@@ -127,13 +128,14 @@ static bool icmpv6_send_echo_request(const uint8_t dst_ip[16], uint16_t id, uint
         return false;
     }
 
-    icmpv6_echo_t *e = (icmpv6_echo_t*)buf;
-    e->hdr.type = ICMPV6_ECHO_REQUEST;
-    e->hdr.code = 0;
-    e->hdr.checksum = 0;
-    e->id = bswap16(id);
-    e->seq = bswap16(seq);
+    icmpv6_echo_t e;
+    e.hdr.type = ICMPV6_ECHO_REQUEST;
+    e.hdr.code = 0;
+    e.hdr.checksum = 0;
+    e.id = bswap16(id);
+    e.seq = bswap16(seq);
 
+    memcpy(buf, &e, sizeof(e));
     if (payload_len) memcpy((void*)((uintptr_t)buf + sizeof(icmpv6_echo_t)), payload, payload_len);
 
     ipv6_tx_plan_t plan;
@@ -141,7 +143,8 @@ static bool icmpv6_send_echo_request(const uint8_t dst_ip[16], uint16_t id, uint
         netpkt_unref(pkt);
         return false;
     }
-    e->hdr.checksum = bswap16(checksum16_pipv6(plan.src_ip, dst_ip, 58, (const uint8_t*)buf, len));
+    e.hdr.checksum = bswap16(checksum16_pipv6(plan.src_ip, dst_ip, 58, (const uint8_t*)buf, len));
+    memcpy(buf, &e, sizeof(e));
 
     ipv6_send_packet(dst_ip, 58, pkt, (const ipv6_tx_opts_t*)tx_opts_or_null, hop_limit ? hop_limit : 64, 0);
     return true;
@@ -237,22 +240,24 @@ bool icmpv6_ping(const uint8_t dst_ip[16], uint16_t id, uint16_t seq, uint32_t t
     return false;
 }
 
-static bool extract_echo_id_seq_from_error(const uint8_t *icmp, uint32_t icmp_len, uint16_t *out_id, uint16_t *out_seq) {//b
+static bool extract_echo_id_seq_from_error(const uint8_t *icmp, uint32_t icmp_len, uint16_t *out_id, uint16_t *out_seq) {
     if (!icmp || icmp_len < 8u + (uint32_t)sizeof(ipv6_hdr_t) + (uint32_t)sizeof(icmpv6_echo_t)) return false;
 
-    const ipv6_hdr_t *inner = (const ipv6_hdr_t*)(icmp + 8);
-    uint32_t v = bswap32(inner->ver_tc_fl);
+    ipv6_hdr_t inner;
+    memcpy(&inner, icmp + 8, sizeof(inner));
+    uint32_t v = bswap32(inner.ver_tc_fl);
     if ((v >>28) != 6) return false;
-    if (inner->next_header != 58) return false;
+    if (inner.next_header != 58) return false;
 
-    const uint8_t *inner_icmp = (const uint8_t*)(inner + 1);
+    const uint8_t *inner_icmp = icmp + 8u + (uint32_t)sizeof(ipv6_hdr_t);
     if ((uintptr_t)inner_icmp + sizeof(icmpv6_echo_t)>(uintptr_t)icmp + icmp_len) return false;
 
-    const icmpv6_echo_t *e = (const icmpv6_echo_t*)inner_icmp;
-    if (e->hdr.type != ICMPV6_ECHO_REQUEST) return false;
+    icmpv6_echo_t e;
+    memcpy(&e, inner_icmp, sizeof(e));
+    if (e.hdr.type != ICMPV6_ECHO_REQUEST) return false;
 
-    if (out_id) *out_id = bswap16(e->id);
-    if (out_seq) *out_seq = bswap16(e->seq);
+    if (out_id) *out_id = bswap16(e.id);
+    if (out_seq) *out_seq = bswap16(e.seq);
     return true;
 }
 
@@ -279,8 +284,9 @@ void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_
 
     if (h->type == ICMPV6_ECHO_REPLY) {
         if (icmp_len < sizeof(icmpv6_echo_t)) return;
-        const icmpv6_echo_t *e = (const icmpv6_echo_t*)icmp;
-        mark_received(bswap16(e->id), bswap16(e->seq), h->type, h->code, src_ip);
+        icmpv6_echo_t e;
+        memcpy(&e, icmp, sizeof(e));
+        mark_received(bswap16(e.id), bswap16(e.seq), h->type, h->code, src_ip);
         return;
     }
 
@@ -292,12 +298,13 @@ void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_
     if (h->type == ICMPV6_PACKET_TOO_BIG) {
 
         if (icmp_len >= 8u + (uint32_t)sizeof(ipv6_hdr_t)) {
-            uint32_t mtu = bswap32(*(const uint32_t *)(icmp + 4));
-            const ipv6_hdr_t *inner = (const ipv6_hdr_t *)(icmp + 8);
-            uint32_t v = bswap32(inner->ver_tc_fl);
+            uint32_t mtu = rd_be32(icmp + 4);
+            ipv6_hdr_t inner;
+            memcpy(&inner, icmp + 8, sizeof(inner));
+            uint32_t v = bswap32(inner.ver_tc_fl);
 
             if ((v >> 28) == 6 && mtu >= 1280u && mtu <= 65535u)
-                ipv6_pmtu_note(inner->dst, (uint16_t)mtu);
+                ipv6_pmtu_note(inner.dst, (uint16_t)mtu);
 
             uint16_t id = 0, seq = 0;
             if (extract_echo_id_seq_from_error(icmp, icmp_len, &id, &seq))

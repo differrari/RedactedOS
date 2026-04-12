@@ -37,7 +37,7 @@ system_config_t system_config = {
     .default_pwd = DEFAULT_PWD,
     .system_name = SYSTEM_NAME,
     .app_directory = "boot",
-    .use_net = false,
+    .use_net = true,
 };
 
 gpu_point parse_gpu_point(char *value, size_t value_len){

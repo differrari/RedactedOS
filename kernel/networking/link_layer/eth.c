@@ -7,28 +7,25 @@
 #include "console/kio.h"
 #include "syscalls/syscalls.h"
 uintptr_t create_eth_packet(uintptr_t p, const uint8_t src_mac[6], const uint8_t dst_mac[6], uint16_t type) {
-    eth_hdr_t* eth =(eth_hdr_t*)p;
+    uint8_t* eth = (uint8_t*)p;
 
-    memcpy(eth->dst_mac, dst_mac, 6);
-    memcpy(eth->src_mac, src_mac, 6);
-    eth->ethertype = bswap16(type);
+    memcpy(eth, dst_mac, 6);
+    memcpy(eth+6, src_mac, 6);
+    wr_be16(eth+12, type);
 
     return p + (uint32_t)sizeof(eth_hdr_t);
 }
 
 uint16_t eth_parse_type(uintptr_t ptr){
-    const eth_hdr_t* eth = (const eth_hdr_t*)ptr;
-    return bswap16(eth->ethertype);
+    return rd_be16((const void*)(ptr+12));
 }
 
 const uint8_t* eth_src(uintptr_t ptr){
-    const eth_hdr_t* eth = (const eth_hdr_t*)ptr;
-    return eth->src_mac;
+    return (const uint8_t*)(ptr+6);
 }
 
 const uint8_t* eth_dst(uintptr_t ptr){
-    const eth_hdr_t* eth = (const eth_hdr_t*)ptr;
-    return eth->dst_mac;
+    return (const uint8_t*)ptr;
 }
 
 bool eth_send_frame_on(uint16_t ifindex, uint16_t ethertype, const uint8_t dst_mac[6], netpkt_t* pkt){

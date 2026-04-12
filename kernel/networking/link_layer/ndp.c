@@ -776,8 +776,9 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
     if (h->type == 135) {
         if (icmp_len < sizeof(icmpv6_ns_t)) return;
 
-        const icmpv6_ns_t* ns = (const icmpv6_ns_t*)icmp;
-        if (ipv6_is_multicast(ns->target)) return;
+        icmpv6_ns_t ns;
+        memcpy(&ns, icmp, sizeof(ns));
+        if (ipv6_is_multicast(ns.target)) return;
 
         l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
         if (!l2) return;
@@ -789,7 +790,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
             if (!v6) continue;
             if (v6->cfg == IPV6_CFG_DISABLE) continue;
 
-            if (ipv6_cmp(v6->ip, ns->target) == 0) {
+            if (ipv6_cmp(v6->ip, ns.target) == 0) {
                 self = v6;
                 break;
             }
@@ -819,7 +820,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
             if (v6->cfg == IPV6_CFG_DISABLE) continue;
             if (v6->dad_state != IPV6_DAD_OK) continue;
 
-            if (ipv6_cmp(v6->ip, ns->target) == 0) {
+            if (ipv6_cmp(v6->ip, ns.target) == 0) {
                 ipv6_cpy(src_my, v6->ip);
                 break;
             }
@@ -830,15 +831,16 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         const uint8_t* my_mac = network_get_mac((uint8_t)ifindex);
         if (!my_mac) return;
 
-        ndp_send_na_on((uint8_t)ifindex, src_ip, src_my, ns->target, src_mac, my_mac, 1);
+        ndp_send_na_on((uint8_t)ifindex, src_ip, src_my, ns.target, src_mac, my_mac, 1);
         return;
     }
 
     if (h->type == 136) {
         if (icmp_len < sizeof(icmpv6_na_t)) return;
 
-        const icmpv6_na_t* na = (const icmpv6_na_t*)icmp;
-        if (ipv6_is_multicast(na->target)) return;
+        icmpv6_na_t na;
+        memcpy(&na, icmp, sizeof(na));
+        if (ipv6_is_multicast(na.target)) return;
 
         l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
 
@@ -846,7 +848,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
             for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
                 l3_ipv6_interface_t* v6 = l2->l3_v6[i];
                 if (!v6) continue;
-                if (ipv6_cmp(v6->ip, na->target) != 0) continue;
+                if (ipv6_cmp(v6->ip, na.target) != 0) continue;
 
                 if (v6->dad_state == IPV6_DAD_IN_PROGRESS || v6->dad_requested) {
                     v6->dad_state = IPV6_DAD_FAILED;
@@ -860,7 +862,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
 
         if (ipv6_is_unspecified(src_ip)) return;
 
-        uint32_t f = bswap32(na->flags);
+        uint32_t f = bswap32(na.flags);
         uint8_t router = (uint8_t)((f >> 31) & 1u);
         uint8_t solicited = (uint8_t)((f >> 30) & 1u);
         uint8_t override = (uint8_t)((f >> 29) & 1u);
@@ -868,7 +870,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         ndp_table_impl_t* t = l2_ndp((uint8_t)ifindex);
         if (!t) return;
 
-        int idx = ndp_find_slot(t, na->target);
+        int idx = ndp_find_slot(t, na.target);
         if (idx < 0) idx = ndp_find_free(t);
 
         if (idx < 0) {
@@ -900,7 +902,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         memcpy(old_mac, e->mac, 6);
 
         if (e->ttl_ms == 0 && e->state == NDP_STATE_UNUSED) {
-            memcpy(e->ip, na->target, 16);
+            memcpy(e->ip, na.target, 16);
             memcpy(e->mac, src_mac, 6);
             e->ttl_ms = g_ndp_reachable_time_ms * 4;
             e->probes_sent = 0;
@@ -965,11 +967,12 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
     if (h->type == 134) {
         if (icmp_len < sizeof(icmpv6_ra_t)) return;
 
-        const icmpv6_ra_t* ra = (const icmpv6_ra_t*)icmp;
+        icmpv6_ra_t ra;
+        memcpy(&ra, icmp, sizeof(ra));
 
-        uint16_t router_lifetime = bswap16(ra->router_lifetime);
-        uint32_t reachable_time = bswap32(ra->reachable_time);
-        uint32_t retrans_timer = bswap32(ra->retrans_timer);
+        uint16_t router_lifetime = bswap16(ra.router_lifetime);
+        uint32_t reachable_time = bswap32(ra.reachable_time);
+        uint32_t retrans_timer = bswap32(ra.retrans_timer);
 
         uint32_t router_lifetime_ms = (uint32_t)router_lifetime * 1000u;
 
@@ -979,7 +982,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         if (reachable_time) g_ndp_reachable_time_ms = reachable_time;
         if (retrans_timer) g_ndp_retrans_timer_ms = retrans_timer;
 
-        const uint8_t* opt = (const uint8_t*)(ra + 1);
+        const uint8_t* opt = icmp + sizeof(ra);
         uint32_t opt_len = icmp_len - (uint32_t)sizeof(icmpv6_ra_t);
 
         uint8_t idx = (uint8_t)(ifindex - 1);
@@ -998,17 +1001,18 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
             if (opt_size > opt_len) break;
 
             if (opt_type == 3&&opt_size >= (uint32_t)sizeof(ndp_opt_prefix_info_t)) {
-                const ndp_opt_prefix_info_t* pio = (const ndp_opt_prefix_info_t*)opt;
+                ndp_opt_prefix_info_t pio;
+                memcpy(&pio, opt, sizeof(pio));
 
-                uint8_t pfx_len = pio->prefix_length;
-                uint8_t autonomous = (pio->flags & 0x40u) ? 1u : 0u;
-                uint32_t valid_lft = bswap32(pio->valid_lifetime);
-                uint32_t pref_lft = bswap32(pio->preferred_lifetime);
+                uint8_t pfx_len = pio.prefix_length;
+                uint8_t autonomous = (pio.flags & 0x40u) ? 1u : 0u;
+                uint32_t valid_lft = bswap32(pio.valid_lifetime);
+                uint32_t pref_lft = bswap32(pio.preferred_lifetime);
 
                 uint8_t pfx[16];
-                memcpy(pfx, pio->prefix, 16);
+                memcpy(pfx, pio.prefix, 16);
 
-                if (pfx_len != 0) ndp_on_ra((uint8_t)ifindex, src_ip, router_lifetime, pfx, pfx_len, valid_lft, pref_lft, autonomous, ra->flags);
+                if (pfx_len != 0) ndp_on_ra((uint8_t)ifindex, src_ip, router_lifetime, pfx, pfx_len, valid_lft, pref_lft, autonomous, ra.flags);
             } else if (opt_type == 5 && opt_size >= (uint32_t)sizeof(ndp_opt_mtu_t)) {
                 uint32_t mtu32 = 0;
                 memcpy(&mtu32, opt + 4, 4);
