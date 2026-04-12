@@ -17,7 +17,5 @@ system_module audio_module = (system_module){
     .read = 0,
     .write = 0,
     .close = 0,
-    .sread = 0,
-    .swrite = 0,
     .readdir = 0,
 };

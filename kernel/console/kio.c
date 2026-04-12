@@ -158,10 +158,6 @@ size_t console_write_fd(file *fd, const char *buf, size_t size, file_offset offs
     return console_write(buf, size);
 }
 
-size_t simple_console_write(const char *path, const void *buf, size_t size){
-    return console_write(buf, size);
-}
-
 file_offset console_seek(file *fd, file_offset offset){
     return 0;
 }
@@ -189,9 +185,7 @@ system_module console_module = (system_module){
     .close = 0,
     .read = console_read,
     .write = console_write_fd,
-    .sread = 0,//TODO implement simple io
     .getstat = console_stat,
-    .swrite = simple_console_write,
     .readdir = 0,
 };
 

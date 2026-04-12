@@ -686,8 +686,6 @@ bool load_process_module(process_t *p, system_module *m){
     p->exposed_fs.read = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.read - (uintptr_t)p->va));
     p->exposed_fs.write = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.write - (uintptr_t)p->va));
     p->exposed_fs.close = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.close - (uintptr_t)p->va));
-    p->exposed_fs.sread = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.sread - (uintptr_t)p->va));
-    p->exposed_fs.swrite = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.swrite - (uintptr_t)p->va));
     return load_module(&p->exposed_fs);
 }
 
@@ -1023,8 +1021,6 @@ system_module scheduler_module = (system_module){
     .read = read_proc,
     .write = write_proc,
     .close = close_proc,
-    .sread = 0,
-    .swrite = 0,//TODO implement simple io
     .getstat = stat_proc,
     .readdir = readdir_proc,
 };

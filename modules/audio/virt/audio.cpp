@@ -311,8 +311,6 @@ system_module audio_module = (system_module){
     .write = audio_write,
     .close = 0,
     .truncate = 0,
-    .sread = 0,
-    .swrite = 0,
     .getstat = 0,//TODO: stat
     .readdir = 0,
 };

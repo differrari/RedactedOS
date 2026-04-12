@@ -128,8 +128,6 @@ system_module graphics_module = {
     .write = 0,
     .close = 0,
     .truncate = 0,
-    .sread = 0,
-    .swrite = 0,//TODO implement simple io
-    .getstat = 0,//TODO: stat
+    .getstat = 0,
     .readdir = 0
 };

@@ -6,6 +6,14 @@ string directories[16];
 int dir_count;
 string files[256];
 int file_count;
+    
+// #error unify swrite/sread and normal
+// #error stack
+
+// #error scroll in filebrowser
+// #error filebrowser ui
+// #error filebrowser lib
+// #error filebrowser hex files
 
 int selected = 0;
 

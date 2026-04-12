@@ -129,15 +129,18 @@ bool load_theme(){
     return true;
 }
 
-size_t reload_theme(const char *path, const void* buf, size_t size){
-    print("Reloading theme? %s",path);
-    if (strcmp(path,"/reload") != 0) return 0;
+FS_RESULT open_theme(const char *path, file *descriptor){
+    descriptor->id = reserve_fd_gid("/theme");
+    descriptor->size = sizeof(system_theme);
+    return FS_RESULT_SUCCESS;
+}
+
+size_t reload_theme(file *descriptor, const char* buf, size_t size, file_offset offset){
     return load_theme();
 }
 
-size_t read_theme(const char *path, void* buf, size_t size){
+size_t read_theme(file *descriptor, char* buf, size_t size, file_offset offset){
     size = min(size, sizeof(system_theme));
-    kprintf("Accent color %x",system_theme.cursor_color_selected);
     memcpy(buf, (void*)&system_theme, size);
     return size;
 }
@@ -153,10 +156,8 @@ system_module theme_mod = (system_module){
     .name = "theme",
     .mount = "theme",
     .init = load_theme,
-    .open = 0,
-    .write = 0,//TODO: can we merge swrite/write and sread/read
-    .swrite = reload_theme,
-    .read = 0,
+    .open = open_theme,
+    .write = reload_theme,
+    .read = read_theme,
     .getstat = stat_theme,
-    .sread = read_theme,
 };

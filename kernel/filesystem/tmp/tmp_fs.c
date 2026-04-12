@@ -93,8 +93,6 @@ system_module tmp_mod = {
     .read = tmp_read,
     .write = tmp_write,
     .close = 0,
-    .sread = 0,
-    .swrite = 0,//TODO implement simple io
     .getstat = tmp_stat,
     .readdir = tmp_list,
 };

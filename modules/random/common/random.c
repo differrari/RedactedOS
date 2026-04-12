@@ -45,8 +45,6 @@ system_module rng_module = {
     .fini = 0,
     .read = rng_read,
     .write = 0,
-    .sread = 0,
     .getstat = rng_stat,
-    .swrite = 0,//TODO implement simple io
     .readdir = 0,
 };

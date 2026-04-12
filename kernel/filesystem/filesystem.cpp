@@ -76,8 +76,6 @@ system_module boot_fs_module = (system_module){
     .write = boot_partition_write,
     .close = boot_partition_close,
     .truncate = boot_truncate,
-    .sread = 0,
-    .swrite = 0,
     .getstat = boot_stat,
     .readdir = boot_partition_readdir,
 };
@@ -122,14 +120,6 @@ void shared_close(file *descriptor){
     p9Driver->close_file(descriptor);
 }
 
-size_t shared_sread(const char *path, void *buf, size_t size){
-    return p9Driver->sread_file(path, buf, size);
-}
-
-size_t shared_swrite(const char *path, const void *buf, size_t size){
-    return p9Driver->swrite_file(path, buf, size);
-}
-
 bool shared_truncate(file *descriptor, size_t size){
     return p9Driver->truncate(descriptor, size);
 }
@@ -145,8 +135,6 @@ system_module p9_fs_module = (system_module){
     .write = shared_write,
     .close = shared_close,
     .truncate = shared_truncate,
-    .sread = shared_sread,
-    .swrite = shared_swrite,
     .getstat = shared_stat,
     .readdir = shared_readdir,
 };
@@ -294,26 +282,19 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
 }
 
 size_t simple_read(const char *path, void *buf, size_t size){
-    const char *search_path = path;
-    if (*search_path == '/') search_path++;
-    if (!*search_path) return 0;
-    system_module *mod = get_module(&search_path);
-    if (!mod) return 0;
-    if (!mod->sread) return 0;
-    return mod->sread(search_path, buf, size);
+    file fd = {};
+    open_file(path, &fd);
+    size_t res = read_file(&fd, (char*)buf, size);
+    close_file(&fd);
+    return res;
 }
 
 size_t simple_write(const char *path, const void *buf, size_t size){
-    const char *search_path = path;
-    if (*search_path == '/') search_path++;
-    if (!*search_path) return 0;
-    system_module *mod = get_module(&search_path);
-    if (!mod) return 0;
-    if (!mod->swrite) return 0;
-    uint64_t mfid = reserve_fd_gid(path);
-    size_t amount_written = mod->swrite(search_path, buf, size);
-    update_pipes(mfid, (char*)buf, amount_written);
-    return amount_written;
+    file fd = {};
+    open_file(path, &fd);
+    size_t res = write_file(&fd, (char*)buf, size);
+    close_file(&fd);
+    return res;
 }
 
 size_t list_directory_contents(const char *path, void* buf, size_t size, uint64_t *offset){
