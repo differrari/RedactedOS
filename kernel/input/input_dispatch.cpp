@@ -192,6 +192,10 @@ void sys_unset_focus(bool close){
     }
 }
 
+u16 sys_get_focused_pid(){
+    return focused_proc ? focused_proc->id : 0;
+}
+
 void sys_set_secure(bool secure){
     secure_mode = secure;
 }

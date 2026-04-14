@@ -36,7 +36,6 @@ extern char __kstack_top[];
 static uintptr_t *kernel_ttbr0;
 static uintptr_t *kernel_ttbr1;
 static uint64_t kernel_ttbr0_hw;
-static bool ttbr0_user_on;
 
 static bool mmu_verbose;
 static inline void mmu_flush_icache();
@@ -792,9 +791,9 @@ void debug_mmu_address(uint64_t va){
 }
 
 void mmu_ttbr0_disable_user() {
-    asm volatile("msr ttbr0_el1, %0" :: "r"((uint64_t)kernel_ttbr0_hw));
-    asm volatile("dsb ish\n\tisb" ::: "memory");
-    ttbr0_user_on = false;
+    // asm volatile("msr ttbr0_el1, %0" :: "r"((uint64_t)kernel_ttbr0_hw));
+    // asm volatile("dsb ish\n\tisb" ::: "memory");
+    // ttbr0_user_on = false;
 }
 
 void mmu_ttbr0_enable_user() {
@@ -802,11 +801,6 @@ void mmu_ttbr0_enable_user() {
     if (pttbr && pttbr != (uintptr_t*)kernel_ttbr0) hw = pttbr_hw;
     asm volatile("msr ttbr0_el1, %0" :: "r"(hw));
     asm volatile("dsb ish\n\tisb" ::: "memory");
-    ttbr0_user_on = pttbr && pttbr != (uintptr_t*)kernel_ttbr0;
-}
-
-bool mmu_ttbr0_user_enabled() {
-    return ttbr0_user_on;
 }
 
 void mmu_swap_ttbr(mm_struct *mm){

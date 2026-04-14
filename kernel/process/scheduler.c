@@ -118,10 +118,9 @@ void update_sleep_timer() {
 }
 
 void switch_proc(ProcSwitchReason reason) {
-    if (mmu_ttbr0_user_enabled()) panic("switch_proc with user ttbr0 active", current_proc ? current_proc->id : 0);
     if (proc_count == 0)
         panic("No processes active", 0);
-    process_t*prev = current_proc, *next_proc = 0;
+    process_t *prev = current_proc, *next_proc = 0;
     if (prev && prev->state == RUNNING) {
         if (prev == idle_proc) prev->state = BLOCKED;
         else ready_process(prev);

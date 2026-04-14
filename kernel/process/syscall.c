@@ -67,7 +67,6 @@ uptr syscall_palloc(process_t *ctx){
 
     if (ctx->mm.ttbr0){
         if (ctx->mm.rss_anon_pages + pages > ctx->mm.cap_anon_pages) return 0;
-        //TODO zalloc likely needs a dedicated syscall to request zeroed on fault explicitly
         uptr va = mm_alloc_mmap(&ctx->mm, alloc_size, MEM_RW, VMA_KIND_ANON, VMA_FLAG_DEMAND | VMA_FLAG_USERALLOC | VMA_FLAG_ZERO);
         if (!va) return 0;
         mmu_flush_asid(ctx->mm.asid);
@@ -178,14 +177,13 @@ u64 syscall_read_shortcut(process_t *ctx){
 
 u64 syscall_get_mouse(process_t *ctx){
     //TODO: we're not fully preventing the mouse from being read outside of proc's window (raw & buttons)
-    if (get_current_proc_pid() != ctx->id) return 0;
-    uintptr_t up = (uintptr_t)ctx->PROC_X0;
-    mouse_data tmp = {};
-    tmp.raw = get_raw_mouse_in();
-    tmp.raw.scroll = sys_read_scroll_current();
-    tmp.position = convert_mouse_position(get_mouse_pos());
-    uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
-    if (ur != UACCESS_OK) return 0;
+    if (sys_get_focused_pid() != ctx->id) return 0;
+    if (!access_ok_range(ctx, ctx->PROC_X0, sizeof(mouse_data), true)) 
+        return 0;
+    mouse_data *inp = (mouse_data*)ctx->PROC_X0;
+    inp->raw = get_raw_mouse_in();
+    inp->raw.scroll = sys_read_scroll_current();
+    inp->position = convert_mouse_position(get_mouse_pos());
     return 0;
 }
 

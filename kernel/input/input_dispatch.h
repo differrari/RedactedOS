@@ -24,6 +24,7 @@ uint16_t sys_subscribe_shortcut_current(keypress kp);
 void sys_set_focus(int pid);
 void sys_focus_current();
 void sys_unset_focus(bool close);
+u16 sys_get_focused_pid();
 
 ///A process can request for shortcuts and others to be disabled
 void sys_set_secure(bool secure);
