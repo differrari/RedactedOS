@@ -9,6 +9,7 @@
 #include "syscalls/syscalls.h"
 #include "exceptions/irq.h"
 #include "files/dir_list.h"
+#include "dev/module_loader.h"
 
 #define kprintfv(fmt, ...) \
     ({ \
@@ -543,10 +544,8 @@ f32_walk_result FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *
     uint32_t count = instance->count_FAT(filecluster);
 
     if (*next == '\0'){
-        print("Found correct entry");
         return {.entry = *entry, .cluster = 0, .offset = 0, .found = true};   
     }
-    print("Entering folder %s at %x",next,filecluster);
     return instance->walk_directory(count, filecluster, next, list_entries_handler);
 }
 
@@ -644,4 +643,65 @@ bool FAT32FS::truncate(file *descriptor, size_t size){
     write_section_to_cluster(result.cluster,result.offset, &result.entry, sizeof(f32file_entry));
     
     return false;
+}
+
+#include "mbr.h"
+
+FAT32FS *fs_driver;
+
+bool boot_partition_init(){
+    uint32_t f32_partition = mbr_find_partition(0xC);
+    fs_driver = new FAT32FS();
+    return fs_driver->init(f32_partition);
+}
+
+bool boot_partition_fini(){
+    return false;
+}
+
+FS_RESULT boot_partition_open(const char *path, file *out_fd){
+    return fs_driver->open_file(path, out_fd);
+}
+
+size_t boot_partition_read(file *fd, char *out_buf, size_t size, file_offset offset){
+    return fs_driver->read_file(fd, out_buf, size);
+}
+
+size_t boot_partition_write(file *fd, const char *buf, size_t size, file_offset offset){
+    return fs_driver->write_file(fd, buf, size);
+}
+
+size_t boot_partition_readdir(const char* path, void *out_buf, size_t size, file_offset *offset){
+    return fs_driver->list_contents(path, out_buf, size, offset);
+}
+
+void boot_partition_close(file *descriptor){
+    fs_driver->close_file(descriptor);
+}
+
+bool boot_stat(const char *path, fs_stat *out_stat){
+    return fs_driver->stat(path, out_stat);
+}
+
+bool boot_truncate(file *descriptor, size_t size){
+    return fs_driver->truncate(descriptor, size);
+}
+
+system_module boot_fs_module = (system_module){
+    .name = "boot",
+    .mount = "boot",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = boot_partition_init,
+    .fini = boot_partition_fini,
+    .open = boot_partition_open,
+    .read = boot_partition_read,
+    .write = boot_partition_write,
+    .close = boot_partition_close,
+    .truncate = boot_truncate,
+    .getstat = boot_stat,
+    .readdir = boot_partition_readdir,
+};
+
+extern "C" bool load_boot_partition(){
+    return load_module(&boot_fs_module);
 }

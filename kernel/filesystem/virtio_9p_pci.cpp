@@ -8,6 +8,7 @@
 #include "std/memory.h"
 #include "std/memory_access.h"
 #include "p9_helper.h"
+#include "dev/module_loader.h"
 
 #define VIRTIO_9P_ID 0x1009
 
@@ -546,4 +547,84 @@ bool Virtio9PDriver::sync_file(module_file *mfile){
     mfile->buf = (uptr)mfile->file_buffer.buffer;
     mfile->file_size = new_size;
     return true;
+}
+
+Virtio9PDriver *p9Driver;
+
+bool shared_init(){
+    if (BOARD_TYPE != 1) return false;
+    p9Driver = new Virtio9PDriver();
+    bool success = p9Driver->init(0);
+    return success;
+}
+
+bool shared_fini(){
+    return false;
+}
+
+FS_RESULT shared_open(const char *path, file *out_fd){
+    return p9Driver->open_file(path, out_fd);
+}
+
+size_t shared_read(file *fd, char *out_buf, size_t size, file_offset offset){
+    return p9Driver->read_file(fd, out_buf, size);
+}
+
+size_t shared_write(file *fd, const char *buf, size_t size, file_offset offset){
+    return p9Driver->write_file(fd, buf, size);
+}
+
+size_t shared_readdir(const char* path, void *out_buf, size_t size, file_offset *offset){
+    return p9Driver->list_contents(path, out_buf, size, offset);
+}
+
+bool shared_stat(const char *path, fs_stat *out_stat){
+    return p9Driver->stat(path, out_stat);
+}
+
+void shared_close(file *descriptor){
+    kprintf("9P will close file");
+    p9Driver->close_file(descriptor);
+}
+
+bool shared_truncate(file *descriptor, size_t size){
+    return p9Driver->truncate(descriptor, size);
+}
+
+system_module p9_fs_module = (system_module){
+    .name = "9PFS",
+    .mount = "home",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = shared_init,
+    .fini = shared_fini,
+    .open = shared_open,
+    .read = shared_read,
+    .write = shared_write,
+    .close = shared_close,
+    .truncate = shared_truncate,
+    .getstat = shared_stat,
+    .readdir = shared_readdir,
+};
+
+bool alias_p9_init(){
+    return true;
+}
+
+system_module p9_fs_module_alias = (system_module){
+    .name = "9PFS",
+    .mount = "shared",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = alias_p9_init,
+    .fini = shared_fini,
+    .open = shared_open,
+    .read = shared_read,
+    .write = shared_write,
+    .close = shared_close,
+    .truncate = shared_truncate,
+    .getstat = shared_stat,
+    .readdir = shared_readdir,
+};
+
+extern "C" bool load_home(){
+    return load_module(&p9_fs_module) && load_module(&p9_fs_module_alias);
 }
