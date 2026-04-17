@@ -1,6 +1,6 @@
 #include "filesystem.h"
 #include "console/kio.h"
-#include "dev/module_loader.h"
+#include "filesystem/modules/module_loader.h"
 #include "memory/page_allocator.h"
 #include "exceptions/irq.h"
 #include "process/scheduler.h"

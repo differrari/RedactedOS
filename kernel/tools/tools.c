@@ -1,4 +1,4 @@
-#include "bin_mod.h"
+#include "tools.h"
 #include "ping.h"
 #include "shutdown.h"
 #include "tracert.h"
@@ -13,16 +13,16 @@
 #include "sysregs.h"
 #include "input/input_dispatch.h"
 
-bool init_bin(){
+bool init_tools(){
     return true;
 }
 
-typedef struct open_bin_ref {
+typedef struct open_tools_ref {
     char *name;
     int (*func)(int argc, char* argv[]);
-} open_bin_ref;
+} open_tools_ref;
 
-open_bin_ref available_cmds[] = {
+open_tools_ref available_cmds[] = {
     { "ping", run_ping },
     { "shutdown", run_shutdown },
     { "tracert", run_tracert },
@@ -84,23 +84,24 @@ process_t* execute(const char* prog_name, int argc, const char* argv[], uint32_t
     return 0;
 }
 
-FS_RESULT open_bin(){
+FS_RESULT open_tools(){
     return FS_RESULT_DRIVER_ERROR;
 }
 
-size_t read_bin(){
+size_t read_tools(){
     return 0;
 }
 
-size_t list_bin(const char *path, void *buf, size_t size, file_offset offset){
+size_t list_tools(const char *path, void *buf, size_t size, file_offset offset){
     return 0;
 }
 
-system_module bin_module = (system_module){
-    .name = "bin",
-    .mount = "bin",
+//TODO: finish listing tool module
+system_module tool_module = (system_module){
+    .name = "tools",
+    .mount = "tools",
     .version = VERSION_NUM(0, 1, 0, 1),
-    .init = init_bin,
+    .init = init_tools,
     .fini = 0,
     .open = 0,
     .read = 0,

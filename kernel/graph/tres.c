@@ -5,7 +5,7 @@
 #include "sysregs.h"
 #include "graphics.h"
 #include "ui/graphic_types.h"
-#include "bin/bin_mod.h"
+#include "tools/tools.h"
 #include "math/math.h"
 #include "memory/mm_process.h"
 #include "memory/mmu.h"

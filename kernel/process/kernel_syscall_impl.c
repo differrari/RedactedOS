@@ -3,7 +3,7 @@
 #include "scheduler.h"
 #include "console/kio.h"
 #include "input/input_dispatch.h"
-#include "bin/bin_mod.h"
+#include "tools/tools.h"
 #include "graph/graphics.h"
 #include "graph/tres.h"
 #include "exceptions/timer.h"

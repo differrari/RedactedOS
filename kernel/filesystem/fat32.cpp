@@ -9,7 +9,7 @@
 #include "syscalls/syscalls.h"
 #include "exceptions/irq.h"
 #include "files/dir_list.h"
-#include "dev/module_loader.h"
+#include "filesystem/modules/module_loader.h"
 
 #define kprintfv(fmt, ...) \
     ({ \
