@@ -69,6 +69,7 @@ package_info get_pkg_info(char* info_path){
 }
 
 void handle_entry(const char *directory, const char *file) {
+    if (!strcmp_case("launcher.red",file,true)) return;
     string fullpath = string_format("%s/%s",directory, (uintptr_t)file);
     uint16_t ext_loc = find_extension((char*)file);
     string_slice name = make_string_slice(fullpath.data, fullpath.length - strlen(file), ext_loc);
@@ -94,7 +95,7 @@ void load_entries(){
     }
     chunk_array_reset(entries);
     traverse_directory("/shared/applications", false, handle_entry);
-    traverse_directory("/boot/redos/user", false, handle_entry);
+    traverse_directory("/boot/redos/system", false, handle_entry);
 }
 
 void draw_desktop(){

@@ -121,6 +121,13 @@ void enter(const char *name){
         string_free(full_path);
         halt(0);
     }
+    
+    if (strend(name, ".c") == 0){
+        const char* argv[1] = { full_path.data }; 
+        exec("/shared/applications/braincode.red/braincode.elf", 1, argv, EXEC_MODE_DEFAULT);
+        string_free(full_path);
+        halt(0);
+    }
 
     fs_stat st = {};
     if (!statf(full_path.data, &st)){

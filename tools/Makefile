@@ -3,21 +3,22 @@ include ../common.mk
 SUBDIRS := $(wildcard */.)
 SUBCLEAN = $(addsuffix .clean,$(SUBDIRS))
 SUBDUMP = $(addsuffix .dump,$(SUBDIRS))
+MAKEFILE := $(shell pwd)/ToolMakefile
 
 all: $(SUBDIRS)
 
+dump: $(SUBDUMP)
+	
 $(SUBDIRS):
-	$(MAKE) -C $@
+	$(MAKE) -f $(MAKEFILE) -C $@
 
 clean: $(SUBCLEAN)
-	
-dump: $(SUBDUMP)
 
 $(SUBCLEAN): %.clean:
-		$(MAKE) -C $* clean
-		
+	$(MAKE) -f $(MAKEFILE) -C $* clean
+
 $(SUBDUMP): %.dump:
-	$(MAKE) -C $* dump
+	$(MAKE) -f $(MAKEFILE) -C $* dump
 
 clean: $(SUBCLEAN)
 

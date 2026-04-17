@@ -61,7 +61,7 @@ process_t* execute(const char* prog_name, int argc, const char* argv[], uint32_t
     char *full_name = (strend_case(prog_name, ".elf", true) == 0) ? string_from_literal(prog_name).data : strcat_new(prog_name, ".elf");
     if (full_name) {
         char pathbuf[1024] = {};
-        size_t pathlen = string_format_buf(pathbuf, sizeof(pathbuf), "/boot/redos/bin/%s",full_name);
+        size_t pathlen = string_format_buf(pathbuf, sizeof(pathbuf), "/boot/redos/tools/%s",full_name);
         process_t *proc = 0;
         if (pathlen < sizeof(pathbuf) - 1) proc = load_elf_process_path(prog_name, 0, pathbuf, argc, argv);
         release(full_name);

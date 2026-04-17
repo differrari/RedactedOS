@@ -149,6 +149,7 @@ u64 reload(void *ctx, size_t len){
 system_module theme_mod = (system_module){
     .name = "theme",
     .mount = "theme",
+    .version = VERSION_NUM(0, 1, 0, 0),
     .init = load_theme,
     .open = vfs_open,
     .write = vfs_write,

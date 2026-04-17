@@ -27,6 +27,7 @@
 #include "dtb.h"
 #include "filesystem/tmp/tmp_fs.h"
 #include "std/memory.h"
+#include "utils/utils.h"
 
 extern char __bss_start[];
 extern char __bss_end[];
@@ -109,6 +110,8 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     load_module(&tmp_mod);
 
     load_module(&scheduler_module);
+    
+    load_util_mods();
     
     start_scheduler();
 

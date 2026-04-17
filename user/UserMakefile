@@ -16,8 +16,7 @@ NAME     := $(notdir $(CURDIR))
 ELF      := $(NAME).elf
 TARGET   := $(NAME).bin
 PACKAGE  := $(NAME).red
-LOCATION := ../../fs/redos/user/
-
+LOCATION := ../../fs/redos/system/
 
 .PHONY: prepare all clean
 

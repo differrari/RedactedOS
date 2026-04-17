@@ -154,9 +154,26 @@ void write_large_file(){
     
 }
 
+void copypaste(){
+    char *copythis = "hello";
+    swritef("/clipboard", copythis, strlen(copythis));
+    
+    char buf[10];
+    sreadf("/clipboard", buf, 10);
+    
+    char *copythis2 = "hello1";
+    swritef("/clipboard", copythis2, strlen(copythis2));
+    
+    char *copythis3 = "hello2";
+    swritef("/clipboard", copythis3, strlen(copythis3));
+    
+    print("Pasted text %s",buf);
+    
+}
+
 int main(int argc, char* argv[]){
     
-    write_large_file();
+    copypaste();
     
     return 0;
 }

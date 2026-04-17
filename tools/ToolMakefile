@@ -15,7 +15,7 @@ DEP     := $(C_SRC:%.c=$(BUILD_DIR)/%.d) $(CPP_SRC:%.cpp=$(BUILD_DIR)/%.d)
 NAME     := $(notdir $(CURDIR))
 ELF      := $(NAME).elf
 TARGET   := $(NAME).bin
-LOCATION := ../../fs/redos/bin/
+LOCATION := ../../fs/redos/tools/
 
 .PHONY: prepare all clean
 

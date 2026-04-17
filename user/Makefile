@@ -1,59 +1,25 @@
-#user
-
 include ../common.mk
 
-CPPFLAGS := -I. -I../shared
-CFLAGS   := $(CFLAGS_BASE) -g $(CPPFLAGS)
-CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
-LDFLAGS  := -T $(shell ls *.ld)
+SUBDIRS := $(wildcard */.)
+SUBCLEAN = $(addsuffix .clean,$(SUBDIRS))
+SUBDUMP = $(addsuffix .dump,$(SUBDIRS))
+MAKEFILE := $(shell pwd)/UserMakefile
 
-CLEAN_OBJS := $(shell find . -name '*.o')
-CLEAN_DEPS := $(shell find . -name '*.d')
-C_SRC   := $(shell find . -name '*.c')
-CPP_SRC := $(shell find . -name '*.cpp')
-OBJ     := $(C_SRC:%.c=$(BUILD_DIR)/%.o) $(CPP_SRC:%.cpp=.$(BUILD_DIR)/%.o)
-DEP     := $(C_SRC:%.c=$(BUILD_DIR)/%.d) $(CPP_SRC:%.cpp=.$(BUILD_DIR)/%.d)
+all: $(SUBDIRS)
 
-NAME     := $(notdir $(CURDIR))
-ELF      := $(NAME).elf
-TARGET   := $(NAME).bin
-PACKAGE  := $(NAME).red
-LOCATION := ../fs/redos/user/
+$(SUBDIRS):
+	$(MAKE) -f $(MAKEFILE) -C $@
 
+clean: $(SUBCLEAN)
+	
+dump: $(SUBDUMP)
 
-.PHONY: prepare all clean
+$(SUBCLEAN): %.clean:
+		$(MAKE) -f $(MAKEFILE) -C $* clean
+		
+$(SUBDUMP): %.dump:
+	$(MAKE) -f $(MAKEFILE) -C $* dump
 
-all: prepare $(PACKAGE)/$(TARGET)
+clean: $(SUBCLEAN)
 
-prepare:
-	mkdir -p $(BUILD_DIR)
-	mkdir -p $(PACKAGE)
-	cp -r resources $(PACKAGE)
-	cp package.info $(PACKAGE)
-
-$(PACKAGE)/$(TARGET): ../shared/libshared.a $(OBJ)
-	$(VLD) $(LDFLAGS) -o $(PACKAGE)/$(ELF) -g $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../shared/libshared.a
-	$(OBJCOPY) -O binary $(PACKAGE)/$(ELF) $@
-	cp -r $(PACKAGE) $(LOCATION)
-
-$(BUILD_DIR)/%.o: %.S
-	@mkdir -p $(dir $@)
-	$(VAS) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/%.o: %.c
-	@mkdir -p $(dir $@)
-	$(VCC) $(CFLAGS) -c -MMD -MP $< -o $@
-
-$(BUILD_DIR)/%.o: %.cpp
-	@mkdir -p $(dir $@)
-	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
-
-clean:
-	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET) 
-	$(RM) -r $(PACKAGE) $(BUILD_DIR)
-
-dump: all
-	$(ARCH)objdump -S $(NAME).red/$(NAME).elf > dump
-
-
--include $(DEP)
+.PHONY: all $(SUBDIRS)

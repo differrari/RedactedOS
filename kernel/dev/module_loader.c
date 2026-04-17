@@ -5,10 +5,13 @@
 #include "memory/page_allocator.h"
 #include "syscalls/syscalls.h"
 #include "files/dir_list.h"
+#include "exceptions/exception_handler.h"
 
 //TODO: use hashmaps
 linked_list_t* modules;
 void *mod_page = 0;
+
+#define MODULE_STRICT
 
 void* mod_alloc(size_t size){ 
     if (!mod_page) mod_page = page_alloc(PAGE_SIZE);
@@ -21,6 +24,17 @@ bool load_module(system_module *module){
     }
     if (!module->init){
         if (strcmp(module->mount,"/console")) kprintf("[MODULE] module not initialized due to missing initializer");//TODO: can we make printf silently fail so logging becomes easier?
+        return false;
+    }
+    if (!module->version){
+        string format = string_format("Version number cannot be null for module /%s",module->mount);
+        if (strcmp(module->mount,"/console")) 
+        #ifdef MODULE_STRICT
+            panic(format.data,0);
+        #else 
+            kprintf(format.data);
+        #endif
+        string_free(format);
         return false;
     }
     if (!module->init()){

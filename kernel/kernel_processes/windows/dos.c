@@ -25,6 +25,8 @@ u16 mode_shortcuts[mode_count];
 u16 sid_g = 0;
 u16 sid_f = 0;
 u16 newwin_s = 0;
+u16 copy_s = 0;
+u16 paste_s = 0;
 
 static dos_mode mode;
 static draw_ctx *dos_ctx;
@@ -154,6 +156,16 @@ void setup_shortcuts(){
         .keys = { KEY_ENTER, 0, 0, 0, 0, 0}
     });
     
+    // copy_s = sys_subscribe_shortcut_current((keypress){
+    //     .modifier = KEY_MOD_LMETA,
+    //     .keys = { KEY_C, 0, 0, 0, 0, 0}
+    // });
+    
+    // paste_s = sys_subscribe_shortcut_current((keypress){
+    //     .modifier = KEY_MOD_LMETA,
+    //     .keys = { KEY_V, 0, 0, 0, 0, 0}
+    // });
+    
     for (int i = 0; i < 4; i++)
         move_shortcuts[i] = sys_subscribe_shortcut_current((keypress){
             .modifier = KEY_MOD_LMETA,
@@ -178,6 +190,14 @@ void check_shortcuts(){
     }
     if (sys_shortcut_triggered_current(newwin_s))
         new_managed_window();
+    // if (sys_shortcut_triggered_current(copy_s)){
+    //     print("Copy");
+    //     //TODO: How do normal applications know they're supposed to copy/paste?
+    // }
+    // if (sys_shortcut_triggered_current(paste_s)){
+    //     print("Paste");
+    //     //TODO: How do normal applications know they're supposed to copy/paste?
+    // }
     for (int i = 0; i < 4; i++)
         if (sys_shortcut_triggered_current(move_shortcuts[i])){
             int sign = i % 2 == 0 ? -1 : 1;
