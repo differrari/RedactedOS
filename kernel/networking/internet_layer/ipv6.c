@@ -19,6 +19,8 @@
 #define IPV6_MIN_MTU 1280u
 #define PMTU_CACHE_SIZE 16
 #define REASS_SLOTS 8
+#define REASS_STEP 2048u
+#define REASS_MAX_LEN (2048u * 8u)
 
 typedef struct {
     uint8_t used;
@@ -49,6 +51,7 @@ typedef struct {
     uint8_t first_pkt[1280];
 
     uint8_t *buf;
+    uint32_t buf_cap;
     uint8_t bitmap[2048];
 } reass_slot_t;
 
@@ -109,8 +112,13 @@ void ipv6_pmtu_note(const uint8_t dst[16], uint16_t mtu) {
 
 static void reass_free(reass_slot_t *s) {
     if (!s) return;
-    if (s->buf) free_sized(s->buf, 2048u * 8u);
+    if (s->buf) release(s->buf);
     memset(s, 0, sizeof(*s));
+}
+
+
+static void free_release(void* ctx, uintptr_t base, uint32_t alloc_size) {
+    if (base) release((void*)base);
 }
 
 static void icmpv6_send_error(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], const uint8_t dst_mac[6], uint8_t type, uint8_t code, uint32_t param32, const uint8_t *invoking, uint32_t invoking_len) {
@@ -124,7 +132,7 @@ static void icmpv6_send_error(uint8_t ifindex, const uint8_t src_ip[16], const u
     if (copy > max_invoke - base) copy = max_invoke - base;
 
     uint32_t icmp_len = base + copy;
-    uint8_t *buf = (uint8_t*)malloc(icmp_len);
+    uint8_t *buf = (uint8_t*)zalloc(icmp_len ? icmp_len : 1u);
     if (!buf) return;
 
     icmpv6_hdr_t *h = (icmpv6_hdr_t*)buf;
@@ -140,7 +148,7 @@ static void icmpv6_send_error(uint8_t ifindex, const uint8_t src_ip[16], const u
 
     icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, buf, icmp_len, 64);
 
-    free_sized(buf, icmp_len);
+    release(buf);
 }
 
 static l3_ipv6_interface_t* best_v6_on_l2_for_dst(l2_interface_t* l2, const uint8_t dst[16]) {
@@ -508,35 +516,34 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     netpkt_unref(pkt);
 }
 
-static bool ipv6_skip_ext_headers(uint8_t* nh, uintptr_t* l4, uint32_t* l4_len) {
-    if (!nh || !l4 || !l4_len) return false;
+static bool ipv6_skip_ext_headers(const netpkt_t* pkt, uint8_t* nh, uint32_t* l4_off, uint32_t* l4_len) {
+    if (!pkt || !nh || !l4_off || !l4_len) return false;
+    uint32_t total_len = netpkt_len(pkt);
 
     for(;;) {
+        uint8_t ext[2];
+        if (*l4_off > total_len || *l4_len > total_len - *l4_off) return false;
         uint8_t h = *nh;
         if (h == 44) return true;
 
-        if (h == 0 ||h == 43 || h == 60) {
-            if (*l4_len < 2) return false;
-            const uint8_t* p = (const uint8_t*)(*l4);
-            uint8_t next = p[0];
-            uint8_t hlen = p[1];
-            uint32_t bytes = (uint32_t)(hlen + 1u)*8;
+        if (h == 0 || h == 43 || h == 60) {
+            if (*l4_len < sizeof(ext)) return false;
+            if (!netpkt_copyout(pkt, *l4_off, ext, sizeof(ext))) return false;
+            uint32_t bytes = ((uint32_t)ext[1] + 1u)*8;
             if (bytes > *l4_len) return false;
-            *nh = next;
-            *l4 += bytes;
+            *nh = ext[0];
+            *l4_off += bytes;
             *l4_len -= bytes;
             continue;
         }
 
         if (h == 51) {
-            if (*l4_len < 2) return false;
-            const uint8_t* p = (const uint8_t*)(*l4);
-            uint8_t next = p[0];
-            uint8_t plen = p[1];
-            uint32_t bytes = ((uint32_t)plen + 2u)*4;
+            if (*l4_len < sizeof(ext)) return false;
+            if (!netpkt_copyout(pkt, *l4_off, ext, sizeof(ext))) return false;
+            uint32_t bytes = ((uint32_t)ext[1] + 2u)*4;
             if (bytes > *l4_len) return false;
-            *nh = next;
-            *l4 += bytes;
+            *nh = ext[0];
+            *l4_off += bytes;
             *l4_len -= bytes;
             continue;
         }
@@ -548,12 +555,11 @@ static bool ipv6_skip_ext_headers(uint8_t* nh, uintptr_t* l4, uint32_t* l4_len) 
 void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if (!pkt) return;
     uint32_t ip_len = netpkt_len(pkt);
-    uintptr_t ip_ptr = netpkt_data(pkt);
     if (ip_len < sizeof(ipv6_hdr_t)) return;
 
     ipv6_hdr_t ip6_;
     ipv6_hdr_t* ip6 = &ip6_;
-    memcpy(ip6, (const void*)ip_ptr, sizeof(*ip6));
+    if (!netpkt_copyout(pkt, 0, ip6, sizeof(*ip6))) return;
     uint32_t v = bswap32(ip6->ver_tc_fl);
     if ((v >> 28) != 6) return;
     uint32_t now = (uint32_t)get_time();
@@ -561,7 +567,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         reass_slot_t *s = &g_reass[i];
         if (!s->used) continue;
 
-        if (now - s->first_rx_ms < 60000u) continue;
+        if (now - s->last_update_ms < 60000u) continue;
 
         if (s->have_first && s->first_pkt_len) {
             icmpv6_send_error(s->ifindex, s->dst, s->src, s->first_src_mac, 3, 1, 0, s->first_pkt, s->first_pkt_len);
@@ -597,7 +603,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         if (!dst_is_local) return;
     }
 
-    uintptr_t l4 = ip_ptr + sizeof(ipv6_hdr_t);
+    uint32_t l4_off = (uint32_t)sizeof(ipv6_hdr_t);
     uint32_t l4_len = (uint32_t)payload_len;
 
     if (ipv6_is_linklocal(ip6->dst) && !ipv6_is_unspecified(ip6->src) && !ipv6_is_linklocal(ip6->src)) return;
@@ -606,13 +612,13 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
     uint8_t nh = ip6->next_header;
 
-    if (!ipv6_skip_ext_headers(&nh, &l4, &l4_len)) return;
+    if (!ipv6_skip_ext_headers(pkt, &nh, &l4_off, &l4_len)) return;
 
     if (nh == 44) {//b
         if (l4_len < sizeof(ipv6_frag_hdr_t)) return;
 
         ipv6_frag_hdr_t fh;
-        memcpy(&fh, (const void*)l4, sizeof(fh));
+        if (!netpkt_copyout(pkt, l4_off, &fh, sizeof(fh))) return;
         uint8_t inner_nh = fh.next_header;
         uint16_t off_flags = bswap16(fh.offset_flags);
         uint32_t ident = bswap32(fh.identification);
@@ -620,7 +626,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         uint32_t off = ((uint32_t)(off_flags >> 3) & 0x1FFFu) * 8u;
         uint8_t more = (off_flags & 0x0001u) ? 1u : 0u;
 
-        const uint8_t* frag = (const uint8_t*)l4 + sizeof(ipv6_frag_hdr_t);
+        uint32_t frag_off = l4_off + (uint32_t)sizeof(ipv6_frag_hdr_t);
         uint32_t frag_len = l4_len-(uint32_t)sizeof(ipv6_frag_hdr_t);
 
         if (more && (frag_len & 7u)) {
@@ -632,7 +638,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 uint32_t cpy = l4_len;
                 uint32_t max = (uint32_t)sizeof(ipv6_frag_hdr_t) + 8u;
                 if (cpy > max) cpy = max;
-                memcpy(invoke_buf + sizeof(ipv6_hdr_t), (void*)l4, cpy);
+                if (!netpkt_copyout(pkt, l4_off, invoke_buf + sizeof(ipv6_hdr_t), cpy)) return;
                 inv = invoke_buf;
                 inv_len = (uint32_t)sizeof(invoke_buf);
             }
@@ -649,7 +655,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 uint32_t cpy = l4_len;
                 uint32_t max = (uint32_t)sizeof(ipv6_frag_hdr_t) + 8u;
                 if (cpy > max) cpy = max;
-                memcpy(invoke_buf + sizeof(ipv6_hdr_t), (void*)l4, cpy);
+                if (!netpkt_copyout(pkt, l4_off, invoke_buf + sizeof(ipv6_hdr_t), cpy)) return;
                 inv = invoke_buf;
                 inv_len = (uint32_t)sizeof(invoke_buf);
             }
@@ -657,7 +663,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
             return;
         }
 
-        if (off + frag_len > 2048u * 8u) return;
+        if (off + frag_len > REASS_MAX_LEN) return;
 
         reass_slot_t* s = NULL;
         uint32_t now = (uint32_t)get_time();
@@ -671,8 +677,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
             if (ipv6_cmp(t->src, ip6->src) != 0) continue;
             if (ipv6_cmp(t->dst, ip6->dst) != 0) continue;
             if (now - t->last_update_ms > 60000u) {
-                if (t->buf) free_sized(t->buf, 2048u * 8u);
-                memset(t, 0, sizeof(*t));
+                reass_free(t);
                 continue;
             }
             s = t;
@@ -684,8 +689,8 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 reass_slot_t *t = &g_reass[i];
                 if (t->used) continue;
 
-                t->buf = (uint8_t*)malloc(2048u * 8u);
-                if (!t->buf) return;
+                t->buf = 0;
+                t->buf_cap = 0;
 
                 t->used = 1;
                 t->ifindex = (uint8_t)ifindex;
@@ -730,17 +735,18 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
             int ok = 1;
 
             while (nh == 0 || nh == 43 || nh == 60 || nh == 51) {
-                const uint8_t *p = frag + ulh_off;
+                uint8_t ext[2];
                 uint32_t avail = frag_len - ulh_off;
-                if (avail < 2) { ok = 0; break; }
+                if (avail < sizeof(ext)) { ok = 0; break; }
+                if (!netpkt_copyout(pkt, frag_off + ulh_off, ext, sizeof(ext))) { ok = 0; break; }
 
                 uint32_t hlen = 0;
-                if (nh == 0 || nh == 43 || nh == 60) hlen = ((uint32_t)p[1] + 1u) * 8u;
-                else hlen = ((uint32_t)p[1] + 2u) * 4u;
+                if (nh == 0 || nh == 43 || nh == 60) hlen = ((uint32_t)ext[1] + 1u) * 8u;
+                else hlen = ((uint32_t)ext[1] + 2u) * 4u;
 
                 if (hlen > avail) { ok = 0; break; }
 
-                nh = p[0];
+                nh = ext[0];
                 ulh_off += hlen;
             }
 
@@ -762,7 +768,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 uint32_t cpy = l4_len;
                 uint32_t max = (uint32_t)sizeof(ipv6_frag_hdr_t) + 64u;
                 if (cpy > max) cpy = max;
-                memcpy(invoke_buf + sizeof(ipv6_hdr_t), (void*)l4, cpy);
+                if (!netpkt_copyout(pkt, l4_off, invoke_buf + sizeof(ipv6_hdr_t), cpy)) return;
                 inv = invoke_buf;
                 inv_len = (uint32_t)sizeof(invoke_buf);
             }
@@ -774,20 +780,48 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         if (off == 0 && !s->have_first) {
             uint32_t inv_len = (uint32_t)sizeof(ipv6_hdr_t) + l4_len;
             if (inv_len > sizeof(s->first_pkt)) inv_len = sizeof(s->first_pkt);
-            memcpy(s->first_pkt, ip6, inv_len);
+            memcpy(s->first_pkt, ip6, sizeof(*ip6));
+            if (inv_len > (uint32_t)sizeof(*ip6) && !netpkt_copyout(pkt, l4_off, s->first_pkt + sizeof(*ip6), inv_len - (uint32_t)sizeof(*ip6))) {
+                reass_free(s);
+                return;
+            }
             s->first_pkt_len = (uint16_t)inv_len;
             memcpy(s->first_src_mac, src_mac, 6);
             s->have_first = 1;
         }
 
-        memcpy(s->buf + off, frag, frag_len);
+        if (off + frag_len > REASS_MAX_LEN) {
+            reass_free(s);
+            return;
+        }
+        if (s->buf_cap < off + frag_len) {
+            uint32_t new_cap = (off + frag_len + (REASS_STEP - 1u)) & ~(REASS_STEP - 1u);
+            if (new_cap < REASS_STEP) new_cap = REASS_STEP;
+            if (new_cap > REASS_MAX_LEN) new_cap = REASS_MAX_LEN;
+
+            uint8_t* new_buf = (uint8_t*)zalloc(new_cap);
+            if (!new_buf) {
+                reass_free(s);
+                return;
+            }
+
+            if (s->buf && s->buf_cap) memcpy(new_buf, s->buf, s->buf_cap);
+            if (s->buf) release(s->buf);
+
+            s->buf = new_buf;
+            s->buf_cap = new_cap;
+        }
+        if (!netpkt_copyout(pkt, frag_off, s->buf + off, frag_len)) {
+            reass_free(s);
+            return;
+        }
 
         start = off / 8u;
         end = (off + frag_len + 7u) / 8u;
         if (end > sizeof(s->bitmap)) end = sizeof(s->bitmap);
         for (uint32_t i = start; i < end; i++) s->bitmap[i] = 1;
 
-        s->last_update_ms = (uint32_t)get_time();
+        s->last_update_ms = now;
 
         if (!more) {
             s->have_last = 1;
@@ -808,21 +842,36 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         if (!complete) return;
         
 
-        uintptr_t payload_ptr = (uintptr_t)s->buf;
+        uint32_t payload_off = 0;
         uint32_t payload_size = s->total_len;
-        if (!ipv6_skip_ext_headers(&inner_nh, &payload_ptr, &payload_size)) {
+
+        netpkt_t* reassembled = netpkt_wrap((uintptr_t)s->buf, s->total_len, 0, s->total_len, free_release, 0);
+        if (!reassembled) {
+            reass_free(s);
+            return;
+        }
+        s->buf = 0;
+
+        if (!ipv6_skip_ext_headers(reassembled, &inner_nh, &payload_off, &payload_size)) {
+            netpkt_unref(reassembled);
             reass_free(s);
             return;
         }
 
         if (inner_nh == 58) {
-            icmpv6_input(ifindex, ip6->src, ip6->dst, ip6->hop_limit, src_mac, (const uint8_t*)payload_ptr, payload_size);
+            netpkt_t* l4pkt = netpkt_view(reassembled, payload_off, payload_size);
+            if (l4pkt) icmpv6_input(ifindex, ip6->src, ip6->dst, ip6->hop_limit, src_mac, l4pkt);
+            netpkt_unref(reassembled);
             reass_free(s);
             return;
         }
 
         l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
-        if (!l2) { reass_free(s); return; }
+        if (!l2) {
+            netpkt_unref(reassembled);
+            reass_free(s);
+            return;
+        }
 
         l3_ipv6_interface_t* cand[MAX_IPV6_PER_INTERFACE];
         int ccount = 0;
@@ -833,6 +882,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
             cand[ccount++] = v6;
         }
         if (ccount == 0) {
+            netpkt_unref(reassembled);
             reass_free(s);
             return;
         }
@@ -846,6 +896,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 }
             }
             if (!joined) {
+                netpkt_unref(reassembled);
                 reass_free(s);
                 return;
             }
@@ -853,10 +904,14 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
             for (int i = 0; i < ccount; i++) {
                 l3_ipv6_interface_t* v6 = cand[i];
                 if (!ipv6_is_linklocal(v6->ip) && ipv6_is_linklocal(ip6->dst)) continue;
-                if (inner_nh == 17) udp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, payload_ptr, payload_size);
-                else if (inner_nh == 6) tcp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, payload_ptr, payload_size);
+                netpkt_t* l4pkt = netpkt_view(reassembled, payload_off, payload_size);
+                if (!l4pkt) continue;
+                if (inner_nh == 17) udp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
+                else if (inner_nh == 6) tcp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
+                else netpkt_unref(l4pkt);
             }
 
+            netpkt_unref(reassembled);
             reass_free(s);
             return;
         }
@@ -871,16 +926,21 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         }
 
         if (match_count >= 1) {
-            if (inner_nh == 6) tcp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, payload_ptr, payload_size);
-            else if (inner_nh == 17) udp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, payload_ptr, payload_size);
+            netpkt_t* l4pkt = netpkt_view(reassembled, payload_off, payload_size);
+            if (l4pkt) {
+                if (inner_nh == 6) tcp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
+                else if (inner_nh == 17) udp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
+                else netpkt_unref(l4pkt);
+            }
         }
-
+        netpkt_unref(reassembled);
         reass_free(s);
         return;
     }
 
     if (nh == 58) {
-        icmpv6_input(ifindex, ip6->src, ip6->dst, ip6->hop_limit, src_mac, (const uint8_t*)l4, l4_len);
+        netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
+        if (l4pkt) icmpv6_input(ifindex, ip6->src, ip6->dst, ip6->hop_limit, src_mac, l4pkt);
         return;
     }
 
@@ -912,12 +972,15 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
             if (!ipv6_is_linklocal(v6->ip) && ipv6_is_linklocal(ip6->dst))
                 continue;
 
-            switch (ip6->next_header) {
+            switch (nh) {
+            netpkt_t* l4pkt;
             case 17:
-                udp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4, l4_len);
+                l4pkt = netpkt_view(pkt, l4_off, l4_len);
+                if (l4pkt) udp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
                 break;
             case 6:
-                tcp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4, l4_len);
+                l4pkt = netpkt_view(pkt, l4_off, l4_len); 
+                if (l4pkt) tcp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
                 break;
             default:
                 break;
@@ -936,12 +999,15 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     }
 
     if (match_count >= 1) {
-        switch (ip6->next_header) {
+        switch (nh) {
+        netpkt_t* l4pkt;
         case 6:
-            tcp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4, l4_len);
+            l4pkt = netpkt_view(pkt, l4_off, l4_len);
+            if (l4pkt) tcp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
             break;
         case 17:
-            udp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4, l4_len);
+            l4pkt = netpkt_view(pkt, l4_off, l4_len);
+            if (l4pkt) udp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
             break;
         default:
             break;

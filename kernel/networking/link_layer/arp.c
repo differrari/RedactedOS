@@ -22,16 +22,15 @@ static inline arp_table_t* l2_arp(uint8_t ifindex){
 }
 
 arp_table_t* arp_table_create(void){
-    arp_table_t* t = (arp_table_t*)malloc(sizeof(arp_table_t));
+    arp_table_t* t = (arp_table_t*)zalloc(sizeof(arp_table_t));
     if (!t) return 0;
-    memset(t, 0, sizeof(*t));
     t->init = 1;
     arp_table_init_static_defaults(t);
     return t;
 }
 
 void arp_table_destroy(arp_table_t* t){
-    if (t) free_sized(t, sizeof(*t));
+    if (t) release(t);
 }
 
 void arp_table_init_static_defaults(arp_table_t* t){
@@ -205,15 +204,12 @@ static void arp_send_reply_on(uint8_t ifindex, const arp_hdr_t* in_arp, const ui
     (void)eth_send_frame_on(ifindex, ETHERTYPE_ARP, in_src_mac, pkt);
 }
 
-void arp_input(uint16_t ifindex, netpkt_t* pkt) {
-    if (!pkt) return;
-    uint32_t frame_len = netpkt_len(pkt);
-    uintptr_t frame_ptr = netpkt_data(pkt);
-    if (frame_len < (uint32_t)sizeof(eth_hdr_t) + (uint32_t)sizeof(arp_hdr_t)) return;
+void arp_input(uint16_t ifindex, const uint8_t src_mac[6], netpkt_t* pkt) {
+    if (!pkt || !src_mac) return;
+    if (netpkt_len(pkt) < (uint32_t)sizeof(arp_hdr_t)) return;
 
-    const uint8_t* src_mac = (const uint8_t*)(frame_ptr+6);
     arp_hdr_t hdr;
-    memcpy(&hdr, (const void*)(frame_ptr + sizeof(eth_hdr_t)), sizeof(hdr));
+    if (!netpkt_copyout(pkt, 0, &hdr, sizeof(hdr))) return;
     uint16_t op = bswap16(hdr.opcode);
     uint32_t sender_ip = bswap32(hdr.sender_ip);
     uint32_t target_ip = bswap32(hdr.target_ip);

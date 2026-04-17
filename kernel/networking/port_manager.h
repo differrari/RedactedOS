@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include "net/network_types.h"
+#include "networking/netpkt.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,8 +19,7 @@ typedef uint32_t (*port_recv_handler_t)(
     ip_version_t ipver,
     const void* src_ip_addr,
     const void* dst_ip_addr,
-    uintptr_t frame_ptr,
-    uint32_t frame_len,
+    netpkt_t* pkt,
     uint16_t src_port,
     uint16_t dst_port
 );
@@ -57,6 +57,17 @@ void port_unbind_all(port_manager_t* pm, uint16_t pid);
 bool port_is_bound(const port_manager_t* pm, protocol_t proto, uint16_t port);
 uint16_t port_owner_of(const port_manager_t* pm, protocol_t proto, uint16_t port);
 port_recv_handler_t port_get_handler(const port_manager_t* pm, protocol_t proto, uint16_t port);
+uint32_t port_deliver(const port_manager_t* pm,
+                      protocol_t proto,
+                      uint16_t port,
+                      uint8_t ifindex,
+                      ip_version_t ipver,
+                      const void* src_ip_addr,
+                      const void* dst_ip_addr,
+                      netpkt_t* pkt,
+                      uint16_t src_port,
+                      uint16_t dst_port,
+                      bool* handled);
 
 #ifdef __cplusplus
 }

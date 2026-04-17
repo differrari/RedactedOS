@@ -91,7 +91,7 @@ bool icmpv6_send_on_l2(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t 
 static bool icmpv6_send_echo_reply(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], const uint8_t *icmp, uint32_t icmp_len, const uint8_t src_mac[6], uint8_t hop_limit) {
     if (!dst_ip || !icmp || icmp_len < sizeof(icmpv6_echo_t)) return false;
 
-    uintptr_t buf = (uintptr_t)malloc(icmp_len);
+    uintptr_t buf = (uintptr_t)zalloc(icmp_len ? icmp_len : 1u);
     if (!buf) return false;
 
     memcpy((void*)buf, icmp, icmp_len);
@@ -103,7 +103,7 @@ static bool icmpv6_send_echo_reply(uint16_t ifindex, const uint8_t src_ip[16], c
 
     ipv6_tx_plan_t plan;
     if (!ipv6_build_tx_plan(dst_ip, 0 ,0, 0, &plan)) {
-        free_sized((void*)buf, icmp_len);
+        release((void*)buf);
         return false;
     }
 
@@ -111,7 +111,7 @@ static bool icmpv6_send_echo_reply(uint16_t ifindex, const uint8_t src_ip[16], c
 
     icmpv6_send_on_l2(ifindex, src_ip, dst_ip, src_mac, (const void*)buf, icmp_len, hop_limit ? hop_limit : 64);
 
-    free_sized((void*)buf, icmp_len);
+    release((void*)buf);
     return true;
 }
 
@@ -261,37 +261,63 @@ static bool extract_echo_id_seq_from_error(const uint8_t *icmp, uint32_t icmp_le
     return true;
 }
 
-void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], uint8_t hop_limit, const uint8_t src_mac[6], const uint8_t *icmp, uint32_t icmp_len) {
-    if (!ifindex || !src_ip || !dst_ip || !icmp || icmp_len < sizeof(icmpv6_hdr_t)) return;
+void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], uint8_t hop_limit, const uint8_t src_mac[6], netpkt_t* pkt) {
+    if (!ifindex || !src_ip || !dst_ip || !pkt || netpkt_len(pkt) < sizeof(icmpv6_hdr_t)) {
+        if (pkt) netpkt_unref(pkt);
+        return;
+    }
 
-    const icmpv6_hdr_t *h = (const icmpv6_hdr_t*)icmp;
-    if (h->code != 0 && (h->type == ICMPV6_ECHO_REQUEST || h->type == ICMPV6_ECHO_REPLY)) return;
+    const uint8_t *icmp = (const uint8_t*)netpkt_data(pkt);
+    uint32_t icmp_len = netpkt_len(pkt);
+    icmpv6_hdr_t hdr;
+    if (!netpkt_copyout(pkt, 0, &hdr, sizeof(hdr))) {
+        netpkt_unref(pkt);
+        return;
+    }
+    const icmpv6_hdr_t *h = &hdr;
+    if (h->code != 0 && (h->type == ICMPV6_ECHO_REQUEST || h->type == ICMPV6_ECHO_REPLY)) {
+        netpkt_unref(pkt);
+        return;
+    }
 
     uint16_t calc = bswap16(checksum16_pipv6(src_ip, dst_ip, 58, icmp, icmp_len));
-    if (calc != 0) return;
+    if (calc != 0) {
+        netpkt_unref(pkt);
+        return;
+    }
 
-    if ((h->type == 133 || h->type == 134 || h->type == 135 || h->type == 136 || h->type == 137) && hop_limit != 255) return;
+    if ((h->type == 133 || h->type == 134 || h->type == 135 || h->type == 136 || h->type == 137) && hop_limit != 255) {
+        netpkt_unref(pkt);
+        return;
+    }
     if (h->type == 130 || h->type == 131 || h->type == 132 || h->type == 143) {
-        mld_input((uint8_t)ifindex, src_ip, dst_ip, icmp, icmp_len);
+        mld_input((uint8_t)ifindex, src_ip, dst_ip, pkt);
+        netpkt_unref(pkt);
         return;
     }
 
 
     if (h->type == ICMPV6_ECHO_REQUEST) {
         icmpv6_send_echo_reply(ifindex, src_ip, dst_ip, icmp, icmp_len, src_mac, hop_limit);
+        netpkt_unref(pkt);
         return;
     }
 
     if (h->type == ICMPV6_ECHO_REPLY) {
-        if (icmp_len < sizeof(icmpv6_echo_t)) return;
+        if (icmp_len < sizeof(icmpv6_echo_t)) {
+            netpkt_unref(pkt);
+            return;
+        }
         icmpv6_echo_t e;
         memcpy(&e, icmp, sizeof(e));
         mark_received(bswap16(e.id), bswap16(e.seq), h->type, h->code, src_ip);
+        netpkt_unref(pkt);
         return;
     }
 
     if (h->type == 133 || h->type == 134 || h->type == 135 || h->type == 136 || h->type == 137) {
-        ndp_input(ifindex, src_ip, dst_ip, src_mac, icmp, icmp_len);
+        ndp_input(ifindex, src_ip, dst_ip, src_mac, pkt);
+        netpkt_unref(pkt);
         return;
     }
 
@@ -310,12 +336,16 @@ void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_
             if (extract_echo_id_seq_from_error(icmp, icmp_len, &id, &seq))
                 mark_received(id, seq, h->type, h->code, src_ip);
         }
+        netpkt_unref(pkt);
         return;
     }
 
     if (h->type == ICMPV6_DEST_UNREACH || h->type == ICMPV6_TIME_EXCEEDED || h->type == ICMPV6_PARAM_PROBLEM) {
         uint16_t id = 0, seq = 0;
         if (extract_echo_id_seq_from_error(icmp, icmp_len, &id, &seq)) mark_received(id, seq, h->type, h->code, src_ip);
+        netpkt_unref(pkt);
         return;
     }
+
+    netpkt_unref(pkt);
 }

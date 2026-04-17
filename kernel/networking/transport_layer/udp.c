@@ -8,12 +8,6 @@
 #include "syscalls/syscalls.h"
 #include "networking/internet_layer/ipv4_utils.h"
 
-static inline uint32_t v4_u32_from_arr(const uint8_t ip16[16]) {
-    uint32_t v = 0;
-    memcpy(&v, ip16, 4);
-    return v;
-}
-
 size_t create_udp_segment(uintptr_t buf, const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload) {
     udp_hdr_t udp;
     udp.src_port = bswap16(src->port);
@@ -26,8 +20,10 @@ size_t create_udp_segment(uintptr_t buf, const net_l4_endpoint *src, const net_l
     memcpy((void *)(buf + sizeof(udp)), (void *)payload.ptr, payload.size);
 
     if (src->ver == IP_VER4) {
-        uint32_t s = v4_u32_from_arr(src->ip);
-        uint32_t d = v4_u32_from_arr(dst->ip);
+        uint32_t s = 0;
+        uint32_t d = 0;
+        memcpy(&s, src->ip, 4);
+        memcpy(&d, dst->ip, 4);
         udp.checksum = bswap16(checksum16_pipv4(s, d, 0x11, (const uint8_t *)buf, full_len));
     } else if (src->ver == IP_VER6) {
         udp.checksum = bswap16(checksum16_pipv6(src->ip, dst->ip, 17, (const uint8_t *)buf, full_len));
@@ -51,7 +47,8 @@ void udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, si
     size_t written = create_udp_segment((uintptr_t)buf, src, dst, payload);
 
     if (src->ver == IP_VER4) {
-        uint32_t dst_ip = v4_u32_from_arr(dst->ip);
+        uint32_t dst_ip = 0;
+        memcpy(&dst_ip, dst->ip, 4);
         (void)netpkt_trim(pkt, (uint32_t)written);
         ipv4_send_packet(dst_ip, 0x11, pkt, (const ipv4_tx_opts_t*)tx_opts, ttl, dontfrag);
     } else if (src->ver == IP_VER6) {
@@ -62,28 +59,28 @@ void udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, si
     }
 }
 
-sizedptr udp_strip_header(uintptr_t ptr, uint32_t len) {
-    if (len < sizeof(udp_hdr_t)) {
-        return (sizedptr){ 0, 0 };
-    }
-    udp_hdr_t hdr;
-    memcpy(&hdr, (const void*)ptr, sizeof(hdr));
-    uint16_t total = bswap16(hdr.length);
-    if (total < sizeof(udp_hdr_t) || total > len) {
-        return (sizedptr){ 0, 0 };
-    }
-    return (sizedptr){
-        .ptr  = ptr + sizeof(udp_hdr_t),
-        .size = total - sizeof(udp_hdr_t)
-    };
+bool udp_strip_header(const netpkt_t* pkt, udp_hdr_t* hdr, uint32_t* payload_off, uint32_t* payload_len) {
+    if (!pkt || !hdr || !payload_off || !payload_len) return false;
+    uint32_t len = netpkt_len(pkt);
+    if (len < sizeof(udp_hdr_t)) return false;
+    if (!netpkt_copyout(pkt, 0, hdr, sizeof(*hdr))) return false;
+    
+    uint16_t total = bswap16(hdr->length);
+    if (total < sizeof(udp_hdr_t) || total > len) return false;
+    *payload_off = (uint32_t)sizeof(udp_hdr_t);
+    *payload_len = total - (uint32_t)sizeof(udp_hdr_t);
+    return true;
 }
 
-void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, uintptr_t ptr, uint32_t len) {
-    sizedptr pl = udp_strip_header(ptr, len);
-    if (!pl.ptr) return;
-
+void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, netpkt_t* pkt) {
+    if (!pkt) return;
     udp_hdr_t hdr;
-    memcpy(&hdr, (const void*)ptr, sizeof(hdr));
+    uint32_t payload_off = 0;
+    uint32_t payload_len = 0;
+    if (!udp_strip_header(pkt, &hdr, &payload_off, &payload_len)) {
+        netpkt_unref(pkt);
+        return;
+    }
 
     if (hdr.checksum) {
         if (ipver == IP_VER4) {
@@ -91,9 +88,15 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             uint32_t dst_ip = 0;
             memcpy(&src_ip, src_ip_addr, sizeof(src_ip));
             memcpy(&dst_ip, dst_ip_addr, sizeof(dst_ip));
-            if (checksum16_pipv4(src_ip, dst_ip, 0x11, (const uint8_t*)ptr, (uint16_t)(pl.size + sizeof(hdr))) != 0) return;
+            if (checksum16_pipv4(src_ip, dst_ip, 0x11, (const uint8_t*)netpkt_data(pkt), (uint16_t)(payload_len + sizeof(hdr))) != 0) {
+                netpkt_unref(pkt);
+                return;
+            }
         } else if (ipver == IP_VER6) {
-            if (checksum16_pipv6((const uint8_t*)src_ip_addr, (const uint8_t*)dst_ip_addr, 0x11, (const uint8_t*)ptr, (uint32_t)(pl.size + sizeof(hdr))) != 0) return;
+            if (checksum16_pipv6((const uint8_t*)src_ip_addr, (const uint8_t*)dst_ip_addr, 0x11, (const uint8_t*)netpkt_data(pkt), (uint32_t)(payload_len + sizeof(hdr))) != 0) {
+                netpkt_unref(pkt);
+                return;
+            }
         }
     }
 
@@ -112,20 +115,25 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
         if (v6) pm = ifmgr_pm_v6(l3_id);
     }
 
-    if (!pm) return;
+    if (!pm) {
+        netpkt_unref(pkt);
+        return;
+    }
+
+    netpkt_t* plpkt = netpkt_view(pkt, payload_off, payload_len);
+    if (!plpkt) {
+        netpkt_unref(pkt);
+        return;
+    }
+
+    uint8_t ifx = 0;
+    if (v4 && v4->l2) ifx = v4->l2->ifindex;
+    else if (v6 && v6->l2) ifx = v6->l2->ifindex;
 
     port_recv_handler_t handler = port_get_handler(pm, PROTO_UDP, dst_port);
-    if (handler) {
-        uintptr_t copy = (uintptr_t)malloc(pl.size);
-        if (!copy) return;
-        memcpy((void*)copy, (const void*)pl.ptr, pl.size);
-
-        uint8_t ifx = 0;
-        if (v4 && v4->l2) ifx = v4->l2->ifindex;
-        else if (v6 && v6->l2) ifx = v6->l2->ifindex;
-
-        handler(ifx, ipver, src_ip_addr, dst_ip_addr, copy, pl.size, src_port, dst_port);
-    }
+    if (handler) handler(ifx, ipver, src_ip_addr, dst_ip_addr, plpkt, src_port, dst_port);
+    netpkt_unref(plpkt);
+    netpkt_unref(pkt);
 }
 
 static inline port_manager_t* pm_for_l3(uint8_t l3_id) {

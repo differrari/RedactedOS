@@ -318,10 +318,8 @@ static void ndp_on_ra(uint8_t ifindex, const uint8_t router_ip[16], uint16_t rou
 }
 
 ndp_table_t* ndp_table_create(void) {
-    ndp_table_impl_t* t = (ndp_table_impl_t*)malloc(sizeof(ndp_table_impl_t));
+    ndp_table_impl_t* t = (ndp_table_impl_t*)zalloc(sizeof(ndp_table_impl_t));
     if (!t) return 0;
-
-    memset(t, 0, sizeof(*t));
     t->init = 1;
 
     return (ndp_table_t*)t;
@@ -329,7 +327,7 @@ ndp_table_t* ndp_table_create(void) {
 
 void ndp_table_destroy(ndp_table_t* t) {
     if (!t) return;
-    free_sized(t, sizeof(ndp_table_impl_t));
+    release(t);
 }
 
 static ndp_table_impl_t* l2_ndp(uint8_t ifindex) {
@@ -433,7 +431,7 @@ static bool ndp_table_get_for_l2(uint8_t ifindex, const uint8_t ip[16], uint8_t 
 
 static bool ndp_send_na_on(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t src_ip[16], const uint8_t target_ip[16], const uint8_t dst_mac_in[6], const uint8_t my_mac[6], uint8_t solicited) {
     uint32_t plen = (uint32_t)(sizeof(icmpv6_na_t) + sizeof(icmpv6_opt_lladdr_t));
-    uintptr_t buf = (uintptr_t)malloc(plen);
+    uintptr_t buf = (uintptr_t)zalloc(plen ? plen : 1u);
     if (!buf) return false;
 
     icmpv6_na_t* na = (icmpv6_na_t*)buf;
@@ -461,14 +459,14 @@ static bool ndp_send_na_on(uint8_t ifindex, const uint8_t dst_ip[16], const uint
 
     bool ok = icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, (const void*)buf, plen, 255);
 
-    free_sized((void*)buf, plen);
+    release((void*)buf);
     return ok;
 }
 
 static void ndp_send_ns_on(uint8_t ifindex, const uint8_t target_ip[16], const uint8_t src_ip[16]) {
     bool dad = ipv6_is_unspecified(src_ip);
     uint32_t plen = (uint32_t)sizeof(icmpv6_ns_t) + (dad ? 0u : (uint32_t)sizeof(icmpv6_opt_lladdr_t));
-    uintptr_t buf = (uintptr_t)malloc(plen);
+    uintptr_t buf = (uintptr_t)zalloc(plen ? plen : 1u);
     if (!buf) return;
 
     icmpv6_ns_t* ns = (icmpv6_ns_t*)buf;
@@ -498,7 +496,7 @@ static void ndp_send_ns_on(uint8_t ifindex, const uint8_t target_ip[16], const u
     ipv6_multicast_mac(dst_ip, dst_mac);
 
     icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, (const void*)buf, plen, 255);
-    free_sized((void*)buf, plen);
+    release((void*)buf);
 }
 
 static void ndp_send_rs_on(uint8_t ifindex) {
@@ -528,7 +526,7 @@ static void ndp_send_rs_on(uint8_t ifindex) {
     } icmpv6_rs_t;
 
     uint32_t plen = (uint32_t)(sizeof(icmpv6_rs_t) + sizeof(icmpv6_opt_lladdr_t));
-    uintptr_t buf = (uintptr_t)malloc(plen);
+    uintptr_t buf = (uintptr_t)zalloc(plen ? plen : 1u);
     if (!buf) return;
 
     icmpv6_rs_t* rs = (icmpv6_rs_t*)buf;
@@ -551,7 +549,7 @@ static void ndp_send_rs_on(uint8_t ifindex) {
     ipv6_multicast_mac(dst_ip, dst_mac);
 
     icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, (const void*)buf, plen, 255);
-    free_sized((void*)buf, plen);
+    release((void*)buf);
 }
 
 static void ndp_send_probe(uint8_t ifindex, ndp_entry_t* e) {
@@ -767,17 +765,20 @@ bool ndp_request_dad_on(uint8_t ifindex, const uint8_t ip[16]) {
     return false;
 }
 
-void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], const uint8_t src_mac[6], const uint8_t* icmp, uint32_t icmp_len) {
-    if (!ifindex || !src_ip || !dst_ip || !icmp || icmp_len < sizeof(icmpv6_hdr_t)) return;
+void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], const uint8_t src_mac[6], netpkt_t* pkt) {
+    if (!ifindex || !src_ip || !dst_ip || !pkt || netpkt_len(pkt) < sizeof(icmpv6_hdr_t)) return;
 
-    const icmpv6_hdr_t* h = (const icmpv6_hdr_t*)icmp;
+    uint32_t icmp_len = netpkt_len(pkt);
+    icmpv6_hdr_t hdr;
+    if (!netpkt_copyout(pkt, 0, &hdr, sizeof(hdr))) return;
+    const icmpv6_hdr_t* h = &hdr;
     if (h->code != 0) return;
 
     if (h->type == 135) {
         if (icmp_len < sizeof(icmpv6_ns_t)) return;
 
         icmpv6_ns_t ns;
-        memcpy(&ns, icmp, sizeof(ns));
+        if (!netpkt_copyout(pkt, 0, &ns, sizeof(ns))) return;
         if (ipv6_is_multicast(ns.target)) return;
 
         l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
@@ -839,7 +840,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         if (icmp_len < sizeof(icmpv6_na_t)) return;
 
         icmpv6_na_t na;
-        memcpy(&na, icmp, sizeof(na));
+        if (!netpkt_copyout(pkt, 0, &na, sizeof(na))) return;
         if (ipv6_is_multicast(na.target)) return;
 
         l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
@@ -968,7 +969,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         if (icmp_len < sizeof(icmpv6_ra_t)) return;
 
         icmpv6_ra_t ra;
-        memcpy(&ra, icmp, sizeof(ra));
+        if (!netpkt_copyout(pkt, 0, &ra, sizeof(ra))) return;
 
         uint16_t router_lifetime = bswap16(ra.router_lifetime);
         uint32_t reachable_time = bswap32(ra.reachable_time);
@@ -982,7 +983,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         if (reachable_time) g_ndp_reachable_time_ms = reachable_time;
         if (retrans_timer) g_ndp_retrans_timer_ms = retrans_timer;
 
-        const uint8_t* opt = icmp + sizeof(ra);
+        uint32_t opt_off = (uint32_t)sizeof(icmpv6_ra_t);
         uint32_t opt_len = icmp_len - (uint32_t)sizeof(icmpv6_ra_t);
 
         uint8_t idx = (uint8_t)(ifindex - 1);
@@ -993,8 +994,10 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         }
 
         while (opt_len >= 2) {
-            uint8_t opt_type = opt[0];
-            uint8_t opt_units = opt[1];
+            uint8_t opt_head[2];
+            if (!netpkt_copyout(pkt, opt_off, opt_head, sizeof(opt_head))) break;
+            uint8_t opt_type = opt_head[0];
+            uint8_t opt_units = opt_head[1];
             if (opt_units == 0) break;
 
             uint32_t opt_size = (uint32_t)opt_units * 8u;
@@ -1002,7 +1005,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
 
             if (opt_type == 3&&opt_size >= (uint32_t)sizeof(ndp_opt_prefix_info_t)) {
                 ndp_opt_prefix_info_t pio;
-                memcpy(&pio, opt, sizeof(pio));
+                if (!netpkt_copyout(pkt, opt_off, &pio, sizeof(pio))) break;
 
                 uint8_t pfx_len = pio.prefix_length;
                 uint8_t autonomous = (pio.flags & 0x40u) ? 1u : 0u;
@@ -1015,7 +1018,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
                 if (pfx_len != 0) ndp_on_ra((uint8_t)ifindex, src_ip, router_lifetime, pfx, pfx_len, valid_lft, pref_lft, autonomous, ra.flags);
             } else if (opt_type == 5 && opt_size >= (uint32_t)sizeof(ndp_opt_mtu_t)) {
                 uint32_t mtu32 = 0;
-                memcpy(&mtu32, opt + 4, 4);
+                if (!netpkt_copyout(pkt, opt_off + 4u, &mtu32, sizeof(mtu32))) break;
                 mtu32= bswap32(mtu32);
 
                 if (mtu32 >= 1280u && mtu32 <= 65535u) {
@@ -1038,8 +1041,11 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
 
                     uint8_t zero16[16] = {0};
 
-                    const uint8_t* a0 = (addr_count >= 1) ? (opt + 8) : zero16;
-                    const uint8_t* a1 = (addr_count >= 2) ? (opt + 24) : zero16;
+                    uint8_t a0[16], a1[16];
+                    if (addr_count >= 1 && !netpkt_copyout(pkt, opt_off + 8u, a0, sizeof(a0))) break;
+                    else if (addr_count < 1) memcpy(a0, zero16, sizeof(a0));
+                    if (addr_count >= 2 && !netpkt_copyout(pkt, opt_off + 24u, a1, sizeof(a1))) break;
+                    else if (addr_count < 2) memcpy(a1, zero16, sizeof(a1));
 
                     l3_ipv6_interface_t* slot = NULL;
 
@@ -1091,7 +1097,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
                 }
             }
 
-            opt += opt_size;
+            opt_off += opt_size;
             opt_len -= opt_size;
         }
 

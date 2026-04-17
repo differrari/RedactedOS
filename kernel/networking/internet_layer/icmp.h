@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include "net/network_types.h"
+#include "networking/netpkt.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,7 +49,7 @@ typedef struct {
 } ping_result_t;
 
 bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint32_t ttl, ping_result_t *out);
-void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip);
+void icmp_input(netpkt_t* pkt, uint32_t src_ip, uint32_t dst_ip);
 
 #ifdef __cplusplus
 }

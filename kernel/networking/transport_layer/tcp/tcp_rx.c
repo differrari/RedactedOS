@@ -22,7 +22,7 @@ static void tcp_reass_evict_tail(tcp_flow_t *flow, uint32_t need) {
 
         tcp_reass_seg_t *r = &flow->reass[idx];
         uint32_t olen = r->end - r->seq;
-        if (r->buf && olen) free_sized((void *)r->buf, olen);
+        if (r->buf && olen) release((void *)r->buf);
         if (flow->rcv_buf_used >= olen) flow->rcv_buf_used -= olen;
         else flow->rcv_buf_used = 0;
 
@@ -34,7 +34,7 @@ static void tcp_reass_evict_tail(tcp_flow_t *flow, uint32_t need) {
     }
 }
 
-static void tcp_reass_insert(tcp_flow_t *flow, uint32_t seq, const uint8_t *data, uint32_t len) {
+static void tcp_reass_insert(tcp_flow_t *flow, uint32_t seq, const netpkt_t *pkt, uint32_t data, uint32_t len) {
     if (!len) return;
     if (flow->reass_count >= TCP_REASS_MAX_SEGS) return;
     if (seq < flow->rcv_nxt) {
@@ -71,7 +71,7 @@ static void tcp_reass_insert(tcp_flow_t *flow, uint32_t seq, const uint8_t *data
             if (start <= rs && end >= re) {
                 uint32_t olen = re - rs;
 
-                if (r->buf && olen) free_sized((void *)r->buf, olen);
+                if (r->buf && olen) release((void *)r->buf);
 
                 flow->reass[i] = flow->reass[flow->reass_count - 1];
                 flow->reass[flow->reass_count - 1].seq = 0;
@@ -108,11 +108,14 @@ static void tcp_reass_insert(tcp_flow_t *flow, uint32_t seq, const uint8_t *data
     if (flow->rcv_buf_used + len > flow->rcv_wnd_max) tcp_reass_evict_tail(flow, len);
     if (flow->rcv_buf_used + len > flow->rcv_wnd_max) return;
 
-    uintptr_t buf = (uintptr_t)malloc(len);
+    uintptr_t buf = (uintptr_t)zalloc(len ? len : 1u);
     if (!buf) return;
 
     uint32_t offset = start - orig_seq;
-    memcpy((void *)buf, data + offset, len);
+    if (!netpkt_copyout(pkt, data + offset, (void *)buf, len)) {
+        release((void *)buf);
+        return;
+    }
 
     int pos = flow->reass_count;
     while (pos > 0 && flow->reass[pos - 1].seq > start){
@@ -130,7 +133,7 @@ static void tcp_reass_insert(tcp_flow_t *flow, uint32_t seq, const uint8_t *data
     (void)tcp_calc_adv_wnd_field(flow, 1);
 }
 
-static void tcp_reass_drain_inseq(tcp_flow_t *flow, port_manager_t *pm, uint8_t ifx, ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port) {
+static void tcp_reass_drain_inseq(tcp_flow_t *flow, port_recv_handler_t handler, uint8_t ifx, ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port) {
     uint32_t rcv_nxt = flow->rcv_nxt;
 
     for(;;){
@@ -156,16 +159,25 @@ static void tcp_reass_drain_inseq(tcp_flow_t *flow, port_manager_t *pm, uint8_t 
             continue;
         }
 
-        if (pm) {
-            port_recv_handler_t h = port_get_handler(pm, PROTO_TCP, dst_port);
+        if (handler) {
+            bool handled = true;
             uint32_t accepted = seg_len;
 
-            if (h) accepted = h(ifx, ipver, src_ip_addr, dst_ip_addr, seg->buf, seg_len, src_port, dst_port);
+            netpkt_t* segpkt = netpkt_alloc(seg_len, 0, 0);
+            if (segpkt) {
+                void* segmem = netpkt_put(segpkt, seg_len);
+                if (segmem) {
+                    memcpy(segmem, (const void*)seg->buf, seg_len);
+                    accepted = handler(ifx, ipver, src_ip_addr, dst_ip_addr, segpkt, src_port, dst_port);
+                } else accepted = 0;
+                netpkt_unref(segpkt);
+            } else accepted = 0;
+            if (!handled) accepted = seg_len;
             if (accepted > seg_len) accepted = seg_len;
 
             if (accepted == 0) {
                 if (flow->state == TCP_FIN_WAIT_1 || flow->state == TCP_FIN_WAIT_2 || flow->state == TCP_CLOSING || flow->state == TCP_LAST_ACK || flow->state == TCP_TIME_WAIT) {
-                    if (seg->buf) free_sized((void *)seg->buf, seg_len);
+                    if (seg->buf) release((void *)seg->buf);
 
                     if (flow->rcv_buf_used >= seg_len) flow->rcv_buf_used -= seg_len;
                     else flow->rcv_buf_used = 0;
@@ -185,11 +197,11 @@ static void tcp_reass_drain_inseq(tcp_flow_t *flow, port_manager_t *pm, uint8_t 
 
             if (accepted < seg_len) {
                 uint32_t rem = seg_len - accepted;
-                uintptr_t newbuf = (uintptr_t)malloc(rem);
+                uintptr_t newbuf = (uintptr_t)zalloc(rem ? rem : 1u);
                 if (!newbuf) break;
 
                 memcpy((void *)newbuf, ((const uint8_t *)seg->buf) + accepted, rem);
-                if (seg->buf) free_sized((void *)seg->buf, seg_len);
+                if (seg->buf) release((void *)seg->buf);
 
                 seg->buf = newbuf;
                 seg->seq += accepted;
@@ -209,7 +221,7 @@ static void tcp_reass_drain_inseq(tcp_flow_t *flow, port_manager_t *pm, uint8_t 
 
         rcv_nxt += seg_len;
 
-        if (seg->buf) free_sized((void *)seg->buf, seg_len);
+        if (seg->buf) release((void *)seg->buf);
         if (flow->rcv_buf_used >= seg_len) flow->rcv_buf_used -= seg_len;
         else flow->rcv_buf_used = 0;
 
@@ -325,20 +337,35 @@ static void tcp_cc_on_dupack(tcp_flow_t *f) {
     }
 }
 
-void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, uintptr_t ptr, uint32_t len) {
-    if (len < sizeof(tcp_hdr_t)) return;
+void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, netpkt_t* pkt) {
+    if (!pkt) return;
+    const uint8_t* segment = (const uint8_t*)netpkt_data(pkt);
+    uint32_t len = netpkt_len(pkt);
+    if (len < sizeof(tcp_hdr_t)) {
+        netpkt_unref(pkt);
+        return;
+    }
 
     tcp_hdr_t hdr;
-    memcpy(&hdr, (const void*)ptr, sizeof(hdr));
+    if (!netpkt_copyout(pkt, 0, &hdr, sizeof(hdr))) {
+        netpkt_unref(pkt);
+        return;
+    }
 
     if (ipver == IP_VER4) {
         uint32_t src_ip = 0;
         uint32_t dst_ip = 0;
         memcpy(&src_ip, src_ip_addr, sizeof(src_ip));
         memcpy(&dst_ip, dst_ip_addr, sizeof(dst_ip));
-        if (tcp_checksum_ipv4((const void*)ptr, (uint16_t)len, src_ip, dst_ip) != 0) return;
+        if (tcp_checksum_ipv4((const void*)segment, (uint16_t)len, src_ip, dst_ip) != 0) {
+            netpkt_unref(pkt);
+            return;
+        }
     } else {
-        if (tcp_checksum_ipv6((const void*)ptr, (uint16_t)len, (const uint8_t *)src_ip_addr, (const uint8_t *)dst_ip_addr) != 0) return;
+        if (tcp_checksum_ipv6((const void*)segment, (uint16_t)len, (const uint8_t *)src_ip_addr, (const uint8_t *)dst_ip_addr) != 0) {
+            netpkt_unref(pkt);
+            return;
+        }
     }
 
     uint16_t src_port = bswap16(hdr.src_port);
@@ -349,7 +376,10 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     uint16_t window = bswap16(hdr.window);
 
     uint8_t hdr_len = (uint8_t)((hdr.data_offset_reserved >> 4) * 4);
-    if (len < hdr_len) return;
+    if (len < hdr_len) {
+        netpkt_unref(pkt);
+        return;
+    }
 
     uint32_t data_len = len - hdr_len;
 
@@ -363,17 +393,28 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
     if (ipver == IP_VER4) {
         l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(l3_id);
-        if (!v4 || !v4->l2) return;
+        if (!v4 || !v4->l2) {
+            netpkt_unref(pkt);
+            return;
+        }
         pm = ifmgr_pm_v4(l3_id);
         ifx = v4->l2->ifindex;
     } else {
         l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(l3_id);
-        if (!v6 || !v6->l2) return;
+        if (!v6 || !v6->l2) {
+            netpkt_unref(pkt);
+            return;
+        }
         pm = ifmgr_pm_v6(l3_id);
         ifx = v6->l2->ifindex;
     }
     
-    if (!pm) return;
+    if (!pm) {
+        netpkt_unref(pkt);
+        return;
+    }
+
+    port_recv_handler_t port_handler = port_get_handler(pm, PROTO_TCP, dst_port);
 
     if (!flow){
         int listen_idx = find_flow(dst_port, ipver, dst_ip_addr, NULL, 0);
@@ -395,11 +436,17 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 syn_total++;
                 if (f->local_port == dst_port && f->l3_id == l3_id) syn_port++;
             }
-            if (syn_total >= (MAX_TCP_FLOWS / 4) || syn_port >= 32) return;
+            if (syn_total >= (MAX_TCP_FLOWS / 4) || syn_port >= 32) {
+                netpkt_unref(pkt);
+                return;
+            }
 
             tcp_flow_t *lf = tcp_flows[listen_idx];
             tcp_flow_t *nf = tcp_alloc_flow();
-            if (!nf) return;
+            if (!nf) {
+                netpkt_unref(pkt);
+                return;
+            }
 
             flow = nf;
             for (int k = 0; k < MAX_TCP_FLOWS; k++) {
@@ -426,7 +473,14 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->retries = TCP_SYN_RETRIES;
 
             tcp_parsed_opts_t pop;
-            tcp_parse_options((const uint8_t *)(ptr + sizeof(tcp_hdr_t)), (uint32_t)(hdr_len > sizeof(tcp_hdr_t) ? hdr_len - sizeof(tcp_hdr_t) : 0), &pop);
+            uint8_t rx_opts_buf[40];
+            uint32_t rx_opts_len = (uint32_t)(hdr_len > sizeof(tcp_hdr_t) ? hdr_len - sizeof(tcp_hdr_t) : 0);
+            if (rx_opts_len && (!netpkt_copyout(pkt, sizeof(tcp_hdr_t), rx_opts_buf, rx_opts_len))) {
+                tcp_free_flow(idx);
+                netpkt_unref(pkt);
+                return;
+            }
+            tcp_parse_options(rx_opts_len ? rx_opts_buf : NULL, rx_opts_len, &pop);
 
             flow->ws_send = lf->ws_send;
             flow->ws_recv = 0;
@@ -522,6 +576,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             }
 
             tcp_daemon_kick();
+            netpkt_unref(pkt);
             return;
         }
 
@@ -538,11 +593,15 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             }
         }
 
+        netpkt_unref(pkt);
         return;
     }
 
     if (flow->state == TCP_TIME_WAIT){
-        if (flags & (1u << RST_F)) return;
+        if (flags & (1u << RST_F)) {
+            netpkt_unref(pkt);
+            return;
+        }
 
         uint32_t seg_len = data_len;
 
@@ -556,6 +615,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             tcp_send_ack_now(flow);
         }
 
+        netpkt_unref(pkt);
         return;
     }
     uint32_t new_wnd = window;
@@ -590,7 +650,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 if (s_end <= ack){
                     if (s->rtt_sample && s->retransmit_cnt == 0) tcp_rtt_update(flow, s->timer_ms);
 
-                    if (s->buf && s->len) free_sized((void *)s->buf, s->len);
+                    if (s->buf && s->len) release((void *)s->buf);
 
                     s->used = 0;
                     s->buf = 0;
@@ -606,6 +666,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 tcp_daemon_kick();
             } else if ((flow->state == TCP_LAST_ACK || flow->state == TCP_CLOSING) && ack >= flow->ctx.expected_ack){
                 tcp_free_flow(idx);
+                netpkt_unref(pkt);
                 return;
             }
         } else if (ack == flow->snd_una && data_len == 0 && !fin){
@@ -630,7 +691,13 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->ctx.flags = 0;
 
             tcp_parsed_opts_t pop;
-            tcp_parse_options((const uint8_t *)(ptr + sizeof(tcp_hdr_t)), (uint32_t)(hdr_len > sizeof(tcp_hdr_t) ? hdr_len - sizeof(tcp_hdr_t) : 0), &pop);
+            uint8_t ack_opts_buf[40];
+            uint32_t ack_opts_len = (uint32_t)(hdr_len > sizeof(tcp_hdr_t) ? hdr_len - sizeof(tcp_hdr_t) : 0);
+            if (ack_opts_len && (!netpkt_copyout(pkt, sizeof(tcp_hdr_t), ack_opts_buf, ack_opts_len))) {
+                netpkt_unref(pkt);
+                return;
+            }
+            tcp_parse_options(ack_opts_len ? ack_opts_buf : NULL, ack_opts_len, &pop);
 
             flow->ws_recv = pop.has_wscale ? pop.wscale : 0;
             if (flow->ws_recv > 14) flow->ws_recv = 14;
@@ -686,6 +753,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->state = TCP_STATE_CLOSED;
         }
 
+        netpkt_unref(pkt);
         return;
 
     case TCP_SYN_RECEIVED:
@@ -698,14 +766,14 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->delayed_ack_timer_ms = 0;
             flow->ctx.ack_received = ack;
 
-            port_recv_handler_t h = port_get_handler(pm, PROTO_TCP, dst_port);
-            if (h) (void)h(ifx, ipver, src_ip_addr, dst_ip_addr, 0, 0, src_port, dst_port);
+            if (port_handler) port_handler(ifx, ipver, src_ip_addr, dst_ip_addr, 0, src_port, dst_port);
 
             tcp_daemon_kick();
         } else if (flags & (1u << RST_F)){
             tcp_free_flow(idx);
         }
 
+        netpkt_unref(pkt);
         return;
 
     default:
@@ -714,6 +782,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
     if (flags & (1u << RST_F)) {
         tcp_free_flow(idx);
+        netpkt_unref(pkt);
         return;
     }
 
@@ -738,7 +807,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 if (fin_seq < rcv_nxt || fin_seq >= wnd_end) fin_in = 0;
             }
 
-            const uint8_t *payload = (const uint8_t *)(ptr + hdr_len);
+            uint32_t payload = hdr_len;
 
             if (seg_seq < rcv_nxt) {
                 uint32_t d = rcv_nxt - seg_seq;
@@ -765,16 +834,20 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 if (data_len){
                     uint32_t free_space = (flow->rcv_buf_used < flow->rcv_wnd_max) ? (flow->rcv_wnd_max - flow->rcv_buf_used) : 0;
 
-                    port_recv_handler_t h = port_get_handler(pm, PROTO_TCP, dst_port);
-
                     uint32_t offer = data_len;
                     if (offer > free_space) offer = free_space;
 
                     uint32_t accepted = 0;
-                    if (offer && h) accepted = h(ifx, ipver, src_ip_addr, dst_ip_addr, (uintptr_t)payload, offer, src_port, dst_port);
+                    if (offer && port_handler) {
+                        netpkt_t* datapkt = netpkt_view(pkt, payload, offer);
+                        if (datapkt) {
+                            accepted = port_handler(ifx, ipver, src_ip_addr, dst_ip_addr, datapkt, src_port, dst_port);
+                            netpkt_unref(datapkt);
+                        } else port_handler = 0;
+                    }
                     if (accepted > offer) accepted = offer;
 
-                    if (h && accepted == 0 && data_len) {
+                    if (port_handler && accepted == 0 && data_len) {
                         (void)tcp_calc_adv_wnd_field(flow, 1);
                         need_ack = 1;
                         ack_immediate = 1;
@@ -816,7 +889,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                     }
                 }
 
-                tcp_reass_drain_inseq(flow, pm, ifx, ipver, src_ip_addr, dst_ip_addr, src_port, dst_port);
+                tcp_reass_drain_inseq(flow, port_handler, ifx, ipver, src_ip_addr, dst_ip_addr, src_port, dst_port);
 
                 if (flow->fin_pending && flow->fin_seq == flow->rcv_nxt){
                     flow->fin_pending = 0;
@@ -841,7 +914,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 if (!ack_immediate && data_len) ack_defer = 1;
                 need_ack = 1;
             } else {
-                if (!(flow->state == TCP_FIN_WAIT_1 || flow->state == TCP_FIN_WAIT_2 || flow->state == TCP_CLOSING || flow->state == TCP_LAST_ACK || flow->state == TCP_TIME_WAIT) && data_len) tcp_reass_insert(flow, seg_seq, payload, data_len);
+                if (!(flow->state == TCP_FIN_WAIT_1 || flow->state == TCP_FIN_WAIT_2 || flow->state == TCP_CLOSING || flow->state == TCP_LAST_ACK || flow->state == TCP_TIME_WAIT) && data_len) tcp_reass_insert(flow, seg_seq, pkt, payload, data_len);
 
                 if (fin_in){
                     flow->fin_pending = 1;
@@ -912,7 +985,7 @@ void tcp_flow_on_app_read(tcp_data *flow_ctx, uint32_t bytes_read){
     }
 
     if (pm) {
-        tcp_reass_drain_inseq(flow, pm, ifx, flow->local.ver, flow->remote.ip, flow->local.ip, flow->remote.port, flow->local_port);
+        tcp_reass_drain_inseq(flow, port_get_handler(pm, PROTO_TCP, flow->local_port), ifx, flow->local.ver, flow->remote.ip, flow->local.ip, flow->remote.port, flow->local_port);
     }
 
     if (flow->state != TCP_STATE_CLOSED && flow->state != TCP_TIME_WAIT) {

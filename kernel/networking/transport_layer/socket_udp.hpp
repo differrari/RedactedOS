@@ -117,53 +117,48 @@ class UDPSocket : public Socket {
         return false;
     }
 
-    static uint32_t dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uintptr_t frame_ptr, uint32_t frame_len, uint16_t src_port, uint16_t dst_port) {
-        UDPSocket* first = nullptr;
-        uint32_t ret = frame_len;
+    static uint32_t dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port) {
+        if (!pkt) return 0;
+        uint32_t ret = netpkt_len(pkt);
         irq_flags_t irq = irq_save_disable();
 
         for (UDPSocket* s = s_list_head; s; s = s->next) {
             if (!socket_matches_dst(s, ifindex, ipver, dst_ip_addr, dst_port)) continue;
-            if (!first) {
-                first = s;
-                continue;
-            }
-
-            uintptr_t copy = (uintptr_t)malloc(frame_len);
-            if (!copy) continue;
-
-            memcpy((void*)copy, (const void*)frame_ptr, frame_len);
-            s->on_receive(ipver, src_ip_addr, src_port, copy, frame_len);
+            s->on_receive(ipver, src_ip_addr, src_port, pkt);
         }
 
-        if (first) first->on_receive(ipver, src_ip_addr, src_port, frame_ptr, frame_len);
-        else if (frame_ptr && frame_len) free_sized((void*)frame_ptr, frame_len);
         irq_restore(irq);
         return ret;
     }
 
-    void on_receive(ip_version_t ver, const void* src_ip_addr, uint16_t src_port, uintptr_t ptr, uint32_t len) {
+    void on_receive(ip_version_t ver, const void* src_ip_addr, uint16_t src_port, netpkt_t* pkt) {
+        if (!pkt) return;
+        uintptr_t ptr = netpkt_data(pkt);
+        uint32_t len = netpkt_len(pkt);
         uint32_t limit = 0xFFFFFFFFu;
         if ((extraOpts.flags & SOCK_OPT_BUF_SIZE) && extraOpts.buf_size) limit = extraOpts.buf_size;
-        if (len > limit) {
-            if (ptr && len) free_sized((void*)ptr, len);
-            return;
+        if (len > limit) return;
+        uintptr_t copy = 0;
+        if (len) {
+            copy = (uintptr_t)zalloc(len);
+            if (!copy) return;
+            memcpy((void*)copy, (const void*)ptr, len);
         }
 
         while (rx_bytes + len > limit && r_head != r_tail) {
             rx_bytes -= ring[r_head].size;
-            free_sized((void*)ring[r_head].ptr, ring[r_head].size);
+            release((void*)ring[r_head].ptr);
             r_head = (r_head + 1) % UDP_RING_CAP;
         }
 
         int nexti = (r_tail + 1) % UDP_RING_CAP;
         if (nexti == r_head) {
             rx_bytes -= ring[r_head].size;
-            free_sized((void*)ring[r_head].ptr, ring[r_head].size);
+            release((void*)ring[r_head].ptr);
             r_head = (r_head + 1) % UDP_RING_CAP;
         }
 
-        ring[r_tail].ptr = ptr;
+        ring[r_tail].ptr = copy;
         ring[r_tail].size = len;
         rx_bytes += len;
 
@@ -171,8 +166,7 @@ class UDPSocket : public Socket {
         memset(src_eps[r_tail].ip, 0, 16);
 
         if (ver == IP_VER4) {
-            uint32_t v4 = *(const uint32_t*)src_ip_addr;
-            memcpy(src_eps[r_tail].ip, &v4, 4);
+            memcpy(src_eps[r_tail].ip, src_ip_addr, 4);
         } else if (ver == IP_VER6) {
             memcpy(src_eps[r_tail].ip, src_ip_addr, 16);
         }
@@ -751,7 +745,7 @@ public:
         memcpy(buf, (void*)p.ptr, tocpy);
         if (src) *src = se;
 
-        free_sized((void*)p.ptr, p.size);
+        release((void*)p.ptr);
         remoteEP = se;
         return tocpy;
     }
@@ -766,7 +760,7 @@ public:
         netlog_socket_event(&extraOpts, &ev);
         while (r_head != r_tail) {
             rx_bytes -= ring[r_head].size;
-            free_sized((void*)ring[r_head].ptr, ring[r_head].size);
+            release((void*)ring[r_head].ptr);
             r_head = (r_head + 1) % UDP_RING_CAP;
         }
         return Socket::close();

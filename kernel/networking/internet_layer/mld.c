@@ -317,25 +317,29 @@ static void schedule_report(uint8_t ifindex, const uint8_t group[16], uint16_t m
     mld_daemon_kick();
 }
 
-void mld_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], const void* l4, uint32_t l4_len) {
-    if(!ifindex || !src_ip || !dst_ip || !l4) return;
+void mld_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], netpkt_t* pkt) {
+    if(!ifindex || !src_ip || !dst_ip || !pkt) return;
+    uint32_t l4_len = netpkt_len(pkt);
     if(l4_len < 8) return;
 
-    const uint8_t* p = (const uint8_t*)l4;
-    uint8_t type = p[0];
+    uint8_t type = 0;
+    if (!netpkt_copyout(pkt, 0, &type, 1)) return;
 
     if(type == MLD_TYPE_REPORT_V2) {
-        if(l4_len < 8) return;
-        uint16_t nrec = (uint16_t)((uint16_t)p[6] << 8) | (uint16_t)p[7];
+        uint8_t hdr[8];
+        if (!netpkt_copyout(pkt, 0, hdr, sizeof(hdr))) return;
+        uint16_t nrec = rd_be16(hdr + 6);
         uint32_t off = 8;
 
         for(uint16_t i = 0; i < nrec; i++) {
-            if(off + 20u > l4_len) break;
+            uint8_t rec[20];
+            uint8_t group[16];
+            if(!netpkt_copyout(pkt, off, rec, sizeof(rec))) break;
 
-            uint8_t rtype = p[off + 0];
-            uint8_t aux_words = p[off + 1];
-            uint16_t nsrc = (uint16_t)((uint16_t)p[off + 2] << 8) | (uint16_t)p[off + 3];
-            const uint8_t* group = p + off + 4;
+            uint8_t rtype = rec[0];
+            uint8_t aux_words = rec[1];
+            uint16_t nsrc = rd_be16(rec + 2);
+            memcpy(group, rec + 4, sizeof(group));
             off += 20;
 
             uint32_t src_bytes = (uint32_t)nsrc * 16u;
@@ -360,9 +364,8 @@ void mld_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
     }
 
     if(type == MLD_TYPE_REPORT_V1) {
-        if(l4_len < 24) return;
         uint8_t group[16];
-        memcpy(group, p + 8, 16);
+        if (!netpkt_copyout(pkt, 8, group, sizeof(group))) return;
         if(ipv6_is_multicast(group)) mld_suppress_pending(ifindex, src_ip, group);
         return;
     }
@@ -370,10 +373,11 @@ void mld_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
     if(type != MLD_TYPE_QUERY) return;
     if(l4_len < 24) return;
 
-    uint16_t max_resp_ms = (uint16_t)((uint16_t)p[4] << 8) | (uint16_t)p[5];
-
+    uint8_t query[24];
     uint8_t group[16];
-    memcpy(group, p + 8, 16);
+    if (!netpkt_copyout(pkt, 0, query, sizeof(query))) return;
+    uint16_t max_resp_ms = rd_be16(query + 4);
+    memcpy(group, query + 8, sizeof(group));
 
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     if(!l2) return;

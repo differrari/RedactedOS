@@ -65,7 +65,7 @@ static void clear_txq(tcp_flow_t *f){
     for (int i = 0; i < TCP_MAX_TX_SEGS; i++){
         tcp_tx_seg_t *s = &f->txq[i];
 
-        if (s->used && s->buf && s->len) free_sized((void *)s->buf, s->len);
+        if (s->used && s->buf && s->len) release((void *)s->buf);
 
         s->used = 0;
         s->syn = 0;
@@ -83,8 +83,7 @@ static void clear_txq(tcp_flow_t *f){
 static void clear_reass(tcp_flow_t *f){
     for (int i = 0; i < TCP_REASS_MAX_SEGS; i++){
         if (f->reass[i].buf && f->reass[i].end > f->reass[i].seq){
-            uint32_t l = f->reass[i].end - f->reass[i].seq;
-            free_sized((void *)f->reass[i].buf, l);
+            release((void *)f->reass[i].buf);
         }
 
         f->reass[i].seq = 0;
@@ -100,9 +99,8 @@ tcp_flow_t *tcp_alloc_flow(void){
     for (int i = 0; i < MAX_TCP_FLOWS; i++){
         if (tcp_flows[i]) continue;
 
-        tcp_flow_t *f = (tcp_flow_t *)malloc(sizeof(tcp_flow_t));
+        tcp_flow_t *f = (tcp_flow_t *)zalloc(sizeof(tcp_flow_t));
         if (!f) return NULL;
-        memset(f, 0, sizeof(tcp_flow_t));
         tcp_flows[i] = f;
 
         f->rto = TCP_INIT_RTO;
@@ -144,7 +142,7 @@ void tcp_free_flow(int idx) {
     f->cwnd = f->mss;
     f->ssthresh = TCP_RECV_WINDOW;
 
-    free_sized(f, sizeof(*f));
+    release(f);
     tcp_flows[idx] = NULL;
 }
 

@@ -105,3 +105,25 @@ port_recv_handler_t port_get_handler(const port_manager_t* pm, protocol_t proto,
     const port_entry_t* e = &pm->tab[proto][port];
     return e->used ? e->handler : NULL;
 }
+
+uint32_t port_deliver(const port_manager_t* pm,
+                      protocol_t proto,
+                      uint16_t port,
+                      uint8_t ifindex,
+                      ip_version_t ipver,
+                      const void* src_ip_addr,
+                      const void* dst_ip_addr,
+                      netpkt_t* pkt,
+                      uint16_t src_port,
+                      uint16_t dst_port,
+                      bool* handled)
+{
+    if (handled) *handled = false;
+    if (!pm || !proto_valid(proto)) return 0;
+
+    port_recv_handler_t handler = port_get_handler(pm, proto, port);
+    if (!handler) return 0;
+
+    if (handled) *handled = true;
+    return handler(ifindex, ipver, src_ip_addr, dst_ip_addr, pkt, src_port, dst_port);
+}

@@ -333,10 +333,10 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
 void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if (!pkt) return;
     uint32_t ip_len = netpkt_len(pkt);
-    uintptr_t ip_ptr = netpkt_data(pkt);
     if (ip_len < sizeof(ipv4_hdr_t)) return;
 
-    uint8_t first = *(const uint8_t*)ip_ptr;
+    uint8_t first = 0;
+    if (!netpkt_copyout(pkt, 0, &first, sizeof(first))) return;
     uint8_t ver = (uint8_t)(first >> 4);
     uint8_t ihl = (uint8_t)(first & 0x0F);
     if (ver != IP_VERSION_4) return;
@@ -347,7 +347,7 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
     uint16_t hdr_words[60 /sizeof(uint16_t)];
     uint8_t* hdr_copy = (uint8_t*)hdr_words;
-    memcpy(hdr_copy, (const void*)ip_ptr, hdr_len);
+    if (!netpkt_copyout(pkt, 0, hdr_copy, hdr_len)) return;
     if (checksum16(hdr_words, hdr_len / 2) != 0) return;
     ipv4_hdr_t ip;
     memcpy(&ip, hdr_copy, sizeof(ip));
@@ -358,7 +358,6 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     (void)netpkt_trim(pkt, ip_totlen);
     ip_len = ip_totlen;
 
-    uintptr_t l4 = ip_ptr + hdr_len;
     uint32_t l4_len = (uint32_t)ip_totlen - hdr_len;
 
     uint32_t src = bswap32(ip.src_ip);
@@ -399,9 +398,19 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         for (int i = 0; i < ccount; ++i) {
             uint8_t l3id = cand[i]->l3_id;
             switch (proto) {
-                case 2: igmp_input((uint8_t)ifindex, src, dst, (const void*)l4, l4_len); break;
-                case 6: tcp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                case 17: udp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
+                netpkt_t* l4pkt;
+                case 2:
+                    l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                    if (l4pkt) igmp_input((uint8_t)ifindex, src, dst, l4pkt);
+                    break;
+                case 6: 
+                    l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                    if (l4pkt) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+                    break;
+                case 17:
+                    l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                    if (l4pkt) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+                    break;
                 default: break;
             }
         }
@@ -411,21 +420,44 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
     if (dst == 0xFFFFFFFFu) {
         if (ccount == 1) {
-            uint8_t l3id = cand[0]->l3_id;
-            switch (proto) {
-                case 1: icmp_input(l4, l4_len, src, dst); break;
-                case 6: tcp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                case 17: udp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                default: break;
+            netpkt_t* l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+            if (l4pkt) {
+                switch (proto) {
+                    case 1:
+                        icmp_input(l4pkt, src, dst);
+                        break;
+                    case 2:
+                        igmp_input((uint8_t)ifindex, src, dst, l4pkt);
+                        break;
+                    case 6:
+                        tcp_input(IP_VER4, &src, &dst, cand[0]->l3_id, l4pkt);
+                        break;
+                    case 17:
+                        udp_input(IP_VER4, &src, &dst, cand[0]->l3_id, l4pkt);
+                        break;
+                    default:
+                        netpkt_unref(l4pkt);
+                        break;
+                }
             }
             return;
         } else {
             for (int i = 0; i < ccount; ++i) {
                 uint8_t l3id = cand[i]->l3_id;
                 switch (proto) {
-                    case 1: icmp_input(l4, l4_len, src, dst); break;
-                    case 6: tcp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                    case 17: udp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
+                    netpkt_t* l4pkt;
+                    case 1:
+                    l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                    if (l4pkt) icmp_input(l4pkt, src, dst);
+                    break;
+                    case 6:
+                        l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                        if (l4pkt) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+                        break;
+                    case 17:
+                        l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                        if (l4pkt) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+                        break;
                     default: break;
                 }
             }
@@ -442,11 +474,26 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         }
     }
     if (match_count == 1) {
-        switch (proto) {
-            case 1: icmp_input(l4, l4_len, src, dst); break;
-            case 6: tcp_input(IP_VER4, &src, &dst, match_l3id, l4, l4_len); break;
-            case 17: udp_input(IP_VER4, &src, &dst, match_l3id, l4, l4_len); break;
-            default: break;
+        netpkt_t* l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+        if (l4pkt) {
+
+            switch (proto) {
+                case 1:
+                    icmp_input(l4pkt, src, dst);
+                    break;
+                case 2:
+                    igmp_input((uint8_t)ifindex, src, dst, l4pkt);
+                    break;
+                case 6:
+                    tcp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
+                    break;
+                case 17:
+                    udp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
+                    break;
+                default:
+                    netpkt_unref(l4pkt);
+                    break;
+            }
         }
         return;
     }
@@ -455,9 +502,19 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
             if (cand[i]->ip == dst) {
                 uint8_t l3id = cand[i]->l3_id;
                 switch (proto) {
-                    case 1: icmp_input(l4, l4_len, src, dst); break;
-                    case 6: tcp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                    case 17: udp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
+                    netpkt_t* l4pkt;
+                    case 1:
+                    l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                    if (l4pkt) icmp_input(l4pkt, src, dst);
+                    break;
+                    case 6:
+                        l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                        if (l4pkt) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+                        break;
+                    case 17:
+                        l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                        if (l4pkt) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+                        break;
                     default: break;
                 }
             }
@@ -477,9 +534,19 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 any_dbcast = 1;
                 uint8_t l3id = v4->l3_id;
                 switch (proto) {
-                    case 1: icmp_input(l4, l4_len, src, dst); break;
-                    case 6: tcp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                    case 17: udp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
+                    netpkt_t* l4pkt;
+                    case 1:
+                    l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                    if (l4pkt) icmp_input(l4pkt, src, dst);
+                    break;
+                    case 6:
+                        l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                        if (l4pkt) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+                        break;
+                    case 17:
+                        l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                        if (l4pkt) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+                        break;
                     default: break;
                 }
             }

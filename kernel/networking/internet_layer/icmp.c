@@ -56,7 +56,7 @@ static void mark_received(uint16_t id, uint16_t seq, uint8_t type, uint8_t code,
 static uintptr_t build_echo(uint16_t id, uint16_t seq, const uint8_t* payload, uint32_t pay_len, uint32_t* out_total_len) {
     uint32_t len = 8 + (pay_len > 56 ? 56 : pay_len);
     *out_total_len = len;
-    uintptr_t buf = (uintptr_t)malloc(8 + 56);
+    uintptr_t buf = (uintptr_t)zalloc(8 + 56);
     if (!buf) return 0;
 
     icmp_packet *pkt = (icmp_packet*)buf;
@@ -102,19 +102,19 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
     uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + (uint32_t)sizeof(ipv4_hdr_t);
     netpkt_t* pkt = netpkt_alloc(tot_len, headroom, 0);
     if (!pkt) {
-        free_sized((void*)buf, 8 + 56);
+        release((void*)buf);
         g_pending[slot].in_use = false;
         return false;
     }
     void* p = netpkt_put(pkt, tot_len);
     if (!p) {
         netpkt_unref(pkt);
-        free_sized((void*)buf, 8 + 56);
+        release((void*)buf);
         g_pending[slot].in_use = false;
         return false;
     }
     memcpy(p, (const void*)buf, tot_len);
-    free_sized((void*)buf, 8 + 56);
+    release((void*)buf);
     ipv4_send_packet(dst_ip, 1, pkt, (const ipv4_tx_opts_t*)tx_opts_or_null, (uint8_t)ttl, 0);
 
     uint32_t start = (uint32_t)get_time();
@@ -168,26 +168,43 @@ bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, 
     return false;
 }
 
-void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
-    if (len < 8) return;
+void icmp_input(netpkt_t* pkt, uint32_t src_ip, uint32_t dst_ip) {
+    if (!pkt) return;
 
-    const uint8_t* raw = (const uint8_t*)ptr;
+    uint32_t len = netpkt_len(pkt);
+    if (len < 8) {
+        netpkt_unref(pkt);
+        return;
+    }
+
+    const uint8_t* raw = (const uint8_t*)netpkt_data(pkt);
+    uint8_t hdr[8];
+    if (!netpkt_copyout(pkt, 0, hdr, sizeof(hdr))) {
+        netpkt_unref(pkt);
+        return;
+    }
     uint32_t sum = 0;
     for (uint32_t i = 0; i + 1 < len; i += 2) sum += (uint32_t)((raw[i] << 8) | raw[i + 1]);
     if (len & 1u) sum += (uint32_t)(raw[len - 1] << 8);
     while (sum >> 16) sum = (sum & 0xFFFFu) + (sum >> 16);
-    if ((uint16_t)sum != 0xFFFFu) return;
+    if ((uint16_t)sum != 0xFFFFu) {
+        netpkt_unref(pkt);
+        return;
+    }
 
-    uint8_t type = raw[0];
-    uint8_t code = raw[1];
-    uint16_t id = rd_be16(raw + 4);
-    uint16_t sq = rd_be16(raw + 6);
+    uint8_t type = hdr[0];
+    uint8_t code = hdr[1];
+    uint16_t id = rd_be16(hdr + 4);
+    uint16_t sq = rd_be16(hdr + 6);
     uint32_t pay = len - 8;
     if (pay > 56) pay = 56;
 
     if (type == ICMP_ECHO_REQUEST) {
-        uintptr_t buf = (uintptr_t)malloc(8 + 56);
-        if (!buf) return;
+        uintptr_t buf = (uintptr_t)zalloc(8 + 56);
+        if (!buf) {
+            netpkt_unref(pkt);
+            return;
+        }
         icmp_packet *rp = (icmp_packet*)buf;
         rp->type = ICMP_ECHO_REPLY;
         rp->code = 0;
@@ -214,12 +231,14 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
                 }
             }
         }
-        free_sized((void*)buf, 8 + 56);
+        release((void*)buf);
+        netpkt_unref(pkt);
         return;
     }
 
     if (type == ICMP_ECHO_REPLY) {
         mark_received(id, sq, type, code, src_ip);
+        netpkt_unref(pkt);
         return;
     }
 
@@ -242,6 +261,9 @@ void icmp_input(uintptr_t ptr, uint32_t len, uint32_t src_ip, uint32_t dst_ip) {
             }
         }
     }
+        netpkt_unref(pkt);
         return;
     }
+
+    netpkt_unref(pkt);
 }

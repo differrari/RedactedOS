@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "networking/netpkt.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,7 +37,7 @@ typedef struct {
 ndp_table_t* ndp_table_create(void);
 void ndp_table_destroy(ndp_table_t* t);
 
-void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], const uint8_t src_mac[6], const uint8_t* icmp, uint32_t icmp_len);
+void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], const uint8_t src_mac[6], netpkt_t* pkt);
 
 void ndp_table_put_for_l2(uint8_t ifindex, const uint8_t ip[16], const uint8_t mac[6], uint32_t ttl_ms, bool router);
 

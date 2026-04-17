@@ -94,17 +94,16 @@ struct ipv6_rt_table {
 };
 
 ipv6_rt_table_t* ipv6_rt_create(void) {
-    ipv6_rt_table_t* t = malloc(sizeof(*t));
+    ipv6_rt_table_t* t = zalloc(sizeof(*t));
     if (!t) return 0;
 
-    memset(t, 0, sizeof(*t));
     return t;
 }
 
 void ipv6_rt_destroy(ipv6_rt_table_t* t) {
     if (!t) return;
 
-    free_sized(t, sizeof(*t));
+    release(t);
 }
 
 void ipv6_rt_clear(ipv6_rt_table_t* t) {

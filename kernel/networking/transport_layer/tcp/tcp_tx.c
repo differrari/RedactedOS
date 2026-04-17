@@ -227,7 +227,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
 
         uintptr_t buf = 0;
         if (seg_len) {
-            buf = (uintptr_t)malloc(seg_len);
+            buf = (uintptr_t)zalloc(seg_len);
             if (!buf) { seg->used = 0; break; }
             memcpy((void *)buf, payload_ptr + sent_bytes, seg_len);
         }

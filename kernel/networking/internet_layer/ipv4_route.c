@@ -91,15 +91,14 @@ static int prefix_len(uint32_t m) {
 }
 
 ipv4_rt_table_t* ipv4_rt_create(void) {
-    ipv4_rt_table_t* t = (ipv4_rt_table_t*)malloc(sizeof(ipv4_rt_table_t));
+    ipv4_rt_table_t* t = (ipv4_rt_table_t*)zalloc(sizeof(ipv4_rt_table_t));
     if (!t) return 0;
-    memset(t, 0, sizeof(*t));
     return t;
 }
 
 void ipv4_rt_destroy(ipv4_rt_table_t* t) {
     if (!t) return;
-    free_sized(t, sizeof(*t));
+    release(t);
 }
 
 void ipv4_rt_clear(ipv4_rt_table_t* t) {

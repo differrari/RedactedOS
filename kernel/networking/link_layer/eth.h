@@ -19,9 +19,9 @@ typedef struct __attribute__((packed)) eth_hdr_t {
     uint16_t ethertype;
 } eth_hdr_t;
 
-uint16_t eth_parse_type(uintptr_t frame_ptr);
-const uint8_t* eth_src(uintptr_t frame_ptr);
-const uint8_t* eth_dst(uintptr_t frame_ptr);
+uint16_t eth_parse_type(const netpkt_t* pkt);
+bool eth_src(const netpkt_t* pkt, uint8_t out[6]);
+bool eth_dst(const netpkt_t* pkt, uint8_t out[6]);
 
 bool eth_send_frame_on(uint16_t ifindex, uint16_t ethertype, const uint8_t dst_mac[6], netpkt_t* pkt);
 

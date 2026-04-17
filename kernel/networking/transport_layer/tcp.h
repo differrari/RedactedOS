@@ -3,6 +3,7 @@
 #include "networking/port_manager.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/link_layer/eth.h"
+#include "networking/netpkt.h"
 #include "std/memory.h"
 #include "net/network_types.h"
 #include "net/socket_types.h"
@@ -98,7 +99,7 @@ tcp_result_t tcp_flow_close(tcp_data *flow_ctx);
 void tcp_flow_window_update(tcp_data *flow_ctx);
 void tcp_flow_on_app_read(tcp_data *flow_ctx, uint32_t bytes_read);
 
-void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, uintptr_t ptr, uint32_t len);
+void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, netpkt_t* pkt);
 
 void tcp_tick_all(uint32_t elapsed_ms);
 int tcp_daemon_entry(int argc, char *argv[]);

@@ -22,6 +22,8 @@ void netpkt_unref(netpkt_t* p);
 
 uintptr_t netpkt_data(const netpkt_t* p);
 uint32_t netpkt_len(const netpkt_t* p);
+//NOTE use this only for small reads to avoid unnecessary payload copies
+bool netpkt_copyout(const netpkt_t* p, uint32_t off, void* dst, uint32_t len);
 
 uint32_t netpkt_headroom(const netpkt_t* p);
 uint32_t netpkt_tailroom(const netpkt_t* p);

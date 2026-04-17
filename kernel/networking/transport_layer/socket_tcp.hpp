@@ -53,8 +53,8 @@ class TCPSocket : public Socket {
         return true;
     }
 
-    static uint32_t dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uintptr_t frame_ptr, uint32_t frame_len, uint16_t src_port, uint16_t dst_port) {
-        if (frame_len == 0){
+    static uint32_t dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port) {
+        if (!pkt){
             for (TCPSocket* srv = s_list_head; srv; srv = srv->next){
                 if (srv->role != SOCK_ROLE_SERVER) continue;
                 if (!srv->bound) continue;
@@ -68,7 +68,9 @@ class TCPSocket : public Socket {
                         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
                         if (!is_valid_v4_l3_for_bind(v4)) continue;
                         if (v4->l2->ifindex != ifindex) continue;
-                        if (v4->ip == *(const uint32_t*)dst_ip_addr) {
+                        uint32_t dst_v4 = 0;
+                        memcpy(&dst_v4, dst_ip_addr, 4);
+                        if (v4->ip == dst_v4) {
                             matches_dst = true;
                             break;
                         }
@@ -106,7 +108,9 @@ class TCPSocket : public Socket {
                         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
                         if (!is_valid_v4_l3_for_bind(v4)) continue;
                         if (v4->l2->ifindex != ifindex) continue;
-                        if (v4->ip == *(const uint32_t*)dst_ip_addr) {
+                        uint32_t dst_v4 = 0;
+                        memcpy(&dst_v4, dst_ip_addr, 4);
+                        if (v4->ip == dst_v4) {
                             l3id = id;
                             break;
                         }
@@ -191,7 +195,9 @@ class TCPSocket : public Socket {
                     l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
                     if (!is_valid_v4_l3_for_bind(v4)) continue;
                     if (v4->l2->ifindex != ifindex) continue;
-                    if (v4->ip == *(const uint32_t*)dst_ip_addr) {
+                    uint32_t dst_v4 = 0;
+                    memcpy(&dst_v4, dst_ip_addr, 4);
+                    if (v4->ip == dst_v4) {
                         matches_dst = true;
                         break;
                     }
@@ -209,18 +215,25 @@ class TCPSocket : public Socket {
             if (!matches_dst) continue;
 
             if (ipver == IP_VER4) {
-                if (*(const uint32_t*)s->remoteEP.ip != *(const uint32_t*)src_ip_addr) continue;
+                uint32_t remote_v4 = 0;
+                uint32_t src_v4 = 0;
+                memcpy(&remote_v4, s->remoteEP.ip, 4);
+                memcpy(&src_v4, src_ip_addr, 4);
+                if (remote_v4 != src_v4) continue;
             } else {
                 if (memcmp(s->remoteEP.ip, src_ip_addr, 16) != 0) continue;
             }
 
-            return s->on_receive(frame_ptr, frame_len);
+            return s->on_receive(pkt);
         }
 
         return 0;
     }
     
-    uint32_t on_receive(uintptr_t ptr, uint32_t len) {
+    uint32_t on_receive(netpkt_t* pkt) {
+        if (!pkt) return 0;
+        uintptr_t ptr = netpkt_data(pkt);
+        uint32_t len = netpkt_len(pkt);
         if(!ptr || !len) return 0;
 
         uint64_t limit = ring.capacity();

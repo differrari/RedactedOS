@@ -20,6 +20,10 @@
 #define TASK_RX_BATCH_LIMIT 256
 #define TASK_TX_BATCH_LIMIT 256
 
+static void netpkt_free_rx_frame(void* ctx, uintptr_t base, uint32_t alloc_size) {
+    if (base) kfree((void*)base, alloc_size);
+}
+
 NetworkDispatch::NetworkDispatch()
 {
     nic_num = 0;
@@ -133,12 +137,11 @@ int NetworkDispatch::net_task()
                 if (nics[n].rx.is_empty()) break;
                 sizedptr pkt{0,0};
                 if (!nics[n].rx.pop(pkt)) break;
-                netpkt_t* np = netpkt_wrap(pkt.ptr, pkt.size, 0 , pkt.size, NULL, 0);
+                netpkt_t* np = netpkt_wrap(pkt.ptr, pkt.size, 0 , pkt.size, netpkt_free_rx_frame, 0);
                 if (np) {
                     eth_input(nics[n].ifindex, np);
                     netpkt_unref(np);
-                }
-                free_frame(pkt);
+                } else kfree((void*)pkt.ptr, pkt.size);
                 nics[n].rx_consumed++;
                 processed++;
             }
@@ -243,7 +246,7 @@ uint8_t NetworkDispatch::kind(uint8_t ifindex) const
 
 void NetworkDispatch::free_frame(const sizedptr &f)
 {
-    if (f.ptr) free_sized((void*)f.ptr, f.size);
+    if (f.ptr) kfree((void*)f.ptr, f.size);
 }
 
 bool NetworkDispatch::register_all_from_bus() {

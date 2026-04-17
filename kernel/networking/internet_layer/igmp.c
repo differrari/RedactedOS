@@ -198,41 +198,66 @@ static void schedule_report(uint8_t ifindex, uint32_t group, uint32_t max_resp_d
     igmp_daemon_kick();
 }
 
-void igmp_input(uint8_t ifindex, uint32_t src, uint32_t dst, const void* l4, uint32_t l4_len) {
-    if (!l4 || l4_len < sizeof(igmp_hdr_t)) return;
-    const uint8_t* p = (const uint8_t*)l4;
+void igmp_input(uint8_t ifindex, uint32_t src, uint32_t dst, netpkt_t* pkt) {
+    if (!pkt) return;
+    uint32_t l4_len = netpkt_len(pkt);
+    if (l4_len < sizeof(igmp_hdr_t)) {
+        netpkt_unref(pkt);
+        return;
+    }
+    const uint8_t* p = (const uint8_t*)netpkt_data(pkt);
+    uint8_t hdr[sizeof(igmp_hdr_t)];
+    if (!netpkt_copyout(pkt, 0, hdr, sizeof(hdr))) {
+        netpkt_unref(pkt);
+        return;
+    }
     uint32_t sum = 0;
     for (uint32_t i = 0; i + 1 < sizeof(igmp_hdr_t); i += 2) sum += (uint32_t)((p[i] << 8) | p[i + 1]);
     while (sum >> 16) sum = (sum & 0xFFFFu) + (sum >> 16);
-    if ((uint16_t)sum != 0xFFFFu) return;
+    if ((uint16_t)sum != 0xFFFFu) {
+        netpkt_unref(pkt);
+        return;
+    }
 
-    uint8_t type = p[0];
-    uint32_t group = rd_be32(p + 4);
+    uint8_t type = hdr[0];
+    uint32_t group = rd_be32(hdr + 4);
 
-    uint32_t max_resp_ds = (uint32_t)p[1];
+    uint32_t max_resp_ds = (uint32_t)hdr[1];
 
-    if (type != IGMP_TYPE_QUERY) return;
+    if (type != IGMP_TYPE_QUERY) {
+        netpkt_unref(pkt);
+        return;
+    }
 
     if (group == 0) {
         l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-        if (!l2) return;
+        if (!l2) {
+            netpkt_unref(pkt);
+            return;
+        }
         for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) {
             uint32_t g = l2->ipv4_mcast[i];
             if (ipv4_is_multicast(g)) schedule_report(ifindex, g, max_resp_ds);
         }
+        netpkt_unref(pkt);
         return;
     }
 
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-    if (!l2) return;
+    if (!l2) {
+        netpkt_unref(pkt);
+        return;
+    }
 
     for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) {
         if (l2->ipv4_mcast[i] == group) {
             schedule_report(ifindex, group, max_resp_ds);
+            netpkt_unref(pkt);
             return;
         }
     }
 
     (void)src;
     (void)dst;
+    netpkt_unref(pkt);
 }
