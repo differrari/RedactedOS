@@ -20,11 +20,11 @@ typedef struct {
 } boot_theme_t;
 
 typedef struct {
-    uint32_t bg_color;
-    uint32_t accent_color;
-    uint32_t err_color;
-    uint32_t cursor_color_deselected;
-    uint32_t cursor_color_selected;
+    u32 bg_color;
+    u32 accent_color;
+    u32 err_color;
+    u32 cursor_color_deselected;
+    u32 cursor_color_selected;
     bool use_window_shadows;
 } system_theme_t;
 

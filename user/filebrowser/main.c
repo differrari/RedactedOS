@@ -135,6 +135,8 @@ void enter(const char *name){
         string_free(full_path);
         return;
     }
+    
+    if (st.data_type) print("Signature for %s = %v",full_path.data, (string_slice){(char*)&st.data_type,8});
 
     if (st.type == entry_directory){
         if (dir_count >= 16){

@@ -5,7 +5,7 @@
 #include "files/vfs.h"
 
 bool init_tmp(){
-    make_entry("std", backing_virtual, entry_file, buffer_create(0x1000, buffer_opt_none));
+    make_entry("std", backing_virtual, entry_file, DATA_SIG_UNKNOWN, buffer_create(0x1000, buffer_opt_none));
     return true;
 }
 

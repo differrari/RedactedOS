@@ -872,10 +872,14 @@ bool stat_proc(const char *path, fs_stat *out_stat){
         return res;
     }
     out_stat->type = entry_file;
-    if (strcmp_case(path, "out",true) == 0)
+    if (strcmp_case(path, "out",true) == 0){
         out_stat->size = proc->output_size;
-    if (strcmp_case(path, "state",true) == 0)
+        out_stat->data_type = DATA_SIG_TEXT;
+    }
+    if (strcmp_case(path, "state",true) == 0){
         out_stat->size = sizeof(proc->state);
+        out_stat->data_type = DATA_SIG_PROC_ST;
+    }
     irq_restore(irq);
     return true;
 }

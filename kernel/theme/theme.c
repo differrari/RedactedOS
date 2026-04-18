@@ -129,7 +129,7 @@ bool load_theme(){
 
     read_toml(buf, parse_theme_kvp, 0);
     
-    make_entry(DIR_AS_FILE, backing_virtual, entry_file, (buffer){
+    make_entry(DIR_AS_FILE, backing_virtual, entry_file, DATA_SIG_THEME, (buffer){
        .buffer = &system_theme,
        .buffer_size = sizeof(system_theme_t),
        .limit = sizeof(system_theme_t),

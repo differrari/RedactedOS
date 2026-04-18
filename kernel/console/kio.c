@@ -172,6 +172,7 @@ bool console_stat(const char *path, fs_stat *out_stat){
     const uint64_t used = full ? sz : (head >= tail ? (head - tail) : (sz - (tail - head)));
     out_stat->size = used;
     out_stat->type = entry_file;
+    out_stat->data_type = DATA_SIG_TEXT;
     return true;
 }
 

@@ -9,6 +9,7 @@
 #include "audio/wav.h"
 #include "memory/memory.h"
 #include "files/helpers.h"
+#include "utils/clipboard.h"
 
 #define BORDER 20
 
@@ -155,17 +156,18 @@ void write_large_file(){
 }
 
 void copypaste(){
-    char *copythis = "hello";
-    swritef("/clipboard", copythis, strlen(copythis));
     
-    char buf[10];
-    sreadf("/clipboard", buf, 10);
+    
+    char *copythis = "hello";
+    clipboard_copy(copythis, strlen(copythis), DATA_SIG_TEXT);
+    
+    char *buf = clipboard_paste(DATA_SIG_TEXT, 0);
     
     char *copythis2 = "hello1";
-    swritef("/clipboard", copythis2, strlen(copythis2));
+    clipboard_copy(copythis2, strlen(copythis2), DATA_SIG_TEXT);
     
     char *copythis3 = "hello2";
-    swritef("/clipboard", copythis3, strlen(copythis3));
+    clipboard_copy(copythis3, strlen(copythis3), DATA_SIG_TEXT);
     
     print("Pasted text %s",buf);
     

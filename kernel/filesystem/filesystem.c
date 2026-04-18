@@ -106,6 +106,7 @@ size_t read_file(file *descriptor, char* buf, size_t size){
         .id = local.mfile_id,
         .size = descriptor->size,
         .cursor = start_cursor,
+        .data_type = descriptor->data_type
     };
     size_t amount_read = local.mod->read(&gfd, buf, size, start_cursor);
     descriptor->cursor = gfd.cursor != start_cursor ? gfd.cursor : start_cursor + amount_read;
@@ -124,6 +125,7 @@ void close_file(file *descriptor){
         .id = ofile->mfile_id,
         .size = ofile->file_size,
         .cursor = descriptor->cursor,
+        .data_type = descriptor->data_type
     };
     close_file_global(&gfd, ofile->mod);
     kfree(ofile, sizeof(open_file_descriptors));
@@ -155,6 +157,7 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
         .id = local.mfile_id,
         .size = descriptor->size,
         .cursor = start_cursor,
+        .data_type = descriptor->data_type
     };
     size_t amount_written = local.mod->write(&gfd, buf, size, 0);
     descriptor->cursor = gfd.cursor != start_cursor ? gfd.cursor : start_cursor + amount_written;
@@ -233,6 +236,7 @@ bool truncate(file *descriptor, size_t size){
         .id = local.mfile_id,
         .size = descriptor->size,
         .cursor = descriptor->cursor,
+        .data_type = descriptor->data_type
     };
     
     if (!local.mod->truncate(&gfd, size)) return false;
