@@ -258,12 +258,18 @@ int window_system(){
                 case window_mode: {
                     gpu_point end_point = get_mouse_pos();
                     gpu_size size = {abs(end_point.x - start_point.x), abs(end_point.y - start_point.y)};
+                    click_loc = start_point;
+                    clicked_frame = 0;
+                    linked_list_for_each(window_list, calc_click);
+                    window_frame *ini_wf = clicked_frame;
                     click_loc = end_point;
+                    clicked_frame = 0;
+                    linked_list_for_each(window_list, calc_click);
+                    //Small movements are counted as clicks
+                    //Others create a window unless they happen fully within a window or intersect with the focused window, as we consider those to happen inside the window itself
                     if (size.width < 0x10 && size.height < 0x10){
-                        clicked_frame = 0;
-                        linked_list_for_each(window_list, calc_click);
-                        if (clicked_frame) sys_set_focus(clicked_frame->pid);
-                    } else {
+                        if (clicked_frame && focused_window != clicked_frame) sys_set_focus(clicked_frame->pid);
+                    } else if ((clicked_frame != ini_wf || !clicked_frame) && clicked_frame != focused_window && ini_wf != focused_window){
                         int_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
                         disable_interrupt();
                         create_window(fixed_point.x - global_win_offset.x,fixed_point.y - global_win_offset.y, size.width, size.height);
