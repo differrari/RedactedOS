@@ -265,11 +265,11 @@ int window_system(){
                     click_loc = end_point;
                     clicked_frame = 0;
                     linked_list_for_each(window_list, calc_click);
-                    //Small movements are counted as clicks
-                    //Others create a window unless they happen fully within a window or intersect with the focused window, as we consider those to happen inside the window itself
                     if (size.width < 0x10 && size.height < 0x10){
+                        //Small movements are counted as clicks
                         if (clicked_frame && focused_window != clicked_frame) sys_set_focus(clicked_frame->pid);
-                    } else if ((clicked_frame != ini_wf || !clicked_frame) && clicked_frame != focused_window && ini_wf != focused_window){
+                    } else if (!linked_list_count(window_list) || ((clicked_frame != ini_wf || !clicked_frame) && clicked_frame != focused_window && ini_wf != focused_window)){
+                        //Others create a window unless they happen fully within a window or intersect with the focused window, as we consider those to happen inside the window itself
                         int_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
                         disable_interrupt();
                         create_window(fixed_point.x - global_win_offset.x,fixed_point.y - global_win_offset.y, size.width, size.height);
