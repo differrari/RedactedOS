@@ -3,8 +3,8 @@
 #include "input_keycodes.h"
 #include "data/struct/stack.h"
 
-stack_t *directories;
-stack_t *files;
+arr_stack_t *directories;
+arr_stack_t *files;
 
 int selected = 0;
 
