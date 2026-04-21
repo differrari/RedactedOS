@@ -533,7 +533,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
             flow->rcv_wnd_max = lf->rcv_wnd_max;
             flow->rcv_buf_used = 0;
-            uint16_t synack_wnd = tcp_calc_adv_wnd_field(flow, flow->ws_ok ? 1 : 0);
+            tcp_calc_adv_wnd_field(flow, flow->ws_ok ? 1 : 0);
 
             flow->ip_ttl = lf->ip_ttl;
             flow->ip_dontfrag = lf->ip_dontfrag;
@@ -551,29 +551,26 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->time_wait_ms = 0;
             flow->fin_wait2_ms = 0;
 
-            tcp_hdr_t synack_hdr;
-            synack_hdr.src_port = bswap16(dst_port);
-            synack_hdr.dst_port = bswap16(src_port);
-            synack_hdr.sequence = bswap32(iss);
-            synack_hdr.ack = bswap32(seq + 1);
-            synack_hdr.flags = (uint8_t)((1u << SYN_F) | (1u << ACK_F));
-            synack_hdr.window = synack_wnd;
-            synack_hdr.urgent_ptr = 0;
-
-            uint8_t syn_opts[40];
-            uint8_t syn_opts_len = tcp_build_syn_options(syn_opts, (uint16_t)flow->mss, flow->ws_ok ? flow->ws_send : 0xffu, flow->sack_ok);
-
-            if (ipver == IP_VER4) {
-                ipv4_tx_opts_t tx;
-                tx.scope = IP_TX_BOUND_L3;
-                tx.index = l3_id;
-                tcp_send_segment(IP_VER4, flow->local.ip, src_ip_addr, &synack_hdr, syn_opts, syn_opts_len, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
-            } else {
-                ipv6_tx_opts_t tx;
-                tx.scope = IP_TX_BOUND_L3;
-                tx.index = l3_id;
-                tcp_send_segment(IP_VER6, flow->local.ip, src_ip_addr, &synack_hdr, syn_opts, syn_opts_len, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
+            tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow);
+            if (!seg) {
+                tcp_free_flow(idx);
+                netpkt_unref(pkt);
+                return;
             }
+
+            seg->syn = 1;
+            seg->fin = 0;
+            seg->rtt_sample = 1;
+            seg->retransmit_cnt = 0;
+            seg->seq = iss;
+            seg->len = 0;
+            seg->buf = 0;
+            seg->timer_ms = 0;
+            seg->timeout_ms = flow->rto ? flow->rto : TCP_INIT_RTO;
+            seg->opts_len = tcp_build_syn_options(seg->opts, (uint16_t)flow->mss, flow->ws_ok ? flow->ws_send : 0xff, flow->sack_ok);
+            tcp_send_from_seg(flow, seg);
+
+            flow->snd_nxt = iss + 1;
 
             tcp_daemon_kick();
             netpkt_unref(pkt);
@@ -758,15 +755,39 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
     case TCP_SYN_RECEIVED:
         if ((flags & (1u << ACK_F)) && !(flags & (1u << SYN_F)) && !(flags & (1u << RST_F)) && ack == flow->ctx.expected_ack){
-            flow->ctx.sequence += 1;
+            uint32_t queued = 0;
+            if (port_handler) queued = port_handler(ifx, ipver, src_ip_addr, dst_ip_addr, 0, src_port, dst_port);
+            if (!queued) {
+                tcp_hdr_t rst_hdr;
+                rst_hdr.src_port = bswap16(flow->local_port);
+                rst_hdr.dst_port = bswap16(flow->remote.port);
+                rst_hdr.sequence = bswap32(flow->snd_nxt);
+                rst_hdr.ack = bswap32(flow->ctx.ack);
+                rst_hdr.flags = (uint8_t)((1 << RST_F) | (1 << ACK_F));
+                rst_hdr.window = 0;
+                rst_hdr.urgent_ptr = 0;
+
+                if (flow->local.ver == IP_VER4) {
+                    ipv4_tx_opts_t tx;
+                    tcp_build_tx_opts_from_local_v4(flow->local.ip, &tx);
+                    (void)tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &rst_hdr, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
+                } else if (flow->local.ver == IP_VER6) {
+                    ipv6_tx_opts_t tx;
+                    tcp_build_tx_opts_from_local_v6(flow->local.ip, &tx);
+                    (void)tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &rst_hdr, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
+                }
+
+                tcp_free_flow(idx);
+                netpkt_unref(pkt);
+                return;
+            }
+
+            flow->ctx.sequence = flow->snd_nxt;
             flow->snd_una = ack;
-            flow->snd_nxt = flow->ctx.sequence;
             flow->state = TCP_ESTABLISHED;
             flow->delayed_ack_pending = 0;
             flow->delayed_ack_timer_ms = 0;
             flow->ctx.ack_received = ack;
-
-            if (port_handler) port_handler(ifx, ipver, src_ip_addr, dst_ip_addr, 0, src_port, dst_port);
 
             tcp_daemon_kick();
         } else if (flags & (1u << RST_F)){

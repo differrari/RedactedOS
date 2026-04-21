@@ -54,6 +54,8 @@ tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow){
             s->fin = 0;
             s->rtt_sample = 0;
             s->retransmit_cnt = 0;
+            s->opts_len = 0;
+            memset(s->opts, 0, sizeof(s->opts));
             s->seq = 0;
             s->len = 0;
             s->buf = 0;
@@ -83,15 +85,16 @@ void tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
 
     hdr.window = tcp_calc_adv_wnd_field(flow, seg->syn ? 0 : 1);
     hdr.urgent_ptr = 0;
+    const uint8_t *opts = seg->opts_len ? seg->opts : NULL;
 
     if (flow->local.ver == IP_VER4) {
         ipv4_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v4(flow->local.ip, &tx);
-        (void)tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &hdr, NULL, 0, seg->buf ? (const uint8_t *)seg->buf : NULL, seg->len, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
+        (void)tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &hdr, opts, seg->opts_len, seg->buf ? (const uint8_t *)seg->buf : NULL, seg->len, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
     } else if (flow->local.ver == IP_VER6) {
         ipv6_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v6(flow->local.ip, &tx);
-        (void)tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &hdr, NULL, 0, seg->buf ? (const uint8_t *)seg->buf : NULL, seg->len, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
+        (void)tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &hdr, opts, seg->opts_len, seg->buf ? (const uint8_t *)seg->buf : NULL, seg->len, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
     }
 
     tcp_daemon_kick();

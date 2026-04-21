@@ -72,6 +72,8 @@ static void clear_txq(tcp_flow_t *f){
         s->fin = 0;
         s->rtt_sample = 0;
         s->retransmit_cnt = 0;
+        s->opts_len = 0;
+        memset(s->opts, 0, sizeof(s->opts));
         s->seq = 0;
         s->len = 0;
         s->buf = 0;
@@ -489,31 +491,9 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     seg->timer_ms = 0;
     seg->timeout_ms = flow->rto ? flow->rto : TCP_INIT_RTO;
 
-    tcp_hdr_t syn_hdr;
+    seg->opts_len = tcp_build_syn_options(seg->opts, (uint16_t)flow->mss, flow->rcv_wnd_max > 65535u ? flow->ws_send : 0xffu, flow->sack_ok);
 
-    syn_hdr.src_port = bswap16(local_port);
-    syn_hdr.dst_port = bswap16(dst->port);
-    syn_hdr.sequence = bswap32(flow->snd_nxt);
-    syn_hdr.ack = bswap32(0);
-    syn_hdr.flags = (uint8_t)(1u << SYN_F);
-    syn_hdr.window = flow->ctx.window;
-    syn_hdr.urgent_ptr = 0;
-
-    uint8_t syn_opts[40];
-    uint8_t syn_opts_len = tcp_build_syn_options(syn_opts, (uint16_t)flow->mss, flow->rcv_wnd_max > 65535u ? flow->ws_send : 0xffu, flow->sack_ok);
-
-    if (dst->ver == IP_VER4){
-        ipv4_tx_opts_t tx;
-
-        tcp_build_tx_opts_from_l3(l3_id, &tx);
-        tcp_send_segment(IP_VER4, flow->local.ip, flow->remote.ip, &syn_hdr, syn_opts, syn_opts_len, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
-    } else{
-        ipv6_tx_opts_t tx;
-
-        tx.scope = IP_TX_BOUND_L3;
-        tx.index = l3_id;
-        tcp_send_segment(IP_VER6, flow->local.ip, flow->remote.ip, &syn_hdr, syn_opts, syn_opts_len, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip_ttl, flow->ip_dontfrag);
-    }
+    tcp_send_from_seg(flow, seg);
 
     flow->snd_nxt += 1;
     flow->ctx.sequence = flow->snd_nxt;

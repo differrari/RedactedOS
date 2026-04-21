@@ -89,9 +89,9 @@ class TCPSocket : public Socket {
                 if (srv->backlogLen >= srv->backlogCap) break;
 
                 TCPSocket* child = new TCPSocket(SOCK_ROLE_CLIENT, srv->pid, &srv->extraOpts);
+                if (!child) break;
 
                 child->localPort = dst_port;
-                child->connected = true;
 
                 child->remoteEP.ver = ipver;
                 memset(child->remoteEP.ip, 0, 16);
@@ -168,15 +168,14 @@ class TCPSocket : public Socket {
 
                 child->flow = tcp_get_ctx(dst_port, ipver, dst_ip_addr, child->remoteEP.ip, src_port);
                 if (!child->flow){
-                    child->close();
                     delete child;
                     break;
                 }
 
-			    child->insert_in_list();
+                child->connected = true;
 
                 srv->pending[srv->backlogLen++] = child;
-                break;
+                return 1;
             }
             return 0;
         }

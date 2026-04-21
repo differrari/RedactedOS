@@ -32,6 +32,8 @@ typedef struct {
     uint8_t fin;
     uint8_t rtt_sample;
     uint8_t retransmit_cnt;
+    uint8_t opts_len;
+    uint8_t opts[40];
     uint32_t seq;
     uint64_t len;
     uintptr_t buf;
