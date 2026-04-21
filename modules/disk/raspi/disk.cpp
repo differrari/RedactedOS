@@ -33,5 +33,6 @@ system_module disk_module = (system_module){
     .write = 0,
     .close = 0,
     .truncate = 0,
+    .getstat = 0,
     .readdir = 0,
 };
