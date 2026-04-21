@@ -28,7 +28,7 @@ prepare:
 $(TARGET): ../../shared/libshared.a $(OBJ)
 	$(VLD) $(LDFLAGS) -o $(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../../shared/libshared.a
 	$(OBJCOPY) -O binary $(ELF) $@
-	cp -r $(ELF) $(LOCATION)
+	cp -r $(ELF) $(LOCATION)/$(NAME)
 
 $(BUILD_DIR)/%.o: %.S
 	@mkdir -p $(dir $@)

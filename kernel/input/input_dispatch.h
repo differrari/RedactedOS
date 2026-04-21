@@ -3,7 +3,7 @@
 #include "input_keycodes.h"
 #include "keyboard_input.h"
 #include "mouse_input.h"
-#include "ui/graphic_types.h"
+#include "graphic_types.h"
 
 #ifdef __cplusplus
 extern "C" {

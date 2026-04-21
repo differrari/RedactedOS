@@ -1,7 +1,7 @@
 #pragma once
 
 #include "types.h"
-#include "ui/graphic_types.h"
+#include "graphic_types.h"
 #include "files/system_module.h"
 
 typedef struct {

@@ -58,18 +58,18 @@ process_t* execute(const char* prog_name, int argc, const char* argv[], uint32_t
         return proc;
     }
 
-    char *full_name = (strend_case(prog_name, ".elf", true) == 0) ? string_from_literal(prog_name).data : strcat_new(prog_name, ".elf");
-    if (full_name) {
-        char pathbuf[1024] = {};
-        size_t pathlen = string_format_buf(pathbuf, sizeof(pathbuf), "/boot/redos/tools/%s",full_name);
-        process_t *proc = 0;
-        if (pathlen < sizeof(pathbuf) - 1) proc = load_elf_process_path(prog_name, 0, pathbuf, argc, argv);
-        release(full_name);
-        if (proc) {
-            if (win_id) proc->win_id = win_id;
-            if (transfer_focus) sys_set_focus(proc->id);
-            return proc;
-        }
+    
+    char pathbuf[1024];
+    string_format_buf(pathbuf, sizeof(pathbuf), "/boot/redos/tools/%s",prog_name);
+    process_t *proc = load_elf_process_path(prog_name, 0, pathbuf, argc, argv);
+    if (!proc){
+        string_format_buf(pathbuf, sizeof(pathbuf), "/home/tools/%s",prog_name);
+        proc = load_elf_process_path(prog_name, 0, pathbuf, argc, argv);
+    }
+    if (proc) {
+        if (win_id) proc->win_id = win_id;
+        if (transfer_focus) sys_set_focus(proc->id);
+        return proc;
     }
 
     for (uint32_t i = 0; i < N_ARR(available_cmds); i++){

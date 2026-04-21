@@ -4,7 +4,7 @@
 #include "memory/memory.h"
 #include "sysregs.h"
 #include "graphics.h"
-#include "ui/graphic_types.h"
+#include "graphic_types.h"
 #include "tools/tools.h"
 #include "math/math.h"
 #include "memory/mm_process.h"

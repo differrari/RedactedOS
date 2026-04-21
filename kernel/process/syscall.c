@@ -27,7 +27,7 @@
 #include "loading/dwarf.h"
 #include "sysregs.h"
 #include "memory/addr.h"
-#include "ui/graphic_types.h"
+#include "graphic_types.h"
 #include "filesystem/modules/module_loader.h"
 #include "alloc/page_index.h"
 #include "process/uaccess.h"

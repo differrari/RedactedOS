@@ -5,7 +5,7 @@ extern "C" {
 #endif
 
 #include "types.h"
-#include "ui/graphic_types.h"
+#include "graphic_types.h"
 #include "std/string.h"
 #include "ui/draw/draw.h"
 #include "files/system_module.h"
