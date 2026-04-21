@@ -12,14 +12,13 @@ protected:
     void end_command();
     int prompt_length;
     void run_command();
-    const char** parse_arguments(char *args, int *count);
 
     void redraw_input_line();
     void set_input_line(const char *s);
     void cursor_tick();
     void cursor_set_visible(bool visible);
 
-    bool exec_cmd(const char *cmd, int argc, const char *args[]);
+    bool exec_cmd(const char *cmd);
 
     draw_ctx* get_ctx() override;
     void flush(draw_ctx *ctx) override;

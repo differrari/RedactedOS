@@ -321,7 +321,7 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
 
                             char argv0[256] = {};
                             if (bundle && *bundle) string_format_buf(argv0, sizeof(argv0), "%s/%s.elf", bundle, name);
-                            else string_format_buf(argv0, sizeof(argv0), "%s.elf", name);
+                            else string_format_buf(argv0, sizeof(argv0), "%s", name);
                             const char *default_argv[] = {argv0};
                             if (!setup_process_args(proc, 1, default_argv)) {
                                 reset_process(proc);
@@ -380,7 +380,7 @@ process_t* load_elf_file(const char *name, const char *bundle, void* file, size_
 
     char argv0[256] = {};
     if (bundle && *bundle) string_format_buf(argv0, sizeof(argv0), "%s/%s.elf", bundle, name);
-    else string_format_buf(argv0, sizeof(argv0), "%s.elf", name);
+    else string_format_buf(argv0, sizeof(argv0), "%s", name);
     const char *default_argv[] = { argv0 };
     if (!setup_process_args(proc, 1, default_argv)) {
         reset_process(proc);

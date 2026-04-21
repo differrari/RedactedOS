@@ -151,15 +151,13 @@ void enter_path(const char *name, const char *full_path){
     if (!name || !*name) return;
 
     if (strend(name, ".red") == 0){
-        string elf = string_format("%S/%v.elf", full_path, (string_slice){(char*)name, strlen(name) - 4});
-        exec(elf.data, 0, 0, EXEC_MODE_DEFAULT);
-        string_free(elf);
+        exec(full_path, 0, 0, EXEC_MODE_DEFAULT);
         halt(0);
     }
     
     if (strend(name, ".c") == 0){
         const char* argv[1] = { full_path }; 
-        exec("/home/applications/braincode.red/braincode.elf", 1, argv, EXEC_MODE_DEFAULT);
+        exec("/home/applications/braincode.red", 1, argv, EXEC_MODE_DEFAULT);
         halt(0);
     }
 

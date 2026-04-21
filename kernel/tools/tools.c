@@ -36,7 +36,7 @@ process_t* execute(const char* prog_name, int argc, const char* argv[], uint32_t
     process_t *cur = get_current_proc();
     uint16_t win_id = cur ? cur->win_id : 0;
     bool transfer_focus = win_id && mode == EXEC_MODE_DEFAULT;
-
+   
     if (strcont(prog_name, "/")){
         const char *name = prog_name;
         for (const char *p = prog_name; *p; p++) if (*p == '/') name = p + 1;
@@ -48,9 +48,9 @@ process_t* execute(const char* prog_name, int argc, const char* argv[], uint32_t
             i++;
         }
 
-        string bundle = string_from_literal_length(prog_name, name - prog_name - 1);
-        process_t *proc = load_elf_process_path(proc_name, bundle.data, prog_name, argc, argv);
-        release(bundle.data);
+        string executable = string_format("%s/%s.elf",prog_name,proc_name);
+        process_t *proc = load_elf_process_path(proc_name, prog_name, executable.data, argc, argv);
+        release(executable.data);
         if (!proc) return 0;
 
         if (win_id) proc->win_id = win_id;

@@ -180,11 +180,9 @@ void activate_current(){
             print("[LAUNCHER error] Wrong format %v. Must be a .red package",entry->ext);
             return;
         }
-        string s = string_format("%s/%v.elf",entry->path.data, entry->name);
         fb_clear(&ctx, 0);
         commit_draw_ctx(&ctx);
-        u16 pid = exec(s.data, 0, 0, EXEC_MODE_DEFAULT);
-        string_free(s);
+        u16 pid = exec(entry->path.data, 0, 0, EXEC_MODE_DEFAULT);
         if (!pid) {
             print("[LAUNCHER error] failed to launch process");
             return;

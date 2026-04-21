@@ -131,7 +131,7 @@ bool create_window(i32 x, i32 y, u32 width, u32 height){
     gpu_create_window(x,y, width, height, &frame->win_ctx);
 
     irq_flags_t irq = irq_save_disable();
-    process_t *p = execute("/boot/redos/system/launcher.red/launcher.elf", 0, 0, 0);
+    process_t *p = execute("/boot/redos/system/launcher.red", 0, 0, 0);
     if (!p){
         irq_restore(irq);
         return false;
