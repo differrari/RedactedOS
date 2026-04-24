@@ -115,7 +115,7 @@ void parse_theme_kvp(string_slice key, string_slice value, void *context){
 
 }
 
-u64 reload(void *ctx, size_t len);
+size_t reload(file*, const char *, size_t, file_offset);
 
 bool load_theme(){
     char *theme_name = read_full_file("/shared/theme", 0);
@@ -136,12 +136,12 @@ bool load_theme(){
        .options = buffer_read_only
     });
     
-    make_cmd_entry("reload", backing_command, entry_file, reload);
+    make_complex_entry("reload", backing_command, entry_file, (file_actions){.write = reload });
 
     return true;
 }
 
-u64 reload(void *ctx, size_t len){
+size_t reload(file* fd, const char *buf, size_t size, file_offset offset){
     load_theme();
     return 0;
 }

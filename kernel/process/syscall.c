@@ -46,7 +46,7 @@ uintptr_t cpec;
     if (!validate_address(ctx, (uptr)name, sizeof(type), write)) return 0;\
     
 #define SYSCALL_ARG_SIZE(type, name, size, arg, write) \
-    if (!ctx->arg) return 0;\
+    if (!ctx->arg && size) return 0;\
     type *name = (type*)ctx->arg;\
     if (!validate_address(ctx, (uptr)name, size, write)) return 0;\
 

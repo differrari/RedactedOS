@@ -49,7 +49,7 @@ int fs_search(void *node, void *key){
     system_module* module = (system_module*)node;
     if (!module) return -1;
     const char** path = (const char**)key;
-    int index = strstart_case(*path, module->mount,true);
+    int index = strstart_case(*path, module->mount, true);
     if (index == (int)strlen(module->mount)){ 
         *path += index;
         return 0;
