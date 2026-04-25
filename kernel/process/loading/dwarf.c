@@ -275,7 +275,7 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 		};
 		if (ptr + sizeof(dwarf_debug_line_header) > end_section) return (debug_line_info){};
 		dwarf_debug_line_header *hdr = (dwarf_debug_line_header*)ptr;
-		uintptr_t unit_end = (uintptr_t)&hdr->unit_length + sizeof(hdr->unit_length) + hdr->unit_length;
+		uintptr_t unit_end = (uintptr_t)read_unaligned64((u64*)((uptr)&hdr->unit_length + sizeof(hdr->unit_length) + hdr->unit_length));
 		if (unit_end <= ptr || unit_end > end_section) return (debug_line_info){};
 		if (!hdr->line_range || !hdr->opcode_base) return (debug_line_info){};
 

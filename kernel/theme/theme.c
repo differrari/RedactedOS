@@ -136,7 +136,7 @@ bool load_theme(){
        .options = buffer_read_only
     });
     
-    make_complex_entry("reload", backing_command, entry_file, (file_actions){.write = reload });
+    make_complex_entry("reload", backing_command, entry_file, DATA_SIG_CMD, (file_actions){.write = reload }, (string){});
 
     return true;
 }
