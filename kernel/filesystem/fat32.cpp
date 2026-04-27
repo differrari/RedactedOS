@@ -462,6 +462,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
         .limit = buf_ptr.size,
         .options = buffer_can_grow,
         .cursor = 0,
+        .data_type = 0,
     };
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;

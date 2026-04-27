@@ -128,6 +128,7 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         .limit = size,
         .options = buffer_opt_none,
         .cursor = 0,
+        .data_type = 0,
     };
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;

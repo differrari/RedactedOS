@@ -1,15 +1,6 @@
 #include "language.h"
 #include "files/vfs.h"
 
-// /language/:lang/:id/syntax/:file
-
-// /language/Cshart
-//     /src
-//     /syntax
-//     /format
-//     /complete
-//     /template
-
 #define DATA_SYNTAX DATA_SIGNATURE("CODESNTX")
 #define DATA_FORMAT DATA_SIGNATURE("CODEFMT")
 #define DATA_AUTOCOMPLETE DATA_SIGNATURE("CODECMPL")
