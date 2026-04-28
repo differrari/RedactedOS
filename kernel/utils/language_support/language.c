@@ -7,9 +7,19 @@
 #define DATA_TEMPLATE DATA_SIGNATURE("CODETMPL")
 
 FS_RESULT syntax_highlight_open(const char *path, file *fd){
-    string_slice first = first_path_component(!path || !strlen(path) ? DIR_AS_FILE : path+1);
-    module_file *mfile = eval_entry(first);
+    if (path && *path == '/') path++;
+    if (!path || !strlen(path)) path = DIR_AS_FILE;
+    path_resolution resolution = parse_path(entries, path, path_resolution_forward, 0);
+    module_file *mfile = resolution.file;
     if (!mfile) return FS_RESULT_NOTFOUND;
+    
+    if (!mfile->alias_info.alias_path.length){
+        print("syntax highlighter should be aliased onto src");
+        return FS_RESULT_SUCCESS;
+    }
+    
+    vfs_open_aliased(mfile, resolution, fd);
+    
     fd->id = mfile->fid;
     fd->size = 0x1000;
     fd->data_type = DATA_SYNTAX;
@@ -18,8 +28,11 @@ FS_RESULT syntax_highlight_open(const char *path, file *fd){
 }
 
 bool syntax_highlight_stat(const char *path, fs_stat *fstat){
-    string_slice first = first_path_component(!path || !strlen(path) ? DIR_AS_FILE : path+1);
-    module_file *mfile = eval_entry(first);
+    if (!fstat) return false;
+    if (path && *path == '/') path++;
+    if (!path || !strlen(path)) path = DIR_AS_FILE;
+    path_resolution resolution = parse_path(entries, path, path_resolution_forward, 0);
+    module_file *mfile = resolution.file;
     if (!mfile) return false;
     fstat->data_type = DATA_SYNTAX;
     fstat->type = mfile->entry_type;
@@ -63,10 +76,6 @@ bool lfsp_init(){
     make_complex_entry("complete", backing_transform, entry_directory, DATA_AUTOCOMPLETE, (file_actions){}, string_from_literal("/language/src"));
     make_complex_entry("template", backing_transform, entry_directory, DATA_TEMPLATE, (file_actions){}, string_from_literal("/language/src"));
     return true;
-}
-
-FS_RESULT lfsp_open(const char *path, file *descriptor){
-    return FS_RESULT_DRIVER_ERROR;
 }
 
 system_module language_mod = {
