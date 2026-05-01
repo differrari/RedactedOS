@@ -44,7 +44,6 @@ typedef struct {
 typedef struct {
     uint32_t seq;
     uint32_t end;
-    uintptr_t buf;
 } tcp_reass_seg_t;
 
 typedef struct {
@@ -66,7 +65,10 @@ typedef struct {
     uint32_t fin_wait2_ms;
 
     uint32_t rcv_nxt;
-    uint32_t rcv_buf_used;
+    uint32_t rcv_base;
+    uint32_t rcv_data_nxt;
+    uintptr_t rcv_buf;
+    uint32_t rcv_ooo_used;
     uint32_t rcv_wnd;
     uint32_t rcv_wnd_max;
     uint32_t rcv_adv_edge;

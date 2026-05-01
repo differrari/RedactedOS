@@ -61,42 +61,6 @@ tcp_data *tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_i
     return &tcp_flows[idx]->ctx;
 }
 
-static void clear_txq(tcp_flow_t *f){
-    for (int i = 0; i < TCP_MAX_TX_SEGS; i++){
-        tcp_tx_seg_t *s = &f->txq[i];
-
-        if (s->used && s->buf && s->len) release((void *)s->buf);
-
-        s->used = 0;
-        s->syn = 0;
-        s->fin = 0;
-        s->rtt_sample = 0;
-        s->retransmit_cnt = 0;
-        s->opts_len = 0;
-        memset(s->opts, 0, sizeof(s->opts));
-        s->seq = 0;
-        s->len = 0;
-        s->buf = 0;
-        s->timer_ms = 0;
-        s->timeout_ms = 0;
-}
-}
-
-static void clear_reass(tcp_flow_t *f){
-    for (int i = 0; i < TCP_REASS_MAX_SEGS; i++){
-        if (f->reass[i].buf && f->reass[i].end > f->reass[i].seq){
-            release((void *)f->reass[i].buf);
-        }
-
-        f->reass[i].seq = 0;
-        f->reass[i].end = 0;
-        f->reass[i].buf = 0;
-    }
-
-    f->reass_count = 0;
-    f->rcv_buf_used = 0;
-}
-
 tcp_flow_t *tcp_alloc_flow(void){
     for (int i = 0; i < MAX_TCP_FLOWS; i++){
         if (tcp_flows[i]) continue;
@@ -112,10 +76,6 @@ tcp_flow_t *tcp_alloc_flow(void){
         f->mss = TCP_DEFAULT_MSS;
         f->cwnd = f->mss;
         f->ssthresh = TCP_RECV_WINDOW;
-
-        clear_reass(f);
-        clear_txq(f);
-
         return f;
     }
 
@@ -127,9 +87,12 @@ void tcp_free_flow(int idx) {
 
     tcp_flow_t *f = tcp_flows[idx];
     if (!f) return;
+    for (int i = 0; i < TCP_MAX_TX_SEGS; i++){
+        tcp_tx_seg_t *s = &f->txq[i];
+        if (s->used && s->buf && s->len) release((void *)s->buf);
+    }
 
-    clear_txq(f);
-    clear_reass(f);
+    if (f->rcv_buf) release((void *)f->rcv_buf);
 
     memset(f, 0, sizeof(*f));
 
@@ -298,7 +261,9 @@ bool tcp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t
 
         f->rcv_wnd_max = TCP_DEFAULT_RCV_BUF;
         if (extra && (extra->flags & SOCK_OPT_BUF_SIZE) && extra->buf_size) f->rcv_wnd_max = extra->buf_size;
-        f->rcv_buf_used = 0;
+        f->rcv_base = 0;
+        f->rcv_data_nxt = 0;
+        f->rcv_ooo_used = 0;
         f->rcv_adv_edge = 0;
 
         f->ip_ttl = extra && (extra->flags & SOCK_OPT_TTL) ? extra->ttl : 0;
@@ -308,7 +273,7 @@ bool tcp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t
         f->keepalive_idle_ms = 0;
 
         f->mss = TCP_DEFAULT_MSS;
-                if (f->rcv_wnd_max > 65535u) {
+        if (f->rcv_wnd_max > 65535u) {
             f->ws_send = 8;
             f->ws_recv = 0;
             f->ws_ok = 1;
@@ -319,7 +284,6 @@ bool tcp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t
         }
         f->sack_ok = 1;
 
-        (void)tcp_calc_adv_wnd_field(f, 1);
 
         f->ctx.options.ptr = 0;
         f->ctx.options.size = 0;
@@ -422,7 +386,9 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->ctx.ack = 0;
 
     flow->rcv_nxt = 0;
-    flow->rcv_buf_used = 0;
+    flow->rcv_base = 0;
+    flow->rcv_data_nxt = 0;
+    flow->rcv_ooo_used = 0;
     flow->rcv_wnd_max = TCP_DEFAULT_RCV_BUF;
     if (extra && (extra->flags & SOCK_OPT_BUF_SIZE) && extra->buf_size) flow->rcv_wnd_max = extra->buf_size;
     flow->rcv_adv_edge = 0;
@@ -439,7 +405,14 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
         flow->ws_ok = 0;
     }
     flow->sack_ok = 1;
-
+    flow->rcv_buf = (uintptr_t)zalloc(flow->rcv_wnd_max);
+    if (!flow->rcv_buf) {
+        flow->rcv_wnd = 0;
+        flow->rcv_adv_edge = flow->rcv_nxt;
+        flow->ctx.window = 0;
+        tcp_free_flow(idx);
+        return false;
+    }
     (void)tcp_calc_adv_wnd_field(flow, 1);
 
     flow->ip_ttl = extra && (extra->flags & SOCK_OPT_TTL) ? extra->ttl : 0;
@@ -470,9 +443,6 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
     flow->time_wait_ms = 0;
     flow->fin_wait2_ms = 0;
-
-    clear_reass(flow);
-    clear_txq(flow);
 
     tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow);
 

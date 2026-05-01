@@ -95,6 +95,9 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
 tcp_result_t tcp_flow_send(tcp_data *flow_ctx);
 tcp_result_t tcp_flow_close(tcp_data *flow_ctx);
+int64_t tcp_flow_read(tcp_data *flow_ctx, void *buf, uint64_t len);
+uint32_t tcp_flow_readable(tcp_data *flow_ctx);
+bool tcp_flow_recv_closed(tcp_data *flow_ctx);
 
 void tcp_flow_window_update(tcp_data *flow_ctx);
 void tcp_flow_on_app_read(tcp_data *flow_ctx, uint32_t bytes_read);

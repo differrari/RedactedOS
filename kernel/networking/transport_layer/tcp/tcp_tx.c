@@ -6,17 +6,17 @@ uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow, uint8_t apply_scale) {
     uint32_t quantum = 1;
     if (apply_scale && flow->ws_ok && flow->ws_send) quantum = 1u << flow->ws_send;
 
-    uint32_t maxw = flow->rcv_wnd_max;
-    uint32_t used = flow->rcv_buf_used;
-    uint32_t freew = maxw > used ? maxw - used: 0;
-
-    uint32_t free_q = quantum == 1 ? freew : (freew & ~(quantum - 1));
+    uint32_t edge = flow->rcv_nxt;
+    if (flow->rcv_buf && flow->rcv_wnd_max) {
+        edge = flow->rcv_base + flow->rcv_wnd_max;
+        if (edge < flow->rcv_nxt) edge = flow->rcv_nxt;
+    }
 
     if (flow->rcv_adv_edge < flow->rcv_nxt) flow->rcv_adv_edge = flow->rcv_nxt;
-    uint32_t candidate_edge = flow->rcv_nxt + free_q;
-    if (candidate_edge > flow->rcv_adv_edge) flow->rcv_adv_edge = candidate_edge;
+    if (edge > flow->rcv_adv_edge) flow->rcv_adv_edge = edge;
 
     uint32_t adv = flow->rcv_adv_edge - flow->rcv_nxt;
+    if (quantum > 1) adv &= ~(quantum - 1);
 
     uint32_t field = adv;
     if (!apply_scale || !flow->ws_ok || flow->ws_send == 0) {

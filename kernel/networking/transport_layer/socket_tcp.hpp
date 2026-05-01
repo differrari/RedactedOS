@@ -7,7 +7,6 @@
 #include "networking/internet_layer/ipv4.h"
 #include "networking/application_layer/dns/dns.h"
 #include "types.h"
-#include "data/struct/ring_buffer.hpp"
 #include "net/socket_types.h"
 #include "networking/internet_layer/ipv4_route.h"
 #include "networking/internet_layer/ipv6_route.h"
@@ -21,9 +20,8 @@ static constexpr uint32_t TCP_DNS_TIMEOUT_MS = 3000;
 
 class TCPSocket : public Socket {
     inline static TCPSocket* s_list_head = nullptr;
+    static constexpr uint32_t TCP_DEFAULT_SOCKET_BUF = 256 * 1024;
 
-    static constexpr uint32_t TCP_RING_CAP = 256 * 1024;
-    RingBuffer<uint8_t, TCP_RING_CAP> ring;
     tcp_data* flow = nullptr;
 
     TCPSocket* pending[TCP_MAX_BACKLOG] = { nullptr };
@@ -180,82 +178,7 @@ class TCPSocket : public Socket {
             return 0;
         }
 
-        for (TCPSocket* s = s_list_head; s; s = s->next) {
-            if (!s->connected) continue;
-            if (s->localPort != dst_port) continue;
-            if (s->remoteEP.port != src_port) continue;
-            if (s->remoteEP.ver != ipver) continue;
-
-            bool matches_dst = (s->bound_l3_count == 0);
-            for (int i = 0; !matches_dst && i < s->bound_l3_count; ++i) {
-                uint8_t id = s->bound_l3[i];
-
-                if (ipver == IP_VER4) {
-                    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
-                    if (!is_valid_v4_l3_for_bind(v4)) continue;
-                    if (v4->l2->ifindex != ifindex) continue;
-                    uint32_t dst_v4 = 0;
-                    memcpy(&dst_v4, dst_ip_addr, 4);
-                    if (v4->ip == dst_v4) {
-                        matches_dst = true;
-                        break;
-                    }
-                } else {
-                    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
-                    if (!is_valid_v6_l3_for_bind(v6)) continue;
-                    if (v6->l2->ifindex != ifindex) continue;
-                    if (memcmp(v6->ip, dst_ip_addr, 16) == 0) {
-                        matches_dst = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!matches_dst) continue;
-
-            if (ipver == IP_VER4) {
-                uint32_t remote_v4 = 0;
-                uint32_t src_v4 = 0;
-                memcpy(&remote_v4, s->remoteEP.ip, 4);
-                memcpy(&src_v4, src_ip_addr, 4);
-                if (remote_v4 != src_v4) continue;
-            } else {
-                if (memcmp(s->remoteEP.ip, src_ip_addr, 16) != 0) continue;
-            }
-
-            return s->on_receive(pkt);
-        }
-
         return 0;
-    }
-    
-    uint32_t on_receive(netpkt_t* pkt) {
-        if (!pkt) return 0;
-        uintptr_t ptr = netpkt_data(pkt);
-        uint32_t len = netpkt_len(pkt);
-        if(!ptr || !len) return 0;
-
-        uint64_t limit = ring.capacity();
-        if ((extraOpts.flags & SOCK_OPT_BUF_SIZE) && extraOpts.buf_size) {
-            uint64_t m = extraOpts.buf_size;
-            if (m < limit) limit = m;
-        }
-        if (!limit) return 0;
-
-        const uint8_t* src = (const uint8_t*)ptr;
-        uint32_t pushed = 0;
-
-        uint64_t sz = ring.size();
-        if (sz < limit) {
-            uint64_t free = limit - sz;
-
-            uint32_t accept = len;
-            if((uint64_t)accept > free) accept = (uint32_t)free;
-
-            pushed = (uint32_t)ring.push_buf(src, accept);
-        }
-
-        return pushed;
     }
 
     void insert_in_list() {
@@ -344,16 +267,27 @@ class TCPSocket : public Socket {
         return n > 0;
     }
 
+
+    TCPSocket* pop_pending_at(int idx) {
+        if (idx < 0 || idx >= backlogLen) return nullptr;
+
+        TCPSocket* client = pending[idx];
+        for (int i = idx + 1; i < backlogLen; ++i) pending[i-1] = pending[i];
+
+        pending[--backlogLen] = nullptr;
+        return client;
+    }
+
 public:
     explicit TCPSocket(uint8_t r = SOCK_ROLE_CLIENT, uint32_t pid_ = 0, const SocketExtraOptions* extra = nullptr) : Socket(PROTO_TCP, r, extra) {
         pid = pid_;
         if (!(extraOpts.flags & SOCK_OPT_BUF_SIZE)) {
             extraOpts.flags |= SOCK_OPT_BUF_SIZE;
-            extraOpts.buf_size = TCP_RING_CAP;
+            extraOpts.buf_size = TCP_DEFAULT_SOCKET_BUF;
         }
 
-        if (!extraOpts.buf_size) extraOpts.buf_size = TCP_RING_CAP;
-        if (extraOpts.buf_size > TCP_RING_CAP) extraOpts.buf_size = TCP_RING_CAP;
+        if (!extraOpts.buf_size) extraOpts.buf_size = TCP_DEFAULT_SOCKET_BUF;
+        if (extraOpts.buf_size > TCP_DEFAULT_SOCKET_BUF) extraOpts.buf_size = TCP_DEFAULT_SOCKET_BUF;
         insert_in_list();
     }
 
@@ -488,12 +422,19 @@ public:
             msleep(10);
         }
 
-        TCPSocket* client = pending[0];
+        //TODO temporary http workaround
+        //without socket events accept() can pick an idle preconnect and block in recv() while a later ipv4/6 request is already ready
+        iter = 0;
+        while (1) {
+            for (int i = 0; i < backlogLen; ++i) {
+                TCPSocket* client = pending[i];
+                if (!client) continue;
+                if (!client->flow || tcp_flow_readable(client->flow) || tcp_flow_recv_closed(client->flow)) return pop_pending_at(i);
+            }
 
-        for (int i = 1; i < backlogLen; ++i) pending[i - 1] = pending[i];
-        pending[--backlogLen] = nullptr;
-
-        return client;
+            if (++iter > max_iters) return nullptr;
+            msleep(10);
+        }
     }
 
     int32_t connect(SockDstKind kind, const void* dst, uint16_t port) {
@@ -697,16 +638,11 @@ public:
         ev.remote_ep = remoteEP;
         netlog_socket_event(&extraOpts, &ev);
         if (!buf || !len) return 0;
+        if (!connected || !flow) return connected ? TCP_WOULDBLOCK : 0;
 
-        uint8_t* out = (uint8_t*)buf;
-        uint64_t n = 0;
-
-        n = ring.pop_buf(out, len);
-
-        if (n) {
-            if (flow) tcp_flow_on_app_read(flow, (uint32_t)n);
-            return (int64_t)n;
-        }
+        int64_t n = tcp_flow_read(flow, buf, len);
+        if (n != 0) return n;
+        if (tcp_flow_recv_closed(flow)) return 0;
         if (connected) return TCP_WOULDBLOCK;
         return 0;
     }
@@ -725,7 +661,6 @@ public:
             flow = nullptr;
         }
 
-        ring.clear();
         for (int i = 0; i < backlogLen; ++i) delete pending[i];
         backlogLen = 0;
 
