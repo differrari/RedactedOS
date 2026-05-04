@@ -7,7 +7,7 @@
 Terminal *default_term;
 
 void term_put_slice(shell_handle *handle, string_slice slice){
-    if (!default_term || (default_term->current_shell && default_term->current_shell != handle)) return;
+    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
     default_term->put_slice(slice);
 }
 
@@ -42,7 +42,7 @@ Terminal::Terminal() : Console() {
 
     dirty = false;
 
-    current_shell = create_shell();
+    term_current_shell = create_shell();
     put_string("> ");
     redraw_input_line();
     if (dirty) {
@@ -54,7 +54,7 @@ Terminal::Terminal() : Console() {
 shell_handle* Terminal::create_shell(){
     return create_sheldon((shell_bindings){
         .console_output = term_put_slice,
-    });
+    }, 0);
 }
 
 void Terminal::update(){
@@ -172,8 +172,10 @@ void Terminal::set_input_line(const char *s){
 
 void Terminal::end_command(){
     command_running = false;
-    put_char('\r');
-    put_char('\n');
+    if (last_char != '\r' && last_char != '\n'){
+        put_char('\r');
+        put_char('\n');
+    }
     put_string("> ");
     prompt_length = 2;
 
@@ -182,9 +184,11 @@ void Terminal::end_command(){
 }
 
 bool Terminal::exec_cmd(const char *cmd){
-    if (!current_shell) return false;
+    if (!term_current_shell) return false;
 
-    if (run_cmd(current_shell, slice_from_literal(cmd))) return true;
+    current_shell = term_current_shell;
+    
+    if (run_cmd(term_current_shell, slice_from_literal(cmd))) return true;
     
     int32_t proc = system_focus(cmd, EXEC_MODE_KEEP_FOCUS);
     if (!proc) return false;

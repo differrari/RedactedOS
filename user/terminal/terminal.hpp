@@ -7,7 +7,7 @@ class Terminal: public Console {
 public:
     Terminal();
     void update();
-    shell_handle *current_shell;
+    shell_handle *term_current_shell;
 protected:
     bool handle_input();
     void repeat_tick();
