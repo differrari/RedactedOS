@@ -18,6 +18,7 @@ extern "C" {
 #endif
 
 #define TCP_REASS_MAX_SEGS 32
+#define TCP_REASS_MAX_BYTES (64u * 1024u)
 #define TCP_DEFAULT_MSS 1460
 #define TCP_DEFAULT_RCV_BUF (256u * 1024u)
 #define TCP_PERSIST_PROBE_BUFSZ 1
@@ -33,6 +34,8 @@ typedef struct {
     uint8_t rtt_sample;
     uint8_t retransmit_cnt;
     uint8_t opts_len;
+    uint8_t sacked;
+    uint8_t sack_retransmitted;
     uint8_t opts[40];
     uint32_t seq;
     uint64_t len;
@@ -69,6 +72,8 @@ typedef struct {
     uint32_t rcv_data_nxt;
     uintptr_t rcv_buf;
     uint32_t rcv_ooo_used;
+    uint32_t sack_recent_left;
+    uint32_t sack_recent_right;
     uint32_t rcv_wnd;
     uint32_t rcv_wnd_max;
     uint32_t rcv_adv_edge;
@@ -98,6 +103,7 @@ typedef struct {
     uint8_t reass_count;
     tcp_tx_seg_t txq[TCP_MAX_TX_SEGS];
     uint8_t fin_pending;
+    uint8_t fin_tx_pending;
     uint32_t fin_seq;
 
     uint8_t ip_ttl;
@@ -117,6 +123,7 @@ void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms);
 tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow);
 void tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg);
 void tcp_send_ack_now(tcp_flow_t *flow);
+int tcp_try_send_pending_fin(tcp_flow_t *flow);
 
 static inline uint16_t tcp_checksum_ipv4(const void *segment, uint16_t seg_len, uint32_t src_ip, uint32_t dst_ip) {
     uint16_t csum = checksum16_pipv4(src_ip, dst_ip, 6, (const uint8_t *)segment, seg_len);

@@ -33,6 +33,8 @@ typedef struct {
 
 typedef struct {
     uint32_t length;
+    uint8_t has_length;
+    uint8_t bad_length;
     string type;
     string date;
     string connection;

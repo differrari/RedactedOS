@@ -6,17 +6,27 @@ uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow, uint8_t apply_scale) {
     uint32_t quantum = 1;
     if (apply_scale && flow->ws_ok && flow->ws_send) quantum = 1u << flow->ws_send;
 
-    uint32_t edge = flow->rcv_nxt;
+    uint32_t hard_edge = flow->rcv_nxt;
     if (flow->rcv_buf && flow->rcv_wnd_max) {
-        edge = flow->rcv_base + flow->rcv_wnd_max;
-        if (edge < flow->rcv_nxt) edge = flow->rcv_nxt;
+        hard_edge = flow->rcv_base + flow->rcv_wnd_max;
+        if (hard_edge < flow->rcv_nxt) hard_edge = flow->rcv_nxt;
     }
 
     if (flow->rcv_adv_edge < flow->rcv_nxt) flow->rcv_adv_edge = flow->rcv_nxt;
-    if (edge > flow->rcv_adv_edge) flow->rcv_adv_edge = edge;
+    uint32_t accept_edge = flow->rcv_adv_edge;
+    uint32_t accept_adv = accept_edge - flow->rcv_nxt;
 
-    uint32_t adv = flow->rcv_adv_edge - flow->rcv_nxt;
+    uint32_t adv = accept_adv;
+    if (hard_edge > accept_edge) adv = hard_edge - flow->rcv_nxt;
     if (quantum > 1) adv &= ~(quantum - 1);
+
+    if (apply_scale && adv) {
+        uint32_t threshold = flow->mss ? flow->mss : TCP_DEFAULT_MSS;
+        uint32_t half = flow->rcv_wnd_max >> 1;
+        if (half && half < threshold) threshold = half;
+        if (!threshold) threshold = 1;
+        if (adv < threshold) adv = 0;
+    }
 
     uint32_t field = adv;
     if (!apply_scale || !flow->ws_ok || flow->ws_send == 0) {
@@ -28,8 +38,14 @@ uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow, uint8_t apply_scale) {
         adv = field << flow->ws_send;
     }
 
-    flow->rcv_wnd = adv;
-    flow->rcv_adv_edge = flow->rcv_nxt + adv;
+    if (adv) {
+        flow->rcv_wnd = adv;
+        flow->rcv_adv_edge = flow->rcv_nxt + adv;
+    } else {
+        flow->rcv_wnd = accept_adv;
+        flow->rcv_adv_edge = accept_edge;
+    }
+
     flow->ctx.window = (uint16_t)field;
     return (uint16_t)field;
 }
@@ -55,6 +71,8 @@ tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow){
             s->rtt_sample = 0;
             s->retransmit_cnt = 0;
             s->opts_len = 0;
+            s->sacked = 0;
+            s->sack_retransmitted = 0;
             memset(s->opts, 0, sizeof(s->opts));
             s->seq = 0;
             s->len = 0;
@@ -118,34 +136,50 @@ void tcp_send_ack_now(tcp_flow_t *flow){
     opts_len = 0;
 
     if (flow->sack_ok && flow->reass_count > 0) {
-        uint32_t n = flow->reass_count;
-        if (n > 4) n = 4;
+        tcp_sack_block_t blocks[TCP_SACK_MAX_BLOCKS];
+        uint32_t n = 0;
+
+        if (flow->sack_recent_right > flow->sack_recent_left) {
+            for (uint32_t i = 0; i < flow->reass_count; i++) {
+                if (flow->reass[i].seq > flow->sack_recent_left) continue;
+                if (flow->reass[i].end < flow->sack_recent_right) continue;
+
+                blocks[n].left = flow->reass[i].seq;
+                blocks[n].right = flow->reass[i].end;
+                n++;
+                break;
+            }
+        }
+
+        for (uint32_t i = 0; i < flow->reass_count && n < TCP_SACK_MAX_BLOCKS; i++) {
+            uint32_t left = flow->reass[i].seq;
+            uint32_t right = flow->reass[i].end;
+            int duplicate = 0;
+
+            for (uint32_t j = 0; j < n; j++) {
+                if (blocks[j].left == left && blocks[j].right == right) {
+                    duplicate = 1;
+                    break;
+                }
+            }
+
+            if (duplicate) continue;
+            blocks[n].left = left;
+            blocks[n].right = right;
+            n++;
+        }
 
         uint32_t need = 2 + 8 * n;
         uint32_t pad = (4 - (need & 3)) & 3;
 
-        if (need + pad <= sizeof(opts)) {
+        if (n && need + pad <= sizeof(opts)) {
             opts[0] = 5;
             opts[1] = (uint8_t)need;
             uint32_t o = 2;
 
-            uint32_t idx[4];
-            for (uint32_t i = 0; i < n; i++) idx[i] = i;
-
-            for (uint32_t i = 0; i + 1 < n; i++) {
-                for (uint32_t j = i + 1; j < n; j++) {
-                    if ((int32_t)(flow->reass[idx[j]].seq > flow->reass[idx[i]].seq)) {
-                        uint32_t t = idx[i];
-                        idx[i] = idx[j];
-                        idx[j] = t;
-                    }
-                }
-            }
-
             for (uint32_t i = 0; i < n; i++) {
-                const tcp_reass_seg_t *s = &flow->reass[idx[i]];
-                uint32_t left = s->seq;
-                uint32_t right = s->end;
+                uint32_t left = blocks[i].left;
+                uint32_t right = blocks[i].right;
 
                 opts[o + 0] = (uint8_t)(left >> 24);
                 opts[o + 1] = (uint8_t)(left >> 16);
@@ -179,6 +213,43 @@ void tcp_send_ack_now(tcp_flow_t *flow){
     tcp_daemon_kick();
 }
 
+int tcp_try_send_pending_fin(tcp_flow_t *flow) {
+    if (!flow || !flow->fin_tx_pending) return 0;
+    if (flow->state != TCP_ESTABLISHED&&  flow->state != TCP_CLOSE_WAIT) return 0;
+
+    uint64_t in_flight = flow->snd_nxt - flow->snd_una;
+    uint32_t wnd = flow->snd_wnd;
+    uint32_t cwnd = flow->cwnd ? flow->cwnd : (flow->mss ? flow->mss : TCP_DEFAULT_MSS);
+    uint32_t eff_wnd = wnd < cwnd ? wnd : cwnd;
+
+    if (eff_wnd == 0 || in_flight >= eff_wnd) return 0;
+    tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow);
+    if (!seg) return 0;
+
+    seg->seq = flow->snd_nxt;
+    seg->len = 0;
+    seg->buf = 0;
+    seg->syn = 0;
+    seg->fin = 1;
+    seg->timer_ms = 0;
+    seg->timeout_ms = flow->rto ? flow->rto : TCP_INIT_RTO;
+    seg->retransmit_cnt = 0;
+    seg->rtt_sample = 0;
+
+    tcp_send_from_seg(flow, seg);
+
+    flow->snd_nxt += 1;
+    flow->ctx.expected_ack = flow->snd_nxt;
+    flow->ctx.sequence = flow->snd_nxt;
+    flow->fin_tx_pending = 0;
+
+    if (flow->state == TCP_ESTABLISHED) flow->state = TCP_FIN_WAIT_1;
+    else flow->state = TCP_LAST_ACK;
+
+    tcp_daemon_kick();
+    return 1;
+}
+
 tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
     if (!flow_ctx) return TCP_INVALID;
 
@@ -196,12 +267,12 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
     uint8_t *payload_ptr = (uint8_t *)flow_ctx->payload.ptr;
     uint64_t payload_len = flow_ctx->payload.size;
     flow_ctx->payload.size = 0;
+    int want_fin = (flags & (1u << FIN_F)) != 0;
+    int fin_queued = 0;
 
-    if (flow->state != TCP_ESTABLISHED && !(flags & (1u << FIN_F))) {
-        if (!(flow->state == TCP_CLOSE_WAIT && (flags & (1u << FIN_F)))) return TCP_INVALID;
-    }
+    if (flow->state != TCP_ESTABLISHED && flow->state != TCP_CLOSE_WAIT) return TCP_INVALID;
 
-    if (flow->snd_wnd == 0 && !(flags & (1u << FIN_F))) {
+    if (flow->snd_wnd == 0 && (!want_fin || payload_len > 0)) {
         tcp_persist_arm(flow);
         return TCP_WOULDBLOCK;
     }
@@ -211,11 +282,10 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
     uint32_t cwnd = flow->cwnd ? flow->cwnd : (flow->mss ? flow->mss : TCP_DEFAULT_MSS);
     uint32_t eff_wnd = wnd < cwnd ? wnd : cwnd;
 
-    if (eff_wnd == 0) eff_wnd = 1;
-    if (in_flight >= eff_wnd && !(flags & (1u << FIN_F))) return TCP_WOULDBLOCK;
+    if (in_flight >= eff_wnd && !want_fin) return TCP_WOULDBLOCK;
 
-    uint64_t can_send = eff_wnd - in_flight;
-    if (can_send == 0 && !(flags & (1u << FIN_F))) return TCP_WOULDBLOCK;
+    uint64_t can_send = in_flight < eff_wnd ? eff_wnd - in_flight :0;
+    if (can_send == 0 && !want_fin) return TCP_WOULDBLOCK;
 
     uint64_t remaining = payload_len;
     uint64_t sent_bytes = 0;
@@ -255,24 +325,10 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
         first_segment = 0;
     }
 
-    if ((flags & (1u << FIN_F)) && remaining == 0) {
-        tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow);
-        if (!seg) return sent_bytes ? TCP_OK : TCP_WOULDBLOCK;
-
-        seg->seq = flow->snd_nxt;
-        seg->len = 0;
-        seg->buf = 0;
-        seg->syn = 0;
-        seg->fin = 1;
-        seg->timer_ms = 0;
-        seg->timeout_ms = flow->rto ? flow->rto : TCP_INIT_RTO;
-        seg->retransmit_cnt = 0;
-        seg->rtt_sample = 0;
-
-        tcp_send_from_seg(flow, seg);
-
-        flow->snd_nxt += 1;
-        flow->ctx.expected_ack = flow->snd_nxt;
+    if (want_fin && remaining == 0) {
+        flow->fin_tx_pending = 1;
+        fin_queued = 1;
+        tcp_try_send_pending_fin(flow);
     }
 
     flow_ctx->sequence = flow->snd_nxt;
@@ -281,7 +337,8 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
     tcp_daemon_kick();
 
     flow_ctx->payload.size = sent_bytes;
-    return sent_bytes || (flags & (1u << FIN_F)) ? TCP_OK : TCP_WOULDBLOCK;
+    if (!sent_bytes && fin_queued && flow->fin_tx_pending) return TCP_WOULDBLOCK;
+    return (sent_bytes || fin_queued) ? TCP_OK : TCP_WOULDBLOCK;
 }
 
 tcp_result_t tcp_flow_close(tcp_data *flow_ctx){
@@ -298,20 +355,10 @@ tcp_result_t tcp_flow_close(tcp_data *flow_ctx){
     if (!flow) return TCP_INVALID;
 
     if (flow->state == TCP_ESTABLISHED || flow->state == TCP_CLOSE_WAIT) {
-        flow_ctx->sequence = flow->snd_nxt;
-        flow_ctx->ack = flow->ctx.ack;
-        flow_ctx->window = tcp_calc_adv_wnd_field(flow, 1);
-        flow_ctx->payload.ptr = 0;
-        flow_ctx->payload.size = 0;
-        flow_ctx->flags = (uint8_t)((1u << FIN_F) | (1u << ACK_F));
-
-        tcp_result_t res = tcp_flow_send(flow_ctx);
-        if (res == TCP_OK || res == TCP_WOULDBLOCK) {
-            if (flow->state == TCP_ESTABLISHED) flow->state = TCP_FIN_WAIT_1;
-            else flow->state = TCP_LAST_ACK;
-        }
+        flow->fin_tx_pending = 1;
+        tcp_try_send_pending_fin(flow);
         tcp_daemon_kick();
-        return res;
+        return TCP_OK;
     }
 
     return TCP_INVALID;

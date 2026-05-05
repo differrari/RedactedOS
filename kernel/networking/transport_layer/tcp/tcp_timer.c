@@ -33,9 +33,10 @@ int tcp_has_pending_timers(void) { //TODO mhh this should be event driven to avo
 
         if (f->state == TCP_TIME_WAIT) return 1;
         if (f->state == TCP_FIN_WAIT_2) return 1;
+        if (f->fin_tx_pending && f->snd_wnd == 0) return 1;
         if (f->delayed_ack_pending) return 1;
         if (f->persist_active) return 1;
-        if (f->keepalive_on && f->state == TCP_ESTABLISHED && f->keepalive_ms) return 1;
+        if (!f->fin_tx_pending && f->keepalive_on && f->state == TCP_ESTABLISHED && f->keepalive_ms) return 1;
 
         for (int j = 0; j < TCP_MAX_TX_SEGS; j++) {
             tcp_tx_seg_t *s = &f->txq[j];
@@ -75,7 +76,7 @@ void tcp_tick_all(uint32_t elapsed_ms) {
             if (f->delayed_ack_timer_ms >= TCP_DELAYED_ACK_MS) tcp_send_ack_now(f);
         }
 
-        if (f->keepalive_on && f->state == TCP_ESTABLISHED && f->keepalive_ms) {
+        if (!f->fin_tx_pending && f->keepalive_on && f->state == TCP_ESTABLISHED && f->keepalive_ms) {
             f->keepalive_idle_ms += elapsed_ms;
             if (f->keepalive_idle_ms >= f->keepalive_ms) {
                 tcp_hdr_t hdr;
@@ -102,7 +103,7 @@ void tcp_tick_all(uint32_t elapsed_ms) {
             }
         }
 
-        if (f->snd_wnd == 0 && f->snd_nxt > f->snd_una) {
+        if (f->snd_wnd == 0 && (f->snd_nxt > f->snd_una || f->fin_tx_pending)) {
             if (!f->persist_active) {
                 f->persist_active = 1;
                 f->persist_timer_ms = 0;
@@ -111,19 +112,8 @@ void tcp_tick_all(uint32_t elapsed_ms) {
             } else {
                 f->persist_timer_ms += elapsed_ms;
                 if (f->persist_timer_ms >= f->persist_timeout_ms) {
-                    if (f->persist_probe_cnt >= TCP_MAX_PERSIST_PROBES) {
-                        if (f->state == TCP_ESTABLISHED) {
-                            f->ctx.flags = (uint8_t)((1u << FIN_F) | (1u << ACK_F));
-                            f->ctx.payload.ptr = 0;
-                            f->ctx.payload.size = 0;
-
-                            tcp_flow_send(&f->ctx);
-                            f->state = TCP_FIN_WAIT_1;
-                            f->ctx.expected_ack = f->snd_nxt;
-                            tcp_daemon_kick();
-                        } else {
-                            tcp_free_flow(i);
-                        }
+                    if (f->fin_tx_pending && f->persist_probe_cnt >= TCP_MAX_PERSIST_PROBES) {
+                        tcp_free_flow(i);
                         continue;
                     }
                     tcp_tx_seg_t *best = tcp_find_first_unacked(f);
@@ -137,6 +127,7 @@ void tcp_tick_all(uint32_t elapsed_ms) {
                     uint16_t pl = 0;
 
                     uint32_t probe_seq = f->snd_una;
+                    if (!best && f->fin_tx_pending && f->snd_nxt == f->snd_una && f->snd_nxt) probe_seq = f->snd_nxt-1;
 
                     if (best && best->buf && best->len && probe_seq >= best->seq && probe_seq < best->seq + best->len) {
                         payload[0] = *((uint8_t *)best->buf + (probe_seq - best->seq));

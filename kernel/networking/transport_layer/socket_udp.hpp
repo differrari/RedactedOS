@@ -138,24 +138,16 @@ class UDPSocket : public Socket {
         uint32_t limit = 0xFFFFFFFFu;
         if ((extraOpts.flags & SOCK_OPT_BUF_SIZE) && extraOpts.buf_size) limit = extraOpts.buf_size;
         if (len > limit) return;
+        if (rx_bytes > limit - len) return;
+
+        int nexti = (r_tail + 1) % UDP_RING_CAP;
+        if (nexti == r_head) return;
+
         uintptr_t copy = 0;
         if (len) {
             copy = (uintptr_t)zalloc(len);
             if (!copy) return;
             memcpy((void*)copy, (const void*)ptr, len);
-        }
-
-        while (rx_bytes + len > limit && r_head != r_tail) {
-            rx_bytes -= ring[r_head].size;
-            release((void*)ring[r_head].ptr);
-            r_head = (r_head + 1) % UDP_RING_CAP;
-        }
-
-        int nexti = (r_tail + 1) % UDP_RING_CAP;
-        if (nexti == r_head) {
-            rx_bytes -= ring[r_head].size;
-            release((void*)ring[r_head].ptr);
-            r_head = (r_head + 1) % UDP_RING_CAP;
         }
 
         ring[r_tail].ptr = copy;

@@ -2,7 +2,7 @@
 #include "std/string.h"
 #include "std/memory.h"
 #include "syscalls/syscalls.h"
-
+//TODO check for a maximum request body size before allocating the buffer
 string http_header_builder(const HTTPHeadersCommon *C, const HTTPHeader *H, uint32_t N){
     string out = string_repeat('\0', 0);
 
@@ -80,7 +80,7 @@ void http_headers_extra_free(HTTPHeader *extra, uint32_t extra_count){
         if (extra[i].key.mem_length) string_free(extra[i].key);
         if (extra[i].value.mem_length) string_free(extra[i].value);
     }
-    free_sized(extra, extra_count * sizeof(HTTPHeader));
+    release(extra);
 }
 
 void http_header_parser(const char *buf, uint32_t len,
@@ -91,13 +91,27 @@ void http_header_parser(const char *buf, uint32_t len,
     *C = (HTTPHeadersCommon){0};
 
     uint32_t max_lines = 0;
-    for (uint32_t i = 0; i + 1 < len; i++){
-        if (buf[i]=='\r' && buf[i+1]=='\n') max_lines++;
+    uint32_t count_pos = 0;
+    while (count_pos < len) {
+        uint32_t eol = count_pos;
+        bool has_crlf = false;
+        while (eol + 1 < len) {
+            if (buf[eol] == '\r' && buf[eol+1] == '\n') {
+                has_crlf = true;
+                break;
+            }
+            eol++;
+        }
+        if (!has_crlf) eol = len;
+        if (eol == count_pos) break;
+        max_lines++;
+        if (!has_crlf) break;
+        count_pos = eol + 2;
     }
 
     HTTPHeader *extras = NULL;
     if (max_lines){
-        extras = (HTTPHeader*)(uintptr_t)malloc(sizeof(*extras) * max_lines);
+        extras = (HTTPHeader*)zalloc(sizeof(*extras) * max_lines);
         if (!extras){
             *out_extra = NULL;
             *out_extra_count = 0;
@@ -110,12 +124,20 @@ void http_header_parser(const char *buf, uint32_t len,
 
     char key_tmp[64];
 
-    while (pos + 1 < len){
+    while (pos < len){
         uint32_t eol = pos;
-        while (eol + 1 < len && !(buf[eol]=='\r' && buf[eol+1]=='\n')) eol++;
+        bool has_crlf = false;
+        while (eol + 1 < len) {
+            if (buf[eol] == '\r' && buf[eol+1] == '\n') {
+                has_crlf = true;
+                break;
+            }
+            eol++;
+        }
+        if (!has_crlf) eol = len;
 
         if (eol == pos){
-            pos += 2;
+            if (has_crlf) pos += 2;
             break;
         }
 
@@ -123,6 +145,7 @@ void http_header_parser(const char *buf, uint32_t len,
         while (sep < eol && buf[sep] != ':') sep++;
 
         if (sep == eol){
+            if (!has_crlf) break;
             pos = eol + 2;
             continue;
         }
@@ -140,7 +163,28 @@ void http_header_parser(const char *buf, uint32_t len,
         key_tmp[copy_len] = '\0';
 
         if (copy_len == 14 && strcmp_case(key_tmp, "content-length", true) == 0){
-            C->length = (uint32_t)parse_int_u64(buf + val_start, val_len);
+            uint32_t p = val_start;
+            uint32_t end = eol;
+            while (p < end && (buf[p] == ' ' || buf[p] == '\t')) p++;
+            while (end > p && (buf[end-1] == ' ' || buf[end-1] == '\t')) end--;
+
+            bool ok = p < end;
+            uint64_t parsed = 0;
+            while (ok && p < end) {
+                char c = buf[p++];
+                if (! is_digit(c)) {
+                    ok = false;
+                    break;
+                }
+                parsed = parsed * 10 + (uint64_t)(c - '0');
+                if (parsed > UINT32_MAX) ok = false;
+            }
+
+            if (!ok || (C->has_length && C->length != (uint32_t)parsed)) C->bad_length = 1;
+            else {
+                C->has_length = 1;
+                C->length = (uint32_t)parsed;
+            }
         }
         else if (copy_len == 12 && strcmp_case(key_tmp, "content-type", true) == 0){
             C->type = string_from_literal_length((char*)(buf + val_start), val_len);
@@ -169,11 +213,12 @@ void http_header_parser(const char *buf, uint32_t len,
             }
         }
 
+        if (!has_crlf) break;
         pos = eol + 2;
     }
 
     if (!extras || extra_i == 0){
-        if (extras) free_sized(extras, sizeof(*extras) * max_lines);
+        if (extras) release(extras);
         *out_extra = NULL;
         *out_extra_count = 0;
         return;
@@ -185,10 +230,10 @@ void http_header_parser(const char *buf, uint32_t len,
         return;
     }
 
-    HTTPHeader *shr = (HTTPHeader*)(uintptr_t)malloc(sizeof(*shr) * extra_i);
+    HTTPHeader *shr = (HTTPHeader*)zalloc(sizeof(*shr) * extra_i);
     if (shr){
         memcpy(shr, extras, sizeof(*shr) * extra_i);
-        free_sized(extras, sizeof(*extras) * max_lines);
+        release(extras);
         *out_extra = shr;
         *out_extra_count = extra_i;
         return;
@@ -198,7 +243,7 @@ void http_header_parser(const char *buf, uint32_t len,
         if (extras[i].key.mem_length) string_free(extras[i].key);
         if (extras[i].value.mem_length) string_free(extras[i].value);
     }
-    free_sized(extras, sizeof(*extras) * max_lines);
+    release(extras);
     *out_extra = NULL;
     *out_extra_count = 0;
 }
@@ -215,9 +260,7 @@ string http_request_builder(const HTTPRequestMsg *R){
     string_free(hdrs);
 
     if (R->body.ptr && R->body.size){
-        string body = string_from_literal_length((char*)R->body.ptr, R->body.size);
-        string_append_bytes(&out, body.data, body.length);
-        string_free(body);
+        string_append_bytes(&out, (char*)R->body.ptr, (uint32_t)R->body.size);
     }
 
     return out;

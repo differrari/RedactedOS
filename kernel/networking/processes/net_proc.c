@@ -88,7 +88,7 @@ static void free_request(HTTPRequestMsg *req) {
     req->extra_headers = NULL;
     req->extra_header_count = 0;
 
-    if (req->body.ptr && req->body.size) free_sized((void*)req->body.ptr, req->body.size);
+    if (req->body.ptr && req->body.size) release((void*)req->body.ptr);
 
     req->path = (string){0};
     req->body = (sizedptr){0};
@@ -224,20 +224,20 @@ static void test_http(const net_l4_endpoint* ep) {
     }
 
     if (resp.body.ptr && resp.body.size > 0) {
-        char *body_str = (char*)malloc(resp.body.size + 1);
+        char *body_str = (char*)zalloc(resp.body.size + 1);
         if (body_str) {
             memcpy(body_str, (void*)resp.body.ptr, resp.body.size);
             body_str[resp.body.size] = '\0';
             kprintf("[HTTP] %i %i bytes of body", resp.status_code, resp.body.size);
             kprintf("%s", body_str);
-            free_sized(body_str, resp.body.size + 1);
+            release(body_str);
         }
     }
 
     http_client_close(cli);
     http_client_destroy(cli);
 
-    if (resp.body.ptr && resp.body.size) free_sized((void*)resp.body.ptr, resp.body.size);
+    if (resp.body.ptr && resp.body.size) release((void*)resp.body.ptr);
 
     http_headers_common_free(&resp.headers_common);
 

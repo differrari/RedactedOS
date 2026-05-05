@@ -264,6 +264,8 @@ bool tcp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t
         f->rcv_base = 0;
         f->rcv_data_nxt = 0;
         f->rcv_ooo_used = 0;
+        f->sack_recent_left = 0;
+        f->sack_recent_right = 0;
         f->rcv_adv_edge = 0;
 
         f->ip_ttl = extra && (extra->flags & SOCK_OPT_TTL) ? extra->ttl : 0;
@@ -389,6 +391,8 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->rcv_base = 0;
     flow->rcv_data_nxt = 0;
     flow->rcv_ooo_used = 0;
+    flow->sack_recent_left = 0;
+    flow->sack_recent_right = 0;
     flow->rcv_wnd_max = TCP_DEFAULT_RCV_BUF;
     if (extra && (extra->flags & SOCK_OPT_BUF_SIZE) && extra->buf_size) flow->rcv_wnd_max = extra->buf_size;
     flow->rcv_adv_edge = 0;

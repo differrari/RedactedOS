@@ -101,7 +101,12 @@ uint32_t tcp_flow_readable(tcp_data *flow_ctx) {
 bool tcp_flow_recv_closed(tcp_data *flow_ctx) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return true;
-    if (flow->state == TCP_CLOSE_WAIT || flow->state == TCP_STATE_CLOSED || flow->state == TCP_TIME_WAIT) return true;
+    if (flow->state == TCP_STATE_CLOSED || flow->state == TCP_TIME_WAIT) return true;
+    if (flow->state == TCP_CLOSE_WAIT) {
+        if (!flow->rcv_buf || !flow->rcv_wnd_max) return true;
+        if (flow->rcv_data_nxt < flow->rcv_base) return true;
+        return flow->rcv_data_nxt == flow->rcv_base;
+    }
     return false;
 }
 
@@ -126,6 +131,71 @@ tcp_tx_seg_t *tcp_find_first_unacked(tcp_flow_t *flow) {
     return best;
 }
 
+static int tcp_apply_sack_blocks(tcp_flow_t *flow, const tcp_parsed_opts_t *opts) {
+    if (!flow || !opts || !flow->sack_ok || !opts->sack_count) return 0;
+
+    int changed = 0;
+    for (uint32_t b = 0; b < opts->sack_count; b++) {
+        uint32_t left = opts->sacks[b].left;
+        uint32_t right = opts->sacks[b].right;
+
+        if (right <= left) continue;
+        if (right <= flow->snd_una) continue;
+        if (left >= flow->snd_nxt) continue;
+
+        for (int i = 0; i < TCP_MAX_TX_SEGS; i++) {
+            tcp_tx_seg_t *s = &flow->txq[i];
+
+            if (!s->used) continue;
+
+            uint32_t end = s->seq + s->len + (s->syn ? 1 : 0) + (s->fin ? 1 : 0);
+            if (end <= flow->snd_una) continue;
+            if (s->seq < left || end > right) continue;
+
+            if (!s->sacked) changed = 1;
+            s->sacked = 1;
+        }
+    }
+
+    return changed;
+}
+
+static tcp_tx_seg_t *tcp_find_sack_retransmit(tcp_flow_t *flow) {
+    tcp_tx_seg_t *best = NULL;
+    uint32_t best_seq = 0;
+    uint32_t highest_sacked = flow->snd_una;
+
+    for (int i = 0; i < TCP_MAX_TX_SEGS; i++) {
+        tcp_tx_seg_t *s = &flow->txq[i];
+
+        if (!s->used || !s->sacked) continue;
+
+        uint32_t end = s->seq + s->len + (s->syn ? 1u : 0u) + (s->fin ? 1u : 0u);
+        if (end <= flow->snd_una) continue;
+        if (end > highest_sacked) highest_sacked = end;
+    }
+
+    if (highest_sacked == flow->snd_una) return NULL;
+
+    for (int i = 0; i < TCP_MAX_TX_SEGS; i++) {
+        tcp_tx_seg_t *s = &flow->txq[i];
+
+        if (!s->used)continue;
+        if (s->sacked || s->sack_retransmitted) continue;
+
+        uint32_t end = s->seq + s->len + (s->syn ? 1 : 0) + (s->fin ? 1 : 0);
+        if (end <= flow->snd_una) continue;
+        if (s->seq >= highest_sacked) continue;
+
+        if (!best || s->seq < best_seq) {
+            best = s;
+            best_seq = s->seq;
+        }
+    }
+
+    return best;
+}
+
 void tcp_cc_on_timeout(tcp_flow_t *f){
     uint32_t mss = f->mss ? f->mss : TCP_DEFAULT_MSS;
     uint32_t flight = f->snd_nxt > f->snd_una ? f->snd_nxt - f->snd_una : 0;
@@ -140,6 +210,11 @@ void tcp_cc_on_timeout(tcp_flow_t *f){
     f->dup_acks = 0;
     f->in_fast_recovery = 0;
     f->recover = 0;
+
+    for (int i = 0; i < TCP_MAX_TX_SEGS; i++) {
+        f->txq[i].sacked = 0;
+        f->txq[i].sack_retransmitted = 0;
+    }
 }
 
 static void tcp_cc_on_new_ack(tcp_flow_t *f, uint32_t ack) {
@@ -180,6 +255,15 @@ static void tcp_cc_on_dupack(tcp_flow_t *f) {
 
     if (f->in_fast_recovery){
         f->cwnd += mss;
+
+        tcp_tx_seg_t *s = tcp_find_sack_retransmit(f);
+        if (s) {
+            tcp_send_from_seg(f, s);
+            s->sack_retransmitted = 1;
+            s->retransmit_cnt++;
+            s->timer_ms = 0;
+        }
+
         return;
     }
 
@@ -196,9 +280,11 @@ static void tcp_cc_on_dupack(tcp_flow_t *f) {
     f->cwnd = f->ssthresh + 3u * mss;
     f->in_fast_recovery = 1;
 
-    tcp_tx_seg_t *s = tcp_find_first_unacked(f);
+    tcp_tx_seg_t *s = tcp_find_sack_retransmit(f);
+    if (!s) s = tcp_find_first_unacked(f);
     if (s) {
         tcp_send_from_seg(f, s);
+        s->sack_retransmitted = 1;
         s->retransmit_cnt++;
         s->timer_ms = 0;
     }
@@ -249,6 +335,15 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     }
 
     uint32_t data_len = len - hdr_len;
+
+    tcp_parsed_opts_t parsed_opts;
+    uint8_t parsed_opts_buf[40];
+    uint32_t parsed_opts_len = (uint32_t)(hdr_len > sizeof(tcp_hdr_t) ? hdr_len - sizeof(tcp_hdr_t) : 0);
+    if (parsed_opts_len && !netpkt_copyout(pkt, sizeof(tcp_hdr_t), parsed_opts_buf, parsed_opts_len)) {
+        netpkt_unref(pkt);
+        return;
+    }
+    tcp_parse_options(parsed_opts_len ? parsed_opts_buf : NULL, parsed_opts_len, &parsed_opts);
 
     int idx = find_flow(dst_port, ipver, dst_ip_addr, src_ip_addr, src_port);
     tcp_flow_t *flow = idx >= 0 ? tcp_flows[idx] : NULL;
@@ -339,15 +434,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->state = TCP_SYN_RECEIVED;
             flow->retries = TCP_SYN_RETRIES;
 
-            tcp_parsed_opts_t pop;
-            uint8_t rx_opts_buf[40];
-            uint32_t rx_opts_len = (uint32_t)(hdr_len > sizeof(tcp_hdr_t) ? hdr_len - sizeof(tcp_hdr_t) : 0);
-            if (rx_opts_len && (!netpkt_copyout(pkt, sizeof(tcp_hdr_t), rx_opts_buf, rx_opts_len))) {
-                tcp_free_flow(idx);
-                netpkt_unref(pkt);
-                return;
-            }
-            tcp_parse_options(rx_opts_len ? rx_opts_buf : NULL, rx_opts_len, &pop);
+            tcp_parsed_opts_t pop = parsed_opts;
 
             flow->ws_send = lf->ws_send;
             flow->ws_recv = 0;
@@ -402,6 +489,8 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->rcv_base = flow->rcv_nxt;
             flow->rcv_data_nxt = flow->rcv_nxt;
             flow->rcv_ooo_used = 0;
+            flow->sack_recent_left = 0;
+            flow->sack_recent_right = 0;
             flow->rcv_buf = (uintptr_t)zalloc(flow->rcv_wnd_max);
             if (!flow->rcv_buf) {
                 flow->rcv_wnd = 0;
@@ -530,9 +619,21 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                     s->used = 0;
                     s->buf = 0;
                     s->len = 0;
+                    s->sacked = 0;
+                    s->sack_retransmitted = 0;
                 }
             }
 
+            for (int i = 0; i < TCP_MAX_TX_SEGS; i++) {
+                tcp_tx_seg_t *s = &flow->txq[i];
+                if (!s->used) continue;
+                if (s->seq >= ack) continue;
+
+                s->sacked = 0;
+                s->sack_retransmitted = 0;
+            }
+
+            if (flow->sack_ok && parsed_opts.sack_count) tcp_apply_sack_blocks(flow, &parsed_opts);
             if (ack > prev_una) tcp_cc_on_new_ack(flow, ack);
 
             if (flow->state == TCP_FIN_WAIT_1 && ack >= flow->ctx.expected_ack){
@@ -545,12 +646,15 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 return;
             }
         } else if (ack == flow->snd_una && data_len == 0 && !fin){
+            if (flow->sack_ok && parsed_opts.sack_count) tcp_apply_sack_blocks(flow, &parsed_opts);
             if (flow->dup_acks < UINT8_MAX) flow->dup_acks++;
             tcp_cc_on_dupack(flow);
         } else {
             flow->dup_acks = 0;
         }
     }
+
+    if (flow->fin_tx_pending) tcp_try_send_pending_fin(flow);
 
     uint32_t seg_seq = seq;
 
@@ -565,14 +669,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->ctx.sequence = flow->snd_nxt;
             flow->ctx.flags = 0;
 
-            tcp_parsed_opts_t pop;
-            uint8_t ack_opts_buf[40];
-            uint32_t ack_opts_len = (uint32_t)(hdr_len > sizeof(tcp_hdr_t) ? hdr_len - sizeof(tcp_hdr_t) : 0);
-            if (ack_opts_len && (!netpkt_copyout(pkt, sizeof(tcp_hdr_t), ack_opts_buf, ack_opts_len))) {
-                netpkt_unref(pkt);
-                return;
-            }
-            tcp_parse_options(ack_opts_len ? ack_opts_buf : NULL, ack_opts_len, &pop);
+            tcp_parsed_opts_t pop = parsed_opts;
 
             flow->ws_recv = pop.has_wscale ? pop.wscale : 0;
             if (flow->ws_recv > 14) flow->ws_recv = 14;
@@ -602,6 +699,8 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->rcv_base = flow->rcv_nxt;
             flow->rcv_data_nxt = flow->rcv_nxt;
             flow->rcv_ooo_used = 0;
+            flow->sack_recent_left = 0;
+            flow->sack_recent_right = 0;
             if (!flow->rcv_buf || !flow->rcv_wnd_max) {
                 flow->rcv_wnd = 0;
                 flow->rcv_adv_edge = flow->rcv_nxt;
@@ -849,84 +948,77 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                     }
 
                     if (ooo_len) {
-                        uint32_t orig_seq = ooo_seq;
                         uint32_t start = ooo_seq;
                         uint32_t end = ooo_seq + ooo_len;
+                        uint32_t merged_start = start;
+                        uint32_t merged_end = end;
+                        uint32_t old_bytes = 0;
+                        int16_t overlapping = 0;
+                        int16_t covered = 0;
 
-                        for (;;) {
-                            int changed = 0;
-                            for (int i = 0; i < flow->reass_count; i++) {
-                                tcp_reass_seg_t *r = &flow->reass[i];
-                                uint32_t rs = r->seq;
-                                uint32_t re = r->end;
-
-                                if (end <= rs || start >= re) continue;
-                                if (start >= rs && end <= re) {
-                                    ooo_len = 0;
-                                    break;
-                                }
-
-                                if (start <= rs && end >= re) {
-                                    tcp_reass_remove(flow, i);
-                                    changed = 1;
-                                    break;
-                                }
-
-                                if (start < rs && end > rs && end <= re) {
-                                    end = rs;
-                                    ooo_len = end - start;
-                                    changed = 1;
-                                    break;
-                                }
-
-                                if (start >= rs && start < re && end > re) {
-                                    start = re;
-                                    ooo_len = end - start;
-                                    changed = 1;
-                                    break;
-                                }
+                        for (int i = 0; i < flow->reass_count; i++) {
+                            tcp_reass_seg_t *r = &flow->reass[i];
+                            if (r->seq <= start && r->end >= end) {
+                                flow->sack_recent_left = r->seq;
+                                flow->sack_recent_right = r->end;
+                                covered = 1;
+                                break;
                             }
 
-                            if (!changed || !ooo_len) break;
+                            if (r->end < merged_start || r->seq > merged_end) continue;
+
+                            if (r->seq < merged_start) merged_start = r->seq;
+                            if (r->end > merged_end) merged_end = r->end;
+                            old_bytes += r->end - r->seq;
+                            overlapping++;
                         }
 
-                        if (ooo_len && flow->reass_count>= TCP_REASS_MAX_SEGS) {
-                            int drop_idx = 0;
-                            uint32_t best = flow->reass[0].seq;
+                        if (!covered) {
+                            uint32_t merged_len = merged_end - merged_start;
+                            uint32_t increase = merged_len > old_bytes ? merged_len - old_bytes : 0;
+                            uint32_t ooo_limit = flow->rcv_wnd_max >> 1;
 
-                            for (int i = 1; i < flow->reass_count; i++) {
-                                if (flow->reass[i].seq <= best) continue;
-                                best = flow->reass[i].seq;
-                                drop_idx = i;
-                            }
+                            if (ooo_limit > TCP_REASS_MAX_BYTES) ooo_limit = TCP_REASS_MAX_BYTES;
+                            if (ooo_limit < flow->mss * 4) ooo_limit = flow->mss * 4;
+                            if (ooo_limit > flow->rcv_wnd_max) ooo_limit = flow->rcv_wnd_max;
 
-                            if (start >= best) ooo_len = 0;
-                            else tcp_reass_remove(flow, drop_idx);
+                            if (increase && (flow->rcv_ooo_used + increase > ooo_limit || flow->reass_count - overlapping >= TCP_REASS_MAX_SEGS)) ooo_len = 0;
                         }
 
-                        if (ooo_len && flow->reass_count < TCP_REASS_MAX_SEGS) {
+                        if (!covered && ooo_len) {
                             uint8_t *rx = (uint8_t *)flow->rcv_buf;
                             uint32_t cap = flow->rcv_wnd_max;
-                            uint32_t offset = start - orig_seq;
                             uint32_t pos = start % cap;
                             uint32_t first = cap - pos;
                             int copied = 1;
 
                             if (first > ooo_len) first = ooo_len;
-                            if (first && !netpkt_copyout(pkt, ooo_data + offset, rx + pos, first)) copied = 0;
-                            if (copied && ooo_len > first && !netpkt_copyout(pkt, ooo_data + offset + first, rx, ooo_len - first)) copied = 0;
+                            if (first && !netpkt_copyout(pkt, ooo_data, rx + pos, first)) copied = 0;
+                            if (copied && ooo_len > first && !netpkt_copyout(pkt, ooo_data + first, rx, ooo_len - first)) copied = 0;
 
                             if (copied) {
+                                for (int i = 0; i < flow->reass_count;) {
+                                    tcp_reass_seg_t *r = &flow->reass[i];
+                                    if (r->end < merged_start || r->seq > merged_end) {
+                                        i++;
+                                        continue;
+                                    }
+                
+                                    tcp_reass_remove(flow,i);
+                                }
+
                                 int pos_idx = flow->reass_count;
-                                while (pos_idx > 0 &&flow->reass[pos_idx - 1].seq > start) {
+                                while (pos_idx > 0 &&flow->reass[pos_idx - 1].seq > merged_start) {
                                     flow->reass[pos_idx] = flow->reass[pos_idx - 1];
                                     pos_idx--;
                                 }
 
-                                flow->reass[pos_idx].seq = start;
-                                flow->reass[pos_idx].end = start + ooo_len;
+                                flow->reass[pos_idx].seq = merged_start;
+                                flow->reass[pos_idx].end = merged_end;
                                 flow->reass_count++;
-                                flow->rcv_ooo_used += ooo_len;
+                                flow->rcv_ooo_used += merged_end - merged_start;
+                                flow->sack_recent_left = merged_start;
+                                flow->sack_recent_right = merged_end;
                                 tcp_calc_adv_wnd_field(flow, 1);
                             }
                         }
@@ -975,7 +1067,7 @@ void tcp_flow_on_app_read(tcp_data *flow_ctx, uint32_t bytes_read){
     if (!flow) return;
 
     uint32_t old_edge = flow->rcv_adv_edge;
-    uint32_t old_wnd = flow->rcv_wnd;
+    uint16_t old_adv_field = flow->ctx.window;
     uint32_t old_nxt = flow->rcv_nxt;
 
     int advanced = tcp_reass_drain_inseq(flow);
@@ -989,5 +1081,5 @@ void tcp_flow_on_app_read(tcp_data *flow_ctx, uint32_t bytes_read){
     if (!threshold) threshold = 1;
 
     uint32_t delta = flow->rcv_adv_edge > old_edge ? flow->rcv_adv_edge - old_edge : 0;
-    if (advanced || flow->rcv_nxt != old_nxt || (!old_wnd && flow->rcv_wnd) || delta >= threshold) tcp_send_ack_now(flow);
+    if (advanced || flow->rcv_nxt != old_nxt || (!old_adv_field && flow->ctx.window) || delta >= threshold) tcp_send_ack_now(flow);
 }

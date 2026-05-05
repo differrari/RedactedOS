@@ -11,12 +11,20 @@
 extern "C" {
 #endif
 
+#define TCP_SACK_MAX_BLOCKS 4
+typedef struct {
+    uint32_t left;
+    uint32_t right;
+} tcp_sack_block_t;
+
 typedef struct {
     uint16_t mss;
     uint8_t wscale;
     uint8_t sack_permitted;
     uint8_t has_mss;
     uint8_t has_wscale;
+    uint8_t sack_count;
+    tcp_sack_block_t sacks[TCP_SACK_MAX_BLOCKS];
 } tcp_parsed_opts_t;
 
 void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out);

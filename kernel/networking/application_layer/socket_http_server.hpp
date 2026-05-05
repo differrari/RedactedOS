@@ -19,7 +19,7 @@ public:
 
         const SocketExtraOptions* tcp_ptr = extra;
         if (extra && (log_opts.flags & SOCK_OPT_DEBUG)) {
-            tcp_extra = (SocketExtraOptions*)malloc(sizeof(SocketExtraOptions));
+            tcp_extra = (SocketExtraOptions*)zalloc(sizeof(SocketExtraOptions));
             if (tcp_extra) {
                 *tcp_extra = *extra;
                 tcp_extra->flags &= ~SOCK_OPT_DEBUG;
@@ -27,7 +27,7 @@ public:
             }
         }
 
-        sock = (TCPSocket*)malloc(sizeof(TCPSocket));
+        sock = (TCPSocket*)zalloc(sizeof(TCPSocket));
         if (sock) new (sock) TCPSocket(SOCK_ROLE_SERVER, pid, tcp_ptr);
     }
 
@@ -81,7 +81,7 @@ public:
         if (!client) return req;
 
         string buf = string_repeat('\0', 0);
-        char tmp[512];
+        char tmp[2048];
         int hdr_end = -1;
 
         while (hdr_end < 0) {
@@ -158,29 +158,58 @@ public:
 
         uint32_t body_start = hdr_end + 4;
         uint32_t have = buf.length > body_start ? buf.length - body_start : 0;
-        uint32_t need = req.headers_common.length;
+        uint32_t need = req.headers_common.has_length ? req.headers_common.length : 0;
+        bool bad_request = req.headers_common.bad_length != 0;
+        char* body_copy = nullptr;
 
-        if (need > 0) {
-            while (have < need) {
-                int64_t r = client->recv(tmp, sizeof(tmp));
-                if (r == TCP_WOULDBLOCK) {
-                    msleep(10);
-                    continue;
+        if (!bad_request && need > 0) {
+            body_copy = (char*)zalloc(need);
+            if (!body_copy) bad_request = true;
+            else {
+                uint32_t copied = have < need ? have : need;
+                if (copied) memcpy(body_copy, buf.data + body_start, copied);
+
+                while (copied < need) {
+                    int64_t r = client->recv(body_copy + copied, need - copied);
+                    if (r == TCP_WOULDBLOCK) {
+                        msleep(5);
+                        continue;
+                    }
+                    if (r <= 0) {
+                        bad_request = true;
+                        break;
+                    }
+                    copied += (uint32_t)r;
                 }
-                if (r < 0) break;
-                if (r == 0) break;
-                string_append_bytes(&buf, tmp, (uint32_t)r);
-                have += (uint32_t)r;
             }
         }
 
-        if (have > 0) {
-            char* body_copy = (char*)malloc(have);
-            if (body_copy) {
-                memcpy(body_copy, buf.data + body_start, have);
-                req.body.ptr = (uintptr_t)body_copy;
-                req.body.size = have;
-            }
+        if (bad_request) {
+            if (body_copy) release(body_copy);
+            static const char BAD_BODY[] = "bad request\n";
+            static const char BAD_REASON[] = "Bad Request";
+            static const char BAD_TYPE[] = "text/plain";
+            static const char BAD_CONN[] = "close";
+            HTTPResponseMsg res{};
+            res.status_code = HTTP_BAD_REQUEST;
+            res.reason = (string) {(char*)BAD_REASON, sizeof(BAD_REASON)-1, 0};
+            res.headers_common.length = sizeof(BAD_BODY)-1;
+            res.headers_common.type = (string){(char*)BAD_TYPE, sizeof(BAD_TYPE)-1, 0};
+            res.headers_common.connection = (string){(char*)BAD_CONN, sizeof(BAD_CONN)-1, 0};
+            res.body.ptr = (uintptr_t)BAD_BODY;
+            res.body.size = sizeof(BAD_BODY)-1;
+            send_response(client, res);
+
+            if (req.path.mem_length) string_free(req.path);
+            http_headers_common_free(&req.headers_common);
+            http_headers_extra_free(req.extra_headers, req.extra_header_count);
+            string_free(buf);
+            return HTTPRequestMsg{};
+        }
+
+        if (body_copy) {
+            req.body.ptr = (uintptr_t)body_copy;
+            req.body.size = need;
         }
 
         netlog_socket_event_t ev{};
@@ -258,10 +287,10 @@ public:
         netlog_socket_event(&log_opts, &ev);
 
         if (sock) sock->~TCPSocket();
-        if (sock) free_sized(sock, sizeof(TCPSocket));
+        if (sock) release(sock);
         sock = nullptr;
 
-        if (tcp_extra) free_sized(tcp_extra, sizeof(SocketExtraOptions));
+        if (tcp_extra) release(tcp_extra);
         tcp_extra = nullptr;
 
         log_opts.flags &= ~SOCK_OPT_DEBUG;

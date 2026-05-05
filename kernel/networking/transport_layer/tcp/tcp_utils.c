@@ -66,6 +66,8 @@ void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out
     out->sack_permitted = 0;
     out->has_mss = 0;
     out->has_wscale = 0;
+    out->sack_count = 0;
+    memset(out->sacks, 0, sizeof(out->sacks));
 
     if (!opts || len == 0) return;
 
@@ -84,13 +86,32 @@ void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out
         if (i + olen > len) break;
 
         if (kind == 2 && olen == 4) {
-            out->mss = (uint16_t)((opts[i + 2] << 8) | opts[i + 3]);
+            out->mss = rd_be16(&opts[i + 2]);
             out->has_mss = 1;
         } else if (kind == 3 && olen == 3) {
-            out->wscale =opts[i + 2];
-            out->has_wscale = 1;
+            uint8_t ws =opts[i + 2];
+            if (ws <= 14) {
+                out->wscale = ws;
+                out->has_wscale = 1;
+            }
         } else if (kind == 4 && olen == 2) {
             out->sack_permitted = 1;
+        } else if (kind == 5 && olen >= 10 && ((olen - 2) % 8) == 0) {
+            uint32_t blocks = (uint32_t)((olen - 2) / 8);
+            if (blocks > TCP_SACK_MAX_BLOCKS) blocks = TCP_SACK_MAX_BLOCKS;
+
+            for (uint32_t b = 0; b < blocks; b++) {
+                uint32_t o = i + 2 + b*8;
+                uint32_t left  = rd_be32(&opts[o]);
+                uint32_t right = rd_be32(&opts[o+4]);
+                if (right <= left) continue;
+
+                uint8_t n = out->sack_count;
+                if (n >= TCP_SACK_MAX_BLOCKS) break;
+                out->sacks[n].left = left;
+                out->sacks[n].right = right;
+                out->sack_count = (uint8_t)(n+1);
+            }
         }
 
         i += olen;

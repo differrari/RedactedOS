@@ -14,7 +14,7 @@
 #include "networking/transport_layer/trans_utils.h"
 #include "syscalls/syscalls.h"
 
-static constexpr int TCP_MAX_BACKLOG = 8;
+static constexpr int TCP_MAX_BACKLOG = 32;
 static constexpr dns_server_sel_t TCP_DNS_SEL = DNS_USE_BOTH;
 static constexpr uint32_t TCP_DNS_TIMEOUT_MS = 3000;
 

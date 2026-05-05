@@ -4,7 +4,7 @@
 #include "http.h"
 #include "std/std.h"
 #include "net/socket_types.h"
-
+//TODO chunked; handle http bodies without Content-Length
 class HTTPClient {
 private:
     uint16_t pid;
@@ -18,7 +18,7 @@ public:
 
         const SocketExtraOptions* tcp_ptr = extra;
         if (extra && (log_opts.flags & SOCK_OPT_DEBUG)) {
-            tcp_extra = (SocketExtraOptions*)malloc(sizeof(SocketExtraOptions));
+            tcp_extra = (SocketExtraOptions*)zalloc(sizeof(SocketExtraOptions));
             if (tcp_extra) {
                 *tcp_extra = *extra;
                 tcp_extra->flags &= ~SOCK_OPT_DEBUG;
@@ -26,7 +26,7 @@ public:
             }
         }
 
-        sock = (TCPSocket*)malloc(sizeof(TCPSocket));
+        sock = (TCPSocket*)zalloc(sizeof(TCPSocket));
         if (sock) new (sock) TCPSocket(SOCK_ROLE_CLIENT, pid, tcp_ptr);
     }
 
@@ -152,7 +152,7 @@ public:
         int status_line_end = strindex((char*)buf.data, "\r\n");
         http_header_parser(
             (char*)buf.data + status_line_end + 2,
-            buf.length - (uint32_t)(status_line_end + 2),
+            (uint32_t)hdr_end - (uint32_t)(status_line_end + 2),
             &resp.headers_common,
             &extras,
             &extra_count);
@@ -162,23 +162,57 @@ public:
         uint32_t body_start = hdr_end + 4;
         uint32_t have = (buf.length > body_start) ? buf.length - body_start : 0;
 
-        uint32_t need = resp.headers_common.length;
-        if (need > 0) {
-            while (have < need) {
-                int64_t r = sock->recv(tmp, sizeof(tmp));
-                if (r == TCP_WOULDBLOCK) { msleep(10); continue; }
-                if (r < 0) break;
-                if (r == 0) break;
-                string_append_bytes(&buf, tmp, (uint32_t)r);
-                have += (uint32_t)r;
-            }
+        if (resp.headers_common.bad_length) {
+            if (resp.reason.mem_length) string_free(resp.reason);
+            resp.reason = string{};
+            http_headers_common_free(&resp.headers_common);
+            http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
+            resp.extra_headers = nullptr;
+            resp.extra_header_count = 0;
+            string_free(buf);
+            sock->close();
+            resp.status_code = (HttpError)SOCK_ERR_PROTO;
+            return resp;
         }
-        if (have > 0) {
-            char *body_copy = (char*)malloc(have);
+
+        uint32_t need = resp.headers_common.has_length ? resp.headers_common.length : 0;
+        uint32_t body_len = resp.headers_common.has_length ? need : have;
+        char *body_copy = nullptr;
+
+        if (body_len > 0) {
+            body_copy = (char*)zalloc(body_len);
             if (body_copy) {
-                memcpy(body_copy, buf.data + body_start, have);
+                uint32_t copied = have < body_len ? have : body_len;
+                if (copied) memcpy(body_copy, buf.data + body_start, copied);
+
+                if (resp.headers_common.has_length) {
+                    while (copied < need) {
+                        int64_t r = sock->recv(body_copy + copied, need - copied);
+                        if (r == TCP_WOULDBLOCK) {
+                            msleep(1);
+                            continue;
+                        }
+                        if (r <= 0) break;
+                        copied += (uint32_t)r;
+                    }
+
+                    if (copied < need) {
+                        release(body_copy);
+                        if (resp.reason.mem_length) string_free(resp.reason);
+                        resp.reason = string{};
+                        http_headers_common_free(&resp.headers_common);
+                        http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
+                        resp.extra_headers = nullptr;
+                        resp.extra_header_count = 0;
+                        string_free(buf);
+                        sock->close();
+                        resp.status_code = (HttpError)SOCK_ERR_PROTO;
+                        return resp;
+                    }
+                }
+
                 resp.body.ptr = (uintptr_t)body_copy;
-                resp.body.size = have;
+                resp.body.size = body_len;
             }
         }
 
@@ -214,10 +248,10 @@ public:
         netlog_socket_event(&log_opts, &ev);
 
         if (sock) sock->~TCPSocket();
-        if (sock) free_sized(sock, sizeof(TCPSocket));
+        if (sock) release(sock);
         sock = nullptr;
 
-        if (tcp_extra) free_sized(tcp_extra, sizeof(SocketExtraOptions));
+        if (tcp_extra) release(tcp_extra);
         tcp_extra = nullptr;
 
         log_opts.flags &= ~SOCK_OPT_DEBUG;
