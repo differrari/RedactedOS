@@ -34,6 +34,7 @@ int tcp_has_pending_timers(void) { //TODO mhh this should be event driven to avo
         if (f->state == TCP_TIME_WAIT) return 1;
         if (f->state == TCP_FIN_WAIT_2) return 1;
         if (f->fin_tx_pending && f->snd_wnd == 0) return 1;
+        if (f->nagle_len) return 1;
         if (f->delayed_ack_pending) return 1;
         if (f->persist_active) return 1;
         if (!f->fin_tx_pending && f->keepalive_on && f->state == TCP_ESTABLISHED && f->keepalive_ms) return 1;
@@ -76,6 +77,14 @@ void tcp_tick_all(uint32_t elapsed_ms) {
             if (f->delayed_ack_timer_ms >= TCP_DELAYED_ACK_MS) tcp_send_ack_now(f);
         }
 
+        if (f->nagle_len) {
+            if (f->snd_nxt == f->snd_una) tcp_flush_nagle(f, 1);
+            else {
+                f->nagle_timer_ms += elapsed_ms;
+                if (f->nagle_timer_ms >= TCP_NAGLE_TIMEOUT_MS) tcp_flush_nagle(f, 1);
+            }
+        }
+
         if (!f->fin_tx_pending && f->keepalive_on && f->state == TCP_ESTABLISHED && f->keepalive_ms) {
             f->keepalive_idle_ms += elapsed_ms;
             if (f->keepalive_idle_ms >= f->keepalive_ms) {
@@ -113,7 +122,8 @@ void tcp_tick_all(uint32_t elapsed_ms) {
                 f->persist_timer_ms += elapsed_ms;
                 if (f->persist_timer_ms >= f->persist_timeout_ms) {
                     if (f->fin_tx_pending && f->persist_probe_cnt >= TCP_MAX_PERSIST_PROBES) {
-                        tcp_free_flow(i);
+                        if (f->state == TCP_ESTABLISHED || f->state == TCP_CLOSE_WAIT) tcp_abort_flow(i);
+                        else tcp_free_flow(i);
                         continue;
                     }
                     tcp_tx_seg_t *best = tcp_find_first_unacked(f);
@@ -176,7 +186,8 @@ void tcp_tick_all(uint32_t elapsed_ms) {
             if (s->timer_ms < s->timeout_ms) continue;
 
             if (s->retransmit_cnt >= TCP_MAX_RETRANS) {
-                tcp_free_flow(i);
+                if (f->state == TCP_ESTABLISHED || f->state == TCP_CLOSE_WAIT) tcp_abort_flow(i);
+                else tcp_free_flow(i);
                 break;
             }
 

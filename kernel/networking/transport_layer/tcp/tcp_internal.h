@@ -23,9 +23,13 @@ extern "C" {
 #define TCP_DEFAULT_RCV_BUF (256u * 1024u)
 #define TCP_PERSIST_PROBE_BUFSZ 1
 
-#define TCP_DELAYED_ACK_MS 200
+#define TCP_DELAYED_ACK_MS 40
 #define TCP_PERSIST_MIN_MS 500
 #define TCP_PERSIST_MAX_MS 60000
+#define TCP_INIT_CWND_SEGS 4
+#define TCP_NAGLE_FLUSH_THRESHOLD TCP_DEFAULT_MSS
+#define TCP_NAGLE_TIMEOUT_MS 10
+#define TCP_CONNECT_TIMEOUT_MS 10000
 
 typedef struct {
     uint8_t used;
@@ -99,6 +103,14 @@ typedef struct {
     uint8_t delayed_ack_pending;
     uint32_t delayed_ack_timer_ms;
 
+    uint8_t nagle_flushing;
+    uint8_t nagle_appending;
+
+    uintptr_t nagle_buf;
+    uint32_t nagle_len;
+    uint32_t nagle_cap;
+    uint32_t nagle_timer_ms;
+
     tcp_reass_seg_t reass[TCP_REASS_MAX_SEGS];
     uint8_t reass_count;
     tcp_tx_seg_t txq[TCP_MAX_TX_SEGS];
@@ -117,6 +129,7 @@ extern tcp_flow_t *tcp_flows[MAX_TCP_FLOWS];
 
 tcp_flow_t *tcp_alloc_flow(void);
 void tcp_free_flow(int idx);
+void tcp_abort_flow(int idx);
 
 void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms);
 
@@ -124,6 +137,7 @@ tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow);
 void tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg);
 void tcp_send_ack_now(tcp_flow_t *flow);
 int tcp_try_send_pending_fin(tcp_flow_t *flow);
+uint64_t tcp_flush_nagle(tcp_flow_t *flow, uint8_t force);
 
 static inline uint16_t tcp_checksum_ipv4(const void *segment, uint16_t seg_len, uint32_t src_ip, uint32_t dst_ip) {
     uint16_t csum = checksum16_pipv4(src_ip, dst_ip, 6, (const uint8_t *)segment, seg_len);

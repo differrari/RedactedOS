@@ -28,6 +28,7 @@ class TCPSocket : public Socket {
     int backlogCap = 0;
     int backlogLen = 0;
     TCPSocket* next = nullptr;
+    int idleAcceptSkips = 0;
 
     static bool is_valid_v4_l3_for_bind(l3_ipv4_interface_t* v4) {
         if (!v4 || !v4->l2) return false;
@@ -414,11 +415,14 @@ public:
     }
 
     TCPSocket* accept(){
-        const int max_iters = 100;
+        const int max_empty_iters = 100;
+        const int ready_wait_iters = 3;
+        const int max_idle_skips = 20;
         int iter = 0;
 
         while (backlogLen == 0){
-            if (++iter > max_iters) return nullptr;
+            idleAcceptSkips = 0;
+            if (++iter > max_empty_iters) return nullptr;
             msleep(10);
         }
 
@@ -429,10 +433,19 @@ public:
             for (int i = 0; i < backlogLen; ++i) {
                 TCPSocket* client = pending[i];
                 if (!client) continue;
-                if (!client->flow || tcp_flow_readable(client->flow) || tcp_flow_recv_closed(client->flow)) return pop_pending_at(i);
+                if (!client->flow || tcp_flow_readable(client->flow) || tcp_flow_recv_closed(client->flow)) {
+                    idleAcceptSkips = 0;
+                    return pop_pending_at(i);
+                }
             }
 
-            if (++iter > max_iters) return nullptr;
+            if (++iter > ready_wait_iters) {
+                if (backlogLen >= backlogCap || ++idleAcceptSkips > max_idle_skips) {
+                    idleAcceptSkips = 0;
+                    return pop_pending_at(0);
+                }
+                return nullptr;
+            }
             msleep(10);
         }
     }
@@ -640,6 +653,7 @@ public:
         if (!buf || !len) return 0;
         if (!connected || !flow) return connected ? TCP_WOULDBLOCK : 0;
 
+        tcp_flow_flush(flow);
         int64_t n = tcp_flow_read(flow, buf, len);
         if (n != 0) return n;
         if (tcp_flow_recv_closed(flow)) return 0;
@@ -656,7 +670,11 @@ public:
         ev.remote_ep = remoteEP;
         netlog_socket_event(&extraOpts, &ev);
         if (connected && flow){
-            tcp_flow_close(flow);
+            if (tcp_flow_is_closed(flow)) tcp_flow_release_closed(flow);
+            else {
+                tcp_flow_flush(flow);
+                tcp_flow_close(flow);
+            }
             connected = false;
             flow = nullptr;
         }

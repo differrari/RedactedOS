@@ -61,6 +61,32 @@ tcp_data *tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_i
     return &tcp_flows[idx]->ctx;
 }
 
+static void tcp_clear_flow_buffers(tcp_flow_t *f) {
+    if (!f) return;
+
+    for (int i = 0; i < TCP_MAX_TX_SEGS; i++) {
+        tcp_tx_seg_t *s = &f->txq[i];
+        if (s->used && s->buf && s->len)release((void*)s->buf);
+        memset(s, 0, sizeof(*s));
+    }
+
+    if (f->nagle_buf) release((void*)f->nagle_buf);
+    f->nagle_buf = 0;
+    f->nagle_len = 0;
+    f->nagle_cap = 0;
+    f->nagle_timer_ms = 0;
+    f->nagle_flushing = 0;
+    f->nagle_appending = 0;
+
+    if (f->rcv_buf) release((void*)f->rcv_buf);
+    f->rcv_buf = 0;
+    f->rcv_base = f->rcv_nxt;
+    f->rcv_data_nxt = f->rcv_nxt;
+    f->rcv_ooo_used = 0;
+    f->reass_count = 0;
+    memset(f->reass, 0, sizeof(f->reass));
+}
+
 tcp_flow_t *tcp_alloc_flow(void){
     for (int i = 0; i < MAX_TCP_FLOWS; i++){
         if (tcp_flows[i]) continue;
@@ -74,7 +100,7 @@ tcp_flow_t *tcp_alloc_flow(void){
         f->rcv_wnd = f->rcv_wnd_max;
 
         f->mss = TCP_DEFAULT_MSS;
-        f->cwnd = f->mss;
+        f->cwnd = f->mss * TCP_INIT_CWND_SEGS;
         f->ssthresh = TCP_RECV_WINDOW;
         return f;
     }
@@ -82,33 +108,65 @@ tcp_flow_t *tcp_alloc_flow(void){
     return NULL;
 }
 
+void tcp_abort_flow(int idx) {
+    if (idx < 0 || idx >= MAX_TCP_FLOWS) return;
+
+    tcp_flow_t *f = tcp_flows[idx];
+    if (!f) return;
+
+    tcp_clear_flow_buffers(f);
+    f->state = TCP_STATE_CLOSED;
+    f->ctx.flags = 0;
+    f->ctx.payload.ptr = 0;
+    f->ctx.payload.size = 0;
+    f->ctx.options.ptr = 0;
+    f->ctx.options.size = 0;
+    f->fin_pending = 0;
+    f->fin_tx_pending = 0;
+    f->delayed_ack_pending = 0;
+    f->persist_active = 0;
+    f->keepalive_on = 0;
+}
+
 void tcp_free_flow(int idx) {
     if (idx < 0 || idx >= MAX_TCP_FLOWS) return;
 
     tcp_flow_t *f = tcp_flows[idx];
     if (!f) return;
-    for (int i = 0; i < TCP_MAX_TX_SEGS; i++){
-        tcp_tx_seg_t *s = &f->txq[i];
-        if (s->used && s->buf && s->len) release((void *)s->buf);
-    }
 
-    if (f->rcv_buf) release((void *)f->rcv_buf);
-
+    tcp_clear_flow_buffers(f);
     memset(f, 0, sizeof(*f));
-
-    f->state = TCP_STATE_CLOSED;
-
-    f->rto = TCP_INIT_RTO;
-
-    f->rcv_wnd_max = TCP_DEFAULT_RCV_BUF;
-    f->rcv_wnd = f->rcv_wnd_max;
-
-    f->mss = TCP_DEFAULT_MSS;
-    f->cwnd = f->mss;
-    f->ssthresh = TCP_RECV_WINDOW;
-
     release(f);
     tcp_flows[idx] = NULL;
+}
+
+bool tcp_flow_is_closed(tcp_data *flow_ctx) {
+    if (!flow_ctx) return true;
+
+    for (int i = 0; i < MAX_TCP_FLOWS; i++) {
+        tcp_flow_t *f = tcp_flows[i];
+        if (!f) continue;
+        if (&f->ctx != flow_ctx) continue;
+        return f->state == TCP_STATE_CLOSED || f->state == TCP_TIME_WAIT;
+    }
+
+    return true;
+}
+
+tcp_result_t tcp_flow_release_closed(tcp_data *flow_ctx) {
+    if (!flow_ctx) return TCP_INVALID;
+
+    for (int i = 0; i < MAX_TCP_FLOWS; i++) {
+        tcp_flow_t *f = tcp_flows[i];
+        if (!f) continue;
+        if (&f->ctx != flow_ctx) continue;
+
+        if (f->state != TCP_STATE_CLOSED && f->state != TCP_TIME_WAIT) return TCP_BUSY;
+        tcp_free_flow(i);
+        return TCP_OK;
+    }
+
+    return TCP_INVALID;
 }
 
 bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp, uint8_t ttl, uint8_t dontfrag){
@@ -438,7 +496,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->snd_nxt = iss;
     flow->snd_wnd = 0;
 
-    flow->cwnd = flow->mss;
+    flow->cwnd = flow->mss * TCP_INIT_CWND_SEGS;
     flow->ssthresh = TCP_RECV_WINDOW;
     flow->dup_acks = 0;
     flow->in_fast_recovery = 0;
@@ -477,10 +535,10 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
     uint64_t waited = 0;
     const uint64_t interval = 50;
-    const uint64_t max_wait = (uint64_t)TCP_MAX_RTO * (uint64_t)(TCP_SYN_RETRIES + 1);
+    const uint64_t max_wait = TCP_CONNECT_TIMEOUT_MS;
 
     while (waited < max_wait){
-        if (flow->state == TCP_ESTABLISHED){
+        if (flow->state == TCP_ESTABLISHED || flow->state == TCP_CLOSE_WAIT){
             tcp_data *ctx = tcp_get_ctx(local_port, dst->ver, flow->local.ip, dst->ip, dst->port);
             if (!ctx) return false;
 

@@ -4,6 +4,7 @@
 #include "http.h"
 #include "std/std.h"
 #include "net/socket_types.h"
+#include "syscalls/syscalls.h"
 
 
 class HTTPServer {
@@ -83,10 +84,17 @@ public:
         string buf = string_repeat('\0', 0);
         char tmp[2048];
         int hdr_end = -1;
+        uint32_t start_ms = (uint32_t)get_time();
+        uint32_t last_rx_ms = start_ms;
 
         while (hdr_end < 0) {
             int64_t r = client->recv(tmp, sizeof(tmp));
             if (r == TCP_WOULDBLOCK) {
+                uint32_t now = (uint32_t)get_time();
+                if ((uint32_t)(now - last_rx_ms) > 1000 || (uint32_t)(now - start_ms) > 15000) {
+                    string_free(buf);
+                    return req;
+                }
                 msleep(10);
                 continue;
             }
@@ -95,6 +103,11 @@ public:
                 return req;
             }
             string_append_bytes(&buf, tmp, (uint32_t)r);
+            last_rx_ms = (uint32_t)get_time();
+            if (buf.length > 16384) {
+                string_free(buf);
+                return req;
+            }
             hdr_end = find_crlfcrlf(buf.data, buf.length);
         }
 
@@ -109,6 +122,7 @@ public:
         while (p + 1u < line_end && buf.data[p] == '\r' && buf.data[p + 1u] == '\n')
             p += 2;
 
+        bool bad_request = false;
         uint32_t i = p;
         while (i < line_end && buf.data[i] != ' ') ++i;
 
@@ -119,13 +133,24 @@ public:
         else if (mlen == 4 && memcmp(method_tok, "POST", 4) == 0) req.method = HTTP_METHOD_POST;
         else if (mlen == 3 && memcmp(method_tok, "PUT", 3) == 0) req.method = HTTP_METHOD_PUT;
         else if (mlen == 6 && memcmp(method_tok, "DELETE", 6) == 0) req.method = HTTP_METHOD_DELETE;
-        else req.method = HTTP_METHOD_GET;
+        else bad_request = true;
 
+        if (i >= line_end) bad_request = true;
         uint32_t j = (i < line_end) ? (i + 1u) : line_end;
+        while (j < line_end && buf.data[j] == ' ') ++j;
         uint32_t path_start = j;
         while (j < line_end && buf.data[j] != ' ') ++j;
+        uint32_t path_len = j > path_start ? (j - path_start) : 0;
+        if (!path_len || j >= line_end) bad_request = true;
+
+        uint32_t version_start = j;
+        while (version_start < line_end && buf.data[version_start ] == ' ') ++version_start;
+        uint32_t version_len = line_end > version_start ? (line_end - version_start) : 0;
+        if (version_len != 8) bad_request = true;
+        else if (memcmp(buf.data + version_start, "HTTP/1.0", 8) != 0 && memcmp(buf.data + version_start, "HTTP/1.1", 8) != 0) bad_request = true;
+
         req.path = string_repeat('\0', 0);
-        string_append_bytes(&req.path, buf.data + path_start, j - path_start);
+        if (path_len) string_append_bytes(&req.path, buf.data + path_start, path_len);
 
         if (req.path.length >= 7 && memcmp(req.path.data, "http://", 7) == 0) {
             uint32_t k = 7;
@@ -159,7 +184,7 @@ public:
         uint32_t body_start = hdr_end + 4;
         uint32_t have = buf.length > body_start ? buf.length - body_start : 0;
         uint32_t need = req.headers_common.has_length ? req.headers_common.length : 0;
-        bool bad_request = req.headers_common.bad_length != 0;
+        if (req.headers_common.bad_length) bad_request = true;
         char* body_copy = nullptr;
 
         if (!bad_request && need > 0) {
@@ -169,9 +194,16 @@ public:
                 uint32_t copied = have < need ? have : need;
                 if (copied) memcpy(body_copy, buf.data + body_start, copied);
 
+                uint32_t body_start_ms = (uint32_t)get_time();
+                uint32_t body_last_rx_ms = body_start_ms;
                 while (copied < need) {
                     int64_t r = client->recv(body_copy + copied, need - copied);
                     if (r == TCP_WOULDBLOCK) {
+                        uint32_t now = (uint32_t)get_time();
+                        if ((now - body_last_rx_ms) > 3000 || (now - body_start_ms) > 20000) {
+                            bad_request = true;
+                            break;
+                        }
                         msleep(5);
                         continue;
                     }
@@ -180,6 +212,7 @@ public:
                         break;
                     }
                     copied += (uint32_t)r;
+                    body_last_rx_ms = (uint32_t)get_time();
                 }
             }
         }

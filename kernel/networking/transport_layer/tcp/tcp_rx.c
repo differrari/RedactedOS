@@ -69,6 +69,7 @@ int64_t tcp_flow_read(tcp_data *flow_ctx, void *buf, uint64_t len) {
 
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return TCP_DISCONNECT;
+    if (flow->state == TCP_STATE_CLOSED) return TCP_DISCONNECT;
 
     if (!flow->rcv_buf || !flow->rcv_wnd_max) return 0;
     if (flow->rcv_data_nxt < flow->rcv_base) return 0;
@@ -93,7 +94,7 @@ int64_t tcp_flow_read(tcp_data *flow_ctx, void *buf, uint64_t len) {
 
 uint32_t tcp_flow_readable(tcp_data *flow_ctx) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
-    if (!flow || !flow->rcv_buf || !flow->rcv_wnd_max) return 0;
+    if (!flow || flow->state == TCP_STATE_CLOSED || !flow->rcv_buf || !flow->rcv_wnd_max) return 0;
     if (flow->rcv_data_nxt < flow->rcv_base) return 0;
     return flow->rcv_data_nxt - flow->rcv_base;
 }
@@ -508,7 +509,8 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->keepalive_ms = lf->keepalive_ms;
             flow->keepalive_idle_ms = 0;
 
-            flow->cwnd = flow->mss;
+            flow->cwnd = flow->mss * TCP_INIT_CWND_SEGS;
+            if (flow->cwnd < flow->mss) flow->cwnd = flow->mss;
             flow->ssthresh = TCP_RECV_WINDOW;
             flow->dup_acks = 0;
             flow->in_fast_recovery = 0;
@@ -654,6 +656,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
         }
     }
 
+    if (flow->nagle_len) tcp_flush_nagle(flow, 0);
     if (flow->fin_tx_pending) tcp_try_send_pending_fin(flow);
 
     uint32_t seg_seq = seq;
@@ -789,7 +792,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     }
 
     if (flags & (1u << RST_F)) {
-        tcp_free_flow(idx);
+        tcp_abort_flow(idx);
         netpkt_unref(pkt);
         return;
     }
