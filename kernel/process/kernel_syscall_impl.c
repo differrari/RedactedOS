@@ -14,6 +14,7 @@
 #include "sysregs.h"
 #include "memory/mmu.h"
 #include "memory/addr.h"
+#include "process/signals/signals.h"
 extern page_index *p_index;
 
 void* malloc(size_t size){
@@ -167,4 +168,12 @@ size_t dir_list(const char *path, void *buf, size_t size, u64 *offset){
 
 bool stat(const char *path, fs_stat *out_stat){
     return get_stat(path, out_stat);
+}
+
+extern bool send_signal(signal_types type, i64 value, u16 proc_id){
+    return send_signal_proc_id(type, value, get_current_proc(), proc_id);
+}
+
+extern bool handle_signal(signal_types type, signal_handler handler){
+    return register_signal_handler(get_current_proc(), type, handler);
 }

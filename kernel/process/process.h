@@ -10,6 +10,7 @@ extern "C" {
 #include "files/system_module.h"
 #include "memory/mm_process.h"
 #include "graphic_types.h"
+#include "signals/signals.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
@@ -41,6 +42,14 @@ typedef struct {
 
 #define MAX_PROC_NAME_LENGTH 256
 
+#define SIGNAL_BUFFER_CAPACITY 64
+
+typedef struct {
+    volatile u32 write_index;
+    volatile u32 read_index;
+    signal_info_t entries[SIGNAL_BUFFER_CAPACITY];
+} signal_buffer_t;
+
 typedef struct process {
     //We use the addresses of these variables to save and restore process state
     uint64_t regs[31]; // x0–x30
@@ -51,6 +60,7 @@ typedef struct process {
     uint16_t id;
     bool in_ready_queue;
     bool sleeping;
+    bool suspended;
     uint64_t wake_at_msec;
     uintptr_t stack;
     paddr_t stack_phys;
@@ -75,6 +85,8 @@ typedef struct process {
     __attribute__((aligned(16))) event_buffer_t event_buffer;
     __attribute__((aligned(16))) packet_buffer_t packet_buffer;
     __attribute__((aligned(16))) scroll_buffer_t scroll_buffer;
+    __attribute__((aligned(16))) signal_buffer_t signal_buffer;
+    __attribute__((aligned(16))) signal_handler signal_handlers[NUMBER_SIGNALS];
     uint8_t priority;
     uint16_t win_id;
     uaddr_t win_fb_va;

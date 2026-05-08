@@ -199,7 +199,10 @@ bool Terminal::exec_cmd(const char *cmd){
     file out_fd, state_fd;
     openf(s1.data, &out_fd);
     string_free(s1);
-    openf(s2.data, &state_fd);
+    if (openf(s2.data, &state_fd) != FS_RESULT_SUCCESS){
+        print("Failed to open process state");
+        return true;
+    }
     string_free(s2);
 
     int state = 1;
@@ -216,9 +219,8 @@ bool Terminal::exec_cmd(const char *cmd){
         if (read_event(&event)){
             if (!handle_modifier(&event)){
                 char cmd = hid_to_char(event.key, current_modifier);
-                if (interpret_cmd_code(cmd)) print("Terminal handled command");
+                if (event.type == KEY_PRESS) interpret_cmd_code(cmd, proc);
             }
-            //TODO: should we forward input to the process
         }
         size_t n = readf(&out_fd, buf, amount);
         buf[n] = 0;
@@ -291,15 +293,17 @@ void Terminal::run_command(){
     command_running = true;
 }
 
-bool Terminal::interpret_cmd_code(char code){
-    print("Got code %x",code);
+bool Terminal::interpret_cmd_code(char code, u16 proc){
     if (code == ASCII_CMD_ETX){
-        //Close program
+        send_signal(SIG_QUIT, proc);
         return true;
     }
     if (code == ASCII_CMD_SUB){
-        //Background program
+        send_signal(SIG_STOP, proc);
         return true;
+    }
+    if (code == ASCII_CMD_CAN){
+        send_signal(SIG_CONT, proc);
     }
     return false;
 }
@@ -314,7 +318,7 @@ bool Terminal::handle_input(){
     char readable = hid_to_char((uint8_t)key, current_modifier);
 
     if (command_running){
-        return interpret_cmd_code(readable);
+        return interpret_cmd_code(readable, 0);
     }
 
     if (key == KEY_ENTER || key == KEY_KPENTER){

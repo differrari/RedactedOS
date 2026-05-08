@@ -29,7 +29,7 @@ protected:
 
     shell_handle* create_shell();
 
-    bool interpret_cmd_code(char code);
+    bool interpret_cmd_code(char code, u16 proc);
 
     bool command_running;
 

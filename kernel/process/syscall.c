@@ -420,6 +420,23 @@ u64 syscall_trunc(process_t* ctx){
     return truncate(descriptor, size);
 }
 
+u64 syscall_signal_send(process_t* ctx){
+    signal_types type = ctx->PROC_X0;
+    u16 proc_id = ctx->PROC_X1;
+    return send_signal_proc_id(type, 0, ctx, proc_id);
+}
+
+u64 syscall_signal_handler(process_t* ctx){
+    kprint("[SYSCALL implementation error] syscall handlers are not supported in userspace yet");
+    //TODO: for this and FS modules, we'll need to set up an isolated environment (thread-like) for them to run in
+    return 0;
+    signal_types type = ctx->PROC_X0;
+    uptr handler = ctx->PROC_X1;
+    if (!handler) return 0;
+    if (!validate_address(ctx, handler, sizeof(uptr), false)) return 0;
+    return register_signal_handler(ctx, type, (signal_handler)handler);
+}
+
 // uint64_t syscall_load_fsmod(process_t *ctx){
 //     system_module *mod = (system_module*)ctx->PROC_X0;
 //     return load_process_module(ctx,mod);
@@ -483,6 +500,10 @@ syscall_entry syscalls[] = {
     [FILE_TRNC_CODE] = syscall_trunc,
     // [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
     // [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
+
+    [SIGNAL_SEND_CODE] = syscall_signal_send,
+    [SIGNAL_HANDLER_CODE] = syscall_signal_handler,
+    
     [IN_CASE_OF_JS_CODE] = syscall_in_case_of_js,
 };
 

@@ -183,14 +183,6 @@ void activate_current(){
             print("[LAUNCHER error] failed to launch process");
             return;
         }
-        string p = string_format("/proc/%i/state",pid);
-        if (openf(p.data, &active_proc) != FS_RESULT_SUCCESS){
-            string_free(p);
-            print("[LAUNCHER error] failed to get process state");
-            return;
-        }
-        string_free(p);
-        process_active = true;
         halt(0);//TODO: remove any references to resuming after the process is closed
     }
     

@@ -157,7 +157,6 @@ void write_large_file(){
 
 void copypaste(){
     
-    
     char *copythis = "hello";
     clipboard_copy(copythis, strlen(copythis), DATA_SIG_TEXT);
     
@@ -173,9 +172,22 @@ void copypaste(){
     
 }
 
+bool should_quit = false;
+
+bool on_quit(signal_info_t *do_not_use_this){
+    print("I'm told to quit");
+    should_quit = true;
+    return true;
+}
+
 int main(int argc, char* argv[]){
+
+    handle_signal(SIG_QUIT, on_quit);
     
-    copypaste();
+    while (!should_quit){
+        print("Wait");
+        msleep(10);
+    }
     
     return 0;
 }

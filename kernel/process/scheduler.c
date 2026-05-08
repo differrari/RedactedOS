@@ -69,7 +69,7 @@ static bool process_has_runtime_state(process_t *proc){
 static bool process_can_run(process_t *proc){
     if (!proc) return false;
     if (!process_is_known(proc) || proc->pending_reset) return false;
-    if (proc->state == STOPPED || proc->sleeping || !proc->pc || !proc->sp) return false;
+    if (proc->state == STOPPED || proc->sleeping || proc->suspended || !proc->pc || !proc->sp) return false;
     if ((proc->spsr & 0xF) == 0) return !!proc->mm.ttbr0;
     return !proc->mm.ttbr0;
 }
@@ -181,7 +181,17 @@ void process_restore(){
         if (current_proc->pc >= HIGH_VA) panic("user pc in kernel VA", current_proc->pc);
         mmu_ttbr0_enable_user();
     } else mmu_ttbr0_disable_user();
-    restore_context(cpec);
+    if (current_proc->signal_buffer.read_index != current_proc->signal_buffer.write_index){
+        signal_info_t *info = &current_proc->signal_buffer.entries[current_proc->signal_buffer.read_index];//TODO: Wrong, this should be copied into userland mem
+        current_proc->signal_buffer.read_index = (current_proc->signal_buffer.read_index + 1) % INPUT_BUFFER_CAPACITY;
+        if (can_signal_be_handled(info->type)){
+            signal_handler handler = current_proc->signal_handlers[info->type];
+            if (handler) handler(info);
+            else handle_signal_default(current_proc, info);
+        } else handle_signal_default(current_proc, info);
+        switch_proc(RECV_SIGNAL);//TODO: wasteful, we might have a lot of CPU time left for this proc to use
+    } else 
+        restore_context(cpec);
 }
 
 bool start_scheduler(){
@@ -570,6 +580,9 @@ void stop_process(uint16_t pid, int32_t exit_code){
     bool current = proc == current_proc;
     proc->state = STOPPED;
     proc->exit_code = exit_code;
+
+    kprintf("[SCHEDULER] Stop process %i with code %i",proc->id,proc->exit_code);
+    
     proc->in_ready_queue = false;
     proc->sleeping = false;
     proc->wake_at_msec = 0;
@@ -590,6 +603,15 @@ void stop_process(uint16_t pid, int32_t exit_code){
 
 void stop_current_process(int32_t exit_code){
     stop_process(get_current_proc_pid(), exit_code);
+}
+
+void block_process(process_t *proc){
+    proc->suspended = true;
+}
+
+void resume_blocked_process(process_t *proc){
+    proc->suspended = false;
+    enqueue_ready_process(proc);
 }
 
 uint16_t process_count(){
