@@ -108,11 +108,7 @@ void draw_desktop(){
     if (process_active){
         active_proc.id = 0;
         load_entries();
-        memset(&ctx, 0, sizeof(draw_ctx));
-        request_draw_ctx(&ctx);
-        if (ctx.width < 512 || ctx.height < 256){
-            resize_draw_ctx(&ctx, max(512,ctx.width), max(256, ctx.height));
-        }
+
         gpu_size screen_size = {ctx.width, ctx.height};
         tile_size = (gpu_size){ screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20 };
         rendered_full = false;
@@ -195,6 +191,7 @@ void activate_current(){
         }
         string_free(p);
         process_active = true;
+        halt(0);//TODO: remove any references to resuming after the process is closed
     }
     
 }

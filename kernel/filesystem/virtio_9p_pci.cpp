@@ -17,7 +17,7 @@
 bool Virtio9PDriver::init(uint32_t partition_sector){
     uint64_t addr = find_pci_device(VIRTIO_VENDOR, VIRTIO_9P_ID);
     if (!addr){ 
-        kprintf("[VIRTIO_9P] device not found");
+        kprintf("[VIRTIO_9P error] device not found");
         return false;
     }
 
@@ -28,7 +28,7 @@ bool Virtio9PDriver::init(uint32_t partition_sector){
     virtio_get_capabilities(&np_dev, addr, &disk_device_address, &disk_device_size);
     pci_register(disk_device_address, disk_device_size);
     if (!virtio_init_device(&np_dev)) {
-        kprintf("[VIRTIO_9P] Failed 9P initialization");
+        kprintf("[VIRTIO_9P error] Failed 9P initialization");
         return false;
     }
 

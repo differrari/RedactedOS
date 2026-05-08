@@ -212,6 +212,14 @@ bool Terminal::exec_cmd(const char *cmd){
     }
 
     do {
+        kbd_event event;
+        if (read_event(&event)){
+            if (!handle_modifier(&event)){
+                char cmd = hid_to_char(event.key, current_modifier);
+                if (interpret_cmd_code(cmd)) print("Terminal handled command");
+            }
+            //TODO: should we forward input to the process
+        }
         size_t n = readf(&out_fd, buf, amount);
         buf[n] = 0;
         if (n) put_string(buf);
@@ -283,14 +291,31 @@ void Terminal::run_command(){
     command_running = true;
 }
 
+bool Terminal::interpret_cmd_code(char code){
+    print("Got code %x",code);
+    if (code == ASCII_CMD_ETX){
+        //Close program
+        return true;
+    }
+    if (code == ASCII_CMD_SUB){
+        //Background program
+        return true;
+    }
+    return false;
+}
+
 bool Terminal::handle_input(){
     kbd_event event;
     if (!read_event(&event)) return false;
     if (event.type == KEY_RELEASE) return true;
-    if (event.type != KEY_PRESS) return false;
+    if (event.type != KEY_PRESS) return handle_modifier(&event);
 
     char key = event.key;
-    char readable = hid_to_char((uint8_t)key,0);
+    char readable = hid_to_char((uint8_t)key, current_modifier);
+
+    if (command_running){
+        return interpret_cmd_code(readable);
+    }
 
     if (key == KEY_ENTER || key == KEY_KPENTER){
         run_command();

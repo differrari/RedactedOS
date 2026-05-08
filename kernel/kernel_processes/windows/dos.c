@@ -80,7 +80,7 @@ static inline void redraw_win(void *node){
     window_frame* frame = (window_frame*)node;
     draw_window(frame);
     frame->win_ctx.full_redraw = true; 
-    commit_frame(&frame->win_ctx, frame);
+    commit_frame(&frame->win_ctx, frame, true);
 }
 
 bool use_desktop_img = false;

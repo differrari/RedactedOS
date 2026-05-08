@@ -86,7 +86,7 @@ extern void request_draw_ctx(draw_ctx* d_ctx){
 }
 
 extern void commit_draw_ctx(draw_ctx* d_ctx){
-    commit_frame(d_ctx, 0);
+    commit_frame(d_ctx, 0, false);
 }
 
 extern void resize_draw_ctx(draw_ctx* d_ctx, uint32_t width, uint32_t height){

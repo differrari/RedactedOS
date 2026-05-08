@@ -2,6 +2,7 @@
 
 #include "utils/console.hpp"
 #include "shell/shell.h"
+#include "kbd_helper.h"
 
 class Terminal: public Console {
 public:
@@ -27,6 +28,8 @@ protected:
     bool screen_ready() override;
 
     shell_handle* create_shell();
+
+    bool interpret_cmd_code(char code);
 
     bool command_running;
 

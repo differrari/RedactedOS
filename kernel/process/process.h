@@ -9,6 +9,7 @@ extern "C" {
 #include "net/network_types.h"
 #include "files/system_module.h"
 #include "memory/mm_process.h"
+#include "graphic_types.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
@@ -68,6 +69,7 @@ typedef struct process {
     size_t code_size;
     uaddr_t va;
     page_index *alloc_map;
+    draw_ctx graphics_ctx;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     __attribute__((aligned(16))) input_buffer_t input_buffer;
     __attribute__((aligned(16))) event_buffer_t event_buffer;

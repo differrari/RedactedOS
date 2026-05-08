@@ -145,29 +145,27 @@ bool create_window(i32 x, i32 y, u32 width, u32 height){
     return true;
 }
 
-void resize_window(uint32_t width, uint32_t height){
-    process_t *p = get_current_proc();
-    linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
+void resize_window_proc(process_t *proc, u32 width, u32 height){
+    linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&proc->win_id), PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
-        process_t *proc = get_all_processes();
-        while (proc) {
-            if (proc->win_id == frame->win_id && proc->mm.ttbr0 && proc->win_fb_va && proc->win_fb_size){
-                mm_remove_vma(&proc->mm, proc->win_fb_va, proc->win_fb_va + proc->win_fb_size);
-                for (uintptr_t va = proc->win_fb_va; va < proc->win_fb_va + proc->win_fb_size; va += PAGE_SIZE) mmu_unmap_and_get_pa((uint64_t*)proc->mm.ttbr0, va, 0);
-                mmu_flush_asid(proc->mm.asid);
-                proc->win_fb_va = 0;
-                proc->win_fb_phys = 0;
-                proc->win_fb_size = 0;
-            }
-            proc = proc->process_next;
-        }
+        mm_remove_vma(&proc->mm, proc->win_fb_va, proc->win_fb_va + proc->win_fb_size);
+        for (uintptr_t va = proc->win_fb_va; va < proc->win_fb_va + proc->win_fb_size; va += PAGE_SIZE) mmu_unmap_and_get_pa((uint64_t*)proc->mm.ttbr0, va, 0);
+        mmu_flush_asid(proc->mm.asid);
+        proc->win_fb_va = 0;
+        proc->win_fb_phys = 0;
+        proc->win_fb_size = 0;
         gpu_resize_window(width, height, &frame->win_ctx);
         frame->width = width;
         frame->height = height;
         check_collisions(frame);
         dirty_windows = true;
     }
+}
+
+void resize_window(uint32_t width, uint32_t height){
+    process_t *proc = get_current_proc();
+    resize_window_proc(proc, width, height);
 }
 
 void get_window_ctx(draw_ctx* out_ctx){
@@ -179,12 +177,27 @@ void get_window_ctx(draw_ctx* out_ctx){
     if (out_ctx->width && out_ctx->height)
         resize_window(out_ctx->width, out_ctx->height);
 
-    frame->pid = p->id;
+    if (frame->pid != p->id){
+        if (sys_get_focused_pid() == frame->pid)
+            sys_set_focus(p->id);
+        frame->pid = p->id;
+        if (p->graphics_ctx.fb){
+            if (p->graphics_ctx.width != frame->width || p->graphics_ctx.width != frame->height){
+                pfree(p->graphics_ctx.fb,p->graphics_ctx.width*p->graphics_ctx.height*sizeof(u32));
+                p->graphics_ctx = (draw_ctx){};
+            }
+        }
+        if (!p->graphics_ctx.fb){
+            p->graphics_ctx = frame->win_ctx;
+            p->graphics_ctx.fb = (uint32_t*)palloc(frame->width * frame->height * 4, MEM_PRIV_SHARED, MEM_RW, true);
+        }
+        frame->win_ctx = p->graphics_ctx;
+    }
     *out_ctx = frame->win_ctx;
 
     if (!p || !p->mm.ttbr0) return;
 
-    size_t fb_size = (size_t)frame->win_ctx.width * (size_t)frame->win_ctx.height *sizeof(uint32_t);
+    size_t fb_size = (size_t)frame->win_ctx.width * (size_t)frame->win_ctx.height * sizeof(u32);
     if (!fb_size) return;
 
     paddr_t pa = pt_va_to_pa(frame->win_ctx.fb);
@@ -214,13 +227,15 @@ void get_window_ctx(draw_ctx* out_ctx){
     out_ctx->fb = (uint32_t*)p->win_fb_va;
 }
 
-void commit_frame(draw_ctx* frame_ctx, window_frame* frame){
+void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus){
+    process_t *p = get_current_proc();
     if (!frame){
-        process_t *p = get_current_proc();
         linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
         if (!node || !node->data) return;
         frame = (window_frame*)node->data;
     }
+    if (frame->pid != p->id && !overwrite_focus)
+        return;
 
     draw_ctx win_ctx = frame->win_ctx;
     draw_ctx *screen_ctx = gpu_get_ctx();
@@ -287,11 +302,24 @@ u16 window_fallback_focus(u16 win_id, u16 skip_id){
     linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&win_id), PHYS_TO_VIRT_P(find_window));
     if (!node || !node->data) return 0;
 
+    window_frame *frame = node->data;
+    if (frame->pid != skip_id)
+        return frame->pid;
+
     process_t *proc = get_all_processes();
     while (proc) {
         if (proc->state != STOPPED && proc->win_id == win_id && proc->id != skip_id){
-            window_frame *frame = node->data;
             frame->pid = proc->id;
+            if (proc->graphics_ctx.fb){
+                frame->win_ctx.fb = proc->graphics_ctx.fb;
+                if (proc->graphics_ctx.width != frame->width || proc->graphics_ctx.height != frame->height){
+                    frame->width = proc->graphics_ctx.width;
+                    frame->height = proc->graphics_ctx.height;
+                    check_collisions(frame);
+                    dirty_windows = true;
+                    frame->win_ctx = proc->graphics_ctx;
+                }
+            }
             sys_set_focus(proc->id);
             return proc->id;
         }
