@@ -39,8 +39,10 @@ bool init_filesystem(){
     open_files->free = kfree;
     const char *path = "disk";
     system_module *disk_mod = get_module(&path);
-    if (!disk_mod) return false;
-    return load_boot_partition() && load_home();
+    if (disk_mod){
+        if (!load_boot_partition()) return false;
+    }
+    return load_home();
 }
 
 FS_RESULT open_file_global(const char* path, file* descriptor, system_module **mod){

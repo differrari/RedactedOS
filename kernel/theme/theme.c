@@ -118,7 +118,7 @@ void parse_theme_kvp(string_slice key, string_slice value, void *context){
 size_t reload(file*, const char *, size_t, file_offset);
 
 bool load_theme(){
-    char *theme_name = read_full_file("/shared/theme", 0);
+    char *theme_name = read_full_file("/home/theme", 0);
     
     if (!theme_name) theme_name = "theme.config";
     

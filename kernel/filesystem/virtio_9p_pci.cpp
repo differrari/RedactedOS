@@ -607,25 +607,6 @@ system_module p9_fs_module = (system_module){
     .readdir = shared_readdir,
 };
 
-bool alias_p9_init(){
-    return true;
-}
-
-system_module p9_fs_module_alias = (system_module){
-    .name = "9PFS",
-    .mount = "shared",
-    .version = VERSION_NUM(0, 1, 0, 0),
-    .init = alias_p9_init,
-    .fini = shared_fini,
-    .open = shared_open,
-    .read = shared_read,
-    .write = shared_write,
-    .close = shared_close,
-    .truncate = shared_truncate,
-    .getstat = shared_stat,
-    .readdir = shared_readdir,
-};
-
 extern "C" bool load_home(){
-    return load_module(&p9_fs_module) && load_module(&p9_fs_module_alias);
+    return load_module(&p9_fs_module);
 }
