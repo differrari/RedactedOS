@@ -21,7 +21,7 @@ typedef struct {
     system_module* mod;
 } open_file_descriptors;
 
-chashmap_t *open_files;
+hash_map_t *open_files;
 
 void* page;
 
@@ -45,11 +45,11 @@ bool init_filesystem(){
     return load_home();
 }
 
-FS_RESULT open_file_global(const char* path, file* descriptor, system_module **mod){
+FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor, system_module **mod){
     const char *search_path = path;
     if (*search_path == '/') search_path++;
     if (!*search_path) return FS_RESULT_NOTFOUND;
-    system_module *module = get_module(&search_path);
+    system_module *module = get_module_from(root, &search_path);
     if (!module) return FS_RESULT_NOTFOUND;
     if (!module->open) return FS_RESULT_NOTFOUND;
     FS_RESULT result = module->open(search_path, descriptor);
@@ -60,9 +60,9 @@ FS_RESULT open_file_global(const char* path, file* descriptor, system_module **m
     return FS_RESULT_SUCCESS;
 }
 
-FS_RESULT open_file(const char* path, file* descriptor){
+FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
     system_module *mod = 0;
-    FS_RESULT result = open_file_global(path, descriptor, &mod);
+    FS_RESULT result = open_file_global(root, path, descriptor, &mod);
     if (result != FS_RESULT_SUCCESS) return result;
     open_file_descriptors *of = (open_file_descriptors*)kalloc(page, sizeof(open_file_descriptors), ALIGN_16B, MEM_PRIV_KERNEL);
     if (!of) {
@@ -173,30 +173,30 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     return amount_written;
 }
 
-size_t simple_read(const char *path, void *buf, size_t size){
+size_t simple_read(module_root *root, const char *path, void *buf, size_t size){
     file fd = {};
-    open_file(path, &fd);
+    open_file(root, path, &fd);
     size_t res = read_file(&fd, (char*)buf, size);
     close_file(&fd);
     return res;
 }
 
-size_t simple_write(const char *path, const void *buf, size_t size){
+size_t simple_write(module_root *root, const char *path, const void *buf, size_t size){
     file fd = {};
-    open_file(path, &fd);
+    open_file(root, path, &fd);
     size_t res = write_file(&fd, (char*)buf, size);
     close_file(&fd);
     return res;
 }
 
-size_t list_directory_contents(const char *path, void* buf, size_t size, uint64_t *offset){
+size_t list_directory_contents(module_root *root, const char *path, void* buf, size_t size, uint64_t *offset){
     const char *search_path = path;
     if (!search_path) return 0;
     if (*search_path == '/') search_path++;
     if (!*search_path){
         return list_root(buf, size, offset);
     }
-    system_module *mod = get_module(&search_path);
+    system_module *mod = get_module_from(root, &search_path);
     if (!mod){
         kprintf("No module for path %s",search_path);
         return 0;
@@ -205,14 +205,14 @@ size_t list_directory_contents(const char *path, void* buf, size_t size, uint64_
     return mod->readdir(search_path, buf, size, offset);
 }
 
-bool get_stat(const char *path, fs_stat *out_stat){
+bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
     if (!out_stat) return false;
     const char *search_path = path;
     if (*search_path == '/') search_path++;
     if (!*search_path){
         return stat_dir(out_stat);
     }
-    system_module *mod = get_module(&search_path);
+    system_module *mod = get_module_from(root, &search_path);
     if (!mod){
         kprintf("No module for path %s",search_path);
         return false;

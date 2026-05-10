@@ -12,7 +12,7 @@
 
 VirtioAudioDriver *audio_driver;
 
-bool init_audio(){
+bool init_audio(system_module *mod){
     audio_driver = new VirtioAudioDriver();
     if (!audio_driver) return false;
     if (!audio_driver->init()) {
@@ -313,4 +313,5 @@ system_module audio_module = (system_module){
     .truncate = 0,
     .getstat = 0,//TODO: stat
     .readdir = 0,
+    .alias_info = {}
 };

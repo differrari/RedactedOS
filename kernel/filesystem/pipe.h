@@ -3,6 +3,7 @@
 #include "types.h"
 #include "files/fs.h"
 #include "files/system_module.h"
+#include "filesystem/modules/module_loader.h"
 
 typedef struct {
     file write_fd;
@@ -19,7 +20,7 @@ typedef enum {
 #ifdef __cplusplus
 extern "C" {
 #endif
-FS_RESULT create_pipe(const char *source, const char* destination, PIPE_OPTIONS options, file *out_fd);
+FS_RESULT create_pipe(module_root *root, const char *source, const char* destination, PIPE_OPTIONS options, file *out_fd);
 FS_RESULT close_pipe(file *fd);
 
 void update_pipes(uint64_t mfid, const char *buf, size_t size);

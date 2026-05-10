@@ -30,6 +30,8 @@
 #include "utils/utils.h"
 #include "tools/tools.h"
 
+extern void trace();
+
 extern char __bss_start[];
 extern char __bss_end[];
 void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
@@ -95,6 +97,8 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     init_filesystem();
 
     debug_load();
+
+    trace();
     
     load_module(&theme_mod);
 

@@ -11,7 +11,7 @@ static bool _gpu_ready;
 
 GPUDriver *gpu_driver;
 
-bool gpu_init(){
+bool gpu_init(system_module *mod){
     kprint("[GRAPH] Initializing Virt GPU");
     gpu_size preferred_screen_size = {1920,1080};
     if (VirtioGPUDriver *vgd = VirtioGPUDriver::try_init(preferred_screen_size)){
@@ -129,5 +129,6 @@ system_module graphics_module = {
     .close = 0,
     .truncate = 0,
     .getstat = 0,
-    .readdir = 0
+    .readdir = 0,
+    .alias_info = {}
 };

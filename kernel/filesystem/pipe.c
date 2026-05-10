@@ -6,16 +6,16 @@
 #include "process/scheduler.h"
 
 static void *pipe_page;
-chashmap_t *pipe_map;
+hash_map_t *pipe_map;
 
 //TODO: options
-FS_RESULT create_pipe(const char *source, const char* destination, PIPE_OPTIONS options, file *out_fd){
+FS_RESULT create_pipe(module_root *root, const char *source, const char* destination, PIPE_OPTIONS options, file *out_fd){
     if (!pipe_page) pipe_page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
     pipe_t *pipe = (pipe_t*)kalloc(pipe_page, sizeof(pipe_t), ALIGN_16B, MEM_PRIV_KERNEL);
     pipe->pid = get_current_proc_pid();
-    FS_RESULT result = open_file_global(source, &pipe->write_fd, &pipe->write_mod);
+    FS_RESULT result = open_file_global(root, source, &pipe->write_fd, &pipe->write_mod);
     if (result == FS_RESULT_SUCCESS){
-        result = open_file(destination, &pipe->read_fd);
+        result = open_file(root, destination, &pipe->read_fd);
         if (result == FS_RESULT_SUCCESS){
             if (!pipe_map) pipe_map = chashmap_create(64);
             linked_list_t *list = chashmap_get(pipe_map, &pipe->write_fd.id, sizeof(uint64_t));

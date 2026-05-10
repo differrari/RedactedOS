@@ -182,12 +182,7 @@ bool on_quit(signal_info_t *do_not_use_this){
 
 int main(int argc, char* argv[]){
 
-    handle_signal(SIG_QUIT, on_quit);
-    
-    while (!should_quit){
-        print("Wait");
-        msleep(10);
-    }
+    img_example();
     
     return 0;
 }

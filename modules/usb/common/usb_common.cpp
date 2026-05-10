@@ -10,7 +10,7 @@ alignas(DWC2Driver) static uint8_t dwc2_driver_storage[sizeof(DWC2Driver)];
 alignas(XHCIDriver) static uint8_t xhci_driver_storage[sizeof(XHCIDriver)];
 
 
-bool input_init(){
+bool input_init(system_module *mod){
     #if QEMU
     if (BOARD_TYPE == 2){
     #else
@@ -85,4 +85,5 @@ system_module usb_module = (system_module){
     .truncate = 0,
     .getstat = 0,//TODO: stat
     .readdir = 0,
+    .alias_info = {}
 };

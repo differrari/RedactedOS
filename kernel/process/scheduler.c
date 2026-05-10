@@ -35,7 +35,7 @@ uint16_t next_proc_index = 1;
 CQueue ready_queue = {};
 linked_list_t sleeping_list = {};
 
-chashmap_t *proc_opened_files;
+hash_map_t *proc_opened_files;
 
 void* proc_page;
 

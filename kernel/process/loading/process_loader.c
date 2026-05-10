@@ -11,6 +11,7 @@
 #include "memory/addr.h"
 #include "string/string.h"
 #include "syscalls/syscall_codes.h"
+#include "filesystem/modules/module_loader.h"
 
 typedef struct {
     uint64_t code_base_start;
@@ -278,6 +279,27 @@ size_t map_section(process_t *proc, kaddr_t base, uaddr_t off, program_load_data
     return data.virt_mem.size;
 }
 
+char *bundle_redirect = 0;
+
+bool resources_init(system_module *module){
+    module->alias_info.alias_path = string_format("%s/resources",bundle_redirect);
+    return true;
+}
+
+system_module bundle_module = {
+    .name = "resources",
+    .mount = "resources",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = resources_init,
+};
+
+void make_process_fs(process_t* proc, char *bundle){
+    proc->permissions.fs_id = register_fs_id();
+    module_root *root = get_fs_for_id(proc->permissions.fs_id);
+    bundle_redirect = bundle;
+    load_module_to(root, &bundle_module);
+}
+
 process_t* create_process(const char *name, const char *bundle, program_load_data *data, size_t data_count, uintptr_t entry, bool allow_rwx) {
 
     process_t* proc = init_process();
@@ -285,7 +307,6 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     name_process(proc, name);
 
     proc->bundle = bundle && *bundle ? string_from_literal(bundle).data : 0;
-    
 
     uaddr_t min_addr = UINT64_MAX;
     uaddr_t max_addr = 0;
@@ -418,6 +439,8 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     kprintf("User process %s (%i) allocated at %llx entry=%llx stack=%llx-%llx (phys=%llx-%llx) anon=%llx (phys=%llx)", name, proc->id, proc, (uint64_t)proc->pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->stack_phys, (uint64_t)proc->stack_phys, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);
     proc->spsr = 0;
     proc->state = BLOCKED;
+
+    make_process_fs(proc,proc->bundle);
     
     return proc;
 }

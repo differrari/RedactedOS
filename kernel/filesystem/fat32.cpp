@@ -650,7 +650,7 @@ bool FAT32FS::truncate(file *descriptor, size_t size){
 
 FAT32FS *fs_driver;
 
-bool boot_partition_init(){
+bool boot_partition_init(system_module *mod){
     uint32_t f32_partition = mbr_find_partition(0xC);
     fs_driver = new FAT32FS();
     return fs_driver->init(f32_partition);
@@ -701,6 +701,7 @@ system_module boot_fs_module = (system_module){
     .truncate = boot_truncate,
     .getstat = boot_stat,
     .readdir = boot_partition_readdir,
+    .alias_info = {}
 };
 
 extern "C" bool load_boot_partition(){

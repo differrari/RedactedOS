@@ -8,19 +8,9 @@
 #include "exceptions/exception_handler.h"
 #include "files/vfs.h"
 
-
-hash_map_t* modules;
-void *mod_page = 0;
-
 #define MODULE_STRICT
 
-void* mod_alloc(size_t size){ 
-    if (!mod_page) mod_page = page_alloc(PAGE_SIZE);
-    return allocate(mod_page, size, page_alloc);
-}
-
-bool load_module(system_module *module){
-    if (!modules) modules = hash_map_create(64);
+bool load_module_to(hash_map_t* modules, system_module *module){
     if (!module->init){
         if (strcmp(module->mount,"/console")) kprintf("[MODULE] module not initialized due to missing initializer");//TODO: can we make printf silently fail so logging becomes easier?
         return false;
@@ -36,27 +26,16 @@ bool load_module(system_module *module){
         string_free(format);
         return false;
     }
-    if (!module->init()){
+    if (!module->init(module)){
         if (strcmp(module->mount,"/console")) kprintf("[MODULE] failed to load module %s. Init failed",module->name);
         return false;
     }
+    if (strcmp(module->mount,"/console")) kprintf("Going to store %s in %x",module->mount,modules);
     hash_map_put_dictionary(modules, module->mount, PHYS_TO_VIRT_P(module));
     return true;
 }
 
-int fs_search(void *node, void *key){
-    system_module* module = (system_module*)node;
-    if (!module) return -1;
-    const char** path = (const char**)key;
-    int index = strstart_case(*path, module->mount, true);
-    if (index == (int)strlen(module->mount)){ 
-        *path += index;
-        return 0;
-    }
-    return -1;
-}
-
-bool unload_module(system_module *module){
+bool unload_module_from(hash_map_t* modules, system_module *module){
     if (!modules) return false;
     if (!module->init) return false;
     if (module->fini) module->fini();
@@ -64,9 +43,14 @@ bool unload_module(system_module *module){
     return false;
 }
 
-system_module* get_module(const char **full_path){
+system_module* get_module_from(hash_map_t* modules, const char **full_path){
     if (!full_path || !*full_path) return 0;
     const char *path = *full_path;
+    if (!strlen(path)) return 0;
+    if (*path == '/'){ 
+        path++;
+        *full_path += 1;
+    }
     string_slice mod_name = first_path_component(path);
     if (!mod_name.length) return 0;
     if (mod_name.data[0] == '/'){
@@ -94,8 +78,7 @@ void iterate_root(void* key, u64 keylen, void* value){
     }
 }
 
-size_t list_root(void* buf, size_t size, uint64_t *offset){
-    
+size_t list_root_from(hash_map_t* modules, void* buf, size_t size, uint64_t *offset){
     fs_dir_list_helper helper = create_dir_list_helper(buf, size);
     dir_helper = &helper;
     index = offset ? *offset : 0;

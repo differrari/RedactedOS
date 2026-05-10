@@ -3,25 +3,26 @@
 #include "types.h"
 #include "std/string.h"
 #include "files/system_module.h"
+#include "modules/module_loader.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-FS_RESULT open_file_global(const char* path, file* descriptor, system_module **mod);
-FS_RESULT open_file(const char* path, file* descriptor);
+FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor, system_module **mod);
+FS_RESULT open_file(module_root *root, const char* path, file* descriptor);
 size_t read_file(file *descriptor, char* buf, size_t size);
 size_t write_file(file *descriptor, const char* buf, size_t size);
 void close_file_global(file *descriptor, system_module *mod);
 void close_file(file *descriptor);
-size_t list_directory_contents(const char *path, void* buf, size_t size, uint64_t *offset);
+size_t list_directory_contents(module_root *root, const char *path, void* buf, size_t size, uint64_t *offset);
 bool init_filesystem();
 
-bool get_stat(const char *path, fs_stat *out_stat);
+bool get_stat(module_root *root, const char *path, fs_stat *out_stat);
 bool truncate(file *descriptor, size_t size);
 
-size_t simple_read(const char *path, void *buf, size_t size);
-size_t simple_write(const char *path, const void *buf, size_t size);
+size_t simple_read(module_root *root, const char *path, void *buf, size_t size);
+size_t simple_write(module_root *root, const char *path, const void *buf, size_t size);
 
 void close_files_for_process(uint16_t pid);
 

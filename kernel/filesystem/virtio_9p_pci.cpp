@@ -552,7 +552,7 @@ bool Virtio9PDriver::sync_file(module_file *mfile){
 
 Virtio9PDriver *p9Driver;
 
-bool shared_init(){
+bool shared_init(system_module *mod){
     if (BOARD_TYPE != 1) return false;
     p9Driver = new Virtio9PDriver();
     bool success = p9Driver->init(0);
@@ -605,6 +605,7 @@ system_module p9_fs_module = (system_module){
     .truncate = shared_truncate,
     .getstat = shared_stat,
     .readdir = shared_readdir,
+    .alias_info = {}
 };
 
 extern "C" bool load_home(){

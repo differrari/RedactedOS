@@ -130,5 +130,5 @@ protected:
 
     bool verbose = false;
 
-    chashmap_t *open_files;
+    hash_map_t *open_files;
 };

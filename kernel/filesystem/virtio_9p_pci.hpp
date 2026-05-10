@@ -32,5 +32,5 @@ private:
 
     uint32_t root = 0;
 
-    chashmap_t *open_files = nullptr;
+    hash_map_t *open_files = nullptr;
 };

@@ -139,7 +139,7 @@ extern int32_t socket_close(SocketHandle *handle){
 }
 
 extern FS_RESULT openf(const char* path, file* descriptor){
-    return open_file(path, descriptor);
+    return open_file(kernel_fs(), path, descriptor);
 }
 
 extern size_t readf(file *descriptor, char* buf, size_t size){
@@ -151,7 +151,7 @@ extern size_t writef(file *descriptor, const char* buf, size_t size){
 }
 
 extern bool statf(const char *path, fs_stat *out_stat){
-    return get_stat(path, out_stat);
+    return get_stat(kernel_fs(), path, out_stat);
 }
 
 extern bool truncatef(file *descriptor, size_t size){
@@ -163,11 +163,11 @@ extern void closef(file *descriptor){
 }
 
 size_t dir_list(const char *path, void *buf, size_t size, u64 *offset){
-    return list_directory_contents(path, buf, size, offset);
+    return list_directory_contents(kernel_fs(), path, buf, size, offset);
 }
 
 bool stat(const char *path, fs_stat *out_stat){
-    return get_stat(path, out_stat);
+    return get_stat(kernel_fs(), path, out_stat);
 }
 
 extern bool send_signal(signal_types type, i64 value, u16 proc_id){

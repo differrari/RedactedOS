@@ -9,7 +9,7 @@ uint16_t socket_ids;
 
 void *sock_mem_page;
 
-chashmap_t *map;
+hash_map_t *map;
 
 typedef struct ksock_handle_t {
     uint16_t id;

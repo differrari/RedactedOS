@@ -1,17 +1,10 @@
 #pragma once
 
-#include "data/struct/linked_list.h"
+#include "data/struct/hashmap.h"
 #include "files/system_module.h"
+#include "fs_isolation.h"
 
-#ifdef __cplusplus 
-extern "C" {
-#endif
-
-bool load_module(system_module *module);
-bool unload_module(system_module *module);
-system_module* get_module(const char **full_path);
-size_t list_root(void* buf, size_t size, uint64_t *offset);
-
-#ifdef __cplusplus 
-}
-#endif
+bool load_module_to(module_root* modules, system_module *module);
+bool unload_module_from(module_root* modules, system_module *module);
+system_module* get_module_from(module_root* modules, const char **full_path);
+size_t list_root_from(module_root* modules, void* buf, size_t size, uint64_t *offset);

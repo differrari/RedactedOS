@@ -31,6 +31,7 @@
 #include "filesystem/modules/module_loader.h"
 #include "alloc/page_index.h"
 #include "process/uaccess.h"
+#include "filesystem/modules/fs_isolation.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -355,7 +356,19 @@ u64 syscall_socket_close(process_t *ctx){
     return close_socket(handle, ctx->id);
 }
 
+// #define ISOLATEDFS
+
 u64 syscall_openf(process_t *ctx){
+#ifdef ISOLATEDFS
+    SYSCALL_STR(path, PROC_X0, false);
+    SYSCALL_ARG(file,descriptor,PROC_X1, true);
+        module_root rootfs = {}; 
+        string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+        if (!s.data || !s.length) return 0;
+        FS_RESULT res = open_file(&rootfs, s.data, descriptor);
+        string_free(s);
+        return res;
+#else
     SYSCALL_STR(req_path, PROC_X0, false);
     char path[255] = {};
     if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path,true) == 11){
@@ -363,7 +376,8 @@ u64 syscall_openf(process_t *ctx){
     } else memcpy(path, req_path, strlen(req_path) + 1);
     //TODO: Restrict access to own bundle, own fs and require privilege escalation for full-ish filesystem access
     SYSCALL_ARG(file,descriptor,PROC_X1, true);
-    return open_file(path, descriptor);
+    return open_file(kernel_fs(),path, descriptor);
+#endif
 }
 
 u64 syscall_readf(process_t *ctx){
@@ -384,14 +398,32 @@ u64 syscall_sreadf(process_t *ctx){
     SYSCALL_STR(path, PROC_X0, false);
     size_t size = (size_t)ctx->PROC_X2;
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
-    return simple_read(path, buf, size);
+#ifdef ISOLATEDFS
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    if (!s.data || !s.length) return 0;
+    size_t ret = simple_read(&rootfs, s.data, buf, size);
+    string_free(s);
+    return ret;
+#else 
+    return simple_read(kernel_fs(), path, buf, size);
+#endif
 }
 
 u64 syscall_swritef(process_t *ctx){
     SYSCALL_STR(path, PROC_X0, false);
     size_t size = (size_t)ctx->PROC_X2;
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
-    return simple_write(path, buf, size);
+#ifdef ISOLATEDFS
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    if (!s.data || !s.length) return 0;
+    size_t ret = simple_write(&rootfs, s.data, buf, size);
+    string_free(s);
+    return ret;
+#else
+    return simple_write(kernel_fs(), path, buf, size);
+#endif
 }
 
 u64 syscall_closef(process_t *ctx){
@@ -405,13 +437,31 @@ u64 syscall_dir_list(process_t *ctx){
     size_t size = (size_t)ctx->PROC_X2;
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, true);
     SYSCALL_ARG(u64,offset,PROC_X3, true);
-    return list_directory_contents(path, buf, size, offset);
+#ifdef ISOLATEDFS
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    if (!s.data || !s.length) return 0;
+    size_t ret = list_directory_contents(&rootfs, s.data, buf, size, offset);
+    string_free(s);
+    return ret;
+#else
+    return list_directory_contents(kernel_fs(), path, buf, size, offset);
+#endif
 }
 
 u64 syscall_stat(process_t *ctx){
     SYSCALL_STR(path,PROC_X0, false);
     SYSCALL_ARG(fs_stat,out_stat,PROC_X1, true);
-    return get_stat(path, out_stat);
+#ifdef ISOLATEDFS
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    if (!s.data || !s.length) return 0;
+    size_t ret = get_stat(&rootfs, s.data, out_stat);
+    string_free(s);
+    return ret;
+#else
+    return get_stat(kernel_fs(), path, out_stat);
+#endif
 }
 
 u64 syscall_trunc(process_t* ctx){

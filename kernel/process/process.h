@@ -50,6 +50,10 @@ typedef struct {
     signal_info_t entries[SIGNAL_BUFFER_CAPACITY];
 } signal_buffer_t;
 
+typedef struct {
+    u64 fs_id;
+} system_permissions;
+
 typedef struct process {
     //We use the addresses of these variables to save and restore process state
     uint64_t regs[31]; // x0–x30
@@ -88,6 +92,7 @@ typedef struct process {
     __attribute__((aligned(16))) signal_buffer_t signal_buffer;
     __attribute__((aligned(16))) signal_handler signal_handlers[NUMBER_SIGNALS];
     uint8_t priority;
+    system_permissions permissions;
     uint16_t win_id;
     uaddr_t win_fb_va;
     paddr_t win_fb_phys;

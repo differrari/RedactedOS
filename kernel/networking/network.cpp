@@ -4,7 +4,7 @@
 
 static NetworkDispatch *dispatch = 0;
 
-bool network_init() {
+bool network_init(system_module *mod) {
     dispatch = new NetworkDispatch();
     if (!dispatch) return false;
     return dispatch->init();
@@ -99,4 +99,5 @@ system_module net_module = (system_module){
     .truncate = 0,
     .getstat = 0,
     .readdir = 0,
+    .alias_info = {}
 };
