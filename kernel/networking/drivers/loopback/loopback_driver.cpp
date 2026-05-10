@@ -36,8 +36,6 @@ sizedptr LoopbackDriver::handle_receive_packet(){
     return p;
 }
 
-void LoopbackDriver::handle_sent_packet(){}
-
 void LoopbackDriver::enable_verbose(){ verbose = true; }
 
 bool LoopbackDriver::send_packet(sizedptr packet){

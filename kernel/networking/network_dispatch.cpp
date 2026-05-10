@@ -15,6 +15,7 @@
 #include "networking/netpkt.h"
 #include "networking/link_layer/link_utils.h"
 #include "networking/drivers/loopback/loopback_driver.hpp"
+#include "exceptions/irq.h"
 
 #define RX_INTR_BATCH_LIMIT 64
 #define TASK_RX_BATCH_LIMIT 256
@@ -78,9 +79,7 @@ void NetworkDispatch::handle_rx_irq(size_t nic_id)
 void NetworkDispatch::handle_tx_irq(size_t nic_id)
 {
     if (nic_id >= nic_num) return;
-    NetDriver* driver = nics[nic_id].drv;
-    if (!driver) return;
-    driver->handle_sent_packet();
+    //TODO wake net_task from tx irq when the network loop becomes event driven
 }
 
 bool NetworkDispatch::enqueue_frame(uint8_t ifindex, const sizedptr& frame)
@@ -98,12 +97,16 @@ bool NetworkDispatch::enqueue_frame(uint8_t ifindex, const sizedptr& frame)
     void* dst = (void*)(pkt.ptr + hs);
     memcpy(dst, (const void*)frame.ptr, frame.size);
 
-    if (!nics[nic_id].tx.push(pkt)) {
+    irq_flags_t irq = irq_save_disable();
+    int pushed = nics[nic_id].tx.push(pkt);
+    if (pushed) nics[nic_id].tx_produced++;
+    irq_restore(irq);
+
+    if (!pushed) {
         free_frame(pkt);
         nics[nic_id].tx_dropped++;
         return false;
     }
-    nics[nic_id].tx_produced++;
     return true;
 }
 
@@ -116,6 +119,7 @@ int NetworkDispatch::net_task()
         for (size_t n = 0; n < nic_num; ++n) {
             NetDriver* driver = nics[n].drv;
             if (driver) {
+                driver->handle_sent_packet();
                 int lim = nics[n].kind_val == NET_IFK_LOCALHOST ? TASK_RX_BATCH_LIMIT : RX_INTR_BATCH_LIMIT;
                 for (int i = 0; i < lim; ++i) {
                     sizedptr raw = driver->handle_receive_packet();
@@ -153,14 +157,17 @@ int NetworkDispatch::net_task()
             if (!driver) continue;
             int processed = 0;
             for (int i = 0; i < TASK_TX_BATCH_LIMIT; ++i) {
-                if (nics[n].tx.is_empty()) break;
                 sizedptr pkt{0,0};
-                if (!nics[n].tx.pop(pkt)) break;
+                irq_flags_t irq = irq_save_disable();
+                int popped = nics[n].tx.pop(pkt);
+                if (popped) nics[n].tx_consumed++;
+                irq_restore(irq);
+
+                if (!popped) break;
                 if (!driver->send_packet(pkt)) {
                     free_frame(pkt);
                     nics[n].tx_dropped++;
                 }
-                nics[n].tx_consumed++;
                 processed++;
             }
             if (processed) did_work = true;

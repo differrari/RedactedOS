@@ -80,6 +80,17 @@ private:
     volatile virtq_used* rx_used = nullptr;
     uint16_t rx_qsz = 0;
 
+    volatile virtq_desc* tx_desc = nullptr;
+    volatile virtq_avail* tx_avail = nullptr;
+    volatile virtq_used* tx_used = nullptr;
+    uint16_t tx_qsz = 0;
+    uint16_t tx_next_desc = 0;
+    //TODO move tx own from sizedptr to netpkt. make it async
+    //[kfree] untracked ptr=0xffff800044342580 phys=0x44342580 size=0x42 off=0x580
+
+    sizedptr* tx_pending = nullptr;
+    size_t tx_pending_size = 0;
+
     bool verbose = false;
     bool mrg_rxbuf = false;
 
