@@ -247,10 +247,10 @@ static bool pick_route(uint32_t dst, const ipv4_tx_opts_t* opts, uint8_t* out_if
 }
 
 
-void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_tx_opts_t* opts, uint8_t ttl, uint8_t dontfrag) {
+bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_tx_opts_t* opts, uint8_t ttl, uint8_t dontfrag) {
     if (!pkt || !netpkt_len(pkt)) {
         if (pkt) netpkt_unref(pkt);
-        return;
+        return false;
     }
 
     uint8_t ifx = 0;
@@ -258,7 +258,7 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
     uint32_t nh = 0;
     if (!pick_route(dst_ip, opts, &ifx, &src_ip, &nh)) {
         netpkt_unref(pkt);
-        return;
+        return false;
     }
 
     uint8_t dst_mac[6];
@@ -281,7 +281,7 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
             memset(dst_mac, 0, 6);
         } else if (!arp_resolve_on(ifx, nh, dst_mac, 1000)) {
             netpkt_unref(pkt);
-            return;
+            return false;
         }
     }
 
@@ -302,13 +302,13 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
     void* hdrp = netpkt_push(pkt, hdr_len);
     if (!hdrp) {
         netpkt_unref(pkt);
-        return;
+        return false;
     }
 
     uint32_t total = hdr_len + seg_len;
     if (dontfrag && total > (uint32_t)mtu) {
         netpkt_unref(pkt);
-        return;
+        return false;
     }
     uint16_t ip_[sizeof(ipv4_hdr_t)/sizeof(uint16_t)];
     ipv4_hdr_t* ip = (ipv4_hdr_t*)ip_;
@@ -327,7 +327,7 @@ void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
     ip->header_checksum = checksum16(ip_, hdr_len / 2);
     memcpy(hdrp, ip, sizeof(*ip));
 
-    eth_send_frame_on(ifx, ETHERTYPE_IPV4, dst_mac, pkt);
+    return eth_send_frame_on(ifx, ETHERTYPE_IPV4, dst_mac, pkt);
 }
 
 void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {

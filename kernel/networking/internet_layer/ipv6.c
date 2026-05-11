@@ -20,7 +20,8 @@
 #define PMTU_CACHE_SIZE 16
 #define REASS_SLOTS 8
 #define REASS_STEP 2048u
-#define REASS_MAX_LEN (2048u * 8u)
+#define REASS_MAX_LEN 65535
+#define REASS_BITMAP_BYTES ((REASS_MAX_LEN + 7u) / 8u)
 
 typedef struct {
     uint8_t used;
@@ -52,7 +53,7 @@ typedef struct {
 
     uint8_t *buf;
     uint32_t buf_cap;
-    uint8_t bitmap[2048];
+    uint8_t bitmap[REASS_BITMAP_BYTES];
 } reass_slot_t;
 
 typedef struct __attribute__((packed)) {
@@ -350,10 +351,10 @@ static bool pick_route(const uint8_t dst[16], const ipv6_tx_opts_t* opts, uint8_
     return pick_route_global(dst, out_ifx, out_src, out_nh);
 }
 
-void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ipv6_tx_opts_t* opts, uint8_t hop_limit, uint8_t dontfrag) {
+bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ipv6_tx_opts_t* opts, uint8_t hop_limit, uint8_t dontfrag) {
     if (!dst || !pkt || !netpkt_len(pkt)) {
         if (pkt) netpkt_unref(pkt);
-        return;
+        return false;
     }
 
     uint8_t ifx = 0;
@@ -364,14 +365,14 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
 
     if (!pick_route(dst, opts, &ifx, src, nh)) {
         netpkt_unref(pkt);
-        return;
+        return false;
     }
 
     if (!ipv6_is_unspecified(src)) {
         l2_interface_t* l2 = l2_interface_find_by_index(ifx);
         if (!l2) {
             netpkt_unref(pkt);
-            return;
+            return false;
         }
 
         int ok = 0;
@@ -381,11 +382,11 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
             if (ipv6_cmp(v6->ip, src) != 0) continue;
             if (v6->cfg == IPV6_CFG_DISABLE) {
                 netpkt_unref(pkt);
-                return;
+                return false;
             }
             if (v6->dad_state != IPV6_DAD_OK) {
                 netpkt_unref(pkt);
-                return;
+                return false;
             }
             ok = 1;
             src_v6 = v6;
@@ -393,13 +394,13 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         }
         if (!ok) {
             netpkt_unref(pkt);
-            return;
+            return false;
         }
     }
 
     if (ipv6_is_linklocal(src) && !ipv6_is_linklocal(dst) && !ipv6_is_multicast(dst)) {
         netpkt_unref(pkt);
-        return;
+        return false;
     }
 
     uint8_t dst_mac[6];
@@ -408,7 +409,7 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     else if (l2 && l2->kind == NET_IFK_LOCALHOST) memset(dst_mac, 0, 6);
     else if (!ndp_resolve_on(ifx, nh, dst_mac, 200)) {
         netpkt_unref(pkt);
-        return;
+        return false;
     }
 
     uint16_t mtu = 1500;
@@ -428,7 +429,7 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         void* hdrp = netpkt_push(pkt, hdr_len);
         if (!hdrp) {
             netpkt_unref(pkt);
-            return;
+            return false;
         }
 
         ipv6_hdr_t ip6;
@@ -440,26 +441,25 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         memcpy(ip6.dst, dst, 16);
         memcpy(hdrp, &ip6, sizeof(ip6));
 
-        eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, pkt);
-        return;
+        return eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, pkt);
     }
 
     if (dontfrag) {
         netpkt_unref(pkt);
-        return;
+        return false;
     }
 
     uint32_t frag_hdr_len = (uint32_t)sizeof(ipv6_frag_hdr_t);
     if ((uint32_t)mtu < hdr_len + frag_hdr_len + 8u) {
         netpkt_unref(pkt);
-        return;
+        return false;
     }
 
     uint32_t max_chunk = (uint32_t)mtu - hdr_len - frag_hdr_len;
     max_chunk = (max_chunk / 8u) * 8u;
     if (max_chunk == 0) {
         netpkt_unref(pkt);
-        return;
+        return false;
     }
 
     rng_t rng;
@@ -471,6 +471,7 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     uint32_t off = 0;
     const uint8_t* data = (const uint8_t*)netpkt_data(pkt);
     uint32_t data_len = seg_len;
+    bool ok = true;
 
     while (off < data_len) {
         uint32_t remain = data_len - off;
@@ -481,10 +482,14 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         uint32_t frame_len = hdr_len + payload_len;
 
         netpkt_t* fpkt = netpkt_alloc(frame_len, (uint32_t)sizeof(eth_hdr_t), 0);
-        if (!fpkt) break;
+        if (!fpkt) {
+            ok = false;
+            break;
+        }
         void* buf = netpkt_put(fpkt, frame_len);
         if (!buf) {
             netpkt_unref(fpkt);
+            ok = false;
             break;
         }
 
@@ -508,12 +513,13 @@ void ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
 
         memcpy((uint8_t*)buf + hdr_len + sizeof(fh), data + off, chunk);
 
-        eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, fpkt);
+        if (!eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, fpkt)) ok = false;
 
         off += chunk;
     }
 
     netpkt_unref(pkt);
+    return ok && off == data_len;
 }
 
 static bool ipv6_skip_ext_headers(const netpkt_t* pkt, uint8_t* nh, uint32_t* l4_off, uint32_t* l4_len) {

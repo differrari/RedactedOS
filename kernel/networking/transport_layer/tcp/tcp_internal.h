@@ -23,10 +23,10 @@ extern "C" {
 #define TCP_DEFAULT_RCV_BUF (256u * 1024u)
 #define TCP_PERSIST_PROBE_BUFSZ 1
 
-#define TCP_DELAYED_ACK_MS 40
+#define TCP_DELAYED_ACK_MS 10
 #define TCP_PERSIST_MIN_MS 500
 #define TCP_PERSIST_MAX_MS 60000
-#define TCP_INIT_CWND_SEGS 4
+#define TCP_INIT_CWND_SEGS 10
 #define TCP_NAGLE_FLUSH_THRESHOLD TCP_DEFAULT_MSS
 #define TCP_NAGLE_TIMEOUT_MS 10
 #define TCP_CONNECT_TIMEOUT_MS 10000
@@ -55,12 +55,18 @@ typedef struct {
 
 typedef struct {
     uint16_t local_port;
+    uint16_t slot;
+    uint16_t active_pos;
+    uint32_t generation;
     net_l4_endpoint local;
     net_l4_endpoint remote;
     uint8_t l3_id;
     tcp_state_t state;
     tcp_data ctx;
     uint8_t retries;
+} tcp_flow_base_t;
+
+typedef struct {
     uint32_t snd_wnd;
     uint32_t snd_una;
     uint32_t snd_nxt;
@@ -68,19 +74,6 @@ typedef struct {
     uint32_t rttvar;
     uint32_t rto;
     uint8_t rtt_valid;
-    uint32_t time_wait_ms;
-    uint32_t fin_wait2_ms;
-
-    uint32_t rcv_nxt;
-    uint32_t rcv_base;
-    uint32_t rcv_data_nxt;
-    uintptr_t rcv_buf;
-    uint32_t rcv_ooo_used;
-    uint32_t sack_recent_left;
-    uint32_t sack_recent_right;
-    uint32_t rcv_wnd;
-    uint32_t rcv_wnd_max;
-    uint32_t rcv_adv_edge;
 
     uint32_t cwnd;
     uint32_t ssthresh;
@@ -95,14 +88,6 @@ typedef struct {
     uint32_t recover;
     uint32_t cwnd_acc;
 
-    uint8_t persist_active;
-    uint8_t persist_probe_cnt;
-    uint32_t persist_timer_ms;
-    uint32_t persist_timeout_ms;
-
-    uint8_t delayed_ack_pending;
-    uint32_t delayed_ack_timer_ms;
-
     uint8_t nagle_flushing;
     uint8_t nagle_appending;
 
@@ -111,30 +96,71 @@ typedef struct {
     uint32_t nagle_cap;
     uint32_t nagle_timer_ms;
 
+    tcp_tx_seg_t txq[TCP_MAX_TX_SEGS];
+    uint8_t fin_tx_pending;
+} tcp_flow_tx_t;
+
+typedef struct {
+    uint32_t rcv_nxt;
+    uint32_t rcv_base;
+    uint32_t rcv_data_nxt;
+    uintptr_t rcv_buf;
+    uint32_t rcv_ooo_used;
+    uint32_t sack_recent_left;
+    uint32_t sack_recent_right;
+    uint32_t rcv_wnd;
+    uint32_t rcv_wnd_max;
+    uint32_t rcv_adv_edge;
+
     tcp_reass_seg_t reass[TCP_REASS_MAX_SEGS];
     uint8_t reass_count;
-    tcp_tx_seg_t txq[TCP_MAX_TX_SEGS];
     uint8_t fin_pending;
-    uint8_t fin_tx_pending;
     uint32_t fin_seq;
+} tcp_flow_rx_t;
 
-    uint8_t ip_ttl;
-    uint8_t ip_dontfrag;
+typedef struct {
+    uint32_t time_wait_ms;
+    uint32_t fin_wait2_ms;
+
+    uint8_t persist_active;
+    uint8_t persist_probe_cnt;
+    uint32_t persist_timer_ms;
+    uint32_t persist_timeout_ms;
+
+    uint8_t delayed_ack_pending;
+    uint32_t delayed_ack_timer_ms;
+
     uint8_t keepalive_on;
     uint32_t keepalive_ms;
     uint32_t keepalive_idle_ms;
+} tcp_flow_timer_t;
+
+typedef struct {
+    uint8_t ttl;
+    uint8_t dontfrag;
+} tcp_flow_ip_t;
+
+typedef struct {
+    tcp_flow_base_t base;
+    tcp_flow_tx_t tx;
+    tcp_flow_rx_t rx;
+    tcp_flow_timer_t timer;
+    tcp_flow_ip_t ip;
 } tcp_flow_t;
 
 extern tcp_flow_t *tcp_flows[MAX_TCP_FLOWS];
+extern uint16_t tcp_active_flows[MAX_TCP_FLOWS];
+extern uint16_t tcp_active_count;
 
 tcp_flow_t *tcp_alloc_flow(void);
 void tcp_free_flow(int idx);
-void tcp_abort_flow(int idx);
+void tcp_release_io_buffers(tcp_flow_t *f);
+tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx);
 
 void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms);
 
 tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow);
-void tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg);
+bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg);
 void tcp_send_ack_now(tcp_flow_t *flow);
 int tcp_try_send_pending_fin(tcp_flow_t *flow);
 uint64_t tcp_flush_nagle(tcp_flow_t *flow, uint8_t force);

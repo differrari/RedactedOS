@@ -55,6 +55,9 @@ typedef struct {
     sizedptr payload;
     uint32_t expected_ack;
     uint32_t ack_received;
+    uint16_t flow_index;
+    uint16_t flow_reserved;
+    uint32_t flow_generation;
 } tcp_data;
 
 typedef enum {
@@ -73,10 +76,8 @@ typedef enum {
 
 #define MAX_TCP_FLOWS 512
 #define TCP_SYN_RETRIES 5
-#define TCP_DATA_RETRIES 5
-#define TCP_RETRY_TIMEOUT_MS 200
 #define TCP_RECV_WINDOW 65535
-#define TCP_MAX_TX_SEGS 16
+#define TCP_MAX_TX_SEGS 128
 #define TCP_INIT_RTO 200
 #define TCP_MIN_RTO 200
 #define TCP_MAX_RTO 60000
@@ -86,7 +87,7 @@ typedef enum {
 #define TCP_MAX_PERSIST_PROBES 8
 
 int find_flow(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port);
-tcp_data* tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port);
+bool tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, tcp_data *out_ctx);
 
 bool tcp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t handler, const SocketExtraOptions* extra);
 int tcp_alloc_ephemeral_l3(uint8_t l3_id, uint16_t pid, port_recv_handler_t handler);
@@ -102,7 +103,6 @@ int64_t tcp_flow_read(tcp_data *flow_ctx, void *buf, uint64_t len);
 uint32_t tcp_flow_readable(tcp_data *flow_ctx);
 bool tcp_flow_recv_closed(tcp_data *flow_ctx);
 
-void tcp_flow_window_update(tcp_data *flow_ctx);
 void tcp_flow_on_app_read(tcp_data *flow_ctx, uint32_t bytes_read);
 
 void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, netpkt_t* pkt);

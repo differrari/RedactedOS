@@ -14,7 +14,7 @@
 #include "networking/transport_layer/trans_utils.h"
 #include "syscalls/syscalls.h"
 
-static constexpr int TCP_MAX_BACKLOG = 32;
+static constexpr int TCP_MAX_BACKLOG = 128;
 static constexpr dns_server_sel_t TCP_DNS_SEL = DNS_USE_BOTH;
 static constexpr uint32_t TCP_DNS_TIMEOUT_MS = 3000;
 
@@ -22,7 +22,7 @@ class TCPSocket : public Socket {
     inline static TCPSocket* s_list_head = nullptr;
     static constexpr uint32_t TCP_DEFAULT_SOCKET_BUF = 256 * 1024;
 
-    tcp_data* flow = nullptr;
+    tcp_data flow = {};
 
     TCPSocket* pending[TCP_MAX_BACKLOG] = { nullptr };
     int backlogCap = 0;
@@ -85,6 +85,23 @@ class TCPSocket : public Socket {
                 }
 
                 if (!matches_dst) continue;
+                for (int i = 0; i < srv->backlogLen;) {
+                    TCPSocket* client = srv->pending[i];
+
+                    if (client && client->flow.flow_generation) {
+                        bool readable = tcp_flow_readable(&client->flow) != 0;
+                        bool closed = tcp_flow_recv_closed(&client->flow);
+
+                        if (!closed || readable) {
+                            i++;
+                            continue;
+                        }
+                    }
+
+                    client = srv->pop_pending_at(i);
+                    if (client) delete client;
+                }
+
                 if (srv->backlogLen >= srv->backlogCap) break;
 
                 TCPSocket* child = new TCPSocket(SOCK_ROLE_CLIENT, srv->pid, &srv->extraOpts);
@@ -165,8 +182,7 @@ class TCPSocket : public Socket {
                     }
                 }
 
-                child->flow = tcp_get_ctx(dst_port, ipver, dst_ip_addr, child->remoteEP.ip, src_port);
-                if (!child->flow){
+                if (!tcp_get_ctx(dst_port, ipver, dst_ip_addr, child->remoteEP.ip, src_port, &child->flow)) {
                     delete child;
                     break;
                 }
@@ -410,30 +426,68 @@ public:
         if (!bound || role != SOCK_ROLE_SERVER) return SOCK_ERR_STATE;
 
         backlogCap = max_backlog > TCP_MAX_BACKLOG ? TCP_MAX_BACKLOG : max_backlog;
+        if (backlogCap < 1) backlogCap = 1;
         backlogLen = 0;
         return SOCK_OK;
     }
 
     TCPSocket* accept(){
-        const int max_empty_iters = 100;
-        const int ready_wait_iters = 3;
+        const int max_empty_iters = 200;
+        const int ready_wait_iters = 4;
         const int max_idle_skips = 20;
         int iter = 0;
 
         while (backlogLen == 0){
             idleAcceptSkips = 0;
             if (++iter > max_empty_iters) return nullptr;
-            msleep(10);
+            msleep(5);
         }
+
+        for (int i = 0; i < backlogLen;) {
+            TCPSocket* client = pending[i];
+
+            if (client && client->flow.flow_generation) {
+                bool readable = tcp_flow_readable(&client->flow) != 0;
+                bool closed = tcp_flow_recv_closed(&client->flow);
+
+                if (!closed || readable) {
+                    i++;
+                    continue;
+                }
+            }
+
+            client = pop_pending_at(i);
+            if (client) delete client;
+        }
+
+        if (backlogLen == 0) return nullptr;
 
         //TODO temporary http workaround
         //without socket events accept() can pick an idle preconnect and block in recv() while a later ipv4/6 request is already ready
         iter = 0;
         while (1) {
+            for (int i = 0; i < backlogLen;) {
+                TCPSocket* client = pending[i];
+
+                if (client && client->flow.flow_generation) {
+                    bool readable = tcp_flow_readable(&client->flow) != 0;
+                    bool closed = tcp_flow_recv_closed(&client->flow);
+
+                    if (!closed || readable) {
+                        i++;
+                        continue;
+                    }
+                }
+
+                client = pop_pending_at(i);
+                if (client) delete client;
+            }
+
+            if (backlogLen == 0) return nullptr;
             for (int i = 0; i < backlogLen; ++i) {
                 TCPSocket* client = pending[i];
                 if (!client) continue;
-                if (!client->flow || tcp_flow_readable(client->flow) || tcp_flow_recv_closed(client->flow)) {
+                if (!client->flow.flow_generation || tcp_flow_readable(&client->flow) || tcp_flow_recv_closed(&client->flow)) {
                     idleAcceptSkips = 0;
                     return pop_pending_at(i);
                 }
@@ -446,7 +500,7 @@ public:
                 }
                 return nullptr;
             }
-            msleep(10);
+            msleep(5);
         }
     }
 
@@ -561,34 +615,24 @@ public:
         add_bound_l3(chosen_l3);
         bound = true;
 
-        tcp_data ctx_copy{};
-        if (!tcp_handshake_l3(chosen_l3, localPort, &d, &ctx_copy, pid, &extraOpts)) {
+        flow = tcp_data{};
+        if (!tcp_handshake_l3(chosen_l3, localPort, &d, &flow, pid, &extraOpts)) {
             Socket::close();
             return SOCK_ERR_SYS;
         }
 
-        uint8_t local_ip[16];
-        memset(local_ip, 0, sizeof(local_ip));
         if (d.ver == IP_VER4) {
             l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
             if (!is_valid_v4_l3_for_bind(v4)) {
                 Socket::close();
                 return SOCK_ERR_SYS;
             }
-            memcpy(local_ip, &v4->ip, 4);
         } else {
             l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen_l3);
             if (!is_valid_v6_l3_for_bind(v6)) {
                 Socket::close();
                 return SOCK_ERR_SYS;
-                }
-            memcpy(local_ip, v6->ip, 16);
-        }
-
-        flow = tcp_get_ctx(localPort, d.ver, local_ip, (const void*)d.ip, d.port);
-        if (!flow) {
-            Socket::close();
-            return SOCK_ERR_SYS;
+            }
         }
 
         remoteEP = d;
@@ -614,30 +658,18 @@ public:
         ev.local_port = localPort;
         ev.remote_ep = remoteEP;
         netlog_socket_event(&extraOpts, &ev);
-        if (!connected || !flow) return SOCK_ERR_STATE;
+        if (!connected || !flow.flow_generation) return SOCK_ERR_STATE;
+        if (!buf && len) return SOCK_ERR_INVAL;
+        if (!len) return 0;
 
-        const uint8_t* p = (const uint8_t*)buf;
-        uint64_t sent_total = 0;
+        uint32_t chunk = len > UINT32_MAX ? UINT32_MAX : (uint32_t)len;
+        flow.payload.ptr = (uintptr_t)buf;
+        flow.payload.size = chunk;
+        flow.flags = (1u<<PSH_F) | (1u<<ACK_F);
 
-        while (sent_total < len) {
-            uint64_t remain = len - sent_total;
-            uint32_t chunk = remain > UINT32_MAX ? UINT32_MAX : (uint32_t)remain;
-            flow->payload.ptr = (uintptr_t)(p + sent_total);
-            flow->payload.size = chunk;
-            flow->flags = (1u<<PSH_F) | (1u<<ACK_F);
-
-            tcp_result_t res = tcp_flow_send(flow);
-            if (res != TCP_OK) {
-                if (sent_total) return (int64_t)sent_total;
-                return (int64_t)res;
-            }
-
-            uint32_t pushed = flow->payload.size;
-            if (!pushed) break;
-            sent_total += pushed;
-        }
-
-        if (sent_total) return (int64_t)sent_total;
+        tcp_result_t res = tcp_flow_send(&flow);
+        if (res != TCP_OK) return (int64_t)res;
+        if (flow.payload.size) return (int64_t)flow.payload.size;
         return TCP_WOULDBLOCK;
     }
 
@@ -651,12 +683,11 @@ public:
         ev.remote_ep = remoteEP;
         netlog_socket_event(&extraOpts, &ev);
         if (!buf || !len) return 0;
-        if (!connected || !flow) return connected ? TCP_WOULDBLOCK : 0;
+        if (!connected || !flow.flow_generation) return connected ? TCP_WOULDBLOCK : 0;
 
-        tcp_flow_flush(flow);
-        int64_t n = tcp_flow_read(flow, buf, len);
+        int64_t n = tcp_flow_read(&flow, buf, len);
         if (n != 0) return n;
-        if (tcp_flow_recv_closed(flow)) return 0;
+        if (tcp_flow_recv_closed(&flow)) return 0;
         if (connected) return TCP_WOULDBLOCK;
         return 0;
     }
@@ -669,14 +700,14 @@ public:
         ev.local_port = localPort;
         ev.remote_ep = remoteEP;
         netlog_socket_event(&extraOpts, &ev);
-        if (connected && flow){
-            if (tcp_flow_is_closed(flow)) tcp_flow_release_closed(flow);
+        if (connected && flow.flow_generation){
+            if (tcp_flow_is_closed(&flow)) tcp_flow_release_closed(&flow);
             else {
-                tcp_flow_flush(flow);
-                tcp_flow_close(flow);
+                tcp_flow_flush(&flow);
+                tcp_flow_close(&flow);
             }
             connected = false;
-            flow = nullptr;
+            flow = tcp_data{};
         }
 
         for (int i = 0; i < backlogLen; ++i) delete pending[i];

@@ -6,8 +6,10 @@
 #include "theme/theme.h"
 #include "std/string.h"
 #include "sysregs.h"
+#include "process/syscall.h"
 
 static bool panic_triggered = false;
+static bool panic_skip_trace = false;
 
 void set_exception_vectors(){
     extern char exception_vectors[];
@@ -27,7 +29,11 @@ void handle_exception(const char* type, uint64_t info) {
     char buf[STRING_MAX_LEN];//no heap to avoid corruption
     const char *fmt = "%s \r\nESR_EL1: %llx\r\nELR_EL1: %llx\r\nFAR_EL1: %llx";
     string_format_buf(buf, sizeof(buf), fmt,type,esr,elr,far);
+
+    bool old_panic_skip_trace = panic_skip_trace;
+    panic_skip_trace = syscall_depth > 0;
     panic(buf, info);
+    panic_skip_trace = old_panic_skip_trace;
 }
 
 void fiq_el1_handler(){ handle_exception("FIQ EXCEPTION\r\n", 0); }
@@ -61,6 +67,10 @@ void panic(const char* msg, uint64_t info) {
     uart_raw_puts("Additional info: ");
     uart_puthex(info);
     uart_raw_puts("\r\n");
+    if (!old_panic_triggered && !panic_skip_trace) {
+        uart_raw_puts("Backtrace:\r\n");
+        trace();
+    }
     uart_raw_puts("System Halted\r\n");
     if (!old_panic_triggered){
         char buf[STRING_MAX_LEN];
