@@ -4,7 +4,6 @@
 #include "virtio/virtio_pci.h"
 #include "std/memory.h"
 #include "networking/link_layer/nic_types.h"
-#define VIRTIO_F_VERSION_1 32
 
 #define VIRTIO_NET_F_CSUM 0
 #define VIRTIO_NET_F_GUEST_CSUM 1
@@ -24,6 +23,7 @@
 #define VIRTIO_NET_F_STATUS 16
 #define VIRTIO_NET_F_CTRL_VQ 17
 #define VIRTIO_NET_F_CTRL_RX 18
+#define VIRTIO_NET_F_SPEED_DUPLEX 63
 
 typedef struct __attribute__((packed)) virtio_net_hdr_t {
     uint8_t flags;
@@ -32,12 +32,8 @@ typedef struct __attribute__((packed)) virtio_net_hdr_t {
     uint16_t gso_size;
     uint16_t csum_start;
     uint16_t csum_offset;
-} virtio_net_hdr_t;
-
-typedef struct __attribute__((packed)) virtio_net_hdr_mrg_rxbuf_t {
-    virtio_net_hdr_t hdr;
     uint16_t num_buffers;
-} virtio_net_hdr_mrg_rxbuf_t;
+} virtio_net_hdr_t;
 
 typedef struct __attribute__((packed)) virtio_net_config {
     uint8_t mac[6];
@@ -92,7 +88,6 @@ private:
     size_t tx_pending_size = 0;
 
     bool verbose = false;
-    bool mrg_rxbuf = false;
 
     bool ctrl_vq = false;
     bool ctrl_rx = false;

@@ -13,9 +13,13 @@
 #define CONTROL_QUEUE 2
 
 constexpr uint32_t RX_BUF_SIZE = PAGE_SIZE;
-constexpr uint16_t RX_CHAIN_SEGS = 4;
+constexpr uint16_t RX_CHAIN_SEGS = 1;
+constexpr uint64_t RX_PACKET_POOL_SIZE = 8*1024*1024;
+constexpr uint64_t TX_PACKET_POOL_SIZE = 8*1024*1024;
 
 void* g_rx_pool = nullptr;
+void* g_rx_packet_pool = nullptr;
+void* g_tx_packet_pool = nullptr;
 
 #define kprintfv(fmt, ...) \
     ({ \
@@ -84,7 +88,6 @@ VirtioNetDriver::~VirtioNetDriver(){}
 
 bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
     verbose = false;
-    mrg_rxbuf = false;
     ctrl_vq = false;
     ctrl_rx = false;
     header_size = sizeof(virtio_net_hdr_t);
@@ -135,9 +138,10 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
     net_feature_mask |= (1ULL << VIRTIO_NET_F_MAC);
     net_feature_mask |= (1ULL << VIRTIO_NET_F_STATUS);
     net_feature_mask |= (1ULL << VIRTIO_NET_F_MTU);
-    net_feature_mask |= (1ULL << VIRTIO_NET_F_MRG_RXBUF);
     net_feature_mask |= (1ULL << VIRTIO_NET_F_CTRL_VQ);
     net_feature_mask |= (1ULL << VIRTIO_NET_F_CTRL_RX);
+    net_feature_mask |= (1ULL << VIRTIO_NET_F_SPEED_DUPLEX);
+    //TODO evaluate MRG_RXBUF CSUM TSO GSO GRO USO
     virtio_set_feature_mask(net_feature_mask);
 
     if (!virtio_init_device(&vnp_net_dev)){
@@ -146,8 +150,12 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
     }
     kprintfv("[virtio-net] common_cfg=%x device_cfg=%x", (uintptr_t)vnp_net_dev.common_cfg,(uintptr_t)vnp_net_dev.device_cfg);
 
-    mrg_rxbuf = (vnp_net_dev.negotiated_features & (1ULL << VIRTIO_NET_F_MRG_RXBUF)) != 0;
-    header_size = mrg_rxbuf ? sizeof(virtio_net_hdr_mrg_rxbuf_t) : sizeof(virtio_net_hdr_t);
+    if (!(vnp_net_dev.negotiated_features & (1ULL << VIRTIO_F_VERSION_1))) {
+        kprintf("[virtio-net][err] device did not accept VIRTIO_F_VERSION_1");
+        vnp_net_dev.common_cfg->device_status |= VIRTIO_STATUS_FAILED;
+        return false;
+    }
+    header_size = sizeof(virtio_net_hdr_t);
 
     ctrl_vq = (vnp_net_dev.negotiated_features & (1ULL << VIRTIO_NET_F_CTRL_VQ)) != 0;
     ctrl_rx = (vnp_net_dev.negotiated_features & (1ULL << VIRTIO_NET_F_CTRL_RX)) != 0;
@@ -173,6 +181,18 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
         if (!g_rx_pool) return false;
     }
 
+    if (!g_rx_packet_pool) {
+        g_rx_packet_pool = palloc(RX_PACKET_POOL_SIZE, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, false);
+        kprintfv("[virtio-net] rx_packet_pool=%x", (uintptr_t)g_rx_packet_pool);
+        if (!g_rx_packet_pool) return false;
+    }
+
+    if (!g_tx_packet_pool) {
+        g_tx_packet_pool = palloc(TX_PACKET_POOL_SIZE, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, false);
+        kprintfv("[virtio-net] tx_packet_pool=%x", (uintptr_t)g_tx_packet_pool);
+        if (!g_tx_packet_pool) return false;
+    }
+
     uint16_t chain_count = (uint16_t)(rx_qsz / RX_CHAIN_SEGS);
     if (!chain_count) return false;
 
@@ -183,21 +203,15 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
     rx_used->idx = 0;
 
     for (uint16_t c = 0; c < chain_count; c++) {
-        uint16_t head = (uint16_t)(c * RX_CHAIN_SEGS);
+        uint16_t di = (uint16_t)(c * RX_CHAIN_SEGS);
+        void* buf = (void*)((uintptr_t)g_rx_pool + (uintptr_t)di * (uintptr_t)RX_BUF_SIZE);
 
-        for (uint16_t s = 0; s < RX_CHAIN_SEGS; s++){
-            uint16_t di = (uint16_t)(head + s);
-            void* buf = (void*)((uintptr_t)g_rx_pool + (uintptr_t)di * (uintptr_t)RX_BUF_SIZE);
+        rx_desc[di].addr = VIRT_TO_PHYS((uintptr_t)buf);
+        rx_desc[di].len = RX_BUF_SIZE;
+        rx_desc[di].flags = VIRTQ_DESC_F_WRITE;
+        rx_desc[di].next = 0;
 
-            rx_desc[di].addr = VIRT_TO_PHYS((uintptr_t)buf);
-            rx_desc[di].len = RX_BUF_SIZE;
-            rx_desc[di].flags = (uint16_t)(VIRTQ_DESC_F_WRITE | ((s + 1 < RX_CHAIN_SEGS) ? VIRTQ_DESC_F_NEXT : 0));
-            rx_desc[di].next = (uint16_t)(di + 1);
-        }
-
-        rx_desc[head + (RX_CHAIN_SEGS - 1)].next = 0;
-
-        rx_avail->ring[rx_avail->idx % rx_qsz] = head;
+        rx_avail->ring[rx_avail->idx % rx_qsz] = di;
         rx_avail->idx++;
     }
 
@@ -207,7 +221,6 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
     vnp_net_dev.common_cfg->queue_msix_vector = 0;
     kprintfv("[virtio-net] RX vector=%u",vnp_net_dev.common_cfg->queue_msix_vector);
     if (vnp_net_dev.common_cfg->queue_msix_vector != 0) return false;
-    virtio_notify(&vnp_net_dev);
 
     if (TRANSMIT_QUEUE >= vnp_net_dev.num_queues) return false;
     if (!vnp_net_dev.queues[TRANSMIT_QUEUE].valid) return false;
@@ -240,7 +253,6 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
         vnp_net_dev.common_cfg->queue_msix_vector = 0xFFFF;
     }
 
-    if (ctrl_vq && ctrl_rx) (void)sync_multicast((const uint8_t*)0, 0);
     kprintfv("[virtio-net] negotiated ctrl_vq=%u ctrl_rx=%u", (unsigned)ctrl_vq, (unsigned)ctrl_rx);
 
     volatile virtio_net_config* cfg = (volatile virtio_net_config*)vnp_net_dev.device_cfg;
@@ -249,15 +261,18 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
     get_mac(mac);
 
 
-    uint16_t dev_mtu = cfg->mtu;
-    if (dev_mtu != 0 && dev_mtu != 0xFFFF && dev_mtu >= 576) mtu = dev_mtu; else mtu = 1500;
+    if (vnp_net_dev.negotiated_features & (1ULL << VIRTIO_NET_F_MTU)) {
+        uint16_t dev_mtu = cfg->mtu;
+        if (dev_mtu != 0 && dev_mtu != 0xFFFF && dev_mtu >= 576) mtu = dev_mtu;
+    }
 
-
-    speed_mbps = cfg->speed;
-    switch (cfg->duplex) {
-        case 0: duplex = LINK_DUPLEX_HALF; break;
-        case 1: duplex = LINK_DUPLEX_FULL; break;
-        default: duplex = LINK_DUPLEX_UNKNOWN; break;
+    if (vnp_net_dev.negotiated_features & (1ULL << VIRTIO_NET_F_SPEED_DUPLEX)) {
+        speed_mbps = cfg->speed;
+        switch (cfg->duplex) {
+            case 0: duplex = LINK_DUPLEX_HALF; break;
+            case 1: duplex = LINK_DUPLEX_FULL; break;
+            default: duplex = LINK_DUPLEX_UNKNOWN; break;
+        }
     }
 
     hw_name[0] = 'v'; hw_name[1] = 'i'; hw_name[2] = 'r'; hw_name[3] = 't'; hw_name[4] = 'i'; hw_name[5] = 'o'; hw_name[6] = 0;
@@ -274,6 +289,11 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
     }
 
     vnp_net_dev.common_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
+    asm volatile ("dsb sy" ::: "memory");
+
+    select_queue(&vnp_net_dev, RECEIVE_QUEUE);
+    virtio_notify(&vnp_net_dev);
+    if (ctrl_vq && ctrl_rx) (void)sync_multicast((const uint8_t*)0, 0);
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
     return true;
 }
@@ -308,121 +328,69 @@ uint8_t VirtioNetDriver::get_duplex() const {
 }
 
 sizedptr VirtioNetDriver::allocate_packet(size_t size){
-    size_t total = size + (size_t)header_size;
-    return (sizedptr){(uintptr_t)kalloc(vnp_net_dev.memory_page, total, ALIGN_64B, MEM_PRIV_KERNEL), total};
+    if (!g_tx_packet_pool) return (sizedptr){0, 0};
+    size_t total = size + header_size;
+
+    irq_flags_t iqr = irq_save_disable();
+    void* ptr = kalloc(g_tx_packet_pool, total, ALIGN_64B, MEM_PRIV_KERNEL);
+    irq_restore(iqr);
+
+    return (sizedptr){(uintptr_t)ptr, total};
 }
 
 sizedptr VirtioNetDriver::handle_receive_packet(){
-    uint32_t desc_index = 0;
-    uint32_t total_len = 0;
-    uint16_t num_buffers = 1;
+    if (!rx_qsz || !rx_desc || !rx_used || !rx_avail) return (sizedptr){0,0};
 
-    irq_flags_t irq = irq_save_disable();
     select_queue(&vnp_net_dev, RECEIVE_QUEUE);
-    volatile virtq_used* used = rx_used;
-    volatile virtq_desc* desc = rx_desc;
-    volatile virtq_avail* avail = rx_avail;
-    uint16_t qsz = rx_qsz;
-    if (!qsz || !used || !desc || !avail) {
-        irq_restore(irq);
-        return (sizedptr){0,0};
-    }
     asm volatile ("dmb ishld" ::: "memory");
 
-    uint16_t new_idx = used->idx;
-    if (new_idx == last_used_receive_idx) {
-        irq_restore(irq);
-        return (sizedptr){0,0};
-    }
+    uint16_t new_idx = rx_used->idx;
+    if (new_idx == last_used_receive_idx) return (sizedptr){0,0};
 
-    uint16_t used_ring_index = (uint16_t)(last_used_receive_idx % qsz);
-    volatile virtq_used_elem* e = &used->ring[used_ring_index];
+    uint16_t used_ring_index = (uint16_t)(last_used_receive_idx % rx_qsz);
+    volatile virtq_used_elem* e = &rx_used->ring[used_ring_index];
+    uint32_t desc_index = e->id;
+    uint32_t total_len = e->len;
     last_used_receive_idx++;
-    desc_index = e->id;
-    total_len = e->len;
 
-    if (desc_index >= qsz || total_len <= (uint32_t)header_size){
-        uint16_t aidx = avail->idx;
-        avail->ring[aidx % qsz] = (uint16_t)(desc_index % qsz);
+    if (desc_index >= rx_qsz) return (sizedptr){0,0};
+    if (total_len <= (uint32_t)header_size || total_len > rx_desc[desc_index].len) {
+        uint16_t aidx = rx_avail->idx;
+        rx_avail->ring[aidx % rx_qsz] = (uint16_t)desc_index;
         asm volatile ("dmb ishst" ::: "memory");
-        avail->idx = (uint16_t)(aidx + 1);
+        rx_avail->idx = (uint16_t)(aidx + 1);
         asm volatile ("dmb ishst" ::: "memory");
-        select_queue(&vnp_net_dev, RECEIVE_QUEUE);
         virtio_notify(&vnp_net_dev);
-        irq_restore(irq);
         return (sizedptr){0,0};
     }
-
-    volatile uint8_t* first_buf = (volatile uint8_t*)PHYS_TO_VIRT_P((void*)(uintptr_t)desc[desc_index].addr);
-    if (mrg_rxbuf) {
-        virtio_net_hdr_mrg_rxbuf_t* h = (virtio_net_hdr_mrg_rxbuf_t*)(uintptr_t)first_buf;
-        num_buffers = h->num_buffers;
-        if (num_buffers == 0) num_buffers = 1;
-        if (num_buffers > RX_CHAIN_SEGS) {
-            uint16_t aidx = avail->idx;
-            avail->ring[aidx % qsz] = (uint16_t)desc_index;
-            asm volatile ("dmb ishst" ::: "memory");
-            avail->idx = (uint16_t)(aidx + 1);
-            asm volatile ("dmb ishst" ::: "memory");
-            select_queue(&vnp_net_dev, RECEIVE_QUEUE);
-            virtio_notify(&vnp_net_dev);
-            irq_restore(irq);
-            return (sizedptr){0,0};
-        }
-    }
-
-    irq_restore(irq);
 
     uint32_t payload_len = total_len - (uint32_t)header_size;
-    void* out_buf = kalloc(vnp_net_dev.memory_page, payload_len, ALIGN_64B, MEM_PRIV_KERNEL);
-    if (!out_buf){
-        irq = irq_save_disable();
-        uint16_t aidx = avail->idx;
-        avail->ring[aidx % qsz] = (uint16_t)desc_index;
-        asm volatile ("dmb ishst" ::: "memory");
-        avail->idx = (uint16_t)(aidx + 1);
-        asm volatile ("dmb ishst" ::: "memory");
-        select_queue(&vnp_net_dev, RECEIVE_QUEUE);
-        virtio_notify(&vnp_net_dev);
+    volatile uint8_t* buf = (volatile uint8_t*)PHYS_TO_VIRT_P((void*)rx_desc[desc_index].addr);
+
+    void* out_buf = nullptr;
+    if (g_rx_packet_pool) {
+        irq_flags_t irq = irq_save_disable();
+        out_buf = kalloc(g_rx_packet_pool, payload_len, ALIGN_64B, MEM_PRIV_KERNEL);
         irq_restore(irq);
+    }
+    if (!out_buf){
+        uint16_t aidx = rx_avail->idx;
+        rx_avail->ring[aidx % rx_qsz] = (uint16_t)desc_index;
+        asm volatile ("dmb ishst" ::: "memory");
+        rx_avail->idx = (uint16_t)(aidx + 1);
+        asm volatile ("dmb ishst" ::: "memory");
+        virtio_notify(&vnp_net_dev);
         return (sizedptr){0,0};
     }
 
-    uint32_t written = 0;
-    uint32_t remaining = payload_len;
-    uint16_t di = (uint16_t)desc_index;
-    for (uint16_t bi = 0; bi < num_buffers && remaining; bi++) {
-        volatile uint8_t* buf = (volatile uint8_t*)PHYS_TO_VIRT_P((void*)(uintptr_t)desc[di].addr);
-        uint32_t cap = desc[di].len;
-        uint32_t off = (bi == 0) ? (uint32_t)header_size : 0;
-        if (cap <= off) break;
+    memcpy(out_buf, (const void*)((uintptr_t)buf + (uintptr_t)header_size), payload_len);
 
-        uint32_t chunk = cap - off;
-        if (chunk > remaining) chunk = remaining;
-        memcpy((uint8_t*)out_buf + written, (const void*)((uintptr_t)buf + off), chunk);
-        written += chunk;
-        remaining -= chunk;
-
-        if (bi + 1 < num_buffers) {
-            if (!(desc[di].flags & VIRTQ_DESC_F_NEXT)) break;
-            di = desc[di].next;
-        }
-    }
-
-    irq = irq_save_disable();
-    uint16_t aidx = avail->idx;
-    avail->ring[aidx % qsz] = (uint16_t)desc_index;
+    uint16_t aidx = rx_avail->idx;
+    rx_avail->ring[aidx % rx_qsz] = (uint16_t)desc_index;
     asm volatile ("dmb ishst" ::: "memory");
-    avail->idx = (uint16_t)(aidx + 1);
+    rx_avail->idx = (uint16_t)(aidx + 1);
     asm volatile ("dmb ishst" ::: "memory");
-    select_queue(&vnp_net_dev, RECEIVE_QUEUE);
     virtio_notify(&vnp_net_dev);
-    irq_restore(irq);
-
-    if (remaining != 0) {
-        kfree(out_buf, payload_len);
-        return (sizedptr){0,0};
-    }
 
     return (sizedptr){ (uintptr_t)out_buf, payload_len };
 }
@@ -431,7 +399,6 @@ void VirtioNetDriver::handle_sent_packet(){
     if (TRANSMIT_QUEUE >= vnp_net_dev.num_queues) return;
     if (!tx_qsz || !tx_desc || !tx_used || !tx_pending) return;
 
-    irq_flags_t irq = irq_save_disable();
     select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
     asm volatile ("dmb ishld" ::: "memory");
 
@@ -450,15 +417,14 @@ void VirtioNetDriver::handle_sent_packet(){
         tx_desc[desc_index].flags = 0;
         tx_desc[desc_index].next = 0;
 
-        irq_restore(irq);
-        if (packet.ptr) kfree((void*)packet.ptr, packet.size);
-        irq = irq_save_disable();
-        select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
+        if (packet.ptr) {
+            irq_flags_t irq = irq_save_disable();
+            kfree((void*)packet.ptr, packet.size);
+            irq_restore(irq);
+        }
         asm volatile ("dmb ishld" ::: "memory");
         used_idx = tx_used->idx;
     }
-
-    irq_restore(irq);
 }
 
 bool VirtioNetDriver::send_packet(sizedptr packet){
@@ -468,59 +434,48 @@ bool VirtioNetDriver::send_packet(sizedptr packet){
     if (!tx_qsz || !tx_desc || !tx_avail || !tx_used || !tx_pending) return false;
 
     memset((void*)packet.ptr, 0, (size_t)header_size);
-    if (mrg_rxbuf) ((virtio_net_hdr_mrg_rxbuf_t*)packet.ptr)->num_buffers = 0;
 
-    for (uint32_t wait = 0; wait < 1000; wait++) {
-        handle_sent_packet();
+    handle_sent_packet();
+    select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
 
-        irq_flags_t irq = irq_save_disable();
-        select_queue(&vnp_net_dev, TRANSMIT_QUEUE);
-
-        bool found = false;
-        uint16_t desc_index = 0;
-        for (uint16_t i = 0; i < tx_qsz; i++) {
-            uint16_t current = (tx_next_desc + i) % tx_qsz;
-            if (tx_pending[current].ptr) continue;
-            desc_index = current;
-            tx_next_desc = (current + 1) % tx_qsz;
-            found = true;
-            break;
-        }
-
-        if (found) {
-            tx_pending[desc_index] = packet;
-            tx_desc[desc_index].addr = VIRT_TO_PHYS(packet.ptr);
-            tx_desc[desc_index].len = (uint32_t)packet.size;
-            tx_desc[desc_index].flags = 0;
-            tx_desc[desc_index].next = 0;
-
-            asm volatile ("dmb ishst" ::: "memory");
-            uint16_t avail_idx = tx_avail->idx;
-            tx_avail->ring[avail_idx % tx_qsz] = desc_index;
-            asm volatile ("dmb ishst" ::: "memory");
-            tx_avail->idx = (uint16_t)(avail_idx + 1);
-            asm volatile ("dmb ishst" ::: "memory");
-            virtio_notify(&vnp_net_dev);
-            irq_restore(irq);
-
-            kprintfv("[virtio-net] tx queued desc=%u len=%u", desc_index,(unsigned)packet.size);
-            return true;
-        }
-
-        irq_restore(irq);
-        msleep(1);
+    bool found = false;
+    uint16_t desc_index = 0;
+    for (uint16_t i = 0; i < tx_qsz; i++) {
+        uint16_t current = (tx_next_desc + i) % tx_qsz;
+        if (tx_pending[current].ptr) continue;
+        desc_index = current;
+        tx_next_desc = (current + 1) % tx_qsz;
+        found = true;
+        break;
     }
 
-    kprintfv("[virtio-net] tx queue full len=%u", packet.size);
-    return false;
+    if (!found) {
+        kprintfv("[virtio-net] tx queue len=%u", packet.size);
+        return false;
+    }
+
+    tx_pending[desc_index] = packet;
+    tx_desc[desc_index].addr = VIRT_TO_PHYS(packet.ptr);
+    tx_desc[desc_index].len = (uint32_t)packet.size;
+    tx_desc[desc_index].flags = 0;
+    tx_desc[desc_index].next = 0;
+
+    asm volatile ("dmb ishst" ::: "memory");
+    uint16_t avail_idx = tx_avail->idx;
+    tx_avail->ring[avail_idx % tx_qsz] = desc_index;
+    asm volatile ("dmb ishst" ::: "memory");
+    tx_avail->idx = (uint16_t)(avail_idx + 1);
+    asm volatile ("dmb ishst" ::: "memory");
+    virtio_notify(&vnp_net_dev);
+
+    kprintfv("[virtio-net] tx queued desc=%u len=%u", desc_index,(unsigned)packet.size);
+    return true;
 }
 
 bool VirtioNetDriver::sync_multicast(const uint8_t* macs, uint32_t count) {
     if (!ctrl_vq) return true;
     if (!ctrl_rx) return true;
     if (!macs && count) return false;
-
-    irq_flags_t irq = irq_save_disable();
 
     bool ok = true;
 
@@ -536,7 +491,6 @@ bool VirtioNetDriver::sync_multicast(const uint8_t* macs, uint32_t count) {
     uint32_t payload_len = 8u + count * 6u;
     uint8_t* payload = (uint8_t*)kalloc(vnp_net_dev.memory_page, payload_len, ALIGN_16B, MEM_PRIV_KERNEL);
     if (!payload) {
-        irq_restore(irq);
         return false;
     }
     kprintfv("[virtio-net] sync_multicast ctrl_vq=%u ctrl_rx=%u count=%u",(unsigned)ctrl_vq, (unsigned)ctrl_rx, (unsigned)count);
@@ -549,7 +503,6 @@ bool VirtioNetDriver::sync_multicast(const uint8_t* macs, uint32_t count) {
     ok = ok && virtio_net_ctrl_send(&vnp_net_dev, VIRTIO_NET_CTRL_MAC, VIRTIO_NET_CTRL_MAC_TABLE_SET, payload, payload_len);
 
     kfree(payload, payload_len);
-    irq_restore(irq);
     return ok;
 }
 

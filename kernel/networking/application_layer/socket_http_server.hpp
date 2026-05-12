@@ -204,7 +204,7 @@ public:
                             bad_request = true;
                             break;
                         }
-                        msleep(5);
+                        msleep(2);
                         continue;
                     }
                     if (r <= 0) {
@@ -272,15 +272,50 @@ public:
 
     int32_t send_response(TCPSocket* client, const HTTPResponseMsg& res) {
         if (!client) return SOCK_ERR_STATE;
+        
+        HTTPResponseMsg head = res;
+        head.body = sizedptr{};
         uint32_t code = (uint32_t)res.status_code;
-        string out = http_response_builder(&res);
-        uint32_t out_len = out.length;
-        uint32_t off = 0;
+        string out = http_response_builder(&head);
+        uint32_t body_len = (res.body.ptr && res.body.size) ? (uint32_t)res.body.size : 0;
+        uint32_t out_len = out.length + body_len;
         int64_t sent = 0;
-        while (off < out_len) {
-            int64_t r = client->send(out.data + off, out_len - off);
-            if (r == TCP_WOULDBLOCK) {
-                msleep(5);
+        uint32_t start_ms = (uint32_t)get_time();
+        uint32_t progress_ms = start_ms;
+        const uint8_t* first_ptr = (const uint8_t*)out.data;
+        uint32_t first_len = out.length;
+        uint32_t first_body_len = 0;
+        uint32_t body_off = 0;
+        uint8_t* combo = nullptr;
+
+        if (body_len && out.length < 1460) {
+            first_body_len = body_len;
+            uint32_t room = 1460 - out.length;
+            if (first_body_len > room) first_body_len = room;
+
+            if (first_body_len) {
+                combo = (uint8_t*)zalloc(out.length + first_body_len);
+                if (combo) {
+                    memcpy(combo, out.data, out.length);
+                    memcpy(combo + out.length, (const void*)res.body.ptr, first_body_len);
+
+                    first_ptr = combo;
+                    first_len = out.length + first_body_len;
+                } else first_body_len = 0;
+            }
+        }
+        
+        uint32_t off = 0;
+        while (sent >= 0 && off < first_len) {
+            int64_t r = client->send(first_ptr + off, first_len - off);
+            uint32_t now = (uint32_t)get_time();
+
+            if (r == TCP_WOULDBLOCK || r == 0) {
+                if ((now - progress_ms) > 3000 || (now - start_ms) > 30000) {
+                    sent = SOCK_ERR_SYS;
+                    break;
+                }
+                msleep(2);
                 continue;
             }
             if (r < 0) {
@@ -288,8 +323,38 @@ public:
                 break;
             }
             off += (uint32_t)r;
+            progress_ms = now;
         }
-        if (sent >= 0) sent = (int64_t)off;
+
+        if (sent >= 0) body_off = first_body_len;
+        if (sent >= 0 && body_len) {
+            const uint8_t* body = (const uint8_t*)res.body.ptr;
+
+            while (body_off < body_len) {
+                uint32_t ask = body_len - body_off;
+                if (ask > 16384) ask = 16384;
+                int64_t r = client->send(body + body_off, ask);
+                uint32_t now = (uint32_t)get_time();
+
+                if (r == TCP_WOULDBLOCK || r == 0) {
+                    if ((now - progress_ms) > 3000 || (now - start_ms) > 30000) {
+                        sent = SOCK_ERR_SYS;
+                        break;
+                    }
+                    msleep(2);
+                    continue;
+                }
+                if (r < 0) {
+                    sent = r;
+                    break;
+                }
+                body_off += (uint32_t)r;
+                progress_ms = now;
+            }
+        }
+        
+        if (sent >= 0) sent = (int64_t)out.length + body_off;
+        if (combo) release(combo);
         
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_HTTP_SERVER;

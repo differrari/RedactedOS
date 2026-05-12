@@ -14,15 +14,19 @@
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/netpkt.h"
 #include "networking/link_layer/link_utils.h"
+#include "networking/transport_layer/tcp.h"
 #include "networking/drivers/loopback/loopback_driver.hpp"
 #include "exceptions/irq.h"
 
-#define RX_INTR_BATCH_LIMIT 64
+#define RX_INTR_BATCH_LIMIT 256
 #define TASK_RX_BATCH_LIMIT 256
 #define TASK_TX_BATCH_LIMIT 256
 
 static void netpkt_free_rx_frame(void* ctx, uintptr_t base, uint32_t alloc_size) {
-    if (base) kfree((void*)base, alloc_size);
+    if (!base) return;
+    irq_flags_t flags = irq_save_disable();
+    kfree((void*)base, alloc_size);
+    irq_restore(flags);
 }
 
 NetworkDispatch::NetworkDispatch()
@@ -97,14 +101,14 @@ bool NetworkDispatch::enqueue_frame(uint8_t ifindex, const sizedptr& frame)
     void* dst = (void*)(pkt.ptr + hs);
     memcpy(dst, (const void*)frame.ptr, frame.size);
 
-    irq_flags_t irq = irq_save_disable();
+    irq_flags_t flags = irq_save_disable();
     int pushed = nics[nic_id].tx.push(pkt);
     if (pushed) nics[nic_id].tx_produced++;
-    irq_restore(irq);
+    else nics[nic_id].tx_dropped++;
+    irq_restore(flags);
 
     if (!pushed) {
         free_frame(pkt);
-        nics[nic_id].tx_dropped++;
         return false;
     }
     return true;
@@ -145,7 +149,7 @@ int NetworkDispatch::net_task()
                 if (np) {
                     eth_input(nics[n].ifindex, np);
                     netpkt_unref(np);
-                } else kfree((void*)pkt.ptr, pkt.size);
+                } else free_frame(pkt);
                 nics[n].rx_consumed++;
                 processed++;
             }
@@ -157,17 +161,20 @@ int NetworkDispatch::net_task()
             if (!driver) continue;
             int processed = 0;
             for (int i = 0; i < TASK_TX_BATCH_LIMIT; ++i) {
-                sizedptr pkt{0,0};
-                irq_flags_t irq = irq_save_disable();
-                int popped = nics[n].tx.pop(pkt);
-                if (popped) nics[n].tx_consumed++;
-                irq_restore(irq);
-
-                if (!popped) break;
-                if (!driver->send_packet(pkt)) {
-                    free_frame(pkt);
-                    nics[n].tx_dropped++;
+                irq_flags_t flags = irq_save_disable();
+                if (nics[n].tx.is_empty()) {
+                    irq_restore(flags);
+                    break;
                 }
+                sizedptr pkt = nics[n].tx.peek();
+                irq_restore(flags);
+
+                if (!driver->send_packet(pkt)) break;
+
+                flags = irq_save_disable();
+                sizedptr popped{0,0};
+                if (nics[n].tx.pop(popped)) nics[n].tx_consumed++;
+                irq_restore(flags);
                 processed++;
             }
             if (processed) did_work = true;
@@ -253,7 +260,10 @@ uint8_t NetworkDispatch::kind(uint8_t ifindex) const
 
 void NetworkDispatch::free_frame(const sizedptr &f)
 {
-    if (f.ptr) kfree((void*)f.ptr, f.size);
+    if (!f.ptr) return;
+    irq_flags_t flags = irq_save_disable();
+    kfree((void*)f.ptr, f.size);
+    irq_restore(flags);
 }
 
 bool NetworkDispatch::register_all_from_bus() {

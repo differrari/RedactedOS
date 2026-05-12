@@ -109,15 +109,19 @@ bool virtio_init_device(virtio_device *dev) {
     dev->num_queues = 0;
     dev->current_queue = 0;
     dev->negotiated_features = 0;
+    cfg->device_status = VIRTIO_STATUS_RESET;
+    asm volatile ("dsb sy" ::: "memory");
     uint32_t timeout = 2000;
-    while (cfg->device_status != 0) {
+    while (cfg->device_status != VIRTIO_STATUS_RESET) {
         if (timeout == 0) return false;
         timeout--;
         delay(1);
     }
 
     cfg->device_status = VIRTIO_STATUS_ACKNOWLEDGE;
+    asm volatile ("dsb sy" ::: "memory");
     cfg->device_status |= VIRTIO_STATUS_DRIVER;
+    asm volatile ("dsb sy" ::: "memory");
 
     cfg->device_feature_select = 0;
     uint32_t f_lo = cfg->device_feature;
@@ -128,6 +132,11 @@ bool virtio_init_device(virtio_device *dev) {
     kprintfv("Features %llx",(unsigned long long)features);
 
     uint64_t negotiated = (features & feature_mask);
+    if ((feature_mask & (1ULL << VIRTIO_F_VERSION_1)) && !(negotiated & (1ULL << VIRTIO_F_VERSION_1))) {
+        kprintf("[VIRTIO] VIRTIO_F_VERSION_1 not supported");
+        cfg->device_status |= VIRTIO_STATUS_FAILED;
+        return false;
+    }
 
     kprintfv("Negotiated features %llx",(unsigned long long)negotiated);
 
@@ -139,8 +148,10 @@ bool virtio_init_device(virtio_device *dev) {
     dev->negotiated_features = negotiated;
 
     cfg->device_status |= VIRTIO_STATUS_FEATURES_OK;
+    asm volatile ("dsb sy" ::: "memory");
     if (!(cfg->device_status & VIRTIO_STATUS_FEATURES_OK)){
         kprintf("Failed to negotiate features. Supported features %llx",(unsigned long long)features);
+        cfg->device_status |= VIRTIO_STATUS_FAILED;
         return false;
     }
 

@@ -1,6 +1,7 @@
 #include "netpkt.h"
 #include "std/std.h"
 #include "memory/page_allocator.h"
+#include "exceptions/irq.h"
 
 #define NETPKT_F_VIEW 1u
 #define NETPKT_BUF_F_EXTERNAL 1u
@@ -346,13 +347,20 @@ static bool netpkt_realloc_to(netpkt_t* p, uint32_t new_head, uint32_t new_alloc
 }
 
 netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailroom) {
+    irq_flags_t irq = irq_save_disable();
     uint64_t alloc = (uint64_t)headroom + (uint64_t)data_capacity + (uint64_t)tailroom;
-    if (alloc > (uint64_t)NETPKT_MAX_ALLOC) return 0;
+    if (alloc > (uint64_t)NETPKT_MAX_ALLOC) {
+        irq_restore(irq);
+        return 0;
+    }
 
     if (!alloc) alloc = 1;
     uint64_t cap64 = count_pages(alloc, PAGE_SIZE) * (uint64_t)PAGE_SIZE;
     if (!cap64) cap64 = PAGE_SIZE;
-    if (cap64 > (uint64_t)NETPKT_MAX_ALLOC) return 0;
+    if (cap64 > (uint64_t)NETPKT_MAX_ALLOC) {
+        irq_restore(irq);
+        return 0;
+    }
 
     uint32_t cap = (uint32_t)cap64;
 
@@ -364,8 +372,10 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
         from_spare = true;
         memset(mem, 0, PAGE_SIZE);
     } else {
-        if ((uint64_t)cap > (uint64_t)NETPKT_MAX_PAGE_BYTES) return 0;
-        if (g_netpkt_page_bytes > (uint64_t)NETPKT_MAX_PAGE_BYTES - (uint64_t)cap) return 0;
+    if ((uint64_t)cap > (uint64_t)NETPKT_MAX_PAGE_BYTES || g_netpkt_page_bytes > (uint64_t)NETPKT_MAX_PAGE_BYTES - (uint64_t)cap) {
+        irq_restore(irq);
+        return 0;
+    }
         g_netpkt_page_bytes += (uint64_t)cap;
         g_netpkt_payload_page_bytes += (uint64_t)cap;
 
@@ -375,6 +385,7 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
             else g_netpkt_page_bytes = 0;
             if (g_netpkt_payload_page_bytes >= (uint64_t)cap) g_netpkt_payload_page_bytes -= (uint64_t)cap;
             else g_netpkt_payload_page_bytes = 0;
+            irq_restore(irq);
             return 0;
         }
     }
@@ -391,6 +402,7 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
             if (g_netpkt_payload_page_bytes >= (uint64_t)cap) g_netpkt_payload_page_bytes -= (uint64_t)cap;
             else g_netpkt_payload_page_bytes = 0;
         }
+        irq_restore(irq);
         return 0;
     }
 
@@ -414,6 +426,7 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
             if (g_netpkt_payload_page_bytes >= (uint64_t)cap) g_netpkt_payload_page_bytes -= (uint64_t)cap;
             else g_netpkt_payload_page_bytes = 0;
         }
+        irq_restore(irq);
         return 0;
     }
 
@@ -424,19 +437,23 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
     p->len = 0;
     p->refs = 1;
     p->flags = 0;
+    irq_restore(irq);
     return p;
 }
 
 netpkt_t* netpkt_wrap(uintptr_t base, uint32_t alloc_size, uint32_t data_off, uint32_t data_len, netpkt_free_fn free_fn, void* ctx) {
-    if (!base) return 0;
-    if (!alloc_size) return 0;
-    if (alloc_size > NETPKT_MAX_ALLOC) return 0;
-    if (data_off > alloc_size) return 0;
-    if (data_len > alloc_size - data_off) return 0;
+    irq_flags_t irq = irq_save_disable();
+    if (!base || !alloc_size || alloc_size > NETPKT_MAX_ALLOC || data_off > alloc_size || data_len > alloc_size - data_off) {
+        irq_restore(irq);
+        return 0;
+    }
 
     uint32_t bsz = (uint32_t)(((uint64_t)sizeof(netpkt_buf_t) + 15ull) &~15ull);
     netpkt_buf_t* b = (netpkt_buf_t*)meta_slab_alloc(&g_meta_slab_buf, bsz);
-    if (!b) return 0;
+    if (!b) {
+        irq_restore(irq);
+        return 0;
+    }
 
     b->base = base;
     b->alloc = alloc_size;
@@ -449,6 +466,7 @@ netpkt_t* netpkt_wrap(uintptr_t base, uint32_t alloc_size, uint32_t data_off, ui
     netpkt_t* p = (netpkt_t*)meta_slab_alloc(&g_meta_slab_pkt, psz);
     if (!p) {
         meta_slab_free(&g_meta_slab_buf, b);
+        irq_restore(irq);
         return 0;
     }
 
@@ -459,22 +477,35 @@ netpkt_t* netpkt_wrap(uintptr_t base, uint32_t alloc_size, uint32_t data_off, ui
     p->len = data_len;
     p->refs = 1;
     p->flags = 0;
+    irq_restore(irq);
     return p;
 }
 
 netpkt_t* netpkt_view(netpkt_t* parent, uint32_t off, uint32_t len) {
-    if (!parent) return 0;
-    if (!parent->buf) return 0;
+    irq_flags_t irq = irq_save_disable();
+    if (!parent || !parent->buf) {
+        irq_restore(irq);
+        return 0;
+    }
 
     uint64_t end = (uint64_t)off+(uint64_t)len;
-    if (end > (uint64_t)parent->len) return 0;
+    if (end > (uint64_t)parent->len) {
+        irq_restore(irq);
+        return 0;
+    }
 
     uint64_t abs = (uint64_t)parent->off + (uint64_t)parent->head + (uint64_t)off;
-    if (abs + (uint64_t)len > (uint64_t)parent->buf->alloc) return 0;
+    if (abs + (uint64_t)len > (uint64_t)parent->buf->alloc) {
+        irq_restore(irq);
+        return 0;
+    }
 
     uint32_t psz = (uint32_t)(((uint64_t)sizeof(netpkt_t) + 15ull) &~15ull);
     netpkt_t* v = (netpkt_t*)meta_slab_alloc(&g_meta_slab_pkt, psz);
-    if (!v) return 0;
+    if (!v) {
+        irq_restore(irq);
+        return 0;
+    }
 
     parent->buf->refs++;
 
@@ -485,18 +516,23 @@ netpkt_t* netpkt_view(netpkt_t* parent, uint32_t off, uint32_t len) {
     v->len = len;
     v->refs = 1;
     v->flags = NETPKT_F_VIEW;
+    irq_restore(irq);
     return v;
 }
 
 void netpkt_ref(netpkt_t* p){
     if (!p) return;
+    irq_flags_t irq = irq_save_disable();
     p->refs++;
+    irq_restore(irq);
 }
 
 void netpkt_unref(netpkt_t* p) {
     if (!p) return;
+    irq_flags_t irq = irq_save_disable();
     if (p->refs > 1) {
         p->refs--;
+        irq_restore(irq);
         return;
     }
 
@@ -534,6 +570,7 @@ void netpkt_unref(netpkt_t* p) {
     }
 
     meta_slab_free(&g_meta_slab_pkt, p);
+    irq_restore(irq);
 }
 
 uintptr_t netpkt_data(const netpkt_t* p) {
@@ -579,13 +616,20 @@ uint32_t netpkt_tailroom(const netpkt_t* p) {
 
 bool netpkt_ensure_headroom(netpkt_t* p, uint32_t need) {
     if (!p) return false;
-    if (!p->buf) return false;
-    if (p->flags & NETPKT_F_VIEW) return false;
-    if (need > NETPKT_MAX_ALLOC) return false;
+    irq_flags_t irq = irq_save_disable();
+    if (!p->buf || (p->flags & NETPKT_F_VIEW) || need > NETPKT_MAX_ALLOC) {
+        irq_restore(irq);
+        return false;
+    }
 
     if (p->head >= need) {
-        if (p->buf->refs == 1) return true;
-        return netpkt_realloc_to(p, p->head, p->cap);
+        if (p->buf->refs == 1) {
+            irq_restore(irq);
+            return true;
+        }
+        bool ok = netpkt_realloc_to(p, p->head, p->cap);
+        irq_restore(irq);
+        return ok;
     }
 
     uint32_t tail = netpkt_tailroom(p);
@@ -594,29 +638,46 @@ bool netpkt_ensure_headroom(netpkt_t* p, uint32_t need) {
     uint64_t alloc = (uint64_t)new_head + (uint64_t)p->len + (uint64_t)tail;
     uint64_t min = (uint64_t)p->cap + (uint64_t)(need - p->head);
     if (alloc < min) alloc = min;
-    if (alloc > (uint64_t)NETPKT_MAX_ALLOC) return false;
+    if (alloc > (uint64_t)NETPKT_MAX_ALLOC) {
+        irq_restore(irq);
+        return false;
+    }
 
-    return netpkt_realloc_to(p, new_head, (uint32_t)alloc);
+    bool ok = netpkt_realloc_to(p, new_head, (uint32_t)alloc);
+    irq_restore(irq);
+    return ok;
 }
 
 bool netpkt_ensure_tailroom(netpkt_t* p, uint32_t need) {
     if (!p) return false;
-    if (!p->buf) return false;
-    if (p->flags & NETPKT_F_VIEW) return false;
-    if (need > NETPKT_MAX_ALLOC) return false;
+    irq_flags_t irq = irq_save_disable();
+    if (!p->buf || (p->flags & NETPKT_F_VIEW) || need > NETPKT_MAX_ALLOC) {
+        irq_restore(irq);
+        return false;
+    }
 
     uint32_t tail = netpkt_tailroom(p);
     if (tail >= need) {
-        if (p->buf->refs == 1) return true;
-        return netpkt_realloc_to(p, p->head, p->cap);
+        if (p->buf->refs == 1) {
+            irq_restore(irq);
+            return true;
+        }
+        bool ok = netpkt_realloc_to(p, p->head, p->cap);
+        irq_restore(irq);
+        return ok;
     }
 
     uint64_t alloc = (uint64_t)p->head + (uint64_t)p->len + (uint64_t)need;
     uint64_t min = (uint64_t)p->cap + (uint64_t)(need - tail);
     if (alloc < min) alloc = min;
-    if (alloc > (uint64_t)NETPKT_MAX_ALLOC) return false;
+    if (alloc > (uint64_t)NETPKT_MAX_ALLOC) {
+        irq_restore(irq);
+        return false;
+    }
 
-    return netpkt_realloc_to(p, p->head, (uint32_t)alloc);
+    bool ok = netpkt_realloc_to(p, p->head, (uint32_t)alloc);
+    irq_restore(irq);
+    return ok;
 }
 
 void* netpkt_push(netpkt_t* p, uint32_t bytes) {
@@ -644,21 +705,27 @@ void* netpkt_put(netpkt_t* p, uint32_t bytes) {
 
 bool netpkt_pull(netpkt_t* p, uint32_t bytes) {
     if (!p) return false;
-    if (bytes > p->len) return false;
+    irq_flags_t irq = irq_save_disable();
+    if (bytes > p->len) {
+        irq_restore(irq);
+        return false;
+    }
     p->head += bytes;
     p->len -= bytes;
 
-    if (p->flags & NETPKT_F_VIEW) return true;
-    if (!p->buf) return true;
-    if (p->buf->flags & NETPKT_BUF_F_EXTERNAL) return true;
-    if (p->buf->refs != 1) return true;
-    if (p->cap <= PAGE_SIZE) return true;
+        if ((p->flags & NETPKT_F_VIEW) || !p->buf || (p->buf->flags & NETPKT_BUF_F_EXTERNAL) || (p->buf->refs != 1) || (p->cap <= PAGE_SIZE)) {
+            irq_restore(irq);
+            return true;
+        }
 
     uint64_t need = (uint64_t)p->head+(uint64_t)p->len;
     if (!need) need = 1;
     uint64_t newcap64 = count_pages(need, PAGE_SIZE) * (uint64_t)PAGE_SIZE;
     if (newcap64 < PAGE_SIZE) newcap64 = PAGE_SIZE;
-    if (newcap64 >= (uint64_t)p->cap) return true;
+    if (newcap64 >= (uint64_t)p->cap) {
+        irq_restore(irq);
+        return true;
+    }
 
     uint32_t newcap = (uint32_t)newcap64;
     uint64_t dec = (uint64_t)p->buf->alloc - (uint64_t)newcap;
@@ -672,25 +739,32 @@ bool netpkt_pull(netpkt_t* p, uint32_t bytes) {
         p->cap = newcap;
     }
 
+    irq_restore(irq);
     return true;
 }
 
 bool netpkt_trim(netpkt_t* p, uint32_t new_len) {
     if (!p) return false;
-    if (new_len > p->len) return false;
+    irq_flags_t irq = irq_save_disable();
+    if (new_len > p->len) {
+        irq_restore(irq);
+        return false;
+    }
     p->len = new_len;
 
-    if (p->flags & NETPKT_F_VIEW) return true;
-    if (!p->buf) return true;
-    if (p->buf->flags & NETPKT_BUF_F_EXTERNAL) return true;
-    if (p->buf->refs != 1) return true;
-    if (p->cap <= PAGE_SIZE) return true;
+    if ((p->flags & NETPKT_F_VIEW) || !p->buf || (p->buf->flags & NETPKT_BUF_F_EXTERNAL) || (p->buf->refs != 1) || (p->cap <= PAGE_SIZE)) {
+        irq_restore(irq);
+        return true;
+    }
 
     uint64_t need = (uint64_t)p->head + (uint64_t)p->len;
     if (!need) need = 1;
     uint64_t newcap64 = count_pages(need, PAGE_SIZE) * (uint64_t)PAGE_SIZE;
     if (newcap64 < PAGE_SIZE) newcap64 = PAGE_SIZE;
-    if (newcap64 >= (uint64_t)p->cap) return true;
+    if (newcap64 >= (uint64_t)p->cap) {
+        irq_restore(irq);
+        return true;
+    }
 
     uint32_t newcap = (uint32_t)newcap64;
     uint64_t dec = (uint64_t)p->buf->alloc - (uint64_t)newcap;
@@ -704,5 +778,6 @@ bool netpkt_trim(netpkt_t* p, uint32_t new_len) {
         p->cap = newcap;
     }
 
+    irq_restore(irq);
     return true;
 }

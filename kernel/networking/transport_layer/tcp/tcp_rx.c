@@ -818,8 +818,15 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->base.ctx.ack_received = ack;
 
             tcp_daemon_kick();
+            if (!data_len && !fin) {
+                netpkt_unref(pkt);
+                return;
+            }
+            break;
         } else if (flags & (1u << RST_F)){
             tcp_free_flow(idx);
+            netpkt_unref(pkt);
+            return;
         }
 
         netpkt_unref(pkt);
