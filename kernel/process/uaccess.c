@@ -51,6 +51,7 @@ uaccess_result_t copy_from_user(process_t *proc, void *dst, uintptr_t src, size_
             pa = mmu_translate((uint64_t*)proc->mm.ttbr0, src, &st);
             if (st) return UACCESS_EFAULT;
         }
+        if (!pa) return UACCESS_EFAULT;
 
         memcpy(d, (const void*)dmap_pa_to_kva((paddr_t)pa), chunk);
         d += chunk;
@@ -109,6 +110,7 @@ uaccess_result_t copy_to_user(process_t *proc, uintptr_t dst, const void *src, s
             pa = mmu_translate((uint64_t*)proc->mm.ttbr0, dst, &st);
             if (st) return UACCESS_EFAULT;
         }
+        if (!pa) return UACCESS_EFAULT;
 
         memcpy((void*)dmap_pa_to_kva((paddr_t)pa), s, chunk);
         s += chunk;
@@ -140,6 +142,7 @@ uaccess_result_t copy_str_from_user(process_t *proc, char *dst, size_t dst_size,
             pa = mmu_translate((uint64_t*)proc->mm.ttbr0, src + pos, &st);
             if (st) return UACCESS_EFAULT;
         }
+        if (!pa) return UACCESS_EFAULT;
         memcpy(dst + pos, (const void*)dmap_pa_to_kva((paddr_t)pa), chunk);
         for (size_t i = 0; i < chunk; i++) {
             if (dst[pos + i]) continue;
