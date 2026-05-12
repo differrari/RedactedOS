@@ -175,7 +175,11 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
 
 size_t simple_read(module_root *root, const char *path, void *buf, size_t size){
     file fd = {};
-    open_file(root, path, &fd);
+    FS_RESULT ores = open_file(root, path, &fd);
+    if (ores != FS_RESULT_SUCCESS){
+        kprintf("[FS error] Failed to open file for simple read (%i)",ores);
+        return 0;
+    }
     size_t res = read_file(&fd, (char*)buf, size);
     close_file(&fd);
     return res;
@@ -183,7 +187,11 @@ size_t simple_read(module_root *root, const char *path, void *buf, size_t size){
 
 size_t simple_write(module_root *root, const char *path, const void *buf, size_t size){
     file fd = {};
-    open_file(root, path, &fd);
+    FS_RESULT ores = open_file(root, path, &fd);
+    if (ores != FS_RESULT_SUCCESS){
+        kprintf("[FS error] Failed to open file for simple write (%i)",ores);
+        return 0;
+    }
     size_t res = write_file(&fd, (char*)buf, size);
     close_file(&fd);
     return res;

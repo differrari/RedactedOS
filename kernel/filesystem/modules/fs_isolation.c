@@ -49,22 +49,19 @@ string resolve_isolated_path(const char *path, u64 id, module_root *resolved){
         const char *rootpath = path;
         system_module *rootmod = get_module(&rootpath);
         if (!rootmod){
-            kprintf("No module in local or kernel fs for %s %s",path,rootpath);
             return (string){};
         }
-        kprintf("Goes to %x as %s",kernel_modules,path);
-        memcpy(resolved,kernel_modules,sizeof(system_module));
+        memcpy(resolved,kernel_modules,sizeof(module_root));
         return string_from_literal(path);
     }
     if (localmod->alias_info.alias_path.length){
         string s = string_format("%S%s", localmod->alias_info.alias_path, localpath);
-        kprintf("Resolved path %S",s);
         const char *rootpath = s.data;
         system_module *rootmod = get_module(&rootpath);
         if (!rootmod) return (string){};
-        memcpy(resolved,kernel_modules,sizeof(system_module));
+        memcpy(resolved,kernel_modules,sizeof(module_root));
         return s;
     }
-    memcpy(resolved,localfs,sizeof(system_module));
+    memcpy(resolved,localfs,sizeof(module_root));
     return string_from_literal(path);
 }

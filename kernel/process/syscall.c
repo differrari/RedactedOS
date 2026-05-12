@@ -356,7 +356,7 @@ u64 syscall_socket_close(process_t *ctx){
     return close_socket(handle, ctx->id);
 }
 
-// #define ISOLATEDFS
+#define ISOLATEDFS
 
 u64 syscall_openf(process_t *ctx){
 #ifdef ISOLATEDFS
