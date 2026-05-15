@@ -1,17 +1,20 @@
 #pragma once
 #include "types.h"
 #include "net/network_types.h"
+#include "networking/netpkt.h"
 
 class NetDriver {
 public:
     NetDriver() = default;
     virtual ~NetDriver() = default;
     virtual bool init_at(uint64_t pci_addr, uint32_t irq_base_vector) = 0;
-    virtual sizedptr allocate_packet(size_t size) = 0;
-    virtual sizedptr handle_receive_packet() = 0;
+    virtual netpkt_t* handle_receive_packet() = 0;
     virtual void handle_sent_packet() {}
+    //TODO this looks like a violation of the single responsibility principle
+    virtual void flush_rx(){}
+    virtual void flush_tx(){}
     virtual void enable_verbose() = 0;
-    virtual bool send_packet(sizedptr packet) = 0;
+    virtual bool send_packet(netpkt_t* packet) = 0;
     virtual void get_mac(uint8_t out_mac[6]) const = 0;
     virtual uint16_t get_mtu() const = 0;
     virtual uint16_t get_header_size() const = 0;

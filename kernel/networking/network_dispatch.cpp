@@ -1,10 +1,8 @@
 #include "network_dispatch.hpp"
 #include "drivers/virtio_net_pci/virtio_net_pci.hpp"
 #include "drivers/net_bus.hpp"
-#include "memory/page_allocator.h"
 #include "networking/link_layer/eth.h"
 #include "net/network_types.h"
-#include "port_manager.h"
 #include "std/memory.h"
 #include "std/std.h"
 #include "console/kio.h"
@@ -14,20 +12,12 @@
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/netpkt.h"
 #include "networking/link_layer/link_utils.h"
-#include "networking/transport_layer/tcp.h"
 #include "networking/drivers/loopback/loopback_driver.hpp"
 #include "exceptions/irq.h"
 
 #define RX_INTR_BATCH_LIMIT 256
 #define TASK_RX_BATCH_LIMIT 256
 #define TASK_TX_BATCH_LIMIT 256
-
-static void netpkt_free_rx_frame(void* ctx, uintptr_t base, uint32_t alloc_size) {
-    if (!base) return;
-    irq_flags_t flags = irq_save_disable();
-    kfree((void*)base, alloc_size);
-    irq_restore(flags);
-}
 
 NetworkDispatch::NetworkDispatch()
 {
@@ -44,12 +34,6 @@ NetworkDispatch::NetworkDispatch()
         nics[i].speed_mbps = 0xFFFFFFFFu;
         nics[i].duplex_mode = 0xFFu;
         nics[i].kind_val = 0xFFu;
-        nics[i].rx_produced = 0;
-        nics[i].rx_consumed = 0;
-        nics[i].tx_produced = 0;
-        nics[i].tx_consumed = 0;
-        nics[i].rx_dropped = 0;
-        nics[i].tx_dropped = 0;
     }
 }
 
@@ -74,44 +58,18 @@ bool NetworkDispatch::init()
     return nic_num > 0;
 }
 
-void NetworkDispatch::handle_rx_irq(size_t nic_id)
-{
-    if (nic_id >= nic_num) return;
-    if (!nics[nic_id].drv) return;
-}
-
-void NetworkDispatch::handle_tx_irq(size_t nic_id)
-{
-    if (nic_id >= nic_num) return;
-    //TODO wake net_task from tx irq when the network loop becomes event driven
-}
-
-bool NetworkDispatch::enqueue_frame(uint8_t ifindex, const sizedptr& frame)
+bool NetworkDispatch::enqueue_packet(uint8_t ifindex, netpkt_t* pkt)
 {
     int nic_id = nic_for_ifindex(ifindex);
     if (nic_id < 0) return false;
-    NetDriver* driver = nics[nic_id].drv;
-    if (!driver) return false;
-    if (frame.size == 0) return false;
-
-    sizedptr pkt = driver->allocate_packet(frame.size);
-    if (!pkt.ptr) return false;
-
-    uint16_t hs = nics[nic_id].hdr_sz;
-    void* dst = (void*)(pkt.ptr + hs);
-    memcpy(dst, (const void*)frame.ptr, frame.size);
+    if (!pkt || !netpkt_len(pkt)) return false;
+    if (!nics[nic_id].drv) return false;
 
     irq_flags_t flags = irq_save_disable();
     int pushed = nics[nic_id].tx.push(pkt);
-    if (pushed) nics[nic_id].tx_produced++;
-    else nics[nic_id].tx_dropped++;
     irq_restore(flags);
 
-    if (!pushed) {
-        free_frame(pkt);
-        return false;
-    }
-    return true;
+    return pushed != 0;
 }
 
 int NetworkDispatch::net_task()
@@ -122,37 +80,25 @@ int NetworkDispatch::net_task()
 
         for (size_t n = 0; n < nic_num; ++n) {
             NetDriver* driver = nics[n].drv;
-            if (driver) {
-                driver->handle_sent_packet();
-                int lim = nics[n].kind_val == NET_IFK_LOCALHOST ? TASK_RX_BATCH_LIMIT : RX_INTR_BATCH_LIMIT;
-                for (int i = 0; i < lim; ++i) {
-                    sizedptr raw = driver->handle_receive_packet();
-                    if (!raw.ptr || raw.size == 0) break;
-                    if (raw.size < sizeof(eth_hdr_t)) {
-                        free_frame(raw);
-                        continue;
-                    }
-                    if (!nics[n].rx.push(raw)) {
-                        free_frame(raw);
-                        nics[n].rx_dropped++;
-                        continue;
-                    }
-                    nics[n].rx_produced++;
-                }
-            }
+            if (!driver) continue;
+
+            driver->handle_sent_packet();
             int processed = 0;
-            for (int i = 0; i < TASK_RX_BATCH_LIMIT; ++i) {
-                if (nics[n].rx.is_empty()) break;
-                sizedptr pkt{0,0};
-                if (!nics[n].rx.pop(pkt)) break;
-                netpkt_t* np = netpkt_wrap(pkt.ptr, pkt.size, 0 , pkt.size, netpkt_free_rx_frame, 0);
-                if (np) {
-                    eth_input(nics[n].ifindex, np);
-                    netpkt_unref(np);
-                } else free_frame(pkt);
-                nics[n].rx_consumed++;
+            int lim = nics[n].kind_val == NET_IFK_LOCALHOST ? TASK_RX_BATCH_LIMIT : RX_INTR_BATCH_LIMIT;
+            for (int i = 0; i < lim; ++i) {
+                netpkt_t* pkt = driver->handle_receive_packet();
+                if (!pkt) break;
+                if (!netpkt_len(pkt)) {
+                    netpkt_unref(pkt);
+                    break;
+                }
+
+                if (netpkt_len(pkt) >= sizeof(eth_hdr_t)) eth_input(nics[n].ifindex, pkt);
+                netpkt_unref(pkt);
                 processed++;
             }
+
+            driver->flush_rx();
             if (processed) did_work = true;
         }
 
@@ -166,18 +112,21 @@ int NetworkDispatch::net_task()
                     irq_restore(flags);
                     break;
                 }
-                sizedptr pkt = nics[n].tx.peek();
+                netpkt_t* pkt = nics[n].tx.peek();
                 irq_restore(flags);
 
                 if (!driver->send_packet(pkt)) break;
 
                 flags = irq_save_disable();
-                sizedptr popped{0,0};
-                if (nics[n].tx.pop(popped)) nics[n].tx_consumed++;
+                netpkt_t* popped = nullptr;
+                nics[n].tx.pop(popped);
                 irq_restore(flags);
                 processed++;
             }
-            if (processed) did_work = true;
+            if (processed) {
+                driver->flush_tx();
+                did_work = true;
+            }
         }
 
         if (!did_work) msleep(1);//TODO: manage it with an event
@@ -250,20 +199,6 @@ uint8_t NetworkDispatch::duplex(uint8_t ifindex) const
 {
     int nic_id = nic_for_ifindex(ifindex);
     return nic_id < 0 ? 0xFFu : nics[nic_id].duplex_mode;
-}
-
-uint8_t NetworkDispatch::kind(uint8_t ifindex) const
-{
-    int nic_id = nic_for_ifindex(ifindex);
-    return nic_id < 0 ? 0xFFu : nics[nic_id].kind_val;
-}
-
-void NetworkDispatch::free_frame(const sizedptr &f)
-{
-    if (!f.ptr) return;
-    irq_flags_t flags = irq_save_disable();
-    kfree((void*)f.ptr, f.size);
-    irq_restore(flags);
 }
 
 bool NetworkDispatch::register_all_from_bus() {

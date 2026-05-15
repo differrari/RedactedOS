@@ -39,6 +39,12 @@ bool eth_send_frame_on(uint16_t ifindex, uint16_t ethertype, const uint8_t dst_m
         return false;
     }
 
+    uint32_t driver_headroom = network_get_header_size(ifindex);
+    if (!netpkt_ensure_headroom(pkt, (uint32_t)sizeof(eth_hdr_t) + driver_headroom)) {
+        netpkt_unref(pkt);
+        return false;
+    }
+
     void* hdrp = netpkt_push(pkt, (uint32_t)sizeof(eth_hdr_t));
     if (!hdrp) {
         netpkt_unref(pkt);
@@ -47,8 +53,8 @@ bool eth_send_frame_on(uint16_t ifindex, uint16_t ethertype, const uint8_t dst_m
 
     (void)create_eth_packet((uintptr_t)hdrp, src_mac, dst_mac, ethertype);
 
-    bool ok = (net_tx_frame_on(ifindex, netpkt_data(pkt), netpkt_len(pkt)) == 0);
-    netpkt_unref(pkt);
+    bool ok = (net_tx_packet_on(ifindex, pkt) == 0);
+    if (!ok) netpkt_unref(pkt);
     return ok;
 }
 
@@ -58,32 +64,25 @@ void eth_input(uint16_t ifindex, netpkt_t* pkt) {
     if (netpkt_len(pkt) < sizeof(eth_hdr_t)) return;
     eth_hdr_t eth;
     if (!netpkt_copyout(pkt, 0, &eth, sizeof(eth))) return;
+    if (!netpkt_pull(pkt, (uint32_t)sizeof(eth_hdr_t))) return;
 
     uint16_t type = bswap16(eth.ethertype);
-    netpkt_t* payload = netpkt_view(pkt, (uint32_t)sizeof(eth_hdr_t), netpkt_len(pkt) - (uint32_t)sizeof(eth_hdr_t));
-    if (!payload) return;
 
     switch (type) {
         case ETHERTYPE_ARP:
-            arp_input(ifindex, eth.src_mac, payload);
-            netpkt_unref(payload);
+            arp_input(ifindex, eth.src_mac, pkt);
             break;
         case ETHERTYPE_IPV4:
-            ipv4_input(ifindex, payload, eth.src_mac);
-            netpkt_unref(payload);
+            ipv4_input(ifindex, pkt, eth.src_mac);
             break;
         case ETHERTYPE_IPV6:
-            ipv6_input(ifindex, payload, eth.src_mac);
-            netpkt_unref(payload);
+            ipv6_input(ifindex, pkt, eth.src_mac);
             break;
         case ETHERTYPE_VLAN1Q:
-            netpkt_unref(payload);
             break;
         case ETHERTYPE_VLAN1AD:
-            netpkt_unref(payload);
             break;
         default:
-            netpkt_unref(payload);
             break;
     }
 }

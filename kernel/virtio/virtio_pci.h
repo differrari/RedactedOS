@@ -107,6 +107,7 @@ typedef struct {
 #define VBUF(a,l,f) ((virtio_buf){.addr = (uint64_t)(a), .len = (uint32_t)(l), .flags = (uint16_t)(f)})
 
 void virtio_notify(virtio_device *dev);
+void virtio_notify_queue(virtio_device *dev, uint16_t index);
 void virtio_set_feature_mask(uint64_t mask);
 void virtio_enable_verbose();
 void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mmio_start, uint64_t *mmio_size);

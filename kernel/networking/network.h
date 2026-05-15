@@ -7,6 +7,7 @@ extern "C" {
 #include "types.h"
 #include "net/network_types.h"
 #include "dev/driver_base.h"
+#include "networking/netpkt.h"
 
 #define NET_IRQ_BASE 40
 //TODO: consider using the system MTU here
@@ -20,9 +21,7 @@ void network_handle_download_interrupt_nic(uint16_t nic_id);
 void network_handle_upload_interrupt_nic(uint16_t nic_id);
 int network_net_task_entry(int argc, char* argv[]);
 
-int net_tx_frame(uintptr_t frame_ptr, uint32_t frame_len);
-int net_tx_frame_on(uint16_t ifindex, uintptr_t frame_ptr, uint32_t frame_len);
-int net_rx_frame(sizedptr *out_frame);
+int net_tx_packet_on(uint16_t ifindex, netpkt_t* pkt);
 
 const uint8_t* network_get_local_mac(void);
 const uint8_t* network_get_mac(uint16_t ifindex);

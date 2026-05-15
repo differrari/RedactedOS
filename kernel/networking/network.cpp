@@ -1,6 +1,5 @@
 #include "network.h"
 #include "network_dispatch.hpp"
-#include "process/scheduler.h"
 
 static NetworkDispatch *dispatch = 0;
 
@@ -11,11 +10,9 @@ bool network_init() {
 }
 
 void network_handle_download_interrupt_nic(uint16_t nic_id) {
-    if (dispatch) dispatch->handle_rx_irq((size_t)nic_id);
 }
 
 void network_handle_upload_interrupt_nic(uint16_t nic_id) {
-    if (dispatch) dispatch->handle_tx_irq((size_t)nic_id);
 }
 
 int network_net_task_entry(int argc, char* argv[]) {
@@ -23,16 +20,9 @@ int network_net_task_entry(int argc, char* argv[]) {
     return 0;
 }
 
-int net_tx_frame_on(uint16_t ifindex, uintptr_t frame_ptr, uint32_t frame_len) {
-    if (!dispatch || !frame_ptr || !frame_len) return -1;
-    return dispatch->enqueue_frame(ifindex, {frame_ptr, frame_len}) ? 0 : -1;
-}
-
-int net_rx_frame(sizedptr* out_frame) {
-    if (!out_frame) return -1;
-    out_frame->ptr = 0;
-    out_frame->size = 0;
-    return 0;
+int net_tx_packet_on(uint16_t ifindex, netpkt_t* pkt) {
+    if (!dispatch || !pkt || !netpkt_len(pkt)) return -1;
+    return dispatch->enqueue_packet((uint8_t)ifindex, pkt) ? 0 : -1;
 }
 
 const uint8_t* network_get_mac(uint16_t ifindex) {

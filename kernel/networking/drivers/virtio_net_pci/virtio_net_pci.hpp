@@ -63,29 +63,30 @@ public:
     uint8_t get_duplex() const override;
     bool sync_multicast(const uint8_t* macs, uint32_t count) override;
 
-    sizedptr allocate_packet(size_t size) override;
-    sizedptr handle_receive_packet() override;
+    netpkt_t* handle_receive_packet() override;
     void handle_sent_packet() override;
-    bool send_packet(sizedptr packet) override;
+    void flush_rx() override;
+    void flush_tx() override;
+    bool send_packet(netpkt_t* packet) override;
 
 private:
+    friend void virtio_net_rx_free(void* ctx, uintptr_t base, uint32_t alloc_size);
     virtio_device vnp_net_dev = {};
 
     volatile virtq_desc* rx_desc = nullptr;
     volatile virtq_avail* rx_avail = nullptr;
     volatile virtq_used* rx_used = nullptr;
     uint16_t rx_qsz = 0;
+    void* rx_pool = nullptr;
+    bool rx_notify_pending = false;
 
     volatile virtq_desc* tx_desc = nullptr;
     volatile virtq_avail* tx_avail = nullptr;
     volatile virtq_used* tx_used = nullptr;
     uint16_t tx_qsz = 0;
     uint16_t tx_next_desc = 0;
-    //TODO move tx own from sizedptr to netpkt. make it async
-    //[kfree] untracked ptr=0xffff800044342580 phys=0x44342580 size=0x42 off=0x580
-
-    sizedptr* tx_pending = nullptr;
-    size_t tx_pending_size = 0;
+    netpkt_t** tx_pending = nullptr;
+    bool tx_notify_pending = false;
 
     bool verbose = false;
 

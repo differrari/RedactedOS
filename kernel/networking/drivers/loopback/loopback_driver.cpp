@@ -1,12 +1,10 @@
 #include "loopback_driver.hpp"
 #include "std/memory.h"
-#include "memory/page_allocator.h"
 
 LoopbackDriver::LoopbackDriver(){
-    memory_page = 0;
     rx_head = 0;
     rx_tail = 0;
-    verbose = false;
+    memset(rxq, 0, sizeof(rxq));
     hw_name[0]='l'; hw_name[1]='o'; hw_name[2]='o'; hw_name[3]='p'; hw_name[4]='b'; hw_name[5]='a'; hw_name[6]='c'; hw_name[7]='k'; hw_name[8]=0;
 }
 
@@ -15,31 +13,21 @@ LoopbackDriver::~LoopbackDriver(){}
 bool LoopbackDriver::init_at(uint64_t pci_addr, uint32_t irq_base_vector){
     (void)pci_addr;
     (void)irq_base_vector;
-    if (!memory_page) {
-        memory_page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, true);
-        if (!memory_page) return false;
-    }
     return true;
 }
 
-sizedptr LoopbackDriver::allocate_packet(size_t size){
-    if (!size) return (sizedptr){0,0};
-    if (!memory_page && !init_at(0, 0)) return (sizedptr){0,0};
-    void* p = kalloc(memory_page, size, ALIGN_16B, MEM_PRIV_KERNEL);
-    return (sizedptr){(uintptr_t)p, (uint32_t)size};
-}
-
-sizedptr LoopbackDriver::handle_receive_packet(){
-    if (rx_head == rx_tail) return (sizedptr){0,0};
-    sizedptr p = rxq[rx_head];
+netpkt_t* LoopbackDriver::handle_receive_packet(){
+    if (rx_head == rx_tail) return nullptr;
+    netpkt_t* p = rxq[rx_head];
+    rxq[rx_head] = nullptr;
     rx_head = (uint16_t)((rx_head + 1) & 255);
     return p;
 }
 
-void LoopbackDriver::enable_verbose(){ verbose = true; }
+void LoopbackDriver::enable_verbose(){}
 
-bool LoopbackDriver::send_packet(sizedptr packet){
-    if (!packet.ptr || !packet.size) return false;
+bool LoopbackDriver::send_packet(netpkt_t* packet){
+    if (!packet || !netpkt_len(packet)) return false;
     uint16_t next = (uint16_t)((rx_tail + 1) & 255);
     if (next == rx_head)return false;
     rxq[rx_tail] = packet;

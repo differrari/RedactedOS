@@ -5,7 +5,9 @@
 
 #define NETPKT_F_VIEW 1u
 #define NETPKT_BUF_F_EXTERNAL 1u
+#define NETPKT_BUF_F_SMALL 2u
 #define NETPKT_META_KEEP_EMPTY_PAGES 2u
+#define NETPKT_SMALL_CLASS_BYTES 2048u
 
 typedef struct netpkt_buf netpkt_buf_t;
 
@@ -61,6 +63,7 @@ static meta_slab_t g_meta_slab_pkt;
 static meta_slab_t g_meta_slab_buf;
 
 static uintptr_t g_spare_page;
+static void* g_netpkt_small_free;
 
 static void* meta_slab_alloc(meta_slab_t* s, uint32_t obj_size_aligned) {
     if (!s) return 0;
@@ -249,16 +252,37 @@ static bool netpkt_realloc_to(netpkt_t* p, uint32_t new_head, uint32_t new_alloc
 
     uint64_t bytes = (uint64_t)new_alloc;
     if (!bytes) bytes = 1;
-    uint64_t cap64 = count_pages(bytes, PAGE_SIZE)*(uint64_t)PAGE_SIZE;
-    if (!cap64) cap64 = PAGE_SIZE;
-    if (cap64 > (uint64_t)NETPKT_MAX_ALLOC) return false;
 
-    uint32_t cap = (uint32_t)cap64;
+    bool small = bytes <= (uint64_t)NETPKT_SMALL_CLASS_BYTES;
+    uint32_t cap = small ? NETPKT_SMALL_CLASS_BYTES : 0;
+    if (!small) {
+        uint64_t cap64 = count_pages(bytes, PAGE_SIZE)*(uint64_t)PAGE_SIZE;
+        if (!cap64) cap64 = PAGE_SIZE;
+        if (cap64 > (uint64_t)NETPKT_MAX_ALLOC) return false;
+
+        cap = (uint32_t)cap64;
+    }
     if ((uint64_t)new_head+(uint64_t)p->len > (uint64_t)cap) return false;
 
     void* mem = 0;
     bool from_spare = false;
-    if (cap == PAGE_SIZE && g_spare_page) {
+    uint32_t flags = 0;
+    if (small) {
+        if (!g_netpkt_small_free) {
+            if (g_netpkt_page_bytes > (uint64_t)NETPKT_MAX_PAGE_BYTES - (uint64_t)PAGE_SIZE) return false;
+            void* page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, true);
+            if (!page) return false;
+            g_netpkt_page_bytes += (uint64_t)PAGE_SIZE;
+            g_netpkt_payload_page_bytes += (uint64_t)PAGE_SIZE;
+            *(void**)page = (void*)((uintptr_t)page + (uintptr_t)NETPKT_SMALL_CLASS_BYTES);
+            *(void**)((uintptr_t)page + (uintptr_t)NETPKT_SMALL_CLASS_BYTES) = 0;
+            g_netpkt_small_free = page;
+        }
+        mem = g_netpkt_small_free;
+        g_netpkt_small_free = *(void**)mem;
+        memset(mem, 0, NETPKT_SMALL_CLASS_BYTES);
+        flags = NETPKT_BUF_F_SMALL;
+    } else if (cap == PAGE_SIZE && g_spare_page) {
         mem = (void*)g_spare_page;
         g_spare_page = 0;
         from_spare = true;
@@ -283,7 +307,10 @@ static bool netpkt_realloc_to(netpkt_t* p, uint32_t new_head, uint32_t new_alloc
     uint32_t sz = (uint32_t)(((uint64_t)sizeof(netpkt_buf_t) + 15) & ~15ull);
     netpkt_buf_t* nb = (netpkt_buf_t*)meta_slab_alloc(&g_meta_slab_buf, sz);
     if (!nb) {
-        if (from_spare) {
+        if (flags & NETPKT_BUF_F_SMALL) {
+            *(void**)mem = g_netpkt_small_free;
+            g_netpkt_small_free = mem;
+        } else if (from_spare) {
             g_spare_page = (uintptr_t)mem;
         } else {
             pfree(mem, (uint64_t)cap);
@@ -298,7 +325,7 @@ static bool netpkt_realloc_to(netpkt_t* p, uint32_t new_head, uint32_t new_alloc
     nb->base = (uintptr_t)mem;
     nb->alloc = cap;
     nb->refs = 1;
-    nb->flags = 0;
+    nb->flags = flags;
     nb->free_fn = 0;
     nb->free_ctx = 0;
 
@@ -316,6 +343,9 @@ static bool netpkt_realloc_to(netpkt_t* p, uint32_t new_head, uint32_t new_alloc
         } else {
             if (ob->flags & NETPKT_BUF_F_EXTERNAL) {
                 if (ob->free_fn) ob->free_fn(ob->free_ctx, ob->base, ob->alloc);
+            } else if (ob->flags & NETPKT_BUF_F_SMALL) {
+                *(void**)ob->base = g_netpkt_small_free;
+                g_netpkt_small_free = (void*)ob->base;
             } else {
                 bool aligned = ((ob->base & (PAGE_SIZE - 1)) == 0) && ((ob->alloc & (PAGE_SIZE - 1)) == 0);
                 if (!g_spare_page && aligned) {
@@ -355,18 +385,44 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
     }
 
     if (!alloc) alloc = 1;
-    uint64_t cap64 = count_pages(alloc, PAGE_SIZE) * (uint64_t)PAGE_SIZE;
-    if (!cap64) cap64 = PAGE_SIZE;
-    if (cap64 > (uint64_t)NETPKT_MAX_ALLOC) {
-        irq_restore(irq);
-        return 0;
-    }
+    bool small = alloc <= (uint64_t)NETPKT_SMALL_CLASS_BYTES;
+    uint32_t cap = small ? NETPKT_SMALL_CLASS_BYTES : 0;
+    if (!small) {
+        uint64_t cap64 = count_pages(alloc, PAGE_SIZE) * (uint64_t)PAGE_SIZE;
+        if (!cap64) cap64 = PAGE_SIZE;
+        if (cap64 > (uint64_t)NETPKT_MAX_ALLOC) {
+            irq_restore(irq);
+            return 0;
+        }
 
-    uint32_t cap = (uint32_t)cap64;
+        cap = (uint32_t)cap64;
+    }
 
     void* mem = 0;
     bool from_spare = false;
-    if (cap == PAGE_SIZE && g_spare_page) {
+    uint32_t flags = 0;
+    if (small) {
+        if (!g_netpkt_small_free) {
+            if (g_netpkt_page_bytes > (uint64_t)NETPKT_MAX_PAGE_BYTES - (uint64_t)PAGE_SIZE) {
+                irq_restore(irq);
+                return 0;
+            }
+            void* page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, true);
+            if (!page) {
+                irq_restore(irq);
+                return 0;
+            }
+            g_netpkt_page_bytes += (uint64_t)PAGE_SIZE;
+            g_netpkt_payload_page_bytes += (uint64_t)PAGE_SIZE;
+            *(void**)page = (void*)((uintptr_t)page + (uintptr_t)NETPKT_SMALL_CLASS_BYTES);
+            *(void**)((uintptr_t)page + (uintptr_t)NETPKT_SMALL_CLASS_BYTES) = 0;
+            g_netpkt_small_free = page;
+        }
+        mem = g_netpkt_small_free;
+        g_netpkt_small_free = *(void**)mem;
+        memset(mem, 0, NETPKT_SMALL_CLASS_BYTES);
+        flags = NETPKT_BUF_F_SMALL;
+    } else if (cap == PAGE_SIZE && g_spare_page) {
         mem = (void*)g_spare_page;
         g_spare_page = 0;
         from_spare = true;
@@ -390,10 +446,13 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
         }
     }
 
-    uint32_t bsz = (uint32_t)(((uint64_t)sizeof(netpkt_buf_t) + 15ull) &~15ull);
+    uint32_t bsz = (uint32_t)(((uint64_t)sizeof(netpkt_buf_t) + 15ull) & ~15ull);
     netpkt_buf_t* b = (netpkt_buf_t*)meta_slab_alloc(&g_meta_slab_buf, bsz);
     if (!b) {
-        if (from_spare) {
+        if (flags & NETPKT_BUF_F_SMALL) {
+            *(void**)mem = g_netpkt_small_free;
+            g_netpkt_small_free = mem;
+        } else if (from_spare) {
             g_spare_page = (uintptr_t)mem;
         } else {
             pfree(mem, (uint64_t)cap);
@@ -409,7 +468,7 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
     b->base = (uintptr_t)mem;
     b->alloc = cap;
     b->refs = 1;
-    b->flags = 0;
+    b->flags = flags;
     b->free_fn = 0;
     b->free_ctx = 0;
 
@@ -417,7 +476,10 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
     netpkt_t* p = (netpkt_t*)meta_slab_alloc(&g_meta_slab_pkt, psz);
     if (!p) {
         meta_slab_free(&g_meta_slab_buf, b);
-        if (from_spare) {
+        if (flags & NETPKT_BUF_F_SMALL) {
+            *(void**)mem = g_netpkt_small_free;
+            g_netpkt_small_free = mem;
+        } else if (from_spare) {
             g_spare_page = (uintptr_t)mem;
         } else {
             pfree(mem, (uint64_t)cap);
@@ -543,6 +605,9 @@ void netpkt_unref(netpkt_t* p) {
         } else {
             if (b->flags & NETPKT_BUF_F_EXTERNAL) {
                 if (b->free_fn) b->free_fn(b->free_ctx, b->base, b->alloc);
+            } else if (b->flags & NETPKT_BUF_F_SMALL) {
+                *(void**)b->base = g_netpkt_small_free;
+                g_netpkt_small_free = (void*)b->base;
             } else {
                 bool aligned = ((b->base & (PAGE_SIZE - 1)) == 0) && ((b->alloc & (PAGE_SIZE - 1)) == 0);
                 if (!g_spare_page && aligned) {
@@ -633,6 +698,15 @@ bool netpkt_ensure_headroom(netpkt_t* p, uint32_t need) {
     }
 
     uint32_t tail = netpkt_tailroom(p);
+    uint32_t add = need - p->head;
+    if (p->buf->refs == 1 && !(p->buf->flags & NETPKT_BUF_F_EXTERNAL) && tail >= add) {
+        uintptr_t old_data = netpkt_data(p);
+        if (p->len) memmove((void*)(old_data + (uintptr_t)add), (const void*)old_data, p->len);
+        p->head += add;
+        irq_restore(irq);
+        return true;
+    }
+
     uint32_t new_head = need;
 
     uint64_t alloc = (uint64_t)new_head + (uint64_t)p->len + (uint64_t)tail;

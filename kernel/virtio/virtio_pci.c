@@ -234,9 +234,8 @@ uint32_t select_queue(virtio_device *dev, uint32_t index){
     return dev->queues[index].size;
 }
 
-void virtio_notify(virtio_device *dev) {
+void virtio_notify_queue(virtio_device *dev, uint16_t index) {
     if (!dev || !dev->notify_cfg) return;
-    uint16_t index = dev->current_queue;
     if (index >= VIRTIO_MAX_QUEUES) return;
     if (!dev->queues[index].valid) return;
 
@@ -247,6 +246,11 @@ void virtio_notify(virtio_device *dev) {
     uint16_t value = (dev->negotiated_features & (1ULL << VIRTIO_F_NOTIFICATION_DATA)) ? dev->queues[index].notify_data : index;
 
     *(volatile uint16_t*)((uintptr_t)dev->notify_cfg + (uint64_t)off * (uint64_t)mul) = value;
+}
+
+void virtio_notify(virtio_device *dev) {
+    if (!dev) return;
+    virtio_notify_queue(dev, dev->current_queue);
 }
 
 bool virtio_send_nd(virtio_device *dev, const virtio_buf *bufs, uint16_t n) {
