@@ -37,7 +37,8 @@ system_module* get_module(const char **full_path){
 }
 
 size_t list_root(void* buf, size_t size, uint64_t *offset){
-    return list_root_from(kernel_modules, buf, size, offset);
+    fs_dir_list_helper helper = create_dir_list_helper(buf, size);
+    return list_root_from(kernel_modules, &helper, offset);
 }
 
 string resolve_isolated_path(const char *path, u64 id, module_root *resolved){

@@ -32,6 +32,7 @@
 #include "alloc/page_index.h"
 #include "process/uaccess.h"
 #include "filesystem/modules/fs_isolation.h"
+#include "files/dir_list.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -362,12 +363,12 @@ u64 syscall_openf(process_t *ctx){
 #ifdef ISOLATEDFS
     SYSCALL_STR(path, PROC_X0, false);
     SYSCALL_ARG(file,descriptor,PROC_X1, true);
-        module_root rootfs = {}; 
-        string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
-        if (!s.data || !s.length) return 0;
-        FS_RESULT res = open_file(&rootfs, s.data, descriptor);
-        string_free(s);
-        return res;
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    if (!s.data || !s.length) return 0;
+    FS_RESULT res = open_file(&rootfs, s.data, descriptor);
+    string_free(s);
+    return res;
 #else
     SYSCALL_STR(req_path, PROC_X0, false);
     char path[255] = {};
@@ -440,7 +441,16 @@ u64 syscall_dir_list(process_t *ctx){
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
     string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
-    if (!s.data || !s.length) return 0;
+    if (!s.data || !s.length || strncmp(s.data,"/",s.length) == 0){
+        size_t ret = 0;
+        fs_dir_list_helper helper = create_dir_list_helper(buf, size);
+        if (rootfs.buckets != kernel_fs()->buckets){
+            ret += list_root_from(&rootfs, &helper, offset);
+        } 
+        if (ret >= size) return ret;
+        ret += list_root_from(kernel_fs(), &helper, offset);
+        return ret;
+    }
     size_t ret = list_directory_contents(&rootfs, s.data, buf, size, offset);
     string_free(s);
     return ret;
@@ -455,7 +465,9 @@ u64 syscall_stat(process_t *ctx){
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
     string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
-    if (!s.data || !s.length) return 0;
+    if (!s.data || !s.length){
+        return root_stat(path, out_stat);
+    }
     size_t ret = get_stat(&rootfs, s.data, out_stat);
     string_free(s);
     return ret;

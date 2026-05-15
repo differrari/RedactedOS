@@ -10,6 +10,20 @@
 
 #define MODULE_STRICT
 
+bool root_stat(const char *path, fs_stat *out_stat){
+    if (!out_stat) return false;
+    out_stat->size = 0;
+    out_stat->type = entry_directory;
+    return true;
+}
+
+system_module root_module = {
+    .name = "root",
+    .mount = "/",
+    .getstat = root_stat,
+    .readdir = 0,
+};
+
 bool load_module_to(hash_map_t* modules, system_module *module){
     if (!module->init){
         if (strcmp(module->mount,"/console")) kprintf("[MODULE] module not initialized due to missing initializer");//TODO: can we make printf silently fail so logging becomes easier?
@@ -44,6 +58,7 @@ bool unload_module_from(hash_map_t* modules, system_module *module){
 }
 
 system_module* get_module_from(hash_map_t* modules, const char **full_path){
+    if (!modules) return 0;
     if (!full_path || !*full_path) return 0;
     const char *path = *full_path;
     if (!strlen(path)) return 0;
@@ -52,20 +67,25 @@ system_module* get_module_from(hash_map_t* modules, const char **full_path){
         *full_path += 1;
     }
     string_slice mod_name = first_path_component(path);
-    if (!mod_name.length) return 0;
+    if (!mod_name.length){
+        return &root_module;
+    }
     if (mod_name.data[0] == '/'){
         mod_name.data++;
         mod_name.length--;
         *full_path += 1;
     }
     *full_path += mod_name.length;
+    if (!mod_name.length){
+        return &root_module;
+    }
     return hash_map_get(modules, mod_name.data, mod_name.length);
 }
 
-u64 index = 0, count = 0;
-uint64_t *list_offset;
+static u64 index = 0, count = 0;
+static uint64_t *list_offset;
 
-fs_dir_list_helper *dir_helper;
+static fs_dir_list_helper *dir_helper;
 
 void iterate_root(void* key, u64 keylen, void* value){
     count++;
@@ -78,12 +98,13 @@ void iterate_root(void* key, u64 keylen, void* value){
     }
 }
 
-size_t list_root_from(hash_map_t* modules, void* buf, size_t size, uint64_t *offset){
-    fs_dir_list_helper helper = create_dir_list_helper(buf, size);
-    dir_helper = &helper;
+size_t list_root_from(hash_map_t* modules, fs_dir_list_helper *helper, uint64_t *offset){
+    
+    dir_helper = helper;
     index = offset ? *offset : 0;
+    count = 0;
     
     hash_map_for_each(modules, iterate_root);
     
-    return dir_buf_size(&helper);
+    return dir_buf_size(helper);
 }
