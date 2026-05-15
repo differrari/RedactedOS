@@ -29,6 +29,7 @@
 #include "std/memory.h"
 #include "utils/utils.h"
 #include "tools/tools.h"
+#include "process/isolated_fs/environment.h"
 
 extern void trace();
 
@@ -114,6 +115,8 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     load_module(&tool_module);
 
     load_module(&scheduler_module);
+
+    load_module(&environment_module);
     
     load_util_mods();
     

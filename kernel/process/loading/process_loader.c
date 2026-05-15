@@ -11,7 +11,7 @@
 #include "memory/addr.h"
 #include "string/string.h"
 #include "syscalls/syscall_codes.h"
-#include "filesystem/modules/module_loader.h"
+#include "process/isolated_fs/isolated_fs.h"
 
 typedef struct {
     uint64_t code_base_start;
@@ -277,27 +277,6 @@ size_t map_section(process_t *proc, kaddr_t base, uaddr_t off, program_load_data
     // kprintf("Copying %llx from %llx to %llx, representing %llx",data.file_cpy.size,data.file_cpy.ptr,base + (data.virt_mem.ptr - off), data.virt_mem.size);
     if (data.file_cpy.size) memcpy((void*)(uintptr_t)base + ((uintptr_t)data.virt_mem.ptr - (uintptr_t)off), (void*)data.file_cpy.ptr, data.file_cpy.size);
     return data.virt_mem.size;
-}
-
-char *bundle_redirect = 0;
-
-bool resources_init(system_module *module){
-    module->alias_info.alias_path = string_format("%s/resources",bundle_redirect);
-    return true;
-}
-
-system_module bundle_module = {
-    .name = "resources",
-    .mount = "resources",
-    .version = VERSION_NUM(0, 1, 0, 0),
-    .init = resources_init,
-};
-
-void make_process_fs(process_t* proc, char *bundle){
-    proc->permissions.fs_id = register_fs_id();
-    module_root *root = get_fs_for_id(proc->permissions.fs_id);
-    bundle_redirect = bundle;
-    load_module_to(root, &bundle_module);
 }
 
 process_t* create_process(const char *name, const char *bundle, program_load_data *data, size_t data_count, uintptr_t entry, bool allow_rwx) {
