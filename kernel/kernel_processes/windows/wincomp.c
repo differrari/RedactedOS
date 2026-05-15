@@ -1,5 +1,5 @@
 #include "wincomp.h"
-#include "ui/graphic_types.h"
+#include "graphic_types.h"
 #include "graph/tres.h"
 #include "graph/graphics.h"
 #include "math/math.h"

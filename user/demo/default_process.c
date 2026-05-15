@@ -8,6 +8,8 @@
 #include "audio/cuatro.h"
 #include "audio/wav.h"
 #include "memory/memory.h"
+#include "files/helpers.h"
+#include "utils/clipboard.h"
 
 #define BORDER 20
 
@@ -144,9 +146,43 @@ void concurrent_write(){
     print("Buffer now %s",buf);
 }
 
-int main(int argc, char* argv[]){
+void write_large_file(){
+    void *buf = zalloc(1024);
     
-    concurrent_write();
+    memset(buf, 'B', 1024);
+    
+    print("Wrote %x",write_full_file("/boot/redos/fattest", buf, 1024));
+    
+}
+
+void copypaste(){
+    
+    char *copythis = "hello";
+    clipboard_copy(copythis, strlen(copythis), DATA_SIG_TEXT);
+    
+    char *buf = clipboard_paste(DATA_SIG_TEXT, 0);
+    
+    char *copythis2 = "hello1";
+    clipboard_copy(copythis2, strlen(copythis2), DATA_SIG_TEXT);
+    
+    char *copythis3 = "hello2";
+    clipboard_copy(copythis3, strlen(copythis3), DATA_SIG_TEXT);
+    
+    print("Pasted text %s",buf);
+    
+}
+
+bool should_quit = false;
+
+bool on_quit(signal_info_t *do_not_use_this){
+    print("I'm told to quit");
+    should_quit = true;
+    return true;
+}
+
+int main(int argc, char* argv[]){
+
+    img_example();
     
     return 0;
 }

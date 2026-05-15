@@ -51,7 +51,7 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
 
     kprintfv("[RAMFB] probing cfg desc");
     if (!fw_find_file("etc/ramfb", &file) || file.selector == 0x0){
-        kprintf("Ramfb not found");
+        kprintf("[RAMFB error] ramfb not found");
         return false;
     }
 

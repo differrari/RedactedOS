@@ -12,7 +12,7 @@
 
 VirtioAudioDriver *audio_driver;
 
-bool init_audio(){
+bool init_audio(system_module *mod){
     audio_driver = new VirtioAudioDriver();
     if (!audio_driver) return false;
     if (!audio_driver->init()) {
@@ -302,7 +302,7 @@ static size_t audio_write(file *fd, const char *buf, size_t size, file_offset of
 
 system_module audio_module = (system_module){
     .name = "audio",
-    .mount = "/audio",
+    .mount = "audio",
     .version = VERSION_NUM(0, 1, 0, 1),
     .init = init_audio,
     .fini = 0,
@@ -311,8 +311,7 @@ system_module audio_module = (system_module){
     .write = audio_write,
     .close = 0,
     .truncate = 0,
-    .sread = 0,
-    .swrite = 0,
     .getstat = 0,//TODO: stat
     .readdir = 0,
+    .alias_info = {}
 };

@@ -24,7 +24,7 @@ extern "C" void disk_read(void *buffer, uint32_t sector, uint32_t count){
 
 system_module disk_module = (system_module){
     .name = "sdhci",
-    .mount = "/disk",
+    .mount = "disk",
     .version = VERSION_NUM(0, 1, 0, 0),
     .init = init_disk_device,
     .fini = 0,
@@ -32,7 +32,7 @@ system_module disk_module = (system_module){
     .read = 0,
     .write = 0,
     .close = 0,
-    .sread = 0,
-    .swrite = 0,
+    .truncate = 0,
+    .getstat = 0,
     .readdir = 0,
 };

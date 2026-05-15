@@ -2,8 +2,17 @@
 #include "alloc/allocate.h"
 #include "std/std.h"
 #include "input_keycodes.h"
+#include "shell/sheldon/sheldon.h"
+
+Terminal *default_term;
+
+void term_put_slice(shell_handle *handle, string_slice slice){
+    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
+    default_term->put_slice(slice);
+}
 
 Terminal::Terminal() : Console() {
+    default_term = this;
     uint32_t color_buf[2] = {};
     sreadf("/theme", &color_buf, sizeof(uint64_t));
     default_bg_color = color_buf[0];
@@ -33,12 +42,19 @@ Terminal::Terminal() : Console() {
 
     dirty = false;
 
+    term_current_shell = create_shell();
     put_string("> ");
     redraw_input_line();
     if (dirty) {
         flush(dctx);
         dirty = false;
     }
+}
+
+shell_handle* Terminal::create_shell(){
+    return create_sheldon((shell_bindings){
+        .console_output = term_put_slice,
+    }, 0);
 }
 
 void Terminal::update(){
@@ -156,8 +172,10 @@ void Terminal::set_input_line(const char *s){
 
 void Terminal::end_command(){
     command_running = false;
-    put_char('\r');
-    put_char('\n');
+    if (last_char != '\r' && last_char != '\n'){
+        put_char('\r');
+        put_char('\n');
+    }
     put_string("> ");
     prompt_length = 2;
 
@@ -165,8 +183,14 @@ void Terminal::end_command(){
     set_text_color(default_text_color);
 }
 
-bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
-    int32_t proc = exec(cmd, argc, argv, EXEC_MODE_KEEP_FOCUS);
+bool Terminal::exec_cmd(const char *cmd){
+    if (!term_current_shell) return false;
+
+    current_shell = term_current_shell;
+    
+    if (run_cmd(term_current_shell, slice_from_literal(cmd))) return true;
+    
+    int32_t proc = system_focus(cmd, EXEC_MODE_KEEP_FOCUS);
     if (!proc) return false;
 
     string s1 = string_format("/proc/%i/out", proc);
@@ -175,7 +199,10 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
     file out_fd, state_fd;
     openf(s1.data, &out_fd);
     string_free(s1);
-    openf(s2.data, &state_fd);
+    if (openf(s2.data, &state_fd) != FS_RESULT_SUCCESS){
+        print("Failed to open process state");
+        return true;
+    }
     string_free(s2);
 
     int state = 1;
@@ -188,6 +215,13 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
     }
 
     do {
+        kbd_event event;
+        if (read_event(&event)){
+            if (!handle_modifier(&event)){
+                char cmd = hid_to_char(event.key, current_modifier);
+                if (event.type == KEY_PRESS) interpret_cmd_code(cmd, proc);
+            }
+        }
         size_t n = readf(&out_fd, buf, amount);
         buf[n] = 0;
         if (n) put_string(buf);
@@ -214,25 +248,6 @@ bool Terminal::exec_cmd(const char *cmd, int argc, const char *argv[]){
     return true;
 }
 
-const char** Terminal::parse_arguments(char *args, int *count){
-    *count = 0;
-    const char **argv = (const char**)zalloc(16 * sizeof(uintptr_t));
-    char* p = args;
-
-    while (*p && *count < 16){
-        while (*p == ' ' || *p == '\t') p++;
-        if (!*p) break;
-
-        char* start = p;
-        while (*p && *p != ' ' && *p != '\t') p++;
-        if (*p) { *p = '\0'; p++; }
-
-        argv[*count] = start;
-        (*count)++;
-    }
-    return argv;
-}
-
 void Terminal::run_command(){
     if (input_len) {
         if (history_len == history_max) {
@@ -251,62 +266,60 @@ void Terminal::run_command(){
     }
     history_index = history_len;
 
-    const char* fullcmd = input_buf;
-    while (*fullcmd == ' ' || *fullcmd == '\t') fullcmd++;
-
     put_char('\r');
     put_char('\n');
+    
+    const char* fullcmd = input_buf;
+    while (*fullcmd == ' ' || *fullcmd == '\t') fullcmd++;
 
     if (*fullcmd == 0) {
         command_running = true;
         return;
     }
 
-    const char* args = fullcmd;
-    while (*args && *args != ' ' && *args != '\t') args++;
-
-    string cmd;
-    int argc = 0;
-    const char** argv = nullptr;
-    string args_copy = {};
-
-    if (*args == '\0')
-        cmd = string_from_literal(fullcmd);
-    else
-        cmd = string_from_literal_length(fullcmd, (size_t)(args - fullcmd));
-    
-    const char* argstart = fullcmd;
-    
-    while (*argstart && (*argstart == ' ' || *argstart == '\t')) argstart++;
-
-    args_copy = string_from_literal(argstart);
-    argv = parse_arguments(args_copy.data, &argc);
-
-    if (!exec_cmd(cmd.data, argc, argv)){
-        if (strcmp_case(cmd.data, "exit", true) == 0){
+    if (!exec_cmd(fullcmd)){
+        const char *next = seek_to(fullcmd, ' ');
+        size_t len = next - fullcmd - (next && *(next-1) == ' ' ? 1 : 0);
+        string_slice cmd = (string_slice){ .data = (char*)fullcmd, .length = len };
+        if (slice_lit_match(cmd, "exit", true) || slice_lit_match(cmd, "q", true)){
             halt(0);
         } else {
-            string s = string_format("Unknown command %s", cmd.data);
+            string s = string_format("Unknown command %v", cmd);
             put_string(s.data);
             string_free(s);
         }
     }
 
-    if (argv) release((void*)argv);
-    string_free(cmd);
-    string_free(args_copy);
-
     command_running = true;
+}
+
+bool Terminal::interpret_cmd_code(char code, u16 proc){
+    if (code == ASCII_CMD_ETX){
+        send_signal(SIG_QUIT, proc);
+        return true;
+    }
+    if (code == ASCII_CMD_SUB){
+        send_signal(SIG_STOP, proc);
+        return true;
+    }
+    if (code == ASCII_CMD_CAN){
+        send_signal(SIG_CONT, proc);
+    }
+    return false;
 }
 
 bool Terminal::handle_input(){
     kbd_event event;
     if (!read_event(&event)) return false;
     if (event.type == KEY_RELEASE) return true;
-    if (event.type != KEY_PRESS) return false;
+    if (event.type != KEY_PRESS) return handle_modifier(&event);
 
     char key = event.key;
-    char readable = hid_to_char((uint8_t)key,0);
+    char readable = hid_to_char((uint8_t)key, current_modifier);
+
+    if (command_running){
+        return interpret_cmd_code(readable, 0);
+    }
 
     if (key == KEY_ENTER || key == KEY_KPENTER){
         run_command();

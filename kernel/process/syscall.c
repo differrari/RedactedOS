@@ -22,18 +22,34 @@
 #include "loading/process_loader.h"
 #include "process/loading/elf_file.h"
 #include "networking/interface_manager.h"
-#include "bin/bin_mod.h"
+#include "tools/tools.h"
 #include "networking/transport_layer/csocket.h"
 #include "loading/dwarf.h"
 #include "sysregs.h"
 #include "memory/addr.h"
-#include "ui/graphic_types.h"
-#include "dev/module_loader.h"
+#include "graphic_types.h"
+#include "filesystem/modules/module_loader.h"
 #include "alloc/page_index.h"
 #include "process/uaccess.h"
+#include "filesystem/modules/fs_isolation.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
+
+#define SYSCALL_STR(name, arg, write)\
+    if (!ctx->arg) return 0;\
+    char *name = (char*)ctx->arg;\
+    if (!validate_address(ctx, ctx->arg, sizeof(name), write)) return 0;
+
+#define SYSCALL_ARG(type, name, arg, write) \
+    if (!ctx->arg) return 0;\
+    type *name = (type*)ctx->arg;\
+    if (!validate_address(ctx, (uptr)name, sizeof(type), write)) return 0;\
+    
+#define SYSCALL_ARG_SIZE(type, name, size, arg, write) \
+    if (!ctx->arg && size) return 0;\
+    type *name = (type*)ctx->arg;\
+    if (!validate_address(ctx, (uptr)name, size, write)) return 0;\
 
 //TEST: What happens if we pass another process' data in here?
 typedef uint64_t (*syscall_entry)(process_t *ctx);
@@ -67,7 +83,6 @@ uptr syscall_palloc(process_t *ctx){
 
     if (ctx->mm.ttbr0){
         if (ctx->mm.rss_anon_pages + pages > ctx->mm.cap_anon_pages) return 0;
-        //TODO zalloc likely needs a dedicated syscall to request zeroed on fault explicitly
         uptr va = mm_alloc_mmap(&ctx->mm, alloc_size, MEM_RW, VMA_KIND_ANON, VMA_FLAG_DEMAND | VMA_FLAG_USERALLOC | VMA_FLAG_ZERO);
         if (!va) return 0;
         mmu_flush_asid(ctx->mm.asid);
@@ -132,43 +147,19 @@ u64 syscall_free(process_t *ctx){
 }
 
 u64 syscall_printl(process_t *ctx){
-    uintptr_t u = (uintptr_t)ctx->PROC_X0;
-    if (!u) return 0;
-
-    char buf[256] = {};
-
-    for (;;) {
-        size_t copied = 0;
-        bool term = false;
-        uaccess_result_t ur = copy_str_from_user(ctx, buf, sizeof(buf), u, &copied, &term);
-        if (ur != UACCESS_OK && ur != UACCESS_ENAMETOOLONG) return 0;
-        kprint(buf);
-        if (term) break;
-        if (!copied) break;
-        u += copied;
-    }
-
+    SYSCALL_STR(str, PROC_X0, false);
+    kprint((char*)str);
     return 0;
 }
 
 u64 syscall_read_key(process_t *ctx){
-    uintptr_t up = (uintptr_t)ctx->PROC_X0;
-    keypress tmp = {};
-    u64 r = sys_read_input_current(&tmp);
-    if (!r) return 0;
-    uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
-    if (ur != UACCESS_OK) return 0;
-    return r;
+    SYSCALL_ARG(keypress, key, PROC_X0, true);
+    return sys_read_input_current(key);
 }
 
 u64 syscall_read_event(process_t *ctx){
-    uintptr_t up = (uintptr_t)ctx->PROC_X0;
-    kbd_event tmp = {};
-    u64 r = sys_read_event_current(&tmp);
-    if (!r) return 0;
-    uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
-    if (ur != UACCESS_OK) return 0;
-    return r;
+    SYSCALL_ARG(kbd_event, ev, PROC_X0, true);
+    return sys_read_event_current(ev);
 }
 
 u64 syscall_read_shortcut(process_t *ctx){
@@ -178,60 +169,33 @@ u64 syscall_read_shortcut(process_t *ctx){
 
 u64 syscall_get_mouse(process_t *ctx){
     //TODO: we're not fully preventing the mouse from being read outside of proc's window (raw & buttons)
-    if (get_current_proc_pid() != ctx->id) return 0;
-    uintptr_t up = (uintptr_t)ctx->PROC_X0;
-    mouse_data tmp = {};
-    tmp.raw = get_raw_mouse_in();
-    tmp.raw.scroll = sys_read_scroll_current();
-    tmp.position = convert_mouse_position(get_mouse_pos());
-    uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
-    if (ur != UACCESS_OK) return 0;
+    if (sys_get_focused_pid() != ctx->id) return 0;
+    SYSCALL_ARG(mouse_data, inp, PROC_X0, true);
+    inp->raw = get_raw_mouse_in();
+    inp->raw.scroll = sys_read_scroll_current();
+    inp->position = convert_mouse_position(get_mouse_pos());
     return 0;
 }
 
 uptr syscall_gpu_request_ctx(process_t *ctx){
-    uintptr_t up = (uintptr_t)ctx->PROC_X0;
-    draw_ctx tmp = {};
-    get_window_ctx(&tmp);
-    uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
-    if (ur != UACCESS_OK) return 0;
+    SYSCALL_ARG(draw_ctx, win, PROC_X0, true);
+    get_window_ctx(win);
     return 0;
 }
 
 u64 syscall_gpu_flush(process_t *ctx){
-    uintptr_t up = (uintptr_t)ctx->PROC_X0;
-    draw_ctx tmp = {};
-    uaccess_result_t ur = copy_from_user(ctx, &tmp, up, sizeof(tmp));
-    if (ur != UACCESS_OK) return 0;
-
-    draw_ctx win = {};
-    get_window_ctx(&win);
-    if (!tmp.full_redraw) {
-        if (tmp.dirty_count > MAX_DIRTY_RECTS) return 0;
-        if (!win.width || !win.height) return 0;
-        for (uint32_t i = 0; i < tmp.dirty_count; i++) {
-            gpu_rect r = tmp.dirty_rects[i];
-            if (r.point.x < 0 || r.point.y < 0) return 0;
-            if ((uint32_t)r.point.x >= win.width || (uint32_t)r.point.y >= win.height) return 0;
-            if (r.size.width > win.width - (uint32_t)r.point.x) return 0;
-            if (r.size.height > win.height - (uint32_t)r.point.y) return 0;
-        }
-    }
-
-    commit_frame(&tmp, 0);
+    SYSCALL_ARG(draw_ctx, win, PROC_X0, true);
+    commit_frame(win, 0, false);
     gpu_flush();
     return 0;
 }
 
 u64 syscall_gpu_resize_ctx(process_t *ctx){
-    uintptr_t up = (uintptr_t)ctx->PROC_X0;
     uint32_t width = (uint32_t)ctx->PROC_X1;
     uint32_t height = (uint32_t)ctx->PROC_X2;
     resize_window(width, height);
-    draw_ctx tmp = {};
-    get_window_ctx(&tmp);
-    uaccess_result_t ur = copy_to_user(ctx, up, &tmp, sizeof(tmp));
-    if (ur != UACCESS_OK) return 0;
+    SYSCALL_ARG(draw_ctx, win, PROC_X0, true);
+    get_window_ctx(win);
     gpu_flush();
     return 0;
 }
@@ -261,31 +225,20 @@ u64 syscall_halt(process_t *ctx){
 //https://man7.org/linux/man-pages/man7/credentials.7.html
 ///https://en.wikipedia.org/wiki/Job_control_(Unix)
 u64 syscall_exec(process_t *ctx){
-    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
+    SYSCALL_STR(prog_name, PROC_X0, false);
     int argc = (int)ctx->PROC_X1;
     uintptr_t uargv = (uintptr_t)ctx->PROC_X2;
     uint32_t mode = (uint32_t)ctx->PROC_X3;
 
-    if (argc < 0) return 0;
-
-    char prog_name[256] = {};
-    size_t copied = 0;
-    bool term = false;
-    uaccess_result_t ur = copy_str_from_user(ctx, prog_name, sizeof(prog_name), upath, &copied, &term);
-    if (ur != UACCESS_OK) return 0;
-    if (!term) return 0;
-
-    const int max_args = 64;
-    if (argc > max_args) return 0;
-
+    if (argc < 0 || argc > 64) return 0;
+    
     user_argv_t user_argv = {};
 
-    ur = copy_argv_from_user(ctx, argc, uargv, &user_argv);
+    uaccess_result_t ur = copy_argv_from_user(ctx, argc, uargv, &user_argv);
     if (ur != UACCESS_OK) return 0;
 
     process_t *p = execute(prog_name, argc, user_argv.argv, mode);
 
-    free_argv_from_user(&user_argv);
     return p ? p->id : 0;
 }
 
@@ -310,433 +263,228 @@ u64 syscall_get_time(process_t *ctx){
 u64 syscall_socket_create(process_t *ctx){
     Socket_Role role = (Socket_Role)ctx->PROC_X0;
     protocol_t protocol = (protocol_t)ctx->PROC_X1;
-    uintptr_t uextra = (uintptr_t)ctx->PROC_X2;
-    uintptr_t uout = (uintptr_t)ctx->PROC_X3;
-    SocketExtraOptions extra = {};
-    SocketExtraOptions *pe = 0;
-    if (uextra) {
-        uaccess_result_t ur = copy_from_user(ctx, &extra, uextra, sizeof(extra));
-        if (ur != UACCESS_OK) return 0;
-        pe = &extra;
-    }
+    SYSCALL_ARG(const SocketExtraOptions, extra, PROC_X2, false);
+    SYSCALL_ARG(SocketHandle, out, PROC_X3, true);
 
-    SocketHandle out = {};
-    i64 r = create_socket(role, protocol, pe, ctx->id, &out);
-    if (r < 0) return r;
-
-    uaccess_result_t ur = copy_to_user(ctx, uout, &out, sizeof(out));
-    if (ur != UACCESS_OK) return 0;
-    return r;
+    return create_socket(role, protocol, extra, ctx->id, out);
 }
 
 u64 syscall_socket_bind(process_t *ctx){
-    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
+    SYSCALL_ARG(SocketHandle,handle,PROC_X0, true);
     ip_version_t ip_version = (ip_version_t)ctx->PROC_X1;
     uint16_t port = (uint16_t)ctx->PROC_X2;
-    SocketHandle handle = {};
-    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return 0;
-    return bind_socket(&handle, port, ip_version, ctx->id);
+    return bind_socket(handle, port, ip_version, ctx->id);
 }
 
 u64 syscall_socket_connect(process_t *ctx){
-    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
     uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
-    uintptr_t udst = (uintptr_t)ctx->PROC_X2;
     uint16_t port = (uint16_t)ctx->PROC_X3;
 
-    SocketHandle handle = {};
-    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return 0;
+    SYSCALL_ARG(SocketHandle,handle,PROC_X0,true);
 
-    net_l4_endpoint ep = {};
-    char domain[256] = {};
     const void *dst = 0;
 
     if (dst_kind == DST_ENDPOINT) {
-        ur = copy_from_user(ctx, &ep, udst, sizeof(ep));
-        if (ur != UACCESS_OK) return 0;
-        dst = &ep;
+        SYSCALL_ARG(net_l4_endpoint, ep, PROC_X2, true);
+        dst = ep;
     } else if (dst_kind == DST_DOMAIN) {
-        size_t copied = 0;
-        bool term = false;
-        ur = copy_str_from_user(ctx, domain, sizeof(domain), udst, &copied, &term);
-        if (ur != UACCESS_OK) return 0;
-        if (!term) return 0;
+        SYSCALL_STR(domain, PROC_X2, true);
         dst = domain;
     } else {
         return 0;
     }
 
-    return connect_socket(&handle, dst_kind, dst, port, ctx->id);
+    return connect_socket(handle, dst_kind, dst, port, ctx->id);
 }
 
 u64 syscall_socket_listen(process_t *ctx){
-    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
+    SYSCALL_ARG(SocketHandle,handle, PROC_X0, true);
     int32_t backlog = (int32_t)ctx->PROC_X1;
 
-    SocketHandle handle = {};
-    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return 0;
-    return listen_on(&handle, backlog, ctx->id);
+    return listen_on(handle, backlog, ctx->id);
 }
 
 u64 syscall_socket_accept(process_t *ctx){
-    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
-    SocketHandle handle = {};
-    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return 0;
-    accept_on_socket(&handle, ctx->id);
+    SYSCALL_ARG(SocketHandle,handle, PROC_X0, true);
+    accept_on_socket(handle, ctx->id);
     return 1;
 }
 
 u64 syscall_socket_send(process_t *ctx){
-    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
     uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
-    uintptr_t udst = (uintptr_t)ctx->PROC_X2;
     uint16_t port = (uint16_t)ctx->PROC_X3;
-    uintptr_t ubuf = (uintptr_t)ctx->PROC_X4;
     size_t size = (size_t)ctx->regs[5];
 
-    SocketHandle handle = {};
-    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return 0;
+    SYSCALL_ARG(SocketHandle,handle, PROC_X0, true);
 
-    net_l4_endpoint ep = {};
-    char domain[256] = {};
     const void *dst = 0;
 
     if (dst_kind == DST_ENDPOINT){
-        ur = copy_from_user(ctx, &ep, udst, sizeof(ep));
-        if (ur != UACCESS_OK) return 0;
-        dst = &ep;
+        SYSCALL_ARG(net_l4_endpoint, ep, PROC_X2, true);
+        dst = ep;
     } else if (dst_kind == DST_DOMAIN){
-        size_t copied = 0;
-        bool term = false;
-        ur = copy_str_from_user(ctx, domain, sizeof(domain), udst, &copied, &term);
-        if (ur != UACCESS_OK) return 0;
-        if (!term) return 0;
+        SYSCALL_STR(domain, PROC_X2, true);
         dst = domain;
     } else {
         return 0;
     }
 
     if (!size) return 0;
-
+    
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
-    void *kbuf = zalloc(alloc_size);
+
+    SYSCALL_ARG_SIZE(void, kbuf, alloc_size, PROC_X4, true);
     if (!kbuf) return 0;
 
-    ur = copy_from_user(ctx, kbuf, ubuf, size);
-    if (ur != UACCESS_OK){
-        release(kbuf);
-        return 0;
-    }
-
-    u64 r = send_on_socket(&handle, dst_kind, dst, port, kbuf, size, ctx->id);
-    release(kbuf);
-    return r;
+    return send_on_socket(handle, dst_kind, dst, port, kbuf, size, ctx->id);
 }
 
 u64 syscall_socket_receive(process_t *ctx){
-    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
-    uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
     size_t size = (size_t)ctx->PROC_X2;
-    uintptr_t uout_src = (uintptr_t)ctx->PROC_X3;
-
-    SocketHandle handle = {};
-    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return 0;
     if (!size) return 0;
-
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
-    void *kbuf = zalloc(alloc_size);
-    if (!kbuf) return 0;
+    
+    SYSCALL_ARG(SocketHandle, handle, PROC_X0, true);
+    SYSCALL_ARG_SIZE(void, buf, alloc_size, PROC_X1, true);
 
-    net_l4_endpoint src = {};
-    i64 r = receive_from_socket(&handle, kbuf, size, &src, ctx->id);
-    if (r > 0) {
-        ur = copy_to_user(ctx, ubuf, kbuf, (size_t)r);
-        if (ur != UACCESS_OK) r = ur;
-    }
-    if (r >= 0) {
-        ur = copy_to_user(ctx, uout_src, &src, sizeof(src));
-        if (ur != UACCESS_OK) r = ur;
-    }
-
-    release(kbuf);
-    return r;
+    SYSCALL_ARG(net_l4_endpoint, src, PROC_X3, true);
+    return receive_from_socket(handle, buf, size, src, ctx->id);
 }
 
 u64 syscall_socket_close(process_t *ctx){
-    uintptr_t uhandle = (uintptr_t)ctx->PROC_X0;
-    SocketHandle handle = {};
-    uaccess_result_t ur = copy_from_user(ctx, &handle, uhandle, sizeof(handle));
-    if (ur != UACCESS_OK) return 0;
-    return close_socket(&handle, ctx->id);
+    SYSCALL_ARG(SocketHandle,handle, PROC_X0, true);
+    return close_socket(handle, ctx->id);
 }
 
+#define ISOLATEDFS
+
 u64 syscall_openf(process_t *ctx){
-    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
-    uintptr_t udesc = (uintptr_t)ctx->PROC_X1;
-
-    char req_path[255] = {};
-    size_t copied = 0;
-    bool term = false;
-    uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
-    if (ur != UACCESS_OK) return 0;
-    if (!term) return 0;
-
+#ifdef ISOLATEDFS
+    SYSCALL_STR(path, PROC_X0, false);
+    SYSCALL_ARG(file,descriptor,PROC_X1, true);
+        module_root rootfs = {}; 
+        string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+        if (!s.data || !s.length) return 0;
+        FS_RESULT res = open_file(&rootfs, s.data, descriptor);
+        string_free(s);
+        return res;
+#else
+    SYSCALL_STR(req_path, PROC_X0, false);
     char path[255] = {};
-    if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
-        string_format_buf(path, sizeof(path), "%s/%s", ctx->bundle, req_path);
-    } else if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11 && ctx->bundle && *ctx->bundle) {
-        string_format_buf(path, sizeof(path), "%s%s", ctx->bundle, req_path);
-    } else {
-        memcpy(path, req_path, strlen(req_path) + 1);
-    }
-    file descriptor = {};
-    FS_RESULT r = open_file(path, &descriptor);
-    if (r != FS_RESULT_SUCCESS) return r;
-    ur = copy_to_user(ctx, udesc, &descriptor, sizeof(descriptor));
-    if (ur != UACCESS_OK) return 0;
-    return r;
+    if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path,true) == 11){
+        string_format_buf(path, sizeof(path),"%s%s", ctx->bundle, req_path);
+    } else memcpy(path, req_path, strlen(req_path) + 1);
+    //TODO: Restrict access to own bundle, own fs and require privilege escalation for full-ish filesystem access
+    SYSCALL_ARG(file,descriptor,PROC_X1, true);
+    return open_file(kernel_fs(),path, descriptor);
+#endif
 }
 
 u64 syscall_readf(process_t *ctx){
-    uintptr_t udesc = (uintptr_t)ctx->PROC_X0;
-    uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
+    SYSCALL_ARG(file, descriptor, PROC_X0, true);
     size_t size = (size_t)ctx->PROC_X2;
-    file descriptor = {};
-    uaccess_result_t ur = copy_from_user(ctx, &descriptor, udesc, sizeof(descriptor));
-    if (ur != UACCESS_OK) return 0;
-
-    uint8_t tmp[4096];
-    size_t done = 0;
-
-    while (done < size){
-        size_t chunk = size - done;
-        if (chunk > sizeof(tmp)) chunk = sizeof(tmp);
-
-        size_t r = read_file(&descriptor, (char*)tmp, chunk);
-        if (!r) break;
-
-        ur = copy_to_user(ctx, ubuf + (uintptr_t)done, tmp, r);
-        if (ur != UACCESS_OK) {
-            if (!done) done = ur;
-            break;
-        }
-
-        done += r;
-        if (r < chunk) break;
-    }
-
-    ur = copy_to_user(ctx, udesc, &descriptor, sizeof(descriptor));
-    if (ur != UACCESS_OK) return 0;
-    return done;
+    SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, true);
+    return read_file(descriptor, buf, size);
 }
 
 u64 syscall_writef(process_t *ctx){
-    uintptr_t udesc = (uintptr_t)ctx->PROC_X0;
-    uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
+    SYSCALL_ARG(file, descriptor, PROC_X0, true);
     size_t size = (size_t)ctx->PROC_X2;
-
-    file descriptor = {};
-    uaccess_result_t ur = copy_from_user(ctx, &descriptor, udesc, sizeof(descriptor));
-    if (ur != UACCESS_OK) return 0;
-
-    uint8_t tmp[4096];
-    size_t done = 0;
-
-    while (done < size) {
-        size_t chunk = size - done;
-        if (chunk > sizeof(tmp)) chunk = sizeof(tmp);
-
-        ur = copy_from_user(ctx, tmp, ubuf + (uintptr_t)done, chunk);
-        if (ur != UACCESS_OK) {
-            if (!done) done = ur;
-            break;
-        }
-
-        size_t w = write_file(&descriptor, (const char*)tmp, chunk);
-        if (!w) break;
-
-        done += w;
-        if (w < chunk) break;
-    }
-
-    ur = copy_to_user(ctx, udesc, &descriptor, sizeof(descriptor));
-    if (ur != UACCESS_OK) return 0;
-    return done;
+    SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
+    return write_file(descriptor, buf, size);
 }
 
 u64 syscall_sreadf(process_t *ctx){
-    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
-    uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
+    SYSCALL_STR(path, PROC_X0, false);
     size_t size = (size_t)ctx->PROC_X2;
-
-    char req_path[255] = {};
-    size_t copied = 0;
-    bool term = false;
-    uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
-    if (ur != UACCESS_OK) return 0;
-    if (!term) return 0;
-
-    char path[255] = {};
-    if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
-        string_format_buf(path, sizeof(path), "%s/%s", ctx->bundle, req_path);
-    } else if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11 && ctx->bundle && *ctx->bundle) {
-        string_format_buf(path, sizeof(path), "%s%s", ctx->bundle, req_path);
-    } else {
-        memcpy(path, req_path, strlen(req_path) + 1);
-    }
-
-    uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
-    void *kbuf = zalloc(alloc_size);
-    if (!kbuf) return 0;
-
-    size_t r = simple_read(path, kbuf, size);
-    if (r) {
-        ur = copy_to_user(ctx, ubuf, kbuf, r);
-        if (ur != UACCESS_OK) {
-            release(kbuf);
-            return 0;
-        }
-    }
-
-    release(kbuf);
-    return r;
+    SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
+#ifdef ISOLATEDFS
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    if (!s.data || !s.length) return 0;
+    size_t ret = simple_read(&rootfs, s.data, buf, size);
+    string_free(s);
+    return ret;
+#else 
+    return simple_read(kernel_fs(), path, buf, size);
+#endif
 }
 
 u64 syscall_swritef(process_t *ctx){
-    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
-    uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
+    SYSCALL_STR(path, PROC_X0, false);
     size_t size = (size_t)ctx->PROC_X2;
-
-    char req_path[255] = {};
-    size_t copied = 0;
-    bool term = false;
-    uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
-    if (ur != UACCESS_OK) return 0;
-    if (!term) return 0;
-
-    char path[255] = {};
-    if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
-        string_format_buf(path, sizeof(path), "%s/%s", ctx->bundle, req_path);
-    } else if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11 && ctx->bundle && *ctx->bundle) {
-        string_format_buf(path, sizeof(path), "%s%s", ctx->bundle, req_path);
-    } else {
-        memcpy(path, req_path, strlen(req_path) + 1);
-    }
-
-    uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
-    void *kbuf = zalloc(alloc_size);
-    if (!kbuf) return 0;
-
-    ur = copy_from_user(ctx, kbuf, ubuf, size);
-    if (ur != UACCESS_OK){
-        release(kbuf);
-        return 0;
-    }
-
-    size_t r = simple_write(path, kbuf, size);
-    release(kbuf);
-    return r;
+    SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
+#ifdef ISOLATEDFS
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    if (!s.data || !s.length) return 0;
+    size_t ret = simple_write(&rootfs, s.data, buf, size);
+    string_free(s);
+    return ret;
+#else
+    return simple_write(kernel_fs(), path, buf, size);
+#endif
 }
 
 u64 syscall_closef(process_t *ctx){
-    uintptr_t udesc = (uintptr_t)ctx->PROC_X0;
-    file descriptor = {};
-    uaccess_result_t ur = copy_from_user(ctx, &descriptor, udesc, sizeof(descriptor));
-    if (ur != UACCESS_OK) return 0;
-    close_file(&descriptor);
+    SYSCALL_ARG(file,descriptor, PROC_X0, true);
+    close_file(descriptor);
     return 0;
 }
 
 u64 syscall_dir_list(process_t *ctx){
-    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
-    uintptr_t ubuf = (uintptr_t)ctx->PROC_X1;
+    SYSCALL_STR(path,PROC_X0, false);
     size_t size = (size_t)ctx->PROC_X2;
-    uintptr_t uoffset = (uintptr_t)ctx->PROC_X3;
-
-    char req_path[255] = {};
-    size_t copied = 0;
-    bool term = false;
-    uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
-    if (ur != UACCESS_OK) return 0;
-    if (!term) return 0;
-
-    char path[255] = {};
-    if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
-        string_format_buf(path, sizeof(path), "%s/%s", ctx->bundle, req_path);
-    } else if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11 && ctx->bundle && *ctx->bundle) {
-        string_format_buf(path, sizeof(path), "%s%s", ctx->bundle, req_path);
-    } else {
-        memcpy(path, req_path, strlen(req_path) + 1);
-    }
-
-    uint64_t off = 0;
-    ur = copy_from_user(ctx, &off, uoffset, sizeof(off));
-    if (ur != UACCESS_OK) return 0;
-
-    uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
-    void *kbuf = zalloc(alloc_size);
-    if (!kbuf) return 0;
-
-    size_t r = list_directory_contents(path, kbuf, size, &off);
-    if (r) {
-        ur = copy_to_user(ctx, ubuf, kbuf, r);
-        if (ur != UACCESS_OK) {
-            release(kbuf);
-            return 0;
-        }
-    }
-    ur = copy_to_user(ctx, uoffset, &off, sizeof(off));
-    release(kbuf);
-    if (ur != UACCESS_OK) return 0;
-    return r;
+    SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, true);
+    SYSCALL_ARG(u64,offset,PROC_X3, true);
+#ifdef ISOLATEDFS
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    if (!s.data || !s.length) return 0;
+    size_t ret = list_directory_contents(&rootfs, s.data, buf, size, offset);
+    string_free(s);
+    return ret;
+#else
+    return list_directory_contents(kernel_fs(), path, buf, size, offset);
+#endif
 }
 
 u64 syscall_stat(process_t *ctx){
-    uintptr_t upath = (uintptr_t)ctx->PROC_X0;
-    uintptr_t uout = (uintptr_t)ctx->PROC_X1;
-
-    char req_path[255] = {};
-    size_t copied = 0;
-    bool term = false;
-    uaccess_result_t ur = copy_str_from_user(ctx, req_path, sizeof(req_path), upath, &copied, &term);
-    if (ur != UACCESS_OK) return 0;
-    if (!term) return 0;
-
-    char path[255] = {};
-    if (!(ctx->PROC_PRIV) && req_path[0] != '/' && ctx->bundle && *ctx->bundle) {
-        string_format_buf(path, sizeof(path), "%s/%s", ctx->bundle, req_path);
-    } else if (!(ctx->PROC_PRIV) && strstart_case("/resources/", req_path, true) == 11 && ctx->bundle && *ctx->bundle) {
-        string_format_buf(path, sizeof(path), "%s%s", ctx->bundle, req_path);
-    } else {
-        memcpy(path, req_path, strlen(req_path) + 1);
-    }
-
-    fs_stat st = {};
-    FS_RESULT res = get_stat(path, &st);
-    if (res != FS_RESULT_SUCCESS) return res;
-
-    ur = copy_to_user(ctx, uout, &st, sizeof(st));
-    if (ur != UACCESS_OK) return 0;
-    return FS_RESULT_SUCCESS;
+    SYSCALL_STR(path,PROC_X0, false);
+    SYSCALL_ARG(fs_stat,out_stat,PROC_X1, true);
+#ifdef ISOLATEDFS
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    if (!s.data || !s.length) return 0;
+    size_t ret = get_stat(&rootfs, s.data, out_stat);
+    string_free(s);
+    return ret;
+#else
+    return get_stat(kernel_fs(), path, out_stat);
+#endif
 }
 
 u64 syscall_trunc(process_t* ctx){
-    uintptr_t udesc = (uintptr_t)ctx->PROC_X0;
-    size_t size = (size_t)ctx->PROC_X1;
-    file descriptor = {};
-    uaccess_result_t ur = copy_from_user(ctx, &descriptor, udesc, sizeof(descriptor));
-    if (ur != UACCESS_OK) return 0;
-    bool ok = truncate(&descriptor, size);
-    if (!ok) return 0;
-    ur = copy_to_user(ctx, udesc, &descriptor, sizeof(descriptor));
-    if (ur != UACCESS_OK) return 0;
-    return ok;
+    SYSCALL_ARG(file,descriptor,PROC_X0, true);
+    size_t size = ctx->PROC_X1;
+    return truncate(descriptor, size);
+}
+
+u64 syscall_signal_send(process_t* ctx){
+    signal_types type = ctx->PROC_X0;
+    u16 proc_id = ctx->PROC_X1;
+    return send_signal_proc_id(type, 0, ctx, proc_id);
+}
+
+u64 syscall_signal_handler(process_t* ctx){
+    kprint("[SYSCALL implementation error] syscall handlers are not supported in userspace yet");
+    //TODO: for this and FS modules, we'll need to set up an isolated environment (thread-like) for them to run in
+    return 0;
+    signal_types type = ctx->PROC_X0;
+    uptr handler = ctx->PROC_X1;
+    if (!handler) return 0;
+    if (!validate_address(ctx, handler, sizeof(uptr), false)) return 0;
+    return register_signal_handler(ctx, type, (signal_handler)handler);
 }
 
 // uint64_t syscall_load_fsmod(process_t *ctx){
@@ -751,14 +499,14 @@ u64 syscall_trunc(process_t* ctx){
 u64 syscall_in_case_of_js(process_t *ctx){
     panic("Shame on you\r\n\
 Don't ever do that again\r\n\
-....................../´¯/) \r\n\
+....................../'¯/) \r\n\
 ....................,/¯../ \r\n\
 .................../..../ \r\n\
-............./´¯/'...'/´¯¯`·¸ \r\n\
-........../'/.../..../......./¨¯\\\r\n\
-........('(...´...´.... ¯~/'...') \r\n\
+............./'¯/'...'/'¯¯`·. \r\n\
+........../'/.../..../......./ ¯\\\r\n\
+........('(...'...'....  ~/'...') \r\n\
 .........\\.................'...../\r\n\
-..........''...\\.......... _.·´\r\n\
+..........''...\\.......... _.·'\r\n\
 ............\\..............(\r\n\
 ..............\\.............\\...",0);
     return 0;
@@ -802,6 +550,10 @@ syscall_entry syscalls[] = {
     [FILE_TRNC_CODE] = syscall_trunc,
     // [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
     // [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
+
+    [SIGNAL_SEND_CODE] = syscall_signal_send,
+    [SIGNAL_HANDLER_CODE] = syscall_signal_handler,
+    
     [IN_CASE_OF_JS_CODE] = syscall_in_case_of_js,
 };
 
@@ -933,18 +685,16 @@ void sync_el0_handler_c(){
     } else {
         if (currentEL == 1){
                 if (syscall_depth < 3){
-                    if (syscall_depth < 1) kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
-                    if (syscall_depth < 2) {
-                        uint64_t ksp = 0;
-                        asm volatile ("mov %0, sp" : "=r"(ksp));
-                        coredump(esr, elr, far, ksp);
-                    }
-                    handle_exception("UNEXPECTED EXCEPTION",ec);
+                    kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
+                    uint64_t ksp = 0;
+                    asm volatile ("mov %0, sp" : "=r"(ksp));
+                    coredump(esr, elr, far, ksp);
                 }
+                handle_exception("UNEXPECTED EXCEPTION", ec);
                 while (true);
         } else {
             kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", esr, elr, far, proc->sp);
-            if (syscall_depth < 2) coredump(esr, elr, far, proc->sp);
+            if (syscall_depth <= 2) coredump(esr, elr, far, proc->sp);
             syscall_depth--;
             stop_current_process(ec);
         }

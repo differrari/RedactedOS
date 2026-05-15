@@ -8,6 +8,7 @@
 #include "std/memory.h"
 #include "std/memory_access.h"
 #include "p9_helper.h"
+#include "filesystem/modules/module_loader.h"
 
 #define VIRTIO_9P_ID 0x1009
 
@@ -16,7 +17,7 @@
 bool Virtio9PDriver::init(uint32_t partition_sector){
     uint64_t addr = find_pci_device(VIRTIO_VENDOR, VIRTIO_9P_ID);
     if (!addr){ 
-        kprintf("[VIRTIO_9P] device not found");
+        kprintf("[VIRTIO_9P error] device not found");
         return false;
     }
 
@@ -27,7 +28,7 @@ bool Virtio9PDriver::init(uint32_t partition_sector){
     virtio_get_capabilities(&np_dev, addr, &disk_device_address, &disk_device_size);
     pci_register(disk_device_address, disk_device_size);
     if (!virtio_init_device(&np_dev)) {
-        kprintf("[VIRTIO_9P] Failed 9P initialization");
+        kprintf("[VIRTIO_9P error] Failed 9P initialization");
         return false;
     }
 
@@ -127,6 +128,7 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         .limit = size,
         .options = buffer_opt_none,
         .cursor = 0,
+        .data_type = 0,
     };
     mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
@@ -147,46 +149,6 @@ size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
     memcpy(buf, (char*)mfile->file_buffer.buffer + descriptor->cursor, size);
     descriptor->cursor += size;
     descriptor->size = mfile->file_size;
-    return size;
-}
-
-size_t Virtio9PDriver::sread_file(const char *path, void *buf, size_t size){
-    uint32_t f = walk_dir(root, (char*)path);
-    if (f == INVALID_FID){
-        kprintf("[VIRTIO 9P error] failed to navigate to %s",path);
-        return FS_RESULT_NOTFOUND;
-    }
-    if (open(f) == INVALID_FID){
-        clunk(&np_dev, f);
-        kprintf("[VIRTIO 9P error] failed to open %s",path);
-        return FS_RESULT_DRIVER_ERROR;
-    }
-    r_getattr *attr = get_attribute(f, P9_GETATTR_SIZE);
-    if (!attr) {
-        clunk(&np_dev, f);
-        return FS_RESULT_DRIVER_ERROR;
-    }
-    uint64_t file_size = read_unaligned64(&attr->size);
-    p9_free(attr);
-
-    if (file_size < size) size = file_size;
-    if (!size) {
-        clunk(&np_dev, f);
-        return 0;
-    }
-
-    void *file_buf = zalloc(file_size ? file_size : 1);
-
-    if (read(f, 0, file_buf) != file_size){
-        clunk(&np_dev, f);
-        release(file_buf);
-        kprintf("[VIRTIO 9P error] failed read file %s",path);
-        return FS_RESULT_DRIVER_ERROR;
-    }
-
-    memcpy(buf, file_buf, size);
-    clunk(&np_dev, f);
-    release(file_buf);
     return size;
 }
 
@@ -218,22 +180,6 @@ size_t Virtio9PDriver::write_file(file *descriptor, const char* buf, size_t size
     if (mfile->file_buffer.buffer && start + written <= mfile->file_buffer.buffer_size) memcpy((char*)mfile->file_buffer.buffer + start, buf, written);
 
     descriptor->size = mfile->file_size;
-    return written;
-}
-
-size_t Virtio9PDriver::swrite_file(const char *path, const void *buf, size_t size){
-    uint32_t f = walk_dir(root, (char*)path);
-    if (f == INVALID_FID){
-        kprintf("[VIRTIO 9P error] failed to navigate to %s",path);
-        return FS_RESULT_NOTFOUND;
-    }
-    if (open(f) == INVALID_FID){
-        clunk(&np_dev, f);
-        kprintf("[VIRTIO 9P error] failed to open %s",path);
-        return FS_RESULT_DRIVER_ERROR;
-    }
-    size_t written = write(f, 0, size, (const char*)buf);
-    clunk(&np_dev, f);
     return written;
 }
 
@@ -602,4 +548,66 @@ bool Virtio9PDriver::sync_file(module_file *mfile){
     mfile->buf = (uptr)mfile->file_buffer.buffer;
     mfile->file_size = new_size;
     return true;
+}
+
+Virtio9PDriver *p9Driver;
+
+bool shared_init(system_module *mod){
+    if (BOARD_TYPE != 1) return false;
+    p9Driver = new Virtio9PDriver();
+    bool success = p9Driver->init(0);
+    return success;
+}
+
+bool shared_fini(){
+    return false;
+}
+
+FS_RESULT shared_open(const char *path, file *out_fd){
+    return p9Driver->open_file(path, out_fd);
+}
+
+size_t shared_read(file *fd, char *out_buf, size_t size, file_offset offset){
+    return p9Driver->read_file(fd, out_buf, size);
+}
+
+size_t shared_write(file *fd, const char *buf, size_t size, file_offset offset){
+    return p9Driver->write_file(fd, buf, size);
+}
+
+size_t shared_readdir(const char* path, void *out_buf, size_t size, file_offset *offset){
+    return p9Driver->list_contents(path, out_buf, size, offset);
+}
+
+bool shared_stat(const char *path, fs_stat *out_stat){
+    return p9Driver->stat(path, out_stat);
+}
+
+void shared_close(file *descriptor){
+    kprintf("9P will close file");
+    p9Driver->close_file(descriptor);
+}
+
+bool shared_truncate(file *descriptor, size_t size){
+    return p9Driver->truncate(descriptor, size);
+}
+
+system_module p9_fs_module = (system_module){
+    .name = "9PFS",
+    .mount = "home",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = shared_init,
+    .fini = shared_fini,
+    .open = shared_open,
+    .read = shared_read,
+    .write = shared_write,
+    .close = shared_close,
+    .truncate = shared_truncate,
+    .getstat = shared_stat,
+    .readdir = shared_readdir,
+    .alias_info = {}
+};
+
+extern "C" bool load_home(){
+    return load_module(&p9_fs_module);
 }

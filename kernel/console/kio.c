@@ -16,6 +16,7 @@ static bool use_visual = false;
 #define LF '\n'
 static const char CRLF[2] = { CR, LF };
 
+//TODO: buffer can handle this & use fs_entry
 static CRingBuffer console_rb;
 static uint8_t *console_storage;
 static volatile uint64_t console_drop_count;
@@ -157,17 +158,27 @@ size_t console_write_fd(file *fd, const char *buf, size_t size, file_offset offs
     return console_write(buf, size);
 }
 
-size_t simple_console_write(const char *path, const void *buf, size_t size){
-    return console_write(buf, size);
-}
-
 file_offset console_seek(file *fd, file_offset offset){
     return 0;
 }
 
+bool console_stat(const char *path, fs_stat *out_stat){
+    if (!out_stat) return false;
+    const uint64_t sz = cring_capacity(&console_rb);
+    const uint64_t head = console_rb.head;
+    const uint64_t tail = console_rb.tail;
+    const bool full = console_rb.full;
+
+    const uint64_t used = full ? sz : (head >= tail ? (head - tail) : (sz - (tail - head)));
+    out_stat->size = used;
+    out_stat->type = entry_file;
+    out_stat->data_type = DATA_SIG_TEXT;
+    return true;
+}
+
 system_module console_module = (system_module){
     .name = "console",
-    .mount = "/console",
+    .mount = "console",
     .version = VERSION_NUM(0,1,0,0),
     .init = console_init,
     .fini = console_fini,
@@ -175,8 +186,7 @@ system_module console_module = (system_module){
     .close = 0,
     .read = console_read,
     .write = console_write_fd,
-    .sread = 0,//TODO implement simple io
-    .swrite = simple_console_write,
+    .getstat = console_stat,
     .readdir = 0,
 };
 

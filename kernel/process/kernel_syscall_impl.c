@@ -3,7 +3,7 @@
 #include "scheduler.h"
 #include "console/kio.h"
 #include "input/input_dispatch.h"
-#include "bin/bin_mod.h"
+#include "tools/tools.h"
 #include "graph/graphics.h"
 #include "graph/tres.h"
 #include "exceptions/timer.h"
@@ -14,6 +14,7 @@
 #include "sysregs.h"
 #include "memory/mmu.h"
 #include "memory/addr.h"
+#include "process/signals/signals.h"
 extern page_index *p_index;
 
 void* malloc(size_t size){
@@ -86,7 +87,7 @@ extern void request_draw_ctx(draw_ctx* d_ctx){
 }
 
 extern void commit_draw_ctx(draw_ctx* d_ctx){
-    commit_frame(d_ctx, 0);
+    commit_frame(d_ctx, 0, false);
 }
 
 extern void resize_draw_ctx(draw_ctx* d_ctx, uint32_t width, uint32_t height){
@@ -138,7 +139,7 @@ extern int32_t socket_close(SocketHandle *handle){
 }
 
 extern FS_RESULT openf(const char* path, file* descriptor){
-    return open_file(path, descriptor);
+    return open_file(kernel_fs(), path, descriptor);
 }
 
 extern size_t readf(file *descriptor, char* buf, size_t size){
@@ -150,7 +151,7 @@ extern size_t writef(file *descriptor, const char* buf, size_t size){
 }
 
 extern bool statf(const char *path, fs_stat *out_stat){
-    return get_stat(path, out_stat);
+    return get_stat(kernel_fs(), path, out_stat);
 }
 
 extern bool truncatef(file *descriptor, size_t size){
@@ -162,9 +163,17 @@ extern void closef(file *descriptor){
 }
 
 size_t dir_list(const char *path, void *buf, size_t size, u64 *offset){
-    return list_directory_contents(path, buf, size, offset);
+    return list_directory_contents(kernel_fs(), path, buf, size, offset);
 }
 
 bool stat(const char *path, fs_stat *out_stat){
-    return get_stat(path, out_stat);
+    return get_stat(kernel_fs(), path, out_stat);
+}
+
+extern bool send_signal(signal_types type, i64 value, u16 proc_id){
+    return send_signal_proc_id(type, value, get_current_proc(), proc_id);
+}
+
+extern bool handle_signal(signal_types type, signal_handler handler){
+    return register_signal_handler(get_current_proc(), type, handler);
 }

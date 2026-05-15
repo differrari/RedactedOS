@@ -22,6 +22,7 @@ typedef struct user_argv {
 } user_argv_t;
 
 bool access_ok_range(process_t *proc, uintptr_t addr, size_t size, bool want_write);
+bool validate_address(process_t *proc, uintptr_t addr, size_t size, bool want_write);
 uaccess_result_t copy_from_user(process_t *proc, void *dst, uintptr_t src, size_t size);
 uaccess_result_t copy_to_user(process_t *proc, uintptr_t dst, const void *src, size_t size);
 uaccess_result_t copy_str_from_user(process_t *proc, char *dst, size_t dst_size, uintptr_t src, size_t *out_copied, bool *out_terminated);

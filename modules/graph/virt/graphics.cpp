@@ -11,7 +11,7 @@ static bool _gpu_ready;
 
 GPUDriver *gpu_driver;
 
-bool gpu_init(){
+bool gpu_init(system_module *mod){
     kprint("[GRAPH] Initializing Virt GPU");
     gpu_size preferred_screen_size = {1920,1080};
     if (VirtioGPUDriver *vgd = VirtioGPUDriver::try_init(preferred_screen_size)){
@@ -119,7 +119,7 @@ void gpu_resize_window(uint32_t width, uint32_t height, draw_ctx *win_ctx){
 
 system_module graphics_module = {
     .name = "graphics",
-    .mount = "/graph",
+    .mount = "graph",
     .version = VERSION_NUM(0, 1, 0, 0),
     .init = gpu_init,
     .fini = 0,
@@ -128,8 +128,7 @@ system_module graphics_module = {
     .write = 0,
     .close = 0,
     .truncate = 0,
-    .sread = 0,
-    .swrite = 0,//TODO implement simple io
-    .getstat = 0,//TODO: stat
-    .readdir = 0
+    .getstat = 0,
+    .readdir = 0,
+    .alias_info = {}
 };

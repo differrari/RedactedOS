@@ -77,7 +77,14 @@ typedef struct f32longname {
 
 class FAT32FS;
 
-typedef sizedptr (*f32_entry_handler)(FAT32FS *instance, f32file_entry*, char *filename, const char *seek);
+typedef struct {
+    f32file_entry entry;
+    u32 cluster;
+    u32 offset;//into the cluster
+    bool found;
+} f32_walk_result;
+
+typedef f32_walk_result (*f32_entry_handler)(FAT32FS *instance, f32file_entry*, char *filename, const char *seek);
 
 class FAT32FS: public FSDriver {
 public:
@@ -85,8 +92,6 @@ public:
     FS_RESULT open_file(const char* path, file* descriptor) override;
     size_t read_file(file *descriptor, void* buf, size_t size) override;
     size_t write_file(file *descriptor, const char* buf, size_t size) override;
-    size_t sread_file(const char *path, void *buf, size_t size) override { return 0; };//TODO: implement
-    size_t swrite_file(const char *path, const void *buf, size_t size) override { return 0; };//TODO: implement
     size_t list_contents(const char *path, void* buf, size_t size, uint64_t *offset) override;
     void close_file(file* descriptor) override;
     bool stat(const char *path, fs_stat *out_stat) override;
@@ -94,11 +99,20 @@ public:
 protected:
     sizedptr read_full_file(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint64_t file_size, uint32_t root_index);
     void read_FAT(uint32_t location, uint32_t size, uint8_t count);
+    void write_FAT(uint32_t location, uint32_t size, uint8_t count);
     uint32_t count_FAT(uint32_t first);
     sizedptr list_directory(uint32_t cluster_count, uint32_t root_index);
-    sizedptr walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, f32_entry_handler handler);
+    f32_walk_result walk_directory(uint32_t cluster_count, uint32_t root_index, const char *seek, f32_entry_handler handler);
     sizedptr read_cluster(uint32_t cluster_start, uint32_t cluster_size, uint32_t cluster_count, uint32_t root_index);
-
+    bool write_to_disk(u32 cluster_start, void* buf, size_t size);
+    
+    bool write_section_to_cluster(u32 cluster, u32 offset, void *buf, size_t size);
+    u32 resolve_cluster_index(u32 start, u32 index);
+    
+    bool resize_fat(u32 start, u32 count);
+    u32 alloc_fat();
+    void dealloc_fat(u32 cluster);
+    
     fat32_mbs* mbs = 0x0;
     void *fs_page = 0x0;
     uint32_t cluster_count = 0;
@@ -108,14 +122,13 @@ protected:
     uint16_t bytes_per_sector = 0;
     uint32_t partition_first_sector = 0;
 
-    static sizedptr read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
-    static sizedptr list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
-    static sizedptr stat_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
+    static f32_walk_result read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
+    static f32_walk_result list_entries_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek);
 
     void parse_longnames(f32longname entries[], uint16_t count, char* out);
     void parse_shortnames(f32file_entry* entry, char* out);
 
     bool verbose = false;
 
-    chashmap_t *open_files;
+    hash_map_t *open_files;
 };

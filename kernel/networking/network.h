@@ -6,8 +6,8 @@ extern "C" {
 
 #include "types.h"
 #include "net/network_types.h"
-#include "dev/driver_base.h"
 #include "networking/netpkt.h"
+#include "files/system_module.h"
 
 #define NET_IRQ_BASE 40
 //TODO: consider using the system MTU here

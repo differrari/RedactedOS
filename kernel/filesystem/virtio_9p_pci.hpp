@@ -11,8 +11,6 @@ public:
     FS_RESULT open_file(const char* path, file* descriptor) override;
     size_t read_file(file *descriptor, void* buf, size_t size) override;
     size_t write_file(file *descriptor, const char* buf, size_t size) override;
-    size_t sread_file(const char *path, void *buf, size_t size) override;
-    size_t swrite_file(const char *path, const void *buf, size_t size) override;
     size_t list_contents(const char *path, void* buf, size_t size, uint64_t *offset) override;
     void close_file(file* descriptor) override;
     bool stat(const char *path, fs_stat *out_stat) override;
@@ -34,5 +32,5 @@ private:
 
     uint32_t root = 0;
 
-    chashmap_t *open_files = nullptr;
+    hash_map_t *open_files = nullptr;
 };

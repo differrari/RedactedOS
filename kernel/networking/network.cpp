@@ -3,7 +3,7 @@
 
 static NetworkDispatch *dispatch = 0;
 
-bool network_init() {
+bool network_init(system_module *mod) {
     dispatch = new NetworkDispatch();
     if (!dispatch) return false;
     return dispatch->init();
@@ -78,7 +78,7 @@ bool network_sync_multicast(uint16_t ifindex, const uint8_t* macs, uint32_t coun
 
 system_module net_module = (system_module){
     .name = "net",
-    .mount = "/net",
+    .mount = "net",
     .version = VERSION_NUM(0, 1, 0, 1),
     .init = network_init,
     .fini = 0,
@@ -87,8 +87,7 @@ system_module net_module = (system_module){
     .write = 0,
     .close = 0,
     .truncate = 0,
-    .sread = 0,
-    .swrite = 0,
     .getstat = 0,
     .readdir = 0,
+    .alias_info = {}
 };

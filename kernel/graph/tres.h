@@ -26,7 +26,7 @@ void resize_window(uint32_t width, uint32_t height);
 
 void get_window_ctx(draw_ctx* out_ctx);
 
-void commit_frame(draw_ctx* frame_ctx, window_frame* frame);
+void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus);
 
 u16 window_fallback_focus(u16 win_id, u16 skip_id);
 void set_window_focus(uint16_t win_id);

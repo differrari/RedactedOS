@@ -2,12 +2,13 @@
 
 #include "types.h"
 #include "process/process.h"
-#include "dev/driver_base.h"
+#include "files/system_module.h"
 
 typedef enum {
     INTERRUPT,
     YIELD,
     HALT,
+    RECV_SIGNAL,
 } ProcSwitchReason;
 
 #define MAX_REUSABLE_EMPTY_PROCS 64
@@ -32,6 +33,9 @@ void process_restore();
 void stop_process(uint16_t pid, int32_t exit_code);
 void stop_current_process(int32_t exit_code);
 void reset_process(process_t *proc);
+
+void block_process(process_t *proc);
+void resume_blocked_process(process_t *proc);
 
 void name_process(process_t *proc, const char *name);
 

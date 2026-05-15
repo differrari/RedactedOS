@@ -16,9 +16,10 @@
 #include "memory/addr.h"
 #include "sysregs.h"
 #include "filesystem/filesystem.h"
-#include "dev/module_loader.h"
+#include "filesystem/modules/module_loader.h"
 #include "string/string.h"
 #include "alloc/allocate.h"
+#include "files/dir_list.h"
 
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
@@ -34,7 +35,7 @@ uint16_t next_proc_index = 1;
 CQueue ready_queue = {};
 linked_list_t sleeping_list = {};
 
-chashmap_t *proc_opened_files;
+hash_map_t *proc_opened_files;
 
 void* proc_page;
 
@@ -68,7 +69,7 @@ static bool process_has_runtime_state(process_t *proc){
 static bool process_can_run(process_t *proc){
     if (!proc) return false;
     if (!process_is_known(proc) || proc->pending_reset) return false;
-    if (proc->state == STOPPED || proc->sleeping || !proc->pc || !proc->sp) return false;
+    if (proc->state == STOPPED || proc->sleeping || proc->suspended || !proc->pc || !proc->sp) return false;
     if ((proc->spsr & 0xF) == 0) return !!proc->mm.ttbr0;
     return !proc->mm.ttbr0;
 }
@@ -117,10 +118,9 @@ void update_sleep_timer() {
 }
 
 void switch_proc(ProcSwitchReason reason) {
-    if (mmu_ttbr0_user_enabled()) panic("switch_proc with user ttbr0 active", current_proc ? current_proc->id : 0);
     if (proc_count == 0)
         panic("No processes active", 0);
-    process_t*prev = current_proc, *next_proc = 0;
+    process_t *prev = current_proc, *next_proc = 0;
     if (prev && prev->state == RUNNING) {
         if (prev == idle_proc) prev->state = BLOCKED;
         else ready_process(prev);
@@ -181,7 +181,17 @@ void process_restore(){
         if (current_proc->pc >= HIGH_VA) panic("user pc in kernel VA", current_proc->pc);
         mmu_ttbr0_enable_user();
     } else mmu_ttbr0_disable_user();
-    restore_context(cpec);
+    if (current_proc->signal_buffer.read_index != current_proc->signal_buffer.write_index){
+        signal_info_t *info = &current_proc->signal_buffer.entries[current_proc->signal_buffer.read_index];//TODO: Wrong, this should be copied into userland mem
+        current_proc->signal_buffer.read_index = (current_proc->signal_buffer.read_index + 1) % INPUT_BUFFER_CAPACITY;
+        if (can_signal_be_handled(info->type)){
+            signal_handler handler = current_proc->signal_handlers[info->type];
+            if (handler) handler(info);
+            else handle_signal_default(current_proc, info);
+        } else handle_signal_default(current_proc, info);
+        switch_proc(RECV_SIGNAL);//TODO: wasteful, we might have a lot of CPU time left for this proc to use
+    } else 
+        restore_context(cpec);
 }
 
 bool start_scheduler(){
@@ -570,6 +580,9 @@ void stop_process(uint16_t pid, int32_t exit_code){
     bool current = proc == current_proc;
     proc->state = STOPPED;
     proc->exit_code = exit_code;
+
+    kprintf("[SCHEDULER] Stop process %i with code %i",proc->id,proc->exit_code);
+    
     proc->in_ready_queue = false;
     proc->sleeping = false;
     proc->wake_at_msec = 0;
@@ -590,6 +603,15 @@ void stop_process(uint16_t pid, int32_t exit_code){
 
 void stop_current_process(int32_t exit_code){
     stop_process(get_current_proc_pid(), exit_code);
+}
+
+void block_process(process_t *proc){
+    proc->suspended = true;
+}
+
+void resume_blocked_process(process_t *proc){
+    proc->suspended = false;
+    enqueue_ready_process(proc);
 }
 
 uint16_t process_count(){
@@ -685,44 +707,87 @@ bool load_process_module(process_t *p, system_module *m){
     p->exposed_fs.read = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.read - (uintptr_t)p->va));
     p->exposed_fs.write = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.write - (uintptr_t)p->va));
     p->exposed_fs.close = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.close - (uintptr_t)p->va));
-    p->exposed_fs.sread = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.sread - (uintptr_t)p->va));
-    p->exposed_fs.swrite = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.swrite - (uintptr_t)p->va));
     return load_module(&p->exposed_fs);
 }
 
-size_t list_processes(const char *path, void *buf, size_t size, file_offset *offset){
+size_t list_processes(void *buf, size_t size, file_offset *offset){
 
     if (!buf || !offset || size < sizeof(uint32_t)) return 0;
-	uint32_t count = 0;
 	
-    char *write_ptr = (char*)buf + sizeof(uint32_t);
-    process_t *proc = process_list;
+	fs_dir_list_helper helper = create_dir_list_helper(buf, size);
+    
+	process_t *proc = process_list;
     if (*offset) {
         while (proc && proc->id != *offset) proc = proc->process_next;
-        if (proc) proc = proc->process_next;
     }
 
     while (proc) {
         if (proc->id != 0 && proc->state != STOPPED) {
-            size_t name_len = 0;
-            while (name_len + 1 < MAX_PROC_NAME_LENGTH && proc->name[name_len] != '\0') name_len++;
+            char name[6];
+            string_format_buf(name, 6, "%i", proc->id);
 
-            size_t used = (size_t)(write_ptr - (char*)buf);
-            if (used + name_len + 1 > size) break;
-
-            if (name_len) memcpy(write_ptr, proc->name, name_len);
-            write_ptr += name_len;
-            *write_ptr++ = 0;
-            *offset = proc->id;
-            count++;
+            if (!dir_list_fill(&helper, name)){
+                if (offset){ 
+                    *offset = proc->id;
+                    return dir_buf_size(&helper);
+                }
+            }
         }
         proc = proc->process_next;
     }
 
-    *(uint32_t*)buf = count;
+    return dir_buf_size(&helper);
+}
 
-    //TODO: allow seeing files belonging to a proc (/out, /in, etc)
-    return (size_t)(write_ptr - (char*)buf);
+#define NUM_PROC_FILES 2
+
+char* proc_files[NUM_PROC_FILES] = {
+    "out",
+    "state"
+};
+
+size_t list_proc_files(void *buf, size_t size, file_offset *offset){
+
+    if (!buf || !offset || size < sizeof(uint32_t)) return 0;
+	
+	fs_dir_list_helper helper = create_dir_list_helper(buf, size);
+    
+	u64 index = offset ? *offset : 0;
+	
+	for (int i = index; i < NUM_PROC_FILES; i++){
+	    kprint(proc_files[i]);
+		char *name = (char*)((uptr)helper.list + 4 + helper.offset);
+	    if (!dir_list_fill(&helper, proc_files[i])){
+			if (offset) *offset = i;
+			return dir_buf_size(&helper);
+		}
+		kprint(name);
+	}
+    return dir_buf_size(&helper);
+}
+
+size_t readdir_proc(const char *path, void *buf, size_t size, file_offset *offset){
+    irq_flags_t irq = irq_save_disable();
+    if (!strlen(path)){
+        size_t res = list_processes(buf, size, offset);
+        irq_restore(irq);
+        return res;
+    }
+    const char *pid_s = seek_to(path, '/');
+    path = seek_to(pid_s, '/');
+    uint64_t pid = parse_int_u64(pid_s, path - pid_s);
+    process_t *proc = get_proc_by_pid(pid);
+    if (!proc) {
+        irq_restore(irq);
+        return false;
+    }
+    if (!strlen(path)){
+        size_t res = list_proc_files(buf, size, offset);
+        irq_restore(irq);
+        return res;
+    }
+    irq_restore(irq);
+    return false;
 }
 
 FS_RESULT open_proc(const char *path, file *descriptor){
@@ -805,6 +870,40 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     kfree((void*)owner_info, sizeof(procfs_owner));
     kfree(file, sizeof(module_file));
     return FS_RESULT_DRIVER_ERROR;
+}
+
+bool stat_proc(const char *path, fs_stat *out_stat){
+    if (!out_stat) return false;
+    irq_flags_t irq = irq_save_disable();
+    if (!strlen(path)){
+        bool res = stat_dir(out_stat);
+        irq_restore(irq);
+        return res;
+    }
+    const char *pid_s = seek_to(path, '/');
+    path = seek_to(pid_s, '/');
+    uint64_t pid = parse_int_u64(pid_s, path - pid_s);
+    process_t *proc = get_proc_by_pid(pid);
+    if (!proc) {
+        irq_restore(irq);
+        return false;
+    }
+    if (!strlen(path)){
+        bool res = stat_dir(out_stat);
+        irq_restore(irq);
+        return res;
+    }
+    out_stat->type = entry_file;
+    if (strcmp_case(path, "out",true) == 0){
+        out_stat->size = proc->output_size;
+        out_stat->data_type = DATA_SIG_TEXT;
+    }
+    if (strcmp_case(path, "state",true) == 0){
+        out_stat->size = sizeof(proc->state);
+        out_stat->data_type = DATA_SIG_PROC_ST;
+    }
+    irq_restore(irq);
+    return true;
 }
 
 int find_open_proc_file(void *node, void* key){
@@ -940,7 +1039,7 @@ void close_proc(file *fd) {
 
 system_module scheduler_module = (system_module){
     .name = "scheduler",
-    .mount = "/proc",
+    .mount = "proc",
     .version = VERSION_NUM(0, 1, 0, 1),
     .init = init_scheduler_module,
     .fini = 0,
@@ -948,7 +1047,6 @@ system_module scheduler_module = (system_module){
     .read = read_proc,
     .write = write_proc,
     .close = close_proc,
-    .sread = 0,
-    .swrite = 0,//TODO implement simple io
-    .readdir = list_processes,
+    .getstat = stat_proc,
+    .readdir = readdir_proc,
 };

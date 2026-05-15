@@ -15,24 +15,28 @@ DEP     := $(C_SRC:%.c=$(BUILD_DIR)/%.d) $(CPP_SRC:%.cpp=$(BUILD_DIR)/%.d)
 NAME     := $(notdir $(CURDIR))
 ELF      := $(NAME).elf
 TARGET   := $(NAME).bin
-LOCATION := ../../fs/redos/bin/
+PACKAGE  := $(NAME).red
+LOCATION := ../../fs/redos/system/
 
 .PHONY: prepare all clean
 
-all: prepare $(TARGET)
+ifeq ($(strip $(OBJ)),)
+all:
+	@echo "Skipping $(NAME): no source files"
+else
+all: prepare $(PACKAGE)/$(TARGET)
+endif
 
 prepare:
-	mkdir -p $(LOCATION)
+	mkdir -p resources
 	mkdir -p $(BUILD_DIR)
+	mkdir -p $(PACKAGE)
+	cp -r resources $(PACKAGE)
 
-$(TARGET): ../../shared/libshared.a $(OBJ)
-	$(VLD) $(LDFLAGS) -o $(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../../shared/libshared.a
-	$(OBJCOPY) -O binary $(ELF) $@
-	cp -r $(ELF) $(LOCATION)
-
-$(BUILD_DIR)/%.o: %.S
-	@mkdir -p $(dir $@)
-	$(VAS) $(CFLAGS) -c $< -o $@
+$(PACKAGE)/$(TARGET): ../../shared/libshared.a $(OBJ)
+	$(VLD) $(LDFLAGS) -o $(PACKAGE)/$(ELF) $(OBJ) ../../shared/libshared.a
+	$(OBJCOPY) -O binary $(PACKAGE)/$(ELF) $@
+	cp -r $(PACKAGE) $(LOCATION)
 
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -43,11 +47,10 @@ $(BUILD_DIR)/%.o: %.cpp
 	$(VCXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
 clean:
-	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET) $(ELF)
-	$(RM) -r $(BUILD_DIR)
-
-
+	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET) 
+	$(RM) -r $(PACKAGE) $(BUILD_DIR)
+	
 dump: all
-	$(ARCH)objdump -S $(ELF) > dump
+	$(ARCH)objdump -S $(PACKAGE)/$(ELF) > dump
 
 -include $(DEP)

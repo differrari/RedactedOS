@@ -6,6 +6,7 @@
 #include "math/math.h"
 #include "std/memory.h"
 #include "files/helpers.h"
+#include "files/vfs.h"
 
 gpu_point default_boot_offsets[BOOTSCREEN_NUM_SYMBOLS] = BOOTSCREEN_OFFSETS;
 boot_theme_t boot_theme = {
@@ -114,8 +115,10 @@ void parse_theme_kvp(string_slice key, string_slice value, void *context){
 
 }
 
+size_t reload(file*, const char *, size_t, file_offset);
+
 bool load_theme(){
-    char *theme_name = read_full_file("/shared/theme", 0);
+    char *theme_name = read_full_file("/home/theme", 0);
     
     if (!theme_name) theme_name = "theme.config";
     
@@ -125,30 +128,32 @@ bool load_theme(){
     if (!buf) return false;
 
     read_toml(buf, parse_theme_kvp, 0);
+    
+    make_entry(DIR_AS_FILE, backing_virtual, entry_file, DATA_SIG_THEME, (buffer){
+       .buffer = &system_theme,
+       .buffer_size = sizeof(system_theme_t),
+       .limit = sizeof(system_theme_t),
+       .options = buffer_read_only
+    });
+    
+    make_complex_entry("reload", backing_command, entry_file, DATA_SIG_CMD, (file_actions){.write = reload }, (string){});
 
     return true;
 }
 
-size_t reload_theme(const char *path, const void* buf, size_t size){
-    print("Reloading theme? %s",path);
-    if (strcmp(path,"/reload") != 0) return 0;
-    return load_theme();
-}
-
-size_t read_theme(const char *path, void* buf, size_t size){
-    size = min(size, sizeof(system_theme));
-    kprintf("Accent color %x",system_theme.cursor_color_selected);
-    memcpy(buf, (void*)&system_theme, size);
-    return size;
+size_t reload(file* fd, const char *buf, size_t size, file_offset offset){
+    load_theme();
+    return 0;
 }
 
 system_module theme_mod = (system_module){
     .name = "theme",
-    .mount = "/theme",
+    .mount = "theme",
+    .version = VERSION_NUM(0, 1, 0, 0),
     .init = load_theme,
-    .open = 0,
-    .write = 0,
-    .swrite = reload_theme,
-    .read = 0,
-    .sread = read_theme,
+    .open = vfs_open,
+    .write = vfs_write,
+    .read = vfs_read,
+    .getstat = vfs_stat,
+    .readdir = vfs_list,
 };

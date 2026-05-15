@@ -1,7 +1,7 @@
 include common.mk
 
 OS      := $(shell uname)
-FS_DIRS := fs/redos/user
+FS_DIRS := fs/redos/system
 
 ifeq ($(OS),Darwin)
 BOOTFS := /Volumes/bootfs
@@ -11,7 +11,7 @@ endif
 
 .PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
 
-all: kshared modules kernel shared user utils bins
+all: kshared modules kernel shared user tools
 	@echo "Build complete."
 	./createfs
 
@@ -30,11 +30,8 @@ user: shared prepare-fs
 kernel: kshared modules
 	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU) TEST=$(TEST)
 
-utils: shared prepare-fs
-	$(MAKE) -C utils
-
-bins: shared prepare-fs
-	$(MAKE) -C bin
+tools: shared prepare-fs
+	$(MAKE) -C tools
 
 test:
 	$(MAKE) $(MODE) QEMU=true TEST=true all
@@ -44,13 +41,10 @@ clean:
 	$(MAKE) -C shared $@
 	$(MAKE) -C user   $@
 	$(MAKE) -C kernel $@
-	$(MAKE) -C utils  $@
-	$(MAKE) -C bin  $@
+	$(MAKE) -C tools  $@
 	$(MAKE) -C modules $@
-	@echo "removing fs dirs"
-	$(RM) -r $(FS_DIRS)
 	@echo "removing images"
-	$(RM) kernel.img kernel.elf disk.img dump
+	$(RM) kernel.img kernel.elf dump
 
 raspi:
 	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true MODE=raspi all
@@ -70,7 +64,6 @@ debug:
 dump:
 	$(ARCH)objdump -D kernel.elf > dump
 	$(MAKE) -C user $@
-	$(MAKE) -C utils $@
 
 install:
 	$(MAKE) clean

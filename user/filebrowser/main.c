@@ -1,41 +1,83 @@
 #include "syscalls/syscalls.h"
 #include "files/helpers.h"
 #include "input_keycodes.h"
+#include "data/struct/stack.h"
 
-string directories[16];
-int dir_count;
-string files[16];
-int file_count;
+arr_stack_t *directories;
+arr_stack_t *files;
 
 int selected = 0;
 
 bool viewing_file = false;
-string viewed_path;
+char *viewed_path;
 char *viewed_data;
 size_t viewed_size;
 
 draw_ctx ctx;
 
+bool disable_multiverse;
+
+typedef struct {
+    string name;
+    string full_path;
+    fs_entry_type type;
+    data_signature signature;
+} file_data;
+
+//TODO: preferences/settings system
+//TODO: put in library
+//TODO: design a system-wide method for opening files by extension
+
 void on_entry(const char* path, const char* name){
     if (!strcmp(name, "..") || !strcmp(name, ".")) return;
-    if (file_count >= 16) return;
-    files[file_count++] = string_from_const(name);
+    string full_path;
+    u64 dir_count = stack_count(directories);
+    if (dir_count){
+        string parent = STACK_GET(string,directories,dir_count-1);
+        if (parent.data[parent.length-1] == '/')
+            full_path = string_format("%s%s", parent.data, name);
+        else     
+            full_path = string_format("%s/%s", parent.data, name);
+    } else
+        full_path = string_from_const(name);
+    string s = string_from_const(name);
+    file_data fdata = {
+        .full_path = full_path,
+        .name = s,
+    };
+    fs_stat st = {};
+    if (statf(full_path.data, &st)){
+        fdata.signature = st.data_type;
+        fdata.type = st.type;
+    }
+    stack_push(files, &fdata);
+}
+
+color color_for_type(fs_entry_type type){
+    switch (type) {
+        case entry_directory: return 0xFF0000DE;
+        case entry_invalid: return 0xFF777777;
+        default: return 0xFFFFFFFF;
+    }
 }
 
 void refresh(){
-    for (int i = 0; i < file_count; i++)
-        string_free(files[i]);
-    file_count = 0;
+    for (u64 i = 0; i < stack_count(files); i++)
+        string_free(STACK_GET(string,files,i));
+    stack_reset(files);
 
+    u64 dir_count = stack_count(directories);
     if (dir_count > 0)
-        traverse_directory(directories[dir_count - 1].data, false, on_entry);
+        traverse_directory(STACK_GET(string,directories,dir_count-1).data, false, on_entry);
+    
+    i64 file_count = stack_count(files);
 
     if (selected >= file_count)
         selected = file_count > 0 ? file_count - 1 : 0;
 
     fb_clear(&ctx, 0);
     if (viewing_file){
-        fb_draw_string(&ctx, viewed_path.data, 4, 4, 2, 0xFFFFFFFF);
+        fb_draw_string(&ctx, viewed_path, 4, 4, 2, 0xFFFFFFFF);
         if (!viewed_data){
             fb_draw_string(&ctx, "Failed to open file", 4, 40, 2, 0xFFFFFFFF);
         } else {
@@ -81,46 +123,53 @@ void refresh(){
     }
 
     if (dir_count > 0)
-        fb_draw_string(&ctx, directories[dir_count - 1].data, 4, 4, 2, 0xFFFFFFFF);
+        fb_draw_string(&ctx, STACK_GET(string,directories,dir_count - 1).data, 4, 4, 2, 0xFFFFFFFF);
 
     for (int i = 0; i < file_count; i++){
         int y = 40 + (i * 30);
         if (selected == i)
             fb_draw_string(&ctx, ">", 0, y, 3, 0xFFFFFFFF);
-        fb_draw_string(&ctx, files[i].data, 30, y, 3, 0xFFFFFFFF);
+        file_data data = STACK_GET(file_data,files,i);
+        int offset = 30;
+        fb_draw_string(&ctx, data.name.data, offset, y, 3, color_for_type(data.type));
+        offset += fb_get_char_size(3) * (data.name.length + 1);
+        if (data.signature){
+            bool valid = true;
+            char *sig = (char*)&data.signature;
+            for (int c = 0; c < 8; c++){
+                valid &= !sig[c] || is_printable(sig[c]);
+            }
+            if (valid){
+                fb_draw_slice(&ctx, (string_slice){sig,8}, offset, y, 3, 0xFF999999);
+            }
+        }
     }
     commit_draw_ctx(&ctx);
 }
 
-void enter(const char *name){
+void enter_path(const char *name, const char *full_path){
     if (!name || !*name) return;
 
-    string full_path;
-    if (dir_count)
-        full_path = string_format("%s/%s", directories[dir_count - 1].data, name);
-    else
-        full_path = string_from_const(name);
-
     if (strend(name, ".red") == 0){
-        string elf = string_format("%S/%v.elf", full_path, (string_slice){(char*)name, strlen(name) - 4});
-        exec(elf.data, 0, 0, EXEC_MODE_DEFAULT);
-        string_free(elf);
-        string_free(full_path);
+        exec(full_path, 0, 0, EXEC_MODE_DEFAULT);
+        halt(0);
+    }
+    
+    if (strend(name, ".c") == 0){
+        const char* argv[1] = { full_path }; 
+        exec("/home/applications/braincode.red", 1, argv, EXEC_MODE_DEFAULT);
         halt(0);
     }
 
     fs_stat st = {};
-    if (!statf(full_path.data, &st)){
-        string_free(full_path);
+    if (!statf(full_path, &st)){
+        print("Failed to get info for %s",full_path);
         return;
     }
 
     if (st.type == entry_directory){
-        if (dir_count >= 16){
-            string_free(full_path);
-            return;
-        }
-        directories[dir_count++] = full_path;
+        string s = string_from_literal(full_path);
+        stack_push(directories,&s);
         selected = 0;
         viewing_file = false;
         refresh();
@@ -131,12 +180,14 @@ void enter(const char *name){
         release(viewed_data);
         viewed_data = 0;
     }
-    if (viewed_path.data)
-        string_free(viewed_path);
-    viewed_path = full_path;
-    viewed_data = read_full_file(viewed_path.data, &viewed_size);
+    viewed_path = (char*)full_path;
+    viewed_data = read_full_file(viewed_path, &viewed_size);
     viewing_file = true;
     refresh();
+}
+
+void enter(char *name){
+    enter_path(name, name);
 }
 
 void pop_dir(){
@@ -145,25 +196,29 @@ void pop_dir(){
             release(viewed_data);
             viewed_data = 0;
         }
-        if (viewed_path.data){
-            string_free(viewed_path);
-            viewed_path = (string){};
-        }
+        if (viewed_path)
+            viewed_path = 0;
         viewed_size = 0;
         viewing_file = false;
         refresh();
         return;
     }
-    if (dir_count <= 0) return;
-    string_free(directories[dir_count - 1]);
-    dir_count--;
+    u64 dir_count = stack_count(directories);
+    if (dir_count <= disable_multiverse) return;
+    string last = STACK_GET(string, directories, dir_count-1);
+    string_free(last);
+    stack_remove(directories,1);
     selected = 0;
     refresh();
 }
 
 int main(){
     request_draw_ctx(&ctx);
-    enter("/shared");
+    
+    files = stack_create(sizeof(file_data),32);
+    directories = stack_create(sizeof(string),16);
+    
+    enter("/");
 
     while (true){
         kbd_event ev = {};
@@ -179,8 +234,9 @@ int main(){
         }
         if (viewing_file)
             continue;
-        if (!file_count)
+        if (!stack_count(files))
             continue;
+        u64 file_count = stack_count(files);
         if (ev.key == KEY_UP){
             selected = (selected - 1 + file_count) % file_count;
             refresh();
@@ -191,8 +247,10 @@ int main(){
             refresh();
             continue;
         }
-        if (ev.key == KEY_ENTER || ev.key == KEY_KPENTER)
-            enter(files[selected].data);
+        if (ev.key == KEY_ENTER || ev.key == KEY_KPENTER){
+            file_data data = STACK_GET(file_data,files,selected);
+            enter_path(data.name.data,data.full_path.data);
+        }
     }
 
     return 0;

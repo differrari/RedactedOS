@@ -69,6 +69,7 @@ package_info get_pkg_info(char* info_path){
 }
 
 void handle_entry(const char *directory, const char *file) {
+    if (!strcmp_case("launcher.red",file,true)) return;
     string fullpath = string_format("%s/%s",directory, (uintptr_t)file);
     uint16_t ext_loc = find_extension((char*)file);
     string_slice name = make_string_slice(fullpath.data, fullpath.length - strlen(file), ext_loc);
@@ -94,7 +95,7 @@ void load_entries(){
     }
     chunk_array_reset(entries);
     traverse_directory("/shared/applications", false, handle_entry);
-    traverse_directory("/boot/redos/user", false, handle_entry);
+    traverse_directory("/boot/redos/system", false, handle_entry);
 }
 
 void draw_desktop(){
@@ -107,11 +108,7 @@ void draw_desktop(){
     if (process_active){
         active_proc.id = 0;
         load_entries();
-        memset(&ctx, 0, sizeof(draw_ctx));
-        request_draw_ctx(&ctx);
-        if (ctx.width < 512 || ctx.height < 256){
-            resize_draw_ctx(&ctx, max(512,ctx.width), max(256, ctx.height));
-        }
+
         gpu_size screen_size = {ctx.width, ctx.height};
         tile_size = (gpu_size){ screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20 };
         rendered_full = false;
@@ -179,23 +176,14 @@ void activate_current(){
             print("[LAUNCHER error] Wrong format %v. Must be a .red package",entry->ext);
             return;
         }
-        string s = string_format("%s/%v.elf",entry->path.data, entry->name);
         fb_clear(&ctx, 0);
         commit_draw_ctx(&ctx);
-        u16 pid = exec(s.data, 0, 0, EXEC_MODE_DEFAULT);
-        string_free(s);
+        u16 pid = exec(entry->path.data, 0, 0, EXEC_MODE_DEFAULT);
         if (!pid) {
             print("[LAUNCHER error] failed to launch process");
             return;
         }
-        string p = string_format("/proc/%i/state",pid);
-        if (openf(p.data, &active_proc) != FS_RESULT_SUCCESS){
-            string_free(p);
-            print("[LAUNCHER error] failed to get process state");
-            return;
-        }
-        string_free(p);
-        process_active = true;
+        halt(0);//TODO: remove any references to resuming after the process is closed
     }
     
 }

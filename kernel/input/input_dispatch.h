@@ -3,18 +3,11 @@
 #include "input_keycodes.h"
 #include "keyboard_input.h"
 #include "mouse_input.h"
-#include "dev/driver_base.h"
-#include "ui/graphic_types.h"
+#include "graphic_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif 
-
-typedef enum mouse_button {
-    LMB,
-    RMB,
-    MMB,
-} mouse_button;
 
 bool register_keypress(keypress kp);
 void register_event(kbd_event event);
@@ -24,13 +17,14 @@ void register_mouse_input(mouse_input *rat);
 mouse_input get_raw_mouse_in();
 
 gpu_point get_mouse_pos();
-bool mouse_button_pressed(mouse_button mb);
+bool mouse_button_pressed(int mb);
 
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp);
 uint16_t sys_subscribe_shortcut_current(keypress kp);
 void sys_set_focus(int pid);
 void sys_focus_current();
 void sys_unset_focus(bool close);
+u16 sys_get_focused_pid();
 
 ///A process can request for shortcuts and others to be disabled
 void sys_set_secure(bool secure);

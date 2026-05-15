@@ -1,6 +1,5 @@
 #include "math/rng.h"
 #include "random/random.h"
-#include "dev/driver_base.h"
 #include "console/kio.h"
 
 rng_t global_rng;
@@ -28,9 +27,17 @@ bool rng_init_global() {
     return true;
 }
 
+bool rng_stat(const char *path, fs_stat *out_stat){
+    if (!out_stat) return false;
+    out_stat->size = 0;
+    out_stat->type = entry_file;
+    out_stat->data_type = DATA_SIG_RAW;
+    return true;
+}
+
 system_module rng_module = {
     .name = "random",
-    .mount = "/random",
+    .mount = "random",
     .version = VERSION_NUM(0, 1, 0, 0),
     .init = rng_init_global,
     .open = rng_open,
@@ -38,7 +45,6 @@ system_module rng_module = {
     .fini = 0,
     .read = rng_read,
     .write = 0,
-    .sread = 0,
-    .swrite = 0,//TODO implement simple io
+    .getstat = rng_stat,
     .readdir = 0,
 };

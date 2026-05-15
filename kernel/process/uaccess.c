@@ -61,6 +61,33 @@ uaccess_result_t copy_from_user(process_t *proc, void *dst, uintptr_t src, size_
     return UACCESS_OK;
 }
 
+bool validate_address(process_t *proc, uintptr_t addr, size_t size, bool want_write) {
+    if (!addr && size) return false;
+    if (!size) return true;
+    if (!access_ok_range(proc, addr, size, want_write)) return false;
+
+    while (size) {
+        size_t off = addr & (PAGE_SIZE - 1);
+        size_t chunk = PAGE_SIZE - off;
+        if (chunk > size) chunk = size;
+
+        int st = 0;
+        mmu_translate((uint64_t*)proc->mm.ttbr0, addr, &st);
+        if (st) {
+            uint64_t esr = (0x24ULL << 26) | 0x7ULL | (want_write << 6);
+            if (!mm_try_handle_page_fault(proc, addr, esr)) return false;
+
+            mmu_translate((uint64_t*)proc->mm.ttbr0, addr, &st);
+            if (st) return false;
+        }
+
+        addr += chunk;
+        size -= chunk;
+    }
+
+    return true;
+}
+
 uaccess_result_t copy_to_user(process_t *proc, uintptr_t dst, const void *src, size_t size) {
     if (!src && size) return UACCESS_EINVAL;
     if (!size) return UACCESS_OK;

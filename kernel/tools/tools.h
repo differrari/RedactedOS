@@ -12,4 +12,4 @@ process_t* execute(const char* prog_name, int argc, const char* argv[], uint32_t
 }
 #endif
 
-extern system_module bin_module;
+extern system_module tool_module;

@@ -10,7 +10,7 @@ alignas(DWC2Driver) static uint8_t dwc2_driver_storage[sizeof(DWC2Driver)];
 alignas(XHCIDriver) static uint8_t xhci_driver_storage[sizeof(XHCIDriver)];
 
 
-bool input_init(){
+bool input_init(system_module *mod){
     #if QEMU
     if (BOARD_TYPE == 2){
     #else
@@ -74,7 +74,7 @@ extern "C" void handle_usb_interrupt(){
 
 system_module usb_module = (system_module){
     .name = "input",
-    .mount = "/in",
+    .mount = "in",
     .version = VERSION_NUM(0, 1, 0, 1),
     .init = input_init,
     .fini = 0,
@@ -83,8 +83,7 @@ system_module usb_module = (system_module){
     .write = 0,
     .close = 0,
     .truncate = 0,
-    .sread = 0,
-    .swrite = 0,//TODO implement simple io
     .getstat = 0,//TODO: stat
     .readdir = 0,
+    .alias_info = {}
 };

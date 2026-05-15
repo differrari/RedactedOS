@@ -1,29 +1,35 @@
 #pragma once
 
 #include "utils/console.hpp"
+#include "shell/shell.h"
+#include "kbd_helper.h"
 
 class Terminal: public Console {
 public:
     Terminal();
     void update();
+    shell_handle *term_current_shell;
 protected:
     bool handle_input();
     void repeat_tick();
     void end_command();
     int prompt_length;
     void run_command();
-    const char** parse_arguments(char *args, int *count);
 
     void redraw_input_line();
     void set_input_line(const char *s);
     void cursor_tick();
     void cursor_set_visible(bool visible);
 
-    bool exec_cmd(const char *cmd, int argc, const char *args[]);
+    bool exec_cmd(const char *cmd);
 
     draw_ctx* get_ctx() override;
     void flush(draw_ctx *ctx) override;
     bool screen_ready() override;
+
+    shell_handle* create_shell();
+
+    bool interpret_cmd_code(char code, u16 proc);
 
     bool command_running;
 

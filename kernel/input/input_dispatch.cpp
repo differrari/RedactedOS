@@ -147,7 +147,7 @@ gpu_point get_mouse_pos(){
     return mouse_loc;
 }
 
-bool mouse_button_pressed(mouse_button mb){
+bool mouse_button_pressed(int mb){
     return (last_cursor_state & (1 << mb)) == (1 << mb);
 }
 
@@ -190,6 +190,10 @@ void sys_unset_focus(bool close){
         process_t *next = get_proc_by_pid(npid);
         if (next && next->focused && next->state != process::STOPPED && next->id && next->pc && next->sp && ((((next->spsr & 0xF) != 0) || next->mm.ttbr0))) focused_proc = next;
     }
+}
+
+u16 sys_get_focused_pid(){
+    return focused_proc ? focused_proc->id : 0;
 }
 
 void sys_set_secure(bool secure){

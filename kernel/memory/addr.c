@@ -1,6 +1,8 @@
 #include "addr.h"
 #include "va_layout.h"
 
+#include "va_layout.h"
+
 bool kva_is_dmap(kaddr_t va){
     uint64_t v = (uint64_t)va;
     return v >= HIGH_VA && v < KERNEL_IMAGE_VA_BASE;

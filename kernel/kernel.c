@@ -16,7 +16,7 @@
 #include "networking/network.h"
 #include "random/random.h"
 #include "filesystem/filesystem.h"
-#include "dev/module_loader.h" 
+#include "filesystem/modules/module_loader.h" 
 #include "audio/audio.h"
 #include "mailbox/mailbox.h"
 #include "math/vector.h"
@@ -27,6 +27,10 @@
 #include "dtb.h"
 #include "filesystem/tmp/tmp_fs.h"
 #include "std/memory.h"
+#include "utils/utils.h"
+#include "tools/tools.h"
+
+extern void trace();
 
 extern char __bss_start[];
 extern char __bss_end[];
@@ -93,6 +97,8 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     init_filesystem();
 
     debug_load();
+
+    trace();
     
     load_module(&theme_mod);
 
@@ -107,8 +113,12 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     init_bootprocess();
     
     load_module(&tmp_mod);
+    
+    load_module(&tool_module);
 
     load_module(&scheduler_module);
+    
+    load_util_mods();
     
     start_scheduler();
 

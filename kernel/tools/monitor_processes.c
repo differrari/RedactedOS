@@ -81,8 +81,6 @@ void draw_process_view(){
     fb_clear(&ctx,system_theme.bg_color+0x112211);
     gpu_size screen_size = (gpu_size){ctx.width,ctx.height};
     gpu_point screen_middle = {screen_size.width / 2, screen_size.height / 2};
-
-    sys_focus_current();
     
     kbd_event ev;
     if (read_event(&ev)){
@@ -90,6 +88,7 @@ void draw_process_view(){
             scroll_index = max(scroll_index - 1, 0);
         if (ev.key == KEY_RIGHT)
             scroll_index++;
+        if (ev.key == KEY_ESC) halt(0);
     }
 
     for (int i = 0; i < PROCS_PER_SCREEN; i++) {
@@ -155,6 +154,8 @@ bool parse_args(int argc, char* argv[]){
     for (int i = 1; i < argc; i++){
         if (strcmp(argv[i],"gui") == 0){ 
             visual = true;
+            ctx.width = 300;
+            ctx.height = 300;
             request_draw_ctx(&ctx);
         }
         else if (strcmp(argv[i],"-help") == 0 || strcmp(argv[i],"-h") == 0){ 
@@ -176,8 +177,6 @@ int monitor_procs(int argc, char* argv[]){
             print_process_info();
             msleep(5000);
         }
-        kbd_event ev;
-        if (read_event(&ev) && ev.key == KEY_ESC) return 0;
     }
     return 1;
 }

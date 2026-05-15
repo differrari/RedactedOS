@@ -48,7 +48,7 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     AUDIO_BACKEND="coreaudio"
     GL="off"
 elif [ "$OS_TYPE" = "Linux" ]; then
-    fuser -k -KILL ./disk.img
+    fuser -k ./disk.img
     NETDEV="-netdev user,id=net0"
     PRIVILEGE=""
     DISPLAY_MODE="sdl"

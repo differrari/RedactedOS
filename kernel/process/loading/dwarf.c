@@ -168,7 +168,8 @@ uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, siz
 	memset(type_codes, 0, sizeof(uint64_t) * DWARF_ENTRY_CAP);
 	memset(form_codes, 0, sizeof(uint64_t) * DWARF_ENTRY_CAP);
 	uint64_t directory_entry_format_count = *p++;
-	if (directory_entry_format_count > DWARF_ENTRY_CAP) return ptr;
+	if (directory_entry_format_count > DWARF_ENTRY_CAP)
+        return ptr;
 	// kprintf("Directory formats %i at %x",directory_entry_format_count, ptr);
 	
 	for (uint64_t i = 0; i < directory_entry_format_count; i++){
@@ -257,7 +258,7 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 	uint64_t form_codes[DWARF_ENTRY_CAP] = {0};
 
 	uintptr_t end_section = ptr + size;
-
+	
 	while (ptr < end_section) {
 		dwarf_debug_line_state_machine state = (dwarf_debug_line_state_machine) {
 			.address = 0,
