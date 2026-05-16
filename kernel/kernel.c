@@ -29,7 +29,7 @@
 #include "std/memory.h"
 #include "utils/utils.h"
 #include "tools/tools.h"
-#include "process/isolated_fs/environment.h"
+#include "process/environment/environment.h"
 
 extern void trace();
 

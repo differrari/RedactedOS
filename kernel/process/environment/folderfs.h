@@ -52,8 +52,16 @@ static void emit_route_contents(path_resolution resolution){
             resolution.file->actions.readdir(resolution.forwarded.data, router_fs_dir_helper->list, router_fs_dir_helper->limit, out_offset);
             return;
         }
-        if (strncmp_case(resolution.file->name.data, ":id", true, resolution.file->name.length) == 0){
-            folderfs_list_ids(out_offset);
+        if (hash_map_size(resolution.params) && hash_map_get_dictionary(resolution.params, "id")){
+            if (!strlen(hash_map_get_dictionary(resolution.params, "id"))){
+                folderfs_list_ids(out_offset);
+                return;
+            }
+            const char *lpc = seek_to(resolution.file->name.data,'/');
+            if (!lpc || !strlen(lpc)) return;
+            if (!dir_list_fill(router_fs_dir_helper, lpc)){
+                if (out_offset) *out_offset = current_offset;
+            }
             return;
         }
         if (!dir_list_fill(router_fs_dir_helper, resolution.file->name.data)){
@@ -84,8 +92,66 @@ static inline size_t folderfs_readdir(const char *path, void *buf, size_t size, 
     return list_route_directory_contents(entries, path, &helper);
 }
 
-bool folderfs_stat(const char *path, fs_stat *stat){
-    if (!stat) return false;
-    stat->type = entry_directory;
+static FS_RESULT (*folderfs_custom_open)(u64 id, string_slice path, file *fd);
+
+static inline FS_RESULT folderfs_open(const char *path, file *fd){
+    if (!path || !strlen(path)) path = DIR_AS_FILE;
+    path_resolution resolution = parse_path(entries, path, false, 0);
+    if (!resolution.file){
+        print("No file for %s",path);
+        return FS_RESULT_NOTFOUND;
+    }     
+    if (!hash_map_size(resolution.params)){
+        print("Resolution error for %s",path);
+        return FS_RESULT_NOTFOUND;
+    }
+    string id_str = string_from_literal(hash_map_get_dictionary(resolution.params, "id"));
+    hash_map_destroy(resolution.params);
+    if (!id_str.length){
+        print("Resolution error for %s",path);
+        return FS_RESULT_NOTFOUND;
+    } 
+    i64 id = parse_int64(id_str.data, id_str.length);
+    string_free(id_str);
+    fd->cursor = 0;
+    fd->data_type = resolution.file->data_type;
+    if (id && folderfs_custom_open){
+        const char *lpc = seek_to(resolution.file->name.data,'/');
+        return folderfs_custom_open(id, slice_from_literal(lpc), fd);
+    }
+    fd->id = resolution.file->fid;
+    fd->size = resolution.file->file_buffer.buffer_size;
+    return FS_RESULT_SUCCESS;
+}
+
+buffer* (*folderfs_resolve_fd)(file *fd);
+
+static inline size_t folderfs_read(file *fd,  char *buf, size_t size, file_offset offset){
+    if (!folderfs_resolve_fd) return 0;
+    return buffer_read(folderfs_resolve_fd(fd), buf, size, fd->cursor);
+}
+
+static inline size_t folderfs_write(file *fd, const char *buf, size_t size, file_offset offset){
+    if (!folderfs_resolve_fd) return 0;
+    size_t s = buffer_write_lim(folderfs_resolve_fd(fd), (void*)buf, size);
+    print("Wrote %x out of %x to prop",s,size);
+    return s;
+}
+
+bool folderfs_stat(const char *path, fs_stat *out_stat){
+    if (!out_stat) return false;
+    if (strlen(path) && *path == '/') path++;
+    if (!strlen(path)){
+        stat_dir(out_stat);
+        return true;
+    }
+    path_resolution resolution = parse_path(entries, path, false, 0);
+    if (!resolution.file){
+        print("Failed to resolve file %s",path);
+        return false;
+    }
+    out_stat->type = resolution.file->entry_type;
+    out_stat->size = resolution.file->file_buffer.buffer_size;
+    out_stat->data_type = resolution.file->data_type;
     return true;
 }

@@ -22,10 +22,10 @@ int img_example() {
     void* file_img = malloc(descriptor.size);
     readf(&descriptor, file_img, descriptor.size);
     closef(&descriptor);
-    if (res != FS_RESULT_SUCCESS) printf("Couldn't open image");
+    if (res != FS_RESULT_SUCCESS) print("Couldn't open image");
     else {
         info = bmp_get_info(file_img, descriptor.size);
-        printf("info %ix%i",info.width,info.height);
+        print("info %ix%i",info.width,info.height);
         img = malloc(info.width*info.height*system_bpp);
         bmp_read_image(file_img, descriptor.size, img);
     }
@@ -52,7 +52,7 @@ int img_example() {
 int net_example() {
     SocketHandle spec = {};
     socket_create(SOCKET_SERVER, PROTO_UDP, NULL, &spec);
-    printf("Created socket for type %i",spec.protocol);
+    print("Created socket for type %i",spec.protocol);
     //Fill in manually with your local IP. A syscall will be added soon to get it for you
     spec.connection.ip[0] = 0;
     spec.connection.ip[1] = 0;
@@ -63,20 +63,20 @@ int net_example() {
     // socket_listen(&spec);
 
     void *ptr = malloc(0x1000);
-    printf("Waiting for data %i.%i.%i.%i", spec.connection.ip[0],spec.connection.ip[1],spec.connection.ip[2],spec.connection.ip[3]);
+    print("Waiting for data %i.%i.%i.%i", spec.connection.ip[0],spec.connection.ip[1],spec.connection.ip[2],spec.connection.ip[3]);
     net_l4_endpoint rc = {};
     while (!socket_receive(&spec, ptr, 0x1000, &rc)){
     }
 
-    printf("Received data from %i.%i.%i.%i:%i", rc.ip[0],rc.ip[1],rc.ip[2],rc.ip[3],rc.port);
+    print("Received data from %i.%i.%i.%i:%i", rc.ip[0],rc.ip[1],rc.ip[2],rc.ip[3],rc.port);
 
-    printf(ptr);
+    print(ptr);
 
     // socket_accept(&spec);
 
     char *str = "Hello node";
 
-    printf("Sent %i",socket_send(&spec, DST_ENDPOINT, &rc.ip, rc.port, str, strlen(str)));
+    print("Sent %i",socket_send(&spec, DST_ENDPOINT, &rc.ip, rc.port, str, strlen(str)));
 
     socket_close(&spec);
 
@@ -93,7 +93,7 @@ int audio_example(){
         mixin[0] = audio_play_sync(&audio[0], 0, AUDIO_ONESHOT, AUDIO_LEVEL_MAX/4, PAN_CENTRE);
         return 0;
     } else {
-        printf("Could not load wav");
+        print("Could not load wav");
         return -1;
     }
     return 0;

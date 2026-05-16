@@ -11,6 +11,7 @@ extern "C" {
 #include "memory/mm_process.h"
 #include "graphic_types.h"
 #include "signals/signals.h"
+#include "environment/environment.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
@@ -103,6 +104,7 @@ typedef struct process {
     sizedptr debug_line_str;
     system_module exposed_fs;
     mm_struct mm;
+    environment_data environment;
     struct process *process_next;
 } process_t;
 

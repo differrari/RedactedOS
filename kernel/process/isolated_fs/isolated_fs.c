@@ -1,7 +1,7 @@
 #include "isolated_fs.h"
 #include "filesystem/modules/fs_isolation.h"
 #include "filesystem/modules/module_loader.h"
-#include "environment.h"
+#include "process/environment/environment.h"
 
 char *bundle_redirect = 0;
 

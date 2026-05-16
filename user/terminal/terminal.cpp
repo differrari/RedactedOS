@@ -195,15 +195,19 @@ bool Terminal::exec_cmd(const char *cmd){
 
     string s1 = string_format("/proc/%i/out", proc);
     string s2 = string_format("/proc/%i/state", proc);
+    string s3 = string_format("/environments/%i/display", proc);
 
-    file out_fd, state_fd;
+    file out_fd, state_fd, display_fd;
     openf(s1.data, &out_fd);
     string_free(s1);
-    if (openf(s2.data, &state_fd) != FS_RESULT_SUCCESS){
+    FS_RESULT state_res = openf(s2.data, &state_fd);
+    string_free(s2);
+    openf(s3.data, &display_fd);
+    string_free(s3);
+    if (state_res != FS_RESULT_SUCCESS){
         print("Failed to open process state");
         return true;
     }
-    string_free(s2);
 
     int state = 1;
     size_t amount = 0x100;
@@ -214,6 +218,7 @@ bool Terminal::exec_cmd(const char *cmd){
         return true;
     }
 
+    env_display_type proc_display_type = env_display_raw;
     do {
         kbd_event event;
         if (read_event(&event)){
@@ -224,11 +229,25 @@ bool Terminal::exec_cmd(const char *cmd){
         }
         size_t n = readf(&out_fd, buf, amount);
         buf[n] = 0;
-        if (n) put_string(buf);
+        if (n){
+            for (size_t i = 0; i < n; i++){
+                if (buf[i] == '\['){
+                    if (!display_fd.id || readf(&display_fd, (char*)&proc_display_type, sizeof(env_display_type)) != sizeof(env_display_type)) proc_display_type = env_display_raw;
+                    if (proc_display_type != current_display_type){
+                        put_string("Switch to display type and read from correct output");
+                        current_display_type = proc_display_type;
+                    }
+                } else if (buf[i] == '\a'){
+                    print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+                } else if (current_display_type == env_display_raw) put_char(buf[i]);
+            }
+            flush(dctx);
+        }
 
         seek(&state_fd, 0, SEEK_ABSOLUTE);
         if (readf(&state_fd, (char*)&state, sizeof(int)) != sizeof(int)) state = 0;
-        if (state && !n) msleep(20);
+        // print("Display type %i",proc_display_type);
+        // if (state && !n) msleep(20);
     } while (state);
 
     for (;;) {

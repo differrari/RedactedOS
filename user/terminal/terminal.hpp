@@ -3,6 +3,7 @@
 #include "utils/console.hpp"
 #include "shell/shell.h"
 #include "kbd_helper.h"
+#include "environment/env_types.h"
 
 class Terminal: public Console {
 public:
@@ -45,6 +46,8 @@ protected:
 
     uint64_t last_blink_ms;
     bool cursor_visible;
+
+    env_display_type current_display_type = env_display_raw;
 
     bool dirty;
 };

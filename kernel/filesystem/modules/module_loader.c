@@ -44,7 +44,6 @@ bool load_module_to(hash_map_t* modules, system_module *module){
         if (strcmp(module->mount,"/console")) kprintf("[MODULE] failed to load module %s. Init failed",module->name);
         return false;
     }
-    if (strcmp(module->mount,"/console")) kprintf("Going to store %s in %x",module->mount,modules);
     hash_map_put_dictionary(modules, module->mount, PHYS_TO_VIRT_P(module));
     return true;
 }
