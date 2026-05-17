@@ -7,7 +7,7 @@
 #include "math/math.h"
 #include "data/struct/ring_buffer.h"
 
-static bool use_visual = false;
+static bool use_visual = true;
 
 #define CONSOLE_BUF_SIZE 0x3000
 #define CONSOLE_WRITE_CHUNK 256
