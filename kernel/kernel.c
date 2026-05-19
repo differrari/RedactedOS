@@ -29,6 +29,7 @@
 #include "std/memory.h"
 #include "utils/utils.h"
 #include "tools/tools.h"
+#include "process/environment/environment.h"
 
 extern void trace();
 
@@ -78,6 +79,9 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
 
     load_module(&disk_module);
 
+    init_filesystem();
+    load_module(&theme_mod);
+
     bool usb_available = can_init_usb ? load_module(&usb_module) : false;
     bool network_available = false;
     bool audio_available = false;
@@ -93,14 +97,8 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     kprint("Starting processes");
 
     if (BOARD_TYPE == 1 && audio_available) init_audio_mixer();
-    
-    init_filesystem();
 
     debug_load();
-
-    trace();
-    
-    load_module(&theme_mod);
 
 #if TEST
     if (!run_tests()) panic("Test run failed",0);
@@ -117,6 +115,8 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     load_module(&tool_module);
 
     load_module(&scheduler_module);
+
+    load_module(&environment_module);
     
     load_util_mods();
     

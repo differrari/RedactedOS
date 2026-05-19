@@ -170,10 +170,10 @@ bool stat(const char *path, fs_stat *out_stat){
     return get_stat(kernel_fs(), path, out_stat);
 }
 
-extern bool send_signal(signal_types type, i64 value, u16 proc_id){
-    return send_signal_proc_id(type, value, get_current_proc(), proc_id);
+bool send_signal(signal_types type, u16 proc_id){
+    return send_signal_proc_id(type, 0, get_current_proc(), proc_id);
 }
 
-extern bool handle_signal(signal_types type, signal_handler handler){
+bool handle_signal(signal_types type, signal_handler handler){
     return register_signal_handler(get_current_proc(), type, handler);
 }
