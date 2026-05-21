@@ -159,7 +159,7 @@ bool await_gpu(){
         gpu_size screen_size = {ctx.width, ctx.height};
         tile_size = (gpu_size){screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20};
         ready = true;
-        u32 color_buf[2] = {};
+        u32 color_buf[2] = { 0xFF222233, 0xFFFFFFFF };
         sreadf("/theme", &color_buf, sizeof(uint64_t));
         bg_color = color_buf[0];
         text_color = color_buf[1];
