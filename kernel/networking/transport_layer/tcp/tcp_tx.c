@@ -5,22 +5,22 @@ uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow, uint8_t apply_scale) {
 
     uint32_t shift = 0;
     if (apply_scale && flow->tx.ws_ok && flow->tx.ws_send) shift = flow->tx.ws_send;
-    if (flow->rx.rcv_adv_edge < flow->rx.rcv_nxt) flow->rx.rcv_adv_edge = flow->rx.rcv_nxt;
+    if (TCP_SEQ_LT(flow->rx.rcv_adv_edge, flow->rx.rcv_nxt)) flow->rx.rcv_adv_edge = flow->rx.rcv_nxt;
     uint32_t accept_edge = flow->rx.rcv_adv_edge;
 
     uint32_t hard_edge = flow->rx.rcv_nxt;
     if (flow->rx.rcv_buf && flow->rx.rcv_wnd_max) {
         hard_edge = flow->rx.rcv_base + flow->rx.rcv_wnd_max;
-        if (hard_edge < flow->rx.rcv_nxt) hard_edge = flow->rx.rcv_nxt;
+        if (TCP_SEQ_LT(hard_edge, flow->rx.rcv_nxt)) hard_edge = flow->rx.rcv_nxt;
     } else if (flow->base.state == TCP_SYN_RECEIVED && flow->rx.rcv_wnd_max) hard_edge = flow->rx.rcv_nxt + flow->rx.rcv_wnd_max;
 
-    if (hard_edge > accept_edge) {
+    if (TCP_SEQ_GT(hard_edge, accept_edge)) {
         uint32_t adv = hard_edge - flow->rx.rcv_nxt;
 
         if (apply_scale && adv) {
             uint32_t threshold = flow->tx.mss ? flow->tx.mss : TCP_DEFAULT_MSS;
             uint32_t half = flow->rx.rcv_wnd_max >> 1;
-            uint32_t already = accept_edge > flow->rx.rcv_nxt ? accept_edge - flow->rx.rcv_nxt : 0;
+            uint32_t already = TCP_SEQ_GT(accept_edge, flow->rx.rcv_nxt) ? accept_edge - flow->rx.rcv_nxt : 0;
             if (half && half < threshold) threshold = half;
             if (!threshold) threshold = 1;
             if (!already && adv < threshold) adv = 0;
@@ -40,11 +40,11 @@ uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow, uint8_t apply_scale) {
             }
 
             uint32_t new_edge = flow->rx.rcv_nxt + actual;
-            if (actual && new_edge > accept_edge) accept_edge = new_edge;
+            if (actual && TCP_SEQ_GT(new_edge, accept_edge)) accept_edge = new_edge;
         }
     }
 
-    if (accept_edge < flow->rx.rcv_nxt) accept_edge = flow->rx.rcv_nxt;
+    if (TCP_SEQ_LT(accept_edge, flow->rx.rcv_nxt)) accept_edge = flow->rx.rcv_nxt;
     uint32_t accept_adv = accept_edge - flow->rx.rcv_nxt;
     uint32_t field = accept_adv;
 
@@ -68,7 +68,7 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
     if (!flow || (!payload && payload_len)) return 0;
     if (flow->base.state != TCP_ESTABLISHED && flow->base.state != TCP_CLOSE_WAIT) return 0;
 
-    uint64_t in_flight = flow->tx.snd_nxt - flow->tx.snd_una;
+    uint64_t in_flight = TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una) ? flow->tx.snd_nxt - flow->tx.snd_una : 0;
     uint32_t wnd = flow->tx.snd_wnd;
     uint32_t cwnd = flow->tx.cwnd ? flow->tx.cwnd : (flow->tx.mss ? flow->tx.mss : TCP_DEFAULT_MSS);
     uint32_t eff_wnd = wnd < cwnd ? wnd : cwnd;
@@ -81,8 +81,29 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
     int first_segment = 1;
 
     while (remaining > 0 && can_send > 0) {
+        uint32_t free_slots = 0;
+        for (int i = 0; i < TCP_MAX_TX_SEGS; i++) if (!flow->tx.txq[i].used) free_slots++;
+        if (free_slots <= TCP_TX_CONTROL_RESERVE_SEGS) {
+            tcp_stats.tx_block_flow_segs++;
+            break;
+        }
+        if (flow->tx.queued_bytes >= TCP_TX_MAX_BYTES_PER_FLOW) {
+            tcp_stats.tx_block_flow_bytes++;
+            break;
+        }
+        if (tcp_tx_global_bytes >= TCP_TX_MAX_BYTES_GLOBAL) {
+            tcp_stats.tx_block_global_bytes++;
+            break;
+        }
+
         uint64_t seg_len = remaining > can_send ? can_send : remaining;
         if (flow->tx.mss && seg_len > flow->tx.mss) seg_len = flow->tx.mss;
+
+        uint32_t flow_room = TCP_TX_MAX_BYTES_PER_FLOW - flow->tx.queued_bytes;
+        uint32_t global_room = TCP_TX_MAX_BYTES_GLOBAL - tcp_tx_global_bytes;
+        if (seg_len > flow_room) seg_len = flow_room;
+        if (seg_len > global_room) seg_len = global_room;
+        if (!seg_len) break;
 
         tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow);
         if (!seg) break;
@@ -112,6 +133,8 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
             break;
         }
 
+        flow->tx.queued_bytes += (uint32_t)seg_len;
+        tcp_tx_global_bytes += (uint32_t)seg_len;
         flow->tx.snd_nxt += seg_len;
         sent_bytes += seg_len;
         remaining -= seg_len;
@@ -164,7 +187,7 @@ uint64_t tcp_flush_nagle(tcp_flow_t *flow, uint8_t force) {
     if (!flow || !flow->tx.nagle_len || !flow->tx.nagle_buf) return 0;
     if (flow->tx.nagle_flushing || flow->tx.nagle_appending) return 0;
 
-    uint64_t in_flight = flow->tx.snd_nxt - flow->tx.snd_una;
+    uint64_t in_flight = TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una) ? flow->tx.snd_nxt - flow->tx.snd_una : 0;
     if (!force && in_flight && flow->tx.nagle_len<tcp_nagle_threshold(flow)) return 0;
 
     flow->tx.nagle_flushing = 1;
@@ -279,8 +302,8 @@ void tcp_send_ack_now(tcp_flow_t *flow){
 
         if (flow->rx.sack_recent_right > flow->rx.sack_recent_left) {
             for (uint32_t i = 0; i < flow->rx.reass_count; i++) {
-                if (flow->rx.reass[i].seq > flow->rx.sack_recent_left) continue;
-                if (flow->rx.reass[i].end < flow->rx.sack_recent_right) continue;
+                if (TCP_SEQ_GT(flow->rx.reass[i].seq, flow->rx.sack_recent_left)) continue;
+                if (TCP_SEQ_LT(flow->rx.reass[i].end, flow->rx.sack_recent_right)) continue;
 
                 blocks[n].left = flow->rx.reass[i].seq;
                 blocks[n].right = flow->rx.reass[i].end;
@@ -351,7 +374,7 @@ int tcp_try_send_pending_fin(tcp_flow_t *flow) {
     if (flow->tx.nagle_len) tcp_flush_nagle(flow, 1);
     if (flow->tx.nagle_len) return 0;
 
-    uint64_t in_flight = flow->tx.snd_nxt - flow->tx.snd_una;
+    uint64_t in_flight = TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una) ? flow->tx.snd_nxt - flow->tx.snd_una : 0;
     uint32_t wnd = flow->tx.snd_wnd;
     uint32_t cwnd = flow->tx.cwnd ? flow->tx.cwnd : (flow->tx.mss ? flow->tx.mss : TCP_DEFAULT_MSS);
     uint32_t eff_wnd = wnd < cwnd ? wnd : cwnd;

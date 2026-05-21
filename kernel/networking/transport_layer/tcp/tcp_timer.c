@@ -43,7 +43,7 @@ int tcp_has_pending_timers(void) { //TODO mhh this should be event driven to avo
             tcp_tx_seg_t *seg = &f->tx.txq[j];
             if (!seg->used) continue;
             uint32_t end_seq = seg->seq + seg->len + (seg->syn ? 1u : 0u) + (seg->fin ? 1u : 0u);
-            if (end_seq > f->tx.snd_una) return 1;
+            if (TCP_SEQ_GT(end_seq, f->tx.snd_una)) return 1;
         }
     }
 
@@ -114,7 +114,7 @@ void tcp_tick_all(uint32_t elapsed_ms) {
             }
         }
 
-        if (f->tx.snd_wnd == 0 && (f->tx.snd_nxt > f->tx.snd_una || f->tx.fin_tx_pending)) {
+        if (f->tx.snd_wnd == 0 && (TCP_SEQ_GT(f->tx.snd_nxt, f->tx.snd_una) || f->tx.fin_tx_pending)) {
             if (!f->timer.persist_active) {
                 f->timer.persist_active = 1;
                 f->timer.persist_timer_ms = 0;
@@ -141,7 +141,7 @@ void tcp_tick_all(uint32_t elapsed_ms) {
                     uint32_t probe_seq = f->tx.snd_una;
                     if (!best && f->tx.fin_tx_pending && f->tx.snd_nxt == f->tx.snd_una && f->tx.snd_nxt) probe_seq = f->tx.snd_nxt-1;
 
-                    if (best && best->buf && best->len && probe_seq >= best->seq && probe_seq < best->seq + best->len) {
+                    if (best && best->buf && best->len && TCP_SEQ_GEQ(probe_seq, best->seq) && TCP_SEQ_LT(probe_seq, best->seq + best->len)) {
                         payload[0] = *((uint8_t *)best->buf + (probe_seq - best->seq));
                         pp = payload;
                         pl = 1;

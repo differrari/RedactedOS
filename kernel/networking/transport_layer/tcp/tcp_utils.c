@@ -1,5 +1,6 @@
 #include "tcp_utils.h"
 #include "std/memory.h"
+#include "tcp_internal.h"
 
 uint32_t tcp_calc_mss_for_l3(uint8_t l3_id, ip_version_t ver, const void *remote_ip){
     uint32_t mtu = 1500;
@@ -104,7 +105,7 @@ void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out
                 uint32_t o = i + 2 + b*8;
                 uint32_t left  = rd_be32(&opts[o]);
                 uint32_t right = rd_be32(&opts[o+4]);
-                if (right <= left) continue;
+                if (TCP_SEQ_LEQ(right, left)) continue;
 
                 uint8_t n = out->sack_count;
                 if (n >= TCP_SACK_MAX_BLOCKS) break;
