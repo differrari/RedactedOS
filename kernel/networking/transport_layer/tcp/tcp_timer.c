@@ -3,6 +3,27 @@
 #include "exceptions/irq.h"
 
 static volatile int tcp_daemon_running = 0;
+
+static void tcp_timer_send_ack_segment(tcp_flow_t *f, uint32_t seq, const uint8_t *payload, uint16_t payload_len) {
+    tcp_hdr_t hdr;
+    hdr.src_port = bswap16(f->base.local_port);
+    hdr.dst_port = bswap16(f->base.remote.port);
+    hdr.sequence = bswap32(seq);
+    hdr.ack = bswap32(f->base.ctx.ack);
+    hdr.flags = (uint8_t)(1u << ACK_F);
+    hdr.window = tcp_calc_adv_wnd_field(f, 1);
+    hdr.urgent_ptr = 0;
+
+    if (f->base.local.ver == IP_VER4) {
+        ipv4_tx_opts_t tx;
+        tcp_build_tx_opts_from_local_v4(f->base.local.ip, &tx);
+        (void)tcp_send_segment(IP_VER4, f->base.local.ip, f->base.remote.ip, &hdr, NULL, 0, payload, payload_len, (const ip_tx_opts_t *)&tx, f->ip.ttl, f->ip.dontfrag);
+    } else if (f->base.local.ver == IP_VER6) {
+        ipv6_tx_opts_t tx;
+        tcp_build_tx_opts_from_local_v6(f->base.local.ip, &tx);
+        (void)tcp_send_segment(IP_VER6, f->base.local.ip, f->base.remote.ip, &hdr, NULL, 0, payload, payload_len, (const ip_tx_opts_t *)&tx, f->ip.ttl, f->ip.dontfrag);
+    }
+}
 //TODO events
 void tcp_daemon_kick(void) {
     if(!tcp_has_pending_timers()) return;
@@ -90,26 +111,9 @@ void tcp_tick_all(uint32_t elapsed_ms) {
         if (!f->tx.fin_tx_pending && f->timer.keepalive_on && f->base.state == TCP_ESTABLISHED && f->timer.keepalive_ms) {
             f->timer.keepalive_idle_ms += elapsed_ms;
             if (f->timer.keepalive_idle_ms >= f->timer.keepalive_ms) {
-                tcp_hdr_t hdr;
-                hdr.src_port = bswap16(f->base.local_port);
-                hdr.dst_port = bswap16(f->base.remote.port);
                 uint32_t seq = f->tx.snd_nxt;
                 if (seq) seq -= 1;
-                hdr.sequence = bswap32(seq);
-                hdr.ack = bswap32(f->base.ctx.ack);
-                hdr.flags = (uint8_t)(1u << ACK_F);
-                hdr.window = tcp_calc_adv_wnd_field(f, 1);
-                hdr.urgent_ptr = 0;
-
-                if (f->base.local.ver == IP_VER4) {
-                    ipv4_tx_opts_t tx;
-                    tcp_build_tx_opts_from_local_v4(f->base.local.ip, &tx);
-                    (void)tcp_send_segment(IP_VER4, f->base.local.ip, f->base.remote.ip, &hdr, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, f->ip.ttl, f->ip.dontfrag);
-                } else if (f->base.local.ver == IP_VER6) {
-                    ipv6_tx_opts_t tx;
-                    tcp_build_tx_opts_from_local_v6(f->base.local.ip, &tx);
-                    (void)tcp_send_segment(IP_VER6, f->base.local.ip, f->base.remote.ip, &hdr, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, f->ip.ttl, f->ip.dontfrag);
-                }
+                tcp_timer_send_ack_segment(f, seq, NULL, 0);
                 f->timer.keepalive_idle_ms = 0;
             }
         }
@@ -130,10 +134,6 @@ void tcp_tick_all(uint32_t elapsed_ms) {
                     }
                     tcp_tx_seg_t *best = tcp_find_first_unacked(f);
 
-                    tcp_hdr_t hdr;
-                    hdr.src_port = bswap16(f->base.local_port);
-                    hdr.dst_port = bswap16(f->base.remote.port);
-
                     uint8_t payload[1];
                     const uint8_t *pp = NULL;
                     uint16_t pl = 0;
@@ -147,21 +147,7 @@ void tcp_tick_all(uint32_t elapsed_ms) {
                         pl = 1;
                     }
 
-                    hdr.sequence = bswap32(probe_seq);
-                    hdr.ack = bswap32(f->base.ctx.ack);
-                    hdr.flags = (uint8_t)(1u << ACK_F);
-                    hdr.window = tcp_calc_adv_wnd_field(f, 1);
-                    hdr.urgent_ptr = 0;
-
-                    if (f->base.local.ver == IP_VER4) {
-                        ipv4_tx_opts_t tx;
-                        tcp_build_tx_opts_from_local_v4(f->base.local.ip, &tx);
-                        (void)tcp_send_segment(IP_VER4, f->base.local.ip, f->base.remote.ip, &hdr, NULL, 0, pp, pl, (const ip_tx_opts_t *)&tx, f->ip.ttl, f->ip.dontfrag);
-                    } else if (f->base.local.ver == IP_VER6) {
-                        ipv6_tx_opts_t tx;
-                        tcp_build_tx_opts_from_local_v6(f->base.local.ip, &tx);
-                        (void)tcp_send_segment(IP_VER6, f->base.local.ip, f->base.remote.ip, &hdr, NULL, 0, pp, pl, (const ip_tx_opts_t *)&tx, f->ip.ttl, f->ip.dontfrag);
-                    }
+                    tcp_timer_send_ack_segment(f, probe_seq, pp, pl);
 
                     if (f->timer.persist_probe_cnt < UINT8_MAX) f->timer.persist_probe_cnt++;
                     f->timer.persist_timer_ms = 0;

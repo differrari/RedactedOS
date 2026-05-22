@@ -83,16 +83,11 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
     while (remaining > 0 && can_send > 0) {
         uint32_t free_slots = 0;
         for (int i = 0; i < TCP_MAX_TX_SEGS; i++) if (!flow->tx.txq[i].used) free_slots++;
-        if (free_slots <= TCP_TX_CONTROL_RESERVE_SEGS) {
-            tcp_stats.tx_block_flow_segs++;
-            break;
-        }
-        if (flow->tx.queued_bytes >= TCP_TX_MAX_BYTES_PER_FLOW) {
-            tcp_stats.tx_block_flow_bytes++;
-            break;
-        }
-        if (tcp_tx_global_bytes >= TCP_TX_MAX_BYTES_GLOBAL) {
-            tcp_stats.tx_block_global_bytes++;
+        tcp_admit_result_t tx_admit = tcp_admit_tx(flow, 0, free_slots);
+        if (tx_admit != TCP_ADMIT_OK) {
+            if (tx_admit == TCP_ADMIT_TX_FLOW_SEGS) tcp_stats.tx_block_flow_segs++;
+            else if (tx_admit == TCP_ADMIT_TX_FLOW_BYTES) tcp_stats.tx_block_flow_bytes++;
+            else if (tx_admit == TCP_ADMIT_TX_GLOBAL_BYTES) tcp_stats.tx_block_global_bytes++;
             break;
         }
 
@@ -133,8 +128,7 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
             break;
         }
 
-        flow->tx.queued_bytes += (uint32_t)seg_len;
-        tcp_tx_global_bytes += (uint32_t)seg_len;
+        tcp_account_tx_add(flow, (uint32_t)seg_len);
         flow->tx.snd_nxt += seg_len;
         sent_bytes += seg_len;
         remaining -= seg_len;

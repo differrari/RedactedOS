@@ -1073,8 +1073,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                                     flow->rx.reass[pos_idx].end = merged_end;
                                     flow->rx.reass_count++;
                                     flow->rx.rcv_ooo_used += merged_end - merged_start;
-                                    tcp_ooo_global_bytes += merged_end - merged_start;
-                                    tcp_ooo_global_segs++;
+                                    tcp_account_ooo_add(merged_end - merged_start, 1);
                                     flow->rx.sack_recent_left = merged_start;
                                     flow->rx.sack_recent_right = merged_end;
                                     tcp_calc_adv_wnd_field(flow, 1);
