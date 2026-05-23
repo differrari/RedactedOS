@@ -57,8 +57,8 @@ int main(){
             }
             if (ev.key == KEY_ENTER){
                 //TODO: need to consider how to make writes overwrite instead of append, and wipe the entire file
-                swritef("/shared/theme", files[selected].data, files[selected].length+1);
-                swritef("/theme/reload", 0, 0);
+                swritef("/shared/theme", files[selected].data, files[selected].length+1, false);
+                swritef("/theme/reload", 0, 0, false);
                 refresh();
             }
         }

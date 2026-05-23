@@ -27,7 +27,7 @@ static inline void check_mem(){
     if (!sock_mem_page)
         sock_mem_page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
     if (!map){
-        map = chashmap_create_alloc(128, custom_alloc, kfree);
+        map = hash_map_create_alloc(128, custom_alloc, kfree);
     }
 }
 
@@ -58,7 +58,7 @@ bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptio
     sh->protocol = protocol;
     sh->pid = pid;
 
-    if (chashmap_put(map, &out_handle->id, sizeof(uint16_t), sh) < 0){
+    if (hash_map_put(map, &out_handle->id, sizeof(uint16_t), sh) < 0){
         kprint("Failed to save socket");
         return false;
     }
@@ -67,7 +67,7 @@ bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptio
 
 int32_t bind_socket(SocketHandle *handle, uint16_t port, ip_version_t ip_version, uint16_t pid){
     check_mem();
-    ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
+    ksock_handle_t *sh = (ksock_handle_t*)hash_map_get(map, &handle->id, sizeof(uint16_t));
     if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket binding");
         return 0;
@@ -93,7 +93,7 @@ int32_t bind_socket(SocketHandle *handle, uint16_t port, ip_version_t ip_version
 
 int32_t connect_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, uint16_t port, uint16_t pid){
     check_mem();
-    ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
+    ksock_handle_t *sh = (ksock_handle_t*)hash_map_get(map, &handle->id, sizeof(uint16_t));
     if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket connection");
         return 0;
@@ -112,7 +112,7 @@ int32_t connect_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, 
 
 int64_t send_on_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, uint16_t port, void* buf, uint64_t len, uint16_t pid){
     check_mem();
-    ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
+    ksock_handle_t *sh = (ksock_handle_t*)hash_map_get(map, &handle->id, sizeof(uint16_t));
     if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket send");
         return 0;
@@ -131,7 +131,7 @@ int64_t send_on_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, 
 
 int64_t receive_from_socket(SocketHandle *handle, void* buf, uint64_t len, net_l4_endpoint* out_src, uint16_t pid){
     check_mem();
-    ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
+    ksock_handle_t *sh = (ksock_handle_t*)hash_map_get(map, &handle->id, sizeof(uint16_t));
     if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket receive %i, %i",sh->id,pid);
         return 0;
@@ -150,7 +150,7 @@ int64_t receive_from_socket(SocketHandle *handle, void* buf, uint64_t len, net_l
 
 int32_t close_socket(SocketHandle *handle, uint16_t pid){
     check_mem();
-    ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
+    ksock_handle_t *sh = (ksock_handle_t*)hash_map_get(map, &handle->id, sizeof(uint16_t));
     if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket close");
         return 0;
@@ -169,7 +169,7 @@ int32_t close_socket(SocketHandle *handle, uint16_t pid){
 
 int32_t listen_on(SocketHandle *handle, int32_t backlog, uint16_t pid){
     check_mem();
-    ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
+    ksock_handle_t *sh = (ksock_handle_t*)hash_map_get(map, &handle->id, sizeof(uint16_t));
     if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket listen");
         return 0;
@@ -188,7 +188,7 @@ int32_t listen_on(SocketHandle *handle, int32_t backlog, uint16_t pid){
 
 void accept_on_socket(SocketHandle *handle, uint16_t pid){
     check_mem();
-    ksock_handle_t *sh = (ksock_handle_t*)chashmap_get(map, &handle->id, sizeof(uint16_t));
+    ksock_handle_t *sh = (ksock_handle_t*)hash_map_get(map, &handle->id, sizeof(uint16_t));
     if (sh->pid != pid){
         kprintf("[SOCKET, error] illegal socket accept");
         return;

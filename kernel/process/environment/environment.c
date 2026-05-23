@@ -21,12 +21,30 @@ void environment_list(void *ctx, u64 original_index, u64 *out_offset){
 FS_RESULT environment_open(u64 id, string_slice file_name, file *fd){
     process_t *proc = get_proc_by_pid(id);
     if (!proc) return FS_RESULT_NOTFOUND;
-    if (slice_lit_match(file_name, "display", true)){
-        fd->id = ((env_type_display & 0xFFFF) << 16) | id;
-        fd->data_type = DATA_SIGNATURE("OUTFMT");
-        fd->size = sizeof(env_display_type);
-        if (!proc->environment.display_buf.buffer){
-            buffer_map_value(&proc->environment.display_buf,&proc->environment.display_type,sizeof(proc->environment.display_type), fd->data_type);
+    if (slice_lit_match(file_name, "config", true)){
+        fd->id = ((env_type_config & 0xFFFF) << 16) | id;
+        fd->data_type = DATA_SIGNATURE("ENVCONF");
+        fd->size = sizeof(env_config);
+        if (!proc->environment.config_buf.buffer){
+            buffer_map_value(&proc->environment.config_buf,&proc->environment.config,sizeof(proc->environment.config), fd->data_type);
+        }
+        return FS_RESULT_SUCCESS;
+    }
+    if (slice_lit_match(file_name, "data", true)){
+        fd->id = ((env_type_data & 0xFFFF) << 16) | id;
+        fd->data_type = DATA_SIG_RAW;
+        fd->size = proc->environment.data.buffer_size;
+        if (!proc->environment.data.buffer){
+            proc->environment.data = buffer_create(fd->size, buffer_can_grow);
+        }
+        return FS_RESULT_SUCCESS;
+    }
+    if (slice_lit_match(file_name, "structure", true)){
+        fd->id = ((env_type_structure & 0xFFFF) << 16) | id;
+        fd->data_type = DATA_SIG_DATA_STRUCT;
+        fd->size = proc->environment.structure.buffer_size;
+        if (!proc->environment.structure.buffer){
+            proc->environment.structure = buffer_create(fd->size, buffer_can_grow);
         }
         return FS_RESULT_SUCCESS;
     }
@@ -39,8 +57,12 @@ buffer* environment_resolve_fd(file *fd){
     if (!proc) return 0;
     u16 file_type = (fd->id >> 16) & 0xFFFF;
     switch (file_type){
-        case env_type_display:
-            return &proc->environment.display_buf;
+        case env_type_config:
+            return &proc->environment.config_buf;
+        case env_type_data:
+            return &proc->environment.data;
+        case env_type_structure:
+            return &proc->environment.structure;
         default: return 0;
     }
     return 0;
@@ -51,7 +73,9 @@ bool environment_init(system_module *module){
     folderfs_custom_list = environment_list;
     folderfs_custom_open = environment_open;
     folderfs_resolve_fd = environment_resolve_fd;
-    static_entries += make_entry(":id/display", backing_virtual, entry_file, DATA_SIGNATURE("OUTFMT"), (buffer){}) != 0;
+    static_entries += make_entry(":id/config", backing_virtual, entry_file, DATA_SIGNATURE("OUTFMT"), (buffer){}) != 0;
+    static_entries += make_entry(":id/data", backing_virtual, entry_file, DATA_SIG_RAW, (buffer){}) != 0;
+    static_entries += make_entry(":id/structure", backing_virtual, entry_file, DATA_SIG_DATA_STRUCT, (buffer){}) != 0;
     return true;
 }
 

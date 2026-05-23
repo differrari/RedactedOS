@@ -3,27 +3,46 @@
 #include "std/std.h"
 #include "input_keycodes.h"
 #include "shell/sheldon/sheldon.h"
+#include "files/helpers.h"
+#include "data/serialize/binary_serial.h"
+#include "environment/env_types.h"
+#include "utils/embedded_fmt/tcf.h"
 
 Terminal *default_term;
 
-void term_put_slice(shell_handle *handle, string_slice slice){
+void term_put_char(shell_handle *handle, char c){
     if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
-    default_term->put_slice(slice);
+    default_term->put_char(c);
+}
+
+void term_clear(shell_handle *handle){
+    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
+    default_term->clear();
+}
+
+void term_flush(shell_handle *handle){
+    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
+    default_term->refresh();
+}
+
+void term_bell(shell_handle *handle){
+    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
+    default_term->bell();
+}
+
+void term_ascii_cmd(shell_handle *handle, char cmd, u16 proc_id){
+    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
+    default_term->interpret_cmd_code(cmd, proc_id);
 }
 
 Terminal::Terminal() : Console() {
     default_term = this;
     uint32_t color_buf[2] = {};
     sreadf("/theme", &color_buf, sizeof(uint64_t));
-    default_bg_color = color_buf[0];
-    bg_color = color_buf[0];
-    default_text_color = color_buf[1];
-    if ((default_bg_color & 0xFF000000) == 0) default_bg_color |= 0xFF000000;
-    if ((default_text_color & 0xFF000000) == 0) default_text_color |= 0xFF000000;
-
-    bg_color = default_bg_color;
-    text_color = default_text_color;
-    if (text_color == bg_color) text_color = default_text_color = 0xFFFFFFFF;
+    if ((color_buf[0] & 0xFF000000) == 0) color_buf[0] |= 0xFF000000;
+    current_format.default_bg_color = color_buf[0];
+    current_format.current_bg_color = color_buf[0];
+    current_format.default_text_color = color_buf[1];
 
     char_scale = 2;
     prompt_length = 2;
@@ -43,6 +62,7 @@ Terminal::Terminal() : Console() {
     dirty = false;
 
     term_current_shell = create_shell();
+    init_tcf(&current_format);
     put_string("> ");
     redraw_input_line();
     if (dirty) {
@@ -53,7 +73,11 @@ Terminal::Terminal() : Console() {
 
 shell_handle* Terminal::create_shell(){
     return create_sheldon((shell_bindings){
-        .console_output = term_put_slice,
+        .console_output = term_put_char,
+        .console_flush = term_flush,
+        .console_clean = term_clear,
+        .console_bell = term_bell,
+        .console_ascii_cmd = term_ascii_cmd,
     }, 0);
 }
 
@@ -74,36 +98,24 @@ void Terminal::update(){
 void Terminal::cursor_set_visible(bool visible){
     if (visible == cursor_visible) {
         if (!visible) return;
-        if (last_drawn_cursor_x == (int32_t)cursor_x && last_drawn_cursor_y == (int32_t)cursor_y) return;
+        if (last_drawn_cursor_x == (int32_t)current_format.cursor_x && last_drawn_cursor_y == (int32_t)current_format.cursor_y) return;
     }
 
-    uint32_t cw = (uint32_t)char_scale * CHAR_SIZE;
-    uint32_t lh = (uint32_t)char_scale * CHAR_SIZE * 2;
     cursor_visible = visible;
 
     if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0) {
         if ((uint32_t)last_drawn_cursor_x < columns && (uint32_t)last_drawn_cursor_y < rows) {
-            fb_fill_rect(dctx,
-                (uint32_t)last_drawn_cursor_x * cw,
-                (uint32_t)last_drawn_cursor_y * lh,
-                cw, lh, bg_color
-            );
-
-            char *prev_line = row_data + (((scroll_row_offset + (uint32_t)last_drawn_cursor_y) % rows) * columns);
-            char ch = prev_line[last_drawn_cursor_x];
-            if (ch) {
-                uint32_t py = ((uint32_t)last_drawn_cursor_y * lh) + (lh / 2);
-                fb_draw_char(dctx, (uint32_t)last_drawn_cursor_x * cw, py, ch, char_scale, text_color);
-            }
+            char *prev_line = &row_data[((scroll_row_offset + (u32)last_drawn_cursor_y) % rows) * columns];
+            render_glyph(last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height, prev_line[last_drawn_cursor_x], current_format.current_text_color, current_format.current_bg_color, true);
         }
         last_drawn_cursor_x = -1;
         last_drawn_cursor_y = -1;
     }
 
     if (cursor_visible) {
-        fb_fill_rect(dctx, cursor_x * cw, cursor_y * lh, cw, lh, 0xFFFFFFFF);
-        last_drawn_cursor_x = (int32_t)cursor_x;
-        last_drawn_cursor_y = (int32_t)cursor_y;
+        fb_fill_rect(dctx, current_format.cursor_x * char_width, current_format.cursor_y * line_height, char_width, line_height, 0xFFFFFFFF);
+        last_drawn_cursor_x = (int32_t)current_format.cursor_x;
+        last_drawn_cursor_y = (int32_t)current_format.cursor_y;
     }
 
     dirty = true;
@@ -122,9 +134,9 @@ void Terminal::redraw_input_line(){
     uint32_t cw = (uint32_t)char_scale * CHAR_SIZE;
     uint32_t lh = (uint32_t)char_scale * CHAR_SIZE * 2;
 
-    fb_fill_rect(dctx, 0, cursor_y * lh, columns * cw, lh, bg_color);
+    fb_fill_rect(dctx, 0, current_format.cursor_y * lh, columns * cw, lh, current_format.current_bg_color);
 
-    char* line = row_data + (((scroll_row_offset + cursor_y) % rows) * columns);
+    char* line = row_data + (((scroll_row_offset + current_format.cursor_y) % rows) * columns);
     memset(line, 0, columns);
 
     if (columns == 0) return;
@@ -140,13 +152,13 @@ void Terminal::redraw_input_line(){
     for (uint32_t i = 0; i < draw_len; i++) line[prompt_length + i] = input_buf[i];
     line[prompt_length + draw_len] = 0;
 
-    uint32_t ypix = (cursor_y * lh) + (lh / 2);
-    fb_draw_char(dctx, 0, ypix, '>', char_scale, text_color);
-    fb_draw_char(dctx, cw, ypix, ' ', char_scale, text_color);
-    for (uint32_t i = 0; i < draw_len; i++) fb_draw_char(dctx, (prompt_length + i) * cw, ypix, input_buf[i], char_scale, text_color);
+    uint32_t ypix = (current_format.cursor_y * lh) + (lh / 2);
+    fb_draw_char(dctx, 0, ypix, '>', char_scale, current_format.current_text_color);
+    fb_draw_char(dctx, cw, ypix, ' ', char_scale, current_format.current_text_color);
+    for (uint32_t i = 0; i < draw_len; i++) fb_draw_char(dctx, (prompt_length + i) * cw, ypix, input_buf[i], char_scale, current_format.current_text_color);
 
     if (input_cursor > draw_len) input_cursor = draw_len;
-    cursor_x = (uint32_t)prompt_length + input_cursor;
+    current_format.cursor_x = (uint32_t)prompt_length + input_cursor;
 
     last_blink_ms = get_time();
     cursor_set_visible(true);
@@ -180,7 +192,26 @@ void Terminal::end_command(){
     prompt_length = 2;
 
     set_input_line("");
-    set_text_color(default_text_color);
+}
+
+void term_emit_data(structdef field, sizedptr data, bool is_allocated){
+    if (!default_term) return;
+    default_term->emit_data(field,data,is_allocated);
+}
+
+void Terminal::emit_data(structdef field, sizedptr data, bool is_allocated){
+    if (!data.ptr || !data.size) return;
+        switch (field.type) {
+        case binary_type_i8: print("%S: %i",field.name,*(i8*)data.ptr); break;
+        case binary_type_i16: print("%S: %i",field.name,*(i16*)data.ptr); break;
+        case binary_type_i32: print("%S: %i",field.name,*(i32*)data.ptr); break;  
+        case binary_type_i64: print("%S: %i",field.name,*(i64*)data.ptr); break;
+        case binary_type_float: print("%S: %f",field.name,*(float*)data.ptr); break;
+        case binary_type_double: print("%S: %f",field.name,*(double*)data.ptr); break;
+        case binary_type_string: print("%S: %v",field.name,data); break;
+        default: return;
+    }
+    if (is_allocated) release((void*)data.ptr);
 }
 
 bool Terminal::exec_cmd(const char *cmd){
@@ -188,83 +219,14 @@ bool Terminal::exec_cmd(const char *cmd){
 
     current_shell = term_current_shell;
     
-    if (run_cmd(term_current_shell, slice_from_literal(cmd))) return true;
+    if (run_cmd(current_shell, slice_from_literal(cmd))) return true;
     
-    int32_t proc = system_focus(cmd, EXEC_MODE_KEEP_FOCUS);
-    if (!proc) return false;
-
-    string s1 = string_format("/proc/%i/out", proc);
-    string s2 = string_format("/proc/%i/state", proc);
-    string s3 = string_format("/environments/%i/display", proc);
-
-    file out_fd, state_fd, display_fd;
-    openf(s1.data, &out_fd);
-    string_free(s1);
-    FS_RESULT state_res = openf(s2.data, &state_fd);
-    string_free(s2);
-    openf(s3.data, &display_fd);
-    string_free(s3);
-    if (state_res != FS_RESULT_SUCCESS){
-        print("Failed to open process state");
-        return true;
-    }
-
-    int state = 1;
-    size_t amount = 0x100;
-    char *buf = (char*)zalloc(amount + 1);
-    if (!buf) {
-        closef(&out_fd);
-        closef(&state_fd);
-        return true;
-    }
-
-    env_display_type proc_display_type = env_display_raw;
-    do {
-        kbd_event event;
-        if (read_event(&event)){
-            if (!handle_modifier(&event)){
-                char cmd = hid_to_char(event.key, current_modifier);
-                if (event.type == KEY_PRESS) interpret_cmd_code(cmd, proc);
-            }
-        }
-        size_t n = readf(&out_fd, buf, amount);
-        buf[n] = 0;
-        if (n){
-            for (size_t i = 0; i < n; i++){
-                if (buf[i] == '\['){
-                    if (!display_fd.id || readf(&display_fd, (char*)&proc_display_type, sizeof(env_display_type)) != sizeof(env_display_type)) proc_display_type = env_display_raw;
-                    if (proc_display_type != current_display_type){
-                        put_string("Switch to display type and read from correct output");
-                        current_display_type = proc_display_type;
-                    }
-                } else if (buf[i] == '\a'){
-                    print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-                } else if (current_display_type == env_display_raw) put_char(buf[i]);
-            }
-            flush(dctx);
-        }
-
-        seek(&state_fd, 0, SEEK_ABSOLUTE);
-        if (readf(&state_fd, (char*)&state, sizeof(int)) != sizeof(int)) state = 0;
-        // print("Display type %i",proc_display_type);
-        // if (state && !n) msleep(20);
-    } while (state);
-
-    for (;;) {
-        size_t n = readf(&out_fd, buf, amount);
-        if (!n) break;
-        buf[n] = 0;
-        put_string(buf);
-    }
-
-    release(buf);
-    closef(&out_fd);
-    closef(&state_fd);
-
-    string exit_msg = string_format("\nProcess %i ended.", proc);
-    put_string(exit_msg.data);
-    string_free(exit_msg);
     return true;
+}
+
+void Terminal::bell(){
+    put_string("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    refresh();
 }
 
 void Terminal::run_command(){
@@ -347,7 +309,7 @@ bool Terminal::handle_input(){
 
     if (key == KEY_LEFT) {
         if (input_cursor) input_cursor--;
-        cursor_x = (uint32_t)prompt_length + input_cursor;
+        current_format.cursor_x = (uint32_t)prompt_length + input_cursor;
         last_blink_ms = get_time();
         cursor_set_visible(true);
         return true;
@@ -355,7 +317,7 @@ bool Terminal::handle_input(){
 
     if (key == KEY_RIGHT) {
         if (input_cursor < input_len) input_cursor++;
-        cursor_x = (uint32_t)prompt_length + input_cursor;
+        current_format.cursor_x = (uint32_t)prompt_length + input_cursor;
         last_blink_ms = get_time();
         cursor_set_visible(true);
         return true;
@@ -426,6 +388,10 @@ draw_ctx* Terminal::get_ctx(){
 
 void Terminal::flush(draw_ctx *ctx){
     commit_draw_ctx(ctx);
+}
+
+void Terminal::refresh(){
+    flush(dctx);
 }
 
 bool Terminal::screen_ready(){

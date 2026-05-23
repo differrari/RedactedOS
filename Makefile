@@ -64,6 +64,8 @@ debug:
 dump:
 	$(ARCH)objdump -D kernel.elf > dump
 	$(MAKE) -C user $@
+	$(MAKE) -C tools $@
+	$(MAKE) -C modules $@
 
 install:
 	$(MAKE) clean

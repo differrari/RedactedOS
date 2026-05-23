@@ -134,7 +134,6 @@ static inline size_t folderfs_read(file *fd,  char *buf, size_t size, file_offse
 static inline size_t folderfs_write(file *fd, const char *buf, size_t size, file_offset offset){
     if (!folderfs_resolve_fd) return 0;
     size_t s = buffer_write_lim(folderfs_resolve_fd(fd), (void*)buf, size);
-    print("Wrote %x out of %x to prop",s,size);
     return s;
 }
 

@@ -22,7 +22,7 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat);
 bool truncate(file *descriptor, size_t size);
 
 size_t simple_read(module_root *root, const char *path, void *buf, size_t size);
-size_t simple_write(module_root *root, const char *path, const void *buf, size_t size);
+size_t simple_write(module_root *root, const char *path, const void *buf, size_t size, bool append);
 
 void close_files_for_process(uint16_t pid);
 

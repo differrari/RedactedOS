@@ -4,12 +4,17 @@
 #include "shell/shell.h"
 #include "kbd_helper.h"
 #include "environment/env_types.h"
+#include "data/serialize/binary_serial.h"
 
 class Terminal: public Console {
 public:
     Terminal();
     void update();
     shell_handle *term_current_shell;
+    void emit_data(structdef, sizedptr, bool);
+    void refresh();
+    void bell();
+    bool interpret_cmd_code(char code, u16 proc);
 protected:
     bool handle_input();
     void repeat_tick();
@@ -30,8 +35,6 @@ protected:
 
     shell_handle* create_shell();
 
-    bool interpret_cmd_code(char code, u16 proc);
-
     bool command_running;
 
     static constexpr uint32_t input_max = 1024;
@@ -46,8 +49,6 @@ protected:
 
     uint64_t last_blink_ms;
     bool cursor_visible;
-
-    env_display_type current_display_type = env_display_raw;
 
     bool dirty;
 };

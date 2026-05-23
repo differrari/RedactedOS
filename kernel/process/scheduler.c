@@ -209,7 +209,7 @@ void* list_alloc(size_t size){
 
 bool init_scheduler_module(){
     if (!proc_opened_files) {
-        proc_opened_files = chashmap_create(1024);
+        proc_opened_files = hash_map_create(1024);
         proc_opened_files->free = kfree;
         proc_opened_files->alloc = list_alloc;
     }
@@ -331,7 +331,7 @@ void reset_process(process_t *proc){
         char proc_path[48] = {};
         string_format_buf(proc_path, sizeof(proc_path), "/%i/out", pid);
         uint64_t fid = reserve_fd_gid(proc_path);
-        module_file *out_file = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(fid));
+        module_file *out_file = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
         if (out_file && (uintptr_t)out_file->file_buffer.buffer == (uintptr_t)proc->output) {
             size_t snapshot_size = proc->output_size;
             if (!snapshot_size) {
@@ -362,7 +362,7 @@ void reset_process(process_t *proc){
 
         string_format_buf(proc_path, sizeof(proc_path), "/%i/state", pid);
         fid = reserve_fd_gid(proc_path);
-        module_file *state_file = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(fid));
+        module_file *state_file = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
         if (state_file && (uintptr_t)state_file->file_buffer.buffer == (uintptr_t)&proc->state) {
             enum process_state *snapshot = (enum process_state*)zalloc(sizeof(proc->state));
             if (snapshot) {
@@ -793,7 +793,7 @@ size_t readdir_proc(const char *path, void *buf, size_t size, file_offset *offse
 FS_RESULT open_proc(const char *path, file *descriptor){
     uint64_t fid = reserve_fd_gid(path);
     irq_flags_t irq = irq_save_disable();
-    module_file *mfile = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(uint64_t));
+    module_file *mfile = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(uint64_t));
     if (mfile){
         descriptor->id = mfile->fid;
         descriptor->size = mfile->file_size;
@@ -861,7 +861,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
         return FS_RESULT_NOTFOUND;
     }
     file->file_size = descriptor->size;
-    int put = chashmap_put(proc_opened_files, &descriptor->id, sizeof(uint64_t), file);
+    int put = hash_map_put(proc_opened_files, &descriptor->id, sizeof(uint64_t), file);
     irq_restore(irq);
     if (put >= 0) return FS_RESULT_SUCCESS;
     if ((uintptr_t)file->file_buffer.buffer == (uintptr_t)proc->output || (uintptr_t)file->file_buffer.buffer == (uintptr_t)proc->postmortem_output || (uintptr_t)file->file_buffer.buffer == (uintptr_t)&proc->state) {
@@ -926,7 +926,7 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
         return 0;
     }
     irq_flags_t irq = irq_save_disable();
-    module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
+    module_file *file = (module_file*)hash_map_get(proc_opened_files, &fd->id, sizeof(uint64_t));
     if (!file) {
         irq_restore(irq);
         return 0;
@@ -965,7 +965,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
             char fullpath[48] = {};
             string_format_buf(fullpath, sizeof(fullpath), "/%i/out", proc->id);
             uint64_t fid = reserve_fd_gid(fullpath);
-            module_file *file = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(fid));
+            module_file *file = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
             if (file) {
                 file->buf = (uptr)proc->output;
                 file->file_buffer.buffer = (char*)proc->output;
@@ -986,7 +986,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
         return 0;
     }
     irq_flags_t irq = irq_save_disable();
-    module_file *file = (module_file*)chashmap_get(proc_opened_files, &fd->id, sizeof(uint64_t));
+    module_file *file = (module_file*)hash_map_get(proc_opened_files, &fd->id, sizeof(uint64_t));
     bool ro = file && file->read_only;
     irq_restore(irq);
     if (!file) return 0;
@@ -1001,7 +1001,7 @@ void close_proc(file *fd) {
     uint64_t fid = fd->id;
     process_t *reset_proc = 0;
     irq_flags_t irq = irq_save_disable();
-    module_file *mfile = (module_file*)chashmap_get(proc_opened_files, &fid, sizeof(fid));
+    module_file *mfile = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
     if (!mfile) {
         irq_restore(irq);
         return;
@@ -1020,7 +1020,7 @@ void close_proc(file *fd) {
         void *owned = mfile->file_buffer.buffer;
         buffer_options options = mfile->file_buffer.options;
         bool owned_postmortem = owner && owned == (void*)owner->postmortem_output;
-        chashmap_remove(proc_opened_files, &fid, sizeof(fid), 0);
+        hash_map_remove(proc_opened_files, &fid, sizeof(fid), 0);
         irq_restore(irq);
         if (owned && options == buffer_opt_none && !(reset_proc && owned_postmortem)) {
             release(owned);

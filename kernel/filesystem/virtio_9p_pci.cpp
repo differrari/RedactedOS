@@ -36,7 +36,7 @@ bool Virtio9PDriver::init(uint32_t partition_sector){
 
     max_msize = choose_version(); 
 
-    open_files = chashmap_create(512);
+    open_files = hash_map_create(512);
 
     root = attach();
     if (root == INVALID_FID){
@@ -59,7 +59,7 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
     descriptor->id = fid;
 
     irq_flags_t irq = irq_save_disable();
-    module_file *cached = (module_file*)chashmap_get(open_files, &fid, sizeof(uint64_t));
+    module_file *cached = (module_file*)hash_map_get(open_files, &fid, sizeof(uint64_t));
     if (cached) {
         cached->references++;
         descriptor->size = cached->file_size;
@@ -98,7 +98,7 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         return FS_RESULT_DRIVER_ERROR;
     } 
     irq = irq_save_disable();
-    module_file *mfile = (module_file*)chashmap_get(open_files, &fid, sizeof(uint64_t));
+    module_file *mfile = (module_file*)hash_map_get(open_files, &fid, sizeof(uint64_t));
     if (!mfile){
         mfile = (module_file*)kalloc(np_dev.memory_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
         if (!mfile) {
@@ -109,7 +109,7 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         }
         memset(mfile, 0, sizeof(module_file));
         mfile->serial = INVALID_FID;
-        if (chashmap_put(open_files, &descriptor->id, sizeof(uint64_t), mfile) < 0) {
+        if (hash_map_put(open_files, &descriptor->id, sizeof(uint64_t), mfile) < 0) {
             irq_restore(irq);
             clunk(&np_dev, f);
             kfree(mfile, sizeof(module_file));
@@ -140,7 +140,7 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
 
 size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
     irq_flags_t irq = irq_save_disable();
-    module_file *mfile = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    module_file *mfile = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     irq_restore(irq);
     if (!mfile) return 0;
     if (!sync_file(mfile) && !mfile->file_buffer.buffer && mfile->file_size) return 0;
@@ -153,7 +153,7 @@ size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
 }
 
 size_t Virtio9PDriver::write_file(file *descriptor, const char* buf, size_t size){
-    module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    module_file *mfile  = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) return 0;
     if (mfile->read_only) return 0;
 
@@ -185,7 +185,7 @@ size_t Virtio9PDriver::write_file(file *descriptor, const char* buf, size_t size
 
 void Virtio9PDriver::close_file(file* descriptor){
     irq_flags_t irq = irq_save_disable();
-    module_file *mfile = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    module_file *mfile = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) {
         irq_restore(irq);
         return;
@@ -200,7 +200,7 @@ void Virtio9PDriver::close_file(file* descriptor){
     void *buf = mfile->file_buffer.buffer;
     size_t buf_size = mfile->file_buffer.buffer_size ? mfile->file_buffer.buffer_size : 1;
 
-    chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
+    hash_map_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
     irq_restore(irq);
 
     if (serial != INVALID_FID) clunk(&np_dev, (u32)serial);
@@ -225,7 +225,7 @@ size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, u
 }
 
 bool Virtio9PDriver::truncate(file *descriptor, size_t size){
-    module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    module_file *mfile  = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) return false;
     if (mfile->read_only) return false;
     if (!set_attribute((u32)mfile->serial, P9_SETATTR_SIZE, size)) return false;

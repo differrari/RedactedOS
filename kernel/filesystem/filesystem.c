@@ -34,7 +34,7 @@ extern bool load_boot_partition();
 
 bool init_filesystem(){
     page = palloc(PAGE_SIZE*8, MEM_PRIV_KERNEL, MEM_RW, false);
-    open_files = chashmap_create(1024);
+    open_files = hash_map_create(1024);
     open_files->alloc = open_files_alloc;
     open_files->free = kfree;
     const char *path = "disk";
@@ -76,7 +76,7 @@ FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
     of->pid = get_current_proc_pid();
     descriptor->id = of->file_id;
     irq_flags_t irq = irq_save_disable();
-    int put = chashmap_put(open_files, &of->file_id, sizeof(uint64_t), of);
+    int put = hash_map_put(open_files, &of->file_id, sizeof(uint64_t), of);
     irq_restore(irq);
 
     if (put != 1) {
@@ -99,7 +99,7 @@ size_t read_file(file *descriptor, char* buf, size_t size){
     }
     open_file_descriptors local = {};
     irq_flags_t irq = irq_save_disable();
-    open_file_descriptors *ofile = (open_file_descriptors *)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    open_file_descriptors *ofile = (open_file_descriptors *)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (ofile) local = *ofile;
     irq_restore(irq);
     if (!ofile || !local.mod || !local.mod->read || local.pid != get_current_proc_pid()) return 0;
@@ -120,7 +120,7 @@ void close_file(file *descriptor){
     if (!open_files || !descriptor) return;
     open_file_descriptors *ofile = 0;
     irq_flags_t irq = irq_save_disable();
-    chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), (void**)&ofile);
+    hash_map_remove(open_files, &descriptor->id, sizeof(uint64_t), (void**)&ofile);
     irq_restore(irq);
     if (!ofile) return;
     file gfd = (file){
@@ -150,7 +150,7 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
 
     open_file_descriptors local = {};
     irq_flags_t irq = irq_save_disable();
-    open_file_descriptors *ofile = (open_file_descriptors *)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    open_file_descriptors *ofile = (open_file_descriptors *)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (ofile) local = *ofile;
     irq_restore(irq);
     if (!ofile || !local.mod || !local.mod->write || local.pid != get_current_proc_pid()) return 0;
@@ -165,7 +165,7 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     descriptor->cursor = gfd.cursor != start_cursor ? gfd.cursor : start_cursor + amount_written;
     descriptor->size = gfd.size;
     irq = irq_save_disable();
-    ofile = (open_file_descriptors *)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    ofile = (open_file_descriptors *)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (ofile) ofile->file_size = gfd.size;
     irq_restore(irq);
 
@@ -185,14 +185,20 @@ size_t simple_read(module_root *root, const char *path, void *buf, size_t size){
     return res;
 }
 
-size_t simple_write(module_root *root, const char *path, const void *buf, size_t size){
+size_t simple_write(module_root *root, const char *path, const void *buf, size_t size, bool append){
     file fd = {};
     FS_RESULT ores = open_file(root, path, &fd);
     if (ores != FS_RESULT_SUCCESS){
         kprintf("[FS error] Failed to open file for simple write (%i)",ores);
         return 0;
     }
+    if (append){
+        seek(&fd, fd.size, SEEK_ABSOLUTE);
+    }
     size_t res = write_file(&fd, (char*)buf, size);
+    if (append){
+        truncate(&fd, size);
+    }
     close_file(&fd);
     return res;
 }
@@ -237,7 +243,7 @@ bool truncate(file *descriptor, size_t size){
 
     open_file_descriptors local = {};
     irq_flags_t irq = irq_save_disable();
-    open_file_descriptors *ofile = (open_file_descriptors *)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    open_file_descriptors *ofile = (open_file_descriptors *)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (ofile) local = *ofile;
     irq_restore(irq);
     if (!ofile || !local.mod || !local.mod->truncate || local.pid != get_current_proc_pid()) return false;
@@ -256,7 +262,7 @@ bool truncate(file *descriptor, size_t size){
     if (descriptor->cursor > descriptor->size) descriptor->cursor = descriptor->size;
 
     irq = irq_save_disable();
-    ofile = (open_file_descriptors *)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    ofile = (open_file_descriptors *)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (ofile) ofile->file_size = gfd.size;
     irq_restore(irq);
     return true;
@@ -268,7 +274,7 @@ void close_files_for_process(uint16_t pid){
             uint64_t fid = 0;
             bool found = false;
             for (uint64_t i = 0; i < open_files->capacity && !found; i++) {
-                chashmap_entry_t *e = open_files->buckets[i];
+                hash_map_entry_t *e = open_files->buckets[i];
                 while (e) {
                     open_file_descriptors *f = (open_file_descriptors*)e->value;
                     if (f && f->pid == pid) {

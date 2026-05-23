@@ -55,7 +55,7 @@ bool FAT32FS::init(uint32_t partition_sector){
     kprintfv("[FAT32] Data start at %x",data_start_sector*512);
     read_FAT(mbs->reserved_sectors, mbs->sectors_per_fat, mbs->number_of_fats);
 
-    open_files = chashmap_create(512);
+    open_files = hash_map_create(512);
 
     return fat && open_files;
 }
@@ -426,7 +426,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (!mbs) return FS_RESULT_DRIVER_ERROR;
     uint64_t fid = reserve_fd_gid(path);
     irq_flags_t irq = irq_save_disable();
-    module_file *mfile = (module_file*)chashmap_get(open_files, &fid, sizeof(uint64_t));
+    module_file *mfile = (module_file*)hash_map_get(open_files, &fid, sizeof(uint64_t));
     if (mfile){
         descriptor->id = mfile->fid;
         descriptor->size = mfile->file_size;
@@ -469,7 +469,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     mfile->serial = filecluster;
     mfile->references = 1;
     irq = irq_save_disable();
-    int ok = chashmap_put(open_files, &fid, sizeof(uint64_t), mfile);
+    int ok = hash_map_put(open_files, &fid, sizeof(uint64_t), mfile);
     irq_restore(irq);
     if (ok < 0) {
         kfree(mfile->file_buffer.buffer, mfile->file_size ? mfile->file_size : 1);
@@ -481,7 +481,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
 
 size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
     irq_flags_t irq = irq_save_disable();
-    module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    module_file *mfile  = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) {
         irq_restore(irq);
         return 0;
@@ -497,7 +497,7 @@ size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
 }
 
 size_t FAT32FS::write_file(file *descriptor, const char* buf, size_t size){
-    module_file *mfile  = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    module_file *mfile  = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) return 0;
     if (mfile->read_only) return 0;
     
@@ -513,14 +513,14 @@ size_t FAT32FS::write_file(file *descriptor, const char* buf, size_t size){
 
 void FAT32FS::close_file(file* descriptor){
     irq_flags_t irq = irq_save_disable();
-    module_file *mfile = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    module_file *mfile = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) {
         irq_restore(irq);
         return;
     }
     if (mfile->references) mfile->references--;
     if (mfile->references == 0){
-        chashmap_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
+        hash_map_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
         irq_restore(irq);
         buffer_destroy(&mfile->file_buffer);
         kfree(mfile, sizeof(module_file));
@@ -585,7 +585,7 @@ size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t
 
     for (uint32_t i = 0; i < total_count; i++){
     	size_t len = strlen(cursor);
-    	uint64_t hash = chashmap_fnv1a64(cursor, len);
+    	uint64_t hash = hash_map_fnv1a64(cursor, len);
     	if (!offset_found){
     		if (hash == *offset) offset_found = true;
     		cursor += len + 1;
@@ -627,7 +627,7 @@ bool FAT32FS::stat(const char *path, fs_stat *out_stat){
 
 bool FAT32FS::truncate(file *descriptor, size_t size){
     irq_flags_t irq = irq_save_disable();
-    module_file *mfile = (module_file*)chashmap_get(open_files, &descriptor->id, sizeof(uint64_t));
+    module_file *mfile = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile || !mfile->name.data) {
         irq_restore(irq);
         return false;

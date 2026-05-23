@@ -415,11 +415,12 @@ u64 syscall_swritef(process_t *ctx){
     SYSCALL_STR(path, PROC_X0, false);
     size_t size = (size_t)ctx->PROC_X2;
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
+    bool append = (bool)ctx->PROC_X3;
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
     string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
     if (!s.data || !s.length) return 0;
-    size_t ret = simple_write(&rootfs, s.data, buf, size);
+    size_t ret = simple_write(&rootfs, s.data, buf, size, append);
     string_free(s);
     return ret;
 #else

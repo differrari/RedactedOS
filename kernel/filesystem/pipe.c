@@ -17,8 +17,8 @@ FS_RESULT create_pipe(module_root *root, const char *source, const char* destina
     if (result == FS_RESULT_SUCCESS){
         result = open_file(root, destination, &pipe->read_fd);
         if (result == FS_RESULT_SUCCESS){
-            if (!pipe_map) pipe_map = chashmap_create(64);
-            linked_list_t *list = chashmap_get(pipe_map, &pipe->write_fd.id, sizeof(uint64_t));
+            if (!pipe_map) pipe_map = hash_map_create(64);
+            linked_list_t *list = hash_map_get(pipe_map, &pipe->write_fd.id, sizeof(uint64_t));
             bool add_entry = false;
             if (!list){
                 add_entry = true;
@@ -26,7 +26,7 @@ FS_RESULT create_pipe(module_root *root, const char *source, const char* destina
             }
             linked_list_push_front(list, pipe);
             if (add_entry)
-                chashmap_put(pipe_map, &pipe->write_fd.id, sizeof(uint64_t), list);
+                hash_map_put(pipe_map, &pipe->write_fd.id, sizeof(uint64_t), list);
             out_fd->cursor = 0;
             out_fd->id = pipe->read_fd.id;
             out_fd->size = pipe->read_fd.size;
@@ -42,7 +42,7 @@ FS_RESULT close_pipe(file *fd){
 
 void update_pipes(uint64_t mfid, const char *buf, size_t size){
     if (!pipe_map) return;
-    linked_list_t *list = chashmap_get(pipe_map, &mfid, sizeof(uint64_t));
+    linked_list_t *list = hash_map_get(pipe_map, &mfid, sizeof(uint64_t));
     if (!list || !list->head) return;
     for (linked_list_node_t *head = list->head; head; head = head->next){
         if (!head->data) continue;
@@ -73,6 +73,6 @@ void close_pipe_list(void *key, uint64_t keylen, void *value){
 
 void close_pipes_for_process(uint16_t pid){
     close_pid = pid;
-    chashmap_for_each(pipe_map, close_pipe_list);
+    hash_map_for_each(pipe_map, close_pipe_list);
     close_pid = -1;
 }
