@@ -67,7 +67,7 @@ public:
     void handle_sent_packet() override;
     void flush_rx() override;
     void flush_tx() override;
-    bool send_packet(netpkt_t* packet) override;
+    netdev_tx_result_t send_packet(netpkt_t* packet) override;
 
 private:
     friend void virtio_net_rx_free(void* ctx, uintptr_t base, uint32_t alloc_size);

@@ -3,6 +3,12 @@
 #include "net/network_types.h"
 #include "networking/netpkt.h"
 
+typedef enum {
+    NETDEV_TX_OK = 0,
+    NETDEV_TX_BUSY = 1,
+    NETDEV_TX_DROP = 2
+} netdev_tx_result_t;
+
 class NetDriver {
 public:
     NetDriver() = default;
@@ -14,7 +20,7 @@ public:
     virtual void flush_rx(){}
     virtual void flush_tx(){}
     virtual void enable_verbose() = 0;
-    virtual bool send_packet(netpkt_t* packet) = 0;
+    virtual netdev_tx_result_t send_packet(netpkt_t* packet) = 0;
     virtual void get_mac(uint8_t out_mac[6]) const = 0;
     virtual uint16_t get_mtu() const = 0;
     virtual uint16_t get_header_size() const = 0;

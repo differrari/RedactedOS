@@ -26,13 +26,13 @@ netpkt_t* LoopbackDriver::handle_receive_packet(){
 
 void LoopbackDriver::enable_verbose(){}
 
-bool LoopbackDriver::send_packet(netpkt_t* packet){
-    if (!packet || !netpkt_len(packet)) return false;
+netdev_tx_result_t LoopbackDriver::send_packet(netpkt_t* packet){
+    if (!packet || !netpkt_len(packet)) return NETDEV_TX_DROP;
     uint16_t next = (uint16_t)((rx_tail + 1) & 255);
-    if (next == rx_head)return false;
+    if (next == rx_head)return NETDEV_TX_BUSY;
     rxq[rx_tail] = packet;
     rx_tail = next;
-    return true;
+    return NETDEV_TX_OK;
 }
 
 void LoopbackDriver::get_mac(uint8_t out_mac[6]) const{

@@ -115,12 +115,15 @@ int NetworkDispatch::net_task()
                 netpkt_t* pkt = nics[n].tx.peek();
                 irq_restore(flags);
 
-                if (!driver->send_packet(pkt)) break;
+                netdev_tx_result_t txr = driver->send_packet(pkt);
+                if (txr == NETDEV_TX_BUSY) break;
 
                 flags = irq_save_disable();
                 netpkt_t* popped = nullptr;
                 nics[n].tx.pop(popped);
                 irq_restore(flags);
+
+                if (txr == NETDEV_TX_DROP && popped) netpkt_unref(popped);
                 processed++;
             }
             if (processed) {

@@ -11,7 +11,7 @@ public:
     bool init_at(uint64_t pci_addr, uint32_t irq_base_vector) override;
     netpkt_t* handle_receive_packet() override;
     void enable_verbose() override;
-    bool send_packet(netpkt_t* packet) override;
+    netdev_tx_result_t send_packet(netpkt_t* packet) override;
     void get_mac(uint8_t out_mac[6]) const override;
     uint16_t get_mtu() const override;
     uint16_t get_header_size() const override;

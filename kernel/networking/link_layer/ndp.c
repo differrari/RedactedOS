@@ -1,4 +1,5 @@
 #include "ndp.h"
+#include "eth.h"
 #include "networking/internet_layer/icmpv6.h"
 #include "std/memory.h"
 #include "std/string.h"
@@ -317,6 +318,16 @@ static void ndp_on_ra(uint8_t ifindex, const uint8_t router_ip[16], uint16_t rou
     if(!ipv6_is_placeholder_gua(slot->ip) && !ipv6_is_unspecified(slot->ip)) memcpy(slot->interface_id, slot->ip + 8, 8);
 }
 
+static void ndp_entry_clear(ndp_entry_t* e) {
+    if (!e) return;
+    if (e->pending) {
+        for (int i = 0; i < e->pending_len; i++) if (e->pending[i]) netpkt_unref(e->pending[i]);
+        release(e->pending);
+    }
+    memset(e, 0, sizeof(*e));
+    e->state = NDP_STATE_UNUSED;
+}
+
 ndp_table_t* ndp_table_create(void) {
     ndp_table_impl_t* t = (ndp_table_impl_t*)zalloc(sizeof(ndp_table_impl_t));
     if (!t) return 0;
@@ -327,6 +338,8 @@ ndp_table_t* ndp_table_create(void) {
 
 void ndp_table_destroy(ndp_table_t* t) {
     if (!t) return;
+    ndp_table_impl_t* impl = (ndp_table_impl_t*)t;
+    for (int i = 0; i < NDP_TABLE_MAX; i++) ndp_entry_clear(&impl->entries[i]);
     release(t);
 }
 
@@ -356,9 +369,23 @@ static int ndp_find_free(ndp_table_impl_t* t) {
     return -1;
 }
 
-static void ndp_entry_clear(ndp_entry_t* e) {
-    memset(e, 0, sizeof(*e));
-    e->state = NDP_STATE_UNUSED;
+static int ndp_find_replacement(ndp_table_impl_t* t) {
+    uint32_t best_ttl = 0xFFFFFFFFu;
+    int best = -1;
+    if (!t) return -1;
+
+    for (int i = 0; i < NDP_TABLE_MAX; i++) {
+        ndp_entry_t* e = &t->entries[i];
+        if (e->pending_len) continue;
+        if (e->state == NDP_STATE_UNUSED || e->ttl_ms == 0) return i;
+        if (e->is_router && e->router_lifetime_ms) continue;
+        if (e->ttl_ms < best_ttl) {
+            best_ttl = e->ttl_ms;
+            best = i;
+        }
+    }
+
+    return best;
 }
 
 void ndp_table_put_for_l2(uint8_t ifindex, const uint8_t ip[16], const uint8_t mac[6], uint32_t ttl_ms, bool router) {
@@ -368,30 +395,11 @@ void ndp_table_put_for_l2(uint8_t ifindex, const uint8_t ip[16], const uint8_t m
     int idx = ndp_find_slot(t, ip);
     if (idx < 0) idx = ndp_find_free(t);
 
-    if (idx < 0) {
-        uint32_t best_ttl = 0xFFFFFFFFu;
-        int best_i = -1;
-
-        for (int i = 0; i < NDP_TABLE_MAX; i++) {
-            ndp_entry_t* e = &t->entries[i];
-            if (e->state == NDP_STATE_UNUSED || e->ttl_ms == 0) {
-                best_i = i;
-                break;
-            }
-
-            if (e->is_router && e->router_lifetime_ms) continue;
-
-            if (e->ttl_ms < best_ttl) {
-                best_ttl = e->ttl_ms;
-                best_i = i;
-            }
-        }
-
-        if (best_i < 0) best_i = 0;
-        idx = best_i;
-    }
+    if (idx < 0) idx = ndp_find_replacement(t);
+    if (idx < 0) return;
 
     ndp_entry_t* e = &t->entries[idx];
+    if (e->state != NDP_STATE_UNUSED && memcmp(e->ip, ip, 16) != 0) ndp_entry_clear(e);
     memcpy(e->ip, ip, 16);
 
     if (mac) {
@@ -409,6 +417,18 @@ void ndp_table_put_for_l2(uint8_t ifindex, const uint8_t ip[16], const uint8_t m
     e->is_router = router ? 1 : 0;
     e->router_lifetime_ms = router ? ttl_ms : 0;
     e->probes_sent = 0;
+
+    if (e->pending) {
+        for (int i = 0; i < e->pending_len; i++) {
+            netpkt_t* pkt = e->pending[i];
+            e->pending[i] = 0;
+            if (pkt) (void)eth_send_frame_on(ifindex, ETHERTYPE_IPV6, e->mac, pkt);
+        }
+        release(e->pending);
+        e->pending = 0;
+        e->pending_len = 0;
+        e->pending_bytes = 0;
+    }
 }
 
 static bool ndp_table_get_for_l2(uint8_t ifindex, const uint8_t ip[16], uint8_t mac_out[6]) {
@@ -663,77 +683,68 @@ static void ndp_tick_all(uint32_t ms) {
     }
 }
 
-bool ndp_resolve_on(uint16_t ifindex, const uint8_t next_hop[16], uint8_t out_mac[6], uint32_t timeout_ms) {
+bool ndp_send_or_queue_on(uint16_t ifindex, const uint8_t next_hop[16], netpkt_t* pkt) {
+    if (!next_hop || !pkt || !netpkt_len(pkt)) {
+        if (pkt) netpkt_unref(pkt);
+        return false;
+    }
+
+    uint8_t out_mac[6];
     if (ipv6_is_multicast(next_hop)) {
         ipv6_multicast_mac(next_hop, out_mac);
-        return true;
+        return eth_send_frame_on(ifindex, ETHERTYPE_IPV6, out_mac, pkt);
     }
 
-    if (ndp_table_get_for_l2((uint8_t)ifindex, next_hop, out_mac)) return true;
+    if (ndp_table_get_for_l2((uint8_t)ifindex, next_hop, out_mac)) return eth_send_frame_on(ifindex, ETHERTYPE_IPV6, out_mac, pkt);
 
     ndp_table_impl_t* t = l2_ndp((uint8_t)ifindex);
-    if (t) {
-        int idx = ndp_find_slot(t, next_hop);
-        if (idx >= 0) {
-            ndp_entry_t* e = &t->entries[idx];
-            if (e->ttl_ms && e->is_router && e->state != NDP_STATE_UNUSED && e->state != NDP_STATE_INCOMPLETE) {
-                memcpy(out_mac, e->mac, 6);
-                return true;
-            }
+    if (!t) {
+        netpkt_unref(pkt);
+        return false;
+    }
+
+    int idx = ndp_find_slot(t, next_hop);
+    if (idx < 0) idx = ndp_find_free(t);
+    if (idx < 0) idx = ndp_find_replacement(t);
+    if (idx < 0) {
+        netpkt_unref(pkt);
+        return false;
+    }
+
+    ndp_entry_t* e = &t->entries[idx];
+    if (e->state != NDP_STATE_UNUSED && memcmp(e->ip, next_hop, 16) != 0) ndp_entry_clear(e);
+
+    uint32_t len = netpkt_len(pkt);
+    if (e->pending_len >= NDP_PENDING_MAX || e->pending_bytes + len > NDP_PENDING_MAX_BYTES) {
+        netpkt_unref(pkt);
+        return false;
+    }
+
+    if (!e->pending) {
+        e->pending = (netpkt_t**)zalloc(sizeof(netpkt_t*) * NDP_PENDING_MAX);
+        if (!e->pending) {
+            netpkt_unref(pkt);
+            return false;
         }
     }
 
-    uint8_t src_ip[16] = {0};
-    l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
+    memcpy(e->ip, next_hop, 16);
+    memset(e->mac, 0, 6);
+    e->ttl_ms = g_ndp_reachable_time_ms * 4;
+    e->is_router = 0;
+    e->router_lifetime_ms = 0;
+    e->state = NDP_STATE_INCOMPLETE;
+    e->pending[e->pending_len] = pkt;
+    e->pending_len++;
+    e->pending_bytes += len;
 
-    if (l2) {
-        for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
-            l3_ipv6_interface_t* v6 = l2->l3_v6[i];
-            if (!v6) continue;
-            if (v6->cfg == IPV6_CFG_DISABLE) continue;
-            if (v6->dad_state != IPV6_DAD_OK) continue;
-
-            if (ipv6_is_linklocal(v6->ip)) {
-                memcpy(src_ip, v6->ip, 16);
-                break;
-            }
-
-            if (ipv6_is_unspecified(src_ip) && !ipv6_is_unspecified(v6->ip))
-                memcpy(src_ip, v6->ip, 16);
-        }
+    if (!e->probes_sent || !e->timer_ms) {
+        e->timer_ms = g_ndp_retrans_timer_ms;
+        e->probes_sent++;
+        ndp_send_probe((uint8_t)ifindex, e);
     }
 
-    t = l2_ndp((uint8_t)ifindex);
-    if (t) {
-        int idx = ndp_find_slot(t, next_hop);
-        if (idx < 0) idx = ndp_find_free(t);
-
-        if (idx >= 0) {
-            ndp_entry_t* e = &t->entries[idx];
-            memcpy(e->ip, next_hop, 16);
-            memset(e->mac, 0, 6);
-            e->ttl_ms = g_ndp_reachable_time_ms * 4;
-            e->is_router = 0;
-            e->router_lifetime_ms = 0;
-            e->state = NDP_STATE_INCOMPLETE;
-            e->timer_ms = g_ndp_retrans_timer_ms;
-            e->probes_sent = 0;
-        }
-    }
-
-    ndp_send_ns_on((uint8_t)ifindex, next_hop, src_ip);
-
-    uint32_t waited = 0;
-    const uint32_t poll = 50;
-
-    while (waited < timeout_ms) {
-        ndp_table_tick_for_l2((uint8_t)ifindex, poll);
-        if (ndp_table_get_for_l2((uint8_t)ifindex, next_hop, out_mac)) return true;
-        msleep(poll);
-        waited += poll;
-    }
-
-    return false;
+    return true;
 }
 
 bool ndp_request_dad_on(uint8_t ifindex, const uint8_t ip[16]) {
@@ -874,30 +885,11 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         int idx = ndp_find_slot(t, na.target);
         if (idx < 0) idx = ndp_find_free(t);
 
-        if (idx < 0) {
-            uint32_t best_ttl = 0xFFFFFFFFu;
-            int best_i = -1;
-
-            for (int i = 0; i < NDP_TABLE_MAX; i++) {
-                ndp_entry_t* e = &t->entries[i];
-                if (e->state == NDP_STATE_UNUSED || e->ttl_ms == 0) {
-                    best_i = i;
-                    break;
-                }
-
-                if (e->is_router && e->router_lifetime_ms) continue;
-
-                if (e->ttl_ms < best_ttl) {
-                    best_ttl = e->ttl_ms;
-                    best_i = i;
-                }
-            }
-
-            if (best_i < 0) best_i = 0;
-            idx = best_i;
-        }
+        if (idx < 0) idx = ndp_find_replacement(t);
+        if (idx < 0) return;
 
         ndp_entry_t* e = &t->entries[idx];
+        if (e->state != NDP_STATE_UNUSED && memcmp(e->ip, na.target, 16) != 0) ndp_entry_clear(e);
 
         uint8_t old_mac[6];
         memcpy(old_mac, e->mac, 6);
@@ -962,6 +954,18 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         }
 
         e->probes_sent = 0;
+
+        if (e->pending) {
+            for (int i = 0; i < e->pending_len; i++) {
+                netpkt_t* pp = e->pending[i];
+                e->pending[i] = 0;
+                if (pp) eth_send_frame_on((uint8_t)ifindex, ETHERTYPE_IPV6, e->mac, pp);
+            }
+            release(e->pending);
+            e->pending = 0;
+            e->pending_len = 0;
+            e->pending_bytes = 0;
+        }
         return;
     }
 

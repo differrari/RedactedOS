@@ -389,9 +389,9 @@ void VirtioNetDriver::handle_sent_packet(){
     }
 }
 
-bool VirtioNetDriver::send_packet(netpkt_t* packet){
-    if (!packet || !netpkt_len(packet)) return false;
-    if (!tx_qsz || !tx_desc || !tx_avail || !tx_used || !tx_pending) return false;
+netdev_tx_result_t VirtioNetDriver::send_packet(netpkt_t* packet){
+    if (!packet || !netpkt_len(packet)) return NETDEV_TX_DROP;
+    if (!tx_qsz || !tx_desc || !tx_avail || !tx_used || !tx_pending) return NETDEV_TX_DROP;
 
     handle_sent_packet();
 
@@ -401,19 +401,19 @@ bool VirtioNetDriver::send_packet(netpkt_t* packet){
         uint16_t current = (tx_next_desc + i) % tx_qsz;
         if (tx_pending[current]) continue;
         desc_index = current;
-        tx_next_desc = (current + 1) % tx_qsz;
+        tx_next_desc = (uint16_t)((current + 1) % tx_qsz);
         found = true;
         break;
     }
 
     if (!found) {
         kprintfv("[virtio-net] tx queue full len=%u", (unsigned)netpkt_len(packet));
-        return false;
+        return NETDEV_TX_BUSY;
     }
 
-    if (!netpkt_ensure_headroom(packet, header_size)) return false;
+    if (!netpkt_ensure_headroom(packet, header_size)) return NETDEV_TX_DROP;
     void* hdr = netpkt_push(packet, header_size);
-    if (!hdr) return false;
+    if (!hdr) return NETDEV_TX_DROP;
     memset(hdr, 0, (size_t)header_size);
 
     tx_pending[desc_index] = packet;
@@ -431,7 +431,7 @@ bool VirtioNetDriver::send_packet(netpkt_t* packet){
     tx_notify_pending = true;
 
     kprintfv("[virtio-net] tx queued desc=%u len=%u", desc_index,(unsigned)netpkt_len(packet));
-    return true;
+    return NETDEV_TX_OK;
 }
 
 void VirtioNetDriver::flush_tx() {

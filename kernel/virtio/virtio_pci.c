@@ -253,11 +253,12 @@ void virtio_notify(virtio_device *dev) {
     virtio_notify_queue(dev, dev->current_queue);
 }
 
+//TODO this still blocks until the device completes the request
+//t would make more sense to split submit/completion later and complete requests through async/events/promises
 bool virtio_send_nd(virtio_device *dev, const virtio_buf *bufs, uint16_t n) {
-
     if (!dev || !bufs || !n) return false;
+    if (dev->current_queue >= VIRTIO_MAX_QUEUES || dev->current_queue >= dev->num_queues) return false;
 
-    if (dev->current_queue >= VIRTIO_MAX_QUEUES) return false;
     virtio_queue *queue = &dev->queues[dev->current_queue];
     if (!queue->valid || !queue->size || n > queue->size) return false;
 
@@ -291,6 +292,7 @@ bool virtio_send_nd(virtio_device *dev, const virtio_buf *bufs, uint16_t n) {
     virtio_notify(dev);
 
     while (last_used_idx == u->idx);//TODO: OPT
+    asm volatile ("dmb ishld" ::: "memory");
 
     return true;
 }

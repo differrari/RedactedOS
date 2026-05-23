@@ -263,6 +263,7 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
 
     uint8_t dst_mac[6];
     bool is_dbcast = false;
+    bool need_arp = false;
     l2_interface_t* l2 = l2_interface_find_by_index(ifx);
     if (l2) {
         for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
@@ -272,18 +273,10 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
         }
     }
 
-    if (is_dbcast) {
-        memset(dst_mac, 0xFF, 6);
-    } else if (ipv4_is_multicast(dst_ip)) {
-        ipv4_mcast_to_mac(dst_ip, dst_mac);
-    } else {
-        if (l2 && l2->kind == NET_IFK_LOCALHOST) {
-            memset(dst_mac, 0, 6);
-        } else if (!arp_resolve_on(ifx, nh, dst_mac, 1000)) {
-            netpkt_unref(pkt);
-            return false;
-        }
-    }
+    if (is_dbcast) memset(dst_mac, 0xFF, 6);
+    else if (ipv4_is_multicast(dst_ip)) ipv4_mcast_to_mac(dst_ip, dst_mac);
+    else if (l2 && l2->kind == NET_IFK_LOCALHOST) memset(dst_mac, 0, 6);
+    else need_arp = true;
 
     uint16_t mtu = 1500;
     if (l2) {
@@ -327,6 +320,7 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
     ip->header_checksum = checksum16(ip_, hdr_len / 2);
     memcpy(hdrp, ip, sizeof(*ip));
 
+    if (need_arp) return arp_send_or_queue_on(ifx, nh, pkt);
     return eth_send_frame_on(ifx, ETHERTYPE_IPV4, dst_mac, pkt);
 }
 

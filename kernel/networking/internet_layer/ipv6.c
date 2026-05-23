@@ -404,13 +404,11 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     }
 
     uint8_t dst_mac[6];
+    bool need_ndp = false;
     l2_interface_t* l2 = l2_interface_find_by_index(ifx);
     if (ipv6_is_multicast(dst)) ipv6_multicast_mac(dst, dst_mac);
     else if (l2 && l2->kind == NET_IFK_LOCALHOST) memset(dst_mac, 0, 6);
-    else if (!ndp_resolve_on(ifx, nh, dst_mac, 200)) {
-        netpkt_unref(pkt);
-        return false;
-    }
+    else need_ndp = true;
 
     uint16_t mtu = 1500;
 
@@ -441,6 +439,7 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         memcpy(ip6.dst, dst, 16);
         memcpy(hdrp, &ip6, sizeof(ip6));
 
+        if (need_ndp) return ndp_send_or_queue_on(ifx, nh, pkt);
         return eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, pkt);
     }
 
@@ -513,7 +512,8 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
 
         memcpy((uint8_t*)buf + hdr_len + sizeof(fh), data + off, chunk);
 
-        if (!eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, fpkt)) ok = false;
+        if (need_ndp) { if (!ndp_send_or_queue_on(ifx, nh, fpkt)) ok = false; }
+        else if (!eth_send_frame_on(ifx, ETHERTYPE_IPV6, dst_mac, fpkt)) ok = false;
 
         off += chunk;
     }
