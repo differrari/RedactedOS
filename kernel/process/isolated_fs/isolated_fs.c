@@ -49,9 +49,11 @@ system_module env_module = {
 void make_process_fs(process_t* proc, char *bundle){
     proc->permissions.fs_id = register_fs_id();
     module_root *root = get_fs_for_id(proc->permissions.fs_id);
-    bundle_redirect = bundle;
     procid = proc->id;
-    load_module_to(root, &bundle_module);
+    if (bundle){
+        bundle_redirect = bundle;
+        load_module_to(root, &bundle_module);
+    }
     load_module_to(root, &shared_module);
     load_module_to(root, &env_module);
 }

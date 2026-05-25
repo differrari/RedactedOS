@@ -13,6 +13,7 @@
 #include "memory/page_allocator.h"
 #include "console/kio.h"
 #include "exceptions/irq.h"
+#include "header_utils/composite.h"
 
 linked_list_t *window_list;
 window_frame *focused_window;
@@ -238,60 +239,12 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus
         return;
 
     draw_ctx win_ctx = frame->win_ctx;
+    memcpy(&win_ctx.dirty_rects, frame_ctx->dirty_rects, sizeof(win_ctx.dirty_rects));
+    win_ctx.dirty_count = frame_ctx->dirty_count;
+    win_ctx.full_redraw = frame_ctx->full_redraw;
     draw_ctx *screen_ctx = gpu_get_ctx();
 
-    int32_t sx = global_win_offset.x + frame->x;
-    int32_t sy = global_win_offset.y + frame->y;
-    
-    sx /= zoom_scale;
-    sy /= zoom_scale;
-
-    if (sx >= (int32_t)screen_ctx->width || sy >= (int32_t)screen_ctx->height || sx + win_ctx.width <= 0 || sy + win_ctx.height <= 0) return;
-
-    int32_t w = win_ctx.width;
-    int32_t h = win_ctx.height;
-    
-    w /= zoom_scale;
-    h /= zoom_scale;
-
-    uint32_t ox = 0;
-    uint32_t oy = 0;
-    
-    if (sx < 0){
-        w -= -sx;
-        ox = -sx;
-        sx = 0;
-    }
-    if (sy < 0){
-        h -= -sy;
-        oy = -sy;
-        sy = 0;
-    }
-
-    if (sx + w > (i32)screen_ctx->width) w = screen_ctx->width - sx;
-    else if (sx < 0){ w += sx; ox = -sx; sx = 0; }
-    if (sy + h > (i32)screen_ctx->height) h = screen_ctx->height - sy;
-    else if (sy < 0){ h += sy; oy = -sy; sy = 0; }
-    if (w <= 0 || h <= 0) return;
-    
-    if (zoom_scale != 1){
-        for (i32 dy = 0; dy < h; dy++)
-            for (i32 dx = 0; dx < w; dx++)
-                screen_ctx->fb[((sy + dy) * screen_ctx->width) + (sx + dx)] = win_ctx.fb[(((dy * zoom_scale) + oy) * win_ctx.width) + ((dx * zoom_scale) + ox)];
-    } else {
-        if (frame_ctx->full_redraw){
-            for (i32 dy = 0; dy < h; dy++)
-                memcpy(screen_ctx->fb + ((sy + dy) * screen_ctx->width) + sx, win_ctx.fb + ((dy + oy) * win_ctx.width) + ox, w * sizeof(uint32_t));
-            mark_dirty(screen_ctx, sx, sy, w, h);
-        } else {
-            for (uint32_t dr = 0; dr < frame_ctx->dirty_count; dr++){
-                gpu_rect r = frame_ctx->dirty_rects[dr];
-                for (u32 dy = 0; dy < r.size.height; dy++)
-                    memcpy(screen_ctx->fb + ((sy + dy + r.point.y) * screen_ctx->width) + sx + r.point.x, win_ctx.fb + ((dy + oy + r.point.y) * win_ctx.width) + r.point.x + ox, r.size.width * sizeof(uint32_t));
-                mark_dirty(screen_ctx, sx + r.point.x, sy + r.point.y, r.size.width, r.size.height);
-            }
-        }
-    }
+    composite(&win_ctx, (int_point){global_win_offset.x + frame->x,global_win_offset.y + frame->y}, zoom_scale, screen_ctx);
 
     frame_ctx->dirty_count = 0;
     frame_ctx->full_redraw = false;

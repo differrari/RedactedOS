@@ -35,6 +35,11 @@ void term_ascii_cmd(shell_handle *handle, char cmd, u16 proc_id){
     default_term->interpret_cmd_code(cmd, proc_id);
 }
 
+void term_console_ctrl(shell_handle *handle, console_ctrls ctrl){
+    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
+    default_term->ctrl(ctrl);
+}
+
 Terminal::Terminal() : Console() {
     default_term = this;
     uint32_t color_buf[2] = {};
@@ -78,7 +83,15 @@ shell_handle* Terminal::create_shell(){
         .console_clean = term_clear,
         .console_bell = term_bell,
         .console_ascii_cmd = term_ascii_cmd,
+        .console_control = term_console_ctrl
     }, 0);
+}
+
+void Terminal::ctrl(console_ctrls ctrl){
+    switch (ctrl) {
+    case console_ctrl_close: halt(0);
+    default: break;
+    }
 }
 
 void Terminal::update(){

@@ -218,15 +218,9 @@ u64 syscall_halt(process_t *ctx){
     return 0;
 }
 
-//TODO exec now has an argument to decide whether the spawned proc should take control of input or whether the caller should keep it
-//rn this is the cleanest way to make launch policy explicit, avoiding that a terminal attached child could steal input focus from the caller, waiting for return after spawn or hardcoding the policy by process name
-//the more standard design would be to handle this through a proper control terminal model later instead of deciding focus in exec
-//https://pubs.opengroup.org/onlinepubs/9699919799.orig/basedefs/V1_chap11.html
-//https://pubs.opengroup.org/onlinepubs/007904975/functions/tcsetpgrp.html
-//https://man7.org/linux/man-pages/man7/credentials.7.html
-///https://en.wikipedia.org/wiki/Job_control_(Unix)
 u64 syscall_exec(process_t *ctx){
     SYSCALL_STR(prog_name, PROC_X0, false);
+    //TODO: prog-name *might* need to be resolved in fs if it contains /
     int argc = (int)ctx->PROC_X1;
     uintptr_t uargv = (uintptr_t)ctx->PROC_X2;
     uint32_t mode = (uint32_t)ctx->PROC_X3;
@@ -358,13 +352,14 @@ u64 syscall_socket_close(process_t *ctx){
 }
 
 #define ISOLATEDFS
+#define ISOLATEDFS_ALLOW_KFS true
 
 u64 syscall_openf(process_t *ctx){
 #ifdef ISOLATEDFS
     SYSCALL_STR(path, PROC_X0, false);
     SYSCALL_ARG(file,descriptor,PROC_X1, true);
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
     if (!s.data || !s.length) return 0;
     FS_RESULT res = open_file(&rootfs, s.data, descriptor);
     string_free(s);
@@ -401,7 +396,7 @@ u64 syscall_sreadf(process_t *ctx){
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
     if (!s.data || !s.length) return 0;
     size_t ret = simple_read(&rootfs, s.data, buf, size);
     string_free(s);
@@ -418,7 +413,7 @@ u64 syscall_swritef(process_t *ctx){
     bool append = (bool)ctx->PROC_X3;
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
     if (!s.data || !s.length) return 0;
     size_t ret = simple_write(&rootfs, s.data, buf, size, append);
     string_free(s);
@@ -441,7 +436,7 @@ u64 syscall_dir_list(process_t *ctx){
     SYSCALL_ARG(u64,offset,PROC_X3, true);
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
     if (!s.data || !s.length || strncmp(s.data,"/",s.length) == 0){
         size_t ret = 0;
         fs_dir_list_helper helper = create_dir_list_helper(buf, size);
@@ -465,7 +460,7 @@ u64 syscall_stat(process_t *ctx){
     SYSCALL_ARG(fs_stat,out_stat,PROC_X1, true);
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
     if (!s.data || !s.length){
         return root_stat(path, out_stat);
     }

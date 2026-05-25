@@ -7,6 +7,7 @@
 #include "string/string.h"
 #include "memory/addr.h"
 #include "memory/memory.h"
+#include "process/isolated_fs/isolated_fs.h"
 
 __attribute__((noreturn)) static void kernel_process_return_trampoline(int32_t exit_code) {
     stop_current_process(exit_code);
@@ -109,6 +110,8 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
             proc->PROC_X1 = (uintptr_t)kargv;
         }
     }
+
+    make_process_fs(proc, 0);
 
     ready_process(proc);
     kprintf("Kernel process %s (%i) allocated with address at %llx, stack at %llx-%llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->pc, proc->sp - proc->stack_size, proc->sp, (uaddr_t)dmap_pa_to_kva(proc->heap_phys), argc);

@@ -11,25 +11,6 @@ typedef struct {
     string_slice modified;
 }__attribute__((packed)) test;
 
-void print_data(structdef field, sizedptr data){
-    if (!data.ptr || !data.size) return;
-    switch (field.type) {
-    case binary_type_i8: print("%S: %i",field.name,*(i8*)data.ptr); break;
-    case binary_type_i16: print("%S: %i",field.name,*(i16*)data.ptr); break;
-    case binary_type_i32: print("%S: %i",field.name,*(i32*)data.ptr); break;  
-    case binary_type_i64: print("%S: %i",field.name,*(i64*)data.ptr); break;
-    case binary_type_float: print("%S: %f",field.name,*(float*)data.ptr); break;
-    case binary_type_double: print("%S: %f",field.name,*(double*)data.ptr); break;
-    case binary_type_string: print("%S: %v",field.name,data); break;
-    default: return;
-    }
-}
-
-void read_deser_data(structdef field, sizedptr data, bool is_alloc){
-    print_data(field, data);
-    if (is_alloc) release((void*)data.ptr);
-}
-
 void structured(){
     set_environment_config((env_config){env_display_document,env_behavior_wipe});
 
