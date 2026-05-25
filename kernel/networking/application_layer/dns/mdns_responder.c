@@ -82,7 +82,7 @@ static void mdns_send(socket_handle_t sock, const net_l4_endpoint *src, bool uni
     if (unicast && src) {
         dst = *src;
         if (!dst.port) dst.port = DNS_MDNS_PORT;
-        socket_sendto_udp_ex(sock, DST_ENDPOINT, &dst, 0, (void*)pkt, pkt_len);
+        socket_sendto_udp(sock, DST_ENDPOINT, &dst, 0, (void*)pkt, pkt_len);
         return;
     }
 
@@ -90,7 +90,7 @@ static void mdns_send(socket_handle_t sock, const net_l4_endpoint *src, bool uni
     if (ver == IP_VER4) memcpy(dst.ip, mcast_ip, 4);
     else memcpy(dst.ip, mcast_ip, 16);
     dst.port = DNS_MDNS_PORT;
-    socket_sendto_udp_ex(sock, DST_ENDPOINT, &dst, 0, (void*)pkt, pkt_len);
+    socket_sendto_udp(sock, DST_ENDPOINT, &dst, 0, (void*)pkt, pkt_len);
 }
 
 static bool mdns_pick_identity(uint32_t *out_v4, uint8_t out_v6[16], uint8_t *out_ifindex, uint8_t out_ifid[8]) {

@@ -53,7 +53,7 @@ static void ssdp_send_notify(socket_handle_t s4, socket_handle_t s6, bool alive)
         string msg = ssdp_build_notify(alive, false);
         net_l4_endpoint dst;
         make_ep(ssdp_host_v4, 1900, IP_VER4, &dst);
-        (void)socket_sendto_udp_ex(s4, DST_ENDPOINT, &dst, 0, msg.data, msg.length);
+        (void)socket_sendto_udp(s4, DST_ENDPOINT, &dst, 0, msg.data, msg.length);
         string_free(msg);
     }
 
@@ -63,7 +63,7 @@ static void ssdp_send_notify(socket_handle_t s4, socket_handle_t s6, bool alive)
         dst.ver = IP_VER6;
         memcpy(dst.ip, ssdp_host_v6, 16);
         dst.port = 1900;
-        (void)socket_sendto_udp_ex(s6, DST_ENDPOINT, &dst, 0, msg.data, msg.length);
+        (void)socket_sendto_udp(s6, DST_ENDPOINT, &dst, 0, msg.data, msg.length);
         string_free(msg);
     }
 }
@@ -94,12 +94,12 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
 
     struct SockBindSpec spec = (struct SockBindSpec){0};
     spec.kind = BIND_ANY;
-    if (s4 && socket_bind_udp_ex(s4, &spec, 1900) < 0) {
+    if (s4 && socket_bind_udp(s4, &spec, 1900) < 0) {
         socket_close_udp(s4);
         socket_destroy_udp(s4);
         s4 = 0;
     }
-    if (s6 && socket_bind_udp_ex(s6, &spec, 1900) < 0) {
+    if (s6 && socket_bind_udp(s6, &spec, 1900) < 0) {
         socket_close_udp(s6);
         socket_destroy_udp(s6);
         s6 = 0;
@@ -127,7 +127,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
         net_l4_endpoint src = (net_l4_endpoint){0};
 
         if (s4) {
-            int64_t r4 = socket_recvfrom_udp_ex(s4, buf, sizeof(buf) - 1, &src);
+            int64_t r4 = socket_recvfrom_udp(s4, buf, sizeof(buf) - 1, &src);
             if (r4 > 0) {
                 buf[r4] = 0;
                 if (ssdp_is_msearch(buf, (int)r4)) ssdp_schedule_response(&src, ssdp_parse_mx_ms(buf, (int)r4));
@@ -135,7 +135,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
         }
 
         if (s6) {
-            int64_t r6 = socket_recvfrom_udp_ex(s6, buf, sizeof(buf) - 1, &src);
+            int64_t r6 = socket_recvfrom_udp(s6, buf, sizeof(buf) - 1, &src);
             if (r6 > 0) {
                 buf[r6] = 0;
                 if (ssdp_is_msearch(buf, (int)r6)) ssdp_schedule_response(&src, ssdp_parse_mx_ms(buf, (int)r6));
@@ -159,7 +159,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
 
             string resp = ssdp_build_search_response();
             socket_handle_t sock = (ssdp_pending[i].dst.ver == IP_VER6) ? s6 : s4;
-            if (sock) (void)socket_sendto_udp_ex(sock, DST_ENDPOINT, &ssdp_pending[i].dst, 0, resp.data, resp.length);
+            if (sock) (void)socket_sendto_udp(sock, DST_ENDPOINT, &ssdp_pending[i].dst, 0, resp.data, resp.length);
             string_free(resp);
             break;
         }

@@ -49,7 +49,7 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
     make_ep(probe_ip, probe_port, IP_VER4, &dst);
 
     static const char greeting[] = "hello";
-    if (socket_sendto_udp_ex(sock, DST_ENDPOINT, &dst, 0, greeting, sizeof(greeting)) < 0) {
+    if (socket_sendto_udp(sock, DST_ENDPOINT, &dst, 0, greeting, sizeof(greeting)) < 0) {
         socket_close_udp(sock);
         socket_destroy_udp(sock);
         return 0;
@@ -63,7 +63,7 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
     net_l4_endpoint src = (net_l4_endpoint){0};
 
     while (waited < TIMEOUT_MS) {
-        recvd = socket_recvfrom_udp_ex(sock, recv_buf, sizeof(recv_buf), &src);
+        recvd = socket_recvfrom_udp(sock, recv_buf, sizeof(recv_buf), &src);
         if (recvd > 0)
             break;
         msleep(INTERVAL_MS);
@@ -203,7 +203,7 @@ static void test_http(const net_l4_endpoint* ep) {
     }
     e.port = 80;
 
-    int rc = http_client_connect_ex(cli, DST_ENDPOINT, &e, 0);
+    int rc = http_client_connect(cli, DST_ENDPOINT, &e, 0);
     if (rc < 0) {
         http_client_destroy(cli);
         return;

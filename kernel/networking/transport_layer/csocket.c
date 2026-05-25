@@ -85,7 +85,7 @@ int32_t bind_socket(SocketHandle *handle, uint16_t port, ip_version_t ip_version
             res = socket_bind_tcp_ex(sh->sh, spec, port);
         break;
         case PROTO_UDP:
-            res = socket_bind_udp_ex(sh->sh, spec, port);
+            res = socket_bind_udp(sh->sh, spec, port);
         break;
     }
     return res;
@@ -123,7 +123,7 @@ int64_t send_on_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, 
         return socket_send_tcp(sh->sh, buf, len);
         break;
         case PROTO_UDP:
-        return socket_sendto_udp_ex(sh->sh, dst_kind, dst, port, buf, len);
+        return socket_sendto_udp(sh->sh, dst_kind, dst, port, buf, len);
         break;
     }
     return 0;
@@ -142,7 +142,7 @@ int64_t receive_from_socket(SocketHandle *handle, void* buf, uint64_t len, net_l
         return socket_recv_tcp(sh->sh, buf, len);
         break;
         case PROTO_UDP:
-        return socket_recvfrom_udp_ex(sh->sh, buf, len, out_src);
+        return socket_recvfrom_udp(sh->sh, buf, len, out_src);
         break;
     }
     return 0;

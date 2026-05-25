@@ -37,14 +37,14 @@ static dns_result_t perform_dns_query_once(socket_handle_t sock, const net_l4_en
     net_l4_endpoint dst = *dns_srv;
     dst.port = 53;
 
-    int64_t sent = socket_sendto_udp_ex(sock, DST_ENDPOINT, &dst, 0, request_buffer, request_len);
+    int64_t sent = socket_sendto_udp(sock, DST_ENDPOINT, &dst, 0, request_buffer, request_len);
     if (sent < 0) return DNS_ERR_SEND;
 
     uint32_t waited_ms = 0;
     while (waited_ms < timeout_ms){
         uint8_t response_buffer[512];
         net_l4_endpoint source;
-        int64_t received = socket_recvfrom_udp_ex(sock, response_buffer, sizeof(response_buffer), &source);
+        int64_t received = socket_recvfrom_udp(sock, response_buffer, sizeof(response_buffer), &source);
         if (received > 0 && source.port == 53 && source.ver == dst.ver && ((dst.ver == IP_VER4 && memcmp(source.ip, dst.ip, 4) == 0) || (dst.ver == IP_VER6 && memcmp(source.ip, dst.ip, 16) == 0))) {
             uint32_t received_len = received;
             dns_record_t parsed[DNS_QUERY_RECORDS];

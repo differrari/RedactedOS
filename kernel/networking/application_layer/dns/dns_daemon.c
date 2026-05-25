@@ -40,7 +40,7 @@ static socket_handle_t mdns_create_socket(ip_version_t ver, const void* group) {
     memset(&spec, 0, sizeof(spec));
     spec.kind = BIND_ANY;
 
-    if(socket_bind_udp_ex(s, &spec, DNS_MDNS_PORT) != SOCK_OK){
+    if(socket_bind_udp(s, &spec, DNS_MDNS_PORT) != SOCK_OK){
         socket_destroy_udp(s);
         return 0;
     }
@@ -70,7 +70,7 @@ int dns_deamon_entry(int argc, char* argv[]){
 
         if (g_sock_mdns4) {
             memset(&src, 0, sizeof(src));
-            int64_t r4 = socket_recvfrom_udp_ex(g_sock_mdns4, buf, sizeof(buf), &src);
+            int64_t r4 = socket_recvfrom_udp(g_sock_mdns4, buf, sizeof(buf), &src);
             if(r4 > 0) {
                 uint32_t len4 = r4;
                 mdns_responder_handle_query(g_sock_mdns4, IP_VER4, mdns_v4_addr, buf, len4, &src);
@@ -79,7 +79,7 @@ int dns_deamon_entry(int argc, char* argv[]){
 
         if (g_sock_mdns6) {
             memset(&src, 0, sizeof(src));
-            int64_t r6 = socket_recvfrom_udp_ex(g_sock_mdns6, buf, sizeof(buf), &src);
+            int64_t r6 = socket_recvfrom_udp(g_sock_mdns6, buf, sizeof(buf), &src);
             if(r6 > 0) {
                 uint32_t len6 = r6;
                 mdns_responder_handle_query(g_sock_mdns6, IP_VER6, mdns_v6, buf, len6, &src);

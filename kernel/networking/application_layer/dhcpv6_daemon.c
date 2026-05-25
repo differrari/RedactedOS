@@ -281,7 +281,7 @@ static void ensure_binds() {
         spec.ver = IP_VER6;
         spec.l3_id = b->bound_linklocal_l3_id;
 
-        if (socket_bind_udp_ex(b->sock, &spec, DHCPV6_CLIENT_PORT) != SOCK_OK) {
+        if (socket_bind_udp(b->sock, &spec, DHCPV6_CLIENT_PORT) != SOCK_OK) {
             socket_destroy_udp(b->sock);
             b->sock = 0;
             free_sized(b, sizeof(*b));
@@ -552,7 +552,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     mcast_servers(dst.ip);
     dst.port = DHCPV6_SERVER_PORT;
 
-    (void)socket_sendto_udp_ex(b->sock, DST_ENDPOINT, &dst, 0, (const void*)msg, (uint64_t)msg_len);
+    (void)socket_sendto_udp(b->sock, DST_ENDPOINT, &dst, 0, (const void*)msg, (uint64_t)msg_len);
     b->tx_tries++;
 
     uint8_t rx[DHCPV6_MAX_MSG];
@@ -565,7 +565,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     uint32_t waited = 0;
 
     while (waited < 250) {
-        int64_t r = socket_recvfrom_udp_ex(b->sock, rx, sizeof(rx), &src);
+        int64_t r = socket_recvfrom_udp(b->sock, rx, sizeof(rx), &src);
         if (r > 0) {
             if (src.port != DHCPV6_SERVER_PORT) {
                 msleep(50);

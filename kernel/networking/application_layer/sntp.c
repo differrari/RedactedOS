@@ -51,7 +51,7 @@ static sntp_result_t sntp_send_query(socket_handle_t sock, uint32_t server_ip_ho
     p.txTs = unix_us_to_ntp64_be(t1_us);
     net_l4_endpoint dst;
     make_ep(server_ip_host, NTP_PORT, IP_VER4, &dst);
-    int64_t sent = socket_sendto_udp_ex(sock, DST_ENDPOINT, &dst, 0, &p, sizeof(p));
+    int64_t sent = socket_sendto_udp(sock, DST_ENDPOINT, &dst, 0, &p, sizeof(p));
     if (sent < 0) return SNTP_ERR_SEND;
     *t1_us_out = t1_us;
     return SNTP_OK;
@@ -105,7 +105,7 @@ sntp_result_t sntp_poll_once(uint32_t timeout_ms){
     while (waited < timeout_ms){
         uint8_t buf[96];
         net_l4_endpoint src;
-        int64_t n = socket_recvfrom_udp_ex(sock, buf, sizeof(buf), &src);
+        int64_t n = socket_recvfrom_udp(sock, buf, sizeof(buf), &src);
 
         if (n >= (int64_t)sizeof(ntp_packet_t) && src.ver == IP_VER4 && src.port == NTP_PORT){
             uint32_t rip = 0;

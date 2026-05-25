@@ -15,7 +15,7 @@ static dns_result_t perform_mdns_query_once(socket_handle_t sock, const net_l4_e
     uint32_t offset = dns_wire_build_query(request_buffer, sizeof(request_buffer), 0, name, qtype, false);
     if (!offset) return DNS_ERR_FORMAT;
 
-    int64_t sent = socket_sendto_udp_ex(sock, DST_ENDPOINT, dst, 0, request_buffer, offset);
+    int64_t sent = socket_sendto_udp(sock, DST_ENDPOINT, dst, 0, request_buffer, offset);
     if (sent < 0) return DNS_ERR_SEND;
 
     uint32_t found = 0;
@@ -23,7 +23,7 @@ static dns_result_t perform_mdns_query_once(socket_handle_t sock, const net_l4_e
     while (waited_ms < timeout_ms) {
         uint8_t response_buffer[512];
         net_l4_endpoint source;
-        int64_t received = socket_recvfrom_udp_ex(sock, response_buffer, sizeof(response_buffer), &source);
+        int64_t received = socket_recvfrom_udp(sock, response_buffer, sizeof(response_buffer), &source);
         if (received > 0 && source.port == DNS_MDNS_PORT){
             uint32_t received_len = received;
             dns_record_t records[12];

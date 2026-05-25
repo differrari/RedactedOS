@@ -18,7 +18,7 @@ void http_client_destroy(http_client_handle_t h) {
     delete cli;
 }
 
-int32_t http_client_connect_ex(http_client_handle_t h, uint8_t dst_kind, const void* dst, uint16_t port) {
+int32_t http_client_connect(http_client_handle_t h, uint8_t dst_kind, const void* dst, uint16_t port) {
     if (!h || !dst) return (int32_t)SOCK_ERR_INVAL;
     HTTPClient *cli = reinterpret_cast<HTTPClient*>(h);
     return cli->connect(static_cast<SockDstKind>(dst_kind), dst, port);

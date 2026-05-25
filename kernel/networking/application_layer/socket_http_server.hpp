@@ -81,17 +81,21 @@ public:
         HTTPRequestMsg req{};
         if (!client) return req;
 
+        HTTPPolicy policy = http_default_policy();
         string buf = string_repeat('\0', 0);
         char tmp[2048];
         int hdr_end = -1;
         uint32_t start_ms = (uint32_t)get_time();
         uint32_t last_rx_ms = start_ms;
+        bool bad_request = false;
+        HttpError reject_status = HTTP_BAD_REQUEST;
+        char* body_copy = nullptr;
 
         while (hdr_end < 0) {
             int64_t r = client->recv(tmp, sizeof(tmp));
             if (r == TCP_WOULDBLOCK) {
                 uint32_t now = (uint32_t)get_time();
-                if ((uint32_t)(now - last_rx_ms) > 1000 || (uint32_t)(now - start_ms) > 15000) {
+                if ((uint32_t)(now - last_rx_ms) > policy.header_idle_timeout_ms || (uint32_t)(now - start_ms) > policy.header_total_timeout_ms) {
                     string_free(buf);
                     return req;
                 }
@@ -104,145 +108,157 @@ public:
             }
             string_append_bytes(&buf, tmp, (uint32_t)r);
             last_rx_ms = (uint32_t)get_time();
-            if (buf.length > 16384) {
-                string_free(buf);
-                return req;
+            if (buf.length > policy.max_header_bytes) {
+                bad_request = true;
+                reject_status = HTTP_HEADER_FIELDS_TOO_LARGE;
+                break;
             }
             hdr_end = find_crlfcrlf(buf.data, buf.length);
         }
 
-        uint32_t line_end = 0;
-        while (line_end + 1u < (uint32_t)hdr_end) {
-            if (buf.data[line_end] == '\r' && buf.data[line_end + 1u] == '\n')
-                break;
-            ++line_end;
-        }
-
-        uint32_t p = 0;
-        while (p + 1u < line_end && buf.data[p] == '\r' && buf.data[p + 1u] == '\n')
-            p += 2;
-
-        bool bad_request = false;
-        uint32_t i = p;
-        while (i < line_end && buf.data[i] != ' ') ++i;
-
-        const char* method_tok = buf.data + p;
-        uint32_t mlen = i > p ? (i - p) : 0;
-
-        if (mlen == 3 && memcmp(method_tok, "GET", 3) == 0) req.method = HTTP_METHOD_GET;
-        else if (mlen == 4 && memcmp(method_tok, "POST", 4) == 0) req.method = HTTP_METHOD_POST;
-        else if (mlen == 3 && memcmp(method_tok, "PUT", 3) == 0) req.method = HTTP_METHOD_PUT;
-        else if (mlen == 6 && memcmp(method_tok, "DELETE", 6) == 0) req.method = HTTP_METHOD_DELETE;
-        else bad_request = true;
-
-        if (i >= line_end) bad_request = true;
-        uint32_t j = (i < line_end) ? (i + 1u) : line_end;
-        while (j < line_end && buf.data[j] == ' ') ++j;
-        uint32_t path_start = j;
-        while (j < line_end && buf.data[j] != ' ') ++j;
-        uint32_t path_len = j > path_start ? (j - path_start) : 0;
-        if (!path_len || j >= line_end) bad_request = true;
-
-        uint32_t version_start = j;
-        while (version_start < line_end && buf.data[version_start ] == ' ') ++version_start;
-        uint32_t version_len = line_end > version_start ? (line_end - version_start) : 0;
-        if (version_len != 8) bad_request = true;
-        else if (memcmp(buf.data + version_start, "HTTP/1.0", 8) != 0 && memcmp(buf.data + version_start, "HTTP/1.1", 8) != 0) bad_request = true;
-
-        req.path = string_repeat('\0', 0);
-        if (path_len) string_append_bytes(&req.path, buf.data + path_start, path_len);
-
-        if (req.path.length >= 7 && memcmp(req.path.data, "http://", 7) == 0) {
-            uint32_t k = 7;
-            while (k < req.path.length && req.path.data[k] != '/') ++k;
-            if (k < req.path.length) {
-                string newp = string_repeat('\0', 0);
-                string_append_bytes(&newp, req.path.data + k, req.path.length - k);
-                string_free(req.path);
-                req.path = newp;
+        if (!bad_request) {
+            uint32_t line_end = 0;
+            while (line_end + 1u < (uint32_t)hdr_end) {
+                if (buf.data[line_end] == '\r' && buf.data[line_end + 1] == '\n') break;
+                line_end++;
             }
-        } else if (req.path.length >= 8 && memcmp(req.path.data, "https://", 8) == 0) {
-            uint32_t k = 8;
-            while (k < req.path.length && req.path.data[k] != '/') ++k;
-            if (k < req.path.length) {
-                string newp = string_repeat('\0', 0);
-                string_append_bytes(&newp, req.path.data + k, req.path.length - k);
-                string_free(req.path);
-                req.path = newp;
+
+            if (line_end > policy.max_start_line) {
+                bad_request = true;
+                reject_status = HTTP_URI_TOO_LONG;
             }
-        }
 
-        int status_line_end = (int)line_end;
-        http_header_parser(
-            (char*)buf.data + status_line_end + 2,
-            (uint32_t)hdr_end - (uint32_t)(status_line_end + 2),
-            &req.headers_common,
-            &req.extra_headers,
-            &req.extra_header_count
-        );
+            HTTPRequestLine line{};
+            HTTPParseResult line_result = HTTP_PARSE_OK;
+            if (!bad_request) {
+                line_result = http_parse_request_line(buf.data, line_end, &line);
+                if (line_result != HTTP_PARSE_OK) {
+                    bad_request = true;
+                    reject_status = http_parse_result_status(line_result);
+                }
+            }
 
-        uint32_t body_start = hdr_end + 4;
-        uint32_t have = buf.length > body_start ? buf.length - body_start : 0;
-        uint32_t need = req.headers_common.has_length ? req.headers_common.length : 0;
-        if (req.headers_common.bad_length) bad_request = true;
-        char* body_copy = nullptr;
+            if (!bad_request) {
+                const char* target = buf.data + line.target_off;
+                uint32_t target_len = line.target_len;
+                req.method = line.method;
+                req.path = string_repeat('\0', 0);
 
-        if (!bad_request && need > 0) {
-            body_copy = (char*)zalloc(need);
-            if (!body_copy) bad_request = true;
-            else {
-                uint32_t copied = have < need ? have : need;
-                if (copied) memcpy(body_copy, buf.data + body_start, copied);
+                if (target_len >= 7 && memcmp(target, "http://", 7) == 0) {
+                    if (!policy.allow_absolute_uri) {
+                        bad_request = true;
+                        reject_status = HTTP_BAD_REQUEST;
+                    } else {
+                        uint32_t k = 7;
+                        while (k < target_len && target[k] != '/') k++;
+                        if (k < target_len) string_append_bytes(&req.path, target + k, target_len - k);
+                        else string_append_bytes(&req.path, "/", 1);
+                    }
+                } else if (target_len >= 8 && memcmp(target, "https://", 8) == 0) {
+                    if (!policy.allow_absolute_uri) {
+                        bad_request = true;
+                        reject_status = HTTP_BAD_REQUEST;
+                    } else {
+                        uint32_t k = 8;
+                        while (k < target_len && target[k] != '/') k++;
+                        if (k < target_len) string_append_bytes(&req.path, target + k, target_len - k);
+                        else string_append_bytes(&req.path, "/", 1);
+                    }
+                } else string_append_bytes(&req.path, target, target_len);
 
-                uint32_t body_start_ms = (uint32_t)get_time();
-                uint32_t body_last_rx_ms = body_start_ms;
-                while (copied < need) {
-                    int64_t r = client->recv(body_copy + copied, need - copied);
-                    if (r == TCP_WOULDBLOCK) {
-                        uint32_t now = (uint32_t)get_time();
-                        if ((now - body_last_rx_ms) > 3000 || (now - body_start_ms) > 20000) {
+                if (!bad_request && (!req.path.length || req.path.length > policy.max_path_len)) {
+                    bad_request = true;
+                    reject_status = req.path.length > policy.max_path_len ? HTTP_URI_TOO_LONG : HTTP_BAD_REQUEST;
+                }
+            }
+
+            if (!bad_request) {
+                HTTPParseResult header_result = http_header_parse_policy(
+                    (char*)buf.data + line_end + 2,
+                    (uint32_t)hdr_end - (line_end + 2),
+                    &policy,
+                    &req.headers_common,
+                    &req.extra_headers,
+                    &req.extra_header_count
+                );
+
+                if (header_result != HTTP_PARSE_OK) {
+                    bad_request = true;
+                    reject_status = http_parse_result_status(header_result);
+                } else if (policy.require_host_http11 && line.version == HTTP_VERSION_11 && !req.headers_common.host.length) {
+                    bad_request = true;
+                    reject_status = HTTP_BAD_REQUEST;
+                }
+            }
+
+            uint32_t body_start = hdr_end + 4;
+            uint32_t have = buf.length > body_start ? buf.length - body_start : 0;
+            uint32_t need = req.headers_common.has_length ? req.headers_common.length : 0;
+            if (!bad_request && need > policy.max_body_bytes) {
+                bad_request = true;
+                reject_status = HTTP_PAYLOAD_TOO_LARGE;
+            }
+
+            if (!bad_request && need > 0) {
+                body_copy = (char*)zalloc(need);
+                if (!body_copy) {
+                    bad_request = true;
+                    reject_status = HTTP_INTERNAL_SERVER_ERROR;
+                } else {
+                    uint32_t copied = have < need ? have : need;
+                    if (copied) memcpy(body_copy, buf.data + body_start, copied);
+
+                    uint32_t body_start_ms = (uint32_t)get_time();
+                    uint32_t body_last_rx_ms = body_start_ms;
+                    while (copied < need) {
+                        int64_t r = client->recv(body_copy + copied, need - copied);
+                        if (r == TCP_WOULDBLOCK) {
+                            uint32_t now = (uint32_t)get_time();
+                            if ((now - body_last_rx_ms) > policy.body_idle_timeout_ms || (now - body_start_ms) > policy.body_total_timeout_ms) {
+                                bad_request = true;
+                                break;
+                            }
+                            msleep(2);
+                            continue;
+                        }
+                        if (r <= 0) {
                             bad_request = true;
                             break;
                         }
-                        msleep(2);
-                        continue;
+                        copied += (uint32_t)r;
+                        body_last_rx_ms = (uint32_t)get_time();
                     }
-                    if (r <= 0) {
-                        bad_request = true;
-                        break;
-                    }
-                    copied += (uint32_t)r;
-                    body_last_rx_ms = (uint32_t)get_time();
                 }
+            }
+
+            if (body_copy && !bad_request) {
+                req.body.ptr = (uintptr_t)body_copy;
+                req.body.size = need;
             }
         }
 
         if (bad_request) {
             if (body_copy) release(body_copy);
-            static const char BAD_BODY[] = "bad request\n";
-            static const char BAD_REASON[] = "Bad Request";
-            static const char BAD_TYPE[] = "text/plain";
-            static const char BAD_CONN[] = "close";
+            const char *reason = http_status_reason(reject_status);
+            string body = string_format("%s\n", reason);
             HTTPResponseMsg res{};
-            res.status_code = HTTP_BAD_REQUEST;
-            res.reason = (string) {(char*)BAD_REASON, sizeof(BAD_REASON)-1, 0};
-            res.headers_common.length = sizeof(BAD_BODY)-1;
-            res.headers_common.type = (string){(char*)BAD_TYPE, sizeof(BAD_TYPE)-1, 0};
-            res.headers_common.connection = (string){(char*)BAD_CONN, sizeof(BAD_CONN)-1, 0};
-            res.body.ptr = (uintptr_t)BAD_BODY;
-            res.body.size = sizeof(BAD_BODY)-1;
+            res.status_code = reject_status;
+            res.reason = string_from_literal(reason);
+            res.headers_common.length = body.length;
+            res.headers_common.type = string_from_literal("text/plain");
+            res.headers_common.connection = string_from_literal("close");
+            res.body.ptr = (uintptr_t)body.data;
+            res.body.size = body.length;
             send_response(client, res);
 
             if (req.path.mem_length) string_free(req.path);
             http_headers_common_free(&req.headers_common);
             http_headers_extra_free(req.extra_headers, req.extra_header_count);
+            http_headers_common_free(&res.headers_common);
+            if (res.reason.mem_length) string_free(res.reason);
+            string_free(body);
             string_free(buf);
             return HTTPRequestMsg{};
-        }
-
-        if (body_copy) {
-            req.body.ptr = (uintptr_t)body_copy;
-            req.body.size = need;
         }
 
         netlog_socket_event_t ev{};

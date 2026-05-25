@@ -1,8 +1,128 @@
 #include "http.h"
 #include "std/string.h"
 #include "std/memory.h"
-#include "syscalls/syscalls.h"
-//TODO check for a maximum request body size before allocating the buffer
+
+HTTPPolicy http_default_policy(void) {
+    HTTPPolicy p = {
+        .max_start_line = HTTP_DEFAULT_MAX_START_LINE,
+        .max_header_bytes = HTTP_DEFAULT_MAX_HEADER_BYTES,
+        .max_header_count = HTTP_DEFAULT_MAX_HEADER_COUNT,
+        .max_header_key_len = HTTP_DEFAULT_MAX_HEADER_KEY_LEN,
+        .max_header_value_len = HTTP_DEFAULT_MAX_HEADER_VALUE_LEN,
+        .max_path_len = HTTP_DEFAULT_MAX_PATH_LEN,
+        .max_body_bytes = HTTP_DEFAULT_MAX_BODY_BYTES,
+        .header_idle_timeout_ms = HTTP_DEFAULT_HEADER_IDLE_TIMEOUT_MS,
+        .header_total_timeout_ms = HTTP_DEFAULT_HEADER_TOTAL_TIMEOUT_MS,
+        .body_idle_timeout_ms = HTTP_DEFAULT_BODY_IDLE_TIMEOUT_MS,
+        .body_total_timeout_ms = HTTP_DEFAULT_BODY_TOTAL_TIMEOUT_MS,
+        .allow_chunked = false,
+        .allow_keep_alive = false,
+        .allow_absolute_uri = true,
+        .require_host_http11 = true
+    };
+    return p;
+}
+
+const char* http_status_reason(HttpError status) {
+    switch (status) {
+        case HTTP_OK: return "OK";
+        case HTTP_BAD_REQUEST: return "Bad Request";
+        case HTTP_UNAUTHORIZED: return "Unauthorized";
+        case HTTP_FORBIDDEN: return "Forbidden";
+        case HTTP_NOT_FOUND: return "Not Found";
+        case HTTP_PAYLOAD_TOO_LARGE: return "Payload Too Large";
+        case HTTP_URI_TOO_LONG: return "URI Too Long";
+        case HTTP_EXPECTATION_FAILED: return "Expectation Failed";
+        case HTTP_HEADER_FIELDS_TOO_LARGE: return "Request Header Fields Too Large";
+        case HTTP_INTERNAL_SERVER_ERROR: return "Internal Server Error";
+        case HTTP_NOT_IMPLEMENTED: return "Not Implemented";
+        case HTTP_SERVICE_UNAVAILABLE: return "Service Unavailable";
+        case HTTP_VERSION_NOT_SUPPORTED: return "HTTP Version Not Supported";
+        default: return "Error";
+    }
+}
+
+HttpError http_parse_result_status(HTTPParseResult result) {
+    switch (result) {
+        case HTTP_PARSE_TOO_LARGE:
+        case HTTP_PARSE_TOO_MANY_HEADERS:
+            return HTTP_HEADER_FIELDS_TOO_LARGE;
+        case HTTP_PARSE_BAD_CONTENT_LENGTH:
+        case HTTP_PARSE_BAD_FORMAT:
+        case HTTP_PARSE_MISSING_HOST:
+            return HTTP_BAD_REQUEST;
+        case HTTP_PARSE_UNSUPPORTED_TRANSFER:
+        case HTTP_PARSE_UNSUPPORTED_METHOD:
+            return HTTP_NOT_IMPLEMENTED;
+        case HTTP_PARSE_UNSUPPORTED_VERSION:
+            return HTTP_VERSION_NOT_SUPPORTED;
+        case HTTP_PARSE_PAYLOAD_TOO_LARGE:
+            return HTTP_PAYLOAD_TOO_LARGE;
+        default:
+            return HTTP_BAD_REQUEST;
+    }
+}
+
+HTTPParseResult http_parse_request_line(const char *buf, uint32_t len, HTTPRequestLine *out) {
+    if (!buf || !out || !len) return HTTP_PARSE_BAD_FORMAT;
+    *out = (HTTPRequestLine){0};
+
+    uint32_t i = 0;
+    while (i < len && buf[i] != ' ') i++;
+    uint32_t mlen = i;
+    if (!mlen || i >= len) return HTTP_PARSE_BAD_FORMAT;
+
+    if (mlen == 3 && memcmp(buf, "GET", 3) == 0) out->method = HTTP_METHOD_GET;
+    else if (mlen == 4 && memcmp(buf, "POST", 4) == 0) out->method = HTTP_METHOD_POST;
+    else if (mlen == 3 && memcmp(buf, "PUT", 3) == 0) out->method = HTTP_METHOD_PUT;
+    else if (mlen == 6 && memcmp(buf, "DELETE", 6) == 0) out->method = HTTP_METHOD_DELETE;
+    else return HTTP_PARSE_UNSUPPORTED_METHOD;
+
+    i++;
+    while (i < len && buf[i] == ' ')i++;
+    uint32_t target_off = i;
+    while (i < len && buf[i] != ' ')i++;
+    uint32_t target_len = i - target_off;
+    if (!target_len || i >= len) return HTTP_PARSE_BAD_FORMAT;
+
+    i++;
+    while (i < len && buf[i] == ' ') i++;
+    uint32_t version_len = len - i;
+    if (version_len != 8) return HTTP_PARSE_UNSUPPORTED_VERSION;
+    if (memcmp(buf + i, "HTTP/1.0", 8) == 0) out->version = HTTP_VERSION_10;
+    else if (memcmp(buf + i, "HTTP/1.1", 8) == 0) out->version = HTTP_VERSION_11;
+    else return HTTP_PARSE_UNSUPPORTED_VERSION;
+
+    out->target_off = target_off;
+    out->target_len = target_len;
+    return HTTP_PARSE_OK;
+}
+
+HTTPParseResult http_parse_status_line(const char *buf, uint32_t len, HTTPStatusLine *out) {
+    if (!buf || !out || len < 12) return HTTP_PARSE_BAD_FORMAT;
+    *out = (HTTPStatusLine){0};
+
+    if (memcmp(buf, "HTTP/1.0", 8) == 0) out->version = HTTP_VERSION_10;
+    else if (memcmp(buf, "HTTP/1.1", 8) == 0) out->version = HTTP_VERSION_11;
+    else return HTTP_PARSE_UNSUPPORTED_VERSION;
+
+    if (buf[8] != ' ') return HTTP_PARSE_BAD_FORMAT;
+    char code_buf[4];
+    memcpy(code_buf, buf + 9,3);
+    code_buf[3] = 0;
+
+    char *end = code_buf;
+    uint64_t code = strtoul(code_buf, &end, 10);
+    if (end != code_buf + 3) return HTTP_PARSE_BAD_FORMAT;
+    out->status_code = code;
+
+    uint32_t i = 12;
+    while (i < len && buf[i] == ' ') i++;
+    out->reason_off = i;
+    out->reason_len = len - i;
+    return HTTP_PARSE_OK;
+}
+
 string http_header_builder(const HTTPHeadersCommon *C, const HTTPHeader *H, uint32_t N){
     string out = string_repeat('\0', 0);
 
@@ -71,6 +191,7 @@ void http_headers_common_free(HTTPHeadersCommon *C){
     if (C->keep_alive.mem_length) string_free(C->keep_alive);
     if (C->host.mem_length) string_free(C->host);
     if (C->content_type.mem_length) string_free(C->content_type);
+    if (C->transfer_encoding.mem_length) string_free(C->transfer_encoding);
     *C = (HTTPHeadersCommon){0};
 }
 
@@ -83,12 +204,19 @@ void http_headers_extra_free(HTTPHeader *extra, uint32_t extra_count){
     release(extra);
 }
 
-void http_header_parser(const char *buf, uint32_t len,
-                        HTTPHeadersCommon *C,
-                        HTTPHeader **out_extra,
-                        uint32_t *out_extra_count)
+HTTPParseResult http_header_parse_policy(const char *buf, uint32_t len,
+                                      const HTTPPolicy *policy,
+                                      HTTPHeadersCommon *C,
+                                      HTTPHeader **out_extra,
+                                      uint32_t *out_extra_count)
 {
+    HTTPPolicy p = policy ? *policy : http_default_policy();
+    if (!buf || !C || !out_extra || !out_extra_count) return HTTP_PARSE_BAD_FORMAT;
+    if (len > p.max_header_bytes) return HTTP_PARSE_TOO_LARGE;
+
     *C = (HTTPHeadersCommon){0};
+    *out_extra = NULL;
+    *out_extra_count = 0;
 
     uint32_t max_lines = 0;
     uint32_t count_pos = 0;
@@ -104,7 +232,20 @@ void http_header_parser(const char *buf, uint32_t len,
         }
         if (!has_crlf) eol = len;
         if (eol == count_pos) break;
+
+        uint32_t sep = count_pos;
+        while (sep < eol && buf[sep] != ':') sep++;
+        if (sep == eol || sep == count_pos) return HTTP_PARSE_BAD_FORMAT;
+
+        uint32_t key_len = sep - count_pos;
+        uint32_t val_start = sep + 1;
+        while (val_start < eol && is_whitespace(buf[val_start])) val_start++;
+        uint32_t val_end = eol;
+        while (val_end > val_start && is_whitespace(buf[val_end-1])) val_end--;
+
+        if (key_len > p.max_header_key_len || key_len >= 128 || val_end - val_start > p.max_header_value_len) return HTTP_PARSE_TOO_LARGE;
         max_lines++;
+        if (max_lines > p.max_header_count) return HTTP_PARSE_TOO_MANY_HEADERS;
         if (!has_crlf) break;
         count_pos = eol + 2;
     }
@@ -112,18 +253,12 @@ void http_header_parser(const char *buf, uint32_t len,
     HTTPHeader *extras = NULL;
     if (max_lines){
         extras = (HTTPHeader*)zalloc(sizeof(*extras) * max_lines);
-        if (!extras){
-            *out_extra = NULL;
-            *out_extra_count = 0;
-            return;
-        }
+        if (!extras) return HTTP_PARSE_TOO_LARGE;
     }
 
+    HTTPParseResult result = HTTP_PARSE_OK;
     uint32_t extra_i = 0;
     uint32_t pos = 0;
-
-    char key_tmp[64];
-
     while (pos < len){
         uint32_t eol = pos;
         bool has_crlf = false;
@@ -136,70 +271,63 @@ void http_header_parser(const char *buf, uint32_t len,
         }
         if (!has_crlf) eol = len;
 
-        if (eol == pos){
-            if (has_crlf) pos += 2;
-            break;
-        }
+        if (eol == pos) break;
 
         uint32_t sep = pos;
         while (sep < eol && buf[sep] != ':') sep++;
 
-        if (sep == eol){
-            if (!has_crlf) break;
-            pos = eol + 2;
-            continue;
-        }
-
         uint32_t key_len = sep - pos;
         uint32_t val_start = sep + 1;
-        while (val_start < eol && (buf[val_start]==' ' || buf[val_start]=='\t')) val_start++;
+        while (val_start < eol && is_whitespace(buf[val_start])) val_start++;
+        uint32_t val_end = eol;
+        while (val_end > val_start && is_whitespace(buf[val_end - 1])) val_end--;
+        uint32_t val_len = val_end - val_start;
 
-        uint32_t val_len = eol - val_start;
-
-        uint32_t copy_len = (key_len < sizeof(key_tmp)-1) ? key_len : (sizeof(key_tmp)-1);
-        for (uint32_t i = 0; i < copy_len; i++){
-            key_tmp[i] = buf[pos + i];
-        }
-        key_tmp[copy_len] = '\0';
-
-        if (copy_len == 14 && strcmp_case(key_tmp, "content-length", true) == 0){
-            uint32_t p = val_start;
-            uint32_t end = eol;
-            while (p < end && (buf[p] == ' ' || buf[p] == '\t')) p++;
-            while (end > p && (buf[end-1] == ' ' || buf[end-1] == '\t')) end--;
-
-            bool ok = p < end;
+        if (key_len == 14 && strncmp_case(buf + pos, "content-length", true, key_len) == 0){
+            char len_buf[32];
+            bool ok = val_len > 0 && val_len < sizeof(len_buf);
             uint64_t parsed = 0;
-            while (ok && p < end) {
-                char c = buf[p++];
-                if (! is_digit(c)) {
-                    ok = false;
-                    break;
-                }
-                parsed = parsed * 10 + (uint64_t)(c - '0');
-                if (parsed > UINT32_MAX) ok = false;
+            if (ok) {
+                memcpy(len_buf, buf + val_start, val_len);
+                len_buf[val_len] = 0;
+                char *end = len_buf;
+                parsed = strtoul(len_buf, &end, 10);
+                ok = end == len_buf + val_len && parsed <= UINT32_MAX;
             }
 
-            if (!ok || (C->has_length && C->length != (uint32_t)parsed)) C->bad_length = 1;
-            else {
+            if (!ok || (C->has_length && C->length != parsed)) {
+                C->bad_length = 1;
+                result = HTTP_PARSE_BAD_CONTENT_LENGTH;
+            } else {
                 C->has_length = 1;
-                C->length = (uint32_t)parsed;
+                C->length = parsed;
             }
         }
-        else if (copy_len == 12 && strcmp_case(key_tmp, "content-type", true) == 0){
-            C->type = string_from_literal_length((char*)(buf + val_start), val_len);
+        else if (key_len == 12 && strncmp_case(buf + pos, "content-type", true, key_len) == 0){
+            C->type = string_from_literal_length(buf + val_start, val_len);
+            C->content_type = string_from_literal_length(buf + val_start, val_len);
         }
-        else if (copy_len == 4 && strcmp_case(key_tmp, "date", true) == 0){
-            C->date = string_from_literal_length((char*)(buf + val_start), val_len);
-        }
-        else if (copy_len == 10 && strcmp_case(key_tmp, "connection", true) == 0){
-            C->connection = string_from_literal_length((char*)(buf + val_start), val_len);
-        }
-        else if (copy_len == 10 && strcmp_case(key_tmp, "keep-alive", true) == 0){
-            C->keep_alive = string_from_literal_length((char*)(buf + val_start), val_len);
-        }
-        else if (copy_len == 4 && strcmp_case(key_tmp, "host", true) == 0){
-            C->host = string_from_literal_length((char*)(buf + val_start), val_len);
+        else if (key_len == 4 && strncmp_case(buf + pos, "date", true, key_len) == 0) C->date = string_from_literal_length(buf + val_start, val_len);
+        else if (key_len == 10 && strncmp_case(buf + pos, "connection", true, key_len) == 0) C->connection = string_from_literal_length(buf + val_start, val_len);
+        else if (key_len == 10 && strncmp_case(buf + pos, "keep-alive", true, key_len) == 0) C->keep_alive = string_from_literal_length(buf + val_start, val_len);
+        else if (key_len == 4 && strncmp_case(buf + pos, "host", true, key_len) == 0) C->host = string_from_literal_length(buf + val_start, val_len);
+        else if (key_len == 17 && strncmp_case(buf + pos, "transfer-encoding", true, key_len) == 0){
+            C->has_transfer_encoding = 1;
+            C->transfer_encoding = string_from_literal_length(buf + val_start, val_len);
+            uint32_t te_pos = val_start;
+            while (te_pos < val_end) {
+                while (te_pos < val_end && (is_whitespace(buf[te_pos]) || buf[te_pos] == ',')) te_pos++;
+                uint32_t te_start = te_pos;
+                while (te_pos < val_end && buf[te_pos] != ',') te_pos++;
+                uint32_t te_end = te_pos;
+                while (te_end > te_start && is_whitespace(buf[te_end - 1])) te_end--;
+                if (te_end - te_start == 7 && strncmp_case(buf + te_start, "chunked", true, 7) == 0) C->chunked = 1;
+                if (te_pos < val_end && buf[te_pos] == ',') te_pos++;
+            }
+            if (C->chunked && !p.allow_chunked) {
+                C->bad_transfer = 1;
+                result = HTTP_PARSE_UNSUPPORTED_TRANSFER;
+            }
         }
         else {
             string key = string_from_literal_length((char*)(buf + pos), key_len);
@@ -221,13 +349,13 @@ void http_header_parser(const char *buf, uint32_t len,
         if (extras) release(extras);
         *out_extra = NULL;
         *out_extra_count = 0;
-        return;
+        return result;
     }
 
     if (extra_i == max_lines){
         *out_extra = extras;
         *out_extra_count = extra_i;
-        return;
+        return result;
     }
 
     HTTPHeader *shr = (HTTPHeader*)zalloc(sizeof(*shr) * extra_i);
@@ -236,7 +364,7 @@ void http_header_parser(const char *buf, uint32_t len,
         release(extras);
         *out_extra = shr;
         *out_extra_count = extra_i;
-        return;
+        return result;
     }
 
     for (uint32_t i = 0; i < extra_i; i++){
@@ -246,6 +374,7 @@ void http_header_parser(const char *buf, uint32_t len,
     release(extras);
     *out_extra = NULL;
     *out_extra_count = 0;
+    return HTTP_PARSE_TOO_LARGE;
 }
 
 string http_request_builder(const HTTPRequestMsg *R){
@@ -268,7 +397,11 @@ string http_request_builder(const HTTPRequestMsg *R){
 
 string http_response_builder(const HTTPResponseMsg *R){
     string out = string_format("HTTP/1.1 %i ", (int)R->status_code);
-    string_append_bytes(&out, R->reason.data, R->reason.length);
+    if (R->reason.length) string_append_bytes(&out, R->reason.data, R->reason.length);
+    else {
+        const char *reason = http_status_reason(R->status_code);
+        string_append_bytes(&out, reason, (uint32_t)strlen(reason));
+    }
     string_append_bytes(&out, "\r\n", 2);
 
     string hdrs = http_header_builder(&R->headers_common, R->extra_headers, R->extra_header_count);

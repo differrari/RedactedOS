@@ -63,6 +63,7 @@ public:
             return resp;
         }
         
+        HTTPPolicy policy = http_default_policy();
         string out = http_request_builder(&req);
         uint32_t out_len = out.length;
 
@@ -111,10 +112,18 @@ public:
         string buf = string_repeat('\0', 0);
         char tmp[512];
         int hdr_end = -1;
+        uint32_t start_ms = (uint32_t)get_time();
+        uint32_t last_rx_ms = start_ms;
 
         while (hdr_end < 0) {
             int64_t r = sock->recv(tmp, sizeof(tmp));
             if (r == TCP_WOULDBLOCK) {
+                uint32_t now = (uint32_t)get_time();
+                if ((now - last_rx_ms) > policy.header_idle_timeout_ms || (now - start_ms) > policy.header_total_timeout_ms) {
+                    string_free(buf);
+                    resp.status_code = (HttpError)SOCK_ERR_PROTO;
+                    return resp;
+                }
                 msleep(10);
                 continue;
             }
@@ -129,40 +138,48 @@ public:
                 return resp;
             }
             string_append_bytes(&buf, tmp, (uint32_t)r);
+            last_rx_ms = (uint32_t)get_time();
+            if (buf.length > policy.max_header_bytes) {
+                string_free(buf);
+                resp.status_code = (HttpError)SOCK_ERR_PROTO;
+                return resp;
+            }
             hdr_end = find_crlfcrlf(buf.data, buf.length);
         }
 
-        uint32_t i = 0;
-        while (i < (uint32_t)hdr_end && buf.data[i] != ' ') i++;
-        uint32_t code = 0, j = i+1;
-        while (j < (uint32_t)hdr_end && buf.data[j] >= '0' && buf.data[j] <= '9') {
-            code = code*10 + (buf.data[j]-'0');
-            ++j;
+        int status_line_end = strindex((char*)buf.data, "\r\n");
+        if (status_line_end <= 0) {
+            string_free(buf);
+            resp.status_code = (HttpError)SOCK_ERR_PROTO;
+            return resp;
         }
-        resp.status_code = (HttpError)code;
-        while (j < (uint32_t)hdr_end && buf.data[j]==' ') ++j;
-        if (j < (uint32_t)hdr_end) {
-            uint32_t rlen = hdr_end - j;
+
+        HTTPStatusLine status_line{};
+        if (http_parse_status_line(buf.data, status_line_end, &status_line) != HTTP_PARSE_OK) {
+            string_free(buf);
+            resp.status_code = (HttpError)SOCK_ERR_PROTO;
+            return resp;
+        }
+
+        resp.status_code = (HttpError)status_line.status_code;
+        if (status_line.reason_len) {
             resp.reason = string_repeat('\0', 0);
-            string_append_bytes(&resp.reason, buf.data+j, rlen);
+            string_append_bytes(&resp.reason, buf.data + status_line.reason_off, status_line.reason_len);
         }
 
         HTTPHeader *extras = nullptr;
         uint32_t extra_count = 0;
-        int status_line_end = strindex((char*)buf.data, "\r\n");
-        http_header_parser(
+        HTTPParseResult header_result = http_header_parse_policy(
             (char*)buf.data + status_line_end + 2,
             (uint32_t)hdr_end - (uint32_t)(status_line_end + 2),
+            &policy,
             &resp.headers_common,
             &extras,
             &extra_count);
         resp.extra_headers = extras;
         resp.extra_header_count = extra_count;
 
-        uint32_t body_start = hdr_end + 4;
-        uint32_t have = (buf.length > body_start) ? buf.length - body_start : 0;
-
-        if (resp.headers_common.bad_length) {
+        if (header_result != HTTP_PARSE_OK) {
             if (resp.reason.mem_length) string_free(resp.reason);
             resp.reason = string{};
             http_headers_common_free(&resp.headers_common);
@@ -175,45 +192,76 @@ public:
             return resp;
         }
 
+        uint32_t body_start = (uint32_t)hdr_end + 4;
+        uint32_t have = buf.length > body_start ? buf.length - body_start : 0;
         uint32_t need = resp.headers_common.has_length ? resp.headers_common.length : 0;
         uint32_t body_len = resp.headers_common.has_length ? need : have;
         char *body_copy = nullptr;
 
+        if (body_len > policy.max_body_bytes) {
+            if (resp.reason.mem_length) string_free(resp.reason);
+            resp.reason = string{};
+            http_headers_common_free(&resp.headers_common);
+            http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
+            resp.extra_headers = nullptr;
+            resp.extra_header_count = 0;
+            string_free(buf);
+            sock->close();
+            resp.status_code = (HttpError)SOCK_ERR_PROTO;
+            return resp;
+        }
+
         if (body_len > 0) {
             body_copy = (char*)zalloc(body_len);
-            if (body_copy) {
-                uint32_t copied = have < body_len ? have : body_len;
-                if (copied) memcpy(body_copy, buf.data + body_start, copied);
+            if (!body_copy) {
+                if (resp.reason.mem_length) string_free(resp.reason);
+                resp.reason = string{};
+                http_headers_common_free(&resp.headers_common);
+                http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
+                resp.extra_headers = nullptr;
+                resp.extra_header_count = 0;
+                string_free(buf);
+                sock->close();
+                resp.status_code = (HttpError)SOCK_ERR_SYS;
+                return resp;
+            }
 
-                if (resp.headers_common.has_length) {
-                    while (copied < need) {
-                        int64_t r = sock->recv(body_copy + copied, need - copied);
-                        if (r == TCP_WOULDBLOCK) {
-                            msleep(1);
-                            continue;
-                        }
-                        if (r <= 0) break;
-                        copied += (uint32_t)r;
-                    }
+            uint32_t copied = have < body_len ? have : body_len;
+            if (copied) memcpy(body_copy, buf.data + body_start, copied);
 
-                    if (copied < need) {
-                        release(body_copy);
-                        if (resp.reason.mem_length) string_free(resp.reason);
-                        resp.reason = string{};
-                        http_headers_common_free(&resp.headers_common);
-                        http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
-                        resp.extra_headers = nullptr;
-                        resp.extra_header_count = 0;
-                        string_free(buf);
-                        sock->close();
-                        resp.status_code = (HttpError)SOCK_ERR_PROTO;
-                        return resp;
+            if (resp.headers_common.has_length) {
+                uint32_t body_start_ms = (uint32_t)get_time();
+                uint32_t body_last_rx_ms = body_start_ms;
+                while (copied < need) {
+                    int64_t r = sock->recv(body_copy + copied, need - copied);
+                    if (r == TCP_WOULDBLOCK) {
+                        uint32_t now = (uint32_t)get_time();
+                        if ((now - body_last_rx_ms) > policy.body_idle_timeout_ms || (now - body_start_ms) > policy.body_total_timeout_ms) break;
+                        msleep(1);
+                        continue;
                     }
+                    if (r <= 0) break;
+                    copied += (uint32_t)r;
+                    body_last_rx_ms = (uint32_t)get_time();
                 }
 
-                resp.body.ptr = (uintptr_t)body_copy;
-                resp.body.size = body_len;
+                if (copied < need) {
+                    release(body_copy);
+                    if (resp.reason.mem_length) string_free(resp.reason);
+                    resp.reason = string{};
+                    http_headers_common_free(&resp.headers_common);
+                    http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
+                    resp.extra_headers = nullptr;
+                    resp.extra_header_count = 0;
+                    string_free(buf);
+                    sock->close();
+                    resp.status_code = (HttpError)SOCK_ERR_PROTO;
+                    return resp;
+                }
             }
+
+            resp.body.ptr = (uintptr_t)body_copy;
+            resp.body.size = body_len;
         }
 
         netlog_socket_event_t ev1{};
