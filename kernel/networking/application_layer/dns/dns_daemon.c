@@ -40,7 +40,7 @@ static socket_handle_t mdns_create_socket(ip_version_t ver, const void* group) {
     memset(&spec, 0, sizeof(spec));
     spec.kind = BIND_ANY;
 
-    if(socket_bind_udp_ex(s, &spec, DNS_SD_MDNS_PORT) != SOCK_OK){
+    if(socket_bind_udp_ex(s, &spec, DNS_MDNS_PORT) != SOCK_OK){
         socket_destroy_udp(s);
         return 0;
     }
@@ -54,10 +54,12 @@ int dns_deamon_entry(int argc, char* argv[]){
     g_sock = udp_socket_create(SOCK_ROLE_CLIENT, g_pid_dnsd, NULL);
 
     uint32_t mdns_v4 = IPV4_MCAST_MDNS;
+    uint8_t mdns_v4_addr[4];
     uint8_t mdns_v6[16];
+    memcpy(mdns_v4_addr, &mdns_v4, 4);
     ipv6_make_multicast(0x02, IPV6_MCAST_MDNS, 0, mdns_v6);
 
-    g_sock_mdns4 = mdns_create_socket(IP_VER4, &mdns_v4);
+    g_sock_mdns4 = mdns_create_socket(IP_VER4, mdns_v4_addr);
     g_sock_mdns6 = mdns_create_socket(IP_VER6, mdns_v6);
 
     uint32_t tick_ms = 100;
@@ -69,16 +71,22 @@ int dns_deamon_entry(int argc, char* argv[]){
         if (g_sock_mdns4) {
             memset(&src, 0, sizeof(src));
             int64_t r4 = socket_recvfrom_udp_ex(g_sock_mdns4, buf, sizeof(buf), &src);
-            if(r4 > 0) mdns_responder_handle_query(g_sock_mdns4, IP_VER4, (const uint8_t*)&mdns_v4, buf, (uint32_t)r4, &src);
+            if(r4 > 0) {
+                uint32_t len4 = r4;
+                mdns_responder_handle_query(g_sock_mdns4, IP_VER4, mdns_v4_addr, buf, len4, &src);
+            }
         }
 
         if (g_sock_mdns6) {
             memset(&src, 0, sizeof(src));
             int64_t r6 = socket_recvfrom_udp_ex(g_sock_mdns6, buf, sizeof(buf), &src);
-            if(r6 > 0) mdns_responder_handle_query(g_sock_mdns6, IP_VER6, mdns_v6, buf, (uint32_t)r6, &src);
+            if(r6 > 0) {
+                uint32_t len6 = r6;
+                mdns_responder_handle_query(g_sock_mdns6, IP_VER6, mdns_v6, buf, len6, &src);
+            }
         }
 
-        mdns_responder_tick(g_sock_mdns4,g_sock_mdns6,(const uint8_t*)&mdns_v4,mdns_v6);
+        mdns_responder_tick(g_sock_mdns4,g_sock_mdns6,mdns_v4_addr,mdns_v6);
         msleep(tick_ms);
     }
     return 1;
