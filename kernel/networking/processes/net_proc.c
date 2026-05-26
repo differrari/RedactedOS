@@ -102,7 +102,7 @@ static void run_http_server() {
     SocketExtraOptions opt = {0};
     opt.debug_level = SOCK_DBG_ALL;
     opt.flags = SOCK_OPT_DEBUG;
-    http_server_handle_t srv = http_server_create(pid, &opt);
+    http_server_handle_t srv = http_server_create(pid, &opt, NULL);
     if (!srv) {
         stop_current_process(1);
         return;
@@ -187,7 +187,7 @@ static void test_http(const net_l4_endpoint* ep) {
     }
 
     uint16_t pid = get_current_proc_pid();
-    http_client_handle_t cli = http_client_create(pid, NULL);
+    http_client_handle_t cli = http_client_create(pid, NULL, NULL);
     if (!cli) {
         kprintf("[HTTP] http_client_create FAIL");
         return;

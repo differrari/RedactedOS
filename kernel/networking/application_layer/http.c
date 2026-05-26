@@ -15,7 +15,9 @@ HTTPPolicy http_default_policy(void) {
         .header_total_timeout_ms = HTTP_DEFAULT_HEADER_TOTAL_TIMEOUT_MS,
         .body_idle_timeout_ms = HTTP_DEFAULT_BODY_IDLE_TIMEOUT_MS,
         .body_total_timeout_ms = HTTP_DEFAULT_BODY_TOTAL_TIMEOUT_MS,
-        .allow_chunked = false,
+        .max_keepalive_requests = HTTP_DEFAULT_MAX_KEEPALIVE_REQUESTS,
+        .max_redirects = HTTP_DEFAULT_MAX_REDIRECTS,
+        .allow_chunked = true,
         .allow_keep_alive = false,
         .allow_absolute_uri = true,
         .require_host_http11 = true
@@ -23,9 +25,39 @@ HTTPPolicy http_default_policy(void) {
     return p;
 }
 
+HTTPPolicy http_policy_from_options(const HTTPPolicyOptions *options) {
+    HTTPPolicy p = http_default_policy();
+    if (!options) return p;
+
+    if (options->max_start_line > 0) p.max_start_line = options->max_start_line;
+    if (options->max_header_bytes > 0) p.max_header_bytes = options->max_header_bytes;
+    if (options->max_header_count > 0) p.max_header_count = options->max_header_count;
+    if (options->max_header_key_len > 0) p.max_header_key_len = options->max_header_key_len;
+    if (options->max_header_value_len > 0) p.max_header_value_len = options->max_header_value_len;
+    if (options->max_path_len > 0) p.max_path_len = options->max_path_len;
+    if (options->max_body_bytes > 0) p.max_body_bytes = options->max_body_bytes;
+    if (options->header_idle_timeout_ms > 0) p.header_idle_timeout_ms = options->header_idle_timeout_ms;
+    if (options->header_total_timeout_ms > 0) p.header_total_timeout_ms = options->header_total_timeout_ms;
+    if (options->body_idle_timeout_ms > 0) p.body_idle_timeout_ms = options->body_idle_timeout_ms;
+    if (options->body_total_timeout_ms > 0) p.body_total_timeout_ms = options->body_total_timeout_ms;
+    if (options->max_keepalive_requests > 0) p.max_keepalive_requests = options->max_keepalive_requests;
+    if (options->max_redirects > 0) p.max_redirects = options->max_redirects;
+
+    p.allow_chunked = options->allow_chunked != 0;
+    p.allow_keep_alive = options->allow_keep_alive != 0;
+    p.allow_absolute_uri = options->allow_absolute_uri != 0;
+    p.require_host_http11 = options->require_host_http11 != 0;
+    return p;
+}
+
 const char* http_status_reason(HttpError status) {
     switch (status) {
         case HTTP_OK: return "OK";
+        case HTTP_MOVED_PERMANENTLY: return "Moved Permanently";
+        case HTTP_FOUND: return "Found";
+        case HTTP_SEE_OTHER: return "See Other";
+        case HTTP_TEMPORARY_REDIRECT: return "Temporary Redirect";
+        case HTTP_PERMANENT_REDIRECT: return "Permanent Redirect";
         case HTTP_BAD_REQUEST: return "Bad Request";
         case HTTP_UNAUTHORIZED: return "Unauthorized";
         case HTTP_FORBIDDEN: return "Forbidden";
@@ -58,9 +90,28 @@ HttpError http_parse_result_status(HTTPParseResult result) {
             return HTTP_VERSION_NOT_SUPPORTED;
         case HTTP_PARSE_PAYLOAD_TOO_LARGE:
             return HTTP_PAYLOAD_TOO_LARGE;
+        case HTTP_PARSE_INCOMPLETE:
+            return HTTP_BAD_REQUEST;
         default:
             return HTTP_BAD_REQUEST;
     }
+}
+
+bool http_header_value_has_token(const char *buf, uint32_t len, const char *token, uint32_t token_len) {
+    if (!buf || !token || !token_len) return false;
+
+    uint32_t pos = 0;
+    while (pos < len) {
+        while (pos < len && (is_whitespace(buf[pos]) || buf[pos] == ',')) pos++;
+        uint32_t start = pos;
+        while (pos < len && buf[pos] != ',') pos++;
+        uint32_t end = pos;
+        while (end > start && is_whitespace(buf[end - 1])) end--;
+        if (end - start == token_len && strncmp_case(buf + start, token, true, token_len) == 0) return true;
+        if (pos < len && buf[pos] == ',') pos++;
+    }
+
+    return false;
 }
 
 HTTPParseResult http_parse_request_line(const char *buf, uint32_t len, HTTPRequestLine *out) {
@@ -111,9 +162,8 @@ HTTPParseResult http_parse_status_line(const char *buf, uint32_t len, HTTPStatus
     memcpy(code_buf, buf + 9,3);
     code_buf[3] = 0;
 
-    char *end = code_buf;
-    uint64_t code = strtoul(code_buf, &end, 10);
-    if (end != code_buf + 3) return HTTP_PARSE_BAD_FORMAT;
+    uint32_t code = 0;
+    if (!parse_uint32_dec(code_buf, &code)) return HTTP_PARSE_BAD_FORMAT;
     out->status_code = code;
 
     uint32_t i = 12;
@@ -132,9 +182,12 @@ string http_header_builder(const HTTPHeadersCommon *C, const HTTPHeader *H, uint
         string_append_bytes(&out, "\r\n", 2);
     }
 
-    string tmp = string_format("Content-Length: %i\r\n", (int)C->length);
-    string_append_bytes(&out, tmp.data, tmp.length);
-    string_free(tmp);
+    if (C->chunked) string_append_bytes(&out, "Transfer-Encoding: chunked\r\n", 28);
+    else {
+        string tmp = string_format("Content-Length: %i\r\n", (int)C->length);
+        string_append_bytes(&out, tmp.data, tmp.length);
+        string_free(tmp);
+    }
 
     if (C->date.length){
         string_append_bytes(&out, "Date: ", 6);
@@ -286,13 +339,11 @@ HTTPParseResult http_header_parse_policy(const char *buf, uint32_t len,
         if (key_len == 14 && strncmp_case(buf + pos, "content-length", true, key_len) == 0){
             char len_buf[32];
             bool ok = val_len > 0 && val_len < sizeof(len_buf);
-            uint64_t parsed = 0;
+            uint32_t parsed = 0;
             if (ok) {
                 memcpy(len_buf, buf + val_start, val_len);
                 len_buf[val_len] = 0;
-                char *end = len_buf;
-                parsed = strtoul(len_buf, &end, 10);
-                ok = end == len_buf + val_len && parsed <= UINT32_MAX;
+                ok = parse_uint32_dec(len_buf, &parsed);
             }
 
             if (!ok || (C->has_length && C->length != parsed)) {
@@ -308,22 +359,17 @@ HTTPParseResult http_header_parse_policy(const char *buf, uint32_t len,
             C->content_type = string_from_literal_length(buf + val_start, val_len);
         }
         else if (key_len == 4 && strncmp_case(buf + pos, "date", true, key_len) == 0) C->date = string_from_literal_length(buf + val_start, val_len);
-        else if (key_len == 10 && strncmp_case(buf + pos, "connection", true, key_len) == 0) C->connection = string_from_literal_length(buf + val_start, val_len);
+        else if (key_len == 10 && strncmp_case(buf + pos, "connection", true, key_len) == 0){
+            C->connection = string_from_literal_length(buf + val_start, val_len);
+            C->connection_close = http_header_value_has_token(buf + val_start, val_len, "close", 5) ? 1 : 0;
+            C->connection_keep_alive = http_header_value_has_token(buf + val_start, val_len, "keep-alive", 10) ? 1 : 0;
+        }
         else if (key_len == 10 && strncmp_case(buf + pos, "keep-alive", true, key_len) == 0) C->keep_alive = string_from_literal_length(buf + val_start, val_len);
         else if (key_len == 4 && strncmp_case(buf + pos, "host", true, key_len) == 0) C->host = string_from_literal_length(buf + val_start, val_len);
         else if (key_len == 17 && strncmp_case(buf + pos, "transfer-encoding", true, key_len) == 0){
             C->has_transfer_encoding = 1;
             C->transfer_encoding = string_from_literal_length(buf + val_start, val_len);
-            uint32_t te_pos = val_start;
-            while (te_pos < val_end) {
-                while (te_pos < val_end && (is_whitespace(buf[te_pos]) || buf[te_pos] == ',')) te_pos++;
-                uint32_t te_start = te_pos;
-                while (te_pos < val_end && buf[te_pos] != ',') te_pos++;
-                uint32_t te_end = te_pos;
-                while (te_end > te_start && is_whitespace(buf[te_end - 1])) te_end--;
-                if (te_end - te_start == 7 && strncmp_case(buf + te_start, "chunked", true, 7) == 0) C->chunked = 1;
-                if (te_pos < val_end && buf[te_pos] == ',') te_pos++;
-            }
+            C->chunked = http_header_value_has_token(buf + val_start, val_len, "chunked", 7) ? 1 : 0;
             if (C->chunked && !p.allow_chunked) {
                 C->bad_transfer = 1;
                 result = HTTP_PARSE_UNSUPPORTED_TRANSFER;
@@ -377,6 +423,20 @@ HTTPParseResult http_header_parse_policy(const char *buf, uint32_t len,
     return HTTP_PARSE_TOO_LARGE;
 }
 
+static void http_append_chunked_body(string *out, uintptr_t ptr, uint32_t len) {
+    if (!out) return;
+
+    if (len) {
+        string tmp = string_format("%x\r\n", (int)len);
+        string_append_bytes(out, tmp.data, tmp.length);
+        string_free(tmp);
+        string_append_bytes(out, (char*)ptr, len);
+        string_append_bytes(out, "\r\n", 2);
+    }
+
+    string_append_bytes(out, "0\r\n\r\n", 5);
+}
+
 string http_request_builder(const HTTPRequestMsg *R){
     static const char *Mnames[] = { "GET", "POST", "PUT", "DELETE" };
     string out = string_format("%s ", Mnames[R->method]);
@@ -388,9 +448,8 @@ string http_request_builder(const HTTPRequestMsg *R){
     string_append_bytes(&out, hdrs.data, hdrs.length);
     string_free(hdrs);
 
-    if (R->body.ptr && R->body.size){
-        string_append_bytes(&out, (char*)R->body.ptr, (uint32_t)R->body.size);
-    }
+    if (R->headers_common.chunked) http_append_chunked_body(&out, R->body.ptr, (uint32_t)R->body.size);
+    else if (R->body.ptr && R->body.size) string_append_bytes(&out, (char*)R->body.ptr, (uint32_t)R->body.size);
 
     return out;
 }
@@ -408,9 +467,8 @@ string http_response_builder(const HTTPResponseMsg *R){
     string_append_bytes(&out, hdrs.data, hdrs.length);
     string_free(hdrs);
 
-    if (R->body.ptr && R->body.size){
-        string_append_bytes(&out, (char*)R->body.ptr, (uint32_t)R->body.size);
-    }
+    if (R->headers_common.chunked) http_append_chunked_body(&out, R->body.ptr, (uint32_t)R->body.size);
+    else if (R->body.ptr && R->body.size) string_append_bytes(&out, (char*)R->body.ptr, (uint32_t)R->body.size);
 
     return out;
 }
@@ -434,11 +492,92 @@ sizedptr http_get_payload(sizedptr header){
     };
 }
 
-string http_get_chunked_payload(sizedptr chunk){
-    if (chunk.ptr && chunk.size > 0){
-        int sizetrm = strindex((char*)chunk.ptr, "\r\n");
-        uint64_t chunk_size = parse_hex_u64((char*)chunk.ptr, sizetrm);
-        return string_from_literal_length((char*)(chunk.ptr + sizetrm + 2), (uint32_t)chunk_size);
+HTTPParseResult http_decode_chunked_body(const char *buf, uint32_t len, const HTTPPolicy *policy, string *out_body, uint32_t *out_used) {
+    HTTPPolicy p = policy ? *policy : http_default_policy();
+    if (!buf || !out_body || !out_used) return HTTP_PARSE_BAD_FORMAT;
+
+    string out = string_repeat('\0', 0);
+    uint32_t off = 0;
+    uint32_t total = 0;
+
+    while (1) {
+        uint32_t line_end = off;
+        while (line_end + 1 < len && !(buf[line_end] == '\r' && buf[line_end+1] == '\n')) line_end++;
+        if (line_end + 1 >= len) {
+            string_free(out);
+            return HTTP_PARSE_INCOMPLETE;
+        }
+
+        uint32_t scan = off;
+        while (scan < line_end && is_whitespace(buf[scan])) scan++;
+        if (scan >= line_end) {
+            string_free(out);
+            return HTTP_PARSE_BAD_FORMAT;
+        }
+
+        uint64_t chunk_len = 0;
+        bool saw_digit = false;
+        while (scan < line_end) {
+            char c = buf[scan];
+            if (c == ';') break;
+            if (is_whitespace(c)) {
+                while (scan < line_end && is_whitespace(buf[scan])) scan++;
+                if (scan < line_end && buf[scan] != ';') {
+                    string_free(out);
+                    return HTTP_PARSE_BAD_FORMAT;
+                }
+                break;
+            }
+
+            int digit = hex_val(c);
+            if (digit < 0) {
+                string_free(out);
+                return HTTP_PARSE_BAD_FORMAT;
+            }
+            saw_digit = true;
+            chunk_len = chunk_len * 16 + digit;
+            if (chunk_len > p.max_body_bytes || total + chunk_len > p.max_body_bytes) {
+                string_free(out);
+                return HTTP_PARSE_PAYLOAD_TOO_LARGE;
+            }
+            scan++;
+        }
+
+        if (!saw_digit) {
+            string_free(out);
+            return HTTP_PARSE_BAD_FORMAT;
+        }
+
+        off = line_end + 2;
+        if (chunk_len == 0) {
+            if (off + 1 < len && buf[off] == '\r' && buf[off+1] == '\n') {
+                *out_body = out;
+                *out_used = off + 2;
+                return HTTP_PARSE_OK;
+            }
+
+            int trailers_end = find_crlfcrlf(buf + off, len - off);
+            if (trailers_end >= 0) {
+                *out_body = out;
+                *out_used = off + (uint32_t)trailers_end + 4;
+                return HTTP_PARSE_OK;
+            }
+
+            string_free(out);
+            return HTTP_PARSE_INCOMPLETE;
+        }
+
+        if (off + chunk_len + 2 > len) {
+            string_free(out);
+            return HTTP_PARSE_INCOMPLETE;
+        }
+        if (buf[off + chunk_len] != '\r' || buf[off+1 + chunk_len] != '\n') {
+            string_free(out);
+            return HTTP_PARSE_BAD_FORMAT;
+        }
+
+        string_append_bytes(&out, buf + off, (uint32_t)chunk_len);
+        total += (uint32_t)chunk_len;
+        off += (uint32_t)chunk_len + 2;
     }
-    return (string){0};
 }

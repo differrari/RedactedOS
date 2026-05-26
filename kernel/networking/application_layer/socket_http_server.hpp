@@ -6,6 +6,10 @@
 #include "net/socket_types.h"
 #include "syscalls/syscalls.h"
 
+struct HTTPConnection {
+    TCPSocket* client;
+    string carry_buf;
+};
 
 class HTTPServer {
 private:
@@ -13,9 +17,10 @@ private:
     TCPSocket* sock;
     SocketExtraOptions log_opts;
     SocketExtraOptions* tcp_extra;
+    HTTPPolicy policy;
 
 public:
-    explicit HTTPServer(uint16_t pid_, const SocketExtraOptions* extra) : pid(pid_), sock(nullptr), log_opts{}, tcp_extra(nullptr) {
+    explicit HTTPServer(uint16_t pid_, const SocketExtraOptions* extra, const HTTPPolicyOptions* http_options) : pid(pid_), sock(nullptr), log_opts{}, tcp_extra(nullptr), policy(http_policy_from_options(http_options)) {
         if (extra) log_opts = *extra;
 
         const SocketExtraOptions* tcp_ptr = extra;
@@ -33,6 +38,11 @@ public:
     }
 
     ~HTTPServer() { close(); }
+
+    int32_t set_options(const HTTPPolicyOptions* http_options) {
+        policy = http_policy_from_options(http_options);
+        return SOCK_OK;
+    }
 
     int32_t bind(const SockBindSpec& spec, uint16_t port) {
         uint16_t p = port;
@@ -62,8 +72,19 @@ public:
         return r;
     }
 
-    TCPSocket* accept() {
+    HTTPConnection* accept() {
         TCPSocket* c = sock ? sock->accept() : nullptr;
+        if (!c) return nullptr;
+
+        HTTPConnection* conn = (HTTPConnection*)zalloc(sizeof(HTTPConnection));
+        if (!conn) {
+            delete c;
+            return nullptr;
+        }
+
+        conn->client = c;
+        conn->carry_buf = string{nullptr, 0, 0};
+
         if (c) {
             netlog_socket_event_t ev{};
             ev.comp = NETLOG_COMP_HTTP_SERVER;
@@ -74,17 +95,24 @@ public:
             ev.remote_ep = c->get_remote_ep();
             netlog_socket_event(&log_opts, &ev);
         }
-        return c;
+        return conn;
     }
 
-    HTTPRequestMsg recv_request(TCPSocket* client) {
+    HTTPRequestMsg recv_request(HTTPConnection* conn) {
         HTTPRequestMsg req{};
-        if (!client) return req;
+        if (!conn || !conn->client) return req;
 
-        HTTPPolicy policy = http_default_policy();
+        TCPSocket* client = conn->client;
         string buf = string_repeat('\0', 0);
+        if (conn->carry_buf.length) {
+            string_append_bytes(&buf, conn->carry_buf.data, conn->carry_buf.length);
+            string_free(conn->carry_buf);
+            conn->carry_buf = string{nullptr, 0, 0};
+        }
+
         char tmp[2048];
-        int hdr_end = -1;
+        int hdr_end = find_crlfcrlf(buf.data, buf.length);
+        uint32_t consumed = 0;
         uint32_t start_ms = (uint32_t)get_time();
         uint32_t last_rx_ms = start_ms;
         bool bad_request = false;
@@ -142,6 +170,7 @@ public:
                 const char* target = buf.data + line.target_off;
                 uint32_t target_len = line.target_len;
                 req.method = line.method;
+                req.version = line.version;
                 req.path = string_repeat('\0', 0);
 
                 if (target_len >= 7 && memcmp(target, "http://", 7) == 0) {
@@ -194,46 +223,91 @@ public:
             uint32_t body_start = hdr_end + 4;
             uint32_t have = buf.length > body_start ? buf.length - body_start : 0;
             uint32_t need = req.headers_common.has_length ? req.headers_common.length : 0;
-            if (!bad_request && need > policy.max_body_bytes) {
-                bad_request = true;
-                reject_status = HTTP_PAYLOAD_TOO_LARGE;
-            }
+            consumed = body_start;
 
-            if (!bad_request && need > 0) {
-                body_copy = (char*)zalloc(need);
-                if (!body_copy) {
+            if (!bad_request && req.headers_common.chunked) {
+                string chunk_buf = string_repeat('\0', 0);
+                if (have) string_append_bytes(&chunk_buf, buf.data + body_start, have);
+
+                uint32_t used = 0;
+                string decoded = string_repeat('\0', 0);
+                HTTPParseResult chunk_result = http_decode_chunked_body(chunk_buf.data, chunk_buf.length, &policy, &decoded, &used);
+                uint32_t body_start_ms = (uint32_t)get_time();
+                uint32_t body_last_rx_ms = body_start_ms;
+
+                while (chunk_result == HTTP_PARSE_INCOMPLETE) {
+                    int64_t r = client->recv(tmp, sizeof(tmp));
+                    if (r == TCP_WOULDBLOCK) {
+                        uint32_t now = (uint32_t)get_time();
+                        if ((now - body_last_rx_ms) > policy.body_idle_timeout_ms || (now - body_start_ms) > policy.body_total_timeout_ms) break;
+                        msleep(2);
+                        continue;
+                    }
+                    if (r <= 0) break;
+                    string_append_bytes(&chunk_buf, tmp, (uint32_t)r);
+                    body_last_rx_ms = (uint32_t)get_time();
+                    chunk_result = http_decode_chunked_body(chunk_buf.data, chunk_buf.length, &policy, &decoded, &used);
+                }
+
+                if (chunk_result != HTTP_PARSE_OK) {
+                    if (decoded.mem_length) string_free(decoded);
                     bad_request = true;
-                    reject_status = HTTP_INTERNAL_SERVER_ERROR;
+                    reject_status = http_parse_result_status(chunk_result);
                 } else {
-                    uint32_t copied = have < need ? have : need;
-                    if (copied) memcpy(body_copy, buf.data + body_start, copied);
+                    consumed = buf.length;
+                    if (used < chunk_buf.length) {
+                        conn->carry_buf = string_repeat('\0', 0);
+                        string_append_bytes(&conn->carry_buf, chunk_buf.data + used, chunk_buf.length - used);
+                    }
+                    if (decoded.length) {
+                        req.body.ptr = (uintptr_t)decoded.data;
+                        req.body.size = decoded.length;
+                    } else if (decoded.mem_length) string_free(decoded);
+                }
+                string_free(chunk_buf);
+            } else {
+                if (!bad_request && need > policy.max_body_bytes) {
+                    bad_request = true;
+                    reject_status = HTTP_PAYLOAD_TOO_LARGE;
+                }
 
-                    uint32_t body_start_ms = (uint32_t)get_time();
-                    uint32_t body_last_rx_ms = body_start_ms;
-                    while (copied < need) {
-                        int64_t r = client->recv(body_copy + copied, need - copied);
-                        if (r == TCP_WOULDBLOCK) {
-                            uint32_t now = (uint32_t)get_time();
-                            if ((now - body_last_rx_ms) > policy.body_idle_timeout_ms || (now - body_start_ms) > policy.body_total_timeout_ms) {
+                if (!bad_request && need > 0) {
+                    body_copy = (char*)zalloc(need);
+                    if (!body_copy) {
+                        bad_request = true;
+                        reject_status = HTTP_INTERNAL_SERVER_ERROR;
+                    } else {
+                        uint32_t copied = have < need ? have : need;
+                        if (copied) memcpy(body_copy, buf.data + body_start, copied);
+
+                        uint32_t body_start_ms = (uint32_t)get_time();
+                        uint32_t body_last_rx_ms = body_start_ms;
+                        while (copied < need) {
+                            int64_t r = client->recv(body_copy + copied, need - copied);
+                            if (r == TCP_WOULDBLOCK) {
+                                uint32_t now = (uint32_t)get_time();
+                                if ((now - body_last_rx_ms) > policy.body_idle_timeout_ms || (now - body_start_ms) > policy.body_total_timeout_ms) {
+                                    bad_request = true;
+                                    break;
+                                }
+                                msleep(2);
+                                continue;
+                            }
+                            if (r <= 0) {
                                 bad_request = true;
                                 break;
                             }
-                            msleep(2);
-                            continue;
+                            copied += (uint32_t)r;
+                            body_last_rx_ms = (uint32_t)get_time();
                         }
-                        if (r <= 0) {
-                            bad_request = true;
-                            break;
-                        }
-                        copied += (uint32_t)r;
-                        body_last_rx_ms = (uint32_t)get_time();
                     }
                 }
-            }
 
-            if (body_copy && !bad_request) {
-                req.body.ptr = (uintptr_t)body_copy;
-                req.body.size = need;
+                if (!bad_request) consumed = body_start + need;
+                if (body_copy && !bad_request) {
+                    req.body.ptr = (uintptr_t)body_copy;
+                    req.body.size = need;
+                }
             }
         }
 
@@ -249,7 +323,7 @@ public:
             res.headers_common.connection = string_from_literal("close");
             res.body.ptr = (uintptr_t)body.data;
             res.body.size = body.length;
-            send_response(client, res);
+            send_response(conn, res);
 
             if (req.path.mem_length) string_free(req.path);
             http_headers_common_free(&req.headers_common);
@@ -282,18 +356,25 @@ public:
 
         netlog_socket_event(&log_opts, &ev);
 
+        if (consumed < buf.length && !conn->carry_buf.length) {
+            conn->carry_buf = string_repeat('\0', 0);
+            string_append_bytes(&conn->carry_buf, buf.data + consumed, buf.length - consumed);
+        }
+
         string_free(buf);
         return req;
     }
 
-    int32_t send_response(TCPSocket* client, const HTTPResponseMsg& res) {
-        if (!client) return SOCK_ERR_STATE;
+    int32_t send_response(HTTPConnection* conn, const HTTPResponseMsg& res) {
+        if (!conn || !conn->client) return SOCK_ERR_STATE;
         
+        TCPSocket* client = conn->client;
+        bool send_chunked = res.headers_common.chunked;
         HTTPResponseMsg head = res;
-        head.body = sizedptr{};
+        if (!send_chunked) head.body = sizedptr{};
         uint32_t code = (uint32_t)res.status_code;
         string out = http_response_builder(&head);
-        uint32_t body_len = (res.body.ptr && res.body.size) ? (uint32_t)res.body.size : 0;
+        uint32_t body_len = (!send_chunked && res.body.ptr && res.body.size) ? (uint32_t)res.body.size : 0;
         uint32_t out_len = out.length + body_len;
         int64_t sent = 0;
         uint32_t start_ms = (uint32_t)get_time();

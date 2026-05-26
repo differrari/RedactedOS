@@ -6,8 +6,8 @@
 
 extern "C" {
 
-http_client_handle_t http_client_create(uint16_t pid, const SocketExtraOptions* extra) {
-    HTTPClient* cli = new HTTPClient(pid, extra);
+http_client_handle_t http_client_create(uint16_t pid, const SocketExtraOptions* extra, const HTTPPolicyOptions *options) {
+    HTTPClient* cli = new HTTPClient(pid, extra, options);
     if (!cli) return nullptr;
     return reinterpret_cast<http_client_handle_t>(cli);
 }
@@ -16,6 +16,12 @@ void http_client_destroy(http_client_handle_t h) {
     if (!h) return;
     HTTPClient* cli = reinterpret_cast<HTTPClient*>(h);
     delete cli;
+}
+
+int32_t http_client_set_options(http_client_handle_t h, const HTTPPolicyOptions *options) {
+    if (!h) return (int32_t)SOCK_ERR_INVAL;
+    HTTPClient* cli = reinterpret_cast<HTTPClient*>(h);
+    return cli->set_options(options);
 }
 
 int32_t http_client_connect(http_client_handle_t h, uint8_t dst_kind, const void* dst, uint16_t port) {

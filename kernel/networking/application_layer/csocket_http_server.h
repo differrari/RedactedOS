@@ -10,7 +10,8 @@ extern "C" {
 typedef void* http_server_handle_t;
 typedef void* http_connection_handle_t;
 
-http_server_handle_t http_server_create(uint16_t pid, const SocketExtraOptions* extra);
+http_server_handle_t http_server_create(uint16_t pid, const SocketExtraOptions* extra, const HTTPPolicyOptions *options);
+int32_t http_server_set_options(http_server_handle_t srv, const HTTPPolicyOptions *options);
 void http_server_destroy(http_server_handle_t srv);
 
 int32_t http_server_bind(http_server_handle_t srv, const struct SockBindSpec *spec, uint16_t port);
