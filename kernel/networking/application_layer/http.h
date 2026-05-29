@@ -25,7 +25,9 @@ typedef enum {
     HTTP_METHOD_GET,
     HTTP_METHOD_POST,
     HTTP_METHOD_PUT,
-    HTTP_METHOD_DELETE
+    HTTP_METHOD_DELETE,
+    HTTP_METHOD_HEAD,
+    HTTP_METHOD_OPTIONS
 } HTTPMethod;
 
 typedef enum {
@@ -49,7 +51,9 @@ typedef enum {
 } HTTPParseResult;
 
 typedef enum {
+    HTTP_CONTINUE = 100,
     HTTP_OK = 200,
+    HTTP_PARTIAL_CONTENT = 206,
     HTTP_MOVED_PERMANENTLY = 301,
     HTTP_FOUND = 302,
     HTTP_SEE_OTHER = 303,
@@ -61,14 +65,27 @@ typedef enum {
     HTTP_NOT_FOUND = 404,
     HTTP_PAYLOAD_TOO_LARGE = 413,
     HTTP_URI_TOO_LONG = 414,
+    HTTP_RANGE_NOT_SATISFIABLE = 416,
     HTTP_EXPECTATION_FAILED = 417,
     HTTP_HEADER_FIELDS_TOO_LARGE = 431,
     HTTP_INTERNAL_SERVER_ERROR = 500,
     HTTP_NOT_IMPLEMENTED = 501,
     HTTP_SERVICE_UNAVAILABLE = 503,
     HTTP_VERSION_NOT_SUPPORTED = 505,
-    HTTP_DEBUG = 800,
 } HttpError;
+
+typedef enum {
+    HTTP_HEADER_BUILD_REQUEST,
+    HTTP_HEADER_BUILD_RESPONSE
+} HTTPHeaderBuildKind;
+
+typedef enum {
+    HTTP_CHUNK_STAGE_SIZE,
+    HTTP_CHUNK_STAGE_DATA,
+    HTTP_CHUNK_STAGE_DATA_CRLF,
+    HTTP_CHUNK_STAGE_TRAILERS,
+    HTTP_CHUNK_STAGE_DONE
+} HTTPChunkStage;
 
 typedef struct {
     uint32_t max_start_line;
@@ -82,12 +99,7 @@ typedef struct {
     uint32_t header_total_timeout_ms;
     uint32_t body_idle_timeout_ms;
     uint32_t body_total_timeout_ms;
-    uint32_t max_keepalive_requests;
-    uint32_t max_redirects;
     bool allow_chunked;
-    bool allow_keep_alive;
-    bool allow_absolute_uri;
-    bool require_host_http11;
 } HTTPPolicy;
 
 typedef struct {
@@ -102,13 +114,38 @@ typedef struct {
     int32_t header_total_timeout_ms;
     int32_t body_idle_timeout_ms;
     int32_t body_total_timeout_ms;
-    int32_t max_keepalive_requests;
-    int32_t max_redirects;
     int32_t allow_chunked;
+} HTTPPolicyOptions;
+
+typedef struct {
+    HTTPPolicy common;
+    uint32_t max_keepalive_requests;
+    bool allow_keep_alive;
+    bool allow_absolute_uri;
+    bool require_host_http11;
+} HTTPServerPolicy;
+
+typedef struct {
+    HTTPPolicyOptions common;
+    int32_t max_keepalive_requests;
     int32_t allow_keep_alive;
     int32_t allow_absolute_uri;
     int32_t require_host_http11;
-} HTTPPolicyOptions;
+} HTTPServerPolicyOptions;
+
+typedef struct {
+    HTTPPolicy common;
+    uint32_t max_redirects;
+    bool follow_redirects;
+    bool allow_close_delimited;
+} HTTPClientPolicy;
+
+typedef struct {
+    HTTPPolicyOptions common;
+    int32_t max_redirects;
+    int32_t follow_redirects;
+    int32_t allow_close_delimited;
+} HTTPClientPolicyOptions;
 
 typedef struct {
     HTTPMethod method;
@@ -130,27 +167,45 @@ typedef struct {
 } HTTPHeader;
 
 typedef struct {
-    uint32_t length;
-    uint8_t has_length;
-    uint8_t bad_length;
-    uint8_t has_transfer_encoding;
+    string content_type;
+    string connection;
+    string host;
+    string expect;
+    string range;
+    string location;
+    string content_range;
+    uint32_t content_length;
+} HTTPHeaderFields;
+
+typedef struct {
+    uint8_t has_content_length;
     uint8_t chunked;
-    uint8_t bad_transfer;
     uint8_t connection_close;
     uint8_t connection_keep_alive;
-    string type;
-    string date;
-    string connection;
-    string keep_alive;
-    string host;
-    string content_type;
-    string transfer_encoding;
+    uint8_t expect_continue;
+} HTTPMessageFraming;
+
+typedef struct {
+    uint8_t has;
+    uint8_t invalid;
+    uint8_t has_start;
+    uint8_t has_end;
+    uint64_t start;
+    uint64_t end;
+} HTTPRangeSpec;
+
+typedef struct {
+    HTTPHeaderFields fields;
+    HTTPMessageFraming framing;
+    HTTPRangeSpec range;
+    uint8_t bad_content_length;
 } HTTPHeadersCommon;
 
 typedef struct {
     HTTPMethod method;
     HTTPVersion version;
     string path;
+    const char *host_override;
     HTTPHeadersCommon headers_common;
     HTTPHeader *extra_headers;
     uint32_t extra_header_count;
@@ -166,8 +221,23 @@ typedef struct {
     sizedptr body;
 } HTTPResponseMsg;
 
+typedef struct {
+    HTTPPolicy policy;
+    HTTPChunkStage stage;
+    uint64_t chunk_size;
+    uint64_t chunk_read;
+    uint32_t body_total;
+    uint8_t crlf_seen;
+    string line;
+    string body;
+    string trailers_buf;
+} HTTPChunkedDecoder;
+
 HTTPPolicy http_default_policy(void);
 HTTPPolicy http_policy_from_options(const HTTPPolicyOptions *options);
+HTTPServerPolicy http_server_policy_from_options(const HTTPServerPolicyOptions *options);
+HTTPClientPolicy http_client_policy_from_options(const HTTPClientPolicyOptions *options);
+const char* http_method_name(HTTPMethod method);
 const char* http_status_reason(HttpError status);
 HttpError http_parse_result_status(HTTPParseResult result);
 bool http_header_value_has_token(const char *buf, uint32_t len, const char *token, uint32_t token_len);
@@ -175,18 +245,20 @@ HTTPParseResult http_parse_request_line(const char *buf, uint32_t len, HTTPReque
 HTTPParseResult http_parse_status_line(const char *buf, uint32_t len, HTTPStatusLine *out);
 string http_header_builder(const HTTPHeadersCommon *common,
                            const HTTPHeader *extra,
-                           uint32_t extra_count);
+                           uint32_t extra_count,
+                           HTTPHeaderBuildKind kind,
+                           HTTPMethod method,
+                           uint32_t status_code);
 
-HTTPParseResult http_header_parse_policy(const char *buf, uint32_t len,
+HTTPParseResult http_header_parse(const char *buf, uint32_t len,
                         const HTTPPolicy *policy,
                         HTTPHeadersCommon *out_common,
                         HTTPHeader **out_extra,
                         uint32_t *out_extra_count);
 
-HTTPParseResult http_decode_chunked_body(const char *buf, uint32_t len,
-                                    const HTTPPolicy *policy,
-                                    string *out_body,
-                                    uint32_t *out_used);
+void http_chunked_decoder_init(HTTPChunkedDecoder *dec, const HTTPPolicy *policy);
+HTTPParseResult http_chunked_decoder_feed(HTTPChunkedDecoder *dec, const char *buf, uint32_t len, uint32_t *out_used);
+void http_chunked_decoder_free(HTTPChunkedDecoder *dec);
 
 void http_headers_common_free(HTTPHeadersCommon *common);
 void http_headers_extra_free(HTTPHeader *extra, uint32_t extra_count);
@@ -196,8 +268,6 @@ string http_request_builder(const HTTPRequestMsg *req);
 string http_response_builder(const HTTPResponseMsg *res);
 
 int find_crlfcrlf(const char *data, uint32_t len);
-
-sizedptr http_get_payload(sizedptr header);
 
 #ifdef __cplusplus
 }

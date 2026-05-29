@@ -15,12 +15,7 @@ HTTPPolicy http_default_policy(void) {
         .header_total_timeout_ms = HTTP_DEFAULT_HEADER_TOTAL_TIMEOUT_MS,
         .body_idle_timeout_ms = HTTP_DEFAULT_BODY_IDLE_TIMEOUT_MS,
         .body_total_timeout_ms = HTTP_DEFAULT_BODY_TOTAL_TIMEOUT_MS,
-        .max_keepalive_requests = HTTP_DEFAULT_MAX_KEEPALIVE_REQUESTS,
-        .max_redirects = HTTP_DEFAULT_MAX_REDIRECTS,
         .allow_chunked = true,
-        .allow_keep_alive = false,
-        .allow_absolute_uri = true,
-        .require_host_http11 = true
     };
     return p;
 }
@@ -40,19 +35,64 @@ HTTPPolicy http_policy_from_options(const HTTPPolicyOptions *options) {
     if (options->header_total_timeout_ms > 0) p.header_total_timeout_ms = options->header_total_timeout_ms;
     if (options->body_idle_timeout_ms > 0) p.body_idle_timeout_ms = options->body_idle_timeout_ms;
     if (options->body_total_timeout_ms > 0) p.body_total_timeout_ms = options->body_total_timeout_ms;
-    if (options->max_keepalive_requests > 0) p.max_keepalive_requests = options->max_keepalive_requests;
-    if (options->max_redirects > 0) p.max_redirects = options->max_redirects;
-
     p.allow_chunked = options->allow_chunked != 0;
+    return p;
+}
+
+HTTPServerPolicy http_server_policy_from_options(const HTTPServerPolicyOptions *options) {
+    HTTPServerPolicy p = {
+        .common = http_default_policy(),
+        .max_keepalive_requests = HTTP_DEFAULT_MAX_KEEPALIVE_REQUESTS,
+        .allow_keep_alive = false,
+        .allow_absolute_uri = true,
+        .require_host_http11 = true
+    };
+
+    if (!options) return p;
+
+    p.common = http_policy_from_options(&options->common);
+    if (options->max_keepalive_requests > 0) p.max_keepalive_requests = options->max_keepalive_requests;
     p.allow_keep_alive = options->allow_keep_alive != 0;
     p.allow_absolute_uri = options->allow_absolute_uri != 0;
     p.require_host_http11 = options->require_host_http11 != 0;
     return p;
 }
 
+HTTPClientPolicy http_client_policy_from_options(const HTTPClientPolicyOptions *options) {
+    HTTPClientPolicy p = {
+        .common = http_default_policy(),
+        .max_redirects = HTTP_DEFAULT_MAX_REDIRECTS,
+        .follow_redirects = false,
+        .allow_close_delimited = true
+    };
+
+    if (!options) return p;
+
+    p.common = http_policy_from_options(&options->common);
+    if (options->max_redirects > 0) p.max_redirects = options->max_redirects;
+    p.follow_redirects = options->follow_redirects != 0;
+    if (options->allow_close_delimited > 0) p.allow_close_delimited = true;
+    else if (options->allow_close_delimited < 0) p.allow_close_delimited = false;
+    return p;
+}
+
+const char* http_method_name(HTTPMethod method) {
+    switch (method) {
+        case HTTP_METHOD_GET: return "GET";
+        case HTTP_METHOD_POST: return "POST";
+        case HTTP_METHOD_PUT: return "PUT";
+        case HTTP_METHOD_DELETE: return "DELETE";
+        case HTTP_METHOD_HEAD: return "HEAD";
+        case HTTP_METHOD_OPTIONS: return "OPTIONS";
+        default: return "GET";
+    }
+}
+
 const char* http_status_reason(HttpError status) {
     switch (status) {
+        case HTTP_CONTINUE: return "Continue";
         case HTTP_OK: return "OK";
+        case HTTP_PARTIAL_CONTENT: return "Partial Content";
         case HTTP_MOVED_PERMANENTLY: return "Moved Permanently";
         case HTTP_FOUND: return "Found";
         case HTTP_SEE_OTHER: return "See Other";
@@ -64,6 +104,7 @@ const char* http_status_reason(HttpError status) {
         case HTTP_NOT_FOUND: return "Not Found";
         case HTTP_PAYLOAD_TOO_LARGE: return "Payload Too Large";
         case HTTP_URI_TOO_LONG: return "URI Too Long";
+        case HTTP_RANGE_NOT_SATISFIABLE: return "Range Not Satisfiable";
         case HTTP_EXPECTATION_FAILED: return "Expectation Failed";
         case HTTP_HEADER_FIELDS_TOO_LARGE: return "Request Header Fields Too Large";
         case HTTP_INTERNAL_SERVER_ERROR: return "Internal Server Error";
@@ -127,6 +168,8 @@ HTTPParseResult http_parse_request_line(const char *buf, uint32_t len, HTTPReque
     else if (mlen == 4 && memcmp(buf, "POST", 4) == 0) out->method = HTTP_METHOD_POST;
     else if (mlen == 3 && memcmp(buf, "PUT", 3) == 0) out->method = HTTP_METHOD_PUT;
     else if (mlen == 6 && memcmp(buf, "DELETE", 6) == 0) out->method = HTTP_METHOD_DELETE;
+    else if (mlen == 4 && memcmp(buf, "HEAD", 4) == 0) out->method = HTTP_METHOD_HEAD;
+    else if (mlen == 7 && memcmp(buf, "OPTIONS", 7) == 0) out->method = HTTP_METHOD_OPTIONS;
     else return HTTP_PARSE_UNSUPPORTED_METHOD;
 
     i++;
@@ -173,64 +216,58 @@ HTTPParseResult http_parse_status_line(const char *buf, uint32_t len, HTTPStatus
     return HTTP_PARSE_OK;
 }
 
-string http_header_builder(const HTTPHeadersCommon *C, const HTTPHeader *H, uint32_t N){
+static void http_append_field(string *out, const char *key, uint32_t key_len, const char *val, uint32_t val_len) {
+    if (!out || !key || !key_len || !val) return;
+    string_append_bytes(out, key, key_len);
+    string_append_bytes(out, ": ", 2);
+    string_append_bytes(out, val, val_len);
+    string_append_bytes(out, "\r\n", 2);
+}
+
+string http_header_builder(const HTTPHeadersCommon *C, const HTTPHeader *H, uint32_t N, HTTPHeaderBuildKind kind, HTTPMethod method, uint32_t status_code){
     string out = string_repeat('\0', 0);
+    bool request = kind == HTTP_HEADER_BUILD_REQUEST;
+    bool response = kind == HTTP_HEADER_BUILD_RESPONSE;
+    bool informational = response && status_code >= 100 && status_code < 200;
 
-    if (C->type.length){
-        string_append_bytes(&out, "Content-Type: ", 14);
-        string_append_bytes(&out, C->type.data, C->type.length);
+    if (!C){
+        for (uint32_t i = 0; H && i < N; i++) http_append_field(&out, H[i].key.data, H[i].key.length, H[i].value.data, H[i].value.length);
         string_append_bytes(&out, "\r\n", 2);
+        return out;
     }
 
-    if (C->chunked) string_append_bytes(&out, "Transfer-Encoding: chunked\r\n", 28);
-    else {
-        string tmp = string_format("Content-Length: %i\r\n", (int)C->length);
-        string_append_bytes(&out, tmp.data, tmp.length);
-        string_free(tmp);
+    if (C->fields.content_type.length && !informational) http_append_field(&out,"Content-Type", 12, C->fields.content_type.data, C->fields.content_type.length);
+    if (!informational) {
+        if (C->framing.chunked) string_append_bytes(&out, "Transfer-Encoding: chunked\r\n", 28);
+        else if (C->framing.has_content_length || C->fields.content_length || response || method == HTTP_METHOD_POST || method == HTTP_METHOD_PUT) {
+            string tmp = string_format("Content-Length: %i\r\n", (int)C->fields.content_length);
+            string_append_bytes(&out, tmp.data, tmp.length);
+            string_free(tmp);
+        }
     }
 
-    if (C->date.length){
-        string_append_bytes(&out, "Date: ", 6);
-        string_append_bytes(&out, C->date.data, C->date.length);
-        string_append_bytes(&out, "\r\n", 2);
-    }
-
-    if (C->host.length){
+    if (response && C->fields.location.length) http_append_field(&out, "Location", 8, C->fields.location.data, C->fields.location.length);
+    if (request && C->fields.range.length) http_append_field(&out, "Range", 5, C->fields.range.data, C->fields.range.length);
+    if (response && C->fields.content_range.length) http_append_field(&out, "Content-Range", 13, C->fields.content_range.data, C->fields.content_range.length);
+    if (request && C->fields.expect.length) http_append_field(&out, "Expect", 6, C->fields.expect.data, C->fields.expect.length);
+    
+    if (request && C->fields.host.length){
         string_append_bytes(&out, "Host: ", 6);
-        bool has_colon = str_has_char(C->host.data, C->host.length, ':') >= 0;
-        bool has_lb = str_has_char(C->host.data, C->host.length, '[') >= 0;
-        bool has_rb = str_has_char(C->host.data, C->host.length, ']') >= 0;
+        bool has_colon = str_has_char(C->fields.host.data, C->fields.host.length, ':') >= 0;
+        bool has_lb = str_has_char(C->fields.host.data, C->fields.host.length, '[') >= 0;
+        bool has_rb = str_has_char(C->fields.host.data, C->fields.host.length, ']') >= 0;
         if (has_colon && !has_lb && !has_rb){
             string_append_bytes(&out, "[", 1);
-            string_append_bytes(&out, C->host.data, C->host.length);
+            string_append_bytes(&out, C->fields.host.data, C->fields.host.length);
             string_append_bytes(&out, "]", 1);
         } else {
-            string_append_bytes(&out, C->host.data, C->host.length);
+            string_append_bytes(&out, C->fields.host.data, C->fields.host.length);
         }
         string_append_bytes(&out, "\r\n", 2);
-    } else {
-        string_append_bytes(&out, "Host: RedactedOS_0.1\r\n", 22);
     }
 
-    if (C->connection.length){
-        string_append_bytes(&out, "Connection: ", 12);
-        string_append_bytes(&out, C->connection.data, C->connection.length);
-        string_append_bytes(&out, "\r\n", 2);
-    }
-
-    if (C->keep_alive.length){
-        string_append_bytes(&out, "Keep-Alive: ", 12);
-        string_append_bytes(&out, C->keep_alive.data, C->keep_alive.length);
-        string_append_bytes(&out, "\r\n", 2);
-    }
-
-    for (uint32_t i = 0; i < N; i++){
-        const HTTPHeader *hdr = &H[i];
-        string_append_bytes(&out, hdr->key.data, hdr->key.length);
-        string_append_bytes(&out, ": ", 2);
-        string_append_bytes(&out, hdr->value.data, hdr->value.length);
-        string_append_bytes(&out, "\r\n", 2);
-    }
+    if (C->fields.connection.length) http_append_field(&out, "Connection", 10, C->fields.connection.data, C->fields.connection.length);
+    for (uint32_t i = 0; H && i < N; i++) http_append_field(&out, H[i].key.data, H[i].key.length, H[i].value.data, H[i].value.length);
 
     string_append_bytes(&out, "\r\n", 2);
     return out;
@@ -238,13 +275,13 @@ string http_header_builder(const HTTPHeadersCommon *C, const HTTPHeader *H, uint
 
 void http_headers_common_free(HTTPHeadersCommon *C){
     if (!C) return;
-    if (C->type.mem_length) string_free(C->type);
-    if (C->date.mem_length) string_free(C->date);
-    if (C->connection.mem_length) string_free(C->connection);
-    if (C->keep_alive.mem_length) string_free(C->keep_alive);
-    if (C->host.mem_length) string_free(C->host);
-    if (C->content_type.mem_length) string_free(C->content_type);
-    if (C->transfer_encoding.mem_length) string_free(C->transfer_encoding);
+    if (C->fields.content_type.mem_length) string_free(C->fields.content_type);
+    if (C->fields.connection.mem_length) string_free(C->fields.connection);
+    if (C->fields.host.mem_length) string_free(C->fields.host);
+    if (C->fields.expect.mem_length) string_free(C->fields.expect);
+    if (C->fields.range.mem_length) string_free(C->fields.range);
+    if (C->fields.location.mem_length) string_free(C->fields.location);
+    if (C->fields.content_range.mem_length) string_free(C->fields.content_range);
     *C = (HTTPHeadersCommon){0};
 }
 
@@ -257,12 +294,7 @@ void http_headers_extra_free(HTTPHeader *extra, uint32_t extra_count){
     release(extra);
 }
 
-HTTPParseResult http_header_parse_policy(const char *buf, uint32_t len,
-                                      const HTTPPolicy *policy,
-                                      HTTPHeadersCommon *C,
-                                      HTTPHeader **out_extra,
-                                      uint32_t *out_extra_count)
-{
+HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolicy *policy, HTTPHeadersCommon *C, HTTPHeader **out_extra, uint32_t *out_extra_count){
     HTTPPolicy p = policy ? *policy : http_default_policy();
     if (!buf || !C || !out_extra || !out_extra_count) return HTTP_PARSE_BAD_FORMAT;
     if (len > p.max_header_bytes) return HTTP_PARSE_TOO_LARGE;
@@ -328,6 +360,10 @@ HTTPParseResult http_header_parse_policy(const char *buf, uint32_t len,
 
         uint32_t sep = pos;
         while (sep < eol && buf[sep] != ':') sep++;
+        if (sep == eol || sep == pos) {
+            result = HTTP_PARSE_BAD_FORMAT;
+            break;
+        }
 
         uint32_t key_len = sep - pos;
         uint32_t val_start = sep + 1;
@@ -335,6 +371,7 @@ HTTPParseResult http_header_parse_policy(const char *buf, uint32_t len,
         uint32_t val_end = eol;
         while (val_end > val_start && is_whitespace(buf[val_end - 1])) val_end--;
         uint32_t val_len = val_end - val_start;
+        bool handled = false;
 
         if (key_len == 14 && strncmp_case(buf + pos, "content-length", true, key_len) == 0){
             char len_buf[32];
@@ -346,36 +383,119 @@ HTTPParseResult http_header_parse_policy(const char *buf, uint32_t len,
                 ok = parse_uint32_dec(len_buf, &parsed);
             }
 
-            if (!ok || (C->has_length && C->length != parsed)) {
-                C->bad_length = 1;
+            if (!ok || (C->framing.has_content_length && C->fields.content_length != parsed)) {
+                C->bad_content_length = 1;
                 result = HTTP_PARSE_BAD_CONTENT_LENGTH;
             } else {
-                C->has_length = 1;
-                C->length = parsed;
+                C->framing.has_content_length = 1;
+                C->fields.content_length = parsed;
             }
-        }
-        else if (key_len == 12 && strncmp_case(buf + pos, "content-type", true, key_len) == 0){
-            C->type = string_from_literal_length(buf + val_start, val_len);
-            C->content_type = string_from_literal_length(buf + val_start, val_len);
-        }
-        else if (key_len == 4 && strncmp_case(buf + pos, "date", true, key_len) == 0) C->date = string_from_literal_length(buf + val_start, val_len);
-        else if (key_len == 10 && strncmp_case(buf + pos, "connection", true, key_len) == 0){
-            C->connection = string_from_literal_length(buf + val_start, val_len);
-            C->connection_close = http_header_value_has_token(buf + val_start, val_len, "close", 5) ? 1 : 0;
-            C->connection_keep_alive = http_header_value_has_token(buf + val_start, val_len, "keep-alive", 10) ? 1 : 0;
-        }
-        else if (key_len == 10 && strncmp_case(buf + pos, "keep-alive", true, key_len) == 0) C->keep_alive = string_from_literal_length(buf + val_start, val_len);
-        else if (key_len == 4 && strncmp_case(buf + pos, "host", true, key_len) == 0) C->host = string_from_literal_length(buf + val_start, val_len);
-        else if (key_len == 17 && strncmp_case(buf + pos, "transfer-encoding", true, key_len) == 0){
-            C->has_transfer_encoding = 1;
-            C->transfer_encoding = string_from_literal_length(buf + val_start, val_len);
-            C->chunked = http_header_value_has_token(buf + val_start, val_len, "chunked", 7) ? 1 : 0;
-            if (C->chunked && !p.allow_chunked) {
-                C->bad_transfer = 1;
-                result = HTTP_PARSE_UNSUPPORTED_TRANSFER;
+            handled = true;
+        } else if (key_len == 12 && strncmp_case(buf + pos, "content-type", true, key_len) == 0){
+            C->fields.content_type = string_from_literal_length(buf + val_start, val_len);
+            handled = true;
+        } else if (key_len == 10 && strncmp_case(buf + pos, "connection", true, key_len) == 0){
+            C->fields.connection = string_from_literal_length(buf + val_start, val_len);
+            C->framing.connection_close = http_header_value_has_token(buf + val_start, val_len, "close", 5) ? 1 : 0;
+            C->framing.connection_keep_alive = http_header_value_has_token(buf + val_start, val_len, "keep-alive", 10) ? 1 : 0;
+            handled = true;
+        } else if (key_len == 4 && strncmp_case(buf + pos, "host", true, key_len) == 0) {
+            C->fields.host = string_from_literal_length(buf + val_start, val_len);
+            handled = true;
+        } else if (key_len == 6 && strncmp_case(buf + pos, "expect", true, key_len) == 0){
+            C->fields.expect = string_from_literal_length(buf + val_start, val_len);
+            C->framing.expect_continue = http_header_value_has_token(buf + val_start, val_len, "100-continue", 12) ? 1 : 0;
+            handled = true;
+        } else if (key_len == 5 && strncmp_case(buf + pos, "range", true, key_len) == 0){
+            C->fields.range = string_from_literal_length(buf + val_start, val_len);
+            C->range.invalid = 1;
+            if (val_len > 6 && strncmp_case(buf + val_start, "bytes=", true, 6) == 0) {
+                uint32_t rp = val_start + 6;
+                uint32_t rend = val_start + val_len;
+                uint64_t start = 0;
+                uint64_t end = 0;
+                bool has_start = false;
+                bool has_end = false;
+                bool overflow = false;
+                while (rp < rend && is_digit(buf[rp])) {
+                    has_start = true;
+                    uint64_t next = start * 10 + (uint64_t)(buf[rp] - '0');
+                    if (next < start) overflow = true;
+                    start = next;
+                    rp++;
+                }
+                if (rp < rend && buf[rp] == '-') {
+                    rp++;
+                    while (rp < rend && is_digit(buf[rp])) {
+                        has_end = true;
+                        uint64_t next = end * 10 + (uint64_t)(buf[rp] - '0');
+                        if (next < end) overflow = true;
+                        end = next;
+                        rp++;
+                    }
+                    if (rp == rend && (has_start || has_end) && !(has_start && has_end && end < start) && !overflow) {
+                        C->range.has = 1;
+                        C->range.invalid = 0;
+                        C->range.has_start = has_start ? 1 : 0;
+                        C->range.has_end = has_end ? 1 : 0;
+                        C->range.start = start;
+                        C->range.end = end;
+                    }
+                }
             }
+            handled = true;
+        } else if (key_len == 8 && strncmp_case(buf + pos, "location", true, key_len) == 0) {
+            C->fields.location = string_from_literal_length(buf + val_start, val_len);
+            handled = true;
+        } else if (key_len == 13 && strncmp_case(buf + pos, "content-range", true, key_len) == 0) {
+            C->fields.content_range = string_from_literal_length(buf + val_start, val_len);
+            handled = true;
+        } else if (key_len == 17 && strncmp_case(buf + pos, "transfer-encoding", true, key_len) == 0){
+            uint32_t te_pos = val_start;
+            uint32_t te_end = val_start + val_len;
+            uint32_t count = 0;
+            bool chunked = false;
+
+            while (te_pos < te_end) {
+                while (te_pos < te_end && is_whitespace(buf[te_pos])) te_pos++;
+                if (te_pos >= te_end) break;
+
+                uint32_t token_start = te_pos;
+                while (te_pos < te_end && buf[te_pos] != ',' && !is_whitespace(buf[te_pos]) && buf[te_pos] != ';') te_pos++;
+                uint32_t token_len = te_pos - token_start;
+                if (!token_len) {
+                    result = HTTP_PARSE_BAD_FORMAT;
+                    break;
+                }
+
+                while (te_pos < te_end && is_whitespace(buf[te_pos])) te_pos++;
+                if (te_pos < te_end && buf[te_pos] == ';') {
+                    result = HTTP_PARSE_UNSUPPORTED_TRANSFER;
+                    break;
+                }
+                if (token_len != 7 || strncmp_case(buf + token_start, "chunked", true, 7) != 0) {
+                    result = HTTP_PARSE_UNSUPPORTED_TRANSFER;
+                    break;
+                }
+
+                count++;
+                chunked = true;
+                if (te_pos < te_end) {
+                    if (buf[te_pos] != ',') {
+                        result = HTTP_PARSE_BAD_FORMAT;
+                        break;
+                    }
+                    te_pos++;
+                }
+            }
+
+            if (result == HTTP_PARSE_OK && count != 1) result = HTTP_PARSE_UNSUPPORTED_TRANSFER;
+            else if (result == HTTP_PARSE_OK && chunked && !p.allow_chunked) result = HTTP_PARSE_UNSUPPORTED_TRANSFER;
+            else if (result == HTTP_PARSE_OK) C->framing.chunked = chunked ? 1 : 0;
+            handled = true;
         }
-        else {
+
+        if (!handled) {
             string key = string_from_literal_length((char*)(buf + pos), key_len);
             string value = string_from_literal_length((char*)(buf + val_start), val_len);
 
@@ -389,6 +509,15 @@ HTTPParseResult http_header_parse_policy(const char *buf, uint32_t len,
 
         if (!has_crlf) break;
         pos = eol + 2;
+    }
+
+    if (result == HTTP_PARSE_OK && C->framing.chunked && C->framing.has_content_length) result = HTTP_PARSE_BAD_FORMAT;
+
+    if (result != HTTP_PARSE_OK) {
+        http_headers_extra_free(extras, extra_i);
+        *out_extra = NULL;
+        *out_extra_count = 0;
+        return result;
     }
 
     if (!extras || extra_i == 0){
@@ -413,11 +542,7 @@ HTTPParseResult http_header_parse_policy(const char *buf, uint32_t len,
         return result;
     }
 
-    for (uint32_t i = 0; i < extra_i; i++){
-        if (extras[i].key.mem_length) string_free(extras[i].key);
-        if (extras[i].value.mem_length) string_free(extras[i].value);
-    }
-    release(extras);
+    http_headers_extra_free(extras, extra_i);
     *out_extra = NULL;
     *out_extra_count = 0;
     return HTTP_PARSE_TOO_LARGE;
@@ -438,23 +563,38 @@ static void http_append_chunked_body(string *out, uintptr_t ptr, uint32_t len) {
 }
 
 string http_request_builder(const HTTPRequestMsg *R){
-    static const char *Mnames[] = { "GET", "POST", "PUT", "DELETE" };
-    string out = string_format("%s ", Mnames[R->method]);
+    HTTPHeadersCommon common = R->headers_common;
+    if (R->host_override) common.fields.host = R->host_override[0] ? string_from_const(R->host_override) : (string){0};
+    if (!common.framing.chunked && (R->body.size || R->method == HTTP_METHOD_POST || R->method == HTTP_METHOD_PUT)) {
+        common.fields.content_length = (uint32_t)R->body.size;
+        common.framing.has_content_length = 1;
+    }
+
+    HTTPVersion version = R->version == HTTP_VERSION_10 ? HTTP_VERSION_10 : HTTP_VERSION_11;
+    string out = string_format("%s ", http_method_name(R->method));
 
     string_append_bytes(&out, R->path.data, R->path.length);
-    string_append_bytes(&out, " HTTP/1.1\r\n", 11);
+    if (version == HTTP_VERSION_10) string_append_bytes(&out, " HTTP/1.0\r\n", 11);
+    else string_append_bytes(&out, " HTTP/1.1\r\n", 11);
 
-    string hdrs = http_header_builder(&R->headers_common, R->extra_headers, R->extra_header_count);
+    string hdrs = http_header_builder(&common, R->extra_headers, R->extra_header_count, HTTP_HEADER_BUILD_REQUEST, R->method, 0);
     string_append_bytes(&out, hdrs.data, hdrs.length);
     string_free(hdrs);
 
-    if (R->headers_common.chunked) http_append_chunked_body(&out, R->body.ptr, (uint32_t)R->body.size);
+    if (common.framing.chunked) http_append_chunked_body(&out, R->body.ptr, (uint32_t)R->body.size);
     else if (R->body.ptr && R->body.size) string_append_bytes(&out, (char*)R->body.ptr, (uint32_t)R->body.size);
 
     return out;
 }
 
 string http_response_builder(const HTTPResponseMsg *R){
+    HTTPHeadersCommon common = R->headers_common;
+    bool informational = R->status_code >= 100 && R->status_code < 200;
+    if (!informational && !common.framing.chunked) {
+        if (!common.framing.has_content_length && !common.fields.content_length) common.fields.content_length = (uint32_t)R->body.size;
+        common.framing.has_content_length = 1;
+    }
+
     string out = string_format("HTTP/1.1 %i ", (int)R->status_code);
     if (R->reason.length) string_append_bytes(&out, R->reason.data, R->reason.length);
     else {
@@ -463,12 +603,14 @@ string http_response_builder(const HTTPResponseMsg *R){
     }
     string_append_bytes(&out, "\r\n", 2);
 
-    string hdrs = http_header_builder(&R->headers_common, R->extra_headers, R->extra_header_count);
+    string hdrs = http_header_builder(&common, R->extra_headers, R->extra_header_count, HTTP_HEADER_BUILD_RESPONSE, HTTP_METHOD_GET, (uint32_t)R->status_code);
     string_append_bytes(&out, hdrs.data, hdrs.length);
     string_free(hdrs);
 
-    if (R->headers_common.chunked) http_append_chunked_body(&out, R->body.ptr, (uint32_t)R->body.size);
-    else if (R->body.ptr && R->body.size) string_append_bytes(&out, (char*)R->body.ptr, (uint32_t)R->body.size);
+    if (!informational) {
+        if (common.framing.chunked) http_append_chunked_body(&out, R->body.ptr, (uint32_t)R->body.size);
+        else if (R->body.ptr && R->body.size) string_append_bytes(&out, (char*)R->body.ptr, (uint32_t)R->body.size);
+    }
 
     return out;
 }
@@ -480,104 +622,113 @@ int find_crlfcrlf(const char *data, uint32_t len){
     return -1;
 }
 
-sizedptr http_get_payload(sizedptr header){
-    if (!header.ptr || header.size < 4) return (sizedptr){0};
-
-    int start = find_crlfcrlf((char*)header.ptr, header.size);
-    if (start < 0) return (sizedptr){0};
-
-    return (sizedptr){
-        header.ptr + (uint32_t)(start + 4),
-        header.size - (uint32_t)(start + 4)
-    };
+void http_chunked_decoder_init(HTTPChunkedDecoder *dec, const HTTPPolicy *policy){
+    if (!dec) return;
+    *dec = (HTTPChunkedDecoder){0};
+    dec->policy = policy ? *policy : http_default_policy();
+    dec->stage = HTTP_CHUNK_STAGE_SIZE;
+    dec->line = string_repeat('\0', 0);
+    dec->body = string_repeat('\0', 0);
+    dec->trailers_buf = string_repeat('\0', 0);
 }
 
-HTTPParseResult http_decode_chunked_body(const char *buf, uint32_t len, const HTTPPolicy *policy, string *out_body, uint32_t *out_used) {
-    HTTPPolicy p = policy ? *policy : http_default_policy();
-    if (!buf || !out_body || !out_used) return HTTP_PARSE_BAD_FORMAT;
+HTTPParseResult http_chunked_decoder_feed(HTTPChunkedDecoder *dec, const char *buf, uint32_t len, uint32_t *out_used) {
+    if (out_used) *out_used = 0;
+    if (!dec || !buf) return HTTP_PARSE_BAD_FORMAT;
+    if (dec->stage == HTTP_CHUNK_STAGE_DONE) return HTTP_PARSE_OK; 
 
-    string out = string_repeat('\0', 0);
-    uint32_t off = 0;
-    uint32_t total = 0;
+    uint32_t i = 0;
+    while (i < len) {
+        if (dec->stage == HTTP_CHUNK_STAGE_SIZE) {
+            string_append_bytes(&dec->line, buf+i, 1);
+            i++;
+            if (dec->line.length > dec->policy.max_header_value_len) return HTTP_PARSE_TOO_LARGE;
+            if (dec->line.length >= 2 && dec->line.data[dec->line.length - 2] == '\r' && dec->line.data[dec->line.length - 1] == '\n') {
+                uint64_t chunk_len = 0;
+                HTTPParseResult r = HTTP_PARSE_OK;
+                uint32_t line_end = dec->line.length - 2;
+                uint32_t scan = 0;
+                bool saw_digit = false;
+                while (scan < line_end && is_whitespace(dec->line.data[scan])) scan++;
+                if (scan >= line_end) r = HTTP_PARSE_BAD_FORMAT;
+                while (r == HTTP_PARSE_OK && scan < line_end) {
+                    char c = dec->line.data[scan];
+                    if (c == ';') break;
+                    if (is_whitespace(c)) {
+                        while (scan < line_end && is_whitespace(dec->line.data[scan])) scan++;
+                        if (scan < line_end && dec->line.data[scan] != ';') r = HTTP_PARSE_BAD_FORMAT;
+                        break;
+                    }
 
-    while (1) {
-        uint32_t line_end = off;
-        while (line_end + 1 < len && !(buf[line_end] == '\r' && buf[line_end+1] == '\n')) line_end++;
-        if (line_end + 1 >= len) {
-            string_free(out);
-            return HTTP_PARSE_INCOMPLETE;
-        }
-
-        uint32_t scan = off;
-        while (scan < line_end && is_whitespace(buf[scan])) scan++;
-        if (scan >= line_end) {
-            string_free(out);
-            return HTTP_PARSE_BAD_FORMAT;
-        }
-
-        uint64_t chunk_len = 0;
-        bool saw_digit = false;
-        while (scan < line_end) {
-            char c = buf[scan];
-            if (c == ';') break;
-            if (is_whitespace(c)) {
-                while (scan < line_end && is_whitespace(buf[scan])) scan++;
-                if (scan < line_end && buf[scan] != ';') {
-                    string_free(out);
-                    return HTTP_PARSE_BAD_FORMAT;
+                    int digit = hex_val(c);
+                    if (digit < 0) {
+                        r = HTTP_PARSE_BAD_FORMAT;
+                        break;
+                    }
+                    saw_digit = true;
+                    chunk_len = chunk_len * 16 + (uint64_t)digit;
+                    if (chunk_len > dec->policy.max_body_bytes) {
+                        r = HTTP_PARSE_PAYLOAD_TOO_LARGE;
+                        break;
+                    }
+                    scan++;
                 }
-                break;
+                string_free(dec->line);
+                dec->line = string_repeat('\0', 0);
+                if (!saw_digit && r == HTTP_PARSE_OK) r = HTTP_PARSE_BAD_FORMAT;
+                if (r != HTTP_PARSE_OK) return r;
+                if (dec->body_total + chunk_len > dec->policy.max_body_bytes) return HTTP_PARSE_PAYLOAD_TOO_LARGE;
+                dec->chunk_size = chunk_len;
+                dec->chunk_read = 0;
+                dec->crlf_seen = 0;
+                dec->stage = chunk_len ? HTTP_CHUNK_STAGE_DATA : HTTP_CHUNK_STAGE_TRAILERS;
             }
-
-            int digit = hex_val(c);
-            if (digit < 0) {
-                string_free(out);
-                return HTTP_PARSE_BAD_FORMAT;
+        } else if (dec->stage == HTTP_CHUNK_STAGE_DATA) {
+            uint64_t need64 = dec->chunk_size - dec->chunk_read;
+            uint32_t avail = len - i; //++
+            uint32_t take = need64 < avail ? (uint32_t)need64:  avail; 
+            if (take) {
+                string_append_bytes(&dec->body, buf + i, take);
+                dec->chunk_read += take;
+                dec->body_total += take;
+                i += take;
             }
-            saw_digit = true;
-            chunk_len = chunk_len * 16 + digit;
-            if (chunk_len > p.max_body_bytes || total + chunk_len > p.max_body_bytes) {
-                string_free(out);
-                return HTTP_PARSE_PAYLOAD_TOO_LARGE;
+            if (dec->chunk_read == dec->chunk_size) dec->stage = HTTP_CHUNK_STAGE_DATA_CRLF;
+        } else if (dec->stage == HTTP_CHUNK_STAGE_DATA_CRLF) {
+            char expected = dec->crlf_seen ? '\n' : '\r';
+            if (buf[i] != expected) return HTTP_PARSE_BAD_FORMAT;
+            dec->crlf_seen++;
+            i++;
+            if (dec->crlf_seen == 2) {
+                dec->crlf_seen = 0;
+                dec->stage = HTTP_CHUNK_STAGE_SIZE;
             }
-            scan++;
-        }
-
-        if (!saw_digit) {
-            string_free(out);
-            return HTTP_PARSE_BAD_FORMAT;
-        }
-
-        off = line_end + 2;
-        if (chunk_len == 0) {
-            if (off + 1 < len && buf[off] == '\r' && buf[off+1] == '\n') {
-                *out_body = out;
-                *out_used = off + 2;
+        } else if (dec->stage == HTTP_CHUNK_STAGE_TRAILERS) {
+            string_append_bytes(&dec->trailers_buf, buf + i, 1);
+            i++;
+            if (dec->trailers_buf.length > dec->policy.max_header_bytes) return HTTP_PARSE_TOO_LARGE;
+            if (dec->trailers_buf.length == 2 && dec->trailers_buf.data[0] == '\r' && dec->trailers_buf.data[1] == '\n') {
+                dec->stage = HTTP_CHUNK_STAGE_DONE;
+                if (out_used) *out_used = i;
                 return HTTP_PARSE_OK;
             }
 
-            int trailers_end = find_crlfcrlf(buf + off, len - off);
-            if (trailers_end >= 0) {
-                *out_body = out;
-                *out_used = off + (uint32_t)trailers_end + 4;
+            if (find_crlfcrlf(dec->trailers_buf.data, dec->trailers_buf.length) >= 0) {
+                dec->stage = HTTP_CHUNK_STAGE_DONE;
+                if (out_used) *out_used = i;
                 return HTTP_PARSE_OK;
             }
 
-            string_free(out);
-            return HTTP_PARSE_INCOMPLETE;
         }
-
-        if (off + chunk_len + 2 > len) {
-            string_free(out);
-            return HTTP_PARSE_INCOMPLETE;
-        }
-        if (buf[off + chunk_len] != '\r' || buf[off+1 + chunk_len] != '\n') {
-            string_free(out);
-            return HTTP_PARSE_BAD_FORMAT;
-        }
-
-        string_append_bytes(&out, buf + off, (uint32_t)chunk_len);
-        total += (uint32_t)chunk_len;
-        off += (uint32_t)chunk_len + 2;
     }
+    if (out_used) *out_used = i;
+    return dec->stage == HTTP_CHUNK_STAGE_DONE ? HTTP_PARSE_OK : HTTP_PARSE_INCOMPLETE;
+}
+
+void http_chunked_decoder_free(HTTPChunkedDecoder *dec) {
+    if (!dec) return;
+    if (dec->line.mem_length) string_free(dec->line);
+    if (dec->body.mem_length) string_free(dec->body);
+    if (dec->trailers_buf.mem_length) string_free(dec->trailers_buf);
+    *dec = (HTTPChunkedDecoder){0};
 }

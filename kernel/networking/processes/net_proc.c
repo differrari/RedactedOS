@@ -12,12 +12,8 @@
 #include "networking/link_layer/arp.h"
 #include "networking/link_layer/ndp.h"
 
-#include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv4_utils.h"
-
-#include "networking/internet_layer/ipv6.h"
 #include "networking/internet_layer/ipv6_utils.h"
-#include "net/checksums.h"
 
 #include "networking/transport_layer/csocket_udp.h"
 #include "networking/transport_layer/trans_utils.h"
@@ -27,18 +23,17 @@
 #include "networking/application_layer/dhcp_daemon.h"
 #include "networking/application_layer/dns/dns_daemon.h"
 #include "networking/application_layer/dns/mdns_responder.h"
-#include "networking/application_layer/dns/dns.h"
-#include "networking/application_layer/sntp_daemon.h"
 #include "networking/application_layer/ntp.h"
 #include "networking/application_layer/ntp_daemon.h"
 #include "networking/application_layer/dhcpv6_daemon.h"
-#include "networking/application_layer/ssdp_daemon.h"
 
 #include "exceptions/timer.h"
 #include "syscalls/syscalls.h"
 
-#include "memory/page_allocator.h"
-#include "memory/mmu.h"
+#define HTTP_PORT 80
+#define PROBE_PORT 8080
+#define PROBE_TIMEOUT_MS 2000
+#define PROBE_INTERVAL_MS 50
 
 static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpoint *out_l4) {
     socket_handle_t sock = udp_socket_create(SOCK_ROLE_CLIENT, (uint16_t)get_current_proc_pid(), NULL);
@@ -56,18 +51,15 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
     }
 
     char recv_buf[64];
-    uint32_t waited = 0;
-    const uint32_t TIMEOUT_MS = 2000;
-    const uint32_t INTERVAL_MS = 50;
-    int64_t recvd = 0;
     net_l4_endpoint src = (net_l4_endpoint){0};
+    uint32_t waited = 0;
+    int64_t recvd = 0;
 
-    while (waited < TIMEOUT_MS) {
+    while (waited < PROBE_TIMEOUT_MS) {
         recvd = socket_recvfrom_udp(sock, recv_buf, sizeof(recv_buf), &src);
-        if (recvd > 0)
-            break;
-        msleep(INTERVAL_MS);
-        waited += INTERVAL_MS;
+        if (recvd > 0) break;
+        msleep(PROBE_INTERVAL_MS);
+        waited += PROBE_INTERVAL_MS;
     }
 
     socket_close_udp(sock);
@@ -78,26 +70,30 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
     return 1;
 }
 
-static void free_request(HTTPRequestMsg *req) {
-    if (!req) return;
+static int net_has_ready_address(void) {
+    uint8_t n_if = l2_interface_count();
 
-    if (req->path.mem_length) string_free(req->path);
+    for (uint8_t i = 0; i < n_if; i++) {
+        l2_interface_t *l2 = l2_interface_at(i);
+        if (!l2 || !l2->is_up) continue;
 
-    http_headers_common_free(&req->headers_common);
-    http_headers_extra_free(req->extra_headers, req->extra_header_count);
-    req->extra_headers = NULL;
-    req->extra_header_count = 0;
+        for (uint8_t j = 0; j < MAX_IPV4_PER_INTERFACE; j++) {
+            l3_ipv4_interface_t *v4 = l2->l3_v4[j];
+            if (!v4 || v4->mode == IPV4_CFG_DISABLED || v4->is_localhost) continue;
+            if (!ipv4_is_unspecified(v4->ip) && !ipv4_is_loopback(v4->ip)) return 1;
+        }
 
-    if (req->body.ptr && req->body.size) release((void*)req->body.ptr);
+        for (uint8_t j = 0; j < MAX_IPV6_PER_INTERFACE; j++) {
+            l3_ipv6_interface_t *v6 = l2->l3_v6[j];
+            if (!v6 || v6->cfg == IPV6_CFG_DISABLE || v6->is_localhost) continue;
+            if (!ipv6_is_unspecified(v6->ip) && !ipv6_is_loopback(v6->ip) && v6->dad_state == IPV6_DAD_OK) return 1;
+        }
+    }
 
-    req->path = (string){0};
-    req->body = (sizedptr){0};
+    return 0;
 }
 
-
 static void run_http_server() {
-    //mmu_enable_verbose();
-    //page_alloc_enable_verbose();
     uint16_t pid = get_current_proc_pid();
     SocketExtraOptions opt = {0};
     opt.debug_level = SOCK_DBG_ALL;
@@ -109,7 +105,7 @@ static void run_http_server() {
     }
     struct SockBindSpec spec = {0};
     spec.kind = BIND_ANY;
-    if (http_server_bind(srv, &spec, 80) < 0) {
+    if (http_server_bind(srv, &spec, HTTP_PORT) < 0) {
         http_server_destroy(srv);
         stop_current_process(2);
         return;
@@ -122,7 +118,7 @@ static void run_http_server() {
         return;
     }
 
-    mdns_register_service("RedactedOS", "http", "tcp", 80, "path=/");
+    mdns_register_service("RedactedOS", "http", "tcp", HTTP_PORT, "path=/");
 
     static const char HTML_ROOT[] =
         "<h1>Hello, world!</h1>\n"
@@ -132,11 +128,6 @@ static void run_http_server() {
         "<h1>404 Regrettably, no such page exists in this realm</h1>\n"
         "<p>Im rather inclined to deduce that your page simply does not exist. Given the state of affairs, I dare say it's not altogether surprising, innit?</p>";
 
-    const string STR_OK      = string_from_const("OK");
-    const string STR_HTML    = string_from_const("text/html");
-    const string STR_CLOSE   = string_from_const("close");
-    const string STR_NOTFOUND= string_from_const("Not Found");
-
     while (1) {
         http_connection_handle_t conn = http_server_accept(srv);
         if (!conn){
@@ -144,50 +135,41 @@ static void run_http_server() {
             continue;
         }
         HTTPRequestMsg req = http_server_recv_request(srv, conn);
-        if (req.path.length) {
-            char tmp[128] = {0};
-            uint32_t n = req.path.length < sizeof(tmp) - 1 ? req.path.length : sizeof(tmp) - 1;
-            memcpy(tmp, req.path.data, n);
-        }
+        int is_root = req.path.length == 1 && req.path.data[0] == '/';
+        const char *body = is_root ? HTML_ROOT : HTML_404;
+        uint32_t len = (uint32_t)strlen(body);
 
         HTTPResponseMsg res = (HTTPResponseMsg){0};
-        
-        if (req.path.length == 1 && req.path.data[0] == '/') {
-            res.status_code = HTTP_OK;
-            res.reason = STR_OK;
-            res.headers_common.length = sizeof(HTML_ROOT) - 1;
-            res.headers_common.type = STR_HTML;
-            res.headers_common.connection = STR_CLOSE;
-            res.body.ptr  = (uintptr_t)HTML_ROOT;
-            res.body.size = sizeof(HTML_ROOT) - 1;
-        } else {
-            res.status_code = HTTP_NOT_FOUND;
-            res.reason = STR_NOTFOUND;
-            res.headers_common.length = sizeof(HTML_404) - 1;
-            res.headers_common.type = STR_HTML;
-            res.headers_common.connection = STR_CLOSE;
-            res.body.ptr  = (uintptr_t)HTML_404;
-            res.body.size = sizeof(HTML_404) - 1;
-        }
+        res.status_code = is_root ? HTTP_OK : HTTP_NOT_FOUND;
+        res.reason = string_from_const(is_root ? "OK" : "Not Found");
+        res.headers_common.fields.content_length = len;
+        res.headers_common.framing.has_content_length = 1;
+        res.headers_common.fields.content_type = string_from_const("text/html");
+        res.headers_common.fields.connection = string_from_const("close");
+        res.body.ptr = (uintptr_t)body;
+        res.body.size = len;
 
         http_server_send_response(srv, conn, &res);
         http_connection_close(conn);
-        free_request(&req);
+        if (req.path.mem_length) string_free(req.path);
+        http_headers_common_free(&req.headers_common);
+        http_headers_extra_free(req.extra_headers, req.extra_header_count);
+        if (req.body.ptr && req.body.size) release((void*)req.body.ptr);
     }
 }
 
 static void test_http(const net_l4_endpoint* ep) {
+    if (!ep) return;
     if (ep->ver == IP_VER4) {
         uint32_t ip_u32;
         memcpy(&ip_u32, ep->ip, 4);
         char ip_str[16];
         ipv4_to_string(ip_u32, ip_str);
 
-        kprintf("[HTTP] GET %s:80", ip_str);
+        kprintf("[HTTP] GET %s:%i", ip_str, HTTP_PORT);
     }
 
-    uint16_t pid = get_current_proc_pid();
-    http_client_handle_t cli = http_client_create(pid, NULL, NULL);
+    http_client_handle_t cli = http_client_create((uint16_t)get_current_proc_pid(), NULL, NULL);
     if (!cli) {
         kprintf("[HTTP] http_client_create FAIL");
         return;
@@ -195,15 +177,15 @@ static void test_http(const net_l4_endpoint* ep) {
 
     net_l4_endpoint e = {0};
     e.ver = ep->ver;
+    e.port = HTTP_PORT;
     if (e.ver == IP_VER4) memcpy(e.ip, ep->ip, 4);
     else if (e.ver == IP_VER6) memcpy(e.ip, ep->ip, 16);
     else {
         http_client_destroy(cli);
         return;
     }
-    e.port = 80;
 
-    int rc = http_client_connect(cli, DST_ENDPOINT, &e, 0);
+    int32_t rc = http_client_connect(cli, DST_ENDPOINT, &e, HTTP_PORT);
     if (rc < 0) {
         http_client_destroy(cli);
         return;
@@ -211,19 +193,14 @@ static void test_http(const net_l4_endpoint* ep) {
 
     HTTPRequestMsg req = (HTTPRequestMsg){0};
     req.method = HTTP_METHOD_GET;
+    req.version = HTTP_VERSION_11;
     req.path = string_from_const("/");
-    req.headers_common.connection = string_from_const("close");
+    req.headers_common.fields.connection = string_from_const("close");
 
     HTTPResponseMsg resp = http_client_send_request(cli, &req);
 
-    if ((int)resp.status_code < 0) {
-        kprintf("[HTTP] request FAIL status=%i", (int)resp.status_code);
-        http_client_close(cli);
-        http_client_destroy(cli);
-        return;
-    }
-
-    if (resp.body.ptr && resp.body.size > 0) {
+    if ((int)resp.status_code < 0) kprintf("[HTTP] request FAIL status=%i", (int)resp.status_code);
+    else if (resp.body.ptr && resp.body.size) {
         char *body_str = (char*)zalloc(resp.body.size + 1);
         if (body_str) {
             memcpy(body_str, (void*)resp.body.ptr, resp.body.size);
@@ -238,59 +215,14 @@ static void test_http(const net_l4_endpoint* ep) {
     http_client_destroy(cli);
 
     if (resp.body.ptr && resp.body.size) release((void*)resp.body.ptr);
+    if (resp.reason.mem_length) string_free(resp.reason);
 
     http_headers_common_free(&resp.headers_common);
-
-    if (resp.reason.data && resp.reason.mem_length) string_free(resp.reason);
     http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
 }
 
-static int ifv4_is_ready_nonlocal(const l3_ipv4_interface_t* ifv4) {
-    if (!ifv4) return 0;
-    if (ifv4->mode == IPV4_CFG_DISABLED) return 0;
-    if (!ifv4->ip) return 0;
-    if (ifv4->is_localhost) return 0;
-    if ((ifv4->ip & 0xFF000000u) == 0x7F000000u) return 0;
-    return 1;
-}
-
-static int ifv6_is_ready_nonlocal(const l3_ipv6_interface_t* ifv6) {
-    if (!ifv6) return 0;
-    if (ifv6->cfg == IPV6_CFG_DISABLE) return 0;
-    if (ifv6->is_localhost) return 0;
-    if (ipv6_is_unspecified(ifv6->ip)) return 0;
-    if (ifv6->dad_state != IPV6_DAD_OK) return 0;
-    if (ipv6_is_loopback(ifv6->ip)) return 0;
-    return 1;
-}
-
-static int any_ipv4_ready(void) {
-    uint8_t n_if = l2_interface_count();
-    for (uint8_t i = 0; i < n_if; i++) {
-        l2_interface_t* l2 = l2_interface_at(i);
-        if (!l2 || !l2->is_up) continue;
-        for (uint8_t j = 0; j < MAX_IPV4_PER_INTERFACE; j++) {
-            l3_ipv4_interface_t* ifv4 = l2->l3_v4[j];
-            if (ifv4_is_ready_nonlocal(ifv4)) return 1;
-        }
-    }
-    return 0;
-}
-
-static int any_ipv6_ready(void) {
-    uint8_t n_if = l2_interface_count();
-    for (uint8_t i = 0; i < n_if; i++) {
-        l2_interface_t* l2 = l2_interface_at(i);
-        if (!l2 || !l2->is_up) continue;
-        for (uint8_t j = 0; j < MAX_IPV6_PER_INTERFACE; j++) {
-            l3_ipv6_interface_t* ifv6 = l2->l3_v6[j];
-            if (ifv6_is_ready_nonlocal(ifv6)) return 1;
-        }
-    }
-    return 0;
-}
-
 static int ntp(int argc, char* argv[]) {
+    (void)argc; (void)argv;
     if (!ntp_is_running()) {
         kprintf("[TIME] starting NTP...");
         create_kernel_process("ntpd", ntp_daemon_entry, 0, 0);
@@ -311,39 +243,20 @@ static int ntp(int argc, char* argv[]) {
     DateTime now_dt_utc, now_dt_loc;
     if (timer_now_datetime(&now_dt_utc, 0)) {
         char s[20];
-        timer_datetime_to_string(&now_dt_utc, s, sizeof s);
+        timer_datetime_to_string(&now_dt_utc, s, sizeof(s));
         kprintf("[TIME] UTC: %s", s);
     }
     if (timer_now_datetime(&now_dt_loc, 1)) {
         char s[20];
-        timer_datetime_to_string(&now_dt_loc, s, sizeof s);
+        timer_datetime_to_string(&now_dt_loc, s, sizeof(s));
         kprintf("[TIME] LOCAL: %s (TZ %i min)", s, (int32_t)timer_get_timezone_minutes());
     }
     return 0;
 }
 
-static void test_net_for_interface(l3_ipv4_interface_t* ifv4) {
-    if (!ifv4_is_ready_nonlocal(ifv4)) return;
-    char ip_str[16];
-    char mask_str[16];
-    char gw_str[16];
-    ipv4_to_string(ifv4->ip, ip_str);
-    ipv4_to_string(ifv4->mask, mask_str);
-    ipv4_to_string(ifv4->gw, gw_str);
-    uint32_t probe_ip = (ifv4->ip && ifv4->mask) ? ipv4_broadcast_calc(ifv4->ip, ifv4->mask) : 0;
-    if (!probe_ip) return;
-    char probe_str[16];
-    ipv4_to_string(probe_ip, probe_str);
-    kprintf("[NET] probing %s (l3_id=%u)", probe_str, (unsigned)ifv4->l3_id);
-    net_l4_endpoint srv = (net_l4_endpoint){0};
-    if (udp_probe_server(probe_ip, 8080, &srv)) {
-        test_http(&srv);
-    } else {
-        kprintf("[NET] no UDP responder at %s:8080 (l3_id=%u)", probe_str, (unsigned)ifv4->l3_id);
-    }
-}
+static int net_test_entry(int argc, char *argv[]) {
+    (void)argc; (void)argv;
 
-static void test_net() {
     create_kernel_process("ntp", ntp, 0, NULL);
     uint8_t n_if = l2_interface_count();
     int tested_any = 0;
@@ -352,32 +265,38 @@ static void test_net() {
         if (!l2 || !l2->is_up) continue;
         for (uint8_t j = 0; j < MAX_IPV4_PER_INTERFACE; j++) {
             l3_ipv4_interface_t* ifv4 = l2->l3_v4[j];
-            if (!ifv4_is_ready_nonlocal(ifv4)) continue;
-            test_net_for_interface(ifv4);
-            tested_any = 1;
+            if (!ifv4 || ifv4->mode == IPV4_CFG_DISABLED || ifv4->is_localhost) continue;
+            if (ipv4_is_unspecified(ifv4->ip) || ipv4_is_loopback(ifv4->ip) || !ifv4->mask) continue;
+
+            uint32_t probe_ip = ipv4_broadcast_calc(ifv4->ip, ifv4->mask);
+            if (!probe_ip) continue;
+
+            char probe_str[16];
+            ipv4_to_string(probe_ip, probe_str);
+            kprintf("[NET] probing %s (l3_id=%u)", probe_str, (unsigned)ifv4->l3_id);
+
+            net_l4_endpoint srv = (net_l4_endpoint){0};
+            if (udp_probe_server(probe_ip, PROBE_PORT, &srv)) {
+                test_http(&srv);
+                tested_any = 1;
+            } else kprintf("[NET] no UDP responder at %s:%i (l3_id=%u)", probe_str, PROBE_PORT, (unsigned)ifv4->l3_id);
         }
     }
-    run_http_server();
     if (!tested_any) {
         net_l4_endpoint srv = (net_l4_endpoint){0};
         uint32_t fallback = (192<<24)|(168<<16)|(1<<8)|255;
-        if (udp_probe_server(fallback, 8080, &srv))
-            test_http(&srv);
-        else
-            kprintf("[NET] could not find update server");
+        if (udp_probe_server(fallback, PROBE_PORT, &srv)) test_http(&srv);
+        else kprintf("[NET] could not find update server");
     }
-}
 
-static int net_test_entry(int argc, char* argv[]) {
-    (void)argc; (void)argv;
-    test_net();
+    run_http_server();
     return 0;
 }
 
 static int ip_waiter_entry(int argc, char* argv[]) {
     (void)argc; (void)argv;
     uint32_t waited = 0;
-    while (!any_ipv4_ready() && !any_ipv6_ready()) {
+    while (!net_has_ready_address()) {
         if ((waited % 1000) == 0) kprintf("[NET] ip_waiter: waiting for ip...");
         msleep(200);
         waited += 200;
@@ -395,12 +314,10 @@ process_t* launch_net_process() {
     create_kernel_process("dhcpv6_daemon", dhcpv6_daemon_entry, 0, 0);
     create_kernel_process("dns_daemon", dns_deamon_entry, 0, 0);
     
-    if (any_ipv4_ready() || any_ipv6_ready()) {
+    if (net_has_ready_address()) {
         kprintf("[NET] ip ready, starting net_test");
         create_kernel_process("net_test", net_test_entry, 0, 0);
-        return NULL;
-    }
+    } else create_kernel_process("ip_waiter", ip_waiter_entry, 0, 0);
 
-    create_kernel_process("ip_waiter", ip_waiter_entry, 0, 0);
     return NULL;
 }

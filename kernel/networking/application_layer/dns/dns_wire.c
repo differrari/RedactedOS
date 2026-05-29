@@ -107,8 +107,9 @@ bool dns_wire_write_name(uint8_t *out, uint32_t cap, uint32_t *off, const char *
 
 bool dns_wire_read_name(const uint8_t *msg, uint32_t msg_len, uint32_t off, char *out, uint32_t out_cap, uint32_t *out_next) {
     if (!msg) return false;
-    if (!out) return false;
-    if (!out_cap) return false;
+    bool skip = !out && !out_cap;
+    if (!skip && !out) return false;
+    if (!skip && !out_cap) return false;
     if (off >= msg_len) return false;
 
     uint32_t idx = off;
@@ -139,6 +140,7 @@ bool dns_wire_read_name(const uint8_t *msg, uint32_t msg_len, uint32_t off, char
         idx++;
         if (!c) {
             if (!jumped && out_next) *out_next = idx;
+            if (skip) return true;
             if (!out_idx) {
                 if (out_cap < 2) return false;
                 out[0] = '.';
@@ -154,14 +156,16 @@ bool dns_wire_read_name(const uint8_t *msg, uint32_t msg_len, uint32_t off, char
         if (label_len > 63) return false;
         if (idx + label_len > msg_len) return false;
 
-        if (out_idx) {
-            if (out_idx + 1 >= out_cap) return false;
-            out[out_idx++] = '.';
-        }
+        if (!skip) {
+            if (out_idx) {
+                if (out_idx + 1 >= out_cap) return false;
+                out[out_idx++] = '.';
+            }
 
-        if (out_idx + label_len >= out_cap) return false;
-        memcpy(out + out_idx, msg + idx, label_len);
-        out_idx += label_len;
+            if (out_idx + label_len >= out_cap) return false;
+            memcpy(out + out_idx, msg + idx, label_len);
+            out_idx += label_len;
+        }
         idx += label_len;
     }
 }

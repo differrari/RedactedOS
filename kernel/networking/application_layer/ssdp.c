@@ -61,9 +61,8 @@ string ssdp_build_notify(bool alive, bool v6) {
     extra[5] = (HTTPHeader){ string_from_literal("SERVER"), string_from_literal("RedactedOS/1.0 UPnP/1.1")};
 
     HTTPHeadersCommon c = (HTTPHeadersCommon){0};
-    string hdrs = http_header_builder(&c, extra, 6);
+    string hdrs = http_header_builder(&c, extra, 6, HTTP_HEADER_BUILD_REQUEST, HTTP_METHOD_GET, 0);
     string_append_bytes(&out, hdrs.data, hdrs.length);
     string_free(hdrs);
-    string_append_bytes(&out, "\r\n", 2);
     return out;
 }

@@ -99,7 +99,7 @@ static int ping_v4(const ping_opts_t *o) {
         uint32_t r = 0;
         dns_result_t dr = dns_resolve_a(host, &r, DNS_USE_BOTH, o->timeout_ms);
         if (dr != DNS_OK) {
-            print("ping: dns lookup failed (%d) for '%s'\n", (int)dr, host);
+            print("ping: dns lookup failed (%d) for '%s'", (int)dr, host);
             return 2;
         }
         dst_ip_be = r;
@@ -108,7 +108,7 @@ static int ping_v4(const ping_opts_t *o) {
     char ipstr[16];
     ipv4_to_string(dst_ip_be, ipstr);
 
-    print("PING %s (%s) with 32 bytes of data:\n", host, ipstr);
+    print("PING %s (%s) with 32 bytes of data:", host, ipstr);
 
     uint32_t sent = 0, received = 0, min_ms = UINT32_MAX, max_ms = 0;
     uint64_t sum_ms = 0;
@@ -120,7 +120,7 @@ static int ping_v4(const ping_opts_t *o) {
     if (o->src_set) {
         l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(o->src_ip);
         if (!l3) {
-            print("ping: invalid source (no local ip match)\n");
+            print("ping: invalid source (no local ip match)");
             return 2;
         }
         txo.index = (uint8_t)l3->l3_id;
@@ -141,26 +141,26 @@ static int ping_v4(const ping_opts_t *o) {
             if (rtt < min_ms) min_ms = rtt;
             if (rtt > max_ms) max_ms = rtt;
             sum_ms += rtt;
-            print("Reply from %s: bytes=32 time=%ums\n", ipstr, rtt);
+            print("Reply from %s: bytes=32 time=%ums", ipstr, rtt);
         } else {
-            print("%s\n", status_to_msg(res.status));
+            print("%s", status_to_msg(res.status));
         }
 
         if (i + 1 < o->count) msleep(o->interval_ms);
     }
 
-    print("\n");
-    print("--- %s ping statistics ---\n", host);
+    print("");
+    print("--- %s ping statistics ---", host);
 
     uint32_t loss = (sent == 0) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
     uint32_t total_time = (o->count > 0) ? (o->count - 1) * o->interval_ms : 0;
 
-    print("%u packets transmitted, %u received, %u%% packet loss, time %ums\n", sent, received, loss, total_time);
+    print("%u packets transmitted, %u received, %u%% packet loss, time %ums", sent, received, loss, total_time);
 
     if (received > 0) {
         uint32_t avg = (uint32_t)(sum_ms / received);
         if (min_ms == UINT32_MAX) min_ms = avg;
-        print("rtt min/avg/max = %u/%u/%u ms\n", min_ms, avg, max_ms);
+        print("rtt min/avg/max = %u/%u/%u ms", min_ms, avg, max_ms);
     }
 
     return (received > 0) ? 0 : 1;
@@ -174,7 +174,7 @@ static int ping_v6(const ping_opts_t *o) {
     if (!is_lit) {
         dns_result_t dr = dns_resolve_aaaa(host, dst6, DNS_USE_BOTH, o->timeout_ms);
         if (dr != DNS_OK) {
-            print("ping: dns lookup failed (%d) for '%s'\n",(int)dr, host);
+            print("ping: dns lookup failed (%d) for '%s'",(int)dr, host);
             return 2;
         }
     }
@@ -182,7 +182,7 @@ static int ping_v6(const ping_opts_t *o) {
     char ipstr[64];
     ipv6_to_string(dst6, ipstr, (int)sizeof(ipstr));
 
-    print("PING %s (%s) with 32 bytes of data:\n", host, ipstr);
+    print("PING %s (%s) with 32 bytes of data:", host, ipstr);
 
     uint32_t sent = 0, received = 0, min_ms = UINT32_MAX, max_ms = 0;
     uint64_t sum_ms = 0;
@@ -202,27 +202,27 @@ static int ping_v6(const ping_opts_t *o) {
             if (rtt < min_ms) min_ms = rtt;
             if (rtt > max_ms) max_ms = rtt;
             sum_ms += rtt;
-            print("Reply from %s: bytes=32 time=%ums\n", ipstr, rtt);
+            print("Reply from %s: bytes=32 time=%ums", ipstr, rtt);
         } else {
-            print("%s\n", status_to_msg(res.status));
+            print("%s", status_to_msg(res.status));
         }
 
         if (i + 1 < o->count) msleep(o->interval_ms);
     }
 
-    print("\n");
+    print("");
 
-    print("--- %s ping statistics ---\n", host);
+    print("--- %s ping statistics ---", host);
 
     uint32_t loss = (sent == 0) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
     uint32_t total_time = (o->count > 0) ? (o->count - 1) * o->interval_ms : 0;
 
-    print("%u packets transmitted, %u received, %u%% packet loss, time %ums\n", sent, received, loss, total_time);
+    print("%u packets transmitted, %u received, %u%% packet loss, time %ums", sent, received, loss, total_time);
 
     if (received > 0) {
         uint32_t avg = (uint32_t)(sum_ms / received);
         if (min_ms == UINT32_MAX) min_ms = avg;
-        print("rtt min/avg/max = %u/%u/%u ms\n", min_ms, avg, max_ms);
+        print("rtt min/avg/max = %u/%u/%u ms", min_ms, avg, max_ms);
     }
 
     return (received > 0) ? 0 : 1;
@@ -231,12 +231,12 @@ static int ping_v6(const ping_opts_t *o) {
 int run_ping(int argc, char *argv[]) {
     ping_opts_t opts;
     if (!parse_args(argc, argv, &opts)) {
-        print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host\n");
+        print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host");
         return 2;
     }
 
     if (opts.ver == IP_VER6 && opts.src_set) {
-        print("ping: -s is only supported for IPv4\n");
+        print("ping: -s is only supported for IPv4");
         return 2;
     }
 
@@ -245,14 +245,14 @@ int run_ping(int argc, char *argv[]) {
         if (!l3) {
             char ssrc[16];
             ipv4_to_string(opts.src_ip, ssrc);
-            print("ping: invalid source %s (no local ip match)\n", ssrc);
+            print("ping: invalid source %s (no local ip match)", ssrc);
             return 2;
         }
     }
 
     if (opts.ver == IP_VER4) return ping_v4(&opts);
     if (opts.ver == IP_VER6) return ping_v6(&opts);
-    print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host\n");
+    print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host");
 
     return 2;
 }

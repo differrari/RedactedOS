@@ -6,7 +6,7 @@
 
 extern "C" {
 
-http_server_handle_t http_server_create(uint16_t pid, const SocketExtraOptions* extra, const HTTPPolicyOptions *options) {
+http_server_handle_t http_server_create(uint16_t pid, const SocketExtraOptions* extra, const HTTPServerPolicyOptions *options) {
     HTTPServer* srv = new HTTPServer(pid, extra, options);
     if (!srv) return nullptr;
     return reinterpret_cast<http_server_handle_t>(srv);
@@ -18,7 +18,7 @@ void http_server_destroy(http_server_handle_t h) {
     delete srv;
 }
 
-int32_t http_server_set_options(http_server_handle_t h, const HTTPPolicyOptions *options) {
+int32_t http_server_set_options(http_server_handle_t h, const HTTPServerPolicyOptions *options) {
     if (!h) return (int32_t)SOCK_ERR_INVAL;
     HTTPServer* srv = reinterpret_cast<HTTPServer*>(h);
     return srv->set_options(options);

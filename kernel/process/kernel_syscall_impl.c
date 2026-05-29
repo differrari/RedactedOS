@@ -126,11 +126,11 @@ bool socket_accept(SocketHandle *spec){
     return 1;
 }
 
-size_t socket_send(SocketHandle *handle, SockDstKind dst_kind, const void* dst, uint16_t port, void *packet, size_t size){
+int64_t socket_send(SocketHandle *handle, SockDstKind dst_kind, const void* dst, uint16_t port, void *packet, size_t size){
     return send_on_socket(handle, dst_kind, dst, port, packet, size, get_current_proc_pid());
 }
 
-bool socket_receive(SocketHandle *handle, void *packet, size_t size, net_l4_endpoint* out_src){
+int64_t socket_receive(SocketHandle *handle, void *packet, size_t size, net_l4_endpoint* out_src){
     return receive_from_socket(handle, packet, size, out_src, get_current_proc_pid());
 }
 

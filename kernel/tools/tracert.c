@@ -92,7 +92,7 @@ static int tracert_v4(const tr_opts_t *o) {
         uint32_t r = 0;
         dns_result_t dr = dns_resolve_a(o->host, &r, DNS_USE_BOTH, o->timeout_ms);
         if (dr != DNS_OK) {
-            print("tracert: dns lookup failed (%d) for '%s'\n", (int)dr, o->host);
+            print("tracert: dns lookup failed (%d) for '%s'", (int)dr, o->host);
             return 2;
         }
         dst = r;
@@ -101,11 +101,11 @@ static int tracert_v4(const tr_opts_t *o) {
     char dip[16];
     char line[256];
     ipv4_to_string(dst, dip);
-    print("Tracing route to %s [%s]\n", o->host, dip);
+    print("Tracing route to %s [%s]", o->host, dip);
     size_t len = string_format_buf(line, sizeof(line), "hop  ");
     for (uint32_t p = 0; p < o->count && len < sizeof(line); p++) len += string_format_buf(line + len, sizeof(line) - len, "rtt%u  ", p + 1);
     string_format_buf(line + len, sizeof(line) - len, "address");
-    print("%s\n", line);
+    print("%s", line);
 
     ipv4_tx_opts_t txo = (ipv4_tx_opts_t){0};
     const ipv4_tx_opts_t *txop = NULL;
@@ -114,7 +114,7 @@ static int tracert_v4(const tr_opts_t *o) {
         if (!l3) {
             char ssrc[16];
             ipv4_to_string(o->src_ip, ssrc);
-            print("tracert: invalid source %s (no local ip match)\n", ssrc);
+            print("tracert: invalid source %s (no local ip match)", ssrc);
             return 2;
         }
         txo.index = l3->l3_id;
@@ -162,11 +162,11 @@ static int tracert_v4(const tr_opts_t *o) {
             dead_streak++;
             string_format_buf(line + len, sizeof(line) - len, "Request timed out.");
         }
-        print("%s\n", line);
+        print("%s", line);
 
         if (hop_ip == dst) break;
         if (dead_streak >= o->timeout_streak_limit) {
-            print("stopping after %u consecutive timeout hops\n", dead_streak);
+            print("stopping after %u consecutive timeout hops", dead_streak);
             break;
         }
     }
@@ -180,7 +180,7 @@ static int tracert_v6(const tr_opts_t *o) {
     if (!lit) {
         dns_result_t dr = dns_resolve_aaaa(o->host, dst, DNS_USE_BOTH, o->timeout_ms);
         if (dr != DNS_OK) {
-            print("tracert: dns lookup failed (%d) for '%s'\n", (int)dr, o->host);
+            print("tracert: dns lookup failed (%d) for '%s'", (int)dr, o->host);
             return 2;
         }
     }
@@ -188,11 +188,11 @@ static int tracert_v6(const tr_opts_t *o) {
     char dip[64];
     char line[256];
     ipv6_to_string(dst, dip, (int)sizeof(dip));
-    print("Tracing route to %s [%s]\n", o->host, dip);
+    print("Tracing route to %s [%s]", o->host, dip);
     size_t len = string_format_buf(line, sizeof(line), "hop  ");
     for (uint32_t p = 0; p < o->count && len < sizeof(line); p++) len += string_format_buf(line + len, sizeof(line) - len, "rtt%u  ", p + 1);
     string_format_buf(line + len, sizeof(line) - len, "address");
-    print("%s\n", line);
+    print("%s", line);
 
     uint16_t id = (uint16_t)(get_current_proc_pid() & 0xFFFF);
     uint16_t seq0 = (uint16_t)(get_time() & 0xFFFF);
@@ -235,11 +235,11 @@ static int tracert_v6(const tr_opts_t *o) {
             dead_streak++;
             string_format_buf(line + len, sizeof(line) - len, "Request timed out.");
         }
-        print("%s\n", line);
+        print("%s", line);
 
         if (ipv6_cmp(hop_ip, dst) == 0) break;
         if (dead_streak >= o->timeout_streak_limit) {
-            print("stopping after %u consecutive timeout hops\n", dead_streak);
+            print("stopping after %u consecutive timeout hops", dead_streak);
             break;
         }
     }
@@ -250,7 +250,7 @@ static int tracert_v6(const tr_opts_t *o) {
 int run_tracert(int argc, char *argv[]) {
     tr_opts_t o;
     if (!parse_args(argc, argv, &o)) {
-        print("usage: tracert [-4/-6] [-m max_hops] [-n probes] [-w timeout_ms] [-i interval_ms] [-x stop_after_timeouts] [-s src_local_ip] host\n");
+        print("usage: tracert [-4/-6] [-m max_hops] [-n probes] [-w timeout_ms] [-i interval_ms] [-x stop_after_timeouts] [-s src_local_ip] host");
         return 2;
     }
 

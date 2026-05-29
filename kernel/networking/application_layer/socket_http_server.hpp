@@ -17,10 +17,10 @@ private:
     TCPSocket* sock;
     SocketExtraOptions log_opts;
     SocketExtraOptions* tcp_extra;
-    HTTPPolicy policy;
+    HTTPServerPolicy policy;
 
 public:
-    explicit HTTPServer(uint16_t pid_, const SocketExtraOptions* extra, const HTTPPolicyOptions* http_options) : pid(pid_), sock(nullptr), log_opts{}, tcp_extra(nullptr), policy(http_policy_from_options(http_options)) {
+    explicit HTTPServer(uint16_t pid_, const SocketExtraOptions* extra, const HTTPServerPolicyOptions* http_options) : pid(pid_), sock(nullptr), log_opts{}, tcp_extra(nullptr), policy(http_server_policy_from_options(http_options)) {
         if (extra) log_opts = *extra;
 
         const SocketExtraOptions* tcp_ptr = extra;
@@ -39,8 +39,8 @@ public:
 
     ~HTTPServer() { close(); }
 
-    int32_t set_options(const HTTPPolicyOptions* http_options) {
-        policy = http_policy_from_options(http_options);
+    int32_t set_options(const HTTPServerPolicyOptions* http_options) {
+        policy = http_server_policy_from_options(http_options);
         return SOCK_OK;
     }
 
@@ -123,7 +123,7 @@ public:
             int64_t r = client->recv(tmp, sizeof(tmp));
             if (r == TCP_WOULDBLOCK) {
                 uint32_t now = (uint32_t)get_time();
-                if ((uint32_t)(now - last_rx_ms) > policy.header_idle_timeout_ms || (uint32_t)(now - start_ms) > policy.header_total_timeout_ms) {
+                if ((uint32_t)(now - last_rx_ms) > policy.common.header_idle_timeout_ms || (uint32_t)(now - start_ms) > policy.common.header_total_timeout_ms) {
                     string_free(buf);
                     return req;
                 }
@@ -136,7 +136,7 @@ public:
             }
             string_append_bytes(&buf, tmp, (uint32_t)r);
             last_rx_ms = (uint32_t)get_time();
-            if (buf.length > policy.max_header_bytes) {
+            if (buf.length > policy.common.max_header_bytes) {
                 bad_request = true;
                 reject_status = HTTP_HEADER_FIELDS_TOO_LARGE;
                 break;
@@ -151,7 +151,7 @@ public:
                 line_end++;
             }
 
-            if (line_end > policy.max_start_line) {
+            if (line_end > policy.common.max_start_line) {
                 bad_request = true;
                 reject_status = HTTP_URI_TOO_LONG;
             }
@@ -195,17 +195,17 @@ public:
                     }
                 } else string_append_bytes(&req.path, target, target_len);
 
-                if (!bad_request && (!req.path.length || req.path.length > policy.max_path_len)) {
+                if (!bad_request && (!req.path.length || req.path.length > policy.common.max_path_len)) {
                     bad_request = true;
-                    reject_status = req.path.length > policy.max_path_len ? HTTP_URI_TOO_LONG : HTTP_BAD_REQUEST;
+                    reject_status = req.path.length > policy.common.max_path_len ? HTTP_URI_TOO_LONG : HTTP_BAD_REQUEST;
                 }
             }
 
             if (!bad_request) {
-                HTTPParseResult header_result = http_header_parse_policy(
+                HTTPParseResult header_result = http_header_parse(
                     (char*)buf.data + line_end + 2,
                     (uint32_t)hdr_end - (line_end + 2),
-                    &policy,
+                    &policy.common,
                     &req.headers_common,
                     &req.extra_headers,
                     &req.extra_header_count
@@ -214,7 +214,7 @@ public:
                 if (header_result != HTTP_PARSE_OK) {
                     bad_request = true;
                     reject_status = http_parse_result_status(header_result);
-                } else if (policy.require_host_http11 && line.version == HTTP_VERSION_11 && !req.headers_common.host.length) {
+                } else if (policy.require_host_http11 && line.version == HTTP_VERSION_11 && !req.headers_common.fields.host.length) {
                     bad_request = true;
                     reject_status = HTTP_BAD_REQUEST;
                 }
@@ -222,51 +222,63 @@ public:
 
             uint32_t body_start = hdr_end + 4;
             uint32_t have = buf.length > body_start ? buf.length - body_start : 0;
-            uint32_t need = req.headers_common.has_length ? req.headers_common.length : 0;
+
+            if (!bad_request && req.headers_common.framing.expect_continue) {
+                if (req.headers_common.framing.has_content_length && req.headers_common.fields.content_length > policy.common.max_body_bytes) {
+                    bad_request = true;
+                    reject_status = HTTP_PAYLOAD_TOO_LARGE;
+                } else {
+                    HTTPResponseMsg cont{};
+                    cont.status_code = HTTP_CONTINUE;
+                    send_response(conn, cont);
+                }
+            }
+            uint32_t need = req.headers_common.framing.has_content_length ? req.headers_common.fields.content_length : 0;
             consumed = body_start;
 
-            if (!bad_request && req.headers_common.chunked) {
-                string chunk_buf = string_repeat('\0', 0);
-                if (have) string_append_bytes(&chunk_buf, buf.data + body_start, have);
+            if (!bad_request && req.headers_common.framing.chunked) {
+                HTTPChunkedDecoder dec;
+                http_chunked_decoder_init(&dec, &policy.common);
 
                 uint32_t used = 0;
-                string decoded = string_repeat('\0', 0);
-                HTTPParseResult chunk_result = http_decode_chunked_body(chunk_buf.data, chunk_buf.length, &policy, &decoded, &used);
+                HTTPParseResult chunk_result = have ? http_chunked_decoder_feed(&dec, buf.data + body_start, have, &used) : HTTP_PARSE_INCOMPLETE;
                 uint32_t body_start_ms = (uint32_t)get_time();
                 uint32_t body_last_rx_ms = body_start_ms;
+                consumed = body_start + used;
 
                 while (chunk_result == HTTP_PARSE_INCOMPLETE) {
                     int64_t r = client->recv(tmp, sizeof(tmp));
                     if (r == TCP_WOULDBLOCK) {
                         uint32_t now = (uint32_t)get_time();
-                        if ((now - body_last_rx_ms) > policy.body_idle_timeout_ms || (now - body_start_ms) > policy.body_total_timeout_ms) break;
+                        if ((now - body_last_rx_ms) > policy.common.body_idle_timeout_ms || (now - body_start_ms) > policy.common.body_total_timeout_ms) break;
                         msleep(2);
                         continue;
                     }
                     if (r <= 0) break;
-                    string_append_bytes(&chunk_buf, tmp, (uint32_t)r);
+                    used = 0;
+                    chunk_result = http_chunked_decoder_feed(&dec, tmp, (uint32_t)r, &used);
                     body_last_rx_ms = (uint32_t)get_time();
-                    chunk_result = http_decode_chunked_body(chunk_buf.data, chunk_buf.length, &policy, &decoded, &used);
+                    consumed = buf.length;
+                    if (chunk_result == HTTP_PARSE_OK && used < (uint32_t)r && !conn->carry_buf.length) {
+                        conn->carry_buf = string_repeat('\0', 0);
+                        string_append_bytes(&conn->carry_buf, tmp + used, (uint32_t)r - used);
+                    }
                 }
 
                 if (chunk_result != HTTP_PARSE_OK) {
-                    if (decoded.mem_length) string_free(decoded);
                     bad_request = true;
                     reject_status = http_parse_result_status(chunk_result);
                 } else {
-                    consumed = buf.length;
-                    if (used < chunk_buf.length) {
-                        conn->carry_buf = string_repeat('\0', 0);
-                        string_append_bytes(&conn->carry_buf, chunk_buf.data + used, chunk_buf.length - used);
-                    }
+                    string decoded = dec.body;
+                    dec.body = string{};
                     if (decoded.length) {
                         req.body.ptr = (uintptr_t)decoded.data;
                         req.body.size = decoded.length;
                     } else if (decoded.mem_length) string_free(decoded);
                 }
-                string_free(chunk_buf);
+                http_chunked_decoder_free(&dec);
             } else {
-                if (!bad_request && need > policy.max_body_bytes) {
+                if (!bad_request && need > policy.common.max_body_bytes) {
                     bad_request = true;
                     reject_status = HTTP_PAYLOAD_TOO_LARGE;
                 }
@@ -286,7 +298,7 @@ public:
                             int64_t r = client->recv(body_copy + copied, need - copied);
                             if (r == TCP_WOULDBLOCK) {
                                 uint32_t now = (uint32_t)get_time();
-                                if ((now - body_last_rx_ms) > policy.body_idle_timeout_ms || (now - body_start_ms) > policy.body_total_timeout_ms) {
+                                if ((now - body_last_rx_ms) > policy.common.body_idle_timeout_ms || (now - body_start_ms) > policy.common.body_total_timeout_ms) {
                                     bad_request = true;
                                     break;
                                 }
@@ -318,9 +330,9 @@ public:
             HTTPResponseMsg res{};
             res.status_code = reject_status;
             res.reason = string_from_literal(reason);
-            res.headers_common.length = body.length;
-            res.headers_common.type = string_from_literal("text/plain");
-            res.headers_common.connection = string_from_literal("close");
+            res.headers_common.fields.content_length = body.length;
+            res.headers_common.fields.content_type = string_from_literal("text/plain");
+            res.headers_common.fields.connection = string_from_literal("close");
             res.body.ptr = (uintptr_t)body.data;
             res.body.size = body.length;
             send_response(conn, res);
@@ -369,12 +381,18 @@ public:
         if (!conn || !conn->client) return SOCK_ERR_STATE;
         
         TCPSocket* client = conn->client;
-        bool send_chunked = res.headers_common.chunked;
+        bool send_chunked = res.headers_common.framing.chunked;
         HTTPResponseMsg head = res;
-        if (!send_chunked) head.body = sizedptr{};
+        uint32_t body_len = (!send_chunked && res.body.ptr && res.body.size) ? (uint32_t)res.body.size : 0;
+        if (!send_chunked) {
+            head.body = sizedptr{};
+            if (body_len && !head.headers_common.framing.has_content_length) {
+                head.headers_common.fields.content_length = body_len;
+                head.headers_common.framing.has_content_length = 1;
+            }
+        }
         uint32_t code = (uint32_t)res.status_code;
         string out = http_response_builder(&head);
-        uint32_t body_len = (!send_chunked && res.body.ptr && res.body.size) ? (uint32_t)res.body.size : 0;
         uint32_t out_len = out.length + body_len;
         int64_t sent = 0;
         uint32_t start_ms = (uint32_t)get_time();

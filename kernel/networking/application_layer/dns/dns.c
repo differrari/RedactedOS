@@ -45,7 +45,7 @@ static dns_result_t perform_dns_query_once(socket_handle_t sock, const net_l4_en
         uint8_t response_buffer[512];
         net_l4_endpoint source;
         int64_t received = socket_recvfrom_udp(sock, response_buffer, sizeof(response_buffer), &source);
-        if (received > 0 && source.port == 53 && source.ver == dst.ver && ((dst.ver == IP_VER4 && memcmp(source.ip, dst.ip, 4) == 0) || (dst.ver == IP_VER6 && memcmp(source.ip, dst.ip, 16) == 0))) {
+        if (received > 0 && source.port == 53 && source.ver == dst.ver) {
             uint32_t received_len = received;
             dns_record_t parsed[DNS_QUERY_RECORDS];
             uint32_t parsed_count = 0;
@@ -179,17 +179,22 @@ static dns_result_t query_with_selection(const net_l4_endpoint* primary, const n
     if (which == DNS_USE_PRIMARY && dns_srv_is_zero(primary)) return DNS_ERR_NO_DNS;
     if (which == DNS_USE_SECONDARY && dns_srv_is_zero(secondary)) return DNS_ERR_NO_DNS;
     if (which == DNS_USE_BOTH && dns_srv_is_zero(primary) && dns_srv_is_zero(secondary)) return DNS_ERR_NO_DNS;
-    socket_handle_t sock = dns_socket_handle();
-    if (sock == 0) return DNS_ERR_SOCKET;
+    socket_handle_t sock = udp_socket_create(SOCK_ROLE_CLIENT, get_current_proc_pid(), NULL);
+    if (!sock) return DNS_ERR_SOCKET;
 
-    if (which == DNS_USE_PRIMARY) return perform_dns_query_once(sock, primary, hostname, qtype, timeout_ms, out_records, max_records, out_count);
-    if (which == DNS_USE_SECONDARY) return perform_dns_query_once(sock, secondary, hostname, qtype, timeout_ms, out_records, max_records, out_count);
+    dns_result_t res = DNS_ERR_NO_DNS;
+    if (which == DNS_USE_PRIMARY)  res = perform_dns_query_once(sock, primary, hostname, qtype, timeout_ms, out_records, max_records, out_count);
+    else if (which == DNS_USE_SECONDARY) res = perform_dns_query_once(sock, secondary, hostname, qtype, timeout_ms, out_records, max_records, out_count);
+    else {
+        const net_l4_endpoint* first = !dns_srv_is_zero(primary) ? primary : secondary;
+        const net_l4_endpoint* second = !dns_srv_is_zero(secondary) ? secondary : primary;
 
-    const net_l4_endpoint* first = !dns_srv_is_zero(primary) ? primary : secondary;
-    const net_l4_endpoint* second = !dns_srv_is_zero(secondary) ? secondary : primary;
+        res = perform_dns_query_once(sock, first, hostname, qtype, timeout_ms, out_records, max_records, out_count);
+        if (res != DNS_OK && second && first != second) res = perform_dns_query_once(sock, second, hostname, qtype, timeout_ms, out_records, max_records, out_count);
+    }
 
-    dns_result_t res = perform_dns_query_once(sock, first, hostname, qtype, timeout_ms, out_records, max_records, out_count);
-    if (res != DNS_OK && second && first != second) res = perform_dns_query_once(sock, second, hostname, qtype, timeout_ms, out_records, max_records, out_count);
+    socket_close_udp(sock);
+    socket_destroy_udp(sock);
     return res;
 }
 

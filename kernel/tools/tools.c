@@ -2,6 +2,7 @@
 #include "ping.h"
 #include "shutdown.h"
 #include "tracert.h"
+#include "curl.h"
 #include "monitor_processes.h"
 #include "kernel_processes/kprocess_loader.h"
 #include "filesystem/filesystem.h"
@@ -26,6 +27,7 @@ open_tools_ref available_cmds[] = {
     { "ping", run_ping },
     { "shutdown", run_shutdown },
     { "tracert", run_tracert },
+    { "curl", run_curl },
     { "monitor", monitor_procs },
 };
 

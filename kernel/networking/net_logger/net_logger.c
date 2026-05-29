@@ -3,16 +3,6 @@
 #include "networking/transport_layer/trans_utils.h"
 #include "networking/application_layer/http.h"
 
-static const char* http_method_str(uint32_t m) {
-    switch ((HTTPMethod)m) {
-        case HTTP_METHOD_GET: return "GET";
-        case HTTP_METHOD_POST: return "POST";
-        case HTTP_METHOD_PUT: return "PUT";
-        case HTTP_METHOD_DELETE: return "DELETE";
-        default: return "";
-    }
-}
-
 static const char* comp_str(netlog_component_t c) {
     switch (c) {
         case NETLOG_COMP_UDP: return "UDP";
@@ -97,7 +87,7 @@ void netlog_socket_event(const SocketExtraOptions* extra, const netlog_socket_ev
         }
 
         if (e->action == NETLOG_ACT_HTTP_RECV_REQUEST) {
-            kprintf("[NET][%s] %s method=%s path_len=%u body=%u", c, a, http_method_str(e->u0), (uint32_t)e->u1, (uint32_t)e->i0);
+            kprintf("[NET][%s] %s method=%s path_len=%u body=%u", c, a, http_method_name(e->u0), (uint32_t)e->u1, (uint32_t)e->i0);
             return;
         }
 
@@ -142,8 +132,8 @@ void netlog_socket_event(const SocketExtraOptions* extra, const netlog_socket_ev
             uint16_t rport = 0;
             net_ep_split(&e->remote_ep, rip, (int)sizeof(rip), &rv6, &rport);
 
-            if (rv6) kprintf("[NET][%s] %s method=%s path_len=%u body=%u remote=[%s]:%u", c, a, http_method_str(e->u0), (uint32_t)e->u1, (uint32_t)e->i0, rip, (uint32_t)rport);
-            else kprintf("[NET][%s] %s method=%s path_len=%u body=%u remote=%s:%u", c, a, http_method_str(e->u0), (uint32_t)e->u1, (uint32_t)e->i0, rip, (uint32_t)rport);
+            if (rv6) kprintf("[NET][%s] %s method=%s path_len=%u body=%u remote=[%s]:%u", c, a, http_method_name(e->u0), (uint32_t)e->u1, (uint32_t)e->i0, rip, (uint32_t)rport);
+            else kprintf("[NET][%s] %s method=%s path_len=%u body=%u remote=%s:%u", c, a, http_method_name(e->u0), (uint32_t)e->u1, (uint32_t)e->i0, rip, (uint32_t)rport);
             return;
         }
 
@@ -327,10 +317,10 @@ void netlog_socket_event(const SocketExtraOptions* extra, const netlog_socket_ev
 
     if (e->action == NETLOG_ACT_HTTP_RECV_REQUEST) {
         if (rem_v6) {
-            if (e->s0) kprintf("[NET][%s] %s method=%s path=%s body=%u remote=[%s]:%u", c, a, http_method_str(e->u0), e->s0, (uint32_t)e->i0, rem_ip, (uint32_t)rem_port);
+            if (e->s0) kprintf("[NET][%s] %s method=%s path=%s body=%u remote=[%s]:%u", c, a, http_method_name(e->u0), e->s0, (uint32_t)e->i0, rem_ip, (uint32_t)rem_port);
             else kprintf("[NET][%s] %s method=%u path_len=%u body=%u remote=[%s]:%u", c, a, (uint32_t)e->u0, (uint32_t)e->u1, (uint32_t)e->i0, rem_ip, (uint32_t)rem_port);
         } else {
-            if (e->s0) kprintf("[NET][%s] %s method=%s path=%s body=%u remote=%s:%u", c, a, http_method_str(e->u0), e->s0, (uint32_t)e->i0, rem_ip, (uint32_t)rem_port);
+            if (e->s0) kprintf("[NET][%s] %s method=%s path=%s body=%u remote=%s:%u", c, a, http_method_name(e->u0), e->s0, (uint32_t)e->i0, rem_ip, (uint32_t)rem_port);
             else kprintf("[NET][%s] %s method=%u path_len=%u body=%u remote=%s:%u", c, a, (uint32_t)e->u0, (uint32_t)e->u1, (uint32_t)e->i0, rem_ip, (uint32_t)rem_port);
         }
         return;
