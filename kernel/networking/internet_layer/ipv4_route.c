@@ -1,13 +1,13 @@
 #include "ipv4_route.h"
 #include "std/memory.h"
 #include "networking/interface_manager.h"
+#include "networking/internet_layer/ipv4_utils.h"
 #include "syscalls/syscalls.h"
 
 static bool v4_l3_ok_for_tx(l3_ipv4_interface_t* v4){
     if (!v4 || !v4->l2) return false;
     if (!v4->l2->is_up) return false;
     if (v4->mode == IPV4_CFG_DISABLED) return false;
-    if (v4->is_localhost) return false;
     if (!v4->ip) return false;
     if (!v4->port_manager) return false;
     return true;
@@ -30,7 +30,7 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, const uint8_t* a
         uint8_t id = hint->index;
         if (!l3_allowed(id, allowed_l3, allowed_n)) return false;
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
-        if (!v4_l3_ok_for_tx(v4)) return false;
+        if (!v4_l3_ok_for_tx(v4) || ipv4_is_loopback(dst) != v4->is_localhost) return false;
         out->l3_id = id;
         out->src_ip = v4->ip;
         out->fixed_opts.scope = IP_TX_BOUND_L3;
@@ -46,7 +46,7 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, const uint8_t* a
         if (!l2 || !l2->is_up) return false;
         for (int s = 0; s < MAX_IPV4_PER_INTERFACE && n < (int)sizeof(cand); ++s){
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!v4_l3_ok_for_tx(v4)) continue;
+            if (!v4_l3_ok_for_tx(v4) || ipv4_is_loopback(dst) != v4->is_localhost) continue;
             if (!l3_allowed(v4->l3_id, allowed_l3, allowed_n)) continue;
             cand[n++] = v4->l3_id;
         }
@@ -57,7 +57,7 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, const uint8_t* a
             if (!l2 || !l2->is_up) continue;
             for (int s = 0; s < MAX_IPV4_PER_INTERFACE && n < (int)sizeof(cand); ++s){
                 l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-                if (!v4_l3_ok_for_tx(v4)) continue;
+                if (!v4_l3_ok_for_tx(v4) || ipv4_is_loopback(dst) != v4->is_localhost) continue;
                 if (!l3_allowed(v4->l3_id, allowed_l3, allowed_n)) continue;
                 cand[n++] = v4->l3_id;
             }
@@ -70,7 +70,7 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, const uint8_t* a
     if (!ipv4_rt_pick_best_l3_in(cand, n, dst, &chosen)) chosen = cand[0];
 
     l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen);
-    if (!v4_l3_ok_for_tx(v4)) return false;
+    if (!v4_l3_ok_for_tx(v4) || ipv4_is_loopback(dst) != v4->is_localhost) return false;
 
     out->l3_id = chosen;
     out->src_ip = v4->ip;

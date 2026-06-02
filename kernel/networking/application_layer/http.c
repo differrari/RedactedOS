@@ -35,7 +35,8 @@ HTTPPolicy http_policy_from_options(const HTTPPolicyOptions *options) {
     if (options->header_total_timeout_ms > 0) p.header_total_timeout_ms = options->header_total_timeout_ms;
     if (options->body_idle_timeout_ms > 0) p.body_idle_timeout_ms = options->body_idle_timeout_ms;
     if (options->body_total_timeout_ms > 0) p.body_total_timeout_ms = options->body_total_timeout_ms;
-    p.allow_chunked = options->allow_chunked != 0;
+    if (options->allow_chunked > 0) p.allow_chunked = true;
+    else if (options->allow_chunked < 0) p.allow_chunked = false;
     return p;
 }
 
@@ -43,7 +44,7 @@ HTTPServerPolicy http_server_policy_from_options(const HTTPServerPolicyOptions *
     HTTPServerPolicy p = {
         .common = http_default_policy(),
         .max_keepalive_requests = HTTP_DEFAULT_MAX_KEEPALIVE_REQUESTS,
-        .allow_keep_alive = false,
+        .allow_keep_alive = true,
         .allow_absolute_uri = true,
         .require_host_http11 = true
     };
@@ -52,9 +53,12 @@ HTTPServerPolicy http_server_policy_from_options(const HTTPServerPolicyOptions *
 
     p.common = http_policy_from_options(&options->common);
     if (options->max_keepalive_requests > 0) p.max_keepalive_requests = options->max_keepalive_requests;
-    p.allow_keep_alive = options->allow_keep_alive != 0;
-    p.allow_absolute_uri = options->allow_absolute_uri != 0;
-    p.require_host_http11 = options->require_host_http11 != 0;
+    if (options->allow_keep_alive > 0) p.allow_keep_alive = true;
+    else if (options->allow_keep_alive < 0) p.allow_keep_alive = false;
+    if (options->allow_absolute_uri > 0) p.allow_absolute_uri = true;
+    else if (options->allow_absolute_uri < 0) p.allow_absolute_uri = false;
+    if (options->require_host_http11 > 0) p.require_host_http11 = true;
+    else if (options->require_host_http11 < 0) p.require_host_http11 = false;
     return p;
 }
 
@@ -70,7 +74,8 @@ HTTPClientPolicy http_client_policy_from_options(const HTTPClientPolicyOptions *
 
     p.common = http_policy_from_options(&options->common);
     if (options->max_redirects > 0) p.max_redirects = options->max_redirects;
-    p.follow_redirects = options->follow_redirects != 0;
+    if (options->follow_redirects > 0) p.follow_redirects = true;
+    else if (options->follow_redirects < 0) p.follow_redirects = false;
     if (options->allow_close_delimited > 0) p.allow_close_delimited = true;
     else if (options->allow_close_delimited < 0) p.allow_close_delimited = false;
     return p;
@@ -552,9 +557,10 @@ static void http_append_chunked_body(string *out, uintptr_t ptr, uint32_t len) {
     if (!out) return;
 
     if (len) {
-        string tmp = string_format("%x\r\n", (int)len);
-        string_append_bytes(out, tmp.data, tmp.length);
-        string_free(tmp);
+        char hex[16];
+        uint32_t n = u64_to_base(hex, len, 16, 0);
+        string_append_bytes(out, hex, n);
+        string_append_bytes(out, "\r\n", 2);
         string_append_bytes(out, (char*)ptr, len);
         string_append_bytes(out, "\r\n", 2);
     }
@@ -685,7 +691,7 @@ HTTPParseResult http_chunked_decoder_feed(HTTPChunkedDecoder *dec, const char *b
             }
         } else if (dec->stage == HTTP_CHUNK_STAGE_DATA) {
             uint64_t need64 = dec->chunk_size - dec->chunk_read;
-            uint32_t avail = len - i; //++
+            uint32_t avail = len - i;
             uint32_t take = need64 < avail ? (uint32_t)need64:  avail; 
             if (take) {
                 string_append_bytes(&dec->body, buf + i, take);

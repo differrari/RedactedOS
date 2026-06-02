@@ -7,11 +7,11 @@
 extern "C" {
 #endif
 
-#define MAX_L2_INTERFACES 15
+#define MAX_L2_INTERFACES 16
 #define MAX_IPV4_PER_INTERFACE 4
 #define MAX_IPV6_PER_INTERFACE 4
-#define MAX_IPV4_MCAST_PER_INTERFACE 12
-#define MAX_IPV6_MCAST_PER_INTERFACE 12
+#define MAX_IPV4_MCAST_PER_INTERFACE 16
+#define MAX_IPV6_MCAST_PER_INTERFACE 32
 
 typedef enum {
     IPV4_CFG_DISABLED = -1,
@@ -68,8 +68,10 @@ typedef struct l2_interface {
     uint8_t ipv4_count;
     uint8_t ipv6_count;
     uint32_t ipv4_mcast[MAX_IPV4_MCAST_PER_INTERFACE];
+    uint16_t ipv4_mcast_ref[MAX_IPV4_MCAST_PER_INTERFACE];
     uint8_t ipv4_mcast_count;
     uint8_t ipv6_mcast[MAX_IPV6_MCAST_PER_INTERFACE][16];
+    uint16_t ipv6_mcast_ref[MAX_IPV6_MCAST_PER_INTERFACE];
     uint8_t ipv6_mcast_count;
 } l2_interface_t;
 

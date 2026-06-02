@@ -39,6 +39,8 @@ static const char* bind_kind_str(SockBindKind k) {
         case BIND_L2: return "L2";
         case BIND_IP: return "IP";
         case BIND_ANY: return "ANY";
+        case BIND_ANY4: return "ANY4";
+        case BIND_ANY6: return "ANY6";
         default: return "";
     }
 }

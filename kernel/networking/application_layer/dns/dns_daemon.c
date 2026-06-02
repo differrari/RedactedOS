@@ -8,7 +8,6 @@
 #include "networking/transport_layer/csocket_udp.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "std/memory.h"
-#include "net/socket_types.h"
 
 static uint16_t g_pid_dnsd = 0xFFFF;
 static socket_handle_t g_sock = 0;
@@ -24,14 +23,18 @@ socket_handle_t dns_socket_handle(void){ return g_sock; }
 socket_handle_t mdns_socket_handle_v4(void){ return g_sock_mdns4; }
 socket_handle_t mdns_socket_handle_v6(void){ return g_sock_mdns6; }
 
-static socket_handle_t mdns_create_socket(ip_version_t ver, const void* group) {
+static socket_handle_t mdns_create_socket(ip_version_t ver, const uint8_t* group) {
+    if (!group) return 0;
     SocketExtraOptions opt;
     memset(&opt, 0, sizeof(opt));
     opt.flags = SOCK_OPT_MCAST_JOIN | SOCK_OPT_TTL;
     opt.ttl = 255;
-    opt.mcast_ver = ver;
-    if(ver == IP_VER4) memcpy(opt.mcast_group, group, 4);
-    else memcpy(opt.mcast_group, group, 16);
+    opt.mcast_count = 1;
+    opt.mcast_groups[0].ver = ver;
+    opt.mcast_groups[0].port = DNS_MDNS_PORT;
+    if(ver == IP_VER4) memcpy(opt.mcast_groups[0].ip, group, 4);
+    else if (ver == IP_VER6) memcpy(opt.mcast_groups[0].ip, group, 16);
+    else return 0;
 
     socket_handle_t s = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dnsd, &opt);
     if(!s) return 0;
@@ -39,6 +42,7 @@ static socket_handle_t mdns_create_socket(ip_version_t ver, const void* group) {
     SockBindSpec spec;
     memset(&spec, 0, sizeof(spec));
     spec.kind = BIND_ANY;
+    spec.ver = ver;
 
     if(socket_bind_udp(s, &spec, DNS_MDNS_PORT) != SOCK_OK){
         socket_destroy_udp(s);
@@ -71,19 +75,13 @@ int dns_deamon_entry(int argc, char* argv[]){
         if (g_sock_mdns4) {
             memset(&src, 0, sizeof(src));
             int64_t r4 = socket_recvfrom_udp(g_sock_mdns4, buf, sizeof(buf), &src);
-            if(r4 > 0) {
-                uint32_t len4 = r4;
-                mdns_responder_handle_query(g_sock_mdns4, IP_VER4, mdns_v4_addr, buf, len4, &src);
-            }
+            if(r4 > 0 && src.ver == IP_VER4) mdns_responder_handle_query(g_sock_mdns4, IP_VER4, mdns_v4_addr, buf, (uint32_t)r4, &src);
         }
 
         if (g_sock_mdns6) {
             memset(&src, 0, sizeof(src));
             int64_t r6 = socket_recvfrom_udp(g_sock_mdns6, buf, sizeof(buf), &src);
-            if(r6 > 0) {
-                uint32_t len6 = r6;
-                mdns_responder_handle_query(g_sock_mdns6, IP_VER6, mdns_v6, buf, len6, &src);
-            }
+            if(r6 > 0 && src.ver == IP_VER6) mdns_responder_handle_query(g_sock_mdns6, IP_VER6, mdns_v6, buf, (uint32_t)r6, &src);
         }
 
         mdns_responder_tick(g_sock_mdns4,g_sock_mdns6,mdns_v4_addr,mdns_v6);

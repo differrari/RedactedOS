@@ -31,6 +31,7 @@ static uint8_t ssdp_host_v6[16];
 #define SSDP_RATE_WINDOW_MS 1000
 #define SSDP_RATE_MAX 20
 #define SSDP_NOTIFY_INTERVAL_MS 300000
+#define SSDP_RECV_BURST 8
 
 static ssdp_pending_t ssdp_pending[SSDP_MAX_PENDING];
 static uint32_t ssdp_rate_window_ms = 0;
@@ -77,33 +78,27 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
 
     ipv6_make_multicast(0x02, IPV6_MCAST_SSDP, NULL, ssdp_host_v6);
 
-    SocketExtraOptions opt4 = (SocketExtraOptions){0};
-    opt4.flags = SOCK_OPT_MCAST_JOIN;
-    opt4.mcast_ver = IP_VER4;
-    memcpy(opt4.mcast_group, &ssdp_host_v4, 4);
-
-    SocketExtraOptions opt6 = (SocketExtraOptions){0};
-    opt6.flags = SOCK_OPT_MCAST_JOIN;
-    opt6.mcast_ver = IP_VER6;
-    memcpy(opt6.mcast_group, ssdp_host_v6, 16);
-
-    uint16_t pid = get_current_proc_pid();
-
-    socket_handle_t s4 = udp_socket_create(SOCK_ROLE_SERVER, pid, &opt4);
-    socket_handle_t s6 = udp_socket_create(SOCK_ROLE_SERVER, pid, &opt6);
+    SocketExtraOptions opt = (SocketExtraOptions){0};
+    opt.flags = SOCK_OPT_MCAST_JOIN;
+    opt.mcast_count = 2;
+    opt.mcast_groups[0].ver = IP_VER4;
+    opt.mcast_groups[0].port = 1900;
+    memcpy(opt.mcast_groups[0].ip, &ssdp_host_v4, 4);
+    opt.mcast_groups[1].ver = IP_VER6;
+    opt.mcast_groups[1].port = 1900;
+    memcpy(opt.mcast_groups[1].ip, ssdp_host_v6, 16);
+    socket_handle_t s = udp_socket_create(SOCK_ROLE_SERVER, get_current_proc_pid(), &opt);
 
     struct SockBindSpec spec = (struct SockBindSpec){0};
     spec.kind = BIND_ANY;
-    if (s4 && socket_bind_udp(s4, &spec, 1900) < 0) {
-        socket_close_udp(s4);
-        socket_destroy_udp(s4);
-        s4 = 0;
+    if (s && socket_bind_udp(s, &spec, 1900) < 0) {
+        socket_close_udp(s);
+        socket_destroy_udp(s);
+        s = 0;
     }
-    if (s6 && socket_bind_udp(s6, &spec, 1900) < 0) {
-        socket_close_udp(s6);
-        socket_destroy_udp(s6);
-        s6 = 0;
-    }
+
+    socket_handle_t s4 = s;
+    socket_handle_t s6 = s;
 
     if (!s4 && !s6) return 1;
 
@@ -126,19 +121,12 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
         char buf[2048];
         net_l4_endpoint src = (net_l4_endpoint){0};
 
-        if (s4) {
-            int64_t r4 = socket_recvfrom_udp(s4, buf, sizeof(buf) - 1, &src);
-            if (r4 > 0) {
-                buf[r4] = 0;
-                if (ssdp_is_msearch(buf, (int)r4)) ssdp_schedule_response(&src, ssdp_parse_mx_ms(buf, (int)r4));
-            }
-        }
-
-        if (s6) {
-            int64_t r6 = socket_recvfrom_udp(s6, buf, sizeof(buf) - 1, &src);
-            if (r6 > 0) {
-                buf[r6] = 0;
-                if (ssdp_is_msearch(buf, (int)r6)) ssdp_schedule_response(&src, ssdp_parse_mx_ms(buf, (int)r6));
+        if (s) {
+            for (int i = 0; i < SSDP_RECV_BURST; ++i) {
+                int64_t r = socket_recvfrom_udp(s, buf, sizeof(buf) - 1, &src);
+                if (r <= 0) break;
+                buf[r] = 0;
+                if (ssdp_is_msearch(buf, (int)r)) ssdp_schedule_response(&src, ssdp_parse_mx_ms(buf, (int)r));
             }
         }
 

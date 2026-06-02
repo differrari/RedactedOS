@@ -9,6 +9,10 @@
 struct HTTPConnection {
     TCPSocket* client;
     string carry_buf;
+    uint32_t request_count;
+    HTTPMethod current_method;
+    bool close_after_response;
+    bool send_keep_alive_header;
 };
 
 class HTTPServer {
@@ -84,6 +88,10 @@ public:
 
         conn->client = c;
         conn->carry_buf = string{nullptr, 0, 0};
+        conn->request_count = 0;
+        conn->current_method = HTTP_METHOD_GET;
+        conn->close_after_response = true;
+        conn->send_keep_alive_header = false;
 
         if (c) {
             netlog_socket_event_t ev{};
@@ -217,6 +225,19 @@ public:
                 } else if (policy.require_host_http11 && line.version == HTTP_VERSION_11 && !req.headers_common.fields.host.length) {
                     bad_request = true;
                     reject_status = HTTP_BAD_REQUEST;
+                } else {
+                    conn->request_count++;
+                    conn->current_method = req.method;
+                    conn->close_after_response = true;
+                    conn->send_keep_alive_header = false;
+                    if (policy.allow_keep_alive) {
+                        if (line.version == HTTP_VERSION_11) conn->close_after_response = req.headers_common.framing.connection_close != 0;
+                        else if (line.version == HTTP_VERSION_10 && req.headers_common.framing.connection_keep_alive) {
+                            conn->close_after_response = false;
+                            conn->send_keep_alive_header = true;
+                        }
+                    }
+                    if (policy.max_keepalive_requests && conn->request_count >= policy.max_keepalive_requests) conn->close_after_response = true;
                 }
             }
 
@@ -381,9 +402,31 @@ public:
         if (!conn || !conn->client) return SOCK_ERR_STATE;
         
         TCPSocket* client = conn->client;
-        bool send_chunked = res.headers_common.framing.chunked;
+        uint32_t code = (uint32_t)res.status_code;
+        bool informational = code >= 100 && code < 200;
+        bool suppress_body = informational || conn->current_method == HTTP_METHOD_HEAD || code == 204 || code == 304;
+        bool send_chunked = suppress_body ? false : res.headers_common.framing.chunked;
         HTTPResponseMsg head = res;
-        uint32_t body_len = (!send_chunked && res.body.ptr && res.body.size) ? (uint32_t)res.body.size : 0;
+        bool explicit_close = http_header_value_has_token(res.headers_common.fields.connection.data, res.headers_common.fields.connection.length, "close", 5);
+        bool explicit_keep_alive = http_header_value_has_token(res.headers_common.fields.connection.data, res.headers_common.fields.connection.length, "keep-alive", 10);
+        bool close_after_send = !informational && (conn->close_after_response || explicit_close);
+        static char conn_close_data[] = "close";
+        static char conn_keep_alive_data[] = "keep-alive";
+        const string conn_close = {conn_close_data, sizeof(conn_close_data) - 1, 0 };
+        const string conn_keep_alive = {conn_keep_alive_data, sizeof(conn_keep_alive_data) - 1, 0 };
+
+        if (!informational) {
+            if (close_after_send) head.headers_common.fields.connection = conn_close;
+            else if (!res.headers_common.fields.connection.length && conn->send_keep_alive_header) head.headers_common.fields.connection = conn_keep_alive;
+            else if (explicit_keep_alive) head.headers_common.fields.connection = res.headers_common.fields.connection;
+        }
+
+        if (suppress_body) {
+            head.body = sizedptr{};
+            head.headers_common.framing.chunked = 0;
+        }
+
+        uint32_t body_len = (!send_chunked && !suppress_body && res.body.ptr && res.body.size) ? (uint32_t)res.body.size : 0;
         if (!send_chunked) {
             head.body = sizedptr{};
             if (body_len && !head.headers_common.framing.has_content_length) {
@@ -391,7 +434,6 @@ public:
                 head.headers_common.framing.has_content_length = 1;
             }
         }
-        uint32_t code = (uint32_t)res.status_code;
         string out = http_response_builder(&head);
         uint32_t out_len = out.length + body_len;
         int64_t sent = 0;
@@ -483,6 +525,7 @@ public:
         netlog_socket_event(&log_opts, &ev);
 
         string_free(out);
+        if (sent >= 0 && close_after_send) client->close();
         return sent < 0 ? (int32_t)sent : SOCK_OK;
     }
 

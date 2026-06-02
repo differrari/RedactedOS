@@ -212,9 +212,15 @@ bool l2_ipv4_mcast_join(uint8_t ifindex, uint32_t group) {
     l2_interface_t* itf = l2_interface_find_by_index(ifindex);
     if (!itf) return false;
     if (!ipv4_is_multicast(group)) return false;
-    if (find_ipv4_group_index(itf, group) >= 0) return true;
+    int idx = find_ipv4_group_index(itf, group);
+    if (idx >= 0) {
+        if (itf->ipv4_mcast_ref[idx] < 0xFFFFu) itf->ipv4_mcast_ref[idx] += 1;
+        return true;
+    }
     if (itf->ipv4_mcast_count >= MAX_IPV4_MCAST_PER_INTERFACE) return false;
-    itf->ipv4_mcast[itf->ipv4_mcast_count++] = group;
+    itf->ipv4_mcast[itf->ipv4_mcast_count] = group;
+    itf->ipv4_mcast_ref[itf->ipv4_mcast_count] = 1;
+    itf->ipv4_mcast_count += 1;
     if (itf->kind != NET_IFK_LOCALHOST) (void)l2_sync_multicast_filters(itf);
     if (itf->kind != NET_IFK_LOCALHOST && l2_has_active_v4(itf)) (void)igmp_send_join(ifindex, group);
     return true;
@@ -225,8 +231,16 @@ bool l2_ipv4_mcast_leave(uint8_t ifindex, uint32_t group) {
     if (!itf) return false;
     int idx = find_ipv4_group_index(itf, group);
     if (idx < 0) return true;
-    for (int i = idx + 1; i < (int)itf->ipv4_mcast_count; ++i) itf->ipv4_mcast[i-1] = itf->ipv4_mcast[i];
+    if (itf->ipv4_mcast_ref[idx] > 1) {
+        itf->ipv4_mcast_ref[idx] -= 1;
+        return true;
+    }
+    for (int i = idx + 1; i < (int)itf->ipv4_mcast_count; ++i) {
+        itf->ipv4_mcast[i-1] = itf->ipv4_mcast[i];
+        itf->ipv4_mcast_ref[i-1] = itf->ipv4_mcast_ref[i];
+    }
     if (itf->ipv4_mcast_count) itf->ipv4_mcast_count -= 1;
+    if (itf->ipv4_mcast_count < MAX_IPV4_MCAST_PER_INTERFACE) itf->ipv4_mcast_ref[itf->ipv4_mcast_count] = 0;
     if (itf->kind != NET_IFK_LOCALHOST) (void)l2_sync_multicast_filters(itf);
     if (itf->kind != NET_IFK_LOCALHOST && l2_has_active_v4(itf)) (void)igmp_send_leave(ifindex, group);
     return true;
@@ -240,9 +254,14 @@ bool l2_ipv6_mcast_join(uint8_t ifindex, const uint8_t group[16]) {
     l2_interface_t* itf = l2_interface_find_by_index(ifindex);
     if (!itf || !group) return false;
     if (!ipv6_is_multicast(group)) return false;
-    if (find_ipv6_group_index(itf, group) >= 0) return true;
+    int idx = find_ipv6_group_index(itf, group);
+    if (idx >= 0) {
+        if (itf->ipv6_mcast_ref[idx] < 0xFFFFu) itf->ipv6_mcast_ref[idx] += 1;
+        return true;
+    }
     if (itf->ipv6_mcast_count >= MAX_IPV6_MCAST_PER_INTERFACE) return false;
     ipv6_cpy(itf->ipv6_mcast[itf->ipv6_mcast_count], group);
+    itf->ipv6_mcast_ref[itf->ipv6_mcast_count] = 1;
     itf->ipv6_mcast_count += 1;
     if (itf->kind != NET_IFK_LOCALHOST) (void)l2_sync_multicast_filters(itf);
     if (itf->kind != NET_IFK_LOCALHOST && l2_has_active_v6(itf)) (void)mld_send_join(ifindex, group);
@@ -253,9 +272,17 @@ bool l2_ipv6_mcast_leave(uint8_t ifindex, const uint8_t group[16]) {
     if (!itf || !group) return false;
     int idx = find_ipv6_group_index(itf, group);
     if (idx < 0) return true;
+    if (itf->ipv6_mcast_ref[idx] > 1) {
+        itf->ipv6_mcast_ref[idx] -= 1;
+        return true;
+    }
     if (itf->kind != NET_IFK_LOCALHOST && l2_has_active_v6(itf)) (void)mld_send_leave(ifindex, group);
-    for (int i = idx + 1; i < (int)itf->ipv6_mcast_count; ++i) ipv6_cpy(itf->ipv6_mcast[i-1], itf->ipv6_mcast[i]);
+    for (int i = idx + 1; i < (int)itf->ipv6_mcast_count; ++i) {
+        ipv6_cpy(itf->ipv6_mcast[i-1], itf->ipv6_mcast[i]);
+        itf->ipv6_mcast_ref[i-1] = itf->ipv6_mcast_ref[i];
+    }
     if (itf->ipv6_mcast_count) itf->ipv6_mcast_count -= 1;
+    if (itf->ipv6_mcast_count < MAX_IPV6_MCAST_PER_INTERFACE) itf->ipv6_mcast_ref[itf->ipv6_mcast_count] = 0;
     if (itf->kind != NET_IFK_LOCALHOST) (void)l2_sync_multicast_filters(itf);
     return true;
 }
@@ -391,6 +418,7 @@ uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
     port_manager_init(n->port_manager);
 
     if (n->mode != IPV4_CFG_DISABLED && n->ip && l2->kind != NET_IFK_LOCALHOST) (void)l2_ipv4_mcast_join(ifindex, IPV4_MCAST_ALL_HOSTS);
+    if (l2->kind != NET_IFK_LOCALHOST && l2_has_active_v4(l2)) for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) igmp_send_join(l2->ifindex, l2->ipv4_mcast[i]);
 
     return n->l3_id;
 }
@@ -451,6 +479,8 @@ bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
             n->routing_table = NULL;
         }
     }
+    if (l2->kind != NET_IFK_LOCALHOST && l2_has_active_v4(l2)) for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) igmp_send_join(l2->ifindex, l2->ipv4_mcast[i]);
+
     return true;
 }
 
@@ -662,6 +692,7 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
             (void)l2_ipv6_mcast_join(ifindex, m);
         }
     }
+    if (l2->kind != NET_IFK_LOCALHOST && l2_has_active_v6(l2)) for (int i = 0; i < (int)l2->ipv6_mcast_count; ++i) mld_send_join(l2->ifindex, l2->ipv6_mcast[i]);
 
     return n->l3_id;
 }
@@ -806,6 +837,7 @@ bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
             n->routing_table = NULL;
         }
     }
+    if (l2->kind != NET_IFK_LOCALHOST && l2_has_active_v6(l2)) for (int i = 0; i < (int)l2->ipv6_mcast_count; ++i) mld_send_join(l2->ifindex, l2->ipv6_mcast[i]);
 
     return true;
 }

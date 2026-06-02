@@ -909,7 +909,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
             for (int i = 0; i < ccount; i++) {
                 l3_ipv6_interface_t* v6 = cand[i];
-                if (!ipv6_is_linklocal(v6->ip) && ipv6_is_linklocal(ip6->dst)) continue;
+                if (!ipv6_is_linklocal(v6->ip) && ipv6_is_linkscope_mcast(ip6->dst)) continue;
                 netpkt_t* l4pkt = netpkt_view(reassembled, payload_off, payload_size);
                 if (!l4pkt) continue;
                 if (inner_nh == 17) udp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
@@ -975,7 +975,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
         for (int i = 0; i < ccount; i++) {
             l3_ipv6_interface_t* v6 = cand[i];
-            if (!ipv6_is_linklocal(v6->ip) && ipv6_is_linklocal(ip6->dst))
+            if (!ipv6_is_linklocal(v6->ip) && ipv6_is_linkscope_mcast(ip6->dst))
                 continue;
 
             switch (nh) {

@@ -774,7 +774,7 @@ void mdns_responder_handle_query(socket_handle_t sock, ip_version_t ver, const u
     uint16_t qd = rd_be16(pkt + 4);
     if (!qd) return;
 
-    bool unicast_any = false;
+    bool unicast_any = src && src->port && src->port != DNS_MDNS_PORT;
 
     uint8_t out[1500];
     mdns_pkt_t p;
@@ -907,6 +907,7 @@ void mdns_responder_handle_query(socket_handle_t sock, ip_version_t ver, const u
 
     mdns_pkt_commit(&p);
     mdns_send(sock, src, unicast_any, ver, mcast_ip, out, p.off);
+    if (unicast_any) mdns_send(sock, NULL, false, ver, mcast_ip, out, p.off);
 
     uint32_t ttl_ms = MDNS_TTL_S * 1000;
 

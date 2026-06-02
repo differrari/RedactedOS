@@ -83,13 +83,12 @@ int64_t tcp_flow_read(tcp_data *flow_ctx, void *buf, uint64_t len) {
 
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return TCP_DISCONNECT;
-    if (flow->base.state == TCP_STATE_CLOSED) return TCP_DISCONNECT;
 
-    if (!flow->rx.rcv_buf || !flow->rx.rcv_wnd_max) return 0;
-    if (TCP_SEQ_LT(flow->rx.rcv_data_nxt, flow->rx.rcv_base)) return 0;
+    if (!flow->rx.rcv_buf || !flow->rx.rcv_wnd_max) return flow->base.state == TCP_STATE_CLOSED ? TCP_DISCONNECT : 0;
+    if (TCP_SEQ_LT(flow->rx.rcv_data_nxt, flow->rx.rcv_base)) return flow->base.state == TCP_STATE_CLOSED ? TCP_DISCONNECT : 0;
 
     uint32_t n = flow->rx.rcv_data_nxt - flow->rx.rcv_base;
-    if (!n) return 0;
+    if (!n) return flow->base.state == TCP_STATE_CLOSED ? TCP_DISCONNECT : 0;
     if (len < n) n = (uint32_t)len;
 
     uint8_t *rx = (uint8_t*)flow->rx.rcv_buf;
@@ -108,7 +107,7 @@ int64_t tcp_flow_read(tcp_data *flow_ctx, void *buf, uint64_t len) {
 
 uint32_t tcp_flow_readable(tcp_data *flow_ctx) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
-    if (!flow || flow->base.state == TCP_STATE_CLOSED || !flow->rx.rcv_buf || !flow->rx.rcv_wnd_max) return 0;
+    if (!flow || !flow->rx.rcv_buf || !flow->rx.rcv_wnd_max) return 0;
     if (TCP_SEQ_LT(flow->rx.rcv_data_nxt, flow->rx.rcv_base)) return 0;
     return flow->rx.rcv_data_nxt - flow->rx.rcv_base;
 }

@@ -9,6 +9,7 @@
 #include "types.h"
 #include "net/socket_types.h"
 #include "networking/internet_layer/ipv4_route.h"
+#include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_route.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/transport_layer/trans_utils.h"
@@ -28,12 +29,10 @@ class TCPSocket : public Socket {
     int backlogCap = 0;
     int backlogLen = 0;
     TCPSocket* next = nullptr;
-    int idleAcceptSkips = 0;
 
     static bool is_valid_v4_l3_for_bind(l3_ipv4_interface_t* v4) {
         if (!v4 || !v4->l2) return false;
         if (!v4->l2->is_up) return false;
-        if (v4->is_localhost) return false;
         if (v4->mode == IPV4_CFG_DISABLED) return false;
         if (v4->ip == 0) return false;
         if (!v4->port_manager) return false;
@@ -226,40 +225,11 @@ class TCPSocket : public Socket {
         (void)tcp_unbind_l3(l3_id, port, pid);
     }
 
-    bool add_all_l3_on_l2(uint8_t ifindex, uint8_t* tmp_ids, ip_version_t* tmp_ver, int& n) {
+    bool add_all_l3_on_l2(uint8_t ifindex, ip_version_t ver, uint8_t* tmp_ids, ip_version_t* tmp_ver, int& n) {
         l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
         if (!l2 || !l2->is_up) return false;
 
-        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
-            l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!is_valid_v4_l3_for_bind(v4)) continue;
-            if (n < SOCK_MAX_L3) {
-                tmp_ids[n] = v4->l3_id;
-                tmp_ver[n] = IP_VER4;
-                ++n;
-            }
-        }
-
-        for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
-            l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-            if (!is_valid_v6_l3_for_bind(v6)) continue;
-            if (n < SOCK_MAX_L3) {
-                tmp_ids[n] = v6->l3_id;
-                tmp_ver[n] = IP_VER6;
-                ++n;
-            }
-        }
-
-        return n > 0;
-    }
-
-    bool add_all_l3_any(uint8_t* tmp_ids, ip_version_t* tmp_ver, int& n) {
-        uint8_t cnt = l2_interface_count();
-
-        for (uint8_t i = 0; i < cnt; ++i) {
-            l2_interface_t* l2 = l2_interface_at(i);
-            if (!l2 || !l2->is_up) continue;
-
+        if ((ver == 0 || ver == IP_VER4)) {
             for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
                 l3_ipv4_interface_t* v4 = l2->l3_v4[s];
                 if (!is_valid_v4_l3_for_bind(v4)) continue;
@@ -269,7 +239,9 @@ class TCPSocket : public Socket {
                     ++n;
                 }
             }
+        }
 
+        if ((ver == 0 || ver == IP_VER6)) {
             for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
                 l3_ipv6_interface_t* v6 = l2->l3_v6[s];
                 if (!is_valid_v6_l3_for_bind(v6)) continue;
@@ -277,6 +249,41 @@ class TCPSocket : public Socket {
                     tmp_ids[n] = v6->l3_id;
                     tmp_ver[n] = IP_VER6;
                     ++n;
+                }
+            }
+        }
+
+        return n > 0;
+    }
+
+    bool add_all_l3_any(ip_version_t ver, uint8_t* tmp_ids, ip_version_t* tmp_ver, int& n) {
+        uint8_t cnt = l2_interface_count();
+
+        for (uint8_t i = 0; i < cnt; ++i) {
+            l2_interface_t* l2 = l2_interface_at(i);
+            if (!l2 || !l2->is_up) continue;
+
+            if ((ver == 0 || ver == IP_VER4)) {
+                for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
+                    l3_ipv4_interface_t* v4 = l2->l3_v4[s];
+                    if (!is_valid_v4_l3_for_bind(v4)) continue;
+                    if (n < SOCK_MAX_L3) {
+                        tmp_ids[n] = v4->l3_id;
+                        tmp_ver[n] = IP_VER4;
+                        ++n;
+                    }
+                }
+            }
+
+            if ((ver == 0 || ver == IP_VER6)) {
+                for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
+                    l3_ipv6_interface_t* v6 = l2->l3_v6[s];
+                    if (!is_valid_v6_l3_for_bind(v6)) continue;
+                    if (n < SOCK_MAX_L3) {
+                        tmp_ids[n] = v6->l3_id;
+                        tmp_ver[n] = IP_VER6;
+                        ++n;
+                    }
                 }
             }
         }
@@ -338,8 +345,8 @@ public:
             l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(spec.l3_id);
             l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(spec.l3_id);
 
-            bool ok4 = is_valid_v4_l3_for_bind(v4);
-            bool ok6 = is_valid_v6_l3_for_bind(v6);
+            bool ok4 = (spec.ver == 0 || spec.ver == IP_VER4) && is_valid_v4_l3_for_bind(v4);
+            bool ok6 = (spec.ver == 0 || spec.ver == IP_VER6) && is_valid_v6_l3_for_bind(v6);
 
             if (!ok4 && !ok6) return SOCK_ERR_INVAL;
 
@@ -354,25 +361,36 @@ public:
                 ++n;
             }
         } else if (spec.kind == BIND_L2){
-            if (!add_all_l3_on_l2(spec.ifindex, ids, vers, n)) return SOCK_ERR_INVAL;
+            if (!add_all_l3_on_l2(spec.ifindex, spec.ver, ids, vers, n)) return SOCK_ERR_INVAL;
         } else if (spec.kind == BIND_IP){
             if (spec.ver == IP_VER4){
                 uint32_t v4ip = 0;
                 memcpy(&v4ip, spec.ip, 4);
-                l3_ipv4_interface_t* ipif = l3_ipv4_find_by_ip(v4ip);
-                if (!is_valid_v4_l3_for_bind(ipif)) return SOCK_ERR_INVAL;
-                ids[n] = ipif->l3_id;
-                vers[n] = IP_VER4;
-                ++n;
+                if (ipv4_is_unspecified(v4ip)) {
+                    if (!add_all_l3_any(IP_VER4, ids, vers, n)) return SOCK_ERR_INVAL;
+                } else {
+                    l3_ipv4_interface_t* ipif = l3_ipv4_find_by_ip(v4ip);
+                    if (!is_valid_v4_l3_for_bind(ipif)) return SOCK_ERR_INVAL;
+                    ids[n] = ipif->l3_id;
+                    vers[n] = IP_VER4;
+                    ++n;
+                }
             } else if (spec.ver == IP_VER6) {
-                l3_ipv6_interface_t* ipif = l3_ipv6_find_by_ip(spec.ip);
-                if (!is_valid_v6_l3_for_bind(ipif)) return SOCK_ERR_INVAL;
-                ids[n] = ipif->l3_id;
-                vers[n] = IP_VER6;
-                ++n;
+                if (ipv6_is_unspecified(spec.ip)) {
+                    if (!add_all_l3_any(IP_VER6, ids, vers, n)) return SOCK_ERR_INVAL;
+                } else {
+                    l3_ipv6_interface_t* ipif = l3_ipv6_find_by_ip(spec.ip);
+                    if (!is_valid_v6_l3_for_bind(ipif)) return SOCK_ERR_INVAL;
+                    ids[n] = ipif->l3_id;
+                    vers[n] = IP_VER6;
+                    ++n;
+                }
             } else return SOCK_ERR_INVAL;
-        } else if (spec.kind == BIND_ANY){
-            if (!add_all_l3_any(ids, vers, n)) return SOCK_ERR_INVAL;
+        } else if (spec.kind == BIND_ANY || spec.kind == BIND_ANY4 || spec.kind == BIND_ANY6){
+            ip_version_t ver = spec.ver;
+            if (spec.kind == BIND_ANY4) ver = IP_VER4;
+            else if (spec.kind == BIND_ANY6) ver = IP_VER6;
+            if (!add_all_l3_any(ver, ids, vers, n)) return SOCK_ERR_INVAL;
         } else return SOCK_ERR_INVAL;
 
         if (n==0) return SOCK_ERR_INVAL;
@@ -434,36 +452,13 @@ public:
     TCPSocket* accept(){
         const int max_empty_iters = 200;
         const int ready_wait_iters = 4;
-        const int max_idle_skips = 20;
         int iter = 0;
 
         while (backlogLen == 0){
-            idleAcceptSkips = 0;
             if (++iter > max_empty_iters) return nullptr;
             msleep(5);
         }
 
-        for (int i = 0; i < backlogLen;) {
-            TCPSocket* client = pending[i];
-
-            if (client && client->flow.flow_generation) {
-                bool readable = tcp_flow_readable(&client->flow) != 0;
-                bool closed = tcp_flow_recv_closed(&client->flow);
-
-                if (!closed || readable) {
-                    i++;
-                    continue;
-                }
-            }
-
-            client = pop_pending_at(i);
-            if (client) delete client;
-        }
-
-        if (backlogLen == 0) return nullptr;
-
-        //TODO temporary http workaround
-        //without socket events accept() can pick an idle preconnect and block in recv() while a later ipv4/6 request is already ready
         iter = 0;
         while (1) {
             for (int i = 0; i < backlogLen;) {
@@ -487,16 +482,13 @@ public:
             for (int i = 0; i < backlogLen; ++i) {
                 TCPSocket* client = pending[i];
                 if (!client) continue;
-                if (!client->flow.flow_generation || tcp_flow_readable(&client->flow) || tcp_flow_recv_closed(&client->flow)) {
-                    idleAcceptSkips = 0;
-                    return pop_pending_at(i);
-                }
+                if (!client->flow.flow_generation || tcp_flow_readable(&client->flow) || tcp_flow_recv_closed(&client->flow)) return pop_pending_at(i);
             }
 
             if (++iter > ready_wait_iters) {
-                if (backlogLen >= backlogCap || ++idleAcceptSkips > max_idle_skips) {
-                    idleAcceptSkips = 0;
-                    return pop_pending_at(0);
+                if (backlogLen >= backlogCap) {
+                    TCPSocket* client = pop_pending_at(0);
+                    if (client) delete client;
                 }
                 return nullptr;
             }

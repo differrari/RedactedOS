@@ -148,7 +148,6 @@ private:
                     if (r <= 0) break;
                     chunk_result = http_chunked_decoder_feed(&dec, tmp, (uint32_t)r, &used);
                     body_last_rx_ms = (uint32_t)get_time();
-                    //sock->close();
                 }
 
                 if (chunk_result != HTTP_PARSE_OK) {
