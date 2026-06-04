@@ -1,13 +1,17 @@
 #pragma once
 #include "console/kio.h"
-#include "networking/transport_layer/socket_tcp.hpp"
+#include "networking/transport_layer/csocket.h"
+#include "networking/transport_layer/tcp.h"
+#include "networking/net_logger/net_logger.h"
 #include "http.h"
 #include "std/std.h"
 #include "net/socket_types.h"
 #include "syscalls/syscalls.h"
+#include "process/scheduler.h"
 
 struct HTTPConnection {
-    TCPSocket* client;
+    socket_handle_t client;
+    uint16_t pid;
     string carry_buf;
     uint32_t request_count;
     HTTPMethod current_method;
@@ -18,13 +22,13 @@ struct HTTPConnection {
 class HTTPServer {
 private:
     uint16_t pid;
-    TCPSocket* sock;
+    socket_handle_t sock;
     SocketExtraOptions log_opts;
     SocketExtraOptions* tcp_extra;
     HTTPServerPolicy policy;
 
 public:
-    explicit HTTPServer(uint16_t pid_, const SocketExtraOptions* extra, const HTTPServerPolicyOptions* http_options) : pid(pid_), sock(nullptr), log_opts{}, tcp_extra(nullptr), policy(http_server_policy_from_options(http_options)) {
+    explicit HTTPServer(const SocketExtraOptions* extra, const HTTPServerPolicyOptions* http_options) : pid((uint16_t)get_current_proc_pid()), sock(socket_handle_t{}), log_opts{}, tcp_extra(nullptr), policy(http_server_policy_from_options(http_options)) {
         if (extra) log_opts = *extra;
 
         const SocketExtraOptions* tcp_ptr = extra;
@@ -37,8 +41,8 @@ public:
             }
         }
 
-        sock = (TCPSocket*)zalloc(sizeof(TCPSocket));
-        if (sock) new (sock) TCPSocket(SOCK_ROLE_SERVER, pid, tcp_ptr);
+        sock = socket_handle_t{};
+        create_socket(SOCKET_SERVER, PROTO_TCP, tcp_ptr, &sock);
     }
 
     ~HTTPServer() { close(); }
@@ -50,7 +54,7 @@ public:
 
     int32_t bind(const SockBindSpec& spec, uint16_t port) {
         uint16_t p = port;
-        int32_t r = sock ? sock->bind(spec, p) : SOCK_ERR_STATE;
+        int32_t r = ((sock).id && (sock).protocol != PROTO_NONE) ? bind_socket_spec(&sock, &spec, p) : SOCK_ERR_STATE;
 
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_HTTP_SERVER;
@@ -64,7 +68,7 @@ public:
 
     int32_t listen(int backlog = 4) {
         int b = backlog;
-        int32_t r = sock ? sock->listen(b) : SOCK_ERR_STATE;
+        int32_t r = ((sock).id && (sock).protocol != PROTO_NONE) ? listen_on(&sock, b) : SOCK_ERR_STATE;
 
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_HTTP_SERVER;
@@ -77,40 +81,40 @@ public:
     }
 
     HTTPConnection* accept() {
-        TCPSocket* c = sock ? sock->accept() : nullptr;
-        if (!c) return nullptr;
+        socket_handle_t child = socket_handle_t{};
+        if (!((sock).id && (sock).protocol != PROTO_NONE) || !accept_on_socket(&sock, &child)) return nullptr;
 
         HTTPConnection* conn = (HTTPConnection*)zalloc(sizeof(HTTPConnection));
         if (!conn) {
-            delete c;
+            close_socket(&child);
             return nullptr;
         }
 
-        conn->client = c;
+        conn->client = child;
+        conn->pid = pid;
         conn->carry_buf = string{nullptr, 0, 0};
         conn->request_count = 0;
         conn->current_method = HTTP_METHOD_GET;
         conn->close_after_response = true;
         conn->send_keep_alive_header = false;
 
-        if (c) {
-            netlog_socket_event_t ev{};
-            ev.comp = NETLOG_COMP_HTTP_SERVER;
-            ev.action = NETLOG_ACT_ACCEPT;
-            ev.pid = pid;
-            ev.i0 = (int64_t)(uintptr_t)c;
-            ev.local_port = c->get_local_port();
-            ev.remote_ep = c->get_remote_ep();
-            netlog_socket_event(&log_opts, &ev);
-        }
+        netlog_socket_event_t ev{};
+        ev.comp = NETLOG_COMP_HTTP_SERVER;
+        ev.action = NETLOG_ACT_ACCEPT;
+        ev.pid = pid;
+        ev.i0 = (int64_t)child.id;
+        ev.local_port = get_socket_local_port(&child);
+        net_l4_endpoint child_remote_ep{};
+        get_socket_remote_endpoint(&child, &child_remote_ep);
+        ev.remote_ep = child_remote_ep;
+        netlog_socket_event(&log_opts, &ev);
         return conn;
     }
 
     HTTPRequestMsg recv_request(HTTPConnection* conn) {
         HTTPRequestMsg req{};
-        if (!conn || !conn->client) return req;
+        if (!conn || !((conn->client).id && (conn->client).protocol != PROTO_NONE)) return req;
 
-        TCPSocket* client = conn->client;
         string buf = string_repeat('\0', 0);
         if (conn->carry_buf.length) {
             string_append_bytes(&buf, conn->carry_buf.data, conn->carry_buf.length);
@@ -128,7 +132,7 @@ public:
         char* body_copy = nullptr;
 
         while (hdr_end < 0) {
-            int64_t r = client->recv(tmp, sizeof(tmp));
+            int64_t r = receive_from_socket(&conn->client, tmp, sizeof(tmp), nullptr);
             if (r == TCP_WOULDBLOCK) {
                 uint32_t now = (uint32_t)get_time();
                 if ((uint32_t)(now - last_rx_ms) > policy.common.header_idle_timeout_ms || (uint32_t)(now - start_ms) > policy.common.header_total_timeout_ms) {
@@ -268,7 +272,7 @@ public:
                 consumed = body_start + used;
 
                 while (chunk_result == HTTP_PARSE_INCOMPLETE) {
-                    int64_t r = client->recv(tmp, sizeof(tmp));
+                    int64_t r = receive_from_socket(&conn->client, tmp, sizeof(tmp), nullptr);
                     if (r == TCP_WOULDBLOCK) {
                         uint32_t now = (uint32_t)get_time();
                         if ((now - body_last_rx_ms) > policy.common.body_idle_timeout_ms || (now - body_start_ms) > policy.common.body_total_timeout_ms) break;
@@ -316,7 +320,7 @@ public:
                         uint32_t body_start_ms = (uint32_t)get_time();
                         uint32_t body_last_rx_ms = body_start_ms;
                         while (copied < need) {
-                            int64_t r = client->recv(body_copy + copied, need - copied);
+                            int64_t r = receive_from_socket(&conn->client, body_copy + copied, need - copied, nullptr);
                             if (r == TCP_WOULDBLOCK) {
                                 uint32_t now = (uint32_t)get_time();
                                 if ((now - body_last_rx_ms) > policy.common.body_idle_timeout_ms || (now - body_start_ms) > policy.common.body_total_timeout_ms) {
@@ -375,8 +379,10 @@ public:
         ev.u0 = (uint32_t)req.method;
         ev.u1 = (uint32_t)req.path.length;
         ev.i0 = (int64_t)req.body.size;
-        ev.local_port = client->get_local_port();
-        ev.remote_ep = client->get_remote_ep();
+        ev.local_port = get_socket_local_port(&conn->client);
+        net_l4_endpoint conn_remote_ep{};
+        get_socket_remote_endpoint(&conn->client, &conn_remote_ep);
+        ev.remote_ep = conn_remote_ep;
 
         char pathbuf[128];
         if (req.path.length && req.path.data) {
@@ -399,9 +405,8 @@ public:
     }
 
     int32_t send_response(HTTPConnection* conn, const HTTPResponseMsg& res) {
-        if (!conn || !conn->client) return SOCK_ERR_STATE;
+        if (!conn || !((conn->client).id && (conn->client).protocol != PROTO_NONE))  return SOCK_ERR_STATE;
         
-        TCPSocket* client = conn->client;
         uint32_t code = (uint32_t)res.status_code;
         bool informational = code >= 100 && code < 200;
         bool suppress_body = informational || conn->current_method == HTTP_METHOD_HEAD || code == 204 || code == 304;
@@ -464,7 +469,7 @@ public:
         
         uint32_t off = 0;
         while (sent >= 0 && off < first_len) {
-            int64_t r = client->send(first_ptr + off, first_len - off);
+            int64_t r = send_on_socket(&conn->client, (void*)(first_ptr + off), first_len - off);
             uint32_t now = (uint32_t)get_time();
 
             if (r == TCP_WOULDBLOCK || r == 0) {
@@ -490,7 +495,7 @@ public:
             while (body_off < body_len) {
                 uint32_t ask = body_len - body_off;
                 if (ask > 16384) ask = 16384;
-                int64_t r = client->send(body + body_off, ask);
+                int64_t r = send_on_socket(&conn->client, (void*)(body + body_off), ask);
                 uint32_t now = (uint32_t)get_time();
 
                 if (r == TCP_WOULDBLOCK || r == 0) {
@@ -520,31 +525,39 @@ public:
         ev.u0 = code;
         ev.u1 = out_len;
         ev.i0 = sent;
-        ev.local_port = client->get_local_port();
-        ev.remote_ep = client->get_remote_ep();
+        ev.local_port = get_socket_local_port(&conn->client);
+        net_l4_endpoint conn_remote_ep{};
+        get_socket_remote_endpoint(&conn->client, &conn_remote_ep);
+        ev.remote_ep = conn_remote_ep;
         netlog_socket_event(&log_opts, &ev);
 
         string_free(out);
-        if (sent >= 0 && close_after_send) client->close();
+        if (sent >= 0 && close_after_send) if (conn && ((conn->client).id && (conn->client).protocol != PROTO_NONE)) {
+            close_socket(&conn->client);
+            conn->client = socket_handle_t{};
+        }
         return sent < 0 ? (int32_t)sent : SOCK_OK;
     }
 
     int32_t close() {
-        int32_t r = sock ? SOCK_OK : SOCK_ERR_STATE;
+        int32_t r = ((sock).id && (sock).protocol != PROTO_NONE) ? SOCK_OK : SOCK_ERR_STATE;
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_HTTP_SERVER;
         ev.action = NETLOG_ACT_CLOSE;
         ev.pid = pid;
         ev.i0 = r;
-        if (sock) {
-            ev.local_port = sock->get_local_port();
-            ev.remote_ep = sock->get_remote_ep();
+        if (((sock).id && (sock).protocol != PROTO_NONE)) {
+            ev.local_port = get_socket_local_port(&sock);
+            net_l4_endpoint sock_remote_ep{};
+            get_socket_remote_endpoint(&sock, &sock_remote_ep);
+            ev.remote_ep = sock_remote_ep;
         }
         netlog_socket_event(&log_opts, &ev);
 
-        if (sock) sock->~TCPSocket();
-        if (sock) release(sock);
-        sock = nullptr;
+        if (((sock).id && (sock).protocol != PROTO_NONE)) {
+            r = close_socket(&sock);
+            sock = socket_handle_t{};
+        }
 
         if (tcp_extra) release(tcp_extra);
         tcp_extra = nullptr;

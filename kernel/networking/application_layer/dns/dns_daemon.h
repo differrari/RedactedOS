@@ -1,5 +1,5 @@
 #pragma once
-#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket.h"
 
 #define IPV4_MCAST_MDNS 0xE00000FBu
 

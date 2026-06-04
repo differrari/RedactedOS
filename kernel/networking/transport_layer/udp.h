@@ -1,7 +1,6 @@
 #pragma once
 #include "types.h"
 #include "net/network_types.h"
-#include "networking/port_manager.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/netpkt.h"
 
@@ -29,9 +28,6 @@ void udp_input(ip_version_t ipver,
                uint8_t l3_id,
                netpkt_t* pkt);
 
-bool udp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t handler);
-bool udp_unbind_l3(uint8_t l3_id, uint16_t port, uint16_t pid);
-int  udp_alloc_ephemeral_l3(uint8_t l3_id, uint16_t pid, port_recv_handler_t handler);
 
 #ifdef __cplusplus
 }

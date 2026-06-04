@@ -45,14 +45,6 @@ static const char* bind_kind_str(SockBindKind k) {
     }
 }
 
-static const char* dst_kind_str(SockDstKind k) {
-    switch (k) {
-        case DST_ENDPOINT: return "EP";
-        case DST_DOMAIN: return "DNS";
-        default: return "";
-    }
-}
-
 void netlog_socket_event(const SocketExtraOptions* extra, const netlog_socket_event_t* e) {
     if (!extra) return;
     if (!e) return;
@@ -115,15 +107,10 @@ void netlog_socket_event(const SocketExtraOptions* extra, const netlog_socket_ev
                 uint16_t dport = 0;
                 net_ep_split(&e->dst_ep, dip, (int)sizeof(dip), &dv6, &dport);
 
-                if (e->dst_kind == DST_DOMAIN && e->s0) {
-                    if (dv6) kprintf("[NET][%s] %s host=%s port=%u dst=[%s]:%u r=%lld", c, a, e->s0, (uint32_t)e->u0, dip, (uint32_t)dport, (long long)e->i0);
-                    else kprintf("[NET][%s] %s host=%s port=%u dst=%s:%u r=%lld", c, a, e->s0, (uint32_t)e->u0, dip, (uint32_t)dport, (long long)e->i0);
-                } else {
-                    if (dv6) kprintf("[NET][%s] %s dst=[%s]:%u r=%lld", c, a, dip, (uint32_t)dport, (long long)e->i0);
-                    else kprintf("[NET][%s] %s dst=%s:%u r=%lld", c, a, dip, (uint32_t)dport, (long long)e->i0);
-                }
+                if (dv6) kprintf("[NET][%s] %s dst=[%s]:%u r=%lld", c, a, dip, (uint32_t)dport, (long long)e->i0);
+                else kprintf("[NET][%s] %s dst=%s:%u r=%lld", c, a, dip, (uint32_t)dport, (long long)e->i0);
             } else {
-                kprintf("[NET][%s] %s kind=%s port=%u", c, a, dst_kind_str(e->dst_kind), (uint32_t)e->u0);
+                kprintf("[NET][%s] %s port=%u", c, a, (uint32_t)e->u0);
             }
             return;
         }
@@ -177,7 +164,7 @@ void netlog_socket_event(const SocketExtraOptions* extra, const netlog_socket_ev
         }
 
         if (e->action == NETLOG_ACT_SENDTO) {
-            kprintf("[NET][%s] %s kind=%s port=%u n=%u", c, a, dst_kind_str(e->dst_kind), (uint32_t)e->u0, (uint32_t)e->u1);
+            kprintf("[NET][%s] %s port=%u n=%u", c, a, (uint32_t)e->u0, (uint32_t)e->u1);
             return;
         }
 
@@ -227,10 +214,7 @@ void netlog_socket_event(const SocketExtraOptions* extra, const netlog_socket_ev
     }
 
     if (e->action == NETLOG_ACT_CONNECT) {
-        if (e->dst_kind == DST_DOMAIN && e->s0) {
-            if (dst_v6) kprintf("[NET][%s] %s host=%s port=%u dst=[%s]:%u r=%lld", c, a, e->s0, (uint32_t)e->u0, dst_ip, (uint32_t)dst_port, (long long)e->i0);
-            else kprintf("[NET][%s] %s host=%s port=%u dst=%s:%u r=%lld", c, a, e->s0, (uint32_t)e->u0, dst_ip, (uint32_t)dst_port, (long long)e->i0);
-        } else if (dst_v6) {
+        if (dst_v6) {
             kprintf("[NET][%s] %s dst=[%s]:%u r=%lld", c, a, dst_ip, (uint32_t)dst_port, (long long)e->i0);
         } else {
             kprintf("[NET][%s] %s dst=%s:%u r=%lld", c, a, dst_ip, (uint32_t)dst_port, (long long)e->i0);
@@ -239,12 +223,8 @@ void netlog_socket_event(const SocketExtraOptions* extra, const netlog_socket_ev
     }
 
     if (e->action == NETLOG_ACT_SENDTO) {
-        if (e->dst_kind == DST_DOMAIN && e->s0)
-            kprintf("[NET][%s] %s host=%s port=%u n=%u", c, a, e->s0, (uint32_t)e->u0, (uint32_t)e->u1);
-        else if (dst_v6)
-            kprintf("[NET][%s] %s dst=[%s]:%u n=%u", c, a, dst_ip, (uint32_t)dst_port, (uint32_t)e->u1);
-        else
-            kprintf("[NET][%s] %s dst=%s:%u n=%u", c, a, dst_ip, (uint32_t)dst_port, (uint32_t)e->u1);
+        if (dst_v6) kprintf("[NET][%s] %s dst=[%s]:%u n=%u", c, a, dst_ip, (uint32_t)dst_port, (uint32_t)e->u1);
+        else kprintf("[NET][%s] %s dst=%s:%u n=%u", c, a, dst_ip, (uint32_t)dst_port, (uint32_t)e->u1);
         return;
     }
 

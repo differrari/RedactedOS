@@ -15,7 +15,7 @@
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 
-#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket.h"
 #include "networking/transport_layer/trans_utils.h"
 
 #include "networking/application_layer/csocket_http_client.h"
@@ -36,17 +36,16 @@
 #define PROBE_INTERVAL_MS 50
 
 static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpoint *out_l4) {
-    socket_handle_t sock = udp_socket_create(SOCK_ROLE_CLIENT, (uint16_t)get_current_proc_pid(), NULL);
-    if (!sock)
+    socket_handle_t sock = {0};
+    if (!create_socket(SOCKET_CLIENT, PROTO_UDP, NULL, &sock))
         return 0;
 
     net_l4_endpoint dst;
     make_ep(probe_ip, probe_port, IP_VER4, &dst);
 
     static const char greeting[] = "hello";
-    if (socket_sendto_udp(sock, DST_ENDPOINT, &dst, 0, greeting, sizeof(greeting)) < 0) {
-        socket_close_udp(sock);
-        socket_destroy_udp(sock);
+    if (send_to_socket(&sock, &dst, greeting, sizeof(greeting)) < 0) {
+        close_socket(&sock);
         return 0;
     }
 
@@ -56,14 +55,13 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
     int64_t recvd = 0;
 
     while (waited < PROBE_TIMEOUT_MS) {
-        recvd = socket_recvfrom_udp(sock, recv_buf, sizeof(recv_buf), &src);
+        recvd = receive_from_socket(&sock, recv_buf, sizeof(recv_buf), &src);
         if (recvd > 0) break;
         msleep(PROBE_INTERVAL_MS);
         waited += PROBE_INTERVAL_MS;
     }
 
-    socket_close_udp(sock);
-    socket_destroy_udp(sock);
+    close_socket(&sock);
 
     if (recvd <= 0) return 0;
     if (out_l4) *out_l4 = src;
@@ -94,11 +92,10 @@ static int net_has_ready_address(void) {
 }
 
 static void run_http_server() {
-    uint16_t pid = get_current_proc_pid();
     SocketExtraOptions opt = {0};
     opt.debug_level = SOCK_DBG_ALL;
     opt.flags = SOCK_OPT_DEBUG;
-    http_server_handle_t srv = http_server_create(pid, &opt, NULL);
+    http_server_handle_t srv = http_server_create(&opt, NULL);
     if (!srv) {
         stop_current_process(1);
         return;
@@ -169,7 +166,7 @@ static void test_http(const net_l4_endpoint* ep) {
         kprintf("[HTTP] GET %s:%i", ip_str, HTTP_PORT);
     }
 
-    http_client_handle_t cli = http_client_create((uint16_t)get_current_proc_pid(), NULL, NULL);
+    http_client_handle_t cli = http_client_create(NULL, NULL);
     if (!cli) {
         kprintf("[HTTP] http_client_create FAIL");
         return;
@@ -185,7 +182,7 @@ static void test_http(const net_l4_endpoint* ep) {
         return;
     }
 
-    int32_t rc = http_client_connect(cli, DST_ENDPOINT, &e, HTTP_PORT);
+    int32_t rc = http_client_connect_endpoint(cli, &e);
     if (rc < 0) {
         http_client_destroy(cli);
         return;

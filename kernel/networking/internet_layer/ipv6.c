@@ -145,7 +145,7 @@ static void icmpv6_send_error(uint8_t ifindex, const uint8_t src_ip[16], const u
 
     memcpy(buf + base, invoking, copy);
 
-    h->checksum =bswap16(checksum16_pipv6(src_ip, dst_ip, 58, buf, icmp_len));
+    h->checksum =bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, buf, icmp_len));
 
     icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, buf, icmp_len, 64);
 
@@ -590,7 +590,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if (ipv6_is_linklocal(ip6->src) &&
         !ipv6_is_linklocal(ip6->dst) &&
         !ipv6_is_multicast(ip6->dst) &&
-        ip6->next_header != 58){
+        ip6->next_header != PROTO_ICMPV6){
         bool dst_is_local = false;
 
         l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
@@ -758,9 +758,9 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
             if (ok) {
                 uint32_t need = 1;
-                if (nh == 6) need = 20;
-                else if (nh == 17) need = 8;
-                else if (nh == 58) need = 4;
+                if (nh == PROTO_TCP) need = 20;
+                else if (nh == PROTO_UDP) need = 8;
+                else if (nh == PROTO_ICMPV6) need = 4;
                 if (frag_len - ulh_off >= need) has_ulh = 1;
             }
         }
@@ -864,7 +864,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
             return;
         }
 
-        if (inner_nh == 58) {
+        if (inner_nh == PROTO_ICMPV6) {
             netpkt_t* l4pkt = netpkt_view(reassembled, payload_off, payload_size);
             if (l4pkt) icmpv6_input(ifindex, ip6->src, ip6->dst, ip6->hop_limit, src_mac, l4pkt);
             netpkt_unref(reassembled);
@@ -912,8 +912,8 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 if (!ipv6_is_linklocal(v6->ip) && ipv6_is_linkscope_mcast(ip6->dst)) continue;
                 netpkt_t* l4pkt = netpkt_view(reassembled, payload_off, payload_size);
                 if (!l4pkt) continue;
-                if (inner_nh == 17) udp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
-                else if (inner_nh == 6) tcp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
+                if (inner_nh == PROTO_UDP) udp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
+                else if (inner_nh == PROTO_TCP) tcp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
                 else netpkt_unref(l4pkt);
             }
 
@@ -934,8 +934,8 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         if (match_count >= 1) {
             netpkt_t* l4pkt = netpkt_view(reassembled, payload_off, payload_size);
             if (l4pkt) {
-                if (inner_nh == 6) tcp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
-                else if (inner_nh == 17) udp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
+                if (inner_nh == PROTO_TCP) tcp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
+                else if (inner_nh == PROTO_UDP) udp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
                 else netpkt_unref(l4pkt);
             }
         }
@@ -944,7 +944,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         return;
     }
 
-    if (nh == 58) {
+    if (nh == PROTO_ICMPV6) {
         netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
         if (l4pkt) icmpv6_input(ifindex, ip6->src, ip6->dst, ip6->hop_limit, src_mac, l4pkt);
         return;
@@ -980,11 +980,11 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
             switch (nh) {
             netpkt_t* l4pkt;
-            case 17:
+            case PROTO_UDP:
                 l4pkt = netpkt_view(pkt, l4_off, l4_len);
                 if (l4pkt) udp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
                 break;
-            case 6:
+            case PROTO_TCP:
                 l4pkt = netpkt_view(pkt, l4_off, l4_len); 
                 if (l4pkt) tcp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
                 break;
@@ -1007,11 +1007,11 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if (match_count >= 1) {
         switch (nh) {
         netpkt_t* l4pkt;
-        case 6:
+        case PROTO_TCP:
             l4pkt = netpkt_view(pkt, l4_off, l4_len);
             if (l4pkt) tcp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
             break;
-        case 17:
+        case PROTO_UDP:
             l4pkt = netpkt_view(pkt, l4_off, l4_len);
             if (l4pkt) udp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
             break;

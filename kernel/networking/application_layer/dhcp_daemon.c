@@ -11,7 +11,7 @@
 #include "networking/link_layer/arp.h"
 #include "networking/transport_layer/udp.h"
 
-#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket.h"
 #include "networking/transport_layer/trans_utils.h"
 
 #include "types.h"
@@ -78,26 +78,16 @@ static void dhcp_reset_backoff(dhcp_if_state_t* st) {
     st->retry_left_ms = 0;
 }
 
-static bool find_state(uint8_t l3_id, int* idx) {
-    for (int i = 0; i < g_if_count; i++) if (g_if[i].l3_id == l3_id) { *idx = i; return true; }
-    return false;
-}
-
-static void remove_state_at(int i) {
-    if (g_if[i].sock) {
-        socket_close_udp(g_if[i].sock);
-        socket_destroy_udp(g_if[i].sock);
-        g_if[i].sock = 0;
-    }
-    if (i < g_if_count - 1) g_if[i] = g_if[g_if_count - 1];
-    g_if_count--;
-}
-
 static void ensure_inventory() {
     for (int i = 0; i < g_if_count;) {
         uint8_t l3id = g_if[i].l3_id;
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3id);
-        if (!v4 || v4->mode == IPV4_CFG_DISABLED || !v4->l2 || !v4->l2->is_up) { remove_state_at(i); continue; }
+        if (!v4 || v4->mode == IPV4_CFG_DISABLED || !v4->l2 || !v4->l2->is_up) {
+            if (g_if[i].sock.id && g_if[i].sock.protocol != PROTO_NONE) close_socket(&g_if[i].sock);
+            if (i < g_if_count - 1) g_if[i] = g_if[g_if_count - 1];
+            g_if_count--;
+            continue;
+        }
         i++;
     }
     uint8_t n = l2_interface_count();
@@ -108,8 +98,14 @@ static void ensure_inventory() {
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
             if (!v4) continue;
             if (v4->mode == IPV4_CFG_DISABLED) continue;
-            int idx;
-            if (find_state(v4->l3_id, &idx)) continue;
+            bool found = false;
+            for (int i = 0; i < g_if_count; i++) {
+                if (g_if[i].l3_id == v4->l3_id) {
+                    found = true;
+                    break;
+                }
+            }
+            if (found) continue;
             dhcp_if_state_t st;
             memset(&st, 0, sizeof(st));
             st.ifindex = l2->ifindex;
@@ -124,13 +120,14 @@ static void ensure_inventory() {
             const uint8_t* m = network_get_mac(st.ifindex);
             if (m) { memcpy(st.mac, m, 6); st.mac_ok = true; }
             st.needs_inform = (v4->mode == IPV4_CFG_STATIC && v4->ip != 0);
-            st.sock = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dhcpd, NULL);
+            memset(&st.sock, 0, sizeof(st.sock));
+            create_socket(SOCKET_SERVER, PROTO_UDP, NULL, &st.sock);
             SockBindSpec spec;
             memset(&spec, 0, sizeof(spec));
             spec.kind = BIND_L3;
             spec.l3_id = st.l3_id;
-            if (socket_bind_udp(st.sock, &spec, 68) != SOCK_OK) {
-                socket_destroy_udp(st.sock);
+            if (bind_socket_spec(&st.sock, &spec, 68) != SOCK_OK) {
+                close_socket(&st.sock);
                 continue;
             }
             st.retry_left_ms = 0;
@@ -152,7 +149,7 @@ static bool udp_wait_for_type_on(socket_handle_t sock, uint8_t wanted, uint32_t 
         uint8_t buf[1024];
         net_l4_endpoint src;
         memset(&src, 0, sizeof(src));
-        int64_t r = socket_recvfrom_udp(sock, buf, sizeof(buf), &src);
+        int64_t r = receive_from_socket(&sock, buf, sizeof(buf), &src);
         if (r > 0) {
             if (src.port != 67) { continue; }
             if ((size_t)r < sizeof(dhcp_packet) - sizeof(((dhcp_packet*)0)->options) + 4) { continue; }
@@ -187,7 +184,7 @@ static bool udp_wait_for_ack_or_nak(socket_handle_t sock, uint32_t expect_xid, c
         uint8_t buf[1024];
         net_l4_endpoint src;
         memset(&src, 0, sizeof(src));
-        int64_t r = socket_recvfrom_udp(sock, buf, sizeof(buf), &src);
+        int64_t r = receive_from_socket(&sock, buf, sizeof(buf), &src);
         if (r > 0) {
             if (src.port != 67) { continue; }
             if ((size_t)r < sizeof(dhcp_packet) - sizeof(((dhcp_packet*)0)->options) + 4) { continue; }
@@ -343,7 +340,7 @@ static void dhcp_send_discover_for(dhcp_if_state_t* st) {
     uint32_t bcast = 0xFFFFFFFFu;
     net_l4_endpoint dst;
     make_ep(bcast, 67, IP_VER4, &dst);
-    socket_sendto_udp(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
+    send_to_socket(&st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
 
@@ -352,7 +349,7 @@ static void dhcp_send_request_select_for(dhcp_if_state_t* st, const dhcp_request
     uint32_t dip = 0xFFFFFFFFu;
     net_l4_endpoint dst;
     make_ep(dip, 67, IP_VER4, &dst);
-    socket_sendto_udp(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
+    send_to_socket(&st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
 
@@ -372,7 +369,7 @@ static void dhcp_send_renew_for(dhcp_if_state_t* st) {
     uint32_t dip = st->server_ip_net ? st->server_ip_net : 0xFFFFFFFFu;
     net_l4_endpoint dst;
     make_ep(dip, 67, IP_VER4, &dst);
-    socket_sendto_udp(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
+    send_to_socket(&st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
 
@@ -392,7 +389,7 @@ static void dhcp_send_rebind_for(dhcp_if_state_t* st) {
     uint32_t dip = 0xFFFFFFFFu;
     net_l4_endpoint dst;
     make_ep(dip, 67, IP_VER4, &dst);
-    socket_sendto_udp(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
+    send_to_socket(&st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
 
@@ -412,7 +409,7 @@ static void dhcp_send_inform_for(dhcp_if_state_t* st) {
     uint32_t dip = 0xFFFFFFFFu;
     net_l4_endpoint dst;
     make_ep(dip, 67, IP_VER4, &dst);
-    socket_sendto_udp(st->sock, 0, &dst, 0, (const void*)pkt.ptr, pkt.size);
+    send_to_socket(&st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
 

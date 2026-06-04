@@ -1,5 +1,6 @@
 #include "tcp_internal.h"
-#include "networking/port_manager.h"
+#include "networking/transport_layer/socket_bind.h"
+#include "networking/transport_layer/csocket_tcp.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv6.h"
 #include "networking/internet_layer/ipv4_utils.h"
@@ -364,16 +365,13 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     if (flow) flow->timer.keepalive_idle_ms = 0;
     if (flow) flow->base.l3_id = l3_id;
 
-    port_manager_t *pm = NULL;
     uint8_t ifx = 0;
-
     if (ipver == IP_VER4) {
         l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(l3_id);
         if (!v4 || !v4->l2) {
             netpkt_unref(pkt);
             return;
         }
-        pm = ifmgr_pm_v4(l3_id);
         ifx = v4->l2->ifindex;
     } else {
         l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(l3_id);
@@ -381,20 +379,14 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             netpkt_unref(pkt);
             return;
         }
-        pm = ifmgr_pm_v6(l3_id);
         ifx = v6->l2->ifindex;
     }
     
-    if (!pm) {
-        netpkt_unref(pkt);
-        return;
-    }
-
-    port_recv_handler_t port_handler = port_get_handler(pm, PROTO_TCP, dst_port);
     if (flow && flow->base.state == TCP_TIME_WAIT && (flags & (1 << SYN_F)) && !(flags& ((1 << ACK_F) | (1 << RST_F) | (1 << FIN_F))) && data_len == 0) {
-        int listen_idx = find_flow(dst_port, ipver, dst_ip_addr, NULL, 0);
-        if (listen_idx < 0)listen_idx = find_flow(dst_port, ipver, NULL, NULL, 0);
-        if (listen_idx >= 0) {
+        ksocket_t* listener = NULL;
+        socket_bind_collect(PROTO_TCP, ipver, l3_id, ifx, dst_ip_addr, dst_port, &listener, 1);
+        if (listener) {
+            socket_core_put(listener);
             tcp_free_flow(idx);
             flow = NULL;
             idx = -1;
@@ -414,10 +406,10 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     }
 
     if (!flow){
-        int listen_idx = find_flow(dst_port, ipver, dst_ip_addr, NULL, 0);
-        if (listen_idx < 0)listen_idx = find_flow(dst_port, ipver, NULL, NULL, 0);
+        ksocket_t* listener = NULL;
+        socket_bind_collect(PROTO_TCP, ipver, l3_id, ifx, dst_ip_addr, dst_port, &listener, 1);
 
-        if ((flags & (1u << SYN_F)) && !(flags & ((1u << ACK_F) | (1u << RST_F) | (1u << FIN_F))) && data_len == 0 && listen_idx >= 0){
+        if ((flags & (1u << SYN_F)) && !(flags & ((1u << ACK_F) | (1u << RST_F) | (1u << FIN_F))) && data_len == 0 && listener){
             rng_t rng;
             uint64_t virt_timer;
             asm volatile ("mrs %0, cntvct_el0" : "=r"(virt_timer));
@@ -431,13 +423,15 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 else if (syn_admit == TCP_ADMIT_ORPHAN_LIMIT) tcp_stats.orphan_drop_global++;
                 else if (syn_admit == TCP_ADMIT_RESOURCE_BUDGET) tcp_stats.resource_budget_drop++;
                 else if (syn_admit == TCP_ADMIT_FLOW_TABLE_FULL) tcp_stats.flow_table_full++;
+                socket_core_put(listener);
                 netpkt_unref(pkt);
                 return;
             }
 
-            tcp_flow_t *lf = tcp_flows[listen_idx];
+            const SocketExtraOptions* listener_extra = socket_tcp_extra_options(socket_core_impl(listener));
             tcp_flow_t *nf = tcp_alloc_flow();
             if (!nf) {
+                socket_core_put(listener);
                 netpkt_unref(pkt);
                 return;
             }
@@ -462,9 +456,9 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
             tcp_parsed_opts_t pop = parsed_opts;
 
-            flow->tx.ws_send = lf->tx.ws_send;
+            flow->tx.ws_send = 0;
             flow->tx.ws_recv = 0;
-            flow->tx.ws_ok = (lf->tx.ws_ok && pop.has_wscale) ? 1 : 0;
+            flow->tx.ws_ok = pop.has_wscale ? 1 : 0;
             if (flow->tx.ws_ok) {
                 flow->tx.ws_recv = pop.wscale;
                 if (flow->tx.ws_recv > 14) flow->tx.ws_recv = 14;
@@ -474,7 +468,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 flow->tx.ws_recv = 0;
             }
 
-            flow->tx.sack_ok = (lf->tx.sack_ok && pop.sack_permitted) ? 1 : 0;
+            flow->tx.sack_ok = pop.sack_permitted ? 1 : 0;
 
             if (pop.has_mss && pop.mss){
                 uint32_t m = pop.mss;
@@ -485,7 +479,8 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 flow->tx.mss = m;
             } else flow->tx.mss = tcp_calc_mss_for_l3(l3_id, ipver, src_ip_addr);
             flow->base.ctx.flags = 0;
-            flow->base.ctx.options = lf->base.ctx.options;
+            flow->base.ctx.options.ptr = 0;
+            flow->base.ctx.options.size = 0;
             flow->base.ctx.payload.ptr = 0;
             flow->base.ctx.payload.size = 0;
 
@@ -511,7 +506,14 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->timer.delayed_ack_pending = 0;
             flow->timer.delayed_ack_timer_ms = 0;
 
-            flow->rx.rcv_wnd_max = lf->rx.rcv_wnd_max;
+            uint32_t rcvbuf = TCP_DEFAULT_RCV_BUF;
+            if (listener_extra && (listener_extra->flags & SOCK_OPT_BUF_SIZE) && listener_extra->buf_size) rcvbuf = listener_extra->buf_size;
+            flow->rx.rcv_wnd_max = tcp_clamp_rcvbuf(rcvbuf);
+            tcp_flow_apply_socket_options(&flow->base.ctx, listener_extra);
+            if (flow->rx.rcv_wnd_max > 65535u && pop.has_wscale) {
+                flow->tx.ws_send = 8;
+                flow->tx.ws_ok = 1;
+            }
             flow->rx.rcv_base = flow->rx.rcv_nxt;
             flow->rx.rcv_data_nxt = flow->rx.rcv_nxt;
             flow->rx.rcv_ooo_used = 0;
@@ -520,12 +522,6 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->rx.rcv_buf = 0;
             flow->rx.rcv_adv_edge = flow->rx.rcv_nxt + flow->rx.rcv_wnd_max;
             tcp_calc_adv_wnd_field(flow, flow->tx.ws_ok ? 1 : 0);
-
-            flow->ip.ttl = lf->ip.ttl;
-            flow->ip.dontfrag = lf->ip.dontfrag;
-            flow->timer.keepalive_on = lf->timer.keepalive_on;
-            flow->timer.keepalive_ms = lf->timer.keepalive_ms;
-            flow->timer.keepalive_idle_ms = 0;
 
             flow->tx.cwnd = flow->tx.mss * TCP_INIT_CWND_SEGS;
             if (flow->tx.cwnd < flow->tx.mss) flow->tx.cwnd = flow->tx.mss;
@@ -541,6 +537,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow);
             if (!seg) {
                 tcp_free_flow(idx);
+                socket_core_put(listener);
                 netpkt_unref(pkt);
                 return;
             }
@@ -557,6 +554,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             seg->opts_len = tcp_build_syn_options(seg->opts, (uint16_t)flow->tx.mss, flow->tx.ws_ok ? flow->tx.ws_send : 0xff, flow->tx.sack_ok);
             if (!tcp_send_from_seg(flow, seg)) {
                 tcp_free_flow(idx);
+                socket_core_put(listener);
                 netpkt_unref(pkt);
                 return;
             }
@@ -564,10 +562,12 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->tx.snd_nxt = iss + 1;
 
             tcp_daemon_kick();
+            socket_core_put(listener);
             netpkt_unref(pkt);
             return;
         }
 
+        if (listener) socket_core_put(listener);
         if (!(flags & (1u << RST_F))){
             if (flags & (1u << ACK_F)){
                 tcp_send_reset(ipver, dst_ip_addr, src_ip_addr, dst_port, src_port, ack, 0, false);
@@ -786,7 +786,12 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             }
 
             uint32_t queued = 0;
-            if (port_handler) queued = port_handler(ifx, ipver, src_ip_addr, dst_ip_addr, 0, src_port, dst_port);
+            ksocket_t* listener = NULL;
+            socket_bind_collect(PROTO_TCP, ipver, l3_id, ifx, dst_ip_addr, dst_port, &listener, 1);
+            if (listener) {
+                queued = tcp_accept_enqueue(listener, ifx, ipver, src_ip_addr, dst_ip_addr, src_port, dst_port);
+                socket_core_put(listener);
+            }
             if (!queued) {
                 tcp_stats.acceptq_drop_full++;
                 tcp_hdr_t rst_hdr;

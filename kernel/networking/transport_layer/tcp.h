@@ -1,6 +1,5 @@
 #pragma once
 
-#include "networking/port_manager.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/link_layer/eth.h"
 #include "networking/netpkt.h"
@@ -82,6 +81,7 @@ typedef enum {
 #define TCP_MIN_RTO 200
 #define TCP_MAX_RTO 60000
 #define TCP_MSL_MS 30000
+#define SOCKET_DEFAULT_KEEPALIVE_MS 60000
 #define TCP_2MSL_MS (2 * TCP_MSL_MS)
 #define TCP_MAX_RETRANS 8
 #define TCP_MAX_PERSIST_PROBES 8
@@ -89,10 +89,8 @@ typedef enum {
 int find_flow(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port);
 bool tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, tcp_data *out_ctx);
 
-bool tcp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t handler, const SocketExtraOptions* extra);
-int tcp_alloc_ephemeral_l3(uint8_t l3_id, uint16_t pid, port_recv_handler_t handler);
-bool tcp_unbind_l3(uint8_t l3_id, uint16_t port, uint16_t pid);
 bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, uint16_t pid, const SocketExtraOptions* extra);
+void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketExtraOptions* extra);
 
 tcp_result_t tcp_flow_send(tcp_data *flow_ctx);
 tcp_result_t tcp_flow_flush(tcp_data *flow_ctx);

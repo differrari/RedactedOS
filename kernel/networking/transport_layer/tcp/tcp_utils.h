@@ -5,7 +5,6 @@
 #include "networking/internet_layer/ipv6.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
-#include "networking/port_manager.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -5,15 +5,15 @@
 #include "process/scheduler.h"
 #include "syscalls/syscalls.h"
 #include "net/socket_types.h"
-#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "std/memory.h"
 
 static uint16_t g_pid_dnsd = 0xFFFF;
-static socket_handle_t g_sock = 0;
+static socket_handle_t g_sock = {0};
 
-static socket_handle_t g_sock_mdns4 = 0;
-static socket_handle_t g_sock_mdns6 = 0;
+static socket_handle_t g_sock_mdns4 = {0};
+static socket_handle_t g_sock_mdns6 = {0};
 
 uint16_t dns_get_pid(void){ return g_pid_dnsd; }
 bool dns_is_running(void){ return g_pid_dnsd != 0xFFFF; }
@@ -24,7 +24,7 @@ socket_handle_t mdns_socket_handle_v4(void){ return g_sock_mdns4; }
 socket_handle_t mdns_socket_handle_v6(void){ return g_sock_mdns6; }
 
 static socket_handle_t mdns_create_socket(ip_version_t ver, const uint8_t* group) {
-    if (!group) return 0;
+    if (!group) return ((socket_handle_t){0});
     SocketExtraOptions opt;
     memset(&opt, 0, sizeof(opt));
     opt.flags = SOCK_OPT_MCAST_JOIN | SOCK_OPT_TTL;
@@ -34,19 +34,20 @@ static socket_handle_t mdns_create_socket(ip_version_t ver, const uint8_t* group
     opt.mcast_groups[0].port = DNS_MDNS_PORT;
     if(ver == IP_VER4) memcpy(opt.mcast_groups[0].ip, group, 4);
     else if (ver == IP_VER6) memcpy(opt.mcast_groups[0].ip, group, 16);
-    else return 0;
+    else return ((socket_handle_t){0});
 
-    socket_handle_t s = udp_socket_create(SOCK_ROLE_SERVER, g_pid_dnsd, &opt);
-    if(!s) return 0;
+    socket_handle_t s = {0};
+    create_socket(SOCKET_SERVER, PROTO_UDP, &opt, &s);
+    if(!((s).id && (s).protocol != PROTO_NONE)) return ((socket_handle_t){0});
 
     SockBindSpec spec;
     memset(&spec, 0, sizeof(spec));
     spec.kind = BIND_ANY;
     spec.ver = ver;
 
-    if(socket_bind_udp(s, &spec, DNS_MDNS_PORT) != SOCK_OK){
-        socket_destroy_udp(s);
-        return 0;
+    if(bind_socket_spec(&s, &spec, DNS_MDNS_PORT) != SOCK_OK){
+        close_socket(&s);
+        return ((socket_handle_t){0});
     }
 
     return s;
@@ -55,7 +56,8 @@ static socket_handle_t mdns_create_socket(ip_version_t ver, const uint8_t* group
 int dns_deamon_entry(int argc, char* argv[]){
     (void)argc; (void)argv;
     dns_set_pid(get_current_proc_pid());
-    g_sock = udp_socket_create(SOCK_ROLE_CLIENT, g_pid_dnsd, NULL);
+    memset(&g_sock, 0, sizeof(g_sock));
+    create_socket(SOCKET_CLIENT, PROTO_UDP, NULL, &g_sock);
 
     uint32_t mdns_v4 = IPV4_MCAST_MDNS;
     uint8_t mdns_v4_addr[4];
@@ -72,15 +74,15 @@ int dns_deamon_entry(int argc, char* argv[]){
         uint8_t buf[900];
         net_l4_endpoint src;
 
-        if (g_sock_mdns4) {
+        if (((g_sock_mdns4).id && (g_sock_mdns4).protocol != PROTO_NONE)) {
             memset(&src, 0, sizeof(src));
-            int64_t r4 = socket_recvfrom_udp(g_sock_mdns4, buf, sizeof(buf), &src);
+            int64_t r4 = receive_from_socket(&g_sock_mdns4, buf, sizeof(buf), &src);
             if(r4 > 0 && src.ver == IP_VER4) mdns_responder_handle_query(g_sock_mdns4, IP_VER4, mdns_v4_addr, buf, (uint32_t)r4, &src);
         }
 
-        if (g_sock_mdns6) {
+        if (((g_sock_mdns6).id && (g_sock_mdns6).protocol != PROTO_NONE)) {
             memset(&src, 0, sizeof(src));
-            int64_t r6 = socket_recvfrom_udp(g_sock_mdns6, buf, sizeof(buf), &src);
+            int64_t r6 = receive_from_socket(&g_sock_mdns6, buf, sizeof(buf), &src);
             if(r6 > 0 && src.ver == IP_VER6) mdns_responder_handle_query(g_sock_mdns6, IP_VER6, mdns_v6, buf, (uint32_t)r6, &src);
         }
 

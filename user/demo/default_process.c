@@ -76,7 +76,7 @@ int net_example() {
 
     char *str = "Hello node";
 
-    print("Sent %i",socket_send(&spec, DST_ENDPOINT, &rc.ip, rc.port, str, strlen(str)));
+    print("Sent %i",socket_send_to(&spec, &rc, str, strlen(str)));
 
     socket_close(&spec);
 

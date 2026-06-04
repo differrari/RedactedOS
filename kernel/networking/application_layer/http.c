@@ -211,7 +211,8 @@ HTTPParseResult http_parse_status_line(const char *buf, uint32_t len, HTTPStatus
     code_buf[3] = 0;
 
     uint32_t code = 0;
-    if (!parse_uint32_dec(code_buf, &code)) return HTTP_PARSE_BAD_FORMAT;
+    if (!parse_uint32_dec_exact(code_buf, &code)) return HTTP_PARSE_BAD_FORMAT;
+    if (code < 100 || code > 999) return HTTP_PARSE_BAD_FORMAT;
     out->status_code = code;
 
     uint32_t i = 12;
@@ -385,7 +386,7 @@ HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolic
             if (ok) {
                 memcpy(len_buf, buf + val_start, val_len);
                 len_buf[val_len] = 0;
-                ok = parse_uint32_dec(len_buf, &parsed);
+                ok = parse_uint32_dec_exact(len_buf, &parsed);
             }
 
             if (!ok || (C->framing.has_content_length && C->fields.content_length != parsed)) {

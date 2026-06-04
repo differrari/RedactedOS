@@ -11,13 +11,12 @@
 #define CURL_MAX_REDIRECTS 5
 
 typedef struct {
-    const char *out_path;
     char *url;
     bool head_only;
     bool follow;
 } curl_opts_t;
 
-static int curl_fetch(char *url, const char *out_path, bool head_only, bool follow) {
+static int curl_fetch(char *url, bool head_only, bool follow) {
     string host = (string){0};
     string path = (string){0};
     uint16_t port = 0;
@@ -75,7 +74,7 @@ static int curl_fetch(char *url, const char *out_path, bool head_only, bool foll
     opts.follow_redirects = follow ? 1 : 0;
     opts.max_redirects = CURL_MAX_REDIRECTS;
 
-    http_client_handle_t cli = http_client_create((uint16_t)get_current_proc_pid(), NULL, &opts);
+    http_client_handle_t cli = http_client_create(NULL, &opts);
     if (!cli) {
         string_free(host);
         string_free(path);
@@ -83,7 +82,7 @@ static int curl_fetch(char *url, const char *out_path, bool head_only, bool foll
         return 4;
     }
 
-    int32_t rc = http_client_connect(cli, DST_DOMAIN, host.data, port);
+    int32_t rc = http_client_connect_domain(cli, host.data, port);
     if (rc < 0) {
         print("curl: connect failed for %s:%d", host.data, port);
         http_client_destroy(cli);
@@ -113,29 +112,7 @@ static int curl_fetch(char *url, const char *out_path, bool head_only, bool foll
         string raw = http_response_builder(&head);
         print("%.*s", (int)raw.length, raw.data);
         string_free(raw);
-    } else if (resp.body.ptr && resp.body.size) {
-        int write_ok;
-
-        if (!out_path) {
-            print("%.*s", (int)resp.body.size, (const char*)resp.body.ptr);
-            write_ok = 1;
-        } else write_ok = swritef(out_path, (const void*)resp.body.ptr, (uint32_t)resp.body.size, false) == resp.body.size;
-
-        if (!write_ok) {
-            print("curl: write failed");
-
-            if (resp.reason.mem_length) string_free(resp.reason);
-            http_headers_common_free(&resp.headers_common);
-            http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
-            if (resp.body.ptr && resp.body.size) release((void*)resp.body.ptr);
-            resp = (HTTPResponseMsg){0};
-
-            http_client_destroy(cli);
-            string_free(host);
-            string_free(path);
-            return 7;
-        }
-    }
+    } else if (resp.body.ptr && resp.body.size) print("%.*s", (int)resp.body.size, (const char*)resp.body.ptr);
 
     if (resp.reason.mem_length) string_free(resp.reason);
     http_headers_common_free(&resp.headers_common);
@@ -155,10 +132,7 @@ static bool parse_args(int argc, char *argv[], curl_opts_t *o) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-I") == 0) o->head_only = true;
         else if (strcmp(argv[i], "-L") == 0) o->follow = true;
-        else if (strcmp(argv[i], "-o") == 0) {
-            if (++i >= argc) return false;
-            o->out_path = argv[i];
-        } else if (!o->url) o->url = argv[i];
+        else if (!o->url) o->url = argv[i];
         else return false;
     }
 
@@ -168,9 +142,9 @@ static bool parse_args(int argc, char *argv[], curl_opts_t *o) {
 int run_curl(int argc, char* argv[]) {
     curl_opts_t opts;
     if (!parse_args(argc, argv, &opts)) {
-        print("usage: curl [-L] [-I] [-o file] http://host/path");
+        print("usage: curl [-L] [-I] http://host/path");
         return 2;
     }
 
-    return curl_fetch(opts.url, opts.out_path, opts.head_only, opts.follow);
+    return curl_fetch(opts.url, opts.head_only, opts.follow);
 }

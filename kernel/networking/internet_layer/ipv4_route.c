@@ -9,7 +9,6 @@ static bool v4_l3_ok_for_tx(l3_ipv4_interface_t* v4){
     if (!v4->l2->is_up) return false;
     if (v4->mode == IPV4_CFG_DISABLED) return false;
     if (!v4->ip) return false;
-    if (!v4->port_manager) return false;
     return true;
 }
 

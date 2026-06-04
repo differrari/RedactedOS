@@ -4,7 +4,6 @@
 #include "networking/link_layer/ndp.h"
 #include "networking/internet_layer/ipv4_route.h"
 #include "networking/internet_layer/ipv6_route.h"
-#include "networking/port_manager.h"
 #include "process/scheduler.h"
 #include "memory/page_allocator.h"
 #include "networking/internet_layer/ipv4_utils.h"
@@ -13,9 +12,6 @@
 #include "networking/internet_layer/mld.h"
 #include "networking/link_layer/nic_types.h"
 #include "networking/network.h"
-
-static void* g_kmem_page_v4 = NULL;
-static void* g_kmem_page_v6 = NULL;
 //TODO: add network settings
 
 static l2_interface_t g_l2[MAX_L2_INTERFACES];
@@ -400,22 +396,6 @@ uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
     l2->l3_v4[loc] = n;
     l2->ipv4_count++;
 
-    if (!g_kmem_page_v4) g_kmem_page_v4 = palloc(PAGE_SIZE*1, MEM_PRIV_KERNEL, MEM_RW|MEM_NORM, false);
-    if (!g_kmem_page_v4) return NULL;
-
-    n->port_manager = (port_manager_t*)kalloc(g_kmem_page_v4, sizeof(port_manager_t), ALIGN_16B, MEM_PRIV_KERNEL);
-    if (!n->port_manager) {
-        l2->l3_v4[loc] = NULL;
-        if (l2->ipv4_count) l2->ipv4_count--;
-        if (n->routing_table) {
-            ipv4_rt_destroy((ipv4_rt_table_t*)n->routing_table);
-            n->routing_table = NULL;
-        }
-        g_v4[g].used = false;
-        memset(&g_v4[g], 0, sizeof(g_v4[g]));
-        return 0;
-    }
-    port_manager_init(n->port_manager);
 
     if (n->mode != IPV4_CFG_DISABLED && n->ip && l2->kind != NET_IFK_LOCALHOST) (void)l2_ipv4_mcast_join(ifindex, IPV4_MCAST_ALL_HOSTS);
     if (l2->kind != NET_IFK_LOCALHOST && l2_has_active_v4(l2)) for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) igmp_send_join(l2->ifindex, l2->ipv4_mcast[i]);
@@ -497,10 +477,6 @@ bool l3_ipv4_remove_from_interface(uint8_t l3_id){
     }
     if (g < 0) return false;
 
-    if (n->port_manager) {
-        kfree(n->port_manager, sizeof(port_manager_t));
-        n->port_manager = NULL;
-    }
 
     uint8_t slot = l3_slot_from_id(l3_id);
     if (slot < MAX_IPV4_PER_INTERFACE && l2->l3_v4[slot] == n){
@@ -659,18 +635,6 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     l2->l3_v6[loc] = n;
     l2->ipv6_count++;
 
-    if (!g_kmem_page_v6) g_kmem_page_v6 = palloc(PAGE_SIZE*1, MEM_PRIV_KERNEL, MEM_RW|MEM_NORM, false);
-    if (!g_kmem_page_v6) return NULL;
-    
-    n->port_manager = (port_manager_t*)kalloc(g_kmem_page_v6, sizeof(port_manager_t), ALIGN_16B, MEM_PRIV_KERNEL);
-    if (!n->port_manager){
-        l2->l3_v6[loc] = NULL;
-        if (l2->ipv6_count) l2->ipv6_count--;
-        g_v6[g].used = false;
-        memset(&g_v6[g], 0, sizeof(g_v6[g]));
-        return 0;
-    }
-    port_manager_init(n->port_manager);
     if (cfg == IPV6_CFG_DHCPV6){
         uint8_t m[16];
         ipv6_make_multicast(2, IPV6_MCAST_DHCPV6_SERVERS, NULL, m);
@@ -863,10 +827,6 @@ bool l3_ipv6_remove_from_interface(uint8_t l3_id){
     }
     if (g < 0) return false;
 
-    if (n->port_manager) {
-        kfree(n->port_manager, sizeof(port_manager_t));
-        n->port_manager = NULL;
-    }
 
     uint8_t slot = l3_slot_from_id(l3_id);
     if (slot < MAX_IPV6_PER_INTERFACE && l2->l3_v6[slot] == n){

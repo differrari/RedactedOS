@@ -14,7 +14,6 @@
 #include "std/string.h"
 #include "exceptions/timer.h"
 #include "networking/network.h"
-#include "networking/port_manager.h"
 #include "filesystem/filesystem.h"
 #include "syscalls/syscall_codes.h"
 #include "graph/tres.h"
@@ -261,94 +260,84 @@ u64 syscall_socket_create(process_t *ctx){
     SYSCALL_ARG(const SocketExtraOptions, extra, PROC_X2, false);
     SYSCALL_ARG(SocketHandle, out, PROC_X3, true);
 
-    return create_socket(role, protocol, extra, ctx->id, out);
+    return create_socket(role, protocol, extra, out);
 }
 
 u64 syscall_socket_bind(process_t *ctx){
-    SYSCALL_ARG(SocketHandle,handle,PROC_X0, true);
+    SYSCALL_ARG(SocketHandle,handle,PROC_X0, false);
     ip_version_t ip_version = (ip_version_t)ctx->PROC_X1;
     uint16_t port = (uint16_t)ctx->PROC_X2;
-    return bind_socket(handle, port, ip_version, ctx->id);
+    return bind_socket(handle, port, ip_version);
 }
 
 u64 syscall_socket_connect(process_t *ctx){
-    uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
-    uint16_t port = (uint16_t)ctx->PROC_X3;
-
     SYSCALL_ARG(SocketHandle,handle,PROC_X0,true);
-
-    const void *dst = 0;
-
-    if (dst_kind == DST_ENDPOINT) {
-        SYSCALL_ARG(net_l4_endpoint, ep, PROC_X2, true);
-        dst = ep;
-    } else if (dst_kind == DST_DOMAIN) {
-        SYSCALL_STR(domain, PROC_X2, true);
-        dst = domain;
-    } else {
-        return 0;
-    }
-
-    return connect_socket(handle, dst_kind, dst, port, ctx->id);
+    SYSCALL_ARG(net_l4_endpoint, ep, PROC_X1, false);
+    return connect_socket(handle, ep);
 }
 
 u64 syscall_socket_listen(process_t *ctx){
-    SYSCALL_ARG(SocketHandle,handle, PROC_X0, true);
+    SYSCALL_ARG(SocketHandle,handle, PROC_X0, false);
     int32_t backlog = (int32_t)ctx->PROC_X1;
 
-    return listen_on(handle, backlog, ctx->id);
+    return listen_on(handle, backlog);
 }
 
 u64 syscall_socket_accept(process_t *ctx){
-    SYSCALL_ARG(SocketHandle,handle, PROC_X0, true);
-    accept_on_socket(handle, ctx->id);
-    return 1;
+    SYSCALL_ARG(SocketHandle,handle, PROC_X0, false);
+    SYSCALL_ARG(SocketHandle,out_child, PROC_X1, true);
+    return accept_on_socket(handle, out_child);
 }
 
 u64 syscall_socket_send(process_t *ctx){
-    uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
-    uint16_t port = (uint16_t)ctx->PROC_X3;
-    size_t size = (size_t)ctx->regs[5];
-
-    SYSCALL_ARG(SocketHandle,handle, PROC_X0, true);
-
-    const void *dst = 0;
-
-    if (dst_kind == DST_ENDPOINT){
-        SYSCALL_ARG(net_l4_endpoint, ep, PROC_X2, true);
-        dst = ep;
-    } else if (dst_kind == DST_DOMAIN){
-        SYSCALL_STR(domain, PROC_X2, true);
-        dst = domain;
-    } else {
-        return 0;
-    }
-
+    size_t size = (size_t)ctx->PROC_X2;
     if (!size) return 0;
-    
-    uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
 
-    SYSCALL_ARG_SIZE(void, kbuf, alloc_size, PROC_X4, true);
-    if (!kbuf) return 0;
+    SYSCALL_ARG(SocketHandle,handle, PROC_X0, false);
+    SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
+    return send_on_socket(handle, buf, size);
+}
 
-    return send_on_socket(handle, dst_kind, dst, port, kbuf, size, ctx->id);
+u64 syscall_socket_send_to(process_t *ctx) {
+    size_t size = (size_t)ctx->PROC_X3;
+    if (!size) return 0;
+    SYSCALL_ARG(SocketHandle,handle, PROC_X0, false);
+    SYSCALL_ARG(net_l4_endpoint, dst, PROC_X1, false);
+    SYSCALL_ARG_SIZE(void, buf, size, PROC_X2, false);
+
+    return send_to_socket(handle, dst, buf, size);
 }
 
 u64 syscall_socket_receive(process_t *ctx){
     size_t size = (size_t)ctx->PROC_X2;
     if (!size) return 0;
-    uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     
-    SYSCALL_ARG(SocketHandle, handle, PROC_X0, true);
-    SYSCALL_ARG_SIZE(void, buf, alloc_size, PROC_X1, true);
+    SYSCALL_ARG(SocketHandle, handle, PROC_X0, false);
+    SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, true);
 
     SYSCALL_ARG(net_l4_endpoint, src, PROC_X3, true);
-    return receive_from_socket(handle, buf, size, src, ctx->id);
+    return receive_from_socket(handle, buf, size, src);
 }
 
 u64 syscall_socket_close(process_t *ctx){
     SYSCALL_ARG(SocketHandle,handle, PROC_X0, true);
-    return close_socket(handle, ctx->id);
+    return close_socket(handle);
+}
+
+u64 syscall_socket_setopt(process_t *ctx){
+    SYSCALL_ARG(SocketHandle, handle, PROC_X0, false);
+    int32_t opt = (int32_t)ctx->PROC_X1;
+    uint32_t len = (uint32_t)ctx->PROC_X3;
+    SYSCALL_ARG_SIZE(void, value, len, PROC_X2, false);
+    return set_socket_option(handle, opt, value, len);
+}
+
+u64 syscall_socket_getopt(process_t *ctx){
+    SYSCALL_ARG(SocketHandle, handle, PROC_X0, false);
+    int32_t opt = (int32_t)ctx->PROC_X1;
+    SYSCALL_ARG(uint32_t, len, PROC_X3, true);
+    SYSCALL_ARG_SIZE(void, value, *len, PROC_X2, true);
+    return get_socket_option(handle, opt, value, len);
 }
 
 #define ISOLATEDFS
@@ -544,9 +533,12 @@ syscall_entry syscalls[] = {
     [SOCKET_CONNECT_CODE] = syscall_socket_connect,
     [SOCKET_LISTEN_CODE] = syscall_socket_listen,
     [SOCKET_ACCEPT_CODE] = syscall_socket_accept,
+    [SOCKET_SENDTO_CODE] = syscall_socket_send_to,
     [SOCKET_SEND_CODE] = syscall_socket_send,
     [SOCKET_RECEIVE_CODE] = syscall_socket_receive,
     [SOCKET_CLOSE_CODE] = syscall_socket_close,
+    [SOCKET_SETOPT_CODE] = syscall_socket_setopt,
+    [SOCKET_GETOPT_CODE] = syscall_socket_getopt,
     [FILE_OPEN_CODE] = syscall_openf,
     [FILE_READ_CODE] = syscall_readf,
     [FILE_WRITE_CODE] = syscall_writef,

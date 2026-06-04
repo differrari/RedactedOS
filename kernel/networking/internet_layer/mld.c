@@ -112,12 +112,12 @@ static bool mld_send_report(uint8_t ifindex, const uint8_t group[16], uint8_t re
     icmp[11] = 0;
     memcpy(icmp + 12, group, 16);
 
-    uint16_t csum = checksum16_pipv6(src_ip, dst_ip, 58, icmp, sizeof(icmp));
+    uint16_t csum = checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, icmp, sizeof(icmp));
     icmp[2] = (uint8_t)(csum >> 8);
     icmp[3] = (uint8_t)(csum & 0xFF);
 
     uint8_t hbh[8];
-    hbh[0] = 58;
+    hbh[0] = PROTO_ICMPV6;
     hbh[1] = 0;
     hbh[2] = 5;
     hbh[3] = 2;

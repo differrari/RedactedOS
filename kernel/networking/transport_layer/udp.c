@@ -2,7 +2,8 @@
 #include "net/checksums.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv6.h"
-#include "networking/port_manager.h"
+#include "networking/transport_layer/socket_bind.h"
+#include "networking/transport_layer/csocket_udp.h"
 #include "std/memory.h"
 #include "types.h"
 #include "syscalls/syscalls.h"
@@ -24,9 +25,9 @@ size_t create_udp_segment(uintptr_t buf, const net_l4_endpoint *src, const net_l
         uint32_t d = 0;
         memcpy(&s, src->ip, 4);
         memcpy(&d, dst->ip, 4);
-        udp.checksum = bswap16(checksum16_pipv4(s, d, 0x11, (const uint8_t *)buf, full_len));
+        udp.checksum = bswap16(checksum16_pipv4(s, d, PROTO_UDP, (const uint8_t *)buf, full_len));
     } else if (src->ver == IP_VER6) {
-        udp.checksum = bswap16(checksum16_pipv6(src->ip, dst->ip, 17, (const uint8_t *)buf, full_len));
+        udp.checksum = bswap16(checksum16_pipv6(src->ip, dst->ip, PROTO_UDP, (const uint8_t *)buf, full_len));
     }
 
     memcpy((void*)buf, &udp, sizeof(udp));
@@ -50,10 +51,10 @@ void udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, si
         uint32_t dst_ip = 0;
         memcpy(&dst_ip, dst->ip, 4);
         (void)netpkt_trim(pkt, (uint32_t)written);
-        ipv4_send_packet(dst_ip, 0x11, pkt, (const ipv4_tx_opts_t*)tx_opts, ttl, dontfrag);
+        ipv4_send_packet(dst_ip, PROTO_UDP, pkt, (const ipv4_tx_opts_t*)tx_opts, ttl, dontfrag);
     } else if (src->ver == IP_VER6) {
         (void)netpkt_trim(pkt, (uint32_t)written);
-        ipv6_send_packet(dst->ip, 0x11, pkt, (const ipv6_tx_opts_t*)tx_opts, ttl, dontfrag);
+        ipv6_send_packet(dst->ip, PROTO_UDP, pkt, (const ipv6_tx_opts_t*)tx_opts, ttl, dontfrag);
     } else {
         netpkt_unref(pkt);
     }
@@ -88,12 +89,12 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             uint32_t dst_ip = 0;
             memcpy(&src_ip, src_ip_addr, sizeof(src_ip));
             memcpy(&dst_ip, dst_ip_addr, sizeof(dst_ip));
-            if (checksum16_pipv4(src_ip, dst_ip, 0x11, (const uint8_t*)netpkt_data(pkt), (uint16_t)(payload_len + sizeof(hdr))) != 0) {
+            if (checksum16_pipv4(src_ip, dst_ip, PROTO_UDP, (const uint8_t*)netpkt_data(pkt), (uint16_t)(payload_len + sizeof(hdr))) != 0) {
                 netpkt_unref(pkt);
                 return;
             }
         } else if (ipver == IP_VER6) {
-            if (checksum16_pipv6((const uint8_t*)src_ip_addr, (const uint8_t*)dst_ip_addr, 0x11, (const uint8_t*)netpkt_data(pkt), (uint32_t)(payload_len + sizeof(hdr))) != 0) {
+            if (checksum16_pipv6((const uint8_t*)src_ip_addr, (const uint8_t*)dst_ip_addr, PROTO_UDP, (const uint8_t*)netpkt_data(pkt), (uint32_t)(payload_len + sizeof(hdr))) != 0) {
                 netpkt_unref(pkt);
                 return;
             }
@@ -105,17 +106,11 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
     l3_ipv4_interface_t *v4 = NULL;
     l3_ipv6_interface_t *v6 = NULL;
-    port_manager_t *pm = NULL;
 
-    if (ipver == IP_VER4) {
-        v4 = l3_ipv4_find_by_id(l3_id);
-        if (v4) pm = ifmgr_pm_v4(l3_id);
-    } else if (ipver == IP_VER6) {
-        v6 = l3_ipv6_find_by_id(l3_id);
-        if (v6) pm = ifmgr_pm_v6(l3_id);
-    }
+    if (ipver == IP_VER4) v4 = l3_ipv4_find_by_id(l3_id);
+    else if (ipver == IP_VER6) v6 = l3_ipv6_find_by_id(l3_id);
 
-    if (!pm) {
+    if (!v4 && !v6) {
         netpkt_unref(pkt);
         return;
     }
@@ -130,32 +125,14 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     if (v4 && v4->l2) ifx = v4->l2->ifindex;
     else if (v6 && v6->l2) ifx = v6->l2->ifindex;
 
-    port_recv_handler_t handler = port_get_handler(pm, PROTO_UDP, dst_port);
-    if (handler) handler(ifx, ipver, src_ip_addr, dst_ip_addr, plpkt, src_port, dst_port);
+    ksocket_t* sockets[SOCKET_BIND_COLLECT_MAX];
+    uint32_t count = socket_bind_collect(PROTO_UDP, ipver, l3_id, ifx, dst_ip_addr, dst_port, sockets, SOCKET_BIND_COLLECT_MAX);
+    for (uint32_t i = 0; i < count; ++i) {
+        socket_udp_input(sockets[i], ifx, l3_id, ipver, src_ip_addr, dst_ip_addr, plpkt, src_port, dst_port);
+        socket_core_put(sockets[i]);
+    }
+
     netpkt_unref(plpkt);
     netpkt_unref(pkt);
 }
 
-static inline port_manager_t* pm_for_l3(uint8_t l3_id) {
-    if (l3_ipv4_find_by_id(l3_id)) return ifmgr_pm_v4(l3_id);
-    if (l3_ipv6_find_by_id(l3_id)) return ifmgr_pm_v6(l3_id);
-    return NULL;
-}
-
-bool udp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t handler) {
-    port_manager_t* pm = pm_for_l3(l3_id);
-    if (!pm) return false;
-    return port_bind_manual(pm, PROTO_UDP, port, pid, handler);
-}
-
-bool udp_unbind_l3(uint8_t l3_id, uint16_t port, uint16_t pid) {
-    port_manager_t* pm = pm_for_l3(l3_id);
-    if (!pm) return false;
-    return port_unbind(pm, PROTO_UDP, port, pid);
-}
-
-int udp_alloc_ephemeral_l3(uint8_t l3_id, uint16_t pid, port_recv_handler_t handler) {
-    port_manager_t* pm = pm_for_l3(l3_id);
-    if (!pm) return -1;
-    return port_alloc_ephemeral(pm, PROTO_UDP, pid, handler);
-}

@@ -8,7 +8,7 @@
 #include "syscalls/syscalls.h"
 
 static uint16_t g_pid_ntp = 0xFFFF;
-static socket_handle_t g_sock = 0;
+static socket_handle_t g_sock = {0};
 
 uint16_t ntp_get_pid(void){ return g_pid_ntp; }
 bool ntp_is_running(void){ return g_pid_ntp != 0xFFFF; }
@@ -43,7 +43,8 @@ int ntp_daemon_entry(int argc, char* argv[]){
     (void)argv;
 
     g_pid_ntp = get_current_proc_pid();
-    g_sock = udp_socket_create(0, g_pid_ntp, NULL);
+    g_sock = ((socket_handle_t){0});
+    create_socket(SOCKET_CLIENT, PROTO_UDP, NULL, &g_sock);
     ntp_set_pid(get_current_proc_pid());
 
     uint32_t attempts = 0;

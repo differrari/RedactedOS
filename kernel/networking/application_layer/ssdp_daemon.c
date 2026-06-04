@@ -5,7 +5,7 @@
 #include "std/string.h"
 #include "syscalls/syscalls.h"
 #include "net/network_types.h"
-#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket.h"
 #include "networking/application_layer/ssdp.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "math/math.h"
@@ -50,21 +50,21 @@ static void ssdp_schedule_response(const net_l4_endpoint* src, uint32_t mx_ms) {
 }
 
 static void ssdp_send_notify(socket_handle_t s4, socket_handle_t s6, bool alive) {
-    if (s4) {
+    if (((s4).id && (s4).protocol != PROTO_NONE)) {
         string msg = ssdp_build_notify(alive, false);
         net_l4_endpoint dst;
         make_ep(ssdp_host_v4, 1900, IP_VER4, &dst);
-        (void)socket_sendto_udp(s4, DST_ENDPOINT, &dst, 0, msg.data, msg.length);
+        (void)send_to_socket(&s4, &dst, (void*)msg.data, msg.length);
         string_free(msg);
     }
 
-    if (s6) {
+    if (((s6).id && (s6).protocol != PROTO_NONE)) {
         string msg = ssdp_build_notify(alive, true);
         net_l4_endpoint dst = (net_l4_endpoint){0};
         dst.ver = IP_VER6;
         memcpy(dst.ip, ssdp_host_v6, 16);
         dst.port = 1900;
-        (void)socket_sendto_udp(s6, DST_ENDPOINT, &dst, 0, msg.data, msg.length);
+        (void)send_to_socket(&s6, &dst, (void*)msg.data, msg.length);
         string_free(msg);
     }
 }
@@ -87,20 +87,20 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
     opt.mcast_groups[1].ver = IP_VER6;
     opt.mcast_groups[1].port = 1900;
     memcpy(opt.mcast_groups[1].ip, ssdp_host_v6, 16);
-    socket_handle_t s = udp_socket_create(SOCK_ROLE_SERVER, get_current_proc_pid(), &opt);
+    socket_handle_t s = {0};
+    create_socket(SOCKET_SERVER, PROTO_UDP, &opt,&s);
 
     struct SockBindSpec spec = (struct SockBindSpec){0};
     spec.kind = BIND_ANY;
-    if (s && socket_bind_udp(s, &spec, 1900) < 0) {
-        socket_close_udp(s);
-        socket_destroy_udp(s);
-        s = 0;
+    if (((s).id && (s).protocol != PROTO_NONE) && bind_socket_spec(&s, &spec, 1900) < 0) {
+        close_socket(&s);
+        s = ((socket_handle_t){0});
     }
 
     socket_handle_t s4 = s;
     socket_handle_t s6 = s;
 
-    if (!s4 && !s6) return 1;
+    if (!((s4).id && (s4).protocol != PROTO_NONE) && !((s6).id && (s6).protocol != PROTO_NONE)) return 1;
 
     ssdp_send_notify(s4, s6, true);
     msleep(100);
@@ -121,9 +121,9 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
         char buf[2048];
         net_l4_endpoint src = (net_l4_endpoint){0};
 
-        if (s) {
+        if (((s).id && (s).protocol != PROTO_NONE)) {
             for (int i = 0; i < SSDP_RECV_BURST; ++i) {
-                int64_t r = socket_recvfrom_udp(s, buf, sizeof(buf) - 1, &src);
+                int64_t r = receive_from_socket(&s, buf, sizeof(buf) - 1, &src);
                 if (r <= 0) break;
                 buf[r] = 0;
                 if (ssdp_is_msearch(buf, (int)r)) ssdp_schedule_response(&src, ssdp_parse_mx_ms(buf, (int)r));
@@ -147,7 +147,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
 
             string resp = ssdp_build_search_response();
             socket_handle_t sock = (ssdp_pending[i].dst.ver == IP_VER6) ? s6 : s4;
-            if (sock) (void)socket_sendto_udp(sock, DST_ENDPOINT, &ssdp_pending[i].dst, 0, resp.data, resp.length);
+            if (((sock).id && (sock).protocol != PROTO_NONE)) (void)send_to_socket(&sock, &ssdp_pending[i].dst, (void*)resp.data, resp.length);
             string_free(resp);
             break;
         }

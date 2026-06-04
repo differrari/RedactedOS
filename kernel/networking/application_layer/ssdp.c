@@ -14,9 +14,18 @@ uint32_t ssdp_parse_mx_ms(const char* buf, int len){
     ++i;
 
     while (i < len && (buf[i] == ' ' || buf[i] == '\t')) ++i;
+    uint32_t start = (uint32_t)i;
+    while (i < len && buf[i] >= '0' && buf[i] <= '9') ++i;
+    if ((uint32_t)i == start) return 1000;
+
+    char mx_buf[16];
+    uint32_t mx_len = (uint32_t)i - start;
+    if (mx_len >= sizeof(mx_buf)) return 1000;
+    memcpy(mx_buf, buf + start, mx_len);
+    mx_buf[mx_len] = 0;
 
     uint32_t v = 0;
-    parse_uint32_dec(buf, &v);
+    if (!parse_uint32_dec_exact(mx_buf, &v)) return 1000;
 
     if (v == 0) v = 1;
     if (v > 5) v = 5;

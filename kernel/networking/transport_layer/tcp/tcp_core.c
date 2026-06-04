@@ -1,5 +1,4 @@
 #include "tcp_internal.h"
-#include "networking/port_manager.h"
 #include "networking/interface_manager.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv6.h"
@@ -73,6 +72,26 @@ tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx) {
     if (!flow) return NULL;
     if (flow->base.generation != flow_ctx->flow_generation) return NULL;
     return flow;
+}
+
+void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketExtraOptions* extra) {
+    tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
+    if (!flow) return;
+
+    uint32_t flags = extra ? extra->flags : 0;
+    flow->timer.keepalive_on = (flags & SOCK_OPT_KEEPALIVE) ? 1 : 0;
+    flow->timer.keepalive_ms = flow->timer.keepalive_on ?(extra->keepalive_ms ? extra->keepalive_ms : SOCKET_DEFAULT_KEEPALIVE_MS) : 0;
+    flow->timer.keepalive_idle_ms = 0;
+
+    flow->tx.nodelay = (flags & SOCK_OPT_TCP_NO_DELAY) ? 1 : 0;
+    if (flow->tx.nodelay && flow->tx.nagle_len) tcp_flush_nagle(flow, 1);
+
+    uint32_t queued_limit = (flags & SOCK_OPT_SEND_BUF_SIZE) && extra->send_buf_size ? extra->send_buf_size : TCP_TX_MAX_BYTES_PER_FLOW;
+    if (queued_limit > TCP_TX_MAX_BYTES_PER_FLOW) queued_limit = TCP_TX_MAX_BYTES_PER_FLOW;
+    flow->tx.queued_limit = queued_limit;
+
+    flow->ip.ttl = (flags & SOCK_OPT_TTL) ? extra->ttl : 0;
+    flow->ip.dontfrag = (flags & SOCK_OPT_DONTFRAG) ? 1 : 0;
 }
 
 void tcp_release_io_buffers(tcp_flow_t *f) {
@@ -249,11 +268,11 @@ bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst
 
         h.checksum = tcp_checksum_ipv4(segment, tcp_len, s, d);
         memcpy(segment, &h, sizeof(h));
-        return ipv4_send_packet(d, 6, pkt, (const ipv4_tx_opts_t *)txp, ttl, dontfrag);
+        return ipv4_send_packet(d, PROTO_TCP, pkt, (const ipv4_tx_opts_t *)txp, ttl, dontfrag);
     } else if (ver == IP_VER6){
         h.checksum = tcp_checksum_ipv6(segment, tcp_len, (const uint8_t *)src_ip_addr, (const uint8_t *)dst_ip_addr);
         memcpy(segment, &h, sizeof(h));
-        return ipv6_send_packet((const uint8_t *)dst_ip_addr, 6, pkt, (const ipv6_tx_opts_t *)txp, ttl, dontfrag);
+        return ipv6_send_packet((const uint8_t *)dst_ip_addr, PROTO_TCP, pkt, (const ipv6_tx_opts_t *)txp, ttl, dontfrag);
     }
 
     netpkt_unref(pkt);
@@ -326,109 +345,6 @@ void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms){
     flow->tx.rto = rto;
 }
 
-bool tcp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t handler, const SocketExtraOptions* extra){
-    ip_version_t ver = l3_is_v6_from_id(l3_id) ? IP_VER6 : IP_VER4;
-
-    port_manager_t *pm = (ver == IP_VER6) ? ifmgr_pm_v6(l3_id) : ifmgr_pm_v4(l3_id);
-
-    if (!pm) return false;
-    if (!port_bind_manual(pm, PROTO_TCP, port, pid, handler)) return false;
-
-    int listen_idx = find_flow(port, ver, NULL, NULL, 0);
-    if (listen_idx >= 0) return true;
-
-    tcp_flow_t *f = tcp_alloc_flow();
-    if (!f) {
-        (void)port_unbind(pm, PROTO_TCP, port, pid);
-        return false;
-    }
-    if (f){
-        f->base.local_port = port;
-        f->base.l3_id = l3_id;
-
-        f->base.local.ver = l3_is_v6_from_id(l3_id) ? IP_VER6 : IP_VER4;
-        memset(f->base.local.ip, 0, sizeof(f->base.local.ip));
-        f->base.local.port = port;
-
-        f->base.remote.ver = 0;
-        memset(f->base.remote.ip, 0, sizeof(f->base.remote.ip));
-        f->base.remote.port = 0;
-
-        f->base.state = TCP_LISTEN;
-
-        f->base.ctx.sequence = 0;
-        f->base.ctx.ack = 0;
-        f->base.ctx.flags = 0;
-
-        f->rx.rcv_wnd_max = tcp_clamp_rcvbuf(TCP_DEFAULT_RCV_BUF);
-        if (extra && (extra->flags & SOCK_OPT_BUF_SIZE) && extra->buf_size) f->rx.rcv_wnd_max = tcp_clamp_rcvbuf(extra->buf_size);
-        f->rx.rcv_base = 0;
-        f->rx.rcv_data_nxt = 0;
-        f->rx.rcv_ooo_used = 0;
-        f->rx.sack_recent_left = 0;
-        f->rx.sack_recent_right = 0;
-        f->rx.rcv_adv_edge = 0;
-
-        f->ip.ttl = extra && (extra->flags & SOCK_OPT_TTL) ? extra->ttl : 0;
-        f->ip.dontfrag = extra && (extra->flags & SOCK_OPT_DONTFRAG) ? 1 : 0;
-        f->timer.keepalive_on = extra && (extra->flags & SOCK_OPT_KEEPALIVE) ? 1 : 0;
-        f->timer.keepalive_ms = extra && (extra->flags & SOCK_OPT_KEEPALIVE) ? extra->keepalive_ms : 0;
-        f->timer.keepalive_idle_ms = 0;
-
-        f->tx.mss = TCP_DEFAULT_MSS;
-        if (f->rx.rcv_wnd_max > 65535u) {
-            f->tx.ws_send = 8;
-            f->tx.ws_recv = 0;
-            f->tx.ws_ok = 1;
-        } else {
-            f->tx.ws_send = 0;
-            f->tx.ws_recv = 0;
-            f->tx.ws_ok = 0;
-        }
-        f->tx.sack_ok = 1;
-
-
-        f->base.ctx.options.ptr = 0;
-        f->base.ctx.options.size = 0;
-        f->base.ctx.payload.ptr = 0;
-        f->base.ctx.payload.size = 0;
-
-        f->base.ctx.expected_ack = 0;
-        f->base.ctx.ack_received = 0;
-
-        f->timer.time_wait_ms = 0;
-        f->timer.fin_wait2_ms = 0;
-    }
-
-    return true;
-}
-
-int tcp_alloc_ephemeral_l3(uint8_t l3_id, uint16_t pid, port_recv_handler_t handler){
-
-    port_manager_t *pm = l3_is_v6_from_id(l3_id) ? ifmgr_pm_v6(l3_id) : ifmgr_pm_v4(l3_id);
-    if (!pm) return -1;
-    return port_alloc_ephemeral(pm, PROTO_TCP, pid, handler);
-}
-
-bool tcp_unbind_l3(uint8_t l3_id, uint16_t port, uint16_t pid){
-    ip_version_t ver = l3_is_v6_from_id(l3_id) ? IP_VER6 : IP_VER4;
-
-    port_manager_t *pm = (ver == IP_VER6) ? ifmgr_pm_v6(l3_id) : ifmgr_pm_v4(l3_id);
-    if (!pm) return false;
-
-    bool res = port_unbind(pm, PROTO_TCP, port, pid);
-
-    if (res){
-        for (int i = 0; i < MAX_TCP_FLOWS; i++){
-            tcp_flow_t *f = tcp_flows[i];
-            if (!f) continue;
-            if (f->base.state==TCP_LISTEN && f->base.local_port==port && f->base.local.ver==ver) tcp_free_flow(i);
-        }
-    }
-
-    return res;
-}
-
 bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, uint16_t pid, const SocketExtraOptions* extra){
     (void)pid;
     if (!dst || !flow_ctx) return false;
@@ -486,9 +402,11 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->rx.rcv_ooo_used = 0;
     flow->rx.sack_recent_left = 0;
     flow->rx.sack_recent_right = 0;
-    flow->rx.rcv_wnd_max = tcp_clamp_rcvbuf(TCP_DEFAULT_RCV_BUF);
-    if (extra && (extra->flags & SOCK_OPT_BUF_SIZE) && extra->buf_size) flow->rx.rcv_wnd_max = tcp_clamp_rcvbuf(extra->buf_size);
+    uint32_t rcvbuf = TCP_DEFAULT_RCV_BUF;
+    if (extra && (extra->flags & SOCK_OPT_BUF_SIZE) && extra->buf_size) rcvbuf = extra->buf_size;
+    flow->rx.rcv_wnd_max = tcp_clamp_rcvbuf(rcvbuf);
     flow->rx.rcv_adv_edge = 0;
+    tcp_flow_apply_socket_options(&flow->base.ctx, extra);
 
     flow->tx.mss = tcp_calc_mss_for_l3(l3_id, dst->ver, dst->ip);
 
@@ -511,12 +429,6 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
         return false;
     }
     (void)tcp_calc_adv_wnd_field(flow, 1);
-
-    flow->ip.ttl = extra && (extra->flags & SOCK_OPT_TTL) ? extra->ttl : 0;
-    flow->ip.dontfrag = extra && (extra->flags & SOCK_OPT_DONTFRAG) ? 1 : 0;
-    flow->timer.keepalive_on = extra && (extra->flags & SOCK_OPT_KEEPALIVE) ? 1 : 0;
-    flow->timer.keepalive_ms = extra && (extra->flags & SOCK_OPT_KEEPALIVE) ? extra->keepalive_ms : 0;
-    flow->timer.keepalive_idle_ms = 0;
 
     flow->base.ctx.options.ptr = 0;
     flow->base.ctx.options.size = 0;

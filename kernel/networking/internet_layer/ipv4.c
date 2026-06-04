@@ -393,15 +393,15 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
             uint8_t l3id = cand[i]->l3_id;
             switch (proto) {
                 netpkt_t* l4pkt;
-                case 2:
+                case PROTO_IGMP:
                     l4pkt = netpkt_view(pkt, hdr_len, l4_len);
                     if (l4pkt) igmp_input((uint8_t)ifindex, src, dst, l4pkt);
                     break;
-                case 6: 
+                case PROTO_TCP: 
                     l4pkt = netpkt_view(pkt, hdr_len, l4_len);
                     if (l4pkt) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
                     break;
-                case 17:
+                case PROTO_UDP:
                     l4pkt = netpkt_view(pkt, hdr_len, l4_len);
                     if (l4pkt) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
                     break;
@@ -417,16 +417,16 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
             netpkt_t* l4pkt = netpkt_view(pkt, hdr_len, l4_len);
             if (l4pkt) {
                 switch (proto) {
-                    case 1:
+                    case PROTO_ICMP:
                         icmp_input(l4pkt, src, dst);
                         break;
-                    case 2:
+                    case PROTO_IGMP:
                         igmp_input((uint8_t)ifindex, src, dst, l4pkt);
                         break;
-                    case 6:
+                    case PROTO_TCP:
                         tcp_input(IP_VER4, &src, &dst, cand[0]->l3_id, l4pkt);
                         break;
-                    case 17:
+                    case PROTO_UDP:
                         udp_input(IP_VER4, &src, &dst, cand[0]->l3_id, l4pkt);
                         break;
                     default:
@@ -440,15 +440,15 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 uint8_t l3id = cand[i]->l3_id;
                 switch (proto) {
                     netpkt_t* l4pkt;
-                    case 1:
+                    case PROTO_ICMP:
                     l4pkt = netpkt_view(pkt, hdr_len, l4_len);
                     if (l4pkt) icmp_input(l4pkt, src, dst);
                     break;
-                    case 6:
+                    case PROTO_TCP:
                         l4pkt = netpkt_view(pkt, hdr_len, l4_len);
                         if (l4pkt) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
                         break;
-                    case 17:
+                    case PROTO_UDP:
                         l4pkt = netpkt_view(pkt, hdr_len, l4_len);
                         if (l4pkt) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
                         break;
@@ -472,16 +472,16 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         if (l4pkt) {
 
             switch (proto) {
-                case 1:
+                case PROTO_ICMP:
                     icmp_input(l4pkt, src, dst);
                     break;
-                case 2:
+                case PROTO_IGMP:
                     igmp_input((uint8_t)ifindex, src, dst, l4pkt);
                     break;
-                case 6:
+                case PROTO_TCP:
                     tcp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
                     break;
-                case 17:
+                case PROTO_UDP:
                     udp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
                     break;
                 default:
@@ -497,15 +497,15 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 uint8_t l3id = cand[i]->l3_id;
                 switch (proto) {
                     netpkt_t* l4pkt;
-                    case 1:
+                    case PROTO_ICMP:
                     l4pkt = netpkt_view(pkt, hdr_len, l4_len);
                     if (l4pkt) icmp_input(l4pkt, src, dst);
                     break;
-                    case 6:
+                    case PROTO_TCP:
                         l4pkt = netpkt_view(pkt, hdr_len, l4_len);
                         if (l4pkt) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
                         break;
-                    case 17:
+                    case PROTO_UDP:
                         l4pkt = netpkt_view(pkt, hdr_len, l4_len);
                         if (l4pkt) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
                         break;
@@ -529,15 +529,15 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 uint8_t l3id = v4->l3_id;
                 switch (proto) {
                     netpkt_t* l4pkt;
-                    case 1:
+                    case PROTO_ICMP:
                     l4pkt = netpkt_view(pkt, hdr_len, l4_len);
                     if (l4pkt) icmp_input(l4pkt, src, dst);
                     break;
-                    case 6:
+                    case PROTO_TCP:
                         l4pkt = netpkt_view(pkt, hdr_len, l4_len);
                         if (l4pkt) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
                         break;
-                    case 17:
+                    case PROTO_UDP:
                         l4pkt = netpkt_view(pkt, hdr_len, l4_len);
                         if (l4pkt) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
                         break;

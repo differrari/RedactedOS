@@ -15,7 +15,7 @@
 #include "networking/internet_layer/ipv6.h"
 #include "networking/internet_layer/ipv6_utils.h"
 
-#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket.h"
 
 enum {
     DHCPV6_S_INIT = 0,
@@ -100,14 +100,6 @@ void dhcpv6_force_decline_l3(uint8_t l3_id) {
     int b = l3id_to_bit(l3_id);
     if (b < 0) return;
     g_force_decline_mask |= (1ull << (uint64_t)b);
-}
-
-static void mcast_servers(uint8_t out_ip[16]) {
-    memset(out_ip, 0, 16);
-    out_ip[0] = 0xFF;
-    out_ip[1] = 0x02;
-    out_ip[14] = 0x01;
-    out_ip[15] = 0x02;
 }
 
 static uint32_t next_backoff_ms(dhcpv6_bind_t* b) {
@@ -198,11 +190,7 @@ static void ensure_binds() {
 
             dhcpv6_bind_t* rb = (dhcpv6_bind_t*)linked_list_remove(g_dhcpv6_binds, it);
             if (rb) {
-                if (rb->sock) {
-                    socket_close_udp(rb->sock);
-                    socket_destroy_udp(rb->sock);
-                    rb->sock = 0;
-                }
+                if (rb->sock.id && rb->sock.protocol != PROTO_NONE) close_socket(&rb->sock);
                 free_sized(rb, sizeof(*rb));
             }
         }
@@ -269,8 +257,8 @@ static void ensure_binds() {
         const uint8_t* mac = network_get_mac(b->ifindex);
         if (mac) { memcpy(b->mac, mac, 6); b->mac_ok = 1; }
 
-        b->sock = udp_socket_create(SOCKET_SERVER, g_dhcpv6_pid, NULL);
-        if (!b->sock) {
+        create_socket(SOCKET_SERVER, PROTO_UDP, NULL, &b->sock);
+        if (!b->sock.id || b->sock.protocol == PROTO_NONE) {
             free_sized(b, sizeof(*b));
             continue;
         }
@@ -281,15 +269,15 @@ static void ensure_binds() {
         spec.ver = IP_VER6;
         spec.l3_id = b->bound_linklocal_l3_id;
 
-        if (socket_bind_udp(b->sock, &spec, DHCPV6_CLIENT_PORT) != SOCK_OK) {
-            socket_destroy_udp(b->sock);
-            b->sock = 0;
+        if (bind_socket_spec(&b->sock, &spec, DHCPV6_CLIENT_PORT) != SOCK_OK) {
+            close_socket(&b->sock);
+            b->sock = ((socket_handle_t){0});
             free_sized(b, sizeof(*b));
             continue;
         }
 
         uint8_t m[16];
-        mcast_servers(m);
+        ipv6_make_multicast(2, IPV6_MCAST_DHCPV6_SERVERS, NULL, m);
         (void)l2_ipv6_mcast_join(b->ifindex, m);
 
         linked_list_push_front(g_dhcpv6_binds, b);
@@ -297,7 +285,7 @@ static void ensure_binds() {
 }
 
 static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
-    if (!b || !b->mac_ok || !b->sock) return;
+    if (!b || !b->mac_ok || !b->sock.id || b->sock.protocol == PROTO_NONE) return;
     if (b->done) return;
 
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(b->target_l3_id);
@@ -549,10 +537,10 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     net_l4_endpoint dst;
     memset(&dst, 0, sizeof(dst));
     dst.ver = IP_VER6;
-    mcast_servers(dst.ip);
+    ipv6_make_multicast(2, IPV6_MCAST_DHCPV6_SERVERS, NULL, dst.ip);
     dst.port = DHCPV6_SERVER_PORT;
 
-    (void)socket_sendto_udp(b->sock, DST_ENDPOINT, &dst, 0, (const void*)msg, (uint64_t)msg_len);
+    (void)send_to_socket(&b->sock, &dst, msg, (uint64_t)msg_len);
     b->tx_tries++;
 
     uint8_t rx[DHCPV6_MAX_MSG];
@@ -565,7 +553,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     uint32_t waited = 0;
 
     while (waited < 250) {
-        int64_t r = socket_recvfrom_udp(b->sock, rx, sizeof(rx), &src);
+        int64_t r = receive_from_socket(&b->sock, rx, sizeof(rx), &src);
         if (r > 0) {
             if (src.port != DHCPV6_SERVER_PORT) {
                 msleep(50);

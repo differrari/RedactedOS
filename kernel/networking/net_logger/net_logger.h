@@ -45,7 +45,6 @@ typedef struct netlog_socket_event_t {
 
     SockBindSpec bind_spec;
 
-    SockDstKind dst_kind;
     net_l4_endpoint dst_ep;
     net_l4_endpoint remote_ep;
 

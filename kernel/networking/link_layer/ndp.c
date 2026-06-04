@@ -471,7 +471,7 @@ static bool ndp_send_na_on(uint8_t ifindex, const uint8_t dst_ip[16], const uint
     opt->length = 1;
     memcpy(opt->mac, my_mac, 6);
 
-    na->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, 58, (const uint8_t*)buf, plen));
+    na->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, (const uint8_t*)buf, plen));
 
     uint8_t dst_mac[6];
     if (ipv6_is_multicast(dst_ip)) ipv6_multicast_mac(dst_ip, dst_mac);
@@ -510,7 +510,7 @@ static void ndp_send_ns_on(uint8_t ifindex, const uint8_t target_ip[16], const u
     uint8_t dst_ip[16];
     ipv6_make_multicast(2, IPV6_MCAST_SOLICITED_NODE, target_ip, dst_ip);
 
-    ns->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, 58, (const uint8_t*)buf, plen));
+    ns->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, (const uint8_t*)buf, plen));
 
     uint8_t dst_mac[6];
     ipv6_multicast_mac(dst_ip, dst_mac);
@@ -563,7 +563,7 @@ static void ndp_send_rs_on(uint8_t ifindex) {
     if (mac) memcpy(opt->mac, mac, 6);
     else memset(opt->mac, 0, 6);
 
-    rs->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, 58, (const uint8_t*)buf, plen));
+    rs->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, (const uint8_t*)buf, plen));
 
     uint8_t dst_mac[6];
     ipv6_multicast_mac(dst_ip, dst_mac);

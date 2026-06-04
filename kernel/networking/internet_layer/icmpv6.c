@@ -77,7 +77,7 @@ bool icmpv6_send_on_l2(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t 
     ipv6_hdr_t ip6;
     ip6.ver_tc_fl = bswap32((uint32_t)(6u << 28));
     ip6.payload_len = bswap16((uint16_t)icmp_len);
-    ip6.next_header = 58;
+    ip6.next_header = PROTO_ICMPV6;
     ip6.hop_limit = hop_limit ? hop_limit : 64;
     memcpy(ip6.src, src_ip, 16);
     memcpy(ip6.dst, dst_ip, 16);
@@ -107,7 +107,7 @@ static bool icmpv6_send_echo_reply(uint16_t ifindex, const uint8_t src_ip[16], c
         return false;
     }
 
-    e->hdr.checksum = bswap16(checksum16_pipv6(dst_ip, src_ip, 58, (const uint8_t*)buf, icmp_len));
+    e->hdr.checksum = bswap16(checksum16_pipv6(dst_ip, src_ip, PROTO_ICMPV6, (const uint8_t*)buf, icmp_len));
 
     icmpv6_send_on_l2(ifindex, src_ip, dst_ip, src_mac, (const void*)buf, icmp_len, hop_limit ? hop_limit : 64);
 
@@ -143,10 +143,10 @@ static bool icmpv6_send_echo_request(const uint8_t dst_ip[16], uint16_t id, uint
         netpkt_unref(pkt);
         return false;
     }
-    e.hdr.checksum = bswap16(checksum16_pipv6(plan.src_ip, dst_ip, 58, (const uint8_t*)buf, len));
+    e.hdr.checksum = bswap16(checksum16_pipv6(plan.src_ip, dst_ip, PROTO_ICMPV6, (const uint8_t*)buf, len));
     memcpy(buf, &e, sizeof(e));
 
-    ipv6_send_packet(dst_ip, 58, pkt, (const ipv6_tx_opts_t*)tx_opts_or_null, hop_limit ? hop_limit : 64, 0);
+    ipv6_send_packet(dst_ip, PROTO_ICMPV6, pkt, (const ipv6_tx_opts_t*)tx_opts_or_null, hop_limit ? hop_limit : 64, 0);
     return true;
 }
 
@@ -247,7 +247,7 @@ static bool extract_echo_id_seq_from_error(const uint8_t *icmp, uint32_t icmp_le
     memcpy(&inner, icmp + 8, sizeof(inner));
     uint32_t v = bswap32(inner.ver_tc_fl);
     if ((v >>28) != 6) return false;
-    if (inner.next_header != 58) return false;
+    if (inner.next_header != PROTO_ICMPV6) return false;
 
     const uint8_t *inner_icmp = icmp + 8u + (uint32_t)sizeof(ipv6_hdr_t);
     if ((uintptr_t)inner_icmp + sizeof(icmpv6_echo_t)>(uintptr_t)icmp + icmp_len) return false;
@@ -280,7 +280,7 @@ void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_
         return;
     }
 
-    uint16_t calc = bswap16(checksum16_pipv6(src_ip, dst_ip, 58, icmp, icmp_len));
+    uint16_t calc = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, icmp, icmp_len));
     if (calc != 0) {
         netpkt_unref(pkt);
         return;

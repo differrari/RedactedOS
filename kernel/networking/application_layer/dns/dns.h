@@ -1,5 +1,5 @@
 #pragma once
-#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket.h"
 #include "networking/application_layer/dns/dns_wire.h"
 #ifdef __cplusplus
 extern "C" {

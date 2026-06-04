@@ -1,5 +1,5 @@
 #pragma once
-#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket.h"
 #include "net/network_types.h"
 
 #ifdef __cplusplus

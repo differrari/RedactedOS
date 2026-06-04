@@ -12,7 +12,6 @@ static bool v6_l3_ok_for_tx(l3_ipv6_interface_t* v6, int dst_is_ll, int dst_is_l
     if (v6->is_localhost && !dst_is_loop) return false;
     if (ipv6_is_unspecified(v6->ip)) return false;
     if (v6->dad_state != IPV6_DAD_OK)return false;
-    if (!v6->port_manager) return false;
 
     int src_is_ll = ipv6_is_linklocal(v6->ip) ? 1 : 0;
     if (src_is_ll != dst_is_ll) return false;

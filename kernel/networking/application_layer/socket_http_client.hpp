@@ -1,24 +1,26 @@
 #pragma once
 #include "console/kio.h"
-#include "networking/transport_layer/socket_tcp.hpp"
+#include "networking/transport_layer/csocket.h"
+#include "networking/transport_layer/tcp.h"
+#include "networking/net_logger/net_logger.h"
 #include "http.h"
 #include "std/std.h"
 #include "net/socket_types.h"
 #include "data/format/url.h"
 #include "networking/transport_layer/trans_utils.h"
+#include "networking/transport_layer/socket_endpoint.h"
+#include "process/scheduler.h"
 
 struct HTTPClientOrigin {
-    SockDstKind kind;
     string domain;
     net_l4_endpoint ep;
-    uint16_t port;
     bool valid;
 };
 
 class HTTPClient {
 private:
     uint16_t pid;
-    TCPSocket* sock;
+    socket_handle_t sock;
     SocketExtraOptions log_opts;
     SocketExtraOptions* tcp_extra;
     HTTPClientPolicy policy;
@@ -50,7 +52,7 @@ private:
             uint32_t last_rx_ms = start_ms;
 
             while (hdr_end < 0) {
-                int64_t r = sock->recv(tmp, sizeof(tmp));
+                int64_t r = receive_from_socket(&sock, tmp, sizeof(tmp), nullptr);
                 if (r == TCP_WOULDBLOCK) {
                     uint32_t now = (uint32_t)get_time();
                     if ((now - last_rx_ms) > policy.common.header_idle_timeout_ms || (now - start_ms) > policy.common.header_total_timeout_ms) {
@@ -106,7 +108,10 @@ private:
             if (header_result != HTTP_PARSE_OK) {
                 free_response(&resp);
                 string_free(buf);
-                sock->close();
+                if (((sock).id && (sock).protocol != PROTO_NONE)) {
+                    close_socket(&sock);
+                    sock = socket_handle_t{};
+                }
                 return error_response(SOCK_ERR_PROTO);
             }
 
@@ -138,7 +143,7 @@ private:
                 uint32_t body_last_rx_ms = body_start_ms;
 
                 while (chunk_result == HTTP_PARSE_INCOMPLETE) {
-                    int64_t r = sock->recv(tmp, sizeof(tmp));
+                    int64_t r = receive_from_socket(&sock, tmp, sizeof(tmp), nullptr);
                     if (r == TCP_WOULDBLOCK) {
                         uint32_t now = (uint32_t)get_time();
                         if ((now - body_last_rx_ms) > policy.common.body_idle_timeout_ms || (now - body_start_ms) > policy.common.body_total_timeout_ms) break;
@@ -154,7 +159,10 @@ private:
                     http_chunked_decoder_free(&dec);
                     free_response(&resp);
                     string_free(buf);
-                    sock->close();
+                    if (((sock).id && (sock).protocol != PROTO_NONE)) {
+                        close_socket(&sock);
+                        sock = socket_handle_t{};
+                    }
                     return error_response(SOCK_ERR_PROTO);
                 }
 
@@ -172,7 +180,10 @@ private:
                     if (need > policy.common.max_body_bytes) {
                         free_response(&resp);
                         string_free(buf);
-                        sock->close();
+                        if (((sock).id && (sock).protocol != PROTO_NONE)) {
+                            close_socket(&sock);
+                            sock = socket_handle_t{};
+                        }
                         return error_response(SOCK_ERR_PROTO);
                     }
 
@@ -181,7 +192,10 @@ private:
                         if (!body_copy) {
                             free_response(&resp);
                             string_free(buf);
-                            sock->close();
+                            if (((sock).id && (sock).protocol != PROTO_NONE)) {
+                                close_socket(&sock);
+                                sock = socket_handle_t{};
+                            }
                             return error_response(SOCK_ERR_SYS);
                         }
 
@@ -191,7 +205,7 @@ private:
                         uint32_t body_start_ms = (uint32_t)get_time();
                         uint32_t body_last_rx_ms = body_start_ms;
                         while (copied < need) {
-                            int64_t r = sock->recv(body_copy + copied, need - copied);
+                            int64_t r = receive_from_socket(&sock, body_copy + copied, need - copied, nullptr);
                             if (r == TCP_WOULDBLOCK) {
                                 uint32_t now = (uint32_t)get_time();
                                 if ((now - body_last_rx_ms) > policy.common.body_idle_timeout_ms || (now - body_start_ms) > policy.common.body_total_timeout_ms) break;
@@ -207,7 +221,10 @@ private:
                             release(body_copy);
                             free_response(&resp);
                             string_free(buf);
-                            sock->close();
+                            if (((sock).id && (sock).protocol != PROTO_NONE)) {
+                                close_socket(&sock);
+                                sock = socket_handle_t{};
+                            }
                             return error_response(SOCK_ERR_PROTO);
                         }
 
@@ -221,14 +238,17 @@ private:
                     uint32_t body_start_ms = (uint32_t)get_time();
                     uint32_t body_last_rx_ms = body_start_ms;
                     while (body.length <= policy.common.max_body_bytes) {
-                        int64_t r = sock->recv(tmp, sizeof(tmp));
+                        int64_t r = receive_from_socket(&sock, tmp, sizeof(tmp), nullptr);
                         if (r == TCP_WOULDBLOCK) {
                             uint32_t now = (uint32_t)get_time();
                             if ((now - body_last_rx_ms) > policy.common.body_idle_timeout_ms || (now - body_start_ms) > policy.common.body_total_timeout_ms) {
                                 string_free(body);
                                 free_response(&resp);
                                 string_free(buf);
-                                sock->close();
+                                if (((sock).id && (sock).protocol != PROTO_NONE)) {
+                                    close_socket(&sock);
+                                    sock = socket_handle_t{};
+                                }
                                 return error_response(SOCK_ERR_PROTO);
                             }
                             msleep(1);
@@ -238,7 +258,10 @@ private:
                             string_free(body);
                             free_response(&resp);
                             string_free(buf);
-                            sock->close();
+                            if (((sock).id && (sock).protocol != PROTO_NONE)) {
+                                close_socket(&sock);
+                                sock = socket_handle_t{};
+                            }
                             return error_response(r);
                         }
                         if (r == 0) break;
@@ -246,7 +269,10 @@ private:
                             string_free(body);
                             free_response(&resp);
                             string_free(buf);
-                            sock->close();
+                            if (((sock).id && (sock).protocol != PROTO_NONE)) {
+                                close_socket(&sock);
+                                sock = socket_handle_t{};
+                            }
                             return error_response(SOCK_ERR_PROTO);
                         }
                         string_append_bytes(&body, tmp, (uint32_t)r);
@@ -266,8 +292,10 @@ private:
             ev.pid = pid;
             ev.u0 = (uint32_t)resp.status_code;
             ev.u1 = (uint32_t)resp.body.size;
-            ev.local_port = sock->get_local_port();
-            ev.remote_ep = sock->get_remote_ep();
+            ev.local_port = get_socket_local_port(&sock);
+            net_l4_endpoint sock_remote_ep{};
+            get_socket_remote_endpoint(&sock, &sock_remote_ep);
+            ev.remote_ep = sock_remote_ep;
             netlog_socket_event(&log_opts, &ev);
 
             string_free(buf);
@@ -277,7 +305,7 @@ private:
 
 
 public:
-    explicit HTTPClient(uint16_t pid_, const SocketExtraOptions* extra, const HTTPClientPolicyOptions* http_options) : pid(pid_), sock(nullptr), log_opts{}, tcp_extra(nullptr), policy(http_client_policy_from_options(http_options)), origin{} {
+    explicit HTTPClient(const SocketExtraOptions* extra, const HTTPClientPolicyOptions* http_options) : pid((uint16_t)get_current_proc_pid()), sock(socket_handle_t{}), log_opts{}, tcp_extra(nullptr), policy(http_client_policy_from_options(http_options)), origin{} {
         if (extra) log_opts = *extra;
 
         const SocketExtraOptions* tcp_ptr = extra;
@@ -290,8 +318,8 @@ public:
             }
         }
 
-        sock = (TCPSocket*)zalloc(sizeof(TCPSocket));
-        if (sock) new (sock) TCPSocket(SOCK_ROLE_CLIENT, pid, tcp_ptr);
+        sock = socket_handle_t{};
+        create_socket(SOCKET_CLIENT, PROTO_TCP, tcp_ptr, &sock);
     }
 
     ~HTTPClient() {close();}
@@ -301,16 +329,13 @@ public:
         return SOCK_OK;
     }
 
-    int32_t connect(SockDstKind kind, const void* dst, uint16_t port) {
-        uint16_t p = port;
-        int32_t r = sock ? sock->connect(kind, dst, p) : SOCK_ERR_STATE;
+    int32_t connect_endpoint(const net_l4_endpoint* dst, const char* host_name = nullptr) {
+        int32_t r = ((sock).id && (sock).protocol != PROTO_NONE) ? connect_socket(&sock, dst) : SOCK_ERR_STATE;
         if (r >= 0) {
             HTTPClientOrigin next{};
-            next.kind = kind;
-            next.port = p;
             next.valid = true;
-            if (kind == DST_DOMAIN && dst) next.domain = string_from_literal((const char*)dst);
-            else if (kind == DST_ENDPOINT && dst) next.ep = *(const net_l4_endpoint*)dst;
+            if (dst) next.ep = *dst;
+            if (host_name) next.domain = string_from_literal(host_name);
             if (origin.domain.mem_length) string_free(origin.domain);
             origin = next;
         }
@@ -319,20 +344,26 @@ public:
         ev.comp = NETLOG_COMP_HTTP_CLIENT;
         ev.action = NETLOG_ACT_CONNECT;
         ev.pid = pid;
-        ev.dst_kind = kind;
-        ev.u0 = p;
-        if (kind == DST_DOMAIN) ev.s0 = (const char*)dst;
-        if (kind == DST_ENDPOINT && dst) ev.dst_ep = *(const net_l4_endpoint*)dst;
+        if (dst) ev.dst_ep = *dst;
         ev.i0 = r;
 
-        if (sock) {
-            ev.local_port = sock->get_local_port();
-            ev.remote_ep = sock->get_remote_ep();
+        if (((sock).id && (sock).protocol != PROTO_NONE)) {
+            ev.local_port = get_socket_local_port(&sock);
+            net_l4_endpoint sock_remote_ep{};
+            get_socket_remote_endpoint(&sock, &sock_remote_ep);
+            ev.remote_ep = sock_remote_ep;
             if (ev.remote_ep.ver) ev.dst_ep = ev.remote_ep;
         }
 
         netlog_socket_event(&log_opts, &ev);
         return r;
+    }
+
+    int32_t connect_domain(const char* host, uint16_t port) {
+        if (!host || !port) return SOCK_ERR_INVAL;
+        net_l4_endpoint ep = socket_endpoint_select(host, port, (ip_version_t)0, DNS_USE_BOTH, 3000);
+        if (!ep.ver) return SOCK_ERR_DNS;
+        return connect_endpoint(&ep, host);
     }
 
     HTTPResponseMsg send_request(const HTTPRequestMsg& req) {
@@ -345,24 +376,28 @@ public:
         HTTPResponseMsg resp{};
         uint32_t redirects = policy.follow_redirects ? policy.max_redirects : 0;
         for (uint32_t i = 0;; i++) {
-            if (!sock) {
+            if (!((sock).id && (sock).protocol != PROTO_NONE)) {
                 resp = error_response(SOCK_ERR_STATE);
                 break;
             }
 
             if (!curr.host_override && curr.version != HTTP_VERSION_10 && !curr.headers_common.fields.host.length && origin.valid) {
-                if (origin.kind == DST_DOMAIN && origin.domain.data) {
+                if (origin.domain.data) {
+                    uint16_t host_port = origin.ep.port;
                     bool ipv6 = str_has_char(origin.domain.data, origin.domain.length, ':') >= 0;
-                    if (origin.port && origin.port != 80) {
-                        if (ipv6) curr.headers_common.fields.host = string_format("[%.*s]:%i", (int)origin.domain.length, origin.domain.data, (int)origin.port);
-                        else curr.headers_common.fields.host = string_format("%.*s:%i", (int)origin.domain.length, origin.domain.data, (int)origin.port);
-                    } else curr.headers_common.fields.host = string_from_literal_length(origin.domain.data, origin.domain.length);
-                } else if (origin.kind == DST_ENDPOINT && origin.ep.ver) {
+                    if (host_port && host_port != 80) {
+                        if (ipv6) curr.headers_common.fields.host = string_format("[%.*s]:%i", (int)origin.domain.length, origin.domain.data, (int)host_port);
+                        else curr.headers_common.fields.host = string_format("%.*s:%i", (int)origin.domain.length, origin.domain.data, (int)host_port);
+                    } else {
+                        if (ipv6) curr.headers_common.fields.host = string_format("[%.*s]", (int)origin.domain.length, origin.domain.data);
+                        else curr.headers_common.fields.host = string_from_literal_length(origin.domain.data, origin.domain.length);
+                    }
+                } else if (origin.ep.ver) {
                     char ip[48];
                     bool ipv6 = false;
                     uint16_t ep_port = 0;
                     net_ep_split(&origin.ep, ip, sizeof(ip), &ipv6, &ep_port);
-                    uint16_t host_port = origin.port ? origin.port : ep_port;
+                    uint16_t host_port = ep_port;
                     if (host_port && host_port != 80) {
                         if (ipv6) curr.headers_common.fields.host = string_format("[%s]:%i", ip, (int)host_port);
                         else curr.headers_common.fields.host = string_format("%s:%i", ip, (int)host_port);
@@ -379,7 +414,7 @@ public:
             uint32_t off = 0;
             int64_t sent = 0;
             while (off < out_len) {
-                int64_t r = sock->send(out.data + off, out_len - off);
+                int64_t r = send_on_socket(&sock, (void*)(out.data + off), out_len - off);
                 if (r == TCP_WOULDBLOCK) {
                     msleep(5);
                     continue;
@@ -398,8 +433,10 @@ public:
             ev.pid = pid;
             ev.u0 = out_len;
             ev.i0 = sent;
-            ev.local_port = sock->get_local_port();
-            ev.remote_ep = sock->get_remote_ep();
+            ev.local_port = get_socket_local_port(&sock);
+            net_l4_endpoint sock_remote_ep{};
+            get_socket_remote_endpoint(&sock, &sock_remote_ep);
+            ev.remote_ep = sock_remote_ep;
 
             char pathbuf[128];
             if (curr.path.length && curr.path.data) {
@@ -427,7 +464,7 @@ public:
             if (!url.ok) break;
 
             bool absolute = url.scheme.size || url.host.size;
-            uint16_t next_port = origin.port;
+            uint16_t next_port = origin.ep.port;
             if (url.scheme.size) {
                 if (url.scheme.size == 5 && strncmp_case((const char*)url.scheme.ptr, "https", true, 5) == 0) break;
                 if (!(url.scheme.size == 4 && strncmp_case((const char*)url.scheme.ptr, "http", true, 4) == 0)) break;
@@ -448,16 +485,12 @@ public:
                     curr.headers_common.fields.host = string_repeat('\0', 0);
                 }
 
-                if (sock) {
-                    sock->close();
-                    sock->~TCPSocket();
-                    release(sock);
-                    sock = nullptr;
-                }
-                sock = (TCPSocket*)zalloc(sizeof(TCPSocket));
-                int32_t rr = sock && next_domain.data ? SOCK_OK : SOCK_ERR_SYS;
-                if (rr >= 0) new (sock) TCPSocket(SOCK_ROLE_CLIENT, pid, tcp_extra ? tcp_extra : &log_opts);
-                if (rr >= 0) rr = connect(DST_DOMAIN, next_domain.data, next_port);
+                if (((sock).id && (sock).protocol != PROTO_NONE)) {
+                        close_socket(&sock);
+                        sock = socket_handle_t{};
+                    }
+                int32_t rr = next_domain.data && create_socket(SOCKET_CLIENT, PROTO_TCP, tcp_extra ? tcp_extra : &log_opts, &sock) ? SOCK_OK : SOCK_ERR_SYS;
+                if (rr >= 0) rr = connect_domain(next_domain.data, next_port);
                 if (next_domain.mem_length) string_free(next_domain);
                 if (rr < 0) {
                     free_response(&resp);
@@ -465,22 +498,16 @@ public:
                     break;
                 }
             } else {
-                SockDstKind reconnect_kind = origin.kind;
-                uint16_t reconnect_port = origin.port;
                 net_l4_endpoint reconnect_ep = origin.ep;
                 string reconnect_domain = string{};
-                if (origin.kind == DST_DOMAIN && origin.domain.data) reconnect_domain = string_from_literal(origin.domain.data);
+                if (origin.domain.data) reconnect_domain = string_from_literal(origin.domain.data);
 
-                if (sock) {
-                    sock->close();
-                    sock->~TCPSocket();
-                    release(sock);
-                    sock = nullptr;
-                }
-                sock = (TCPSocket*)zalloc(sizeof(TCPSocket));
-                int32_t rr = sock && origin.valid && (reconnect_kind != DST_DOMAIN || reconnect_domain.data) ? SOCK_OK : SOCK_ERR_SYS;
-                if (rr >= 0) new (sock) TCPSocket(SOCK_ROLE_CLIENT, pid, tcp_extra ? tcp_extra : &log_opts);
-                if (rr >= 0) rr = reconnect_kind == DST_DOMAIN ? connect(DST_DOMAIN, reconnect_domain.data, reconnect_port) : connect(DST_ENDPOINT, &reconnect_ep, reconnect_port);
+                if (((sock).id && (sock).protocol != PROTO_NONE)) {
+                        close_socket(&sock);
+                        sock = socket_handle_t{};
+                    }
+                int32_t rr = origin.valid && create_socket(SOCKET_CLIENT, PROTO_TCP, tcp_extra ? tcp_extra : &log_opts, &sock) ? SOCK_OK : SOCK_ERR_SYS;
+                if (rr >= 0) rr = reconnect_domain.data ? connect_domain(reconnect_domain.data, reconnect_ep.port) : connect_endpoint(&reconnect_ep);
                 if (reconnect_domain.mem_length) string_free(reconnect_domain);
                 if (rr < 0) {
                     free_response(&resp);
@@ -506,25 +533,25 @@ public:
     }
 
     int32_t close() {
-        int32_t r = SOCK_ERR_STATE;
-        if (sock) r = sock->close();
-
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_HTTP_CLIENT;
         ev.action = NETLOG_ACT_CLOSE;
         ev.pid = pid;
-        ev.i0 = r;
 
-        if (sock) {
-            ev.local_port = sock->get_local_port();
-            ev.remote_ep = sock->get_remote_ep();
+        if (((sock).id && (sock).protocol != PROTO_NONE)) {
+            ev.local_port = get_socket_local_port(&sock);
+            net_l4_endpoint sock_remote_ep{};
+            get_socket_remote_endpoint(&sock, &sock_remote_ep);
+            ev.remote_ep = sock_remote_ep;
         }
 
+        int32_t r = SOCK_ERR_STATE;
+        if (((sock).id && (sock).protocol != PROTO_NONE)) {
+            r = close_socket(&sock);
+            sock = socket_handle_t{};
+        }
+        ev.i0 = r;
         netlog_socket_event(&log_opts, &ev);
-
-        if (sock) sock->~TCPSocket();
-        if (sock) release(sock);
-        sock = nullptr;
 
         if (tcp_extra) release(tcp_extra);
         tcp_extra = nullptr;

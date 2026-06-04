@@ -1,6 +1,6 @@
 #pragma once//deprecated, use ntp
 #include "types.h"
-#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket.h"
 
 #ifdef __cplusplus
 extern "C" {

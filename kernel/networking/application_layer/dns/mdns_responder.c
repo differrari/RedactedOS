@@ -3,7 +3,7 @@
 #include "dns_sd.h"
 #include "dns_cache.h"
 #include "networking/internet_layer/ipv6_utils.h"
-#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket.h"
 #include "networking/interface_manager.h"
 #include "std/std.h"
 #include "std/string.h"
@@ -72,7 +72,7 @@ static mdns_service_t g_mdns_services[MDNS_MAX_SERVICES];
 static mdns_cache_entry_t g_mdns_cache[MDNS_CACHE_MAX];
 
 static void mdns_send(socket_handle_t sock, const net_l4_endpoint *src, bool unicast, ip_version_t ver, const uint8_t *mcast_ip, const uint8_t *pkt, uint32_t pkt_len) {
-    if (!sock) return;
+    if (!((sock).id && (sock).protocol != PROTO_NONE)) return;
     if (!pkt) return;
     if (!pkt_len) return;
 
@@ -82,7 +82,7 @@ static void mdns_send(socket_handle_t sock, const net_l4_endpoint *src, bool uni
     if (unicast && src) {
         dst = *src;
         if (!dst.port) dst.port = DNS_MDNS_PORT;
-        socket_sendto_udp(sock, DST_ENDPOINT, &dst, 0, (void*)pkt, pkt_len);
+        send_to_socket(&sock, &dst, pkt, pkt_len);
         return;
     }
 
@@ -90,7 +90,7 @@ static void mdns_send(socket_handle_t sock, const net_l4_endpoint *src, bool uni
     if (ver == IP_VER4) memcpy(dst.ip, mcast_ip, 4);
     else memcpy(dst.ip, mcast_ip, 16);
     dst.port = DNS_MDNS_PORT;
-    socket_sendto_udp(sock, DST_ENDPOINT, &dst, 0, (void*)pkt, pkt_len);
+    send_to_socket(&sock, &dst, pkt, pkt_len);
 }
 
 static bool mdns_pick_identity(uint32_t *out_v4, uint8_t out_v6[16], uint8_t *out_ifindex, uint8_t out_ifid[8]) {
@@ -700,8 +700,8 @@ void mdns_responder_tick(socket_handle_t sock4, socket_handle_t sock6, const uin
                 if (ok && p.an) {
                     mdns_pkt_commit(&p);
 
-                    if (sock4 && mcast_v4) mdns_send(sock4, 0, false, IP_VER4, mcast_v4, pkt, p.off);
-                    if (sock6 && mcast_v6) mdns_send(sock6, 0, false, IP_VER6, mcast_v6, pkt, p.off);
+                    if (((sock4).id && (sock4).protocol != PROTO_NONE) && mcast_v4) mdns_send(sock4, 0, false, IP_VER4, mcast_v4, pkt, p.off);
+                    if (((sock6).id && (sock6).protocol != PROTO_NONE) && mcast_v6) mdns_send(sock6, 0, false, IP_VER6, mcast_v6, pkt, p.off);
 
                     uint32_t ttl_ms = MDNS_TTL_S * 1000;
 
@@ -741,8 +741,8 @@ void mdns_responder_tick(socket_handle_t sock4, socket_handle_t sock6, const uin
             if (mdns_pkt_begin(&p, pkt, sizeof(pkt), DNS_FLAG_QR | DNS_FLAG_AA) && mdns_add_service_records(&p, s, MDNS_TTL_S, do_goodbye) && (p.an || p.ar)) {
                 mdns_pkt_commit(&p);
 
-                if (sock4 && mcast_v4) mdns_send(sock4, 0, false, IP_VER4, mcast_v4, pkt, p.off);
-                if (sock6 && mcast_v6) mdns_send(sock6, 0, false, IP_VER6, mcast_v6, pkt, p.off);
+                if (((sock4).id && (sock4).protocol != PROTO_NONE) && mcast_v4) mdns_send(sock4, 0, false, IP_VER4, mcast_v4, pkt, p.off);
+                if (((sock6).id && (sock6).protocol != PROTO_NONE) && mcast_v6) mdns_send(sock6, 0, false, IP_VER6, mcast_v6, pkt, p.off);
             }
 
             if (do_goodbye) {
@@ -758,7 +758,7 @@ void mdns_responder_tick(socket_handle_t sock4, socket_handle_t sock6, const uin
 }
 
 void mdns_responder_handle_query(socket_handle_t sock, ip_version_t ver, const uint8_t *mcast_ip, const uint8_t *pkt, uint32_t pkt_len, const net_l4_endpoint *src) {
-    if (!sock) return;
+    if (!((sock).id && (sock).protocol != PROTO_NONE)) return;
     if (!mcast_ip) return;
     if (!pkt) return;
     if (pkt_len < 12) return;

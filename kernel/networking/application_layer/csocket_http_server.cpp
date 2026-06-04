@@ -1,13 +1,10 @@
 #include "csocket_http_server.h"
 #include "socket_http_server.hpp"
-#include "networking/transport_layer/socket_tcp.hpp"
-#include "networking/transport_layer/socket.hpp"
-
 
 extern "C" {
 
-http_server_handle_t http_server_create(uint16_t pid, const SocketExtraOptions* extra, const HTTPServerPolicyOptions *options) {
-    HTTPServer* srv = new HTTPServer(pid, extra, options);
+http_server_handle_t http_server_create(const SocketExtraOptions* extra, const HTTPServerPolicyOptions *options) {
+    HTTPServer* srv = new HTTPServer(extra, options);
     if (!srv) return nullptr;
     return reinterpret_cast<http_server_handle_t>(srv);
 }
@@ -62,7 +59,7 @@ int32_t http_connection_close(http_connection_handle_t c) {
     if (!c) return (int32_t)SOCK_ERR_INVAL;
     HTTPConnection* conn = reinterpret_cast<HTTPConnection*>(c);
     if (conn->carry_buf.mem_length) string_free(conn->carry_buf);
-    if (conn->client) delete conn->client;
+    if (((conn->client).id && (conn->client).protocol != PROTO_NONE)) close_socket(&conn->client);
     release(conn);
     return (int32_t)SOCK_OK;
 }

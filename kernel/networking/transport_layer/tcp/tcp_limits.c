@@ -96,9 +96,10 @@ tcp_admit_result_t tcp_admit_syn(uint8_t l3_id, uint16_t port, ip_version_t ver,
 tcp_admit_result_t tcp_admit_tx(tcp_flow_t *flow, uint32_t bytes, uint32_t free_slots) {
     if (!flow) return TCP_ADMIT_TX_FLOW_BYTES;
     if (free_slots <= TCP_TX_CONTROL_RESERVE_SEGS) return TCP_ADMIT_TX_FLOW_SEGS;
-    if (flow->tx.queued_bytes >= TCP_TX_MAX_BYTES_PER_FLOW) return TCP_ADMIT_TX_FLOW_BYTES;
+    uint32_t limit = flow->tx.queued_limit ? flow->tx.queued_limit : TCP_TX_MAX_BYTES_PER_FLOW;
+    if (flow->tx.queued_bytes >= limit) return TCP_ADMIT_TX_FLOW_BYTES;
     if (tcp_tx_global_bytes >= TCP_TX_MAX_BYTES_GLOBAL) return TCP_ADMIT_TX_GLOBAL_BYTES;
-    if (bytes && flow->tx.queued_bytes + bytes > TCP_TX_MAX_BYTES_PER_FLOW) return TCP_ADMIT_TX_FLOW_BYTES;
+    if (bytes && flow->tx.queued_bytes + bytes > limit) return TCP_ADMIT_TX_FLOW_BYTES;
     if (bytes && tcp_tx_global_bytes + bytes > TCP_TX_MAX_BYTES_GLOBAL) return TCP_ADMIT_TX_GLOBAL_BYTES;
     return TCP_ADMIT_OK;
 }

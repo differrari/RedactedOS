@@ -1,7 +1,6 @@
 #pragma once
 
 #include "types.h"
-#include "networking/port_manager.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -85,7 +84,6 @@ typedef struct l3_ipv4_interface {
     bool is_localhost;
     net_runtime_opts_t runtime_opts_v4;
     void *routing_table;
-    port_manager_t *port_manager;
     l2_interface_t *l2;
 } l3_ipv4_interface_t;
 
@@ -130,7 +128,6 @@ typedef struct l3_ipv6_interface {
     uint8_t dad_probes_sent;
     uint32_t dad_timer_ms;
     void *routing_table;
-    port_manager_t *port_manager;
     l2_interface_t *l2;
     uint8_t ra_has;
     uint8_t ra_autonomous;
@@ -184,15 +181,6 @@ void ifmgr_autoconfig_l2(uint8_t ifindex);
 
 ip_resolution_result_t resolve_ipv4_to_interface(uint32_t dst_ip);
 ip_resolution_result_t resolve_ipv6_to_interface(const uint8_t dst_ip[16]);
-
-static inline port_manager_t* ifmgr_pm_v4(uint8_t l3_id){
-    l3_ipv4_interface_t* n = l3_ipv4_find_by_id(l3_id);
-    return n ? n->port_manager : NULL;
-}
-static inline port_manager_t* ifmgr_pm_v6(uint8_t l3_id){
-    l3_ipv6_interface_t* n = l3_ipv6_find_by_id(l3_id);
-    return n ? n->port_manager : NULL;
-}
 
 static inline uint8_t make_l3_id_v4(uint8_t ifindex, uint8_t local_slot){ return (uint8_t)((ifindex<<4) | (local_slot & 0x03)); }
 static inline uint8_t make_l3_id_v6(uint8_t ifindex, uint8_t local_slot){ return (uint8_t)((ifindex<<4) | 0x08 | (local_slot & 0x03)); }

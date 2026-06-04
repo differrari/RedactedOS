@@ -2,7 +2,6 @@
 
 #include "../tcp.h"
 #include "types.h"
-#include "networking/port_manager.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv6.h"
 #include "networking/internet_layer/ipv4_utils.h"
@@ -93,6 +92,7 @@ typedef struct {
 
     uint8_t nagle_flushing;
     uint8_t nagle_appending;
+    uint8_t nodelay;
 
     uintptr_t nagle_buf;
     uint32_t nagle_len;
@@ -101,6 +101,7 @@ typedef struct {
 
     tcp_tx_seg_t txq[TCP_MAX_TX_SEGS];
     uint32_t queued_bytes;
+    uint32_t queued_limit;
     uint8_t fin_tx_pending;
 } tcp_flow_tx_t;
 
@@ -172,11 +173,11 @@ int tcp_try_send_pending_fin(tcp_flow_t *flow);
 uint64_t tcp_flush_nagle(tcp_flow_t *flow, uint8_t force);
 
 static inline uint16_t tcp_checksum_ipv4(const void *segment, uint16_t seg_len, uint32_t src_ip, uint32_t dst_ip) {
-    uint16_t csum = checksum16_pipv4(src_ip, dst_ip, 6, (const uint8_t *)segment, seg_len);
+    uint16_t csum = checksum16_pipv4(src_ip, dst_ip, PROTO_TCP, (const uint8_t *)segment, seg_len);
     return bswap16(csum);
 }
 static inline uint16_t tcp_checksum_ipv6(const void *segment, uint16_t seg_len,  const uint8_t src_ip[16], const uint8_t dst_ip[16]) {
-    uint16_t csum = checksum16_pipv6(src_ip, dst_ip, 6, (const uint8_t *)segment, seg_len);
+    uint16_t csum = checksum16_pipv6(src_ip, dst_ip, PROTO_TCP, (const uint8_t *)segment, seg_len);
     return bswap16(csum);
 }
 

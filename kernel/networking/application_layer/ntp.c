@@ -5,7 +5,7 @@
 #include "process/scheduler.h"
 #include "console/kio.h"
 #include "math/math.h"
-#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket.h"
 #include "networking/transport_layer/trans_utils.h"
 
 #include "syscalls/syscalls.h"
@@ -110,7 +110,7 @@ static ntp_result_t ntp_send_query(socket_handle_t sock, uint32_t server_ip_host
 
     net_l4_endpoint dst;
     make_ep(server_ip_host, NTP_PORT, IP_VER4, &dst);
-    int64_t sent = socket_sendto_udp(sock, DST_ENDPOINT, &dst, 0, &p, sizeof(p));
+    int64_t sent = send_to_socket(&sock, &dst, &p, sizeof(p));
     if (sent < 0) return NTP_ERR_SEND;
     *t1_us_out = t1_us;
     *tx_ntp64_be_out = tx_be;
@@ -237,8 +237,9 @@ ntp_result_t ntp_poll_once(uint32_t timeout_ms){
     discover_servers(&s0, &s1);
     if (s0 == 0 && s1 == 0) return NTP_ERR_NO_SERVER;
 
-    socket_handle_t sock = udp_socket_create(0, (uint32_t)get_current_proc_pid(), NULL);
-    if (sock == 0) return NTP_ERR_SOCKET;
+    socket_handle_t sock = {0};
+    create_socket(SOCKET_CLIENT, PROTO_UDP, NULL, &sock);
+    if (!((sock).id && (sock).protocol != PROTO_NONE)) return NTP_ERR_SOCKET;
 
     uint64_t t1_0 = 0, t1_1 = 0;
     uint64_t o0 = 0, o1 = 0;
@@ -258,7 +259,7 @@ ntp_result_t ntp_poll_once(uint32_t timeout_ms){
     while (waited < timeout_ms) {
         uint8_t buf[96];
         net_l4_endpoint src;
-        int64_t n = socket_recvfrom_udp(sock, buf, sizeof(buf), &src);
+        int64_t n = receive_from_socket(&sock, buf, sizeof(buf), &src);
 
         if (n >= (int64_t)sizeof(ntp_packet_t) && src.ver == IP_VER4 && src.port == NTP_PORT) {
             uint32_t rip = 0;
@@ -386,7 +387,7 @@ ntp_result_t ntp_poll_once(uint32_t timeout_ms){
         if (best_err == NTP_OK && waited >= (timeout_ms / 2)) break;
     }
 
-    socket_destroy_udp(sock);
+    close_socket(&sock);
 
     ntp_peer_t* best = NULL;
     for (uint32_t i = 0; i < 2; i++) {

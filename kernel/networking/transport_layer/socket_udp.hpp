@@ -3,7 +3,6 @@
 #include "networking/transport_layer/udp.h"
 #include "types.h"
 #include "std/memory.h"
-#include "networking/application_layer/dns/dns.h"
 #include "net/socket_types.h"
 #include "networking/internet_layer/ipv4_route.h"
 #include "networking/internet_layer/ipv6_route.h"
@@ -16,26 +15,20 @@
 #include "sysregs.h"
 
 static constexpr int32_t UDP_RING_CAP = 1024;
-static constexpr dns_server_sel_t UDP_DNS_SEL = DNS_USE_BOTH;
-static constexpr uint32_t UDP_DNS_TIMEOUT_MS = 3000;
 
 class UDPSocket : public Socket {
-    inline static UDPSocket* s_list_head = nullptr;
-
     sizedptr ring[UDP_RING_CAP];
     net_l4_endpoint src_eps[UDP_RING_CAP];
     int32_t r_head = 0;
     int32_t r_tail = 0;
     uint32_t rx_bytes = 0;
 
-    UDPSocket* next = nullptr;
 
     static bool is_valid_v4_l3_for_bind(l3_ipv4_interface_t* v4) {
         if (!v4) return false;
         if (!v4->l2) return false;
         if (!v4->l2->is_up) return false;
         if (v4->mode == IPV4_CFG_DISABLED) return false;
-        if (!v4->port_manager) return false;
         return true;
     }
 
@@ -45,7 +38,6 @@ class UDPSocket : public Socket {
         if (!v6->l2->is_up) return false;
         if (v6->cfg == IPV6_CFG_DISABLE) return false;
         if (v6->dad_state != IPV6_DAD_OK) return false;
-        if (!v6->port_manager) return false;
         return true;
     }
 
@@ -94,70 +86,6 @@ class UDPSocket : public Socket {
         return false;
     }
 
-    static bool socket_matches_dst(UDPSocket* s, uint8_t ifx, ip_version_t ver, const void* dst_ip_addr, uint16_t dst_port) {
-        if (!s) return false;
-        if (!s->bound) return false;
-        if (s->localPort != dst_port) return false;
-        if (!dst_ip_addr) return false;
-
-        if (ver == IP_VER4) {
-            uint32_t dip = *(const uint32_t*)dst_ip_addr;
-            bool lb = dip == 0xFFFFFFFFu;
-            bool mc = ipv4_is_multicast(dip);
-            if (mc && !udp_mcast_match(s, IP_VER4, dst_ip_addr)) return false;
-
-            for (int i = 0; i < s->bound_l3_count; ++i) {
-                uint8_t id = s->bound_l3[i];
-                l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
-                if (!is_valid_v4_l3_for_bind(v4)) continue;
-                if (v4->l2->ifindex != ifx) continue;
-                if (lb) return true;
-                if (mc) return true;
-
-                if (v4->mask) {
-                    uint32_t b = ipv4_broadcast_calc(v4->ip, v4->mask);
-                    if (b == dip)return true;
-                }
-
-                if (v4->ip == dip) return true;
-            }
-            return false;
-        }
-
-        if (ver == IP_VER6) {
-            bool mcast = ipv6_is_multicast((const uint8_t*)dst_ip_addr);
-            if (mcast && !udp_mcast_match(s, IP_VER6, dst_ip_addr)) return false;
-
-            for (int i = 0; i < s->bound_l3_count; ++i) {
-                uint8_t id = s->bound_l3[i];
-                l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
-                if (!is_valid_v6_l3_for_bind(v6)) continue;
-                if (v6->l2->ifindex != ifx) continue;
-                if (mcast && ipv6_is_linkscope_mcast((const uint8_t*)dst_ip_addr) && !ipv6_is_linklocal(v6->ip)) continue;
-
-                if (mcast) return true;
-                if (memcmp(v6->ip, dst_ip_addr, 16) == 0) return true;
-            }
-            return false;
-        }
-
-        return false;
-    }
-
-    static uint32_t dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port) {
-        if (!pkt) return 0;
-        uint32_t ret = netpkt_len(pkt);
-        irq_flags_t irq = irq_save_disable();
-
-        for (UDPSocket* s = s_list_head; s; s = s->next) {
-            if (!socket_matches_dst(s, ifindex, ipver, dst_ip_addr, dst_port)) continue;
-            s->on_receive(ipver, src_ip_addr, src_port, pkt);
-        }
-
-        irq_restore(irq);
-        return ret;
-    }
-
     void on_receive(ip_version_t ver, const void* src_ip_addr, uint16_t src_port, netpkt_t* pkt) {
         if (!pkt) return;
         uintptr_t ptr = netpkt_data(pkt);
@@ -196,149 +124,13 @@ class UDPSocket : public Socket {
         remoteEP = src_eps[(r_tail + UDP_RING_CAP - 1) % UDP_RING_CAP];
     }
 
-    void insert_in_list() {
-        for (UDPSocket* it = s_list_head; it; it = it->next) if (it == this) return;
-        next = s_list_head;
-        s_list_head = this;
-    }
-
-    void remove_from_list() {
-        UDPSocket** cur = &s_list_head;
-        int hops = 0;
-        while (*cur && hops++ < UDP_RING_CAP * 4) {
-            UDPSocket* p = *cur;
-            if (((uintptr_t)p & HIGH_VA) != HIGH_VA) break; //TODO this check should be useless but for now it prevents crashes if someone modifies the list, remove it once the issue is fixed
-            if (p == this) {
-                *cur = p->next;
-                break;
-            }
-            if (p->next && (((uintptr_t)p->next & HIGH_VA) != HIGH_VA)) break;
-            cur = &(p->next);
-        }
-        next = nullptr;
-    }
-
-    bool add_all_l3_on_l2(uint8_t ifindex, ip_version_t ver, uint8_t* tmp_ids, int& n) {
-        l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-        if (!l2) return false;
-        if (!l2->is_up) return false;
-
-        if ((ver == 0 || ver == IP_VER4)) {
-            for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
-                l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-                if (!is_valid_v4_l3_for_bind(v4)) continue;
-                if (n < SOCK_MAX_L3) tmp_ids[n++] = v4->l3_id;
-            }
-        }
-
-        if ((ver == 0 || ver == IP_VER6)) {
-            for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
-                l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-                if (!is_valid_v6_l3_for_bind(v6)) continue;
-                if (n < SOCK_MAX_L3) tmp_ids[n++] = v6->l3_id;
-            }
-        }
-
-        return n > 0;
-    }
-
-    bool add_all_l3_any(ip_version_t ver, uint8_t* tmp_ids, int& n) {
-        uint8_t cnt = l2_interface_count();
-        for (uint8_t i = 0; i < cnt; ++i) {
-            l2_interface_t* l2 = l2_interface_at(i);
-            if (!l2) continue;
-            if (!l2->is_up) continue;
-
-            if ((ver == 0 || ver == IP_VER4)) {
-                for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
-                    l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-                    if (!is_valid_v4_l3_for_bind(v4)) continue;
-                    if (n < SOCK_MAX_L3) tmp_ids[n++] = v4->l3_id;
-                }
-            }
-
-            if ((ver == 0 || ver == IP_VER6)) {
-                for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
-                    l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-                    if (!is_valid_v6_l3_for_bind(v6)) continue;
-                    if (n < SOCK_MAX_L3) tmp_ids[n++] = v6->l3_id;
-                }
-            }
-        }
-        return n > 0;
-    }
-
-    bool add_l3_for_mcast_group_on_l2(l2_interface_t* l2, const net_l4_endpoint* group, uint8_t* tmp_ids, int& n) {
-        if (!l2) return false;
-        if (!l2->is_up) return false;
-        if (!group) return false;
-
-        bool added = false;
-        if (group->ver == IP_VER4) {
-            uint32_t g = 0;
-            memcpy(&g, group->ip, 4);
-            if (!ipv4_is_multicast(g)) return false;
-
-            for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
-                l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-                if (!is_valid_v4_l3_for_bind(v4)) continue;
-                if (n < SOCK_MAX_L3) tmp_ids[n++] = v4->l3_id;
-                added = true;
-            }
-        } else if (group->ver == IP_VER6) {
-            if (!ipv6_is_multicast(group->ip)) return false;
-            bool linkscope = ipv6_is_linkscope_mcast(group->ip);
-
-            for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
-                l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-                if (!is_valid_v6_l3_for_bind(v6)) continue;
-                if (linkscope && !ipv6_is_linklocal(v6->ip)) continue;
-                if (n < SOCK_MAX_L3) tmp_ids[n++] = v6->l3_id;
-                added = true;
-            }
-        }
-        return added;
-    }
-
-    bool add_l3_for_mcast_group_any(const net_l4_endpoint* group, uint8_t* tmp_ids, int& n) {
-        bool added = false;
-        uint8_t cnt = l2_interface_count();
-
-        for (uint8_t i = 0; i < cnt; ++i) {
-            l2_interface_t* l2 = l2_interface_at(i);
-            if (add_l3_for_mcast_group_on_l2(l2, group, tmp_ids, n)) added = true;
-        }
-
-        return added;
-    }
-
-    void do_unbind_one(uint8_t l3_id, uint16_t port, uint16_t pid_) override {
-        (void)pid_;
-        udp_unbind_l3(l3_id, port, pid);
-    }
-
-    static bool pick_v4_l3_for_unicast(uint32_t dip, const uint8_t* candidates, int n, uint8_t* out_l3) {
-        if (!out_l3) return false;
-        ipv4_tx_plan_t plan;
-        if (!ipv4_build_tx_plan(dip, nullptr, candidates, n, &plan)) return false;
-        *out_l3 = plan.l3_id;
-        return true;
-    }
-
-    static bool pick_v6_l3_for_unicast(const uint8_t dst_ip[16], const uint8_t* candidates, int n, uint8_t* out_l3) {
-        if (!out_l3) return false;
-        ipv6_tx_plan_t plan;
-        if (!ipv6_build_tx_plan(dst_ip, nullptr, candidates, n, &plan)) return false;
-        *out_l3 = plan.l3_id;
-        return true;
-    }
-
     void leave_mcast_groups() {
         if ((extraOpts.flags & SOCK_OPT_MCAST_JOIN) == 0) return;
 
         uint32_t count = extraOpts.mcast_count;
         if (count > SOCK_MAX_MCAST_GROUPS) count = SOCK_MAX_MCAST_GROUPS;
 
+        uint8_t ids[MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE];
         for (uint32_t gidx = 0; gidx < count; ++gidx) {
             const net_l4_endpoint* group = &extraOpts.mcast_groups[gidx];
 
@@ -347,8 +139,9 @@ class UDPSocket : public Socket {
                 memcpy(&g, group->ip, 4);
                 if (!ipv4_is_multicast(g)) continue;
 
-                for (int i = 0; i < bound_l3_count; ++i) {
-                    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(bound_l3[i]);
+                uint32_t n = socket_bind_l3_list(&bindSpec, IP_VER4, ids, MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE);
+                for (uint32_t i = 0; i < n; ++i) {
+                    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(ids[i]);
                     if (!is_valid_v4_l3_for_bind(v4)) continue;
                     l2_ipv4_mcast_leave(v4->l2->ifindex,g);
                 }
@@ -356,8 +149,9 @@ class UDPSocket : public Socket {
                 if (!ipv6_is_multicast(group->ip)) continue;
                 bool linkscope = ipv6_is_linkscope_mcast(group->ip);
 
-                for (int i = 0; i < bound_l3_count; ++i) {
-                    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(bound_l3[i]);
+                uint32_t n = socket_bind_l3_list(&bindSpec, IP_VER6, ids, MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE);
+                for (uint32_t i = 0; i < n; ++i) {
+                    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(ids[i]);
                     if (!is_valid_v6_l3_for_bind(v6)) continue;
                     if (linkscope && !ipv6_is_linklocal(v6->ip)) continue;
                     l2_ipv6_mcast_leave(v6->l2->ifindex,group->ip);
@@ -367,17 +161,11 @@ class UDPSocket : public Socket {
     }
 
 public:
-    UDPSocket(uint8_t r, uint32_t pid_, const SocketExtraOptions* extra = nullptr) : Socket(PROTO_UDP, r, extra) {
+    UDPSocket(ksocket_t* owner, uint8_t r, uint32_t pid_, const SocketExtraOptions* extra = nullptr) : Socket(owner, PROTO_UDP, r, extra) {
         pid = pid_;
-        irq_flags_t irq = irq_save_disable();
-        insert_in_list();
-        irq_restore(irq);
     }
 
     ~UDPSocket() override {
-        irq_flags_t irq = irq_save_disable(); //TODO locking is needed asap
-        remove_from_list();
-        irq_restore(irq);
         close();
     }
 
@@ -389,251 +177,107 @@ public:
         ev.u0 = port;
         ev.bind_spec = spec_in;
         netlog_socket_event(&extraOpts, &ev);
-        if (role != SOCK_ROLE_SERVER) return SOCK_ERR_PERM;
+        if (role != SOCKET_SERVER) return SOCK_ERR_PERM;
         if (bound) return SOCK_ERR_BOUND;
+        if (!ownerSocket) return SOCK_ERR_SYS;
 
         SockBindSpec spec = spec_in;
         bool empty = spec.kind == BIND_L3 && spec.l3_id == 0 && spec.ifindex == 0 && spec.ver == 0 && ipv6_is_unspecified(spec.ip);
         if (empty) spec.kind = BIND_ANY;
 
-        uint8_t ids[SOCK_MAX_L3];
-        int n = 0;
-
         if (spec.kind == BIND_L3) {
             if (!spec.l3_id) return SOCK_ERR_INVAL;
-
-            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(spec.l3_id);
-            l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(spec.l3_id);
-
-            bool ok4 = (spec.ver == 0 || spec.ver == IP_VER4) && is_valid_v4_l3_for_bind(v4);
-            bool ok6 = (spec.ver == 0 || spec.ver == IP_VER6) && is_valid_v6_l3_for_bind(v6);
-
-            if (!ok4 && !ok6) return SOCK_ERR_INVAL;
-
-            if (ok4 && n < SOCK_MAX_L3) ids[n++] = spec.l3_id;
-            if (ok6 && n < SOCK_MAX_L3) ids[n++] = spec.l3_id;
+            uint8_t one[1];
+            if (spec.ver == IP_VER4 && !socket_bind_l3_list(&spec, IP_VER4, one, 1)) return SOCK_ERR_INVAL;
+            if (spec.ver == IP_VER6 && !socket_bind_l3_list(&spec, IP_VER6, one, 1)) return SOCK_ERR_INVAL;
+            if (!spec.ver && !socket_bind_l3_list(&spec, IP_VER4, one, 1) && !socket_bind_l3_list(&spec, IP_VER6, one, 1)) return SOCK_ERR_INVAL;
         } else if (spec.kind == BIND_L2) {
-            bool used_mcast = false;
-            if ((extraOpts.flags & SOCK_OPT_MCAST_JOIN) && extraOpts.mcast_count) {
-                l2_interface_t* l2 = l2_interface_find_by_index(spec.ifindex);
-                uint32_t count = extraOpts.mcast_count;
-                if (count > SOCK_MAX_MCAST_GROUPS) count = SOCK_MAX_MCAST_GROUPS;
-
-                for (uint32_t i = 0; i < count; ++i) {
-                    const net_l4_endpoint* group = &extraOpts.mcast_groups[i];
-                    if (spec.ver && group->ver != spec.ver) continue;
-                    if (add_l3_for_mcast_group_on_l2(l2, group, ids, n)) used_mcast = true;
-                }
-            }
-            if (!used_mcast && !add_all_l3_on_l2(spec.ifindex, spec.ver, ids, n)) return SOCK_ERR_INVAL;
+            l2_interface_t* l2 = l2_interface_find_by_index(spec.ifindex);
+            if (!l2 || !l2->is_up) return SOCK_ERR_INVAL;
         } else if (spec.kind == BIND_IP) {
             if (spec.ver == IP_VER4) {
                 uint32_t v4ip = 0;
                 memcpy(&v4ip, spec.ip, 4);
-                if (ipv4_is_unspecified(v4ip)) {
-                    if (!add_all_l3_any(IP_VER4, ids, n)) return SOCK_ERR_INVAL;
-                } else if (ipv4_is_multicast(v4ip)) {
-                    net_l4_endpoint group;
-                    memset(&group, 0, sizeof(group));
-                    group.ver = IP_VER4;
-                    memcpy(group.ip, &v4ip, 4);
-                    if (spec.ifindex) {
-                        l2_interface_t* l2 = l2_interface_find_by_index(spec.ifindex);
-                        if (!add_l3_for_mcast_group_on_l2(l2, &group, ids, n)) return SOCK_ERR_INVAL;
-                    } else if (!add_l3_for_mcast_group_any(&group, ids, n)) return SOCK_ERR_INVAL;
-                } else {
-                    l3_ipv4_interface_t* ipif = l3_ipv4_find_by_ip(v4ip);
-                    if (!is_valid_v4_l3_for_bind(ipif)) return SOCK_ERR_INVAL;
-                    if (n < SOCK_MAX_L3) ids[n++] = ipif->l3_id;
+                if (!ipv4_is_unspecified(v4ip)) {
+                    uint8_t one[1];
+                    if (!socket_bind_l3_list(&spec, IP_VER4, one, 1)) return SOCK_ERR_INVAL;
                 }
             } else if (spec.ver == IP_VER6) {
-                if (ipv6_is_unspecified(spec.ip)) {
-                    if (!add_all_l3_any(IP_VER6, ids, n)) return SOCK_ERR_INVAL;
-                } else if (ipv6_is_multicast(spec.ip)) {
-                    net_l4_endpoint group;
-                    memset(&group, 0, sizeof(group));
-                    group.ver = IP_VER6;
-                    memcpy(group.ip, spec.ip, 16);
-                    if (spec.ifindex) {
-                        l2_interface_t* l2 = l2_interface_find_by_index(spec.ifindex);
-                        if (!add_l3_for_mcast_group_on_l2(l2, &group, ids, n)) return SOCK_ERR_INVAL;
-                    } else if (!add_l3_for_mcast_group_any(&group, ids, n)) return SOCK_ERR_INVAL;
-                } else {
-                    l3_ipv6_interface_t* ipif6 = l3_ipv6_find_by_ip(spec.ip);
-                    if (!is_valid_v6_l3_for_bind(ipif6)) return SOCK_ERR_INVAL;
-                    if (n < SOCK_MAX_L3) ids[n++] = ipif6->l3_id;
+                if (!ipv6_is_unspecified(spec.ip)) {
+                    uint8_t one[1];
+                    if (!socket_bind_l3_list(&spec, IP_VER6, one, 1)) return SOCK_ERR_INVAL;
                 }
-            } else {
-                return SOCK_ERR_INVAL;
-            }
-        } else if (spec.kind == BIND_ANY || spec.kind == BIND_ANY4 || spec.kind == BIND_ANY6) {
-            ip_version_t ver = spec.ver;
-            if (spec.kind == BIND_ANY4) ver = IP_VER4;
-            else if (spec.kind == BIND_ANY6) ver = IP_VER6;
+            } else return SOCK_ERR_INVAL;
+        } else if (spec.kind != BIND_ANY && spec.kind != BIND_ANY4 && spec.kind != BIND_ANY6) return SOCK_ERR_INVAL;
 
-            if ((extraOpts.flags & SOCK_OPT_MCAST_JOIN) && extraOpts.mcast_count) {
-                bool used_mcast = false;
-                uint32_t count = extraOpts.mcast_count;
-                if (count > SOCK_MAX_MCAST_GROUPS) count = SOCK_MAX_MCAST_GROUPS;
+        if (!socket_bind_insert(ownerSocket, PROTO_UDP, &spec, port)) return SOCK_ERR_SYS;
 
-                for (uint32_t i = 0; i < count; ++i) {
-                    const net_l4_endpoint* group = &extraOpts.mcast_groups[i];
-                    if (ver && group->ver != ver) continue;
-                    if (add_l3_for_mcast_group_any(group, ids, n)) used_mcast = true;
-                }
-
-                if (!used_mcast && !add_all_l3_any(ver, ids, n)) return SOCK_ERR_INVAL;
-            } else if (!add_all_l3_any(ver, ids, n)) return SOCK_ERR_INVAL;
-        } else {
-            return SOCK_ERR_INVAL;
-        }
-
-        if (n == 0) return SOCK_ERR_INVAL;
-
-        uint8_t dedup[SOCK_MAX_L3];
-        int m = 0;
-        for (int i = 0; i < n; ++i) {
-            bool seen = false;
-            for (int j = 0; j < m; ++j) {
-                if (dedup[j] == ids[i]) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (!seen && m < SOCK_MAX_L3) dedup[m++] = ids[i];
-        }
-        if (m == 0) return SOCK_ERR_INVAL;
-
-        int bdone = 0;
-        for (int i = 0; i < m; ++i) {
-            uint8_t id = dedup[i];
-            if (udp_bind_l3(id, port, pid, dispatch)) {
-                bdone++;
-                continue;
-            }
-            for (int j = 0; j < bdone; ++j) udp_unbind_l3(dedup[j], port, pid);
-            return SOCK_ERR_SYS;
-        }
-
-        clear_bound_l3();
-        for (int i = 0; i < m; ++i) add_bound_l3(dedup[i]);
+        bindSpec = spec;
+        localPort = port;
+        bound = true;
 
         if (extraOpts.flags & SOCK_OPT_MCAST_JOIN) {
             uint32_t count = extraOpts.mcast_count;
             if (count > SOCK_MAX_MCAST_GROUPS) count = SOCK_MAX_MCAST_GROUPS;
+            uint8_t ids[MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE];
 
             for (uint32_t gidx = 0; gidx < count; ++gidx) {
                 const net_l4_endpoint* group = &extraOpts.mcast_groups[gidx];
+                uint32_t n = 0;
                 bool joined = false;
-
-                bool applicable = false;
-                bool same_family_bound = false;
 
                 if (group->ver == IP_VER4) {
                     uint32_t g = 0;
                     memcpy(&g, group->ip, 4);
                     if (!ipv4_is_multicast(g)) continue;
-
-                    for (int i = 0; i < bound_l3_count; ++i) {
-                        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(bound_l3[i]);
+                    n = socket_bind_l3_list(&bindSpec, IP_VER4, ids, MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE);
+                    for (uint32_t i = 0; i < n; ++i) {
+                        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(ids[i]);
                         if (!is_valid_v4_l3_for_bind(v4)) continue;
-                        same_family_bound = true;
-                        applicable = true;
                         if (l2_ipv4_mcast_join(v4->l2->ifindex, g)) joined = true;
                     }
                 } else if (group->ver == IP_VER6) {
                     if (!ipv6_is_multicast(group->ip)) continue;
                     bool linkscope = ipv6_is_linkscope_mcast(group->ip);
-
-                    for (int i = 0; i < bound_l3_count; ++i) {
-                        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(bound_l3[i]);
+                    n = socket_bind_l3_list(&bindSpec, IP_VER6, ids, MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE);
+                    for (uint32_t i = 0; i < n; ++i) {
+                        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(ids[i]);
                         if (!is_valid_v6_l3_for_bind(v6)) continue;
-                        same_family_bound = true;
                         if (linkscope && !ipv6_is_linklocal(v6->ip)) continue;
-                        applicable = true;
                         if (l2_ipv6_mcast_join(v6->l2->ifindex, group->ip)) joined = true;
                     }
                 }
 
-                if (!applicable && !same_family_bound) continue;
                 if (!joined) {
                     leave_mcast_groups();
-                    for (int i = 0; i < m; ++i) udp_unbind_l3(dedup[i], port, pid);
-                    clear_bound_l3();
+                    socket_bind_remove_socket(ownerSocket);
+                    memset(&bindSpec, 0, sizeof(bindSpec));
+                    bound = false;
+                    localPort = 0;
                     return SOCK_ERR_SYS;
                 }
             }
         }
 
-        localPort = port;
-        bound = true;
         return SOCK_OK;
     }
 
-    int64_t sendto(SockDstKind kind, const void* dst, uint16_t port, const void* buf, uint64_t len) {
+    int64_t sendto(const net_l4_endpoint* dst, const void* buf, uint64_t len) {
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_UDP;
         ev.action = NETLOG_ACT_SENDTO;
         ev.pid = pid;
-        ev.dst_kind = kind;
-        ev.u0 = port;
         ev.u1 = (uint32_t)len;
-        if (kind == DST_ENDPOINT && dst) ev.dst_ep = *(const net_l4_endpoint*)dst;
-        if (kind == DST_DOMAIN) ev.s0 = (const char*)dst;
-        netlog_socket_event(&extraOpts, &ev);
-        if (!dst) return SOCK_ERR_INVAL;
-        if (!buf) return SOCK_ERR_INVAL;
-        if (len == 0) return SOCK_ERR_INVAL;
-
-        net_l4_endpoint d;
-        if (kind == DST_ENDPOINT) {
-            const net_l4_endpoint* ed = (const net_l4_endpoint*)dst;
-            d = *ed;
-            if (!d.port && port) d.port = port;
-            if (!d.port) return SOCK_ERR_INVAL;
-        } else if (kind == DST_DOMAIN) {
-            const char* host = (const char*)dst;
-            if (!port) return SOCK_ERR_INVAL;
-
-            uint8_t a6[16];
-            memset(a6, 0, 16);
-            uint32_t a4 = 0;
-
-            dns_result_t dr6 = dns_resolve_aaaa(host, a6, UDP_DNS_SEL, UDP_DNS_TIMEOUT_MS);
-            dns_result_t dr4 = dns_resolve_a(host, &a4, UDP_DNS_SEL, UDP_DNS_TIMEOUT_MS);
-            if (dr6 != DNS_OK && dr4 != DNS_OK) return SOCK_ERR_DNS;
-
-            uint8_t allow_v4[SOCK_MAX_L3];
-            uint8_t allow_v6[SOCK_MAX_L3];
-            int n4 = 0;
-            int n6 = 0;
-            for (int i = 0; i < bound_l3_count; ++i) {
-                uint8_t id = bound_l3[i];
-                if (n4 < SOCK_MAX_L3 && l3_ipv4_find_by_id(id)) allow_v4[n4++] = id;
-                if (n6 < SOCK_MAX_L3 && l3_ipv6_find_by_id(id)) allow_v6[n6++] = id;
-            }
-
-            if (dr6 == DNS_OK) {
-                ipv6_tx_plan_t p6;
-                if (ipv6_build_tx_plan(a6, nullptr, n6 ? allow_v6 : nullptr, n6, &p6)) {
-                    d.ver = IP_VER6;
-                    memcpy(d.ip, a6, 16);
-                    d.port = port;
-                }
-            }
-
-            if (d.ver == 0 && dr4 == DNS_OK) {
-                ipv4_tx_plan_t p4;
-                if (ipv4_build_tx_plan(a4, nullptr, n4 ? allow_v4 : nullptr, n4, &p4)) {
-                    make_ep(a4, port, IP_VER4, &d);
-                }
-            }
-
-            if (d.ver == 0) return SOCK_ERR_SYS;
-        } else {
-            return SOCK_ERR_INVAL;
+        if (dst) {
+            ev.dst_ep = *dst;
+            ev.u0 = dst->port;
         }
+        netlog_socket_event(&extraOpts, &ev);
+        if (!dst || !dst->port) return SOCK_ERR_INVAL;
+        if (!buf || !len) return SOCK_ERR_INVAL;
+        if (!bound && !ownerSocket) return SOCK_ERR_SYS;
 
+        net_l4_endpoint d = *dst;
         sizedptr pay;
         pay.ptr = (uintptr_t)buf;
         pay.size = (uint32_t)len;
@@ -642,34 +286,17 @@ public:
             uint32_t dip = 0;
             memcpy(&dip, d.ip, 4);
 
-            bool is_bcast = false;
-            if (dip == 0xFFFFFFFFu) is_bcast = true;
-             else {
-                uint8_t dummy = 0;
-                if (is_dbcast(dip, &dummy)) is_bcast = true;
-            }
+            if (dip == 0xFFFFFFFFu || is_dbcast(dip, nullptr)) {
+                if (!bound || !localPort) return SOCK_ERR_BOUND;
 
-            if (is_bcast) {
+                uint8_t ids[MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE];
+                uint32_t n = socket_bind_l3_list(&bindSpec, IP_VER4, ids, MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE);
+                if (!n) return SOCK_ERR_SYS;
+
                 if (dip == 0xFFFFFFFFu) {
-                    if (bound_l3_count == 0) return SOCK_ERR_SYS;
-
-                    for (int i = 0; i < bound_l3_count; ++i) {
-                        uint8_t bl3 = bound_l3[i];
-                        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(bl3);
-                        if (!is_valid_v4_l3_for_bind(v4)) continue;
-                        if (!v4->l2) continue;
-
-                        if (!bound) {
-                            int p = udp_alloc_ephemeral_l3(bl3, pid, dispatch);
-                            if (p < 0) continue;
-                            localPort = (uint16_t)p;
-                            add_bound_l3(bl3);
-                            bound = true;
-                        } else if (localPort == 0) {
-                            int p = udp_alloc_ephemeral_l3(bl3, pid, dispatch);
-                            if (p < 0) continue;
-                            localPort = (uint16_t)p;
-                        }
+                    for (uint32_t i = 0; i < n; ++i) {
+                        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(ids[i]);
+                        if (!is_valid_v4_l3_for_bind(v4) || !v4->l2) continue;
 
                         net_l4_endpoint src;
                         src.ver = IP_VER4;
@@ -679,7 +306,7 @@ public:
 
                         ipv4_tx_opts_t tx;
                         tx.scope = IP_TX_BOUND_L3;
-                        tx.index = bl3;
+                        tx.index = ids[i];
 
                         udp_send_segment(&src, &d, pay, &tx, (extraOpts.flags & SOCK_OPT_TTL) ? extraOpts.ttl : 0, (extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
                     }
@@ -690,22 +317,12 @@ public:
 
                 uint8_t db_l3 = 0;
                 if (!is_dbcast(dip, &db_l3)) return SOCK_ERR_SYS;
+                bool allowed = false;
+                for (uint32_t i = 0; i < n; ++i) if (ids[i] == db_l3) allowed = true;
+                if (!allowed) return SOCK_ERR_SYS;
 
                 l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(db_l3);
-                if (!is_valid_v4_l3_for_bind(v4)) return SOCK_ERR_SYS;
-                if (!v4->l2) return SOCK_ERR_SYS;
-
-                if (!bound) {
-                    int p = udp_alloc_ephemeral_l3(db_l3, pid, dispatch);
-                    if (p < 0) return SOCK_ERR_NO_PORT;
-                    localPort = (uint16_t)p;
-                    add_bound_l3(db_l3);
-                    bound = true;
-                } else if (localPort == 0) {
-                    int p = udp_alloc_ephemeral_l3(db_l3, pid, dispatch);
-                    if (p < 0) return SOCK_ERR_NO_PORT;
-                    localPort = (uint16_t)p;
-                }
+                if (!is_valid_v4_l3_for_bind(v4) || !v4->l2) return SOCK_ERR_SYS;
 
                 net_l4_endpoint src;
                 src.ver = IP_VER4;
@@ -723,25 +340,15 @@ public:
             }
 
             if (ipv4_is_multicast(dip)) {
-                if (bound_l3_count == 0) return SOCK_ERR_SYS;
+                if (!bound || !localPort) return SOCK_ERR_BOUND;
 
-                for (int i = 0; i < bound_l3_count; ++i) {
-                    uint8_t bl3 = bound_l3[i];
-                    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(bl3);
-                    if (!is_valid_v4_l3_for_bind(v4)) continue;
-                    if (!v4->l2) continue;
+                uint8_t ids[MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE];
+                uint32_t n = socket_bind_l3_list(&bindSpec, IP_VER4, ids, MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE);
+                if (!n) return SOCK_ERR_SYS;
 
-                    if (!bound) {
-                        int p = udp_alloc_ephemeral_l3(bl3, pid, dispatch);
-                        if (p < 0) continue;
-                        localPort = (uint16_t)p;
-                        add_bound_l3(bl3);
-                        bound = true;
-                    } else if (localPort == 0) {
-                        int p = udp_alloc_ephemeral_l3(bl3, pid, dispatch);
-                        if (p < 0) continue;
-                        localPort = (uint16_t)p;
-                    }
+                for (uint32_t i = 0; i < n; ++i) {
+                    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(ids[i]);
+                    if (!is_valid_v4_l3_for_bind(v4) || !v4->l2) continue;
 
                     net_l4_endpoint src;
                     src.ver = IP_VER4;
@@ -751,7 +358,7 @@ public:
 
                     ipv4_tx_opts_t tx;
                     tx.scope = IP_TX_BOUND_L3;
-                    tx.index = bl3;
+                    tx.index = ids[i];
 
                     udp_send_segment(&src, &d, pay, &tx, (extraOpts.flags & SOCK_OPT_TTL) ? extraOpts.ttl : 0, (extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
                 }
@@ -760,13 +367,9 @@ public:
                 return (int64_t)len;
             }
 
-            uint8_t allowed_v4[SOCK_MAX_L3];
-            int n_allowed = 0;
-            for (int i = 0; i < bound_l3_count && n_allowed < SOCK_MAX_L3; ++i) {
-                uint8_t id = bound_l3[i];
-                if (l3_ipv4_find_by_id(id)) allowed_v4[n_allowed++] = id;
-            }
-            if (bound_l3_count > 0 && n_allowed == 0) return SOCK_ERR_SYS;
+            uint8_t allowed_v4[MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE];
+            uint32_t n_allowed = bound ? socket_bind_l3_list(&bindSpec, IP_VER4, allowed_v4, MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE) : 0;
+            if (bound && n_allowed == 0) return SOCK_ERR_SYS;
 
             ipv4_tx_plan_t plan;
             if (!ipv4_build_tx_plan(dip, nullptr, n_allowed ? allowed_v4 : nullptr, n_allowed, &plan)) return SOCK_ERR_SYS;
@@ -776,13 +379,16 @@ public:
             if (!is_valid_v4_l3_for_bind(v4)) return SOCK_ERR_SYS;
 
             if (!bound) {
-                int p = udp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
+                int p = socket_bind_alloc_ephemeral_l3(ownerSocket, PROTO_UDP, chosen_l3, pid);
                 if (p < 0) return SOCK_ERR_NO_PORT;
                 localPort = (uint16_t)p;
-                add_bound_l3(chosen_l3);
+                bindSpec = {};
+                bindSpec.kind = BIND_L3;
+                bindSpec.ver = IP_VER4;
+                bindSpec.l3_id = chosen_l3;
                 bound = true;
             } else if (localPort == 0) {
-                int p = udp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
+                int p = socket_bind_alloc_ephemeral_l3(ownerSocket, PROTO_UDP, chosen_l3, pid);
                 if (p < 0) return SOCK_ERR_NO_PORT;
                 localPort = (uint16_t)p;
             }
@@ -806,15 +412,16 @@ public:
             bool is_mcast = ipv6_is_multicast(d.ip);
 
             if (is_mcast) {
-                if (!bound) return SOCK_ERR_BOUND;
-                if (!localPort) return SOCK_ERR_BOUND;
-                if (bound_l3_count == 0) return SOCK_ERR_SYS;
+                if (!bound || !localPort) return SOCK_ERR_BOUND;
+
+                uint8_t ids[MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE];
+                uint32_t n = socket_bind_l3_list(&bindSpec, IP_VER6, ids, MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE);
+                if (!n) return SOCK_ERR_SYS;
 
                 int sent = 0;
                 bool linkscope = ipv6_is_linkscope_mcast(d.ip);
-                for (int i = 0; i < bound_l3_count; ++i) {
-                    uint8_t bl3 = bound_l3[i];
-                    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(bl3);
+                for (uint32_t i = 0; i < n; ++i) {
+                    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(ids[i]);
                     if (!is_valid_v6_l3_for_bind(v6)) continue;
                     if (linkscope && !ipv6_is_linklocal(v6->ip)) continue;
 
@@ -826,7 +433,7 @@ public:
 
                     ipv6_tx_opts_t tx;
                     tx.scope = IP_TX_BOUND_L3;
-                    tx.index = bl3;
+                    tx.index = ids[i];
 
                     udp_send_segment(&src, &d, pay, &tx, (extraOpts.flags & SOCK_OPT_TTL) ? extraOpts.ttl : 0, (extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
                     sent++;
@@ -837,13 +444,9 @@ public:
                 return (int64_t)len;
             }
 
-            uint8_t allowed_v6[SOCK_MAX_L3];
-            int n_allowed = 0;
-            for (int i = 0; i < bound_l3_count && n_allowed < SOCK_MAX_L3; ++i) {
-                uint8_t id = bound_l3[i];
-                if (l3_ipv6_find_by_id(id)) allowed_v6[n_allowed++] = id;
-            }
-            if (bound_l3_count > 0 && n_allowed == 0) return SOCK_ERR_SYS;
+            uint8_t allowed_v6[MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE];
+            uint32_t n_allowed = bound ? socket_bind_l3_list(&bindSpec, IP_VER6, allowed_v6, MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE) : 0;
+            if (bound && n_allowed == 0) return SOCK_ERR_SYS;
 
             ipv6_tx_plan_t plan;
             if (!ipv6_build_tx_plan(d.ip, nullptr, n_allowed ? allowed_v6 : nullptr, n_allowed, &plan)) return SOCK_ERR_SYS;
@@ -854,13 +457,16 @@ public:
             if (!is_valid_v6_l3_for_bind(v6)) return SOCK_ERR_SYS;
 
             if (!bound) {
-                int p = udp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
+                int p = socket_bind_alloc_ephemeral_l3(ownerSocket, PROTO_UDP, chosen_l3, pid);
                 if (p < 0) return SOCK_ERR_NO_PORT;
                 localPort = (uint16_t)p;
-                add_bound_l3(chosen_l3);
+                bindSpec = {};
+                bindSpec.kind = BIND_L3;
+                bindSpec.ver = IP_VER6;
+                bindSpec.l3_id = chosen_l3;
                 bound = true;
             } else if (localPort == 0) {
-                int p = udp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
+                int p = socket_bind_alloc_ephemeral_l3(ownerSocket, PROTO_UDP, chosen_l3, pid);
                 if (p < 0) return SOCK_ERR_NO_PORT;
                 localPort = (uint16_t)p;
             }
@@ -881,6 +487,19 @@ public:
         }
 
         return SOCK_ERR_INVAL;
+    }
+
+    uint32_t enqueue_datagram(uint8_t ifindex, uint8_t l3_id, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port) {
+        if (!bound || localPort != dst_port || !pkt || !dst_ip_addr) return 0;
+        if (ipver == IP_VER4) {
+            uint32_t dip = 0;
+            memcpy(&dip, dst_ip_addr, 4);
+            if (ipv4_is_multicast(dip) && !udp_mcast_match(this, IP_VER4, dst_ip_addr)) return 0;
+        } else if (ipver == IP_VER6) {
+            if (ipv6_is_multicast((const uint8_t*)dst_ip_addr) && !udp_mcast_match(this, IP_VER6, dst_ip_addr)) return 0;
+        }
+        on_receive(ipver, src_ip_addr, src_port, pkt);
+        return netpkt_len(pkt);
     }
 
     int64_t recvfrom(void* buf, uint64_t len, net_l4_endpoint* src) {
@@ -908,6 +527,63 @@ public:
         release((void*)p.ptr);
         remoteEP = se;
         return tocpy;
+    }
+
+
+    int32_t set_option(int32_t opt, const void* value, uint32_t len) {
+        switch ((uint32_t)opt) {
+            case SOCK_OPT_KEEPALIVE:
+            case SOCK_OPT_KEEPALIVE_INTERVAL:
+            case SOCK_OPT_TCP_NO_DELAY:
+            case SOCK_OPT_SEND_BUF_SIZE:
+                return SOCK_ERR_INVAL;
+            case SOCK_OPT_MCAST_JOIN: {
+                if (!value || !len || (len % sizeof(net_l4_endpoint)) != 0) return SOCK_ERR_INVAL;
+                if (bound) return SOCK_ERR_STATE;
+
+                uint32_t count = len / sizeof(net_l4_endpoint);
+                if (!count || count > SOCK_MAX_MCAST_GROUPS) return SOCK_ERR_INVAL;
+
+                const net_l4_endpoint* groups = (const net_l4_endpoint*)value;
+                for (uint32_t i = 0; i < count; ++i) {
+                    if (groups[i].ver != IP_VER4 && groups[i].ver != IP_VER6) return SOCK_ERR_INVAL;
+                    if (groups[i].ver == IP_VER4) {
+                        uint32_t ip = 0;
+                        memcpy(&ip, groups[i].ip, 4);
+                        if (!ipv4_is_multicast(ip)) return SOCK_ERR_INVAL;
+                    } else if (!ipv6_is_multicast(groups[i].ip)) return SOCK_ERR_INVAL;
+                }
+
+                extraOpts.flags |= SOCK_OPT_MCAST_JOIN;
+                extraOpts.mcast_count = (uint8_t)count;
+                memcpy(extraOpts.mcast_groups, groups, count * sizeof(net_l4_endpoint));
+                return SOCK_OK;
+            }
+            default:
+                return Socket::set_option(opt, value, len);
+        }
+    }
+
+    int32_t get_option(int32_t opt, void* value, uint32_t* len) const {
+        switch ((uint32_t)opt) {
+            case SOCK_OPT_KEEPALIVE:
+            case SOCK_OPT_KEEPALIVE_INTERVAL:
+            case SOCK_OPT_TCP_NO_DELAY:
+            case SOCK_OPT_SEND_BUF_SIZE:
+                return SOCK_ERR_INVAL;
+            case SOCK_OPT_MCAST_JOIN: {
+                if (!value || !len) return SOCK_ERR_INVAL;
+                uint32_t count = (extraOpts.flags & SOCK_OPT_MCAST_JOIN) ? extraOpts.mcast_count : 0;
+                if (count > SOCK_MAX_MCAST_GROUPS) count = SOCK_MAX_MCAST_GROUPS;
+                uint32_t need = count * sizeof(net_l4_endpoint);
+                if (*len < need) return SOCK_ERR_INVAL;
+                if (need) memcpy(value, extraOpts.mcast_groups, need);
+                *len = need;
+                return SOCK_OK;
+            }
+            default:
+                return Socket::get_option(opt, value, len);
+        }
     }
 
     int32_t close() override {

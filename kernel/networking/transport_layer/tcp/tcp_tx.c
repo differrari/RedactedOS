@@ -94,7 +94,8 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
         uint64_t seg_len = remaining > can_send ? can_send : remaining;
         if (flow->tx.mss && seg_len > flow->tx.mss) seg_len = flow->tx.mss;
 
-        uint32_t flow_room = TCP_TX_MAX_BYTES_PER_FLOW - flow->tx.queued_bytes;
+        uint32_t tx_limit = flow->tx.queued_limit ? flow->tx.queued_limit : TCP_TX_MAX_BYTES_PER_FLOW;
+        uint32_t flow_room = tx_limit > flow->tx.queued_bytes ? tx_limit - flow->tx.queued_bytes : 0;
         uint32_t global_room = TCP_TX_MAX_BYTES_GLOBAL - tcp_tx_global_bytes;
         if (seg_len > flow_room) seg_len = flow_room;
         if (seg_len > global_room) seg_len = global_room;
@@ -441,7 +442,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
 
     uint64_t accepted = 0;
 
-    if (payload_len && flow->tx.nagle_len) {
+    if (!flow->tx.nodelay && payload_len && flow->tx.nagle_len) {
         uint64_t n = tcp_nagle_append(flow, payload_ptr, payload_len);
         accepted += n;
         payload_ptr += n;
@@ -449,7 +450,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
         if (flow->tx.nagle_len >= tcp_nagle_threshold(flow)) tcp_flush_nagle(flow, 1);
     }
 
-    if (payload_len && payload_len < tcp_nagle_threshold(flow)) {
+    if (!flow->tx.nodelay && payload_len && payload_len < tcp_nagle_threshold(flow)) {
         uint64_t n = tcp_nagle_append(flow, payload_ptr, payload_len);
         accepted += n;
         payload_ptr += n;

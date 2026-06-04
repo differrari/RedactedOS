@@ -4,8 +4,8 @@
 #include "std/string.h"
 #include "socket.hpp"
 #include "networking/transport_layer/tcp.h"
+#include "networking/transport_layer/csocket_tcp.h"
 #include "networking/internet_layer/ipv4.h"
-#include "networking/application_layer/dns/dns.h"
 #include "types.h"
 #include "net/socket_types.h"
 #include "networking/internet_layer/ipv4_route.h"
@@ -16,26 +16,21 @@
 #include "syscalls/syscalls.h"
 
 static constexpr int TCP_MAX_BACKLOG = 128;
-static constexpr dns_server_sel_t TCP_DNS_SEL = DNS_USE_BOTH;
-static constexpr uint32_t TCP_DNS_TIMEOUT_MS = 3000;
 
 class TCPSocket : public Socket {
-    inline static TCPSocket* s_list_head = nullptr;
     static constexpr uint32_t TCP_DEFAULT_SOCKET_BUF = 256 * 1024;
 
     tcp_data flow = {};
 
-    TCPSocket* pending[TCP_MAX_BACKLOG] = { nullptr };
+    ksocket_t* pending[TCP_MAX_BACKLOG] = { nullptr };
     int backlogCap = 0;
     int backlogLen = 0;
-    TCPSocket* next = nullptr;
 
     static bool is_valid_v4_l3_for_bind(l3_ipv4_interface_t* v4) {
         if (!v4 || !v4->l2) return false;
         if (!v4->l2->is_up) return false;
         if (v4->mode == IPV4_CFG_DISABLED) return false;
         if (v4->ip == 0) return false;
-        if (!v4->port_manager) return false;
         return true;
     }
 
@@ -47,255 +42,79 @@ class TCPSocket : public Socket {
         if (ipv6_is_unspecified(v6->ip)) return false;
         if (v6->dad_state == IPV6_DAD_FAILED) return false;
         if (!(v6->kind & IPV6_ADDRK_LINK_LOCAL) && v6->dad_state != IPV6_DAD_OK) return false;
-        if (!v6->port_manager) return false;
         return true;
     }
 
-    static uint32_t dispatch(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port) {
-        if (!pkt){
-            for (TCPSocket* srv = s_list_head; srv; srv = srv->next){
-                if (srv->role != SOCK_ROLE_SERVER) continue;
-                if (!srv->bound) continue;
-                if (srv->localPort != dst_port) continue;
+public:
+    uint32_t queue_accepted_child(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uint16_t src_port, uint16_t dst_port) {
+        if (role != SOCKET_SERVER || !bound || localPort != dst_port) return 0;
 
-                bool matches_dst = false;
-                for (int i = 0; i < srv->bound_l3_count; ++i) {
-                    uint8_t id = srv->bound_l3[i];
-
-                    if (ipver == IP_VER4) {
-                        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
-                        if (!is_valid_v4_l3_for_bind(v4)) continue;
-                        if (v4->l2->ifindex != ifindex) continue;
-                        uint32_t dst_v4 = 0;
-                        memcpy(&dst_v4, dst_ip_addr, 4);
-                        if (v4->ip == dst_v4) {
-                            matches_dst = true;
-                            break;
-                        }
-                    } else if (ipver == IP_VER6) {
-                        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
-                        if (!is_valid_v6_l3_for_bind(v6)) continue;
-                        if (v6->l2->ifindex != ifindex) continue;
-                        if (memcmp(v6->ip, dst_ip_addr, 16) == 0){
-                            matches_dst = true;
-                            break;
-                        }
-                    }
+        for (int i = 0; i < backlogLen;) {
+            ksocket_t* owner = pending[i];
+            TCPSocket* client = owner ? (TCPSocket*)socket_core_impl(owner) : nullptr;
+            if (client && client->flow.flow_generation) {
+                bool readable = tcp_flow_readable(&client->flow) != 0;
+                bool closed = tcp_flow_recv_closed(&client->flow);
+                if (!closed || readable) {
+                    ++i;
+                    continue;
                 }
-
-                if (!matches_dst) continue;
-                for (int i = 0; i < srv->backlogLen;) {
-                    TCPSocket* client = srv->pending[i];
-
-                    if (client && client->flow.flow_generation) {
-                        bool readable = tcp_flow_readable(&client->flow) != 0;
-                        bool closed = tcp_flow_recv_closed(&client->flow);
-
-                        if (!closed || readable) {
-                            i++;
-                            continue;
-                        }
-                    }
-
-                    client = srv->pop_pending_at(i);
-                    if (client) delete client;
-                }
-
-                if (srv->backlogLen >= srv->backlogCap) break;
-
-                TCPSocket* child = new TCPSocket(SOCK_ROLE_CLIENT, srv->pid, &srv->extraOpts);
-                if (!child) break;
-
-                child->localPort = dst_port;
-
-                child->remoteEP.ver = ipver;
-                memset(child->remoteEP.ip, 0, 16);
-                if (ipver == IP_VER4) memcpy(child->remoteEP.ip, src_ip_addr, 4);
-                else memcpy(child->remoteEP.ip, src_ip_addr, 16);
-                child->remoteEP.port = src_port;
-
-                uint8_t l3id = 0;
-
-                for (int i = 0; i < srv->bound_l3_count; ++i) {
-                    uint8_t id = srv->bound_l3[i];
-
-                    if (ipver == IP_VER4) {
-                        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
-                        if (!is_valid_v4_l3_for_bind(v4)) continue;
-                        if (v4->l2->ifindex != ifindex) continue;
-                        uint32_t dst_v4 = 0;
-                        memcpy(&dst_v4, dst_ip_addr, 4);
-                        if (v4->ip == dst_v4) {
-                            l3id = id;
-                            break;
-                        }
-                    } else if (ipver == IP_VER6) {
-                        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
-                        if (!is_valid_v6_l3_for_bind(v6)) continue;
-                        if (v6->l2->ifindex != ifindex) continue;
-                        if (memcmp(v6->ip, dst_ip_addr, 16) == 0) {
-                            l3id = id;
-                            break;
-                        }
-                    }
-                }
-
-                if (!l3id) {
-                    if (ipver == IP_VER4) {
-                        uint32_t v4dst = 0;
-                        memcpy(&v4dst, dst_ip_addr, 4);
-                        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_ip(v4dst);
-                        if (is_valid_v4_l3_for_bind(v4) && v4->l2 && v4->l2->ifindex == ifindex) l3id = v4->l3_id;
-                    } else if (ipver == IP_VER6) {
-                        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_ip((const uint8_t*)dst_ip_addr);
-                        if (is_valid_v6_l3_for_bind(v6) && v6->l2 && v6->l2->ifindex == ifindex) l3id = v6->l3_id;
-                    }
-                }
-
-                child->clear_bound_l3();
-
-                if (l3id) {
-                    child->add_bound_l3(l3id);
-                } else if (ipver == IP_VER4){
-                    uint32_t v4dst = 0;
-                    memcpy(&v4dst, dst_ip_addr, 4);
-                    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_ip(v4dst);
-                    if (is_valid_v4_l3_for_bind(v4) && v4->l2 && v4->l2->ifindex == ifindex) {
-                        child->add_bound_l3(v4->l3_id);
-                    } else {
-                        for (int i = 0; i < srv->bound_l3_count; ++i) {
-                            l3_ipv4_interface_t* sv4 = l3_ipv4_find_by_id(srv->bound_l3[i]);
-                            if (!sv4 || !sv4->l2) continue;
-                            if (!sv4->l2->is_up) continue;
-                            if (sv4->l2->ifindex != ifindex) continue;
-                            child->add_bound_l3(sv4->l3_id);
-                        }
-                    }
-                } else if (ipver == IP_VER6) {
-                    for (int i = 0; i < srv->bound_l3_count; ++i) {
-                        l3_ipv6_interface_t* sv6 = l3_ipv6_find_by_id(srv->bound_l3[i]);
-                        if (!is_valid_v6_l3_for_bind(sv6)) continue;
-                        if (!sv6->l2 || !sv6->l2->is_up) continue;
-                        if (sv6->l2->ifindex != ifindex) continue;
-                        child->add_bound_l3(sv6->l3_id);
-                    }
-                }
-
-                if (!tcp_get_ctx(dst_port, ipver, dst_ip_addr, child->remoteEP.ip, src_port, &child->flow)) {
-                    delete child;
-                    break;
-                }
-
-                child->connected = true;
-
-                srv->pending[srv->backlogLen++] = child;
-                return 1;
             }
+
+            owner = pop_pending_at(i);
+            if (owner) {
+                socket_core_close_socket(owner);
+                socket_core_put(owner);
+            }
+        }
+        if (backlogLen >= backlogCap) return 0;
+
+        ksocket_t* child_owner = nullptr;
+        if (!socket_core_alloc(SOCKET_CLIENT, PROTO_TCP, pid, &child_owner)) return 0;
+
+        TCPSocket* child = new TCPSocket(child_owner, SOCKET_CLIENT, pid, &extraOpts);
+        if (!child) {
+            socket_core_close_socket(child_owner);
             return 0;
         }
 
-        return 0;
-    }
+        child->localPort = dst_port;
 
-    void insert_in_list() {
-        for (TCPSocket* it = s_list_head; it; it = it->next){
-            if (it == this) {
-                return;
-            }
-        }
-        next = s_list_head;
-        s_list_head = this;
-    }
+        child->bound = true;
+        child->remoteEP.ver = ipver;
+        memset(child->remoteEP.ip, 0, 16);
+        if (ipver == IP_VER4) memcpy(child->remoteEP.ip, src_ip_addr, 4);
+        else memcpy(child->remoteEP.ip, src_ip_addr, 16);
+        child->remoteEP.port = src_port;
+        child->bindSpec.kind = BIND_IP;
+        child->bindSpec.ver = ipver;
+        if (ipver == IP_VER4) memcpy(child->bindSpec.ip, dst_ip_addr, 4);
+        else if (ipver == IP_VER6) memcpy(child->bindSpec.ip, dst_ip_addr, 16);
 
-    void remove_from_list() {
-        TCPSocket** cur = &s_list_head;
-        while (*cur) {
-            if (*cur == this) {
-                *cur = (*cur)->next;
-                break;
-            }
-            cur = &((*cur)->next);
-        }
-        next = nullptr;
-    }
-
-    void do_unbind_one(uint8_t l3_id, uint16_t port, uint16_t pid_) override {
-        (void)pid_;
-        if (role != SOCK_ROLE_SERVER) return;
-        (void)tcp_unbind_l3(l3_id, port, pid);
-    }
-
-    bool add_all_l3_on_l2(uint8_t ifindex, ip_version_t ver, uint8_t* tmp_ids, ip_version_t* tmp_ver, int& n) {
-        l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-        if (!l2 || !l2->is_up) return false;
-
-        if ((ver == 0 || ver == IP_VER4)) {
-            for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
-                l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-                if (!is_valid_v4_l3_for_bind(v4)) continue;
-                if (n < SOCK_MAX_L3) {
-                    tmp_ids[n] = v4->l3_id;
-                    tmp_ver[n] = IP_VER4;
-                    ++n;
-                }
-            }
+        if (!tcp_get_ctx(dst_port, ipver, dst_ip_addr, child->remoteEP.ip, src_port, &child->flow)) {
+            delete child;
+            socket_core_close_socket(child_owner);
+            return 0;
         }
 
-        if ((ver == 0 || ver == IP_VER6)) {
-            for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
-                l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-                if (!is_valid_v6_l3_for_bind(v6)) continue;
-                if (n < SOCK_MAX_L3) {
-                    tmp_ids[n] = v6->l3_id;
-                    tmp_ver[n] = IP_VER6;
-                    ++n;
-                }
-            }
+        if (!socket_core_attach_impl(child_owner, child, socket_destroy_tcp, socket_close_tcp, socket_setopt_tcp, socket_getopt_tcp, nullptr)) {
+            delete child;
+            socket_core_close_socket(child_owner);
+            return 0;
         }
 
-        return n > 0;
+        child->connected = true;
+        socket_core_ref(child_owner);
+        pending[backlogLen++] = child_owner;
+        return 1;
     }
 
-    bool add_all_l3_any(ip_version_t ver, uint8_t* tmp_ids, ip_version_t* tmp_ver, int& n) {
-        uint8_t cnt = l2_interface_count();
+private:
 
-        for (uint8_t i = 0; i < cnt; ++i) {
-            l2_interface_t* l2 = l2_interface_at(i);
-            if (!l2 || !l2->is_up) continue;
-
-            if ((ver == 0 || ver == IP_VER4)) {
-                for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
-                    l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-                    if (!is_valid_v4_l3_for_bind(v4)) continue;
-                    if (n < SOCK_MAX_L3) {
-                        tmp_ids[n] = v4->l3_id;
-                        tmp_ver[n] = IP_VER4;
-                        ++n;
-                    }
-                }
-            }
-
-            if ((ver == 0 || ver == IP_VER6)) {
-                for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
-                    l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-                    if (!is_valid_v6_l3_for_bind(v6)) continue;
-                    if (n < SOCK_MAX_L3) {
-                        tmp_ids[n] = v6->l3_id;
-                        tmp_ver[n] = IP_VER6;
-                        ++n;
-                    }
-                }
-            }
-        }
-
-        return n > 0;
-    }
-
-
-    TCPSocket* pop_pending_at(int idx) {
+    ksocket_t* pop_pending_at(int idx) {
         if (idx < 0 || idx >= backlogLen) return nullptr;
 
-        TCPSocket* client = pending[idx];
+        ksocket_t* client = pending[idx];
         for (int i = idx + 1; i < backlogLen; ++i) pending[i-1] = pending[i];
 
         pending[--backlogLen] = nullptr;
@@ -303,7 +122,7 @@ class TCPSocket : public Socket {
     }
 
 public:
-    explicit TCPSocket(uint8_t r = SOCK_ROLE_CLIENT, uint32_t pid_ = 0, const SocketExtraOptions* extra = nullptr) : Socket(PROTO_TCP, r, extra) {
+    explicit TCPSocket(ksocket_t* owner, uint8_t r = SOCKET_CLIENT, uint32_t pid_ = 0, const SocketExtraOptions* extra = nullptr) : Socket(owner, PROTO_TCP, r, extra) {
         pid = pid_;
         if (!(extraOpts.flags & SOCK_OPT_BUF_SIZE)) {
             extraOpts.flags |= SOCK_OPT_BUF_SIZE;
@@ -312,12 +131,79 @@ public:
 
         if (!extraOpts.buf_size) extraOpts.buf_size = TCP_DEFAULT_SOCKET_BUF;
         if (extraOpts.buf_size > TCP_DEFAULT_SOCKET_BUF) extraOpts.buf_size = TCP_DEFAULT_SOCKET_BUF;
-        insert_in_list();
     }
 
     ~TCPSocket() override {
-        remove_from_list();
         close();
+    }
+
+    int32_t set_option(int32_t opt, const void* value, uint32_t len) {
+        if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
+
+        uint32_t v = 0;
+        memcpy(&v, value, sizeof(v));
+
+        switch ((uint32_t)opt) {
+            case SOCK_OPT_KEEPALIVE:
+                if (v) {
+                    extraOpts.flags |= SOCK_OPT_KEEPALIVE;
+                    if (!extraOpts.keepalive_ms) extraOpts.keepalive_ms = SOCKET_DEFAULT_KEEPALIVE_MS;
+                } else extraOpts.flags &= ~SOCK_OPT_KEEPALIVE;
+                if (flow.flow_generation) tcp_flow_apply_socket_options(&flow, &extraOpts);
+                return SOCK_OK;
+            case SOCK_OPT_KEEPALIVE_INTERVAL:
+                if (!v) return SOCK_ERR_INVAL;
+                extraOpts.keepalive_ms = v;
+                extraOpts.flags |= SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL;
+                if (flow.flow_generation) tcp_flow_apply_socket_options(&flow, &extraOpts);
+                return SOCK_OK;
+            case SOCK_OPT_TCP_NO_DELAY:
+                if (v) extraOpts.flags |= SOCK_OPT_TCP_NO_DELAY;
+                else extraOpts.flags &= ~SOCK_OPT_TCP_NO_DELAY;
+                if (flow.flow_generation) tcp_flow_apply_socket_options(&flow, &extraOpts);
+                return SOCK_OK;
+            case SOCK_OPT_SEND_BUF_SIZE:
+                if (!v) return SOCK_ERR_INVAL;
+                extraOpts.send_buf_size = v;
+                extraOpts.flags |= SOCK_OPT_SEND_BUF_SIZE;
+                if (flow.flow_generation) tcp_flow_apply_socket_options(&flow, &extraOpts);
+                return SOCK_OK;
+            case SOCK_OPT_MCAST_JOIN:
+                return SOCK_ERR_INVAL;
+            default: {
+                int32_t ret = Socket::set_option(opt, value, len);
+                if (ret == SOCK_OK && flow.flow_generation) tcp_flow_apply_socket_options(&flow, &extraOpts);
+                return ret;
+            }
+        }
+    }
+
+    int32_t get_option(int32_t opt, void* value, uint32_t* len) const {
+        if (!value || !len || *len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
+
+        uint32_t v = 0;
+        switch ((uint32_t)opt) {
+            case SOCK_OPT_KEEPALIVE:
+                v = (extraOpts.flags & SOCK_OPT_KEEPALIVE) != 0;
+                break;
+            case SOCK_OPT_KEEPALIVE_INTERVAL:
+                v = extraOpts.keepalive_ms;
+                break;
+            case SOCK_OPT_TCP_NO_DELAY:
+                v = (extraOpts.flags & SOCK_OPT_TCP_NO_DELAY) != 0;
+                break;
+            case SOCK_OPT_SEND_BUF_SIZE:
+                v = extraOpts.send_buf_size;
+                break;
+            case SOCK_OPT_MCAST_JOIN:
+                return SOCK_ERR_INVAL;
+            default:
+                return Socket::get_option(opt, value, len);
+        }
+
+        memcpy(value, &v, sizeof(v));
+        *len = sizeof(uint32_t);
+        return SOCK_OK;
     }
 
     int32_t bind(const SockBindSpec& spec_in, uint16_t port) override {
@@ -328,120 +214,44 @@ public:
         ev.u0 = port;
         ev.bind_spec = spec_in;
         netlog_socket_event(&extraOpts, &ev);
-        if (role != SOCK_ROLE_SERVER) return SOCK_ERR_PERM;
+        if (role != SOCKET_SERVER) return SOCK_ERR_PERM;
         if (bound) return SOCK_ERR_BOUND;
+        if (!ownerSocket) return SOCK_ERR_SYS;
 
         SockBindSpec spec = spec_in;
         bool empty = spec.kind == BIND_L3 && spec.l3_id == 0 && spec.ifindex == 0 && spec.ver == 0 && ipv6_is_unspecified(spec.ip);
         if (empty) spec.kind = BIND_ANY;
 
-        uint8_t ids[SOCK_MAX_L3];
-        ip_version_t vers[SOCK_MAX_L3];
-        int n = 0;
-
         if (spec.kind == BIND_L3){
             if (!spec.l3_id) return SOCK_ERR_INVAL;
-
             l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(spec.l3_id);
             l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(spec.l3_id);
-
             bool ok4 = (spec.ver == 0 || spec.ver == IP_VER4) && is_valid_v4_l3_for_bind(v4);
             bool ok6 = (spec.ver == 0 || spec.ver == IP_VER6) && is_valid_v6_l3_for_bind(v6);
-
             if (!ok4 && !ok6) return SOCK_ERR_INVAL;
-
-            if (ok4 && n < SOCK_MAX_L3) {
-                ids[n] = spec.l3_id;
-                vers[n] = IP_VER4;
-                ++n;
-            }
-            if (ok6 && n < SOCK_MAX_L3) {
-                ids[n] = spec.l3_id;
-                vers[n] = IP_VER6;
-                ++n;
-            }
-        } else if (spec.kind == BIND_L2){
-            if (!add_all_l3_on_l2(spec.ifindex, spec.ver, ids, vers, n)) return SOCK_ERR_INVAL;
+        } else if (spec.kind == BIND_L2) {
+            l2_interface_t* l2 = l2_interface_find_by_index(spec.ifindex);
+            if (!l2 || !l2->is_up) return SOCK_ERR_INVAL;
         } else if (spec.kind == BIND_IP){
             if (spec.ver == IP_VER4){
                 uint32_t v4ip = 0;
                 memcpy(&v4ip, spec.ip, 4);
-                if (ipv4_is_unspecified(v4ip)) {
-                    if (!add_all_l3_any(IP_VER4, ids, vers, n)) return SOCK_ERR_INVAL;
-                } else {
-                    l3_ipv4_interface_t* ipif = l3_ipv4_find_by_ip(v4ip);
-                    if (!is_valid_v4_l3_for_bind(ipif)) return SOCK_ERR_INVAL;
-                    ids[n] = ipif->l3_id;
-                    vers[n] = IP_VER4;
-                    ++n;
-                }
+                if (!ipv4_is_unspecified(v4ip) && !is_valid_v4_l3_for_bind(l3_ipv4_find_by_ip(v4ip))) return SOCK_ERR_INVAL;
             } else if (spec.ver == IP_VER6) {
-                if (ipv6_is_unspecified(spec.ip)) {
-                    if (!add_all_l3_any(IP_VER6, ids, vers, n)) return SOCK_ERR_INVAL;
-                } else {
-                    l3_ipv6_interface_t* ipif = l3_ipv6_find_by_ip(spec.ip);
-                    if (!is_valid_v6_l3_for_bind(ipif)) return SOCK_ERR_INVAL;
-                    ids[n] = ipif->l3_id;
-                    vers[n] = IP_VER6;
-                    ++n;
-                }
+                if (!ipv6_is_unspecified(spec.ip) && !is_valid_v6_l3_for_bind(l3_ipv6_find_by_ip(spec.ip))) return SOCK_ERR_INVAL;
             } else return SOCK_ERR_INVAL;
-        } else if (spec.kind == BIND_ANY || spec.kind == BIND_ANY4 || spec.kind == BIND_ANY6){
-            ip_version_t ver = spec.ver;
-            if (spec.kind == BIND_ANY4) ver = IP_VER4;
-            else if (spec.kind == BIND_ANY6) ver = IP_VER6;
-            if (!add_all_l3_any(ver, ids, vers, n)) return SOCK_ERR_INVAL;
-        } else return SOCK_ERR_INVAL;
+        } else if (spec.kind != BIND_ANY && spec.kind != BIND_ANY4 && spec.kind != BIND_ANY6) return SOCK_ERR_INVAL;
 
-        if (n==0) return SOCK_ERR_INVAL;
+        if (!socket_bind_insert(ownerSocket, PROTO_TCP, &spec, port)) return SOCK_ERR_SYS;
 
-        uint8_t dedup_ids[SOCK_MAX_L3];
-        ip_version_t dedup_ver[SOCK_MAX_L3];
-        int m = 0;
-
-        for (int i = 0; i < n; ++i) {
-            bool seen = false;
-            for (int j = 0; j < m; ++j) {
-                if (dedup_ids[j] == ids[i] && dedup_ver[j] == vers[i]) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (!seen && m < SOCK_MAX_L3) {
-                dedup_ids[m] = ids[i];
-                dedup_ver[m] = vers[i];
-                ++m;
-            }
-        }
-
-        if (m==0) return SOCK_ERR_INVAL;
-
-        uint8_t bound_ids[SOCK_MAX_L3];
-        int bdone=0;
-
-        for (int i = 0; i < m; ++i){
-            uint8_t id = dedup_ids[i];
-            bool ok = tcp_bind_l3(id, port, pid, dispatch, &extraOpts);
-            if (!ok){
-                for (int j=0;j<bdone;++j) (void)tcp_unbind_l3(bound_ids[j], port, pid);
-                return SOCK_ERR_SYS;
-            }
-            bound_ids[bdone] = id;
-            ++bdone;
-        }
-
-        if (bdone == 0) return SOCK_ERR_SYS;
-
-        clear_bound_l3();
-        for (int i=0;i<m;++i) add_bound_l3(dedup_ids[i]);
-
+        bindSpec = spec;
         localPort = port;
         bound = true;
         return SOCK_OK;
     }
 
     int32_t listen(int max_backlog){
-        if (!bound || role != SOCK_ROLE_SERVER) return SOCK_ERR_STATE;
+        if (!bound || role != SOCKET_SERVER) return SOCK_ERR_STATE;
 
         backlogCap = max_backlog > TCP_MAX_BACKLOG ? TCP_MAX_BACKLOG : max_backlog;
         if (backlogCap < 1) backlogCap = 1;
@@ -449,7 +259,7 @@ public:
         return SOCK_OK;
     }
 
-    TCPSocket* accept(){
+    ksocket_t* accept(){
         const int max_empty_iters = 200;
         const int ready_wait_iters = 4;
         int iter = 0;
@@ -462,7 +272,8 @@ public:
         iter = 0;
         while (1) {
             for (int i = 0; i < backlogLen;) {
-                TCPSocket* client = pending[i];
+                ksocket_t* owner = pending[i];
+                TCPSocket* client = owner ? (TCPSocket*)socket_core_impl(owner) : nullptr;
 
                 if (client && client->flow.flow_generation) {
                     bool readable = tcp_flow_readable(&client->flow) != 0;
@@ -474,21 +285,28 @@ public:
                     }
                 }
 
-                client = pop_pending_at(i);
-                if (client) delete client;
+                owner = pop_pending_at(i);
+                if (owner) {
+                    socket_core_close_socket(owner);
+                    socket_core_put(owner);
+                }
             }
 
             if (backlogLen == 0) return nullptr;
             for (int i = 0; i < backlogLen; ++i) {
-                TCPSocket* client = pending[i];
+                ksocket_t* owner = pending[i];
+                TCPSocket* client = owner ? (TCPSocket*)socket_core_impl(owner) : nullptr;
                 if (!client) continue;
                 if (!client->flow.flow_generation || tcp_flow_readable(&client->flow) || tcp_flow_recv_closed(&client->flow)) return pop_pending_at(i);
             }
 
             if (++iter > ready_wait_iters) {
                 if (backlogLen >= backlogCap) {
-                    TCPSocket* client = pop_pending_at(0);
-                    if (client) delete client;
+                    ksocket_t* owner = pop_pending_at(0);
+                    if (owner) {
+                        socket_core_close_socket(owner);
+                        socket_core_put(owner);
+                    }
                 }
                 return nullptr;
             }
@@ -496,95 +314,37 @@ public:
         }
     }
 
-    int32_t connect(SockDstKind kind, const void* dst, uint16_t port) {
+    int32_t connect(const net_l4_endpoint* dst) {
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_TCP;
         ev.action = NETLOG_ACT_CONNECT;
         ev.pid = pid;
-        ev.dst_kind = kind;
-        ev.u0 = port;
-        if (kind == DST_ENDPOINT && dst) ev.dst_ep = *(const net_l4_endpoint*)dst;
-        if (kind == DST_DOMAIN) ev.s0 = (const char*)dst;
+        if (dst) ev.dst_ep = *dst;
         netlog_socket_event(&extraOpts, &ev);
-        if (role != SOCK_ROLE_CLIENT) return SOCK_ERR_PERM;
+        if (role != SOCKET_CLIENT) return SOCK_ERR_PERM;
         if (connected) return SOCK_ERR_STATE;
-        if (!dst) return SOCK_ERR_INVAL;
+        if (!dst || !dst->port) return SOCK_ERR_INVAL;
 
-        net_l4_endpoint d{};
+        net_l4_endpoint d = *dst;
         uint8_t chosen_l3 = 0;
 
-        uint8_t allow_v4[SOCK_MAX_L3];
-        uint8_t allow_v6[SOCK_MAX_L3];
-        int n4 = 0;
-        int n6 = 0;
+        uint8_t allow_v4[MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE];
+        uint8_t allow_v6[MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE];
+        uint32_t n4 = bound ? socket_bind_l3_list(&bindSpec, IP_VER4, allow_v4, MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE) : 0;
+        uint32_t n6 = bound ? socket_bind_l3_list(&bindSpec, IP_VER6, allow_v6, MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE) : 0;
 
-        for (int i = 0; i < bound_l3_count; ++i) {
-            uint8_t id = bound_l3[i];
-
-            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
-            if (is_valid_v4_l3_for_bind(v4) && n4 < SOCK_MAX_L3) allow_v4[n4++] = id;
-
-            l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
-            if (is_valid_v6_l3_for_bind(v6) && n6 < SOCK_MAX_L3) allow_v6[n6++] = id;
-        }
-
-        if (kind == DST_ENDPOINT){
-            const net_l4_endpoint* ed = (const net_l4_endpoint*)dst;
-            d = *ed;
-            if (!d.port && port) d.port = port;
-            if (!d.port) return SOCK_ERR_INVAL;
-
-            if (d.ver == IP_VER6) {
-                ipv6_tx_plan_t p6;
-                if (!ipv6_build_tx_plan(d.ip, nullptr, n6 ? allow_v6 : nullptr, n6, &p6)) return SOCK_ERR_SYS;
-                chosen_l3 = p6.l3_id;
-            } else if (d.ver == IP_VER4) {
-                uint32_t dip = 0;
-                memcpy(&dip, d.ip, 4);
-                ipv4_tx_plan_t p4;
-                if (!ipv4_build_tx_plan(dip, nullptr, n4 ? allow_v4 : nullptr, n4, &p4)) return SOCK_ERR_SYS;
-                chosen_l3 = p4.l3_id;
-            } else return SOCK_ERR_INVAL;
-        } else if (kind == DST_DOMAIN){
-            const char* host = (const char*)dst;
-            if (!port) return SOCK_ERR_INVAL;
-
-            uint8_t v6addr[16];
-            memset(v6addr, 0, 16);
-            uint32_t v4addr = 0;
-
-            dns_result_t dr6 = dns_resolve_aaaa(host, v6addr, TCP_DNS_SEL, TCP_DNS_TIMEOUT_MS);
-            dns_result_t dr4 = dns_resolve_a(host, &v4addr, TCP_DNS_SEL, TCP_DNS_TIMEOUT_MS);
-
-            if (dr6 != DNS_OK && dr4 != DNS_OK) return SOCK_ERR_DNS;
-
-            if (dr6 == DNS_OK) {
-                net_l4_endpoint d6{};
-                d6.ver = IP_VER6;
-                memcpy(d6.ip, v6addr, 16);
-                d6.port = port;
-
-                ipv6_tx_plan_t p6;
-                if (ipv6_build_tx_plan(d6.ip, nullptr, n6 ? allow_v6 : nullptr, n6, &p6)) {
-                    d = d6;
-                    chosen_l3 = p6.l3_id;
-                }
-            }
-
-            if (!chosen_l3 && dr4 == DNS_OK) {
-                net_l4_endpoint d4{};
-                make_ep(v4addr, port, IP_VER4, &d4);
-
-                uint32_t dip = 0;
-                memcpy(&dip, d4.ip, 4);
-                ipv4_tx_plan_t p4;
-                if (ipv4_build_tx_plan(dip, nullptr, n4 ? allow_v4 : nullptr, n4, &p4)) {
-                    d = d4;
-                    chosen_l3 = p4.l3_id;
-                }
-            }
-
-            if (!chosen_l3) return SOCK_ERR_SYS;
+        if (d.ver == IP_VER6) {
+            if (bound && n6 == 0) return SOCK_ERR_SYS;
+            ipv6_tx_plan_t p6;
+            if (!ipv6_build_tx_plan(d.ip, nullptr, n6 ? allow_v6 : nullptr, n6, &p6)) return SOCK_ERR_SYS;
+            chosen_l3 = p6.l3_id;
+        } else if (d.ver == IP_VER4) {
+            if (bound && n4 == 0) return SOCK_ERR_SYS;
+            uint32_t dip = 0;
+            memcpy(&dip, d.ip, 4);
+            ipv4_tx_plan_t p4;
+            if (!ipv4_build_tx_plan(dip, nullptr, n4 ? allow_v4 : nullptr, n4, &p4)) return SOCK_ERR_SYS;
+            chosen_l3 = p4.l3_id;
         } else return SOCK_ERR_INVAL;
 
         if (!chosen_l3) return SOCK_ERR_SYS;
@@ -598,13 +358,16 @@ public:
         } else return SOCK_ERR_INVAL;
 
         if (localPort == 0) {
-            int p = tcp_alloc_ephemeral_l3(chosen_l3, pid, dispatch);
+            if (!ownerSocket) return SOCK_ERR_SYS;
+            int p = socket_bind_alloc_ephemeral_l3(ownerSocket, PROTO_TCP, chosen_l3, pid);
             if (p < 0) return SOCK_ERR_NO_PORT;
             localPort = (uint16_t)p;
         }
 
-        clear_bound_l3();
-        add_bound_l3(chosen_l3);
+        bindSpec = {};
+        bindSpec.kind = BIND_L3;
+        bindSpec.ver = d.ver;
+        bindSpec.l3_id = chosen_l3;
         bound = true;
 
         flow = tcp_data{};
@@ -702,7 +465,12 @@ public:
             flow = tcp_data{};
         }
 
-        for (int i = 0; i < backlogLen; ++i) delete pending[i];
+        for (int i = 0; i < backlogLen; ++i) {
+            if (!pending[i]) continue;
+            socket_core_close_socket(pending[i]);
+            socket_core_put(pending[i]);
+            pending[i] = nullptr;
+        }
         backlogLen = 0;
 
         return Socket::close();
