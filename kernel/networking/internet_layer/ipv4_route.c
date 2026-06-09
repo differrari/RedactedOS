@@ -3,6 +3,11 @@
 #include "networking/interface_manager.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "syscalls/syscalls.h"
+//TODO see ipv6_route.c
+struct ipv4_rt_table {
+    ipv4_rt_entry_t e[IPV4_RT_PER_IF_MAX];
+    int len;
+};
 
 static bool v4_l3_ok_for_tx(l3_ipv4_interface_t* v4){
     if (!v4 || !v4->l2) return false;
@@ -12,22 +17,50 @@ static bool v4_l3_ok_for_tx(l3_ipv4_interface_t* v4){
     return true;
 }
 
-static bool l3_allowed(uint8_t id, const uint8_t* allowed, int n){
-    if (!allowed || n <= 0) return true;
-    for (int i = 0; i < n; ++i) if (allowed[i] == id) return true;
-    return false;
+static uint32_t ipv4_route_epoch(void) {
+    uint32_t h = 0x811C9DC5;
+    uint8_t cnt = l2_interface_count();
+    h = (h ^ cnt) * 16777619;
+    for (uint8_t i = 0; i < cnt; ++i) {
+        l2_interface_t* l2 = l2_interface_at(i);
+        if (!l2) continue;
+        h = (h ^ l2->ifindex) * 16777619;
+        h = (h ^ (uint32_t)l2->is_up) * 16777619;
+        h = (h ^ l2->base_metric) * 16777619;
+        h = (h ^ l2->ipv4_count) * 16777619;
+        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
+            l3_ipv4_interface_t* v4 = l2->l3_v4[s];
+            if (!v4) continue;
+            h = (h ^ v4->l3_id) * 16777619;
+            h = (h ^ v4->ip) * 16777619;
+            h = (h ^ v4->mask) * 16777619;
+            h = (h ^ v4->gw) * 16777619;
+            h = (h ^ (uint32_t)v4->mode) * 16777619;
+            h = (h ^ (uint32_t)(uintptr_t)v4->routing_table) * 16777619;
+        }
+    }
+    return h ? h : 1;
 }
 
-bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, const uint8_t* allowed_l3, int allowed_n, ipv4_tx_plan_t* out){
+bool ipv4_tx_plan_valid(const ipv4_tx_plan_t* plan) {
+    if (!plan || !plan->l3_id || !plan->net_epoch) return false;
+    if (plan->net_epoch != ipv4_route_epoch()) return false;
+
+    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(plan->l3_id);
+    if (!v4_l3_ok_for_tx(v4)) return false;
+    return v4->ip == plan->src_ip;
+}
+
+bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* out){
     if (!out) return false;
     out->l3_id = 0;
     out->src_ip = 0;
+    out->net_epoch = ipv4_route_epoch();
     out->fixed_opts.scope = IP_TX_AUTO;
     out->fixed_opts.index = 0;
 
     if (hint && hint->scope == IP_TX_BOUND_L3) {
         uint8_t id = hint->index;
-        if (!l3_allowed(id, allowed_l3, allowed_n)) return false;
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
         if (!v4_l3_ok_for_tx(v4) || ipv4_is_loopback(dst) != v4->is_localhost) return false;
         out->l3_id = id;
@@ -46,7 +79,6 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, const uint8_t* a
         for (int s = 0; s < MAX_IPV4_PER_INTERFACE && n < (int)sizeof(cand); ++s){
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
             if (!v4_l3_ok_for_tx(v4) || ipv4_is_loopback(dst) != v4->is_localhost) continue;
-            if (!l3_allowed(v4->l3_id, allowed_l3, allowed_n)) continue;
             cand[n++] = v4->l3_id;
         }
     } else {
@@ -57,7 +89,6 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, const uint8_t* a
             for (int s = 0; s < MAX_IPV4_PER_INTERFACE && n < (int)sizeof(cand); ++s){
                 l3_ipv4_interface_t* v4 = l2->l3_v4[s];
                 if (!v4_l3_ok_for_tx(v4) || ipv4_is_loopback(dst) != v4->is_localhost) continue;
-                if (!l3_allowed(v4->l3_id, allowed_l3, allowed_n)) continue;
                 cand[n++] = v4->l3_id;
             }
         }
@@ -77,11 +108,6 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, const uint8_t* a
     out->fixed_opts.index = chosen;
     return true;
 }
-
-struct ipv4_rt_table {
-    ipv4_rt_entry_t e[IPV4_RT_PER_IF_MAX];
-    int len;
-};
 
 static int prefix_len(uint32_t m) {
     int n = 0;

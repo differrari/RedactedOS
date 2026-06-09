@@ -5,11 +5,12 @@
 #include "std/string.h"
 #include "syscalls/syscalls.h"
 #include "net/network_types.h"
+#include "net/socket_types.h"
 #include "networking/transport_layer/csocket.h"
 #include "networking/application_layer/ssdp.h"
 #include "networking/internet_layer/ipv6_utils.h"
+#include "networking/interface_manager.h"
 #include "math/math.h"
-#include "networking/transport_layer/trans_utils.h"
 
 //at the moment it's a very basic version. it's a protocol still in use but only in few cases
 //it;s used in some printers, upnp, local video streaming and various other things 
@@ -17,15 +18,24 @@
 
 typedef struct {
     uint8_t used;
+    socket_handle_t sock;
     uint32_t due_ms;
     net_l4_endpoint dst;
 } ssdp_pending_t;
+
+typedef struct {
+    socket_handle_t sock;
+    ip_version_t ver;
+    uint8_t mcast_ip[16];
+} ssdp_socket_entry_t;
 
 static rng_t ssdp_rng;
 static uint32_t ssdp_uptime_ms = 0;
 
 static uint32_t ssdp_host_v4 = IPV4_MCAST_SSDP;
 static uint8_t ssdp_host_v6[16];
+static ssdp_socket_entry_t ssdp_sockets[MAX_L3_INTERFACES];
+static uint8_t ssdp_socket_count = 0;
 
 #define SSDP_MAX_PENDING 64
 #define SSDP_RATE_WINDOW_MS 1000
@@ -37,11 +47,12 @@ static ssdp_pending_t ssdp_pending[SSDP_MAX_PENDING];
 static uint32_t ssdp_rate_window_ms = 0;
 static uint32_t ssdp_rate_count = 0;
 
-static void ssdp_schedule_response(const net_l4_endpoint* src, uint32_t mx_ms) {
-    if (!src) return;
+static void ssdp_schedule_response(socket_handle_t sock, const net_l4_endpoint* src, uint32_t mx_ms) {
+    if (!sock || !src) return;
     for (int i = 0; i < SSDP_MAX_PENDING; ++i) {
         if (!ssdp_pending[i].used) {
             ssdp_pending[i].used = 1;
+            ssdp_pending[i].sock = sock;
             ssdp_pending[i].dst = *src;
             ssdp_pending[i].due_ms = ssdp_uptime_ms + rng_between32(&ssdp_rng, 0, mx_ms);
             return;
@@ -49,22 +60,19 @@ static void ssdp_schedule_response(const net_l4_endpoint* src, uint32_t mx_ms) {
     }
 }
 
-static void ssdp_send_notify(socket_handle_t s4, socket_handle_t s6, bool alive) {
-    if (((s4).id && (s4).protocol != PROTO_NONE)) {
-        string msg = ssdp_build_notify(alive, false);
-        net_l4_endpoint dst;
-        make_ep(ssdp_host_v4, 1900, IP_VER4, &dst);
-        (void)send_to_socket(&s4, &dst, (void*)msg.data, msg.length);
-        string_free(msg);
-    }
+static void ssdp_send_notify(bool alive) {
+    for (uint8_t i = 0; i < ssdp_socket_count; i++) {
+        socket_handle_t s = ssdp_sockets[i].sock;
+        if (!s) continue;
 
-    if (((s6).id && (s6).protocol != PROTO_NONE)) {
-        string msg = ssdp_build_notify(alive, true);
-        net_l4_endpoint dst = (net_l4_endpoint){0};
-        dst.ver = IP_VER6;
-        memcpy(dst.ip, ssdp_host_v6, 16);
+        string msg = ssdp_build_notify(alive, ssdp_sockets[i].ver == IP_VER6);
+        net_l4_endpoint dst;
+        memset(&dst, 0, sizeof(dst));
+        dst.ver = ssdp_sockets[i].ver;
         dst.port = 1900;
-        (void)send_to_socket(&s6, &dst, (void*)msg.data, msg.length);
+        if (dst.ver == IP_VER4) memcpy(dst.ip, &ssdp_host_v4, 4);
+        else memcpy(dst.ip, ssdp_host_v6, 16);
+        (void)send_to_socket(s, &dst, (void*)msg.data, msg.length);
         string_free(msg);
     }
 }
@@ -78,35 +86,91 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
 
     ipv6_make_multicast(0x02, IPV6_MCAST_SSDP, NULL, ssdp_host_v6);
 
-    SocketExtraOptions opt = (SocketExtraOptions){0};
-    opt.flags = SOCK_OPT_MCAST_JOIN;
-    opt.mcast_count = 2;
-    opt.mcast_groups[0].ver = IP_VER4;
-    opt.mcast_groups[0].port = 1900;
-    memcpy(opt.mcast_groups[0].ip, &ssdp_host_v4, 4);
-    opt.mcast_groups[1].ver = IP_VER6;
-    opt.mcast_groups[1].port = 1900;
-    memcpy(opt.mcast_groups[1].ip, ssdp_host_v6, 16);
-    socket_handle_t s = {0};
-    create_socket(SOCKET_SERVER, PROTO_UDP, &opt,&s);
+    uint8_t n_if = l2_interface_count();
+    for (uint8_t i = 0; i < n_if && ssdp_socket_count < MAX_L3_INTERFACES; i++) {
+        l2_interface_t *l2 = l2_interface_at(i);
+        if (!l2 || !l2->is_up) continue;
 
-    struct SockBindSpec spec = (struct SockBindSpec){0};
-    spec.kind = BIND_ANY;
-    if (((s).id && (s).protocol != PROTO_NONE) && bind_socket_spec(&s, &spec, 1900) < 0) {
-        close_socket(&s);
-        s = ((socket_handle_t){0});
+        for (uint8_t j = 0; j < MAX_IPV4_PER_INTERFACE && ssdp_socket_count < MAX_L3_INTERFACES; j++) {
+            l3_ipv4_interface_t *v4 = l2->l3_v4[j];
+            if (!v4 || v4->mode == IPV4_CFG_DISABLED || v4->is_localhost || !v4->ip) continue;
+
+            uint32_t ttl = 2;
+            SocketExtraOptions opt;
+            memset(&opt, 0, sizeof(opt));
+            opt.flags = SOCK_OPT_TTL;
+            opt.ttl = (uint8_t)ttl;
+
+            socket_handle_t s = create_socket(PROTO_UDP, &opt);
+            if (!s) continue;
+
+            SockBindSpec spec;
+            memset(&spec, 0, sizeof(spec));
+            spec.kind = BIND_L3;
+            spec.ver = IP_VER4;
+            spec.l3_id = v4->l3_id;
+
+            net_l4_endpoint group;
+            memset(&group, 0, sizeof(group));
+            group.ver = IP_VER4;
+            group.port = 1900;
+            memcpy(group.ip, &ssdp_host_v4, 4);
+
+            if (bind_socket(s, &spec, 1900) != SOCK_OK || set_socket_option(s, SOCK_OPT_MCAST_JOIN, &group, sizeof(group)) != SOCK_OK) {
+                close_socket(s);
+                continue;
+            }
+
+            ssdp_sockets[ssdp_socket_count].sock = s;
+            ssdp_sockets[ssdp_socket_count].ver = IP_VER4;
+            memcpy(ssdp_sockets[ssdp_socket_count].mcast_ip, &ssdp_host_v4, 4);
+            ssdp_socket_count++;
+        }
+
+        for (uint8_t j = 0; j < MAX_IPV6_PER_INTERFACE && ssdp_socket_count < MAX_L3_INTERFACES; j++) {
+            l3_ipv6_interface_t *v6 = l2->l3_v6[j];
+            if (!v6 || v6->cfg == IPV6_CFG_DISABLE || v6->dad_state != IPV6_DAD_OK || v6->is_localhost || !v6->ip[0]) continue;
+
+            uint32_t ttl = 2;
+            SocketExtraOptions opt;
+            memset(&opt, 0, sizeof(opt));
+            opt.flags = SOCK_OPT_TTL;
+            opt.ttl = (uint8_t)ttl;
+
+            socket_handle_t s = create_socket(PROTO_UDP, &opt);
+            if (!s) continue;
+
+            SockBindSpec spec;
+            memset(&spec, 0, sizeof(spec));
+            spec.kind = BIND_L3;
+            spec.ver = IP_VER6;
+            spec.l3_id = v6->l3_id;
+
+            net_l4_endpoint group;
+            memset(&group, 0, sizeof(group));
+            group.ver = IP_VER6;
+            group.port = 1900;
+            memcpy(group.ip, ssdp_host_v6, 16);
+
+            if (bind_socket(s, &spec, 1900) != SOCK_OK || set_socket_option(s, SOCK_OPT_MCAST_JOIN, &group, sizeof(group)) != SOCK_OK) {
+                close_socket(s);
+                continue;
+            }
+
+            ssdp_sockets[ssdp_socket_count].sock = s;
+            ssdp_sockets[ssdp_socket_count].ver = IP_VER6;
+            memcpy(ssdp_sockets[ssdp_socket_count].mcast_ip, ssdp_host_v6, 16);
+            ssdp_socket_count++;
+        }
     }
 
-    socket_handle_t s4 = s;
-    socket_handle_t s6 = s;
+    if (!ssdp_socket_count) return 1;
 
-    if (!((s4).id && (s4).protocol != PROTO_NONE) && !((s6).id && (s6).protocol != PROTO_NONE)) return 1;
-
-    ssdp_send_notify(s4, s6, true);
+    ssdp_send_notify(true);
     msleep(100);
-    ssdp_send_notify(s4, s6, true);
+    ssdp_send_notify(true);
     msleep(100);
-    ssdp_send_notify(s4, s6, true);
+    ssdp_send_notify(true);
 
     uint32_t notify_ms = 0;
     const uint32_t tick_ms = 50;
@@ -115,18 +179,21 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
         notify_ms += tick_ms;
         if (notify_ms >= SSDP_NOTIFY_INTERVAL_MS) {
             notify_ms = 0;
-            ssdp_send_notify(s4, s6, true);
+            ssdp_send_notify(true);
         }
 
         char buf[2048];
         net_l4_endpoint src = (net_l4_endpoint){0};
 
-        if (((s).id && (s).protocol != PROTO_NONE)) {
+        for (uint8_t sidx = 0; sidx < ssdp_socket_count; sidx++) {
+            socket_handle_t s = ssdp_sockets[sidx].sock;
             for (int i = 0; i < SSDP_RECV_BURST; ++i) {
-                int64_t r = receive_from_socket(&s, buf, sizeof(buf) - 1, &src);
-                if (r <= 0) break;
+                int64_t r = receive_from_socket(s, buf, sizeof(buf) - 1, &src);
+                if (r == SOCK_ERR_WOULDBLOCK) break;
+                if (r < 0) break;
+                if (!r) continue;
                 buf[r] = 0;
-                if (ssdp_is_msearch(buf, (int)r)) ssdp_schedule_response(&src, ssdp_parse_mx_ms(buf, (int)r));
+                if (ssdp_is_msearch(buf, (int)r)) ssdp_schedule_response(s, &src, ssdp_parse_mx_ms(buf, (int)r));
             }
         }
 
@@ -146,8 +213,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
             ssdp_pending[i].used = 0;
 
             string resp = ssdp_build_search_response();
-            socket_handle_t sock = (ssdp_pending[i].dst.ver == IP_VER6) ? s6 : s4;
-            if (((sock).id && (sock).protocol != PROTO_NONE)) (void)send_to_socket(&sock, &ssdp_pending[i].dst, (void*)resp.data, resp.length);
+            if (ssdp_pending[i].sock) (void)send_to_socket(ssdp_pending[i].sock, &ssdp_pending[i].dst, (void*)resp.data, resp.length);
             string_free(resp);
             break;
         }

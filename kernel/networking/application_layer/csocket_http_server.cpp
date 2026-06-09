@@ -59,7 +59,7 @@ int32_t http_connection_close(http_connection_handle_t c) {
     if (!c) return (int32_t)SOCK_ERR_INVAL;
     HTTPConnection* conn = reinterpret_cast<HTTPConnection*>(c);
     if (conn->carry_buf.mem_length) string_free(conn->carry_buf);
-    if (((conn->client).id && (conn->client).protocol != PROTO_NONE)) close_socket(&conn->client);
+    if (conn->client) close_socket(conn->client);
     release(conn);
     return (int32_t)SOCK_OK;
 }

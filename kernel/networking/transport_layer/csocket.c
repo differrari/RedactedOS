@@ -5,9 +5,9 @@
 #include "process/scheduler.h"
 #include "std/memory.h"
 
-bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptions* extra, SocketHandle *out_handle){
-    if (!out_handle) return false;
-    memset(out_handle, 0, sizeof(*out_handle));
+socket_handle_t create_socket(protocol_t protocol, const SocketExtraOptions* extra){
+    SocketExtraOptions default_extra = {};
+    if (!extra) extra = &default_extra;
 
     if (protocol == PROTO_NONE) {
         //TODO PROTO_NONE for RAW SET or L2
@@ -17,7 +17,7 @@ bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptio
 
     uint16_t pid = get_current_proc_pid();
     ksocket_t* socket = NULL;
-    if (!socket_core_alloc(role, protocol, pid, &socket)) return false;
+    if (!socket_core_alloc(protocol, pid, &socket)) return false;
 
     socket_impl_t impl = NULL;
     socket_impl_destroy_fn destroy = NULL;
@@ -26,13 +26,13 @@ bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptio
     socket_impl_getopt_fn getopt = NULL;
 
     if (protocol == PROTO_UDP) {
-        impl = udp_socket_create(socket, role, pid, extra);
+        impl = udp_socket_create(socket, extra);
         destroy = socket_destroy_udp;
         close = socket_close_udp;
         setopt = socket_setopt_udp;
         getopt = socket_getopt_udp;
     } else if (protocol == PROTO_TCP) {
-        impl = socket_tcp_create(socket, role, pid, extra);
+        impl = socket_tcp_create(socket, extra);
         destroy = socket_destroy_tcp;
         close = socket_close_tcp;
         setopt = socket_setopt_tcp;
@@ -43,27 +43,22 @@ bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptio
         return false;
     }
 
-    if (!socket_core_attach_impl(socket, impl, destroy, close, setopt, getopt, out_handle)) {
+    if (!socket_core_attach_impl(socket, impl, destroy, close, setopt, getopt)) {
         destroy(impl);
         socket_core_close_socket(socket);
         return false;
     }
-    return true;
+    return socket_core_export_handle(socket);
 }
 
-int32_t bind_socket(SocketHandle *handle, uint16_t port, ip_version_t ip_version){
-    ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
-    if (!socket) return SOCK_ERR_INVAL;
-
+int32_t bind_socket(socket_handle_t handle, const SockBindSpec *spec_in, uint16_t port){
     SockBindSpec spec;
     memset(&spec, 0, sizeof(spec));
-    spec.kind = BIND_IP;
-    spec.ver = ip_version;
-    if (handle) {
-        if (ip_version == IP_VER4) memcpy(spec.ip, handle->connection.ip, 4);
-        else if (ip_version == IP_VER6) memcpy(spec.ip, handle->connection.ip, 16);
-        else spec.kind = BIND_ANY;
-    }
+    if (spec_in) spec = *spec_in;
+    else spec.kind = BIND_ANY;
+
+    ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
+    if (!socket) return SOCK_ERR_INVAL;
 
     int32_t res = SOCK_ERR_PROTO;
     if (socket_core_protocol(socket) == PROTO_TCP) res = socket_bind_tcp(socket_core_impl(socket), &spec, port);
@@ -73,34 +68,20 @@ int32_t bind_socket(SocketHandle *handle, uint16_t port, ip_version_t ip_version
     return res;
 }
 
-int32_t bind_socket_spec(SocketHandle* handle, const SockBindSpec* spec, uint16_t port){
-    if (!spec) return SOCK_ERR_INVAL;
-    ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
-    if (!socket) return SOCK_ERR_INVAL;
-
-    int32_t res = SOCK_ERR_PROTO;
-    if (socket_core_protocol(socket) == PROTO_TCP) res = socket_bind_tcp(socket_core_impl(socket), spec, port);
-    else if (socket_core_protocol(socket) == PROTO_UDP) res = socket_bind_udp(socket_core_impl(socket), spec, port);
-
-    socket_core_put(socket);
-    return res;
-}
-
-int32_t connect_socket(SocketHandle *handle, const net_l4_endpoint* dst){
+int32_t connect_socket(socket_handle_t handle, const net_l4_endpoint* dst){
     ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
     if (!socket) return SOCK_ERR_INVAL;
 
     int32_t res = SOCK_ERR_PROTO;
     if (socket_core_protocol(socket) == PROTO_TCP) {
         res = socket_connect_tcp(socket_core_impl(socket), dst);
-        if (res == SOCK_OK && handle) socket_get_remote_ep_tcp(socket_core_impl(socket), &handle->connection);
-    }
+    } else if (socket_core_protocol(socket) == PROTO_UDP) res = socket_connect_udp(socket_core_impl(socket), dst);
 
     socket_core_put(socket);
     return res;
 }
 
-int64_t send_on_socket(SocketHandle *handle, const void* buf, uint64_t len){
+int64_t send_on_socket(socket_handle_t handle, const void* buf, uint64_t len){
     ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
     if (!socket) return SOCK_ERR_INVAL;
 
@@ -112,7 +93,7 @@ int64_t send_on_socket(SocketHandle *handle, const void* buf, uint64_t len){
     return res;
 }
 
-int64_t send_to_socket(SocketHandle *handle, const net_l4_endpoint* dst, const void* buf, uint64_t len){
+int64_t send_to_socket(socket_handle_t handle, const net_l4_endpoint* dst, const void* buf, uint64_t len){
     if (!dst) return SOCK_ERR_INVAL;
     ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
     if (!socket) return SOCK_ERR_INVAL;
@@ -124,7 +105,7 @@ int64_t send_to_socket(SocketHandle *handle, const net_l4_endpoint* dst, const v
     return res;
 }
 
-int64_t receive_from_socket(SocketHandle *handle, void* buf, uint64_t len, net_l4_endpoint* out_src){
+int64_t receive_from_socket(socket_handle_t handle, void* buf, uint64_t len, net_l4_endpoint* out_src){
     ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
     if (!socket) return SOCK_ERR_INVAL;
 
@@ -136,7 +117,7 @@ int64_t receive_from_socket(SocketHandle *handle, void* buf, uint64_t len, net_l
     return res;
 }
 
-int32_t set_socket_option(SocketHandle *handle, int32_t opt, const void* value, uint32_t len){
+int32_t set_socket_option(socket_handle_t handle, int32_t opt, const void* value, uint32_t len){
     ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
     if (!socket) return SOCK_ERR_INVAL;
     int32_t res = socket_core_set_option(socket, opt, value, len);
@@ -144,7 +125,7 @@ int32_t set_socket_option(SocketHandle *handle, int32_t opt, const void* value, 
     return res;
 }
 
-int32_t get_socket_option(SocketHandle *handle, int32_t opt, void* value, uint32_t* len){
+int32_t get_socket_option(socket_handle_t handle, int32_t opt, void* value, uint32_t* len){
     ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
     if (!socket) return SOCK_ERR_INVAL;
     int32_t res = socket_core_get_option(socket, opt, value, len);
@@ -152,7 +133,7 @@ int32_t get_socket_option(SocketHandle *handle, int32_t opt, void* value, uint32
     return res;
 }
 
-uint16_t get_socket_local_port(SocketHandle* handle){
+uint16_t get_socket_local_port(socket_handle_t handle){
     ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
     if (!socket) return 0;
 
@@ -164,7 +145,7 @@ uint16_t get_socket_local_port(SocketHandle* handle){
     return port;
 }
 
-bool get_socket_remote_endpoint(SocketHandle *handle, net_l4_endpoint* out){
+bool get_socket_remote_endpoint(socket_handle_t handle, net_l4_endpoint* out){
     if (!out) return false;
     ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
     if (!socket) return false;
@@ -178,11 +159,11 @@ bool get_socket_remote_endpoint(SocketHandle *handle, net_l4_endpoint* out){
     return ok;
 }
 
-int32_t close_socket(SocketHandle *handle){
+int32_t close_socket(socket_handle_t handle){
     return socket_core_close_handle(handle, get_current_proc_pid());
 }
 
-int32_t listen_on(SocketHandle *handle, int32_t backlog){
+int32_t listen_on(socket_handle_t handle, int32_t backlog){
     ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
     if (!socket) return SOCK_ERR_INVAL;
 
@@ -193,25 +174,22 @@ int32_t listen_on(SocketHandle *handle, int32_t backlog){
     return res;
 }
 
-bool accept_on_socket(SocketHandle *handle, SocketHandle* out_child) {
-    if (!out_child) return false;
-    memset(out_child, 0, sizeof(*out_child));
+socket_handle_t accept_on_socket(socket_handle_t handle) {
     ksocket_t* listener = socket_core_get(handle, get_current_proc_pid());
-    if (!listener) return false;
+    if (!listener) return 0;
     if (socket_core_protocol(listener) != PROTO_TCP) {
         socket_core_put(listener);
-        return false;
+        return 0;
     }
 
     ksocket_t* child = socket_accept_tcp(socket_core_impl(listener));
     if (!child) {
         socket_core_put(listener);
-        return false;
+        return 0;
     }
 
-    socket_core_export_handle(child, out_child);
-    socket_get_remote_ep_tcp(socket_core_impl(child), &out_child->connection);
+    socket_handle_t child_handle = socket_core_export_handle(child);
     socket_core_put(child);
     socket_core_put(listener);
-    return true;
+    return child_handle;
 }

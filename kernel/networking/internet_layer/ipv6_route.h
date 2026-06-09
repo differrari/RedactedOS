@@ -33,10 +33,12 @@ bool ipv6_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, const uint8_t dst
 typedef struct {
     uint8_t l3_id;
     uint8_t src_ip[16];
+    uint32_t net_epoch;
     ip_tx_opts_t fixed_opts;
 } ipv6_tx_plan_t;
 
-bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const uint8_t* allowed_l3, int allowed_n, ipv6_tx_plan_t* out);
+bool ipv6_tx_plan_valid(const ipv6_tx_plan_t* plan);
+bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx_plan_t* out);
 
 #ifdef __cplusplus
 }

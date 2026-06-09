@@ -72,7 +72,7 @@ static mdns_service_t g_mdns_services[MDNS_MAX_SERVICES];
 static mdns_cache_entry_t g_mdns_cache[MDNS_CACHE_MAX];
 
 static void mdns_send(socket_handle_t sock, const net_l4_endpoint *src, bool unicast, ip_version_t ver, const uint8_t *mcast_ip, const uint8_t *pkt, uint32_t pkt_len) {
-    if (!((sock).id && (sock).protocol != PROTO_NONE)) return;
+    if (!sock) return;
     if (!pkt) return;
     if (!pkt_len) return;
 
@@ -82,7 +82,7 @@ static void mdns_send(socket_handle_t sock, const net_l4_endpoint *src, bool uni
     if (unicast && src) {
         dst = *src;
         if (!dst.port) dst.port = DNS_MDNS_PORT;
-        send_to_socket(&sock, &dst, pkt, pkt_len);
+        send_to_socket(sock, &dst, pkt, pkt_len);
         return;
     }
 
@@ -90,7 +90,7 @@ static void mdns_send(socket_handle_t sock, const net_l4_endpoint *src, bool uni
     if (ver == IP_VER4) memcpy(dst.ip, mcast_ip, 4);
     else memcpy(dst.ip, mcast_ip, 16);
     dst.port = DNS_MDNS_PORT;
-    send_to_socket(&sock, &dst, pkt, pkt_len);
+    send_to_socket(sock, &dst, pkt, pkt_len);
 }
 
 static bool mdns_pick_identity(uint32_t *out_v4, uint8_t out_v6[16], uint8_t *out_ifindex, uint8_t out_ifid[8]) {
@@ -658,7 +658,8 @@ bool mdns_deregister_service(const char *instance, const char *service, const ch
     return false;
 }
 
-void mdns_responder_tick(socket_handle_t sock4, socket_handle_t sock6, const uint8_t mcast_v4[4], const uint8_t mcast_v6[16]) {
+void mdns_responder_tick_multi(const mdns_tx_target_t *targets, uint32_t target_count) {
+    if (!targets) target_count = 0;
     mdns_refresh_identity();
     uint64_t now = get_time();
     for (uint32_t i = 0; i < MDNS_CACHE_MAX; i++) {
@@ -700,8 +701,10 @@ void mdns_responder_tick(socket_handle_t sock4, socket_handle_t sock6, const uin
                 if (ok && p.an) {
                     mdns_pkt_commit(&p);
 
-                    if (((sock4).id && (sock4).protocol != PROTO_NONE) && mcast_v4) mdns_send(sock4, 0, false, IP_VER4, mcast_v4, pkt, p.off);
-                    if (((sock6).id && (sock6).protocol != PROTO_NONE) && mcast_v6) mdns_send(sock6, 0, false, IP_VER6, mcast_v6, pkt, p.off);
+                    for (uint32_t t = 0; t < target_count; t++) {
+                        if (!targets[t].sock) continue;
+                        mdns_send(targets[t].sock, 0, false, targets[t].ver, targets[t].mcast_ip, pkt, p.off);
+                    }
 
                     uint32_t ttl_ms = MDNS_TTL_S * 1000;
 
@@ -741,8 +744,10 @@ void mdns_responder_tick(socket_handle_t sock4, socket_handle_t sock6, const uin
             if (mdns_pkt_begin(&p, pkt, sizeof(pkt), DNS_FLAG_QR | DNS_FLAG_AA) && mdns_add_service_records(&p, s, MDNS_TTL_S, do_goodbye) && (p.an || p.ar)) {
                 mdns_pkt_commit(&p);
 
-                if (((sock4).id && (sock4).protocol != PROTO_NONE) && mcast_v4) mdns_send(sock4, 0, false, IP_VER4, mcast_v4, pkt, p.off);
-                if (((sock6).id && (sock6).protocol != PROTO_NONE) && mcast_v6) mdns_send(sock6, 0, false, IP_VER6, mcast_v6, pkt, p.off);
+                for (uint32_t t = 0; t < target_count; t++) {
+                    if (!targets[t].sock) continue;
+                    mdns_send(targets[t].sock, 0, false, targets[t].ver, targets[t].mcast_ip, pkt, p.off);
+                }
             }
 
             if (do_goodbye) {
@@ -757,8 +762,31 @@ void mdns_responder_tick(socket_handle_t sock4, socket_handle_t sock6, const uin
     }
 }
 
+void mdns_responder_tick(socket_handle_t sock, const uint8_t mcast_v4[4], const uint8_t mcast_v6[16]) {
+    mdns_tx_target_t targets[2];
+    uint32_t n = 0;
+
+    if (sock && mcast_v4) {
+        memset(&targets[n], 0, sizeof(targets[n]));
+        targets[n].sock = sock;
+        targets[n].ver = IP_VER4;
+        memcpy(targets[n].mcast_ip, mcast_v4, 4);
+        n++;
+    }
+
+    if (sock && mcast_v6) {
+        memset(&targets[n], 0, sizeof(targets[n]));
+        targets[n].sock = sock;
+        targets[n].ver = IP_VER6;
+        memcpy(targets[n].mcast_ip, mcast_v6, 16);
+        n++;
+    }
+
+    mdns_responder_tick_multi(targets, n);
+}
+
 void mdns_responder_handle_query(socket_handle_t sock, ip_version_t ver, const uint8_t *mcast_ip, const uint8_t *pkt, uint32_t pkt_len, const net_l4_endpoint *src) {
-    if (!((sock).id && (sock).protocol != PROTO_NONE)) return;
+    if (!sock) return;
     if (!mcast_ip) return;
     if (!pkt) return;
     if (pkt_len < 12) return;

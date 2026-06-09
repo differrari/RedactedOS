@@ -50,22 +50,24 @@ int img_example() {
 }
 
 int net_example() {
-    SocketHandle spec = {};
-    socket_create(SOCKET_SERVER, PROTO_UDP, NULL, &spec);
-    print("Created socket for type %i",spec.protocol);
-    //Fill in manually with your local IP. A syscall will be added soon to get it for you
-    spec.connection.ip[0] = 0;
-    spec.connection.ip[1] = 0;
-    spec.connection.ip[2] = 0;
-    spec.connection.ip[3] = 0;
-    if (socket_bind(&spec, IP_VER4, 9000) < 0) return -1;
+    socket_handle_t sock = socket_create(PROTO_UDP, NULL);
+    print("Created socket");
+    SockBindSpec spec = {};
+    spec.kind = BIND_IP;
+    spec.ver = IP_VER4;
+    //Fill in manually with your local IPV4. address (0.0.0.0 is ANYV4)
+    spec.ip[0] = 0;
+    spec.ip[1] = 0;
+    spec.ip[2] = 0;
+    spec.ip[3] = 0;
+    if (socket_bind(sock, &spec, 9000) < 0) return -1;
 
     // socket_listen(&spec);
 
     void *ptr = malloc(0x1000);
-    print("Waiting for data %i.%i.%i.%i", spec.connection.ip[0],spec.connection.ip[1],spec.connection.ip[2],spec.connection.ip[3]);
+    print("Waiting for data %i.%i.%i.%i", spec.ip[0],spec.ip[1],spec.ip[2],spec.ip[3]);
     net_l4_endpoint rc = {};
-    while (!socket_receive(&spec, ptr, 0x1000, &rc)){
+    while (socket_receive(sock, ptr, 0x1000, &rc) == SOCK_ERR_WOULDBLOCK){
     }
 
     print("Received data from %i.%i.%i.%i:%i", rc.ip[0],rc.ip[1],rc.ip[2],rc.ip[3],rc.port);
@@ -76,9 +78,9 @@ int net_example() {
 
     char *str = "Hello node";
 
-    print("Sent %i",socket_send_to(&spec, &rc, str, strlen(str)));
+    print("Sent %i",socket_send_to(sock, &rc, str, strlen(str)));
 
-    socket_close(&spec);
+    socket_close(sock);
 
     return 1;
 }

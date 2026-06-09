@@ -72,7 +72,6 @@ static uint64_t g_force_decline_mask = 0;
 
 uint16_t dhcpv6_get_pid() { return g_dhcpv6_pid; }
 bool dhcpv6_is_running() { return g_dhcpv6_pid != 0xFFFF; }
-void dhcpv6_set_pid(uint16_t pid) { g_dhcpv6_pid = pid; }
 
 void dhcpv6_force_renew_all() { g_force_renew_all = true; }
 void dhcpv6_force_rebind_all() { g_force_rebind_all = true; }
@@ -190,7 +189,7 @@ static void ensure_binds() {
 
             dhcpv6_bind_t* rb = (dhcpv6_bind_t*)linked_list_remove(g_dhcpv6_binds, it);
             if (rb) {
-                if (rb->sock.id && rb->sock.protocol != PROTO_NONE) close_socket(&rb->sock);
+                if (rb->sock) close_socket(rb->sock);
                 free_sized(rb, sizeof(*rb));
             }
         }
@@ -257,8 +256,8 @@ static void ensure_binds() {
         const uint8_t* mac = network_get_mac(b->ifindex);
         if (mac) { memcpy(b->mac, mac, 6); b->mac_ok = 1; }
 
-        create_socket(SOCKET_SERVER, PROTO_UDP, NULL, &b->sock);
-        if (!b->sock.id || b->sock.protocol == PROTO_NONE) {
+        b->sock = create_socket(PROTO_UDP, NULL);
+        if (!b->sock) {
             free_sized(b, sizeof(*b));
             continue;
         }
@@ -269,9 +268,9 @@ static void ensure_binds() {
         spec.ver = IP_VER6;
         spec.l3_id = b->bound_linklocal_l3_id;
 
-        if (bind_socket_spec(&b->sock, &spec, DHCPV6_CLIENT_PORT) != SOCK_OK) {
-            close_socket(&b->sock);
-            b->sock = ((socket_handle_t){0});
+        if (bind_socket(b->sock, &spec, DHCPV6_CLIENT_PORT) != SOCK_OK) {
+            close_socket(b->sock);
+            b->sock = 0;
             free_sized(b, sizeof(*b));
             continue;
         }
@@ -285,7 +284,7 @@ static void ensure_binds() {
 }
 
 static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
-    if (!b || !b->mac_ok || !b->sock.id || b->sock.protocol == PROTO_NONE) return;
+    if (!b || !b->mac_ok || !b->sock) return;
     if (b->done) return;
 
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(b->target_l3_id);
@@ -540,7 +539,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     ipv6_make_multicast(2, IPV6_MCAST_DHCPV6_SERVERS, NULL, dst.ip);
     dst.port = DHCPV6_SERVER_PORT;
 
-    (void)send_to_socket(&b->sock, &dst, msg, (uint64_t)msg_len);
+    (void)send_to_socket(b->sock, &dst, msg, (uint64_t)msg_len);
     b->tx_tries++;
 
     uint8_t rx[DHCPV6_MAX_MSG];
@@ -553,7 +552,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     uint32_t waited = 0;
 
     while (waited < 250) {
-        int64_t r = receive_from_socket(&b->sock, rx, sizeof(rx), &src);
+        int64_t r = receive_from_socket(b->sock, rx, sizeof(rx), &src);
         if (r > 0) {
             if (src.port != DHCPV6_SERVER_PORT) {
                 msleep(50);
@@ -774,8 +773,7 @@ int dhcpv6_daemon_entry(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
 
-    g_dhcpv6_pid = (uint16_t)get_current_proc_pid();
-    dhcpv6_set_pid(g_dhcpv6_pid);
+    g_dhcpv6_pid = get_current_proc_pid();
 
     uint64_t virt_timer;
     asm volatile ("mrs %0, cntvct_el0" : "=r"(virt_timer));

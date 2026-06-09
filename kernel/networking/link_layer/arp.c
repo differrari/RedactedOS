@@ -347,7 +347,9 @@ void arp_input(uint16_t ifindex, const uint8_t src_mac[6], netpkt_t* pkt) {
     uint32_t sender_ip = bswap32(hdr.sender_ip);
     uint32_t target_ip = bswap32(hdr.target_ip);
 
-    arp_table_put_for_l2((uint8_t)ifindex, sender_ip, hdr.sender_mac, ARP_REACHABLE_MS, false);
+    bool sender_mac_matches = memcmp(hdr.sender_mac, src_mac, 6) == 0;
+    bool sender_is_usable = sender_ip != 0 && sender_ip != 0xFFFFFFFF && !ipv4_is_multicast(sender_ip) && !l2_has_ip((uint8_t)ifindex, sender_ip);
+    if (sender_mac_matches && sender_is_usable) arp_table_put_for_l2((uint8_t)ifindex, sender_ip, hdr.sender_mac, ARP_REACHABLE_MS, false);
 
     if (op == ARP_OPCODE_REQUEST) {
         bool has = l2_has_ip((uint8_t)ifindex, target_ip);
@@ -360,12 +362,11 @@ void arp_input(uint16_t ifindex, const uint8_t src_mac[6], netpkt_t* pkt) {
 }
 
 
-void arp_set_pid(uint16_t pid){ g_arp_pid = pid; }
 uint16_t arp_get_pid(void){ return g_arp_pid; }
 
 int arp_daemon_entry(int argc, char* argv[]){
     (void)argc; (void)argv;
-    arp_set_pid(get_current_proc_pid());
+    g_arp_pid = get_current_proc_pid();
     const uint32_t tick_ms = 1000;
     while (1){
         arp_tick_all(tick_ms);

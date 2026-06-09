@@ -22,9 +22,10 @@ class TCPSocket : public Socket {
 
     tcp_data flow = {};
 
-    ksocket_t* pending[TCP_MAX_BACKLOG] = { nullptr };
+    ksocket_t** pending = nullptr;
     int backlogCap = 0;
     int backlogLen = 0;
+    bool listening = false;
 
     static bool is_valid_v4_l3_for_bind(l3_ipv4_interface_t* v4) {
         if (!v4 || !v4->l2) return false;
@@ -46,8 +47,8 @@ class TCPSocket : public Socket {
     }
 
 public:
-    uint32_t queue_accepted_child(uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uint16_t src_port, uint16_t dst_port) {
-        if (role != SOCKET_SERVER || !bound || localPort != dst_port) return 0;
+    uint32_t queue_accepted_child(ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uint16_t src_port, uint16_t dst_port) {
+        if (!listening || !localPort || localPort != dst_port || !pending) return 0;
 
         for (int i = 0; i < backlogLen;) {
             ksocket_t* owner = pending[i];
@@ -70,9 +71,10 @@ public:
         if (backlogLen >= backlogCap) return 0;
 
         ksocket_t* child_owner = nullptr;
-        if (!socket_core_alloc(SOCKET_CLIENT, PROTO_TCP, pid, &child_owner)) return 0;
+        uint16_t owner_pid = socket_core_pid(ownerSocket);
+        if (!socket_core_alloc(PROTO_TCP, owner_pid, &child_owner)) return 0;
 
-        TCPSocket* child = new TCPSocket(child_owner, SOCKET_CLIENT, pid, &extraOpts);
+        TCPSocket* child = new TCPSocket(child_owner, &extraOpts);
         if (!child) {
             socket_core_close_socket(child_owner);
             return 0;
@@ -80,7 +82,6 @@ public:
 
         child->localPort = dst_port;
 
-        child->bound = true;
         child->remoteEP.ver = ipver;
         memset(child->remoteEP.ip, 0, 16);
         if (ipver == IP_VER4) memcpy(child->remoteEP.ip, src_ip_addr, 4);
@@ -97,7 +98,7 @@ public:
             return 0;
         }
 
-        if (!socket_core_attach_impl(child_owner, child, socket_destroy_tcp, socket_close_tcp, socket_setopt_tcp, socket_getopt_tcp, nullptr)) {
+        if (!socket_core_attach_impl(child_owner, child, socket_destroy_tcp, socket_close_tcp, socket_setopt_tcp, socket_getopt_tcp)) {
             delete child;
             socket_core_close_socket(child_owner);
             return 0;
@@ -122,8 +123,7 @@ private:
     }
 
 public:
-    explicit TCPSocket(ksocket_t* owner, uint8_t r = SOCKET_CLIENT, uint32_t pid_ = 0, const SocketExtraOptions* extra = nullptr) : Socket(owner, PROTO_TCP, r, extra) {
-        pid = pid_;
+    explicit TCPSocket(ksocket_t* owner, const SocketExtraOptions* extra = nullptr) : Socket(owner, extra) {
         if (!(extraOpts.flags & SOCK_OPT_BUF_SIZE)) {
             extraOpts.flags |= SOCK_OPT_BUF_SIZE;
             extraOpts.buf_size = TCP_DEFAULT_SOCKET_BUF;
@@ -138,36 +138,47 @@ public:
     }
 
     int32_t set_option(int32_t opt, const void* value, uint32_t len) {
-        if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
-
-        uint32_t v = 0;
-        memcpy(&v, value, sizeof(v));
-
         switch ((uint32_t)opt) {
-            case SOCK_OPT_KEEPALIVE:
+            case SOCK_OPT_KEEPALIVE: {
+                if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
+                uint32_t v = 0;
+                memcpy(&v, value, sizeof(v));
                 if (v) {
                     extraOpts.flags |= SOCK_OPT_KEEPALIVE;
                     if (!extraOpts.keepalive_ms) extraOpts.keepalive_ms = SOCKET_DEFAULT_KEEPALIVE_MS;
                 } else extraOpts.flags &= ~SOCK_OPT_KEEPALIVE;
                 if (flow.flow_generation) tcp_flow_apply_socket_options(&flow, &extraOpts);
                 return SOCK_OK;
-            case SOCK_OPT_KEEPALIVE_INTERVAL:
+            }
+            case SOCK_OPT_KEEPALIVE_INTERVAL: {
+                if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
+                uint32_t v = 0;
+                memcpy(&v, value, sizeof(v));
                 if (!v) return SOCK_ERR_INVAL;
                 extraOpts.keepalive_ms = v;
                 extraOpts.flags |= SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL;
                 if (flow.flow_generation) tcp_flow_apply_socket_options(&flow, &extraOpts);
                 return SOCK_OK;
-            case SOCK_OPT_TCP_NO_DELAY:
+            }
+            case SOCK_OPT_TCP_NO_DELAY: {
+                if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
+                uint32_t v = 0;
+                memcpy(&v, value, sizeof(v));
                 if (v) extraOpts.flags |= SOCK_OPT_TCP_NO_DELAY;
                 else extraOpts.flags &= ~SOCK_OPT_TCP_NO_DELAY;
                 if (flow.flow_generation) tcp_flow_apply_socket_options(&flow, &extraOpts);
                 return SOCK_OK;
-            case SOCK_OPT_SEND_BUF_SIZE:
+            }
+            case SOCK_OPT_SEND_BUF_SIZE: {
+                if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
+                uint32_t v = 0;
+                memcpy(&v, value, sizeof(v));
                 if (!v) return SOCK_ERR_INVAL;
                 extraOpts.send_buf_size = v;
                 extraOpts.flags |= SOCK_OPT_SEND_BUF_SIZE;
                 if (flow.flow_generation) tcp_flow_apply_socket_options(&flow, &extraOpts);
                 return SOCK_OK;
+            }
             case SOCK_OPT_MCAST_JOIN:
                 return SOCK_ERR_INVAL;
             default: {
@@ -179,7 +190,7 @@ public:
     }
 
     int32_t get_option(int32_t opt, void* value, uint32_t* len) const {
-        if (!value || !len || *len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
+        if (!len) return SOCK_ERR_INVAL;
 
         uint32_t v = 0;
         switch ((uint32_t)opt) {
@@ -201,6 +212,11 @@ public:
                 return Socket::get_option(opt, value, len);
         }
 
+        if (!value) {
+            *len = sizeof(uint32_t);
+            return SOCK_OK;
+        }
+        if (*len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
         memcpy(value, &v, sizeof(v));
         *len = sizeof(uint32_t);
         return SOCK_OK;
@@ -210,17 +226,15 @@ public:
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_TCP;
         ev.action = NETLOG_ACT_BIND;
-        ev.pid = pid;
+        ev.pid = socket_core_pid(ownerSocket);
         ev.u0 = port;
         ev.bind_spec = spec_in;
         netlog_socket_event(&extraOpts, &ev);
-        if (role != SOCKET_SERVER) return SOCK_ERR_PERM;
-        if (bound) return SOCK_ERR_BOUND;
+        if (localPort) return SOCK_ERR_BOUND;
         if (!ownerSocket) return SOCK_ERR_SYS;
 
         SockBindSpec spec = spec_in;
-        bool empty = spec.kind == BIND_L3 && spec.l3_id == 0 && spec.ifindex == 0 && spec.ver == 0 && ipv6_is_unspecified(spec.ip);
-        if (empty) spec.kind = BIND_ANY;
+        if (!socket_bind_normalize_spec(&spec)) return SOCK_ERR_INVAL;
 
         if (spec.kind == BIND_L3){
             if (!spec.l3_id) return SOCK_ERR_INVAL;
@@ -242,24 +256,51 @@ public:
             } else return SOCK_ERR_INVAL;
         } else if (spec.kind != BIND_ANY && spec.kind != BIND_ANY4 && spec.kind != BIND_ANY6) return SOCK_ERR_INVAL;
 
-        if (!socket_bind_insert(ownerSocket, PROTO_TCP, &spec, port)) return SOCK_ERR_SYS;
+        int bind_port = port;
+        socket_bind_token_t token = 0;
+        if (bind_port == 0) {
+            bind_port = socket_bind_alloc_ephemeral(ownerSocket, PROTO_TCP, &spec, &token);
+            if (bind_port < 0) return SOCK_ERR_NO_PORT;
+        } else if (!socket_bind_insert(ownerSocket, PROTO_TCP, &spec, port, &token)) return SOCK_ERR_BOUND;
 
         bindSpec = spec;
-        localPort = port;
-        bound = true;
+        bindToken = token;
+        localPort = (uint16_t)bind_port;
         return SOCK_OK;
     }
 
     int32_t listen(int max_backlog){
-        if (!bound || role != SOCKET_SERVER) return SOCK_ERR_STATE;
+        if (!bindToken || connected) return SOCK_ERR_STATE;
 
-        backlogCap = max_backlog > TCP_MAX_BACKLOG ? TCP_MAX_BACKLOG : max_backlog;
-        if (backlogCap < 1) backlogCap = 1;
+        int cap = max_backlog > TCP_MAX_BACKLOG ? TCP_MAX_BACKLOG : max_backlog;
+        if (cap < 1) cap = 1;
+
+        if (pending) {
+            for (int i = 0; i < backlogLen; ++i) {
+                if (!pending[i]) continue;
+                socket_core_close_socket(pending[i]);
+                socket_core_put(pending[i]);
+            }
+            release(pending);
+        }
+
+        pending = (ksocket_t**)zalloc(sizeof(ksocket_t*) * cap);
+        if (!pending) {
+            backlogCap = 0;
+            backlogLen = 0;
+            listening = false;
+            return SOCK_ERR_SYS;
+        }
+
+        backlogCap = cap;
         backlogLen = 0;
+        listening = true;
         return SOCK_OK;
     }
 
     ksocket_t* accept(){
+        if (!listening || !pending) return nullptr;
+        //TODO replace polling with a socket wait queue when kernel events are present
         const int max_empty_iters = 200;
         const int ready_wait_iters = 4;
         int iter = 0;
@@ -318,32 +359,24 @@ public:
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_TCP;
         ev.action = NETLOG_ACT_CONNECT;
-        ev.pid = pid;
+        ev.pid = socket_core_pid(ownerSocket);
         if (dst) ev.dst_ep = *dst;
         netlog_socket_event(&extraOpts, &ev);
-        if (role != SOCKET_CLIENT) return SOCK_ERR_PERM;
-        if (connected) return SOCK_ERR_STATE;
+        if (connected || listening) return SOCK_ERR_STATE;
         if (!dst || !dst->port) return SOCK_ERR_INVAL;
 
         net_l4_endpoint d = *dst;
         uint8_t chosen_l3 = 0;
 
-        uint8_t allow_v4[MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE];
-        uint8_t allow_v6[MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE];
-        uint32_t n4 = bound ? socket_bind_l3_list(&bindSpec, IP_VER4, allow_v4, MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE) : 0;
-        uint32_t n6 = bound ? socket_bind_l3_list(&bindSpec, IP_VER6, allow_v6, MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE) : 0;
-
         if (d.ver == IP_VER6) {
-            if (bound && n6 == 0) return SOCK_ERR_SYS;
             ipv6_tx_plan_t p6;
-            if (!ipv6_build_tx_plan(d.ip, nullptr, n6 ? allow_v6 : nullptr, n6, &p6)) return SOCK_ERR_SYS;
+            if (!socket_bind_build_ipv6_tx_plan(&bindSpec, localPort, d.ip, &p6)) return SOCK_ERR_SYS;
             chosen_l3 = p6.l3_id;
         } else if (d.ver == IP_VER4) {
-            if (bound && n4 == 0) return SOCK_ERR_SYS;
             uint32_t dip = 0;
             memcpy(&dip, d.ip, 4);
             ipv4_tx_plan_t p4;
-            if (!ipv4_build_tx_plan(dip, nullptr, n4 ? allow_v4 : nullptr, n4, &p4)) return SOCK_ERR_SYS;
+            if (!socket_bind_build_ipv4_tx_plan(&bindSpec, localPort, dip, &p4)) return SOCK_ERR_SYS;
             chosen_l3 = p4.l3_id;
         } else return SOCK_ERR_INVAL;
 
@@ -357,35 +390,37 @@ public:
             if (!is_valid_v6_l3_for_bind(v6)) return SOCK_ERR_SYS;
         } else return SOCK_ERR_INVAL;
 
+        bool ephemeral_allocated = false;
         if (localPort == 0) {
             if (!ownerSocket) return SOCK_ERR_SYS;
-            int p = socket_bind_alloc_ephemeral_l3(ownerSocket, PROTO_TCP, chosen_l3, pid);
+            socket_bind_token_t token = 0;
+            int p = socket_bind_alloc_ephemeral_l3(ownerSocket, PROTO_TCP, chosen_l3, &token);
             if (p < 0) return SOCK_ERR_NO_PORT;
             localPort = (uint16_t)p;
+            bindToken = token;
+            memset(&bindSpec, 0, sizeof(bindSpec));
+            bindSpec.kind = BIND_L3;
+            bindSpec.ver = d.ver;
+            bindSpec.l3_id = chosen_l3;
+            ephemeral_allocated = true;
         }
 
-        bindSpec = {};
-        bindSpec.kind = BIND_L3;
-        bindSpec.ver = d.ver;
-        bindSpec.l3_id = chosen_l3;
-        bound = true;
-
         flow = tcp_data{};
-        if (!tcp_handshake_l3(chosen_l3, localPort, &d, &flow, pid, &extraOpts)) {
-            Socket::close();
+        if (!tcp_handshake_l3(chosen_l3, localPort, &d, &flow, &extraOpts)) {
+            if (ephemeral_allocated) Socket::close();
             return SOCK_ERR_SYS;
         }
 
         if (d.ver == IP_VER4) {
             l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
             if (!is_valid_v4_l3_for_bind(v4)) {
-                Socket::close();
+                if (ephemeral_allocated) Socket::close();
                 return SOCK_ERR_SYS;
             }
         } else {
             l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen_l3);
             if (!is_valid_v6_l3_for_bind(v6)) {
-                Socket::close();
+                if (ephemeral_allocated) Socket::close();
                 return SOCK_ERR_SYS;
             }
         }
@@ -395,7 +430,7 @@ public:
         netlog_socket_event_t ev1{};
         ev1.comp = NETLOG_COMP_TCP;
         ev1.action = NETLOG_ACT_CONNECTED;
-        ev1.pid = pid;
+        ev1.pid = socket_core_pid(ownerSocket);
         ev1.u0 = localPort;
         ev1.u1 = remoteEP.port;
         ev1.local_port = localPort;
@@ -408,7 +443,7 @@ public:
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_TCP;
         ev.action = NETLOG_ACT_SEND;
-        ev.pid = pid;
+        ev.pid = socket_core_pid(ownerSocket);
         ev.u0 = (uint32_t)len;
         ev.local_port = localPort;
         ev.remote_ep = remoteEP;
@@ -432,7 +467,7 @@ public:
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_TCP;
         ev.action = NETLOG_ACT_RECV;
-        ev.pid = pid;
+        ev.pid = socket_core_pid(ownerSocket);
         ev.u0 = (uint32_t)len;
         ev.local_port = localPort;
         ev.remote_ep = remoteEP;
@@ -451,13 +486,12 @@ public:
         netlog_socket_event_t ev{};
         ev.comp = NETLOG_COMP_TCP;
         ev.action = NETLOG_ACT_CLOSE;
-        ev.pid = pid;
+        ev.pid = socket_core_pid(ownerSocket);
         ev.local_port = localPort;
         ev.remote_ep = remoteEP;
         netlog_socket_event(&extraOpts, &ev);
         if (connected && flow.flow_generation){
-            if (tcp_flow_is_closed(&flow)) tcp_flow_release_closed(&flow);
-            else {
+            if (!tcp_flow_is_closed(&flow)) {
                 tcp_flow_flush(&flow);
                 tcp_flow_close(&flow);
             }
@@ -465,13 +499,19 @@ public:
             flow = tcp_data{};
         }
 
-        for (int i = 0; i < backlogLen; ++i) {
-            if (!pending[i]) continue;
-            socket_core_close_socket(pending[i]);
-            socket_core_put(pending[i]);
-            pending[i] = nullptr;
+        if (pending) {
+            for (int i = 0; i < backlogLen; ++i) {
+                if (!pending[i]) continue;
+                socket_core_close_socket(pending[i]);
+                socket_core_put(pending[i]);
+                pending[i] = nullptr;
+            }
+            release(pending);
+            pending = nullptr;
         }
+        backlogCap = 0;
         backlogLen = 0;
+        listening = false;
 
         return Socket::close();
     }

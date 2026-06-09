@@ -17,21 +17,16 @@ protected:
     uint16_t localPort = 0;
     net_l4_endpoint remoteEP = { IP_VER4, {0}, 0 };
 
-    uint8_t proto = 0;
-    uint8_t role = 0;
-    bool bound = false;
     bool connected = false;
-    uint16_t pid = 0;
     ksocket_t* ownerSocket = nullptr;
 
     SocketExtraOptions extraOpts = {};
     SockBindSpec bindSpec = {};
+    socket_bind_token_t bindToken = 0;
 
-
-    Socket(ksocket_t* owner, uint8_t protocol, uint8_t r, const SocketExtraOptions* extra) : proto(protocol), role(r), ownerSocket(owner) {
+    Socket(ksocket_t* owner, const SocketExtraOptions* extra) : ownerSocket(owner) {
         if (extra) extraOpts = *extra;
     }
-
 
 public:
     virtual ~Socket() { close(); }
@@ -40,12 +35,13 @@ public:
     const SocketExtraOptions* get_extra_options() const { return &extraOpts; }
 
     int32_t set_option(int32_t opt, const void* value, uint32_t len) {
-        if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
+        uint32_t v = 1;
+        if (value) {
+            if (len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
+            memcpy(&v, value, sizeof(v));
+        } else if (len || (opt != SOCK_OPT_DONTFRAG && opt != SOCK_OPT_BROADCAST_ALLOWED)) return SOCK_ERR_INVAL;
 
-        uint32_t v = 0;
-        memcpy(&v, value, sizeof(v));
-
-        switch ((uint32_t)opt) {
+        switch (opt) {
             case SOCK_OPT_RECV_TIMEOUT:
                 extraOpts.recv_timeout_ms = v;
                 if (v) extraOpts.flags |= SOCK_OPT_RECV_TIMEOUT;
@@ -71,6 +67,10 @@ public:
                 if (v) extraOpts.flags |= SOCK_OPT_DONTFRAG;
                 else extraOpts.flags &= ~SOCK_OPT_DONTFRAG;
                 return SOCK_OK;
+            case SOCK_OPT_BROADCAST_ALLOWED:
+                if (v) extraOpts.flags |= SOCK_OPT_BROADCAST_ALLOWED;
+                else extraOpts.flags &= ~SOCK_OPT_BROADCAST_ALLOWED;
+                return SOCK_OK;
             case SOCK_OPT_TTL:
                 if (v > 255) return SOCK_ERR_INVAL;
                 extraOpts.ttl = (uint8_t)v;
@@ -83,7 +83,7 @@ public:
     }
 
     int32_t get_option(int32_t opt, void* value, uint32_t* len) const {
-        if (!value || !len || *len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
+        if (!len) return SOCK_ERR_INVAL;
 
         uint32_t v = 0;
         switch ((uint32_t)opt) {
@@ -102,6 +102,9 @@ public:
             case SOCK_OPT_DONTFRAG:
                 v = (extraOpts.flags & SOCK_OPT_DONTFRAG) != 0;
                 break;
+            case SOCK_OPT_BROADCAST_ALLOWED:
+                v = (extraOpts.flags & SOCK_OPT_BROADCAST_ALLOWED) != 0;
+                break;
             case SOCK_OPT_TTL:
                 v = extraOpts.ttl;
                 break;
@@ -109,6 +112,11 @@ public:
                 return SOCK_ERR_INVAL;
         }
 
+        if (!value) {
+            *len = sizeof(uint32_t);
+            return SOCK_OK;
+        }
+        if (*len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
         memcpy(value, &v, sizeof(v));
         *len = sizeof(uint32_t);
         return SOCK_OK;
@@ -117,23 +125,21 @@ public:
     virtual int32_t bind(const SockBindSpec& spec, uint16_t port) = 0;
 
     virtual int32_t close() {
-        if (ownerSocket) socket_bind_remove_socket(ownerSocket);
-        bound = false;
+        if (bindToken) {
+            socket_bind_remove(bindToken);
+            bindToken = 0;
+        }
         localPort = 0;
+        memset(&bindSpec, 0, sizeof(bindSpec));
         connected = false;
         remoteEP.port = 0;
         remoteEP.ver = IP_VER4;
         memset(remoteEP.ip, 0, 16);
-        memset(&bindSpec, 0, sizeof(bindSpec));
         return SOCK_OK;
     }
 
     uint16_t get_local_port() const { return localPort; }
     uint16_t get_remote_port() const { return remoteEP.port; }
-    uint8_t get_protocol() const { return proto; }
-    uint8_t get_role() const { return role; }
-    uint16_t get_pid() const { return pid; }
-    bool is_bound() const { return bound; }
     bool is_connected() const { return connected; }
 
     ip_version_t get_remote_ip_version() const { return remoteEP.ver; }

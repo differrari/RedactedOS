@@ -85,44 +85,59 @@ int64_t tcp_flow_read(tcp_data *flow_ctx, void *buf, uint64_t len) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return TCP_DISCONNECT;
 
-    if (!flow->rx.rcv_buf || !flow->rx.rcv_wnd_max) return flow->base.state == TCP_STATE_CLOSED ? TCP_DISCONNECT : 0;
-    if (TCP_SEQ_LT(flow->rx.rcv_data_nxt, flow->rx.rcv_base)) return flow->base.state == TCP_STATE_CLOSED ? TCP_DISCONNECT : 0;
+    int64_t rc = 0;
+    if (!flow->rx.rcv_buf || !flow->rx.rcv_wnd_max) rc = flow->base.state == TCP_STATE_CLOSED ? TCP_DISCONNECT : 0;
+    else if (TCP_SEQ_LT(flow->rx.rcv_data_nxt, flow->rx.rcv_base)) rc = flow->base.state == TCP_STATE_CLOSED ? TCP_DISCONNECT : 0;
+    else {
+        uint32_t n = flow->rx.rcv_data_nxt - flow->rx.rcv_base;
+        if (!n) rc = flow->base.state == TCP_STATE_CLOSED ? TCP_DISCONNECT : 0;
+        else {
+            if (len < n) n = (uint32_t)len;
 
-    uint32_t n = flow->rx.rcv_data_nxt - flow->rx.rcv_base;
-    if (!n) return flow->base.state == TCP_STATE_CLOSED ? TCP_DISCONNECT : 0;
-    if (len < n) n = (uint32_t)len;
+            uint8_t *rx = (uint8_t*)flow->rx.rcv_buf;
+            uint8_t *dst = (uint8_t*)buf;
+            uint32_t pos = flow->rx.rcv_base % flow->rx.rcv_wnd_max;
+            uint32_t first = flow->rx.rcv_wnd_max - pos;
 
-    uint8_t *rx = (uint8_t*)flow->rx.rcv_buf;
-    uint8_t *dst = (uint8_t*)buf;
-    uint32_t pos = flow->rx.rcv_base % flow->rx.rcv_wnd_max;
-    uint32_t first = flow->rx.rcv_wnd_max - pos;
+            if (first > n) first = n;
+            if (first) memcpy(dst, rx + pos, first);
+            if (n > first) memcpy(dst + first, rx, n - first);
 
-    if (first > n) first = n;
-    if (first) memcpy(dst, rx + pos, first);
-    if (n > first) memcpy(dst + first, rx, n - first);
-
-    flow->rx.rcv_base += n;
-    tcp_flow_on_app_read(flow_ctx, n);
-    return n;
+            flow->rx.rcv_base += n;
+            rc = n;
+        }
+    }
+    
+    tcp_flow_put(flow);
+    if (rc > 0) tcp_flow_on_app_read(flow_ctx, (uint32_t)rc);
+    return rc;
 }
 
 uint32_t tcp_flow_readable(tcp_data *flow_ctx) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
-    if (!flow || !flow->rx.rcv_buf || !flow->rx.rcv_wnd_max) return 0;
-    if (TCP_SEQ_LT(flow->rx.rcv_data_nxt, flow->rx.rcv_base)) return 0;
-    return flow->rx.rcv_data_nxt - flow->rx.rcv_base;
+    if (!flow) return 0;
+
+    uint32_t n = 0;
+    if (flow->rx.rcv_buf && flow->rx.rcv_wnd_max && !TCP_SEQ_LT(flow->rx.rcv_data_nxt, flow->rx.rcv_base)) n = flow->rx.rcv_data_nxt - flow->rx.rcv_base;
+
+    tcp_flow_put(flow);
+    return n;
 }
 
 bool tcp_flow_recv_closed(tcp_data *flow_ctx) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return true;
-    if (flow->base.state == TCP_STATE_CLOSED || flow->base.state == TCP_TIME_WAIT) return true;
-    if (flow->base.state == TCP_CLOSE_WAIT) {
-        if (!flow->rx.rcv_buf || !flow->rx.rcv_wnd_max) return true;
-        if (TCP_SEQ_LT(flow->rx.rcv_data_nxt, flow->rx.rcv_base)) return true;
-        return flow->rx.rcv_data_nxt == flow->rx.rcv_base;
+
+    bool closed = false;
+    if (flow->base.state == TCP_STATE_CLOSED || flow->base.state == TCP_TIME_WAIT) closed = true;
+    else if (flow->base.state == TCP_CLOSE_WAIT) {
+        if (!flow->rx.rcv_buf || !flow->rx.rcv_wnd_max) closed = true;
+        else if (TCP_SEQ_LT(flow->rx.rcv_data_nxt, flow->rx.rcv_base)) closed = true;
+        else closed = flow->rx.rcv_data_nxt == flow->rx.rcv_base;
     }
-    return false;
+
+    tcp_flow_put(flow);
+    return closed;
 }
 
 tcp_tx_seg_t *tcp_find_first_unacked(tcp_flow_t *flow) {
@@ -360,8 +375,8 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     }
     tcp_parse_options(parsed_opts_len ? parsed_opts_buf : NULL, parsed_opts_len, &parsed_opts);
 
-    int idx = find_flow(dst_port, ipver, dst_ip_addr, src_ip_addr, src_port);
-    tcp_flow_t *flow = idx >= 0 ? tcp_flows[idx] : NULL;
+    int idx = -1;
+    tcp_flow_t *flow = tcp_flow_acquire_match(dst_port, ipver, dst_ip_addr, src_ip_addr, src_port, &idx);
     if (flow) flow->timer.keepalive_idle_ms = 0;
     if (flow) flow->base.l3_id = l3_id;
 
@@ -369,6 +384,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     if (ipver == IP_VER4) {
         l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(l3_id);
         if (!v4 || !v4->l2) {
+            if (flow) tcp_flow_put(flow);
             netpkt_unref(pkt);
             return;
         }
@@ -376,6 +392,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     } else {
         l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(l3_id);
         if (!v6 || !v6->l2) {
+            if (flow) tcp_flow_put(flow);
             netpkt_unref(pkt);
             return;
         }
@@ -388,6 +405,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
         if (listener) {
             socket_core_put(listener);
             tcp_free_flow(idx);
+            tcp_flow_put(flow);
             flow = NULL;
             idx = -1;
         }
@@ -401,6 +419,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             tcp_send_from_seg(flow, seg);
             break;
         }
+        tcp_flow_put(flow);
         netpkt_unref(pkt);
         return;
     }
@@ -431,6 +450,12 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             const SocketExtraOptions* listener_extra = socket_tcp_extra_options(socket_core_impl(listener));
             tcp_flow_t *nf = tcp_alloc_flow();
             if (!nf) {
+                socket_core_put(listener);
+                netpkt_unref(pkt);
+                return;
+            }
+            if (!tcp_flow_hold(nf)) {
+                tcp_free_flow((int)nf->base.slot);
                 socket_core_put(listener);
                 netpkt_unref(pkt);
                 return;
@@ -537,6 +562,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow);
             if (!seg) {
                 tcp_free_flow(idx);
+                tcp_flow_put(flow);
                 socket_core_put(listener);
                 netpkt_unref(pkt);
                 return;
@@ -552,17 +578,19 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             seg->timer_ms = 0;
             seg->timeout_ms = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
             seg->opts_len = tcp_build_syn_options(seg->opts, (uint16_t)flow->tx.mss, flow->tx.ws_ok ? flow->tx.ws_send : 0xff, flow->tx.sack_ok);
+            flow->tx.snd_nxt = iss + 1;
+            flow->base.ctx.sequence = flow->tx.snd_nxt;
             if (!tcp_send_from_seg(flow, seg)) {
                 tcp_free_flow(idx);
+                tcp_flow_put(flow);
                 socket_core_put(listener);
                 netpkt_unref(pkt);
                 return;
             }
 
-            flow->tx.snd_nxt = iss + 1;
-
             tcp_daemon_kick();
             socket_core_put(listener);
+            tcp_flow_put(flow);
             netpkt_unref(pkt);
             return;
         }
@@ -587,6 +615,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
     if (flow->base.state == TCP_TIME_WAIT){
         if (flags & (1u << RST_F)) {
+            tcp_flow_put(flow);
             netpkt_unref(pkt);
             return;
         }
@@ -603,6 +632,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             tcp_send_ack_now(flow);
         }
 
+        tcp_flow_put(flow);
         netpkt_unref(pkt);
         return;
     }
@@ -641,8 +671,12 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                     if (s->rtt_sample && s->retransmit_cnt == 0) tcp_rtt_update(flow, s->timer_ms);
 
                     if (s->buf && s->len) {
-                        tcp_account_tx_remove(flow, (uint32_t)s->len);
-                        release((void *)s->buf);
+                        uintptr_t seg_buf = s->buf;
+                        uint32_t seg_len = (uint32_t)s->len;
+                        s->buf = 0;
+                        s->len = 0;
+                        tcp_account_tx_remove(flow, seg_len);
+                        release((void*)seg_buf);
                     }
 
                     s->used = 0;
@@ -671,6 +705,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 tcp_daemon_kick();
             } else if ((flow->base.state == TCP_LAST_ACK || flow->base.state == TCP_CLOSING) && TCP_SEQ_GEQ(ack, flow->base.ctx.expected_ack)){
                 tcp_free_flow(idx);
+                tcp_flow_put(flow);
                 netpkt_unref(pkt);
                 return;
             }
@@ -735,6 +770,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 flow->rx.rcv_wnd = 0;
                 flow->rx.rcv_adv_edge = flow->rx.rcv_nxt;
                 flow->base.ctx.window = 0;
+                tcp_flow_put(flow);
                 netpkt_unref(pkt);
                 return;
             }
@@ -767,6 +803,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->base.state = TCP_STATE_CLOSED;
         }
 
+        tcp_flow_put(flow);
         netpkt_unref(pkt);
         return;
 
@@ -777,6 +814,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 if (!flow->rx.rcv_buf) {
                     tcp_send_reset(ipver, dst_ip_addr, src_ip_addr, dst_port, src_port, 0, flow->base.ctx.ack, true);
                     tcp_free_flow(idx);
+                    tcp_flow_put(flow);
                     netpkt_unref(pkt);
                     return;
                 }
@@ -789,7 +827,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             ksocket_t* listener = NULL;
             socket_bind_collect(PROTO_TCP, ipver, l3_id, ifx, dst_ip_addr, dst_port, &listener, 1);
             if (listener) {
-                queued = tcp_accept_enqueue(listener, ifx, ipver, src_ip_addr, dst_ip_addr, src_port, dst_port);
+                queued = tcp_accept_enqueue(listener, ipver, src_ip_addr, dst_ip_addr, src_port, dst_port);
                 socket_core_put(listener);
             }
             if (!queued) {
@@ -814,6 +852,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 }
 
                 tcp_free_flow(idx);
+                tcp_flow_put(flow);
                 netpkt_unref(pkt);
                 return;
             }
@@ -827,16 +866,19 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
             tcp_daemon_kick();
             if (!data_len && !fin) {
+                tcp_flow_put(flow);
                 netpkt_unref(pkt);
                 return;
             }
             break;
         } else if (flags & (1u << RST_F)){
             tcp_free_flow(idx);
+            tcp_flow_put(flow);
             netpkt_unref(pkt);
             return;
         }
 
+        tcp_flow_put(flow);
         netpkt_unref(pkt);
         return;
 
@@ -846,6 +888,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
     if (flags & (1u << RST_F)) {
         tcp_free_flow(idx);
+        tcp_flow_put(flow);
         netpkt_unref(pkt);
         return;
     }
@@ -1119,6 +1162,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             }
         }
     }
+    tcp_flow_put(flow);
     netpkt_unref(pkt);
 }
 
@@ -1135,13 +1179,15 @@ void tcp_flow_on_app_read(tcp_data *flow_ctx, uint32_t bytes_read){
     int advanced = tcp_reass_drain_inseq(flow);
     tcp_calc_adv_wnd_field(flow, 1);
 
-    if (flow->base.state == TCP_STATE_CLOSED || flow->base.state == TCP_TIME_WAIT) return;
+    if (flow->base.state != TCP_STATE_CLOSED && flow->base.state != TCP_TIME_WAIT) {
+        uint32_t threshold = flow->tx.mss ? flow->tx.mss : TCP_DEFAULT_MSS;
+        uint32_t half = flow->rx.rcv_wnd_max >> 1;
+        if (half && half < threshold) threshold = half;
+        if (!threshold) threshold = 1;
 
-    uint32_t threshold = flow->tx.mss ? flow->tx.mss : TCP_DEFAULT_MSS;
-    uint32_t half = flow->rx.rcv_wnd_max >> 1;
-    if (half && half < threshold) threshold = half;
-    if (!threshold) threshold = 1;
+        uint32_t delta = TCP_SEQ_GT(flow->rx.rcv_adv_edge, old_edge) ? flow->rx.rcv_adv_edge - old_edge : 0;
+        if (advanced || flow->rx.rcv_nxt != old_nxt || (!old_adv_field && flow->base.ctx.window) || delta >= threshold) tcp_send_ack_now(flow);
+    }
 
-    uint32_t delta = TCP_SEQ_GT(flow->rx.rcv_adv_edge, old_edge) ? flow->rx.rcv_adv_edge - old_edge : 0;
-    if (advanced || flow->rx.rcv_nxt != old_nxt || (!old_adv_field && flow->base.ctx.window) || delta >= threshold) tcp_send_ack_now(flow);
+    tcp_flow_put(flow);
 }

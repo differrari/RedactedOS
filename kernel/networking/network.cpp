@@ -57,9 +57,6 @@ size_t network_nic_count() {
     return dispatch->nic_count();
 }
 
-void network_net_set_pid(uint16_t pid) {
-    if (dispatch) dispatch->set_net_pid(pid);
-}
 
 uint16_t network_net_get_pid() {
     return dispatch ? dispatch->get_net_pid() : UINT16_MAX;

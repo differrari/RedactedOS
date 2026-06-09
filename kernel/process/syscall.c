@@ -255,53 +255,63 @@ u64 syscall_get_time(process_t *ctx){
 }
 
 u64 syscall_socket_create(process_t *ctx){
-    Socket_Role role = (Socket_Role)ctx->PROC_X0;
-    protocol_t protocol = (protocol_t)ctx->PROC_X1;
-    SYSCALL_ARG(const SocketExtraOptions, extra, PROC_X2, false);
-    SYSCALL_ARG(SocketHandle, out, PROC_X3, true);
+    protocol_t protocol = (protocol_t)ctx->PROC_X0;
+    const SocketExtraOptions* extra = NULL;
 
-    return create_socket(role, protocol, extra, out);
+    if (ctx->PROC_X1) {
+        SYSCALL_ARG(SocketExtraOptions, user_extra, PROC_X1, false);
+        if (user_extra->mcast_count) {
+            if (!user_extra->mcast_groups) return 0;
+            if (!validate_address(ctx, (uptr)user_extra->mcast_groups, sizeof(net_l4_endpoint) * user_extra->mcast_count, false)) return 0;
+        }
+        extra = user_extra;
+    }
+
+    return create_socket(protocol, extra);
 }
 
 u64 syscall_socket_bind(process_t *ctx){
-    SYSCALL_ARG(SocketHandle,handle,PROC_X0, false);
-    ip_version_t ip_version = (ip_version_t)ctx->PROC_X1;
+    socket_handle_t handle = (socket_handle_t)ctx->PROC_X0;
+    const SockBindSpec* spec = NULL;
+
+    if (ctx->PROC_X1){
+        SYSCALL_ARG(SockBindSpec, user_spec, PROC_X1, false);
+        spec = user_spec;
+    }
+
     uint16_t port = (uint16_t)ctx->PROC_X2;
-    return bind_socket(handle, port, ip_version);
+    return bind_socket(handle, spec, port);
 }
 
 u64 syscall_socket_connect(process_t *ctx){
-    SYSCALL_ARG(SocketHandle,handle,PROC_X0,true);
+    socket_handle_t handle = (socket_handle_t)ctx->PROC_X0;
     SYSCALL_ARG(net_l4_endpoint, ep, PROC_X1, false);
     return connect_socket(handle, ep);
 }
 
 u64 syscall_socket_listen(process_t *ctx){
-    SYSCALL_ARG(SocketHandle,handle, PROC_X0, false);
+    socket_handle_t handle = (socket_handle_t)ctx->PROC_X0;
     int32_t backlog = (int32_t)ctx->PROC_X1;
 
     return listen_on(handle, backlog);
 }
 
 u64 syscall_socket_accept(process_t *ctx){
-    SYSCALL_ARG(SocketHandle,handle, PROC_X0, false);
-    SYSCALL_ARG(SocketHandle,out_child, PROC_X1, true);
-    return accept_on_socket(handle, out_child);
+    socket_handle_t handle = (socket_handle_t)ctx->PROC_X0;
+    return accept_on_socket(handle);
 }
 
 u64 syscall_socket_send(process_t *ctx){
     size_t size = (size_t)ctx->PROC_X2;
-    if (!size) return 0;
 
-    SYSCALL_ARG(SocketHandle,handle, PROC_X0, false);
+    socket_handle_t handle = (socket_handle_t)ctx->PROC_X0;
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
     return send_on_socket(handle, buf, size);
 }
 
 u64 syscall_socket_send_to(process_t *ctx) {
     size_t size = (size_t)ctx->PROC_X3;
-    if (!size) return 0;
-    SYSCALL_ARG(SocketHandle,handle, PROC_X0, false);
+    socket_handle_t handle = (socket_handle_t)ctx->PROC_X0;
     SYSCALL_ARG(net_l4_endpoint, dst, PROC_X1, false);
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X2, false);
 
@@ -310,22 +320,26 @@ u64 syscall_socket_send_to(process_t *ctx) {
 
 u64 syscall_socket_receive(process_t *ctx){
     size_t size = (size_t)ctx->PROC_X2;
-    if (!size) return 0;
     
-    SYSCALL_ARG(SocketHandle, handle, PROC_X0, false);
+    socket_handle_t handle = (socket_handle_t)ctx->PROC_X0;
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, true);
 
-    SYSCALL_ARG(net_l4_endpoint, src, PROC_X3, true);
+    net_l4_endpoint* src = NULL;
+    if (ctx->PROC_X3) {
+        src = (net_l4_endpoint*)ctx->PROC_X3;
+        if (!validate_address(ctx, (uptr)src, sizeof(net_l4_endpoint), true)) return 0;
+    }
+
     return receive_from_socket(handle, buf, size, src);
 }
 
 u64 syscall_socket_close(process_t *ctx){
-    SYSCALL_ARG(SocketHandle,handle, PROC_X0, true);
+    socket_handle_t handle = (socket_handle_t)ctx->PROC_X0;
     return close_socket(handle);
 }
 
 u64 syscall_socket_setopt(process_t *ctx){
-    SYSCALL_ARG(SocketHandle, handle, PROC_X0, false);
+    socket_handle_t handle = (socket_handle_t)ctx->PROC_X0;
     int32_t opt = (int32_t)ctx->PROC_X1;
     uint32_t len = (uint32_t)ctx->PROC_X3;
     SYSCALL_ARG_SIZE(void, value, len, PROC_X2, false);
@@ -333,7 +347,7 @@ u64 syscall_socket_setopt(process_t *ctx){
 }
 
 u64 syscall_socket_getopt(process_t *ctx){
-    SYSCALL_ARG(SocketHandle, handle, PROC_X0, false);
+    socket_handle_t handle = (socket_handle_t)ctx->PROC_X0;
     int32_t opt = (int32_t)ctx->PROC_X1;
     SYSCALL_ARG(uint32_t, len, PROC_X3, true);
     SYSCALL_ARG_SIZE(void, value, *len, PROC_X2, true);

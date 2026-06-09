@@ -66,6 +66,8 @@ typedef struct {
     tcp_state_t state;
     tcp_data ctx;
     uint8_t retries;
+    uint16_t refs;
+    uint8_t retired;
 } tcp_flow_base_t;
 
 typedef struct {
@@ -161,8 +163,10 @@ void tcp_enter_time_wait(tcp_flow_t *flow);
 
 tcp_flow_t *tcp_alloc_flow(void);
 void tcp_free_flow(int idx);
-void tcp_release_io_buffers(tcp_flow_t *f);
 tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx);
+tcp_flow_t *tcp_flow_acquire_match(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, int *out_idx);
+int tcp_flow_hold(tcp_flow_t *flow);
+void tcp_flow_put(tcp_flow_t *flow);
 
 void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms);
 

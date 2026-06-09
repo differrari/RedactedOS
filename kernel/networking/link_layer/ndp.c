@@ -822,7 +822,17 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
 
         if (self->dad_state != IPV6_DAD_OK) return;
 
-        ndp_table_put_for_l2((uint8_t)ifindex, src_ip, src_mac, 180000, false);
+        int src_is_local = 0;
+        for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+            l3_ipv6_interface_t* v6 = l2->l3_v6[i];
+            if (!v6) continue;
+            if (v6->cfg == IPV6_CFG_DISABLE) continue;
+            if (ipv6_cmp(v6->ip, src_ip) == 0) {
+                src_is_local = 1;
+                break;
+            }
+        }
+        if (!src_is_local) ndp_table_put_for_l2((uint8_t)ifindex, src_ip, src_mac, 180000, false);
 
         uint8_t src_my[16] = {0};
 
@@ -873,6 +883,14 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         }
 
         if (ipv6_is_unspecified(src_ip)) return;
+        if (l2) {
+            for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+                l3_ipv6_interface_t* v6 = l2->l3_v6[i];
+                if (!v6) continue;
+                if (v6->cfg == IPV6_CFG_DISABLE) continue;
+                if (ipv6_cmp(v6->ip, src_ip) == 0 || ipv6_cmp(v6->ip, na.target) == 0) return;
+            }
+        }
 
         uint32_t f = bswap32(na.flags);
         uint8_t router = (uint8_t)((f >> 31) & 1u);

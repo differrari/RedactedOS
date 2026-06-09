@@ -6,7 +6,7 @@
 
 static dns_result_t perform_mdns_query_once(socket_handle_t sock, const net_l4_endpoint *dst, const char *name, dns_qtype_t qtype, uint32_t timeout_ms, dns_record_t *out_records, uint32_t max_records, uint32_t *out_count) {
     if (out_count) *out_count = 0;
-    if (!((sock).id && (sock).protocol != PROTO_NONE)) return DNS_ERR_NO_DNS;
+    if (!sock) return DNS_ERR_NO_DNS;
     if (!dst) return DNS_ERR_NO_DNS;
     if (!name) return DNS_ERR_FORMAT;
     if (!out_records && max_records) return DNS_ERR_FORMAT;
@@ -15,7 +15,7 @@ static dns_result_t perform_mdns_query_once(socket_handle_t sock, const net_l4_e
     uint32_t offset = dns_wire_build_query(request_buffer, sizeof(request_buffer), 0, name, qtype, false);
     if (!offset) return DNS_ERR_FORMAT;
 
-    int64_t sent = send_to_socket(&sock, dst, (void*)request_buffer, offset);
+    int64_t sent = send_to_socket(sock, dst, (void*)request_buffer, offset);
     if (sent < 0) return DNS_ERR_SEND;
 
     uint32_t found = 0;
@@ -23,7 +23,7 @@ static dns_result_t perform_mdns_query_once(socket_handle_t sock, const net_l4_e
     while (waited_ms < timeout_ms) {
         uint8_t response_buffer[512];
         net_l4_endpoint source;
-        int64_t received = receive_from_socket(&sock, response_buffer, sizeof(response_buffer), &source);
+        int64_t received = receive_from_socket(sock, response_buffer, sizeof(response_buffer), &source);
         if (received > 0 && source.port == DNS_MDNS_PORT){
             uint32_t received_len = received;
             dns_record_t records[12];
@@ -64,13 +64,13 @@ dns_result_t mdns_query(const char* name, dns_qtype_t qtype, uint32_t timeout_ms
     dns_result_t last = DNS_ERR_NO_DNS;
     uint32_t total = 0;
 
-    socket_handle_t sock4 = mdns_socket_handle_v4();
-    if (((sock4).id && (sock4).protocol != PROTO_NONE)) {
+    socket_handle_t sock = mdns_socket_handle_for(IP_VER4);
+    if (sock) {
         uint32_t group =DNS_MDNS_GROUP_V4;
         net_l4_endpoint dst;
         make_ep(group, DNS_MDNS_PORT, IP_VER4, &dst);
         uint32_t got = 0;
-        last = perform_mdns_query_once(sock4, &dst, name, qtype, timeout_ms, out_records, max_records, &got);
+        last = perform_mdns_query_once(sock, &dst, name, qtype, timeout_ms, out_records, max_records, &got);
         if (last == DNS_OK) total = got;
         if (total >= max_records && max_records) {
             if (out_count) *out_count  =total;
@@ -78,8 +78,8 @@ dns_result_t mdns_query(const char* name, dns_qtype_t qtype, uint32_t timeout_ms
         }
     }
 
-    socket_handle_t sock6 = mdns_socket_handle_v6();
-    if (((sock6).id && (sock6).protocol != PROTO_NONE)) {
+    sock = mdns_socket_handle_for(IP_VER6);
+    if (sock) {
         net_l4_endpoint dst;
         memset(&dst, 0, sizeof(dst));
         dst.ver = IP_VER6;
@@ -88,7 +88,7 @@ dns_result_t mdns_query(const char* name, dns_qtype_t qtype, uint32_t timeout_ms
         uint32_t got = 0;
         dns_record_t *dst_records = out_records ? out_records + total : 0;
         uint32_t left = max_records > total ? max_records - total : 0;
-        dns_result_t r6 = perform_mdns_query_once(sock6, &dst, name, qtype, timeout_ms, dst_records, left, &got);
+        dns_result_t r6 = perform_mdns_query_once(sock, &dst, name, qtype, timeout_ms, dst_records, left, &got);
         if (r6 == DNS_OK) {
             total += got;
             last = DNS_OK;

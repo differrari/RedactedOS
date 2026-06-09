@@ -123,14 +123,24 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
         seg->rtt_sample = 0;
 
         if (!flow->tx.rtt_valid && first_segment) seg->rtt_sample = 1;
+        tcp_account_tx_add(flow, (uint32_t)seg_len);
+        flow->tx.snd_nxt += seg_len;
+        flow->base.ctx.sequence = flow->tx.snd_nxt;
+
         if (!tcp_send_from_seg(flow, seg)) {
-            if (seg->buf && seg->len) release((void*)seg->buf);
+            flow->tx.snd_nxt -= seg_len;
+            flow->base.ctx.sequence = flow->tx.snd_nxt;
+            tcp_account_tx_remove(flow, (uint32_t)seg_len);
+            if (seg->buf && seg->len) {
+                uintptr_t seg_buf = seg->buf;
+                seg->buf = 0;
+                seg->len = 0;
+                release((void*)seg_buf);
+            }
             memset(seg, 0, sizeof(*seg));
             break;
         }
 
-        tcp_account_tx_add(flow, (uint32_t)seg_len);
-        flow->tx.snd_nxt += seg_len;
         sent_bytes += seg_len;
         remaining -= seg_len;
         can_send -= seg_len;
@@ -238,7 +248,7 @@ tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow){
 
 bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
     if (!flow || !seg) return false;
-    if (flow->base.state == TCP_STATE_CLOSED) return false;
+    if (flow->base.retired || flow->base.state == TCP_STATE_CLOSED) return false;
     if (flow) flow->timer.keepalive_idle_ms = 0;
     tcp_hdr_t hdr;
 
@@ -388,19 +398,25 @@ int tcp_try_send_pending_fin(tcp_flow_t *flow) {
     seg->retransmit_cnt = 0;
     seg->rtt_sample = 0;
 
-    if (!tcp_send_from_seg(flow, seg)) {
-        memset(seg, 0, sizeof(*seg));
-        tcp_daemon_kick();
-        return 0;
-    }
-
+    tcp_state_t old_state = flow->base.state;
     flow->tx.snd_nxt += 1;
     flow->base.ctx.expected_ack = flow->tx.snd_nxt;
     flow->base.ctx.sequence = flow->tx.snd_nxt;
     flow->tx.fin_tx_pending = 0;
 
-    if (flow->base.state == TCP_ESTABLISHED) flow->base.state = TCP_FIN_WAIT_1;
+    if (old_state == TCP_ESTABLISHED) flow->base.state = TCP_FIN_WAIT_1;
     else flow->base.state = TCP_LAST_ACK;
+
+    if (!tcp_send_from_seg(flow, seg)) {
+        flow->tx.snd_nxt -= 1;
+        flow->base.ctx.expected_ack = flow->tx.snd_nxt;
+        flow->base.ctx.sequence = flow->tx.snd_nxt;
+        flow->base.state = old_state;
+        flow->tx.fin_tx_pending = 1;
+        memset(seg, 0, sizeof(*seg));
+        tcp_daemon_kick();
+        return 0;
+    }
 
     tcp_daemon_kick();
     return 1;
@@ -412,17 +428,25 @@ tcp_result_t tcp_flow_flush(tcp_data *flow_ctx){
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return TCP_INVALID;
 
-    if (flow->base.state != TCP_ESTABLISHED && flow->base.state != TCP_CLOSE_WAIT && flow->base.state != TCP_FIN_WAIT_1 && flow->base.state != TCP_FIN_WAIT_2) return TCP_INVALID;
+    tcp_result_t rc = TCP_OK;
+    if (flow->base.state != TCP_ESTABLISHED && flow->base.state != TCP_CLOSE_WAIT && flow->base.state != TCP_FIN_WAIT_1 && flow->base.state != TCP_FIN_WAIT_2) rc = TCP_INVALID;
 
-    while (flow->tx.nagle_len) {
+    while (rc == TCP_OK && flow->tx.nagle_len) {
         uint32_t before = flow->tx.nagle_len;
         uint64_t sent = tcp_flush_nagle(flow, 1);
         if (!sent || flow->tx.nagle_len == before) break;
     }
 
-    if (flow->tx.fin_tx_pending) tcp_try_send_pending_fin(flow);
-    if (flow->tx.nagle_len)tcp_daemon_kick();
-    return flow->tx.nagle_len ? TCP_WOULDBLOCK : TCP_OK;
+    if (rc == TCP_OK) {
+        if (flow->tx.fin_tx_pending) tcp_try_send_pending_fin(flow);
+        if (flow->tx.nagle_len) {
+            tcp_daemon_kick();
+            rc = TCP_WOULDBLOCK;
+        }
+    }
+
+    tcp_flow_put(flow);
+    return rc;
 }
 
 tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
@@ -437,12 +461,12 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
     flow_ctx->payload.size = 0;
     int want_fin = (flags & (1u << FIN_F)) != 0;
     int fin_queued = 0;
-
-    if (flow->base.state != TCP_ESTABLISHED && flow->base.state != TCP_CLOSE_WAIT) return TCP_INVALID;
-
     uint64_t accepted = 0;
+    tcp_result_t rc = TCP_OK;
 
-    if (!flow->tx.nodelay && payload_len && flow->tx.nagle_len) {
+    if (flow->base.state != TCP_ESTABLISHED && flow->base.state != TCP_CLOSE_WAIT) rc = TCP_INVALID;
+
+    if (rc == TCP_OK && !flow->tx.nodelay && payload_len && flow->tx.nagle_len) {
         uint64_t n = tcp_nagle_append(flow, payload_ptr, payload_len);
         accepted += n;
         payload_ptr += n;
@@ -450,7 +474,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
         if (flow->tx.nagle_len >= tcp_nagle_threshold(flow)) tcp_flush_nagle(flow, 1);
     }
 
-    if (!flow->tx.nodelay && payload_len && payload_len < tcp_nagle_threshold(flow)) {
+    if (rc == TCP_OK && !flow->tx.nodelay && payload_len && payload_len < tcp_nagle_threshold(flow)) {
         uint64_t n = tcp_nagle_append(flow, payload_ptr, payload_len);
         accepted += n;
         payload_ptr += n;
@@ -458,7 +482,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
         if (flow->tx.nagle_len >= tcp_nagle_threshold(flow)) tcp_flush_nagle(flow, 1);
     }
 
-    if (payload_len) {
+    if (rc == TCP_OK && payload_len) {
         if (flow->tx.nagle_len) tcp_flush_nagle(flow, 1);
         if (!flow->tx.nagle_len) {
             uint64_t n = tcp_emit_data(flow, payload_ptr, payload_len);
@@ -468,7 +492,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
         }
     }
 
-    if (want_fin && payload_len == 0) {
+    if (rc == TCP_OK && want_fin && payload_len == 0) {
         flow->tx.fin_tx_pending = 1;
         fin_queued = 1;
         if (flow->tx.nagle_len) tcp_flush_nagle(flow, 1);
@@ -479,17 +503,24 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
     flow->base.ctx.sequence = flow->tx.snd_nxt;
 
     flow_ctx->payload.size = accepted;
-    if (!accepted && fin_queued && flow->tx.fin_tx_pending) return TCP_WOULDBLOCK;
-    if (accepted || fin_queued) return TCP_OK;
-    if (flow->tx.snd_wnd == 0) {
-        flow->timer.persist_active = 1;
-        flow->timer.persist_timer_ms = 0;
-        if (flow->timer.persist_timeout_ms == 0) flow->timer.persist_timeout_ms = TCP_PERSIST_MIN_MS;
-        if (flow->timer.persist_timeout_ms < TCP_PERSIST_MIN_MS) flow->timer.persist_timeout_ms = TCP_PERSIST_MIN_MS;
-        if (flow->timer.persist_timeout_ms > TCP_PERSIST_MAX_MS) flow->timer.persist_timeout_ms = TCP_PERSIST_MAX_MS;
-        tcp_daemon_kick();
+    if (rc == TCP_OK) {
+        if (!accepted && fin_queued && flow->tx.fin_tx_pending) rc = TCP_WOULDBLOCK;
+        else if (accepted || fin_queued) rc = TCP_OK;
+        else { 
+            if (flow->tx.snd_wnd == 0) {
+                flow->timer.persist_active = 1;
+                flow->timer.persist_timer_ms = 0;
+                if (flow->timer.persist_timeout_ms == 0) flow->timer.persist_timeout_ms = TCP_PERSIST_MIN_MS;
+                if (flow->timer.persist_timeout_ms < TCP_PERSIST_MIN_MS) flow->timer.persist_timeout_ms = TCP_PERSIST_MIN_MS;
+                if (flow->timer.persist_timeout_ms > TCP_PERSIST_MAX_MS) flow->timer.persist_timeout_ms = TCP_PERSIST_MAX_MS;
+                tcp_daemon_kick();
+            }
+            rc = TCP_WOULDBLOCK;
+        }
     }
-    return TCP_WOULDBLOCK;
+
+    tcp_flow_put(flow);
+    return rc;
 }
 
 tcp_result_t tcp_flow_close(tcp_data *flow_ctx){
@@ -498,13 +529,15 @@ tcp_result_t tcp_flow_close(tcp_data *flow_ctx){
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return TCP_INVALID;
 
+    tcp_result_t rc = TCP_INVALID;
     if (flow->base.state == TCP_ESTABLISHED || flow->base.state == TCP_CLOSE_WAIT) {
         flow->tx.fin_tx_pending = 1;
-        if (flow->tx.nagle_len) tcp_flow_flush(flow_ctx);
+        if (flow->tx.nagle_len) tcp_flush_nagle(flow, 1);
         tcp_try_send_pending_fin(flow);
         tcp_daemon_kick();
-        return TCP_OK;
+        rc = TCP_OK;
     }
 
-    return TCP_INVALID;
+    tcp_flow_put(flow);
+    return rc;
 }

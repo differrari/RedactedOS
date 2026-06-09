@@ -10,11 +10,10 @@
 
 
 static uint16_t g_pid_sntp = 0xFFFF;
-static socket_handle_t g_sock = {0};
+static socket_handle_t g_sock = 0;
 
 uint16_t sntp_get_pid(void){ return g_pid_sntp; }
 bool sntp_is_running(void){ return g_pid_sntp != 0xFFFF; }
-void sntp_set_pid(uint16_t p){ g_pid_sntp = p; }
 socket_handle_t sntp_socket_handle(void){ return g_sock; }
 
 #define SNTP_POLL_INTERVAL_MS (10u * 60u * 1000u)
@@ -42,9 +41,7 @@ static bool any_ipv4_configured_nonlocal(void){
 int sntp_daemon_entry(int argc, char* argv[]){
     (void)argc; (void)argv;
     g_pid_sntp = (uint16_t)get_current_proc_pid();
-    g_sock = ((socket_handle_t){0});
-    create_socket(SOCKET_CLIENT, PROTO_UDP, NULL, &g_sock);
-    sntp_set_pid(get_current_proc_pid());
+    g_sock = create_socket(PROTO_UDP, NULL);
     uint32_t attempts = 0;
     while (attempts < SNTP_BOOTSTRAP_MAX_RETRY){
         if (!any_ipv4_configured_nonlocal()){

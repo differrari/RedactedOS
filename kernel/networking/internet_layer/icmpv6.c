@@ -102,7 +102,7 @@ static bool icmpv6_send_echo_reply(uint16_t ifindex, const uint8_t src_ip[16], c
     e->hdr.checksum = 0;
 
     ipv6_tx_plan_t plan;
-    if (!ipv6_build_tx_plan(dst_ip, 0 ,0, 0, &plan)) {
+    if (!ipv6_build_tx_plan(dst_ip, 0, &plan)) {
         release((void*)buf);
         return false;
     }
@@ -139,7 +139,7 @@ static bool icmpv6_send_echo_request(const uint8_t dst_ip[16], uint16_t id, uint
     if (payload_len) memcpy((void*)((uintptr_t)buf + sizeof(icmpv6_echo_t)), payload, payload_len);
 
     ipv6_tx_plan_t plan;
-    if (!ipv6_build_tx_plan(dst_ip, tx_opts_or_null, 0, 0, &plan)) {
+    if (!ipv6_build_tx_plan(dst_ip, tx_opts_or_null, &plan)) {
         netpkt_unref(pkt);
         return false;
     }

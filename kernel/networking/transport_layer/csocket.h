@@ -9,25 +9,22 @@
 extern "C" {
 #endif
 
-typedef SocketHandle socket_handle_t;
+socket_handle_t create_socket(protocol_t protocol, const SocketExtraOptions* extra);
+int32_t bind_socket(socket_handle_t handle, const SockBindSpec* spec, uint16_t port);
+int32_t connect_socket(socket_handle_t handle, const net_l4_endpoint* dst);
 
-bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptions* extra, SocketHandle* out_handle);
-int32_t bind_socket(SocketHandle *handle, uint16_t port, ip_version_t ip_vers);
-int32_t bind_socket_spec(SocketHandle *handle, const SockBindSpec* spec, uint16_t port);
-int32_t connect_socket(SocketHandle *handle, const net_l4_endpoint* dst);
+int64_t send_on_socket(socket_handle_t handle, const void* buf, uint64_t len);
+int64_t send_to_socket(socket_handle_t handle, const net_l4_endpoint* dst, const void* buf, uint64_t len);
+int64_t receive_from_socket(socket_handle_t handle, void* buf, uint64_t len, net_l4_endpoint* out_src);
+int32_t set_socket_option(socket_handle_t handle, int32_t opt, const void* value, uint32_t len);
+int32_t get_socket_option(socket_handle_t handle, int32_t opt, void* value, uint32_t* len);
 
-int64_t send_on_socket(SocketHandle *handle, const void* buf, uint64_t len);
-int64_t send_to_socket(SocketHandle *handle, const net_l4_endpoint* dst, const void* buf, uint64_t len);
-int64_t receive_from_socket(SocketHandle *handle, void* buf, uint64_t len, net_l4_endpoint* out_src);
-int32_t set_socket_option(SocketHandle *handle, int32_t opt, const void* value, uint32_t len);
-int32_t get_socket_option(SocketHandle *handle, int32_t opt, void* value, uint32_t* len);
+uint16_t get_socket_local_port(socket_handle_t handle);
+bool get_socket_remote_endpoint(socket_handle_t handle, net_l4_endpoint* out);
+int32_t close_socket(socket_handle_t handle);
 
-uint16_t get_socket_local_port(SocketHandle *handle);
-bool get_socket_remote_endpoint(SocketHandle *handle, net_l4_endpoint* out);
-int32_t close_socket(SocketHandle *handle);
-
-int32_t listen_on(SocketHandle *handle, int32_t backlog);
-bool accept_on_socket(SocketHandle *handle, SocketHandle* out_child);
+int32_t listen_on(socket_handle_t handle, int32_t backlog);
+socket_handle_t accept_on_socket(socket_handle_t handle);
 
 #ifdef __cplusplus
 }

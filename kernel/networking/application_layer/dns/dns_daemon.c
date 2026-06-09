@@ -7,57 +7,128 @@
 #include "net/socket_types.h"
 #include "networking/transport_layer/csocket.h"
 #include "networking/internet_layer/ipv6_utils.h"
+#include "networking/interface_manager.h"
 #include "std/memory.h"
 
 static uint16_t g_pid_dnsd = 0xFFFF;
-static socket_handle_t g_sock = {0};
-
-static socket_handle_t g_sock_mdns4 = {0};
-static socket_handle_t g_sock_mdns6 = {0};
+static socket_handle_t g_sock = 0;
+static mdns_tx_target_t g_mdns[MAX_L3_INTERFACES];
+static uint8_t g_mdns_count = 0;
 
 uint16_t dns_get_pid(void){ return g_pid_dnsd; }
 bool dns_is_running(void){ return g_pid_dnsd != 0xFFFF; }
-void dns_set_pid(uint16_t p){ g_pid_dnsd = p; }
 socket_handle_t dns_socket_handle(void){ return g_sock; }
 
-socket_handle_t mdns_socket_handle_v4(void){ return g_sock_mdns4; }
-socket_handle_t mdns_socket_handle_v6(void){ return g_sock_mdns6; }
-
-static socket_handle_t mdns_create_socket(ip_version_t ver, const uint8_t* group) {
-    if (!group) return ((socket_handle_t){0});
-    SocketExtraOptions opt;
-    memset(&opt, 0, sizeof(opt));
-    opt.flags = SOCK_OPT_MCAST_JOIN | SOCK_OPT_TTL;
-    opt.ttl = 255;
-    opt.mcast_count = 1;
-    opt.mcast_groups[0].ver = ver;
-    opt.mcast_groups[0].port = DNS_MDNS_PORT;
-    if(ver == IP_VER4) memcpy(opt.mcast_groups[0].ip, group, 4);
-    else if (ver == IP_VER6) memcpy(opt.mcast_groups[0].ip, group, 16);
-    else return ((socket_handle_t){0});
-
-    socket_handle_t s = {0};
-    create_socket(SOCKET_SERVER, PROTO_UDP, &opt, &s);
-    if(!((s).id && (s).protocol != PROTO_NONE)) return ((socket_handle_t){0});
-
-    SockBindSpec spec;
-    memset(&spec, 0, sizeof(spec));
-    spec.kind = BIND_ANY;
-    spec.ver = ver;
-
-    if(bind_socket_spec(&s, &spec, DNS_MDNS_PORT) != SOCK_OK){
-        close_socket(&s);
-        return ((socket_handle_t){0});
+socket_handle_t mdns_socket_handle(void){ return g_mdns_count ? g_mdns[0].sock : 0; }
+socket_handle_t mdns_socket_handle_for(ip_version_t ver){
+    for (uint8_t i = 0; i < g_mdns_count; i++) {
+        if (g_mdns[i].ver == ver) return g_mdns[i].sock;
     }
+    return 0;
+}
 
-    return s;
+static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
+    if (!group4 || !group6) return;
+
+    uint8_t n_if = l2_interface_count();
+    for (uint8_t i = 0; i < n_if && g_mdns_count < MAX_L3_INTERFACES; i++) {
+        l2_interface_t *l2 = l2_interface_at(i);
+        if (!l2 || !l2->is_up) continue;
+
+        for (uint8_t j = 0; j < MAX_IPV4_PER_INTERFACE && g_mdns_count < MAX_L3_INTERFACES; j++) {
+            l3_ipv4_interface_t *v4 = l2->l3_v4[j];
+            if (!v4 || v4->mode == IPV4_CFG_DISABLED || v4->is_localhost || !v4->ip) continue;
+            bool have_socket = false;
+            for (uint8_t k = 0; k < g_mdns_count; k++) {
+                if (g_mdns[k].sock && g_mdns[k].ver == IP_VER4 && g_mdns[k].l3_id == v4->l3_id) {
+                    have_socket = true;
+                    break;
+                }
+            }
+            if (have_socket) continue;
+
+            SocketExtraOptions opt;
+            memset(&opt, 0, sizeof(opt));
+            opt.flags = SOCK_OPT_TTL;
+            opt.ttl = 255;
+
+            socket_handle_t s = create_socket(PROTO_UDP, &opt);
+            if (!s) continue;
+
+            SockBindSpec spec;
+            memset(&spec, 0, sizeof(spec));
+            spec.kind = BIND_L3;
+            spec.ver = IP_VER4;
+            spec.l3_id = v4->l3_id;
+
+            net_l4_endpoint group;
+            memset(&group, 0, sizeof(group));
+            group.ver = IP_VER4;
+            group.port = DNS_MDNS_PORT;
+            memcpy(group.ip, group4, 4);
+
+            if (bind_socket(s, &spec, DNS_MDNS_PORT) != SOCK_OK || set_socket_option(s, SOCK_OPT_MCAST_JOIN, &group, sizeof(group)) != SOCK_OK) {
+                close_socket(s);
+                continue;
+            }
+
+            g_mdns[g_mdns_count].sock = s;
+            g_mdns[g_mdns_count].ver = IP_VER4;
+            g_mdns[g_mdns_count].l3_id = v4->l3_id;
+            memcpy(g_mdns[g_mdns_count].mcast_ip, group4, 4);
+            g_mdns_count++;
+        }
+
+        for (uint8_t j = 0; j < MAX_IPV6_PER_INTERFACE && g_mdns_count < MAX_L3_INTERFACES; j++) {
+            l3_ipv6_interface_t *v6 = l2->l3_v6[j];
+            if (!v6 || v6->cfg == IPV6_CFG_DISABLE || v6->dad_state != IPV6_DAD_OK || v6->is_localhost || !v6->ip[0]) continue;
+            bool have_socket = false;
+            for (uint8_t k = 0; k < g_mdns_count; k++) {
+                if (g_mdns[k].sock && g_mdns[k].ver == IP_VER6 && g_mdns[k].l3_id == v6->l3_id) {
+                    have_socket = true;
+                    break;
+                }
+            }
+            if (have_socket) continue;
+
+            SocketExtraOptions opt;
+            memset(&opt, 0, sizeof(opt));
+            opt.flags = SOCK_OPT_TTL;
+            opt.ttl = 255;
+
+            socket_handle_t s = create_socket(PROTO_UDP, &opt);
+            if (!s) continue;
+
+            SockBindSpec spec;
+            memset(&spec, 0, sizeof(spec));
+            spec.kind = BIND_L3;
+            spec.ver = IP_VER6;
+            spec.l3_id = v6->l3_id;
+
+            net_l4_endpoint group;
+            memset(&group, 0, sizeof(group));
+            group.ver = IP_VER6;
+            group.port = DNS_MDNS_PORT;
+            memcpy(group.ip, group6, 16);
+
+            if (bind_socket(s, &spec, DNS_MDNS_PORT) != SOCK_OK || set_socket_option(s, SOCK_OPT_MCAST_JOIN, &group, sizeof(group)) != SOCK_OK) {
+                close_socket(s);
+                continue;
+            }
+
+            g_mdns[g_mdns_count].sock = s;
+            g_mdns[g_mdns_count].ver = IP_VER6;
+            g_mdns[g_mdns_count].l3_id = v6->l3_id;
+            memcpy(g_mdns[g_mdns_count].mcast_ip, group6, 16);
+            g_mdns_count++;
+        }
+    }
 }
 
 int dns_deamon_entry(int argc, char* argv[]){
     (void)argc; (void)argv;
-    dns_set_pid(get_current_proc_pid());
-    memset(&g_sock, 0, sizeof(g_sock));
-    create_socket(SOCKET_CLIENT, PROTO_UDP, NULL, &g_sock);
+    g_pid_dnsd = get_current_proc_pid();
+    g_sock = create_socket(PROTO_UDP, NULL);
 
     uint32_t mdns_v4 = IPV4_MCAST_MDNS;
     uint8_t mdns_v4_addr[4];
@@ -65,28 +136,28 @@ int dns_deamon_entry(int argc, char* argv[]){
     memcpy(mdns_v4_addr, &mdns_v4, 4);
     ipv6_make_multicast(0x02, IPV6_MCAST_MDNS, 0, mdns_v6);
 
-    g_sock_mdns4 = mdns_create_socket(IP_VER4, mdns_v4_addr);
-    g_sock_mdns6 = mdns_create_socket(IP_VER6, mdns_v6);
+    mdns_open_sockets(mdns_v4_addr, mdns_v6);
 
     uint32_t tick_ms = 100;
     for(;;) {
+        mdns_open_sockets(mdns_v4_addr, mdns_v6);
         dns_cache_tick(tick_ms);
         uint8_t buf[900];
         net_l4_endpoint src;
 
-        if (((g_sock_mdns4).id && (g_sock_mdns4).protocol != PROTO_NONE)) {
-            memset(&src, 0, sizeof(src));
-            int64_t r4 = receive_from_socket(&g_sock_mdns4, buf, sizeof(buf), &src);
-            if(r4 > 0 && src.ver == IP_VER4) mdns_responder_handle_query(g_sock_mdns4, IP_VER4, mdns_v4_addr, buf, (uint32_t)r4, &src);
+        for (uint8_t sidx = 0; sidx < g_mdns_count; sidx++) {
+            socket_handle_t s = g_mdns[sidx].sock;
+            for (int i = 0; i < 4; ++i) {
+                memset(&src, 0, sizeof(src));
+                int64_t r = receive_from_socket(s, buf, sizeof(buf), &src);
+                if (r == SOCK_ERR_WOULDBLOCK) break;
+                if (r < 0) break;
+                if (!r) continue;
+                mdns_responder_handle_query(s, g_mdns[sidx].ver, g_mdns[sidx].mcast_ip, buf, (uint32_t)r, &src);
+            }
         }
 
-        if (((g_sock_mdns6).id && (g_sock_mdns6).protocol != PROTO_NONE)) {
-            memset(&src, 0, sizeof(src));
-            int64_t r6 = receive_from_socket(&g_sock_mdns6, buf, sizeof(buf), &src);
-            if(r6 > 0 && src.ver == IP_VER6) mdns_responder_handle_query(g_sock_mdns6, IP_VER6, mdns_v6, buf, (uint32_t)r6, &src);
-        }
-
-        mdns_responder_tick(g_sock_mdns4,g_sock_mdns6,mdns_v4_addr,mdns_v6);
+        mdns_responder_tick_multi(g_mdns, g_mdns_count);
         msleep(tick_ms);
     }
     return 1;

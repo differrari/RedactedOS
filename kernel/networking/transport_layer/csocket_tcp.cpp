@@ -4,9 +4,9 @@
 
 extern "C" {
 
-socket_impl_t socket_tcp_create(ksocket_t* owner, uint8_t role, uint32_t pid, const SocketExtraOptions* extra) {
+socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketExtraOptions* extra) {
     if (!owner) return nullptr;
-    return reinterpret_cast<socket_impl_t>(new TCPSocket(owner, role, pid, extra));
+    return reinterpret_cast<socket_impl_t>(new TCPSocket(owner, extra));
 }
 
 int32_t socket_bind_tcp(socket_impl_t sh, const SockBindSpec* spec, uint16_t port) {
@@ -64,11 +64,11 @@ const SocketExtraOptions* socket_tcp_extra_options(socket_impl_t sh) {
     return reinterpret_cast<TCPSocket*>(sh)->get_extra_options();
 }
 
-uint32_t tcp_accept_enqueue(ksocket_t* listener, uint8_t ifindex, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uint16_t src_port, uint16_t dst_port) {
+uint32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uint16_t src_port, uint16_t dst_port) {
     if (!listener) return 0;
     socket_impl_t sh = socket_core_impl(listener);
     if (!sh) return 0;
-    return reinterpret_cast<TCPSocket*>(sh)->queue_accepted_child(ifindex, ipver, src_ip_addr, dst_ip_addr, src_port, dst_port);
+    return reinterpret_cast<TCPSocket*>(sh)->queue_accepted_child(ipver, src_ip_addr, dst_ip_addr, src_port, dst_port);
 }
 
 uint16_t socket_get_local_port_tcp(socket_impl_t sh) {
@@ -76,29 +76,10 @@ uint16_t socket_get_local_port_tcp(socket_impl_t sh) {
     return reinterpret_cast<TCPSocket*>(sh)->get_local_port();
 }
 
-uint16_t socket_get_remote_port_tcp(socket_impl_t sh) {
-    if (!sh) return 0;
-    return reinterpret_cast<TCPSocket*>(sh)->get_remote_port();
-}
 
 void socket_get_remote_ep_tcp(socket_impl_t sh, net_l4_endpoint* out) {
     if (!sh || !out) return;
     *out = reinterpret_cast<TCPSocket*>(sh)->get_remote_ep();
-}
-
-uint8_t socket_get_protocol_tcp(socket_impl_t sh) {
-    if (!sh) return 0xFF;
-    return reinterpret_cast<TCPSocket*>(sh)->get_protocol();
-}
-
-uint8_t socket_get_role_tcp(socket_impl_t sh) {
-    if (!sh) return 0xFF;
-    return reinterpret_cast<TCPSocket*>(sh)->get_role();
-}
-
-bool socket_is_bound_tcp(socket_impl_t sh) {
-    if (!sh) return false;
-    return reinterpret_cast<TCPSocket*>(sh)->is_bound();
 }
 
 bool socket_is_connected_tcp(socket_impl_t sh) {

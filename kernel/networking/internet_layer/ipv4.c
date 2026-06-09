@@ -88,58 +88,8 @@ static bool pick_broadcast_bound_l3(uint8_t l3_id, uint8_t* out_ifx, uint32_t* o
     return true;
 }
 
-static bool pick_broadcast_bound_l2(uint8_t ifindex, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-    if (!l2) return false;
-
-    l3_ipv4_interface_t* chosen = NULL;
-    l3_ipv4_interface_t* dhcp = NULL;
-    for (int s = 0; s < MAX_IPV4_PER_INTERFACE; s++) {
-        l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-        if (!v4) continue;
-        if (v4->mode == IPV4_CFG_DISABLED) continue;
-        if (v4->ip) { chosen = v4; break; }
-        if (!v4->ip && v4->mode == IPV4_CFG_DHCP && !dhcp) dhcp = v4;
-    }
-    if (!chosen) chosen = dhcp;
-
-    if (out_ifx) *out_ifx = l2->ifindex;
-    if (out_src) *out_src = (chosen && chosen->ip) ? chosen->ip : 0;
-    if (out_nh) *out_nh = 0xFFFFFFFFu;
-    return true;
-}
-
-static bool pick_broadcast_global(uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    l3_ipv4_interface_t* static_cand = NULL;
-    l3_ipv4_interface_t* dhcp_cand = NULL;
-    l2_interface_t* l2_s = NULL;
-    l2_interface_t* l2_d = NULL;
-
-    uint8_t n = l2_interface_count();
-    for (uint8_t i = 0; i < n; i++) {
-        l2_interface_t* l2 = l2_interface_at(i);
-        if (!l2) continue;
-        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; s++) {
-            l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!v4) continue;
-            if (v4->mode == IPV4_CFG_DISABLED) continue;
-            if (v4->ip && !static_cand) { static_cand = v4; l2_s = l2; }
-            if (!v4->ip && v4->mode == IPV4_CFG_DHCP && !dhcp_cand) { dhcp_cand = v4; l2_d = l2; }
-        }
-    }
-
-    l3_ipv4_interface_t* pick = static_cand ? static_cand : dhcp_cand;
-    l2_interface_t* l2 = static_cand ? l2_s : l2_d;
-    if (!l2) return false;
-
-    if (out_ifx) *out_ifx = l2->ifindex;
-    if (out_src) *out_src = (pick && pick->ip) ? pick->ip : 0;
-    if (out_nh) *out_nh = 0xFFFFFFFFu;
-    return true;
-}
-
 static bool pick_route_global(uint32_t dst, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    if (ipv4_is_limited_broadcast(dst)) return pick_broadcast_global(out_ifx, out_src, out_nh);
+    if (ipv4_is_limited_broadcast(dst)) return false;
 
     ip_resolution_result_t r = resolve_ipv4_to_interface(dst);
     if (r.found && r.ipv4 && r.l2) {
@@ -203,7 +153,7 @@ static bool pick_route_bound_l3(uint8_t l3_id, uint32_t dst, uint8_t* out_ifx, u
 }
 
 static bool pick_route_bound_l2(uint8_t ifindex, uint32_t dst, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    if (ipv4_is_limited_broadcast(dst)) return pick_broadcast_bound_l2(ifindex, out_ifx, out_src, out_nh);
+    if (ipv4_is_limited_broadcast(dst)) return false;
 
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return false;
@@ -269,11 +219,14 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_
         for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
             if (!v4 || v4->mode == IPV4_CFG_DISABLED) continue;
-            if (v4->mask && ipv4_broadcast_calc(v4->ip, v4->mask) == dst_ip) { is_dbcast = true; break; }
+            if (v4->mask && ipv4_broadcast_calc(v4->ip, v4->mask) == dst_ip) {
+                is_dbcast = true;
+                break;
+            }
         }
     }
 
-    if (is_dbcast) memset(dst_mac, 0xFF, 6);
+    if (ipv4_is_limited_broadcast(dst_ip) || is_dbcast) memset(dst_mac, 0xFF, 6);
     else if (ipv4_is_multicast(dst_ip)) ipv4_mcast_to_mac(dst_ip, dst_mac);
     else if (l2 && l2->kind == NET_IFK_LOCALHOST) memset(dst_mac, 0, 6);
     else need_arp = true;
@@ -516,37 +469,31 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         return;
     }
 
-    int any_dbcast = 0;
-    for (uint8_t i = 0, n = l2_interface_count(); i < n; ++i) {
-        l2_interface_t* l2x = l2_interface_at(i);
-        if (!l2x) continue;
-        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
-            l3_ipv4_interface_t* v4 = l2x->l3_v4[s];
-            if (!v4) continue;
-            if (v4->mode == IPV4_CFG_DISABLED) continue;
-            if (v4->mask && ipv4_broadcast_calc(v4->ip, v4->mask) == dst) {
-                any_dbcast = 1;
-                uint8_t l3id = v4->l3_id;
-                switch (proto) {
-                    netpkt_t* l4pkt;
-                    case PROTO_ICMP:
-                    l4pkt = netpkt_view(pkt, hdr_len, l4_len);
-                    if (l4pkt) icmp_input(l4pkt, src, dst);
-                    break;
-                    case PROTO_TCP:
-                        l4pkt = netpkt_view(pkt, hdr_len, l4_len);
-                        if (l4pkt) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
-                        break;
-                    case PROTO_UDP:
-                        l4pkt = netpkt_view(pkt, hdr_len, l4_len);
-                        if (l4pkt) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
-                        break;
-                    default: break;
-                }
-            }
+    for (int i = 0; i < ccount; ++i) {
+        l3_ipv4_interface_t* v4 = cand[i];
+        if (!v4 || !v4->ip || !v4->mask) continue;
+        if (v4->is_localhost) continue;
+        if (ipv4_broadcast_calc(v4->ip, v4->mask) != dst) continue;
+        uint8_t l3id = v4->l3_id;
+        switch (proto) {
+            netpkt_t* l4pkt;
+            case PROTO_ICMP:
+                l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                if (l4pkt) icmp_input(l4pkt, src, dst);
+                break;
+            case PROTO_TCP:
+                l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                if (l4pkt) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+                break;
+            case PROTO_UDP:
+                l4pkt = netpkt_view(pkt, hdr_len, l4_len);
+                if (l4pkt) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+                break;
+            default:
+                break;
         }
+        return;
     }
-    if (any_dbcast) return;
 
     return;
 }

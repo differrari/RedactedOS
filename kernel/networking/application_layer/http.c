@@ -414,6 +414,7 @@ HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolic
             handled = true;
         } else if (key_len == 5 && strncmp_case(buf + pos, "range", true, key_len) == 0){
             C->fields.range = string_from_literal_length(buf + val_start, val_len);
+            C->range.has = 1;
             C->range.invalid = 1;
             if (val_len > 6 && strncmp_case(buf + val_start, "bytes=", true, 6) == 0) {
                 uint32_t rp = val_start + 6;

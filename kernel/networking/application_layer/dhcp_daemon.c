@@ -49,12 +49,11 @@ typedef struct {
 
 static volatile bool g_force_renew = false;
 static uint16_t g_pid_dhcpd = 0xFFFF;
-static dhcp_if_state_t g_if[MAX_L2_INTERFACES * MAX_IPV4_PER_INTERFACE];
+static dhcp_if_state_t g_if[MAX_IPV4_L3_INTERFACES];
 static int g_if_count = 0;
 
 uint16_t dhcp_get_pid() { return g_pid_dhcpd; }
 bool dhcp_is_running() { return g_pid_dhcpd != 0xFFFF; }
-void dhcp_set_pid(uint16_t p){ g_pid_dhcpd = p;    }
 void dhcp_force_renew() { g_force_renew = true; }
 
 static uint32_t dhcp_next_backoff_ms(dhcp_if_state_t* st) {
@@ -83,7 +82,7 @@ static void ensure_inventory() {
         uint8_t l3id = g_if[i].l3_id;
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3id);
         if (!v4 || v4->mode == IPV4_CFG_DISABLED || !v4->l2 || !v4->l2->is_up) {
-            if (g_if[i].sock.id && g_if[i].sock.protocol != PROTO_NONE) close_socket(&g_if[i].sock);
+            if (g_if[i].sock) close_socket(g_if[i].sock);
             if (i < g_if_count - 1) g_if[i] = g_if[g_if_count - 1];
             g_if_count--;
             continue;
@@ -120,14 +119,19 @@ static void ensure_inventory() {
             const uint8_t* m = network_get_mac(st.ifindex);
             if (m) { memcpy(st.mac, m, 6); st.mac_ok = true; }
             st.needs_inform = (v4->mode == IPV4_CFG_STATIC && v4->ip != 0);
-            memset(&st.sock, 0, sizeof(st.sock));
-            create_socket(SOCKET_SERVER, PROTO_UDP, NULL, &st.sock);
+            st.sock = create_socket(PROTO_UDP, NULL);
+            if (!st.sock) continue;
+            if (set_socket_option(st.sock, SOCK_OPT_BROADCAST_ALLOWED, NULL, 0) != SOCK_OK) {
+                close_socket(st.sock);
+                continue;
+            }
             SockBindSpec spec;
             memset(&spec, 0, sizeof(spec));
             spec.kind = BIND_L3;
+            spec.ver = IP_VER4;
             spec.l3_id = st.l3_id;
-            if (bind_socket_spec(&st.sock, &spec, 68) != SOCK_OK) {
-                close_socket(&st.sock);
+            if (bind_socket(st.sock, &spec, 68) != SOCK_OK) {
+                close_socket(st.sock);
                 continue;
             }
             st.retry_left_ms = 0;
@@ -149,7 +153,7 @@ static bool udp_wait_for_type_on(socket_handle_t sock, uint8_t wanted, uint32_t 
         uint8_t buf[1024];
         net_l4_endpoint src;
         memset(&src, 0, sizeof(src));
-        int64_t r = receive_from_socket(&sock, buf, sizeof(buf), &src);
+        int64_t r = receive_from_socket(sock, buf, sizeof(buf), &src);
         if (r > 0) {
             if (src.port != 67) { continue; }
             if ((size_t)r < sizeof(dhcp_packet) - sizeof(((dhcp_packet*)0)->options) + 4) { continue; }
@@ -184,7 +188,7 @@ static bool udp_wait_for_ack_or_nak(socket_handle_t sock, uint32_t expect_xid, c
         uint8_t buf[1024];
         net_l4_endpoint src;
         memset(&src, 0, sizeof(src));
-        int64_t r = receive_from_socket(&sock, buf, sizeof(buf), &src);
+        int64_t r = receive_from_socket(sock, buf, sizeof(buf), &src);
         if (r > 0) {
             if (src.port != 67) { continue; }
             if ((size_t)r < sizeof(dhcp_packet) - sizeof(((dhcp_packet*)0)->options) + 4) { continue; }
@@ -340,7 +344,7 @@ static void dhcp_send_discover_for(dhcp_if_state_t* st) {
     uint32_t bcast = 0xFFFFFFFFu;
     net_l4_endpoint dst;
     make_ep(bcast, 67, IP_VER4, &dst);
-    send_to_socket(&st->sock, &dst, (const void*)pkt.ptr, pkt.size);
+    send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
 
@@ -349,7 +353,7 @@ static void dhcp_send_request_select_for(dhcp_if_state_t* st, const dhcp_request
     uint32_t dip = 0xFFFFFFFFu;
     net_l4_endpoint dst;
     make_ep(dip, 67, IP_VER4, &dst);
-    send_to_socket(&st->sock, &dst, (const void*)pkt.ptr, pkt.size);
+    send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
 
@@ -369,7 +373,7 @@ static void dhcp_send_renew_for(dhcp_if_state_t* st) {
     uint32_t dip = st->server_ip_net ? st->server_ip_net : 0xFFFFFFFFu;
     net_l4_endpoint dst;
     make_ep(dip, 67, IP_VER4, &dst);
-    send_to_socket(&st->sock, &dst, (const void*)pkt.ptr, pkt.size);
+    send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
 
@@ -389,7 +393,7 @@ static void dhcp_send_rebind_for(dhcp_if_state_t* st) {
     uint32_t dip = 0xFFFFFFFFu;
     net_l4_endpoint dst;
     make_ep(dip, 67, IP_VER4, &dst);
-    send_to_socket(&st->sock, &dst, (const void*)pkt.ptr, pkt.size);
+    send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
 
@@ -409,7 +413,7 @@ static void dhcp_send_inform_for(dhcp_if_state_t* st) {
     uint32_t dip = 0xFFFFFFFFu;
     net_l4_endpoint dst;
     make_ep(dip, 67, IP_VER4, &dst);
-    send_to_socket(&st->sock, &dst, (const void*)pkt.ptr, pkt.size);
+    send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
 
@@ -563,8 +567,7 @@ static void maybe_send_inform() {
 
 int dhcp_daemon_entry(int argc, char* argv[]) {
     (void)argc; (void)argv;
-    g_pid_dhcpd = (uint16_t)get_current_proc_pid();
-    dhcp_set_pid(g_pid_dhcpd);
+    g_pid_dhcpd = get_current_proc_pid();
     for (;;) {
         ensure_inventory();
         if (g_if_count == 0) { msleep(250); continue; }

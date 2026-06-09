@@ -6,9 +6,8 @@
 
 struct ksocket {
     uint32_t id;
-    uint32_t generation;
+    uint64_t generation;
     uint16_t pid;
-    Socket_Role role;
     protocol_t protocol;
     socket_impl_t impl;
     socket_impl_destroy_fn destroy;
@@ -21,9 +20,9 @@ struct ksocket {
 };
 
 static ksocket_t* sockets[SOCKET_MAX_OPEN];
-static uint32_t generations[SOCKET_MAX_OPEN];
+static uint64_t generations[SOCKET_MAX_OPEN];
 
-bool socket_core_alloc(Socket_Role role, protocol_t protocol, uint16_t pid, ksocket_t** out_socket) {
+bool socket_core_alloc(protocol_t protocol, uint16_t pid, ksocket_t** out_socket) {
     if (!out_socket) return false;
     if (protocol == PROTO_NONE) return false;
 
@@ -46,14 +45,13 @@ bool socket_core_alloc(Socket_Role role, protocol_t protocol, uint16_t pid, ksoc
         return false;
     }
 
-    uint32_t gen = generations[id] + 1;
+    uint64_t gen = generations[id] + 1;
     if (!gen) gen = 1;
     generations[id] = gen;
 
     socket->id = id;
     socket->generation = gen;
     socket->pid = pid;
-    socket->role = role;
     socket->protocol = protocol;
     socket->refs = 1;
     sockets[id] = socket;
@@ -64,7 +62,7 @@ bool socket_core_alloc(Socket_Role role, protocol_t protocol, uint16_t pid, ksoc
     return true;
 }
 
-bool socket_core_attach_impl(ksocket_t* socket, socket_impl_t impl, socket_impl_destroy_fn destroy, socket_impl_close_fn close, socket_impl_setopt_fn setopt, socket_impl_getopt_fn getopt, SocketHandle* out_handle) {
+bool socket_core_attach_impl(ksocket_t* socket, socket_impl_t impl, socket_impl_destroy_fn destroy, socket_impl_close_fn close, socket_impl_setopt_fn setopt, socket_impl_getopt_fn getopt) {
     if (!socket || !impl || !destroy || !close) return false;
     irq_flags_t irq = irq_save_disable(); //TODO lock
     if (socket->closing || socket->visible || socket->impl) {
@@ -80,17 +78,20 @@ bool socket_core_attach_impl(ksocket_t* socket, socket_impl_t impl, socket_impl_
     socket->visible = true;
     irq_restore(irq);
 
-    if (out_handle) socket_core_export_handle(socket, out_handle);
     return true;
 }
 
-ksocket_t* socket_core_get(const SocketHandle* handle, uint16_t pid) {
-    if (!handle || handle->protocol == PROTO_NONE) return NULL;
-    if (handle->id >= SOCKET_MAX_OPEN) return NULL;
+ksocket_t* socket_core_get(socket_handle_t handle, uint16_t pid) {
+    if (!handle) return NULL;
+
+    uint64_t index_mask = ((uint64_t)1 << SOCKET_HANDLE_INDEX_BITS) - 1;
+    uint32_t id = (uint32_t)(handle & index_mask);
+    uint64_t generation = handle >> SOCKET_HANDLE_INDEX_BITS;
+    if (!id || id >= SOCKET_MAX_OPEN || !generation) return NULL;
 
     irq_flags_t irq = irq_save_disable(); //TODO lock
-    ksocket_t* socket = sockets[handle->id];
-    if (!socket || !socket->visible || socket->closing || socket->generation != handle->generation || (pid && socket->pid != pid) || socket->protocol != handle->protocol) {
+    ksocket_t* socket = sockets[id];
+    if (!socket || !socket->visible || socket->closing || socket->generation != generation || (pid && socket->pid != pid)) {
         irq_restore(irq);
         return NULL;
     }
@@ -143,8 +144,6 @@ int32_t socket_core_close_socket(ksocket_t* socket) {
     irq_restore(irq);
 
     if (!first_close) return SOCK_OK;
-    socket_bind_remove_socket(socket);
-
     int32_t ret = SOCK_OK;
     if (socket->close && socket->impl) ret = socket->close(socket->impl);
 
@@ -152,28 +151,24 @@ int32_t socket_core_close_socket(ksocket_t* socket) {
     return ret;
 }
 
-int32_t socket_core_close_handle(SocketHandle* handle, uint16_t pid) {
+int32_t socket_core_close_handle(socket_handle_t handle, uint16_t pid) {
     ksocket_t* socket = socket_core_get(handle, pid);
     if (!socket) return SOCK_ERR_INVAL;
     int32_t ret = socket_core_close_socket(socket);
     socket_core_put(socket);
-    if (handle) {
-        handle->id = 0;
-        handle->generation = 0;
-        handle->protocol = PROTO_NONE;
-        handle->connection = (net_l4_endpoint){};
-    }
     return ret;
 }
 
 int32_t socket_core_set_option(ksocket_t* socket, int32_t opt, const void* value, uint32_t len) {
-    if (!socket || !value || !len) return SOCK_ERR_INVAL;
+    if (!socket) return SOCK_ERR_INVAL;
+    if (!value && len) return SOCK_ERR_INVAL;
     if (!socket->setopt || !socket->impl) return SOCK_ERR_PROTO;
     return socket->setopt(socket->impl, opt, value, len);
 }
 
 int32_t socket_core_get_option(ksocket_t* socket, int32_t opt, void* value, uint32_t* len) {
-    if (!socket || !value || !len) return SOCK_ERR_INVAL;
+    if (!socket || !len) return SOCK_ERR_INVAL;
+    if (!value && *len) return SOCK_ERR_INVAL;
     if (!socket->getopt || !socket->impl) return SOCK_ERR_PROTO;
     return socket->getopt(socket->impl, opt, value, len);
 }
@@ -186,30 +181,17 @@ protocol_t socket_core_protocol(const ksocket_t* socket) {
     return socket ? socket->protocol : PROTO_NONE;
 }
 
-Socket_Role socket_core_role(const ksocket_t* socket) {
-    return socket ? socket->role : SOCKET_CLIENT;
-}
 
 uint16_t socket_core_pid(const ksocket_t* socket) {
     return socket ? socket->pid : 0;
 }
 
-uint32_t socket_core_id(const ksocket_t* socket) {
-    return socket ? socket->id : 0;
-}
-
-uint32_t socket_core_generation(const ksocket_t* socket) {
-    return socket ? socket->generation : 0;
-}
 
 bool socket_core_is_closing(const ksocket_t* socket) {
     return !socket || socket->closing;
 }
 
-void socket_core_export_handle(const ksocket_t* socket, SocketHandle* out_handle) {
-    if (!socket || !out_handle) return;
-    out_handle->id = socket->id;
-    out_handle->generation = socket->generation;
-    out_handle->protocol = socket->protocol;
-    out_handle->connection = (net_l4_endpoint){};
+socket_handle_t socket_core_export_handle(const ksocket_t* socket) {
+    if (!socket || !socket->id || !socket->generation) return 0;
+    return (socket->generation << SOCKET_HANDLE_INDEX_BITS) | socket->id;
 }

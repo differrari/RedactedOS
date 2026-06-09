@@ -61,7 +61,6 @@ void arp_send_request_on(uint8_t ifindex, uint32_t target_ip);
 
 void arp_input(uint16_t ifindex, const uint8_t src_mac[6], netpkt_t* pkt);
 
-void arp_set_pid(uint16_t pid);
 uint16_t arp_get_pid(void);
 int arp_daemon_entry(int argc, char* argv[]);
 

@@ -128,7 +128,7 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     ksocket_t* sockets[SOCKET_BIND_COLLECT_MAX];
     uint32_t count = socket_bind_collect(PROTO_UDP, ipver, l3_id, ifx, dst_ip_addr, dst_port, sockets, SOCKET_BIND_COLLECT_MAX);
     for (uint32_t i = 0; i < count; ++i) {
-        socket_udp_input(sockets[i], ifx, l3_id, ipver, src_ip_addr, dst_ip_addr, plpkt, src_port, dst_port);
+        socket_udp_input(sockets[i], ipver, src_ip_addr, dst_ip_addr, plpkt, src_port, dst_port);
         socket_core_put(sockets[i]);
     }
 

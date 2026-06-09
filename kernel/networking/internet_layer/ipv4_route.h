@@ -32,10 +32,12 @@ void ipv4_rt_sync_basics(ipv4_rt_table_t* t, uint32_t ip, uint32_t mask, uint32_
 typedef struct {
     uint8_t l3_id;
     uint32_t src_ip;
+    uint32_t net_epoch;
     ip_tx_opts_t fixed_opts;
 } ipv4_tx_plan_t;
 
-bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, const uint8_t* allowed_l3, int allowed_n, ipv4_tx_plan_t* out);
+bool ipv4_tx_plan_valid(const ipv4_tx_plan_t* plan);
+bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* out);
 
 bool ipv4_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, uint32_t dst, uint8_t* out_l3);
 

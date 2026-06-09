@@ -74,7 +74,7 @@ bool NetworkDispatch::enqueue_packet(uint8_t ifindex, netpkt_t* pkt)
 
 int NetworkDispatch::net_task()
 {
-    set_net_pid(get_current_proc_pid());
+    g_net_pid = get_current_proc_pid();
     for (;;) {
         bool did_work = false;
 
@@ -134,11 +134,6 @@ int NetworkDispatch::net_task()
 
         if (!did_work) msleep(1);//TODO: manage it with an event
     }
-}
-
-void NetworkDispatch::set_net_pid(uint16_t pid)
-{
-    g_net_pid = pid;
 }
 
 uint16_t NetworkDispatch::get_net_pid() const

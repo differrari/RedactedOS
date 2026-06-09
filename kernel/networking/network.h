@@ -13,7 +13,6 @@ extern "C" {
 //TODO: consider using the system MTU here
 #define MAX_PACKET_SIZE 0x1000
 
-void network_net_set_pid(uint16_t pid);
 uint16_t network_net_get_pid();
 
 bool network_init();

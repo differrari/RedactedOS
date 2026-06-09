@@ -4,6 +4,11 @@
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/interface_manager.h"
 #include "syscalls/syscalls.h"
+//TODO simplify plans by getting IP_TX_BOUND_L3 from l3_id instead of fixed_opts, both ipv4 and ipv6
+struct ipv6_rt_table {
+    ipv6_rt_entry_t e[IPV6_RT_PER_IF_MAX];
+    int len;
+};
 
 static bool v6_l3_ok_for_tx(l3_ipv6_interface_t* v6, int dst_is_ll, int dst_is_loop) {
     if (!v6 || !v6->l2) return false;
@@ -17,17 +22,50 @@ static bool v6_l3_ok_for_tx(l3_ipv6_interface_t* v6, int dst_is_ll, int dst_is_l
     if (src_is_ll != dst_is_ll) return false;
     return true;
 }
-
-static bool l3_allowed(uint8_t id, const uint8_t* allowed, int n) {
-    if (!allowed || n <= 0) return true;
-    for (int i = 0; i < n; ++i) if (allowed[i] == id) return true;
-    return false;
+//TODO the epoch system is terrible, use interface events when avaible, same for ipv4
+static uint32_t ipv6_route_epoch(void) {
+    uint32_t h = 0x811C9DC5;
+    uint8_t cnt = l2_interface_count();
+    h = (h ^ cnt) * 16777619;
+    for (uint8_t i = 0; i < cnt; ++i) {
+        l2_interface_t* l2 = l2_interface_at(i);
+        if (!l2) continue;
+        h = (h ^ l2->ifindex) * 16777619;
+        h = (h ^ (uint32_t)l2->is_up) * 16777619;
+        h = (h ^ l2->base_metric) * 16777619;
+        h = (h ^ l2->ipv6_count) * 16777619;
+        for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
+            l3_ipv6_interface_t* v6 = l2->l3_v6[s];
+            if (!v6) continue;
+            h = (h ^ v6->l3_id) * 16777619;
+            h = (h ^ v6->prefix_len) * 16777619;
+            h = (h ^ (uint32_t)v6->cfg) * 16777619;
+            h = (h ^ (uint32_t)v6->kind) * 16777619;
+            h = (h ^ (uint32_t)v6->dad_state) * 16777619;
+            h = (h ^ (uint32_t)(uintptr_t)v6->routing_table) * 16777619;
+            for (int b = 0; b < 16; ++b) h = (h ^ v6->ip[b]) * 16777619;
+            for (int b = 0; b < 16; ++b) h = (h ^ v6->gateway[b]) * 16777619;
+        }
+    }
+    return h ? h : 1;
 }
 
-bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const uint8_t* allowed_l3, int allowed_n, ipv6_tx_plan_t* out) {
+bool ipv6_tx_plan_valid(const ipv6_tx_plan_t* plan) {
+    if (!plan || !plan->l3_id || !plan->net_epoch) return false;
+    if (plan->net_epoch != ipv6_route_epoch()) return false;
+
+    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(plan->l3_id);
+    if (!v6 || !v6->l2 || !v6->l2->is_up) return false;
+    if (v6->cfg == IPV6_CFG_DISABLE) return false;
+    if (v6->dad_state != IPV6_DAD_OK) return false;
+    return memcmp(v6->ip, plan->src_ip, 16) == 0;
+}
+
+bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx_plan_t* out) {
     if (!dst || !out) return false;
 
     memset(out, 0, sizeof(*out));
+    out->net_epoch = ipv6_route_epoch();
     out->fixed_opts.scope = IP_TX_AUTO;
     out->fixed_opts.index = 0;
 
@@ -36,7 +74,6 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const u
 
     if (hint && hint->scope == IP_TX_BOUND_L3) {
         uint8_t id = hint->index;
-        if (!l3_allowed(id, allowed_l3, allowed_n)) return false;
         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
         if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) return false;
         out->l3_id = id;
@@ -55,7 +92,6 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const u
         for (int s = 0; s < MAX_IPV6_PER_INTERFACE && n < (int)sizeof(cand); ++s){
             l3_ipv6_interface_t* v6 = l2->l3_v6[s];
             if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) continue;
-            if (!l3_allowed(v6->l3_id, allowed_l3, allowed_n)) continue;
             cand[n++] = v6->l3_id;
         }
     } else {
@@ -65,8 +101,7 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const u
             if (!l2 || !l2->is_up) continue;
             for (int s = 0; s < MAX_IPV6_PER_INTERFACE && n < (int)sizeof(cand); ++s){
                 l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-            if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) continue;
-                if (!l3_allowed(v6->l3_id, allowed_l3, allowed_n)) continue;
+                if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) continue;
                 cand[n++] = v6->l3_id;
             }
         }
@@ -86,11 +121,6 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const u
     out->fixed_opts.index = chosen;
     return true;
 }
-
-struct ipv6_rt_table {
-    ipv6_rt_entry_t e[IPV6_RT_PER_IF_MAX];
-    int len;
-};
 
 ipv6_rt_table_t* ipv6_rt_create(void) {
     ipv6_rt_table_t* t = zalloc(sizeof(*t));

@@ -1,7 +1,6 @@
 #include "net_proc.h" 
 #include "kernel_processes/kprocess_loader.h"
 #include "process/scheduler.h"
-#include "console/kio.h"
 #include "std/memory.h"
 #include "std/string.h"
 
@@ -28,7 +27,6 @@
 #include "networking/application_layer/dhcpv6_daemon.h"
 
 #include "exceptions/timer.h"
-#include "syscalls/syscalls.h"
 
 #define HTTP_PORT 80
 #define PROBE_PORT 8080
@@ -36,16 +34,19 @@
 #define PROBE_INTERVAL_MS 50
 
 static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpoint *out_l4) {
-    socket_handle_t sock = {0};
-    if (!create_socket(SOCKET_CLIENT, PROTO_UDP, NULL, &sock))
+    socket_handle_t sock = create_socket(PROTO_UDP, NULL);
+    if (!sock) return 0;
+    if (set_socket_option(sock, SOCK_OPT_BROADCAST_ALLOWED, NULL, 0) < 0) {
+        close_socket(sock);
         return 0;
+    }
 
     net_l4_endpoint dst;
     make_ep(probe_ip, probe_port, IP_VER4, &dst);
 
     static const char greeting[] = "hello";
-    if (send_to_socket(&sock, &dst, greeting, sizeof(greeting)) < 0) {
-        close_socket(&sock);
+    if (send_to_socket(sock, &dst, greeting, sizeof(greeting)) < 0) {
+        close_socket(sock);
         return 0;
     }
 
@@ -55,13 +56,13 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
     int64_t recvd = 0;
 
     while (waited < PROBE_TIMEOUT_MS) {
-        recvd = receive_from_socket(&sock, recv_buf, sizeof(recv_buf), &src);
+        recvd = receive_from_socket(sock, recv_buf, sizeof(recv_buf), &src);
         if (recvd > 0) break;
         msleep(PROBE_INTERVAL_MS);
         waited += PROBE_INTERVAL_MS;
     }
 
-    close_socket(&sock);
+    close_socket(sock);
 
     if (recvd <= 0) return 0;
     if (out_l4) *out_l4 = src;
@@ -92,10 +93,7 @@ static int net_has_ready_address(void) {
 }
 
 static void run_http_server() {
-    SocketExtraOptions opt = {0};
-    opt.debug_level = SOCK_DBG_ALL;
-    opt.flags = SOCK_OPT_DEBUG;
-    http_server_handle_t srv = http_server_create(&opt, NULL);
+    http_server_handle_t srv = http_server_create(NULL, NULL);
     if (!srv) {
         stop_current_process(1);
         return;
@@ -167,10 +165,7 @@ static void test_http(const net_l4_endpoint* ep) {
     }
 
     http_client_handle_t cli = http_client_create(NULL, NULL);
-    if (!cli) {
-        kprintf("[HTTP] http_client_create FAIL");
-        return;
-    }
+    if (!cli) return;
 
     net_l4_endpoint e = {0};
     e.ver = ep->ver;
@@ -182,8 +177,7 @@ static void test_http(const net_l4_endpoint* ep) {
         return;
     }
 
-    int32_t rc = http_client_connect_endpoint(cli, &e);
-    if (rc < 0) {
+    if (http_client_connect_endpoint(cli, &e) < 0) {
         http_client_destroy(cli);
         return;
     }
@@ -196,14 +190,14 @@ static void test_http(const net_l4_endpoint* ep) {
 
     HTTPResponseMsg resp = http_client_send_request(cli, &req);
 
-    if ((int)resp.status_code < 0) kprintf("[HTTP] request FAIL status=%i", (int)resp.status_code);
+    if ((int)resp.status_code < 0) print("[HTTP] request FAIL status=%i", (int)resp.status_code);
     else if (resp.body.ptr && resp.body.size) {
         char *body_str = (char*)zalloc(resp.body.size + 1);
         if (body_str) {
             memcpy(body_str, (void*)resp.body.ptr, resp.body.size);
             body_str[resp.body.size] = '\0';
-            kprintf("[HTTP] %i %i bytes of body", resp.status_code, resp.body.size);
-            kprintf("%s", body_str);
+            print("[HTTP] %i %i bytes of body", resp.status_code, resp.body.size);
+            print("%s", body_str);
             release(body_str);
         }
     }
@@ -221,32 +215,30 @@ static void test_http(const net_l4_endpoint* ep) {
 static int ntp(int argc, char* argv[]) {
     (void)argc; (void)argv;
     if (!ntp_is_running()) {
-        kprintf("[TIME] starting NTP...");
+        print("[TIME] starting NTP...");
         create_kernel_process("ntpd", ntp_daemon_entry, 0, 0);
         uint32_t waited = 0;
         const uint32_t step = 200;
         const uint32_t timeout = 10000;
         while (!timer_is_synchronised() && waited < timeout) {
-            if ((waited % 1000) == 0) kprintf("[TIME] waiting NTP sync...");
+            if ((waited % 1000) == 0) print("[TIME] waiting NTP sync...");
             msleep(step);
             waited += step;
-
         }
-        if (!timer_is_synchronised()) kprintf("[TIME] NTP sync timeout, continuing");
     }
     timer_set_timezone_minutes(120);
-    kprintf("[TIME]timezone offset %i minutes", (int32_t)timer_get_timezone_minutes());
+    print("[TIME]timezone offset %i minutes", (int32_t)timer_get_timezone_minutes());
 
     DateTime now_dt_utc, now_dt_loc;
     if (timer_now_datetime(&now_dt_utc, 0)) {
         char s[20];
         timer_datetime_to_string(&now_dt_utc, s, sizeof(s));
-        kprintf("[TIME] UTC: %s", s);
+        print("[TIME] UTC: %s", s);
     }
     if (timer_now_datetime(&now_dt_loc, 1)) {
         char s[20];
         timer_datetime_to_string(&now_dt_loc, s, sizeof(s));
-        kprintf("[TIME] LOCAL: %s (TZ %i min)", s, (int32_t)timer_get_timezone_minutes());
+        print("[TIME] LOCAL: %s (TZ %i min)", s, (int32_t)timer_get_timezone_minutes());
     }
     return 0;
 }
@@ -268,22 +260,17 @@ static int net_test_entry(int argc, char *argv[]) {
             uint32_t probe_ip = ipv4_broadcast_calc(ifv4->ip, ifv4->mask);
             if (!probe_ip) continue;
 
-            char probe_str[16];
-            ipv4_to_string(probe_ip, probe_str);
-            kprintf("[NET] probing %s (l3_id=%u)", probe_str, (unsigned)ifv4->l3_id);
-
             net_l4_endpoint srv = (net_l4_endpoint){0};
             if (udp_probe_server(probe_ip, PROBE_PORT, &srv)) {
                 test_http(&srv);
                 tested_any = 1;
-            } else kprintf("[NET] no UDP responder at %s:%i (l3_id=%u)", probe_str, PROBE_PORT, (unsigned)ifv4->l3_id);
+            } 
         }
     }
     if (!tested_any) {
         net_l4_endpoint srv = (net_l4_endpoint){0};
         uint32_t fallback = (192<<24)|(168<<16)|(1<<8)|255;
         if (udp_probe_server(fallback, PROBE_PORT, &srv)) test_http(&srv);
-        else kprintf("[NET] could not find update server");
     }
 
     run_http_server();
@@ -292,12 +279,7 @@ static int net_test_entry(int argc, char *argv[]) {
 
 static int ip_waiter_entry(int argc, char* argv[]) {
     (void)argc; (void)argv;
-    uint32_t waited = 0;
-    while (!net_has_ready_address()) {
-        if ((waited % 1000) == 0) kprintf("[NET] ip_waiter: waiting for ip...");
-        msleep(200);
-        waited += 200;
-    }
+    while (!net_has_ready_address()) msleep(200);
     create_kernel_process("net_test", net_test_entry, 0, 0);
     return 0;
 }
@@ -312,7 +294,7 @@ process_t* launch_net_process() {
     create_kernel_process("dns_daemon", dns_deamon_entry, 0, 0);
     
     if (net_has_ready_address()) {
-        kprintf("[NET] ip ready, starting net_test");
+        print("[NET] ip ready, starting net_test");
         create_kernel_process("net_test", net_test_entry, 0, 0);
     } else create_kernel_process("ip_waiter", ip_waiter_entry, 0, 0);
 
