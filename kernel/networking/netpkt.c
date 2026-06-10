@@ -342,7 +342,8 @@ static bool netpkt_realloc_to(netpkt_t* p, uint32_t new_head, uint32_t new_alloc
             ob->refs--;
         } else {
             if (ob->flags & NETPKT_BUF_F_EXTERNAL) {
-                if (ob->free_fn) ob->free_fn(ob->free_ctx, ob->base, ob->alloc);
+                if (ob->free_fn) ob->free_fn(ob->free_ctx, ob->base);
+                else if (ob->base) release((void*)ob->base);
             } else if (ob->flags & NETPKT_BUF_F_SMALL) {
                 *(void**)ob->base = g_netpkt_small_free;
                 g_netpkt_small_free = (void*)ob->base;
@@ -428,10 +429,10 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
         from_spare = true;
         memset(mem, 0, PAGE_SIZE);
     } else {
-    if ((uint64_t)cap > (uint64_t)NETPKT_MAX_PAGE_BYTES || g_netpkt_page_bytes > (uint64_t)NETPKT_MAX_PAGE_BYTES - (uint64_t)cap) {
-        irq_restore(irq);
-        return 0;
-    }
+        if ((uint64_t)cap > (uint64_t)NETPKT_MAX_PAGE_BYTES || g_netpkt_page_bytes > (uint64_t)NETPKT_MAX_PAGE_BYTES - (uint64_t)cap) {
+            irq_restore(irq);
+            return 0;
+        }
         g_netpkt_page_bytes += (uint64_t)cap;
         g_netpkt_payload_page_bytes += (uint64_t)cap;
 
@@ -604,7 +605,8 @@ void netpkt_unref(netpkt_t* p) {
             b->refs--;
         } else {
             if (b->flags & NETPKT_BUF_F_EXTERNAL) {
-                if (b->free_fn) b->free_fn(b->free_ctx, b->base, b->alloc);
+                if (b->free_fn) b->free_fn(b->free_ctx, b->base);
+                else if (b->base) release((void*)b->base);
             } else if (b->flags & NETPKT_BUF_F_SMALL) {
                 *(void**)b->base = g_netpkt_small_free;
                 g_netpkt_small_free = (void*)b->base;
@@ -787,10 +789,10 @@ bool netpkt_pull(netpkt_t* p, uint32_t bytes) {
     p->head += bytes;
     p->len -= bytes;
 
-        if ((p->flags & NETPKT_F_VIEW) || !p->buf || (p->buf->flags & NETPKT_BUF_F_EXTERNAL) || (p->buf->refs != 1) || (p->cap <= PAGE_SIZE)) {
-            irq_restore(irq);
-            return true;
-        }
+    if ((p->flags & NETPKT_F_VIEW) || !p->buf || (p->buf->flags & NETPKT_BUF_F_EXTERNAL) || (p->buf->refs != 1) || (p->cap <= PAGE_SIZE)) {
+        irq_restore(irq);
+        return true;
+    }
 
     uint64_t need = (uint64_t)p->head+(uint64_t)p->len;
     if (!need) need = 1;

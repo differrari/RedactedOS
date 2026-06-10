@@ -39,7 +39,7 @@ typedef struct __attribute__((packed)) virtio_net_ctrl_ack_t {
 
 #define VIRTIO_NET_CTRL_MAC_TABLE_SET 0
 
-void virtio_net_rx_free(void* ctx, uintptr_t base, uint32_t alloc_size) {
+void virtio_net_rx_free(void* ctx, uintptr_t base) {
     VirtioNetDriver* driver = (VirtioNetDriver*)ctx;
     if (!driver || !driver->rx_qsz || !driver->rx_avail || !driver->rx_pool) return;
     if (base < (uintptr_t)driver->rx_pool) return;
@@ -340,14 +340,14 @@ netpkt_t* VirtioNetDriver::handle_receive_packet(){
     if (desc_index >= rx_qsz) return nullptr;
     uintptr_t buf = (uintptr_t)PHYS_TO_VIRT_P((void*)rx_desc[desc_index].addr);
     if (total_len <= (uint32_t)header_size || total_len > rx_desc[desc_index].len) {
-        virtio_net_rx_free(this, buf, RX_BUF_SIZE);
+        virtio_net_rx_free(this, buf);
         return nullptr;
     }
 
     uint32_t payload_len = total_len - (uint32_t)header_size;
     netpkt_t* pkt = netpkt_wrap(buf, RX_BUF_SIZE, header_size, payload_len, virtio_net_rx_free, this);
     if (!pkt) {
-        virtio_net_rx_free(this, buf, RX_BUF_SIZE);
+        virtio_net_rx_free(this, buf);
         return nullptr;
     }
 

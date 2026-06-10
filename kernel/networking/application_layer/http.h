@@ -30,6 +30,14 @@ typedef enum {
     HTTP_METHOD_OPTIONS
 } HTTPMethod;
 
+#define HTTP_METHOD_MASK_GET (1u << HTTP_METHOD_GET)
+#define HTTP_METHOD_MASK_POST (1u << HTTP_METHOD_POST)
+#define HTTP_METHOD_MASK_PUT (1u << HTTP_METHOD_PUT)
+#define HTTP_METHOD_MASK_DELETE (1u << HTTP_METHOD_DELETE)
+#define HTTP_METHOD_MASK_HEAD (1u << HTTP_METHOD_HEAD)
+#define HTTP_METHOD_MASK_OPTIONS (1u << HTTP_METHOD_OPTIONS)
+#define HTTP_METHOD_MASK_ALL (HTTP_METHOD_MASK_GET | HTTP_METHOD_MASK_POST | HTTP_METHOD_MASK_PUT | HTTP_METHOD_MASK_DELETE | HTTP_METHOD_MASK_HEAD | HTTP_METHOD_MASK_OPTIONS)
+
 typedef enum {
     HTTP_VERSION_UNKNOWN,
     HTTP_VERSION_10,
@@ -46,7 +54,7 @@ typedef enum {
     HTTP_PARSE_MISSING_HOST,
     HTTP_PARSE_UNSUPPORTED_VERSION,
     HTTP_PARSE_PAYLOAD_TOO_LARGE,
-    HTTP_PARSE_UNSUPPORTED_METHOD,
+    HTTP_PARSE_UNKNOWN_METHOD,
     HTTP_PARSE_INCOMPLETE
 } HTTPParseResult;
 
@@ -63,6 +71,7 @@ typedef enum {
     HTTP_UNAUTHORIZED = 401,
     HTTP_FORBIDDEN = 403,
     HTTP_NOT_FOUND = 404,
+    HTTP_METHOD_NOT_ALLOWED = 405,
     HTTP_PAYLOAD_TOO_LARGE = 413,
     HTTP_URI_TOO_LONG = 414,
     HTTP_RANGE_NOT_SATISFIABLE = 416,
@@ -87,6 +96,37 @@ typedef enum {
     HTTP_CHUNK_STAGE_DONE
 } HTTPChunkStage;
 
+typedef enum {
+    HTTP_POLICY_OPT_MAX_START_LINE = 1u << 0,
+    HTTP_POLICY_OPT_MAX_HEADER_BYTES = 1u << 1,
+    HTTP_POLICY_OPT_MAX_HEADER_COUNT = 1u << 2,
+    HTTP_POLICY_OPT_MAX_HEADER_KEY_LEN = 1u << 3,
+    HTTP_POLICY_OPT_MAX_HEADER_VALUE_LEN = 1u << 4,
+    HTTP_POLICY_OPT_MAX_PATH_LEN = 1u << 5,
+    HTTP_POLICY_OPT_MAX_BODY_BYTES = 1u << 6,
+    HTTP_POLICY_OPT_HEADER_IDLE_TIMEOUT_MS = 1u << 7,
+    HTTP_POLICY_OPT_HEADER_TOTAL_TIMEOUT_MS = 1u << 8,
+    HTTP_POLICY_OPT_BODY_IDLE_TIMEOUT_MS = 1u << 9,
+    HTTP_POLICY_OPT_BODY_TOTAL_TIMEOUT_MS = 1u << 10,
+    HTTP_POLICY_OPT_ALLOW_CHUNKED = 1u << 11
+} HTTPPolicyOptionFlag;
+
+typedef enum {
+    HTTP_SERVER_OPT_MAX_KEEPALIVE_REQUESTS = 1u << 0,
+    HTTP_SERVER_OPT_ALLOWED_METHODS = 1u << 1,
+    HTTP_SERVER_OPT_ERROR_CONTENT_TYPE = 1u << 2,
+    HTTP_SERVER_OPT_ALLOW_KEEP_ALIVE = 1u << 3,
+    HTTP_SERVER_OPT_ALLOW_ABSOLUTE_URI = 1u << 4,
+    HTTP_SERVER_OPT_REQUIRE_HOST_HTTP11 = 1u << 5,
+    HTTP_SERVER_OPT_SEND_ERROR_BODY = 1u << 6
+} HTTPServerPolicyOptionFlag;
+
+typedef enum {
+    HTTP_CLIENT_OPT_MAX_REDIRECTS = 1u << 0,
+    HTTP_CLIENT_OPT_FOLLOW_REDIRECTS = 1u << 1,
+    HTTP_CLIENT_OPT_ALLOW_CLOSE_DELIMITED = 1u << 2
+} HTTPClientPolicyOptionFlag;
+
 typedef struct {
     uint32_t max_start_line;
     uint32_t max_header_bytes;
@@ -103,34 +143,25 @@ typedef struct {
 } HTTPPolicy;
 
 typedef struct {
-    int32_t max_start_line;
-    int32_t max_header_bytes;
-    int32_t max_header_count;
-    int32_t max_header_key_len;
-    int32_t max_header_value_len;
-    int32_t max_path_len;
-    int32_t max_body_bytes;
-    int32_t header_idle_timeout_ms;
-    int32_t header_total_timeout_ms;
-    int32_t body_idle_timeout_ms;
-    int32_t body_total_timeout_ms;
-    int32_t allow_chunked;
+    HTTPPolicy value;
+    uint32_t flags;
 } HTTPPolicyOptions;
 
 typedef struct {
     HTTPPolicy common;
     uint32_t max_keepalive_requests;
+    uint32_t allowed_methods;
+    const char *error_content_type;
     bool allow_keep_alive;
     bool allow_absolute_uri;
     bool require_host_http11;
+    bool send_error_body;
 } HTTPServerPolicy;
 
 typedef struct {
-    HTTPPolicyOptions common;
-    int32_t max_keepalive_requests;
-    int32_t allow_keep_alive;
-    int32_t allow_absolute_uri;
-    int32_t require_host_http11;
+    HTTPServerPolicy value;
+    uint32_t flags;
+    uint32_t common_flags;
 } HTTPServerPolicyOptions;
 
 typedef struct {
@@ -141,10 +172,9 @@ typedef struct {
 } HTTPClientPolicy;
 
 typedef struct {
-    HTTPPolicyOptions common;
-    int32_t max_redirects;
-    int32_t follow_redirects;
-    int32_t allow_close_delimited;
+    HTTPClientPolicy value;
+    uint32_t flags;
+    uint32_t common_flags;
 } HTTPClientPolicyOptions;
 
 typedef struct {
@@ -209,7 +239,7 @@ typedef struct {
     HTTPHeadersCommon headers_common;
     HTTPHeader *extra_headers;
     uint32_t extra_header_count;
-    sizedptr body;
+    string body;
 } HTTPRequestMsg;
 
 typedef struct {
@@ -218,7 +248,7 @@ typedef struct {
     HTTPHeadersCommon headers_common;
     HTTPHeader *extra_headers;
     uint32_t extra_header_count;
-    sizedptr body;
+    string body;
 } HTTPResponseMsg;
 
 typedef struct {
@@ -234,10 +264,12 @@ typedef struct {
 } HTTPChunkedDecoder;
 
 HTTPPolicy http_default_policy(void);
-HTTPPolicy http_policy_from_options(const HTTPPolicyOptions *options);
+HTTPPolicy http_policy_apply_options(HTTPPolicy base, const HTTPPolicyOptions *options);
 HTTPServerPolicy http_server_policy_from_options(const HTTPServerPolicyOptions *options);
 HTTPClientPolicy http_client_policy_from_options(const HTTPClientPolicyOptions *options);
 const char* http_method_name(HTTPMethod method);
+bool http_method_allowed(uint32_t mask, HTTPMethod method);
+string http_methods_allow_header(uint32_t mask);
 const char* http_status_reason(HttpError status);
 HttpError http_parse_result_status(HTTPParseResult result);
 bool http_header_value_has_token(const char *buf, uint32_t len, const char *token, uint32_t token_len);
@@ -262,6 +294,8 @@ void http_chunked_decoder_free(HTTPChunkedDecoder *dec);
 
 void http_headers_common_free(HTTPHeadersCommon *common);
 void http_headers_extra_free(HTTPHeader *extra, uint32_t extra_count);
+void http_request_free(HTTPRequestMsg *req);
+void http_response_free(HTTPResponseMsg *res);
 
 string http_request_builder(const HTTPRequestMsg *req);
 

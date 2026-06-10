@@ -56,8 +56,6 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* 
     out->l3_id = 0;
     out->src_ip = 0;
     out->net_epoch = ipv4_route_epoch();
-    out->fixed_opts.scope = IP_TX_AUTO;
-    out->fixed_opts.index = 0;
 
     if (hint && hint->scope == IP_TX_BOUND_L3) {
         uint8_t id = hint->index;
@@ -65,8 +63,6 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* 
         if (!v4_l3_ok_for_tx(v4) || ipv4_is_loopback(dst) != v4->is_localhost) return false;
         out->l3_id = id;
         out->src_ip = v4->ip;
-        out->fixed_opts.scope = IP_TX_BOUND_L3;
-        out->fixed_opts.index = id;
         return true;
     }
 
@@ -104,8 +100,6 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* 
 
     out->l3_id = chosen;
     out->src_ip = v4->ip;
-    out->fixed_opts.scope = IP_TX_BOUND_L3;
-    out->fixed_opts.index = chosen;
     return true;
 }
 

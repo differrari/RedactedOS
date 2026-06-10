@@ -52,7 +52,7 @@ public:
     VirtioNetDriver();
     ~VirtioNetDriver();
 
-    bool init_at(uint64_t pci_addr, uint32_t irq_base_vector);
+    bool init_at(uint64_t pci_addr, uint32_t irq_base_vector) override;
     void get_mac(uint8_t out_mac[6]) const override;
     uint16_t get_mtu() const override;
     uint16_t get_header_size() const override;
@@ -70,7 +70,7 @@ public:
     netdev_tx_result_t send_packet(netpkt_t* packet) override;
 
 private:
-    friend void virtio_net_rx_free(void* ctx, uintptr_t base, uint32_t alloc_size);
+    friend void virtio_net_rx_free(void* ctx, uintptr_t base);
     virtio_device vnp_net_dev = {};
 
     volatile virtq_desc* rx_desc = nullptr;

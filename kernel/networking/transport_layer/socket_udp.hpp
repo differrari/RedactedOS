@@ -365,7 +365,7 @@ public:
                 memcpy(src.ip, &bcast_v4->ip, 4);
                 src.port = localPort;
 
-                ipv4_tx_opts_t tx;
+                ip_tx_opts_t tx;
                 tx.scope = IP_TX_BOUND_L3;
                 tx.index = chosen_l3;
 
@@ -398,9 +398,9 @@ public:
             memcpy(src.ip, &v4->ip, 4);
             src.port = localPort;
 
-            ipv4_tx_opts_t tx;
-            tx.scope = (ip_tx_scope_t)plan.fixed_opts.scope;
-            tx.index = plan.fixed_opts.index;
+            ip_tx_opts_t tx;
+            tx.scope = IP_TX_BOUND_L3;
+            tx.index = plan.l3_id;
 
             udp_send_segment(&src, &d, pay, &tx, (extraOpts.flags & SOCK_OPT_TTL) ? extraOpts.ttl : 0, (extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
             return (int64_t)len;
@@ -433,9 +433,9 @@ public:
             memcpy(src.ip, v6->ip, 16);
             src.port = localPort;
 
-            ipv6_tx_opts_t tx;
-            tx.scope = (ip_tx_scope_t)plan.fixed_opts.scope;
-            tx.index = plan.fixed_opts.index;
+            ip_tx_opts_t tx;
+            tx.scope = IP_TX_BOUND_L3;
+            tx.index = plan.l3_id;
 
             udp_send_segment(&src, &d, pay, &tx, (extraOpts.flags & SOCK_OPT_TTL) ? extraOpts.ttl : 0, (extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
             return (int64_t)len;

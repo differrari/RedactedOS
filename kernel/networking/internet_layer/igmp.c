@@ -59,7 +59,7 @@ static bool send_igmp(uint8_t ifindex, uint32_t dst, uint8_t type, uint32_t grou
     h->checksum = checksum16(igmp_words, sizeof(igmp_hdr_t)/2);
     memcpy((void*)netpkt_data(pkt), h, sizeof(*h));
 
-    ipv4_tx_opts_t tx;
+    ip_tx_opts_t tx;
     tx.scope = IP_TX_BOUND_L2;
     tx.index = ifindex;
 

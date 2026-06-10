@@ -51,10 +51,10 @@ void udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, si
         uint32_t dst_ip = 0;
         memcpy(&dst_ip, dst->ip, 4);
         (void)netpkt_trim(pkt, (uint32_t)written);
-        ipv4_send_packet(dst_ip, PROTO_UDP, pkt, (const ipv4_tx_opts_t*)tx_opts, ttl, dontfrag);
+        ipv4_send_packet(dst_ip, PROTO_UDP, pkt, tx_opts, ttl, dontfrag);
     } else if (src->ver == IP_VER6) {
         (void)netpkt_trim(pkt, (uint32_t)written);
-        ipv6_send_packet(dst->ip, PROTO_UDP, pkt, (const ipv6_tx_opts_t*)tx_opts, ttl, dontfrag);
+        ipv6_send_packet(dst->ip, PROTO_UDP, pkt, tx_opts, ttl, dontfrag);
     } else {
         netpkt_unref(pkt);
     }

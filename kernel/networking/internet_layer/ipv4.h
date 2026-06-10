@@ -28,10 +28,8 @@ typedef struct __attribute__((packed)) ipv4_hdr_t {
     uint32_t dst_ip;
 } ipv4_hdr_t;
 
-typedef ip_tx_scope_t ipv4_tx_scope_t;
-typedef ip_tx_opts_t ipv4_tx_opts_t;
 
-bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_tx_opts_t* opts, uint8_t ttl, uint8_t dontfrag);
+bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx_opts_t* opts, uint8_t ttl, uint8_t dontfrag);
 void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]);
 
 #ifdef __cplusplus

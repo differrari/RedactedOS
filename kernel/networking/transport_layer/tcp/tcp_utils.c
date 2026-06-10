@@ -23,7 +23,7 @@ uint32_t tcp_calc_mss_for_l3(uint8_t l3_id, ip_version_t ver, const void *remote
     return mss;
 }
 
-bool tcp_build_tx_opts_from_local_v4(const void *src_ip_addr, ipv4_tx_opts_t *out){
+bool tcp_build_tx_opts_from_local_v4(const void *src_ip_addr, ip_tx_opts_t *out){
     if (!out) return false;
     uint32_t src_ip = 0;
     memcpy(&src_ip, src_ip_addr, sizeof(src_ip));
@@ -38,14 +38,14 @@ bool tcp_build_tx_opts_from_local_v4(const void *src_ip_addr, ipv4_tx_opts_t *ou
     return true;
 }
 
-bool tcp_build_tx_opts_from_l3(uint8_t l3_id, ipv4_tx_opts_t *out){
+bool tcp_build_tx_opts_from_l3(uint8_t l3_id, ip_tx_opts_t *out){
     if (!out) return false;
     out->scope = IP_TX_BOUND_L3;
     out->index = l3_id;
     return true;
 }
 
-bool tcp_build_tx_opts_from_local_v6(const void *src_ip_addr, ipv6_tx_opts_t *out){
+bool tcp_build_tx_opts_from_local_v6(const void *src_ip_addr, ip_tx_opts_t *out){
     if (!out) return false;
     const uint8_t *sip = (const uint8_t *)src_ip_addr;
     l3_ipv6_interface_t *v6 = l3_ipv6_find_by_ip(sip);

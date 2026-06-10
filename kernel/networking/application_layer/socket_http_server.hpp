@@ -172,6 +172,9 @@ public:
                 if (line_result != HTTP_PARSE_OK) {
                     bad_request = true;
                     reject_status = http_parse_result_status(line_result);
+                } else if (!http_method_allowed(policy.allowed_methods, line.method)) {
+                    bad_request = true;
+                    reject_status = HTTP_METHOD_NOT_ALLOWED;
                 }
             }
 
@@ -294,8 +297,7 @@ public:
                     string decoded = dec.body;
                     dec.body = string{};
                     if (decoded.length) {
-                        req.body.ptr = (uintptr_t)decoded.data;
-                        req.body.size = decoded.length;
+                        req.body = decoded;
                     } else if (decoded.mem_length) string_free(decoded);
                 }
                 http_chunked_decoder_free(&dec);
@@ -339,8 +341,7 @@ public:
 
                 if (!bad_request) consumed = body_start + need;
                 if (body_copy && !bad_request) {
-                    req.body.ptr = (uintptr_t)body_copy;
-                    req.body.size = need;
+                    req.body = (string){body_copy, need, need};
                 }
             }
         }
@@ -348,23 +349,37 @@ public:
         if (bad_request) {
             if (body_copy) release(body_copy);
             const char *reason = http_status_reason(reject_status);
-            string body = string_format("%s\n", reason);
+            string body = policy.send_error_body ? string_format("%s\n", reason) : string{};
             HTTPResponseMsg res{};
-            res.status_code = reject_status;
-            res.reason = string_from_literal(reason);
-            res.headers_common.fields.content_length = body.length;
-            res.headers_common.fields.content_type = string_from_literal("text/plain");
-            res.headers_common.fields.connection = string_from_literal("close");
-            res.body.ptr = (uintptr_t)body.data;
-            res.body.size = body.length;
-            send_response(conn, res);
+            HTTPHeader allow_header{};
+            string allow_value{};
+            static char allow_key[] = "Allow";
 
-            if (req.path.mem_length) string_free(req.path);
-            http_headers_common_free(&req.headers_common);
-            http_headers_extra_free(req.extra_headers, req.extra_header_count);
+            res.status_code = reject_status;
+            res.headers_common.fields.content_length = body.length;
+            res.headers_common.framing.has_content_length = 1;
+            if (policy.error_content_type) res.headers_common.fields.content_type = string_from_literal(policy.error_content_type);
+            res.body = body;
+            
+            if (reject_status == HTTP_METHOD_NOT_ALLOWED) {
+                allow_value = http_methods_allow_header(policy.allowed_methods);
+                allow_header.key = string{allow_key, sizeof(allow_key) - 1, 0};
+                allow_header.value = allow_value;
+                res.extra_headers = &allow_header;
+                res.extra_header_count =1;
+            }
+
+            conn->close_after_response = true;
+            send_response(conn, res);
+            if (conn->client) {
+                close_socket(conn->client);
+                conn->client = 0;
+            }
+
+            http_request_free(&req);
             http_headers_common_free(&res.headers_common);
-            if (res.reason.mem_length) string_free(res.reason);
-            string_free(body);
+            if (allow_value.mem_length) string_free(allow_value);
+            if (body.mem_length) string_free(body);
             string_free(buf);
             return HTTPRequestMsg{};
         }
@@ -375,7 +390,7 @@ public:
         ev.pid = get_current_proc_pid();
         ev.u0 = (uint32_t)req.method;
         ev.u1 = (uint32_t)req.path.length;
-        ev.i0 = (int64_t)req.body.size;
+        ev.i0 = (int64_t)req.body.length;
         ev.local_port = get_socket_local_port(conn->client);
         net_l4_endpoint conn_remote_ep{};
         get_socket_remote_endpoint(conn->client, &conn_remote_ep);
@@ -424,13 +439,13 @@ public:
         }
 
         if (suppress_body) {
-            head.body = sizedptr{};
+            head.body = string{};
             head.headers_common.framing.chunked = 0;
         }
 
-        uint32_t body_len = (!send_chunked && !suppress_body && res.body.ptr && res.body.size) ? (uint32_t)res.body.size : 0;
+        uint32_t body_len = (!send_chunked && !suppress_body && res.body.data && res.body.length) ? (uint32_t)res.body.length : 0;
         if (!send_chunked) {
-            head.body = sizedptr{};
+            head.body = string{};
             if (body_len && !head.headers_common.framing.has_content_length) {
                 head.headers_common.fields.content_length = body_len;
                 head.headers_common.framing.has_content_length = 1;
@@ -456,7 +471,7 @@ public:
                 combo = (uint8_t*)zalloc(out.length + first_body_len);
                 if (combo) {
                     memcpy(combo, out.data, out.length);
-                    memcpy(combo + out.length, (const void*)res.body.ptr, first_body_len);
+                    memcpy(combo + out.length, (const void*)res.body.data, first_body_len);
 
                     first_ptr = combo;
                     first_len = out.length + first_body_len;
@@ -487,7 +502,7 @@ public:
 
         if (sent >= 0) body_off = first_body_len;
         if (sent >= 0 && body_len) {
-            const uint8_t* body = (const uint8_t*)res.body.ptr;
+            const uint8_t* body = (const uint8_t*)res.body.data;
 
             while (body_off < body_len) {
                 uint32_t ask = body_len - body_off;

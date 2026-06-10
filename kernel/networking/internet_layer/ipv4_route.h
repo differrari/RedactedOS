@@ -33,7 +33,6 @@ typedef struct {
     uint8_t l3_id;
     uint32_t src_ip;
     uint32_t net_epoch;
-    ip_tx_opts_t fixed_opts;
 } ipv4_tx_plan_t;
 
 bool ipv4_tx_plan_valid(const ipv4_tx_plan_t* plan);

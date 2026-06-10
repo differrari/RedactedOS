@@ -20,23 +20,22 @@ HTTPPolicy http_default_policy(void) {
     return p;
 }
 
-HTTPPolicy http_policy_from_options(const HTTPPolicyOptions *options) {
-    HTTPPolicy p = http_default_policy();
+HTTPPolicy http_policy_apply_options(HTTPPolicy p, const HTTPPolicyOptions *options) {
     if (!options) return p;
 
-    if (options->max_start_line > 0) p.max_start_line = options->max_start_line;
-    if (options->max_header_bytes > 0) p.max_header_bytes = options->max_header_bytes;
-    if (options->max_header_count > 0) p.max_header_count = options->max_header_count;
-    if (options->max_header_key_len > 0) p.max_header_key_len = options->max_header_key_len;
-    if (options->max_header_value_len > 0) p.max_header_value_len = options->max_header_value_len;
-    if (options->max_path_len > 0) p.max_path_len = options->max_path_len;
-    if (options->max_body_bytes > 0) p.max_body_bytes = options->max_body_bytes;
-    if (options->header_idle_timeout_ms > 0) p.header_idle_timeout_ms = options->header_idle_timeout_ms;
-    if (options->header_total_timeout_ms > 0) p.header_total_timeout_ms = options->header_total_timeout_ms;
-    if (options->body_idle_timeout_ms > 0) p.body_idle_timeout_ms = options->body_idle_timeout_ms;
-    if (options->body_total_timeout_ms > 0) p.body_total_timeout_ms = options->body_total_timeout_ms;
-    if (options->allow_chunked > 0) p.allow_chunked = true;
-    else if (options->allow_chunked < 0) p.allow_chunked = false;
+    uint32_t f = options->flags;
+    if (f & HTTP_POLICY_OPT_MAX_START_LINE) p.max_start_line = options->value.max_start_line;
+    if (f & HTTP_POLICY_OPT_MAX_HEADER_BYTES) p.max_header_bytes = options->value.max_header_bytes;
+    if (f & HTTP_POLICY_OPT_MAX_HEADER_COUNT) p.max_header_count = options->value.max_header_count;
+    if (f & HTTP_POLICY_OPT_MAX_HEADER_KEY_LEN) p.max_header_key_len = options->value.max_header_key_len;
+    if (f & HTTP_POLICY_OPT_MAX_HEADER_VALUE_LEN) p.max_header_value_len = options->value.max_header_value_len;
+    if (f & HTTP_POLICY_OPT_MAX_PATH_LEN) p.max_path_len = options->value.max_path_len;
+    if (f & HTTP_POLICY_OPT_MAX_BODY_BYTES) p.max_body_bytes = options->value.max_body_bytes;
+    if (f & HTTP_POLICY_OPT_HEADER_IDLE_TIMEOUT_MS) p.header_idle_timeout_ms = options->value.header_idle_timeout_ms;
+    if (f & HTTP_POLICY_OPT_HEADER_TOTAL_TIMEOUT_MS) p.header_total_timeout_ms = options->value.header_total_timeout_ms;
+    if (f & HTTP_POLICY_OPT_BODY_IDLE_TIMEOUT_MS) p.body_idle_timeout_ms = options->value.body_idle_timeout_ms;
+    if (f & HTTP_POLICY_OPT_BODY_TOTAL_TIMEOUT_MS) p.body_total_timeout_ms = options->value.body_total_timeout_ms;
+    if (f & HTTP_POLICY_OPT_ALLOW_CHUNKED) p.allow_chunked = options->value.allow_chunked;
     return p;
 }
 
@@ -44,21 +43,30 @@ HTTPServerPolicy http_server_policy_from_options(const HTTPServerPolicyOptions *
     HTTPServerPolicy p = {
         .common = http_default_policy(),
         .max_keepalive_requests = HTTP_DEFAULT_MAX_KEEPALIVE_REQUESTS,
+        .allowed_methods = HTTP_METHOD_MASK_ALL,
+        .error_content_type = "text/plain",
         .allow_keep_alive = true,
         .allow_absolute_uri = true,
-        .require_host_http11 = true
+        .require_host_http11 = true,
+        .send_error_body = true
     };
 
     if (!options) return p;
 
-    p.common = http_policy_from_options(&options->common);
-    if (options->max_keepalive_requests > 0) p.max_keepalive_requests = options->max_keepalive_requests;
-    if (options->allow_keep_alive > 0) p.allow_keep_alive = true;
-    else if (options->allow_keep_alive < 0) p.allow_keep_alive = false;
-    if (options->allow_absolute_uri > 0) p.allow_absolute_uri = true;
-    else if (options->allow_absolute_uri < 0) p.allow_absolute_uri = false;
-    if (options->require_host_http11 > 0) p.require_host_http11 = true;
-    else if (options->require_host_http11 < 0) p.require_host_http11 = false;
+    HTTPPolicyOptions common = {
+        .value = options->value.common,
+        .flags = options->common_flags
+    };
+    p.common = http_policy_apply_options(p.common, &common);
+
+    uint32_t f = options->flags;
+    if (f & HTTP_SERVER_OPT_MAX_KEEPALIVE_REQUESTS) p.max_keepalive_requests = options->value.max_keepalive_requests;
+    if (f & HTTP_SERVER_OPT_ALLOWED_METHODS) p.allowed_methods = options->value.allowed_methods;
+    if (f & HTTP_SERVER_OPT_ERROR_CONTENT_TYPE) p.error_content_type = options->value.error_content_type;
+    if (f & HTTP_SERVER_OPT_ALLOW_KEEP_ALIVE) p.allow_keep_alive = options->value.allow_keep_alive;
+    if (f & HTTP_SERVER_OPT_ALLOW_ABSOLUTE_URI) p.allow_absolute_uri = options->value.allow_absolute_uri;
+    if (f & HTTP_SERVER_OPT_REQUIRE_HOST_HTTP11) p.require_host_http11 = options->value.require_host_http11;
+    if (f & HTTP_SERVER_OPT_SEND_ERROR_BODY) p.send_error_body = options->value.send_error_body;
     return p;
 }
 
@@ -72,12 +80,16 @@ HTTPClientPolicy http_client_policy_from_options(const HTTPClientPolicyOptions *
 
     if (!options) return p;
 
-    p.common = http_policy_from_options(&options->common);
-    if (options->max_redirects > 0) p.max_redirects = options->max_redirects;
-    if (options->follow_redirects > 0) p.follow_redirects = true;
-    else if (options->follow_redirects < 0) p.follow_redirects = false;
-    if (options->allow_close_delimited > 0) p.allow_close_delimited = true;
-    else if (options->allow_close_delimited < 0) p.allow_close_delimited = false;
+    HTTPPolicyOptions common = {
+        .value = options->value.common,
+        .flags = options->common_flags
+    };
+    p.common = http_policy_apply_options(p.common, &common);
+
+    uint32_t f = options->flags;
+    if (f & HTTP_CLIENT_OPT_MAX_REDIRECTS) p.max_redirects = options->value.max_redirects;
+    if (f & HTTP_CLIENT_OPT_FOLLOW_REDIRECTS) p.follow_redirects = options->value.follow_redirects;
+    if (f & HTTP_CLIENT_OPT_ALLOW_CLOSE_DELIMITED) p.allow_close_delimited = options->value.allow_close_delimited;
     return p;
 }
 
@@ -91,6 +103,31 @@ const char* http_method_name(HTTPMethod method) {
         case HTTP_METHOD_OPTIONS: return "OPTIONS";
         default: return "GET";
     }
+}
+
+bool http_method_allowed(uint32_t mask, HTTPMethod method) {
+    if ((uint32_t)method >= 32) return false;
+    return (mask & (1u << method)) != 0;
+}
+
+string http_methods_allow_header(uint32_t mask) {
+    HTTPMethod methods[] = {
+        HTTP_METHOD_GET,
+        HTTP_METHOD_HEAD,
+        HTTP_METHOD_POST,
+        HTTP_METHOD_PUT,
+        HTTP_METHOD_DELETE,
+        HTTP_METHOD_OPTIONS
+    };
+
+    string out = string_repeat('\0', 0);
+    for (uint32_t i = 0; i < sizeof(methods) / sizeof(methods[0]);i++) {
+        if (!http_method_allowed(mask, methods[i])) continue;
+        if (out.length) string_append_bytes(&out, ", ", 2);
+        const char *name = http_method_name(methods[i]);
+        string_append_bytes(&out, name, (uint32_t)strlen(name));
+    }
+    return out;
 }
 
 const char* http_status_reason(HttpError status) {
@@ -107,6 +144,7 @@ const char* http_status_reason(HttpError status) {
         case HTTP_UNAUTHORIZED: return "Unauthorized";
         case HTTP_FORBIDDEN: return "Forbidden";
         case HTTP_NOT_FOUND: return "Not Found";
+        case HTTP_METHOD_NOT_ALLOWED: return "Method Not Allowed";
         case HTTP_PAYLOAD_TOO_LARGE: return "Payload Too Large";
         case HTTP_URI_TOO_LONG: return "URI Too Long";
         case HTTP_RANGE_NOT_SATISFIABLE: return "Range Not Satisfiable";
@@ -130,7 +168,8 @@ HttpError http_parse_result_status(HTTPParseResult result) {
         case HTTP_PARSE_MISSING_HOST:
             return HTTP_BAD_REQUEST;
         case HTTP_PARSE_UNSUPPORTED_TRANSFER:
-        case HTTP_PARSE_UNSUPPORTED_METHOD:
+            return HTTP_NOT_IMPLEMENTED;
+        case HTTP_PARSE_UNKNOWN_METHOD:
             return HTTP_NOT_IMPLEMENTED;
         case HTTP_PARSE_UNSUPPORTED_VERSION:
             return HTTP_VERSION_NOT_SUPPORTED;
@@ -175,7 +214,10 @@ HTTPParseResult http_parse_request_line(const char *buf, uint32_t len, HTTPReque
     else if (mlen == 6 && memcmp(buf, "DELETE", 6) == 0) out->method = HTTP_METHOD_DELETE;
     else if (mlen == 4 && memcmp(buf, "HEAD", 4) == 0) out->method = HTTP_METHOD_HEAD;
     else if (mlen == 7 && memcmp(buf, "OPTIONS", 7) == 0) out->method = HTTP_METHOD_OPTIONS;
-    else return HTTP_PARSE_UNSUPPORTED_METHOD;
+    else {
+        for (uint32_t j = 0; j < mlen; j++) if (!is_alnum( buf[j]) && str_has_char("!#$%&'*+-.^_`|~", 0, buf[j]) < 0) return HTTP_PARSE_BAD_FORMAT;
+        return HTTP_PARSE_UNKNOWN_METHOD;
+    }
 
     i++;
     while (i < len && buf[i] == ' ')i++;
@@ -300,6 +342,24 @@ void http_headers_extra_free(HTTPHeader *extra, uint32_t extra_count){
     release(extra);
 }
 
+void http_request_free(HTTPRequestMsg *req) {
+    if (!req) return;
+    if (req->path.mem_length) string_free(req->path);
+    http_headers_common_free(&req->headers_common);
+    http_headers_extra_free(req->extra_headers, req->extra_header_count);
+    if (req->body.mem_length) string_free(req->body);
+    *req = (HTTPRequestMsg){0};
+}
+
+void http_response_free(HTTPResponseMsg *res) {
+    if (!res) return;
+    if (res->reason.mem_length) string_free(res->reason);
+    http_headers_common_free(&res->headers_common);
+    http_headers_extra_free(res->extra_headers, res->extra_header_count);
+    if (res->body.mem_length) string_free(res->body);
+    *res = (HTTPResponseMsg){0};
+}
+
 HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolicy *policy, HTTPHeadersCommon *C, HTTPHeader **out_extra, uint32_t *out_extra_count){
     HTTPPolicy p = policy ? *policy : http_default_policy();
     if (!buf || !C || !out_extra || !out_extra_count) return HTTP_PARSE_BAD_FORMAT;
@@ -309,60 +369,46 @@ HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolic
     *out_extra = NULL;
     *out_extra_count = 0;
 
-    uint32_t max_lines = 0;
-    uint32_t count_pos = 0;
-    while (count_pos < len) {
-        uint32_t eol = count_pos;
-        bool has_crlf = false;
-        while (eol + 1 < len) {
-            if (buf[eol] == '\r' && buf[eol+1] == '\n') {
-                has_crlf = true;
-                break;
-            }
-            eol++;
-        }
-        if (!has_crlf) eol = len;
-        if (eol == count_pos) break;
-
-        uint32_t sep = count_pos;
-        while (sep < eol && buf[sep] != ':') sep++;
-        if (sep == eol || sep == count_pos) return HTTP_PARSE_BAD_FORMAT;
-
-        uint32_t key_len = sep - count_pos;
-        uint32_t val_start = sep + 1;
-        while (val_start < eol && is_whitespace(buf[val_start])) val_start++;
-        uint32_t val_end = eol;
-        while (val_end > val_start && is_whitespace(buf[val_end-1])) val_end--;
-
-        if (key_len > p.max_header_key_len || key_len >= 128 || val_end - val_start > p.max_header_value_len) return HTTP_PARSE_TOO_LARGE;
-        max_lines++;
-        if (max_lines > p.max_header_count) return HTTP_PARSE_TOO_MANY_HEADERS;
-        if (!has_crlf) break;
-        count_pos = eol + 2;
-    }
-
     HTTPHeader *extras = NULL;
-    if (max_lines){
-        extras = (HTTPHeader*)zalloc(sizeof(*extras) * max_lines);
+    if (p.max_header_count) {
+        extras = (HTTPHeader*)zalloc(sizeof(*extras) * p.max_header_count);
         if (!extras) return HTTP_PARSE_TOO_LARGE;
     }
 
     HTTPParseResult result = HTTP_PARSE_OK;
     uint32_t extra_i = 0;
+    uint32_t header_i = 0;
     uint32_t pos = 0;
+    bool seen_host = false;
+
     while (pos < len){
         uint32_t eol = pos;
         bool has_crlf = false;
-        while (eol + 1 < len) {
-            if (buf[eol] == '\r' && buf[eol+1] == '\n') {
-                has_crlf = true;
+        while (eol < len) {
+            if (buf[eol] == 0) {
+                result = HTTP_PARSE_BAD_FORMAT;
+                break;
+            }
+            if (buf[eol] == '\r') {
+                if (eol + 1 >= len || buf[eol+1] != '\n') result = HTTP_PARSE_BAD_FORMAT;
+                else has_crlf = true;
+                break;
+            }
+            if (buf[eol] == '\n') {
+                result = HTTP_PARSE_BAD_FORMAT;
                 break;
             }
             eol++;
         }
-        if (!has_crlf) eol = len;
+        if (result != HTTP_PARSE_OK) break;
 
         if (eol == pos) break;
+
+        header_i++;
+        if (header_i > p.max_header_count) {
+            result = HTTP_PARSE_TOO_MANY_HEADERS;
+            break;
+        }
 
         uint32_t sep = pos;
         while (sep < eol && buf[sep] != ':') sep++;
@@ -378,6 +424,11 @@ HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolic
         while (val_end > val_start && is_whitespace(buf[val_end - 1])) val_end--;
         uint32_t val_len = val_end - val_start;
         bool handled = false;
+
+        if (key_len > p.max_header_key_len || val_len > p.max_header_value_len) {
+            result = HTTP_PARSE_TOO_LARGE;
+            break;
+        }
 
         if (key_len == 14 && strncmp_case(buf + pos, "content-length", true, key_len) == 0){
             char len_buf[32];
@@ -398,21 +449,29 @@ HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolic
             }
             handled = true;
         } else if (key_len == 12 && strncmp_case(buf + pos, "content-type", true, key_len) == 0){
+            if (C->fields.content_type.mem_length) string_free(C->fields.content_type);
             C->fields.content_type = string_from_literal_length(buf + val_start, val_len);
             handled = true;
         } else if (key_len == 10 && strncmp_case(buf + pos, "connection", true, key_len) == 0){
+            if (C->fields.connection.mem_length) string_free(C->fields.connection);
             C->fields.connection = string_from_literal_length(buf + val_start, val_len);
             C->framing.connection_close = http_header_value_has_token(buf + val_start, val_len, "close", 5) ? 1 : 0;
             C->framing.connection_keep_alive = http_header_value_has_token(buf + val_start, val_len, "keep-alive", 10) ? 1 : 0;
             handled = true;
         } else if (key_len == 4 && strncmp_case(buf + pos, "host", true, key_len) == 0) {
-            C->fields.host = string_from_literal_length(buf + val_start, val_len);
+            if (seen_host) result = HTTP_PARSE_BAD_FORMAT;
+            else {
+                seen_host = 1;
+                C->fields.host = string_from_literal_length(buf + val_start, val_len);
+            }
             handled = true;
         } else if (key_len == 6 && strncmp_case(buf + pos, "expect", true, key_len) == 0){
+            if (C->fields.expect.mem_length) string_free(C->fields.expect);
             C->fields.expect = string_from_literal_length(buf + val_start, val_len);
             C->framing.expect_continue = http_header_value_has_token(buf + val_start, val_len, "100-continue", 12) ? 1 : 0;
             handled = true;
         } else if (key_len == 5 && strncmp_case(buf + pos, "range", true, key_len) == 0){
+            if (C->fields.range.mem_length) string_free(C->fields.range);
             C->fields.range = string_from_literal_length(buf + val_start, val_len);
             C->range.has = 1;
             C->range.invalid = 1;
@@ -441,7 +500,6 @@ HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolic
                         rp++;
                     }
                     if (rp == rend && (has_start || has_end) && !(has_start && has_end && end < start) && !overflow) {
-                        C->range.has = 1;
                         C->range.invalid = 0;
                         C->range.has_start = has_start ? 1 : 0;
                         C->range.has_end = has_end ? 1 : 0;
@@ -452,9 +510,11 @@ HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolic
             }
             handled = true;
         } else if (key_len == 8 && strncmp_case(buf + pos, "location", true, key_len) == 0) {
+            if (C->fields.location.mem_length) string_free(C->fields.location);
             C->fields.location = string_from_literal_length(buf + val_start, val_len);
             handled = true;
         } else if (key_len == 13 && strncmp_case(buf + pos, "content-range", true, key_len) == 0) {
+            if (C->fields.content_range.mem_length) string_free(C->fields.content_range);
             C->fields.content_range = string_from_literal_length(buf + val_start, val_len);
             handled = true;
         } else if (key_len == 17 && strncmp_case(buf + pos, "transfer-encoding", true, key_len) == 0){
@@ -502,11 +562,12 @@ HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolic
             handled = true;
         }
 
+        if (result != HTTP_PARSE_OK) break;
         if (!handled) {
             string key = string_from_literal_length((char*)(buf + pos), key_len);
             string value = string_from_literal_length((char*)(buf + val_start), val_len);
 
-            if (extras && extra_i < max_lines){
+            if (extras && extra_i < p.max_header_count){
                 extras[extra_i++] = (HTTPHeader){ key, value };
             } else {
                 if (key.mem_length) string_free(key);
@@ -522,6 +583,7 @@ HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolic
 
     if (result != HTTP_PARSE_OK) {
         http_headers_extra_free(extras, extra_i);
+        http_headers_common_free(C);
         *out_extra = NULL;
         *out_extra_count = 0;
         return result;
@@ -534,7 +596,7 @@ HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolic
         return result;
     }
 
-    if (extra_i == max_lines){
+    if (extra_i == p.max_header_count){
         *out_extra = extras;
         *out_extra_count = extra_i;
         return result;
@@ -573,8 +635,8 @@ static void http_append_chunked_body(string *out, uintptr_t ptr, uint32_t len) {
 string http_request_builder(const HTTPRequestMsg *R){
     HTTPHeadersCommon common = R->headers_common;
     if (R->host_override) common.fields.host = R->host_override[0] ? string_from_const(R->host_override) : (string){0};
-    if (!common.framing.chunked && (R->body.size || R->method == HTTP_METHOD_POST || R->method == HTTP_METHOD_PUT)) {
-        common.fields.content_length = (uint32_t)R->body.size;
+    if (!common.framing.chunked && (R->body.length || R->method == HTTP_METHOD_POST || R->method == HTTP_METHOD_PUT)) {
+        common.fields.content_length = R->body.length;
         common.framing.has_content_length = 1;
     }
 
@@ -589,8 +651,8 @@ string http_request_builder(const HTTPRequestMsg *R){
     string_append_bytes(&out, hdrs.data, hdrs.length);
     string_free(hdrs);
 
-    if (common.framing.chunked) http_append_chunked_body(&out, R->body.ptr, (uint32_t)R->body.size);
-    else if (R->body.ptr && R->body.size) string_append_bytes(&out, (char*)R->body.ptr, (uint32_t)R->body.size);
+    if (common.framing.chunked) http_append_chunked_body(&out, (uintptr_t)R->body.data, R->body.length);
+    else if ((uintptr_t)R->body.data && R->body.length) string_append_bytes(&out, R->body.data, R->body.length);
 
     return out;
 }
@@ -599,7 +661,7 @@ string http_response_builder(const HTTPResponseMsg *R){
     HTTPHeadersCommon common = R->headers_common;
     bool informational = R->status_code >= 100 && R->status_code < 200;
     if (!informational && !common.framing.chunked) {
-        if (!common.framing.has_content_length && !common.fields.content_length) common.fields.content_length = (uint32_t)R->body.size;
+        if (!common.framing.has_content_length && !common.fields.content_length) common.fields.content_length = R->body.length;
         common.framing.has_content_length = 1;
     }
 
@@ -616,8 +678,8 @@ string http_response_builder(const HTTPResponseMsg *R){
     string_free(hdrs);
 
     if (!informational) {
-        if (common.framing.chunked) http_append_chunked_body(&out, R->body.ptr, (uint32_t)R->body.size);
-        else if (R->body.ptr && R->body.size) string_append_bytes(&out, (char*)R->body.ptr, (uint32_t)R->body.size);
+        if (common.framing.chunked) http_append_chunked_body(&out, (uintptr_t)R->body.data, R->body.length);
+        else if ((uintptr_t)R->body.data && R->body.length) string_append_bytes(&out, R->body.data, R->body.length);
     }
 
     return out;

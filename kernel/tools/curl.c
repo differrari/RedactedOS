@@ -70,9 +70,9 @@ static int curl_fetch(char *url, bool head_only, bool follow) {
     }
 
     HTTPClientPolicyOptions opts = {0};
-    opts.common.allow_chunked = 1;
-    opts.follow_redirects = follow ? 1 : 0;
-    opts.max_redirects = CURL_MAX_REDIRECTS;
+    opts.flags = HTTP_CLIENT_OPT_FOLLOW_REDIRECTS | HTTP_CLIENT_OPT_MAX_REDIRECTS;
+    opts.value.follow_redirects = follow != 0;
+    opts.value.max_redirects = CURL_MAX_REDIRECTS;
 
     http_client_handle_t cli = http_client_create(NULL, &opts);
     if (!cli) {
@@ -100,6 +100,8 @@ static int curl_fetch(char *url, bool head_only, bool follow) {
     HTTPResponseMsg resp = http_client_send_request(cli, &req);
     if ((int32_t)resp.status_code < 0) {
         print("curl: request failed (%d)", (int)resp.status_code);
+        http_response_free(&resp);
+        http_headers_common_free(&req.headers_common);
         http_client_destroy(cli);
         string_free(host);
         string_free(path);
@@ -108,17 +110,14 @@ static int curl_fetch(char *url, bool head_only, bool follow) {
 
     if (head_only) {
         HTTPResponseMsg head = resp;
-        head.body = (sizedptr){0};
+        head.body = (string){0};
         string raw = http_response_builder(&head);
         print("%.*s", (int)raw.length, raw.data);
         string_free(raw);
-    } else if (resp.body.ptr && resp.body.size) print("%.*s", (int)resp.body.size, (const char*)resp.body.ptr);
+    } else if (resp.body.data && resp.body.length) print("%.*s", (int)resp.body.length, (const char*)resp.body.data);
 
-    if (resp.reason.mem_length) string_free(resp.reason);
-    http_headers_common_free(&resp.headers_common);
-    http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
-    if (resp.body.ptr && resp.body.size) release((void*)resp.body.ptr);
-    resp = (HTTPResponseMsg){0};
+    http_response_free(&resp);
+    http_headers_common_free(&req.headers_common);
 
     http_client_destroy(cli);
     string_free(host);

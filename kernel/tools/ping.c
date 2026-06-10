@@ -115,8 +115,8 @@ static int ping_v4(const ping_opts_t *o) {
     uint16_t id = (uint16_t)(get_current_proc_pid() & 0xFFFF);
     uint16_t seq_base = (uint16_t)(get_time() & 0xFFFF);
 
-    ipv4_tx_opts_t txo = {0};
-    const ipv4_tx_opts_t *txop = NULL;
+    ip_tx_opts_t txo = {0};
+    const ip_tx_opts_t *txop = NULL;
     if (o->src_set) {
         l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(o->src_ip);
         if (!l3) {

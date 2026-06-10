@@ -15,13 +15,13 @@ static void tcp_timer_send_ack_segment(tcp_flow_t *f, uint32_t seq, const uint8_
     hdr.urgent_ptr = 0;
 
     if (f->base.local.ver == IP_VER4) {
-        ipv4_tx_opts_t tx;
+        ip_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v4(f->base.local.ip, &tx);
-        (void)tcp_send_segment(IP_VER4, f->base.local.ip, f->base.remote.ip, &hdr, NULL, 0, payload, payload_len, (const ip_tx_opts_t *)&tx, f->ip.ttl, f->ip.dontfrag);
+        (void)tcp_send_segment(IP_VER4, f->base.local.ip, f->base.remote.ip, &hdr, NULL, 0, payload, payload_len, &tx, f->ip.ttl, f->ip.dontfrag);
     } else if (f->base.local.ver == IP_VER6) {
-        ipv6_tx_opts_t tx;
+        ip_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v6(f->base.local.ip, &tx);
-        (void)tcp_send_segment(IP_VER6, f->base.local.ip, f->base.remote.ip, &hdr, NULL, 0, payload, payload_len, (const ip_tx_opts_t *)&tx, f->ip.ttl, f->ip.dontfrag);
+        (void)tcp_send_segment(IP_VER6, f->base.local.ip, f->base.remote.ip, &hdr, NULL, 0, payload, payload_len, &tx, f->ip.ttl, f->ip.dontfrag);
     }
 }
 //TODO events

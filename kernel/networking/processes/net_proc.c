@@ -93,7 +93,12 @@ static int net_has_ready_address(void) {
 }
 
 static void run_http_server() {
-    http_server_handle_t srv = http_server_create(NULL, NULL);
+    uint32_t http_methods = (1 << HTTP_METHOD_GET) | (1 << HTTP_METHOD_HEAD) | (1 << HTTP_METHOD_OPTIONS);
+    HTTPServerPolicyOptions http_options = {0};
+    http_options.flags = HTTP_SERVER_OPT_ALLOWED_METHODS;
+    http_options.value.allowed_methods = http_methods;
+
+    http_server_handle_t srv = http_server_create(NULL, &http_options);
     if (!srv) {
         stop_current_process(1);
         return;
@@ -115,11 +120,11 @@ static void run_http_server() {
 
     mdns_register_service("RedactedOS", "http", "tcp", HTTP_PORT, "path=/");
 
-    static const char HTML_ROOT[] =
+    static char HTML_ROOT[] =
         "<h1>Hello, world!</h1>\n"
         "<h3>[Redacted]</h3>";
 
-    static const char HTML_404[] =
+    static char HTML_404[] =
         "<h1>404 Regrettably, no such page exists in this realm</h1>\n"
         "<p>Im rather inclined to deduce that your page simply does not exist. Given the state of affairs, I dare say it's not altogether surprising, innit?</p>";
 
@@ -130,26 +135,48 @@ static void run_http_server() {
             continue;
         }
         HTTPRequestMsg req = http_server_recv_request(srv, conn);
+        if (!req.path.length) {
+            http_connection_close(conn);
+            continue;
+        }
+
+        if (req.method == HTTP_METHOD_OPTIONS) {
+            static char allow_key[] = "Allow";
+            string allow_value = http_methods_allow_header(http_methods);
+            HTTPHeader allow_header = {
+                {allow_key, sizeof(allow_key) - 1, 0},
+                allow_value
+            };
+
+            HTTPResponseMsg res = (HTTPResponseMsg){0};
+            res.status_code = HTTP_OK;
+            res.headers_common.fields.content_length = 0;
+            res.headers_common.framing.has_content_length = 1;
+            res.extra_headers = &allow_header;
+            res.extra_header_count = 1;
+
+            http_server_send_response(srv, conn, &res);
+            string_free(allow_value);
+            http_connection_close(conn);
+            http_request_free(&req);
+            continue;
+        }
+
         int is_root = req.path.length == 1 && req.path.data[0] == '/';
-        const char *body = is_root ? HTML_ROOT : HTML_404;
+        char *body = is_root ? HTML_ROOT : HTML_404;
         uint32_t len = (uint32_t)strlen(body);
 
         HTTPResponseMsg res = (HTTPResponseMsg){0};
         res.status_code = is_root ? HTTP_OK : HTTP_NOT_FOUND;
-        res.reason = string_from_const(is_root ? "OK" : "Not Found");
         res.headers_common.fields.content_length = len;
         res.headers_common.framing.has_content_length = 1;
         res.headers_common.fields.content_type = string_from_const("text/html");
-        res.headers_common.fields.connection = string_from_const("close");
-        res.body.ptr = (uintptr_t)body;
-        res.body.size = len;
+        res.body = (string){body, len, 0};
 
         http_server_send_response(srv, conn, &res);
         http_connection_close(conn);
-        if (req.path.mem_length) string_free(req.path);
-        http_headers_common_free(&req.headers_common);
-        http_headers_extra_free(req.extra_headers, req.extra_header_count);
-        if (req.body.ptr && req.body.size) release((void*)req.body.ptr);
+        http_request_free(&req);
+        http_response_free(&res);
     }
 }
 
@@ -161,7 +188,7 @@ static void test_http(const net_l4_endpoint* ep) {
         char ip_str[16];
         ipv4_to_string(ip_u32, ip_str);
 
-        kprintf("[HTTP] GET %s:%i", ip_str, HTTP_PORT);
+        print("[HTTP] GET %s:%i", ip_str, HTTP_PORT);
     }
 
     http_client_handle_t cli = http_client_create(NULL, NULL);
@@ -191,12 +218,12 @@ static void test_http(const net_l4_endpoint* ep) {
     HTTPResponseMsg resp = http_client_send_request(cli, &req);
 
     if ((int)resp.status_code < 0) print("[HTTP] request FAIL status=%i", (int)resp.status_code);
-    else if (resp.body.ptr && resp.body.size) {
-        char *body_str = (char*)zalloc(resp.body.size + 1);
+    else if (resp.body.data && resp.body.length) {
+        char *body_str = (char*)zalloc(resp.body.length + 1);
         if (body_str) {
-            memcpy(body_str, (void*)resp.body.ptr, resp.body.size);
-            body_str[resp.body.size] = '\0';
-            print("[HTTP] %i %i bytes of body", resp.status_code, resp.body.size);
+            memcpy(body_str, (void*)resp.body.data, resp.body.length);
+            body_str[resp.body.length] = '\0';
+            print("[HTTP] %i %i bytes of body", resp.status_code, resp.body.length);
             print("%s", body_str);
             release(body_str);
         }
@@ -205,11 +232,8 @@ static void test_http(const net_l4_endpoint* ep) {
     http_client_close(cli);
     http_client_destroy(cli);
 
-    if (resp.body.ptr && resp.body.size) release((void*)resp.body.ptr);
-    if (resp.reason.mem_length) string_free(resp.reason);
-
-    http_headers_common_free(&resp.headers_common);
-    http_headers_extra_free(resp.extra_headers, resp.extra_header_count);
+    http_response_free(&resp);
+    http_request_free(&req);
 }
 
 static int ntp(int argc, char* argv[]) {

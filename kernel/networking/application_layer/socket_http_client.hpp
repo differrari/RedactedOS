@@ -25,15 +25,6 @@ private:
     HTTPClientPolicy policy;
     HTTPClientOrigin origin;
 
-    void free_response(HTTPResponseMsg *resp) {
-        if (!resp) return;
-        if (resp->body.ptr && resp->body.size) release((void*)resp->body.ptr);
-        if (resp->reason.mem_length) string_free(resp->reason);
-        http_headers_common_free(&resp->headers_common);
-        http_headers_extra_free(resp->extra_headers, resp->extra_header_count);
-        *resp = HTTPResponseMsg{};
-    }
-
     HTTPResponseMsg error_response(int64_t err) {
         HTTPResponseMsg resp{};
         resp.status_code = (HttpError)err;
@@ -105,7 +96,7 @@ private:
                 &resp.extra_header_count);
 
             if (header_result != HTTP_PARSE_OK) {
-                free_response(&resp);
+                http_response_free(&resp);
                 string_free(buf);
                 if (sock) {
                     close_socket(sock);
@@ -156,7 +147,7 @@ private:
 
                 if (chunk_result != HTTP_PARSE_OK) {
                     http_chunked_decoder_free(&dec);
-                    free_response(&resp);
+                    http_response_free(&resp);
                     string_free(buf);
                     if (sock) {
                         close_socket(sock);
@@ -169,15 +160,14 @@ private:
                 dec.body = string{};
                 http_chunked_decoder_free(&dec);
                 if (decoded.length) {
-                    resp.body.ptr = (uintptr_t)decoded.data;
-                    resp.body.size = decoded.length;
+                    resp.body = decoded;
                 } else if (decoded.mem_length) string_free(decoded);
             } else {
                 uint32_t need = resp.headers_common.framing.has_content_length ? resp.headers_common.fields.content_length : 0;
 
                 if (resp.headers_common.framing.has_content_length) {
                     if (need > policy.common.max_body_bytes) {
-                        free_response(&resp);
+                        http_response_free(&resp);
                         string_free(buf);
                         if (sock) {
                             close_socket(sock);
@@ -189,7 +179,7 @@ private:
                     if (need) {
                         char *body_copy = (char*)zalloc(need);
                         if (!body_copy) {
-                            free_response(&resp);
+                            http_response_free(&resp);
                             string_free(buf);
                             if (sock) {
                                 close_socket(sock);
@@ -218,7 +208,7 @@ private:
 
                         if (copied < need) {
                             release(body_copy);
-                            free_response(&resp);
+                            http_response_free(&resp);
                             string_free(buf);
                             if (sock) {
                                 close_socket(sock);
@@ -227,8 +217,7 @@ private:
                             return error_response(SOCK_ERR_PROTO);
                         }
 
-                        resp.body.ptr = (uintptr_t)body_copy;
-                        resp.body.size = need;
+                        resp.body = (string){body_copy, need, need};
                     }
                 } else if (policy.allow_close_delimited) {
                     string body = string_repeat('\0', 0);
@@ -242,7 +231,7 @@ private:
                             uint32_t now = (uint32_t)get_time();
                             if ((now - body_last_rx_ms) > policy.common.body_idle_timeout_ms || (now - body_start_ms) > policy.common.body_total_timeout_ms) {
                                 string_free(body);
-                                free_response(&resp);
+                                http_response_free(&resp);
                                 string_free(buf);
                                 if (sock) {
                                     close_socket(sock);
@@ -255,7 +244,7 @@ private:
                         }
                         if (r < 0) {
                             string_free(body);
-                            free_response(&resp);
+                            http_response_free(&resp);
                             string_free(buf);
                             if (sock) {
                                 close_socket(sock);
@@ -266,7 +255,7 @@ private:
                         if (r == 0) break;
                         if (body.length + (uint32_t)r > policy.common.max_body_bytes) {
                             string_free(body);
-                            free_response(&resp);
+                            http_response_free(&resp);
                             string_free(buf);
                             if (sock) {
                                 close_socket(sock);
@@ -279,8 +268,7 @@ private:
                     }
 
                     if (body.length) {
-                        resp.body.ptr = (uintptr_t)body.data;
-                        resp.body.size = body.length;
+                        resp.body = body;
                     } else if (body.mem_length) string_free(body);
                 }
             }
@@ -290,7 +278,7 @@ private:
             ev.action = NETLOG_ACT_HTTP_RECV_RESPONSE;
             ev.pid = get_current_proc_pid();
             ev.u0 = (uint32_t)resp.status_code;
-            ev.u1 = (uint32_t)resp.body.size;
+            ev.u1 = (uint32_t)resp.body.length;
             ev.local_port = get_socket_local_port(sock);
             net_l4_endpoint sock_remote_ep{};
             get_socket_remote_endpoint(sock, &sock_remote_ep);
@@ -492,7 +480,7 @@ public:
                 if (rr >= 0) rr = connect_domain(next_domain.data, next_port);
                 if (next_domain.mem_length) string_free(next_domain);
                 if (rr < 0) {
-                    free_response(&resp);
+                    http_response_free(&resp);
                     resp.status_code = (HttpError)rr;
                     break;
                 }
@@ -510,7 +498,7 @@ public:
                 if (rr >= 0) rr = reconnect_domain.data ? connect_domain(reconnect_domain.data, reconnect_ep.port) : connect_endpoint(&reconnect_ep);
                 if (reconnect_domain.mem_length) string_free(reconnect_domain);
                 if (rr < 0) {
-                    free_response(&resp);
+                    http_response_free(&resp);
                     resp.status_code = (HttpError)rr;
                     break;
                 }
@@ -518,13 +506,13 @@ public:
 
             if (code == HTTP_SEE_OTHER && curr.method != HTTP_METHOD_HEAD) {
                 curr.method = HTTP_METHOD_GET;
-                curr.body = sizedptr{};
+                curr.body = string{};
                 curr.headers_common.framing.chunked = 0;
                 curr.headers_common.framing.has_content_length = 0;
                 curr.headers_common.fields.content_length = 0;
             }
 
-            free_response(&resp);
+            http_response_free(&resp);
         }
 
         if (curr.path.mem_length) string_free(curr.path);

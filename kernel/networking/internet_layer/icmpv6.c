@@ -146,7 +146,7 @@ static bool icmpv6_send_echo_request(const uint8_t dst_ip[16], uint16_t id, uint
     e.hdr.checksum = bswap16(checksum16_pipv6(plan.src_ip, dst_ip, PROTO_ICMPV6, (const uint8_t*)buf, len));
     memcpy(buf, &e, sizeof(e));
 
-    ipv6_send_packet(dst_ip, PROTO_ICMPV6, pkt, (const ipv6_tx_opts_t*)tx_opts_or_null, hop_limit ? hop_limit : 64, 0);
+    ipv6_send_packet(dst_ip, PROTO_ICMPV6, pkt, (const ip_tx_opts_t*)tx_opts_or_null, hop_limit ? hop_limit : 64, 0);
     return true;
 }
 

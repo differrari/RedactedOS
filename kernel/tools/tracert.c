@@ -107,8 +107,8 @@ static int tracert_v4(const tr_opts_t *o) {
     string_format_buf(line + len, sizeof(line) - len, "address");
     print("%s", line);
 
-    ipv4_tx_opts_t txo = (ipv4_tx_opts_t){0};
-    const ipv4_tx_opts_t *txop = NULL;
+    ip_tx_opts_t txo = (ip_tx_opts_t){0};
+    const ip_tx_opts_t *txop = NULL;
     if (o->src_set) {
         l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(o->src_ip);
         if (!l3) {

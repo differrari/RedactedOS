@@ -786,13 +786,13 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             final_ack.urgent_ptr = 0;
 
             if (flow->base.local.ver == IP_VER4) {
-                ipv4_tx_opts_t tx;
+                ip_tx_opts_t tx;
                 tcp_build_tx_opts_from_local_v4(flow->base.local.ip, &tx);
-                tcp_send_segment(IP_VER4, flow->base.local.ip, flow->base.remote.ip, &final_ack, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip.ttl, flow->ip.dontfrag);
+                tcp_send_segment(IP_VER4, flow->base.local.ip, flow->base.remote.ip, &final_ack, NULL, 0, NULL, 0, &tx, flow->ip.ttl, flow->ip.dontfrag);
             } else {
-                ipv6_tx_opts_t tx;
+                ip_tx_opts_t tx;
                 tcp_build_tx_opts_from_local_v6(flow->base.local.ip, &tx);
-                tcp_send_segment(IP_VER6, flow->base.local.ip, flow->base.remote.ip, &final_ack, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip.ttl, flow->ip.dontfrag);
+                tcp_send_segment(IP_VER6, flow->base.local.ip, flow->base.remote.ip, &final_ack, NULL, 0, NULL, 0, &tx, flow->ip.ttl, flow->ip.dontfrag);
             }
 
             flow->base.state = TCP_ESTABLISHED;
@@ -842,13 +842,13 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 rst_hdr.urgent_ptr = 0;
 
                 if (flow->base.local.ver == IP_VER4) {
-                    ipv4_tx_opts_t tx;
+                    ip_tx_opts_t tx;
                     tcp_build_tx_opts_from_local_v4(flow->base.local.ip, &tx);
-                    (void)tcp_send_segment(IP_VER4, flow->base.local.ip, flow->base.remote.ip, &rst_hdr, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip.ttl, flow->ip.dontfrag);
+                    (void)tcp_send_segment(IP_VER4, flow->base.local.ip, flow->base.remote.ip, &rst_hdr, NULL, 0, NULL, 0, &tx, flow->ip.ttl, flow->ip.dontfrag);
                 } else if (flow->base.local.ver == IP_VER6) {
-                    ipv6_tx_opts_t tx;
+                    ip_tx_opts_t tx;
                     tcp_build_tx_opts_from_local_v6(flow->base.local.ip, &tx);
-                    (void)tcp_send_segment(IP_VER6, flow->base.local.ip, flow->base.remote.ip, &rst_hdr, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, flow->ip.ttl, flow->ip.dontfrag);
+                    (void)tcp_send_segment(IP_VER6, flow->base.local.ip, flow->base.remote.ip, &rst_hdr, NULL, 0, NULL, 0, &tx, flow->ip.ttl, flow->ip.dontfrag);
                 }
 
                 tcp_free_flow(idx);

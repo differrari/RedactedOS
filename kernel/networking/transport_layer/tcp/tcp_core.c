@@ -344,11 +344,11 @@ bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst
 
         h.checksum = tcp_checksum_ipv4(segment, tcp_len, s, d);
         memcpy(segment, &h, sizeof(h));
-        return ipv4_send_packet(d, PROTO_TCP, pkt, (const ipv4_tx_opts_t *)txp, ttl, dontfrag);
+        return ipv4_send_packet(d, PROTO_TCP, pkt, txp, ttl, dontfrag);
     } else if (ver == IP_VER6){
         h.checksum = tcp_checksum_ipv6(segment, tcp_len, (const uint8_t *)src_ip_addr, (const uint8_t *)dst_ip_addr);
         memcpy(segment, &h, sizeof(h));
-        return ipv6_send_packet((const uint8_t *)dst_ip_addr, PROTO_TCP, pkt, (const ipv6_tx_opts_t *)txp, ttl, dontfrag);
+        return ipv6_send_packet((const uint8_t *)dst_ip_addr, PROTO_TCP, pkt, txp, ttl, dontfrag);
     }
 
     netpkt_unref(pkt);
@@ -375,15 +375,15 @@ void tcp_send_reset(ip_version_t ver, const void *src_ip_addr, const void *dst_i
     rst_hdr.urgent_ptr = 0;
 
     if (ver == IP_VER4){
-        ipv4_tx_opts_t tx;
+        ip_tx_opts_t tx;
 
         tcp_build_tx_opts_from_local_v4(src_ip_addr, &tx);
-        tcp_send_segment(IP_VER4, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, 0, 0);
+        tcp_send_segment(IP_VER4, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, NULL, 0, &tx, 0, 0);
     } else if (ver == IP_VER6){
-        ipv6_tx_opts_t tx;
+        ip_tx_opts_t tx;
 
         tcp_build_tx_opts_from_local_v6(src_ip_addr, &tx);
-        tcp_send_segment(IP_VER6, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, NULL, 0, (const ip_tx_opts_t *)&tx, 0, 0);
+        tcp_send_segment(IP_VER6, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, NULL, 0, &tx, 0, 0);
     }
 }
 

@@ -4,7 +4,7 @@
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/interface_manager.h"
 #include "syscalls/syscalls.h"
-//TODO simplify plans by getting IP_TX_BOUND_L3 from l3_id instead of fixed_opts, both ipv4 and ipv6
+
 struct ipv6_rt_table {
     ipv6_rt_entry_t e[IPV6_RT_PER_IF_MAX];
     int len;
@@ -66,8 +66,6 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx
 
     memset(out, 0, sizeof(*out));
     out->net_epoch = ipv6_route_epoch();
-    out->fixed_opts.scope = IP_TX_AUTO;
-    out->fixed_opts.index = 0;
 
     int dst_is_ll = (ipv6_is_linklocal(dst) || ipv6_is_linkscope_mcast(dst)) ? 1 : 0;
     int dst_is_loop = ipv6_is_loopback(dst) ? 1 : 0;
@@ -78,8 +76,6 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx
         if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) return false;
         out->l3_id = id;
         memcpy(out->src_ip, v6->ip, 16);
-        out->fixed_opts.scope = IP_TX_BOUND_L3;
-        out->fixed_opts.index = id;
         return true;
     }
 
@@ -117,8 +113,6 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx
 
     out->l3_id = chosen;
     memcpy(out->src_ip, v6->ip, 16);
-    out->fixed_opts.scope = IP_TX_BOUND_L3;
-    out->fixed_opts.index = chosen;
     return true;
 }
 
