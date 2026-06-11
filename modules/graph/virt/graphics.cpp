@@ -1,6 +1,6 @@
 #include "graph/graphics.h"
 #include "console/kio.h"
-
+#include "theme/theme.h"
 #include "virtio_gpu_pci.hpp"
 #include "ramfb.hpp"
 
@@ -13,7 +13,7 @@ GPUDriver *gpu_driver;
 
 bool gpu_init(system_module *mod){
     kprint("[GRAPH] Initializing Virt GPU");
-    gpu_size preferred_screen_size = {1920,1080};
+    gpu_size preferred_screen_size = system_config.preferred_screen_size;
     if (VirtioGPUDriver *vgd = VirtioGPUDriver::try_init(preferred_screen_size)){
         gpu_driver = vgd;
     } else if (RamFBGPUDriver *rfb = RamFBGPUDriver::try_init(preferred_screen_size)){

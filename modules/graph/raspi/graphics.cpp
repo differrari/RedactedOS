@@ -1,6 +1,6 @@
 #include "graph/graphics.h"
 #include "console/kio.h"
-
+#include "theme/theme.h"
 #include "videocore.hpp"
 
 #include "hw/hw.h"
@@ -14,7 +14,7 @@ GPUDriver *gpu_driver;
 
 bool gpu_init(){
     kprint("[GRAPH] Initializing Raspberry Pi GPU");
-    gpu_size preferred_screen_size = {1080,720};
+    gpu_size preferred_screen_size = system_config.preferred_screen_size;
     gpu_driver = VideoCoreGPUDriver::try_init(preferred_screen_size);
     screen_size = preferred_screen_size;
     _gpu_ready = true;

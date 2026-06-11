@@ -34,6 +34,10 @@ typedef struct {
     char *system_name;
     char *app_directory;
     bool use_net;
+    gpu_size preferred_screen_size;
+    bool headless;
+    bool use_login;
+    bool use_windows;
 } system_config_t;
 
 extern boot_theme_t boot_theme;

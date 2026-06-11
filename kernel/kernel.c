@@ -14,7 +14,6 @@
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
-#include "random/random.h"
 #include "filesystem/filesystem.h"
 #include "filesystem/modules/module_loader.h" 
 #include "audio/audio.h"
@@ -57,15 +56,19 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     load_module(&console_module);
 
     print_hardware();
-
-    load_module(&rng_module);
     
     irq_init();
     kprintf("Interrupts initialized");
 
     enable_interrupt();
 
-    load_module(&graphics_module);
+    load_module(&disk_module);
+
+    init_filesystem();
+    load_module(&theme_mod);
+
+    // if (!system_config.headless)
+        load_module(&graphics_module);
     
     bool can_init_usb = true;
     
@@ -76,11 +79,6 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
            pci_setup_rp1();
     }
 #endif
-
-    load_module(&disk_module);
-
-    init_filesystem();
-    load_module(&theme_mod);
 
     bool usb_available = can_init_usb ? load_module(&usb_module) : false;
     bool network_available = false;

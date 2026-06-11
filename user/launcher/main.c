@@ -39,9 +39,9 @@ void *launcher_page = 0;
 
 void* alloc_launcher(size_t size){
     if (!launcher_page) {
-        launcher_page = malloc(PAGE_SIZE);
+        launcher_page = page_alloc(PAGE_SIZE);
     }
-    return allocate(launcher_page, size, malloc);
+    return allocate(launcher_page, size, page_alloc);
 }
 
 void add_entry(string_slice name, string_slice ext, string path, package_info info){
@@ -87,11 +87,11 @@ void load_entries(){
         entries = chunk_array_create_alloc(sizeof(launch_entry), 9, alloc_launcher, 0);
     size_t c = chunk_array_count(entries);
     for (uint32_t i = 0; i < c; i++){
-        // launch_entry *entry = chunk_array_get(entries, i);
-        // string_free(entry->path);
-        // string_free(entry->info.name);
-        // string_free(entry->info.version);
-        // string_free(entry->info.author);
+        launch_entry *entry = chunk_array_get(entries, i);
+        string_free(entry->path);
+        string_free(entry->info.name);
+        string_free(entry->info.version);
+        string_free(entry->info.author);
     }
     chunk_array_reset(entries);
     traverse_directory("/home/applications", false, handle_entry);

@@ -11,7 +11,7 @@ endif
 
 .PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
 
-all: kshared modules kernel shared user tools
+all: kshared modules kernel shared user tools docs
 	@echo "Build complete."
 	./createfs
 
@@ -36,6 +36,9 @@ tools: shared prepare-fs
 test:
 	$(MAKE) $(MODE) QEMU=true TEST=true all
 	./run_$(MODE)
+
+docs:
+	$(MAKE) -C docs all
 
 clean:
 	$(MAKE) -C shared $@
@@ -62,7 +65,7 @@ debug:
 	./rundebug MODE=$(MODE) $(ARGS)
 
 dump:
-	$(ARCH)objdump -D kernel.elf > dump
+	$(ARCH)objdump -S -D kernel.elf > dump
 	$(MAKE) -C user $@
 	$(MAKE) -C tools $@
 	$(MAKE) -C modules $@
@@ -74,6 +77,7 @@ install:
 	cp kernel.img $(BOOTFS)/kernel_2712.img
 	cp config.txt $(BOOTFS)/config.txt
 	cp kernel.elf $(BOOTFS)/kernel.elf
+	# TODO: Install basic fs
 
 prepare-fs:
 	@echo "creating dirs"

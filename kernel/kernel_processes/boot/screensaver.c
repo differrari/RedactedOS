@@ -1,4 +1,4 @@
-#include "bootscreen.h"
+#include "screensaver.h"
 #include "../kprocess_loader.h"
 #include "console/kio.h"
 #include "graph/graphics.h"
@@ -89,7 +89,7 @@ void boot_draw_lines(gpu_point current_point, gpu_point next_point, gpu_size siz
         }
         if (dt < target_dt) delay(floor(target_dt-dt));
         kbd_event kbd = {};
-        if (sys_read_event_current(&kbd))
+        if (read_event(&kbd) && kbd.type == KEY_PRESS)
             stop_current_process(0);
         gpu_flush();
     }
@@ -118,7 +118,7 @@ static void play_startup_sound(){
     }
 }
 
-int bootscreen(){
+int screensaver(){
     disable_visual();
     sys_focus_current();
     gpu_size screen_size = gpu_get_screen_size();
@@ -145,6 +145,6 @@ int bootscreen(){
     return 0;
 }
 
-process_t* start_bootscreen(){
-    return create_kernel_process("bootscreen",bootscreen, 0, 0);
+process_t* start_screensaver(){
+    return create_kernel_process("screensave",screensaver, 0, 0);
 }

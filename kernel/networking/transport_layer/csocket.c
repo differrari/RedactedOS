@@ -4,6 +4,10 @@
 #include "socket_core.h"
 #include "process/scheduler.h"
 #include "std/memory.h"
+#include "memory/page_allocator.h"
+#include "console/kio.h"
+#include "data/struct/hashmap.h"
+#include "alloc/allocate.h"
 
 socket_handle_t create_socket(protocol_t protocol, const SocketExtraOptions* extra){
     SocketExtraOptions default_extra = {};
@@ -18,6 +22,7 @@ socket_handle_t create_socket(protocol_t protocol, const SocketExtraOptions* ext
     uint16_t pid = get_current_proc_pid();
     ksocket_t* socket = NULL;
     if (!socket_core_alloc(protocol, pid, &socket)) return false;
+
 
     socket_impl_t impl = NULL;
     socket_impl_destroy_fn destroy = NULL;
@@ -65,6 +70,7 @@ int32_t bind_socket(socket_handle_t handle, const SockBindSpec *spec_in, uint16_
     else if (socket_core_protocol(socket) == PROTO_UDP) res = socket_bind_udp(socket_core_impl(socket), &spec, port);
 
     socket_core_put(socket);
+
     return res;
 }
 

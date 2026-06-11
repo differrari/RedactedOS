@@ -37,7 +37,7 @@ process_t* execute(const char* prog_name, int argc, const char* argv[], uint32_t
 
     process_t *cur = get_current_proc();
     uint16_t win_id = cur ? cur->win_id : 0;
-    bool transfer_focus = win_id && mode == EXEC_MODE_DEFAULT;
+    bool transfer_focus = mode == EXEC_MODE_DEFAULT;
    
     if (strcont(prog_name, "/")){
         const char *name = prog_name;

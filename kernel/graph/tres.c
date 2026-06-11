@@ -14,6 +14,7 @@
 #include "console/kio.h"
 #include "exceptions/irq.h"
 #include "header_utils/composite.h"
+#include "theme/theme.h"
 
 linked_list_t *window_list;
 window_frame *focused_window;
@@ -24,6 +25,8 @@ uint16_t win_ids = 1;
 bool dirty_windows = false;
 
 int_point global_win_offset;
+
+draw_ctx non_win_ctx;
 
 typedef struct window_tab {
     int_point offset;
@@ -108,9 +111,19 @@ void check_collisions(window_frame *frame){
 }
 
 bool create_window(i32 x, i32 y, u32 width, u32 height){
-    if (win_ids == UINT16_MAX) return false;
-    if (zoom_scale != 1) return false;
-    if (width < 0x100 || height < 0x100) return false;
+    irq_flags_t irq = irq_save_disable();
+    if (win_ids == UINT16_MAX){ 
+        irq_restore(irq);
+        return false; 
+    }
+    if (zoom_scale != 1){ 
+        irq_restore(irq);
+        return false; 
+    }
+    if (width < 0x100 || height < 0x100){ 
+        irq_restore(irq);
+        return false; 
+    }
     
     window_frame *frame = (window_frame*)zalloc(sizeof(window_frame));
     frame->win_id = win_ids++;
@@ -131,7 +144,6 @@ bool create_window(i32 x, i32 y, u32 width, u32 height){
     linked_list_push_front(window_list, PHYS_TO_VIRT_P(frame));
     gpu_create_window(x,y, width, height, &frame->win_ctx);
 
-    irq_flags_t irq = irq_save_disable();
     process_t *p = execute("/boot/redos/system/launcher.red", 0, 0, 0);
     if (!p){
         irq_restore(irq);
@@ -170,38 +182,51 @@ void resize_window(uint32_t width, uint32_t height){
 }
 
 void get_window_ctx(draw_ctx* out_ctx){
+    if (!out_ctx) return;
     process_t *p = get_current_proc();
-    linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
-    if (!node || !node->data) return;
 
-    window_frame* frame = (window_frame*)node->data;
-    if (out_ctx->width && out_ctx->height)
-        resize_window(out_ctx->width, out_ctx->height);
-
-    if (frame->pid != p->id){
-        if (sys_get_focused_pid() == frame->pid)
-            sys_set_focus(p->id);
-        frame->pid = p->id;
-        if (p->graphics_ctx.fb){
-            if (p->graphics_ctx.width != frame->width || p->graphics_ctx.width != frame->height){
-                pfree(p->graphics_ctx.fb,p->graphics_ctx.width*p->graphics_ctx.height*sizeof(u32));
-                p->graphics_ctx = (draw_ctx){};
+    if (!system_config.use_windows){
+        draw_ctx *ctx = gpu_get_ctx();
+        memcpy(out_ctx, ctx, sizeof(draw_ctx));
+        if (non_win_ctx.fb)
+            pfree(non_win_ctx.fb, ctx->width * ctx->height * 4);
+        out_ctx->fb = palloc(ctx->width * ctx->height * 4, MEM_PRIV_SHARED, MEM_RW, true);
+        non_win_ctx = *ctx;
+        non_win_ctx.fb = out_ctx->fb;
+        sys_set_focus(p->id);
+    } else {
+        linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
+        if (!node || !node->data) return;
+    
+        window_frame* frame = (window_frame*)node->data;
+        if (out_ctx->width && out_ctx->height)
+            resize_window(out_ctx->width, out_ctx->height);
+    
+        if (frame->pid != p->id){
+            if (sys_get_focused_pid() == frame->pid)
+                sys_set_focus(p->id);
+            frame->pid = p->id;
+            if (p->graphics_ctx.fb){
+                if (p->graphics_ctx.width != frame->width || p->graphics_ctx.width != frame->height){
+                    pfree(p->graphics_ctx.fb,p->graphics_ctx.width*p->graphics_ctx.height*sizeof(u32));
+                    p->graphics_ctx = (draw_ctx){};
+                }
             }
+            if (!p->graphics_ctx.fb){
+                p->graphics_ctx = frame->win_ctx;
+                p->graphics_ctx.fb = (uint32_t*)palloc(frame->width * frame->height * 4, MEM_PRIV_SHARED, MEM_RW, true);
+            }
+            frame->win_ctx = p->graphics_ctx;
         }
-        if (!p->graphics_ctx.fb){
-            p->graphics_ctx = frame->win_ctx;
-            p->graphics_ctx.fb = (uint32_t*)palloc(frame->width * frame->height * 4, MEM_PRIV_SHARED, MEM_RW, true);
-        }
-        frame->win_ctx = p->graphics_ctx;
+        *out_ctx = frame->win_ctx;
     }
-    *out_ctx = frame->win_ctx;
 
     if (!p || !p->mm.ttbr0) return;
 
-    size_t fb_size = (size_t)frame->win_ctx.width * (size_t)frame->win_ctx.height * sizeof(u32);
+    size_t fb_size = (size_t)out_ctx->width * (size_t)out_ctx->height * sizeof(u32);
     if (!fb_size) return;
 
-    paddr_t pa = pt_va_to_pa(frame->win_ctx.fb);
+    paddr_t pa = pt_va_to_pa(out_ctx->fb);
     size_t map_size = count_pages(fb_size, PAGE_SIZE) * PAGE_SIZE;
 
     if (p->win_fb_va && (p->win_fb_size != map_size || p->win_fb_phys != pa)) {
@@ -230,6 +255,13 @@ void get_window_ctx(draw_ctx* out_ctx){
 
 void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus){
     process_t *p = get_current_proc();
+    draw_ctx *screen_ctx = gpu_get_ctx();
+    if (!system_config.use_windows){
+        memcpy(&non_win_ctx.dirty_rects, frame_ctx->dirty_rects, sizeof(non_win_ctx.dirty_rects));
+        non_win_ctx.dirty_count = frame_ctx->dirty_count;
+        non_win_ctx.full_redraw = frame_ctx->full_redraw;
+        composite(&non_win_ctx, (int_point){}, 1, screen_ctx);
+    }
     if (!frame){
         linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
         if (!node || !node->data) return;
@@ -242,8 +274,7 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus
     memcpy(&win_ctx.dirty_rects, frame_ctx->dirty_rects, sizeof(win_ctx.dirty_rects));
     win_ctx.dirty_count = frame_ctx->dirty_count;
     win_ctx.full_redraw = frame_ctx->full_redraw;
-    draw_ctx *screen_ctx = gpu_get_ctx();
-
+    
     composite(&win_ctx, (int_point){global_win_offset.x + frame->x,global_win_offset.y + frame->y}, zoom_scale, screen_ctx);
 
     frame_ctx->dirty_count = 0;

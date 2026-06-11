@@ -6,7 +6,7 @@ extern "C" {
 #include "process/process.h"
 #include "types.h"
 
-process_t* start_bootscreen();
+process_t* start_screensaver();
 #ifdef __cplusplus
 }
 #endif

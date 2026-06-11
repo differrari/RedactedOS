@@ -50,8 +50,12 @@ void irq_init() {
         write32(GICC_BASE, 0); // Disable CPU Interface
     }
 
+    for (int i = 0; i < 128; i++)
+        gic_enable_irq(i, 0x80, 0);
+    
     gic_enable_irq(IRQ_TIMER, 0x80, 0);
     gic_enable_irq(MSI_OFFSET + INPUT_IRQ, 0x80, 0);
+    if (UART_IRQ) gic_enable_irq(UART_IRQ, 0x80, 0);
 
     for (uint32_t i = 0; i < (uint32_t)MAX_L2_INTERFACES; ++i) {
         gic_enable_irq(MSI_OFFSET + NET_IRQ_BASE + (2*i), 0x80, 0);
@@ -129,6 +133,11 @@ void irq_el1_handler() {
         if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
         syscall_depth--;
         if (scheduler_in_idle()) switch_proc(INTERRUPT);
+        process_restore();
+    } else if (irq == UART_IRQ){
+        uart_read_in();
+        if (RPI_BOARD != 3) write32(GICC_BASE + 0x10, irq);
+        syscall_depth--;
         process_restore();
     } else {
         kprintf("[GIC error] Received unknown interrupt %i",irq);

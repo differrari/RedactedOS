@@ -169,20 +169,24 @@ void sys_focus_current(){
     sys_set_focus(get_current_proc_pid());
 }
 
+#include "console/kio.h"
+#include "theme/theme.h"
+
 void sys_set_focus(int pid){
     process_t *target = get_proc_by_pid(pid);
     if (!target || target->state == process::STOPPED || !target->id || !target->pc || !target->sp || (((target->spsr & 0xF) == 0) && !target->mm.ttbr0)) return;
     if (focused_proc) focused_proc->focused = false;
     focused_proc = target;
     focused_proc->focused = true;
-    set_window_focus(focused_proc->win_id);
+    kprintf("New focus %i",pid);
+    if (system_config.use_windows) set_window_focus(focused_proc->win_id);
 }
 
 void sys_unset_focus(bool close){
     process_t *proc = focused_proc;
     if (proc) proc->focused = false;
     focused_proc = 0;
-    unset_window_focus();
+    if (system_config.use_windows) unset_window_focus();
 
     u16 npid = proc && proc->win_id ? window_fallback_focus(proc->win_id, proc->id) : 0;
     if (npid)

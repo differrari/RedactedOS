@@ -16,6 +16,10 @@ public:
     void bell();
     bool interpret_cmd_code(char code, u16 proc);
     void ctrl(console_ctrls ctrl);
+    void put_char(char c) override;
+    void put_string(const char* str) override;
+    void put_slice(string_slice slice) override;
+    bool headless;
 protected:
     bool handle_input();
     void repeat_tick();

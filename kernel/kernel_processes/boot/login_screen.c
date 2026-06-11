@@ -13,7 +13,7 @@
 int login_screen(){
     sys_focus_current();
     sys_set_secure(true);
-    char* buf = (char*)malloc(256);
+    char* buf = (char*)zalloc(256);
     int len = 0;
     keypress old_kp;
     gpu_clear(system_theme.bg_color);
@@ -74,7 +74,7 @@ int login_screen(){
                 if (hid_keycode_to_char[(uint8_t)key]){
                     if (key == KEY_ENTER || key == KEY_KPENTER){
                         if (strcmp(buf,system_config.default_pwd) == 0){
-                            free_sized(buf, 256);
+                            release(buf);
                             string_free(s);
                             sys_set_secure(false);
                             stop_current_process(0);

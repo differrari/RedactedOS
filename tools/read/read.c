@@ -16,7 +16,7 @@ int main(int argc, const char* argv[]){
         return 1;
     } 
     if (size == 0) size = fd.size;
-    char* buf = (char*)malloc(size);
+    char* buf = (char*)zalloc(size);
     readf(&fd, buf, size);
     print("%s",buf);
     closef(&fd);

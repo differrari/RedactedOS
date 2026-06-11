@@ -39,6 +39,10 @@ system_config_t system_config = {
     .system_name = SYSTEM_NAME,
     .app_directory = "boot",
     .use_net = true,
+    .preferred_screen_size = {1920,1080},
+    .headless = false,
+    .use_login = false,
+    .use_windows = true,
 };
 
 gpu_point parse_gpu_point(char *value, size_t value_len){
@@ -47,6 +51,14 @@ gpu_point parse_gpu_point(char *value, size_t value_len){
     uint32_t x = parse_int64(value, cursor-value-1) & UINT32_MAX;
     uint32_t y = parse_int64(cursor, value_len-(cursor-value)) & UINT32_MAX;
     return (gpu_point){x,y};
+}
+
+gpu_size parse_gpu_size(char *value, size_t value_len){
+    const char *cursor = value;
+    cursor = seek_to(cursor, ',');
+    uint32_t x = parse_int64(value, cursor-value-1) & UINT32_MAX;
+    uint32_t y = parse_int64(cursor, value_len-(cursor-value)) & UINT32_MAX;
+    return (gpu_size){x,y};
 }
 
 gpu_point* parse_gpu_point_array(char *value, size_t value_len){
@@ -68,7 +80,7 @@ gpu_point* parse_gpu_point_array(char *value, size_t value_len){
         }
     }
     boot_theme.logo_points_count = count;
-    gpu_point *points = malloc(count * sizeof(gpu_point));
+    gpu_point *points = zalloc(count * sizeof(gpu_point));
     for (int i = 0; i < count; i++){
         char *start_index = 0;
         do {
@@ -90,12 +102,13 @@ void parse_theme_kvp(string_slice key, string_slice value, void *context){
     parse_toml(err_color,               system_theme, parse_hex_u64);
     parse_toml(cursor_color_deselected, system_theme, parse_hex_u64);
     parse_toml(cursor_color_selected,   system_theme, parse_hex_u64);
-    parse_toml(use_window_shadows,      system_theme,parse_int_u64);
+    parse_toml(use_window_shadows,      system_theme, parse_int_u64);
     
     parse_toml_str(panic_text,  system_config);
     parse_toml_str(system_name, system_config);
     parse_toml_str(app_directory, system_config);
     parse_toml(use_net, system_config, parse_int_u64);
+    parse_toml(preferred_screen_size, system_config, parse_gpu_size);
     
     parse_toml(logo_points_count,   boot_theme,parse_int_u64);
     parse_toml(logo_repeat,         boot_theme,parse_int_u64);
@@ -112,6 +125,10 @@ void parse_theme_kvp(string_slice key, string_slice value, void *context){
     parse_toml(logo_steps, boot_theme, parse_int_u64);
 
     parse_toml(logo_points, boot_theme, parse_gpu_point_array);
+
+    parse_toml(headless, system_config, parse_int_u64);
+    parse_toml(use_login, system_config, parse_int_u64);
+    parse_toml(use_windows, system_config, parse_int_u64);
 
 }
 

@@ -19,14 +19,14 @@ int img_example() {
     FS_RESULT res = openf("/resources/jest.bmp", &descriptor);
     void *img = 0;
     image_info info;
-    void* file_img = malloc(descriptor.size);
+    void* file_img = zalloc(descriptor.size);
     readf(&descriptor, file_img, descriptor.size);
     closef(&descriptor);
     if (res != FS_RESULT_SUCCESS) print("Couldn't open image");
     else {
         info = bmp_get_info(file_img, descriptor.size);
         print("info %ix%i",info.width,info.height);
-        img = malloc(info.width*info.height*system_bpp);
+        img = zalloc(info.width*info.height*system_bpp);
         bmp_read_image(file_img, descriptor.size, img);
     }
     ctx.width = info.width+BORDER*2;
@@ -64,7 +64,7 @@ int net_example() {
 
     // socket_listen(&spec);
 
-    void *ptr = malloc(0x1000);
+    void *ptr = zalloc(0x1000);
     print("Waiting for data %i.%i.%i.%i", spec.ip[0],spec.ip[1],spec.ip[2],spec.ip[3]);
     net_l4_endpoint rc = {};
     while (socket_receive(sock, ptr, 0x1000, &rc) == SOCK_ERR_WOULDBLOCK){

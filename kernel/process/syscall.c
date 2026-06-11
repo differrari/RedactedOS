@@ -32,6 +32,7 @@
 #include "process/uaccess.h"
 #include "filesystem/modules/fs_isolation.h"
 #include "files/dir_list.h"
+#include "theme/theme.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -53,27 +54,6 @@ uintptr_t cpec;
 
 //TEST: What happens if we pass another process' data in here?
 typedef uint64_t (*syscall_entry)(process_t *ctx);
-
-u64 syscall_malloc(process_t *ctx){
-    if (syscall_depth > 1) {
-        process_t *k = get_kernel_proc();
-        if (!k) return 0;
-        return (u64)kalloc((void*)dmap_pa_to_kva((paddr_t)k->heap_phys), ctx->PROC_X0, ALIGN_16B, MEM_PRIV_KERNEL);
-    }
-
-    size_t size = ctx->PROC_X0;
-    if (!size) return 0;
-
-    u64 pages = count_pages(size, PAGE_SIZE);
-    size_t alloc_size = pages * PAGE_SIZE;
-    if (ctx->mm.rss_anon_pages + pages > ctx->mm.cap_anon_pages) return 0;
-
-    uptr va = mm_alloc_mmap(&ctx->mm, alloc_size, MEM_RW, VMA_KIND_ANON, VMA_FLAG_DEMAND | VMA_FLAG_USERALLOC | VMA_FLAG_ZERO);
-    if (!va) return 0;
-
-    mmu_flush_asid(ctx->mm.asid);
-    return va;
-}
 
 uptr syscall_palloc(process_t *ctx){
     size_t size = ctx->PROC_X0;
@@ -130,25 +110,16 @@ u64 syscall_pfree(process_t *ctx){
     return 0;
 }
 
-u64 syscall_free(process_t *ctx){
-    if (ctx->mm.ttbr0) return syscall_pfree(ctx);
-
-    void *ptr = (void*)ctx->PROC_X0;
-    size_t size = (size_t)ctx->PROC_X1;
-    if (!ptr || !size) return 0;
-    if (!ctx->alloc_map) return 0;
-
-    size_t alloc_size = get_alloc_size(ctx->alloc_map, ptr);
-    if (!alloc_size) return 0;
-    if (size && alloc_size != size) return 0;
-
-    free_registered(ctx->alloc_map, ptr);
-    return 0;
-}
-
 u64 syscall_printl(process_t *ctx){
     SYSCALL_STR(str, PROC_X0, false);
     kprint((char*)str);
+    return 0;
+}
+
+u64 syscall_serial_transmit(process_t *ctx){//TODO: will probably require special permission
+    if (sys_get_focused_pid() != ctx->id) return 0;
+    u8 byte = ctx->PROC_X0;
+    if (byte) uart_raw_putc(byte);
     return 0;
 }
 
@@ -422,7 +393,7 @@ u64 syscall_swritef(process_t *ctx){
     string_free(s);
     return ret;
 #else
-    return simple_write(kernel_fs(), path, buf, size);
+    return simple_write(kernel_fs(), path, buf, size, append);
 #endif
 }
 
@@ -524,11 +495,10 @@ Don't ever do that again\r\n\
 }
 
 syscall_entry syscalls[] = {
-    [MALLOC_CODE] = syscall_malloc,
-    [FREE_CODE] = syscall_free,
     [PALLOC_CODE] = syscall_palloc,
     [PFREE_CODE] = syscall_pfree,
     [PRINTL_CODE] = syscall_printl,
+    [SERIAL_TRANS_CODE] = syscall_serial_transmit,
     [READ_KEY_CODE] = syscall_read_key,
     [READ_EVENT_CODE] = syscall_read_event,
     [READ_SHORTCUT_CODE] = syscall_read_shortcut,

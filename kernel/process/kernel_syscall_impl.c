@@ -17,22 +17,6 @@
 #include "process/signals/signals.h"
 extern page_index *p_index;
 
-void* malloc(size_t size){
-    process_t* k = get_kernel_proc();
-    if (!k) return 0;
-
-    if (!k->heap_phys) return 0;
-
-    void* ptr = kalloc((void*)dmap_pa_to_kva(k->heap_phys), size, ALIGN_16B, MEM_PRIV_KERNEL);
-    if (ptr && size >= PAGE_SIZE && k->alloc_map)
-        register_allocation(k->alloc_map, ptr, size);
-    return ptr;
-}
-
-void free_sized(void*ptr, size_t size){
-    kfree(ptr, size);
-}
-
 void* page_alloc(size_t size){
     if (!size) return 0;
     process_t* k = get_kernel_proc();//TODO: can we make this more fragmented? This inside a syscall, current proc outside

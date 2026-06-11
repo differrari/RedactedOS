@@ -1,47 +1,12 @@
 #include "terminal.hpp"
 #include "alloc/allocate.h"
-#include "std/std.h"
+#include "memory/memory.h"
 #include "input_keycodes.h"
 #include "shell/sheldon/sheldon.h"
-#include "files/helpers.h"
 #include "data/serialize/binary_serial.h"
-#include "environment/env_types.h"
 #include "utils/embedded_fmt/tcf.h"
 
-Terminal *default_term;
-
-void term_put_char(shell_handle *handle, char c){
-    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
-    default_term->put_char(c);
-}
-
-void term_clear(shell_handle *handle){
-    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
-    default_term->clear();
-}
-
-void term_flush(shell_handle *handle){
-    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
-    default_term->refresh();
-}
-
-void term_bell(shell_handle *handle){
-    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
-    default_term->bell();
-}
-
-void term_ascii_cmd(shell_handle *handle, char cmd, u16 proc_id){
-    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
-    default_term->interpret_cmd_code(cmd, proc_id);
-}
-
-void term_console_ctrl(shell_handle *handle, console_ctrls ctrl){
-    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
-    default_term->ctrl(ctrl);
-}
-
 Terminal::Terminal() : Console() {
-    default_term = this;
     uint32_t color_buf[2] = {};
     sreadf("/theme", &color_buf, sizeof(uint64_t));
     if ((color_buf[0] & 0xFF000000) == 0) color_buf[0] |= 0xFF000000;
@@ -75,6 +40,13 @@ Terminal::Terminal() : Console() {
         dirty = false;
     }
 }
+
+extern void term_put_char(shell_handle *handle, char c);
+extern void term_clear(shell_handle *handle);
+extern void term_flush(shell_handle *handle);
+extern void term_bell(shell_handle *handle);
+extern void term_ascii_cmd(shell_handle *handle, char cmd, u16 proc_id);
+extern void term_console_ctrl(shell_handle *handle, console_ctrls ctrl);
 
 shell_handle* Terminal::create_shell(){
     return create_sheldon((shell_bindings){
@@ -205,11 +177,6 @@ void Terminal::end_command(){
     prompt_length = 2;
 
     set_input_line("");
-}
-
-void term_emit_data(structdef field, sizedptr data, bool is_allocated){
-    if (!default_term) return;
-    default_term->emit_data(field,data,is_allocated);
 }
 
 void Terminal::emit_data(structdef field, sizedptr data, bool is_allocated){
@@ -399,14 +366,34 @@ draw_ctx* Terminal::get_ctx(){
     return ctx;
 }
 
+void Terminal::put_char(char c){
+    if (headless){
+        serial_transmit(c);
+        return;
+    }
+    Console::put_char(c);
+}
+
+void Terminal::put_slice(string_slice slice){
+    if (!check_ready()) return;
+    for (u32 i = 0; i < slice.length; i++) Terminal::put_char(slice.data[i]);
+    flush(dctx);
+}
+
+void Terminal::put_string(const char* str){
+    Terminal::put_slice(slice_from_literal(str));
+}
+
 void Terminal::flush(draw_ctx *ctx){
+    if (headless) return;
     commit_draw_ctx(ctx);
 }
 
 void Terminal::refresh(){
+    if (headless) return;
     flush(dctx);
 }
 
 bool Terminal::screen_ready(){
-    return true;
+    return !headless;
 }

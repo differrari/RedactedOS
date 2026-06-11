@@ -80,6 +80,7 @@ static inline void redraw_win(void *node){
     window_frame* frame = (window_frame*)node;
     draw_window(frame);
     frame->win_ctx.full_redraw = true; 
+    if (!frame->win_ctx.fb) return;
     commit_frame(&frame->win_ctx, frame, true);
 }
 

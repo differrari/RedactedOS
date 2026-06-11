@@ -275,9 +275,10 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 			.discriminator = 0
 		};
 		if (ptr + sizeof(dwarf_debug_line_header) > end_section) return (debug_line_info){};
-		dwarf_debug_line_header hdr = {};
+		dwarf_debug_line_header hdr = {0};
 		memcpy(&hdr, (const void*)ptr, sizeof(hdr));
 		uintptr_t unit_end = ptr + sizeof(hdr.unit_length) + hdr.unit_length;
+
 		if (unit_end <= ptr || unit_end > end_section) return (debug_line_info){};
 		if (!hdr.line_range || !hdr.opcode_base) return (debug_line_info){};
 
@@ -302,9 +303,8 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 		// for (int i = 0; i < 256; i++){
 		// 	if (files[i]) kprintf("File [%i] = %s",i,files[i]);
 		// }
-
 		ptr = ptr + sizeof(hdr.unit_length) + sizeof(hdr.version) + sizeof(hdr.address_size) + sizeof(hdr.segment_selector) + sizeof(hdr.header_length) + hdr.header_length;
-		
+
 		uint8_t *end = (uint8_t*)unit_end;
 		uint8_t *p = (uint8_t*)ptr;
 
@@ -431,6 +431,22 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 			if (emit_row) {
 				// kprintf("Address %#x line %i of file %s", state.address, state.line, files[state.file]);
 
+				if (state.address == address) {
+				    return (debug_line_info){
+						.address = address,
+						.line = state.line,
+						.column = state.column,
+						.file = (state.file < DWARF_ENTRY_CAP && files[state.file]) ? files[state.file] : unknown_file
+					};
+				} else if (state.address > address && previous_state.address && previous_state.address < address) {
+				    return (debug_line_info){
+						.address = address,
+						.line = previous_state.line,
+						.column = previous_state.column,
+						.file =(previous_state.file < DWARF_ENTRY_CAP && files[previous_state.file]) ? files[previous_state.file] : unknown_file
+					};
+				}
+
 				if (state.end_sequence) {
 					// kprintf(">>>>>>Resetting state");
 					state = (dwarf_debug_line_state_machine) {
@@ -446,22 +462,6 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 						.epilogue_begin = false,
 						.isa = 0,
 						.discriminator = 0
-					};
-				}
-
-				if (state.address == address) {
-				    return (debug_line_info){
-						.address = address,
-						.line = state.line,
-						.column = state.column,
-						.file = (state.file < DWARF_ENTRY_CAP && files[state.file]) ? files[state.file] : unknown_file
-					};
-				} else if (state.address > address && previous_state.address && previous_state.address < address) {
-				    return (debug_line_info){
-						.address = address,
-						.line = previous_state.line,
-						.column = previous_state.column,
-						.file =(previous_state.file < DWARF_ENTRY_CAP && files[previous_state.file]) ? files[previous_state.file] : unknown_file
 					};
 				}
 

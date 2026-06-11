@@ -7,7 +7,7 @@ bool test_wrong_file_descriptor(){
     FS_RESULT res = openf("/console", &descriptor);
     assert_true(res, "Failed to open console file");
     descriptor.id = -2;
-    void* file_img = malloc(descriptor.size);
+    void* file_img = zalloc(descriptor.size);
     
     assert_eq(readf(&descriptor, file_img, descriptor.size), 0, "Read from non-owned fd: %i", descriptor.id);
     assert_eq(writef(&descriptor,file_img, descriptor.size), 0, "Wrote to non-owned fd: %i", descriptor.id);

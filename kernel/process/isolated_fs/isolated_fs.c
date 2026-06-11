@@ -29,6 +29,18 @@ system_module shared_module = {
     .init = shared_init,
 };
 
+bool docs_init(system_module *mod){
+    mod->alias_info.alias_path = string_from_literal("/home/docs");
+    return true;
+}
+
+system_module doc_module = {
+    .name = "documentation",
+    .mount = "docs",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = docs_init
+};
+
 static u16 procid;
 
 bool env_init(system_module *module){
@@ -56,4 +68,5 @@ void make_process_fs(process_t* proc, char *bundle){
     }
     load_module_to(root, &shared_module);
     load_module_to(root, &env_module);
+    load_module_to(root, &doc_module);
 }

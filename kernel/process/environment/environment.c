@@ -1,4 +1,4 @@
-#include "folderfs.h"
+#include "files/folderfs.h"
 #include "console/kio.h"
 
 bool env_loaded = false;

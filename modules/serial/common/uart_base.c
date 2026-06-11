@@ -4,6 +4,7 @@
 #include "hw/hw.h"
 #include "mailbox/mailbox.h"
 #include "memory/mmu.h"
+#include "console/serial/serial_input.h"
 
 #define UART0_DR   (UART0_BASE + 0x00)
 #define UART0_FR   (UART0_BASE + 0x18)
@@ -22,9 +23,11 @@
 
 #define UART_8B_WLEN 0b11
 
-uint32_t uart_ibrd;
-uint32_t uart_fbrd;
-uint32_t uart_baud;
+u32 uart_ibrd;
+u32 uart_fbrd;
+u32 uart_baud;
+
+u32 UART_IRQ;
 
 void enable_uart() {
     register_device_memory_dmap(UART0_BASE);
@@ -45,6 +48,8 @@ void enable_uart() {
     write32(UART0_CR, (1 << UART_EN) | (1 << UART_TXE) | (1 << UART_RXE));
     
     write32(UART0_IMSC, 1 << 4);
+
+    UART_IRQ = 33;
 }
 
 void uart_raw_putc(const char c) {
@@ -65,6 +70,16 @@ void uart_raw_puts(const char *s) {
         uart_raw_putc(*s);
         s++;
     }
+}
+
+u8 uart_get_byte(){
+    while (read32(UART0_FR) & (1 << 4));
+    return (u8)read32(UART0_DR);
+}
+
+void uart_read_in(){
+    u8 c = uart_get_byte();
+    process_serial_input(c);
 }
 
 void uart_puthex(uint64_t value) {

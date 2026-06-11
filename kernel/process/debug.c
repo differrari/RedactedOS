@@ -14,7 +14,7 @@ void debug_load(){
 
     kprint("[DEBUG] .elf fopened");
 
-    void *file = malloc(fd.size);
+    void *file = zalloc(fd.size);
 
     kprintf("[DEBUG] Malloced %x",fd.size);
 

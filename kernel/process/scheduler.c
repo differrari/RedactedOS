@@ -203,15 +203,15 @@ bool start_scheduler(){
     return true;
 }
 
-void* list_alloc(size_t size){
-    return kalloc(proc_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+void* procfs_alloc(size_t size){
+    return allocate(proc_page, size, page_alloc);
 }
 
 bool init_scheduler_module(){
     if (!proc_opened_files) {
         proc_opened_files = hash_map_create(1024);
-        proc_opened_files->free = kfree;
-        proc_opened_files->alloc = list_alloc;
+        proc_opened_files->free = release;
+        proc_opened_files->alloc = procfs_alloc;
     }
     if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*),0,0);
     return true;
@@ -464,7 +464,7 @@ void reset_process(process_t *proc){
 }
 
 void init_main_process(){
-    proc_page = palloc(PAGE_SIZE*16, MEM_PRIV_KERNEL, MEM_RW, false);
+    proc_page = page_alloc(PAGE_SIZE*16);
     if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*),0,0);
     size_t kernel_proc_size = (sizeof(process_t) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     kernel_proc = (process_t*)palloc(kernel_proc_size, MEM_PRIV_KERNEL, MEM_RW, true);
@@ -814,15 +814,15 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     }
     descriptor->id = fid;
     descriptor->cursor = 0;
-    module_file *file = kalloc(proc_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
+    module_file *file = procfs_alloc(sizeof(module_file));
     if (!file) {
         irq_restore(irq);
         return FS_RESULT_DRIVER_ERROR;
     }
-    procfs_owner *owner_info = kalloc(proc_page, sizeof(procfs_owner), ALIGN_16B, MEM_PRIV_KERNEL);
+    procfs_owner *owner_info = procfs_alloc(sizeof(procfs_owner));
     if (!owner_info) {
         irq_restore(irq);
-        kfree(file, sizeof(module_file));
+        release(file);
         return FS_RESULT_DRIVER_ERROR;
     }
     owner_info->proc = proc;
@@ -856,8 +856,8 @@ FS_RESULT open_proc(const char *path, file *descriptor){
         proc->procfs_refs++;
     } else {
         irq_restore(irq);
-        kfree((void*)owner_info, sizeof(procfs_owner));
-        kfree(file, sizeof(module_file));
+        release((void*)owner_info);
+        release(file);
         return FS_RESULT_NOTFOUND;
     }
     file->file_size = descriptor->size;
@@ -867,8 +867,8 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     if ((uintptr_t)file->file_buffer.buffer == (uintptr_t)proc->output || (uintptr_t)file->file_buffer.buffer == (uintptr_t)proc->postmortem_output || (uintptr_t)file->file_buffer.buffer == (uintptr_t)&proc->state) {
         if (proc->procfs_refs) proc->procfs_refs--;
     }
-    kfree((void*)owner_info, sizeof(procfs_owner));
-    kfree(file, sizeof(module_file));
+    release((void*)owner_info);
+    release(file);
     return FS_RESULT_DRIVER_ERROR;
 }
 
@@ -1029,8 +1029,8 @@ void close_proc(file *fd) {
                 owner->postmortem_output_size = 0;
             }
         }
-        if (mfile->private_data) kfree(mfile->private_data, sizeof(procfs_owner));
-        kfree(mfile, sizeof(module_file));
+        if (mfile->private_data) release(mfile->private_data);
+        release(mfile);
         if (reset_proc) reset_process(reset_proc);
         return;
     }
