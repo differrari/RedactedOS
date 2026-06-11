@@ -164,14 +164,11 @@ static uint64_t tcp_nagle_append(tcp_flow_t *flow, const uint8_t *payload, uint6
     }
 
     if (!flow->tx.nagle_buf || flow->tx.nagle_cap < cap) {
-        uintptr_t nb = (uintptr_t)zalloc(cap);
+        uintptr_t nb = flow->tx.nagle_buf ? (uintptr_t)reallocate((void*)flow->tx.nagle_buf, cap) : (uintptr_t)zalloc(cap);
         if (!nb) {
             flow->tx.nagle_appending = 0;
             return 0;
         }
-
-        if (flow->tx.nagle_buf && flow->tx.nagle_len) memcpy((void*)nb, (const void*)flow->tx.nagle_buf, flow->tx.nagle_len);
-        if (flow->tx.nagle_buf) release((void*)flow->tx.nagle_buf);
 
         flow->tx.nagle_buf = nb;
         flow->tx.nagle_cap = cap;

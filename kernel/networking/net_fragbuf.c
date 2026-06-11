@@ -40,10 +40,8 @@ bool net_fragbuf_add(net_fragbuf_t *fb, netpkt_t *pkt, uint32_t pkt_off, uint32_
         if (new_cap < fb->step) new_cap = fb->step;
         if (new_cap > fb->max_len) new_cap = fb->max_len;
 
-        uint8_t *new_data = (uint8_t*)zalloc(new_cap);
+        uint8_t *new_data = fb->data ? (uint8_t*)reallocate(fb->data, new_cap) : (uint8_t*)zalloc(new_cap);
         if (!new_data) return false;
-        if (fb->data && fb->cap) memcpy(new_data, fb->data, fb->cap);
-        if (fb->data) release(fb->data);
         fb->data = new_data;
         fb->cap = new_cap;
     }

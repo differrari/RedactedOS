@@ -10,7 +10,7 @@ typedef struct netpkt netpkt_t;
 
 typedef void (*netpkt_free_fn)(void* ctx, uintptr_t base);
 
-#define NETPKT_MAX_ALLOC 65536u
+#define NETPKT_MAX_ALLOC 65535u
 #define NETPKT_MAX_PAGE_BYTES (32ull * 1024ull * 1024ull)
 
 netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailroom);
