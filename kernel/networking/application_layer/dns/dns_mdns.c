@@ -68,7 +68,7 @@ dns_result_t mdns_query(const char* name, dns_qtype_t qtype, uint32_t timeout_ms
     if (sock) {
         uint32_t group =DNS_MDNS_GROUP_V4;
         net_l4_endpoint dst;
-        make_ep(group, DNS_MDNS_PORT, IP_VER4, &dst);
+        make_ep(&group, DNS_MDNS_PORT, IP_VER4, &dst);
         uint32_t got = 0;
         last = perform_mdns_query_once(sock, &dst, name, qtype, timeout_ms, out_records, max_records, &got);
         if (last == DNS_OK) total = got;
@@ -80,11 +80,10 @@ dns_result_t mdns_query(const char* name, dns_qtype_t qtype, uint32_t timeout_ms
 
     sock = mdns_socket_handle_for(IP_VER6);
     if (sock) {
+        uint8_t group6[16];
         net_l4_endpoint dst;
-        memset(&dst, 0, sizeof(dst));
-        dst.ver = IP_VER6;
-        ipv6_make_multicast(0x02, IPV6_MCAST_MDNS, 0, dst.ip);
-        dst.port = DNS_MDNS_PORT;
+        ipv6_make_multicast(0x02, IPV6_MCAST_MDNS, 0, group6);
+        make_ep(group6, DNS_MDNS_PORT, IP_VER6, &dst);
         uint32_t got = 0;
         dns_record_t *dst_records = out_records ? out_records + total : 0;
         uint32_t left = max_records > total ? max_records - total : 0;

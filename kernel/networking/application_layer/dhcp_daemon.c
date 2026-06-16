@@ -7,6 +7,7 @@
 
 #include "networking/application_layer/dhcp.h"
 #include "networking/internet_layer/ipv4.h"
+#include "networking/internet_layer/ipv4_utils.h"
 #include "net/network_types.h"
 #include "networking/link_layer/arp.h"
 #include "networking/transport_layer/udp.h"
@@ -81,7 +82,7 @@ static void ensure_inventory() {
     for (int i = 0; i < g_if_count;) {
         uint8_t l3id = g_if[i].l3_id;
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3id);
-        if (!v4 || v4->mode == IPV4_CFG_DISABLED || !v4->l2 || !v4->l2->is_up) {
+        if (!ipv4_l3_is_active(v4)) {
             if (g_if[i].sock) close_socket(g_if[i].sock);
             if (i < g_if_count - 1) g_if[i] = g_if[g_if_count - 1];
             g_if_count--;
@@ -95,8 +96,7 @@ static void ensure_inventory() {
         if (!l2 || !l2->is_up) continue;
         for (int s = 0; s < MAX_IPV4_PER_INTERFACE; s++) {
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!v4) continue;
-            if (v4->mode == IPV4_CFG_DISABLED) continue;
+            if (!ipv4_l3_is_active(v4)) continue;
             bool found = false;
             for (int i = 0; i < g_if_count; i++) {
                 if (g_if[i].l3_id == v4->l3_id) {
@@ -343,7 +343,7 @@ static void dhcp_send_discover_for(dhcp_if_state_t* st) {
     sizedptr pkt = dhcp_build_packet(&req, DHCPDISCOVER, xid, DHCPK_DISCOVER, true);
     uint32_t bcast = 0xFFFFFFFFu;
     net_l4_endpoint dst;
-    make_ep(bcast, 67, IP_VER4, &dst);
+    make_ep(&bcast, 67, IP_VER4, &dst);
     send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
@@ -352,7 +352,7 @@ static void dhcp_send_request_select_for(dhcp_if_state_t* st, const dhcp_request
     sizedptr pkt = dhcp_build_packet(base, DHCPREQUEST, st->trans_xid, DHCPK_SELECT, true);
     uint32_t dip = 0xFFFFFFFFu;
     net_l4_endpoint dst;
-    make_ep(dip, 67, IP_VER4, &dst);
+    make_ep(&dip, 67, IP_VER4, &dst);
     send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
@@ -372,7 +372,7 @@ static void dhcp_send_renew_for(dhcp_if_state_t* st) {
     sizedptr pkt = dhcp_build_packet(&req, DHCPREQUEST, st->trans_xid, DHCPK_RENEW, st->server_ip_net == 0);
     uint32_t dip = st->server_ip_net ? st->server_ip_net : 0xFFFFFFFFu;
     net_l4_endpoint dst;
-    make_ep(dip, 67, IP_VER4, &dst);
+    make_ep(&dip, 67, IP_VER4, &dst);
     send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
@@ -392,7 +392,7 @@ static void dhcp_send_rebind_for(dhcp_if_state_t* st) {
     sizedptr pkt = dhcp_build_packet(&req, DHCPREQUEST, st->trans_xid, DHCPK_REBIND, true);
     uint32_t dip = 0xFFFFFFFFu;
     net_l4_endpoint dst;
-    make_ep(dip, 67, IP_VER4, &dst);
+    make_ep(&dip, 67, IP_VER4, &dst);
     send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
@@ -412,12 +412,18 @@ static void dhcp_send_inform_for(dhcp_if_state_t* st) {
     sizedptr pkt = dhcp_build_packet(&req, DHCPINFORM, xid, DHCPK_INFORM, true);
     uint32_t dip = 0xFFFFFFFFu;
     net_l4_endpoint dst;
-    make_ep(dip, 67, IP_VER4, &dst);
+    make_ep(&dip, 67, IP_VER4, &dst);
     send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
 
-static void schedule_retry(dhcp_if_state_t* st) {
+static void dhcp_drop_lease_and_retry(dhcp_if_state_t* st) {
+    l3_ipv4_update(st->l3_id, 0, 0, 0, IPV4_CFG_DHCP, NULL);
+    st->t1_left_ms = 0;
+    st->t2_left_ms = 0;
+    st->lease_left_ms = 0;
+    st->server_ip_net = 0;
+    st->state = DHCP_S_INIT;
     st->retry_left_ms = dhcp_next_backoff_ms(st);
 }
 
@@ -434,7 +440,7 @@ static void fsm_once_for(dhcp_if_state_t* st) {
         dhcp_packet* offer = NULL; sizedptr sp = (sizedptr){0,0};
         if (!udp_wait_for_type_on(st->sock, DHCPOFFER, st->last_xid, st->mac_ok ? st->mac : NULL, &offer, &sp, 5000)) {
             st->state = DHCP_S_INIT;
-            schedule_retry(st);
+            st->retry_left_ms = dhcp_next_backoff_ms(st);
             break;
         }
         dhcp_request req;
@@ -453,7 +459,7 @@ static void fsm_once_for(dhcp_if_state_t* st) {
         dhcp_packet* resp = NULL; sizedptr sp = (sizedptr){0,0}; uint8_t mtype = 0;
         if (!udp_wait_for_ack_or_nak(st->sock, st->last_xid, st->mac_ok ? st->mac : NULL, &resp, &sp, 5000, &mtype)) {
             st->state = DHCP_S_INIT;
-            schedule_retry(st);
+            st->retry_left_ms = dhcp_next_backoff_ms(st);
         } else {
             if (mtype == DHCPACK) {
                 apply_offer_to_l3(st->ifindex, st->l3_id, resp, sp, st->last_xid, st);
@@ -462,13 +468,7 @@ static void fsm_once_for(dhcp_if_state_t* st) {
                 dhcp_reset_backoff(st);
             } else {
                 free_sized((void*)sp.ptr, sp.size);
-                l3_ipv4_update(st->l3_id, 0, 0, 0, IPV4_CFG_DHCP, NULL);
-                st->t1_left_ms = 0;
-                st->t2_left_ms = 0;
-                st->lease_left_ms = 0;
-                st->server_ip_net = 0;
-                st->state = DHCP_S_INIT;
-                schedule_retry(st);
+                dhcp_drop_lease_and_retry(st);
             }
         }
     } break;
@@ -498,13 +498,7 @@ static void fsm_once_for(dhcp_if_state_t* st) {
                 dhcp_reset_backoff(st);
             } else {
                 free_sized((void*)sp.ptr, sp.size);
-                l3_ipv4_update(st->l3_id, 0, 0, 0, IPV4_CFG_DHCP, NULL);
-                st->t1_left_ms = 0;
-                st->t2_left_ms = 0;
-                st->lease_left_ms = 0;
-                st->server_ip_net = 0;
-                st->state = DHCP_S_INIT;
-                schedule_retry(st);
+                dhcp_drop_lease_and_retry(st);
             }
         } else {
             dhcp_send_rebind_for(st);
@@ -522,22 +516,10 @@ static void fsm_once_for(dhcp_if_state_t* st) {
                 dhcp_reset_backoff(st);
             } else {
                 free_sized((void*)sp.ptr, sp.size);
-                l3_ipv4_update(st->l3_id, 0, 0, 0, IPV4_CFG_DHCP, NULL);
-                st->t1_left_ms = 0;
-                st->t2_left_ms = 0;
-                st->lease_left_ms = 0;
-                st->server_ip_net = 0;
-                st->state = DHCP_S_INIT;
-                schedule_retry(st);
+                dhcp_drop_lease_and_retry(st);
             }
         } else {
-            l3_ipv4_update(st->l3_id, 0, 0, 0, IPV4_CFG_DHCP, NULL);
-            st->t1_left_ms = 0;
-            st->t2_left_ms = 0;
-            st->lease_left_ms = 0;
-            st->server_ip_net = 0;
-            st->state = DHCP_S_INIT;
-            schedule_retry(st);
+            dhcp_drop_lease_and_retry(st);
         }
     } break;
     }

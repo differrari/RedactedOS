@@ -601,13 +601,6 @@ bool netpkt_copyout(const netpkt_t* p, uint32_t off, void* dst, uint32_t len) {
     if (!src) return false;
     src += (uintptr_t)off;
 
-    if (len <= 16u) {
-        const uint8_t* s = (const uint8_t*)src;
-        uint8_t* d = (uint8_t*)dst;
-        for (uint32_t i = 0; i < len; i++) d[i] = s[i];
-        return true;
-    }
-
     memcpy(dst, (const void*)src, len);
     return true;
 }

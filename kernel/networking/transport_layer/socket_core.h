@@ -28,6 +28,8 @@ int32_t socket_core_close_handle(socket_handle_t handle, uint16_t pid);
 int32_t socket_core_close_socket(ksocket_t* socket);
 int32_t socket_core_set_option(ksocket_t* socket, int32_t opt, const void* value, uint32_t len);
 int32_t socket_core_get_option(ksocket_t* socket, int32_t opt, void* value, uint32_t* len);
+int32_t socket_extra_setopt(SocketExtraOptions* opts, int32_t opt, const void* value, uint32_t len);
+int32_t socket_extra_getopt(const SocketExtraOptions* opts, int32_t opt, void* value, uint32_t* len);
 
 socket_impl_t socket_core_impl(ksocket_t* socket);
 protocol_t socket_core_protocol(const ksocket_t* socket);

@@ -11,12 +11,8 @@ struct ipv6_rt_table {
 };
 
 static bool v6_l3_ok_for_tx(l3_ipv6_interface_t* v6, int dst_is_ll, int dst_is_loop) {
-    if (!v6 || !v6->l2) return false;
-    if (!v6->l2->is_up) return false;
-    if (v6->cfg == IPV6_CFG_DISABLE) return false;
+    if (!ipv6_l3_is_ready(v6)) return false;
     if (v6->is_localhost && !dst_is_loop) return false;
-    if (ipv6_is_unspecified(v6->ip)) return false;
-    if (v6->dad_state != IPV6_DAD_OK)return false;
 
     int src_is_ll = ipv6_is_linklocal(v6->ip) ? 1 : 0;
     if (src_is_ll != dst_is_ll) return false;
@@ -55,9 +51,7 @@ bool ipv6_tx_plan_valid(const ipv6_tx_plan_t* plan) {
     if (plan->net_epoch != ipv6_route_epoch()) return false;
 
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(plan->l3_id);
-    if (!v6 || !v6->l2 || !v6->l2->is_up) return false;
-    if (v6->cfg == IPV6_CFG_DISABLE) return false;
-    if (v6->dad_state != IPV6_DAD_OK) return false;
+    if (!ipv6_l3_is_ready(v6)) return false;
     return memcmp(v6->ip, plan->src_ip, 16) == 0;
 }
 
@@ -182,26 +176,8 @@ bool ipv6_rt_lookup_in(const ipv6_rt_table_t* t, const uint8_t dst[16], uint8_t 
     for (int i = 0; i < t->len; i++) {
         bool match = false;
 
-        if (t->e[i].prefix_len == 0) {
-            match = true;
-        } else {
-            int plen = t->e[i].prefix_len;
-            int fb = plen / 8;
-            int rb = plen % 8;
-
-            match = true;
-            for (int j = 0; j < fb; j++) {
-                if (dst[j] != t->e[i].network[j]) {
-                    match = false;
-                    break;
-                }
-            }
-
-            if (match && rb) {
-                uint8_t m = (uint8_t)(0xFF << (8 - rb));
-                if ((dst[fb] & m) != (t->e[i].network[fb] & m)) match = false;
-            }
-        }
+        if (t->e[i].prefix_len == 0) match = true;
+        else match = ipv6_common_prefix_len(dst, t->e[i].network) >= t->e[i].prefix_len;
 
         if (!match) continue;
 
@@ -229,20 +205,7 @@ void ipv6_rt_ensure_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t ple
 
     if (ip && plen &&!ipv6_is_unspecified(ip)) {
         uint8_t net[16];
-        ipv6_cpy(net, ip);
-
-        if (plen < 128) {
-            int fb = plen / 8;
-            int rb = plen % 8;
-
-            for (int i = fb + (rb > 0); i < 16; i++) net[i] = 0;
-
-            if (rb) {
-                uint8_t m = (uint8_t)(0xFF <<(8 - rb));
-                net[fb] &=m;
-            }
-        }
-
+        ipv6_prefix_network(ip, plen, net);
         ipv6_rt_add_in(t, net, plen, (const uint8_t[16]){0}, base_metric);
     }
 
@@ -262,20 +225,7 @@ void ipv6_rt_sync_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t plen,
 
     if (ip && plen && !ipv6_is_unspecified(ip)) {
         uint8_t net[16];
-        ipv6_cpy(net, ip);
-
-        if (plen < 128) {
-            int fb = plen / 8;
-            int rb = plen % 8;
-
-            for (int i = fb + (rb > 0); i < 16; i++)net[i] = 0;
-
-            if (rb) {
-                uint8_t m = (uint8_t)(0xFF << (8 - rb));
-                net[fb] &= m;
-            }
-        }
-        
+        ipv6_prefix_network(ip, plen, net);
         ipv6_rt_add_in(t, net, plen, (const uint8_t[16]) {0}, base_metric);
     }
 }
@@ -287,9 +237,7 @@ bool ipv6_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, const uint8_t dst
 
     for (int i = 0; i < n_ids; i++) {
         l3_ipv6_interface_t* x = l3_ipv6_find_by_id(l3_ids[i]);
-        if (!x || !x->l2)continue;
-        if (x->cfg == IPV6_CFG_DISABLE) continue;
-        if (ipv6_is_unspecified(x->ip)) continue;
+        if (!ipv6_l3_is_ready(x)) continue;
 
         int l2base = x->l2->base_metric;
 

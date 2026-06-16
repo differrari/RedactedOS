@@ -6,6 +6,7 @@
 #include "networking/internet_layer/ipv6_utils.h"
 #include "std/memory.h"
 #include "math/rng.h"
+#include "random/random.h"
 #include "syscalls/syscalls.h"
 #include "networking/transport_layer/trans_utils.h"
 #include "exceptions/irq.h"
@@ -449,7 +450,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
             return false;
         }
 
-        make_ep(v4->ip, local_port, IP_VER4, &flow->base.local);
+        make_ep(&v4->ip, local_port, IP_VER4, &flow->base.local);
     } else{
         l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(l3_id);
 
@@ -469,9 +470,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->base.retries = TCP_SYN_RETRIES;
 
     rng_t rng;
-    uint64_t virt_timer;
-    asm volatile ("mrs %0, cntvct_el0" : "=r"(virt_timer));
-    rng_seed(&rng, virt_timer);
+        rng_init_random(&rng);
     uint32_t iss = rng_next32(&rng);
 
     flow->base.ctx.sequence = iss;

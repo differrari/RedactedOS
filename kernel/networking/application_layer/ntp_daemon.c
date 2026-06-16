@@ -26,9 +26,7 @@ static bool any_ipv4_configured_nonlocal(void){
         if (!l2 || !l2->is_up) continue;
         for (int s = 0; s < MAX_IPV4_PER_INTERFACE; s++) {
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!v4) continue;
-            if (v4->mode == IPV4_CFG_DISABLED) continue;
-            if (!v4->ip) continue;
+            if (!ipv4_l3_is_ready(v4)) continue;
             if (v4->is_localhost) continue;
             if (ipv4_is_loopback(v4->ip)) continue;
             return true;

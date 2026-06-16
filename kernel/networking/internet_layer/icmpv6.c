@@ -10,6 +10,7 @@
 #include "syscalls/syscalls.h"
 
 #define MAX_PENDING 16
+#define MAX_PING6_REPLIES 16
 
 typedef struct __attribute__((packed)) {
     icmpv6_hdr_t hdr;
@@ -18,15 +19,20 @@ typedef struct __attribute__((packed)) {
 } icmpv6_echo_t;
 
 typedef struct {
+    uint8_t type;
+    uint8_t code;
+    uint32_t end_ms;
+    uint8_t src_ip[16];
+} ping6_reply_t;
+
+//TODO use raw sockets
+typedef struct {
     bool in_use;
     uint16_t id;
     uint16_t seq;
-    bool received;
-    uint8_t rx_type;
-    uint8_t rx_code;
     uint32_t start_ms;
-    uint32_t end_ms;
-    uint8_t rx_src_ip[16];
+    uint8_t rx_count;
+    ping6_reply_t replies[MAX_PING6_REPLIES];
 } ping6_slot_t;
 
 static ping6_slot_t g_pending[MAX_PENDING] = {0};
@@ -37,12 +43,9 @@ static int alloc_slot(uint16_t id, uint16_t seq) {
             g_pending[i].in_use = true;
             g_pending[i].id = id;
             g_pending[i].seq = seq;
-            g_pending[i].received = false;
-            g_pending[i].rx_type = 0xFF;
-            g_pending[i].rx_code = 0xFF;
             g_pending[i].start_ms = (uint32_t)get_time();
-            g_pending[i].end_ms = 0;
-            memset(g_pending[i].rx_src_ip, 0, 16);
+            g_pending[i].rx_count = 0;
+            memset(g_pending[i].replies, 0, sizeof(g_pending[i].replies));
             return i;
         }
     }
@@ -52,11 +55,12 @@ static int alloc_slot(uint16_t id, uint16_t seq) {
 static void mark_received(uint16_t id, uint16_t seq, uint8_t type, uint8_t code, const uint8_t src_ip[16]) {
     for (int i = 0; i < MAX_PENDING; i++) {
         if (g_pending[i].in_use && g_pending[i].id == id && g_pending[i].seq == seq) {
-            g_pending[i].received = true;
-            g_pending[i].rx_type = type;
-            g_pending[i].rx_code = code;
-            g_pending[i].end_ms = (uint32_t)get_time();
-            if (src_ip) memcpy(g_pending[i].rx_src_ip, src_ip, 16);
+            if (g_pending[i].rx_count >= MAX_PING6_REPLIES) return;
+            ping6_reply_t *r = &g_pending[i].replies[g_pending[i].rx_count++];
+            r->type = type;
+            r->code = code;
+            r->end_ms = (uint32_t)get_time();
+            if (src_ip) memcpy(r->src_ip, src_ip, 16);
             return;
         }
     }
@@ -150,94 +154,68 @@ static bool icmpv6_send_echo_request(const uint8_t dst_ip[16], uint16_t id, uint
     return true;
 }
 
-bool icmpv6_ping(const uint8_t dst_ip[16], uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint8_t hop_limit, ping6_result_t *out) {
+uint32_t icmpv6_ping_collect(const uint8_t dst_ip[16], uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint8_t hop_limit, ping6_result_t *out, uint32_t max_results) {
+    if (!out || !max_results) return 0;
     int slot = alloc_slot(id, seq);
     if (slot < 0) {
-        if (out) {
-            out->rtt_ms = 0;
-            out->status = PING_UNKNOWN_ERROR;
-            out->icmp_type = 0xFF;
-            out->icmp_code = 0xFF;
-            memset(out->responder_ip, 0, 16);
-        }
-        return false;
+        return 0;
     }
 
     uint8_t payload[32];
     memset(payload, 0, sizeof(payload));
 
     if (!icmpv6_send_echo_request(dst_ip, id, seq, payload, sizeof(payload), tx_opts_or_null, hop_limit)) {
-        if (out) {
-            out->rtt_ms = 0;
-            out->status = PING_UNKNOWN_ERROR;
-            out->icmp_type = 0xFF;
-            out->icmp_code = 0xFF;
-            memset(out->responder_ip, 0, 16);
-        }
-        g_pending[slot].in_use =false;
-        return false;
+        g_pending[slot].in_use = false;
+        return 0;
     }
 
+    uint32_t count = 0;
+    uint32_t copied = 0;
     uint32_t start = (uint32_t)get_time();
     for (;;) {
-        if (g_pending[slot].received) {
-            if (out) {
-                out->icmp_type = g_pending[slot].rx_type;
-                out->icmp_code = g_pending[slot].rx_code;
-                memcpy(out->responder_ip, g_pending[slot].rx_src_ip, 16);
-
-                switch (g_pending[slot].rx_type) {
-                case ICMPV6_ECHO_REPLY:
-                    out->status = PING_OK;
-                    break;
+        while (copied < g_pending[slot].rx_count && count < max_results) {
+            ping6_reply_t *r = &g_pending[slot].replies[copied++];
+            ping6_result_t *dst = &out[count++];
+            dst->icmp_type = r->type;
+            dst->icmp_code = r->code;
+            memcpy(dst->responder_ip, r->src_ip, 16);
+            switch (r->type) {
+                case ICMPV6_ECHO_REPLY: dst->status = PING_OK; break;
                 case ICMPV6_DEST_UNREACH:
-                    switch (g_pending[slot].rx_code) {
-                        case 0: out->status = PING_NET_UNREACH; break;
-                        case 1: out->status = PING_ADMIN_PROHIBITED; break;
-                        case 2: out->status = PING_ADMIN_PROHIBITED; break;
-                        case 3: out->status = PING_HOST_UNREACH; break;
-                        case 4: out->status = PING_PORT_UNREACH; break;
-                        default: out->status = PING_UNKNOWN_ERROR; break;
+                    switch (r->code) {
+                        case 0: dst->status = PING_NET_UNREACH; break;
+                        case 1: dst->status = PING_ADMIN_PROHIBITED; break;
+                        case 2: dst->status = PING_ADMIN_PROHIBITED; break;
+                        case 3: dst->status = PING_HOST_UNREACH; break;
+                        case 4: dst->status = PING_PORT_UNREACH; break;
+                        default: dst->status = PING_UNKNOWN_ERROR; break;
                     }
                     break;
-                case ICMPV6_PACKET_TOO_BIG:
-                    out->status = PING_FRAG_NEEDED;
-                    break;
-                case ICMPV6_TIME_EXCEEDED:
-                    out->status = PING_TTL_EXPIRED;
-                    break;
-                case ICMPV6_PARAM_PROBLEM:
-                    out->status = PING_PARAM_PROBLEM;
-                    break;
-                default:
-                    out->status = PING_UNKNOWN_ERROR;
-                    break;
-                }
-
-                if (g_pending[slot].end_ms >= g_pending[slot].start_ms) out->rtt_ms = g_pending[slot].end_ms - g_pending[slot].start_ms;
-                else out->rtt_ms = 0;
+                case ICMPV6_PACKET_TOO_BIG: dst->status = PING_FRAG_NEEDED; break;
+                case ICMPV6_TIME_EXCEEDED: dst->status = PING_TTL_EXPIRED; break;
+                case ICMPV6_PARAM_PROBLEM: dst->status = PING_PARAM_PROBLEM; break;
+                default: dst->status = PING_UNKNOWN_ERROR; break;
             }
 
-            bool ok = (g_pending[slot].rx_type == ICMPV6_ECHO_REPLY);
-            g_pending[slot].in_use = false;
-            return ok;
+            if (r->end_ms >= g_pending[slot].start_ms) dst->rtt_ms = r->end_ms - g_pending[slot].start_ms;
+            else dst->rtt_ms = 0;
         }
 
+        if (count == max_results || (max_results == 1 && count)) break;
         uint32_t now = (uint32_t)get_time();
         if (now - start >= timeout_ms) break;
         msleep(5);
     }
 
-    if (out) {
-        out->rtt_ms = 0;
-        out->status = PING_TIMEOUT;
-        out->icmp_type = 0xFF;
-        out->icmp_code = 0xFF;
-        memset(out->responder_ip, 0, 16);
-    }
-
     g_pending[slot].in_use = false;
-    return false;
+    return count;
+}
+
+bool icmpv6_ping(const uint8_t dst_ip[16], uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint8_t hop_limit, ping6_result_t *out) {
+    ping6_result_t res;
+    ping6_result_t *dst = out ? out : &res;
+    uint32_t n = icmpv6_ping_collect(dst_ip, id, seq, timeout_ms, tx_opts_or_null, hop_limit, dst, 1);
+    return n && dst->status == PING_OK;
 }
 
 static bool extract_echo_id_seq_from_error(const uint8_t *icmp, uint32_t icmp_len, uint16_t *out_id, uint16_t *out_seq) {

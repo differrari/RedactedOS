@@ -126,8 +126,8 @@ uint8_t tcp_build_syn_options(uint8_t *out, uint16_t mss, uint8_t wscale, uint8_
 
     out[i++] = 2;
     out[i++] = 4;
-    out[i++] = (uint8_t)(mss >> 8);
-    out[i++] = (uint8_t)(mss & 0xff);
+    wr_be16(out + i, mss);
+    i += 2;
 
     if (wscale != 0xffu){
         out[i++] = 1;

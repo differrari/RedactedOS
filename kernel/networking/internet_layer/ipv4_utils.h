@@ -1,5 +1,6 @@
 #pragma once
 #include "types.h"
+#include "networking/interface_manager.h"
 #define IPV4_MCAST_ALL_HOSTS 0xE0000001u
 #define IPV4_MCAST_ALL_ROUTERS 0xE0000002u
 
@@ -18,6 +19,9 @@ bool ipv4_is_benchmark(uint32_t ip);
 bool ipv4_is_reserved(uint32_t ip);
 bool ipv4_is_reserved_special(uint32_t ip);
 bool ipv4_is_unicast_global(uint32_t ip);
+
+bool ipv4_l3_is_active(l3_ipv4_interface_t *v4);
+bool ipv4_l3_is_ready(l3_ipv4_interface_t *v4);
 
 bool ipv4_mask_is_contiguous(uint32_t mask);
 int ipv4_prefix_len(uint32_t mask);

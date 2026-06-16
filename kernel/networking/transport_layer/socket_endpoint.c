@@ -20,7 +20,7 @@ uint32_t socket_endpoint_resolve(const char* host, uint16_t port, dns_server_sel
     }
 
     if (dns_resolve_a(host, &v4addr, sel, timeout_ms) == DNS_OK) {
-        make_ep(v4addr, port, IP_VER4, &out[count]);
+        make_ep(&v4addr, port, IP_VER4, &out[count]);
         count++;
     }
 

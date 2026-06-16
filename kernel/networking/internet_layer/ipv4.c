@@ -54,7 +54,7 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
         }
 
         src_v4 = l3_ipv4_find_by_id(opts->index);
-        if (!src_v4 || !src_v4->l2 || !src_v4->l2->is_up || src_v4->mode == IPV4_CFG_DISABLED) {
+        if (!ipv4_l3_is_active(src_v4)) {
             netpkt_unref(pkt);
             return false;
         }
@@ -70,7 +70,7 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
         }
 
         src_v4 = l3_ipv4_find_by_id(plan.l3_id);
-        if (!src_v4 || !src_v4->l2 || !src_v4->l2->is_up || src_v4->mode == IPV4_CFG_DISABLED || !src_v4->ip) {
+        if (!ipv4_l3_is_ready(src_v4)) {
             netpkt_unref(pkt);
             return false;
         }
@@ -121,22 +121,21 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
             return false;
         }
 
-        uint16_t ip_[sizeof(ipv4_hdr_t)/sizeof(uint16_t)];
-        ipv4_hdr_t* ip = (ipv4_hdr_t*)ip_;
-        ip->version_ihl = (uint8_t)((IP_VERSION_4 << 4) | IP_IHL_NOOPTS);
-        ip->dscp_ecn = 0;
-        ip->total_length = bswap16((uint16_t)total);
-        ip->identification = bswap16(g_ip_ident++);
+        ipv4_hdr_t ip;
+        ip.version_ihl = (uint8_t)((IP_VERSION_4 << 4) | IP_IHL_NOOPTS);
+        ip.dscp_ecn = 0;
+        ip.total_length = bswap16((uint16_t)total);
+        ip.identification = bswap16(g_ip_ident++);
         uint16_t ff = 0;
         if (dontfrag) ff |= 0x4000;
-        ip->flags_frag_offset = bswap16(ff);
-        ip->ttl = ttl ? ttl : IP_TTL_DEFAULT;
-        ip->protocol = proto;
-        ip->header_checksum = 0;
-        ip->src_ip = bswap32(src_ip);
-        ip->dst_ip = bswap32(dst_ip);
-        ip->header_checksum = checksum16(ip_, hdr_len / 2);
-        memcpy(hdrp, ip, sizeof(*ip));
+        ip.flags_frag_offset = bswap16(ff);
+        ip.ttl = ttl ? ttl : IP_TTL_DEFAULT;
+        ip.protocol = proto;
+        ip.header_checksum = 0;
+        ip.src_ip = bswap32(src_ip);
+        ip.dst_ip = bswap32(dst_ip);
+        ip.header_checksum = bswap16(checksum16(&ip, hdr_len));
+        memcpy(hdrp, &ip, sizeof(ip));
 
         if (need_arp) return arp_send_or_queue_on(ifx, nh, pkt);
         return eth_send_frame_on(ifx, ETHERTYPE_IPV4, dst_mac, pkt);
@@ -177,23 +176,22 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
             break;
         }
 
-        uint16_t ip_[sizeof(ipv4_hdr_t) / sizeof(uint16_t)];
-        ipv4_hdr_t* ip = (ipv4_hdr_t*)ip_;
-        ip->version_ihl = (uint8_t)((IP_VERSION_4 << 4) | IP_IHL_NOOPTS);
-        ip->dscp_ecn = 0;
-        ip->total_length = bswap16((uint16_t)frame_len);
-        ip->identification = bswap16(ident);
+        ipv4_hdr_t ip;
+        ip.version_ihl = (uint8_t)((IP_VERSION_4 << 4) | IP_IHL_NOOPTS);
+        ip.dscp_ecn = 0;
+        ip.total_length = bswap16((uint16_t)frame_len);
+        ip.identification = bswap16(ident);
         uint16_t ff = (uint16_t)((off / 8) & 0x1FFF);
         if (more) ff |= 0x2000;
-        ip->flags_frag_offset = bswap16(ff);
-        ip->ttl = ttl ? ttl : IP_TTL_DEFAULT;
-        ip->protocol = proto;
-        ip->header_checksum = 0;
-        ip->src_ip = bswap32(src_ip);
-        ip->dst_ip = bswap32(dst_ip);
-        ip->header_checksum = checksum16(ip_, hdr_len / 2);
+        ip.flags_frag_offset = bswap16(ff);
+        ip.ttl = ttl ? ttl : IP_TTL_DEFAULT;
+        ip.protocol = proto;
+        ip.header_checksum = 0;
+        ip.src_ip = bswap32(src_ip);
+        ip.dst_ip = bswap32(dst_ip);
+        ip.header_checksum = bswap16(checksum16(&ip, hdr_len));
 
-        memcpy(buf, ip, sizeof(*ip));
+        memcpy(buf, &ip, sizeof(ip));
         memcpy((uint8_t*)buf + hdr_len, data + off, chunk);
 
         if (need_arp) {
@@ -215,8 +213,7 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
     int ccount = 0;
     for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
         l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-        if (!v4) continue;
-        if (v4->mode == IPV4_CFG_DISABLED) continue;
+        if (!ipv4_l3_is_active(v4)) continue;
         cand[ccount++] = v4;
     }
 
@@ -324,10 +321,9 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     uint32_t hdr_len = (uint32_t)ihl * 4;
     if (ip_len < hdr_len) return;
 
-    uint16_t hdr_words[60 /sizeof(uint16_t)];
-    uint8_t* hdr_copy = (uint8_t*)hdr_words;
+    uint8_t hdr_copy[60];
     if (!netpkt_copyout(pkt, 0, hdr_copy, hdr_len)) return;
-    if (checksum16(hdr_words, hdr_len / 2) != 0) return;
+    if (checksum16(hdr_copy, hdr_len) != 0) return;
     ipv4_hdr_t ip;
     memcpy(&ip, hdr_copy, sizeof(ip));
 

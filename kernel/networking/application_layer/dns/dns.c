@@ -6,12 +6,14 @@
 #include "process/scheduler.h"
 #include "types.h"
 #include "networking/internet_layer/ipv4.h"
+#include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 
 #include "networking/interface_manager.h"
 #include "dns_daemon.h"
 #include "syscalls/syscalls.h"
 #include "networking/transport_layer/trans_utils.h"
+#include "random/random.h"
 
 #define MDNS_TIMEOUT_A_MS 500u
 #define MDNS_TIMEOUT_AAAA_MS 300u
@@ -27,9 +29,7 @@ static dns_result_t perform_dns_query_once(socket_handle_t sock, const net_l4_en
 
     uint8_t request_buffer[512];
     rng_t rng;
-    uint64_t virt_timer;
-    asm volatile ("mrs %0, cntvct_el0" : "=r"(virt_timer));
-    rng_seed(&rng, virt_timer);
+    rng_init_random(&rng);
     uint16_t message_id = (uint16_t)(rng_next32(&rng) & 0xFFFF);
     uint32_t request_len = dns_wire_build_query(request_buffer, sizeof(request_buffer), message_id, name, qtype, false);
     if (!request_len) return DNS_ERR_FORMAT;
@@ -78,41 +78,27 @@ static dns_result_t perform_dns_query_once(socket_handle_t sock, const net_l4_en
 }
 
 static bool pick_dns_on_l3(uint8_t l3_id, net_l4_endpoint* out_primary, net_l4_endpoint* out_secondary) {
-    if (l3_ipv4_find_by_id(l3_id)) {
-        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
-        if (!v4) return false;
+    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
+    if (v4) {
         uint32_t p = v4->runtime_opts_v4.dns[0];
         uint32_t s = v4->runtime_opts_v4.dns[1];
         if (out_primary) {
-            memset(out_primary, 0, sizeof(*out_primary));
-            out_primary->ver = IP_VER4;
-            memcpy(out_primary->ip, &p, 4);
+            make_ep(&p, 0, IP_VER4, out_primary);
         }
         if (out_secondary) {
-            memset(out_secondary, 0, sizeof(*out_secondary));
-            out_secondary->ver = IP_VER4;
-            memcpy(out_secondary->ip, &s, 4);
+            make_ep(&s, 0, IP_VER4, out_secondary);
         }
         return p || s;
     }
 
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
     if (!v6) return false;
-    static const uint8_t z[16] = {0};
     const uint8_t* p6 = v6->runtime_opts_v6.dns[0];
     const uint8_t* s6 = v6->runtime_opts_v6.dns[1];
-    bool hp = memcmp(p6, z, 16) != 0;
-    bool hs = memcmp(s6, z, 16) != 0;
-    if (out_primary) {
-        memset(out_primary, 0, sizeof(*out_primary));
-        out_primary->ver = IP_VER6;
-        if (hp) memcpy(out_primary->ip, p6, 16);
-    }
-    if (out_secondary) {
-        memset(out_secondary, 0, sizeof(*out_secondary));
-        out_secondary->ver = IP_VER6;
-        if (hs) memcpy(out_secondary->ip, s6, 16);
-    }
+    bool hp = !ipv6_is_unspecified(p6);
+    bool hs = !ipv6_is_unspecified(s6);
+    if (out_primary) make_ep(hp ? p6 : NULL, 0, IP_VER6, out_primary);
+    if (out_secondary) make_ep(hs ? s6 : NULL, 0, IP_VER6, out_secondary);
     return hp || hs;
 }
 
@@ -123,21 +109,17 @@ static bool pick_dns_first_iface(uint8_t* out_l3, net_l4_endpoint* out_primary, 
         if (!l2) continue;
         for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s){
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!v4 || v4->mode == IPV4_CFG_DISABLED) continue;
+            if (!ipv4_l3_is_active(v4)) continue;
 
             uint32_t p = v4->runtime_opts_v4.dns[0];
             uint32_t q = v4->runtime_opts_v4.dns[1];
             if (p || q){
                 if (out_l3) *out_l3 = v4->l3_id;
                 if (out_primary) {
-                    memset(out_primary, 0, sizeof(*out_primary));
-                    out_primary->ver = IP_VER4;
-                    memcpy(out_primary->ip, &p, 4);
+                    make_ep(&p, 0, IP_VER4, out_primary);
                 }
                 if (out_secondary) {
-                    memset(out_secondary, 0, sizeof(*out_secondary));
-                    out_secondary->ver = IP_VER4;
-                    memcpy(out_secondary->ip, &q, 4);
+                    make_ep(&q, 0, IP_VER4, out_secondary);
                 }
                 return true;
             }
@@ -145,20 +127,16 @@ static bool pick_dns_first_iface(uint8_t* out_l3, net_l4_endpoint* out_primary, 
 
         for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
             l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-            if (!v6 || v6->cfg == IPV6_CFG_DISABLE) continue;
+            if (!ipv6_l3_is_active(v6)) continue;
             bool hp = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[0]);
             bool hq = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[1]);
             if (hp || hq){
                 if (out_l3) *out_l3 = v6->l3_id;
                 if (out_primary) {
-                    memset(out_primary, 0, sizeof(*out_primary));
-                    out_primary->ver = IP_VER6;
-                    if (hp) memcpy(out_primary->ip, v6->runtime_opts_v6.dns[0], 16);
+                    make_ep(hp ? v6->runtime_opts_v6.dns[0] : NULL, 0, IP_VER6, out_primary);
                 }
                 if (out_secondary) {
-                    memset(out_secondary, 0, sizeof(*out_secondary));
-                    out_secondary->ver = IP_VER6;
-                    if (hq) memcpy(out_secondary->ip, v6->runtime_opts_v6.dns[1], 16);
+                    make_ep(hq ? v6->runtime_opts_v6.dns[1] : NULL, 0, IP_VER6, out_secondary);
                 }
                 return true;
             }

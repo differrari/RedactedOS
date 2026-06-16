@@ -2,6 +2,7 @@
 
 #include "kernel_processes/kprocess_loader.h"
 #include "math/rng.h"
+#include "random/random.h"
 #include "networking/interface_manager.h"
 #include "net/checksums.h"
 #include "networking/internet_layer/ipv6.h"
@@ -224,9 +225,7 @@ static int mld_daemon_entry(int argc, char* argv[]) {
     mld_daemon_running = 1;
 
     if(! mld_rng_inited) {
-        uint64_t virt_timer;
-        asm volatile ("mrs %0, cntvct_el0" : "=r"(virt_timer));
-        rng_seed(&mld_rng, virt_timer);
+        rng_init_random(&mld_rng);
         mld_rng_inited = 1;
     }
 
@@ -294,9 +293,7 @@ static void schedule_report(uint8_t ifindex, const uint8_t group[16], uint16_t m
     if(!ipv6_is_multicast(group)) return;
 
     if(!mld_rng_inited) {
-        uint64_t virt_timer;
-        asm volatile ("mrs %0, cntvct_el0" : "=r"(virt_timer));
-        rng_seed(&mld_rng, virt_timer);
+        rng_init_random(&mld_rng);
         mld_rng_inited = 1;
     }
 

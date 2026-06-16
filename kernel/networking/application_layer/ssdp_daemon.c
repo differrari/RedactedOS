@@ -7,10 +7,13 @@
 #include "net/network_types.h"
 #include "net/socket_types.h"
 #include "networking/transport_layer/csocket.h"
+#include "networking/transport_layer/trans_utils.h"
 #include "networking/application_layer/ssdp.h"
+#include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/interface_manager.h"
 #include "math/math.h"
+#include "random/random.h"
 
 //at the moment it's a very basic version. it's a protocol still in use but only in few cases
 //it;s used in some printers, upnp, local video streaming and various other things 
@@ -67,11 +70,8 @@ static void ssdp_send_notify(bool alive) {
 
         string msg = ssdp_build_notify(alive, ssdp_sockets[i].ver == IP_VER6);
         net_l4_endpoint dst;
-        memset(&dst, 0, sizeof(dst));
-        dst.ver = ssdp_sockets[i].ver;
-        dst.port = 1900;
-        if (dst.ver == IP_VER4) memcpy(dst.ip, &ssdp_host_v4, 4);
-        else memcpy(dst.ip, ssdp_host_v6, 16);
+        if (ssdp_sockets[i].ver == IP_VER4) make_ep(&ssdp_host_v4, 1900, IP_VER4, &dst);
+        else make_ep(ssdp_host_v6, 1900, IP_VER6, &dst);
         (void)send_to_socket(s, &dst, (void*)msg.data, msg.length);
         string_free(msg);
     }
@@ -80,9 +80,7 @@ static void ssdp_send_notify(bool alive) {
 int ssdp_daemon_entry(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
-    uint64_t virt_timer;
-    asm volatile ("mrs %0, cntvct_el0" : "=r"(virt_timer));
-    rng_seed(&ssdp_rng, virt_timer);
+    rng_init_random(&ssdp_rng);
 
     ipv6_make_multicast(0x02, IPV6_MCAST_SSDP, NULL, ssdp_host_v6);
 
@@ -93,7 +91,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
 
         for (uint8_t j = 0; j < MAX_IPV4_PER_INTERFACE && ssdp_socket_count < MAX_L3_INTERFACES; j++) {
             l3_ipv4_interface_t *v4 = l2->l3_v4[j];
-            if (!v4 || v4->mode == IPV4_CFG_DISABLED || v4->is_localhost || !v4->ip) continue;
+            if (!ipv4_l3_is_ready(v4) || v4->is_localhost) continue;
 
             uint32_t ttl = 2;
             SocketExtraOptions opt;
@@ -129,7 +127,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
 
         for (uint8_t j = 0; j < MAX_IPV6_PER_INTERFACE && ssdp_socket_count < MAX_L3_INTERFACES; j++) {
             l3_ipv6_interface_t *v6 = l2->l3_v6[j];
-            if (!v6 || v6->cfg == IPV6_CFG_DISABLE || v6->dad_state != IPV6_DAD_OK || v6->is_localhost || !v6->ip[0]) continue;
+            if (!ipv6_l3_is_ready(v6) || v6->is_localhost) continue;
 
             uint32_t ttl = 2;
             SocketExtraOptions opt;

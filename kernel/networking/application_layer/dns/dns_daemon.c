@@ -6,6 +6,7 @@
 #include "syscalls/syscalls.h"
 #include "net/socket_types.h"
 #include "networking/transport_layer/csocket.h"
+#include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/interface_manager.h"
 #include "std/memory.h"
@@ -37,7 +38,7 @@ static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
 
         for (uint8_t j = 0; j < MAX_IPV4_PER_INTERFACE && g_mdns_count < MAX_L3_INTERFACES; j++) {
             l3_ipv4_interface_t *v4 = l2->l3_v4[j];
-            if (!v4 || v4->mode == IPV4_CFG_DISABLED || v4->is_localhost || !v4->ip) continue;
+            if (!ipv4_l3_is_ready(v4) || v4->is_localhost) continue;
             bool have_socket = false;
             for (uint8_t k = 0; k < g_mdns_count; k++) {
                 if (g_mdns[k].sock && g_mdns[k].ver == IP_VER4 && g_mdns[k].l3_id == v4->l3_id) {
@@ -81,7 +82,7 @@ static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
 
         for (uint8_t j = 0; j < MAX_IPV6_PER_INTERFACE && g_mdns_count < MAX_L3_INTERFACES; j++) {
             l3_ipv6_interface_t *v6 = l2->l3_v6[j];
-            if (!v6 || v6->cfg == IPV6_CFG_DISABLE || v6->dad_state != IPV6_DAD_OK || v6->is_localhost || !v6->ip[0]) continue;
+            if (!ipv6_l3_is_ready(v6) || v6->is_localhost) continue;
             bool have_socket = false;
             for (uint8_t k = 0; k < g_mdns_count; k++) {
                 if (g_mdns[k].sock && g_mdns[k].ver == IP_VER6 && g_mdns[k].l3_id == v6->l3_id) {
@@ -147,7 +148,7 @@ int dns_deamon_entry(int argc, char* argv[]){
 
         for (uint8_t sidx = 0; sidx < g_mdns_count; sidx++) {
             socket_handle_t s = g_mdns[sidx].sock;
-            for (int i = 0; i < 4; ++i) {
+            for (int i = 0; i < 64; i++) {
                 memset(&src, 0, sizeof(src));
                 int64_t r = receive_from_socket(s, buf, sizeof(buf), &src);
                 if (r == SOCK_ERR_WOULDBLOCK) break;

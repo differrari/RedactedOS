@@ -2,6 +2,7 @@
 #include "exceptions/timer.h"
 #include "std/memory.h"
 #include "networking/internet_layer/ipv4.h"
+#include "networking/internet_layer/ipv4_utils.h"
 #include "process/scheduler.h"
 #include "console/kio.h"
 #include "types.h"
@@ -50,7 +51,7 @@ static sntp_result_t sntp_send_query(socket_handle_t sock, uint32_t server_ip_ho
     uint64_t t1_us = timer_wall_time_us();
     p.txTs = unix_us_to_ntp64_be(t1_us);
     net_l4_endpoint dst;
-    make_ep(server_ip_host, NTP_PORT, IP_VER4, &dst);
+    make_ep(&server_ip_host, NTP_PORT, IP_VER4, &dst);
     int64_t sent = send_to_socket(sock, &dst, (void*)&p, sizeof(p));
     if (sent < 0) return SNTP_ERR_SEND;
     *t1_us_out = t1_us;
@@ -67,8 +68,7 @@ sntp_result_t sntp_poll_once(uint32_t timeout_ms){
         if (!l2) continue;
         for (int s = 0; s < MAX_IPV4_PER_INTERFACE && (s0 == 0 || s1 == 0); s++) {
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!v4) continue;
-            if (v4->mode == IPV4_CFG_DISABLED) continue;
+            if (!ipv4_l3_is_active(v4)) continue;
             const net_runtime_opts_t* rt = &v4->runtime_opts_v4;
             if (!rt) continue;
             uint32_t c0 = rt->ntp[0];

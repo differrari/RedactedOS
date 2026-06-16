@@ -14,8 +14,16 @@
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/internet_layer/icmpv6.h"
-//TODO add a print variant that does not append a newline automatically in serial
-//std printf behavior is useful here since output requires explicit \n
+#include "networking/interface_manager.h"
+#include "networking/transport_layer/trans_utils.h"
+
+#define PING_MAX_REPLIES 16
+
+typedef struct {
+    const char *host;
+    net_l4_endpoint src_ip;
+    ip_tx_opts_t src_if;
+} ping_addressing_t;
 
 typedef struct {
     ip_version_t ver;
@@ -23,9 +31,7 @@ typedef struct {
     uint32_t timeout_ms;
     uint32_t interval_ms;
     uint32_t ttl;
-    uint32_t src_ip;
-    bool src_set;
-    const char *host;
+    ping_addressing_t addr;
 } ping_opts_t;
 
 static bool parse_args(int argc, char *argv[], ping_opts_t *o) {
@@ -34,9 +40,7 @@ static bool parse_args(int argc, char *argv[], ping_opts_t *o) {
     o->timeout_ms = 1000;
     o->interval_ms = 1000;
     o->ttl = 64;
-    o->src_ip = 0;
-    o->src_set = false;
-    o->host = NULL;
+    memset(&o->addr, 0, sizeof(o->addr));
 
     for (int i = 1; i < argc; ++i) {
         const char *a = argv[i];
@@ -57,19 +61,32 @@ static bool parse_args(int argc, char *argv[], ping_opts_t *o) {
                 if (!parse_uint32_dec(argv[i], &o->ttl)) return false;
             } else if (strcmp_case(a, "-s",true) == 0) {
                 if (++i >= argc) return false;
-                uint32_t src = 0;
-                if (!ipv4_parse(argv[i], &src)) return false;
-                o->src_ip = src;
-                o->src_set = true;
+                if (o->addr.src_ip.ver || o->addr.src_if.scope != IP_TX_AUTO) return false;
+                uint32_t id = 0;
+                if (strncmp(argv[i], "l2:", 3) == 0) {
+                    if (!parse_uint32_dec_exact(argv[i] + 3, &id) || id == 0 || id > UINT8_MAX) return false;
+                    o->addr.src_if.index = (uint8_t)id;
+                    o->addr.src_if.scope = IP_TX_BOUND_L2;
+                } else if (strncmp(argv[i], "l3:", 3) == 0) {
+                    if (!parse_uint32_dec_exact(argv[i] + 3, &id) || id == 0 || id > UINT8_MAX) return false;
+                    o->addr.src_if.index = (uint8_t)id;
+                    o->addr.src_if.scope = IP_TX_BOUND_L3;
+                } else {
+                    uint32_t src4 = 0;
+                    uint8_t src6[16];
+                    if (ipv4_parse(argv[i], &src4)) make_ep(&src4, 0, IP_VER4, &o->addr.src_ip);
+                    else if (ipv6_parse(argv[i], src6)) make_ep(src6, 0, IP_VER6, &o->addr.src_ip);
+                    else return false;
+                }
             }
             else return false;
         } else {
-            if (o->host) return false;
-            o->host = a;
+            if (o->addr.host) return false;
+            o->addr.host = a;
         }
     }
 
-    if (!o->host) return false;
+    if (!o->addr.host) return false;
     return true;
 }
 
@@ -91,7 +108,7 @@ static const char *status_to_msg(uint8_t st) {
 }
 
 static int ping_v4(const ping_opts_t *o) {
-    const char *host = o->host;
+    const char *host = o->addr.host;
 
     uint32_t dst_ip_be = 0;
     bool is_lit = ipv4_parse(host, &dst_ip_be);
@@ -117,33 +134,65 @@ static int ping_v4(const ping_opts_t *o) {
 
     ip_tx_opts_t txo = {0};
     const ip_tx_opts_t *txop = NULL;
-    if (o->src_set) {
-        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(o->src_ip);
-        if (!l3) {
-            print("ping: invalid source (no local ip match)");
+    if (o->addr.src_ip.ver) {
+        uint32_t src4 = 0;
+        memcpy(&src4, o->addr.src_ip.ip, 4);
+        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(src4);
+        txo.index = l3->l3_id;
+        txo.scope = IP_TX_BOUND_L3;
+        txop = &txo;
+    } else if (o->addr.src_if.scope != IP_TX_AUTO) txop = &o->addr.src_if;
+    else if (ipv4_is_limited_broadcast(dst_ip_be)) {
+        l3_ipv4_interface_t *chosen = NULL;
+        uint8_t cnt = l2_interface_count();
+        for (uint8_t li = 0; li < cnt; li++) {
+            l2_interface_t *l2 = l2_interface_at(li);
+            if (!l2 || !l2->is_up) continue;
+            for (int vi = 0; vi < MAX_IPV4_PER_INTERFACE; vi++) {
+                l3_ipv4_interface_t *v4 = l2->l3_v4[vi];
+                if (!ipv4_l3_is_ready(v4) || v4->is_localhost) continue;
+                if (chosen) {
+                    print("ping: broadcast requires -s when more IPv4 interfaces are usable");
+                    return 2;
+                }
+                chosen = v4;
+            }
+        }
+        if (!chosen) {
+            print("ping: no usable IPv4 interface");
             return 2;
         }
-        txo.index = (uint8_t)l3->l3_id;
+        txo.index = (uint8_t)chosen->l3_id;
         txo.scope = IP_TX_BOUND_L3;
         txop = &txo;
     }
 
+    bool multi = ipv4_is_multicast(dst_ip_be) || ipv4_is_limited_broadcast(dst_ip_be);
+    uint32_t max_results = multi ? PING_MAX_REPLIES : 1;
     for (uint32_t i = 0; i < o->count; i++) {
         ++sent;
         uint16_t seq = (uint16_t)(seq_base + i);
 
-        ping_result_t res = {0};
-        bool ok = icmp_ping(dst_ip_be, id, seq, o->timeout_ms, txop, (uint8_t)o->ttl, &res);
+        ping_result_t res[PING_MAX_REPLIES];
+        uint32_t n = icmp_ping_collect(dst_ip_be, id, seq, o->timeout_ms, txop, (uint8_t)o->ttl, res, max_results);
 
-        if (ok) {
-            ++received;
-            uint32_t rtt = res.rtt_ms;
-            if (rtt < min_ms) min_ms = rtt;
-            if (rtt > max_ms) max_ms = rtt;
-            sum_ms += rtt;
-            print("Reply from %s: bytes=32 time=%ums", ipstr, rtt);
+        if (n) {
+            for (uint32_t j = 0; j < n; j++) {
+                if (res[j].status == PING_OK) {
+                    received++;
+                    uint32_t rtt = res[j].rtt_ms;
+                    if (rtt < min_ms) min_ms = rtt;
+                    if (rtt > max_ms) max_ms = rtt;
+                    sum_ms += rtt;
+                    char rip[16];
+                    ipv4_to_string(res[j].responder_ip, rip);
+                    print("Reply from %s: bytes=32 time=%ums", rip, rtt);
+                } else {
+                    print("%s", status_to_msg(res[j].status));
+                }
+            }
         } else {
-            print("%s", status_to_msg(res.status));
+            print("%s", status_to_msg(PING_TIMEOUT));
         }
 
         if (i + 1 < o->count) msleep(o->interval_ms);
@@ -152,7 +201,7 @@ static int ping_v4(const ping_opts_t *o) {
     print("");
     print("--- %s ping statistics ---", host);
 
-    uint32_t loss = (sent == 0) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
+    uint32_t loss = (sent == 0 || received >= sent) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
     uint32_t total_time = (o->count > 0) ? (o->count - 1) * o->interval_ms : 0;
 
     print("%u packets transmitted, %u received, %u%% packet loss, time %ums", sent, received, loss, total_time);
@@ -167,7 +216,7 @@ static int ping_v4(const ping_opts_t *o) {
 }
 
 static int ping_v6(const ping_opts_t *o) {
-    const char *host = o->host;
+    const char *host = o->addr.host;
 
     uint8_t dst6[16] ={0};
     bool is_lit = ipv6_parse(host, dst6);
@@ -189,23 +238,62 @@ static int ping_v6(const ping_opts_t *o) {
     uint16_t id = (uint16_t)(get_current_proc_pid() & 0xFFFF);
     uint16_t seq_base = (uint16_t)(get_time() & 0xFFFF);
 
+    ip_tx_opts_t txo = {0};
+    const ip_tx_opts_t *txop = NULL;
+    if (o->addr.src_ip.ver) {
+        l3_ipv6_interface_t *l3 = l3_ipv6_find_by_ip(o->addr.src_ip.ip);
+        txo.index = l3->l3_id;
+        txo.scope = IP_TX_BOUND_L3;
+        txop = &txo;
+    } else if (o->addr.src_if.scope != IP_TX_AUTO) txop = &o->addr.src_if;
+    else if (ipv6_is_linkscope_mcast(dst6)) {
+        l3_ipv6_interface_t *chosen = NULL;
+        uint8_t cnt = l2_interface_count();
+        for (uint8_t li = 0; li < cnt; li++) {
+            l2_interface_t *l2 = l2_interface_at(li);
+            if (!l2 || !l2->is_up) continue;
+            for (int vi = 0; vi < MAX_IPV6_PER_INTERFACE; vi++) {
+                l3_ipv6_interface_t *v6 = l2->l3_v6[vi];
+                if (!ipv6_l3_is_ready(v6) || v6->is_localhost || !ipv6_is_linklocal(v6->ip)) continue;
+                if (chosen) {
+                    print("ping: IPv6 link local multicast requires -s when more IPv6 interfaces are usable");
+                    return 2;
+                }
+                chosen = v6;
+            }
+        }
+        if (!chosen) {
+            print("ping: no usable IPv6 interface");
+            return 2;
+        }
+        txo.index = (uint8_t)chosen->l3_id;
+        txo.scope = IP_TX_BOUND_L3;
+        txop = &txo;
+    }
+
+    bool multi = ipv6_is_multicast(dst6);
+    uint32_t max_results = multi ? PING_MAX_REPLIES : 1;
     for (uint32_t i = 0; i < o->count; i++) {
         ++sent;
         uint16_t seq = (uint16_t)(seq_base + i);
 
-        ping6_result_t res = {0};
-        bool ok = icmpv6_ping(dst6, id, seq, o->timeout_ms, NULL, (uint8_t)o->ttl, &res);
+        ping6_result_t res[PING_MAX_REPLIES];
+        uint32_t n = icmpv6_ping_collect(dst6, id, seq, o->timeout_ms, txop, (uint8_t)o->ttl, res, max_results);
 
-        if (ok) {
-            ++received;
-            uint32_t rtt = res.rtt_ms;
-            if (rtt < min_ms) min_ms = rtt;
-            if (rtt > max_ms) max_ms = rtt;
-            sum_ms += rtt;
-            print("Reply from %s: bytes=32 time=%ums", ipstr, rtt);
-        } else {
-            print("%s", status_to_msg(res.status));
-        }
+        if (n) {
+            for (uint32_t j = 0; j < n; j++) {
+                if (res[j].status == PING_OK) {
+                    ++received;
+                    uint32_t rtt = res[j].rtt_ms;
+                    if (rtt < min_ms) min_ms = rtt;
+                    if (rtt > max_ms) max_ms = rtt;
+                    sum_ms += rtt;
+                    char rip[64];
+                    ipv6_to_string(res[j].responder_ip, rip, (int)sizeof(rip));
+                    print("Reply from %s: bytes=32 time=%ums", rip, rtt);
+                } else print("%s", status_to_msg(res[j].status));
+            }
+        } else print("%s", status_to_msg(PING_TIMEOUT));
 
         if (i + 1 < o->count) msleep(o->interval_ms);
     }
@@ -214,7 +302,7 @@ static int ping_v6(const ping_opts_t *o) {
 
     print("--- %s ping statistics ---", host);
 
-    uint32_t loss = (sent == 0) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
+    uint32_t loss = (sent == 0 || received >= sent) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
     uint32_t total_time = (o->count > 0) ? (o->count - 1) * o->interval_ms : 0;
 
     print("%u packets transmitted, %u received, %u%% packet loss, time %ums", sent, received, loss, total_time);
@@ -231,28 +319,79 @@ static int ping_v6(const ping_opts_t *o) {
 int run_ping(int argc, char *argv[]) {
     ping_opts_t opts;
     if (!parse_args(argc, argv, &opts)) {
-        print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host");
+        print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s ip|l2:id|l3:id] host");
         return 2;
     }
 
-    if (opts.ver == IP_VER6 && opts.src_set) {
-        print("ping: -s is only supported for IPv4");
+    if (opts.addr.src_ip.ver && opts.addr.src_ip.ver != opts.ver) {
+        print("ping: source address version doesn't match target version");
         return 2;
     }
 
-    if (opts.ver == IP_VER4 && opts.src_set) {
-        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(opts.src_ip);
-        if (!l3) {
+    if (opts.ver == IP_VER4 && opts.addr.src_ip.ver) {
+        uint32_t src4 = 0;
+        memcpy(&src4, opts.addr.src_ip.ip, 4);
+        if (!l3_ipv4_find_by_ip(src4)) {
             char ssrc[16];
-            ipv4_to_string(opts.src_ip, ssrc);
+            ipv4_to_string(src4, ssrc);
             print("ping: invalid source %s (no local ip match)", ssrc);
+            return 2;
+        }
+    }
+
+    if (opts.ver == IP_VER6 && opts.addr.src_ip.ver && !l3_ipv6_find_by_ip(opts.addr.src_ip.ip)) {
+        char ssrc[64];
+        ipv6_to_string(opts.addr.src_ip.ip, ssrc, (int)sizeof(ssrc));
+        print("ping: invalid source %s (no local ip match)", ssrc);
+        return 2;
+    }
+
+    if (opts.ver == IP_VER4 && opts.addr.src_if.scope == IP_TX_BOUND_L3) {
+        if (!ipv4_l3_is_ready(l3_ipv4_find_by_id(opts.addr.src_if.index))) {
+            print("ping: invalid IPv4 L3 interface %u", opts.addr.src_if.index);
+            return 2;
+        }
+    }
+
+    if (opts.ver == IP_VER6 && opts.addr.src_if.scope == IP_TX_BOUND_L3) {
+        if (!ipv6_l3_is_ready(l3_ipv6_find_by_id(opts.addr.src_if.index))) {
+            print("ping: invalid IPv6 L3 interface %u", opts.addr.src_if.index);
+            return 2;
+        }
+    }
+
+    if (opts.addr.src_if.scope == IP_TX_BOUND_L2) {
+        l2_interface_t *l2 = l2_interface_find_by_index(opts.addr.src_if.index);
+        if (!l2 || !l2->is_up) {
+            print("ping: invalid L2 interface %u", opts.addr.src_if.index);
+            return 2;
+        }
+
+        bool has_l3 = false;
+        if (opts.ver == IP_VER4) {
+            for (int i = 0; i < MAX_IPV4_PER_INTERFACE; i++) {
+                if (ipv4_l3_is_ready(l2->l3_v4[i])) {
+                    has_l3 = true;
+                    break;
+                }
+            }
+        } else {
+            for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+                if (ipv6_l3_is_ready(l2->l3_v6[i])) {
+                    has_l3 = true;
+                    break;
+                }
+            }
+        }
+        if (!has_l3) {
+            print("ping: L2 interface %u has no usable %s L3 interface", opts.addr.src_if.index, opts.ver == IP_VER4 ? "IPv4" : "IPv6");
             return 2;
         }
     }
 
     if (opts.ver == IP_VER4) return ping_v4(&opts);
     if (opts.ver == IP_VER6) return ping_v6(&opts);
-    print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host");
+    print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s ip|l2:id|l3:id] host");
 
     return 2;
 }

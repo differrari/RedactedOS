@@ -91,17 +91,8 @@ bool socket_bind_normalize_spec(SockBindSpec* spec) {
 
 static bool socket_bind_l3_valid(ip_version_t ver, uint8_t l3_id) {
     if (!l3_id) return false;
-
-    if (ver == IP_VER4) {
-        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
-        return v4 && v4->l2 && v4->l2->is_up && v4->mode != IPV4_CFG_DISABLED;
-    }
-
-    if (ver == IP_VER6) {
-        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
-        return v6 && v6->l2 && v6->l2->is_up && v6->cfg != IPV6_CFG_DISABLE && v6->dad_state == IPV6_DAD_OK;
-    }
-
+    if (ver == IP_VER4) return ipv4_l3_is_active(l3_ipv4_find_by_id(l3_id));
+    if (ver == IP_VER6) return ipv6_l3_is_ready(l3_ipv6_find_by_id(l3_id));
     return false;
 }
 

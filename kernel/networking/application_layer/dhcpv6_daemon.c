@@ -5,6 +5,7 @@
 #include "syscalls/syscalls.h"
 #include "process/scheduler.h"
 #include "math/rng.h"
+#include "random/random.h"
 
 #include "data/struct/linked_list.h"
 
@@ -172,7 +173,7 @@ static void ensure_binds() {
             bool stateless = (t->cfg == IPV6_CFG_SLAAC && t->dhcpv6_stateless);
             if (!stateful && !stateless) keep = false;
         }
-        if (keep) if (!t->l2 || !t->l2->is_up) keep = false;
+        if (keep && (!t->l2 || !t->l2->is_up)) keep = false;
 
         l3_ipv6_interface_t* llv6 = NULL;
         if (keep) {
@@ -180,9 +181,8 @@ static void ensure_binds() {
             if (!llv6) keep = false;
         }
 
-        if (keep) if (llv6->cfg == IPV6_CFG_DISABLE) keep = false;
-        if (keep) if (llv6->dad_state != IPV6_DAD_OK) keep = false;
-        if (keep) if (!ipv6_is_linklocal(llv6->ip)) keep = false;
+        if (keep && !ipv6_l3_is_ready(llv6)) keep = false;
+        if (keep && !ipv6_is_linklocal(llv6->ip)) keep = false;
 
         if (!keep) {
             if (t) reset_lease_state(t, b);
@@ -234,9 +234,7 @@ static void ensure_binds() {
 
         for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
             l3_ipv6_interface_t* v6 = l2->l3_v6[i];
-            if (!v6) continue;
-            if (v6->cfg == IPV6_CFG_DISABLE) continue;
-            if (v6->dad_state != IPV6_DAD_OK) continue;
+            if (!ipv6_l3_is_ready(v6)) continue;
             if (!ipv6_is_linklocal(v6->ip)) continue;
             ll_l3 = v6->l3_id;
             ll_ok = true;
@@ -398,8 +396,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
     if (v6->dhcpv6_state == DHCPV6_S_INIT) {
         if (stateless) {
-            uint8_t zero16[16] = {0};
-            int has_dns = (memcmp(v6->runtime_opts_v6.dns[0], zero16, 16) != 0) || (memcmp(v6->runtime_opts_v6.dns[1], zero16, 16) != 0);
+            int has_dns = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[0]) || !ipv6_is_unspecified(v6->runtime_opts_v6.dns[1]);
 
             if (has_dns) {
                 v6->dhcpv6_stateless_done = 1;
@@ -467,8 +464,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     else if (type_peek == DHCPV6_MSG_REQUEST) lim = DHCPV6_MAX_REQUEST_TX;
 
     if (b->tx_tries >= lim) {
-        uint8_t zero16[16] = {0};
-        int has_dns =(memcmp(v6->runtime_opts_v6.dns[0], zero16, 16) != 0) || (memcmp(v6->runtime_opts_v6.dns[1], zero16, 16) != 0);
+        int has_dns = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[0]) || !ipv6_is_unspecified(v6->runtime_opts_v6.dns[1]);
 
         if (!has_dns) {
             if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
@@ -583,8 +579,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
                     if (p.has_dns) memcpy(v6->runtime_opts_v6.dns, p.dns, sizeof(v6->runtime_opts_v6.dns));
                     if (p.has_ntp) memcpy(v6->runtime_opts_v6.ntp, p.ntp, sizeof(v6->runtime_opts_v6.ntp));
-                    uint8_t zero16[16] = {0};
-                    int has_dns = (memcmp(v6->runtime_opts_v6.dns[0], zero16, 16) != 0) || (memcmp(v6->runtime_opts_v6.dns[1], zero16, 16) != 0);
+                    int has_dns = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[0]) || !ipv6_is_unspecified(v6->runtime_opts_v6.dns[1]);
 
                     if (!has_dns) {
                         if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
@@ -633,8 +628,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
                         if (p.has_dns) memcpy(v6->runtime_opts_v6.dns, p.dns, sizeof(v6->runtime_opts_v6.dns));
                         if (p.has_ntp) memcpy(v6->runtime_opts_v6.ntp, p.ntp, sizeof(v6->runtime_opts_v6.ntp));
 
-                        uint8_t zero16[16] = {0};
-                        int has_dns = (memcmp(v6->runtime_opts_v6.dns[0], zero16, 16) != 0) || (memcmp(v6->runtime_opts_v6.dns[1], zero16, 16) != 0);
+                        int has_dns = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[0]) || !ipv6_is_unspecified(v6->runtime_opts_v6.dns[1]);
 
                         if (!has_dns) {
                             if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
@@ -654,8 +648,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
                         if (p.has_dns) memcpy(v6->runtime_opts_v6.dns, p.dns, sizeof(v6->runtime_opts_v6.dns));
                         if (p.has_ntp) memcpy(v6->runtime_opts_v6.ntp, p.ntp, sizeof(v6->runtime_opts_v6.ntp));
-                        uint8_t zero16[16] = {0};
-                        int has_dns = (memcmp(v6->runtime_opts_v6.dns[0], zero16, 16) != 0) || (memcmp(v6->runtime_opts_v6.dns[1], zero16, 16) != 0);
+                        int has_dns = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[0]) || !ipv6_is_unspecified(v6->runtime_opts_v6.dns[1]);
 
                         if (!has_dns) {
                             if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
@@ -706,8 +699,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
                         if (p.has_dns) memcpy(v6->runtime_opts_v6.dns, p.dns, sizeof(v6->runtime_opts_v6.dns));
                         if (p.has_ntp) memcpy(v6->runtime_opts_v6.ntp, p.ntp, sizeof(v6->runtime_opts_v6.ntp));
-                        uint8_t zero16[16] = {0};
-                        int has_dns = (memcmp(v6->runtime_opts_v6.dns[0], zero16, 16) != 0) || (memcmp(v6->runtime_opts_v6.dns[1], zero16, 16) != 0);
+                        int has_dns = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[0]) || !ipv6_is_unspecified(v6->runtime_opts_v6.dns[1]);
 
                         if (!has_dns) {
                             if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
@@ -775,9 +767,7 @@ int dhcpv6_daemon_entry(int argc, char* argv[]) {
 
     g_dhcpv6_pid = get_current_proc_pid();
 
-    uint64_t virt_timer;
-    asm volatile ("mrs %0, cntvct_el0" : "=r"(virt_timer));
-    rng_seed(&g_dhcpv6_rng, virt_timer);
+    rng_init_random(&g_dhcpv6_rng);
 
     const uint32_t tick_ms = 250;
 

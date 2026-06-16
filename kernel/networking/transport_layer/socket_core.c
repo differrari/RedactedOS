@@ -173,6 +173,96 @@ int32_t socket_core_get_option(ksocket_t* socket, int32_t opt, void* value, uint
     return socket->getopt(socket->impl, opt, value, len);
 }
 
+int32_t socket_extra_setopt(SocketExtraOptions* opts, int32_t opt, const void* value, uint32_t len) {
+    if (!opts) return SOCK_ERR_INVAL;
+
+    uint32_t v = 1;
+    if (value) {
+        if (len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
+        memcpy(&v, value, sizeof(v));
+    } else if (len || (opt != SOCK_OPT_DONTFRAG && opt != SOCK_OPT_BROADCAST_ALLOWED)) return SOCK_ERR_INVAL;
+
+    switch ((uint32_t)opt) {
+        case SOCK_OPT_RECV_TIMEOUT:
+            opts->recv_timeout_ms = v;
+            if (v) opts->flags |= SOCK_OPT_RECV_TIMEOUT;
+            else opts->flags &= ~SOCK_OPT_RECV_TIMEOUT;
+            return SOCK_OK;
+        case SOCK_OPT_SEND_TIMEOUT:
+            opts->send_timeout_ms = v;
+            if (v) opts->flags |= SOCK_OPT_SEND_TIMEOUT;
+            else opts->flags &= ~SOCK_OPT_SEND_TIMEOUT;
+            return SOCK_OK;
+        case SOCK_OPT_BUF_SIZE:
+            if (!v) return SOCK_ERR_INVAL;
+            opts->buf_size = v;
+            opts->flags |= SOCK_OPT_BUF_SIZE;
+            return SOCK_OK;
+        case SOCK_OPT_DEBUG:
+            if (v > SOCK_DBG_ALL) return SOCK_ERR_INVAL;
+            opts->debug_level = (SockDebugLevel)v;
+            if (v) opts->flags |= SOCK_OPT_DEBUG;
+            else opts->flags &= ~SOCK_OPT_DEBUG;
+            return SOCK_OK;
+        case SOCK_OPT_DONTFRAG:
+            if (v) opts->flags |= SOCK_OPT_DONTFRAG;
+            else opts->flags &= ~SOCK_OPT_DONTFRAG;
+            return SOCK_OK;
+        case SOCK_OPT_BROADCAST_ALLOWED:
+            if (v) opts->flags |= SOCK_OPT_BROADCAST_ALLOWED;
+            else opts->flags &= ~SOCK_OPT_BROADCAST_ALLOWED;
+            return SOCK_OK;
+        case SOCK_OPT_TTL:
+            if (v > 255) return SOCK_ERR_INVAL;
+            opts->ttl = (uint8_t)v;
+            if (v) opts->flags |= SOCK_OPT_TTL;
+            else opts->flags &= ~SOCK_OPT_TTL;
+            return SOCK_OK;
+        default:
+            return SOCK_ERR_INVAL;
+    }
+}
+
+int32_t socket_extra_getopt(const SocketExtraOptions* opts, int32_t opt, void* value, uint32_t* len) {
+    if (!opts || !len) return SOCK_ERR_INVAL;
+
+    uint32_t v = 0;
+    switch ((uint32_t)opt) {
+        case SOCK_OPT_RECV_TIMEOUT:
+            v = opts->recv_timeout_ms;
+            break;
+        case SOCK_OPT_SEND_TIMEOUT:
+            v = opts->send_timeout_ms;
+            break;
+        case SOCK_OPT_BUF_SIZE:
+            v = opts->buf_size;
+            break;
+        case SOCK_OPT_DEBUG:
+            v = opts->debug_level;
+            break;
+        case SOCK_OPT_DONTFRAG:
+            v = (opts->flags & SOCK_OPT_DONTFRAG) != 0;
+            break;
+        case SOCK_OPT_BROADCAST_ALLOWED:
+            v = (opts->flags & SOCK_OPT_BROADCAST_ALLOWED) != 0;
+            break;
+        case SOCK_OPT_TTL:
+            v = opts->ttl;
+            break;
+        default:
+            return SOCK_ERR_INVAL;
+    }
+
+    if (!value) {
+        *len = sizeof(uint32_t);
+        return SOCK_OK;
+    }
+    if (*len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
+    memcpy(value, &v, sizeof(v));
+    *len = sizeof(uint32_t);
+    return SOCK_OK;
+}
+
 socket_impl_t socket_core_impl(ksocket_t* socket) {
     return socket ? socket->impl : NULL;
 }

@@ -199,9 +199,8 @@ static uint32_t pick_spa_for_l2(uint8_t ifindex, uint32_t target_ip){
     if (!l2) return 0;
     for (int s=0;s<MAX_IPV4_PER_INTERFACE;s++){
         l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-        if (!v4) continue;
-        if (v4->mode == IPV4_CFG_DISABLED) continue;
-        if (v4->ip && v4->mask){
+        if (!ipv4_l3_is_ready(v4)) continue;
+        if (v4->mask){
             uint32_t a = v4->ip & v4->mask;
             uint32_t b = target_ip & v4->mask;
             if (a == b) return v4->ip;
@@ -209,9 +208,8 @@ static uint32_t pick_spa_for_l2(uint8_t ifindex, uint32_t target_ip){
     }
     for (int s=0;s<MAX_IPV4_PER_INTERFACE;s++){
         l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-        if (!v4) continue;
-        if (v4->mode == IPV4_CFG_DISABLED) continue;
-        if (v4->ip) return v4->ip;
+        if (!ipv4_l3_is_ready(v4)) continue;
+        return v4->ip;
     }
     return 0;
 }
@@ -308,8 +306,7 @@ static bool l2_has_ip(uint8_t ifindex, uint32_t ip){
     if (!l2) return false;
     for (int s=0;s<MAX_IPV4_PER_INTERFACE;s++){
         l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-        if (!v4) continue;
-        if (v4->mode == IPV4_CFG_DISABLED) continue;
+        if (!ipv4_l3_is_ready(v4)) continue;
         if (v4->ip == ip) return true;
     }
     return false;

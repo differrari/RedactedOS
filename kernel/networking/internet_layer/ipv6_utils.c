@@ -18,6 +18,29 @@ bool ipv6_is_ula(const uint8_t ip[16]) { return (ip[0] & 0xFE) == 0xFC; }
 
 bool ipv6_is_linklocal(const uint8_t ip[16]) { return ip[0] == 0xFE && (ip[1] & 0xC0) == 0x80; }
 
+bool ipv6_l3_is_active(l3_ipv6_interface_t *v6) {
+    if (!v6 || !v6->l2) return false;
+    if (!v6->l2->is_up) return false;
+    if (v6->cfg == IPV6_CFG_DISABLE) return false;
+    return true;
+}
+
+bool ipv6_l3_is_ready(l3_ipv6_interface_t *v6) {
+    if (!ipv6_l3_is_active(v6)) return false;
+    if (ipv6_is_unspecified(v6->ip)) return false;
+    if (v6->dad_state != IPV6_DAD_OK) return false;
+    return true;
+}
+
+bool ipv6_l3_is_tcp_usable(l3_ipv6_interface_t *v6) {
+    if (!ipv6_l3_is_active(v6)) return false;
+    if (v6->is_localhost) return false;
+    if (ipv6_is_unspecified(v6->ip)) return false;
+    if (v6->dad_state == IPV6_DAD_FAILED) return false;
+    if (!(v6->kind & IPV6_ADDRK_LINK_LOCAL) && v6->dad_state != IPV6_DAD_OK) return false;
+    return true;
+}
+
 int ipv6_cmp(const uint8_t a[16], const uint8_t b[16]) {
     for (int i = 0; i < 16; i++) if (a[i] != b[i]) return (int)a[i] - (int)b[i];
     return 0;
@@ -35,6 +58,24 @@ int ipv6_common_prefix_len(const uint8_t a[16], const uint8_t b[16]) {
         }
     }
     return 128;
+}
+
+void ipv6_prefix_network(const uint8_t ip[16], uint8_t prefix_len, uint8_t out[16]) {
+    if (!out) return;
+    if (!ip) {
+        memset(out, 0, 16);
+        return;
+    }
+
+    if (prefix_len > 128) prefix_len = 128;
+    memcpy(out, ip, 16);
+
+    if (prefix_len == 128) return;
+
+    int fb = prefix_len / 8;
+    int rb = prefix_len % 8;
+    for (int i = fb + (rb > 0); i < 16; i++) out[i] = 0;
+    if (rb) out[fb] &= (uint8_t)(0xFF << (8 - rb));
 }
 
 void ipv6_make_multicast(uint8_t scope, ipv6_mcast_kind_t kind, const uint8_t unicast[16], uint8_t out[16]) {
@@ -80,12 +121,6 @@ void ipv6_make_multicast(uint8_t scope, ipv6_mcast_kind_t kind, const uint8_t un
     }
 }
 
-static int hexval(int c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    return -1;
-}
 
 bool ipv6_parse(const char* s, uint8_t out[16]) {
     if (!s || !out) return false;
@@ -103,7 +138,7 @@ bool ipv6_parse(const char* s, uint8_t out[16]) {
         if (wi >= 8) return false;
 
         int val = 0, cnt = 0, hv;
-        while ((hv = hexval(*p)) >= 0) {
+        while ((hv = hex_val(*p)) >= 0) {
             val = (val << 4) | hv;
             cnt++;
             if (cnt > 4) return false;

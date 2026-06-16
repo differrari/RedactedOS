@@ -1,19 +1,5 @@
 #include "ipv4_utils.h"
-
-static char* u8_to_str(uint8_t val, char* out) {
-    if (val >= 100) {
-        *out++ = '0' + (val / 100);
-        val %= 100;
-        *out++ = '0' + (val / 10);
-        *out++ = '0' + (val % 10);
-    } else if (val >= 10) {
-        *out++ = '0' + (val / 10);
-        *out++ = '0' + (val % 10);
-    } else {
-        *out++ = '0' + val;
-    }
-    return out;
-}
+#include "std/string.h"
 
 bool ipv4_is_unspecified(uint32_t ip) { return ip == 0; }
 bool ipv4_is_loopback(uint32_t ip) { return (ip & 0xFF000000u) == 0x7F000000u; }
@@ -59,6 +45,19 @@ bool ipv4_is_unicast_global(uint32_t ip) {
     return true;
 }
 
+bool ipv4_l3_is_active(l3_ipv4_interface_t *v4) {
+    if (!v4 || !v4->l2) return false;
+    if (!v4->l2->is_up) return false;
+    if (v4->mode == IPV4_CFG_DISABLED) return false;
+    return true;
+}
+
+bool ipv4_l3_is_ready(l3_ipv4_interface_t *v4) {
+    if (!ipv4_l3_is_active(v4)) return false;
+    if (ipv4_is_unspecified(v4->ip)) return false;
+    return true;
+}
+
 bool ipv4_mask_is_contiguous(uint32_t mask) {
     if (mask == 0) return true;
     return ((mask | (mask - 1u)) == 0xFFFFFFFFu);
@@ -99,16 +98,8 @@ bool ipv4_same_subnet(uint32_t a, uint32_t b, uint32_t mask) {
 }
 
 void ipv4_to_string(uint32_t ip, char* buf) {
-    uint8_t a = (uint8_t)(ip >> 24);
-    uint8_t b = (uint8_t)(ip >> 16);
-    uint8_t c = (uint8_t)(ip >> 8);
-    uint8_t d = (uint8_t)(ip);
-    char* p = buf;
-    p = u8_to_str(a, p); *p++ = '.';
-    p = u8_to_str(b, p); *p++ = '.';
-    p = u8_to_str(c, p); *p++ = '.';
-    p = u8_to_str(d, p);
-    *p = '\0';
+    if (!buf) return;
+    string_format_buf(buf, 16, "%u.%u.%u.%u", ip >> 24, (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF);
 }
 
 bool ipv4_parse(const char* s, uint32_t* out) {

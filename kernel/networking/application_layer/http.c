@@ -120,7 +120,7 @@ string http_methods_allow_header(uint32_t mask) {
         HTTP_METHOD_OPTIONS
     };
 
-    string out = string_repeat('\0', 0);
+    string out = (string){0};
     for (uint32_t i = 0; i < sizeof(methods) / sizeof(methods[0]);i++) {
         if (!http_method_allowed(mask, methods[i])) continue;
         if (out.length) string_append_bytes(&out, ", ", 2);
@@ -273,7 +273,7 @@ static void http_append_field(string *out, const char *key, uint32_t key_len, co
 }
 
 string http_header_builder(const HTTPHeadersCommon *C, const HTTPHeader *H, uint32_t N, HTTPHeaderBuildKind kind, HTTPMethod method, uint32_t status_code){
-    string out = string_repeat('\0', 0);
+    string out = (string){0};
     bool request = kind == HTTP_HEADER_BUILD_REQUEST;
     bool response = kind == HTTP_HEADER_BUILD_RESPONSE;
     bool informational = response && status_code >= 100 && status_code < 200;
@@ -686,10 +686,8 @@ string http_response_builder(const HTTPResponseMsg *R){
 }
 
 int find_crlfcrlf(const char *data, uint32_t len){
-    for (uint32_t i = 0; i + 3 < len; i++){
-        if (data[i]=='\r' && data[i+1]=='\n' && data[i+2]=='\r' && data[i+3]=='\n') return (int)i;
-    }
-    return -1;
+    const char *p = memmem(data, len, "\r\n\r\n", 4);
+    return p ? (int)(p-data) : -1;
 }
 
 void http_chunked_decoder_init(HTTPChunkedDecoder *dec, const HTTPPolicy *policy){
@@ -697,9 +695,9 @@ void http_chunked_decoder_init(HTTPChunkedDecoder *dec, const HTTPPolicy *policy
     *dec = (HTTPChunkedDecoder){0};
     dec->policy = policy ? *policy : http_default_policy();
     dec->stage = HTTP_CHUNK_STAGE_SIZE;
-    dec->line = string_repeat('\0', 0);
-    dec->body = string_repeat('\0', 0);
-    dec->trailers_buf = string_repeat('\0', 0);
+    dec->line = (string){0};
+    dec->body = (string){0};
+    dec->trailers_buf = (string){0};
 }
 
 HTTPParseResult http_chunked_decoder_feed(HTTPChunkedDecoder *dec, const char *buf, uint32_t len, uint32_t *out_used) {
@@ -744,7 +742,7 @@ HTTPParseResult http_chunked_decoder_feed(HTTPChunkedDecoder *dec, const char *b
                     scan++;
                 }
                 string_free(dec->line);
-                dec->line = string_repeat('\0', 0);
+                dec->line = (string){0};
                 if (!saw_digit && r == HTTP_PARSE_OK) r = HTTP_PARSE_BAD_FORMAT;
                 if (r != HTTP_PARSE_OK) return r;
                 if (dec->body_total + chunk_len > dec->policy.max_body_bytes) return HTTP_PARSE_PAYLOAD_TOO_LARGE;

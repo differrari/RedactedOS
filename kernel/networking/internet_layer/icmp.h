@@ -49,6 +49,7 @@ typedef struct {
 } ping_result_t;
 
 bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint32_t ttl, ping_result_t *out);
+uint32_t icmp_ping_collect(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint32_t ttl, ping_result_t *out, uint32_t max_results);
 void icmp_input(netpkt_t* pkt, uint32_t src_ip, uint32_t dst_ip);
 
 #ifdef __cplusplus

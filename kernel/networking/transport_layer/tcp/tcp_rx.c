@@ -7,6 +7,7 @@
 #include "networking/internet_layer/ipv6_utils.h"
 #include "std/memory.h"
 #include "math/rng.h"
+#include "random/random.h"
 #include "syscalls/syscalls.h"
 #include "../tcp.h"
 
@@ -430,9 +431,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
         if ((flags & (1u << SYN_F)) && !(flags & ((1u << ACK_F) | (1u << RST_F) | (1u << FIN_F))) && data_len == 0 && listener){
             rng_t rng;
-            uint64_t virt_timer;
-            asm volatile ("mrs %0, cntvct_el0" : "=r"(virt_timer));
-            rng_seed(&rng, virt_timer);
+        rng_init_random(&rng);
 
             tcp_admit_result_t syn_admit = tcp_admit_syn(l3_id, dst_port, ipver, src_ip_addr);
             if (syn_admit != TCP_ADMIT_OK) {

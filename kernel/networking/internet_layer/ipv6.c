@@ -13,6 +13,7 @@
 #include "networking/internet_layer/ipv6_route.h"
 #include "networking/internet_layer/icmpv6.h"
 #include "math/rng.h"
+#include "random/random.h"
 #include "net/checksums.h"
 #include "networking/link_layer/nic_types.h"
 #include "networking/net_fragbuf.h"
@@ -152,7 +153,7 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     }
 
     l3_ipv6_interface_t* src_v6 = l3_ipv6_find_by_id(plan.l3_id);
-    if (!src_v6 || !src_v6->l2 || !src_v6->l2->is_up || src_v6->cfg == IPV6_CFG_DISABLE|| src_v6->dad_state != IPV6_DAD_OK) {
+    if (!ipv6_l3_is_ready(src_v6)) {
         netpkt_unref(pkt);
         return false;
     }
@@ -245,9 +246,7 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     }
 
     rng_t rng;
-    uint64_t virt_timer;
-    asm volatile ("mrs %0, cntvct_el0" : "=r"(virt_timer));
-    rng_seed(&rng, virt_timer);
+        rng_init_random(&rng);
     uint32_t ident = rng_next32(&rng);
 
     uint32_t off = 0;
@@ -379,8 +378,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         if (l2) {
             for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
                 l3_ipv6_interface_t* v6 = l2->l3_v6[i];
-                if (!v6) continue;
-                if (v6->cfg == IPV6_CFG_DISABLE) continue;
+                if (!ipv6_l3_is_active(v6)) continue;
                 if (ipv6_cmp(v6->ip, ip6->dst) == 0) {
                     dst_is_local = true;
                     break;
@@ -601,8 +599,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         int ccount = 0;
         for (int x = 0; x < MAX_IPV6_PER_INTERFACE; x++) {
             l3_ipv6_interface_t* v6 = l2->l3_v6[x];
-            if (!v6) continue;
-            if (v6->cfg == IPV6_CFG_DISABLE) continue;
+            if (!ipv6_l3_is_active(v6)) continue;
             cand[ccount++] = v6;
         }
         if (ccount == 0) {
@@ -675,8 +672,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     int ccount = 0;
     for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
         l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-        if (!v6) continue;
-        if (v6->cfg == IPV6_CFG_DISABLE) continue;
+        if (!ipv6_l3_is_active(v6)) continue;
         cand[ccount++] = v6;
     }
     if (ccount == 0) return;

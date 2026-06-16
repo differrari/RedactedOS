@@ -2,6 +2,7 @@
 #include "exceptions/timer.h"
 #include "std/memory.h"
 #include "networking/internet_layer/ipv4.h"
+#include "networking/internet_layer/ipv4_utils.h"
 #include "process/scheduler.h"
 #include "console/kio.h"
 #include "math/math.h"
@@ -109,7 +110,7 @@ static ntp_result_t ntp_send_query(socket_handle_t sock, uint32_t server_ip_host
     p.txTs = tx_be;
 
     net_l4_endpoint dst;
-    make_ep(server_ip_host, NTP_PORT, IP_VER4, &dst);
+    make_ep(&server_ip_host, NTP_PORT, IP_VER4, &dst);
     int64_t sent = send_to_socket(sock, &dst, &p, sizeof(p));
     if (sent < 0) return NTP_ERR_SEND;
     *t1_us_out = t1_us;
@@ -153,8 +154,7 @@ static void discover_servers(uint32_t* s0, uint32_t* s1){
         if (!l2) continue;
         for (int s = 0; s < MAX_IPV4_PER_INTERFACE && (*s0 == 0 || *s1 == 0); s++) {
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!v4) continue;
-            if (v4->mode == IPV4_CFG_DISABLED) continue;
+            if (!ipv4_l3_is_active(v4)) continue;
             const net_runtime_opts_t* rt =&v4->runtime_opts_v4;
             if (!rt) continue;
             uint32_t c0 = rt->ntp[0];

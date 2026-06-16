@@ -5,6 +5,7 @@
 #include "networking/interface_manager.h"
 #include "kernel_processes/kprocess_loader.h"
 #include "math/rng.h"
+#include "random/random.h"
 #include "std/memory.h"
 #include "std/string.h"
 #include "syscalls/syscalls.h"
@@ -45,19 +46,18 @@ static bool send_igmp(uint8_t ifindex, uint32_t dst, uint8_t type, uint32_t grou
     netpkt_t* pkt = netpkt_alloc(sizeof(igmp_hdr_t),headroom, 0);
     if (!pkt) return false;
 
-    uint16_t igmp_words[sizeof(igmp_hdr_t)/sizeof(uint16_t)];
-    igmp_hdr_t* h = (igmp_hdr_t*)igmp_words;
+    igmp_hdr_t igmp;
     if (!netpkt_put(pkt, sizeof(igmp_hdr_t))) {
         netpkt_unref(pkt);
         return false;
     }
 
-    h->type = type;
-    h->max_resp_time = 0;
-    h->group = bswap32(group);
-    h->checksum = 0;
-    h->checksum = checksum16(igmp_words, sizeof(igmp_hdr_t)/2);
-    memcpy((void*)netpkt_data(pkt), h, sizeof(*h));
+    igmp.type = type;
+    igmp.max_resp_time = 0;
+    igmp.group = bswap32(group);
+    igmp.checksum = 0;
+    igmp.checksum = bswap16(checksum16(&igmp, sizeof(igmp)));
+    memcpy((void*)netpkt_data(pkt), &igmp, sizeof(igmp));
 
     ip_tx_opts_t tx;
     tx.scope = IP_TX_BOUND_L2;
@@ -111,9 +111,7 @@ static int igmp_daemon_entry(int argc, char* argv[]) {
     igmp_daemon_running = 1;
 
     if (!igmp_rng_inited) {
-        uint64_t virt_timer;
-        asm volatile ("mrs %0, cntvct_el0" : "=r"(virt_timer));
-        rng_seed(&igmp_rng, virt_timer);
+        rng_init_random(&igmp_rng);
         igmp_rng_inited = 1;
     }
 
@@ -211,10 +209,7 @@ void igmp_input(uint8_t ifindex, uint32_t src, uint32_t dst, netpkt_t* pkt) {
         netpkt_unref(pkt);
         return;
     }
-    uint32_t sum = 0;
-    for (uint32_t i = 0; i + 1 < sizeof(igmp_hdr_t); i += 2) sum += (uint32_t)((p[i] << 8) | p[i + 1]);
-    while (sum >> 16) sum = (sum & 0xFFFFu) + (sum >> 16);
-    if ((uint16_t)sum != 0xFFFFu) {
+    if (checksum16(p, sizeof(igmp_hdr_t)) != 0) {
         netpkt_unref(pkt);
         return;
     }
