@@ -9,6 +9,7 @@ struct ksocket {
     uint64_t generation;
     uint16_t pid;
     protocol_t protocol;
+    SocketSpecialKind special_kind;
     socket_impl_t impl;
     socket_impl_destroy_fn destroy;
     socket_impl_close_fn close;
@@ -22,9 +23,8 @@ struct ksocket {
 static ksocket_t* sockets[SOCKET_MAX_OPEN];
 static uint64_t generations[SOCKET_MAX_OPEN];
 
-bool socket_core_alloc(protocol_t protocol, uint16_t pid, ksocket_t** out_socket) {
+bool socket_core_alloc(protocol_t protocol, SocketSpecialKind special_kind, uint16_t pid, ksocket_t** out_socket) {
     if (!out_socket) return false;
-    if (protocol == PROTO_NONE) return false;
 
     ksocket_t* socket = (ksocket_t*)zalloc(sizeof(ksocket_t));
     if (!socket) return false;
@@ -53,6 +53,7 @@ bool socket_core_alloc(protocol_t protocol, uint16_t pid, ksocket_t** out_socket
     socket->generation = gen;
     socket->pid = pid;
     socket->protocol = protocol;
+    socket->special_kind = special_kind;
     socket->refs = 1;
     sockets[id] = socket;
 
@@ -173,6 +174,7 @@ int32_t socket_core_get_option(ksocket_t* socket, int32_t opt, void* value, uint
     uint32_t v = 0;
     if (opt == SOCK_GET_PROTOCOL) v = socket->protocol;
     else if (opt == SOCK_GET_OWNER_PID) v = socket->pid;
+    else if (opt == SOCK_GET_SPECIAL_KIND) v = socket->special_kind;
     else return socket->getopt(socket->impl, opt, value, len);
 
     if (!value) {
@@ -283,6 +285,9 @@ protocol_t socket_core_protocol(const ksocket_t* socket) {
     return socket ? socket->protocol : PROTO_NONE;
 }
 
+SocketSpecialKind socket_core_special_kind(const ksocket_t* socket) {
+    return socket ? socket->special_kind : SOCKET_SPECIAL_NONE;
+}
 
 uint16_t socket_core_pid(const ksocket_t* socket) {
     return socket ? socket->pid : 0;

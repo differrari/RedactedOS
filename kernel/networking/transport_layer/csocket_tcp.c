@@ -656,7 +656,7 @@ uint32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, const void*
 
     ksocket_t* child_owner = NULL;
     uint16_t owner_pid = socket_core_pid(s->ownerSocket);
-    if (!socket_core_alloc(PROTO_TCP, owner_pid, &child_owner)) return 0;
+    if (!socket_core_alloc(PROTO_TCP, SOCKET_SPECIAL_NONE, owner_pid, &child_owner)) return 0;
 
     tcp_socket_t* child = (tcp_socket_t*)socket_tcp_create(child_owner, &s->options);
     if (!child) {
