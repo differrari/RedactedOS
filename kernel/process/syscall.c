@@ -227,10 +227,10 @@ u64 syscall_get_time(process_t *ctx){
 
 u64 syscall_socket_create(process_t *ctx){
     protocol_t protocol = (protocol_t)ctx->PROC_X0;
-    const SocketExtraOptions* extra = NULL;
+    const SocketOptions* extra = NULL;
 
     if (ctx->PROC_X1) {
-        SYSCALL_ARG(SocketExtraOptions, user_extra, PROC_X1, false);
+        SYSCALL_ARG(SocketOptions, user_extra, PROC_X1, false);
         if (user_extra->mcast_count) {
             if (!user_extra->mcast_groups) return 0;
             if (!validate_address(ctx, (uptr)user_extra->mcast_groups, sizeof(net_l4_endpoint) * user_extra->mcast_count, false)) return 0;

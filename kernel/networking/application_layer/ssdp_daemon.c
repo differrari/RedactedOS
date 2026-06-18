@@ -94,7 +94,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
             if (!ipv4_l3_is_ready(v4) || v4->is_localhost) continue;
 
             uint32_t ttl = 2;
-            SocketExtraOptions opt;
+            SocketOptions opt;
             memset(&opt, 0, sizeof(opt));
             opt.flags = SOCK_OPT_TTL;
             opt.ttl = (uint8_t)ttl;
@@ -130,7 +130,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
             if (!ipv6_l3_is_ready(v6) || v6->is_localhost) continue;
 
             uint32_t ttl = 2;
-            SocketExtraOptions opt;
+            SocketOptions opt;
             memset(&opt, 0, sizeof(opt));
             opt.flags = SOCK_OPT_TTL;
             opt.ttl = (uint8_t)ttl;

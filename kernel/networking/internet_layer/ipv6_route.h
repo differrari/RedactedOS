@@ -17,7 +17,7 @@ typedef struct {
 
 typedef struct ipv6_rt_table ipv6_rt_table_t;
 
-ipv6_rt_table_t* ipv6_rt_create(void);
+ipv6_rt_table_t* ipv6_rt_create(uint8_t owner_l3_id);
 void ipv6_rt_destroy(ipv6_rt_table_t* t);
 void ipv6_rt_clear(ipv6_rt_table_t* t);
 
@@ -32,8 +32,8 @@ bool ipv6_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, const uint8_t dst
 
 typedef struct {
     uint8_t l3_id;
+    uint32_t l3_epoch;
     uint8_t src_ip[16];
-    uint32_t net_epoch;
 } ipv6_tx_plan_t;
 
 bool ipv6_tx_plan_valid(const ipv6_tx_plan_t* plan);

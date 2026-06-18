@@ -79,6 +79,7 @@ typedef struct l2_interface {
 
 typedef struct l3_ipv4_interface {
     uint8_t l3_id;
+    uint32_t epoch;
     uint32_t ip;
     uint32_t mask;
     uint32_t gw;
@@ -113,6 +114,7 @@ typedef struct net_runtime_opts_v6 {
 
 typedef struct l3_ipv6_interface {
     uint8_t l3_id;
+    uint32_t epoch;
     uint16_t mtu;
 
     uint8_t ip[16];

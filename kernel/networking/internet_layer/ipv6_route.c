@@ -6,9 +6,17 @@
 #include "syscalls/syscalls.h"
 
 struct ipv6_rt_table {
+    uint8_t owner_l3_id;
+    uint32_t epoch;
     ipv6_rt_entry_t e[IPV6_RT_PER_IF_MAX];
     int len;
 };
+
+static void ipv6_rt_bump(ipv6_rt_table_t* t) {
+    if (!t) return;
+    t->epoch++;
+    if (!t->epoch) t->epoch = 1;
+}
 
 static bool v6_l3_ok_for_tx(l3_ipv6_interface_t* v6, int dst_is_ll, int dst_is_loop) {
     if (!ipv6_l3_is_ready(v6)) return false;
@@ -18,48 +26,20 @@ static bool v6_l3_ok_for_tx(l3_ipv6_interface_t* v6, int dst_is_ll, int dst_is_l
     if (src_is_ll != dst_is_ll) return false;
     return true;
 }
-//TODO the epoch system is terrible, use interface events when avaible, same for ipv4
-static uint32_t ipv6_route_epoch(void) {
-    uint32_t h = 0x811C9DC5;
-    uint8_t cnt = l2_interface_count();
-    h = (h ^ cnt) * 16777619;
-    for (uint8_t i = 0; i < cnt; ++i) {
-        l2_interface_t* l2 = l2_interface_at(i);
-        if (!l2) continue;
-        h = (h ^ l2->ifindex) * 16777619;
-        h = (h ^ (uint32_t)l2->is_up) * 16777619;
-        h = (h ^ l2->base_metric) * 16777619;
-        h = (h ^ l2->ipv6_count) * 16777619;
-        for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
-            l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-            if (!v6) continue;
-            h = (h ^ v6->l3_id) * 16777619;
-            h = (h ^ v6->prefix_len) * 16777619;
-            h = (h ^ (uint32_t)v6->cfg) * 16777619;
-            h = (h ^ (uint32_t)v6->kind) * 16777619;
-            h = (h ^ (uint32_t)v6->dad_state) * 16777619;
-            h = (h ^ (uint32_t)(uintptr_t)v6->routing_table) * 16777619;
-            for (int b = 0; b < 16; ++b) h = (h ^ v6->ip[b]) * 16777619;
-            for (int b = 0; b < 16; ++b) h = (h ^ v6->gateway[b]) * 16777619;
-        }
-    }
-    return h ? h : 1;
-}
 
 bool ipv6_tx_plan_valid(const ipv6_tx_plan_t* plan) {
-    if (!plan || !plan->l3_id || !plan->net_epoch) return false;
-    if (plan->net_epoch != ipv6_route_epoch()) return false;
+    if (!plan || !plan->l3_id) return false;
 
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(plan->l3_id);
     if (!ipv6_l3_is_ready(v6)) return false;
-    return memcmp(v6->ip, plan->src_ip, 16) == 0;
+    if (v6->epoch != plan->l3_epoch) return false;
+    return ipv6_cmp(v6->ip, plan->src_ip) == 0;
 }
 
 bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx_plan_t* out) {
     if (!dst || !out) return false;
 
     memset(out, 0, sizeof(*out));
-    out->net_epoch = ipv6_route_epoch();
 
     int dst_is_ll = (ipv6_is_linklocal(dst) || ipv6_is_linkscope_mcast(dst)) ? 1 : 0;
     int dst_is_loop = ipv6_is_loopback(dst) ? 1 : 0;
@@ -69,7 +49,8 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx
         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
         if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) return false;
         out->l3_id = id;
-        memcpy(out->src_ip, v6->ip, 16);
+        out->l3_epoch = v6->epoch;
+        ipv6_cpy(out->src_ip, v6->ip);
         return true;
     }
 
@@ -106,14 +87,17 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx
     if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) return false;
 
     out->l3_id = chosen;
-    memcpy(out->src_ip, v6->ip, 16);
+    out->l3_epoch = v6->epoch;
+    ipv6_cpy(out->src_ip, v6->ip);
     return true;
 }
 
-ipv6_rt_table_t* ipv6_rt_create(void) {
+ipv6_rt_table_t* ipv6_rt_create(uint8_t owner_l3_id) {
     ipv6_rt_table_t* t = zalloc(sizeof(*t));
     if (!t) return 0;
 
+    t->owner_l3_id = owner_l3_id;
+    t->epoch = 1;
     return t;
 }
 
@@ -125,29 +109,33 @@ void ipv6_rt_destroy(ipv6_rt_table_t* t) {
 
 void ipv6_rt_clear(ipv6_rt_table_t* t) {
     if (!t) return;
-
+    bool changed = t->len != 0;
     t->len = 0;
     memset(t->e, 0, sizeof(t->e));
+    if (changed) ipv6_rt_bump(t);
 }
 
 bool ipv6_rt_add_in(ipv6_rt_table_t* t, const uint8_t net[16], uint8_t plen, const uint8_t gw[16], uint16_t metric) {
     if (!t) return false;
 
     for (int i = 0; i < t->len; i++) {
-        if (t->e[i].prefix_len == plen && memcmp(t->e[i].network, net, 16) == 0) {
-            memcpy(t->e[i].gateway, gw, 16);
+        if (t->e[i].prefix_len == plen && ipv6_cmp(t->e[i].network, net) == 0) {
+            if (ipv6_cmp(t->e[i].gateway, gw) == 0 && t->e[i].metric == metric) return true;
+            ipv6_cpy(t->e[i].gateway, gw);
             t->e[i].metric = metric;
+            ipv6_rt_bump(t);
             return true;
         }
     }
 
     if (t->len >= IPV6_RT_PER_IF_MAX) return false;
 
-    memcpy(t->e[t->len].network, net, 16);
-    memcpy(t->e[t->len].gateway, gw, 16);
+    ipv6_cpy(t->e[t->len].network, net);
+    ipv6_cpy(t->e[t->len].gateway, gw);
     t->e[t->len].prefix_len = plen;
     t->e[t->len].metric = metric;
     t->len++;
+    ipv6_rt_bump(t);
 
     return true;
 }
@@ -156,9 +144,10 @@ bool ipv6_rt_del_in(ipv6_rt_table_t* t, const uint8_t net[16], uint8_t plen) {
     if (!t) return false;
 
     for (int i = 0; i < t->len; i++) {
-        if (t->e[i].prefix_len == plen && memcmp(t->e[i].network, net, 16) == 0) {
+        if (t->e[i].prefix_len == plen && ipv6_cmp(t->e[i].network, net) == 0) {
             t->e[i] = t->e[--t->len];
             memset(&t->e[t->len], 0, sizeof(t->e[0]));
+            ipv6_rt_bump(t);
             return true;
         }
     }
@@ -187,13 +176,13 @@ bool ipv6_rt_lookup_in(const ipv6_rt_table_t* t, const uint8_t dst[16], uint8_t 
         if (pl > best_pl || (pl == best_pl && met < best_metric)) {
             best_pl = pl;
             best_metric = met;
-            memcpy(best_gw, t->e[i].gateway, 16);
+            ipv6_cpy(best_gw, t->e[i].gateway);
         }
     }
 
     if (best_pl < 0) return false;
 
-    if (next_hop) memcpy(next_hop, best_gw, 16);
+    if (next_hop) ipv6_cpy(next_hop, best_gw);
     if (out_pl) *out_pl =best_pl;
     if (out_metric) *out_metric = best_metric;
 
@@ -210,18 +199,15 @@ void ipv6_rt_ensure_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t ple
     }
 
     if (gw && !ipv6_is_unspecified(gw)) {
-        uint8_t z[16] = {0};
-        ipv6_rt_add_in(t, z, 0, gw, (uint16_t)(base_metric + 1));
+        ipv6_rt_add_in(t, (const uint8_t[16]){0}, 0, gw, (uint16_t)(base_metric + 1));
     }
 }
 
 void ipv6_rt_sync_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t plen, const uint8_t gw[16], uint16_t base_metric) {
     if (!t) return;
 
-    uint8_t z[16] = {0};
-
-    if (gw && !ipv6_is_unspecified(gw)) ipv6_rt_add_in(t, z, 0,gw, (uint16_t)(base_metric + 1));
-    else ipv6_rt_del_in(t, z, 0);
+    if (gw && !ipv6_is_unspecified(gw)) ipv6_rt_add_in(t, (const uint8_t[16]){0}, 0,gw, (uint16_t)(base_metric + 1));
+    else ipv6_rt_del_in(t, (const uint8_t[16]){0}, 0);
 
     if (ip && plen && !ipv6_is_unspecified(ip)) {
         uint8_t net[16];
@@ -251,11 +237,13 @@ bool ipv6_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, const uint8_t dst
         int met_tab = 0x7FFF;
 
         if (x->routing_table) {
+            const ipv6_rt_table_t* rt = (const ipv6_rt_table_t*)x->routing_table;
+            if (rt->owner_l3_id && rt->owner_l3_id != x->l3_id) continue;
             uint8_t via[16] = {0};
             int out_pl = -1;
             int out_met = 0x7FFF;
 
-            if (ipv6_rt_lookup_in((const ipv6_rt_table_t*)x->routing_table, dst, via, &out_pl, &out_met)) {
+            if (ipv6_rt_lookup_in(rt, dst, via, &out_pl, &out_met)) {
                 pl_tab = out_pl;
                 met_tab = out_met;
             }
@@ -264,12 +252,12 @@ bool ipv6_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, const uint8_t dst
         int cand_pl = pl_conn;
         int cand_cost = l2base;
 
-        if (pl_tab > cand_pl || (pl_tab == cand_pl && l2base + met_tab < cand_cost)) {
+        if (pl_tab > cand_pl || (pl_tab == cand_pl && met_tab < cand_cost)) {
             cand_pl = pl_tab;
-            cand_cost = l2base + met_tab;
+            cand_cost = met_tab;
         }
 
-        if (cand_pl > best_pl || (cand_pl == best_pl && cand_cost <best_cost)) {
+        if (cand_pl > best_pl || (cand_pl == best_pl && cand_cost <best_cost) || (cand_pl == best_pl && cand_cost == best_cost && l3_ids[i] < best_l3)) {
             best_pl = cand_pl;
             best_cost = cand_cost;
             best_l3 = l3_ids[i];

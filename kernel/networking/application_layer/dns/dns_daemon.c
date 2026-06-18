@@ -48,7 +48,7 @@ static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
             }
             if (have_socket) continue;
 
-            SocketExtraOptions opt;
+            SocketOptions opt;
             memset(&opt, 0, sizeof(opt));
             opt.flags = SOCK_OPT_TTL;
             opt.ttl = 255;
@@ -92,7 +92,7 @@ static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
             }
             if (have_socket) continue;
 
-            SocketExtraOptions opt;
+            SocketOptions opt;
             memset(&opt, 0, sizeof(opt));
             opt.flags = SOCK_OPT_TTL;
             opt.ttl = 255;

@@ -168,12 +168,24 @@ int32_t socket_core_set_option(ksocket_t* socket, int32_t opt, const void* value
 
 int32_t socket_core_get_option(ksocket_t* socket, int32_t opt, void* value, uint32_t* len) {
     if (!socket || !len) return SOCK_ERR_INVAL;
-    if (!value && *len) return SOCK_ERR_INVAL;
     if (!socket->getopt || !socket->impl) return SOCK_ERR_PROTO;
-    return socket->getopt(socket->impl, opt, value, len);
+
+    uint32_t v = 0;
+    if (opt == SOCK_GET_PROTOCOL) v = socket->protocol;
+    else if (opt == SOCK_GET_OWNER_PID) v = socket->pid;
+    else return socket->getopt(socket->impl, opt, value, len);
+
+    if (!value) {
+        *len = sizeof(uint32_t);
+        return SOCK_OK;
+    }
+    if (*len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
+    memcpy(value, &v, sizeof(v));
+    *len = sizeof(uint32_t);
+    return SOCK_OK;
 }
 
-int32_t socket_extra_setopt(SocketExtraOptions* opts, int32_t opt, const void* value, uint32_t len) {
+int32_t socket_common_options_set(SocketOptions* opts, int32_t opt, const void* value, uint32_t len) {
     if (!opts) return SOCK_ERR_INVAL;
 
     uint32_t v = 1;
@@ -223,30 +235,30 @@ int32_t socket_extra_setopt(SocketExtraOptions* opts, int32_t opt, const void* v
     }
 }
 
-int32_t socket_extra_getopt(const SocketExtraOptions* opts, int32_t opt, void* value, uint32_t* len) {
+int32_t socket_common_options_get(const SocketOptions* opts, int32_t opt, void* value, uint32_t* len) {
     if (!opts || !len) return SOCK_ERR_INVAL;
 
     uint32_t v = 0;
     switch ((uint32_t)opt) {
-        case SOCK_OPT_RECV_TIMEOUT:
+        case SOCK_GET_OPT_RECV_TIMEOUT:
             v = opts->recv_timeout_ms;
             break;
-        case SOCK_OPT_SEND_TIMEOUT:
+        case SOCK_GET_OPT_SEND_TIMEOUT:
             v = opts->send_timeout_ms;
             break;
-        case SOCK_OPT_BUF_SIZE:
+        case SOCK_GET_OPT_BUF_SIZE:
             v = opts->buf_size;
             break;
-        case SOCK_OPT_DEBUG:
+        case SOCK_GET_OPT_DEBUG:
             v = opts->debug_level;
             break;
-        case SOCK_OPT_DONTFRAG:
+        case SOCK_GET_OPT_DONTFRAG:
             v = (opts->flags & SOCK_OPT_DONTFRAG) != 0;
             break;
-        case SOCK_OPT_BROADCAST_ALLOWED:
+        case SOCK_GET_OPT_BROADCAST_ALLOWED:
             v = (opts->flags & SOCK_OPT_BROADCAST_ALLOWED) != 0;
             break;
-        case SOCK_OPT_TTL:
+        case SOCK_GET_OPT_TTL:
             v = opts->ttl;
             break;
         default:

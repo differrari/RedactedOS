@@ -65,8 +65,8 @@ public:
 
     netpkt_t* handle_receive_packet() override;
     void handle_sent_packet() override;
-    void flush_rx() override;
-    void flush_tx() override;
+    void complete_rx_batch() override;
+    void complete_tx_batch() override;
     netdev_tx_result_t send_packet(netpkt_t* packet) override;
 
 private:

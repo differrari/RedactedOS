@@ -164,6 +164,21 @@ bool socket_bind_insert(ksocket_t* socket, protocol_t protocol, const SockBindSp
     SockBindSpec normal = *spec;
     if (!socket_bind_normalize_spec(&normal)) return false;
 
+    if (normal.kind == BIND_L3) {
+        ip_version_t ver = normal.ver ? normal.ver : (l3_is_v6_from_id(normal.l3_id) ? IP_VER6 : IP_VER4);
+        if (!socket_bind_l3_valid(ver, normal.l3_id)) return false;
+    } else if (normal.kind == BIND_L2) {
+        if (!l2_interface_find_by_index(normal.ifindex)) return false;
+    } else if (normal.kind == BIND_IP) {
+        if (normal.ver == IP_VER4) {
+            uint32_t ip = 0;
+            memcpy(&ip, normal.ip, 4);
+            if (!ipv4_is_unspecified(ip) && !l3_ipv4_find_by_ip(ip)) return false;
+        } else if (normal.ver == IP_VER6 && !ipv6_is_unspecified(normal.ip)) {
+            if (!l3_ipv6_find_by_ip(normal.ip)) return false;
+        }
+    }
+
     socket_bind_map_init();
     if (!bind_map) return false;
 
@@ -191,7 +206,7 @@ bool socket_bind_insert(ksocket_t* socket, protocol_t protocol, const SockBindSp
                 memcpy(&av, normal.ip, 4);
                 memcpy(&bv, e->spec.ip, 4);
                 overlap = ipv4_is_unspecified(av) || ipv4_is_unspecified(bv) || av == bv;
-            } else if (a_family == IP_VER6) overlap = ipv6_is_unspecified(normal.ip) || ipv6_is_unspecified(e->spec.ip) || memcmp(normal.ip, e->spec.ip, 16) == 0;
+            } else if (a_family == IP_VER6) overlap = ipv6_is_unspecified(normal.ip) || ipv6_is_unspecified(e->spec.ip) || ipv6_cmp(normal.ip, e->spec.ip) == 0;
         } else if (normal.kind == BIND_L3 && e->spec.kind == BIND_L3) overlap = normal.l3_id == e->spec.l3_id;
         else if (normal.kind == BIND_L2 && e->spec.kind == BIND_L2) overlap = normal.ifindex == e->spec.ifindex;
         if (!overlap) continue;
@@ -344,7 +359,7 @@ uint32_t socket_bind_collect(protocol_t protocol, ip_version_t ipver, uint8_t l3
                 memcpy(&got, dst_ip_addr, 4);
                 if (!ipv4_is_unspecified(want) && want != got) continue;
             } else if (ipver == IP_VER6) {
-                if (!ipv6_is_unspecified(e->spec.ip) && memcmp(e->spec.ip, dst_ip_addr, 16) != 0) continue;
+                if (!ipv6_is_unspecified(e->spec.ip) && ipv6_cmp(e->spec.ip, dst_ip_addr) != 0) continue;
             } else continue;
         } else if (e->spec.kind != BIND_ANY && e->spec.kind != BIND_ANY4 && e->spec.kind != BIND_ANY6 && e->spec.kind != BIND_L3 && e->spec.kind != BIND_L2) continue;
 

@@ -10,7 +10,7 @@ extern "C" {
 typedef void* http_server_handle_t;
 typedef void* http_connection_handle_t;
 
-http_server_handle_t http_server_create(const SocketExtraOptions* extra, const HTTPServerPolicyOptions *options);
+http_server_handle_t http_server_create(const SocketOptions* extra, const HTTPServerPolicyOptions *options);
 int32_t http_server_set_options(http_server_handle_t srv, const HTTPServerPolicyOptions *options);
 void http_server_destroy(http_server_handle_t srv);
 

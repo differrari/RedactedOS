@@ -354,7 +354,7 @@ netpkt_t* VirtioNetDriver::handle_receive_packet(){
     return pkt;
 }
 
-void VirtioNetDriver::flush_rx() {
+void VirtioNetDriver::complete_rx_batch() {
     irq_flags_t flags = irq_save_disable();
     bool pending = rx_notify_pending;
     rx_notify_pending = false;
@@ -434,7 +434,7 @@ netdev_tx_result_t VirtioNetDriver::send_packet(netpkt_t* packet){
     return NETDEV_TX_OK;
 }
 
-void VirtioNetDriver::flush_tx() {
+void VirtioNetDriver::complete_tx_batch() {
     irq_flags_t flags = irq_save_disable();
     bool pending = tx_notify_pending;
     tx_notify_pending = false;

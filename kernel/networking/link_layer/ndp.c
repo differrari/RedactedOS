@@ -200,8 +200,7 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
                 v6->dhcpv6_stateless_done = 0;
 
                 if (v6->cfg != IPV6_CFG_DHCPV6 || ipv6_is_placeholder_gua(v6->ip)) {
-                    uint8_t z[16] = {0};
-                    (void)l3_ipv6_update(v6->l3_id, z, 0, gw, IPV6_CFG_DHCPV6, v6->kind);
+                    (void)l3_ipv6_update(v6->l3_id, (const uint8_t[16]){0}, 0, gw, IPV6_CFG_DHCPV6, v6->kind);
                 } else {
                     (void)l3_ipv6_update(v6->l3_id, v6->ip, v6->prefix_len, gw, IPV6_CFG_DHCPV6, v6->kind);
                 }
@@ -312,11 +311,15 @@ static void ndp_on_ra(uint8_t ifindex, const uint8_t router_ip[16], uint16_t rou
 
     ipv6_cpy(slot->prefix, prefix);
 
-    if (slot->ra_is_default && router_ip) ipv6_cpy(slot->gateway, router_ip);
-    else memset(slot->gateway, 0, 16);
+    uint8_t gw[16];
+    if (slot->ra_is_default && router_ip) ipv6_cpy(gw, router_ip);
+    else memset(gw, 0, sizeof(gw));
 
     slot->valid_lifetime = valid_lft;
     slot->preferred_lifetime = preferred_lft;
+
+    l3_ipv6_update(slot->l3_id, slot->ip, slot->prefix_len, gw, slot->cfg, slot->kind);
+    apply_ra_policy(now_ms, l2);
 
     if (ipv6_is_unspecified(slot->ip)) slot->timestamp_created = now_ms;
 
@@ -360,7 +363,7 @@ static int ndp_find_slot(ndp_table_impl_t* t, const uint8_t ip[16]) {
 
     for (int i = 0; i < NDP_TABLE_MAX; i++) {
         if (!t->entries[i].ttl_ms) continue;
-        if (memcmp(t->entries[i].ip, ip, 16) == 0) return i;
+        if (ipv6_cmp(t->entries[i].ip, ip) == 0) return i;
     }
 
     return -1;
@@ -404,8 +407,8 @@ void ndp_table_put_for_l2(uint8_t ifindex, const uint8_t ip[16], const uint8_t m
     if (idx < 0) return;
 
     ndp_entry_t* e = &t->entries[idx];
-    if (e->state != NDP_STATE_UNUSED && memcmp(e->ip, ip, 16) != 0) ndp_entry_clear(e);
-    memcpy(e->ip, ip, 16);
+    if (e->state != NDP_STATE_UNUSED && ipv6_cmp(e->ip, ip) != 0) ndp_entry_clear(e);
+    ipv6_cpy(e->ip, ip);
 
     if (mac) {
         memcpy(e->mac, mac, 6);
@@ -445,7 +448,7 @@ static bool ndp_table_get_for_l2(uint8_t ifindex, const uint8_t ip[16], uint8_t 
         if (!e->ttl_ms) continue;
         if (e->state == NDP_STATE_UNUSED) continue;
         if (e->state == NDP_STATE_INCOMPLETE) continue;
-        if (memcmp(e->ip, ip, 16) != 0) continue;
+        if (ipv6_cmp(e->ip, ip) != 0) continue;
 
         memcpy(mac_out, e->mac, 6);
         return true;
@@ -469,7 +472,7 @@ static bool ndp_send_na_on(uint8_t ifindex, const uint8_t dst_ip[16], const uint
     flags |= (1u << 29);
     na->flags = bswap32(flags);
 
-    memcpy(na->target, target_ip, 16);
+    ipv6_cpy(na->target, target_ip);
 
     icmpv6_opt_lladdr_t* opt = (icmpv6_opt_lladdr_t*)(buf + sizeof(icmpv6_na_t));
     opt->type = 2;
@@ -500,7 +503,7 @@ static void ndp_send_ns_on(uint8_t ifindex, const uint8_t target_ip[16], const u
     ns->hdr.checksum = 0;
     ns->rsv = 0;
 
-    memcpy(ns->target, target_ip, 16);
+    ipv6_cpy(ns->target, target_ip);
 
     if (!dad) {
         icmpv6_opt_lladdr_t* opt = (icmpv6_opt_lladdr_t*)(buf + sizeof(icmpv6_ns_t));
@@ -587,12 +590,12 @@ static void ndp_send_probe(uint8_t ifindex, ndp_entry_t* e) {
             if (!ipv6_l3_is_ready(v6)) continue;
 
             if (ipv6_is_linklocal(v6->ip)) {
-                memcpy(src_ip, v6->ip, 16);
+                ipv6_cpy(src_ip, v6->ip);
                 break;
             }
 
             if (ipv6_is_unspecified(src_ip) && !ipv6_is_unspecified(v6->ip))
-                memcpy(src_ip, v6->ip, 16);
+                ipv6_cpy(src_ip, v6->ip);
         }
     }
 
@@ -715,7 +718,7 @@ bool ndp_send_or_queue_on(uint16_t ifindex, const uint8_t next_hop[16], netpkt_t
     }
 
     ndp_entry_t* e = &t->entries[idx];
-    if (e->state != NDP_STATE_UNUSED && memcmp(e->ip, next_hop, 16) != 0) ndp_entry_clear(e);
+    if (e->state != NDP_STATE_UNUSED && ipv6_cmp(e->ip, next_hop) != 0) ndp_entry_clear(e);
 
     uint32_t len = netpkt_len(pkt);
     if (e->pending_len >= NDP_PENDING_MAX || e->pending_bytes + len > NDP_PENDING_MAX_BYTES) {
@@ -731,7 +734,7 @@ bool ndp_send_or_queue_on(uint16_t ifindex, const uint8_t next_hop[16], netpkt_t
         }
     }
 
-    memcpy(e->ip, next_hop, 16);
+    ipv6_cpy(e->ip, next_hop);
     memset(e->mac, 0, 6);
     e->ttl_ms = g_ndp_reachable_time_ms * 4;
     e->is_router = 0;
@@ -908,13 +911,13 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         if (idx < 0) return;
 
         ndp_entry_t* e = &t->entries[idx];
-        if (e->state != NDP_STATE_UNUSED && memcmp(e->ip, na.target, 16) != 0) ndp_entry_clear(e);
+        if (e->state != NDP_STATE_UNUSED && ipv6_cmp(e->ip, na.target) != 0) ndp_entry_clear(e);
 
         uint8_t old_mac[6];
         memcpy(old_mac, e->mac, 6);
 
         if (e->ttl_ms == 0 && e->state == NDP_STATE_UNUSED) {
-            memcpy(e->ip, na.target, 16);
+            ipv6_cpy(e->ip, na.target);
             memcpy(e->mac, src_mac, 6);
             e->ttl_ms = g_ndp_reachable_time_ms * 4;
             e->probes_sent = 0;
@@ -1014,7 +1017,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
                 uint32_t pref_lft = bswap32(pio.preferred_lifetime);
 
                 uint8_t pfx[16];
-                memcpy(pfx, pio.prefix, 16);
+                ipv6_cpy(pfx, pio.prefix);
 
                 if (pfx_len != 0) ndp_on_ra((uint8_t)ifindex, src_ip, router_lifetime, pfx, pfx_len, valid_lft, pref_lft, autonomous, ra.flags);
             } else if (opt_type == 5 && opt_size >= (uint32_t)sizeof(ndp_opt_mtu_t)) {
@@ -1087,10 +1090,10 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
                     }
 
                     if (slot) {
-                        if (addr_count >= 1) memcpy(slot->runtime_opts_v6.dns[0], a0, 16);
+                        if (addr_count >= 1) ipv6_cpy(slot->runtime_opts_v6.dns[0], a0);
                         else memset(slot->runtime_opts_v6.dns[0], 0, 16);
 
-                        if (addr_count >= 2) memcpy(slot->runtime_opts_v6.dns[1], a1, 16);
+                        if (addr_count >= 2) ipv6_cpy(slot->runtime_opts_v6.dns[1], a1);
                         else memset(slot->runtime_opts_v6.dns[1], 0, 16);
                     }
                 }

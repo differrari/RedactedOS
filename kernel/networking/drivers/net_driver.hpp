@@ -16,9 +16,8 @@ public:
     virtual bool init_at(uint64_t pci_addr, uint32_t irq_base_vector) = 0;
     virtual netpkt_t* handle_receive_packet() = 0;
     virtual void handle_sent_packet() {}
-    //TODO this looks like a violation of the single responsibility principle
-    virtual void flush_rx(){}
-    virtual void flush_tx(){}
+    virtual void complete_rx_batch(){}
+    virtual void complete_tx_batch(){}
     virtual void enable_verbose() = 0;
     virtual netdev_tx_result_t send_packet(netpkt_t* packet) = 0;
     virtual void get_mac(uint8_t out_mac[6]) const = 0;

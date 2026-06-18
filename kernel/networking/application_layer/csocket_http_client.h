@@ -8,7 +8,7 @@ extern "C" {
 
 typedef void* http_client_handle_t;
 
-http_client_handle_t http_client_create(const SocketExtraOptions* extra, const HTTPClientPolicyOptions *options);
+http_client_handle_t http_client_create(const SocketOptions* extra, const HTTPClientPolicyOptions *options);
 int32_t http_client_set_options(http_client_handle_t h, const HTTPClientPolicyOptions *options);
 void http_client_destroy(http_client_handle_t h);
 

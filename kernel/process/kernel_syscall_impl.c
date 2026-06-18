@@ -89,7 +89,7 @@ uint64_t get_time(){
     return timer_now_msec();
 }
 
-socket_handle_t socket_create(protocol_t protocol, const SocketExtraOptions* extra){
+socket_handle_t socket_create(protocol_t protocol, const SocketOptions* extra){
     return create_socket(protocol, extra);
 }
 

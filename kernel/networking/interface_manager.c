@@ -18,6 +18,7 @@
 static l2_interface_t g_l2[MAX_L2_INTERFACES];
 static uint8_t g_l2_used[MAX_L2_INTERFACES];
 static uint8_t g_l2_count = 0;
+static uint32_t g_if_epoch = 1;
 
 typedef struct {
     l3_ipv4_interface_t node;
@@ -32,6 +33,12 @@ typedef struct {
 
 static v4_slot_t g_v4[MAX_IPV4_L3_INTERFACES];
 static v6_slot_t g_v6[MAX_IPV6_L3_INTERFACES];
+
+static uint32_t net_interface_mark_changed(void) {
+    g_if_epoch++;
+    if (!g_if_epoch) g_if_epoch = 1;
+    return g_if_epoch;
+}
 
 static inline int l2_slot_from_ifindex(uint8_t ifindex){
     if (!ifindex) return -1;
@@ -85,6 +92,7 @@ uint8_t l2_interface_create(const char *name, void *driver_ctx, uint16_t base_me
     l2_interface_t* itf = &g_l2[slot];
     memset(itf, 0, sizeof(*itf));
     itf->ifindex = (uint8_t)(slot + 1);
+    net_interface_mark_changed();
 
     if (name) strncpy(itf->name, name, sizeof(itf->name));
 
@@ -122,6 +130,7 @@ bool l2_interface_destroy(uint8_t ifindex){
     memset(&g_l2[slot], 0, sizeof(l2_interface_t));
     g_l2_used[slot] = 0;
     if (g_l2_count) g_l2_count -= 1;
+    net_interface_mark_changed();
     return true;
 }
 
@@ -146,7 +155,9 @@ l2_interface_t* l2_interface_at(uint8_t idx) {
 bool l2_interface_set_up(uint8_t ifindex, bool up) {
     l2_interface_t* itf = l2_interface_find_by_index(ifindex);
     if (!itf) return false;
+    if (itf->is_up == up) return true;
     itf->is_up = up;
+    net_interface_mark_changed();
     return true;
 }
 
@@ -365,9 +376,11 @@ uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
     memset(&n->runtime_opts_v4, 0, sizeof(n->runtime_opts_v4));
     if (runtime_opts) n->runtime_opts_v4 = *runtime_opts;
 
+    n->is_localhost = (l2->kind == NET_IFK_LOCALHOST);
+    n->l3_id = make_l3_id_v4(l2->ifindex, (uint8_t)loc);
     n->routing_table = NULL;
-    if (l2->kind != NET_IFK_LOCALHOST) {
-        n->routing_table = ipv4_rt_create();
+    if (!n->is_localhost) {
+        n->routing_table = ipv4_rt_create(n->l3_id);
         if (!n->routing_table) {
             g_v4[g].used = false;
             memset(&g_v4[g], 0, sizeof(g_v4[g]));
@@ -376,8 +389,7 @@ uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
         ipv4_rt_ensure_basics((ipv4_rt_table_t*)n->routing_table, n->ip, n->mask, n->gw, l2->base_metric);
     }
 
-    n->is_localhost = (l2->kind == NET_IFK_LOCALHOST);
-    n->l3_id = make_l3_id_v4(l2->ifindex, (uint8_t)loc);
+    n->epoch = net_interface_mark_changed();
     l2->l3_v4[loc] = n;
     l2->ipv4_count++;
 
@@ -418,6 +430,16 @@ bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
         }
     }
 
+    uint32_t old_ip = n->ip;
+    uint32_t old_mask = n->mask;
+
+    bool l3_changed = n->mode != mode;
+    if (mode == IPV4_CFG_STATIC || mode == IPV4_CFG_DHCP) {
+        if (n->ip != ip || n->mask != mask) l3_changed = true;
+    } else if (n->ip || n->mask) {
+        l3_changed = true;
+    }
+
     n->mode = mode;
 
     if (runtime_opts) n->runtime_opts_v4 = *runtime_opts;
@@ -436,8 +458,17 @@ bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
     }
 
     if (l2->kind != NET_IFK_LOCALHOST) {
-        if (!n->routing_table) n->routing_table = ipv4_rt_create();
-        if (n->routing_table) ipv4_rt_sync_basics((ipv4_rt_table_t*)n->routing_table, n->ip, n->mask, n->gw, l2->base_metric);
+        if (!n->routing_table) n->routing_table = ipv4_rt_create(n->l3_id);
+        if (n->routing_table) {
+            if (old_ip && old_mask) {
+                uint32_t old_net = old_ip & old_mask;
+                uint32_t new_net = (n->ip && n->mask) ? (n->ip & n->mask) : 0;
+                if (!n->ip || !n->mask || old_mask != n->mask || old_net != new_net) {
+                    ipv4_rt_del_in((ipv4_rt_table_t*)n->routing_table, old_net, old_mask);
+                }
+            }
+            ipv4_rt_sync_basics((ipv4_rt_table_t*)n->routing_table, n->ip, n->mask, n->gw, l2->base_metric);
+        }
     } else {
         if (n->routing_table) {
             ipv4_rt_destroy((ipv4_rt_table_t*)n->routing_table);
@@ -446,6 +477,7 @@ bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
     }
     if (l2->kind != NET_IFK_LOCALHOST && l2_has_active_v4(l2)) for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) igmp_send_join(l2->ifindex, l2->ipv4_mcast[i]);
 
+    if (l3_changed) n->epoch = net_interface_mark_changed();
     return true;
 }
 
@@ -467,6 +499,7 @@ bool l3_ipv4_remove_from_interface(uint8_t l3_id){
     if (slot < MAX_IPV4_PER_INTERFACE && l2->l3_v4[slot] == n){
         l2->l3_v4[slot] = NULL;
         if (l2->ipv4_count) l2->ipv4_count--;
+        net_interface_mark_changed();
     }
 
     if (n->routing_table) {
@@ -617,6 +650,7 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     }
 
     n->l3_id = make_l3_id_v6(l2->ifindex, (uint8_t)loc);
+    n->epoch = net_interface_mark_changed();
     l2->l3_v6[loc] = n;
     l2->ipv6_count++;
 
@@ -627,7 +661,7 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     }
     n->routing_table = NULL;
     if (!n->is_localhost) {
-        n->routing_table = ipv6_rt_create();
+        n->routing_table = ipv6_rt_create(n->l3_id);
         if (n->routing_table){
             ipv6_rt_ensure_basics((ipv6_rt_table_t*)n->routing_table, n->ip, n->prefix_len, n->gateway, l2->base_metric);
         }
@@ -654,6 +688,7 @@ bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
     if (prefix_len > 128) return false;
 
     if (kind == n->kind && cfg == n->cfg && prefix_len == n->prefix_len && ipv6_cmp(ip, n->ip) == 0 && ipv6_cmp(gw, n->gateway) == 0) return true;
+    bool l3_changed = kind != n->kind || cfg != n->cfg || prefix_len != n->prefix_len || ipv6_cmp(ip, n->ip) != 0;
 
     if ((n->kind & IPV6_ADDRK_LINK_LOCAL) && cfg == IPV6_CFG_DISABLE){
         for (int i=0;i<MAX_IPV6_L3_INTERFACES;i++){
@@ -692,6 +727,7 @@ bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
 
     uint8_t old_ip[16];
     ipv6_cpy(old_ip, n->ip);
+    uint8_t old_prefix_len = n->prefix_len;
 
     n->cfg = cfg;
     n->kind = kind;
@@ -759,8 +795,17 @@ bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
             (void)l2_ipv6_mcast_join(l2->ifindex, sn);
         }
 
-        if (!n->routing_table) n->routing_table = ipv6_rt_create();
+        if (!n->routing_table) n->routing_table = ipv6_rt_create(n->l3_id);
         if (n->routing_table){
+            if (old_prefix_len && !ipv6_is_unspecified(old_ip)) {
+                uint8_t old_net[16];
+                uint8_t new_net[16];
+                ipv6_prefix_network(old_ip, old_prefix_len, old_net);
+                if (n->prefix_len && !ipv6_is_unspecified(n->ip)) ipv6_prefix_network(n->ip, n->prefix_len, new_net);
+                if (!n->prefix_len || ipv6_is_unspecified(n->ip) || old_prefix_len != n->prefix_len || ipv6_cmp(old_net, new_net) != 0) {
+                    ipv6_rt_del_in((ipv6_rt_table_t*)n->routing_table, old_net, old_prefix_len);
+                }
+            }
             ipv6_rt_sync_basics((ipv6_rt_table_t*)n->routing_table, n->ip, n->prefix_len, n->gateway, l2->base_metric);
         }
     } else {
@@ -771,6 +816,7 @@ bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
     }
     if (l2->kind != NET_IFK_LOCALHOST && l2_has_active_v6(l2)) for (int i = 0; i < (int)l2->ipv6_mcast_count; ++i) mld_send_join(l2->ifindex, l2->ipv6_mcast[i]);
 
+    if (l3_changed) n->epoch = net_interface_mark_changed();
     return true;
 }
 
@@ -800,6 +846,7 @@ bool l3_ipv6_remove_from_interface(uint8_t l3_id){
     if (slot < MAX_IPV6_PER_INTERFACE && l2->l3_v6[slot] == n){
         l2->l3_v6[slot] = NULL;
         if (l2->ipv6_count) l2->ipv6_count--;
+        net_interface_mark_changed();
     }
 
     if (n->routing_table){
@@ -831,6 +878,7 @@ bool l3_ipv6_set_enabled(uint8_t l3_id, bool enable){
         n->dad_state = IPV6_DAD_NONE;
         n->dad_probes_sent = 0;
         n->dad_timer_ms = 0;
+        n->epoch = net_interface_mark_changed();
         return true;
     }
 }

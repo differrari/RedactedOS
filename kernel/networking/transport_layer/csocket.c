@@ -9,8 +9,8 @@
 #include "data/struct/hashmap.h"
 #include "alloc/allocate.h"
 
-socket_handle_t create_socket(protocol_t protocol, const SocketExtraOptions* extra){
-    SocketExtraOptions default_extra = {};
+socket_handle_t create_socket(protocol_t protocol, const SocketOptions* extra){
+    SocketOptions default_extra = {};
     if (!extra) extra = &default_extra;
 
     if (protocol == PROTO_NONE) {
@@ -137,32 +137,6 @@ int32_t get_socket_option(socket_handle_t handle, int32_t opt, void* value, uint
     int32_t res = socket_core_get_option(socket, opt, value, len);
     socket_core_put(socket);
     return res;
-}
-
-uint16_t get_socket_local_port(socket_handle_t handle){
-    ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
-    if (!socket) return 0;
-
-    uint16_t port = 0;
-    if (socket_core_protocol(socket) == PROTO_TCP) port = socket_get_local_port_tcp(socket_core_impl(socket));
-    else if (socket_core_protocol(socket) == PROTO_UDP) port = socket_get_local_port_udp(socket_core_impl(socket));
-
-    socket_core_put(socket);
-    return port;
-}
-
-bool get_socket_remote_endpoint(socket_handle_t handle, net_l4_endpoint* out){
-    if (!out) return false;
-    ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
-    if (!socket) return false;
-
-    bool ok = true;
-    if (socket_core_protocol(socket) == PROTO_TCP) socket_get_remote_ep_tcp(socket_core_impl(socket), out);
-    else if (socket_core_protocol(socket) == PROTO_UDP) socket_get_remote_ep_udp(socket_core_impl(socket), out);
-    else ok = false;
-
-    socket_core_put(socket);
-    return ok;
 }
 
 int32_t close_socket(socket_handle_t handle){

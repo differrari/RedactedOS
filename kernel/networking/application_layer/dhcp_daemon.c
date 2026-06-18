@@ -18,7 +18,6 @@
 #include "types.h"
 #include "networking/interface_manager.h"
 #include "networking/network.h"
-#include "networking/internet_layer/ipv4_route.h"
 #include "syscalls/syscalls.h"
 
 typedef enum {
@@ -215,9 +214,9 @@ static bool udp_wait_for_ack_or_nak(socket_handle_t sock, uint32_t expect_xid, c
     return false;
 }
 
-static void apply_offer_to_l3(uint8_t ifindex, uint8_t l3_id, dhcp_packet *p, sizedptr sp, uint32_t xid, dhcp_if_state_t* st) {
+static bool apply_offer_to_l3(uint8_t l3_id, dhcp_packet *p, sizedptr sp, uint32_t xid, dhcp_if_state_t* st) {
     l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
-    if (!v4) return;
+    if (!v4) return false;
     net_runtime_opts_t rt_local;
     memset(&rt_local, 0, sizeof(rt_local));
     uint32_t yi_net = p->yiaddr;
@@ -307,29 +306,12 @@ static void apply_offer_to_l3(uint8_t ifindex, uint8_t l3_id, dhcp_packet *p, si
     if (rt_local.dns[0] == 0 && gw_host != 0) rt_local.dns[0] = gw_host;
     rt_local.xid = (uint16_t)xid;
 
-    l3_ipv4_update(l3_id, ip_host, mask_host, gw_host, IPV4_CFG_DHCP, &rt_local);
-
-    l3_ipv4_interface_t* v4u = l3_ipv4_find_by_id(l3_id);
-    if (v4u) {
-        if (!v4u->routing_table) {
-            v4u->routing_table = ipv4_rt_create();
-        } else {
-            ipv4_rt_clear(v4u->routing_table);
-        }
-        if (v4u->routing_table) {
-            if (ip_host && mask_host) {
-                uint32_t net = ip_host & mask_host;
-                ipv4_rt_add_in(v4u->routing_table, net, mask_host, 0, 10);
-            }
-            if (gw_host) {
-                ipv4_rt_add_in(v4u->routing_table, 0, 0, gw_host, 11);
-            }
-        }
-    }
+    if (!l3_ipv4_update(l3_id, ip_host, mask_host, gw_host, IPV4_CFG_DHCP, &rt_local)) return false;
 
     st->t1_left_ms = t1_s * 1000;
     st->t2_left_ms = t2_s * 1000;
     st->lease_left_ms = lease_s * 1000;
+    return true;
 }
 
 static void dhcp_send_discover_for(dhcp_if_state_t* st) {
@@ -462,10 +444,12 @@ static void fsm_once_for(dhcp_if_state_t* st) {
             st->retry_left_ms = dhcp_next_backoff_ms(st);
         } else {
             if (mtype == DHCPACK) {
-                apply_offer_to_l3(st->ifindex, st->l3_id, resp, sp, st->last_xid, st);
+                bool ok = apply_offer_to_l3(st->l3_id, resp, sp, st->last_xid, st);
                 free_sized((void*)sp.ptr, sp.size);
-                st->state = DHCP_S_BOUND;
-                dhcp_reset_backoff(st);
+                if (ok) {
+                    st->state = DHCP_S_BOUND;
+                    dhcp_reset_backoff(st);
+                } else dhcp_drop_lease_and_retry(st);
             } else {
                 free_sized((void*)sp.ptr, sp.size);
                 dhcp_drop_lease_and_retry(st);
@@ -492,10 +476,12 @@ static void fsm_once_for(dhcp_if_state_t* st) {
         dhcp_packet* p = NULL; sizedptr sp = (sizedptr){0,0}; uint8_t mtype = 0;
         if (udp_wait_for_ack_or_nak(st->sock, st->last_xid, st->mac_ok ? st->mac : NULL, &p, &sp, 2000, &mtype)) {
             if (mtype == DHCPACK) {
-                apply_offer_to_l3(st->ifindex, st->l3_id, p, sp, st->last_xid, st);
+                bool ok = apply_offer_to_l3(st->l3_id, p, sp, st->last_xid, st);
                 free_sized((void*)sp.ptr, sp.size);
-                st->state = DHCP_S_BOUND;
-                dhcp_reset_backoff(st);
+                if (ok) {
+                    st->state = DHCP_S_BOUND;
+                    dhcp_reset_backoff(st);
+                } else dhcp_drop_lease_and_retry(st);
             } else {
                 free_sized((void*)sp.ptr, sp.size);
                 dhcp_drop_lease_and_retry(st);
@@ -510,10 +496,12 @@ static void fsm_once_for(dhcp_if_state_t* st) {
         dhcp_packet* p = NULL; sizedptr sp = (sizedptr){0,0}; uint8_t mtype = 0;
         if (udp_wait_for_ack_or_nak(st->sock, st->last_xid, st->mac_ok ? st->mac : NULL, &p, &sp, 2000, &mtype)) {
             if (mtype == DHCPACK) {
-                apply_offer_to_l3(st->ifindex, st->l3_id, p, sp, st->last_xid, st);
+                bool ok = apply_offer_to_l3(st->l3_id, p, sp, st->last_xid, st);
                 free_sized((void*)sp.ptr, sp.size);
-                st->state = DHCP_S_BOUND;
-                dhcp_reset_backoff(st);
+                if (ok) {
+                    st->state = DHCP_S_BOUND;
+                    dhcp_reset_backoff(st);
+                } else dhcp_drop_lease_and_retry(st);
             } else {
                 free_sized((void*)sp.ptr, sp.size);
                 dhcp_drop_lease_and_retry(st);

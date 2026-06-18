@@ -1,7 +1,6 @@
 #include "csocket_http_server.h"
 #include "console/kio.h"
 #include "networking/transport_layer/csocket.h"
-#include "networking/transport_layer/tcp.h"
 #include "networking/net_logger/net_logger.h"
 #include "http.h"
 #include "std/std.h"
@@ -21,24 +20,20 @@ typedef struct HTTPConnection {
 
 typedef struct HTTPServer {
     socket_handle_t sock;
-    SocketExtraOptions log_opts;
-    SocketExtraOptions* tcp_extra;
+    SocketOptions log_opts;
+    SocketOptions tcp_opts;
     HTTPServerPolicy policy;
 } HTTPServer;
 
-http_server_handle_t http_server_create(const SocketExtraOptions* extra, const HTTPServerPolicyOptions* http_options) {
+http_server_handle_t http_server_create(const SocketOptions* extra, const HTTPServerPolicyOptions* http_options) {
     HTTPServer* srv = (HTTPServer*)zalloc(sizeof(*srv));
     if (!srv) return NULL;
 
     srv->policy = http_server_policy_from_options(http_options);
-    if (extra) srv->log_opts = *extra;
-
-    if (extra && (srv->log_opts.flags & SOCK_OPT_DEBUG)) {
-        srv->tcp_extra = (SocketExtraOptions*)zalloc(sizeof(SocketExtraOptions));
-        if (srv->tcp_extra) {
-            *srv->tcp_extra = *extra;
-            srv->tcp_extra->flags &= ~SOCK_OPT_DEBUG;
-        }
+    if (extra) {
+        srv->log_opts = *extra;
+        srv->tcp_opts = *extra;
+        srv->tcp_opts.flags &= ~SOCK_OPT_DEBUG;
     }
 
     return srv;
@@ -63,7 +58,7 @@ int32_t http_server_bind(http_server_handle_t h, const SockBindSpec* spec, uint1
 
     HTTPServer* srv = (HTTPServer*)h;
     uint16_t p = port;
-    if (!srv->sock) srv->sock = create_socket(PROTO_TCP, srv->tcp_extra ? srv->tcp_extra : &srv->log_opts);
+    if (!srv->sock) srv->sock = create_socket(PROTO_TCP, &srv->tcp_opts);
     if (!srv->sock) return SOCK_ERR_SYS;
     int32_t r = bind_socket(srv->sock, spec, p);
 
@@ -120,10 +115,11 @@ http_connection_handle_t http_server_accept(http_server_handle_t h) {
     ev.action = NETLOG_ACT_ACCEPT;
     ev.pid = get_current_proc_pid();
     ev.i0 = (int64_t)child;
-    ev.local_port = get_socket_local_port(child);
-    net_l4_endpoint child_remote_ep = {0};
-    get_socket_remote_endpoint(child, &child_remote_ep);
-    ev.remote_ep = child_remote_ep;
+    uint32_t local_port = 0;
+    uint32_t opt_len = sizeof(local_port);
+    if (get_socket_option(child, SOCK_GET_LOCAL_PORT, &local_port, &opt_len) == SOCK_OK) ev.local_port = local_port;
+    opt_len = sizeof(ev.remote_ep);
+    get_socket_option(child, SOCK_GET_REMOTE_ENDPOINT, &ev.remote_ep, &opt_len);
     netlog_socket_event(&srv->log_opts, &ev);
     return conn;
 }
@@ -154,7 +150,7 @@ HTTPRequestMsg http_server_recv_request(http_server_handle_t h, http_connection_
 
     while (hdr_end < 0) {
         int64_t r = receive_from_socket(conn->client, tmp, sizeof(tmp), NULL);
-        if (r == TCP_WOULDBLOCK) {
+        if (r == SOCK_ERR_WOULDBLOCK) {
             uint32_t now = (uint32_t)get_time();
             if ((uint32_t)(now - last_rx_ms) > srv->policy.common.header_idle_timeout_ms || (uint32_t)(now - start_ms) > srv->policy.common.header_total_timeout_ms) {
                 string_free(buf);
@@ -296,7 +292,7 @@ HTTPRequestMsg http_server_recv_request(http_server_handle_t h, http_connection_
 
             while (chunk_result == HTTP_PARSE_INCOMPLETE) {
                 int64_t r = receive_from_socket(conn->client, tmp, sizeof(tmp), NULL);
-                if (r == TCP_WOULDBLOCK) {
+                if (r == SOCK_ERR_WOULDBLOCK) {
                     uint32_t now = (uint32_t)get_time();
                     if ((now - body_last_rx_ms) > srv->policy.common.body_idle_timeout_ms || (now - body_start_ms) > srv->policy.common.body_total_timeout_ms) break;
                     msleep(2);
@@ -343,7 +339,7 @@ HTTPRequestMsg http_server_recv_request(http_server_handle_t h, http_connection_
                     uint32_t body_last_rx_ms = body_start_ms;
                     while (copied < need) {
                         int64_t r = receive_from_socket(conn->client, body_copy + copied, need - copied, NULL);
-                        if (r == TCP_WOULDBLOCK) {
+                        if (r == SOCK_ERR_WOULDBLOCK) {
                             uint32_t now = (uint32_t)get_time();
                             if ((now - body_last_rx_ms) > srv->policy.common.body_idle_timeout_ms || (now - body_start_ms) > srv->policy.common.body_total_timeout_ms) {
                                 bad_request = true;
@@ -414,10 +410,11 @@ HTTPRequestMsg http_server_recv_request(http_server_handle_t h, http_connection_
     ev.u0 = (uint32_t)req.method;
     ev.u1 = (uint32_t)req.path.length;
     ev.i0 = (int64_t)req.body.length;
-    ev.local_port = get_socket_local_port(conn->client);
-    net_l4_endpoint conn_remote_ep = {0};
-    get_socket_remote_endpoint(conn->client, &conn_remote_ep);
-    ev.remote_ep = conn_remote_ep;
+    uint32_t local_port = 0;
+    uint32_t opt_len = sizeof(local_port);
+    if (get_socket_option(conn->client, SOCK_GET_LOCAL_PORT, &local_port, &opt_len) == SOCK_OK) ev.local_port = local_port;
+    opt_len = sizeof(ev.remote_ep);
+    get_socket_option(conn->client, SOCK_GET_REMOTE_ENDPOINT, &ev.remote_ep, &opt_len);
 
     char pathbuf[128];
     if (req.path.length && req.path.data) {
@@ -511,7 +508,7 @@ int32_t http_server_send_response(http_server_handle_t h, http_connection_handle
         int64_t r = send_on_socket(conn->client, (void*)(first_ptr + off), first_len - off);
         uint32_t now = (uint32_t)get_time();
 
-        if (r == TCP_WOULDBLOCK || r == 0) {
+        if (r == SOCK_ERR_WOULDBLOCK || r == 0) {
             if ((now - progress_ms) > 3000 || (now - start_ms) > 30000) {
                 sent = SOCK_ERR_SYS;
                 break;
@@ -537,7 +534,7 @@ int32_t http_server_send_response(http_server_handle_t h, http_connection_handle
             int64_t r = send_on_socket(conn->client, (void*)(body + body_off), ask);
             uint32_t now = (uint32_t)get_time();
 
-            if (r == TCP_WOULDBLOCK || r == 0) {
+            if (r == SOCK_ERR_WOULDBLOCK || r == 0) {
                 if ((now - progress_ms) > 3000 || (now - start_ms) > 30000) {
                     sent = SOCK_ERR_SYS;
                     break;
@@ -564,10 +561,11 @@ int32_t http_server_send_response(http_server_handle_t h, http_connection_handle
     ev.u0 = code;
     ev.u1 = out_len;
     ev.i0 = sent;
-    ev.local_port = get_socket_local_port(conn->client);
-    net_l4_endpoint conn_remote_ep = {0};
-    get_socket_remote_endpoint(conn->client, &conn_remote_ep);
-    ev.remote_ep = conn_remote_ep;
+    uint32_t local_port = 0;
+    uint32_t opt_len = sizeof(local_port);
+    if (get_socket_option(conn->client, SOCK_GET_LOCAL_PORT, &local_port, &opt_len) == SOCK_OK) ev.local_port = local_port;
+    opt_len = sizeof(ev.remote_ep);
+    get_socket_option(conn->client, SOCK_GET_REMOTE_ENDPOINT, &ev.remote_ep, &opt_len);
     netlog_socket_event(&srv->log_opts, &ev);
 
     string_free(out);
@@ -598,10 +596,11 @@ int32_t http_server_close(http_server_handle_t h) {
     ev.pid = get_current_proc_pid();
     ev.i0 = r;
     if (srv->sock) {
-        ev.local_port = get_socket_local_port(srv->sock);
-        net_l4_endpoint sock_remote_ep = {0};
-        get_socket_remote_endpoint(srv->sock, &sock_remote_ep);
-        ev.remote_ep = sock_remote_ep;
+        uint32_t local_port = 0;
+        uint32_t opt_len = sizeof(local_port);
+        if (get_socket_option(srv->sock, SOCK_GET_LOCAL_PORT, &local_port, &opt_len) == SOCK_OK) ev.local_port = local_port;
+        opt_len = sizeof(ev.remote_ep);
+        get_socket_option(srv->sock, SOCK_GET_REMOTE_ENDPOINT, &ev.remote_ep, &opt_len);
     }
     netlog_socket_event(&srv->log_opts, &ev);
 
@@ -610,9 +609,5 @@ int32_t http_server_close(http_server_handle_t h) {
         srv->sock = 0;
     }
 
-    if (srv->tcp_extra) release(srv->tcp_extra);
-    srv->tcp_extra = NULL;
-
-    srv->log_opts.flags &= ~SOCK_OPT_DEBUG;
     return r;
 }

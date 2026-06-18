@@ -98,7 +98,7 @@ int NetworkDispatch::net_task()
                 processed++;
             }
 
-            driver->flush_rx();
+            driver->complete_rx_batch();
             if (processed) did_work = true;
         }
 
@@ -127,7 +127,7 @@ int NetworkDispatch::net_task()
                 processed++;
             }
             if (processed) {
-                driver->flush_tx();
+                driver->complete_tx_batch();
                 did_work = true;
             }
         }

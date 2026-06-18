@@ -127,6 +127,11 @@ static void reset_backoff(dhcpv6_bind_t* b) {
 
 static void reset_lease_state(l3_ipv6_interface_t* v6, dhcpv6_bind_t* b) {
     if (v6) {
+        if (v6->cfg == IPV6_CFG_DHCPV6) {
+            if (!ipv6_is_unspecified(v6->ip) || v6->prefix_len || !ipv6_is_unspecified(v6->gateway)) {
+                l3_ipv6_update(v6->l3_id, (const uint8_t[16]){0}, 0, (const uint8_t[16]){0}, IPV6_CFG_DHCPV6, v6->kind);
+            }
+        }
         v6->dhcpv6_state = DHCPV6_S_INIT;
         v6->runtime_opts_v6.server_id_len = 0;
         v6->runtime_opts_v6.lease = 0;
@@ -301,9 +306,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
         uint32_t lease_s = v6->runtime_opts_v6.lease;
         if (elapsed_s >= lease_s) {
-            v6->runtime_opts_v6.lease = 0;
-            v6->runtime_opts_v6.lease_start_time = 0;
-            v6->dhcpv6_state = DHCPV6_S_INIT;
+            reset_lease_state(v6, b);
         } else {
             uint32_t left_s = lease_s - elapsed_s;
             b->lease_left_ms = left_s * 1000u;
@@ -419,9 +422,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
     if (v6->dhcpv6_state == DHCPV6_S_BOUND) {
         if (!b->lease_left_ms && v6->runtime_opts_v6.lease) {
-            v6->dhcpv6_state = DHCPV6_S_SOLICIT;
-            v6->runtime_opts_v6.server_id_len = 0;
-            reset_backoff(b);
+            reset_lease_state(v6, b);
             return;
         }
 
@@ -468,7 +469,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
         if (!has_dns) {
             if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
-                memcpy(v6->runtime_opts_v6.dns[0], v6->gateway, 16);
+                ipv6_cpy(v6->runtime_opts_v6.dns[0], v6->gateway);
             }
         }
 
@@ -477,6 +478,12 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
             v6->dhcpv6_state = DHCPV6_S_INIT;
             b->retry_left_ms = 0;
             reset_backoff(b);
+            return;
+        }
+
+        if (type_peek == DHCPV6_MSG_RELEASE || type_peek == DHCPV6_MSG_DECLINE) {
+            reset_lease_state(v6, b);
+            b->done = 1;
             return;
         }
 
@@ -583,7 +590,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
                     if (!has_dns) {
                         if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
-                            memcpy(v6->runtime_opts_v6.dns[0], v6->gateway, 16);
+                            ipv6_cpy(v6->runtime_opts_v6.dns[0], v6->gateway);
                         }
                     }
 
@@ -632,7 +639,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
                         if (!has_dns) {
                             if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
-                                memcpy(v6->runtime_opts_v6.dns[0], v6->gateway, 16);
+                                ipv6_cpy(v6->runtime_opts_v6.dns[0], v6->gateway);
                             }
                         }
 
@@ -652,7 +659,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
                         if (!has_dns) {
                             if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
-                                memcpy(v6->runtime_opts_v6.dns[0], v6->gateway, 16);
+                                ipv6_cpy(v6->runtime_opts_v6.dns[0], v6->gateway);
                             }
                         }
 
@@ -703,7 +710,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
 
                         if (!has_dns) {
                             if (!ipv6_is_unspecified(v6->gateway) && !ipv6_is_multicast(v6->gateway)) {
-                                memcpy(v6->runtime_opts_v6.dns[0], v6->gateway, 16);
+                                ipv6_cpy(v6->runtime_opts_v6.dns[0], v6->gateway);
                             }
                         }
 
@@ -743,15 +750,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
                         v6->dhcpv6_state = DHCPV6_S_BOUND;
                         reset_backoff(b);
                     } else if (v6->dhcpv6_state == DHCPV6_S_RELEASING || v6->dhcpv6_state == DHCPV6_S_DECLINING) {
-                        v6->runtime_opts_v6.lease = 0;
-                        v6->runtime_opts_v6.lease_start_time = 0;
-
-                        b->t1_left_ms = 0;
-                        b->t2_left_ms = 0;
-                        b->lease_left_ms = 0;
-
-                        v6->dhcpv6_state = DHCPV6_S_INIT;
-                        reset_backoff(b);
+                        reset_lease_state(v6, b);
                     }
                 }
             }

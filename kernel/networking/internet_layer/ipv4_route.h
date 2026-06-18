@@ -17,7 +17,7 @@ typedef struct {
 
 typedef struct ipv4_rt_table ipv4_rt_table_t;
 
-ipv4_rt_table_t* ipv4_rt_create(void);
+ipv4_rt_table_t* ipv4_rt_create(uint8_t owner_l3_id);
 void ipv4_rt_destroy(ipv4_rt_table_t* t);
 void ipv4_rt_clear(ipv4_rt_table_t* t);
 
@@ -31,8 +31,8 @@ void ipv4_rt_sync_basics(ipv4_rt_table_t* t, uint32_t ip, uint32_t mask, uint32_
 
 typedef struct {
     uint8_t l3_id;
+    uint32_t l3_epoch;
     uint32_t src_ip;
-    uint32_t net_epoch;
 } ipv4_tx_plan_t;
 
 bool ipv4_tx_plan_valid(const ipv4_tx_plan_t* plan);

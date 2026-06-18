@@ -10,6 +10,7 @@
 #include "networking/network.h"
 #include "networking/interface_manager.h"
 #include "networking/net_logger/net_logger.h"
+#include "syscalls/syscalls.h"
 #include "std/memory.h"
 #include "alloc/allocate.h"
 
@@ -21,7 +22,7 @@ typedef struct udp_socket {
     net_l4_endpoint remoteEP;
     bool connected;
     ksocket_t* ownerSocket;
-    SocketExtraOptions extraOpts;
+    SocketOptions options;
     SockBindSpec bindSpec;
     socket_bind_token_t bindToken;
     netpkt_t** ring;
@@ -60,7 +61,7 @@ static bool udp_socket_mcast_match(udp_socket_t* s, ip_version_t ver, const void
             memcpy(&got, dst_ip_addr, 4);
             if (want == got) return true;
         } else if (ver == IP_VER6) {
-            if (memcmp(group->ip, dst_ip_addr, 16) == 0) return true;
+            if (ipv6_cmp(group->ip, dst_ip_addr) == 0) return true;
         }
     }
 
@@ -155,19 +156,19 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, const void* src
     if (s->connected) {
         if (s->remoteEP.ver != ipver || s->remoteEP.port != src_port) return 0;
         if (ipver == IP_VER4 && memcmp(s->remoteEP.ip, src_ip_addr, 4) != 0) return 0;
-        if (ipver == IP_VER6 && memcmp(s->remoteEP.ip, src_ip_addr, 16) != 0) return 0;
+        if (ipver == IP_VER6 && ipv6_cmp(s->remoteEP.ip, src_ip_addr) != 0) return 0;
     }
 
     uint32_t pkt_len = netpkt_len(pkt);
     uint32_t limit = UINT32_MAX;
-    if ((s->extraOpts.flags & SOCK_OPT_BUF_SIZE) && s->extraOpts.buf_size) limit = s->extraOpts.buf_size;
+    if ((s->options.flags & SOCK_OPT_BUF_SIZE) && s->options.buf_size) limit = s->options.buf_size;
     if (pkt_len > limit) return 0;
     if (s->rx_bytes > limit - pkt_len) return 0;
 
     if (!s->ring || !s->src_eps || !s->ring_cap) {
         uint32_t usable = UDP_DEFAULT_RING_CAP;
-        if ((s->extraOpts.flags & SOCK_OPT_BUF_SIZE) && s->extraOpts.buf_size) {
-            usable = s->extraOpts.buf_size / MAX_PACKET_SIZE;
+        if ((s->options.flags & SOCK_OPT_BUF_SIZE) && s->options.buf_size) {
+            usable = s->options.buf_size / MAX_PACKET_SIZE;
             if (usable < 4) usable = 4;
             if (usable > UDP_MAX_RING_CAP) usable = UDP_MAX_RING_CAP;
         }
@@ -195,23 +196,23 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, const void* src
     s->src_eps[s->r_tail].ver = ipver;
     memset(s->src_eps[s->r_tail].ip, 0, 16);
     if (ipver == IP_VER4) memcpy(s->src_eps[s->r_tail].ip, src_ip_addr, 4);
-    else if (ipver == IP_VER6) memcpy(s->src_eps[s->r_tail].ip, src_ip_addr, 16);
+    else if (ipver == IP_VER6) ipv6_cpy(s->src_eps[s->r_tail].ip, src_ip_addr);
     s->src_eps[s->r_tail].port = src_port;
     s->r_tail = nexti;
     return pkt_len;
 } 
 
-socket_impl_t udp_socket_create(ksocket_t* owner, const SocketExtraOptions* extra) {
+socket_impl_t udp_socket_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
 
     udp_socket_t* s = (udp_socket_t*)zalloc(sizeof(*s));
     if (!s) return NULL;
     s->ownerSocket = owner;
     s->remoteEP.ver = IP_VER4;
-    if (extra) s->extraOpts = *extra;
-    s->extraOpts.flags &= ~(SOCK_OPT_MCAST_JOIN | SOCK_OPT_MCAST_LEAVE);
-    s->extraOpts.mcast_count = 0;
-    s->extraOpts.mcast_groups = NULL;
+    if (extra) s->options = *extra;
+    s->options.flags &= ~(SOCK_OPT_MCAST_JOIN | SOCK_OPT_MCAST_LEAVE);
+    s->options.mcast_count = 0;
+    s->options.mcast_groups = NULL;
 
     if (extra && extra->mcast_count) {
         if (!extra->mcast_groups || socket_setopt_udp(s, SOCK_OPT_MCAST_JOIN, extra->mcast_groups, sizeof(net_l4_endpoint) * extra->mcast_count) != SOCK_OK) {
@@ -233,7 +234,7 @@ int32_t socket_bind_udp(socket_impl_t sh, const SockBindSpec* spec_in, uint16_t 
     ev.pid = socket_core_pid(s->ownerSocket);
     ev.u0 = port;
     ev.bind_spec = *spec_in;
-    netlog_socket_event(&s->extraOpts, &ev);
+    netlog_socket_event(&s->options, &ev);
 
     if (s->localPort) return SOCK_ERR_BOUND;
     if (!s->ownerSocket) return SOCK_ERR_SYS;
@@ -299,7 +300,7 @@ int32_t socket_connect_udp(socket_impl_t sh, const net_l4_endpoint* dst) {
     ev.action = NETLOG_ACT_CONNECT;
     ev.pid = socket_core_pid(s->ownerSocket);
     if (dst) ev.dst_ep = *dst;
-    netlog_socket_event(&s->extraOpts, &ev);
+    netlog_socket_event(&s->options, &ev);
 
     if (!dst || !dst->port) return SOCK_ERR_INVAL;
     if (dst->ver != IP_VER4 && dst->ver != IP_VER6) return SOCK_ERR_INVAL;
@@ -322,7 +323,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         ev.dst_ep = *dst;
         ev.u0 = dst->port;
     }
-    netlog_socket_event(&s->extraOpts, &ev);
+    netlog_socket_event(&s->options, &ev);
 
     bool explicit_dst = dst != NULL;
     if (!dst) {
@@ -337,7 +338,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
     if (s->connected && explicit_dst) {
         if (d.ver != s->remoteEP.ver || d.port != s->remoteEP.port) return SOCK_ERR_STATE;
         if (d.ver == IP_VER4 && memcmp(d.ip, s->remoteEP.ip, 4) != 0) return SOCK_ERR_STATE;
-        if (d.ver == IP_VER6 && memcmp(d.ip, s->remoteEP.ip, 16) != 0) return SOCK_ERR_STATE;
+        if (d.ver == IP_VER6 && ipv6_cmp(d.ip, s->remoteEP.ip) != 0) return SOCK_ERR_STATE;
     }
 
     sizedptr pay;
@@ -354,7 +355,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         l3_ipv4_interface_t* bcast_v4 = NULL;
 
         if (limited_bcast) {
-            if (!(s->extraOpts.flags & SOCK_OPT_BROADCAST_ALLOWED)) return SOCK_ERR_PERM;
+            if (!(s->options.flags & SOCK_OPT_BROADCAST_ALLOWED)) return SOCK_ERR_PERM;
 
             uint32_t n = socket_bind_select_l3(&s->bindSpec, IP_VER4, bcast_ids, MAX_IPV4_L3_INTERFACES);
             uint32_t valid = 0;
@@ -379,7 +380,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
                 bcast_v4 = v4;
                 break;
             }
-            if (bcast_v4 && !(s->extraOpts.flags & SOCK_OPT_BROADCAST_ALLOWED)) return SOCK_ERR_PERM;
+            if (bcast_v4 && !(s->options.flags & SOCK_OPT_BROADCAST_ALLOWED)) return SOCK_ERR_PERM;
         }
 
         if (bcast_v4) {
@@ -405,7 +406,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
             tx.scope = IP_TX_BOUND_L3;
             tx.index = chosen_l3;
 
-            udp_send_segment(&src, &d, pay, &tx, (s->extraOpts.flags & SOCK_OPT_TTL) ? s->extraOpts.ttl : 0, (s->extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
+            udp_send_segment(&src, &d, pay, &tx, (s->options.flags & SOCK_OPT_TTL) ? s->options.ttl : 0, (s->options.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
             return (int64_t)len;
         }
 
@@ -438,7 +439,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         tx.scope = IP_TX_BOUND_L3;
         tx.index = plan.l3_id;
 
-        udp_send_segment(&src, &d, pay, &tx, (s->extraOpts.flags & SOCK_OPT_TTL) ? s->extraOpts.ttl : 0, (s->extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
+        udp_send_segment(&src, &d, pay, &tx, (s->options.flags & SOCK_OPT_TTL) ? s->options.ttl : 0, (s->options.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
         return (int64_t)len;
     }
 
@@ -465,14 +466,14 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         net_l4_endpoint src;
         src.ver = IP_VER6;
         memset(src.ip, 0, 16);
-        memcpy(src.ip, v6->ip, 16);
+        ipv6_cpy(src.ip, v6->ip);
         src.port = s->localPort;
 
         ip_tx_opts_t tx;
         tx.scope = IP_TX_BOUND_L3;
         tx.index = plan.l3_id;
 
-        udp_send_segment(&src, &d, pay, &tx, (s->extraOpts.flags & SOCK_OPT_TTL) ? s->extraOpts.ttl : 0, (s->extraOpts.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
+        udp_send_segment(&src, &d, pay, &tx, (s->options.flags & SOCK_OPT_TTL) ? s->options.ttl : 0, (s->options.flags & SOCK_OPT_DONTFRAG) ? 1 : 0);
         return (int64_t)len;
     }
 
@@ -490,9 +491,22 @@ int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_en
     ev.u0 = (uint32_t)len;
     ev.local_port = s->localPort;
     ev.remote_ep = s->remoteEP;
-    netlog_socket_event(&s->extraOpts, &ev);
+    netlog_socket_event(&s->options, &ev);
 
-    if (!s->ring || s->r_head == s->r_tail) return SOCK_ERR_WOULDBLOCK;
+    if (!s->ring || s->r_head == s->r_tail) {
+        if (!(s->options.flags & SOCK_OPT_RECV_TIMEOUT) || !s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
+
+        uint32_t start_ms = (uint32_t)get_time();
+        while (!s->ring || s->r_head == s->r_tail) {
+            uint32_t now_ms = (uint32_t)get_time();
+            uint32_t elapsed_ms = now_ms - start_ms;
+            if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
+
+            uint32_t wait_ms = s->options.recv_timeout_ms - elapsed_ms;
+            if (wait_ms > 5) wait_ms = 5;
+            msleep(wait_ms);
+        }
+    }
 
     netpkt_t* p = s->ring[s->r_head];
     net_l4_endpoint se = s->src_eps[s->r_head];
@@ -537,11 +551,15 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
             for (uint32_t i = 0; i < count32; ++i) {
                 bool exists = false;
                 for (uint8_t j = 0; j < next_count; ++j) {
-                    if (next[j].ver != groups[i].ver || next[j].port != groups[i].port) continue;
+                    if (next[j].ver != groups[i].ver) continue;
                     uint32_t sz = groups[i].ver == IP_VER4 ? 4 : 16;
                     if (memcmp(next[j].ip, groups[i].ip, sz) == 0) exists = true;
                 }
-                if (!exists) next[next_count++] = groups[i];
+                if (!exists) {
+                    next[next_count] = groups[i];
+                    next[next_count].port = 0;
+                    next_count++;
+                }
             }
 
             if (next_count == s->mcast_count) {
@@ -561,18 +579,18 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
                 release(next);
                 s->mcast_groups = old_groups;
                 s->mcast_count = old_count;
-                s->extraOpts.mcast_groups = s->mcast_groups;
-                s->extraOpts.mcast_count = s->mcast_count;
-                if (s->mcast_count) s->extraOpts.flags |= SOCK_OPT_MCAST_JOIN;
-                else s->extraOpts.flags &= ~SOCK_OPT_MCAST_JOIN;
+                s->options.mcast_groups = s->mcast_groups;
+                s->options.mcast_count = s->mcast_count;
+                if (s->mcast_count) s->options.flags |= SOCK_OPT_MCAST_JOIN;
+                else s->options.flags &= ~SOCK_OPT_MCAST_JOIN;
                 if (s->localPort) udp_socket_join_mcast_groups(s);
                 return rc;
             }
 
             if (old_groups) release(old_groups);
-            s->extraOpts.mcast_groups = s->mcast_groups;
-            s->extraOpts.mcast_count = s->mcast_count;
-            s->extraOpts.flags |= SOCK_OPT_MCAST_JOIN;
+            s->options.mcast_groups = s->mcast_groups;
+            s->options.mcast_count = s->mcast_count;
+            s->options.flags |= SOCK_OPT_MCAST_JOIN;
             return SOCK_OK;
         }
         case SOCK_OPT_MCAST_LEAVE: {
@@ -594,7 +612,7 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
             for (uint8_t i = 0; i < s->mcast_count; ++i) {
                 bool remove_group = false;
                 for (uint32_t j = 0; j < count; ++j) {
-                    if (s->mcast_groups[i].ver != groups[j].ver || s->mcast_groups[i].port != groups[j].port) continue;
+                    if (s->mcast_groups[i].ver != groups[j].ver) continue;
                     uint32_t sz = groups[j].ver == IP_VER4 ? 4 : 16;
                     if (memcmp(s->mcast_groups[i].ip, groups[j].ip, sz) == 0) remove_group = true;
                 }
@@ -629,18 +647,18 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
                 if (next) release(next);
                 s->mcast_groups = old_groups;
                 s->mcast_count = old_count;
-                s->extraOpts.mcast_groups = s->mcast_groups;
-                s->extraOpts.mcast_count = s->mcast_count;
-                s->extraOpts.flags |= SOCK_OPT_MCAST_JOIN;
+                s->options.mcast_groups = s->mcast_groups;
+                s->options.mcast_count = s->mcast_count;
+                s->options.flags |= SOCK_OPT_MCAST_JOIN;
                 if (s->localPort) udp_socket_join_mcast_groups(s);
                 return rc;
             }
 
             release(old_groups);
-            s->extraOpts.mcast_count = s->mcast_count;
-            s->extraOpts.mcast_groups = s->mcast_groups;
-            if (s->mcast_count) s->extraOpts.flags |= SOCK_OPT_MCAST_JOIN;
-            else s->extraOpts.flags &= ~SOCK_OPT_MCAST_JOIN;
+            s->options.mcast_count = s->mcast_count;
+            s->options.mcast_groups = s->mcast_groups;
+            if (s->mcast_count) s->options.flags |= SOCK_OPT_MCAST_JOIN;
+            else s->options.flags &= ~SOCK_OPT_MCAST_JOIN;
             return SOCK_OK;
         }
         case SOCK_OPT_RECV_TIMEOUT:
@@ -650,7 +668,7 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_DONTFRAG:
         case SOCK_OPT_BROADCAST_ALLOWED:
         case SOCK_OPT_TTL:
-            return socket_extra_setopt(&s->extraOpts, opt, value, len);
+            return socket_common_options_set(&s->options, opt, value, len);
         default:
             return SOCK_ERR_INVAL;
     }
@@ -661,12 +679,58 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
     if (!s || !len) return SOCK_ERR_INVAL;
 
     switch ((uint32_t)opt) {
-        case SOCK_OPT_KEEPALIVE:
-        case SOCK_OPT_KEEPALIVE_INTERVAL:
-        case SOCK_OPT_TCP_NO_DELAY:
-        case SOCK_OPT_SEND_BUF_SIZE:
+        case SOCK_GET_REMOTE_ENDPOINT:
+            if (!value) {
+                *len = sizeof(net_l4_endpoint);
+                return SOCK_OK;
+            }
+            if (*len < sizeof(net_l4_endpoint)) return SOCK_ERR_INVAL;
+            memcpy(value, &s->remoteEP, sizeof(s->remoteEP));
+            *len = sizeof(net_l4_endpoint);
+            return SOCK_OK;
+        case SOCK_GET_BIND_SPEC:
+            if (!value) {
+                *len = sizeof(SockBindSpec);
+                return SOCK_OK;
+            }
+            if (*len < sizeof(SockBindSpec)) return SOCK_ERR_INVAL;
+            memcpy(value, &s->bindSpec, sizeof(s->bindSpec));
+            *len = sizeof(SockBindSpec);
+            return SOCK_OK;
+        default:
+            break;
+    }
+
+    uint32_t v = 0;
+    switch ((uint32_t)opt) {
+        case SOCK_GET_BOUND:
+            v = s->localPort != 0;
+            break;
+        case SOCK_GET_CONNECTED:
+            v = s->connected;
+            break;
+        case SOCK_GET_LISTENING:
+            v = 0;
+            break;
+        case SOCK_GET_LOCAL_PORT:
+            v = s->localPort;
+            break;
+        case SOCK_GET_RECV_QUEUED:
+            v = s->rx_bytes;
+            break;
+        case SOCK_GET_SEND_QUEUED:
+            v = 0;
+            break;
+        case SOCK_GET_OPT_KEEPALIVE:
+        case SOCK_GET_OPT_KEEPALIVE_INTERVAL:
+        case SOCK_GET_OPT_TCP_NO_DELAY:
+        case SOCK_GET_OPT_SEND_BUF_SIZE:
+        case SOCK_GET_TCP_STATE:
+        case SOCK_GET_TCP_MSS:
+        case SOCK_GET_TCP_RTT_MS:
+        case SOCK_GET_TCP_RETRANSMITS:
             return SOCK_ERR_INVAL;
-        case SOCK_OPT_MCAST_JOIN: {
+        case SOCK_GET_MCAST_GROUPS: {
             uint32_t need = s->mcast_count * sizeof(net_l4_endpoint);
             if (!value) {
                 *len = need;
@@ -677,17 +741,27 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
             *len = need;
             return SOCK_OK;
         }
-        case SOCK_OPT_RECV_TIMEOUT:
-        case SOCK_OPT_SEND_TIMEOUT:
-        case SOCK_OPT_BUF_SIZE:
-        case SOCK_OPT_DEBUG:
-        case SOCK_OPT_DONTFRAG:
-        case SOCK_OPT_BROADCAST_ALLOWED:
-        case SOCK_OPT_TTL:
-            return socket_extra_getopt(&s->extraOpts, opt, value, len);
+        case SOCK_GET_OPT_RECV_TIMEOUT:
+        case SOCK_GET_OPT_SEND_TIMEOUT:
+        case SOCK_GET_OPT_BUF_SIZE:
+        case SOCK_GET_OPT_DEBUG:
+        case SOCK_GET_OPT_DONTFRAG:
+        case SOCK_GET_OPT_BROADCAST_ALLOWED:
+        case SOCK_GET_OPT_TTL:
+            return socket_common_options_get(&s->options, opt, value, len);
         default:
             return SOCK_ERR_INVAL;
     }
+
+    if (!value) {
+        *len = sizeof(uint32_t);
+        return SOCK_OK;
+    }
+
+    if (*len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
+    memcpy(value, &v, sizeof(v));
+    *len = sizeof(uint32_t);
+    return SOCK_OK;
 }
 
 int32_t socket_close_udp(socket_impl_t sh) {
@@ -702,7 +776,7 @@ int32_t socket_close_udp(socket_impl_t sh) {
     ev.pid = socket_core_pid(s->ownerSocket);
     ev.local_port = s->localPort;
     ev.remote_ep = s->remoteEP;
-    netlog_socket_event(&s->extraOpts, &ev);
+    netlog_socket_event(&s->options, &ev);
 
     if (s->ring) {
         while (s->r_head != s->r_tail) {
@@ -724,9 +798,9 @@ int32_t socket_close_udp(socket_impl_t sh) {
         s->mcast_groups = NULL;
     }
     s->mcast_count = 0;
-    s->extraOpts.mcast_count = 0;
-    s->extraOpts.mcast_groups = NULL;
-    s->extraOpts.flags &= ~(SOCK_OPT_MCAST_JOIN | SOCK_OPT_MCAST_LEAVE);
+    s->options.mcast_count = 0;
+    s->options.mcast_groups = NULL;
+    s->options.flags &= ~(SOCK_OPT_MCAST_JOIN | SOCK_OPT_MCAST_LEAVE);
     s->ring_cap = 0;
     s->r_head = 0;
     s->r_tail = 0;
@@ -749,20 +823,4 @@ void socket_destroy_udp(socket_impl_t sh) {
     if (!s) return;
     socket_close_udp(s);
     release(s);
-}
-
-uint16_t socket_get_local_port_udp(socket_impl_t sh) {
-    udp_socket_t* s = (udp_socket_t*)sh;
-    return s ? s->localPort : 0;
-}
-
-void socket_get_remote_ep_udp(socket_impl_t sh, net_l4_endpoint* out) {
-    udp_socket_t* s = (udp_socket_t*)sh;
-    if (!s || !out) return;
-    *out = s->remoteEP;
-}
-
-bool socket_is_connected_udp(socket_impl_t sh) {
-    udp_socket_t* s = (udp_socket_t*)sh;
-    return s ? s->connected : false;
 }

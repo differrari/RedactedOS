@@ -106,7 +106,7 @@ tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx) {
     return flow;
 }
 
-void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketExtraOptions* extra) {
+void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return;
 
@@ -422,7 +422,7 @@ void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms){
     flow->tx.rto = rto;
 }
 
-bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketExtraOptions* extra){
+bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra){
     if (!dst || !flow_ctx) return false;
 
     tcp_flow_t *flow = tcp_alloc_flow();

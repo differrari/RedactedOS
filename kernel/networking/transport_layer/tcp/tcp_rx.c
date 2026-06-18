@@ -446,7 +446,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 return;
             }
 
-            const SocketExtraOptions* listener_extra = socket_tcp_extra_options(socket_core_impl(listener));
+            const SocketOptions* listener_extra = socket_tcp_options(socket_core_impl(listener));
             tcp_flow_t *nf = tcp_alloc_flow();
             if (!nf) {
                 socket_core_put(listener);

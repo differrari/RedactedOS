@@ -52,7 +52,7 @@ typedef struct netlog_socket_event_t {
     const char* s1;
 } netlog_socket_event_t;
 
-void netlog_socket_event(const SocketExtraOptions*extra, const netlog_socket_event_t* e);
+void netlog_socket_event(const SocketOptions*extra, const netlog_socket_event_t* e);
 
 #ifdef __cplusplus
 }

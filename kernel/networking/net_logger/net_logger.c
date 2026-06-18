@@ -45,7 +45,7 @@ static const char* bind_kind_str(SockBindKind k) {
     }
 }
 
-void netlog_socket_event(const SocketExtraOptions* extra, const netlog_socket_event_t* e) {
+void netlog_socket_event(const SocketOptions* extra, const netlog_socket_event_t* e) {
     if (!extra) return;
     if (!e) return;
 
