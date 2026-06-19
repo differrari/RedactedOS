@@ -132,6 +132,20 @@ bool ipv4_rt_del_in(ipv4_rt_table_t* t, uint32_t network, uint32_t mask) {
     return false;
 }
 
+int ipv4_rt_count(const ipv4_rt_table_t* t) {
+    return t ? t->len : 0;
+}
+
+bool ipv4_rt_get(const ipv4_rt_table_t* t, int index, ipv4_rt_entry_t* out) {
+    if (!t || !out || index < 0 || index >= t->len) return false;
+    *out = t->e[index];
+    return true;
+}
+
+uint32_t ipv4_rt_epoch(const ipv4_rt_table_t* t) {
+    return t ? t->epoch : 0;
+}
+
 bool ipv4_rt_lookup_in(const ipv4_rt_table_t* t, uint32_t dst, uint32_t* next_hop, int* out_prefix_len, int* out_metric) {
     if (!t) return false;
     int best_pl = -1;

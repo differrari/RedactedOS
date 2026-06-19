@@ -23,6 +23,9 @@ void ipv6_rt_clear(ipv6_rt_table_t* t);
 
 bool ipv6_rt_add_in(ipv6_rt_table_t* t, const uint8_t net[16], uint8_t plen, const uint8_t gw[16], uint16_t metric);
 bool ipv6_rt_del_in(ipv6_rt_table_t* t, const uint8_t net[16], uint8_t plen);
+int ipv6_rt_count(const ipv6_rt_table_t* t);
+bool ipv6_rt_get(const ipv6_rt_table_t* t, int index, ipv6_rt_entry_t* out);
+uint32_t ipv6_rt_epoch(const ipv6_rt_table_t* t);
 bool ipv6_rt_lookup_in(const ipv6_rt_table_t* t, const uint8_t dst[16], uint8_t next_hop[16], int* out_prefix_len, int* out_metric);
 
 void ipv6_rt_ensure_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t plen, const uint8_t gw[16], uint16_t base_metric);

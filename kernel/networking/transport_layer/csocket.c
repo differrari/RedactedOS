@@ -102,7 +102,7 @@ int64_t send_on_socket(socket_handle_t handle, const void* buf, uint64_t len){
     if (!socket) return SOCK_ERR_INVAL;
 
     int64_t res = SOCK_ERR_PROTO;
-    if (socket_core_special_kind(socket) != SOCKET_SPECIAL_NONE) res = SOCK_ERR_UNSUP;
+    if (socket_core_special_kind(socket) != SOCKET_SPECIAL_NONE) res = socket_send_special(socket_core_impl(socket), buf, len);
     else if (socket_core_protocol(socket) == PROTO_TCP) res = socket_send_tcp(socket_core_impl(socket), buf, len);
     else if (socket_core_protocol(socket) == PROTO_UDP) res = socket_sendto_udp(socket_core_impl(socket), NULL, buf, len);
 
@@ -128,7 +128,7 @@ int64_t receive_from_socket(socket_handle_t handle, void* buf, uint64_t len, net
     if (!socket) return SOCK_ERR_INVAL;
 
     int64_t res = SOCK_ERR_PROTO;
-    if (socket_core_special_kind(socket) != SOCKET_SPECIAL_NONE) res = SOCK_ERR_UNSUP;
+    if (socket_core_special_kind(socket) != SOCKET_SPECIAL_NONE) res = socket_recv_special(socket_core_impl(socket), buf, len);
     else if (socket_core_protocol(socket) == PROTO_TCP) res = socket_recv_tcp(socket_core_impl(socket), buf, len);
     else if (socket_core_protocol(socket) == PROTO_UDP) res = socket_recvfrom_udp(socket_core_impl(socket), buf, len, out_src);
 

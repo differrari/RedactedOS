@@ -161,6 +161,25 @@ bool l2_interface_set_up(uint8_t ifindex, bool up) {
     return true;
 }
 
+bool l2_interface_set_metric(uint8_t ifindex, uint16_t metric) {
+    l2_interface_t* itf = l2_interface_find_by_index(ifindex);
+    if (!itf) return false;
+    if (itf->base_metric == metric) return true;
+    itf->base_metric = metric;
+    for (int i = 0; i < MAX_IPV4_PER_INTERFACE; i++) {
+        l3_ipv4_interface_t* v4 = itf->l3_v4[i];
+        if (!v4 || !v4->routing_table) continue;
+        ipv4_rt_sync_basics((ipv4_rt_table_t*)v4->routing_table, v4->ip, v4->mask, v4->gw, itf->base_metric);
+    }
+    for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+        l3_ipv6_interface_t* v6 = itf->l3_v6[i];
+        if (!v6 || !v6->routing_table) continue;
+        ipv6_rt_sync_basics((ipv6_rt_table_t*)v6->routing_table, v6->ip, v6->prefix_len, v6->gateway, itf->base_metric);
+    }
+    net_interface_mark_changed();
+    return true;
+}
+
 static bool l2_sync_multicast_filters(l2_interface_t* itf) {
     if (!itf) return false;
     uint8_t macs[(MAX_IPV4_MCAST_PER_INTERFACE + MAX_IPV6_MCAST_PER_INTERFACE) * 6];

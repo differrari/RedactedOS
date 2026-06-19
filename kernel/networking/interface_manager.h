@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "net/interface_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,31 +15,6 @@ extern "C" {
 #define MAX_IPV6_L3_INTERFACES (MAX_L2_INTERFACES * MAX_IPV6_PER_INTERFACE)
 #define MAX_IPV4_MCAST_PER_INTERFACE 16
 #define MAX_IPV6_MCAST_PER_INTERFACE 32
-
-typedef enum {
-    IPV4_CFG_DISABLED = -1,
-    IPV4_CFG_DHCP = 0,
-    IPV4_CFG_STATIC = 1
-} ipv4_cfg_t;
-
-typedef enum {
-    IPV6_DAD_NONE = 0,
-    IPV6_DAD_IN_PROGRESS = 1,
-    IPV6_DAD_FAILED = 2,
-    IPV6_DAD_OK = 3
-} ipv6_dad_state_t;
-
-typedef enum {
-    IPV6_ADDRK_GLOBAL = 0x01,
-    IPV6_ADDRK_LINK_LOCAL = 0x02
-} ipv6_addr_kind_t;
-
-typedef enum {
-    IPV6_CFG_DISABLE = -1,
-    IPV6_CFG_STATIC = 0x01,
-    IPV6_CFG_SLAAC = 0x02,
-    IPV6_CFG_DHCPV6 = 0x04 
-} ipv6_cfg_t;
 
 struct l2_interface;
 struct l3_ipv4_interface;
@@ -159,6 +135,7 @@ l2_interface_t *l2_interface_find_by_index(uint8_t ifindex);
 uint8_t l2_interface_count(void);
 l2_interface_t *l2_interface_at(uint8_t idx);
 bool l2_interface_set_up(uint8_t ifindex, bool up);
+bool l2_interface_set_metric(uint8_t ifindex, uint16_t metric);
 
 bool l2_ipv4_mcast_join(uint8_t ifindex, uint32_t group);
 bool l2_ipv4_mcast_leave(uint8_t ifindex, uint32_t group);

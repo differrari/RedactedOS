@@ -386,6 +386,7 @@ static int ndp_find_replacement(ndp_table_impl_t* t) {
         ndp_entry_t* e = &t->entries[i];
         if (e->pending_len) continue;
         if (e->state == NDP_STATE_UNUSED || e->ttl_ms == 0) return i;
+        if (e->static_entry) continue;
         if (e->is_router && e->router_lifetime_ms) continue;
         if (e->ttl_ms < best_ttl) {
             best_ttl = e->ttl_ms;
@@ -396,7 +397,7 @@ static int ndp_find_replacement(ndp_table_impl_t* t) {
     return best;
 }
 
-void ndp_table_put_for_l2(uint8_t ifindex, const uint8_t ip[16], const uint8_t mac[6], uint32_t ttl_ms, bool router) {
+void ndp_table_put_for_l2(uint8_t ifindex, const uint8_t ip[16], const uint8_t mac[6], uint32_t ttl_ms, bool router, bool is_static) {
     ndp_table_impl_t* t = l2_ndp(ifindex);
     if (!t) return;
 
@@ -416,14 +417,16 @@ void ndp_table_put_for_l2(uint8_t ifindex, const uint8_t ip[16], const uint8_t m
         e->timer_ms = g_ndp_reachable_time_ms;
     }
 
-    if (ttl_ms == 0) {
+    if (is_static) ttl_ms = UINT32_MAX;
+    else if (ttl_ms == 0) {
         ttl_ms = g_ndp_reachable_time_ms * 4;
         if (ttl_ms == 0) ttl_ms = 1;
     }
 
     e->ttl_ms = ttl_ms;
     e->is_router = router ? 1 : 0;
-    e->router_lifetime_ms = router ? ttl_ms : 0;
+    e->static_entry = is_static ? 1 : 0;
+    e->router_lifetime_ms = router && !is_static ? ttl_ms : 0;
     e->probes_sent = 0;
 
     if (e->pending) {
@@ -439,7 +442,7 @@ void ndp_table_put_for_l2(uint8_t ifindex, const uint8_t ip[16], const uint8_t m
     }
 }
 
-static bool ndp_table_get_for_l2(uint8_t ifindex, const uint8_t ip[16], uint8_t mac_out[6]) {
+bool ndp_table_get_for_l2(uint8_t ifindex, const uint8_t ip[16], uint8_t mac_out[6]) {
     ndp_table_impl_t* t = l2_ndp(ifindex);
     if (!t) return false;
 
@@ -455,6 +458,27 @@ static bool ndp_table_get_for_l2(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     }
 
     return false;
+}
+
+bool ndp_table_delete_for_l2(uint8_t ifindex, const uint8_t ip[16]) {
+    ndp_table_impl_t* t = l2_ndp(ifindex);
+    if (!t || !ip) return false;
+    int idx = ndp_find_slot(t, ip);
+    if (idx < 0) return false;
+    ndp_entry_clear(&t->entries[idx]);
+    return true;
+}
+
+uint32_t ndp_table_dump_for_l2(uint8_t ifindex, ndp_entry_t* out, uint32_t out_cap) {
+    ndp_table_impl_t* t = l2_ndp(ifindex);
+    if (!t || !out || !out_cap) return 0;
+    uint32_t n = 0;
+    for (int i = 0; i < NDP_TABLE_MAX && n < out_cap; i++) {
+        ndp_entry_t* e = &t->entries[i];
+        if (e->state == NDP_STATE_UNUSED) continue;
+        out[n++] = *e;
+    }
+    return n;
 }
 
 static bool ndp_send_na_on(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t src_ip[16], const uint8_t target_ip[16], const uint8_t dst_mac_in[6], const uint8_t my_mac[6], uint8_t solicited) {
@@ -614,6 +638,7 @@ static void ndp_table_tick_for_l2(uint8_t ifindex, uint32_t ms) {
             continue;
         }
 
+        if (e->static_entry) continue;
         if (e->ttl_ms <= ms) {
             ndp_entry_clear(e);
             continue;
@@ -838,7 +863,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
                 break;
             }
         }
-        if (!src_is_local) ndp_table_put_for_l2((uint8_t)ifindex, src_ip, src_mac, 180000, false);
+        if (!src_is_local) ndp_table_put_for_l2((uint8_t)ifindex, src_ip, src_mac, 180000, false, false);
 
         uint8_t src_my[16] = {0};
 
@@ -981,8 +1006,8 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
 
         uint32_t router_lifetime_ms = (uint32_t)router_lifetime * 1000u;
 
-        if (router_lifetime == 0) ndp_table_put_for_l2((uint8_t)ifindex, src_ip, src_mac, 180000, false);
-        else ndp_table_put_for_l2((uint8_t)ifindex, src_ip, src_mac, router_lifetime_ms, true);
+        if (router_lifetime == 0) ndp_table_put_for_l2((uint8_t)ifindex, src_ip, src_mac, 180000, false, false);
+        else ndp_table_put_for_l2((uint8_t)ifindex, src_ip, src_mac, router_lifetime_ms, true, false);
 
         if (reachable_time) g_ndp_reachable_time_ms = reachable_time;
         if (retrans_timer) g_ndp_retrans_timer_ms = retrans_timer;

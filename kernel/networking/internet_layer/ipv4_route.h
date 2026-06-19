@@ -23,6 +23,9 @@ void ipv4_rt_clear(ipv4_rt_table_t* t);
 
 bool ipv4_rt_add_in(ipv4_rt_table_t* t, uint32_t network, uint32_t mask, uint32_t gateway, uint16_t metric);
 bool ipv4_rt_del_in(ipv4_rt_table_t* t, uint32_t network, uint32_t mask);
+int ipv4_rt_count(const ipv4_rt_table_t* t);
+bool ipv4_rt_get(const ipv4_rt_table_t* t, int index, ipv4_rt_entry_t* out);
+uint32_t ipv4_rt_epoch(const ipv4_rt_table_t* t);
 
 bool ipv4_rt_lookup_in(const ipv4_rt_table_t* t, uint32_t dst, uint32_t *next_hop, int* out_prefix_len, int* out_metric);
 

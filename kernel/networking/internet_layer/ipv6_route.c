@@ -155,6 +155,20 @@ bool ipv6_rt_del_in(ipv6_rt_table_t* t, const uint8_t net[16], uint8_t plen) {
     return false;
 }
 
+int ipv6_rt_count(const ipv6_rt_table_t* t) {
+    return t ? t->len : 0;
+}
+
+bool ipv6_rt_get(const ipv6_rt_table_t* t, int index, ipv6_rt_entry_t* out) {
+    if (!t || !out || index < 0 || index >= t->len) return false;
+    *out = t->e[index];
+    return true;
+}
+
+uint32_t ipv6_rt_epoch(const ipv6_rt_table_t* t) {
+    return t ? t->epoch : 0;
+}
+
 bool ipv6_rt_lookup_in(const ipv6_rt_table_t* t, const uint8_t dst[16], uint8_t next_hop[16], int* out_pl, int* out_metric) {
     if (!t) return false;
 

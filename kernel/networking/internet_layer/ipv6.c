@@ -394,7 +394,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
     if (ipv6_is_linklocal(ip6->dst) && !ipv6_is_unspecified(ip6->src) && !ipv6_is_linklocal(ip6->src)) return;
 
-    if (ifindex && !ipv6_is_unspecified(ip6->src) && src_mac) ndp_table_put_for_l2((uint8_t)ifindex, ip6->src, src_mac, 180000, false);
+    if (ifindex && !ipv6_is_unspecified(ip6->src) && src_mac) ndp_table_put_for_l2((uint8_t)ifindex, ip6->src, src_mac, 180000, false, false);
 
     uint8_t nh = ip6->next_header;
 

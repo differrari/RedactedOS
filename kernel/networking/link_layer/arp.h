@@ -53,6 +53,8 @@ void arp_table_init_static_defaults(arp_table_t* t);
 
 void arp_table_put_for_l2(uint8_t ifindex, uint32_t ip, const uint8_t mac[6], uint32_t ttl_ms, bool is_static);
 bool arp_table_get_for_l2(uint8_t ifindex, uint32_t ip, uint8_t mac_out[6]);
+bool arp_table_delete_for_l2(uint8_t ifindex, uint32_t ip);
+uint32_t arp_table_dump_for_l2(uint8_t ifindex, arp_entry_t* out, uint32_t out_cap);
 void arp_table_tick_for_l2(uint8_t ifindex, uint32_t ms);
 void arp_tick_all(uint32_t ms);
 

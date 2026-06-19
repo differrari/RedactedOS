@@ -146,6 +146,27 @@ bool arp_table_get_for_l2(uint8_t ifindex, uint32_t ip, uint8_t mac_out[6]){
     return false;
 }
 
+bool arp_table_delete_for_l2(uint8_t ifindex, uint32_t ip) {
+    arp_table_t* t = l2_arp(ifindex);
+    if (!t || !ip) return false;
+    int idx = arp_find_slot(t, ip);
+    if (idx < 0) return false;
+    arp_entry_clear(&t->entries[idx]);
+    return true;
+}
+
+uint32_t arp_table_dump_for_l2(uint8_t ifindex, arp_entry_t* out, uint32_t out_cap) {
+    arp_table_t* t = l2_arp(ifindex);
+    if (!t || !out || !out_cap) return 0;
+    uint32_t n = 0;
+    for (int i = 0; i < ARP_TABLE_MAX && n < out_cap; i++) {
+        arp_entry_t* e = &t->entries[i];
+        if (e->state == ARP_STATE_UNUSED) continue;
+        out[n++] = *e;
+    }
+    return n;
+}
+
 void arp_table_tick_for_l2(uint8_t ifindex, uint32_t ms){
     arp_table_t* t = l2_arp(ifindex);
     if (!t) return;
