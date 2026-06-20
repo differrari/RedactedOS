@@ -59,7 +59,8 @@ void arp_table_tick_for_l2(uint8_t ifindex, uint32_t ms);
 void arp_tick_all(uint32_t ms);
 
 bool arp_send_or_queue_on(uint8_t ifindex, uint32_t ip, netpkt_t* pkt);
-void arp_send_request_on(uint8_t ifindex, uint32_t target_ip);
+bool arp_send_request_on(uint8_t ifindex, uint32_t sender_ip, uint32_t target_ip);
+bool arp_dad_ipv4_on(uint8_t ifindex, uint32_t ip);
 
 void arp_input(uint16_t ifindex, const uint8_t src_mac[6], netpkt_t* pkt);
 

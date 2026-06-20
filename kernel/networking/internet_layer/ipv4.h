@@ -8,7 +8,6 @@
 #include "networking/netpkt.h"
 
 #define IP_IHL_NOOPTS 5
-#define IP_VERSION_4 4
 #define IP_TTL_DEFAULT 64
 
 #ifdef __cplusplus

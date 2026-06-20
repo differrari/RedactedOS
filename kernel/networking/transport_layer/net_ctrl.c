@@ -353,7 +353,7 @@ static bool net_ctrl_route_dump(const net_ctrl_attrs_t* a, buffer* b) {
     return true;
 }
 
-static int32_t net_ctrl_route_set(const net_ctrl_attrs_t* a) {
+static int32_t net_ctrl_route_apply(const net_ctrl_attrs_t* a, bool add) {
     if (!NET_CTRL_HAS(a, NET_CTRL_EXT_L3_ID) || !NET_CTRL_HAS(a, NET_CTRL_EXT_ADDRESS) || !NET_CTRL_HAS(a, NET_CTRL_EXT_PREFIX_LEN)) return SOCK_ERR_INVAL;
     uint16_t metric = NET_CTRL_HAS(a, NET_CTRL_EXT_METRIC) ? a->metric : 0;
     if (!l3_is_v6_from_id(a->l3_id)) {
@@ -367,21 +367,45 @@ static int32_t net_ctrl_route_set(const net_ctrl_attrs_t* a) {
             if (a->gateway.ver != IP_VER4) return SOCK_ERR_INVAL;
             memcpy(&gw, a->gateway.ip, sizeof(gw));
         }
+        if (!v4->routing_table && !add) return SOCK_ERR_NOT_FOUND;
         if (!v4->routing_table) v4->routing_table = ipv4_rt_create(v4->l3_id);
         if (!v4->routing_table) return SOCK_ERR_SYS;
         uint32_t mask = 0;
         if (a->prefix_len >= 32) mask = 0xFFFFFFFF;
         else if (a->prefix_len) mask = 0xFFFFFFFF << (32 -a->prefix_len);
+        bool exists = false;
+        int n = ipv4_rt_count((const ipv4_rt_table_t*)v4->routing_table);
+        for (int i = 0; i < n; i++) {
+            ipv4_rt_entry_t e;
+            if (ipv4_rt_get((const ipv4_rt_table_t*)v4->routing_table, i, &e) && e.network == (network & mask) && e.mask == mask) {
+                exists = true;
+                break;
+            }
+        }
+        if (add && exists) return SOCK_ERR_EXIST;
+        if (!add && !exists) return SOCK_ERR_NOT_FOUND;
         return ipv4_rt_add_in((ipv4_rt_table_t*)v4->routing_table, network & mask, mask, gw, metric) ? SOCK_OK : SOCK_ERR_INVAL;
     }
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(a->l3_id);
     if (!v6 || v6->is_localhost || a->address.ver != IP_VER6 || a->prefix_len > 128) return SOCK_ERR_INVAL;
     if (NET_CTRL_HAS(a, NET_CTRL_EXT_GATEWAY) && a->gateway.ver != IP_VER6) return SOCK_ERR_INVAL;
     const uint8_t* gw = NET_CTRL_HAS(a, NET_CTRL_EXT_GATEWAY) ? a->gateway.ip : (const uint8_t[16]){0};
+    if (!v6->routing_table && !add) return SOCK_ERR_NOT_FOUND;
     if (!v6->routing_table) v6->routing_table = ipv6_rt_create(v6->l3_id);
     if (!v6->routing_table) return SOCK_ERR_SYS;
     uint8_t net[16];
     ipv6_prefix_network(a->address.ip, a->prefix_len, net);
+    bool exists = false;
+    int n = ipv6_rt_count((const ipv6_rt_table_t*)v6->routing_table);
+    for (int i = 0; i < n; i++) {
+        ipv6_rt_entry_t e;
+        if (ipv6_rt_get((const ipv6_rt_table_t*)v6->routing_table, i, &e) && e.prefix_len == a->prefix_len && ipv6_cmp(e.network, net) == 0) {
+            exists = true;
+            break;
+        }
+    }
+    if (add && exists) return SOCK_ERR_EXIST;
+    if (!add && !exists) return SOCK_ERR_NOT_FOUND;
     return ipv6_rt_add_in((ipv6_rt_table_t*)v6->routing_table, net, a->prefix_len, gw, metric) ? SOCK_OK : SOCK_ERR_INVAL;
 }
 
@@ -454,20 +478,42 @@ static bool net_ctrl_neigh_dump(const net_ctrl_attrs_t* a, buffer* b) {
     return true;
 }
 
-static int32_t net_ctrl_neigh_set(const net_ctrl_attrs_t* a) {
+static int32_t net_ctrl_neigh_set(const net_ctrl_attrs_t* a, bool add) {
     if (!NET_CTRL_HAS(a, NET_CTRL_EXT_ADDRESS) || !NET_CTRL_HAS(a, NET_CTRL_EXT_MAC)) return SOCK_ERR_INVAL;
     l2_interface_t* l2 = net_ctrl_l2_from_attrs(a);
     if (!l2) return SOCK_ERR_INVAL;
-    uint32_t ttl = NET_CTRL_HAS(a, NET_CTRL_EXT_TTL_MS) ? a->ttl_ms : 0;
+    bool exists = false;
     if (a->address.ver == IP_VER4) {
         uint32_t ip = 0;
         memcpy(&ip, a->address.ip, sizeof(ip));
+        arp_entry_t ae[ARP_TABLE_MAX];
+        uint32_t n = arp_table_dump_for_l2(l2->ifindex, ae, ARP_TABLE_MAX);
+        for (uint32_t i = 0; i < n; i++) {
+            if (ae[i].ip == ip) {
+                exists = true;
+                break;
+            }
+        }
+        if (add && exists) return SOCK_ERR_EXIST;
+        if (!add && !exists) return SOCK_ERR_NOT_FOUND;
         if (!l2->arp_table) return SOCK_ERR_INVAL;
+        uint32_t ttl = NET_CTRL_HAS(a, NET_CTRL_EXT_TTL_MS) ? a->ttl_ms : 0;
         arp_table_put_for_l2(l2->ifindex, ip, a->mac, ttl, NET_CTRL_HAS(a, NET_CTRL_EXT_FLAGS) && (a->flags & NET_CTRL_NEIGH_F_STATIC));
         return SOCK_OK;
     }
     if (a->address.ver == IP_VER6) {
+        ndp_entry_t ne[NDP_TABLE_MAX];
+        uint32_t n = ndp_table_dump_for_l2(l2->ifindex, ne, NDP_TABLE_MAX);
+        for (uint32_t i = 0; i < n; i++) {
+            if (ipv6_cmp(ne[i].ip, a->address.ip) == 0) {
+                exists = true;
+                break;
+            }
+        }
+        if (add && exists) return SOCK_ERR_EXIST;
+        if (!add && !exists) return SOCK_ERR_NOT_FOUND;
         if (!l2->nd_table) return SOCK_ERR_INVAL;
+        uint32_t ttl = NET_CTRL_HAS(a, NET_CTRL_EXT_TTL_MS) ? a->ttl_ms : 0;
         bool router = NET_CTRL_HAS(a, NET_CTRL_EXT_FLAGS) && (a->flags & NET_CTRL_NEIGH_F_ROUTER);
         bool is_static = NET_CTRL_HAS(a, NET_CTRL_EXT_FLAGS) && (a->flags & NET_CTRL_NEIGH_F_STATIC);
         ndp_table_put_for_l2(l2->ifindex, a->address.ip, a->mac, ttl, router, is_static);
@@ -493,7 +539,6 @@ static int32_t net_ctrl_neigh_del(const net_ctrl_attrs_t* a) {
     return SOCK_ERR_INVAL;
 }
 
-//TODO improve handling of UPD and ADD cases in neight e route
 int32_t net_ctrl_dispatch(const void* req, uint32_t req_len, uint8_t** out, uint32_t* out_len) {
     if (!req || req_len < sizeof(NetCtrlMsg) || !out || !out_len) return SOCK_ERR_INVAL;
     *out = NULL;
@@ -555,8 +600,10 @@ int32_t net_ctrl_dispatch(const void* req, uint32_t req_len, uint8_t** out, uint
                     status = net_ctrl_route_dump(&attrs, &b) ? SOCK_OK : SOCK_ERR_SYS;
                     break;
                 case NET_CTRL_OP_ADD:
+                    status = net_ctrl_route_apply(&attrs, true);
+                    break;
                 case NET_CTRL_OP_UPD:
-                    status = net_ctrl_route_set(&attrs);
+                    status = net_ctrl_route_apply(&attrs, false);
                     break;
                 case NET_CTRL_OP_DEL:
                     status = net_ctrl_route_del(&attrs);
@@ -572,8 +619,10 @@ int32_t net_ctrl_dispatch(const void* req, uint32_t req_len, uint8_t** out, uint
                     status = net_ctrl_neigh_dump(&attrs, &b) ? SOCK_OK : SOCK_ERR_SYS;
                     break;
                 case NET_CTRL_OP_ADD:
+                    status = net_ctrl_neigh_set(&attrs, true);
+                    break;
                 case NET_CTRL_OP_UPD:
-                    status = net_ctrl_neigh_set(&attrs);
+                    status = net_ctrl_neigh_set(&attrs, false);
                     break;
                 case NET_CTRL_OP_DEL:
                     status = net_ctrl_neigh_del(&attrs);

@@ -10,6 +10,7 @@
 #include "memory/memory.h"
 #include "files/helpers.h"
 #include "utils/clipboard.h"
+#include "net/net_ctrl.h"
 
 #define BORDER 20
 
@@ -83,6 +84,163 @@ int net_example() {
     socket_close(sock);
 
     return 1;
+}
+
+int net_ctrl_example() {
+    //create ctrl socket
+    SocketOptions opt = {};
+    opt.special_kind = SOCKET_SPECIAL_CTRL;
+    socket_handle_t sock = socket_create(PROTO_NONE, &opt);
+    if (!sock) return -1;
+
+    //create a REQUEST to get ADDR
+    NetCtrlMsg req = {};
+    req.object = NET_CTRL_OBJ_ADDR;
+    req.op = NET_CTRL_OP_GET;
+    req.flags = NET_CTRL_F_REQUEST;
+    req.length = sizeof(req);
+
+    if (socket_send(sock, &req, req.length) < 0) {
+        socket_close(sock);
+        return -1;
+    }
+
+    //read response
+    uint8_t rx[1024];
+    int64_t n = socket_receive(sock, rx, sizeof(rx), NULL);
+    if (n < (int64_t)sizeof(NetCtrlMsg)) {
+        socket_close(sock);
+        return -1;
+    }
+
+    NetCtrlMsg* res = (NetCtrlMsg*)rx;
+    if (res->status != SOCK_OK) {
+        socket_close(sock);
+        return -1;
+    }
+
+    //parse respose
+    NetCtrlAddrInfo* addrs = (NetCtrlAddrInfo*)NET_CTRL_MSG_DATA(res);
+    uint32_t count = NET_CTRL_MSG_PAYLOAD_LEN(res) / sizeof(NetCtrlAddrInfo);
+    NetCtrlAddrInfo* main_v4 = NULL;
+
+    //find a valid ip
+    for (uint32_t i = 0; i < count; i++) {
+        if (addrs[i].prefix.address.ver != IP_VER4) continue;
+        if (addrs[i].config != IPV4_CFG_DHCP && addrs[i].config != IPV4_CFG_STATIC) continue;
+        main_v4 = &addrs[i];
+        break;
+    }
+
+    if (!main_v4) {
+        socket_close(sock);
+        return -1;
+    }
+
+    uint32_t current_ip = 0;
+    memcpy(&current_ip, main_v4->prefix.address.ip, sizeof(current_ip));
+
+    uint32_t mask = 0xFFFFFFFF << (32 - main_v4->prefix.prefix_len);
+
+    print("main IPv4 is %u.%u.%u.%u/%u mask %u.%u.%u.%u",
+        current_ip >> 24, (current_ip >> 16) & 0xFF, (current_ip >> 8) & 0xFF, current_ip & 0xFF,
+        main_v4->prefix.prefix_len, mask >> 24, (mask >> 16) & 0xFF, (mask >> 8) & 0xFF, mask & 0xFF);
+
+    uint8_t msg_buf[128];
+    memset(msg_buf, 0, sizeof(msg_buf));
+
+    //create a REQUEST to add OBJ_ADDR
+    NetCtrlMsg* msg = (NetCtrlMsg*)msg_buf;
+    msg->object = NET_CTRL_OBJ_ADDR;
+    msg->op = NET_CTRL_OP_ADD;
+    msg->flags = NET_CTRL_F_REQUEST;
+
+    uint32_t off = sizeof(NetCtrlMsg);
+
+    //reuse the same L2 interface as the found ipv4
+    NetCtrlAttr* attr = (NetCtrlAttr*)(msg_buf + off);
+    attr->ext = NET_CTRL_EXT_IFINDEX;
+    attr->length = sizeof(main_v4->prefix.ifindex);
+    off += sizeof(NetCtrlAttr);
+    memcpy(msg_buf + off, &main_v4->prefix.ifindex, sizeof(main_v4->prefix.ifindex));
+    off += sizeof(main_v4->prefix.ifindex);
+
+    //reuse the same mask (prefix length)
+    attr = (NetCtrlAttr*)(msg_buf + off);
+    attr->ext = NET_CTRL_EXT_PREFIX_LEN;
+    attr->length = sizeof(main_v4->prefix.prefix_len);
+    off += sizeof(NetCtrlAttr);
+    memcpy(msg_buf + off, &main_v4->prefix.prefix_len, sizeof(main_v4->prefix.prefix_len));
+    off += sizeof(main_v4->prefix.prefix_len);
+
+    uint32_t host_mask = ~mask;
+    if (host_mask <= 1) {
+        socket_close(sock);
+        return -1;
+    }
+
+    uint32_t gateway_ip = 0;
+    if (main_v4->prefix.gateway.ver == IP_VER4) memcpy(&gateway_ip, main_v4->prefix.gateway.ip, sizeof(gateway_ip));
+
+    uint32_t network = current_ip & mask;
+    uint32_t first_host = 1;
+    uint32_t last_host = host_mask - 1;
+    if (host_mask > 32) {
+        first_host = 10;
+        last_host = host_mask - 10;
+    }
+    uint32_t host_span = last_host - first_host + 1;
+    uint32_t host = first_host + (((uint32_t)get_time() ^ current_ip) % host_span);
+    uint32_t static_ip = network | host;
+    for (uint32_t i = 0; i < host_span; i++) {
+        if (static_ip != current_ip && static_ip != gateway_ip) break;
+        host++;
+        if (host > last_host) host = first_host;
+        static_ip = network | host;
+    }
+
+    print("adding static %u.%u.%u.%u on the same /%u network",
+        static_ip >> 24, (static_ip >> 16) & 0xFF, (static_ip >> 8) & 0xFF, static_ip & 0xFF, main_v4->prefix.prefix_len);
+
+    //add another address in the same network and with the same mask
+    net_l4_endpoint static_addr = {};
+    static_addr.ver = IP_VER4;
+    memcpy(static_addr.ip, &static_ip, sizeof(static_ip));
+
+    attr = (NetCtrlAttr*)(msg_buf + off);
+    attr->ext = NET_CTRL_EXT_ADDRESS;
+    attr->length = sizeof(static_addr);
+    off += sizeof(NetCtrlAttr);
+    memcpy(msg_buf + off, &static_addr, sizeof(static_addr));
+    off += sizeof(static_addr);
+
+    //static config
+    int16_t cfg = IPV4_CFG_STATIC;
+    attr = (NetCtrlAttr*)(msg_buf + off);
+    attr->ext = NET_CTRL_EXT_CONFIG;
+    attr->length = sizeof(cfg);
+    off += sizeof(NetCtrlAttr);
+    memcpy(msg_buf + off, &cfg, sizeof(cfg));
+    off += sizeof(cfg);
+    msg->length = off;
+
+    int64_t sent = socket_send(sock, msg, msg->length);
+    if (sent != (int64_t)msg->length) {
+        socket_close(sock);
+        return -1;
+    }
+
+    n = socket_receive(sock, rx, sizeof(rx), NULL);
+    if (n < (int64_t)sizeof(NetCtrlMsg)) {
+        socket_close(sock);
+        return -1;
+    }
+
+    res = (NetCtrlMsg*)rx;
+    if (res->status != SOCK_OK) print("add failed with status %i", res->status);
+    else print("add ok");
+    socket_close(sock);
+    return res->status == SOCK_OK ? 0 : -1;
 }
 
 static int8_t mixin[MIXER_INPUTS] = { NULL };

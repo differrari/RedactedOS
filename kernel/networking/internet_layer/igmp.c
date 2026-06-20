@@ -3,6 +3,7 @@
 #include "networking/internet_layer/ipv4_utils.h"
 #include "net/checksums.h"
 #include "networking/interface_manager.h"
+#include "networking/transport_layer/csocket_raw.h"
 #include "kernel_processes/kprocess_loader.h"
 #include "math/rng.h"
 #include "random/random.h"
@@ -41,34 +42,32 @@ static int igmp_rng_inited = 0;
 
 static igmp_state_t igmp_states[IGMP_MAX_TRACK];
 
-static bool send_igmp(uint8_t ifindex, uint32_t dst, uint8_t type, uint32_t group) {
+static bool igmp_send_packet(uint8_t ifindex, uint32_t dst, uint8_t type, uint32_t group) {
     uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + (uint32_t)sizeof(ipv4_hdr_t);
-    netpkt_t* pkt = netpkt_alloc(sizeof(igmp_hdr_t),headroom, 0);
+    netpkt_t* pkt = netpkt_alloc(sizeof(igmp_hdr_t), headroom, 0);
     if (!pkt) return false;
 
-    igmp_hdr_t igmp;
-    if (!netpkt_put(pkt, sizeof(igmp_hdr_t))) {
+    igmp_hdr_t* igmp = (igmp_hdr_t*)netpkt_put(pkt, sizeof(igmp_hdr_t));
+    if (!igmp) {
         netpkt_unref(pkt);
         return false;
     }
 
-    igmp.type = type;
-    igmp.max_resp_time = 0;
-    igmp.group = bswap32(group);
-    igmp.checksum = 0;
-    igmp.checksum = bswap16(checksum16(&igmp, sizeof(igmp)));
-    memcpy((void*)netpkt_data(pkt), &igmp, sizeof(igmp));
+    igmp->type = type;
+    igmp->max_resp_time = 0;
+    igmp->group = bswap32(group);
+    igmp->checksum = 0;
+    igmp->checksum = bswap16(checksum16(igmp, sizeof(*igmp)));
 
     ip_tx_opts_t tx;
     tx.scope = IP_TX_BOUND_L2;
     tx.index = ifindex;
 
-    ipv4_send_packet(dst, 2, pkt, &tx, 1, 0);
-    return true;
+    return ipv4_send_packet(dst, PROTO_IGMP, pkt, &tx, 1, 0);
 }
 
 static igmp_state_t* igmp_find_state(uint8_t ifindex, uint32_t group) {
-    for (int i = 0; i < IGMP_MAX_TRACK; ++i) {
+    for (int i = 0; i < (int)N_ARR(igmp_states); i++) {
         igmp_state_t* s = &igmp_states[i];
         if (!s->used) continue;
         if (s->ifindex == ifindex &&s->group == group) return s;
@@ -79,7 +78,7 @@ static igmp_state_t* igmp_find_state(uint8_t ifindex, uint32_t group) {
 static igmp_state_t* igmp_get_state(uint8_t ifindex, uint32_t group) {
     igmp_state_t* s = igmp_find_state(ifindex, group);
     if (s) return s;
-    for (int i = 0; i < IGMP_MAX_TRACK; ++i) {
+    for (int i = 0; i < (int)N_ARR(igmp_states); i++) {
         if (!igmp_states[i].used) {
             igmp_states[i].used = 1;
             igmp_states[i].ifindex = ifindex;
@@ -94,7 +93,7 @@ static igmp_state_t* igmp_get_state(uint8_t ifindex, uint32_t group) {
 }
 
 static int igmp_has_pending_timers(void) {
-    for (int i = 0; i < IGMP_MAX_TRACK; ++i) {
+    for (int i = 0; i < (int)N_ARR(igmp_states); i++) {
         igmp_state_t* s = &igmp_states[i];
         if (!s->used) continue;
         if (s->query_pending) return 1;
@@ -120,7 +119,7 @@ static int igmp_daemon_entry(int argc, char* argv[]) {
     while (igmp_has_pending_timers()) {
         igmp_uptime_ms += tick_ms;
 
-        for (int i = 0; i < IGMP_MAX_TRACK; ++i) {
+        for (int i = 0; i < (int)N_ARR(igmp_states); i++) {
             igmp_state_t* s = &igmp_states[i];
             if (!s->used) continue;
 
@@ -139,15 +138,15 @@ static int igmp_daemon_entry(int argc, char* argv[]) {
                 continue;
             }
 
-            s->refresh_ms+= tick_ms;
-            if (s->refresh_ms>= IGMP_REFRESH_PERIOD_MS) {
+            s->refresh_ms += tick_ms;
+            if (s->refresh_ms >= IGMP_REFRESH_PERIOD_MS) {
                 s->refresh_ms = 0;
-                (void)send_igmp(s->ifindex, s->group, IGMP_TYPE_V2_REPORT, s->group);
+                (void)igmp_send_packet(s->ifindex, s->group, IGMP_TYPE_V2_REPORT, s->group);
             }
 
             if (s->query_pending && igmp_uptime_ms >= s->query_due_ms) {
                 s->query_pending = 0;
-                (void)send_igmp(s->ifindex, s->group, IGMP_TYPE_V2_REPORT, s->group);
+                (void)igmp_send_packet(s->ifindex, s->group, IGMP_TYPE_V2_REPORT, s->group);
             }
         }
         msleep(tick_ms);
@@ -169,7 +168,7 @@ bool igmp_send_join(uint8_t ifindex, uint32_t group) {
     igmp_state_t* s = igmp_get_state(ifindex, group);
     if (s) s->refresh_ms = 0;
     igmp_daemon_kick();
-    return send_igmp(ifindex, group, IGMP_TYPE_V2_REPORT, group);
+    return igmp_send_packet(ifindex, group, IGMP_TYPE_V2_REPORT, group);
 }
 
 bool igmp_send_leave(uint8_t ifindex, uint32_t group) {
@@ -177,7 +176,7 @@ bool igmp_send_leave(uint8_t ifindex, uint32_t group) {
     igmp_state_t* s = igmp_find_state(ifindex, group);
     if (s) s->used = 0;
     igmp_daemon_kick();
-    return send_igmp(ifindex, IPV4_MCAST_ALL_ROUTERS, IGMP_TYPE_V2_LEAVE, group);
+    return igmp_send_packet(ifindex, IPV4_MCAST_ALL_ROUTERS, IGMP_TYPE_V2_LEAVE, group);
 }
 
 static void schedule_report(uint8_t ifindex, uint32_t group, uint32_t max_resp_ds) {
@@ -213,6 +212,8 @@ void igmp_input(uint8_t ifindex, uint32_t src, uint32_t dst, netpkt_t* pkt) {
         netpkt_unref(pkt);
         return;
     }
+
+    socket_raw_input_v4(PROTO_IGMP, ifindex, src, dst, pkt);
 
     uint8_t type = hdr[0];
     uint32_t group = rd_be32(hdr + 4);

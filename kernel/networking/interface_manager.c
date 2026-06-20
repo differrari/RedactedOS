@@ -317,7 +317,9 @@ static bool v4_overlap_intra_l2(uint8_t ifindex, uint32_t ip, uint32_t mask){
         if (!x->l2 || x->l2->ifindex != ifindex) continue;
         if (x->mode == IPV4_CFG_DISABLED) continue;
         uint32_t m = (x->mask==0)?mask:((mask==0)?x->mask:((x->mask < mask)?x->mask:mask));
-        if (ipv4_net(ip, m) == ipv4_net(x->ip, m)) return true;
+        if (ipv4_net(ip, m) != ipv4_net(x->ip, m)) continue;
+        if (x->mask == mask && ipv4_net(ip, mask) == ipv4_net(x->ip, x->mask)) continue;
+        return true;
     }
     return false;
 }
@@ -365,6 +367,7 @@ uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
         if (ipv4_is_broadcast_address(ip, mask)) return 0;
         if (v4_ip_exists_anywhere(ip)) return 0;
         if (v4_overlap_intra_l2(ifindex, ip, mask)) return 0;
+        if (l2->kind != NET_IFK_LOCALHOST && !arp_dad_ipv4_on(ifindex, ip)) return 0;
     }
     if (l2->ipv4_count >= MAX_IPV4_PER_INTERFACE) return 0;
 
@@ -445,8 +448,11 @@ bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
             if (!x->l2 || x->l2->ifindex != l2->ifindex) continue;
             if (x->mode == IPV4_CFG_DISABLED) continue;
             uint32_t m = (x->mask < mask) ? x->mask : mask;
-            if (ipv4_net(ip, m) == ipv4_net(x->ip, m)) return false;
+            if (ipv4_net(ip, m) != ipv4_net(x->ip, m)) continue;
+            if (x->mask == mask && ipv4_net(ip, mask) == ipv4_net(x->ip, x->mask)) continue;
+            return false;
         }
+        if (ip != n->ip && l2->kind != NET_IFK_LOCALHOST && !arp_dad_ipv4_on(l2->ifindex, ip)) return false;
     }
 
     uint32_t old_ip = n->ip;

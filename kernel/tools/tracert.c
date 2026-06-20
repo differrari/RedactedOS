@@ -26,7 +26,7 @@ typedef struct {
     bool src_set;
     const char *host;
 } tr_opts_t;
-
+//TODO raw socket
 static bool parse_args(int argc, char *argv[], tr_opts_t *o) {
     o->ver = IP_VER4;
     o->max_ttl = 30;

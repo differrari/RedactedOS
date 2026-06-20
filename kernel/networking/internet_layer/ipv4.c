@@ -122,7 +122,7 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
         }
 
         ipv4_hdr_t ip;
-        ip.version_ihl = (uint8_t)((IP_VERSION_4 << 4) | IP_IHL_NOOPTS);
+        ip.version_ihl = (uint8_t)((IP_VER4 << 4) | IP_IHL_NOOPTS);
         ip.dscp_ecn = 0;
         ip.total_length = bswap16((uint16_t)total);
         ip.identification = bswap16(g_ip_ident++);
@@ -177,7 +177,7 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
         }
 
         ipv4_hdr_t ip;
-        ip.version_ihl = (uint8_t)((IP_VERSION_4 << 4) | IP_IHL_NOOPTS);
+        ip.version_ihl = (uint8_t)((IP_VER4 << 4) | IP_IHL_NOOPTS);
         ip.dscp_ecn = 0;
         ip.total_length = bswap16((uint16_t)frame_len);
         ip.identification = bswap16(ident);
@@ -245,7 +245,7 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
             netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
             if (!l4pkt) continue;
             uint8_t l3id = cand[i]->l3_id;
-            if (proto == PROTO_ICMP) icmp_input(l4pkt, src, dst);
+            if (proto == PROTO_ICMP) icmp_input((uint8_t)ifindex, l4pkt, src, dst);
             else if (proto == PROTO_IGMP) igmp_input((uint8_t)ifindex, src, dst, l4pkt);
             else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
             else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
@@ -266,7 +266,7 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
     if (match_count == 1) {
         netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
         if (!l4pkt) return;
-        if (proto == PROTO_ICMP) icmp_input(l4pkt, src, dst);
+        if (proto == PROTO_ICMP) icmp_input((uint8_t)ifindex, l4pkt, src, dst);
         else if (proto == PROTO_IGMP) igmp_input((uint8_t)ifindex, src, dst, l4pkt);
         else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
         else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
@@ -281,7 +281,7 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
             netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
             if (!l4pkt) continue;
             uint8_t l3id = cand[i]->l3_id;
-            if (proto == PROTO_ICMP) icmp_input(l4pkt, src, dst);
+            if (proto == PROTO_ICMP) icmp_input((uint8_t)ifindex, l4pkt, src, dst);
             else if (proto == PROTO_IGMP) igmp_input((uint8_t)ifindex, src, dst, l4pkt);
             else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
             else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
@@ -298,7 +298,7 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
 
         netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
         if (!l4pkt) return;
-        if (proto == PROTO_ICMP) icmp_input(l4pkt, src, dst);
+        if (proto == PROTO_ICMP) icmp_input((uint8_t)ifindex, l4pkt, src, dst);
         else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, v4->l3_id, l4pkt);
         else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, v4->l3_id, l4pkt);
         else netpkt_unref(l4pkt);
@@ -315,7 +315,7 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if (!netpkt_copyout(pkt, 0, &first, sizeof(first))) return;
     uint8_t ver = (uint8_t)(first >> 4);
     uint8_t ihl = (uint8_t)(first & 0x0F);
-    if (ver != IP_VERSION_4) return;
+    if (ver != IP_VER4) return;
     if (ihl < IP_IHL_NOOPTS) return;
 
     uint32_t hdr_len = (uint32_t)ihl * 4;

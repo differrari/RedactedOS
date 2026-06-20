@@ -4,7 +4,6 @@
 #include "std/string.h"
 #include "networking/network.h"
 #include "process/scheduler.h"
-#include "console/kio.h"
 #include "networking/internet_layer/ipv4.h"
 #include "syscalls/syscalls.h"
 #include "networking/internet_layer/ipv4_utils.h"
@@ -13,6 +12,8 @@
 #define ARP_STALE_MS 60000
 #define ARP_RETRANS_MS 1000
 #define ARP_MAX_PROBES 3
+#define ARP_DAD_PROBES 3
+#define ARP_DAD_WAIT_MS 150
 
 struct arp_table {
     arp_entry_t entries[ARP_TABLE_MAX];
@@ -48,7 +49,7 @@ arp_table_t* arp_table_create(void){
 
 void arp_table_destroy(arp_table_t* t){
     if (!t) return;
-    for (int i = 0; i < ARP_TABLE_MAX; i++) arp_entry_clear(&t->entries[i]);
+    for (int i = 0; i < (int)N_ARR(t->entries); i++) arp_entry_clear(&t->entries[i]);
     release(t);
 }
 
@@ -68,7 +69,7 @@ void arp_table_init_static_defaults(arp_table_t* t){
 
 static int arp_find_slot(arp_table_t* t, uint32_t ip){
     if (!t) return -1;
-    for (int i=0;i<ARP_TABLE_MAX;i++) {
+    for (int i = 0; i < (int)N_ARR(t->entries); i++) {
         if (t->entries[i].state == ARP_STATE_UNUSED) continue;
         if (t->entries[i].ip == ip) return i;
     }
@@ -77,7 +78,7 @@ static int arp_find_slot(arp_table_t* t, uint32_t ip){
 
 static int arp_find_free(arp_table_t* t){
     if (!t) return -1;
-    for (int i=0;i<ARP_TABLE_MAX;i++) if (t->entries[i].state == ARP_STATE_UNUSED) return i;
+    for (int i = 0; i < (int)N_ARR(t->entries); i++) if (t->entries[i].state == ARP_STATE_UNUSED) return i;
     return -1;
 }
 
@@ -86,7 +87,7 @@ static int arp_find_replacement(arp_table_t* t) {
     uint32_t best_ttl = 0xFFFFFFFFu;
     if (!t) return -1;
 
-    for (int i = 0; i < ARP_TABLE_MAX; i++) {
+    for (int i = 0; i < (int)N_ARR(t->entries); i++) {
         arp_entry_t* e = &t->entries[i];
         if (e->static_entry) continue;
         if (e->pending_len) continue;
@@ -136,7 +137,7 @@ bool arp_table_get_for_l2(uint8_t ifindex, uint32_t ip, uint8_t mac_out[6]){
     arp_table_t* t = l2_arp(ifindex);
     if (!t || !mac_out) return false;
 
-    for (int i=0;i<ARP_TABLE_MAX;i++){
+    for (int i = 0; i < (int)N_ARR(t->entries); i++){
         arp_entry_t* e = &t->entries[i];
         if (e->state == ARP_STATE_UNUSED || e->state == ARP_STATE_INCOMPLETE) continue;
         if (e->ip != ip) continue;
@@ -159,7 +160,7 @@ uint32_t arp_table_dump_for_l2(uint8_t ifindex, arp_entry_t* out, uint32_t out_c
     arp_table_t* t = l2_arp(ifindex);
     if (!t || !out || !out_cap) return 0;
     uint32_t n = 0;
-    for (int i = 0; i < ARP_TABLE_MAX && n < out_cap; i++) {
+    for (int i = 0; i < (int)N_ARR(t->entries) && n < out_cap; i++) {
         arp_entry_t* e = &t->entries[i];
         if (e->state == ARP_STATE_UNUSED) continue;
         out[n++] = *e;
@@ -167,10 +168,31 @@ uint32_t arp_table_dump_for_l2(uint8_t ifindex, arp_entry_t* out, uint32_t out_c
     return n;
 }
 
+static uint32_t pick_spa_for_l2(uint8_t ifindex, uint32_t target_ip){
+    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
+    if (!l2) return 0;
+    for (int s = 0; s < (int)N_ARR(l2->l3_v4); s++) {
+        l3_ipv4_interface_t* v4 = l2->l3_v4[s];
+        if (!ipv4_l3_is_ready(v4)) continue;
+        if (v4->mask){
+            uint32_t a = v4->ip & v4->mask;
+            uint32_t b = target_ip & v4->mask;
+            if (a == b)return v4->ip;
+        }
+    }
+
+    for (int s = 0; s < (int)N_ARR(l2->l3_v4); s++) {
+        l3_ipv4_interface_t* v4 = l2->l3_v4[s];
+        if (!ipv4_l3_is_ready(v4)) continue;
+        return v4->ip;
+    }
+    return 0;
+}
+
 void arp_table_tick_for_l2(uint8_t ifindex, uint32_t ms){
     arp_table_t* t = l2_arp(ifindex);
     if (!t) return;
-    for (int i=0;i<ARP_TABLE_MAX;i++){
+    for (int i = 0; i < (int)N_ARR(t->entries); i++){
         arp_entry_t* e = &t->entries[i];
         if (e->state == ARP_STATE_UNUSED || e->static_entry) continue;
 
@@ -187,7 +209,7 @@ void arp_table_tick_for_l2(uint8_t ifindex, uint32_t ms){
 
             e->timer_ms = ARP_RETRANS_MS;
             e->probes_sent++;
-            arp_send_request_on(ifindex, e->ip);
+            arp_send_request_on(ifindex, pick_spa_for_l2(ifindex, e->ip), e->ip);
             continue;
         }
 
@@ -207,32 +229,12 @@ void arp_table_tick_for_l2(uint8_t ifindex, uint32_t ms){
 }
 
 void arp_tick_all(uint32_t ms){
-    for (uint8_t i=1;i<=MAX_L2_INTERFACES;i++){
+    for (uint8_t i = 1; i <= MAX_L2_INTERFACES; i++){
         l2_interface_t* l2 = l2_interface_find_by_index(i);
         if (!l2) continue;
         if (!l2->arp_table) continue;
         arp_table_tick_for_l2(i, ms);
     }
-}
-
-static uint32_t pick_spa_for_l2(uint8_t ifindex, uint32_t target_ip){
-    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-    if (!l2) return 0;
-    for (int s=0;s<MAX_IPV4_PER_INTERFACE;s++){
-        l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-        if (!ipv4_l3_is_ready(v4)) continue;
-        if (v4->mask){
-            uint32_t a = v4->ip & v4->mask;
-            uint32_t b = target_ip & v4->mask;
-            if (a == b) return v4->ip;
-        }
-    }
-    for (int s=0;s<MAX_IPV4_PER_INTERFACE;s++){
-        l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-        if (!ipv4_l3_is_ready(v4)) continue;
-        return v4->ip;
-    }
-    return 0;
 }
 
 bool arp_send_or_queue_on(uint8_t ifindex, uint32_t ip, netpkt_t* pkt) {
@@ -290,16 +292,15 @@ bool arp_send_or_queue_on(uint8_t ifindex, uint32_t ip, netpkt_t* pkt) {
     if (!e->probes_sent || !e->timer_ms) {
         e->timer_ms = ARP_RETRANS_MS;
         e->probes_sent++;
-        arp_send_request_on(ifindex, ip);
+        arp_send_request_on(ifindex, pick_spa_for_l2(ifindex, ip), ip);
     }
 
     return true;
 }
 
-void arp_send_request_on(uint8_t ifindex, uint32_t target_ip){
+bool arp_send_request_on(uint8_t ifindex, uint32_t sender_ip, uint32_t target_ip){
     const uint8_t* local_mac = network_get_mac(ifindex);
-    if (!local_mac) return;
-    uint32_t spa = pick_spa_for_l2(ifindex, target_ip);
+    if (!local_mac || !target_ip) return false;
     uint8_t dst_mac[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
     arp_hdr_t hdr;
     memset(&hdr, 0, sizeof(hdr));
@@ -309,23 +310,39 @@ void arp_send_request_on(uint8_t ifindex, uint32_t target_ip){
     hdr.plen      = 4;
     hdr.opcode    = bswap16(ARP_OPCODE_REQUEST);
     memcpy(hdr.sender_mac, local_mac, 6);
-    hdr.sender_ip = bswap32(spa);
+    hdr.sender_ip = bswap32(sender_ip);
     hdr.target_ip = bswap32(target_ip);
     netpkt_t* pkt = netpkt_alloc((uint32_t)sizeof(hdr), (uint32_t)sizeof(eth_hdr_t), 0);
-    if (!pkt) return;
+    if (!pkt) return false;
     void* p = netpkt_put(pkt, (uint32_t)sizeof(hdr));
     if (!p) {
         netpkt_unref(pkt);
-        return;
+        return false;
     }
     memcpy(p, &hdr, sizeof(hdr));
-    (void)eth_send_frame_on(ifindex, ETHERTYPE_ARP, dst_mac, pkt);
+    return eth_send_frame_on(ifindex, ETHERTYPE_ARP, dst_mac, pkt);
+}
+
+bool arp_dad_ipv4_on(uint8_t ifindex, uint32_t ip) {
+    uint8_t mac[6];
+    if (!l2_arp(ifindex) || !ip || ip == 0xFFFFFFFFu || ipv4_is_multicast(ip)) return false;
+    if (arp_table_get_for_l2(ifindex, ip, mac)) return false;
+
+    for (int i = 0; i < ARP_DAD_PROBES; i++) {
+        if (!arp_send_request_on(ifindex, 0, ip)) return false;
+        uint32_t start = (uint32_t)get_time();
+        while ((uint32_t)get_time() - start < ARP_DAD_WAIT_MS) {
+            if (arp_table_get_for_l2(ifindex, ip, mac)) return false;
+            msleep(10);
+        }
+    }
+    return !arp_table_get_for_l2(ifindex, ip, mac);
 }
 
 static bool l2_has_ip(uint8_t ifindex, uint32_t ip){
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return false;
-    for (int s=0;s<MAX_IPV4_PER_INTERFACE;s++){
+    for (int s = 0; s < (int)N_ARR(l2->l3_v4); s++){
         l3_ipv4_interface_t* v4 = l2->l3_v4[s];
         if (!ipv4_l3_is_ready(v4)) continue;
         if (v4->ip == ip) return true;
@@ -336,8 +353,8 @@ static bool l2_has_ip(uint8_t ifindex, uint32_t ip){
 static void arp_send_reply_on(uint8_t ifindex, const arp_hdr_t* in_arp, const uint8_t in_src_mac[6]){
     const uint8_t* local_mac = network_get_mac(ifindex);
     if (!local_mac) return;
-    uint32_t spa = pick_spa_for_l2(ifindex, bswap32(in_arp->sender_ip));
-    if (!spa) return;
+    uint32_t spa = bswap32(in_arp->target_ip);
+    if (!l2_has_ip(ifindex, spa)) return;
     arp_hdr_t reply = *in_arp;
     memcpy(reply.target_mac, in_arp->sender_mac, 6);
     memcpy(reply.sender_mac, local_mac, 6);
@@ -370,12 +387,7 @@ void arp_input(uint16_t ifindex, const uint8_t src_mac[6], netpkt_t* pkt) {
     if (sender_mac_matches && sender_is_usable) arp_table_put_for_l2((uint8_t)ifindex, sender_ip, hdr.sender_mac, ARP_REACHABLE_MS, false);
 
     if (op == ARP_OPCODE_REQUEST) {
-        bool has = l2_has_ip((uint8_t)ifindex, target_ip);
-
-        uint32_t spa_guess = pick_spa_for_l2((uint8_t)ifindex, sender_ip);
-        if (has || (spa_guess == target_ip)) {
-            arp_send_reply_on((uint8_t)ifindex, &hdr, src_mac);
-        }
+        if (l2_has_ip((uint8_t)ifindex, target_ip)) arp_send_reply_on((uint8_t)ifindex, &hdr, src_mac);
     }
 }
 

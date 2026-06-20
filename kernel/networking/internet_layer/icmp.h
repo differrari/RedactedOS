@@ -7,12 +7,14 @@
 extern "C" {
 #endif
 
-#define ICMP_ECHO_REPLY 0
-#define ICMP_DEST_UNREACH 3
-#define ICMP_REDIRECT 5
-#define ICMP_ECHO_REQUEST 8
-#define ICMP_TIME_EXCEEDED 11
-#define ICMP_PARAM_PROBLEM 12
+typedef enum {
+    ICMP_ECHO_REPLY = 0,
+    ICMP_DEST_UNREACH = 3,
+    ICMP_REDIRECT = 5,
+    ICMP_ECHO_REQUEST = 8,
+    ICMP_TIME_EXCEEDED = 11,
+    ICMP_PARAM_PROBLEM = 12
+} icmp_type_t;
 
 typedef enum {
     PING_OK = 0,
@@ -50,7 +52,7 @@ typedef struct {
 
 bool icmp_ping(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint32_t ttl, ping_result_t *out);
 uint32_t icmp_ping_collect(uint32_t dst_ip, uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint32_t ttl, ping_result_t *out, uint32_t max_results);
-void icmp_input(netpkt_t* pkt, uint32_t src_ip, uint32_t dst_ip);
+void icmp_input(uint8_t ifindex, netpkt_t* pkt, uint32_t src_ip, uint32_t dst_ip);
 
 #ifdef __cplusplus
 }

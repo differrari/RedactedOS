@@ -7,10 +7,10 @@
 #include "networking/link_layer/eth.h"
 #include "networking/link_layer/ndp.h"
 #include "networking/internet_layer/mld.h"
+#include "networking/transport_layer/csocket.h"
+#include "networking/transport_layer/csocket_raw.h"
+#include "networking/transport_layer/trans_utils.h"
 #include "syscalls/syscalls.h"
-
-#define MAX_PENDING 16
-#define MAX_PING6_REPLIES 16
 
 typedef struct __attribute__((packed)) {
     icmpv6_hdr_t hdr;
@@ -18,53 +18,7 @@ typedef struct __attribute__((packed)) {
     uint16_t seq;
 } icmpv6_echo_t;
 
-typedef struct {
-    uint8_t type;
-    uint8_t code;
-    uint32_t end_ms;
-    uint8_t src_ip[16];
-} ping6_reply_t;
-
-//TODO use raw sockets
-typedef struct {
-    bool in_use;
-    uint16_t id;
-    uint16_t seq;
-    uint32_t start_ms;
-    uint8_t rx_count;
-    ping6_reply_t replies[MAX_PING6_REPLIES];
-} ping6_slot_t;
-
-static ping6_slot_t g_pending[MAX_PENDING] = {0};
-
-static int alloc_slot(uint16_t id, uint16_t seq) {
-    for (int i = 0; i < MAX_PENDING; i++) {
-        if (!g_pending[i].in_use) {
-            g_pending[i].in_use = true;
-            g_pending[i].id = id;
-            g_pending[i].seq = seq;
-            g_pending[i].start_ms = (uint32_t)get_time();
-            g_pending[i].rx_count = 0;
-            memset(g_pending[i].replies, 0, sizeof(g_pending[i].replies));
-            return i;
-        }
-    }
-    return -1;
-}
-
-static void mark_received(uint16_t id, uint16_t seq, uint8_t type, uint8_t code, const uint8_t src_ip[16]) {
-    for (int i = 0; i < MAX_PENDING; i++) {
-        if (g_pending[i].in_use && g_pending[i].id == id && g_pending[i].seq == seq) {
-            if (g_pending[i].rx_count >= MAX_PING6_REPLIES) return;
-            ping6_reply_t *r = &g_pending[i].replies[g_pending[i].rx_count++];
-            r->type = type;
-            r->code = code;
-            r->end_ms = (uint32_t)get_time();
-            if (src_ip) memcpy(r->src_ip, src_ip, 16);
-            return;
-        }
-    }
-}
+static bool extract_echo_id_seq_from_error(const uint8_t *icmp, uint32_t icmp_len, uint16_t *out_id, uint16_t *out_seq);
 
 bool icmpv6_send_on_l2(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t src_ip[16], const uint8_t dst_mac[6], const void *icmp, uint32_t icmp_len, uint8_t hop_limit) {
     if (!ifindex || !dst_ip || !src_ip || !dst_mac || !icmp || !icmp_len) return false;
@@ -83,8 +37,8 @@ bool icmpv6_send_on_l2(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t 
     ip6.payload_len = bswap16((uint16_t)icmp_len);
     ip6.next_header = PROTO_ICMPV6;
     ip6.hop_limit = hop_limit ? hop_limit : 64;
-    memcpy(ip6.src, src_ip, 16);
-    memcpy(ip6.dst, dst_ip, 16);
+    ipv6_cpy(ip6.src, src_ip);
+    ipv6_cpy(ip6.dst, dst_ip);
 
     memcpy(buf, &ip6, sizeof(ip6));
     memcpy((void*)((uintptr_t)buf + sizeof(ipv6_hdr_t)), icmp, icmp_len);
@@ -119,95 +73,120 @@ static bool icmpv6_send_echo_reply(uint16_t ifindex, const uint8_t src_ip[16], c
     return true;
 }
 
-static bool icmpv6_send_echo_request(const uint8_t dst_ip[16], uint16_t id, uint16_t seq, const void *payload, uint32_t payload_len, const void *tx_opts_or_null, uint8_t hop_limit) {
-    if (!dst_ip) return false;
-
-    uint32_t len = (uint32_t)sizeof(icmpv6_echo_t) + payload_len;
-    uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + (uint32_t)sizeof(ipv6_hdr_t);
-    netpkt_t* pkt = netpkt_alloc(len, headroom, 0);
-    if (!pkt) return false;
-    void* buf = netpkt_put(pkt, len);
-    if (!buf) {
-        netpkt_unref(pkt);
-        return false;
-    }
-
-    icmpv6_echo_t e;
-    e.hdr.type = ICMPV6_ECHO_REQUEST;
-    e.hdr.code = 0;
-    e.hdr.checksum = 0;
-    e.id = bswap16(id);
-    e.seq = bswap16(seq);
-
-    memcpy(buf, &e, sizeof(e));
-    if (payload_len) memcpy((void*)((uintptr_t)buf + sizeof(icmpv6_echo_t)), payload, payload_len);
-
-    ipv6_tx_plan_t plan;
-    if (!ipv6_build_tx_plan(dst_ip, tx_opts_or_null, &plan)) {
-        netpkt_unref(pkt);
-        return false;
-    }
-    e.hdr.checksum = bswap16(checksum16_pipv6(plan.src_ip, dst_ip, PROTO_ICMPV6, (const uint8_t*)buf, len));
-    memcpy(buf, &e, sizeof(e));
-
-    ipv6_send_packet(dst_ip, PROTO_ICMPV6, pkt, (const ip_tx_opts_t*)tx_opts_or_null, hop_limit ? hop_limit : 64, 0);
-    return true;
-}
-
 uint32_t icmpv6_ping_collect(const uint8_t dst_ip[16], uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint8_t hop_limit, ping6_result_t *out, uint32_t max_results) {
     if (!out || !max_results) return 0;
-    int slot = alloc_slot(id, seq);
-    if (slot < 0) {
+
+    SocketOptions opt;
+    memset(&opt, 0, sizeof(opt));
+    opt.special_kind = SOCKET_SPECIAL_RAW;
+    if (hop_limit) {
+        opt.flags |= SOCK_OPT_TTL;
+        opt.ttl = hop_limit;
+    }
+    socket_handle_t sock = create_socket(PROTO_ICMPV6, &opt);
+    if (!sock) {
         return 0;
     }
 
-    uint8_t payload[32];
-    memset(payload, 0, sizeof(payload));
+    const ip_tx_opts_t* tx = (const ip_tx_opts_t*)tx_opts_or_null;
+    if (tx && tx->scope != IP_TX_AUTO) {
+        SockBindSpec bind;
+        memset(&bind, 0, sizeof(bind));
+        if (tx->scope == IP_TX_BOUND_L2) {
+            bind.kind = BIND_L2;
+            bind.ifindex = tx->index;
+        } else if (tx->scope == IP_TX_BOUND_L3) {
+            bind.kind = BIND_L3;
+            bind.ver = IP_VER6;
+            bind.l3_id = tx->index;
+        }
+        if (bind.kind && bind_socket(sock, &bind, 0) != SOCK_OK) {
+            close_socket(sock);
+            return 0;
+        }
+    }
 
-    if (!icmpv6_send_echo_request(dst_ip, id, seq, payload, sizeof(payload), tx_opts_or_null, hop_limit)) {
-        g_pending[slot].in_use = false;
+    uint8_t payload[sizeof(icmpv6_echo_t) + 32];
+    memset(payload, 0, sizeof(payload));
+    icmpv6_echo_t* e = (icmpv6_echo_t*)payload;
+    e->hdr.type = ICMPV6_ECHO_REQUEST;
+    e->hdr.code = 0;
+    e->id = bswap16(id);
+    e->seq = bswap16(seq);
+
+    net_l4_endpoint dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.ver = IP_VER6;
+    ipv6_cpy(dst.ip, dst_ip);
+    if (send_to_socket(sock, &dst, payload, sizeof(payload)) != (int64_t)sizeof(payload)) {
+        close_socket(sock);
         return 0;
     }
 
     uint32_t count = 0;
-    uint32_t copied = 0;
     uint32_t start = (uint32_t)get_time();
-    for (;;) {
-        while (copied < g_pending[slot].rx_count && count < max_results) {
-            ping6_reply_t *r = &g_pending[slot].replies[copied++];
-            ping6_result_t *dst = &out[count++];
-            dst->icmp_type = r->type;
-            dst->icmp_code = r->code;
-            memcpy(dst->responder_ip, r->src_ip, 16);
-            switch (r->type) {
-                case ICMPV6_ECHO_REPLY: dst->status = PING_OK; break;
-                case ICMPV6_DEST_UNREACH:
-                    switch (r->code) {
-                        case 0: dst->status = PING_NET_UNREACH; break;
-                        case 1: dst->status = PING_ADMIN_PROHIBITED; break;
-                        case 2: dst->status = PING_ADMIN_PROHIBITED; break;
-                        case 3: dst->status = PING_HOST_UNREACH; break;
-                        case 4: dst->status = PING_PORT_UNREACH; break;
-                        default: dst->status = PING_UNKNOWN_ERROR; break;
-                    }
-                    break;
-                case ICMPV6_PACKET_TOO_BIG: dst->status = PING_FRAG_NEEDED; break;
-                case ICMPV6_TIME_EXCEEDED: dst->status = PING_TTL_EXPIRED; break;
-                case ICMPV6_PARAM_PROBLEM: dst->status = PING_PARAM_PROBLEM; break;
-                default: dst->status = PING_UNKNOWN_ERROR; break;
-            }
-
-            if (r->end_ms >= g_pending[slot].start_ms) dst->rtt_ms = r->end_ms - g_pending[slot].start_ms;
-            else dst->rtt_ms = 0;
-        }
-
-        if (count == max_results || (max_results == 1 && count)) break;
+    while (count < max_results) {
         uint32_t now = (uint32_t)get_time();
         if (now - start >= timeout_ms) break;
-        msleep(5);
+
+        uint8_t rx[1280];
+        net_l4_endpoint src;
+        memset(&src, 0, sizeof(src));
+        int64_t n = receive_from_socket(sock, rx, sizeof(rx), &src);
+        if (n == SOCK_ERR_WOULDBLOCK) {
+            msleep(5);
+            continue;
+        }
+
+        if (n < (int64_t)sizeof(icmpv6_hdr_t)) {
+        if (n < 0) msleep(5);
+        continue;
+        }
+
+        uint8_t type = rx[0];
+        uint8_t code = rx[1];
+        bool matched = false;
+        if (type == ICMPV6_ECHO_REPLY && n >= (int64_t)sizeof(icmpv6_echo_t)) {
+            icmpv6_echo_t reply;
+            memcpy(&reply, rx, sizeof(reply));
+            if (bswap16(reply.id) == id &&bswap16(reply.seq) == seq) matched = true;
+        } else if (type == ICMPV6_DEST_UNREACH || type == ICMPV6_PACKET_TOO_BIG || type == ICMPV6_TIME_EXCEEDED || type == ICMPV6_PARAM_PROBLEM) {
+            uint16_t inner_id = 0;
+            uint16_t inner_seq = 0;
+            if (extract_echo_id_seq_from_error(rx, (uint32_t)n, &inner_id, &inner_seq) && inner_id == id && inner_seq == seq) matched = true;
+        }
+        if (!matched) continue;
+
+        ping6_result_t* r = &out[count++];
+        memset(r, 0, sizeof(*r));
+        r->icmp_type = type;
+        r->icmp_code = code;
+        ipv6_cpy(r->responder_ip, src.ip);
+        now = (uint32_t)get_time();
+        r->rtt_ms = now >= start ? now - start : 0;
+        switch (type) {
+            case ICMPV6_ECHO_REPLY:
+                r->status = PING_OK;
+                break;
+            case ICMPV6_DEST_UNREACH:
+                switch (code) {
+                    case 0: r->status = PING_NET_UNREACH; break;
+                    case 1: r->status = PING_ADMIN_PROHIBITED; break;
+                    case 2: r->status = PING_ADMIN_PROHIBITED; break;
+                    case 3: r->status = PING_HOST_UNREACH; break;
+                    case 4: r->status = PING_PORT_UNREACH; break;
+                    default: r->status = PING_UNKNOWN_ERROR; break;
+                }
+                break;
+            case ICMPV6_PACKET_TOO_BIG: r->status = PING_FRAG_NEEDED; break;
+            case ICMPV6_TIME_EXCEEDED: r->status = PING_TTL_EXPIRED; break;
+            case ICMPV6_PARAM_PROBLEM: r->status = PING_PARAM_PROBLEM; break;
+            default: r->status = PING_UNKNOWN_ERROR; break;
+        }
+        if (max_results == 1) break;
     }
 
-    g_pending[slot].in_use = false;
+    close_socket(sock);
     return count;
 }
 
@@ -268,6 +247,8 @@ void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_
         netpkt_unref(pkt);
         return;
     }
+
+    socket_raw_input_v6((uint8_t)ifindex, src_ip, dst_ip, pkt);
     if (h->type == 130 || h->type == 131 || h->type == 132 || h->type == 143) {
         mld_input((uint8_t)ifindex, src_ip, dst_ip, pkt);
         netpkt_unref(pkt);
@@ -288,7 +269,6 @@ void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_
         }
         icmpv6_echo_t e;
         memcpy(&e, icmp, sizeof(e));
-        mark_received(bswap16(e.id), bswap16(e.seq), h->type, h->code, src_ip);
         netpkt_unref(pkt);
         return;
     }
@@ -307,20 +287,13 @@ void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_
             memcpy(&inner, icmp + 8, sizeof(inner));
             uint32_t v = bswap32(inner.ver_tc_fl);
 
-            if ((v >> 28) == 6 && mtu >= 1280u && mtu <= 65535u)
-                ipv6_pmtu_note(inner.dst, (uint16_t)mtu);
-
-            uint16_t id = 0, seq = 0;
-            if (extract_echo_id_seq_from_error(icmp, icmp_len, &id, &seq))
-                mark_received(id, seq, h->type, h->code, src_ip);
+            if ((v >> 28) == 6 && mtu >= 1280u && mtu <= 65535u) ipv6_pmtu_note(inner.dst, (uint16_t)mtu);
         }
         netpkt_unref(pkt);
         return;
     }
 
     if (h->type == ICMPV6_DEST_UNREACH || h->type == ICMPV6_TIME_EXCEEDED || h->type == ICMPV6_PARAM_PROBLEM) {
-        uint16_t id = 0, seq = 0;
-        if (extract_echo_id_seq_from_error(icmp, icmp_len, &id, &seq)) mark_received(id, seq, h->type, h->code, src_ip);
         netpkt_unref(pkt);
         return;
     }
