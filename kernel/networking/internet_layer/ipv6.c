@@ -3,6 +3,7 @@
 #include "std/memory.h"
 #include "std/string.h"
 #include "networking/link_layer/eth.h"
+#include "networking/link_layer/link_utils.h"
 #include "networking/interface_manager.h"
 #include "networking/link_layer/ndp.h"
 #include "networking/transport_layer/tcp.h"
@@ -201,7 +202,7 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     uint8_t dst_mac[6];
     bool need_ndp = false;
     if (ipv6_is_multicast(dst)) ipv6_multicast_mac(dst, dst_mac);
-    else if (l2 && l2->kind == NET_IFK_LOCALHOST) memset(dst_mac, 0, 6);
+    else if (l2 && l2->kind == NET_IFK_LOCALHOST) mac_clear(dst_mac);
     else need_ndp = true;
 
     uint16_t mtu = src_v6->mtu ? src_v6->mtu : 1500;
@@ -224,8 +225,8 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         ip6.payload_len = bswap16((uint16_t)seg_len);
         ip6.next_header = next_header;
         ip6.hop_limit = hop_limit ? hop_limit : 64;
-        memcpy(ip6.src, src, 16);
-        memcpy(ip6.dst, dst, 16);
+        ipv6_cpy(ip6.src, src);
+        ipv6_cpy(ip6.dst, dst);
         memcpy(hdrp, &ip6, sizeof(ip6));
 
         if (need_ndp) return ndp_send_or_queue_on(ifx, nh, pkt);
@@ -485,7 +486,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 t->last_update_ms = now;
                 t->have_first = 0;
                 net_fragbuf_init(&t->frag);
-                memset(t->first_src_mac, 0, 6);
+                mac_clear(t->first_src_mac);
                 t->first_pkt_len = 0;
                 memset(t->first_pkt, 0, sizeof(t->first_pkt));
                 s = t;
@@ -553,7 +554,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 return;
             }
             s->first_pkt_len = (uint16_t)inv_len;
-            memcpy(s->first_src_mac, src_mac, 6);
+            mac_copy(s->first_src_mac, src_mac);
             s->have_first = 1;
         }
 

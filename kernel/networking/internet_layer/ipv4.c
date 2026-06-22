@@ -1,6 +1,7 @@
 #include "ipv4.h"
 #include "ipv4_route.h"
 #include "networking/link_layer/arp.h"
+#include "networking/link_layer/link_utils.h"
 #include "networking/internet_layer/icmp.h"
 #include "networking/internet_layer/igmp.h"
 #include "std/memory.h"
@@ -13,6 +14,7 @@
 #include "net/network_types.h"
 #include "networking/link_layer/nic_types.h"
 #include "networking/net_fragbuf.h"
+#include "networking/interface_manager.h"
 
 static uint16_t g_ip_ident = 1;
 
@@ -61,7 +63,7 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
 
         ifx = src_v4->l2->ifindex;
         src_ip = src_v4->ip;
-        nh = 0xFFFFFFFF;
+        nh = IPV4_LIMITED_BROADCAST;
     } else {
         ipv4_tx_plan_t plan;
         if (!ipv4_build_tx_plan(dst_ip, opts, &plan)) {
@@ -100,13 +102,13 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
     }
 
     l2_interface_t* l2 = src_v4->l2;
-    uint8_t dst_mac[6];
+    uint8_t dst_mac[MAC_ADDR_LEN];
     bool need_arp = false;
     bool is_dbcast = src_v4->mask && nh == dst_ip && ipv4_broadcast_calc(src_v4->ip, src_v4->mask) == dst_ip;
 
-    if (ipv4_is_limited_broadcast(dst_ip) || is_dbcast) memset(dst_mac, 0xFF, 6);
+    if (ipv4_is_limited_broadcast(dst_ip) || is_dbcast) mac_set_broadcast(dst_mac);
     else if (ipv4_is_multicast(dst_ip)) ipv4_mcast_to_mac(dst_ip, dst_mac);
-    else if (l2->kind == NET_IFK_LOCALHOST) memset(dst_mac, 0, 6);
+    else if (l2->kind == NET_IFK_LOCALHOST) mac_clear(dst_mac);
     else need_arp = true;
 
     uint16_t mtu = src_v4->runtime_opts_v4.mtu ? src_v4->runtime_opts_v4.mtu : 1500;
@@ -240,7 +242,7 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
         return;
     }
 
-    if (dst == 0xFFFFFFFF) {
+    if (dst == IPV4_LIMITED_BROADCAST) {
         for (int i = 0; i < ccount; ++i) {
             netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
             if (!l4pkt) continue;
@@ -306,7 +308,7 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
     }
 }
 
-void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
+void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_LEN]) {
     if (!pkt) return;
     uint32_t ip_len = netpkt_len(pkt);
     if (ip_len < sizeof(ipv4_hdr_t)) return;
@@ -336,9 +338,9 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     uint32_t dst = bswap32(ip.dst_ip);
 
     if (ifindex && src && src_mac) {
-        uint8_t mac_old[6];
+        uint8_t mac_old[MAC_ADDR_LEN];
         bool had = arp_table_get_for_l2((uint8_t)ifindex, src, mac_old);
-        if (!had || memcmp(mac_old, src_mac, 6) != 0) arp_table_put_for_l2((uint8_t)ifindex, src, src_mac, 180000, false);
+        if (!had || !mac_equal(mac_old, src_mac)) arp_table_put_for_l2((uint8_t)ifindex, src, src_mac, 180000, false);
         else arp_table_put_for_l2((uint8_t)ifindex, src, mac_old, 180000, false);
     }
 

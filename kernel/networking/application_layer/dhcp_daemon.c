@@ -10,6 +10,7 @@
 #include "networking/internet_layer/ipv4_utils.h"
 #include "net/network_types.h"
 #include "networking/link_layer/arp.h"
+#include "networking/link_layer/link_utils.h"
 #include "networking/transport_layer/udp.h"
 
 #include "networking/transport_layer/csocket.h"
@@ -39,7 +40,7 @@ typedef struct {
     uint32_t last_xid;
     uint32_t trans_xid;
     uint32_t server_ip_net;
-    uint8_t mac[6];
+    uint8_t mac[MAC_ADDR_LEN];
     bool mac_ok;
     bool needs_inform;
     socket_handle_t sock;
@@ -116,7 +117,10 @@ static void ensure_inventory() {
             st.trans_xid = 0;
             st.server_ip_net = 0;
             const uint8_t* m = network_get_mac(st.ifindex);
-            if (m) { memcpy(st.mac, m, 6); st.mac_ok = true; }
+            if (m) {
+                mac_copy(st.mac, m);
+                st.mac_ok = true;
+            }
             st.needs_inform = (v4->mode == IPV4_CFG_STATIC && v4->ip != 0);
             st.sock = create_socket(PROTO_UDP, NULL);
             if (!st.sock) continue;
@@ -140,13 +144,7 @@ static void ensure_inventory() {
     }
 }
 
-static bool packet_mac_matches(const dhcp_packet *p, const uint8_t mac[6]) {
-    if (!mac) return true;
-    for (int i = 0; i < 6; i++) if (p->chaddr[i] != mac[i]) return false;
-    return true;
-}
-
-static bool udp_wait_for_type_on(socket_handle_t sock, uint8_t wanted, uint32_t expect_xid, const uint8_t mac[6], dhcp_packet **outp, sizedptr *outsp, uint32_t timeout_ms) {
+static bool udp_wait_for_type_on(socket_handle_t sock, uint8_t wanted, uint32_t expect_xid, const uint8_t mac[MAC_ADDR_LEN], dhcp_packet** outp, sizedptr* outsp, uint32_t timeout_ms) {
     uint32_t waited = 0;
     while(waited < timeout_ms){
         uint8_t buf[1024];
@@ -154,34 +152,33 @@ static bool udp_wait_for_type_on(socket_handle_t sock, uint8_t wanted, uint32_t 
         memset(&src, 0, sizeof(src));
         int64_t r = receive_from_socket(sock, buf, sizeof(buf), &src);
         if (r > 0) {
-            if (src.port != 67) { continue; }
-            if ((size_t)r < sizeof(dhcp_packet) - sizeof(((dhcp_packet*)0)->options) + 4) { continue; }
+            if (src.port != 67) continue;
+            if ((size_t)r < sizeof(dhcp_packet) - sizeof(((dhcp_packet*)0)->options) + 4) continue;
             dhcp_packet *p = (dhcp_packet*)buf;
 
-            if (p->htype != 1) { continue; }
-            if (p->hlen != 6) { continue; }
-            if (!dhcp_has_valid_cookie(p)) { continue; }
-            if (expect_xid && p->xid != expect_xid) { continue; }
-            if (mac && !packet_mac_matches(p, mac)) { continue; }
+            if (p->htype != 1) continue;
+            if (p->hlen != MAC_ADDR_LEN) continue;
+            if (!dhcp_has_valid_cookie(p)) continue;
+            if (expect_xid && p->xid != expect_xid) continue;
+            if (mac && !mac_equal(p->chaddr, mac)) continue;
             uint16_t idx = dhcp_parse_option_bounded(p, (uint32_t)r, 53);
-            if (idx == UINT16_MAX) { continue; }
+            if (idx == UINT16_MAX) continue;
             uint8_t len = p->options[idx+1];
-            if (len < 1) { continue; }
-            if (p->options[idx+2] != wanted) { continue; }
+            if (len < 1) continue;
+            if (p->options[idx+2] != wanted) continue;
             uintptr_t copy = (uintptr_t)malloc((uint32_t)r);
             memcpy((void*)copy, buf, (size_t)r);
             if (outp) *outp= (dhcp_packet*)copy;
             if (outsp) *outsp = (sizedptr){ copy, (uint32_t)r };
             return true;
-        } else {
-            msleep(50);
-            waited += 50;
         }
+        msleep(50);
+        waited += 50;
     }
     return false;
 }
 
-static bool udp_wait_for_ack_or_nak(socket_handle_t sock, uint32_t expect_xid, const uint8_t mac[6], dhcp_packet **outp, sizedptr *outsp, uint32_t timeout_ms, uint8_t *out_msg_type) {
+static bool udp_wait_for_ack_or_nak(socket_handle_t sock, uint32_t expect_xid, const uint8_t mac[MAC_ADDR_LEN], dhcp_packet** outp, sizedptr* outsp, uint32_t timeout_ms, uint8_t *out_msg_type) {
     uint32_t waited = 0;
     while (waited < timeout_ms) {
         uint8_t buf[1024];
@@ -189,27 +186,26 @@ static bool udp_wait_for_ack_or_nak(socket_handle_t sock, uint32_t expect_xid, c
         memset(&src, 0, sizeof(src));
         int64_t r = receive_from_socket(sock, buf, sizeof(buf), &src);
         if (r > 0) {
-            if (src.port != 67) { continue; }
-            if ((size_t)r < sizeof(dhcp_packet) - sizeof(((dhcp_packet*)0)->options) + 4) { continue; }
+            if (src.port != 67) continue;
+            if ((size_t)r < sizeof(dhcp_packet) - sizeof(((dhcp_packet*)0)->options) + 4) continue;
             dhcp_packet* p = (dhcp_packet*)buf;
-            if (p->htype != 1 || p->hlen != 6) { continue; }
-            if (!dhcp_has_valid_cookie(p)) { continue; }
-            if (expect_xid && p->xid != expect_xid) { continue; }
-            if (mac && !packet_mac_matches(p, mac)) { continue; }
+            if (p->htype != 1 || p->hlen != MAC_ADDR_LEN) continue;
+            if (!dhcp_has_valid_cookie(p)) continue;
+            if (expect_xid && p->xid != expect_xid) continue;
+            if (mac && !mac_equal(p->chaddr, mac)) continue;
             uint16_t idx = dhcp_parse_option_bounded(p, (uint32_t)r, 53);
-            if (idx == UINT16_MAX || p->options[idx+1] < 1) { continue; }
+            if (idx == UINT16_MAX || p->options[idx+1] < 1) continue;
             uint8_t mtype = p->options[idx+2];
-            if (mtype != DHCPACK && mtype != DHCPNAK) { continue; }
+            if (mtype != DHCPACK && mtype != DHCPNAK) continue;
             uintptr_t copy = (uintptr_t)malloc((uint32_t)r);
             memcpy((void*)copy, buf, (size_t)r);
             if (outp) *outp = (dhcp_packet*)copy;
             if (outsp) *outsp = (sizedptr){ copy, (uint32_t)r };
             if (out_msg_type) *out_msg_type = mtype;
             return true;
-        } else {
-            msleep(50);
-            waited += 50;
         }
+        msleep(50);
+        waited += 50;
     }
     return false;
 }
@@ -321,20 +317,11 @@ static void dhcp_send_discover_for(dhcp_if_state_t* st) {
     st->trans_xid = xid;
     dhcp_request req;
     memset(&req, 0, sizeof(req));
-    if (st->mac_ok) memcpy(req.mac, st->mac, 6);
+    if (st->mac_ok) mac_copy(req.mac, st->mac);
     sizedptr pkt = dhcp_build_packet(&req, DHCPDISCOVER, xid, DHCPK_DISCOVER, true);
-    uint32_t bcast = 0xFFFFFFFFu;
+    uint32_t bcast = IPV4_LIMITED_BROADCAST;
     net_l4_endpoint dst;
     make_ep(&bcast, 67, IP_VER4, &dst);
-    send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
-    free_sized((void*)pkt.ptr, pkt.size);
-}
-
-static void dhcp_send_request_select_for(dhcp_if_state_t* st, const dhcp_request* base) {
-    sizedptr pkt = dhcp_build_packet(base, DHCPREQUEST, st->trans_xid, DHCPK_SELECT, true);
-    uint32_t dip = 0xFFFFFFFFu;
-    net_l4_endpoint dst;
-    make_ep(&dip, 67, IP_VER4, &dst);
     send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
     free_sized((void*)pkt.ptr, pkt.size);
 }
@@ -344,7 +331,7 @@ static void dhcp_send_renew_for(dhcp_if_state_t* st) {
     if (!v4) return;
     dhcp_request req;
     memset(&req, 0, sizeof(req));
-    if (st->mac_ok) memcpy(req.mac, st->mac, 6);
+    if (st->mac_ok) mac_copy(req.mac, st->mac);
     uint32_t ip_net = bswap32(v4->ip);
     req.offered_ip = ip_net;
     req.server_ip = st->server_ip_net;
@@ -352,7 +339,7 @@ static void dhcp_send_renew_for(dhcp_if_state_t* st) {
     rng_init_random(&rng);
     st->trans_xid = rng_next32(&rng);
     sizedptr pkt = dhcp_build_packet(&req, DHCPREQUEST, st->trans_xid, DHCPK_RENEW, st->server_ip_net == 0);
-    uint32_t dip = st->server_ip_net ? st->server_ip_net : 0xFFFFFFFFu;
+    uint32_t dip = st->server_ip_net ? st->server_ip_net : IPV4_LIMITED_BROADCAST;
     net_l4_endpoint dst;
     make_ep(&dip, 67, IP_VER4, &dst);
     send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
@@ -364,7 +351,7 @@ static void dhcp_send_rebind_for(dhcp_if_state_t* st) {
     if (!v4) return;
     dhcp_request req;
     memset(&req, 0, sizeof(req));
-    if (st->mac_ok) memcpy(req.mac, st->mac, 6);
+    if (st->mac_ok) mac_copy(req.mac, st->mac);
     uint32_t ip_net = bswap32(v4->ip);
     req.offered_ip = ip_net;
     req.server_ip = 0;
@@ -372,7 +359,7 @@ static void dhcp_send_rebind_for(dhcp_if_state_t* st) {
     rng_init_random(&rng);
     st->trans_xid = rng_next32(&rng);
     sizedptr pkt = dhcp_build_packet(&req, DHCPREQUEST, st->trans_xid, DHCPK_REBIND, true);
-    uint32_t dip = 0xFFFFFFFFu;
+    uint32_t dip = IPV4_LIMITED_BROADCAST;
     net_l4_endpoint dst;
     make_ep(&dip, 67, IP_VER4, &dst);
     send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
@@ -384,7 +371,7 @@ static void dhcp_send_inform_for(dhcp_if_state_t* st) {
     if (!v4 || !v4->ip) return;
     dhcp_request req;
     memset(&req, 0, sizeof(req));
-    if (st->mac_ok) memcpy(req.mac, st->mac, 6);
+    if (st->mac_ok) mac_copy(req.mac, st->mac);
     uint32_t ip_net = bswap32(v4->ip);
     req.offered_ip = ip_net;
     req.server_ip = 0;
@@ -392,7 +379,7 @@ static void dhcp_send_inform_for(dhcp_if_state_t* st) {
     rng_init_random(&rng);
     uint32_t xid = rng_next32(&rng);
     sizedptr pkt = dhcp_build_packet(&req, DHCPINFORM, xid, DHCPK_INFORM, true);
-    uint32_t dip = 0xFFFFFFFFu;
+    uint32_t dip = IPV4_LIMITED_BROADCAST;
     net_l4_endpoint dst;
     make_ep(&dip, 67, IP_VER4, &dst);
     send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
@@ -419,7 +406,8 @@ static void fsm_once_for(dhcp_if_state_t* st) {
         st->state = DHCP_S_SELECTING;
     } break;
     case DHCP_S_SELECTING: {
-        dhcp_packet* offer = NULL; sizedptr sp = (sizedptr){0,0};
+        dhcp_packet* offer = NULL;
+        sizedptr sp = (sizedptr){0,0};
         if (!udp_wait_for_type_on(st->sock, DHCPOFFER, st->last_xid, st->mac_ok ? st->mac : NULL, &offer, &sp, 5000)) {
             st->state = DHCP_S_INIT;
             st->retry_left_ms = dhcp_next_backoff_ms(st);
@@ -427,18 +415,25 @@ static void fsm_once_for(dhcp_if_state_t* st) {
         }
         dhcp_request req;
         memset(&req, 0, sizeof(req));
-        if (st->mac_ok) memcpy(req.mac, st->mac, 6);
+        if (st->mac_ok) mac_copy(req.mac, st->mac);
         uint16_t idx54 = dhcp_parse_option_bounded(offer, sp.size, 54);
         if (idx54 != UINT16_MAX && offer->options[idx54+1] >= 4) memcpy(&st->server_ip_net, &offer->options[idx54+2], 4);
         memcpy(&req.offered_ip, &offer->yiaddr, 4);
         req.server_ip = st->server_ip_net;
         free_sized((void*)sp.ptr, sp.size);
-        dhcp_send_request_select_for(st, &req);
+        sizedptr pkt = dhcp_build_packet(&req, DHCPREQUEST, st->trans_xid, DHCPK_SELECT, true);
+        uint32_t dip = IPV4_LIMITED_BROADCAST;
+        net_l4_endpoint dst;
+        make_ep(&dip, 67, IP_VER4, &dst);
+        send_to_socket(st->sock, &dst, (const void*)pkt.ptr, pkt.size);
+        free_sized((void*)pkt.ptr, pkt.size);
         st->state = DHCP_S_REQUESTING;
         dhcp_reset_backoff(st);
     } break;
     case DHCP_S_REQUESTING: {
-        dhcp_packet* resp = NULL; sizedptr sp = (sizedptr){0,0}; uint8_t mtype = 0;
+        dhcp_packet* resp = NULL;
+        sizedptr sp = (sizedptr){0,0};
+        uint8_t mtype = 0;
         if (!udp_wait_for_ack_or_nak(st->sock, st->last_xid, st->mac_ok ? st->mac : NULL, &resp, &sp, 5000, &mtype)) {
             st->state = DHCP_S_INIT;
             st->retry_left_ms = dhcp_next_backoff_ms(st);

@@ -258,7 +258,7 @@ bool NetworkDispatch::register_all_from_bus() {
 
         strncpy(c->ifname_str, name, (int)sizeof(c->ifname_str));
         strncpy(c->hwname_str, hw, (int)sizeof(c->hwname_str));
-        memcpy(c->mac_addr, macbuf, 6);
+        mac_copy(c->mac_addr, macbuf);
         c->mtu_val = m;
         c->hdr_sz = hs;
         c->speed_mbps = sp;

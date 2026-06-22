@@ -7,18 +7,14 @@
 #include "networking/link_layer/eth.h"
 #include "networking/link_layer/ndp.h"
 #include "networking/internet_layer/mld.h"
-#include "networking/transport_layer/csocket.h"
 #include "networking/transport_layer/csocket_raw.h"
 #include "networking/transport_layer/trans_utils.h"
-#include "syscalls/syscalls.h"
 
 typedef struct __attribute__((packed)) {
     icmpv6_hdr_t hdr;
     uint16_t id;
     uint16_t seq;
 } icmpv6_echo_t;
-
-static bool extract_echo_id_seq_from_error(const uint8_t *icmp, uint32_t icmp_len, uint16_t *out_id, uint16_t *out_seq);
 
 bool icmpv6_send_on_l2(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t src_ip[16], const uint8_t dst_mac[6], const void *icmp, uint32_t icmp_len, uint8_t hop_limit) {
     if (!ifindex || !dst_ip || !src_ip || !dst_mac || !icmp || !icmp_len) return false;
@@ -73,151 +69,6 @@ static bool icmpv6_send_echo_reply(uint16_t ifindex, const uint8_t src_ip[16], c
     return true;
 }
 
-uint32_t icmpv6_ping_collect(const uint8_t dst_ip[16], uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint8_t hop_limit, ping6_result_t *out, uint32_t max_results) {
-    if (!out || !max_results) return 0;
-
-    SocketOptions opt;
-    memset(&opt, 0, sizeof(opt));
-    opt.special_kind = SOCKET_SPECIAL_RAW;
-    if (hop_limit) {
-        opt.flags |= SOCK_OPT_TTL;
-        opt.ttl = hop_limit;
-    }
-    socket_handle_t sock = create_socket(PROTO_ICMPV6, &opt);
-    if (!sock) {
-        return 0;
-    }
-
-    const ip_tx_opts_t* tx = (const ip_tx_opts_t*)tx_opts_or_null;
-    if (tx && tx->scope != IP_TX_AUTO) {
-        SockBindSpec bind;
-        memset(&bind, 0, sizeof(bind));
-        if (tx->scope == IP_TX_BOUND_L2) {
-            bind.kind = BIND_L2;
-            bind.ifindex = tx->index;
-        } else if (tx->scope == IP_TX_BOUND_L3) {
-            bind.kind = BIND_L3;
-            bind.ver = IP_VER6;
-            bind.l3_id = tx->index;
-        }
-        if (bind.kind && bind_socket(sock, &bind, 0) != SOCK_OK) {
-            close_socket(sock);
-            return 0;
-        }
-    }
-
-    uint8_t payload[sizeof(icmpv6_echo_t) + 32];
-    memset(payload, 0, sizeof(payload));
-    icmpv6_echo_t* e = (icmpv6_echo_t*)payload;
-    e->hdr.type = ICMPV6_ECHO_REQUEST;
-    e->hdr.code = 0;
-    e->id = bswap16(id);
-    e->seq = bswap16(seq);
-
-    net_l4_endpoint dst;
-    memset(&dst, 0, sizeof(dst));
-    dst.ver = IP_VER6;
-    ipv6_cpy(dst.ip, dst_ip);
-    if (send_to_socket(sock, &dst, payload, sizeof(payload)) != (int64_t)sizeof(payload)) {
-        close_socket(sock);
-        return 0;
-    }
-
-    uint32_t count = 0;
-    uint32_t start = (uint32_t)get_time();
-    while (count < max_results) {
-        uint32_t now = (uint32_t)get_time();
-        if (now - start >= timeout_ms) break;
-
-        uint8_t rx[1280];
-        net_l4_endpoint src;
-        memset(&src, 0, sizeof(src));
-        int64_t n = receive_from_socket(sock, rx, sizeof(rx), &src);
-        if (n == SOCK_ERR_WOULDBLOCK) {
-            msleep(5);
-            continue;
-        }
-
-        if (n < (int64_t)sizeof(icmpv6_hdr_t)) {
-        if (n < 0) msleep(5);
-        continue;
-        }
-
-        uint8_t type = rx[0];
-        uint8_t code = rx[1];
-        bool matched = false;
-        if (type == ICMPV6_ECHO_REPLY && n >= (int64_t)sizeof(icmpv6_echo_t)) {
-            icmpv6_echo_t reply;
-            memcpy(&reply, rx, sizeof(reply));
-            if (bswap16(reply.id) == id &&bswap16(reply.seq) == seq) matched = true;
-        } else if (type == ICMPV6_DEST_UNREACH || type == ICMPV6_PACKET_TOO_BIG || type == ICMPV6_TIME_EXCEEDED || type == ICMPV6_PARAM_PROBLEM) {
-            uint16_t inner_id = 0;
-            uint16_t inner_seq = 0;
-            if (extract_echo_id_seq_from_error(rx, (uint32_t)n, &inner_id, &inner_seq) && inner_id == id && inner_seq == seq) matched = true;
-        }
-        if (!matched) continue;
-
-        ping6_result_t* r = &out[count++];
-        memset(r, 0, sizeof(*r));
-        r->icmp_type = type;
-        r->icmp_code = code;
-        ipv6_cpy(r->responder_ip, src.ip);
-        now = (uint32_t)get_time();
-        r->rtt_ms = now >= start ? now - start : 0;
-        switch (type) {
-            case ICMPV6_ECHO_REPLY:
-                r->status = PING_OK;
-                break;
-            case ICMPV6_DEST_UNREACH:
-                switch (code) {
-                    case 0: r->status = PING_NET_UNREACH; break;
-                    case 1: r->status = PING_ADMIN_PROHIBITED; break;
-                    case 2: r->status = PING_ADMIN_PROHIBITED; break;
-                    case 3: r->status = PING_HOST_UNREACH; break;
-                    case 4: r->status = PING_PORT_UNREACH; break;
-                    default: r->status = PING_UNKNOWN_ERROR; break;
-                }
-                break;
-            case ICMPV6_PACKET_TOO_BIG: r->status = PING_FRAG_NEEDED; break;
-            case ICMPV6_TIME_EXCEEDED: r->status = PING_TTL_EXPIRED; break;
-            case ICMPV6_PARAM_PROBLEM: r->status = PING_PARAM_PROBLEM; break;
-            default: r->status = PING_UNKNOWN_ERROR; break;
-        }
-        if (max_results == 1) break;
-    }
-
-    close_socket(sock);
-    return count;
-}
-
-bool icmpv6_ping(const uint8_t dst_ip[16], uint16_t id, uint16_t seq, uint32_t timeout_ms, const void *tx_opts_or_null, uint8_t hop_limit, ping6_result_t *out) {
-    ping6_result_t res;
-    ping6_result_t *dst = out ? out : &res;
-    uint32_t n = icmpv6_ping_collect(dst_ip, id, seq, timeout_ms, tx_opts_or_null, hop_limit, dst, 1);
-    return n && dst->status == PING_OK;
-}
-
-static bool extract_echo_id_seq_from_error(const uint8_t *icmp, uint32_t icmp_len, uint16_t *out_id, uint16_t *out_seq) {
-    if (!icmp || icmp_len < 8u + (uint32_t)sizeof(ipv6_hdr_t) + (uint32_t)sizeof(icmpv6_echo_t)) return false;
-
-    ipv6_hdr_t inner;
-    memcpy(&inner, icmp + 8, sizeof(inner));
-    uint32_t v = bswap32(inner.ver_tc_fl);
-    if ((v >>28) != 6) return false;
-    if (inner.next_header != PROTO_ICMPV6) return false;
-
-    const uint8_t *inner_icmp = icmp + 8u + (uint32_t)sizeof(ipv6_hdr_t);
-    if ((uintptr_t)inner_icmp + sizeof(icmpv6_echo_t)>(uintptr_t)icmp + icmp_len) return false;
-
-    icmpv6_echo_t e;
-    memcpy(&e, inner_icmp, sizeof(e));
-    if (e.hdr.type != ICMPV6_ECHO_REQUEST) return false;
-
-    if (out_id) *out_id = bswap16(e.id);
-    if (out_seq) *out_seq = bswap16(e.seq);
-    return true;
-}
-
 void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], uint8_t hop_limit, const uint8_t src_mac[6], netpkt_t* pkt) {
     if (!ifindex || !src_ip || !dst_ip || !pkt || netpkt_len(pkt) < sizeof(icmpv6_hdr_t)) {
         if (pkt) netpkt_unref(pkt);
@@ -263,12 +114,6 @@ void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_
     }
 
     if (h->type == ICMPV6_ECHO_REPLY) {
-        if (icmp_len < sizeof(icmpv6_echo_t)) {
-            netpkt_unref(pkt);
-            return;
-        }
-        icmpv6_echo_t e;
-        memcpy(&e, icmp, sizeof(e));
         netpkt_unref(pkt);
         return;
     }

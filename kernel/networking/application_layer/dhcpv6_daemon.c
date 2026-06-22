@@ -10,6 +10,7 @@
 #include "data/struct/linked_list.h"
 
 #include "networking/interface_manager.h"
+#include "networking/link_layer/link_utils.h"
 #include "networking/network.h"
 
 #include "networking/application_layer/dhcpv6.h"
@@ -38,7 +39,7 @@ typedef struct {
     uint8_t last_gateway[16];
     uint8_t last_gateway_ok;
 
-    uint8_t mac[6];
+    uint8_t mac[MAC_ADDR_LEN];
     uint8_t mac_ok;
 
     socket_handle_t sock;
@@ -78,28 +79,26 @@ void dhcpv6_force_renew_all() { g_force_renew_all = true; }
 void dhcpv6_force_rebind_all() { g_force_rebind_all = true; }
 void dhcpv6_force_confirm_all() { g_force_confirm_all = true; }
 
-static int l3id_to_bit(uint8_t l3_id) {
-    if (!l3_id) return -1;
-    if ((l3_id & 0x08) == 0) return -1;
+static uint64_t dhcpv6_l3_mask(uint8_t l3_id) {
+    if (!l3_id || !l3_is_v6_from_id(l3_id)) return 0;
 
-    uint8_t ifx = (uint8_t)((l3_id >> 4) & 0x0F);
-    uint8_t sl = (uint8_t)(l3_id & 0x03);
-    int idx = ((int)(ifx - 1) * MAX_IPV6_PER_INTERFACE) + (int)sl;
+    uint8_t ifindex = l3_ifindex_from_id(l3_id);
+    uint8_t slot = l3_slot_from_id(l3_id);
+    if (!ifindex || slot >= MAX_IPV6_PER_INTERFACE) return 0;
 
-    if (idx < 0 || idx >= 64) return -1;
-    return idx;
+    uint32_t bit = ((uint32_t)(ifindex - 1) * MAX_IPV6_PER_INTERFACE) + slot;
+    if (bit >= 64) return 0;
+    return (uint64_t)1 << bit;
 }
 
 void dhcpv6_force_release_l3(uint8_t l3_id) {
-    int b = l3id_to_bit(l3_id);
-    if (b < 0) return;
-    g_force_release_mask |= (1ull << (uint64_t)b);
+    uint64_t m = dhcpv6_l3_mask(l3_id);
+    if (m) g_force_release_mask |= m;
 }
 
 void dhcpv6_force_decline_l3(uint8_t l3_id) {
-    int b = l3id_to_bit(l3_id);
-    if (b < 0) return;
-    g_force_decline_mask |= (1ull << (uint64_t)b);
+    uint64_t m = dhcpv6_l3_mask(l3_id);
+    if (m) g_force_decline_mask |= m;
 }
 
 static uint32_t next_backoff_ms(dhcpv6_bind_t* b) {
@@ -257,7 +256,10 @@ static void ensure_binds() {
         b->bound_linklocal_l3_id = ll_l3;
 
         const uint8_t* mac = network_get_mac(b->ifindex);
-        if (mac) { memcpy(b->mac, mac, 6); b->mac_ok = 1; }
+        if (mac) {
+            mac_copy(b->mac, mac);
+            b->mac_ok = 1;
+        }
 
         b->sock = create_socket(PROTO_UDP, NULL);
         if (!b->sock) {
@@ -343,22 +345,18 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     if (!v6->runtime_opts_v6.iaid) v6->runtime_opts_v6.iaid = dhcpv6_iaid_from_mac(b->mac);
     if (!v6->runtime_opts_v6.iaid) v6->runtime_opts_v6.iaid = rng_next32(&g_dhcpv6_rng);
 
-    int bit = l3id_to_bit(v6->l3_id);
+    uint64_t l3_mask = dhcpv6_l3_mask(v6->l3_id);
     bool do_release = false;
     bool do_decline = false;
 
-    if (bit >= 0) {
-        uint64_t m = (1ull << (uint64_t)bit);
+    if (l3_mask && (g_force_release_mask & l3_mask)) {
+        g_force_release_mask &= ~l3_mask;
+        do_release = true;
+    }
 
-        if (g_force_release_mask & m) {
-            g_force_release_mask &= ~m;
-            do_release = true;
-        }
-
-        if (g_force_decline_mask & m) {
-            g_force_decline_mask &= ~m;
-            do_decline = true;
-        }
+    if (l3_mask && (g_force_decline_mask & l3_mask)) {
+        g_force_decline_mask &= ~l3_mask;
+        do_decline = true;
     }
 
     if (do_release) {

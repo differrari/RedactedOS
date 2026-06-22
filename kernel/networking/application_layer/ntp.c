@@ -1,6 +1,7 @@
 #include "ntp.h"
 #include "exceptions/timer.h"
 #include "std/memory.h"
+#include "networking/interface_manager.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "process/scheduler.h"

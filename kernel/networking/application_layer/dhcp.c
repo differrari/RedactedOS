@@ -2,6 +2,7 @@
 #include "std/memory.h"
 #include "networking/transport_layer/udp.h"
 #include "networking/internet_layer/ipv4.h"
+#include "networking/link_layer/link_utils.h"
 #include "types.h"
 #include "syscalls/syscalls.h"
 
@@ -23,7 +24,7 @@ sizedptr dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t x
 
     p.op = 1;
     p.htype = 1;
-    p.hlen  = 6;
+    p.hlen  = MAC_ADDR_LEN;
     p.hops  = 0;
     p.xid = xid;
     p.secs  = 0;
@@ -32,7 +33,7 @@ sizedptr dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t x
     p.yiaddr = 0;
     p.siaddr = 0;
     p.giaddr = 0;
-    memcpy(p.chaddr, req->mac, 6);
+    mac_copy(p.chaddr, req->mac);
 
     if (msg_type == DHCPINFORM) p.ciaddr = req->offered_ip;
     if (msg_type == DHCPREQUEST && (kind == DHCPK_RENEW || kind == DHCPK_REBIND)) p.ciaddr = req->offered_ip;

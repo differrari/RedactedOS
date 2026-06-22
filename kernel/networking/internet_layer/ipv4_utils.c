@@ -60,7 +60,7 @@ bool ipv4_l3_is_ready(l3_ipv4_interface_t *v4) {
 
 bool ipv4_mask_is_contiguous(uint32_t mask) {
     if (mask == 0) return true;
-    return ((mask | (mask - 1u)) == 0xFFFFFFFFu);
+    return ((mask | (mask - 1u)) == IPV4_LIMITED_BROADCAST);
 }
 
 int ipv4_prefix_len(uint32_t mask) {
@@ -74,21 +74,21 @@ uint32_t ipv4_broadcast_calc(uint32_t ip, uint32_t mask) { return (mask == 0) ? 
 
 bool ipv4_is_network_address(uint32_t ip, uint32_t mask) {
     if (!ipv4_mask_is_contiguous(mask)) return false;
-    if (mask == 0 || mask == 0xFFFFFFFFu) return false;
+    if (mask == 0 || mask == IPV4_LIMITED_BROADCAST) return false;
     return (ip & ~mask) == 0;
 }
 
 bool ipv4_is_broadcast_address(uint32_t ip, uint32_t mask) {
     if (!ipv4_mask_is_contiguous(mask)) return false;
-    if (mask == 0 || mask == 0xFFFFFFFFu) return false;
+    if (mask == 0 || mask == IPV4_LIMITED_BROADCAST) return false;
     return (ip & ~mask) == ~mask;
 }
 
-bool ipv4_is_limited_broadcast(uint32_t ip) { return ip == 0xFFFFFFFFu; }
+bool ipv4_is_limited_broadcast(uint32_t ip) { return ip == IPV4_LIMITED_BROADCAST; }
 
 bool ipv4_is_directed_broadcast(uint32_t ip, uint32_t mask, uint32_t dst) {
     if (!ipv4_mask_is_contiguous(mask)) return false;
-    if (mask == 0 || mask == 0xFFFFFFFFu) return false;
+    if (mask == 0 || mask == IPV4_LIMITED_BROADCAST) return false;
     return ipv4_broadcast_calc(ip, mask) == dst;
 }
 
@@ -104,32 +104,26 @@ void ipv4_to_string(uint32_t ip, char* buf) {
 
 bool ipv4_parse(const char* s, uint32_t* out) {
     if (!s || !out) return false;
-    uint32_t ip = 0, v = 0;
-    int oct = 0, digits = 0;
+    uint32_t ip = 0;
     const char* p = s;
-    while (*p) {
-        if (*p == '.') {
-            if (digits == 0 || v > 255 || oct >= 3) return false;
-            ip = (ip << 8) | (v & 0xFF);
-            v = 0;
-            digits = 0;
-            oct++;
-        } else if (*p >= '0' && *p <= '9') {
-            v = v * 10 + (uint32_t)(*p - '0');
-            if (v > 255) return false;
-            digits++;
+    for (uint32_t oct = 0; oct < 4; oct++) {
+        if (!is_digit(*p)) return false;
+        char* end = 0;
+        uint64_t v = strtoul(p, &end, 10);
+        if (v > 255) return false;
+        ip = (ip << 8) | (uint32_t)v;
+        if (oct == 3) {
+            if (*end) return false;
         } else {
-            return false;
+            if (*end != '.') return false;
+            p = end + 1;
         }
-        ++p;
     }
-    if (oct != 3 || digits == 0 || v > 255) return false;
-    ip = (ip << 8) | (v & 0xFF);
     *out = ip;
     return true;
 }
 
-void ipv4_mcast_to_mac(uint32_t group, uint8_t out_mac[6]) {
+void ipv4_mcast_to_mac(uint32_t group, uint8_t out_mac[MAC_ADDR_LEN]) {
     if (!out_mac) return;
     out_mac[0] = 0x01;
     out_mac[1] = 0x00;

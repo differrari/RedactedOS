@@ -2,6 +2,7 @@
 #include "networking/transport_layer/socket_bind.h"
 #include "networking/transport_layer/tcp.h"
 #include "networking/transport_layer/tcp/tcp_internal.h"
+#include "networking/interface_manager.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv4_route.h"
 #include "networking/internet_layer/ipv4_utils.h"
@@ -43,6 +44,7 @@ static ksocket_t* tcp_socket_pop_pending_at(tcp_socket_t* s, int idx) {
 
 socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
+    if (extra && (extra->flags & SOCK_OPT_RAW_FILTER)) return NULL;
 
     tcp_socket_t* s = (tcp_socket_t*)zalloc(sizeof(*s));
     if (!s) return NULL;
@@ -108,6 +110,7 @@ int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_MCAST_JOIN:
         case SOCK_OPT_MCAST_LEAVE:
         case SOCK_OPT_BROADCAST_ALLOWED:
+        case SOCK_OPT_RAW_FILTER:
             return SOCK_ERR_INVAL;
         case SOCK_OPT_RECV_TIMEOUT:
         case SOCK_OPT_SEND_TIMEOUT:
@@ -223,6 +226,7 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
             break;
         case SOCK_GET_MCAST_GROUPS:
         case SOCK_GET_OPT_BROADCAST_ALLOWED:
+        case SOCK_GET_OPT_RAW_FILTER:
             return SOCK_ERR_INVAL;
         case SOCK_GET_OPT_RECV_TIMEOUT:
         case SOCK_GET_OPT_SEND_TIMEOUT:

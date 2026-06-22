@@ -17,6 +17,11 @@
 #define UDP_DEFAULT_RING_CAP 64
 #define UDP_MAX_RING_CAP 1024
 
+typedef struct udp_rx_entry {
+    netpkt_t* pkt;
+    net_l4_endpoint src;
+} udp_rx_entry_t;
+
 typedef struct udp_socket {
     uint16_t localPort;
     net_l4_endpoint remoteEP;
@@ -25,8 +30,7 @@ typedef struct udp_socket {
     SocketOptions options;
     SockBindSpec bindSpec;
     socket_bind_token_t bindToken;
-    netpkt_t** ring;
-    net_l4_endpoint* src_eps;
+    udp_rx_entry_t* rx_ring;
     net_l4_endpoint* mcast_groups;
     uint8_t mcast_count;
     uint32_t ring_cap;
@@ -144,6 +148,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, const void* src
     udp_socket_t* s = (udp_socket_t*)socket_core_impl(socket);
     if (!s) return 0;
     if (!s->bindToken || s->localPort != dst_port || !dst_ip_addr || !src_ip_addr) return 0;
+    if (ipver != IP_VER4 && ipver != IP_VER6) return 0;
 
     if (ipver == IP_VER4) {
         uint32_t dip = 0;
@@ -165,7 +170,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, const void* src
     if (pkt_len > limit) return 0;
     if (s->rx_bytes > limit - pkt_len) return 0;
 
-    if (!s->ring || !s->src_eps || !s->ring_cap) {
+    if (!s->rx_ring || !s->ring_cap) {
         uint32_t usable = UDP_DEFAULT_RING_CAP;
         if ((s->options.flags & SOCK_OPT_BUF_SIZE) && s->options.buf_size) {
             usable = s->options.buf_size / MAX_PACKET_SIZE;
@@ -174,13 +179,8 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, const void* src
         }
 
         s->ring_cap = usable + 1;
-        s->ring = (netpkt_t**)zalloc(sizeof(netpkt_t*) * s->ring_cap);
-        s->src_eps = (net_l4_endpoint*)zalloc(sizeof(net_l4_endpoint) * s->ring_cap);
-        if (!s->ring || !s->src_eps) {
-            if (s->ring) release(s->ring);
-            if (s->src_eps) release(s->src_eps);
-            s->ring = NULL;
-            s->src_eps = NULL;
+        s->rx_ring = (udp_rx_entry_t*)zalloc(sizeof(udp_rx_entry_t) * s->ring_cap);
+        if (!s->rx_ring) {
             s->ring_cap = 0;
             return 0;
         }
@@ -190,20 +190,16 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, const void* src
     if (nexti == s->r_head) return 0;
 
     netpkt_ref(pkt);
-    s->ring[s->r_tail] = pkt;
+    s->rx_ring[s->r_tail].pkt = pkt;
+    make_ep(src_ip_addr, src_port, ipver, &s->rx_ring[s->r_tail].src);
     s->rx_bytes += pkt_len;
-
-    s->src_eps[s->r_tail].ver = ipver;
-    memset(s->src_eps[s->r_tail].ip, 0, 16);
-    if (ipver == IP_VER4) memcpy(s->src_eps[s->r_tail].ip, src_ip_addr, 4);
-    else if (ipver == IP_VER6) ipv6_cpy(s->src_eps[s->r_tail].ip, src_ip_addr);
-    s->src_eps[s->r_tail].port = src_port;
     s->r_tail = nexti;
     return pkt_len;
 } 
 
 socket_impl_t udp_socket_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
+    if (extra && (extra->flags & SOCK_OPT_RAW_FILTER)) return NULL;
 
     udp_socket_t* s = (udp_socket_t*)zalloc(sizeof(*s));
     if (!s) return NULL;
@@ -397,10 +393,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
             }
 
             net_l4_endpoint src;
-            src.ver = IP_VER4;
-            memset(src.ip, 0, 16);
-            memcpy(src.ip, &bcast_v4->ip, 4);
-            src.port = s->localPort;
+            make_ep(&bcast_v4->ip, s->localPort, IP_VER4, &src);
 
             ip_tx_opts_t tx;
             tx.scope = IP_TX_BOUND_L3;
@@ -430,10 +423,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         }
 
         net_l4_endpoint src;
-        src.ver = IP_VER4;
-        memset(src.ip, 0, 16);
-        memcpy(src.ip, &v4->ip, 4);
-        src.port = s->localPort;
+        make_ep(&v4->ip, s->localPort, IP_VER4, &src);
 
         ip_tx_opts_t tx;
         tx.scope = IP_TX_BOUND_L3;
@@ -464,10 +454,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         }
 
         net_l4_endpoint src;
-        src.ver = IP_VER6;
-        memset(src.ip, 0, 16);
-        ipv6_cpy(src.ip, v6->ip);
-        src.port = s->localPort;
+        make_ep(v6->ip, s->localPort, IP_VER6, &src);
 
         ip_tx_opts_t tx;
         tx.scope = IP_TX_BOUND_L3;
@@ -493,11 +480,11 @@ int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_en
     ev.remote_ep = s->remoteEP;
     netlog_socket_event(&s->options, &ev);
 
-    if (!s->ring || s->r_head == s->r_tail) {
+    if (!s->rx_ring || s->r_head == s->r_tail) {
         if (!(s->options.flags & SOCK_OPT_RECV_TIMEOUT) || !s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
 
         uint32_t start_ms = (uint32_t)get_time();
-        while (!s->ring || s->r_head == s->r_tail) {
+        while (!s->rx_ring || s->r_head == s->r_tail) {
             uint32_t now_ms = (uint32_t)get_time();
             uint32_t elapsed_ms = now_ms - start_ms;
             if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
@@ -508,9 +495,9 @@ int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_en
         }
     }
 
-    netpkt_t* p = s->ring[s->r_head];
-    net_l4_endpoint se = s->src_eps[s->r_head];
-    s->ring[s->r_head] = NULL;
+    netpkt_t* p = s->rx_ring[s->r_head].pkt;
+    net_l4_endpoint se = s->rx_ring[s->r_head].src;
+    memset(&s->rx_ring[s->r_head], 0, sizeof(s->rx_ring[s->r_head]));
     s->r_head = (s->r_head + 1) % s->ring_cap;
 
     uint32_t pkt_len = p ? netpkt_len(p) : 0;
@@ -534,6 +521,7 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_KEEPALIVE_INTERVAL:
         case SOCK_OPT_TCP_NO_DELAY:
         case SOCK_OPT_SEND_BUF_SIZE:
+        case SOCK_OPT_RAW_FILTER:
             return SOCK_ERR_INVAL;
         case SOCK_OPT_MCAST_JOIN: {
             if (!value || !len || (len % sizeof(net_l4_endpoint)) != 0) return SOCK_ERR_INVAL;
@@ -725,6 +713,7 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_KEEPALIVE_INTERVAL:
         case SOCK_GET_OPT_TCP_NO_DELAY:
         case SOCK_GET_OPT_SEND_BUF_SIZE:
+        case SOCK_GET_OPT_RAW_FILTER:
         case SOCK_GET_TCP_STATE:
         case SOCK_GET_TCP_MSS:
         case SOCK_GET_TCP_RTT_MS:
@@ -778,20 +767,16 @@ int32_t socket_close_udp(socket_impl_t sh) {
     ev.remote_ep = s->remoteEP;
     netlog_socket_event(&s->options, &ev);
 
-    if (s->ring) {
+    if (s->rx_ring) {
         while (s->r_head != s->r_tail) {
-            if (s->ring[s->r_head]) {
-                s->rx_bytes -= netpkt_len(s->ring[s->r_head]);
-                netpkt_unref(s->ring[s->r_head]);
+            if (s->rx_ring[s->r_head].pkt) {
+                s->rx_bytes -= netpkt_len(s->rx_ring[s->r_head].pkt);
+                netpkt_unref(s->rx_ring[s->r_head].pkt);
             }
             s->r_head = (s->r_head + 1) % s->ring_cap;
         }
-        release(s->ring);
-        s->ring = NULL;
-    }
-    if (s->src_eps) {
-        release(s->src_eps);
-        s->src_eps = NULL;
+        release(s->rx_ring);
+        s->rx_ring = NULL;
     }
     if (s->mcast_groups) {
         release(s->mcast_groups);

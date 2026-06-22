@@ -8,6 +8,7 @@
 #include "networking/internet_layer/ipv6_route.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/link_layer/arp.h"
+#include "networking/link_layer/link_utils.h"
 #include "networking/link_layer/ndp.h"
 #include "networking/network.h"
 
@@ -17,7 +18,7 @@ typedef struct {
     uint8_t prefix_len;
     uint8_t ifname_len;
     char ifname[16];
-    uint8_t mac[6];
+    uint8_t mac[MAC_ADDR_LEN];
     uint16_t metric;
     uint16_t mtu;
     uint16_t flags;
@@ -32,7 +33,7 @@ typedef struct {
 } net_ctrl_attrs_t;
 
 static bool net_ctrl_read_attrs(const uint8_t* p, uint32_t len, net_ctrl_attrs_t* out) {
-    if (!out)return false;
+    if (!out) return false;
     memset(out, 0, sizeof(*out));
     uint32_t off = 0;
     while (off < len) {
@@ -452,7 +453,7 @@ static bool net_ctrl_neigh_dump(const net_ctrl_attrs_t* a, buffer* b) {
             if (ae[j].static_entry) info.flags |= NET_CTRL_NEIGH_F_STATIC;
             info.address.ver = IP_VER4;
             memcpy(info.address.ip, &ae[j].ip, sizeof(ae[j].ip));
-            memcpy(info.mac, ae[j].mac, 6);
+            mac_copy(info.mac, ae[j].mac);
             if (buffer_write_lim(b, (const char*)&info, sizeof(info)) != sizeof(info)) return false;
         }
         ndp_entry_t ne[NDP_TABLE_MAX];
@@ -471,7 +472,7 @@ static bool net_ctrl_neigh_dump(const net_ctrl_attrs_t* a, buffer* b) {
             if (ne[j].is_router) info.flags |= NET_CTRL_NEIGH_F_ROUTER;
             info.address.ver = IP_VER6;
             ipv6_cpy(info.address.ip, ne[j].ip);
-            memcpy(info.mac, ne[j].mac, 6);
+            mac_copy(info.mac, ne[j].mac);
             if (buffer_write_lim(b, (const char*)&info, sizeof(info)) != sizeof(info)) return false;
         }
     }

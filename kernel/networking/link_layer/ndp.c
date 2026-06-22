@@ -1,5 +1,6 @@
 #include "ndp.h"
 #include "eth.h"
+#include "link_utils.h"
 #include "networking/internet_layer/icmpv6.h"
 #include "std/memory.h"
 #include "std/string.h"
@@ -412,7 +413,7 @@ void ndp_table_put_for_l2(uint8_t ifindex, const uint8_t ip[16], const uint8_t m
     ipv6_cpy(e->ip, ip);
 
     if (mac) {
-        memcpy(e->mac, mac, 6);
+        mac_copy(e->mac, mac);
         e->state = NDP_STATE_REACHABLE;
         e->timer_ms = g_ndp_reachable_time_ms;
     }
@@ -453,7 +454,7 @@ bool ndp_table_get_for_l2(uint8_t ifindex, const uint8_t ip[16], uint8_t mac_out
         if (e->state == NDP_STATE_INCOMPLETE) continue;
         if (ipv6_cmp(e->ip, ip) != 0) continue;
 
-        memcpy(mac_out, e->mac, 6);
+        mac_copy(mac_out, e->mac);
         return true;
     }
 
@@ -482,6 +483,9 @@ uint32_t ndp_table_dump_for_l2(uint8_t ifindex, ndp_entry_t* out, uint32_t out_c
 }
 
 static bool ndp_send_na_on(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t src_ip[16], const uint8_t target_ip[16], const uint8_t dst_mac_in[6], const uint8_t my_mac[6], uint8_t solicited) {
+    if (!my_mac) return false;
+    if (!ipv6_is_multicast(dst_ip) && !dst_mac_in) return false;
+
     uint32_t plen = (uint32_t)(sizeof(icmpv6_na_t) + sizeof(icmpv6_opt_lladdr_t));
     uintptr_t buf = (uintptr_t)zalloc(plen ? plen : 1u);
     if (!buf) return false;
@@ -501,13 +505,13 @@ static bool ndp_send_na_on(uint8_t ifindex, const uint8_t dst_ip[16], const uint
     icmpv6_opt_lladdr_t* opt = (icmpv6_opt_lladdr_t*)(buf + sizeof(icmpv6_na_t));
     opt->type = 2;
     opt->length = 1;
-    memcpy(opt->mac, my_mac, 6);
+    mac_copy(opt->mac, my_mac);
 
     na->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, (const uint8_t*)buf, plen));
 
     uint8_t dst_mac[6];
     if (ipv6_is_multicast(dst_ip)) ipv6_multicast_mac(dst_ip, dst_mac);
-    else memcpy(dst_mac, dst_mac_in, 6);
+    else mac_copy(dst_mac, dst_mac_in);
 
     bool ok = icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, (const void*)buf, plen, 255);
 
@@ -535,8 +539,8 @@ static void ndp_send_ns_on(uint8_t ifindex, const uint8_t target_ip[16], const u
         opt->length = 1;
 
         const uint8_t* mac = network_get_mac(ifindex);
-        if (mac) memcpy(opt->mac, mac, 6);
-        else memset(opt->mac, 0, 6);
+        if (mac) mac_copy(opt->mac, mac);
+        else mac_clear(opt->mac);
     }
 
     uint8_t dst_ip[16];
@@ -592,8 +596,8 @@ static void ndp_send_rs_on(uint8_t ifindex) {
     opt->length = 1;
 
     const uint8_t* mac = network_get_mac(ifindex);
-    if (mac) memcpy(opt->mac, mac, 6);
-    else memset(opt->mac, 0, 6);
+    if (mac) mac_copy(opt->mac, mac);
+    else mac_clear(opt->mac);
 
     rs->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, (const uint8_t*)buf, plen));
 
@@ -760,7 +764,7 @@ bool ndp_send_or_queue_on(uint16_t ifindex, const uint8_t next_hop[16], netpkt_t
     }
 
     ipv6_cpy(e->ip, next_hop);
-    memset(e->mac, 0, 6);
+    mac_clear(e->mac);
     e->ttl_ms = g_ndp_reachable_time_ms * 4;
     e->is_router = 0;
     e->router_lifetime_ms = 0;
@@ -939,11 +943,11 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
         if (e->state != NDP_STATE_UNUSED && ipv6_cmp(e->ip, na.target) != 0) ndp_entry_clear(e);
 
         uint8_t old_mac[6];
-        memcpy(old_mac, e->mac, 6);
+        mac_copy(old_mac, e->mac);
 
         if (e->ttl_ms == 0 && e->state == NDP_STATE_UNUSED) {
             ipv6_cpy(e->ip, na.target);
-            memcpy(e->mac, src_mac, 6);
+            mac_copy(e->mac, src_mac);
             e->ttl_ms = g_ndp_reachable_time_ms * 4;
             e->probes_sent = 0;
             e->is_router = router ? 1 : 0;
@@ -951,10 +955,10 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
 
             ndp_mark_neighbor_observed(e, solicited);
         } else {
-            int mac_changed = memcmp(old_mac, src_mac, 6) != 0;
+            int mac_changed = !mac_equal(old_mac, src_mac);
 
             if (e->state == NDP_STATE_INCOMPLETE) {
-                memcpy(e->mac, src_mac, 6);
+                mac_copy(e->mac, src_mac);
                 e->ttl_ms = g_ndp_reachable_time_ms * 4;
 
                 ndp_mark_neighbor_observed(e, solicited);
@@ -963,7 +967,7 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
                     if (solicited) ndp_mark_neighbor_observed(e, true);
                 } else {
                     if (override) {
-                        memcpy(e->mac, src_mac, 6);
+                        mac_copy(e->mac, src_mac);
                         e->ttl_ms = g_ndp_reachable_time_ms * 4;
 
                         ndp_mark_neighbor_observed(e, solicited);

@@ -20,12 +20,11 @@ socket_handle_t create_socket(protocol_t protocol, const SocketOptions* extra){
     bool raw_socket = special_kind == SOCKET_SPECIAL_RAW && (protocol == PROTO_ICMP || protocol == PROTO_ICMPV6 || protocol == PROTO_IGMP);
     bool ctrl_socket = special_kind == SOCKET_SPECIAL_CTRL && protocol == PROTO_NONE;
     bool packet_socket = special_kind == SOCKET_SPECIAL_PACKET && protocol == PROTO_NONE;
-    if (!normal_socket && !raw_socket && !ctrl_socket && !packet_socket) return false;
+    if (!normal_socket && !raw_socket && !ctrl_socket && !packet_socket) return 0;
 
     uint16_t pid = get_current_proc_pid();
     ksocket_t* socket = NULL;
-    if (!socket_core_alloc(protocol, special_kind, pid, &socket)) return false;
-
+    if (!socket_core_alloc(protocol, special_kind, pid, &socket)) return 0;
 
     socket_impl_t impl = NULL;
     socket_impl_destroy_fn destroy = NULL;
@@ -60,13 +59,13 @@ socket_handle_t create_socket(protocol_t protocol, const SocketOptions* extra){
     }
     if (!impl) {
         socket_core_close_socket(socket);
-        return false;
+        return 0;
     }
 
     if (!socket_core_attach_impl(socket, impl, destroy, close, setopt, getopt)) {
         destroy(impl);
         socket_core_close_socket(socket);
-        return false;
+        return 0;
     }
     return socket_core_export_handle(socket);
 }

@@ -1,6 +1,7 @@
 #include "ipv6_utils.h"
 #include "std/std.h"
 #include "networking/network.h"
+#include "networking/interface_manager.h"
 
 bool ipv6_is_unspecified(const uint8_t ip[16]) {
     for (int i = 0; i < 16; i++) if (ip[i] != 0) return false;

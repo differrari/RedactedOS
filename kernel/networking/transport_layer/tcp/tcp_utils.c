@@ -1,6 +1,7 @@
 #include "tcp_utils.h"
 #include "std/memory.h"
 #include "tcp_internal.h"
+#include "networking/interface_manager.h"
 
 uint32_t tcp_calc_mss_for_l3(uint8_t l3_id, ip_version_t ver, const void *remote_ip){
     uint32_t mtu = 1500;

@@ -1,5 +1,6 @@
 #pragma once
 #include "types.h"
+#include "net/interface_types.h"
 #include "networking/interface_manager.h"
 
 #ifdef __cplusplus

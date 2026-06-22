@@ -1,7 +1,7 @@
 #pragma once
 #include "types.h"
-#include "networking/interface_manager.h"
 #include "networking/netpkt.h"
+#include "networking/link_layer/link_utils.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,15 +26,15 @@ typedef struct __attribute__((packed)) arp_hdr_t {
     uint8_t hlen;
     uint8_t plen;
     uint16_t opcode;//1=request, 2=reply
-    uint8_t sender_mac[6];
+    uint8_t sender_mac[MAC_ADDR_LEN];
     uint32_t sender_ip;
-    uint8_t target_mac[6];
+    uint8_t target_mac[MAC_ADDR_LEN];
     uint32_t target_ip;
 } arp_hdr_t;
 
 typedef struct arp_entry {
     uint32_t ip;
-    uint8_t  mac[6];
+    uint8_t mac[MAC_ADDR_LEN];
     uint32_t ttl_ms;
     uint32_t timer_ms;
     uint32_t pending_bytes;
@@ -51,8 +51,8 @@ arp_table_t* arp_table_create(void);
 void arp_table_destroy(arp_table_t* t);
 void arp_table_init_static_defaults(arp_table_t* t);
 
-void arp_table_put_for_l2(uint8_t ifindex, uint32_t ip, const uint8_t mac[6], uint32_t ttl_ms, bool is_static);
-bool arp_table_get_for_l2(uint8_t ifindex, uint32_t ip, uint8_t mac_out[6]);
+void arp_table_put_for_l2(uint8_t ifindex, uint32_t ip, const uint8_t mac[MAC_ADDR_LEN], uint32_t ttl_ms, bool is_static);
+bool arp_table_get_for_l2(uint8_t ifindex, uint32_t ip, uint8_t mac_out[MAC_ADDR_LEN]);
 bool arp_table_delete_for_l2(uint8_t ifindex, uint32_t ip);
 uint32_t arp_table_dump_for_l2(uint8_t ifindex, arp_entry_t* out, uint32_t out_cap);
 void arp_table_tick_for_l2(uint8_t ifindex, uint32_t ms);
@@ -62,7 +62,7 @@ bool arp_send_or_queue_on(uint8_t ifindex, uint32_t ip, netpkt_t* pkt);
 bool arp_send_request_on(uint8_t ifindex, uint32_t sender_ip, uint32_t target_ip);
 bool arp_dad_ipv4_on(uint8_t ifindex, uint32_t ip);
 
-void arp_input(uint16_t ifindex, const uint8_t src_mac[6], netpkt_t* pkt);
+void arp_input(uint16_t ifindex, const uint8_t src_mac[MAC_ADDR_LEN], netpkt_t* pkt);
 
 uint16_t arp_get_pid(void);
 int arp_daemon_entry(int argc, char* argv[]);

@@ -2,6 +2,7 @@
 #include "std/memory.h"
 #include "std/string.h"
 #include "networking/link_layer/arp.h"
+#include "networking/link_layer/link_utils.h"
 #include "networking/link_layer/ndp.h"
 #include "networking/internet_layer/ipv4_route.h"
 #include "networking/internet_layer/ipv6_route.h"
@@ -182,37 +183,37 @@ bool l2_interface_set_metric(uint8_t ifindex, uint16_t metric) {
 
 static bool l2_sync_multicast_filters(l2_interface_t* itf) {
     if (!itf) return false;
-    uint8_t macs[(MAX_IPV4_MCAST_PER_INTERFACE + MAX_IPV6_MCAST_PER_INTERFACE) * 6];
+    uint8_t macs[(MAX_IPV4_MCAST_PER_INTERFACE + MAX_IPV6_MCAST_PER_INTERFACE) * MAC_ADDR_LEN];
     uint32_t count = 0;
 
     for (int i = 0; i < (int)itf->ipv4_mcast_count; ++i) {
-        uint8_t m[6];
+        uint8_t m[MAC_ADDR_LEN];
         ipv4_mcast_to_mac(itf->ipv4_mcast[i], m);
         bool exists = false;
         for (uint32_t j = 0; j < count; ++j) {
-            if (memcmp(&macs[j * 6], m, 6) == 0) {
+            if (mac_equal(&macs[j * MAC_ADDR_LEN], m)) {
                 exists = true;
                 break;
             }
         }
         if (!exists) {
-            memcpy(&macs[count * 6], m, 6);
+            mac_copy(&macs[count * MAC_ADDR_LEN], m);
             count++;
         }
     }
 
     for (int i = 0; i < (int)itf->ipv6_mcast_count; ++i) {
-        uint8_t m[6];
+        uint8_t m[MAC_ADDR_LEN];
         ipv6_multicast_mac(itf->ipv6_mcast[i], m);
         bool exists = false;
         for (uint32_t j = 0; j < count; ++j) {
-            if (memcmp(&macs[j*6], m, 6) == 0) {
+            if (mac_equal(&macs[j * MAC_ADDR_LEN], m)) {
                 exists = true;
                 break;
             }
         }
         if (!exists) {
-            memcpy(&macs[count * 6], m, 6);
+            mac_copy(&macs[count * MAC_ADDR_LEN], m);
             count++;
         }
     }

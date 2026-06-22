@@ -1,6 +1,7 @@
 #include "tcp_internal.h"
 #include "networking/transport_layer/socket_bind.h"
 #include "networking/transport_layer/csocket_tcp.h"
+#include "networking/interface_manager.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv6.h"
 #include "networking/internet_layer/ipv4_utils.h"

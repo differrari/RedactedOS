@@ -2,6 +2,7 @@
 
 #include "std/memory.h"
 #include "std/string.h"
+#include "networking/link_layer/link_utils.h"
 
 static void opt_append(uint8_t*b, uint32_t cap, uint32_t*off, uint16_t code, const void*data, uint16_t len){
     if (!b || !off) return;
@@ -24,12 +25,12 @@ uint32_t dhcpv6_make_xid24(uint32_t r32){
     return x;
 }
 
-uint32_t dhcpv6_iaid_from_mac(const uint8_t mac[6]){
+uint32_t dhcpv6_iaid_from_mac(const uint8_t mac[MAC_ADDR_LEN]){
     if (!mac) return 0;
     return ((uint32_t)mac[2] << 24) | ((uint32_t)mac[3] << 16) | ((uint32_t)mac[4] << 8) | (uint32_t)mac[5];
 }
 
-bool dhcpv6_build_message(uint8_t*out, uint32_t out_cap, uint32_t*out_len, const net_runtime_opts_v6_t*rt, const uint8_t mac[6], uint8_t msg_type, dhcpv6_req_kind kind, uint32_t xid24, bool want_address) {
+bool dhcpv6_build_message(uint8_t*out, uint32_t out_cap, uint32_t*out_len, const net_runtime_opts_v6_t*rt, const uint8_t mac[MAC_ADDR_LEN], uint8_t msg_type, dhcpv6_req_kind kind, uint32_t xid24, bool want_address) {
     if (!out || !out_len) return false;
     if (out_cap < 4) return false;
 
@@ -50,8 +51,8 @@ bool dhcpv6_build_message(uint8_t*out, uint32_t out_cap, uint32_t*out_len, const
     memcpy(duid + 0, &duid_type, 2);
     memcpy(duid + 2, &hw_type, 2);
 
-    if (mac) memcpy(duid + 4, mac, 6);
-    else memset(duid + 4, 0, 6);
+    if (mac) mac_copy(duid + 4, mac);
+    else mac_clear(duid + 4);
 
     opt_append(out, out_cap, &off, DHCPV6_OPT_CLIENTID, duid, 10);
 

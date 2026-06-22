@@ -6,11 +6,11 @@
 #include "networking/internet_layer/ipv6.h"
 #include "console/kio.h"
 #include "syscalls/syscalls.h"
-uintptr_t create_eth_packet(uintptr_t p, const uint8_t src_mac[6], const uint8_t dst_mac[6], uint16_t type) {
+uintptr_t create_eth_packet(uintptr_t p, const uint8_t src_mac[MAC_ADDR_LEN], const uint8_t dst_mac[MAC_ADDR_LEN], uint16_t type) {
     uint8_t* eth = (uint8_t*)p;
 
-    memcpy(eth, dst_mac, 6);
-    memcpy(eth+6, src_mac, 6);
+    mac_copy(eth, dst_mac);
+    mac_copy(eth + MAC_ADDR_LEN, src_mac);
     wr_be16(eth+12, type);
 
     return p + (uint32_t)sizeof(eth_hdr_t);
@@ -22,17 +22,17 @@ uint16_t eth_parse_type(const netpkt_t* pkt){
     return rd_be16(&type);
 }
 
-bool eth_src(const netpkt_t* pkt, uint8_t out[6]){
+bool eth_src(const netpkt_t* pkt, uint8_t out[MAC_ADDR_LEN]){
     if (!pkt || !out) return false;
-    return netpkt_copyout(pkt, 6u, out, 6);
+    return netpkt_copyout(pkt, 6u, out, MAC_ADDR_LEN);
 }
 
-bool eth_dst(const netpkt_t* pkt, uint8_t out[6]){
+bool eth_dst(const netpkt_t* pkt, uint8_t out[MAC_ADDR_LEN]){
     if (!pkt || !out) return false;
-    return netpkt_copyout(pkt, 0u, out, 6);
+    return netpkt_copyout(pkt, 0u, out, MAC_ADDR_LEN);
 }
 
-bool eth_send_frame_on(uint16_t ifindex, uint16_t ethertype, const uint8_t dst_mac[6], netpkt_t* pkt){
+bool eth_send_frame_on(uint16_t ifindex, uint16_t ethertype, const uint8_t dst_mac[MAC_ADDR_LEN], netpkt_t* pkt){
     const uint8_t* src_mac = network_get_mac(ifindex);
     if (!src_mac || !dst_mac || !pkt) {
         if (pkt) netpkt_unref(pkt);

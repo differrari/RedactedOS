@@ -1,5 +1,6 @@
 #include "udp.h"
 #include "net/checksums.h"
+#include "networking/interface_manager.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv6.h"
 #include "networking/transport_layer/socket_bind.h"
