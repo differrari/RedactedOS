@@ -118,7 +118,8 @@ int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_MCAST_JOIN:
         case SOCK_OPT_MCAST_LEAVE:
         case SOCK_OPT_BROADCAST_ALLOWED:
-        case SOCK_OPT_RAW_FILTER:
+        case SOCK_OPT_FILTER:
+        case SOCK_OPT_SPECIAL:
             return SOCK_ERR_UNSUP;
         case SOCK_OPT_RECV_TIMEOUT:
         case SOCK_OPT_SEND_TIMEOUT:
@@ -235,7 +236,7 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
             break;
         case SOCK_GET_MCAST_GROUPS:
         case SOCK_GET_OPT_BROADCAST_ALLOWED:
-        case SOCK_GET_OPT_RAW_FILTER:
+        case SOCK_GET_OPT_FILTER:
             return SOCK_ERR_UNSUP;
         case SOCK_GET_OPT_RECV_TIMEOUT:
         case SOCK_GET_OPT_SEND_TIMEOUT:

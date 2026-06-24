@@ -12,7 +12,7 @@ typedef struct ctrl_socket {
 socket_impl_t socket_ctrl_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
     if (socket_core_special_kind(owner) != SOCKET_SPECIAL_CTRL) return NULL;
-    if (extra && extra->flags) return NULL;
+    if (extra && (extra->flags & ~SOCK_OPT_SPECIAL)) return NULL;
 
     ctrl_socket_t* s = (ctrl_socket_t*)zalloc(sizeof(ctrl_socket_t));
     if (!s) return NULL;
@@ -59,6 +59,23 @@ int32_t socket_getopt_ctrl(socket_impl_t sh, int32_t opt, void* value, uint32_t*
         case SOCK_GET_LISTENING:
         case SOCK_GET_LOCAL_PORT:
         case SOCK_GET_SEND_QUEUED:
+        case SOCK_GET_OPT_RECV_TIMEOUT:
+        case SOCK_GET_OPT_SEND_TIMEOUT:
+        case SOCK_GET_OPT_BUF_SIZE:
+        case SOCK_GET_OPT_DEBUG:
+        case SOCK_GET_OPT_DONTFRAG:
+        case SOCK_GET_OPT_TTL:
+        case SOCK_GET_OPT_KEEPALIVE:
+        case SOCK_GET_OPT_KEEPALIVE_INTERVAL:
+        case SOCK_GET_OPT_TCP_NO_DELAY:
+        case SOCK_GET_OPT_SEND_BUF_SIZE:
+        case SOCK_GET_OPT_BROADCAST_ALLOWED:
+        case SOCK_GET_OPT_FILTER:
+        case SOCK_GET_MCAST_GROUPS:
+        case SOCK_GET_TCP_STATE:
+        case SOCK_GET_TCP_MSS:
+        case SOCK_GET_TCP_RTT_MS:
+        case SOCK_GET_TCP_RETRANSMITS:
             return SOCK_ERR_UNSUP;
         default:
             return SOCK_ERR_INVAL;

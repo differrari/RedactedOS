@@ -46,7 +46,7 @@ static int32_t raw_set_filter(raw_socket_t* s, const void* value, uint32_t len) 
     if (!s) return SOCK_ERR_INVAL;
     if (!value && !len) { 
         memset(&s->options.raw_filter, 0, sizeof(s->options.raw_filter));
-        s->options.flags &= ~SOCK_OPT_RAW_FILTER;
+        s->options.flags &= ~SOCK_OPT_FILTER;
         return SOCK_OK;
     }
     if (!value || len != sizeof(SocketRawFilter)) return SOCK_ERR_INVAL;
@@ -54,11 +54,17 @@ static int32_t raw_set_filter(raw_socket_t* s, const void* value, uint32_t len) 
     SocketRawFilter filter;
     memcpy(&filter, value, sizeof(filter));
     if (filter.count > SOCKET_RAW_FILTER_MAX_RULES) return SOCK_ERR_INVAL;
-    for (uint32_t i = 0; i < filter.count; i++) if (filter.rules[i].has_code > 1 || filter.rules[i].reserved) return SOCK_ERR_INVAL;
+    for (uint32_t i = 0; i < filter.count; i++) {
+        SocketRawFilterRule* rule = &filter.rules[i];
+        if (rule->reserved || (rule->flags & ~(SOCKET_RAW_FILTER_HAS_CODE | SOCKET_RAW_FILTER_HAS_ID | SOCKET_RAW_FILTER_HAS_SEQ))) return SOCK_ERR_INVAL;
+        if (!(rule->flags & SOCKET_RAW_FILTER_HAS_CODE) && rule->code) return SOCK_ERR_INVAL;
+        if (!(rule->flags & SOCKET_RAW_FILTER_HAS_ID) && rule->id) return SOCK_ERR_INVAL;
+        if (!(rule->flags & SOCKET_RAW_FILTER_HAS_SEQ) && rule->seq) return SOCK_ERR_INVAL;
+    }
 
     s->options.raw_filter = filter;
-    if (filter.count) s->options.flags |= SOCK_OPT_RAW_FILTER;
-    else s->options.flags &= ~SOCK_OPT_RAW_FILTER;
+    if (filter.count) s->options.flags |= SOCK_OPT_FILTER;
+    else s->options.flags &= ~SOCK_OPT_FILTER;
     return SOCK_OK;
 }
 
@@ -66,14 +72,17 @@ static bool raw_enqueue(raw_socket_t* s, const net_l4_endpoint* src, const SockB
     if (!s || !src || !pkt || !len || len > NETPKT_MAX_ALLOC || len > RAW_RX_MAX_BYTES) return false;
 
     if (s->options.raw_filter.count) {
-        if (netpkt_len(pkt) < 2) return false;
-        uint8_t hdr[2];
-        if (!netpkt_copyout(pkt, 0, hdr, sizeof(hdr))) return false;
+        if (netpkt_len(pkt) < 1) return false;
+        uint8_t hdr[8];
+        uint32_t hdr_len = netpkt_len(pkt) >= sizeof(hdr) ? (uint32_t)sizeof(hdr) : netpkt_len(pkt);
+        if (!netpkt_copyout(pkt, 0, hdr, hdr_len)) return false;
         bool ok = false;
         for (uint32_t i = 0; i < s->options.raw_filter.count; i++) {
             const SocketRawFilterRule* rule = &s->options.raw_filter.rules[i];
             if (rule->type != hdr[0]) continue;
-            if (rule->has_code && rule->code != hdr[1]) continue;
+            if ((rule->flags & SOCKET_RAW_FILTER_HAS_CODE) && (hdr_len < 2 || rule->code != hdr[1])) continue;
+            if ((rule->flags & SOCKET_RAW_FILTER_HAS_ID) && (hdr_len < 6 || rule->id != rd_be16(hdr+4))) continue;
+            if ((rule->flags & SOCKET_RAW_FILTER_HAS_SEQ) && (hdr_len < 8 || rule->seq != rd_be16(hdr+6))) continue;
             ok = true;
             break;
         }
@@ -114,14 +123,16 @@ socket_impl_t socket_raw_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner || socket_core_special_kind(owner) != SOCKET_SPECIAL_RAW) return NULL;
     protocol_t proto = socket_core_protocol(owner);
     if (proto != PROTO_ICMP && proto != PROTO_IGMP && proto != PROTO_ICMPV6) return NULL;
+    //TODO add ESP/AH sock if needed
 
-    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_RAW_FILTER;
+    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_FILTER | SOCK_OPT_SPECIAL;
     if (extra && (extra->flags & ~supported)) return NULL;
 
     raw_socket_t* s = (raw_socket_t*)zalloc(sizeof(raw_socket_t));
     if (!s) return NULL;
 
     s->ownerSocket = owner;
+    s->options.flags = SOCK_OPT_SPECIAL;
     s->options.special_kind = SOCKET_SPECIAL_RAW;
     s->last_rx_spec.kind = BIND_ANY;
     if (extra) {
@@ -144,7 +155,7 @@ socket_impl_t socket_raw_create(ksocket_t* owner, const SocketOptions* extra) {
             s->options.flags |= SOCK_OPT_TTL;
             s->options.ttl = extra->ttl;
         }
-        if (extra->flags & SOCK_OPT_RAW_FILTER) {
+        if (extra->flags & SOCK_OPT_FILTER) {
             if (raw_set_filter(s, &extra->raw_filter, sizeof(extra->raw_filter)) != SOCK_OK) {
                 release(s);
                 return NULL;
@@ -213,8 +224,10 @@ int32_t socket_setopt_raw(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_DONTFRAG:
         case SOCK_OPT_TTL:
             return socket_common_options_set(&s->options, opt, value, len);
-        case SOCK_OPT_RAW_FILTER:
+        case SOCK_OPT_FILTER:
             return raw_set_filter(s, value, len);
+        case SOCK_OPT_SPECIAL:
+            return SOCK_ERR_UNSUP;
         default:
             return SOCK_ERR_INVAL;
     }
@@ -231,7 +244,7 @@ int32_t socket_getopt_raw(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
             return socket_common_get_value(&s->bind_spec, sizeof(s->bind_spec), value, len);
         case SOCK_GET_LAST_RX_SPEC:
             return socket_common_get_value(&s->last_rx_spec, sizeof(s->last_rx_spec), value, len);
-        case SOCK_GET_OPT_RAW_FILTER:
+        case SOCK_GET_OPT_FILTER:
             return socket_common_get_value(&s->options.raw_filter, sizeof(s->options.raw_filter), value, len);
         default:
             break;

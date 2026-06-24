@@ -1,5 +1,6 @@
 #include "csocket_packet.h"
 #include "networking/network.h"
+#include "networking/link_layer/eth.h"
 #include "alloc/allocate.h"
 #include "exceptions/irq.h"
 #include "std/memory.h"
@@ -61,17 +62,46 @@ static void packet_socket_clear_rx(packet_socket_t* s) {
     s->rx_bytes = 0;
 }
 
+static int32_t packet_set_filter(packet_socket_t* s, const void* value, uint32_t len) {
+    if (!s) return SOCK_ERR_INVAL;
+    if (!value && !len) {
+        memset(&s->options.packet_filter, 0, sizeof(s->options.packet_filter));
+        s->options.flags &= ~SOCK_OPT_FILTER;
+        return SOCK_OK;
+    }
+    if (!value || len != sizeof(SocketPacketFilter)) return SOCK_ERR_INVAL;
+
+    SocketPacketFilter filter;
+    memcpy(&filter, value, sizeof(filter));
+
+    uint32_t valid_flags = SOCKET_PACKET_FILTER_HAS_ETHERTYPE | SOCKET_PACKET_FILTER_HAS_MIN_LEN | SOCKET_PACKET_FILTER_HAS_MAX_LEN;
+    if (filter.reserved || (filter.flags & ~valid_flags)) return SOCK_ERR_INVAL;
+    if ((filter.flags & SOCKET_PACKET_FILTER_HAS_ETHERTYPE) && !filter.ethertype) return SOCK_ERR_INVAL;
+    if (!(filter.flags & SOCKET_PACKET_FILTER_HAS_ETHERTYPE) && filter.ethertype) return SOCK_ERR_INVAL;
+    if ((filter.flags & SOCKET_PACKET_FILTER_HAS_MIN_LEN) && !filter.min_len) return SOCK_ERR_INVAL;
+    if (!(filter.flags & SOCKET_PACKET_FILTER_HAS_MIN_LEN) && filter.min_len) return SOCK_ERR_INVAL;
+    if ((filter.flags & SOCKET_PACKET_FILTER_HAS_MAX_LEN) && !filter.max_len) return SOCK_ERR_INVAL;
+    if (!(filter.flags & SOCKET_PACKET_FILTER_HAS_MAX_LEN) && filter.max_len) return SOCK_ERR_INVAL;
+    if ((filter.flags & SOCKET_PACKET_FILTER_HAS_MIN_LEN) && (filter.flags & SOCKET_PACKET_FILTER_HAS_MAX_LEN) && filter.min_len > filter.max_len) return SOCK_ERR_INVAL;
+
+    s->options.packet_filter = filter;
+    if (filter.flags) s->options.flags |= SOCK_OPT_FILTER;
+    else s->options.flags &= ~SOCK_OPT_FILTER;
+    return SOCK_OK;
+}
+
 socket_impl_t socket_packet_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
     if (socket_core_special_kind(owner) != SOCKET_SPECIAL_PACKET) return NULL;
 
-    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG;
+    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_FILTER | SOCK_OPT_SPECIAL;
     if (extra && (extra->flags & ~supported)) return NULL;
 
     packet_socket_t* s = (packet_socket_t*)zalloc(sizeof(packet_socket_t));
     if (!s) return NULL;
 
     s->ownerSocket = owner;
+    s->options.flags = SOCK_OPT_SPECIAL;
     s->options.special_kind = SOCKET_SPECIAL_PACKET;
     s->options.buf_size = PACKET_RX_DEFAULT_BUF_SIZE;
     s->bind_spec.kind = BIND_ANY;
@@ -97,6 +127,12 @@ socket_impl_t socket_packet_create(ksocket_t* owner, const SocketOptions* extra)
             }
             s->options.flags |= SOCK_OPT_BUF_SIZE;
             s->options.buf_size = extra->buf_size;
+        }
+        if (extra->flags & SOCK_OPT_FILTER) {
+            if (packet_set_filter(s, &extra->packet_filter, sizeof(extra->packet_filter)) != SOCK_OK) {
+                release(s);
+                return NULL;
+            }
         }
     }
 
@@ -152,7 +188,20 @@ int32_t socket_setopt_packet(socket_impl_t sh, int32_t opt, const void* value, u
         case SOCK_OPT_RECV_TIMEOUT:
         case SOCK_OPT_DEBUG:
             return socket_common_options_set(&s->options, opt, value, len);
+        case SOCK_OPT_FILTER:
+            return packet_set_filter(s, value, len);
         case SOCK_OPT_BUF_SIZE:
+        case SOCK_OPT_SEND_TIMEOUT:
+        case SOCK_OPT_SEND_BUF_SIZE:
+        case SOCK_OPT_KEEPALIVE:
+        case SOCK_OPT_KEEPALIVE_INTERVAL:
+        case SOCK_OPT_TCP_NO_DELAY:
+        case SOCK_OPT_BROADCAST_ALLOWED:
+        case SOCK_OPT_SPECIAL:
+        case SOCK_OPT_MCAST_JOIN:
+        case SOCK_OPT_MCAST_LEAVE:
+        case SOCK_OPT_DONTFRAG:
+        case SOCK_OPT_TTL:
             return SOCK_ERR_UNSUP;
         default:
             return SOCK_ERR_INVAL;
@@ -168,6 +217,8 @@ int32_t socket_getopt_packet(socket_impl_t sh, int32_t opt, void* value, uint32_
             return socket_common_get_value(&s->bind_spec, sizeof(s->bind_spec), value, len);
         case SOCK_GET_LAST_RX_SPEC:
             return socket_common_get_value(&s->last_rx_spec, sizeof(s->last_rx_spec), value, len);
+        case SOCK_GET_OPT_FILTER:
+            return socket_common_get_value(&s->options.packet_filter, sizeof(s->options.packet_filter), value, len);
         default:
             break;
     }
@@ -188,6 +239,19 @@ int32_t socket_getopt_packet(socket_impl_t sh, int32_t opt, void* value, uint32_
         case SOCK_GET_LISTENING:
         case SOCK_GET_LOCAL_PORT:
         case SOCK_GET_SEND_QUEUED:
+        case SOCK_GET_OPT_SEND_TIMEOUT:
+        case SOCK_GET_OPT_SEND_BUF_SIZE:
+        case SOCK_GET_OPT_KEEPALIVE:
+        case SOCK_GET_OPT_KEEPALIVE_INTERVAL:
+        case SOCK_GET_OPT_TCP_NO_DELAY:
+        case SOCK_GET_OPT_BROADCAST_ALLOWED:
+        case SOCK_GET_OPT_DONTFRAG:
+        case SOCK_GET_OPT_TTL:
+        case SOCK_GET_MCAST_GROUPS:
+        case SOCK_GET_TCP_STATE:
+        case SOCK_GET_TCP_MSS:
+        case SOCK_GET_TCP_RTT_MS:
+        case SOCK_GET_TCP_RETRANSMITS:
             return SOCK_ERR_UNSUP;
         default:
             return SOCK_ERR_INVAL;
@@ -270,8 +334,11 @@ int64_t socket_recv_packet(socket_impl_t sh, void* buf, uint64_t len) {
 }
 
 bool socket_packet_input(uint8_t ifindex, netpkt_t* pkt) {
-    if (!ifindex || !pkt || !netpkt_len(pkt)) return false;
+    if (!ifindex || !pkt) return false;
+    uint32_t pkt_len = netpkt_len(pkt);
+    if (!pkt_len) return false;
 
+    uint16_t ethertype = eth_parse_type(pkt);
     packet_socket_t* targets[PACKET_SOCKET_MAX];
     int n = 0;
     irq_flags_t irq = irq_save_disable();
@@ -279,39 +346,54 @@ bool socket_packet_input(uint8_t ifindex, netpkt_t* pkt) {
         packet_socket_t* s = g_packet_sockets[i];
         if (!s || socket_core_is_closing(s->ownerSocket)) continue;
         if (s->bind_spec.kind == BIND_L2 && s->bind_spec.ifindex != ifindex) continue;
+        if ((s->options.packet_filter.flags & SOCKET_PACKET_FILTER_HAS_ETHERTYPE) && s->options.packet_filter.ethertype != ethertype) continue;
+        if ((s->options.packet_filter.flags & SOCKET_PACKET_FILTER_HAS_MIN_LEN) && pkt_len < s->options.packet_filter.min_len) continue;
+        if ((s->options.packet_filter.flags & SOCKET_PACKET_FILTER_HAS_MAX_LEN) && pkt_len > s->options.packet_filter.max_len) continue;
         socket_core_ref(s->ownerSocket);
         targets[n++] = s;
     }
     irq_restore(irq);
 
+    if (!n) return false;
+
     bool delivered = false;
-    uint32_t pkt_len = netpkt_len(pkt);
     for (int i = 0; i < n; i++) {
         packet_socket_t* s = targets[i];
         uint32_t limit = s->options.buf_size ? s->options.buf_size : PACKET_RX_DEFAULT_BUF_SIZE;
-        netpkt_t* view = 0;
+        if (pkt_len > limit) {
+            socket_core_put(s->ownerSocket);
+            continue;
+        }
 
         irq = irq_save_disable();
-        bool can_queue = s->ring && s->ring_cap && pkt_len <= limit && s->rx_bytes <= limit - pkt_len;
-        uint32_t nexti = s->ring_cap ? (s->tail + 1) % s->ring_cap : 0;
+        bool can_queue = s->ring && s->ring_cap && s->rx_bytes <= limit - pkt_len;
+        uint32_t nexti = can_queue ? (s->tail + 1) % s->ring_cap : 0;
         if (can_queue && nexti == s->head) can_queue = false;
         irq_restore(irq);
 
-        if (can_queue) view = netpkt_view(pkt, 0, pkt_len);
-        if (view) {
-            irq = irq_save_disable();
-            nexti = (s->tail + 1) % s->ring_cap;
-            if (s->ring && nexti != s->head && s->rx_bytes <= limit - pkt_len) {
-                s->ring[s->tail].pkt = view;
-                s->ring[s->tail].ifindex = ifindex;
-                s->tail = nexti;
-                s->rx_bytes += pkt_len;
-                view = 0;
-                delivered = true;
-            }
-            irq_restore(irq);
-            if (view) netpkt_unref(view);
+        if (!can_queue){
+            socket_core_put(s->ownerSocket);
+            continue;
         }
+
+        netpkt_t* view = netpkt_view(pkt, 0, pkt_len);
+        if (!view) {
+            socket_core_put(s->ownerSocket);
+            continue;
+        }
+
+        irq = irq_save_disable();
+        nexti = (s->tail + 1) % s->ring_cap;
+        if (s->ring && nexti != s->head && s->rx_bytes <= limit - pkt_len) {
+            s->ring[s->tail].pkt = view;
+            s->ring[s->tail].ifindex = ifindex;
+            s->tail = nexti;
+            s->rx_bytes += pkt_len;
+            view = 0;
+            delivered = true;
+        }
+        irq_restore(irq);
+        if (view) netpkt_unref(view);
         socket_core_put(s->ownerSocket);
     }
     return delivered;

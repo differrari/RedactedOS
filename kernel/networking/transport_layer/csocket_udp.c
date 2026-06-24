@@ -535,7 +535,8 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_KEEPALIVE_INTERVAL:
         case SOCK_OPT_TCP_NO_DELAY:
         case SOCK_OPT_SEND_BUF_SIZE:
-        case SOCK_OPT_RAW_FILTER:
+        case SOCK_OPT_FILTER:
+        case SOCK_OPT_SPECIAL:
             return SOCK_ERR_UNSUP;
         case SOCK_OPT_MCAST_JOIN: {
             if (!value || !len || (len % sizeof(net_l4_endpoint)) != 0) return SOCK_ERR_INVAL;
@@ -714,7 +715,7 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_KEEPALIVE_INTERVAL:
         case SOCK_GET_OPT_TCP_NO_DELAY:
         case SOCK_GET_OPT_SEND_BUF_SIZE:
-        case SOCK_GET_OPT_RAW_FILTER:
+        case SOCK_GET_OPT_FILTER:
         case SOCK_GET_TCP_STATE:
         case SOCK_GET_TCP_MSS:
         case SOCK_GET_TCP_RTT_MS:

@@ -17,10 +17,11 @@ socket_handle_t create_socket(protocol_t protocol, const SocketOptions* extra){
     if (!extra) extra = &default_extra;
 
     SocketSpecialKind special_kind = extra->special_kind;
-    bool normal_socket = special_kind == SOCKET_SPECIAL_NONE && (protocol == PROTO_TCP || protocol == PROTO_UDP);
-    bool raw_socket = special_kind == SOCKET_SPECIAL_RAW && (protocol == PROTO_ICMP || protocol == PROTO_ICMPV6 || protocol == PROTO_IGMP);
-    bool ctrl_socket = special_kind == SOCKET_SPECIAL_CTRL && protocol == PROTO_NONE;
-    bool packet_socket = special_kind == SOCKET_SPECIAL_PACKET && protocol == PROTO_NONE;
+    bool special_requested = (extra->flags & SOCK_OPT_SPECIAL) != 0;
+    bool normal_socket = !special_requested && special_kind == SOCKET_SPECIAL_NONE && (protocol == PROTO_TCP || protocol == PROTO_UDP);
+    bool raw_socket = special_requested && special_kind == SOCKET_SPECIAL_RAW && (protocol == PROTO_ICMP || protocol == PROTO_ICMPV6 || protocol == PROTO_IGMP);
+    bool ctrl_socket = special_requested && special_kind == SOCKET_SPECIAL_CTRL && protocol == PROTO_NONE;
+    bool packet_socket = special_requested && special_kind == SOCKET_SPECIAL_PACKET && protocol == PROTO_NONE;
     if (!normal_socket && !raw_socket && !ctrl_socket && !packet_socket) return 0;
 
     uint16_t pid = get_current_proc_pid();

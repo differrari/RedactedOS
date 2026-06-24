@@ -90,6 +90,7 @@ int net_ctrl_example() {
     //create ctrl socket
     SocketOptions opt = {};
     opt.special_kind = SOCKET_SPECIAL_CTRL;
+    opt.flags = SOCK_OPT_SPECIAL;
     socket_handle_t sock = socket_create(PROTO_NONE, &opt);
     if (!sock) return -1;
 

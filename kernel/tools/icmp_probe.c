@@ -72,12 +72,12 @@ uint32_t icmp_probe_collect(const net_l4_endpoint* dst, uint16_t id, uint16_t se
     SocketOptions opt;
     memset(&opt, 0, sizeof(opt));
     opt.special_kind = SOCKET_SPECIAL_RAW;
-    opt.flags = SOCK_OPT_RAW_FILTER;
+    opt.flags = SOCK_OPT_SPECIAL | SOCK_OPT_FILTER;
     opt.raw_filter.count = 5;
     if (dst->ver == IP_VER4) {
         opt.raw_filter.rules[0].type = ICMP_ECHO_REPLY;
         opt.raw_filter.rules[0].code = 0;
-        opt.raw_filter.rules[0].has_code = 1;
+        opt.raw_filter.rules[0].flags = SOCKET_RAW_FILTER_HAS_CODE;
         opt.raw_filter.rules[1].type = ICMP_DEST_UNREACH;
         opt.raw_filter.rules[2].type = ICMP_TIME_EXCEEDED;
         opt.raw_filter.rules[3].type = ICMP_PARAM_PROBLEM;
@@ -85,7 +85,7 @@ uint32_t icmp_probe_collect(const net_l4_endpoint* dst, uint16_t id, uint16_t se
     } else {
         opt.raw_filter.rules[0].type = ICMPV6_ECHO_REPLY;
         opt.raw_filter.rules[0].code = 0;
-        opt.raw_filter.rules[0].has_code = 1;
+        opt.raw_filter.rules[0].flags = SOCKET_RAW_FILTER_HAS_CODE;
         opt.raw_filter.rules[1].type = ICMPV6_DEST_UNREACH;
         opt.raw_filter.rules[2].type = ICMPV6_PACKET_TOO_BIG;
         opt.raw_filter.rules[3].type = ICMPV6_TIME_EXCEEDED;
