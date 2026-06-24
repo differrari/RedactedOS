@@ -30,6 +30,7 @@ int32_t socket_core_set_option(ksocket_t* socket, int32_t opt, const void* value
 int32_t socket_core_get_option(ksocket_t* socket, int32_t opt, void* value, uint32_t* len);
 int32_t socket_common_options_set(SocketOptions* opts, int32_t opt, const void* value, uint32_t len);
 int32_t socket_common_options_get(const SocketOptions* opts, int32_t opt, void* value, uint32_t* len);
+int32_t socket_common_get_value(const void* data, uint32_t data_len, void* value, uint32_t* len);
 
 socket_impl_t socket_core_impl(ksocket_t* socket);
 protocol_t socket_core_protocol(const ksocket_t* socket);

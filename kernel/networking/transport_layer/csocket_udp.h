@@ -18,7 +18,7 @@ int32_t socket_close_udp(socket_impl_t sh);
 void socket_destroy_udp(socket_impl_t sh);
 int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint32_t len);
 int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* len);
-uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port);
+uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, uint8_t l3_id, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port);
 
 #ifdef __cplusplus
 }

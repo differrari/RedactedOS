@@ -44,7 +44,15 @@ static ksocket_t* tcp_socket_pop_pending_at(tcp_socket_t* s, int idx) {
 
 socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
-    if (extra && (extra->flags & SOCK_OPT_RAW_FILTER)) return NULL;
+
+    uint32_t supported = SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_SEND_BUF_SIZE | SOCK_OPT_TCP_NO_DELAY;
+    if (extra) {
+        if (extra->flags & ~supported) return NULL;
+        if ((extra->flags & SOCK_OPT_DEBUG) && extra->debug_level > SOCK_DBG_ALL) return NULL;
+        if ((extra->flags & SOCK_OPT_BUF_SIZE) && !extra->buf_size) return NULL;
+        if ((extra->flags & SOCK_OPT_SEND_BUF_SIZE) && !extra->send_buf_size) return NULL;
+        if ((extra->flags & SOCK_OPT_KEEPALIVE_INTERVAL) && !extra->keepalive_ms) return NULL;
+    }
 
     tcp_socket_t* s = (tcp_socket_t*)zalloc(sizeof(*s));
     if (!s) return NULL;
@@ -111,7 +119,7 @@ int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_MCAST_LEAVE:
         case SOCK_OPT_BROADCAST_ALLOWED:
         case SOCK_OPT_RAW_FILTER:
-            return SOCK_ERR_INVAL;
+            return SOCK_ERR_UNSUP;
         case SOCK_OPT_RECV_TIMEOUT:
         case SOCK_OPT_SEND_TIMEOUT:
         case SOCK_OPT_BUF_SIZE:
@@ -134,23 +142,24 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
 
     switch ((uint32_t)opt) {
         case SOCK_GET_REMOTE_ENDPOINT:
-            if (!value) {
-                *len = sizeof(net_l4_endpoint);
-                return SOCK_OK;
-            }
-            if (*len < sizeof(net_l4_endpoint)) return SOCK_ERR_INVAL;
-            memcpy(value, &s->remoteEP, sizeof(s->remoteEP));
-            *len = sizeof(net_l4_endpoint);
-            return SOCK_OK;
+            return socket_common_get_value(&s->remoteEP, sizeof(s->remoteEP), value, len);
         case SOCK_GET_BIND_SPEC:
-            if (!value) {
-                *len = sizeof(SockBindSpec);
-                return SOCK_OK;
+            return socket_common_get_value(&s->bindSpec, sizeof(s->bindSpec), value, len);
+        case SOCK_GET_LAST_RX_SPEC: {
+            SockBindSpec spec;
+            memset(&spec, 0, sizeof(spec));
+            spec.kind = BIND_ANY;
+            tcp_flow_t* flow = tcp_flow_from_ctx(&s->flow);
+            if (flow) {
+                if (flow->base.l3_id) {
+                    spec.kind = BIND_L3;
+                    spec.ver = flow->base.local.ver;
+                    spec.l3_id = flow->base.l3_id;
+                }
+                tcp_flow_put(flow);
             }
-            if (*len < sizeof(SockBindSpec)) return SOCK_ERR_INVAL;
-            memcpy(value, &s->bindSpec, sizeof(s->bindSpec));
-            *len = sizeof(SockBindSpec);
-            return SOCK_OK;
+            return socket_common_get_value(&spec, sizeof(spec), value, len);
+        }
         default:
             break;
     }
@@ -227,7 +236,7 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_MCAST_GROUPS:
         case SOCK_GET_OPT_BROADCAST_ALLOWED:
         case SOCK_GET_OPT_RAW_FILTER:
-            return SOCK_ERR_INVAL;
+            return SOCK_ERR_UNSUP;
         case SOCK_GET_OPT_RECV_TIMEOUT:
         case SOCK_GET_OPT_SEND_TIMEOUT:
         case SOCK_GET_OPT_BUF_SIZE:
@@ -239,14 +248,7 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
             return SOCK_ERR_INVAL;
     }
 
-    if (!value) {
-        *len = sizeof(uint32_t);
-        return SOCK_OK;
-    }
-    if (*len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
-    memcpy(value, &v, sizeof(v));
-    *len = sizeof(uint32_t);
-    return SOCK_OK;
+    return socket_common_get_value(&v, sizeof(v), value, len);
 }
 
 int32_t socket_bind_tcp(socket_impl_t sh, const SockBindSpec* spec_in, uint16_t port) {

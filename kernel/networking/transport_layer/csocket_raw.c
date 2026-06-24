@@ -21,6 +21,7 @@ typedef struct raw_rx_entry {
     uint8_t* data;
     uint32_t len;
     net_l4_endpoint src;
+    SockBindSpec rx_spec;
 } raw_rx_entry_t; 
 
 typedef struct raw_socket {
@@ -30,6 +31,7 @@ typedef struct raw_socket {
     bool bound;
     bool connected;
     SockBindSpec bind_spec;
+    SockBindSpec last_rx_spec;
     net_l4_endpoint remote_ep;
     raw_rx_entry_t rx[RAW_RX_RING_CAP];
     uint8_t rx_head;
@@ -52,7 +54,6 @@ static int32_t raw_set_filter(raw_socket_t* s, const void* value, uint32_t len) 
     SocketRawFilter filter;
     memcpy(&filter, value, sizeof(filter));
     if (filter.count > SOCKET_RAW_FILTER_MAX_RULES) return SOCK_ERR_INVAL;
-    if (filter.reserved[0] || filter.reserved[1] || filter.reserved[2]) return SOCK_ERR_INVAL;
     for (uint32_t i = 0; i < filter.count; i++) if (filter.rules[i].has_code > 1 || filter.rules[i].reserved) return SOCK_ERR_INVAL;
 
     s->options.raw_filter = filter;
@@ -61,7 +62,7 @@ static int32_t raw_set_filter(raw_socket_t* s, const void* value, uint32_t len) 
     return SOCK_OK;
 }
 
-static bool raw_enqueue(raw_socket_t* s, const net_l4_endpoint* src, netpkt_t* pkt, uint32_t len) {
+static bool raw_enqueue(raw_socket_t* s, const net_l4_endpoint* src, const SockBindSpec* rx_spec, netpkt_t* pkt, uint32_t len) {
     if (!s || !src || !pkt || !len || len > NETPKT_MAX_ALLOC || len > RAW_RX_MAX_BYTES) return false;
 
     if (s->options.raw_filter.count) {
@@ -97,6 +98,11 @@ static bool raw_enqueue(raw_socket_t* s, const net_l4_endpoint* src, netpkt_t* p
     s->rx[pos].data = copy;
     s->rx[pos].len = len;
     s->rx[pos].src = *src;
+    if (rx_spec) s->rx[pos].rx_spec = *rx_spec;
+    else {
+        memset(&s->rx[pos].rx_spec, 0, sizeof(s->rx[pos].rx_spec));
+        s->rx[pos].rx_spec.kind = BIND_ANY;
+    }
     s->rx_tail = (uint8_t)((s->rx_tail + 1) % RAW_RX_RING_CAP);
     s->rx_count++;
     s->rx_bytes += len;
@@ -108,20 +114,27 @@ socket_impl_t socket_raw_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner || socket_core_special_kind(owner) != SOCKET_SPECIAL_RAW) return NULL;
     protocol_t proto = socket_core_protocol(owner);
     if (proto != PROTO_ICMP && proto != PROTO_IGMP && proto != PROTO_ICMPV6) return NULL;
-    //TODO add ESP/AH sock if needed
+
+    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_RAW_FILTER;
+    if (extra && (extra->flags & ~supported)) return NULL;
 
     raw_socket_t* s = (raw_socket_t*)zalloc(sizeof(raw_socket_t));
     if (!s) return NULL;
 
     s->ownerSocket = owner;
     s->options.special_kind = SOCKET_SPECIAL_RAW;
+    s->last_rx_spec.kind = BIND_ANY;
     if (extra) {
         if ((extra->flags & SOCK_OPT_RECV_TIMEOUT) && extra->recv_timeout_ms) {
             s->options.flags |= SOCK_OPT_RECV_TIMEOUT;
             s->options.recv_timeout_ms = extra->recv_timeout_ms;
         }
 
-        if ((extra->flags & SOCK_OPT_DEBUG) && extra->debug_level <= SOCK_DBG_ALL) {
+        if (extra->flags & SOCK_OPT_DEBUG) {
+            if (extra->debug_level > SOCK_DBG_ALL) {
+                release(s);
+                return NULL;
+            }
             s->options.flags |= SOCK_OPT_DEBUG;
             s->options.debug_level = extra->debug_level;
         }
@@ -213,32 +226,13 @@ int32_t socket_getopt_raw(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
 
     switch ((uint32_t)opt) {
         case SOCK_GET_REMOTE_ENDPOINT:
-            if (!value) {
-                *len = sizeof(net_l4_endpoint);
-                return SOCK_OK;
-            }
-            if (*len < sizeof(net_l4_endpoint)) return SOCK_ERR_INVAL;
-            memcpy(value, &s->remote_ep, sizeof(s->remote_ep));
-            *len = sizeof(net_l4_endpoint);
-            return SOCK_OK;
+            return socket_common_get_value(&s->remote_ep, sizeof(s->remote_ep), value, len);
         case SOCK_GET_BIND_SPEC:
-            if (!value) {
-                *len = sizeof(SockBindSpec);
-                return SOCK_OK;
-            }
-            if (*len < sizeof(SockBindSpec)) return SOCK_ERR_INVAL;
-            memcpy(value, &s->bind_spec, sizeof(s->bind_spec));
-            *len = sizeof(SockBindSpec);
-            return SOCK_OK;
+            return socket_common_get_value(&s->bind_spec, sizeof(s->bind_spec), value, len);
+        case SOCK_GET_LAST_RX_SPEC:
+            return socket_common_get_value(&s->last_rx_spec, sizeof(s->last_rx_spec), value, len);
         case SOCK_GET_OPT_RAW_FILTER:
-            if (!value) {
-                *len = sizeof(SocketRawFilter);
-                return SOCK_OK;
-            }
-            if (*len < sizeof(SocketRawFilter)) return SOCK_ERR_INVAL;
-            memcpy(value, &s->options.raw_filter, sizeof(s->options.raw_filter));
-            *len = sizeof(SocketRawFilter);
-            return SOCK_OK;
+            return socket_common_get_value(&s->options.raw_filter, sizeof(s->options.raw_filter), value, len);
         default:
             break;
     }
@@ -251,14 +245,12 @@ int32_t socket_getopt_raw(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_CONNECTED:
             v = s->connected;
             break;
-        case SOCK_GET_LISTENING:
-        case SOCK_GET_LOCAL_PORT:
-        case SOCK_GET_SEND_QUEUED:
-            v = 0;
-            break;
         case SOCK_GET_RECV_QUEUED:
             v = s->rx_bytes;
             break;
+        case SOCK_GET_LISTENING:
+        case SOCK_GET_LOCAL_PORT:
+        case SOCK_GET_SEND_QUEUED:
         case SOCK_GET_OPT_KEEPALIVE:
         case SOCK_GET_OPT_KEEPALIVE_INTERVAL:
         case SOCK_GET_OPT_TCP_NO_DELAY:
@@ -268,7 +260,7 @@ int32_t socket_getopt_raw(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_TCP_RTT_MS:
         case SOCK_GET_TCP_RETRANSMITS:
         case SOCK_GET_MCAST_GROUPS:
-            return SOCK_ERR_INVAL;
+            return SOCK_ERR_UNSUP;
         case SOCK_GET_OPT_RECV_TIMEOUT:
         case SOCK_GET_OPT_DEBUG:
         case SOCK_GET_OPT_DONTFRAG:
@@ -277,19 +269,12 @@ int32_t socket_getopt_raw(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_SEND_TIMEOUT:
         case SOCK_GET_OPT_BUF_SIZE:
         case SOCK_GET_OPT_BROADCAST_ALLOWED:
-            return SOCK_ERR_INVAL;
+            return SOCK_ERR_UNSUP;
         default:
             return SOCK_ERR_INVAL;
     }
 
-    if (!value) {
-        *len = sizeof(uint32_t);
-        return SOCK_OK;
-    }
-    if (*len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
-    memcpy(value, &v, sizeof(v));
-    *len = sizeof(uint32_t);
-    return SOCK_OK;
+    return socket_common_get_value(&v, sizeof(v), value, len);
 }
 
 int32_t socket_bind_raw(socket_impl_t sh, const SockBindSpec* spec) {
@@ -303,6 +288,8 @@ int32_t socket_bind_raw(socket_impl_t sh, const SockBindSpec* spec) {
     if (spec->kind == BIND_ANY || ((proto == PROTO_ICMP || proto == PROTO_IGMP) && spec->kind == BIND_ANY4) || (proto == PROTO_ICMPV6 && spec->kind == BIND_ANY6)) {
         s->bind_spec = next;
         s->bound = false;
+        memset(&s->last_rx_spec, 0, sizeof(s->last_rx_spec));
+        s->last_rx_spec.kind = BIND_ANY;
         return SOCK_OK;
     }
     if (spec->kind == BIND_L2) {
@@ -341,6 +328,8 @@ int32_t socket_bind_raw(socket_impl_t sh, const SockBindSpec* spec) {
 
     s->bind_spec = next;
     s->bound = true;
+    memset(&s->last_rx_spec, 0, sizeof(s->last_rx_spec));
+    s->last_rx_spec.kind = BIND_ANY;
     return SOCK_OK;
 }
 
@@ -449,6 +438,7 @@ int64_t socket_recv_raw(socket_impl_t sh, void* buf, uint64_t len, net_l4_endpoi
     uint8_t* data = s->rx[pos].data;
     uint32_t pkt_len = s->rx[pos].len;
     net_l4_endpoint src = s->rx[pos].src;
+    s->last_rx_spec = s->rx[pos].rx_spec;
     s->rx_bytes -= pkt_len;
     s->rx[pos].data = NULL;
     s->rx[pos].len = 0;
@@ -469,6 +459,18 @@ bool socket_raw_input_v4(protocol_t protocol, uint8_t ifindex, uint32_t src, uin
 
     net_l4_endpoint src_ep;
     make_ep(&src, 0, IP_VER4, &src_ep);
+
+    SockBindSpec rx_spec;
+    memset(&rx_spec, 0, sizeof(rx_spec));
+    l3_ipv4_interface_t* rx_l3 = l3_ipv4_find_by_ip(dst);
+    if (rx_l3) {
+        rx_spec.kind = BIND_L3;
+        rx_spec.ver = IP_VER4;
+        rx_spec.l3_id = rx_l3->l3_id;
+    } else {
+        rx_spec.kind = BIND_L2;
+        rx_spec.ifindex = ifindex;
+    }
 
     raw_socket_t* targets[RAW_SOCKET_MAX];
     int n = 0;
@@ -501,7 +503,7 @@ bool socket_raw_input_v4(protocol_t protocol, uint8_t ifindex, uint32_t src, uin
     uint32_t len = netpkt_len(pkt);
     for (int i = 0; i < n; i++) {
         raw_socket_t* s = targets[i];
-        if (raw_enqueue(s, &src_ep, pkt, len)) delivered = true;
+        if (raw_enqueue(s, &src_ep, &rx_spec, pkt, len)) delivered = true;
         socket_core_put(s->ownerSocket);
     }
     return delivered;
@@ -512,6 +514,18 @@ bool socket_raw_input_v6(uint8_t ifindex, const uint8_t src[16], const uint8_t d
 
     net_l4_endpoint src_ep;
     make_ep(src, 0, IP_VER6, &src_ep);
+
+    SockBindSpec rx_spec;
+    memset(&rx_spec, 0, sizeof(rx_spec));
+    l3_ipv6_interface_t* rx_l3 = l3_ipv6_find_by_ip(dst);
+    if (rx_l3) {
+        rx_spec.kind = BIND_L3;
+        rx_spec.ver = IP_VER6;
+        rx_spec.l3_id = rx_l3->l3_id;
+    } else {
+        rx_spec.kind = BIND_L2;
+        rx_spec.ifindex = ifindex;
+    }
 
     raw_socket_t* targets[RAW_SOCKET_MAX];
     int n = 0;
@@ -536,7 +550,7 @@ bool socket_raw_input_v6(uint8_t ifindex, const uint8_t src[16], const uint8_t d
     uint32_t len = netpkt_len(pkt);
     for (int i = 0; i < n; i++) {
         raw_socket_t* s = targets[i];
-        if (raw_enqueue(s, &src_ep, pkt, len)) delivered = true;
+        if (raw_enqueue(s, &src_ep, &rx_spec, pkt, len)) delivered = true;
         socket_core_put(s->ownerSocket);
     }
     return delivered;

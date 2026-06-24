@@ -177,13 +177,18 @@ int32_t socket_core_get_option(ksocket_t* socket, int32_t opt, void* value, uint
     else if (opt == SOCK_GET_SPECIAL_KIND) v = socket->special_kind;
     else return socket->getopt(socket->impl, opt, value, len);
 
+    return socket_common_get_value(&v, sizeof(v), value, len);
+}
+
+int32_t socket_common_get_value(const void* data, uint32_t data_len, void* value, uint32_t* len) {
+    if ((!data && data_len) || !len) return SOCK_ERR_INVAL;
     if (!value) {
-        *len = sizeof(uint32_t);
+        *len = data_len;
         return SOCK_OK;
     }
-    if (*len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
-    memcpy(value, &v, sizeof(v));
-    *len = sizeof(uint32_t);
+    if (*len < data_len) return SOCK_ERR_INVAL;
+    if (data_len) memcpy(value, data, data_len);
+    *len = data_len;
     return SOCK_OK;
 }
 
@@ -267,14 +272,7 @@ int32_t socket_common_options_get(const SocketOptions* opts, int32_t opt, void* 
             return SOCK_ERR_INVAL;
     }
 
-    if (!value) {
-        *len = sizeof(uint32_t);
-        return SOCK_OK;
-    }
-    if (*len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
-    memcpy(value, &v, sizeof(v));
-    *len = sizeof(uint32_t);
-    return SOCK_OK;
+    return socket_common_get_value(&v, sizeof(v), value, len);
 }
 
 socket_impl_t socket_core_impl(ksocket_t* socket) {

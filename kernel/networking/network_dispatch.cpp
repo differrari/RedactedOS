@@ -12,6 +12,7 @@
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/netpkt.h"
 #include "networking/link_layer/link_utils.h"
+#include "networking/transport_layer/csocket_packet.h"
 #include "networking/drivers/loopback/loopback_driver.hpp"
 #include "exceptions/irq.h"
 
@@ -93,6 +94,7 @@ int NetworkDispatch::net_task()
                     break;
                 }
 
+                socket_packet_input(nics[n].ifindex, pkt);
                 if (netpkt_len(pkt) >= sizeof(eth_hdr_t)) eth_input(nics[n].ifindex, pkt);
                 netpkt_unref(pkt);
                 processed++;

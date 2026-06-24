@@ -1,6 +1,7 @@
 #include "csocket.h"
+#include "csocket_ctrl.h"
+#include "csocket_packet.h"
 #include "csocket_raw.h"
-#include "csocket_special.h"
 #include "csocket_tcp.h"
 #include "csocket_udp.h"
 #include "socket_core.h"
@@ -50,12 +51,18 @@ socket_handle_t create_socket(protocol_t protocol, const SocketOptions* extra){
         close = socket_close_raw;
         setopt = socket_setopt_raw;
         getopt = socket_getopt_raw;
-    } else {
-        impl = socket_special_create(socket, extra);
-        destroy = socket_destroy_special;
-        close = socket_close_special;
-        setopt = socket_setopt_special;
-        getopt = socket_getopt_special;
+    } else if (special_kind == SOCKET_SPECIAL_CTRL) {
+        impl = socket_ctrl_create(socket, extra);
+        destroy = socket_destroy_ctrl;
+        close = socket_close_ctrl;
+        setopt = socket_setopt_ctrl;
+        getopt = socket_getopt_ctrl;
+    } else if (special_kind == SOCKET_SPECIAL_PACKET) {
+        impl = socket_packet_create(socket, extra);
+        destroy = socket_destroy_packet;
+        close = socket_close_packet;
+        setopt = socket_setopt_packet;
+        getopt = socket_getopt_packet;
     }
     if (!impl) {
         socket_core_close_socket(socket);
@@ -81,6 +88,7 @@ int32_t bind_socket(socket_handle_t handle, const SockBindSpec *spec_in, uint16_
 
     int32_t res = SOCK_ERR_PROTO;
     if (socket_core_special_kind(socket) == SOCKET_SPECIAL_RAW) res = socket_bind_raw(socket_core_impl(socket), &spec);
+    else if (socket_core_special_kind(socket) == SOCKET_SPECIAL_PACKET) res = socket_bind_packet(socket_core_impl(socket), &spec);
     else if (socket_core_special_kind(socket) != SOCKET_SPECIAL_NONE) res = SOCK_ERR_UNSUP;
     else if (socket_core_protocol(socket) == PROTO_TCP) res = socket_bind_tcp(socket_core_impl(socket), &spec, port);
     else if (socket_core_protocol(socket) == PROTO_UDP) res = socket_bind_udp(socket_core_impl(socket), &spec, port);
@@ -111,7 +119,8 @@ int64_t send_on_socket(socket_handle_t handle, const void* buf, uint64_t len){
 
     int64_t res = SOCK_ERR_PROTO;
     if (socket_core_special_kind(socket) == SOCKET_SPECIAL_RAW) res = socket_send_raw(socket_core_impl(socket), buf, len);
-    else if (socket_core_special_kind(socket) != SOCKET_SPECIAL_NONE) res = socket_send_special(socket_core_impl(socket), buf, len);
+    else if (socket_core_special_kind(socket) == SOCKET_SPECIAL_CTRL) res = socket_send_ctrl(socket_core_impl(socket), buf, len);
+    else if (socket_core_special_kind(socket) != SOCKET_SPECIAL_NONE) res = SOCK_ERR_UNSUP;
     else if (socket_core_protocol(socket) == PROTO_TCP) res = socket_send_tcp(socket_core_impl(socket), buf, len);
     else if (socket_core_protocol(socket) == PROTO_UDP) res = socket_sendto_udp(socket_core_impl(socket), NULL, buf, len);
 
@@ -139,7 +148,9 @@ int64_t receive_from_socket(socket_handle_t handle, void* buf, uint64_t len, net
 
     int64_t res = SOCK_ERR_PROTO;
     if (socket_core_special_kind(socket) == SOCKET_SPECIAL_RAW) res = socket_recv_raw(socket_core_impl(socket), buf, len, out_src);
-    else if (socket_core_special_kind(socket) != SOCKET_SPECIAL_NONE) res = socket_recv_special(socket_core_impl(socket), buf, len);
+    else if (socket_core_special_kind(socket) == SOCKET_SPECIAL_CTRL) res = socket_recv_ctrl(socket_core_impl(socket), buf, len);
+    else if (socket_core_special_kind(socket) == SOCKET_SPECIAL_PACKET) res = socket_recv_packet(socket_core_impl(socket), buf, len);
+    else if (socket_core_special_kind(socket) != SOCKET_SPECIAL_NONE) res = SOCK_ERR_UNSUP;
     else if (socket_core_protocol(socket) == PROTO_TCP) res = socket_recv_tcp(socket_core_impl(socket), buf, len);
     else if (socket_core_protocol(socket) == PROTO_UDP) res = socket_recvfrom_udp(socket_core_impl(socket), buf, len, out_src);
 

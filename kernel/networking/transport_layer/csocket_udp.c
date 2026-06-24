@@ -20,6 +20,7 @@
 typedef struct udp_rx_entry {
     netpkt_t* pkt;
     net_l4_endpoint src;
+    SockBindSpec rx_spec;
 } udp_rx_entry_t;
 
 typedef struct udp_socket {
@@ -29,6 +30,7 @@ typedef struct udp_socket {
     ksocket_t* ownerSocket;
     SocketOptions options;
     SockBindSpec bindSpec;
+    SockBindSpec lastRxSpec;
     socket_bind_token_t bindToken;
     udp_rx_entry_t* rx_ring;
     net_l4_endpoint* mcast_groups;
@@ -143,7 +145,7 @@ static int32_t udp_socket_join_mcast_groups(udp_socket_t* s) {
     return SOCK_OK;
 }
 
-uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port) {
+uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, uint8_t l3_id, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port) {
     if (!socket || !pkt) return 0;
     udp_socket_t* s = (udp_socket_t*)socket_core_impl(socket);
     if (!s) return 0;
@@ -192,19 +194,30 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, const void* src
     netpkt_ref(pkt);
     s->rx_ring[s->r_tail].pkt = pkt;
     make_ep(src_ip_addr, src_port, ipver, &s->rx_ring[s->r_tail].src);
+    memset(&s->rx_ring[s->r_tail].rx_spec, 0, sizeof(s->rx_ring[s->r_tail].rx_spec));
+    s->rx_ring[s->r_tail].rx_spec.kind = BIND_L3;
+    s->rx_ring[s->r_tail].rx_spec.ver = ipver;
+    s->rx_ring[s->r_tail].rx_spec.l3_id = l3_id;
     s->rx_bytes += pkt_len;
     s->r_tail = nexti;
     return pkt_len;
-} 
+}
 
 socket_impl_t udp_socket_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
-    if (extra && (extra->flags & SOCK_OPT_RAW_FILTER)) return NULL;
+
+    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_BROADCAST_ALLOWED | SOCK_OPT_TTL | SOCK_OPT_MCAST_JOIN;
+    if (extra) {
+        if (extra->flags & ~supported) return NULL;
+        if ((extra->flags & SOCK_OPT_DEBUG) && extra->debug_level > SOCK_DBG_ALL) return NULL;
+        if ((extra->flags & SOCK_OPT_BUF_SIZE) && !extra->buf_size) return NULL;
+    }
 
     udp_socket_t* s = (udp_socket_t*)zalloc(sizeof(*s));
     if (!s) return NULL;
     s->ownerSocket = owner;
     s->remoteEP.ver = IP_VER4;
+    s->lastRxSpec.kind = BIND_ANY;
     if (extra) s->options = *extra;
     s->options.flags &= ~(SOCK_OPT_MCAST_JOIN | SOCK_OPT_MCAST_LEAVE);
     s->options.mcast_count = 0;
@@ -497,6 +510,7 @@ int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_en
 
     netpkt_t* p = s->rx_ring[s->r_head].pkt;
     net_l4_endpoint se = s->rx_ring[s->r_head].src;
+    s->lastRxSpec = s->rx_ring[s->r_head].rx_spec;
     memset(&s->rx_ring[s->r_head], 0, sizeof(s->rx_ring[s->r_head]));
     s->r_head = (s->r_head + 1) % s->ring_cap;
 
@@ -522,7 +536,7 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_TCP_NO_DELAY:
         case SOCK_OPT_SEND_BUF_SIZE:
         case SOCK_OPT_RAW_FILTER:
-            return SOCK_ERR_INVAL;
+            return SOCK_ERR_UNSUP;
         case SOCK_OPT_MCAST_JOIN: {
             if (!value || !len || (len % sizeof(net_l4_endpoint)) != 0) return SOCK_ERR_INVAL;
             uint32_t count32 = len / sizeof(net_l4_endpoint);
@@ -668,23 +682,11 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
 
     switch ((uint32_t)opt) {
         case SOCK_GET_REMOTE_ENDPOINT:
-            if (!value) {
-                *len = sizeof(net_l4_endpoint);
-                return SOCK_OK;
-            }
-            if (*len < sizeof(net_l4_endpoint)) return SOCK_ERR_INVAL;
-            memcpy(value, &s->remoteEP, sizeof(s->remoteEP));
-            *len = sizeof(net_l4_endpoint);
-            return SOCK_OK;
+            return socket_common_get_value(&s->remoteEP, sizeof(s->remoteEP), value, len);
         case SOCK_GET_BIND_SPEC:
-            if (!value) {
-                *len = sizeof(SockBindSpec);
-                return SOCK_OK;
-            }
-            if (*len < sizeof(SockBindSpec)) return SOCK_ERR_INVAL;
-            memcpy(value, &s->bindSpec, sizeof(s->bindSpec));
-            *len = sizeof(SockBindSpec);
-            return SOCK_OK;
+            return socket_common_get_value(&s->bindSpec, sizeof(s->bindSpec), value, len);
+        case SOCK_GET_LAST_RX_SPEC:
+            return socket_common_get_value(&s->lastRxSpec, sizeof(s->lastRxSpec), value, len);
         default:
             break;
     }
@@ -698,8 +700,7 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
             v = s->connected;
             break;
         case SOCK_GET_LISTENING:
-            v = 0;
-            break;
+            return SOCK_ERR_UNSUP;
         case SOCK_GET_LOCAL_PORT:
             v = s->localPort;
             break;
@@ -718,17 +719,10 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_TCP_MSS:
         case SOCK_GET_TCP_RTT_MS:
         case SOCK_GET_TCP_RETRANSMITS:
-            return SOCK_ERR_INVAL;
+            return SOCK_ERR_UNSUP;
         case SOCK_GET_MCAST_GROUPS: {
             uint32_t need = s->mcast_count * sizeof(net_l4_endpoint);
-            if (!value) {
-                *len = need;
-                return SOCK_OK;
-            }
-            if (*len < need) return SOCK_ERR_INVAL;
-            if (need) memcpy(value, s->mcast_groups, need);
-            *len = need;
-            return SOCK_OK;
+            return socket_common_get_value(s->mcast_groups, need, value, len);
         }
         case SOCK_GET_OPT_RECV_TIMEOUT:
         case SOCK_GET_OPT_SEND_TIMEOUT:
@@ -742,15 +736,7 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
             return SOCK_ERR_INVAL;
     }
 
-    if (!value) {
-        *len = sizeof(uint32_t);
-        return SOCK_OK;
-    }
-
-    if (*len < sizeof(uint32_t)) return SOCK_ERR_INVAL;
-    memcpy(value, &v, sizeof(v));
-    *len = sizeof(uint32_t);
-    return SOCK_OK;
+    return socket_common_get_value(&v, sizeof(v), value, len);
 }
 
 int32_t socket_close_udp(socket_impl_t sh) {
@@ -790,6 +776,8 @@ int32_t socket_close_udp(socket_impl_t sh) {
     s->r_head = 0;
     s->r_tail = 0;
     s->rx_bytes = 0;
+    memset(&s->lastRxSpec, 0, sizeof(s->lastRxSpec));
+    s->lastRxSpec.kind = BIND_ANY;
     if (s->bindToken) {
         socket_bind_remove(s->bindToken);
         s->bindToken = 0;
