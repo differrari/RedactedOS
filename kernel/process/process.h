@@ -71,15 +71,9 @@ typedef struct thread {
 
 typedef struct process {
     //We use the addresses of these variables to save and restore process state
-    uint64_t regs[31]; // x0–x30
-    uintptr_t sp;
-    uintptr_t pc;
-    uint64_t spsr; 
-    //Not used in process saving
-    uintptr_t stack;
-    paddr_t stack_phys;
-    uint64_t stack_size;
+    thread_t main_thread;
     //Thread ends
+    uint64_t spsr;
     thread_t *pending_thread;
     uint16_t id;
     bool in_ready_queue;

@@ -57,13 +57,13 @@ bool process_is_known(process_t *proc){
 }
 
 bool process_has_runtime_state(process_t *proc){
-    return proc && (proc->sp || proc->pc || proc->spsr || proc->stack || proc->heap_phys || proc->mm.ttbr0 || proc->output || proc->alloc_map || proc->bundle || proc->code || proc->code_size || proc->va);
+    return proc && (proc->main_thread.sp || proc->main_thread.pc || proc->spsr || proc->main_thread.stack || proc->heap_phys || proc->mm.ttbr0 || proc->output || proc->alloc_map || proc->bundle || proc->code || proc->code_size || proc->va);
 }
 
 bool process_can_run(process_t *proc){
     if (!proc) return false;
     if (!process_is_known(proc) || proc->pending_reset) return false;
-    if (proc->state == STOPPED || proc->sleeping || proc->suspended || !proc->pc || !proc->sp) return false;
+    if (proc->state == STOPPED || proc->sleeping || proc->suspended || !proc->main_thread.pc || !proc->main_thread.sp) return false;
     if (!is_privileged(proc->spsr)) return !!proc->mm.ttbr0;
     return !proc->mm.ttbr0;
 }
@@ -137,7 +137,7 @@ void switch_proc(ProcSwitchReason reason) {
 
     next_proc->state = RUNNING;
     current_proc = next_proc;
-    cpec = (uintptr_t)current_proc;
+    cpec = (uptr)&current_proc->main_thread;
     if (current_proc == idle_proc) timer_disable();
     else {
         timer_enable();
@@ -153,13 +153,13 @@ void switch_proc(ProcSwitchReason reason) {
 
 void save_syscall_return(uint64_t value){
     if (!current_proc) return;
-    current_proc->PROC_X0 = value;
+    current_proc->main_thread.PROC_X0 = value;
 }
 
 void process_restore(){
     if (!current_proc) panic("process_restore null process", 0);
     if (!process_is_known(current_proc)) panic("process_restore unknown process", cpec);
-    if (current_proc->pending_reset || current_proc->state == STOPPED || !current_proc->pc || !current_proc->sp) {
+    if (current_proc->pending_reset || current_proc->state == STOPPED || !current_proc->main_thread.pc || !current_proc->main_thread.sp) {
         if (current_proc->mm.ttbr0) {
             current_proc->pending_reset = true;
             current_proc->state = STOPPED;
@@ -170,13 +170,15 @@ void process_restore(){
         }
         panic("process_restore invalid process", cpec);
     }
+    current_proc->main_thread.spsr = current_proc->spsr;
     if (!is_privileged(current_proc->spsr)) {
-        if (!current_proc->mm.ttbr0) panic("process_restore user process without ttbr0", cpec);
-        if (current_proc->pc >= HIGH_VA) panic("user pc in kernel VA", current_proc->pc);
+        if (!current_proc->mm.ttbr0) panic("process_restore user process without ttbr0", current_proc->id);
+        if (current_proc->main_thread.pc >= HIGH_VA) panic("user pc in kernel VA", current_proc->main_thread.pc);
         mmu_ttbr0_enable_user();
     } else mmu_ttbr0_disable_user(); 
     if (current_proc->pending_thread){
         if (current_proc->pending_thread->thread_state != STOPPED){
+            current_proc->pending_thread->spsr = current_proc->spsr;
             cpec = (uptr)current_proc->pending_thread;
         } else {
             current_proc->pending_thread = 0;
@@ -200,14 +202,13 @@ bool init_scheduler(){
     return true;
 }
 
-
 uintptr_t get_current_heap(){
     if (current_proc->heap_phys) return (uintptr_t)dmap_pa_to_kva(current_proc->heap_phys);
     return current_proc->mm.mmap_bottom;
 }
 
 bool get_current_privilege(){
-    return current_proc && (current_proc->spsr & 0b1111) != 0;
+    return current_proc && is_privileged(current_proc->spsr);
 }
 
 process_t* get_current_proc(){
@@ -257,7 +258,7 @@ void reset_process(process_t *proc){
 
     uint16_t pid = proc->id;
     int32_t exit_code = proc->exit_code;
-    bool counted = proc->sp || proc->pc || proc->spsr || proc->stack || proc->heap_phys || proc->mm.ttbr0;
+    bool counted = proc->main_thread.sp || proc->main_thread.pc || proc->spsr || proc->main_thread.stack || proc->heap_phys || proc->mm.ttbr0;
 
     irq_flags_t irq = irq_save_disable();
     proc->pending_reset = false;
@@ -269,10 +270,10 @@ void reset_process(process_t *proc){
 
     update_sleep_timer();
     irq_restore(irq);
-    proc->sp = 0;
-    proc->pc = 0;
+    proc->main_thread.sp = 0;
+    proc->main_thread.pc = 0;
     proc->spsr = 0;
-    memset(proc->regs, 0, 31 * sizeof(proc->regs[0]));
+    memset(proc->main_thread.regs, 0, 31 * sizeof(proc->main_thread.regs[0]));
     memset(&proc->input_buffer, 0, sizeof(proc->input_buffer));
     memset(&proc->event_buffer, 0, sizeof(proc->event_buffer));
     proc->packet_buffer.read_index = 0;
@@ -420,9 +421,8 @@ void reset_process(process_t *proc){
 
     memset(proc->name, 0, sizeof(proc->name));
 
-    proc->stack = 0;
-    proc->stack_phys = 0;
-    proc->stack_size = 0;
+    proc->main_thread.stack = 0;
+    proc->main_thread.stack_size = 0;
 
     proc->heap_phys = 0;
     memset(&proc->mm, 0, sizeof(proc->mm));
@@ -460,10 +460,11 @@ void init_main_process(){
     kernel_proc->id = next_proc_index++;
     kernel_proc->alloc_map = make_page_index();
     kernel_proc->state = BLOCKED;
+    kernel_proc->spsr = 0x205;
     kernel_proc->heap_phys = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
-    kernel_proc->stack_size = 0x10000;
-    kernel_proc->stack = (uintptr_t)palloc(kernel_proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
-    kernel_proc->sp = (uintptr_t)ksp;
+    kernel_proc->main_thread.stack_size = 0x10000;
+    kernel_proc->main_thread.stack = (uintptr_t)palloc(kernel_proc->main_thread.stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
+    kernel_proc->main_thread.sp = (uintptr_t)ksp;
     kernel_proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
     kernel_proc->output_size = 0;
     kernel_proc->postmortem_output = 0;
@@ -472,13 +473,14 @@ void init_main_process(){
     name_process(kernel_proc, "kernel");
     idle_proc->state = BLOCKED;
     idle_proc->priority = PROC_PRIORITY_LOW;
-    idle_proc->stack_size = 0x4000;
-    uintptr_t idle_stack = (uintptr_t)palloc(idle_proc->stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
+    idle_proc->main_thread.stack_size = 0x4000;
+    uintptr_t idle_stack = (uintptr_t)palloc(idle_proc->main_thread.stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
     if (!idle_stack) panic("idle stack alloc failed", 0);
-    idle_proc->stack = idle_stack + idle_proc->stack_size;
-    idle_proc->sp = idle_proc->stack;
-    idle_proc->pc = (uintptr_t)idle_entry;
+    idle_proc->main_thread.stack = idle_stack + idle_proc->main_thread.stack_size;
+    idle_proc->main_thread.sp = idle_proc->main_thread.stack;
+    idle_proc->main_thread.pc = (uintptr_t)idle_entry;
     idle_proc->spsr = 0x205;
+    idle_proc->main_thread.spsr = 0x205;
     name_process(idle_proc, "idle");
 
     proc_count++;

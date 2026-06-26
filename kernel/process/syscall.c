@@ -295,7 +295,7 @@ u64 syscall_socket_accept(process_t *ctx, thread_t *current_thread){
 u64 syscall_socket_send(process_t *ctx, thread_t *current_thread){
     uint8_t dst_kind = (uint8_t)current_thread->PROC_X1;
     uint16_t port = (uint16_t)current_thread->PROC_X3;
-    size_t size = (size_t)ctx->regs[5];
+    size_t size = (size_t)current_thread->regs[5];
 
     SYSCALL_ARG(SocketHandle,handle, PROC_X0, true);
 
@@ -671,7 +671,7 @@ void sync_el0_handler_c(){
             result = entry(proc, current_thread);
         } else {
             kprintf("Unknown syscall in process. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
-            coredump(esr, elr, far, proc->sp);
+            coredump(esr, elr, far, current_thread->sp);
             syscall_depth--;
             stop_current_process(ec);
         }
@@ -687,7 +687,7 @@ void sync_el0_handler_c(){
             while (true);
         } else {
             kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", esr, elr, far, current_thread->sp);
-            if (syscall_depth <= 2) coredump(esr, elr, far, proc->sp);
+            if (syscall_depth <= 2) coredump(esr, elr, far, current_thread->sp);
             syscall_depth--;
             stop_current_process(ec);
         }

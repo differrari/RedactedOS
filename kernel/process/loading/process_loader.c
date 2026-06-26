@@ -368,6 +368,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->code_size = code_size;
 
     proc->spsr = 0;
+    proc->main_thread.spsr = 0;
 
     uint64_t shared_pages = 1;
     size_t shared_size = shared_pages * PAGE_SIZE;
@@ -408,17 +409,16 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     for (uint64_t i = 0; i < shared_pages; i++) mmu_map_4kb((uint64_t*)ttbr, (uint64_t)(shared_base + (i * PAGE_SIZE)), (paddr_t)(shared_page + (i * PAGE_SIZE)), MAIR_IDX_NORMAL, MEM_EXEC | MEM_NORM, MEM_PRIV_SHARED);
     mm_add_vma(&proc->mm, shared_base, shared_base + shared_size, MEM_EXEC | MEM_NORM, VMA_KIND_SPECIAL, VMA_FLAG_NOFREE);
 
-    proc->stack = stack_top;
-    proc->stack_phys = 0;
-    proc->stack_size = main_stack.size;
+    proc->main_thread.stack = stack_top;
+    proc->main_thread.stack_size = main_stack.size;
     proc->mm.rss_stack_pages = 0;
 
-    proc->sp = proc->stack;
+    proc->main_thread.sp = proc->main_thread.stack;
 
-    proc->pc = (uintptr_t)(entry);
-    proc->regs[30] = shared_base;
+    proc->main_thread.pc = (uintptr_t)(entry);
+    proc->main_thread.regs[30] = shared_base;
     proc->shared_page = shared_base;
-    kprintf("User process %s (%i) allocated at %llx entry=%llx stack=%llx-%llx (phys=%llx-%llx) anon=%llx (phys=%llx)", name, proc->id, proc, (uint64_t)proc->pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->stack_phys, (uint64_t)proc->stack_phys, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);
+    kprintf("User process %s (%i) allocated at %llx entry=%llx stack=%llx-%llx anon=%llx (phys=%llx)", name, proc->id, proc, (uint64_t)proc->main_thread.pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);
     proc->state = BLOCKED;
 
     make_process_fs(proc,proc->bundle);

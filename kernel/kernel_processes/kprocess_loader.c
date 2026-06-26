@@ -57,19 +57,20 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
     }
     register_allocation(proc->alloc_map, (void*)dmap_pa_to_kva(heap), PAGE_SIZE);
 
-    proc->stack = (stack + stack_size);
-    proc->stack_size = stack_size;
+    proc->main_thread.stack = (stack + stack_size);
+    proc->main_thread.stack_size = stack_size;
 
     proc->heap_phys = heap;
 
-    proc->sp = proc->stack;
+    proc->main_thread.sp = proc->main_thread.stack;
     
-    proc->pc = ((uintptr_t)func);
-    proc->regs[30] = ((uintptr_t)kernel_process_return_trampoline);
+    proc->main_thread.pc = ((uintptr_t)func);
+    proc->main_thread.regs[30] = ((uintptr_t)kernel_process_return_trampoline);
     proc->spsr = 0x205;
+    proc->main_thread.spsr = 0x205;
 
-    proc->PROC_X0 = 0;
-    proc->PROC_X1 = 0;
+    proc->main_thread.PROC_X0 = 0;
+    proc->main_thread.PROC_X1 = 0;
 
     if (argc > 0 && argv) {
 
@@ -86,7 +87,7 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
 
         if (need + 0x20 < stack_size) {
 
-            uintptr_t top = proc->stack;
+            uintptr_t top = proc->main_thread.stack;
             uintptr_t base = (top - need) & ~0xFULL;
 
             char **kargv = (char**)base;
@@ -110,16 +111,16 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
 
             kargv[argc] = 0;
 
-            proc->sp = base;
-            proc->PROC_X0 = argc;
-            proc->PROC_X1 = (uintptr_t)kargv;
+            proc->main_thread.sp = base;
+            proc->main_thread.PROC_X0 = argc;
+            proc->main_thread.PROC_X1 = (uintptr_t)kargv;
         }
     }
 
     make_process_fs(proc, 0);
 
     ready_process(proc);
-    kprintf("Kernel process %s (%i) allocated with address at %llx, stack at %llx-%llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->pc, proc->sp - proc->stack_size, proc->sp, (uaddr_t)dmap_pa_to_kva(proc->heap_phys), argc);
+    kprintf("Kernel process %s (%i) allocated with address at %llx, stack at %llx-%llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->main_thread.pc, proc->main_thread.sp - proc->main_thread.stack_size, proc->main_thread.sp, (uaddr_t)dmap_pa_to_kva(proc->heap_phys), argc);
     irq_restore(irq);
     
     return proc;
