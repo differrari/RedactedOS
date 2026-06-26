@@ -690,7 +690,7 @@ void wake_processes(){
 }
 
 sizedptr new_stack(process_t *proc){
-    uptr stack_limit = (uptr)0x00008FFFFFFFF000ULL;
+    uptr stack_limit = is_privileged(proc->spsr) ? (uptr)palloc(proc->stack_size, MEM_PRIV_KERNEL, MEM_RW, true) : 0x00008FFFFFFFF000ULL;
     uptr stack_top = stack_limit - proc->stack_size;
     mm_add_vma(&proc->mm, proc->mm.stack_top, stack_limit, MEM_RW, VMA_KIND_ANON, VMA_FLAG_DEMAND);
     print("New stack at %llx-%llx",stack_limit,stack_top);
