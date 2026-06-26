@@ -57,7 +57,7 @@ uintptr_t cpec;
 typedef uint64_t (*syscall_entry)(process_t *ctx, thread_t *current_thread);
 
 uptr syscall_palloc(process_t *ctx, thread_t *current_thread){
-    size_t size = ctx->PROC_X0;
+    size_t size = current_thread->PROC_X0;
     if(!size) return 0;
     u64 pages = count_pages(size, PAGE_SIZE);
     size_t alloc_size = pages * PAGE_SIZE;
@@ -78,7 +78,7 @@ uptr syscall_palloc(process_t *ctx, thread_t *current_thread){
 }
 
 u64 syscall_pfree(process_t *ctx, thread_t *current_thread){
-    uptr va = ctx->PROC_X0;
+    uptr va = current_thread->PROC_X0;
     if (!va) return 0;
 
     if (ctx->mm.ttbr0) {
@@ -119,7 +119,7 @@ u64 syscall_printl(process_t *ctx, thread_t *current_thread){
 
 u64 syscall_serial_transmit(process_t *ctx, thread_t *current_thread){//TODO: will probably require special permission
     if (sys_get_focused_pid() != ctx->id) return 0;
-    u8 byte = ctx->PROC_X0;
+    u8 byte = current_thread->PROC_X0;
     if (byte) uart_raw_putc(byte);
     return 0;
 }
@@ -163,8 +163,8 @@ u64 syscall_gpu_flush(process_t *ctx, thread_t *current_thread){
 }
 
 u64 syscall_gpu_resize_ctx(process_t *ctx, thread_t *current_thread){
-    uint32_t width = (uint32_t)ctx->PROC_X1;
-    uint32_t height = (uint32_t)ctx->PROC_X2;
+    uint32_t width = (uint32_t)current_thread->PROC_X1;
+    uint32_t height = (uint32_t)current_thread->PROC_X2;
     resize_window(width, height);
     SYSCALL_ARG(draw_ctx, win, PROC_X0, true);
     get_window_ctx(win);
@@ -173,17 +173,17 @@ u64 syscall_gpu_resize_ctx(process_t *ctx, thread_t *current_thread){
 }
 
 u64 syscall_char_size(process_t *ctx, thread_t *current_thread){
-    return gpu_get_char_size(ctx->PROC_X0);
+    return gpu_get_char_size(current_thread->PROC_X0);
 }
 
 u64 syscall_msleep(process_t *ctx, thread_t *current_thread){
     syscall_depth--;
-    sleep_process(ctx->PROC_X0);
+    sleep_process(current_thread->PROC_X0);//TODO: sleep thread instead
     return 0;
 }
 
 u64 syscall_halt(process_t *ctx, thread_t *current_thread){
-    kprintf("Process has ended with code %i",ctx->PROC_X0);
+    kprintf("Process has ended with code %i",current_thread->PROC_X0);
     syscall_depth--;
     stop_current_process(current_thread->PROC_X0);
     return 0;
@@ -219,7 +219,7 @@ u64 syscall_exec(process_t *ctx, thread_t *current_thread){
 }
 
 u64 syscall_kill_process(process_t *ctx, thread_t *current_thread) {
-    uint16_t pid = (uint16_t)ctx->PROC_X0;
+    uint16_t pid = (uint16_t)current_thread->PROC_X0;
     if (!pid) return 0;
 
     process_t *target = get_proc_by_pid(pid);
@@ -237,8 +237,8 @@ u64 syscall_get_time(process_t *ctx, thread_t *current_thread){
 }
 
 u64 syscall_socket_create(process_t *ctx, thread_t *current_thread){
-    Socket_Role role = (Socket_Role)ctx->PROC_X0;
-    protocol_t protocol = (protocol_t)ctx->PROC_X1;
+    Socket_Role role = (Socket_Role)current_thread->PROC_X0;
+    protocol_t protocol = (protocol_t)current_thread->PROC_X1;
     SYSCALL_ARG(const SocketExtraOptions, extra, PROC_X2, false);
     SYSCALL_ARG(SocketHandle, out, PROC_X3, true);
 
@@ -247,14 +247,14 @@ u64 syscall_socket_create(process_t *ctx, thread_t *current_thread){
 
 u64 syscall_socket_bind(process_t *ctx, thread_t *current_thread){
     SYSCALL_ARG(SocketHandle,handle,PROC_X0, true);
-    ip_version_t ip_version = (ip_version_t)ctx->PROC_X1;
-    uint16_t port = (uint16_t)ctx->PROC_X2;
+    ip_version_t ip_version = (ip_version_t)current_thread->PROC_X1;
+    uint16_t port = (uint16_t)current_thread->PROC_X2;
     return bind_socket(handle, port, ip_version, ctx->id);
 }
 
 u64 syscall_socket_connect(process_t *ctx, thread_t *current_thread){
-    uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
-    uint16_t port = (uint16_t)ctx->PROC_X3;
+    uint8_t dst_kind = (uint8_t)current_thread->PROC_X1;
+    uint16_t port = (uint16_t)current_thread->PROC_X3;
 
     SYSCALL_ARG(SocketHandle,handle,PROC_X0,true);
 
@@ -275,7 +275,7 @@ u64 syscall_socket_connect(process_t *ctx, thread_t *current_thread){
 
 u64 syscall_socket_listen(process_t *ctx, thread_t *current_thread){
     SYSCALL_ARG(SocketHandle,handle, PROC_X0, true);
-    int32_t backlog = (int32_t)ctx->PROC_X1;
+    int32_t backlog = (int32_t)current_thread->PROC_X1;
 
     return listen_on(handle, backlog, ctx->id);
 }
@@ -287,8 +287,8 @@ u64 syscall_socket_accept(process_t *ctx, thread_t *current_thread){
 }
 
 u64 syscall_socket_send(process_t *ctx, thread_t *current_thread){
-    uint8_t dst_kind = (uint8_t)ctx->PROC_X1;
-    uint16_t port = (uint16_t)ctx->PROC_X3;
+    uint8_t dst_kind = (uint8_t)current_thread->PROC_X1;
+    uint16_t port = (uint16_t)current_thread->PROC_X3;
     size_t size = (size_t)ctx->regs[5];
 
     SYSCALL_ARG(SocketHandle,handle, PROC_X0, true);
@@ -316,7 +316,7 @@ u64 syscall_socket_send(process_t *ctx, thread_t *current_thread){
 }
 
 u64 syscall_socket_receive(process_t *ctx, thread_t *current_thread){
-    size_t size = (size_t)ctx->PROC_X2;
+    size_t size = (size_t)current_thread->PROC_X2;
     if (!size) return 0;
     uint64_t alloc_size = (size + 0xFFF) & ~0xFFFULL;
     
@@ -359,21 +359,21 @@ u64 syscall_openf(process_t *ctx, thread_t *current_thread){
 
 u64 syscall_readf(process_t *ctx, thread_t *current_thread){
     SYSCALL_ARG(file, descriptor, PROC_X0, true);
-    size_t size = (size_t)ctx->PROC_X2;
+    size_t size = (size_t)current_thread->PROC_X2;
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, true);
     return read_file(descriptor, buf, size);
 }
 
 u64 syscall_writef(process_t *ctx, thread_t *current_thread){
     SYSCALL_ARG(file, descriptor, PROC_X0, true);
-    size_t size = (size_t)ctx->PROC_X2;
+    size_t size = (size_t)current_thread->PROC_X2;
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
     return write_file(descriptor, buf, size);
 }
 
 u64 syscall_sreadf(process_t *ctx, thread_t *current_thread){
     SYSCALL_STR(path, PROC_X0, false);
-    size_t size = (size_t)ctx->PROC_X2;
+    size_t size = (size_t)current_thread->PROC_X2;
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
@@ -389,9 +389,9 @@ u64 syscall_sreadf(process_t *ctx, thread_t *current_thread){
 
 u64 syscall_swritef(process_t *ctx, thread_t *current_thread){
     SYSCALL_STR(path, PROC_X0, false);
-    size_t size = (size_t)ctx->PROC_X2;
+    size_t size = (size_t)current_thread->PROC_X2;
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
-    bool append = (bool)ctx->PROC_X3;
+    bool append = (bool)current_thread->PROC_X3;
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
     string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
@@ -412,7 +412,7 @@ u64 syscall_closef(process_t *ctx, thread_t *current_thread){
 
 u64 syscall_dir_list(process_t *ctx, thread_t *current_thread){
     SYSCALL_STR(path,PROC_X0, false);
-    size_t size = (size_t)ctx->PROC_X2;
+    size_t size = (size_t)current_thread->PROC_X2;
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, true);
     SYSCALL_ARG(u64,offset,PROC_X3, true);
 #ifdef ISOLATEDFS
@@ -455,19 +455,19 @@ u64 syscall_stat(process_t *ctx, thread_t *current_thread){
 
 u64 syscall_trunc(process_t* ctx, thread_t *current_thread){
     SYSCALL_ARG(file,descriptor,PROC_X0, true);
-    size_t size = ctx->PROC_X1;
+    size_t size = current_thread->PROC_X1;
     return truncate(descriptor, size);
 }
 
 u64 syscall_signal_send(process_t* ctx, thread_t *current_thread){
-    signal_types type = ctx->PROC_X0;
-    u16 proc_id = ctx->PROC_X1;
+    signal_types type = current_thread->PROC_X0;
+    u16 proc_id = current_thread->PROC_X1;
     return send_signal_proc_id(type, 0, ctx, proc_id);
 }
 
 u64 syscall_signal_handler(process_t* ctx, thread_t *current_thread){
-    signal_types type = ctx->PROC_X0;
-    uptr handler = ctx->PROC_X1;
+    signal_types type = current_thread->PROC_X0;
+    uptr handler = current_thread->PROC_X1;
     print("Handler is %x",handler);
     if (!handler) return 0;
     if (!validate_address(ctx, handler, sizeof(uptr), false)) return 0;
@@ -475,7 +475,7 @@ u64 syscall_signal_handler(process_t* ctx, thread_t *current_thread){
 }
 
 // uint64_t syscall_load_fsmod(process_t *ctx){
-//     system_module *mod = (system_module*)ctx->PROC_X0;
+//     system_module *mod = (system_module*)current_thread->PROC_X0;
 //     return load_process_module(ctx,mod);
 // }
 
