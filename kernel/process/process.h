@@ -67,6 +67,7 @@ typedef struct thread {
     uint64_t stack_size;
     u16 pid;
     process_state thread_state;
+    struct thread *next;
 } thread_t;
 
 typedef struct process {
@@ -76,7 +77,6 @@ typedef struct process {
     uint64_t spsr;
     thread_t *pending_thread;
     uint16_t id;
-    bool in_ready_queue;
     bool sleeping;
     bool suspended;
     uint64_t wake_at_msec;

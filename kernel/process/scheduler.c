@@ -73,10 +73,9 @@ bool process_can_reset(process_t *proc){
 }
 
 void enqueue_ready_process(process_t *proc){
-    if (!proc || proc == idle_proc || proc->in_ready_queue) return;
+    if (!proc || proc == idle_proc || proc->state == READY) return;
     if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*),0,0);
     if (!cqueue_enqueue(&ready_queue, &proc)) panic("ready enqueue failed", proc->id);
-    proc->in_ready_queue = true;
     proc->state = READY;
 }
 
@@ -124,7 +123,6 @@ void switch_proc(ProcSwitchReason reason) {
         process_t *queued = 0;
         if (!cqueue_dequeue(&ready_queue, &queued)) break;
         if (!queued) continue;
-        if (process_is_known(queued)) queued->in_ready_queue = false;
         if (queued->state != READY || !process_can_run(queued)) continue;
         next_proc = queued;
         break;
@@ -164,7 +162,6 @@ void process_restore(){
             current_proc->pending_reset = true;
             current_proc->state = STOPPED;
             current_proc->sleeping = false;
-            current_proc->in_ready_queue = false;
             switch_proc(HALT);
             panic("process_restore recovery returned", cpec);
         }
@@ -229,7 +226,7 @@ bool scheduler_in_idle(){
 
 void ready_process(process_t *proc){
     irq_flags_t irq = irq_save_disable();
-    if (!proc || !proc->id || proc->state == STOPPED || proc->sleeping || proc->in_ready_queue || proc->pending_reset) {
+    if (!proc || !proc->id || proc->state == STOPPED || proc->sleeping || proc->pending_reset) {
         irq_restore(irq);
         return;
     }
@@ -264,7 +261,6 @@ void reset_process(process_t *proc){
     proc->pending_reset = false;
     proc->sleeping = false;
     proc->wake_at_msec = 0;
-    proc->in_ready_queue = false;
 
     remove_sleeping_process(proc, pid);
 
@@ -506,7 +502,6 @@ process_t* init_process(){
                 proc->exit_code = 0;
                 proc->state = BLOCKED;
                 proc->priority = PROC_PRIORITY_LOW;
-                proc->in_ready_queue = false;
                 proc->sleeping = false;
                 proc->wake_at_msec = 0;
                 proc->pending_reset = false;
@@ -567,7 +562,6 @@ void stop_process(uint16_t pid, int32_t exit_code){
 
     kprintf("[SCHEDULER] Stop process %i with code %i",proc->id,proc->exit_code);
     
-    proc->in_ready_queue = false;
     proc->sleeping = false;
     proc->wake_at_msec = 0;
     if (proc->focused)
