@@ -3,6 +3,7 @@
 #include "types.h"
 #include "process/process.h"
 #include "files/system_module.h"
+#include "procfs.h"
 
 typedef enum {
     INTERRUPT,
@@ -63,6 +64,6 @@ process_t *get_all_processes();
 
 thread_t new_thread(process_t *proc, uptr entry_point);
 
-extern system_module scheduler_module;
+bool init_scheduler();
 
 extern char ksp[];

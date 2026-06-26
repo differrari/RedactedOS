@@ -195,7 +195,7 @@ u64 syscall_halt_thread(process_t *ctx, thread_t *current_thread){
     if ((uptr)current_thread == (uptr)ctx)
         stop_current_process(current_thread->PROC_X0);
     else
-        switch_proc(YIELD);
+        switch_proc(YIELD);//TODO: proper cleanup
     return 0;
 }
 

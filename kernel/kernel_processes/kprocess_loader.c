@@ -9,9 +9,14 @@
 #include "memory/memory.h"
 #include "process/isolated_fs/isolated_fs.h"
 
-__attribute__((noreturn)) static void kernel_process_return_trampoline(int32_t exit_code) {
+void kernel_thread_return_trampoline(int32_t exit_code){
+    switch_proc(YIELD);//TODO: proper cleanup
+    while (true){}
+}
+
+void kernel_process_return_trampoline(int32_t exit_code) {
     stop_current_process(exit_code);
-    while (1) {}
+    while (true) {}
 }
 
 process_t *create_kernel_process(const char *name, int (*func)(int argc, char* argv[]), int argc, const char* argv[]){

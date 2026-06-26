@@ -112,7 +112,7 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     
     load_module(&tool_module);
 
-    load_module(&scheduler_module);
+    init_scheduler();
 
     load_module(&environment_module);
     

@@ -247,6 +247,7 @@ int main(int argc, char* argv[]){
                     if (index >= 0 && index < count)
                         return demos[index].fn();
                 }
+                if (ev.key == KEY_ESC) halt(0);
             }
         }
     }
