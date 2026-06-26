@@ -231,7 +231,7 @@ u64 syscall_kill_process(process_t *ctx, thread_t *current_thread) {
     process_t *target = get_proc_by_pid(pid);
     if (!target || target->state == STOPPED) return 0;
     if (target->id == 1) return 0;
-    if ((target->spsr & 0xF) != 0) return 0;
+    if (is_privileged(target)) return 0;
     if (!ctx->win_id || target->win_id != ctx->win_id) return 0;
 
     stop_process(pid, -9);

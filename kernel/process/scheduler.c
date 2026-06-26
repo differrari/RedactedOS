@@ -57,14 +57,14 @@ bool process_is_known(process_t *proc){
 }
 
 bool process_has_runtime_state(process_t *proc){
-    return proc && (proc->main_thread.sp || proc->main_thread.pc || proc->spsr || proc->main_thread.stack || proc->heap_phys || proc->mm.ttbr0 || proc->output || proc->alloc_map || proc->bundle || proc->code || proc->code_size || proc->va);
+    return proc && (proc->main_thread.sp || proc->main_thread.pc || proc->main_thread.spsr || proc->main_thread.stack || proc->heap_phys || proc->mm.ttbr0 || proc->output || proc->alloc_map || proc->bundle || proc->code || proc->code_size || proc->va);
 }
 
 bool process_can_run(process_t *proc){
     if (!proc) return false;
     if (!process_is_known(proc) || proc->pending_reset) return false;
     if (proc->state == STOPPED || proc->sleeping || proc->suspended || !proc->main_thread.pc || !proc->main_thread.sp) return false;
-    if (!is_privileged(proc->spsr)) return !!proc->mm.ttbr0;
+    if (!is_privileged(proc)) return !!proc->mm.ttbr0;
     return !proc->mm.ttbr0;
 }
 
@@ -167,15 +167,15 @@ void process_restore(){
         }
         panic("process_restore invalid process", cpec);
     }
-    current_proc->main_thread.spsr = current_proc->spsr;
-    if (!is_privileged(current_proc->spsr)) {
+
+    if (!is_privileged(current_proc)) {
         if (!current_proc->mm.ttbr0) panic("process_restore user process without ttbr0", current_proc->id);
         if (current_proc->main_thread.pc >= HIGH_VA) panic("user pc in kernel VA", current_proc->main_thread.pc);
         mmu_ttbr0_enable_user();
     } else mmu_ttbr0_disable_user(); 
     if (current_proc->pending_thread){
         if (current_proc->pending_thread->thread_state != STOPPED){
-            current_proc->pending_thread->spsr = current_proc->spsr;
+            current_proc->pending_thread->spsr = current_proc->main_thread.spsr;
             cpec = (uptr)current_proc->pending_thread;
         } else {
             current_proc->pending_thread = 0;
@@ -205,7 +205,7 @@ uintptr_t get_current_heap(){
 }
 
 bool get_current_privilege(){
-    return current_proc && is_privileged(current_proc->spsr);
+    return current_proc && is_privileged(current_proc);
 }
 
 process_t* get_current_proc(){
@@ -255,7 +255,7 @@ void reset_process(process_t *proc){
 
     uint16_t pid = proc->id;
     int32_t exit_code = proc->exit_code;
-    bool counted = proc->main_thread.sp || proc->main_thread.pc || proc->spsr || proc->main_thread.stack || proc->heap_phys || proc->mm.ttbr0;
+    bool counted = proc->main_thread.sp || proc->main_thread.pc || proc->main_thread.spsr || proc->main_thread.stack || proc->heap_phys || proc->mm.ttbr0;
 
     irq_flags_t irq = irq_save_disable();
     proc->pending_reset = false;
@@ -268,7 +268,7 @@ void reset_process(process_t *proc){
     irq_restore(irq);
     proc->main_thread.sp = 0;
     proc->main_thread.pc = 0;
-    proc->spsr = 0;
+    proc->main_thread.spsr = 0;
     memset(proc->main_thread.regs, 0, 31 * sizeof(proc->main_thread.regs[0]));
     memset(&proc->input_buffer, 0, sizeof(proc->input_buffer));
     memset(&proc->event_buffer, 0, sizeof(proc->event_buffer));
@@ -456,7 +456,7 @@ void init_main_process(){
     kernel_proc->id = next_proc_index++;
     kernel_proc->alloc_map = make_page_index();
     kernel_proc->state = BLOCKED;
-    kernel_proc->spsr = 0x205;
+    kernel_proc->main_thread.spsr = 0x205;
     kernel_proc->heap_phys = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
     kernel_proc->main_thread.stack_size = 0x10000;
     kernel_proc->main_thread.stack = (uintptr_t)palloc(kernel_proc->main_thread.stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
@@ -475,7 +475,6 @@ void init_main_process(){
     idle_proc->main_thread.stack = idle_stack + idle_proc->main_thread.stack_size;
     idle_proc->main_thread.sp = idle_proc->main_thread.stack;
     idle_proc->main_thread.pc = (uintptr_t)idle_entry;
-    idle_proc->spsr = 0x205;
     idle_proc->main_thread.spsr = 0x205;
     name_process(idle_proc, "idle");
 
@@ -687,9 +686,9 @@ thread_t new_thread(process_t *proc, uptr entry_point){
         .sp = stack.top,
         .stack_size = stack.size,
         .stack = stack.top,
-        .spsr = proc->spsr
+        .spsr = proc->main_thread.spsr
     };
-    t.regs[30] = is_privileged(proc->spsr) ? (uptr)kernel_thread_return_trampoline : proc->shared_page+sizeof(u32);
+    t.regs[30] = is_privileged(proc) ? (uptr)kernel_thread_return_trampoline : proc->shared_page+sizeof(u32);
     return t;
 }
 
@@ -701,7 +700,7 @@ u64 run_thread_oneshot(thread_t *t, process_t *p){
         mmu_ttbr0_enable_user();
     }
     t->sp = t->stack-sizeof(system_module);//TODO: stack needs not be reset past args
-    t->spsr = p->spsr;
+    t->spsr = p->main_thread.spsr;
     t->thread_state = RUNNING;
     cpec = (uptr)t;
     kprintf("STACK %llx and shared on %llx. Running %llx, after which %llx",t->sp,p->shared_page,t->pc,t->regs[30]);

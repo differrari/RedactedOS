@@ -74,7 +74,6 @@ typedef struct process {
     //We use the addresses of these variables to save and restore process state
     thread_t main_thread;
     //Thread ends
-    uint64_t spsr;
     thread_t *pending_thread;
     uint16_t id;
     bool sleeping;
@@ -121,7 +120,9 @@ typedef struct process {
     struct process *process_next;
 } process_t;
 
-#define is_privileged(spsr) (spsr & 0xf)
+static inline bool is_privileged(process_t *proc){
+    return proc->main_thread.spsr & 0xf;
+} 
 
 //Helper functions for accessing registers mapped to scratch regs
 #define PROC_X0 regs[0]

@@ -367,7 +367,6 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->code = dest;
     proc->code_size = code_size;
 
-    proc->spsr = 0;
     proc->main_thread.spsr = 0;
 
     uint64_t shared_pages = 1;

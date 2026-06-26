@@ -36,7 +36,7 @@ bool register_keypress(keypress kp) {
     }
 
     process_t *target = focused_proc;
-    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target->spsr) && !target->mm.ttbr0)) {
+    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) {
         u16 win_id = target ? target->win_id : 0;
         u16 skip_id = target ? target->id : 0;
         focused_proc = 0;
@@ -47,7 +47,7 @@ bool register_keypress(keypress kp) {
         }
 
         target = focused_proc;
-        if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target->spsr) && !target->mm.ttbr0)) {
+        if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) {
             focused_proc = 0;
             return false;
         }
@@ -83,7 +83,7 @@ bool register_scroll(i8 scroll){
 
 void register_event(kbd_event event){
     process_t *target = focused_proc;
-    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target->spsr & 0xF) && !target->mm.ttbr0)) {
+    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) {
         u16 win_id = target ? target->win_id : 0;
         u16 skip_id = target ? target->id : 0;
         focused_proc = 0;
@@ -94,7 +94,7 @@ void register_event(kbd_event event){
         }
 
         target = focused_proc;
-        if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target->spsr & 0xF) && !target->mm.ttbr0)) {
+        if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) {
             focused_proc = 0;
             return;
         }
@@ -174,7 +174,7 @@ void sys_focus_current(){
 
 void sys_set_focus(int pid){
     process_t *target = get_proc_by_pid(pid);
-    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target->spsr & 0xF) && !target->mm.ttbr0)) return;
+    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) return;
     if (focused_proc) focused_proc->focused = false;
     focused_proc = target;
     focused_proc->focused = true;
@@ -192,7 +192,7 @@ void sys_unset_focus(bool close){
     if (npid)
     {
         process_t *next = get_proc_by_pid(npid);
-        if (next && next->focused && next->state != STOPPED && next->id && next->main_thread.pc && next->main_thread.sp && (is_privileged(next->spsr & 0xF) || next->mm.ttbr0)) focused_proc = next;
+        if (next && next->focused && next->state != STOPPED && next->id && next->main_thread.pc && next->main_thread.sp && (is_privileged(next) || next->mm.ttbr0)) focused_proc = next;
     }
 }
 

@@ -2,7 +2,7 @@
 #include "exceptions/exception_handler.h"
 
 uptr next_stack_addr(process_t *proc){
-    if (is_privileged(proc->spsr)) return 0;
+    if (is_privileged(proc)) return 0;
     for (uptr start = stack_max_addr; start > stack_min_addr; start -= 0x100000000000){
         vma *m = mm_find_vma(&proc->mm, start-stack_max);
         if (!m){
@@ -14,7 +14,7 @@ uptr next_stack_addr(process_t *proc){
 }
 
 stack_t new_stack(process_t *proc){
-    uptr stack_top = is_privileged(proc->spsr) ? (uptr)palloc(stack_max, MEM_PRIV_KERNEL, MEM_RW, true) : next_stack_addr(proc);
+    uptr stack_top = is_privileged(proc) ? (uptr)palloc(stack_max, MEM_PRIV_KERNEL, MEM_RW, true) : next_stack_addr(proc);
     if (!stack_top) return (stack_t){};
     uptr stack_limit = stack_top - stack_max;
     print("New stack at %llx-%llx",stack_limit,stack_top);

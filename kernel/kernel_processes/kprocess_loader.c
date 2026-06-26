@@ -66,7 +66,6 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
     
     proc->main_thread.pc = ((uintptr_t)func);
     proc->main_thread.regs[30] = ((uintptr_t)kernel_process_return_trampoline);
-    proc->spsr = 0x205;
     proc->main_thread.spsr = 0x205;
 
     proc->main_thread.PROC_X0 = 0;
