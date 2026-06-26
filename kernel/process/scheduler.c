@@ -31,6 +31,8 @@ static process_t *process_list = 0;
 uint16_t proc_count = 0;
 uint16_t next_proc_index = 1;
 
+#define is_privileged(spsr) (spsr & 0xf)
+
 //TODO maybe use a weighted ready queue based on process priority
 CQueue ready_queue = {};
 linked_list_t sleeping_list = {};
@@ -176,7 +178,7 @@ void process_restore(){
         }
         panic("process_restore invalid process", cpec);
     }
-    if ((current_proc->spsr & 0xF) == 0) {
+    if (!is_privileged(current_proc->spsr)) {
         if (!current_proc->mm.ttbr0) panic("process_restore user process without ttbr0", cpec);
         if (current_proc->pc >= HIGH_VA) panic("user pc in kernel VA", current_proc->pc);
         mmu_ttbr0_enable_user();
@@ -185,8 +187,12 @@ void process_restore(){
         signal_info_t *info = &current_proc->signal_buffer.entries[current_proc->signal_buffer.read_index];//TODO: Wrong, this should be copied into userland mem
         current_proc->signal_buffer.read_index = (current_proc->signal_buffer.read_index + 1) % INPUT_BUFFER_CAPACITY;
         if (can_signal_be_handled(info->type)){
-            signal_handler handler = current_proc->signal_handlers[info->type];
-            if (handler) handler(info);
+            thread_t *handler = &current_proc->signal_handlers[info->type];
+            if (handler->pc){
+                handler->spsr = current_proc->spsr;
+                cpec = (uptr)handler;
+                restore_context(cpec);
+            }
             else handle_signal_default(current_proc, info);
         } else handle_signal_default(current_proc, info);
         switch_proc(RECV_SIGNAL);//TODO: wasteful, we might have a lot of CPU time left for this proc to use
@@ -364,7 +370,7 @@ void reset_process(process_t *proc){
         fid = reserve_fd_gid(proc_path);
         module_file *state_file = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
         if (state_file && (uintptr_t)state_file->file_buffer.buffer == (uintptr_t)&proc->state) {
-            enum process_state *snapshot = (enum process_state*)zalloc(sizeof(proc->state));
+            process_state *snapshot = (process_state*)zalloc(sizeof(proc->state));
             if (snapshot) {
                 *snapshot = STOPPED;
                 state_file->buf = (uptr)snapshot;
@@ -697,6 +703,28 @@ void wake_processes(){
 
     update_sleep_timer();
     irq_restore(irq);
+}
+
+sizedptr new_stack(process_t *proc){
+    uptr stack_limit = (uptr)0x00008FFFFFFFF000ULL;
+    uptr stack_top = stack_limit - proc->stack_size;
+    mm_add_vma(&proc->mm, proc->mm.stack_top, stack_limit, MEM_RW, VMA_KIND_ANON, VMA_FLAG_DEMAND);
+    print("New stack at %llx-%llx",stack_limit,stack_top);
+    return (sizedptr){.ptr = stack_top, proc->stack_size};
+}
+
+thread_t new_thread(process_t *proc, uptr entry_point){
+    sizedptr stack = new_stack(proc);
+    thread_t t = {
+        .pc = entry_point,
+        .pid = proc->id,
+        .regs = {},
+        .sp = stack.ptr,
+        .stack_size = stack.size,
+        .spsr = proc->spsr
+    };
+    t.regs[30] = proc->shared_page+sizeof(u32);//TODO: kernel processes don't have this
+    return t;
 }
 
 bool load_process_module(process_t *p, system_module *m){

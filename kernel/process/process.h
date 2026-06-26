@@ -55,6 +55,20 @@ typedef struct {
     u64 fs_id;
 } system_permissions;
 
+typedef enum { STOPPED, READY, RUNNING, BLOCKED } process_state;
+
+typedef struct {
+    uint64_t regs[31]; // x0–x30
+    uintptr_t sp;
+    uintptr_t pc;
+    uint64_t spsr; 
+    //Not used in process saving
+    uintptr_t stack;
+    uint64_t stack_size;
+    u16 pid;
+    process_state thread_state;
+} thread_t;
+
 typedef struct process {
     //We use the addresses of these variables to save and restore process state
     uint64_t regs[31]; // x0–x30
@@ -62,14 +76,15 @@ typedef struct process {
     uintptr_t pc;
     uint64_t spsr; 
     //Not used in process saving
+    uintptr_t stack;
+    paddr_t stack_phys;
+    uint64_t stack_size;
+    //Thread ends
     uint16_t id;
     bool in_ready_queue;
     bool sleeping;
     bool suspended;
     uint64_t wake_at_msec;
-    uintptr_t stack;
-    paddr_t stack_phys;
-    uint64_t stack_size;
     paddr_t heap_phys;
     kaddr_t output;
     size_t output_size;
@@ -85,13 +100,13 @@ typedef struct process {
     uaddr_t va;
     page_index *alloc_map;
     draw_ctx graphics_ctx;
-    enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
+    process_state state;
     __attribute__((aligned(16))) input_buffer_t input_buffer;
     __attribute__((aligned(16))) event_buffer_t event_buffer;
     __attribute__((aligned(16))) packet_buffer_t packet_buffer;
     __attribute__((aligned(16))) scroll_buffer_t scroll_buffer;
     __attribute__((aligned(16))) signal_buffer_t signal_buffer;
-    __attribute__((aligned(16))) signal_handler signal_handlers[NUMBER_SIGNALS];
+    __attribute__((aligned(16))) thread_t signal_handlers[NUMBER_SIGNALS];
     uint8_t priority;
     system_permissions permissions;
     uint16_t win_id;
@@ -104,7 +119,9 @@ typedef struct process {
     sizedptr debug_line_str;
     system_module exposed_fs;
     mm_struct mm;
+    int thread_count;
     environment_data environment;
+    uptr shared_page;
     struct process *process_next;
 } process_t;
 

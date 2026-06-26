@@ -61,6 +61,8 @@ bool get_current_privilege();
 uint16_t process_count();
 process_t *get_all_processes();
 
+thread_t new_thread(process_t *proc, uptr entry_point);
+
 extern system_module scheduler_module;
 
 extern char ksp[];

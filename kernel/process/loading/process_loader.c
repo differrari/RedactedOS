@@ -316,13 +316,8 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     }
     if (!shared_page) {
         shared_page = palloc_inner(PAGE_SIZE, MEM_PRIV_SHARED, MEM_EXEC, true, false);
-        if (!shared_page) {
-            pfree((void*)dmap_pa_to_kva(dest), code_size);
-            reset_process(proc);
-            return 0;
-        }
-        memset((void*)dmap_pa_to_kva(shared_page), 0, PAGE_SIZE);
-        *(uint32_t*)(uintptr_t)dmap_pa_to_kva(shared_page) = aarch64_svc(HALT_CODE);
+        *(u32*)(uptr)dmap_pa_to_kva(shared_page) = aarch64_svc(HALT_CODE);
+        *(u32*)(uptr)dmap_pa_to_kva(shared_page+sizeof(u32)) = aarch64_svc(HALT_THREAD_CODE);
     }
     
     // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
@@ -394,7 +389,6 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->mm.stack_limit = stack_limit;
     proc->mm.stack_commit = stack_commit;
 
-
     uint64_t total_pages = get_total_user_ram() / PAGE_SIZE;
     if (!total_pages) total_pages = 1;
 
@@ -415,7 +409,8 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
 
     proc->pc = (uintptr_t)(entry);
     proc->regs[30] = shared_base;
-    kprintf("User process %s (%i) allocated at %llx entry=%llx stack=%llx-%llx (phys=%llx-%llx) anon=%llx (phys=%llx)", name, proc->id, proc, (uint64_t)proc->pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->stack_phys, (uint64_t)proc->stack_phys, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);
+    proc->shared_page = shared_base;
+    kprintf("%llx.User process %s (%i) allocated at %llx entry=%llx stack=%llx-%llx (phys=%llx-%llx) anon=%llx (phys=%llx)", shared_base, name, proc->id, proc, (uint64_t)proc->pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->stack_phys, (uint64_t)proc->stack_phys, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);
     proc->spsr = 0;
     proc->state = BLOCKED;
 

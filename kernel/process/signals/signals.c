@@ -5,7 +5,7 @@
 #include "console/kio.h"
 
 bool register_signal_handler(process_t *proc, signal_types type, signal_handler handler){
-    if (proc->signal_handlers[type]){
+    if (proc->signal_handlers[type].pc){
         kprint("Signal already exists");
         return false;  
     } 
@@ -14,8 +14,7 @@ bool register_signal_handler(process_t *proc, signal_types type, signal_handler 
         return false;  
     } 
     kprint("Signal handler added");
-    proc->signal_handlers[type] = handler;
-    //TODO: Can we check if the handler is in proc's va? cba rn
+    proc->signal_handlers[type] = new_thread(proc, (uptr)handler);
     return true;
 }
 

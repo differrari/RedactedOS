@@ -186,8 +186,9 @@ int copypaste(){
 bool should_quit = false;
 
 bool on_quit(signal_info_t *do_not_use_this){
-    print("I'm told to quit");
+    printl("I'm told to quit");
     should_quit = true;
+    // while(true);
     return true;
 }
 
@@ -202,6 +203,9 @@ struct { char* name; int (*fn)(); } demos[] = {
 };
 
 int main(int argc, char* argv[]){
+    
+    handle_signal(SIG_QUIT, on_quit);
+    send_signal(SIG_QUIT, 7);
 
     request_draw_ctx(&ctx);
 
@@ -231,6 +235,10 @@ int main(int argc, char* argv[]){
 
     while (true) {
         commit_draw_ctx(&ctx);
+        if (should_quit) {
+            print("SIG QUIT");
+            halt(0);
+        }
         kbd_event ev = {};
         if (read_event(&ev)){
             if (ev.type == KEY_PRESS){
