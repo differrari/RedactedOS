@@ -57,7 +57,7 @@ typedef struct {
 
 typedef enum { STOPPED, READY, RUNNING, BLOCKED } process_state;
 
-typedef struct {
+typedef struct thread {
     uint64_t regs[31]; // x0–x30
     uintptr_t sp;
     uintptr_t pc;
@@ -124,6 +124,8 @@ typedef struct process {
     uptr shared_page;
     struct process *process_next;
 } process_t;
+
+#define is_privileged(spsr) (spsr & 0xf)
 
 //Helper functions for accessing registers mapped to scratch regs
 #define PROC_X0 regs[0]

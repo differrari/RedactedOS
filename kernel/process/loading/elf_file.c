@@ -163,13 +163,13 @@ bool setup_process_args(process_t *proc, int argc, const char *argv[]) {
         size_t off = 0;
         for (int i = 0; i < argc; i++) {
             size_t len = strlen(argv[i]) + 1;
-            if (copy_to_user(proc, str_base + off, argv[i], len) != UACCESS_OK) return false;
+            if (copy_to_user(proc, (thread_t*)proc, str_base + off, argv[i], len) != UACCESS_OK) return false;
             arg_ptrs[i] = str_base + off;
             off += len;
         }
         arg_ptrs[argc] = 0;
 
-        if (copy_to_user(proc, sp, arg_ptrs, argv_size) != UACCESS_OK) return false;
+        if (copy_to_user(proc, (thread_t*)proc, sp, arg_ptrs, argv_size) != UACCESS_OK) return false;
         return true;
     }
 

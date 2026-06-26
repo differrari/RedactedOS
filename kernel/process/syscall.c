@@ -41,17 +41,17 @@ uintptr_t cpec;
 #define SYSCALL_STR(name, arg, write)\
     char *name = (char*)current_thread->arg;\
     if (!name) return 0;\
-    if (!validate_address(ctx, (uptr)name, sizeof(name), write)) return 0;
+    if (!validate_address(ctx, current_thread, (uptr)name, sizeof(name), write)) return 0;
 
 #define SYSCALL_ARG(type, name, arg, write) \
     type *name = (type*)current_thread->arg;\
     if (!name) return 0;\
-    if (!validate_address(ctx, (uptr)name, sizeof(type), write)) return 0;\
+    if (!validate_address(ctx, current_thread, (uptr)name, sizeof(type), write)) return 0;\
     
 #define SYSCALL_ARG_SIZE(type, name, size, arg, write) \
     type *name = (type*)current_thread->arg;\
     if (!name && size) return 0;\
-    if (!validate_address(ctx, (uptr)name, size, write)) return 0;\
+    if (!validate_address(ctx, current_thread, (uptr)name, size, write)) return 0;\
 
 //TEST: What happens if we pass another process' data in here?
 typedef uint64_t (*syscall_entry)(process_t *ctx, thread_t *current_thread);
@@ -210,7 +210,7 @@ u64 syscall_exec(process_t *ctx, thread_t *current_thread){
     
     user_argv_t user_argv = {};
 
-    uaccess_result_t ur = copy_argv_from_user(ctx, argc, uargv, &user_argv);
+    uaccess_result_t ur = copy_argv_from_user(ctx, current_thread, argc, uargv, &user_argv);
     if (ur != UACCESS_OK) return 0;
 
     process_t *p = execute(prog_name, argc, user_argv.argv, mode);
@@ -468,9 +468,9 @@ u64 syscall_signal_send(process_t* ctx, thread_t *current_thread){
 u64 syscall_signal_handler(process_t* ctx, thread_t *current_thread){
     signal_types type = current_thread->PROC_X0;
     uptr handler = current_thread->PROC_X1;
-    print("Handler is %x",handler);
+
     if (!handler) return 0;
-    if (!validate_address(ctx, handler, sizeof(uptr), false)) return 0;
+    if (!validate_address(ctx, current_thread, handler, sizeof(uptr), false)) return 0;
     return register_signal_handler(ctx, type, (signal_handler)handler);
 }
 
@@ -634,6 +634,7 @@ void sync_el0_handler_c(){
 #endif
 
     process_t *proc = get_current_proc();
+    thread_t *current_thread = (thread_t*)cpec;
 
     uint64_t elr;
     asm volatile ("mrs %0, elr_el1" : "=r"(elr));
@@ -651,7 +652,7 @@ void sync_el0_handler_c(){
     uint64_t far;
     asm volatile ("mrs %0, far_el1" : "=r"(far));
     if (ec == 0x24 || ec == 0x20){
-        if (mm_try_handle_page_fault(proc, far, esr)){
+        if (mm_try_handle_page_fault(proc, current_thread, far, esr)){
             syscall_depth--;
             process_restore();
         }
@@ -661,7 +662,6 @@ void sync_el0_handler_c(){
     if (ec == 0x15) {
         syscall_entry entry = syscalls[iss];
         if (entry){
-            thread_t *current_thread = (thread_t*)cpec;
             result = entry(proc, current_thread);
         } else {
             kprintf("Unknown syscall in process. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
@@ -680,7 +680,7 @@ void sync_el0_handler_c(){
             handle_exception("UNEXPECTED EXCEPTION", ec);
             while (true);
         } else {
-            kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", esr, elr, far, proc->sp);
+            kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", esr, elr, far, current_thread->sp);
             if (syscall_depth <= 2) coredump(esr, elr, far, proc->sp);
             syscall_depth--;
             stop_current_process(ec);

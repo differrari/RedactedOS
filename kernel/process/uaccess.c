@@ -5,7 +5,7 @@
 #include "std/memory.h"
 #include "alloc/allocate.h"
 
-bool access_ok_range(process_t *proc, uintptr_t addr, size_t size, bool want_write) {
+bool access_ok_range(process_t *proc, thread_t *current_thread, uintptr_t addr, size_t size, bool want_write) {
     if (!proc) return false;
     if (!proc->mm.ttbr0) return false;
     if (!size) return true;
@@ -30,10 +30,10 @@ bool access_ok_range(process_t *proc, uintptr_t addr, size_t size, bool want_wri
     return true;
 }
 
-uaccess_result_t copy_from_user(process_t *proc, void *dst, uintptr_t src, size_t size) {
+uaccess_result_t copy_from_user(process_t *proc, thread_t *current_thread, void *dst, uintptr_t src, size_t size) {
     if (!dst && size) return UACCESS_EINVAL;
     if (!size) return UACCESS_OK;
-    if (!access_ok_range(proc, src, size, false)) return UACCESS_EFAULT;
+    if (!access_ok_range(proc, current_thread, src, size, false)) return UACCESS_EFAULT;
 
     uint8_t *d = (uint8_t*)dst;
 
@@ -46,7 +46,7 @@ uaccess_result_t copy_from_user(process_t *proc, void *dst, uintptr_t src, size_
         uintptr_t pa =mmu_translate((uint64_t*)proc->mm.ttbr0, src, &st);
         if (st) {
             uint64_t esr = (0x24ULL << 26) | 0x7ULL;
-            if (!mm_try_handle_page_fault(proc, src, esr)) return UACCESS_EFAULT;
+            if (!mm_try_handle_page_fault(proc, current_thread, src, esr)) return UACCESS_EFAULT;
 
             pa = mmu_translate((uint64_t*)proc->mm.ttbr0, src, &st);
             if (st) return UACCESS_EFAULT;
@@ -61,10 +61,10 @@ uaccess_result_t copy_from_user(process_t *proc, void *dst, uintptr_t src, size_
     return UACCESS_OK;
 }
 
-bool validate_address(process_t *proc, uintptr_t addr, size_t size, bool want_write) {
+bool validate_address(process_t *proc, thread_t *current_thread, uintptr_t addr, size_t size, bool want_write) {
     if (!addr && size) return false;
     if (!size) return true;
-    if (!access_ok_range(proc, addr, size, want_write)) return false;
+    if (!access_ok_range(proc, current_thread, addr, size, want_write)) return false;
 
     while (size) {
         size_t off = addr & (PAGE_SIZE - 1);
@@ -75,7 +75,7 @@ bool validate_address(process_t *proc, uintptr_t addr, size_t size, bool want_wr
         mmu_translate((uint64_t*)proc->mm.ttbr0, addr, &st);
         if (st) {
             uint64_t esr = (0x24ULL << 26) | 0x7ULL | (want_write << 6);
-            if (!mm_try_handle_page_fault(proc, addr, esr)) return false;
+            if (!mm_try_handle_page_fault(proc, current_thread, addr, esr)) return false;
 
             mmu_translate((uint64_t*)proc->mm.ttbr0, addr, &st);
             if (st) return false;
@@ -88,10 +88,10 @@ bool validate_address(process_t *proc, uintptr_t addr, size_t size, bool want_wr
     return true;
 }
 
-uaccess_result_t copy_to_user(process_t *proc, uintptr_t dst, const void *src, size_t size) {
+uaccess_result_t copy_to_user(process_t *proc, thread_t *current_thread, uintptr_t dst, const void *src, size_t size) {
     if (!src && size) return UACCESS_EINVAL;
     if (!size) return UACCESS_OK;
-    if (!access_ok_range(proc, dst, size, true)) return UACCESS_EFAULT;
+    if (!access_ok_range(proc, current_thread, dst, size, true)) return UACCESS_EFAULT;
 
     const uint8_t *s = (const uint8_t*)src;
 
@@ -104,7 +104,7 @@ uaccess_result_t copy_to_user(process_t *proc, uintptr_t dst, const void *src, s
         uintptr_t pa = mmu_translate((uint64_t*)proc->mm.ttbr0, dst, &st);
         if (st) {
             uint64_t esr = (0x24ULL << 26) | 0x7ULL | (1 << 6);
-            if (!mm_try_handle_page_fault(proc, dst, esr)) return UACCESS_EFAULT;
+            if (!mm_try_handle_page_fault(proc, current_thread, dst, esr)) return UACCESS_EFAULT;
 
             pa = mmu_translate((uint64_t*)proc->mm.ttbr0, dst, &st);
             if (st) return UACCESS_EFAULT;
@@ -119,7 +119,7 @@ uaccess_result_t copy_to_user(process_t *proc, uintptr_t dst, const void *src, s
     return UACCESS_OK;
 }
 
-uaccess_result_t copy_str_from_user(process_t *proc, char *dst, size_t dst_size, uintptr_t src, size_t *out_copied, bool *out_terminated) {
+uaccess_result_t copy_str_from_user(process_t *proc, thread_t *current_thread, char *dst, size_t dst_size, uintptr_t src, size_t *out_copied, bool *out_terminated) {
     if (out_copied) *out_copied = 0;
     if (out_terminated) *out_terminated = false;
     if (!dst || !dst_size) return UACCESS_EINVAL;
@@ -131,12 +131,12 @@ uaccess_result_t copy_str_from_user(process_t *proc, char *dst, size_t dst_size,
     while (pos + 1 < dst_size) {
         size_t chunk = PAGE_SIZE - ((src + pos) & (PAGE_SIZE - 1));
         if (chunk > dst_size - 1 - pos) chunk = dst_size - 1 - pos;
-        if (!access_ok_range(proc, src + pos, chunk, false)) return UACCESS_EFAULT;
+        if (!access_ok_range(proc, current_thread, src + pos, chunk, false)) return UACCESS_EFAULT;
 
         int st = 0;
         uintptr_t pa = mmu_translate((uint64_t*)proc->mm.ttbr0, src + pos, &st);
         if (st) {
-            if (!mm_try_handle_page_fault(proc, src + pos, (0x24ULL << 26) | 0x7ULL)) return UACCESS_EFAULT;
+            if (!mm_try_handle_page_fault(proc, current_thread, src + pos, (0x24ULL << 26) | 0x7ULL)) return UACCESS_EFAULT;
             pa = mmu_translate((uint64_t*)proc->mm.ttbr0, src + pos, &st);
             if (st) return UACCESS_EFAULT;
         }
@@ -156,7 +156,7 @@ uaccess_result_t copy_str_from_user(process_t *proc, char *dst, size_t dst_size,
     return UACCESS_ENAMETOOLONG;
 }
 
-uaccess_result_t copy_argv_from_user(process_t *proc, int argc, uintptr_t uargv, user_argv_t *out) {
+uaccess_result_t copy_argv_from_user(process_t *proc, thread_t *current_thread, int argc, uintptr_t uargv, user_argv_t *out) {
     if (!out) return UACCESS_EINVAL;
     if (argc < 0 || argc > UACCESS_MAX_ARGV) return UACCESS_EINVAL;
 
@@ -165,7 +165,7 @@ uaccess_result_t copy_argv_from_user(process_t *proc, int argc, uintptr_t uargv,
 
     for (int i = 0; i < argc; i++) {
         uintptr_t up = 0;
-        uaccess_result_t ur = copy_from_user(proc, &up, uargv + ((uintptr_t)i * sizeof(uintptr_t)), sizeof(up));
+        uaccess_result_t ur = copy_from_user(proc, current_thread, &up, uargv + ((uintptr_t)i * sizeof(uintptr_t)), sizeof(up));
         if (ur != UACCESS_OK) {
             free_argv_from_user(out);
             return ur;
@@ -178,7 +178,7 @@ uaccess_result_t copy_argv_from_user(process_t *proc, int argc, uintptr_t uargv,
         char tmp[256] = {};
         size_t copied = 0;
         bool term = false;
-        ur = copy_str_from_user(proc, tmp, sizeof(tmp), up, &copied, &term);
+        ur = copy_str_from_user(proc, current_thread, tmp, sizeof(tmp), up, &copied, &term);
         if (ur != UACCESS_OK) {
             free_argv_from_user(out);
             return ur;

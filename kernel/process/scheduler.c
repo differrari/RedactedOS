@@ -20,6 +20,7 @@
 #include "string/string.h"
 #include "alloc/allocate.h"
 #include "files/dir_list.h"
+#include "stack_manager.h"
 
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
@@ -30,8 +31,6 @@ static process_t *idle_proc = 0;
 process_t *process_list = 0;
 uint16_t proc_count = 0;
 uint16_t next_proc_index = 1;
-
-#define is_privileged(spsr) (spsr & 0xf)
 
 //TODO maybe use a weighted ready queue based on process priority
 CQueue ready_queue = {};
@@ -689,25 +688,18 @@ void wake_processes(){
     irq_restore(irq);
 }
 
-sizedptr new_stack(process_t *proc){
-    uptr stack_limit = is_privileged(proc->spsr) ? (uptr)palloc(proc->stack_size, MEM_PRIV_KERNEL, MEM_RW, true) : 0x00008FFFFFFFF000ULL;
-    uptr stack_top = stack_limit - proc->stack_size;
-    mm_add_vma(&proc->mm, proc->mm.stack_top, stack_limit, MEM_RW, VMA_KIND_ANON, VMA_FLAG_DEMAND);
-    print("New stack at %llx-%llx",stack_limit,stack_top);
-    return (sizedptr){.ptr = stack_top, proc->stack_size};
-}
-
 thread_t new_thread(process_t *proc, uptr entry_point){
-    sizedptr stack = new_stack(proc);
+    stack_t stack = new_stack(proc);
+    if (!stack.top || !stack.size) return (thread_t){};
     thread_t t = {
         .pc = entry_point,
         .pid = proc->id,
         .regs = {},
-        .sp = stack.ptr,
+        .sp = stack.top,
         .stack_size = stack.size,
         .spsr = proc->spsr
     };
-    t.regs[30] = is_privileged(proc->spsr) ? (uptr)kernel_thread_return_trampoline : proc->shared_page+sizeof(u32);//TODO: kernel processes don't have this
+    t.regs[30] = is_privileged(proc->spsr) ? (uptr)kernel_thread_return_trampoline : proc->shared_page+sizeof(u32);
     return t;
 }
 
