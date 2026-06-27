@@ -46,10 +46,12 @@ bool load_module_to(hash_map_t* modules, system_module *module){
         process_t *p = get_proc_by_pid(module->owner);
         if (!p) return false;
         p->fs_thread = new_thread(p, (uptr)module->init);
-        run_thread_oneshot(&p->fs_thread,p);
+        if (!run_thread_oneshot(&p->fs_thread,p)){
+            kprintf("Failed to load module %s",module->name);
+            return false;
+        } 
         //TODO: The thread returns asyncronously, we'll need to handle that
-    }
-    if (!module->init(module)){
+    } else if (!module->init(module)){
         if (strcmp(module->mount,"/console")) kprintf("[MODULE] failed to load module %s. Init failed",module->name);
         return false;
     }

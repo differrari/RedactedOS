@@ -189,6 +189,10 @@ u64 syscall_halt(process_t *ctx, thread_t *current_thread){
     return 0;
 }
 
+extern thread_t kernel_thread;
+
+extern void restore_context(uptr ptr);
+
 u64 syscall_halt_thread(process_t *ctx, thread_t *current_thread){
     kprintf("Thread has ended with code %i",current_thread->PROC_X0);
     syscall_depth--;
@@ -197,8 +201,12 @@ u64 syscall_halt_thread(process_t *ctx, thread_t *current_thread){
     else {
         current_thread->thread_state = STOPPED;
         if (ctx->pending_thread == current_thread){
-            print("Current thread was scheduled expecting result. We have it now");
             ctx->pending_thread = 0;
+            cpec = (uptr)&kernel_thread;
+            kprintf("Restoring execution to %llx",kernel_thread.regs[30]);
+            // kernel_thread.regs[30] += 16;//TODO: hardcoded skip of one function, may change
+            // syscall_depth--;
+            // restore_context(cpec);
         }
         switch_proc(YIELD);//TODO: proper cleanup
     }

@@ -60,6 +60,68 @@ mov sp, x18
 4:
 .endm
 
+.global save_kernel_state
+save_kernel_state:
+    msr daifset, #2
+    msr spsel, #1
+
+    stp x17, x18, [sp, #-16]!
+    mrs     x18, spsr_el1
+    and     x18, x18, #0xF
+    cmp     x18, #0x5
+    b.eq    1f
+    mrs     x17, sp_el0
+    b 2f
+1:
+    add x17, sp, #16
+2:
+    mov x18, x0
+    ldr x18, [x18]
+
+3:
+    
+// Save general-purpose registers x1-x30
+stp x0, x1, [x18, #(8 * 0)]
+stp x2, x3, [x18, #(8 * 2)]
+stp x4, x5, [x18, #(8 * 4)]
+stp x6, x7, [x18, #(8 * 6)]
+stp x8, x9, [x18, #(8 * 8)]
+stp x10, x11, [x18, #(8 * 10)]
+stp x12, x13, [x18, #(8 * 12)]
+stp x14, x15, [x18, #(8 * 14)]
+str x16,      [x18, #(8 * 16)]
+ldr x16, [sp, #0]
+str x16, [x18, #(8 * 17)]
+ldr x16, [sp, #8]
+str x16, [x18, #(8 * 18)]
+str      x19, [x18, #(8 * 19)]
+stp x20, x21, [x18, #(8 * 20)]
+stp x22, x23, [x18, #(8 * 22)]
+stp x24, x25, [x18, #(8 * 24)]
+stp x26, x27, [x18, #(8 * 26)]
+stp x28, x29, [x18, #(8 * 28)]
+str x30,      [x18,#(8 * 30)] 
+
+// SP
+str x17, [x18, #(8 * 31)]
+
+//Status bits
+mrs x17, spsr_el1
+str x17, [x18, #(8 * 33)]
+
+add sp, sp, #16
+
+mrs x17, spsr_el1
+lsr x17, x17, #2
+and x17, x17,#0b11
+cmp x17, #0
+b.ne 4f
+adrp x18, ksp
+add x18, x18, :lo12:ksp
+mov sp, x18
+
+    ret
+
 .section .vectors, "a", %progbits
 .align 11
 .global exception_vectors

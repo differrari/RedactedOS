@@ -58,13 +58,13 @@ typedef struct {
 typedef enum { STOPPED, READY, RUNNING, BLOCKED } process_state;
 
 typedef struct thread {
-    uint64_t regs[31]; // x0–x30
-    uintptr_t sp;
-    uintptr_t pc;
-    uint64_t spsr; 
+    u64 regs[31]; // x0–x30
+    uptr sp;
+    uptr pc;
+    u64 spsr;
     //Not used in process saving
-    uintptr_t stack;
-    uint64_t stack_size;
+    uptr stack;
+    u64 stack_size;
     u16 pid;
     process_state thread_state;
 } thread_t;
@@ -77,10 +77,10 @@ typedef struct process {
     uint64_t spsr; 
     //Not used in process saving
     uintptr_t stack;
-    paddr_t stack_phys;
     uint64_t stack_size;
     //Thread ends
     thread_t *pending_thread;
+    paddr_t stack_phys;
     uint16_t id;
     bool in_ready_queue;
     bool sleeping;

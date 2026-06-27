@@ -22,8 +22,9 @@
 #include "files/dir_list.h"
 #include "stack_manager.h"
 
-extern void save_pc_interrupt(uintptr_t ptr);
-extern void restore_context(uintptr_t ptr);
+extern void save_pc_interrupt(uptr ptr);
+extern void save_kernel_state(uptr ptr);
+extern void restore_context(uptr ptr);
 
 static process_t *current_proc = 0;
 static process_t *kernel_proc = 0;
@@ -697,8 +698,12 @@ thread_t new_thread(process_t *proc, uptr entry_point){
     return t;
 }
 
+thread_t kernel_thread = {};
+
 u64 run_thread_oneshot(thread_t *t, process_t *p){
     process_t *cproc = current_proc;
+    uptr cthread = cpec;
+    (void)cthread;
     if (p != cproc){
         if (p->mm.ttbr0) mmu_asid_ensure(&p->mm);
         mmu_swap_ttbr(p->mm.ttbr0 ? &p->mm : 0);
@@ -707,12 +712,22 @@ u64 run_thread_oneshot(thread_t *t, process_t *p){
     t->sp = t->stack-sizeof(system_module);//TODO: stack needs not be reset past args
     t->spsr = p->spsr;
     t->thread_state = RUNNING;
+    (void)cpec;
     cpec = (uptr)t;
-    kprintf("STACK %llx and shared on %llx. Running %llx, after which %llx",t->sp,p->shared_page,t->pc,t->regs[30]);
     timer_reset(p->priority);
     p->pending_thread = t;
+    kprintf("%llx",t);
+    //Save the stack
+    save_kernel_state((uptr)&kernel_thread);
     restore_context(cpec);
     panic("Somehow the thread has returned",(uptr)t);
+    cpec = cthread;
+    current_proc = cproc;
+    if (p != cproc){
+        if (cproc->mm.ttbr0) mmu_asid_ensure(&cproc->mm);
+        mmu_swap_ttbr(cproc->mm.ttbr0 ? &cproc->mm : 0);
+        mmu_ttbr0_enable_user();
+    }
     return 0;
 }
 
