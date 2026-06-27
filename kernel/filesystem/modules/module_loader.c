@@ -26,7 +26,7 @@ system_module root_module = {
 };
 
 bool load_module_to(hash_map_t* modules, system_module *module){
-    if (!module->init){
+    if (module->owner == get_kernel_proc()->id && !module->init){
         if (strcmp(module->mount,"/console")) kprintf("[MODULE] module not initialized due to missing initializer");//TODO: can we make printf silently fail so logging becomes easier?
         return false;
     }
@@ -42,14 +42,7 @@ bool load_module_to(hash_map_t* modules, system_module *module){
         return false;
     }
     if (!module->owner) module->owner = get_kernel_proc()->id;
-    if (module->owner != get_kernel_proc()->id){
-        process_t *p = get_proc_by_pid(module->owner);
-        if (!p) return false;
-        p->fs_thread = new_thread(p, (uptr)module->init);
-        run_thread_oneshot(&p->fs_thread,p);
-        //TODO: The thread returns asyncronously, we'll need to handle that
-    }
-    if (!module->init(module)){
+    if (module->owner == get_kernel_proc()->id && !module->init(module)){
         if (strcmp(module->mount,"/console")) kprintf("[MODULE] failed to load module %s. Init failed",module->name);
         return false;
     }
@@ -59,12 +52,12 @@ bool load_module_to(hash_map_t* modules, system_module *module){
 
 bool unload_module_from(hash_map_t* modules, system_module *module){
     if (!modules) return false;
-    if (!module->init) return false;
-    if (module->fini) {
-        if (module->owner != get_kernel_proc()->id){
-            kprint("Can't deinit module yet");
-        } else
-            module->fini();
+    if (module->owner == get_kernel_proc()->id){
+        if (!module->init) return false;
+        if (module->fini) {
+                kprint("Can't deinit module yet");
+            } else
+                module->fini();
     }
     hash_map_remove(modules, module->mount, strlen(module->mount), 0);
     return false;
@@ -105,6 +98,7 @@ void iterate_root(void* key, u64 keylen, void* value){
     if (count <= index) return;
     
     system_module *mod = value;
+    if (!mod || !mod->mount) return;
     if (!dir_list_fill(dir_helper, mod->mount)){
         if (list_offset) *list_offset = index;
         return;

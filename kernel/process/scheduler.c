@@ -718,6 +718,8 @@ u64 run_thread_oneshot(thread_t *t, process_t *p){
 
 bool load_process_module(process_t *p, system_module *m){
     p->exposed_fs = *m;
+    p->exposed_fs.name = string_from_literal(p->exposed_fs.name).data;
+    p->exposed_fs.mount = string_from_literal(p->exposed_fs.mount).data;
     p->exposed_fs.owner = p->id;
     return load_module(&p->exposed_fs);
 }

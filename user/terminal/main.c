@@ -278,7 +278,7 @@ void toggle_cursor(){
 bool quit = false;
 
 bool termhistory_init(system_module *mod){
-    quit = true;
+    printl("Mounting mod");
     // while (true) printl("I'm told to quit %i");
     return true;
 }
@@ -287,7 +287,7 @@ system_module termhistory_mod = {
     .name = "terminal history",
     .mount = "termhistory",
     .version = VERSION_NUM(0, 1, 0, 0),
-    .init = termhistory_init,
+    .init = 0,
     .open = stackfs_open,
     .read = stackfs_read,
     .write = stackfs_write,
@@ -300,6 +300,7 @@ int main(){
 
     screen_printer_init(dummy_draw_ctx(ctx.width, ctx.height-INPUT_HEIGHT));
 
+    stackfs_init();
     load_fsmodule(&termhistory_mod);
 
     u32 color_buf[2] = {};
