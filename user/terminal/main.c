@@ -10,6 +10,8 @@
 #include "files/helpers.h"
 #include "header_utils/screenprinter.h"
 #include "header_utils/composite.h"
+#include "files/system_module.h"
+#include "files/stack_fs.h"
 
 embedded_fmt input_format = {};
 
@@ -273,10 +275,32 @@ void toggle_cursor(){
     refresh_input();
 }
 
+bool quit = false;
+
+bool termhistory_init(system_module *mod){
+    quit = true;
+    // while (true) printl("I'm told to quit %i");
+    return true;
+}
+
+system_module termhistory_mod = {
+    .name = "terminal history",
+    .mount = "termhistory",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = termhistory_init,
+    .open = stackfs_open,
+    .read = stackfs_read,
+    .write = stackfs_write,
+    .readdir = stackfs_readdir,
+    .getstat = stackfs_stat
+};
+
 int main(){    
     request_app_ctx(&ctx);
 
     screen_printer_init(dummy_draw_ctx(ctx.width, ctx.height-INPUT_HEIGHT));
+
+    load_fsmodule(&termhistory_mod);
 
     u32 color_buf[2] = {};
     sreadf("/theme", &color_buf, sizeof(uint64_t));
@@ -300,6 +324,7 @@ int main(){
     u64 last_time = get_time();
     refresh_input();
     while (true){
+        if (quit) halt(0);
         // append("Bonjour %.3i \t",i++);
         u64 current_time = get_time();
         cursor_current += (current_time-last_time);

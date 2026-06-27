@@ -174,22 +174,15 @@ void process_restore(){
         if (!current_proc->mm.ttbr0) panic("process_restore user process without ttbr0", cpec);
         if (current_proc->pc >= HIGH_VA) panic("user pc in kernel VA", current_proc->pc);
         mmu_ttbr0_enable_user();
-    } else mmu_ttbr0_disable_user();
-    if (current_proc->signal_buffer.read_index != current_proc->signal_buffer.write_index){
-        signal_info_t *info = &current_proc->signal_buffer.entries[current_proc->signal_buffer.read_index];//TODO: Wrong, this should be copied into userland mem
-        current_proc->signal_buffer.read_index = (current_proc->signal_buffer.read_index + 1) % INPUT_BUFFER_CAPACITY;
-        if (can_signal_be_handled(info->type)){
-            thread_t *handler = &current_proc->signal_handlers[info->type];
-            if (handler->pc){
-                handler->spsr = current_proc->spsr;
-                cpec = (uptr)handler;
-                restore_context(cpec);
-            }
-            else handle_signal_default(current_proc, info);
-        } else handle_signal_default(current_proc, info);
-        switch_proc(RECV_SIGNAL);//TODO: wasteful, we might have a lot of CPU time left for this proc to use
-    } else 
-        restore_context(cpec);
+    } else mmu_ttbr0_disable_user(); 
+    if (current_proc->pending_thread){
+        if (current_proc->pending_thread->thread_state != STOPPED){
+            cpec = (uptr)current_proc->pending_thread;
+        } else {
+            current_proc->pending_thread = 0;
+        }
+    }
+    restore_context(cpec);
 }
 
 bool start_scheduler(){
@@ -697,19 +690,34 @@ thread_t new_thread(process_t *proc, uptr entry_point){
         .regs = {},
         .sp = stack.top,
         .stack_size = stack.size,
+        .stack = stack.top,
         .spsr = proc->spsr
     };
     t.regs[30] = is_privileged(proc->spsr) ? (uptr)kernel_thread_return_trampoline : proc->shared_page+sizeof(u32);
     return t;
 }
 
+u64 run_thread_oneshot(thread_t *t, process_t *p){
+    process_t *cproc = current_proc;
+    if (p != cproc){
+        if (p->mm.ttbr0) mmu_asid_ensure(&p->mm);
+        mmu_swap_ttbr(p->mm.ttbr0 ? &p->mm : 0);
+        mmu_ttbr0_enable_user();
+    }
+    t->sp = t->stack-sizeof(system_module);//TODO: stack needs not be reset past args
+    t->spsr = p->spsr;
+    t->thread_state = RUNNING;
+    cpec = (uptr)t;
+    kprintf("STACK %llx and shared on %llx. Running %llx, after which %llx",t->sp,p->shared_page,t->pc,t->regs[30]);
+    timer_reset(p->priority);
+    p->pending_thread = t;
+    restore_context(cpec);
+    panic("Somehow the thread has returned",(uptr)t);
+    return 0;
+}
+
 bool load_process_module(process_t *p, system_module *m){
     p->exposed_fs = *m;
-    p->exposed_fs.init = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.init - (uintptr_t)p->va));
-    p->exposed_fs.fini = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.fini - (uintptr_t)p->va));
-    p->exposed_fs.open = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.open - (uintptr_t)p->va));
-    p->exposed_fs.read = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.read - (uintptr_t)p->va));
-    p->exposed_fs.write = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.write - (uintptr_t)p->va));
-    p->exposed_fs.close = PHYS_TO_VIRT_P(p->code + ((uintptr_t)p->exposed_fs.close - (uintptr_t)p->va));
+    p->exposed_fs.owner = p->id;
     return load_module(&p->exposed_fs);
 }

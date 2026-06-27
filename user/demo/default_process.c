@@ -186,9 +186,8 @@ int copypaste(){
 bool should_quit = false;
 
 bool on_quit(signal_info_t *do_not_use_this){
-    printl("I'm told to quit");
     should_quit = true;
-    // while(true);
+    // while (true) printl("I'm told to quit");
     return true;
 }
 

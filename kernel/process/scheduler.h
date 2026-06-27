@@ -66,4 +66,6 @@ thread_t new_thread(process_t *proc, uptr entry_point);
 
 bool init_scheduler();
 
+u64 run_thread_oneshot(thread_t *t, process_t *p);
+
 extern char ksp[];

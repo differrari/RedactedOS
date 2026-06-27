@@ -194,8 +194,14 @@ u64 syscall_halt_thread(process_t *ctx, thread_t *current_thread){
     syscall_depth--;
     if ((uptr)current_thread == (uptr)ctx)
         stop_current_process(current_thread->PROC_X0);
-    else
+    else {
+        current_thread->thread_state = STOPPED;
+        if (ctx->pending_thread == current_thread){
+            print("Current thread was scheduled expecting result. We have it now");
+            ctx->pending_thread = 0;
+        }
         switch_proc(YIELD);//TODO: proper cleanup
+    }
     return 0;
 }
 
@@ -474,14 +480,14 @@ u64 syscall_signal_handler(process_t* ctx, thread_t *current_thread){
     return register_signal_handler(ctx, type, (signal_handler)handler);
 }
 
-// uint64_t syscall_load_fsmod(process_t *ctx){
-//     system_module *mod = (system_module*)current_thread->PROC_X0;
-//     return load_process_module(ctx,mod);
-// }
+uint64_t syscall_load_fsmod(process_t *ctx, thread_t *current_thread){
+    SYSCALL_ARG(system_module,mod,PROC_X0, false);
+    return load_process_module(ctx,mod);
+}
 
-// uint64_t syscall_unload_fsmod(process_t *ctx){
-//     return unload_module(&ctx->exposed_fs);
-// }
+uint64_t syscall_unload_fsmod(process_t *ctx, thread_t *current_thread){
+    return unload_module(&ctx->exposed_fs);
+}
 
 u64 syscall_in_case_of_js(process_t *ctx, thread_t *current_thread){
     panic("Shame on you\r\n\
@@ -535,8 +541,8 @@ syscall_entry syscalls[] = {
     [DIR_LIST_CODE] = syscall_dir_list,
     [FILE_STAT_CODE] = syscall_stat,
     [FILE_TRNC_CODE] = syscall_trunc,
-    // [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
-    // [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
+    [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
+    [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
 
     [SIGNAL_SEND_CODE] = syscall_signal_send,
     [SIGNAL_HANDLER_CODE] = syscall_signal_handler,

@@ -381,7 +381,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     uaddr_t stack_top = main_stack.top;
     uaddr_t stack_limit = stack_top - main_stack.max;
     uaddr_t stack_commit = stack_top;
-    uaddr_t mmap_top = stack_limit - PAGE_SIZE;
+    uaddr_t mmap_top = stack_min_addr - PAGE_SIZE;
     uaddr_t shared_base = mmap_top - (shared_size - PAGE_SIZE);
 
     uaddr_t mmap_bottom = (max_map + (PAGE_SIZE*4) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);

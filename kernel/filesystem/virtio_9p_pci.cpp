@@ -596,6 +596,7 @@ system_module p9_fs_module = (system_module){
     .name = "9PFS",
     .mount = "home",
     .version = VERSION_NUM(0, 1, 0, 0),
+    .owner = 0,
     .init = shared_init,
     .fini = shared_fini,
     .open = shared_open,

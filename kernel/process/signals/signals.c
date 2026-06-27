@@ -30,19 +30,10 @@ bool send_signal_proc_proc(signal_types type, i64 value, process_t *source, proc
         return true;
     }
 
-    signal_buffer_t *buffer = &destination->signal_buffer;
-
-    uint32_t next_index = (buffer->write_index + 1) % INPUT_BUFFER_CAPACITY;
-
-    buffer->entries[buffer->write_index] = (signal_info_t){
-        .sender = source->id,
-        .type = type,
-        .value = value,
-    };
-    buffer->write_index = next_index;
-
-    if (buffer->write_index == buffer->read_index)
-        buffer->read_index = (buffer->read_index + 1) % INPUT_BUFFER_CAPACITY;
+    thread_t *t = zalloc(sizeof(thread_t));
+    *t = new_thread(destination, (uptr)destination->signal_handlers[type].pc);//&destination->signal_handlers[type];
+    if (t->pc)
+        run_thread_oneshot(t, destination);
 
     switch_proc(YIELD);
     

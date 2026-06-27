@@ -80,6 +80,7 @@ typedef struct process {
     paddr_t stack_phys;
     uint64_t stack_size;
     //Thread ends
+    thread_t *pending_thread;
     uint16_t id;
     bool in_ready_queue;
     bool sleeping;
@@ -118,6 +119,7 @@ typedef struct process {
     sizedptr debug_lines;
     sizedptr debug_line_str;
     system_module exposed_fs;
+    thread_t fs_thread;
     mm_struct mm;
     int thread_count;
     environment_data environment;

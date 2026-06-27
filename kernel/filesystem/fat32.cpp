@@ -692,6 +692,7 @@ system_module boot_fs_module = (system_module){
     .name = "boot",
     .mount = "boot",
     .version = VERSION_NUM(0, 1, 0, 0),
+    .owner = 0,
     .init = boot_partition_init,
     .fini = boot_partition_fini,
     .open = boot_partition_open,

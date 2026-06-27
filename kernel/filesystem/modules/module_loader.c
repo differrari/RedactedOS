@@ -7,6 +7,7 @@
 #include "files/dir_list.h"
 #include "exceptions/exception_handler.h"
 #include "files/vfs.h"
+#include "process/scheduler.h"
 
 #define MODULE_STRICT
 
@@ -40,6 +41,14 @@ bool load_module_to(hash_map_t* modules, system_module *module){
         string_free(format);
         return false;
     }
+    if (!module->owner) module->owner = get_kernel_proc()->id;
+    if (module->owner != get_kernel_proc()->id){
+        process_t *p = get_proc_by_pid(module->owner);
+        if (!p) return false;
+        p->fs_thread = new_thread(p, (uptr)module->init);
+        run_thread_oneshot(&p->fs_thread,p);
+        //TODO: The thread returns asyncronously, we'll need to handle that
+    }
     if (!module->init(module)){
         if (strcmp(module->mount,"/console")) kprintf("[MODULE] failed to load module %s. Init failed",module->name);
         return false;
@@ -51,7 +60,12 @@ bool load_module_to(hash_map_t* modules, system_module *module){
 bool unload_module_from(hash_map_t* modules, system_module *module){
     if (!modules) return false;
     if (!module->init) return false;
-    if (module->fini) module->fini();
+    if (module->fini) {
+        if (module->owner != get_kernel_proc()->id){
+            kprint("Can't deinit module yet");
+        } else
+            module->fini();
+    }
     hash_map_remove(modules, module->mount, strlen(module->mount), 0);
     return false;
 }

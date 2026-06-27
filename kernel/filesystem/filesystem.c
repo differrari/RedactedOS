@@ -53,7 +53,13 @@ FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor
     system_module *module = get_module_from(root, &search_path);
     if (!module) return FS_RESULT_NOTFOUND;
     if (!module->open) return FS_RESULT_NOTFOUND;
-    FS_RESULT result = module->open(search_path, descriptor);
+    FS_RESULT result = FS_RESULT_DRIVER_ERROR;
+    if (module->owner != get_kernel_proc()->id){
+        kprintf("cba rn");
+        return result;
+    } else {
+        result = module->open(search_path, descriptor);
+    }
     if (result != FS_RESULT_SUCCESS) return result;
     if (!open_files) return FS_RESULT_DRIVER_ERROR;
     descriptor->cursor = 0;
@@ -111,7 +117,13 @@ size_t read_file(file *descriptor, char* buf, size_t size){
         .cursor = start_cursor,
         .data_type = descriptor->data_type
     };
-    size_t amount_read = local.mod->read(&gfd, buf, size, start_cursor);
+    size_t amount_read = 0;
+    if (local.mod->owner != get_kernel_proc()->id){
+        kprintf("cba rn");
+        return amount_read;
+    } else {
+        amount_read = local.mod->read(&gfd, buf, size, start_cursor);
+    }
     descriptor->cursor = gfd.cursor != start_cursor ? gfd.cursor : start_cursor + amount_read;
     descriptor->size = gfd.size;
     return amount_read;
@@ -136,7 +148,10 @@ void close_file(file *descriptor){
 
 void close_file_global(file *descriptor, system_module *mod){
     if (!mod || !mod->close) return;
-    mod->close(descriptor);
+    if (mod->owner != get_kernel_proc()->id)
+        kprintf("cba rn");
+    else 
+        mod->close(descriptor);
 }
 
 size_t write_file(file *descriptor, const char* buf, size_t size){
@@ -162,7 +177,13 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
         .cursor = start_cursor,
         .data_type = descriptor->data_type
     };
-    size_t amount_written = local.mod->write(&gfd, buf, size, 0);
+    size_t amount_written = 0;
+    if (local.mod->owner != get_kernel_proc()->id){
+        kprintf("cba rn");
+        return amount_written;
+    } else {
+        amount_written = local.mod->write(&gfd, buf, size, 0);
+    }
     descriptor->cursor = gfd.cursor != start_cursor ? gfd.cursor : start_cursor + amount_written;
     descriptor->size = gfd.size;
     irq = irq_save_disable();
@@ -217,7 +238,11 @@ size_t list_directory_contents(module_root *root, const char *path, void* buf, s
         return 0;
     }
     if (!mod->readdir) return 0;
-    return mod->readdir(search_path, buf, size, offset);
+    if (mod->owner != get_kernel_proc()->id){
+        kprintf("cba rn");
+        return 0;
+    } else
+        return mod->readdir(search_path, buf, size, offset);
 }
 
 bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
@@ -233,7 +258,11 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
         return false;
     }
     if (!mod->getstat) return false;
-    return mod->getstat(search_path, out_stat);
+    if (mod->owner != get_kernel_proc()->id){
+        kprintf("cba rn");
+        return false;
+    } else
+        return mod->getstat(search_path, out_stat);
 }
 
 bool truncate(file *descriptor, size_t size){
@@ -255,8 +284,11 @@ bool truncate(file *descriptor, size_t size){
         .cursor = descriptor->cursor,
         .data_type = descriptor->data_type
     };
-    
-    if (!local.mod->truncate(&gfd, size)) return false;
+
+    if (local.mod->owner != get_kernel_proc()->id){
+        kprintf("cba rn");
+        return false;
+    } else if (!local.mod->truncate(&gfd, size)) return false;
 
     descriptor->size = gfd.size;
     descriptor->cursor = gfd.cursor;
