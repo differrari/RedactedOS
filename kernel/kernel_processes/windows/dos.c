@@ -289,12 +289,14 @@ int window_system(){
             }
             drawing = false;
         }
-        // i8 scroll = get_raw_mouse_in().scroll;
-        // if (scroll){
-        //     zoom_scale += -scroll;
-        //     zoom_scale = clamp(zoom_scale, 1, 5);
-        //     dirty_windows = true;
-        // }
+        if (system_theme.use_desktop_zoom){
+            i8 scroll = get_raw_mouse_in().scroll;
+            if (scroll){
+                zoom_scale += -scroll;
+                zoom_scale = clamp(zoom_scale, 1, 5);
+                dirty_windows = true;
+            }
+        }
         disable_interrupt();
         if (dirty_windows){
             active = true;
