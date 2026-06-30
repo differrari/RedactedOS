@@ -417,7 +417,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->main_thread.pc = (uintptr_t)(entry);
     proc->main_thread.regs[30] = shared_base;
     proc->shared_page = shared_base;
-    kprintf("User process %s (%i) allocated at %llx entry=%llx stack=%llx-%llx anon=%llx (phys=%llx)", name, proc->id, proc, (uint64_t)proc->main_thread.pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);
+    kprintf("[NEW PROC:U]: %s (pid: %i, main tid: %i) allocated at %llx entry=%llx stack=%llx-%llx anon=%llx (phys=%llx)", name, proc->id, proc->main_thread.tid, proc, (uint64_t)proc->main_thread.pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);
     proc->state = BLOCKED;
 
     make_process_fs(proc,proc->bundle);

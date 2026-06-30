@@ -25,6 +25,21 @@
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
 
+void *proc_mem_page;
+
+static inline void* proc_palloc(size_t s){
+    return palloc(s, MEM_PRIV_KERNEL, MEM_RW, true);
+}
+
+static inline void* proc_alloc(size_t s){
+    if (!proc_mem_page) proc_mem_page = proc_palloc(PAGE_SIZE);
+    return allocate(proc_mem_page, s, proc_palloc);
+}
+
+thread_t* alloc_thread(){
+    return proc_alloc(sizeof(thread_t));
+}
+
 static process_t *current_proc = 0;
 static process_t *kernel_proc = 0;
 static process_t *idle_proc = 0;
@@ -119,13 +134,19 @@ void switch_proc(ProcSwitchReason reason) {
         else ready_process(prev);
     }
 
-    while (!cqueue_is_empty(&ready_queue)) {
-        process_t *queued = 0;
-        if (!cqueue_dequeue(&ready_queue, &queued)) break;
-        if (!queued) continue;
-        if (queued->state != READY || !process_can_run(queued)) continue;
-        next_proc = queued;
-        break;
+    if (prev->current_thread->next){
+        do {
+            prev->current_thread = prev->current_thread->next;
+        } while (prev->current_thread && prev->current_thread->thread_state != RUNNING && prev->current_thread->thread_state != READY);
+    } else {
+        while (!cqueue_is_empty(&ready_queue)) {
+            process_t *queued = 0;
+            if (!cqueue_dequeue(&ready_queue, &queued)) break;
+            if (!queued) continue;
+            if (queued->state != READY || !process_can_run(queued)) continue;
+            next_proc = queued;
+            break;
+        }
     }
 
     if (!next_proc && current_proc && current_proc != idle_proc && current_proc->state == RUNNING && process_can_run(current_proc)) next_proc = current_proc;
@@ -133,9 +154,10 @@ void switch_proc(ProcSwitchReason reason) {
     if (!next_proc || !process_can_run(next_proc)) panic("no runnable process", 0);
     //if (next_proc == idle_proc && prev != idle_proc) kprint("entering idle");
 
+    if (!next_proc->current_thread) next_proc->current_thread = &next_proc->main_thread;
     next_proc->state = RUNNING;
     current_proc = next_proc;
-    cpec = (uptr)&current_proc->main_thread;
+    cpec = (uptr)next_proc->current_thread;
     if (current_proc == idle_proc) timer_disable();
     else {
         timer_enable();
@@ -173,14 +195,6 @@ void process_restore(){
         if (current_proc->main_thread.pc >= HIGH_VA) panic("user pc in kernel VA", current_proc->main_thread.pc);
         mmu_ttbr0_enable_user();
     } else mmu_ttbr0_disable_user(); 
-    if (current_proc->pending_thread){
-        if (current_proc->pending_thread->thread_state != STOPPED){
-            current_proc->pending_thread->spsr = current_proc->main_thread.spsr;
-            cpec = (uptr)current_proc->pending_thread;
-        } else {
-            current_proc->pending_thread = 0;
-        }
-    }
     restore_context(cpec);
 }
 
@@ -676,39 +690,50 @@ void wake_processes(){
     irq_restore(irq);
 }
 
-thread_t new_thread(process_t *proc, uptr entry_point){
+void unschedule_thread(process_t *proc, thread_t *t){
+    if (!proc || !t || proc->id != t->pid) return;
+    thread_t *prev = &proc->main_thread;
+    thread_t *current = prev->next;
+    if (proc->current_thread == t) proc->current_thread = prev;
+    while (current) {
+        if (t == current){
+            prev->next = current->next;
+            return;
+        }
+        prev = current;
+        current = current->next;
+    }
+}
+
+void schedule_thread(process_t *proc, thread_t *t){
+    if (!proc || !t || proc->id != t->pid) return;
+    thread_t *current = &proc->main_thread;
+    while (current){
+        if (!current->next){
+            current->next = t;
+            kprintf("[SCHEDULER] scheduled thread %i for %i. pc %llx",t->tid,t->pid,t->pc);
+            t->thread_state = RUNNING;
+            return;
+        }
+        current = current->next;
+    }
+}
+
+thread_t* new_thread(process_t *proc, thread_t *addr, u64 spsr, uptr entry_point){
     stack_t stack = new_stack(proc);
-    if (!stack.top || !stack.size) return (thread_t){};
-    thread_t t = {
+    if (!proc || !stack.top || !stack.size || !addr) return 0;
+    *addr = (thread_t){
         .pc = entry_point,
         .pid = proc->id,
         .regs = {},
         .sp = stack.top,
         .stack_size = stack.size,
         .stack = stack.top,
-        .spsr = proc->main_thread.spsr
+        .spsr = spsr,
+        // .state = BLOCKED,
     };
-    t.regs[30] = is_privileged(proc) ? (uptr)kernel_thread_return_trampoline : proc->shared_page+sizeof(u32);
-    return t;
-}
-
-u64 run_thread_oneshot(thread_t *t, process_t *p){
-    process_t *cproc = current_proc;
-    if (p != cproc){
-        if (p->mm.ttbr0) mmu_asid_ensure(&p->mm);
-        mmu_swap_ttbr(p->mm.ttbr0 ? &p->mm : 0);
-        mmu_ttbr0_enable_user();
-    }
-    t->sp = t->stack-sizeof(system_module);//TODO: stack needs not be reset past args
-    t->spsr = p->main_thread.spsr;
-    t->thread_state = RUNNING;
-    cpec = (uptr)t;
-    kprintf("STACK %llx and shared on %llx. Running %llx, after which %llx",t->sp,p->shared_page,t->pc,t->regs[30]);
-    timer_reset(p->priority);
-    p->pending_thread = t;
-    restore_context(cpec);
-    panic("Somehow the thread has returned",(uptr)t);
-    return 0;
+    addr->regs[30] = is_privileged(proc) ? (uptr)kernel_thread_return_trampoline : proc->shared_page+sizeof(u32);
+    return addr;
 }
 
 bool load_process_module(process_t *p, system_module *m){

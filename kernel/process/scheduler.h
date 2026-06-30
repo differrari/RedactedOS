@@ -62,7 +62,10 @@ bool get_current_privilege();
 uint16_t process_count();
 process_t *get_all_processes();
 
-thread_t new_thread(process_t *proc, uptr entry_point);
+thread_t* alloc_thread();
+thread_t* new_thread(process_t *proc, thread_t *addr, u64 spsr, uptr entry_point);
+void unschedule_thread(process_t *proc, thread_t *t);
+void schedule_thread(process_t *proc, thread_t *t);
 
 bool init_scheduler();
 

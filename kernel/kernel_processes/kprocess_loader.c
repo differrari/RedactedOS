@@ -119,7 +119,7 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
     make_process_fs(proc, 0);
 
     ready_process(proc);
-    kprintf("Kernel process %s (%i) allocated with address at %llx, stack at %llx-%llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->main_thread.pc, proc->main_thread.sp - proc->main_thread.stack_size, proc->main_thread.sp, (uaddr_t)dmap_pa_to_kva(proc->heap_phys), argc);
+    kprintf("[NEW PROC:K] process %s (pid: %i main tid: %i) allocated with address at %llx, stack at %llx-%llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->main_thread.tid, proc->main_thread.pc, proc->main_thread.sp - proc->main_thread.stack_size, proc->main_thread.sp, (uaddr_t)dmap_pa_to_kva(proc->heap_phys), argc);
     irq_restore(irq);
     
     return proc;

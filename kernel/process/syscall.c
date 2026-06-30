@@ -192,14 +192,11 @@ u64 syscall_halt(process_t *ctx, thread_t *current_thread){
 u64 syscall_halt_thread(process_t *ctx, thread_t *current_thread){
     kprintf("Thread has ended with code %i",current_thread->PROC_X0);
     syscall_depth--;
-    if ((uptr)current_thread == (uptr)ctx)
+    if (current_thread == &ctx->main_thread)
         stop_current_process(current_thread->PROC_X0);
     else {
         current_thread->thread_state = STOPPED;
-        if (ctx->pending_thread == current_thread){
-            print("Current thread was scheduled expecting result. We have it now");
-            ctx->pending_thread = 0;
-        }
+        unschedule_thread(ctx, current_thread);
         switch_proc(YIELD);//TODO: proper cleanup
     }
     return 0;

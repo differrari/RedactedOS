@@ -14,7 +14,7 @@ bool register_signal_handler(process_t *proc, signal_types type, signal_handler 
         return false;  
     } 
     kprint("Signal handler added");
-    proc->signal_handlers[type] = new_thread(proc, (uptr)handler);
+    new_thread(proc, &proc->signal_handlers[type], proc->main_thread.spsr, (uptr)handler);
     return true;
 }
 
@@ -30,10 +30,9 @@ bool send_signal_proc_proc(signal_types type, i64 value, process_t *source, proc
         return true;
     }
 
-    thread_t *t = zalloc(sizeof(thread_t));
-    *t = new_thread(destination, (uptr)destination->signal_handlers[type].pc);//&destination->signal_handlers[type];
+    thread_t *t = &destination->signal_handlers[type];
     if (t->pc)
-        run_thread_oneshot(t, destination);
+        schedule_thread(destination,t);
 
     switch_proc(YIELD);
     

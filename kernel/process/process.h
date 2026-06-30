@@ -62,21 +62,20 @@ typedef struct thread {
     uintptr_t sp;
     uintptr_t pc;
     uint64_t spsr; 
-    //Not used in process saving
+    //Not used in context saving
     uintptr_t stack;
     uint64_t stack_size;
     u16 pid;
+    u16 tid;
     process_state thread_state;
     struct thread *next;
 } thread_t;
 
 typedef struct process {
-    //We use the addresses of these variables to save and restore process state
     thread_t main_thread;
-    //Thread ends
-    thread_t *pending_thread;
     uint16_t id;
     bool sleeping;
+    thread_t *current_thread;//NOTE: temporary
     bool suspended;
     uint64_t wake_at_msec;
     paddr_t heap_phys;
