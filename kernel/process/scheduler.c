@@ -694,9 +694,13 @@ void unschedule_thread(process_t *proc, thread_t *t){
     if (!proc || !t || proc->id != t->pid) return;
     thread_t *prev = &proc->main_thread;
     thread_t *current = prev->next;
-    if (proc->current_thread == t) proc->current_thread = prev;
+    if (proc->current_thread == t){
+        proc->thread_count--;
+        proc->current_thread = prev;
+    }
     while (current) {
         if (t == current){
+            proc->thread_count--;
             prev->next = current->next;
             return;
         }
@@ -711,6 +715,7 @@ void schedule_thread(process_t *proc, thread_t *t){
     while (current){
         if (!current->next){
             current->next = t;
+            proc->thread_count++;
             kprintf("[SCHEDULER] scheduled thread %i for %i. pc %llx",t->tid,t->pid,t->pc);
             t->thread_state = RUNNING;
             return;
@@ -730,6 +735,7 @@ thread_t* new_thread(process_t *proc, thread_t *addr, u64 spsr, uptr entry_point
         .stack_size = stack.size,
         .stack = stack.top,
         .spsr = spsr,
+        .tid = ++proc->thread_ids
         // .state = BLOCKED,
     };
     addr->regs[30] = is_privileged(proc) ? (uptr)kernel_thread_return_trampoline : proc->shared_page+sizeof(u32);

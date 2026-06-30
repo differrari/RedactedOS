@@ -57,6 +57,12 @@ typedef struct {
 
 typedef enum { STOPPED, READY, RUNNING, BLOCKED } process_state;
 
+typedef struct {
+    uptr top;
+    size_t max;
+    size_t size;
+} stack_t;
+
 typedef struct thread {
     uint64_t regs[31]; // x0–x30
     uintptr_t sp;
@@ -114,6 +120,7 @@ typedef struct process {
     thread_t fs_thread;
     mm_struct mm;
     int thread_count;
+    int thread_ids;
     environment_data environment;
     uptr shared_page;
     struct process *process_next;
