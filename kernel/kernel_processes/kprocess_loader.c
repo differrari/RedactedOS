@@ -38,38 +38,17 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
 
     name_process(proc, name);
 
-    uint64_t stack_size = 0x10000;
-
-    uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_KERNEL, MEM_RW, true);
-    if (!stack) {
-        reset_process(proc);
-        irq_restore(irq);
-        return 0;
-    }
-    register_allocation(proc->alloc_map, (void*)stack, stack_size);
-
     uintptr_t heap = (uintptr_t)palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
     if (!heap) {
-        free_registered(proc->alloc_map, (void*)stack);
         reset_process(proc);
         irq_restore(irq);
         return 0;
     }
     register_allocation(proc->alloc_map, (void*)dmap_pa_to_kva(heap), PAGE_SIZE);
 
-    proc->main_thread.stack = (stack + stack_size);
-    proc->main_thread.stack_size = stack_size;
-
     proc->heap_phys = heap;
-
-    proc->main_thread.sp = proc->main_thread.stack;
     
-    proc->main_thread.pc = ((uintptr_t)func);
-    proc->main_thread.regs[30] = ((uintptr_t)kernel_process_return_trampoline);
-    proc->main_thread.spsr = 0x205;
-
-    proc->main_thread.PROC_X0 = 0;
-    proc->main_thread.PROC_X1 = 0;
+    new_thread(proc, &proc->main_thread, 0x205, (uptr)func);
 
     if (argc > 0 && argv) {
 
@@ -84,7 +63,7 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
         uint64_t need = argvs + str_total;
         need = (need + 0xF) & ~0xFULL;
 
-        if (need + 0x20 < stack_size) {
+        if (need + 0x20 < proc->main_thread.stack_info.size) {
 
             uintptr_t top = proc->main_thread.stack;
             uintptr_t base = (top - need) & ~0xFULL;

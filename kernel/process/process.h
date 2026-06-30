@@ -71,6 +71,7 @@ typedef struct thread {
     //Not used in context saving
     uintptr_t stack;
     uint64_t stack_size;
+    stack_t stack_info;
     u16 pid;
     u16 tid;
     process_state thread_state;
@@ -100,6 +101,7 @@ typedef struct process {
     page_index *alloc_map;
     draw_ctx graphics_ctx;
     process_state state;
+    u64 spsr; 
     __attribute__((aligned(16))) input_buffer_t input_buffer;
     __attribute__((aligned(16))) event_buffer_t event_buffer;
     __attribute__((aligned(16))) packet_buffer_t packet_buffer;
@@ -127,7 +129,7 @@ typedef struct process {
 } process_t;
 
 static inline bool is_privileged(process_t *proc){
-    return proc->main_thread.spsr & 0xf;
+    return proc->spsr & 0xf;
 } 
 
 //Helper functions for accessing registers mapped to scratch regs

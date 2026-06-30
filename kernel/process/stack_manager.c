@@ -14,7 +14,12 @@ uptr next_stack_addr(process_t *proc){
 }
 
 stack_t new_stack(process_t *proc){
-    uptr stack_top = is_privileged(proc) ? (uptr)palloc(stack_max, MEM_PRIV_KERNEL, MEM_RW, true) : next_stack_addr(proc);
+    uptr stack_top = 0;
+    if (is_privileged(proc)) {
+        void *st = palloc(stack_max, MEM_PRIV_KERNEL, MEM_RW, true);
+        stack_top = (uptr)st;
+        register_allocation(proc->alloc_map, st, stack_max);
+    } else stack_top = next_stack_addr(proc);
     if (!stack_top) return (stack_t){};
     uptr stack_limit = stack_top - stack_max;
     print("New stack at %llx-%llx",stack_limit,stack_top);

@@ -368,19 +368,13 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->code = dest;
     proc->code_size = code_size;
 
-    proc->main_thread.spsr = 0;
-
     uint64_t shared_pages = 1;
     size_t shared_size = shared_pages * PAGE_SIZE;
 
-    stack_t main_stack = new_stack(proc);
-    if (!main_stack.top || !main_stack.size){
-        reset_process(proc);
-        return 0;
-    }
+    new_thread(proc, &proc->main_thread, 0, entry);
     
-    uaddr_t stack_top = main_stack.top;
-    uaddr_t stack_limit = stack_top - main_stack.max;
+    uaddr_t stack_top = proc->main_thread.stack_info.top;
+    uaddr_t stack_limit = stack_top - proc->main_thread.stack_info.max;
     uaddr_t stack_commit = stack_top;
     uaddr_t mmap_top = stack_min_addr - PAGE_SIZE;
     uaddr_t shared_base = mmap_top - (shared_size - PAGE_SIZE);
@@ -408,15 +402,10 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
 
     for (uint64_t i = 0; i < shared_pages; i++) mmu_map_4kb((uint64_t*)ttbr, (uint64_t)(shared_base + (i * PAGE_SIZE)), (paddr_t)(shared_page + (i * PAGE_SIZE)), MAIR_IDX_NORMAL, MEM_EXEC | MEM_NORM, MEM_PRIV_SHARED);
     mm_add_vma(&proc->mm, shared_base, shared_base + shared_size, MEM_EXEC | MEM_NORM, VMA_KIND_SPECIAL, VMA_FLAG_NOFREE);
-
-    proc->main_thread.stack = stack_top;
-    proc->main_thread.stack_size = main_stack.size;
+    
     proc->mm.rss_stack_pages = 0;
 
-    proc->main_thread.sp = proc->main_thread.stack;
-
-    proc->main_thread.pc = (uintptr_t)(entry);
-    proc->main_thread.regs[30] = shared_base;
+    
     proc->shared_page = shared_base;
     kprintf("[NEW PROC:U]: %s (pid: %i, main tid: %i) allocated at %llx entry=%llx stack=%llx-%llx anon=%llx (phys=%llx)", name, proc->id, proc->main_thread.tid, proc, (uint64_t)proc->main_thread.pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);
     proc->state = BLOCKED;

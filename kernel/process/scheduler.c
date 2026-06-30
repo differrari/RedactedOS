@@ -245,6 +245,8 @@ void ready_process(process_t *proc){
         return;
     }
 
+    proc->spsr = proc->main_thread.spsr;//TODO: remove
+    
     enqueue_ready_process(proc);
     irq_restore(irq);
 }
@@ -275,6 +277,8 @@ void reset_process(process_t *proc){
     proc->pending_reset = false;
     proc->sleeping = false;
     proc->wake_at_msec = 0;
+    proc->thread_count = 0;//TODO: clean up all threads
+    proc->thread_ids = 0;
 
     remove_sleeping_process(proc, pid);
 
@@ -470,19 +474,15 @@ void init_main_process(){
     kernel_proc->id = next_proc_index++;
     kernel_proc->alloc_map = make_page_index();
     kernel_proc->state = BLOCKED;
-    kernel_proc->main_thread.spsr = 0x205;
-    kernel_proc->main_thread.sp = (uintptr_t)ksp;
+
+    new_thread(kernel_proc, &kernel_proc->main_thread, 0x205, 0);
+    
     kernel_proc->priority = PROC_PRIORITY_LOW;
     name_process(kernel_proc, "kernel");
     idle_proc->state = BLOCKED;
     idle_proc->priority = PROC_PRIORITY_LOW;
-    idle_proc->main_thread.stack_size = 0x4000;
-    uintptr_t idle_stack = (uintptr_t)palloc(idle_proc->main_thread.stack_size,MEM_PRIV_KERNEL, MEM_RW,true);
-    if (!idle_stack) panic("idle stack alloc failed", 0);
-    idle_proc->main_thread.stack = idle_stack + idle_proc->main_thread.stack_size;
-    idle_proc->main_thread.sp = idle_proc->main_thread.stack;
-    idle_proc->main_thread.pc = (uintptr_t)idle_entry;
-    idle_proc->main_thread.spsr = 0x205;
+
+    new_thread(idle_proc, &idle_proc->main_thread, 0x205, (uptr)idle_entry);
     name_process(idle_proc, "idle");
 
     proc_count++;
@@ -718,6 +718,8 @@ void schedule_thread(process_t *proc, thread_t *t){
 }
 
 thread_t* new_thread(process_t *proc, thread_t *addr, u64 spsr, uptr entry_point){
+    if (addr != &proc->main_thread) spsr = proc->spsr;
+    else proc->spsr = spsr;
     stack_t stack = new_stack(proc);
     if (!proc || !stack.top || !stack.size || !addr) return 0;
     *addr = (thread_t){
@@ -727,6 +729,7 @@ thread_t* new_thread(process_t *proc, thread_t *addr, u64 spsr, uptr entry_point
         .sp = stack.top,
         .stack_size = stack.size,
         .stack = stack.top,
+        .stack_info = stack,
         .spsr = spsr,
         .tid = ++proc->thread_ids
         // .state = BLOCKED,
