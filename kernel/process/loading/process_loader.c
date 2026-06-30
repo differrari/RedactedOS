@@ -316,6 +316,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
         return 0;
     }
     if (!shared_page) {
+        //TODO: can we make the page auto-generated with the codes for svcs?
         shared_page = palloc_inner(PAGE_SIZE, MEM_PRIV_SHARED, MEM_EXEC, true, false);
         *(u32*)(uptr)dmap_pa_to_kva(shared_page) = aarch64_svc(HALT_CODE);
         *(u32*)(uptr)dmap_pa_to_kva(shared_page+sizeof(u32)) = aarch64_svc(HALT_THREAD_CODE);
