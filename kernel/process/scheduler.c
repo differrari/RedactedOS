@@ -72,7 +72,7 @@ bool process_is_known(process_t *proc){
 }
 
 bool process_has_runtime_state(process_t *proc){
-    return proc && (proc->main_thread.sp || proc->main_thread.pc || proc->main_thread.spsr || proc->main_thread.stack || proc->heap_phys || proc->mm.ttbr0 || proc->output || proc->alloc_map || proc->bundle || proc->code || proc->code_size || proc->va);
+    return proc && (proc->main_thread.sp || proc->main_thread.pc || proc->main_thread.spsr || proc->main_thread.stack_info.size || proc->heap_phys || proc->mm.ttbr0 || proc->output || proc->alloc_map || proc->bundle || proc->code || proc->code_size || proc->va);
 }
 
 bool process_can_run(process_t *proc){
@@ -271,7 +271,7 @@ void reset_process(process_t *proc){
 
     uint16_t pid = proc->id;
     int32_t exit_code = proc->exit_code;
-    bool counted = proc->main_thread.sp || proc->main_thread.pc || proc->main_thread.spsr || proc->main_thread.stack || proc->heap_phys || proc->mm.ttbr0;
+    bool counted = proc->main_thread.sp || proc->main_thread.pc || proc->main_thread.spsr || proc->main_thread.stack_info.size || proc->heap_phys || proc->mm.ttbr0;
 
     irq_flags_t irq = irq_save_disable();
     proc->pending_reset = false;
@@ -435,8 +435,7 @@ void reset_process(process_t *proc){
 
     memset(proc->name, 0, sizeof(proc->name));
 
-    proc->main_thread.stack = 0;
-    proc->main_thread.stack_size = 0;
+    proc->main_thread.stack_info = (stack_t){};
 
     proc->heap_phys = 0;
     memset(&proc->mm, 0, sizeof(proc->mm));
@@ -727,8 +726,6 @@ thread_t* new_thread(process_t *proc, thread_t *addr, u64 spsr, uptr entry_point
         .pid = proc->id,
         .regs = {},
         .sp = stack.top,
-        .stack_size = stack.size,
-        .stack = stack.top,
         .stack_info = stack,
         .spsr = spsr,
         .tid = ++proc->thread_ids

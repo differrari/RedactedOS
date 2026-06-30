@@ -129,12 +129,12 @@ bool setup_process_args(process_t *proc, int argc, const char *argv[]) {
 
     proc->main_thread.PROC_X0 = argc;
     proc->main_thread.PROC_X1 = 0;
-    proc->main_thread.sp = proc->main_thread.stack;
+    proc->main_thread.sp = proc->main_thread.stack_info.top;
 
     if (argc == 0) return true;
     if (!argv) return false;
 
-    size_t stack_size = proc->mm.ttbr0 ? (size_t)(proc->mm.stack_top - proc->mm.stack_limit) : proc->main_thread.stack_size;
+    size_t stack_size = proc->mm.ttbr0 ? (size_t)(proc->mm.stack_top - proc->mm.stack_limit) : proc->main_thread.stack_info.size;
     if (!stack_size) return false;
 
     size_t total_str = 0;
@@ -150,7 +150,7 @@ bool setup_process_args(process_t *proc, int argc, const char *argv[]) {
     if (argv_size > stack_size) return false;
     if (total_str > stack_size - argv_size) return false;
 
-    uintptr_t str_base = proc->main_thread.stack - total_str;
+    uintptr_t str_base = proc->main_thread.stack_info.top - total_str;
     if (argc > UACCESS_MAX_ARGV) return false;
     uintptr_t arg_ptrs[UACCESS_MAX_ARGV + 1] = {};
     uintptr_t sp = str_base & ~0xFULL;
@@ -173,7 +173,7 @@ bool setup_process_args(process_t *proc, int argc, const char *argv[]) {
         return true;
     }
 
-    paddr_t str_phys = proc->main_thread.stack - total_str;
+    paddr_t str_phys = proc->main_thread.stack_info.top - total_str;
     size_t off = 0;
     for (int i = 0; i < argc; i++) {
         size_t len = strlen(argv[i]);

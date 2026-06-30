@@ -69,8 +69,6 @@ typedef struct thread {
     uintptr_t pc;
     uint64_t spsr; 
     //Not used in context saving
-    uintptr_t stack;
-    uint64_t stack_size;
     stack_t stack_info;
     u16 pid;
     u16 tid;
@@ -106,7 +104,6 @@ typedef struct process {
     __attribute__((aligned(16))) event_buffer_t event_buffer;
     __attribute__((aligned(16))) packet_buffer_t packet_buffer;
     __attribute__((aligned(16))) scroll_buffer_t scroll_buffer;
-    __attribute__((aligned(16))) signal_buffer_t signal_buffer;
     __attribute__((aligned(16))) thread_t signal_handlers[NUMBER_SIGNALS];
     uint8_t priority;
     system_permissions permissions;
