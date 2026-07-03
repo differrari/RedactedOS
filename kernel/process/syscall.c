@@ -34,6 +34,7 @@
 #include "filesystem/modules/fs_isolation.h"
 #include "files/dir_list.h"
 #include "theme/theme.h"
+#include "jobs/job_manager.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -192,6 +193,9 @@ u64 syscall_halt(process_t *ctx, thread_t *current_thread){
 u64 syscall_halt_thread(process_t *ctx, thread_t *current_thread){
     kprintf("Thread has ended with code %i",current_thread->PROC_X0);
     syscall_depth--;
+    if (current_thread->job_id){
+        fulfill_job(current_thread->job_id, current_thread);
+    }
     if (current_thread == &ctx->main_thread)
         stop_current_process(current_thread->PROC_X0);
     else {

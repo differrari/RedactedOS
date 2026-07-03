@@ -12,6 +12,7 @@ extern "C" {
 #include "graphic_types.h"
 #include "signals/signals.h"
 #include "environment/environment.h"
+#include "files/jobs.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
@@ -74,6 +75,7 @@ typedef struct thread {
     u16 tid;
     process_state thread_state;
     struct thread *next;
+    job_id_t job_id;
 } thread_t;
 
 typedef struct process {

@@ -260,6 +260,16 @@ process_t* get_proc_by_pid(uint16_t pid){
     return NULL;
 }
 
+thread_t* get_thread_from_proc(process_t *proc, u16 tid){
+    if (proc->current_thread->tid == tid) return proc->current_thread;
+    thread_t *t = &proc->main_thread;
+    do {
+        if (t->tid == tid) return t;
+        t = t->next;
+    } while (t);
+    return 0;
+}
+
 uint16_t get_current_proc_pid(){
     return current_proc ? current_proc->id : 0;
 }

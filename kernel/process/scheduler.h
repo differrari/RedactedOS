@@ -67,8 +67,8 @@ thread_t* new_thread(process_t *proc, thread_t *addr, u64 spsr, uptr entry_point
 void unschedule_thread(process_t *proc, thread_t *t);
 void schedule_thread(process_t *proc, thread_t *t);
 
-bool init_scheduler();
+thread_t* get_thread_from_proc(process_t *proc, u16 tid);
 
-u64 run_thread_oneshot(thread_t *t, process_t *p);
+bool init_scheduler();
 
 extern char ksp[];

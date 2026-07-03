@@ -6,6 +6,7 @@
 #include "process/scheduler.h"
 #include "pipe.h"
 #include "files/dir_list.h"
+#include "process/jobs/job_manager.h"
 
 uint64_t fd_id = 256;//First byte reserved
 
@@ -259,10 +260,23 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
     }
     if (!mod->getstat) return false;
     if (mod->owner != get_kernel_proc()->id){
-        kprintf("cba rn");
-        return false;
-    } else
-        return mod->getstat(search_path, out_stat);
+        if (get_current_proc()->id == mod->owner){
+            //TODO: We can probably optimize this more, but right now it blocks the entire process so we can't allow this case
+            return false;
+        }
+        process_t *owner_proc = get_proc_by_pid(mod->owner);
+        if (!is_privileged(owner_proc)){
+            create_new_job((job_application_t){
+                .requesting_pid = get_current_proc()->id,
+                .requesting_tid = get_current_proc()->current_thread->tid,
+                .worker_pid = owner_proc->id,
+                .type = job_stat
+            });
+            
+            return false;
+        }
+    }
+    return mod->getstat(search_path, out_stat);
 }
 
 bool truncate(file *descriptor, size_t size){

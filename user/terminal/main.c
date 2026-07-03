@@ -283,6 +283,11 @@ bool termhistory_init(system_module *mod){
     return true;
 }
 
+bool custom_stat(const char *path, fs_stat *out_stat){
+    print("Hello");
+    return true;
+}
+
 system_module termhistory_mod = {
     .name = "terminal history",
     .mount = "termhistory",
@@ -292,7 +297,7 @@ system_module termhistory_mod = {
     .read = stackfs_read,
     .write = stackfs_write,
     .readdir = stackfs_readdir,
-    .getstat = stackfs_stat
+    .getstat = custom_stat
 };
 
 int main(){    
