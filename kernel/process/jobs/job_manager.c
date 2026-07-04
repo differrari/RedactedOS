@@ -12,6 +12,8 @@ typedef struct {
     thread_t *requester;
     thread_t *worker;
     job_id_t id;
+    job_buffer buffers[8];
+    size_t buffer_count;
 } job_state_t;
 
 linked_list_t *job_list;
@@ -31,17 +33,18 @@ job_state_t* job_alloc(){
     return job;
 }
 
-bool prepare_thread(job_application_t application, process_t *proc, thread_t *t){
+bool prepare_thread(job_state_t *job, job_application_t application, process_t *proc, thread_t *t){
     uptr entry = 0;
     switch (application.type){
         case job_stat: entry = (uptr)proc->exposed_fs.getstat; break;
+        case job_readdir: entry = (uptr)proc->exposed_fs.readdir; break;
         default: return false;
     }
     if (!entry) return false;
-    new_thread(proc, t, proc->spsr, (uptr)proc->exposed_fs.getstat);
+    new_thread(proc, t, proc->spsr, entry);
     size_t total_size = 0;
     for (size_t i = 0; i < application.buffer_count; i++)
-        total_size += application.buffers[i].ptr.size;
+        total_size += application.buffers[i].worker_ptr.size;
     size_t num_pages = count_pages(total_size, PAGE_SIZE);
     uptr buffers = mm_alloc_mmap(&proc->mm, total_size, MEM_RW, VMA_KIND_SPECIAL, 0);
     uptr pbuffers = (uptr)palloc_inner(total_size, MEM_PRIV_SHARED, MEM_RW, true, false);
@@ -49,18 +52,21 @@ bool prepare_thread(job_application_t application, process_t *proc, thread_t *t)
         mmu_map_4kb(proc->mm.ttbr0, buffers + (i * PAGE_SIZE), pbuffers + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
         register_proc_memory(PHYS_TO_VIRT(pbuffers + (i * PAGE_SIZE)), pbuffers + (i * PAGE_SIZE), MEM_RW, MEM_PRIV_KERNEL);
     }
-    print("Our buffers will go to %llx - %llx",buffers,pbuffers);
+    print("[JOB debug] buffers will go to %llx - %llx",buffers,pbuffers);
     uptr next_addr_pa = PHYS_TO_VIRT(pbuffers);
     uptr next_addr_va = buffers;
     
     for (size_t i = 0; i < application.buffer_count; i++){
         job_buffer buf = application.buffers[i];
-        memcpy((void*)next_addr_pa, (void*)buf.ptr.ptr, buf.ptr.size);
+        job->buffers[job->buffer_count++] = buf;
+        if (buf.sync == copy_on_start)
+            memcpy((void*)next_addr_pa, (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
         t->regs[buf.arg_num] = next_addr_va;
+        job->buffers[i].worker_ptr.ptr = next_addr_va;
         if (buf.explicit_size)
-            t->regs[buf.arg_num+1] = buf.ptr.size;
-        next_addr_pa += buf.ptr.size;
-        next_addr_va += buf.ptr.size;
+            t->regs[buf.arg_num+1] = buf.worker_ptr.size;
+        next_addr_pa += buf.worker_ptr.size;
+        next_addr_va += buf.worker_ptr.size;
     }
     return true;
 }
@@ -74,12 +80,13 @@ job_id_t create_new_job(job_application_t application){
     thread_t *requester = (thread_t*)get_thread_from_proc(requesting_proc, application.requesting_tid);
     job->requester = requester;
     process_t *fs_owner = get_proc_by_pid(application.worker_pid);
-    print("[JOB DEBUG] Sync between %i - %i will happen with job %i",requester->pid,application.worker_pid,job->id);
+    print("[JOB debug] Sync between %i - %i will happen with job %i - %i",requester->pid,application.worker_pid,job->id,application.type);
     thread_t *new_t = alloc_thread();
-    if (!prepare_thread(application, fs_owner, new_t)) return false;
+    if (!prepare_thread(job, application, fs_owner, new_t)) return false;
     new_t->job_id = job->id;
     job->worker = new_t;
     requester->thread_state = BLOCKED;
+    requesting_proc->state = BLOCKED;
     schedule_thread(fs_owner, new_t);
     return job->id;
 }
@@ -92,7 +99,7 @@ job_state_t* get_job_state(job_id_t job_id){
     return 0;
 }
 
-void fulfill_job(job_id_t job_id, thread_t *thread){
+void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     job_state_t *st = get_job_state(job_id);
     if (!st) {
         print("[JOB error] Could not find id %i",job_id);
@@ -102,6 +109,26 @@ void fulfill_job(job_id_t job_id, thread_t *thread){
         print("[JOB error] termination request by wrong thread %i",thread->tid);
         return;
     }
-    st->requester->thread_state = READY;//TODO: schedule once the scheduler is fully thread-based
+    st->requester->thread_state = RUNNING;//TODO: schedule once the scheduler is fully thread-based
+    process_t *proc = get_proc_by_pid(st->requester->pid);
+    proc->state = RUNNING;//TODO: this shouldn't be necessary
+    ready_process(proc);
+    st->requester->PROC_X0 = ret;
+    for (size_t i = 0; i < st->buffer_count; i++){
+        job_buffer buf = st->buffers[i];
+        if (buf.sync == copy_on_end){
+            print("[JOB debug] Copy buffer %x into %x",buf.worker_ptr.ptr,buf.orig_ptr.ptr);
+            int status = 0;
+            uptr addr = mmu_translate(proc->mm.ttbr0, buf.orig_ptr.ptr, &status);
+            if (status){
+                uint64_t esr = (0x24ULL << 26) | 0x7ULL;
+                if (!mm_try_handle_page_fault(proc, st->requester, buf.orig_ptr.ptr, esr)) return;
+    
+                addr = mmu_translate((uint64_t*)proc->mm.ttbr0, buf.orig_ptr.ptr, &status);
+                if (st) return;
+            }
+            memcpy((void*)PHYS_TO_VIRT(addr), (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
+        }
+    }
     print("[JOB] %i fulfilled",job_id);
 }

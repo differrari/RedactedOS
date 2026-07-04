@@ -289,6 +289,13 @@ bool custom_stat(const char *path, fs_stat *out_stat){
     return true;
 }
 
+size_t custom_readdir(const char *path, void *buf, size_t size, file_offset *offset){
+    print("READDIR %s info %x (%i) (%x)",path,buf,size,offset);
+    fs_dir_list_helper helper = create_dir_list_helper(buf, size);
+    dir_list_fill(&helper, "test");
+    return dir_buf_size(&helper);
+}
+
 system_module termhistory_mod = {
     .name = "terminal history",
     .mount = "termhistory",
@@ -297,7 +304,7 @@ system_module termhistory_mod = {
     .open = stackfs_open,
     .read = stackfs_read,
     .write = stackfs_write,
-    .readdir = stackfs_readdir,
+    .readdir = custom_readdir,
     .getstat = custom_stat
 };
 

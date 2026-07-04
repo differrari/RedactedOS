@@ -194,7 +194,7 @@ u64 syscall_halt_thread(process_t *ctx, thread_t *current_thread){
     kprintf("Thread has ended with code %i",current_thread->PROC_X0);
     syscall_depth--;
     if (current_thread->job_id){
-        fulfill_job(current_thread->job_id, current_thread);
+        fulfill_job(current_thread->job_id, current_thread->PROC_X0, current_thread);
     }
     if (current_thread == &ctx->main_thread)
         stop_current_process(current_thread->PROC_X0);

@@ -240,7 +240,11 @@ size_t list_directory_contents(module_root *root, const char *path, void* buf, s
     }
     if (!mod->readdir) return 0;
     if (mod->owner != get_kernel_proc()->id){
-        kprintf("cba rn");
+        job_make(job_readdir, {
+            job_serialize_str(&app, 0, search_path);
+            job_serialize_buf(&app, 1, true, buf, size, copy_on_end);
+            job_serialize_off(&app, 3, offset);
+        });
         return 0;
     } else
         return mod->readdir(search_path, buf, size, offset);
@@ -260,23 +264,10 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
     }
     if (!mod->getstat) return false;
     if (mod->owner != get_kernel_proc()->id){
-        if (get_current_proc()->id == mod->owner){
-            //TODO: We can probably optimize this more, but right now it blocks the entire process so we can't allow this case
-            return false;
-        }
-        process_t *owner_proc = get_proc_by_pid(mod->owner);
-        if (!is_privileged(owner_proc)){
-            job_application_t app = (job_application_t){
-                .requesting_pid = get_current_proc()->id,
-                .requesting_tid = get_current_proc()->current_thread->tid,
-                .worker_pid = owner_proc->id,
-                .type = job_stat
-            };
+        job_make(job_stat, {
             job_serialize_str(&app, 0, search_path);
             job_serialize_stat(&app, 1, out_stat);
-            create_new_job(app);
-            return false;
-        }
+        })
     }
     return mod->getstat(search_path, out_stat);
 }
