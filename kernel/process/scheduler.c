@@ -297,6 +297,7 @@ void reset_process(process_t *proc){
     proc->main_thread.sp = 0;
     proc->main_thread.pc = 0;
     proc->main_thread.spsr = 0;
+    unmap_stack(proc, proc->main_thread.stack_info);
     memset(proc->main_thread.regs, 0, 31 * sizeof(proc->main_thread.regs[0]));
     memset(&proc->input_buffer, 0, sizeof(proc->input_buffer));
     memset(&proc->event_buffer, 0, sizeof(proc->event_buffer));

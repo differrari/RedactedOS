@@ -9,3 +9,4 @@
 #define stack_min_addr 0x100000000000ULL
 
 stack_t new_stack(process_t *proc);
+void unmap_stack(process_t *proc, stack_t stack);

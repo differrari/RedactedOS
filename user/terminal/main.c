@@ -300,7 +300,6 @@ system_module termhistory_mod = {
     .name = "terminal history",
     .mount = "termhistory",
     .version = VERSION_NUM(0, 1, 0, 0),
-    .init = 0,
     .open = stackfs_open,
     .read = stackfs_read,
     .write = stackfs_write,

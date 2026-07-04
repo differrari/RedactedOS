@@ -35,6 +35,7 @@
 #include "files/dir_list.h"
 #include "theme/theme.h"
 #include "jobs/job_manager.h"
+#include "stack_manager.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -201,6 +202,7 @@ u64 syscall_halt_thread(process_t *ctx, thread_t *current_thread){
     else {
         current_thread->thread_state = STOPPED;
         unschedule_thread(ctx, current_thread);
+        unmap_stack(ctx, current_thread->stack_info);
         switch_proc(YIELD);//TODO: proper cleanup
     }
     return 0;
