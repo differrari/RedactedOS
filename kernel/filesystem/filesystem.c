@@ -266,13 +266,15 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
         }
         process_t *owner_proc = get_proc_by_pid(mod->owner);
         if (!is_privileged(owner_proc)){
-            create_new_job((job_application_t){
+            job_application_t app = (job_application_t){
                 .requesting_pid = get_current_proc()->id,
                 .requesting_tid = get_current_proc()->current_thread->tid,
                 .worker_pid = owner_proc->id,
                 .type = job_stat
-            });
-            
+            };
+            job_serialize_str(&app, 0, search_path);
+            job_serialize_stat(&app, 1, out_stat);
+            create_new_job(app);
             return false;
         }
     }

@@ -284,7 +284,8 @@ bool termhistory_init(system_module *mod){
 }
 
 bool custom_stat(const char *path, fs_stat *out_stat){
-    print("Hello");
+    print("Stat %s into %x",path, out_stat);
+    stat_dir(out_stat);
     return true;
 }
 
