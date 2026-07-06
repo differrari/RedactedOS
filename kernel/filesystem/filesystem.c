@@ -47,31 +47,31 @@ bool init_filesystem(){
     return true;
 }
 
-FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor, system_module **mod){
+FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor, system_module **out_mod){
     const char *search_path = path;
     if (*search_path == '/') search_path++;
     if (!*search_path) return FS_RESULT_NOTFOUND;
-    system_module *module = get_module_from(root, &search_path);
-    if (!module) return FS_RESULT_NOTFOUND;
-    if (!module->open) return FS_RESULT_NOTFOUND;
+    system_module *mod = get_module_from(root, &search_path);
+    if (!mod) return FS_RESULT_NOTFOUND;
+    if (!mod->open) return FS_RESULT_NOTFOUND;
     FS_RESULT result = FS_RESULT_DRIVER_ERROR;
-    if (module->owner != get_kernel_proc()->id){
-        kprintf("cba rn");
-        return result;
+    if (mod->owner != get_kernel_proc()->id){
+        job_make(job_open, {
+            job_serialize_str(&app, 0, path);
+            job_serialize_fd(&app, 1, descriptor, copy_on_end);
+        });
+        return 0;
     } else {
-        result = module->open(search_path, descriptor);
+        result = mod->open(search_path, descriptor);
     }
     if (result != FS_RESULT_SUCCESS) return result;
     if (!open_files) return FS_RESULT_DRIVER_ERROR;
     descriptor->cursor = 0;
-    *mod = module;
+    *out_mod = mod;
     return FS_RESULT_SUCCESS;
 }
 
-FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
-    system_module *mod = 0;
-    FS_RESULT result = open_file_global(root, path, descriptor, &mod);
-    if (result != FS_RESULT_SUCCESS) return result;
+FS_RESULT instance_local_fd(system_module *mod, file *descriptor){
     open_file_descriptors *of = (open_file_descriptors*)open_files_alloc(sizeof(open_file_descriptors));
     if (!of) {
         close_file_global(descriptor, mod);
@@ -83,9 +83,7 @@ FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
     of->mod = mod;
     of->pid = get_current_proc_pid();
     descriptor->id = of->file_id;
-    irq_flags_t irq = irq_save_disable();
     int put = hash_map_put(open_files, &of->file_id, sizeof(uint64_t), of);
-    irq_restore(irq);
 
     if (put != 1) {
         file tmp = {
@@ -97,7 +95,17 @@ FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
         release(of);
         return FS_RESULT_DRIVER_ERROR;
     }
+
     return FS_RESULT_SUCCESS;
+}
+
+FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
+    system_module *mod = 0;
+    FS_RESULT result = open_file_global(root, path, descriptor, &mod);
+    if (result != FS_RESULT_SUCCESS) return result;
+    result = instance_local_fd(mod, descriptor);
+    if (result != FS_RESULT_SUCCESS) return result;
+    return result;
 }
 
 size_t read_file(file *descriptor, char* buf, size_t size){
@@ -331,5 +339,5 @@ void close_files_for_process(uint16_t pid){
             close_file(&fd);
         }
     }
-    close_pipes_for_process(pid);
+    close_pipes_for_process(pid);//TODO: pipes need to be cleaned. They're not being used
 }

@@ -50,6 +50,18 @@ static inline void job_serialize_buf(job_application_t *application, u8 arg_num,
     job_application_append_buffer(application, buf);
 }
 
+static inline void job_serialize_fd(job_application_t *application, u8 arg_num, file *fd, job_sync_type sync_type){
+    job_buffer buf = {
+        .worker_ptr = {.ptr = (uptr)fd, .size = sizeof(file)},
+        .orig_ptr = {.ptr = (uptr)fd, .size = sizeof(file)},
+        .sync = sync_type,
+        .arg_num = arg_num,
+        .explicit_size = false,
+        .fd = true
+    };
+    job_application_append_buffer(application, buf);
+}
+
 static inline void job_serialize_stat(job_application_t *application, int arg_num, fs_stat *stat){
     job_buffer buf = {
         .worker_ptr = {.ptr = (uptr)stat, .size = sizeof(fs_stat) },

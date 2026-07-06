@@ -6,6 +6,11 @@
 
 int main(){
     request_draw_ctx(&filebrowser_ctx);
+
+    file descriptor = {};
+    openf("/termhistory", &descriptor);
+
+    print("Descriptor id %i of type %s and size %i",descriptor.id,&descriptor.data_type,descriptor.size);
     
     files = stack_create(sizeof(file_data),32);
     directories = stack_create(sizeof(string),16);

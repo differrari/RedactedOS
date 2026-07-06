@@ -5,6 +5,7 @@
 #include "memory/mmu.h"
 #include "memory/addr.h"
 #include "memory/memory.h"
+#include "filesystem/filesystem.h"
 
 job_id_t job_id_counter = 1;
 
@@ -14,6 +15,7 @@ typedef struct {
     job_id_t id;
     job_buffer buffers[8];
     size_t buffer_count;
+    job_types type;
 } job_state_t;
 
 linked_list_t *job_list;
@@ -38,6 +40,8 @@ bool prepare_thread(job_state_t *job, job_application_t application, process_t *
     switch (application.type){
         case job_stat: entry = (uptr)proc->exposed_fs.getstat; break;
         case job_readdir: entry = (uptr)proc->exposed_fs.readdir; break;
+        case job_open: entry = (uptr)proc->exposed_fs.open; break;
+        case job_close: entry = (uptr)proc->exposed_fs.close; break;
         default: return false;
     }
     if (!entry) return false;
@@ -59,7 +63,7 @@ bool prepare_thread(job_state_t *job, job_application_t application, process_t *
     for (size_t i = 0; i < application.buffer_count; i++){
         job_buffer buf = application.buffers[i];
         job->buffers[job->buffer_count++] = buf;
-        if (buf.sync == copy_on_start)
+        if (buf.sync & copy_on_start)
             memcpy((void*)next_addr_pa, (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
         t->regs[buf.arg_num] = next_addr_va;
         job->buffers[i].worker_ptr.ptr = next_addr_va;
@@ -73,6 +77,7 @@ bool prepare_thread(job_state_t *job, job_application_t application, process_t *
 
 job_id_t create_new_job(job_application_t application){
     job_state_t *job = job_alloc();
+    job->type = application.type;
     process_t *requesting_proc = get_proc_by_pid(application.requesting_pid);
     if (!requesting_proc){
         print("[JOB error] Unknown requesting proc %i",application.requesting_pid);
@@ -99,6 +104,19 @@ job_state_t* get_job_state(job_id_t job_id){
     return 0;
 }
 
+void* quick_translate(thread_t *thread, process_t *proc, uptr ptr){
+    int status = 0;
+    uptr addr = mmu_translate(proc->mm.ttbr0, ptr, &status);
+    if (status){
+        uint64_t esr = (0x24ULL << 26) | 0x7ULL;
+        if (!mm_try_handle_page_fault(proc, thread, ptr, esr)) return 0;
+
+        addr = mmu_translate((uint64_t*)proc->mm.ttbr0, ptr, &status);
+        if (status) return 0;
+    }
+    return (void*)PHYS_TO_VIRT(addr);
+}
+
 void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     job_state_t *st = get_job_state(job_id);
     if (!st) {
@@ -109,25 +127,33 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
         print("[JOB error] termination request by wrong thread %i",thread->tid);
         return;
     }
-    st->requester->thread_state = RUNNING;//TODO: schedule once the scheduler is fully thread-based
     process_t *proc = get_proc_by_pid(st->requester->pid);
+    process_t *fsproc = get_proc_by_pid(st->worker->pid);
+    // if (st->type == job_open){
+    //     process_t *fsproc = get_proc_by_pid(st->worker->pid);
+    //     if (fsproc){
+    //         file* fd = quick_translate(st->requester, proc, (uptr)st->fd);
+    //         instance_local_fd(&fsproc->exposed_fs, fd);
+    //     }
+    // }
+    st->requester->thread_state = RUNNING;//TODO: schedule once the scheduler is fully thread-based
     proc->state = RUNNING;//TODO: this shouldn't be necessary
     ready_process(proc);
     st->requester->PROC_X0 = ret;
     for (size_t i = 0; i < st->buffer_count; i++){
         job_buffer buf = st->buffers[i];
-        if (buf.sync == copy_on_end){
+        if (buf.sync & copy_on_end){
             print("[JOB debug] Copy buffer %x into %x",buf.worker_ptr.ptr,buf.orig_ptr.ptr);
-            int status = 0;
-            uptr addr = mmu_translate(proc->mm.ttbr0, buf.orig_ptr.ptr, &status);
-            if (status){
-                uint64_t esr = (0x24ULL << 26) | 0x7ULL;
-                if (!mm_try_handle_page_fault(proc, st->requester, buf.orig_ptr.ptr, esr)) return;
-    
-                addr = mmu_translate((uint64_t*)proc->mm.ttbr0, buf.orig_ptr.ptr, &status);
-                if (st) return;
+            void* addr = quick_translate(st->requester, proc, buf.orig_ptr.ptr);
+            if (!addr) return;
+            memcpy(addr, (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
+            file *fd = addr;
+            if (buf.fd){
+                print("[JOB DEBUG] fd %i size %i signature %s",fd->id,fd->size,&fd->data_type);
+                if (st->type == job_open){
+                    instance_local_fd(&fsproc->exposed_fs, addr);
+                }
             }
-            memcpy((void*)PHYS_TO_VIRT(addr), (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
         }
     }
     print("[JOB] %i fulfilled",job_id);

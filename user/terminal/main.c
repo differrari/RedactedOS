@@ -296,11 +296,19 @@ size_t custom_readdir(const char *path, void *buf, size_t size, file_offset *off
     return dir_buf_size(&helper);
 }
 
+FS_RESULT custom_open(const char *path, file *fd){
+    fd->id = 1;
+    print("Sending id %i",fd->id);
+    fd->size = 100;
+    fd->data_type = DATA_SIGNATURE("ASYNC");
+    return FS_RESULT_SUCCESS;
+}
+
 system_module termhistory_mod = {
     .name = "terminal history",
     .mount = "termhistory",
     .version = VERSION_NUM(0, 1, 0, 0),
-    .open = stackfs_open,
+    .open = custom_open,
     .read = stackfs_read,
     .write = stackfs_write,
     .readdir = custom_readdir,
