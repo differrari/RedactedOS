@@ -194,7 +194,7 @@ HTTPRequestMsg http_server_recv_request(http_server_handle_t h, http_connection_
                 reject_status = http_parse_result_status(line_result);
             } else if (!http_method_allowed(srv->policy.allowed_methods, line.method)) {
                 bad_request = true;
-                reject_status = HTTP_METHOD_NOT_ALLOWED;
+                reject_status = line.method == HTTP_METHOD_UNKNOWN ? HTTP_NOT_IMPLEMENTED : HTTP_METHOD_NOT_ALLOWED;
             }
         }
 

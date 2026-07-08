@@ -471,7 +471,8 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
         if (flow->tx.nagle_len >= tcp_nagle_threshold(flow)) tcp_flush_nagle(flow, 1);
     }
 
-    if (rc == TCP_OK && !flow->tx.nodelay && payload_len && payload_len < tcp_nagle_threshold(flow)) {
+    uint64_t in_flight = TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una) ? flow->tx.snd_nxt - flow->tx.snd_una : 0;
+    if (rc == TCP_OK && !flow->tx.nodelay && payload_len && payload_len < tcp_nagle_threshold(flow) && in_flight != 0) {
         uint64_t n = tcp_nagle_append(flow, payload_ptr, payload_len);
         accepted += n;
         payload_ptr += n;

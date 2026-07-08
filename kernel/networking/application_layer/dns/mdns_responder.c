@@ -6,6 +6,7 @@
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/transport_layer/csocket.h"
 #include "networking/interface_manager.h"
+#include "data/hash.h"
 #include "std/std.h"
 #include "std/string.h"
 #include "syscalls/syscalls.h"
@@ -17,6 +18,8 @@
 #define MDNS_KEEPALIVE_MS 60000
 #define MDNS_MAX_SERVICES 8
 #define MDNS_CACHE_MAX 48
+#define MDNS_QUERY_DEDUP_MAX 8
+#define MDNS_QUERY_DEDUP_MS 250
 #define MDNS_FLUSH_CLASS (DNS_CLASS_CACHE_FLUSH | DNS_CLASS_IN)
 #define MDNS_HOST_NAME "RedactedOS"
 
@@ -44,6 +47,15 @@ typedef struct {
 } mdns_cache_entry_t;
 
 typedef struct {
+    bool used;
+    ip_version_t ver;
+    uint16_t port;
+    uint64_t hash;
+    uint64_t last_ms;
+    uint8_t ip[16];
+} mdns_query_dedup_t;
+
+typedef struct {
     uint8_t *out;
     uint32_t cap;
     uint32_t off;
@@ -65,6 +77,8 @@ static uint64_t g_mdns_host_last_tx_ms = 0;
 
 static mdns_service_t g_mdns_services[MDNS_MAX_SERVICES];
 static mdns_cache_entry_t g_mdns_cache[MDNS_CACHE_MAX];
+static mdns_query_dedup_t g_mdns_query_dedup[MDNS_QUERY_DEDUP_MAX];
+static uint8_t g_mdns_query_dedup_next = 0;
 
 static void mdns_send(socket_handle_t sock, const net_l4_endpoint *src, bool unicast, ip_version_t ver, const uint8_t *mcast_ip, const uint8_t *pkt, uint32_t pkt_len) {
     if (!sock) return;
@@ -687,6 +701,35 @@ void mdns_responder_handle_query(socket_handle_t sock, ip_version_t ver, const u
 
     uint16_t qd = rd_be16(pkt + 4);
     if (!qd) return;
+
+    uint64_t now = get_time();
+    uint64_t hash = hash_map_fnv1a64(pkt, pkt_len);
+    uint16_t src_port = src ? src->port : 0;
+    uint8_t src_ip_zero[16];
+    memset(src_ip_zero, 0, sizeof(src_ip_zero));
+    const uint8_t *src_ip = src ? src->ip : src_ip_zero;
+    bool duplicate_query = false;
+
+    for (uint32_t i = 0; i < MDNS_QUERY_DEDUP_MAX; i++) {
+        mdns_query_dedup_t *e = &g_mdns_query_dedup[i];
+        if (!e->used || e->ver != ver || e->port != src_port || e->hash != hash) continue;
+        if (memcmp(e->ip, src_ip, ver == IP_VER4 ? 4 : 16) != 0) continue;
+        if (now - e->last_ms >= MDNS_QUERY_DEDUP_MS) continue;
+        e->last_ms = now;
+        duplicate_query = true;
+        break;
+    }
+
+    if (duplicate_query) return;
+
+    mdns_query_dedup_t *dedup = &g_mdns_query_dedup[g_mdns_query_dedup_next++ % MDNS_QUERY_DEDUP_MAX];
+    memset(dedup, 0, sizeof(*dedup));
+    dedup->used = true;
+    dedup->ver = ver;
+    dedup->port = src_port;
+    dedup->hash = hash;
+    dedup->last_ms = now;
+    memcpy(dedup->ip, src_ip, ver == IP_VER4 ? 4 : 16);
 
     bool unicast_any = src && src->port && src->port != DNS_MDNS_PORT;
 

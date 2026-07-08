@@ -555,6 +555,8 @@ l3_ipv4_interface_t* l3_ipv4_find_by_ip(uint32_t ip){
 uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t prefix_len, const uint8_t gw[16], ipv6_cfg_t cfg, uint8_t kind){
     l2_interface_t *l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return 0;
+    bool had_active_v6 = l2_has_active_v6(l2);
+    uint8_t pre_mcast_count = l2->ipv6_mcast_count;
     if (prefix_len > 128) return 0;
 
     int placeholder_ll = 0;
@@ -680,7 +682,7 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     l2->l3_v6[loc] = n;
     l2->ipv6_count++;
 
-    if (cfg == IPV6_CFG_DHCPV6){
+    if (cfg & IPV6_CFG_DHCPV6){
         uint8_t m[16];
         ipv6_make_multicast(2, IPV6_MCAST_DHCPV6_SERVERS, NULL, m);
         (void)l2_ipv6_mcast_join(ifindex, m);
@@ -701,7 +703,7 @@ uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
             (void)l2_ipv6_mcast_join(ifindex, m);
         }
     }
-    if (l2->kind != NET_IFK_LOCALHOST && l2_has_active_v6(l2)) for (int i = 0; i < (int)l2->ipv6_mcast_count; ++i) mld_send_join(l2->ifindex, l2->ipv6_mcast[i]);
+    if (!had_active_v6 && l2->kind != NET_IFK_LOCALHOST && l2_has_active_v6(l2)) for (int i = 0; i < (int)pre_mcast_count && i < (int)l2->ipv6_mcast_count; ++i) mld_send_join(l2->ifindex, l2->ipv6_mcast[i]);
 
     return n->l3_id;
 }
@@ -711,6 +713,8 @@ bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
     if (!n) return false;
     l2_interface_t *l2 = n->l2;
     if (!l2) return false;
+    bool had_active_v6 = l2_has_active_v6(l2);
+    uint8_t pre_mcast_count = l2->ipv6_mcast_count;
     if (prefix_len > 128) return false;
 
     if (kind == n->kind && cfg == n->cfg && prefix_len == n->prefix_len && ipv6_cmp(ip, n->ip) == 0 && ipv6_cmp(gw, n->gateway) == 0) return true;
@@ -783,12 +787,12 @@ bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
             (void)l2_ipv6_mcast_join(l2->ifindex, m);
         }
 
-        if (cfg == IPV6_CFG_DHCPV6){
+        if (cfg & IPV6_CFG_DHCPV6){
             ipv6_make_multicast(2, IPV6_MCAST_DHCPV6_SERVERS, NULL, m);
             (void)l2_ipv6_mcast_join(l2->ifindex, m);
         }
 
-        if (cfg == IPV6_CFG_SLAAC){
+        if (cfg & IPV6_CFG_SLAAC){
             ipv6_make_multicast(2, IPV6_MCAST_ALL_ROUTERS, NULL, m);
             (void)l2_ipv6_mcast_join(l2->ifindex, m);
         }
@@ -840,7 +844,7 @@ bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
             n->routing_table = NULL;
         }
     }
-    if (l2->kind != NET_IFK_LOCALHOST && l2_has_active_v6(l2)) for (int i = 0; i < (int)l2->ipv6_mcast_count; ++i) mld_send_join(l2->ifindex, l2->ipv6_mcast[i]);
+    if (!had_active_v6 && l2->kind != NET_IFK_LOCALHOST && l2_has_active_v6(l2)) for (int i = 0; i < (int)pre_mcast_count && i < (int)l2->ipv6_mcast_count; ++i) mld_send_join(l2->ifindex, l2->ipv6_mcast[i]);
 
     if (l3_changed) n->epoch = net_interface_mark_changed();
     return true;
@@ -1003,16 +1007,13 @@ void ifmgr_autoconfig_l2(uint8_t ifindex){
         ipv6_make_lla_from_mac(ifindex, lla);
         (void)l3_ipv6_add_to_interface(ifindex, lla, 64, (const uint8_t[16]){0}, IPV6_CFG_SLAAC, IPV6_ADDRK_LINK_LOCAL);
 
-        uint8_t m[16];
-        ipv6_make_multicast(2, IPV6_MCAST_ALL_NODES, lla, m);
-        (void)l2_ipv6_mcast_join(ifindex, m);
     }
 
     if (!has_gua) {
         uint8_t ph[16];
 
         ipv6_make_placeholder_gua(ph);
-        (void)l3_ipv6_add_to_interface(ifindex, ph, 64, (const uint8_t[16]){0}, IPV6_CFG_SLAAC, IPV6_ADDRK_GLOBAL);
+        (void)l3_ipv6_add_to_interface(ifindex, ph, 64, (const uint8_t[16]){0}, IPV6_CFG_STATELESS, IPV6_ADDRK_GLOBAL);
     }
 }
 

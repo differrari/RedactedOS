@@ -18,7 +18,7 @@
 #include "networking/transport_layer/trans_utils.h"
 
 #include "networking/application_layer/csocket_http_client.h"
-#include "networking/application_layer/csocket_http_server.h"
+#include "networking/application_layer/http_webserver.h"
 #include "networking/application_layer/dhcp_daemon.h"
 #include "networking/application_layer/dns/dns_daemon.h"
 #include "networking/application_layer/dns/mdns_responder.h"
@@ -93,91 +93,72 @@ static int net_has_ready_address(void) {
 }
 
 static void run_http_server() {
-    uint32_t http_methods = (1 << HTTP_METHOD_GET) | (1 << HTTP_METHOD_HEAD) | (1 << HTTP_METHOD_OPTIONS);
-    HTTPServerPolicyOptions http_options = {0};
-    http_options.flags = HTTP_SERVER_OPT_ALLOWED_METHODS;
-    http_options.value.allowed_methods = http_methods;
-
-    http_server_handle_t srv = http_server_create(NULL, &http_options);
-    if (!srv) {
-        stop_current_process(1);
-        return;
-    }
-    struct SockBindSpec spec = {0};
-    spec.kind = BIND_ANY;
-    if (http_server_bind(srv, &spec, HTTP_PORT) < 0) {
-        http_server_destroy(srv);
-        stop_current_process(2);
-        return;
-    }
-
-    if (http_server_listen(srv, 4) < 0) {
-        http_server_close(srv);
-        http_server_destroy(srv);
-        stop_current_process(3);
-        return;
-    }
-
-    mdns_register_service("RedactedOS", "http", "tcp", HTTP_PORT, "path=/");
-
-    static char HTML_ROOT[] =
+    static const char HTTP_ROOT_BODY[] =
+        "<!doctype html>\n"
+        "<html><head><title>RedactedOS</title>\n"
+        "<link rel=\"icon\" type=\"image/png\" href=\"/favicon.ico\">\n"
+        "</head>\n"
+        "<body>\n"
         "<h1>Hello, world!</h1>\n"
-        "<h3>[Redacted]</h3>";
+        "<h3>[Redacted]</h3>"
+        "<p><img src=\"/assets/test.png\"></p>\n"
+        "<p><a href=\"/assets/test.png\" download=\"test.png\">download test</a></p>\n"
+        "</body></html>\n";
 
     static char HTML_404[] =
         "<h1>404 Regrettably, no such page exists in this realm</h1>\n"
         "<p>Im rather inclined to deduce that your page simply does not exist. Given the state of affairs, I dare say it's not altogether surprising, innit?</p>";
 
-    while (1) {
-        http_connection_handle_t conn = http_server_accept(srv);
-        if (!conn){
-            msleep(50);
-            continue;
-        }
-        HTTPRequestMsg req = http_server_recv_request(srv, conn);
-        if (!req.path.length) {
-            http_connection_close(conn);
-            continue;
-        }
+    static const HTTPRoute routes[] = {
+        {
+            .path = "/",
+            .methods = HTTP_METHOD_MASK_GET,
+            .flags = HTTP_ROUTE_HEAD_AS_GET,
+            .kind = HTTP_ROUTE_STATIC,
+            .as.response = {
+                .status = HTTP_OK,
+                .content_type = "text/html",
+                .body = HTTP_ROOT_BODY,
+                .body_len = sizeof(HTTP_ROOT_BODY) - 1
+            }
+        },
+        {
+            .path = "/assets/test.png",
+            .methods = HTTP_METHOD_MASK_GET,
+            .flags = HTTP_ROUTE_HEAD_AS_GET,
+            .kind = HTTP_ROUTE_FILE,
+            .as.file = {
+                .fs_path = "/boot/redos/system/demo.red/resources/test.png",
+                .content_type = "image/png",
+                .cache_max_age_sec = 60
+            }
+        },
+        {
+            .path = "/favicon.ico",
+            .methods = HTTP_METHOD_MASK_GET,
+            .flags = HTTP_ROUTE_HEAD_AS_GET,
+            .kind = HTTP_ROUTE_FILE,
+            .as.file = {
+                .fs_path = "/boot/redos/system/demo.red/resources/test.png",
+                .content_type = "image/png",
+                .cache_max_age_sec = 60
+            }
+        },
+    };
 
-        if (req.method == HTTP_METHOD_OPTIONS) {
-            static char allow_key[] = "Allow";
-            string allow_value = http_methods_allow_header(http_methods);
-            HTTPHeader allow_header = {
-                {allow_key, sizeof(allow_key) - 1, 0},
-                allow_value
-            };
+    HTTPWebServerConfig config = {0};
+    config.port = HTTP_PORT;
+    config.backlog = 4;
+    config.routes = routes;
+    config.route_count = N_ARR(routes);
+    config.not_found = HTTP_WEB_HTML_RESPONSE(HTTP_NOT_FOUND, HTML_404);
+    config.mdns_instance = "RedactedOS";
+    config.mdns_type = "http";
+    config.mdns_proto = "tcp";
+    config.mdns_txt = "path=/";
 
-            HTTPResponseMsg res = (HTTPResponseMsg){0};
-            res.status_code = HTTP_OK;
-            res.headers_common.fields.content_length = 0;
-            res.headers_common.framing.has_content_length = 1;
-            res.extra_headers = &allow_header;
-            res.extra_header_count = 1;
-
-            http_server_send_response(srv, conn, &res);
-            string_free(allow_value);
-            http_connection_close(conn);
-            http_request_free(&req);
-            continue;
-        }
-
-        int is_root = req.path.length == 1 && req.path.data[0] == '/';
-        char *body = is_root ? HTML_ROOT : HTML_404;
-        uint32_t len = (uint32_t)strlen(body);
-
-        HTTPResponseMsg res = (HTTPResponseMsg){0};
-        res.status_code = is_root ? HTTP_OK : HTTP_NOT_FOUND;
-        res.headers_common.fields.content_length = len;
-        res.headers_common.framing.has_content_length = 1;
-        res.headers_common.fields.content_type = string_from_const("text/html");
-        res.body = (string){body, len, 0};
-
-        http_server_send_response(srv, conn, &res);
-        http_connection_close(conn);
-        http_request_free(&req);
-        http_response_free(&res);
-    }
+    http_webserver_run(&config);
+    stop_current_process(0);
 }
 
 static void test_http(const net_l4_endpoint* ep) {

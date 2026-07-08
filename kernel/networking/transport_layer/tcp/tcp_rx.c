@@ -709,10 +709,12 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 netpkt_unref(pkt);
                 return;
             }
-        } else if (ack == flow->tx.snd_una && data_len == 0 && !fin){
-            if (flow->tx.sack_ok && parsed_opts.sack_count) tcp_apply_sack_blocks(flow, &parsed_opts);
-            if (flow->tx.dup_acks < UINT8_MAX) flow->tx.dup_acks++;
-            tcp_cc_on_dupack(flow);
+        } else if (ack == flow->tx.snd_una && data_len == 0 && !fin && !(flags & (1u << SYN_F))){
+            int sack_changed = flow->tx.sack_ok && parsed_opts.sack_count ? tcp_apply_sack_blocks(flow, &parsed_opts) : 0;
+            if (TCP_SEQ_LT(flow->tx.snd_una, flow->tx.snd_nxt) && (new_wnd == old_wnd || sack_changed)) {
+                if (flow->tx.dup_acks < UINT8_MAX) flow->tx.dup_acks++;
+                tcp_cc_on_dupack(flow);
+            }
         } else {
             flow->tx.dup_acks = 0;
         }
@@ -887,6 +889,14 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     }
 
     if (flags & (1u << RST_F)) {
+        bool rst_acceptable = flow->rx.rcv_wnd ? (TCP_SEQ_GEQ(seq, flow->rx.rcv_nxt) && TCP_SEQ_LT(seq, flow->rx.rcv_nxt + flow->rx.rcv_wnd)) : (seq == flow->rx.rcv_nxt);
+        if (!rst_acceptable) {
+            tcp_send_ack_now(flow);
+            tcp_flow_put(flow);
+            netpkt_unref(pkt);
+            return;
+        }
+
         tcp_free_flow(idx);
         tcp_flow_put(flow);
         netpkt_unref(pkt);

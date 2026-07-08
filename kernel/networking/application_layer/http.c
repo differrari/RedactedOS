@@ -101,7 +101,8 @@ const char* http_method_name(HTTPMethod method) {
         case HTTP_METHOD_DELETE: return "DELETE";
         case HTTP_METHOD_HEAD: return "HEAD";
         case HTTP_METHOD_OPTIONS: return "OPTIONS";
-        default: return "GET";
+        case HTTP_METHOD_UNKNOWN: return "UNKNOWN";
+        default: return "UNKNOWN";
     }
 }
 
@@ -169,8 +170,6 @@ HttpError http_parse_result_status(HTTPParseResult result) {
             return HTTP_BAD_REQUEST;
         case HTTP_PARSE_UNSUPPORTED_TRANSFER:
             return HTTP_NOT_IMPLEMENTED;
-        case HTTP_PARSE_UNKNOWN_METHOD:
-            return HTTP_NOT_IMPLEMENTED;
         case HTTP_PARSE_UNSUPPORTED_VERSION:
             return HTTP_VERSION_NOT_SUPPORTED;
         case HTTP_PARSE_PAYLOAD_TOO_LARGE:
@@ -216,7 +215,7 @@ HTTPParseResult http_parse_request_line(const char *buf, uint32_t len, HTTPReque
     else if (mlen == 7 && memcmp(buf, "OPTIONS", 7) == 0) out->method = HTTP_METHOD_OPTIONS;
     else {
         for (uint32_t j = 0; j < mlen; j++) if (!is_alnum( buf[j]) && str_has_char("!#$%&'*+-.^_`|~", 0, buf[j]) < 0) return HTTP_PARSE_BAD_FORMAT;
-        return HTTP_PARSE_UNKNOWN_METHOD;
+        out->method = HTTP_METHOD_UNKNOWN;
     }
 
     i++;
@@ -370,10 +369,7 @@ HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolic
     *out_extra_count = 0;
 
     HTTPHeader *extras = NULL;
-    if (p.max_header_count) {
-        extras = (HTTPHeader*)zalloc(sizeof(*extras) * p.max_header_count);
-        if (!extras) return HTTP_PARSE_TOO_LARGE;
-    }
+    uint32_t extra_cap = 0;
 
     HTTPParseResult result = HTTP_PARSE_OK;
     uint32_t extra_i = 0;
@@ -567,7 +563,24 @@ HTTPParseResult http_header_parse(const char *buf, uint32_t len, const HTTPPolic
             string key = string_from_literal_length((char*)(buf + pos), key_len);
             string value = string_from_literal_length((char*)(buf + val_start), val_len);
 
-            if (extras && extra_i < p.max_header_count){
+            if (extra_i < p.max_header_count) {
+                if (extra_i == extra_cap) {
+                    uint32_t new_cap = extra_cap ? extra_cap * 2 : 4;
+                    if (new_cap > p.max_header_count) new_cap = p.max_header_count;
+                    HTTPHeader *grown = (HTTPHeader*)zalloc(sizeof(*grown) * new_cap);
+                    if (!grown) {
+                        if (key.mem_length) string_free(key);
+                        if (value.mem_length) string_free(value);
+                        result = HTTP_PARSE_TOO_LARGE;
+                        break;
+                    }
+                    if (extras) {
+                        memcpy(grown, extras, sizeof(*grown) * extra_i);
+                        release(extras);
+                    }
+                    extras = grown;
+                    extra_cap = new_cap;
+                }
                 extras[extra_i++] = (HTTPHeader){ key, value };
             } else {
                 if (key.mem_length) string_free(key);

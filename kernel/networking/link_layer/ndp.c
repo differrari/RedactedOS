@@ -215,7 +215,8 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
         v6->dhcpv6_stateless = o ? 1 : 0;
         v6->dhcpv6_stateless_done = 0;
 
-        if (v6->cfg != IPV6_CFG_SLAAC) {
+        ipv6_cfg_t ra_cfg = o ? IPV6_CFG_STATELESS : IPV6_CFG_SLAAC;
+        if (v6->cfg != ra_cfg) {
             uint8_t ph[16];
             uint8_t gw[16];
 
@@ -224,7 +225,7 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
             if (v6->ra_is_default) ipv6_cpy(gw, v6->gateway);
             else memset(gw, 0, 16);
 
-            (void)l3_ipv6_update(v6->l3_id, ph, 64, gw, IPV6_CFG_SLAAC, v6->kind);
+            (void)l3_ipv6_update(v6->l3_id, ph, 64, gw, ra_cfg, v6->kind);
         }
 
         if (ipv6_is_placeholder_gua(v6->ip)) {
@@ -235,7 +236,7 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
             ipv6_cpy(ip, v6->prefix);
             memcpy(ip + 8, iid, 8);
 
-            (void)l3_ipv6_update(v6->l3_id, ip, 64, v6->gateway, IPV6_CFG_SLAAC, v6->kind);
+            (void)l3_ipv6_update(v6->l3_id, ip, 64, v6->gateway, ra_cfg, v6->kind);
 
             v6->timestamp_created = now_ms;
             memcpy(v6->interface_id, ip + 8, 8);
@@ -248,7 +249,7 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
         if (v6->ra_is_default) ipv6_cpy(gw, v6->gateway);
         else memset(gw, 0, 16);
 
-        (void)l3_ipv6_update(v6->l3_id, v6->ip, v6->prefix_len, gw, IPV6_CFG_SLAAC, v6->kind);
+        (void)l3_ipv6_update(v6->l3_id, v6->ip, v6->prefix_len, gw, ra_cfg, v6->kind);
 
         v6->timestamp_created = now_ms;
         memcpy(v6->interface_id, v6->ip + 8, 8);
@@ -297,7 +298,7 @@ static void ndp_on_ra(uint8_t ifindex, const uint8_t router_ip[16], uint16_t rou
         uint8_t ph[16];
         ipv6_make_placeholder_gua(ph);
 
-        uint8_t id = l3_ipv6_add_to_interface(ifindex, ph, 64, (const uint8_t[16]){0}, IPV6_CFG_SLAAC, IPV6_ADDRK_GLOBAL);
+        uint8_t id = l3_ipv6_add_to_interface(ifindex, ph, 64, (const uint8_t[16]){0}, (ra_flags & RA_FLAG_O) ? IPV6_CFG_STATELESS : IPV6_CFG_SLAAC, IPV6_ADDRK_GLOBAL);
         if (!id) return;
 
         slot = l3_ipv6_find_by_id(id);

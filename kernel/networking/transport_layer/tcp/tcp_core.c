@@ -566,25 +566,35 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
     tcp_daemon_kick();
 
+    uint64_t start_ms = get_time();
     uint64_t waited = 0;
     const uint64_t interval = 50;
-    const uint64_t max_wait = TCP_CONNECT_TIMEOUT_MS;
+    uint64_t max_wait = TCP_CONNECT_TIMEOUT_MS;
+    if (extra && (extra->flags & SOCK_OPT_SEND_TIMEOUT) && extra->send_timeout_ms) max_wait = extra->send_timeout_ms;
 
     while (waited < max_wait){
-        if (flow->base.state == TCP_ESTABLISHED || flow->base.state == TCP_CLOSE_WAIT){
-            *flow_ctx = flow->base.ctx;
+        tcp_data ctx_snapshot;
+        memset(&ctx_snapshot, 0, sizeof(ctx_snapshot));
+
+        irq_flags_t irq = irq_save_disable();
+        tcp_state_t state = flow->base.state;
+        ctx_snapshot = flow->base.ctx;
+        irq_restore(irq);
+
+        if (state == TCP_ESTABLISHED || state == TCP_CLOSE_WAIT){
+            *flow_ctx = ctx_snapshot;
             tcp_flow_put(flow);
             return true;
         }
 
-        if (flow->base.state == TCP_STATE_CLOSED){
+        if (state == TCP_STATE_CLOSED){
             tcp_free_flow(idx);
             tcp_flow_put(flow);
             return false;
         }
 
         msleep(interval);
-        waited += interval;
+        waited = get_time() - start_ms;
     }
 
     tcp_free_flow(idx);

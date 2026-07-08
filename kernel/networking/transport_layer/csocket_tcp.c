@@ -13,6 +13,7 @@
 #include "syscalls/syscalls.h"
 #include "std/memory.h"
 #include "alloc/allocate.h"
+#include "exceptions/irq.h"
 
 #define TCP_MAX_BACKLOG 128
 #define TCP_DEFAULT_SOCKET_BUF (256 * 1024)
@@ -32,13 +33,29 @@ typedef struct tcp_socket {
     bool listening;
 } tcp_socket_t;
 
+static int tcp_socket_backlog_len(tcp_socket_t* s) {
+    if (!s) return 0;
+
+    irq_flags_t irq = irq_save_disable();
+    int len = s->backlogLen;
+    irq_restore(irq);
+    return len;
+}
+
 static ksocket_t* tcp_socket_pop_pending_at(tcp_socket_t* s, int idx) {
-    if (!s || idx < 0 || idx >= s->backlogLen) return NULL;
+    if (!s) return NULL;
+
+    irq_flags_t irq = irq_save_disable();
+    if (idx < 0 || idx >= s->backlogLen) {
+        irq_restore(irq);
+        return NULL;
+    }
 
     ksocket_t* client = s->pending[idx];
     for (int i = idx + 1; i < s->backlogLen; ++i) s->pending[i-1] = s->pending[i];
 
     s->pending[--s->backlogLen] = NULL;
+    irq_restore(irq);
     return client;
 }
 
@@ -340,56 +357,25 @@ ksocket_t* socket_accept_tcp(socket_impl_t sh) {
     if (!s || !s->listening || !s->pending) return NULL;
 
     const int max_empty_iters = 200;
-    const int ready_wait_iters = 4;
     int iter = 0;
-    while (s->backlogLen == 0) {
+    while (tcp_socket_backlog_len(s) == 0) {
         if (++iter > max_empty_iters) return NULL;
         msleep(5);
     }
 
-    iter = 0;
-    while (1) {
-        for (int i = 0; i < s->backlogLen;) {
-            ksocket_t* owner = s->pending[i];
-            tcp_socket_t* client = owner ? (tcp_socket_t*)socket_core_impl(owner) : NULL;
+    while (tcp_socket_backlog_len(s) > 0) {
+        ksocket_t* owner = tcp_socket_pop_pending_at(s, 0);
+        tcp_socket_t* client = owner ? (tcp_socket_t*)socket_core_impl(owner) : NULL;
 
-            if (client && client->flow.flow_generation) {
-                bool readable = tcp_flow_readable(&client->flow) != 0;
-                bool closed = tcp_flow_recv_closed(&client->flow);
-                if (!closed || readable) {
-                    ++i;
-                    continue;
-                }
-            }
+        if (client && client->flow.flow_generation) return owner;
 
-            owner = tcp_socket_pop_pending_at(s, i);
-            if (owner) {
-                socket_core_close_socket(owner);
-                socket_core_put(owner);
-            }
+        if (owner) {
+            socket_core_close_socket(owner);
+            socket_core_put(owner);
         }
-
-        if (s->backlogLen == 0) return NULL;
-
-        for (int i = 0; i < s->backlogLen; ++i) {
-            ksocket_t* owner = s->pending[i];
-            tcp_socket_t* client = owner ? (tcp_socket_t*)socket_core_impl(owner) : NULL;
-            if (!client) continue;
-            if (!client->flow.flow_generation || tcp_flow_readable(&client->flow) || tcp_flow_recv_closed(&client->flow)) return tcp_socket_pop_pending_at(s, i);
-        }
-
-        if (++iter > ready_wait_iters) {
-            if (s->backlogLen >= s->backlogCap) {
-                ksocket_t* owner = tcp_socket_pop_pending_at(s, 0);
-                if (owner) {
-                    socket_core_close_socket(owner);
-                    socket_core_put(owner);
-                }
-            }
-            return NULL;
-        }
-        msleep(5);
     }
+
+    return NULL;
 }
 
 int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst) {
@@ -641,9 +627,14 @@ uint32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, const void*
     if (!s) return 0;
     if (!s->listening || !s->localPort || s->localPort != dst_port || !s->pending) return 0;
 
-    for (int i = 0; i < s->backlogLen;) {
-        ksocket_t* owner = s->pending[i];
-        tcp_socket_t* client = owner ? (tcp_socket_t*)socket_core_impl(owner) : NULL;
+    for (int i = 0;;) {
+        irq_flags_t irq = irq_save_disable();
+        ksocket_t* owner = (i >= 0 && i < s->backlogLen) ? s->pending[i] : NULL;
+        irq_restore(irq);
+
+        if (!owner) break;
+
+        tcp_socket_t* client = (tcp_socket_t*)socket_core_impl(owner);
         if (client && client->flow.flow_generation) {
             bool readable = tcp_flow_readable(&client->flow) != 0;
             bool closed = tcp_flow_recv_closed(&client->flow);
@@ -659,7 +650,7 @@ uint32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, const void*
             socket_core_put(owner);
         }
     }
-    if (s->backlogLen >= s->backlogCap) return 0;
+    if (tcp_socket_backlog_len(s) >= s->backlogCap) return 0;
 
     ksocket_t* child_owner = NULL;
     uint16_t owner_pid = socket_core_pid(s->ownerSocket);
@@ -696,6 +687,15 @@ uint32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, const void*
 
     child->connected = true;
     socket_core_ref(child_owner);
+
+    irq_flags_t irq = irq_save_disable();
+    if (s->backlogLen >= s->backlogCap) {
+        irq_restore(irq);
+        socket_core_close_socket(child_owner);
+        socket_core_put(child_owner);
+        return 0;
+    }
     s->pending[s->backlogLen++] = child_owner;
+    irq_restore(irq);
     return 1;
 }
