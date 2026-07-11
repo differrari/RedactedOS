@@ -73,7 +73,8 @@ struct thread_t {
     stack_t stack_info;
     u16 pid;
     u16 tid;
-    process_state thread_state;
+    process_state thread_state;//NOTE: name will change to just state
+    u64 wake_at_msec;
     thread_t *next;
     job_id_t job_id;
 };
@@ -81,10 +82,10 @@ struct thread_t {
 struct process_t {
     thread_t main_thread;
     uint16_t id;
-    bool sleeping;
-    thread_t *current_thread;//NOTE: temporary
+    bool sleeping;//NOTE: deprecated
+    thread_t *current_thread;//NOTE: deprecated
     bool suspended;
-    uint64_t wake_at_msec;
+    uint64_t wake_at_msec;//NOTE: deprecated
     paddr_t heap_phys;
     kaddr_t output;
     size_t output_size;

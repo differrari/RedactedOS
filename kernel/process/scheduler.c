@@ -98,8 +98,8 @@ bool remove_sleeping_process(process_t *proc, uint16_t pid){
     linked_list_node_t *sleep = sleeping_list.head;
     while (sleep) {
         linked_list_node_t *next = sleep->next;
-        process_t *sleep_proc = (process_t*)sleep->data;
-        if (sleep_proc == proc || (sleep_proc && sleep_proc->id == pid)) {
+        thread_t *thread = (thread_t*)sleep->data;
+        if (thread && thread->pid == pid) {
             linked_list_remove(&sleeping_list, sleep);
             removed = true;
         }
@@ -114,10 +114,10 @@ void save_return_address_interrupt(){
 
 void update_sleep_timer() {
     if (sleeping_list.head) {
-        process_t *head_proc = (process_t*)sleeping_list.head->data;
-        if (head_proc) {
+        thread_t *head_thread = (thread_t*)sleeping_list.head->data;
+        if (head_thread) {
             uint64_t now = timer_now_msec();
-            uint64_t wait = head_proc->wake_at_msec > now ? head_proc->wake_at_msec - now : 1;
+            uint64_t wait = head_thread->wake_at_msec > now ? head_thread->wake_at_msec - now : 1;
             virtual_timer_reset(wait);
             virtual_timer_enable();
         } else virtual_timer_disable();
@@ -638,20 +638,20 @@ void sleep_process(uint64_t msec){
     }
 
     uint64_t wake_at = timer_now_msec() + msec;
-    current_proc->state = BLOCKED;
-    current_proc->sleeping = true;
-    current_proc->wake_at_msec = wake_at;
+    thread_t *current_thread = (thread_t*)cpec;
+    current_thread->thread_state = BLOCKED;
+    current_thread->wake_at_msec = wake_at;
 
     linked_list_node_t *it = sleeping_list.head, *prev = 0;
     while (it) {
-        process_t *cur = (process_t*)it->data;
+        thread_t *cur = (thread_t*)it->data;
         if (!cur || cur->wake_at_msec > wake_at) break;
         prev = it;
         it = it->next;
     }
 
-    linked_list_insert_after(&sleeping_list, prev, current_proc);
-    if (sleeping_list.head && sleeping_list.head->data == current_proc){
+    linked_list_insert_after(&sleeping_list, prev, current_thread);
+    if (sleeping_list.head && sleeping_list.head->data == current_thread){
         virtual_timer_reset(msec);
         virtual_timer_enable();
     }
@@ -659,45 +659,24 @@ void sleep_process(uint64_t msec){
     irq_restore(irq);
 }
 
-void wake_process(process_t *proc){
-    if (!proc) return;
-    irq_flags_t irq = irq_save_disable();
-
-    if (proc->state == STOPPED) {
-        irq_restore(irq);
-        return;
-    }
-
-    if (remove_sleeping_process(proc, proc->id)) {
-        proc->sleeping = false;
-        proc->wake_at_msec = 0;
-
-        if (proc->state == BLOCKED) enqueue_ready_thread(&proc->main_thread);
-    }
-
-    update_sleep_timer();
-    irq_restore(irq);
-}
-
 void wake_processes(){
     irq_flags_t irq = irq_save_disable();
     uint64_t now = timer_now_msec();
     while (sleeping_list.head) {
-        process_t *proc = (process_t*)sleeping_list.head->data;
+        thread_t *t = (thread_t*)sleeping_list.head->data;
 
-        if (!proc) {
+        if (!t) {
             linked_list_pop_front(&sleeping_list);
             continue;
         }
 
-        if (proc->wake_at_msec > now) break;
-        proc = (process_t*)linked_list_pop_front(&sleeping_list);
+        if (t->wake_at_msec > now) break;
+        t = (thread_t*)linked_list_pop_front(&sleeping_list);
 
-        if (proc) {
-            proc->sleeping = false;
-            proc->wake_at_msec = 0;
+        if (t) {
+            t->wake_at_msec = 0;
 
-            if (proc->state != STOPPED) enqueue_ready_thread(&proc->main_thread);
+            if (t->thread_state != STOPPED) enqueue_ready_thread(t);
         }
     }
 
