@@ -28,6 +28,7 @@ void save_return_address_interrupt();
 void init_main_process();
 process_t* init_process();
 void ready_process(process_t *proc);
+void ready_thread(thread_t *t);
 void save_syscall_return(uint64_t value);
 void process_restore();
 
