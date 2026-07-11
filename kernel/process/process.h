@@ -64,7 +64,7 @@ typedef struct {
     size_t size;
 } stack_t;
 
-typedef struct thread {
+struct thread_t {
     uint64_t regs[31]; // x0–x30
     uintptr_t sp;
     uintptr_t pc;
@@ -74,11 +74,11 @@ typedef struct thread {
     u16 pid;
     u16 tid;
     process_state thread_state;
-    struct thread *next;
+    thread_t *next;
     job_id_t job_id;
-} thread_t;
+};
 
-typedef struct process {
+struct process_t {
     thread_t main_thread;
     uint16_t id;
     bool sleeping;
@@ -124,8 +124,8 @@ typedef struct process {
     int thread_ids;
     environment_data environment;
     uptr shared_page;
-    struct process *process_next;
-} process_t;
+    process_t *process_next;
+};
 
 static inline bool is_privileged(process_t *proc){
     return proc->spsr & 0xf;
