@@ -143,6 +143,7 @@ bool tcp_flow_recv_closed(tcp_data *flow_ctx) {
 }
 
 tcp_tx_seg_t *tcp_find_first_unacked(tcp_flow_t *flow) {
+    if (!flow) return NULL;
     tcp_tx_seg_t *best = NULL;
     uint32_t best_seq = 0;
 
@@ -193,6 +194,7 @@ static int tcp_apply_sack_blocks(tcp_flow_t *flow, const tcp_parsed_opts_t *opts
 }
 
 static tcp_tx_seg_t *tcp_find_sack_retransmit(tcp_flow_t *flow) {
+    if (!flow) return NULL;
     tcp_tx_seg_t *best = NULL;
     uint32_t best_seq = 0;
     uint32_t highest_sacked = flow->tx.snd_una;
@@ -465,6 +467,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             idx = (int)flow->base.slot;
             flow->base.local_port = dst_port;
             flow->base.l3_id = l3_id;
+            tcp_active_insert_flow(flow);
 
             flow->base.remote.ver = ipver;
             memset(flow->base.remote.ip, 0, 16);
@@ -574,7 +577,8 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             seg->retransmit_cnt = 0;
             seg->seq = iss;
             seg->len = 0;
-            seg->buf = 0;
+            seg->pkt = NULL;
+            seg->payload_off = 0;
             seg->timer_ms = 0;
             seg->timeout_ms = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
             seg->opts_len = tcp_build_syn_options(seg->opts, (uint16_t)flow->tx.mss, flow->tx.ws_ok ? flow->tx.ws_send : 0xff, flow->tx.sack_ok);
@@ -669,21 +673,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
                 if (TCP_SEQ_LEQ(s_end, ack)){
                     if (s->rtt_sample && s->retransmit_cnt == 0) tcp_rtt_update(flow, s->timer_ms);
-
-                    if (s->buf && s->len) {
-                        uintptr_t seg_buf = s->buf;
-                        uint32_t seg_len = (uint32_t)s->len;
-                        s->buf = 0;
-                        s->len = 0;
-                        tcp_account_tx_remove(flow, seg_len);
-                        release((void*)seg_buf);
-                    }
-
-                    s->used = 0;
-                    s->buf = 0;
-                    s->len = 0;
-                    s->sacked = 0;
-                    s->sack_retransmitted = 0;
+                    tcp_tx_seg_clear(flow, s);
                 }
             }
 

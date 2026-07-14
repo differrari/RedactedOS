@@ -69,8 +69,9 @@ tcp_admit_result_t tcp_admit_syn(uint8_t l3_id, uint16_t port, ip_version_t ver,
     uint32_t orphan = 0;
     size_t ip_len = (size_t)(ver == IP_VER6 ? 16 : 4);
 
-    for (int i = 0; i < MAX_TCP_FLOWS; i++) {
-        tcp_flow_t *f = tcp_flows[i];
+    for (uint16_t n = 0; n < tcp_active_count; n++) {
+        uint16_t slot = tcp_active_flows[n];
+        tcp_flow_t *f = slot < MAX_TCP_FLOWS ? tcp_flows[slot] : NULL;
         if (!f) continue;
 
         if (f->base.state == TCP_SYN_RECEIVED) {

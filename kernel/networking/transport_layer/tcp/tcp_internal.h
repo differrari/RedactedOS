@@ -45,7 +45,8 @@ typedef struct {
     uint8_t opts[40];
     uint32_t seq;
     uint64_t len;
-    uintptr_t buf;
+    netpkt_t *pkt;
+    uint32_t payload_off;
     uint32_t timer_ms;
     uint32_t timeout_ms;
 } tcp_tx_seg_t;
@@ -163,6 +164,7 @@ void tcp_enter_time_wait(tcp_flow_t *flow);
 
 tcp_flow_t *tcp_alloc_flow(void);
 void tcp_free_flow(int idx);
+void tcp_active_insert_flow(tcp_flow_t *flow);
 tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx);
 tcp_flow_t *tcp_flow_acquire_match(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, int *out_idx);
 int tcp_flow_hold(tcp_flow_t *flow);
@@ -171,6 +173,8 @@ void tcp_flow_put(tcp_flow_t *flow);
 void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms);
 
 tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow);
+const uint8_t *tcp_tx_seg_payload_ptr(const tcp_tx_seg_t *seg);
+void tcp_tx_seg_clear(tcp_flow_t *flow, tcp_tx_seg_t *seg);
 bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg);
 void tcp_send_ack_now(tcp_flow_t *flow);
 int tcp_try_send_pending_fin(tcp_flow_t *flow);

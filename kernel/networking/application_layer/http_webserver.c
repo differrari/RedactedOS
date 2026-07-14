@@ -2,6 +2,7 @@
 #include "filesystem/filesystem.h"
 #include "networking/application_layer/dns/mdns_responder.h"
 #include "networking/transport_layer/socket_bind.h"
+#include "data/format/url.h"
 #include "std/memory.h"
 #include "std/string.h"
 #include "syscalls/syscalls.h"
@@ -12,20 +13,11 @@ typedef struct {
     uint32_t methods;
 } HTTPWebRouteMatch;
 
-static uint32_t http_web_path_len(string path) {
-    uint32_t len = path.length;
-    int32_t q = str_has_char(path.data, len, '?');
-    if (q >= 0)len = (uint32_t)q;
-    int32_t f = str_has_char(path.data, len, '#');
-    if (f >= 0)len = (uint32_t)f;
-    return len;
-}
-
 static HTTPWebRouteMatch http_web_find_route(const HTTPWebServerConfig *config, string path, HTTPMethod method) {
     HTTPWebRouteMatch match = {0};
     if (!config || (!config->routes && config->route_count)) return match;
 
-    uint32_t path_len = http_web_path_len(path);
+    uint32_t path_len = url_path_len(path);
     uint32_t best_prefix_len = 0;
     uint32_t best_method_prefix_len = 0;
     uint32_t exact_methods = 0;
@@ -69,40 +61,33 @@ static HTTPWebRouteMatch http_web_find_route(const HTTPWebServerConfig *config, 
     return match;
 }
 
-static int32_t http_web_send_blob(HTTPWebContext *ctx, const HTTPWebFile *file, const void *body, uint32_t body_len) {
+static HTTPHeader *http_web_build_file_headers(const HTTPWebFile *file, string content_range, HTTPHeader local[8], uint32_t *out_count, string *out_cache) {
     static char cache_name[] = "Cache-Control";
-    string cache = {0};
-    HTTPHeader local[4];
-    uint32_t base_count = file && file->headers ? file->header_count : 0;
-    uint32_t total = base_count;
-
-    if (file && file->cache_max_age_sec) total++;
-    HTTPHeader *headers = total ? local : NULL;
-    if (total > N_ARR(local)) headers = (HTTPHeader*)zalloc(sizeof(HTTPHeader) * total);
-    if (total && !headers) {
-        HTTPWebResponse response = HTTP_WEB_TEXT_RESPONSE(HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error\n");
-        return http_web_send(ctx, &response);
-    }
-
-    for (uint32_t i = 0; i < base_count; i++) headers[i] = file->headers[i];
-    if (file && file->cache_max_age_sec) {
-        cache = string_format("public, max-age=%i", (int)file->cache_max_age_sec);
-        headers[base_count] = (HTTPHeader){{cache_name, sizeof(cache_name) - 1, 0}, cache};
-    }
-
-    HTTPWebResponse response = {
-        .status = HTTP_OK,
-        .content_type = file && file->content_type ? file->content_type : "application/octet-stream",
-        .body = body,
-        .body_len = body_len,
-        .headers = headers,
-        .header_count = total
-    };
+    static char accept_ranges_name[] = "Accept-Ranges";
+    static char accept_ranges_value[] = "bytes";
+    static char content_range_name[] = "Content-Range";
     
-    int32_t rc = http_web_send(ctx, &response);
-    if (headers && headers != local) release(headers);
-    string_free(cache);
-    return rc;
+    *out_count = 0;
+    *out_cache = (string){0};
+    uint32_t base_count = file->headers ? file->header_count : 0;
+    uint32_t total = base_count+1;
+
+    if (file->cache_max_age_sec) total++;
+    if (content_range.length) total++;
+    HTTPHeader *headers = total <= 8 ? local : (HTTPHeader*)zalloc(sizeof(HTTPHeader) * total);
+    if (!headers) return NULL;
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < base_count; i++) headers[n++] = file->headers[i];
+    headers[n++] = (HTTPHeader){{accept_ranges_name, sizeof(accept_ranges_name) - 1, 0}, {accept_ranges_value, sizeof(accept_ranges_value) - 1, 0}};
+    if (file->cache_max_age_sec) {
+        *out_cache = string_format("public, max-age=%i", (int)file->cache_max_age_sec);
+        headers[n++] = (HTTPHeader){{cache_name, sizeof(cache_name) - 1, 0}, *out_cache};
+    }
+
+    if (content_range.length) headers[n++] = (HTTPHeader){{content_range_name, sizeof(content_range_name) - 1, 0}, content_range};
+
+    *out_count = n;
+    return headers;
 }
 
 int32_t http_web_send(HTTPWebContext *ctx, const HTTPWebResponse *response) {
@@ -142,36 +127,129 @@ static int32_t http_web_send_allow(HTTPWebContext *ctx, HttpError status, uint32
     return rc;
 }
 
-static int32_t http_web_send_file(HTTPWebContext *ctx, const HTTPWebFile *file) {
-    if (!ctx || !file || !file->fs_path) return SOCK_ERR_INVAL;
+static int32_t http_web_send_file(HTTPWebContext *ctx, const HTTPWebFile *web_file) {
+    if (!ctx || !web_file || !web_file->fs_path) return SOCK_ERR_INVAL;
 
     fs_stat st = {0};
-    if (!get_stat(kernel_fs(), file->fs_path, &st) || st.type != entry_file) {
+    if (!get_stat(kernel_fs(), web_file->fs_path, &st) || st.type != entry_file) {
         HTTPWebResponse response = HTTP_WEB_TEXT_RESPONSE(HTTP_NOT_FOUND, "Not Found\n");
         return http_web_send(ctx, &response);
     }
-    if (st.size > UINT32_MAX || (file->max_bytes && st.size > file->max_bytes)) {
+    if (st.size > UINT32_MAX || (web_file->max_bytes && st.size > web_file->max_bytes)) {
         HTTPWebResponse response = HTTP_WEB_TEXT_RESPONSE(HTTP_PAYLOAD_TOO_LARGE, "Payload Too Large\n");
         return http_web_send(ctx, &response);
     }
 
-    uint32_t size = (uint32_t)st.size;
+    uint64_t file_size = st.size;
+    uint64_t range_start = 0;
+    uint64_t range_end = file_size ? file_size - 1 : 0;
+    uint64_t range_len = file_size;
+    bool partial = ctx->request->headers_common.range.has;
+    bool not_satisfiable = false;
+
+    if (partial) {
+        const HTTPRangeSpec *in = &ctx->request->headers_common.range;
+
+        if (in->invalid || file_size == 0 || (!in->has_start && !in->has_end)) not_satisfiable = true;
+        else if (in->has_start) {
+            range_start = in->start;
+            range_end = in->has_end && in->end < file_size ? in->end : file_size - 1;
+            not_satisfiable = range_start >= file_size || range_end < range_start;
+        } else {
+            uint64_t suffix = in->end;
+            not_satisfiable = suffix == 0;
+            if (!not_satisfiable) {
+                range_start = suffix >= file_size ? 0 : file_size - suffix;
+                range_end = file_size - 1;
+            }
+        }
+
+        range_len = not_satisfiable ? 0 : range_end - range_start + 1;
+    }
+
+    char content_range_buf[64];
+    string content_range = {0};
+    if (not_satisfiable) {
+        //print("aaa %s %llu", web_file->fs_path, file_size);
+        content_range.length = (uint32_t)string_format_buf(content_range_buf, sizeof(content_range_buf), "bytes */%llu", file_size);
+        content_range.data = content_range_buf;
+
+        HTTPHeader local[8];
+        uint32_t total = 0;
+        string cache = {0};
+        HTTPHeader *headers = http_web_build_file_headers(web_file, content_range, local, &total, &cache);
+        if (!headers) {
+            HTTPWebResponse response = HTTP_WEB_TEXT_RESPONSE(HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error\n");
+            return http_web_send(ctx, &response);
+        }
+
+        HTTPResponseMsg res = {0};
+        res.status_code = HTTP_RANGE_NOT_SATISFIABLE;
+        res.headers_common.fields.content_length = 0;
+        res.headers_common.framing.has_content_length = 1;
+        res.extra_headers = headers;
+        res.extra_header_count = total;
+
+        int32_t rc = http_server_send_response(ctx->server, ctx->conn, &res);
+        if (headers != local) release(headers);
+        string_free(cache);
+        return rc;
+    }
+
+    if (partial) {
+        //print("%s %llu-%llu %llu", web_file->fs_path, range_start, range_end, file_size);
+        content_range.length = (uint32_t)string_format_buf(content_range_buf, sizeof(content_range_buf), "bytes %llu-%llu/%llu", range_start, range_end, file_size);
+        content_range.data = content_range_buf;
+    }
+
+    uint32_t read_len = (uint32_t)range_len;
     uint8_t *buf = NULL;
-    bool head = ctx->request && ctx->request->method == HTTP_METHOD_HEAD;
-    if (size && !head) {
-        buf = (uint8_t*)zalloc(size);
+    bool head = ctx->request->method == HTTP_METHOD_HEAD;
+    if (read_len && !head) {
+        buf = (uint8_t*)zalloc(read_len);
         if (!buf) {
             HTTPWebResponse response = HTTP_WEB_TEXT_RESPONSE(HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error\n");
             return http_web_send(ctx, &response);
         }
-        if (simple_read(kernel_fs(), file->fs_path, buf, size) != size) {
+        file fd = {0};
+        FS_RESULT ores = open_file(kernel_fs(), web_file->fs_path, &fd);
+        if (ores != FS_RESULT_SUCCESS) {
+            release(buf);
+            HTTPWebResponse response = HTTP_WEB_TEXT_RESPONSE(HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error\n");
+            return http_web_send(ctx, &response);
+        }
+        fd.cursor = range_start;
+        size_t got = read_file(&fd, (char*)buf, read_len);
+        close_file(&fd);
+        if (got != read_len) {
             release(buf);
             HTTPWebResponse response = HTTP_WEB_TEXT_RESPONSE(HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error\n");
             return http_web_send(ctx, &response);
         }
     }
 
-    int32_t rc = http_web_send_blob(ctx, file, buf, size);
+    HTTPHeader local[8];
+    uint32_t total = 0;
+    string cache = {0};
+    HTTPHeader *headers = http_web_build_file_headers(web_file, content_range, local, &total, &cache);
+    if (!headers) {
+        if (buf) release(buf);
+        HTTPWebResponse response = HTTP_WEB_TEXT_RESPONSE(HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error\n");
+        return http_web_send(ctx, &response);
+    }
+
+    HTTPWebResponse response = {
+        .status = partial ? HTTP_PARTIAL_CONTENT : HTTP_OK,
+        .content_type = web_file->content_type ? web_file->content_type : "application/octet-stream",
+        .body = buf,
+        .body_len = read_len,
+        .headers = headers,
+        .header_count = total
+    };
+
+    int32_t rc = http_web_send(ctx, &response);
+    if (headers != local) release(headers);
+    string_free(cache);
     if (buf) release(buf);
     return rc;
 }

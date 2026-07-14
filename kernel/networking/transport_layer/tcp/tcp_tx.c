@@ -1,5 +1,25 @@
 #include "tcp_internal.h"
 
+const uint8_t *tcp_tx_seg_payload_ptr(const tcp_tx_seg_t *seg) {
+    if (!seg || !seg->pkt || !seg->len) return NULL;
+    
+    uint32_t pkt_len = netpkt_len(seg->pkt);
+    if (seg->payload_off > pkt_len) return NULL;
+    if (seg->len > pkt_len - seg->payload_off) return NULL;
+
+    return (const uint8_t*)(netpkt_data(seg->pkt) + (uintptr_t)seg->payload_off);
+}
+
+void tcp_tx_seg_clear(tcp_flow_t *flow, tcp_tx_seg_t *seg) {
+    if (!seg) return;
+
+    uint32_t len = seg->len ? (uint32_t)seg->len : 0;
+    if (seg->pkt) netpkt_unref(seg->pkt);
+    if (len && flow) tcp_account_tx_remove(flow, len);
+
+    memset(seg, 0, sizeof(*seg));
+}
+
 uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow, uint8_t apply_scale) {
     if (!flow) return 0;
 
@@ -104,17 +124,20 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
         tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow);
         if (!seg) break;
 
-        uintptr_t buf = (uintptr_t)zalloc(seg_len);
-        if (!buf) {
-            seg->used = 0;
+        netpkt_t *payload_pkt = netpkt_alloc((uint32_t)seg_len, 0, 0);
+        uint8_t *payload_dst = payload_pkt ? (uint8_t*)netpkt_put(payload_pkt, (uint32_t)seg_len) : NULL;
+        if (!payload_dst) {
+            if (payload_pkt) netpkt_unref(payload_pkt);
+            tcp_tx_seg_clear(flow, seg);
             break;
         }
 
-        memcpy((void*)buf, payload + sent_bytes, seg_len);
+        memcpy(payload_dst, payload + sent_bytes, (uint32_t)seg_len);
 
         seg->seq = flow->tx.snd_nxt;
         seg->len = seg_len;
-        seg->buf = buf;
+        seg->pkt = payload_pkt;
+        seg->payload_off = 0;
         seg->syn = 0;
         seg->fin = 0;
         seg->timer_ms = 0;
@@ -130,14 +153,7 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
         if (!tcp_send_from_seg(flow, seg)) {
             flow->tx.snd_nxt -= seg_len;
             flow->base.ctx.sequence = flow->tx.snd_nxt;
-            tcp_account_tx_remove(flow, (uint32_t)seg_len);
-            if (seg->buf && seg->len) {
-                uintptr_t seg_buf = seg->buf;
-                seg->buf = 0;
-                seg->len = 0;
-                release((void*)seg_buf);
-            }
-            memset(seg, 0, sizeof(*seg));
+            tcp_tx_seg_clear(flow, seg);
             break;
         }
 
@@ -220,22 +236,12 @@ uint64_t tcp_flush_nagle(tcp_flow_t *flow, uint8_t force) {
 }
 
 tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow){
+    if (!flow) return NULL;
     for (int i = 0; i < TCP_MAX_TX_SEGS; i++) {
         if (!flow->tx.txq[i].used) {
             tcp_tx_seg_t *s = &flow->tx.txq[i];
+            memset(s, 0, sizeof(*s));
             s->used = 1;
-            s->syn = 0;
-            s->fin = 0;
-            s->rtt_sample = 0;
-            s->retransmit_cnt = 0;
-            s->opts_len = 0;
-            s->sacked = 0;
-            s->sack_retransmitted = 0;
-            memset(s->opts, 0, sizeof(s->opts));
-            s->seq = 0;
-            s->len = 0;
-            s->buf = 0;
-            s->timer_ms = 0;
             s->timeout_ms = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
             return s;
         }
@@ -267,13 +273,13 @@ bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
     if (flow->base.local.ver == IP_VER4) {
         ip_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v4(flow->base.local.ip, &tx);
-        bool ok = tcp_send_segment(IP_VER4, flow->base.local.ip, flow->base.remote.ip, &hdr, opts, seg->opts_len, seg->buf ? (const uint8_t *)seg->buf : NULL, seg->len, &tx, flow->ip.ttl, flow->ip.dontfrag);
+        bool ok = tcp_send_segment(IP_VER4, flow->base.local.ip, flow->base.remote.ip, &hdr, opts, seg->opts_len, tcp_tx_seg_payload_ptr(seg), (uint16_t)seg->len, &tx, flow->ip.ttl, flow->ip.dontfrag);
         if (ok) tcp_daemon_kick();
         return ok;
     } else if (flow->base.local.ver == IP_VER6) {
         ip_tx_opts_t tx;
         tcp_build_tx_opts_from_local_v6(flow->base.local.ip, &tx);
-        bool ok = tcp_send_segment(IP_VER6, flow->base.local.ip, flow->base.remote.ip, &hdr, opts, seg->opts_len, seg->buf ? (const uint8_t *)seg->buf : NULL, seg->len, &tx, flow->ip.ttl, flow->ip.dontfrag);
+        bool ok = tcp_send_segment(IP_VER6, flow->base.local.ip, flow->base.remote.ip, &hdr, opts, seg->opts_len, tcp_tx_seg_payload_ptr(seg), (uint16_t)seg->len, &tx, flow->ip.ttl, flow->ip.dontfrag);
         if (ok) tcp_daemon_kick();
         return ok;
     }
@@ -295,8 +301,6 @@ void tcp_send_ack_now(tcp_flow_t *flow){
 
     uint8_t opts[64];
     uint8_t opts_len = 0;
-
-    opts_len = 0;
 
     if (flow->tx.sack_ok && flow->rx.reass_count > 0) {
         tcp_sack_block_t blocks[TCP_SACK_MAX_BLOCKS];
@@ -387,7 +391,8 @@ int tcp_try_send_pending_fin(tcp_flow_t *flow) {
 
     seg->seq = flow->tx.snd_nxt;
     seg->len = 0;
-    seg->buf = 0;
+    seg->pkt = NULL;
+    seg->payload_off = 0;
     seg->syn = 0;
     seg->fin = 1;
     seg->timer_ms = 0;
@@ -410,7 +415,7 @@ int tcp_try_send_pending_fin(tcp_flow_t *flow) {
         flow->base.ctx.sequence = flow->tx.snd_nxt;
         flow->base.state = old_state;
         flow->tx.fin_tx_pending = 1;
-        memset(seg, 0, sizeof(*seg));
+        tcp_tx_seg_clear(flow, seg);
         tcp_daemon_kick();
         return 0;
     }

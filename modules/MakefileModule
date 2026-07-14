@@ -13,11 +13,12 @@ endif
 CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
 CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
 
-CLEAN_OBJS := $(shell find $(DRIVER_TARGET) -name "*.o") $(shell find ./common -name "*.o")
-CLEAN_DEPS := $(shell find $(DRIVER_TARGET) -name "*.d") $(shell find ./common -name "*.d")
-C_SRC   := $(shell find $(DRIVER_TARGET) -name "*.c") $(shell find ./common -name "*.c")
-CPP_SRC := $(shell find $(DRIVER_TARGET) -name "*.cpp") $(shell find ./common -name "*.cpp")
-ASM_SRC := $(shell find $(DRIVER_TARGET) -name "*.S") $(shell find ./common -name "*.S")
+SRC_DIRS := $(if $(strip $(DRIVER_TARGET)),$(wildcard ./$(DRIVER_TARGET)) $(wildcard ./common),.)
+CLEAN_OBJS := $(if $(SRC_DIRS),$(shell find $(SRC_DIRS) -name "*.o"),)
+CLEAN_DEPS := $(if $(SRC_DIRS),$(shell find $(SRC_DIRS) -name "*.d"),)
+C_SRC   := $(if $(SRC_DIRS),$(shell find $(SRC_DIRS) -name "*.c"),)
+CPP_SRC := $(if $(SRC_DIRS),$(shell find $(SRC_DIRS) -name "*.cpp"),)
+ASM_SRC := $(if $(SRC_DIRS),$(shell find $(SRC_DIRS) -name "*.S"),)
 OBJ     := $(C_SRC:%.c=$(BUILD_DIR)/%.o) $(ASM_SRC:%.S=$(BUILD_DIR)/%.o) $(CPP_SRC:%.cpp=$(BUILD_DIR)/%.o)
 DEP     := $(C_SRC:%.c=$(BUILD_DIR)/%.d) $(ASM_SRC:%.S=$(BUILD_DIR)/%.d) $(CPP_SRC:%.cpp=$(BUILD_DIR)/%.d)
 

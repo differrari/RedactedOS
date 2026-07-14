@@ -152,8 +152,9 @@ void tcp_tick_all(uint32_t elapsed_ms) {
                         uint32_t probe_seq = f->tx.snd_una;
                         if (!best && f->tx.fin_tx_pending && f->tx.snd_nxt == f->tx.snd_una && f->tx.snd_nxt) probe_seq = f->tx.snd_nxt-1;
 
-                        if (best && best->buf && best->len && TCP_SEQ_GEQ(probe_seq, best->seq) && TCP_SEQ_LT(probe_seq, best->seq + best->len)) {
-                            payload[0] = *((uint8_t *)best->buf + (probe_seq - best->seq));
+                        const uint8_t *best_payload = tcp_tx_seg_payload_ptr(best);
+                        if (best && best_payload && best->len && TCP_SEQ_GEQ(probe_seq, best->seq) && TCP_SEQ_LT(probe_seq, best->seq + best->len)) {
+                            payload[0] = best_payload[probe_seq - best->seq];
                             pp = payload;
                             pl = 1;
                         }

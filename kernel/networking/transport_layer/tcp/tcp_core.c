@@ -15,14 +15,63 @@ tcp_flow_t *tcp_flows[MAX_TCP_FLOWS];
 uint16_t tcp_active_flows[MAX_TCP_FLOWS];
 uint16_t tcp_active_count;
 static uint32_t tcp_generation_next = 1;
+static uint16_t tcp_alloc_cursor;
+
+static uint16_t tcp_active_port_lower_bound(uint16_t local_port) {
+    uint16_t lo = 0;
+    uint16_t hi = tcp_active_count;
+
+    while (lo < hi) { 
+        uint16_t mid = lo + ((hi - lo) >> 1);
+        tcp_flow_t *flow = tcp_flows[tcp_active_flows[mid]];
+        if (flow->base.local_port < local_port) lo = (uint16_t)(mid + 1);
+        else hi = mid;
+    }
+
+    return lo;
+}
+
+void tcp_active_insert_flow(tcp_flow_t *flow) {
+    if (!flow) return;
+
+    irq_flags_t irq = irq_save_disable();
+    uint16_t slot = flow->base.slot;
+    if (slot >= MAX_TCP_FLOWS || tcp_flows[slot] != flow || flow->base.retired || tcp_active_count >= MAX_TCP_FLOWS) {
+        irq_restore(irq);
+        return;
+    }
+
+    uint16_t local_port = flow->base.local_port;
+    uint16_t pos = tcp_active_port_lower_bound(local_port);
+    while (pos < tcp_active_count) {
+        uint16_t cur_slot = tcp_active_flows[pos];
+        tcp_flow_t *cur = cur_slot < MAX_TCP_FLOWS ? tcp_flows[cur_slot] : NULL;
+        uint16_t cur_port = cur ? cur->base.local_port : UINT16_MAX;
+        if (cur_port != local_port || cur_slot > slot) break;
+        pos++;
+    }
+
+    for (uint16_t i = tcp_active_count; i > pos; i--) {
+        uint16_t moved_slot = tcp_active_flows[i-1];
+        tcp_active_flows[i] = moved_slot;
+        if (moved_slot < MAX_TCP_FLOWS && tcp_flows[moved_slot]) tcp_flows[moved_slot]->base.active_pos = i;
+    }
+
+    tcp_active_flows[pos] = slot;
+    flow->base.active_pos = pos;
+    tcp_active_count++;
+    irq_restore(irq);
+}
 
 tcp_flow_t *tcp_flow_acquire_match(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, int *out_idx){
     irq_flags_t irq = irq_save_disable();
-    for (uint16_t n = 0; n < tcp_active_count; n++){
+    uint16_t start = tcp_active_port_lower_bound(local_port);
+    for (uint16_t n = start; n < tcp_active_count; n++){
         int i = tcp_active_flows[n];
-        tcp_flow_t *f = tcp_flows[i];
+        tcp_flow_t *f = i < MAX_TCP_FLOWS ? tcp_flows[i] : NULL;
         if (!f) continue;
 
+        if (f->base.local_port > local_port) break;
         if (f->base.retired || f->base.state == TCP_STATE_CLOSED) continue;
         if (f->base.local_port != local_port) continue;
 
@@ -142,18 +191,7 @@ void tcp_flow_put(tcp_flow_t *f) {
 
     if (!free_now) return;
 
-    for (int i = 0; i < TCP_MAX_TX_SEGS; i++) {
-        tcp_tx_seg_t *s = &f->tx.txq[i];
-        if (s->buf && s->len) {
-            uintptr_t buf = s->buf;
-            uint32_t len = (uint32_t)s->len;
-            s->buf = 0;
-            s->len = 0;
-            tcp_account_tx_remove(f, len);
-            release((void*)buf);
-        }
-        memset(s, 0, sizeof(*s));
-    }
+    for (int i = 0; i < TCP_MAX_TX_SEGS; i++) tcp_tx_seg_clear(f, &f->tx.txq[i]);
 
     f->tx.queued_bytes = 0;
 
@@ -195,12 +233,13 @@ void tcp_enter_time_wait(tcp_flow_t *flow) {
     uint32_t oldest_ms = 0;
 
     irq_flags_t irq = irq_save_disable();
-    for (int i = 0; i < MAX_TCP_FLOWS; i++) {
-        tcp_flow_t *f = tcp_flows[i];
+    for (uint16_t n = 0; n < tcp_active_count; n++) {
+        uint16_t slot = tcp_active_flows[n];
+        tcp_flow_t *f = slot < MAX_TCP_FLOWS ? tcp_flows[slot] : NULL;
         if (!f || f->base.retired || f->base.state != TCP_TIME_WAIT) continue;
         timewait++;
         if ((oldest < 0 || f->timer.time_wait_ms > oldest_ms) && f != flow) {
-            oldest = i;
+            oldest = slot;
             oldest_ms = f->timer.time_wait_ms;
         }
     }
@@ -222,9 +261,11 @@ tcp_flow_t *tcp_alloc_flow(void){
 
     irq_flags_t irq = irq_save_disable();
     int slot = -1;
-    for (int i = 0; i < MAX_TCP_FLOWS; i++) {
+    for (int n = 0; n < MAX_TCP_FLOWS; n++) {
+        uint16_t i = (uint16_t)((tcp_alloc_cursor+n) % MAX_TCP_FLOWS);
         if (!tcp_flows[i]) {
             slot = i;
+            tcp_alloc_cursor = (uint16_t)((i + 1) % MAX_TCP_FLOWS);
             break;
         }
     }
@@ -236,8 +277,6 @@ tcp_flow_t *tcp_alloc_flow(void){
     }
 
     tcp_flows[slot] = f;
-    f->base.active_pos = tcp_active_count;
-    tcp_active_flows[tcp_active_count++] = (uint16_t)slot;
     f->base.slot = (uint16_t)slot;
     f->base.generation = tcp_generation_next++;
     if (!tcp_generation_next) tcp_generation_next = 1;
@@ -268,22 +307,30 @@ void tcp_free_flow(int idx) {
 
     f->base.retired = 1;
     f->base.state = TCP_STATE_CLOSED;
-    tcp_flows[idx] = NULL;
 
     if (tcp_active_count != 0) {
         uint16_t pos = f->base.active_pos;
 
-        if (pos >= tcp_active_count || tcp_active_flows[pos] != idx) for (pos = 0; pos < tcp_active_count && tcp_active_flows[pos] != idx; pos++);
-        if (pos < tcp_active_count) {
-            uint16_t last = tcp_active_flows[--tcp_active_count];
-            tcp_active_flows[pos] = last;
-            tcp_active_flows[tcp_active_count] = 0;
+        if (pos >= tcp_active_count || tcp_active_flows[pos] != (uint16_t)idx) {
+            pos = 0;
+            while (pos < tcp_active_count && tcp_active_flows[pos] != (uint16_t)idx) pos++;
+        }
 
-            if (last != idx && tcp_flows[last]) tcp_flows[last]->base.active_pos = pos;
+        if (pos < tcp_active_count) {
+            for (uint16_t i = pos; i + 1 < tcp_active_count; i++) {
+                uint16_t moved = tcp_active_flows[i+1];
+                tcp_active_flows[i] = moved;
+                if (moved < MAX_TCP_FLOWS && tcp_flows[moved]) tcp_flows[moved]->base.active_pos = i;
+            }
+            tcp_active_count--;
+            tcp_active_flows[tcp_active_count] = 0;
         }
 
         f->base.active_pos = 0;
     }
+
+    tcp_flows[idx] = NULL;
+    if ((uint16_t)idx < tcp_alloc_cursor) tcp_alloc_cursor = (uint16_t)idx;
     irq_restore(irq);
 
     tcp_flow_put(f);
@@ -436,6 +483,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
     flow->base.local_port = local_port;
     flow->base.l3_id = l3_id;
+    tcp_active_insert_flow(flow);
 
     flow->base.remote.ver = dst->ver;
     memcpy(flow->base.remote.ip, dst->ip, (size_t)(dst->ver == IP_VER6 ? 16 : 4));
@@ -548,7 +596,8 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     seg->retransmit_cnt = 0;
     seg->seq = flow->tx.snd_nxt;
     seg->len = 0;
-    seg->buf = 0;
+    seg->pkt = NULL;
+    seg->payload_off = 0;
     seg->timer_ms = 0;
     seg->timeout_ms = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
 
