@@ -73,7 +73,7 @@ struct thread_t {
     stack_t stack_info;
     u16 pid;
     u16 tid;
-    process_state thread_state;//NOTE: name will change to just state
+    process_state state;
     u64 wake_at_msec;
     thread_t *next;
     job_id_t job_id;

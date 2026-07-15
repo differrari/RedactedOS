@@ -90,7 +90,7 @@ job_id_t create_new_job(job_application_t application){
     if (!prepare_thread(job, application, fs_owner, new_t)) return false;
     new_t->job_id = job->id;
     job->worker = new_t;
-    requester->thread_state = BLOCKED;
+    requester->state = BLOCKED;
     requesting_proc->state = BLOCKED;
     schedule_thread(fs_owner, new_t);
     return job->id;
@@ -136,7 +136,7 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     //         instance_local_fd(&fsproc->exposed_fs, fd);
     //     }
     // }
-    st->requester->thread_state = RUNNING;//TODO: schedule once the scheduler is fully thread-based
+    st->requester->state = RUNNING;//TODO: schedule once the scheduler is fully thread-based
     proc->state = RUNNING;//TODO: this shouldn't be necessary
     ready_process(proc);
     st->requester->PROC_X0 = ret;
