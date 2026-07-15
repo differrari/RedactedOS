@@ -478,6 +478,8 @@ void reset_process(process_t *proc){
     proc->id = pid;
     proc->exit_code = exit_code;
     proc->state = STOPPED;
+
+    memset(proc, 0, sizeof(process_t));
 }
 
 void init_main_process(){
