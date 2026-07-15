@@ -28,6 +28,7 @@ void save_return_address_interrupt();
 void init_main_process();
 process_t* init_process();
 void ready_process(process_t *proc);
+void ready_thread(thread_t *t);
 void save_syscall_return(uint64_t value);
 void process_restore();
 
@@ -42,7 +43,6 @@ void name_process(process_t *proc, const char *name);
 
 void sleep_process(uint64_t msec);
 void wake_processes();
-void wake_process(process_t *proc);
 
 bool load_process_module(process_t *p, system_module *m);
 

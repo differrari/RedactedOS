@@ -3,8 +3,8 @@
 #include "types.h"
 #include "memory/page_allocator.h"
 
-typedef struct process process_t;
-typedef struct thread thread_t;
+typedef struct process_t process_t;
+typedef struct thread_t thread_t;
 
 #define VMA_FLAG_DEMAND 1
 #define VMA_FLAG_USERALLOC 2

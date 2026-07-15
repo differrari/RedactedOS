@@ -47,7 +47,6 @@ process_t *process_list = 0;
 uint16_t proc_count = 0;
 uint16_t next_proc_index = 1;
 
-//TODO maybe use a weighted ready queue based on process priority
 CQueue ready_queue = {};
 linked_list_t sleeping_list = {};
 
@@ -87,11 +86,11 @@ bool process_can_reset(process_t *proc){
     return proc && proc->state == STOPPED && proc->pending_reset && !proc->procfs_refs;
 }
 
-void enqueue_ready_process(process_t *proc){
-    if (!proc || proc == idle_proc || proc->state == READY) return;
-    if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*),0,0);
-    if (!cqueue_enqueue(&ready_queue, &proc)) panic("ready enqueue failed", proc->id);
-    proc->state = READY;
+void enqueue_ready_thread(thread_t *t){
+    if (!t || t->pid == idle_proc->id || t->thread_state == READY) return;
+    if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(thread_t*),0,0);
+    t->thread_state = READY;
+    if (!cqueue_enqueue(&ready_queue, &t)) panic("ready enqueue failed", (t->pid << 16) | t->pid);
 }
 
 bool remove_sleeping_process(process_t *proc, uint16_t pid){
@@ -99,8 +98,8 @@ bool remove_sleeping_process(process_t *proc, uint16_t pid){
     linked_list_node_t *sleep = sleeping_list.head;
     while (sleep) {
         linked_list_node_t *next = sleep->next;
-        process_t *sleep_proc = (process_t*)sleep->data;
-        if (sleep_proc == proc || (sleep_proc && sleep_proc->id == pid)) {
+        thread_t *thread = (thread_t*)sleep->data;
+        if (thread && thread->pid == pid) {
             linked_list_remove(&sleeping_list, sleep);
             removed = true;
         }
@@ -115,10 +114,10 @@ void save_return_address_interrupt(){
 
 void update_sleep_timer() {
     if (sleeping_list.head) {
-        process_t *head_proc = (process_t*)sleeping_list.head->data;
-        if (head_proc) {
+        thread_t *head_thread = (thread_t*)sleeping_list.head->data;
+        if (head_thread) {
             uint64_t now = timer_now_msec();
-            uint64_t wait = head_proc->wake_at_msec > now ? head_proc->wake_at_msec - now : 1;
+            uint64_t wait = head_thread->wake_at_msec > now ? head_thread->wake_at_msec - now : 1;
             virtual_timer_reset(wait);
             virtual_timer_enable();
         } else virtual_timer_disable();
@@ -128,10 +127,11 @@ void update_sleep_timer() {
 void switch_proc(ProcSwitchReason reason) {
     if (proc_count == 0)
         panic("No processes active", 0);
+    thread_t *prev_t = (thread_t*)cpec;
     process_t *prev = current_proc, *next_proc = 0;
-    if (prev && prev->state == RUNNING) {
+    if (prev && prev->state == RUNNING && prev_t->thread_state == RUNNING) {
         if (prev == idle_proc) prev->state = BLOCKED;
-        else ready_process(prev);
+        else enqueue_ready_thread(prev_t);
     }
 
     if (prev->current_thread->next){
@@ -140,11 +140,12 @@ void switch_proc(ProcSwitchReason reason) {
         } while (prev->current_thread && prev->current_thread->thread_state != RUNNING && prev->current_thread->thread_state != READY);
     } else {
         while (!cqueue_is_empty(&ready_queue)) {
-            process_t *queued = 0;
+            thread_t *queued = 0;
             if (!cqueue_dequeue(&ready_queue, &queued)) break;
             if (!queued) continue;
-            if (queued->state != READY || !process_can_run(queued)) continue;
-            next_proc = queued;
+            if (queued->thread_state != READY) continue;
+            process_t *proc = get_proc_by_pid(queued->pid);
+            next_proc = (process_t*)proc;
             break;
         }
     }
@@ -156,6 +157,7 @@ void switch_proc(ProcSwitchReason reason) {
 
     if (!next_proc->current_thread) next_proc->current_thread = &next_proc->main_thread;
     next_proc->state = RUNNING;
+    next_proc->current_thread->thread_state = RUNNING;
     current_proc = next_proc;
     cpec = (uptr)next_proc->current_thread;
     if (current_proc == idle_proc) timer_disable();
@@ -208,7 +210,6 @@ bool start_scheduler(){
 }
 
 bool init_scheduler(){
-    if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*),0,0);
     load_module(&procfs_mod);
     return true;
 }
@@ -247,7 +248,19 @@ void ready_process(process_t *proc){
 
     proc->spsr = proc->main_thread.spsr;//TODO: remove
     
-    enqueue_ready_process(proc);
+    enqueue_ready_thread(&proc->main_thread);
+    proc->state = READY;
+    irq_restore(irq);
+}
+
+void ready_thread(thread_t *t){
+    irq_flags_t irq = irq_save_disable();
+    if (!t || !t->pid || !t->tid || t->thread_state == STOPPED/* || thread->sleeping || proc->pending_reset*/) {
+        irq_restore(irq);
+        return;
+    }
+    
+    enqueue_ready_thread(t);
     irq_restore(irq);
 }
 
@@ -471,7 +484,6 @@ void reset_process(process_t *proc){
 }
 
 void init_main_process(){
-    if (!ready_queue.elem_size) cqueue_init(&ready_queue, 0, sizeof(process_t*),0,0);
     size_t kernel_proc_size = (sizeof(process_t) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     kernel_proc = (process_t*)palloc(kernel_proc_size, MEM_PRIV_KERNEL, MEM_RW, true);
     if (!kernel_proc) panic("kernel process alloc failed", 0);
@@ -605,7 +617,7 @@ void block_process(process_t *proc){
 
 void resume_blocked_process(process_t *proc){
     proc->suspended = false;
-    enqueue_ready_process(proc);
+    enqueue_ready_thread(&proc->main_thread);
 }
 
 uint16_t process_count(){
@@ -626,20 +638,20 @@ void sleep_process(uint64_t msec){
     }
 
     uint64_t wake_at = timer_now_msec() + msec;
-    current_proc->state = BLOCKED;
-    current_proc->sleeping = true;
-    current_proc->wake_at_msec = wake_at;
+    thread_t *current_thread = (thread_t*)cpec;
+    current_thread->thread_state = BLOCKED;
+    current_thread->wake_at_msec = wake_at;
 
     linked_list_node_t *it = sleeping_list.head, *prev = 0;
     while (it) {
-        process_t *cur = (process_t*)it->data;
+        thread_t *cur = (thread_t*)it->data;
         if (!cur || cur->wake_at_msec > wake_at) break;
         prev = it;
         it = it->next;
     }
 
-    linked_list_insert_after(&sleeping_list, prev, current_proc);
-    if (sleeping_list.head && sleeping_list.head->data == current_proc){
+    linked_list_insert_after(&sleeping_list, prev, current_thread);
+    if (sleeping_list.head && sleeping_list.head->data == current_thread){
         virtual_timer_reset(msec);
         virtual_timer_enable();
     }
@@ -647,45 +659,24 @@ void sleep_process(uint64_t msec){
     irq_restore(irq);
 }
 
-void wake_process(process_t *proc){
-    if (!proc) return;
-    irq_flags_t irq = irq_save_disable();
-
-    if (proc->state == STOPPED) {
-        irq_restore(irq);
-        return;
-    }
-
-    if (remove_sleeping_process(proc, proc->id)) {
-        proc->sleeping = false;
-        proc->wake_at_msec = 0;
-
-        if (proc->state == BLOCKED) enqueue_ready_process(proc);
-    }
-
-    update_sleep_timer();
-    irq_restore(irq);
-}
-
 void wake_processes(){
     irq_flags_t irq = irq_save_disable();
     uint64_t now = timer_now_msec();
     while (sleeping_list.head) {
-        process_t *proc = (process_t*)sleeping_list.head->data;
+        thread_t *t = (thread_t*)sleeping_list.head->data;
 
-        if (!proc) {
+        if (!t) {
             linked_list_pop_front(&sleeping_list);
             continue;
         }
 
-        if (proc->wake_at_msec > now) break;
-        proc = (process_t*)linked_list_pop_front(&sleeping_list);
+        if (t->wake_at_msec > now) break;
+        t = (thread_t*)linked_list_pop_front(&sleeping_list);
 
-        if (proc) {
-            proc->sleeping = false;
-            proc->wake_at_msec = 0;
+        if (t) {
+            t->wake_at_msec = 0;
 
-            if (proc->state != STOPPED) enqueue_ready_process(proc);
+            if (t->thread_state != STOPPED) enqueue_ready_thread(t);
         }
     }
 
@@ -720,7 +711,7 @@ void schedule_thread(process_t *proc, thread_t *t){
             current->next = t;
             proc->thread_count++;
             kprintf("[SCHEDULER] scheduled thread %i for %i. pc %llx",t->tid,t->pid,t->pc);
-            t->thread_state = RUNNING;
+            t->thread_state = READY;
             return;
         }
         current = current->next;
