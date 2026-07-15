@@ -114,7 +114,7 @@ bool FAT32FS::write_section_to_cluster(u32 cluster, u32 offset, void *buf, size_
     
     u32 sector_count = ceil(((float)offset + size)/512);
     
-    void *initial = zalloc(512 * sector_count);
+    void *initial = kalloc(fs_page, 512 * sector_count, ALIGN_64B, MEM_PRIV_KERNEL);
     
     disk_read(initial, sector, sector_count);
     
