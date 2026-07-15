@@ -602,6 +602,8 @@ void stop_process(uint16_t pid, int32_t exit_code){
         return;
     }
 
+    //TODO: any threads for this process with a job id need to be reported back as failed
+
     if (proc->mm.ttbr0) mmu_swap_ttbr(0);
     switch_proc(HALT);
     panic("stop_process returned", pid);

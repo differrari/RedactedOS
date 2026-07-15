@@ -287,8 +287,11 @@ u16 window_fallback_focus(u16 win_id, u16 skip_id){
     if (!node || !node->data) return 0;
 
     window_frame *frame = node->data;
-    if (frame->pid != skip_id)
+    if (frame->pid != skip_id){
+        process_t *proc = get_proc_by_pid(frame->pid);
+        proc->focused = true;
         return frame->pid;
+    }
 
     process_t *proc = get_all_processes();
     while (proc) {
@@ -296,6 +299,7 @@ u16 window_fallback_focus(u16 win_id, u16 skip_id){
             frame->pid = proc->id;
             if (proc->graphics_ctx.fb){
                 frame->win_ctx.fb = proc->graphics_ctx.fb;
+                proc->focused = true;
                 if (proc->graphics_ctx.width != frame->width || proc->graphics_ctx.height != frame->height){
                     frame->width = proc->graphics_ctx.width;
                     frame->height = proc->graphics_ctx.height;
