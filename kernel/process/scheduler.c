@@ -74,10 +74,10 @@ bool process_has_runtime_state(process_t *proc){
     return proc && (proc->main_thread.sp || proc->main_thread.pc || proc->main_thread.spsr || proc->main_thread.stack_info.size || proc->heap_phys || proc->mm.ttbr0 || proc->output || proc->alloc_map || proc->bundle || proc->code || proc->code_size || proc->va);
 }
 
-bool process_can_run(process_t *proc){
+bool process_can_run(process_t *proc){//TODO: thread, not proc based
     if (!proc) return false;
     if (!process_is_known(proc) || proc->pending_reset) return false;
-    if (proc->state == STOPPED || proc->sleeping || proc->suspended || !proc->main_thread.pc || !proc->main_thread.sp) return false;
+    if (proc->state == STOPPED || proc->suspended || !proc->main_thread.pc || !proc->main_thread.sp) return false;
     if (!is_privileged(proc)) return !!proc->mm.ttbr0;
     return !proc->mm.ttbr0;
 }
@@ -185,7 +185,6 @@ void process_restore(){
         if (current_proc->mm.ttbr0) {
             current_proc->pending_reset = true;
             current_proc->state = STOPPED;
-            current_proc->sleeping = false;
             switch_proc(HALT);
             panic("process_restore recovery returned", cpec);
         }
@@ -241,7 +240,7 @@ bool scheduler_in_idle(){
 
 void ready_process(process_t *proc){
     irq_flags_t irq = irq_save_disable();
-    if (!proc || !proc->id || proc->state == STOPPED || proc->sleeping || proc->pending_reset) {
+    if (!proc || !proc->id || proc->state == STOPPED || proc->pending_reset) {
         irq_restore(irq);
         return;
     }
@@ -255,7 +254,7 @@ void ready_process(process_t *proc){
 
 void ready_thread(thread_t *t){
     irq_flags_t irq = irq_save_disable();
-    if (!t || !t->pid || !t->tid || t->thread_state == STOPPED/* || thread->sleeping || proc->pending_reset*/) {
+    if (!t || !t->pid || !t->tid || t->thread_state == STOPPED || t->thread_state == SLEEPING/* || proc->pending_reset*/) {
         irq_restore(irq);
         return;
     }
@@ -298,8 +297,6 @@ void reset_process(process_t *proc){
 
     irq_flags_t irq = irq_save_disable();
     proc->pending_reset = false;
-    proc->sleeping = false;
-    proc->wake_at_msec = 0;
     proc->thread_count = 0;//TODO: clean up all threads
     proc->thread_ids = 0;
 
@@ -530,8 +527,6 @@ process_t* init_process(){
                 proc->exit_code = 0;
                 proc->state = BLOCKED;
                 proc->priority = PROC_PRIORITY_LOW;
-                proc->sleeping = false;
-                proc->wake_at_msec = 0;
                 proc->pending_reset = false;
                 proc_count++;
                 irq_restore(irq);
@@ -590,8 +585,6 @@ void stop_process(uint16_t pid, int32_t exit_code){
 
     kprintf("[SCHEDULER] Stop process %i with code %i",proc->id,proc->exit_code);
     
-    proc->sleeping = false;
-    proc->wake_at_msec = 0;
     if (proc->focused)
         sys_unset_focus(false);
     
@@ -641,7 +634,7 @@ void sleep_process(uint64_t msec){
 
     uint64_t wake_at = timer_now_msec() + msec;
     thread_t *current_thread = (thread_t*)cpec;
-    current_thread->thread_state = BLOCKED;
+    current_thread->thread_state = SLEEPING;
     current_thread->wake_at_msec = wake_at;
 
     linked_list_node_t *it = sleeping_list.head, *prev = 0;

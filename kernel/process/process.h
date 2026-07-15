@@ -56,7 +56,7 @@ typedef struct {
     u64 fs_id;
 } system_permissions;
 
-typedef enum { STOPPED, READY, RUNNING, BLOCKED } process_state;
+typedef enum { STOPPED, READY, RUNNING, BLOCKED, SLEEPING } process_state;
 
 typedef struct {
     uptr top;
@@ -82,10 +82,8 @@ struct thread_t {
 struct process_t {
     thread_t main_thread;
     uint16_t id;
-    bool sleeping;//NOTE: deprecated
-    thread_t *current_thread;//NOTE: deprecated
+    thread_t *current_thread;
     bool suspended;
-    uint64_t wake_at_msec;//NOTE: deprecated
     paddr_t heap_phys;
     kaddr_t output;
     size_t output_size;
