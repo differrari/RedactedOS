@@ -362,8 +362,11 @@ bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst
 
     if (opts_len & 3u) return false;
     if (opts_len > 40u) return false;
+    if ((opts_len && !opts) || (payload_len && !payload)) return false;
 
-    uint16_t tcp_len = (uint16_t)(sizeof(tcp_hdr_t) + opts_len + payload_len);
+    uint32_t tcp_len32 = (uint32_t)sizeof(tcp_hdr_t) + (uint32_t)opts_len + (uint32_t)payload_len;
+    if (tcp_len32 > NETPKT_MAX_ALLOC) return false;
+    uint16_t tcp_len = (uint16_t)tcp_len32;
     uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + (uint32_t)(ver == IP_VER4 ? sizeof(ipv4_hdr_t) : sizeof(ipv6_hdr_t));
     netpkt_t *pkt = netpkt_alloc(tcp_len, headroom, 0);
     if (!pkt) return false;

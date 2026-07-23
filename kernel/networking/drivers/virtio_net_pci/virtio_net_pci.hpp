@@ -77,6 +77,7 @@ private:
     volatile virtq_avail* rx_avail = nullptr;
     volatile virtq_used* rx_used = nullptr;
     uint16_t rx_qsz = 0;
+    uint16_t rx_used_batch_end = 0;
     void* rx_pool = nullptr;
     bool rx_notify_pending = false;
 
@@ -84,9 +85,9 @@ private:
     volatile virtq_avail* tx_avail = nullptr;
     volatile virtq_used* tx_used = nullptr;
     uint16_t tx_qsz = 0;
-    uint16_t tx_next_desc = 0;
+    uint16_t tx_avail_shadow_idx = 0;
     netpkt_t** tx_pending = nullptr;
-    bool tx_notify_pending = false;
+    uint16_t tx_free_head = UINT16_MAX;
 
     bool verbose = false;
 

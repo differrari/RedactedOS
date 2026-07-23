@@ -9,6 +9,8 @@ extern "C" {
 #define VIRTQ_DESC_F_NEXT  1
 #define VIRTQ_DESC_F_WRITE 2
 
+#define VIRTQ_AVAIL_F_NO_INTERRUPT 1
+
 #define VIRTIO_VENDOR 0x1AF4
 
 #define VIRTIO_F_VERSION_1 32

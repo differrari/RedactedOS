@@ -12,6 +12,7 @@
 #define NETPKT_PAYLOAD_CACHE_KEEP 8
 #define NETPKT_PAYLOAD_CACHE_MAX_BYTES (2 *1024 * 1024ull)
 #define NETPKT_MAX_STORAGE_BYTES 131072u
+#define NETPKT_HEADROOM_SLACK 32u
 
 typedef struct netpkt_buf netpkt_buf_t;
 
@@ -81,7 +82,6 @@ static void* netpkt_payload_alloc(uint32_t cap, uint32_t* flags) {
             void* mem = g_netpkt_small_free;
             g_netpkt_small_free = *(void**)mem;
             irq_restore(irq);
-            memset(mem, 0, NETPKT_SMALL_CLASS_BYTES);
             *flags = NETPKT_BUF_F_SMALL;
             return mem;
         }
@@ -125,7 +125,6 @@ static void* netpkt_payload_alloc(uint32_t cap, uint32_t* flags) {
         if (g_payload_cache_bytes >= (uint64_t)cap) g_payload_cache_bytes -= (uint64_t)cap;
         else g_payload_cache_bytes = 0;
         irq_restore(irq);
-        memset(mem, 0, cap);
         return mem;
     }
     if ((uint64_t)cap > (uint64_t)NETPKT_MAX_PAGE_BYTES || g_netpkt_page_bytes > (uint64_t)NETPKT_MAX_PAGE_BYTES - (uint64_t)cap) {
@@ -461,10 +460,14 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
     b->free_fn = 0;
     b->free_ctx = 0;
 
+    uint32_t used = headroom + data_capacity + tailroom;
+    uint32_t slack = cap > used ? cap - used : 0;
+    if (slack > NETPKT_HEADROOM_SLACK) slack = NETPKT_HEADROOM_SLACK;
+
     p->buf = b;
     p->off = 0;
     p->cap = cap;
-    p->head = headroom;
+    p->head = headroom + slack;
     p->len = 0;
     p->refs = 1;
     p->flags = 0;

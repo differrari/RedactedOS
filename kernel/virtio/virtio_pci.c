@@ -240,8 +240,6 @@ void virtio_notify_queue(virtio_device *dev, uint16_t index) {
     if (!dev->queues[index].valid) return;
 
     uint32_t mul = dev->notify_off_multiplier;
-    if (!mul) mul = 1;
-
     uint16_t off = dev->queues[index].notify_off;
     uint16_t value = (dev->negotiated_features & (1ULL << VIRTIO_F_NOTIFICATION_DATA)) ? dev->queues[index].notify_data : index;
 

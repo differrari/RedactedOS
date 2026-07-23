@@ -1,4 +1,5 @@
 #include "csocket_udp.h"
+#include "exceptions/irq.h"
 #include "networking/transport_layer/socket_bind.h"
 #include "networking/transport_layer/udp.h"
 #include "networking/internet_layer/ipv4_route.h"
@@ -170,7 +171,6 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, uint8_t l3_id, 
     uint32_t limit = UINT32_MAX;
     if ((s->options.flags & SOCK_OPT_BUF_SIZE) && s->options.buf_size) limit = s->options.buf_size;
     if (pkt_len > limit) return 0;
-    if (s->rx_bytes > limit - pkt_len) return 0;
 
     if (!s->rx_ring || !s->ring_cap) {
         uint32_t usable = UDP_DEFAULT_RING_CAP;
@@ -180,16 +180,29 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, uint8_t l3_id, 
             if (usable > UDP_MAX_RING_CAP) usable = UDP_MAX_RING_CAP;
         }
 
-        s->ring_cap = usable + 1;
-        s->rx_ring = (udp_rx_entry_t*)zalloc(sizeof(udp_rx_entry_t) * s->ring_cap);
+        udp_rx_entry_t* ring = (udp_rx_entry_t*)zalloc(sizeof(udp_rx_entry_t) * (usable+1));
+        if (!ring) return 0;
+        irq_flags_t irq = irq_save_disable();
         if (!s->rx_ring) {
-            s->ring_cap = 0;
-            return 0;
+            s->rx_ring = ring;
+            s->ring_cap = usable + 1;
+            ring = NULL;
         }
+        irq_restore(irq);
+        if (ring) release(ring);
+    }
+
+    irq_flags_t irq = irq_save_disable();
+    if (!s->rx_ring || !s->ring_cap || s->rx_bytes > limit - pkt_len) {
+        irq_restore(irq);
+        return 0;
     }
 
     uint32_t nexti = (s->r_tail + 1) % s->ring_cap;
-    if (nexti == s->r_head) return 0;
+    if (nexti == s->r_head) {
+        irq_restore(irq);
+        return 0;
+    }
 
     netpkt_ref(pkt);
     s->rx_ring[s->r_tail].pkt = pkt;
@@ -200,6 +213,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, uint8_t l3_id, 
     s->rx_ring[s->r_tail].rx_spec.l3_id = l3_id;
     s->rx_bytes += pkt_len;
     s->r_tail = nexti;
+    irq_restore(irq);
     return pkt_len;
 }
 
@@ -493,11 +507,19 @@ int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_en
     ev.remote_ep = s->remoteEP;
     netlog_socket_event(&s->options, &ev);
 
-    if (!s->rx_ring || s->r_head == s->r_tail) {
+    irq_flags_t irq = irq_save_disable();
+    bool ready = s->rx_ring && s->r_head != s->r_tail;
+    irq_restore(irq);
+    if (!ready) {
         if (!(s->options.flags & SOCK_OPT_RECV_TIMEOUT) || !s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
 
         uint32_t start_ms = (uint32_t)get_time();
-        while (!s->rx_ring || s->r_head == s->r_tail) {
+        while (1) {
+            irq = irq_save_disable();
+            ready = s->rx_ring && s->r_head != s->r_tail;
+            irq_restore(irq);
+            if (ready) break;
+
             uint32_t now_ms = (uint32_t)get_time();
             uint32_t elapsed_ms = now_ms - start_ms;
             if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
@@ -508,6 +530,12 @@ int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_en
         }
     }
 
+    irq = irq_save_disable();
+    if (!s->rx_ring || s->r_head == s->r_tail) {
+        irq_restore(irq);
+        return SOCK_ERR_WOULDBLOCK;
+    }
+
     netpkt_t* p = s->rx_ring[s->r_head].pkt;
     net_l4_endpoint se = s->rx_ring[s->r_head].src;
     s->lastRxSpec = s->rx_ring[s->r_head].rx_spec;
@@ -515,7 +543,10 @@ int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_en
     s->r_head = (s->r_head + 1) % s->ring_cap;
 
     uint32_t pkt_len = p ? netpkt_len(p) : 0;
-    s->rx_bytes -= pkt_len;
+    if (s->rx_bytes >= pkt_len) s->rx_bytes -= pkt_len;
+    else s->rx_bytes = 0;
+    irq_restore(irq);
+
     uint32_t tocpy = pkt_len;
     if (tocpy > len) tocpy = (uint32_t)len;
 

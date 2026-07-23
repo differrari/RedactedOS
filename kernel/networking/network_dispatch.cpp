@@ -16,7 +16,8 @@
 #include "networking/drivers/loopback/loopback_driver.hpp"
 #include "exceptions/irq.h"
 
-#define RX_INTR_BATCH_LIMIT 256
+#define TASK_RX_QUANTUM 64
+#define TASK_TX_QUANTUM 64
 #define TASK_RX_BATCH_LIMIT 256
 #define TASK_TX_BATCH_LIMIT 256
 
@@ -83,55 +84,52 @@ int NetworkDispatch::net_task()
             NetDriver* driver = nics[n].drv;
             if (!driver) continue;
 
-            driver->handle_sent_packet();
-            int processed = 0;
-            int lim = nics[n].kind_val == NET_IFK_LOCALHOST ? TASK_RX_BATCH_LIMIT : RX_INTR_BATCH_LIMIT;
-            for (int i = 0; i < lim; ++i) {
-                netpkt_t* pkt = driver->handle_receive_packet();
-                if (!pkt) break;
-                if (!netpkt_len(pkt)) {
+            uint16_t rx_processed = 0;
+            uint16_t tx_processed = 0;
+            while (rx_processed < TASK_RX_BATCH_LIMIT || tx_processed < TASK_TX_BATCH_LIMIT) {
+                uint16_t rx_round = 0;
+                uint16_t tx_round = 0;
+                while (rx_processed < TASK_RX_BATCH_LIMIT && rx_round < TASK_RX_QUANTUM) {
+                    netpkt_t* pkt = driver->handle_receive_packet();
+                    if (!pkt) break;
+                    if (!netpkt_len(pkt)) {
+                        netpkt_unref(pkt);
+                        break;
+                    }
+
+                    socket_packet_input(nics[n].ifindex, pkt);
+                    if (netpkt_len(pkt) >= sizeof(eth_hdr_t)) eth_input(nics[n].ifindex, pkt);
                     netpkt_unref(pkt);
-                    break;
+                    rx_processed++;
+                    rx_round++;
                 }
-
-                socket_packet_input(nics[n].ifindex, pkt);
-                if (netpkt_len(pkt) >= sizeof(eth_hdr_t)) eth_input(nics[n].ifindex, pkt);
-                netpkt_unref(pkt);
-                processed++;
-            }
-
-            driver->complete_rx_batch();
-            if (processed) did_work = true;
-        }
-
-        for (size_t n = 0; n < nic_num; ++n) {
-            NetDriver* driver = nics[n].drv;
-            if (!driver) continue;
-            int processed = 0;
-            for (int i = 0; i < TASK_TX_BATCH_LIMIT; ++i) {
-                irq_flags_t flags = irq_save_disable();
-                if (nics[n].tx.is_empty()) {
+                driver->complete_rx_batch();
+                driver->handle_sent_packet();
+                while (tx_processed < TASK_TX_BATCH_LIMIT && tx_round < TASK_TX_QUANTUM) {
+                    irq_flags_t flags = irq_save_disable();
+                    if (nics[n].tx.is_empty()) {
+                        irq_restore(flags);
+                        break;
+                    }
+                    netpkt_t* pkt = nics[n].tx.peek();
                     irq_restore(flags);
-                    break;
+
+                    netdev_tx_result_t txr = driver->send_packet(pkt);
+                    if (txr == NETDEV_TX_BUSY) break;
+
+                    flags = irq_save_disable();
+                    netpkt_t* popped = nullptr;
+                    nics[n].tx.pop(popped);
+                    irq_restore(flags);
+
+                    if (txr == NETDEV_TX_DROP && popped) netpkt_unref(popped);
+                    tx_processed++;
+                    tx_round++;
                 }
-                netpkt_t* pkt = nics[n].tx.peek();
-                irq_restore(flags);
-
-                netdev_tx_result_t txr = driver->send_packet(pkt);
-                if (txr == NETDEV_TX_BUSY) break;
-
-                flags = irq_save_disable();
-                netpkt_t* popped = nullptr;
-                nics[n].tx.pop(popped);
-                irq_restore(flags);
-
-                if (txr == NETDEV_TX_DROP && popped) netpkt_unref(popped);
-                processed++;
-            }
-            if (processed) {
                 driver->complete_tx_batch();
-                did_work = true;
+                if (!rx_round && !tx_round) break;
             }
+            if (rx_processed || tx_processed) did_work = true;
         }
 
         if (!did_work) msleep(1);//TODO: manage it with an event
