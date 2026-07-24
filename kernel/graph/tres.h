@@ -16,6 +16,9 @@ typedef struct {
     uint16_t pid;
 } window_frame;
 
+#define MENU_HEIGHT 50
+#define TOOLBAR_HEIGHT 50
+
 void init_window_manager();
 
 bool create_window(int32_t x, int32_t y, uint32_t width, uint32_t height);

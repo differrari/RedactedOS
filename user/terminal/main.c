@@ -357,7 +357,7 @@ int main(){
         handle_input();
         msleep(1);
         ctx.full_redraw = true;
-        composite(&printer_ctx, (int_point){}, 1, &ctx);
+        composite(&printer_ctx, (int_point){}, 1, &ctx, draw_ctx_rect(&ctx));
         commit_draw_ctx(&ctx);
     }
     

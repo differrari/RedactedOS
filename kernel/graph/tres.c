@@ -24,7 +24,7 @@ i32 zoom_scale = 1;
 uint16_t win_ids = 1;
 bool dirty_windows = false;
 
-int_point global_win_offset;
+int_point global_win_offset = {};
 
 draw_ctx non_win_ctx;
 
@@ -111,6 +111,7 @@ void check_collisions(window_frame *frame){
 }
 
 bool create_window(i32 x, i32 y, u32 width, u32 height){
+    height -= TOOLBAR_HEIGHT;
     irq_flags_t irq = irq_save_disable();
     if (win_ids == UINT16_MAX){ 
         irq_restore(irq);
@@ -260,7 +261,7 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus
         memcpy(&non_win_ctx.dirty_rects, frame_ctx->dirty_rects, sizeof(non_win_ctx.dirty_rects));
         non_win_ctx.dirty_count = frame_ctx->dirty_count;
         non_win_ctx.full_redraw = frame_ctx->full_redraw;
-        composite(&non_win_ctx, (int_point){}, 1, screen_ctx);
+        composite(&non_win_ctx, (int_point){}, 1, screen_ctx, (gpu_rect){ {0, MENU_HEIGHT}, {screen_ctx->width, screen_ctx->height-MENU_HEIGHT} });
     }
     if (!frame){
         linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
@@ -275,7 +276,7 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus
     win_ctx.dirty_count = frame_ctx->dirty_count;
     win_ctx.full_redraw = frame_ctx->full_redraw;
     
-    composite(&win_ctx, (int_point){global_win_offset.x + frame->x,global_win_offset.y + frame->y}, zoom_scale, screen_ctx);
+    composite(&win_ctx, (int_point){ global_win_offset.x + frame->x, global_win_offset.y + frame->y + TOOLBAR_HEIGHT }, zoom_scale, screen_ctx, (gpu_rect){ {0, MENU_HEIGHT}, {screen_ctx->width, screen_ctx->height-MENU_HEIGHT} });
 
     frame_ctx->dirty_count = 0;
     frame_ctx->full_redraw = false;
