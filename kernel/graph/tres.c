@@ -19,7 +19,7 @@
 linked_list_t *window_list;
 window_frame *focused_window;
 
-i32 zoom_scale = 1;
+float zoom_scale = 1.f;
 
 uint16_t win_ids = 1;
 bool dirty_windows = false;

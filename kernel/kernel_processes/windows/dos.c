@@ -32,7 +32,7 @@ u16 paste_s = 0;
 static dos_mode mode;
 static draw_ctx *dos_ctx;
 
-extern i32 zoom_scale;
+extern float zoom_scale;
 
 static void draw_solid_window(draw_ctx *ctx, int_point fixed_point, gpu_size fixed_size, bool fill){
     int_point win_point = {fixed_point.x + BORDER_SIZE, fixed_point.y + BORDER_SIZE + TOOLBAR_HEIGHT};
@@ -315,7 +315,7 @@ int window_system(){
                 linked_list_for_each(window_list, calc_click);
                 if (!clicked_frame){
                     zoom_scale += -scroll;
-                    zoom_scale = clamp(zoom_scale, 1, 5);
+                    zoom_scale = clampf(zoom_scale, 1.f, 5);
                     dirty_windows = true;
                 }
             }
