@@ -47,6 +47,11 @@ static void draw_solid_window(draw_ctx *ctx, int_point fixed_point, gpu_size fix
         .foreground_color = COLOR_WHITE,
     }), {
         rectangle(ctx, (rect_ui_config){}, (common_ui_config){
+            .point = {fixed_point.x + BORDER_SIZE, fixed_point.y + TOOLBAR_HEIGHT},
+            .size = {win_size.width - (BORDER_SIZE), BORDER_SIZE},
+            .background_color = 0x33000000,
+        });
+        rectangle(ctx, (rect_ui_config){}, (common_ui_config){
             .point = win_point,
             .size = win_size,
             .background_color = 0,
@@ -226,6 +231,7 @@ void check_shortcuts(){
 void draw_menu(){
     draw_ctx *screen_ctx = gpu_get_ctx();
     fb_fill_rect(screen_ctx, 0, 0, screen_ctx->width, MENU_HEIGHT, system_theme.bg_color+0x111111);
+    fb_fill_rect(screen_ctx, 0, MENU_HEIGHT-BORDER_SIZE, screen_ctx->width, BORDER_SIZE, 0x44000000);
 }
 
 int window_system(){

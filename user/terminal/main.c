@@ -52,7 +52,7 @@ int debug_print(const char *fmt, ...){
 }
 
 shell_handle* make_default_shell(shell_bindings bindings){
-    return create_sheldon(bindings, 0);
+    return create_sheldon(bindings, 0, 0);
 }
 
 void clear(shell_handle *handle){
