@@ -315,7 +315,7 @@ int window_system(){
                 linked_list_for_each(window_list, calc_click);
                 if (!clicked_frame){
                     zoom_scale += -scroll;
-                    zoom_scale = clampf(zoom_scale, 1.f, 5);
+                    zoom_scale = clampf(zoom_scale, 0.25f, 5);
                     dirty_windows = true;
                 }
             }
