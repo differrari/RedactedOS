@@ -94,6 +94,7 @@ void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extr
 tcp_result_t tcp_flow_send(tcp_data *flow_ctx);
 tcp_result_t tcp_flow_flush(tcp_data *flow_ctx);
 tcp_result_t tcp_flow_close(tcp_data *flow_ctx);
+tcp_result_t tcp_flow_abort(tcp_data *flow_ctx);
 bool tcp_flow_is_closed(tcp_data *flow_ctx);
 tcp_result_t tcp_flow_release_closed(tcp_data *flow_ctx);
 int64_t tcp_flow_read(tcp_data *flow_ctx, void *buf, uint64_t len);

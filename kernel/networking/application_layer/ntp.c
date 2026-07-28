@@ -238,7 +238,7 @@ ntp_result_t ntp_poll_once(uint32_t timeout_ms){
     discover_servers(&s0, &s1);
     if (s0 == 0 && s1 == 0) return NTP_ERR_NO_SERVER;
 
-    socket_handle_t sock = create_socket(PROTO_UDP, NULL);
+    socket_handle_t sock = create_socket(PROTO_UDP, &(SocketOptions){.flags = SOCK_OPT_NONBLOCK});
     if (!sock) return NTP_ERR_SOCKET;
 
     uint64_t t1_0 = 0, t1_1 = 0;

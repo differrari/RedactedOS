@@ -26,6 +26,14 @@ bool ipv4_tx_plan_valid(const ipv4_tx_plan_t* plan) {
     return v4->ip == plan->src_ip;
 }
 
+bool ipv4_tx_plan_onlink(const ipv4_tx_plan_t* plan, uint32_t dst) {
+    if (!ipv4_tx_plan_valid(plan)) return false;
+    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(plan->l3_id); 
+    if (ipv4_is_loopback(dst)) return v4->is_localhost;
+    if (ipv4_is_multicast(dst) || ipv4_is_limited_broadcast(dst) || dst == v4->broadcast) return true;
+    return v4->mask && (dst & v4->mask) == (v4->ip & v4->mask);
+}
+
 bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* out){
     if (!out) return false;
     out->l3_id = 0;

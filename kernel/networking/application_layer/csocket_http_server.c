@@ -36,6 +36,8 @@ http_server_handle_t http_server_create(const SocketOptions* extra, const HTTPSe
         srv->tcp_opts.flags &= ~SOCK_OPT_DEBUG;
     }
 
+    srv->tcp_opts.flags |= SOCK_OPT_NONBLOCK;
+
     return srv;
 }
 
@@ -96,6 +98,12 @@ http_connection_handle_t http_server_accept(http_server_handle_t h) {
     if (!srv->sock) return NULL;
     socket_handle_t child = accept_on_socket(srv->sock);
     if (!child) return NULL;
+    //TODO for now almost everything is using SOCK_OPT_NONBLOCK for compatibilit
+    //in many app protocols it should be blocking, while for others such as HTTP, it should depend on the given options (blocking by default)
+    if (set_socket_option(child, SOCK_OPT_NONBLOCK,&(uint32_t){1}, sizeof(uint32_t)) != SOCK_OK) {
+        close_socket(child);
+        return NULL;
+    }
 
     HTTPConnection* conn = (HTTPConnection*)zalloc(sizeof(HTTPConnection));
     if (!conn) {

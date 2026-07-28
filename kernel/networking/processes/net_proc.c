@@ -34,7 +34,7 @@
 #define PROBE_INTERVAL_MS 50
 
 static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpoint *out_l4) {
-    socket_handle_t sock = create_socket(PROTO_UDP, NULL);
+    socket_handle_t sock = create_socket(PROTO_UDP, &(SocketOptions){.flags = SOCK_OPT_NONBLOCK});
     if (!sock) return 0;
     if (set_socket_option(sock, SOCK_OPT_BROADCAST_ALLOWED, NULL, 0) < 0) {
         close_socket(sock);

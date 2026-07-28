@@ -292,16 +292,23 @@ static HTTPResponseMsg http_client_receive_response(HTTPClient* cli, HTTPMethod 
 }
 
 static int32_t http_client_connect_endpoint_origin(HTTPClient* cli, const net_l4_endpoint* dst, const char* host_name) {
-    if (!cli->sock) cli->sock = create_socket(PROTO_TCP, &cli->tcp_opts);
+    if (!cli->sock) {
+        SocketOptions connect_options = cli->tcp_opts;
+        connect_options.flags &= ~SOCK_OPT_NONBLOCK;
+        cli->sock = create_socket(PROTO_TCP, &connect_options);
+    }
     if (!cli->sock) return SOCK_ERR_SYS;
     int32_t r = connect_socket(cli->sock, dst);
-    if (r >= 0) {
+    if (r >= 0 && (r = set_socket_option(cli->sock, SOCK_OPT_NONBLOCK, &(uint32_t){1}, sizeof(uint32_t))) >= 0) {
         HTTPClientOrigin next = {0};
         next.valid = true;
         if (dst) next.ep = *dst;
         if (host_name) next.domain = string_from_literal(host_name);
         if (cli->origin.domain.mem_length) string_free(cli->origin.domain);
         cli->origin = next;
+    } else {
+        close_socket(cli->sock);
+        cli->sock = 0;
     }
 
     netlog_socket_event_t ev = {0};
@@ -477,7 +484,6 @@ HTTPResponseMsg http_client_send_request(http_client_handle_t h, const HTTPReque
         if (!url.ok) break;
 
         bool absolute = url.scheme.size || url.host.size;
-        uint16_t next_port = cli->origin.ep.port;
         if (url.scheme.size) {
             if (url.scheme.size == 5 && strncmp_case((const char*)url.scheme.ptr, "https", true, 5) == 0) break;
             if (!(url.scheme.size == 4 && strncmp_case((const char*)url.scheme.ptr, "http", true, 4) == 0)) break;
@@ -491,7 +497,7 @@ HTTPResponseMsg http_client_send_request(http_client_handle_t h, const HTTPReque
         curr.path = next_path;
 
         if (absolute) {
-            next_port = url.port ? url.port : 80;
+            uint16_t next_port = url.port ? url.port : 80;
             string next_domain = string_from_literal_length((const char*)url.host.ptr, url.host.size);
             if (!curr.host_override) {
                 if (curr.headers_common.fields.host.mem_length) string_free(curr.headers_common.fields.host);
@@ -502,9 +508,8 @@ HTTPResponseMsg http_client_send_request(http_client_handle_t h, const HTTPReque
                 close_socket(cli->sock);
                 cli->sock = 0;
             }
-            cli->sock = next_domain.data ? create_socket(PROTO_TCP, &cli->tcp_opts) : 0;
-            int32_t rr = cli->sock ? SOCK_OK : SOCK_ERR_SYS;
-            if (rr >= 0) rr = http_client_connect_domain_origin(cli, next_domain.data, next_port);
+            int32_t rr = SOCK_ERR_SYS;
+            if (next_domain.data) rr = http_client_connect_domain_origin(cli, next_domain.data, next_port);
             if (next_domain.mem_length) string_free(next_domain);
             if (rr < 0) {
                 http_response_free(&resp);
@@ -520,9 +525,11 @@ HTTPResponseMsg http_client_send_request(http_client_handle_t h, const HTTPReque
                 close_socket(cli->sock);
                 cli->sock = 0;
             }
-            cli->sock = cli->origin.valid ? create_socket(PROTO_TCP, &cli->tcp_opts) : 0;
-            int32_t rr = cli->sock ? SOCK_OK : SOCK_ERR_SYS;
-            if (rr >= 0) rr = reconnect_domain.data ? http_client_connect_domain_origin(cli, reconnect_domain.data, reconnect_ep.port) : http_client_connect_endpoint_origin(cli, &reconnect_ep, NULL);
+            int32_t rr = SOCK_ERR_STATE;
+            if (cli->origin.valid) {
+                if (reconnect_domain.data) rr = http_client_connect_domain_origin(cli, reconnect_domain.data, reconnect_ep.port);
+                else rr = http_client_connect_endpoint_origin(cli, &reconnect_ep, NULL);
+            }
             if (reconnect_domain.mem_length) string_free(reconnect_domain);
             if (rr < 0) {
                 http_response_free(&resp);

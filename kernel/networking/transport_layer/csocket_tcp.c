@@ -59,10 +59,52 @@ static ksocket_t* tcp_socket_pop_pending_at(tcp_socket_t* s, int idx) {
     return client;
 }
 
+static int32_t tcp_socket_connection_state(tcp_socket_t* s) { 
+    if (!s) return -1;
+    if (!s->flow.flow_generation) {
+        s->connected = false;
+        memset(&s->flow, 0, sizeof(s->flow));
+        s->remoteEP.port = 0;
+        s->remoteEP.ver = IP_VER4;
+        memset(s->remoteEP.ip, 0, sizeof(s->remoteEP.ip));
+        return -1;
+    }
+
+    tcp_flow_t* flow = tcp_flow_from_ctx(&s->flow);
+    if (!flow) {
+        s->connected = false;
+        memset(&s->flow, 0, sizeof(s->flow));
+        s->remoteEP.port = 0;
+        s->remoteEP.ver = IP_VER4;
+        memset(s->remoteEP.ip, 0, sizeof(s->remoteEP.ip));
+        return -1;
+    }
+
+    tcp_state_t state = flow->base.state;
+    tcp_flow_put(flow);
+
+    if (state == TCP_ESTABLISHED || state == TCP_CLOSE_WAIT) {
+        s->connected = true;
+        return 1;
+    }
+
+    if (state == TCP_STATE_CLOSED || state == TCP_TIME_WAIT) {
+        tcp_flow_release_closed(&s->flow);
+        s->connected = false;
+        memset(&s->flow, 0, sizeof(s->flow));
+        s->remoteEP.port = 0;
+        s->remoteEP.ver = IP_VER4;
+        memset(s->remoteEP.ip, 0, sizeof(s->remoteEP.ip));
+        return -1;
+    }
+
+    return 0;
+}
+
 socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
 
-    uint32_t supported = SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_SEND_BUF_SIZE | SOCK_OPT_TCP_NO_DELAY;
+    uint32_t supported = SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_SEND_BUF_SIZE | SOCK_OPT_TCP_NO_DELAY | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE;
     if (extra) {
         if (extra->flags & ~supported) return NULL;
         if ((extra->flags & SOCK_OPT_DEBUG) && extra->debug_level > SOCK_DBG_ALL) return NULL;
@@ -132,6 +174,12 @@ int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint
             if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options);
             return SOCK_OK;
         }
+        case SOCK_OPT_DONTROUTE: {
+            if (s->flow.flow_generation) return SOCK_ERR_STATE;
+            return socket_common_options_set(&s->options, opt, value, len);
+        }
+        case SOCK_OPT_NONBLOCK:
+            return socket_common_options_set(&s->options, opt, value, len);
         case SOCK_OPT_MCAST_JOIN:
         case SOCK_OPT_MCAST_LEAVE:
         case SOCK_OPT_BROADCAST_ALLOWED:
@@ -188,7 +236,7 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
             v = s->localPort != 0;
             break;
         case SOCK_GET_CONNECTED:
-            v = s->connected;
+            v = tcp_socket_connection_state(s) > 0;
             break;
         case SOCK_GET_LISTENING:
             v = s->listening;
@@ -261,6 +309,8 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_DEBUG:
         case SOCK_GET_OPT_DONTFRAG:
         case SOCK_GET_OPT_TTL:
+        case SOCK_GET_OPT_NONBLOCK:
+        case SOCK_GET_OPT_DONTROUTE:
             return socket_common_options_get(&s->options, opt, value, len);
         default:
             return SOCK_ERR_INVAL;
@@ -356,10 +406,13 @@ ksocket_t* socket_accept_tcp(socket_impl_t sh) {
     tcp_socket_t* s = (tcp_socket_t*)sh;
     if (!s || !s->listening || !s->pending) return NULL;
 
-    const int max_empty_iters = 200;
-    int iter = 0;
+    uint32_t start_ms = get_time();
     while (tcp_socket_backlog_len(s) == 0) {
-        if (++iter > max_empty_iters) return NULL;
+        if (s->options.flags & SOCK_OPT_NONBLOCK) return NULL;
+        if ((s->options.flags & SOCK_OPT_RECV_TIMEOUT) && s->options.recv_timeout_ms) {
+            uint32_t elapsed = get_time() - start_ms;
+            if (elapsed >= s->options.recv_timeout_ms) return NULL;
+        }
         msleep(5);
     }
 
@@ -389,74 +442,109 @@ int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst) {
     if (dst) ev.dst_ep = *dst;
     netlog_socket_event(&s->options, &ev);
 
-    if (s->connected || s->listening) return SOCK_ERR_STATE;
+    if (s->listening) return SOCK_ERR_STATE;
     if (!dst || !dst->port) return SOCK_ERR_INVAL;
+    if (s->flow.flow_generation) {
+        if (s->remoteEP.port &&
+            (s->remoteEP.ver != dst->ver || s->remoteEP.port != dst->port || memcmp(s->remoteEP.ip, dst->ip, dst->ver == IP_VER6 ? 16 : 4) != 0)) return SOCK_ERR_STATE;
+    } else {
+        if (s->connected) return SOCK_ERR_STATE;
 
-    net_l4_endpoint d = *dst;
-    uint8_t chosen_l3 = 0;
+        net_l4_endpoint d = *dst;
+        uint8_t chosen_l3 = 0;
 
-    if (d.ver == IP_VER6) {
-        ipv6_tx_plan_t p6;
-        if (!socket_bind_build_ipv6_tx_plan(&s->bindSpec, s->localPort, d.ip, &p6)) return SOCK_ERR_SYS;
-        chosen_l3 = p6.l3_id;
-    } else if (d.ver == IP_VER4) {
-        uint32_t dip = 0;
-        memcpy(&dip, d.ip, 4);
-        ipv4_tx_plan_t p4;
-        if (!socket_bind_build_ipv4_tx_plan(&s->bindSpec, s->localPort, dip, &p4)) return SOCK_ERR_SYS;
-        chosen_l3 = p4.l3_id;
-    } else return SOCK_ERR_INVAL;
+        if (d.ver == IP_VER6) {
+            ipv6_tx_plan_t p6;
+            if (!socket_bind_build_ipv6_tx_plan(&s->bindSpec, s->localPort != 0, d.ip, &p6)) return SOCK_ERR_NO_ROUTE;
+            if ((s->options.flags & SOCK_OPT_DONTROUTE) && !ipv6_tx_plan_onlink(&p6, d.ip)) return SOCK_ERR_NO_ROUTE;
+            chosen_l3 = p6.l3_id;
+        } else if (d.ver == IP_VER4) {
+            uint32_t dip = 0;
+            memcpy(&dip, d.ip, 4);
+            ipv4_tx_plan_t p4;
+            if (!socket_bind_build_ipv4_tx_plan(&s->bindSpec, s->localPort != 0, dip, &p4)) return SOCK_ERR_NO_ROUTE;
+            if ((s->options.flags & SOCK_OPT_DONTROUTE) && !ipv4_tx_plan_onlink(&p4, dip)) return SOCK_ERR_NO_ROUTE;
+            chosen_l3 = p4.l3_id;
+        } else return SOCK_ERR_INVAL;
 
-    if (!chosen_l3) return SOCK_ERR_SYS;
+        if (!chosen_l3) return SOCK_ERR_NO_ROUTE;
 
-    if (d.ver == IP_VER4) {
-        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
-        if (!ipv4_l3_is_ready(v4)) return SOCK_ERR_SYS;
-    } else if (d.ver == IP_VER6) {
-        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen_l3);
-        if (!ipv6_l3_is_tcp_usable(v6)) return SOCK_ERR_SYS;
-    } else return SOCK_ERR_INVAL;
+        if (d.ver == IP_VER4) {
+            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
+            if (!ipv4_l3_is_ready(v4)) return SOCK_ERR_SYS;
+        } else if (d.ver == IP_VER6) {
+            l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen_l3);
+            if (!ipv6_l3_is_tcp_usable(v6)) return SOCK_ERR_SYS;
+        } else return SOCK_ERR_INVAL;
 
-    bool ephemeral_allocated = false;
-    if (s->localPort == 0) {
-        if (!s->ownerSocket) return SOCK_ERR_SYS;
-        socket_bind_token_t token = 0;
-        int p = socket_bind_alloc_ephemeral_l3(s->ownerSocket, PROTO_TCP, chosen_l3, &token);
-        if (p < 0) return SOCK_ERR_NO_PORT;
-        s->localPort = (uint16_t)p;
-        s->bindToken = token;
-        memset(&s->bindSpec, 0, sizeof(s->bindSpec));
-        s->bindSpec.kind = BIND_L3;
-        s->bindSpec.ver = d.ver;
-        s->bindSpec.l3_id = chosen_l3;
-        ephemeral_allocated = true;
-    }
-
-    memset(&s->flow, 0, sizeof(s->flow));
-    bool ok = tcp_handshake_l3(chosen_l3, s->localPort, &d, &s->flow, &s->options);
-    if (ok && d.ver == IP_VER4) {
-        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
-        ok = ipv4_l3_is_ready(v4);
-    } else if (ok && d.ver == IP_VER6) ok = ipv6_l3_is_tcp_usable(l3_ipv6_find_by_id(chosen_l3));
-
-    if (!ok) {
-        if (ephemeral_allocated) {
-            if (s->bindToken) {
-                socket_bind_remove(s->bindToken);
-                s->bindToken = 0;
-            }
-            s->localPort = 0;
+        bool ephemeral_allocated = false;
+        if (s->localPort == 0) {
+            if (!s->ownerSocket) return SOCK_ERR_SYS;
+            socket_bind_token_t token = 0;
+            int p = socket_bind_alloc_ephemeral_l3(s->ownerSocket, PROTO_TCP, chosen_l3, &token);
+            if (p < 0) return SOCK_ERR_NO_PORT;
+            s->localPort = (uint16_t)p;
+            s->bindToken = token;
             memset(&s->bindSpec, 0, sizeof(s->bindSpec));
+            s->bindSpec.kind = BIND_L3;
+            s->bindSpec.ver = d.ver;
+            s->bindSpec.l3_id = chosen_l3;
+            ephemeral_allocated = true;
+        }
+
+        memset(&s->flow, 0, sizeof(s->flow));
+        bool ok = tcp_handshake_l3(chosen_l3, s->localPort, &d, &s->flow, &s->options);
+        if (ok && d.ver == IP_VER4) {
+            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
+            ok = ipv4_l3_is_ready(v4);
+        } else if (ok && d.ver == IP_VER6) ok = ipv6_l3_is_tcp_usable(l3_ipv6_find_by_id(chosen_l3));
+
+        if (!ok) {
+            if (s->flow.flow_generation) {
+                tcp_flow_abort(&s->flow);
+                memset(&s->flow, 0, sizeof(s->flow));
+            }
+
             s->connected = false;
             s->remoteEP.port = 0;
             s->remoteEP.ver = IP_VER4;
             memset(s->remoteEP.ip, 0, sizeof(s->remoteEP.ip));
+
+            if (ephemeral_allocated) {
+                if (s->bindToken) {
+                    socket_bind_remove(s->bindToken);
+                    s->bindToken = 0;
+                }
+                s->localPort = 0;
+                memset(&s->bindSpec, 0, sizeof(s->bindSpec));
+            }
+            return SOCK_ERR_SYS;
         }
-        return SOCK_ERR_SYS;
+
+        s->remoteEP = d;
     }
 
-    s->remoteEP = d;
-    s->connected = true;
+    uint32_t start_ms = get_time();
+    uint32_t timeout_ms = (s->options.flags & SOCK_OPT_SEND_TIMEOUT) && s->options.send_timeout_ms ? s->options.send_timeout_ms : TCP_CONNECT_TIMEOUT_MS;
+
+    while (1) {
+        int32_t state = tcp_socket_connection_state(s);
+        if (state > 0) break;
+        if (state < 0) return SOCK_ERR_STATE;
+        if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
+
+        uint32_t now_ms = get_time();
+        if (now_ms - start_ms >= timeout_ms) {
+            if (s->flow.flow_generation) tcp_flow_abort(&s->flow);
+            s->connected = false;
+            memset(&s->flow, 0, sizeof(s->flow));
+            s->remoteEP.port = 0;
+            s->remoteEP.ver = IP_VER4;
+            memset(s->remoteEP.ip, 0, sizeof(s->remoteEP.ip));
+            return SOCK_ERR_WOULDBLOCK;
+        }
+        msleep(5);
+    }
 
     netlog_socket_event_t ev1 = {0};
     ev1.comp = NETLOG_COMP_TCP;
@@ -483,7 +571,8 @@ int64_t socket_send_tcp(socket_impl_t sh, const void* buf, uint64_t len) {
     ev.remote_ep = s->remoteEP;
     netlog_socket_event(&s->options, &ev);
 
-    if (!s->connected || !s->flow.flow_generation) return SOCK_ERR_STATE;
+    int connection_state = tcp_socket_connection_state(s);
+    if (connection_state <= 0 || !s->flow.flow_generation) return connection_state == 0 ? SOCK_ERR_WOULDBLOCK : SOCK_ERR_STATE;
     if (!buf && len) return SOCK_ERR_INVAL;
     if (!len) return 0;
 
@@ -513,14 +602,16 @@ int64_t socket_send_tcp(socket_impl_t sh, const void* buf, uint64_t len) {
             }
         }
         if (s->flow.payload.size) return (int64_t)s->flow.payload.size;
-        if (!(s->options.flags & SOCK_OPT_SEND_TIMEOUT) || !s->options.send_timeout_ms) return SOCK_ERR_WOULDBLOCK;
+        if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
 
-        uint32_t now_ms = (uint32_t)get_time();
-        uint32_t elapsed_ms = now_ms - start_ms;
-        if (elapsed_ms >= s->options.send_timeout_ms) return SOCK_ERR_WOULDBLOCK;
-        uint32_t wait_ms = s->options.send_timeout_ms - elapsed_ms;
-        if (wait_ms > 5) wait_ms = 5;
-        msleep(wait_ms);
+        if ((s->options.flags & SOCK_OPT_SEND_TIMEOUT) && s->options.send_timeout_ms) {
+            uint32_t now_ms = (uint32_t)get_time();
+            uint32_t elapsed_ms = now_ms - start_ms;
+            if (elapsed_ms >= s->options.send_timeout_ms) return SOCK_ERR_WOULDBLOCK;
+            uint32_t wait_ms = s->options.send_timeout_ms - elapsed_ms;
+            if (wait_ms > 5) wait_ms = 5;
+            msleep(wait_ms);
+        }else msleep(5);
     }
 }
 
@@ -538,25 +629,33 @@ int64_t socket_recv_tcp(socket_impl_t sh, void* buf, uint64_t len) {
     netlog_socket_event(&s->options, &ev);
 
     if (!buf || !len) return 0;
-    if (!s->connected || !s->flow.flow_generation) return s->connected ? SOCK_ERR_WOULDBLOCK : 0;
+    int connection_state = tcp_socket_connection_state(s);
+    if (connection_state < 0) return 0;
+    if (connection_state == 0 || !s->flow.flow_generation) return SOCK_ERR_WOULDBLOCK;
 
+    //TODO add receive low water mark support when socket events exist
     uint32_t start_ms = (uint32_t)get_time();
     while (1) {
-        int64_t n = tcp_flow_read(&s->flow, buf, len);
-        if (n > 0) return n;
-        if (n == TCP_DISCONNECT) return 0;
-        if (n < 0) return SOCK_ERR_STATE;
-        if (tcp_flow_recv_closed(&s->flow)) return 0;
-        if (!s->connected) return 0;
-        if (!(s->options.flags & SOCK_OPT_RECV_TIMEOUT) || !s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
+        uint32_t readable = tcp_flow_readable(&s->flow);
+        bool closed = tcp_flow_recv_closed(&s->flow);
+        if (readable || closed) {
+            int64_t n = tcp_flow_read(&s->flow, buf, len);
+            if (n > 0) return n;
+            if (n == TCP_DISCONNECT) return 0;
+            if (n < 0) return SOCK_ERR_STATE;
+        }
+        if (closed || !s->connected) return 0;
+        if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
+        if ((s->options.flags & SOCK_OPT_RECV_TIMEOUT) && s->options.recv_timeout_ms) {
 
-        uint32_t now_ms = (uint32_t)get_time();
-        uint32_t elapsed_ms = now_ms - start_ms;
-        if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
+            uint32_t now_ms = (uint32_t)get_time();
+            uint32_t elapsed_ms = now_ms - start_ms;
+            if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
 
-        uint32_t wait_ms = s->options.recv_timeout_ms - elapsed_ms;
-        if (wait_ms > 5) wait_ms = 5;
-        msleep(wait_ms);
+            uint32_t wait_ms = s->options.recv_timeout_ms - elapsed_ms;
+            if (wait_ms > 5) wait_ms = 5;
+            msleep(wait_ms);
+        }else msleep(5);
     }
 }
 
@@ -572,13 +671,14 @@ int32_t socket_close_tcp(socket_impl_t sh) {
     ev.remote_ep = s->remoteEP;
     netlog_socket_event(&s->options, &ev);
 
-    if (s->connected && s->flow.flow_generation) {
-        if (!tcp_flow_is_closed(&s->flow)) {
-            tcp_flow_flush(&s->flow);
-            tcp_flow_close(&s->flow);
-        }
-        s->connected = false;
-        memset(&s->flow, 0, sizeof(s->flow));
+    int32_t connection_state = tcp_socket_connection_state(s);
+    if (s->flow.flow_generation) {
+        if (connection_state > 0) {
+            if (!tcp_flow_is_closed(&s->flow)) {
+                tcp_flow_flush(&s->flow);
+                tcp_flow_close(&s->flow);
+            }
+        } else if (connection_state == 0) tcp_flow_abort(&s->flow);
     }
 
     if (s->pending) {
@@ -602,6 +702,7 @@ int32_t socket_close_tcp(socket_impl_t sh) {
     s->localPort = 0;
     memset(&s->bindSpec, 0, sizeof(s->bindSpec));
     s->connected = false;
+    memset(&s->flow, 0, sizeof(s->flow));
     s->remoteEP.port = 0;
     s->remoteEP.ver = IP_VER4;
     memset(s->remoteEP.ip, 0, sizeof(s->remoteEP.ip));
@@ -656,11 +757,13 @@ uint32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, const void*
     uint16_t owner_pid = socket_core_pid(s->ownerSocket);
     if (!socket_core_alloc(PROTO_TCP, SOCKET_SPECIAL_NONE, owner_pid, &child_owner)) return 0;
 
-    tcp_socket_t* child = (tcp_socket_t*)socket_tcp_create(child_owner, &s->options);
+    tcp_socket_t* child = (tcp_socket_t*)socket_tcp_create(child_owner, NULL);
     if (!child) {
         socket_core_close_socket(child_owner);
         return 0;
     }
+    child->options = s->options;
+    child->options.flags &= ~SOCK_OPT_NONBLOCK;
 
     child->localPort = dst_port;
     child->remoteEP.ver = ipver;

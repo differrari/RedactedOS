@@ -36,6 +36,14 @@ bool ipv6_tx_plan_valid(const ipv6_tx_plan_t* plan) {
     return ipv6_cmp(v6->ip, plan->src_ip) == 0;
 }
 
+bool ipv6_tx_plan_onlink(const ipv6_tx_plan_t* plan, const uint8_t dst[16]) {
+    if (!dst || !ipv6_tx_plan_valid(plan)) return false;
+    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(plan->l3_id); 
+    if (ipv6_is_loopback(dst)) return v6->is_localhost;
+    if (ipv6_is_linklocal(dst) || ipv6_is_linkscope_mcast(dst) || ipv6_is_multicast(dst)) return true;
+    return v6->prefix_len && ipv6_common_prefix_len(v6->ip, dst) >= v6->prefix_len;
+}
+
 bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx_plan_t* out) {
     if (!dst || !out) return false;
 

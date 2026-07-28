@@ -93,13 +93,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
             l3_ipv4_interface_t *v4 = l2->l3_v4[j];
             if (!ipv4_l3_is_ready(v4) || v4->is_localhost) continue;
 
-            uint32_t ttl = 2;
-            SocketOptions opt;
-            memset(&opt, 0, sizeof(opt));
-            opt.flags = SOCK_OPT_TTL;
-            opt.ttl = (uint8_t)ttl;
-
-            socket_handle_t s = create_socket(PROTO_UDP, &opt);
+            socket_handle_t s = create_socket(PROTO_UDP, &(SocketOptions){.flags = SOCK_OPT_TTL | SOCK_OPT_NONBLOCK, .ttl = 2});
             if (!s) continue;
 
             SockBindSpec spec;
@@ -129,13 +123,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
             l3_ipv6_interface_t *v6 = l2->l3_v6[j];
             if (!ipv6_l3_is_ready(v6) || v6->is_localhost) continue;
 
-            uint32_t ttl = 2;
-            SocketOptions opt;
-            memset(&opt, 0, sizeof(opt));
-            opt.flags = SOCK_OPT_TTL;
-            opt.ttl = (uint8_t)ttl;
-
-            socket_handle_t s = create_socket(PROTO_UDP, &opt);
+            socket_handle_t s = create_socket(PROTO_UDP, &(SocketOptions){.flags = SOCK_OPT_TTL | SOCK_OPT_NONBLOCK, .ttl = 2});
             if (!s) continue;
 
             SockBindSpec spec;

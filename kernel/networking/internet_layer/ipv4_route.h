@@ -39,6 +39,7 @@ typedef struct {
 } ipv4_tx_plan_t;
 
 bool ipv4_tx_plan_valid(const ipv4_tx_plan_t* plan);
+bool ipv4_tx_plan_onlink(const ipv4_tx_plan_t* plan, uint32_t dst);
 bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* out);
 
 bool ipv4_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, uint32_t dst, uint8_t* out_l3);

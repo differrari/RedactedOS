@@ -48,12 +48,7 @@ static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
             }
             if (have_socket) continue;
 
-            SocketOptions opt;
-            memset(&opt, 0, sizeof(opt));
-            opt.flags = SOCK_OPT_TTL;
-            opt.ttl = 255;
-
-            socket_handle_t s = create_socket(PROTO_UDP, &opt);
+            socket_handle_t s = create_socket(PROTO_UDP, &(SocketOptions){.flags = SOCK_OPT_TTL | SOCK_OPT_NONBLOCK, .ttl = 255});
             if (!s) continue;
 
             SockBindSpec spec;
@@ -92,12 +87,7 @@ static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
             }
             if (have_socket) continue;
 
-            SocketOptions opt;
-            memset(&opt, 0, sizeof(opt));
-            opt.flags = SOCK_OPT_TTL;
-            opt.ttl = 255;
-
-            socket_handle_t s = create_socket(PROTO_UDP, &opt);
+            socket_handle_t s = create_socket(PROTO_UDP, &(SocketOptions){.flags = SOCK_OPT_TTL | SOCK_OPT_NONBLOCK, .ttl = 255});
             if (!s) continue;
 
             SockBindSpec spec;

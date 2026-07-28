@@ -336,6 +336,19 @@ void tcp_free_flow(int idx) {
     tcp_flow_put(f);
 }
 
+tcp_result_t tcp_flow_abort(tcp_data *flow_ctx) {
+    tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
+    if (!flow) return TCP_INVALID;
+
+    int slot = (int)flow->base.slot;
+    tcp_state_t state = flow->base.state;
+    if ( !flow->base.retired && state != TCP_STATE_CLOSED && state != TCP_TIME_WAIT && state != TCP_SYN_SENT) tcp_send_reset(flow->base.local.ver, flow->base.local.ip, flow->base.remote.ip, flow->base.local_port, flow->base.remote.port, flow->tx.snd_nxt, 0, false);
+
+    tcp_free_flow(slot);
+    tcp_flow_put(flow);
+    return TCP_OK;
+}
+
 bool tcp_flow_is_closed(tcp_data *flow_ctx) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return true;
@@ -618,38 +631,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
     tcp_daemon_kick();
 
-    uint64_t start_ms = get_time();
-    uint64_t waited = 0;
-    const uint64_t interval = 50;
-    uint64_t max_wait = TCP_CONNECT_TIMEOUT_MS;
-    if (extra && (extra->flags & SOCK_OPT_SEND_TIMEOUT) && extra->send_timeout_ms) max_wait = extra->send_timeout_ms;
-
-    while (waited < max_wait){
-        tcp_data ctx_snapshot;
-        memset(&ctx_snapshot, 0, sizeof(ctx_snapshot));
-
-        irq_flags_t irq = irq_save_disable();
-        tcp_state_t state = flow->base.state;
-        ctx_snapshot = flow->base.ctx;
-        irq_restore(irq);
-
-        if (state == TCP_ESTABLISHED || state == TCP_CLOSE_WAIT){
-            *flow_ctx = ctx_snapshot;
-            tcp_flow_put(flow);
-            return true;
-        }
-
-        if (state == TCP_STATE_CLOSED){
-            tcp_free_flow(idx);
-            tcp_flow_put(flow);
-            return false;
-        }
-
-        msleep(interval);
-        waited = get_time() - start_ms;
-    }
-
-    tcp_free_flow(idx);
+    *flow_ctx = flow->base.ctx;
     tcp_flow_put(flow);
-    return false;
+    return true;
 }

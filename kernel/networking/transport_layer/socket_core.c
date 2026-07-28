@@ -231,6 +231,15 @@ int32_t socket_common_options_set(SocketOptions* opts, int32_t opt, const void* 
             if (v) opts->flags |= SOCK_OPT_BROADCAST_ALLOWED;
             else opts->flags &= ~SOCK_OPT_BROADCAST_ALLOWED;
             return SOCK_OK;
+        case SOCK_OPT_NONBLOCK:
+            if (v) opts->flags |= SOCK_OPT_NONBLOCK;
+            else opts->flags &= ~SOCK_OPT_NONBLOCK;
+            return SOCK_OK;
+
+        case SOCK_OPT_DONTROUTE:
+            if (v) opts->flags |= SOCK_OPT_DONTROUTE;
+            else opts->flags &= ~SOCK_OPT_DONTROUTE;
+            return SOCK_OK;
         case SOCK_OPT_TTL:
             if (v > 255) return SOCK_ERR_INVAL;
             opts->ttl = (uint8_t)v;
@@ -264,6 +273,12 @@ int32_t socket_common_options_get(const SocketOptions* opts, int32_t opt, void* 
             break;
         case SOCK_GET_OPT_BROADCAST_ALLOWED:
             v = (opts->flags & SOCK_OPT_BROADCAST_ALLOWED) != 0;
+            break;
+        case SOCK_GET_OPT_NONBLOCK:
+            v = (opts->flags & SOCK_OPT_NONBLOCK) != 0;
+            break;
+        case SOCK_GET_OPT_DONTROUTE:
+            v = (opts->flags & SOCK_OPT_DONTROUTE) != 0;
             break;
         case SOCK_GET_OPT_TTL:
             v = opts->ttl;

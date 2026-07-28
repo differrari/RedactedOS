@@ -11,6 +11,7 @@
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/link_layer/eth.h"
 #include "networking/transport_layer/trans_utils.h"
+#include "networking/transport_layer/socket_bind.h"
 #include "syscalls/syscalls.h"
 
 #define RAW_SOCKET_MAX 64
@@ -125,7 +126,7 @@ socket_impl_t socket_raw_create(ksocket_t* owner, const SocketOptions* extra) {
     if (proto != PROTO_ICMP && proto != PROTO_IGMP && proto != PROTO_ICMPV6) return NULL;
     //TODO add ESP/AH sock if needed
 
-    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_FILTER | SOCK_OPT_SPECIAL;
+    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_FILTER | SOCK_OPT_SPECIAL | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE;
     if (extra && (extra->flags & ~supported)) return NULL;
 
     raw_socket_t* s = (raw_socket_t*)zalloc(sizeof(raw_socket_t));
@@ -151,6 +152,8 @@ socket_impl_t socket_raw_create(ksocket_t* owner, const SocketOptions* extra) {
         }
 
         if (extra->flags & SOCK_OPT_DONTFRAG) s->options.flags |= SOCK_OPT_DONTFRAG;
+        if (extra->flags & SOCK_OPT_NONBLOCK) s->options.flags |= SOCK_OPT_NONBLOCK;
+        if (extra->flags & SOCK_OPT_DONTROUTE) s->options.flags |= SOCK_OPT_DONTROUTE;
         if ((extra->flags & SOCK_OPT_TTL) && extra->ttl) {
             s->options.flags |= SOCK_OPT_TTL;
             s->options.ttl = extra->ttl;
@@ -223,6 +226,8 @@ int32_t socket_setopt_raw(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_DEBUG:
         case SOCK_OPT_DONTFRAG:
         case SOCK_OPT_TTL:
+        case SOCK_OPT_NONBLOCK:
+        case SOCK_OPT_DONTROUTE:
             return socket_common_options_set(&s->options, opt, value, len);
         case SOCK_OPT_FILTER:
             return raw_set_filter(s, value, len);
@@ -278,6 +283,8 @@ int32_t socket_getopt_raw(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_DEBUG:
         case SOCK_GET_OPT_DONTFRAG:
         case SOCK_GET_OPT_TTL:
+        case SOCK_GET_OPT_NONBLOCK:
+        case SOCK_GET_OPT_DONTROUTE:
             return socket_common_options_get(&s->options, opt, value, len);
         case SOCK_GET_OPT_SEND_TIMEOUT:
         case SOCK_GET_OPT_BUF_SIZE:
@@ -402,17 +409,29 @@ int64_t socket_sendto_raw(socket_impl_t sh, const net_l4_endpoint* dst, const vo
     if (proto == PROTO_ICMP || proto == PROTO_IGMP) {
         uint32_t dst_ip = 0;
         memcpy(&dst_ip, dst->ip, sizeof(dst_ip));
+        if (s->options.flags & SOCK_OPT_DONTROUTE) {
+            ipv4_tx_plan_t plan;
+            if (!socket_bind_build_ipv4_tx_plan(&s->bind_spec, s->bound, dst_ip, &plan) || !ipv4_tx_plan_onlink(&plan, dst_ip)) {
+                netpkt_unref(pkt);
+                return SOCK_ERR_NO_ROUTE;
+            }
+        }
         return ipv4_send_packet(dst_ip, (uint8_t)proto, pkt, txp, ttl, dontfrag) ? (int64_t)len : SOCK_ERR_SYS;
     }
 
+    ipv6_tx_plan_t plan;
+    if (!ipv6_build_tx_plan(dst->ip, txp, &plan)) {
+        netpkt_unref(pkt);
+        return (s->options.flags & SOCK_OPT_DONTROUTE) ? SOCK_ERR_NO_ROUTE : SOCK_ERR_SYS;
+    }
+
+    if ((s->options.flags & SOCK_OPT_DONTROUTE) && !ipv6_tx_plan_onlink(&plan, dst->ip)){
+        netpkt_unref(pkt);
+        return SOCK_ERR_NO_ROUTE;
+    }
+
     if (len >= 4) {
-        ipv6_tx_plan_t plan;
-        if (!ipv6_build_tx_plan(dst->ip, txp, &plan)) {
-            netpkt_unref(pkt);
-            return SOCK_ERR_SYS;
-        }
-        ((uint8_t*)p)[2] = 0;
-        ((uint8_t*)p)[3] = 0;
+        memset((uint8_t*)p + 2, 0, sizeof(uint16_t));
         uint16_t sum = bswap16(checksum16_pipv6(plan.src_ip, dst->ip, PROTO_ICMPV6, p, (uint32_t)len));
         memcpy((uint8_t*)p + 2, &sum, sizeof(sum));
     }
@@ -429,7 +448,7 @@ int64_t socket_recv_raw(socket_impl_t sh, void* buf, uint64_t len, net_l4_endpoi
         bool ready = s->rx_count != 0;
         irq_restore(irq);
         if (ready) break;
-        if (!(s->options.flags & SOCK_OPT_RECV_TIMEOUT) || !s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
+        if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
 
         uint32_t start_ms = (uint32_t)get_time();
         while (1) {
@@ -438,11 +457,14 @@ int64_t socket_recv_raw(socket_impl_t sh, void* buf, uint64_t len, net_l4_endpoi
             irq_restore(irq);
             if (ready) break;
 
-            uint32_t now_ms = (uint32_t)get_time();
-            uint32_t elapsed_ms = now_ms - start_ms;
-            if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
-            uint32_t wait_ms = s->options.recv_timeout_ms - elapsed_ms;
-            msleep(wait_ms > 5 ? 5 : wait_ms);
+            if ((s->options.flags & SOCK_OPT_RECV_TIMEOUT) && s->options.recv_timeout_ms) {
+                uint32_t now_ms = (uint32_t)get_time();
+                uint32_t elapsed_ms = now_ms - start_ms;
+                if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
+                uint32_t wait_ms = s->options.recv_timeout_ms - elapsed_ms;
+                if (wait_ms > 5) wait_ms = 5;
+                msleep(wait_ms);
+            }else msleep(5);
         }
     }
 

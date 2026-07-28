@@ -157,7 +157,7 @@ static dns_result_t query_with_selection(const net_l4_endpoint* primary, const n
     if (which == DNS_USE_PRIMARY && dns_srv_is_zero(primary)) return DNS_ERR_NO_DNS;
     if (which == DNS_USE_SECONDARY && dns_srv_is_zero(secondary)) return DNS_ERR_NO_DNS;
     if (which == DNS_USE_BOTH && dns_srv_is_zero(primary) && dns_srv_is_zero(secondary)) return DNS_ERR_NO_DNS;
-    socket_handle_t sock = create_socket(PROTO_UDP, NULL);
+    socket_handle_t sock = create_socket(PROTO_UDP, &(SocketOptions){.flags = SOCK_OPT_NONBLOCK});
     if (!sock) return DNS_ERR_SOCKET;
 
     dns_result_t res = DNS_ERR_NO_DNS;

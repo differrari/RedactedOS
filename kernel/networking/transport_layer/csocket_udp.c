@@ -220,7 +220,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, uint8_t l3_id, 
 socket_impl_t udp_socket_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
 
-    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_BROADCAST_ALLOWED | SOCK_OPT_TTL | SOCK_OPT_MCAST_JOIN;
+    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_BROADCAST_ALLOWED | SOCK_OPT_TTL | SOCK_OPT_MCAST_JOIN | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE;
     if (extra) {
         if (extra->flags & ~supported) return NULL;
         if ((extra->flags & SOCK_OPT_DEBUG) && extra->debug_level > SOCK_DBG_ALL) return NULL;
@@ -328,6 +328,18 @@ int32_t socket_connect_udp(socket_impl_t sh, const net_l4_endpoint* dst) {
     if (!dst || !dst->port) return SOCK_ERR_INVAL;
     if (dst->ver != IP_VER4 && dst->ver != IP_VER6) return SOCK_ERR_INVAL;
 
+    if (dst->ver == IP_VER4) {
+        uint32_t dip = 0;
+        memcpy(&dip, dst->ip, 4);
+        ipv4_tx_plan_t plan;
+        if (!socket_bind_build_ipv4_tx_plan(&s->bindSpec, s->localPort != 0, dip, &plan)) return SOCK_ERR_NO_ROUTE;
+        if ((s->options.flags & SOCK_OPT_DONTROUTE) && !ipv4_tx_plan_onlink(&plan, dip)) return SOCK_ERR_NO_ROUTE;
+    } else {
+        ipv6_tx_plan_t plan;
+        if (!socket_bind_build_ipv6_tx_plan(&s->bindSpec, s->localPort != 0, dst->ip, &plan)) return SOCK_ERR_NO_ROUTE;
+        if ((s->options.flags & SOCK_OPT_DONTROUTE) && !ipv6_tx_plan_onlink(&plan, dst->ip)) return SOCK_ERR_NO_ROUTE;
+    }
+
     s->remoteEP = *dst;
     s->connected = true;
     return SOCK_OK;
@@ -431,11 +443,12 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         }
 
         ipv4_tx_plan_t plan;
-        if (!socket_bind_build_ipv4_tx_plan(&s->bindSpec, s->localPort, dip, &plan)) return SOCK_ERR_SYS;
+        if (!socket_bind_build_ipv4_tx_plan(&s->bindSpec, s->localPort != 0, dip, &plan)) return SOCK_ERR_NO_ROUTE;
+        if ((s->options.flags & SOCK_OPT_DONTROUTE) && !ipv4_tx_plan_onlink(&plan, dip)) return SOCK_ERR_NO_ROUTE;
 
         uint8_t tx_l3 = plan.l3_id;
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(tx_l3);
-        if (!ipv4_l3_is_ready(v4)) return SOCK_ERR_SYS;
+        if (!ipv4_l3_is_ready(v4)) return SOCK_ERR_NO_ROUTE;
 
         if (!s->localPort) {
             socket_bind_token_t token = 0;
@@ -462,11 +475,12 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
 
     if (d.ver == IP_VER6) {
         ipv6_tx_plan_t plan;
-        if (!socket_bind_build_ipv6_tx_plan(&s->bindSpec, s->localPort, d.ip, &plan)) return SOCK_ERR_SYS;
+        if (!socket_bind_build_ipv6_tx_plan(&s->bindSpec, s->localPort != 0, d.ip, &plan)) return SOCK_ERR_NO_ROUTE;
+        if ((s->options.flags & SOCK_OPT_DONTROUTE) && !ipv6_tx_plan_onlink(&plan, d.ip)) return SOCK_ERR_NO_ROUTE;
 
         uint8_t chosen_l3 = plan.l3_id;
         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen_l3);
-        if (!ipv6_l3_is_ready(v6)) return SOCK_ERR_SYS;
+        if (!ipv6_l3_is_ready(v6)) return SOCK_ERR_NO_ROUTE;
 
         if (!s->localPort) {
             socket_bind_token_t token = 0;
@@ -511,7 +525,7 @@ int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_en
     bool ready = s->rx_ring && s->r_head != s->r_tail;
     irq_restore(irq);
     if (!ready) {
-        if (!(s->options.flags & SOCK_OPT_RECV_TIMEOUT) || !s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
+        if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
 
         uint32_t start_ms = (uint32_t)get_time();
         while (1) {
@@ -520,13 +534,15 @@ int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_en
             irq_restore(irq);
             if (ready) break;
 
-            uint32_t now_ms = (uint32_t)get_time();
-            uint32_t elapsed_ms = now_ms - start_ms;
-            if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
+            if ((s->options.flags & SOCK_OPT_RECV_TIMEOUT) && s->options.recv_timeout_ms) {
+                uint32_t now_ms = get_time();
+                uint32_t elapsed_ms = now_ms - start_ms;
+                if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
 
-            uint32_t wait_ms = s->options.recv_timeout_ms - elapsed_ms;
-            if (wait_ms > 5) wait_ms = 5;
-            msleep(wait_ms);
+                uint32_t wait_ms = s->options.recv_timeout_ms - elapsed_ms;
+                if (wait_ms > 5) wait_ms = 5;
+                msleep(wait_ms);
+            }else msleep(5);
         }
     }
 
@@ -569,6 +585,9 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_FILTER:
         case SOCK_OPT_SPECIAL:
             return SOCK_ERR_UNSUP;
+        case SOCK_OPT_NONBLOCK:
+        case SOCK_OPT_DONTROUTE:
+            return socket_common_options_set(&s->options, opt, value, len);
         case SOCK_OPT_MCAST_JOIN: {
             if (!value || !len || (len % sizeof(net_l4_endpoint)) != 0) return SOCK_ERR_INVAL;
             uint32_t count32 = len / sizeof(net_l4_endpoint);
@@ -763,6 +782,8 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_DONTFRAG:
         case SOCK_GET_OPT_BROADCAST_ALLOWED:
         case SOCK_GET_OPT_TTL:
+        case SOCK_GET_OPT_NONBLOCK:
+        case SOCK_GET_OPT_DONTROUTE:
             return socket_common_options_get(&s->options, opt, value, len);
         default:
             return SOCK_ERR_INVAL;

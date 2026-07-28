@@ -122,7 +122,7 @@ static void ensure_inventory() {
                 st.mac_ok = true;
             }
             st.needs_inform = (v4->mode == IPV4_CFG_STATIC && v4->ip != 0);
-            st.sock = create_socket(PROTO_UDP, NULL);
+            st.sock = create_socket(PROTO_UDP, &(SocketOptions){.flags = SOCK_OPT_NONBLOCK});
             if (!st.sock) continue;
             if (set_socket_option(st.sock, SOCK_OPT_BROADCAST_ALLOWED, NULL, 0) != SOCK_OK) {
                 close_socket(st.sock);

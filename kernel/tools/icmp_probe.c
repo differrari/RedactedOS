@@ -72,7 +72,7 @@ uint32_t icmp_probe_collect(const net_l4_endpoint* dst, uint16_t id, uint16_t se
     SocketOptions opt;
     memset(&opt, 0, sizeof(opt));
     opt.special_kind = SOCKET_SPECIAL_RAW;
-    opt.flags = SOCK_OPT_SPECIAL | SOCK_OPT_FILTER;
+    opt.flags = SOCK_OPT_SPECIAL | SOCK_OPT_FILTER | SOCK_OPT_NONBLOCK;
     opt.raw_filter.count = 5;
     if (dst->ver == IP_VER4) {
         opt.raw_filter.rules[0].type = ICMP_ECHO_REPLY;

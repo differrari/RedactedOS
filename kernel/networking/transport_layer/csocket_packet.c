@@ -94,7 +94,7 @@ socket_impl_t socket_packet_create(ksocket_t* owner, const SocketOptions* extra)
     if (!owner) return NULL;
     if (socket_core_special_kind(owner) != SOCKET_SPECIAL_PACKET) return NULL;
 
-    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_FILTER | SOCK_OPT_SPECIAL;
+    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_FILTER | SOCK_OPT_SPECIAL | SOCK_OPT_NONBLOCK;
     if (extra && (extra->flags & ~supported)) return NULL;
 
     packet_socket_t* s = (packet_socket_t*)zalloc(sizeof(packet_socket_t));
@@ -120,6 +120,7 @@ socket_impl_t socket_packet_create(ksocket_t* owner, const SocketOptions* extra)
             s->options.flags |= SOCK_OPT_RECV_TIMEOUT;
             s->options.recv_timeout_ms = extra->recv_timeout_ms;
         }
+        if (extra->flags & SOCK_OPT_NONBLOCK) s->options.flags |= SOCK_OPT_NONBLOCK;
         if (extra->flags & SOCK_OPT_BUF_SIZE) {
             if (!extra->buf_size) {
                 release(s);
@@ -187,6 +188,7 @@ int32_t socket_setopt_packet(socket_impl_t sh, int32_t opt, const void* value, u
     switch ((uint32_t)opt) {
         case SOCK_OPT_RECV_TIMEOUT:
         case SOCK_OPT_DEBUG:
+        case SOCK_OPT_NONBLOCK:
             return socket_common_options_set(&s->options, opt, value, len);
         case SOCK_OPT_FILTER:
             return packet_set_filter(s, value, len);
@@ -234,6 +236,7 @@ int32_t socket_getopt_packet(socket_impl_t sh, int32_t opt, void* value, uint32_
         case SOCK_GET_OPT_RECV_TIMEOUT:
         case SOCK_GET_OPT_DEBUG:
         case SOCK_GET_OPT_BUF_SIZE:
+        case SOCK_GET_OPT_NONBLOCK:
             return socket_common_options_get(&s->options, opt, value, len);
         case SOCK_GET_CONNECTED:
         case SOCK_GET_LISTENING:
@@ -294,7 +297,7 @@ int64_t socket_recv_packet(socket_impl_t sh, void* buf, uint64_t len) {
         bool ready = s->head != s->tail;
         irq_restore(irq);
         if (ready) break;
-        if (!(s->options.flags & SOCK_OPT_RECV_TIMEOUT) || !s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
+        if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
 
         uint32_t start_ms = (uint32_t)get_time();
         while (1) {
@@ -303,11 +306,14 @@ int64_t socket_recv_packet(socket_impl_t sh, void* buf, uint64_t len) {
             irq_restore(irq);
             if (ready) break;
 
-            uint32_t now_ms = (uint32_t)get_time();
-            uint32_t elapsed_ms = now_ms - start_ms;
-            if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
-            uint32_t wait_ms = s->options.recv_timeout_ms - elapsed_ms;
-            msleep(wait_ms > 5 ? 5 : wait_ms);
+            if ((s->options.flags & SOCK_OPT_RECV_TIMEOUT) && s->options.recv_timeout_ms) {
+                uint32_t now_ms = (uint32_t)get_time();
+                uint32_t elapsed_ms = now_ms - start_ms;
+                if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
+                uint32_t wait_ms = s->options.recv_timeout_ms - elapsed_ms;
+                if (wait_ms > 5) wait_ms = 5;
+                msleep(wait_ms);
+            }else msleep(5);
         }
     }
 

@@ -40,6 +40,7 @@ typedef struct {
 } ipv6_tx_plan_t;
 
 bool ipv6_tx_plan_valid(const ipv6_tx_plan_t* plan);
+bool ipv6_tx_plan_onlink(const ipv6_tx_plan_t* plan, const uint8_t dst[16]);
 bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx_plan_t* out);
 
 #ifdef __cplusplus

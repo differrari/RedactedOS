@@ -261,7 +261,7 @@ static void ensure_binds() {
             b->mac_ok = 1;
         }
 
-        b->sock = create_socket(PROTO_UDP, NULL);
+        b->sock = create_socket(PROTO_UDP, &(SocketOptions){.flags = SOCK_OPT_NONBLOCK});
         if (!b->sock) {
             free_sized(b, sizeof(*b));
             continue;
