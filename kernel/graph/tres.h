@@ -18,6 +18,7 @@ typedef struct {
 
 #define MENU_HEIGHT 50
 #define TOOLBAR_HEIGHT 50
+#define BORDER_SIZE 3
 
 void init_window_manager();
 

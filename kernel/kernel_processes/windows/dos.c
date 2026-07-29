@@ -14,8 +14,7 @@
 #include "wincomp.h"
 #include "ui/color/color.h"
 #include "utils/cursor/cursor_manager.h"
-
-#define BORDER_SIZE 3
+#include "menu.h"
 
 typedef enum { right_move, left_move, down_move, up_move } dos_movement;
 u16 move_shortcuts[4];
@@ -225,13 +224,6 @@ void check_shortcuts(){
             }
         }
 }
-
-void draw_menu(){
-    draw_ctx *screen_ctx = gpu_get_ctx();
-    fb_fill_rect(screen_ctx, 0, 0, screen_ctx->width, MENU_HEIGHT, system_theme.bg_color+0x111111);
-    fb_fill_rect(screen_ctx, 0, MENU_HEIGHT-BORDER_SIZE, screen_ctx->width, BORDER_SIZE, 0x44000000);
-}
-
 int window_system(){
     disable_visual();
     dos_ctx = gpu_get_ctx();
@@ -323,9 +315,9 @@ int window_system(){
             active = true;
             draw_desktop();
             linked_list_for_each(window_list, redraw_win);
-            draw_menu();
             dirty_windows = false;
         }
+        draw_menu();
         gpu_flush();
         enable_interrupt();
         if (!active && !dirty_windows && !mouse_button_pressed(LMB) && !mouse_button_pressed(MMB)) msleep(25);
