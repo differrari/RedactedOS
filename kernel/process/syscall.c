@@ -180,7 +180,7 @@ u64 syscall_char_size(process_t *ctx, thread_t *current_thread){
 
 u64 syscall_msleep(process_t *ctx, thread_t *current_thread){
     syscall_depth--;
-    sleep_process(current_thread->PROC_X0);//TODO: sleep thread instead
+    sleep_thread(current_thread->PROC_X0);
     return 0;
 }
 

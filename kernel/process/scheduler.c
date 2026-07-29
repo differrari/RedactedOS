@@ -129,9 +129,10 @@ void switch_proc(ProcSwitchReason reason) {
         panic("No processes active", 0);
     thread_t *prev_t = (thread_t*)cpec;
     process_t *prev = current_proc, *next_proc = 0;
-    if (prev && prev->state == RUNNING && prev_t->state == RUNNING) {
+    if (prev && prev->state == RUNNING) {
         if (prev == idle_proc) prev->state = BLOCKED;
-        else enqueue_ready_thread(prev_t);
+        else if (prev_t->state == RUNNING) enqueue_ready_thread(prev_t);
+        else prev->current_thread = prev->current_thread->next ?: &prev->main_thread;
     }
 
     if (prev->current_thread->next){
@@ -623,7 +624,7 @@ process_t *get_all_processes(){
     return process_list;
 }
 
-void sleep_process(uint64_t msec){
+void sleep_thread(uint64_t msec){
     irq_flags_t irq = irq_save_disable();
 
     if (!msec) {
