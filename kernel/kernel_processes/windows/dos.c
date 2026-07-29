@@ -34,16 +34,23 @@ static draw_ctx *dos_ctx;
 
 extern float zoom_scale;
 
-static void draw_solid_window(draw_ctx *ctx, int_point fixed_point, gpu_size fixed_size, bool fill){
+static void draw_solid_window(draw_ctx *ctx, int_point fixed_point, gpu_size fixed_size, bool fill, bool use_shadows, bool focused){
     int_point win_point = {fixed_point.x + BORDER_SIZE, fixed_point.y + BORDER_SIZE + TOOLBAR_HEIGHT};
     gpu_size win_size = {fixed_size.width - (BORDER_SIZE*2), fixed_size.height - TOOLBAR_HEIGHT - (BORDER_SIZE*2)};
+
+    if (use_shadows && focused)
+        rectangle(dos_ctx, (rect_ui_config){
+            .border_size = BORDER_SIZE * 1.5,
+            .border_color = 0x44000000,
+        }, (common_ui_config){ .point = (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5}, });
+    
     DRAW(rectangle(ctx, (rect_ui_config){
         .border_size = BORDER_SIZE,
-        .border_color = system_theme.bg_color + 0x222222
+        .border_color = saturate(system_theme.bg_color + 0x222222, focused ? 0 : -90),
     }, (common_ui_config){
         .point = fixed_point,
         .size = fixed_size,
-        .background_color = system_theme.bg_color + 0x111111,
+        .background_color = saturate(system_theme.bg_color + 0x111111, focused ? 0 : -90),
         .foreground_color = COLOR_WHITE,
     }), {
         rectangle(ctx, (rect_ui_config){}, (common_ui_config){
@@ -67,16 +74,7 @@ void draw_window(window_frame *frame){
     fixed_point.y /= zoom_scale;
     fixed_size.width /= zoom_scale;
     fixed_size.height /= zoom_scale;
-    if (!system_theme.use_window_shadows || focused_window != frame){
-        draw_solid_window(dos_ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
-        return;
-    }
-    DRAW(rectangle(dos_ctx, (rect_ui_config){
-        .border_size = BORDER_SIZE * 1.5,
-        .border_color = 0x44000000,
-    }, (common_ui_config){ .point = (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5}, }),{
-        draw_solid_window(dos_ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
-    });
+    draw_solid_window(dos_ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid, system_theme.use_window_shadows, focused_window == frame);
 }
 
 gpu_point click_loc;
