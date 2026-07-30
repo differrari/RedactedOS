@@ -3,7 +3,7 @@
 #include "files/jobs.h"
 #include "process/process.h"
 
-//TODO: We can probably optimize current proc fs more, but right now it blocks the entire process so we can't allow this case
+//TODO: if the owner is the current process, we can downgrade the syscall into a function call without async
 #define job_make(job_type,mod,action)\
 process_t *owner_proc = get_proc_by_pid(mod->owner);\
 if (!is_privileged(owner_proc)){\
@@ -16,7 +16,6 @@ if (!is_privileged(owner_proc)){\
     action\
     create_new_job(app,mod);\
     switch_proc(YIELD);\
-    return false;\
 }
 
 static inline void job_application_append_buffer(job_application_t *app, job_buffer buf){

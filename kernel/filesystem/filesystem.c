@@ -160,9 +160,12 @@ void close_file(file *descriptor){
 
 void close_file_global(file *descriptor, system_module *mod){
     if (!mod || !mod->close) return;
-    if (mod->owner != get_kernel_proc()->id)
-        kprintf("cba rn");
-    else 
+    if (mod->owner != get_kernel_proc()->id){
+        job_make(job_close, mod, {
+            job_serialize_fd(&app, 0, descriptor, copy_on_start);
+        });
+        return;
+    } else 
         mod->close(descriptor);
 }
 
@@ -282,6 +285,7 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
             job_serialize_str(&app, 0, search_path);
             job_serialize_stat(&app, 1, out_stat);
         })
+        return false;
     }
     return mod->getstat(search_path, out_stat);
 }
@@ -301,15 +305,17 @@ bool truncate(file *descriptor, size_t size){
 
     file gfd = (file){
         .id = local.mfile_id,
-        .size = descriptor->size,
+        .size = size,
         .cursor = descriptor->cursor,
         .data_type = descriptor->data_type
     };
 
     if (local.mod->owner != get_kernel_proc()->id){
-        kprintf("cba rn");
+        job_make(job_trunc, local.mod, {
+            job_serialize_fd(&app, 0, &gfd, copy_on_start);
+        });
         return false;
-    } else if (!local.mod->truncate(&gfd, size)) return false;
+    } else if (!local.mod->truncate(&gfd)) return false;
 
     descriptor->size = gfd.size;
     descriptor->cursor = gfd.cursor;
