@@ -53,7 +53,6 @@ FS_RESULT environment_open(u64 id, string_slice file_name, file *fd){
         return FS_RESULT_SUCCESS;
     }
     if (slice_lit_match(file_name, "window", true)){
-        print("Opening file %v",file_name);
         fd->id = ((env_type_win & 0xFFFF) << 16) | id;
         fd->data_type = DATA_WIN_SIGNATURE;
         fd->size = sizeof(window_info_t);
