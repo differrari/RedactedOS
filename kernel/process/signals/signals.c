@@ -33,6 +33,12 @@ bool send_signal_proc_proc(signal_types type, i64 value, process_t *source, proc
     thread_t *t = &destination->signal_handlers[type];
     if (t->pc)
         schedule_thread(destination,t);
+    else 
+        handle_signal_default(destination, &(signal_info_t){
+            .sender = source->id,
+            .type = type,
+            .value = value,
+        });
 
     switch_proc(YIELD);
     

@@ -151,6 +151,10 @@ bool mouse_button_pressed(int mb){
     return (last_cursor_state & (1 << mb)) == (1 << mb);
 }
 
+bool mouse_any_button_pressed(){
+    return last_cursor_state;
+}
+
 uint16_t sys_subscribe_shortcut_current(keypress kp){
     return sys_subscribe_shortcut(get_current_proc_pid(),kp);
 }
@@ -184,16 +188,14 @@ void sys_set_focus(int pid){
 
 void sys_unset_focus(bool close){
     process_t *proc = focused_proc;
-    if (proc) proc->focused = false;
-    focused_proc = 0;
-    if (system_config.use_windows) unset_window_focus();
-
-    u16 npid = proc && proc->win_id ? window_fallback_focus(proc->win_id, proc->id) : 0;
-    if (npid)
-    {
-        process_t *next = get_proc_by_pid(npid);
-        if (next && next->focused && next->state != STOPPED && next->id && next->main_thread.pc && next->main_thread.sp && (is_privileged(next) || next->mm.ttbr0)) focused_proc = next;
+    if (!proc) return;
+    if (proc->focused){ 
+        proc->focused = false;
+        focused_proc = 0;
+        if (system_config.use_windows) unset_window_focus();
     }
+
+    window_close_process(proc);
 }
 
 u16 sys_get_focused_pid(){

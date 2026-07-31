@@ -205,7 +205,7 @@ struct { char* name; int (*fn)(); } demos[] = {
 int main(int argc, char* argv[]){
     
     handle_signal(SIG_QUIT, on_quit);
-    send_signal(SIG_QUIT, 7);
+    // send_signal(SIG_QUIT, 7);//TODO: get own procid?
 
     request_draw_ctx(&ctx);
 
@@ -244,8 +244,11 @@ int main(int argc, char* argv[]){
             if (ev.type == KEY_PRESS){
                 if (ev.key >= KEY_1 && ev.key <= (KEY_1 + count - 1)){
                     int index = ev.key - KEY_1;
-                    if (index >= 0 && index < count)
+                    if (index >= 0 && index < count){
+                        fb_clear(&ctx, 0);
+                        commit_draw_ctx(&ctx);
                         return demos[index].fn();
+                    }
                 }
                 if (ev.key == KEY_ESC) halt(0);
             }

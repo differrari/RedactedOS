@@ -3,6 +3,7 @@
 #include "types.h"
 #include "ui/draw/draw.h"
 #include "data/struct/linked_list.h"
+#include "process/process.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +36,7 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus
 u16 window_fallback_focus(u16 win_id, u16 skip_id);
 void set_window_focus(uint16_t win_id);
 void unset_window_focus();
+void window_close_process(process_t *proc);
 
 gpu_point convert_mouse_position(gpu_point p);
 

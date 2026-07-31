@@ -33,7 +33,7 @@ static draw_ctx *dos_ctx;
 
 extern float zoom_scale;
 
-static void draw_solid_window(draw_ctx *ctx, int_point fixed_point, gpu_size fixed_size, bool fill, bool use_shadows, bool focused){
+static void draw_solid_window(window_frame *frame, draw_ctx *ctx, int_point fixed_point, gpu_size fixed_size, bool fill, bool use_shadows, bool focused){
     int_point win_point = {fixed_point.x + BORDER_SIZE, fixed_point.y + BORDER_SIZE + TOOLBAR_HEIGHT};
     gpu_size win_size = {fixed_size.width - (BORDER_SIZE*2), fixed_size.height - TOOLBAR_HEIGHT - (BORDER_SIZE*2)};
 
@@ -52,6 +52,17 @@ static void draw_solid_window(draw_ctx *ctx, int_point fixed_point, gpu_size fix
         .background_color = saturate(system_theme.bg_color + 0x111111, focused ? 0 : -90),
         .foreground_color = COLOR_WHITE,
     }), {
+        #if false
+        bool close_pressed = false;
+        button(ctx, (rect_ui_config){}, (common_ui_config){
+            .point = RELATIVE(parent.size.width - (BORDER_SIZE * 2) - 40 - BORDER_SIZE,BORDER_SIZE),
+            .size = {30, 30},
+            .background_color = 0xFFB40000,
+        }, &close_pressed);
+        if (close_pressed){
+            send_signal(SIG_QUIT, frame->pid);
+        }
+        #endif
         rectangle(ctx, (rect_ui_config){}, (common_ui_config){
             .point = {fixed_point.x + BORDER_SIZE, fixed_point.y + TOOLBAR_HEIGHT},
             .size = {win_size.width - (BORDER_SIZE), BORDER_SIZE},
@@ -73,7 +84,7 @@ void draw_window(window_frame *frame){
     fixed_point.y /= zoom_scale;
     fixed_size.width /= zoom_scale;
     fixed_size.height /= zoom_scale;
-    draw_solid_window(dos_ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid, system_theme.use_window_shadows, focused_window == frame);
+    draw_solid_window(frame, dos_ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid, system_theme.use_window_shadows, focused_window == frame);
 }
 
 gpu_point click_loc;
@@ -311,6 +322,7 @@ int window_system(){
             }
         }
         disable_interrupt();
+        if (mouse_any_button_pressed()) dirty_windows = true;
         if (dirty_windows){
             active = true;
             draw_desktop();
@@ -325,6 +337,10 @@ int window_system(){
     return 0;
 }
 
+process_t *win_system_proc;
+
 process_t* create_windowing_system(){
-    return create_kernel_process("dos", window_system, 0, 0);
+    if (!win_system_proc)
+        win_system_proc = create_kernel_process("dos", window_system, 0, 0);
+    return win_system_proc;
 }

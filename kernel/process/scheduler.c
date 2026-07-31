@@ -21,6 +21,7 @@
 #include "alloc/allocate.h"
 #include "files/dir_list.h"
 #include "stack_manager.h"
+#include "graph/tres.h"
 
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
@@ -588,6 +589,8 @@ void stop_process(uint16_t pid, int32_t exit_code){
     
     if (proc->focused)
         sys_unset_focus(false);
+    else 
+        window_close_process(proc);
     
     remove_sleeping_process(proc, pid);
     update_sleep_timer();

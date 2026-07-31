@@ -53,8 +53,11 @@ gpu_point win_to_screen(window_frame *frame, gpu_point point){
     return (gpu_point){};
 }
 
+extern process_t *win_system_proc;
+
 gpu_point convert_mouse_position(gpu_point point){
     process_t *p = get_current_proc();
+    if (p == win_system_proc) return point;
     linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
@@ -280,7 +283,14 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus
 
     frame_ctx->dirty_count = 0;
     frame_ctx->full_redraw = false;
-    
+}
+
+void window_close_process(process_t *proc){
+    u16 npid = proc && proc->win_id ? window_fallback_focus(proc->win_id, proc->id) : 0;
+    if (npid){
+        process_t *next = get_proc_by_pid(npid);
+        if (next && next->focused && next->state != STOPPED && next->id && next->main_thread.pc && next->main_thread.sp && (is_privileged(next) || next->mm.ttbr0)) sys_set_focus(next->id);
+    }
 }
 
 u16 window_fallback_focus(u16 win_id, u16 skip_id){
@@ -290,8 +300,10 @@ u16 window_fallback_focus(u16 win_id, u16 skip_id){
     window_frame *frame = node->data;
     if (frame->pid != skip_id){
         process_t *proc = get_proc_by_pid(frame->pid);
-        proc->focused = true;
-        return frame->pid;
+        if (proc){
+            proc->focused = true;
+            return frame->pid;
+        }
     }
 
     process_t *proc = get_all_processes();
