@@ -130,16 +130,7 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
         return;
     }
     process_t *proc = get_proc_by_pid(st->requester->pid);
-    // if (st->type == job_open){
-    //     process_t *fsproc = get_proc_by_pid(st->worker->pid);
-    //     if (fsproc){
-    //         file* fd = quick_translate(st->requester, proc, (uptr)st->fd);
-    //         instance_local_fd(&fsproc->exposed_fs, fd);
-    //     }
-    // }
     ready_thread(st->requester);
-    proc->state = RUNNING;//TODO: this shouldn't be necessary
-    ready_process(proc);
     st->requester->PROC_X0 = ret;
     for (size_t i = 0; i < st->buffer_count; i++){
         job_buffer buf = st->buffers[i];

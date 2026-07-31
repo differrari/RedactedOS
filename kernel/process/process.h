@@ -83,7 +83,6 @@ struct thread_t {
 struct process_t {
     thread_t main_thread;
     uint16_t id;
-    thread_t *current_thread;
     bool suspended;
     paddr_t heap_phys;
     kaddr_t output;

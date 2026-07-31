@@ -201,7 +201,6 @@ u64 syscall_halt_thread(process_t *ctx, thread_t *current_thread){
         stop_current_process(current_thread->PROC_X0);
     else {
         current_thread->state = STOPPED;
-        unschedule_thread(ctx, current_thread);
         unmap_stack(ctx, current_thread->stack_info);
         switch_proc(YIELD);//TODO: proper cleanup
     }

@@ -12,7 +12,7 @@ process_t *owner_proc = get_proc_by_pid(mod->owner);\
 if (!is_privileged(owner_proc)){\
     job_application_t app = (job_application_t){\
         .requesting_pid = get_current_proc()->id,\
-        .requesting_tid = get_current_proc()->current_thread->tid,\
+        .requesting_tid = get_current_thread()->tid,\
         .worker_pid = owner_proc->id,\
         .type = job_type\
     };\

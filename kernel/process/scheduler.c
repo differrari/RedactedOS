@@ -10,7 +10,6 @@
 #include "data/struct/queue.h"
 #include "data/struct/linked_list.h"
 #include "std/memory.h"
-#include "math/math.h"
 #include "memory/mmu.h"
 #include "process/syscall.h"
 #include "memory/addr.h"
@@ -133,39 +132,37 @@ void switch_proc(ProcSwitchReason reason) {
     if (prev && prev->state == RUNNING) {
         if (prev == idle_proc) prev->state = BLOCKED;
         else if (prev_t->state == RUNNING) enqueue_ready_thread(prev_t);
-        else prev->current_thread = prev->current_thread->next ?: &prev->main_thread;
     }
 
-    if (prev->current_thread->next){
-        do {
-            prev->current_thread = prev->current_thread->next;
-        } while (prev->current_thread && prev->current_thread->state != RUNNING && prev->current_thread->state != READY);
-    } else {
-        while (!cqueue_is_empty(&ready_queue)) {
-            thread_t *queued = 0;
-            if (!cqueue_dequeue(&ready_queue, &queued)) break;
-            if (!queued) continue;
-            if (queued->state != READY) continue;
-            process_t *proc = get_proc_by_pid(queued->pid);
-            next_proc = (process_t*)proc;
-            if (!process_can_run(next_proc)) continue;
-            break;
-        }
+
+    thread_t *next_thread = 0;
+    while (!cqueue_is_empty(&ready_queue)) {
+        thread_t *queued = 0;
+        if (!cqueue_dequeue(&ready_queue, &queued)) break;
+        if (!queued) continue;
+        if (queued->state != READY) continue;
+        process_t *proc = get_proc_by_pid(queued->pid);
+        next_proc = (process_t*)proc;
+        next_thread = queued;
+        if (!process_can_run(next_proc)) continue;
+        break;
     }
 
-    if (!next_proc && current_proc && current_proc != idle_proc && current_proc->state == RUNNING && process_can_run(current_proc)) next_proc = current_proc;
-    if (!next_proc || !process_can_run(next_proc)) {
-        next_proc = idle_proc;
-        print("Selected idle proc %llx",next_proc);
+    if (!next_proc && current_proc && current_proc != idle_proc && current_proc->state == RUNNING && process_can_run(current_proc)){
+        next_proc = current_proc;
+        next_thread = (thread_t*)cpec;
+    } 
+    if (!next_proc || !process_can_run(next_proc)){
+        next_proc = idle_proc;//TODO: process can run is too restrictive, it could run, just need to find the right thread to run
+        next_thread = &idle_proc->main_thread;
     }
     if (!next_proc || !process_can_run(next_proc)) panic("no runnable process", 0);
-    //if (next_proc == idle_proc && prev != idle_proc) kprint("entering idle");
-
-    if (!next_proc->current_thread) next_proc->current_thread = &next_proc->main_thread;
+    
+    if (!next_thread || next_thread->pid != next_proc->id) next_thread = &next_proc->main_thread;
     next_proc->state = RUNNING;
-    next_proc->current_thread->state = RUNNING;
+    next_thread->state = RUNNING;
     current_proc = next_proc;
-    cpec = (uptr)next_proc->current_thread;
+    cpec = (uptr)next_thread;
     if (current_proc == idle_proc) timer_disable();
     else {
         timer_enable();
@@ -232,6 +229,10 @@ process_t* get_current_proc(){
     return current_proc;
 }
 
+thread_t* get_current_thread(){
+    return (thread_t*)cpec;
+}
+
 process_t* get_kernel_proc(){
     return kernel_proc;
 }
@@ -279,7 +280,6 @@ process_t* get_proc_by_pid(uint16_t pid){
 }
 
 thread_t* get_thread_from_proc(process_t *proc, u16 tid){
-    if (proc->current_thread->tid == tid) return proc->current_thread;
     thread_t *t = &proc->main_thread;
     do {
         if (t->tid == tid) return t;
@@ -455,10 +455,8 @@ void reset_process(process_t *proc){
         proc->mm.ttbr0 = 0;
         proc->mm.ttbr0_phys = 0;
     }
-    if (proc->exposed_fs.init){
-        unload_module(&proc->exposed_fs);
-    }
-    proc->exposed_fs = (system_module){0};
+    destroy_fs(proc->permissions.fs_id);
+    destroy_fs(proc->permissions.owned_fs_id);
 
     memset(proc->name, 0, sizeof(proc->name));
 
@@ -687,38 +685,8 @@ void wake_processes(){
     irq_restore(irq);
 }
 
-void unschedule_thread(process_t *proc, thread_t *t){
-    if (!proc || !t || proc->id != t->pid) return;
-    thread_t *prev = &proc->main_thread;
-    thread_t *current = prev->next;
-    if (proc->current_thread == t){
-        proc->thread_count--;
-        proc->current_thread = prev;
-    }
-    while (current) {
-        if (t == current){
-            proc->thread_count--;
-            prev->next = current->next;
-            return;
-        }
-        prev = current;
-        current = current->next;
-    }
-}
-
 void schedule_thread(process_t *proc, thread_t *t){
-    if (!proc || !t || proc->id != t->pid) return;
-    thread_t *current = &proc->main_thread;
-    while (current){
-        if (!current->next){
-            current->next = t;
-            proc->thread_count++;
-            kprintf("[SCHEDULER] scheduled thread %i for %i. pc %llx",t->tid,t->pid,t->pc);
-            t->state = READY;
-            return;
-        }
-        current = current->next;
-    }
+    enqueue_ready_thread(t);
 }
 
 thread_t* new_thread(process_t *proc, thread_t *addr, u64 spsr, uptr entry_point){

@@ -49,6 +49,7 @@ bool load_process_module(process_t *p, system_module *m);
 process_t* get_current_proc();
 process_t* get_kernel_proc();
 process_t* get_idle_proc();
+thread_t* get_current_thread();
 bool scheduler_in_idle();
 process_t* get_proc_by_pid(uint16_t pid);
 uint16_t get_current_proc_pid();
@@ -64,7 +65,6 @@ process_t *get_all_processes();
 
 thread_t* alloc_thread();
 thread_t* new_thread(process_t *proc, thread_t *addr, u64 spsr, uptr entry_point);
-void unschedule_thread(process_t *proc, thread_t *t);
 void schedule_thread(process_t *proc, thread_t *t);
 
 thread_t* get_thread_from_proc(process_t *proc, u16 tid);
