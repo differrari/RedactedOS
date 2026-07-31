@@ -128,7 +128,10 @@ size_t read_file(file *descriptor, char* buf, size_t size){
     };
     size_t amount_read = 0;
     if (local.mod->owner != get_kernel_proc()->id){
-        kprintf("cba rn");
+        job_make(job_readdir, local.mod, {
+            job_serialize_fd(&app, 0, &gfd, copy_on_start);
+            job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_end);
+        });
         return amount_read;
     } else {
         amount_read = local.mod->read(&gfd, buf, size, start_cursor);
@@ -188,7 +191,10 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     };
     size_t amount_written = 0;
     if (local.mod->owner != get_kernel_proc()->id){
-        kprintf("cba rn");
+        job_make(job_readdir, local.mod, {
+            job_serialize_fd(&app, 0, &gfd, copy_on_start);
+            job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_start);
+        });
         return amount_written;
     } else {
         amount_written = local.mod->write(&gfd, buf, size, 0);
