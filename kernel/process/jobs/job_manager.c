@@ -57,6 +57,7 @@ bool prepare_thread(job_state_t *job, system_module *mod, job_application_t appl
         mmu_map_4kb(proc->mm.ttbr0, buffers + (i * PAGE_SIZE), pbuffers + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
         register_proc_memory(PHYS_TO_VIRT(pbuffers + (i * PAGE_SIZE)), pbuffers + (i * PAGE_SIZE), MEM_RW, MEM_PRIV_KERNEL);
     }
+    memset((void*)PHYS_TO_VIRT(pbuffers), 0, total_size);
     print("[JOB debug] buffers will go to %llx - %llx",buffers,pbuffers);
     uptr next_addr_pa = PHYS_TO_VIRT(pbuffers);
     uptr next_addr_va = buffers;
