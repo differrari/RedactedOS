@@ -32,12 +32,17 @@ bool load_module_to(hash_map_t* modules, system_module *module){
     }
     if (!module->version){
         string format = string_format("Version number cannot be null for module /%s",module->mount);
-        if (strcmp(module->mount,"/console")) 
+        if (strcmp(module->mount,"/console")) {
         #ifdef MODULE_STRICT
-            panic(format.data,0);
+            if (module->owner != get_kernel_proc()->id){
+                kprintf(format.data);
+            } else { 
+                panic(format.data,0);
+            }
         #else 
             kprintf(format.data);
         #endif
+        }
         string_free(format);
         return false;
     }

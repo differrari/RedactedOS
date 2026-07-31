@@ -489,7 +489,8 @@ uint64_t syscall_load_fsmod(process_t *ctx, thread_t *current_thread){
 }
 
 uint64_t syscall_unload_fsmod(process_t *ctx, thread_t *current_thread){
-    return unload_module(&ctx->exposed_fs);
+    //TODO: this syscall needs to be remade with the specific module
+    return 0;
 }
 
 u64 syscall_in_case_of_js(process_t *ctx, thread_t *current_thread){

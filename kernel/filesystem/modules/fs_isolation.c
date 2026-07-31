@@ -67,3 +67,8 @@ string resolve_isolated_path(const char *path, u64 id, module_root *resolved, bo
     memcpy(resolved,localfs,sizeof(module_root));
     return string_from_literal(path);
 }
+
+void destroy_fs(u64 fsid){
+    if (!fsid) return;
+    //TODO: STUB
+}

@@ -56,7 +56,7 @@ FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor
     if (!mod->open) return FS_RESULT_NOTFOUND;
     FS_RESULT result = FS_RESULT_DRIVER_ERROR;
     if (mod->owner != get_kernel_proc()->id){
-        job_make(job_open, {
+        job_make(job_open, mod, {
             job_serialize_str(&app, 0, path);
             job_serialize_fd(&app, 1, descriptor, copy_on_end);
         });
@@ -248,7 +248,7 @@ size_t list_directory_contents(module_root *root, const char *path, void* buf, s
     }
     if (!mod->readdir) return 0;
     if (mod->owner != get_kernel_proc()->id){
-        job_make(job_readdir, {
+        job_make(job_readdir, mod, {
             job_serialize_str(&app, 0, search_path);
             job_serialize_buf(&app, 1, true, buf, size, copy_on_end);
             job_serialize_off(&app, 3, offset);
@@ -272,7 +272,7 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
     }
     if (!mod->getstat) return false;
     if (mod->owner != get_kernel_proc()->id){
-        job_make(job_stat, {
+        job_make(job_stat, mod, {
             job_serialize_str(&app, 0, search_path);
             job_serialize_stat(&app, 1, out_stat);
         })

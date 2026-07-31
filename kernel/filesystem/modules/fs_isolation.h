@@ -21,6 +21,7 @@ size_t list_root(void* buf, size_t size, uint64_t *offset);
 
 //Userland
 string resolve_isolated_path(const char *path, u64 id, module_root *resolved, bool allow_kfs);
+void destroy_fs(u64 fsid);
 
 #ifdef __cplusplus 
 }

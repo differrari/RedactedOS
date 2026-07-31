@@ -125,7 +125,7 @@ int32_t socket_close(SocketHandle *handle){
 FS_RESULT openf(const char* path, file* descriptor){
     module_root rootfs = {}; 
     string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs, true);
-    if (!s.data || !s.length) return open_file(kernel_fs(), path, descriptor);;
+    if (!s.data || !s.length) return open_file(kernel_fs(), path, descriptor);
     FS_RESULT res = open_file(&rootfs, s.data, descriptor);
     string_free(s);
     return res;

@@ -16,6 +16,7 @@ typedef struct {
     job_buffer buffers[8];
     size_t buffer_count;
     job_types type;
+    system_module *mod;
 } job_state_t;
 
 linked_list_t *job_list;
@@ -35,13 +36,13 @@ job_state_t* job_alloc(){
     return job;
 }
 
-bool prepare_thread(job_state_t *job, job_application_t application, process_t *proc, thread_t *t){
+bool prepare_thread(job_state_t *job, system_module *mod, job_application_t application, process_t *proc, thread_t *t){
     uptr entry = 0;
     switch (application.type){
-        case job_stat: entry = (uptr)proc->exposed_fs.getstat; break;
-        case job_readdir: entry = (uptr)proc->exposed_fs.readdir; break;
-        case job_open: entry = (uptr)proc->exposed_fs.open; break;
-        case job_close: entry = (uptr)proc->exposed_fs.close; break;
+        case job_stat: entry = (uptr)mod->getstat; break;
+        case job_readdir: entry = (uptr)mod->readdir; break;
+        case job_open: entry = (uptr)mod->open; break;
+        case job_close: entry = (uptr)mod->close; break;
         default: return false;
     }
     if (!entry) return false;
@@ -75,19 +76,20 @@ bool prepare_thread(job_state_t *job, job_application_t application, process_t *
     return true;
 }
 
-job_id_t create_new_job(job_application_t application){
-    job_state_t *job = job_alloc();
-    job->type = application.type;
+job_id_t create_new_job(job_application_t application, system_module *mod){
     process_t *requesting_proc = get_proc_by_pid(application.requesting_pid);
     if (!requesting_proc){
         print("[JOB error] Unknown requesting proc %i",application.requesting_pid);
     }
+    job_state_t *job = job_alloc();
+    job->type = application.type;
+    job->mod = mod;
     thread_t *requester = (thread_t*)get_thread_from_proc(requesting_proc, application.requesting_tid);
     job->requester = requester;
     process_t *fs_owner = get_proc_by_pid(application.worker_pid);
-    print("[JOB debug] Sync between %i - %i will happen with job %i - %i",requester->pid,application.worker_pid,job->id,application.type);
     thread_t *new_t = alloc_thread();
-    if (!prepare_thread(job, application, fs_owner, new_t)) return false;
+    if (!prepare_thread(job, mod, application, fs_owner, new_t)) return false;
+    print("[JOB debug] Sync between %i - %i will happen with job %i of type %i using thread %i",requester->pid,application.worker_pid,job->id,application.type,new_t->tid);
     new_t->job_id = job->id;
     job->worker = new_t;
     requester->state = BLOCKED;
@@ -128,7 +130,6 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
         return;
     }
     process_t *proc = get_proc_by_pid(st->requester->pid);
-    process_t *fsproc = get_proc_by_pid(st->worker->pid);
     // if (st->type == job_open){
     //     process_t *fsproc = get_proc_by_pid(st->worker->pid);
     //     if (fsproc){
@@ -136,7 +137,7 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     //         instance_local_fd(&fsproc->exposed_fs, fd);
     //     }
     // }
-    st->requester->state = RUNNING;//TODO: schedule once the scheduler is fully thread-based
+    ready_thread(st->requester);
     proc->state = RUNNING;//TODO: this shouldn't be necessary
     ready_process(proc);
     st->requester->PROC_X0 = ret;
@@ -151,10 +152,10 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
             if (buf.fd){
                 print("[JOB DEBUG] fd %i size %i signature %s",fd->id,fd->size,&fd->data_type);
                 if (st->type == job_open){
-                    instance_local_fd(&fsproc->exposed_fs, addr);
+                    instance_local_fd(st->mod, addr);
                 }
             }
         }
     }
-    print("[JOB] %i fulfilled",job_id);
+    print("[JOB] %i fulfilled by %i",job_id,thread->tid);
 }

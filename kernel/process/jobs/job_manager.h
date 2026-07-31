@@ -4,7 +4,7 @@
 #include "process/process.h"
 
 //TODO: We can probably optimize current proc fs more, but right now it blocks the entire process so we can't allow this case
-#define job_make(job_type,action)\
+#define job_make(job_type,mod,action)\
 if (get_current_proc()->id == mod->owner){\
     return false;\
 }\
@@ -17,7 +17,7 @@ if (!is_privileged(owner_proc)){\
         .type = job_type\
     };\
     action\
-    create_new_job(app);\
+    create_new_job(app,mod);\
     switch_proc(YIELD);\
     return false;\
 }
@@ -84,5 +84,5 @@ static inline void job_serialize_off(job_application_t *application, int arg_num
     job_application_append_buffer(application, buf);
 }
 
-job_id_t create_new_job(job_application_t application);
+job_id_t create_new_job(job_application_t application, system_module *mod);
 void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread);

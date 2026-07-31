@@ -53,7 +53,8 @@ typedef struct {
 } signal_buffer_t;
 
 typedef struct {
-    u64 fs_id;
+    u64 fs_id;//Filesystem this process has access to
+    u64 owned_fs_id;//Filesystem this process owns, not automapped to fs_id due to isolation not being enforced yet
 } system_permissions;
 
 typedef enum { STOPPED, READY, RUNNING, BLOCKED, SLEEPING } process_state;
@@ -116,7 +117,6 @@ struct process_t {
     char name[MAX_PROC_NAME_LENGTH];
     sizedptr debug_lines;
     sizedptr debug_line_str;
-    system_module exposed_fs;
     thread_t fs_thread;
     mm_struct mm;
     int thread_count;
