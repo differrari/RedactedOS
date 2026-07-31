@@ -51,8 +51,7 @@ static void draw_solid_window(window_frame *frame, draw_ctx *ctx, int_point fixe
         .size = fixed_size,
         .background_color = saturate(system_theme.bg_color + 0x111111, focused ? 0 : -90),
         .foreground_color = COLOR_WHITE,
-    }), {
-        #if false
+    }), {        
         bool close_pressed = false;
         button(ctx, (rect_ui_config){}, (common_ui_config){
             .point = RELATIVE(parent.size.width - (BORDER_SIZE * 2) - 40 - BORDER_SIZE,BORDER_SIZE),
@@ -62,7 +61,6 @@ static void draw_solid_window(window_frame *frame, draw_ctx *ctx, int_point fixe
         if (close_pressed){
             send_signal(SIG_QUIT, frame->pid);
         }
-        #endif
         rectangle(ctx, (rect_ui_config){}, (common_ui_config){
             .point = {fixed_point.x + BORDER_SIZE, fixed_point.y + TOOLBAR_HEIGHT},
             .size = {win_size.width - (BORDER_SIZE), BORDER_SIZE},

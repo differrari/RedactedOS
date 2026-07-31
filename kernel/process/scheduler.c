@@ -148,12 +148,16 @@ void switch_proc(ProcSwitchReason reason) {
             if (queued->state != READY) continue;
             process_t *proc = get_proc_by_pid(queued->pid);
             next_proc = (process_t*)proc;
+            if (!process_can_run(next_proc)) continue;
             break;
         }
     }
 
     if (!next_proc && current_proc && current_proc != idle_proc && current_proc->state == RUNNING && process_can_run(current_proc)) next_proc = current_proc;
-    if (!next_proc) next_proc = idle_proc;
+    if (!next_proc || !process_can_run(next_proc)) {
+        next_proc = idle_proc;
+        print("Selected idle proc %llx",next_proc);
+    }
     if (!next_proc || !process_can_run(next_proc)) panic("no runnable process", 0);
     //if (next_proc == idle_proc && prev != idle_proc) kprint("entering idle");
 
