@@ -87,6 +87,7 @@ typedef enum {
 #define TCP_MAX_PERSIST_PROBES 8
 
 bool tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, tcp_data *out_ctx);
+bool tcp_bind_conflicts(const SockBindSpec* spec, uint16_t port, bool reuseaddr);
 
 bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra);
 void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra);

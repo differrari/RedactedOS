@@ -12,16 +12,18 @@ extern "C" {
 #endif
 
 #define SOCKET_BIND_MAX 1024
-#define SOCKET_BIND_COLLECT_MAX 32
 typedef uint32_t socket_bind_token_t;
 
 bool socket_bind_normalize_spec(SockBindSpec* spec);
-bool socket_bind_insert(ksocket_t* socket, protocol_t protocol, const SockBindSpec* spec, uint16_t port, socket_bind_token_t* out_token);
+bool socket_bind_insert(ksocket_t* socket, protocol_t protocol, const SockBindSpec* spec, uint16_t port, uint32_t options, bool allow_reuse, socket_bind_token_t* out_token);
+bool socket_bind_tcp_listen(socket_bind_token_t token);
 void socket_bind_remove(socket_bind_token_t token);
-int socket_bind_alloc_ephemeral(ksocket_t* socket, protocol_t protocol, const SockBindSpec* spec, socket_bind_token_t* out_token);
-int socket_bind_alloc_ephemeral_l3(ksocket_t* socket, protocol_t protocol, uint8_t l3_id, socket_bind_token_t* out_token);
+void socket_bind_udp_set_remote(socket_bind_token_t token, const net_l4_endpoint* remote);
+int socket_bind_alloc_ephemeral(ksocket_t* socket, protocol_t protocol, const SockBindSpec* spec, uint32_t options, socket_bind_token_t* out_token);
+int socket_bind_alloc_ephemeral_l3(ksocket_t* socket, protocol_t protocol, uint8_t l3_id, uint32_t options, socket_bind_token_t* out_token);
 
-uint32_t socket_bind_collect(protocol_t protocol, ip_version_t ipver, uint8_t l3_id, uint8_t ifindex, const void* dst_ip_addr, uint16_t dst_port, ksocket_t** out, uint32_t out_cap);
+ksocket_t* socket_bind_lookup(protocol_t protocol, ip_version_t ipver, uint8_t l3_id, uint8_t ifindex, const void* src_ip_addr, uint16_t src_port, const void* dst_ip_addr, uint16_t dst_port);
+ksocket_t* socket_bind_udp_next_fanout(ip_version_t ipver, uint8_t l3_id, uint8_t ifindex, const void* dst_ip_addr, uint16_t dst_port, uint32_t* cursor);
 
 uint32_t socket_bind_select_l3(const SockBindSpec* spec, ip_version_t ver, uint8_t* out, uint32_t cap);
 bool socket_bind_build_ipv4_tx_plan(const SockBindSpec* spec, bool use_spec, uint32_t dst, ipv4_tx_plan_t* out);

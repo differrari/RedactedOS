@@ -36,7 +36,7 @@ http_server_handle_t http_server_create(const SocketOptions* extra, const HTTPSe
         srv->tcp_opts.flags &= ~SOCK_OPT_DEBUG;
     }
 
-    srv->tcp_opts.flags |= SOCK_OPT_NONBLOCK;
+    srv->tcp_opts.flags |= SOCK_OPT_NONBLOCK | SOCK_OPT_REUSEADDR;
 
     return srv;
 }

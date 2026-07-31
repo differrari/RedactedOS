@@ -21,10 +21,13 @@ extern "C" {
 #define TCP_SYN_RECV_MAX_LISTENER 32u
 #define TCP_SYN_RECV_MAX_SOURCE 8u
 #define TCP_TIMEWAIT_MAX_GLOBAL 128u
-#define TCP_ORPHAN_MAX_GLOBAL 32u
-#define TCP_RESOURCE_BUDGET 4096u
+#define TCP_FLOW_CONTROL_RESERVE 32u
+#define TCP_SYN_RECV_MIN_GLOBAL 16u
+#define TCP_SYN_RECV_MIN_LISTENER 4u
+#define TCP_SYN_RECV_MIN_SOURCE 2u
 
-typedef struct tcp_flow tcp_flow_t;
+struct tcp_flow;
+struct ksocket;
 
 typedef enum {
     TCP_ADMIT_OK = 0,
@@ -35,11 +38,10 @@ typedef enum {
     TCP_ADMIT_SYN_GLOBAL,
     TCP_ADMIT_SYN_LISTENER, 
     TCP_ADMIT_SYN_SOURCE,
-    TCP_ADMIT_ORPHAN_LIMIT,
+    TCP_ADMIT_FLOW_RESERVE,
     TCP_ADMIT_TX_FLOW_BYTES,
     TCP_ADMIT_TX_FLOW_SEGS,
     TCP_ADMIT_TX_GLOBAL_BYTES,
-    TCP_ADMIT_RESOURCE_BUDGET,
     TCP_ADMIT_FLOW_TABLE_FULL
 } tcp_admit_result_t;
 
@@ -53,11 +55,10 @@ typedef struct {
     uint64_t syn_drop_source;
     uint64_t acceptq_drop_full;
     uint64_t timewait_reap_oldest;
-    uint64_t orphan_drop_global;
+    uint64_t syn_drop_flow_reserve;
     uint64_t tx_block_flow_bytes;
     uint64_t tx_block_flow_segs;
     uint64_t tx_block_global_bytes;
-    uint64_t resource_budget_drop;
     uint64_t flow_table_full;
 } tcp_stats_t;
 
@@ -67,13 +68,13 @@ extern uint32_t tcp_tx_global_bytes;
 extern tcp_stats_t tcp_stats;
 
 uint32_t tcp_clamp_rcvbuf(uint32_t size);
-tcp_admit_result_t tcp_admit_syn(uint8_t l3_id, uint16_t port, ip_version_t ver, const void *src_ip);
-tcp_admit_result_t tcp_admit_ooo(tcp_flow_t *flow, uint32_t increase, uint32_t remaining_nodes);
-tcp_admit_result_t tcp_admit_tx(tcp_flow_t *flow, uint32_t bytes, uint32_t free_slots);
+tcp_admit_result_t tcp_admit_syn(struct ksocket *listener, ip_version_t ver, const void *src_ip);
+tcp_admit_result_t tcp_admit_ooo(struct tcp_flow *flow, uint32_t increase, uint32_t remaining_nodes);
+tcp_admit_result_t tcp_admit_tx(struct tcp_flow *flow, uint32_t bytes, uint32_t free_slots);
 void tcp_account_ooo_add(uint32_t bytes, uint32_t segs);
 void tcp_account_ooo_remove(uint32_t bytes, uint32_t segs);
-void tcp_account_tx_add(tcp_flow_t *flow, uint32_t bytes);
-void tcp_account_tx_remove(tcp_flow_t *flow, uint32_t bytes);
+void tcp_account_tx_add(struct tcp_flow *flow, uint32_t bytes);
+void tcp_account_tx_remove(struct tcp_flow *flow, uint32_t bytes);
 
 #ifdef __cplusplus
 }

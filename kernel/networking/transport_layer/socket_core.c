@@ -134,19 +134,28 @@ void socket_core_put(ksocket_t* socket) {
 int32_t socket_core_close_socket(ksocket_t* socket) {
     if (!socket) return SOCK_ERR_INVAL;
 
-    bool first_close = false;
     irq_flags_t irq = irq_save_disable(); 
-    if (!socket->closing) {
-        socket->closing = true;
-        socket->visible = false;
-        if (socket->id < SOCKET_MAX_OPEN && sockets[socket->id] == socket) sockets[socket->id] = NULL;
-        first_close = true;
+    if (socket->closing) {
+        irq_restore(irq);
+        return SOCK_OK;
     }
+    socket->closing = true;
     irq_restore(irq);
 
-    if (!first_close) return SOCK_OK;
     int32_t ret = SOCK_OK;
     if (socket->close && socket->impl) ret = socket->close(socket->impl);
+
+    if (ret == SOCK_ERR_WOULDBLOCK) {
+        irq = irq_save_disable();
+        socket->closing = false;
+        irq_restore(irq);
+        return ret;
+    }
+
+    irq = irq_save_disable();
+    socket->visible = false;
+    if (socket->id < SOCKET_MAX_OPEN && sockets[socket->id] == socket) sockets[socket->id] = NULL;
+    irq_restore(irq);
 
     socket_core_put(socket);
     return ret;
@@ -240,6 +249,14 @@ int32_t socket_common_options_set(SocketOptions* opts, int32_t opt, const void* 
             if (v) opts->flags |= SOCK_OPT_DONTROUTE;
             else opts->flags &= ~SOCK_OPT_DONTROUTE;
             return SOCK_OK;
+        case SOCK_OPT_REUSEADDR:
+            if (v) opts->flags |= SOCK_OPT_REUSEADDR;
+            else opts->flags &= ~SOCK_OPT_REUSEADDR;
+            return SOCK_OK;
+        case SOCK_OPT_REUSEPORT:
+            if (v) opts->flags |= SOCK_OPT_REUSEPORT;
+            else opts->flags &= ~SOCK_OPT_REUSEPORT;
+            return SOCK_OK;
         case SOCK_OPT_TTL:
             if (v > 255) return SOCK_ERR_INVAL;
             opts->ttl = (uint8_t)v;
@@ -279,6 +296,12 @@ int32_t socket_common_options_get(const SocketOptions* opts, int32_t opt, void* 
             break;
         case SOCK_GET_OPT_DONTROUTE:
             v = (opts->flags & SOCK_OPT_DONTROUTE) != 0;
+            break;
+        case SOCK_GET_OPT_REUSEADDR:
+            v = (opts->flags & SOCK_OPT_REUSEADDR) != 0;
+            break;
+        case SOCK_GET_OPT_REUSEPORT:
+            v = (opts->flags & SOCK_OPT_REUSEPORT) != 0;
             break;
         case SOCK_GET_OPT_TTL:
             v = opts->ttl;

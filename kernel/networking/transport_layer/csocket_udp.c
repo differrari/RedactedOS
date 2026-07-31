@@ -220,7 +220,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, uint8_t l3_id, 
 socket_impl_t udp_socket_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
 
-    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_BROADCAST_ALLOWED | SOCK_OPT_TTL | SOCK_OPT_MCAST_JOIN | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE;
+    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_BROADCAST_ALLOWED | SOCK_OPT_TTL | SOCK_OPT_MCAST_JOIN | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE | SOCK_OPT_REUSEADDR | SOCK_OPT_REUSEPORT;
     if (extra) {
         if (extra->flags & ~supported) return NULL;
         if ((extra->flags & SOCK_OPT_DEBUG) && extra->debug_level > SOCK_DBG_ALL) return NULL;
@@ -293,13 +293,14 @@ int32_t socket_bind_udp(socket_impl_t sh, const SockBindSpec* spec_in, uint16_t 
     int bind_port = port;
     socket_bind_token_t token = 0;
     if (bind_port == 0) {
-        bind_port = socket_bind_alloc_ephemeral(s->ownerSocket, PROTO_UDP, &spec, &token);
+        bind_port = socket_bind_alloc_ephemeral(s->ownerSocket, PROTO_UDP, &spec, s->options.flags & (SOCK_OPT_REUSEADDR | SOCK_OPT_REUSEPORT), &token);
         if (bind_port < 0) return SOCK_ERR_NO_PORT;
-    } else if (!socket_bind_insert(s->ownerSocket, PROTO_UDP, &spec, port, &token)) return SOCK_ERR_BOUND;
+    } else if (!socket_bind_insert(s->ownerSocket, PROTO_UDP, &spec, port, s->options.flags & (SOCK_OPT_REUSEADDR | SOCK_OPT_REUSEPORT), true, &token)) return SOCK_ERR_BOUND;
 
     s->bindSpec = spec;
     s->bindToken = token;
     s->localPort = (uint16_t)bind_port;
+    if (s->connected) socket_bind_udp_set_remote(s->bindToken, &s->remoteEP);
 
     int32_t mcast_res = udp_socket_join_mcast_groups(s);
     if (mcast_res != SOCK_OK) {
@@ -342,6 +343,7 @@ int32_t socket_connect_udp(socket_impl_t sh, const net_l4_endpoint* dst) {
 
     s->remoteEP = *dst;
     s->connected = true;
+    if (s->bindToken) socket_bind_udp_set_remote(s->bindToken, &s->remoteEP);
     return SOCK_OK;
 }
 
@@ -421,7 +423,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         if (bcast_v4) {
             if (!s->localPort) {
                 socket_bind_token_t token = 0;
-                int p = socket_bind_alloc_ephemeral_l3(s->ownerSocket, PROTO_UDP, chosen_l3, &token);
+                int p = socket_bind_alloc_ephemeral_l3(s->ownerSocket, PROTO_UDP, chosen_l3, s->options.flags & (SOCK_OPT_REUSEADDR | SOCK_OPT_REUSEPORT), &token);
                 if (p < 0) return SOCK_ERR_NO_PORT;
                 s->localPort = (uint16_t)p;
                 s->bindToken = token;
@@ -429,6 +431,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
                 s->bindSpec.kind = BIND_L3;
                 s->bindSpec.ver = IP_VER4;
                 s->bindSpec.l3_id = chosen_l3;
+                if (s->connected) socket_bind_udp_set_remote(s->bindToken, &s->remoteEP);
             }
 
             net_l4_endpoint src;
@@ -452,7 +455,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
 
         if (!s->localPort) {
             socket_bind_token_t token = 0;
-            int p = socket_bind_alloc_ephemeral_l3(s->ownerSocket, PROTO_UDP, tx_l3, &token);
+            int p = socket_bind_alloc_ephemeral_l3(s->ownerSocket, PROTO_UDP, tx_l3, s->options.flags & (SOCK_OPT_REUSEADDR | SOCK_OPT_REUSEPORT), &token);
             if (p < 0) return SOCK_ERR_NO_PORT;
             s->localPort = (uint16_t)p;
             s->bindToken = token;
@@ -460,6 +463,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
             s->bindSpec.kind = BIND_L3;
             s->bindSpec.ver = IP_VER4;
             s->bindSpec.l3_id = tx_l3;
+            if (s->connected) socket_bind_udp_set_remote(s->bindToken, &s->remoteEP);
         }
 
         net_l4_endpoint src;
@@ -484,7 +488,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
 
         if (!s->localPort) {
             socket_bind_token_t token = 0;
-            int p = socket_bind_alloc_ephemeral_l3(s->ownerSocket, PROTO_UDP, chosen_l3, &token);
+            int p = socket_bind_alloc_ephemeral_l3(s->ownerSocket, PROTO_UDP, chosen_l3, s->options.flags & (SOCK_OPT_REUSEADDR | SOCK_OPT_REUSEPORT), &token);
             if (p < 0) return SOCK_ERR_NO_PORT;
             s->localPort = (uint16_t)p;
             s->bindToken = token;
@@ -492,6 +496,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
             s->bindSpec.kind = BIND_L3;
             s->bindSpec.ver = IP_VER6;
             s->bindSpec.l3_id = chosen_l3;
+            if (s->connected) socket_bind_udp_set_remote(s->bindToken, &s->remoteEP);
         }
 
         net_l4_endpoint src;
@@ -582,9 +587,15 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_KEEPALIVE_INTERVAL:
         case SOCK_OPT_TCP_NO_DELAY:
         case SOCK_OPT_SEND_BUF_SIZE:
+        case SOCK_OPT_TCP_MAXSEG:
+        case SOCK_OPT_LINGER:
         case SOCK_OPT_FILTER:
         case SOCK_OPT_SPECIAL:
             return SOCK_ERR_UNSUP;
+        case SOCK_OPT_REUSEADDR:
+        case SOCK_OPT_REUSEPORT:
+            if (s->localPort) return SOCK_ERR_STATE;
+            return socket_common_options_set(&s->options, opt, value, len);
         case SOCK_OPT_NONBLOCK:
         case SOCK_OPT_DONTROUTE:
             return socket_common_options_set(&s->options, opt, value, len);
@@ -765,6 +776,8 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_KEEPALIVE_INTERVAL:
         case SOCK_GET_OPT_TCP_NO_DELAY:
         case SOCK_GET_OPT_SEND_BUF_SIZE:
+        case SOCK_GET_OPT_TCP_MAXSEG:
+        case SOCK_GET_OPT_LINGER:
         case SOCK_GET_OPT_FILTER:
         case SOCK_GET_TCP_STATE:
         case SOCK_GET_TCP_MSS:
@@ -784,6 +797,8 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_TTL:
         case SOCK_GET_OPT_NONBLOCK:
         case SOCK_GET_OPT_DONTROUTE:
+        case SOCK_GET_OPT_REUSEADDR:
+        case SOCK_GET_OPT_REUSEPORT:
             return socket_common_options_get(&s->options, opt, value, len);
         default:
             return SOCK_ERR_INVAL;

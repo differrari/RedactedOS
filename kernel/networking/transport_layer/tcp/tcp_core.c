@@ -9,6 +9,7 @@
 #include "random/random.h"
 #include "syscalls/syscalls.h"
 #include "networking/transport_layer/trans_utils.h"
+#include "networking/transport_layer/socket_core.h"
 #include "exceptions/irq.h"
 
 tcp_flow_t *tcp_flows[MAX_TCP_FLOWS];
@@ -75,34 +76,13 @@ tcp_flow_t *tcp_flow_acquire_match(uint16_t local_port, ip_version_t ver, const 
         if (f->base.retired || f->base.state == TCP_STATE_CLOSED) continue;
         if (f->base.local_port != local_port) continue;
 
-        uint8_t match = 0;
-        if (f->base.state == TCP_LISTEN){
-            if (remote_ip || remote_port) continue;
-            if (f->base.local.ver && f->base.local.ver != ver) continue;
-            if (!local_ip) match = 1;
-            else {
-                size_t l = (size_t)(ver == IP_VER6 ? 16 : 4);
-                uint8_t unspec = 1;
-                for (size_t k = 0; k < l; ++k){
-                    if (f->base.local.ip[k]){
-                        unspec = 0;
-                        break;
-                    }
-                }
-                match = unspec || memcmp(f->base.local.ip, local_ip, l) == 0;
-            }
-        } else {
-            if (!remote_ip || !local_ip) continue;
-            if (f->base.remote.ver != ver) continue;
-            if (f->base.remote.port != remote_port) continue;
+        if (!remote_ip || !local_ip) continue;
+        if (f->base.local.ver != ver || f->base.remote.ver != ver) continue;
+        if (f->base.remote.port != remote_port) continue;
 
-            size_t l = (size_t)(ver == IP_VER6 ? 16 : 4);
-            if (memcmp(f->base.local.ip, local_ip, l) != 0) continue;
-            if (memcmp(f->base.remote.ip, remote_ip, l) != 0) continue;
-            match = 1;
-        }
-
-        if (!match) continue;
+        size_t l = (size_t)(ver == IP_VER6 ? 16 : 4);
+        if (memcmp(f->base.local.ip, local_ip, l) != 0) continue;
+        if (memcmp(f->base.remote.ip, remote_ip, l) != 0) continue;
         if (!f->base.refs || f->base.refs == UINT16_MAX) break;
 
         f->base.refs++;
@@ -114,6 +94,30 @@ tcp_flow_t *tcp_flow_acquire_match(uint16_t local_port, ip_version_t ver, const 
     if (out_idx) *out_idx = -1;
     irq_restore(irq);
     return NULL;
+}
+
+bool tcp_bind_conflicts(const SockBindSpec* spec, uint16_t port, bool reuseaddr) {
+    if (!spec || !port) return true;
+
+    bool conflict = false;
+    irq_flags_t irq = irq_save_disable();
+    uint16_t start = tcp_active_port_lower_bound(port);
+    for (uint16_t n = start; n < tcp_active_count; n++) {
+        uint16_t slot = tcp_active_flows[n];
+        tcp_flow_t* flow = slot < MAX_TCP_FLOWS ? tcp_flows[slot] : NULL;
+        if (!flow) continue;
+        if (flow->base.local_port > port) break;
+        if (flow->base.retired || flow->base.state == TCP_STATE_CLOSED) continue;
+        if (flow->base.local_port != port || !tcp_flow_matches_bind(flow, spec)) continue;
+
+        bool allowed = reuseaddr && flow->ip.reuseaddr;
+        if (!allowed) {
+            conflict = true;
+            break;
+        }
+    }
+    irq_restore(irq);
+    return conflict;
 }
 
 bool tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, tcp_data *out_ctx){
@@ -155,13 +159,25 @@ tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx) {
     return flow;
 }
 
+void tcp_update_mss(tcp_flow_t *flow) {
+    if (!flow) return;
+    uint32_t local_mss = flow->tx.path_mss ? flow->tx.path_mss : TCP_DEFAULT_MSS;
+    if (flow->tx.configured_mss && flow->tx.configured_mss < local_mss) local_mss = flow->tx.configured_mss;
+    if (!local_mss) local_mss = 1;
+    flow->tx.advertised_mss = local_mss;
+
+    uint32_t mss = local_mss;
+    if (flow->tx.peer_mss && flow->tx.peer_mss < mss) mss = flow->tx.peer_mss;
+    flow->tx.mss = mss;
+}
+
 void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return;
 
     uint32_t flags = extra ? extra->flags : 0;
     flow->timer.keepalive_on = (flags & SOCK_OPT_KEEPALIVE) ? 1 : 0;
-    flow->timer.keepalive_ms = flow->timer.keepalive_on ?(extra->keepalive_ms ? extra->keepalive_ms : SOCKET_DEFAULT_KEEPALIVE_MS) : 0;
+    flow->timer.keepalive_ms = flow->timer.keepalive_on ? (extra->keepalive_ms ? extra->keepalive_ms : SOCKET_DEFAULT_KEEPALIVE_MS) : 0;
     flow->timer.keepalive_idle_ms = 0;
 
     flow->tx.nodelay = (flags & SOCK_OPT_TCP_NO_DELAY) ? 1 : 0;
@@ -170,10 +186,49 @@ void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extr
     uint32_t queued_limit = (flags & SOCK_OPT_SEND_BUF_SIZE) && extra->send_buf_size ? extra->send_buf_size : TCP_TX_MAX_BYTES_PER_FLOW;
     if (queued_limit > TCP_TX_MAX_BYTES_PER_FLOW) queued_limit = TCP_TX_MAX_BYTES_PER_FLOW;
     flow->tx.queued_limit = queued_limit;
+    flow->tx.configured_mss = (flags & SOCK_OPT_TCP_MAXSEG) && extra->tcp_maxseg ? extra->tcp_maxseg : 0;
+    tcp_update_mss(flow);
 
     flow->ip.ttl = (flags & SOCK_OPT_TTL) ? extra->ttl : 0;
     flow->ip.dontfrag = (flags & SOCK_OPT_DONTFRAG) ? 1 : 0;
+    flow->ip.reuseaddr = (flags & SOCK_OPT_REUSEADDR) ? 1 : 0;
     tcp_flow_put(flow);
+}
+
+static void tcp_flow_clear_storage(tcp_flow_t *flow) {
+    for (int i = 0; i < TCP_MAX_TX_SEGS; i++) tcp_tx_seg_clear(flow, &flow->tx.txq[i]);
+    flow->tx.queued_bytes = 0;
+
+    if (flow->tx.nagle_buf) {
+        uintptr_t buf = flow->tx.nagle_buf;
+        flow->tx.nagle_buf = 0;
+        release((void*)buf);
+    }
+    flow->tx.nagle_len = 0;
+    flow->tx.nagle_cap = 0;
+    flow->tx.nagle_timer_ms = 0;
+    flow->tx.nagle_flushing = 0;
+    flow->tx.nagle_appending = 0;
+
+    if (flow->rx.reass_count || flow->rx.rcv_ooo_used) tcp_account_ooo_remove(flow->rx.rcv_ooo_used, flow->rx.reass_count);
+    if (flow->rx.rcv_buf) {
+        uintptr_t buf = flow->rx.rcv_buf;
+        flow->rx.rcv_buf = 0;
+        release((void*)buf);
+    }
+    flow->rx.rcv_base = flow->rx.rcv_nxt;
+    flow->rx.rcv_data_nxt = flow->rx.rcv_nxt;
+    flow->rx.rcv_ooo_used = 0;
+    flow->rx.rcv_wnd = 0;
+    flow->rx.rcv_adv_edge = flow->rx.rcv_nxt;
+    flow->rx.fin_pending = 0;
+    flow->base.ctx.window = 0;
+    flow->rx.reass_count = 0;
+    memset(flow->rx.reass, 0, sizeof(flow->rx.reass));
+    if (flow->base.listener) {
+        socket_core_put(flow->base.listener);
+        flow->base.listener = NULL;
+    }
 }
 
 void tcp_flow_put(tcp_flow_t *f) {
@@ -191,36 +246,7 @@ void tcp_flow_put(tcp_flow_t *f) {
 
     if (!free_now) return;
 
-    for (int i = 0; i < TCP_MAX_TX_SEGS; i++) tcp_tx_seg_clear(f, &f->tx.txq[i]);
-
-    f->tx.queued_bytes = 0;
-
-    if (f->tx.nagle_buf) {
-        uintptr_t buf = f->tx.nagle_buf;
-        f->tx.nagle_buf = 0;
-        release((void*)buf);
-    }
-    f->tx.nagle_len = 0;
-    f->tx.nagle_cap = 0;
-    f->tx.nagle_timer_ms = 0;
-    f->tx.nagle_flushing = 0;
-    f->tx.nagle_appending = 0;
-
-    if (f->rx.reass_count || f->rx.rcv_ooo_used) tcp_account_ooo_remove(f->rx.rcv_ooo_used, f->rx.reass_count);
-    if (f->rx.rcv_buf) {
-        uintptr_t buf = f->rx.rcv_buf;
-        f->rx.rcv_buf = 0;
-        release((void*)buf);
-    }
-    f->rx.rcv_base = f->rx.rcv_nxt;
-    f->rx.rcv_data_nxt = f->rx.rcv_nxt;
-    f->rx.rcv_ooo_used = 0;
-    f->rx.rcv_wnd = 0;
-    f->rx.rcv_adv_edge = f->rx.rcv_nxt;
-    f->rx.fin_pending = 0;
-    f->base.ctx.window = 0;
-    f->rx.reass_count = 0;
-    memset(f->rx.reass, 0, sizeof(f->rx.reass));
+    tcp_flow_clear_storage(f);
     memset(f, 0, sizeof(*f));
     release(f);
 }
@@ -252,6 +278,7 @@ void tcp_enter_time_wait(tcp_flow_t *flow) {
 
     flow->base.state = TCP_TIME_WAIT;
     flow->timer.time_wait_ms = 0;
+    tcp_flow_clear_storage(flow);
     tcp_daemon_kick();
 }
 
@@ -289,6 +316,9 @@ tcp_flow_t *tcp_alloc_flow(void){
     f->rx.rcv_wnd_max = tcp_clamp_rcvbuf(TCP_DEFAULT_RCV_BUF);
     f->rx.rcv_wnd = f->rx.rcv_wnd_max;
 
+    f->tx.path_mss = TCP_DEFAULT_MSS;
+    f->tx.peer_mss = 0;
+    f->tx.advertised_mss = TCP_DEFAULT_MSS;
     f->tx.mss = TCP_DEFAULT_MSS;
     f->tx.cwnd = f->tx.mss * TCP_INIT_CWND_SEGS;
     f->tx.ssthresh = TCP_RECV_WINDOW;
@@ -342,7 +372,7 @@ tcp_result_t tcp_flow_abort(tcp_data *flow_ctx) {
 
     int slot = (int)flow->base.slot;
     tcp_state_t state = flow->base.state;
-    if ( !flow->base.retired && state != TCP_STATE_CLOSED && state != TCP_TIME_WAIT && state != TCP_SYN_SENT) tcp_send_reset(flow->base.local.ver, flow->base.local.ip, flow->base.remote.ip, flow->base.local_port, flow->base.remote.port, flow->tx.snd_nxt, 0, false);
+    if (state != TCP_STATE_CLOSED && state != TCP_TIME_WAIT && state != TCP_SYN_SENT) tcp_send_reset(flow->base.local.ver, flow->base.local.ip, flow->base.remote.ip, flow->base.local_port, flow->base.remote.port, flow->tx.snd_nxt, 0, false);
 
     tcp_free_flow(slot);
     tcp_flow_put(flow);
@@ -360,7 +390,11 @@ bool tcp_flow_is_closed(tcp_data *flow_ctx) {
 tcp_result_t tcp_flow_release_closed(tcp_data *flow_ctx) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return TCP_INVALID;
-    if (!flow->base.retired && flow->base.state != TCP_STATE_CLOSED && flow->base.state != TCP_TIME_WAIT) {
+    if (flow->base.state == TCP_TIME_WAIT) {
+        tcp_flow_put(flow);
+        return TCP_OK;
+    }
+    if (flow->base.state != TCP_STATE_CLOSED) {
         tcp_flow_put(flow);
         return TCP_BUSY;
     }
@@ -499,7 +533,6 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
     flow->base.local_port = local_port;
     flow->base.l3_id = l3_id;
-    tcp_active_insert_flow(flow);
 
     flow->base.remote.ver = dst->ver;
     memcpy(flow->base.remote.ip, dst->ip, (size_t)(dst->ver == IP_VER6 ? 16 : 4));
@@ -550,9 +583,9 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     if (extra && (extra->flags & SOCK_OPT_BUF_SIZE) && extra->buf_size) rcvbuf = extra->buf_size;
     flow->rx.rcv_wnd_max = tcp_clamp_rcvbuf(rcvbuf);
     flow->rx.rcv_adv_edge = 0;
+    flow->tx.path_mss = tcp_calc_mss_for_l3(l3_id, dst->ver, dst->ip);
+    flow->tx.peer_mss = 0;
     tcp_flow_apply_socket_options(&flow->base.ctx, extra);
-
-    flow->tx.mss = tcp_calc_mss_for_l3(l3_id, dst->ver, dst->ip);
 
     if (flow->rx.rcv_wnd_max > 65535u) {
         flow->tx.ws_send = 8;
@@ -597,6 +630,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
     flow->timer.time_wait_ms = 0;
     flow->timer.fin_wait2_ms = 0;
+    tcp_active_insert_flow(flow);
 
     tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow);
 
@@ -617,7 +651,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     seg->timer_ms = 0;
     seg->timeout_ms = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
 
-    seg->opts_len = tcp_build_syn_options(seg->opts, (uint16_t)flow->tx.mss, flow->rx.rcv_wnd_max > 65535u ? flow->tx.ws_send : 0xffu, flow->tx.sack_ok);
+    seg->opts_len = tcp_build_syn_options(seg->opts, (uint16_t)flow->tx.advertised_mss, flow->rx.rcv_wnd_max > 65535u ? flow->tx.ws_send : 0xffu, flow->tx.sack_ok);
 
     flow->tx.snd_nxt += 1;
     flow->base.ctx.sequence = flow->tx.snd_nxt;

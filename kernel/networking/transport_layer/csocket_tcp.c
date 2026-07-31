@@ -104,7 +104,7 @@ static int32_t tcp_socket_connection_state(tcp_socket_t* s) {
 socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
 
-    uint32_t supported = SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_SEND_BUF_SIZE | SOCK_OPT_TCP_NO_DELAY | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE;
+    uint32_t supported = SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_SEND_BUF_SIZE | SOCK_OPT_TCP_NO_DELAY | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE | SOCK_OPT_REUSEADDR | SOCK_OPT_TCP_MAXSEG | SOCK_OPT_LINGER;
     if (extra) {
         if (extra->flags & ~supported) return NULL;
         if ((extra->flags & SOCK_OPT_DEBUG) && extra->debug_level > SOCK_DBG_ALL) return NULL;
@@ -124,8 +124,11 @@ socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketOptions* extra) {
         s->options.buf_size = TCP_DEFAULT_SOCKET_BUF;
     }
 
-    if (!s->options.buf_size) s->options.buf_size = TCP_DEFAULT_SOCKET_BUF;
-    if (s->options.buf_size > TCP_DEFAULT_SOCKET_BUF) s->options.buf_size = TCP_DEFAULT_SOCKET_BUF;
+    s->options.buf_size = tcp_clamp_rcvbuf(s->options.buf_size);
+    if (s->options.tcp_maxseg && (s->options.tcp_maxseg < 256u || s->options.tcp_maxseg > 65535u)) {
+        release(s);
+        return NULL;
+    }
     return s;
 }
 
@@ -174,21 +177,54 @@ int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint
             if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options);
             return SOCK_OK;
         }
+        case SOCK_OPT_REUSEADDR: {
+            if (s->localPort || s->connected || s->listening) return SOCK_ERR_STATE;
+            return socket_common_options_set(&s->options, opt, value, len);
+        }
         case SOCK_OPT_DONTROUTE: {
             if (s->flow.flow_generation) return SOCK_ERR_STATE;
             return socket_common_options_set(&s->options, opt, value, len);
         }
         case SOCK_OPT_NONBLOCK:
             return socket_common_options_set(&s->options, opt, value, len);
+        case SOCK_OPT_TCP_MAXSEG: {
+            if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
+            uint32_t v = 0;
+            memcpy(&v, value, sizeof(v));
+            if (v && (v < 256u || v > 65535u)) return SOCK_ERR_INVAL;
+            s->options.tcp_maxseg = v;
+            if (v) s->options.flags |= SOCK_OPT_TCP_MAXSEG;
+            else s->options.flags &= ~SOCK_OPT_TCP_MAXSEG;
+            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options);
+            return SOCK_OK;
+        }
+        case SOCK_OPT_LINGER: {
+            if (!value || len != sizeof(SocketLinger)) return SOCK_ERR_INVAL;
+            SocketLinger linger;
+            memcpy(&linger, value, sizeof(linger));
+            s->options.linger = linger;
+            if (linger.enabled) s->options.flags |= SOCK_OPT_LINGER;
+            else s->options.flags &= ~SOCK_OPT_LINGER;
+            return SOCK_OK;
+        }
+        case SOCK_OPT_REUSEPORT:
         case SOCK_OPT_MCAST_JOIN:
         case SOCK_OPT_MCAST_LEAVE:
         case SOCK_OPT_BROADCAST_ALLOWED:
         case SOCK_OPT_FILTER:
         case SOCK_OPT_SPECIAL:
             return SOCK_ERR_UNSUP;
+        case SOCK_OPT_BUF_SIZE: {
+            if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
+            if (s->flow.flow_generation || s->listening) return SOCK_ERR_STATE;
+            uint32_t v = 0;
+            memcpy(&v, value, sizeof(v));
+            if (!v || v > TCP_RCV_BUF_MAX) return SOCK_ERR_INVAL;
+            v = tcp_clamp_rcvbuf(v);
+            return socket_common_options_set(&s->options, opt, &v, sizeof(v));
+        }
         case SOCK_OPT_RECV_TIMEOUT:
         case SOCK_OPT_SEND_TIMEOUT:
-        case SOCK_OPT_BUF_SIZE:
         case SOCK_OPT_DEBUG:
         case SOCK_OPT_DONTFRAG:
         case SOCK_OPT_TTL: {
@@ -226,6 +262,8 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
             }
             return socket_common_get_value(&spec, sizeof(spec), value, len);
         }
+        case SOCK_GET_OPT_LINGER:
+            return socket_common_get_value( &s->options.linger, sizeof(s->options.linger), value, len);
         default:
             break;
     }
@@ -299,6 +337,10 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_SEND_BUF_SIZE:
             v = s->options.send_buf_size;
             break;
+        case SOCK_GET_OPT_TCP_MAXSEG:
+            v = s->options.tcp_maxseg;
+            break;
+        case SOCK_GET_OPT_REUSEPORT:
         case SOCK_GET_MCAST_GROUPS:
         case SOCK_GET_OPT_BROADCAST_ALLOWED:
         case SOCK_GET_OPT_FILTER:
@@ -311,6 +353,7 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_TTL:
         case SOCK_GET_OPT_NONBLOCK:
         case SOCK_GET_OPT_DONTROUTE:
+        case SOCK_GET_OPT_REUSEADDR:
             return socket_common_options_get(&s->options, opt, value, len);
         default:
             return SOCK_ERR_INVAL;
@@ -360,9 +403,9 @@ int32_t socket_bind_tcp(socket_impl_t sh, const SockBindSpec* spec_in, uint16_t 
     int bind_port = port;
     socket_bind_token_t token = 0;
     if (bind_port == 0) {
-        bind_port = socket_bind_alloc_ephemeral(s->ownerSocket, PROTO_TCP, &spec, &token);
+        bind_port = socket_bind_alloc_ephemeral(s->ownerSocket, PROTO_TCP, &spec, s->options.flags & SOCK_OPT_REUSEADDR, &token);
         if (bind_port < 0) return SOCK_ERR_NO_PORT;
-    } else if (!socket_bind_insert(s->ownerSocket, PROTO_TCP, &spec, port, &token)) return SOCK_ERR_BOUND;
+    } else if (!socket_bind_insert(s->ownerSocket, PROTO_TCP, &spec, port, s->options.flags & SOCK_OPT_REUSEADDR, true, &token)) return SOCK_ERR_BOUND;
 
     s->bindSpec = spec;
     s->bindToken = token;
@@ -375,29 +418,42 @@ int32_t socket_listen_tcp(socket_impl_t sh, int32_t backlog) {
     if (!s) return SOCK_ERR_INVAL;
     if (!s->bindToken || s->connected) return SOCK_ERR_STATE;
 
-    int cap = backlog > TCP_MAX_BACKLOG ? TCP_MAX_BACKLOG : backlog;
+    int32_t cap = backlog > TCP_MAX_BACKLOG ? TCP_MAX_BACKLOG : backlog;
     if (cap < 1) cap = 1;
 
-    if (s->pending) {
-        for (int i = 0; i < s->backlogLen; ++i) {
-            if (!s->pending[i]) continue;
-            socket_core_close_socket(s->pending[i]);
-            socket_core_put(s->pending[i]);
-        }
-        release(s->pending);
-    }
+    ksocket_t** pending = (ksocket_t**)zalloc(sizeof(ksocket_t*)*cap);
+    if (!pending) return SOCK_ERR_SYS;
 
-    s->pending = (ksocket_t**)zalloc(sizeof(ksocket_t*) * cap);
-    if (!s->pending) {
-        s->backlogCap = 0;
-        s->backlogLen = 0;
-        s->listening = false;
-        return SOCK_ERR_SYS;
-    }
-
+    irq_flags_t irq = irq_save_disable();
+    int32_t keep = s->backlogLen < cap ? s->backlogLen : cap;
+    for (int32_t i = 0; i < keep; ++i) pending[i] = s->pending[i];
+    ksocket_t** old_pending = s->pending;
+    int32_t old_cap = s->backlogCap;
+    int32_t old_len = s->backlogLen;
+    bool old_listening = s->listening;
+    s->pending = pending;
     s->backlogCap = cap;
-    s->backlogLen = 0;
+    s->backlogLen = keep;
     s->listening = true;
+    irq_restore(irq);
+
+    if (!socket_bind_tcp_listen(s->bindToken)) {
+        irq = irq_save_disable();
+        s->pending = old_pending;
+        s->backlogCap = old_cap;
+        s->backlogLen = old_len;
+        s->listening = old_listening;
+        irq_restore(irq);
+        release(pending);
+        return SOCK_ERR_BOUND;
+    }
+
+    for (int32_t i = keep; i < old_len; ++i) {
+        if (!old_pending[i]) continue;
+        socket_core_close_socket(old_pending[i]);
+        socket_core_put(old_pending[i]);
+    }
+    if (old_pending) release(old_pending);
     return SOCK_OK;
 }
 
@@ -481,7 +537,7 @@ int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst) {
         if (s->localPort == 0) {
             if (!s->ownerSocket) return SOCK_ERR_SYS;
             socket_bind_token_t token = 0;
-            int p = socket_bind_alloc_ephemeral_l3(s->ownerSocket, PROTO_TCP, chosen_l3, &token);
+            int p = socket_bind_alloc_ephemeral_l3(s->ownerSocket, PROTO_TCP, chosen_l3, s->options.flags & SOCK_OPT_REUSEADDR, &token);
             if (p < 0) return SOCK_ERR_NO_PORT;
             s->localPort = (uint16_t)p;
             s->bindToken = token;
@@ -672,13 +728,32 @@ int32_t socket_close_tcp(socket_impl_t sh) {
     netlog_socket_event(&s->options, &ev);
 
     int32_t connection_state = tcp_socket_connection_state(s);
+    bool linger = (s->options.flags & SOCK_OPT_LINGER) && s->options.linger.enabled;
     if (s->flow.flow_generation) {
-        if (connection_state > 0) {
-            if (!tcp_flow_is_closed(&s->flow)) {
-                tcp_flow_flush(&s->flow);
-                tcp_flow_close(&s->flow);
+        if (connection_state == 0 && !s->connected) tcp_flow_abort(&s->flow);
+        else if (connection_state >= 0) {
+            if (linger && s->options.linger.timeout_ms == 0) tcp_flow_abort(&s->flow);
+            else {
+                bool closed = tcp_flow_is_closed(&s->flow);
+                if (connection_state > 0 && !closed) {
+                    tcp_flow_flush(&s->flow);
+                    tcp_flow_close(&s->flow);
+                    closed = tcp_flow_is_closed(&s->flow);
+                }
+
+                if (linger && !closed) {
+                    if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
+                    uint32_t start_ms = get_time();
+                    while (!tcp_flow_is_closed(&s->flow)) {
+                        if (get_time() - start_ms >= s->options.linger.timeout_ms) break;
+                        msleep(5);
+                    }
+                    closed = tcp_flow_is_closed(&s->flow);
+                }
+
+                if (closed) tcp_flow_release_closed(&s->flow);
             }
-        } else if (connection_state == 0) tcp_flow_abort(&s->flow);
+        }
     }
 
     if (s->pending) {

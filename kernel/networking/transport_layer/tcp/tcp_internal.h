@@ -69,6 +69,7 @@ typedef struct {
     uint8_t retries;
     uint16_t refs;
     uint8_t retired;
+    struct ksocket *listener;
 } tcp_flow_base_t;
 
 typedef struct {
@@ -83,6 +84,9 @@ typedef struct {
     uint32_t cwnd;
     uint32_t ssthresh;
     uint32_t mss;
+    uint32_t advertised_mss;
+    uint32_t path_mss;
+    uint32_t peer_mss;
 
     uint8_t ws_send;
     uint8_t ws_recv;
@@ -92,6 +96,7 @@ typedef struct {
     uint8_t in_fast_recovery;
     uint32_t recover;
     uint32_t cwnd_acc;
+    uint32_t configured_mss;
 
     uint8_t nagle_flushing;
     uint8_t nagle_appending;
@@ -146,6 +151,7 @@ typedef struct {
 typedef struct {
     uint8_t ttl;
     uint8_t dontfrag;
+    uint8_t reuseaddr;
 } tcp_flow_ip_t;
 
 typedef struct tcp_flow {
@@ -165,12 +171,15 @@ void tcp_enter_time_wait(tcp_flow_t *flow);
 tcp_flow_t *tcp_alloc_flow(void);
 void tcp_free_flow(int idx);
 void tcp_active_insert_flow(tcp_flow_t *flow);
+//TODO REUSEADDR can create flows that rx cant distinguish
 tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx);
 tcp_flow_t *tcp_flow_acquire_match(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, int *out_idx);
 int tcp_flow_hold(tcp_flow_t *flow);
 void tcp_flow_put(tcp_flow_t *flow);
 
 void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms);
+void tcp_update_mss(tcp_flow_t *flow);
+bool tcp_flow_matches_bind(const tcp_flow_t *flow, const SockBindSpec *spec);
 
 tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow);
 const uint8_t *tcp_tx_seg_payload_ptr(const tcp_tx_seg_t *seg);

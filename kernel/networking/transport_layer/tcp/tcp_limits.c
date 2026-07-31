@@ -1,5 +1,5 @@
 #include "tcp_internal.h"
-#include "std/memory.h"
+#include "exceptions/irq.h"
 
 uint32_t tcp_ooo_global_bytes;
 uint32_t tcp_ooo_global_segs;
@@ -54,42 +54,57 @@ tcp_admit_result_t tcp_admit_ooo(tcp_flow_t *flow, uint32_t increase, uint32_t r
     uint32_t seg_increase = remaining_nodes >= flow->rx.reass_count ? 1u : 0;
 
     if (remaining_nodes >= TCP_REASS_MAX_SEGS) return TCP_ADMIT_OOO_FLOW_SEGS;
-    if (increase && flow->rx.rcv_ooo_used + increase > limit) return TCP_ADMIT_OOO_FLOW_BYTES;
-    if (increase && tcp_ooo_global_bytes + increase > TCP_REASS_GLOBAL_MAX_BYTES) return TCP_ADMIT_OOO_GLOBAL_BYTES;
+    if (increase && (flow->rx.rcv_ooo_used > limit || increase > limit - flow->rx.rcv_ooo_used)) return TCP_ADMIT_OOO_FLOW_BYTES;
+    if (increase && (tcp_ooo_global_bytes > TCP_REASS_GLOBAL_MAX_BYTES || increase > TCP_REASS_GLOBAL_MAX_BYTES - tcp_ooo_global_bytes)) return TCP_ADMIT_OOO_GLOBAL_BYTES;
     if (seg_increase && tcp_ooo_global_segs + seg_increase > TCP_REASS_GLOBAL_MAX_SEGS) return TCP_ADMIT_OOO_GLOBAL_SEGS;
 
     return TCP_ADMIT_OK;
 }
 
-tcp_admit_result_t tcp_admit_syn(uint8_t l3_id, uint16_t port, ip_version_t ver, const void *src_ip) {
+tcp_admit_result_t tcp_admit_syn(struct ksocket* listener, ip_version_t ver, const void *src_ip) {
+    if (!listener) return TCP_ADMIT_SYN_LISTENER;
     uint32_t syn_total = 0;
     uint32_t syn_listener = 0;
     uint32_t syn_source = 0;
-    uint32_t timewait = 0;
-    uint32_t orphan = 0;
     size_t ip_len = (size_t)(ver == IP_VER6 ? 16 : 4);
 
-    for (uint16_t n = 0; n < tcp_active_count; n++) {
+    irq_flags_t irq = irq_save_disable();
+    uint32_t active_count = tcp_active_count;
+    for (uint16_t n = 0; n < active_count; n++) {
         uint16_t slot = tcp_active_flows[n];
-        tcp_flow_t *f = slot < MAX_TCP_FLOWS ? tcp_flows[slot] : NULL;
-        if (!f) continue;
-
-        if (f->base.state == TCP_SYN_RECEIVED) {
-            syn_total++;
-            if (f->base.local_port == port && f->base.l3_id == l3_id) syn_listener++;
-            if (src_ip && f->base.local_port == port && f->base.l3_id == l3_id && f->base.remote.ver == ver && memcmp(f->base.remote.ip, src_ip, ip_len) == 0) syn_source++;
-        } else if (f->base.state == TCP_TIME_WAIT) timewait++;
-        else if (f->base.state != TCP_LISTEN && f->base.state != TCP_STATE_CLOSED && !f->base.local_port) orphan++;
+        tcp_flow_t* flow = slot < MAX_TCP_FLOWS ? tcp_flows[slot] : NULL;
+        if (!flow || flow->base.retired || flow->base.state != TCP_SYN_RECEIVED) continue;
+        syn_total++;
+        if (flow->base.listener != listener) continue;
+        syn_listener++;
+        if (src_ip && flow->base.remote.ver == ver && memcmp(flow->base.remote.ip, src_ip, ip_len) == 0) syn_source++;
     }
+    irq_restore(irq);
 
-    uint32_t score = (uint32_t)tcp_active_count * 4 + syn_total * 4 + timewait + orphan * 4 + (tcp_ooo_global_bytes >> 12) + (tcp_tx_global_bytes >> 12);
+    if (active_count >= MAX_TCP_FLOWS) return TCP_ADMIT_FLOW_TABLE_FULL;
 
-    if (tcp_active_count >= MAX_TCP_FLOWS) return TCP_ADMIT_FLOW_TABLE_FULL;
-    if (syn_total >= TCP_SYN_RECV_MAX_GLOBAL) return TCP_ADMIT_SYN_GLOBAL;
-    if (syn_listener >= TCP_SYN_RECV_MAX_LISTENER) return TCP_ADMIT_SYN_LISTENER;
-    if (syn_source >= TCP_SYN_RECV_MAX_SOURCE) return TCP_ADMIT_SYN_SOURCE;
-    if (orphan >= TCP_ORPHAN_MAX_GLOBAL) return TCP_ADMIT_ORPHAN_LIMIT;
-    if (score >= TCP_RESOURCE_BUDGET) return TCP_ADMIT_RESOURCE_BUDGET;
+    uint32_t available = MAX_TCP_FLOWS - active_count;
+    if (available <= TCP_FLOW_CONTROL_RESERVE) return TCP_ADMIT_FLOW_RESERVE;
+
+    uint32_t usable = available - TCP_FLOW_CONTROL_RESERVE;
+    uint32_t global_limit = usable / 2;
+    if (global_limit < TCP_SYN_RECV_MIN_GLOBAL) global_limit = TCP_SYN_RECV_MIN_GLOBAL;
+    if (global_limit > TCP_SYN_RECV_MAX_GLOBAL) global_limit = TCP_SYN_RECV_MAX_GLOBAL;
+    if (global_limit > usable) global_limit = usable;
+
+    uint32_t listener_limit = usable / 8;
+    if (listener_limit < TCP_SYN_RECV_MIN_LISTENER) listener_limit = TCP_SYN_RECV_MIN_LISTENER;
+    if (listener_limit > TCP_SYN_RECV_MAX_LISTENER) listener_limit = TCP_SYN_RECV_MAX_LISTENER;
+    if (listener_limit > global_limit) listener_limit = global_limit;
+
+    uint32_t source_limit = listener_limit / 4;
+    if (source_limit < TCP_SYN_RECV_MIN_SOURCE) source_limit = TCP_SYN_RECV_MIN_SOURCE;
+    if (source_limit > TCP_SYN_RECV_MAX_SOURCE) source_limit = TCP_SYN_RECV_MAX_SOURCE;
+    if (source_limit > listener_limit) source_limit = listener_limit;
+
+    if (syn_total >= global_limit) return TCP_ADMIT_SYN_GLOBAL;
+    if (syn_listener >= listener_limit) return TCP_ADMIT_SYN_LISTENER;
+    if (syn_source >= source_limit) return TCP_ADMIT_SYN_SOURCE;
 
     return TCP_ADMIT_OK;
 }
@@ -100,7 +115,7 @@ tcp_admit_result_t tcp_admit_tx(tcp_flow_t *flow, uint32_t bytes, uint32_t free_
     uint32_t limit = flow->tx.queued_limit ? flow->tx.queued_limit : TCP_TX_MAX_BYTES_PER_FLOW;
     if (flow->tx.queued_bytes >= limit) return TCP_ADMIT_TX_FLOW_BYTES;
     if (tcp_tx_global_bytes >= TCP_TX_MAX_BYTES_GLOBAL) return TCP_ADMIT_TX_GLOBAL_BYTES;
-    if (bytes && flow->tx.queued_bytes + bytes > limit) return TCP_ADMIT_TX_FLOW_BYTES;
-    if (bytes && tcp_tx_global_bytes + bytes > TCP_TX_MAX_BYTES_GLOBAL) return TCP_ADMIT_TX_GLOBAL_BYTES;
+    if (bytes && (flow->tx.queued_bytes > limit || bytes > limit - flow->tx.queued_bytes)) return TCP_ADMIT_TX_FLOW_BYTES;
+    if (bytes && (tcp_tx_global_bytes > TCP_TX_MAX_BYTES_GLOBAL || bytes > TCP_TX_MAX_BYTES_GLOBAL - tcp_tx_global_bytes)) return TCP_ADMIT_TX_GLOBAL_BYTES;
     return TCP_ADMIT_OK;
 }

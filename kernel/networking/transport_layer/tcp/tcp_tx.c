@@ -116,7 +116,7 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
 
         uint32_t tx_limit = flow->tx.queued_limit ? flow->tx.queued_limit : TCP_TX_MAX_BYTES_PER_FLOW;
         uint32_t flow_room = tx_limit > flow->tx.queued_bytes ? tx_limit - flow->tx.queued_bytes : 0;
-        uint32_t global_room = TCP_TX_MAX_BYTES_GLOBAL - tcp_tx_global_bytes;
+        uint32_t global_room = tcp_tx_global_bytes < TCP_TX_MAX_BYTES_GLOBAL ? TCP_TX_MAX_BYTES_GLOBAL - tcp_tx_global_bytes : 0;
         if (seg_len > flow_room) seg_len = flow_room;
         if (seg_len > global_room) seg_len = global_room;
         if (!seg_len) break;

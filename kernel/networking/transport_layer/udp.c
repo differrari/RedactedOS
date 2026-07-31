@@ -9,6 +9,7 @@
 #include "types.h"
 #include "syscalls/syscalls.h"
 #include "networking/internet_layer/ipv4_utils.h"
+#include "networking/internet_layer/ipv6_utils.h"
 
 size_t create_udp_segment(uintptr_t buf, const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload) {
     udp_hdr_t udp;
@@ -126,11 +127,26 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     if (v4 && v4->l2) ifx = v4->l2->ifindex;
     else if (v6 && v6->l2) ifx = v6->l2->ifindex;
 
-    ksocket_t* sockets[SOCKET_BIND_COLLECT_MAX];
-    uint32_t count = socket_bind_collect(PROTO_UDP, ipver, l3_id, ifx, dst_ip_addr, dst_port, sockets, SOCKET_BIND_COLLECT_MAX);
-    for (uint32_t i = 0; i < count; ++i) {
-        socket_udp_input(sockets[i], ipver, l3_id, src_ip_addr, dst_ip_addr, plpkt, src_port, dst_port);
-        socket_core_put(sockets[i]);
+    bool fanout = false;
+    if (ipver == IP_VER4) {
+        uint32_t dst = 0;
+        memcpy(&dst, dst_ip_addr, sizeof(dst));
+        fanout = ipv4_is_multicast(dst) || ipv4_is_limited_broadcast(dst) || (v4 && dst == v4->broadcast);
+    } else if (ipver == IP_VER6) fanout = ipv6_is_multicast(dst_ip_addr);
+
+    if (!fanout) {
+        ksocket_t* socket = socket_bind_lookup(PROTO_UDP, ipver, l3_id, ifx, src_ip_addr, src_port, dst_ip_addr, dst_port);
+        if (socket) {
+            socket_udp_input(socket, ipver, l3_id, src_ip_addr, dst_ip_addr, plpkt, src_port, dst_port);
+            socket_core_put(socket);
+        }
+    } else {
+        uint32_t cursor = 0;
+        ksocket_t* socket = NULL;
+        while ((socket = socket_bind_udp_next_fanout(ipver, l3_id, ifx, dst_ip_addr, dst_port, &cursor))) {
+            socket_udp_input(socket, ipver, l3_id, src_ip_addr, dst_ip_addr, plpkt, src_port, dst_port);
+            socket_core_put(socket);
+        }
     }
 
     netpkt_unref(plpkt);
