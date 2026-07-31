@@ -484,7 +484,8 @@ u64 syscall_signal_handler(process_t* ctx, thread_t *current_thread){
 
 uint64_t syscall_load_fsmod(process_t *ctx, thread_t *current_thread){
     SYSCALL_ARG(system_module,mod,PROC_X0, false);
-    return load_process_module(ctx,mod);
+    bool global = current_thread->PROC_X1;
+    return load_process_module(ctx,mod,global);
 }
 
 uint64_t syscall_unload_fsmod(process_t *ctx, thread_t *current_thread){

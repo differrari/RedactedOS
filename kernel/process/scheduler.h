@@ -44,7 +44,7 @@ void name_process(process_t *proc, const char *name);
 void sleep_thread(uint64_t msec);
 void wake_processes();
 
-bool load_process_module(process_t *p, system_module *m);
+bool load_process_module(process_t *p, system_module *m, bool global);
 
 process_t* get_current_proc();
 process_t* get_kernel_proc();

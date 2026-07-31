@@ -708,7 +708,7 @@ thread_t* new_thread(process_t *proc, thread_t *addr, u64 spsr, uptr entry_point
     return addr;
 }
 
-bool load_process_module(process_t *p, system_module *m){//TODO: this doesn't belong here
+bool load_process_module(process_t *p, system_module *m, bool global){//TODO: this doesn't belong here
     if (!p->permissions.owned_fs_id) p->permissions.owned_fs_id = register_fs_id();
     module_root *root = get_fs_for_id(p->permissions.fs_id);
     system_module *mod = zalloc(sizeof(system_module));
@@ -716,6 +716,8 @@ bool load_process_module(process_t *p, system_module *m){//TODO: this doesn't be
     mod->name = string_from_literal(m->name).data;
     mod->mount = string_from_literal(m->mount).data;
     mod->owner = p->id;
-    load_module_to(root, mod);
+    bool ret = load_module_to(root, mod);
+    if (!ret) return false;
+    if (!global) return true;
     return load_module(mod);
 }

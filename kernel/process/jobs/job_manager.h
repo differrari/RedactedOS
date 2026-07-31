@@ -5,9 +5,6 @@
 
 //TODO: We can probably optimize current proc fs more, but right now it blocks the entire process so we can't allow this case
 #define job_make(job_type,mod,action)\
-if (get_current_proc()->id == mod->owner){\
-    return false;\
-}\
 process_t *owner_proc = get_proc_by_pid(mod->owner);\
 if (!is_privileged(owner_proc)){\
     job_application_t app = (job_application_t){\
@@ -77,7 +74,7 @@ static inline void job_serialize_off(job_application_t *application, int arg_num
     job_buffer buf = {
         .worker_ptr = {.ptr = (uptr)offset, .size = sizeof(file_offset *) },
         .orig_ptr = {.ptr = (uptr)offset, .size = sizeof(file_offset *) },
-        .sync = copy_on_end,
+        .sync = copy_on_start | copy_on_end,
         .arg_num = arg_num,
         .explicit_size = false,
     };

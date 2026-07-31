@@ -321,7 +321,7 @@ int main(){
     screen_printer_init(dummy_draw_ctx(ctx.width, ctx.height-INPUT_HEIGHT));
 
     stackfs_init();
-    load_fsmodule(&termhistory_mod);
+    load_fsmodule(&termhistory_mod, true);
 
     u32 color_buf[2] = {};
     sreadf("/theme", &color_buf, sizeof(uint64_t));
