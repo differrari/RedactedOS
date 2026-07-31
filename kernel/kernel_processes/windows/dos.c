@@ -51,7 +51,15 @@ static void draw_solid_window(window_frame *frame, draw_ctx *ctx, int_point fixe
         .size = fixed_size,
         .background_color = saturate(system_theme.bg_color + 0x111111, focused ? 0 : -90),
         .foreground_color = COLOR_WHITE,
-    }), {        
+    }), { 
+        label(ctx, (text_ui_config){
+            .slice = { frame->info.name, frame->info.name_length},
+            .font_size = 3,
+        }, (common_ui_config){
+            .point = RELATIVE(5, BORDER_SIZE+5),
+            .size = { parent.size.width-200, 30 },
+            .foreground_color = system_theme.accent_color,
+        });
         bool close_pressed = false;
         button(ctx, (rect_ui_config){}, (common_ui_config){
             .point = RELATIVE(parent.size.width - (BORDER_SIZE * 2) - 40 - BORDER_SIZE,BORDER_SIZE),
@@ -233,11 +241,17 @@ void check_shortcuts(){
             }
         }
 }
+
+void refresh_desktop_colors(){
+    setup_desktop_bg();
+    draw_desktop();
+    dirty_windows = true;
+}
+
 int window_system(){
     disable_visual();
     dos_ctx = gpu_get_ctx();
-    setup_desktop_bg();
-    draw_desktop();
+    refresh_desktop_colors();
     setup_shortcuts();
     switch_cursor(cursor_crosshair);
     

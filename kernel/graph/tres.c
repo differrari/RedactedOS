@@ -343,3 +343,12 @@ void set_window_focus(uint16_t win_id){
 void unset_window_focus(){
     focused_window = 0;
 }
+
+void refresh_window_info(u16 wid, window_info_t *info){
+    linked_list_node_t *node = linked_list_find(window_list, &wid, find_window);
+    if (!node || !node->data) return;
+
+    window_frame *frame = node->data;
+    frame->info = *info;
+    dirty_windows = true;
+}

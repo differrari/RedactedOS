@@ -74,7 +74,7 @@ bool process_has_runtime_state(process_t *proc){
     return proc && (proc->main_thread.sp || proc->main_thread.pc || proc->main_thread.spsr || proc->main_thread.stack_info.size || proc->heap_phys || proc->mm.ttbr0 || proc->output || proc->alloc_map || proc->bundle || proc->code || proc->code_size || proc->va);
 }
 
-bool process_can_run(process_t *proc){//TODO: thread, not proc based
+bool process_can_run(process_t *proc){
     if (!proc) return false;
     if (!process_is_known(proc) || proc->pending_reset) return false;
     if (proc->state == STOPPED || proc->suspended || !proc->main_thread.pc || !proc->main_thread.sp) return false;
@@ -153,7 +153,7 @@ void switch_proc(ProcSwitchReason reason) {
         next_thread = (thread_t*)cpec;
     } 
     if (!next_proc || !process_can_run(next_proc)){
-        next_proc = idle_proc;//TODO: process can run is too restrictive, it could run, just need to find the right thread to run
+        next_proc = idle_proc;
         next_thread = &idle_proc->main_thread;
     }
     if (!next_proc || !process_can_run(next_proc)) panic("no runnable process", 0);

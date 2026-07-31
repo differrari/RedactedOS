@@ -12,6 +12,7 @@
 #include "utils/clipboard.h"
 #include "math/math.h"
 #include "draw/textdraw.h"
+#include "environment/env_types.h"
 
 draw_ctx ctx = {};
 
@@ -207,6 +208,12 @@ int main(int argc, char* argv[]){
     handle_signal(SIG_QUIT, on_quit);
     // send_signal(SIG_QUIT, 7);//TODO: get own procid?
 
+    window_info_t info = {
+        .name = "Demo program",
+        .name_length = 12
+    };
+    env_set_window_info(&info);
+
     request_draw_ctx(&ctx);
 
     gpu_point cursor = {};
@@ -229,7 +236,6 @@ int main(int argc, char* argv[]){
         string f = string_format("[%i]: %s\n",i+1, demos[i].name);
         range.size = f.length;
         fb_continuous_draw_text(&ctx, draw_text_render, &cursor, slice_from_string(f), &range, rect, &size, (gpu_point){}, text_fmt, (text_format_arr){ });
-        print("%i,%i - %i,%i",range.start,range.size,cursor.x,cursor.y);
         string_free(f);
     }
 

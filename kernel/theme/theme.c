@@ -160,8 +160,11 @@ bool load_theme(){
     return true;
 }
 
+extern void refresh_desktop_colors();
+
 size_t reload(file* fd, const char *buf, size_t size, file_offset offset){
     load_theme();
+    refresh_desktop_colors();
     return 0;
 }
 

@@ -227,7 +227,7 @@ size_t simple_write(module_root *root, const char *path, const void *buf, size_t
         seek(&fd, fd.size, SEEK_ABSOLUTE);
     }
     size_t res = write_file(&fd, (char*)buf, size);
-    if (append){
+    if (!append){
         truncate(&fd, size);
     }
     close_file(&fd);
