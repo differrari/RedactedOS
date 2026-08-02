@@ -128,7 +128,7 @@ size_t read_file(file *descriptor, char* buf, size_t size){
     };
     size_t amount_read = 0;
     if (local.mod->owner != get_kernel_proc()->id){
-        job_make(job_readdir, local.mod, {
+        job_make(job_read, local.mod, {
             job_serialize_fd(&app, 0, &gfd, copy_on_start);
             job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_end);
         });
@@ -191,7 +191,7 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     };
     size_t amount_written = 0;
     if (local.mod->owner != get_kernel_proc()->id){
-        job_make(job_readdir, local.mod, {
+        job_make(job_write, local.mod, {
             job_serialize_fd(&app, 0, &gfd, copy_on_start);
             job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_start);
         });

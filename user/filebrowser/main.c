@@ -15,7 +15,7 @@ void menu_init(){
     make_entry("File" "/" "Hello", backing_virtual, entry_file, 0, (buffer){});
     make_entry("Edit", backing_virtual, entry_directory, 0, (buffer){});
     make_entry("Edit/World", backing_virtual, entry_directory, 0, (buffer){});
-    // make_complex_entry("File/Test", backing_transform, entry_file, 0, (file_actions){.write = test_fn}, (string){});
+    make_complex_entry("File/Test", backing_transform, entry_file, 0, (file_actions){.write = test_fn}, (string){});
 }
 
 system_module menu_mod = {
@@ -31,10 +31,8 @@ system_module menu_mod = {
 };
 
 int main(){
-#if false
     menu_init();
     load_fsmodule(&menu_mod, true);
-#endif
     request_draw_ctx(&filebrowser_ctx);
     
     files = stack_create(sizeof(file_data),32);
