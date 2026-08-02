@@ -9,7 +9,7 @@ extern "C" void disk_verbose(){
     sdhci_driver.enable_verbose();
 }
 
-extern "C" bool init_disk_device(){
+extern "C" bool init_disk_device(system_module *mod){
     kprint("Initializing disk");
     return sdhci_driver.init();
 }
@@ -26,6 +26,7 @@ system_module disk_module = (system_module){
     .name = "sdhci",
     .mount = "disk",
     .version = VERSION_NUM(0, 1, 0, 0),
+    .owner = 0,
     .init = init_disk_device,
     .fini = 0,
     .open = 0,
@@ -35,4 +36,5 @@ system_module disk_module = (system_module){
     .truncate = 0,
     .getstat = 0,
     .readdir = 0,
+    .alias_info = {}
 };
