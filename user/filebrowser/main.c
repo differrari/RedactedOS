@@ -18,6 +18,13 @@ void menu_init(){
     make_complex_entry("File/Test", backing_transform, entry_file, 0, (file_actions){.write = test_fn}, (string){});
 }
 
+size_t custom_readdir(const char *path, void *buf, size_t size, file_offset *offset){
+    print(">>>>>>>Hello");
+    size_t ret = vfs_readdir(path, buf, size, offset);
+    print(">>> %x",ret);
+    return ret;
+}
+
 system_module menu_mod = {
     .name = "demo menu",
     .mount = "menu",
@@ -27,12 +34,15 @@ system_module menu_mod = {
     .read = vfs_read,
     .write = vfs_write,
     .getstat = vfs_stat,
-    .readdir = vfs_readdir,
+    .readdir = custom_readdir,
 };
 
 int main(){
     menu_init();
-    load_fsmodule(&menu_mod, true);
+    load_fsmodule(&menu_mod, false);
+
+    swritef("/environment/menu", 0, 0, false);
+    
     request_draw_ctx(&filebrowser_ctx);
     
     files = stack_create(sizeof(file_data),32);

@@ -68,7 +68,7 @@ bool prepare_thread(job_state_t *job, system_module *mod, job_application_t appl
     for (size_t i = 0; i < application.buffer_count; i++){
         job_buffer buf = application.buffers[i];
         job->buffers[job->buffer_count++] = buf;
-        if (buf.sync & copy_on_start)
+        if (buf.sync & copy_on_start && buf.worker_ptr.ptr)
             memcpy((void*)next_addr_pa, (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
         t->regs[buf.arg_num] = next_addr_va;
         job->buffers[i].worker_ptr.ptr = next_addr_va;
@@ -142,10 +142,10 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     st->requester->PROC_X0 = ret;
     for (size_t i = 0; i < st->buffer_count; i++){
         job_buffer buf = st->buffers[i];
-        if (buf.sync & copy_on_end){
+        if (buf.sync & copy_on_end && buf.worker_ptr.ptr){
             print("[JOB debug] Copy buffer %x into %x",buf.worker_ptr.ptr,buf.orig_ptr.ptr);
             void* addr = quick_translate(st->requester, proc, buf.orig_ptr.ptr);
-            if (!addr) return;
+            if (!addr) continue;
             memcpy(addr, (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
             file *fd = addr;
             if (buf.fd){

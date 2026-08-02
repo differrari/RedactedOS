@@ -2,6 +2,7 @@
 #include "console/kio.h"
 #include "graph/tres.h"
 #include "process/scheduler.h"
+#include "kernel_processes/windows/menu.h"
 
 bool env_loaded = false;
 
@@ -61,6 +62,12 @@ FS_RESULT environment_open(u64 id, string_slice file_name, file *fd){
             buffer_map_value(&proc->environment.win_buf, &proc->environment.win_info, sizeof(window_info_t), DATA_WIN_SIGNATURE);
         return FS_RESULT_SUCCESS;
     }
+    if (slice_lit_match(file_name, "menu", true)){
+        fd->id = ((env_type_menu & 0xFFFF) << 16) | id;
+        fd->data_type = 0;
+        fd->size = 0;
+        return FS_RESULT_SUCCESS;
+    }
     return FS_RESULT_NOTFOUND;
 }
 
@@ -78,6 +85,8 @@ buffer* environment_resolve_fd(file *fd){
             return &proc->environment.structure;
         case env_type_win:
             return &proc->environment.win_buf;
+        case env_type_menu:
+            return 0;
         default: return 0;
     }
     return 0;
@@ -92,6 +101,7 @@ bool environment_init(system_module *module){
     static_entries += make_entry(":id/data", backing_virtual, entry_file, DATA_SIG_RAW, (buffer){}) != 0;
     static_entries += make_entry(":id/structure", backing_virtual, entry_file, DATA_SIG_DATA_STRUCT, (buffer){}) != 0;
     static_entries += make_entry(":id/window", backing_virtual, entry_file, DATA_WIN_SIGNATURE, (buffer){}) != 0;
+    static_entries += make_entry(":id/menu", backing_virtual, entry_file, 0, (buffer){}) != 0;
     return true;
 }
 
@@ -106,6 +116,11 @@ static inline size_t environment_write(file *fd, const char *buf, size_t size, f
     u16 file_type = (fd->id >> 16) & 0xFFFF;
     if (file_type == env_type_win && s == sizeof(window_info_t)){
         refresh_window_info(get_current_proc()->win_id,(window_info_t*)buf);
+    } 
+    if (file_type == env_type_menu){
+        process_t *menu_proc = get_current_proc();
+        if (!menu_proc->focused) return 0;
+        refresh_menu();
     }
     return s;
 }

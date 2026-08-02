@@ -4,6 +4,7 @@
 #include "math/math.h"
 #include "graph/graphics.h"
 #include "graph/tres.h"
+#include "kernel_processes/windows/menu.h"
 
 process_t* focused_proc;
 
@@ -179,11 +180,14 @@ void sys_focus_current(){
 void sys_set_focus(int pid){
     process_t *target = get_proc_by_pid(pid);
     if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) return;
+    if (focused_proc && focused_proc->id == pid) return;
     if (focused_proc) focused_proc->focused = false;
     focused_proc = target;
     focused_proc->focused = true;
-    kprintf("New focus %i",pid);
-    if (system_config.use_windows) set_window_focus(focused_proc->win_id);
+    if (system_config.use_windows){
+        set_window_focus(focused_proc->win_id);
+        refresh_menu();
+    } 
 }
 
 void sys_unset_focus(bool close){

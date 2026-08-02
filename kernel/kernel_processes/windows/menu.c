@@ -6,6 +6,8 @@
 #include "theme/theme.h"
 #include "syscalls/syscalls.h"
 #include "input/input_dispatch.h"
+#include "filesystem/modules/fs_isolation.h"
+#include "filesystem/filesystem.h"
 
 #define draw_eye(x_off, blink, eyelid) fb_fill_rect(ctx, rect.point.x + eye_margin + x_off, rect.point.y + (rect.size.height * 0.1), eye_size.width, eye_size.height, (blink) ? eyelid : 0xFFcccccc);\
 fb_fill_rect(ctx, rect.point.x + eye_margin + p.x + x_off, rect.point.y + (rect.size.height * 0.1) + p.y, eye_size.width-pupil_distance.width, eye_size.height-pupil_distance.height, (blink) ? eyelid : 0xFF333333);
@@ -33,7 +35,35 @@ void test_widget(draw_ctx *ctx, gpu_rect rect, color bg){
     
 }
 
+bool menu_dirty = true;
+
+void refresh_menu(){
+#if false
+    menu_dirty = true;  
+#endif
+}
+
+void load_menu(){
+    process_t *menu_proc = get_proc_by_pid(sys_get_focused_pid());
+    if (!menu_proc){ print("[MENU debug] no focused process"); return; }
+    const char *path = "/menu";
+    module_root *localfs = get_fs_for_id(menu_proc->permissions.fs_id);
+
+    if (!localfs) return;
+
+    void *buf = zalloc(0x1000);
+    u64 off = 0;
+    size_t s = list_directory_contents(localfs, path, buf, 0x1000, &off);
+    print("Size of read %x",s);
+
+    print("There are %i entries",*(u32*)buf);
+}
+
 void draw_menu(){
+    if (menu_dirty){
+        load_menu();
+        menu_dirty = false;
+    }
     draw_ctx *screen_ctx = gpu_get_ctx();
     fb_fill_rect(screen_ctx, 0, 0, screen_ctx->width, MENU_HEIGHT, system_theme.bg_color+0x111111);
     fb_fill_rect(screen_ctx, 0, MENU_HEIGHT-BORDER_SIZE, screen_ctx->width, BORDER_SIZE, 0x44000000);
