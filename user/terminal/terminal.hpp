@@ -1,0 +1,59 @@
+#pragma once
+
+#include "utils/console.hpp"
+#include "shell/shell.h"
+#include "kbd_helper.h"
+#include "environment/env_types.h"
+#include "data/serialize/binary_serial.h"
+
+class Terminal: public Console {
+public:
+    Terminal();
+    void update();
+    shell_handle *term_current_shell;
+    void emit_data(structdef, sizedptr, bool);
+    void refresh();
+    void bell();
+    bool interpret_cmd_code(char code, u16 proc);
+    void ctrl(console_ctrls ctrl);
+    void put_char(char c) override;
+    void put_string(const char* str) override;
+    void put_slice(string_slice slice) override;
+    bool headless;
+protected:
+    bool handle_input();
+    void repeat_tick();
+    void end_command();
+    int prompt_length;
+    void run_command();
+
+    void redraw_input_line();
+    void set_input_line(const char *s);
+    void cursor_tick();
+    void cursor_set_visible(bool visible);
+
+    bool exec_cmd(const char *cmd);
+
+    draw_ctx* get_ctx() override;
+    void flush(draw_ctx *ctx) override;
+    bool screen_ready() override;
+
+    shell_handle* create_shell();
+
+    bool command_running;
+
+    static constexpr uint32_t input_max = 1024;
+    char input_buf[input_max];
+    uint32_t input_len;
+    uint32_t input_cursor;
+
+    static constexpr uint32_t history_max = 32;
+    char *history[history_max];
+    uint32_t history_len;
+    uint32_t history_index;
+
+    uint64_t last_blink_ms;
+    bool cursor_visible;
+
+    bool dirty;
+};
