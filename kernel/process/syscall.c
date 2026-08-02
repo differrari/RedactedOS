@@ -702,6 +702,7 @@ void sync_el0_handler_c(){
     }
     syscall_depth--;
     save_syscall_return(result);
+    // print("Return to %i",current_thread->pid);
     process_restore();
 }
 

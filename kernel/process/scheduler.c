@@ -182,6 +182,7 @@ void save_syscall_return(uint64_t value){
 }
 
 void prepare_process_restore(process_t *proc){
+    current_proc = proc;
     if (!proc) panic("process_restore null process", 0);
     if (!process_is_known(proc)) panic("process_restore unknown process", cpec);
     if (proc->pending_reset || proc->state == STOPPED || !proc->main_thread.pc || !proc->main_thread.sp) {
@@ -195,8 +196,10 @@ void prepare_process_restore(process_t *proc){
     }
 
     if (!is_privileged(proc)) {
+        // print("Restoring process %i ttbr0",proc->id);
         if (!proc->mm.ttbr0) panic("process_restore user process without ttbr0", proc->id);
         if (proc->main_thread.pc >= HIGH_VA) panic("user pc in kernel VA", proc->main_thread.pc);
+        mmu_swap_ttbr(&proc->mm);
         mmu_ttbr0_enable_user();
     } else mmu_ttbr0_disable_user(); 
 }

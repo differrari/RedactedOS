@@ -177,17 +177,9 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     }
     print("[JOB] %i fulfilled by %i",job_id,thread->tid);
     if (st->kernel_ctx.job_id){
-        //Restore kernel proc here and let it return to the process
-        print("Restoring to kernel's functionality here %llx",st->kernel_ctx.pc);
         st->kernel_ctx.PROC_X0 = ret;
         job_kpec = (uptr)&st->kernel_ctx;
         cpec = (uptr)st->requester;
-        // print("Kernel will restore to %i %i. with %llx of stack being restored to %llx from %llx",st->requester->pid,st->requester->tid,st->kstack.size,ksp,st->kstack.ptr);
-        // print("memcpy(%llx,%llx,%llx)",ksp-st->kstack.size,st->kstack.ptr,st->kstack.size);
-        // memcpy(ksp-st->kstack.size, (void*)st->kstack.ptr, st->kstack.size);
-
-
-        // print("SP is %llx and LR is %llx",st->kernel_ctx.sp,st->kernel_ctx.regs[29]);
 
         st->kernel_ctx.sp = translate_stack((st->kstack.ptr+st->kstack.size), st->kernel_ctx.sp);
         print("Initial Address %llx",st->kernel_ctx.regs[29]);
@@ -207,9 +199,6 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
         st->requester->state = RUNNING;
         prepare_process_restore(proc);
         job_restore_kernel();
-        
-        // st->kernel_ctx.sp = st->kstack.ptr-((uptr)ksp-st->kernel_ctx.sp);
-        // job_restore_kernel();
     } else {
         ready_thread(st->requester);
         st->requester->PROC_X0 = ret;
