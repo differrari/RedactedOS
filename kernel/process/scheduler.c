@@ -181,24 +181,28 @@ void save_syscall_return(uint64_t value){
     get_current_thread()->PROC_X0 = value;
 }
 
-void process_restore(){
-    if (!current_proc) panic("process_restore null process", 0);
-    if (!process_is_known(current_proc)) panic("process_restore unknown process", cpec);
-    if (current_proc->pending_reset || current_proc->state == STOPPED || !current_proc->main_thread.pc || !current_proc->main_thread.sp) {
-        if (current_proc->mm.ttbr0) {
-            current_proc->pending_reset = true;
-            current_proc->state = STOPPED;
+void prepare_process_restore(process_t *proc){
+    if (!proc) panic("process_restore null process", 0);
+    if (!process_is_known(proc)) panic("process_restore unknown process", cpec);
+    if (proc->pending_reset || proc->state == STOPPED || !proc->main_thread.pc || !proc->main_thread.sp) {
+        if (proc->mm.ttbr0) {
+            proc->pending_reset = true;
+            proc->state = STOPPED;
             switch_proc(HALT);
             panic("process_restore recovery returned", cpec);
         }
         panic("process_restore invalid process", cpec);
     }
 
-    if (!is_privileged(current_proc)) {
-        if (!current_proc->mm.ttbr0) panic("process_restore user process without ttbr0", current_proc->id);
-        if (current_proc->main_thread.pc >= HIGH_VA) panic("user pc in kernel VA", current_proc->main_thread.pc);
+    if (!is_privileged(proc)) {
+        if (!proc->mm.ttbr0) panic("process_restore user process without ttbr0", proc->id);
+        if (proc->main_thread.pc >= HIGH_VA) panic("user pc in kernel VA", proc->main_thread.pc);
         mmu_ttbr0_enable_user();
     } else mmu_ttbr0_disable_user(); 
+}
+
+void process_restore(){
+    prepare_process_restore(current_proc);
     restore_context(cpec);
 }
 

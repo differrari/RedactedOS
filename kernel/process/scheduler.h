@@ -30,6 +30,7 @@ process_t* init_process();
 void ready_process(process_t *proc);
 void ready_thread(thread_t *t);
 void save_syscall_return(uint64_t value);
+void prepare_process_restore(process_t *proc);
 void process_restore();
 
 void stop_process(uint16_t pid, int32_t exit_code);
