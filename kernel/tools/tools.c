@@ -48,10 +48,14 @@ process_t* execute(const char* prog_name, int argc, const char* argv[], uint32_t
             i++;
         }
 
-        string executable = string_format("%s/%s.elf",prog_name,proc_name);
-        process_t *proc = load_elf_process_path(proc_name, prog_name, executable.data, argc, argv);
-        release(executable.data);
-        if (!proc) return 0;
+        process_t *proc = load_elf_process_path(proc_name, prog_name, prog_name, argc, argv);
+        if (!proc) {
+            //TODO: this should only be for .red
+            string executable = string_format("%s/%s.elf",prog_name,proc_name);
+            proc = load_elf_process_path(proc_name, prog_name, executable.data, argc, argv);
+            release(executable.data);
+            if (!proc) return 0;
+        }
 
         if (win_id) proc->win_id = win_id;
         if (transfer_focus) sys_set_focus(proc->id);

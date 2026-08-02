@@ -692,7 +692,7 @@ void sync_el0_handler_c(){
             while (true);
         } else {
             kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", esr, elr, far, current_thread->sp);
-            if (syscall_depth <= 2) coredump(esr, elr, far, current_thread->sp);
+            coredump(esr, elr, far, current_thread->sp);
             syscall_depth--;
             stop_current_process(ec);
         }
