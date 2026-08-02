@@ -21,11 +21,8 @@ all: prepare $(TARGET)
 
 prepare:
 	mkdir -p $(BUILD_DIR)
-	@echo "C Sources $(C_SRC)"
 
 $(TARGET): $(OBJ)
-	@echo "Finishing build $(ARCH)"
-	@echo $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ)))
 	$(VAR) rcs $@ $(OBJ)
 
 $(BUILD_DIR)/%.o: %.c
