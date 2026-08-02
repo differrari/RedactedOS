@@ -39,9 +39,6 @@ typedef enum {
     TCP_ADMIT_SYN_LISTENER, 
     TCP_ADMIT_SYN_SOURCE,
     TCP_ADMIT_FLOW_RESERVE,
-    TCP_ADMIT_TX_FLOW_BYTES,
-    TCP_ADMIT_TX_FLOW_SEGS,
-    TCP_ADMIT_TX_GLOBAL_BYTES,
     TCP_ADMIT_FLOW_TABLE_FULL
 } tcp_admit_result_t;
 
@@ -70,7 +67,6 @@ extern tcp_stats_t tcp_stats;
 uint32_t tcp_clamp_rcvbuf(uint32_t size);
 tcp_admit_result_t tcp_admit_syn(struct ksocket *listener, ip_version_t ver, const void *src_ip);
 tcp_admit_result_t tcp_admit_ooo(struct tcp_flow *flow, uint32_t increase, uint32_t remaining_nodes);
-tcp_admit_result_t tcp_admit_tx(struct tcp_flow *flow, uint32_t bytes, uint32_t free_slots);
 void tcp_account_ooo_add(uint32_t bytes, uint32_t segs);
 void tcp_account_ooo_remove(uint32_t bytes, uint32_t segs);
 void tcp_account_tx_add(struct tcp_flow *flow, uint32_t bytes);

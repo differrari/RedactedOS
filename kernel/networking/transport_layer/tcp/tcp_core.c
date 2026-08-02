@@ -10,6 +10,7 @@
 #include "syscalls/syscalls.h"
 #include "networking/transport_layer/trans_utils.h"
 #include "networking/transport_layer/socket_core.h"
+#include "networking/transport_layer/socket_bind.h"
 #include "exceptions/irq.h"
 
 tcp_flow_t *tcp_flows[MAX_TCP_FLOWS];
@@ -25,29 +26,52 @@ static uint16_t tcp_active_port_lower_bound(uint16_t local_port) {
     while (lo < hi) { 
         uint16_t mid = lo + ((hi - lo) >> 1);
         tcp_flow_t *flow = tcp_flows[tcp_active_flows[mid]];
-        if (flow->base.local_port < local_port) lo = (uint16_t)(mid + 1);
+        if (flow->base.local.port < local_port) lo = (uint16_t)(mid + 1);
         else hi = mid;
     }
 
     return lo;
 }
 
-void tcp_active_insert_flow(tcp_flow_t *flow) {
-    if (!flow) return;
+static bool tcp_flow_tuple_matches(const tcp_flow_t *flow, uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port) {
+    if (!flow || !local_ip || !remote_ip || (ver != IP_VER4 && ver != IP_VER6)) return false;
+    if (flow->base.local.port != local_port || flow->base.remote.port != remote_port) return false;
+    if (flow->base.local.ver != ver || flow->base.remote.ver != ver) return false;
+
+    size_t ip_len = ver == IP_VER6 ? 16 : 4;
+    if (memcmp(flow->base.local.ip, local_ip, ip_len) != 0) return false;
+    if (memcmp(flow->base.remote.ip, remote_ip, ip_len) != 0) return false;
+    return true;
+}
+
+bool tcp_active_insert_flow(tcp_flow_t *flow) {
+    if (!flow) return false;
 
     irq_flags_t irq = irq_save_disable();
     uint16_t slot = flow->base.slot;
-    if (slot >= MAX_TCP_FLOWS || tcp_flows[slot] != flow || flow->base.retired || tcp_active_count >= MAX_TCP_FLOWS) {
+    if (slot >= MAX_TCP_FLOWS || tcp_flows[slot] != flow || flow->base.retired || flow->base.active_pos != UINT16_MAX || tcp_active_count >= MAX_TCP_FLOWS) {
         irq_restore(irq);
-        return;
+        return false;
     }
 
-    uint16_t local_port = flow->base.local_port;
+    uint16_t local_port = flow->base.local.port;
     uint16_t pos = tcp_active_port_lower_bound(local_port);
+    for (uint16_t n = pos; n < tcp_active_count; ++n) {
+        uint16_t cur_slot = tcp_active_flows[n];
+        tcp_flow_t *cur = cur_slot < MAX_TCP_FLOWS ? tcp_flows[cur_slot] : NULL;
+        if (!cur) continue;
+        if (cur->base.local.port > local_port) break;
+        if (cur->base.retired || cur->base.state == TCP_STATE_CLOSED) continue;
+        if (tcp_flow_tuple_matches(cur, local_port, flow->base.local.ver, flow->base.local.ip, flow->base.remote.ip, flow->base.remote.port)) {
+            irq_restore(irq);
+            return false;
+        }
+    }
+
     while (pos < tcp_active_count) {
         uint16_t cur_slot = tcp_active_flows[pos];
         tcp_flow_t *cur = cur_slot < MAX_TCP_FLOWS ? tcp_flows[cur_slot] : NULL;
-        uint16_t cur_port = cur ? cur->base.local_port : UINT16_MAX;
+        uint16_t cur_port = cur ? cur->base.local.port : UINT16_MAX;
         if (cur_port != local_port || cur_slot > slot) break;
         pos++;
     }
@@ -62,36 +86,29 @@ void tcp_active_insert_flow(tcp_flow_t *flow) {
     flow->base.active_pos = pos;
     tcp_active_count++;
     irq_restore(irq);
+    return true;
 }
 
-tcp_flow_t *tcp_flow_acquire_match(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, int *out_idx){
+tcp_flow_t *tcp_flow_acquire_match(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port){
     irq_flags_t irq = irq_save_disable();
     uint16_t start = tcp_active_port_lower_bound(local_port);
     for (uint16_t n = start; n < tcp_active_count; n++){
-        int i = tcp_active_flows[n];
-        tcp_flow_t *f = i < MAX_TCP_FLOWS ? tcp_flows[i] : NULL;
+        uint16_t slot = tcp_active_flows[n];
+        tcp_flow_t *f = slot < MAX_TCP_FLOWS ? tcp_flows[slot] : NULL;
         if (!f) continue;
 
-        if (f->base.local_port > local_port) break;
+        if (f->base.local.port > local_port) break;
         if (f->base.retired || f->base.state == TCP_STATE_CLOSED) continue;
-        if (f->base.local_port != local_port) continue;
+        if (f->base.local.port != local_port) continue;
 
-        if (!remote_ip || !local_ip) continue;
-        if (f->base.local.ver != ver || f->base.remote.ver != ver) continue;
-        if (f->base.remote.port != remote_port) continue;
-
-        size_t l = (size_t)(ver == IP_VER6 ? 16 : 4);
-        if (memcmp(f->base.local.ip, local_ip, l) != 0) continue;
-        if (memcmp(f->base.remote.ip, remote_ip, l) != 0) continue;
+        if (!tcp_flow_tuple_matches(f, local_port, ver, local_ip, remote_ip, remote_port)) continue;
         if (!f->base.refs || f->base.refs == UINT16_MAX) break;
 
         f->base.refs++;
-        if (out_idx) *out_idx = i;
         irq_restore(irq);
         return f;
     }
 
-    if (out_idx) *out_idx = -1;
     irq_restore(irq);
     return NULL;
 }
@@ -106,9 +123,10 @@ bool tcp_bind_conflicts(const SockBindSpec* spec, uint16_t port, bool reuseaddr)
         uint16_t slot = tcp_active_flows[n];
         tcp_flow_t* flow = slot < MAX_TCP_FLOWS ? tcp_flows[slot] : NULL;
         if (!flow) continue;
-        if (flow->base.local_port > port) break;
+        if (flow->base.local.port > port) break;
         if (flow->base.retired || flow->base.state == TCP_STATE_CLOSED) continue;
-        if (flow->base.local_port != port || !tcp_flow_matches_bind(flow, spec)) continue;
+        uint8_t ifindex = l3_ifindex_from_id(flow->base.l3_id);
+        if (flow->base.local.port != port || !socket_bind_match_score(spec, flow->base.local.ver, flow->base.l3_id, ifindex, flow->base.local.ip)) continue;
 
         bool allowed = reuseaddr && flow->ip.reuseaddr;
         if (!allowed) {
@@ -122,25 +140,11 @@ bool tcp_bind_conflicts(const SockBindSpec* spec, uint16_t port, bool reuseaddr)
 
 bool tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, tcp_data *out_ctx){
     if (!out_ctx) return false;
-    tcp_flow_t *flow = tcp_flow_acquire_match(local_port, ver, local_ip, remote_ip, remote_port, NULL);
+    tcp_flow_t *flow = tcp_flow_acquire_match(local_port, ver, local_ip, remote_ip, remote_port);
     if (!flow) return false;
     *out_ctx = flow->base.ctx;
     tcp_flow_put(flow);
     return true;
-}
-
-int tcp_flow_hold(tcp_flow_t *flow) {
-    if (!flow)return 0;
-
-    irq_flags_t irq = irq_save_disable();
-    if (flow->base.retired || !flow->base.refs || flow->base.refs == UINT16_MAX) {
-        irq_restore(irq);
-        return 0;
-    }
-
-    flow->base.refs++;
-    irq_restore(irq);
-    return 1;
 }
 
 tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx) {
@@ -159,44 +163,49 @@ tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx) {
     return flow;
 }
 
-void tcp_update_mss(tcp_flow_t *flow) {
+void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32_t apply_mask) {
     if (!flow) return;
-    uint32_t local_mss = flow->tx.path_mss ? flow->tx.path_mss : TCP_DEFAULT_MSS;
-    if (flow->tx.configured_mss && flow->tx.configured_mss < local_mss) local_mss = flow->tx.configured_mss;
-    if (!local_mss) local_mss = 1;
-    flow->tx.advertised_mss = local_mss;
+    SocketOptions defaults = {0};
+    if (!extra) extra = &defaults;
+    uint32_t flags = extra->flags;
 
-    uint32_t mss = local_mss;
-    if (flow->tx.peer_mss && flow->tx.peer_mss < mss) mss = flow->tx.peer_mss;
-    flow->tx.mss = mss;
+    if (apply_mask & (SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL)) {
+        flow->timer.keepalive_on = (flags & SOCK_OPT_KEEPALIVE) ? 1 : 0;
+        flow->timer.keepalive_ms = flow->timer.keepalive_on ? (extra->keepalive_ms ? extra->keepalive_ms : SOCKET_DEFAULT_KEEPALIVE_MS) : 0;
+        flow->timer.keepalive_idle_ms = 0;
+        if (flow->base.active_pos != UINT16_MAX) tcp_daemon_kick();
+    }
+
+    if (apply_mask & SOCK_OPT_TCP_NO_DELAY) {
+        flow->tx.nodelay = (flags & SOCK_OPT_TCP_NO_DELAY) ? 1 : 0;
+        if (flow->tx.nodelay && flow->tx.nagle_len) tcp_flush_nagle(flow, 1);
+    }
+
+    if (apply_mask & SOCK_OPT_SEND_BUF_SIZE) {
+        uint32_t queued_limit = (flags & SOCK_OPT_SEND_BUF_SIZE) && extra->send_buf_size ? extra->send_buf_size : TCP_TX_MAX_BYTES_PER_FLOW;
+        if (queued_limit > TCP_TX_MAX_BYTES_PER_FLOW) queued_limit = TCP_TX_MAX_BYTES_PER_FLOW;
+        flow->tx.queued_limit = queued_limit;
+    }
+
+    if (apply_mask & SOCK_OPT_TCP_MAXSEG) {
+        flow->tx.configured_mss = (flags & SOCK_OPT_TCP_MAXSEG) && extra->tcp_maxseg ? extra->tcp_maxseg : 0;
+        tcp_update_mss(flow);
+    }
+
+    if (apply_mask & SOCK_OPT_TTL) flow->ip.ttl = (flags & SOCK_OPT_TTL) ? extra->ttl : 0;
+    if (apply_mask & SOCK_OPT_DONTFRAG) flow->ip.dontfrag = (flags & SOCK_OPT_DONTFRAG) ? 1 : 0;
+    if (apply_mask & SOCK_OPT_REUSEADDR) flow->ip.reuseaddr = (flags & SOCK_OPT_REUSEADDR) ? 1 : 0;
 }
 
-void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra) {
+void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra, uint32_t apply_mask) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return;
-
-    uint32_t flags = extra ? extra->flags : 0;
-    flow->timer.keepalive_on = (flags & SOCK_OPT_KEEPALIVE) ? 1 : 0;
-    flow->timer.keepalive_ms = flow->timer.keepalive_on ? (extra->keepalive_ms ? extra->keepalive_ms : SOCKET_DEFAULT_KEEPALIVE_MS) : 0;
-    flow->timer.keepalive_idle_ms = 0;
-
-    flow->tx.nodelay = (flags & SOCK_OPT_TCP_NO_DELAY) ? 1 : 0;
-    if (flow->tx.nodelay && flow->tx.nagle_len) tcp_flush_nagle(flow, 1);
-
-    uint32_t queued_limit = (flags & SOCK_OPT_SEND_BUF_SIZE) && extra->send_buf_size ? extra->send_buf_size : TCP_TX_MAX_BYTES_PER_FLOW;
-    if (queued_limit > TCP_TX_MAX_BYTES_PER_FLOW) queued_limit = TCP_TX_MAX_BYTES_PER_FLOW;
-    flow->tx.queued_limit = queued_limit;
-    flow->tx.configured_mss = (flags & SOCK_OPT_TCP_MAXSEG) && extra->tcp_maxseg ? extra->tcp_maxseg : 0;
-    tcp_update_mss(flow);
-
-    flow->ip.ttl = (flags & SOCK_OPT_TTL) ? extra->ttl : 0;
-    flow->ip.dontfrag = (flags & SOCK_OPT_DONTFRAG) ? 1 : 0;
-    flow->ip.reuseaddr = (flags & SOCK_OPT_REUSEADDR) ? 1 : 0;
+    tcp_flow_apply_options(flow, extra, apply_mask);
     tcp_flow_put(flow);
 }
 
 static void tcp_flow_clear_storage(tcp_flow_t *flow) {
-    for (int i = 0; i < TCP_MAX_TX_SEGS; i++) tcp_tx_seg_clear(flow, &flow->tx.txq[i]);
+    for (uint32_t i = 0; i < TCP_MAX_TX_SEGS; i++) tcp_tx_seg_clear(flow, &flow->tx.txq[i]);
     flow->tx.queued_bytes = 0;
 
     if (flow->tx.nagle_buf) {
@@ -241,7 +250,7 @@ void tcp_flow_put(tcp_flow_t *f) {
     }
 
     f->base.refs--;
-    uint8_t free_now = f->base.refs == 0;
+    bool free_now = f->base.refs == 0;
     irq_restore(irq);
 
     if (!free_now) return;
@@ -255,7 +264,7 @@ void tcp_enter_time_wait(tcp_flow_t *flow) {
     if (!flow) return;
 
     uint32_t timewait = 0;
-    int oldest = -1;
+    tcp_flow_t *oldest = NULL;
     uint32_t oldest_ms = 0;
 
     irq_flags_t irq = irq_save_disable();
@@ -264,16 +273,19 @@ void tcp_enter_time_wait(tcp_flow_t *flow) {
         tcp_flow_t *f = slot < MAX_TCP_FLOWS ? tcp_flows[slot] : NULL;
         if (!f || f->base.retired || f->base.state != TCP_TIME_WAIT) continue;
         timewait++;
-        if ((oldest < 0 || f->timer.time_wait_ms > oldest_ms) && f != flow) {
-            oldest = slot;
+        if ((!oldest || f->timer.time_wait_ms > oldest_ms) && f != flow) {
+            oldest = f;
             oldest_ms = f->timer.time_wait_ms;
         }
     }
+    if (timewait >= TCP_TIMEWAIT_MAX_GLOBAL && oldest && oldest->base.refs && oldest->base.refs != UINT16_MAX) oldest->base.refs++;
+    else oldest = NULL;
     irq_restore(irq);
 
-    if (timewait >= TCP_TIMEWAIT_MAX_GLOBAL && oldest >= 0) {
+    if (timewait >= TCP_TIMEWAIT_MAX_GLOBAL && oldest) {
         tcp_stats.timewait_reap_oldest++;
         tcp_free_flow(oldest);
+        tcp_flow_put(oldest);
     }
 
     flow->base.state = TCP_TIME_WAIT;
@@ -287,9 +299,9 @@ tcp_flow_t *tcp_alloc_flow(void){
     if (!f) return NULL;
 
     irq_flags_t irq = irq_save_disable();
-    int slot = -1;
-    for (int n = 0; n < MAX_TCP_FLOWS; n++) {
-        uint16_t i = (uint16_t)((tcp_alloc_cursor+n) % MAX_TCP_FLOWS);
+    int32_t slot = -1;
+    for (uint32_t n = 0; n < MAX_TCP_FLOWS; n++) {
+        uint16_t i = (uint16_t)((tcp_alloc_cursor + n) % MAX_TCP_FLOWS);
         if (!tcp_flows[i]) {
             slot = i;
             tcp_alloc_cursor = (uint16_t)((i + 1) % MAX_TCP_FLOWS);
@@ -305,11 +317,12 @@ tcp_flow_t *tcp_alloc_flow(void){
 
     tcp_flows[slot] = f;
     f->base.slot = (uint16_t)slot;
+    f->base.active_pos = UINT16_MAX;
     f->base.generation = tcp_generation_next++;
     if (!tcp_generation_next) tcp_generation_next = 1;
     f->base.ctx.flow_index = f->base.slot;
     f->base.ctx.flow_generation = f->base.generation;
-    f->base.refs = 1;
+    f->base.refs = 2;
     irq_restore(irq);
 
     f->tx.rto = TCP_INIT_RTO;
@@ -325,25 +338,24 @@ tcp_flow_t *tcp_alloc_flow(void){
     return f;
 }
 
-void tcp_free_flow(int idx) {
-    if (idx < 0 || idx >= MAX_TCP_FLOWS) return;
-
+void tcp_free_flow(tcp_flow_t *flow) {
+    if (!flow) return;
     irq_flags_t irq = irq_save_disable();
-    tcp_flow_t *f = tcp_flows[idx];
-    if (!f || f->base.retired) {
+    uint16_t slot = flow->base.slot;
+    if (slot >= MAX_TCP_FLOWS || tcp_flows[slot] != flow || flow->base.retired) {
         irq_restore(irq);
         return;
     }
 
-    f->base.retired = 1;
-    f->base.state = TCP_STATE_CLOSED;
+    flow->base.retired = 1;
+    flow->base.state = TCP_STATE_CLOSED;
 
-    if (tcp_active_count != 0) {
-        uint16_t pos = f->base.active_pos;
+    if (tcp_active_count != 0 && flow->base.active_pos != UINT16_MAX) {
+        uint16_t pos = flow->base.active_pos;
 
-        if (pos >= tcp_active_count || tcp_active_flows[pos] != (uint16_t)idx) {
+        if (pos >= tcp_active_count || tcp_active_flows[pos] != slot) {
             pos = 0;
-            while (pos < tcp_active_count && tcp_active_flows[pos] != (uint16_t)idx) pos++;
+            while (pos < tcp_active_count && tcp_active_flows[pos] != slot) pos++;
         }
 
         if (pos < tcp_active_count) {
@@ -356,25 +368,24 @@ void tcp_free_flow(int idx) {
             tcp_active_flows[tcp_active_count] = 0;
         }
 
-        f->base.active_pos = 0;
+        flow->base.active_pos = UINT16_MAX;
     }
 
-    tcp_flows[idx] = NULL;
-    if ((uint16_t)idx < tcp_alloc_cursor) tcp_alloc_cursor = (uint16_t)idx;
+    tcp_flows[slot] = NULL;
+    if (slot < tcp_alloc_cursor) tcp_alloc_cursor = slot;
     irq_restore(irq);
 
-    tcp_flow_put(f);
+    tcp_flow_put(flow);
 }
 
 tcp_result_t tcp_flow_abort(tcp_data *flow_ctx) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return TCP_INVALID;
 
-    int slot = (int)flow->base.slot;
     tcp_state_t state = flow->base.state;
-    if (state != TCP_STATE_CLOSED && state != TCP_TIME_WAIT && state != TCP_SYN_SENT) tcp_send_reset(flow->base.local.ver, flow->base.local.ip, flow->base.remote.ip, flow->base.local_port, flow->base.remote.port, flow->tx.snd_nxt, 0, false);
+    if (state != TCP_STATE_CLOSED && state != TCP_TIME_WAIT && state != TCP_SYN_SENT) tcp_send_reset(flow->base.l3_id, flow->base.local.ver, flow->base.local.ip, flow->base.remote.ip, flow->base.local.port, flow->base.remote.port, flow->tx.snd_nxt, 0, false);
 
-    tcp_free_flow(slot);
+    tcp_free_flow(flow);
     tcp_flow_put(flow);
     return TCP_OK;
 }
@@ -398,23 +409,25 @@ tcp_result_t tcp_flow_release_closed(tcp_data *flow_ctx) {
         tcp_flow_put(flow);
         return TCP_BUSY;
     }
-    int slot = (int)flow->base.slot;
+    tcp_free_flow(flow);
     tcp_flow_put(flow);
-    tcp_free_flow(slot);
     return TCP_OK;
 }
 
 bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp, uint8_t ttl, uint8_t dontfrag){
-    if (!hdr) return false;
+    if (!hdr || !src_ip_addr || !dst_ip_addr) return false;
+    if (ver != IP_VER4 && ver != IP_VER6) return false;
 
     if (opts_len & 3u) return false;
     if (opts_len > 40u) return false;
     if ((opts_len && !opts) || (payload_len && !payload)) return false;
 
+    uint32_t ip_header_len = ver == IP_VER4 ? (uint32_t)sizeof(ipv4_hdr_t) : (uint32_t)sizeof(ipv6_hdr_t);
+    uint32_t max_tcp_len = ver == IP_VER4 ? UINT16_MAX - ip_header_len : UINT16_MAX;
     uint32_t tcp_len32 = (uint32_t)sizeof(tcp_hdr_t) + (uint32_t)opts_len + (uint32_t)payload_len;
-    if (tcp_len32 > NETPKT_MAX_ALLOC) return false;
+    if (tcp_len32 > max_tcp_len || tcp_len32 > NETPKT_MAX_ALLOC) return false;
     uint16_t tcp_len = (uint16_t)tcp_len32;
-    uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + (uint32_t)(ver == IP_VER4 ? sizeof(ipv4_hdr_t) : sizeof(ipv6_hdr_t));
+    uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + ip_header_len;
     netpkt_t *pkt = netpkt_alloc(tcp_len, headroom, 0);
     if (!pkt) return false;
     uint8_t *segment = (uint8_t*)netpkt_put(pkt, tcp_len);
@@ -443,17 +456,15 @@ bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst
         h.checksum = tcp_checksum_ipv4(segment, tcp_len, s, d);
         memcpy(segment, &h, sizeof(h));
         return ipv4_send_packet(d, PROTO_TCP, pkt, txp, ttl, dontfrag);
-    } else if (ver == IP_VER6){
-        h.checksum = tcp_checksum_ipv6(segment, tcp_len, (const uint8_t *)src_ip_addr, (const uint8_t *)dst_ip_addr);
-        memcpy(segment, &h, sizeof(h));
-        return ipv6_send_packet((const uint8_t *)dst_ip_addr, PROTO_TCP, pkt, txp, ttl, dontfrag);
     }
 
-    netpkt_unref(pkt);
-    return false;
+    h.checksum = tcp_checksum_ipv6(segment, tcp_len, (const uint8_t *)src_ip_addr, (const uint8_t *)dst_ip_addr);
+    memcpy(segment, &h, sizeof(h));
+    return ipv6_send_packet((const uint8_t *)dst_ip_addr, PROTO_TCP, pkt, txp, ttl, dontfrag);
 }
 
-void tcp_send_reset(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port, uint32_t seq, uint32_t ack, bool ack_valid){
+void tcp_send_reset(uint8_t l3_id, ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port, uint32_t seq, uint32_t ack, bool ack_valid){
+    if (!l3_id) return;
     tcp_hdr_t rst_hdr;
 
     rst_hdr.src_port = bswap16(src_port);
@@ -472,17 +483,10 @@ void tcp_send_reset(ip_version_t ver, const void *src_ip_addr, const void *dst_i
     rst_hdr.window = 0;
     rst_hdr.urgent_ptr = 0;
 
-    if (ver == IP_VER4){
-        ip_tx_opts_t tx;
-
-        tcp_build_tx_opts_from_local_v4(src_ip_addr, &tx);
-        tcp_send_segment(IP_VER4, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, NULL, 0, &tx, 0, 0);
-    } else if (ver == IP_VER6){
-        ip_tx_opts_t tx;
-
-        tcp_build_tx_opts_from_local_v6(src_ip_addr, &tx);
-        tcp_send_segment(IP_VER6, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, NULL, 0, &tx, 0, 0);
-    }
+    ip_tx_opts_t tx;
+    tx.scope = IP_TX_BOUND_L3;
+    tx.index = l3_id;
+    (void)tcp_send_segment(ver, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, NULL, 0, &tx, 0, 0);
 }
 
 void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms){
@@ -524,14 +528,6 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
     tcp_flow_t *flow = tcp_alloc_flow();
     if (!flow) return false;
-    if (!tcp_flow_hold(flow)) {
-        tcp_free_flow((int)flow->base.slot);
-        return false;
-    }
-
-    int idx = (int)flow->base.slot;
-
-    flow->base.local_port = local_port;
     flow->base.l3_id = l3_id;
 
     flow->base.remote.ver = dst->ver;
@@ -542,7 +538,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
         l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(l3_id);
 
         if (!v4 || !v4->ip){
-            tcp_free_flow(idx);
+            tcp_free_flow(flow);
             tcp_flow_put(flow);
             return false;
         }
@@ -552,7 +548,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
         l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(l3_id);
 
         if (!v6 || ipv6_is_unspecified(v6->ip)){
-            tcp_free_flow(idx);
+            tcp_free_flow(flow);
             tcp_flow_put(flow);
             return false;
         }
@@ -567,7 +563,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->base.retries = TCP_SYN_RETRIES;
 
     rng_t rng;
-        rng_init_random(&rng);
+    rng_init_random(&rng);
     uint32_t iss = rng_next32(&rng);
 
     flow->base.ctx.sequence = iss;
@@ -585,7 +581,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->rx.rcv_adv_edge = 0;
     flow->tx.path_mss = tcp_calc_mss_for_l3(l3_id, dst->ver, dst->ip);
     flow->tx.peer_mss = 0;
-    tcp_flow_apply_socket_options(&flow->base.ctx, extra);
+    tcp_flow_apply_options(flow, extra, UINT32_MAX);
 
     if (flow->rx.rcv_wnd_max > 65535u) {
         flow->tx.ws_send = 8;
@@ -602,7 +598,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
         flow->rx.rcv_wnd = 0;
         flow->rx.rcv_adv_edge = flow->rx.rcv_nxt;
         flow->base.ctx.window = 0;
-        tcp_free_flow(idx);
+        tcp_free_flow(flow);
         tcp_flow_put(flow);
         return false;
     }
@@ -630,12 +626,11 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
     flow->timer.time_wait_ms = 0;
     flow->timer.fin_wait2_ms = 0;
-    tcp_active_insert_flow(flow);
 
-    tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow);
+    tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow, 0);
 
     if (!seg){
-        tcp_free_flow(idx);
+        tcp_free_flow(flow);
         tcp_flow_put(flow);
         return false;
     }
@@ -657,13 +652,11 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->base.ctx.sequence = flow->tx.snd_nxt;
     flow->base.ctx.expected_ack = flow->tx.snd_nxt;
 
-    if (!tcp_send_from_seg(flow, seg)) {
-        tcp_free_flow(idx);
+    if (!tcp_active_insert_flow(flow) || !tcp_send_from_seg(flow, seg)) {
+        tcp_free_flow(flow);
         tcp_flow_put(flow);
         return false;
     }
-
-    tcp_daemon_kick();
 
     *flow_ctx = flow->base.ctx;
     tcp_flow_put(flow);

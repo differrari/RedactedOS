@@ -18,6 +18,7 @@ extern "C" {
 #endif
 
 #define TCP_DEFAULT_MSS 1460
+#define TCP_MAX_MSS (NETPKT_MAX_ALLOC - sizeof(ipv4_hdr_t) - sizeof(tcp_hdr_t))
 #define TCP_PERSIST_PROBE_BUFSZ 1
 
 #define TCP_SEQ_LT(a,b) ((int32_t)((uint32_t)(a) - (uint32_t)(b)) < 0)
@@ -44,7 +45,7 @@ typedef struct {
     uint8_t sack_retransmitted;
     uint8_t opts[40];
     uint32_t seq;
-    uint64_t len;
+    uint32_t len;
     netpkt_t *pkt;
     uint32_t payload_off;
     uint32_t timer_ms;
@@ -57,7 +58,6 @@ typedef struct {
 } tcp_reass_seg_t;
 
 typedef struct {
-    uint16_t local_port;
     uint16_t slot;
     uint16_t active_pos;
     uint32_t generation;
@@ -169,24 +169,22 @@ extern uint16_t tcp_active_count;
 void tcp_enter_time_wait(tcp_flow_t *flow);
 
 tcp_flow_t *tcp_alloc_flow(void);
-void tcp_free_flow(int idx);
-void tcp_active_insert_flow(tcp_flow_t *flow);
-//TODO REUSEADDR can create flows that rx cant distinguish
+void tcp_free_flow(tcp_flow_t *flow);
+bool tcp_active_insert_flow(tcp_flow_t *flow);
 tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx);
-tcp_flow_t *tcp_flow_acquire_match(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, int *out_idx);
-int tcp_flow_hold(tcp_flow_t *flow);
+tcp_flow_t *tcp_flow_acquire_match(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port);
 void tcp_flow_put(tcp_flow_t *flow);
+void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32_t apply_mask);
 
 void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms);
-void tcp_update_mss(tcp_flow_t *flow);
-bool tcp_flow_matches_bind(const tcp_flow_t *flow, const SockBindSpec *spec);
 
-tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow);
+tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow, uint32_t reserve_slots);
 const uint8_t *tcp_tx_seg_payload_ptr(const tcp_tx_seg_t *seg);
 void tcp_tx_seg_clear(tcp_flow_t *flow, tcp_tx_seg_t *seg);
 bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg);
-void tcp_send_ack_now(tcp_flow_t *flow);
-int tcp_try_send_pending_fin(tcp_flow_t *flow);
+bool tcp_send_flow_segment(tcp_flow_t *flow, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len);
+bool tcp_send_ack_now(tcp_flow_t *flow);
+bool tcp_try_send_pending_fin(tcp_flow_t *flow);
 uint64_t tcp_flush_nagle(tcp_flow_t *flow, uint8_t force);
 
 static inline uint16_t tcp_checksum_ipv4(const void *segment, uint16_t seg_len, uint32_t src_ip, uint32_t dst_ip) {
@@ -199,11 +197,9 @@ static inline uint16_t tcp_checksum_ipv6(const void *segment, uint16_t seg_len, 
 }
 
 bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp, uint8_t ttl, uint8_t dontfrag);
-void tcp_send_reset(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port, uint32_t seq, uint32_t ack, bool ack_valid);
+void tcp_send_reset(uint8_t l3_id, ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port, uint32_t seq, uint32_t ack, bool ack_valid);
 tcp_tx_seg_t *tcp_find_first_unacked(tcp_flow_t *flow);
 void tcp_cc_on_timeout(tcp_flow_t *f);
-
-int tcp_has_pending_timers(void);
 
 void tcp_daemon_kick(void);
 uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow, uint8_t apply_scale);

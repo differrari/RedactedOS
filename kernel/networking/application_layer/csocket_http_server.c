@@ -1,4 +1,5 @@
 #include "csocket_http_server.h"
+#include "csocket_http_internal.h"
 #include "console/kio.h"
 #include "networking/transport_layer/csocket.h"
 #include "networking/net_logger/net_logger.h"
@@ -44,7 +45,7 @@ http_server_handle_t http_server_create(const SocketOptions* extra, const HTTPSe
 void http_server_destroy(http_server_handle_t h) {
     if (!h) return;
     HTTPServer* srv = (HTTPServer*)h;
-    http_server_close(srv);
+    if (srv->sock) (void)http_socket_close(&srv->sock, true);
     release(srv);
 }
 
@@ -78,7 +79,7 @@ int32_t http_server_listen(http_server_handle_t h, int backlog) {
     if (!h) return (int32_t)SOCK_ERR_INVAL;
 
     HTTPServer* srv = (HTTPServer*)h;
-    int b = backlog;
+    int32_t b = backlog;
     int32_t r = srv->sock ? listen_on(srv->sock, b) : SOCK_ERR_STATE;
 
     netlog_socket_event_t ev = {0};
@@ -101,13 +102,13 @@ http_connection_handle_t http_server_accept(http_server_handle_t h) {
     //TODO for now almost everything is using SOCK_OPT_NONBLOCK for compatibilit
     //in many app protocols it should be blocking, while for others such as HTTP, it should depend on the given options (blocking by default)
     if (set_socket_option(child, SOCK_OPT_NONBLOCK,&(uint32_t){1}, sizeof(uint32_t)) != SOCK_OK) {
-        close_socket(child);
+        http_socket_close(&child, true);
         return NULL;
     }
 
     HTTPConnection* conn = (HTTPConnection*)zalloc(sizeof(HTTPConnection));
     if (!conn) {
-        close_socket(child);
+        http_socket_close(&child, true);
         return NULL;
     }
 
@@ -123,11 +124,7 @@ http_connection_handle_t http_server_accept(http_server_handle_t h) {
     ev.action = NETLOG_ACT_ACCEPT;
     ev.pid = get_current_proc_pid();
     ev.i0 = (int64_t)child;
-    uint32_t local_port = 0;
-    uint32_t opt_len = sizeof(local_port);
-    if (get_socket_option(child, SOCK_GET_LOCAL_PORT, &local_port, &opt_len) == SOCK_OK) ev.local_port = local_port;
-    opt_len = sizeof(ev.remote_ep);
-    get_socket_option(child, SOCK_GET_REMOTE_ENDPOINT, &ev.remote_ep, &opt_len);
+    http_socket_fill_log_endpoints(child, &ev);
     netlog_socket_event(&srv->log_opts, &ev);
     return conn;
 }
@@ -148,37 +145,27 @@ HTTPRequestMsg http_server_recv_request(http_server_handle_t h, http_connection_
     }
 
     char tmp[2048];
-    int hdr_end = find_crlfcrlf(buf.data, buf.length);
+    int32_t hdr_end = -1;
     uint32_t consumed = 0;
-    uint32_t start_ms = (uint32_t)get_time();
-    uint32_t last_rx_ms = start_ms;
     bool bad_request = false;
     HttpError reject_status = HTTP_BAD_REQUEST;
     char* body_copy = NULL;
 
-    while (hdr_end < 0) {
-        int64_t r = receive_from_socket(conn->client, tmp, sizeof(tmp), NULL);
-        if (r == SOCK_ERR_WOULDBLOCK) {
-            uint32_t now = (uint32_t)get_time();
-            if ((uint32_t)(now - last_rx_ms) > srv->policy.common.header_idle_timeout_ms || (uint32_t)(now - start_ms) > srv->policy.common.header_total_timeout_ms) {
-                string_free(buf);
-                return req;
-            }
-            msleep(10);
-            continue;
-        }
-        if (r <= 0) {
+    int32_t head_result = http_socket_recv_head(conn->client, &buf, srv->policy.common.max_header_bytes, srv->policy.common.header_idle_timeout_ms, srv->policy.common.header_total_timeout_ms, &hdr_end);
+    if (head_result < 0) {
+        bool header_too_large = (hdr_end >= 0 && (uint32_t)hdr_end + 4 > srv->policy.common.max_header_bytes) || (hdr_end < 0 && buf.length >= srv->policy.common.max_header_bytes);
+        if (header_too_large) {
+            bad_request = true;
+            reject_status = HTTP_HEADER_FIELDS_TOO_LARGE;
+        } else {
             string_free(buf);
             return req;
         }
-        string_append_bytes(&buf, tmp, (uint32_t)r);
-        last_rx_ms = (uint32_t)get_time();
-        if (buf.length > srv->policy.common.max_header_bytes) {
-            bad_request = true;
-            reject_status = HTTP_HEADER_FIELDS_TOO_LARGE;
-            break;
-        }
-        hdr_end = find_crlfcrlf(buf.data, buf.length);
+    }
+
+    if (!bad_request && (!buf.data || hdr_end < 2)) {
+        bad_request = true;
+        reject_status = HTTP_BAD_REQUEST;
     }
 
     if (!bad_request) {
@@ -200,6 +187,9 @@ HTTPRequestMsg http_server_recv_request(http_server_handle_t h, http_connection_
             if (line_result != HTTP_PARSE_OK) {
                 bad_request = true;
                 reject_status = http_parse_result_status(line_result);
+            } else if (line.target_off > line_end || line.target_len > line_end - line.target_off) {
+                bad_request = true;
+                reject_status = HTTP_BAD_REQUEST;
             } else if (!http_method_allowed(srv->policy.allowed_methods, line.method)) {
                 bad_request = true;
                 reject_status = line.method == HTTP_METHOD_UNKNOWN ? HTTP_NOT_IMPLEMENTED : HTTP_METHOD_NOT_ALLOWED;
@@ -295,21 +285,14 @@ HTTPRequestMsg http_server_recv_request(http_server_handle_t h, http_connection_
             uint32_t used = 0;
             HTTPParseResult chunk_result = have ? http_chunked_decoder_feed(&dec, buf.data + body_start, have, &used) : HTTP_PARSE_INCOMPLETE;
             uint32_t body_start_ms = (uint32_t)get_time();
-            uint32_t body_last_rx_ms = body_start_ms;
+            HTTPSocketTimeoutState body_timeout = {body_start_ms, body_start_ms};
             consumed = body_start + used;
 
             while (chunk_result == HTTP_PARSE_INCOMPLETE) {
-                int64_t r = receive_from_socket(conn->client, tmp, sizeof(tmp), NULL);
-                if (r == SOCK_ERR_WOULDBLOCK) {
-                    uint32_t now = (uint32_t)get_time();
-                    if ((now - body_last_rx_ms) > srv->policy.common.body_idle_timeout_ms || (now - body_start_ms) > srv->policy.common.body_total_timeout_ms) break;
-                    msleep(2);
-                    continue;
-                }
+                int64_t r = http_socket_recv_wait(conn->client, tmp, sizeof(tmp), srv->policy.common.body_idle_timeout_ms, srv->policy.common.body_total_timeout_ms, &body_timeout);
                 if (r <= 0) break;
                 used = 0;
                 chunk_result = http_chunked_decoder_feed(&dec, tmp, (uint32_t)r, &used);
-                body_last_rx_ms = (uint32_t)get_time();
                 consumed = buf.length;
                 if (chunk_result == HTTP_PARSE_OK && used < (uint32_t)r && !conn->carry_buf.length) {
                     conn->carry_buf = (string){0};
@@ -343,25 +326,9 @@ HTTPRequestMsg http_server_recv_request(http_server_handle_t h, http_connection_
                     uint32_t copied = have < need ? have : need;
                     if (copied) memcpy(body_copy, buf.data + body_start, copied);
 
-                    uint32_t body_start_ms = (uint32_t)get_time();
-                    uint32_t body_last_rx_ms = body_start_ms;
-                    while (copied < need) {
-                        int64_t r = receive_from_socket(conn->client, body_copy + copied, need - copied, NULL);
-                        if (r == SOCK_ERR_WOULDBLOCK) {
-                            uint32_t now = (uint32_t)get_time();
-                            if ((now - body_last_rx_ms) > srv->policy.common.body_idle_timeout_ms || (now - body_start_ms) > srv->policy.common.body_total_timeout_ms) {
-                                bad_request = true;
-                                break;
-                            }
-                            msleep(2);
-                            continue;
-                        }
-                        if (r <= 0) {
-                            bad_request = true;
-                            break;
-                        }
-                        copied += (uint32_t)r;
-                        body_last_rx_ms = (uint32_t)get_time();
+                    if (copied < need) {
+                        int64_t receive_result = http_socket_recv_exact(conn->client, body_copy + copied, need - copied, srv->policy.common.body_idle_timeout_ms, srv->policy.common.body_total_timeout_ms);
+                        if (receive_result < 0) bad_request = true;
                     }
                 }
             }
@@ -398,10 +365,7 @@ HTTPRequestMsg http_server_recv_request(http_server_handle_t h, http_connection_
 
         conn->close_after_response = true;
         http_server_send_response(srv, conn, &res);
-        if (conn->client) {
-            close_socket(conn->client);
-            conn->client = 0;
-        }
+        if (conn->client) (void)http_socket_close(&conn->client, true);
 
         http_request_free(&req);
         http_headers_common_free(&res.headers_common);
@@ -418,11 +382,7 @@ HTTPRequestMsg http_server_recv_request(http_server_handle_t h, http_connection_
     ev.u0 = (uint32_t)req.method;
     ev.u1 = (uint32_t)req.path.length;
     ev.i0 = (int64_t)req.body.length;
-    uint32_t local_port = 0;
-    uint32_t opt_len = sizeof(local_port);
-    if (get_socket_option(conn->client, SOCK_GET_LOCAL_PORT, &local_port, &opt_len) == SOCK_OK) ev.local_port = local_port;
-    opt_len = sizeof(ev.remote_ep);
-    get_socket_option(conn->client, SOCK_GET_REMOTE_ENDPOINT, &ev.remote_ep, &opt_len);
+    http_socket_fill_log_endpoints(conn->client, &ev);
 
     char pathbuf[128];
     if (req.path.length && req.path.data) {
@@ -487,7 +447,7 @@ int32_t http_server_send_response(http_server_handle_t h, http_connection_handle
     uint32_t out_len = out.length + body_len;
     int64_t sent = 0;
     uint32_t start_ms = (uint32_t)get_time();
-    uint32_t progress_ms = start_ms;
+    HTTPSocketTimeoutState send_timeout = {start_ms, start_ms};
     const uint8_t* first_ptr = (const uint8_t*)out.data;
     uint32_t first_len = out.length;
     uint32_t first_body_len = 0;
@@ -511,52 +471,14 @@ int32_t http_server_send_response(http_server_handle_t h, http_connection_handle
         }
     }
 
-    uint32_t off = 0;
-    while (sent >= 0 && off < first_len) {
-        int64_t r = send_on_socket(conn->client, (void*)(first_ptr + off), first_len - off);
-        uint32_t now = (uint32_t)get_time();
-
-        if (r == SOCK_ERR_WOULDBLOCK || r == 0) {
-            if ((now - progress_ms) > 3000 || (now - start_ms) > 30000) {
-                sent = SOCK_ERR_SYS;
-                break;
-            }
-            msleep(2);
-            continue;
-        }
-        if (r < 0) {
-            sent = r;
-            break;
-        }
-        off += (uint32_t)r;
-        progress_ms = now;
-    }
+    sent = http_socket_send_all(conn->client, first_ptr, first_len, 0, HTTP_SOCKET_WRITE_IDLE_TIMEOUT_MS, HTTP_SOCKET_WRITE_TOTAL_TIMEOUT_MS, &send_timeout);
 
     if (sent >= 0) body_off = first_body_len;
-    if (sent >= 0 && body_len) {
+    if (sent >= 0 && body_len > body_off) {
         const uint8_t* body = (const uint8_t*)res->body.data;
-
-        while (body_off < body_len) {
-            uint32_t ask = body_len - body_off;
-            if (ask > 16384) ask = 16384;
-            int64_t r = send_on_socket(conn->client, (void*)(body + body_off), ask);
-            uint32_t now = (uint32_t)get_time();
-
-            if (r == SOCK_ERR_WOULDBLOCK || r == 0) {
-                if ((now - progress_ms) > 3000 || (now - start_ms) > 30000) {
-                    sent = SOCK_ERR_SYS;
-                    break;
-                }
-                msleep(2);
-                continue;
-            }
-            if (r < 0) {
-                sent = r;
-                break;
-            }
-            body_off += (uint32_t)r;
-            progress_ms = now;
-        }
+        int64_t body_sent = http_socket_send_all(conn->client, body + body_off, body_len - body_off, 16384, HTTP_SOCKET_WRITE_IDLE_TIMEOUT_MS, HTTP_SOCKET_WRITE_TOTAL_TIMEOUT_MS, &send_timeout);
+        if (body_sent < 0) sent = body_sent;
+        else body_off += (uint32_t)body_sent;
     }
 
     if (sent >= 0) sent = (int64_t)out.length + body_off;
@@ -569,17 +491,13 @@ int32_t http_server_send_response(http_server_handle_t h, http_connection_handle
     ev.u0 = code;
     ev.u1 = out_len;
     ev.i0 = sent;
-    uint32_t local_port = 0;
-    uint32_t opt_len = sizeof(local_port);
-    if (get_socket_option(conn->client, SOCK_GET_LOCAL_PORT, &local_port, &opt_len) == SOCK_OK) ev.local_port = local_port;
-    opt_len = sizeof(ev.remote_ep);
-    get_socket_option(conn->client, SOCK_GET_REMOTE_ENDPOINT, &ev.remote_ep, &opt_len);
+    http_socket_fill_log_endpoints(conn->client, &ev);
     netlog_socket_event(&srv->log_opts, &ev);
 
     string_free(out);
     if (sent >= 0 && close_after_send && conn->client) {
-        close_socket(conn->client);
-        conn->client = 0;
+        int32_t close_result = http_socket_close(&conn->client, false);
+        if (close_result < 0) return close_result;
     }
     return sent < 0 ? (int32_t)sent : SOCK_OK;
 }
@@ -587,10 +505,11 @@ int32_t http_server_send_response(http_server_handle_t h, http_connection_handle
 int32_t http_connection_close(http_connection_handle_t c) {
     if (!c) return (int32_t)SOCK_ERR_INVAL;
     HTTPConnection* conn = (HTTPConnection*)c;
+    int32_t result = conn->client ? http_socket_close(&conn->client, false) : SOCK_OK;
+    if (result < 0) return result;
     if (conn->carry_buf.mem_length) string_free(conn->carry_buf);
-    if (conn->client) close_socket(conn->client);
     release(conn);
-    return (int32_t)SOCK_OK;
+    return SOCK_OK;
 }
 
 int32_t http_server_close(http_server_handle_t h) {
@@ -603,19 +522,9 @@ int32_t http_server_close(http_server_handle_t h) {
     ev.action = NETLOG_ACT_CLOSE;
     ev.pid = get_current_proc_pid();
     ev.i0 = r;
-    if (srv->sock) {
-        uint32_t local_port = 0;
-        uint32_t opt_len = sizeof(local_port);
-        if (get_socket_option(srv->sock, SOCK_GET_LOCAL_PORT, &local_port, &opt_len) == SOCK_OK) ev.local_port = local_port;
-        opt_len = sizeof(ev.remote_ep);
-        get_socket_option(srv->sock, SOCK_GET_REMOTE_ENDPOINT, &ev.remote_ep, &opt_len);
-    }
+    if (srv->sock) http_socket_fill_log_endpoints(srv->sock, &ev);
+    if (srv->sock) r = http_socket_close(&srv->sock, false);
+    ev.i0 = r;
     netlog_socket_event(&srv->log_opts, &ev);
-
-    if (srv->sock) {
-        r = close_socket(srv->sock);
-        srv->sock = 0;
-    }
-
     return r;
 }

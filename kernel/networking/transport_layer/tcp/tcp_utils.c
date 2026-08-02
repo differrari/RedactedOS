@@ -3,33 +3,30 @@
 #include "tcp_internal.h"
 #include "networking/interface_manager.h"
 
-bool tcp_flow_matches_bind(const tcp_flow_t *flow, const SockBindSpec *spec) {
-    if (!flow || !spec) return false;
+void tcp_update_mss(tcp_flow_t *flow) {
+    if (!flow) return;
+    uint32_t local_mss = flow->tx.path_mss ? flow->tx.path_mss : TCP_DEFAULT_MSS;
+    if (local_mss > TCP_MAX_MSS) local_mss = TCP_MAX_MSS;
+    if (flow->tx.configured_mss && flow->tx.configured_mss < local_mss) local_mss = flow->tx.configured_mss;
+    flow->tx.advertised_mss = local_mss;
 
-    ip_version_t ver = flow->base.local.ver;
-    if ((spec->kind == BIND_L3 || spec->kind == BIND_L2) && spec->ver && spec->ver != ver) return false;
-    if (spec->kind == BIND_ANY) return true;
-    if (spec->kind == BIND_ANY4) return ver == IP_VER4;
-    if (spec->kind == BIND_ANY6) return ver == IP_VER6;
-    if (spec->kind == BIND_IP) {
-        if (spec->ver != ver) return false;
-        return memcmp(spec->ip, flow->base.local.ip, ver == IP_VER6 ? 16 : 4) == 0;
-    }
-    if (spec->kind == BIND_L3) return spec->l3_id == flow->base.l3_id;
-    if (spec->kind == BIND_L2) return l3_ifindex_from_id(flow->base.l3_id) == spec->ifindex;
-    return false;
+    uint32_t mss = local_mss;
+    if (flow->tx.peer_mss && flow->tx.peer_mss < mss) mss = flow->tx.peer_mss;
+    flow->tx.mss = mss;
 }
 
 uint32_t tcp_calc_mss_for_l3(uint8_t l3_id, ip_version_t ver, const void *remote_ip){
     uint32_t mtu = 1500;
-    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
-    if (v6) mtu =v6->mtu ? v6->mtu : 1500;
-
-    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
-    if (v4)  mtu = v4->runtime_opts_v4.mtu ? v4->runtime_opts_v4.mtu : 1500;
+    if (ver == IP_VER4) {
+        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
+        if (v4) mtu = v4->runtime_opts_v4.mtu ? v4->runtime_opts_v4.mtu : 1500;
+    } else if (ver == IP_VER6) {
+        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
+        if (v6) mtu =v6->mtu ? v6->mtu : 1500;
+    } else return 256;
 
     if (ver == IP_VER6 && remote_ip){
-        uint16_t pmtu =ipv6_pmtu_get((const uint8_t*)remote_ip);
+        uint16_t pmtu = ipv6_pmtu_get((const uint8_t*)remote_ip);
         if (pmtu && pmtu < mtu) mtu = pmtu;
     }
 
@@ -39,42 +36,6 @@ uint32_t tcp_calc_mss_for_l3(uint8_t l3_id, ip_version_t ver, const void *remote
     uint32_t mss = mtu - ih - th;
     if (mss < 256u) mss = 256u;
     return mss;
-}
-
-bool tcp_build_tx_opts_from_local_v4(const void *src_ip_addr, ip_tx_opts_t *out){
-    if (!out) return false;
-    uint32_t src_ip = 0;
-    memcpy(&src_ip, src_ip_addr, sizeof(src_ip));
-    l3_ipv4_interface_t *v4 = l3_ipv4_find_by_ip(src_ip);
-    if (v4) {
-        out->scope = IP_TX_BOUND_L3;
-        out->index = v4->l3_id;
-    } else {
-        out->scope = IP_TX_AUTO;
-        out->index = 0;
-    }
-    return true;
-}
-
-bool tcp_build_tx_opts_from_l3(uint8_t l3_id, ip_tx_opts_t *out){
-    if (!out) return false;
-    out->scope = IP_TX_BOUND_L3;
-    out->index = l3_id;
-    return true;
-}
-
-bool tcp_build_tx_opts_from_local_v6(const void *src_ip_addr, ip_tx_opts_t *out){
-    if (!out) return false;
-    const uint8_t *sip = (const uint8_t *)src_ip_addr;
-    l3_ipv6_interface_t *v6 = l3_ipv6_find_by_ip(sip);
-    if (v6 && v6->l2) {
-        out->scope = IP_TX_BOUND_L3;
-        out->index = v6->l3_id;
-    } else {
-        out->scope = IP_TX_AUTO;
-        out->index = 0;
-    }
-    return true;
 }
 
 void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out) {

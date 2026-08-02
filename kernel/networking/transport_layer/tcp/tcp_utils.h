@@ -16,6 +16,8 @@ typedef struct {
     uint32_t right;
 } tcp_sack_block_t;
 
+struct tcp_flow;
+
 typedef struct {
     uint16_t mss;
     uint8_t wscale;
@@ -29,11 +31,8 @@ typedef struct {
 void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out);
 uint8_t tcp_build_syn_options(uint8_t *out, uint16_t mss, uint8_t wscale, uint8_t sack_permitted);
 
+void tcp_update_mss(struct tcp_flow *flow);
 uint32_t tcp_calc_mss_for_l3(uint8_t l3_id, ip_version_t ver, const void *remote_ip);
-
-bool tcp_build_tx_opts_from_local_v4(const void *src_ip_addr, ip_tx_opts_t *out);
-bool tcp_build_tx_opts_from_l3(uint8_t l3_id, ip_tx_opts_t *out);
-bool tcp_build_tx_opts_from_local_v6(const void *src_ip_addr, ip_tx_opts_t *out);
 
 #ifdef __cplusplus
 }

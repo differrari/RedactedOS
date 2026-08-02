@@ -12,6 +12,10 @@
 #include "networking/internet_layer/ipv6_utils.h"
 
 size_t create_udp_segment(uintptr_t buf, const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload) {
+    if (!buf || !src || !dst || src->ver != dst->ver) return 0;
+    if ((src->ver != IP_VER4 && src->ver != IP_VER6) || (payload.size && !payload.ptr)) return 0;
+    if (payload.size > UINT16_MAX - sizeof(udp_hdr_t)) return 0;
+
     udp_hdr_t udp;
     udp.src_port = bswap16(src->port);
     udp.dst_port = bswap16(dst->port);
@@ -20,46 +24,48 @@ size_t create_udp_segment(uintptr_t buf, const net_l4_endpoint *src, const net_l
     udp.checksum = 0;
 
     memcpy((void*)buf, &udp, sizeof(udp));
-    memcpy((void *)(buf + sizeof(udp)), (void *)payload.ptr, payload.size);
+    if (payload.size) memcpy((void *)(buf + sizeof(udp)), (void *)payload.ptr, payload.size);
 
+    uint16_t checksum = 0;
     if (src->ver == IP_VER4) {
-        uint32_t s = 0;
-        uint32_t d = 0;
-        memcpy(&s, src->ip, 4);
-        memcpy(&d, dst->ip, 4);
-        udp.checksum = bswap16(checksum16_pipv4(s, d, PROTO_UDP, (const uint8_t *)buf, full_len));
-    } else if (src->ver == IP_VER6) {
-        udp.checksum = bswap16(checksum16_pipv6(src->ip, dst->ip, PROTO_UDP, (const uint8_t *)buf, full_len));
-    }
+        uint32_t src_ip = 0;
+        uint32_t dst_ip = 0;
+        memcpy(&src_ip, src->ip, 4);
+        memcpy(&dst_ip, dst->ip, 4);
+        checksum = checksum16_pipv4(src_ip, dst_ip, PROTO_UDP, (const uint8_t *)buf, full_len);
+    } else checksum = checksum16_pipv6(src->ip, dst->ip, PROTO_UDP, (const uint8_t *)buf, full_len);
 
+    udp.checksum = checksum ? bswap16(checksum) : UINT16_MAX;
     memcpy((void*)buf, &udp, sizeof(udp));
     return full_len;
 }
 
-void udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload, const ip_tx_opts_t* tx_opts, uint8_t ttl, uint8_t dontfrag) {
+bool udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload, const ip_tx_opts_t* tx_opts, uint8_t ttl, uint8_t dontfrag) {
+    if (!src || !dst || src->ver != dst->ver) return false;
+    if ((src->ver != IP_VER4 && src->ver != IP_VER6) || (payload.size && !payload.ptr)) return false;
+    if (payload.size > UINT16_MAX - sizeof(udp_hdr_t)) return false;
+
     uint32_t udp_len = (uint32_t)(sizeof(udp_hdr_t) + payload.size);
     uint32_t headroom = (uint32_t)sizeof(eth_hdr_t) + (uint32_t)(src->ver == IP_VER4 ? sizeof(ipv4_hdr_t) : sizeof(ipv6_hdr_t));
     netpkt_t* pkt = netpkt_alloc(udp_len, headroom, 0);
-    if (!pkt) return;
+    if (!pkt) return false;
     void* buf = netpkt_put(pkt, udp_len);
     if (!buf) {
         netpkt_unref(pkt);
-        return;
+        return false;
     }
 
-    size_t written = create_udp_segment((uintptr_t)buf, src, dst, payload);
+    if (!create_udp_segment((uintptr_t)buf, src, dst, payload)) {
+        netpkt_unref(pkt);
+        return false;
+    }
 
     if (src->ver == IP_VER4) {
         uint32_t dst_ip = 0;
         memcpy(&dst_ip, dst->ip, 4);
-        (void)netpkt_trim(pkt, (uint32_t)written);
-        ipv4_send_packet(dst_ip, PROTO_UDP, pkt, tx_opts, ttl, dontfrag);
-    } else if (src->ver == IP_VER6) {
-        (void)netpkt_trim(pkt, (uint32_t)written);
-        ipv6_send_packet(dst->ip, PROTO_UDP, pkt, tx_opts, ttl, dontfrag);
-    } else {
-        netpkt_unref(pkt);
+        return ipv4_send_packet(dst_ip, PROTO_UDP, pkt, tx_opts, ttl, dontfrag);
     }
+    return ipv6_send_packet(dst->ip, PROTO_UDP, pkt, tx_opts, ttl, dontfrag);
 }
 
 bool udp_strip_header(const netpkt_t* pkt, udp_hdr_t* hdr, uint32_t* payload_off, uint32_t* payload_len) {
@@ -85,6 +91,10 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
         return;
     }
 
+    if (ipver == IP_VER6 && !hdr.checksum) {
+        netpkt_unref(pkt);
+        return;
+    }
     if (hdr.checksum) {
         if (ipver == IP_VER4) {
             uint32_t src_ip = 0;

@@ -90,7 +90,7 @@ bool tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_ip, co
 bool tcp_bind_conflicts(const SockBindSpec* spec, uint16_t port, bool reuseaddr);
 
 bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra);
-void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra);
+void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra, uint32_t apply_mask);
 
 tcp_result_t tcp_flow_send(tcp_data *flow_ctx);
 tcp_result_t tcp_flow_flush(tcp_data *flow_ctx);
@@ -105,9 +105,6 @@ bool tcp_flow_recv_closed(tcp_data *flow_ctx);
 void tcp_flow_on_app_read(tcp_data *flow_ctx, uint32_t bytes_read);
 
 void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, netpkt_t* pkt);
-
-void tcp_tick_all(uint32_t elapsed_ms);
-int tcp_daemon_entry(int argc, char *argv[]);
 
 #ifdef __cplusplus
 }
