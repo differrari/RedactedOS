@@ -9,9 +9,17 @@
 
 job_id_t job_id_counter = 1;
 
+uptr job_kpec = 0;
+sizedptr job_kstack = {};
+extern int syscall_depth;
+extern void job_restore_kernel();
+extern uptr job_save_ret();
+
 typedef struct {
     thread_t *requester;
     thread_t *worker;
+    thread_t kernel_ctx;
+    sizedptr kstack;
     job_id_t id;
     job_buffer buffers[8];
     size_t buffer_count;
@@ -80,7 +88,7 @@ bool prepare_thread(job_state_t *job, system_module *mod, job_application_t appl
     return true;
 }
 
-job_id_t create_new_job(job_application_t application, system_module *mod){
+job_id_t create_new_job(job_application_t application, system_module *mod, thread_t *kthread){
     process_t *requesting_proc = get_proc_by_pid(application.requesting_pid);
     if (!requesting_proc){
         print("[JOB error] Unknown requesting proc %i",application.requesting_pid);
@@ -102,7 +110,18 @@ job_id_t create_new_job(job_application_t application, system_module *mod){
     job->worker = new_t;
     requester->state = BLOCKED;
     requesting_proc->state = BLOCKED;
+    if (syscall_depth >= 1){
+        print("[JOB debug] kstack has been saved to %llx - %x",job_kstack.ptr,job_kstack.size);
+        memcpy(&job->kernel_ctx, kthread, sizeof(thread_t));
+        for (u64 i = 0; i < sizeof(thread_t); i+=8){
+            print("%i = %llx",i/8,((u64*)kthread)[i]);
+        } 
+        job->kernel_ctx.job_id = job->id;
+        job->kernel_ctx.pc = job_save_ret();
+        job->kstack = job_kstack;
+    } else memset(&job->kernel_ctx, 0, sizeof(thread_t));
     schedule_thread(fs_owner, new_t);
+    switch_proc(YIELD);
     return job->id;
 }
 
@@ -127,6 +146,12 @@ void* quick_translate(thread_t *thread, process_t *proc, uptr ptr){
     return (void*)PHYS_TO_VIRT(addr);
 }
 
+extern uptr cpec;
+
+static inline uptr translate_stack(uptr new_top, uptr ptr){
+    return new_top-((uptr)ksp-ptr);
+}
+
 void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     job_state_t *st = get_job_state(job_id);
     if (!st) {
@@ -138,8 +163,6 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
         return;
     }
     process_t *proc = get_proc_by_pid(st->requester->pid);
-    ready_thread(st->requester);
-    st->requester->PROC_X0 = ret;
     for (size_t i = 0; i < st->buffer_count; i++){
         job_buffer buf = st->buffers[i];
         if (buf.sync & copy_on_end && buf.worker_ptr.ptr){
@@ -157,4 +180,41 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
         }
     }
     print("[JOB] %i fulfilled by %i",job_id,thread->tid);
+    if (st->kernel_ctx.job_id){
+        //Restore kernel proc here and let it return to the process
+        print("Restoring to kernel's functionality here %llx",st->kernel_ctx.pc);
+        st->kernel_ctx.PROC_X0 = ret;
+        job_kpec = (uptr)&st->kernel_ctx;
+        cpec = (uptr)st->requester;
+        // print("Kernel will restore to %i %i. with %llx of stack being restored to %llx from %llx",st->requester->pid,st->requester->tid,st->kstack.size,ksp,st->kstack.ptr);
+        // print("memcpy(%llx,%llx,%llx)",ksp-st->kstack.size,st->kstack.ptr,st->kstack.size);
+        // memcpy(ksp-st->kstack.size, (void*)st->kstack.ptr, st->kstack.size);
+
+
+        // print("SP is %llx and LR is %llx",st->kernel_ctx.sp,st->kernel_ctx.regs[29]);
+
+        st->kernel_ctx.sp = translate_stack((st->kstack.ptr+st->kstack.size), st->kernel_ctx.sp);
+        print("Initial Address %llx",st->kernel_ctx.regs[29]);
+        st->kernel_ctx.regs[29] = translate_stack((st->kstack.ptr+st->kstack.size), st->kernel_ctx.regs[29]);
+
+        uptr addr = st->kernel_ctx.regs[29];
+        uptr fp = 0;
+        do {
+            print("Address %llx",addr);
+            fp = *(uptr*)addr;
+            print("Link %llx",fp);
+            fp = translate_stack(fp, st->kstack.ptr+st->kstack.size);
+            print("In new stack %llx",fp);
+            *(uptr*)addr = fp;
+            addr = fp;
+        } while(addr && (addr & 0xfffff00000000000) == 0xffffc00000000000);
+        
+        job_restore_kernel();
+        
+        // st->kernel_ctx.sp = st->kstack.ptr-((uptr)ksp-st->kernel_ctx.sp);
+        // job_restore_kernel();
+    } else {
+        ready_thread(st->requester);
+        st->requester->PROC_X0 = ret;
+    }
 }

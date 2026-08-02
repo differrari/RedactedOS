@@ -454,7 +454,9 @@ u64 syscall_stat(process_t *ctx, thread_t *current_thread){
     if (!s.data || !s.length){
         return root_stat(path, out_stat);
     }
+    kprintf("String before syscall %llx",s.data);
     size_t ret = get_stat(&rootfs, s.data, out_stat);
+    kprintf("String after syscall %llx",s.data);
     string_free(s);
     return ret;
 #else
@@ -683,9 +685,9 @@ void sync_el0_handler_c(){
     } else {
         if (currentEL == 1){
             if (syscall_depth < 3){
-                kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx", esr, elr, far);
                 uint64_t ksp = 0;
                 asm volatile ("mov %0, sp" : "=r"(ksp));
+                kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx. KSP: %llx", esr, elr, far, ksp);
                 coredump(esr, elr, far, ksp);
             }
             handle_exception("UNEXPECTED EXCEPTION", ec);
