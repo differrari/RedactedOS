@@ -178,7 +178,7 @@ void switch_proc(ProcSwitchReason reason) {
 
 void save_syscall_return(uint64_t value){
     if (!current_proc) return;
-    current_proc->main_thread.PROC_X0 = value;
+    get_current_thread()->PROC_X0 = value;
 }
 
 void process_restore(){
@@ -252,7 +252,7 @@ void ready_process(process_t *proc){
         return;
     }
 
-    proc->spsr = proc->main_thread.spsr;//TODO: remove
+    proc->spsr = proc->main_thread.spsr;
     
     enqueue_ready_thread(&proc->main_thread);
     proc->state = READY;
