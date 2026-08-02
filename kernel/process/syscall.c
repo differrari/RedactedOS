@@ -707,6 +707,7 @@ void sync_el0_handler_c(){
         //TODO: schedule kstack_top to cleanup, but don't do immediately as we're in it
         current_thread->kstack_top = 0;
     }
+    job_ksp = (uptr)ksp;
     process_restore();
 }
 

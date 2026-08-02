@@ -1,6 +1,5 @@
 .global job_save_kernel
 job_save_kernel:
-    msr daifset, #2
 
     stp x17, x18, [sp, #-16]!
     add x17, sp, #16
@@ -59,7 +58,7 @@ adrp x1, ksp
 add x1, x1, :lo12:ksp
 cmp x0, x1
 
-b.ne 2f
+b.ne 1f
 
 mov x1, sp
 sub x21, x0, x1
@@ -77,7 +76,7 @@ mov x1, sp
 mov x2, x21
 bl memcpy
 
-2: 
+1: 
 ldp x0, x1, [sp, #0]
 ldp x21,x30, [sp, #16]
 

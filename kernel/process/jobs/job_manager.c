@@ -111,13 +111,11 @@ u64 create_new_job(job_application_t application, system_module *mod, thread_t *
     new_t->job_id = job->id;
     job->worker = new_t;
     requester->state = BLOCKED;
-    if (syscall_depth >= 1){
-        print("[JOB debug] kstack has been saved to %llx - %x",job_kstack.ptr,job_kstack.size);
-        memcpy(&job->kernel_ctx, kthread, sizeof(thread_t));
-        job->kernel_ctx.job_id = job->id;
-        job->kernel_ctx.pc = job_save_ret();
-        job->kstack = job_kstack;
-    } else memset(&job->kernel_ctx, 0, sizeof(thread_t));
+    print("[JOB debug] kstack has been saved to %llx - %x",job_kstack.ptr,job_kstack.size);
+    memcpy(&job->kernel_ctx, kthread, sizeof(thread_t));
+    job->kernel_ctx.job_id = job->id;
+    job->kernel_ctx.pc = job_save_ret();
+    job->kstack = job_kstack;
     schedule_thread(fs_owner, new_t);
     switch_proc(YIELD);
     return 0;
@@ -177,35 +175,30 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
             }
         }
     }
-    print("[JOB] %i fulfilled by %i",job_id,thread->tid);
-    if (st->kernel_ctx.job_id){
-        st->kernel_ctx.PROC_X0 = ret;
-        job_kpec = (uptr)&st->kernel_ctx;
-        cpec = (uptr)st->requester;
+    print("[JOB] %i fulfilled by %i with return value %llx",job_id,thread->tid);
+    st->kernel_ctx.PROC_X0 = ret;
+    job_kpec = (uptr)&st->kernel_ctx;
+    cpec = (uptr)st->requester;
 
-        if (st->kstack.ptr){
-            st->kernel_ctx.sp = translate_stack((st->kstack.ptr+0x10000), st->kernel_ctx.sp);
-            print("[JOB debug] Initial Address %llx",st->kernel_ctx.regs[29]);
-            st->kernel_ctx.regs[29] = translate_stack((st->kstack.ptr+0x10000), st->kernel_ctx.regs[29]);
-    
-            uptr addr = st->kernel_ctx.regs[29];
-            uptr fp = 0;
-            do {
-                print("[JOB debug] Address %llx",addr);
-                fp = *(uptr*)addr;
-                print("[JOB debug] Link %llx",fp);
-                fp = translate_stack(st->kstack.ptr+0x10000, fp);
-                print("[JOB debug] In new stack %llx",fp);
-                *(uptr*)addr = fp;
-                addr = fp;
-            } while(addr && (addr & 0xfffff00000000000) == 0xffffc00000000000);
-        }
-        st->requester->state = RUNNING;
-        prepare_process_restore(proc);
+    if (st->kstack.ptr){
+        st->kernel_ctx.sp = translate_stack((st->kstack.ptr+0x10000), st->kernel_ctx.sp);
+        print("[JOB debug] Initial Address %llx",st->kernel_ctx.regs[29]);
+        st->kernel_ctx.regs[29] = translate_stack((st->kstack.ptr+0x10000), st->kernel_ctx.regs[29]);
+
+        uptr addr = st->kernel_ctx.regs[29];
+        uptr fp = 0;
+        do {
+            print("[JOB debug] Address %llx",addr);
+            fp = *(uptr*)addr;
+            print("[JOB debug] Link %llx",fp);
+            fp = translate_stack(st->kstack.ptr+0x10000, fp);
+            print("[JOB debug] In new stack %llx",fp);
+            *(uptr*)addr = fp;
+            addr = fp;
+        } while(addr && (addr & 0xfffff00000000000) == 0xffffc00000000000);
         job_ksp = st->kstack.ptr+0x10000;
-        job_restore_kernel();
-    } else {
-        ready_thread(st->requester);
-        st->requester->PROC_X0 = ret;
     }
+    st->requester->state = RUNNING;
+    prepare_process_restore(proc);
+    job_restore_kernel();
 }
