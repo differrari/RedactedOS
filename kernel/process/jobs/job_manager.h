@@ -89,5 +89,5 @@ static inline void job_serialize_off(job_application_t *application, int arg_num
     job_application_append_buffer(application, buf);
 }
 
-job_id_t create_new_job(job_application_t application, system_module *mod, thread_t *kthread);
+u64 create_new_job(job_application_t application, system_module *mod, thread_t *kthread);
 void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread);

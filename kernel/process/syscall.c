@@ -434,7 +434,10 @@ u64 syscall_dir_list(process_t *ctx, thread_t *current_thread){
             ret += list_root_from(&rootfs, &helper, offset);
         } 
         if (ret >= size) return ret;
+        //TODO: this calculation needs to make the offsets relative for each root mod
+#if ISOLATEDFS_ALLOW_KFS
         ret += list_root_from(kernel_fs(), &helper, offset);
+#endif
         return ret;
     }
     size_t ret = list_directory_contents(&rootfs, s.data, buf, size, offset);
@@ -454,9 +457,7 @@ u64 syscall_stat(process_t *ctx, thread_t *current_thread){
     if (!s.data || !s.length){
         return root_stat(path, out_stat);
     }
-    kprintf("String before syscall %llx",s.data);
     size_t ret = get_stat(&rootfs, s.data, out_stat);
-    kprintf("String after syscall %llx",s.data);
     string_free(s);
     return ret;
 #else
@@ -693,7 +694,7 @@ void sync_el0_handler_c(){
             handle_exception("UNEXPECTED EXCEPTION", ec);
             while (true);
         } else {
-            kprintf("Process has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", esr, elr, far, current_thread->sp);
+            kprintf("Process [p: %i t: %i] has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", current_thread->pid,current_thread->tid, esr, elr, far, current_thread->sp);
             coredump(esr, elr, far, current_thread->sp);
             syscall_depth--;
             stop_current_process(ec);

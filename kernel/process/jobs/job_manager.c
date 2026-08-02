@@ -88,7 +88,7 @@ bool prepare_thread(job_state_t *job, system_module *mod, job_application_t appl
     return true;
 }
 
-job_id_t create_new_job(job_application_t application, system_module *mod, thread_t *kthread){
+u64 create_new_job(job_application_t application, system_module *mod, thread_t *kthread){
     process_t *requesting_proc = get_proc_by_pid(application.requesting_pid);
     if (!requesting_proc){
         print("[JOB error] Unknown requesting proc %i",application.requesting_pid);
@@ -109,20 +109,16 @@ job_id_t create_new_job(job_application_t application, system_module *mod, threa
     new_t->job_id = job->id;
     job->worker = new_t;
     requester->state = BLOCKED;
-    requesting_proc->state = BLOCKED;
     if (syscall_depth >= 1){
         print("[JOB debug] kstack has been saved to %llx - %x",job_kstack.ptr,job_kstack.size);
         memcpy(&job->kernel_ctx, kthread, sizeof(thread_t));
-        for (u64 i = 0; i < sizeof(thread_t); i+=8){
-            print("%i = %llx",i/8,((u64*)kthread)[i]);
-        } 
         job->kernel_ctx.job_id = job->id;
         job->kernel_ctx.pc = job_save_ret();
         job->kstack = job_kstack;
     } else memset(&job->kernel_ctx, 0, sizeof(thread_t));
     schedule_thread(fs_owner, new_t);
     switch_proc(YIELD);
-    return job->id;
+    return 0;
 }
 
 job_state_t* get_job_state(job_id_t job_id){
@@ -208,7 +204,8 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
             *(uptr*)addr = fp;
             addr = fp;
         } while(addr && (addr & 0xfffff00000000000) == 0xffffc00000000000);
-        ready_thread(st->requester);
+        st->requester->state = RUNNING;
+        prepare_process_restore(proc);
         job_restore_kernel();
         
         // st->kernel_ctx.sp = st->kstack.ptr-((uptr)ksp-st->kernel_ctx.sp);
