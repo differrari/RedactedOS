@@ -25,13 +25,21 @@ system_module root_module = {
     .readdir = 0,
 };
 
-bool load_module_to(hash_map_t* modules, system_module *module){
+bool reserve_mount_point(module_root* modules, char* mount_point){
+    if (!modules->reserved) modules->reserved = hash_map_create(64);
+    if (hash_map_get_dictionary(modules->reserved, mount_point)){ print("[MODULE] %s already reserved",mount_point); return false; }
+    hash_map_put_dictionary(modules->reserved, mount_point, (void*)((u64)get_kernel_proc()->id));
+    print("[MODULE] Reserved %s",mount_point);
+    return false;
+}
+
+bool load_module_to(module_root* modules, system_module *module){
     if (module->owner == get_kernel_proc()->id && !module->init){
-        if (strcmp(module->mount,"/console")) kprintf("[MODULE] module not initialized due to missing initializer");//TODO: can we make printf silently fail so logging becomes easier?
+        if (strcmp(module->mount,"/console")) kprintf("[MODULE error] module not initialized due to missing initializer");//TODO: can we make printf silently fail so logging becomes easier?
         return false;
     }
     if (!module->version){
-        string format = string_format("Version number cannot be null for module /%s",module->mount);
+        string format = string_format("[MODULE error] Version number cannot be null for module /%s",module->mount);
         if (strcmp(module->mount,"/console")) {
         #ifdef MODULE_STRICT
             if (module->owner != get_kernel_proc()->id){
@@ -48,14 +56,19 @@ bool load_module_to(hash_map_t* modules, system_module *module){
     }
     if (!module->owner) module->owner = get_kernel_proc()->id;
     if (module->owner == get_kernel_proc()->id && !module->init(module)){
-        if (strcmp(module->mount,"/console")) kprintf("[MODULE] failed to load module %s. Init failed",module->name);
+        if (strcmp(module->mount,"/console")) kprintf("[MODULE error] failed to load module %s. Init failed",module->name);
         return false;
     }
-    hash_map_put_dictionary(modules, module->mount, PHYS_TO_VIRT_P(module));
+    if (!modules->map) modules->map = hash_map_create(64);
+    if (modules->reserved && hash_map_get_dictionary(modules->reserved, module->mount)){
+        kprintf("[MODULE error] mount point %s is reserved",module->mount);
+        return false;
+    }
+    hash_map_put_dictionary(modules->map, module->mount, PHYS_TO_VIRT_P(module));
     return true;
 }
 
-bool unload_module_from(hash_map_t* modules, system_module *module){
+bool unload_module_from(module_root* modules, system_module *module){
     if (!modules) return false;
     if (module->owner == get_kernel_proc()->id){
         if (!module->init) return false;
@@ -64,11 +77,11 @@ bool unload_module_from(hash_map_t* modules, system_module *module){
             } else
                 module->fini();
     }
-    hash_map_remove(modules, module->mount, strlen(module->mount), 0);
+    hash_map_remove(modules->map, module->mount, strlen(module->mount), 0);
     return false;
 }
 
-system_module* get_module_from(hash_map_t* modules, const char **full_path){
+system_module* get_module_from(module_root* modules, const char **full_path){
     if (!modules) return 0;
     if (!full_path || !*full_path) return 0;
     const char *path = *full_path;
@@ -90,7 +103,7 @@ system_module* get_module_from(hash_map_t* modules, const char **full_path){
     if (!mod_name.length){
         return &root_module;
     }
-    return hash_map_get(modules, mod_name.data, mod_name.length);
+    return hash_map_get(modules->map, mod_name.data, mod_name.length);
 }
 
 static u64 index = 0, count = 0;
@@ -110,13 +123,13 @@ void iterate_root(void* key, u64 keylen, void* value){
     }
 }
 
-size_t list_root_from(hash_map_t* modules, fs_dir_list_helper *helper, uint64_t *offset){
+size_t list_root_from(module_root* modules, fs_dir_list_helper *helper, uint64_t *offset){
     
     dir_helper = helper;
     index = offset ? *offset : 0;
     count = 0;
     
-    hash_map_for_each(modules, iterate_root);
+    hash_map_for_each(modules->map, iterate_root);
     
     return dir_buf_size(helper);
 }

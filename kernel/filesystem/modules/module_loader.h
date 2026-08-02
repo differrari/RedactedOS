@@ -5,6 +5,7 @@
 #include "fs_isolation.h"
 #include "files/dir_list.h"
 
+bool reserve_mount_point(module_root* modules, char* mount_point);
 bool load_module_to(module_root* modules, system_module *module);
 bool unload_module_from(module_root* modules, system_module *module);
 system_module* get_module_from(module_root* modules, const char **full_path);

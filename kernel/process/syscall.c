@@ -429,7 +429,7 @@ u64 syscall_dir_list(process_t *ctx, thread_t *current_thread){
     if (!s.data || !s.length || strncmp(s.data,"/",s.length) == 0){
         size_t ret = 0;
         fs_dir_list_helper helper = create_dir_list_helper(buf, size);
-        if (rootfs.buckets != kernel_fs()->buckets){
+        if (rootfs.map->buckets != kernel_fs()->map->buckets){
             ret += list_root_from(&rootfs, &helper, offset);
         } 
         if (ret >= size) return ret;

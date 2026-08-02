@@ -91,6 +91,8 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     }
 
     kprint("Kernel initialization finished");
+
+    reserve_mount_point(kernel_fs(), "menu");
     
     kprint("Starting processes");
 

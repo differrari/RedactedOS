@@ -171,7 +171,7 @@ size_t dir_list(const char *path, void *buf, size_t size, u64 *offset){
     if (!s.data || !s.length || strncmp(s.data,"/",s.length) == 0){
         size_t ret = 0;
         fs_dir_list_helper helper = create_dir_list_helper(buf, size);
-        if (rootfs.buckets != kernel_fs()->buckets){
+        if (rootfs.map->buckets != kernel_fs()->map->buckets){
             ret += list_root_from(&rootfs, &helper, offset);
         } 
         if (ret >= size) return ret;
