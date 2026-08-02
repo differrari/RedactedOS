@@ -124,6 +124,8 @@ void update_sleep_timer() {
     } else virtual_timer_disable();
 }
 
+extern uptr job_ksp;
+
 void switch_proc(ProcSwitchReason reason) {
     syscall_depth = 0;
     if (proc_count == 0)
@@ -173,6 +175,7 @@ void switch_proc(ProcSwitchReason reason) {
     mmu_swap_ttbr(current_proc->mm.ttbr0 ? &current_proc->mm : 0);
     if (prev && prev != current_proc && prev != idle_proc && process_can_reset(prev)) reset_process(prev);
 
+    job_ksp = (uptr)ksp;
     process_restore();
 }
 

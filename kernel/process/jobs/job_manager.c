@@ -10,6 +10,7 @@
 job_id_t job_id_counter = 1;
 
 uptr job_kpec = 0;
+uptr job_ksp = 0;
 sizedptr job_kstack = {};
 extern int syscall_depth;
 extern void job_restore_kernel();
@@ -181,23 +182,26 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
         job_kpec = (uptr)&st->kernel_ctx;
         cpec = (uptr)st->requester;
 
-        st->kernel_ctx.sp = translate_stack((st->kstack.ptr+st->kstack.size), st->kernel_ctx.sp);
-        print("Initial Address %llx",st->kernel_ctx.regs[29]);
-        st->kernel_ctx.regs[29] = translate_stack((st->kstack.ptr+st->kstack.size), st->kernel_ctx.regs[29]);
-
-        uptr addr = st->kernel_ctx.regs[29];
-        uptr fp = 0;
-        do {
-            print("Address %llx",addr);
-            fp = *(uptr*)addr;
-            print("Link %llx",fp);
-            fp = translate_stack(fp, st->kstack.ptr+st->kstack.size);
-            print("In new stack %llx",fp);
-            *(uptr*)addr = fp;
-            addr = fp;
-        } while(addr && (addr & 0xfffff00000000000) == 0xffffc00000000000);
+        if (st->kstack.ptr){
+            st->kernel_ctx.sp = translate_stack((st->kstack.ptr+0x10000), st->kernel_ctx.sp);
+            print("[JOB debug] Initial Address %llx",st->kernel_ctx.regs[29]);
+            st->kernel_ctx.regs[29] = translate_stack((st->kstack.ptr+0x10000), st->kernel_ctx.regs[29]);
+    
+            uptr addr = st->kernel_ctx.regs[29];
+            uptr fp = 0;
+            do {
+                print("[JOB debug] Address %llx",addr);
+                fp = *(uptr*)addr;
+                print("[JOB debug] Link %llx",fp);
+                fp = translate_stack(st->kstack.ptr+0x10000, fp);
+                print("[JOB debug] In new stack %llx",fp);
+                *(uptr*)addr = fp;
+                addr = fp;
+            } while(addr && (addr & 0xfffff00000000000) == 0xffffc00000000000);
+        }
         st->requester->state = RUNNING;
         prepare_process_restore(proc);
+        job_ksp = st->kstack.ptr+0x10000;
         job_restore_kernel();
     } else {
         ready_thread(st->requester);
