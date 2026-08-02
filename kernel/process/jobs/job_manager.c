@@ -43,6 +43,9 @@ bool prepare_thread(job_state_t *job, system_module *mod, job_application_t appl
         case job_readdir: entry = (uptr)mod->readdir; break;
         case job_open: entry = (uptr)mod->open; break;
         case job_close: entry = (uptr)mod->close; break;
+        case job_read: entry = (uptr)mod->read; break;
+        case job_write: entry = (uptr)mod->write; break;
+        case job_trunc: entry = (uptr)mod->truncate; break;
         default: return false;
     }
     if (!entry) return false;
@@ -81,6 +84,7 @@ job_id_t create_new_job(job_application_t application, system_module *mod){
     process_t *requesting_proc = get_proc_by_pid(application.requesting_pid);
     if (!requesting_proc){
         print("[JOB error] Unknown requesting proc %i",application.requesting_pid);
+        return (job_id_t){};
     }
     job_state_t *job = job_alloc();
     job->type = application.type;
@@ -89,7 +93,10 @@ job_id_t create_new_job(job_application_t application, system_module *mod){
     job->requester = requester;
     process_t *fs_owner = get_proc_by_pid(application.worker_pid);
     thread_t *new_t = alloc_thread();
-    if (!prepare_thread(job, mod, application, fs_owner, new_t)) return false;
+    if (!prepare_thread(job, mod, application, fs_owner, new_t)){
+        print("[JOB error] failed to prepare thread for job %i",job->id);
+        return false;
+    }
     print("[JOB debug] Sync between %i - %i will happen with job %i of type %i using thread %i",requester->pid,application.worker_pid,job->id,application.type,new_t->tid);
     new_t->job_id = job->id;
     job->worker = new_t;

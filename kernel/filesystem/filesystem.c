@@ -57,7 +57,7 @@ FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor
     FS_RESULT result = FS_RESULT_DRIVER_ERROR;
     if (mod->owner != get_kernel_proc()->id){
         job_make(job_open, mod, {
-            job_serialize_str(&app, 0, path);
+            job_serialize_str(&app, 0, search_path);
             job_serialize_fd(&app, 1, descriptor, copy_on_end);
         });
         return 0;
