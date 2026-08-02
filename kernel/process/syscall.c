@@ -349,7 +349,7 @@ u64 syscall_openf(process_t *ctx, thread_t *current_thread){
     SYSCALL_ARG(file,descriptor,PROC_X1, true);
     module_root rootfs = {}; 
     string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
-    if (!s.data || !s.length) return 0;
+    if (!s.data || !s.length || !rootfs.map) return 0;
     FS_RESULT res = open_file(&rootfs, s.data, descriptor);
     string_free(s);
     return res;
@@ -426,6 +426,7 @@ u64 syscall_dir_list(process_t *ctx, thread_t *current_thread){
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
     string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
+    if (!rootfs.map) return 0;
     if (!s.data || !s.length || strncmp(s.data,"/",s.length) == 0){
         size_t ret = 0;
         fs_dir_list_helper helper = create_dir_list_helper(buf, size);
