@@ -125,6 +125,7 @@ void update_sleep_timer() {
 }
 
 void switch_proc(ProcSwitchReason reason) {
+    syscall_depth = 0;
     if (proc_count == 0)
         panic("No processes active", 0);
     thread_t *prev_t = (thread_t*)cpec;
@@ -133,7 +134,6 @@ void switch_proc(ProcSwitchReason reason) {
         if (prev == idle_proc) prev->state = BLOCKED;
         else if (prev_t->state == RUNNING) enqueue_ready_thread(prev_t);
     }
-
 
     thread_t *next_thread = 0;
     while (!cqueue_is_empty(&ready_queue)) {

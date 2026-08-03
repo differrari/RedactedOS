@@ -3,10 +3,20 @@
 #include "files/jobs.h"
 #include "process/process.h"
 
+extern uptr job_kpec;
+extern sizedptr job_kstack;
+extern void job_save_kernel();
+extern void save_kstack();
+
 //TODO: if the owner is the current process, we can downgrade the syscall into a function call without async
 #define job_make(job_type,mod,action)\
-process_t *owner_proc = get_proc_by_pid(mod->owner);\
-if (!is_privileged(owner_proc)){\
+    thread_t kthread = {};\
+    job_kpec = (uptr)&kthread;\
+    job_save_kernel();\
+    print("KStack save");\
+    save_kstack();\
+    print("KStack saved to %llx of size %llx from %llx",job_kstack.ptr,job_kstack.size,ksp);\
+    process_t *owner_proc = get_proc_by_pid(mod->owner);\
     job_application_t app = (job_application_t){\
         .requesting_pid = get_current_proc()->id,\
         .requesting_tid = get_current_thread()->tid,\
@@ -14,9 +24,8 @@ if (!is_privileged(owner_proc)){\
         .type = job_type\
     };\
     action\
-    create_new_job(app,mod);\
-    switch_proc(YIELD);\
-}
+    u64 j_ret = create_new_job(app, mod, &kthread);\
+    (void)j_ret;
 
 static inline void job_application_append_buffer(job_application_t *app, job_buffer buf){
     if (app->buffer_count >= MAX_JOB_BUFFERS) return;
@@ -80,5 +89,5 @@ static inline void job_serialize_off(job_application_t *application, int arg_num
     job_application_append_buffer(application, buf);
 }
 
-job_id_t create_new_job(job_application_t application, system_module *mod);
+job_id_t create_new_job(job_application_t application, system_module *mod, thread_t *kthread);
 void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread);

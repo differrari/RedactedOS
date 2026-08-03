@@ -60,7 +60,7 @@ FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor
             job_serialize_str(&app, 0, search_path);
             job_serialize_fd(&app, 1, descriptor, copy_on_end);
         });
-        return 0;
+        return j_ret;
     } else {
         result = mod->open(search_path, descriptor);
     }
@@ -132,7 +132,7 @@ size_t read_file(file *descriptor, char* buf, size_t size){
             job_serialize_fd(&app, 0, &gfd, copy_on_start);
             job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_end);
         });
-        return amount_read;
+        return j_ret;
     } else {
         amount_read = local.mod->read(&gfd, buf, size, start_cursor);
     }
@@ -198,7 +198,7 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
             job_serialize_fd(&app, 0, &gfd, copy_on_start);
             job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_start);
         });
-        return amount_written;
+        return j_ret;
     } else {
         amount_written = local.mod->write(&gfd, buf, size, 0);
     }
@@ -262,7 +262,7 @@ size_t list_directory_contents(module_root *root, const char *path, void* buf, s
             job_serialize_buf(&app, 1, true, buf, size, copy_on_end);
             job_serialize_off(&app, 3, offset);
         });
-        return 0;
+        return j_ret;
     } else
         return mod->readdir(search_path, buf, size, offset);
 }
@@ -285,7 +285,7 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
             job_serialize_str(&app, 0, search_path);
             job_serialize_stat(&app, 1, out_stat);
         })
-        return false;
+        return j_ret;
     }
     return mod->getstat(search_path, out_stat);
 }
@@ -314,7 +314,7 @@ bool truncate(file *descriptor, size_t size){
         job_make(job_trunc, local.mod, {
             job_serialize_fd(&app, 0, &gfd, copy_on_start);
         });
-        return false;
+        return j_ret;
     } else if (!local.mod->truncate(&gfd)) return false;
 
     descriptor->size = gfd.size;
