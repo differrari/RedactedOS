@@ -4,6 +4,7 @@
 #include "process/process.h"
 
 extern uptr job_kpec;
+extern uptr job_ksp;
 extern sizedptr job_kstack;
 extern void job_save_kernel();
 extern void save_kstack();
@@ -11,9 +12,11 @@ extern void save_kstack();
 //TODO: if the owner is the current process, we can downgrade the syscall into a function call without async
 #define job_make(job_type,mod,action)\
     thread_t kthread = {};\
+    job_kstack = (sizedptr){};\
     job_kpec = (uptr)&kthread;\
+    if (!job_ksp) job_ksp = (uptr)ksp;\
     job_save_kernel();\
-    print("KStack save");\
+    print("KStack save to %llx",job_ksp);\
     save_kstack();\
     print("KStack saved to %llx of size %llx from %llx",job_kstack.ptr,job_kstack.size,ksp);\
     process_t *owner_proc = get_proc_by_pid(mod->owner);\

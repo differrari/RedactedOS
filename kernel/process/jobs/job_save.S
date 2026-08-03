@@ -51,8 +51,15 @@ sub sp, sp, #32
 stp x0, x1, [sp, #0]
 stp x21,x30, [sp, #16]
 
-adrp x0, ksp
-add  x0, x0, :lo12:ksp
+adrp x0, job_ksp
+add  x0, x0, :lo12:job_ksp
+ldr x0, [x0]
+
+adrp x1, ksp
+add x1, x1, :lo12:ksp
+cmp x0, x1
+
+b.ne 2f
 
 mov x1, sp
 sub x21, x0, x1
@@ -63,10 +70,14 @@ adrp x1, job_kstack
 add x1, x1, :lo12:job_kstack
 stp x0, x21, [x1, #0]
 
+add x0,x0,#0x10000
+sub x0,x0,x21
+
 mov x1, sp
 mov x2, x21
 bl memcpy
 
+2: 
 ldp x0, x1, [sp, #0]
 ldp x21,x30, [sp, #16]
 
