@@ -99,6 +99,7 @@ u64 create_new_job(job_application_t application, system_module *mod, thread_t *
     job->type = application.type;
     job->mod = mod;
     thread_t *requester = (thread_t*)get_thread_from_proc(requesting_proc, application.requesting_tid);
+    if (job_ksp != (uptr)ksp) requester->kstack_top = job_ksp;
     job->requester = requester;
     process_t *fs_owner = get_proc_by_pid(application.worker_pid);
     thread_t *new_t = alloc_thread();

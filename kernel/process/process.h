@@ -72,6 +72,7 @@ struct thread_t {
     uint64_t spsr; 
     //Not used in context saving
     stack_t stack_info;
+    uptr kstack_top;
     u16 pid;
     u16 tid;
     process_state state;
