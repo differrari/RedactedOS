@@ -208,7 +208,7 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
             *(uptr*)addr = fp;
             addr = fp;
         } while(addr && (addr & 0xfffff00000000000) == 0xffffc00000000000);
-        
+        ready_thread(st->requester);
         job_restore_kernel();
         
         // st->kernel_ctx.sp = st->kstack.ptr-((uptr)ksp-st->kernel_ctx.sp);
