@@ -83,7 +83,7 @@ uint64_t timer_now() {
     asm volatile ("mrs %0, cntvct_el0" : "=r"(val));
     return val;
 }
-
+//TODO: do we want more precision since we have it?
 uint64_t timer_now_msec() {
     uint64_t ticks = timer_now();
     uint64_t freq = rd_cntfrq_el0();

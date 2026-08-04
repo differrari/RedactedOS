@@ -3,6 +3,7 @@
 #include "memory/addr.h"
 #include "std/memory.h"
 #include "memory/mm_process.h"
+#include "process/stack_manager.h"
 
 vma* mm_find_vma(mm_struct *mm, uaddr_t va){
     if (!mm) return 0;
@@ -29,7 +30,7 @@ bool mm_add_vma(mm_struct *mm, uaddr_t start, uaddr_t end, uint8_t prot, uint8_t
 
     for (uint16_t i = mm->vma_count; i > ins; i--) mm->vmas[i] = mm->vmas[i - 1];
 
-    mm->vmas[ins] = (vma){start, end, prot, kind, flags};
+    mm->vmas[ins] = (vma){ start, end, prot, kind, flags };
     mm->vma_count++;
 
     if (ins > 0) {
@@ -160,7 +161,7 @@ uaddr_t mm_alloc_mmap(mm_struct *mm, size_t size, uint8_t prot, uint8_t kind, ui
     return base;
 }
 
-bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr) {
+bool mm_try_handle_page_fault(process_t *proc, thread_t *current_thread, uintptr_t far, uint64_t esr) {
     if (!proc || !proc->mm.ttbr0) return false;
 
     uint64_t ec = (esr >> 26) & 0x3F;
@@ -189,12 +190,13 @@ bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr) {
     if (!(m->flags & VMA_FLAG_DEMAND)) return false;
 
     if (m->kind == VMA_KIND_STACK) {
-        uintptr_t sp = proc->sp & ~(PAGE_SIZE - 1);
+#if LEGACY_STACK
+        uintptr_t sp = current_thread->sp & ~(PAGE_SIZE - 1);
         uintptr_t low = sp > (32 * PAGE_SIZE) ? sp - (32 * PAGE_SIZE) : proc->mm.stack_limit;
-        if (va_page < low || va_page < proc->mm.stack_limit || va_page >= proc->mm.stack_top) return false;
+        if (va_page < low || va_page < stack_min_addr || va_page >= stack_max_addr){ print("Out of bounds %llx < %llx | %llx < %llx | %llx >= %llx",va_page,low,va_page,proc->mm.stack_limit,va_page,proc->mm.stack_top); return false; }
         uintptr_t grow_to = proc->mm.stack_commit;
         if (va_page < grow_to) grow_to = va_page;
-        if (((proc->mm.stack_top - grow_to) / PAGE_SIZE) > proc->mm.cap_stack_pages) return false;
+        if (((proc->mm.stack_top - grow_to) / PAGE_SIZE) > proc->mm.cap_stack_pages){ print("Too many pages"); return false; }
         for (uintptr_t page = proc->mm.stack_commit - PAGE_SIZE; page >= grow_to; page -= PAGE_SIZE) {
             paddr_t phys = palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false);
             if (!phys) {
@@ -212,6 +214,10 @@ bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr) {
             if (page == 0) break;
         }
         proc->mm.stack_commit = grow_to;
+#else 
+        paddr_t phys = palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, true, false);        
+        mmu_map_4kb((uint64_t*)proc->mm.ttbr0, va_page, phys, MAIR_IDX_NORMAL, m->prot | MEM_NORM, MEM_PRIV_USER);
+#endif
         mmu_flush_asid(proc->mm.asid);
         return true;
     }

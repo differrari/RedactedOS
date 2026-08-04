@@ -1,7 +1,12 @@
 #include "files/folderfs.h"
 #include "console/kio.h"
+#include "graph/tres.h"
+#include "process/scheduler.h"
+#include "kernel_processes/windows/menu.h"
 
 bool env_loaded = false;
+
+#define DATA_WIN_SIGNATURE DATA_SIGNATURE("WININFO")
 
 typedef struct {
     u16 procid;
@@ -48,6 +53,20 @@ FS_RESULT environment_open(u64 id, string_slice file_name, file *fd){
         }
         return FS_RESULT_SUCCESS;
     }
+    if (slice_lit_match(file_name, "window", true)){
+        fd->id = ((env_type_win & 0xFFFF) << 16) | id;
+        fd->data_type = DATA_WIN_SIGNATURE;
+        fd->size = sizeof(window_info_t);
+        if (!proc->environment.win_buf.buffer)
+            buffer_map_value(&proc->environment.win_buf, &proc->environment.win_info, sizeof(window_info_t), DATA_WIN_SIGNATURE);
+        return FS_RESULT_SUCCESS;
+    }
+    if (slice_lit_match(file_name, "menu", true)){
+        fd->id = ((env_type_menu & 0xFFFF) << 16) | id;
+        fd->data_type = 0;
+        fd->size = 0;
+        return FS_RESULT_SUCCESS;
+    }
     return FS_RESULT_NOTFOUND;
 }
 
@@ -63,6 +82,10 @@ buffer* environment_resolve_fd(file *fd){
             return &proc->environment.data;
         case env_type_structure:
             return &proc->environment.structure;
+        case env_type_win:
+            return &proc->environment.win_buf;
+        case env_type_menu:
+            return 0;
         default: return 0;
     }
     return 0;
@@ -76,6 +99,8 @@ bool environment_init(system_module *module){
     static_entries += make_entry(":id/config", backing_virtual, entry_file, DATA_SIGNATURE("OUTFMT"), (buffer){}) != 0;
     static_entries += make_entry(":id/data", backing_virtual, entry_file, DATA_SIG_RAW, (buffer){}) != 0;
     static_entries += make_entry(":id/structure", backing_virtual, entry_file, DATA_SIG_DATA_STRUCT, (buffer){}) != 0;
+    static_entries += make_entry(":id/window", backing_virtual, entry_file, DATA_WIN_SIGNATURE, (buffer){}) != 0;
+    static_entries += make_entry(":id/menu", backing_virtual, entry_file, 0, (buffer){}) != 0;
     return true;
 }
 
@@ -85,13 +110,27 @@ void register_environment(u16 procid){
     folderfs_create_folder(data);
 }
 
+static inline size_t environment_write(file *fd, const char *buf, size_t size, file_offset offset){
+    size_t s = buffer_write_lim(environment_resolve_fd(fd), (void*)buf, size);
+    u16 file_type = (fd->id >> 16) & 0xFFFF;
+    if (file_type == env_type_win && s == sizeof(window_info_t)){
+        refresh_window_info(get_current_proc()->win_id,(window_info_t*)buf);
+    } 
+    if (file_type == env_type_menu){
+        process_t *menu_proc = get_current_proc();
+        if (!menu_proc->focused) return 0;
+        refresh_menu();
+    }
+    return s;
+}
+
 system_module environment_module = {
     .name = "environment",
     .mount = "environments",
     .version = VERSION_NUM(0, 1, 0, 0),
     .init = environment_init,
-    .read = folderfs_read ,
-    .write = folderfs_write,
+    .read = folderfs_read,
+    .write = environment_write,
     .getstat = folderfs_stat,
     .readdir = folderfs_readdir,
     .open = folderfs_open,

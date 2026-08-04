@@ -18,6 +18,7 @@ mouse_input get_raw_mouse_in();
 
 gpu_point get_mouse_pos();
 bool mouse_button_pressed(int mb);
+bool mouse_any_button_pressed();
 
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp);
 uint16_t sys_subscribe_shortcut_current(keypress kp);

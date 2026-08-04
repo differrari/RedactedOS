@@ -10,7 +10,7 @@ int_point current_win_offset = {};
 void new_managed_window(){
     draw_ctx *cur = gpu_get_ctx();
     if (!cur) return;
-    create_window(10 - current_win_offset.x, 10 - current_win_offset.y, cur->width - 20, cur->height - 20);
+    create_window(10 - current_win_offset.x, 10 - current_win_offset.y + MENU_HEIGHT, cur->width - 20, cur->height - 20 - MENU_HEIGHT);
     global_win_offset.x = current_win_offset.x;
     current_win_offset.x -= cur->width;
 }

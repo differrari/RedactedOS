@@ -127,14 +127,14 @@ uint8_t elf_to_red_permissions(uint8_t flags){
 bool setup_process_args(process_t *proc, int argc, const char *argv[]) {
     if (!proc || argc < 0) return false;
 
-    proc->PROC_X0 = argc;
-    proc->PROC_X1 = 0;
-    proc->sp = proc->stack;
+    proc->main_thread.PROC_X0 = argc;
+    proc->main_thread.PROC_X1 = 0;
+    proc->main_thread.sp = proc->main_thread.stack_info.top;
 
     if (argc == 0) return true;
     if (!argv) return false;
 
-    size_t stack_size = proc->mm.ttbr0 ? (size_t)(proc->mm.stack_top - proc->mm.stack_limit) : proc->stack_size;
+    size_t stack_size = proc->mm.ttbr0 ? (size_t)(proc->mm.stack_top - proc->mm.stack_limit) : proc->main_thread.stack_info.size;
     if (!stack_size) return false;
 
     size_t total_str = 0;
@@ -150,30 +150,30 @@ bool setup_process_args(process_t *proc, int argc, const char *argv[]) {
     if (argv_size > stack_size) return false;
     if (total_str > stack_size - argv_size) return false;
 
-    uintptr_t str_base = proc->stack - total_str;
+    uintptr_t str_base = proc->main_thread.stack_info.top - total_str;
     if (argc > UACCESS_MAX_ARGV) return false;
     uintptr_t arg_ptrs[UACCESS_MAX_ARGV + 1] = {};
     uintptr_t sp = str_base & ~0xFULL;
     sp -= argv_size;
 
     if (proc->mm.ttbr0) {
-        proc->PROC_X1 = sp;
-        proc->sp = sp;
+        proc->main_thread.PROC_X1 = sp;
+        proc->main_thread.sp = sp;
 
         size_t off = 0;
         for (int i = 0; i < argc; i++) {
             size_t len = strlen(argv[i]) + 1;
-            if (copy_to_user(proc, str_base + off, argv[i], len) != UACCESS_OK) return false;
+            if (copy_to_user(proc, (thread_t*)proc, str_base + off, argv[i], len) != UACCESS_OK) return false;
             arg_ptrs[i] = str_base + off;
             off += len;
         }
         arg_ptrs[argc] = 0;
 
-        if (copy_to_user(proc, sp, arg_ptrs, argv_size) != UACCESS_OK) return false;
+        if (copy_to_user(proc, (thread_t*)proc, sp, arg_ptrs, argv_size) != UACCESS_OK) return false;
         return true;
     }
 
-    paddr_t str_phys = proc->stack_phys - total_str;
+    paddr_t str_phys = proc->main_thread.stack_info.top - total_str;
     size_t off = 0;
     for (int i = 0; i < argc; i++) {
         size_t len = strlen(argv[i]);
@@ -190,8 +190,8 @@ bool setup_process_args(process_t *proc, int argc, const char *argv[]) {
     uintptr_t *kargv = (uintptr_t*)dmap_pa_to_kva(sp_phys);
     for (int i = 0; i <= argc; i++) kargv[i] = arg_ptrs[i];
 
-    proc->PROC_X1 = sp;
-    proc->sp = sp;
+    proc->main_thread.PROC_X1 = sp;
+    proc->main_thread.sp = sp;
     return true;
 }
 

@@ -181,6 +181,7 @@ void activate_current(){
         u16 pid = exec(entry->path.data, 0, 0, EXEC_MODE_DEFAULT);
         if (!pid) {
             print("[LAUNCHER error] failed to launch process");
+            rendered_full = false;
             return;
         }
         halt(0);//TODO: remove any references to resuming after the process is closed

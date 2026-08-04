@@ -6,6 +6,7 @@
 #include "process/scheduler.h"
 #include "pipe.h"
 #include "files/dir_list.h"
+#include "process/jobs/job_manager.h"
 
 uint64_t fd_id = 256;//First byte reserved
 
@@ -46,25 +47,31 @@ bool init_filesystem(){
     return true;
 }
 
-FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor, system_module **mod){
+FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor, system_module **out_mod){
     const char *search_path = path;
     if (*search_path == '/') search_path++;
     if (!*search_path) return FS_RESULT_NOTFOUND;
-    system_module *module = get_module_from(root, &search_path);
-    if (!module) return FS_RESULT_NOTFOUND;
-    if (!module->open) return FS_RESULT_NOTFOUND;
-    FS_RESULT result = module->open(search_path, descriptor);
+    system_module *mod = get_module_from(root, &search_path);
+    if (!mod) return FS_RESULT_NOTFOUND;
+    if (!mod->open) return FS_RESULT_NOTFOUND;
+    FS_RESULT result = FS_RESULT_DRIVER_ERROR;
+    if (mod->owner != get_kernel_proc()->id){
+        job_make(job_open, mod, {
+            job_serialize_str(&app, 0, search_path);
+            job_serialize_fd(&app, 1, descriptor, copy_on_end);
+        });
+        return j_ret;
+    } else {
+        result = mod->open(search_path, descriptor);
+    }
     if (result != FS_RESULT_SUCCESS) return result;
     if (!open_files) return FS_RESULT_DRIVER_ERROR;
     descriptor->cursor = 0;
-    *mod = module;
+    *out_mod = mod;
     return FS_RESULT_SUCCESS;
 }
 
-FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
-    system_module *mod = 0;
-    FS_RESULT result = open_file_global(root, path, descriptor, &mod);
-    if (result != FS_RESULT_SUCCESS) return result;
+FS_RESULT instance_local_fd(system_module *mod, file *descriptor){
     open_file_descriptors *of = (open_file_descriptors*)open_files_alloc(sizeof(open_file_descriptors));
     if (!of) {
         close_file_global(descriptor, mod);
@@ -76,9 +83,7 @@ FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
     of->mod = mod;
     of->pid = get_current_proc_pid();
     descriptor->id = of->file_id;
-    irq_flags_t irq = irq_save_disable();
     int put = hash_map_put(open_files, &of->file_id, sizeof(uint64_t), of);
-    irq_restore(irq);
 
     if (put != 1) {
         file tmp = {
@@ -90,7 +95,17 @@ FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
         release(of);
         return FS_RESULT_DRIVER_ERROR;
     }
+
     return FS_RESULT_SUCCESS;
+}
+
+FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
+    system_module *mod = 0;
+    FS_RESULT result = open_file_global(root, path, descriptor, &mod);
+    if (result != FS_RESULT_SUCCESS) return result;
+    result = instance_local_fd(mod, descriptor);
+    if (result != FS_RESULT_SUCCESS) return result;
+    return result;
 }
 
 size_t read_file(file *descriptor, char* buf, size_t size){
@@ -111,7 +126,16 @@ size_t read_file(file *descriptor, char* buf, size_t size){
         .cursor = start_cursor,
         .data_type = descriptor->data_type
     };
-    size_t amount_read = local.mod->read(&gfd, buf, size, start_cursor);
+    size_t amount_read = 0;
+    if (local.mod->owner != get_kernel_proc()->id){
+        job_make(job_read, local.mod, {
+            job_serialize_fd(&app, 0, &gfd, copy_on_start);
+            job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_end);
+        });
+        return j_ret;
+    } else {
+        amount_read = local.mod->read(&gfd, buf, size, start_cursor);
+    }
     descriptor->cursor = gfd.cursor != start_cursor ? gfd.cursor : start_cursor + amount_read;
     descriptor->size = gfd.size;
     return amount_read;
@@ -136,7 +160,13 @@ void close_file(file *descriptor){
 
 void close_file_global(file *descriptor, system_module *mod){
     if (!mod || !mod->close) return;
-    mod->close(descriptor);
+    if (mod->owner != get_kernel_proc()->id){
+        job_make(job_close, mod, {
+            job_serialize_fd(&app, 0, descriptor, copy_on_start);
+        });
+        return;
+    } else 
+        mod->close(descriptor);
 }
 
 size_t write_file(file *descriptor, const char* buf, size_t size){
@@ -162,7 +192,16 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
         .cursor = start_cursor,
         .data_type = descriptor->data_type
     };
-    size_t amount_written = local.mod->write(&gfd, buf, size, 0);
+    size_t amount_written = 0;
+    if (local.mod->owner != get_kernel_proc()->id){
+        job_make(job_write, local.mod, {
+            job_serialize_fd(&app, 0, &gfd, copy_on_start);
+            job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_start);
+        });
+        return j_ret;
+    } else {
+        amount_written = local.mod->write(&gfd, buf, size, 0);
+    }
     descriptor->cursor = gfd.cursor != start_cursor ? gfd.cursor : start_cursor + amount_written;
     descriptor->size = gfd.size;
     irq = irq_save_disable();
@@ -197,7 +236,7 @@ size_t simple_write(module_root *root, const char *path, const void *buf, size_t
         seek(&fd, fd.size, SEEK_ABSOLUTE);
     }
     size_t res = write_file(&fd, (char*)buf, size);
-    if (append){
+    if (!append){
         truncate(&fd, size);
     }
     close_file(&fd);
@@ -217,7 +256,15 @@ size_t list_directory_contents(module_root *root, const char *path, void* buf, s
         return 0;
     }
     if (!mod->readdir) return 0;
-    return mod->readdir(search_path, buf, size, offset);
+    if (mod->owner != get_kernel_proc()->id){
+        job_make(job_readdir, mod, {
+            job_serialize_str(&app, 0, search_path);
+            job_serialize_buf(&app, 1, true, buf, size, copy_on_end);
+            job_serialize_off(&app, 3, offset);
+        });
+        return j_ret;
+    } else
+        return mod->readdir(search_path, buf, size, offset);
 }
 
 bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
@@ -233,6 +280,13 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
         return false;
     }
     if (!mod->getstat) return false;
+    if (mod->owner != get_kernel_proc()->id){
+        job_make(job_stat, mod, {
+            job_serialize_str(&app, 0, search_path);
+            job_serialize_stat(&app, 1, out_stat);
+        })
+        return j_ret;
+    }
     return mod->getstat(search_path, out_stat);
 }
 
@@ -251,12 +305,17 @@ bool truncate(file *descriptor, size_t size){
 
     file gfd = (file){
         .id = local.mfile_id,
-        .size = descriptor->size,
+        .size = size,
         .cursor = descriptor->cursor,
         .data_type = descriptor->data_type
     };
-    
-    if (!local.mod->truncate(&gfd, size)) return false;
+
+    if (local.mod->owner != get_kernel_proc()->id){
+        job_make(job_trunc, local.mod, {
+            job_serialize_fd(&app, 0, &gfd, copy_on_start);
+        });
+        return j_ret;
+    } else if (!local.mod->truncate(&gfd)) return false;
 
     descriptor->size = gfd.size;
     descriptor->cursor = gfd.cursor;
@@ -292,5 +351,5 @@ void close_files_for_process(uint16_t pid){
             close_file(&fd);
         }
     }
-    close_pipes_for_process(pid);
+    close_pipes_for_process(pid);//TODO: pipes need to be cleaned. They're not being used
 }

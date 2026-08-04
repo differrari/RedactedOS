@@ -1,8 +1,3 @@
-#Find the simplemake
-    #Iterate through each line
-        #gcc -I../../shared -c file.c -o file.o ../../shared/libshared.a
-    #Iterate through each line with .o and run
-        #ar rcs (folder).a *.o 
 
 BASE_FLAGS := -I. -I../../shared
 
@@ -26,11 +21,8 @@ all: prepare $(TARGET)
 
 prepare:
 	mkdir -p $(BUILD_DIR)
-	@echo "C Sources $(C_SRC)"
 
 $(TARGET): $(OBJ)
-	@echo "Finishing build $(ARCH)"
-	@echo $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ)))
 	$(VAR) rcs $@ $(OBJ)
 
 $(BUILD_DIR)/%.o: %.c

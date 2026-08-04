@@ -12,6 +12,7 @@
 #include "utils/clipboard.h"
 #include "math/math.h"
 #include "draw/textdraw.h"
+#include "environment/env_types.h"
 
 draw_ctx ctx = {};
 
@@ -186,8 +187,9 @@ int copypaste(){
 bool should_quit = false;
 
 bool on_quit(signal_info_t *do_not_use_this){
-    print("I'm told to quit");
+    msleep(3000);
     should_quit = true;
+    // while (true) printl("I'm told to quit");
     return true;
 }
 
@@ -202,6 +204,15 @@ struct { char* name; int (*fn)(); } demos[] = {
 };
 
 int main(int argc, char* argv[]){
+    
+    handle_signal(SIG_QUIT, on_quit);
+    // send_signal(SIG_QUIT, 7);//TODO: get own procid?
+
+    window_info_t info = {
+        .name = "Demo program",
+        .name_length = 12
+    };
+    env_set_window_info(&info);
 
     request_draw_ctx(&ctx);
 
@@ -225,20 +236,27 @@ int main(int argc, char* argv[]){
         string f = string_format("[%i]: %s\n",i+1, demos[i].name);
         range.size = f.length;
         fb_continuous_draw_text(&ctx, draw_text_render, &cursor, slice_from_string(f), &range, rect, &size, (gpu_point){}, text_fmt, (text_format_arr){ });
-        print("%i,%i - %i,%i",range.start,range.size,cursor.x,cursor.y);
         string_free(f);
     }
 
     while (true) {
         commit_draw_ctx(&ctx);
+        if (should_quit) {
+            print("SIG QUIT");
+            halt(0);
+        }
         kbd_event ev = {};
         if (read_event(&ev)){
             if (ev.type == KEY_PRESS){
                 if (ev.key >= KEY_1 && ev.key <= (KEY_1 + count - 1)){
                     int index = ev.key - KEY_1;
-                    if (index >= 0 && index < count)
+                    if (index >= 0 && index < count){
+                        fb_clear(&ctx, 0);
+                        commit_draw_ctx(&ctx);
                         return demos[index].fn();
+                    }
                 }
+                if (ev.key == KEY_ESC) halt(0);
             }
         }
     }

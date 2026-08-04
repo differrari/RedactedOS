@@ -121,6 +121,7 @@ system_module graphics_module = {
     .name = "graphics",
     .mount = "graph",
     .version = VERSION_NUM(0, 1, 0, 0),
+    .owner = 0,
     .init = gpu_init,
     .fini = 0,
     .open = 0,

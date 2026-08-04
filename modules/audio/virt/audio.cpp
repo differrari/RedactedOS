@@ -304,6 +304,7 @@ system_module audio_module = (system_module){
     .name = "audio",
     .mount = "audio",
     .version = VERSION_NUM(0, 1, 0, 1),
+    .owner = 0,
     .init = init_audio,
     .fini = 0,
     .open = audio_open,

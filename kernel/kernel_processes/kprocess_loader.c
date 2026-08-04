@@ -9,9 +9,14 @@
 #include "memory/memory.h"
 #include "process/isolated_fs/isolated_fs.h"
 
-__attribute__((noreturn)) static void kernel_process_return_trampoline(int32_t exit_code) {
+void kernel_thread_return_trampoline(int32_t exit_code){
+    switch_proc(YIELD);//TODO: proper cleanup
+    while (true){}
+}
+
+void kernel_process_return_trampoline(int32_t exit_code) {
     stop_current_process(exit_code);
-    while (1) {}
+    while (true) {}
 }
 
 process_t *create_kernel_process(const char *name, int (*func)(int argc, char* argv[]), int argc, const char* argv[]){
@@ -33,38 +38,17 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
 
     name_process(proc, name);
 
-    uint64_t stack_size = 0x10000;
-
-    uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_KERNEL, MEM_RW, true);
-    if (!stack) {
-        reset_process(proc);
-        irq_restore(irq);
-        return 0;
-    }
-    register_allocation(proc->alloc_map, (void*)stack, stack_size);
-
     uintptr_t heap = (uintptr_t)palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
     if (!heap) {
-        free_registered(proc->alloc_map, (void*)stack);
         reset_process(proc);
         irq_restore(irq);
         return 0;
     }
     register_allocation(proc->alloc_map, (void*)dmap_pa_to_kva(heap), PAGE_SIZE);
 
-    proc->stack = (stack + stack_size);
-    proc->stack_size = stack_size;
-
     proc->heap_phys = heap;
-
-    proc->sp = proc->stack;
     
-    proc->pc = ((uintptr_t)func);
-    proc->regs[30] = ((uintptr_t)kernel_process_return_trampoline);
-    proc->spsr = 0x205;
-
-    proc->PROC_X0 = 0;
-    proc->PROC_X1 = 0;
+    new_thread(proc, &proc->main_thread, 0x205, (uptr)func);
 
     if (argc > 0 && argv) {
 
@@ -79,9 +63,9 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
         uint64_t need = argvs + str_total;
         need = (need + 0xF) & ~0xFULL;
 
-        if (need + 0x20 < stack_size) {
+        if (need + 0x20 < proc->main_thread.stack_info.size) {
 
-            uintptr_t top = proc->stack;
+            uintptr_t top = proc->main_thread.stack_info.top;
             uintptr_t base = (top - need) & ~0xFULL;
 
             char **kargv = (char**)base;
@@ -105,16 +89,16 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
 
             kargv[argc] = 0;
 
-            proc->sp = base;
-            proc->PROC_X0 = argc;
-            proc->PROC_X1 = (uintptr_t)kargv;
+            proc->main_thread.sp = base;
+            proc->main_thread.PROC_X0 = argc;
+            proc->main_thread.PROC_X1 = (uintptr_t)kargv;
         }
     }
 
     make_process_fs(proc, 0);
 
     ready_process(proc);
-    kprintf("Kernel process %s (%i) allocated with address at %llx, stack at %llx-%llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->pc, proc->sp - proc->stack_size, proc->sp, (uaddr_t)dmap_pa_to_kva(proc->heap_phys), argc);
+    kprintf("[NEW PROC:K] process %s (pid: %i main tid: %i) allocated with address at %llx, stack at %llx-%llx, heap at %llx. %i argument(s)", (uintptr_t)name, proc->id, proc->main_thread.tid, proc->main_thread.pc, proc->main_thread.sp - proc->main_thread.stack_info.size, proc->main_thread.sp, (uaddr_t)dmap_pa_to_kva(proc->heap_phys), argc);
     irq_restore(irq);
     
     return proc;

@@ -13,6 +13,5 @@ static inline bool load_util_mods(){
         load_module(&clipboard_mod) && 
         load_module(&language_mod) &&
         load_module(&rng_module) &&
-        load_module(&termhistory_mod) &&
     true;
 }

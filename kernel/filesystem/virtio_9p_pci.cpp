@@ -224,11 +224,11 @@ size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, u
     return amount;
 }
 
-bool Virtio9PDriver::truncate(file *descriptor, size_t size){
+bool Virtio9PDriver::truncate(file *descriptor){
     module_file *mfile  = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) return false;
     if (mfile->read_only) return false;
-    if (!set_attribute((u32)mfile->serial, P9_SETATTR_SIZE, size)) return false;
+    if (!set_attribute((u32)mfile->serial, P9_SETATTR_SIZE, descriptor->size)) return false;
     if (!sync_file(mfile)) return false;
     descriptor->size = mfile->file_size;
     if (descriptor->cursor > descriptor->size) descriptor->cursor = descriptor->size;
@@ -588,14 +588,15 @@ void shared_close(file *descriptor){
     p9Driver->close_file(descriptor);
 }
 
-bool shared_truncate(file *descriptor, size_t size){
-    return p9Driver->truncate(descriptor, size);
+bool shared_truncate(file *descriptor){
+    return p9Driver->truncate(descriptor);
 }
 
 system_module p9_fs_module = (system_module){
     .name = "9PFS",
     .mount = "home",
     .version = VERSION_NUM(0, 1, 0, 0),
+    .owner = 0,
     .init = shared_init,
     .fini = shared_fini,
     .open = shared_open,

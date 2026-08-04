@@ -31,6 +31,7 @@ system_theme_t system_theme = {
     .cursor_color_deselected = CURSOR_COLOR_DESELECTED,
     .cursor_color_selected = CURSOR_COLOR_SELECTED,
     .use_window_shadows = true,
+    .use_desktop_zoom = true,
 };
 
 system_config_t system_config = {
@@ -39,7 +40,7 @@ system_config_t system_config = {
     .system_name = SYSTEM_NAME,
     .app_directory = "boot",
     .use_net = false,
-    .preferred_screen_size = {1920,1080},
+    .preferred_screen_size = { 1920,1080 },
     .headless = false,
     .use_login = false,
     .use_windows = true,
@@ -103,6 +104,7 @@ void parse_theme_kvp(string_slice key, string_slice value, void *context){
     parse_toml(cursor_color_deselected, system_theme, parse_hex_u64);
     parse_toml(cursor_color_selected,   system_theme, parse_hex_u64);
     parse_toml(use_window_shadows,      system_theme, parse_int_u64);
+    parse_toml(use_desktop_zoom,        system_theme, parse_int_u64);
     
     parse_toml_str(panic_text,  system_config);
     parse_toml_str(system_name, system_config);
@@ -158,8 +160,11 @@ bool load_theme(){
     return true;
 }
 
+extern void refresh_desktop_colors();
+
 size_t reload(file* fd, const char *buf, size_t size, file_offset offset){
     load_theme();
+    refresh_desktop_colors();
     return 0;
 }
 

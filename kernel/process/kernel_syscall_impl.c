@@ -125,7 +125,7 @@ int32_t socket_close(SocketHandle *handle){
 FS_RESULT openf(const char* path, file* descriptor){
     module_root rootfs = {}; 
     string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs, true);
-    if (!s.data || !s.length) return open_file(kernel_fs(), path, descriptor);;
+    if (!s.data || !s.length) return open_file(kernel_fs(), path, descriptor);
     FS_RESULT res = open_file(&rootfs, s.data, descriptor);
     string_free(s);
     return res;
@@ -171,7 +171,7 @@ size_t dir_list(const char *path, void *buf, size_t size, u64 *offset){
     if (!s.data || !s.length || strncmp(s.data,"/",s.length) == 0){
         size_t ret = 0;
         fs_dir_list_helper helper = create_dir_list_helper(buf, size);
-        if (rootfs.buckets != kernel_fs()->buckets){
+        if (rootfs.map->buckets != kernel_fs()->map->buckets){
             ret += list_root_from(&rootfs, &helper, offset);
         } 
         if (ret >= size) return ret;

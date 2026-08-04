@@ -3,6 +3,7 @@
 #include "types.h"
 #include "process/process.h"
 #include "files/system_module.h"
+#include "procfs.h"
 
 typedef enum {
     INTERRUPT,
@@ -27,7 +28,9 @@ void save_return_address_interrupt();
 void init_main_process();
 process_t* init_process();
 void ready_process(process_t *proc);
+void ready_thread(thread_t *t);
 void save_syscall_return(uint64_t value);
+void prepare_process_restore(process_t *proc);
 void process_restore();
 
 void stop_process(uint16_t pid, int32_t exit_code);
@@ -39,15 +42,15 @@ void resume_blocked_process(process_t *proc);
 
 void name_process(process_t *proc, const char *name);
 
-void sleep_process(uint64_t msec);
+void sleep_thread(uint64_t msec);
 void wake_processes();
-void wake_process(process_t *proc);
 
-bool load_process_module(process_t *p, system_module *m);
+bool load_process_module(process_t *p, system_module *m, bool global);
 
 process_t* get_current_proc();
 process_t* get_kernel_proc();
 process_t* get_idle_proc();
+thread_t* get_current_thread();
 bool scheduler_in_idle();
 process_t* get_proc_by_pid(uint16_t pid);
 uint16_t get_current_proc_pid();
@@ -61,6 +64,12 @@ bool get_current_privilege();
 uint16_t process_count();
 process_t *get_all_processes();
 
-extern system_module scheduler_module;
+thread_t* alloc_thread();
+thread_t* new_thread(process_t *proc, thread_t *addr, u64 spsr, uptr entry_point);
+void schedule_thread(process_t *proc, thread_t *t);
+
+thread_t* get_thread_from_proc(process_t *proc, u16 tid);
+
+bool init_scheduler();
 
 extern char ksp[];
