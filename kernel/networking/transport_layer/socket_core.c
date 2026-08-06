@@ -210,68 +210,89 @@ int32_t socket_common_options_set(SocketOptions* opts, int32_t opt, const void* 
         memcpy(&v, value, sizeof(v));
     } else if (len || (opt != SOCK_OPT_DONTFRAG && opt != SOCK_OPT_BROADCAST_ALLOWED)) return SOCK_ERR_INVAL;
 
+    int32_t rc = SOCK_OK;
+    irq_flags_t irq = irq_save_disable();
     switch ((uint32_t)opt) {
         case SOCK_OPT_RECV_TIMEOUT:
             opts->recv_timeout_ms = v;
             if (v) opts->flags |= SOCK_OPT_RECV_TIMEOUT;
             else opts->flags &= ~SOCK_OPT_RECV_TIMEOUT;
-            return SOCK_OK;
+            break;
         case SOCK_OPT_SEND_TIMEOUT:
             opts->send_timeout_ms = v;
             if (v) opts->flags |= SOCK_OPT_SEND_TIMEOUT;
             else opts->flags &= ~SOCK_OPT_SEND_TIMEOUT;
-            return SOCK_OK;
+            break;
         case SOCK_OPT_BUF_SIZE:
-            if (!v) return SOCK_ERR_INVAL;
-            opts->buf_size = v;
-            opts->flags |= SOCK_OPT_BUF_SIZE;
-            return SOCK_OK;
+            if (!v) rc = SOCK_ERR_INVAL;
+            else {
+                opts->buf_size = v;
+                opts->flags |= SOCK_OPT_BUF_SIZE;
+            }
+            break;
         case SOCK_OPT_DEBUG:
-            if (v > SOCK_DBG_ALL) return SOCK_ERR_INVAL;
-            opts->debug_level = (SockDebugLevel)v;
-            if (v) opts->flags |= SOCK_OPT_DEBUG;
-            else opts->flags &= ~SOCK_OPT_DEBUG;
-            return SOCK_OK;
+            if (v > SOCK_DBG_ALL) rc = SOCK_ERR_INVAL;
+            else {
+                opts->debug_level = (SockDebugLevel)v;
+                if (v) opts->flags |= SOCK_OPT_DEBUG;
+                else opts->flags &= ~SOCK_OPT_DEBUG;
+            }
+            break;
         case SOCK_OPT_DONTFRAG:
             if (v) opts->flags |= SOCK_OPT_DONTFRAG;
             else opts->flags &= ~SOCK_OPT_DONTFRAG;
-            return SOCK_OK;
+            break;
         case SOCK_OPT_BROADCAST_ALLOWED:
             if (v) opts->flags |= SOCK_OPT_BROADCAST_ALLOWED;
             else opts->flags &= ~SOCK_OPT_BROADCAST_ALLOWED;
-            return SOCK_OK;
+            break;
         case SOCK_OPT_NONBLOCK:
             if (v) opts->flags |= SOCK_OPT_NONBLOCK;
             else opts->flags &= ~SOCK_OPT_NONBLOCK;
-            return SOCK_OK;
+            break;
 
         case SOCK_OPT_DONTROUTE:
             if (v) opts->flags |= SOCK_OPT_DONTROUTE;
             else opts->flags &= ~SOCK_OPT_DONTROUTE;
-            return SOCK_OK;
+            break;
         case SOCK_OPT_REUSEADDR:
             if (v) opts->flags |= SOCK_OPT_REUSEADDR;
             else opts->flags &= ~SOCK_OPT_REUSEADDR;
-            return SOCK_OK;
+            break;
         case SOCK_OPT_REUSEPORT:
             if (v) opts->flags |= SOCK_OPT_REUSEPORT;
             else opts->flags &= ~SOCK_OPT_REUSEPORT;
-            return SOCK_OK;
+            break;
+        case SOCK_OPT_TCP_SACK:
+            if (v) opts->flags |= SOCK_OPT_TCP_SACK;
+            else opts->flags &= ~(SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK);
+            break;
+        case SOCK_OPT_TCP_DSACK:
+            if (v) opts->flags |= SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK;
+            else opts->flags &= ~SOCK_OPT_TCP_DSACK;
+            break;
         case SOCK_OPT_TTL:
-            if (v > 255) return SOCK_ERR_INVAL;
-            opts->ttl = (uint8_t)v;
-            if (v) opts->flags |= SOCK_OPT_TTL;
-            else opts->flags &= ~SOCK_OPT_TTL;
-            return SOCK_OK;
+            if (v > 255) rc = SOCK_ERR_INVAL;
+            else {
+                opts->ttl = (uint8_t)v;
+                if (v) opts->flags |= SOCK_OPT_TTL;
+                else opts->flags &= ~SOCK_OPT_TTL;
+            }
+            break;
         default:
-            return SOCK_ERR_INVAL;
+            rc = SOCK_ERR_INVAL;
+            break;
     }
+    irq_restore(irq);
+    return rc;
 }
 
 int32_t socket_common_options_get(const SocketOptions* opts, int32_t opt, void* value, uint32_t* len) {
     if (!opts || !len) return SOCK_ERR_INVAL;
 
     uint32_t v = 0;
+    int32_t rc = SOCK_OK;
+    irq_flags_t irq = irq_save_disable();
     switch ((uint32_t)opt) {
         case SOCK_GET_OPT_RECV_TIMEOUT:
             v = opts->recv_timeout_ms;
@@ -303,13 +324,22 @@ int32_t socket_common_options_get(const SocketOptions* opts, int32_t opt, void* 
         case SOCK_GET_OPT_REUSEPORT:
             v = (opts->flags & SOCK_OPT_REUSEPORT) != 0;
             break;
+        case SOCK_GET_OPT_TCP_SACK:
+            v = (opts->flags & SOCK_OPT_TCP_SACK) != 0;
+            break;
+        case SOCK_GET_OPT_TCP_DSACK:
+            v = (opts->flags & SOCK_OPT_TCP_DSACK) != 0;
+            break;
         case SOCK_GET_OPT_TTL:
             v = opts->ttl;
             break;
         default:
-            return SOCK_ERR_INVAL;
+            rc = SOCK_ERR_INVAL;
+            break;
     }
+    irq_restore(irq);
 
+    if (rc != SOCK_OK) return rc;
     return socket_common_get_value(&v, sizeof(v), value, len);
 }
 

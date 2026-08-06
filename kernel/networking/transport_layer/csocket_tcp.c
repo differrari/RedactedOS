@@ -114,7 +114,7 @@ static int32_t tcp_socket_connection_state(tcp_socket_t* s) {
 socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
 
-    uint32_t supported = SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_SEND_BUF_SIZE | SOCK_OPT_TCP_NO_DELAY | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE | SOCK_OPT_REUSEADDR | SOCK_OPT_TCP_MAXSEG | SOCK_OPT_LINGER;
+    uint32_t supported = SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_SEND_BUF_SIZE | SOCK_OPT_TCP_NO_DELAY | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE | SOCK_OPT_REUSEADDR | SOCK_OPT_TCP_MAXSEG | SOCK_OPT_LINGER | SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK;
     if (extra) {
         if (extra->flags & ~supported) return NULL;
         if ((extra->flags & SOCK_OPT_DEBUG) && extra->debug_level > SOCK_DBG_ALL) return NULL;
@@ -130,6 +130,7 @@ socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketOptions* extra) {
     s->remoteEP.ver = IP_VER4;
     s->bindSpec.kind = BIND_ANY;
     if (extra) s->options = *extra;
+    s->options.flags |= SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK;
     if (!(s->options.flags & SOCK_OPT_BUF_SIZE)) {
         s->options.flags |= SOCK_OPT_BUF_SIZE;
         s->options.buf_size = TCP_DEFAULT_SOCKET_BUF;
@@ -147,6 +148,7 @@ socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketOptions* extra) {
         s->options.flags &= ~SOCK_OPT_LINGER;
         memset(&s->options.linger, 0, sizeof(s->options.linger));
     } else s->options.linger.enabled = 1;
+    if (s->options.flags & SOCK_OPT_TCP_DSACK) s->options.flags |= SOCK_OPT_TCP_SACK;
     return s;
 }
 
@@ -205,6 +207,10 @@ int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint
         }
         case SOCK_OPT_NONBLOCK:
             return socket_common_options_set(&s->options, opt, value, len);
+        case SOCK_OPT_TCP_SACK:
+        case SOCK_OPT_TCP_DSACK:
+            if (s->flow.flow_generation || s->listening) return SOCK_ERR_STATE;
+            return socket_common_options_set(&s->options, opt, value, len);
         case SOCK_OPT_TCP_MAXSEG: {
             if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
             uint32_t v = 0;
@@ -230,7 +236,6 @@ int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint
             }
             return SOCK_OK;
         }
-        case SOCK_OPT_TCP_SACK:
         case SOCK_OPT_REUSEPORT:
         case SOCK_OPT_MCAST_JOIN:
         case SOCK_OPT_MCAST_LEAVE:
@@ -365,7 +370,6 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_TCP_MAXSEG:
             v = s->options.tcp_maxseg;
             break;
-        case SOCK_GET_OPT_TCP_SACK:
         case SOCK_GET_OPT_REUSEPORT:
         case SOCK_GET_MCAST_GROUPS:
         case SOCK_GET_OPT_BROADCAST_ALLOWED:
@@ -380,6 +384,8 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_NONBLOCK:
         case SOCK_GET_OPT_DONTROUTE:
         case SOCK_GET_OPT_REUSEADDR:
+        case SOCK_GET_OPT_TCP_SACK:
+        case SOCK_GET_OPT_TCP_DSACK:
             return socket_common_options_get(&s->options, opt, value, len);
         default:
             return SOCK_ERR_INVAL;

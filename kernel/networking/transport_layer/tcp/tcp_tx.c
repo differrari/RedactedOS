@@ -309,11 +309,17 @@ bool tcp_send_ack_now(tcp_flow_t *flow){
     uint8_t opts[64];
     uint8_t opts_len = 0;
 
-    if (flow->tx.sack_ok && flow->rx.reass_count > 0) {
+    if (flow->tx.sack_ok && (flow->rx.reass_count > 0 || (flow->tx.dsack_enabled && flow->rx.dsack_pending))) {
         tcp_sack_block_t blocks[TCP_SACK_MAX_BLOCKS];
         uint32_t n = 0;
 
-        if (flow->rx.sack_recent_right > flow->rx.sack_recent_left) {
+        if (flow->tx.dsack_enabled && flow->rx.dsack_pending && TCP_SEQ_GT(flow->rx.dsack_right, flow->rx.dsack_left)) {
+            blocks[n].left = flow->rx.dsack_left;
+            blocks[n].right = flow->rx.dsack_right;
+            n++;
+        }
+
+        if (n < TCP_SACK_MAX_BLOCKS && TCP_SEQ_GT(flow->rx.sack_recent_right, flow->rx.sack_recent_left)) {
             for (uint32_t i = 0; i < flow->rx.reass_count; i++) {
                 if (TCP_SEQ_GT(flow->rx.reass[i].seq, flow->rx.sack_recent_left)) continue;
                 if (TCP_SEQ_LT(flow->rx.reass[i].end, flow->rx.sack_recent_right)) continue;
@@ -372,6 +378,10 @@ bool tcp_send_ack_now(tcp_flow_t *flow){
         tcp_daemon_kick();
         return false;
     }
+
+    flow->rx.dsack_pending = 0;
+    flow->rx.dsack_left = 0;
+    flow->rx.dsack_right = 0;
     flow->timer.delayed_ack_pending = 0;
     flow->timer.delayed_ack_timer_ms = 0;
     return true;

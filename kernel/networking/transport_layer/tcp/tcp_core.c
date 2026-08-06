@@ -166,6 +166,7 @@ tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx) {
 void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32_t apply_mask) {
     if (!flow) return;
     SocketOptions defaults = {0};
+    defaults.flags = SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK;
     if (!extra) extra = &defaults;
     uint32_t flags = extra->flags;
 
@@ -190,6 +191,20 @@ void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32
     if (apply_mask & SOCK_OPT_TCP_MAXSEG) {
         flow->tx.configured_mss = (flags & SOCK_OPT_TCP_MAXSEG) && extra->tcp_maxseg ? extra->tcp_maxseg : 0;
         tcp_update_mss(flow);
+    }
+
+    if (apply_mask & (SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK)) {
+        flow->tx.sack_enabled = (flags & SOCK_OPT_TCP_SACK) ? 1 : 0;
+        flow->tx.dsack_enabled = flow->tx.sack_enabled && (flags & SOCK_OPT_TCP_DSACK) ? 1 : 0;
+        if (!flow->tx.sack_enabled) {
+            flow->tx.sack_ok = 0;
+            flow->tx.sack_range_count = 0;
+            flow->tx.sack_retransmitted_count = 0;
+            flow->tx.sack_rescue_sent = 0;
+            flow->rx.dsack_pending = 0;
+            flow->rx.dsack_left = 0;
+            flow->rx.dsack_right = 0;
+        }
     }
 
     if (apply_mask & SOCK_OPT_TTL) flow->ip.ttl = (flags & SOCK_OPT_TTL) ? extra->ttl : 0;
@@ -333,6 +348,8 @@ tcp_flow_t *tcp_alloc_flow(void){
     f->tx.peer_mss = 0;
     f->tx.advertised_mss = TCP_DEFAULT_MSS;
     f->tx.mss = TCP_DEFAULT_MSS;
+    f->tx.sack_enabled = 1;
+    f->tx.dsack_enabled = 1;
     f->tx.cwnd = f->tx.mss * TCP_INIT_CWND_SEGS;
     f->tx.ssthresh = TCP_RECV_WINDOW;
     return f;
@@ -592,7 +609,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
         flow->tx.ws_recv = 0;
         flow->tx.ws_ok = 0;
     }
-    flow->tx.sack_ok = 1;
+    flow->tx.sack_ok = flow->tx.sack_enabled;
     flow->rx.rcv_buf = (uintptr_t)zalloc(flow->rx.rcv_wnd_max);
     if (!flow->rx.rcv_buf) {
         flow->rx.rcv_wnd = 0;

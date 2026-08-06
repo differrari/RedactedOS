@@ -33,6 +33,12 @@ extern "C" {
 #define TCP_NAGLE_FLUSH_THRESHOLD TCP_DEFAULT_MSS
 #define TCP_NAGLE_TIMEOUT_MS 10
 #define TCP_CONNECT_TIMEOUT_MS 10000
+#define TCP_SACK_SCOREBOARD_MAX 32
+
+typedef struct {
+    uint32_t left;
+    uint32_t right;
+} tcp_sack_range_t;
 
 typedef struct {
     uint8_t used;
@@ -41,8 +47,6 @@ typedef struct {
     uint8_t rtt_sample;
     uint8_t retransmit_cnt;
     uint8_t opts_len;
-    uint8_t sacked;
-    uint8_t sack_retransmitted;
     uint8_t opts[40];
     uint32_t seq;
     uint32_t len;
@@ -96,7 +100,15 @@ typedef struct {
     uint8_t in_fast_recovery;
     uint32_t recover;
     uint32_t cwnd_acc;
+    
     uint32_t configured_mss;
+    uint8_t sack_enabled;
+    uint8_t dsack_enabled;
+    tcp_sack_range_t sack_ranges[TCP_SACK_SCOREBOARD_MAX];
+    tcp_sack_range_t sack_retransmitted_ranges[TCP_SACK_SCOREBOARD_MAX];
+    uint8_t sack_range_count;
+    uint8_t sack_retransmitted_count;
+    uint8_t sack_rescue_sent;
 
     uint8_t nagle_flushing;
     uint8_t nagle_appending;
@@ -121,6 +133,9 @@ typedef struct {
     uint32_t rcv_ooo_used;
     uint32_t sack_recent_left;
     uint32_t sack_recent_right;
+    uint8_t dsack_pending;
+    uint32_t dsack_left;
+    uint32_t dsack_right;
     uint32_t rcv_wnd;
     uint32_t rcv_wnd_max;
     uint32_t rcv_adv_edge;
