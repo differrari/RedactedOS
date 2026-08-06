@@ -47,6 +47,18 @@ bool custom_stat(const char *path, fs_stat *out_stat){
     return vfs_stat(path, out_stat);
 }
 
+FS_RESULT custom_open(const char *path, file *fd){
+    FS_RESULT res = vfs_open(path, fd);
+    print("Opened fd inside module with %i",fd->id);
+    return res;
+}
+
+size_t custom_read(file *fd, char *buf, size_t size, file_offset off){
+    size_t res = vfs_read(fd, buf, size, off);
+    print("Result on fid %i size %i",fd->id,size);
+    return res;
+}
+
 system_module apps_mod = {
     .name = "apps folder",
     .mount = "apps",

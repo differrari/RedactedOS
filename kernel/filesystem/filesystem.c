@@ -60,6 +60,7 @@ FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor
             job_serialize_str(&app, 0, search_path);
             job_serialize_fd(&app, 1, descriptor, copy_on_end);
         });
+        *out_mod = mod;
         return j_ret;
     } else {
         result = mod->open(search_path, descriptor);

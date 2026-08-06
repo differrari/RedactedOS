@@ -99,7 +99,8 @@ u64 create_new_job(job_application_t application, system_module *mod, thread_t *
     job->type = application.type;
     job->mod = mod;
     thread_t *requester = (thread_t*)get_thread_from_proc(requesting_proc, application.requesting_tid);
-    if (job_ksp != (uptr)ksp) requester->kstack_top = job_ksp;
+    if (job_kstack.ptr)
+        requester->kstack_top = job_kstack.ptr+job_kstack.size;
     job->requester = requester;
     process_t *fs_owner = get_proc_by_pid(application.worker_pid);
     thread_t *new_t = alloc_thread();
@@ -162,17 +163,13 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     for (size_t i = 0; i < st->buffer_count; i++){
         job_buffer buf = st->buffers[i];
         if (buf.sync & copy_on_end && buf.worker_ptr.ptr){
-            print("[JOB debug] Copy buffer %x into %x",buf.worker_ptr.ptr,buf.orig_ptr.ptr);
+            print("[JOB debug] Copy buffer %x into %llx",buf.worker_ptr.ptr,buf.orig_ptr.ptr);
             void* addr = quick_translate(st->requester, proc, buf.orig_ptr.ptr);
-            if (!addr) continue;
-            memcpy(addr, (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
-            file *fd = addr;
-            if (buf.fd){
-                print("[JOB DEBUG] fd %i size %i signature %s",fd->id,fd->size,&fd->data_type);
-                if (st->type == job_open){
-                    instance_local_fd(st->mod, addr);
-                }
+            if (!addr){
+                if (buf.orig_ptr.ptr & HIGH_VA) addr = (void*)buf.orig_ptr.ptr;//TODO: extra safety checks? 
+                else continue;
             }
+            memcpy(addr, (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
         }
     }
     print("[JOB] %i fulfilled by %i with return value %llx",job_id,thread->tid);

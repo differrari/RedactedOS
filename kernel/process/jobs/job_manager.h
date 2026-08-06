@@ -14,11 +14,9 @@ extern void save_kstack();
     thread_t kthread = {};\
     job_kstack = (sizedptr){};\
     job_kpec = (uptr)&kthread;\
-    if (!job_ksp) job_ksp = (uptr)ksp;\
+    job_ksp = get_current_thread()->kstack_top ?: (uptr)ksp;\
     job_save_kernel();\
-    print("KStack save to %llx",job_ksp);\
     save_kstack();\
-    print("KStack saved to %llx of size %llx from %llx",job_kstack.ptr,job_kstack.size,ksp);\
     process_t *owner_proc = get_proc_by_pid(mod->owner);\
     job_application_t app = (job_application_t){\
         .requesting_pid = get_current_proc()->id,\

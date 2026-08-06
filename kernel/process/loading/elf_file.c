@@ -206,8 +206,10 @@ process_t* load_elf_process_path(const char *name, const char *bundle, const cha
         close_file(&fd);
         return 0;
     }
+
+    size_t amt = read_file(&fd, program, fd.size);
+    bool ok = amt == fd.size;
     
-    bool ok = read_file(&fd, program, fd.size) == fd.size;
     close_file(&fd);
     if (!ok) {
         release(program);
