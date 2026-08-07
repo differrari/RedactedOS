@@ -145,10 +145,6 @@ void* quick_translate(thread_t *thread, process_t *proc, uptr ptr){
 
 extern uptr cpec;
 
-static inline uptr translate_stack(uptr new_top, uptr ptr){
-    return new_top-((uptr)ksp-ptr);
-}
-
 void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     job_state_t *st = get_job_state(job_id);
     if (!st) {
@@ -163,7 +159,7 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     for (size_t i = 0; i < st->buffer_count; i++){
         job_buffer buf = st->buffers[i];
         if (buf.sync & copy_on_end && buf.worker_ptr.ptr){
-            print("[JOB debug] Copy buffer %x into %llx",buf.worker_ptr.ptr,buf.orig_ptr.ptr);
+            print("[JOB debug] Copy buffer %llx into %llx",buf.worker_ptr.ptr,buf.orig_ptr.ptr);
             void* addr = quick_translate(st->requester, proc, buf.orig_ptr.ptr);
             if (!addr){
                 if (buf.orig_ptr.ptr & HIGH_VA) addr = (void*)buf.orig_ptr.ptr;//TODO: extra safety checks? 

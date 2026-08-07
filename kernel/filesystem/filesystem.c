@@ -57,6 +57,7 @@ FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor
     FS_RESULT result = FS_RESULT_DRIVER_ERROR;
     if (mod->owner != get_kernel_proc()->id){
         job_make(job_open, mod, {
+            //TODO: here, out_mod is in the stack, and we're referencing it through a pointer, which we of course lose as we move the stack the first time.
             job_serialize_str(&app, 0, search_path);
             job_serialize_fd(&app, 1, descriptor, copy_on_end);
         });
