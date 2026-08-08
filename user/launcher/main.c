@@ -6,7 +6,7 @@
 #include "memory/memory.h"
 #include "input_keycodes.h"
 #include "string/slice.h"
-#include "package_info.h"
+#include "utils/package_info.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3

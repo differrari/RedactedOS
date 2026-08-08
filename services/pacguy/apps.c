@@ -1,5 +1,9 @@
 #include "files/vfs.h"
 #include "files/helpers.h"
+#include "utils/package_info.h"
+#include "data/format/toml.h"
+
+int manual_entries = 0;
 
 void handle_entry(const char *directory, const char *file) {
     if (strlen(file) && *file == '.') return;
@@ -14,6 +18,31 @@ void handle_entry(const char *directory, const char *file) {
     } else string_free(fullpath);
 }
 
+size_t resolve_fs(const char *path, void* buf, size_t size){
+    char *prompt = buf;
+    (void)prompt;
+    size_t count = stack_count(entries);
+    for (u32 i = manual_entries; i < count; i++){
+        module_file *file = chunk_array_get(entries, i);
+        if (file->alias_info.alias_path.data){
+            string s = string_format("%S/package.info",file->alias_info.alias_path);
+            char *package = read_full_file(s.data, 0);
+            package_info pkg_info = parse_package_info(package);
+            if (slice_lit_match(slice_from_string(pkg_info.id), prompt, true)){
+                if (size < file->alias_info.alias_path.length) {
+                    package_info_dispose(&pkg_info);
+                    return 0;
+                }
+                memcpy(buf, file->alias_info.alias_path.data, file->alias_info.alias_path.length);
+                package_info_dispose(&pkg_info);
+                return file->alias_info.alias_path.length;
+            } else package_info_dispose(&pkg_info);
+            release(package);
+        }
+    }
+    return 0;
+}
+
 void refresh_apps(){
     if (!entries) entries = stack_create(sizeof(module_file),32);
     size_t count = stack_count(entries);
@@ -22,6 +51,7 @@ void refresh_apps(){
         string_free(STACK_GET(module_file, entries, i).alias_info.alias_path);
     }
     stack_reset(entries);
+    manual_entries += make_complex_entry("resolve", backing_virtual, entry_file, 0, (file_actions){.transform = resolve_fs}, (string){});
     traverse_directory("/home/applications", false, handle_entry);
     traverse_directory("/boot/redos/system", false, handle_entry);
 }
@@ -36,4 +66,5 @@ system_module apps_mod = {
     .write = vfs_write,
     .getstat = vfs_stat,
     .readdir = vfs_readdir,
+    .transform = vfs_trace_transform,
 };

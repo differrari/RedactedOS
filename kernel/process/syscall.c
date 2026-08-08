@@ -379,6 +379,22 @@ u64 syscall_writef(process_t *ctx, thread_t *current_thread){
     return write_file(descriptor, buf, size);
 }
 
+u64 syscall_transf(process_t *ctx, thread_t *current_thread){
+    SYSCALL_STR(path, PROC_X0, false);
+    size_t size = (size_t)current_thread->PROC_X2;
+    SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, true);
+#ifdef ISOLATEDFS
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
+    if (!s.data || !s.length) return 0;
+    size_t ret = transform_file(&rootfs, s.data, buf, size);
+    string_free(s);
+    return ret;
+#else 
+    return transform_file(kernel_fs(), path, buf, size);
+#endif
+}
+
 u64 syscall_sreadf(process_t *ctx, thread_t *current_thread){
     SYSCALL_STR(path, PROC_X0, false);
     size_t size = (size_t)current_thread->PROC_X2;
@@ -549,6 +565,7 @@ syscall_entry syscalls[] = {
     [DIR_LIST_CODE] = syscall_dir_list,
     [FILE_STAT_CODE] = syscall_stat,
     [FILE_TRNC_CODE] = syscall_trunc,
+    [FILE_TRANS_CODE] = syscall_transf,
     [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
     [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
 

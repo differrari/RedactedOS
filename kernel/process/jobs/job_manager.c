@@ -55,6 +55,7 @@ bool prepare_thread(job_state_t *job, system_module *mod, job_application_t appl
         case job_read: entry = (uptr)mod->read; break;
         case job_write: entry = (uptr)mod->write; break;
         case job_trunc: entry = (uptr)mod->truncate; break;
+        case job_transform: entry = (uptr)mod->transform; break;
         default: return false;
     }
     if (!entry) return false;

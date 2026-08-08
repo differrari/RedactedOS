@@ -703,6 +703,7 @@ system_module boot_fs_module = (system_module){
     .truncate = boot_truncate,
     .getstat = boot_stat,
     .readdir = boot_partition_readdir,
+    .transform = 0,
     .alias_info = {}
 };
 
