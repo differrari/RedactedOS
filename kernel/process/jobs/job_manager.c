@@ -173,6 +173,7 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     job_kpec = (uptr)&st->kernel_ctx;
     cpec = (uptr)st->requester;
 
+    //TODO: this entire thing is flimsy, we're only translating stack returns so we can make our way back to the userland proc, but any &values stored in the stack are not translated and risk corruption + failure
     if (st->kstack.ptr){
         st->kernel_ctx.sp = translate_stack((st->kstack.ptr+0x10000), st->kernel_ctx.sp);
         print("[JOB debug] Initial Address %llx",st->kernel_ctx.regs[29]);

@@ -402,7 +402,7 @@ u32 FAT32FS::alloc_fat(){
 
 f32_walk_result FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *entry, char *filename, const char *seek) {
     if (entry->flags.volume_id) return {};
-    
+
     size_t name_len = strlen_max(filename, 0);
     int matched = strstart_case(seek, filename, true);
     if (matched != (int)name_len) return {};
@@ -417,7 +417,7 @@ f32_walk_result FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *en
     uint32_t bpc = bps * spc;
     uint32_t count = entry->filesize > 0 ? ((entry->filesize + bpc - 1) / bpc) : instance->count_FAT(filecluster);
     
-    if (entry->flags.directory) return instance->walk_directory(count, filecluster, next, read_entry_handler);
+    if (entry->flags.directory && *next) return instance->walk_directory(count, filecluster, next, read_entry_handler);
     if (*next != '\0') return {};
     return {.entry = *entry, .cluster = 0, .offset = 0, .found = true};
 }
