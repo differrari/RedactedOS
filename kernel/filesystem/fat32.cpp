@@ -114,7 +114,7 @@ bool FAT32FS::write_section_to_cluster(u32 cluster, u32 offset, void *buf, size_
     
     u32 sector_count = ceil(((float)offset + size)/512);
     
-    void *initial = zalloc(512 * sector_count);
+    void *initial = kalloc(fs_page, 512 * sector_count, ALIGN_64B, MEM_PRIV_KERNEL);
     
     disk_read(initial, sector, sector_count);
     
@@ -505,8 +505,9 @@ size_t FAT32FS::write_file(file *descriptor, const char* buf, size_t size){
     
     if (written)
         write_to_disk(mfile->serial, mfile->file_buffer.buffer, mfile->file_buffer.buffer_size);
-    
-    truncate(descriptor, mfile->file_size);
+
+    descriptor->size = mfile->file_size;
+    truncate(descriptor);
     
     return written;
 }
@@ -625,7 +626,7 @@ bool FAT32FS::stat(const char *path, fs_stat *out_stat){
     return true;
 }
 
-bool FAT32FS::truncate(file *descriptor, size_t size){
+bool FAT32FS::truncate(file *descriptor){
     irq_flags_t irq = irq_save_disable();
     module_file *mfile = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile || !mfile->name.data) {
@@ -639,7 +640,7 @@ bool FAT32FS::truncate(file *descriptor, size_t size){
     
     if (!result.found) return false;
     
-    result.entry.filesize = size & UINT32_MAX;
+    result.entry.filesize = descriptor->size & UINT32_MAX;
     
     write_section_to_cluster(result.cluster,result.offset, &result.entry, sizeof(f32file_entry));
     
@@ -684,14 +685,15 @@ bool boot_stat(const char *path, fs_stat *out_stat){
     return fs_driver->stat(path, out_stat);
 }
 
-bool boot_truncate(file *descriptor, size_t size){
-    return fs_driver->truncate(descriptor, size);
+bool boot_truncate(file *descriptor){
+    return fs_driver->truncate(descriptor);
 }
 
 system_module boot_fs_module = (system_module){
     .name = "boot",
     .mount = "boot",
     .version = VERSION_NUM(0, 1, 0, 0),
+    .owner = 0,
     .init = boot_partition_init,
     .fini = boot_partition_fini,
     .open = boot_partition_open,

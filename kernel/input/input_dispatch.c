@@ -4,6 +4,7 @@
 #include "math/math.h"
 #include "graph/graphics.h"
 #include "graph/tres.h"
+#include "kernel_processes/windows/menu.h"
 
 process_t* focused_proc;
 
@@ -36,7 +37,7 @@ bool register_keypress(keypress kp) {
     }
 
     process_t *target = focused_proc;
-    if (!target || target->state == process::STOPPED || !target->id || !target->pc || !target->sp || (((target->spsr & 0xF) == 0) && !target->mm.ttbr0)) {
+    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) {
         u16 win_id = target ? target->win_id : 0;
         u16 skip_id = target ? target->id : 0;
         focused_proc = 0;
@@ -47,7 +48,7 @@ bool register_keypress(keypress kp) {
         }
 
         target = focused_proc;
-        if (!target || target->state == process::STOPPED || !target->id || !target->pc || !target->sp || (((target->spsr & 0xF) == 0) && !target->mm.ttbr0)) {
+        if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) {
             focused_proc = 0;
             return false;
         }
@@ -83,7 +84,7 @@ bool register_scroll(i8 scroll){
 
 void register_event(kbd_event event){
     process_t *target = focused_proc;
-    if (!target || target->state == process::STOPPED || !target->id || !target->pc || !target->sp || (((target->spsr & 0xF) == 0) && !target->mm.ttbr0)) {
+    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) {
         u16 win_id = target ? target->win_id : 0;
         u16 skip_id = target ? target->id : 0;
         focused_proc = 0;
@@ -94,7 +95,7 @@ void register_event(kbd_event event){
         }
 
         target = focused_proc;
-        if (!target || target->state == process::STOPPED || !target->id || !target->pc || !target->sp || (((target->spsr & 0xF) == 0) && !target->mm.ttbr0)) {
+        if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) {
             focused_proc = 0;
             return;
         }
@@ -151,6 +152,10 @@ bool mouse_button_pressed(int mb){
     return (last_cursor_state & (1 << mb)) == (1 << mb);
 }
 
+bool mouse_any_button_pressed(){
+    return last_cursor_state;
+}
+
 uint16_t sys_subscribe_shortcut_current(keypress kp){
     return sys_subscribe_shortcut(get_current_proc_pid(),kp);
 }
@@ -174,26 +179,27 @@ void sys_focus_current(){
 
 void sys_set_focus(int pid){
     process_t *target = get_proc_by_pid(pid);
-    if (!target || target->state == process::STOPPED || !target->id || !target->pc || !target->sp || (((target->spsr & 0xF) == 0) && !target->mm.ttbr0)) return;
+    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) return;
+    if (focused_proc && focused_proc->id == pid) return;
     if (focused_proc) focused_proc->focused = false;
     focused_proc = target;
     focused_proc->focused = true;
-    kprintf("New focus %i",pid);
-    if (system_config.use_windows) set_window_focus(focused_proc->win_id);
+    if (system_config.use_windows){
+        set_window_focus(focused_proc->win_id);
+        refresh_menu();
+    } 
 }
 
 void sys_unset_focus(bool close){
     process_t *proc = focused_proc;
-    if (proc) proc->focused = false;
-    focused_proc = 0;
-    if (system_config.use_windows) unset_window_focus();
-
-    u16 npid = proc && proc->win_id ? window_fallback_focus(proc->win_id, proc->id) : 0;
-    if (npid)
-    {
-        process_t *next = get_proc_by_pid(npid);
-        if (next && next->focused && next->state != process::STOPPED && next->id && next->pc && next->sp && ((((next->spsr & 0xF) != 0) || next->mm.ttbr0))) focused_proc = next;
+    if (!proc) return;
+    if (proc->focused){ 
+        proc->focused = false;
+        focused_proc = 0;
+        if (system_config.use_windows) unset_window_focus();
     }
+
+    window_close_process(proc);
 }
 
 u16 sys_get_focused_pid(){

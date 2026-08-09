@@ -3,6 +3,7 @@
 #include "types.h"
 #include "ui/draw/draw.h"
 #include "data/struct/linked_list.h"
+#include "process/process.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,7 +15,12 @@ typedef struct {
     uint32_t width, height;
     draw_ctx win_ctx;
     uint16_t pid;
+    window_info_t info;
 } window_frame;
+
+#define MENU_HEIGHT 50
+#define TOOLBAR_HEIGHT 50
+#define BORDER_SIZE 3
 
 void init_window_manager();
 
@@ -28,9 +34,12 @@ void get_window_ctx(draw_ctx* out_ctx);
 
 void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus);
 
+void refresh_window_info(u16 wid, window_info_t *info);
+
 u16 window_fallback_focus(u16 win_id, u16 skip_id);
 void set_window_focus(uint16_t win_id);
 void unset_window_focus();
+void window_close_process(process_t *proc);
 
 gpu_point convert_mouse_position(gpu_point p);
 

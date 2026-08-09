@@ -1,6 +1,8 @@
 #include "syscalls/syscalls.h"
 #include "files/helpers.h"
 #include "data/format/scanner/scanner.h"
+#include "regex/regex.h"
+#include "memory/memory.h"
 
 void markdown_sections(string_slice document, void (*on_section)(int size, string_slice title, string_slice content)){
     Scanner scan = scanner_make(document.data,document.length);
@@ -23,17 +25,46 @@ void markdown_sections(string_slice document, void (*on_section)(int size, strin
     } while(!scan_eof(&scan));
 }
 
-char *seek_section = 0;
+string_slice seek_section = {};
+
+regex_handle annotation_regex = {};
+
+string_slice slice_subrange(string_slice original, range_t range){
+    if (range.start > original.length || range.start + range.size > original.length) return (string_slice){};
+    return (string_slice){.data = original.data + range.start, .length = range.size};
+}
+
+bool print_annotation(regex_result result){
+    if (!result.found || result.capture_count < 2) return true;
+    string_slice categories = slice_subrange(result.full_slice,result.capture_groups[2]);
+    string_slice content = slice_subrange(result.full_slice,result.capture_groups[1]);
+    if (slices_equal(categories, seek_section, true)){
+        print("%v",content);
+    } else {
+        string_splitter splitter = make_string_splitter_slice(categories, '/', false);
+        while (string_splitter_advance(&splitter)){
+            string_slice current = string_splitter_get_current(&splitter);
+            if (current.length && (current.data[current.length-1]) == ')') current.length--;
+            if (slices_equal(seek_section,current, true)){
+                print("%v",content);
+                break;
+            }
+        }
+    }
+    return true;
+}
 
 void print_section(int size, string_slice title, string_slice content){
-    if (!seek_section) return;
+    if (!seek_section.length) return;
 
     if (size == 1){
         print("===%v===",title);
     }
     
-    if (slice_lit_match(title, seek_section, true)){
+    if (slices_equal(title, seek_section, true)){
         print("%v",content);
+    } else {
+        regex_find_many(&annotation_regex, content, print_annotation);
     }
 }
 
@@ -53,9 +84,11 @@ void find_page_file(const char *directory, const char *file){
 
 int main(int argc, strarr argv){
 
+    annotation_regex = init_regex("!\\[(^\\]*)\\]\\((^\\)*)\\)");
+
     if (argc > 1){
-        seek_section = argv[1];
-    } else seek_section = "overview";
+        seek_section = slice_from_literal(argv[1]);
+    } else seek_section = slice_from_literal("overview");
 
     print("Printing system %s information",seek_section);
     

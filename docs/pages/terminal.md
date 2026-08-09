@@ -1,5 +1,7 @@
 # Terminal
 
+> ![The terminal is being rewritten, some documented features may not yet be available.](overview)
+
 ## Overview
 
 The system's terminal has the same basic functionality as any other in terms of text input, history, etc, but differs greatly in its implementation.

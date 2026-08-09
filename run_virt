@@ -6,7 +6,6 @@ ARGS=""
 SERIAL_OPT="-serial stdio"
 if [ "$1" = "debug" ]; then
   ARGS="-monitor unix:/tmp/qemu-monitor-socket,server,nowait -s -S"
-
   if [ -r /etc/os-release ]; then
     . /etc/os-release
     if [ "${ID:-}" = "ubuntu" ]; then

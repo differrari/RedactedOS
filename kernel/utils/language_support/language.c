@@ -57,7 +57,7 @@ size_t syntax_highlight(file *fd, char *buf, size_t size, file_offset off){
         if (!instance) break;
         size_t new_i = instance - contents;
         i = new_i;
-        size_t written = buffer_write_lim(&write_buf,(char*)&(text_format){ .color = 0xFFfcba03, .bounds = { i, 8 }}, sizeof(text_format));
+        size_t written = buffer_write_lim(&write_buf,(char*)&(text_format){ .foreground = 0xFFfcba03, .bounds = { i, 8 }}, sizeof(text_format));
         total += written;
         if (written != sizeof(text_format)) return total;
     }

@@ -1,6 +1,7 @@
 #pragma once 
 
 #include "../gpu_driver.hpp"
+#include "utils/cursor/cursor_manager.h"
 
 class FBGPUDriver : public GPUDriver {
 public:
@@ -20,7 +21,6 @@ public:
 
     draw_ctx* get_ctx() override;
 
-    draw_ctx new_cursor(uint32_t color);
     void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, draw_ctx *ctx) override;
     void resize_window(uint32_t width, uint32_t height, draw_ctx *win_ctx) override;
     void setup_cursor() override;   
@@ -38,6 +38,7 @@ protected:
     uint32_t stride;
     void* mem_page;
     bool cursor_pressed, cursor_updated;
+    cursor_types last_cursor_type;
     draw_ctx ctx, cursor_unpressed_ctx, cursor_pressed_ctx;
     uint32_t cursor_x, cursor_y;
 };

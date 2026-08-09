@@ -26,6 +26,7 @@ typedef struct {
     u32 cursor_color_deselected;
     u32 cursor_color_selected;
     bool use_window_shadows;
+    bool use_desktop_zoom;
 } system_theme_t;
 
 typedef struct {

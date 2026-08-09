@@ -49,14 +49,15 @@ extern void term_ascii_cmd(shell_handle *handle, char cmd, u16 proc_id);
 extern void term_console_ctrl(shell_handle *handle, console_ctrls ctrl);
 
 shell_handle* Terminal::create_shell(){
-    return create_sheldon((shell_bindings){
+    shell_bindings terminal_bindings = (shell_bindings){
         .console_output = term_put_char,
         .console_flush = term_flush,
         .console_clean = term_clear,
         .console_bell = term_bell,
         .console_ascii_cmd = term_ascii_cmd,
         .console_control = term_console_ctrl
-    }, 0);
+    };
+    return create_sheldon(terminal_bindings, 0, 0);
 }
 
 void Terminal::ctrl(console_ctrls ctrl){
@@ -276,7 +277,7 @@ bool Terminal::handle_input(){
     if (event.type != KEY_PRESS) return handle_modifier(&event);
 
     char key = event.key;
-    char readable = hid_to_char((uint8_t)key, current_modifier);
+    char readable = hid_to_char((uint8_t)key, current_modifier, special_key);
 
     if (command_running){
         return interpret_cmd_code(readable, 0);

@@ -12,7 +12,7 @@ static bool _gpu_ready;
 
 GPUDriver *gpu_driver;
 
-bool gpu_init(){
+bool gpu_init(system_module *mod){
     kprint("[GRAPH] Initializing Raspberry Pi GPU");
     gpu_size preferred_screen_size = system_config.preferred_screen_size;
     gpu_driver = VideoCoreGPUDriver::try_init(preferred_screen_size);
@@ -111,6 +111,7 @@ system_module graphics_module = {
     .name = "graphics",
     .mount = "graph",
     .version = VERSION_NUM(0, 1, 0, 0),
+    .owner = 0,
     .init = gpu_init,
     .fini = 0,
     .open = 0,
@@ -119,5 +120,6 @@ system_module graphics_module = {
     .close = 0,
     .truncate = 0,
     .getstat = 0,//TODO: stat
-    .readdir = 0
+    .readdir = 0,
+    .alias_info = {}
 };

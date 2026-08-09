@@ -338,6 +338,11 @@ bool VirtioGPUDriver::transfer_to_host(uint32_t resource_id, gpu_rect rect) {
 
 void VirtioGPUDriver::flush() {
 
+    if (last_cursor_type != current_cursor_type){
+        setup_cursor();
+        update_cursor(0, 0, true);
+    }
+
     if (ctx.full_redraw) {
         transfer_to_host(fb_resource_id, (gpu_rect){{0,0},{screen_size.width,screen_size.height}});
     } else {
@@ -457,18 +462,20 @@ uint32_t VirtioGPUDriver::new_cursor(uint32_t color){
     uint32_t id = new_resource_id();
     size_t cursor_size = 64*64*BPP;
     create_2d_resource(id, {64,64});
-    uint32_t *cursor = (uint32_t*)kalloc(gpu_dev.memory_page, cursor_size, ALIGN_4KB, MEM_PRIV_KERNEL);
-    draw_ctx ctx = {{},cursor, 64 * BPP, 64, 64, 0,0};
+    draw_ctx ctx = get_cursor();
     fb_draw_cursor(&ctx, color);
-    attach_backing(id, (sizedptr){VIRT_TO_PHYS((uintptr_t)cursor), cursor_size});
+    attach_backing(id, (sizedptr){VIRT_TO_PHYS((uintptr_t)ctx.fb), cursor_size});
     transfer_to_host(id, {{0,0},{64,64}});
     return id;
 }
 
 void VirtioGPUDriver::setup_cursor()
 {
+    //TODO: clear old cursor
     cursor_pressed_resource_id = new_cursor(system_theme.cursor_color_selected);
     cursor_unpressed_resource_id = new_cursor(system_theme.cursor_color_deselected);
+    last_cursor_type = current_cursor_type;
+    last_cursor_type = current_cursor_type; 
     set_cursor_pressed(false);
 }   
 

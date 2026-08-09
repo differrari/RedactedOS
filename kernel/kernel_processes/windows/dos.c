@@ -13,8 +13,8 @@
 #include "input_keycodes.h"
 #include "wincomp.h"
 #include "ui/color/color.h"
-
-#define BORDER_SIZE 3
+#include "utils/cursor/cursor_manager.h"
+#include "menu.h"
 
 typedef enum { right_move, left_move, down_move, up_move } dos_movement;
 u16 move_shortcuts[4];
@@ -31,39 +31,66 @@ u16 paste_s = 0;
 static dos_mode mode;
 static draw_ctx *dos_ctx;
 
-extern i32 zoom_scale;
+extern float zoom_scale;
 
-static void draw_solid_window(draw_ctx *ctx, int_point fixed_point, gpu_size fixed_size, bool fill){
+static void draw_solid_window(window_frame *frame, draw_ctx *ctx, int_point fixed_point, gpu_size fixed_size, bool fill, bool use_shadows, bool focused){
+    int_point win_point = {fixed_point.x + BORDER_SIZE, fixed_point.y + BORDER_SIZE + TOOLBAR_HEIGHT};
+    gpu_size win_size = {fixed_size.width - (BORDER_SIZE*2), fixed_size.height - TOOLBAR_HEIGHT - (BORDER_SIZE*2)};
+
+    if (use_shadows && focused)
+        rectangle(dos_ctx, (rect_ui_config){
+            .border_size = BORDER_SIZE * 1.5,
+            .border_color = 0x44000000,
+        }, (common_ui_config){ .point = (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5}, });
+    
     DRAW(rectangle(ctx, (rect_ui_config){
         .border_size = BORDER_SIZE,
-        .border_color = system_theme.bg_color + 0x222222
+        .border_color = saturate(system_theme.bg_color + 0x222222, focused ? 0 : -90),
     }, (common_ui_config){
         .point = fixed_point,
         .size = fixed_size,
-        .background_color = system_theme.bg_color,
+        .background_color = saturate(system_theme.bg_color + 0x111111, focused ? 0 : -90),
         .foreground_color = COLOR_WHITE,
-    }),{
-        
+    }), { 
+        label(ctx, (text_ui_config){
+            .slice = { frame->info.name, frame->info.name_length},
+            .font_size = 3,
+        }, (common_ui_config){
+            .point = RELATIVE(5, BORDER_SIZE+5),
+            .size = { parent.size.width-200, 30 },
+            .foreground_color = system_theme.accent_color,
+        });
+        bool close_pressed = false;
+        button(ctx, (rect_ui_config){}, (common_ui_config){
+            .point = RELATIVE(parent.size.width - (BORDER_SIZE * 2) - 40 - BORDER_SIZE,BORDER_SIZE),
+            .size = {30, 30},
+            .background_color = 0xFFB40000,
+        }, &close_pressed);
+        if (close_pressed){
+            send_signal(SIG_QUIT, frame->pid);
+        }
+        rectangle(ctx, (rect_ui_config){}, (common_ui_config){
+            .point = {fixed_point.x + BORDER_SIZE, fixed_point.y + TOOLBAR_HEIGHT},
+            .size = {win_size.width - (BORDER_SIZE), BORDER_SIZE},
+            .background_color = 0x33000000,
+        });
+        rectangle(ctx, (rect_ui_config){}, (common_ui_config){
+            .point = win_point,
+            .size = win_size,
+            .background_color = 0,
+            .foreground_color = COLOR_WHITE,
+        });
     });
 }
 
 void draw_window(window_frame *frame){
     int_point fixed_point = { global_win_offset.x + frame->x - BORDER_SIZE, global_win_offset.y + frame->y - BORDER_SIZE };
-    gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 };
+    gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 + TOOLBAR_HEIGHT };
     fixed_point.x /= zoom_scale;
     fixed_point.y /= zoom_scale;
     fixed_size.width /= zoom_scale;
     fixed_size.height /= zoom_scale;
-    if (!system_theme.use_window_shadows || focused_window != frame){
-        draw_solid_window(dos_ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
-        return;
-    }
-    DRAW(rectangle(dos_ctx, (rect_ui_config){
-        .border_size = BORDER_SIZE * 1.5,
-        .border_color = 0x44000000,
-    }, (common_ui_config){ .point = (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5}, }),{
-        draw_solid_window(dos_ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
-    });
+    draw_solid_window(frame, dos_ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid, system_theme.use_window_shadows, focused_window == frame);
 }
 
 gpu_point click_loc;
@@ -71,7 +98,7 @@ window_frame* clicked_frame;
 
 static inline void calc_click(void *node){
     window_frame* frame = (window_frame*)node;
-    gpu_point p = win_to_screen(frame, click_loc);
+    gpu_point p = win_to_screen(frame, click_loc);//TODO: account for zoom
     if (!p.x || !p.y) return;
     clicked_frame = frame;
 }
@@ -205,15 +232,28 @@ void check_shortcuts(){
             switch_focus(i < 2 ? sign : 0, i >= 2 ? sign : 0);   
         }
     for (int i = 0; i < mode_count; i++)
-        if (sys_shortcut_triggered_current(mode_shortcuts[i])) mode = i;
+        if (sys_shortcut_triggered_current(mode_shortcuts[i])){
+            mode = i;
+            switch (mode) {
+            case window_mode: switch_cursor(cursor_crosshair); break;
+            case doodle_mode: switch_cursor(cursor_pencil); break;
+            default: break;
+            }
+        }
+}
+
+void refresh_desktop_colors(){
+    setup_desktop_bg();
+    draw_desktop();
+    dirty_windows = true;
 }
 
 int window_system(){
     disable_visual();
     dos_ctx = gpu_get_ctx();
-    setup_desktop_bg();
-    draw_desktop();
+    refresh_desktop_colors();
     setup_shortcuts();
+    switch_cursor(cursor_crosshair);
     
     gpu_point start_point = {0,0};
     bool drawing = false;
@@ -280,19 +320,28 @@ int window_system(){
             }
             drawing = false;
         }
-        // i8 scroll = get_raw_mouse_in().scroll;
-        // if (scroll){
-        //     zoom_scale += -scroll;
-        //     zoom_scale = clamp(zoom_scale, 1, 5);
-        //     dirty_windows = true;
-        // }
+        if (system_theme.use_desktop_zoom){
+            i8 scroll = get_raw_mouse_in().scroll;
+            if (scroll){
+                click_loc = get_mouse_pos();
+                clicked_frame = 0;
+                linked_list_for_each(window_list, calc_click);
+                if (!clicked_frame){
+                    zoom_scale += -scroll;
+                    zoom_scale = clampf(zoom_scale, 0.25f, 5);
+                    dirty_windows = true;
+                }
+            }
+        }
         disable_interrupt();
+        if (mouse_any_button_pressed()) dirty_windows = true;
         if (dirty_windows){
             active = true;
             draw_desktop();
             linked_list_for_each(window_list, redraw_win);
             dirty_windows = false;
         }
+        draw_menu();
         gpu_flush();
         enable_interrupt();
         if (!active && !dirty_windows && !mouse_button_pressed(LMB) && !mouse_button_pressed(MMB)) msleep(25);
@@ -300,6 +349,10 @@ int window_system(){
     return 0;
 }
 
+process_t *win_system_proc;
+
 process_t* create_windowing_system(){
-    return create_kernel_process("dos", window_system, 0, 0);
+    if (!win_system_proc)
+        win_system_proc = create_kernel_process("dos", window_system, 0, 0);
+    return win_system_proc;
 }

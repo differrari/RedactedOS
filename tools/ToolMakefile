@@ -1,6 +1,6 @@
 include ../../common.mk
 
-CPPFLAGS := -I. -I../../shared
+CPPFLAGS := -I. -I../../shared -I../../libs
 CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)
 CXXFLAGS := $(CXXFLAGS_BASE) $(CPPFLAGS)
 LDFLAGS  := -emain
@@ -16,6 +16,7 @@ NAME     := $(notdir $(CURDIR))
 ELF      := $(NAME).elf
 TARGET   := $(NAME).bin
 LOCATION := ../../fs/redos/tools/
+LIBRARIES := $(wildcard ../../libs/*.a)
 
 .PHONY: prepare all clean
 
@@ -26,7 +27,7 @@ prepare:
 	mkdir -p $(BUILD_DIR)
 
 $(TARGET): ../../shared/libshared.a $(OBJ)
-	$(VLD) $(LDFLAGS) -o $(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../../shared/libshared.a
+	$(VLD) $(LDFLAGS) -o $(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) $(LIBRARIES) ../../shared/libshared.a
 	$(OBJCOPY) -O binary $(ELF) $@
 	cp -r $(ELF) $(LOCATION)/$(NAME)
 

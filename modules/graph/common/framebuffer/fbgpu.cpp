@@ -3,11 +3,16 @@
 #include "console/kio.h"
 #include "theme/theme.h"
 #include "memory/page_allocator.h"
+#include "utils/cursor/cursor_manager.h"
 
 #define cursor_dim 64
 #define cursor_size cursor_dim*cursor_dim*bpp
 
 void FBGPUDriver::flush(){
+    if (last_cursor_type != current_cursor_type){
+        setup_cursor();
+        update_cursor(cursor_x, cursor_y, true);
+    }
     if (ctx.full_redraw) {
         uint32_t* tmp = back_framebuffer;
         back_framebuffer = framebuffer;
@@ -48,16 +53,11 @@ void FBGPUDriver::flush(){
     ctx.dirty_count = 0;
 }
 
-draw_ctx FBGPUDriver::new_cursor(uint32_t color){
-    uint32_t *cursor = (uint32_t*)kalloc(mem_page, cursor_size, ALIGN_4KB, MEM_PRIV_KERNEL);
-    draw_ctx cursor_ctx = {{},cursor, cursor_dim * bpp, cursor_dim, cursor_dim, 0,0};
-    fb_draw_cursor(&cursor_ctx, color);
-    return cursor_ctx;
-}
-
 void FBGPUDriver::setup_cursor(){
-    cursor_pressed_ctx = new_cursor(system_theme.cursor_color_selected);
-    cursor_unpressed_ctx = new_cursor(system_theme.cursor_color_deselected);
+    cursor_pressed_ctx = get_cursor();
+    cursor_unpressed_ctx = get_cursor();
+    last_cursor_type = current_cursor_type; 
+    cursor_updated = true;
 }
 
 #define cursor_loc(x,y,row) (((y + cy) * row) + (cx + x))

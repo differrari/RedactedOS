@@ -41,14 +41,14 @@ uint64_t calc_heap(uintptr_t ptr){
 char *procname;
 
 void print_process_info(){
-    process_t *proc = get_all_processes();
+    process_t *proc = get_all_processes();//TODO: awareness of threads
     while (proc){
         if (proc->id != 0 && proc->state != STOPPED && (!procname || strcmp_case(procname,proc->name,true) == 0)){
             print("Process %s [pid = %i | status = %s]",(uintptr_t)proc->name,proc->id,(uintptr_t)parse_proc_state(proc->state));
-            print("Stack: %x (%x). SP: %x",proc->stack, proc->stack_size, proc->sp);
+            print("Stack: %x (%x). SP: %x",proc->main_thread.stack_info.top, proc->main_thread.stack_info.size, proc->main_thread.sp);
             print("Heap: %x (%x)",proc->mm.mmap_bottom, calc_heap(proc->heap_phys));
-            print("Flags: %x", proc->spsr);
-            print("PC: %x",proc->pc);
+            print("Flags: %x", proc->main_thread.spsr);
+            print("PC: %x",proc->main_thread.pc);
         }
         proc = proc->process_next;
     }
@@ -126,16 +126,16 @@ void draw_process_view(){
         fb_draw_string(&ctx,name.data, xo, name_y, scale, system_theme.bg_color);
         fb_draw_string(&ctx,state.data, xo, state_y, scale, system_theme.bg_color);
         
-        string pc = string_from_hex(proc->pc);
+        string pc = string_from_hex(proc->main_thread.pc);
         fb_draw_string(&ctx,pc.data, xo, pc_y, scale, system_theme.bg_color);
         string_free(pc);
         
-        draw_memory("Stack", xo, stack_y, stack_width, stack_height, proc->stack - proc->sp, proc->stack_size ? proc->stack_size : 1);
+        draw_memory("Stack", xo, stack_y, stack_width, stack_height, proc->main_thread.stack_info.top - proc->main_thread.sp, proc->main_thread.stack_info.size ? proc->main_thread.stack_info.size : 1);
         uint64_t heap = proc->mm.ttbr0 ? (proc->mm.rss_anon_pages * PAGE_SIZE) : calc_heap(proc->heap_phys);
         uint64_t heap_limit = proc->mm.ttbr0 ? (uint64_t)(proc->mm.mmap_top - proc->mm.mmap_bottom) : ((heap + 0xFFF) & ~0xFFF);
         draw_memory("Heap", xo + stack_width + 50, stack_y, stack_width, stack_height, heap, heap_limit ? heap_limit : PAGE_SIZE);
 
-        string flags = string_format("Flags: %x", proc->spsr);
+        string flags = string_format("Flags: %x", proc->main_thread.spsr);
         fb_draw_string(&ctx, flags.data, xo, flags_y, scale, system_theme.bg_color);
         string_free(name);
         string_free(state);

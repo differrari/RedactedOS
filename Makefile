@@ -11,7 +11,7 @@ endif
 
 .PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
 
-all: kshared modules kernel shared user tools docs
+all: kshared modules kernel shared user tools libs docs
 	@echo "Build complete."
 	./createfs
 
@@ -30,8 +30,11 @@ user: shared prepare-fs
 kernel: kshared modules
 	$(MAKE) -C kernel LOAD_ADDR=$(LOAD_ADDR) XHCI_CTX_SIZE=$(XHCI_CTX_SIZE) QEMU=$(QEMU) TEST=$(TEST)
 
-tools: shared prepare-fs
+tools: shared libs prepare-fs
 	$(MAKE) -C tools
+
+libs: shared
+	$(MAKE) -C libs
 
 test:
 	$(MAKE) $(MODE) QEMU=true TEST=true all
@@ -46,6 +49,7 @@ clean:
 	$(MAKE) -C kernel $@
 	$(MAKE) -C tools  $@
 	$(MAKE) -C modules $@
+	$(MAKE) -C libs $@
 	@echo "removing images"
 	$(RM) -f kernel.img kernel.elf disk.img dump trace serial.log gdb_net.log screenlog.0 dump.dtb
 	$(RM) -f logs/*.log fs/kernel.elf
@@ -71,7 +75,6 @@ dump:
 	$(ARCH)objdump -S -D kernel.elf > dump
 	$(MAKE) -C user $@
 	$(MAKE) -C tools $@
-	$(MAKE) -C modules $@
 
 install:
 	$(MAKE) clean

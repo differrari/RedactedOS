@@ -2,6 +2,7 @@
 
 #include "virtio/virtio_pci.h"
 #include "common/gpu_driver.hpp"
+#include "utils/cursor/cursor_manager.h"
 
 #define VIRTIO_GPU_ID 0x1050
 
@@ -53,6 +54,7 @@ typedef struct virtio_transfer_cmd {
     uint32_t padding; 
 }__attribute__((packed)) virtio_transfer_cmd;
 
+//TODO: refactor before 3D Accelleration
 class VirtioGPUDriver : public GPUDriver {
 public:
     static VirtioGPUDriver* try_init(gpu_size preferred_screen_size);
@@ -102,6 +104,7 @@ private:
     uint32_t cursor_resource_id = 0;
     uint32_t cursor_pressed_resource_id = 0;
     uint32_t cursor_unpressed_resource_id = 0;
+    cursor_types last_cursor_type;
 
     virtio_gpu_ctrl_hdr *trans_resp = nullptr;
     virtio_gpu_ctrl_hdr *flush_resp = nullptr;

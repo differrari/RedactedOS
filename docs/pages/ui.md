@@ -1,13 +1,19 @@
 # UI
 
-## Overview
+![The system has a window-based UI system, which is integrated into the kernel itself](overview). It's made up of two parts,  ![dos (/kernel/kernel_processes/dos) & tres (/kernel/graph/tres). Dos is the desktop environment, tres handles creating & compositing the actual windows](overview). Due to the similarities between the two, they might be merged in the future, or their names swapped/changed.
 
-The system has a window-based UI system, which is integrated into the kernel itself. 
-Windows are drawable, so dragging and dropping on the desktop creates a window. 
-Windows don't overlap, so windows will move themselves to the closest available space.
-The desktop is infinite. Drag with middle mouse to move around it.
-There's currently no window controls (close, minimize, maximize) or visible dock.
-By default a new window opens on an application launcher. It takes applications from `/home/applications` (which is a shared folder, explained in the filesystem section) and `/boot/redos/system` (which maps to `/fs/redos/system`)
+## Windowing & Desktop
+
+![Windows are drawable by dragging and dropping on the desktop](overview/windows/desktop). 
+![Windows don't overlap, so windows will move themselves to the closest available space.](overview/windows/desktop)
+![There's currently no window controls (close, minimize, maximize) or visible dock. Visual feedback is limited](overview/desktop)
+![By default a new window opens on an application launcher. It takes applications from `/home/applications` (which is a shared folder, explained in the filesystem section) and `/boot/redos/system` (which maps to `/fs/redos/system`)](overview/windows)
+![The desktop is infinite. Drag with middle mouse to move around it.](overview/desktop) Zooming exists but is currently disabled and requires patching the kernel to enable. It might be added as a setting eventually.
+
+The desktop has a "drawing mode", which just draws lines on the space between windows.
+Pressing ![META/CMD + 1 will move the desktop to windowing mode, META/CMD + 2 will put it in drawing mode](overview/desktop)
+
+The desktop can have an image background, ![place a `desktop.png` image inside `fs/redos` to be loaded as a background image to the desktop](overview/desktop). It will automatically set the system tint (which would've been the desktop background if no image were loaded) to the average color of the image, and the foreground color to a complementary.
 
 ## Developers
 

@@ -19,12 +19,12 @@
 linked_list_t *window_list;
 window_frame *focused_window;
 
-i32 zoom_scale = 1;
+float zoom_scale = 1.f;
 
 uint16_t win_ids = 1;
 bool dirty_windows = false;
 
-int_point global_win_offset;
+int_point global_win_offset = {};
 
 draw_ctx non_win_ctx;
 
@@ -53,8 +53,11 @@ gpu_point win_to_screen(window_frame *frame, gpu_point point){
     return (gpu_point){};
 }
 
+extern process_t *win_system_proc;
+
 gpu_point convert_mouse_position(gpu_point point){
     process_t *p = get_current_proc();
+    if (p == win_system_proc) return point;
     linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
@@ -111,6 +114,7 @@ void check_collisions(window_frame *frame){
 }
 
 bool create_window(i32 x, i32 y, u32 width, u32 height){
+    height -= TOOLBAR_HEIGHT;
     irq_flags_t irq = irq_save_disable();
     if (win_ids == UINT16_MAX){ 
         irq_restore(irq);
@@ -260,7 +264,7 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus
         memcpy(&non_win_ctx.dirty_rects, frame_ctx->dirty_rects, sizeof(non_win_ctx.dirty_rects));
         non_win_ctx.dirty_count = frame_ctx->dirty_count;
         non_win_ctx.full_redraw = frame_ctx->full_redraw;
-        composite(&non_win_ctx, (int_point){}, 1, screen_ctx);
+        composite(&non_win_ctx, (int_point){}, 1, screen_ctx, (gpu_rect){ {0, MENU_HEIGHT}, {screen_ctx->width, screen_ctx->height-MENU_HEIGHT} });
     }
     if (!frame){
         linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
@@ -275,11 +279,18 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus
     win_ctx.dirty_count = frame_ctx->dirty_count;
     win_ctx.full_redraw = frame_ctx->full_redraw;
     
-    composite(&win_ctx, (int_point){global_win_offset.x + frame->x,global_win_offset.y + frame->y}, zoom_scale, screen_ctx);
+    composite(&win_ctx, (int_point){ global_win_offset.x + frame->x, global_win_offset.y + frame->y + TOOLBAR_HEIGHT }, zoom_scale, screen_ctx, (gpu_rect){ {0, MENU_HEIGHT}, {screen_ctx->width, screen_ctx->height-MENU_HEIGHT} });
 
     frame_ctx->dirty_count = 0;
     frame_ctx->full_redraw = false;
-    
+}
+
+void window_close_process(process_t *proc){
+    u16 npid = proc && proc->win_id ? window_fallback_focus(proc->win_id, proc->id) : 0;
+    if (npid){
+        process_t *next = get_proc_by_pid(npid);
+        if (next && next->focused && next->state != STOPPED && next->id && next->main_thread.pc && next->main_thread.sp && (is_privileged(next) || next->mm.ttbr0)) sys_set_focus(next->id);
+    }
 }
 
 u16 window_fallback_focus(u16 win_id, u16 skip_id){
@@ -287,8 +298,13 @@ u16 window_fallback_focus(u16 win_id, u16 skip_id){
     if (!node || !node->data) return 0;
 
     window_frame *frame = node->data;
-    if (frame->pid != skip_id)
-        return frame->pid;
+    if (frame->pid != skip_id){
+        process_t *proc = get_proc_by_pid(frame->pid);
+        if (proc){
+            proc->focused = true;
+            return frame->pid;
+        }
+    }
 
     process_t *proc = get_all_processes();
     while (proc) {
@@ -296,6 +312,7 @@ u16 window_fallback_focus(u16 win_id, u16 skip_id){
             frame->pid = proc->id;
             if (proc->graphics_ctx.fb){
                 frame->win_ctx.fb = proc->graphics_ctx.fb;
+                proc->focused = true;
                 if (proc->graphics_ctx.width != frame->width || proc->graphics_ctx.height != frame->height){
                     frame->width = proc->graphics_ctx.width;
                     frame->height = proc->graphics_ctx.height;
@@ -325,4 +342,13 @@ void set_window_focus(uint16_t win_id){
 
 void unset_window_focus(){
     focused_window = 0;
+}
+
+void refresh_window_info(u16 wid, window_info_t *info){
+    linked_list_node_t *node = linked_list_find(window_list, &wid, find_window);
+    if (!node || !node->data) return;
+
+    window_frame *frame = node->data;
+    frame->info = *info;
+    dirty_windows = true;
 }

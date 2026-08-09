@@ -3,11 +3,14 @@
 #include "data/struct/linked_list.h"
 #include "files/system_module.h"
 
-typedef hash_map_t module_root;
+typedef struct {
+    hash_map_t *map;
+    hash_map_t *reserved;
+} module_root;
 
 u64 register_fs_id();
-hash_map_t* get_fs_for_id(u64 id);
-hash_map_t* kernel_fs();
+module_root* get_fs_for_id(u64 id);
+module_root* kernel_fs();
 
 #ifdef __cplusplus 
 extern "C" {
@@ -21,6 +24,7 @@ size_t list_root(void* buf, size_t size, uint64_t *offset);
 
 //Userland
 string resolve_isolated_path(const char *path, u64 id, module_root *resolved, bool allow_kfs);
+void destroy_fs(u64 fsid);
 
 #ifdef __cplusplus 
 }

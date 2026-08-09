@@ -1,3 +1,6 @@
 [submodule "shared"]
 	path = shared
 	url = https://github.com/differrari/redlib.git
+[submodule "libs/regex"]
+	path = libs/regex
+	url = git@github.com:differrari/regex.git

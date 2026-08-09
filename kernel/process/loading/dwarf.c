@@ -226,7 +226,7 @@ uintptr_t dwarf_decode_entries(uintptr_t ptr, uintptr_t debug_line_str_base, siz
 					}
 					str = (const char *)(debug_line_str_base + offset);
 					// kprintf("Directory %s", str);
-					if (array && (i + 1) < DWARF_ENTRY_CAP) array[i+1] = str;
+					if (array && (i) < DWARF_ENTRY_CAP) array[i] = str;
 					break;
 				}
 				case DW_FORM_sdata: decode_sleb128(&p); break;

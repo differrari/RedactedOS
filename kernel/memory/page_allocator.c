@@ -241,7 +241,7 @@ paddr_t palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full
                             if (prev_page) prev_page->next = curr;
                             prev_page = curr;
 
-                            memset((void*)PHYS_TO_VIRT(address +sizeof(mem_page)), 0, PAGE_SIZE - sizeof(mem_page));
+                            memset((void*)PHYS_TO_VIRT(address + sizeof(mem_page)), 0, PAGE_SIZE - sizeof(mem_page));
                         } else {
                             memset((void*)PHYS_TO_VIRT(address), 0, PAGE_SIZE);
                         }

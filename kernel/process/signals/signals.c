@@ -5,7 +5,7 @@
 #include "console/kio.h"
 
 bool register_signal_handler(process_t *proc, signal_types type, signal_handler handler){
-    if (proc->signal_handlers[type]){
+    if (proc->signal_handlers[type].pc){
         kprint("Signal already exists");
         return false;  
     } 
@@ -14,8 +14,7 @@ bool register_signal_handler(process_t *proc, signal_types type, signal_handler 
         return false;  
     } 
     kprint("Signal handler added");
-    proc->signal_handlers[type] = handler;
-    //TODO: Can we check if the handler is in proc's va? cba rn
+    new_thread(proc, &proc->signal_handlers[type], proc->main_thread.spsr, (uptr)handler);
     return true;
 }
 
@@ -31,19 +30,15 @@ bool send_signal_proc_proc(signal_types type, i64 value, process_t *source, proc
         return true;
     }
 
-    signal_buffer_t *buffer = &destination->signal_buffer;
-
-    uint32_t next_index = (buffer->write_index + 1) % INPUT_BUFFER_CAPACITY;
-
-    buffer->entries[buffer->write_index] = (signal_info_t){
-        .sender = source->id,
-        .type = type,
-        .value = value,
-    };
-    buffer->write_index = next_index;
-
-    if (buffer->write_index == buffer->read_index)
-        buffer->read_index = (buffer->read_index + 1) % INPUT_BUFFER_CAPACITY;
+    thread_t *t = &destination->signal_handlers[type];
+    if (t->pc)
+        schedule_thread(destination,t);
+    else 
+        handle_signal_default(destination, &(signal_info_t){
+            .sender = source->id,
+            .type = type,
+            .value = value,
+        });
 
     switch_proc(YIELD);
     

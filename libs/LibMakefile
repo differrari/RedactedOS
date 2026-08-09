@@ -1,0 +1,37 @@
+
+BASE_FLAGS := -I. -I../../shared
+
+include ../../common.mk
+
+ifeq ($(QEMU),true)
+  BASE_FLAGS += -DQEMU
+endif
+
+CFLAGS   := $(CFLAGS_BASE) $(BASE_FLAGS)
+
+CLEAN_OBJS := $(shell find -name "*.o")
+C_SRC   := $(shell cat simplemake | xargs -n1 find . -name)
+OBJ     := $(C_SRC:%.c=$(BUILD_DIR)/%.o)
+
+TARGET  := $(shell echo "../lib$(notdir $(CURDIR)).a")
+
+.PHONY: all clean prepare
+
+all: prepare $(TARGET)
+
+prepare:
+	mkdir -p $(BUILD_DIR)
+
+$(TARGET): $(OBJ)
+	$(VAR) rcs $@ $(OBJ)
+
+$(BUILD_DIR)/%.o: %.c
+	mkdir -p $(dir $@)
+	$(VCC) $(CFLAGS) $(SH_FLAGS) -c -MMD -MP $< -o $@
+
+clean:
+	$(RM) $(CLEAN_OBJS) $(CLEAN_DEPS) $(TARGET)
+	$(RM) -r $(BUILD_DIR)
+
+-include $(DEP)
+

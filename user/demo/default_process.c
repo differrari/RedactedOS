@@ -11,11 +11,15 @@
 #include "files/helpers.h"
 #include "utils/clipboard.h"
 #include "net/net_ctrl.h"
+#include "math/math.h"
+#include "draw/textdraw.h"
+#include "environment/env_types.h"
+
+draw_ctx ctx = {};
 
 #define BORDER 20
 
 int img_example() {
-    draw_ctx ctx = {};
     file descriptor = {};
     FS_RESULT res = openf("/resources/jest.bmp", &descriptor);
     void *img = 0;
@@ -262,7 +266,7 @@ int audio_example(){
 
 char reffub[256];
 
-void file_sync(){
+int file_sync(){
     file testfd = {};
     openf("/shared/test", &testfd);
     
@@ -279,9 +283,11 @@ void file_sync(){
     memset(reffub, 0, 256);
     readf(&testfd, reffub, 256);
     print("New contents of file: %s",reffub);
+
+    return 0;
 }
 
-void concurrent_write(){
+int concurrent_write(){
     file fd1 = {};
     file fd2 = {};
     
@@ -305,18 +311,22 @@ void concurrent_write(){
     readf(&fd1, buf, 64);
     
     print("Buffer now %s",buf);
+
+    return 0;
 }
 
-void write_large_file(){
+int write_large_file(){
     void *buf = zalloc(1024);
     
     memset(buf, 'B', 1024);
     
     print("Wrote %x",write_full_file("/boot/redos/fattest", buf, 1024));
+
+    return 0;
     
 }
 
-void copypaste(){
+int copypaste(){
     
     char *copythis = "hello";
     clipboard_copy(copythis, strlen(copythis), DATA_SIG_TEXT);
@@ -330,20 +340,87 @@ void copypaste(){
     clipboard_copy(copythis3, strlen(copythis3), DATA_SIG_TEXT);
     
     print("Pasted text %s",buf);
+
+    return 0;
     
 }
 
 bool should_quit = false;
 
 bool on_quit(signal_info_t *do_not_use_this){
-    print("I'm told to quit");
+    msleep(3000);
     should_quit = true;
+    // while (true) printl("I'm told to quit");
     return true;
 }
 
-int main(int argc, char* argv[]){
+struct { char* name; int (*fn)(); } demos[] = {
+    {"Display image on screen", img_example},
+    {"Networking demo", net_example},
+    {"Audio demo", audio_example},
+    {"Shared folder demo (requires 9Pfs)", file_sync},
+    {"Concurrent writing to file (WIP)", concurrent_write},
+    {"Write large file", write_large_file},
+    {"Copy-paste to clipboard", copypaste},
+};
 
-    img_example();
+int main(int argc, char* argv[]){
+    
+    handle_signal(SIG_QUIT, on_quit);
+    // send_signal(SIG_QUIT, 7);//TODO: get own procid?
+
+    window_info_t info = {
+        .name = "Demo program",
+        .name_length = 12
+    };
+    env_set_window_info(&info);
+
+    request_draw_ctx(&ctx);
+
+    gpu_point cursor = {};
+
+    string_slice initial = SLICE("Collection of demos of the system's functionality. The code is the most relevant part, they might not do anything interesting visually and might outright close the program after they're done.\n\n");
+    
+    range_t range = {.size = initial.length};
+
+    gpu_rect rect = {{0,0},{ctx.width,ctx.height}};
+
+    text_format text_fmt = {.scale = 3,.foreground = 0xFFFFFFFF,.background = 0xFF354657,.wrap = wrap_word};
+    
+    fb_clear(&ctx, 0xFF354657);
+
+    gpu_size size = {};
+    fb_continuous_draw_text(&ctx, draw_text_render, &cursor, initial, &range, rect, &size, (gpu_point){}, text_fmt, (text_format_arr){ });
+
+    int count = min(9,N_ARR(demos));
+    for (int i = 0; i < count; i++){
+        string f = string_format("[%i]: %s\n",i+1, demos[i].name);
+        range.size = f.length;
+        fb_continuous_draw_text(&ctx, draw_text_render, &cursor, slice_from_string(f), &range, rect, &size, (gpu_point){}, text_fmt, (text_format_arr){ });
+        string_free(f);
+    }
+
+    while (true) {
+        commit_draw_ctx(&ctx);
+        if (should_quit) {
+            print("SIG QUIT");
+            halt(0);
+        }
+        kbd_event ev = {};
+        if (read_event(&ev)){
+            if (ev.type == KEY_PRESS){
+                if (ev.key >= KEY_1 && ev.key <= (KEY_1 + count - 1)){
+                    int index = ev.key - KEY_1;
+                    if (index >= 0 && index < count){
+                        fb_clear(&ctx, 0);
+                        commit_draw_ctx(&ctx);
+                        return demos[index].fn();
+                    }
+                }
+                if (ev.key == KEY_ESC) halt(0);
+            }
+        }
+    }
     
     return 0;
 }
