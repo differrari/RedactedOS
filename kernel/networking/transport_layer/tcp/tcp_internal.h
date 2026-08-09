@@ -18,8 +18,9 @@ extern "C" {
 #endif
 
 #define TCP_DEFAULT_MSS 1460
+#define TCP_DEFAULT_PEER_MSS_IPV4 536
+#define TCP_DEFAULT_PEER_MSS_IPV6 1220
 #define TCP_MAX_MSS (NETPKT_MAX_ALLOC - sizeof(ipv4_hdr_t) - sizeof(tcp_hdr_t))
-#define TCP_PERSIST_PROBE_BUFSZ 1
 
 #define TCP_SEQ_LT(a,b) ((int32_t)((uint32_t)(a) - (uint32_t)(b)) < 0)
 #define TCP_SEQ_LEQ(a,b) ((int32_t)((uint32_t)(a) - (uint32_t)(b)) <= 0)
@@ -29,11 +30,11 @@ extern "C" {
 #define TCP_DELAYED_ACK_MS 10
 #define TCP_PERSIST_MIN_MS 500
 #define TCP_PERSIST_MAX_MS 60000
-#define TCP_INIT_CWND_SEGS 10
 #define TCP_NAGLE_FLUSH_THRESHOLD TCP_DEFAULT_MSS
 #define TCP_NAGLE_TIMEOUT_MS 10
 #define TCP_CONNECT_TIMEOUT_MS 10000
 #define TCP_SACK_SCOREBOARD_MAX 32
+#define TCP_CHALLENGE_ACK_INTERVAL_MS 100
 
 typedef struct {
     uint32_t left;
@@ -44,6 +45,8 @@ typedef struct {
     uint8_t used;
     uint8_t syn;
     uint8_t fin;
+    uint8_t psh;
+    uint8_t persist;
     uint8_t rtt_sample;
     uint8_t retransmit_cnt;
     uint8_t opts_len;
@@ -53,6 +56,7 @@ typedef struct {
     netpkt_t *pkt;
     uint32_t payload_off;
     uint32_t timer_ms;
+    uint32_t rtt_timer_ms;
     uint32_t timeout_ms;
 } tcp_tx_seg_t;
 
@@ -70,20 +74,23 @@ typedef struct {
     uint8_t l3_id;
     tcp_state_t state;
     tcp_data ctx;
-    uint8_t retries;
     uint16_t refs;
     uint8_t retired;
+    uint8_t active_open;
     struct ksocket *listener;
 } tcp_flow_base_t;
 
 typedef struct {
     uint32_t snd_wnd;
+    uint32_t snd_wl1;
+    uint32_t snd_wl2;
     uint32_t snd_una;
     uint32_t snd_nxt;
     uint32_t srtt;
     uint32_t rttvar;
     uint32_t rto;
     uint8_t rtt_valid;
+    uint8_t rtt_sample_pending;
 
     uint32_t cwnd;
     uint32_t ssthresh;
@@ -98,6 +105,7 @@ typedef struct {
     uint8_t sack_ok;
     uint8_t dup_acks;
     uint8_t in_fast_recovery;
+    uint8_t recover_valid;
     uint32_t recover;
     uint32_t cwnd_acc;
     
@@ -113,11 +121,14 @@ typedef struct {
     uint8_t nagle_flushing;
     uint8_t nagle_appending;
     uint8_t nodelay;
+    uint8_t nagle_psh;
+    uint8_t data_tx_valid;
 
     uintptr_t nagle_buf;
     uint32_t nagle_len;
     uint32_t nagle_cap;
     uint32_t nagle_timer_ms;
+    uint32_t last_data_tx_ms;
 
     tcp_tx_seg_t txq[TCP_MAX_TX_SEGS];
     uint32_t queued_bytes;
@@ -134,6 +145,7 @@ typedef struct {
     uint32_t sack_recent_left;
     uint32_t sack_recent_right;
     uint8_t dsack_pending;
+    uint8_t urg_valid;
     uint32_t dsack_left;
     uint32_t dsack_right;
     uint32_t rcv_wnd;
@@ -144,6 +156,7 @@ typedef struct {
     uint8_t reass_count;
     uint8_t fin_pending;
     uint32_t fin_seq;
+    uint32_t urg_seq;
 } tcp_flow_rx_t;
 
 typedef struct {
@@ -151,7 +164,6 @@ typedef struct {
     uint32_t fin_wait2_ms;
 
     uint8_t persist_active;
-    uint8_t persist_probe_cnt;
     uint32_t persist_timer_ms;
     uint32_t persist_timeout_ms;
 
@@ -161,6 +173,9 @@ typedef struct {
     uint8_t keepalive_on;
     uint32_t keepalive_ms;
     uint32_t keepalive_idle_ms;
+
+    uint8_t challenge_ack_valid;
+    uint32_t challenge_ack_last_ms;
 } tcp_flow_timer_t;
 
 typedef struct {
@@ -197,9 +212,10 @@ tcp_tx_seg_t *tcp_alloc_tx_seg(tcp_flow_t *flow, uint32_t reserve_slots);
 const uint8_t *tcp_tx_seg_payload_ptr(const tcp_tx_seg_t *seg);
 void tcp_tx_seg_clear(tcp_flow_t *flow, tcp_tx_seg_t *seg);
 bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg);
+bool tcp_retransmit_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg);
 bool tcp_send_flow_segment(tcp_flow_t *flow, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len);
-bool tcp_send_ack_now(tcp_flow_t *flow);
-bool tcp_try_send_pending_fin(tcp_flow_t *flow);
+void tcp_send_ack_now(tcp_flow_t *flow);
+void tcp_try_send_pending_fin(tcp_flow_t *flow);
 uint64_t tcp_flush_nagle(tcp_flow_t *flow, uint8_t force);
 
 static inline uint16_t tcp_checksum_ipv4(const void *segment, uint16_t seg_len, uint32_t src_ip, uint32_t dst_ip) {
@@ -217,7 +233,7 @@ tcp_tx_seg_t *tcp_find_first_unacked(tcp_flow_t *flow);
 void tcp_cc_on_timeout(tcp_flow_t *f);
 
 void tcp_daemon_kick(void);
-uint16_t tcp_calc_adv_wnd_field(tcp_flow_t *flow, uint8_t apply_scale);
+void tcp_update_adv_wnd(tcp_flow_t *flow, uint8_t apply_scale);
 
 #ifdef __cplusplus
 }

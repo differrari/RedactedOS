@@ -277,6 +277,7 @@ int32_t socket_getopt_raw(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_TCP_MSS:
         case SOCK_GET_TCP_RTT_MS:
         case SOCK_GET_TCP_RETRANSMITS:
+        case SOCK_GET_TCP_URGENT_REMAINING:
         case SOCK_GET_MCAST_GROUPS:
             return SOCK_ERR_UNSUP;
         case SOCK_GET_OPT_RECV_TIMEOUT:

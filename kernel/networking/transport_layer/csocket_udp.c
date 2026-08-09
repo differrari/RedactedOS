@@ -876,6 +876,7 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_TCP_MSS:
         case SOCK_GET_TCP_RTT_MS:
         case SOCK_GET_TCP_RETRANSMITS:
+        case SOCK_GET_TCP_URGENT_REMAINING:
             irq_restore(irq);
             return SOCK_ERR_UNSUP;
         default:

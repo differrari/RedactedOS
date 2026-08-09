@@ -179,7 +179,7 @@ void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32
 
     if (apply_mask & SOCK_OPT_TCP_NO_DELAY) {
         flow->tx.nodelay = (flags & SOCK_OPT_TCP_NO_DELAY) ? 1 : 0;
-        if (flow->tx.nodelay && flow->tx.nagle_len) tcp_flush_nagle(flow, 1);
+        if (flow->tx.nodelay && flow->tx.nagle_len && flow->tx.snd_wnd > 0 && !tcp_flush_nagle(flow, 1)) tcp_daemon_kick();
     }
 
     if (apply_mask & SOCK_OPT_SEND_BUF_SIZE) {
@@ -233,6 +233,7 @@ static void tcp_flow_clear_storage(tcp_flow_t *flow) {
     flow->tx.nagle_timer_ms = 0;
     flow->tx.nagle_flushing = 0;
     flow->tx.nagle_appending = 0;
+    flow->tx.nagle_psh = 0;
 
     if (flow->rx.reass_count || flow->rx.rcv_ooo_used) tcp_account_ooo_remove(flow->rx.rcv_ooo_used, flow->rx.reass_count);
     if (flow->rx.rcv_buf) {
@@ -350,7 +351,7 @@ tcp_flow_t *tcp_alloc_flow(void){
     f->tx.mss = TCP_DEFAULT_MSS;
     f->tx.sack_enabled = 1;
     f->tx.dsack_enabled = 1;
-    f->tx.cwnd = f->tx.mss * TCP_INIT_CWND_SEGS;
+    f->tx.cwnd = tcp_initial_cwnd(f->tx.mss);
     f->tx.ssthresh = TCP_RECV_WINDOW;
     return f;
 }
@@ -395,16 +396,15 @@ void tcp_free_flow(tcp_flow_t *flow) {
     tcp_flow_put(flow);
 }
 
-tcp_result_t tcp_flow_abort(tcp_data *flow_ctx) {
+void tcp_flow_abort(tcp_data *flow_ctx) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
-    if (!flow) return TCP_INVALID;
+    if (!flow) return;
 
     tcp_state_t state = flow->base.state;
     if (state != TCP_STATE_CLOSED && state != TCP_TIME_WAIT && state != TCP_SYN_SENT) tcp_send_reset(flow->base.l3_id, flow->base.local.ver, flow->base.local.ip, flow->base.remote.ip, flow->base.local.port, flow->base.remote.port, flow->tx.snd_nxt, 0, false);
 
     tcp_free_flow(flow);
     tcp_flow_put(flow);
-    return TCP_OK;
 }
 
 bool tcp_flow_is_closed(tcp_data *flow_ctx) {
@@ -541,7 +541,7 @@ void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms){
 }
 
 bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra){
-    if (!dst || !flow_ctx) return false;
+    if (!dst || !flow_ctx || !local_port || !dst->port || (dst->ver != IP_VER4 && dst->ver != IP_VER6)) return false;
 
     tcp_flow_t *flow = tcp_alloc_flow();
     if (!flow) return false;
@@ -577,7 +577,7 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     }
 
     flow->base.state = TCP_SYN_SENT;
-    flow->base.retries = TCP_SYN_RETRIES;
+    flow->base.active_open = 1;
 
     rng_t rng;
     rng_init_random(&rng);
@@ -610,16 +610,8 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
         flow->tx.ws_ok = 0;
     }
     flow->tx.sack_ok = flow->tx.sack_enabled;
-    flow->rx.rcv_buf = (uintptr_t)zalloc(flow->rx.rcv_wnd_max);
-    if (!flow->rx.rcv_buf) {
-        flow->rx.rcv_wnd = 0;
-        flow->rx.rcv_adv_edge = flow->rx.rcv_nxt;
-        flow->base.ctx.window = 0;
-        tcp_free_flow(flow);
-        tcp_flow_put(flow);
-        return false;
-    }
-    (void)tcp_calc_adv_wnd_field(flow, 1);
+    flow->rx.rcv_buf = 0;
+    tcp_update_adv_wnd(flow, 1);
 
     flow->base.ctx.options.ptr = 0;
     flow->base.ctx.options.size = 0;
@@ -634,11 +626,12 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->tx.snd_nxt = iss;
     flow->tx.snd_wnd = 0;
 
-    flow->tx.cwnd = flow->tx.mss * TCP_INIT_CWND_SEGS;
+    flow->tx.cwnd = tcp_initial_cwnd(flow->tx.mss);
     flow->tx.ssthresh = TCP_RECV_WINDOW;
     flow->tx.dup_acks = 0;
     flow->tx.in_fast_recovery = 0;
     flow->tx.recover = 0;
+    flow->tx.recover_valid = 0;
     flow->tx.cwnd_acc = 0;
 
     flow->timer.time_wait_ms = 0;
@@ -654,7 +647,10 @@ bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
 
     seg->syn = 1;
     seg->fin = 0;
+    seg->psh = 0;
+    seg->persist = 0;
     seg->rtt_sample = 1;
+    flow->tx.rtt_sample_pending = 1;
     seg->retransmit_cnt = 0;
     seg->seq = flow->tx.snd_nxt;
     seg->len = 0;

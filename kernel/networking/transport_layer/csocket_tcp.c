@@ -16,7 +16,6 @@
 #include "exceptions/irq.h"
 
 #define TCP_MAX_BACKLOG 128
-#define TCP_DEFAULT_SOCKET_BUF (256 * 1024)
 
 typedef struct tcp_socket {
     uint16_t localPort;
@@ -103,7 +102,7 @@ static int32_t tcp_socket_connection_state(tcp_socket_t* s) {
     }
 
     if (state == TCP_STATE_CLOSED || state == TCP_TIME_WAIT) {
-        tcp_flow_release_closed(&s->flow);
+        if (tcp_flow_release_closed(&s->flow) == TCP_BUSY) return 0;
         tcp_socket_reset_connection(s, false);
         return -1;
     }
@@ -133,7 +132,7 @@ socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketOptions* extra) {
     s->options.flags |= SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK;
     if (!(s->options.flags & SOCK_OPT_BUF_SIZE)) {
         s->options.flags |= SOCK_OPT_BUF_SIZE;
-        s->options.buf_size = TCP_DEFAULT_SOCKET_BUF;
+        s->options.buf_size = TCP_DEFAULT_RCV_BUF;
     }
 
     s->options.buf_size = tcp_clamp_rcvbuf(s->options.buf_size);
@@ -355,6 +354,14 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
             }
             break;
         }
+        case SOCK_GET_TCP_URGENT_REMAINING: {
+            tcp_flow_t* flow = tcp_flow_from_ctx(&s->flow);
+            if (flow) {
+                if (flow->rx.urg_valid && TCP_SEQ_GT(flow->rx.urg_seq, flow->rx.rcv_base)) v = flow->rx.urg_seq - flow->rx.rcv_base;
+                tcp_flow_put(flow);
+            }
+            break;
+        }
         case SOCK_GET_OPT_KEEPALIVE:
             v = (s->options.flags & SOCK_OPT_KEEPALIVE) != 0;
             break;
@@ -513,8 +520,7 @@ int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst) {
     if (s->listening) return SOCK_ERR_STATE;
     if (!dst || !dst->port) return SOCK_ERR_INVAL;
     if (s->flow.flow_generation) {
-        if (s->remoteEP.port &&
-            (s->remoteEP.ver != dst->ver || s->remoteEP.port != dst->port || memcmp(s->remoteEP.ip, dst->ip, dst->ver == IP_VER6 ? 16 : 4) != 0)) return SOCK_ERR_STATE;
+        if (s->remoteEP.port && (s->remoteEP.ver != dst->ver || s->remoteEP.port != dst->port || memcmp(s->remoteEP.ip, dst->ip, dst->ver == IP_VER6 ? 16 : 4) != 0)) return SOCK_ERR_STATE;
     } else {
         if (s->connected) return SOCK_ERR_STATE;
 
@@ -522,6 +528,7 @@ int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst) {
         uint8_t chosen_l3 = 0;
 
         if (d.ver == IP_VER6) {
+            if (ipv6_is_unspecified(d.ip) || ipv6_is_multicast(d.ip)) return SOCK_ERR_INVAL;
             ipv6_tx_plan_t p6;
             if (!socket_bind_build_ipv6_tx_plan(&s->bindSpec, s->localPort != 0, d.ip, &p6)) return SOCK_ERR_NO_ROUTE;
             if ((s->options.flags & SOCK_OPT_DONTROUTE) && !ipv6_tx_plan_onlink(&p6, d.ip)) return SOCK_ERR_NO_ROUTE;
@@ -529,6 +536,7 @@ int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst) {
         } else if (d.ver == IP_VER4) {
             uint32_t dip = 0;
             memcpy(&dip, d.ip, 4);
+            if (ipv4_is_unspecified(dip) || ipv4_is_multicast(dip) || ipv4_is_limited_broadcast(dip)) return SOCK_ERR_INVAL;
             ipv4_tx_plan_t p4;
             if (!socket_bind_build_ipv4_tx_plan(&s->bindSpec, s->localPort != 0, dip, &p4)) return SOCK_ERR_NO_ROUTE;
             if ((s->options.flags & SOCK_OPT_DONTROUTE) && !ipv4_tx_plan_onlink(&p4, dip)) return SOCK_ERR_NO_ROUTE;
@@ -540,6 +548,9 @@ int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst) {
         if (d.ver == IP_VER4) {
             l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen_l3);
             if (!ipv4_l3_is_ready(v4)) return SOCK_ERR_SYS;
+            uint32_t dip = 0;
+            memcpy(&dip, d.ip, 4);
+            if (ipv4_is_directed_broadcast(v4->ip, v4->mask, dip)) return SOCK_ERR_INVAL;
         } else if (d.ver == IP_VER6) {
             l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen_l3);
             if (!ipv6_l3_is_tcp_usable(v6)) return SOCK_ERR_SYS;
@@ -630,23 +641,7 @@ int64_t socket_send_tcp(socket_impl_t sh, const void* buf, uint64_t len) {
         s->flow.flags = (1u << PSH_F) | (1u << ACK_F);
 
         tcp_result_t res = tcp_flow_send(&s->flow);
-        if (res != TCP_OK && res != TCP_WOULDBLOCK) {
-            switch (res) {
-                case TCP_BUSY:
-                case TCP_TIMEOUT:
-                    return SOCK_ERR_WOULDBLOCK;
-                case TCP_UNIMPLEMENT:
-                    return SOCK_ERR_UNSUP;
-                case TCP_INVALID:
-                case TCP_RESET:
-                case TCP_DISCONNECT:
-                    return SOCK_ERR_STATE;
-                case TCP_CSUM_ERR:
-                    return SOCK_ERR_PROTO;
-                default:
-                    return SOCK_ERR_SYS;
-            }
-        }
+        if (res != TCP_OK && res != TCP_WOULDBLOCK) return res == TCP_INVALID ? SOCK_ERR_STATE : SOCK_ERR_SYS;
         if (s->flow.payload.size) return (int64_t)s->flow.payload.size;
         if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
 
@@ -727,8 +722,11 @@ int32_t socket_close_tcp(socket_impl_t sh) {
             else {
                 bool closed = tcp_flow_is_closed(&s->flow);
                 if (connection_state > 0 && !closed) {
-                    tcp_flow_flush(&s->flow);
-                    tcp_flow_close(&s->flow);
+                    tcp_result_t flush_rc = tcp_flow_flush(&s->flow);
+                    if (flush_rc == TCP_OK || flush_rc == TCP_WOULDBLOCK) {
+                        tcp_result_t close_rc = tcp_flow_close(&s->flow);
+                        if (close_rc != TCP_OK && close_rc != TCP_INVALID) tcp_flow_abort(&s->flow);
+                    } else if (flush_rc != TCP_INVALID) tcp_flow_abort(&s->flow);
                     closed = tcp_flow_is_closed(&s->flow);
                 }
 
@@ -742,7 +740,10 @@ int32_t socket_close_tcp(socket_impl_t sh) {
                     closed = tcp_flow_is_closed(&s->flow);
                 }
 
-                if (closed) tcp_flow_release_closed(&s->flow);
+                if (closed) {
+                    tcp_result_t release_rc = tcp_flow_release_closed(&s->flow);
+                    if (release_rc != TCP_OK && release_rc != TCP_INVALID && release_rc != TCP_BUSY) tcp_flow_abort(&s->flow);
+                }
             }
         }
     }
@@ -775,7 +776,13 @@ int32_t socket_close_tcp(socket_impl_t sh) {
 void socket_destroy_tcp(socket_impl_t sh) {
     tcp_socket_t* s = (tcp_socket_t*)sh;
     if (!s) return;
-    socket_close_tcp(s);
+    int32_t rc = socket_close_tcp(s);
+    if (rc == SOCK_ERR_WOULDBLOCK) {
+        s->options.flags &= ~(SOCK_OPT_NONBLOCK | SOCK_OPT_LINGER);
+        memset(&s->options.linger, 0, sizeof(s->options.linger));
+        rc = socket_close_tcp(s);
+    }
+    if (rc != SOCK_OK) tcp_socket_reset_connection(s, true);
     release(s);
 }
 

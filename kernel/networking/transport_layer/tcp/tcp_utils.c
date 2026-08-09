@@ -3,6 +3,16 @@
 #include "tcp_internal.h"
 #include "networking/interface_manager.h"
 
+#define TCP_INIT_CWND_SEGS 10u
+
+uint32_t tcp_initial_cwnd(uint32_t mss) {
+    if (!mss) mss = TCP_DEFAULT_MSS;
+    uint32_t ten_mss = mss * TCP_INIT_CWND_SEGS;
+    uint32_t lower = 2 * mss;
+    if (lower < 14600u) lower = 14600u;
+    return ten_mss < lower ? ten_mss : lower;
+}
+
 void tcp_update_mss(tcp_flow_t *flow) {
     if (!flow) return;
     uint32_t local_mss = flow->tx.path_mss ? flow->tx.path_mss : TCP_DEFAULT_MSS;
@@ -16,13 +26,14 @@ void tcp_update_mss(tcp_flow_t *flow) {
 }
 
 uint32_t tcp_calc_mss_for_l3(uint8_t l3_id, ip_version_t ver, const void *remote_ip){
+    //TODO propagate icmp4/6 pmtu and errors
     uint32_t mtu = 1500;
     if (ver == IP_VER4) {
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
         if (v4) mtu = v4->runtime_opts_v4.mtu ? v4->runtime_opts_v4.mtu : 1500;
     } else if (ver == IP_VER6) {
         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
-        if (v6) mtu =v6->mtu ? v6->mtu : 1500;
+        if (v6) mtu = v6->mtu ? v6->mtu : 1500;
     } else return 256;
 
     if (ver == IP_VER6 && remote_ip){

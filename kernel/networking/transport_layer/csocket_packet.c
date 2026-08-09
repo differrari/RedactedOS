@@ -255,6 +255,7 @@ int32_t socket_getopt_packet(socket_impl_t sh, int32_t opt, void* value, uint32_
         case SOCK_GET_TCP_MSS:
         case SOCK_GET_TCP_RTT_MS:
         case SOCK_GET_TCP_RETRANSMITS:
+        case SOCK_GET_TCP_URGENT_REMAINING:
             return SOCK_ERR_UNSUP;
         default:
             return SOCK_ERR_INVAL;
