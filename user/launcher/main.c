@@ -117,7 +117,7 @@ void draw_desktop(){
     gpu_point old_selected = selected;
     kbd_event event;
     while (read_event(&event)){
-        if (event.type == KEY_PRESS){
+        if (event.type == KEY_PRESS || event.type == KEY_CONTINUE){
             switch (event.key) {
                 case KEY_ENTER:
                 case KEY_KPENTER:
