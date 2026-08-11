@@ -705,7 +705,7 @@ void sync_el0_handler_c(){
             if (syscall_depth < 3){
                 uint64_t ksp = 0;
                 asm volatile ("mov %0, sp" : "=r"(ksp));
-                kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx. KSP: %llx", esr, elr, far, ksp);
+                kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", esr, elr, far, ksp);
                 coredump(esr, elr, far, ksp);
             }
             handle_exception("UNEXPECTED EXCEPTION", ec);
@@ -719,10 +719,12 @@ void sync_el0_handler_c(){
     }
     syscall_depth--;
     save_syscall_return(result);
-    // print("Return to %i",current_thread->pid);
-    if (current_thread->kstack_top) {
+    if (current_thread->special_mm) {
         //TODO: schedule kstack_top to cleanup, but don't do immediately as we're in it
-        current_thread->kstack_top = 0;
+        current_thread->special_mm = 0;
+        mmu_swap_kttbr(0);
+        mmu_flush_all();
+        mmu_flush_icache();
     }
     job_ksp = (uptr)ksp;
     process_restore();

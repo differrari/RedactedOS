@@ -14,9 +14,9 @@ extern void save_kstack();
     thread_t kthread = {};\
     job_kstack = (sizedptr){};\
     job_kpec = (uptr)&kthread;\
-    job_ksp = get_current_thread()->kstack_top ?: (uptr)ksp;\
     job_save_kernel();\
-    save_kstack();\
+    if (!get_current_thread()->special_mm)\
+        save_kstack();\
     process_t *owner_proc = get_proc_by_pid(mod->owner);\
     job_application_t app = (job_application_t){\
         .requesting_pid = get_current_proc()->id,\
@@ -92,9 +92,3 @@ static inline void job_serialize_off(job_application_t *application, int arg_num
 
 u64 create_new_job(job_application_t application, system_module *mod, thread_t *kthread);
 void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread);
-
-extern char ksp[];
-
-static inline uptr translate_stack(uptr new_top, uptr ptr){
-    return new_top-((uptr)ksp-ptr);
-}

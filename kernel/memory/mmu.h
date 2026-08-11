@@ -45,6 +45,7 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
 void mmu_unmap_table(uint64_t *table, uint64_t va, uint64_t pa);
 void debug_mmu_address(uint64_t va);
 void mmu_enable_verbose();
+void mmu_swap_kttbr(uptr *ttbr);
 void mmu_swap_ttbr(mm_struct *mm);
 void mmu_ttbr0_disable_user();
 void mmu_ttbr0_enable_user();
@@ -53,6 +54,8 @@ void mmu_asid_ensure(mm_struct *mm);
 void mmu_asid_release(mm_struct *mm);
 bool mmu_unmap_and_get_pa(uint64_t *table, uint64_t va, uint64_t *pa);
 bool mmu_set_access_flag(uint64_t *table, uint64_t va);
+void mmu_copy(uintptr_t *new_ttbr, uintptr_t *old_ttbr, int level);
+bool mmu_replace(uptr *ttbr, uptr va, uptr new_pa);
 uintptr_t* mmu_default_ttbr();
 void mmu_free_ttbr(uintptr_t *ttbr);
 uintptr_t mmu_translate(uint64_t *root, uintptr_t va, int *status);

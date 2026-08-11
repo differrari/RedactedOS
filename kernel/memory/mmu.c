@@ -503,10 +503,7 @@ void mmu_init() {
     page_alloc_enable_high_va();
     kernel_ttbr0_hw = pt_va_to_pa(kernel_ttbr0) & PTE_ADDR_MASK;
 
-    uint64_t ttbr1_pa = pt_va_to_pa(kernel_ttbr1) & PTE_ADDR_MASK;
-    asm volatile("msr ttbr1_el1, %0" :: "r"(ttbr1_pa));
-    asm volatile("dsb ish");
-    asm volatile("isb");
+    mmu_swap_kttbr(0);
 
     mmu_swap_ttbr(0);
 
@@ -536,6 +533,12 @@ void mmu_copy(uintptr_t *new_ttbr, uintptr_t *old_ttbr, int level){
         new_ttbr[i] = entry | (pt_va_to_pa(new_entry) & PTE_ADDR_MASK);
         mmu_copy(new_entry, old_entry, level+1);
     }
+}
+
+bool mmu_replace(uptr *table, uptr va, uptr new_pa){
+    mmu_unmap_and_get_pa(table, va, 0);
+    mmu_map_4kb(table, va, new_pa, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_KERNEL);
+    return true;
 }
 
 typedef struct {
@@ -722,6 +725,44 @@ uintptr_t mmu_translate(uint64_t *root, uintptr_t va, int *status){
     return (uintptr_t)((e3 & PTE_ADDR_MASK) | ((uint64_t)va & (GRANULE_4KB - 1)));
 }
 
+//TODO: let's use this everywhere, to make code more readable
+typedef union {
+    struct {
+        u64 vb: 1;//Validity descriptor
+        u64 tb: 1;//Table descriptor
+        u64 indx: 2;//Index into MAIR
+        u64 ns: 1;
+        u64 ap: 2;
+        u64 sh: 2;
+        u64 af: 1;
+        u64 rsvd3: 2;
+        u64 addr: 36;
+        u64 rsvd2: 5;
+        u64 pxn: 1;
+        u64 uxn: 1;
+        u64 sw: 4;
+        u64 rsvd: 5;
+    };
+    u64 entry;
+}
+mmu_entry_t;
+
+void mmu_print_entry(mmu_entry_t entry){
+    print("=========");
+    print("MMU entry %llb",entry);
+    print("UXN: %b",entry.uxn);
+    print("PXN: %b",entry.pxn);    
+    print("ADDR: %llx",entry.addr);
+    print("AF: %b",entry.af);
+    print("SH: %b",entry.sh);
+    print("AP: %b",entry.ap);
+    print("NS: %b",entry.ns);
+    print("INDX: %i",entry.indx);
+    print("TB: %b",entry.tb);
+    print("VB: %b",entry.vb);
+    print("=========");
+}
+
 void debug_mmu_address(uint64_t va){
     int tr = 0;
     uintptr_t pa = mmu_translate(0, (uintptr_t)va, &tr);
@@ -771,7 +812,7 @@ void debug_mmu_address(uint64_t va){
 
     if ((e2 & 0b11) == PD_BLOCK) {
         kprintf("Mapped as 2MB memory in L3");
-        kprintf("Entry: %b", (uint64_t)e2);
+        mmu_print_entry((mmu_entry_t){ .entry = e2 });
         return;
     }
 
@@ -786,7 +827,7 @@ void debug_mmu_address(uint64_t va){
         kprintf("L4 Table entry missing");
         return;
     }
-    kprintf("Entry: %b", e3);
+    mmu_print_entry((mmu_entry_t){.entry = e3});
     return;
 }
 
@@ -801,6 +842,11 @@ void mmu_ttbr0_enable_user() {
     if (pttbr && pttbr != (uintptr_t*)kernel_ttbr0) hw = pttbr_hw;
     asm volatile("msr ttbr0_el1, %0" :: "r"(hw));
     asm volatile("dsb ish\n\tisb" ::: "memory");
+}
+
+void mmu_swap_kttbr(uptr *ttbr){
+    uint64_t ttbr1_pa = pt_va_to_pa(ttbr ?: kernel_ttbr1);
+    asm volatile("msr ttbr1_el1, %0" :: "r"(ttbr1_pa));
 }
 
 void mmu_swap_ttbr(mm_struct *mm){

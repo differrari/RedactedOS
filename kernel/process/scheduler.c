@@ -172,6 +172,7 @@ void switch_proc(ProcSwitchReason reason) {
     }
 
     if (current_proc->mm.ttbr0) mmu_asid_ensure(&current_proc->mm);
+    mmu_swap_kttbr(0);
     mmu_swap_ttbr(current_proc->mm.ttbr0 ? &current_proc->mm : 0);
     if (prev && prev != current_proc && prev != idle_proc && process_can_reset(prev)) reset_process(prev);
 

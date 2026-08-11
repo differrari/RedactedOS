@@ -20,7 +20,7 @@ typedef struct {
     thread_t *requester;
     thread_t *worker;
     thread_t kernel_ctx;
-    sizedptr kstack;
+    uptr* kttbr;
     job_id_t id;
     job_buffer buffers[8];
     size_t buffer_count;
@@ -94,20 +94,18 @@ u64 create_new_job(job_application_t application, system_module *mod, thread_t *
     process_t *requesting_proc = get_proc_by_pid(application.requesting_pid);
     if (!requesting_proc){
         print("[JOB error] Unknown requesting proc %i",application.requesting_pid);
-        return (job_id_t){};
+        return 0;
     }
     job_state_t *job = job_alloc();
     job->type = application.type;
     job->mod = mod;
     thread_t *requester = (thread_t*)get_thread_from_proc(requesting_proc, application.requesting_tid);
-    if (job_kstack.ptr)
-        requester->kstack_top = job_kstack.ptr+job_kstack.size;
     job->requester = requester;
     process_t *fs_owner = get_proc_by_pid(application.worker_pid);
     thread_t *new_t = alloc_thread();
     if (!prepare_thread(job, mod, application, fs_owner, new_t)){
         print("[JOB error] failed to prepare thread for job %i",job->id);
-        return false;
+        return 0;
     }
     print("[JOB debug] Sync between %i - %i will happen with job %i of type %i using thread %i",requester->pid,application.worker_pid,job->id,application.type,new_t->tid);
     new_t->job_id = job->id;
@@ -117,7 +115,19 @@ u64 create_new_job(job_application_t application, system_module *mod, thread_t *
     memcpy(&job->kernel_ctx, kthread, sizeof(thread_t));
     job->kernel_ctx.job_id = job->id;
     job->kernel_ctx.pc = job_save_ret();
-    job->kstack = job_kstack;
+    if (job_kstack.ptr && job_kstack.size){
+        uptr* ttbr1k = mmu_default_ttbr();
+        uptr* newttbr1 = mmu_new_ttbr();
+        job->kttbr = newttbr1;
+        mmu_copy(newttbr1, ttbr1k, 0);
+        uptr base = (uptr)ksp - 0x10000;
+        for (uptr a = 0; a < 0x10000; a += PAGE_SIZE){
+            int st = 0;
+            uptr addr = mmu_translate(newttbr1, job_kstack.ptr + a, &st);
+            if (st) return 0;//TODO: release table
+            mmu_replace(newttbr1, base + a, addr);
+        }
+    }
     schedule_thread(fs_owner, new_t);
     switch_proc(YIELD);
     return 0;
@@ -163,9 +173,12 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
             print("[JOB debug] Copy buffer %llx into %llx",buf.worker_ptr.ptr,buf.orig_ptr.ptr);
             void* addr = quick_translate(st->requester, proc, buf.orig_ptr.ptr);
             if (!addr){
-                if (buf.orig_ptr.ptr & HIGH_VA) addr = (void*)buf.orig_ptr.ptr;//TODO: extra safety checks? 
-                else continue;
+                if (buf.orig_ptr.ptr & HIGH_VA){
+                    int stb = 0;
+                    addr = (void*)PHYS_TO_VIRT(mmu_translate(st->kttbr, buf.orig_ptr.ptr, &stb));
+                }
             }
+            if (!addr) continue;
             memcpy(addr, (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
         }
     }
@@ -174,26 +187,9 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     job_kpec = (uptr)&st->kernel_ctx;
     cpec = (uptr)st->requester;
 
-    //TODO: this entire thing is flimsy, we're only translating stack returns so we can make our way back to the userland proc, but any &values stored in the stack are not translated and risk corruption + failure
-    if (st->kstack.ptr){
-        st->kernel_ctx.sp = translate_stack((st->kstack.ptr+0x10000), st->kernel_ctx.sp);
-        print("[JOB debug] Initial Address %llx",st->kernel_ctx.regs[29]);
-        st->kernel_ctx.regs[29] = translate_stack((st->kstack.ptr+0x10000), st->kernel_ctx.regs[29]);
-
-        uptr addr = st->kernel_ctx.regs[29];
-        uptr fp = 0;
-        do {
-            print("[JOB debug] Address %llx",addr);
-            fp = *(uptr*)addr;
-            print("[JOB debug] Link %llx",fp);
-            fp = translate_stack(st->kstack.ptr+0x10000, fp);
-            print("[JOB debug] In new stack %llx",fp);
-            *(uptr*)addr = fp;
-            addr = fp;
-        } while(addr && (addr & 0xfffff00000000000) == 0xffffc00000000000);
-        job_ksp = st->kstack.ptr+0x10000;
-    }
     st->requester->state = RUNNING;
+    st->requester->special_mm = st->kttbr;
     prepare_process_restore(proc);
+    mmu_swap_kttbr(st->kttbr);
     job_restore_kernel();
 }
