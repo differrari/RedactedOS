@@ -67,3 +67,21 @@ void mmu_map_all(paddr_t pa);
 
 void mmu_unmap(uint64_t va, uint64_t pa);
 void mmu_init_kernel();
+
+static inline void mmu_flush_all() {
+    asm volatile (
+        "dsb ishst\n"        // Ensure all memory accesses complete
+        "tlbi vmalle1is\n"   // Invalidate all EL1 TLB entries (Inner Shareable)
+        "dsb ish\n"          // Ensure completion of TLB invalidation
+        "isb\n"              // Synchronize pipeline
+        ::: "memory"
+    );
+}
+
+static inline void mmu_flush_icache() {
+    asm volatile (
+        "ic iallu\n"         // Invalidate all instruction caches to PoU
+        "isb\n"              // Ensure completion before continuing
+        ::: "memory"
+    );
+}

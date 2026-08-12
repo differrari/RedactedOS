@@ -38,8 +38,6 @@ static uintptr_t *kernel_ttbr1;
 static uint64_t kernel_ttbr0_hw;
 
 static bool mmu_verbose;
-static inline void mmu_flush_icache();
-static inline void mmu_flush_all();
 
 
 static uint64_t asid_shift;
@@ -294,24 +292,6 @@ void mmu_map_4kb(uint64_t *table, uint64_t va, uint64_t pa, uint64_t attr_index,
     }
 
     l3[l3_index] = want;
-}
-
-static inline void mmu_flush_all() {
-    asm volatile (
-        "dsb ishst\n"        // Ensure all memory accesses complete
-        "tlbi vmalle1is\n"   // Invalidate all EL1 TLB entries (Inner Shareable)
-        "dsb ish\n"          // Ensure completion of TLB invalidation
-        "isb\n"              // Synchronize pipeline
-        ::: "memory"
-    );
-}
-
-static inline void mmu_flush_icache() {
-    asm volatile (
-        "ic iallu\n"         // Invalidate all instruction caches to PoU
-        "isb\n"              // Ensure completion before continuing
-        ::: "memory"
-    );
 }
 
 uintptr_t* mmu_default_ttbr(){
