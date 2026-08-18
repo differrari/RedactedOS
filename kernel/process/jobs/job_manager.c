@@ -121,7 +121,7 @@ u64 create_new_job(job_application_t application, system_module *mod, thread_t *
         job->kttbr = newttbr1;
         mmu_copy(newttbr1, ttbr1k, 0);
         uptr base = (uptr)ksp - 0x10000;
-        for (uptr a = 0; a <= 0x10000; a += PAGE_SIZE){
+        for (uptr a = 0; a < 0x10000; a += PAGE_SIZE){
             int st = 0;
             uptr addr = mmu_translate(newttbr1, job_kstack.ptr + a, &st);
             if (st) return 0;//TODO: release table
