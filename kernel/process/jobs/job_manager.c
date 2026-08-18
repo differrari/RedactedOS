@@ -6,8 +6,17 @@
 #include "memory/addr.h"
 #include "memory/memory.h"
 #include "filesystem/filesystem.h"
+#include "process/stack_manager.h"
 
 job_id_t job_id_counter = 1;
+
+// #define JOB_DEBUG
+
+#ifdef JOB_DEBUG
+#define job_print(...) print(#__VA_ARGS__)
+#else
+#define job_print(...)
+#endif
 
 uptr job_kpec = 0;
 uptr job_ksp = 0;
@@ -20,7 +29,6 @@ typedef struct {
     thread_t *requester;
     thread_t *worker;
     thread_t kernel_ctx;
-    uptr* kttbr;
     job_id_t id;
     job_buffer buffers[8];
     size_t buffer_count;
@@ -56,7 +64,7 @@ bool prepare_thread(job_state_t *job, system_module *mod, job_application_t appl
         case job_write: entry = (uptr)mod->write; break;
         case job_trunc: entry = (uptr)mod->truncate; break;
         case job_transform: entry = (uptr)mod->transform; break;
-        default: return false;
+        default: print("[JOB error] unknown type %i",application.type); return false;
     }
     if (!entry) return false;
     new_thread(proc, t, proc->spsr, entry);
@@ -71,7 +79,7 @@ bool prepare_thread(job_state_t *job, system_module *mod, job_application_t appl
         register_proc_memory(PHYS_TO_VIRT(pbuffers + (i * PAGE_SIZE)), pbuffers + (i * PAGE_SIZE), MEM_RW, MEM_PRIV_KERNEL);
     }
     memset((void*)PHYS_TO_VIRT(pbuffers), 0, total_size);
-    print("[JOB debug] buffers will go to %llx - %llx",buffers,pbuffers);
+    job_print("[JOB debug] buffers will go to %llx - %llx",buffers,pbuffers);
     uptr next_addr_pa = PHYS_TO_VIRT(pbuffers);
     uptr next_addr_va = buffers;
     
@@ -107,23 +115,24 @@ u64 create_new_job(job_application_t application, system_module *mod, thread_t *
         print("[JOB error] failed to prepare thread for job %i",job->id);
         return 0;
     }
-    print("[JOB debug] Sync between %i - %i will happen with job %i of type %i using thread %i",requester->pid,application.worker_pid,job->id,application.type,new_t->tid);
+    job_print("[JOB debug] Sync between %i - %i will happen with job %i of type %i using thread %i",requester->pid,application.worker_pid,job->id,application.type,new_t->tid);
     new_t->job_id = job->id;
     job->worker = new_t;
     requester->state = BLOCKED;
-    print("[JOB debug] kstack has been saved to %llx - %x",job_kstack.ptr,job_kstack.size);
+    job_print("[JOB debug] kstack has been saved to %llx - %x",kthread->stack_info.top,kthread->stack_info.size);
     memcpy(&job->kernel_ctx, kthread, sizeof(thread_t));
     job->kernel_ctx.job_id = job->id;
     job->kernel_ctx.pc = job_save_ret();
-    if (job_kstack.ptr && job_kstack.size){
+    if (kthread->stack_info.top && kthread->stack_info.size){
         uptr* ttbr1k = mmu_default_ttbr();
         uptr* newttbr1 = mmu_new_ttbr();
-        job->kttbr = newttbr1;
+        requester->special_mm = newttbr1;
         mmu_copy(newttbr1, ttbr1k, 0);
-        uptr base = (uptr)ksp - 0x10000;
-        for (uptr a = 0; a < 0x10000; a += PAGE_SIZE){
+        uptr base = (uptr)ksp - kstack_max;
+        uptr stack = kthread->stack_info.top-kstack_max;
+        for (uptr a = 0; a < kstack_max; a += PAGE_SIZE){
             int st = 0;
-            uptr addr = mmu_translate(newttbr1, job_kstack.ptr + a, &st);
+            uptr addr = mmu_translate(newttbr1,  stack + a, &st);
             if (st) return 0;//TODO: release table
             mmu_replace(newttbr1, base + a, addr);
         }
@@ -170,26 +179,25 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
     for (size_t i = 0; i < st->buffer_count; i++){
         job_buffer buf = st->buffers[i];
         if (buf.sync & copy_on_end && buf.worker_ptr.ptr){
-            print("[JOB debug] Copy buffer %llx into %llx",buf.worker_ptr.ptr,buf.orig_ptr.ptr);
+            job_print("[JOB debug] Copy buffer %llx into %llx",buf.worker_ptr.ptr,buf.orig_ptr.ptr);
             void* addr = quick_translate(st->requester, proc, buf.orig_ptr.ptr);
             if (!addr){
                 if (buf.orig_ptr.ptr & HIGH_VA){
                     int stb = 0;
-                    addr = (void*)PHYS_TO_VIRT(mmu_translate(st->kttbr, buf.orig_ptr.ptr, &stb));
+                    addr = (void*)PHYS_TO_VIRT(mmu_translate(st->requester->special_mm, buf.orig_ptr.ptr, &stb));
                 }
             }
             if (!addr) continue;
             memcpy(addr, (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
         }
     }
-    print("[JOB] %i fulfilled by %i with return value %llx",job_id,thread->tid,thread->regs[0]);
+    job_print("[JOB] %i fulfilled by %i with return value %llx",job_id,thread->tid,thread->regs[0]);
     st->kernel_ctx.PROC_X0 = ret;
     job_kpec = (uptr)&st->kernel_ctx;
     cpec = (uptr)st->requester;
 
     st->requester->state = RUNNING;
-    st->requester->special_mm = st->kttbr;
     prepare_process_restore(proc);
-    mmu_swap_kttbr(st->kttbr);
+    mmu_swap_kttbr(st->requester->special_mm);
     job_restore_kernel();
 }

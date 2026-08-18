@@ -94,8 +94,7 @@ void load_entries(){
         string_free(entry->info.author);
     }
     chunk_array_reset(entries);
-    traverse_directory("/home/applications", false, handle_entry);
-    traverse_directory("/boot/redos/system", false, handle_entry);
+    traverse_directory("/apps", false, handle_entry);
 }
 
 void draw_desktop(){

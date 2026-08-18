@@ -2,22 +2,22 @@
 
 #include "files/jobs.h"
 #include "process/process.h"
+#include "process/stack_manager.h"
 
 extern uptr job_kpec;
 extern uptr job_ksp;
-extern sizedptr job_kstack;
 extern void job_save_kernel();
-extern void save_kstack();
+extern void save_kstack(uptr stack);
 
 //TODO: if the owner is the current process, we can downgrade the syscall into a function call without async
-//TODO: in stack saving, just create the stack externally (belonging to proc 1), then pass it to save_kstack to copy into
 #define job_make(job_type,mod,action)\
     thread_t kthread = {};\
-    job_kstack = (sizedptr){};\
     job_kpec = (uptr)&kthread;\
     job_save_kernel();\
-    if (!get_current_thread()->special_mm)\
-        save_kstack();\
+    if (!get_current_thread()->special_mm){\
+        kthread.stack_info = new_stack(get_proc_by_pid(1));\
+        save_kstack(kthread.stack_info.top);\
+    }\
     process_t *owner_proc = get_proc_by_pid(mod->owner);\
     job_application_t app = (job_application_t){\
         .requesting_pid = get_current_proc()->id,\
