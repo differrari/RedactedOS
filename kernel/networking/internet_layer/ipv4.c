@@ -337,6 +337,11 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_
     uint32_t src = bswap32(ip.src_ip);
     uint32_t dst = bswap32(ip.dst_ip);
 
+    if (ipv4_is_loopback(src)) {
+        l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
+        if (!l2 || l2->kind != NET_IFK_LOCALHOST) return;
+    }
+
     if (ifindex && src && src_mac) {
         uint8_t mac_old[MAC_ADDR_LEN];
         bool had = arp_table_get_for_l2((uint8_t)ifindex, src, mac_old);

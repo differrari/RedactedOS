@@ -1,4 +1,6 @@
 #include "network.h"
+#include "networking/transport_layer/socket_core.h"
+#include "networking/firewall.h"
 #include "network_dispatch.hpp"
 
 static NetworkDispatch *dispatch = 0;
@@ -71,6 +73,11 @@ bool network_sync_multicast(uint16_t ifindex, const uint8_t* macs, uint32_t coun
     NetDriver* drv = dispatch->driver_at((uint8_t)ifindex);
     if (!drv) return false;
     return drv->sync_multicast(macs, count);
+}
+
+void network_cleanup_process(uint16_t pid) {
+    firewall_cleanup_process(pid);
+    socket_core_close_process(pid);
 }
 
 system_module net_module = (system_module){

@@ -1,11 +1,13 @@
 #include "tcp_internal.h"
 #include "networking/transport_layer/socket_bind.h"
 #include "networking/transport_layer/csocket_tcp.h"
+#include "networking/transport_layer/trans_utils.h"
 #include "networking/interface_manager.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv6.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
+#include "networking/firewall.h"
 #include "std/memory.h"
 #include "math/rng.h"
 #include "random/random.h"
@@ -847,9 +849,17 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     }
 
     if (!flow){
+        net_l4_endpoint remote = {0};
+        make_ep(src_ip_addr, src_port, ipver, &remote);
+        if (!firewall_allows(PROTO_TCP, NET_CTRL_FIREWALL_IN, &remote, dst_port, false)) {
+            netpkt_unref(pkt);
+            return;
+        }
+
+        bool initial_syn = (flags & (1u << SYN_F)) && !(flags & ((1u << ACK_F) | (1u << RST_F) | (1u << FIN_F))) && data_len == 0;
         ksocket_t* listener = socket_bind_lookup(PROTO_TCP, ipver, l3_id, ifx, src_ip_addr, src_port, dst_ip_addr, dst_port);
 
-        if ((flags & (1u << SYN_F)) && !(flags & ((1u << ACK_F) | (1u << RST_F) | (1u << FIN_F))) && data_len == 0 && listener){
+        if (initial_syn && listener){
             rng_t rng;
             rng_init_random(&rng);
 

@@ -31,6 +31,7 @@ const char* network_get_hw_ifname(uint16_t ifindex);
 size_t network_nic_count(void);
 
 void network_update_local_ip(uint32_t ip);
+void network_cleanup_process(uint16_t pid);
 
 void network_dump_interfaces(void);
 bool network_sync_multicast(uint16_t ifindex, const uint8_t* macs, uint32_t count);

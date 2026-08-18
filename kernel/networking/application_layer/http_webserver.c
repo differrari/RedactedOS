@@ -1,4 +1,5 @@
 #include "http_webserver.h"
+#include "networking/firewall.h"
 #include "filesystem/filesystem.h"
 #include "networking/application_layer/dns/mdns_responder.h"
 #include "networking/transport_layer/socket_bind.h"
@@ -6,6 +7,7 @@
 #include "std/memory.h"
 #include "std/string.h"
 #include "syscalls/syscalls.h"
+#include "process/scheduler.h"
 
 typedef struct {
     const HTTPRoute *route;
@@ -66,7 +68,7 @@ static HTTPHeader *http_web_build_file_headers(const HTTPWebFile *file, string c
     static char accept_ranges_name[] = "Accept-Ranges";
     static char accept_ranges_value[] = "bytes";
     static char content_range_name[] = "Content-Range";
-    
+
     *out_count = 0;
     *out_cache = (string){0};
     uint32_t base_count = file->headers ? file->header_count : 0;
@@ -286,12 +288,29 @@ int32_t http_webserver_run(const HTTPWebServerConfig *config) {
         return rc;
     }
 
+    if (config->firewall_allow) {
+        NetCtrlFirewallRule rule = {
+            .action = NET_CTRL_FIREWALL_ALLOW,
+            .direction = NET_CTRL_FIREWALL_IN,
+            .protocol = PROTO_TCP,
+            .port_from = config->port,
+            .port_to = config->port
+        };
+        uint16_t pid = get_current_proc_pid();
+        rc = pid ? firewall_add_rule(&rule, pid) : SOCK_ERR_INVAL;
+        if (rc < 0) {
+            http_server_close(srv);
+            http_server_destroy(srv);
+            return rc;
+        }
+    }
+
     if (config->mdns_instance && config->mdns_type && config->mdns_proto) mdns_register_service(config->mdns_instance, config->mdns_type, config->mdns_proto, config->port, config->mdns_txt);
 
     while (1) {
         http_connection_handle_t conn = http_server_accept(srv);
         if (!conn) {
-            msleep(50);
+            msleep(10);
             continue;
         }
 

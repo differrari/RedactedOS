@@ -156,6 +156,7 @@ static void run_http_server() {
     config.mdns_type = "http";
     config.mdns_proto = "tcp";
     config.mdns_txt = "path=/";
+    config.firewall_allow = true;
 
     http_webserver_run(&config);
     stop_current_process(0);

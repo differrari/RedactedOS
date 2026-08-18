@@ -350,6 +350,12 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if (!netpkt_copyout(pkt, 0, ip6, sizeof(*ip6))) return;
     uint32_t v = bswap32(ip6->ver_tc_fl);
     if ((v >> 28) != 6) return;
+
+    if (ipv6_is_loopback(ip6->src)) {
+        l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
+        if (!l2 || l2->kind != NET_IFK_LOCALHOST) return;
+    }
+
     uint32_t now = (uint32_t)get_time();
     for (int i = 0; i < REASS_SLOTS; i++) {
         reass_slot_t *s = &g_reass[i];

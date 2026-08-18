@@ -3,6 +3,8 @@
 #include "shutdown.h"
 #include "tracert.h"
 #include "curl.h"
+#include "ip.h"
+#include "firewall.h"
 #include "monitor_processes.h"
 #include "kernel_processes/kprocess_loader.h"
 #include "filesystem/filesystem.h"
@@ -28,6 +30,8 @@ open_tools_ref available_cmds[] = {
     { "shutdown", run_shutdown },
     { "tracert", run_tracert },
     { "curl", run_curl },
+    { "ip", run_ip },
+    { "firewall", run_firewall },
     { "monitor", monitor_procs },
 };
 

@@ -70,6 +70,7 @@ typedef struct {
     bool close_each_response;
     bool head_as_get;
     bool options_for_any_path;
+    bool firewall_allow;
 } HTTPWebServerConfig;
 
 struct HTTPWebContext {

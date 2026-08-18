@@ -161,6 +161,35 @@ int32_t socket_core_close_socket(ksocket_t* socket) {
     return ret;
 }
 
+void socket_core_close_process(uint16_t pid) {
+    if (!pid) return;
+
+    while (true) {
+        ksocket_t* socket = NULL;
+        irq_flags_t irq = irq_save_disable();
+        for (uint32_t i = 1; i < SOCKET_MAX_OPEN; i++) {
+            if (!sockets[i] || sockets[i]->pid != pid) continue;
+            socket = sockets[i];
+            socket->refs++;
+            break;
+        }
+        irq_restore(irq);
+
+        if (!socket) break;
+
+        uint32_t nonblock = 1;
+        socket_core_set_option(socket, SOCK_OPT_NONBLOCK, &nonblock, sizeof(nonblock));
+
+        int32_t rc = socket_core_close_socket(socket);
+        if (rc == SOCK_ERR_WOULDBLOCK) {
+            SocketLinger linger = {0};
+            if (socket_core_set_option(socket, SOCK_OPT_LINGER, &linger, sizeof(linger)) == SOCK_OK) rc = socket_core_close_socket(socket);
+        }
+        socket_core_put(socket);
+        if (rc == SOCK_ERR_WOULDBLOCK) break;
+    }
+}
+
 int32_t socket_core_close_handle(socket_handle_t handle, uint16_t pid) {
     ksocket_t* socket = socket_core_get(handle, pid);
     if (!socket) return SOCK_ERR_INVAL;

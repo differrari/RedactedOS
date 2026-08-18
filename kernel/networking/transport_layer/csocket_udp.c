@@ -9,12 +9,15 @@
 #include "networking/internet_layer/ipv6.h"
 #include "networking/transport_layer/trans_utils.h"
 #include "networking/network.h"
+#include "networking/firewall.h"
 #include "networking/interface_manager.h"
 #include "networking/net_logger/net_logger.h"
 #include "syscalls/syscalls.h"
 #include "std/memory.h"
 #include "alloc/allocate.h"
 #define UDP_DEFAULT_RING_CAP 64
+#define UDP_REPLY_WINDOW_MS 60000
+#define UDP_RECENT_TX_COUNT 8
 #define UDP_MAX_RING_CAP 1024
 
 //what if MAX_L2_INTERFACES is larger than sizeof u16?
@@ -24,10 +27,18 @@ typedef struct udp_rx_entry {
     SockBindSpec rx_spec;
 } udp_rx_entry_t;
 
+typedef struct udp_recent_tx {
+    net_l4_endpoint remote;
+    uint32_t sent_at_ms;
+    bool match_any_source;
+} udp_recent_tx_t;
+
 typedef struct udp_socket {
     uint16_t localPort;
     net_l4_endpoint remoteEP;
     bool connected;
+    udp_recent_tx_t recent_tx[UDP_RECENT_TX_COUNT];
+    uint8_t recent_tx_next;
     ksocket_t* ownerSocket;
     SocketOptions options;
     SockBindSpec bindSpec;
@@ -41,6 +52,16 @@ typedef struct udp_socket {
     uint32_t rx_bytes;
     bool closed;
 } udp_socket_t;
+
+static void udp_record_recent_tx(udp_socket_t* s, const net_l4_endpoint* remote, bool match_any_source) {
+    if (!s || !remote) return;
+    uint32_t now_ms = (uint32_t)get_time();
+    irq_flags_t irq = irq_save_disable();
+    uint8_t index = s->recent_tx_next;
+    if (++s->recent_tx_next == UDP_RECENT_TX_COUNT) s->recent_tx_next = 0;
+    s->recent_tx[index] = (udp_recent_tx_t) {.remote = *remote, .sent_at_ms = now_ms, .match_any_source = match_any_source};
+    irq_restore(irq);
+}
 
 static bool udp_socket_mcast_endpoint_valid(const net_l4_endpoint* ep) {
     if (!ep) return false;
@@ -217,6 +238,38 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, uint8_t l3_id, 
     entry.rx_spec.ver = ipver;
     entry.rx_spec.l3_id = l3_id;
 
+    irq_flags_t irq = irq_save_disable();
+    if (s->closed || s->localPort != dst_port) {
+        irq_restore(irq);
+        return 0;
+    }
+    bool joined_multicast = multicast && udp_socket_mcast_match(s, ipver, dst_ip_addr);
+    if (multicast && !joined_multicast) {
+        irq_restore(irq);
+        return 0;
+    }
+    if (s->connected && (s->remoteEP.ver != ipver || s->remoteEP.port != src_port || (ipver == IP_VER4 && memcmp(s->remoteEP.ip, src_ip_addr, 4) != 0) || (ipver == IP_VER6 && ipv6_cmp(s->remoteEP.ip, src_ip_addr) != 0))) {
+        irq_restore(irq);
+        return 0;
+    }
+    bool recent_tx_match = false;
+    uint32_t recent_tx_time_ms = 0;
+    uint8_t index = s->recent_tx_next;
+    for (uint32_t i = 0; i < UDP_RECENT_TX_COUNT; i++) {
+        if (!index) index = UDP_RECENT_TX_COUNT;
+        udp_recent_tx_t* tx = &s->recent_tx[--index];
+        if (!tx->remote.port || tx->remote.ver != ipver || tx->remote.port != src_port) continue;
+        if (tx->match_any_source || (ipver == IP_VER4 && memcmp(tx->remote.ip, src_ip_addr, 4) == 0) || (ipver == IP_VER6 && ipv6_cmp(tx->remote.ip, src_ip_addr) == 0)) {
+            recent_tx_match = true;
+            recent_tx_time_ms = tx->sent_at_ms;
+            break;
+        }
+    }
+    irq_restore(irq);
+
+    bool related = recent_tx_match && (uint32_t)get_time() - recent_tx_time_ms <= UDP_REPLY_WINDOW_MS;
+    if (!firewall_allows(PROTO_UDP, NET_CTRL_FIREWALL_IN, &entry.src, dst_port, related)) return 0;
+
     if (!s->rx_ring || !s->ring_cap) {
         uint32_t usable = UDP_DEFAULT_RING_CAP;
         if ((s->options.flags & SOCK_OPT_BUF_SIZE) && s->options.buf_size) {
@@ -237,7 +290,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, uint8_t l3_id, 
         if (ring) release(ring);
     }
 
-    irq_flags_t irq = irq_save_disable();
+    irq = irq_save_disable();
     if (s->closed || s->localPort != dst_port || !s->rx_ring || !s->ring_cap) {
         irq_restore(irq);
         return 0;
@@ -422,6 +475,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         if (d.ver == IP_VER4 && memcmp(d.ip, s->remoteEP.ip, 4) != 0) return SOCK_ERR_STATE;
         if (d.ver == IP_VER6 && ipv6_cmp(d.ip, s->remoteEP.ip) != 0) return SOCK_ERR_STATE;
     }
+    if (!firewall_allows(PROTO_UDP, NET_CTRL_FIREWALL_OUT, &d, s->localPort, false)) return SOCK_ERR_PERM;
 
     sizedptr pay;
     pay.ptr = (uintptr_t)buf;
@@ -479,6 +533,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
             tx.index = chosen_l3;
 
             if (!udp_send_segment(&src, &d, pay, &tx, ttl, dontfrag)) return SOCK_ERR_SYS;
+            udp_record_recent_tx(s, &d, true);
             return (int64_t)len;
         }
 
@@ -501,6 +556,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         tx.index = plan.l3_id;
 
         if (!udp_send_segment(&src, &d, pay, &tx, ttl, dontfrag)) return SOCK_ERR_SYS;
+        udp_record_recent_tx(s, &d, ipv4_is_multicast(dip));
         return (int64_t)len;
     }
 
@@ -524,6 +580,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         tx.index = plan.l3_id;
 
         if (!udp_send_segment(&src, &d, pay, &tx, ttl, dontfrag)) return SOCK_ERR_SYS;
+        udp_record_recent_tx(s, &d, ipv6_is_multicast(d.ip));
         return (int64_t)len;
     }
 
@@ -933,6 +990,8 @@ int32_t socket_close_udp(socket_impl_t sh) {
     memset(&s->bindSpec, 0, sizeof(s->bindSpec));
     s->bindSpec.kind = BIND_ANY;
     s->connected = false;
+    memset(s->recent_tx, 0, sizeof(s->recent_tx));
+    s->recent_tx_next = 0;
     memset(&s->remoteEP, 0, sizeof(s->remoteEP));
     s->remoteEP.ver = IP_VER4;
     irq_restore(irq);

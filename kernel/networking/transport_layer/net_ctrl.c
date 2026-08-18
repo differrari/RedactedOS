@@ -11,6 +11,8 @@
 #include "networking/link_layer/link_utils.h"
 #include "networking/link_layer/ndp.h"
 #include "networking/network.h"
+#include "networking/firewall.h"
+#include "alloc/allocate.h"
 
 typedef struct {
     uint8_t ifindex;
@@ -27,6 +29,12 @@ typedef struct {
     uint8_t kind;
     uint8_t dad_state;
     uint32_t ttl_ms;
+    uint32_t rule_id;
+    uint16_t port_from;
+    uint16_t port_to;
+    uint8_t action;
+    uint8_t direction;
+    uint8_t protocol;
     uint32_t present;
     net_l4_endpoint address;
     net_l4_endpoint gateway;
@@ -105,6 +113,36 @@ static bool net_ctrl_read_attrs(const uint8_t* p, uint32_t len, net_ctrl_attrs_t
                 if (a.length != sizeof(uint32_t)) return false;
                 memcpy(&out->ttl_ms, v, sizeof(out->ttl_ms));
                 out->present |= 1u << NET_CTRL_EXT_TTL_MS;
+                break;
+            case NET_CTRL_EXT_PROTOCOL:
+                if (a.length != sizeof(uint8_t)) return false;
+                out->protocol = v[0];
+                out->present |= 1u << NET_CTRL_EXT_PROTOCOL;
+                break;
+            case NET_CTRL_EXT_RULE_ID:
+                if (a.length != sizeof(uint32_t)) return false;
+                memcpy(&out->rule_id, v, sizeof(out->rule_id));
+                out->present |= 1u << NET_CTRL_EXT_RULE_ID;
+                break;
+            case NET_CTRL_EXT_ACTION:
+                if (a.length != sizeof(uint8_t)) return false;
+                out->action = v[0];
+                out->present |= 1u << NET_CTRL_EXT_ACTION;
+                break;
+            case NET_CTRL_EXT_DIRECTION:
+                if (a.length != sizeof(uint8_t)) return false;
+                out->direction = v[0];
+                out->present |= 1u << NET_CTRL_EXT_DIRECTION;
+                break;
+            case NET_CTRL_EXT_PORT_FROM:
+                if (a.length != sizeof(uint16_t)) return false;
+                memcpy(&out->port_from, v, sizeof(out->port_from));
+                out->present |= 1u << NET_CTRL_EXT_PORT_FROM;
+                break;
+            case NET_CTRL_EXT_PORT_TO:
+                if (a.length != sizeof(uint16_t)) return false;
+                memcpy(&out->port_to, v, sizeof(out->port_to));
+                out->present |= 1u << NET_CTRL_EXT_PORT_TO;
                 break;
             case NET_CTRL_EXT_ADDRESS:
                 if (a.length != sizeof(net_l4_endpoint)) return false;
@@ -415,19 +453,47 @@ static int32_t net_ctrl_route_del(const net_ctrl_attrs_t* a) {
     if (!l3_is_v6_from_id(a->l3_id)) {
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(a->l3_id);
         uint32_t network = 0;
-        if (!v4 || !v4->routing_table || a->address.ver != IP_VER4) return SOCK_ERR_INVAL;
+        uint32_t gateway = 0;
+        if (!v4 || a->address.ver != IP_VER4 || a->prefix_len > 32) return SOCK_ERR_INVAL;
+        if (!v4->routing_table) return SOCK_ERR_NOT_FOUND;
         memcpy(&network, a->address.ip, sizeof(network));
-        if (a->prefix_len > 32) return SOCK_ERR_INVAL;
+        if (NET_CTRL_HAS(a, NET_CTRL_EXT_GATEWAY)) {
+            if (a->gateway.ver != IP_VER4) return SOCK_ERR_INVAL;
+            memcpy(&gateway, a->gateway.ip, sizeof(gateway));
+        }
         uint32_t mask = 0;
         if (a->prefix_len >= 32) mask = 0xFFFFFFFF;
         else if (a->prefix_len) mask = 0xFFFFFFFF << (32 -(a->prefix_len));
-        return ipv4_rt_del_in((ipv4_rt_table_t*)v4->routing_table, network & mask, mask) ? SOCK_OK : SOCK_ERR_INVAL;
+        uint32_t exact_network = network & mask;
+        bool found = false;
+        int n = ipv4_rt_count((const ipv4_rt_table_t*)v4->routing_table);
+        for (int i = 0; i < n; i++) {
+            ipv4_rt_entry_t e;
+            if (!ipv4_rt_get((const ipv4_rt_table_t*)v4->routing_table, i, &e) || e.network != exact_network || e.mask != mask) continue;
+            if (NET_CTRL_HAS(a, NET_CTRL_EXT_GATEWAY) && e.gateway != gateway) continue;
+            found = true;
+            break;
+        }
+        if (!found) return SOCK_ERR_NOT_FOUND;
+        return ipv4_rt_del_in((ipv4_rt_table_t*)v4->routing_table, exact_network, mask) ? SOCK_OK : SOCK_ERR_NOT_FOUND;
     }
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(a->l3_id);
-    if (!v6 || !v6->routing_table || a->address.ver != IP_VER6 || a->prefix_len > 128) return SOCK_ERR_INVAL;
+    if (!v6 || a->address.ver != IP_VER6 || a->prefix_len > 128) return SOCK_ERR_INVAL;
+    if (!v6->routing_table) return SOCK_ERR_NOT_FOUND;
+    if (NET_CTRL_HAS(a, NET_CTRL_EXT_GATEWAY) && a->gateway.ver != IP_VER6) return SOCK_ERR_INVAL;
     uint8_t net[16];
     ipv6_prefix_network(a->address.ip, a->prefix_len, net);
-    return ipv6_rt_del_in((ipv6_rt_table_t*)v6->routing_table, net, a->prefix_len) ? SOCK_OK : SOCK_ERR_INVAL;
+    bool found = false;
+    int n = ipv6_rt_count((const ipv6_rt_table_t*)v6->routing_table);
+    for (int i = 0; i < n; i++) {
+        ipv6_rt_entry_t e;
+        if (!ipv6_rt_get((const ipv6_rt_table_t*)v6->routing_table, i, &e) || e.prefix_len != a->prefix_len || ipv6_cmp(e.network, net) != 0) continue;
+        if (NET_CTRL_HAS(a, NET_CTRL_EXT_GATEWAY) && ipv6_cmp(e.gateway, a->gateway.ip) != 0) continue;
+        found = true;
+        break;
+    }
+    if (!found) return SOCK_ERR_NOT_FOUND;
+    return ipv6_rt_del_in((ipv6_rt_table_t*)v6->routing_table, net, a->prefix_len) ? SOCK_OK : SOCK_ERR_NOT_FOUND;
 }
 
 static bool net_ctrl_neigh_dump(const net_ctrl_attrs_t* a, buffer* b) {
@@ -627,6 +693,74 @@ int32_t net_ctrl_dispatch(const void* req, uint32_t req_len, uint8_t** out, uint
                     break;
                 case NET_CTRL_OP_DEL:
                     status = net_ctrl_neigh_del(&attrs);
+                    break;
+                default:
+                    status = SOCK_ERR_INVAL;
+                    break;
+            }
+            break;
+        case NET_CTRL_OBJ_FIREWALL:
+            switch ((uint32_t)in.op) {
+                case NET_CTRL_OP_GET: {
+                    uint32_t capacity = firewall_get_snapshot(NULL, NULL, 0);
+                    NetCtrlFirewallRule* rules = capacity ? (NetCtrlFirewallRule*)zalloc((uint64_t)capacity * sizeof(NetCtrlFirewallRule)) : NULL;
+                    if (capacity && !rules) {
+                        status = SOCK_ERR_SYS;
+                        break;
+                    }
+                    NetCtrlFirewallState state;
+                    uint32_t count = capacity ? firewall_get_snapshot(&state, rules, capacity) : firewall_get_snapshot(&state, NULL, 0);
+                    if (!capacity) {
+                        count = 0;
+                        state.rule_count = 0;
+                    }
+                    status = buffer_write_lim(&b, (const char*)&state, sizeof(state)) == sizeof(state) && (!count || buffer_write_lim(&b, (const char*)rules, sizeof(NetCtrlFirewallRule) * count) == sizeof(NetCtrlFirewallRule) * count) ? SOCK_OK : SOCK_ERR_SYS;
+                    if (rules) release(rules);
+                    break;
+                }
+                case NET_CTRL_OP_ADD: {
+                    if (!NET_CTRL_HAS(&attrs, NET_CTRL_EXT_ACTION) || !NET_CTRL_HAS(&attrs, NET_CTRL_EXT_DIRECTION) ||
+                        (NET_CTRL_HAS(&attrs, NET_CTRL_EXT_ADDRESS) && attrs.address.ver != IP_VER4 && attrs.address.ver != IP_VER6) || 
+                        (NET_CTRL_HAS(&attrs, NET_CTRL_EXT_PREFIX_LEN) && !NET_CTRL_HAS(&attrs, NET_CTRL_EXT_ADDRESS)) || 
+                        (NET_CTRL_HAS(&attrs, NET_CTRL_EXT_PORT_FROM) != NET_CTRL_HAS(&attrs, NET_CTRL_EXT_PORT_TO))) {
+                        status = SOCK_ERR_INVAL;
+                        break;
+                    }
+                    NetCtrlFirewallRule rule = {
+                        .action = attrs.action,
+                        .direction = attrs.direction,
+                        .protocol = NET_CTRL_HAS(&attrs, NET_CTRL_EXT_PROTOCOL) ? attrs.protocol : PROTO_NONE
+                    };
+                    if (NET_CTRL_HAS(&attrs, NET_CTRL_EXT_ADDRESS)){
+                        rule.ip_version = attrs.address.ver;
+                        rule.prefix_len = NET_CTRL_HAS(&attrs, NET_CTRL_EXT_PREFIX_LEN) ? attrs.prefix_len : (attrs.address.ver == IP_VER4 ? 32 : 128);
+                        memcpy(rule.address, attrs.address.ip, sizeof(rule.address));
+                    }
+                    if (NET_CTRL_HAS(&attrs, NET_CTRL_EXT_PORT_FROM)) {
+                        rule.port_from = attrs.port_from;
+                        rule.port_to = attrs.port_to;
+                    }
+                    status = firewall_add_rule(&rule, 0);
+                    break;
+                }
+                case NET_CTRL_OP_UPD: {
+                    bool has_state = NET_CTRL_HAS(&attrs, NET_CTRL_EXT_STATE);
+                    bool has_action = NET_CTRL_HAS(&attrs, NET_CTRL_EXT_ACTION);
+                    bool has_direction = NET_CTRL_HAS(&attrs, NET_CTRL_EXT_DIRECTION);
+                    if (has_action != has_direction || (!has_state && !has_action)) {
+                        status = SOCK_ERR_INVAL;
+                        break;
+                    }
+                    status = has_action ? firewall_set_default((NetCtrlFirewallDirection)attrs.direction, (NetCtrlFirewallAction)attrs.action) : SOCK_OK;
+                    if (status == SOCK_OK && has_state) firewall_set_enabled(attrs.state != 0);
+                    break;
+                }
+                case NET_CTRL_OP_DEL:
+                    if (NET_CTRL_HAS(&attrs, NET_CTRL_EXT_RULE_ID)) status = firewall_remove_rule(attrs.rule_id);
+                    else {
+                        firewall_clear_rules();
+                        status = SOCK_OK;
+                    }
                     break;
                 default:
                     status = SOCK_ERR_INVAL;
