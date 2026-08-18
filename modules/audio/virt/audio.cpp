@@ -110,7 +110,7 @@ static inline void buffer_exhausted(mixer_line* line, sizedptr* inbuf){
             break;
         case AUDIO_ONESHOT_FREE:
             inbuf->ptr = NULL;
-            free_sized((void*)line->source.ptr, line->source.size);
+            release((void*)line->source.ptr);
             mixer_reset_line(line - mixin);
             break;
         case AUDIO_LOOP:

@@ -16,7 +16,7 @@ void debug_load(){
 
     void *file = zalloc(fd.size);
 
-    kprintf("[DEBUG] Malloced %x",fd.size);
+    kprintf("[DEBUG] alloc'd %x",fd.size);
 
     readf(&fd, file, fd.size);
     closef(&fd);
