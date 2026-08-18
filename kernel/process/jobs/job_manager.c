@@ -180,15 +180,26 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
         job_buffer buf = st->buffers[i];
         if (buf.sync & copy_on_end && buf.worker_ptr.ptr){
             job_print("[JOB debug] Copy buffer %llx into %llx",buf.worker_ptr.ptr,buf.orig_ptr.ptr);
-            void* addr = quick_translate(st->requester, proc, buf.orig_ptr.ptr);
-            if (!addr){
-                if (buf.orig_ptr.ptr & HIGH_VA){
-                    int stb = 0;
-                    addr = (void*)PHYS_TO_VIRT(mmu_translate(st->requester->special_mm, buf.orig_ptr.ptr, &stb));
+            size_t size = buf.orig_ptr.size;
+            uptr src = buf.worker_ptr.ptr;
+            for (uptr page = buf.orig_ptr.ptr; page < buf.orig_ptr.ptr + buf.orig_ptr.size; page += PAGE_SIZE){
+                job_print("[JOB debug] doing translation for %llx",page);
+                void* addr = quick_translate(st->requester, proc, page);
+                if (!addr){
+                    if (page & HIGH_VA){
+                        int stb = 0;
+                        addr = (void*)PHYS_TO_VIRT(mmu_translate(st->requester->special_mm, page, &stb));
+                    }
                 }
+                if (!addr){
+                    print("[JOB error] failed to translate destination va %llx",page);
+                    continue;
+                }
+                size_t amount = size > PAGE_SIZE ? PAGE_SIZE : size;
+                memcpy(addr, (void*)src, amount);
+                src += amount;
+                size -= amount;
             }
-            if (!addr) continue;
-            memcpy(addr, (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
         }
     }
     job_print("[JOB] %i fulfilled by %i with return value %llx",job_id,thread->tid,thread->regs[0]);
