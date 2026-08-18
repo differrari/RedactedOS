@@ -10,6 +10,7 @@ extern void job_save_kernel();
 extern void save_kstack();
 
 //TODO: if the owner is the current process, we can downgrade the syscall into a function call without async
+//TODO: in stack saving, just create the stack externally (belonging to proc 1), then pass it to save_kstack to copy into
 #define job_make(job_type,mod,action)\
     thread_t kthread = {};\
     job_kstack = (sizedptr){};\
