@@ -182,7 +182,7 @@ void fulfill_job(job_id_t job_id, u64 ret, thread_t *thread){
             memcpy(addr, (void*)buf.worker_ptr.ptr, buf.worker_ptr.size);
         }
     }
-    print("[JOB] %i fulfilled by %i with return value %llx",job_id,thread->tid);
+    print("[JOB] %i fulfilled by %i with return value %llx",job_id,thread->tid,thread->regs[0]);
     st->kernel_ctx.PROC_X0 = ret;
     job_kpec = (uptr)&st->kernel_ctx;
     cpec = (uptr)st->requester;

@@ -1,15 +1,16 @@
 #include "fat32.hpp"
+#include "alloc/mem_types.h"
 #include "disk.h"
-#include "memory/page_allocator.h"
+#include "files/system_module.h"
 #include "console/kio.h"
-#include "std/memory_access.h"
-#include "std/string.h"
-#include "std/memory.h"
+#include "memory/memory.h"
+#include "memory/memory_access.h"
 #include "math/math.h"
 #include "syscalls/syscalls.h"
 #include "exceptions/irq.h"
 #include "files/dir_list.h"
 #include "filesystem/modules/module_loader.h"
+#include "alloc/allocate.h"
 
 #define kprintfv(fmt, ...) \
     ({ \
@@ -18,10 +19,14 @@
         }\
     })
 
-bool FAT32FS::init(uint32_t partition_sector){
-    fs_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, false);
+void* f32palloc(size_t size){
+    return palloc(size, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, true);
+}
 
-    mbs = (fat32_mbs*)kalloc(fs_page, 512, ALIGN_64B, MEM_PRIV_KERNEL);
+bool FAT32FS::init(uint32_t partition_sector){
+    fs_page = f32palloc(PAGE_SIZE);
+
+    mbs = (fat32_mbs*)allocate(fs_page, 512, f32palloc);
     if (!mbs) return false;
 
     partition_first_sector = partition_sector;
@@ -65,7 +70,7 @@ sizedptr FAT32FS::read_cluster(uint32_t cluster_start, uint32_t cluster_size, ui
     if (root_index < 2 || root_index >= total_fat_entries) return (sizedptr){ 0, 0};
 
     size_t size = cluster_count * cluster_size * 512;
-    void* buffer = kalloc(fs_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+    void *buffer = allocate(fs_page, size, f32palloc);
     if (!buffer) return (sizedptr){0, 0};
     
     uint32_t next_index = root_index;
@@ -114,7 +119,7 @@ bool FAT32FS::write_section_to_cluster(u32 cluster, u32 offset, void *buf, size_
     
     u32 sector_count = ceil(((float)offset + size)/512);
     
-    void *initial = kalloc(fs_page, 512 * sector_count, ALIGN_64B, MEM_PRIV_KERNEL);
+    void *initial = allocate(fs_page, 512 * sector_count, f32palloc);
     
     disk_read(initial, sector, sector_count);
     
@@ -175,7 +180,7 @@ f32_walk_result FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_in
     u32 cluster_byte_size = cluster_size * 512;
     for (uint64_t i = 0; i + sizeof(f32file_entry) <= buf_ptr.size;) {
         if (buffer[i] == 0) {
-            kfree(buffer, buf_ptr.size);
+            release(buffer);
             return {};
         }
         if (buffer[i] == 0xE5){
@@ -183,7 +188,7 @@ f32_walk_result FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_in
             continue;
         }
         bool long_name = buffer[i + 0xB] == 0xF;
-        char filename[256] = {0};
+        char filename[256] = {};
         if (long_name){
             f32longname *first_longname = (f32longname*)&buffer[i];
             uint16_t count = 0;
@@ -191,7 +196,7 @@ f32_walk_result FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_in
                 i += sizeof(f32longname);
                 count++;
                 if (i + sizeof(f32file_entry) > buf_ptr.size) {
-                    kfree(buffer, buf_ptr.size);
+                    release(buffer);
                     return {};
                 }
             } while (buffer[i + 0xB] == 0xF);
@@ -215,16 +220,16 @@ f32_walk_result FAT32FS::walk_directory(uint32_t cluster_count, uint32_t root_in
                     .offset = offset,
                     .found = true,
                 };
-                kfree(buffer, buf_ptr.size);
+                release(buffer);
                 return result;
             }
-            kfree(buffer, buf_ptr.size);
+            release(buffer);
             return found_entry;
         }
         i += sizeof(f32file_entry);
     }
 
-    kfree(buffer, buf_ptr.size);
+    release(buffer);
     return {};
 }
 
@@ -236,9 +241,9 @@ sizedptr FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
     f32file_entry *entry = 0;
     if (!buffer || !buf_ptr.size) return { 0, 0};
     size_t full_size = buf_ptr.size + 4;
-    void *list_buffer = kalloc(fs_page, full_size, ALIGN_64B, MEM_PRIV_KERNEL);
+    void *list_buffer = allocate(fs_page, full_size, f32palloc);
     if (!list_buffer) {
-        kfree(buffer, buf_ptr.size);
+        release(buffer);
         return { 0, 0};
     }
 
@@ -261,8 +266,8 @@ sizedptr FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
                 i += sizeof(f32longname);
                 long_count++;
                 if (i + sizeof(f32file_entry) > buf_ptr.size) {
-                    kfree(buffer, buf_ptr.size);
-                    kfree(list_buffer, full_size);
+                    release(buffer);
+                    release(list_buffer);
                     return { 0, 0 };
                 }
             } while (buffer[i + 0xB] == 0xF);
@@ -286,7 +291,7 @@ sizedptr FAT32FS::list_directory(uint32_t cluster_count, uint32_t root_index) {
     }
 
     *(uint32_t*)list_buffer = count;
-    kfree(buffer, buf_ptr.size);
+    release(buffer);
 
     return (sizedptr){(uintptr_t)list_buffer, full_size};
 }
@@ -299,22 +304,22 @@ sizedptr FAT32FS::read_full_file(uint32_t cluster_start, uint32_t cluster_size, 
     char *buffer = (char*)buf_ptr.ptr;
     if (!buffer || !buf_ptr.size) return {0, 0};
 
-    if (!file_page) file_page = page_alloc(PAGE_SIZE);
+    if (!file_page) file_page = f32palloc(PAGE_SIZE);
     
-    void *file = allocate(file_page, file_size ? file_size : 1, page_alloc);
+    void *file = allocate(file_page, file_size ? file_size : 1, f32palloc);
     if (!file) {
-        kfree(buffer, buf_ptr.size);
+        release(buffer);
         return {0, 0};
     }
 
     if (file_size) memcpy(file, (void*)buffer, file_size);
-    kfree(buffer, buf_ptr.size);
+    release(buffer);
     
     return (sizedptr){(uintptr_t)file,file_size};
 }
 
 void FAT32FS::read_FAT(uint32_t location, uint32_t size, uint8_t count){
-    fat = (uint32_t*)kalloc(fs_page, size * 512, ALIGN_64B, MEM_PRIV_KERNEL);
+    fat = (uint32_t*)allocate(fs_page, size*512, f32palloc);
     if (!fat) {
         total_fat_entries = 0;
         return;
@@ -448,9 +453,9 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     if (!buf || !buf_ptr.size) return FS_RESULT_NOTFOUND;
     descriptor->id = fid;
     descriptor->size = buf_ptr.size;
-    mfile = (module_file*)kalloc(fs_page, sizeof(module_file), ALIGN_64B, MEM_PRIV_KERNEL);
+    mfile = (module_file*)allocate(fs_page, sizeof(module_file), f32palloc);
     if (!mfile) {
-        kfree(buf, buf_ptr.size ? buf_ptr.size : 1);
+        release(buf);
         return FS_RESULT_DRIVER_ERROR;
     }
     memset(mfile, 0, sizeof(module_file));
@@ -472,8 +477,8 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     int ok = hash_map_put(open_files, &fid, sizeof(uint64_t), mfile);
     irq_restore(irq);
     if (ok < 0) {
-        kfree(mfile->file_buffer.buffer, mfile->file_size ? mfile->file_size : 1);
-        kfree(mfile, sizeof(module_file));
+        release(mfile->file_buffer.buffer);
+        release(mfile);
         return FS_RESULT_DRIVER_ERROR;
     }
     return FS_RESULT_SUCCESS;
@@ -524,7 +529,7 @@ void FAT32FS::close_file(file* descriptor){
         hash_map_remove(open_files, &descriptor->id, sizeof(uint64_t), 0);
         irq_restore(irq);
         buffer_destroy(&mfile->file_buffer);
-        kfree(mfile, sizeof(module_file));
+        release(mfile);
         return;
     }
     irq_restore(irq);
@@ -605,7 +610,7 @@ size_t FAT32FS::list_contents(const char *path, void* buf, size_t size, uint64_t
     }
 
     *(uint32_t*)buf = count;
-    kfree((void*)ptr.ptr, ptr.size);
+    release((void*)ptr.ptr);
 
     return (uintptr_t)write_ptr-(uintptr_t)buf;
 }
