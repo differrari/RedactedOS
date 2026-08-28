@@ -11,6 +11,32 @@
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 
+static void print_help(void) {
+    print("Usage:\t firewall [COMMAND]");
+    print("\t firewall default DIRECTION ACTION");
+    print("\t firewall delete ID");
+    print("\t firewall ACTION in PROTOCOL [from ADDRESS] [port PORT]");
+    print("\t firewall ACTION out PROTOCOL [to ADDRESS] [port PORT]");
+    print("manage firewall rules\n");
+    print("Commands:");
+    print("\t status\t show status");
+    print("\t list\t list rules");
+    print("\t on\t enable");
+    print("\t off\t disable");
+    print("\t clear\t clear rules");
+    print("\t reset\t reset rules");
+    print("\t delete\t delete rule\n");
+    print("Args:");
+    print("\t ACTION\t allow|deny");
+    print("\t DIRECTION\t in|out");
+    print("\t PROTOCOL\t tcp|udp|any");
+    print("\t ADDRESS\t address|prefix|any");
+    print("\t PORT\t port|FIRST-LAST");
+    print("\t ID\t rule id\n");
+    print("Options:");
+    print("\t --help\t help");
+}
+
 static void req_init(uint8_t req[256], uint32_t* req_len, NetCtrlOp op) {
     memset(req, 0, 256);
     NetCtrlMsg* msg = (NetCtrlMsg*)req;
@@ -202,6 +228,11 @@ static int add_rule(int argc, char* argv[]) {
 }
 
 int run_firewall(int argc, char* argv[]) {
+    if (argc == 2 && strcmp_case(argv[1], "--help", true) == 0) {
+        print_help();
+        return 0;
+    }
+
     int rc = 2;
     if (argc == 1 || (argc == 2 && strcmp_case(argv[1], "list", true) == 0)) rc = show_firewall(true);
     else if (argc == 2 && strcmp_case(argv[1], "status", true) == 0) rc = show_firewall(false);
@@ -227,10 +258,6 @@ int run_firewall(int argc, char* argv[]) {
     }
 
     if (rc != 2) return rc;
-    print("usage: firewall [status|list|on|off|clear|reset]");
-    print("       firewall default in|out allow|deny");
-    print("       firewall delete id");
-    print("       firewall allow|deny in tcp|udp|any [from cidr|any] [port n|a-b]");
-    print("       firewall allow|deny out tcp|udp|any [to cidr|any] [port n|a-b]");
+    print_help();
     return 2;
 }

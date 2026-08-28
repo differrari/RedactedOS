@@ -16,6 +16,17 @@ typedef struct {
     bool follow;
 } curl_opts_t;
 
+static void print_help(void) {
+    print("Usage:\t curl [OPTIONS] URL");
+    print("transfer data from URL (no HTTPS)\n");
+    print("Args:");
+    print("\t URL\t URL to fetch\n");
+    print("Options:");
+    print("\t -I\t headers only");
+    print("\t -L\t follow redirects");
+    print("\t --help\t help");
+}
+
 static int curl_fetch(char *url, bool head_only, bool follow) {
     string host = (string){0};
     string path = (string){0};
@@ -139,9 +150,14 @@ static bool parse_args(int argc, char *argv[], curl_opts_t *o) {
 }
 
 int run_curl(int argc, char* argv[]) {
+    if (argc == 2 && strcmp(argv[1], "--help") == 0) {
+        print_help();
+        return 0;
+    }
+
     curl_opts_t opts;
     if (!parse_args(argc, argv, &opts)) {
-        print("usage: curl [-L] [-I] http://host/path");
+        print_help();
         return 2;
     }
 

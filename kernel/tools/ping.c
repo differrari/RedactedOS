@@ -28,6 +28,23 @@ typedef struct {
     ping_addressing_t addr;
 } ping_opts_t;
 
+static void print_help(void) {
+    print("Usage:\t ping [OPTION] HOST");
+    print("send echo requests\n");
+    print("Args:");
+    print("\t HOST\t host|ip");
+    print("\t SOURCE\t IP|l2:ID|l3:ID\n");
+    print("Options:");
+    print("\t -4\t ipv4");
+    print("\t -6\t ipv6");
+    print("\t -n COUNT\t request count (4)");
+    print("\t -w TIMEOUT\t timeout ms (1000)");
+    print("\t -i INTERVAL\t interval ms (1000)");
+    print("\t -t TTL\t ttl|hop limit (64)");
+    print("\t -s SOURCE\t source");
+    print("\t --help\t help");
+}
+
 static bool parse_args(int argc, char *argv[], ping_opts_t *o) {
     o->ver = IP_VER4;
     o->count = 4;
@@ -234,9 +251,14 @@ static int ping_v6(const ping_opts_t *o) {
 }
 
 int run_ping(int argc, char *argv[]) {
+    if (argc == 2 && strcmp_case(argv[1], "--help", true) == 0) {
+        print_help();
+        return 0;
+    }
+
     ping_opts_t opts;
     if (!parse_args(argc, argv, &opts)) {
-        print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s ip|l2:id|l3:id] host");
+        print_help();
         return 2;
     }
 
@@ -247,7 +269,7 @@ int run_ping(int argc, char *argv[]) {
 
     if (opts.ver == IP_VER4) return ping_v4(&opts);
     if (opts.ver == IP_VER6) return ping_v6(&opts);
-    print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s ip|l2:id|l3:id] host");
+    print_help();
 
     return 2;
 }

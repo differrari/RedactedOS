@@ -4,7 +4,7 @@ USER_DIRS := $(sort $(dir $(wildcard */*.S */*.c */*.cpp)))
 SUBDIRS := $(filter-out build/ resources/ %.red/,$(USER_DIRS))
 SUBCLEAN := $(addsuffix .clean,$(SUBDIRS))
 SUBDUMP := $(addsuffix .dump,$(SUBDIRS))
-MAKEFILE := $(shell pwd)/UserMakefile
+MAKEFILE := $(CURDIR)/UserMakefile
 
 all: $(SUBDIRS)
 

@@ -13,6 +13,24 @@
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/link_layer/link_utils.h"
 
+static void print_help(void) {
+    print("Usage:\t ip COMMAND [ARGS]");
+    print("show or configure networking\n");
+    print("Commands:");
+    print("\t link\t interfaces");
+    print("\t addr\t addresses");
+    print("\t route\t routes");
+    print("\t neigh\t neighbors\n");
+    print("Args:");
+    print("\t IFACE\t interface name");
+    print("\t PREFIX\t ADDRESS/LENGTH");
+    print("\t ADDRESS\t v4|v6 address");
+    print("\t GATEWAY\t next hop");
+    print("\t METRIC\t route metric\n");
+    print("Options:");
+    print("\t --help\t help");
+}
+
 static void req_init(uint8_t req[256], uint32_t* req_len, NetCtrlObject object, NetCtrlOp op) {
     memset(req, 0, 256);
     NetCtrlMsg* msg = (NetCtrlMsg*)req;
@@ -279,6 +297,11 @@ static int show_neigh(void) {
 }
 
 int run_ip(int argc, char* argv[]) {
+    if (argc == 2 && strcmp_case(argv[1], "--help", true) == 0) {
+        print_help();
+        return 0;
+    }
+
     int rc = 2;
     if (argc == 2 && strcmp_case(argv[1], "link", true) == 0) rc = show_link();
     else if (argc >= 3 && strcmp_case(argv[1], "link", true) == 0 && strcmp_case(argv[2], "set", true) == 0) rc = set_link(argc, argv);
@@ -291,9 +314,6 @@ int run_ip(int argc, char* argv[]) {
     else if (argc == 2 && strcmp_case(argv[1], "neigh", true) == 0) rc = show_neigh();
 
     if (rc != 2) return rc;
-    print("usage: ip link [set if up|down]");
-    print("       ip addr [add cidr dev if|del ip dev if]");
-    print("       ip route [add cidr [via gw] dev if [metric n]|add default via gw dev if [metric n]|del cidr dev if|del default via gw dev if]");
-    print("       ip neigh");
+    print_help();
     return 2;
 }

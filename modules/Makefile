@@ -1,6 +1,6 @@
 include ../common.mk
 
-SUBDIRS := $(wildcard */.)
+SUBDIRS := $(wildcard */)
 SUBCLEAN := $(addsuffix .clean, $(SUBDIRS))
 MAKEFILE := $(CURDIR)/MakefileModule
 

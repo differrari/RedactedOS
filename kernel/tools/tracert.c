@@ -23,6 +23,24 @@ typedef struct {
     const char *host;
 } tr_opts_t;
 
+static void print_help(void) {
+    print("Usage:\t tracert [OPTION] HOST");
+    print("trace route to HOST\n");
+    print("Args:");
+    print("\t HOST\t host|ip");
+    print("\t SOURCE\t IP|l2:ID|l3:ID\n");
+    print("Options:");
+    print("\t -4\t ipv4");
+    print("\t -6\t ipv6");
+    print("\t -m MAX_HOPS\t max hops (30)");
+    print("\t -n PROBES\t probes per hop (3)");
+    print("\t -w TIMEOUT\t timeout ms (1000)");
+    print("\t -i INTERVAL\t interval ms (250)");
+    print("\t -x STREAK\t timeout hops (5)");
+    print("\t -s SOURCE\t source");
+    print("\t --help\t help");
+}
+
 static bool parse_args(int argc, char *argv[], tr_opts_t *o) {
     o->ver = IP_VER4;
     o->max_ttl = 30;
@@ -227,9 +245,14 @@ static int tracert_v6(const tr_opts_t *o) {
 }
 
 int run_tracert(int argc, char *argv[]) {
+    if (argc == 2 && strcmp_case(argv[1], "--help", true) == 0) {
+        print_help();
+        return 0;
+    }
+
     tr_opts_t o;
     if (!parse_args(argc, argv, &o)) {
-        print("usage: tracert [-4/-6] [-m max_hops] [-n probes] [-w timeout_ms] [-i interval_ms] [-x stop_after_timeouts] [-s ip|l2:id|l3:id] host");
+        print_help();
         return 2;
     }
 

@@ -8,7 +8,7 @@
 #include "networking/internet_layer/ipv4.h"
 #include "syscalls/syscalls.h"
 #include "networking/internet_layer/ipv4_utils.h"
-
+//TODO remove passive add/update, 172.68.196.21 dev eth0 lladdr 04:71:53:0a:ad:90
 #define ARP_REACHABLE_MS 180000
 #define ARP_STALE_MS 60000
 #define ARP_RETRANS_MS 1000

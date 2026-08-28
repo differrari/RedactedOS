@@ -25,6 +25,19 @@ typedef struct open_tools_ref {
     int (*func)(int argc, char* argv[]);
 } open_tools_ref;
 
+//[optional args], alt1|alt2, VALUE, (default value)
+//template help
+//  print("Usage:\t ip link");
+//  print("\t ip addr");
+//  print("show or configure networking\n");
+//  print("Commands:");
+//  print("\t link\t interfaces");
+//  print("Args:");
+//  print("\t IFACE\t interface name");
+//  print("\t PREFIX\t ADDRESS/LENGTH\n");
+//  print("Options:");
+//  print("\t --help\t help");
+
 open_tools_ref available_cmds[] = {
     { "ping", run_ping },
     { "shutdown", run_shutdown },
