@@ -5,7 +5,7 @@
 #include "input_keycodes.h"
 #include "syscalls/syscalls.h"
 #include "input/input_dispatch.h"
-#include "ui/draw/draw.h"
+#include "draw/draw.h"
 #include "std/string.h"
 #include "theme/theme.h"
 #include "memory/addr.h"
