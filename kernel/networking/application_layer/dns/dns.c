@@ -77,7 +77,7 @@ static dns_result_t perform_dns_query_once(socket_handle_t sock, const net_l4_en
     return DNS_ERR_TIMEOUT;
 }
 
-static bool pick_dns_on_l3(uint8_t l3_id, net_l4_endpoint* out_primary, net_l4_endpoint* out_secondary) {
+static bool pick_dns_on_l3(l3_id_t l3_id, net_l4_endpoint* out_primary, net_l4_endpoint* out_secondary) {
     l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
     if (v4) {
         uint32_t p = v4->runtime_opts_v4.dns[0];
@@ -102,7 +102,7 @@ static bool pick_dns_on_l3(uint8_t l3_id, net_l4_endpoint* out_primary, net_l4_e
     return hp || hs;
 }
 
-static bool pick_dns_first_iface(uint8_t* out_l3, net_l4_endpoint* out_primary, net_l4_endpoint* out_secondary){
+static bool pick_dns_first_iface(l3_id_t* out_l3, net_l4_endpoint* out_primary, net_l4_endpoint* out_secondary) {
     uint8_t n = l2_interface_count();
     for (uint8_t i = 0; i < n; ++i){
         l2_interface_t* l2 = l2_interface_at(i);
@@ -182,13 +182,13 @@ dns_result_t dns_query(const char* hostname, dns_qtype_t qtype, dns_record_t* ou
     if (dns_wire_is_local_name(hostname)) return mdns_query(hostname, qtype, timeout_ms, out_records, max_records, out_count);
 
     dns_result_t res = DNS_ERR_NO_DNS;
-    uint8_t l3 = 0;
+    l3_id_t l3 = 0;
     net_l4_endpoint p, s;
     if (pick_dns_first_iface(&l3, &p, &s)) res = query_with_selection(&p, &s, which, hostname, qtype, timeout_ms, out_records, max_records, out_count);
     return res;
 }
 
-dns_result_t dns_query_on_l3(uint8_t l3_id, const char* hostname, dns_qtype_t qtype, dns_record_t* out_records, uint32_t max_records, uint32_t* out_count, dns_server_sel_t which, uint32_t timeout_ms) {
+dns_result_t dns_query_on_l3(l3_id_t l3_id, const char* hostname, dns_qtype_t qtype, dns_record_t* out_records, uint32_t max_records, uint32_t* out_count, dns_server_sel_t which, uint32_t timeout_ms) {
     if (out_count) *out_count = 0;
     if (!hostname) return DNS_ERR_FORMAT;
     if (!out_records && max_records) return DNS_ERR_FORMAT;
@@ -199,7 +199,7 @@ dns_result_t dns_query_on_l3(uint8_t l3_id, const char* hostname, dns_qtype_t qt
     return res;
 }
 
-static dns_result_t dns_resolve_ip_common(uint8_t use_l3, uint8_t l3_id, const char* hostname, dns_qtype_t qtype, uint8_t out_addr[16], dns_server_sel_t which, uint32_t timeout_ms, uint32_t *out_ttl_s) {
+static dns_result_t dns_resolve_ip_common(uint8_t use_l3, l3_id_t l3_id, const char* hostname, dns_qtype_t qtype, uint8_t out_addr[16], dns_server_sel_t which, uint32_t timeout_ms, uint32_t *out_ttl_s) {
     if (!hostname || !out_addr) return DNS_ERR_FORMAT;
 
     char current[DNS_WIRE_MAX_NAME];
@@ -260,7 +260,7 @@ dns_result_t dns_resolve_a(const char* hostname, uint32_t* out_ip, dns_server_se
     return DNS_OK;
 }
 
-dns_result_t dns_resolve_a_on_l3(uint8_t l3_id, const char* hostname, uint32_t* out_ip, dns_server_sel_t which, uint32_t timeout_ms) {
+dns_result_t dns_resolve_a_on_l3(l3_id_t l3_id, const char* hostname, uint32_t* out_ip, dns_server_sel_t which, uint32_t timeout_ms) {
     if (!hostname || !out_ip) return DNS_ERR_FORMAT;
     uint8_t cached[16];
     if (dns_cache_get_ip(hostname, DNS_TYPE_A, cached)) {
@@ -290,7 +290,7 @@ dns_result_t dns_resolve_aaaa(const char* hostname, uint8_t out_ipv6[16], dns_se
     return dns_resolve_ip_common(0, 0, hostname, DNS_TYPE_AAAA, out_ipv6, which, timeout_ms, &ttl_s);
 }
 
-dns_result_t dns_resolve_aaaa_on_l3(uint8_t l3_id, const char* hostname, uint8_t out_ipv6[16], dns_server_sel_t which, uint32_t timeout_ms) {
+dns_result_t dns_resolve_aaaa_on_l3(l3_id_t l3_id, const char* hostname, uint8_t out_ipv6[16], dns_server_sel_t which, uint32_t timeout_ms) {
     if (!hostname || !out_ipv6) return DNS_ERR_FORMAT;
     if (dns_cache_get_ip(hostname, DNS_TYPE_AAAA, out_ipv6)) return DNS_OK;
     uint32_t ttl_s = 0;

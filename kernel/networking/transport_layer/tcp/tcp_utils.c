@@ -2,6 +2,7 @@
 #include "std/memory.h"
 #include "tcp_internal.h"
 #include "networking/interface_manager.h"
+#include "networking/network.h"
 
 #define TCP_INIT_CWND_SEGS 10u
 
@@ -25,15 +26,15 @@ void tcp_update_mss(tcp_flow_t *flow) {
     flow->tx.mss = mss;
 }
 
-uint32_t tcp_calc_mss_for_l3(uint8_t l3_id, ip_version_t ver, const void *remote_ip){
+uint32_t tcp_calc_mss_for_l3(l3_id_t l3_id, ip_version_t ver, const void *remote_ip){
     //TODO propagate icmp4/6 pmtu and errors
     uint32_t mtu = 1500;
     if (ver == IP_VER4) {
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
-        if (v4) mtu = v4->runtime_opts_v4.mtu ? v4->runtime_opts_v4.mtu : 1500;
+        if (v4) mtu = v4->runtime_opts_v4.mtu ? v4->runtime_opts_v4.mtu : network_get_mtu(v4->l2->ifindex);
     } else if (ver == IP_VER6) {
         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
-        if (v6) mtu = v6->mtu ? v6->mtu : 1500;
+        if (v6) mtu = v6->mtu ? v6->mtu : network_get_mtu(v6->l2->ifindex);
     } else return 256;
 
     if (ver == IP_VER6 && remote_ip){

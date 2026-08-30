@@ -36,25 +36,22 @@ public:
 private:
     struct NICCtx {
         NetDriver* drv;
-        uint8_t ifindex;
-        char ifname_str[16];
+        uint8_t l2_ifindex;
         char hwname_str[32];
         uint8_t mac_addr[6];
-        uint16_t mtu_val;
+        uint16_t device_mtu;
         uint16_t hdr_sz;
         uint32_t speed_mbps;
         uint8_t duplex_mode;
-        uint8_t kind_val;
         RingBuffer<netpkt_t*, 1024> tx;
     };
 
-    static const size_t MAX_NIC = 16;
+    static const size_t MAX_NIC = MAX_L2_INTERFACES;
 
     NICCtx nics[MAX_NIC];
     size_t nic_num;
     uint16_t g_net_pid;
 
-    uint8_t ifindex_to_nicid[MAX_L2_INTERFACES + 1];
 
     bool register_all_from_bus();
     int nic_for_ifindex(uint8_t ifindex) const;

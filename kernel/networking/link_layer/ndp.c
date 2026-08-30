@@ -298,7 +298,7 @@ static void ndp_on_ra(uint8_t ifindex, const uint8_t router_ip[16], uint16_t rou
         uint8_t ph[16];
         ipv6_make_placeholder_gua(ph);
 
-        uint8_t id = l3_ipv6_add_to_interface(ifindex, ph, 64, (const uint8_t[16]){0}, (ra_flags & RA_FLAG_O) ? IPV6_CFG_STATELESS : IPV6_CFG_SLAAC, IPV6_ADDRK_GLOBAL);
+        l3_id_t id = l3_ipv6_add_to_interface(ifindex, ph, 64, (const uint8_t[16]){0}, (ra_flags & RA_FLAG_O) ? IPV6_CFG_STATELESS : IPV6_CFG_SLAAC, IPV6_ADDRK_GLOBAL);
         if (!id) return;
 
         slot = l3_ipv6_find_by_id(id);
@@ -1062,7 +1062,6 @@ void ndp_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[
                             l3_ipv6_interface_t* v6 = l2->l3_v6[i];
                             if (!v6) continue;
                             if (v6->cfg == IPV6_CFG_DISABLE) continue;
-                            if (v6->mtu < 1280) continue;
                             v6->mtu = mtu32;
                         }
                     }

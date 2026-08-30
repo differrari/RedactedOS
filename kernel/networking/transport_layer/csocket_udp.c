@@ -20,7 +20,6 @@
 #define UDP_RECENT_TX_COUNT 8
 #define UDP_MAX_RING_CAP 1024
 
-//what if MAX_L2_INTERFACES is larger than sizeof u16?
 typedef struct udp_rx_entry {
     netpkt_t* pkt;
     net_l4_endpoint src;
@@ -45,7 +44,7 @@ typedef struct udp_socket {
     SockBindSpec lastRxSpec;
     socket_bind_token_t bindToken;
     udp_rx_entry_t* rx_ring;
-    uint16_t* mcast_ifmasks;
+    uint32_t* mcast_ifmasks;
     uint32_t ring_cap;
     uint32_t r_head;
     uint32_t r_tail;
@@ -77,7 +76,7 @@ static bool udp_socket_mcast_endpoint_valid(const net_l4_endpoint* ep) {
 static bool udp_socket_mcast_match(udp_socket_t* s, ip_version_t ver, const void* dst_ip_addr) {
     if (!s || !dst_ip_addr || !s->options.mcast_groups || !s->options.mcast_count) return false;
 
-    for (uint32_t i = 0; i < s->options.mcast_count; ++i) {
+    for (uint32_t i = 0; i < s->options.mcast_count; i++) {
         const net_l4_endpoint* group = &s->options.mcast_groups[i];
         if (group->ver != ver) continue;
 
@@ -93,7 +92,7 @@ static bool udp_socket_mcast_match(udp_socket_t* s, ip_version_t ver, const void
     return false;
 }
 
-static int32_t udp_socket_apply_mcast_group(const SockBindSpec* spec, const net_l4_endpoint* group, bool joining, uint16_t* ifmask) {
+static int32_t udp_socket_apply_mcast_group(const SockBindSpec* spec, const net_l4_endpoint* group, bool joining, uint32_t* ifmask) {
     if (!spec || !group || !ifmask) return SOCK_ERR_INVAL;
     if (joining && *ifmask) return SOCK_ERR_STATE;
 
@@ -106,9 +105,9 @@ static int32_t udp_socket_apply_mcast_group(const SockBindSpec* spec, const net_
     } else return SOCK_ERR_INVAL;
 
     if (!joining) {
-        uint16_t mask = *ifmask;
-        for (uint8_t ifindex = 1; ifindex <= MAX_L2_INTERFACES; ++ifindex) {
-            if (!(mask & (uint16_t)(1u << (ifindex - 1)))) continue;
+        for (uint8_t ifindex = 1; ifindex <= MAX_L2_INTERFACES; ifindex++) {
+            uint32_t bit = 1u << (ifindex - 1);
+            if (!(*ifmask & bit)) continue;
             if (group->ver == IP_VER4) l2_ipv4_mcast_leave(ifindex, v4_group);
             else l2_ipv6_mcast_leave(ifindex, group->ip);
         }
@@ -116,32 +115,44 @@ static int32_t udp_socket_apply_mcast_group(const SockBindSpec* spec, const net_
         return SOCK_OK;
     }
 
-    uint8_t l3_ids[MAX_L3_INTERFACES];
+    SockBindSpec normal = *spec;
+    if (!socket_bind_prepare_spec(&normal, PROTO_UDP)) return SOCK_ERR_INVAL;
+
     bool linkscope = group->ver == IP_VER6 && ipv6_is_linkscope_mcast(group->ip);
-    uint32_t l3_count = socket_bind_select_l3(spec, group->ver, l3_ids, MAX_L3_INTERFACES);
-    uint16_t targets = 0;
+    uint32_t targets = 0;
     *ifmask = 0;
 
-    for (uint32_t i = 0; i < l3_count; ++i) {
-        l2_interface_t* l2 = NULL;
+    uint8_t l2_count = l2_interface_count();
+    for (uint8_t i = 0; i < l2_count; i++) {
+        l2_interface_t* l2 = l2_interface_at(i);
+        if (!l2 || !l2->ifindex || l2->ifindex > MAX_L2_INTERFACES) continue;
+
+        bool matches = false;
         if (group->ver == IP_VER4) {
-            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_ids[i]);
-            if (!v4 || !v4->l2 || !ipv4_l3_is_active(v4)) continue;
-            l2 = v4->l2;
+            for (uint8_t slot = 0; slot < MAX_IPV4_PER_INTERFACE; slot++) {
+                l3_ipv4_interface_t* v4 = l2->l3_v4[slot];
+                if (!ipv4_l3_is_active(v4)) continue;
+                if (!socket_bind_match_score(&normal, IP_VER4, v4->l3_id, l2->ifindex, &v4->ip)) continue;
+                matches = true;
+                break;
+            }
         } else {
-            l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_ids[i]);
-            if (!v6 || !v6->l2 || !ipv6_l3_is_ready(v6)) continue;
-            if (linkscope && !ipv6_is_linklocal(v6->ip)) continue;
-            l2 = v6->l2;
+            for (uint8_t slot = 0; slot < MAX_IPV6_PER_INTERFACE; slot++) {
+                l3_ipv6_interface_t* v6 = l2->l3_v6[slot];
+                if (!ipv6_l3_is_ready(v6)) continue;
+                if (linkscope && !ipv6_is_linklocal(v6->ip)) continue;
+                if (!socket_bind_match_score(&normal, IP_VER6, v6->l3_id, l2->ifindex, v6->ip)) continue;
+                matches = true;
+                break;
+            }
         }
 
-        if (!l2->ifindex || l2->ifindex > MAX_L2_INTERFACES) continue;
-        targets |= (uint16_t)(1u << (l2->ifindex - 1));
+        if (matches) targets |= 1u << (l2->ifindex - 1);
     }
 
     if (!targets) return SOCK_ERR_SYS;
-    for (uint8_t ifindex = 1; ifindex <= MAX_L2_INTERFACES; ++ifindex) {
-        uint16_t bit = (uint16_t)(1u << (ifindex - 1));
+    for (uint8_t ifindex = 1; ifindex <= MAX_L2_INTERFACES; ifindex++) {
+        uint32_t bit = 1u << (ifindex - 1);
         if (!(targets & bit)) continue;
 
         bool ok = group->ver == IP_VER4 ? l2_ipv4_mcast_join(ifindex, v4_group) : l2_ipv6_mcast_join(ifindex, group->ip);
@@ -150,9 +161,9 @@ static int32_t udp_socket_apply_mcast_group(const SockBindSpec* spec, const net_
             continue;
         }
 
-        uint16_t joined = *ifmask;
-        for (uint8_t joined_ifindex = 1; joined_ifindex <= MAX_L2_INTERFACES; ++joined_ifindex) {
-            if (!(joined & (uint16_t)(1u << (joined_ifindex - 1)))) continue;
+        for (uint8_t joined_ifindex = 1; joined_ifindex <= MAX_L2_INTERFACES; joined_ifindex++) {
+            uint32_t joined_bit = 1u << (joined_ifindex - 1);
+            if (!(*ifmask & joined_bit)) continue;
             if (group->ver == IP_VER4) l2_ipv4_mcast_leave(joined_ifindex, v4_group);
             else l2_ipv6_mcast_leave(joined_ifindex, group->ip);
         }
@@ -167,7 +178,7 @@ static int32_t udp_socket_join_mcast_groups(udp_socket_t* s, const SockBindSpec*
     if (!s || !spec || !s->options.mcast_groups || !s->options.mcast_count) return SOCK_OK;
     if (!s->mcast_ifmasks) return SOCK_ERR_SYS;
 
-    for (uint32_t i = 0; i < s->options.mcast_count; ++i) {
+    for (uint32_t i = 0; i < s->options.mcast_count; i++) {
         int32_t rc = udp_socket_apply_mcast_group(spec, &s->options.mcast_groups[i], true, &s->mcast_ifmasks[i]);
         if (rc == SOCK_OK) continue;
 
@@ -181,7 +192,7 @@ static int32_t udp_socket_join_mcast_groups(udp_socket_t* s, const SockBindSpec*
     return SOCK_OK;
 }
 
-static int32_t udp_socket_bind_l3(udp_socket_t* s, uint8_t l3_id) {
+static int32_t udp_socket_bind_l3(udp_socket_t* s, l3_id_t l3_id) {
     if (!s || !s->ownerSocket || !l3_id) return SOCK_ERR_INVAL;
     if (s->closed) return SOCK_ERR_STATE;
     if (s->localPort) return SOCK_OK;
@@ -212,7 +223,7 @@ static int32_t udp_socket_bind_l3(udp_socket_t* s, uint8_t l3_id) {
     return SOCK_OK;
 }
 
-uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, uint8_t l3_id, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port) {
+uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port) {
     if (!socket || !pkt || !src_ip_addr || !dst_ip_addr) return 0;
     if (ipver != IP_VER4 && ipver != IP_VER6) return 0;
 
@@ -487,36 +498,47 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         uint32_t dip = 0;
         memcpy(&dip, d.ip, 4);
 
+        SockBindSpec send_spec = s->bindSpec;
+        if (!socket_bind_prepare_spec(&send_spec, PROTO_UDP)) return SOCK_ERR_INVAL;
+
         bool limited_bcast = ipv4_is_limited_broadcast(dip);
-        uint8_t bcast_ids[MAX_IPV4_L3_INTERFACES];
-        uint8_t chosen_l3 = 0;
+        l3_id_t chosen_l3 = 0;
         l3_ipv4_interface_t* bcast_v4 = NULL;
 
         if (limited_bcast) {
             if (!(s->options.flags & SOCK_OPT_BROADCAST_ALLOWED)) return SOCK_ERR_PERM;
 
-            uint32_t n = socket_bind_select_l3(&s->bindSpec, IP_VER4, bcast_ids, MAX_IPV4_L3_INTERFACES);
-            uint32_t valid = 0;
-            for (uint32_t i = 0; i < n; ++i) {
-                l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(bcast_ids[i]);
-                if (!ipv4_l3_is_active(v4) || v4->is_localhost) continue;
-                if (!v4->ip && v4->mode != IPV4_CFG_DHCP) continue;
-                if (!valid) {
-                    chosen_l3 = bcast_ids[i];
+            uint8_t l2_count = l2_interface_count();
+            for (uint8_t i = 0; i < l2_count; i++) {
+                l2_interface_t* l2 = l2_interface_at(i);
+                if (!l2) continue;
+
+                for (uint8_t slot = 0; slot < MAX_IPV4_PER_INTERFACE; slot++) {
+                    l3_ipv4_interface_t* v4 = l2->l3_v4[slot];
+                    if (!ipv4_l3_is_active(v4) || v4->is_localhost) continue;
+                    if (!socket_bind_match_score(&send_spec, IP_VER4, v4->l3_id, l2->ifindex, &v4->ip)) continue;
+                    if (!v4->ip && v4->mode != IPV4_CFG_DHCP) continue;
+                    if (bcast_v4) return SOCK_ERR_INVAL;
+                    chosen_l3 = v4->l3_id;
                     bcast_v4 = v4;
                 }
-                valid++;
             }
-            if (valid != 1 || !bcast_v4) return SOCK_ERR_INVAL;
+            if (!bcast_v4) return SOCK_ERR_INVAL;
         } else {
-            uint32_t n = socket_bind_select_l3(&s->bindSpec, IP_VER4, bcast_ids, MAX_IPV4_L3_INTERFACES);
-            for (uint32_t i = 0; i < n; ++i) {
-                l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(bcast_ids[i]);
-                if (!ipv4_l3_is_ready(v4) || !v4->mask || v4->is_localhost) continue;
-                if (ipv4_broadcast_calc(v4->ip, v4->mask) != dip) continue;
-                chosen_l3 = bcast_ids[i];
-                bcast_v4 = v4;
-                break;
+            uint8_t l2_count = l2_interface_count();
+            for (uint8_t i = 0; i < l2_count && !bcast_v4; i++) {
+                l2_interface_t* l2 = l2_interface_at(i);
+                if (!l2) continue;
+
+                for (uint8_t slot = 0; slot < MAX_IPV4_PER_INTERFACE; slot++) {
+                    l3_ipv4_interface_t* v4 = l2->l3_v4[slot];
+                    if (!ipv4_l3_is_ready(v4) || !v4->mask || v4->is_localhost) continue;
+                    if (!socket_bind_match_score(&send_spec, IP_VER4, v4->l3_id, l2->ifindex, &v4->ip)) continue;
+                    if (ipv4_broadcast_calc(v4->ip, v4->mask) != dip) continue;
+                    chosen_l3 = v4->l3_id;
+                    bcast_v4 = v4;
+                    break;
+                }
             }
             if (bcast_v4 && !(s->options.flags & SOCK_OPT_BROADCAST_ALLOWED)) return SOCK_ERR_PERM;
         }
@@ -541,7 +563,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         if (!socket_bind_build_ipv4_tx_plan(&s->bindSpec, s->localPort != 0, dip, &plan)) return SOCK_ERR_NO_ROUTE;
         if ((s->options.flags & SOCK_OPT_DONTROUTE) && !ipv4_tx_plan_onlink(&plan, dip)) return SOCK_ERR_NO_ROUTE;
 
-        uint8_t tx_l3 = plan.l3_id;
+        l3_id_t tx_l3 = plan.l3_id;
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(tx_l3);
         if (!ipv4_l3_is_ready(v4)) return SOCK_ERR_NO_ROUTE;
 
@@ -565,7 +587,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         if (!socket_bind_build_ipv6_tx_plan(&s->bindSpec, s->localPort != 0, d.ip, &plan)) return SOCK_ERR_NO_ROUTE;
         if ((s->options.flags & SOCK_OPT_DONTROUTE) && !ipv6_tx_plan_onlink(&plan, d.ip)) return SOCK_ERR_NO_ROUTE;
 
-        uint8_t chosen_l3 = plan.l3_id;
+        l3_id_t chosen_l3 = plan.l3_id;
         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen_l3);
         if (!ipv6_l3_is_ready(v6)) return SOCK_ERR_NO_ROUTE;
 
@@ -677,16 +699,41 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_MCAST_JOIN: {
             if (!value || !len || (len % sizeof(net_l4_endpoint)) != 0) return SOCK_ERR_INVAL;
             uint32_t count = len / sizeof(net_l4_endpoint);
-            if (!count || count > 255 || count + s->options.mcast_count > 255) return SOCK_ERR_INVAL;
+            if (!count || count > 255) return SOCK_ERR_INVAL;
 
             const net_l4_endpoint* groups = value;
-            for (uint32_t i = 0; i < count; ++i) if (!udp_socket_mcast_endpoint_valid(&groups[i])) return SOCK_ERR_INVAL;
+            for (uint32_t i = 0; i < count; i++) if (!udp_socket_mcast_endpoint_valid(&groups[i])) return SOCK_ERR_INVAL;
 
             uint8_t old_count = s->options.mcast_count;
             if (old_count && (!s->options.mcast_groups || !s->mcast_ifmasks)) return SOCK_ERR_SYS;
-            uint32_t capacity = old_count + count;
+            uint32_t add_count = 0;
+            for (uint32_t i = 0; i < count; i++) {
+                bool exists = false;
+                for (uint8_t j = 0; j < old_count; j++) {
+                    if (s->options.mcast_groups[j].ver != groups[i].ver) continue;
+                    uint32_t ip_len = groups[i].ver == IP_VER4 ? 4 : 16;
+                    if (memcmp(s->options.mcast_groups[j].ip, groups[i].ip, ip_len) == 0) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (exists) continue;
+                for (uint32_t j = 0; j < i; j++) {
+                    if (groups[j].ver != groups[i].ver) continue;
+                    uint32_t ip_len = groups[i].ver == IP_VER4 ? 4 : 16;
+                    if (memcmp(groups[j].ip, groups[i].ip, ip_len) == 0) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) add_count++;
+            }
+            if (!add_count) return SOCK_OK;
+            if ((uint32_t)old_count + add_count > 255) return SOCK_ERR_INVAL;
+
+            uint32_t capacity = (uint32_t)old_count + add_count;
             net_l4_endpoint* next_groups = (net_l4_endpoint*)zalloc(sizeof(net_l4_endpoint) * capacity);
-            uint16_t* next_ifmasks = (uint16_t*)zalloc(sizeof(uint16_t) * capacity);
+            uint32_t* next_ifmasks = (uint32_t*)zalloc(sizeof(uint32_t) * capacity);
             if (!next_groups || !next_ifmasks) {
                 if (next_groups) release(next_groups);
                 if (next_ifmasks) release(next_ifmasks);
@@ -695,13 +742,13 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
 
             if (old_count) {
                 memcpy(next_groups, s->options.mcast_groups, sizeof(net_l4_endpoint) * old_count);
-                memcpy(next_ifmasks, s->mcast_ifmasks, sizeof(uint16_t) * old_count);
+                memcpy(next_ifmasks, s->mcast_ifmasks, sizeof(uint32_t) * old_count);
             }
 
             uint8_t next_count = old_count;
-            for (uint32_t i = 0; i < count; ++i) {
+            for (uint32_t i = 0; i < count; i++) {
                 bool exists = false;
-                for (uint8_t j = 0; j < next_count; ++j) {
+                for (uint8_t j = 0; j < next_count; j++) {
                     if (next_groups[j].ver != groups[i].ver) continue;
                     uint32_t ip_len = groups[i].ver == IP_VER4 ? 4 : 16;
                     if (memcmp(next_groups[j].ip, groups[i].ip, ip_len) == 0) {
@@ -736,7 +783,7 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
 
             irq_flags_t irq = irq_save_disable();
             net_l4_endpoint* old_groups = (net_l4_endpoint*)s->options.mcast_groups;
-            uint16_t* old_ifmasks = s->mcast_ifmasks;
+            uint32_t* old_ifmasks = s->mcast_ifmasks;
             s->options.mcast_groups = next_groups;
             s->mcast_ifmasks = next_ifmasks;
             s->options.mcast_count = next_count;
@@ -754,22 +801,36 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
             if (!s->options.mcast_groups || !s->options.mcast_count) return SOCK_OK;
 
             const net_l4_endpoint* groups = value;
-            for (uint32_t i = 0; i < count; ++i) if (!udp_socket_mcast_endpoint_valid(&groups[i])) return SOCK_ERR_INVAL;
+            for (uint32_t i = 0; i < count; i++) if (!udp_socket_mcast_endpoint_valid(&groups[i])) return SOCK_ERR_INVAL;
 
             uint8_t old_count = s->options.mcast_count;
             if (!s->mcast_ifmasks) return SOCK_ERR_SYS;
-            net_l4_endpoint* next_groups = (net_l4_endpoint*)zalloc(sizeof(net_l4_endpoint) * old_count);
-            uint16_t* next_ifmasks = (uint16_t*)zalloc(sizeof(uint16_t) * old_count);
-            if (!next_groups || !next_ifmasks) {
+            uint8_t remove_count = 0;
+            for (uint8_t i = 0; i < old_count; i++) {
+                for (uint32_t j = 0; j < count; j++) {
+                    if (s->options.mcast_groups[i].ver != groups[j].ver) continue;
+                    uint32_t ip_len = groups[j].ver == IP_VER4 ? 4 : 16;
+                    if (memcmp(s->options.mcast_groups[i].ip, groups[j].ip, ip_len) == 0) {
+                        remove_count++;
+                        break;
+                    }
+                }
+            }
+            if (!remove_count) return SOCK_OK;
+
+            uint8_t capacity = (uint8_t)(old_count - remove_count);
+            net_l4_endpoint* next_groups = capacity ? (net_l4_endpoint*)zalloc(sizeof(net_l4_endpoint) * capacity) : NULL;
+            uint32_t* next_ifmasks = capacity ? (uint32_t*)zalloc(sizeof(uint32_t) * capacity) : NULL;
+            if (capacity && (!next_groups || !next_ifmasks)) {
                 if (next_groups) release(next_groups);
                 if (next_ifmasks) release(next_ifmasks);
                 return SOCK_ERR_SYS;
             }
 
             uint8_t next_count = 0;
-            for (uint8_t i = 0; i < old_count; ++i) {
+            for (uint8_t i = 0; i < old_count; i++) {
                 bool removed = false;
-                for (uint32_t j = 0; j < count; ++j) {
+                for (uint32_t j = 0; j < count; j++) {
                     if (s->options.mcast_groups[i].ver != groups[j].ver) continue;
                     uint32_t ip_len = groups[j].ver == IP_VER4 ? 4 : 16;
                     if (memcmp(s->options.mcast_groups[i].ip, groups[j].ip, ip_len) == 0) {
@@ -783,22 +844,9 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
                 next_count++;
             }
 
-            if (next_count == old_count) {
-                release(next_groups);
-                release(next_ifmasks);
-                return SOCK_OK;
-            }
-
-            if (!next_count) {
-                release(next_groups);
-                release(next_ifmasks);
-                next_groups = NULL;
-                next_ifmasks = NULL;
-            }
-
             irq_flags_t irq = irq_save_disable();
             net_l4_endpoint* old_groups = (net_l4_endpoint*)s->options.mcast_groups;
-            uint16_t* old_ifmasks = s->mcast_ifmasks;
+            uint32_t* old_ifmasks = s->mcast_ifmasks;
             s->options.mcast_groups = next_groups;
             s->mcast_ifmasks = next_ifmasks;
             s->options.mcast_count = next_count;
@@ -807,9 +855,9 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
             irq_restore(irq);
 
             if (s->localPort) {
-                for (uint8_t i = 0; i < old_count; ++i) {
+                for (uint8_t i = 0; i < old_count; i++) {
                     bool kept = false;
-                    for (uint8_t j = 0; j < next_count; ++j) {
+                    for (uint8_t j = 0; j < next_count; j++) {
                         if (old_groups[i].ver != next_groups[j].ver) continue;
                         uint32_t ip_len = old_groups[i].ver == IP_VER4 ? 4 : 16;
                         if (memcmp(old_groups[i].ip, next_groups[j].ip, ip_len) == 0) {
@@ -965,7 +1013,7 @@ int32_t socket_close_udp(socket_impl_t sh) {
     uint32_t r_head = s->r_head;
     uint32_t r_tail = s->r_tail;
     net_l4_endpoint* mcast_groups = (net_l4_endpoint*)s->options.mcast_groups;
-    uint16_t* mcast_ifmasks = s->mcast_ifmasks;
+    uint32_t* mcast_ifmasks = s->mcast_ifmasks;
     uint8_t mcast_count = s->options.mcast_count;
     socket_bind_token_t bind_token = s->bindToken;
     SockBindSpec bind_spec = s->bindSpec;
@@ -1000,7 +1048,7 @@ int32_t socket_close_udp(socket_impl_t sh) {
     netlog_socket_event(&options, &ev);
 
     if (ev.local_port && mcast_groups && mcast_ifmasks) {
-        for (uint32_t i = 0; i < mcast_count; ++i) (void)udp_socket_apply_mcast_group(&bind_spec, &mcast_groups[i], false, &mcast_ifmasks[i]);
+        for (uint32_t i = 0; i < mcast_count; i++) (void)udp_socket_apply_mcast_group(&bind_spec, &mcast_groups[i], false, &mcast_ifmasks[i]);
     }
 
     if (rx_ring && ring_cap) {

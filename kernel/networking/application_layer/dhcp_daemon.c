@@ -32,7 +32,7 @@ typedef enum {
 
 typedef struct {
     uint8_t ifindex;
-    uint8_t l3_id;
+    l3_id_t l3_id;
     dhcp_state_t state;
     uint32_t t1_left_ms;
     uint32_t t2_left_ms;
@@ -80,7 +80,7 @@ static void dhcp_reset_backoff(dhcp_if_state_t* st) {
 
 static void ensure_inventory() {
     for (int i = 0; i < g_if_count;) {
-        uint8_t l3id = g_if[i].l3_id;
+        l3_id_t l3id = g_if[i].l3_id;
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3id);
         if (!ipv4_l3_is_active(v4)) {
             if (g_if[i].sock) close_socket(g_if[i].sock);
@@ -210,7 +210,7 @@ static bool udp_wait_for_ack_or_nak(socket_handle_t sock, uint32_t expect_xid, c
     return false;
 }
 
-static bool apply_offer_to_l3(uint8_t l3_id, dhcp_packet *p, sizedptr sp, uint32_t xid, dhcp_if_state_t* st) {
+static bool apply_offer_to_l3(l3_id_t l3_id, dhcp_packet *p, sizedptr sp, uint32_t xid, dhcp_if_state_t* st) {
     l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
     if (!v4) return false;
     net_runtime_opts_t rt_local;

@@ -18,6 +18,7 @@
 #include "net/checksums.h"
 #include "networking/link_layer/nic_types.h"
 #include "networking/net_fragbuf.h"
+#include "networking/network.h"
 
 #define IPV6_MIN_MTU 1280u
 #define PMTU_CACHE_SIZE 16
@@ -205,7 +206,7 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     else if (l2 && l2->kind == NET_IFK_LOCALHOST) mac_clear(dst_mac);
     else need_ndp = true;
 
-    uint16_t mtu = src_v6->mtu ? src_v6->mtu : 1500;
+    uint16_t mtu = src_v6->mtu ? src_v6->mtu : network_get_mtu(l2->ifindex);
     uint16_t pmtu = ipv6_pmtu_get(dst);
     if (pmtu && pmtu < mtu) mtu = pmtu;
     if (mtu < IPV6_MIN_MTU) mtu = IPV6_MIN_MTU;
@@ -645,7 +646,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         }
 
         int match_count = 0;
-        uint8_t match_l3id = 0;
+        l3_id_t match_l3id = 0;
         for (int i = 0; i < ccount; i++) {
             if (ipv6_cmp(cand[i]->ip, ip6->dst) == 0){
                 match_count++;
@@ -717,7 +718,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     }
 
     int match_count = 0;
-    uint8_t match_l3id = 0;
+    l3_id_t match_l3id = 0;
     for (int i = 0; i < ccount; ++i) {
         if (ipv6_cmp(cand[i]->ip, ip6->dst) == 0) {
             match_count++;

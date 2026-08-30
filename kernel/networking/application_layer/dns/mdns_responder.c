@@ -122,7 +122,7 @@ static bool mdns_pick_identity(uint32_t *out_v4, uint8_t out_v6[16], uint8_t *ou
         if (!l2 || !l2->is_up) continue;
 
         if (!v4) {
-            for (uint8_t j = 0; j < l2->ipv4_count; j++) {
+            for (uint8_t j = 0; j < MAX_IPV4_PER_INTERFACE; j++) {
                 l3_ipv4_interface_t *a = l2->l3_v4[j];
                 if (!ipv4_l3_is_ready(a) || a->is_localhost) continue;
                 v4 = a->ip;
@@ -130,7 +130,7 @@ static bool mdns_pick_identity(uint32_t *out_v4, uint8_t out_v6[16], uint8_t *ou
             }
         }
 
-        for (uint8_t j = 0; j < l2->ipv6_count; j++) {
+        for (uint8_t j = 0; j < MAX_IPV6_PER_INTERFACE; j++) {
             l3_ipv6_interface_t *a = l2->l3_v6[j];
             if (!ipv6_l3_is_ready(a) || a->is_localhost) continue;
 

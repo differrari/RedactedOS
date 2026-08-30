@@ -83,7 +83,7 @@ typedef enum {
 bool tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, tcp_data *out_ctx);
 bool tcp_bind_conflicts(const SockBindSpec* spec, uint16_t port, bool reuseaddr);
 
-bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra);
+bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra);
 void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra, uint32_t apply_mask);
 
 tcp_result_t tcp_flow_send(tcp_data *flow_ctx);
@@ -96,7 +96,7 @@ int64_t tcp_flow_read(tcp_data *flow_ctx, void *buf, uint64_t len);
 uint32_t tcp_flow_readable(tcp_data *flow_ctx);
 bool tcp_flow_recv_closed(tcp_data *flow_ctx);
 
-void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, netpkt_t* pkt);
+void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, l3_id_t l3_id, netpkt_t* pkt);
 
 #ifdef __cplusplus
 }

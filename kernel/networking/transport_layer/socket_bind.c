@@ -58,7 +58,11 @@ static bool socket_bind_normalize_spec(SockBindSpec* spec) {
 
     if (spec->kind == BIND_L3) {
         if (!spec->l3_id) return false;
-        if (!spec->ver) spec->ver = l3_is_v6_from_id(spec->l3_id) ? IP_VER6 : IP_VER4;
+        l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(spec->l3_id);
+        l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(spec->l3_id);
+        if (!v4 && !v6) return false;
+        if (!spec->ver) spec->ver = v6 ? IP_VER6 : IP_VER4;
+        if ((spec->ver == IP_VER4 && !v4) || (spec->ver == IP_VER6 && !v6)) return false;
         if (spec->ver != IP_VER4 && spec->ver != IP_VER6) return false;
         spec->ifindex = 0;
         memset(spec->ip, 0, sizeof(spec->ip));
@@ -166,7 +170,7 @@ bool socket_bind_prepare_spec(SockBindSpec* spec, protocol_t protocol) {
     return true;
 }
 
-uint8_t socket_bind_match_score(const SockBindSpec* spec, ip_version_t ver, uint8_t l3_id, uint8_t ifindex, const void* ip_addr) {
+uint8_t socket_bind_match_score(const SockBindSpec* spec, ip_version_t ver, l3_id_t l3_id, uint8_t ifindex, const void* ip_addr) {
     if (!spec || !ip_addr || (ver != IP_VER4 && ver != IP_VER6)) return 0;
     if ((spec->kind == BIND_L3 || spec->kind == BIND_L2) && spec->ver && spec->ver != ver) return 0;
 
@@ -187,35 +191,6 @@ uint8_t socket_bind_match_score(const SockBindSpec* spec, ip_version_t ver, uint
         default:
             return 0;
     }
-}
-
-uint32_t socket_bind_select_l3(const SockBindSpec* spec, ip_version_t ver, uint8_t* out, uint32_t cap) {
-    if (!spec || !out || !cap || (ver != IP_VER4 && ver != IP_VER6)) return 0;
-
-    SockBindSpec normal = *spec;
-    if (!socket_bind_normalize_spec(&normal)) return 0;
-
-    uint32_t count = 0;
-    for (uint8_t i = 0, n = l2_interface_count(); i < n && count < cap; ++i) {
-        l2_interface_t* l2 = l2_interface_at(i);
-        if (!l2) continue;
-
-        if (ver == IP_VER4) {
-            for (uint32_t slot = 0; slot < MAX_IPV4_PER_INTERFACE && count < cap; ++slot) {
-                l3_ipv4_interface_t* v4 = l2->l3_v4[slot];
-                if (!v4 || !socket_bind_match_score(&normal, ver, v4->l3_id, l2->ifindex, &v4->ip)) continue;
-                out[count++] = v4->l3_id;
-            }
-        } else {
-            for (uint32_t slot = 0; slot < MAX_IPV6_PER_INTERFACE && count < cap; ++slot) {
-                l3_ipv6_interface_t* v6 = l2->l3_v6[slot];
-                if (!v6 || !socket_bind_match_score(&normal, ver, v6->l3_id, l2->ifindex, v6->ip)) continue;
-                out[count++] = v6->l3_id;
-            }
-        }
-    }
-
-    return count;
 }
 
 static bool socket_bind_specs_overlap(const SockBindSpec* a, const SockBindSpec* b) {
@@ -447,13 +422,15 @@ int32_t socket_bind_alloc_ephemeral(ksocket_t* socket, protocol_t protocol, Sock
     return -1;
 }
 
-int32_t socket_bind_alloc_ephemeral_l3(ksocket_t* socket, protocol_t protocol, uint8_t l3_id, uint32_t options, SockBindSpec* out_spec, socket_bind_token_t* out_token) {
+int32_t socket_bind_alloc_ephemeral_l3(ksocket_t* socket, protocol_t protocol, l3_id_t l3_id, uint32_t options, SockBindSpec* out_spec, socket_bind_token_t* out_token) {
     if (!socket || !l3_id || !out_spec) return -1;
 
     SockBindSpec spec;
     memset(&spec, 0, sizeof(spec));
     spec.kind = BIND_L3;
-    spec.ver = l3_is_v6_from_id(l3_id) ? IP_VER6 : IP_VER4;
+    if (l3_ipv4_find_by_id(l3_id)) spec.ver = IP_VER4;
+    else if (l3_ipv6_find_by_id(l3_id)) spec.ver = IP_VER6;
+    else return -1;
     spec.l3_id = l3_id;
 
     int32_t port = socket_bind_alloc_ephemeral(socket, protocol, &spec, options, out_token);
@@ -461,7 +438,7 @@ int32_t socket_bind_alloc_ephemeral_l3(ksocket_t* socket, protocol_t protocol, u
     return port;
 }
 
-ksocket_t* socket_bind_lookup(protocol_t protocol, ip_version_t ipver, uint8_t l3_id, uint8_t ifindex, const void* src_ip_addr, uint16_t src_port, const void* dst_ip_addr, uint16_t dst_port) {
+ksocket_t* socket_bind_lookup(protocol_t protocol, ip_version_t ipver, l3_id_t l3_id, uint8_t ifindex, const void* src_ip_addr, uint16_t src_port, const void* dst_ip_addr, uint16_t dst_port) {
     if (!dst_ip_addr || (protocol != PROTO_TCP && protocol != PROTO_UDP)) return NULL;
     if (ipver != IP_VER4 && ipver != IP_VER6) return NULL;
     if (!bind_map) return NULL;
@@ -534,7 +511,7 @@ ksocket_t* socket_bind_lookup(protocol_t protocol, ip_version_t ipver, uint8_t l
     return socket;
 }
 
-ksocket_t* socket_bind_udp_next_fanout(ip_version_t ipver, uint8_t l3_id, uint8_t ifindex, const void* dst_ip_addr, uint16_t dst_port, uint32_t* cursor) {
+ksocket_t* socket_bind_udp_next_fanout(ip_version_t ipver, l3_id_t l3_id, uint8_t ifindex, const void* dst_ip_addr, uint16_t dst_port, uint32_t* cursor) {
     if (!cursor || !dst_ip_addr || (ipver != IP_VER4 && ipver != IP_VER6)) return NULL;
 
     uint32_t start = *cursor;
@@ -577,7 +554,7 @@ static bool socket_bind_build_tx_opts(const SockBindSpec* spec, ip_version_t ver
         return true;
     }
 
-    uint8_t l3_id = normal.l3_id;
+    l3_id_t l3_id = normal.l3_id;
     if (normal.kind == BIND_IP) {
         if (ver == IP_VER4) {
             uint32_t ip = 0;

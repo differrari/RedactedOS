@@ -7,103 +7,57 @@
 #include "net/checksums.h"
 #include "networking/internet_layer/ipv6.h"
 #include "networking/internet_layer/ipv6_utils.h"
+#include "networking/internet_layer/icmpv6.h"
 #include "networking/link_layer/eth.h"
+#include "networking/link_layer/nic_types.h"
 #include "std/memory.h"
 #include "syscalls/syscalls.h"
 
-#define MLD_TYPE_QUERY 130
-#define MLD_TYPE_REPORT_V1 131
-#define MLD_TYPE_DONE_V1 132
-#define MLD_TYPE_REPORT_V2 143
-
-#define MLDV2_RTYPE_MODE_IS_INCLUDE 1
 #define MLDV2_RTYPE_MODE_IS_EXCLUDE 2
 #define MLDV2_RTYPE_CHANGE_TO_INCLUDE 3
 #define MLDV2_RTYPE_CHANGE_TO_EXCLUDE 4
-#define MLDV2_RTYPE_ALLOW_NEW_SOURCES 5
-#define MLDV2_RTYPE_BLOCK_OLD_SOURCES 6
+#define MLD_UNSOLICITED_REPORT_INTERVAL_MS 1000u
 
 typedef struct {
     uint8_t used;
     uint8_t ifindex;
     uint8_t group[16];
-    uint32_t refresh_ms;
     uint32_t query_due_ms;
+    uint32_t change_due_ms;
     uint8_t query_pending;
+    uint8_t change_left;
+    uint8_t change_type;
 } mld_state_t;
 
 static volatile int mld_daemon_running = 0;
 static volatile int mld_daemon_pending = 0;
-static uint32_t mld_uptime_ms = 0;
 static rng_t mld_rng;
 static int mld_rng_inited = 0;
 
 #define MLD_MAX_TRACK 64
-#define MLD_REFRESH_PERIOD_MS 60000
 
 static mld_state_t mld_states[MLD_MAX_TRACK];
 
-static bool mld_pick_src_ip(uint8_t ifindex, uint8_t out_src_ip[16]);
-static mld_state_t* mld_find_state(uint8_t ifindex, const uint8_t group[16]);
-
-static int mld_is_our_src(uint8_t ifindex, const uint8_t src_ip[16]) {
-    uint8_t my_ip[16];
-    if(!mld_pick_src_ip(ifindex, my_ip)) return 0;
-    return (ipv6_cmp(my_ip, src_ip) == 0);
-}
-
-static void mld_suppress_pending(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t group[16]) {
-    if(mld_is_our_src(ifindex, src_ip)) return;
-
-    mld_state_t* s = mld_find_state(ifindex, group);
-    if(!s) return;
-    if(!s->query_pending) return;
-
-    s->query_pending = 0;
-    s->query_due_ms = 0;
-}
-
-static bool mld_pick_src_ip(uint8_t ifindex, uint8_t out_src_ip[16]) {
-    l2_interface_t *l2;
-    l3_ipv6_interface_t *best;
-    l3_ipv6_interface_t *v6;
-    uint8_t i;
-
-    l2 = l2_interface_find_by_index(ifindex);
-    if(!l2) return false;
-
-    best = NULL;
-    for(i = 0; i < l2->ipv6_count; i++) {
-        v6 = l2->l3_v6[i];
-        if(!v6) continue;
-        if(ipv6_is_unspecified(v6->ip)) continue;
-        if(ipv6_is_linklocal(v6->ip)) {
-
-
-            memcpy(out_src_ip, v6->ip, 16);
-            return true;
-        }
-        if(!best) best = v6;
-    }
-
-    if(!best) return false;
-    memcpy(out_src_ip, best->ip, 16);
-    return true;
-}
-
 static bool mld_send_report(uint8_t ifindex, const uint8_t group[16], uint8_t record_type) {
-    uint8_t src_ip[16];
+    uint8_t src_ip[16] = {0};
     uint8_t dst_ip[16];
     uint8_t dst_mac[6];
     uint8_t icmp[28];
 
-    if(!mld_pick_src_ip(ifindex, src_ip)) return false;
+    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
+    if (!l2) return false;
+    for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+        l3_ipv6_interface_t* v6 = l2->l3_v6[i];
+        if (!ipv6_l3_is_ready(v6) || !ipv6_is_linklocal(v6->ip)) continue;
+        ipv6_cpy(src_ip, v6->ip);
+        break;
+    }
 
     ipv6_make_multicast(2, IPV6_MCAST_MLDV2_ROUTERS, NULL, dst_ip);
     ipv6_multicast_mac(dst_ip, dst_mac);
 
     memset(icmp, 0, sizeof(icmp));
-    icmp[0] = MLD_TYPE_REPORT_V2;
+    icmp[0] = ICMPV6_MLDV2_REPORT;
     icmp[6] = 0;
     icmp[7] = 1;
 
@@ -186,9 +140,11 @@ static mld_state_t* mld_get_state(uint8_t ifindex, const uint8_t group[16]) {
             mld_states[i].used = 1;
             mld_states[i].ifindex = ifindex;
             ipv6_cpy(mld_states[i].group, group);
-            mld_states[i].refresh_ms = 0;
             mld_states[i].query_due_ms = 0;
+            mld_states[i].change_due_ms = 0;
             mld_states[i].query_pending = 0;
+            mld_states[i].change_left = 0;
+            mld_states[i].change_type = 0;
             return &mld_states[i];
         }
     }
@@ -200,8 +156,7 @@ static int mld_has_pending_timers(void) {
     for(int i = 0; i < MLD_MAX_TRACK; i++) {
         mld_state_t* s =&mld_states[i];
         if(!s->used) continue;
-        if(s->query_pending) return 1;
-        if(s->refresh_ms < MLD_REFRESH_PERIOD_MS) return 1;
+        if (s->query_pending || s->change_left) return 1;
     }
     return 0;
 }
@@ -224,7 +179,7 @@ static int mld_daemon_entry(int argc, char* argv[]) {
     mld_daemon_pending = 0;
     mld_daemon_running = 1;
 
-    if(! mld_rng_inited) {
+    if (!mld_rng_inited) {
         rng_init_random(&mld_rng);
         mld_rng_inited = 1;
     }
@@ -232,33 +187,38 @@ static int mld_daemon_entry(int argc, char* argv[]) {
     const uint32_t tick_ms = 100;
 
     while(mld_has_pending_timers()) {
-        mld_uptime_ms += tick_ms;
+        uint32_t now_ms = get_time();
 
         for(int i = 0; i < MLD_MAX_TRACK; i++) {
             mld_state_t* s = &mld_states[i];
             if(!s->used) continue;
 
-            if(!mld_is_still_joined(s->ifindex, s->group)) {
-                s->used = 0;
-                continue;
-            }
-
-            s->refresh_ms += tick_ms;
-            if(s->refresh_ms >= MLD_REFRESH_PERIOD_MS) {
-                s->refresh_ms = 0;
-                (void)mld_send_report(s->ifindex, s->group, MLDV2_RTYPE_MODE_IS_EXCLUDE);
-            }
-
-            if(s->query_pending && mld_uptime_ms >= s->query_due_ms) {
+            if (s->query_pending && !mld_is_still_joined(s->ifindex, s->group)) s->query_pending = 0;
+            if (s->query_pending && (int32_t)(now_ms - s->query_due_ms) >= 0) {
                 s->query_pending = 0;
                 (void)mld_send_report(s->ifindex, s->group, MLDV2_RTYPE_MODE_IS_EXCLUDE);
             }
+
+            if (s->change_left && (int32_t)(now_ms - s->change_due_ms) >= 0) {
+                mld_send_report(s->ifindex, s->group, s->change_type);
+                s->change_left--;
+                if (s->change_left) {
+                    uint32_t delay = rng_between32(&mld_rng, 1, MLD_UNSOLICITED_REPORT_INTERVAL_MS + 1);
+                    s->change_due_ms = now_ms + delay;
+                }
+            }
+
+            if (!s->query_pending && !s->change_left && !mld_is_still_joined(s->ifindex, s->group)) memset(s, 0, sizeof(*s));
         }
 
         msleep(tick_ms);
     }
 
     mld_daemon_running = 0;
+    if (!mld_daemon_pending && mld_has_pending_timers()) {
+        mld_daemon_pending = 1;
+        if (!create_kernel_process("mld_daemon", mld_daemon_entry, 0, 0)) mld_daemon_pending = 0;
+    }
     return 0;
 }
 
@@ -270,29 +230,59 @@ static void mld_daemon_kick(void) {
 }
 
 bool mld_send_join(uint8_t ifindex, const uint8_t group[16]) {
-    if(!ipv6_is_multicast(group)) return false;
+    if (!group || !ipv6_is_multicast(group)) return false;
+    uint8_t all_nodes[16];
+    ipv6_make_multicast(2, IPV6_MCAST_ALL_NODES, NULL, all_nodes);
+    if ((group[1] & 0x0F) < 2 || ipv6_cmp(group, all_nodes) == 0) return true;
+
+    if (!mld_rng_inited) {
+        rng_init_random(&mld_rng);
+        mld_rng_inited = 1;
+    }
 
     mld_state_t* s = mld_get_state(ifindex, group);
-    if(s) s->refresh_ms = 0;
+    if (!s) return false;
+
+    bool ok = mld_send_report(ifindex, group, MLDV2_RTYPE_CHANGE_TO_EXCLUDE);
+    s->change_type = MLDV2_RTYPE_CHANGE_TO_EXCLUDE;
+    s->change_left = 1;
+    s->change_due_ms = get_time() + rng_between32(&mld_rng, 1, MLD_UNSOLICITED_REPORT_INTERVAL_MS + 1);
     mld_daemon_kick();
 
-    return mld_send_report(ifindex, group, MLDV2_RTYPE_MODE_IS_EXCLUDE);
+    return ok;
 }
 
 bool mld_send_leave(uint8_t ifindex, const uint8_t group[16]) {
-    if(!ipv6_is_multicast(group)) return false;
+    if (!group || !ipv6_is_multicast(group)) return false;
+    uint8_t all_nodes[16];
+    ipv6_make_multicast(2, IPV6_MCAST_ALL_NODES, NULL, all_nodes);
+    if ((group[1] & 0x0F) < 2 || ipv6_cmp(group, all_nodes) == 0) return true;
 
-    mld_state_t* s = mld_find_state(ifindex, group);
-    if(s) s->used = 0;
+    if (!mld_rng_inited) {
+        rng_init_random(&mld_rng);
+        mld_rng_inited = 1;
+    }
+
+    mld_state_t* s = mld_get_state(ifindex, group);
+    if (!s) return false;
+
+    bool ok = mld_send_report(ifindex, group, MLDV2_RTYPE_CHANGE_TO_INCLUDE);
+    s->query_pending = 0;
+    s->change_type = MLDV2_RTYPE_CHANGE_TO_INCLUDE;
+    s->change_left = 1;
+    s->change_due_ms = get_time() + rng_between32(&mld_rng, 1, MLD_UNSOLICITED_REPORT_INTERVAL_MS + 1);
     mld_daemon_kick();
 
-    return mld_send_report(ifindex, group, MLDV2_RTYPE_MODE_IS_INCLUDE);
+    return ok;
 }
 
 static void schedule_report(uint8_t ifindex, const uint8_t group[16], uint16_t max_resp_ms) {
-    if(!ipv6_is_multicast(group)) return;
+    if (!group || !ipv6_is_multicast(group)) return;
+    uint8_t all_nodes[16];
+    ipv6_make_multicast(2, IPV6_MCAST_ALL_NODES, NULL, all_nodes);
+    if ((group[1] & 0x0F) < 2 || ipv6_cmp(group, all_nodes) == 0) return;
 
-    if(!mld_rng_inited) {
+    if (!mld_rng_inited) {
         rng_init_random(&mld_rng);
         mld_rng_inited = 1;
     }
@@ -300,13 +290,18 @@ static void schedule_report(uint8_t ifindex, const uint8_t group[16], uint16_t m
     mld_state_t* s = mld_get_state(ifindex, group);
     if(!s) return;
 
-    uint32_t max_ms = (uint32_t)max_resp_ms;
-    if(max_ms == 0) max_ms = 100;
+    uint32_t max_ms;
+    if (max_resp_ms < 0x8000) max_ms = max_resp_ms ? (uint32_t)max_resp_ms : 1;
+    else {
+        uint32_t exp = ((uint32_t)max_resp_ms >> 12) & 0x07;
+        uint32_t mant = (uint32_t)max_resp_ms & 0x0FFF;
+        max_ms = (mant | 0x1000) << (exp + 3);
+    }
 
     uint32_t delay = rng_between32(&mld_rng, 0, max_ms);
-    uint32_t due = mld_uptime_ms + delay;
+    uint32_t due = get_time() + delay;
 
-    if(!s->query_pending || due < s->query_due_ms) {
+    if (!s->query_pending || (int32_t)(due - s->query_due_ms) < 0) {
         s->query_pending = 1;
         s->query_due_ms = due;
     }
@@ -322,53 +317,9 @@ void mld_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
     uint8_t type = 0;
     if (!netpkt_copyout(pkt, 0, &type, 1)) return;
 
-    if(type == MLD_TYPE_REPORT_V2) {
-        uint8_t hdr[8];
-        if (!netpkt_copyout(pkt, 0, hdr, sizeof(hdr))) return;
-        uint16_t nrec = rd_be16(hdr + 6);
-        uint32_t off = 8;
-
-        for(uint16_t i = 0; i < nrec; i++) {
-            uint8_t rec[20];
-            uint8_t group[16];
-            if(!netpkt_copyout(pkt, off, rec, sizeof(rec))) break;
-
-            uint8_t rtype = rec[0];
-            uint8_t aux_words = rec[1];
-            uint16_t nsrc = rd_be16(rec + 2);
-            memcpy(group, rec + 4, sizeof(group));
-            off += 20;
-
-            uint32_t src_bytes = (uint32_t)nsrc * 16u;
-            if(off + src_bytes > l4_len) break;
-            off += src_bytes;
-
-            uint32_t aux_bytes = (uint32_t)aux_words * 4u;
-            if(off + aux_bytes > l4_len) break;
-            off += aux_bytes;
-
-            int interest = 0;
-            if(rtype == MLDV2_RTYPE_MODE_IS_EXCLUDE || rtype == MLDV2_RTYPE_CHANGE_TO_EXCLUDE || rtype == MLDV2_RTYPE_ALLOW_NEW_SOURCES) {
-                interest = 1;
-            } else if((rtype == MLDV2_RTYPE_MODE_IS_INCLUDE || rtype == MLDV2_RTYPE_CHANGE_TO_INCLUDE) && nsrc) {
-                interest = 1;
-            }
-            if(!interest) continue;
-
-            mld_suppress_pending(ifindex, src_ip, group);
-        }
-        return;
-    }
-
-    if(type == MLD_TYPE_REPORT_V1) {
-        uint8_t group[16];
-        if (!netpkt_copyout(pkt, 8, group, sizeof(group))) return;
-        if(ipv6_is_multicast(group)) mld_suppress_pending(ifindex, src_ip, group);
-        return;
-    }
-
-    if(type != MLD_TYPE_QUERY) return;
+    if (type != ICMPV6_MLD_QUERY) return;
     if(l4_len < 24) return;
+    if (!ipv6_is_linklocal(src_ip)) return;
 
     uint8_t query[24];
     uint8_t group[16];

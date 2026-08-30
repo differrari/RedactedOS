@@ -38,7 +38,7 @@ static uint32_t ssdp_uptime_ms = 0;
 static uint32_t ssdp_host_v4 = IPV4_MCAST_SSDP;
 static uint8_t ssdp_host_v6[16];
 static ssdp_socket_entry_t ssdp_sockets[MAX_L3_INTERFACES];
-static uint8_t ssdp_socket_count = 0;
+static uint16_t ssdp_socket_count = 0;
 
 #define SSDP_MAX_PENDING 64
 #define SSDP_RATE_WINDOW_MS 1000
@@ -64,7 +64,7 @@ static void ssdp_schedule_response(socket_handle_t sock, const net_l4_endpoint* 
 }
 
 static void ssdp_send_notify(bool alive) {
-    for (uint8_t i = 0; i < ssdp_socket_count; i++) {
+    for (uint16_t i = 0; i < ssdp_socket_count; i++) {
         socket_handle_t s = ssdp_sockets[i].sock;
         if (!s) continue;
 
@@ -171,7 +171,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
         char buf[2048];
         net_l4_endpoint src = (net_l4_endpoint){0};
 
-        for (uint8_t sidx = 0; sidx < ssdp_socket_count; sidx++) {
+        for (uint16_t sidx = 0; sidx < ssdp_socket_count; sidx++) {
             socket_handle_t s = ssdp_sockets[sidx].sock;
             for (int i = 0; i < SSDP_RECV_BURST; ++i) {
                 int64_t r = receive_from_socket(s, buf, sizeof(buf) - 1, &src);

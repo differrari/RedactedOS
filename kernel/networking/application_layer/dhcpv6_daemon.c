@@ -33,8 +33,8 @@ enum {
 
 typedef struct {
     uint8_t ifindex;
-    uint8_t target_l3_id;
-    uint8_t bound_linklocal_l3_id;
+    l3_id_t target_l3_id;
+    l3_id_t bound_linklocal_l3_id;
 
     uint8_t last_gateway[16];
     uint8_t last_gateway_ok;
@@ -69,8 +69,8 @@ static volatile bool g_force_renew_all = false;
 static volatile bool g_force_rebind_all = false;
 static volatile bool g_force_confirm_all = false;
 
-static uint64_t g_force_release_mask = 0;
-static uint64_t g_force_decline_mask = 0;
+static uint8_t g_force_release[MAX_IPV6_L3_INTERFACES];
+static uint8_t g_force_decline[MAX_IPV6_L3_INTERFACES];
 
 uint16_t dhcpv6_get_pid() { return g_dhcpv6_pid; }
 bool dhcpv6_is_running() { return g_dhcpv6_pid != 0xFFFF; }
@@ -79,26 +79,16 @@ void dhcpv6_force_renew_all() { g_force_renew_all = true; }
 void dhcpv6_force_rebind_all() { g_force_rebind_all = true; }
 void dhcpv6_force_confirm_all() { g_force_confirm_all = true; }
 
-static uint64_t dhcpv6_l3_mask(uint8_t l3_id) {
-    if (!l3_id || !l3_is_v6_from_id(l3_id)) return 0;
-
-    uint8_t ifindex = l3_ifindex_from_id(l3_id);
-    uint8_t slot = l3_slot_from_id(l3_id);
-    if (!ifindex || slot >= MAX_IPV6_PER_INTERFACE) return 0;
-
-    uint32_t bit = ((uint32_t)(ifindex - 1) * MAX_IPV6_PER_INTERFACE) + slot;
-    if (bit >= 64) return 0;
-    return (uint64_t)1 << bit;
+void dhcpv6_force_release_l3(l3_id_t l3_id) {
+    if (!l3_ipv6_find_by_id(l3_id)) return;
+    uint32_t index = (uint32_t)l3_id - MAX_IPV4_L3_INTERFACES - 1;
+    g_force_release[index] = 1;
 }
 
-void dhcpv6_force_release_l3(uint8_t l3_id) {
-    uint64_t m = dhcpv6_l3_mask(l3_id);
-    if (m) g_force_release_mask |= m;
-}
-
-void dhcpv6_force_decline_l3(uint8_t l3_id) {
-    uint64_t m = dhcpv6_l3_mask(l3_id);
-    if (m) g_force_decline_mask |= m;
+void dhcpv6_force_decline_l3(l3_id_t l3_id) {
+    if (!l3_ipv6_find_by_id(l3_id)) return;
+    uint32_t index = (uint32_t)l3_id - MAX_IPV4_L3_INTERFACES - 1;
+    g_force_decline[index] = 1;
 }
 
 static uint32_t next_backoff_ms(dhcpv6_bind_t* b) {
@@ -233,7 +223,7 @@ static void ensure_binds() {
         }
         if (!target) continue;
 
-        uint8_t ll_l3 = 0;
+        l3_id_t ll_l3 = 0;
         bool ll_ok = false;
 
         for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
@@ -279,10 +269,6 @@ static void ensure_binds() {
             free_sized(b, sizeof(*b));
             continue;
         }
-
-        uint8_t m[16];
-        ipv6_make_multicast(2, IPV6_MCAST_DHCPV6_SERVERS, NULL, m);
-        (void)l2_ipv6_mcast_join(b->ifindex, m);
 
         linked_list_push_front(g_dhcpv6_binds, b);
     }
@@ -345,19 +331,11 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms) {
     if (!v6->runtime_opts_v6.iaid) v6->runtime_opts_v6.iaid = dhcpv6_iaid_from_mac(b->mac);
     if (!v6->runtime_opts_v6.iaid) v6->runtime_opts_v6.iaid = rng_next32(&g_dhcpv6_rng);
 
-    uint64_t l3_mask = dhcpv6_l3_mask(v6->l3_id);
-    bool do_release = false;
-    bool do_decline = false;
-
-    if (l3_mask && (g_force_release_mask & l3_mask)) {
-        g_force_release_mask &= ~l3_mask;
-        do_release = true;
-    }
-
-    if (l3_mask && (g_force_decline_mask & l3_mask)) {
-        g_force_decline_mask &= ~l3_mask;
-        do_decline = true;
-    }
+    uint32_t force_index = (uint32_t)v6->l3_id - MAX_IPV4_L3_INTERFACES - 1;
+    bool do_release = g_force_release[force_index] != 0;
+    bool do_decline = g_force_decline[force_index] != 0;
+    g_force_release[force_index] = 0;
+    g_force_decline[force_index] = 0;
 
     if (do_release) {
         v6->dhcpv6_state = DHCPV6_S_RELEASING;

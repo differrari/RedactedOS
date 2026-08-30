@@ -167,7 +167,7 @@ static int addr_del(int argc, char* argv[]) {
     NetCtrlMsg* msg = (NetCtrlMsg*)response;
     uint32_t count = NET_CTRL_MSG_PAYLOAD_LEN(msg)/sizeof(NetCtrlAddrInfo);
     NetCtrlAddrInfo* addrs = NET_CTRL_MSG_DATA(msg);
-    uint8_t l3_id = 0;
+    l3_id_t l3_id = 0;
     for (uint32_t i = 0; i < count; i++) {
         uint32_t bytes = ep.ver == IP_VER4 ? 4 : 16;
         if (addrs[i].prefix.address.ver == ep.ver && memcmp(addrs[i].prefix.address.ip, ep.ip, bytes) == 0) {
@@ -246,7 +246,7 @@ static int route_change(int argc, char* argv[], bool add) {
     if (def) network.ver = gateway.ver;
     if (has_gateway && gateway.ver != network.ver) return 2;
 
-    uint8_t l3_id = 0;
+    l3_id_t l3_id = 0;
     bool linklocal = network.ver == IP_VER6 && !def && ipv6_is_linklocal(network.ip);
     uint8_t req[256];
     uint32_t req_len;

@@ -12,7 +12,7 @@ bool mdns_deregister_service(const char *instance, const char *service, const ch
 typedef struct {
     socket_handle_t sock;
     ip_version_t ver;
-    uint8_t l3_id;
+    l3_id_t l3_id;
     uint8_t mcast_ip[16];
 } mdns_tx_target_t;
 

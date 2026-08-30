@@ -25,7 +25,7 @@ bool udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, si
 void udp_input(ip_version_t ipver,
                const void *src_ip_addr,
                const void *dst_ip_addr,
-               uint8_t l3_id,
+               l3_id_t l3_id,
                netpkt_t* pkt);
 
 

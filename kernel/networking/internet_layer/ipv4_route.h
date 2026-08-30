@@ -17,7 +17,7 @@ typedef struct {
 
 typedef struct ipv4_rt_table ipv4_rt_table_t;
 
-ipv4_rt_table_t* ipv4_rt_create(uint8_t owner_l3_id);
+ipv4_rt_table_t* ipv4_rt_create(l3_id_t owner_l3_id);
 void ipv4_rt_destroy(ipv4_rt_table_t* t);
 void ipv4_rt_clear(ipv4_rt_table_t* t);
 
@@ -33,7 +33,7 @@ void ipv4_rt_ensure_basics(ipv4_rt_table_t* t, uint32_t ip, uint32_t mask, uint3
 void ipv4_rt_sync_basics(ipv4_rt_table_t* t, uint32_t ip, uint32_t mask, uint32_t gw, uint16_t base_metric);
 
 typedef struct {
-    uint8_t l3_id;
+    l3_id_t l3_id;
     uint32_t l3_epoch;
     uint32_t src_ip;
 } ipv4_tx_plan_t;
@@ -42,7 +42,7 @@ bool ipv4_tx_plan_valid(const ipv4_tx_plan_t* plan);
 bool ipv4_tx_plan_onlink(const ipv4_tx_plan_t* plan, uint32_t dst);
 bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* out);
 
-bool ipv4_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, uint32_t dst, uint8_t* out_l3);
+bool ipv4_rt_pick_best_l3(uint32_t dst, uint8_t ifindex, l3_id_t* out_l3);
 
 #ifdef __cplusplus
 }

@@ -125,7 +125,14 @@ bool tcp_bind_conflicts(const SockBindSpec* spec, uint16_t port, bool reuseaddr)
         if (!flow) continue;
         if (flow->base.local.port > port) break;
         if (flow->base.retired || flow->base.state == TCP_STATE_CLOSED) continue;
-        uint8_t ifindex = l3_ifindex_from_id(flow->base.l3_id);
+        uint8_t ifindex = 0;
+        if (flow->base.local.ver == IP_VER4) {
+            l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(flow->base.l3_id);
+            if (v4 && v4->l2) ifindex = v4->l2->ifindex;
+        } else if (flow->base.local.ver == IP_VER6) {
+            l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(flow->base.l3_id);
+            if (v6 && v6->l2) ifindex = v6->l2->ifindex;
+        }
         if (flow->base.local.port != port || !socket_bind_match_score(spec, flow->base.local.ver, flow->base.l3_id, ifindex, flow->base.local.ip)) continue;
 
         bool allowed = reuseaddr && flow->ip.reuseaddr;
@@ -480,7 +487,7 @@ bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst
     return ipv6_send_packet((const uint8_t *)dst_ip_addr, PROTO_TCP, pkt, txp, ttl, dontfrag);
 }
 
-void tcp_send_reset(uint8_t l3_id, ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port, uint32_t seq, uint32_t ack, bool ack_valid){
+void tcp_send_reset(l3_id_t l3_id, ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port, uint32_t seq, uint32_t ack, bool ack_valid) {
     if (!l3_id) return;
     tcp_hdr_t rst_hdr;
 
@@ -540,7 +547,7 @@ void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms){
     flow->tx.rto = rto;
 }
 
-bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra){
+bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra) {
     if (!dst || !flow_ctx || !local_port || !dst->port || (dst->ver != IP_VER4 && dst->ver != IP_VER6)) return false;
 
     tcp_flow_t *flow = tcp_alloc_flow();

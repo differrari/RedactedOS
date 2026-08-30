@@ -6,7 +6,7 @@
 #include "syscalls/syscalls.h"
 
 struct ipv6_rt_table {
-    uint8_t owner_l3_id;
+    l3_id_t owner_l3_id;
     uint32_t epoch;
     ipv6_rt_entry_t e[IPV6_RT_PER_IF_MAX];
     int len;
@@ -53,7 +53,7 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx
     int dst_is_loop = ipv6_is_loopback(dst) ? 1 : 0;
 
     if (hint && hint->scope == IP_TX_BOUND_L3) {
-        uint8_t id = hint->index;
+        l3_id_t id = hint->index;
         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
         if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) return false;
         out->l3_id = id;
@@ -62,34 +62,29 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx
         return true;
     }
 
-    uint8_t cand[64];
-    int n = 0;
-
+    uint8_t ifindex = 0;
     if (hint && hint->scope == IP_TX_BOUND_L2) {
-        l2_interface_t* l2 = l2_interface_find_by_index(hint->index);
+        l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)hint->index);
         if (!l2 || !l2->is_up) return false;
-        for (int s = 0; s < MAX_IPV6_PER_INTERFACE && n < (int)sizeof(cand); ++s){
-            l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-            if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) continue;
-            cand[n++] = v6->l3_id;
-        }
-    } else {
-        uint8_t cnt = l2_interface_count();
-        for (uint8_t i = 0; i < cnt && n < (int)sizeof(cand); ++i){
-            l2_interface_t* l2 = l2_interface_at(i);
-            if (!l2 || !l2->is_up) continue;
-            for (int s = 0; s < MAX_IPV6_PER_INTERFACE && n < (int)sizeof(cand); ++s){
-                l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-                if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) continue;
-                cand[n++] = v6->l3_id;
-            }
-        }
+        ifindex = l2->ifindex;
     }
 
-    if (n == 0) return false;
-
-    uint8_t chosen = 0;
-    if (!ipv6_rt_pick_best_l3_in(cand, n, dst, &chosen)) chosen = cand[0];
+    l3_id_t chosen = 0;
+    if (!ipv6_rt_pick_best_l3(dst, ifindex, &chosen)) {
+        uint8_t first = ifindex ? ifindex : 1;
+        uint8_t last = ifindex ? ifindex : MAX_L2_INTERFACES;
+        for (uint8_t ix = first; ix <= last && !chosen; ix++) {
+            l2_interface_t* l2 = l2_interface_find_by_index(ix);
+            if (!l2 || !l2->is_up) continue;
+            for (int slot = 0; slot < MAX_IPV6_PER_INTERFACE; slot++) {
+                l3_ipv6_interface_t* v6 = l2->l3_v6[slot];
+                if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) continue;
+                chosen = v6->l3_id;
+                break;
+            }
+        }
+        if (!chosen) return false;
+    }
 
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(chosen);
     if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) return false;
@@ -100,7 +95,7 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx
     return true;
 }
 
-ipv6_rt_table_t* ipv6_rt_create(uint8_t owner_l3_id) {
+ipv6_rt_table_t* ipv6_rt_create(l3_id_t owner_l3_id) {
     ipv6_rt_table_t* t = zalloc(sizeof(*t));
     if (!t) return 0;
 
@@ -238,56 +233,65 @@ void ipv6_rt_sync_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t plen,
     }
 }
 
-bool ipv6_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, const uint8_t dst[16], uint8_t* out_l3) {
+bool ipv6_rt_pick_best_l3(const uint8_t dst[16], uint8_t ifindex, l3_id_t* out_l3) {
+    if (!dst) return false;
+
     int best_pl = -1;
     int best_cost = 0x7FFFFFFF;
-    uint8_t best_l3 = 0;
+    l3_id_t best_l3 = 0;
+    int dst_is_ll = (ipv6_is_linklocal(dst) || ipv6_is_linkscope_mcast(dst)) ? 1 : 0;
+    int dst_is_loop = ipv6_is_loopback(dst) ? 1 : 0;
+    uint8_t first = ifindex ? ifindex : 1;
+    uint8_t last = ifindex ? ifindex : MAX_L2_INTERFACES;
 
-    for (int i = 0; i < n_ids; i++) {
-        l3_ipv6_interface_t* x = l3_ipv6_find_by_id(l3_ids[i]);
-        if (!ipv6_l3_is_ready(x)) continue;
+    for (uint8_t ix = first; ix <= last; ix++) {
+        l2_interface_t* l2 = l2_interface_find_by_index(ix);
+        if (!l2 || !l2->is_up) continue;
 
-        int l2base = x->l2->base_metric;
+        for (int slot = 0; slot < MAX_IPV6_PER_INTERFACE; slot++) {
+            l3_ipv6_interface_t* x = l2->l3_v6[slot];
+            if (!v6_l3_ok_for_tx(x, dst_is_ll, dst_is_loop)) continue;
 
-        int pl_conn = -1;
-        if (x->prefix_len) {
-            int pl = ipv6_common_prefix_len(dst, x->ip);
-            if (pl >= x->prefix_len) pl_conn = x->prefix_len;
-        }
-
-        int pl_tab = -1;
-        int met_tab = 0x7FFF;
-
-        if (x->routing_table) {
-            const ipv6_rt_table_t* rt = (const ipv6_rt_table_t*)x->routing_table;
-            if (rt->owner_l3_id && rt->owner_l3_id != x->l3_id) continue;
-            uint8_t via[16] = {0};
-            int out_pl = -1;
-            int out_met = 0x7FFF;
-
-            if (ipv6_rt_lookup_in(rt, dst, via, &out_pl, &out_met)) {
-                pl_tab = out_pl;
-                met_tab = out_met;
+            int pl_conn = -1;
+            if (x->prefix_len) {
+                int pl = ipv6_common_prefix_len(dst, x->ip);
+                if (pl >= x->prefix_len) pl_conn = x->prefix_len;
             }
-        }
 
-        int cand_pl = pl_conn;
-        int cand_cost = l2base;
+            int pl_tab = -1;
+            int met_tab = 0x7FFF;
 
-        if (pl_tab > cand_pl || (pl_tab == cand_pl && met_tab < cand_cost)) {
-            cand_pl = pl_tab;
-            cand_cost = met_tab;
-        }
+            if (x->routing_table) {
+                const ipv6_rt_table_t* rt = (const ipv6_rt_table_t*)x->routing_table;
+                if (rt->owner_l3_id && rt->owner_l3_id != x->l3_id) continue;
+                uint8_t via[16] = {0};
+                int out_pl = -1;
+                int out_met = 0x7FFF;
 
-        if (cand_pl > best_pl || (cand_pl == best_pl && cand_cost <best_cost) || (cand_pl == best_pl && cand_cost == best_cost && l3_ids[i] < best_l3)) {
-            best_pl = cand_pl;
-            best_cost = cand_cost;
-            best_l3 = l3_ids[i];
+                if (ipv6_rt_lookup_in(rt, dst, via, &out_pl, &out_met)) {
+                    pl_tab = out_pl;
+                    met_tab = out_met;
+                }
+            }
+
+            int cand_pl = pl_conn;
+            int cand_cost = l2->base_metric;
+
+            if (pl_tab > cand_pl || (pl_tab == cand_pl && met_tab < cand_cost)) {
+                cand_pl = pl_tab;
+                cand_cost = met_tab;
+            }
+
+            if (cand_pl > best_pl || (cand_pl == best_pl && cand_cost < best_cost) ||
+                (cand_pl == best_pl && cand_cost == best_cost && x->l3_id < best_l3)) {
+                best_pl = cand_pl;
+                best_cost = cand_cost;
+                best_l3 = x->l3_id;
+            }
         }
     }
 
     if (best_pl < 0) return false;
-
     if (out_l3) *out_l3 = best_l3;
     return true;
 }

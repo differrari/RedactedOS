@@ -15,6 +15,7 @@
 #include "networking/link_layer/nic_types.h"
 #include "networking/net_fragbuf.h"
 #include "networking/interface_manager.h"
+#include "networking/network.h"
 
 static uint16_t g_ip_ident = 1;
 
@@ -111,7 +112,7 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
     else if (l2->kind == NET_IFK_LOCALHOST) mac_clear(dst_mac);
     else need_arp = true;
 
-    uint16_t mtu = src_v4->runtime_opts_v4.mtu ? src_v4->runtime_opts_v4.mtu : 1500;
+    uint16_t mtu = src_v4->runtime_opts_v4.mtu ? src_v4->runtime_opts_v4.mtu : network_get_mtu(l2->ifindex);
     uint32_t hdr_len = IP_IHL_NOOPTS * 4;
     uint32_t seg_len = netpkt_len(pkt);
     uint32_t total = hdr_len + seg_len;
@@ -233,7 +234,7 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
         for (int i = 0; i < ccount; ++i) {
             netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
             if (!l4pkt) continue;
-            uint8_t l3id = cand[i]->l3_id;
+            l3_id_t l3id = cand[i]->l3_id;
             if (proto == PROTO_IGMP) igmp_input((uint8_t)ifindex, src, dst, l4pkt);
             else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
             else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
@@ -257,7 +258,7 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
     }
 
     int match_count = 0;
-    uint8_t match_l3id = 0;
+    l3_id_t match_l3id = 0;
     for (int i = 0; i < ccount; ++i) {
         if (cand[i]->ip && cand[i]->ip == dst) {
             match_count++;

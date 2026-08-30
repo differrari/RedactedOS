@@ -16,7 +16,7 @@
 
 typedef struct {
     uint8_t ifindex;
-    uint8_t l3_id;
+    l3_id_t l3_id;
     uint8_t prefix_len;
     uint8_t ifname_len;
     char ifname[16];
@@ -65,8 +65,8 @@ static bool net_ctrl_read_attrs(const uint8_t* p, uint32_t len, net_ctrl_attrs_t
                 out->present |= 1u << NET_CTRL_EXT_IFNAME;
                 break;
             case NET_CTRL_EXT_L3_ID:
-                if (a.length != sizeof(uint8_t)) return false;
-                out->l3_id = v[0];
+                if (a.length != sizeof(l3_id_t)) return false;
+                memcpy(&out->l3_id, v, sizeof(out->l3_id));
                 out->present |= 1u << NET_CTRL_EXT_L3_ID;
                 break;
             case NET_CTRL_EXT_PREFIX_LEN:
@@ -321,8 +321,9 @@ static int32_t net_ctrl_addr_apply(const net_ctrl_attrs_t* a, bool update) {
 
 static int32_t net_ctrl_addr_del(const net_ctrl_attrs_t* a) {
     if (NET_CTRL_HAS(a, NET_CTRL_EXT_L3_ID)) {
-        if (l3_is_v6_from_id(a->l3_id)) return l3_ipv6_remove_from_interface(a->l3_id) ? SOCK_OK : SOCK_ERR_INVAL;
-        return l3_ipv4_remove_from_interface(a->l3_id) ? SOCK_OK : SOCK_ERR_INVAL;
+        if (l3_ipv4_find_by_id(a->l3_id)) return l3_ipv4_remove_from_interface(a->l3_id) ? SOCK_OK : SOCK_ERR_INVAL;
+        if (l3_ipv6_find_by_id(a->l3_id)) return l3_ipv6_remove_from_interface(a->l3_id) ? SOCK_OK : SOCK_ERR_INVAL;
+        return SOCK_ERR_INVAL;
     }
     if (!NET_CTRL_HAS(a, NET_CTRL_EXT_ADDRESS)) return SOCK_ERR_INVAL;
     if (a->address.ver == IP_VER4) {
@@ -395,8 +396,8 @@ static bool net_ctrl_route_dump(const net_ctrl_attrs_t* a, buffer* b) {
 static int32_t net_ctrl_route_apply(const net_ctrl_attrs_t* a, bool add) {
     if (!NET_CTRL_HAS(a, NET_CTRL_EXT_L3_ID) || !NET_CTRL_HAS(a, NET_CTRL_EXT_ADDRESS) || !NET_CTRL_HAS(a, NET_CTRL_EXT_PREFIX_LEN)) return SOCK_ERR_INVAL;
     uint16_t metric = NET_CTRL_HAS(a, NET_CTRL_EXT_METRIC) ? a->metric : 0;
-    if (!l3_is_v6_from_id(a->l3_id)) {
-        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(a->l3_id);
+    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(a->l3_id);
+    if (v4) {
         uint32_t network = 0;
         uint32_t gw = 0;
         if (!v4 || v4->is_localhost || a->address.ver != IP_VER4) return SOCK_ERR_INVAL;
@@ -450,8 +451,8 @@ static int32_t net_ctrl_route_apply(const net_ctrl_attrs_t* a, bool add) {
 
 static int32_t net_ctrl_route_del(const net_ctrl_attrs_t* a) {
     if (!NET_CTRL_HAS(a, NET_CTRL_EXT_L3_ID) || !NET_CTRL_HAS(a, NET_CTRL_EXT_ADDRESS) || !NET_CTRL_HAS(a, NET_CTRL_EXT_PREFIX_LEN)) return SOCK_ERR_INVAL;
-    if (!l3_is_v6_from_id(a->l3_id)) {
-        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(a->l3_id);
+    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(a->l3_id);
+    if (v4) {
         uint32_t network = 0;
         uint32_t gateway = 0;
         if (!v4 || a->address.ver != IP_VER4 || a->prefix_len > 32) return SOCK_ERR_INVAL;

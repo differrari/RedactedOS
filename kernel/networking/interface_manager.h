@@ -2,12 +2,13 @@
 
 #include "types.h"
 #include "net/interface_types.h"
+#include "net/network_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define MAX_L2_INTERFACES 16
+#define MAX_L2_INTERFACES 32
 #define MAX_IPV4_PER_INTERFACE 4
 #define MAX_IPV6_PER_INTERFACE 4
 #define MAX_L3_INTERFACES (MAX_L2_INTERFACES * (MAX_IPV4_PER_INTERFACE + MAX_IPV6_PER_INTERFACE))
@@ -34,11 +35,11 @@ typedef struct net_runtime_opts {
 
 typedef struct l2_interface {
     uint8_t ifindex;
+    uint8_t nic_id;
     char name[16];
     bool is_up;
     uint16_t base_metric;
     uint8_t kind;
-    void *driver_context;
     void *arp_table;
     void *nd_table;
     struct l3_ipv4_interface *l3_v4[MAX_IPV4_PER_INTERFACE];
@@ -54,7 +55,7 @@ typedef struct l2_interface {
 } l2_interface_t;
 
 typedef struct l3_ipv4_interface {
-    uint8_t l3_id;
+    l3_id_t l3_id;
     uint32_t epoch;
     uint32_t ip;
     uint32_t mask;
@@ -89,7 +90,7 @@ typedef struct net_runtime_opts_v6 {
 } net_runtime_opts_v6_t;
 
 typedef struct l3_ipv6_interface {
-    uint8_t l3_id;
+    l3_id_t l3_id;
     uint32_t epoch;
     uint16_t mtu;
 
@@ -129,7 +130,7 @@ typedef struct ip_resolution_result {
     l2_interface_t *l2;
 } ip_resolution_result_t;
 
-uint8_t l2_interface_create(const char *name, void *driver_ctx, uint16_t base_metric, uint8_t kind);
+uint8_t l2_interface_create(const char *name, uint8_t nic_id, uint16_t base_metric, uint8_t kind);
 bool l2_interface_destroy(uint8_t ifindex);
 l2_interface_t *l2_interface_find_by_index(uint8_t ifindex);
 uint8_t l2_interface_count(void);
@@ -142,17 +143,17 @@ bool l2_ipv4_mcast_leave(uint8_t ifindex, uint32_t group);
 bool l2_ipv6_mcast_join(uint8_t ifindex, const uint8_t group[16]);
 bool l2_ipv6_mcast_leave(uint8_t ifindex, const uint8_t group[16]);
 
-uint8_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, uint32_t gw, ipv4_cfg_t mode, net_runtime_opts_t *rt);
-bool l3_ipv4_update(uint8_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4_cfg_t mode, net_runtime_opts_t *rt);
-bool l3_ipv4_remove_from_interface(uint8_t l3_id);
-l3_ipv4_interface_t *l3_ipv4_find_by_id(uint8_t l3_id);
+l3_id_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, uint32_t gw, ipv4_cfg_t mode, net_runtime_opts_t *rt);
+bool l3_ipv4_update(l3_id_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4_cfg_t mode, net_runtime_opts_t *rt);
+bool l3_ipv4_remove_from_interface(l3_id_t l3_id);
+l3_ipv4_interface_t *l3_ipv4_find_by_id(l3_id_t l3_id);
 l3_ipv4_interface_t *l3_ipv4_find_by_ip(uint32_t ip);
 
-uint8_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t prefix_len, const uint8_t gw[16], ipv6_cfg_t cfg, uint8_t kind);
-bool l3_ipv6_update(uint8_t l3_id, const uint8_t ip[16], uint8_t prefix_len, const uint8_t gw[16], ipv6_cfg_t cfg, uint8_t kind);
-bool l3_ipv6_remove_from_interface(uint8_t l3_id);
-bool l3_ipv6_set_enabled(uint8_t l3_id, bool enable);
-l3_ipv6_interface_t *l3_ipv6_find_by_id(uint8_t l3_id);
+l3_id_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t prefix_len, const uint8_t gw[16], ipv6_cfg_t cfg, uint8_t kind);
+bool l3_ipv6_update(l3_id_t l3_id, const uint8_t ip[16], uint8_t prefix_len, const uint8_t gw[16], ipv6_cfg_t cfg, uint8_t kind);
+bool l3_ipv6_remove_from_interface(l3_id_t l3_id);
+bool l3_ipv6_set_enabled(l3_id_t l3_id, bool enable);
+l3_ipv6_interface_t *l3_ipv6_find_by_id(l3_id_t l3_id);
 l3_ipv6_interface_t *l3_ipv6_find_by_ip(const uint8_t ip[16]);
 
 void l3_init_localhost_ipv4(void);
@@ -163,12 +164,6 @@ void ifmgr_autoconfig_l2(uint8_t ifindex);
 
 ip_resolution_result_t resolve_ipv4_to_interface(uint32_t dst_ip);
 ip_resolution_result_t resolve_ipv6_to_interface(const uint8_t dst_ip[16]);
-
-static inline uint8_t make_l3_id_v4(uint8_t ifindex, uint8_t local_slot){ return (uint8_t)((ifindex<<4) | (local_slot & 0x03)); }
-static inline uint8_t make_l3_id_v6(uint8_t ifindex, uint8_t local_slot){ return (uint8_t)((ifindex<<4) | 0x08 | (local_slot & 0x03)); }
-static inline uint8_t l3_ifindex_from_id(uint8_t l3_id){ return (uint8_t)((l3_id >> 4) & 0x0F); }
-static inline uint8_t l3_is_v6_from_id(uint8_t l3_id){ return (uint8_t)((l3_id & 0x08) ? 1 : 0); }
-static inline uint8_t l3_slot_from_id(uint8_t l3_id){ return (uint8_t)(l3_id & 0x03); }
 
 #ifdef __cplusplus
 }

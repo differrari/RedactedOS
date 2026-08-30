@@ -14,7 +14,7 @@
 static uint16_t g_pid_dnsd = 0xFFFF;
 static socket_handle_t g_sock = 0;
 static mdns_tx_target_t g_mdns[MAX_L3_INTERFACES];
-static uint8_t g_mdns_count = 0;
+static uint16_t g_mdns_count = 0;
 
 uint16_t dns_get_pid(void){ return g_pid_dnsd; }
 bool dns_is_running(void){ return g_pid_dnsd != 0xFFFF; }
@@ -22,7 +22,7 @@ socket_handle_t dns_socket_handle(void){ return g_sock; }
 
 socket_handle_t mdns_socket_handle(void){ return g_mdns_count ? g_mdns[0].sock : 0; }
 socket_handle_t mdns_socket_handle_for(ip_version_t ver){
-    for (uint8_t i = 0; i < g_mdns_count; i++) {
+    for (uint16_t i = 0; i < g_mdns_count; i++) {
         if (g_mdns[i].ver == ver) return g_mdns[i].sock;
     }
     return 0;
@@ -40,7 +40,7 @@ static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
             l3_ipv4_interface_t *v4 = l2->l3_v4[j];
             if (!ipv4_l3_is_ready(v4) || v4->is_localhost) continue;
             bool have_socket = false;
-            for (uint8_t k = 0; k < g_mdns_count; k++) {
+            for (uint16_t k = 0; k < g_mdns_count; k++) {
                 if (g_mdns[k].sock && g_mdns[k].ver == IP_VER4 && g_mdns[k].l3_id == v4->l3_id) {
                     have_socket = true;
                     break;
@@ -79,7 +79,7 @@ static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
             l3_ipv6_interface_t *v6 = l2->l3_v6[j];
             if (!ipv6_l3_is_ready(v6) || v6->is_localhost) continue;
             bool have_socket = false;
-            for (uint8_t k = 0; k < g_mdns_count; k++) {
+            for (uint16_t k = 0; k < g_mdns_count; k++) {
                 if (g_mdns[k].sock && g_mdns[k].ver == IP_VER6 && g_mdns[k].l3_id == v6->l3_id) {
                     have_socket = true;
                     break;
@@ -136,7 +136,7 @@ int dns_deamon_entry(int argc, char* argv[]){
         uint8_t buf[900];
         net_l4_endpoint src;
 
-        for (uint8_t sidx = 0; sidx < g_mdns_count; sidx++) {
+        for (uint16_t sidx = 0; sidx < g_mdns_count; sidx++) {
             socket_handle_t s = g_mdns[sidx].sock;
             for (int i = 0; i < 64; i++) {
                 memset(&src, 0, sizeof(src));

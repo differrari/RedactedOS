@@ -5,7 +5,7 @@
 #include "syscalls/syscalls.h"
 
 struct ipv4_rt_table {
-    uint8_t owner_l3_id;
+    l3_id_t owner_l3_id;
     uint32_t epoch;
     ipv4_rt_entry_t e[IPV4_RT_PER_IF_MAX];
     int len;
@@ -34,14 +34,14 @@ bool ipv4_tx_plan_onlink(const ipv4_tx_plan_t* plan, uint32_t dst) {
     return v4->mask && (dst & v4->mask) == (v4->ip & v4->mask);
 }
 
-bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* out){
+bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* out) {
     if (!out) return false;
     out->l3_id = 0;
     out->l3_epoch = 0;
     out->src_ip = 0;
 
     if (hint && hint->scope == IP_TX_BOUND_L3) {
-        uint8_t id = hint->index;
+        l3_id_t id = hint->index;
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
         if (!ipv4_l3_is_ready(v4) || ipv4_is_loopback(dst) != v4->is_localhost) return false;
         out->l3_id = id;
@@ -50,34 +50,29 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* 
         return true;
     }
 
-    uint8_t cand[64];
-    int n = 0;
-
+    uint8_t ifindex = 0;
     if (hint && hint->scope == IP_TX_BOUND_L2) {
-        l2_interface_t* l2 = l2_interface_find_by_index(hint->index);
+        l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)hint->index);
         if (!l2 || !l2->is_up) return false;
-        for (int s = 0; s < MAX_IPV4_PER_INTERFACE && n < (int)sizeof(cand); ++s){
-            l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!ipv4_l3_is_ready(v4) || ipv4_is_loopback(dst) != v4->is_localhost) continue;
-            cand[n++] = v4->l3_id;
-        }
-    } else {
-        uint8_t cnt = l2_interface_count();
-        for (uint8_t i = 0; i < cnt && n < (int)sizeof(cand); ++i){
-            l2_interface_t* l2 = l2_interface_at(i);
-            if (!l2 || !l2->is_up) continue;
-            for (int s = 0; s < MAX_IPV4_PER_INTERFACE && n < (int)sizeof(cand); ++s){
-                l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-                if (!ipv4_l3_is_ready(v4) || ipv4_is_loopback(dst) != v4->is_localhost) continue;
-                cand[n++] = v4->l3_id;
-            }
-        }
+        ifindex = l2->ifindex;
     }
 
-    if (n == 0) return false;
-
-    uint8_t chosen = 0;
-    if (!ipv4_rt_pick_best_l3_in(cand, n, dst, &chosen)) chosen = cand[0];
+    l3_id_t chosen = 0;
+    if (!ipv4_rt_pick_best_l3(dst, ifindex, &chosen)) {
+        uint8_t first = ifindex ? ifindex : 1;
+        uint8_t last = ifindex ? ifindex : MAX_L2_INTERFACES;
+        for (uint8_t ix = first; ix <= last && !chosen; ix++) {
+            l2_interface_t* l2 = l2_interface_find_by_index(ix);
+            if (!l2 || !l2->is_up) continue;
+            for (int slot = 0; slot < MAX_IPV4_PER_INTERFACE; slot++) {
+                l3_ipv4_interface_t* v4 = l2->l3_v4[slot];
+                if (!ipv4_l3_is_ready(v4) || ipv4_is_loopback(dst) != v4->is_localhost) continue;
+                chosen = v4->l3_id;
+                break;
+            }
+        }
+        if (!chosen) return false;
+    }
 
     l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(chosen);
     if (!ipv4_l3_is_ready(v4) || ipv4_is_loopback(dst) != v4->is_localhost) return false;
@@ -89,7 +84,7 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* 
 }
 
 
-ipv4_rt_table_t* ipv4_rt_create(uint8_t owner_l3_id) {
+ipv4_rt_table_t* ipv4_rt_create(l3_id_t owner_l3_id) {
     ipv4_rt_table_t* t = (ipv4_rt_table_t*)zalloc(sizeof(ipv4_rt_table_t));
     if (!t) return 0;
     t->owner_l3_id = owner_l3_id;
@@ -205,40 +200,52 @@ void ipv4_rt_sync_basics(ipv4_rt_table_t* t, uint32_t ip, uint32_t mask, uint32_
     }
 }
 
-bool ipv4_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, uint32_t dst, uint8_t* out_l3){
+bool ipv4_rt_pick_best_l3(uint32_t dst, uint8_t ifindex, l3_id_t* out_l3){
     int best_pl = -1;
     int best_cost = 0x7FFFFFFF;
-    uint8_t best_l3 = 0;
-    for (int i=0;i<n_ids;i++){
-        l3_ipv4_interface_t* x = l3_ipv4_find_by_id(l3_ids[i]);
-        if (!ipv4_l3_is_ready(x)) continue;
-        int l2base = (int)x->l2->base_metric;
-        int pl_conn = -1;
-        if (x->mask){
-            uint32_t netx = x->ip & x->mask;
-            if ((dst & x->mask) == netx) pl_conn = ipv4_prefix_len(x->mask);
-        }
-        int pl_tab = -1, met_tab = 0x7FFF;
-        if (x->routing_table){
-            const ipv4_rt_table_t* rt = (const ipv4_rt_table_t*)x->routing_table;
-            if (rt->owner_l3_id && rt->owner_l3_id != x->l3_id) continue;
-            int out_pl = -1, out_met = 0x7FFF;
-            uint32_t nh;
-            if (ipv4_rt_lookup_in(rt, dst, &nh, &out_pl, &out_met)){
-                pl_tab = out_pl;
-                met_tab = out_met;
+    l3_id_t best_l3 = 0;
+    uint8_t first = ifindex ? ifindex : 1;
+    uint8_t last = ifindex ? ifindex : MAX_L2_INTERFACES;
+
+    for (uint8_t ix = first; ix <= last; ix++) {
+        l2_interface_t* l2 = l2_interface_find_by_index(ix);
+        if (!l2 || !l2->is_up) continue;
+
+        for (int slot = 0; slot < MAX_IPV4_PER_INTERFACE; slot++) {
+            l3_ipv4_interface_t* x = l2->l3_v4[slot];
+            if (!ipv4_l3_is_ready(x) || ipv4_is_loopback(dst) != x->is_localhost) continue; 
+
+            int pl_conn = -1;
+            if (x->mask){
+                uint32_t netx = x->ip & x->mask;
+                if ((dst & x->mask) == netx) pl_conn = ipv4_prefix_len(x->mask);
             }
-        }
-        int cand_pl = pl_conn;
-        int cand_cost = l2base;
-        if (pl_tab > cand_pl || (pl_tab == cand_pl && met_tab < cand_cost)){
-            cand_pl = pl_tab;
-            cand_cost = met_tab;
-        }
-        if (cand_pl > best_pl || (cand_pl == best_pl && cand_cost < best_cost) || (cand_pl == best_pl && cand_cost == best_cost && l3_ids[i] < best_l3)){
-            best_pl = cand_pl;
-            best_cost = cand_cost;
-            best_l3 = l3_ids[i];
+
+            int pl_tab = -1;
+            int met_tab = 0x7FFF;
+            if (x->routing_table){
+                const ipv4_rt_table_t* rt = (const ipv4_rt_table_t*)x->routing_table;
+                if (rt->owner_l3_id && rt->owner_l3_id != x->l3_id) continue;
+                int out_pl = -1;
+                int out_met = 0x7FFF;
+                uint32_t nh;
+                if (ipv4_rt_lookup_in(rt, dst, &nh, &out_pl, &out_met)) {
+                    pl_tab = out_pl;
+                    met_tab = out_met;
+                }
+            }
+            int cand_pl = pl_conn;
+            int cand_cost = l2->base_metric;
+            if (pl_tab > cand_pl || (pl_tab == cand_pl && met_tab < cand_cost)) {
+                cand_pl = pl_tab;
+                cand_cost = met_tab;
+            }
+            if (cand_pl > best_pl || (cand_pl == best_pl && cand_cost < best_cost) ||
+                (cand_pl == best_pl && cand_cost == best_cost && x->l3_id < best_l3)) {
+                best_pl = cand_pl;
+                best_cost = cand_cost;
+                best_l3 = x->l3_id;
+            }
         }
     }
     if (best_pl < 0) return false;

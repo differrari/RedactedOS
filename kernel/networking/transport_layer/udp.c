@@ -81,7 +81,7 @@ bool udp_strip_header(const netpkt_t* pkt, udp_hdr_t* hdr, uint32_t* payload_off
     return true;
 }
 
-void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, netpkt_t* pkt) {
+void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, l3_id_t l3_id, netpkt_t* pkt) {
     if (!pkt) return;
     udp_hdr_t hdr;
     uint32_t payload_off = 0;

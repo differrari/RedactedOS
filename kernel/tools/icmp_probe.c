@@ -42,9 +42,9 @@ bool icmp_probe_parse_bind(const char* arg, SockBindSpec* out){
     }
 
     if (strncmp(arg, "l3:", 3) == 0) {
-        if (!parse_uint32_dec_exact(arg + 3, &id) || id == 0 || id > UINT8_MAX) return false;
+        if (!parse_uint32_dec_exact(arg + 3, &id) || id == 0 || id > UINT16_MAX) return false;
         out->kind = BIND_L3;
-        out->l3_id = (uint8_t)id;
+        out->l3_id = (l3_id_t)id;
         return true;
     }
 

@@ -528,7 +528,7 @@ int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst) {
         if (s->connected) return SOCK_ERR_STATE;
 
         net_l4_endpoint d = *dst;
-        uint8_t chosen_l3 = 0;
+        l3_id_t chosen_l3 = 0;
 
         if (d.ver == IP_VER6) {
             if (ipv6_is_unspecified(d.ip) || ipv6_is_multicast(d.ip)) return SOCK_ERR_INVAL;

@@ -682,7 +682,7 @@ static void tcp_cc_on_dupack(tcp_flow_t *f) {
     }
 }
 
-void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, netpkt_t* pkt) {
+void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, l3_id_t l3_id, netpkt_t* pkt) {
     if (!pkt) return;
     if (!src_ip_addr || !dst_ip_addr || (ipver != IP_VER4 && ipver != IP_VER6)) {
         netpkt_unref(pkt);
