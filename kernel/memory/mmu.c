@@ -825,7 +825,8 @@ void mmu_ttbr0_enable_user() {
 }
 
 void mmu_swap_kttbr(uptr *ttbr){
-    uint64_t ttbr1_pa = pt_va_to_pa(ttbr ?: kernel_ttbr1);
+    uptr ttbr1_pa = pt_va_to_pa(ttbr ?: kernel_ttbr1);
+    asm volatile("dsb ish\n\tisb" ::: "memory");
     asm volatile("msr ttbr1_el1, %0" :: "r"(ttbr1_pa));
 }
 

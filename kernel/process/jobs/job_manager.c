@@ -10,10 +10,10 @@
 
 job_id_t job_id_counter = 1;
 
-// #define JOB_DEBUG
+#define JOB_DEBUG
 
 #ifdef JOB_DEBUG
-#define job_print(...) print(#__VA_ARGS__)
+#define job_print(...) print(__VA_ARGS__)
 #else
 #define job_print(...)
 #endif
