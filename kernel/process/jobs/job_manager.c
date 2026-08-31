@@ -75,8 +75,12 @@ bool prepare_thread(job_state_t *job, system_module *mod, job_application_t appl
     uptr buffers = mm_alloc_mmap(&proc->mm, total_size, MEM_RW, VMA_KIND_SPECIAL, 0);
     uptr pbuffers = (uptr)palloc_inner(total_size, MEM_PRIV_SHARED, MEM_RW, true, false);
     for (size_t i = 0; i < num_pages; i++){
-        mmu_map_4kb(proc->mm.ttbr0, buffers + (i * PAGE_SIZE), pbuffers + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
-        register_proc_memory(PHYS_TO_VIRT(pbuffers + (i * PAGE_SIZE)), pbuffers + (i * PAGE_SIZE), MEM_RW, MEM_PRIV_KERNEL);
+        int st = 0;
+        if (!mmu_translate(proc->mm.ttbr0, buffers + (i * PAGE_SIZE), &st) || st){
+            mmu_map_4kb(proc->mm.ttbr0, buffers + (i * PAGE_SIZE), pbuffers + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
+            register_proc_memory(PHYS_TO_VIRT(pbuffers + (i * PAGE_SIZE)), pbuffers + (i * PAGE_SIZE), MEM_RW, MEM_PRIV_KERNEL);
+        }
+        //TODO: buffers created for the fsus are not cleaned up
     }
     memset((void*)PHYS_TO_VIRT(pbuffers), 0, total_size);
     job_print("[JOB debug] buffers will go to %llx - %llx",buffers,pbuffers);
