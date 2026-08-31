@@ -811,17 +811,11 @@ void debug_mmu_address(uint64_t va){
     return;
 }
 
-void mmu_ttbr0_disable_user() {
-    // asm volatile("msr ttbr0_el1, %0" :: "r"((uint64_t)kernel_ttbr0_hw));
-    // asm volatile("dsb ish\n\tisb" ::: "memory");
-    // ttbr0_user_on = false;
-}
-
 void mmu_ttbr0_enable_user() {
     uint64_t hw = kernel_ttbr0_hw;
     if (pttbr && pttbr != (uintptr_t*)kernel_ttbr0) hw = pttbr_hw;
-    asm volatile("msr ttbr0_el1, %0" :: "r"(hw));
     asm volatile("dsb ish\n\tisb" ::: "memory");
+    asm volatile("msr ttbr0_el1, %0" :: "r"(hw));
 }
 
 void mmu_swap_kttbr(uptr *ttbr){
@@ -840,7 +834,6 @@ void mmu_swap_ttbr(mm_struct *mm){
         pttbr_asid = 0;
         pttbr_hw = kernel_ttbr0_hw;
     }
-    mmu_ttbr0_disable_user();
 }
 
 void mmu_flush_asid(uint16_t asid) {

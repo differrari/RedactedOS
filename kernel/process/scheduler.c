@@ -205,7 +205,7 @@ void prepare_process_restore(process_t *proc){
         if (proc->main_thread.pc >= HIGH_VA) panic("user pc in kernel VA", proc->main_thread.pc);
         mmu_swap_ttbr(&proc->mm);
         mmu_ttbr0_enable_user();
-    } else mmu_ttbr0_disable_user(); 
+    }
 }
 
 void process_restore(){

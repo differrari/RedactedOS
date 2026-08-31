@@ -47,7 +47,6 @@ void debug_mmu_address(uint64_t va);
 void mmu_enable_verbose();
 void mmu_swap_kttbr(uptr *ttbr);
 void mmu_swap_ttbr(mm_struct *mm);
-void mmu_ttbr0_disable_user();
 void mmu_ttbr0_enable_user();
 void mmu_flush_asid(uint16_t asid);
 void mmu_asid_ensure(mm_struct *mm);
