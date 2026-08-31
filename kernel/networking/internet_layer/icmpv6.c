@@ -9,6 +9,9 @@
 #include "networking/internet_layer/mld.h"
 #include "networking/transport_layer/csocket_raw.h"
 #include "networking/transport_layer/trans_utils.h"
+#include "networking/transport_layer/tcp.h"
+#include "networking/internet_layer/pmtu.h"
+#include "networking/interface_manager.h"
 
 typedef struct __attribute__((packed)) {
     icmpv6_hdr_t hdr;
@@ -42,7 +45,7 @@ bool icmpv6_send_on_l2(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t 
     return eth_send_frame_on(ifindex, ETHERTYPE_IPV6, dst_mac, pkt);
 }
 
-static bool icmpv6_send_echo_reply(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], const uint8_t *icmp, uint32_t icmp_len, const uint8_t src_mac[6], uint8_t hop_limit) {
+static bool icmpv6_send_echo_reply(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], const uint8_t *icmp, uint32_t icmp_len, const uint8_t src_mac[6], uint8_t hop_limit) {
     if (!dst_ip || !icmp || icmp_len < sizeof(icmpv6_echo_t)) return false;
 
     uintptr_t buf = (uintptr_t)zalloc(icmp_len ? icmp_len : 1u);
@@ -55,12 +58,6 @@ static bool icmpv6_send_echo_reply(uint16_t ifindex, const uint8_t src_ip[16], c
     e->hdr.code = 0;
     e->hdr.checksum = 0;
 
-    ipv6_tx_plan_t plan;
-    if (!ipv6_build_tx_plan(dst_ip, 0, &plan)) {
-        release((void*)buf);
-        return false;
-    }
-
     e->hdr.checksum = bswap16(checksum16_pipv6(dst_ip, src_ip, PROTO_ICMPV6, (const uint8_t*)buf, icmp_len));
 
     icmpv6_send_on_l2(ifindex, src_ip, dst_ip, src_mac, (const void*)buf, icmp_len, hop_limit ? hop_limit : 64);
@@ -69,7 +66,7 @@ static bool icmpv6_send_echo_reply(uint16_t ifindex, const uint8_t src_ip[16], c
     return true;
 }
 
-void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], uint8_t hop_limit, const uint8_t src_mac[6], netpkt_t* pkt) {
+void icmpv6_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], uint8_t hop_limit, const uint8_t src_mac[6], netpkt_t* pkt) {
     if (!ifindex || !src_ip || !dst_ip || !pkt || netpkt_len(pkt) < sizeof(icmpv6_hdr_t)) {
         if (pkt) netpkt_unref(pkt);
         return;
@@ -94,18 +91,17 @@ void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_
         return;
     }
 
-    if ((h->type == 133 || h->type == 134 || h->type == 135 || h->type == 136 || h->type == 137) && hop_limit != 255) {
+    if ((h->type == ICMPV6_ROUTER_SOLICIT || h->type == ICMPV6_ROUTER_ADVERT || h->type == ICMPV6_NEIGHBOR_SOLICIT || h->type == ICMPV6_NEIGHBOR_ADVERT || h->type == ICMPV6_REDIRECT) && hop_limit != 255) {
         netpkt_unref(pkt);
         return;
     }
 
-    socket_raw_input_v6((uint8_t)ifindex, src_ip, dst_ip, pkt);
-    if (h->type == 130 || h->type == 131 || h->type == 132 || h->type == 143) {
-        mld_input((uint8_t)ifindex, src_ip, dst_ip, pkt);
+    socket_raw_input_v6(ifindex, src_ip, dst_ip, pkt);
+    if (h->type == ICMPV6_MLD_QUERY || h->type == ICMPV6_MLD_REPORT || h->type == ICMPV6_MLD_DONE || h->type == ICMPV6_MLDV2_REPORT) {
+        mld_input(ifindex, src_ip, dst_ip, pkt);
         netpkt_unref(pkt);
         return;
     }
-
 
     if (h->type == ICMPV6_ECHO_REQUEST) {
         icmpv6_send_echo_reply(ifindex, src_ip, dst_ip, icmp, icmp_len, src_mac, hop_limit);
@@ -118,22 +114,47 @@ void icmpv6_input(uint16_t ifindex, const uint8_t src_ip[16], const uint8_t dst_
         return;
     }
 
-    if (h->type == 133 || h->type == 134 || h->type == 135 || h->type == 136 || h->type == 137) {
+    if (h->type == ICMPV6_ROUTER_SOLICIT || h->type == ICMPV6_ROUTER_ADVERT || h->type == ICMPV6_NEIGHBOR_SOLICIT || h->type == ICMPV6_NEIGHBOR_ADVERT || h->type == ICMPV6_REDIRECT) {
         ndp_input(ifindex, src_ip, dst_ip, src_mac, pkt);
         netpkt_unref(pkt);
         return;
     }
 
     if (h->type == ICMPV6_PACKET_TOO_BIG) {
-
-        if (icmp_len >= 8u + (uint32_t)sizeof(ipv6_hdr_t)) {
-            uint32_t mtu = rd_be32(icmp + 4);
-            ipv6_hdr_t inner;
-            memcpy(&inner, icmp + 8, sizeof(inner));
-            uint32_t v = bswap32(inner.ver_tc_fl);
-
-            if ((v >> 28) == 6 && mtu >= 1280u && mtu <= 65535u) ipv6_pmtu_note(inner.dst, (uint16_t)mtu);
+        if (h->code || icmp_len < 8 + sizeof(ipv6_hdr_t)) {
+            netpkt_unref(pkt);
+            return;
         }
+
+        uint32_t reported = rd_be32(icmp + 4);
+        if (reported < 1280 || reported > UINT16_MAX) {
+            netpkt_unref(pkt);
+            return;
+        }
+
+        ipv6_hdr_t inner;
+        memcpy(&inner, icmp + 8, sizeof(inner));
+        if ((bswap32(inner.ver_tc_fl) >> 28) != 6 || ipv6_is_multicast(inner.dst)) {
+            netpkt_unref(pkt);
+            return;
+        }
+
+        l3_ipv6_interface_t* l3 = l3_ipv6_find_by_ip(inner.src);
+        if (!ipv6_l3_is_ready(l3) || !l3->l2 || l3->l2->ifindex != ifindex) {
+            netpkt_unref(pkt);
+            return;
+        }
+
+        uint16_t mtu = (uint16_t)reported;
+        uint16_t base_mtu = l3_ipv6_effective_mtu(l3);
+        if (base_mtu && mtu < base_mtu) {
+            uint16_t path_mtu = pmtu_note(l3->l3_id, l3->epoch, IP_VER6, inner.dst, mtu);
+            if (path_mtu && inner.next_header == PROTO_TCP && icmp_len >= 8 + sizeof(ipv6_hdr_t) + 4) {
+                const uint8_t* tcp = icmp + 8 + sizeof(ipv6_hdr_t);
+                tcp_pmtu_update(l3->l3_id, IP_VER6, inner.src, inner.dst, rd_be16(tcp), rd_be16(tcp + 2), path_mtu);
+            }
+        }
+
         netpkt_unref(pkt);
         return;
     }

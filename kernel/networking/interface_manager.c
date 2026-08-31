@@ -586,9 +586,21 @@ l3_ipv4_interface_t* l3_ipv4_find_by_ip(uint32_t ip){
     return NULL;
 }
 
+uint16_t l3_ipv4_effective_mtu(const l3_ipv4_interface_t *l3) {
+    if (!l3 || !l3->l2) return 0;
+    uint16_t device_mtu = network_get_device_mtu(l3->l2->ifindex);
+    if (!device_mtu) return 0;
+    uint16_t l3_mtu = l3->runtime_opts_v4.mtu;
+    return l3_mtu && l3_mtu < device_mtu ? l3_mtu : device_mtu;
+}
+
 l3_id_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t prefix_len, const uint8_t gw[16], ipv6_cfg_t cfg, uint8_t kind) {
     l2_interface_t *l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return 0;
+    if (l2->kind != NET_IFK_LOCALHOST && cfg != IPV6_CFG_DISABLE) {
+        uint16_t device_mtu = network_get_device_mtu(ifindex);
+        if (device_mtu && device_mtu < 1280) return 0;
+    }
     bool had_active_v6 = l2_has_active_v6(l2);
     uint8_t pre_mcast_count = l2->ipv6_mcast_count;
     if (prefix_len > 128) return 0;
@@ -674,7 +686,6 @@ l3_id_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     n->l2 = l2;
     n->cfg = cfg;
     n->kind = kind;
-    n->mtu = 0;
 
     uint8_t final_ip[16];
     ipv6_cpy(final_ip, ip);
@@ -740,6 +751,10 @@ bool l3_ipv6_update(l3_id_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
     if (!n) return false;
     l2_interface_t *l2 = n->l2;
     if (!l2) return false;
+    if (l2->kind != NET_IFK_LOCALHOST && cfg != IPV6_CFG_DISABLE) {
+        uint16_t device_mtu = network_get_device_mtu(l2->ifindex);
+        if (device_mtu && device_mtu < 1280) return false;
+    }
     bool had_active_v6 = l2_has_active_v6(l2);
     uint8_t pre_mcast_count = l2->ipv6_mcast_count;
     if (prefix_len > 128) return false;
@@ -903,28 +918,6 @@ bool l3_ipv6_remove_from_interface(l3_id_t l3_id) {
     return true;
 }
 
-bool l3_ipv6_set_enabled(l3_id_t l3_id, bool enable) {
-    l3_ipv6_interface_t *n = l3_ipv6_find_by_id(l3_id);
-    if (!n) return false;
-    if (enable) return true;
-
-    if (n->kind & IPV6_ADDRK_LINK_LOCAL) {
-        l2_interface_t *l2 = n->l2;
-        for (int i = 0; i < MAX_IPV6_L3_INTERFACES; i++) {
-            if (!g_v6[i].used) continue;
-            l3_ipv6_interface_t *x = &g_v6[i].node;
-            if (!x->l2 || x->l2->ifindex != l2->ifindex) continue;
-            if ((x->kind & IPV6_ADDRK_GLOBAL) && x->cfg != IPV6_CFG_DISABLE) return false;
-        }
-    }
-    n->cfg = IPV6_CFG_DISABLE;
-    n->dad_state = IPV6_DAD_NONE;
-    n->dad_probes_sent = 0;
-    n->dad_timer_ms = 0;
-    n->epoch = net_interface_mark_changed();
-    return true;
-}
-
 l3_ipv6_interface_t* l3_ipv6_find_by_id(l3_id_t l3_id) {
     if (l3_id <= MAX_IPV4_L3_INTERFACES || l3_id > MAX_L3_INTERFACES) return NULL;
     v6_slot_t *slot = &g_v6[l3_id - MAX_IPV4_L3_INTERFACES - 1];
@@ -935,6 +928,29 @@ l3_ipv6_interface_t* l3_ipv6_find_by_ip(const uint8_t ip[16]){
         if (g_v6[i].used && ipv6_cmp(g_v6[i].node.ip, ip)==0) return &g_v6[i].node;
     }
     return NULL;
+}
+
+uint16_t l3_ipv6_effective_mtu(const l3_ipv6_interface_t *l3) {
+    if (!l3 || !l3->l2) return 0;
+    uint16_t device_mtu = network_get_device_mtu(l3->l2->ifindex);
+    if (!device_mtu) return 0;
+    uint16_t mtu = device_mtu;
+    if (l3->l2->ipv6_link_mtu && l3->l2->ipv6_link_mtu < mtu) mtu = l3->l2->ipv6_link_mtu;
+    return mtu;
+}
+
+bool l2_ipv6_set_link_mtu(uint8_t ifindex, uint16_t mtu) {
+    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
+    if (!l2 || mtu < 1280) return false;
+
+    uint16_t device_mtu = network_get_device_mtu(ifindex);
+    if (!device_mtu || mtu > device_mtu) return false;
+    if (l2->ipv6_link_mtu == mtu) return true;
+
+    l2->ipv6_link_mtu = mtu;
+    uint32_t epoch = net_interface_mark_changed();
+    for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) if (l2->l3_v6[i]) l2->l3_v6[i]->epoch = epoch;
+    return true;
 }
 
 void l3_init_localhost_ipv4(void){

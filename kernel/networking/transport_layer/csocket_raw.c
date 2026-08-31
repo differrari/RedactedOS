@@ -385,11 +385,11 @@ int64_t socket_sendto_raw(socket_impl_t sh, const net_l4_endpoint* dst, const vo
     ip_tx_opts_t* txp = NULL;
     if (s->bound && s->bind_spec.kind == BIND_L2) {
         tx.scope = IP_TX_BOUND_L2;
-        tx.index = s->bind_spec.ifindex;
+        tx.target.ifindex = s->bind_spec.ifindex;
         txp = &tx;
     } else if (s->bound && (s->bind_spec.kind == BIND_L3 || s->bind_spec.kind == BIND_IP)) {
         tx.scope = IP_TX_BOUND_L3;
-        tx.index = s->bind_spec.l3_id;
+        tx.target.l3_id = s->bind_spec.l3_id;
         txp = &tx;
     }
 

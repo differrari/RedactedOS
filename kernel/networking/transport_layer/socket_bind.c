@@ -549,7 +549,7 @@ static bool socket_bind_build_tx_opts(const SockBindSpec* spec, ip_version_t ver
         l2_interface_t* l2 = l2_interface_find_by_index(normal.ifindex);
         if (!l2 || !l2->is_up) return false;
         tx->scope = IP_TX_BOUND_L2;
-        tx->index = normal.ifindex;
+        tx->target.ifindex = normal.ifindex;
         *hint = tx;
         return true;
     }
@@ -577,7 +577,7 @@ static bool socket_bind_build_tx_opts(const SockBindSpec* spec, ip_version_t ver
         if (!v6 || !v6->l2) return false;
     }
     tx->scope = IP_TX_BOUND_L3;
-    tx->index = l3_id;
+    tx->target.l3_id = l3_id;
     *hint = tx;
     return true;
 }

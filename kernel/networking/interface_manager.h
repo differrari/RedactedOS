@@ -40,6 +40,8 @@ typedef struct l2_interface {
     bool is_up;
     uint16_t base_metric;
     uint8_t kind;
+    uint8_t ipv6_default_hop_limit;
+    uint16_t ipv6_link_mtu;
     void *arp_table;
     void *nd_table;
     struct l3_ipv4_interface *l3_v4[MAX_IPV4_PER_INTERFACE];
@@ -92,8 +94,6 @@ typedef struct net_runtime_opts_v6 {
 typedef struct l3_ipv6_interface {
     l3_id_t l3_id;
     uint32_t epoch;
-    uint16_t mtu;
-
     uint8_t ip[16];
     uint8_t prefix_len;
     uint8_t gateway[16];
@@ -113,7 +113,6 @@ typedef struct l3_ipv6_interface {
     l2_interface_t *l2;
     uint8_t ra_has;
     uint8_t ra_autonomous;
-    uint8_t ra_is_default;
     uint8_t ra_flags;
     uint8_t dhcpv6_stateless;
     uint8_t dhcpv6_stateless_done;
@@ -148,13 +147,15 @@ bool l3_ipv4_update(l3_id_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
 bool l3_ipv4_remove_from_interface(l3_id_t l3_id);
 l3_ipv4_interface_t *l3_ipv4_find_by_id(l3_id_t l3_id);
 l3_ipv4_interface_t *l3_ipv4_find_by_ip(uint32_t ip);
+uint16_t l3_ipv4_effective_mtu(const l3_ipv4_interface_t *l3);
 
 l3_id_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t prefix_len, const uint8_t gw[16], ipv6_cfg_t cfg, uint8_t kind);
 bool l3_ipv6_update(l3_id_t l3_id, const uint8_t ip[16], uint8_t prefix_len, const uint8_t gw[16], ipv6_cfg_t cfg, uint8_t kind);
 bool l3_ipv6_remove_from_interface(l3_id_t l3_id);
-bool l3_ipv6_set_enabled(l3_id_t l3_id, bool enable);
 l3_ipv6_interface_t *l3_ipv6_find_by_id(l3_id_t l3_id);
 l3_ipv6_interface_t *l3_ipv6_find_by_ip(const uint8_t ip[16]);
+uint16_t l3_ipv6_effective_mtu(const l3_ipv6_interface_t *l3);
+bool l2_ipv6_set_link_mtu(uint8_t ifindex, uint16_t mtu);
 
 void l3_init_localhost_ipv4(void);
 void l3_init_localhost_ipv6(void);

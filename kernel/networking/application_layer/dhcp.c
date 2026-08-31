@@ -58,9 +58,18 @@ sizedptr dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t x
             memcpy(&p.options[idx], &req->server_ip, 4);
             idx += 4;
         }
+    } else if (msg_type == DHCPDECLINE && kind == DHCPK_DECLINE) {
+        p.options[idx++] = 50;
+        p.options[idx++] = 4;
+        memcpy(&p.options[idx], &req->offered_ip, 4);
+        idx += 4;
+        p.options[idx++] = 54;
+        p.options[idx++] = 4;
+        memcpy(&p.options[idx], &req->server_ip, 4);
+        idx += 4; 
     }
 
-    idx = dhcp_options_write_param_req_list(p.options, idx);
+    if (msg_type != DHCPDECLINE) idx = dhcp_options_write_param_req_list(p.options, idx);
 
     p.options[idx++] = 255;
 

@@ -97,6 +97,7 @@ uint32_t tcp_flow_readable(tcp_data *flow_ctx);
 bool tcp_flow_recv_closed(tcp_data *flow_ctx);
 
 void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, l3_id_t l3_id, netpkt_t* pkt);
+void tcp_pmtu_update(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port, uint16_t mtu);
 
 #ifdef __cplusplus
 }

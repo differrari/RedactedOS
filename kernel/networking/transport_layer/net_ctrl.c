@@ -205,7 +205,7 @@ static bool net_ctrl_link_dump(const net_ctrl_attrs_t* a, buffer* b) {
         info.ifindex = l2->ifindex;
         info.up = l2->is_up ? 1 : 0;
         info.metric = l2->base_metric;
-        info.mtu = network_get_mtu(l2->ifindex);
+        info.mtu = network_get_device_mtu(l2->ifindex);
         info.kind = l2->kind;
         info.ipv4_count = l2->ipv4_count;
         info.ipv6_count = l2->ipv6_count;
@@ -241,7 +241,7 @@ static bool net_ctrl_addr_dump(const net_ctrl_attrs_t* a, buffer* b) {
             info.prefix.prefix_len = prefix_len < 0 ? 0 : (uint8_t)prefix_len;
             info.config = v4->mode;
             info.epoch = v4->epoch;
-            info.mtu = v4->runtime_opts_v4.mtu ? v4->runtime_opts_v4.mtu : network_get_mtu(l2->ifindex);
+            info.mtu = l3_ipv4_effective_mtu(v4);
             info.prefix.address.ver = IP_VER4;
             info.prefix.gateway.ver = IP_VER4;
             memcpy(info.prefix.address.ip, &v4->ip, sizeof(v4->ip));
@@ -260,7 +260,7 @@ static bool net_ctrl_addr_dump(const net_ctrl_attrs_t* a, buffer* b) {
             info.kind = v6->kind;
             info.config = v6->cfg;
             info.epoch = v6->epoch;
-            info.mtu = v6->mtu ? v6->mtu : network_get_mtu(l2->ifindex);
+            info.mtu = l3_ipv6_effective_mtu(v6);
             info.dad_state = v6->dad_state;
             info.prefix.address.ver = IP_VER6;
             info.prefix.gateway.ver = IP_VER6;
@@ -534,7 +534,7 @@ static bool net_ctrl_neigh_dump(const net_ctrl_attrs_t* a, buffer* b) {
             info.ifindex = l2->ifindex;
             info.state = ne[j].state;
             info.ttl_ms = ne[j].ttl_ms;
-            info.router_lifetime_ms = ne[j].router_lifetime_ms;
+            info.router_lifetime_ms = ndp_default_router_lifetime_for_l2(l2->ifindex, ne[j].ip);
             if (ne[j].static_entry) info.flags |= NET_CTRL_NEIGH_F_STATIC;
             if (ne[j].is_router) info.flags |= NET_CTRL_NEIGH_F_ROUTER;
             info.address.ver = IP_VER6;

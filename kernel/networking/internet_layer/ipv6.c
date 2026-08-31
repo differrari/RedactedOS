@@ -18,18 +18,10 @@
 #include "net/checksums.h"
 #include "networking/link_layer/nic_types.h"
 #include "networking/net_fragbuf.h"
-#include "networking/network.h"
+#include "networking/internet_layer/pmtu.h"
 
 #define IPV6_MIN_MTU 1280u
-#define PMTU_CACHE_SIZE 16
 #define REASS_SLOTS 8
-typedef struct {
-    uint8_t used;
-    uint8_t dst[16];
-    uint16_t mtu;
-    uint32_t timestamp_ms;
-} pmtu_entry_t;
-
 typedef struct {
     uint8_t used;
     uint8_t ifindex;
@@ -58,53 +50,7 @@ typedef struct __attribute__((packed)) {
     uint32_t identification;
 } ipv6_frag_hdr_t;
 
-static pmtu_entry_t g_pmtu[PMTU_CACHE_SIZE] = {0};
 static reass_slot_t g_reass[REASS_SLOTS] = {0};
-
-uint16_t ipv6_pmtu_get(const uint8_t dst[16]) {
-    if (!dst) return 0;
-    uint32_t now = (uint32_t)get_time();
-    for (int i = 0; i < PMTU_CACHE_SIZE; i++) {
-        if (!g_pmtu[i].used) continue;
-        if (ipv6_cmp(g_pmtu[i].dst, dst) != 0) continue;
-        if (now - g_pmtu[i].timestamp_ms > 600000u) {
-            g_pmtu[i].used = 0;
-            continue;
-        }
-        return g_pmtu[i].mtu;
-    }
-    return 0;
-}
-
-void ipv6_pmtu_note(const uint8_t dst[16], uint16_t mtu) {
-    if (!dst) return;
-    if (mtu < IPV6_MIN_MTU) mtu = IPV6_MIN_MTU;
-    uint32_t now = (uint32_t)get_time();
-
-    int free_i = -1;
-    int lru_i = 0;
-    uint32_t lru_t = 0xFFFFFFFFu;
-
-    for (int i = 0; i < PMTU_CACHE_SIZE; i++) {
-        if (g_pmtu[i].used) {
-            if (ipv6_cmp(g_pmtu[i].dst, dst) == 0) {
-                g_pmtu[i].mtu = mtu;
-                g_pmtu[i].timestamp_ms = now;
-                return;
-            }
-            if (g_pmtu[i].timestamp_ms < lru_t) {
-                lru_t = g_pmtu[i].timestamp_ms;
-                lru_i = i;
-            }
-        } else if (free_i < 0) free_i = i;
-    }
-
-    int idx = (free_i >= 0) ? free_i : lru_i;
-    g_pmtu[idx].used = 1;
-    ipv6_cpy(g_pmtu[idx].dst, dst);
-    g_pmtu[idx].mtu = mtu;
-    g_pmtu[idx].timestamp_ms = now;
-}
 
 static void reass_free(reass_slot_t *s) {
     if (!s) return;
@@ -206,9 +152,15 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     else if (l2 && l2->kind == NET_IFK_LOCALHOST) mac_clear(dst_mac);
     else need_ndp = true;
 
-    uint16_t mtu = src_v6->mtu ? src_v6->mtu : network_get_mtu(l2->ifindex);
-    uint16_t pmtu = ipv6_pmtu_get(dst);
-    if (pmtu && pmtu < mtu) mtu = pmtu;
+    uint16_t mtu = l3_ipv6_effective_mtu(src_v6);
+    if (mtu < IPV6_MIN_MTU) {
+        netpkt_unref(pkt);
+        return false;
+    }
+    if (next_header != PROTO_TCP) {
+        uint16_t path_mtu = pmtu_get(src_v6->l3_id, src_v6->epoch, IP_VER6, dst);
+        if (path_mtu && path_mtu < mtu) mtu = path_mtu;
+    }
     if (mtu < IPV6_MIN_MTU) mtu = IPV6_MIN_MTU;
     uint32_t hdr_len = (uint32_t)sizeof(ipv6_hdr_t);
     uint32_t seg_len = netpkt_len(pkt);
@@ -225,7 +177,7 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         ip6.ver_tc_fl = bswap32((uint32_t)(6u << 28));
         ip6.payload_len = bswap16((uint16_t)seg_len);
         ip6.next_header = next_header;
-        ip6.hop_limit = hop_limit ? hop_limit : 64;
+        ip6.hop_limit = hop_limit ? hop_limit : (src_v6->l2->ipv6_default_hop_limit ? src_v6->l2->ipv6_default_hop_limit : 64);
         ipv6_cpy(ip6.src, src);
         ipv6_cpy(ip6.dst, dst);
         memcpy(hdrp, &ip6, sizeof(ip6));
@@ -279,7 +231,7 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         ip6.ver_tc_fl = bswap32((uint32_t)(6u << 28));
         ip6.payload_len = bswap16((uint16_t)payload_len);
         ip6.next_header = 44;
-        ip6.hop_limit = hop_limit ? hop_limit : 64;
+        ip6.hop_limit = hop_limit ? hop_limit : (src_v6->l2->ipv6_default_hop_limit ? src_v6->l2->ipv6_default_hop_limit : 64);
         memcpy(ip6.src, src, 16);
         memcpy(ip6.dst, dst, 16);
 
@@ -341,7 +293,7 @@ static bool ipv6_skip_ext_headers(const netpkt_t* pkt, uint8_t* nh, uint32_t* l4
     }
 }
 
-void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
+void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if (!pkt) return;
     uint32_t ip_len = netpkt_len(pkt);
     if (ip_len < sizeof(ipv6_hdr_t)) return;
@@ -353,7 +305,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if ((v >> 28) != 6) return;
 
     if (ipv6_is_loopback(ip6->src)) {
-        l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
+        l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
         if (!l2 || l2->kind != NET_IFK_LOCALHOST) return;
     }
 
@@ -382,7 +334,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         ip6->next_header != PROTO_ICMPV6){
         bool dst_is_local = false;
 
-        l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
+        l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
         if (l2) {
             for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
                 l3_ipv6_interface_t* v6 = l2->l3_v6[i];
@@ -401,8 +353,6 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     uint32_t l4_len = (uint32_t)payload_len;
 
     if (ipv6_is_linklocal(ip6->dst) && !ipv6_is_unspecified(ip6->src) && !ipv6_is_linklocal(ip6->src)) return;
-
-    if (ifindex && !ipv6_is_unspecified(ip6->src) && src_mac) ndp_table_put_for_l2((uint8_t)ifindex, ip6->src, src_mac, 180000, false, false);
 
     uint8_t nh = ip6->next_header;
 
@@ -436,7 +386,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 inv = invoke_buf;
                 inv_len = (uint32_t)sizeof(invoke_buf);
             }
-            icmpv6_send_error((uint8_t)ifindex, ip6->dst, ip6->src, src_mac, 4, 0, 4u, inv, inv_len);
+            icmpv6_send_error(ifindex, ip6->dst, ip6->src, src_mac, 4, 0, 4u, inv, inv_len);
             return;
         }
 
@@ -453,7 +403,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 inv = invoke_buf;
                 inv_len = (uint32_t)sizeof(invoke_buf);
             }
-            icmpv6_send_error((uint8_t)ifindex, ip6->dst, ip6->src, src_mac, 4, 0, 42u, inv, inv_len);
+            icmpv6_send_error(ifindex, ip6->dst, ip6->src, src_mac, 4, 0, 42u, inv, inv_len);
             return;
         }
 
@@ -465,7 +415,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         for (int i = 0; i < REASS_SLOTS; i++) {
             reass_slot_t *t = &g_reass[i];
             if (!t->used) continue;
-            if (t->ifindex != (uint8_t)ifindex) continue;
+            if (t->ifindex != ifindex) continue;
             if (t->ident != ident) continue;
             if (t->next_header != inner_nh) continue;
             if (ipv6_cmp(t->src, ip6->src) != 0) continue;
@@ -484,7 +434,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 if (t->used) continue;
 
                 t->used = 1;
-                t->ifindex = (uint8_t)ifindex;
+                t->ifindex = ifindex;
                 t->ident = ident;
                 ipv6_cpy(t->src, ip6->src);
                 ipv6_cpy(t->dst, ip6->dst);
@@ -547,7 +497,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 inv = invoke_buf;
                 inv_len = (uint32_t)sizeof(invoke_buf);
             }
-            icmpv6_send_error((uint8_t)ifindex, ip6->dst, ip6->src, src_mac, 4, 3, 0u, inv, inv_len);
+            icmpv6_send_error(ifindex, ip6->dst, ip6->src, src_mac, 4, 3, 0u, inv, inv_len);
             reass_free(s);
             return;
         }
@@ -596,7 +546,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
             return;
         }
 
-        l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
+        l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
         if (!l2) {
             netpkt_unref(reassembled);
             reass_free(s);
@@ -673,7 +623,7 @@ void ipv6_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         return;
     }
 
-    l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
+    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return;
 
     l3_ipv6_interface_t* cand[MAX_IPV6_PER_INTERFACE];

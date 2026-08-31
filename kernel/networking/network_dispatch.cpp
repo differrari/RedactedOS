@@ -29,7 +29,6 @@ NetworkDispatch::NetworkDispatch()
         nics[i].drv = nullptr;
         nics[i].l2_ifindex = 0;
         nics[i].hwname_str[0] = 0;
-        nics[i].device_mtu = 0;
         nics[i].hdr_sz = 0;
         nics[i].speed_mbps = 0xFFFFFFFFu;
         nics[i].duplex_mode = 0xFFu;
@@ -161,10 +160,10 @@ const uint8_t* NetworkDispatch::mac(uint8_t ifindex) const
     return nic_id < 0 ? nullptr : nics[nic_id].mac_addr;
 }
 
-uint16_t NetworkDispatch::mtu(uint8_t ifindex) const
+uint16_t NetworkDispatch::device_mtu(uint8_t ifindex) const
 {
     int nic_id = nic_for_ifindex(ifindex);
-    return nic_id < 0 ? 0 : nics[nic_id].device_mtu;
+    return nic_id < 0 || !nics[nic_id].drv ? 0 : nics[nic_id].drv->get_mtu();
 }
 
 uint16_t NetworkDispatch::header_size(uint8_t ifindex) const 
@@ -257,7 +256,6 @@ bool NetworkDispatch::register_all_from_bus() {
 
         strncpy(c->hwname_str, hw, (int)sizeof(c->hwname_str));
         mac_copy(c->mac_addr, macbuf);
-        c->device_mtu = m;
         c->hdr_sz = hs;
         c->speed_mbps = sp;
         c->duplex_mode = dp;
@@ -307,7 +305,7 @@ void NetworkDispatch::dump_interfaces()
             kprintf(" driver: nic_id=%u ifname=%s hw=%s mtu=%u hdr=%u mac=%s drv=%x spd=%u dup=%s kind=%u",
                     (unsigned)nid, l2->name,
                     nics[nid].hwname_str[0] ? nics[nid].hwname_str : "(null)",
-                    (unsigned)nics[nid].device_mtu, (unsigned)nics[nid].hdr_sz, macs,
+                    (unsigned)nics[nid].drv->get_mtu(), (unsigned)nics[nid].hdr_sz, macs,
                     (uint64_t)(uintptr_t)nics[nid].drv,
                     (unsigned)nics[nid].speed_mbps, dpx, (unsigned)l2->kind);
         } else {

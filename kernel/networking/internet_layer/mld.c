@@ -276,6 +276,13 @@ bool mld_send_leave(uint8_t ifindex, const uint8_t group[16]) {
     return ok;
 }
 
+void mld_resend_memberships(uint8_t ifindex) {
+    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
+    if (!l2 || l2->kind == NET_IFK_LOCALHOST) return;
+
+    for (int i = 0; i < (int)l2->ipv6_mcast_count; i++) mld_send_join(ifindex, l2->ipv6_mcast[i]);
+}
+
 static void schedule_report(uint8_t ifindex, const uint8_t group[16], uint16_t max_resp_ms) {
     if (!group || !ipv6_is_multicast(group)) return;
     uint8_t all_nodes[16];

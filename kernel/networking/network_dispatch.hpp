@@ -23,7 +23,7 @@ public:
     const char* ifname(uint8_t ifindex) const;
     const char* hw_ifname(uint8_t ifindex) const;
     const uint8_t* mac(uint8_t ifindex) const;
-    uint16_t mtu(uint8_t ifindex) const;
+    uint16_t device_mtu(uint8_t ifindex) const;
     uint16_t header_size(uint8_t ifindex) const;
     l2_interface_t* l2_at(uint8_t ifindex) const;
     NetDriver* driver_at(uint8_t ifindex) const;
@@ -39,7 +39,6 @@ private:
         uint8_t l2_ifindex;
         char hwname_str[32];
         uint8_t mac_addr[6];
-        uint16_t device_mtu;
         uint16_t hdr_sz;
         uint32_t speed_mbps;
         uint8_t duplex_mode;

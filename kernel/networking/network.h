@@ -20,21 +20,21 @@ void network_handle_download_interrupt_nic(uint16_t nic_id);
 void network_handle_upload_interrupt_nic(uint16_t nic_id);
 int network_net_task_entry(int argc, char* argv[]);
 
-int net_tx_packet_on(uint16_t ifindex, netpkt_t* pkt);
+int net_tx_packet_on(uint8_t ifindex, netpkt_t* pkt);
 
 const uint8_t* network_get_local_mac(void);
-const uint8_t* network_get_mac(uint16_t ifindex);
-uint16_t network_get_mtu(uint16_t ifindex);
-uint16_t network_get_header_size(uint16_t ifindex);
-const char* network_get_ifname(uint16_t ifindex);
-const char* network_get_hw_ifname(uint16_t ifindex);
+const uint8_t* network_get_mac(uint8_t ifindex);
+uint16_t network_get_device_mtu(uint8_t ifindex);
+uint16_t network_get_header_size(uint8_t ifindex);
+const char* network_get_ifname(uint8_t ifindex);
+const char* network_get_hw_ifname(uint8_t ifindex);
 size_t network_nic_count(void);
 
 void network_update_local_ip(uint32_t ip);
 void network_cleanup_process(uint16_t pid);
 
 void network_dump_interfaces(void);
-bool network_sync_multicast(uint16_t ifindex, const uint8_t* macs, uint32_t count);
+bool network_sync_multicast(uint8_t ifindex, const uint8_t* macs, uint32_t count);
 
 extern system_module net_module;
 

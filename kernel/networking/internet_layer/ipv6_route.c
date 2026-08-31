@@ -53,7 +53,7 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx
     int dst_is_loop = ipv6_is_loopback(dst) ? 1 : 0;
 
     if (hint && hint->scope == IP_TX_BOUND_L3) {
-        l3_id_t id = hint->index;
+        l3_id_t id = hint->target.l3_id;
         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(id);
         if (!v6_l3_ok_for_tx(v6, dst_is_ll, dst_is_loop)) return false;
         out->l3_id = id;
@@ -64,7 +64,7 @@ bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx
 
     uint8_t ifindex = 0;
     if (hint && hint->scope == IP_TX_BOUND_L2) {
-        l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)hint->index);
+        l2_interface_t* l2 = l2_interface_find_by_index(hint->target.ifindex);
         if (!l2 || !l2->is_up) return false;
         ifindex = l2->ifindex;
     }

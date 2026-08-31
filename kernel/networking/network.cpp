@@ -22,34 +22,34 @@ int network_net_task_entry(int argc, char* argv[]) {
     return 0;
 }
 
-int net_tx_packet_on(uint16_t ifindex, netpkt_t* pkt) {
+int net_tx_packet_on(uint8_t ifindex, netpkt_t* pkt) {
     if (!dispatch || !pkt || !netpkt_len(pkt)) return -1;
-    return dispatch->enqueue_packet((uint8_t)ifindex, pkt) ? 0 : -1;
+    return dispatch->enqueue_packet(ifindex, pkt) ? 0 : -1;
 }
 
-const uint8_t* network_get_mac(uint16_t ifindex) {
+const uint8_t* network_get_mac(uint8_t ifindex) {
     static uint8_t dummy[6] = {0,0,0,0,0,0};
     if (!dispatch) return dummy;
     const uint8_t* m = dispatch->mac(ifindex);
     return m ? m : dummy;
 }
 
-uint16_t network_get_mtu(uint16_t ifindex) {
+uint16_t network_get_device_mtu(uint8_t ifindex) {
     if (!dispatch) return 0;
-    return dispatch->mtu(ifindex);
+    return dispatch->device_mtu(ifindex);
 }
 
-uint16_t network_get_header_size(uint16_t ifindex) {
+uint16_t network_get_header_size(uint8_t ifindex) {
     if (!dispatch) return 0;
     return dispatch->header_size(ifindex);
 }
 
-const char* network_get_ifname(uint16_t ifindex) {
+const char* network_get_ifname(uint8_t ifindex) {
     if (!dispatch) return 0;
     return dispatch->ifname(ifindex);
 }
 
-const char* network_get_hw_ifname(uint16_t ifindex) {
+const char* network_get_hw_ifname(uint8_t ifindex) {
     if (!dispatch) return 0;
     return dispatch->hw_ifname(ifindex);
 }
@@ -68,9 +68,9 @@ void network_dump_interfaces() {
     if (dispatch) dispatch->dump_interfaces();
 }
 
-bool network_sync_multicast(uint16_t ifindex, const uint8_t* macs, uint32_t count) {
+bool network_sync_multicast(uint8_t ifindex, const uint8_t* macs, uint32_t count) {
     if (!dispatch) return false;
-    NetDriver* drv = dispatch->driver_at((uint8_t)ifindex);
+    NetDriver* drv = dispatch->driver_at(ifindex);
     if (!drv) return false;
     return drv->sync_multicast(macs, count);
 }

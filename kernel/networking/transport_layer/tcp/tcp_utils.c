@@ -2,7 +2,7 @@
 #include "std/memory.h"
 #include "tcp_internal.h"
 #include "networking/interface_manager.h"
-#include "networking/network.h"
+#include "networking/internet_layer/pmtu.h"
 
 #define TCP_INIT_CWND_SEGS 10u
 
@@ -26,28 +26,51 @@ void tcp_update_mss(tcp_flow_t *flow) {
     flow->tx.mss = mss;
 }
 
-uint32_t tcp_calc_mss_for_l3(l3_id_t l3_id, ip_version_t ver, const void *remote_ip){
-    //TODO propagate icmp4/6 pmtu and errors
-    uint32_t mtu = 1500;
+uint32_t tcp_calc_mss_for_l3(l3_id_t l3_id, ip_version_t ver, const void *remote_ip) {
+    uint32_t mtu = 0;
+    uint32_t epoch = 0;
     if (ver == IP_VER4) {
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
-        if (v4) mtu = v4->runtime_opts_v4.mtu ? v4->runtime_opts_v4.mtu : network_get_mtu(v4->l2->ifindex);
+        if (v4) {
+            mtu = l3_ipv4_effective_mtu(v4);
+            epoch = v4->epoch;
+        }
     } else if (ver == IP_VER6) {
         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
-        if (v6) mtu = v6->mtu ? v6->mtu : network_get_mtu(v6->l2->ifindex);
-    } else return 256;
+        if (v6) {
+            mtu = l3_ipv6_effective_mtu(v6);
+            epoch = v6->epoch;
+        }
+    } else return 1;
 
-    if (ver == IP_VER6 && remote_ip){
-        uint16_t pmtu = ipv6_pmtu_get((const uint8_t*)remote_ip);
-        if (pmtu && pmtu < mtu) mtu = pmtu;
+    if (remote_ip && epoch){
+        uint16_t path_mtu = pmtu_get(l3_id, epoch, ver, remote_ip);
+        if (path_mtu && path_mtu < mtu) mtu = path_mtu;
     }
 
     uint32_t ih = (ver == IP_VER6) ? 40u : 20u;
     uint32_t th = 20u;
-    if (mtu <= ih + th) return 256;
-    uint32_t mss = mtu - ih - th;
-    if (mss < 256u) mss = 256u;
-    return mss;
+    if (mtu <= ih + th) return 1;
+    return mtu - ih - th;
+}
+
+void tcp_pmtu_update(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port, uint16_t mtu) {
+    if (!l3_id || !local_ip || !remote_ip || !local_port || !remote_port || !mtu) return;
+
+    tcp_flow_t* flow = tcp_flow_acquire_match(local_port, ver, local_ip, remote_ip, remote_port);
+    if (!flow) return;
+    if (flow->base.l3_id != l3_id) {
+        tcp_flow_put(flow);
+        return;
+    }
+
+    uint32_t headers = ver == IP_VER6 ? 60 : 40;
+    uint32_t path_mss = mtu > headers ? (uint32_t)mtu - headers : 1;
+    if (!flow->tx.path_mss || path_mss < flow->tx.path_mss) {
+        flow->tx.path_mss = path_mss;
+        tcp_update_mss(flow);
+    }
+    tcp_flow_put(flow);
 }
 
 void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out) {

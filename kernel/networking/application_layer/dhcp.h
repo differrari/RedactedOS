@@ -56,7 +56,8 @@ typedef enum {
     DHCPK_RENEW = 1,
     DHCPK_REBIND = 2,
     DHCPK_INFORM = 3,
-    DHCPK_DISCOVER = 4
+    DHCPK_DISCOVER = 4,
+    DHCPK_DECLINE = 5
 } dhcp_req_kind;
 
 sizedptr dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t xid, dhcp_req_kind kind, bool broadcast);

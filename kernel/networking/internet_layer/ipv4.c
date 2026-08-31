@@ -14,6 +14,7 @@
 #include "net/network_types.h"
 #include "networking/link_layer/nic_types.h"
 #include "networking/net_fragbuf.h"
+#include "networking/internet_layer/pmtu.h"
 #include "networking/interface_manager.h"
 #include "networking/network.h"
 
@@ -56,7 +57,7 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
             return false;
         }
 
-        src_v4 = l3_ipv4_find_by_id(opts->index);
+        src_v4 = l3_ipv4_find_by_id(opts->target.l3_id);
         if (!ipv4_l3_is_active(src_v4)) {
             netpkt_unref(pkt);
             return false;
@@ -112,10 +113,19 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
     else if (l2->kind == NET_IFK_LOCALHOST) mac_clear(dst_mac);
     else need_arp = true;
 
-    uint16_t mtu = src_v4->runtime_opts_v4.mtu ? src_v4->runtime_opts_v4.mtu : network_get_mtu(l2->ifindex);
+    uint16_t mtu = l3_ipv4_effective_mtu(src_v4);
+    if (proto != PROTO_TCP && !ipv4_is_multicast(dst_ip) && !ipv4_is_limited_broadcast(dst_ip) && !is_dbcast) {
+        uint16_t path_mtu = pmtu_get(src_v4->l3_id, src_v4->epoch, IP_VER4, &dst_ip);
+        if (path_mtu && path_mtu < mtu) mtu = path_mtu;
+    }
     uint32_t hdr_len = IP_IHL_NOOPTS * 4;
     uint32_t seg_len = netpkt_len(pkt);
     uint32_t total = hdr_len + seg_len;
+
+    if (mtu < hdr_len + 8) {
+        netpkt_unref(pkt);
+        return false;
+    }
 
     if (total <= (uint32_t)mtu) {
         void* hdrp = netpkt_push(pkt, hdr_len);
@@ -144,7 +154,7 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
         return eth_send_frame_on(ifx, ETHERTYPE_IPV4, dst_mac, pkt);
     }
 
-    if (dontfrag || (uint32_t)mtu < hdr_len + 8) {
+    if (dontfrag) {
         netpkt_unref(pkt);
         return false;
     }
@@ -208,8 +218,8 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
     return ok && off == seg_len;
 }
 
-static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, uint32_t l4_len, uint8_t proto, uint32_t src, uint32_t dst) {
-    l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
+static void ipv4_deliver_l4(uint8_t ifindex, netpkt_t* pkt, uint32_t l4_off, uint32_t l4_len, uint8_t proto, uint32_t src, uint32_t dst) {
+    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return;
 
     l3_ipv4_interface_t* cand[MAX_IPV4_PER_INTERFACE];
@@ -235,7 +245,7 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
             netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
             if (!l4pkt) continue;
             l3_id_t l3id = cand[i]->l3_id;
-            if (proto == PROTO_IGMP) igmp_input((uint8_t)ifindex, src, dst, l4pkt);
+            if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, l4pkt);
             else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
             else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
             else netpkt_unref(l4pkt);
@@ -247,9 +257,9 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
         for (int i = 0; i < ccount; ++i) {
             netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
             if (!l4pkt) continue;
-            uint8_t l3id = cand[i]->l3_id;
-            if (proto == PROTO_ICMP) icmp_input((uint8_t)ifindex, l4pkt, src, dst);
-            else if (proto == PROTO_IGMP) igmp_input((uint8_t)ifindex, src, dst, l4pkt);
+            l3_id_t l3id = cand[i]->l3_id;
+            if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
+            else if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, l4pkt);
             else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
             else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
             else netpkt_unref(l4pkt);
@@ -269,8 +279,8 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
     if (match_count == 1) {
         netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
         if (!l4pkt) return;
-        if (proto == PROTO_ICMP) icmp_input((uint8_t)ifindex, l4pkt, src, dst);
-        else if (proto == PROTO_IGMP) igmp_input((uint8_t)ifindex, src, dst, l4pkt);
+        if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
+        else if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, l4pkt);
         else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
         else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
         else netpkt_unref(l4pkt);
@@ -283,9 +293,9 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
 
             netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
             if (!l4pkt) continue;
-            uint8_t l3id = cand[i]->l3_id;
-            if (proto == PROTO_ICMP) icmp_input((uint8_t)ifindex, l4pkt, src, dst);
-            else if (proto == PROTO_IGMP) igmp_input((uint8_t)ifindex, src, dst, l4pkt);
+            l3_id_t l3id = cand[i]->l3_id;
+            if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
+            else if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, l4pkt);
             else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
             else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
             else netpkt_unref(l4pkt);
@@ -301,7 +311,7 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
 
         netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
         if (!l4pkt) return;
-        if (proto == PROTO_ICMP) icmp_input((uint8_t)ifindex, l4pkt, src, dst);
+        if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
         else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, v4->l3_id, l4pkt);
         else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, v4->l3_id, l4pkt);
         else netpkt_unref(l4pkt);
@@ -309,7 +319,7 @@ static void ipv4_deliver_l4(uint16_t ifindex, netpkt_t* pkt, uint32_t l4_off, ui
     }
 }
 
-void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_LEN]) {
+void ipv4_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_LEN]) {
     if (!pkt) return;
     uint32_t ip_len = netpkt_len(pkt);
     if (ip_len < sizeof(ipv4_hdr_t)) return;
@@ -339,15 +349,8 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_
     uint32_t dst = bswap32(ip.dst_ip);
 
     if (ipv4_is_loopback(src)) {
-        l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
+        l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
         if (!l2 || l2->kind != NET_IFK_LOCALHOST) return;
-    }
-
-    if (ifindex && src && src_mac) {
-        uint8_t mac_old[MAC_ADDR_LEN];
-        bool had = arp_table_get_for_l2((uint8_t)ifindex, src, mac_old);
-        if (!had || !mac_equal(mac_old, src_mac)) arp_table_put_for_l2((uint8_t)ifindex, src, src_mac, 180000, false);
-        else arp_table_put_for_l2((uint8_t)ifindex, src, mac_old, 180000, false);
     }
 
     uint8_t proto = ip.protocol;
@@ -372,7 +375,7 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_
                 ipv4_reass_free(s);
                 continue;
             }
-            if (s->ifindex == (uint8_t)ifindex && s->ident == ident && s->proto == proto && s->src == src && s->dst == dst) slot = s;
+            if (s->ifindex == ifindex && s->ident == ident && s->proto == proto && s->src == src && s->dst == dst) slot = s;
         }
 
         if (!slot) {
@@ -382,7 +385,7 @@ void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_
                 memset(slot, 0, sizeof(*slot));
                 slot->used = 1;
                 net_fragbuf_init(&slot->frag);
-                slot->ifindex = (uint8_t)ifindex;
+                slot->ifindex = ifindex;
                 slot->ident = ident;
                 slot->proto = proto;
                 slot->src = src;

@@ -28,7 +28,7 @@ bool ipv4_tx_plan_valid(const ipv4_tx_plan_t* plan) {
 
 bool ipv4_tx_plan_onlink(const ipv4_tx_plan_t* plan, uint32_t dst) {
     if (!ipv4_tx_plan_valid(plan)) return false;
-    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(plan->l3_id); 
+    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(plan->l3_id);
     if (ipv4_is_loopback(dst)) return v4->is_localhost;
     if (ipv4_is_multicast(dst) || ipv4_is_limited_broadcast(dst) || dst == v4->broadcast) return true;
     return v4->mask && (dst & v4->mask) == (v4->ip & v4->mask);
@@ -41,7 +41,7 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* 
     out->src_ip = 0;
 
     if (hint && hint->scope == IP_TX_BOUND_L3) {
-        l3_id_t id = hint->index;
+        l3_id_t id = hint->target.l3_id;
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(id);
         if (!ipv4_l3_is_ready(v4) || ipv4_is_loopback(dst) != v4->is_localhost) return false;
         out->l3_id = id;
@@ -52,7 +52,7 @@ bool ipv4_build_tx_plan(uint32_t dst, const ip_tx_opts_t* hint, ipv4_tx_plan_t* 
 
     uint8_t ifindex = 0;
     if (hint && hint->scope == IP_TX_BOUND_L2) {
-        l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)hint->index);
+        l2_interface_t* l2 = l2_interface_find_by_index(hint->target.ifindex);
         if (!l2 || !l2->is_up) return false;
         ifindex = l2->ifindex;
     }

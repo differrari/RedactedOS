@@ -63,7 +63,7 @@ static bool igmp_send_packet(uint8_t ifindex, uint32_t dst, uint8_t type, uint32
 
     ip_tx_opts_t tx;
     tx.scope = IP_TX_BOUND_L2;
-    tx.index = ifindex;
+    tx.target.ifindex = ifindex;
 
     return ipv4_send_packet(dst, PROTO_IGMP, pkt, &tx, 1, 0);
 }

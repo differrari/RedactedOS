@@ -509,7 +509,7 @@ void tcp_send_reset(l3_id_t l3_id, ip_version_t ver, const void *src_ip_addr, co
 
     ip_tx_opts_t tx;
     tx.scope = IP_TX_BOUND_L3;
-    tx.index = l3_id;
+    tx.target.l3_id = l3_id;
     (void)tcp_send_segment(ver, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, NULL, 0, &tx, 0, 0);
 }
 

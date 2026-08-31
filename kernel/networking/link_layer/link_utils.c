@@ -11,6 +11,12 @@ bool mac_equal(const uint8_t a[MAC_ADDR_LEN], const uint8_t b[MAC_ADDR_LEN]){
     return memcmp(a, b, MAC_ADDR_LEN) == 0;
 }
 
+bool mac_is_unicast(const uint8_t mac[MAC_ADDR_LEN]) {
+    if (!mac || (mac[0] & 1)) return false;
+    for (int i = 0; i < MAC_ADDR_LEN; i++) if (mac[i]) return 1;
+    return false;
+}
+
 void mac_clear(uint8_t mac[MAC_ADDR_LEN]){
     if (!mac) return;
     memset(mac, 0, MAC_ADDR_LEN);

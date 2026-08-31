@@ -22,8 +22,7 @@ typedef struct __attribute__((packed)) {
     uint16_t checksum;
     uint16_t id;
     uint16_t seq;
-    uint8_t payload[56];
-} icmp_packet;
+} icmp_echo_hdr_t;
 
 void icmp_input(uint8_t ifindex, netpkt_t* pkt, uint32_t src_ip, uint32_t dst_ip);
 

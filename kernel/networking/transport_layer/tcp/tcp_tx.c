@@ -287,35 +287,60 @@ bool tcp_send_flow_segment(tcp_flow_t *flow, tcp_hdr_t *hdr, const uint8_t *opts
 
     ip_tx_opts_t tx;
     tx.scope = IP_TX_BOUND_L3;
-    tx.index = flow->base.l3_id;
+    tx.target.l3_id = flow->base.l3_id;
     return tcp_send_segment(flow->base.local.ver, flow->base.local.ip, flow->base.remote.ip, hdr, opts, opts_len, payload, payload_len, &tx, flow->ip.ttl, flow->ip.dontfrag);
 }
 
 bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
     if (!flow || !seg) return false;
     if (flow->base.retired || flow->base.state == TCP_STATE_CLOSED) return false;
-    tcp_hdr_t hdr;
 
-    hdr.src_port = bswap16(flow->base.local.port);
-    hdr.dst_port = bswap16(flow->base.remote.port);
-    hdr.sequence = bswap32(seg->seq);
-    hdr.ack = bswap32(flow->base.ctx.ack);
-
-    uint8_t flags = 0;
-    if (!(flow->base.state == TCP_SYN_SENT && seg->syn && flow->base.ctx.ack == 0)) flags |= (uint8_t)(1u << ACK_F);
-    if (seg->syn) flags |= (uint8_t)(1u << SYN_F);
-    if (seg->fin) flags |= (uint8_t)(1u << FIN_F);
-    if (seg->psh && seg->len) flags |= (uint8_t)(1u << PSH_F);
-    hdr.flags = flags;
-
-    tcp_update_adv_wnd(flow, seg->syn ? 0 : 1);
-    hdr.window = flow->base.ctx.window;
-    hdr.urgent_ptr = 0;
-    const uint8_t *opts = seg->opts_len ? seg->opts : NULL;
+    uint32_t max_payload = flow->tx.mss ? flow->tx.mss : TCP_DEFAULT_MSS;
+    if (!max_payload) max_payload = 1;
+    if (seg->syn && seg->len > max_payload) max_payload = seg->len;
 
     bool arm_timer = !seg->timer_ms && !seg->retransmit_cnt;
-    bool ok = tcp_send_flow_segment(flow, &hdr, opts, seg->opts_len, tcp_tx_seg_payload_ptr(seg), (uint16_t)seg->len);
-    if (!ok) return false;
+    bool sent_any = false;
+    uint32_t off = 0;
+
+    do{
+        uint32_t chunk = seg->len - off;
+        if (chunk > max_payload) chunk = max_payload;
+        bool final_chunk = off + chunk == seg->len;
+
+        tcp_hdr_t hdr;
+
+        hdr.src_port = bswap16(flow->base.local.port);
+        hdr.dst_port = bswap16(flow->base.remote.port);
+        hdr.sequence = bswap32(seg->seq + off);
+        hdr.ack = bswap32(flow->base.ctx.ack);
+
+        uint8_t flags = 0;
+        if (!(flow->base.state == TCP_SYN_SENT && seg->syn && flow->base.ctx.ack == 0)) flags |= (uint8_t)(1u << ACK_F);
+        if (seg->syn && off == 0) flags |= (uint8_t)(1u << SYN_F);
+        if (seg->fin && final_chunk) flags |= (uint8_t)(1u << FIN_F);
+        if (seg->psh && chunk && final_chunk) flags |= (uint8_t)(1u << PSH_F);
+        hdr.flags = flags;
+
+        tcp_update_adv_wnd(flow, seg->syn && off == 0 ? 0 : 1);
+        hdr.window = flow->base.ctx.window;
+        hdr.urgent_ptr = 0;
+
+        const uint8_t* payload = NULL;
+        if (chunk) {
+            const uint8_t* base = tcp_tx_seg_payload_ptr(seg);
+            if (!base) return sent_any;
+            payload = base + off;
+        }
+
+        const uint8_t* opts = seg->opts_len ? seg->opts : NULL;
+        if (!tcp_send_flow_segment(flow, &hdr, opts, seg->opts_len, payload, (uint16_t)chunk)) return sent_any;
+
+        sent_any = true;
+        off += chunk;
+        //print("tcp %u/%u", off, seg->len);
+    } while (off < seg->len); //while (payload_off < seg->len);
+
     flow->timer.keepalive_idle_ms = 0;
     if (seg->len) {
         flow->tx.data_tx_valid = 1;

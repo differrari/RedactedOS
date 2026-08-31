@@ -28,7 +28,7 @@ typedef struct __attribute__((packed)) ipv4_hdr_t {
 
 
 bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx_opts_t* opts, uint8_t ttl, uint8_t dontfrag);
-void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_LEN]);
+void ipv4_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_LEN]);
 
 #ifdef __cplusplus
 }

@@ -32,7 +32,7 @@ bool eth_dst(const netpkt_t* pkt, uint8_t out[MAC_ADDR_LEN]){
     return netpkt_copyout(pkt, 0u, out, MAC_ADDR_LEN);
 }
 
-bool eth_send_frame_on(uint16_t ifindex, uint16_t ethertype, const uint8_t dst_mac[MAC_ADDR_LEN], netpkt_t* pkt){
+bool eth_send_frame_on(uint8_t ifindex, uint16_t ethertype, const uint8_t dst_mac[MAC_ADDR_LEN], netpkt_t* pkt){
     const uint8_t* src_mac = network_get_mac(ifindex);
     if (!src_mac || !dst_mac || !pkt) {
         if (pkt) netpkt_unref(pkt);
@@ -58,7 +58,7 @@ bool eth_send_frame_on(uint16_t ifindex, uint16_t ethertype, const uint8_t dst_m
     return ok;
 }
 
-void eth_input(uint16_t ifindex, netpkt_t* pkt) {
+void eth_input(uint8_t ifindex, netpkt_t* pkt) {
     if (!pkt) return;
 
     if (netpkt_len(pkt) < sizeof(eth_hdr_t)) return;
