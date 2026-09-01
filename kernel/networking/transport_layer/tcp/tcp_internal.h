@@ -72,6 +72,7 @@ typedef struct {
     net_l4_endpoint local;
     net_l4_endpoint remote;
     l3_id_t l3_id;
+    uint32_t l3_generation;
     tcp_state_t state;
     tcp_data ctx;
     uint16_t refs;
@@ -116,7 +117,8 @@ typedef struct {
     tcp_sack_range_t sack_retransmitted_ranges[TCP_SACK_SCOREBOARD_MAX];
     uint8_t sack_range_count;
     uint8_t sack_retransmitted_count;
-    uint8_t sack_rescue_sent;
+    uint32_t sack_rescue_rxt;
+    uint8_t sack_rescue_valid;
 
     uint8_t nagle_flushing;
     uint8_t nagle_appending;
@@ -182,6 +184,7 @@ typedef struct {
     uint8_t ttl;
     uint8_t dontfrag;
     uint8_t reuseaddr;
+    uint8_t dontroute;
 } tcp_flow_ip_t;
 
 typedef struct tcp_flow {
@@ -191,7 +194,7 @@ typedef struct tcp_flow {
     tcp_flow_timer_t timer;
     tcp_flow_ip_t ip;
 } tcp_flow_t;
-
+//TODO rfc 6675 is not complete
 extern tcp_flow_t *tcp_flows[MAX_TCP_FLOWS];
 extern uint16_t tcp_active_flows[MAX_TCP_FLOWS];
 extern uint16_t tcp_active_count;
@@ -227,7 +230,7 @@ static inline uint16_t tcp_checksum_ipv6(const void *segment, uint16_t seg_len, 
     return bswap16(csum);
 }
 
-bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp, uint8_t ttl, uint8_t dontfrag);
+bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp, uint8_t ttl, uint8_t dontfrag, uint8_t dontroute);
 void tcp_send_reset(l3_id_t l3_id, ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port, uint32_t seq, uint32_t ack, bool ack_valid);
 tcp_tx_seg_t *tcp_find_first_unacked(tcp_flow_t *flow);
 void tcp_cc_on_timeout(tcp_flow_t *f);

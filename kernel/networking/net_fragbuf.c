@@ -23,17 +23,22 @@ bool net_fragbuf_add(net_fragbuf_t *fb, netpkt_t *pkt, uint32_t pkt_off, uint32_
     if (!fb->step) fb->step = NET_FRAGBUF_DEFAULT_STEP;
     if (frag_off > fb->max_len || frag_len > fb->max_len - frag_off) return false;
     if (more && (frag_len & 7u)) return false;
+    uint32_t frag_end = frag_off + frag_len;
+    if (fb->have_last && frag_end > fb->total_len) return false;
+    if (!more && fb->have_last && frag_end != fb->total_len) return false;
+    if (!more && fb->max_end > frag_end) return false;
 
-    uint32_t need_blocks = (frag_off + frag_len + 7u) / 8u;
+    uint32_t need_blocks = (frag_end + 7u) / 8u;
     if (!fb->blocks) {
         fb->block_count = (fb->max_len + 7u) / 8u;
-        fb->blocks = (uint8_t*)zalloc(fb->block_count ? fb->block_count : 1u);
+        uint32_t bitmap_bytes = (fb->block_count + 7u) / 8u;
+        fb->blocks = (uint8_t*)zalloc(bitmap_bytes ? bitmap_bytes : 1u);
         if (!fb->blocks) return false;
     }
     if (need_blocks > fb->block_count) return false;
 
     uint32_t start = frag_off / 8u;
-    for (uint32_t i = start; i < need_blocks; i++) if (fb->blocks[i]) return false;
+    for (uint32_t i = start; i < need_blocks; i++) if (fb->blocks[i >> 3] & (uint8_t)(1u << (i & 7))) return false;
 
     if (frag_len && fb->cap < frag_off + frag_len) {
         uint32_t new_cap = ((frag_off + frag_len + fb->step - 1u) / fb->step) * fb->step;
@@ -47,11 +52,12 @@ bool net_fragbuf_add(net_fragbuf_t *fb, netpkt_t *pkt, uint32_t pkt_off, uint32_
     }
 
     if (frag_len && !netpkt_copyout(pkt, pkt_off, fb->data + frag_off, frag_len)) return false;
-    for (uint32_t i = start; i < need_blocks; i++) fb->blocks[i] = 1;
+    for (uint32_t i = start; i < need_blocks; i++) fb->blocks[i >> 3] |= (uint8_t)(1u << (i & 7));
+    if (frag_end > fb->max_end) fb->max_end = frag_end;
 
     if (!more) {
         fb->have_last = 1;
-        fb->total_len = frag_off + frag_len;
+        fb->total_len = frag_end;
     }
     return true;
 }
@@ -60,7 +66,7 @@ bool net_fragbuf_complete(const net_fragbuf_t *fb) {
     if (!fb || !fb->have_last || !fb->blocks) return false;
     uint32_t need = (fb->total_len + 7u) / 8u;
     if (need > fb->block_count) return false;
-    for (uint32_t i = 0; i < need; i++) if (!fb->blocks[i]) return false;
+    for (uint32_t i = 0; i < need; i++) if (!(fb->blocks[i >> 3] & (uint8_t)(1u << (i & 7)))) return false;
     return true;
 }
 

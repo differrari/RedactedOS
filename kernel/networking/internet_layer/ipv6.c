@@ -30,15 +30,12 @@ typedef struct {
     uint8_t dst[16];
     uint8_t next_header;
 
-    uint32_t first_rx_ms;
     uint32_t last_update_ms;
 
     uint8_t have_first;
     uint8_t first_src_mac[6];
-    uint8_t _pad0[1];
 
     uint16_t first_pkt_len;
-    uint8_t _pad1[2];
     uint8_t first_pkt[1280];
     net_fragbuf_t frag;
 } reass_slot_t;
@@ -69,26 +66,37 @@ static void icmpv6_send_error(uint8_t ifindex, const uint8_t src_ip[16], const u
     if (copy > max_invoke - base) copy = max_invoke - base;
 
     uint32_t icmp_len = base + copy;
-    uint8_t *buf = (uint8_t*)zalloc(icmp_len ? icmp_len : 1u);
-    if (!buf) return;
+    uint32_t total = (uint32_t)sizeof(ipv6_hdr_t) + icmp_len;
+    netpkt_t *pkt = netpkt_alloc( total, (uint32_t)sizeof(eth_hdr_t), 0);
+    if (!pkt) return;
 
-    icmpv6_hdr_t *h = (icmpv6_hdr_t*)buf;
+    uint8_t *buf = (uint8_t*)netpkt_put(pkt, total);
+    if (!buf) {
+        netpkt_unref(pkt);
+        return;
+    }
+
+    ipv6_hdr_t* ip6 = (ipv6_hdr_t*)buf;
+    ip6->ver_tc_fl = bswap32((uint32_t)(6u << 28));
+    ip6->payload_len = bswap16((uint16_t)icmp_len);
+    ip6->next_header = PROTO_ICMPV6;
+    ip6->hop_limit = 64;
+    ipv6_cpy(ip6->src, src_ip);
+    ipv6_cpy(ip6->dst, dst_ip);
+
+    uint8_t* icmp = buf + sizeof(*ip6);
+    icmpv6_hdr_t *h = (icmpv6_hdr_t*)icmp;
     h->type = type;
     h->code = code;
     h->checksum = 0;
+    wr_be32(icmp + sizeof(icmpv6_hdr_t), param32);
+    memcpy(icmp + base, invoking, copy);
+    h->checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, icmp, icmp_len));
 
-    wr_be32(buf + sizeof(icmpv6_hdr_t), param32);
-
-    memcpy(buf + base, invoking, copy);
-
-    h->checksum =bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, buf, icmp_len));
-
-    icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, buf, icmp_len, 64);
-
-    release(buf);
+    eth_send_frame_on(ifindex, ETHERTYPE_IPV6, dst_mac, pkt);
 }
 
-bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ip_tx_opts_t* opts, uint8_t hop_limit, uint8_t dontfrag) {
+bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ip_tx_opts_t* opts, uint8_t hop_limit, uint8_t dontfrag, uint8_t dontroute) {
     if (!dst || !pkt || !netpkt_len(pkt)) {
         if (pkt) netpkt_unref(pkt);
         return false;
@@ -122,7 +130,16 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         int route_pl = -1;
         bool have_nh = false;
 
-        if (src_v6->routing_table && ipv6_rt_lookup_in((const ipv6_rt_table_t*)src_v6->routing_table, dst, via, &route_pl, NULL)) {
+        if (dontroute) {
+            if (!ipv6_tx_plan_onlink(&plan, dst)) {
+                netpkt_unref(pkt);
+                return false;
+            }
+            ipv6_cpy(nh, dst);
+            have_nh = true;
+        }
+
+        if (!have_nh && src_v6->routing_table && ipv6_rt_lookup_in((const ipv6_rt_table_t*)src_v6->routing_table, dst, via, &route_pl, NULL)) {
             if (!ipv6_is_unspecified(via)) ipv6_cpy(nh, via);
             else if (src_v6->prefix_len && ipv6_common_prefix_len(dst, src_v6->ip) >= src_v6->prefix_len) ipv6_cpy(nh, dst);
             else if (route_pl > 0) ipv6_cpy(nh, dst);
@@ -439,13 +456,8 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 ipv6_cpy(t->src, ip6->src);
                 ipv6_cpy(t->dst, ip6->dst);
                 t->next_header = inner_nh;
-                t->first_rx_ms = now;
                 t->last_update_ms = now;
-                t->have_first = 0;
                 net_fragbuf_init(&t->frag);
-                mac_clear(t->first_src_mac);
-                t->first_pkt_len = 0;
-                memset(t->first_pkt, 0, sizeof(t->first_pkt));
                 s = t;
                 break;
             }

@@ -554,7 +554,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
             tx.scope = IP_TX_BOUND_L3;
             tx.target.l3_id = chosen_l3;
 
-            if (!udp_send_segment(&src, &d, pay, &tx, ttl, dontfrag)) return SOCK_ERR_SYS;
+            if (!udp_send_segment(&src, &d, pay, &tx, ttl, dontfrag, 0)) return SOCK_ERR_SYS;
             udp_record_recent_tx(s, &d, true);
             return (int64_t)len;
         }
@@ -577,7 +577,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         tx.scope = IP_TX_BOUND_L3;
         tx.target.l3_id = plan.l3_id;
 
-        if (!udp_send_segment(&src, &d, pay, &tx, ttl, dontfrag)) return SOCK_ERR_SYS;
+        if (!udp_send_segment(&src, &d, pay, &tx, ttl, dontfrag, (s->options.flags & SOCK_OPT_DONTROUTE) ? 1 : 0)) return SOCK_ERR_SYS;
         udp_record_recent_tx(s, &d, ipv4_is_multicast(dip));
         return (int64_t)len;
     }
@@ -601,7 +601,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         tx.scope = IP_TX_BOUND_L3;
         tx.target.l3_id = plan.l3_id;
 
-        if (!udp_send_segment(&src, &d, pay, &tx, ttl, dontfrag)) return SOCK_ERR_SYS;
+        if (!udp_send_segment(&src, &d, pay, &tx, ttl, dontfrag, (s->options.flags & SOCK_OPT_DONTROUTE) ? 1 : 0)) return SOCK_ERR_SYS;
         udp_record_recent_tx(s, &d, ipv6_is_multicast(d.ip));
         return (int64_t)len;
     }

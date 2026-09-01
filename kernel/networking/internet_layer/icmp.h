@@ -25,6 +25,7 @@ typedef struct __attribute__((packed)) {
 } icmp_echo_hdr_t;
 
 void icmp_input(uint8_t ifindex, netpkt_t* pkt, uint32_t src_ip, uint32_t dst_ip);
+void icmp_send_port_unreachable(l3_id_t l3_id, uint32_t remote_ip, const uint8_t *ip_header, uint8_t ip_header_len, const netpkt_t *l4pkt, uint32_t l4_off, uint32_t l4_len);
 
 #ifdef __cplusplus
 }

@@ -207,7 +207,8 @@ void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32
             flow->tx.sack_ok = 0;
             flow->tx.sack_range_count = 0;
             flow->tx.sack_retransmitted_count = 0;
-            flow->tx.sack_rescue_sent = 0;
+            flow->tx.sack_rescue_rxt = 0;
+            flow->tx.sack_rescue_valid = 0;
             flow->rx.dsack_pending = 0;
             flow->rx.dsack_left = 0;
             flow->rx.dsack_right = 0;
@@ -216,6 +217,7 @@ void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32
 
     if (apply_mask & SOCK_OPT_TTL) flow->ip.ttl = (flags & SOCK_OPT_TTL) ? extra->ttl : 0;
     if (apply_mask & SOCK_OPT_DONTFRAG) flow->ip.dontfrag = (flags & SOCK_OPT_DONTFRAG) ? 1 : 0;
+    if (apply_mask & SOCK_OPT_DONTROUTE) flow->ip.dontroute = (flags & SOCK_OPT_DONTROUTE) ? 1 : 0;
     if (apply_mask & SOCK_OPT_REUSEADDR) flow->ip.reuseaddr = (flags & SOCK_OPT_REUSEADDR) ? 1 : 0;
 }
 
@@ -251,10 +253,7 @@ static void tcp_flow_clear_storage(tcp_flow_t *flow) {
     flow->rx.rcv_base = flow->rx.rcv_nxt;
     flow->rx.rcv_data_nxt = flow->rx.rcv_nxt;
     flow->rx.rcv_ooo_used = 0;
-    flow->rx.rcv_wnd = 0;
-    flow->rx.rcv_adv_edge = flow->rx.rcv_nxt;
     flow->rx.fin_pending = 0;
-    flow->base.ctx.window = 0;
     flow->rx.reass_count = 0;
     memset(flow->rx.reass, 0, sizeof(flow->rx.reass));
     if (flow->base.listener) {
@@ -311,8 +310,8 @@ void tcp_enter_time_wait(tcp_flow_t *flow) {
         tcp_flow_put(oldest);
     }
 
+    memset(&flow->timer, 0, sizeof(flow->timer));
     flow->base.state = TCP_TIME_WAIT;
-    flow->timer.time_wait_ms = 0;
     tcp_flow_clear_storage(flow);
     tcp_daemon_kick();
 }
@@ -408,10 +407,66 @@ void tcp_flow_abort(tcp_data *flow_ctx) {
     if (!flow) return;
 
     tcp_state_t state = flow->base.state;
-    if (state != TCP_STATE_CLOSED && state != TCP_TIME_WAIT && state != TCP_SYN_SENT) tcp_send_reset(flow->base.l3_id, flow->base.local.ver, flow->base.local.ip, flow->base.remote.ip, flow->base.local.port, flow->base.remote.port, flow->tx.snd_nxt, 0, false);
+    if (state != TCP_STATE_CLOSED && state != TCP_TIME_WAIT && state != TCP_SYN_SENT) {
+        tcp_hdr_t rst_hdr;
+        rst_hdr.src_port = bswap16(flow->base.local.port);
+        rst_hdr.dst_port = bswap16(flow->base.remote.port);
+        rst_hdr.sequence = bswap32(flow->tx.snd_nxt);
+        rst_hdr.ack = 0;
+        rst_hdr.flags = (uint8_t)(1u << RST_F);
+        rst_hdr.window = 0;
+        rst_hdr.urgent_ptr = 0;
+        tcp_send_flow_segment(flow, &rst_hdr, NULL, 0, NULL, 0);
+    }
 
     tcp_free_flow(flow);
     tcp_flow_put(flow);
+}
+
+void tcp_l3_retire(l3_id_t l3_id, uint32_t l3_generation) {
+    if (!l3_id || !l3_generation) return;
+
+    for (uint16_t slot = 0; slot < MAX_TCP_FLOWS; slot++) {
+        irq_flags_t irq = irq_save_disable();
+        tcp_flow_t *flow = tcp_flows[slot];
+        if (!flow || flow->base.retired || flow->base.l3_id != l3_id || flow->base.l3_generation != l3_generation || !flow->base.refs || flow->base.refs == UINT16_MAX) {
+            irq_restore(irq);
+            continue;
+        }
+        flow->base.refs++;
+        irq_restore(irq);
+
+        tcp_free_flow(flow);
+        tcp_flow_put(flow);
+    }
+}
+
+void tcp_l3_mtu_reduce(l3_id_t l3_id, uint32_t l3_generation, uint16_t mtu) {
+    if (!l3_id || !l3_generation || !mtu) return;
+
+    uint32_t headers = 0;
+    if (l3_ipv4_find_by_id(l3_id)) headers = 40;
+    else if (l3_ipv6_find_by_id(l3_id)) headers = 60;
+    else return;
+
+    uint32_t path_mss = mtu > headers ? (uint32_t)mtu - headers : 1;
+
+    for (uint16_t slot = 0; slot < MAX_TCP_FLOWS; slot++) {
+        irq_flags_t irq = irq_save_disable();
+        tcp_flow_t *flow = tcp_flows[slot];
+        if (!flow || flow->base.retired || flow->base.l3_id != l3_id || flow->base.l3_generation != l3_generation || !flow->base.refs || flow->base.refs == UINT16_MAX) {
+            irq_restore(irq);
+            continue;
+        }
+        flow->base.refs++;
+        irq_restore(irq);
+
+        if (!flow->tx.path_mss || path_mss < flow->tx.path_mss) {
+            flow->tx.path_mss = path_mss;
+            tcp_update_mss(flow);
+        }
+        tcp_flow_put(flow);
+    }
 }
 
 bool tcp_flow_is_closed(tcp_data *flow_ctx) {
@@ -438,7 +493,7 @@ tcp_result_t tcp_flow_release_closed(tcp_data *flow_ctx) {
     return TCP_OK;
 }
 
-bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp, uint8_t ttl, uint8_t dontfrag){
+bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len, const ip_tx_opts_t *txp, uint8_t ttl, uint8_t dontfrag, uint8_t dontroute) {
     if (!hdr || !src_ip_addr || !dst_ip_addr) return false;
     if (ver != IP_VER4 && ver != IP_VER6) return false;
 
@@ -479,12 +534,12 @@ bool tcp_send_segment(ip_version_t ver, const void *src_ip_addr, const void *dst
 
         h.checksum = tcp_checksum_ipv4(segment, tcp_len, s, d);
         memcpy(segment, &h, sizeof(h));
-        return ipv4_send_packet(d, PROTO_TCP, pkt, txp, ttl, dontfrag);
+        return ipv4_send_packet(d, PROTO_TCP, pkt, txp, ttl, dontfrag, dontroute);
     }
 
     h.checksum = tcp_checksum_ipv6(segment, tcp_len, (const uint8_t *)src_ip_addr, (const uint8_t *)dst_ip_addr);
     memcpy(segment, &h, sizeof(h));
-    return ipv6_send_packet((const uint8_t *)dst_ip_addr, PROTO_TCP, pkt, txp, ttl, dontfrag);
+    return ipv6_send_packet((const uint8_t *)dst_ip_addr, PROTO_TCP, pkt, txp, ttl, dontfrag, dontroute);
 }
 
 void tcp_send_reset(l3_id_t l3_id, ip_version_t ver, const void *src_ip_addr, const void *dst_ip_addr, uint16_t src_port, uint16_t dst_port, uint32_t seq, uint32_t ack, bool ack_valid) {
@@ -510,7 +565,7 @@ void tcp_send_reset(l3_id_t l3_id, ip_version_t ver, const void *src_ip_addr, co
     ip_tx_opts_t tx;
     tx.scope = IP_TX_BOUND_L3;
     tx.target.l3_id = l3_id;
-    (void)tcp_send_segment(ver, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, NULL, 0, &tx, 0, 0);
+    (void)tcp_send_segment(ver, src_ip_addr, dst_ip_addr, &rst_hdr, NULL, 0, NULL, 0, &tx, 0, 0, 0);
 }
 
 void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms){
@@ -567,6 +622,7 @@ bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
             return false;
         }
 
+        flow->base.l3_generation = v4->generation;
         make_ep(&v4->ip, local_port, IP_VER4, &flow->base.local);
     } else{
         l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(l3_id);
@@ -577,6 +633,7 @@ bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
             return false;
         }
 
+        flow->base.l3_generation = v6->generation;
         flow->base.local.ver = IP_VER6;
         memset(flow->base.local.ip, 0, sizeof(flow->base.local.ip));
         memcpy(flow->base.local.ip, v6->ip, sizeof(flow->base.local.ip));

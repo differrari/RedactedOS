@@ -14,6 +14,7 @@
 #include "networking/internet_layer/mld.h"
 #include "networking/link_layer/nic_types.h"
 #include "networking/network.h"
+#include "networking/transport_layer/tcp.h"
 //TODO: add network settings
 
 static l2_interface_t g_l2[MAX_L2_INTERFACES];
@@ -444,6 +445,7 @@ l3_id_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
     }
 
     n->epoch = net_interface_mark_changed();
+    n->generation = n->epoch;
     l2->l3_v4[loc] = n;
     g_v4[g].used = true;
     l2->ipv4_count++;
@@ -461,6 +463,7 @@ bool l3_ipv4_update(l3_id_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
     if (!n) return false;
     l2_interface_t *l2 = n->l2;
     if (!l2) return false;
+    uint16_t old_effective_mtu = l3_ipv4_effective_mtu(n);
     bool had_active_v4 = l2_has_active_v4(l2);
     if (mode == IPV4_CFG_DHCP && n->mode != IPV4_CFG_DHCP) {
         if (v4_has_dhcp_on_l2(l2->ifindex)) return false;
@@ -492,6 +495,9 @@ bool l3_ipv4_update(l3_id_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
 
     uint32_t old_ip = n->ip;
     uint32_t old_mask = n->mask;
+    bool old_active = n->mode != IPV4_CFG_DISABLED && n->ip != 0;
+    bool new_active = mode != IPV4_CFG_DISABLED && (mode == IPV4_CFG_STATIC || mode == IPV4_CFG_DHCP) && ip != 0;
+    bool identity_changed = old_ip != (new_active ? ip : 0) || old_active != new_active;
     bool needs_route = !n->is_localhost && mode != IPV4_CFG_DISABLED;
     ipv4_rt_table_t *new_rt = NULL;
     if (needs_route && !n->routing_table) {
@@ -505,6 +511,8 @@ bool l3_ipv4_update(l3_id_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
     } else if (n->ip || n->mask) {
         l3_changed = true;
     }
+
+    if (identity_changed) tcp_l3_retire(n->l3_id, n->generation);
 
     n->mode = mode;
 
@@ -521,6 +529,9 @@ bool l3_ipv4_update(l3_id_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
         n->gw = 0;
         n->broadcast = 0;
     }
+
+    uint16_t new_effective_mtu = l3_ipv4_effective_mtu(n);
+    if (new_effective_mtu != old_effective_mtu) l3_changed = true;
 
     if (needs_route) {
         if (new_rt) n->routing_table = new_rt;
@@ -540,7 +551,11 @@ bool l3_ipv4_update(l3_id_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
         for (int i = 0; i < (int)l2->ipv4_mcast_count; i++) igmp_send_join(l2->ifindex, l2->ipv4_mcast[i]);
     }
 
-    if (l3_changed) n->epoch = net_interface_mark_changed();
+    if (l3_changed) {
+        n->epoch = net_interface_mark_changed();
+        if (identity_changed) n->generation = n->epoch;
+    }
+    if (!identity_changed && new_effective_mtu && old_effective_mtu && new_effective_mtu < old_effective_mtu)tcp_l3_mtu_reduce(n->l3_id, n->generation, new_effective_mtu);
     return true;
 }
 
@@ -557,6 +572,7 @@ bool l3_ipv4_remove_from_interface(l3_id_t l3_id) {
     }
     if (g < 0) return false;
 
+    tcp_l3_retire(n->l3_id, n->generation);
 
     for (int slot = 0; slot < MAX_IPV4_PER_INTERFACE; slot++) {
         if (l2->l3_v4[slot] != n) continue;
@@ -730,6 +746,7 @@ l3_id_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     }
 
     n->epoch = net_interface_mark_changed();
+    n->generation = n->epoch;
     l2->l3_v6[loc] = n;
     g_v6[g].used = true;
     l2->ipv6_count++;
@@ -803,6 +820,9 @@ bool l3_ipv6_update(l3_id_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
     ipv6_cpy(old_gateway, n->gateway);
     uint8_t old_prefix_len = n->prefix_len;
     ipv6_cfg_t old_cfg = n->cfg;
+    bool old_active = old_cfg != IPV6_CFG_DISABLE && !ipv6_is_unspecified(old_ip);
+    bool new_active = cfg != IPV6_CFG_DISABLE && !ipv6_is_unspecified(ip);
+    bool identity_changed = ipv6_cmp(old_ip, ip) != 0 || old_active != new_active || kind != n->kind;
     bool needs_route = !n->is_localhost && cfg != IPV6_CFG_DISABLE;
     ipv6_rt_table_t *new_rt = NULL;
     if (needs_route && !n->routing_table) {
@@ -811,6 +831,7 @@ bool l3_ipv6_update(l3_id_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
     }
 
     if (ipv6_cmp(old_gateway, gw) != 0) l3_changed = true;
+    if (identity_changed) tcp_l3_retire(n->l3_id, n->generation);
     bool old_has_sn = !n->is_localhost && old_cfg != IPV6_CFG_DISABLE && !ipv6_is_unspecified(old_ip) && !ipv6_is_placeholder_gua(old_ip);
     uint8_t old_sn[16] = {0};
     if (old_has_sn) ipv6_make_multicast(2, IPV6_MCAST_SOLICITED_NODE, old_ip, old_sn);
@@ -869,7 +890,10 @@ bool l3_ipv6_update(l3_id_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
         for (int i = 0; i < (int)pre_mcast_count && i < (int)l2->ipv6_mcast_count; i++) mld_send_join(l2->ifindex, l2->ipv6_mcast[i]);
     }
 
-    if (l3_changed) n->epoch = net_interface_mark_changed();
+    if (l3_changed) {
+        n->epoch = net_interface_mark_changed();
+        if (identity_changed) n->generation = n->epoch;
+    }
     return true;
 }
 
@@ -893,6 +917,8 @@ bool l3_ipv6_remove_from_interface(l3_id_t l3_id) {
         if (g_v6[i].used && &g_v6[i].node == n){ g = i; break; }
     }
     if (g < 0) return false;
+
+    tcp_l3_retire(n->l3_id, n->generation);
 
     if (!n->is_localhost && n->cfg != IPV6_CFG_DISABLE && !ipv6_is_unspecified(n->ip) && !ipv6_is_placeholder_gua(n->ip)) {
         uint8_t sn[16];
@@ -947,9 +973,18 @@ bool l2_ipv6_set_link_mtu(uint8_t ifindex, uint16_t mtu) {
     if (!device_mtu || mtu > device_mtu) return false;
     if (l2->ipv6_link_mtu == mtu) return true;
 
+    uint16_t old_mtu[MAX_IPV6_PER_INTERFACE] = {0};
+    for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) if (l2->l3_v6[i]) old_mtu[i] = l3_ipv6_effective_mtu(l2->l3_v6[i]);
+
     l2->ipv6_link_mtu = mtu;
     uint32_t epoch = net_interface_mark_changed();
-    for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) if (l2->l3_v6[i]) l2->l3_v6[i]->epoch = epoch;
+    for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+        l3_ipv6_interface_t* v6 = l2->l3_v6[i];
+        if (!v6) continue;
+        uint16_t new_mtu = l3_ipv6_effective_mtu(v6);
+        v6->epoch = epoch;
+        if (new_mtu && old_mtu[i] && new_mtu < old_mtu[i]) tcp_l3_mtu_reduce(v6->l3_id, v6->generation, new_mtu);
+    }
     return true;
 }
 

@@ -28,10 +28,7 @@ int net_tx_packet_on(uint8_t ifindex, netpkt_t* pkt) {
 }
 
 const uint8_t* network_get_mac(uint8_t ifindex) {
-    static uint8_t dummy[6] = {0,0,0,0,0,0};
-    if (!dispatch) return dummy;
-    const uint8_t* m = dispatch->mac(ifindex);
-    return m ? m : dummy;
+    return dispatch ? dispatch->mac(ifindex) : nullptr;
 }
 
 uint16_t network_get_device_mtu(uint8_t ifindex) {
@@ -47,21 +44,6 @@ uint16_t network_get_header_size(uint8_t ifindex) {
 const char* network_get_ifname(uint8_t ifindex) {
     if (!dispatch) return 0;
     return dispatch->ifname(ifindex);
-}
-
-const char* network_get_hw_ifname(uint8_t ifindex) {
-    if (!dispatch) return 0;
-    return dispatch->hw_ifname(ifindex);
-}
-
-size_t network_nic_count() {
-    if (!dispatch) return 0;
-    return dispatch->nic_count();
-}
-
-
-uint16_t network_net_get_pid() {
-    return dispatch ? dispatch->get_net_pid() : UINT16_MAX;
 }
 
 void network_dump_interfaces() {

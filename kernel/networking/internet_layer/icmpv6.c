@@ -46,24 +46,35 @@ bool icmpv6_send_on_l2(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t 
 }
 
 static bool icmpv6_send_echo_reply(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], const uint8_t *icmp, uint32_t icmp_len, const uint8_t src_mac[6], uint8_t hop_limit) {
-    if (!dst_ip || !icmp || icmp_len < sizeof(icmpv6_echo_t)) return false;
+    if (!ifindex || !src_ip || !dst_ip || !src_mac || !icmp || icmp_len < sizeof(icmpv6_echo_t)) return false;
 
-    uintptr_t buf = (uintptr_t)zalloc(icmp_len ? icmp_len : 1u);
-    if (!buf) return false;
+    uint32_t total = (uint32_t)sizeof(ipv6_hdr_t) + icmp_len;
+    netpkt_t* pkt = netpkt_alloc(total, (uint32_t)sizeof(eth_hdr_t), 0);
+    if (!pkt) return false;
 
-    memcpy((void*)buf, icmp, icmp_len);
+    uint8_t* buf = (uint8_t*)netpkt_put(pkt, total);
+    if (!buf) {
+        netpkt_unref(pkt);
+        return false;
+    }
 
-    icmpv6_echo_t *e = (icmpv6_echo_t*)buf;
+    ipv6_hdr_t* ip6 = (ipv6_hdr_t*)buf;
+    ip6->ver_tc_fl = bswap32((uint32_t)(6u << 28));
+    ip6->payload_len = bswap16((uint16_t)icmp_len);
+    ip6->next_header = PROTO_ICMPV6;
+    ip6->hop_limit = hop_limit ? hop_limit : 64;
+    ipv6_cpy(ip6->src, dst_ip);
+    ipv6_cpy(ip6->dst, src_ip);
+
+    icmpv6_echo_t* e = (icmpv6_echo_t*)(buf + sizeof(*ip6));
+    memcpy(e, icmp, icmp_len);
     e->hdr.type = ICMPV6_ECHO_REPLY;
     e->hdr.code = 0;
     e->hdr.checksum = 0;
 
-    e->hdr.checksum = bswap16(checksum16_pipv6(dst_ip, src_ip, PROTO_ICMPV6, (const uint8_t*)buf, icmp_len));
+    e->hdr.checksum = bswap16(checksum16_pipv6(dst_ip, src_ip, PROTO_ICMPV6, (const uint8_t*)e, icmp_len));
 
-    icmpv6_send_on_l2(ifindex, src_ip, dst_ip, src_mac, (const void*)buf, icmp_len, hop_limit ? hop_limit : 64);
-
-    release((void*)buf);
-    return true;
+    return eth_send_frame_on(ifindex, ETHERTYPE_IPV6, src_mac, pkt);
 }
 
 void icmpv6_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], uint8_t hop_limit, const uint8_t src_mac[6], netpkt_t* pkt) {

@@ -22,16 +22,6 @@ uint16_t eth_parse_type(const netpkt_t* pkt){
     return rd_be16(&type);
 }
 
-bool eth_src(const netpkt_t* pkt, uint8_t out[MAC_ADDR_LEN]){
-    if (!pkt || !out) return false;
-    return netpkt_copyout(pkt, 6u, out, MAC_ADDR_LEN);
-}
-
-bool eth_dst(const netpkt_t* pkt, uint8_t out[MAC_ADDR_LEN]){
-    if (!pkt || !out) return false;
-    return netpkt_copyout(pkt, 0u, out, MAC_ADDR_LEN);
-}
-
 bool eth_send_frame_on(uint8_t ifindex, uint16_t ethertype, const uint8_t dst_mac[MAC_ADDR_LEN], netpkt_t* pkt){
     const uint8_t* src_mac = network_get_mac(ifindex);
     if (!src_mac || !dst_mac || !pkt) {

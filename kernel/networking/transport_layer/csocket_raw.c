@@ -19,7 +19,7 @@
 #define RAW_RX_MAX_BYTES 32768
 
 typedef struct raw_rx_entry {
-    uint8_t* data;
+    netpkt_t* pkt;
     uint32_t len;
     net_l4_endpoint src;
     SockBindSpec rx_spec;
@@ -70,12 +70,11 @@ static int32_t raw_set_filter(raw_socket_t* s, const void* value, uint32_t len) 
 }
 
 static bool raw_enqueue(raw_socket_t* s, const net_l4_endpoint* src, const SockBindSpec* rx_spec, netpkt_t* pkt, uint32_t len) {
-    if (!s || !src || !pkt || !len || len > NETPKT_MAX_ALLOC || len > RAW_RX_MAX_BYTES) return false;
+    if (!s || !src || !pkt || !len || len > RAW_RX_MAX_BYTES) return false;
 
     if (s->options.raw_filter.count) {
-        if (netpkt_len(pkt) < 1) return false;
         uint8_t hdr[8];
-        uint32_t hdr_len = netpkt_len(pkt) >= sizeof(hdr) ? (uint32_t)sizeof(hdr) : netpkt_len(pkt);
+        uint32_t hdr_len = len >= sizeof(hdr) ? (uint32_t)sizeof(hdr) : len;
         if (!netpkt_copyout(pkt, 0, hdr, hdr_len)) return false;
         bool ok = false;
         for (uint32_t i = 0; i < s->options.raw_filter.count; i++) {
@@ -90,22 +89,17 @@ static bool raw_enqueue(raw_socket_t* s, const net_l4_endpoint* src, const SockB
         if (!ok) return false;
     }
 
-    uint8_t* copy = (uint8_t*)zalloc(len);
-    if (!copy) return false;
-    if (!netpkt_copyout(pkt, 0, copy, len)) {
-        release(copy);
-        return false;
-    }
+    netpkt_ref(pkt);
 
     irq_flags_t irq = irq_save_disable();
     if (s->rx_count >= RAW_RX_RING_CAP || s->rx_bytes > RAW_RX_MAX_BYTES - len) {
         irq_restore(irq);
-        release(copy);
+        netpkt_unref(pkt);
         return false;
     }
 
     uint8_t pos = s->rx_tail;
-    s->rx[pos].data = copy;
+    s->rx[pos].pkt = pkt;
     s->rx[pos].len = len;
     s->rx[pos].src = *src;
     if (rx_spec) s->rx[pos].rx_spec = *rx_spec;
@@ -194,7 +188,7 @@ void socket_destroy_raw(socket_impl_t sh) {
         irq_restore(irq);
     }
 
-    for (int i = 0; i < RAW_RX_RING_CAP; i++) if (s->rx[i].data) release(s->rx[i].data);
+    for (int i = 0; i < RAW_RX_RING_CAP; i++) if (s->rx[i].pkt) netpkt_unref(s->rx[i].pkt);
     release(s);
 }
 
@@ -416,8 +410,11 @@ int64_t socket_sendto_raw(socket_impl_t sh, const net_l4_endpoint* dst, const vo
                 netpkt_unref(pkt);
                 return SOCK_ERR_NO_ROUTE;
             }
+            tx.scope = IP_TX_BOUND_L3;
+            tx.target.l3_id = plan.l3_id;
+            txp = &tx;
         }
-        return ipv4_send_packet(dst_ip, (uint8_t)proto, pkt, txp, ttl, dontfrag) ? (int64_t)len : SOCK_ERR_SYS;
+        return ipv4_send_packet(dst_ip, (uint8_t)proto, pkt, txp, ttl, dontfrag, (s->options.flags & SOCK_OPT_DONTROUTE) ? 1 : 0) ? (int64_t)len : SOCK_ERR_SYS;
     }
 
     ipv6_tx_plan_t plan;
@@ -426,9 +423,14 @@ int64_t socket_sendto_raw(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         return (s->options.flags & SOCK_OPT_DONTROUTE) ? SOCK_ERR_NO_ROUTE : SOCK_ERR_SYS;
     }
 
-    if ((s->options.flags & SOCK_OPT_DONTROUTE) && !ipv6_tx_plan_onlink(&plan, dst->ip)){
-        netpkt_unref(pkt);
-        return SOCK_ERR_NO_ROUTE;
+    if (s->options.flags & SOCK_OPT_DONTROUTE){
+        if (!ipv6_tx_plan_onlink(&plan, dst->ip)) {
+            netpkt_unref(pkt);
+            return SOCK_ERR_NO_ROUTE;
+        }
+        tx.scope = IP_TX_BOUND_L3;
+        tx.target.l3_id = plan.l3_id;
+        txp = &tx;
     }
 
     if (len >= 4) {
@@ -437,7 +439,7 @@ int64_t socket_sendto_raw(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         memcpy((uint8_t*)p + 2, &sum, sizeof(sum));
     }
 
-    return ipv6_send_packet(dst->ip, PROTO_ICMPV6, pkt, txp, ttl ? ttl : 64, dontfrag) ? (int64_t)len : SOCK_ERR_SYS;
+    return ipv6_send_packet(dst->ip, PROTO_ICMPV6, pkt, txp, ttl ? ttl : 64, dontfrag, (s->options.flags & SOCK_OPT_DONTROUTE) ? 1 : 0) ? (int64_t)len : SOCK_ERR_SYS;
 }
 
 int64_t socket_recv_raw(socket_impl_t sh, void* buf, uint64_t len, net_l4_endpoint* out_src) {
@@ -471,12 +473,12 @@ int64_t socket_recv_raw(socket_impl_t sh, void* buf, uint64_t len, net_l4_endpoi
 
     irq_flags_t irq = irq_save_disable();
     uint8_t pos = s->rx_head;
-    uint8_t* data = s->rx[pos].data;
+    netpkt_t* pkt = s->rx[pos].pkt;
     uint32_t pkt_len = s->rx[pos].len;
     net_l4_endpoint src = s->rx[pos].src;
     s->last_rx_spec = s->rx[pos].rx_spec;
     s->rx_bytes -= pkt_len;
-    s->rx[pos].data = NULL;
+    s->rx[pos].pkt = NULL;
     s->rx[pos].len = 0;
     s->rx_head = (uint8_t)((s->rx_head + 1) % RAW_RX_RING_CAP);
     s->rx_count--;
@@ -484,9 +486,12 @@ int64_t socket_recv_raw(socket_impl_t sh, void* buf, uint64_t len, net_l4_endpoi
 
     uint32_t n = pkt_len;
     if (n > len) n = (uint32_t)len;
-    if (n) memcpy(buf, data, n);
+    if (n && !netpkt_copyout(pkt, 0, buf, n)) {
+        netpkt_unref(pkt);
+        return SOCK_ERR_SYS;
+    }
     if (out_src) *out_src = src;
-    release(data);
+    netpkt_unref(pkt);
     return n;
 }
 

@@ -59,7 +59,15 @@ void tcp_pmtu_update(l3_id_t l3_id, ip_version_t ver, const void* local_ip, cons
 
     tcp_flow_t* flow = tcp_flow_acquire_match(local_port, ver, local_ip, remote_ip, remote_port);
     if (!flow) return;
-    if (flow->base.l3_id != l3_id) {
+    uint32_t l3_generation = 0;
+    if (ver == IP_VER4) {
+        l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(l3_id);
+        if (v4) l3_generation = v4->generation;
+    } else if (ver == IP_VER6) {
+        l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(l3_id);
+        if (v6) l3_generation = v6->generation;
+    }
+    if (flow->base.l3_id != l3_id || !l3_generation || flow->base.l3_generation != l3_generation) {
         tcp_flow_put(flow);
         return;
     }

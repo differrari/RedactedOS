@@ -288,7 +288,7 @@ bool tcp_send_flow_segment(tcp_flow_t *flow, tcp_hdr_t *hdr, const uint8_t *opts
     ip_tx_opts_t tx;
     tx.scope = IP_TX_BOUND_L3;
     tx.target.l3_id = flow->base.l3_id;
-    return tcp_send_segment(flow->base.local.ver, flow->base.local.ip, flow->base.remote.ip, hdr, opts, opts_len, payload, payload_len, &tx, flow->ip.ttl, flow->ip.dontfrag);
+    return tcp_send_segment(flow->base.local.ver, flow->base.local.ip, flow->base.remote.ip, hdr, opts, opts_len, payload, payload_len, &tx, flow->ip.ttl, flow->ip.dontfrag, flow->ip.dontroute);
 }
 
 bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
@@ -338,8 +338,7 @@ bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
 
         sent_any = true;
         off += chunk;
-        //print("tcp %u/%u", off, seg->len);
-    } while (off < seg->len); //while (payload_off < seg->len);
+    } while (off < seg->len);
 
     flow->timer.keepalive_idle_ms = 0;
     if (seg->len) {

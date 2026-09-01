@@ -408,7 +408,7 @@ netdev_tx_result_t VirtioNetDriver::send_packet(netpkt_t* packet){
 
     uint16_t desc_index = tx_free_head;
     tx_free_head = tx_desc[desc_index].next;
-    if (!netpkt_ensure_headroom(packet, header_size)) {
+    if (netpkt_headroom(packet) < header_size) {
         tx_desc[desc_index].next = tx_free_head;
         tx_free_head = desc_index;
         return NETDEV_TX_DROP;

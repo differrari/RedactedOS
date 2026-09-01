@@ -15,17 +15,11 @@ public:
     bool enqueue_packet(uint8_t ifindex, netpkt_t* pkt);
 
     int net_task();
-    void set_net_pid(uint16_t pid);
-    uint16_t get_net_pid() const;
-
-    size_t nic_count() const;
-
     const char* ifname(uint8_t ifindex) const;
     const char* hw_ifname(uint8_t ifindex) const;
     const uint8_t* mac(uint8_t ifindex) const;
     uint16_t device_mtu(uint8_t ifindex) const;
     uint16_t header_size(uint8_t ifindex) const;
-    l2_interface_t* l2_at(uint8_t ifindex) const;
     NetDriver* driver_at(uint8_t ifindex) const;
 
     uint32_t speed(uint8_t ifindex) const;
@@ -49,7 +43,6 @@ private:
 
     NICCtx nics[MAX_NIC];
     size_t nic_num;
-    uint16_t g_net_pid;
 
 
     bool register_all_from_bus();

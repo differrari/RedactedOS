@@ -4,7 +4,7 @@
 #include "networking/netpkt.h"
 
 #define NET_FRAGBUF_DEFAULT_MAX_LEN 65535u
-#define NET_FRAGBUF_DEFAULT_STEP 2048u
+#define NET_FRAGBUF_DEFAULT_STEP 4096u
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,6 +15,7 @@ typedef struct {
     uint8_t *blocks;
     uint32_t cap;
     uint32_t total_len;
+    uint32_t max_end;
     uint32_t max_len;
     uint32_t step;
     uint32_t block_count;

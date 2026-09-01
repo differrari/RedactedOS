@@ -679,9 +679,20 @@ void* netpkt_push(netpkt_t* p, uint32_t bytes) {
     if ((p->flags & NETPKT_F_VIEW) && bytes) return 0;
     if (!bytes) return (void*)netpkt_data(p);
     if (p->len > NETPKT_MAX_ALLOC - bytes) return 0;
-    if (!netpkt_ensure_headroom(p, bytes)) return 0;
 
     irq_flags_t irq = irq_save_disable();
+    if (p->buf && p->buf->refs == 1 && bytes <= p->head) {
+        p->head -= bytes;
+        p->len += bytes;
+        void* out = (void*)(p->buf->base + (uintptr_t)p->off + (uintptr_t)p->head);
+        irq_restore(irq);
+        return out;
+    }
+    irq_restore(irq);
+
+    if (!netpkt_ensure_headroom(p, bytes)) return 0;
+
+    irq = irq_save_disable();
     if (!p->buf || bytes > p->head || p->len > NETPKT_MAX_ALLOC - bytes) {
         irq_restore(irq);
         return 0;
@@ -698,9 +709,22 @@ void* netpkt_put(netpkt_t* p, uint32_t bytes) {
     if ((p->flags & NETPKT_F_VIEW) && bytes) return 0;
     if (!bytes) return (void*)(netpkt_data(p) + (uintptr_t)p->len);
     if (p->len > NETPKT_MAX_ALLOC - bytes) return 0;
-    if (!netpkt_ensure_tailroom(p, bytes)) return 0;
 
     irq_flags_t irq = irq_save_disable();
+    if (p->buf && p->buf->refs == 1 && p->head <= p->cap && p->len <= p->cap - p->head) {
+        uint32_t tail = p->cap - p->head - p->len;
+        if (bytes <= tail) {
+            uintptr_t out = p->buf->base + (uintptr_t)p->off + (uintptr_t)p->head + (uintptr_t)p->len;
+            p->len += bytes;
+            irq_restore(irq);
+            return (void*)out;
+        }
+    }
+    irq_restore(irq);
+
+    if (!netpkt_ensure_tailroom(p, bytes)) return 0;
+
+    irq = irq_save_disable();
     if (!p->buf || bytes > netpkt_tailroom(p) || p->len > NETPKT_MAX_ALLOC - bytes) {
         irq_restore(irq);
         return 0;

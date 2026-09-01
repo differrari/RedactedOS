@@ -24,11 +24,13 @@ static uint16_t g_ip_ident = 1;
 typedef struct {
     uint8_t used;
     uint8_t ifindex;
+    uint8_t first_header_len;
     uint16_t ident;
     uint8_t proto;
     uint32_t src;
     uint32_t dst;
     uint32_t last_update_ms;
+    uint8_t first_header[60];
     net_fragbuf_t frag;
 } ipv4_reass_slot_t;
 
@@ -40,7 +42,7 @@ static void ipv4_reass_free(ipv4_reass_slot_t *s) {
     memset(s, 0, sizeof(*s));
 }
 
-bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx_opts_t* opts, uint8_t ttl, uint8_t dontfrag) {
+bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx_opts_t* opts, uint8_t ttl, uint8_t dontfrag, uint8_t dontroute) {
     if (!pkt || !netpkt_len(pkt)) {
         if (pkt) netpkt_unref(pkt);
         return false;
@@ -85,7 +87,16 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
         uint32_t route_nh = 0;
         bool have_nh = false;
 
-        if (src_v4->routing_table && ipv4_rt_lookup_in(src_v4->routing_table, dst_ip, &route_nh, NULL, NULL)) {
+        if (dontroute) {
+            if (!ipv4_tx_plan_onlink(&plan, dst_ip)) {
+                netpkt_unref(pkt);
+                return false;
+            }
+            nh = dst_ip;
+            have_nh = true;
+        }
+
+        if (!have_nh && src_v4->routing_table && ipv4_rt_lookup_in(src_v4->routing_table, dst_ip, &route_nh, NULL, NULL)) {
             nh = route_nh ? route_nh : dst_ip;
             have_nh = true;
         }
@@ -218,7 +229,7 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
     return ok && off == seg_len;
 }
 
-static void ipv4_deliver_l4(uint8_t ifindex, netpkt_t* pkt, uint32_t l4_off, uint32_t l4_len, uint8_t proto, uint32_t src, uint32_t dst) {
+static void ipv4_deliver_l4(uint8_t ifindex, netpkt_t* pkt, uint32_t l4_off, uint32_t l4_len, uint8_t proto, uint32_t src, uint32_t dst, const uint8_t *ip_header, uint8_t ip_header_len) {
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return;
 
@@ -282,7 +293,10 @@ static void ipv4_deliver_l4(uint8_t ifindex, netpkt_t* pkt, uint32_t l4_off, uin
         if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
         else if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, l4pkt);
         else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
-        else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
+        else if (proto == PROTO_UDP) {
+            udp_input_result_t result = udp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
+            if (result == UDP_INPUT_NO_LISTENER && ip_header) icmp_send_port_unreachable(match_l3id, src, ip_header, ip_header_len, pkt, l4_off, l4_len);
+        }
         else netpkt_unref(l4pkt);
         return;
     }
@@ -356,8 +370,10 @@ void ipv4_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_L
     uint8_t proto = ip.protocol;
     uint32_t l4_len = (uint32_t)ip_totlen - hdr_len;
     uint16_t ff = bswap16(ip.flags_frag_offset);
+    if (ff & 0x8000u) return;
     uint32_t off = (uint32_t)(ff & 0x1FFF) * 8;
     uint8_t more = (ff & 0x2000) ? 1 : 0;
+    if ((ff & 0x4000u) && (off || more)) return;
 
     if (off || more) {
         if (!l4_len) return;
@@ -401,6 +417,11 @@ void ipv4_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_L
             return;
         }
 
+        if (!off) {
+            slot->first_header_len = (uint8_t)hdr_len;
+            memcpy(slot->first_header, hdr_copy, hdr_len);
+        }
+
         slot->last_update_ms = now;
 
         if (!net_fragbuf_complete(&slot->frag)) return;
@@ -411,11 +432,14 @@ void ipv4_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_L
             return;
         }
 
+        uint8_t first_header[60];
+        uint8_t first_header_len = slot->first_header_len;
+        if (first_header_len) memcpy(first_header, slot->first_header, first_header_len);
         ipv4_reass_free(slot);
-        ipv4_deliver_l4(ifindex, reassembled, 0, netpkt_len(reassembled), proto, src, dst);
+        ipv4_deliver_l4(ifindex, reassembled, 0, netpkt_len(reassembled), proto, src, dst, first_header_len ? first_header : NULL, first_header_len);
         netpkt_unref(reassembled);
         return;
     }
 
-    ipv4_deliver_l4(ifindex, pkt, hdr_len, l4_len, proto, src, dst);
+    ipv4_deliver_l4(ifindex, pkt, hdr_len, l4_len, proto, src, dst, hdr_copy, (uint8_t)hdr_len);
 }

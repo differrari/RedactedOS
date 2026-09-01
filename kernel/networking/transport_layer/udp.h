@@ -15,14 +15,20 @@ typedef struct __attribute__((packed)) {
     uint16_t checksum;
 } udp_hdr_t;
 
+typedef enum {
+    UDP_INPUT_DROP = 0,
+    UDP_INPUT_DELIVERED,
+    UDP_INPUT_NO_LISTENER
+} udp_input_result_t;
+
 size_t create_udp_segment(uintptr_t buf,
                           const net_l4_endpoint *src,
                           const net_l4_endpoint *dst,
                           sizedptr payload);
 
-bool udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload, const ip_tx_opts_t* tx_opts, uint8_t ttl, uint8_t dontfrag);
+bool udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload, const ip_tx_opts_t* tx_opts, uint8_t ttl, uint8_t dontfrag, uint8_t dontroute);
 
-void udp_input(ip_version_t ipver,
+udp_input_result_t udp_input(ip_version_t ipver,
                const void *src_ip_addr,
                const void *dst_ip_addr,
                l3_id_t l3_id,

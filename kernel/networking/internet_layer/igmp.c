@@ -65,7 +65,7 @@ static bool igmp_send_packet(uint8_t ifindex, uint32_t dst, uint8_t type, uint32
     tx.scope = IP_TX_BOUND_L2;
     tx.target.ifindex = ifindex;
 
-    return ipv4_send_packet(dst, PROTO_IGMP, pkt, &tx, 1, 0);
+    return ipv4_send_packet(dst, PROTO_IGMP, pkt, &tx, 1, 0, 0);
 }
 
 static igmp_state_t* igmp_find_state(uint8_t ifindex, uint32_t group) {

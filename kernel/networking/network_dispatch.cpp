@@ -24,7 +24,6 @@
 NetworkDispatch::NetworkDispatch()
 {
     nic_num = 0;
-    g_net_pid = 0xFFFF;
     for (size_t i = 0; i < MAX_NIC; ++i) {
         nics[i].drv = nullptr;
         nics[i].l2_ifindex = 0;
@@ -72,7 +71,6 @@ bool NetworkDispatch::enqueue_packet(uint8_t ifindex, netpkt_t* pkt)
 
 int NetworkDispatch::net_task()
 {
-    g_net_pid = get_current_proc_pid();
     for (;;) {
         bool did_work = false;
 
@@ -132,16 +130,6 @@ int NetworkDispatch::net_task()
     }
 }
 
-uint16_t NetworkDispatch::get_net_pid() const
-{
-    return g_net_pid;
-}
-
-size_t NetworkDispatch::nic_count() const
-{
-    return nic_num;
-}
-
 const char* NetworkDispatch::ifname(uint8_t ifindex) const
 {
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
@@ -170,11 +158,6 @@ uint16_t NetworkDispatch::header_size(uint8_t ifindex) const
 {
     int nic_id = nic_for_ifindex(ifindex);
     return nic_id < 0 ? 0 : nics[nic_id].hdr_sz;
-}
-
-l2_interface_t* NetworkDispatch::l2_at(uint8_t ifindex) const
-{
-    return l2_interface_find_by_index(ifindex);
 }
 
 NetDriver* NetworkDispatch::driver_at(uint8_t ifindex) const

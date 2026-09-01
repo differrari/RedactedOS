@@ -21,9 +21,6 @@ typedef struct __attribute__((packed)) eth_hdr_t {
 } eth_hdr_t;
 
 uint16_t eth_parse_type(const netpkt_t* pkt);
-bool eth_src(const netpkt_t* pkt, uint8_t out[MAC_ADDR_LEN]);
-bool eth_dst(const netpkt_t* pkt, uint8_t out[MAC_ADDR_LEN]);
-
 bool eth_send_frame_on(uint8_t ifindex, uint16_t ethertype, const uint8_t dst_mac[MAC_ADDR_LEN], netpkt_t* pkt);
 
 void eth_input(uint8_t ifindex, netpkt_t* pkt);

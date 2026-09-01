@@ -17,7 +17,7 @@ typedef struct __attribute__((packed)) {
     uint8_t dst[16];
 } ipv6_hdr_t;
 
-bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ip_tx_opts_t* opts, uint8_t hop_limit, uint8_t dontfrag);
+bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ip_tx_opts_t* opts, uint8_t hop_limit, uint8_t dontfrag, uint8_t dontroute);
 void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]);
 
 #ifdef __cplusplus

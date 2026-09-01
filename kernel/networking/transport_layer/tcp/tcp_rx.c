@@ -366,7 +366,7 @@ static bool tcp_sack_is_lost(tcp_flow_t *flow, uint32_t right) {
         blocks++;
     }
 
-    return blocks >= 3 || bytes >= 3 * mss;
+    return blocks >= 3 || bytes > 2 * mss;
 }
 
 static bool tcp_sack_select_retransmit(tcp_flow_t *flow, bool force, bool rescue, tcp_tx_seg_t **out_seg, uint32_t *out_left, uint32_t *out_right) {
@@ -462,7 +462,10 @@ static bool tcp_sack_retransmit_range(tcp_flow_t *flow, tcp_tx_seg_t *seg, uint3
     for (uint32_t i = 0; i < TCP_MAX_TX_SEGS; i++) flow->tx.txq[i].rtt_sample = 0;
     flow->tx.rtt_sample_pending = 0;
     bool tracked = tcp_sack_insert(flow->tx.sack_retransmitted_ranges, &flow->tx.sack_retransmitted_count, left, right);
-    if (rescue) flow->tx.sack_rescue_sent = 1;
+    if (rescue) {
+        flow->tx.sack_rescue_rxt = flow->tx.recover;
+        flow->tx.sack_rescue_valid = 1;
+    }
     if (seg->retransmit_cnt < UINT8_MAX) seg->retransmit_cnt++;
     seg->timer_ms = 0;
     seg->rtt_timer_ms = 0;
@@ -478,6 +481,8 @@ static void tcp_sack_recovery_send(tcp_flow_t *flow, bool force_first) {
         uint32_t left = 0;
         uint32_t right = 0;
         if (!tcp_sack_select_retransmit(flow, true, false, &seg, &left, &right) || !tcp_sack_retransmit_range(flow, seg, left, right, false)) return;
+        flow->tx.sack_rescue_rxt = right;
+        flow->tx.sack_rescue_valid = 1;
     }
 
     uint32_t pipe = 0;
@@ -505,22 +510,19 @@ static void tcp_sack_recovery_send(tcp_flow_t *flow, bool force_first) {
             }
 
             if (TCP_SEQ_GT(hole_right, cursor)) {
-                if (tcp_sack_is_lost(flow, hole_right)) {
-                    uint32_t retransmitted = 0;
-                    for (uint8_t n = 0; n < flow->tx.sack_retransmitted_count; n++) {
-                        tcp_sack_range_t *range = &flow->tx.sack_retransmitted_ranges[n];
-                        if (TCP_SEQ_GEQ(cursor, range->right) || TCP_SEQ_GEQ(range->left, hole_right)) continue;
+                uint32_t retransmitted = 0;
+                for (uint8_t n = 0; n < flow->tx.sack_retransmitted_count; n++) {
+                    tcp_sack_range_t *range = &flow->tx.sack_retransmitted_ranges[n];
+                    if (TCP_SEQ_GEQ(cursor, range->right) || TCP_SEQ_GEQ(range->left, hole_right)) continue;
 
-                        uint32_t range_left = TCP_SEQ_GT(cursor, range->left) ? cursor : range->left;
-                        uint32_t range_right = TCP_SEQ_LT(hole_right, range->right) ? hole_right : range->right;
-                        if (TCP_SEQ_GT(range_right, range_left)) retransmitted += range_right - range_left;
-                    }
-
-                    uint32_t hole_len = hole_right - cursor;
-                    pipe += retransmitted > hole_len ? hole_len : retransmitted;
-                } else {
-                    pipe += hole_right - cursor;
+                    uint32_t range_left = TCP_SEQ_GT(cursor, range->left) ? cursor : range->left;
+                    uint32_t range_right = TCP_SEQ_LT(hole_right, range->right) ? hole_right : range->right;
+                    if (TCP_SEQ_GT(range_right, range_left)) retransmitted += range_right - range_left;
                 }
+
+                uint32_t hole_len = hole_right - cursor;
+                if (!tcp_sack_is_lost(flow, hole_right)) pipe += hole_len;
+                pipe += retransmitted > hole_len ? hole_len : retransmitted;
             }
 
             if (r < flow->tx.sack_range_count && TCP_SEQ_GT(flow->tx.sack_ranges[r].right, cursor)) cursor = flow->tx.sack_ranges[r].right;
@@ -536,8 +538,10 @@ static void tcp_sack_recovery_send(tcp_flow_t *flow, bool force_first) {
         uint32_t right = 0;
         bool rescue = false;
         if (!tcp_sack_select_retransmit(flow, false, false, &seg, &left, &right)) {
-            if (flow->tx.sack_rescue_sent || !tcp_sack_select_retransmit(flow, false, true, &seg, &left, &right)) break;
-            rescue = true;
+            if (!tcp_sack_select_retransmit(flow, true, false, &seg, &left, &right)) {
+                if ((flow->tx.sack_rescue_valid && !TCP_SEQ_GT(flow->tx.snd_una, flow->tx.sack_rescue_rxt)) || !tcp_sack_select_retransmit(flow, false, true, &seg, &left, &right)) break;
+                rescue = true;
+            }
         }
         uint32_t len = right - left;
         if (!len || len > cwnd - pipe) break;
@@ -583,7 +587,8 @@ void tcp_cc_on_timeout(tcp_flow_t *f){
 
     f->tx.sack_range_count = 0;
     f->tx.sack_retransmitted_count = 0;
-    f->tx.sack_rescue_sent = 0;
+    f->tx.sack_rescue_rxt = 0;
+    f->tx.sack_rescue_valid = 0;
 }
 
 static void tcp_cc_on_new_ack(tcp_flow_t *f, uint32_t ack, uint32_t prev_una) {
@@ -601,7 +606,8 @@ static void tcp_cc_on_new_ack(tcp_flow_t *f, uint32_t ack, uint32_t prev_una) {
             f->tx.cwnd_acc = 0;
             f->tx.sack_range_count = 0;
             f->tx.sack_retransmitted_count = 0;
-            f->tx.sack_rescue_sent = 0;
+            f->tx.sack_rescue_rxt = 0;
+            f->tx.sack_rescue_valid = 0;
             return;
         }
 
@@ -654,7 +660,7 @@ static void tcp_cc_on_dupack(tcp_flow_t *f) {
         return;
     }
 
-    if (f->tx.dup_acks != 3) return;
+    if (f->tx.dup_acks < 3 && (!f->tx.sack_ok || !tcp_sack_is_lost(f, f->tx.snd_una))) return;
     if (f->tx.recover_valid && TCP_SEQ_LEQ(f->tx.snd_una, f->tx.recover)) return;
 
     uint32_t flight = f->tx.snd_nxt - f->tx.snd_una;
@@ -673,7 +679,8 @@ static void tcp_cc_on_dupack(tcp_flow_t *f) {
     }
     f->tx.in_fast_recovery = 1;
     f->tx.sack_retransmitted_count = 0;
-    f->tx.sack_rescue_sent = 0;
+    f->tx.sack_rescue_rxt = 0;
+    f->tx.sack_rescue_valid = 0;
 
     if (f->tx.sack_ok) tcp_sack_recovery_send(f, true);
     else {
@@ -745,6 +752,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     tcp_flow_t *flow = tcp_flow_acquire_match(dst_port, ipver, dst_ip_addr, src_ip_addr, src_port);
 
     uint8_t ifx = 0;
+    uint32_t l3_generation = 0;
     if (ipver == IP_VER4) {
         l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(l3_id);
         if (!v4 || !v4->l2) {
@@ -764,6 +772,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             return;
         }
         ifx = v4->l2->ifindex;
+        l3_generation = v4->generation;
     } else {
         l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(l3_id);
         if (!v6 || !v6->l2) {
@@ -777,14 +786,13 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             return;
         }
         ifx = v6->l2->ifindex;
+        l3_generation = v6->generation;
     }
 
-    if (flow) {
-        if (flow->base.l3_id != l3_id) {
-            flow->base.l3_id = l3_id;
-            flow->tx.path_mss = tcp_calc_mss_for_l3(l3_id, ipver, src_ip_addr);
-            tcp_update_mss(flow);
-        }
+    if (flow && (flow->base.l3_id != l3_id || !l3_generation || flow->base.l3_generation != l3_generation)) {
+        tcp_free_flow(flow);
+        tcp_flow_put(flow);
+        flow = NULL;
     }
 
     if (flow) {
@@ -884,6 +892,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             }
             flow = nf;
             flow->base.l3_id = l3_id;
+            flow->base.l3_generation = l3_generation;
 
             flow->base.remote.ver = ipver;
             memset(flow->base.remote.ip, 0, 16);
@@ -1037,17 +1046,8 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 return;
             }
 
-            uint32_t time_wait_seg_len = data_len;
-
-            if (flags & (1u << SYN_F)) time_wait_seg_len++;
-            if (flags & (1u << FIN_F)) time_wait_seg_len++;
-
-            uint32_t seg_end = seq + time_wait_seg_len;
-
-            if (TCP_SEQ_LEQ(seq, flow->rx.rcv_nxt) && TCP_SEQ_GEQ(seg_end, flow->rx.rcv_nxt)){
-                flow->timer.time_wait_ms = 0;
-                tcp_send_ack_now(flow);
-            }
+            if ((flags & (1u << FIN_F)) && seq + data_len + 1 == flow->rx.rcv_nxt) flow->timer.time_wait_ms = 0;
+            tcp_send_ack_now(flow);
 
             tcp_flow_put(flow);
             netpkt_unref(pkt);

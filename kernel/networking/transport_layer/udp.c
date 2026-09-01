@@ -40,7 +40,7 @@ size_t create_udp_segment(uintptr_t buf, const net_l4_endpoint *src, const net_l
     return full_len;
 }
 
-bool udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload, const ip_tx_opts_t* tx_opts, uint8_t ttl, uint8_t dontfrag) {
+bool udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, sizedptr payload, const ip_tx_opts_t* tx_opts, uint8_t ttl, uint8_t dontfrag, uint8_t dontroute) {
     if (!src || !dst || src->ver != dst->ver) return false;
     if ((src->ver != IP_VER4 && src->ver != IP_VER6) || (payload.size && !payload.ptr)) return false;
     if (payload.size > UINT16_MAX - sizeof(udp_hdr_t)) return false;
@@ -63,9 +63,9 @@ bool udp_send_segment(const net_l4_endpoint *src, const net_l4_endpoint *dst, si
     if (src->ver == IP_VER4) {
         uint32_t dst_ip = 0;
         memcpy(&dst_ip, dst->ip, 4);
-        return ipv4_send_packet(dst_ip, PROTO_UDP, pkt, tx_opts, ttl, dontfrag);
+        return ipv4_send_packet(dst_ip, PROTO_UDP, pkt, tx_opts, ttl, dontfrag, dontroute);
     }
-    return ipv6_send_packet(dst->ip, PROTO_UDP, pkt, tx_opts, ttl, dontfrag);
+    return ipv6_send_packet(dst->ip, PROTO_UDP, pkt, tx_opts, ttl, dontfrag, dontroute);
 }
 
 bool udp_strip_header(const netpkt_t* pkt, udp_hdr_t* hdr, uint32_t* payload_off, uint32_t* payload_len) {
@@ -81,19 +81,19 @@ bool udp_strip_header(const netpkt_t* pkt, udp_hdr_t* hdr, uint32_t* payload_off
     return true;
 }
 
-void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, l3_id_t l3_id, netpkt_t* pkt) {
-    if (!pkt) return;
+udp_input_result_t udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, l3_id_t l3_id, netpkt_t* pkt) {
+    if (!pkt) return UDP_INPUT_DROP;
     udp_hdr_t hdr;
     uint32_t payload_off = 0;
     uint32_t payload_len = 0;
     if (!udp_strip_header(pkt, &hdr, &payload_off, &payload_len)) {
         netpkt_unref(pkt);
-        return;
+        return UDP_INPUT_DROP;
     }
 
     if (ipver == IP_VER6 && !hdr.checksum) {
         netpkt_unref(pkt);
-        return;
+        return UDP_INPUT_DROP;
     }
     if (hdr.checksum) {
         if (ipver == IP_VER4) {
@@ -103,13 +103,16 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             memcpy(&dst_ip, dst_ip_addr, sizeof(dst_ip));
             if (checksum16_pipv4(src_ip, dst_ip, PROTO_UDP, (const uint8_t*)netpkt_data(pkt), (uint16_t)(payload_len + sizeof(hdr))) != 0) {
                 netpkt_unref(pkt);
-                return;
+                return UDP_INPUT_DROP;
             }
         } else if (ipver == IP_VER6) {
             if (checksum16_pipv6((const uint8_t*)src_ip_addr, (const uint8_t*)dst_ip_addr, PROTO_UDP, (const uint8_t*)netpkt_data(pkt), (uint32_t)(payload_len + sizeof(hdr))) != 0) {
                 netpkt_unref(pkt);
-                return;
+                return UDP_INPUT_DROP;
             }
+        } else {
+            netpkt_unref(pkt);
+            return UDP_INPUT_DROP;
         }
     }
 
@@ -124,13 +127,7 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
     if (!v4 && !v6) {
         netpkt_unref(pkt);
-        return;
-    }
-
-    netpkt_t* plpkt = netpkt_view(pkt, payload_off, payload_len);
-    if (!plpkt) {
-        netpkt_unref(pkt);
-        return;
+        return UDP_INPUT_DROP;
     }
 
     uint8_t ifx = 0;
@@ -146,20 +143,40 @@ void udp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
     if (!fanout) {
         ksocket_t* socket = socket_bind_lookup(PROTO_UDP, ipver, l3_id, ifx, src_ip_addr, src_port, dst_ip_addr, dst_port);
-        if (socket) {
-            socket_udp_input(socket, ipver, l3_id, src_ip_addr, dst_ip_addr, plpkt, src_port, dst_port);
-            socket_core_put(socket);
+        if (!socket) {
+            netpkt_unref(pkt);
+            return UDP_INPUT_NO_LISTENER;
         }
-    } else {
-        uint32_t cursor = 0;
-        ksocket_t* socket = NULL;
-        while ((socket = socket_bind_udp_next_fanout(ipver, l3_id, ifx, dst_ip_addr, dst_port, &cursor))) {
-            socket_udp_input(socket, ipver, l3_id, src_ip_addr, dst_ip_addr, plpkt, src_port, dst_port);
+
+        netpkt_t* plpkt = netpkt_view(pkt, payload_off, payload_len);
+        if (!plpkt) {
             socket_core_put(socket);
+            netpkt_unref(pkt);
+            return UDP_INPUT_DROP;
         }
+        socket_udp_input(socket, ipver, l3_id, src_ip_addr, dst_ip_addr, plpkt, src_port, dst_port);
+        socket_core_put(socket);
+        netpkt_unref(plpkt);
+        netpkt_unref(pkt);
+        return UDP_INPUT_DELIVERED;
+    }
+
+    netpkt_t* plpkt = netpkt_view(pkt, payload_off, payload_len);
+    if (!plpkt) {
+        netpkt_unref(pkt);
+        return UDP_INPUT_DROP;
+    }
+
+    bool delivered = false;
+    uint32_t cursor = 0;
+    ksocket_t* socket = NULL;
+    while ((socket = socket_bind_udp_next_fanout(ipver, l3_id, ifx, dst_ip_addr, dst_port, &cursor))) {
+        delivered = true;
+        socket_udp_input(socket, ipver, l3_id, src_ip_addr, dst_ip_addr, plpkt, src_port, dst_port);
+        socket_core_put(socket);
     }
 
     netpkt_unref(plpkt);
     netpkt_unref(pkt);
+    return delivered ? UDP_INPUT_DELIVERED : UDP_INPUT_NO_LISTENER;
 }
-
