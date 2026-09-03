@@ -292,11 +292,7 @@ static int ip_waiter_entry(int argc, char* argv[]) {
 
 process_t* launch_net_process() {
     create_kernel_process("net_net", network_net_task_entry, 0, 0);
-    create_kernel_process("arp_daemon", arp_daemon_entry, 0, 0);
-    create_kernel_process("ndp_daemon", ndp_daemon_entry, 0, 0);
     //create_kernel_process("ssdp_daemon", ssdp_daemon_entry, 0, 0);
-    create_kernel_process("dhcp_daemon", dhcp_daemon_entry, 0, 0);
-    create_kernel_process("dhcpv6_daemon", dhcpv6_daemon_entry, 0, 0);
     create_kernel_process("dns_daemon", dns_deamon_entry, 0, 0);
     
     if (net_has_ready_address()) {

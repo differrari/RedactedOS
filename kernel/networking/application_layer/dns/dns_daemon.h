@@ -7,13 +7,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-bool dns_is_running(void);
-socket_handle_t dns_socket_handle(void);
-
-socket_handle_t mdns_socket_handle(void);
 socket_handle_t mdns_socket_handle_for(ip_version_t ver);
-
-uint16_t dns_get_pid(void);
+socket_handle_t mdns_socket_handle_for_l3(l3_id_t l3_id);
 
 int dns_deamon_entry(int argc, char* argv[]);
 #ifdef __cplusplus

@@ -60,7 +60,7 @@ typedef enum {
     DHCPK_DECLINE = 5
 } dhcp_req_kind;
 
-sizedptr dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t xid, dhcp_req_kind kind, bool broadcast);
+uint32_t dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t xid, dhcp_req_kind kind, bool broadcast, dhcp_packet *out);
 
 dhcp_packet* dhcp_parse_frame_payload(uintptr_t frame_ptr);
 

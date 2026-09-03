@@ -79,7 +79,6 @@ typedef struct {
 
 uint32_t dhcpv6_make_xid24(uint32_t r32);
 
-void dhcpv6_duid_ll_from_mac(uint8_t out_duid[10], const uint8_t mac[MAC_ADDR_LEN]);
 uint32_t dhcpv6_iaid_from_mac(const uint8_t mac[MAC_ADDR_LEN]);
 
 bool dhcpv6_build_message(uint8_t* out, uint32_t out_cap, uint32_t* out_len, const net_runtime_opts_v6_t* rt, const uint8_t mac[MAC_ADDR_LEN], uint8_t type, dhcpv6_req_kind kind, uint32_t xid24, bool want_address);

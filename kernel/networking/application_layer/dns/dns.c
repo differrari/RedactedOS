@@ -152,13 +152,20 @@ static bool dns_srv_is_zero(const net_l4_endpoint* e){
     return true;
 }
 
-static dns_result_t query_with_selection(const net_l4_endpoint* primary, const net_l4_endpoint* secondary, dns_server_sel_t which, const char* hostname, dns_qtype_t qtype, uint32_t timeout_ms, dns_record_t* out_records, uint32_t max_records, uint32_t* out_count) {
+static dns_result_t query_with_selection(l3_id_t l3_id, const net_l4_endpoint* primary, const net_l4_endpoint* secondary, dns_server_sel_t which, const char* hostname, dns_qtype_t qtype, uint32_t timeout_ms, dns_record_t* out_records, uint32_t max_records, uint32_t* out_count) {
     if (out_count) *out_count = 0;
     if (which == DNS_USE_PRIMARY && dns_srv_is_zero(primary)) return DNS_ERR_NO_DNS;
     if (which == DNS_USE_SECONDARY && dns_srv_is_zero(secondary)) return DNS_ERR_NO_DNS;
     if (which == DNS_USE_BOTH && dns_srv_is_zero(primary) && dns_srv_is_zero(secondary)) return DNS_ERR_NO_DNS;
     socket_handle_t sock = create_socket(PROTO_UDP, &(SocketOptions){.flags = SOCK_OPT_NONBLOCK});
     if (!sock) return DNS_ERR_SOCKET;
+    if (l3_id) {
+        SockBindSpec spec = {.kind = BIND_L3, .l3_id = l3_id};
+        if (bind_socket(sock, &spec, 0) != SOCK_OK) {
+            close_socket(sock);
+            return DNS_ERR_SOCKET;
+        }
+    }
 
     dns_result_t res = DNS_ERR_NO_DNS;
     if (which == DNS_USE_PRIMARY)  res = perform_dns_query_once(sock, primary, hostname, qtype, timeout_ms, out_records, max_records, out_count);
@@ -179,12 +186,12 @@ dns_result_t dns_query(const char* hostname, dns_qtype_t qtype, dns_record_t* ou
     if (out_count) *out_count = 0;
     if (!hostname) return DNS_ERR_FORMAT;
     if (!out_records && max_records) return DNS_ERR_FORMAT;
-    if (dns_wire_is_local_name(hostname)) return mdns_query(hostname, qtype, timeout_ms, out_records, max_records, out_count);
+    if (dns_wire_is_local_name(hostname)) return mdns_query(0, hostname, qtype, timeout_ms, out_records, max_records, out_count);
 
     dns_result_t res = DNS_ERR_NO_DNS;
     l3_id_t l3 = 0;
     net_l4_endpoint p, s;
-    if (pick_dns_first_iface(&l3, &p, &s)) res = query_with_selection(&p, &s, which, hostname, qtype, timeout_ms, out_records, max_records, out_count);
+    if (pick_dns_first_iface(&l3, &p, &s)) res = query_with_selection(0, &p, &s, which, hostname, qtype, timeout_ms, out_records, max_records, out_count);
     return res;
 }
 
@@ -192,10 +199,11 @@ dns_result_t dns_query_on_l3(l3_id_t l3_id, const char* hostname, dns_qtype_t qt
     if (out_count) *out_count = 0;
     if (!hostname) return DNS_ERR_FORMAT;
     if (!out_records && max_records) return DNS_ERR_FORMAT;
-    if (dns_wire_is_local_name(hostname))return mdns_query(hostname, qtype, timeout_ms, out_records, max_records, out_count);
+    if (!l3_id) return DNS_ERR_NO_DNS;
+    if (dns_wire_is_local_name(hostname))return mdns_query(l3_id, hostname, qtype, timeout_ms, out_records, max_records, out_count);
     dns_result_t res = DNS_ERR_NO_DNS;
     net_l4_endpoint p,s;
-    if (pick_dns_on_l3(l3_id, &p, &s)) res = query_with_selection(&p, &s, which, hostname, qtype, timeout_ms, out_records, max_records, out_count);
+    if (pick_dns_on_l3(l3_id, &p, &s)) res = query_with_selection(l3_id, &p, &s, which, hostname, qtype, timeout_ms, out_records, max_records, out_count);
     return res;
 }
 

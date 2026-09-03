@@ -54,7 +54,8 @@ bool ndp_send_or_queue_on(uint8_t ifindex, const uint8_t next_hop[16], netpkt_t*
 
 bool ndp_request_dad_on(uint8_t ifindex, const uint8_t ip[16]);
 
-int ndp_daemon_entry(int argc, char* argv[]);
+void ndp_daemon_kick(void);
+void ndp_link_state_changed(uint8_t ifindex, bool up);
 
 #ifdef __cplusplus
 }

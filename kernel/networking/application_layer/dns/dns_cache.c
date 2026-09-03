@@ -1,13 +1,14 @@
 #include "dns_cache.h"
 #include "dns_wire.h"
 #include "std/std.h"
+#include "syscalls/syscalls.h"
 
 typedef struct {
     uint8_t in_use;
     uint16_t rr_type;
     uint32_t name_len;
     char name[128];
-    uint32_t ttl_ms;
+    uint64_t expire_ms;
     uint8_t addr[16];
 } dns_cache_entry_t;
 
@@ -39,8 +40,9 @@ void dns_cache_put_ip(const char* name, uint16_t rr_type,const uint8_t addr[16],
 
     if (nlen == 9u&& memcmp(norm, "localhost", 9) == 0 && (rr_type == DNS_TYPE_A || rr_type == DNS_TYPE_AAAA)) ttl_ms = 0xFFFFFFFF;
     int free_i = -1;
+    uint64_t now = get_time();
     for (int i = 0; i < 32; i++) {
-        if (!g_dns_cache[i].in_use) {
+        if (!g_dns_cache[i].in_use || (g_dns_cache[i].expire_ms != UINT64_MAX && now >= g_dns_cache[i].expire_ms)) {
             if (free_i < 0) free_i = i;
             continue;
         }
@@ -48,7 +50,7 @@ void dns_cache_put_ip(const char* name, uint16_t rr_type,const uint8_t addr[16],
         if (g_dns_cache[i].name_len != nlen) continue;
         if (memcmp(g_dns_cache[i].name, norm, nlen) != 0) continue;
         memcpy(g_dns_cache[i].addr, addr, 16);
-        g_dns_cache[i].ttl_ms = ttl_ms;
+        g_dns_cache[i].expire_ms = ttl_ms == 0xFFFFFFFFu ? UINT64_MAX : get_time() + ttl_ms;
         return;
     }
 
@@ -60,7 +62,7 @@ void dns_cache_put_ip(const char* name, uint16_t rr_type,const uint8_t addr[16],
     g_dns_cache[idx].name_len = nlen;
     memcpy(g_dns_cache[idx].name, norm, nlen);
     g_dns_cache[idx].name[nlen] = 0;
-    g_dns_cache[idx].ttl_ms = ttl_ms;
+    g_dns_cache[idx].expire_ms = ttl_ms == 0xFFFFFFFFu ? UINT64_MAX : now + ttl_ms;
     memcpy(g_dns_cache[idx].addr, addr, 16);
 }
 
@@ -85,31 +87,18 @@ bool dns_cache_get_ip(const char* name, uint16_t rr_type, uint8_t out_addr[16]) 
     if (!dns_wire_name_normalize(name, norm, sizeof(norm))) return false;
     uint32_t nlen = strlen(norm);
     if (!nlen) return false;
+    uint64_t now = get_time();
     for (int i = 0; i < 32; i++) {
         if (!g_dns_cache[i].in_use) continue;
+        if (g_dns_cache[i].expire_ms != UINT64_MAX && now >= g_dns_cache[i].expire_ms) {
+            memset(&g_dns_cache[i], 0, sizeof(g_dns_cache[i]));
+            continue;
+        }
         if (g_dns_cache[i].rr_type != rr_type) continue;
-        if (g_dns_cache[i].ttl_ms == 0) continue;
         if (g_dns_cache[i].name_len != nlen) continue;
         if (memcmp(g_dns_cache[i].name, norm, nlen) != 0) continue;
         memcpy(out_addr, g_dns_cache[i].addr, 16);
         return true;
     }
     return false;
-}
-
-void dns_cache_tick(uint32_t ms) {
-    dns_cache_ensure_init();
-    for (int i = 0; i < 32; i++) {
-        if (!g_dns_cache[i].in_use) continue;
-        if (!g_dns_cache[i].ttl_ms) {
-            g_dns_cache[i].in_use = 0;
-            continue;
-        }
-        if (g_dns_cache[i].ttl_ms == 0xFFFFFFFFu) continue;
-        if (g_dns_cache[i].ttl_ms <= ms) {
-            memset(&g_dns_cache[i], 0, sizeof(g_dns_cache[i]));
-        } else {
-            g_dns_cache[i].ttl_ms -= ms;
-        }
-    }
 }

@@ -9,8 +9,7 @@ extern "C" {
 
 int dhcpv6_daemon_entry(int argc, char* argv[]);
 
-uint16_t dhcpv6_get_pid();
-bool dhcpv6_is_running();
+void dhcpv6_daemon_kick(void);
 
 void dhcpv6_force_renew_all();
 void dhcpv6_force_rebind_all();

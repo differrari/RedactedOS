@@ -1,6 +1,7 @@
 #include "dns_mdns.h"
 #include "dns_daemon.h"
 #include "networking/internet_layer/ipv6_utils.h"
+#include "networking/interface_manager.h"
 #include "std/std.h"
 #include "networking/transport_layer/trans_utils.h"
 
@@ -56,7 +57,7 @@ static dns_result_t perform_mdns_query_once(socket_handle_t sock, const net_l4_e
     return DNS_ERR_TIMEOUT;
 }
 
-dns_result_t mdns_query(const char* name, dns_qtype_t qtype, uint32_t timeout_ms, dns_record_t* out_records, uint32_t max_records, uint32_t* out_count) {
+dns_result_t mdns_query(l3_id_t l3_id, const char* name, dns_qtype_t qtype, uint32_t timeout_ms, dns_record_t* out_records, uint32_t max_records, uint32_t* out_count) {
     if (out_count) *out_count = 0;
     if (!name) return DNS_ERR_FORMAT;
     if (!out_records && max_records) return DNS_ERR_FORMAT;
@@ -64,8 +65,9 @@ dns_result_t mdns_query(const char* name, dns_qtype_t qtype, uint32_t timeout_ms
     dns_result_t last = DNS_ERR_NO_DNS;
     uint32_t total = 0;
 
-    socket_handle_t sock = mdns_socket_handle_for(IP_VER4);
-    if (sock) {
+    socket_handle_t sock = l3_id ? mdns_socket_handle_for_l3(l3_id) : mdns_socket_handle_for(IP_VER4);
+    l3_ipv6_interface_t* v6 = l3_id ? l3_ipv6_find_by_id(l3_id) : NULL;
+    if (sock && !v6) {
         uint32_t group =DNS_MDNS_GROUP_V4;
         net_l4_endpoint dst;
         make_ep(&group, DNS_MDNS_PORT, IP_VER4, &dst);
@@ -78,8 +80,8 @@ dns_result_t mdns_query(const char* name, dns_qtype_t qtype, uint32_t timeout_ms
         }
     }
 
-    sock = mdns_socket_handle_for(IP_VER6);
-    if (sock) {
+    if (!l3_id) sock = mdns_socket_handle_for(IP_VER6);
+    if (sock && (v6 || !l3_id)) {
         uint8_t group6[16];
         net_l4_endpoint dst;
         ipv6_make_multicast(0x02, IPV6_MCAST_MDNS, 0, group6);
@@ -108,7 +110,7 @@ dns_result_t mdns_resolve_a(const char* name, uint32_t timeout_ms, uint32_t* out
     dns_record_t records[4];
     uint32_t count = 0;
 
-    dns_result_t r = mdns_query(name, DNS_TYPE_A, timeout_ms, records, 4, &count);
+    dns_result_t r = mdns_query(0, name, DNS_TYPE_A, timeout_ms, records, 4, &count);
     if (r != DNS_OK) return r;
 
     for (uint32_t i = 0; i < count; i++) {
@@ -125,7 +127,7 @@ dns_result_t mdns_resolve_aaaa(const char* name, uint32_t timeout_ms, uint8_t ou
     if (!out_ipv6) return DNS_ERR_FORMAT;
     dns_record_t records[4];
     uint32_t count = 0;
-    dns_result_t r = mdns_query(name, DNS_TYPE_AAAA, timeout_ms, records, 4, &count);
+    dns_result_t r = mdns_query(0, name, DNS_TYPE_AAAA, timeout_ms, records, 4, &count);
     if (r != DNS_OK) return r;
 
     for (uint32_t i = 0; i < count; i++) {

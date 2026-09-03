@@ -15,12 +15,14 @@
 #include "networking/link_layer/nic_types.h"
 #include "networking/network.h"
 #include "networking/transport_layer/tcp.h"
+#include "networking/application_layer/dhcpv6_daemon.h"
+#include "networking/application_layer/dhcp_daemon.h"
 //TODO: add network settings
 
 static l2_interface_t g_l2[MAX_L2_INTERFACES];
 static uint8_t g_l2_used[MAX_L2_INTERFACES];
 static uint8_t g_l2_count = 0;
-static uint32_t g_if_epoch = 1;
+static uint32_t g_l3_epoch = 1;
 
 typedef struct {
     l3_ipv4_interface_t node;
@@ -34,10 +36,10 @@ typedef struct {
 static v4_slot_t g_v4[MAX_IPV4_L3_INTERFACES];
 static v6_slot_t g_v6[MAX_IPV6_L3_INTERFACES];
 
-static uint32_t net_interface_mark_changed(void) {
-    g_if_epoch++;
-    if (!g_if_epoch) g_if_epoch = 1;
-    return g_if_epoch;
+static uint32_t next_l3_epoch(void) {
+    g_l3_epoch++;
+    if (!g_l3_epoch) g_l3_epoch = 1;
+    return g_l3_epoch;
 }
 
 static inline int l2_slot_from_ifindex(uint8_t ifindex){
@@ -167,7 +169,6 @@ uint8_t l2_interface_create(const char *name, uint8_t nic_id, uint16_t base_metr
 
     g_l2_used[slot] = 1;
     g_l2_count += 1;
-    net_interface_mark_changed();
     return itf->ifindex;
 }
 
@@ -189,7 +190,6 @@ bool l2_interface_destroy(uint8_t ifindex){
     memset(&g_l2[slot], 0, sizeof(l2_interface_t));
     g_l2_used[slot] = 0;
     if (g_l2_count) g_l2_count -= 1;
-    net_interface_mark_changed();
     return true;
 }
 
@@ -216,8 +216,14 @@ bool l2_interface_set_up(uint8_t ifindex, bool up) {
     if (!itf) return false;
     if (itf->is_up == up) return true;
     itf->is_up = up;
-    if (up && itf->kind != NET_IFK_LOCALHOST) (void)l2_sync_multicast_filters(itf);
-    net_interface_mark_changed();
+    if (itf->kind != NET_IFK_LOCALHOST) {
+        ndp_link_state_changed(ifindex, up);
+        if (up) (void)l2_sync_multicast_filters(itf);
+    }
+    if (up) {
+        dhcp_daemon_kick();
+        dhcpv6_daemon_kick();
+    }
     return true;
 }
 
@@ -236,7 +242,6 @@ bool l2_interface_set_metric(uint8_t ifindex, uint16_t metric) {
         if (!v6 || !v6->routing_table) continue;
         ipv6_rt_sync_basics((ipv6_rt_table_t*)v6->routing_table, v6->ip, v6->prefix_len, v6->gateway, itf->base_metric);
     }
-    net_interface_mark_changed();
     return true;
 }
 
@@ -444,7 +449,7 @@ l3_id_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
         ipv4_rt_ensure_basics((ipv4_rt_table_t*)n->routing_table, n->ip, n->mask, n->gw, l2->base_metric);
     }
 
-    n->epoch = net_interface_mark_changed();
+    n->epoch = next_l3_epoch();
     n->generation = n->epoch;
     l2->l3_v4[loc] = n;
     g_v4[g].used = true;
@@ -455,6 +460,7 @@ l3_id_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
         for (int i = 0; i < (int)l2->ipv4_mcast_count; i++) igmp_send_join(l2->ifindex, l2->ipv4_mcast[i]);
     }
 
+    dhcp_daemon_kick();
     return n->l3_id;
 }
 
@@ -552,10 +558,11 @@ bool l3_ipv4_update(l3_id_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
     }
 
     if (l3_changed) {
-        n->epoch = net_interface_mark_changed();
+        n->epoch = next_l3_epoch();
         if (identity_changed) n->generation = n->epoch;
     }
-    if (!identity_changed && new_effective_mtu && old_effective_mtu && new_effective_mtu < old_effective_mtu)tcp_l3_mtu_reduce(n->l3_id, n->generation, new_effective_mtu);
+    if (!identity_changed && new_effective_mtu && old_effective_mtu && new_effective_mtu < old_effective_mtu) tcp_l3_mtu_reduce(n->l3_id, n->generation, new_effective_mtu);
+    dhcp_daemon_kick();
     return true;
 }
 
@@ -578,7 +585,6 @@ bool l3_ipv4_remove_from_interface(l3_id_t l3_id) {
         if (l2->l3_v4[slot] != n) continue;
         l2->l3_v4[slot] = NULL;
         if (l2->ipv4_count) l2->ipv4_count--;
-        net_interface_mark_changed();
         break;
     }
 
@@ -589,6 +595,7 @@ bool l3_ipv4_remove_from_interface(l3_id_t l3_id) {
 
     g_v4[g].used = false;
     memset(&g_v4[g], 0, sizeof(g_v4[g]));
+    dhcp_daemon_kick();
     return true;
 }
 
@@ -745,7 +752,7 @@ l3_id_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
         ipv6_rt_ensure_basics((ipv6_rt_table_t*)n->routing_table, n->ip, n->prefix_len, n->gateway, l2->base_metric);
     }
 
-    n->epoch = net_interface_mark_changed();
+    n->epoch = next_l3_epoch();
     n->generation = n->epoch;
     l2->l3_v6[loc] = n;
     g_v6[g].used = true;
@@ -759,6 +766,8 @@ l3_id_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     if (!had_active_v6 && l2->kind != NET_IFK_LOCALHOST && l2_has_active_v6(l2)) {
         for (int i = 0; i < (int)pre_mcast_count && i < (int)l2->ipv6_mcast_count; i++) mld_send_join(l2->ifindex, l2->ipv6_mcast[i]);
     }
+    if (n->dad_requested) ndp_daemon_kick();
+    if (n->cfg & IPV6_CFG_DHCPV6) dhcpv6_daemon_kick();
 
     return n->l3_id;
 }
@@ -891,9 +900,11 @@ bool l3_ipv6_update(l3_id_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
     }
 
     if (l3_changed) {
-        n->epoch = net_interface_mark_changed();
+        n->epoch = next_l3_epoch();
         if (identity_changed) n->generation = n->epoch;
     }
+    if (n->dad_requested) ndp_daemon_kick();
+    if (n->cfg & IPV6_CFG_DHCPV6) dhcpv6_daemon_kick();
     return true;
 }
 
@@ -930,7 +941,6 @@ bool l3_ipv6_remove_from_interface(l3_id_t l3_id) {
         if (l2->l3_v6[slot] != n) continue;
         l2->l3_v6[slot] = NULL;
         if (l2->ipv6_count) l2->ipv6_count--;
-        net_interface_mark_changed();
         break;
     }
 
@@ -977,7 +987,7 @@ bool l2_ipv6_set_link_mtu(uint8_t ifindex, uint16_t mtu) {
     for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) if (l2->l3_v6[i]) old_mtu[i] = l3_ipv6_effective_mtu(l2->l3_v6[i]);
 
     l2->ipv6_link_mtu = mtu;
-    uint32_t epoch = net_interface_mark_changed();
+    uint32_t epoch = next_l3_epoch();
     for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
         l3_ipv6_interface_t* v6 = l2->l3_v6[i];
         if (!v6) continue;

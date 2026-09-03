@@ -61,8 +61,6 @@ bool arp_dad_ipv4_on(uint8_t ifindex, uint32_t ip);
 
 void arp_input(uint8_t ifindex, const uint8_t src_mac[MAC_ADDR_LEN], netpkt_t* pkt);
 
-int arp_daemon_entry(int argc, char* argv[]);
-
 #ifdef __cplusplus
 }
 #endif

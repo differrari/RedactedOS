@@ -662,29 +662,6 @@ void mdns_responder_tick_multi(const mdns_tx_target_t *targets, uint32_t target_
     }
 }
 
-void mdns_responder_tick(socket_handle_t sock, const uint8_t mcast_v4[4], const uint8_t mcast_v6[16]) {
-    mdns_tx_target_t targets[2];
-    uint32_t n = 0;
-
-    if (sock && mcast_v4) {
-        memset(&targets[n], 0, sizeof(targets[n]));
-        targets[n].sock = sock;
-        targets[n].ver = IP_VER4;
-        memcpy(targets[n].mcast_ip, mcast_v4, 4);
-        n++;
-    }
-
-    if (sock && mcast_v6) {
-        memset(&targets[n], 0, sizeof(targets[n]));
-        targets[n].sock = sock;
-        targets[n].ver = IP_VER6;
-        memcpy(targets[n].mcast_ip, mcast_v6, 16);
-        n++;
-    }
-
-    mdns_responder_tick_multi(targets, n);
-}
-
 void mdns_responder_handle_query(socket_handle_t sock, ip_version_t ver, const uint8_t *mcast_ip, const uint8_t *pkt, uint32_t pkt_len, const net_l4_endpoint *src) {
     if (!sock) return;
     if (!mcast_ip) return;

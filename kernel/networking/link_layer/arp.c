@@ -5,6 +5,8 @@
 #include "networking/network.h"
 #include "networking/interface_manager.h"
 #include "process/scheduler.h"
+#include "kernel_processes/kprocess_loader.h"
+#include "exceptions/irq.h"
 #include "networking/internet_layer/ipv4.h"
 #include "syscalls/syscalls.h"
 #include "networking/internet_layer/ipv4_utils.h"
@@ -32,6 +34,11 @@ struct arp_table {
     uint8_t announce_left;
     arp_defense_t defense[MAX_IPV4_PER_INTERFACE];
 };
+
+static volatile uint8_t g_arp_daemon_running;
+static volatile uint8_t g_arp_daemon_pending;
+
+static void arp_daemon_kick(void);
 
 static void arp_entry_clear(arp_entry_t* e) {
     if (!e) return;
@@ -133,6 +140,7 @@ void arp_table_put_for_l2(uint8_t ifindex, uint32_t ip, const uint8_t mac[MAC_AD
         e->pending_len = 0;
         e->pending_bytes = 0;
     }
+    if (!is_static) arp_daemon_kick();
 }
 
 static void arp_table_learn_for_l2(uint8_t ifindex, uint32_t ip, const uint8_t mac[MAC_ADDR_LEN], bool confirmed, bool allow_create) {
@@ -169,6 +177,7 @@ static void arp_table_learn_for_l2(uint8_t ifindex, uint32_t ip, const uint8_t m
         e->pending_len = 0;
         e->pending_bytes = 0;
     }
+    arp_daemon_kick();
 }
 
 bool arp_table_get_for_l2(uint8_t ifindex, uint32_t ip, uint8_t mac_out[MAC_ADDR_LEN]){
@@ -343,6 +352,7 @@ bool arp_send_or_queue_on(uint8_t ifindex, uint32_t ip, netpkt_t* pkt) {
         e->probes_sent++;
         arp_send_request_on(ifindex, pick_spa_for_l2(ifindex, ip), ip);
     }
+    arp_daemon_kick();
 
     return true;
 }
@@ -408,6 +418,7 @@ bool arp_dad_ipv4_on(uint8_t ifindex, uint32_t ip) {
         t->announce_ip = ip;
         t->announce_left = 1;
         t->announce_timer_ms = ARP_ANNOUNCE_INTERVAL_MS;
+        arp_daemon_kick();
     }
     return true;
 }
@@ -516,14 +527,63 @@ void arp_input(uint8_t ifindex, const uint8_t src_mac[MAC_ADDR_LEN], netpkt_t* p
 }
 
 
-int arp_daemon_entry(int argc, char* argv[]){
+static bool arp_has_timed_work(void) {
+    for (uint8_t ifindex = 1; ifindex <= MAX_L2_INTERFACES; ifindex++) {
+        l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
+        arp_table_t* t = l2 ? (arp_table_t*)l2->arp_table : NULL;
+        if (!t) continue;
+        if (t->announce_left) return true;
+
+        for (int i = 0; i < (int)N_ARR(t->entries); i++) {
+            arp_entry_t* e = &t->entries[i];
+            if (e->state != ARP_STATE_UNUSED && !e->static_entry) return true;
+        }
+    }
+    return false;
+}
+
+static int arp_daemon_entry(int argc, char* argv[]){
     (void)argc; (void)argv;
-    const uint32_t tick_ms = 1000;
-    while (1) {
+
+    irq_flags_t irq = irq_save_disable();
+    g_arp_daemon_pending = 0;
+    g_arp_daemon_running = 1;
+    irq_restore(irq);
+
+    uint32_t last_ms = (uint32_t)get_time();
+    while (arp_has_timed_work()) {
+        msleep(1000);
+        uint32_t now_ms = (uint32_t)get_time();
+        uint32_t elapsed_ms = now_ms - last_ms;
+        last_ms = now_ms;
         for (uint8_t ifindex = 1; ifindex <= MAX_L2_INTERFACES; ifindex++) {
             l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-            if (l2 && l2->arp_table) arp_table_tick_for_l2(ifindex, tick_ms);
+            if (!l2 || !l2->arp_table) continue;
+            arp_table_tick_for_l2(ifindex, elapsed_ms);
         }
-        msleep(tick_ms);
+    }
+
+    irq = irq_save_disable();
+    g_arp_daemon_running = 0;
+    irq_restore(irq);
+    arp_daemon_kick();
+    return 0;
+}
+
+static void arp_daemon_kick(void) {
+    if (!arp_has_timed_work()) return;
+
+    irq_flags_t irq = irq_save_disable();
+    if (g_arp_daemon_running || g_arp_daemon_pending) {
+        irq_restore(irq);
+        return;
+    }
+    g_arp_daemon_pending = 1;
+    irq_restore(irq);
+
+    if (!create_kernel_process("arp_daemon", arp_daemon_entry, 0, 0)) {
+        irq = irq_save_disable();
+        g_arp_daemon_pending = 0;
+        irq_restore(irq);
     }
 }

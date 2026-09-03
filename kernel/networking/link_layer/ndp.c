@@ -5,6 +5,7 @@
 #include "std/memory.h"
 #include "std/string.h"
 #include "networking/interface_manager.h"
+#include "networking/application_layer/dhcpv6_daemon.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/internet_layer/ipv6_route.h"
 #include "networking/internet_layer/mld.h"
@@ -12,6 +13,8 @@
 #include "syscalls/syscalls.h"
 #include "networking/network.h"
 #include "process/scheduler.h"
+#include "kernel_processes/kprocess_loader.h"
+#include "exceptions/irq.h"
 #include "math/rng.h"
 #include "random/random.h"
 
@@ -32,7 +35,9 @@ typedef struct {
     uint32_t reachable_time_ms;
     uint32_t retrans_timer_ms;
     uint32_t reachable_recalc_ms;
+    uint32_t rs_timer_ms;
     uint8_t router_rr;
+    uint8_t rs_tries;
 } ndp_table_impl_t;
 
 #define NDP_DEFAULT_REACHABLE_TIME_MS 30000u
@@ -97,8 +102,8 @@ typedef struct __attribute__((packed)) {
     uint32_t mtu;
 } ndp_opt_mtu_t;
 
-static uint8_t g_rs_tries[MAX_L2_INTERFACES];
-static uint32_t g_rs_timer_ms[MAX_L2_INTERFACES];
+static volatile uint8_t g_ndp_daemon_running;
+static volatile uint8_t g_ndp_daemon_pending;
 
 static bool ndp_read_lladdr_option(netpkt_t * pkt, uint32_t off, uint32_t len, uint8_t type, uint8_t mac[6], bool* found) {
     if (!pkt || !found) return false;
@@ -331,7 +336,6 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
         if (!v6->ra_autonomous) {
             if (m) {
                 v6->dhcpv6_stateless = 0;
-                v6->dhcpv6_stateless_done = 0;
 
                 if (v6->cfg != IPV6_CFG_DHCPV6 || ipv6_is_placeholder_gua(v6->ip)) {
                     (void)l3_ipv6_update(v6->l3_id, (const uint8_t[16]){0}, 0, default_router, IPV6_CFG_DHCPV6, v6->kind);
@@ -339,14 +343,20 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
                     (void)l3_ipv6_update(v6->l3_id, v6->ip, v6->prefix_len, default_router, IPV6_CFG_DHCPV6, v6->kind);
                 }
             } else {
-                v6->dhcpv6_stateless = o ? 1 : 0;
-                v6->dhcpv6_stateless_done = 0;
+                uint8_t stateless = o ? 1 : 0;
+                if (v6->dhcpv6_stateless != stateless) {
+                    v6->dhcpv6_stateless = stateless;
+                    if (stateless) v6->dhcpv6_stateless_done = 0;
+                }
             }
 
             continue;
         }
-        v6->dhcpv6_stateless = o ? 1 : 0;
-        v6->dhcpv6_stateless_done = 0;
+        uint8_t stateless = o ? 1 : 0;
+        if (v6->dhcpv6_stateless != stateless) {
+            v6->dhcpv6_stateless = stateless;
+            if (stateless) v6->dhcpv6_stateless_done = 0;
+        }
 
         ipv6_cfg_t ra_cfg = o ? IPV6_CFG_STATELESS : IPV6_CFG_SLAAC;
         if (v6->cfg != ra_cfg) {
@@ -378,6 +388,7 @@ static void apply_ra_policy(uint32_t now_ms, l2_interface_t* l2) {
         v6->timestamp_created = now_ms;
         memcpy(v6->interface_id, v6->ip + 8, 8);
     }
+    dhcpv6_daemon_kick();
 }
 
 static void ndp_on_ra(uint8_t ifindex, const uint8_t prefix[16], uint8_t prefix_len, uint32_t valid_lft, uint32_t preferred_lft, bool autonomous, uint8_t ra_flags) {
@@ -556,6 +567,7 @@ void ndp_table_put_for_l2(uint8_t ifindex, const uint8_t ip[16], const uint8_t m
     e->probes_sent = 0;
 
     ndp_flush_pending(ifindex, e);
+    if (!is_static) ndp_daemon_kick();
 }
 
 bool ndp_table_get_for_l2(uint8_t ifindex, const uint8_t ip[16], uint8_t mac_out[6]) {
@@ -574,6 +586,7 @@ bool ndp_table_get_for_l2(uint8_t ifindex, const uint8_t ip[16], uint8_t mac_out
         if (e->state == NDP_STATE_STALE) {
             e->state = NDP_STATE_DELAY;
             e->timer_ms = NDP_DELAY_FIRST_PROBE_TIME_MS;
+            ndp_daemon_kick();
         }
         return true;
     }
@@ -617,8 +630,7 @@ static bool ndp_send_na_on(uint8_t ifindex, const uint8_t dst_ip[16], const uint
     if (!ipv6_is_multicast(dst_ip) && !dst_mac_in) return false;
 
     uint32_t plen = (uint32_t)(sizeof(icmpv6_na_t) + sizeof(icmpv6_opt_lladdr_t));
-    uintptr_t buf = (uintptr_t)zalloc(plen ? plen : 1u);
-    if (!buf) return false;
+    uint8_t buf[sizeof(icmpv6_na_t) + sizeof(icmpv6_opt_lladdr_t)] = {0};
 
     icmpv6_na_t* na = (icmpv6_na_t*)buf;
     na->hdr.type = 136;
@@ -637,16 +649,13 @@ static bool ndp_send_na_on(uint8_t ifindex, const uint8_t dst_ip[16], const uint
     opt->length = 1;
     mac_copy(opt->mac, my_mac);
 
-    na->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, (const uint8_t*)buf, plen));
+    na->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, buf, plen));
 
     uint8_t dst_mac[6];
     if (ipv6_is_multicast(dst_ip)) ipv6_multicast_mac(dst_ip, dst_mac);
     else mac_copy(dst_mac, dst_mac_in);
 
-    bool ok = icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, (const void*)buf, plen, 255);
-
-    release((void*)buf);
-    return ok;
+    return icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, buf, plen, 255);
 }
 
 static void ndp_send_ns_on(uint8_t ifindex, const uint8_t target_ip[16], const uint8_t src_ip[16], const uint8_t unicast_mac[6]) {
@@ -655,8 +664,7 @@ static void ndp_send_ns_on(uint8_t ifindex, const uint8_t target_ip[16], const u
     if (!dad && !mac) return;
 
     uint32_t plen = (uint32_t)sizeof(icmpv6_ns_t) + (mac ? (uint32_t)sizeof(icmpv6_opt_lladdr_t) : 0u);
-    uintptr_t buf = (uintptr_t)zalloc(plen ? plen : 1u);
-    if (!buf) return;
+    uint8_t buf[sizeof(icmpv6_ns_t) + sizeof(icmpv6_opt_lladdr_t)] = {0};
 
     icmpv6_ns_t* ns = (icmpv6_ns_t*)buf;
     ns->hdr.type = 135;
@@ -677,14 +685,13 @@ static void ndp_send_ns_on(uint8_t ifindex, const uint8_t target_ip[16], const u
     if (unicast_mac) ipv6_cpy(dst_ip, target_ip);
     else ipv6_make_multicast(2, IPV6_MCAST_SOLICITED_NODE, target_ip, dst_ip);
 
-    ns->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, (const uint8_t*)buf, plen));
+    ns->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, buf, plen));
 
     uint8_t dst_mac[6];
     if (unicast_mac) mac_copy(dst_mac, unicast_mac);
     else ipv6_multicast_mac(dst_ip, dst_mac);
 
-    icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, (const void*)buf, plen, 255);
-    release((void*)buf);
+    icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, buf, plen, 255);
 }
 
 static void ndp_send_rs_on(uint8_t ifindex) {
@@ -715,8 +722,7 @@ static void ndp_send_rs_on(uint8_t ifindex) {
 
     const uint8_t* mac = ipv6_is_unspecified(src_ip) ? NULL : network_get_mac(ifindex);
     uint32_t plen = (uint32_t)sizeof(icmpv6_rs_t) + (mac ? (uint32_t)sizeof(icmpv6_opt_lladdr_t) : 0u);
-    uintptr_t buf = (uintptr_t)zalloc(plen ? plen : 1u);
-    if (!buf) return;
+    uint8_t buf[sizeof(icmpv6_rs_t) + sizeof(icmpv6_opt_lladdr_t)] = {0};
 
     icmpv6_rs_t* rs = (icmpv6_rs_t*)buf;
     rs->hdr.type = 133;
@@ -731,13 +737,12 @@ static void ndp_send_rs_on(uint8_t ifindex) {
         mac_copy(opt->mac, mac);
     }
 
-    rs->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, (const uint8_t*)buf, plen));
+    rs->hdr.checksum = bswap16(checksum16_pipv6(src_ip, dst_ip, PROTO_ICMPV6, buf, plen));
 
     uint8_t dst_mac[6];
     ipv6_multicast_mac(dst_ip, dst_mac);
 
-    icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, (const void*)buf, plen, 255);
-    release((void*)buf);
+    icmpv6_send_on_l2(ifindex, dst_ip, src_ip, dst_mac, buf, plen, 255);
 }
 
 static void ndp_send_probe(uint8_t ifindex, ndp_entry_t* e) {
@@ -940,6 +945,7 @@ bool ndp_send_or_queue_on(uint8_t ifindex, const uint8_t next_hop[16], netpkt_t*
         e->probes_sent++;
         ndp_send_probe(ifindex, e);
     }
+    ndp_daemon_kick();
 
     return true;
 }
@@ -962,6 +968,7 @@ bool ndp_request_dad_on(uint8_t ifindex, const uint8_t ip[16]) {
         v6->dad_timer_ms = 0;
         v6->dad_probes_sent = 0;
         v6->dad_requested = 1;
+        ndp_daemon_kick();
 
         return true;
     }
@@ -1194,8 +1201,8 @@ void ndp_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
         uint32_t reachable_time = bswap32(ra.reachable_time);
         uint32_t retrans_timer = bswap32(ra.retrans_timer);
 
-        uint32_t opt_off = sizeof(icmpv6_ra_t);
-        uint32_t opt_len = icmp_len - sizeof(icmpv6_ra_t);
+        uint32_t opt_off = (uint32_t)sizeof(icmpv6_ra_t);
+        uint32_t opt_len = icmp_len - (uint32_t)sizeof(icmpv6_ra_t);
         uint8_t slla[6];
         bool has_slla = false;
         if (!ndp_read_lladdr_option(pkt, opt_off, opt_len, NDP_OPT_SOURCE_LLADDR, slla, &has_slla)) return;
@@ -1295,9 +1302,8 @@ void ndp_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
         }
         if (retrans_timer) t->retrans_timer_ms = retrans_timer;
 
-        uint8_t rs_index = ifx - 1;
-        g_rs_tries[rs_index] = 3;
-        g_rs_timer_ms[rs_index] = 0;
+        t->rs_tries = 3;
+        t->rs_timer_ms = 0;
 
         while (opt_len >= 2) {
             uint8_t opt_head[2];
@@ -1367,51 +1373,84 @@ void ndp_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
             opt_len -= opt_size;
         }
 
+        ndp_daemon_kick();
         return;
     }
 }
 
-int ndp_daemon_entry(int argc, char* argv[]) {
+static bool ndp_has_timed_work(void) {
+    uint8_t n = l2_interface_count();
+    for (uint8_t i = 0; i < n; i++) {
+        l2_interface_t* l2 = l2_interface_at(i);
+        if (!l2 || !l2->is_up || !l2->nd_table) continue;
+
+        ndp_table_impl_t* t = (ndp_table_impl_t*)l2->nd_table;
+        for (int r = 0; r < NDP_DEFAULT_ROUTER_MAX; r++) if (t->routers[r].used && t->routers[r].lifetime_ms) return true;
+        for (int e = 0; e < NDP_TABLE_MAX; e++) {
+            ndp_entry_t* entry = &t->entries[e];
+            if (entry->state != NDP_STATE_UNUSED && !entry->static_entry && entry->ttl_ms) return true;
+        }
+
+        bool has_lla_ok = false;
+        for (int s = 0; s < MAX_IPV6_PER_INTERFACE; s++) {
+            l3_ipv6_interface_t* v6 = l2->l3_v6[s];
+            if (!v6 || v6->cfg == IPV6_CFG_DISABLE) continue;
+
+            if (v6->dad_requested || v6->dad_state == IPV6_DAD_IN_PROGRESS || v6->dad_state == IPV6_DAD_FAILED) return true;
+            if (v6->dad_state == IPV6_DAD_OK && ipv6_is_linklocal(v6->ip)) has_lla_ok = true;
+
+            if (v6->ra_last_update_ms) {
+                if (v6->valid_lifetime != 0xFFFFFFFFu) return true;
+                if (v6->preferred_lifetime && v6->preferred_lifetime != 0xFFFFFFFFu) return true;
+            }
+        }
+
+        if (t && has_lla_ok && t->rs_tries < 3) return true;
+    }
+
+    return false;
+}
+
+static int ndp_daemon_entry(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
 
+    irq_flags_t irq = irq_save_disable();
+    g_ndp_daemon_pending = 0;
+    g_ndp_daemon_running = 1;
+    irq_restore(irq);
+
     rng_init_random(&g_rng);
+    uint8_t init_n = l2_interface_count();
+    for (uint8_t i = 0; i < init_n; i++) {
+        l2_interface_t* l2 = l2_interface_at(i);
+        ndp_table_impl_t* t = l2 && l2->is_up ? (ndp_table_impl_t*)l2->nd_table : NULL;
+        if (t && t->base_reachable_time_ms) {
+            uint32_t low = t->base_reachable_time_ms / 2u;
+            uint32_t high = t->base_reachable_time_ms + t->base_reachable_time_ms / 2u;
+            t->reachable_time_ms = rng_between32(&g_rng, low, high + 1u);
+            if (!t->reachable_time_ms) t->reachable_time_ms = 1;
+            t->reachable_recalc_ms = NDP_REACHABLE_RECALC_MS;
+        }
+    }
 
     const uint32_t tick_ms = 1000;
+    uint32_t last_ms = (uint32_t)get_time();
 
-    while (1) {
+    while (ndp_has_timed_work()) {
+        uint32_t now_ms = (uint32_t)get_time();
+        uint32_t elapsed_ms = now_ms - last_ms;
+        last_ms = now_ms;
         uint8_t n = l2_interface_count();
-        for (uint8_t i = 0; i < n; i++) {
-            l2_interface_t* l2 = l2_interface_at(i);
-            if (l2 && l2->is_up) ndp_table_tick_for_l2(l2->ifindex, tick_ms);
-        }
-
-        uint32_t now_ms = get_time();
 
         for (uint8_t i = 0; i < n; i++) {
             l2_interface_t* l2 = l2_interface_at(i);
-            if (!l2) continue;
+            if (!l2 || !l2->is_up || !l2->nd_table) continue;
 
-            if (!l2->is_up) {
-                if (l2->ifindex && l2->ifindex <= MAX_L2_INTERFACES) {
-                    g_rs_tries[l2->ifindex - 1] = 0;
-                    g_rs_timer_ms[l2->ifindex - 1] = 0;
-                }
-                continue;
-            }
+            if (elapsed_ms) ndp_table_tick_for_l2(l2->ifindex, elapsed_ms);
 
-            int is_v6_local = 0;
-
-            for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
-                l3_ipv6_interface_t* v6 = l2->l3_v6[i];
-                if (v6 && v6->is_localhost) {
-                    is_v6_local = 1;
-                    break;
-                }
-            }
-
-            if (!is_v6_local) apply_ra_policy(now_ms, l2);
-            int has_lla_ok = 0;
+            bool has_lla_ok = false;
+            bool lla_became_ready = false;
             ndp_table_impl_t* ndp = (ndp_table_impl_t*)l2->nd_table;
             uint32_t dad_retrans_ms = ndp ? ndp->retrans_timer_ms : NDP_DEFAULT_RETRANS_TIMER_MS;
 
@@ -1427,20 +1466,21 @@ int ndp_daemon_entry(int argc, char* argv[]) {
                 }
 
                 if (v6->dad_requested && v6->dad_state == IPV6_DAD_NONE) {
-                    if (ipv6_is_unspecified(v6->ip) || ipv6_is_multicast(v6->ip) || ipv6_is_placeholder_gua(v6->ip)) {
+                    if (ipv6_is_placeholder_gua(v6->ip)) {
                         v6->dad_requested = 0;
                         continue;
                     }
 
                     v6->dad_requested = 0;
                     v6->dad_state = IPV6_DAD_IN_PROGRESS;
-                    v6->dad_probes_sent = 0;
+                    v6->dad_probes_sent = 1;
                     v6->dad_timer_ms = 0;
-
+                    ndp_send_ns_on(l2->ifindex, v6->ip, (const uint8_t[16]){0}, NULL);
                 }
 
-                if (v6->dad_state == IPV6_DAD_IN_PROGRESS) {
-                    v6->dad_timer_ms += tick_ms;
+                if (v6->dad_state == IPV6_DAD_IN_PROGRESS && elapsed_ms) {
+                    if (UINT32_MAX - v6->dad_timer_ms < elapsed_ms) v6->dad_timer_ms = UINT32_MAX;
+                    else v6->dad_timer_ms += elapsed_ms;
 
                     if (v6->dad_probes_sent < NDP_MAX_PROBES) {
                         if (v6->dad_timer_ms >= dad_retrans_ms) {
@@ -1449,49 +1489,88 @@ int ndp_daemon_entry(int argc, char* argv[]) {
                             ndp_send_ns_on(l2->ifindex, v6->ip, (const uint8_t[16]){0}, NULL);
                             v6->dad_probes_sent++;
                         }
-                    } else {
-                        if (v6->dad_timer_ms >= dad_retrans_ms) {
-                            v6->dad_timer_ms = 0;
-                            v6->dad_state = IPV6_DAD_OK;
+                    } else if (v6->dad_timer_ms >= dad_retrans_ms) {
+                        v6->dad_timer_ms = 0;
+                        v6->dad_state = IPV6_DAD_OK;
+                        lla_became_ready |= ipv6_is_linklocal(v6->ip);
 
-                            uint8_t all_nodes[16];
-                            ipv6_make_multicast(2, IPV6_MCAST_ALL_NODES, (const uint8_t[16]){0}, all_nodes);
+                        uint8_t all_nodes[16];
+                        ipv6_make_multicast(2, IPV6_MCAST_ALL_NODES, NULL, all_nodes);
 
-                            const uint8_t* my_mac = network_get_mac(l2->ifindex);
-                            if (my_mac) (void)ndp_send_na_on(l2->ifindex, all_nodes, v6->ip, v6->ip, 0, my_mac, 0);
-                            if (ipv6_is_linklocal(v6->ip)) mld_resend_memberships(l2->ifindex);
-                        }
+                        const uint8_t* my_mac = network_get_mac(l2->ifindex);
+                        if (my_mac) (void)ndp_send_na_on(l2->ifindex, all_nodes, v6->ip, v6->ip, 0, my_mac, 0);
+                        if (ipv6_is_linklocal(v6->ip)) mld_resend_memberships(l2->ifindex);
                     }
                 }
 
-                if (v6->dad_state == IPV6_DAD_OK && ipv6_is_linklocal(v6->ip)) has_lla_ok = 1;
+                if (v6->dad_state == IPV6_DAD_OK && ipv6_is_linklocal(v6->ip)) has_lla_ok = true;
                 handle_lifetimes(now_ms, v6);
             }
 
-            if (!has_lla_ok && l2->ifindex && l2->ifindex <= MAX_L2_INTERFACES) {
-                g_rs_tries[l2->ifindex - 1] = 0;
-                g_rs_timer_ms[l2->ifindex - 1] = 0;
-            }
-
-            if (has_lla_ok && l2->ifindex && l2->ifindex <= MAX_L2_INTERFACES) {
-                uint8_t idx = (uint8_t)(l2->ifindex - 1);
-
-                if (g_rs_tries[idx] == 0) {
+            if (lla_became_ready) apply_ra_policy(now_ms, l2);
+            if (ndp) {
+                if (!has_lla_ok) {
+                    ndp->rs_tries = 0;
+                    ndp->rs_timer_ms = 0;
+                } else if (ndp->rs_tries == 0) {
                     ndp_send_rs_on(l2->ifindex);
-                    g_rs_tries[idx] = 1;
-                    g_rs_timer_ms[idx] = 0;
-                } else if (g_rs_tries[idx] < 3) {
-                    g_rs_timer_ms[idx] += tick_ms;
+                    ndp->rs_tries = 1;
+                    ndp->rs_timer_ms = 0;
+                } else if (ndp->rs_tries < 3 && elapsed_ms) {
+                    if (UINT32_MAX - ndp->rs_timer_ms < elapsed_ms) ndp->rs_timer_ms = UINT32_MAX;
+                    else ndp->rs_timer_ms += elapsed_ms;
 
-                    if (g_rs_timer_ms[idx] >= 4000) {
-                        g_rs_timer_ms[idx] = 0;
+                    if (ndp->rs_timer_ms >= 4000) {
+                        ndp->rs_timer_ms = 0;
                         ndp_send_rs_on(l2->ifindex);
-                        g_rs_tries[idx]++;
+                        ndp->rs_tries++;
                     }
                 }
             }
         }
 
+        if (!ndp_has_timed_work()) break;
         msleep(tick_ms);
     }
+
+    irq = irq_save_disable();
+    g_ndp_daemon_running = 0;
+    irq_restore(irq);
+    ndp_daemon_kick();
+    return 0;
+}
+
+void ndp_daemon_kick(void) {
+    irq_flags_t irq = irq_save_disable();
+    if (g_ndp_daemon_running || g_ndp_daemon_pending) {
+        irq_restore(irq);
+        return;
+    }
+    irq_restore(irq);
+
+    if (!ndp_has_timed_work()) return;
+
+    irq = irq_save_disable();
+    if (g_ndp_daemon_running || g_ndp_daemon_pending) {
+        irq_restore(irq);
+        return;
+    }
+    g_ndp_daemon_pending = 1;
+    irq_restore(irq);
+
+    if (!create_kernel_process("ndp_daemon", ndp_daemon_entry, 0, 0)) {
+        irq = irq_save_disable();
+        g_ndp_daemon_pending = 0;
+        irq_restore(irq);
+    }
+}
+
+void ndp_link_state_changed(uint8_t ifindex, bool up) {
+    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
+    ndp_table_impl_t* t = l2 ? (ndp_table_impl_t*)l2->nd_table : NULL;
+    if (!t) return;
+
+    t->rs_tries = 0;
+    t->rs_timer_ms = 0;
+    if (up) ndp_daemon_kick();
 }
