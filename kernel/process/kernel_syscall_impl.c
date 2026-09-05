@@ -211,7 +211,8 @@ bool handle_signal(signal_types type, signal_handler handler){
 }
 
 void msleep(uint64_t time){
-    sleep_thread(time);
+    //print(">>>>>> Attempt to sleep from %i",get_current_proc()->id);
+    // sleep_thread(time);
 }
 
 void __attribute__((noreturn)) halt(int32_t exit_code){

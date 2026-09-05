@@ -5,7 +5,6 @@
 #include "process/stack_manager.h"
 
 extern uptr job_kpec;
-extern uptr job_ksp;
 extern void job_save_kernel();
 extern void save_kstack(uptr stack);
 

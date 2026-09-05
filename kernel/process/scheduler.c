@@ -176,7 +176,6 @@ void switch_proc(ProcSwitchReason reason) {
     mmu_swap_ttbr(current_proc->mm.ttbr0 ? &current_proc->mm : 0);
     if (prev && prev != current_proc && prev != idle_proc && process_can_reset(prev)) reset_process(prev);
 
-    job_ksp = (uptr)ksp;
     process_restore();
 }
 

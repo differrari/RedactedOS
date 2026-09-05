@@ -726,7 +726,6 @@ void sync_el0_handler_c(){
         mmu_flush_all();
         mmu_flush_icache();
     }
-    job_ksp = (uptr)ksp;
     process_restore();
 }
 

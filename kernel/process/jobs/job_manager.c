@@ -19,7 +19,6 @@ job_id_t job_id_counter = 1;
 #endif
 
 uptr job_kpec = 0;
-uptr job_ksp = 0;
 sizedptr job_kstack = {};
 extern int syscall_depth;
 extern void job_restore_kernel();
