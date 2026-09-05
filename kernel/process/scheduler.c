@@ -25,7 +25,7 @@
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
 
-void *proc_mem_page;
+void *proc_mem_page = 0;
 
 static inline void* proc_palloc(size_t s){
     return palloc(s, MEM_PRIV_KERNEL, MEM_RW, true);

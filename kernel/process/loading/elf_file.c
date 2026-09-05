@@ -65,7 +65,7 @@ void get_elf_debug_info(process_t* proc, void* file, size_t filesize){
     if (!file) return;
     if (filesize < sizeof(elf_header)) return;
 
-     elf_header *header = (elf_header*)file;
+    elf_header *header = (elf_header*)file;
 
     if (memcmp(header->magic, "\x7f" "ELF", 4) != 0) return;
 

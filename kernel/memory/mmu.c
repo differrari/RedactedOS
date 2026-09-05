@@ -380,8 +380,6 @@ uint64_t *mmu_alloc(){
     return p;
 }
 
-extern void mmu_start(uint64_t *ttbr1, uint64_t *ttbr0);
-
 uintptr_t heap_end;
 
 void mmu_init() {
@@ -822,6 +820,7 @@ void mmu_swap_kttbr(uptr *ttbr){
     uptr ttbr1_pa = pt_va_to_pa(ttbr ?: kernel_ttbr1);
     asm volatile("dsb ish\n\tisb" ::: "memory");
     asm volatile("msr ttbr1_el1, %0" :: "r"(ttbr1_pa));
+    asm volatile("dsb ish\n\tisb" ::: "memory");
 }
 
 void mmu_swap_ttbr(mm_struct *mm){

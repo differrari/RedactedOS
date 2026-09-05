@@ -10,7 +10,7 @@
 
 job_id_t job_id_counter = 1;
 
-#define JOB_DEBUG
+// #define JOB_DEBUG
 
 #ifdef JOB_DEBUG
 #define job_print(...) print(__VA_ARGS__)
@@ -38,7 +38,7 @@ typedef struct {
 
 linked_list_t *job_list;
 
-void *job_page;
+void *job_page = 0;
 
 void* job_man_alloc(size_t size){
     return allocate(job_page, size, page_alloc);
@@ -46,6 +46,7 @@ void* job_man_alloc(size_t size){
 
 job_state_t* job_alloc(){
     if (!job_page) job_page = page_alloc(PAGE_SIZE);
+    print(">>>>>>Linkedin %llx",job_page);
     if (!job_list) job_list = linked_list_create_alloc(job_man_alloc, release);
     job_state_t *job = job_man_alloc(sizeof(job_state_t));
     job->id = job_id_counter++;
