@@ -15,6 +15,8 @@
 #include "memory/mmu.h"
 #include "memory/addr.h"
 #include "process/signals/signals.h"
+#include "jobs/job_manager.h"
+
 extern page_index *p_index;
 
 void* page_alloc(size_t size){
@@ -206,4 +208,28 @@ bool send_signal(signal_types type, u16 proc_id){
 
 bool handle_signal(signal_types type, signal_handler handler){
     return register_signal_handler(get_current_proc(), type, handler);
+}
+
+void msleep(uint64_t time){
+    sleep_thread(time);
+}
+
+void __attribute__((noreturn)) halt(int32_t exit_code){
+    stop_current_process(exit_code);
+    kernel_process_return_trampoline(exit_code);
+}
+
+void __attribute__((noreturn)) halt_thread(int32_t exit_code){
+    thread_t* current_thread = get_current_thread();
+    if (current_thread->job_id){
+        fulfill_job(current_thread->job_id, current_thread->PROC_X0, current_thread);
+    }
+    if (current_thread->tid == 1)
+        stop_current_process(current_thread->PROC_X0);
+    else {
+        current_thread->state = STOPPED;
+        unmap_stack(get_current_proc(), current_thread->stack_info);
+        switch_proc(YIELD);//TODO: proper cleanup
+    }
+    kernel_process_return_trampoline(exit_code);
 }

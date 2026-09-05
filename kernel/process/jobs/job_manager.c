@@ -46,7 +46,6 @@ void* job_man_alloc(size_t size){
 
 job_state_t* job_alloc(){
     if (!job_page) job_page = page_alloc(PAGE_SIZE);
-    print(">>>>>>Linkedin %llx",job_page);
     if (!job_list) job_list = linked_list_create_alloc(job_man_alloc, release);
     job_state_t *job = job_man_alloc(sizeof(job_state_t));
     job->id = job_id_counter++;

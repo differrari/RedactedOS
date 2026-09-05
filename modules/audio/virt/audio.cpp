@@ -65,7 +65,7 @@ static mixer_line mixin[MIXER_INPUTS];
 
 static void mixer_reset_line(int8_t lineId){
     if (lineId < 0 || lineId >= MIXER_INPUTS) return;
-    memset(mixin + lineId, 0, sizeof(mixer_line));
+    memset(&mixin[lineId], 0, sizeof(mixer_line));
     mixin[lineId].life = AUDIO_OFF;
 }
 

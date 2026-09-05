@@ -77,8 +77,8 @@ struct thread_t {
     u16 tid;
     process_state state;
     u64 wake_at_msec;
-    thread_t *next;
     job_id_t job_id;
+    thread_t *next;
 };
 
 struct process_t {
