@@ -3,19 +3,20 @@
 #include "module_loader.h"
 #include "console/kio.h"
 #include "memory/memory.h"
+#include "alloc/alloc.h"
 
 chunk_array_t *fs_permissions;
 
 u64 register_fs_id(){
-    if (!fs_permissions) fs_permissions = chunk_array_create(sizeof(uptr), 256);
+    if (!fs_permissions) fs_permissions = chunk_array_create(sizeof(module_root), 256);
     module_root *map = zalloc(sizeof(module_root));
     map->map = hash_map_create(64);
-    return chunk_array_push(fs_permissions, map);
+    return chunk_array_push(fs_permissions, map)+1;
 }
 
 module_root* get_fs_for_id(u64 id){
     if (!fs_permissions) return 0;
-    return (module_root*)chunk_array_get(fs_permissions, id);
+    return (module_root*)chunk_array_get(fs_permissions, id-1);
 }
 
 module_root kernel_modules = {};
@@ -71,5 +72,8 @@ string resolve_isolated_path(const char *path, u64 id, module_root *resolved, bo
 
 void destroy_fs(u64 fsid){
     if (!fsid) return;
-    destroy_root_module(get_fs_for_id(fsid));
+    module_root *root = get_fs_for_id(fsid);
+    if (!root) return;
+    destroy_root_module(root);
+    memset(root,0,sizeof(module_root));
 }
