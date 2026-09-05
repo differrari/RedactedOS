@@ -348,7 +348,7 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         if (l2) {
             for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
                 l3_ipv6_interface_t* v6 = l2->l3_v6[i];
-                if (!ipv6_l3_is_active(v6)) continue;
+                if (!ipv6_l3_is_active(v6) || ipv6_is_placeholder_gua(v6->ip)) continue;
                 if (ipv6_cmp(v6->ip, ip6->dst) == 0) {
                     dst_is_local = true;
                     break;
@@ -562,7 +562,7 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         int ccount = 0;
         for (int x = 0; x < MAX_IPV6_PER_INTERFACE; x++) {
             l3_ipv6_interface_t* v6 = l2->l3_v6[x];
-            if (!ipv6_l3_is_active(v6)) continue;
+            if (!ipv6_l3_is_active(v6) || ipv6_is_placeholder_gua(v6->ip)) continue;
             cand[ccount++] = v6;
         }
         if (ccount == 0) {
@@ -635,7 +635,7 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     int ccount = 0;
     for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
         l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-        if (!ipv6_l3_is_active(v6)) continue;
+        if (!ipv6_l3_is_active(v6) || ipv6_is_placeholder_gua(v6->ip)) continue;
         cand[ccount++] = v6;
     }
     if (ccount == 0) return;

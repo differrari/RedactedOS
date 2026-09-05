@@ -816,8 +816,10 @@ bool l3_ipv6_update(l3_id_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
         if (!ipv6_is_unspecified(ip)){
             if (ipv6_is_multicast(ip)) return false;
             if (ipv6_is_loopback(ip) && (l2->kind != NET_IFK_LOCALHOST)) return false;
-            if (ipv6_cmp(ip,n->ip)!=0 && v6_ip_exists_anywhere(ip)) return false;
-            if (v6_overlap_intra_l2(l2->ifindex, ip, prefix_len, n)) return false;
+            if (!ipv6_is_placeholder_gua(ip)) {
+                if (ipv6_cmp(ip,n->ip)!=0 && v6_ip_exists_anywhere(ip)) return false;
+                if (v6_overlap_intra_l2(l2->ifindex, ip, prefix_len, n)) return false;
+            }
         }
     } else {
         return false;
@@ -867,7 +869,7 @@ bool l3_ipv6_update(l3_id_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
         if (n->is_localhost) {
             n->dad_requested = 0;
             n->dad_state = IPV6_DAD_OK;
-        } else if (ipv6_is_unspecified(n->ip) || ipv6_is_multicast(n->ip) || n->cfg == IPV6_CFG_DISABLE) {
+        } else if (ipv6_is_unspecified(n->ip) || ipv6_is_multicast(n->ip) || ipv6_is_placeholder_gua(n->ip) || n->cfg == IPV6_CFG_DISABLE) {
             n->dad_requested = 0;
         } else {
             n->dad_requested = 1;

@@ -227,7 +227,7 @@ bool ipv6_rt_lookup_in(const ipv6_rt_table_t* t, const uint8_t dst[16], uint8_t 
 void ipv6_rt_ensure_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t plen, const uint8_t gw[16], uint16_t base_metric) {
     if (!t) return;
 
-    if (ip && plen &&!ipv6_is_unspecified(ip)) {
+    if (ip && plen && !ipv6_is_unspecified(ip) && !ipv6_is_placeholder_gua(ip)) {
         uint8_t net[16];
         ipv6_prefix_network(ip, plen, net);
         ipv6_rt_add_in(t, net, plen, (const uint8_t[16]){0}, base_metric);
@@ -244,7 +244,7 @@ void ipv6_rt_sync_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t plen,
     if (gw && !ipv6_is_unspecified(gw)) ipv6_rt_add_in(t, (const uint8_t[16]){0}, 0,gw, (uint16_t)(base_metric + 1));
     else ipv6_rt_del_in(t, (const uint8_t[16]){0}, 0);
 
-    if (ip && plen && !ipv6_is_unspecified(ip)) {
+    if (ip && plen && !ipv6_is_unspecified(ip) && !ipv6_is_placeholder_gua(ip)) {
         uint8_t net[16];
         ipv6_prefix_network(ip, plen, net);
         l3_ipv6_interface_t* owner = l3_ipv6_find_by_id(t->owner_l3_id);

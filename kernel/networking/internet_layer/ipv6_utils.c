@@ -28,7 +28,7 @@ bool ipv6_l3_is_active(l3_ipv6_interface_t *v6) {
 
 bool ipv6_l3_is_ready(l3_ipv6_interface_t *v6) {
     if (!ipv6_l3_is_active(v6)) return false;
-    if (ipv6_is_unspecified(v6->ip)) return false;
+    if (ipv6_is_unspecified(v6->ip) || ipv6_is_placeholder_gua(v6->ip)) return false;
     if (v6->dad_state != IPV6_DAD_OK) return false;
     return true;
 }
@@ -36,7 +36,7 @@ bool ipv6_l3_is_ready(l3_ipv6_interface_t *v6) {
 bool ipv6_l3_is_tcp_usable(l3_ipv6_interface_t *v6) {
     if (!ipv6_l3_is_active(v6)) return false;
     if (v6->is_localhost) return false;
-    if (ipv6_is_unspecified(v6->ip)) return false;
+    if (ipv6_is_unspecified(v6->ip) || ipv6_is_placeholder_gua(v6->ip)) return false;
     if (v6->dad_state == IPV6_DAD_FAILED) return false;
     if (!(v6->kind & IPV6_ADDRK_LINK_LOCAL) && v6->dad_state != IPV6_DAD_OK) return false;
     return true;

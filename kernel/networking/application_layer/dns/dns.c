@@ -127,7 +127,7 @@ static bool pick_dns_first_iface(l3_id_t* out_l3, net_l4_endpoint* out_primary, 
 
         for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
             l3_ipv6_interface_t* v6 = l2->l3_v6[s];
-            if (!ipv6_l3_is_active(v6)) continue;
+            if (!ipv6_l3_is_ready(v6)) continue;
             bool hp = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[0]);
             bool hq = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[1]);
             if (hp || hq){
