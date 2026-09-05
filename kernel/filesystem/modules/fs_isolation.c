@@ -71,5 +71,5 @@ string resolve_isolated_path(const char *path, u64 id, module_root *resolved, bo
 
 void destroy_fs(u64 fsid){
     if (!fsid) return;
-    //TODO: STUB
+    destroy_root_module(get_fs_for_id(fsid));
 }

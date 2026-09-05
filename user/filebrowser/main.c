@@ -39,7 +39,7 @@ system_module menu_mod = {
 
 int main(){
     menu_init();
-    load_fsmodule(&menu_mod, false);
+    // load_fsmodule(&menu_mod, false);
 
     swritef("/environment/menu", 0, 0, false);
     

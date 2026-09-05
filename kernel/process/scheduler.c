@@ -124,8 +124,6 @@ void update_sleep_timer() {
     } else virtual_timer_disable();
 }
 
-extern uptr job_ksp;
-
 void switch_proc(ProcSwitchReason reason) {
     syscall_depth = 0;
     if (proc_count == 0)
