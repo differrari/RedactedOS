@@ -49,6 +49,7 @@ bool ndp_table_get_for_l2(uint8_t ifindex, const uint8_t ip[16], uint8_t mac_out
 bool ndp_table_delete_for_l2(uint8_t ifindex, const uint8_t ip[16]);
 uint32_t ndp_table_dump_for_l2(uint8_t ifindex, ndp_entry_t* out, uint32_t out_cap);
 uint32_t ndp_default_router_lifetime_for_l2(uint8_t ifindex, const uint8_t ip[16]);
+int ndp_onlink_prefix_len_for_l2(uint8_t ifindex, const uint8_t ip[16]);//TODO move RA onlink prefix to route, NDP should only update PIO
 
 bool ndp_send_or_queue_on(uint8_t ifindex, const uint8_t next_hop[16], netpkt_t* pkt);
 

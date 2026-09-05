@@ -3,6 +3,7 @@
 #include "std/string.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/interface_manager.h"
+#include "networking/link_layer/ndp.h"
 #include "syscalls/syscalls.h"
 
 struct ipv6_rt_table {
@@ -41,7 +42,12 @@ bool ipv6_tx_plan_onlink(const ipv6_tx_plan_t* plan, const uint8_t dst[16]) {
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(plan->l3_id); 
     if (ipv6_is_loopback(dst)) return v6->is_localhost;
     if (ipv6_is_linklocal(dst) || ipv6_is_linkscope_mcast(dst) || ipv6_is_multicast(dst)) return true;
-    return v6->prefix_len && ipv6_common_prefix_len(v6->ip, dst) >= v6->prefix_len;
+    if (!(v6->ra_has && (v6->cfg & IPV6_CFG_SLAAC)) && v6->prefix_len && ipv6_common_prefix_len(v6->ip, dst) >= v6->prefix_len) return true;
+    if (v6->routing_table) {
+        uint8_t via[16] = {0};
+        if (ipv6_rt_lookup_in((const ipv6_rt_table_t*)v6->routing_table, dst, via, NULL, NULL) && ipv6_is_unspecified(via)) return true;
+    }
+    return false;
 }
 
 bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx_plan_t* out) {
@@ -197,6 +203,18 @@ bool ipv6_rt_lookup_in(const ipv6_rt_table_t* t, const uint8_t dst[16], uint8_t 
         }
     }
 
+    l3_ipv6_interface_t* owner = l3_ipv6_find_by_id(t->owner_l3_id);
+    l2_interface_t* l2 = owner ? owner->l2 : NULL;
+    if (l2 && !ipv6_is_unspecified(dst) && !ipv6_is_loopback(dst) && !ipv6_is_linklocal(dst) && !ipv6_is_multicast(dst)) {
+        int pl = ndp_onlink_prefix_len_for_l2(l2->ifindex, dst);
+        int met = l2->base_metric;
+        if (pl > best_pl || (pl == best_pl && met < best_metric)) {
+            best_pl = pl;
+            best_metric = met;
+            memset(best_gw, 0, sizeof(best_gw));
+        }
+    }
+
     if (best_pl < 0) return false;
 
     if (next_hop) ipv6_cpy(next_hop, best_gw);
@@ -229,7 +247,9 @@ void ipv6_rt_sync_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t plen,
     if (ip && plen && !ipv6_is_unspecified(ip)) {
         uint8_t net[16];
         ipv6_prefix_network(ip, plen, net);
-        ipv6_rt_add_in(t, net, plen, (const uint8_t[16]) {0}, base_metric);
+        l3_ipv6_interface_t* owner = l3_ipv6_find_by_id(t->owner_l3_id);
+        if (owner && owner->ra_has && (owner->cfg & IPV6_CFG_SLAAC)) ipv6_rt_del_in(t, net, plen);
+        else ipv6_rt_add_in(t, net, plen, (const uint8_t[16]) {0}, base_metric);
     }
 }
 
@@ -253,7 +273,7 @@ bool ipv6_rt_pick_best_l3(const uint8_t dst[16], uint8_t ifindex, l3_id_t* out_l
             if (!v6_l3_ok_for_tx(x, dst_is_ll, dst_is_loop)) continue;
 
             int pl_conn = -1;
-            if (x->prefix_len) {
+            if (!(x->ra_has && (x->cfg & IPV6_CFG_SLAAC)) && x->prefix_len) {
                 int pl = ipv6_common_prefix_len(dst, x->ip);
                 if (pl >= x->prefix_len) pl_conn = x->prefix_len;
             }

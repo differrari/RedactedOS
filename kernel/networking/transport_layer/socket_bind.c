@@ -16,7 +16,7 @@
 #define SOCKET_BIND_FLAG_REUSEADDR (1u << 0)
 #define SOCKET_BIND_FLAG_REUSEPORT (1u << 1)
 #define SOCKET_BIND_FLAG_LISTENING (1u << 2)
-
+//TODO FAR: 0x61636f6c0570630a hashmap corruption
 typedef struct socket_bind_entry {
     uint16_t port;
     uint16_t next;

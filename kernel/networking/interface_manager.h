@@ -81,7 +81,7 @@ typedef struct net_runtime_opts_v6 {
     uint32_t iaid;
 
     uint32_t lease;
-    uint32_t lease_start_time;
+    uint64_t lease_start_time;
 
     uint16_t server_id_len;
     uint8_t server_id[128];

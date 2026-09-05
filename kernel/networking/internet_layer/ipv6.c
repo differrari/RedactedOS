@@ -127,7 +127,6 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
 
     if (!ipv6_is_linklocal(dst) && !ipv6_is_multicast(dst)) {
         uint8_t via[16] = {0};
-        int route_pl = -1;
         bool have_nh = false;
 
         if (dontroute) {
@@ -139,19 +138,13 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
             have_nh = true;
         }
 
-        if (!have_nh && src_v6->routing_table && ipv6_rt_lookup_in((const ipv6_rt_table_t*)src_v6->routing_table, dst, via, &route_pl, NULL)) {
+        if (!have_nh && src_v6->routing_table && ipv6_rt_lookup_in((const ipv6_rt_table_t*)src_v6->routing_table, dst, via, NULL, NULL)) {
             if (!ipv6_is_unspecified(via)) ipv6_cpy(nh, via);
-            else if (src_v6->prefix_len && ipv6_common_prefix_len(dst, src_v6->ip) >= src_v6->prefix_len) ipv6_cpy(nh, dst);
-            else if (route_pl > 0) ipv6_cpy(nh, dst);
-            else if (!ipv6_is_unspecified(src_v6->gateway) && ipv6_is_linklocal(src_v6->gateway)) ipv6_cpy(nh, src_v6->gateway);
-            else {
-                netpkt_unref(pkt);
-                return false;
-            }
+            else ipv6_cpy(nh, dst);
             have_nh = true;
         }
 
-        if (!have_nh && src_v6->prefix_len && ipv6_common_prefix_len(dst, src_v6->ip) >= src_v6->prefix_len) have_nh = true;
+        if (!have_nh && !(src_v6->ra_has && (src_v6->cfg & IPV6_CFG_SLAAC)) && src_v6->prefix_len && ipv6_common_prefix_len(dst, src_v6->ip) >= src_v6->prefix_len) have_nh = true;
         if (!have_nh && !ipv6_is_unspecified(src_v6->gateway) && ipv6_is_linklocal(src_v6->gateway)) {
             ipv6_cpy(nh, src_v6->gateway);
             have_nh = true;

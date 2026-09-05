@@ -22,7 +22,7 @@
 #include "networking/interface_manager.h"
 #include "networking/network.h"
 #include "syscalls/syscalls.h"
-//TODO this code is a mess. cleanup
+
 typedef enum {
     DHCP_S_INIT = 0,
     DHCP_S_SELECTING,
@@ -45,9 +45,9 @@ typedef struct {
     uint32_t seen_generation;
     ipv4_cfg_t mode;
     dhcp_state_t state;
-    uint32_t t1_left_ms;
-    uint32_t t2_left_ms;
-    uint32_t lease_left_ms;
+    uint64_t t1_left_ms;
+    uint64_t t2_left_ms;
+    uint64_t lease_left_ms;
     uint32_t last_tick_ms;
     uint32_t last_xid;
     uint32_t trans_xid;
@@ -56,19 +56,27 @@ typedef struct {
     bool mac_ok;
     bool needs_inform;
     socket_handle_t sock;
-    uint32_t retry_left_ms;
+    uint64_t retry_left_ms;
+    uint32_t rx_fast_left_ms;
     uint32_t backoff_ms;
+    uint32_t force_renew_seen;
 } dhcp_if_state_t;
 
-static volatile bool g_force_renew = false;
+static volatile uint32_t g_force_renew_generation;
 static volatile uint8_t g_dhcp_running;
 static volatile uint8_t g_dhcp_pending;
 static volatile uint8_t g_dhcp_rekick;
 static dhcp_if_state_t g_if[MAX_IPV4_L3_INTERFACES];
 static int g_if_count = 0;
 
+#define DHCP_ACTIVE_TICK_MS 100
+#define DHCP_IDLE_TICK_MS 5000
+
 void dhcp_force_renew() {
-    g_force_renew = true;
+    irq_flags_t irq = irq_save_disable();
+    g_force_renew_generation++;
+    if (!g_force_renew_generation) g_force_renew_generation = 1;
+    irq_restore(irq);
     dhcp_daemon_kick();
 }
 
@@ -86,11 +94,6 @@ static uint32_t dhcp_next_backoff_ms(dhcp_if_state_t* st) {
     int64_t val = (int64_t)st->backoff_ms + signed_jitter;
     if (val < 1000) val = 1000;
     return (uint32_t)val;
-}
-
-static void dhcp_reset_backoff(dhcp_if_state_t* st) {
-    st->backoff_ms = 0;
-    st->retry_left_ms = 0;
 }
 
 static void ensure_inventory() {
@@ -128,10 +131,21 @@ static void ensure_inventory() {
             st->seen_generation = v4->generation;
             st->mode = v4->mode;
             st->needs_inform = v4->mode == IPV4_CFG_STATIC && v4->ip != 0;
+            st->force_renew_seen = g_force_renew_generation;
             st->last_tick_ms = (uint32_t)get_time();
             if (v4->mode == IPV4_CFG_DHCP && v4->ip && v4->runtime_opts_v4.lease && v4->runtime_opts_v4.lease_start_time) {
-                st->state = DHCP_S_BOUND;
-                if (v4->runtime_opts_v4.server_ip) st->server_ip_net = bswap32(v4->runtime_opts_v4.server_ip);
+                uint32_t age_ms = (uint32_t)get_time() - v4->runtime_opts_v4.lease_start_time;
+                uint64_t lease_ms = v4->runtime_opts_v4.lease == UINT32_MAX ? UINT64_MAX : (uint64_t)v4->runtime_opts_v4.lease * 1000;
+                uint64_t t1_ms = v4->runtime_opts_v4.t1 == UINT32_MAX ? UINT64_MAX : (uint64_t)v4->runtime_opts_v4.t1 * 1000;
+                uint64_t t2_ms = v4->runtime_opts_v4.t2 == UINT32_MAX ? UINT64_MAX : (uint64_t)v4->runtime_opts_v4.t2 * 1000;
+
+                if (lease_ms == UINT64_MAX || age_ms < lease_ms) {
+                    st->state = DHCP_S_BOUND;
+                    st->lease_left_ms = lease_ms == UINT64_MAX ? UINT64_MAX : lease_ms - age_ms;
+                    st->t1_left_ms = t1_ms == UINT64_MAX ? UINT64_MAX : (age_ms < t1_ms ? t1_ms - age_ms : 0);
+                    st->t2_left_ms = t2_ms == UINT64_MAX ? UINT64_MAX : (age_ms < t2_ms ? t2_ms - age_ms : 0);
+                    if (v4->runtime_opts_v4.server_ip) st->server_ip_net = bswap32(v4->runtime_opts_v4.server_ip);
+                }
             }
 
             const uint8_t* m = network_get_mac(st->ifindex);
@@ -157,6 +171,7 @@ static void ensure_inventory() {
             st->trans_xid = 0;
             st->server_ip_net = 0;
             st->retry_left_ms = 0;
+            st->rx_fast_left_ms = 0;
             st->backoff_ms = 0;
             st->last_tick_ms = get_time();
             st->needs_inform = v4->mode == IPV4_CFG_STATIC && v4->ip != 0;
@@ -184,8 +199,8 @@ static void ensure_inventory() {
 static uint32_t udp_wait_for_type_on(socket_handle_t sock, uint8_t wanted, uint32_t expect_xid, const uint8_t mac[MAC_ADDR_LEN], dhcp_packet* out, uint32_t timeout_ms) {
     if (!out) return 0;
 
-    uint32_t waited = 0;
-    while(waited < timeout_ms){
+    uint64_t start_ms = get_time();
+    while (get_time() - start_ms < timeout_ms){
         net_l4_endpoint src;
         memset(&src, 0, sizeof(src));
         int64_t r = receive_from_socket(sock, out, sizeof(*out), &src);
@@ -202,16 +217,15 @@ static uint32_t udp_wait_for_type_on(socket_handle_t sock, uint8_t wanted, uint3
             return (uint32_t)r;
         }
         msleep(50);
-        waited += 50;
     }
     return 0;
 }
 
-static uint32_t udp_wait_for_ack_or_nak(socket_handle_t sock, uint32_t expect_xid, const uint8_t mac[MAC_ADDR_LEN], dhcp_packet* out, uint32_t timeout_ms, uint8_t *out_msg_type) {
+static uint32_t udp_wait_for_ack_or_nak(socket_handle_t sock, uint32_t expect_xid, const uint8_t mac[MAC_ADDR_LEN], uint32_t expect_server_net, dhcp_packet* out, uint32_t timeout_ms, uint8_t *out_msg_type) {
     if (!out) return 0;
 
-    uint32_t waited = 0;
-    while (waited < timeout_ms) {
+    uint64_t start_ms = get_time();
+    while (get_time() - start_ms < timeout_ms) {
         net_l4_endpoint src;
         memset(&src, 0, sizeof(src));
         int64_t r = receive_from_socket(sock, out, sizeof(*out), &src);
@@ -226,11 +240,17 @@ static uint32_t udp_wait_for_ack_or_nak(socket_handle_t sock, uint32_t expect_xi
             if (idx == UINT16_MAX || out->options[idx+1] < 1) continue;
             uint8_t mtype = out->options[idx+2];
             if (mtype != DHCPACK && mtype != DHCPNAK) continue;
+            if (expect_server_net) {
+                uint16_t sid = dhcp_parse_option_bounded(out, r, 54);
+                if (sid == UINT16_MAX || out->options[sid + 1] < 4) continue;
+                uint32_t server_net;
+                memcpy(&server_net, &out->options[sid+2], 4);
+                if (server_net != expect_server_net) continue;
+            }
             if (out_msg_type) *out_msg_type = mtype;
             return (uint32_t)r;
         }
         msleep(50);
-        waited += 50;
     }
     return 0;
 }
@@ -326,8 +346,6 @@ static dhcp_apply_result_t apply_offer_to_l3(l3_id_t l3_id, dhcp_packet *p, uint
     } else {
         if (lease_s) t1_s = lease_s / 2;
     }
-    rt_local.t1 = t1_s;
-
     uint32_t t2_s = 0;
     idx = dhcp_parse_option_bounded(p, payload_len, 59);
     if (idx != UINT16_MAX && p->options[idx+1] >= 4) {
@@ -337,6 +355,14 @@ static dhcp_apply_result_t apply_offer_to_l3(l3_id_t l3_id, dhcp_packet *p, uint
     } else {
         if (lease_s) t2_s = (lease_s / 8) * 7;
     }
+    if (lease_s != UINT32_MAX) {
+        if (!lease_s) return DHCP_APPLY_FAILED;
+        if (!t1_s || t1_s >= lease_s) t1_s = lease_s / 2;
+        if (!t2_s || t2_s <= t1_s || t2_s >= lease_s) t2_s = (lease_s / 8) * 7;
+        if (t2_s <= t1_s) t2_s = t1_s + ((lease_s - t1_s) / 2);
+        if (t2_s >= lease_s) t2_s = lease_s - 1;
+    }
+    rt_local.t1 = t1_s;
     rt_local.t2 = t2_s;
 
     idx = dhcp_parse_option_bounded(p, payload_len, 54);
@@ -356,9 +382,10 @@ static dhcp_apply_result_t apply_offer_to_l3(l3_id_t l3_id, dhcp_packet *p, uint
 
     if (!l3_ipv4_update(l3_id, ip_host, mask_host, gw_host, IPV4_CFG_DHCP, &rt_local)) return DHCP_APPLY_FAILED;
 
-    st->t1_left_ms = t1_s * 1000;
-    st->t2_left_ms = t2_s * 1000;
-    st->lease_left_ms = lease_s * 1000;
+    st->t1_left_ms = (uint64_t)t1_s * 1000;
+    st->t2_left_ms = (uint64_t)t2_s * 1000;
+    st->lease_left_ms = (uint64_t)lease_s * 1000;
+    st->force_renew_seen = g_force_renew_generation;
     st->last_tick_ms = get_time();
     l3_ipv4_interface_t* updated = l3_ipv4_find_by_id(l3_id);
     if (updated) {
@@ -385,51 +412,55 @@ static void dhcp_send_discover_for(dhcp_if_state_t* st) {
     send_to_socket(st->sock, &dst, &pkt, pkt_len);
 }
 
-static void dhcp_send_renew_for(dhcp_if_state_t* st) {
+static void dhcp_send_renew_for(dhcp_if_state_t* st, bool new_transaction) {
     l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(st->l3_id);
     if (!v4) return;
     dhcp_request req;
     memset(&req, 0, sizeof(req));
     if (st->mac_ok) mac_copy(req.mac, st->mac);
-    uint32_t ip_net = bswap32(v4->ip);
-    req.offered_ip = ip_net;
+    req.offered_ip = bswap32(v4->ip);
     req.server_ip = st->server_ip_net;
-    rng_t rng;
-    rng_init_random(&rng);
-    st->trans_xid = rng_next32(&rng);
+
+    if (new_transaction || !st->trans_xid) {
+        rng_t rng;
+        rng_init_random(&rng);
+        st->trans_xid = rng_next32(&rng);
+    }
+
     dhcp_packet pkt;
-    uint32_t pkt_len = dhcp_build_packet(&req, DHCPREQUEST, st->trans_xid, DHCPK_RENEW, st->server_ip_net == 0, &pkt);
+    uint32_t pkt_len = dhcp_build_packet(&req, DHCPREQUEST, st->trans_xid, DHCPK_RENEW, false, &pkt);
     if (!pkt_len) return;
     uint32_t dip = st->server_ip_net ? bswap32(st->server_ip_net) : IPV4_LIMITED_BROADCAST;
     net_l4_endpoint dst;
     make_ep(&dip, 67, IP_VER4, &dst);
-    send_to_socket(st->sock, &dst, &pkt, pkt_len);
+    if (send_to_socket(st->sock, &dst, &pkt, pkt_len) >= 0) st->rx_fast_left_ms = 1000;
 }
 
-static void dhcp_send_rebind_for(dhcp_if_state_t* st) {
+static void dhcp_send_rebind_for(dhcp_if_state_t* st, bool new_transaction) {
     l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(st->l3_id);
     if (!v4) return;
     dhcp_request req;
     memset(&req, 0, sizeof(req));
     if (st->mac_ok) mac_copy(req.mac, st->mac);
-    uint32_t ip_net = bswap32(v4->ip);
-    req.offered_ip = ip_net;
-    req.server_ip = 0;
-    rng_t rng;
-    rng_init_random(&rng);
-    st->trans_xid = rng_next32(&rng);
+    req.offered_ip = bswap32(v4->ip);
+    if (new_transaction || !st->trans_xid) {
+        rng_t rng;
+        rng_init_random(&rng);
+        st->trans_xid = rng_next32(&rng);
+    }
+
     dhcp_packet pkt;
     uint32_t pkt_len = dhcp_build_packet(&req, DHCPREQUEST, st->trans_xid, DHCPK_REBIND, true, &pkt);
     if (!pkt_len) return;
     uint32_t dip = IPV4_LIMITED_BROADCAST;
     net_l4_endpoint dst;
     make_ep(&dip, 67, IP_VER4, &dst);
-    send_to_socket(st->sock, &dst, &pkt, pkt_len);
+    if (send_to_socket(st->sock, &dst, &pkt, pkt_len) >= 0) st->rx_fast_left_ms = 1000;
 }
 
-static void dhcp_send_inform_for(dhcp_if_state_t* st) {
+static uint32_t dhcp_send_inform_for(dhcp_if_state_t* st) {
     l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(st->l3_id);
-    if (!v4 || !v4->ip) return;
+    if (!v4 || !v4->ip) return 0;
     dhcp_request req;
     memset(&req, 0, sizeof(req));
     if (st->mac_ok) mac_copy(req.mac, st->mac);
@@ -441,11 +472,12 @@ static void dhcp_send_inform_for(dhcp_if_state_t* st) {
     uint32_t xid = rng_next32(&rng);
     dhcp_packet pkt;
     uint32_t pkt_len = dhcp_build_packet(&req, DHCPINFORM, xid, DHCPK_INFORM, true, &pkt);
-    if (!pkt_len) return;
+    if (!pkt_len) return 0;
     uint32_t dip = IPV4_LIMITED_BROADCAST;
     net_l4_endpoint dst;
     make_ep(&dip, 67, IP_VER4, &dst);
-    send_to_socket(st->sock, &dst, &pkt, pkt_len);
+    if (send_to_socket(st->sock, &dst, &pkt, pkt_len) < 0) return 0;
+    return xid;
 }
 
 static void dhcp_drop_lease_and_retry(dhcp_if_state_t* st) {
@@ -460,11 +492,11 @@ static void dhcp_drop_lease_and_retry(dhcp_if_state_t* st) {
     st->lease_left_ms = 0;
     st->server_ip_net = 0;
     st->state = DHCP_S_INIT;
+    st->rx_fast_left_ms = 0;
     st->retry_left_ms = dhcp_next_backoff_ms(st);
-    st->last_tick_ms = (uint32_t)get_time();
 }
 
-static void fsm_once_for(dhcp_if_state_t* st, bool force_renew) {
+static void fsm_once_for(dhcp_if_state_t* st) {
     switch (st->state) {
     case DHCP_S_INIT: {
         if (st->retry_left_ms != 0) break;
@@ -478,14 +510,18 @@ static void fsm_once_for(dhcp_if_state_t* st, bool force_renew) {
         if (!offer_len) {
             st->state = DHCP_S_INIT;
             st->retry_left_ms = dhcp_next_backoff_ms(st);
-            st->last_tick_ms = (uint32_t)get_time();
             break;
         }
         dhcp_request req;
         memset(&req, 0, sizeof(req));
         if (st->mac_ok) mac_copy(req.mac, st->mac);
         uint16_t idx54 = dhcp_parse_option_bounded(&offer, offer_len, 54);
-        if (idx54 != UINT16_MAX && offer.options[idx54+1] >= 4) memcpy(&st->server_ip_net, &offer.options[idx54+2], 4);
+        if (idx54 == UINT16_MAX || offer.options[idx54+1] < 4 || !offer.yiaddr) {
+            st->state = DHCP_S_INIT;
+            st->retry_left_ms = dhcp_next_backoff_ms(st);
+            break;
+        }
+        memcpy(&st->server_ip_net, &offer.options[idx54+2], 4);
         memcpy(&req.offered_ip, &offer.yiaddr, 4);
         req.server_ip = st->server_ip_net;
         dhcp_packet pkt;
@@ -493,7 +529,6 @@ static void fsm_once_for(dhcp_if_state_t* st, bool force_renew) {
         if (!pkt_len) {
             st->state = DHCP_S_INIT;
             st->retry_left_ms = dhcp_next_backoff_ms(st);
-            st->last_tick_ms = (uint32_t)get_time();
             break;
         }
 
@@ -502,21 +537,24 @@ static void fsm_once_for(dhcp_if_state_t* st, bool force_renew) {
         make_ep(&dip, 67, IP_VER4, &dst);
         send_to_socket(st->sock, &dst, &pkt, pkt_len);
         st->state = DHCP_S_REQUESTING;
-        dhcp_reset_backoff(st);
+        st->backoff_ms = 0;
+        st->retry_left_ms = 0;
+        st->rx_fast_left_ms = 0;
     } break;
     case DHCP_S_REQUESTING: {
         dhcp_packet resp;
         uint8_t mtype = 0;
-        uint32_t resp_len = udp_wait_for_ack_or_nak(st->sock, st->last_xid, st->mac_ok ? st->mac : NULL, &resp, 5000, &mtype);
+        uint32_t resp_len = udp_wait_for_ack_or_nak(st->sock, st->last_xid, st->mac_ok ? st->mac : NULL, st->server_ip_net, &resp, 5000, &mtype);
         if (!resp_len) {
             st->state = DHCP_S_INIT;
             st->retry_left_ms = dhcp_next_backoff_ms(st);
-            st->last_tick_ms = (uint32_t)get_time();
         } else if (mtype == DHCPACK) {
             dhcp_apply_result_t applied = apply_offer_to_l3(st->l3_id, &resp, resp_len, st->last_xid, st);
             if (applied == DHCP_APPLY_OK) {
                 st->state = DHCP_S_BOUND;
-                dhcp_reset_backoff(st);
+                st->backoff_ms = 0;
+                st->retry_left_ms = 0;
+                st->rx_fast_left_ms = 0;
             } else {
                 dhcp_drop_lease_and_retry(st);
                 if (applied == DHCP_APPLY_CONFLICT && st->retry_left_ms < 10000) st->retry_left_ms = 10000;
@@ -526,41 +564,89 @@ static void fsm_once_for(dhcp_if_state_t* st, bool force_renew) {
         }
     } break;
     case DHCP_S_BOUND: {
-        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(st->l3_id);
-        if (v4 && v4->runtime_opts_v4.lease && !st->lease_left_ms) {
-            dhcp_drop_lease_and_retry(st);
-        } else if (force_renew || (!st->t1_left_ms && st->lease_left_ms)) {
-            st->state = DHCP_S_RENEWING;
-            dhcp_reset_backoff(st);
-        }
-    } break;
-    case DHCP_S_RENEWING:
-    case DHCP_S_REBINDING: {
-        bool rebindin = st->state == DHCP_S_REBINDING;
         if (!st->lease_left_ms) {
             dhcp_drop_lease_and_retry(st);
             break;
         }
-        if (!rebindin && !st->t2_left_ms) {
-            st->state = DHCP_S_REBINDING;
-            dhcp_reset_backoff(st);
-            rebindin = true;
-        }
-        if (st->retry_left_ms) break;
 
-        if (rebindin) dhcp_send_rebind_for(st);
-        else dhcp_send_renew_for(st);
-        st->last_xid = st->trans_xid;
+        if (st->force_renew_seen != g_force_renew_generation) {
+            st->force_renew_seen = g_force_renew_generation;
+            dhcp_send_renew_for(st, true);
+            st->last_xid = st->trans_xid;
+            st->retry_left_ms = st->t2_left_ms / 2;
+            if (st->retry_left_ms < 60000) st->retry_left_ms = 60000;
+            st->state = DHCP_S_RENEWING;
+        } else if (!st->t2_left_ms) {
+            dhcp_send_rebind_for(st, true);
+            st->last_xid = st->trans_xid;
+            st->retry_left_ms = st->lease_left_ms / 2;
+            if (st->retry_left_ms < 60000) st->retry_left_ms = 60000;
+            st->state = DHCP_S_REBINDING;
+        } else if (!st->t1_left_ms) {
+            dhcp_send_renew_for(st, true);
+            st->last_xid = st->trans_xid;
+            st->retry_left_ms = st->t2_left_ms / 2;
+            if (st->retry_left_ms < 60000) st->retry_left_ms = 60000;
+            st->state = DHCP_S_RENEWING;
+        }
+    } break;
+    case DHCP_S_RENEWING: {
+        if (!st->lease_left_ms) {
+            dhcp_drop_lease_and_retry(st);
+            break;
+        }
+        if (!st->t2_left_ms) {
+            dhcp_send_rebind_for(st, true);
+            st->last_xid = st->trans_xid;
+            st->retry_left_ms = st->lease_left_ms / 2;
+            if (st->retry_left_ms < 60000) st->retry_left_ms = 60000;
+            st->state = DHCP_S_REBINDING;
+            break;
+        }
 
         dhcp_packet p;
         uint8_t mtype = 0;
-        uint32_t payload_len = udp_wait_for_ack_or_nak(st->sock, st->last_xid, st->mac_ok ? st->mac : NULL, &p, 2000, &mtype);
+        uint32_t payload_len = udp_wait_for_ack_or_nak(st->sock, st->last_xid, st->mac_ok ? st->mac : NULL, st->server_ip_net, &p, 200, &mtype);
         if (payload_len) {
             if (mtype == DHCPACK) {
                 dhcp_apply_result_t applied = apply_offer_to_l3(st->l3_id, &p, payload_len, st->last_xid, st);
                 if (applied == DHCP_APPLY_OK) {
                     st->state = DHCP_S_BOUND;
-                    dhcp_reset_backoff(st);
+                    st->backoff_ms = 0;
+                    st->retry_left_ms = 0;
+                    st->rx_fast_left_ms = 0;
+                } else {
+                    dhcp_drop_lease_and_retry(st);
+                    if (applied == DHCP_APPLY_CONFLICT && st->retry_left_ms < 10000) st->retry_left_ms = 10000;
+                }
+            } else dhcp_drop_lease_and_retry(st);
+            break;
+        }
+
+        if (!st->retry_left_ms) {
+            dhcp_send_renew_for(st, false);
+            st->last_xid = st->trans_xid;
+            st->retry_left_ms = st->t2_left_ms / 2;
+            if (st->retry_left_ms < 60000) st->retry_left_ms = 60000;
+        }
+    } break;
+    case DHCP_S_REBINDING: {
+        if (!st->lease_left_ms) {
+            dhcp_drop_lease_and_retry(st);
+            break;
+        }
+
+        dhcp_packet p;
+        uint8_t mtype = 0;
+        uint32_t payload_len = udp_wait_for_ack_or_nak(st->sock, st->last_xid, st->mac_ok ? st->mac : NULL, 0, &p, 200, &mtype);
+        if (payload_len) {
+            if (mtype == DHCPACK) {
+                dhcp_apply_result_t applied = apply_offer_to_l3(st->l3_id, &p, payload_len, st->last_xid, st);
+                if (applied == DHCP_APPLY_OK) {
+                    st->state = DHCP_S_BOUND;
+                    st->backoff_ms = 0;
+                    st->retry_left_ms = 0;
+                    st->rx_fast_left_ms = 0;
                 } else {
                     dhcp_drop_lease_and_retry(st);
                     if (applied == DHCP_APPLY_CONFLICT && st->retry_left_ms < 10000) st->retry_left_ms = 10000;
@@ -568,32 +654,38 @@ static void fsm_once_for(dhcp_if_state_t* st, bool force_renew) {
             } else {
                 dhcp_drop_lease_and_retry(st);
             }
-        } else {
-            st->retry_left_ms = dhcp_next_backoff_ms(st);
-            st->last_tick_ms = (uint32_t)get_time();
+            break;
+        }
+
+        if (!st->retry_left_ms) {
+            dhcp_send_rebind_for(st, false);
+            st->last_xid = st->trans_xid;
+            st->retry_left_ms = st->lease_left_ms / 2;
+            if (st->retry_left_ms < 60000) st->retry_left_ms = 60000;
         }
     } break;
     }
 }
 
 static void tick_timers() {
-    uint32_t now_ms = (uint32_t)get_time();
+    uint32_t now_ms = get_time();
     for (int i = 0; i < g_if_count; i++) {
         uint32_t elapsed_ms = now_ms - g_if[i].last_tick_ms;
         g_if[i].last_tick_ms = now_ms;
-        if (g_if[i].retry_left_ms > elapsed_ms) g_if[i].retry_left_ms -= elapsed_ms; else g_if[i].retry_left_ms = 0;
+        if (!elapsed_ms) continue;
 
-        if (g_if[i].state != DHCP_S_BOUND && g_if[i].state != DHCP_S_RENEWING && g_if[i].state != DHCP_S_REBINDING) continue;
-        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(g_if[i].l3_id);
-        if (!v4 || !v4->runtime_opts_v4.lease || !v4->runtime_opts_v4.lease_start_time) continue;
-
-        uint32_t lease_ms = v4->runtime_opts_v4.lease * 1000;
-        uint32_t t1_ms = v4->runtime_opts_v4.t1 * 1000;
-        uint32_t t2_ms = v4->runtime_opts_v4.t2 * 1000;
-        uint32_t age_ms = now_ms - v4->runtime_opts_v4.lease_start_time;
-        g_if[i].lease_left_ms = age_ms < lease_ms ? lease_ms - age_ms : 0;
-        g_if[i].t1_left_ms = age_ms < t1_ms ? t1_ms - age_ms : 0;
-        g_if[i].t2_left_ms = age_ms < t2_ms ? t2_ms - age_ms : 0;
+        if (g_if[i].state == DHCP_S_BOUND || g_if[i].state == DHCP_S_RENEWING || g_if[i].state == DHCP_S_REBINDING) {
+            if (g_if[i].t1_left_ms > elapsed_ms) g_if[i].t1_left_ms -= elapsed_ms;
+            else g_if[i].t1_left_ms = 0;
+            if (g_if[i].t2_left_ms > elapsed_ms) g_if[i].t2_left_ms -= elapsed_ms;
+            else g_if[i].t2_left_ms = 0;
+            if (g_if[i].lease_left_ms > elapsed_ms) g_if[i].lease_left_ms -= elapsed_ms;
+            else g_if[i].lease_left_ms = 0;
+        }
+        if (g_if[i].retry_left_ms > elapsed_ms) g_if[i].retry_left_ms -= elapsed_ms;
+        else g_if[i].retry_left_ms = 0;
+        if (g_if[i].rx_fast_left_ms > elapsed_ms) g_if[i].rx_fast_left_ms -= elapsed_ms;
+        else g_if[i].rx_fast_left_ms = 0;
     }
 }
 
@@ -601,8 +693,52 @@ static void maybe_send_inform() {
     for (int i = 0; i < g_if_count; i++) {
         if (!g_if[i].needs_inform) continue;
         l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(g_if[i].l3_id);
-        if (!v4 || v4->mode != IPV4_CFG_STATIC || !v4->ip) { g_if[i].needs_inform = false; continue; }
-        dhcp_send_inform_for(&g_if[i]);
+        if (!v4 || v4->mode != IPV4_CFG_STATIC || !v4->ip) {
+            g_if[i].needs_inform = false;
+            continue;
+         }
+
+        uint32_t xid = dhcp_send_inform_for(&g_if[i]);
+        if (xid) {
+            dhcp_packet ack;
+            uint32_t ack_len = udp_wait_for_type_on(g_if[i].sock, DHCPACK, xid, g_if[i].mac_ok ? g_if[i].mac : NULL, &ack, 5000);
+            if (ack_len) {
+                net_runtime_opts_t rt = v4->runtime_opts_v4;
+                uint16_t idx = dhcp_parse_option_bounded(&ack, ack_len, 6);
+                if (idx != UINT16_MAX) {
+                    uint8_t len = ack.options[idx+1];
+                    rt.dns[0] = 0;
+                    rt.dns[1] = 0;
+                    for (int d = 0; d < 2 && d * 4 + 4 <= len; d++) {
+                        uint32_t dns_net;
+                        memcpy(&dns_net, &ack.options[idx + 2 + d*4], 4);
+                        rt.dns[d] = bswap32(dns_net);
+                    }
+                }
+
+                idx = dhcp_parse_option_bounded(&ack, ack_len, 42);
+                if (idx != UINT16_MAX) {
+                    uint8_t len = ack.options[idx+1];
+                    rt.ntp[0] = 0;
+                    rt.ntp[1] = 0;
+                    for (int n = 0; n < 2 && n * 4 + 4 <= len; n++) {
+                        uint32_t ntp_net;
+                        memcpy(&ntp_net, &ack.options[idx + 2 + n*4], 4);
+                        rt.ntp[n] = bswap32(ntp_net);
+                    }
+                }
+
+                idx = dhcp_parse_option_bounded(&ack, ack_len, 26);
+                if (idx != UINT16_MAX && ack.options[idx + 1] == 2) {
+                    uint16_t mtu_net;
+                    memcpy(&mtu_net, &ack.options[idx + 2], 2);
+                    uint16_t mtu = bswap16(mtu_net);
+                    if (mtu >= 68) rt.mtu = mtu;
+                }
+                l3_ipv4_update(v4->l3_id, v4->ip, v4->mask, v4->gw, IPV4_CFG_STATIC, &rt);
+            }
+        }
+
         g_if[i].needs_inform = false;
         if (g_if[i].sock) {
             close_socket(g_if[i].sock); 
@@ -622,8 +758,6 @@ int dhcp_daemon_entry(int argc, char* argv[]) {
 
     for (;;) {
         irq = irq_save_disable();
-        bool force_renew = g_force_renew;
-        g_force_renew = false;
         g_dhcp_rekick = 0;
         irq_restore(irq);
 
@@ -633,46 +767,52 @@ int dhcp_daemon_entry(int argc, char* argv[]) {
         for (int i = 0; i < g_if_count; i++) {
             l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(g_if[i].l3_id);
             if (!v4 || v4->mode != IPV4_CFG_DHCP || !g_if[i].sock) continue;
-            fsm_once_for(&g_if[i], force_renew);
+            fsm_once_for(&g_if[i]);
         }
         maybe_send_inform();
 
-        bool active_work = g_force_renew;
-        for (int i = 0; i < g_if_count && !active_work; i++) {
-            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(g_if[i].l3_id);
-            if (!ipv4_l3_is_active(v4)) continue;
-            if (v4->mode == IPV4_CFG_DHCP || g_if[i].needs_inform) active_work = true;
-        }
-        if (!active_work) break;
-
-        uint32_t sleep_ms = 2500;
-        if (g_dhcp_rekick || g_force_renew) sleep_ms = 10;
+        bool active_work = false;
+        uint32_t sleep_ms = DHCP_IDLE_TICK_MS;
+        if (g_dhcp_rekick) sleep_ms = DHCP_ACTIVE_TICK_MS;
         for (int i = 0; i < g_if_count; i++) {
-            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(g_if[i].l3_id);
+            dhcp_if_state_t* st = &g_if[i];
+            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(st->l3_id);
             if (!ipv4_l3_is_active(v4)) continue;
-            if (g_if[i].needs_inform) {
-                sleep_ms = 10;
+            if (st->needs_inform) {
+                active_work = true;
+                sleep_ms = DHCP_ACTIVE_TICK_MS;
                 break;
             }
             if (v4->mode != IPV4_CFG_DHCP) continue;
+            active_work = true;
 
-            uint32_t wait_ms = 100;
-            if (g_if[i].retry_left_ms) {
-                wait_ms = g_if[i].retry_left_ms;
-            } else if (g_if[i].state == DHCP_S_BOUND) {
-                wait_ms = 2500;
-                if (g_if[i].t1_left_ms && g_if[i].t1_left_ms < wait_ms) wait_ms = g_if[i].t1_left_ms;
-                if (g_if[i].t2_left_ms && g_if[i].t2_left_ms < wait_ms) wait_ms = g_if[i].t2_left_ms;
-                if (g_if[i].lease_left_ms && g_if[i].lease_left_ms < wait_ms) wait_ms = g_if[i].lease_left_ms;
-            } else if (g_if[i].state == DHCP_S_RENEWING || g_if[i].state == DHCP_S_REBINDING) {
-                wait_ms = 100;
-                if (g_if[i].state == DHCP_S_RENEWING && g_if[i].t2_left_ms && g_if[i].t2_left_ms < wait_ms) wait_ms = g_if[i].t2_left_ms;
-                if (g_if[i].lease_left_ms && g_if[i].lease_left_ms < wait_ms) wait_ms = g_if[i].lease_left_ms;
+            if (st->force_renew_seen != g_force_renew_generation || st->state == DHCP_S_SELECTING || st->state == DHCP_S_REQUESTING || ((st->state == DHCP_S_RENEWING || st->state == DHCP_S_REBINDING) && st->rx_fast_left_ms)) {
+                sleep_ms = DHCP_ACTIVE_TICK_MS;
+                break;
             }
-            if (wait_ms < 10) wait_ms = 10;
-            if (wait_ms > 2500) wait_ms = 2500;
-            if (wait_ms < sleep_ms) sleep_ms = wait_ms;
+
+            uint64_t next = 0;
+            if (st->state == DHCP_S_INIT) next = st->retry_left_ms;
+            else if (st->state == DHCP_S_BOUND) {
+                next = st->lease_left_ms;
+                if (st->t1_left_ms < next) next = st->t1_left_ms;
+                if (st->t2_left_ms < next) next = st->t2_left_ms;
+            } else if (st->state == DHCP_S_RENEWING) {
+                next = st->retry_left_ms;
+                if (!next || st->t2_left_ms < next) next = st->t2_left_ms;
+                if (!next || st->lease_left_ms < next) next = st->lease_left_ms;
+            } else if (st->state == DHCP_S_REBINDING) {
+                next = st->retry_left_ms;
+                if (!next || st->lease_left_ms < next) next = st->lease_left_ms;
+            }
+            if (!next) {
+                sleep_ms = DHCP_ACTIVE_TICK_MS;
+                break;
+            }
+            uint64_t wait = next > DHCP_IDLE_TICK_MS ? DHCP_IDLE_TICK_MS : next;
+            if (wait < sleep_ms) sleep_ms = wait;
         }
+        if (!active_work) break;
         msleep(sleep_ms);
     }
 
@@ -708,7 +848,7 @@ void dhcp_daemon_kick(void) {
             }
         }
     }
-    if (!g_force_renew && !config_work) return;
+    if (!config_work) return;
 
     irq = irq_save_disable();
     if (g_dhcp_running || g_dhcp_pending) {
