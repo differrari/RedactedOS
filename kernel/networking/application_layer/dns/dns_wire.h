@@ -11,11 +11,13 @@ extern "C" {
 #define DNS_CLASS_IN 1
 #define DNS_CLASS_ANY 255
 #define DNS_CLASS_CACHE_FLUSH 0x8000
+#define DNS_CLASS_UNICAST_RESPONSE 0x8000
 #define DNS_CLASS_MASK 0x7FFF
 
 #define DNS_FLAG_QR 0x8000
 #define DNS_FLAG_AA 0x0400
 #define DNS_FLAG_RD 0x0100
+#define DNS_OPCODE_MASK 0x7800
 
 #define DNS_RCODE_MASK 0x000F
 #define DNS_RCODE_NXDOMAIN 3
@@ -79,6 +81,7 @@ bool dns_wire_name_equals(const char *a, const char *b);
 bool dns_wire_is_local_name(const char *name);
 bool dns_wire_read_rr(const uint8_t *msg, uint32_t msg_len, uint32_t off, dns_section_t section, dns_rr_view_t *rr, uint32_t *out_next);
 bool dns_wire_parse_rdata(const uint8_t *msg, uint32_t msg_len, const dns_rr_view_t *rr, dns_record_t *out);
+bool dns_wire_record_equal(const dns_record_t *a, const dns_record_t *b);
 bool dns_wire_parse_records(const uint8_t *msg, uint32_t msg_len, bool check_id, uint16_t message_id, dns_record_t *out, uint32_t out_cap, uint32_t *out_count, uint16_t *out_flags);
 uint32_t dns_wire_build_query(uint8_t *out, uint32_t cap, uint16_t message_id, const char *name,uint16_t qtype, bool mdns_qu);
 

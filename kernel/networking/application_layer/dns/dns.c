@@ -10,7 +10,6 @@
 #include "networking/internet_layer/ipv6_utils.h"
 
 #include "networking/interface_manager.h"
-#include "dns_daemon.h"
 #include "syscalls/syscalls.h"
 #include "networking/transport_layer/trans_utils.h"
 #include "random/random.h"

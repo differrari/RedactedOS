@@ -256,6 +256,30 @@ bool dns_wire_parse_rdata(const uint8_t *msg, uint32_t msg_len, const dns_rr_vie
     return true;
 }
 
+bool dns_wire_record_equal(const dns_record_t *a, const dns_record_t *b) {
+    if (!a || !b) return false;
+    if (a->type != b->type) return false;
+    if ((a->rrclass & DNS_CLASS_MASK) != (b->rrclass & DNS_CLASS_MASK)) return false;
+    if (!dns_wire_name_equals(a->name, b->name)) return false;
+
+    switch (a->type) {
+    case DNS_TYPE_A:
+        return memcmp(a->addr, b->addr, 4) == 0;
+    case DNS_TYPE_AAAA:
+        return memcmp(a->addr, b->addr, 16) == 0;
+    case DNS_TYPE_CNAME:
+    case DNS_TYPE_NS:
+    case DNS_TYPE_PTR:
+        return dns_wire_name_equals(a->target, b->target);
+    case DNS_TYPE_SRV:
+        return a->priority == b->priority && a->weight == b->weight && a->port == b->port && dns_wire_name_equals(a->target, b->target);
+    case DNS_TYPE_TXT:
+        return strcmp(a->txt, b->txt) == 0;
+    default:
+        return false;
+    }
+}
+
 bool dns_wire_parse_records(const uint8_t *msg, uint32_t msg_len, bool check_id, uint16_t message_id, dns_record_t *out, uint32_t out_cap, uint32_t *out_count, uint16_t *out_flags) {
     if (out_count) *out_count = 0;
     if (!msg) return false;
@@ -311,6 +335,6 @@ uint32_t dns_wire_build_query(uint8_t *out, uint32_t cap, uint16_t message_id, c
     if (!dns_wire_write_name(out, cap, &off, name)) return 0;
     if (off + 4 > cap) return 0;
     wr_be16(out + off, qtype);
-    wr_be16(out + off + 2, mdns_qu?  DNS_CLASS_CACHE_FLUSH | DNS_CLASS_IN : DNS_CLASS_IN);
+    wr_be16(out + off + 2, mdns_qu?  DNS_CLASS_UNICAST_RESPONSE | DNS_CLASS_IN : DNS_CLASS_IN);
     return off + 4;
 }
