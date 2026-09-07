@@ -14,6 +14,7 @@ uint32_t dns_sd_add_rr_a(uint8_t *out, uint32_t cap, uint32_t off, const char *n
 uint32_t dns_sd_add_rr_aaaa(uint8_t *out, uint32_t cap, uint32_t off, const char *name, uint16_t rrclass, uint32_t ttl_s, const uint8_t ip6[16]);
 uint32_t dns_sd_add_rr_srv(uint8_t *out, uint32_t cap, uint32_t off, const char *name, uint16_t rrclass, uint32_t ttl_s, uint16_t priority, uint16_t weight, uint16_t port, const char *target);
 uint32_t dns_sd_add_rr_txt(uint8_t *out, uint32_t cap, uint32_t off, const char *name, uint16_t rrclass, uint32_t ttl_s, const char *txt);
+uint32_t dns_sd_add_record(uint8_t *out, uint32_t cap, uint32_t off, const dns_record_t *record, uint16_t rrclass, uint32_t ttl_s);
 
 #ifdef __cplusplus
 }

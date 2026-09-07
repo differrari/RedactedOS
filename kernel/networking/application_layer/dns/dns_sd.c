@@ -139,3 +139,21 @@ uint32_t dns_sd_add_rr_txt(uint8_t *out, uint32_t cap, uint32_t off, const char 
     wr_be16(out + rdlen_pos, rdlen);
     return off;
 }
+
+uint32_t dns_sd_add_record(uint8_t *out, uint32_t cap, uint32_t off, const dns_record_t *record, uint16_t rrclass, uint32_t ttl_s) {
+    if (!record) return 0;
+    switch (record->type) {
+        case DNS_TYPE_A:
+            return dns_sd_add_rr_a(out, cap, off, record->name, rrclass, ttl_s, rd_be32(record->addr));
+        case DNS_TYPE_AAAA:
+            return dns_sd_add_rr_aaaa(out, cap, off, record->name, rrclass, ttl_s, record->addr);
+        case DNS_TYPE_PTR:
+            return dns_sd_add_rr_ptr(out, cap, off, record->name, rrclass, ttl_s, record->target);
+        case DNS_TYPE_SRV:
+            return dns_sd_add_rr_srv(out, cap, off, record->name, rrclass, ttl_s, record->priority, record->weight, record->port, record->target);
+        case DNS_TYPE_TXT:
+            return dns_sd_add_rr_txt(out, cap, off, record->name, rrclass, ttl_s, record->txt);
+        default:
+            return 0;
+    }
+}

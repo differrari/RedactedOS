@@ -82,6 +82,8 @@ bool dns_wire_is_local_name(const char *name);
 bool dns_wire_read_rr(const uint8_t *msg, uint32_t msg_len, uint32_t off, dns_section_t section, dns_rr_view_t *rr, uint32_t *out_next);
 bool dns_wire_parse_rdata(const uint8_t *msg, uint32_t msg_len, const dns_rr_view_t *rr, dns_record_t *out);
 bool dns_wire_record_equal(const dns_record_t *a, const dns_record_t *b);
+uint32_t dns_wire_write_record_rdata(const dns_record_t *record, uint8_t *out, uint32_t cap);
+int dns_wire_record_cmp(const dns_record_t *a, const dns_record_t *b);
 bool dns_wire_parse_records(const uint8_t *msg, uint32_t msg_len, bool check_id, uint16_t message_id, dns_record_t *out, uint32_t out_cap, uint32_t *out_count, uint16_t *out_flags);
 uint32_t dns_wire_build_query(uint8_t *out, uint32_t cap, uint16_t message_id, const char *name,uint16_t qtype, bool mdns_qu);
 

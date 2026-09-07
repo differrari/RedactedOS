@@ -76,86 +76,63 @@ static dns_result_t perform_dns_query_once(socket_handle_t sock, const net_l4_en
     return DNS_ERR_TIMEOUT;
 }
 
-static bool pick_dns_on_l3(l3_id_t l3_id, net_l4_endpoint* out_primary, net_l4_endpoint* out_secondary) {
-    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
-    if (v4) {
-        uint32_t p = v4->runtime_opts_v4.dns[0];
-        uint32_t s = v4->runtime_opts_v4.dns[1];
-        if (out_primary) {
-            make_ep(&p, 0, IP_VER4, out_primary);
+static bool pick_dns(l3_id_t l3_id, net_l4_endpoint* out_primary, net_l4_endpoint* out_secondary) {
+    if (l3_id) {
+        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
+        if (v4) {
+            uint32_t primary = v4->runtime_opts_v4.dns[0];
+            uint32_t secondary = v4->runtime_opts_v4.dns[1];
+            if (out_primary) make_ep(&primary, 0, IP_VER4, out_primary);
+            if (out_secondary) make_ep(&secondary, 0, IP_VER4, out_secondary);
+            return primary || secondary;
         }
-        if (out_secondary) {
-            make_ep(&s, 0, IP_VER4, out_secondary);
-        }
-        return p || s;
+
+        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
+        if (!v6) return false;
+        bool have_primary = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[0]);
+        bool have_secondary = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[1]);
+        if (out_primary) make_ep(have_primary ? v6->runtime_opts_v6.dns[0] : NULL, 0, IP_VER6, out_primary);
+        if (out_secondary) make_ep(have_secondary ? v6->runtime_opts_v6.dns[1] : NULL, 0, IP_VER6, out_secondary);
+        return have_primary || have_secondary;
     }
 
-    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
-    if (!v6) return false;
-    const uint8_t* p6 = v6->runtime_opts_v6.dns[0];
-    const uint8_t* s6 = v6->runtime_opts_v6.dns[1];
-    bool hp = !ipv6_is_unspecified(p6);
-    bool hs = !ipv6_is_unspecified(s6);
-    if (out_primary) make_ep(hp ? p6 : NULL, 0, IP_VER6, out_primary);
-    if (out_secondary) make_ep(hs ? s6 : NULL, 0, IP_VER6, out_secondary);
-    return hp || hs;
-}
-
-static bool pick_dns_first_iface(l3_id_t* out_l3, net_l4_endpoint* out_primary, net_l4_endpoint* out_secondary) {
-    uint8_t n = l2_interface_count();
-    for (uint8_t i = 0; i < n; ++i){
+    uint8_t count = l2_interface_count();
+    for (uint8_t i = 0; i < count; i++) {
         l2_interface_t* l2 = l2_interface_at(i);
         if (!l2) continue;
-        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s){
+        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; s++){
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
             if (!ipv4_l3_is_active(v4)) continue;
 
-            uint32_t p = v4->runtime_opts_v4.dns[0];
-            uint32_t q = v4->runtime_opts_v4.dns[1];
-            if (p || q){
-                if (out_l3) *out_l3 = v4->l3_id;
-                if (out_primary) {
-                    make_ep(&p, 0, IP_VER4, out_primary);
-                }
-                if (out_secondary) {
-                    make_ep(&q, 0, IP_VER4, out_secondary);
-                }
-                return true;
-            }
+            uint32_t primary = v4->runtime_opts_v4.dns[0];
+            uint32_t secondary = v4->runtime_opts_v4.dns[1];
+            if (!primary && !secondary) continue;
+            if (out_primary) make_ep(&primary, 0, IP_VER4, out_primary);
+            if (out_secondary) make_ep(&secondary, 0, IP_VER4, out_secondary);
+            return true;
         }
 
         for (int s = 0; s < MAX_IPV6_PER_INTERFACE; ++s) {
             l3_ipv6_interface_t* v6 = l2->l3_v6[s];
             if (!ipv6_l3_is_ready(v6)) continue;
-            bool hp = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[0]);
-            bool hq = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[1]);
-            if (hp || hq){
-                if (out_l3) *out_l3 = v6->l3_id;
-                if (out_primary) {
-                    make_ep(hp ? v6->runtime_opts_v6.dns[0] : NULL, 0, IP_VER6, out_primary);
-                }
-                if (out_secondary) {
-                    make_ep(hq ? v6->runtime_opts_v6.dns[1] : NULL, 0, IP_VER6, out_secondary);
-                }
-                return true;
-            }
+            bool have_primary = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[0]);
+            bool have_secondary = !ipv6_is_unspecified(v6->runtime_opts_v6.dns[1]);
+            if (!have_primary && !have_secondary) continue;
+            if (out_primary) make_ep(have_primary ? v6->runtime_opts_v6.dns[0] : NULL, 0, IP_VER6, out_primary);
+            if (out_secondary) make_ep(have_secondary ? v6->runtime_opts_v6.dns[1] : NULL, 0, IP_VER6, out_secondary);
+            return true;
         }
     }
     return false;
 }
 
-static bool dns_srv_is_zero(const net_l4_endpoint* e){
-    if (!e) return true;
-    if (e->ver == IP_VER4) return rd_be32(e->ip) == 0;
-    if (e->ver == IP_VER6) return ipv6_is_unspecified(e->ip);
-    return true;
-}
-
-static dns_result_t query_with_selection(l3_id_t l3_id, const net_l4_endpoint* primary, const net_l4_endpoint* secondary, dns_server_sel_t which, const char* hostname, dns_qtype_t qtype, uint32_t timeout_ms, dns_record_t* out_records, uint32_t max_records, uint32_t* out_count) {
+static dns_result_t dns_query_selected(l3_id_t l3_id, const net_l4_endpoint* primary, const net_l4_endpoint* secondary, dns_server_sel_t which, const char* hostname, dns_qtype_t qtype, uint32_t timeout_ms, dns_record_t* out_records, uint32_t max_records, uint32_t* out_count) {
     if (out_count) *out_count = 0;
-    if (which == DNS_USE_PRIMARY && dns_srv_is_zero(primary)) return DNS_ERR_NO_DNS;
-    if (which == DNS_USE_SECONDARY && dns_srv_is_zero(secondary)) return DNS_ERR_NO_DNS;
-    if (which == DNS_USE_BOTH && dns_srv_is_zero(primary) && dns_srv_is_zero(secondary)) return DNS_ERR_NO_DNS;
+    bool have_primary = primary && ((primary->ver == IP_VER4 && rd_be32(primary->ip)) || (primary->ver == IP_VER6 && !ipv6_is_unspecified(primary->ip)));
+    bool have_secondary = secondary && ((secondary->ver == IP_VER4 && rd_be32(secondary->ip)) || (secondary->ver == IP_VER6 && !ipv6_is_unspecified(secondary->ip)));
+    if (which == DNS_USE_PRIMARY && !have_primary) return DNS_ERR_NO_DNS;
+    if (which == DNS_USE_SECONDARY && !have_secondary) return DNS_ERR_NO_DNS;
+    if (which == DNS_USE_BOTH && !have_primary && !have_secondary) return DNS_ERR_NO_DNS;
     socket_handle_t sock = create_socket(PROTO_UDP, &(SocketOptions){.flags = SOCK_OPT_NONBLOCK});
     if (!sock) return DNS_ERR_SOCKET;
     if (l3_id) {
@@ -170,8 +147,8 @@ static dns_result_t query_with_selection(l3_id_t l3_id, const net_l4_endpoint* p
     if (which == DNS_USE_PRIMARY)  res = perform_dns_query_once(sock, primary, hostname, qtype, timeout_ms, out_records, max_records, out_count);
     else if (which == DNS_USE_SECONDARY) res = perform_dns_query_once(sock, secondary, hostname, qtype, timeout_ms, out_records, max_records, out_count);
     else {
-        const net_l4_endpoint* first = !dns_srv_is_zero(primary) ? primary : secondary;
-        const net_l4_endpoint* second = !dns_srv_is_zero(secondary) ? secondary : primary;
+        const net_l4_endpoint* first = have_primary ? primary : secondary;
+        const net_l4_endpoint* second = have_secondary ? secondary : primary;
 
         res = perform_dns_query_once(sock, first, hostname, qtype, timeout_ms, out_records, max_records, out_count);
         if (res != DNS_OK && second && first != second) res = perform_dns_query_once(sock, second, hostname, qtype, timeout_ms, out_records, max_records, out_count);
@@ -187,11 +164,9 @@ dns_result_t dns_query(const char* hostname, dns_qtype_t qtype, dns_record_t* ou
     if (!out_records && max_records) return DNS_ERR_FORMAT;
     if (dns_wire_is_local_name(hostname)) return mdns_query(0, hostname, qtype, timeout_ms, out_records, max_records, out_count);
 
-    dns_result_t res = DNS_ERR_NO_DNS;
-    l3_id_t l3 = 0;
     net_l4_endpoint p, s;
-    if (pick_dns_first_iface(&l3, &p, &s)) res = query_with_selection(0, &p, &s, which, hostname, qtype, timeout_ms, out_records, max_records, out_count);
-    return res;
+    if (!pick_dns(0, &p, &s)) return DNS_ERR_NO_DNS;
+    return dns_query_selected(0, &p, &s, which, hostname, qtype, timeout_ms, out_records, max_records, out_count);
 }
 
 dns_result_t dns_query_on_l3(l3_id_t l3_id, const char* hostname, dns_qtype_t qtype, dns_record_t* out_records, uint32_t max_records, uint32_t* out_count, dns_server_sel_t which, uint32_t timeout_ms) {
@@ -200,10 +175,9 @@ dns_result_t dns_query_on_l3(l3_id_t l3_id, const char* hostname, dns_qtype_t qt
     if (!out_records && max_records) return DNS_ERR_FORMAT;
     if (!l3_id) return DNS_ERR_NO_DNS;
     if (dns_wire_is_local_name(hostname))return mdns_query(l3_id, hostname, qtype, timeout_ms, out_records, max_records, out_count);
-    dns_result_t res = DNS_ERR_NO_DNS;
     net_l4_endpoint p,s;
-    if (pick_dns_on_l3(l3_id, &p, &s)) res = query_with_selection(l3_id, &p, &s, which, hostname, qtype, timeout_ms, out_records, max_records, out_count);
-    return res;
+    if (!pick_dns(l3_id, &p, &s)) return DNS_ERR_NO_DNS;
+    return dns_query_selected(l3_id, &p, &s, which, hostname, qtype, timeout_ms, out_records, max_records, out_count);
 }
 
 static dns_result_t dns_resolve_ip_common(uint8_t use_l3, l3_id_t l3_id, const char* hostname, dns_qtype_t qtype, uint8_t out_addr[16], dns_server_sel_t which, uint32_t timeout_ms, uint32_t *out_ttl_s) {

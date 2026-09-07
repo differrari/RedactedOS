@@ -280,6 +280,81 @@ bool dns_wire_record_equal(const dns_record_t *a, const dns_record_t *b) {
     }
 }
 
+uint32_t dns_wire_write_record_rdata(const dns_record_t *record, uint8_t *out, uint32_t cap) {
+    if (!record |!out) return 0;
+
+    if (record->type == DNS_TYPE_A) {
+        if (cap < 4) return 0;
+        memcpy(out, record->addr, 4);
+        return 4;
+    }
+    if (record->type == DNS_TYPE_AAAA) {
+        if (cap < 16) return 0;
+        memcpy(out, record->addr, 16);
+        return 16;
+    }
+    if (record->type == DNS_TYPE_TXT) {
+        uint32_t off = 0;
+        const char *txt = record->txt;
+        while (*txt) {
+            while (is_whitespace(*txt) || *txt == ';') txt++;
+            if (!*txt) break;
+
+            const char *start = txt;
+            while (*txt && *txt != ';' && *txt != '\n' && *txt != '\r') txt++;
+            uint32_t len = (uint32_t)(txt - start);
+            if (len > 255) len = 255;
+            if (off + 1 + len > cap) return 0;
+            out[off++] = (uint8_t)len;
+            memcpy(out + off, start, len);
+            off += len;
+        }
+        return off;
+    }
+    if (record->type == DNS_TYPE_SRV) {
+        if (cap < 7) return 0;
+        char target[DNS_WIRE_MAX_NAME];
+        if (!dns_wire_name_normalize(record->target, target, sizeof(target))) return 0;
+        wr_be16(out, record->priority);
+        wr_be16(out + 2, record->weight);
+        wr_be16(out + 4, record->port);
+        uint32_t off = 6;
+        if (!dns_wire_write_name(out, cap, &off, target)) return 0;
+        return off;
+    }
+    if (record->type == DNS_TYPE_PTR || record->type == DNS_TYPE_CNAME || record->type == DNS_TYPE_NS) {
+        char target[DNS_WIRE_MAX_NAME];
+        if (!dns_wire_name_normalize(record->target, target, sizeof(target))) return 0;
+        uint32_t off = 0;
+        if (!dns_wire_write_name(out, cap, &off, target)) return 0;
+        return off;
+    }
+    return 0;
+}
+
+int dns_wire_record_cmp(const dns_record_t *a, const dns_record_t *b) {
+    if (!a || !b) {
+        if (a) return 1;
+        if (b) return -1;
+        return 0;
+    }
+
+    uint16_t ac = a->rrclass & DNS_CLASS_MASK;
+    uint16_t bc = b->rrclass & DNS_CLASS_MASK;
+    if (ac != bc) return ac > bc ? 1 : -1;
+    if (a->type != b->type) return a->type > b->type ? 1 : -1;
+
+    uint8_t ar[DNS_WIRE_MAX_NAME + 8];
+    uint8_t br[DNS_WIRE_MAX_NAME + 8];
+    uint32_t alen = dns_wire_write_record_rdata(a, ar, sizeof(ar));
+    uint32_t blen = dns_wire_write_record_rdata(b, br, sizeof(br));
+    uint32_t common = alen < blen ? alen : blen;
+    int cmp = memcmp(ar, br, common);
+    if (cmp) return cmp > 0 ? 1 : -1;
+    if (alen == blen) return 0;
+    return alen > blen ? 1 : -1;
+}
+
 bool dns_wire_parse_records(const uint8_t *msg, uint32_t msg_len, bool check_id, uint16_t message_id, dns_record_t *out, uint32_t out_cap, uint32_t *out_count, uint16_t *out_flags) {
     if (out_count) *out_count = 0;
     if (!msg) return false;

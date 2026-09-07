@@ -22,7 +22,8 @@
 static l2_interface_t g_l2[MAX_L2_INTERFACES];
 static uint8_t g_l2_used[MAX_L2_INTERFACES];
 static uint8_t g_l2_count = 0;
-static uint32_t g_l3_epoch = 1;
+static uint32_t g_l3_epoch_seq = 1;
+static uint32_t g_l3_generation_seq = 1;
 
 typedef struct {
     l3_ipv4_interface_t node;
@@ -37,9 +38,15 @@ static v4_slot_t g_v4[MAX_IPV4_L3_INTERFACES];
 static v6_slot_t g_v6[MAX_IPV6_L3_INTERFACES];
 
 static uint32_t next_l3_epoch(void) {
-    g_l3_epoch++;
-    if (!g_l3_epoch) g_l3_epoch = 1;
-    return g_l3_epoch;
+    g_l3_epoch_seq++;
+    if (!g_l3_epoch_seq) g_l3_epoch_seq = 1;
+    return g_l3_epoch_seq;
+}
+
+static uint32_t next_l3_generation(void) {
+    g_l3_generation_seq++;
+    if (!g_l3_generation_seq) g_l3_generation_seq = 1;
+    return g_l3_generation_seq;
 }
 
 static inline int l2_slot_from_ifindex(uint8_t ifindex){
@@ -450,7 +457,7 @@ l3_id_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
     }
 
     n->epoch = next_l3_epoch();
-    n->generation = n->epoch;
+    n->generation = next_l3_generation();
     l2->l3_v4[loc] = n;
     g_v4[g].used = true;
     l2->ipv4_count++;
@@ -559,7 +566,7 @@ bool l3_ipv4_update(l3_id_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
 
     if (l3_changed) {
         n->epoch = next_l3_epoch();
-        if (identity_changed) n->generation = n->epoch;
+        if (identity_changed) n->generation = next_l3_generation();
     }
     if (!identity_changed && new_effective_mtu && old_effective_mtu && new_effective_mtu < old_effective_mtu) tcp_l3_mtu_reduce(n->l3_id, n->generation, new_effective_mtu);
     dhcp_daemon_kick();
@@ -753,7 +760,7 @@ l3_id_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     }
 
     n->epoch = next_l3_epoch();
-    n->generation = n->epoch;
+    n->generation = next_l3_generation();
     l2->l3_v6[loc] = n;
     g_v6[g].used = true;
     l2->ipv6_count++;
@@ -903,7 +910,7 @@ bool l3_ipv6_update(l3_id_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
 
     if (l3_changed) {
         n->epoch = next_l3_epoch();
-        if (identity_changed) n->generation = n->epoch;
+        if (identity_changed) n->generation = next_l3_generation();
     }
     if (n->dad_requested) ndp_daemon_kick();
     if (n->cfg & IPV6_CFG_DHCPV6) dhcpv6_daemon_kick();

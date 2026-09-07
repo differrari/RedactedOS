@@ -69,29 +69,6 @@ static int udp_probe_server(uint32_t probe_ip, uint16_t probe_port, net_l4_endpo
     return 1;
 }
 
-static int net_has_ready_address(void) {
-    uint8_t n_if = l2_interface_count();
-
-    for (uint8_t i = 0; i < n_if; i++) {
-        l2_interface_t *l2 = l2_interface_at(i);
-        if (!l2 || !l2->is_up) continue;
-
-        for (uint8_t j = 0; j < MAX_IPV4_PER_INTERFACE; j++) {
-            l3_ipv4_interface_t *v4 = l2->l3_v4[j];
-            if (!ipv4_l3_is_ready(v4) || v4->is_localhost) continue;
-            if (!ipv4_is_loopback(v4->ip)) return 1;
-        }
-
-        for (uint8_t j = 0; j < MAX_IPV6_PER_INTERFACE; j++) {
-            l3_ipv6_interface_t *v6 = l2->l3_v6[j];
-            if (!ipv6_l3_is_ready(v6) || v6->is_localhost) continue;
-            if (!ipv6_is_loopback(v6->ip)) return 1;
-        }
-    }
-
-    return 0;
-}
-
 static void run_http_server() {
     static const char HTTP_ROOT_BODY[] =
         "<!doctype html>\n"
@@ -252,6 +229,30 @@ static int ntp(int argc, char* argv[]) {
 static int net_test_entry(int argc, char *argv[]) {
     (void)argc; (void)argv;
 
+    for (;;) {
+        bool ready = false;
+        uint8_t n_if = l2_interface_count();
+        for (uint8_t i = 0; i < n_if && !ready; i++) {
+            l2_interface_t *l2 = l2_interface_at(i);
+            if (!l2 || !l2->is_up) continue;
+
+            for (uint8_t j = 0; j < MAX_IPV4_PER_INTERFACE; j++) {
+                l3_ipv4_interface_t *v4 = l2->l3_v4[j];
+                if (ipv4_l3_is_ready(v4) && !v4->is_localhost && !ipv4_is_loopback(v4->ip)) {
+                    ready = true;
+                    break;
+                }
+            }
+            for (uint8_t j = 0; j < MAX_IPV6_PER_INTERFACE && !ready; j++) {
+                l3_ipv6_interface_t *v6 = l2->l3_v6[j];
+                if (ipv6_l3_is_ready(v6) && !v6->is_localhost && !ipv6_is_loopback(v6->ip)) ready = true;
+            }
+        }
+        if (ready) break;
+        msleep(200);
+    }
+    print("[NET] ip ready, starting net_test");
+
     create_kernel_process("ntp", ntp, 0, NULL);
     uint8_t n_if = l2_interface_count();
     int tested_any = 0;
@@ -283,22 +284,10 @@ static int net_test_entry(int argc, char *argv[]) {
     return 0;
 }
 
-static int ip_waiter_entry(int argc, char* argv[]) {
-    (void)argc; (void)argv;
-    while (!net_has_ready_address()) msleep(200);
-    create_kernel_process("net_test", net_test_entry, 0, 0);
-    return 0;
-}
-
 process_t* launch_net_process() {
     create_kernel_process("net_net", network_net_task_entry, 0, 0);
     //create_kernel_process("ssdp_daemon", ssdp_daemon_entry, 0, 0);
     create_kernel_process("dns_daemon", dns_deamon_entry, 0, 0);
-    
-    if (net_has_ready_address()) {
-        print("[NET] ip ready, starting net_test");
-        create_kernel_process("net_test", net_test_entry, 0, 0);
-    } else create_kernel_process("ip_waiter", ip_waiter_entry, 0, 0);
-
+    create_kernel_process("net_test", net_test_entry, 0, 0);
     return NULL;
 }

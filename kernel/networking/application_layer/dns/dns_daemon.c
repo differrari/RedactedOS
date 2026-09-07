@@ -1,10 +1,11 @@
 #include "dns_daemon.h"
 #include "mdns_responder.h"
-#include "dns_sd.h"
+#include "dns_wire.h"
 #include "process/scheduler.h"
 #include "syscalls/syscalls.h"
 #include "net/socket_types.h"
 #include "networking/transport_layer/csocket.h"
+#include "networking/transport_layer/trans_utils.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/interface_manager.h"
@@ -13,23 +14,7 @@
 static mdns_tx_target_t g_mdns[MAX_L3_INTERFACES];
 static uint16_t g_mdns_count = 0;
 
-socket_handle_t mdns_socket_handle_for(ip_version_t ver){
-    for (uint16_t i = 0; i < g_mdns_count; i++) {
-        if (g_mdns[i].ver == ver) return g_mdns[i].sock;
-    }
-    return 0;
-}
-
-socket_handle_t mdns_socket_handle_for_l3(l3_id_t l3_id) {
-    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
-    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
-    uint32_t generation = v4 ? v4->generation : v6 ? v6->generation : 0;
-    if (!generation) return 0;
-    for (uint16_t i = 0; i < g_mdns_count; i++) if (g_mdns[i].l3_id == l3_id && g_mdns[i].l3_generation == generation) return g_mdns[i].sock;
-    return 0;
-}
-
-static void mdns_prune_sockets(void) {
+static void mdns_sync(const uint8_t* group4, const uint8_t* group6) {
     uint16_t out = 0;
     for (uint16_t i = 0; i < g_mdns_count; i++) {
         bool valid = false;
@@ -48,10 +33,6 @@ static void mdns_prune_sockets(void) {
         out++;
     }
     g_mdns_count = out;
-}
-
-static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
-    if (!group4 || !group6) return;
 
     uint8_t n_if = l2_interface_count();
     for (uint8_t i = 0; i < n_if && g_mdns_count < MAX_L3_INTERFACES; i++) {
@@ -74,8 +55,8 @@ static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
             if (!s) continue;
 
             SockBindSpec spec = {.kind = BIND_L3, .ver = IP_VER4, .l3_id = v4->l3_id};
-            net_l4_endpoint group = {.ver = IP_VER4, .port = DNS_MDNS_PORT};
-            memcpy(group.ip, group4, 4);
+            net_l4_endpoint group;
+            make_ep(group4, DNS_MDNS_PORT, IP_VER4, &group);
 
             if (bind_socket(s, &spec, DNS_MDNS_PORT) != SOCK_OK || set_socket_option(s, SOCK_OPT_MCAST_JOIN, &group, sizeof(group)) != SOCK_OK) {
                 close_socket(s);
@@ -106,9 +87,8 @@ static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
             if (!s) continue;
 
             SockBindSpec spec = {.kind = BIND_L3, .ver = IP_VER6, .l3_id = v6->l3_id};
-            net_l4_endpoint group = {.ver = IP_VER6, .port = DNS_MDNS_PORT};
-            memcpy(group.ip, group6, 16);
-
+            net_l4_endpoint group;
+            make_ep(group6, DNS_MDNS_PORT, IP_VER6, &group);
             if (bind_socket(s, &spec, DNS_MDNS_PORT) != SOCK_OK || set_socket_option(s, SOCK_OPT_MCAST_JOIN, &group, sizeof(group)) != SOCK_OK) {
                 close_socket(s);
                 continue;
@@ -124,17 +104,16 @@ static void mdns_open_sockets(const uint8_t *group4, const uint8_t *group6) {
     }
 }
 
-int dns_deamon_entry(int argc, char* argv[]){
+int dns_deamon_entry(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
-    uint32_t mdns_v4 = IPV4_MCAST_MDNS;
+    uint32_t mdns_v4 = DNS_MDNS_GROUP_V4;
     uint8_t mdns_v4_addr[4];
     uint8_t mdns_v6[16];
     memcpy(mdns_v4_addr, &mdns_v4, 4);
     ipv6_make_multicast(0x02, IPV6_MCAST_MDNS, 0, mdns_v6);
 
-    mdns_prune_sockets();
-    mdns_open_sockets(mdns_v4_addr, mdns_v6);
+    mdns_sync(mdns_v4_addr, mdns_v6);
 
     const uint32_t tick_ms = 100;
     uint32_t last_socket_sync_ms = (uint32_t)get_time();
@@ -142,8 +121,7 @@ int dns_deamon_entry(int argc, char* argv[]){
         uint32_t now_ms = (uint32_t)get_time();
         if (now_ms - last_socket_sync_ms >= 1000) {
             last_socket_sync_ms = now_ms;
-            mdns_prune_sockets();
-            mdns_open_sockets(mdns_v4_addr, mdns_v6);
+            mdns_sync(mdns_v4_addr, mdns_v6);
         }
 
         uint8_t buf[900];
@@ -152,7 +130,6 @@ int dns_deamon_entry(int argc, char* argv[]){
         for (uint16_t sidx = 0; sidx < g_mdns_count; sidx++) {
             socket_handle_t s = g_mdns[sidx].sock;
             for (int i = 0; i < 64; i++) {
-                memset(&src, 0, sizeof(src));
                 int64_t r = receive_from_socket(s, buf, sizeof(buf), &src);
                 if (r == SOCK_ERR_WOULDBLOCK) break;
                 if (r < 0) break;
