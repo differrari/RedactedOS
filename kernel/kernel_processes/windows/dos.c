@@ -45,11 +45,11 @@ static void draw_solid_window(window_frame *frame, draw_ctx *ctx, int_point fixe
     
     DRAW(rectangle(ctx, (rect_ui_config){
         .border_size = BORDER_SIZE,
-        .border_color = saturate(system_theme.bg_color + 0x222222, focused ? 0 : -90),
+        .border_color = saturate_color(system_theme.bg_color + 0x222222, focused ? 0 : -90),
     }, (common_ui_config){
         .point = fixed_point,
         .size = fixed_size,
-        .background_color = saturate(system_theme.bg_color + 0x111111, focused ? 0 : -90),
+        .background_color = saturate_color(system_theme.bg_color + 0x111111, focused ? 0 : -90),
         .foreground_color = COLOR_WHITE,
     }), { 
         label(ctx, (text_ui_config){

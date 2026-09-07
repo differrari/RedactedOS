@@ -25,7 +25,7 @@
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
 
-void *proc_mem_page;
+void *proc_mem_page = 0;
 
 static inline void* proc_palloc(size_t s){
     return palloc(s, MEM_PRIV_KERNEL, MEM_RW, true);
@@ -172,6 +172,7 @@ void switch_proc(ProcSwitchReason reason) {
     }
 
     if (current_proc->mm.ttbr0) mmu_asid_ensure(&current_proc->mm);
+    mmu_swap_kttbr(0);
     mmu_swap_ttbr(current_proc->mm.ttbr0 ? &current_proc->mm : 0);
     if (prev && prev != current_proc && prev != idle_proc && process_can_reset(prev)) reset_process(prev);
 
@@ -204,7 +205,7 @@ void prepare_process_restore(process_t *proc){
         if (proc->main_thread.pc >= HIGH_VA) panic("user pc in kernel VA", proc->main_thread.pc);
         mmu_swap_ttbr(&proc->mm);
         mmu_ttbr0_enable_user();
-    } else mmu_ttbr0_disable_user(); 
+    }
 }
 
 void process_restore(){

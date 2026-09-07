@@ -6,7 +6,7 @@
 #include "memory/memory.h"
 #include "input_keycodes.h"
 #include "string/slice.h"
-#include "package_info.h"
+#include "utils/package_info.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3
@@ -94,8 +94,7 @@ void load_entries(){
         string_free(entry->info.author);
     }
     chunk_array_reset(entries);
-    traverse_directory("/home/applications", false, handle_entry);
-    traverse_directory("/boot/redos/system", false, handle_entry);
+    traverse_directory("/apps", false, handle_entry);
 }
 
 void draw_desktop(){
@@ -117,7 +116,7 @@ void draw_desktop(){
     gpu_point old_selected = selected;
     kbd_event event;
     while (read_event(&event)){
-        if (event.type == KEY_PRESS){
+        if (event.type == KEY_PRESS || event.type == KEY_CONTINUE){
             switch (event.key) {
                 case KEY_ENTER:
                 case KEY_KPENTER:

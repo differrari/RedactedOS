@@ -80,7 +80,6 @@ void resize_draw_ctx(draw_ctx* d_ctx, uint32_t width, uint32_t height){
     gpu_flush();
 }
 
-
 uint32_t gpu_char_size(uint32_t scale){
     return gpu_get_char_size(scale);
 }
@@ -133,6 +132,13 @@ FS_RESULT openf(const char* path, file* descriptor){
 
 size_t readf(file *descriptor, char* buf, size_t size){
     return read_file(descriptor, buf, size);
+}
+
+size_t transformf(const char *path, void* buf, size_t size){
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs, true);
+    if (!s.data || !s.length) return transform_file(kernel_fs(), path, buf, size);
+    return transform_file(&rootfs, path, buf, size);
 }
 
 size_t writef(file *descriptor, const char* buf, size_t size){

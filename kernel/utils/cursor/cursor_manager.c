@@ -2,6 +2,7 @@
 #include "syscalls/syscalls.h"
 #include "files/helpers.h"
 #include "image/bmp.h"
+#include "draw/draw.h"
 
 draw_ctx current_cursor;
 cursor_types current_cursor_type;

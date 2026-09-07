@@ -2,6 +2,7 @@
 #include "files/helpers.h"
 #include "data/format/scanner/scanner.h"
 #include "regex/regex.h"
+#include "regex/regexlang.h"
 #include "memory/memory.h"
 
 void markdown_sections(string_slice document, void (*on_section)(int size, string_slice title, string_slice content)){
@@ -82,9 +83,23 @@ void find_page_file(const char *directory, const char *file){
     string_free(s);
 }
 
+regex_node annotation_pattern[] = {
+    REGEX_MATCH('!', REGEX_ADVANCE, REGEX_FAIL),
+    REGEX_MATCH('[', REGEX_ADVANCE, REGEX_FAIL),
+    REGEX_CAPTURE(
+        REGEX_NOT(']', REGEX_STAY, REGEX_ADVANCE)
+    ),
+    REGEX_MATCH(']', REGEX_ADVANCE, REGEX_FAIL),
+    REGEX_MATCH('(', REGEX_ADVANCE, REGEX_FAIL),
+    REGEX_CAPTURE(
+        REGEX_NOT(')', REGEX_STAY, REGEX_ADVANCE)
+    ),
+    REGEX_MATCH(')', REGEX_ADVANCE, REGEX_FAIL),
+};
+
 int main(int argc, strarr argv){
 
-    annotation_regex = init_regex("!\\[(^\\]*)\\]\\((^\\)*)\\)");
+    annotation_regex = init_manual_regex(annotation_pattern, N_ARR(annotation_pattern));
 
     if (argc > 1){
         seek_section = slice_from_literal(argv[1]);

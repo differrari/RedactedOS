@@ -379,6 +379,22 @@ u64 syscall_writef(process_t *ctx, thread_t *current_thread){
     return write_file(descriptor, buf, size);
 }
 
+u64 syscall_transf(process_t *ctx, thread_t *current_thread){
+    SYSCALL_STR(path, PROC_X0, false);
+    size_t size = (size_t)current_thread->PROC_X2;
+    SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, true);
+#ifdef ISOLATEDFS
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
+    if (!s.data || !s.length) return 0;
+    size_t ret = transform_file(&rootfs, s.data, buf, size);
+    string_free(s);
+    return ret;
+#else 
+    return transform_file(kernel_fs(), path, buf, size);
+#endif
+}
+
 u64 syscall_sreadf(process_t *ctx, thread_t *current_thread){
     SYSCALL_STR(path, PROC_X0, false);
     size_t size = (size_t)current_thread->PROC_X2;
@@ -549,6 +565,7 @@ syscall_entry syscalls[] = {
     [DIR_LIST_CODE] = syscall_dir_list,
     [FILE_STAT_CODE] = syscall_stat,
     [FILE_TRNC_CODE] = syscall_trunc,
+    [FILE_TRANS_CODE] = syscall_transf,
     [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
     [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
 
@@ -688,7 +705,7 @@ void sync_el0_handler_c(){
             if (syscall_depth < 3){
                 uint64_t ksp = 0;
                 asm volatile ("mov %0, sp" : "=r"(ksp));
-                kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx. KSP: %llx", esr, elr, far, ksp);
+                kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", esr, elr, far, ksp);
                 coredump(esr, elr, far, ksp);
             }
             handle_exception("UNEXPECTED EXCEPTION", ec);
@@ -702,11 +719,14 @@ void sync_el0_handler_c(){
     }
     syscall_depth--;
     save_syscall_return(result);
-    // print("Return to %i",current_thread->pid);
-    if (current_thread->kstack_top) {
+    if (current_thread->special_mm) {
         //TODO: schedule kstack_top to cleanup, but don't do immediately as we're in it
-        current_thread->kstack_top = 0;
+        current_thread->special_mm = 0;
+        mmu_swap_kttbr(0);
+        mmu_flush_all();
+        mmu_flush_icache();
     }
+    job_ksp = (uptr)ksp;
     process_restore();
 }
 

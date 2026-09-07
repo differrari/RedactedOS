@@ -100,5 +100,6 @@ system_module net_module = (system_module){
     .truncate = 0,
     .getstat = 0,
     .readdir = 0,
+    .transform = 0,
     .alias_info = {}
 };
