@@ -1,8 +1,8 @@
 #pragma once
 
-#include "networking/port_manager.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/link_layer/eth.h"
+#include "networking/netpkt.h"
 #include "std/memory.h"
 #include "net/network_types.h"
 #include "net/socket_types.h"
@@ -19,17 +19,12 @@ extern "C" {
 #define URG_F 5
 #define ECE_F 6
 #define CWR_F 7
-
+//todo ECE_F CWR_F rfc 3168 8311 9293 
 typedef enum {
     TCP_OK          = 0,
-    TCP_RETRY       = 1,
-    TCP_RESET       = 2,
-    TCP_TIMEOUT     = -2,
-    TCP_CSUM_ERR    = -3,
     TCP_INVALID     = -4,
     TCP_WOULDBLOCK  = -5,
     TCP_DISCONNECT  = -6,
-    TCP_UNIMPLEMENT = -10,
     TCP_BUSY        = -11,
 } tcp_result_t;
 
@@ -54,6 +49,9 @@ typedef struct {
     sizedptr payload;
     uint32_t expected_ack;
     uint32_t ack_received;
+    uint16_t flow_index;
+    uint16_t flow_reserved;
+    uint32_t flow_generation;
 } tcp_data;
 
 typedef enum {
@@ -71,37 +69,37 @@ typedef enum {
 } tcp_state_t;
 
 #define MAX_TCP_FLOWS 512
-#define TCP_SYN_RETRIES 5
-#define TCP_DATA_RETRIES 5
-#define TCP_RETRY_TIMEOUT_MS 200
 #define TCP_RECV_WINDOW 65535
-#define TCP_MAX_TX_SEGS 16
-#define TCP_INIT_RTO 200
+#define TCP_MAX_TX_SEGS 128
+#define TCP_INIT_RTO 1000
 #define TCP_MIN_RTO 200
 #define TCP_MAX_RTO 60000
+#define TCP_SYN_DATA_RTO 3000
 #define TCP_MSL_MS 30000
+#define SOCKET_DEFAULT_KEEPALIVE_MS (2u * 60u * 60u * 1000u)
 #define TCP_2MSL_MS (2 * TCP_MSL_MS)
 #define TCP_MAX_RETRANS 8
-#define TCP_MAX_PERSIST_PROBES 8
 
-int find_flow(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port);
-tcp_data* tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port);
+bool tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, tcp_data *out_ctx);
+bool tcp_bind_conflicts(const SockBindSpec* spec, uint16_t port, bool reuseaddr);
 
-bool tcp_bind_l3(uint8_t l3_id, uint16_t port, uint16_t pid, port_recv_handler_t handler, const SocketExtraOptions* extra);
-int tcp_alloc_ephemeral_l3(uint8_t l3_id, uint16_t pid, port_recv_handler_t handler);
-bool tcp_unbind_l3(uint8_t l3_id, uint16_t port, uint16_t pid);
-bool tcp_handshake_l3(uint8_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, uint16_t pid, const SocketExtraOptions* extra);
+bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra);
+void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra, uint32_t apply_mask);
 
 tcp_result_t tcp_flow_send(tcp_data *flow_ctx);
+tcp_result_t tcp_flow_flush(tcp_data *flow_ctx);
 tcp_result_t tcp_flow_close(tcp_data *flow_ctx);
+void tcp_flow_abort(tcp_data *flow_ctx);
+bool tcp_flow_is_closed(tcp_data *flow_ctx);
+tcp_result_t tcp_flow_release_closed(tcp_data *flow_ctx);
+int64_t tcp_flow_read(tcp_data *flow_ctx, void *buf, uint64_t len);
+uint32_t tcp_flow_readable(tcp_data *flow_ctx);
+bool tcp_flow_recv_closed(tcp_data *flow_ctx);
 
-void tcp_flow_window_update(tcp_data *flow_ctx);
-void tcp_flow_on_app_read(tcp_data *flow_ctx, uint32_t bytes_read);
-
-void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, uint8_t l3_id, uintptr_t ptr, uint32_t len);
-
-void tcp_tick_all(uint32_t elapsed_ms);
-int tcp_daemon_entry(int argc, char *argv[]);
+void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, l3_id_t l3_id, netpkt_t* pkt);
+void tcp_pmtu_update(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port, uint16_t mtu);
+void tcp_l3_retire(l3_id_t l3_id, uint32_t l3_generation);
+void tcp_l3_mtu_reduce(l3_id_t l3_id, uint32_t l3_generation, uint16_t mtu);
 
 #ifdef __cplusplus
 }

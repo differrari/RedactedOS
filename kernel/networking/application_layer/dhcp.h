@@ -46,7 +46,7 @@ typedef struct __attribute__((packed)) {
 } dhcp_packet;
 
 typedef struct {
-    uint8_t  mac[6];
+    uint8_t mac[MAC_ADDR_LEN];
     uint32_t server_ip;
     uint32_t offered_ip;
 } dhcp_request;
@@ -56,10 +56,11 @@ typedef enum {
     DHCPK_RENEW = 1,
     DHCPK_REBIND = 2,
     DHCPK_INFORM = 3,
-    DHCPK_DISCOVER = 4
+    DHCPK_DISCOVER = 4,
+    DHCPK_DECLINE = 5
 } dhcp_req_kind;
 
-sizedptr dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t xid, dhcp_req_kind kind, bool broadcast);
+uint32_t dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t xid, dhcp_req_kind kind, bool broadcast, dhcp_packet *out);
 
 dhcp_packet* dhcp_parse_frame_payload(uintptr_t frame_ptr);
 

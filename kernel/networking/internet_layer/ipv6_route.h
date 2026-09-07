@@ -17,26 +17,31 @@ typedef struct {
 
 typedef struct ipv6_rt_table ipv6_rt_table_t;
 
-ipv6_rt_table_t* ipv6_rt_create(void);
+ipv6_rt_table_t* ipv6_rt_create(l3_id_t owner_l3_id);
 void ipv6_rt_destroy(ipv6_rt_table_t* t);
 void ipv6_rt_clear(ipv6_rt_table_t* t);
 
 bool ipv6_rt_add_in(ipv6_rt_table_t* t, const uint8_t net[16], uint8_t plen, const uint8_t gw[16], uint16_t metric);
 bool ipv6_rt_del_in(ipv6_rt_table_t* t, const uint8_t net[16], uint8_t plen);
+int ipv6_rt_count(const ipv6_rt_table_t* t);
+bool ipv6_rt_get(const ipv6_rt_table_t* t, int index, ipv6_rt_entry_t* out);
+uint32_t ipv6_rt_epoch(const ipv6_rt_table_t* t);
 bool ipv6_rt_lookup_in(const ipv6_rt_table_t* t, const uint8_t dst[16], uint8_t next_hop[16], int* out_prefix_len, int* out_metric);
 
 void ipv6_rt_ensure_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t plen, const uint8_t gw[16], uint16_t base_metric);
 void ipv6_rt_sync_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t plen, const uint8_t gw[16], uint16_t base_metric);
 
-bool ipv6_rt_pick_best_l3_in(const uint8_t* l3_ids, int n_ids, const uint8_t dst[16], uint8_t* out_l3);
+bool ipv6_rt_pick_best_l3(const uint8_t dst[16], uint8_t ifindex, l3_id_t* out_l3);
 
 typedef struct {
-    uint8_t l3_id;
+    l3_id_t l3_id;
+    uint32_t l3_epoch;
     uint8_t src_ip[16];
-    ip_tx_opts_t fixed_opts;
 } ipv6_tx_plan_t;
 
-bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, const uint8_t* allowed_l3, int allowed_n, ipv6_tx_plan_t* out);
+bool ipv6_tx_plan_valid(const ipv6_tx_plan_t* plan);
+bool ipv6_tx_plan_onlink(const ipv6_tx_plan_t* plan, const uint8_t dst[16]);
+bool ipv6_build_tx_plan(const uint8_t dst[16], const ip_tx_opts_t* hint, ipv6_tx_plan_t* out);
 
 #ifdef __cplusplus
 }

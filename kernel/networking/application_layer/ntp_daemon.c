@@ -8,12 +8,7 @@
 #include "syscalls/syscalls.h"
 
 static uint16_t g_pid_ntp = 0xFFFF;
-static socket_handle_t g_sock = 0;
-
-uint16_t ntp_get_pid(void){ return g_pid_ntp; }
 bool ntp_is_running(void){ return g_pid_ntp != 0xFFFF; }
-void ntp_set_pid(uint16_t p){ g_pid_ntp = p; }
-socket_handle_t ntp_socket_handle(void){ return g_sock; }
 
 #define NTP_POLL_INTERVAL_MS 60000u
 #define NTP_QUERY_TIMEOUT_MS 1200u
@@ -27,9 +22,7 @@ static bool any_ipv4_configured_nonlocal(void){
         if (!l2 || !l2->is_up) continue;
         for (int s = 0; s < MAX_IPV4_PER_INTERFACE; s++) {
             l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!v4) continue;
-            if (v4->mode == IPV4_CFG_DISABLED) continue;
-            if (!v4->ip) continue;
+            if (!ipv4_l3_is_ready(v4)) continue;
             if (v4->is_localhost) continue;
             if (ipv4_is_loopback(v4->ip)) continue;
             return true;
@@ -43,8 +36,6 @@ int ntp_daemon_entry(int argc, char* argv[]){
     (void)argv;
 
     g_pid_ntp = get_current_proc_pid();
-    g_sock = udp_socket_create(0, g_pid_ntp, NULL);
-    ntp_set_pid(get_current_proc_pid());
 
     uint32_t attempts = 0;
     while (attempts < NTP_BOOTSTRAP_MAX_RETRY) {

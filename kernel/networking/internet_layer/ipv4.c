@@ -1,6 +1,7 @@
 #include "ipv4.h"
 #include "ipv4_route.h"
 #include "networking/link_layer/arp.h"
+#include "networking/link_layer/link_utils.h"
 #include "networking/internet_layer/icmp.h"
 #include "networking/internet_layer/igmp.h"
 #include "std/memory.h"
@@ -12,479 +13,433 @@
 #include "ipv4_utils.h"
 #include "net/network_types.h"
 #include "networking/link_layer/nic_types.h"
+#include "networking/net_fragbuf.h"
+#include "networking/internet_layer/pmtu.h"
+#include "networking/interface_manager.h"
+#include "networking/network.h"
 
 static uint16_t g_ip_ident = 1;
 
-static l3_ipv4_interface_t* best_v4_on_l2_for_dst(l2_interface_t* l2, uint32_t dst) {
-    l3_ipv4_interface_t* best = NULL;
-    uint32_t best_pl = -1;
-    for (int s = 0; s < MAX_IPV4_PER_INTERFACE; s++) {
-        l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-        if (!v4) continue;
-        if (v4->mode == IPV4_CFG_DISABLED) continue;
-        if (!v4->ip) continue;
-        uint32_t m = v4->mask;
-        if (m && (ipv4_net(dst, m) == ipv4_net(v4->ip, m))) {
-            uint32_t pl = ipv4_prefix_len(m);
-            if (pl > best_pl) {
-                best_pl = pl;
-                best = v4;
-            }
-        } else if (!best) {
-            best = v4;
-        }
-    }
-    return best;
+#define IPV4_REASS_SLOTS 8
+typedef struct {
+    uint8_t used;
+    uint8_t ifindex;
+    uint8_t first_header_len;
+    uint16_t ident;
+    uint8_t proto;
+    uint32_t src;
+    uint32_t dst;
+    uint32_t last_update_ms;
+    uint8_t first_header[60];
+    net_fragbuf_t frag;
+} ipv4_reass_slot_t;
+
+static ipv4_reass_slot_t g_ipv4_reass[IPV4_REASS_SLOTS];
+
+static void ipv4_reass_free(ipv4_reass_slot_t *s) {
+    if (!s) return;
+    net_fragbuf_free(&s->frag);
+    memset(s, 0, sizeof(*s));
 }
 
-static bool lookup_route_in_tables(uint32_t dst, uint32_t* out_nh, uint8_t* out_ifx, uint32_t* out_src) {
-    int best_pl = -1;
-    int best_metric = 0x7FFF;
-    uint32_t best_nh = 0;
-    uint8_t best_ifx = 0;
-    uint32_t best_src = 0;
-
-    uint8_t cnt = l2_interface_count();
-    for (uint8_t i = 0; i < cnt; i++) {
-        l2_interface_t* l2 = l2_interface_at(i);
-        if (!l2) continue;
-        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; s++) {
-            l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!v4) continue;
-            if (v4->mode == IPV4_CFG_DISABLED) continue;
-            if (!v4->routing_table) continue;
-
-            uint32_t nh = 0; int pl = -1; int metric = 0;
-            if (ipv4_rt_lookup_in(v4->routing_table, dst, &nh, &pl, &metric)) {
-                if (pl > best_pl || (pl == best_pl && metric < best_metric)) {
-                    best_pl = pl;
-                    best_metric = metric;
-                    best_nh = nh ? nh : dst;
-                    best_ifx = l2->ifindex;
-                    best_src = v4->ip;
-                }
-            }
-        }
-    }
-
-    if (best_pl >= 0) {
-        if (out_nh) *out_nh = best_nh;
-        if (out_ifx) *out_ifx = best_ifx;
-        if (out_src) *out_src = best_src;
-        return true;
-    }
-    return false;
-}
-
-static bool pick_broadcast_bound_l3(uint8_t l3_id, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
-    if (!v4 || !v4->l2) return false;
-    if (v4->mode == IPV4_CFG_DISABLED) return false;
-
-    if (out_ifx) *out_ifx = v4->l2->ifindex;
-    if (out_src) *out_src = v4->ip;
-    if (!v4->ip && v4->mode == IPV4_CFG_DHCP && out_src) *out_src = 0;
-    if (out_nh) *out_nh = 0xFFFFFFFFu;
-    return true;
-}
-
-static bool pick_broadcast_bound_l2(uint8_t ifindex, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-    if (!l2) return false;
-
-    l3_ipv4_interface_t* chosen = NULL;
-    l3_ipv4_interface_t* dhcp = NULL;
-    for (int s = 0; s < MAX_IPV4_PER_INTERFACE; s++) {
-        l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-        if (!v4) continue;
-        if (v4->mode == IPV4_CFG_DISABLED) continue;
-        if (v4->ip) { chosen = v4; break; }
-        if (!v4->ip && v4->mode == IPV4_CFG_DHCP && !dhcp) dhcp = v4;
-    }
-    if (!chosen) chosen = dhcp;
-
-    if (out_ifx) *out_ifx = l2->ifindex;
-    if (out_src) *out_src = (chosen && chosen->ip) ? chosen->ip : 0;
-    if (out_nh) *out_nh = 0xFFFFFFFFu;
-    return true;
-}
-
-static bool pick_broadcast_global(uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    l3_ipv4_interface_t* static_cand = NULL;
-    l3_ipv4_interface_t* dhcp_cand = NULL;
-    l2_interface_t* l2_s = NULL;
-    l2_interface_t* l2_d = NULL;
-
-    uint8_t n = l2_interface_count();
-    for (uint8_t i = 0; i < n; i++) {
-        l2_interface_t* l2 = l2_interface_at(i);
-        if (!l2) continue;
-        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; s++) {
-            l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!v4) continue;
-            if (v4->mode == IPV4_CFG_DISABLED) continue;
-            if (v4->ip && !static_cand) { static_cand = v4; l2_s = l2; }
-            if (!v4->ip && v4->mode == IPV4_CFG_DHCP && !dhcp_cand) { dhcp_cand = v4; l2_d = l2; }
-        }
-    }
-
-    l3_ipv4_interface_t* pick = static_cand ? static_cand : dhcp_cand;
-    l2_interface_t* l2 = static_cand ? l2_s : l2_d;
-    if (!l2) return false;
-
-    if (out_ifx) *out_ifx = l2->ifindex;
-    if (out_src) *out_src = (pick && pick->ip) ? pick->ip : 0;
-    if (out_nh) *out_nh = 0xFFFFFFFFu;
-    return true;
-}
-
-static bool pick_route_global(uint32_t dst, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    if (ipv4_is_limited_broadcast(dst)) return pick_broadcast_global(out_ifx, out_src, out_nh);
-
-    ip_resolution_result_t r = resolve_ipv4_to_interface(dst);
-    if (r.found && r.ipv4 && r.l2) {
-        uint32_t m = r.ipv4->mask;
-        if (m && (ipv4_net(dst, m) == ipv4_net(r.ipv4->ip, m))) {
-            if (out_ifx) *out_ifx = r.l2->ifindex;
-            if (out_src) *out_src = r.ipv4->ip;
-            if (out_nh) *out_nh = dst;
-            return true;
-        }
-        if (r.ipv4->gw) {
-            if (out_ifx) *out_ifx = r.l2->ifindex;
-            if (out_src) *out_src = r.ipv4->ip;
-            if (out_nh) *out_nh = r.ipv4->gw;
-            return true;
-        }
-        if (r.ipv4->routing_table) {
-            uint32_t nh = 0; int pl = -1; int metric = 0;
-            if (ipv4_rt_lookup_in(r.ipv4->routing_table, dst, &nh, &pl, &metric)) {
-                if (out_ifx) *out_ifx = r.l2->ifindex;
-                if (out_src) *out_src = r.ipv4->ip;
-                if (out_nh) *out_nh = nh ? nh : dst;
-                return true;
-            }
-        }
-    }
-    return lookup_route_in_tables(dst, out_nh, out_ifx, out_src);
-}
-
-static bool pick_route_bound_l3(uint8_t l3_id, uint32_t dst, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    if (ipv4_is_limited_broadcast(dst)) return pick_broadcast_bound_l3(l3_id, out_ifx, out_src, out_nh);
-
-    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
-    if (!v4 || !v4->l2) return false;
-    if (v4->mode == IPV4_CFG_DISABLED) return false;
-    if (!v4->ip) return false;
-
-    uint32_t m = v4->mask;
-    if (m && (ipv4_net(dst, m) == ipv4_net(v4->ip, m))) {
-        if (out_ifx) *out_ifx = v4->l2->ifindex;
-        if (out_src) *out_src = v4->ip;
-        if (out_nh) *out_nh = dst;
-        return true;
-    }
-    if (v4->gw) {
-        if (out_ifx) *out_ifx = v4->l2->ifindex;
-        if (out_src) *out_src = v4->ip;
-        if (out_nh) *out_nh = v4->gw;
-        return true;
-    }
-    if (v4->routing_table) {
-        uint32_t nh = 0; int pl = -1; int metric = 0;
-        if (ipv4_rt_lookup_in(v4->routing_table, dst, &nh, &pl, &metric)) {
-            if (out_ifx) *out_ifx = v4->l2->ifindex;
-            if (out_src) *out_src = v4->ip;
-            if (out_nh) *out_nh = nh ? nh : dst;
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool pick_route_bound_l2(uint8_t ifindex, uint32_t dst, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    if (ipv4_is_limited_broadcast(dst)) return pick_broadcast_bound_l2(ifindex, out_ifx, out_src, out_nh);
-
-    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-    if (!l2) return false;
-
-    l3_ipv4_interface_t* v4 = best_v4_on_l2_for_dst(l2, dst);
-    if (!v4) return false;
-    if (v4->mode == IPV4_CFG_DISABLED) return false;
-
-    uint32_t m = v4->mask;
-    if (m && (ipv4_net(dst, m) == ipv4_net(v4->ip, m))) {
-        if (out_ifx) *out_ifx = l2->ifindex;
-        if (out_src) *out_src = v4->ip;
-        if (out_nh) *out_nh = dst;
-        return true;
-    }
-    if (v4->gw) {
-        if (out_ifx) *out_ifx = l2->ifindex;
-        if (out_src) *out_src = v4->ip;
-        if (out_nh) *out_nh = v4->gw;
-        return true;
-    }
-    if (v4->routing_table) {
-        uint32_t nh = 0; int pl = -1; int metric = 0;
-        if (ipv4_rt_lookup_in(v4->routing_table, dst, &nh, &pl, &metric)) {
-            if (out_ifx) *out_ifx = l2->ifindex;
-            if (out_src) *out_src = v4->ip;
-            if (out_nh) *out_nh = nh ? nh : dst;
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool pick_route(uint32_t dst, const ipv4_tx_opts_t* opts, uint8_t* out_ifx, uint32_t* out_src, uint32_t* out_nh) {
-    if (opts) {
-        if (opts->scope == IP_TX_BOUND_L3) return pick_route_bound_l3(opts->index, dst, out_ifx, out_src, out_nh);
-        if (opts->scope == IP_TX_BOUND_L2) return pick_route_bound_l2(opts->index, dst, out_ifx, out_src, out_nh);
-        return pick_route_global(dst, out_ifx, out_src, out_nh);
-    }
-    return pick_route_global(dst, out_ifx, out_src, out_nh);
-}
-
-
-void ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ipv4_tx_opts_t* opts, uint8_t ttl, uint8_t dontfrag) {
+bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx_opts_t* opts, uint8_t ttl, uint8_t dontfrag, uint8_t dontroute) {
     if (!pkt || !netpkt_len(pkt)) {
         if (pkt) netpkt_unref(pkt);
-        return;
+        return false;
     }
 
     uint8_t ifx = 0;
     uint32_t src_ip = 0;
-    uint32_t nh = 0;
-    if (!pick_route(dst_ip, opts, &ifx, &src_ip, &nh)) {
-        netpkt_unref(pkt);
-        return;
-    }
+    uint32_t nh = dst_ip;
+    l3_ipv4_interface_t* src_v4 = NULL;
 
-    uint8_t dst_mac[6];
-    bool is_dbcast = false;
-    l2_interface_t* l2 = l2_interface_find_by_index(ifx);
-    if (l2) {
-        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
-            l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!v4 || v4->mode == IPV4_CFG_DISABLED) continue;
-            if (v4->mask && ipv4_broadcast_calc(v4->ip, v4->mask) == dst_ip) { is_dbcast = true; break; }
-        }
-    }
-
-    if (is_dbcast) {
-        memset(dst_mac, 0xFF, 6);
-    } else if (ipv4_is_multicast(dst_ip)) {
-        ipv4_mcast_to_mac(dst_ip, dst_mac);
-    } else {
-        if (l2 && l2->kind == NET_IFK_LOCALHOST) {
-            memset(dst_mac, 0, 6);
-        } else if (!arp_resolve_on(ifx, nh, dst_mac, 1000)) {
+    if (ipv4_is_limited_broadcast(dst_ip)) {
+        if (!opts || opts->scope != IP_TX_BOUND_L3) {
             netpkt_unref(pkt);
-            return;
+            return false;
+        }
+
+        src_v4 = l3_ipv4_find_by_id(opts->target.l3_id);
+        if (!ipv4_l3_is_active(src_v4)) {
+            netpkt_unref(pkt);
+            return false;
+        }
+
+        ifx = src_v4->l2->ifindex;
+        src_ip = src_v4->ip;
+        nh = IPV4_LIMITED_BROADCAST;
+    } else {
+        ipv4_tx_plan_t plan;
+        if (!ipv4_build_tx_plan(dst_ip, opts, &plan)) {
+            netpkt_unref(pkt);
+            return false;
+        }
+
+        src_v4 = l3_ipv4_find_by_id(plan.l3_id);
+        if (!ipv4_l3_is_ready(src_v4)) {
+            netpkt_unref(pkt);
+            return false;
+        }
+
+        ifx = src_v4->l2->ifindex;
+        src_ip = plan.src_ip;
+
+        uint32_t route_nh = 0;
+        bool have_nh = false;
+
+        if (dontroute) {
+            if (!ipv4_tx_plan_onlink(&plan, dst_ip)) {
+                netpkt_unref(pkt);
+                return false;
+            }
+            nh = dst_ip;
+            have_nh = true;
+        }
+
+        if (!have_nh && src_v4->routing_table && ipv4_rt_lookup_in(src_v4->routing_table, dst_ip, &route_nh, NULL, NULL)) {
+            nh = route_nh ? route_nh : dst_ip;
+            have_nh = true;
+        }
+        if (!have_nh && src_v4->mask && ipv4_net(dst_ip, src_v4->mask) == ipv4_net(src_v4->ip, src_v4->mask)) {
+            nh = dst_ip;
+            have_nh = true;
+        }
+        if (!have_nh && src_v4->gw) {
+            nh = src_v4->gw;
+            have_nh = true;
+        }
+        if (!have_nh) {
+            netpkt_unref(pkt);
+            return false;
         }
     }
 
-    uint16_t mtu = 1500;
-    if (l2) {
-        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
-            l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-            if (!v4) continue;
-            if (v4->mode == IPV4_CFG_DISABLED) continue;
-            if (v4->ip != src_ip) continue;
-            if (v4->runtime_opts_v4.mtu) mtu = v4->runtime_opts_v4.mtu;
-            break;
-        }
-    }
+    l2_interface_t* l2 = src_v4->l2;
+    uint8_t dst_mac[MAC_ADDR_LEN];
+    bool need_arp = false;
+    bool is_dbcast = src_v4->mask && nh == dst_ip && ipv4_broadcast_calc(src_v4->ip, src_v4->mask) == dst_ip;
 
+    if (ipv4_is_limited_broadcast(dst_ip) || is_dbcast) mac_set_broadcast(dst_mac);
+    else if (ipv4_is_multicast(dst_ip)) ipv4_mcast_to_mac(dst_ip, dst_mac);
+    else if (l2->kind == NET_IFK_LOCALHOST) mac_clear(dst_mac);
+    else need_arp = true;
+
+    uint16_t mtu = l3_ipv4_effective_mtu(src_v4);
+    if (proto != PROTO_TCP && !ipv4_is_multicast(dst_ip) && !ipv4_is_limited_broadcast(dst_ip) && !is_dbcast) {
+        uint16_t path_mtu = pmtu_get(src_v4->l3_id, src_v4->epoch, IP_VER4, &dst_ip);
+        if (path_mtu && path_mtu < mtu) mtu = path_mtu;
+    }
     uint32_t hdr_len = IP_IHL_NOOPTS * 4;
     uint32_t seg_len = netpkt_len(pkt);
-    void* hdrp = netpkt_push(pkt, hdr_len);
-    if (!hdrp) {
-        netpkt_unref(pkt);
-        return;
-    }
-
     uint32_t total = hdr_len + seg_len;
-    if (dontfrag && total > (uint32_t)mtu) {
-        netpkt_unref(pkt);
-        return;
-    }
-    ipv4_hdr_t* ip = (ipv4_hdr_t*)hdrp;
-    ip->version_ihl = (uint8_t)((IP_VERSION_4 << 4) | IP_IHL_NOOPTS);
-    ip->dscp_ecn = 0;
-    ip->total_length = bswap16((uint16_t)total);
-    ip->identification = bswap16(g_ip_ident++);
-    uint16_t ff = 0;
-    if (dontfrag) ff |= 0x4000u;
-    ip->flags_frag_offset = bswap16(ff);
-    ip->ttl = ttl ? ttl : IP_TTL_DEFAULT;
-    ip->protocol = proto;
-    ip->header_checksum = 0;
-    ip->src_ip = bswap32(src_ip);
-    ip->dst_ip = bswap32(dst_ip);
-    ip->header_checksum = checksum16((const uint16_t*)ip, hdr_len / 2);
 
-    eth_send_frame_on(ifx, ETHERTYPE_IPV4, dst_mac, pkt);
+    if (mtu < hdr_len + 8) {
+        netpkt_unref(pkt);
+        return false;
+    }
+
+    if (total <= (uint32_t)mtu) {
+        void* hdrp = netpkt_push(pkt, hdr_len);
+        if (!hdrp) {
+            netpkt_unref(pkt);
+            return false;
+        }
+
+        ipv4_hdr_t ip;
+        ip.version_ihl = (uint8_t)((IP_VER4 << 4) | IP_IHL_NOOPTS);
+        ip.dscp_ecn = 0;
+        ip.total_length = bswap16((uint16_t)total);
+        ip.identification = bswap16(g_ip_ident++);
+        uint16_t ff = 0;
+        if (dontfrag) ff |= 0x4000;
+        ip.flags_frag_offset = bswap16(ff);
+        ip.ttl = ttl ? ttl : IP_TTL_DEFAULT;
+        ip.protocol = proto;
+        ip.header_checksum = 0;
+        ip.src_ip = bswap32(src_ip);
+        ip.dst_ip = bswap32(dst_ip);
+        ip.header_checksum = bswap16(checksum16(&ip, hdr_len));
+        memcpy(hdrp, &ip, sizeof(ip));
+
+        if (need_arp) return arp_send_or_queue_on(ifx, nh, pkt);
+        return eth_send_frame_on(ifx, ETHERTYPE_IPV4, dst_mac, pkt);
+    }
+
+    if (dontfrag) {
+        netpkt_unref(pkt);
+        return false;
+    }
+
+    uint32_t max_chunk = ((uint32_t)mtu - hdr_len) / 8 * 8;
+    if (!max_chunk) {
+        netpkt_unref(pkt);
+        return false;
+    }
+
+    uint16_t ident = g_ip_ident++;
+    uint32_t off = 0;
+    const uint8_t* data = (const uint8_t*)netpkt_data(pkt);
+    bool ok = true;
+
+    while (off < seg_len) {
+        uint32_t remain = seg_len - off;
+        uint32_t chunk = remain > max_chunk ? max_chunk : remain;
+        uint8_t more = off + chunk < seg_len ? 1 : 0;
+        uint32_t frame_len = hdr_len + chunk;
+
+        netpkt_t* fpkt = netpkt_alloc(frame_len, sizeof(eth_hdr_t), 0);
+        if (!fpkt) {
+            ok = false;
+            break;
+        }
+
+        void* buf = netpkt_put(fpkt, frame_len);
+        if (!buf) {
+            netpkt_unref(fpkt);
+            ok = false;
+            break;
+        }
+
+        ipv4_hdr_t ip;
+        ip.version_ihl = (uint8_t)((IP_VER4 << 4) | IP_IHL_NOOPTS);
+        ip.dscp_ecn = 0;
+        ip.total_length = bswap16((uint16_t)frame_len);
+        ip.identification = bswap16(ident);
+        uint16_t ff = (uint16_t)((off / 8) & 0x1FFF);
+        if (more) ff |= 0x2000;
+        ip.flags_frag_offset = bswap16(ff);
+        ip.ttl = ttl ? ttl : IP_TTL_DEFAULT;
+        ip.protocol = proto;
+        ip.header_checksum = 0;
+        ip.src_ip = bswap32(src_ip);
+        ip.dst_ip = bswap32(dst_ip);
+        ip.header_checksum = bswap16(checksum16(&ip, hdr_len));
+
+        memcpy(buf, &ip, sizeof(ip));
+        memcpy((uint8_t*)buf + hdr_len, data + off, chunk);
+
+        if (need_arp) {
+            if (!arp_send_or_queue_on(ifx, nh, fpkt)) ok = false;
+        } else if (!eth_send_frame_on(ifx, ETHERTYPE_IPV4, dst_mac, fpkt)) ok = false;
+
+        off += chunk;
+    }
+
+    netpkt_unref(pkt);
+    return ok && off == seg_len;
 }
 
-void ipv4_input(uint16_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
-    if (!pkt) return;
-    uint32_t ip_len = netpkt_len(pkt);
-    uintptr_t ip_ptr = netpkt_data(pkt);
-    if (ip_len < sizeof(ipv4_hdr_t)) return;
-
-    ipv4_hdr_t* ip = (ipv4_hdr_t*)ip_ptr;
-    uint8_t ver = (uint8_t)(ip->version_ihl >> 4);
-    uint8_t ihl = (uint8_t)(ip->version_ihl & 0x0F);
-    if (ver != IP_VERSION_4) return;
-    if (ihl < IP_IHL_NOOPTS) return;
-
-    uint32_t hdr_len = (uint32_t)ihl * 4;
-    if (ip_len < hdr_len) return;
-
-    uint16_t saved = ip->header_checksum;
-    ip->header_checksum = 0;
-    if (checksum16((const uint16_t*)ip, hdr_len / 2) != saved) {
-        ip->header_checksum = saved;
-        return;
-    }
-    ip->header_checksum = saved;
-
-    uint16_t ip_totlen = bswap16(ip->total_length);
-    if (ip_totlen < hdr_len) return;
-    if (ip_len < ip_totlen) return;
-    (void)netpkt_trim(pkt, ip_totlen);
-    ip_len = ip_totlen;
-
-    uintptr_t l4 = ip_ptr + hdr_len;
-    uint32_t l4_len = (uint32_t)ip_totlen - hdr_len;
-
-    uint32_t src = bswap32(ip->src_ip);
-    uint32_t dst = bswap32(ip->dst_ip);
-
-    if (ifindex && src) {
-        uint8_t mac_old[6];
-        bool had = arp_table_get_for_l2((uint8_t)ifindex, src, mac_old);
-        if (!had || memcmp(mac_old, src_mac, 6) != 0) {
-            arp_table_put_for_l2((uint8_t)ifindex, src, src_mac, 180000, false);
-        } else {
-            arp_table_put_for_l2((uint8_t)ifindex, src, mac_old, 180000, false);
-        }
-    }
-
-    uint8_t proto = ip->protocol;
-
-    l2_interface_t* l2 = l2_interface_find_by_index((uint8_t)ifindex);
+static void ipv4_deliver_l4(uint8_t ifindex, netpkt_t* pkt, uint32_t l4_off, uint32_t l4_len, uint8_t proto, uint32_t src, uint32_t dst, const uint8_t *ip_header, uint8_t ip_header_len) {
+    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return;
 
     l3_ipv4_interface_t* cand[MAX_IPV4_PER_INTERFACE];
     int ccount = 0;
     for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
         l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-        if (!v4) continue;
-        if (v4->mode == IPV4_CFG_DISABLED) continue;
+        if (!ipv4_l3_is_active(v4)) continue;
         cand[ccount++] = v4;
     }
-    if (ccount == 0) return;
 
+    if (ccount == 0) return;
     if (ipv4_is_multicast(dst)) {
         bool joined = false;
-        for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) if (l2->ipv4_mcast[i] == dst) {
-            joined = true;
-            break;
+        for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) {
+            if (l2->ipv4_mcast[i] == dst) {
+                joined = true;
+                break;
+            }
         }
         if (!joined) return;
+
         for (int i = 0; i < ccount; ++i) {
-            uint8_t l3id = cand[i]->l3_id;
-            switch (proto) {
-                case 2: igmp_input((uint8_t)ifindex, src, dst, (const void*)l4, l4_len); break;
-                case 6: tcp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                case 17: udp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                default: break;
-            }
+            netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
+            if (!l4pkt) continue;
+            l3_id_t l3id = cand[i]->l3_id;
+            if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, l4pkt);
+            else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+            else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+            else netpkt_unref(l4pkt);
         }
         return;
     }
 
-
-    if (dst == 0xFFFFFFFFu) {
-        if (ccount == 1) {
-            uint8_t l3id = cand[0]->l3_id;
-            switch (proto) {
-                case 1: icmp_input(l4, l4_len, src, dst); break;
-                case 6: tcp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                case 17: udp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                default: break;
-            }
-            return;
-        } else {
-            for (int i = 0; i < ccount; ++i) {
-                uint8_t l3id = cand[i]->l3_id;
-                switch (proto) {
-                    case 1: icmp_input(l4, l4_len, src, dst); break;
-                    case 6: tcp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                    case 17: udp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                    default: break;
-                }
-            }
-            return;
+    if (dst == IPV4_LIMITED_BROADCAST) {
+        for (int i = 0; i < ccount; ++i) {
+            netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
+            if (!l4pkt) continue;
+            l3_id_t l3id = cand[i]->l3_id;
+            if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
+            else if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, l4pkt);
+            else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+            else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+            else netpkt_unref(l4pkt);
         }
+        return;
     }
 
     int match_count = 0;
-    uint8_t match_l3id = 0;
+    l3_id_t match_l3id = 0;
     for (int i = 0; i < ccount; ++i) {
         if (cand[i]->ip && cand[i]->ip == dst) {
             match_count++;
-            match_l3id = cand[i]->l3_id;
+            if (match_count == 1) match_l3id = cand[i]->l3_id;
         }
     }
+
     if (match_count == 1) {
-        switch (proto) {
-            case 1: icmp_input(l4, l4_len, src, dst); break;
-            case 6: tcp_input(IP_VER4, &src, &dst, match_l3id, l4, l4_len); break;
-            case 17: udp_input(IP_VER4, &src, &dst, match_l3id, l4, l4_len); break;
-            default: break;
+        netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
+        if (!l4pkt) return;
+        if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
+        else if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, l4pkt);
+        else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
+        else if (proto == PROTO_UDP) {
+            udp_input_result_t result = udp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
+            if (result == UDP_INPUT_NO_LISTENER && ip_header) icmp_send_port_unreachable(match_l3id, src, ip_header, ip_header_len, pkt, l4_off, l4_len);
         }
+        else netpkt_unref(l4pkt);
         return;
     }
+
     if (match_count > 1) {
         for (int i = 0; i < ccount; ++i) {
-            if (cand[i]->ip == dst) {
-                uint8_t l3id = cand[i]->l3_id;
-                switch (proto) {
-                    case 1: icmp_input(l4, l4_len, src, dst); break;
-                    case 6: tcp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                    case 17: udp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                    default: break;
-                }
-            }
+            if (cand[i]->ip != dst) continue;
+
+            netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
+            if (!l4pkt) continue;
+            l3_id_t l3id = cand[i]->l3_id;
+            if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
+            else if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, l4pkt);
+            else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+            else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
+            else netpkt_unref(l4pkt);
         }
         return;
     }
 
-    int any_dbcast = 0;
-    for (uint8_t i = 0, n = l2_interface_count(); i < n; ++i) {
-        l2_interface_t* l2x = l2_interface_at(i);
-        if (!l2x) continue;
-        for (int s = 0; s < MAX_IPV4_PER_INTERFACE; ++s) {
-            l3_ipv4_interface_t* v4 = l2x->l3_v4[s];
-            if (!v4) continue;
-            if (v4->mode == IPV4_CFG_DISABLED) continue;
-            if (v4->mask && ipv4_broadcast_calc(v4->ip, v4->mask) == dst) {
-                any_dbcast = 1;
-                uint8_t l3id = v4->l3_id;
-                switch (proto) {
-                    case 1: icmp_input(l4, l4_len, src, dst); break;
-                    case 6: tcp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                    case 17: udp_input(IP_VER4, &src, &dst, l3id, l4, l4_len); break;
-                    default: break;
-                }
+    for (int i = 0; i < ccount; ++i) {
+        l3_ipv4_interface_t* v4 = cand[i];
+        if (!v4 || !v4->ip || !v4->mask) continue;
+        if (v4->is_localhost) continue;
+        if (ipv4_broadcast_calc(v4->ip, v4->mask) != dst) continue;
+
+        netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
+        if (!l4pkt) return;
+        if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
+        else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, v4->l3_id, l4pkt);
+        else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, v4->l3_id, l4pkt);
+        else netpkt_unref(l4pkt);
+        return;
+    }
+}
+
+void ipv4_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_LEN]) {
+    if (!pkt) return;
+    uint32_t ip_len = netpkt_len(pkt);
+    if (ip_len < sizeof(ipv4_hdr_t)) return;
+
+    uint8_t first = 0;
+    if (!netpkt_copyout(pkt, 0, &first, sizeof(first))) return;
+    uint8_t ver = (uint8_t)(first >> 4);
+    uint8_t ihl = (uint8_t)(first & 0x0F);
+    if (ver != IP_VER4) return;
+    if (ihl < IP_IHL_NOOPTS) return;
+
+    uint32_t hdr_len = (uint32_t)ihl * 4;
+    if (ip_len < hdr_len) return;
+
+    uint8_t hdr_copy[60];
+    if (!netpkt_copyout(pkt, 0, hdr_copy, hdr_len)) return;
+    if (checksum16(hdr_copy, hdr_len) != 0) return;
+    ipv4_hdr_t ip;
+    memcpy(&ip, hdr_copy, sizeof(ip));
+
+    uint16_t ip_totlen = bswap16(ip.total_length);
+    if (ip_totlen < hdr_len) return;
+    if (ip_len < ip_totlen) return;
+    (void)netpkt_trim(pkt, ip_totlen);
+
+    uint32_t src = bswap32(ip.src_ip);
+    uint32_t dst = bswap32(ip.dst_ip);
+
+    if (ipv4_is_loopback(src)) {
+        l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
+        if (!l2 || l2->kind != NET_IFK_LOCALHOST) return;
+    }
+
+    uint8_t proto = ip.protocol;
+    uint32_t l4_len = (uint32_t)ip_totlen - hdr_len;
+    uint16_t ff = bswap16(ip.flags_frag_offset);
+    if (ff & 0x8000u) return;
+    uint32_t off = (uint32_t)(ff & 0x1FFF) * 8;
+    uint8_t more = (ff & 0x2000) ? 1 : 0;
+    if ((ff & 0x4000u) && (off || more)) return;
+
+    if (off || more) {
+        if (!l4_len) return;
+        if (more && (l4_len & 7)) return;
+        if (off + l4_len > NET_FRAGBUF_DEFAULT_MAX_LEN) return;
+
+        uint32_t now = (uint32_t)get_time();
+        ipv4_reass_slot_t* slot = NULL;
+        uint16_t ident = bswap16(ip.identification);
+
+        for (int i = 0; i < IPV4_REASS_SLOTS; i++) {
+            ipv4_reass_slot_t* s = &g_ipv4_reass[i];
+            if (!s->used) continue;
+            if (now - s->last_update_ms > 60000) {
+                ipv4_reass_free(s);
+                continue;
+            }
+            if (s->ifindex == ifindex && s->ident == ident && s->proto == proto && s->src == src && s->dst == dst) slot = s;
+        }
+
+        if (!slot) {
+            for (int i = 0; i < IPV4_REASS_SLOTS; i++) {
+                if (g_ipv4_reass[i].used) continue;
+                slot = &g_ipv4_reass[i];
+                memset(slot, 0, sizeof(*slot));
+                slot->used = 1;
+                net_fragbuf_init(&slot->frag);
+                slot->ifindex = ifindex;
+                slot->ident = ident;
+                slot->proto = proto;
+                slot->src = src;
+                slot->dst = dst;
+                slot->last_update_ms = now;
+                break;
             }
         }
-    }
-    if (any_dbcast) return;
 
-    return;
+        if (!slot) return;
+        if (!net_fragbuf_add(&slot->frag, pkt, hdr_len, off, l4_len, more)) {
+            ipv4_reass_free(slot);
+            return;
+        }
+
+        if (!off) {
+            slot->first_header_len = (uint8_t)hdr_len;
+            memcpy(slot->first_header, hdr_copy, hdr_len);
+        }
+
+        slot->last_update_ms = now;
+
+        if (!net_fragbuf_complete(&slot->frag)) return;
+
+        netpkt_t* reassembled = net_fragbuf_take_packet(&slot->frag);
+        if (!reassembled) {
+            ipv4_reass_free(slot);
+            return;
+        }
+
+        uint8_t first_header[60];
+        uint8_t first_header_len = slot->first_header_len;
+        if (first_header_len) memcpy(first_header, slot->first_header, first_header_len);
+        ipv4_reass_free(slot);
+        ipv4_deliver_l4(ifindex, reassembled, 0, netpkt_len(reassembled), proto, src, dst, first_header_len ? first_header : NULL, first_header_len);
+        netpkt_unref(reassembled);
+        return;
+    }
+
+    ipv4_deliver_l4(ifindex, pkt, hdr_len, l4_len, proto, src, dst, hdr_copy, (uint8_t)hdr_len);
 }
