@@ -1,4 +1,5 @@
-#include "mdns_responder.h"
+#include "mdns_internal.h"
+#include "dns_daemon.h"
 
 #include "dns_sd.h"
 #include "dns_cache.h"
@@ -7,458 +8,133 @@
 #include "networking/transport_layer/csocket.h"
 #include "networking/interface_manager.h"
 #include "data/hash.h"
+#include "math/rng.h"
+#include "random/random.h"
 #include "std/std.h"
-#include "std/string.h"
 #include "syscalls/syscalls.h"
 
-#define MDNS_TTL_S 120
-#define MDNS_ANNOUNCE_BURST 3
-#define MDNS_GOODBYE_BURST 3
-#define MDNS_ANNOUNCE_INTERVAL_MS 250
-#define MDNS_KEEPALIVE_MS 60000
-#define MDNS_MAX_SERVICES 8
-#define MDNS_CACHE_MAX 48
-#define MDNS_QUERY_DEDUP_MAX 8
-#define MDNS_QUERY_DEDUP_MS 250
-#define MDNS_FLUSH_CLASS (DNS_CLASS_CACHE_FLUSH | DNS_CLASS_IN)
-#define MDNS_HOST_NAME "RedactedOS"
+#define MDNS_ANNOUNCE_BURST 2
+#define MDNS_ANNOUNCE_INTERVAL_MS 1000
+#define MDNS_RECENT_RR_MAX 64
+#define MDNS_PROBE_COUNT 3
+#define MDNS_PROBE_INTERVAL_MS 250
 
 typedef struct {
     bool used;
-    bool active;
-    uint8_t announce_left;
-    uint8_t goodbye_left;
-    uint64_t last_tx_ms;
-    char instance[64];
-    char service[32];
-    char proto[8];
-    char txt[128];
-    uint16_t port;
-} mdns_service_t;
-
-typedef struct {
-    uint8_t type;
-    uint16_t rrtype;
-    uint16_t port;
-    uint64_t expire_ms;
-    char name[256];
-    char target[256];
-    char txt[256];
-} mdns_cache_entry_t;
-
-typedef struct {
-    bool used;
+    uint8_t l2_slot;
     ip_version_t ver;
-    uint16_t port;
-    uint64_t hash;
+    uint64_t key;
     uint64_t last_ms;
-    uint8_t ip[16];
-} mdns_query_dedup_t;
+} mdns_recent_rr_t;
 
-typedef struct {
-    uint8_t *out;
-    uint32_t cap;
-    uint32_t off;
-    uint32_t an_pos;
-    uint32_t ar_pos;
-    uint16_t an;
-    uint16_t ar;
-} mdns_pkt_t;
+char g_mdns_fqdn[72] = MDNS_HOST_NAME ".local";
+uint16_t g_mdns_host_name_index;
+uint16_t g_mdns_old_host_name_index;
+bool g_mdns_host_advertised;
+uint8_t g_mdns_host_goodbye_left;
+mdns_link_state_t g_mdns_host_link[MAX_L2_INTERFACES];
+mdns_service_t g_mdns_services[MDNS_MAX_SERVICES];
 
-static uint32_t g_mdns_ipv4 = 0;
-static uint8_t g_mdns_ipv6[16];
-static uint8_t g_mdns_ifindex = 0;
-static char g_mdns_fqdn[72];
+static rng_t g_mdns_rng;
+static bool g_mdns_rng_ready;
+static mdns_recent_rr_t g_mdns_recent_rr[MDNS_RECENT_RR_MAX];
 
-static uint64_t g_mdns_last_refresh_ms = 0;
-static uint64_t g_mdns_last_keepalive_ms = 0;
-static uint8_t g_mdns_host_announce_left = 0;
-static uint64_t g_mdns_host_last_tx_ms = 0;
-
-static mdns_service_t g_mdns_services[MDNS_MAX_SERVICES];
-static mdns_cache_entry_t g_mdns_cache[MDNS_CACHE_MAX];
-static mdns_query_dedup_t g_mdns_query_dedup[MDNS_QUERY_DEDUP_MAX];
-static uint8_t g_mdns_query_dedup_next = 0;
-
-static void mdns_send(socket_handle_t sock, const net_l4_endpoint *src, bool unicast, ip_version_t ver, const uint8_t *mcast_ip, const uint8_t *pkt, uint32_t pkt_len) {
-    if (!sock) return;
-    if (!pkt) return;
-    if (!pkt_len) return;
-
+bool mdns_send(socket_handle_t sock, const net_l4_endpoint *src, bool unicast, ip_version_t ver, const uint8_t *mcast_ip, const uint8_t *pkt, uint32_t pkt_len) {
     net_l4_endpoint dst;
     memset(&dst, 0, sizeof(dst));
 
     if (unicast && src) {
         dst = *src;
         if (!dst.port) dst.port = DNS_MDNS_PORT;
-        send_to_socket(sock, &dst, pkt, pkt_len);
-        return;
+        return send_to_socket(sock, &dst, pkt, pkt_len) >= 0;
     }
 
     dst.ver = ver;
     if (ver == IP_VER4) memcpy(dst.ip, mcast_ip, 4);
     else memcpy(dst.ip, mcast_ip, 16);
     dst.port = DNS_MDNS_PORT;
-    send_to_socket(sock, &dst, pkt, pkt_len);
+    return send_to_socket(sock, &dst, pkt, pkt_len) >= 0;
 }
 
-static bool mdns_pick_identity(uint32_t *out_v4, uint8_t out_v6[16], uint8_t *out_ifindex) {
-    if (!out_v4) return false;
-    if (!out_v6) return false;
-    if (!out_ifindex) return false;
-
-    uint32_t v4 = 0;
-    uint8_t v6_best[16];
-    uint8_t v6_fallback[16];
-    uint8_t if_best = 0;
-    uint8_t if_fallback = 0;
-
-    memset(v6_best, 0, sizeof(v6_best));
-    memset(v6_fallback, 0, sizeof(v6_fallback));
-
-    uint8_t c = l2_interface_count();
-    for (uint8_t i = 0; i < c; i++) {
-        l2_interface_t *l2 = l2_interface_at(i);
-        if (!l2 || !l2->is_up) continue;
-
-        if (!v4) {
-            for (uint8_t j = 0; j < MAX_IPV4_PER_INTERFACE; j++) {
-                l3_ipv4_interface_t *a = l2->l3_v4[j];
-                if (!ipv4_l3_is_ready(a) || a->is_localhost) continue;
-                v4 = a->ip;
-                break;
-            }
-        }
-
-        for (uint8_t j = 0; j < MAX_IPV6_PER_INTERFACE; j++) {
-            l3_ipv6_interface_t *a = l2->l3_v6[j];
-            if (!ipv6_l3_is_ready(a) || a->is_localhost) continue;
-
-            if (!ipv6_is_linklocal(a->ip) && !if_best) {
-                memcpy(v6_best, a->ip, 16);
-                if_best = l2->ifindex;
-            }
-
-            if (!if_fallback) {
-                memcpy(v6_fallback, a->ip, 16);
-                if_fallback = l2->ifindex;
-            }
-        }
+static uint32_t mdns_probe_jitter(void) {
+    if (!g_mdns_rng_ready) {
+        rng_init_random(&g_mdns_rng);
+        g_mdns_rng_ready = true;
     }
-
-    if (if_best) {
-        *out_v4 = v4;
-        memcpy(out_v6, v6_best, 16);
-        *out_ifindex = if_best;
-        return true;
-    }
-
-    if (if_fallback) {
-        *out_v4 = v4;
-        memcpy(out_v6, v6_fallback, 16);
-        *out_ifindex = if_fallback;
-        return true;
-    }
-
-    if (v4) {
-        *out_v4 = v4;
-        memset(out_v6, 0, 16);
-        *out_ifindex = 0;
-        return true;
-    }
-
-    return false;
+    return rng_between32(&g_mdns_rng, 0, MDNS_PROBE_INTERVAL_MS + 1);
 }
 
-static void mdns_refresh_identity(void) {
-    uint64_t now = get_time();
-    if (g_mdns_last_refresh_ms && (now - g_mdns_last_refresh_ms) < 1000) return;
-    g_mdns_last_refresh_ms = now;
-
-    uint32_t v4 = 0;
-    uint8_t v6[16];
-    uint8_t ifindex = 0;
-    memset(v6, 0, sizeof(v6));
-
-    if (!mdns_pick_identity(&v4, v6, &ifindex)) return;
-
-    bool changed = false;
-    if (g_mdns_ipv4 != v4) changed = true;
-    if (memcmp(g_mdns_ipv6, v6, 16) != 0) changed = true;
-    if (g_mdns_ifindex != ifindex) changed = true;
-
-    g_mdns_ipv4 = v4;
-    memcpy(g_mdns_ipv6, v6, 16);
-    g_mdns_ifindex = ifindex;
-
-    if (!g_mdns_fqdn[0]) {
-        string_format_buf(g_mdns_fqdn, sizeof(g_mdns_fqdn), "%s.local", MDNS_HOST_NAME);
-        changed = true;
-    }
-
-    if (changed) {
-        g_mdns_host_announce_left = MDNS_ANNOUNCE_BURST;
-        g_mdns_host_last_tx_ms= 0;
-        for (uint32_t i = 0; i < MDNS_MAX_SERVICES; i++) {
-            if (!g_mdns_services[i].used) continue;
-            if (!g_mdns_services[i].active) continue;
-            g_mdns_services[i].announce_left = MDNS_ANNOUNCE_BURST;
-            g_mdns_services[i].last_tx_ms = 0;
-        }
-    }
+void mdns_probe_start(mdns_probe_t* probe, uint32_t delay_ms) {
+    probe->ready = false;
+    probe->sent = 0;
+    probe->next_ms = get_time() + delay_ms;
 }
 
+void mdns_instance_name(char* out, uint32_t out_cap, const mdns_service_t* s, uint16_t name_index) {
+    char label[64];
+    if (name_index < 2) strncpy(label, s->instance, sizeof(label));
+    else {
+        char suffix[12];
+        string_format_buf(suffix, sizeof(suffix), "-%u", (uint32_t)name_index);
+        uint32_t suffix_len = strlen(suffix);
+        uint32_t base_len = strlen(s->instance);
+        if (base_len + suffix_len > 63) base_len = 63 - suffix_len;
+        memcpy(label, s->instance, base_len);
+        memcpy(label + base_len, suffix, suffix_len + 1);
+    }
 
-static void mdns_make_service_type(char *out, uint32_t out_cap, const char *service, const char *proto) {
-    if (!out) return;
-    if (!out_cap) return;
-    if (!service) return;
-    if (!proto) return;
-    string_format_buf(out, out_cap, "_%s._%s.local", service, proto);
+    string_format_buf(out, out_cap, "%s._%s._%s.local", label, s->service, s->proto);
 }
 
+l2_interface_t* mdns_l2(l3_id_t l3_id) {
+    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
+    if (ipv4_l3_is_ready(v4)) return v4->l2;
 
-static bool mdns_pkt_begin(mdns_pkt_t *p, uint8_t *out, uint32_t cap, uint16_t flags) {
-    if (!p) return false;
-    if (!out) return false;
+    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
+    return ipv6_l3_is_ready(v6) ? v6->l2 : NULL;
+}
+
+bool mdns_pkt_begin(mdns_pkt_t *p, uint8_t *out, uint32_t cap, uint16_t flags) {
     if (cap < 12) return false;
 
+    memset(out, 0, 12);
     memset(p, 0, sizeof(*p));
     p->out = out;
     p->cap = cap;
-    p->off = 0;
-
-    p->off = dns_wire_put_u16(out, cap, p->off, 0);
-    if (!p->off) return false;
-    p->off = dns_wire_put_u16(out, cap, p->off, flags);
-    if (!p->off) return false;
-    p->off = dns_wire_put_u16(out, cap, p->off, 0);
-    if (!p->off) return false;
-
-    p->an_pos = p->off;
-    p->off = dns_wire_put_u16(out, cap, p->off, 0);
-    if (!p->off) return false;
-
-    p->off = dns_wire_put_u16(out, cap, p->off, 0);
-    if (!p->off) return false;
-
-    p->ar_pos = p->off;
-    p->off = dns_wire_put_u16(out, cap, p->off, 0);
-    if (!p->off) return false;
-
+    p->off = 12;
+    wr_be16(out+2, flags);
     return true;
 }
 
-static void mdns_pkt_commit(mdns_pkt_t *p) {
-    if (!p) return;
-    uint16_t anbe = be16(p->an);
-    uint16_t arbe = be16(p->ar);
-    memcpy(p->out + p->an_pos, &anbe, 2);
-    memcpy(p->out + p->ar_pos, &arbe, 2);
-}
-
-static bool mdns_pkt_add_ptr(mdns_pkt_t *p, bool additional, const char *name, uint16_t rrclass, uint32_t ttl_s, const char *target) {
-    if (!p) return false;
-    uint32_t n = dns_sd_add_rr_ptr(p->out, p->cap, p->off, name, rrclass, ttl_s, target);
-    if (!n) return false;
-    p->off = n;
-    if (additional) p->ar++;
-    else p->an++;
-    return true;
-}
-
-static bool mdns_pkt_add_a(mdns_pkt_t *p, bool additional, const char *name, uint16_t rrclass, uint32_t ttl_s, uint32_t ip) {
-    if (!p) return false;
-    uint32_t n = dns_sd_add_rr_a(p->out, p->cap, p->off, name, rrclass, ttl_s, ip);
-    if (!n) return false;
-    p->off = n;
-    if (additional) p->ar++;
-    else p->an++;
-    return true;
-}
-
-static bool mdns_pkt_add_aaaa(mdns_pkt_t *p, bool additional, const char *name, uint16_t rrclass, uint32_t ttl_s, const uint8_t ip6[16]) {
-    if (!p) return false;
-    uint32_t n = dns_sd_add_rr_aaaa(p->out, p->cap, p->off, name, rrclass, ttl_s, ip6);
-    if (!n) return false;
-    p->off = n;
-    if (additional) p->ar++;
-    else p->an++;
-    return true;
-}
-
-static bool mdns_pkt_add_srv(mdns_pkt_t *p, bool additional, const char *name, uint16_t rrclass, uint32_t ttl_s, uint16_t port, const char *target) {
-    if (!p) return false;
-    uint32_t n = dns_sd_add_rr_srv(p->out, p->cap, p->off, name, rrclass, ttl_s, 0, 0, port, target);
-    if (!n) return false;
-    p->off = n;
-    if (additional) p->ar++;
-    else p->an++;
-    return true;
-}
-
-static bool mdns_pkt_add_txt(mdns_pkt_t *p, bool additional, const char *name, uint16_t rrclass, uint32_t ttl_s, const char *txt) {
-    if (!p) return false;
-    uint32_t n = dns_sd_add_rr_txt(p->out, p->cap, p->off, name, rrclass, ttl_s, txt);
-    if (!n) return false;
-    p->off = n;
-    if (additional) p->ar++;
-    else p->an++;
-    return true;
-}
-
-
-static mdns_cache_entry_t *mdns_cache_entry_for(const char *name, uint16_t rrtype, bool create) {
-    if (!name) return NULL;
-
-    mdns_cache_entry_t *empty = NULL;
-    for (uint32_t i = 0; i < MDNS_CACHE_MAX; i++) {
-        mdns_cache_entry_t *e = &g_mdns_cache[i];
-        if (!e->type) {
-            if (!empty) empty = e;
-            continue;
-        }
-        if (e->rrtype == rrtype && dns_wire_name_equals(e->name, name)) return e;
-    }
-
-    if (!create || !empty) return NULL;
-    memset(empty, 0, sizeof(*empty));
-    empty->type = 1;
-    empty->rrtype = rrtype;
-    strncpy(empty->name, name, sizeof(empty->name));
-    return empty;
-}
-
-static bool mdns_current_ipv6(uint8_t ip[16]) {
-    if (!ip) return false;
-
-    memcpy(ip, g_mdns_ipv6, 16);
-    if (ipv6_is_unspecified(ip) && g_mdns_ifindex) ipv6_make_lla_from_mac(g_mdns_ifindex, ip);
-    return !ipv6_is_unspecified(ip);
-}
-
-static bool mdns_parse_ipv4_ptr_qname(const char *name, uint32_t *out_ip) {
-    if (!name) return false;
-    if (!out_ip) return false;
-
-    char norm[DNS_WIRE_MAX_NAME];
-    if (!dns_wire_name_normalize(name, norm, sizeof(norm))) return false;
-
-    uint8_t ip[4];
-    const char *p = norm;
-    for (int i = 3; i >= 0; i--) {
-        const char *label = p;
-        uint32_t v = 0;
-        while (is_digit(*p) && (p - label) < 3) v = v * 10 + (*p++ - '0');
-        if (p == label) return false;
-        if (is_digit(*p)) return false;
-        if (v > 255) return false;
-        ip[i] = v;
-        if (i) {
-            if (*p != '.') return false;
-            p++;
-        }
-    }
-
-    if (*p++ != '.') return false;
-
-    if (strcmp(p, "in-addr.arpa") != 0) return false;
-    *out_ip = rd_be32(ip);
-    return true;
-}
-
-static void mdns_cache_from_packet(const uint8_t *pkt, uint32_t pkt_len) {
-    if (!pkt) return;
-    if (pkt_len < 12) return;
-
-    dns_record_t records[12];
-    uint32_t count = 0;
-    uint16_t flags = 0;
-    if (!dns_wire_parse_records(pkt, pkt_len, false, 0, records, 12, &count, &flags)) return;
-    if (!(flags & DNS_FLAG_QR)) return;
-
-    for (uint32_t i = 0; i < count; i++) {
-        dns_record_t *r = &records[i];
-        if ((r->rrclass & DNS_CLASS_MASK) != DNS_CLASS_IN) continue;
-
-        switch (r->type) {
-        case DNS_TYPE_A:
-            if (!r->ttl_s) dns_cache_remove_ip(r->name, DNS_TYPE_A);
-            else dns_cache_put_ip(r->name, DNS_TYPE_A, r->addr, r->ttl_s * 1000);
-            break;
-        case DNS_TYPE_AAAA:
-            if (!r->ttl_s) dns_cache_remove_ip(r->name, DNS_TYPE_AAAA);
-            else dns_cache_put_ip(r->name, DNS_TYPE_AAAA, r->addr, r->ttl_s * 1000);
-            break;
-        case DNS_TYPE_PTR:
-        case DNS_TYPE_SRV:
-        case DNS_TYPE_TXT:
-            if (r->ttl_s && (r->type == DNS_TYPE_PTR || r->type == DNS_TYPE_SRV) && !r->target[0]) continue;
-
-            mdns_cache_entry_t *e = mdns_cache_entry_for(r->name, r->type, r->ttl_s != 0);
-            if (!e) continue;
-            if (!r->ttl_s) {
-                memset(e, 0, sizeof(*e));
-                continue;
-            }
-
-            if (r->type == DNS_TYPE_SRV) e->port = r->port;
-            if (r->type == DNS_TYPE_PTR || r->type == DNS_TYPE_SRV) strncpy(e->target, r->target, sizeof(e->target));
-            if (r->type == DNS_TYPE_TXT) strncpy(e->txt, r->txt, sizeof(e->txt));
-            e->expire_ms = get_time() + (uint64_t)r->ttl_s * 1000;
-            break;
-        default:
-            break;
-        }
-    }
-}
-
-static bool mdns_add_host_additionals(mdns_pkt_t *p) {
-    if (!p) return false;
-
-    uint16_t rrclass = MDNS_FLUSH_CLASS;
-
-    if (g_mdns_ipv4) {
-        if (!mdns_pkt_add_a(p, true, g_mdns_fqdn, rrclass, MDNS_TTL_S, g_mdns_ipv4)) return false;
-    }
-
-    uint8_t ip6[16];
-    if (mdns_current_ipv6(ip6)) {
-        if (!mdns_pkt_add_aaaa(p, true, g_mdns_fqdn, rrclass, MDNS_TTL_S, ip6)) return false;
-    }
-
-    return true;
-}
-
-static bool mdns_add_service_records(mdns_pkt_t *p, const mdns_service_t *s, uint32_t ttl_s, bool goodbye) {
-    if (!p) return false;
-    if (!s) return false;
-
-    char type[128];
-    char inst[256];
-    mdns_make_service_type(type, sizeof(type), s->service, s->proto);
-    inst[0] = 0;
-    if (!s->instance[0] || !s->service[0] || !s->proto[0]) return false;
-    string_format_buf(inst, sizeof(inst), "%s._%s._%s.local", s->instance, s->service, s->proto);
-
-    uint16_t ptr_class = DNS_CLASS_IN;
-    uint16_t flush_class = MDNS_FLUSH_CLASS;
-
-    uint32_t ttl = goodbye ? 0 : ttl_s;
-
-    if (!mdns_pkt_add_ptr(p, false, DNS_SD_ENUM_SERVICES, ptr_class, ttl, type)) return false;
-    if (!mdns_pkt_add_ptr(p, false, type, ptr_class, ttl, inst)) return false;
-
-    if (!goodbye) {
-        if (!mdns_pkt_add_srv(p, true, inst, flush_class, ttl_s, s->port, g_mdns_fqdn)) return false;
-        if (!mdns_pkt_add_txt(p, true, inst, flush_class, ttl_s, s->txt)) return false;
-        if (!mdns_add_host_additionals(p)) return false;
+bool mdns_pkt_add(mdns_pkt_t *p, bool additional, const dns_record_t* record, uint16_t rrclass, uint32_t ttl_s) {
+    uint32_t off = dns_sd_add_record(p->out, p->cap, p->off, record, rrclass, ttl_s);
+    if (!off) return false;
+    p->off = off;
+    if (additional) {
+        p->ar++;
+        wr_be16(p->out + 10, p->ar);
     } else {
-        if (!mdns_pkt_add_srv(p, true, inst, flush_class, 0, s->port, g_mdns_fqdn)) return false;
-        if (!mdns_pkt_add_txt(p, true, inst, flush_class, 0, s->txt)) return false;
+        p->an++;
+        wr_be16(p->out + 6, p->an);
+    }
+    return true;
+}
+
+void mdns_cache_host(l2_interface_t* l2) {
+    uint32_t ttl_ms = MDNS_TTL_S * 1000;
+    for (uint8_t i = 0; i < MAX_IPV4_PER_INTERFACE; i++) {
+        l3_ipv4_interface_t* v4 = l2->l3_v4[i];
+        if (!ipv4_l3_is_ready(v4) || v4->is_localhost) continue;
+        uint8_t ip[16] = {0};
+        memcpy(ip, &v4->ip, 4);
+        dns_cache_put_ip(g_mdns_fqdn, DNS_TYPE_A, ip, ttl_ms);
     }
 
-    return true;
+    for (uint8_t i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+        l3_ipv6_interface_t* v6 = l2->l3_v6[i];
+        if (!ipv6_l3_is_ready(v6) || v6->is_localhost) continue;
+        dns_cache_put_ip(g_mdns_fqdn, DNS_TYPE_AAAA, v6->ip, ttl_ms);
+    }
 }
 
 static bool mdns_label_ok(const char *s, uint32_t max_len) {
@@ -483,6 +159,161 @@ static bool mdns_instance_ok(const char *s) {
     return true;
 }
 
+void mdns_record(dns_record_t* r, const char* name, uint16_t type) {
+    memset(r, 0, sizeof(*r));
+    strncpy(r->name, name, sizeof(r->name));
+    r->type = type;
+    r->rrclass = DNS_CLASS_IN;
+    r->ttl_s = MDNS_TTL_S;
+}
+
+uint32_t mdns_host_records(l2_interface_t* l2, dns_record_t* out, uint32_t cap) {
+    if (!cap) return 0;
+
+    uint32_t count = 0;
+    for (uint8_t i = 0; i < MAX_IPV4_PER_INTERFACE && count < cap; i++) {
+        l3_ipv4_interface_t* v4 = l2->l3_v4[i];
+        if (!ipv4_l3_is_ready(v4) || v4->is_localhost) continue;
+        mdns_record(&out[count], g_mdns_fqdn, DNS_TYPE_A);
+        wr_be32(out[count].addr, v4->ip);
+        count++;
+    }
+
+    for (uint8_t i = 0; i < MAX_IPV6_PER_INTERFACE && count < cap; i++) {
+        l3_ipv6_interface_t* v6 = l2->l3_v6[i];
+        if (!ipv6_l3_is_ready(v6) || v6->is_localhost) continue;
+        mdns_record(&out[count], g_mdns_fqdn, DNS_TYPE_AAAA);
+        memcpy(out[count].addr, v6->ip, 16);
+        count++;
+    }
+    return count;
+}
+
+static int mdns_add_host_records(mdns_pkt_t* p, bool additional, l2_interface_t* l2, const char* name, uint16_t rrclass, uint32_t ttl_s) {
+    if (!l2->is_up) return 0;
+
+    dns_record_t records[8];
+    uint32_t count = mdns_host_records(l2, records, N_ARR(records));
+    for (uint32_t i = 0; i < count; i++) {
+        strncpy(records[i].name, name, sizeof(records[i].name));
+        if (!mdns_pkt_add(p, additional, &records[i], rrclass, ttl_s)) return -1;
+    }
+    return count;
+}
+
+void mdns_service_records(const mdns_service_t* s, uint16_t name_index, dns_record_t out[2]) {
+    char inst[256];
+    mdns_instance_name(inst, sizeof(inst), s, name_index);
+
+    mdns_record(&out[0], inst, DNS_TYPE_TXT);
+    strncpy(out[0].txt, s->txt, sizeof(out[0].txt));
+
+    mdns_record(&out[1], inst, DNS_TYPE_SRV);
+    out[1].port = s->port;
+    strncpy(out[1].target, g_mdns_fqdn, sizeof(out[1].target));
+}
+
+static bool mdns_recent(const dns_record_t* r, ip_version_t ver, uint32_t l2_slot, uint64_t now, bool mark) {
+    if (l2_slot >= MAX_L2_INTERFACES) return false;
+
+    char name[DNS_WIRE_MAX_NAME];
+    if (!dns_wire_name_normalize(r->name, name, sizeof(name))) return false;
+
+    uint8_t key_data[DNS_WIRE_MAX_NAME*2 + 20];
+    uint32_t off = 0;
+    if (!dns_wire_write_name(key_data, sizeof(key_data), &off, name)) return false;
+    off = dns_wire_put_u16(key_data, sizeof(key_data), off, r->type);
+    if (!off) return false;
+    off = dns_wire_put_u16(key_data, sizeof(key_data), off, r->rrclass & DNS_CLASS_MASK);
+    if (!off) return false;
+    off = dns_wire_put_u32(key_data, sizeof(key_data), off, r->ttl_s);
+    if (!off) return false;
+
+    uint8_t rdata[DNS_WIRE_MAX_NAME + 8];
+    uint32_t rdata_len = dns_wire_write_record_rdata(r, rdata, sizeof(rdata));
+    if (off + rdata_len > sizeof(key_data)) return false;
+    memcpy(key_data + off, rdata, rdata_len);
+    uint64_t key = hash_map_fnv1a64(key_data, off + rdata_len);
+
+    int empty = -1;
+    uint32_t oldest = 0;
+
+    for (uint32_t i = 0; i < MDNS_RECENT_RR_MAX; i++) {
+        mdns_recent_rr_t* e = &g_mdns_recent_rr[i];
+        if (!e->used) {
+            if (empty < 0) empty = (int)i;
+            continue;
+        }
+        if (e->l2_slot == l2_slot && e->ver == ver && e->key == key) {
+            bool recent = (now - e->last_ms) < MDNS_ANNOUNCE_INTERVAL_MS;
+            if (mark) e->last_ms = now;
+            return recent;
+        }
+        if (g_mdns_recent_rr[oldest].used && e->last_ms < g_mdns_recent_rr[oldest].last_ms) oldest = i;
+    }
+
+    if (mark) {
+        mdns_recent_rr_t* e = &g_mdns_recent_rr[empty >= 0 ? (uint32_t)empty : oldest];
+        e->used = true;
+        e->l2_slot = (uint8_t)l2_slot;
+        e->ver = ver;
+        e->key = key;
+        e->last_ms = now;
+    }
+    return false;
+}
+
+bool mdns_send_mcast(socket_handle_t sock, ip_version_t ver, const uint8_t* mcast_ip, uint32_t l2_slot, const uint8_t* pkt, uint32_t pkt_len, uint64_t now) {
+    if (l2_slot >= MAX_L2_INTERFACES) return mdns_send(sock, NULL, false, ver, mcast_ip, pkt, pkt_len);
+
+    dns_record_t records[48];
+    uint32_t count = 0;
+    uint16_t flags = 0;
+    if (!dns_wire_parse_records(pkt, pkt_len, false, 0, records, N_ARR(records), &count, &flags)) return false;
+
+    uint8_t filtered[1500];
+    mdns_pkt_t p;
+    uint64_t added = 0;
+    if (!mdns_pkt_begin(&p, filtered, sizeof(filtered), flags)) return false;
+    for (uint32_t i = 0; i < count; i++) {
+        if (mdns_recent(&records[i], ver, l2_slot, now, false)) continue;
+        bool additional = records[i].section == DNS_SECTION_ADDITIONAL;
+        if (!mdns_pkt_add(&p, additional, &records[i], records[i].rrclass, records[i].ttl_s)) return false;
+        added |= 1ULL << i;
+    }
+    if (!added || !mdns_send(sock, NULL, false, ver, mcast_ip, filtered, p.off)) return false;
+    for (uint32_t i = 0; i < count; i++) if (added & (1ULL << i)) mdns_recent(&records[i], ver, l2_slot, now, true);
+    return true;
+}
+
+static bool mdns_probe_packet(uint8_t* out, uint32_t cap, const char* name, const dns_record_t* records, uint32_t count, uint32_t* out_len) {
+    if (cap < 12 || !count) return false;
+    memset(out, 0, 12);
+    wr_be16(out + 4, 1);
+    wr_be16(out + 8, (uint16_t)count);
+
+    uint32_t off = 12;
+    if (!dns_wire_write_name(out, cap, &off, name)) return false;
+    off = dns_wire_put_u16(out, cap, off, DNS_TYPE_ANY);
+    if (!off) return false;
+    off = dns_wire_put_u16(out, cap, off, DNS_CLASS_IN);
+    if (!off) return false;
+
+    for (uint32_t i = 0; i < count; i++) {
+        off = dns_sd_add_record(out, cap, off, &records[i], DNS_CLASS_IN, MDNS_TTL_S);
+        if (!off) return false;
+    }
+
+    *out_len = off;
+    return true;
+}
+
+bool mdns_has_work(void) {
+    if (g_mdns_host_goodbye_left) return true;
+    for (uint32_t i = 0; i < MDNS_MAX_SERVICES; i++) if (g_mdns_services[i].used && (g_mdns_services[i].active || g_mdns_services[i].goodbye_left)) return true;
+    return false;
+}
+
 bool mdns_register_service(const char *instance, const char *service, const char *proto, uint16_t port, const char *txt) {
     if (!port) return false;
     if (!mdns_instance_ok(instance)) return false;
@@ -498,6 +329,24 @@ bool mdns_register_service(const char *instance, const char *service, const char
         }
     }
 
+    uint32_t link_mask = 0;
+    uint8_t n_if = l2_interface_count();
+    for (uint8_t i = 0; i < n_if; i++) {
+        l2_interface_t* l2 = l2_interface_at(i);
+        if (!l2 || !l2->is_up || !l2->ifindex || l2->ifindex > MAX_L2_INTERFACES) continue;
+
+        bool ready = false;
+        for (uint8_t j = 0; j < MAX_IPV4_PER_INTERFACE && !ready; j++) {
+            l3_ipv4_interface_t* v4 = l2->l3_v4[j];
+            if (ipv4_l3_is_ready(v4) && !v4->is_localhost) ready = true;
+        }
+        for (uint8_t j = 0; j < MAX_IPV6_PER_INTERFACE && !ready; j++) {
+            l3_ipv6_interface_t* v6 = l2->l3_v6[j];
+            if (ipv6_l3_is_ready(v6) && !v6->is_localhost) ready = true;
+        }
+        if (ready) link_mask |= 1u << (l2->ifindex-1);
+    }
+
     for (uint32_t i = 0; i < MDNS_MAX_SERVICES; i++) {
         mdns_service_t *s = &g_mdns_services[i];
         if (!s->used) continue;
@@ -505,13 +354,39 @@ bool mdns_register_service(const char *instance, const char *service, const char
         if (strncmp(s->service, service, (int)sizeof(s->service)) != 0) continue;
         if (strncmp_case(s->proto, proto, true, (int)sizeof(s->proto)) != 0) continue;
 
+        bool was_active = s->active;
+        bool rdata_changed = s->port != port;
+        if (txt) rdata_changed |= strcmp(s->txt, txt) != 0;
+        else rdata_changed |= s->txt[0] != 0;
+
         s->active = true;
         s->port = port;
         if (txt) strncpy(s->txt, txt, sizeof(s->txt));
         else s->txt[0] = 0;
-        s->announce_left = MDNS_ANNOUNCE_BURST;
+
+        bool cancelled_goodbye = false;
+        if (!was_active && s->goodbye_left) {
+            s->goodbye_left = 0;
+            s->retire = false;
+            cancelled_goodbye = true;
+        }
+
+        for (uint32_t slot = 0; slot < MAX_L2_INTERFACES; slot++) {
+            if (!(link_mask & (1u << slot))) continue;
+            mdns_link_state_t* link = &s->link[slot];
+            if (!cancelled_goodbye && !was_active && !s->advertised) mdns_probe_start(&link->probe, mdns_probe_jitter());
+            else if (was_active && rdata_changed && !link->probe.ready) mdns_probe_start(&link->probe, mdns_probe_jitter());
+            link->announce_left = link->probe.ready && g_mdns_host_link[slot].probe.ready ? MDNS_ANNOUNCE_BURST : 0;
+            link->last_tx_ms = 0;
+
+            mdns_probe_t* host_probe = &g_mdns_host_link[slot].probe;
+            if (!host_probe->ready && !host_probe->sent && !host_probe->next_ms) mdns_probe_start(host_probe, mdns_probe_jitter());
+        }
+
         s->goodbye_left = 0;
         s->last_tx_ms = 0;
+        g_mdns_host_goodbye_left = 0;
+        dns_daemon_kick();
         return true;
     }
 
@@ -529,9 +404,17 @@ bool mdns_register_service(const char *instance, const char *service, const char
         strncpy(s->proto, proto, sizeof(s->proto));
         if (txt) strncpy(s->txt, txt, sizeof(s->txt));
 
-        s->announce_left = MDNS_ANNOUNCE_BURST;
+        for (uint32_t slot = 0; slot < MAX_L2_INTERFACES; slot++) {
+            if (!(link_mask & (1u << slot))) continue;
+            mdns_probe_start(&s->link[slot].probe, mdns_probe_jitter());
+
+            mdns_probe_t* host_probe = &g_mdns_host_link[slot].probe;
+            if (!host_probe->ready && !host_probe->sent && !host_probe->next_ms) mdns_probe_start(host_probe, mdns_probe_jitter());
+        }
         s->goodbye_left = 0;
         s->last_tx_ms = 0;
+        g_mdns_host_goodbye_left = 0;
+        dns_daemon_kick();
         return true;
     }
 
@@ -553,301 +436,274 @@ bool mdns_deregister_service(const char *instance, const char *service, const ch
         if (strncmp_case(s->proto, proto, true, (int)sizeof(s->proto)) != 0) continue;
 
         s->active = false;
-        s->announce_left = 0;
-        s->goodbye_left = MDNS_GOODBYE_BURST;
         s->last_tx_ms = 0;
+        for (uint32_t slot = 0; slot < MAX_L2_INTERFACES; slot++) {
+            s->link[slot].announce_left = 0;
+            s->link[slot].last_tx_ms = 0;
+        }
+
+        if (s->advertised) {
+            s->old_name_index = s->name_index;
+            s->goodbye_left = MDNS_GOODBYE_BURST;
+            s->retire = true;
+        } else memset(s, 0, sizeof(*s));
+
+        bool active = false;
+        for (uint32_t j = 0; j < MDNS_MAX_SERVICES; j++) {
+            if (!g_mdns_services[j].used || !g_mdns_services[j].active) continue;
+            active = true;
+            break;
+        }
+        if (!active) {
+            if (g_mdns_host_advertised) {
+                g_mdns_old_host_name_index = g_mdns_host_name_index;
+                g_mdns_host_goodbye_left = MDNS_GOODBYE_BURST;
+            }
+            memset(g_mdns_host_link, 0, sizeof(g_mdns_host_link));
+        }
+        dns_daemon_kick();
         return true;
     }
 
     return false;
 }
 
-void mdns_responder_tick_multi(const mdns_tx_target_t *targets, uint32_t target_count) {
-    if (!targets) target_count = 0;
-    mdns_refresh_identity();
-    uint64_t now = get_time();
-    for (uint32_t i = 0; i < MDNS_CACHE_MAX; i++) {
-        mdns_cache_entry_t *e = &g_mdns_cache[i];
-        if (!e->type) continue;
-        if (now < e->expire_ms) continue;
-        memset(e, 0, sizeof(*e));
+void mdns_reprobe(uint32_t l2_mask) {
+    for (uint32_t i = 0; i < MDNS_RECENT_RR_MAX; i++) {
+        mdns_recent_rr_t *e = &g_mdns_recent_rr[i];
+        if (e->used && e->l2_slot < MAX_L2_INTERFACES && (l2_mask & (1u << e->l2_slot))) memset(e, 0, sizeof(*e));
     }
 
-    if (!g_mdns_last_keepalive_ms) g_mdns_last_keepalive_ms = now;
-    if ((now - g_mdns_last_keepalive_ms) >= MDNS_KEEPALIVE_MS) {
-        g_mdns_last_keepalive_ms = now;
-        g_mdns_host_announce_left = 1;
-        g_mdns_host_last_tx_ms = 0;
+    uint32_t delay_ms = mdns_probe_jitter();
+    for (uint32_t slot = 0; slot < MAX_L2_INTERFACES; slot++) {
+        if (!(l2_mask & (1u << slot))) continue;
+
+        bool active = false;
+        g_mdns_host_link[slot].announce_left = 0;
+        g_mdns_host_link[slot].last_tx_ms = 0;
         for (uint32_t i = 0; i < MDNS_MAX_SERVICES; i++) {
-            if (!g_mdns_services[i].used) continue;
-            if (!g_mdns_services[i].active) continue;
-            g_mdns_services[i].announce_left = 1;
-            g_mdns_services[i].last_tx_ms = 0;
+            mdns_service_t* s = &g_mdns_services[i];
+            if (!s->used || !s->active) continue;
+            active = true;
+            mdns_probe_start(&s->link[slot].probe, delay_ms);
+            s->link[slot].announce_left = 0;
+            s->link[slot].last_tx_ms = 0;
+        }
+        if (active) mdns_probe_start(&g_mdns_host_link[slot].probe, delay_ms);
+        else memset(&g_mdns_host_link[slot], 0, sizeof(g_mdns_host_link[slot]));
+    }
+}
+
+void mdns_responder_tick_multi(const mdns_tx_target_t *targets, uint32_t target_count) {
+    if (!target_count) return;
+
+    uint64_t now = get_time();
+    for (uint32_t slot = 0; slot < MAX_L2_INTERFACES; slot++) {
+        mdns_link_state_t* host = &g_mdns_host_link[slot];
+        if (!host->probe.next_ms || host->probe.ready || now < host->probe.next_ms) continue;
+
+        if (host->probe.sent < MDNS_PROBE_COUNT) {
+            bool sent = false;
+            for (uint32_t t = 0; t < target_count; t++) {
+                if (targets[t].ifindex != slot + 1) continue;
+                l2_interface_t* l2 = mdns_l2(targets[t].l3_id);
+                if (!l2) continue;
+
+                dns_record_t records[8];
+                uint32_t count = mdns_host_records(l2, records, N_ARR(records));
+                if (!count) continue;
+
+                uint8_t pkt[900];
+                uint32_t pkt_len = 0;
+                if (!mdns_probe_packet(pkt, sizeof(pkt), g_mdns_fqdn, records, count, &pkt_len)) continue;
+                if (mdns_send(targets[t].sock, NULL, false, targets[t].ver, targets[t].mcast_ip, pkt, pkt_len)) sent = true;
+            }
+            if (sent) {
+                host->probe.sent++;
+                host->probe.next_ms = now + MDNS_PROBE_INTERVAL_MS;
+            }
+        } else {
+            host->probe.ready = true;
+            host->announce_left = MDNS_ANNOUNCE_BURST;
+            host->last_tx_ms = 0;
+            for (uint32_t i = 0; i < MDNS_MAX_SERVICES; i++) {
+                mdns_service_t *s = &g_mdns_services[i];
+                if (s->used && s->active && s->link[slot].probe.ready) {
+                    s->link[slot].announce_left = MDNS_ANNOUNCE_BURST;
+                    s->link[slot].last_tx_ms = 0;
+                }
+            }
         }
     }
 
-    if (g_mdns_host_announce_left) {
-        if (!g_mdns_host_last_tx_ms || (now - g_mdns_host_last_tx_ms) >= MDNS_ANNOUNCE_INTERVAL_MS) {
-            g_mdns_host_last_tx_ms = now;
+    for (uint32_t i = 0; i < MDNS_MAX_SERVICES; i++) {
+        mdns_service_t *s = &g_mdns_services[i];
+        if (!s->used || !s->active) continue;
+
+        for (uint32_t slot = 0; slot < MAX_L2_INTERFACES; slot++) {
+            mdns_link_state_t* link = &s->link[slot];
+            if (link->probe.ready || !link->probe.next_ms || now < link->probe.next_ms) continue;
+
+            if (link->probe.sent < MDNS_PROBE_COUNT) {
+                dns_record_t records[2];
+                mdns_service_records(s, s->name_index, records);
+                bool sent = false;
+
+                uint8_t pkt[900];
+                uint32_t pkt_len = 0;
+                if (mdns_probe_packet(pkt, sizeof(pkt), records[0].name, records, 2, &pkt_len)) {
+                    for (uint32_t t = 0; t < target_count; t++) {
+                        if (targets[t].ifindex != slot + 1) continue;
+                        if (mdns_send(targets[t].sock, NULL, false, targets[t].ver, targets[t].mcast_ip, pkt, pkt_len)) sent = true;
+                    }
+                }
+                if (sent) {
+                    link->probe.sent++;
+                    link->probe.next_ms = now + MDNS_PROBE_INTERVAL_MS;
+                }
+            } else {
+                link->probe.ready = true;
+                if (g_mdns_host_link[slot].probe.ready) {
+                    link->announce_left = MDNS_ANNOUNCE_BURST;
+                    link->last_tx_ms = 0;
+                }
+            }
+        }
+    }
+
+    if (g_mdns_host_goodbye_left) {
+        char old_name[72];
+        if (g_mdns_old_host_name_index < 2) string_format_buf(old_name, sizeof(old_name), "%s.local", MDNS_HOST_NAME);
+        else string_format_buf(old_name, sizeof(old_name), "%s-%u.local", MDNS_HOST_NAME, (uint32_t)g_mdns_old_host_name_index);
+        bool sent = false;
+        for (uint32_t t = 0; t < target_count; t++) {
+            l2_interface_t* l2 = mdns_l2(targets[t].l3_id);
+            if (!l2) continue;
 
             uint8_t pkt[900];
             mdns_pkt_t p;
-            if (mdns_pkt_begin(&p, pkt, sizeof(pkt), DNS_FLAG_QR | DNS_FLAG_AA)) {
-                bool ok = true;
-                uint16_t flush_class = MDNS_FLUSH_CLASS;
-                if (g_mdns_ipv4 && !mdns_pkt_add_a(&p, false, g_mdns_fqdn, flush_class, MDNS_TTL_S, g_mdns_ipv4)) ok = false;
+            if (!mdns_pkt_begin(&p, pkt, sizeof(pkt), DNS_FLAG_QR | DNS_FLAG_AA)) continue;
+            int added = mdns_add_host_records(&p, false, l2, old_name, MDNS_FLUSH_CLASS, 0);
+            if (added <= 0) continue;
+            uint32_t slot = l2->ifindex && l2->ifindex <= MAX_L2_INTERFACES ? (uint32_t)l2->ifindex - 1u : UINT32_MAX;
+            if (mdns_send_mcast(targets[t].sock, targets[t].ver, targets[t].mcast_ip, slot, pkt, p.off, now)) sent = true;
+        }
 
-                uint8_t ip6[16];
-                if (mdns_current_ipv6(ip6) && !mdns_pkt_add_aaaa(&p, false, g_mdns_fqdn, flush_class, MDNS_TTL_S, ip6)) ok = false;
-
-                if (ok && p.an) {
-                    mdns_pkt_commit(&p);
-
-                    for (uint32_t t = 0; t < target_count; t++) {
-                        if (!targets[t].sock) continue;
-                        mdns_send(targets[t].sock, 0, false, targets[t].ver, targets[t].mcast_ip, pkt, p.off);
-                    }
-
-                    uint32_t ttl_ms = MDNS_TTL_S * 1000;
-
-                    if (g_mdns_ipv4) {
-                        uint8_t ip4[16];
-                        memset(ip4, 0, sizeof(ip4));
-                        memcpy(ip4, &g_mdns_ipv4, 4);
-                        dns_cache_put_ip(g_mdns_fqdn, DNS_TYPE_A, ip4, ttl_ms);
-                    }
-
-                    uint8_t ip6_cache[16];
-                    if (mdns_current_ipv6(ip6_cache)) dns_cache_put_ip(g_mdns_fqdn, DNS_TYPE_AAAA, ip6_cache, ttl_ms);
-                }
+        if (sent) {
+            g_mdns_host_goodbye_left--;
+            if (!g_mdns_host_goodbye_left) {
+                g_mdns_host_advertised = false;
+                memset(g_mdns_host_link, 0, sizeof(g_mdns_host_link));
             }
+        }
+    }
 
-            g_mdns_host_announce_left--;
+    for (uint32_t slot = 0; slot < MAX_L2_INTERFACES; slot++) {
+        mdns_link_state_t* host = &g_mdns_host_link[slot];
+        if (!host->probe.ready || !host->announce_left) continue;
+        if (host->last_tx_ms && (now - host->last_tx_ms) < MDNS_ANNOUNCE_INTERVAL_MS) continue;
+
+        bool sent = false;
+        for (uint32_t t = 0; t < target_count; t++) {
+            if (targets[t].ifindex != slot + 1) continue;
+            l2_interface_t* l2 = mdns_l2(targets[t].l3_id);
+            if (!l2) continue;
+
+            uint8_t pkt[900];
+            mdns_pkt_t p;
+            if (!mdns_pkt_begin(&p, pkt, sizeof(pkt), DNS_FLAG_QR | DNS_FLAG_AA)) continue;
+            int added = mdns_add_host_records(&p, false, l2, g_mdns_fqdn, MDNS_FLUSH_CLASS, MDNS_TTL_S);
+            if (added <= 0) continue;
+            if (mdns_send_mcast(targets[t].sock, targets[t].ver, targets[t].mcast_ip, slot, pkt, p.off, now)) {
+                sent = true;
+                mdns_cache_host(l2);
+            }
+        }
+        if (sent) {
+            g_mdns_host_advertised = true;
+            host->last_tx_ms = now;
+            host->announce_left--;
         }
     }
 
     for (uint32_t i = 0; i < MDNS_MAX_SERVICES; i++) {
         mdns_service_t *s = &g_mdns_services[i];
         if (!s->used) continue;
+        if (s->goodbye_left && s->last_tx_ms && (now - s->last_tx_ms) < MDNS_ANNOUNCE_INTERVAL_MS) continue;
 
-        bool do_goodbye = false;
-        if (s->goodbye_left) do_goodbye = true;
-        if (!do_goodbye && !s->active) continue;
-        if (!do_goodbye && !s->announce_left) continue;
-
-        uint32_t interval = MDNS_ANNOUNCE_INTERVAL_MS;
-        if (!s->last_tx_ms || (now - s->last_tx_ms) >= interval) {
-            s->last_tx_ms = now;
-
-            uint8_t pkt[900];
-            mdns_pkt_t p;
-            if (mdns_pkt_begin(&p, pkt, sizeof(pkt), DNS_FLAG_QR | DNS_FLAG_AA) && mdns_add_service_records(&p, s, MDNS_TTL_S, do_goodbye) && (p.an || p.ar)) {
-                mdns_pkt_commit(&p);
-
-                for (uint32_t t = 0; t < target_count; t++) {
-                    if (!targets[t].sock) continue;
-                    mdns_send(targets[t].sock, 0, false, targets[t].ver, targets[t].mcast_ip, pkt, p.off);
-                }
+        bool other_type = false;
+        if (s->goodbye_left && s->retire) {
+            for (uint32_t j = 0; j < MDNS_MAX_SERVICES; j++) {
+                if (j == i) continue;
+                const mdns_service_t* other = &g_mdns_services[j];
+                if (!other->used || !other->active) continue;
+                if (strncmp(other->service, s->service, (int)sizeof(other->service)) != 0) continue;
+                if (strncmp_case(other->proto, s->proto, true, (int)sizeof(other->proto)) != 0) continue;
+                other_type = true;
+                break;
             }
-
-            if (do_goodbye) {
-                if (s->goodbye_left) s->goodbye_left--;
-                if (!s->goodbye_left) {
-                    memset(s, 0, sizeof(*s));
-                }
+        }
+        bool add_enum = !s->goodbye_left || (s->retire && !other_type);
+        uint16_t name_index = s->goodbye_left ? s->old_name_index : s->name_index;
+        for (uint32_t slot = 0; slot < MAX_L2_INTERFACES; slot++) {
+            mdns_link_state_t* link = NULL;
+            if (s->goodbye_left) {
+                if (slot) break;
             } else {
-                if (s->announce_left) s->announce_left--;
+                if (!s->active) break;
+                link = &s->link[slot];
+                if (!link->probe.ready || !g_mdns_host_link[slot].probe.ready || !link->announce_left) continue;
+                if (link->last_tx_ms && (now - link->last_tx_ms) < MDNS_ANNOUNCE_INTERVAL_MS) continue;
             }
-        }
-    }
-}
 
-void mdns_responder_handle_query(socket_handle_t sock, ip_version_t ver, const uint8_t *mcast_ip, const uint8_t *pkt, uint32_t pkt_len, const net_l4_endpoint *src) {
-    if (!sock) return;
-    if (!mcast_ip) return;
-    if (!pkt) return;
-    if (pkt_len < 12) return;
+            bool sent = false;
+            for (uint32_t t = 0; t < target_count; t++) {
+                if (!s->goodbye_left && targets[t].ifindex != slot + 1) continue;
+                l2_interface_t* l2 = mdns_l2(targets[t].l3_id);
+                if (!l2) continue;
+                uint32_t l2_slot = l2->ifindex && l2->ifindex <= MAX_L2_INTERFACES ? (uint32_t)l2->ifindex - 1u : UINT32_MAX;
 
-    mdns_refresh_identity();
-
-    uint16_t flags = rd_be16(pkt + 2);
-    if (flags & DNS_FLAG_QR) {
-        mdns_cache_from_packet(pkt, pkt_len);
-        return;
-    }
-
-    uint16_t qd = rd_be16(pkt + 4);
-    if (!qd) return;
-
-    uint64_t now = get_time();
-    uint64_t hash = hash_map_fnv1a64(pkt, pkt_len);
-    uint16_t src_port = src ? src->port : 0;
-    uint8_t src_ip_zero[16];
-    memset(src_ip_zero, 0, sizeof(src_ip_zero));
-    const uint8_t *src_ip = src ? src->ip : src_ip_zero;
-    bool duplicate_query = false;
-
-    for (uint32_t i = 0; i < MDNS_QUERY_DEDUP_MAX; i++) {
-        mdns_query_dedup_t *e = &g_mdns_query_dedup[i];
-        if (!e->used || e->ver != ver || e->port != src_port || e->hash != hash) continue;
-        if (memcmp(e->ip, src_ip, ver == IP_VER4 ? 4 : 16) != 0) continue;
-        if (now - e->last_ms >= MDNS_QUERY_DEDUP_MS) continue;
-        e->last_ms = now;
-        duplicate_query = true;
-        break;
-    }
-
-    if (duplicate_query) return;
-
-    mdns_query_dedup_t *dedup = &g_mdns_query_dedup[g_mdns_query_dedup_next++ % MDNS_QUERY_DEDUP_MAX];
-    memset(dedup, 0, sizeof(*dedup));
-    dedup->used = true;
-    dedup->ver = ver;
-    dedup->port = src_port;
-    dedup->hash = hash;
-    dedup->last_ms = now;
-    memcpy(dedup->ip, src_ip, ver == IP_VER4 ? 4 : 16);
-
-    bool unicast_any = src && src->port && src->port != DNS_MDNS_PORT;
-
-    uint8_t out[1500];
-    mdns_pkt_t p;
-    if (!mdns_pkt_begin(&p, out, sizeof(out), DNS_FLAG_QR | DNS_FLAG_AA)) return;
-
-    uint32_t qoff = 12;
-
-    for (uint16_t qi = 0; qi < qd; qi++) {
-        char qname[256];
-        uint32_t next = 0;
-        if (!dns_wire_read_name(pkt, pkt_len, qoff, qname, sizeof(qname), &next)) return;
-        if (next + 4 > pkt_len) return;
-
-        uint16_t qtype = rd_be16(pkt + next);
-        uint16_t qclass = rd_be16(pkt + next + 2);
-        if ((qclass & DNS_CLASS_MASK) != DNS_CLASS_IN && (qclass & DNS_CLASS_MASK) != DNS_CLASS_ANY) {
-            qoff = next + 4;
-            continue;
-        }
-        if ((qclass & DNS_CLASS_CACHE_FLUSH) != 0) unicast_any = true;
-
-        uint32_t ipq = 0;
-        if ((qtype == DNS_TYPE_PTR || qtype == DNS_TYPE_ANY) && g_mdns_ipv4 && mdns_parse_ipv4_ptr_qname(qname, &ipq) && ipq == g_mdns_ipv4) {
-            uint16_t ptr_class = DNS_CLASS_IN;
-            uint16_t flush_class = MDNS_FLUSH_CLASS;
-
-            if (!mdns_pkt_add_ptr(&p, false, qname, ptr_class, MDNS_TTL_S, g_mdns_fqdn)) return;
-            if (!mdns_pkt_add_a(&p, true, g_mdns_fqdn, flush_class, MDNS_TTL_S, g_mdns_ipv4)) return;
-
-            uint8_t ip6[16];
-            if (mdns_current_ipv6(ip6)) {
-                if (!mdns_pkt_add_aaaa(&p, true, g_mdns_fqdn, flush_class, MDNS_TTL_S, ip6)) return;
-            }
-        }
-
-        if (qtype == DNS_TYPE_A || qtype == DNS_TYPE_ANY) {
-            if (dns_wire_name_equals(qname, g_mdns_fqdn) && g_mdns_ipv4) {
-                uint16_t flush_class = MDNS_FLUSH_CLASS;
-                if (!mdns_pkt_add_a(&p, false, g_mdns_fqdn, flush_class, MDNS_TTL_S, g_mdns_ipv4)) return;
-            }
-        }
-
-        if (qtype == DNS_TYPE_AAAA || qtype == DNS_TYPE_ANY) {
-            if (dns_wire_name_equals(qname, g_mdns_fqdn)) {
-                uint8_t ip6[16];
-                if (mdns_current_ipv6(ip6)) {
-                    uint16_t flush_class = MDNS_FLUSH_CLASS;
-                    if (!mdns_pkt_add_aaaa(&p, false, g_mdns_fqdn, flush_class, MDNS_TTL_S, ip6)) return;
-                }
-            }
-        }
-
-        if ((qtype == DNS_TYPE_PTR || qtype == DNS_TYPE_ANY) && dns_wire_name_equals(qname, DNS_SD_ENUM_SERVICES)) {
-            uint16_t ptr_class = DNS_CLASS_IN;
-
-            for (uint32_t i = 0; i < MDNS_MAX_SERVICES; i++) {
-                if (!g_mdns_services[i].used) continue;
-                if (!g_mdns_services[i].active) continue;
+                uint8_t pkt[900];
+                mdns_pkt_t p;
+                if (!mdns_pkt_begin(&p, pkt, sizeof(pkt), DNS_FLAG_QR | DNS_FLAG_AA)) continue;
 
                 char type[128];
-                mdns_make_service_type(type,sizeof(type), g_mdns_services[i].service, g_mdns_services[i].proto);
+                string_format_buf(type, sizeof(type), "_%s._%s.local", s->service, s->proto);
+                dns_record_t unique[2];
+                mdns_service_records(s, name_index, unique);
+                if (!unique[0].name[0] || !s->service[0] || !s->proto[0]) continue;
 
-                bool seen = false;
-                for (uint32_t j = 0; j < i; j++) {
-                    if (!g_mdns_services[j].used) continue;
-                    if (!g_mdns_services[j].active) continue;
-
-                    char type2[128];
-                    mdns_make_service_type(type2,sizeof(type2),g_mdns_services[j].service, g_mdns_services[j].proto);
-                    if (dns_wire_name_equals(type2, type)) {
-                        seen = true;
-                        break;
-                    }
+                uint32_t ttl = s->goodbye_left ? 0 : MDNS_TTL_S;
+                dns_record_t record;
+                if (add_enum) {
+                    mdns_record(&record, DNS_SD_ENUM_SERVICES, DNS_TYPE_PTR);
+                    strncpy(record.target, type, sizeof(record.target));
+                    if (!mdns_pkt_add(&p, false, &record, DNS_CLASS_IN, ttl)) continue;
                 }
 
-                if (seen) continue;
-                if (!mdns_pkt_add_ptr(&p, false, DNS_SD_ENUM_SERVICES, ptr_class, MDNS_TTL_S, type)) return;
+                mdns_record(&record, type, DNS_TYPE_PTR);
+                strncpy(record.target, unique[0].name, sizeof(record.target));
+                if (!mdns_pkt_add(&p, false, &record, DNS_CLASS_IN, ttl)) continue;
+                if (!mdns_pkt_add(&p, true, &unique[1], MDNS_FLUSH_CLASS, ttl)) continue;
+                if (!mdns_pkt_add(&p, true, &unique[0], MDNS_FLUSH_CLASS, ttl)) continue;
+                if (!s->goodbye_left && mdns_add_host_records(&p, true, l2, g_mdns_fqdn, MDNS_FLUSH_CLASS, MDNS_TTL_S) < 0) continue;
+                if (mdns_send_mcast(targets[t].sock, targets[t].ver, targets[t].mcast_ip, l2_slot, pkt, p.off, now)) sent = true;
+            }
+            if (!sent) continue;
+
+            if (s->goodbye_left) {
+                s->last_tx_ms = now;
+                s->goodbye_left--;
+                if (!s->goodbye_left) {
+                    if (s->retire) memset(s, 0, sizeof(*s));
+                    else s->last_tx_ms = 0;
+                }
+                break;
+            } else {
+                s->advertised = true;
+                link->last_tx_ms = now;
+                link->announce_left--;
             }
         }
-
-        bool need_host_add = false;
-        for (uint32_t i = 0; i < MDNS_MAX_SERVICES; i++) {
-            if (!g_mdns_services[i].used) continue;
-            if (!g_mdns_services[i].active) continue;
-
-            mdns_service_t *s = &g_mdns_services[i];
-
-            char type[128];
-            char inst[256];
-            mdns_make_service_type(type, sizeof(type), s->service, s->proto);
-            inst[0] = 0;
-            if (!s->instance[0] || !s->service[0] || !s->proto[0]) continue;
-            string_format_buf(inst, sizeof(inst), "%s._%s._%s.local", s->instance, s->service, s->proto);
-
-            if ((qtype == DNS_TYPE_PTR || qtype == DNS_TYPE_ANY) && dns_wire_name_equals(qname, type)) {
-                uint16_t ptr_class = DNS_CLASS_IN;
-                if (!mdns_pkt_add_ptr(&p, false, type, ptr_class, MDNS_TTL_S, inst)) return;
-
-                uint16_t flush_class = MDNS_FLUSH_CLASS;
-                if (!mdns_pkt_add_srv(&p, true, inst, flush_class, MDNS_TTL_S, s->port, g_mdns_fqdn)) return;
-                if (!mdns_pkt_add_txt(&p, true, inst, flush_class, MDNS_TTL_S, s->txt)) return;
-                need_host_add = true;
-            }
-
-            if ((qtype == DNS_TYPE_SRV || qtype == DNS_TYPE_ANY) && dns_wire_name_equals(qname, inst)) {
-                uint16_t flush_class = MDNS_FLUSH_CLASS;
-                if (!mdns_pkt_add_srv(&p, false, inst, flush_class, MDNS_TTL_S, s->port, g_mdns_fqdn)) return;
-                need_host_add = true;
-            }
-
-            if ((qtype == DNS_TYPE_TXT || qtype ==  DNS_TYPE_ANY) && dns_wire_name_equals(qname, inst)) {
-                uint16_t flush_class = MDNS_FLUSH_CLASS;
-                if (!mdns_pkt_add_txt(&p, false, inst, flush_class, MDNS_TTL_S, s->txt)) return;
-            }
-        }
-
-        if (need_host_add) {
-            if (!mdns_add_host_additionals(&p)) return;
-        }
-
-        qoff = next + 4;
-        if (qoff > pkt_len) return;
     }
-
-    if (!p.an && !p.ar) return;
-
-    mdns_pkt_commit(&p);
-    mdns_send(sock, src, unicast_any, ver, mcast_ip, out, p.off);
-    if (unicast_any) mdns_send(sock, NULL, false, ver, mcast_ip, out, p.off);
-
-    uint32_t ttl_ms = MDNS_TTL_S * 1000;
-
-    if (g_mdns_ipv4) {
-        uint8_t ip4[16];
-        memset(ip4, 0, sizeof(ip4));
-        memcpy(ip4, &g_mdns_ipv4, 4);
-        dns_cache_put_ip(g_mdns_fqdn, DNS_TYPE_A, ip4, ttl_ms);
-    }
-
-    uint8_t ip6[16];
-    if (mdns_current_ipv6(ip6)) dns_cache_put_ip(g_mdns_fqdn, DNS_TYPE_AAAA, ip6, ttl_ms);
 }

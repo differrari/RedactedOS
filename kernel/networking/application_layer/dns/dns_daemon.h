@@ -4,7 +4,7 @@
 extern "C" {
 #endif
 
-int dns_deamon_entry(int argc, char* argv[]);
+void dns_daemon_kick(void);
 #ifdef __cplusplus
 }
 #endif

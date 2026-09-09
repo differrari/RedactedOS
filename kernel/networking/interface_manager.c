@@ -17,6 +17,7 @@
 #include "networking/transport_layer/tcp.h"
 #include "networking/application_layer/dhcpv6_daemon.h"
 #include "networking/application_layer/dhcp_daemon.h"
+#include "networking/application_layer/dns/dns_daemon.h"
 //TODO: add network settings
 
 static l2_interface_t g_l2[MAX_L2_INTERFACES];
@@ -231,6 +232,7 @@ bool l2_interface_set_up(uint8_t ifindex, bool up) {
         dhcp_daemon_kick();
         dhcpv6_daemon_kick();
     }
+    dns_daemon_kick();
     return true;
 }
 
@@ -468,6 +470,7 @@ l3_id_t l3_ipv4_add_to_interface(uint8_t ifindex, uint32_t ip, uint32_t mask, ui
     }
 
     dhcp_daemon_kick();
+    dns_daemon_kick();
     return n->l3_id;
 }
 
@@ -570,6 +573,7 @@ bool l3_ipv4_update(l3_id_t l3_id, uint32_t ip, uint32_t mask, uint32_t gw, ipv4
     }
     if (!identity_changed && new_effective_mtu && old_effective_mtu && new_effective_mtu < old_effective_mtu) tcp_l3_mtu_reduce(n->l3_id, n->generation, new_effective_mtu);
     dhcp_daemon_kick();
+    if (identity_changed) dns_daemon_kick();
     return true;
 }
 
@@ -603,6 +607,7 @@ bool l3_ipv4_remove_from_interface(l3_id_t l3_id) {
     g_v4[g].used = false;
     memset(&g_v4[g], 0, sizeof(g_v4[g]));
     dhcp_daemon_kick();
+    dns_daemon_kick();
     return true;
 }
 
@@ -775,6 +780,7 @@ l3_id_t l3_ipv6_add_to_interface(uint8_t ifindex, const uint8_t ip[16], uint8_t 
     }
     if (n->dad_requested) ndp_daemon_kick();
     if (n->cfg & IPV6_CFG_DHCPV6) dhcpv6_daemon_kick();
+    dns_daemon_kick();
 
     return n->l3_id;
 }
@@ -914,6 +920,7 @@ bool l3_ipv6_update(l3_id_t l3_id, const uint8_t ip[16], uint8_t prefix_len, con
     }
     if (n->dad_requested) ndp_daemon_kick();
     if (n->cfg & IPV6_CFG_DHCPV6) dhcpv6_daemon_kick();
+    if (identity_changed) dns_daemon_kick();
     return true;
 }
 
@@ -960,6 +967,7 @@ bool l3_ipv6_remove_from_interface(l3_id_t l3_id) {
 
     g_v6[g].used = false;
     memset(&g_v6[g], 0, sizeof(g_v6[g]));
+    dns_daemon_kick();
     return true;
 }
 

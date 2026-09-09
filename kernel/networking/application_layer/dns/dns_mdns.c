@@ -12,10 +12,8 @@ typedef struct {
     l3_id_t l3_id;
     net_l4_endpoint dst;
 } mdns_query_target_t;
-//TODO keep query id for legacy unicast mdns replies
 //TODO do the same per L3 handling for igmp and mld
-//161 192.168.1.100		37669	224.0.0.251		5353	False	RedactedOS._http._tcp.local RedactedOS._http._tcp.local: type SRV, class IN, "QU" question Transaction ID: 0x34f0
-//164 5353	192.168.1.100		37669	True	 Transaction ID: 0x0000 RedactedOS._http._tcp.local: type SRV, class IN, cache flush, priority 0, weight 0, port 80, target RedactedOS.local 1... .... .... .... = Cache flush: True
+
 static bool mdns_open_query_target(l3_id_t l3_id, mdns_query_target_t* target) {
     if (!l3_id || !target) return false;
 
@@ -25,6 +23,17 @@ static bool mdns_open_query_target(l3_id_t l3_id, mdns_query_target_t* target) {
     else {
         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
         if (!ipv6_l3_is_ready(v6) || v6->is_localhost) return false;
+        if (!ipv6_is_linklocal(v6->ip)) {
+            if (!v6->l2) return false;
+            for (uint8_t i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+                l3_ipv6_interface_t* cand = v6->l2->l3_v6[i];
+                if (!ipv6_l3_is_ready(cand) || cand->is_localhost || !ipv6_is_linklocal(cand->ip)) continue;
+                v6 = cand;
+                break;
+            }
+            if (!ipv6_is_linklocal(v6->ip)) return false;
+            l3_id = v6->l3_id;
+        }
         ver = IP_VER6;
     }
 

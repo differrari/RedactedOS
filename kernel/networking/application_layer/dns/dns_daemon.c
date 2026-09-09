@@ -1,7 +1,9 @@
 #include "dns_daemon.h"
-#include "mdns_responder.h"
+#include "mdns_internal.h"
 #include "dns_wire.h"
 #include "process/scheduler.h"
+#include "kernel_processes/kprocess_loader.h"
+#include "exceptions/irq.h"
 #include "syscalls/syscalls.h"
 #include "net/socket_types.h"
 #include "networking/transport_layer/csocket.h"
@@ -13,8 +15,12 @@
 
 static mdns_tx_target_t g_mdns[MAX_L3_INTERFACES];
 static uint16_t g_mdns_count = 0;
+static volatile uint8_t g_dns_daemon_running;
+static volatile uint8_t g_dns_daemon_pending;
+static volatile uint8_t g_dns_dirty;
 
-static void mdns_sync(const uint8_t* group4, const uint8_t* group6) {
+static uint32_t mdns_sync(const uint8_t* group4, const uint8_t* group6) {
+    uint32_t changed = 0;
     uint16_t out = 0;
     for (uint16_t i = 0; i < g_mdns_count; i++) {
         bool valid = false;
@@ -27,6 +33,7 @@ static void mdns_sync(const uint8_t* group4, const uint8_t* group6) {
         }
         if (!valid) {
             if (g_mdns[i].sock) close_socket(g_mdns[i].sock);
+            if (g_mdns[i].ifindex && g_mdns[i].ifindex <= MAX_L2_INTERFACES) changed |= 1u << (g_mdns[i].ifindex - 1u);
             continue;
         }
         if (out != i) g_mdns[out] = g_mdns[i];
@@ -65,10 +72,12 @@ static void mdns_sync(const uint8_t* group4, const uint8_t* group6) {
 
             g_mdns[g_mdns_count].sock = s;
             g_mdns[g_mdns_count].ver = IP_VER4;
+            g_mdns[g_mdns_count].ifindex = l2->ifindex;
             g_mdns[g_mdns_count].l3_id = v4->l3_id;
             g_mdns[g_mdns_count].l3_generation = v4->generation;
             memcpy(g_mdns[g_mdns_count].mcast_ip, group4, 4);
             g_mdns_count++;
+            if (l2->ifindex && l2->ifindex <= MAX_L2_INTERFACES) changed |= 1u << (l2->ifindex - 1u);
         }
 
         for (uint8_t j = 0; j < MAX_IPV6_PER_INTERFACE && g_mdns_count < MAX_L3_INTERFACES; j++) {
@@ -96,16 +105,25 @@ static void mdns_sync(const uint8_t* group4, const uint8_t* group6) {
 
             g_mdns[g_mdns_count].sock = s;
             g_mdns[g_mdns_count].ver = IP_VER6;
+            g_mdns[g_mdns_count].ifindex = l2->ifindex;
             g_mdns[g_mdns_count].l3_id = v6->l3_id;
             g_mdns[g_mdns_count].l3_generation = v6->generation;
             memcpy(g_mdns[g_mdns_count].mcast_ip, group6, 16);
             g_mdns_count++;
+            if (l2->ifindex && l2->ifindex <= MAX_L2_INTERFACES) changed |= 1u << (l2->ifindex-1);
         }
     }
+    return changed;
 }
 
-int dns_deamon_entry(int argc, char* argv[]) {
+static int dns_deamon_entry(int argc, char* argv[]) {
     (void)argc; (void)argv;
+
+    irq_flags_t irq = irq_save_disable();
+    g_dns_daemon_running = 1;
+    g_dns_daemon_pending = 0;
+    g_dns_dirty = 0;
+    irq_restore(irq);
 
     uint32_t mdns_v4 = DNS_MDNS_GROUP_V4;
     uint8_t mdns_v4_addr[4];
@@ -113,15 +131,23 @@ int dns_deamon_entry(int argc, char* argv[]) {
     memcpy(mdns_v4_addr, &mdns_v4, 4);
     ipv6_make_multicast(0x02, IPV6_MCAST_MDNS, 0, mdns_v6);
 
-    mdns_sync(mdns_v4_addr, mdns_v6);
+    uint32_t changed = mdns_sync(mdns_v4_addr, mdns_v6);
+    if (changed) mdns_reprobe(changed);
 
     const uint32_t tick_ms = 100;
-    uint32_t last_socket_sync_ms = (uint32_t)get_time();
-    for(;;) {
+    const uint32_t sync_ms = 1000;
+    uint64_t last_socket_sync_ms = (uint32_t)get_time();
+    while (mdns_has_work()) {
+        irq = irq_save_disable();
+        bool dirty = g_dns_dirty != 0;
+        g_dns_dirty = 0;
+        irq_restore(irq);
+
         uint32_t now_ms = (uint32_t)get_time();
-        if (now_ms - last_socket_sync_ms >= 1000) {
+        if (dirty || now_ms - last_socket_sync_ms >= sync_ms) {
             last_socket_sync_ms = now_ms;
-            mdns_sync(mdns_v4_addr, mdns_v6);
+            changed = mdns_sync(mdns_v4_addr, mdns_v6);
+            if (changed) mdns_reprobe(changed);
         }
 
         uint8_t buf[900];
@@ -134,12 +160,47 @@ int dns_deamon_entry(int argc, char* argv[]) {
                 if (r == SOCK_ERR_WOULDBLOCK) break;
                 if (r < 0) break;
                 if (!r) continue;
-                mdns_responder_handle_query(s, g_mdns[sidx].ver, g_mdns[sidx].mcast_ip, buf, (uint32_t)r, &src);
+                mdns_rx(s, g_mdns[sidx].l3_id, g_mdns[sidx].ver, g_mdns[sidx].mcast_ip, buf, (uint32_t)r, &src);
             }
         }
 
         mdns_responder_tick_multi(g_mdns, g_mdns_count);
+        if (!mdns_has_work()) break;
         msleep(tick_ms);
     }
-    return 1;
+
+    for (uint16_t i = 0; i < g_mdns_count; i++) close_socket(g_mdns[i].sock);
+    g_mdns_count = 0;
+
+    irq = irq_save_disable();
+    g_dns_daemon_running = 0;
+    g_dns_dirty = 0;
+    irq_restore(irq);
+    dns_daemon_kick();
+    return 0;
+}
+
+void dns_daemon_kick(void) {
+    if (!mdns_has_work()) return;
+
+    irq_flags_t irq = irq_save_disable();
+    if (g_dns_daemon_running) {
+        g_dns_dirty = 1;
+        irq_restore(irq);
+        return;
+    }
+
+    if (g_dns_daemon_pending) {
+        irq_restore(irq);
+        return;
+    }
+
+    g_dns_daemon_pending = 1;
+    irq_restore(irq);
+
+    if (!create_kernel_process("dns_daemon", dns_deamon_entry, 0, 0)) {
+        irq = irq_save_disable();
+        g_dns_daemon_pending = 0;
+        irq_restore(irq);
+    }
 }

@@ -20,7 +20,6 @@
 #include "networking/application_layer/csocket_http_client.h"
 #include "networking/application_layer/http_webserver.h"
 #include "networking/application_layer/dhcp_daemon.h"
-#include "networking/application_layer/dns/dns_daemon.h"
 #include "networking/application_layer/dns/mdns_responder.h"
 #include "networking/application_layer/ntp.h"
 #include "networking/application_layer/ntp_daemon.h"
@@ -287,7 +286,6 @@ static int net_test_entry(int argc, char *argv[]) {
 process_t* launch_net_process() {
     create_kernel_process("net_net", network_net_task_entry, 0, 0);
     //create_kernel_process("ssdp_daemon", ssdp_daemon_entry, 0, 0);
-    create_kernel_process("dns_daemon", dns_deamon_entry, 0, 0);
     create_kernel_process("net_test", net_test_entry, 0, 0);
     return NULL;
 }

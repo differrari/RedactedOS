@@ -145,6 +145,8 @@ static void ensure_inventory() {
                     st->t1_left_ms = t1_ms == UINT64_MAX ? UINT64_MAX : (age_ms < t1_ms ? t1_ms - age_ms : 0);
                     st->t2_left_ms = t2_ms == UINT64_MAX ? UINT64_MAX : (age_ms < t2_ms ? t2_ms - age_ms : 0);
                     if (v4->runtime_opts_v4.server_ip) st->server_ip_net = bswap32(v4->runtime_opts_v4.server_ip);
+                    if (g_force_renew_generation) st->force_renew_seen = g_force_renew_generation - 1;
+                    else st->force_renew_seen = UINT32_MAX;
                 }
             }
 
