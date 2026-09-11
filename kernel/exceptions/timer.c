@@ -163,10 +163,6 @@ int32_t timer_sync_get_freq_ppm(void) {
     return g_freq_ppm;
 }
 
-void timer_apply_sntp_sample_us(uint64_t server_unix_us) {
-    timer_sync_set_unix_us(server_unix_us);
-}
-
 int timer_is_synchronised(void) {
     return g_sync;
 }

@@ -2,6 +2,9 @@
 #include "ping.h"
 #include "shutdown.h"
 #include "tracert.h"
+#include "curl.h"
+#include "ip.h"
+#include "firewall.h"
 #include "monitor_processes.h"
 #include "kernel_processes/kprocess_loader.h"
 #include "filesystem/filesystem.h"
@@ -22,10 +25,26 @@ typedef struct open_tools_ref {
     int (*func)(int argc, char* argv[]);
 } open_tools_ref;
 
+//[optional args], alt1|alt2, VALUE, (default value)
+//template help
+//  print("Usage:\t ip link");
+//  print("\t ip addr");
+//  print("show or configure networking\n");
+//  print("Commands:");
+//  print("\t link\t interfaces");
+//  print("Args:");
+//  print("\t IFACE\t interface name");
+//  print("\t PREFIX\t ADDRESS/LENGTH\n");
+//  print("Options:");
+//  print("\t --help\t help");
+
 open_tools_ref available_cmds[] = {
     { "ping", run_ping },
     { "shutdown", run_shutdown },
     { "tracert", run_tracert },
+    { "curl", run_curl },
+    { "ip", run_ip },
+    { "firewall", run_firewall },
     { "monitor", monitor_procs },
 };
 

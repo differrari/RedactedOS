@@ -1,9 +1,9 @@
 include ../common.mk
 
-SUBDIRS := $(wildcard */.)
-SUBCLEAN = $(addsuffix .clean,$(SUBDIRS))
-SUBDUMP = $(addsuffix .dump,$(SUBDIRS))
-MAKEFILE := $(shell pwd)/ToolMakefile
+SUBDIRS := $(sort $(dir $(wildcard */*.S */*.c */*.cpp)))
+SUBCLEAN := $(addsuffix .clean,$(wildcard */))
+SUBDUMP := $(addsuffix .dump,$(SUBDIRS))
+MAKEFILE := $(CURDIR)/ToolMakefile
 
 all: $(SUBDIRS)
 
@@ -20,6 +20,4 @@ $(SUBCLEAN): %.clean:
 $(SUBDUMP): %.dump:
 	$(MAKE) -f $(MAKEFILE) -C $* dump
 
-clean: $(SUBCLEAN)
-
-.PHONY: all $(SUBDIRS)
+.PHONY: all clean dump $(SUBDIRS) $(SUBCLEAN) $(SUBDUMP)

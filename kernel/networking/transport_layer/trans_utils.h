@@ -34,10 +34,11 @@ static inline void net_ep_split(const net_l4_endpoint* ep, char* ip, int iplen, 
     }
 }
 
-static void make_ep(uint32_t ip_host, uint16_t port, ip_version_t ver, net_l4_endpoint* ep) {
+static inline void make_ep(const void *ip, uint16_t port, ip_version_t ver, net_l4_endpoint* ep) {
+    if (!ep) return;
     memset(ep, 0, sizeof(*ep));
     ep->ver = ver;
-    memcpy(ep->ip, &ip_host, 4);
+    if (ip) memcpy(ep->ip, ip, ver == IP_VER6 ? 16 : 4);
     ep->port = port;
 }
 

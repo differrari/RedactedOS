@@ -21,6 +21,7 @@
 #include "files/dir_list.h"
 #include "stack_manager.h"
 #include "graph/tres.h"
+#include "networking/network.h"
 
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
@@ -336,6 +337,7 @@ void reset_process(process_t *proc){
         proc->packet_buffer.entries[k] = (sizedptr){0};
     }
     close_files_for_process(pid);
+    network_cleanup_process(pid);
 
     if (proc->postmortem_output) {
         release((void*)proc->postmortem_output);

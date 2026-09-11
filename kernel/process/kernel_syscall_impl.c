@@ -89,37 +89,48 @@ uint64_t get_time(){
     return timer_now_msec();
 }
 
-bool socket_create(Socket_Role role, protocol_t protocol, const SocketExtraOptions* extra, SocketHandle *out_handle){
-    return create_socket(role, protocol, extra, get_current_proc_pid(), out_handle);
+socket_handle_t socket_create(protocol_t protocol, const SocketOptions* extra){
+    return create_socket(protocol, extra);
 }
 
-int32_t socket_bind(SocketHandle *handle, ip_version_t ip_version, uint16_t port){
-    return bind_socket(handle, port, ip_version, get_current_proc_pid());
+int32_t socket_bind(socket_handle_t handle, const SockBindSpec* spec, uint16_t port){
+    return bind_socket(handle, spec, port);
 }
 
-int32_t socket_connect(SocketHandle *handle, SockDstKind dst_kind, void* dst, uint16_t port){
-    return connect_socket(handle, dst_kind, dst, port, get_current_proc_pid());
+int32_t socket_connect(socket_handle_t handle, const net_l4_endpoint* dst){
+    return connect_socket(handle, dst);
 }
 
-int32_t socket_listen(SocketHandle *handle){
-    return listen_on(handle, 0, get_current_proc_pid());
+int32_t socket_listen(socket_handle_t handle, int32_t backlog){
+    return listen_on(handle, backlog);
 }
 
-bool socket_accept(SocketHandle *spec){
-    accept_on_socket(spec, get_current_proc_pid());
-    return 1;
+socket_handle_t socket_accept(socket_handle_t handle){
+    return accept_on_socket(handle);
 }
 
-size_t socket_send(SocketHandle *handle, SockDstKind dst_kind, const void* dst, uint16_t port, void *packet, size_t size){
-    return send_on_socket(handle, dst_kind, dst, port, packet, size, get_current_proc_pid());
+int64_t socket_send(socket_handle_t handle, void *packet, size_t size){
+    return send_on_socket(handle, packet, size);
 }
 
-bool socket_receive(SocketHandle *handle, void *packet, size_t size, net_l4_endpoint* out_src){
-    return receive_from_socket(handle, packet, size, out_src, get_current_proc_pid());
+int64_t socket_send_to(socket_handle_t handle, const net_l4_endpoint* dst, void *packet, size_t size){
+    return send_to_socket(handle, dst, packet, size);
 }
 
-int32_t socket_close(SocketHandle *handle){
-    return close_socket(handle, get_current_proc_pid());
+int64_t socket_receive(socket_handle_t handle, void *packet, size_t size, net_l4_endpoint* out_src){
+    return receive_from_socket(handle, packet, size, out_src);
+}
+
+int32_t socket_close(socket_handle_t handle){
+    return close_socket(handle);
+}
+
+int32_t socket_set_option(socket_handle_t handle, int32_t opt, const void* value, uint32_t len){
+    return set_socket_option(handle, opt, value, len);
+}
+
+int32_t socket_get_option(socket_handle_t handle, int32_t opt, void* value, uint32_t* len){
+    return get_socket_option(handle, opt, value, len);
 }
 
 FS_RESULT openf(const char* path, file* descriptor){

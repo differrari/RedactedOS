@@ -8,9 +8,9 @@ extern "C" {
 
 typedef struct netpkt netpkt_t;
 
-typedef void (*netpkt_free_fn)(void* ctx, uintptr_t base, uint32_t alloc_size);
+typedef void (*netpkt_free_fn)(void* ctx, uintptr_t base);
 
-#define NETPKT_MAX_ALLOC 65536u
+#define NETPKT_MAX_ALLOC 65535u
 #define NETPKT_MAX_PAGE_BYTES (32ull * 1024ull * 1024ull)
 
 netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailroom);
@@ -22,6 +22,8 @@ void netpkt_unref(netpkt_t* p);
 
 uintptr_t netpkt_data(const netpkt_t* p);
 uint32_t netpkt_len(const netpkt_t* p);
+//NOTE use this only for small reads to avoid unnecessary payload copies
+bool netpkt_copyout(const netpkt_t* p, uint32_t off, void* dst, uint32_t len);
 
 uint32_t netpkt_headroom(const netpkt_t* p);
 uint32_t netpkt_tailroom(const netpkt_t* p);
