@@ -12,6 +12,7 @@ void new_managed_window(){
     if (!cur) return;
     create_window(10 - current_win_offset.x, 10 - current_win_offset.y + MENU_HEIGHT, cur->width - 20, cur->height - 20 - MENU_HEIGHT);
     global_win_offset.x = current_win_offset.x;
+    global_win_offset.y = current_win_offset.y;
     current_win_offset.x -= cur->width;
 }
 
