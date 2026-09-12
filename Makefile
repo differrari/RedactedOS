@@ -1,4 +1,5 @@
 include common.mk
+include feature_flags.mk
 
 OS      := $(shell uname)
 FS_DIRS := fs/redos/system
