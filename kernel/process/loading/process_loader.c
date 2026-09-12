@@ -405,7 +405,6 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     
     proc->mm.rss_stack_pages = 0;
 
-    
     proc->shared_page = shared_base;
     proc->main_thread.regs[30] = proc->shared_page;
     kprintf("[NEW PROC:U]: %s (pid: %i, main tid: %i) allocated at %llx entry=%llx stack=%llx-%llx anon=%llx (phys=%llx)", name, proc->id, proc->main_thread.tid, proc, (uint64_t)proc->main_thread.pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);

@@ -133,3 +133,18 @@ size_t list_root_from(module_root* modules, fs_dir_list_helper *helper, uint64_t
     
     return dir_buf_size(helper);
 }
+
+void destroy_root_module(module_root *root){
+    if (!root || !root->map) return;
+    for (uint64_t i = 0; i < root->map->capacity; i++){
+        hash_map_entry_t* e = root->map->buckets[i];
+        while(e){
+            hash_map_entry_t* next = e->next;
+            system_module *m = e->value;
+            if (m && m->owner){
+                release(m);
+            }
+            e = next;
+        }
+    }
+}

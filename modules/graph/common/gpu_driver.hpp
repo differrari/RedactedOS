@@ -3,7 +3,7 @@
 #include "types.h"
 #include "std/string.h"
 #include "graphic_types.h"
-#include "ui/draw/draw.h"
+#include "draw/draw.h"
 
 #define bpp 4
 

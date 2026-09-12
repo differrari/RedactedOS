@@ -1,4 +1,5 @@
 include common.mk
+include feature_flags.mk
 
 OS      := $(shell uname)
 FS_DIRS := fs/redos/system
@@ -11,7 +12,7 @@ endif
 
 .PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
 
-all: kshared modules kernel shared user tools libs docs
+all: kshared modules kernel shared user tools libs services docs
 	@echo "Build complete."
 	./createfs
 
@@ -33,6 +34,9 @@ kernel: kshared modules
 tools: shared libs prepare-fs
 	$(MAKE) -C tools
 
+services: shared libs prepare-fs
+	$(MAKE) -C services
+
 libs: shared
 	$(MAKE) -C libs
 
@@ -50,6 +54,7 @@ clean:
 	$(MAKE) -C tools  $@
 	$(MAKE) -C modules $@
 	$(MAKE) -C libs $@
+	$(MAKE) -C services $@
 	@echo "removing images"
 	$(RM) kernel.img kernel.elf dump
 
@@ -72,6 +77,7 @@ dump:
 	$(ARCH)objdump -S -D kernel.elf > dump
 	$(MAKE) -C user $@
 	$(MAKE) -C tools $@
+	$(MAKE) -C services $@
 
 install:
 	$(MAKE) clean

@@ -11,5 +11,6 @@ bool unload_module_from(module_root* modules, system_module *module);
 system_module* get_module_from(module_root* modules, const char **full_path);
 size_t list_root_from(module_root* modules, fs_dir_list_helper *helper, uint64_t *offset);
 bool root_stat(const char *path, fs_stat *out_stat);
+void destroy_root_module(module_root *root);
 
 extern system_module root_module; 

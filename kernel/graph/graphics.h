@@ -7,7 +7,7 @@ extern "C" {
 #include "types.h"
 #include "graphic_types.h"
 #include "std/string.h"
-#include "ui/draw/draw.h"
+#include "draw/draw.h"
 #include "files/system_module.h"
 
 bool gpu_ready();

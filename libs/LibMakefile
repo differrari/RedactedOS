@@ -10,7 +10,7 @@ endif
 CFLAGS   := $(CFLAGS_BASE) $(BASE_FLAGS)
 
 CLEAN_OBJS := $(shell find -name "*.o")
-C_SRC   := $(shell cat simplemake | xargs -n1 find . -name)
+C_SRC   := $(shell xargs -r -n1 printf './%s\n' < simplemake)
 OBJ     := $(C_SRC:%.c=$(BUILD_DIR)/%.o)
 
 TARGET  := $(shell echo "../lib$(notdir $(CURDIR)).a")

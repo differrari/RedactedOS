@@ -606,6 +606,7 @@ system_module p9_fs_module = (system_module){
     .truncate = shared_truncate,
     .getstat = shared_stat,
     .readdir = shared_readdir,
+    .transform = 0,
     .alias_info = {}
 };
 

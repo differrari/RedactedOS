@@ -1,6 +1,7 @@
 #include "stack_manager.h"
 #include "exceptions/exception_handler.h"
 #include "memory/mmu.h"
+#include <stddef.h>
 
 uptr next_stack_addr(process_t *proc){
     if (is_privileged(proc)) return 0;
@@ -29,15 +30,20 @@ void unmap_stack(process_t *proc, stack_t stack){
 
 stack_t new_stack(process_t *proc){
     uptr stack_top = 0;
+    size_t size = 0;
     if (is_privileged(proc)) {
-        void *st = palloc(stack_max, MEM_PRIV_KERNEL, MEM_RW, true);
-        stack_top = (uptr)st + stack_max;
-        register_allocation(proc->alloc_map, st, stack_max);
-    } else stack_top = next_stack_addr(proc);
+        size = kstack_max;
+        void *st = palloc(size, MEM_PRIV_KERNEL, MEM_RW, true);
+        stack_top = (uptr)st + size;
+        register_allocation(proc->alloc_map, st, size);
+    } else {
+        stack_top = next_stack_addr(proc);
+        size = stack_max;
+    }
     if (!stack_top) return (stack_t){};
-    uptr stack_limit = stack_top - stack_max;
+    uptr stack_limit = stack_top - size;
     print("New stack at %llx-%llx",stack_limit,stack_top);
     if (!is_privileged(proc) && !mm_add_vma(&proc->mm, stack_limit, stack_top, MEM_RW, VMA_KIND_STACK, VMA_FLAG_DEMAND))
         return (stack_t){};
-    return (stack_t){.top = stack_top, .size = stack_max, .max = stack_max};
+    return (stack_t){.top = stack_top, .size = size, .max = size};
 }

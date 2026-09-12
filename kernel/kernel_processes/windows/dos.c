@@ -45,11 +45,11 @@ static void draw_solid_window(window_frame *frame, draw_ctx *ctx, int_point fixe
     
     DRAW(rectangle(ctx, (rect_ui_config){
         .border_size = BORDER_SIZE,
-        .border_color = saturate(system_theme.bg_color + 0x222222, focused ? 0 : -90),
+        .border_color = saturate_color(system_theme.bg_color + 0x222222, focused ? 0 : -90),
     }, (common_ui_config){
         .point = fixed_point,
         .size = fixed_size,
-        .background_color = saturate(system_theme.bg_color + 0x111111, focused ? 0 : -90),
+        .background_color = saturate_color(system_theme.bg_color + 0x111111, focused ? 0 : -90),
         .foreground_color = COLOR_WHITE,
     }), { 
         label(ctx, (text_ui_config){
@@ -309,7 +309,11 @@ int window_system(){
                     if (size.width < 0x10 && size.height < 0x10){
                         //Small movements are counted as clicks
                         if (clicked_frame && focused_window != clicked_frame) sys_set_focus(clicked_frame->pid);
-                    } else if (!linked_list_count(window_list) || ((clicked_frame != ini_wf || !clicked_frame) && clicked_frame != focused_window && ini_wf != focused_window)){
+                    } else if (
+                        !linked_list_count(window_list) || 
+                        !clicked_frame ||
+                        (clicked_frame != ini_wf && clicked_frame != focused_window && ini_wf != focused_window)
+                    ){
                         //Others create a window unless they happen fully within a window or intersect with the focused window, as we consider those to happen inside the window itself
                         int_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
                         disable_interrupt();

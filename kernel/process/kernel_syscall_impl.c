@@ -15,6 +15,8 @@
 #include "memory/mmu.h"
 #include "memory/addr.h"
 #include "process/signals/signals.h"
+#include "jobs/job_manager.h"
+
 extern page_index *p_index;
 
 void* page_alloc(size_t size){
@@ -80,7 +82,6 @@ void resize_draw_ctx(draw_ctx* d_ctx, uint32_t width, uint32_t height){
     gpu_flush();
 }
 
-
 uint32_t gpu_char_size(uint32_t scale){
     return gpu_get_char_size(scale);
 }
@@ -133,6 +134,13 @@ FS_RESULT openf(const char* path, file* descriptor){
 
 size_t readf(file *descriptor, char* buf, size_t size){
     return read_file(descriptor, buf, size);
+}
+
+size_t transformf(const char *path, void* buf, size_t size){
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs, true);
+    if (!s.data || !s.length) return transform_file(kernel_fs(), path, buf, size);
+    return transform_file(&rootfs, path, buf, size);
 }
 
 size_t writef(file *descriptor, const char* buf, size_t size){
@@ -200,4 +208,29 @@ bool send_signal(signal_types type, u16 proc_id){
 
 bool handle_signal(signal_types type, signal_handler handler){
     return register_signal_handler(get_current_proc(), type, handler);
+}
+
+void msleep(uint64_t time){
+    //print(">>>>>> Attempt to sleep from %i",get_current_proc()->id);
+    // sleep_thread(time);
+}
+
+void __attribute__((noreturn)) halt(int32_t exit_code){
+    stop_current_process(exit_code);
+    kernel_process_return_trampoline(exit_code);
+}
+
+void __attribute__((noreturn)) halt_thread(int32_t exit_code){
+    thread_t* current_thread = get_current_thread();
+    if (current_thread->job_id){
+        fulfill_job(current_thread->job_id, current_thread->PROC_X0, current_thread);
+    }
+    if (current_thread->tid == 1)
+        stop_current_process(current_thread->PROC_X0);
+    else {
+        current_thread->state = STOPPED;
+        unmap_stack(get_current_proc(), current_thread->stack_info);
+        switch_proc(YIELD);//TODO: proper cleanup
+    }
+    kernel_process_return_trampoline(exit_code);
 }
