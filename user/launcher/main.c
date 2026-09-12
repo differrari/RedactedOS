@@ -94,8 +94,12 @@ void load_entries(){
         string_free(entry->info.author);
     }
     chunk_array_reset(entries);
+#ifdef BUG_CRASH_FSUS
+    traverse_directory("/apps",false, handle_entry);
+#else 
     traverse_directory("/boot/redos/system", false, handle_entry);
     traverse_directory("/home/applications", false, handle_entry);
+#endif
 }
 
 void draw_desktop(){

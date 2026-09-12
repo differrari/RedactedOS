@@ -426,6 +426,7 @@ void reset_process(process_t *proc){
         proc->output_size = 0;
     }
 
+#ifdef BUG_RESET_TTBR0
     if (proc->mm.ttbr0) {
         for (uint16_t i = 0; i < proc->mm.vma_count; i++) {
             vma *m = &proc->mm.vmas[i];
@@ -451,6 +452,7 @@ void reset_process(process_t *proc){
         }
         proc->mm.vma_count = 0;
     }
+#endif
 
     if (proc->alloc_map) {
         if (proc->mm.ttbr0) {
