@@ -156,9 +156,11 @@ void switch_proc(ProcSwitchReason reason) {
         next_proc = idle_proc;
         next_thread = &idle_proc->main_thread;
     }
-    if (!next_proc || !process_can_run(next_proc)) panic("no runnable process", 0);
+
+    //TODO: the next two checks could be more lenient, just ensuring that we do panic if it happens a second time
+    if (!next_proc || !process_can_run(next_proc)) panic("No runnable process", 0);
+    if (!next_thread || next_thread->pid != next_proc->id) panic("No runnable thread", next_proc->id);
     
-    if (!next_thread || next_thread->pid != next_proc->id) next_thread = &next_proc->main_thread;
     next_proc->state = RUNNING;
     next_thread->state = RUNNING;
     current_proc = next_proc;
@@ -331,7 +333,7 @@ void reset_process(process_t *proc){
         sizedptr p = proc->packet_buffer.entries[k];
         if (p.ptr)
             free_sizedptr(p);
-        proc->packet_buffer.entries[k] = (sizedptr){0};
+        proc->packet_buffer.entries[k] = (sizedptr){};
     }
     close_files_for_process(pid);
 
@@ -352,11 +354,11 @@ void reset_process(process_t *proc){
 
     if (proc->debug_lines.ptr) {
         pfree((void*)proc->debug_lines.ptr, proc->debug_lines.size);
-        proc->debug_lines = (sizedptr){0};
+        proc->debug_lines = (sizedptr){};
     }
     if (proc->debug_line_str.ptr) {
         pfree((void*)proc->debug_line_str.ptr, proc->debug_line_str.size);
-        proc->debug_line_str = (sizedptr){0};
+        proc->debug_line_str = (sizedptr){};
     }
 
     if (proc_opened_files) {
@@ -476,7 +478,7 @@ void reset_process(process_t *proc){
     proc->code = 0;
     proc->code_size = 0;
     proc->va = 0;
-    proc->out_fd = (file){0};
+    proc->out_fd = (file){};
 
     proc->win_id = 0;
     proc->win_fb_va = 0;
