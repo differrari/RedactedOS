@@ -6,6 +6,7 @@
 #include "std/string.h"
 #include "networking/interface_manager.h"
 #include "networking/application_layer/dhcpv6_daemon.h"
+#include "networking/application_layer/dns/dns_daemon.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/internet_layer/ipv6.h"
 #include "networking/internet_layer/ipv6_route.h"
@@ -22,6 +23,7 @@
 typedef struct {
     uint8_t ip[16];
     uint32_t lifetime_ms;
+    uint32_t last_probe_ms;
     int8_t preference;
     uint8_t failed;
     uint8_t used;
@@ -53,12 +55,14 @@ typedef struct {
 #define NDP_REACHABLE_RECALC_MS 7200000u
 #define NDP_DELAY_FIRST_PROBE_TIME_MS 5000u
 #define NDP_MAX_PROBES 3u
+#define NDP_ROUTER_REPROBE_INTERVAL_MS 60000u
 #define NDP_MAX_RA_REACHABLE_TIME_MS 3600000u
 
 enum {
     NDP_OPT_SOURCE_LLADDR = 1,
     NDP_OPT_TARGET_LLADDR = 2,
     NDP_OPT_PREFIX_INFO = 3,
+    NDP_OPT_REDIRECTED_HEADER = 4,
     NDP_OPT_MTU = 5,
     NDP_OPT_RDNSS = 25
 };
@@ -76,6 +80,13 @@ typedef struct __attribute__((packed)) {
     uint32_t flags;
     uint8_t target[16];
 } icmpv6_na_t;
+
+typedef struct __attribute__((packed)) {
+    icmpv6_hdr_t hdr;
+    uint32_t reserved;
+    uint8_t target[16];
+    uint8_t destination[16];
+} icmpv6_redirect_t;
 
 typedef struct __attribute__((packed)) {
     uint8_t type;
@@ -110,35 +121,75 @@ typedef struct __attribute__((packed)) {
     uint32_t mtu;
 } ndp_opt_mtu_t;
 
+typedef struct {
+    uint8_t type;
+    uint32_t off;
+    uint32_t size;
+} ndp_opt_t;
+
 static volatile uint8_t g_ndp_daemon_running;
 static volatile uint8_t g_ndp_daemon_pending;
 
+static bool ndp_read_opt(netpkt_t* pkt, uint32_t* off, uint32_t* len, ndp_opt_t* opt) {
+    if (*len < 2) return 0;
+
+    uint8_t hdr[2];
+    if (!netpkt_copyout(pkt, *off, hdr, sizeof(hdr)) || !hdr[1]) return 0;
+
+    uint32_t size = (uint32_t)hdr[1]*8;
+    if (size > *len) return 0;
+
+    opt->type = hdr[0];
+    opt->off = *off;
+    opt->size = size;
+    *off += size;
+    *len -= size;
+    return true;
+}
+
 static bool ndp_read_lladdr_option(netpkt_t * pkt, uint32_t off, uint32_t len, uint8_t type, uint8_t mac[6], bool* found) {
-    if (!pkt || !found) return false;
     *found = false;
 
     while (len) {
-        if (len < 2) return false;
+        ndp_opt_t opt;
+        if (!ndp_read_opt(pkt, &off, &len, &opt)) return false;
 
-        uint8_t head[2];
-        if (!netpkt_copyout(pkt, off, head, sizeof(head))) return false;
-        if (!head[1]) return false;
-
-        uint32_t size = (uint32_t)head[1]*8;
-        if (size > len) return false;
-
-        if (head[0] == type) {
-            if (size != sizeof(icmpv6_opt_lladdr_t)) return false;
+        if (opt.type == type) {
+            if (opt.size != sizeof(icmpv6_opt_lladdr_t)) return false;
             if (!*found) {
-                icmpv6_opt_lladdr_t opt;
-                if (!netpkt_copyout(pkt, off, &opt, sizeof(opt))) return false;
-                if (mac) mac_copy(mac, opt.mac);
+                icmpv6_opt_lladdr_t lladdr;
+                if (!netpkt_copyout(pkt, opt.off, &lladdr, sizeof(lladdr))) return false;
+                mac_copy(mac, lladdr.mac);
                 *found = true;
             }
         }
+    }
 
-        off += size;
-        len -= size;
+    return true;
+}
+
+static bool ndp_read_redirect_options(netpkt_t* pkt, uint32_t off, uint32_t len, const uint8_t local_ip[16], const uint8_t destination[16], uint8_t mac[6], bool* found) {
+    *found = false;
+
+    while (len) {
+        ndp_opt_t opt;
+        if (!ndp_read_opt(pkt, &off, &len, &opt)) return false;
+
+        if (opt.type == NDP_OPT_TARGET_LLADDR) {
+            if (opt.size != sizeof(icmpv6_opt_lladdr_t)) return false;
+            if (!*found) {
+                icmpv6_opt_lladdr_t lladdr;
+                if (!netpkt_copyout(pkt, opt.off, &lladdr, sizeof(lladdr)) || !mac_is_unicast(lladdr.mac)) return false;
+                mac_copy(mac, lladdr.mac);
+                *found = true;
+            }
+        } else if (opt.type == NDP_OPT_REDIRECTED_HEADER) {
+            if (opt.size < 8 + sizeof(ipv6_hdr_t)) return false;
+            ipv6_hdr_t quoted;
+            if (!netpkt_copyout(pkt, opt.off + 8, &quoted, sizeof(quoted))) return false;
+            if ((bswap32(quoted.ver_tc_fl) >> 28) != 6) return false;
+            if (ipv6_cmp(quoted.src, local_ip) != 0 || ipv6_cmp(quoted.dst, destination) != 0) return false;
+        }
     }
 
     return true;
@@ -188,6 +239,13 @@ static void make_random_iid(uint8_t out_iid[8]) {
 
 static void handle_dad_failed(l3_ipv6_interface_t* v6) {
     if (!v6) return;
+
+    if (v6->cfg == IPV6_CFG_DHCPV6) {
+        v6->dad_requested = 0;
+        v6->dad_state = IPV6_DAD_NONE;
+        dhcpv6_force_decline_l3(v6->l3_id);
+        return;
+    }
 
     uint8_t iid[8];
     uint8_t new_ip[16];
@@ -804,6 +862,52 @@ static void ndp_send_probe(uint8_t ifindex, ndp_entry_t* e) {
     ndp_send_ns_on(ifindex, e->ip, src_ip, e->state == NDP_STATE_PROBE ? e->mac : NULL);
 }
 
+void ndp_note_default_router(uint8_t ifindex, const uint8_t router[16]) {
+    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
+    ndp_table_impl_t* t = l2 ? (ndp_table_impl_t*)l2->nd_table : NULL;
+    if (!t || !router) return;
+
+    int selected = -1;
+    for (int i = 0; i < NDP_DEFAULT_ROUTER_MAX; i++) {
+        if (!t->routers[i].used || ipv6_cmp(t->routers[i].ip, router) != 0) continue;
+        selected = i;
+        break;
+    }
+    if (selected < 0) return;
+
+    int8_t selected_pref = t->routers[selected].preference;
+    uint32_t now = (uint32_t)get_time();
+    for (int i = 0; i < NDP_DEFAULT_ROUTER_MAX; i++) {
+        ndp_default_router_t* r = &t->routers[i];
+        if (!r->used || !r->lifetime_ms || !r->failed || r->preference <= selected_pref) continue;
+        if (r->last_probe_ms && now - r->last_probe_ms < NDP_ROUTER_REPROBE_INTERVAL_MS) continue;
+
+        int idx = ndp_find_slot(t, r->ip);
+        if (idx < 0) idx = ndp_find_free(t);
+        if (idx < 0) idx = ndp_find_replacement(t);
+        if (idx < 0) continue;
+
+        ndp_entry_t* e = &t->entries[idx];
+        bool existing = e->state != NDP_STATE_UNUSED && ipv6_cmp(e->ip, r->ip) == 0;
+        if (existing && e->static_entry) continue;
+        if (!existing) {
+            if (e->state != NDP_STATE_UNUSED) ndp_entry_clear(e);
+            ipv6_cpy(e->ip, r->ip);
+            e->state = NDP_STATE_INCOMPLETE;
+            mac_clear(e->mac);
+        } else if (e->state != NDP_STATE_INCOMPLETE && mac_is_unicast(e->mac)) e->state = NDP_STATE_PROBE;
+        else e->state = NDP_STATE_INCOMPLETE;
+
+        r->last_probe_ms = now ? now : 1;
+        e->is_router = 1;
+        e->ttl_ms = t->reachable_time_ms*4;
+        e->probes_sent = NDP_MAX_PROBES;
+        e->timer_ms = t->retrans_timer_ms;
+        ndp_send_probe(ifindex, e);
+        ndp_daemon_kick();
+    }
+}
+
 static void ndp_table_tick_for_l2(uint8_t ifindex, uint32_t ms) {
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     ndp_table_impl_t* t = l2 ? (ndp_table_impl_t*)l2->nd_table : NULL;
@@ -822,6 +926,7 @@ static void ndp_table_tick_for_l2(uint8_t ifindex, uint32_t ms) {
         ndp_default_router_t* r = &t->routers[i];
         if (!r->used) continue;
         if (r->lifetime_ms <= ms) {
+            ipv6_redirect_invalidate(ifindex, r->ip);
             memset(r, 0, sizeof(*r));
             routers_changed = true;
         } else r->lifetime_ms -= ms;
@@ -857,6 +962,7 @@ static void ndp_table_tick_for_l2(uint8_t ifindex, uint32_t ms) {
                     e->timer_ms = t->retrans_timer_ms;
                     ndp_send_probe(ifindex, e);
                 } else {
+                    ipv6_redirect_invalidate(ifindex, e->ip);
                     if (e->is_router) {
                         bool changed = false;
                         for (int r = 0; r < NDP_DEFAULT_ROUTER_MAX; r++) {
@@ -894,6 +1000,7 @@ static void ndp_table_tick_for_l2(uint8_t ifindex, uint32_t ms) {
                     e->timer_ms = t->retrans_timer_ms;
                     ndp_send_probe(ifindex, e);
                 } else {
+                    ipv6_redirect_invalidate(ifindex, e->ip);
                     if (e->is_router) {
                         bool changed = false;
                         for (int r = 0; r < NDP_DEFAULT_ROUTER_MAX; r++) {
@@ -1221,13 +1328,63 @@ void ndp_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
             if (router && solicited && def->failed) {
                 def->failed = 0;
                 routers_changed = true;
-            } else if (was_router && !router) {
+            } else if (was_router && !router) {// TODO rfc4861 7.3.3 invalidate redirect route even if it's not a def router
+                ipv6_redirect_invalidate(ifx, na.target);
                 memset(def, 0, sizeof(*def));
                 routers_changed = true;
             }
             break;
         }
         if (routers_changed) ndp_sync_default_routes(ifx, t);
+        return;
+    }
+
+    if (h->type == ICMPV6_REDIRECT) {
+        if (icmp_len < sizeof(icmpv6_redirect_t) || !ipv6_is_linklocal(src_ip)) return;
+
+        icmpv6_redirect_t redirect;
+        if (!netpkt_copyout(pkt, 0, &redirect, sizeof(redirect))) return;
+        if (ipv6_is_unspecified(redirect.destination) || ipv6_is_loopback(redirect.destination) || ipv6_is_multicast(redirect.destination)) return;
+        if (ipv6_is_unspecified(redirect.target) || ipv6_is_multicast(redirect.target)) return;
+        if (!ipv6_is_linklocal(redirect.target) && ipv6_cmp(redirect.target, redirect.destination) != 0) return;
+
+        l3_ipv6_interface_t* local = l3_ipv6_find_by_ip(dst_ip);
+        if (!ipv6_l3_is_ready(local) || local->l2->ifindex != ifx) return;
+        l2_interface_t* l2 = local->l2;
+
+        uint8_t tlla[6];
+        bool has_tlla = false;
+        uint32_t opt_off = (uint32_t)sizeof(icmpv6_redirect_t);
+        uint32_t opt_len = icmp_len - opt_off;
+
+        if (!ndp_read_redirect_options(pkt, opt_off, opt_len, local->ip, redirect.destination, tlla, &has_tlla)) return;
+        if (!ipv6_redirect_update(local->l3_id, src_ip, redirect.destination, redirect.target)) return;
+        if (!has_tlla) return; //TODO rfc4861 8.3 
+
+        ndp_table_impl_t* t = (ndp_table_impl_t*)l2->nd_table;
+        if (!t) return; 
+        int idx = ndp_find_slot(t, redirect.target);
+        if (idx < 0) idx = ndp_find_free(t);
+        if (idx < 0) idx = ndp_find_replacement(t);
+        if (idx < 0) return;
+
+        ndp_entry_t* e = &t->entries[idx];
+        bool existing = e->state != NDP_STATE_UNUSED && ipv6_cmp(e->ip, redirect.target) == 0;
+        if (existing && e->static_entry) return;
+        if (!existing) {
+            if (e->state != NDP_STATE_UNUSED) ndp_entry_clear(e);
+            ipv6_cpy(e->ip, redirect.target);
+        }
+
+        if (ipv6_cmp(redirect.target, redirect.destination) != 0) e->is_router = 1;
+        if (!existing || !mac_equal(e->mac, tlla)) {
+            mac_copy(e->mac, tlla);
+            ndp_mark_neighbor_observed(t, e, false);
+        }
+        e->ttl_ms = t->reachable_time_ms*4;
+        e->probes_sent = 0;
+        ndp_flush_pending(ifx, e);
+        ndp_daemon_kick();
         return;
     }
 
@@ -1307,11 +1464,15 @@ void ndp_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
         }
 
         if (!router_lifetime) {
-            if (router_slot >= 0) memset(&t->routers[router_slot], 0, sizeof(t->routers[router_slot]));
+            if (router_slot >= 0) {
+                ipv6_redirect_invalidate(ifx, src_ip);
+                memset(&t->routers[router_slot], 0, sizeof(t->routers[router_slot]));
+            }
         } else {
             if (router_slot < 0) router_slot = free_router >= 0 ? free_router : replacement;
             if (router_slot >= 0) {
                 ndp_default_router_t* r = &t->routers[router_slot];
+                if (r->used && ipv6_cmp(r->ip, src_ip) != 0) ipv6_redirect_invalidate(ifx, r->ip);
                 memset(r, 0, sizeof(*r));
                 r->used = 1;
                 ipv6_cpy(r->ip, src_ip);
@@ -1347,18 +1508,12 @@ void ndp_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
         t->rs_timer_ms = 0;
 
         while (opt_len >= 2) {
-            uint8_t opt_head[2];
-            if (!netpkt_copyout(pkt, opt_off, opt_head, sizeof(opt_head))) break;
-            uint8_t opt_type = opt_head[0];
-            uint8_t opt_units = opt_head[1];
-            if (opt_units == 0) break;
+            ndp_opt_t opt;
+            if (!ndp_read_opt(pkt, &opt_off, &opt_len, &opt)) break;
 
-            uint32_t opt_size = (uint32_t)opt_units * 8;
-            if (opt_size > opt_len) break;
-
-            if (opt_type == NDP_OPT_PREFIX_INFO && opt_size == sizeof(ndp_opt_prefix_info_t)) {
+            if (opt.type == NDP_OPT_PREFIX_INFO && opt.size == sizeof(ndp_opt_prefix_info_t)) {
                 ndp_opt_prefix_info_t pio;
-                if (!netpkt_copyout(pkt, opt_off, &pio, sizeof(pio))) break;
+                if (!netpkt_copyout(pkt, opt.off, &pio, sizeof(pio))) break;
 
                 uint8_t pfx_len = pio.prefix_length;
                 bool onlink = (pio.flags & 0x80) != 0;
@@ -1401,18 +1556,18 @@ void ndp_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
                         if (pref_lft <= valid_lft && pfx_len) ndp_on_ra(ifx, pfx, pfx_len, valid_lft, pref_lft, autonomous, ra.flags);
                     }
                 }
-            } else if (opt_type == NDP_OPT_MTU && opt_size == sizeof(ndp_opt_mtu_t)) {
+            } else if (opt.type == NDP_OPT_MTU && opt.size == sizeof(ndp_opt_mtu_t)) {
                 uint32_t advertised_mtu = 0;
-                if (!netpkt_copyout(pkt, opt_off + 4, &advertised_mtu, sizeof(advertised_mtu))) break;
+                if (!netpkt_copyout(pkt, opt.off + 4, &advertised_mtu, sizeof(advertised_mtu))) break;
                 advertised_mtu = bswap32(advertised_mtu);
 
                 if (advertised_mtu <= UINT16_MAX) l2_ipv6_set_link_mtu(ifx, (uint16_t)advertised_mtu);
-            } else if (opt_type == NDP_OPT_RDNSS && opt_size >= 24 && ((opt_size - 8) % 16) == 0) {
-                uint32_t addr_count = (opt_size - 8) / 16;
+            } else if (opt.type == NDP_OPT_RDNSS && opt.size >= 24 && ((opt.size - 8) % 16) == 0) {
+                uint32_t addr_count = (opt.size - 8) / 16;
                 uint8_t dns0[16];
                 uint8_t dns1[16] = {0};
-                if (!netpkt_copyout(pkt, opt_off + 8, dns0, sizeof(dns0))) break;
-                if (addr_count > 1 && !netpkt_copyout(pkt, opt_off + 24, dns1, sizeof(dns1))) break;
+                if (!netpkt_copyout(pkt, opt.off + 8, dns0, sizeof(dns0))) break;
+                if (addr_count > 1 && !netpkt_copyout(pkt, opt.off + 24, dns1, sizeof(dns1))) break;
 
                 l3_ipv6_interface_t* dns_l3 = NULL;
                 l3_ipv6_interface_t* fallback = NULL;
@@ -1441,9 +1596,6 @@ void ndp_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
                     else memset(dns_l3->runtime_opts_v6.dns[1], 0, 16);
                 }
             }
-
-            opt_off += opt_size;
-            opt_len -= opt_size;
         }
 
         ndp_daemon_kick();
@@ -1566,6 +1718,7 @@ static int ndp_daemon_entry(int argc, char* argv[]) {
                         v6->dad_timer_ms = 0;
                         v6->dad_state = IPV6_DAD_OK;
                         lla_became_ready |= ipv6_is_linklocal(v6->ip);
+                        dns_daemon_kick();
 
                         uint8_t all_nodes[16];
                         ipv6_make_multicast(2, IPV6_MCAST_ALL_NODES, NULL, all_nodes);
@@ -1645,6 +1798,8 @@ void ndp_link_state_changed(uint8_t ifindex, bool up) {
 
     t->rs_tries = 0;
     t->rs_timer_ms = 0;
-    if (!up) memset(t->onlink, 0, sizeof(t->onlink));
-    if (up) ndp_daemon_kick();
+    if (!up) {
+        ipv6_redirect_invalidate(ifindex, NULL);
+        memset(t->onlink, 0, sizeof(t->onlink));
+    } else ndp_daemon_kick();
 }

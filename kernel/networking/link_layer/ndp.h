@@ -54,6 +54,7 @@ int ndp_onlink_prefix_len_for_l2(uint8_t ifindex, const uint8_t ip[16]);//TODO m
 bool ndp_send_or_queue_on(uint8_t ifindex, const uint8_t next_hop[16], netpkt_t* pkt);
 
 bool ndp_request_dad_on(uint8_t ifindex, const uint8_t ip[16]);
+void ndp_note_default_router(uint8_t ifindex, const uint8_t router[16]);
 
 void ndp_daemon_kick(void);
 void ndp_link_state_changed(uint8_t ifindex, bool up);

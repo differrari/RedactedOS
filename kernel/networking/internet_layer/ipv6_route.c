@@ -6,12 +6,27 @@
 #include "networking/link_layer/ndp.h"
 #include "syscalls/syscalls.h"
 
+#define IPV6_REDIRECT_MAX 32
+
 struct ipv6_rt_table {
     l3_id_t owner_l3_id;
     uint32_t epoch;
     ipv6_rt_entry_t e[IPV6_RT_PER_IF_MAX];
     int len;
 };
+
+typedef struct {
+    uint8_t used;
+    uint8_t ifindex;
+    l3_id_t l3_id;
+    uint32_t l3_epoch;
+    uint32_t route_epoch;
+    uint8_t dst[16];
+    uint8_t target[16];
+} ipv6_redirect_entry_t;
+
+static ipv6_redirect_entry_t g_redirects[IPV6_REDIRECT_MAX] = {0};
+static uint8_t g_redirect_rr = 0;
 
 static void ipv6_rt_bump(ipv6_rt_table_t* t) {
     if (!t) return;
@@ -222,6 +237,82 @@ bool ipv6_rt_lookup_in(const ipv6_rt_table_t* t, const uint8_t dst[16], uint8_t 
     if (out_metric) *out_metric = best_metric;
 
     return true;
+}
+
+bool ipv6_next_hop_for_l3(l3_id_t l3_id, const uint8_t dst[16], uint8_t next_hop[16]) {
+    l3_ipv6_interface_t* src_v6 = l3_ipv6_find_by_id(l3_id);
+    if (!ipv6_l3_is_ready(src_v6)) return false;
+    ipv6_rt_table_t* rt = (ipv6_rt_table_t*)src_v6->routing_table;
+
+    if (rt) {
+        uint32_t route_epoch = ipv6_rt_epoch(rt);
+
+        for (int i = 0; i < IPV6_REDIRECT_MAX; i++) {
+            ipv6_redirect_entry_t* e = &g_redirects[i];
+            if (!e->used || e->l3_id != src_v6->l3_id || ipv6_cmp(e->dst, dst) != 0) continue;
+            if (e->l3_epoch != src_v6->epoch || e->route_epoch != route_epoch) {
+                memset(e, 0, sizeof(*e));
+                continue;
+            }
+
+            ipv6_cpy(next_hop, e->target);
+            return true;
+        }
+    }
+
+    uint8_t via[16] = {0};
+    if (rt && ipv6_rt_lookup_in(rt, dst, via, NULL, NULL)) {
+        if (!ipv6_is_unspecified(via)) ipv6_cpy(next_hop, via);
+        else ipv6_cpy(next_hop, dst);
+    } else if (!(src_v6->ra_has && (src_v6->cfg & IPV6_CFG_SLAAC)) && src_v6->prefix_len && ipv6_common_prefix_len(dst, src_v6->ip) >= src_v6->prefix_len) ipv6_cpy(next_hop, dst);
+    else if (!ipv6_is_unspecified(src_v6->gateway) && ipv6_is_linklocal(src_v6->gateway)) ipv6_cpy(next_hop, src_v6->gateway);
+    else return false;
+
+    return true;
+}
+
+bool ipv6_redirect_update(l3_id_t l3_id, const uint8_t router[16], const uint8_t dst[16], const uint8_t target[16]) {
+    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
+    if (!ipv6_l3_is_ready(v6) || !v6->routing_table || !router || !dst || !target) return false;
+
+    uint8_t current_next_hop[16];
+    if (!ipv6_next_hop_for_l3(l3_id, dst, current_next_hop) || ipv6_cmp(current_next_hop, router) != 0) return false;
+
+    int slot = -1;
+    for (int i = 0; i < IPV6_REDIRECT_MAX; i++) {
+        ipv6_redirect_entry_t* e = &g_redirects[i];
+        if (e->used && e->l3_id == l3_id && ipv6_cmp(e->dst, dst) == 0) {
+            slot = i;
+            break;
+        }
+        if (!e->used && slot < 0) slot = i;
+    }
+
+    if (slot < 0) {
+        slot = g_redirect_rr;
+        g_redirect_rr = (uint8_t)((g_redirect_rr + 1) % IPV6_REDIRECT_MAX);
+    }
+
+    ipv6_redirect_entry_t* e = &g_redirects[slot];
+    e->used = 0;
+    e->ifindex = v6->l2->ifindex;
+    e->l3_id = l3_id;
+    e->l3_epoch = v6->epoch;
+    e->route_epoch = ipv6_rt_epoch((const ipv6_rt_table_t*)v6->routing_table);
+    ipv6_cpy(e->dst, dst);
+    ipv6_cpy(e->target, target);
+    e->used = 1;
+    return true;
+}
+
+void ipv6_redirect_invalidate(uint8_t ifindex, const uint8_t next_hop[16]) {
+    if (!ifindex) return;
+
+    for (int i = 0; i < IPV6_REDIRECT_MAX; i++) {
+        ipv6_redirect_entry_t* e = &g_redirects[i];
+        if (!e->used || e->ifindex != ifindex) continue;
+        if (!next_hop || ipv6_cmp(e->target, next_hop) == 0) memset(e, 0, sizeof(*e));
+    }
 }
 
 void ipv6_rt_ensure_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t plen, const uint8_t gw[16], uint16_t base_metric) {
