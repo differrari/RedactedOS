@@ -38,7 +38,7 @@ void test_widget(draw_ctx *ctx, gpu_rect rect, color bg){
 bool menu_dirty = true;
 
 void refresh_menu(){
-#if false
+#if FEATURE_MENU
     menu_dirty = true;  
 #endif
 }
@@ -54,9 +54,20 @@ void load_menu(){
     void *buf = zalloc(0x1000);
     u64 off = 0;
     size_t s = list_directory_contents(localfs, path, buf, 0x1000, &off);
-    print("Size of read %x",s);
+    if (!s) return;
+    string_list *list = (string_list*)buf;
+    if (list){
+        char* reader = (char*)list->array;
+        for (uint32_t i = 0; i < list->count; i++){
+            char *file = reader;
+            if (*file){
+                print("Entry %s",file);
+            }
+            while (*reader) reader++;
+            reader++;
+        }
+    }
 
-    print("There are %i entries",*(u32*)buf);
 }
 
 void draw_menu(){

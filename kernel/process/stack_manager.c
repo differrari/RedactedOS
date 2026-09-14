@@ -42,8 +42,8 @@ stack_t new_stack(process_t *proc){
     }
     if (!stack_top) return (stack_t){};
     uptr stack_limit = stack_top - size;
-    print("New stack at %llx-%llx",stack_limit,stack_top);
     if (!is_privileged(proc) && !mm_add_vma(&proc->mm, stack_limit, stack_top, MEM_RW, VMA_KIND_STACK, VMA_FLAG_DEMAND))
         return (stack_t){};
+    print("New stack at %llx-%llx",stack_limit,stack_top);
     return (stack_t){.top = stack_top, .size = size, .max = size};
 }

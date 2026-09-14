@@ -13,7 +13,7 @@ extern void save_kstack(uptr stack);
     thread_t kthread = {};\
     job_kpec = (uptr)&kthread;\
     job_save_kernel();\
-    if (!get_current_thread()->special_mm){\
+    if (!get_current_thread()->special_mm && !is_privileged(get_current_proc())){\
         kthread.stack_info = new_stack(get_proc_by_pid(1));\
         save_kstack(kthread.stack_info.top);\
     }\
