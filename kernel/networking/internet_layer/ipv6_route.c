@@ -305,6 +305,36 @@ bool ipv6_redirect_update(l3_id_t l3_id, const uint8_t router[16], const uint8_t
     return true;
 }
 
+bool ipv6_redirect_is_router(uint8_t ifindex, const uint8_t target[16]) {
+    if (!ifindex || !target) return false;
+
+    for (int i = 0; i < IPV6_REDIRECT_MAX; i++) {
+        ipv6_redirect_entry_t* e = &g_redirects[i];
+        if (!e->used || e->ifindex != ifindex || ipv6_cmp(e->target, target) != 0) continue;
+
+        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(e->l3_id);
+        if (!ipv6_l3_is_ready(v6) || !v6->routing_table || v6->l2->ifindex != ifindex ||
+            e->l3_epoch != v6->epoch || e->route_epoch != ipv6_rt_epoch((const ipv6_rt_table_t*)v6->routing_table)) {
+            memset(e, 0, sizeof(*e));
+            continue;
+        }
+
+        if (ipv6_cmp(e->dst, e->target) != 0) return true;
+    }
+
+    return false;
+}
+
+void ipv6_redirect_invalidate_router(uint8_t ifindex, const uint8_t target[16]) {
+    if (!ifindex || !target) return;
+
+    for (int i = 0; i < IPV6_REDIRECT_MAX; i++) {
+        ipv6_redirect_entry_t* e = &g_redirects[i];
+        if (!e->used || e->ifindex != ifindex || ipv6_cmp(e->target, target) != 0) continue;
+        if (ipv6_cmp(e->dst, e->target) != 0) memset(e, 0, sizeof(*e));
+    }
+}
+
 void ipv6_redirect_invalidate(uint8_t ifindex, const uint8_t next_hop[16]) {
     if (!ifindex) return;
 

@@ -30,6 +30,8 @@ bool ipv6_rt_lookup_in(const ipv6_rt_table_t* t, const uint8_t dst[16], uint8_t 
 
 bool ipv6_next_hop_for_l3(l3_id_t l3_id, const uint8_t dst[16], uint8_t next_hop[16]);
 bool ipv6_redirect_update(l3_id_t l3_id, const uint8_t router[16], const uint8_t dst[16], const uint8_t target[16]);
+bool ipv6_redirect_is_router(uint8_t ifindex, const uint8_t target[16]);
+void ipv6_redirect_invalidate_router(uint8_t ifindex, const uint8_t target[16]);
 void ipv6_redirect_invalidate(uint8_t ifindex, const uint8_t next_hop[16]);
 
 void ipv6_rt_ensure_basics(ipv6_rt_table_t* t, const uint8_t ip[16], uint8_t plen, const uint8_t gw[16], uint16_t base_metric);

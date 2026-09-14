@@ -1073,8 +1073,8 @@ bool ndp_send_or_queue_on(uint8_t ifindex, const uint8_t next_hop[16], netpkt_t*
     ipv6_cpy(e->ip, next_hop);
     mac_clear(e->mac);
     e->ttl_ms = t->reachable_time_ms * 4;
-    e->is_router = 0;
-    for (int r = 0; r < NDP_DEFAULT_ROUTER_MAX; r++) {
+    e->is_router = ipv6_redirect_is_router(ifindex, next_hop) ? 1 : 0;
+    for (int r = 0; !e->is_router && r < NDP_DEFAULT_ROUTER_MAX; r++) {
         if (!t->routers[r].used || ipv6_cmp(t->routers[r].ip, next_hop) != 0) continue;
         e->is_router = 1;
         break;
@@ -1320,6 +1320,8 @@ void ndp_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
             e->probes_sent = 0;
         }
 
+        if (was_router && !router) ipv6_redirect_invalidate_router(ifx, na.target);
+
         bool routers_changed = false;
         for (int r = 0; r < NDP_DEFAULT_ROUTER_MAX; r++) {
             ndp_default_router_t* def = &t->routers[r];
@@ -1328,8 +1330,7 @@ void ndp_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
             if (router && solicited && def->failed) {
                 def->failed = 0;
                 routers_changed = true;
-            } else if (was_router && !router) {// TODO rfc4861 7.3.3 invalidate redirect route even if it's not a def router
-                ipv6_redirect_invalidate(ifx, na.target);
+            } else if (was_router && !router) {
                 memset(def, 0, sizeof(*def));
                 routers_changed = true;
             }
@@ -1359,24 +1360,31 @@ void ndp_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
 
         if (!ndp_read_redirect_options(pkt, opt_off, opt_len, local->ip, redirect.destination, tlla, &has_tlla)) return;
         if (!ipv6_redirect_update(local->l3_id, src_ip, redirect.destination, redirect.target)) return;
-        if (!has_tlla) return; //TODO rfc4861 8.3 
 
+        bool target_router = ipv6_cmp(redirect.target, redirect.destination) != 0;
         ndp_table_impl_t* t = (ndp_table_impl_t*)l2->nd_table;
         if (!t) return; 
         int idx = ndp_find_slot(t, redirect.target);
+        if (!has_tlla) {
+            if (idx >= 0 && target_router) t->entries[idx].is_router = 1;
+            return;
+        }
         if (idx < 0) idx = ndp_find_free(t);
         if (idx < 0) idx = ndp_find_replacement(t);
         if (idx < 0) return;
 
         ndp_entry_t* e = &t->entries[idx];
         bool existing = e->state != NDP_STATE_UNUSED && ipv6_cmp(e->ip, redirect.target) == 0;
-        if (existing && e->static_entry) return;
+        if (existing && e->static_entry) {
+            if (target_router) e->is_router = 1;
+            return;
+        }
         if (!existing) {
             if (e->state != NDP_STATE_UNUSED) ndp_entry_clear(e);
             ipv6_cpy(e->ip, redirect.target);
         }
 
-        if (ipv6_cmp(redirect.target, redirect.destination) != 0) e->is_router = 1;
+        if (target_router) e->is_router = 1;
         if (!existing || !mac_equal(e->mac, tlla)) {
             mac_copy(e->mac, tlla);
             ndp_mark_neighbor_observed(t, e, false);
