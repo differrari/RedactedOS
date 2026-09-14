@@ -1,6 +1,5 @@
 #include "isolated_fs.h"
 #include "filesystem/modules/fs_isolation.h"
-#include "filesystem/modules/module_loader.h"
 #include "process/environment/environment.h"
 #include "alloc/alloc.h"
 

@@ -8,7 +8,7 @@
 #include "std/memory.h"
 #include "std/memory_access.h"
 #include "p9_helper.h"
-#include "filesystem/modules/module_loader.h"
+#include "modules/fs_isolation.h"
 
 #define VIRTIO_9P_ID 0x1009
 

@@ -28,7 +28,6 @@
 #include "sysregs.h"
 #include "memory/addr.h"
 #include "graphic_types.h"
-#include "filesystem/modules/module_loader.h"
 #include "alloc/page_index.h"
 #include "process/uaccess.h"
 #include "filesystem/modules/fs_isolation.h"

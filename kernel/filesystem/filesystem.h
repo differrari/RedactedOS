@@ -3,7 +3,7 @@
 #include "types.h"
 #include "std/string.h"
 #include "files/system_module.h"
-#include "modules/module_loader.h"
+#include "files/module_loader.h"
 
 #ifdef __cplusplus
 extern "C" {

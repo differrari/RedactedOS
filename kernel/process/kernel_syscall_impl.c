@@ -16,6 +16,7 @@
 #include "memory/addr.h"
 #include "process/signals/signals.h"
 #include "jobs/job_manager.h"
+#include "filesystem/modules/fs_isolation.h"
 
 extern page_index *p_index;
 

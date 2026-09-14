@@ -1,12 +1,11 @@
 #include "filesystem.h"
 #include "console/kio.h"
-#include "filesystem/modules/module_loader.h"
-#include "memory/page_allocator.h"
 #include "exceptions/irq.h"
 #include "process/scheduler.h"
 #include "pipe.h"
 #include "files/dir_list.h"
 #include "process/jobs/job_manager.h"
+#include "modules/fs_isolation.h"
 
 uint64_t fd_id = 256;//First byte reserved
 

@@ -15,7 +15,7 @@
 #include "memory/addr.h"
 #include "sysregs.h"
 #include "filesystem/filesystem.h"
-#include "filesystem/modules/module_loader.h"
+#include "filesystem/modules/fs_isolation.h"
 #include "string/string.h"
 #include "alloc/allocate.h"
 #include "files/dir_list.h"

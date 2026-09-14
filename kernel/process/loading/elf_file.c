@@ -12,6 +12,7 @@
 #include "process/scheduler.h"
 #include "filesystem/filesystem.h"
 #include "process/uaccess.h"
+#include "filesystem/modules/fs_isolation.h"
 
 typedef struct elf_header {
     char magic[4];//should be " ELF"

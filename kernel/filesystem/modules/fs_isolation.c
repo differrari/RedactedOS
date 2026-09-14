@@ -1,9 +1,12 @@
 #include "fs_isolation.h"
 #include "data/struct/chunk_array.h"
-#include "module_loader.h"
 #include "console/kio.h"
 #include "memory/memory.h"
 #include "alloc/alloc.h"
+#include "process/scheduler.h"
+#include "exceptions/exception_handler.h"
+
+#define MODULE_STRICT
 
 chunk_array_t *fs_permissions;
 
@@ -27,7 +30,17 @@ module_root* kernel_fs(){
 
 bool load_module(system_module *module){
     if (!kernel_modules.map) kernel_modules.map = hash_map_create(64);
-    return load_module_to(&kernel_modules, module);
+    if (module->owner == get_kernel_proc()->id && !module->init){
+        if (strcmp(module->mount,"/console")) kprintf("[MODULE error] module not initialized due to missing initializer");//TODO: can we make printf silently fail so logging becomes easier?
+        return false;
+    }
+    if (!module->owner) module->owner = get_kernel_proc()->id;
+    bool res = load_module_to(&kernel_modules, module);
+
+#ifdef MODULE_STRICT
+    if (!res) panic("Failed to load module",(uptr)module);
+#endif
+    return res;
 }
 
 bool unload_module(system_module *module){
