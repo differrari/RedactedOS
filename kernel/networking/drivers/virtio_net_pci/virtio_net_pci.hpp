@@ -4,7 +4,6 @@
 #include "virtio/virtio_pci.h"
 #include "std/memory.h"
 #include "networking/link_layer/nic_types.h"
-#define VIRTIO_F_VERSION_1 32
 
 #define VIRTIO_NET_F_CSUM 0
 #define VIRTIO_NET_F_GUEST_CSUM 1
@@ -24,6 +23,7 @@
 #define VIRTIO_NET_F_STATUS 16
 #define VIRTIO_NET_F_CTRL_VQ 17
 #define VIRTIO_NET_F_CTRL_RX 18
+#define VIRTIO_NET_F_SPEED_DUPLEX 63
 
 typedef struct __attribute__((packed)) virtio_net_hdr_t {
     uint8_t flags;
@@ -32,12 +32,8 @@ typedef struct __attribute__((packed)) virtio_net_hdr_t {
     uint16_t gso_size;
     uint16_t csum_start;
     uint16_t csum_offset;
-} virtio_net_hdr_t;
-
-typedef struct __attribute__((packed)) virtio_net_hdr_mrg_rxbuf_t {
-    virtio_net_hdr_t hdr;
     uint16_t num_buffers;
-} virtio_net_hdr_mrg_rxbuf_t;
+} virtio_net_hdr_t;
 
 typedef struct __attribute__((packed)) virtio_net_config {
     uint8_t mac[6];
@@ -56,7 +52,7 @@ public:
     VirtioNetDriver();
     ~VirtioNetDriver();
 
-    bool init_at(uint64_t pci_addr, uint32_t irq_base_vector);
+    bool init_at(uint64_t pci_addr, uint32_t irq_base_vector) override;
     void get_mac(uint8_t out_mac[6]) const override;
     uint16_t get_mtu() const override;
     uint16_t get_header_size() const override;
@@ -67,21 +63,33 @@ public:
     uint8_t get_duplex() const override;
     bool sync_multicast(const uint8_t* macs, uint32_t count) override;
 
-    sizedptr allocate_packet(size_t size) override;
-    sizedptr handle_receive_packet() override;
+    netpkt_t* handle_receive_packet() override;
     void handle_sent_packet() override;
-    bool send_packet(sizedptr packet) override;
+    void complete_rx_batch() override;
+    void complete_tx_batch() override;
+    netdev_tx_result_t send_packet(netpkt_t* packet) override;
 
 private:
+    friend void virtio_net_rx_free(void* ctx, uintptr_t base);
     virtio_device vnp_net_dev = {};
 
     volatile virtq_desc* rx_desc = nullptr;
     volatile virtq_avail* rx_avail = nullptr;
     volatile virtq_used* rx_used = nullptr;
     uint16_t rx_qsz = 0;
+    uint16_t rx_used_batch_end = 0;
+    void* rx_pool = nullptr;
+    bool rx_notify_pending = false;
+
+    volatile virtq_desc* tx_desc = nullptr;
+    volatile virtq_avail* tx_avail = nullptr;
+    volatile virtq_used* tx_used = nullptr;
+    uint16_t tx_qsz = 0;
+    uint16_t tx_avail_shadow_idx = 0;
+    netpkt_t** tx_pending = nullptr;
+    uint16_t tx_free_head = UINT16_MAX;
 
     bool verbose = false;
-    bool mrg_rxbuf = false;
 
     bool ctrl_vq = false;
     bool ctrl_rx = false;

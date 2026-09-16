@@ -2,6 +2,7 @@
 #include "std/memory.h"
 #include "networking/transport_layer/udp.h"
 #include "networking/internet_layer/ipv4.h"
+#include "networking/link_layer/link_utils.h"
 #include "types.h"
 #include "syscalls/syscalls.h"
 
@@ -15,59 +16,58 @@ static size_t dhcp_options_write_param_req_list(uint8_t *opt, size_t idx) {
     return idx;
 }
 
-sizedptr dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t xid, dhcp_req_kind kind, bool broadcast) {
+uint32_t dhcp_build_packet(const dhcp_request *req, uint8_t msg_type, uint32_t xid, dhcp_req_kind kind, bool broadcast, dhcp_packet *out) {
+    if (!req || !out) return 0;
 
-    dhcp_packet p;
-    memset(&p, 0, sizeof(p));
+    memset(out, 0, sizeof(*out));
     size_t idx = 0;
 
-    p.op = 1;
-    p.htype = 1;
-    p.hlen  = 6;
-    p.hops  = 0;
-    p.xid = xid;
-    p.secs  = 0;
-    p.flags = broadcast ? bswap16(0x8000) : 0;
-    p.ciaddr = 0;
-    p.yiaddr = 0;
-    p.siaddr = 0;
-    p.giaddr = 0;
-    memcpy(p.chaddr, req->mac, 6);
+    out->op = 1;
+    out->htype = 1;
+    out->hlen  = MAC_ADDR_LEN;
+    out->xid = xid;
+    out->flags = broadcast ? bswap16(0x8000) : 0;
+    mac_copy(out->chaddr, req->mac);
 
-    if (msg_type == DHCPINFORM) p.ciaddr = req->offered_ip;
-    if (msg_type == DHCPREQUEST && (kind == DHCPK_RENEW || kind == DHCPK_REBIND)) p.ciaddr = req->offered_ip;
+    if (msg_type == DHCPINFORM) out->ciaddr = req->offered_ip;
+    if (msg_type == DHCPREQUEST && (kind == DHCPK_RENEW || kind == DHCPK_REBIND)) out->ciaddr = req->offered_ip;
 
-    p.options[idx++] = DHCP_MAGIC_COOKIE_0;
-    p.options[idx++] = DHCP_MAGIC_COOKIE_1;
-    p.options[idx++] = DHCP_MAGIC_COOKIE_2;
-    p.options[idx++] = DHCP_MAGIC_COOKIE_3;
+    out->options[idx++] = DHCP_MAGIC_COOKIE_0;
+    out->options[idx++] = DHCP_MAGIC_COOKIE_1;
+    out->options[idx++] = DHCP_MAGIC_COOKIE_2;
+    out->options[idx++] = DHCP_MAGIC_COOKIE_3;
 
-    p.options[idx++] = 53;
-    p.options[idx++] = 1;
-    p.options[idx++] = msg_type;
+    out->options[idx++] = 53;
+    out->options[idx++] = 1;
+    out->options[idx++] = msg_type;
 
     if (msg_type == DHCPREQUEST && kind == DHCPK_SELECT) {
-        p.options[idx++] = 50;
-        p.options[idx++] = 4;
-        memcpy(&p.options[idx], &req->offered_ip, 4);
+        out->options[idx++] = 50;
+        out->options[idx++] = 4;
+        memcpy(&out->options[idx], &req->offered_ip, 4);
         idx += 4;
         if (req->server_ip) {
-            p.options[idx++] = 54;
-            p.options[idx++] = 4;
-            memcpy(&p.options[idx], &req->server_ip, 4);
+            out->options[idx++] = 54;
+            out->options[idx++] = 4;
+            memcpy(&out->options[idx], &req->server_ip, 4);
             idx += 4;
         }
+    } else if (msg_type == DHCPDECLINE && kind == DHCPK_DECLINE) {
+        out->options[idx++] = 50;
+        out->options[idx++] = 4;
+        memcpy(&out->options[idx], &req->offered_ip, 4);
+        idx += 4;
+        out->options[idx++] = 54;
+        out->options[idx++] = 4;
+        memcpy(&out->options[idx], &req->server_ip, 4);
+        idx += 4; 
     }
 
-    idx = dhcp_options_write_param_req_list(p.options, idx);
+    if (msg_type != DHCPDECLINE) idx = dhcp_options_write_param_req_list(out->options, idx);
 
-    p.options[idx++] = 255;
+    out->options[idx++] = 255;
 
-    size_t dhcp_len = sizeof(dhcp_packet) - (sizeof(p.options) - idx);
-    uintptr_t buf = (uintptr_t)malloc(dhcp_len);
-
-    memcpy((void*)buf, &p, dhcp_len);
-    return (sizedptr){ .ptr = buf, .size = (uint32_t)dhcp_len };
+    return (uint32_t)(sizeof(*out) - (sizeof(out->options) - idx));
 }
 
 dhcp_packet* dhcp_parse_frame_payload(uintptr_t frame_ptr) {
@@ -88,6 +88,7 @@ uint16_t dhcp_parse_option_bounded(const dhcp_packet *p, uint32_t payload_len, u
     const uint8_t *opt = p->options;
     uint32_t i= 4;
     uint32_t max = payload_len - header_sz;
+    if (max > sizeof(p->options)) max = sizeof(p->options);
     while (i < max) {
         uint8_t code = opt[i++];
         if (code == 0) continue;

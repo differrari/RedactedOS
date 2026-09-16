@@ -1,7 +1,11 @@
 #pragma once
 #include "types.h"
+#include "networking/link_layer/link_utils.h"
+#include "networking/interface_manager.h"
+
 #define IPV4_MCAST_ALL_HOSTS 0xE0000001u
 #define IPV4_MCAST_ALL_ROUTERS 0xE0000002u
+#define IPV4_LIMITED_BROADCAST UINT32_MAX
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,6 +23,9 @@ bool ipv4_is_reserved(uint32_t ip);
 bool ipv4_is_reserved_special(uint32_t ip);
 bool ipv4_is_unicast_global(uint32_t ip);
 
+bool ipv4_l3_is_active(l3_ipv4_interface_t *v4);
+bool ipv4_l3_is_ready(l3_ipv4_interface_t *v4);
+
 bool ipv4_mask_is_contiguous(uint32_t mask);
 int ipv4_prefix_len(uint32_t mask);
 
@@ -34,7 +41,7 @@ bool ipv4_same_subnet(uint32_t a, uint32_t b, uint32_t mask);
 void ipv4_to_string(uint32_t ip, char* buf);
 bool ipv4_parse(const char* s, uint32_t* out);
 
-void ipv4_mcast_to_mac(uint32_t group, uint8_t out_mac[6]);
+void ipv4_mcast_to_mac(uint32_t group, uint8_t out_mac[MAC_ADDR_LEN]);
 
 #ifdef __cplusplus
 }

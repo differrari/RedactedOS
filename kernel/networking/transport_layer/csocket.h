@@ -3,14 +3,27 @@
 #include "types.h"
 #include "net/network_types.h"
 #include "net/socket_types.h"
+#include "networking/transport_layer/socket_core.h"
 
-bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptions* extra, uint16_t pid, SocketHandle *out_handle);
-int32_t bind_socket(SocketHandle *handle, uint16_t port, ip_version_t ip_vers, uint16_t pid);
-int32_t connect_socket(SocketHandle *handle, uint8_t dst_kind, const void* dst, uint16_t port, uint16_t pid);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-int64_t send_on_socket(SocketHandle *sh, uint8_t dst_kind, const void* dst, uint16_t port, void* buf, uint64_t len, uint16_t pid);
-int64_t receive_from_socket(SocketHandle *sh, void* buf, uint64_t len, net_l4_endpoint* out_src, uint16_t pid);
-int32_t close_socket(SocketHandle *sh, uint16_t pid);
+socket_handle_t create_socket(protocol_t protocol, const SocketOptions* extra);
+int32_t bind_socket(socket_handle_t handle, const SockBindSpec* spec, uint16_t port);
+int32_t connect_socket(socket_handle_t handle, const net_l4_endpoint* dst);
 
-int32_t listen_on(SocketHandle *sh, int32_t backlog, uint16_t pid);
-void accept_on_socket(SocketHandle *sh, uint16_t pid);
+int64_t send_on_socket(socket_handle_t handle, const void* buf, uint64_t len);
+int64_t send_to_socket(socket_handle_t handle, const net_l4_endpoint* dst, const void* buf, uint64_t len);
+int64_t receive_from_socket(socket_handle_t handle, void* buf, uint64_t len, net_l4_endpoint* out_src);
+int32_t set_socket_option(socket_handle_t handle, int32_t opt, const void* value, uint32_t len);
+int32_t get_socket_option(socket_handle_t handle, int32_t opt, void* value, uint32_t* len);
+
+int32_t close_socket(socket_handle_t handle);
+
+int32_t listen_on(socket_handle_t handle, int32_t backlog);
+socket_handle_t accept_on_socket(socket_handle_t handle);
+
+#ifdef __cplusplus
+}
+#endif
