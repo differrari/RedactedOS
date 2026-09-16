@@ -225,10 +225,10 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         ipv6_hdr_t ip6;
         ip6.ver_tc_fl = bswap32((uint32_t)(6u << 28));
         ip6.payload_len = bswap16((uint16_t)payload_len);
-        ip6.next_header = 44;
+        ip6.next_header = IPV6_NH_FRAGMENT;
         ip6.hop_limit = hop_limit ? hop_limit : (src_v6->l2->ipv6_default_hop_limit ? src_v6->l2->ipv6_default_hop_limit : 64);
-        memcpy(ip6.src, src, 16);
-        memcpy(ip6.dst, dst, 16);
+        ipv6_cpy(ip6.src, src);
+        ipv6_cpy(ip6.dst, dst);
 
         memcpy(buf, &ip6, sizeof(ip6));
         ipv6_frag_hdr_t fh;
@@ -252,28 +252,66 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     return ok && off == seg_len;
 }
 
-static bool ipv6_skip_ext_headers(const netpkt_t* pkt, uint8_t* nh, uint32_t* l4_off, uint32_t* l4_len) {
+bool ipv6_skip_ext_headers(const netpkt_t* pkt, uint8_t* nh, uint32_t* l4_off, uint32_t* l4_len, bool stop_at_fragment, bool* router_alert) {
     if (!pkt || !nh || !l4_off || !l4_len) return false;
+    if (router_alert) *router_alert = false;
     uint32_t total_len = netpkt_len(pkt);
+    bool router_alert_seen = false;
 
     for(;;) {
         uint8_t ext[2];
         if (*l4_off > total_len || *l4_len > total_len - *l4_off) return false;
         uint8_t h = *nh;
-        if (h == 44) return true;
 
-        if (h == 0 || h == 43 || h == 60) {
+        if (h == IPV6_NH_FRAGMENT) {
+            if (stop_at_fragment) return true;
+            uint8_t frag[4];
+            if (*l4_len < 8 || !netpkt_copyout(pkt, *l4_off, frag, sizeof(frag))) return false;
+            if (rd_be16(frag + 2) & 0xFFF8u) return false;
+            *nh = frag[0];
+            *l4_off += 8;
+            *l4_len -= 8;
+            continue;
+        }
+
+        if (h == IPV6_NH_HOP_BY_HOP || h == IPV6_NH_ROUTING || h == IPV6_NH_DEST_OPTS) {
             if (*l4_len < sizeof(ext)) return false;
             if (!netpkt_copyout(pkt, *l4_off, ext, sizeof(ext))) return false;
             uint32_t bytes = ((uint32_t)ext[1] + 1u)*8;
             if (bytes > *l4_len) return false;
+
+            if (h == IPV6_NH_HOP_BY_HOP) {
+                uint32_t pos = 2;
+                while (pos < bytes) {
+                    uint8_t type;
+                    if (!netpkt_copyout(pkt, *l4_off + pos, &type, 1)) return false;
+                    if (!type) {
+                        pos++;
+                        continue;
+                    }
+
+                    uint8_t opt[2];
+                    if (bytes - pos < sizeof(opt) || !netpkt_copyout(pkt, *l4_off + pos, opt, sizeof(opt))) return false;
+                    uint32_t opt_len = (uint32_t)opt[1]+2;
+                    if (opt_len > bytes - pos) return false;
+                    if (type == 5) {
+                        if (router_alert_seen || opt[1] != 2) return false;
+                        router_alert_seen = true;
+                        uint8_t value[2];
+                        if (!netpkt_copyout(pkt, *l4_off + pos + 2, value, sizeof(value))) return false;
+                        if (router_alert && !value[0] && !value[1]) *router_alert = true;
+                    }
+                    pos += opt_len;
+                }
+            }
+
             *nh = ext[0];
             *l4_off += bytes;
             *l4_len -= bytes;
             continue;
         }
 
-        if (h == 51) {
+        if (h == IPV6_NH_AH) {
             if (*l4_len < sizeof(ext)) return false;
             if (!netpkt_copyout(pkt, *l4_off, ext, sizeof(ext))) return false;
             uint32_t bytes = ((uint32_t)ext[1] + 2u)*4;
@@ -350,10 +388,11 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if (ipv6_is_linklocal(ip6->dst) && !ipv6_is_unspecified(ip6->src) && !ipv6_is_linklocal(ip6->src)) return;
 
     uint8_t nh = ip6->next_header;
+    bool router_alert = false;
 
-    if (!ipv6_skip_ext_headers(pkt, &nh, &l4_off, &l4_len)) return;
+    if (!ipv6_skip_ext_headers(pkt, &nh, &l4_off, &l4_len, true, &router_alert)) return;
 
-    if (nh == 44) {//b
+    if (nh == IPV6_NH_FRAGMENT) {
         if (l4_len < sizeof(ipv6_frag_hdr_t)) return;
 
         ipv6_frag_hdr_t fh;
@@ -445,32 +484,15 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
         int has_ulh = 0;
         if (off == 0) {
-            uint32_t ulh_off = 0;
+            uint32_t ulh_off = frag_off;
+            uint32_t ulh_len = frag_len;
             uint8_t nh = inner_nh;
-            int ok = 1;
-
-            while (nh == 0 || nh == 43 || nh == 60 || nh == 51) {
-                uint8_t ext[2];
-                uint32_t avail = frag_len - ulh_off;
-                if (avail < sizeof(ext)) { ok = 0; break; }
-                if (!netpkt_copyout(pkt, frag_off + ulh_off, ext, sizeof(ext))) { ok = 0; break; }
-
-                uint32_t hlen = 0;
-                if (nh == 0 || nh == 43 || nh == 60) hlen = ((uint32_t)ext[1] + 1u) * 8u;
-                else hlen = ((uint32_t)ext[1] + 2u) * 4u;
-
-                if (hlen > avail) { ok = 0; break; }
-
-                nh = ext[0];
-                ulh_off += hlen;
-            }
-
-            if (ok) {
+            if (ipv6_skip_ext_headers(pkt, &nh, &ulh_off, &ulh_len, true, NULL)) {
                 uint32_t need = 1;
                 if (nh == PROTO_TCP) need = 20;
                 else if (nh == PROTO_UDP) need = 8;
                 else if (nh == PROTO_ICMPV6) need = 4;
-                if (frag_len - ulh_off >= need) has_ulh = 1;
+                if (ulh_len >= need) has_ulh = 1;
             }
         }
 
@@ -522,7 +544,7 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
             return;
         }
 
-        if (!ipv6_skip_ext_headers(reassembled, &inner_nh, &payload_off, &payload_size)) {
+        if (!ipv6_skip_ext_headers(reassembled, &inner_nh, &payload_off, &payload_size, false, NULL)) {
             netpkt_unref(reassembled);
             reass_free(s);
             return;
@@ -530,7 +552,7 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
         if (inner_nh == PROTO_ICMPV6) {
             netpkt_t* l4pkt = netpkt_view(reassembled, payload_off, payload_size);
-            if (l4pkt) icmpv6_input(ifindex, ip6->src, ip6->dst, ip6->hop_limit, src_mac, l4pkt);
+            if (l4pkt) icmpv6_input(ifindex, ip6->src, ip6->dst, ip6->hop_limit, router_alert, src_mac, l4pkt);
             netpkt_unref(reassembled);
             reass_free(s);
             return;
@@ -609,7 +631,7 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
     if (nh == PROTO_ICMPV6) {
         netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
-        if (l4pkt) icmpv6_input(ifindex, ip6->src, ip6->dst, ip6->hop_limit, src_mac, l4pkt);
+        if (l4pkt) icmpv6_input(ifindex, ip6->src, ip6->dst, ip6->hop_limit, router_alert, src_mac, l4pkt);
         return;
     }
 

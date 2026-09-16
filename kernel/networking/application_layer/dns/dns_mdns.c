@@ -12,8 +12,6 @@ typedef struct {
     l3_id_t l3_id;
     net_l4_endpoint dst;
 } mdns_query_target_t;
-//TODO do the same per L3 handling for igmp and mld
-
 static bool mdns_open_query_target(l3_id_t l3_id, mdns_query_target_t* target) {
     if (!l3_id || !target) return false;
 
@@ -193,7 +191,7 @@ dns_result_t mdns_resolve_aaaa(const char* name, uint32_t timeout_ms, uint8_t ou
 
     for (uint32_t i = 0; i < count; i++) {
         if (records[i].type != DNS_TYPE_AAAA) continue;
-        memcpy(out_ipv6, records[i].addr, 16);
+        ipv6_cpy(out_ipv6, records[i].addr);
         if (out_ttl_s) *out_ttl_s = records[i].ttl_s;
         return DNS_OK;
     }

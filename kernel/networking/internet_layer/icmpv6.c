@@ -77,7 +77,7 @@ static bool icmpv6_send_echo_reply(uint8_t ifindex, const uint8_t src_ip[16], co
     return eth_send_frame_on(ifindex, ETHERTYPE_IPV6, src_mac, pkt);
 }
 
-void icmpv6_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], uint8_t hop_limit, const uint8_t src_mac[6], netpkt_t* pkt) {
+void icmpv6_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], uint8_t hop_limit, bool router_alert, const uint8_t src_mac[6], netpkt_t* pkt) {
     if (!ifindex || !src_ip || !dst_ip || !pkt || netpkt_len(pkt) < sizeof(icmpv6_hdr_t)) {
         if (pkt) netpkt_unref(pkt);
         return;
@@ -109,7 +109,7 @@ void icmpv6_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_i
 
     socket_raw_input_v6(ifindex, src_ip, dst_ip, pkt);
     if (h->type == ICMPV6_MLD_QUERY || h->type == ICMPV6_MLD_REPORT || h->type == ICMPV6_MLD_DONE || h->type == ICMPV6_MLDV2_REPORT) {
-        mld_input(ifindex, src_ip, dst_ip, pkt);
+        mld_input(ifindex, src_ip, dst_ip, hop_limit, router_alert, pkt);
         netpkt_unref(pkt);
         return;
     }
@@ -158,12 +158,19 @@ void icmpv6_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_i
 
         uint16_t mtu = (uint16_t)reported;
         uint16_t base_mtu = l3_ipv6_effective_mtu(l3);
-        if (base_mtu && mtu < base_mtu) {
-            uint16_t path_mtu = pmtu_note(l3->l3_id, l3->epoch, IP_VER6, inner.dst, mtu);
-            if (path_mtu && inner.next_header == PROTO_TCP && icmp_len >= 8 + sizeof(ipv6_hdr_t) + 4) {
-                const uint8_t* tcp = icmp + 8 + sizeof(ipv6_hdr_t);
-                tcp_pmtu_update(l3->l3_id, IP_VER6, inner.src, inner.dst, rd_be16(tcp), rd_be16(tcp + 2), path_mtu);
-            }
+        if (!base_mtu || mtu >= base_mtu) {
+            netpkt_unref(pkt);
+            return;
+        }
+
+        uint16_t path_mtu = pmtu_note(l3->l3_id, l3->epoch, IP_VER6, inner.dst, mtu);
+        if (path_mtu) {
+            uint32_t l4_off = 8 + (uint32_t)sizeof(ipv6_hdr_t);
+            uint32_t l4_len = icmp_len - l4_off;
+            uint8_t inner_nh = inner.next_header;
+            uint8_t ports[4];
+            if (ipv6_skip_ext_headers(pkt, &inner_nh, &l4_off, &l4_len, false, NULL) && inner_nh == PROTO_TCP && l4_len >= sizeof(ports) && 
+                netpkt_copyout(pkt, l4_off, ports, sizeof(ports))) tcp_pmtu_update(l3->l3_id, IP_VER6, inner.src, inner.dst, rd_be16(ports), rd_be16(ports + 2), path_mtu);
         }
 
         netpkt_unref(pkt);
