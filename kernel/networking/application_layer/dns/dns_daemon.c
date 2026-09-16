@@ -108,7 +108,7 @@ static uint32_t mdns_sync(const uint8_t* group4, const uint8_t* group6) {
             g_mdns[g_mdns_count].ifindex = l2->ifindex;
             g_mdns[g_mdns_count].l3_id = v6->l3_id;
             g_mdns[g_mdns_count].l3_generation = v6->generation;
-            memcpy(g_mdns[g_mdns_count].mcast_ip, group6, 16);
+            ipv6_cpy(g_mdns[g_mdns_count].mcast_ip, group6);
             g_mdns_count++;
             if (l2->ifindex && l2->ifindex <= MAX_L2_INTERFACES) changed |= 1u << (l2->ifindex-1);
         }

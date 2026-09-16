@@ -201,7 +201,7 @@ static dns_result_t dns_resolve_ip_common(uint8_t use_l3, l3_id_t l3_id, const c
             if ((records[i].rrclass & DNS_CLASS_MASK) != DNS_CLASS_IN) continue;
             if (records[i].type == qtype) {
                 if (qtype == DNS_TYPE_A) memcpy(out_addr, records[i].addr, 4);
-                else memcpy(out_addr, records[i].addr, 16);
+                else ipv6_cpy(out_addr, records[i].addr);
 
                 uint32_t ttl_ms = 0xFFFFFFFF;
                 if (records[i].ttl_s <= 0xFFFFFFFFU / 1000) ttl_ms = records[i].ttl_s * 1000;

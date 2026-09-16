@@ -69,7 +69,7 @@ void ipv6_prefix_network(const uint8_t ip[16], uint8_t prefix_len, uint8_t out[1
     }
 
     if (prefix_len > 128) prefix_len = 128;
-    memcpy(out, ip, 16);
+    ipv6_cpy(out, ip);
 
     if (prefix_len == 128) return;
 

@@ -103,7 +103,7 @@ bool dhcpv6_build_message(uint8_t*out, uint32_t out_cap, uint32_t*out_len, const
 
             memcpy(payload + 12, &code_net, 2);
             memcpy(payload + 14, &len_net, 2);
-            memcpy(payload + 16, ia_addr, 16);
+            ipv6_cpy(payload + 16, ia_addr);
             memcpy(payload + 32, &t1_net, 4);
             memcpy(payload + 36, &t2_net, 4);
             ia_len = 40;
@@ -135,7 +135,7 @@ bool dhcpv6_build_message(uint8_t*out, uint32_t out_cap, uint32_t*out_len, const
                 memcpy(iapd + 20, &valid_net, 4);
 
                 iapd[24] = rt->pd_prefix_len;
-                memcpy(iapd + 25, rt->pd_prefix, 16);
+                ipv6_cpy(iapd + 25, rt->pd_prefix);
 
                 if (!opt_append(out, out_cap, &off, DHCPV6_OPT_IA_PD, iapd, 41)) return false;
             }
@@ -184,7 +184,7 @@ static bool parse_opts(const uint8_t*opt, uint32_t opt_len, uint32_t expect_iaid
             int n = (int)(len / 16);
             if (n > 2) n = 2;
 
-            for (int i = 0; i < n; i++) memcpy(out->dns[i], data + (uint32_t)i * 16u, 16);
+            for (int i = 0; i < n; i++) ipv6_cpy(out->dns[i], data + (uint32_t)i * 16u);
 
             out->has_dns = true;
         } else if (code == DHCPV6_OPT_NTP_SERVER) {
@@ -201,7 +201,7 @@ static bool parse_opts(const uint8_t*opt, uint32_t opt_len, uint32_t expect_iaid
                 ntp_off += 4;
                 if (ntp_off + sl > len) return false;
                 if (sc == DHCPV6_NTP_SUBOPT_SERVER_ADDR && sl == 16 && count < 2) {
-                    memcpy(out->ntp[count], data + ntp_off, 16);
+                    ipv6_cpy(out->ntp[count], data + ntp_off);
                     count++;
                 }
                 ntp_off += sl;
@@ -278,12 +278,12 @@ static bool parse_opts(const uint8_t*opt, uint32_t opt_len, uint32_t expect_iaid
                         uint32_t valid = bswap32(valid_net);
                         if (preferred <= valid && !ipv6_is_unspecified(data + sub)) {
                             if (valid) {
-                                memcpy(out->addr, data + sub, 16);
+                                ipv6_cpy(out->addr, data + sub);
                                 out->preferred_lft = preferred;
                                 out->valid_lft = valid;
                                 out->has_addr = true;
                             } else if (!out->has_expired_addr) {
-                                memcpy(out->expired_addr, data + sub, 16);
+                                ipv6_cpy(out->expired_addr, data + sub);
                                 out->has_expired_addr = true;
                             }
                         }
@@ -329,7 +329,7 @@ static bool parse_opts(const uint8_t*opt, uint32_t opt_len, uint32_t expect_iaid
                             out->pd_preferred_lft = preferred;
                             out->pd_valid_lft = valid;
                             out->pd_prefix_len = prefix_len;
-                            memcpy(out->pd_prefix, data + sub + 9, 16);
+                            ipv6_cpy(out->pd_prefix, data + sub + 9);
 
                             out->has_pd = true;
                         }

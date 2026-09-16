@@ -14,7 +14,7 @@ uint32_t socket_endpoint_resolve(const char* host, uint16_t port, dns_server_sel
     memset(v6addr, 0, sizeof(v6addr));
     if (dns_resolve_aaaa(host, v6addr, sel, timeout_ms) == DNS_OK) {
         out[count].ver = IP_VER6;
-        memcpy(out[count].ip, v6addr, 16);
+        ipv6_cpy(out[count].ip, v6addr);
         out[count].port = port;
         count++;
     }

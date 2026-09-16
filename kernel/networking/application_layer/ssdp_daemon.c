@@ -136,7 +136,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
             memset(&group, 0, sizeof(group));
             group.ver = IP_VER6;
             group.port = 1900;
-            memcpy(group.ip, ssdp_host_v6, 16);
+            ipv6_cpy(group.ip, ssdp_host_v6);
 
             if (bind_socket(s, &spec, 1900) != SOCK_OK || set_socket_option(s, SOCK_OPT_MCAST_JOIN, &group, sizeof(group)) != SOCK_OK) {
                 close_socket(s);
@@ -145,7 +145,7 @@ int ssdp_daemon_entry(int argc, char* argv[]) {
 
             ssdp_sockets[ssdp_socket_count].sock = s;
             ssdp_sockets[ssdp_socket_count].ver = IP_VER6;
-            memcpy(ssdp_sockets[ssdp_socket_count].mcast_ip, ssdp_host_v6, 16);
+            ipv6_cpy(ssdp_sockets[ssdp_socket_count].mcast_ip, ssdp_host_v6);
             ssdp_socket_count++;
         }
     }

@@ -156,7 +156,7 @@ static void test_http(const net_l4_endpoint* ep) {
     e.ver = ep->ver;
     e.port = HTTP_PORT;
     if (e.ver == IP_VER4) memcpy(e.ip, ep->ip, 4);
-    else if (e.ver == IP_VER6) memcpy(e.ip, ep->ip, 16);
+    else if (e.ver == IP_VER6) ipv6_cpy(e.ip, ep->ip);
     else {
         http_client_destroy(cli);
         return;

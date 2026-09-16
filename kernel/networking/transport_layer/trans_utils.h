@@ -38,7 +38,8 @@ static inline void make_ep(const void *ip, uint16_t port, ip_version_t ver, net_
     if (!ep) return;
     memset(ep, 0, sizeof(*ep));
     ep->ver = ver;
-    if (ip) memcpy(ep->ip, ip, ver == IP_VER6 ? 16 : 4);
+    if (ip && ver == IP_VER6) ipv6_cpy(ep->ip, ip);
+    else if (ip) memcpy(ep->ip, ip, 4);
     ep->port = port;
 }
 

@@ -51,7 +51,7 @@ bool mdns_send(socket_handle_t sock, const net_l4_endpoint *src, bool unicast, i
 
     dst.ver = ver;
     if (ver == IP_VER4) memcpy(dst.ip, mcast_ip, 4);
-    else memcpy(dst.ip, mcast_ip, 16);
+    else ipv6_cpy(dst.ip, mcast_ip);
     dst.port = DNS_MDNS_PORT;
     return send_to_socket(sock, &dst, pkt, pkt_len) >= 0;
 }
@@ -183,7 +183,7 @@ uint32_t mdns_host_records(l2_interface_t* l2, dns_record_t* out, uint32_t cap) 
         l3_ipv6_interface_t* v6 = l2->l3_v6[i];
         if (!ipv6_l3_is_ready(v6) || v6->is_localhost) continue;
         mdns_record(&out[count], g_mdns_fqdn, DNS_TYPE_AAAA);
-        memcpy(out[count].addr, v6->ip, 16);
+        ipv6_cpy(out[count].addr, v6->ip);
         count++;
     }
     return count;
