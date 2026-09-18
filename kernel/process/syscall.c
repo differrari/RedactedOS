@@ -36,6 +36,7 @@
 #include "jobs/job_manager.h"
 #include "stack_manager.h"
 #include "debug.h"
+#include "debug/inspect.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -529,6 +530,13 @@ Don't ever do that again\r\n\
     return 0;
 }
 
+u64 syscall_thread_inspect(process_t *ctx, thread_t *current_thread){
+    debug_inspect_types type = current_thread->PROC_X0;
+    u16 pid = current_thread->PROC_X1;
+    u16 tid = current_thread->PROC_X2;
+    return set_inspect(type, ctx, current_thread, pid, tid);
+}
+
 syscall_entry syscalls[] = {
     [PALLOC_CODE] = syscall_palloc,
     [PFREE_CODE] = syscall_pfree,
@@ -573,6 +581,7 @@ syscall_entry syscalls[] = {
     [SIGNAL_HANDLER_CODE] = syscall_signal_handler,
     
     [IN_CASE_OF_JS_CODE] = syscall_in_case_of_js,
+    [THREAD_INSPECT_CODE] = syscall_thread_inspect,
 };
 
 const char* fault_messages[] = {

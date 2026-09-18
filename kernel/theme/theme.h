@@ -19,6 +19,7 @@ typedef struct {
     bool play_startup_sound;
 } boot_theme_t;
 
+//TODO: break this up after the colors
 typedef struct {
     u32 bg_color;
     u32 accent_color;

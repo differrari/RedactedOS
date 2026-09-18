@@ -76,3 +76,16 @@ void backtrace(uptr *ttbr, uintptr_t fp, uintptr_t elr, sizedptr debug_line, siz
 void debug_snapshot(process_t *proc, thread_t *t){
     backtrace(proc->mm.ttbr0, t->sp, t->pc, proc->debug_lines, proc->debug_line_str);
 }
+
+bool set_inspect(debug_inspect_types types, process_t *inspector, thread_t *inspector_thread, u16 inspected_pid, u16 inspected_tid){
+    if (!inspector || !inspector_thread) return false;
+    process_t *inspected = get_proc_by_pid(inspected_pid);
+    if (!inspected || inspected->id != inspected_pid) return false;
+    thread_t *inspected_thread = get_thread_from_proc(inspected, inspected_tid);
+    if (!inspected_thread || inspected_thread->pid != inspected_pid || inspected_thread->tid != inspected_tid) return false;
+    inspected_thread->inspector = (proc_addr){
+        .pid = inspector->id,
+        .tid = inspector_thread->tid
+    };
+    return true;
+}
