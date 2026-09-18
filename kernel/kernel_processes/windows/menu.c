@@ -110,7 +110,6 @@ void load_menu_level(menu_item_t *parent){
         for (uint32_t i = 0; i < list->count; i++){
             char *file = reader;
             if (*file){
-                print("Entry %s",file);
                 menu_add_entry(file,parent);
             }
             while (*reader) reader++;
@@ -156,12 +155,14 @@ void unload_menu_children(menu_item_t *parent){
             child = child->sibling;
         }
         stack_remove(menu_items,stack_count(menu_items)-num_menu_items);
+        last_menu_item = stack_get(menu_items,stack_count(menu_items)-1);
         return;
     }
     size_t num_to_delete = calc_children(parent);
     stack_remove(menu_items, num_to_delete);
     parent->child = 0;
     parent->num_children = 0;
+    last_menu_item = stack_get(menu_items,stack_count(menu_items)-1);
 }
 
 bool click_in_menu(gpu_rect menu, gpu_point click){
@@ -230,9 +231,10 @@ void draw_menu(){
         gpu_rect bounds = {{x,y},{(menu->name_len * fb_get_char_size(2)),fb_line_height(2)}};
         if (click_in_menu(bounds, mouse_click)){
             did_click_inside = true;
-            if (!menu->child)
+            if (!menu->child){
+                unload_menu_children(0);
                 load_menu_level(menu);
-            else unload_menu_children(menu);
+            } else unload_menu_children(menu);
         }
         if (menu->child){
             did_click_inside |= draw_submenu(screen_ctx, (gpu_point){ x, MENU_HEIGHT-BORDER_SIZE }, menu, mouse_click);
@@ -241,8 +243,9 @@ void draw_menu(){
         menu = menu->sibling;
     }
     
+    (void)did_click;
+    (void)did_click_inside;
     if (did_click && !did_click_inside) {
-        print("Unload");
         unload_menu_children(0);
     }
 
