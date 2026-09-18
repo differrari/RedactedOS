@@ -25,7 +25,7 @@ modules: kshared
 shared: 
 	$(MAKE) -C shared BUILD_DIR=./build
 
-user: shared prepare-fs
+user: shared libs prepare-fs
 	$(MAKE) -C user
 
 kernel: kshared modules
