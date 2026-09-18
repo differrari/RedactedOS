@@ -174,13 +174,22 @@ void unload_menu_children(menu_item_t *parent){
     last_menu_item = stack_get(menu_items,stack_count(menu_items)-1);
 }
 
-bool click_in_menu(gpu_rect menu, gpu_point click){
+bool mouse_in_menu(gpu_rect menu, gpu_point click){
     if (click.x < menu.point.x || click.x >= menu.point.x + (i32)menu.size.width || 
         click.y < menu.point.y || click.y >= menu.point.y + (i32)menu.size.height) return false;
     return true;
 }
 
-bool draw_submenu(draw_ctx *ctx, gpu_point origin, menu_item_t *parent, gpu_point mouse_click){
+typedef union {
+    struct {
+        u8 quit: 1;
+        u8 clicked: 1;
+        u8 inside: 1;
+    };
+    u8 info;
+} menu_info;
+
+menu_info draw_submenu(draw_ctx *ctx, gpu_point origin, menu_item_t *parent, bool did_click, gpu_point mouse_click){
     int width = 256;
     fb_fill_rect(ctx, origin.x, origin.y, width, parent->num_children*MENU_HEIGHT, system_theme.bg_color+0x181818);
     fb_outline_rect(ctx, origin.x, origin.y, width, parent->num_children*MENU_HEIGHT, 2, 0x44000000);
@@ -189,34 +198,38 @@ bool draw_submenu(draw_ctx *ctx, gpu_point origin, menu_item_t *parent, gpu_poin
     
     int y = (MENU_HEIGHT-fb_line_height(2))/2;
     int y_top = 0;
-    bool did_click = false;
+    menu_info info;
     while (menu){
         int x = 10;
         gpu_rect bounds = {{origin.x,origin.y + y_top },{width,MENU_HEIGHT}};
-        if (click_in_menu(bounds, mouse_click)){
+        bool clicked_inside = mouse_in_menu(bounds, mouse_click);
+        info.inside |= clicked_inside;
+        if (did_click && clicked_inside){
             if (menu->is_submenu){
                 if (!menu->child) load_menu_level(menu);
                 else unload_menu_children(menu);
-            } else if (menu->module)
+            } else if (menu->module){
                 transform_file(menu->module, menu->filepath, 0, 0);
-            did_click = true;
+                info.quit = true;
+            }
+            info.clicked = true;
         }
         if (menu->child){
-            draw_submenu(ctx, (gpu_point){ origin.x + width, origin.y + y_top }, menu, mouse_click);
+            draw_submenu(ctx, (gpu_point){ origin.x + width, origin.y + y_top }, menu, did_click, mouse_click);
             fb_fill_rect(ctx, origin.x + 3, origin.y + y_top + 3, width - 6, MENU_HEIGHT-6, 0x44000000);
         }
         fb_draw_slice(ctx, (string_slice){menu->name,menu->name_len}, origin.x + x, origin.y + y, 2, 0xFFcccccc);
-        if (menu->is_submenu) fb_draw_slice(ctx, SLICE(">"), width-fb_get_char_size(2)-10, origin.y + y, 2, 0xFFcccccc);
+        if (menu->is_submenu) fb_draw_slice(ctx, SLICE(">"), origin.x + width-fb_get_char_size(2)-10, origin.y + y, 2, 0xFFcccccc);
         y += MENU_HEIGHT;
         y_top += MENU_HEIGHT;
         menu = menu->sibling;
     }
-    return did_click;
+    return info;
 }
 
 bool mouse_can_click = true;
 
-void draw_menu(){
+bool draw_menu(gpu_point mouse_pos){
     if (menu_dirty){
         load_menu();
         menu_dirty = false;
@@ -230,18 +243,20 @@ void draw_menu(){
     int x = 10;
     bool did_click = false, did_click_inside = false;
     gpu_point mouse_click = {};
+    
+    bool mouse_in = mouse_pos.y < MENU_HEIGHT;
+    
     if (mouse_button_pressed(LMB)){
-        if (mouse_can_click) {
-            mouse_click = get_mouse_pos();
+        if (mouse_can_click)
             did_click = true;
-        }
         mouse_can_click = false;
     } else mouse_can_click = true;
+    mouse_click = mouse_pos;
     while (menu){
         int y = (MENU_HEIGHT-fb_line_height(2))/2;
         fb_draw_slice(screen_ctx, (string_slice){menu->name,menu->name_len}, x, y, 2, 0xFFcccccc);
         gpu_rect bounds = {{x,y},{(menu->name_len * fb_get_char_size(2)),fb_line_height(2)}};
-        if (click_in_menu(bounds, mouse_click)){
+        if (did_click && mouse_in_menu(bounds, mouse_click)){
             did_click_inside = true;
             if (!menu->child){
                 unload_menu_children(0);
@@ -249,7 +264,13 @@ void draw_menu(){
             } else unload_menu_children(menu);
         }
         if (menu->child){
-            did_click_inside |= draw_submenu(screen_ctx, (gpu_point){ x, MENU_HEIGHT-BORDER_SIZE }, menu, mouse_click);
+            menu_info info = draw_submenu(screen_ctx, (gpu_point){ x, MENU_HEIGHT-BORDER_SIZE }, menu, did_click, mouse_click);
+            did_click_inside |= info.clicked;
+            mouse_in |= info.inside;
+            if (info.quit) {
+                unload_menu_children(0);
+                return mouse_in;
+            }
         }
         x += bounds.size.width + 10;
         menu = menu->sibling;
@@ -262,4 +283,6 @@ void draw_menu(){
     // fb_fill_rect(screen_ctx, screen_ctx->width/2 - 100, 0, screen_ctx->width/2 + 100, MENU_HEIGHT, 0xb4dd13);
 
     test_widget(screen_ctx, (gpu_rect){{screen_ctx->width/2 - 100, 0}, {200, MENU_HEIGHT}},system_theme.bg_color+0x111111);
+    
+    return mouse_in;
 }
