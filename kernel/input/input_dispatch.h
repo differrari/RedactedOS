@@ -16,6 +16,8 @@ void register_mouse_input(mouse_input *rat);
 
 mouse_input get_raw_mouse_in();
 
+void render_cursor();
+
 gpu_point get_mouse_pos();
 bool mouse_button_pressed(int mb);
 bool mouse_any_button_pressed();

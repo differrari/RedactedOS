@@ -12,17 +12,11 @@ size_t test_fn(file *fd, const char *c, size_t s, file_offset off){
 
 void menu_init(){
     make_entry("File", backing_virtual, entry_directory, 0, (buffer){});
-    make_entry("File" "/" "Hello", backing_virtual, entry_file, 0, (buffer){});
+    make_entry("File" "/" "Hello", backing_virtual, entry_directory, 0, (buffer){});
+    make_entry("File" "/" "Hello" "/" "World", backing_virtual, entry_file, 0, (buffer){});
     make_entry("Edit", backing_virtual, entry_directory, 0, (buffer){});
-    make_entry("Edit/World", backing_virtual, entry_directory, 0, (buffer){});
+    make_entry("Edit/Delete", backing_virtual, entry_directory, 0, (buffer){});
     make_complex_entry("File/Test", backing_transform, entry_file, 0, (file_actions){.write = test_fn}, (string){});
-}
-
-size_t custom_readdir(const char *path, void *buf, size_t size, file_offset *offset){
-    print(">>>>>>>Hello");
-    size_t ret = vfs_readdir(path, buf, size, offset);
-    print(">>> %x",ret);
-    return ret;
 }
 
 system_module menu_mod = {
@@ -34,7 +28,7 @@ system_module menu_mod = {
     .read = vfs_read,
     .write = vfs_write,
     .getstat = vfs_stat,
-    .readdir = custom_readdir,
+    .readdir = vfs_readdir,
 };
 
 int main(){

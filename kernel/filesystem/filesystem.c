@@ -274,7 +274,7 @@ size_t list_directory_contents(module_root *root, const char *path, void* buf, s
     }
     system_module *mod = get_module_from(root, &search_path);
     if (!mod){
-        kprintf("No module for path %s",search_path);
+        kprintf("[LIST error] No module for path %s",path);
         return 0;
     }
     if (!mod->readdir) return 0;
@@ -298,7 +298,7 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
     }
     system_module *mod = get_module_from(root, &search_path);
     if (!mod){
-        kprintf("No module for path %s",search_path);
+        kprintf("[STAT error] No module for path %s",path);
         return false;
     }
     if (!mod->getstat) return false;

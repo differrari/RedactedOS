@@ -235,7 +235,7 @@ void check_shortcuts(){
         if (sys_shortcut_triggered_current(mode_shortcuts[i])){
             mode = i;
             switch (mode) {
-            case window_mode: switch_cursor(cursor_crosshair); break;
+            case window_mode: switch_cursor(cursor_pointer); break;
             case doodle_mode: switch_cursor(cursor_pencil); break;
             default: break;
             }
@@ -253,7 +253,7 @@ int window_system(){
     dos_ctx = gpu_get_ctx();
     refresh_desktop_colors();
     setup_shortcuts();
-    switch_cursor(cursor_crosshair);
+    switch_cursor(cursor_pointer);
     
     gpu_point start_point = {0,0};
     bool drawing = false;
@@ -346,6 +346,7 @@ int window_system(){
             dirty_windows = false;
         }
         draw_menu();
+        render_cursor();
         gpu_flush();
         enable_interrupt();
         if (!active && !dirty_windows && !mouse_button_pressed(LMB) && !mouse_button_pressed(MMB)) msleep(25);
