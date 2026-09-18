@@ -41,7 +41,13 @@ void set_window_focus(uint16_t win_id);
 void unset_window_focus();
 void window_close_process(process_t *proc);
 
-gpu_point convert_mouse_position(gpu_point p);
+bool convert_mouse_position(mouse_data *in);
+
+static inline bool mouse_in_rect(gpu_rect rect, gpu_point click){
+    if (click.x < rect.point.x || click.x >= rect.point.x + (i32)rect.size.width || 
+        click.y < rect.point.y || click.y >= rect.point.y + (i32)rect.size.height) return false;
+    return true;
+}
 
 extern linked_list_t *window_list;
 

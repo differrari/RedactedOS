@@ -184,6 +184,24 @@ int copypaste(){
     
 }
 
+int test_mouse(){
+    while (true){
+        mouse_data data = {};
+        get_mouse_status(&data);
+        fb_clear(&ctx, 0xff0c0c0c);
+        kbd_event ev;
+        if (read_event(&ev)){
+            if (ev.key == KEY_ESC) return 0;
+        }
+        color col = 0xffb4dd13;
+        if (data.raw.buttons & 1) col = 0xff674928;
+        if ((data.raw.buttons >> 1) & 1) col = 0xff398019;
+        if ((data.raw.buttons >> 2) & 1) col = 0xff029387;
+        fb_fill_rect(&ctx, data.position.x, data.position.y, 128 + data.raw.x, 128 + data.raw.y, col);
+        commit_draw_ctx(&ctx);
+    }
+}
+
 bool should_quit = false;
 
 bool on_quit(signal_info_t *do_not_use_this){
@@ -201,6 +219,7 @@ struct { char* name; int (*fn)(); } demos[] = {
     {"Concurrent writing to file (WIP)", concurrent_write},
     {"Write large file", write_large_file},
     {"Copy-paste to clipboard", copypaste},
+    {"Mouse test",test_mouse}
 };
 
 int main(int argc, char* argv[]){

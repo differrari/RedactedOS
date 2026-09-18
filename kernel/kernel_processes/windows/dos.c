@@ -98,9 +98,9 @@ window_frame* clicked_frame;
 
 static inline void calc_click(void *node){
     window_frame* frame = (window_frame*)node;
-    gpu_point p = win_to_screen(frame, click_loc);//TODO: account for zoom
-    if (!p.x || !p.y) return;
-    clicked_frame = frame;
+    gpu_rect rect = {{frame->x, frame->y}, {frame->width, frame->height}};
+    if (mouse_in_rect(rect, click_loc))
+        clicked_frame = frame;
 }
 
 static inline void redraw_win(void *node){
@@ -267,6 +267,8 @@ int window_system(){
     bool drawing = false;
     bool dragging = false;
     
+    int redraw_repeat = 0;
+    
     while (1){
         bool active = false;
         check_shortcuts();
@@ -330,10 +332,7 @@ int window_system(){
         if (system_theme.use_desktop_zoom){
             i8 scroll = get_raw_mouse_in().scroll;
             if (scroll){
-                click_loc = get_mouse_pos();
-                clicked_frame = 0;
-                linked_list_for_each(window_list, calc_click);
-                if (!clicked_frame){
+                if (!get_current_mouse_window(get_mouse_pos())){
                     zoom_scale += -scroll;
                     zoom_scale = clampf(zoom_scale, 0.25f, 5);
                     dirty_windows = true;
@@ -344,14 +343,19 @@ int window_system(){
         gpu_point curr_mouse = get_mouse_pos();
         //TODO: move the window mouse position & button translation here so we can simplify that logic
         bool in_menu = draw_menu(curr_mouse);
-        if (get_current_mouse_window(curr_mouse) || in_menu){
-            if (switch_cursor(cursor_pointer))
+        window_frame *curr_frame = get_current_mouse_window(curr_mouse);
+        if (curr_frame || in_menu){
+            if (mouse_any_button_pressed() && curr_frame && curr_mouse.y-curr_frame->y <= MENU_HEIGHT) dirty_windows = true;
+            if (switch_cursor(cursor_pointer)){
                 dirty_windows = true;
+                redraw_repeat = 5;
+            }
         } else {
-            if (switch_cursor(window_mode_cursors[mode]))
+            if (switch_cursor(window_mode_cursors[mode])){
                 dirty_windows = true;
+                redraw_repeat = 5;
+            }
         }
-        if (mouse_any_button_pressed()) dirty_windows = true;
         if (dirty_windows){
             active = true;
             draw_desktop();
@@ -359,7 +363,10 @@ int window_system(){
             linked_list_for_each(window_list, redraw_win);
             dirty_windows = false;
         }
-        gpu_get_ctx()->full_redraw = true;//TODO: This is re-rendering every frame unnecessarily, but without it the cursor gets duplicated outside the window once we enter it
+        if (redraw_repeat){
+            redraw_repeat--;
+            gpu_get_ctx()->full_redraw = true;
+        }
         render_cursor();
         gpu_flush();
         enable_interrupt();

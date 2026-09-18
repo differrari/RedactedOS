@@ -174,12 +174,6 @@ void unload_menu_children(menu_item_t *parent){
     last_menu_item = stack_get(menu_items,stack_count(menu_items)-1);
 }
 
-bool mouse_in_menu(gpu_rect menu, gpu_point click){
-    if (click.x < menu.point.x || click.x >= menu.point.x + (i32)menu.size.width || 
-        click.y < menu.point.y || click.y >= menu.point.y + (i32)menu.size.height) return false;
-    return true;
-}
-
 typedef union {
     struct {
         u8 quit: 1;
@@ -202,7 +196,7 @@ menu_info draw_submenu(draw_ctx *ctx, gpu_point origin, menu_item_t *parent, boo
     while (menu){
         int x = 10;
         gpu_rect bounds = {{origin.x,origin.y + y_top },{width,MENU_HEIGHT}};
-        bool clicked_inside = mouse_in_menu(bounds, mouse_click);
+        bool clicked_inside = mouse_in_rect(bounds, mouse_click);
         info.inside |= clicked_inside;
         if (did_click && clicked_inside){
             if (menu->is_submenu){
@@ -256,7 +250,7 @@ bool draw_menu(gpu_point mouse_pos){
         int y = (MENU_HEIGHT-fb_line_height(2))/2;
         fb_draw_slice(screen_ctx, (string_slice){menu->name,menu->name_len}, x, y, 2, 0xFFcccccc);
         gpu_rect bounds = {{x,y},{(menu->name_len * fb_get_char_size(2)),fb_line_height(2)}};
-        if (did_click && mouse_in_menu(bounds, mouse_click)){
+        if (did_click && mouse_in_rect(bounds, mouse_click)){
             did_click_inside = true;
             if (!menu->child){
                 unload_menu_children(0);

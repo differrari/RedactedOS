@@ -55,15 +55,22 @@ gpu_point win_to_screen(window_frame *frame, gpu_point point){
 
 extern process_t *win_system_proc;
 
-gpu_point convert_mouse_position(gpu_point point){
+bool convert_mouse_position(mouse_data *in){
     process_t *p = get_current_proc();
-    if (p == win_system_proc) return point;
+    if (p == win_system_proc) return true;
     linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
-        return win_to_screen(frame, point);
+        gpu_rect rect = {{frame->x, frame->y + MENU_HEIGHT}, {frame->width, frame->height - MENU_HEIGHT}};
+        if (mouse_in_rect(rect, in->position)){
+            in->position.x -= frame->x;
+            in->position.y -= frame->y;
+            return true;
+        }
     }
-    return (gpu_point){};
+    in->raw = (mouse_input){};
+    in->position = (gpu_point){};
+    return false;
 }
 
 i32 calculate_distance(i32 ep, i32 es, i32 np, i32 ns, i32 existing){

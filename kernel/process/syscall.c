@@ -141,12 +141,12 @@ u64 syscall_read_shortcut(process_t *ctx, thread_t *current_thread){
 }
 
 u64 syscall_get_mouse(process_t *ctx, thread_t *current_thread){
-    //TODO: we're not fully preventing the mouse from being read outside of proc's window (raw & buttons)
     if (sys_get_focused_pid() != ctx->id) return 0;
     SYSCALL_ARG(mouse_data, inp, PROC_X0, true);
     inp->raw = get_raw_mouse_in();
     inp->raw.scroll = sys_read_scroll_current();
-    inp->position = convert_mouse_position(get_mouse_pos());
+    inp->position = get_mouse_pos();
+    convert_mouse_position(inp);
     return 0;
 }
 

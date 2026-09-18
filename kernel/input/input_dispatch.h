@@ -24,7 +24,7 @@ bool mouse_any_button_pressed();
 
 uint16_t sys_subscribe_shortcut(uint16_t pid, keypress kp);
 uint16_t sys_subscribe_shortcut_current(keypress kp);
-void sys_set_focus(int pid);
+bool sys_set_focus(int pid);
 void sys_focus_current();
 void sys_unset_focus(bool close);
 u16 sys_get_focused_pid();

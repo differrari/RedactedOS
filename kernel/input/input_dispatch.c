@@ -179,10 +179,10 @@ void sys_focus_current(){
 #include "console/kio.h"
 #include "theme/theme.h"
 
-void sys_set_focus(int pid){
+bool sys_set_focus(int pid){
     process_t *target = get_proc_by_pid(pid);
-    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) return;
-    if (focused_proc && focused_proc->id == pid) return;
+    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) return false;
+    if (focused_proc && focused_proc->id == pid) return false;
     if (focused_proc) focused_proc->focused = false;
     focused_proc = target;
     focused_proc->focused = true;
@@ -190,6 +190,7 @@ void sys_set_focus(int pid){
         set_window_focus(focused_proc->win_id);
         refresh_menu();
     } 
+    return true;
 }
 
 void sys_unset_focus(bool close){
