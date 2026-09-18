@@ -6,8 +6,6 @@
 #include "process/scheduler.h"
 #include "exceptions/exception_handler.h"
 
-#define MODULE_STRICT
-
 chunk_array_t *fs_permissions;
 
 u64 register_fs_id(){
