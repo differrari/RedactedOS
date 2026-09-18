@@ -48,29 +48,32 @@ void refresh_menu(){
 
 #define MENU_MAX_NAME 64
 #define MENU_MAX_TOOLTIP 256
+#define MENU_MAX_FILEPATH 256
 
 typedef struct menu_item_t {
     u8 name_len;
     char name[MENU_MAX_NAME];
     u8 tooltip_len;
     char tooltip[MENU_MAX_TOOLTIP];
-    bool is_parent;
+    u8 filepath_len;
+    char filepath[MENU_MAX_TOOLTIP];
     size_t num_children;
+    bool is_submenu;
+    module_root *module;
     struct menu_item_t *parent;
     struct menu_item_t *child;
     struct menu_item_t *sibling;
 } menu_item_t;
 
-arr_stack_t *menu_items;
+arr_stack_t *menu_items = 0;
 
-menu_item_t *first_menu_item, *last_menu_item;
+menu_item_t *first_menu_item = 0, *last_menu_item = 0;
 
-void menu_add_entry(char *name, menu_item_t *parent){
+menu_item_t* menu_add_entry(char *name, menu_item_t *parent){
     menu_item_t *item = stack_new_item(menu_items,menu_item_t);
     string_slice sl = slice_from_literal(name);
     item->name_len = min(MENU_MAX_NAME,sl.length);
     memcpy(item->name, sl.data, item->name_len);
-    item->is_parent = true;
     item->parent = parent;
     if (last_menu_item){
         if (last_menu_item->parent == parent) last_menu_item->sibling = item;
@@ -78,6 +81,7 @@ void menu_add_entry(char *name, menu_item_t *parent){
         if (parent) parent->num_children++;
     } else first_menu_item = item;
     last_menu_item = item;
+    return item;
 }
 
 string menu_create_pathname(menu_item_t *parent){
@@ -110,7 +114,12 @@ void load_menu_level(menu_item_t *parent){
         for (uint32_t i = 0; i < list->count; i++){
             char *file = reader;
             if (*file){
-                menu_add_entry(file,parent);
+                menu_item_t *item = menu_add_entry(file,parent);
+                item->module = localfs;
+                string_format_buf(item->filepath, MENU_MAX_FILEPATH, "%S/%s",path,file);
+                fs_stat stat = {};
+                get_stat(localfs, item->filepath, &stat);
+                item->is_submenu = stat.type == entry_directory;
             }
             while (*reader) reader++;
             reader++;
@@ -183,11 +192,13 @@ bool draw_submenu(draw_ctx *ctx, gpu_point origin, menu_item_t *parent, gpu_poin
     bool did_click = false;
     while (menu){
         int x = 10;
-        gpu_rect bounds = {{origin.x + x,origin.y + y},{(menu->name_len * fb_get_char_size(2)),fb_line_height(2)}};
+        gpu_rect bounds = {{origin.x,origin.y + y_top },{width,MENU_HEIGHT}};
         if (click_in_menu(bounds, mouse_click)){
-            if (!menu->child)
-                load_menu_level(menu);
-            else unload_menu_children(menu);
+            if (menu->is_submenu){
+                if (!menu->child) load_menu_level(menu);
+                else unload_menu_children(menu);
+            } else if (menu->module)
+                transform_file(menu->module, menu->filepath, 0, 0);
             did_click = true;
         }
         if (menu->child){
@@ -195,6 +206,7 @@ bool draw_submenu(draw_ctx *ctx, gpu_point origin, menu_item_t *parent, gpu_poin
             fb_fill_rect(ctx, origin.x + 3, origin.y + y_top + 3, width - 6, MENU_HEIGHT-6, 0x44000000);
         }
         fb_draw_slice(ctx, (string_slice){menu->name,menu->name_len}, origin.x + x, origin.y + y, 2, 0xFFcccccc);
+        if (menu->is_submenu) fb_draw_slice(ctx, SLICE(">"), width-fb_get_char_size(2)-10, origin.y + y, 2, 0xFFcccccc);
         y += MENU_HEIGHT;
         y_top += MENU_HEIGHT;
         menu = menu->sibling;
@@ -243,8 +255,6 @@ void draw_menu(){
         menu = menu->sibling;
     }
     
-    (void)did_click;
-    (void)did_click_inside;
     if (did_click && !did_click_inside) {
         unload_menu_children(0);
     }

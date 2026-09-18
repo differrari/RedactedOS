@@ -5,7 +5,7 @@
 #include "header_utils/filebrowser.h"
 #include "files/vfs.h"
 
-size_t test_fn(file *fd, const char *c, size_t s, file_offset off){
+size_t test_fn(const char *path, void *c, size_t s){
     print("Test button pressed");
     return 0;
 }
@@ -16,7 +16,7 @@ void menu_init(){
     make_entry("File" "/" "Hello" "/" "World", backing_virtual, entry_file, 0, (buffer){});
     make_entry("Edit", backing_virtual, entry_directory, 0, (buffer){});
     make_entry("Edit/Delete", backing_virtual, entry_directory, 0, (buffer){});
-    make_complex_entry("File/Test", backing_transform, entry_file, 0, (file_actions){.write = test_fn}, (string){});
+    make_complex_entry("File/Test", backing_transform, entry_file, 0, (file_actions){.transform = test_fn }, (string){});
 }
 
 system_module menu_mod = {
@@ -29,6 +29,7 @@ system_module menu_mod = {
     .write = vfs_write,
     .getstat = vfs_stat,
     .readdir = vfs_readdir,
+    .transform = vfs_transform,
 };
 
 int main(){
