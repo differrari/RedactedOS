@@ -17,6 +17,7 @@ ELF      := $(NAME).elf
 TARGET   := $(NAME).bin
 PACKAGE  := $(NAME).red
 LOCATION := ../../fs/redos/system/
+LIBRARIES := $(wildcard ../../libs/*.a)
 
 .PHONY: prepare all clean
 
@@ -30,7 +31,7 @@ prepare:
 	cp package.info $(PACKAGE)/package.info 2>/dev/null || :
 
 $(PACKAGE)/$(TARGET): ../../shared/libshared.a $(OBJ)
-	$(VLD) $(LDFLAGS) -o $(PACKAGE)/$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../../shared/libshared.a
+	$(VLD) $(LDFLAGS) -o $(PACKAGE)/$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) $(LIBRARIES) ../../shared/libshared.a
 	$(OBJCOPY) -O binary $(PACKAGE)/$(ELF) $@
 	cp -r $(PACKAGE) $(LOCATION)
 

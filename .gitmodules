@@ -1,3 +1,6 @@
 [submodule "shared"]
 	path = shared
 	url = https://github.com/differrari/redlib.git
+[submodule "libs/uno"]
+	path = libs/uno
+	url = git@github.com:differrari/uno.git
