@@ -12,6 +12,7 @@
 #include "header_utils/composite.h"
 #include "files/system_module.h"
 #include "files/stack_fs.h"
+#include "utils/theme.h"
 
 embedded_fmt input_format = {};
 
@@ -26,7 +27,7 @@ bool headless = false;
 bool cursor_on = false;
 u64 cursor_blink_time = 500;
 
-u32 bg_color;
+theme_palette palette;
 
 buffer input_buf = {};
 
@@ -315,12 +316,11 @@ int main(){
     stackfs_init();
     load_fsmodule(&termhistory_mod, true);
 
-    u32 color_buf[2] = {};
-    sreadf("/theme", &color_buf, sizeof(uint64_t));
-    if ((color_buf[0] & 0xFF000000) == 0) color_buf[0] |= 0xFF000000;
-    if ((color_buf[1] & 0xFF000000) == 0) color_buf[1] |= 0xFF000000;
-    screen_printer_formatting.default_bg_color = screen_printer_formatting.current_bg_color = color_buf[0];
-    screen_printer_formatting.default_text_color = screen_printer_formatting.current_text_color = color_buf[1];
+    get_theme(&palette);
+    if ((palette.background & 0xFF000000) == 0) palette.background |= 0xFF000000;
+    if ((palette.foreground & 0xFF000000) == 0) palette.foreground |= 0xFF000000;
+    screen_printer_formatting.default_bg_color = screen_printer_formatting.current_bg_color = palette.background;
+    screen_printer_formatting.default_text_color = screen_printer_formatting.current_text_color = palette.foreground;
 
     init_tcf(&screen_printer_formatting);
 

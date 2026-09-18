@@ -2,6 +2,7 @@
 #include "input_keycodes.h"
 #include "memory/memory.h"
 #include "uno/uno.h"
+#include "utils/theme.h"
 
 // - [x] control the program's execution
 // - [] get proc's information /proc/id/info
@@ -33,7 +34,7 @@ u16 proc_id = 0;
 
 button_info pp_button = {.press = toggle_proc };
 
-u32 theme[2];
+theme_palette theme;
 
 gpu_point log_scroll = {.x = -30};
 
@@ -42,12 +43,12 @@ text_field_info log_text_info = {
 };
 
 void view_builder(){
-    VERTICAL(((node_info){.bg_color = theme[0], .sizing_rule = size_fill}), {
+    VERTICAL(((node_info){.bg_color = theme.background, .sizing_rule = size_fill}), {
         HORIZONTAL((node_info){},{
             uno_button(button_pauseplay, (node_info){.bg_color = proc_state == PROC_READY || proc_state == PROC_RUNNING ? 0xFFcc0000 : 0xFF00cc00, .padding = 5}, &pp_button, SLICE(proc_state == PROC_READY || proc_state == PROC_RUNNING ? "|" : ">"));
-            uno_label((node_info){.fg_color = theme[1], .padding = 5}, doc_text_body, SLICE("Process name goes here")); 
+            uno_label((node_info){.fg_color = theme.foreground, .padding = 5}, doc_text_body, SLICE("Process name goes here")); 
         });
-        uno_text_field(2, (node_info){ .sizing_rule = size_fill, .fg_color = theme[1], .offset = &log_scroll, .type = doc_text_body }, &log_text_info);
+        uno_text_field(2, (node_info){ .sizing_rule = size_fill, .fg_color = theme.foreground, .offset = &log_scroll, .type = doc_text_body }, &log_text_info);
     });
 }
 
@@ -59,7 +60,7 @@ int main(int argc, char* argv[]){
     
     proc_id = parse_int_u64(proc_id_str, strlen(proc_id_str));
     
-    sreadf("/theme", &theme, sizeof(theme));
+    get_theme(&theme);
     
     thread_inspect(TINSPECT_CONTROL | TINSPECT_TRACE | TINSPECT_INFO | TINSPECT_STATE, proc_id, 1);
     

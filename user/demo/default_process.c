@@ -13,6 +13,7 @@
 #include "math/math.h"
 #include "draw/textdraw.h"
 #include "environment/env_types.h"
+#include "utils/theme.h"
 
 draw_ctx ctx = {};
 
@@ -259,7 +260,10 @@ int main(int argc, char* argv[]){
 
     text_format text_fmt = {.scale = 3,.foreground = 0xFFFFFFFF,.background = 0xFF354657,.wrap = wrap_word};
     
-    fb_clear(&ctx, 0xFF354657);
+    theme_palette palette = {};
+    get_theme(&palette);
+    
+    fb_clear(&ctx, palette.background);
 
     gpu_size size = {};
     fb_continuous_draw_text(&ctx, draw_text_render, &cursor, initial, &range, rect, &size, (gpu_point){}, text_fmt, (text_format_arr){ });

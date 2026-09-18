@@ -185,7 +185,7 @@ typedef union {
 
 menu_info draw_submenu(draw_ctx *ctx, gpu_point origin, menu_item_t *parent, bool did_click, gpu_point mouse_click){
     int width = 256;
-    fb_fill_rect(ctx, origin.x, origin.y, width, parent->num_children*MENU_HEIGHT, system_theme.bg_color+0x181818);
+    fb_fill_rect(ctx, origin.x, origin.y, width, parent->num_children*MENU_HEIGHT, system_theme.palette.background+0x181818);
     fb_outline_rect(ctx, origin.x, origin.y, width, parent->num_children*MENU_HEIGHT, 2, 0x44000000);
     
     menu_item_t *menu = parent->child;
@@ -229,7 +229,7 @@ bool draw_menu(gpu_point mouse_pos){
         menu_dirty = false;
     }
     draw_ctx *screen_ctx = gpu_get_ctx();
-    fb_fill_rect(screen_ctx, 0, 0, screen_ctx->width, MENU_HEIGHT, system_theme.bg_color+0x111111);
+    fb_fill_rect(screen_ctx, 0, 0, screen_ctx->width, MENU_HEIGHT, system_theme.palette.background+0x111111);
     fb_fill_rect(screen_ctx, 0, MENU_HEIGHT-BORDER_SIZE, screen_ctx->width, BORDER_SIZE, 0x44000000);
     
     menu_item_t *menu = first_menu_item;
@@ -276,7 +276,7 @@ bool draw_menu(gpu_point mouse_pos){
 
     // fb_fill_rect(screen_ctx, screen_ctx->width/2 - 100, 0, screen_ctx->width/2 + 100, MENU_HEIGHT, 0xb4dd13);
 
-    test_widget(screen_ctx, (gpu_rect){{screen_ctx->width/2 - 100, 0}, {200, MENU_HEIGHT}},system_theme.bg_color+0x111111);
+    test_widget(screen_ctx, (gpu_rect){{screen_ctx->width/2 - 100, 0}, {200, MENU_HEIGHT}},system_theme.palette.background+0x111111);
     
     return mouse_in;
 }

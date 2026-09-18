@@ -3,6 +3,7 @@
 #include "types.h"
 #include "graphic_types.h"
 #include "files/system_module.h"
+#include "utils/theme.h"
 
 typedef struct {
     int logo_repeat;
@@ -19,11 +20,9 @@ typedef struct {
     bool play_startup_sound;
 } boot_theme_t;
 
-//TODO: break this up after the colors
+
 typedef struct {
-    u32 bg_color;
-    u32 accent_color;
-    u32 err_color;
+    theme_palette palette;
     u32 cursor_color_deselected;
     u32 cursor_color_selected;
     bool use_window_shadows;

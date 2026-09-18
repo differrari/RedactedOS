@@ -7,6 +7,7 @@
 #include "input_keycodes.h"
 #include "string/slice.h"
 #include "utils/package_info.h"
+#include "utils/theme.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3
@@ -32,8 +33,8 @@ file active_proc;
 chunk_array_t *entries;
 bool process_active = false;
 draw_ctx ctx;
-i32 bg_color;
-i32 text_color;
+
+theme_palette palette;
 
 void *launcher_page = 0;
 
@@ -149,7 +150,7 @@ void draw_desktop(){
 
 void draw_full(){
     if (!await_gpu()) return;
-    fb_clear(&ctx, bg_color+0x050505);
+    fb_clear(&ctx, palette.background+0x050505);
     for (uint32_t column = 0; column < MAX_COLS; column++){
         for (uint32_t row = 0; row < MAX_ROWS; row++){
             draw_tile(column, row);
@@ -163,10 +164,8 @@ bool await_gpu(){
         gpu_size screen_size = {ctx.width, ctx.height};
         tile_size = (gpu_size){screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20};
         ready = true;
-        u32 color_buf[2] = { 0xFF222233, 0xFFFFFFFF };
-        sreadf("/theme", &color_buf, sizeof(uint64_t));
-        bg_color = color_buf[0];
-        text_color = color_buf[1];
+        palette = (theme_palette){ .background = 0xFF222233, .foreground = 0xFFFFFFFF };
+        get_theme(&palette);
     }
     return ready;
 }
@@ -204,14 +203,14 @@ void draw_tile(uint32_t column, uint32_t row){
     DRAW(
         rectangle(&ctx, (rect_ui_config){
         .border_size = (uint8_t)(sel ? 4 : 0),
-        .border_color = bg_color+0x333333,
+        .border_color = palette.background+0x333333,
         .border_padding = 0,
         }, (common_ui_config){
         .point = (int_point){10 + (int32_t)((tile_size.width + 10)*column), 50 + (int32_t)((tile_size.height + 10) *row)},
         .size = {tile_size.width, tile_size.height},
         .horizontal_align = Leading,
         .vertical_align = Top,
-        .background_color = bg_color+0x111111,
+        .background_color = palette.background+0x111111,
         .foreground_color = 0
         }), {
         

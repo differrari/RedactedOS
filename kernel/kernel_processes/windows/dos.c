@@ -52,11 +52,11 @@ static void draw_window(window_frame *frame){
     
     DRAW(rectangle(dos_ctx, (rect_ui_config){
         .border_size = BORDER_SIZE,
-        .border_color = saturate_color(system_theme.bg_color + 0x222222, focused ? 0 : -90),
+        .border_color = saturate_color(system_theme.palette.background + 0x222222, focused ? 0 : -90),
     }, (common_ui_config){
         .point = fixed_point,
         .size = fixed_size,
-        .background_color = saturate_color(system_theme.bg_color + 0x111111, focused ? 0 : -90),
+        .background_color = saturate_color(system_theme.palette.background + 0x111111, focused ? 0 : -90),
         .foreground_color = COLOR_WHITE,
     }), { 
         if (!frame->is_aux){
@@ -66,7 +66,7 @@ static void draw_window(window_frame *frame){
             }, (common_ui_config){
                 .point = RELATIVE(5, BORDER_SIZE+5),
                 .size = { parent.size.width-200, 30 },
-                .foreground_color = system_theme.accent_color,
+                .foreground_color = system_theme.palette.accent,
             });
             bool close_pressed = false;
             button(dos_ctx, (rect_ui_config){}, (common_ui_config){
@@ -168,12 +168,12 @@ void setup_desktop_bg(){
             rescale_image(info.width, info.height, img_info.width, img_info.height, oimg, img);
             release(oimg);
         }
-        system_theme.bg_color = calc_average(img, img_info.width * img_info.height);
-        system_theme.accent_color = text_color_for_base(system_theme.bg_color);
+        system_theme.palette.background = calc_average(img, img_info.width * img_info.height);
+        system_theme.palette.accent = text_color_for_base(system_theme.palette.background);
         release(imgf);
         closef(&fd);
     } else {
-        fb_fill_rect(&img_draw_ctx, 0, 0, img_draw_ctx.width, img_draw_ctx.height, system_theme.bg_color);
+        fb_fill_rect(&img_draw_ctx, 0, 0, img_draw_ctx.width, img_draw_ctx.height, system_theme.palette.background);
     }
 }
 

@@ -16,7 +16,7 @@ int login_screen(){
     char* buf = (char*)zalloc(256);
     int len = 0;
     keypress old_kp;
-    gpu_clear(system_theme.bg_color);
+    gpu_clear(system_theme.palette.background);
     while (1)
     {
         gpu_size screen_size = gpu_get_screen_size();
@@ -63,7 +63,7 @@ int login_screen(){
             .size = { screen_size.width/3, height },
             .horizontal_align = Leading,
             .vertical_align = VerticalCenter,
-            .background_color = system_theme.bg_color+0x111111,
+            .background_color = system_theme.palette.background+0x111111,
             .foreground_color = COLOR_WHITE,
         });
 
