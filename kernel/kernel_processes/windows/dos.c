@@ -33,9 +33,16 @@ static draw_ctx *dos_ctx;
 
 extern float zoom_scale;
 
-static void draw_solid_window(window_frame *frame, draw_ctx *ctx, int_point fixed_point, gpu_size fixed_size, bool fill, bool use_shadows, bool focused){
-    int_point win_point = {fixed_point.x + BORDER_SIZE, fixed_point.y + BORDER_SIZE + TOOLBAR_HEIGHT};
-    gpu_size win_size = {fixed_size.width - (BORDER_SIZE*2), fixed_size.height - TOOLBAR_HEIGHT - (BORDER_SIZE*2)};
+static void draw_window(window_frame *frame){
+    int_point fixed_point = { global_win_offset.x + frame->x - BORDER_SIZE, global_win_offset.y + frame->y + (frame->is_aux ? TOOLBAR_HEIGHT-BORDER_SIZE : -BORDER_SIZE) };
+    gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 + (frame->is_aux ? 0 : TOOLBAR_HEIGHT) };
+    fixed_point.x /= zoom_scale;
+    fixed_point.y /= zoom_scale;
+    fixed_size.width /= zoom_scale;
+    fixed_size.height /= zoom_scale;
+    bool use_shadows = system_theme.use_window_shadows;
+    bool focused = focused_window == frame;
+    gpu_size win_size = {fixed_size.width - (BORDER_SIZE*2), fixed_size.height - (frame->is_aux ? 0 : TOOLBAR_HEIGHT) - (BORDER_SIZE*2)};
 
     if (use_shadows && focused)
         rectangle(dos_ctx, (rect_ui_config){
@@ -43,7 +50,7 @@ static void draw_solid_window(window_frame *frame, draw_ctx *ctx, int_point fixe
             .border_color = 0x44000000,
         }, (common_ui_config){ .point = (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5}, });
     
-    DRAW(rectangle(ctx, (rect_ui_config){
+    DRAW(rectangle(dos_ctx, (rect_ui_config){
         .border_size = BORDER_SIZE,
         .border_color = saturate_color(system_theme.bg_color + 0x222222, focused ? 0 : -90),
     }, (common_ui_config){
@@ -52,45 +59,45 @@ static void draw_solid_window(window_frame *frame, draw_ctx *ctx, int_point fixe
         .background_color = saturate_color(system_theme.bg_color + 0x111111, focused ? 0 : -90),
         .foreground_color = COLOR_WHITE,
     }), { 
-        label(ctx, (text_ui_config){
-            .slice = { frame->info.name, frame->info.name_length},
-            .font_size = 3,
-        }, (common_ui_config){
-            .point = RELATIVE(5, BORDER_SIZE+5),
-            .size = { parent.size.width-200, 30 },
-            .foreground_color = system_theme.accent_color,
-        });
-        bool close_pressed = false;
-        button(ctx, (rect_ui_config){}, (common_ui_config){
-            .point = RELATIVE(parent.size.width - (BORDER_SIZE * 2) - 40 - BORDER_SIZE,BORDER_SIZE),
-            .size = {30, 30},
-            .background_color = 0xFFB40000,
-        }, &close_pressed);
-        if (close_pressed){
-            send_signal(SIG_QUIT, frame->pid);
+        if (!frame->is_aux){
+            label(dos_ctx, (text_ui_config){
+                .slice = { frame->info.name, frame->info.name_length},
+                .font_size = 3,
+            }, (common_ui_config){
+                .point = RELATIVE(5, BORDER_SIZE+5),
+                .size = { parent.size.width-200, 30 },
+                .foreground_color = system_theme.accent_color,
+            });
+            bool close_pressed = false;
+            button(dos_ctx, (rect_ui_config){}, (common_ui_config){
+                .point = RELATIVE(parent.size.width - (BORDER_SIZE * 2) - 40 - BORDER_SIZE,BORDER_SIZE),
+                .size = {30, 30},
+                .background_color = 0xFFB40000,
+            }, &close_pressed);
+            if (close_pressed){
+                send_signal(SIG_QUIT, frame->pid);
+            }
+#ifdef FEATURE_DEBUGGING
+            bool aux_pressed = false; 
+            button(dos_ctx, (rect_ui_config){}, (common_ui_config){
+                .point = RELATIVE(parent.size.width - (BORDER_SIZE * 2) - 80 - BORDER_SIZE,BORDER_SIZE),
+                .size = {30, 30},
+                .background_color = 0xFF40b0bc,
+            }, &aux_pressed);
+            if (aux_pressed){
+                if (!frame->aux){
+                    new_aux_window(frame);
+                    print("New aux window with debugger and with this proc id, %x",frame->aux);
+                }
+            }
+#endif
+            rectangle(dos_ctx, (rect_ui_config){}, (common_ui_config){
+                .point = {fixed_point.x + BORDER_SIZE, fixed_point.y + (frame->is_aux ? 0 : TOOLBAR_HEIGHT)},
+                .size = {win_size.width - (BORDER_SIZE), BORDER_SIZE},
+                .background_color = 0x33000000,
+            });
         }
-        rectangle(ctx, (rect_ui_config){}, (common_ui_config){
-            .point = {fixed_point.x + BORDER_SIZE, fixed_point.y + TOOLBAR_HEIGHT},
-            .size = {win_size.width - (BORDER_SIZE), BORDER_SIZE},
-            .background_color = 0x33000000,
-        });
-        rectangle(ctx, (rect_ui_config){}, (common_ui_config){
-            .point = win_point,
-            .size = win_size,
-            .background_color = 0,
-            .foreground_color = COLOR_WHITE,
-        });
     });
-}
-
-void draw_window(window_frame *frame){
-    int_point fixed_point = { global_win_offset.x + frame->x - BORDER_SIZE, global_win_offset.y + frame->y - BORDER_SIZE };
-    gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 + TOOLBAR_HEIGHT };
-    fixed_point.x /= zoom_scale;
-    fixed_point.y /= zoom_scale;
-    fixed_size.width /= zoom_scale;
-    fixed_size.height /= zoom_scale;
-    draw_solid_window(frame, dos_ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid, system_theme.use_window_shadows, focused_window == frame);
 }
 
 gpu_point click_loc;

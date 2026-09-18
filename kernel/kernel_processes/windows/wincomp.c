@@ -16,6 +16,21 @@ void new_managed_window(){
     current_win_offset.x -= cur->width;
 }
 
+void new_aux_window(window_frame *main){
+    draw_ctx *cur = gpu_get_ctx();
+    if (!cur) return;
+
+    string s = string_format("%i",main->pid);
+
+    const char *args[] = {
+        "debugger.elf",
+        s.data
+    };
+    main->aux = create_window_prog(main->x, main->y+main->height, main->width, 200, "/boot/redos/system/debugger.red", 2, args);
+    main->aux->is_aux = true;
+    string_free(s);
+}
+
 void switch_focus(int8_t x, int8_t y){
     x = min(max(x,-1),1);
     y = min(max(y,-1),1);

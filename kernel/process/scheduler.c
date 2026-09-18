@@ -631,6 +631,7 @@ void block_process(process_t *proc){
 void resume_blocked_process(process_t *proc){
     proc->suspended = false;
     enqueue_ready_thread(&proc->main_thread);
+    //TODO: this only executes the main thread, not other threads
 }
 
 uint16_t process_count(){

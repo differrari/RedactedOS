@@ -35,6 +35,7 @@
 #include "theme/theme.h"
 #include "jobs/job_manager.h"
 #include "stack_manager.h"
+#include "debug.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -574,45 +575,6 @@ syscall_entry syscalls[] = {
     [IN_CASE_OF_JS_CODE] = syscall_in_case_of_js,
 };
 
-bool decode_crash_address_with_info(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
-    if (!debug_line.ptr || !debug_line.size) return false;
-    debug_line_info info = dwarf_decode_lines(debug_line.ptr, debug_line.size, debug_line_str.ptr, debug_line_str.size, address);
-    if (info.address == address){
-        kprintf("[%.16x] %i: %s %i:%i", address, depth, info.file, info.line, info.column);
-        return true;
-    }
-    return false;
-}
-
-bool decode_crash_address(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
-    return decode_crash_address_with_info(depth, address, debug_line, debug_line_str) ||
-    decode_crash_address_with_info(depth, address, get_kernel_proc()->debug_lines, get_kernel_proc()->debug_line_str);
-}
-
-void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_line_str) {
-
-    if (elr){
-        if (!decode_crash_address(0, elr, debug_line, debug_line_str))
-            kprintf("Exception triggered by %llx",(elr));
-    }
-
-    for (uint8_t depth = 1; depth < 10 && fp; depth++) {
-        int tr_ra = 0;
-        uintptr_t ra_pa = mmu_translate(0, fp + 8, &tr_ra);
-        if (tr_ra) return;
-
-        uintptr_t return_address = (*(uintptr_t*)dmap_pa_to_kva((paddr_t)ra_pa));
-        if (!return_address) return;
-        return_address -= 4;//Return address is the next instruction after branching
-        if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
-            kprintf("%i: caller address: %llx", depth, return_address);
-        int tr = 0;
-        uintptr_t fp_pa = mmu_translate(0, fp, &tr);
-        if (tr) return;
-        fp = *(uintptr_t*)dmap_pa_to_kva((paddr_t)fp_pa);
-    }
-}
-
 const char* fault_messages[] = {
     [0b000000] = "Address size fault in TTBR0 or TTBR1",
     [0b000100] = "Translation fault, 0th level",
@@ -645,7 +607,7 @@ void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
     if (!m) m = "Unknown fault";
     kprint(m);
     process_t *proc = get_current_proc();
-    backtrace(sp, elr, proc->debug_lines, proc->debug_line_str);
+    backtrace(proc->mm.ttbr0, sp, elr, proc->debug_lines, proc->debug_line_str);
 
     // for (int i = 0; i < 31; i++)
     //     kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
@@ -737,5 +699,5 @@ void trace(){
     asm volatile ("mrs %0, far_el1" : "=r"(far));
     uint64_t sp;
     asm volatile ("mov %0, sp" : "=r"(sp));
-    backtrace(sp, elr, (sizedptr){0,0}, (sizedptr){0,0});
+    backtrace(0, sp, elr, (sizedptr){0,0}, (sizedptr){0,0});
 }

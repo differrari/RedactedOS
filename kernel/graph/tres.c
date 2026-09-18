@@ -119,20 +119,21 @@ void check_collisions(window_frame *frame){
     }
 }
 
-bool create_window(i32 x, i32 y, u32 width, u32 height){
+window_frame* create_window_prog(i32 x, i32 y, u32 width, u32 height, char *prog, int argc, const char** argv){
     height -= TOOLBAR_HEIGHT;
     irq_flags_t irq = irq_save_disable();
     if (win_ids == UINT16_MAX){ 
         irq_restore(irq);
-        return false; 
+        return 0; 
     }
     if (zoom_scale != 1){ 
         irq_restore(irq);
-        return false; 
+        return 0; 
     }
-    if (width < 0x100 || height < 0x100){ 
+    
+    if (!prog){
         irq_restore(irq);
-        return false; 
+        return 0; 
     }
     
     window_frame *frame = (window_frame*)zalloc(sizeof(window_frame));
@@ -154,10 +155,10 @@ bool create_window(i32 x, i32 y, u32 width, u32 height){
     linked_list_push_front(window_list, PHYS_TO_VIRT_P(frame));
     gpu_create_window(x,y, width, height, &frame->win_ctx);
 
-    process_t *p = execute("/boot/redos/system/launcher.red", 0, 0, 0);
+    process_t *p = execute(prog, argc, argv, 0);
     if (!p){
         irq_restore(irq);
-        return false;
+        return 0;
     }
     p->win_id = frame->win_id;
     frame->pid = p->id;
@@ -165,7 +166,13 @@ bool create_window(i32 x, i32 y, u32 width, u32 height){
     dirty_windows = true;
     irq_restore(irq);
 
-    return true;
+    return frame;
+}
+
+window_frame* create_window(i32 x, i32 y, u32 width, u32 height){
+    if (width < 0x100 || height < 0x100) return 0; 
+
+    return create_window_prog(x, y, width, height, "/boot/redos/system/launcher.red", 0, 0);
 }
 
 void resize_window_proc(process_t *proc, u32 width, u32 height){
