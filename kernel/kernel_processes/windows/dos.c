@@ -45,11 +45,11 @@ static void draw_solid_window(window_frame *frame, draw_ctx *ctx, int_point fixe
     
     DRAW(rectangle(ctx, (rect_ui_config){
         .border_size = BORDER_SIZE,
-        .border_color = saturate(system_theme.bg_color + 0x222222, focused ? 0 : -90),
+        .border_color = saturate_color(system_theme.bg_color + 0x222222, focused ? 0 : -90),
     }, (common_ui_config){
         .point = fixed_point,
         .size = fixed_size,
-        .background_color = saturate(system_theme.bg_color + 0x111111, focused ? 0 : -90),
+        .background_color = saturate_color(system_theme.bg_color + 0x111111, focused ? 0 : -90),
         .foreground_color = COLOR_WHITE,
     }), { 
         label(ctx, (text_ui_config){
@@ -207,6 +207,11 @@ void setup_shortcuts(){
         });
 }
 
+int window_mode_cursors[] = {
+    [window_mode] = cursor_crosshair,
+    [doodle_mode] = cursor_pencil
+};
+
 void check_shortcuts(){
     if (sys_shortcut_triggered_current(sid_g)){
         global_win_offset = (int_point){0,0};
@@ -234,11 +239,7 @@ void check_shortcuts(){
     for (int i = 0; i < mode_count; i++)
         if (sys_shortcut_triggered_current(mode_shortcuts[i])){
             mode = i;
-            switch (mode) {
-            case window_mode: switch_cursor(cursor_crosshair); break;
-            case doodle_mode: switch_cursor(cursor_pencil); break;
-            default: break;
-            }
+            switch_cursor(window_mode_cursors[mode]);
         }
 }
 
@@ -246,6 +247,13 @@ void refresh_desktop_colors(){
     setup_desktop_bg();
     draw_desktop();
     dirty_windows = true;
+}
+
+static inline window_frame* get_current_mouse_window(gpu_point loc){
+    click_loc = loc;
+    clicked_frame = 0;
+    linked_list_for_each(window_list, calc_click);
+    return clicked_frame;
 }
 
 int window_system(){
@@ -299,17 +307,16 @@ int window_system(){
                 case window_mode: {
                     gpu_point end_point = get_mouse_pos();
                     gpu_size size = {abs(end_point.x - start_point.x), abs(end_point.y - start_point.y)};
-                    click_loc = start_point;
-                    clicked_frame = 0;
-                    linked_list_for_each(window_list, calc_click);
-                    window_frame *ini_wf = clicked_frame;
-                    click_loc = end_point;
-                    clicked_frame = 0;
-                    linked_list_for_each(window_list, calc_click);
+                    window_frame *ini_wf = get_current_mouse_window(start_point);
+                    window_frame *curr_win = get_current_mouse_window(end_point);
                     if (size.width < 0x10 && size.height < 0x10){
                         //Small movements are counted as clicks
-                        if (clicked_frame && focused_window != clicked_frame) sys_set_focus(clicked_frame->pid);
-                    } else if (!linked_list_count(window_list) || ((clicked_frame != ini_wf || !clicked_frame) && clicked_frame != focused_window && ini_wf != focused_window)){
+                        if (curr_win && focused_window != curr_win) sys_set_focus(curr_win->pid);
+                    } else if (
+                        !linked_list_count(window_list) || 
+                        !curr_win ||
+                        (curr_win != ini_wf && curr_win != focused_window && ini_wf != focused_window)
+                    ){
                         //Others create a window unless they happen fully within a window or intersect with the focused window, as we consider those to happen inside the window itself
                         int_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
                         disable_interrupt();
@@ -334,14 +341,26 @@ int window_system(){
             }
         }
         disable_interrupt();
+        gpu_point curr_mouse = get_mouse_pos();
+        //TODO: move the window mouse position & button translation here so we can simplify that logic
+        bool in_menu = draw_menu(curr_mouse);
+        if (get_current_mouse_window(curr_mouse) || in_menu){
+            if (switch_cursor(cursor_pointer))
+                dirty_windows = true;
+        } else {
+            if (switch_cursor(window_mode_cursors[mode]))
+                dirty_windows = true;
+        }
         if (mouse_any_button_pressed()) dirty_windows = true;
         if (dirty_windows){
             active = true;
             draw_desktop();
+            draw_menu(curr_mouse);
             linked_list_for_each(window_list, redraw_win);
             dirty_windows = false;
         }
-        draw_menu();
+        gpu_get_ctx()->full_redraw = true;//TODO: This is re-rendering every frame unnecessarily, but without it the cursor gets duplicated outside the window once we enter it
+        render_cursor();
         gpu_flush();
         enable_interrupt();
         if (!active && !dirty_windows && !mouse_button_pressed(LMB) && !mouse_button_pressed(MMB)) msleep(25);

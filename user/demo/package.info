@@ -1,10 +1,10 @@
 # Name
 app_name = "Demo"
-app_author="[REDACTED]"
 
 # Comments are allowed
-unknown values="will be ignored"
+unknown_values="will be ignored"
 
-// C-style comments are allowed too
+        indentation="is ok"
+app_author="[REDACTED]"
 
-        "indentation"=and no quotes
+app_bundle_id="com.redos.demo"

@@ -84,7 +84,6 @@ i32 calculate_distance(i32 ep, i32 es, i32 np, i32 ns, i32 existing){
 }
 
 int_point window_frame_intersect(window_frame *new_frame, window_frame *existing_frame, int_point existing_move){
-    
     i32 horizontal = calculate_distance(existing_frame->x, existing_frame->width, new_frame->x, new_frame->width,existing_move.x);
     i32 vertical = calculate_distance(existing_frame->y, existing_frame->height, new_frame->y, new_frame->height,existing_move.y);
     return (int_point){ abs(horizontal) < abs(vertical) ? horizontal : 0, abs(horizontal) < abs(vertical) ? 0 : vertical };

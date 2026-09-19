@@ -65,7 +65,7 @@ static mixer_line mixin[MIXER_INPUTS];
 
 static void mixer_reset_line(int8_t lineId){
     if (lineId < 0 || lineId >= MIXER_INPUTS) return;
-    memset(mixin + lineId, 0, sizeof(mixer_line));
+    memset(&mixin[lineId], 0, sizeof(mixer_line));
     mixin[lineId].life = AUDIO_OFF;
 }
 
@@ -110,7 +110,7 @@ static inline void buffer_exhausted(mixer_line* line, sizedptr* inbuf){
             break;
         case AUDIO_ONESHOT_FREE:
             inbuf->ptr = NULL;
-            free_sized((void*)line->source.ptr, line->source.size);
+            release((void*)line->source.ptr);
             mixer_reset_line(line - mixin);
             break;
         case AUDIO_LOOP:
@@ -314,5 +314,6 @@ system_module audio_module = (system_module){
     .truncate = 0,
     .getstat = 0,//TODO: stat
     .readdir = 0,
+    .transform = 0,
     .alias_info = {}
 };

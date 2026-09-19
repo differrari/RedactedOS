@@ -1,7 +1,7 @@
 #include "virtio_gpu_pci.hpp"
 #include "pci.h"
 #include "console/kio.h"
-#include "ui/draw/draw.h"
+#include "draw/draw.h"
 #include "std/std.h"
 #include "theme/theme.h"
 #include "memory/page_allocator.h"

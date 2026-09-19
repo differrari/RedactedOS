@@ -36,5 +36,6 @@ system_module disk_module = (system_module){
     .truncate = 0,
     .getstat = 0,
     .readdir = 0,
+    .transform = 0,
     .alias_info = {}
 };

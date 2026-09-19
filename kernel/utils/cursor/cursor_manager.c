@@ -2,9 +2,17 @@
 #include "syscalls/syscalls.h"
 #include "files/helpers.h"
 #include "image/bmp.h"
+#include "draw/draw.h"
+#include "graph/graphics.h"
 
 draw_ctx current_cursor;
 cursor_types current_cursor_type;
+
+gpu_point cursor_offset;
+
+gpu_point cursor_offsets[cursor_count] = {
+    [cursor_crosshair] = {-32,-32}
+};
 
 char *cursor_names[] = {
     [cursor_pointer] = "pointer.bmp",
@@ -23,7 +31,7 @@ void default_cursor(){
 }
 
 bool switch_cursor(cursor_types type){
-    if (current_cursor_type == type) return true;
+    if (current_cursor_type == type) return false;
     if (current_cursor.fb) release(current_cursor.fb);
     image_info info = {};
     char *name = cursor_names[type];
@@ -31,6 +39,7 @@ bool switch_cursor(cursor_types type){
         print("Cursor type %i not found",name);
         return false;
     }
+    cursor_offset = cursor_offsets[type];
     string s = string_format("%s/%s",CURSOR_DIR,name);
     void *pixels = load_bmp(s.data, &info);
     string_free(s);

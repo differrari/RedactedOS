@@ -21,7 +21,7 @@ ifeq ($(ARCH), aarch64-none-elf-)
 COMMON_FLAGS += -mcpu=cortex-a72 -Wno-error=sized-deallocation 
 endif
 
-CFLAGS_BASE   ?= $(COMMON_FLAGS) -std=c99
+CFLAGS_BASE   += $(COMMON_FLAGS) -std=c99
 CXXFLAGS_BASE ?= $(COMMON_FLAGS) -fno-rtti
 LDFLAGS_BASE  ?=
 

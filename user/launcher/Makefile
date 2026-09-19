@@ -1,4 +1,5 @@
 include ../../common.mk
+include ../../feature_flags.mk
 
 CPPFLAGS := -I. -I../../shared
 CFLAGS   := $(CFLAGS_BASE) $(CPPFLAGS)

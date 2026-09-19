@@ -72,13 +72,13 @@ struct thread_t {
     uint64_t spsr; 
     //Not used in context saving
     stack_t stack_info;
-    uptr kstack_top;
+    uptr *special_mm;
     u16 pid;
     u16 tid;
     process_state state;
     u64 wake_at_msec;
-    thread_t *next;
     job_id_t job_id;
+    thread_t *next;
 };
 
 struct process_t {
