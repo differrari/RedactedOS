@@ -1,6 +1,6 @@
 #pragma once
 
-#include "filesystem/modules/module_loader.h"
+#include "filesystem/modules/fs_isolation.h"
 
 #include "clipboard/clipboard.h"
 #include "language_support/language.h"

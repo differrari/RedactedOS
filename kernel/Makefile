@@ -2,6 +2,7 @@
 # toolchain (inherited from top-level)
 
 include ../common.mk
+include ../feature_flags.mk
 
 CPPFLAGS := -I. -I../shared -I../user -DXHCI_CTX_SIZE=$(XHCI_CTX_SIZE)
 

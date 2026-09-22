@@ -125,6 +125,10 @@ mouse_input get_raw_mouse_in(){
     return last_mouse_in;
 }
 
+void render_cursor(){
+    gpu_update_cursor(mouse_loc, false);
+}
+
 void register_mouse_input(mouse_input *rat){
     last_mouse_in = *rat;
     if (!mouse_setup) return;
@@ -134,13 +138,11 @@ void register_mouse_input(mouse_input *rat){
     mouse_loc.y += dy;
     mouse_loc.x = min(max(0, mouse_loc.x), screen_bounds.width);
     mouse_loc.y = min(max(0, mouse_loc.y), screen_bounds.height);
-    gpu_update_cursor(mouse_loc, false);
     register_scroll(rat->scroll);
     uint8_t cursor_state = rat->buttons;
     if (cursor_state != last_cursor_state){
         last_cursor_state = cursor_state;
         gpu_set_cursor_pressed(last_cursor_state);
-        gpu_update_cursor(mouse_loc, true);
     }
 }
 
@@ -177,10 +179,10 @@ void sys_focus_current(){
 #include "console/kio.h"
 #include "theme/theme.h"
 
-void sys_set_focus(int pid){
+bool sys_set_focus(int pid){
     process_t *target = get_proc_by_pid(pid);
-    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) return;
-    if (focused_proc && focused_proc->id == pid) return;
+    if (!target || target->state == STOPPED || !target->id || !target->main_thread.pc || !target->main_thread.sp || (!is_privileged(target) && !target->mm.ttbr0)) return false;
+    if (focused_proc && focused_proc->id == pid) return false;
     if (focused_proc) focused_proc->focused = false;
     focused_proc = target;
     focused_proc->focused = true;
@@ -188,6 +190,7 @@ void sys_set_focus(int pid){
         set_window_focus(focused_proc->win_id);
         refresh_menu();
     } 
+    return true;
 }
 
 void sys_unset_focus(bool close){

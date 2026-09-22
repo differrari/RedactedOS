@@ -1,7 +1,7 @@
 #include "signals.h"
 #include "process/process.h"
 #include "process/scheduler.h"
-
+#include "process/debug.h"
 #include "console/kio.h"
 
 bool register_signal_handler(process_t *proc, signal_types type, signal_handler handler){
@@ -55,6 +55,7 @@ bool handle_signal_default(process_t *proc, signal_info_t *info){
         case SIG_STOP:
             kprintf("Stop %s",proc->name);
             block_process(proc);
+            debug_snapshot(proc, &proc->main_thread);
             return true;
         case SIG_CONT:
             kprintf("Ready proc %s",proc->name);

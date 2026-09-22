@@ -1,12 +1,11 @@
 #include "filesystem.h"
 #include "console/kio.h"
-#include "filesystem/modules/module_loader.h"
-#include "memory/page_allocator.h"
 #include "exceptions/irq.h"
 #include "process/scheduler.h"
 #include "pipe.h"
 #include "files/dir_list.h"
 #include "process/jobs/job_manager.h"
+#include "modules/fs_isolation.h"
 
 uint64_t fd_id = 256;//First byte reserved
 
@@ -57,10 +56,11 @@ FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor
     FS_RESULT result = FS_RESULT_DRIVER_ERROR;
     if (mod->owner != get_kernel_proc()->id){
         job_make(job_open, mod, {
+            //TODO: here, out_mod is in the stack, and we're referencing it through a pointer, which we of course lose as we move the stack the first time.
             job_serialize_str(&app, 0, search_path);
             job_serialize_fd(&app, 1, descriptor, copy_on_end);
         });
-        return j_ret;
+        result = j_ret;
     } else {
         result = mod->open(search_path, descriptor);
     }
@@ -139,6 +139,28 @@ size_t read_file(file *descriptor, char* buf, size_t size){
     descriptor->cursor = gfd.cursor != start_cursor ? gfd.cursor : start_cursor + amount_read;
     descriptor->size = gfd.size;
     return amount_read;
+}
+
+size_t transform_file(module_root *root, const char* path, void* buf, size_t size){
+    const char *search_path = path;
+    if (*search_path == '/') search_path++;
+    if (!*search_path) return FS_RESULT_NOTFOUND;
+    system_module *mod = get_module_from(root, &search_path);
+    if (!mod) return FS_RESULT_NOTFOUND;
+    if (!mod->transform) return FS_RESULT_NOTFOUND;
+    FS_RESULT result = FS_RESULT_DRIVER_ERROR;
+    if (mod->owner != get_kernel_proc()->id){
+        job_make(job_transform, mod, {
+            job_serialize_str(&app, 0, search_path);
+            job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_start | copy_on_end);
+        });
+        return j_ret;
+    } else {
+        result = mod->transform(search_path, buf, size);
+    }
+    if (result != FS_RESULT_SUCCESS) return result;
+    if (!open_files) return FS_RESULT_DRIVER_ERROR;
+    return FS_RESULT_SUCCESS;
 }
 
 void close_file(file *descriptor){
@@ -252,7 +274,7 @@ size_t list_directory_contents(module_root *root, const char *path, void* buf, s
     }
     system_module *mod = get_module_from(root, &search_path);
     if (!mod){
-        kprintf("No module for path %s",search_path);
+        kprintf("[LIST error] No module for path %s",path);
         return 0;
     }
     if (!mod->readdir) return 0;
@@ -276,7 +298,7 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
     }
     system_module *mod = get_module_from(root, &search_path);
     if (!mod){
-        kprintf("No module for path %s",search_path);
+        kprintf("[STAT error] No module for path %s",path);
         return false;
     }
     if (!mod->getstat) return false;

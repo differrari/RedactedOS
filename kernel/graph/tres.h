@@ -1,7 +1,7 @@
 #pragma once
 
 #include "types.h"
-#include "ui/draw/draw.h"
+#include "draw/draw.h"
 #include "data/struct/linked_list.h"
 #include "process/process.h"
 
@@ -9,13 +9,15 @@
 extern "C" {
 #endif
 
-typedef struct {
+typedef struct window_frame {
     uint16_t win_id;
     int32_t x, y;
     uint32_t width, height;
     draw_ctx win_ctx;
     uint16_t pid;
     window_info_t info;
+    struct window_frame *aux;
+    bool is_aux;
 } window_frame;
 
 #define MENU_HEIGHT 50
@@ -24,7 +26,8 @@ typedef struct {
 
 void init_window_manager();
 
-bool create_window(int32_t x, int32_t y, uint32_t width, uint32_t height);
+window_frame* create_window(int32_t x, int32_t y, uint32_t width, uint32_t height);
+window_frame* create_window_prog(i32 x, i32 y, u32 width, u32 height, char *prog, int argc, const char** argv);
 
 gpu_point win_to_screen(window_frame *frame, gpu_point point);
 
@@ -41,7 +44,13 @@ void set_window_focus(uint16_t win_id);
 void unset_window_focus();
 void window_close_process(process_t *proc);
 
-gpu_point convert_mouse_position(gpu_point p);
+bool convert_mouse_position(mouse_data *in);
+
+static inline bool mouse_in_rect(gpu_rect rect, gpu_point click){
+    if (click.x < rect.point.x || click.x >= rect.point.x + (i32)rect.size.width || 
+        click.y < rect.point.y || click.y >= rect.point.y + (i32)rect.size.height) return false;
+    return true;
+}
 
 extern linked_list_t *window_list;
 

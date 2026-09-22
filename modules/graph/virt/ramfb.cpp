@@ -1,6 +1,6 @@
 #include "ramfb.hpp"
 #include "console/kio.h"
-#include "ui/draw/draw.h"
+#include "draw/draw.h"
 #include "std/memory_access.h"
 #include "std/std.h"
 #include "std/memory.h"

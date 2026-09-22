@@ -65,6 +65,14 @@ typedef struct {
     size_t size;
 } stack_t;
 
+typedef union {
+    struct {
+        u32 pid: 16;
+        u32 tid: 16;
+    };
+    u32 addr;
+} proc_addr;
+
 struct thread_t {
     uint64_t regs[31]; // x0–x30
     uintptr_t sp;
@@ -72,13 +80,14 @@ struct thread_t {
     uint64_t spsr; 
     //Not used in context saving
     stack_t stack_info;
-    uptr kstack_top;
+    uptr *special_mm;
     u16 pid;
     u16 tid;
     process_state state;
     u64 wake_at_msec;
-    thread_t *next;
     job_id_t job_id;
+    proc_addr inspector;
+    thread_t *next;
 };
 
 struct process_t {

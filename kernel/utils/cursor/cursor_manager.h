@@ -17,9 +17,11 @@ typedef enum {
     // cursor_hresize,
     // cursor_wresize,
     // cursor_dresize,
+    cursor_count
 } cursor_types;
 
 extern cursor_types current_cursor_type;
+extern gpu_point cursor_offset;
 
 void default_cursor();
 bool switch_cursor(cursor_types);

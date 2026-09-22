@@ -28,7 +28,6 @@
 #include "sysregs.h"
 #include "memory/addr.h"
 #include "graphic_types.h"
-#include "filesystem/modules/module_loader.h"
 #include "alloc/page_index.h"
 #include "process/uaccess.h"
 #include "filesystem/modules/fs_isolation.h"
@@ -36,6 +35,8 @@
 #include "theme/theme.h"
 #include "jobs/job_manager.h"
 #include "stack_manager.h"
+#include "debug.h"
+#include "debug/inspect.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -142,12 +143,12 @@ u64 syscall_read_shortcut(process_t *ctx, thread_t *current_thread){
 }
 
 u64 syscall_get_mouse(process_t *ctx, thread_t *current_thread){
-    //TODO: we're not fully preventing the mouse from being read outside of proc's window (raw & buttons)
     if (sys_get_focused_pid() != ctx->id) return 0;
     SYSCALL_ARG(mouse_data, inp, PROC_X0, true);
     inp->raw = get_raw_mouse_in();
     inp->raw.scroll = sys_read_scroll_current();
-    inp->position = convert_mouse_position(get_mouse_pos());
+    inp->position = get_mouse_pos();
+    convert_mouse_position(inp);
     return 0;
 }
 
@@ -192,7 +193,7 @@ u64 syscall_halt(process_t *ctx, thread_t *current_thread){
 }
 
 u64 syscall_halt_thread(process_t *ctx, thread_t *current_thread){
-    kprintf("Thread has ended with code %i",current_thread->PROC_X0);
+    // kprintf("Thread has ended with code %i",current_thread->PROC_X0);
     syscall_depth--;
     if (current_thread->job_id){
         fulfill_job(current_thread->job_id, current_thread->PROC_X0, current_thread);
@@ -379,6 +380,22 @@ u64 syscall_writef(process_t *ctx, thread_t *current_thread){
     return write_file(descriptor, buf, size);
 }
 
+u64 syscall_transf(process_t *ctx, thread_t *current_thread){
+    SYSCALL_STR(path, PROC_X0, false);
+    size_t size = (size_t)current_thread->PROC_X2;
+    SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, true);
+#ifdef ISOLATEDFS
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
+    if (!s.data || !s.length) return 0;
+    size_t ret = transform_file(&rootfs, s.data, buf, size);
+    string_free(s);
+    return ret;
+#else 
+    return transform_file(kernel_fs(), path, buf, size);
+#endif
+}
+
 u64 syscall_sreadf(process_t *ctx, thread_t *current_thread){
     SYSCALL_STR(path, PROC_X0, false);
     size_t size = (size_t)current_thread->PROC_X2;
@@ -513,6 +530,13 @@ Don't ever do that again\r\n\
     return 0;
 }
 
+u64 syscall_thread_inspect(process_t *ctx, thread_t *current_thread){
+    debug_inspect_types type = current_thread->PROC_X0;
+    u16 pid = current_thread->PROC_X1;
+    u16 tid = current_thread->PROC_X2;
+    return set_inspect(type, ctx, current_thread, pid, tid);
+}
+
 syscall_entry syscalls[] = {
     [PALLOC_CODE] = syscall_palloc,
     [PFREE_CODE] = syscall_pfree,
@@ -549,6 +573,7 @@ syscall_entry syscalls[] = {
     [DIR_LIST_CODE] = syscall_dir_list,
     [FILE_STAT_CODE] = syscall_stat,
     [FILE_TRNC_CODE] = syscall_trunc,
+    [FILE_TRANS_CODE] = syscall_transf,
     [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
     [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
 
@@ -556,46 +581,8 @@ syscall_entry syscalls[] = {
     [SIGNAL_HANDLER_CODE] = syscall_signal_handler,
     
     [IN_CASE_OF_JS_CODE] = syscall_in_case_of_js,
+    [THREAD_INSPECT_CODE] = syscall_thread_inspect,
 };
-
-bool decode_crash_address_with_info(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
-    if (!debug_line.ptr || !debug_line.size) return false;
-    debug_line_info info = dwarf_decode_lines(debug_line.ptr, debug_line.size, debug_line_str.ptr, debug_line_str.size, address);
-    if (info.address == address){
-        kprintf("[%.16x] %i: %s %i:%i", address, depth, info.file, info.line, info.column);
-        return true;
-    }
-    return false;
-}
-
-bool decode_crash_address(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
-    return decode_crash_address_with_info(depth, address, debug_line, debug_line_str) ||
-    decode_crash_address_with_info(depth, address, get_kernel_proc()->debug_lines, get_kernel_proc()->debug_line_str);
-}
-
-void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_line_str) {
-
-    if (elr){
-        if (!decode_crash_address(0, elr, debug_line, debug_line_str))
-            kprintf("Exception triggered by %llx",(elr));
-    }
-
-    for (uint8_t depth = 1; depth < 10 && fp; depth++) {
-        int tr_ra = 0;
-        uintptr_t ra_pa = mmu_translate(0, fp + 8, &tr_ra);
-        if (tr_ra) return;
-
-        uintptr_t return_address = (*(uintptr_t*)dmap_pa_to_kva((paddr_t)ra_pa));
-        if (!return_address) return;
-        return_address -= 4;//Return address is the next instruction after branching
-        if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
-            kprintf("%i: caller address: %llx", depth, return_address);
-        int tr = 0;
-        uintptr_t fp_pa = mmu_translate(0, fp, &tr);
-        if (tr) return;
-        fp = *(uintptr_t*)dmap_pa_to_kva((paddr_t)fp_pa);
-    }
-}
 
 const char* fault_messages[] = {
     [0b000000] = "Address size fault in TTBR0 or TTBR1",
@@ -629,7 +616,7 @@ void coredump(uintptr_t esr, uintptr_t elr, uintptr_t far, uintptr_t sp){
     if (!m) m = "Unknown fault";
     kprint(m);
     process_t *proc = get_current_proc();
-    backtrace(sp, elr, proc->debug_lines, proc->debug_line_str);
+    backtrace(proc->mm.ttbr0, sp, elr, proc->debug_lines, proc->debug_line_str);
 
     // for (int i = 0; i < 31; i++)
     //     kprintf("Reg[%i - %x] = %x",i,&proc->regs[i],proc->regs[i]);
@@ -688,7 +675,7 @@ void sync_el0_handler_c(){
             if (syscall_depth < 3){
                 uint64_t ksp = 0;
                 asm volatile ("mov %0, sp" : "=r"(ksp));
-                kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx. KSP: %llx", esr, elr, far, ksp);
+                kprintf("System has crashed. ESR: %llx. ELR: %llx. FAR: %llx. SP: %llx", esr, elr, far, ksp);
                 coredump(esr, elr, far, ksp);
             }
             handle_exception("UNEXPECTED EXCEPTION", ec);
@@ -702,10 +689,12 @@ void sync_el0_handler_c(){
     }
     syscall_depth--;
     save_syscall_return(result);
-    // print("Return to %i",current_thread->pid);
-    if (current_thread->kstack_top) {
+    if (current_thread->special_mm) {
         //TODO: schedule kstack_top to cleanup, but don't do immediately as we're in it
-        current_thread->kstack_top = 0;
+        current_thread->special_mm = 0;
+        mmu_swap_kttbr(0);
+        mmu_flush_all();
+        mmu_flush_icache();
     }
     process_restore();
 }
@@ -719,5 +708,5 @@ void trace(){
     asm volatile ("mrs %0, far_el1" : "=r"(far));
     uint64_t sp;
     asm volatile ("mov %0, sp" : "=r"(sp));
-    backtrace(sp, elr, (sizedptr){0,0}, (sizedptr){0,0});
+    backtrace(0, sp, elr, (sizedptr){0,0}, (sizedptr){0,0});
 }
