@@ -20,7 +20,7 @@
 #include "networking/internet_layer/ipv6_utils.h"
 
 #include "networking/transport_layer/csocket.h"
-
+//TODO add dns cleaner (dhcpv6, rdnss)
 enum {
     DHCPV6_S_INIT = 0,
     DHCPV6_S_SOLICIT = 1,
@@ -188,6 +188,7 @@ static void reset_lease_state(l3_ipv6_interface_t* v6, dhcpv6_bind_t* b) {
         v6->runtime_opts_v6.lease_start_time = 0;
         v6->runtime_opts_v6.t1 = 0;
         v6->runtime_opts_v6.t2 = 0;
+        memset(v6->runtime_opts_v6.ntp, 0, sizeof(v6->runtime_opts_v6.ntp));
         memset(v6->runtime_opts_v6.pd_prefix, 0, sizeof(v6->runtime_opts_v6.pd_prefix));
         v6->runtime_opts_v6.pd_prefix_len = 0;
         v6->runtime_opts_v6.pd_preferred_lft = 0;
@@ -510,6 +511,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms, bool force_renew, bool 
                 if (!stateless || !success) continue;
                 v6->runtime_opts_v6.server_id_len = p.server_id_len;
                 memcpy(v6->runtime_opts_v6.server_id, p.server_id, p.server_id_len);
+                memset(v6->runtime_opts_v6.ntp, 0, sizeof(v6->runtime_opts_v6.ntp));
                 if (p.has_dns) memcpy(v6->runtime_opts_v6.dns, p.dns, sizeof(v6->runtime_opts_v6.dns));
                 if (p.has_ntp) memcpy(v6->runtime_opts_v6.ntp, p.ntp, sizeof(v6->runtime_opts_v6.ntp));
 
@@ -600,6 +602,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms, bool force_renew, bool 
             v6->runtime_opts_v6.server_id_len = p.server_id_len;
             memcpy(v6->runtime_opts_v6.server_id, p.server_id, p.server_id_len);
 
+            memset(v6->runtime_opts_v6.ntp, 0, sizeof(v6->runtime_opts_v6.ntp));
             if (p.has_dns) memcpy(v6->runtime_opts_v6.dns, p.dns, sizeof(v6->runtime_opts_v6.dns));
             if (p.has_ntp) memcpy(v6->runtime_opts_v6.ntp, p.ntp, sizeof(v6->runtime_opts_v6.ntp));
             if (p.has_pd) {

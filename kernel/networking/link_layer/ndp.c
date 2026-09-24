@@ -1698,6 +1698,8 @@ static int ndp_daemon_entry(int argc, char* argv[]) {
                     continue;
                 }
 
+                bool dad_started_now = 0;
+
                 if (v6->dad_requested && v6->dad_state == IPV6_DAD_NONE) {
                     if (ipv6_is_placeholder_gua(v6->ip)) {
                         v6->dad_requested = 0;
@@ -1709,9 +1711,10 @@ static int ndp_daemon_entry(int argc, char* argv[]) {
                     v6->dad_probes_sent = 1;
                     v6->dad_timer_ms = 0;
                     ndp_send_ns_on(l2->ifindex, v6->ip, (const uint8_t[16]){0}, NULL);
+                    dad_started_now = 1;
                 }
 
-                if (v6->dad_state == IPV6_DAD_IN_PROGRESS && elapsed_ms) {
+                if (v6->dad_state == IPV6_DAD_IN_PROGRESS && elapsed_ms && !dad_started_now) {
                     if (UINT32_MAX - v6->dad_timer_ms < elapsed_ms) v6->dad_timer_ms = UINT32_MAX;
                     else v6->dad_timer_ms += elapsed_ms;
 
