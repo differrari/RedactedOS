@@ -34,6 +34,12 @@ static inline void net_ep_split(const net_l4_endpoint* ep, char* ip, int iplen, 
     }
 }
 
+static inline bool net_ep_equal(const net_l4_endpoint* a, const net_l4_endpoint* b) {
+    if (!a || !b || a->ver != b->ver || a->port != b->port) return false;
+    if (a->ver != IP_VER4 && a->ver != IP_VER6) return false;
+    return memcmp(a->ip, b->ip, a->ver == IP_VER6 ? 16 : 4) == 0;
+}
+
 static inline void make_ep(const void *ip, uint16_t port, ip_version_t ver, net_l4_endpoint* ep) {
     if (!ep) return;
     memset(ep, 0, sizeof(*ep));

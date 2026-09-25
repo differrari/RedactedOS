@@ -44,7 +44,7 @@ static dns_result_t perform_dns_query_once(socket_handle_t sock, const net_l4_en
         uint8_t response_buffer[512];
         net_l4_endpoint source;
         int64_t received = receive_from_socket(sock, response_buffer, sizeof(response_buffer), &source);
-        if (received > 0 && source.port == 53 && source.ver == dst.ver) {
+        if (received > 0 && net_ep_equal(&source, &dst)) {
             uint32_t received_len = received;
             dns_record_t parsed[DNS_QUERY_RECORDS];
             uint32_t parsed_count = 0;

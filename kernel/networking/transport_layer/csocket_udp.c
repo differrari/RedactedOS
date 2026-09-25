@@ -259,7 +259,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, 
         irq_restore(irq);
         return 0;
     }
-    if (s->connected && (s->remoteEP.ver != ipver || s->remoteEP.port != src_port || (ipver == IP_VER4 && memcmp(s->remoteEP.ip, src_ip_addr, 4) != 0) || (ipver == IP_VER6 && ipv6_cmp(s->remoteEP.ip, src_ip_addr) != 0))) {
+    if (s->connected && !net_ep_equal(&s->remoteEP, &entry.src)) {
         irq_restore(irq);
         return 0;
     }
@@ -270,7 +270,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, 
         if (!index) index = UDP_RECENT_TX_COUNT;
         udp_recent_tx_t* tx = &s->recent_tx[--index];
         if (!tx->remote.port || tx->remote.ver != ipver || tx->remote.port != src_port) continue;
-        if (tx->match_any_source || (ipver == IP_VER4 && memcmp(tx->remote.ip, src_ip_addr, 4) == 0) || (ipver == IP_VER6 && ipv6_cmp(tx->remote.ip, src_ip_addr) == 0)) {
+        if (tx->match_any_source || net_ep_equal(&tx->remote, &entry.src)) {
             recent_tx_match = true;
             recent_tx_time_ms = tx->sent_at_ms;
             break;
@@ -312,7 +312,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, 
         return 0;
     }
 
-    if (s->connected && (s->remoteEP.ver != ipver || s->remoteEP.port != src_port || (ipver == IP_VER4 && memcmp(s->remoteEP.ip, src_ip_addr, 4) != 0) || (ipver == IP_VER6 && ipv6_cmp(s->remoteEP.ip, src_ip_addr) != 0))) {
+    if (s->connected && !net_ep_equal(&s->remoteEP, &entry.src)) {
         irq_restore(irq);
         return 0;
     }
@@ -481,11 +481,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
     if (d.ver != IP_VER4 && d.ver != IP_VER6) return SOCK_ERR_INVAL;
     uint64_t max_payload = d.ver == IP_VER4 ? UINT16_MAX - sizeof(ipv4_hdr_t) - sizeof(udp_hdr_t) : UINT16_MAX - sizeof(udp_hdr_t);
     if (len > max_payload) return SOCK_ERR_INVAL;
-    if (s->connected && explicit_dst) {
-        if (d.ver != s->remoteEP.ver || d.port != s->remoteEP.port) return SOCK_ERR_STATE;
-        if (d.ver == IP_VER4 && memcmp(d.ip, s->remoteEP.ip, 4) != 0) return SOCK_ERR_STATE;
-        if (d.ver == IP_VER6 && ipv6_cmp(d.ip, s->remoteEP.ip) != 0) return SOCK_ERR_STATE;
-    }
+    if (s->connected && explicit_dst && !net_ep_equal(&d, &s->remoteEP)) return SOCK_ERR_STATE;
     if (!firewall_allows(PROTO_UDP, NET_CTRL_FIREWALL_OUT, &d, s->localPort, false)) return SOCK_ERR_PERM;
 
     sizedptr pay;

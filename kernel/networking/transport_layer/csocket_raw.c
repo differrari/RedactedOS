@@ -519,11 +519,7 @@ bool socket_raw_input_v4(protocol_t protocol, uint8_t ifindex, uint32_t src, uin
     for (int i = 0; i < RAW_SOCKET_MAX; i++) {
         raw_socket_t* s = g_raw_sockets[i];
         if (!s || socket_core_protocol(s->ownerSocket) != protocol || socket_core_is_closing(s->ownerSocket)) continue;
-        if (s->connected) {
-            uint32_t remote = 0;
-            memcpy(&remote, s->remote_ep.ip, sizeof(remote));
-            if (remote != src) continue;
-        }
+        if (s->connected && !net_ep_equal(&s->remote_ep, &src_ep)) continue;
         if (s->bound && s->bind_spec.kind == BIND_L2 && s->bind_spec.ifindex != ifindex) continue;
         if (s->bound && s->bind_spec.kind == BIND_L3) {
             l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(s->bind_spec.l3_id);
@@ -574,7 +570,7 @@ bool socket_raw_input_v6(uint8_t ifindex, const uint8_t src[16], const uint8_t d
     for (int i = 0; i < RAW_SOCKET_MAX; i++) {
         raw_socket_t* s = g_raw_sockets[i];
         if (!s || socket_core_protocol(s->ownerSocket) != PROTO_ICMPV6 || socket_core_is_closing(s->ownerSocket)) continue;
-        if (s->connected && ipv6_cmp(s->remote_ep.ip, src) != 0) continue;
+        if (s->connected && !net_ep_equal(&s->remote_ep, &src_ep)) continue;
         if (s->bound && s->bind_spec.kind == BIND_L2 && s->bind_spec.ifindex != ifindex) continue;
         if (s->bound && s->bind_spec.kind == BIND_L3) {
             l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(s->bind_spec.l3_id);

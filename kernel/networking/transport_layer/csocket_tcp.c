@@ -523,7 +523,7 @@ int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst) {
     if (dst->ver != IP_VER4 && dst->ver != IP_VER6) return SOCK_ERR_INVAL;
     if (!firewall_allows(PROTO_TCP, NET_CTRL_FIREWALL_OUT, dst, s->localPort, false)) return SOCK_ERR_PERM;
     if (s->flow.flow_generation) {
-        if (s->remoteEP.port && (s->remoteEP.ver != dst->ver || s->remoteEP.port != dst->port || memcmp(s->remoteEP.ip, dst->ip, dst->ver == IP_VER6 ? 16 : 4) != 0)) return SOCK_ERR_STATE;
+        if (s->remoteEP.port && !net_ep_equal(&s->remoteEP, dst)) return SOCK_ERR_STATE;
     } else {
         if (s->connected) return SOCK_ERR_STATE;
 

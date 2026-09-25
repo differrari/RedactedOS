@@ -169,8 +169,7 @@ static int addr_del(int argc, char* argv[]) {
     NetCtrlAddrInfo* addrs = NET_CTRL_MSG_DATA(msg);
     l3_id_t l3_id = 0;
     for (uint32_t i = 0; i < count; i++) {
-        uint32_t bytes = ep.ver == IP_VER4 ? 4 : 16;
-        if (addrs[i].prefix.address.ver == ep.ver && memcmp(addrs[i].prefix.address.ip, ep.ip, bytes) == 0) {
+        if (net_ep_equal(&addrs[i].prefix.address, &ep)) {
             l3_id = addrs[i].prefix.l3_id;
             break;
         }
