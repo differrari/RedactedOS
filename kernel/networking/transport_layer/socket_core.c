@@ -1,0 +1,399 @@
+#include "socket_core.h"
+#include "socket_bind.h"
+#include "exceptions/irq.h"
+#include "std/memory.h"
+#include "alloc/allocate.h"
+
+struct ksocket {
+    uint32_t id;
+    uint64_t generation;
+    uint16_t pid;
+    protocol_t protocol;
+    SocketSpecialKind special_kind;
+    socket_impl_t impl;
+    socket_impl_destroy_fn destroy;
+    socket_impl_close_fn close;
+    socket_impl_setopt_fn setopt;
+    socket_impl_getopt_fn getopt;
+    int32_t refs;
+    bool closing;
+    bool visible;
+};
+
+static ksocket_t* sockets[SOCKET_MAX_OPEN];
+static uint64_t generations[SOCKET_MAX_OPEN];
+
+bool socket_core_alloc(protocol_t protocol, SocketSpecialKind special_kind, uint16_t pid, ksocket_t** out_socket) {
+    if (!out_socket) return false;
+
+    ksocket_t* socket = (ksocket_t*)zalloc(sizeof(ksocket_t));
+    if (!socket) return false;
+
+    irq_flags_t irq = irq_save_disable(); //TODO lock
+
+    uint32_t id = SOCKET_MAX_OPEN;
+    for (uint32_t i = 1; i < SOCKET_MAX_OPEN; ++i) {
+        if (!sockets[i]) {
+            id = i;
+            break;
+        }
+    }
+
+    if (id == SOCKET_MAX_OPEN) {
+        irq_restore(irq);
+        release(socket);
+        return false;
+    }
+
+    uint64_t gen = generations[id] + 1;
+    if (!gen) gen = 1;
+    generations[id] = gen;
+
+    socket->id = id;
+    socket->generation = gen;
+    socket->pid = pid;
+    socket->protocol = protocol;
+    socket->special_kind = special_kind;
+    socket->refs = 1;
+    sockets[id] = socket;
+
+    irq_restore(irq);
+
+    *out_socket = socket;
+    return true;
+}
+
+bool socket_core_attach_impl(ksocket_t* socket, socket_impl_t impl, socket_impl_destroy_fn destroy, socket_impl_close_fn close, socket_impl_setopt_fn setopt, socket_impl_getopt_fn getopt) {
+    if (!socket || !impl || !destroy || !close) return false;
+    irq_flags_t irq = irq_save_disable(); //TODO lock
+    if (socket->closing || socket->visible || socket->impl) {
+        irq_restore(irq);
+        return false;
+    }
+
+    socket->impl = impl;
+    socket->destroy = destroy;
+    socket->close = close;
+    socket->setopt = setopt;
+    socket->getopt = getopt;
+    socket->visible = true;
+    irq_restore(irq);
+
+    return true;
+}
+
+ksocket_t* socket_core_get(socket_handle_t handle, uint16_t pid) {
+    if (!handle) return NULL;
+
+    uint64_t index_mask = ((uint64_t)1 << SOCKET_HANDLE_INDEX_BITS) - 1;
+    uint32_t id = (uint32_t)(handle & index_mask);
+    uint64_t generation = handle >> SOCKET_HANDLE_INDEX_BITS;
+    if (!id || id >= SOCKET_MAX_OPEN || !generation) return NULL;
+
+    irq_flags_t irq = irq_save_disable(); //TODO lock
+    ksocket_t* socket = sockets[id];
+    if (!socket || !socket->visible || socket->closing || socket->generation != generation || (pid && socket->pid != pid)) {
+        irq_restore(irq);
+        return NULL;
+    }
+    socket->refs++;
+    irq_restore(irq);
+    return socket;
+}
+
+void socket_core_ref(ksocket_t* socket) {
+    if (!socket) return;
+    irq_flags_t irq = irq_save_disable(); //TODO lock
+    socket->refs++;
+    irq_restore(irq);
+}
+
+void socket_core_put(ksocket_t* socket) {
+    if (!socket) return;
+
+    bool do_destroy = false;
+    irq_flags_t irq = irq_save_disable(); 
+    if (socket->refs > 0) socket->refs--;
+    if (socket->refs == 0 && socket->closing) do_destroy = true;
+    irq_restore(irq);
+
+    if (!do_destroy) return;
+
+    socket_impl_t impl = socket->impl;
+    socket_impl_destroy_fn destroy = socket->destroy;
+    socket->impl = NULL;
+    socket->destroy = NULL;
+    socket->close = NULL;
+    socket->setopt = NULL;
+    socket->getopt = NULL;
+
+    if (destroy && impl) destroy(impl);
+    release(socket);
+}
+
+int32_t socket_core_close_socket(ksocket_t* socket) {
+    if (!socket) return SOCK_ERR_INVAL;
+
+    irq_flags_t irq = irq_save_disable(); 
+    if (socket->closing) {
+        irq_restore(irq);
+        return SOCK_OK;
+    }
+    socket->closing = true;
+    irq_restore(irq);
+
+    int32_t ret = SOCK_OK;
+    if (socket->close && socket->impl) ret = socket->close(socket->impl);
+
+    if (ret == SOCK_ERR_WOULDBLOCK) {
+        irq = irq_save_disable();
+        socket->closing = false;
+        irq_restore(irq);
+        return ret;
+    }
+
+    irq = irq_save_disable();
+    socket->visible = false;
+    if (socket->id < SOCKET_MAX_OPEN && sockets[socket->id] == socket) sockets[socket->id] = NULL;
+    irq_restore(irq);
+
+    socket_core_put(socket);
+    return ret;
+}
+
+void socket_core_close_process(uint16_t pid) {
+    if (!pid) return;
+
+    while (true) {
+        ksocket_t* socket = NULL;
+        irq_flags_t irq = irq_save_disable();
+        for (uint32_t i = 1; i < SOCKET_MAX_OPEN; i++) {
+            if (!sockets[i] || sockets[i]->pid != pid) continue;
+            socket = sockets[i];
+            socket->refs++;
+            break;
+        }
+        irq_restore(irq);
+
+        if (!socket) break;
+
+        uint32_t nonblock = 1;
+        socket_core_set_option(socket, SOCK_OPT_NONBLOCK, &nonblock, sizeof(nonblock));
+
+        int32_t rc = socket_core_close_socket(socket);
+        if (rc == SOCK_ERR_WOULDBLOCK) {
+            SocketLinger linger = {0};
+            if (socket_core_set_option(socket, SOCK_OPT_LINGER, &linger, sizeof(linger)) == SOCK_OK) rc = socket_core_close_socket(socket);
+        }
+        socket_core_put(socket);
+        if (rc == SOCK_ERR_WOULDBLOCK) break;
+    }
+}
+
+int32_t socket_core_close_handle(socket_handle_t handle, uint16_t pid) {
+    ksocket_t* socket = socket_core_get(handle, pid);
+    if (!socket) return SOCK_ERR_INVAL;
+    int32_t ret = socket_core_close_socket(socket);
+    socket_core_put(socket);
+    return ret;
+}
+
+int32_t socket_core_set_option(ksocket_t* socket, int32_t opt, const void* value, uint32_t len) {
+    if (!socket) return SOCK_ERR_INVAL;
+    if (!value && len) return SOCK_ERR_INVAL;
+    if (!socket->setopt || !socket->impl) return SOCK_ERR_PROTO;
+    return socket->setopt(socket->impl, opt, value, len);
+}
+
+int32_t socket_core_get_option(ksocket_t* socket, int32_t opt, void* value, uint32_t* len) {
+    if (!socket || !len) return SOCK_ERR_INVAL;
+    if (!socket->getopt || !socket->impl) return SOCK_ERR_PROTO;
+
+    uint32_t v = 0;
+    if (opt == SOCK_GET_PROTOCOL) v = socket->protocol;
+    else if (opt == SOCK_GET_OWNER_PID) v = socket->pid;
+    else if (opt == SOCK_GET_SPECIAL_KIND) v = socket->special_kind;
+    else return socket->getopt(socket->impl, opt, value, len);
+
+    return socket_common_get_value(&v, sizeof(v), value, len);
+}
+
+int32_t socket_common_get_value(const void* data, uint32_t data_len, void* value, uint32_t* len) {
+    if ((!data && data_len) || !len) return SOCK_ERR_INVAL;
+    if (!value) {
+        *len = data_len;
+        return SOCK_OK;
+    }
+    if (*len < data_len) return SOCK_ERR_INVAL;
+    if (data_len) memcpy(value, data, data_len);
+    *len = data_len;
+    return SOCK_OK;
+}
+
+int32_t socket_common_options_set(SocketOptions* opts, int32_t opt, const void* value, uint32_t len) {
+    if (!opts) return SOCK_ERR_INVAL;
+
+    uint32_t v = 1;
+    if (value) {
+        if (len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
+        memcpy(&v, value, sizeof(v));
+    } else if (len || (opt != SOCK_OPT_DONTFRAG && opt != SOCK_OPT_BROADCAST_ALLOWED)) return SOCK_ERR_INVAL;
+
+    int32_t rc = SOCK_OK;
+    irq_flags_t irq = irq_save_disable();
+    switch ((uint32_t)opt) {
+        case SOCK_OPT_RECV_TIMEOUT:
+            opts->recv_timeout_ms = v;
+            if (v) opts->flags |= SOCK_OPT_RECV_TIMEOUT;
+            else opts->flags &= ~SOCK_OPT_RECV_TIMEOUT;
+            break;
+        case SOCK_OPT_SEND_TIMEOUT:
+            opts->send_timeout_ms = v;
+            if (v) opts->flags |= SOCK_OPT_SEND_TIMEOUT;
+            else opts->flags &= ~SOCK_OPT_SEND_TIMEOUT;
+            break;
+        case SOCK_OPT_BUF_SIZE:
+            if (!v) rc = SOCK_ERR_INVAL;
+            else {
+                opts->buf_size = v;
+                opts->flags |= SOCK_OPT_BUF_SIZE;
+            }
+            break;
+        case SOCK_OPT_DEBUG:
+            if (v > SOCK_DBG_ALL) rc = SOCK_ERR_INVAL;
+            else {
+                opts->debug_level = (SockDebugLevel)v;
+                if (v) opts->flags |= SOCK_OPT_DEBUG;
+                else opts->flags &= ~SOCK_OPT_DEBUG;
+            }
+            break;
+        case SOCK_OPT_DONTFRAG:
+            if (v) opts->flags |= SOCK_OPT_DONTFRAG;
+            else opts->flags &= ~SOCK_OPT_DONTFRAG;
+            break;
+        case SOCK_OPT_BROADCAST_ALLOWED:
+            if (v) opts->flags |= SOCK_OPT_BROADCAST_ALLOWED;
+            else opts->flags &= ~SOCK_OPT_BROADCAST_ALLOWED;
+            break;
+        case SOCK_OPT_NONBLOCK:
+            if (v) opts->flags |= SOCK_OPT_NONBLOCK;
+            else opts->flags &= ~SOCK_OPT_NONBLOCK;
+            break;
+
+        case SOCK_OPT_DONTROUTE:
+            if (v) opts->flags |= SOCK_OPT_DONTROUTE;
+            else opts->flags &= ~SOCK_OPT_DONTROUTE;
+            break;
+        case SOCK_OPT_REUSEADDR:
+            if (v) opts->flags |= SOCK_OPT_REUSEADDR;
+            else opts->flags &= ~SOCK_OPT_REUSEADDR;
+            break;
+        case SOCK_OPT_REUSEPORT:
+            if (v) opts->flags |= SOCK_OPT_REUSEPORT;
+            else opts->flags &= ~SOCK_OPT_REUSEPORT;
+            break;
+        case SOCK_OPT_TCP_SACK:
+            if (v) opts->flags |= SOCK_OPT_TCP_SACK;
+            else opts->flags &= ~(SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK);
+            break;
+        case SOCK_OPT_TCP_DSACK:
+            if (v) opts->flags |= SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK;
+            else opts->flags &= ~SOCK_OPT_TCP_DSACK;
+            break;
+        case SOCK_OPT_TTL:
+            if (v > 255) rc = SOCK_ERR_INVAL;
+            else {
+                opts->ttl = (uint8_t)v;
+                if (v) opts->flags |= SOCK_OPT_TTL;
+                else opts->flags &= ~SOCK_OPT_TTL;
+            }
+            break;
+        default:
+            rc = SOCK_ERR_INVAL;
+            break;
+    }
+    irq_restore(irq);
+    return rc;
+}
+
+int32_t socket_common_options_get(const SocketOptions* opts, int32_t opt, void* value, uint32_t* len) {
+    if (!opts || !len) return SOCK_ERR_INVAL;
+
+    uint32_t v = 0;
+    int32_t rc = SOCK_OK;
+    irq_flags_t irq = irq_save_disable();
+    switch ((uint32_t)opt) {
+        case SOCK_GET_OPT_RECV_TIMEOUT:
+            v = opts->recv_timeout_ms;
+            break;
+        case SOCK_GET_OPT_SEND_TIMEOUT:
+            v = opts->send_timeout_ms;
+            break;
+        case SOCK_GET_OPT_BUF_SIZE:
+            v = opts->buf_size;
+            break;
+        case SOCK_GET_OPT_DEBUG:
+            v = opts->debug_level;
+            break;
+        case SOCK_GET_OPT_DONTFRAG:
+            v = (opts->flags & SOCK_OPT_DONTFRAG) != 0;
+            break;
+        case SOCK_GET_OPT_BROADCAST_ALLOWED:
+            v = (opts->flags & SOCK_OPT_BROADCAST_ALLOWED) != 0;
+            break;
+        case SOCK_GET_OPT_NONBLOCK:
+            v = (opts->flags & SOCK_OPT_NONBLOCK) != 0;
+            break;
+        case SOCK_GET_OPT_DONTROUTE:
+            v = (opts->flags & SOCK_OPT_DONTROUTE) != 0;
+            break;
+        case SOCK_GET_OPT_REUSEADDR:
+            v = (opts->flags & SOCK_OPT_REUSEADDR) != 0;
+            break;
+        case SOCK_GET_OPT_REUSEPORT:
+            v = (opts->flags & SOCK_OPT_REUSEPORT) != 0;
+            break;
+        case SOCK_GET_OPT_TCP_SACK:
+            v = (opts->flags & SOCK_OPT_TCP_SACK) != 0;
+            break;
+        case SOCK_GET_OPT_TCP_DSACK:
+            v = (opts->flags & SOCK_OPT_TCP_DSACK) != 0;
+            break;
+        case SOCK_GET_OPT_TTL:
+            v = opts->ttl;
+            break;
+        default:
+            rc = SOCK_ERR_INVAL;
+            break;
+    }
+    irq_restore(irq);
+
+    if (rc != SOCK_OK) return rc;
+    return socket_common_get_value(&v, sizeof(v), value, len);
+}
+
+socket_impl_t socket_core_impl(ksocket_t* socket) {
+    return socket ? socket->impl : NULL;
+}
+
+protocol_t socket_core_protocol(const ksocket_t* socket) {
+    return socket ? socket->protocol : PROTO_NONE;
+}
+
+SocketSpecialKind socket_core_special_kind(const ksocket_t* socket) {
+    return socket ? socket->special_kind : SOCKET_SPECIAL_NONE;
+}
+
+uint16_t socket_core_pid(const ksocket_t* socket) {
+    return socket ? socket->pid : 0;
+}
+
+
+bool socket_core_is_closing(const ksocket_t* socket) {
+    return !socket || socket->closing;
+}
+
+socket_handle_t socket_core_export_handle(const ksocket_t* socket) {
+    if (!socket || !socket->id || !socket->generation) return 0;
+    return (socket->generation << SOCKET_HANDLE_INDEX_BITS) | socket->id;
+}

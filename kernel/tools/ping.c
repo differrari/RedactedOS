@@ -1,21 +1,23 @@
 #include "ping.h"
-#include "networking/internet_layer/icmp.h"
-#include "net/network_types.h"
+#include "icmp_probe.h"
 #include "std/string.h"
 #include "std/memory.h"
 #include "types.h"
 #include "console/kio.h"
-#include "filesystem/filesystem.h"
 #include "process/scheduler.h"
 #include "syscalls/syscalls.h"
-#include "networking/internet_layer/ipv4.h"
-#include "networking/internet_layer/ipv4_route.h"
 #include "networking/application_layer/dns/dns.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
-#include "networking/internet_layer/icmpv6.h"
-//TODO add a print variant that does not append a newline automatically in serial
-//std printf behavior is useful here since output requires explicit \n
+#include "networking/transport_layer/trans_utils.h"
+
+#define PING_MAX_REPLIES 16
+
+typedef struct {
+    const char *host;
+    SockBindSpec bind;
+    bool bind_set;
+} ping_addressing_t;
 
 typedef struct {
     ip_version_t ver;
@@ -23,10 +25,25 @@ typedef struct {
     uint32_t timeout_ms;
     uint32_t interval_ms;
     uint32_t ttl;
-    uint32_t src_ip;
-    bool src_set;
-    const char *host;
+    ping_addressing_t addr;
 } ping_opts_t;
+
+static void print_help(void) {
+    print("Usage:\t ping [OPTION] HOST");
+    print("send echo requests\n");
+    print("Args:");
+    print("\t HOST\t host|ip");
+    print("\t SOURCE\t IP|l2:ID|l3:ID\n");
+    print("Options:");
+    print("\t -4\t ipv4");
+    print("\t -6\t ipv6");
+    print("\t -n COUNT\t request count (4)");
+    print("\t -w TIMEOUT\t timeout ms (1000)");
+    print("\t -i INTERVAL\t interval ms (1000)");
+    print("\t -t TTL\t ttl|hop limit (64)");
+    print("\t -s SOURCE\t source");
+    print("\t --help\t help");
+}
 
 static bool parse_args(int argc, char *argv[], ping_opts_t *o) {
     o->ver = IP_VER4;
@@ -34,9 +51,7 @@ static bool parse_args(int argc, char *argv[], ping_opts_t *o) {
     o->timeout_ms = 1000;
     o->interval_ms = 1000;
     o->ttl = 64;
-    o->src_ip = 0;
-    o->src_set = false;
-    o->host = NULL;
+    memset(&o->addr, 0, sizeof(o->addr));
 
     for (int i = 1; i < argc; ++i) {
         const char *a = argv[i];
@@ -56,203 +71,205 @@ static bool parse_args(int argc, char *argv[], ping_opts_t *o) {
                 if (++i >= argc) return false;
                 if (!parse_uint32_dec(argv[i], &o->ttl)) return false;
             } else if (strcmp_case(a, "-s",true) == 0) {
-                if (++i >= argc) return false;
-                uint32_t src = 0;
-                if (!ipv4_parse(argv[i], &src)) return false;
-                o->src_ip = src;
-                o->src_set = true;
-            }
-            else return false;
+                if (++i >= argc || o->addr.bind_set) return false;
+                if (!icmp_probe_parse_bind(argv[i], &o->addr.bind)) return false;
+                o->addr.bind_set = true;
+            } else return false;
         } else {
-            if (o->host) return false;
-            o->host = a;
+            if (o->addr.host) return false;
+            o->addr.host = a;
         }
     }
 
-    if (!o->host) return false;
+    if (!o->addr.host) return false;
     return true;
 }
 
 static const char *status_to_msg(uint8_t st) {
     switch (st) {
-    case PING_TIMEOUT: return "Request timed out.";
-    case PING_NET_UNREACH: return "Destination Net Unreachable.";
-    case PING_HOST_UNREACH: return "Destination Host Unreachable.";
-    case PING_PROTO_UNREACH: return "Protocol Unreachable.";
-    case PING_PORT_UNREACH: return "Port Unreachable.";
-    case PING_FRAG_NEEDED: return "Fragmentation Needed.";
-    case PING_SRC_ROUTE_FAILED: return "Source Route Failed.";
-    case PING_ADMIN_PROHIBITED: return "Administratively Prohibited.";
-    case PING_TTL_EXPIRED: return "Time To Live exceeded.";
-    case PING_PARAM_PROBLEM: return "Parameter Problem.";
-    case PING_REDIRECT: return "Redirect received.";
-    default: return "No reply (unknown error).";
+        case ICMP_PROBE_TIMEOUT: return "Request timed out.";
+        case ICMP_PROBE_NET_UNREACH: return "Destination Net Unreachable.";
+        case ICMP_PROBE_HOST_UNREACH: return "Destination Host Unreachable.";
+        case ICMP_PROBE_PROTO_UNREACH: return "Protocol Unreachable.";
+        case ICMP_PROBE_PORT_UNREACH: return "Port Unreachable.";
+        case ICMP_PROBE_FRAG_NEEDED: return "Fragmentation Needed.";
+        case ICMP_PROBE_SRC_ROUTE_FAILED: return "Source Route Failed.";
+        case ICMP_PROBE_ADMIN_PROHIBITED: return "Administratively Prohibited.";
+        case ICMP_PROBE_TTL_EXPIRED: return "Time To Live exceeded.";
+        case ICMP_PROBE_PARAM_PROBLEM: return "Parameter Problem.";
+        case ICMP_PROBE_REDIRECT: return "Redirect received.";
+        default: return "No reply (unknown error).";
     }
 }
 
 static int ping_v4(const ping_opts_t *o) {
-    const char *host = o->host;
+    const char *host = o->addr.host;
 
-    uint32_t dst_ip_be = 0;
-    bool is_lit = ipv4_parse(host, &dst_ip_be);
+    uint32_t dst_ip = 0;
+    bool is_lit = ipv4_parse(host, &dst_ip);
     if (!is_lit) {
         uint32_t r = 0;
         dns_result_t dr = dns_resolve_a(host, &r, DNS_USE_BOTH, o->timeout_ms);
         if (dr != DNS_OK) {
-            print("ping: dns lookup failed (%d) for '%s'\n", (int)dr, host);
+            print("ping: dns lookup failed (%d) for '%s'", (int)dr, host);
             return 2;
         }
-        dst_ip_be = r;
+        dst_ip = r;
+    }
+
+    if (ipv4_is_limited_broadcast(dst_ip) && (!o->addr.bind_set || o->addr.bind.kind == BIND_L2)) {
+        print("ping: limited broadcast requires -s local_ipv4 or l3:id");
+        return 2;
     }
 
     char ipstr[16];
-    ipv4_to_string(dst_ip_be, ipstr);
-
-    print("PING %s (%s) with 32 bytes of data:\n", host, ipstr);
+    ipv4_to_string(dst_ip, ipstr);
+    print("PING %s (%s) with 32 bytes of data:", host, ipstr);
 
     uint32_t sent = 0, received = 0, min_ms = UINT32_MAX, max_ms = 0;
     uint64_t sum_ms = 0;
     uint16_t id = (uint16_t)(get_current_proc_pid() & 0xFFFF);
     uint16_t seq_base = (uint16_t)(get_time() & 0xFFFF);
-
-    ipv4_tx_opts_t txo = {0};
-    const ipv4_tx_opts_t *txop = NULL;
-    if (o->src_set) {
-        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(o->src_ip);
-        if (!l3) {
-            print("ping: invalid source (no local ip match)\n");
-            return 2;
-        }
-        txo.index = (uint8_t)l3->l3_id;
-        txo.scope = IP_TX_BOUND_L3;
-        txop = &txo;
-    }
+    const SockBindSpec* bind = o->addr.bind_set ? &o->addr.bind : NULL;
+    bool multi = ipv4_is_multicast(dst_ip) || ipv4_is_limited_broadcast(dst_ip);
+    uint32_t max_results = multi ? PING_MAX_REPLIES : 1;
+    net_l4_endpoint dst;
+    make_ep(&dst_ip, 0, IP_VER4, &dst);
 
     for (uint32_t i = 0; i < o->count; i++) {
-        ++sent;
+        sent++;
         uint16_t seq = (uint16_t)(seq_base + i);
+        icmp_probe_result_t res[PING_MAX_REPLIES];
+        uint32_t n = icmp_probe_collect(&dst, id, seq, o->timeout_ms, bind, (uint8_t)o->ttl, res, max_results);
 
-        ping_result_t res = {0};
-        bool ok = icmp_ping(dst_ip_be, id, seq, o->timeout_ms, txop, (uint8_t)o->ttl, &res);
-
-        if (ok) {
-            ++received;
-            uint32_t rtt = res.rtt_ms;
-            if (rtt < min_ms) min_ms = rtt;
-            if (rtt > max_ms) max_ms = rtt;
-            sum_ms += rtt;
-            print("Reply from %s: bytes=32 time=%ums\n", ipstr, rtt);
-        } else {
-            print("%s\n", status_to_msg(res.status));
-        }
+        if (n) {
+            for (uint32_t j = 0; j < n; j++) {
+                if (res[j].status == ICMP_PROBE_OK) {
+                    received++;
+                    uint32_t rtt = res[j].rtt_ms;
+                    if (rtt < min_ms) min_ms = rtt;
+                    if (rtt > max_ms) max_ms = rtt;
+                    sum_ms += rtt;
+                    char rip[64];
+                    net_ep_split(&res[j].responder, rip, (int)sizeof(rip), NULL, NULL);
+                    print("Reply from %s: bytes=32 time=%ums", rip, rtt);
+                } else print("%s", status_to_msg(res[j].status));
+            }
+        } else print("%s", status_to_msg(ICMP_PROBE_TIMEOUT));
 
         if (i + 1 < o->count) msleep(o->interval_ms);
     }
 
-    print("\n");
-    print("--- %s ping statistics ---\n", host);
+    print("");
+    print("--- %s ping statistics ---", host);
 
-    uint32_t loss = (sent == 0) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
+    uint32_t loss = (sent == 0 || received >= sent) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
     uint32_t total_time = (o->count > 0) ? (o->count - 1) * o->interval_ms : 0;
 
-    print("%u packets transmitted, %u received, %u%% packet loss, time %ums\n", sent, received, loss, total_time);
+    print("%u packets transmitted, %u received, %u%% packet loss, time %ums", sent, received, loss, total_time);
 
     if (received > 0) {
         uint32_t avg = (uint32_t)(sum_ms / received);
         if (min_ms == UINT32_MAX) min_ms = avg;
-        print("rtt min/avg/max = %u/%u/%u ms\n", min_ms, avg, max_ms);
+        print("rtt min/avg/max = %u/%u/%u ms", min_ms, avg, max_ms);
     }
 
-    return (received > 0) ? 0 : 1;
+    return received > 0 ? 0 : 1;
 }
 
 static int ping_v6(const ping_opts_t *o) {
-    const char *host = o->host;
-
-    uint8_t dst6[16] ={0};
-    bool is_lit = ipv6_parse(host, dst6);
+    const char *host = o->addr.host;
+    uint8_t dst_ip[16] ={0};
+    bool is_lit = ipv6_parse(host, dst_ip);
     if (!is_lit) {
-        dns_result_t dr = dns_resolve_aaaa(host, dst6, DNS_USE_BOTH, o->timeout_ms);
+        dns_result_t dr = dns_resolve_aaaa(host, dst_ip, DNS_USE_BOTH, o->timeout_ms);
         if (dr != DNS_OK) {
-            print("ping: dns lookup failed (%d) for '%s'\n",(int)dr, host);
+            print("ping: dns lookup failed (%d) for '%s'",(int)dr, host);
             return 2;
         }
     }
 
-    char ipstr[64];
-    ipv6_to_string(dst6, ipstr, (int)sizeof(ipstr));
+    if (ipv6_is_linkscope_mcast(dst_ip) && !o->addr.bind_set) {
+        print("ping: IPv6 link-local multicast requires -s local_ipv6, l2:id or l3:id");
+        return 2;
+    }
 
-    print("PING %s (%s) with 32 bytes of data:\n", host, ipstr);
+    char ipstr[64];
+    ipv6_to_string(dst_ip, ipstr, (int)sizeof(ipstr));
+
+    print("PING %s (%s) with 32 bytes of data:", host, ipstr);
 
     uint32_t sent = 0, received = 0, min_ms = UINT32_MAX, max_ms = 0;
     uint64_t sum_ms = 0;
     uint16_t id = (uint16_t)(get_current_proc_pid() & 0xFFFF);
     uint16_t seq_base = (uint16_t)(get_time() & 0xFFFF);
+    const SockBindSpec* bind = o->addr.bind_set ? &o->addr.bind : NULL;
+    uint32_t max_results = ipv6_is_multicast(dst_ip) ? PING_MAX_REPLIES : 1;
+    net_l4_endpoint dst;
+    make_ep(dst_ip, 0, IP_VER6, &dst);
 
     for (uint32_t i = 0; i < o->count; i++) {
-        ++sent;
+        sent++;
         uint16_t seq = (uint16_t)(seq_base + i);
+        icmp_probe_result_t res[PING_MAX_REPLIES];
+        uint32_t n = icmp_probe_collect(&dst, id, seq, o->timeout_ms, bind, (uint8_t)o->ttl, res, max_results);
 
-        ping6_result_t res = {0};
-        bool ok = icmpv6_ping(dst6, id, seq, o->timeout_ms, NULL, (uint8_t)o->ttl, &res);
-
-        if (ok) {
-            ++received;
-            uint32_t rtt = res.rtt_ms;
-            if (rtt < min_ms) min_ms = rtt;
-            if (rtt > max_ms) max_ms = rtt;
-            sum_ms += rtt;
-            print("Reply from %s: bytes=32 time=%ums\n", ipstr, rtt);
-        } else {
-            print("%s\n", status_to_msg(res.status));
-        }
+        if (n) {
+            for (uint32_t j = 0; j < n; j++) {
+                if (res[j].status == ICMP_PROBE_OK) {
+                    received++;
+                    uint32_t rtt = res[j].rtt_ms;
+                    if (rtt < min_ms) min_ms = rtt;
+                    if (rtt > max_ms) max_ms = rtt;
+                    sum_ms += rtt;
+                    char rip[64];
+                    net_ep_split(&res[j].responder, rip, (int)sizeof(rip), NULL, NULL);
+                    print("Reply from %s: bytes=32 time=%ums", rip, rtt);
+                } else print("%s", status_to_msg(res[j].status));
+            }
+        } else print("%s", status_to_msg(ICMP_PROBE_TIMEOUT));
 
         if (i + 1 < o->count) msleep(o->interval_ms);
     }
 
-    print("\n");
+    print("");
 
-    print("--- %s ping statistics ---\n", host);
+    print("--- %s ping statistics ---", host);
 
-    uint32_t loss = (sent == 0) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
+    uint32_t loss = (sent == 0 || received >= sent) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
     uint32_t total_time = (o->count > 0) ? (o->count - 1) * o->interval_ms : 0;
 
-    print("%u packets transmitted, %u received, %u%% packet loss, time %ums\n", sent, received, loss, total_time);
+    print("%u packets transmitted, %u received, %u%% packet loss, time %ums", sent, received, loss, total_time);
 
     if (received > 0) {
         uint32_t avg = (uint32_t)(sum_ms / received);
         if (min_ms == UINT32_MAX) min_ms = avg;
-        print("rtt min/avg/max = %u/%u/%u ms\n", min_ms, avg, max_ms);
+        print("rtt min/avg/max = %u/%u/%u ms", min_ms, avg, max_ms);
     }
 
     return (received > 0) ? 0 : 1;
 }
 
 int run_ping(int argc, char *argv[]) {
+    if (argc == 2 && strcmp_case(argv[1], "--help", true) == 0) {
+        print_help();
+        return 0;
+    }
+
     ping_opts_t opts;
     if (!parse_args(argc, argv, &opts)) {
-        print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host\n");
+        print_help();
         return 2;
     }
 
-    if (opts.ver == IP_VER6 && opts.src_set) {
-        print("ping: -s is only supported for IPv4\n");
+    if (opts.addr.bind_set && opts.addr.bind.kind == BIND_IP && opts.addr.bind.ver != opts.ver) {
+        print("ping: source address version doesn't match target version");
         return 2;
-    }
-
-    if (opts.ver == IP_VER4 && opts.src_set) {
-        l3_ipv4_interface_t *l3 = l3_ipv4_find_by_ip(opts.src_ip);
-        if (!l3) {
-            char ssrc[16];
-            ipv4_to_string(opts.src_ip, ssrc);
-            print("ping: invalid source %s (no local ip match)\n", ssrc);
-            return 2;
-        }
     }
 
     if (opts.ver == IP_VER4) return ping_v4(&opts);
     if (opts.ver == IP_VER6) return ping_v6(&opts);
-    print("usage: ping [-4/-6] [-n times] [-w timeout] [-i interval] [-t TTL] [-s src_local_ip] host\n");
+    print_help();
 
     return 2;
 }

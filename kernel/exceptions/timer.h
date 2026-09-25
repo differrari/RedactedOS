@@ -23,8 +23,6 @@ uint64_t timer_now_usec(void);
 uint64_t timer_wall_time_us(void);
 uint64_t timer_unix_time_us(void);
 
-void timer_apply_sntp_sample_us(uint64_t server_unix_us);
-
 void timer_sync_set_unix_us(uint64_t unix_us);
 void timer_sync_slew_us(int64_t delta_us);
 void timer_sync_set_freq_ppm(int32_t ppm);

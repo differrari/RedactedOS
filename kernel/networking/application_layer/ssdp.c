@@ -14,9 +14,18 @@ uint32_t ssdp_parse_mx_ms(const char* buf, int len){
     ++i;
 
     while (i < len && (buf[i] == ' ' || buf[i] == '\t')) ++i;
+    uint32_t start = (uint32_t)i;
+    while (i < len && buf[i] >= '0' && buf[i] <= '9') ++i;
+    if ((uint32_t)i == start) return 1000;
+
+    char mx_buf[16];
+    uint32_t mx_len = (uint32_t)i - start;
+    if (mx_len >= sizeof(mx_buf)) return 1000;
+    memcpy(mx_buf, buf + start, mx_len);
+    mx_buf[mx_len] = 0;
 
     uint32_t v = 0;
-    parse_uint32_dec(buf, &v);
+    if (!parse_uint32_dec_exact(mx_buf, &v)) return 1000;
 
     if (v == 0) v = 1;
     if (v > 5) v = 5;
@@ -61,9 +70,8 @@ string ssdp_build_notify(bool alive, bool v6) {
     extra[5] = (HTTPHeader){ string_from_literal("SERVER"), string_from_literal("RedactedOS/1.0 UPnP/1.1")};
 
     HTTPHeadersCommon c = (HTTPHeadersCommon){0};
-    string hdrs = http_header_builder(&c, extra, 6);
+    string hdrs = http_header_builder(&c, extra, 6, HTTP_HEADER_BUILD_REQUEST, HTTP_METHOD_GET, 0);
     string_append_bytes(&out, hdrs.data, hdrs.length);
     string_free(hdrs);
-    string_append_bytes(&out, "\r\n", 2);
     return out;
 }
