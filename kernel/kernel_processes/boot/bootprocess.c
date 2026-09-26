@@ -48,9 +48,11 @@ void bootsm_transition(int new_state){
             break;
         }
         case bsm_userland: {
-            if (system_config.headless || !system_config.use_windows){
+            if (system_config.headless){
                 const char *argv = system_config.headless ? "headless" : "";
                 current_proc = execute("/boot/redos/system/terminal.red", 1, &argv, EXEC_MODE_DEFAULT);
+            } else if (!system_config.use_windows){
+                current_proc = execute("/boot/redos/system/launcher.red", 0, 0, EXEC_MODE_DEFAULT);
             }
             else
                 current_proc = create_windowing_system();

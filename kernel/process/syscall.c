@@ -153,12 +153,14 @@ u64 syscall_get_mouse(process_t *ctx, thread_t *current_thread){
 }
 
 uptr syscall_gpu_request_ctx(process_t *ctx, thread_t *current_thread){
+    if (system_config.headless) return 0;
     SYSCALL_ARG(draw_ctx, win, PROC_X0, true);
     get_window_ctx(win);
     return 0;
 }
 
 u64 syscall_gpu_flush(process_t *ctx, thread_t *current_thread){
+    if (system_config.headless) return 0;
     SYSCALL_ARG(draw_ctx, win, PROC_X0, true);
     commit_frame(win, 0, false);
     gpu_flush();
@@ -166,6 +168,7 @@ u64 syscall_gpu_flush(process_t *ctx, thread_t *current_thread){
 }
 
 u64 syscall_gpu_resize_ctx(process_t *ctx, thread_t *current_thread){
+    if (!system_config.use_windows) return 0;
     uint32_t width = (uint32_t)current_thread->PROC_X1;
     uint32_t height = (uint32_t)current_thread->PROC_X2;
     resize_window(width, height);
