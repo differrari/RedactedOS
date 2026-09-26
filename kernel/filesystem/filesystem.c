@@ -239,7 +239,7 @@ size_t simple_read(module_root *root, const char *path, void *buf, size_t size){
     file fd = {};
     FS_RESULT ores = open_file(root, path, &fd);
     if (ores != FS_RESULT_SUCCESS){
-        kprintf("[FS error] Failed to open file for simple read (%i)",ores);
+        kprintf("[FS error] Failed to open file %s for simple read (%i)",path,ores);
         return 0;
     }
     size_t res = read_file(&fd, (char*)buf, size);

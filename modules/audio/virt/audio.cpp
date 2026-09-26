@@ -315,5 +315,6 @@ system_module audio_module = (system_module){
     .getstat = 0,//TODO: stat
     .readdir = 0,
     .transform = 0,
+    //.permissions = fs_permission_shared,
     .alias_info = {}
 };

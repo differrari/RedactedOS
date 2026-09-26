@@ -51,7 +51,7 @@ void refresh_apps(){
         string_free(STACK_GET(module_file, entries, i).alias_info.alias_path);
     }
     stack_reset(entries);
-    manual_entries += make_complex_entry("resolve", backing_virtual, entry_file, 0, (file_actions){.transform = resolve_fs}, (string){});
+    manual_entries += make_complex_entry("resolve", backing_virtual, entry_file, 0, (file_actions){.transform = resolve_fs}, (string){}) != 0;
     traverse_directory("/home/applications", false, handle_entry);
     traverse_directory("/boot/redos/system", false, handle_entry);
 }

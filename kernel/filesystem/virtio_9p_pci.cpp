@@ -62,7 +62,7 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
     module_file *cached = (module_file*)hash_map_get(open_files, &fid, sizeof(uint64_t));
     if (cached) {
         cached->references++;
-        descriptor->size = cached->file_size;
+        descriptor->size = cached->file_buffer.buffer_size;
         irq_restore(irq);
         return FS_RESULT_SUCCESS;
     }
@@ -120,7 +120,6 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         if (mfile->serial != INVALID_FID) clunk(&np_dev, (uint32_t)mfile->serial);
         if (mfile->file_buffer.buffer) kfree(mfile->file_buffer.buffer, mfile->file_buffer.buffer_size ? mfile->file_buffer.buffer_size : 1);
     }
-    mfile->file_size = size;
     mfile->buf = (uptr)file;
     mfile->file_buffer = (buffer){
         .buffer = file,
@@ -143,12 +142,12 @@ size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
     module_file *mfile = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     irq_restore(irq);
     if (!mfile) return 0;
-    if (!sync_file(mfile) && !mfile->file_buffer.buffer && mfile->file_size) return 0;
-    if (descriptor->cursor > mfile->file_size) return 0;
-    if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
+    if (!sync_file(mfile) && !mfile->file_buffer.buffer && mfile->file_buffer.buffer_size) return 0;
+    if (descriptor->cursor > mfile->file_buffer.buffer_size) return 0;
+    if (size > mfile->file_buffer.buffer_size-descriptor->cursor) size = mfile->file_buffer.buffer_size-descriptor->cursor;
     memcpy(buf, (char*)mfile->file_buffer.buffer + descriptor->cursor, size);
     descriptor->cursor += size;
-    descriptor->size = mfile->file_size;
+    descriptor->size = mfile->file_buffer.buffer_size;
     return size;
 }
 
@@ -165,7 +164,7 @@ size_t Virtio9PDriver::write_file(file *descriptor, const char* buf, size_t size
     if (end > mfile->file_buffer.buffer_size) {
         void *new_buf = kalloc(np_dev.memory_page, end ? end : 1, ALIGN_64B, MEM_PRIV_KERNEL);
         if (new_buf) {
-            if (mfile->file_buffer.buffer && mfile->file_size) memcpy(new_buf, mfile->file_buffer.buffer, mfile->file_size);
+            if (mfile->file_buffer.buffer && mfile->file_buffer.buffer_size) memcpy(new_buf, mfile->file_buffer.buffer, mfile->file_buffer.buffer_size);
             if (mfile->file_buffer.buffer) kfree(mfile->file_buffer.buffer, mfile->file_buffer.buffer_size ? mfile->file_buffer.buffer_size : 1);
 
             mfile->file_buffer.buffer = new_buf;
@@ -174,12 +173,12 @@ size_t Virtio9PDriver::write_file(file *descriptor, const char* buf, size_t size
         }
     }
 
-    if (end > mfile->file_size) mfile->file_size = end;
-    mfile->file_buffer.limit = mfile->file_size;
+    if (end > mfile->file_buffer.buffer_size) mfile->file_buffer.buffer_size = end;
+    mfile->file_buffer.limit = mfile->file_buffer.buffer_size;
 
     if (mfile->file_buffer.buffer && start + written <= mfile->file_buffer.buffer_size) memcpy((char*)mfile->file_buffer.buffer + start, buf, written);
 
-    descriptor->size = mfile->file_size;
+    descriptor->size = mfile->file_buffer.buffer_size;
     return written;
 }
 
@@ -230,7 +229,7 @@ bool Virtio9PDriver::truncate(file *descriptor){
     if (mfile->read_only) return false;
     if (!set_attribute((u32)mfile->serial, P9_SETATTR_SIZE, descriptor->size)) return false;
     if (!sync_file(mfile)) return false;
-    descriptor->size = mfile->file_size;
+    descriptor->size = mfile->file_buffer.buffer_size;
     if (descriptor->cursor > descriptor->size) descriptor->cursor = descriptor->size;
     return true;
 }
@@ -521,7 +520,6 @@ bool Virtio9PDriver::sync_file(module_file *mfile){
         mfile->file_buffer.buffer_size = 0;
         mfile->file_buffer.limit = 0;
         mfile->buf = 0;
-        mfile->file_size = 0;
         return true;
     }
 
@@ -546,7 +544,7 @@ bool Virtio9PDriver::sync_file(module_file *mfile){
 
     mfile->file_buffer.limit = new_size;
     mfile->buf = (uptr)mfile->file_buffer.buffer;
-    mfile->file_size = new_size;
+    mfile->file_buffer.buffer_size = new_size;
     return true;
 }
 
@@ -607,6 +605,7 @@ system_module p9_fs_module = (system_module){
     .getstat = shared_stat,
     .readdir = shared_readdir,
     .transform = 0,
+    //.permissions = fs_permission_shared,
     .alias_info = {}
 };
 

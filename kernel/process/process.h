@@ -14,6 +14,7 @@ extern "C" {
 #include "environment/environment.h"
 #include "files/jobs.h"
 #include "permissions/authorize.h"
+#include "procfs.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
@@ -58,13 +59,6 @@ typedef struct {
     u64 owned_fs_id;//Filesystem this process owns, not automapped to fs_id due to isolation not being enforced yet
     auth_token auth_id;
 } system_permissions;
-
-typedef enum {
-    permission_none,//Only the kernel can access this
-    permission_shared,//Everyone can access this
-    permission_instanced,//Everyone can access their own copy of this
-    permission_request,//Need to ask for permission to access this, if given, treated like shared
-} fs_permission_level;
 
 typedef enum { STOPPED, READY, RUNNING, BLOCKED, SLEEPING } process_state;
 
@@ -141,6 +135,7 @@ struct process_t {
     int thread_count;
     int thread_ids;
     environment_data environment;
+    procfs_files procfs;
     uptr shared_page;
     process_t *process_next;
 };

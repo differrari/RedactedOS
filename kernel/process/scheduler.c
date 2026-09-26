@@ -361,64 +361,61 @@ void reset_process(process_t *proc){
         proc->debug_line_str = (sizedptr){};
     }
 
-    if (proc_opened_files) {
-        //irq_flags_t irq = irq_save_disable();
-        char proc_path[48] = {};
-        string_format_buf(proc_path, sizeof(proc_path), "/%i/out", pid);
-        uint64_t fid = reserve_fd_gid(proc_path);
-        module_file *out_file = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
-        if (out_file && (uintptr_t)out_file->file_buffer.buffer == (uintptr_t)proc->output) {
-            size_t snapshot_size = proc->output_size;
-            if (!snapshot_size) {
-                out_file->buf = 0;
-                out_file->file_buffer = (buffer){0};
-                out_file->file_size = 0;
-            } else {
-                void *snapshot = zalloc(snapshot_size+1);
+#ifndef FEATURE_NEW_PROCFS
+        if (proc_opened_files) {
+            //irq_flags_t irq = irq_save_disable();
+            char proc_path[48] = {};
+            string_format_buf(proc_path, sizeof(proc_path), "/%i/out", pid);
+            uint64_t fid = reserve_fd_gid(proc_path);
+            module_file *out_file = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
+            if (out_file && (uintptr_t)out_file->file_buffer.buffer == (uintptr_t)proc->output) {
+                size_t snapshot_size = proc->output_size;
+                if (!snapshot_size) {
+                    out_file->buf = 0;
+                    out_file->file_buffer = (buffer){0};
+                } else {
+                    void *snapshot = zalloc(snapshot_size+1);
+                    if (snapshot) {
+                        memcpy(snapshot, (void*)proc->output, snapshot_size);
+                        ((char*)snapshot)[snapshot_size] = 0;
+                        out_file->buf = (uptr)snapshot;
+                        out_file->file_buffer = (buffer){
+                            .buffer = snapshot,
+                            .buffer_size = snapshot_size,
+                            .limit = snapshot_size,
+                            .options = buffer_opt_none,
+                            .cursor = 0,
+                        };
+                    } else {
+                        out_file->buf = 0;
+                        out_file->file_buffer = (buffer){0};
+                    }
+                }
+            }
+    
+            string_format_buf(proc_path, sizeof(proc_path), "/%i/state", pid);
+            fid = reserve_fd_gid(proc_path);
+            module_file *state_file = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
+            if (state_file && (uintptr_t)state_file->file_buffer.buffer == (uintptr_t)&proc->state) {
+                process_state *snapshot = (process_state*)zalloc(sizeof(proc->state));
                 if (snapshot) {
-                    memcpy(snapshot, (void*)proc->output, snapshot_size);
-                    ((char*)snapshot)[snapshot_size] = 0;
-                    out_file->buf = (uptr)snapshot;
-                    out_file->file_buffer = (buffer){
+                    *snapshot = STOPPED;
+                    state_file->buf = (uptr)snapshot;
+                    state_file->file_buffer = (buffer){
                         .buffer = snapshot,
-                        .buffer_size = snapshot_size,
-                        .limit = snapshot_size,
+                        .buffer_size = sizeof(proc->state),
+                        .limit = sizeof(proc->state),
                         .options = buffer_opt_none,
                         .cursor = 0,
                     };
-                    out_file->file_size = snapshot_size;
                 } else {
-                    out_file->buf = 0;
-                    out_file->file_buffer = (buffer){0};
-                    out_file->file_size = 0;
+                    state_file->buf = 0;
+                    state_file->file_buffer = (buffer){0};
                 }
             }
-        }
-
-        string_format_buf(proc_path, sizeof(proc_path), "/%i/state", pid);
-        fid = reserve_fd_gid(proc_path);
-        module_file *state_file = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
-        if (state_file && (uintptr_t)state_file->file_buffer.buffer == (uintptr_t)&proc->state) {
-            process_state *snapshot = (process_state*)zalloc(sizeof(proc->state));
-            if (snapshot) {
-                *snapshot = STOPPED;
-                state_file->buf = (uptr)snapshot;
-                state_file->file_buffer = (buffer){
-                    .buffer = snapshot,
-                    .buffer_size = sizeof(proc->state),
-                    .limit = sizeof(proc->state),
-                    .options = buffer_opt_none,
-                    .cursor = 0,
-                };
-                state_file->file_size = sizeof(proc->state);
-            } else {
-                state_file->buf = 0;
-                state_file->file_buffer = (buffer){0};
-                state_file->file_size = 0;
-            }
-        }
         //irq_restore(irq);
     }
+#endif
 
     if (proc->output) {
         pfree((void*)proc->output, PROC_OUT_BUF);

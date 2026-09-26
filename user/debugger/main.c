@@ -62,14 +62,14 @@ int main(int argc, char* argv[]){
     
     get_theme(&theme);
     
-    thread_inspect(TINSPECT_CONTROL | TINSPECT_TRACE | TINSPECT_INFO | TINSPECT_STATE, proc_id, 1);
+    thread_inspect(TINSPECT_CONTROL | TINSPECT_TRACE | TINSPECT_INFO | TINSPECT_STATE | TINSPECT_OUTPUT, proc_id, 1);
     
     string proc_out_s = string_format("/proc/%i/out", proc_id);
     string proc_state_s = string_format("/proc/%i/state", proc_id);
     sreadf(proc_state_s.data, &proc_state, sizeof(proc_state));
     
     file proc_out_fd = {};
-    openf(proc_out_s.data, &proc_out_fd);
+    if (openf(proc_out_s.data, &proc_out_fd) != FS_RESULT_SUCCESS) return false;
     
     proc_out_buf = buffer_create(0x1000, buffer_can_grow);
 
@@ -120,6 +120,12 @@ int main(int argc, char* argv[]){
         }
 
         commit_draw_ctx(&ctx);
+        
+        // if (running){
+        //     print("Sending sig");
+        //     send_signal(SIG_STOP, proc_id);
+        //     running = false;
+        // }
 
         kbd_event ev = {};
         if (read_event(&ev)){

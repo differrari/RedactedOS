@@ -54,6 +54,11 @@ static inline system_module* clone_mod(system_module *mod){
 
 void make_process_fs(process_t* proc, char *bundle){
     proc->permissions.fs_id = register_fs_id();
+    
+#ifdef FEATURE_NEW_PROCFS
+    register_procfs(proc->id);
+#endif
+    
     module_root *root = get_fs_for_id(proc->permissions.fs_id);
     
     if (bundle){

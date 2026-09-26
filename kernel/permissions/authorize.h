@@ -28,7 +28,7 @@ typedef enum {
     auth_process_state = 1 << 4, // /proc/<id>/state
     auth_process_info = 1 << 5, // /proc/<id>/info
     
-    auth_process_count = 1 << 4
+    auth_process_count = 1 << 6
 } auth_process_actions;
 
 typedef enum {

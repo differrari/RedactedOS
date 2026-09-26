@@ -434,7 +434,7 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
     module_file *mfile = (module_file*)hash_map_get(open_files, &fid, sizeof(uint64_t));
     if (mfile){
         descriptor->id = mfile->fid;
-        descriptor->size = mfile->file_size;
+        descriptor->size = mfile->file_buffer.buffer_size;
         mfile->references++;
         irq_restore(irq);
         return FS_RESULT_SUCCESS;
@@ -459,7 +459,6 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
         return FS_RESULT_DRIVER_ERROR;
     }
     memset(mfile, 0, sizeof(module_file));
-    mfile->file_size = buf_ptr.size;
     mfile->name = string_from_literal(fullpath);
     mfile->file_buffer = (buffer){
         .buffer = buf,
@@ -491,11 +490,11 @@ size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
         irq_restore(irq);
         return 0;
     }
-    if (descriptor->cursor > mfile->file_size) {
+    if (descriptor->cursor > mfile->file_buffer.buffer_size) {
         irq_restore(irq);
         return 0;
     }
-    if (size > mfile->file_size-descriptor->cursor) size = mfile->file_size-descriptor->cursor;
+    if (size > mfile->file_buffer.buffer_size-descriptor->cursor) size = mfile->file_buffer.buffer_size-descriptor->cursor;
     memcpy(buf, (char*)mfile->file_buffer.buffer + descriptor->cursor, size);
     irq_restore(irq);
     return size;
@@ -511,7 +510,7 @@ size_t FAT32FS::write_file(file *descriptor, const char* buf, size_t size){
     if (written)
         write_to_disk(mfile->serial, mfile->file_buffer.buffer, mfile->file_buffer.buffer_size);
 
-    descriptor->size = mfile->file_size;
+    descriptor->size = mfile->file_buffer.buffer_size;
     truncate(descriptor);
     
     return written;
@@ -709,6 +708,7 @@ system_module boot_fs_module = (system_module){
     .getstat = boot_stat,
     .readdir = boot_partition_readdir,
     .transform = 0,
+    //.permissions = fs_permission_shared,
     .alias_info = {}
 };
 
