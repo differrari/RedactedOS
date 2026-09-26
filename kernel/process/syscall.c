@@ -515,7 +515,12 @@ uint64_t syscall_unload_fsmod(process_t *ctx, thread_t *current_thread){
 }
 
 u64 syscall_in_case_of_js(process_t *ctx, thread_t *current_thread){
-    panic("Shame on you\r\n\
+#ifdef FEATURE_JS_PROTECTION
+#define handle_js(...) panic(__VA_ARGS__)
+#else
+#define handle_js(N,...) print(N)
+#endif
+    handle_js("Shame on you\r\n\
 Don't ever do that again\r\n\
 ....................../'¯/) \r\n\
 ....................,/¯../ \r\n\
