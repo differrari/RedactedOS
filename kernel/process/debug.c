@@ -6,6 +6,7 @@
 #include "memory/mmu.h"
 #include "memory/addr.h"
 #include "loading/dwarf.h"
+#include "permissions/authorize.h"
 
 void debug_load(){
     kprint("[DEBUG] Loading debug information for kernel");
@@ -83,6 +84,21 @@ bool set_inspect(debug_inspect_types types, process_t *inspector, thread_t *insp
     if (!inspected || inspected->id != inspected_pid) return false;
     thread_t *inspected_thread = get_thread_from_proc(inspected, inspected_tid);
     if (!inspected_thread || inspected_thread->pid != inspected_pid || inspected_thread->tid != inspected_tid) return false;
+    auth_token tok = auth_get_proc_token(inspector);
+    auth_resource res = auth_map_process(inspected);
+    if (!tok || !res.id) return false;
+    if (types & TINSPECT_CONTROL)
+        if (!auth_request(tok, auth_process_send_signals, res)) return false;
+    if (types & TINSPECT_TRACE)
+        if (!auth_request(tok, auth_process_intercept_exceptions, res)) return false;
+    // if (types & TINSPECT_INFO)
+    //     if (!request_auth(tok, auth_resource_filesystem)) return false;
+    // if (types & TINSPECT_STATE)
+    //     if (!request_auth(tok, auth_resource_filesystem)) return false;
+    // if (types & TINSPECT_INPUT)
+    //     if (!request_auth(tok, auth_resource_filesystem)) return false;
+    // if (types & TINSPECT_OUTPUT)
+    //     if (!request_auth(tok, auth_resource_filesystem)) return false;
     inspected_thread->inspector = (proc_addr){
         .pid = inspector->id,
         .tid = inspector_thread->tid

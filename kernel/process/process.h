@@ -13,6 +13,7 @@ extern "C" {
 #include "signals/signals.h"
 #include "environment/environment.h"
 #include "files/jobs.h"
+#include "permissions/authorize.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
@@ -55,7 +56,15 @@ typedef struct {
 typedef struct {
     u64 fs_id;//Filesystem this process has access to
     u64 owned_fs_id;//Filesystem this process owns, not automapped to fs_id due to isolation not being enforced yet
+    auth_token auth_id;
 } system_permissions;
+
+typedef enum {
+    permission_none,//Only the kernel can access this
+    permission_shared,//Everyone can access this
+    permission_instanced,//Everyone can access their own copy of this
+    permission_request,//Need to ask for permission to access this, if given, treated like shared
+} fs_permission_level;
 
 typedef enum { STOPPED, READY, RUNNING, BLOCKED, SLEEPING } process_state;
 
@@ -118,6 +127,7 @@ struct process_t {
     __attribute__((aligned(16))) thread_t signal_handlers[NUMBER_SIGNALS];
     uint8_t priority;
     system_permissions permissions;
+    auth_resource resource_id;
     uint16_t win_id;
     uaddr_t win_fb_va;
     paddr_t win_fb_phys;
