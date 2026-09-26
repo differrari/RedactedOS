@@ -468,7 +468,6 @@ FS_RESULT FAT32FS::open_file(const char* path, file* descriptor){
         .cursor = 0,
         .data_type = 0,
     };
-    mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
     mfile->serial = filecluster;
     mfile->references = 1;
@@ -503,7 +502,7 @@ size_t FAT32FS::read_file(file *descriptor, void* buf, size_t size){
 size_t FAT32FS::write_file(file *descriptor, const char* buf, size_t size){
     module_file *mfile  = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) return 0;
-    if (mfile->read_only) return 0;
+    if (mfile->file_buffer.options & buffer_read_only) return 0;
     
     size_t written = buffer_write_to(&mfile->file_buffer, buf, size, descriptor->cursor);
     

@@ -120,7 +120,6 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         if (mfile->serial != INVALID_FID) clunk(&np_dev, (uint32_t)mfile->serial);
         if (mfile->file_buffer.buffer) kfree(mfile->file_buffer.buffer, mfile->file_buffer.buffer_size ? mfile->file_buffer.buffer_size : 1);
     }
-    mfile->buf = (uptr)file;
     mfile->file_buffer = (buffer){
         .buffer = file,
         .buffer_size = size,
@@ -129,7 +128,6 @@ FS_RESULT Virtio9PDriver::open_file(const char* path, file* descriptor){
         .cursor = 0,
         .data_type = 0,
     };
-    mfile->ignore_cursor = false;
     mfile->fid = descriptor->id;
     mfile->serial = f;
     mfile->references++;
@@ -154,7 +152,7 @@ size_t Virtio9PDriver::read_file(file *descriptor, void* buf, size_t size){
 size_t Virtio9PDriver::write_file(file *descriptor, const char* buf, size_t size){
     module_file *mfile  = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) return 0;
-    if (mfile->read_only) return 0;
+    if (mfile->file_buffer.options & buffer_read_only) return 0;
 
     size_t start = descriptor->cursor;
     size_t written = write((u32)mfile->serial, start, size, buf);
@@ -169,7 +167,6 @@ size_t Virtio9PDriver::write_file(file *descriptor, const char* buf, size_t size
 
             mfile->file_buffer.buffer = new_buf;
             mfile->file_buffer.buffer_size = end;
-            mfile->buf = (uptr)new_buf;
         }
     }
 
@@ -226,7 +223,7 @@ size_t Virtio9PDriver::list_contents(const char *path, void* buf, size_t size, u
 bool Virtio9PDriver::truncate(file *descriptor){
     module_file *mfile  = (module_file*)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
     if (!mfile) return false;
-    if (mfile->read_only) return false;
+    if (mfile->file_buffer.options & buffer_read_only) return false;
     if (!set_attribute((u32)mfile->serial, P9_SETATTR_SIZE, descriptor->size)) return false;
     if (!sync_file(mfile)) return false;
     descriptor->size = mfile->file_buffer.buffer_size;
@@ -519,7 +516,6 @@ bool Virtio9PDriver::sync_file(module_file *mfile){
         mfile->file_buffer.buffer = 0;
         mfile->file_buffer.buffer_size = 0;
         mfile->file_buffer.limit = 0;
-        mfile->buf = 0;
         return true;
     }
 
@@ -543,7 +539,6 @@ bool Virtio9PDriver::sync_file(module_file *mfile){
     }
 
     mfile->file_buffer.limit = new_size;
-    mfile->buf = (uptr)mfile->file_buffer.buffer;
     mfile->file_buffer.buffer_size = new_size;
     return true;
 }
