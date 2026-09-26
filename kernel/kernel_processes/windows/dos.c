@@ -105,7 +105,7 @@ window_frame* clicked_frame;
 
 static inline void calc_click(void *node){
     window_frame* frame = (window_frame*)node;
-    gpu_rect rect = {{frame->x, frame->y}, {frame->width, frame->height}};
+    gpu_rect rect = {{global_win_offset.x + frame->x, global_win_offset.y + frame->y}, {frame->width, frame->height}};
     if (mouse_in_rect(rect, click_loc))
         clicked_frame = frame;
 }
