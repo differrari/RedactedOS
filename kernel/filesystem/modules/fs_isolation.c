@@ -29,7 +29,7 @@ module_root* kernel_fs(){
 bool load_module(system_module *module){
     if (!kernel_modules.map) kernel_modules.map = hash_map_create(64);
     if (module->owner == get_kernel_proc()->id && !module->init){
-        if (strcmp(module->mount,"/console")) kprintf("[MODULE error] module not initialized due to missing initializer");//TODO: can we make printf silently fail so logging becomes easier?
+        kprintf("[MODULE error] module not initialized due to missing initializer");
         return false;
     }
     if (!module->owner) module->owner = get_kernel_proc()->id;
