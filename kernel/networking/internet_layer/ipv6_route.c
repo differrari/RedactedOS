@@ -1,12 +1,28 @@
 #include "ipv6_route.h"
 #include "std/memory.h"
-#include "std/string.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/interface_manager.h"
-#include "networking/link_layer/ndp.h"
 #include "syscalls/syscalls.h"
+#include "exceptions/irq.h"
 
 #define IPV6_REDIRECT_MAX 32
+#define IPV6_ONLINK_PREFIX_MAX 32
+#define IPV6_ONLINK_PREFIX_INIT 4
+
+typedef struct {
+    uint8_t prefix[16];
+    uint64_t valid_until_ms;
+    uint8_t prefix_len;
+} ipv6_onlink_prefix_t;
+
+typedef struct {
+    uint64_t next_expiry_ms;
+    uint8_t capacity;
+    uint8_t count;
+    ipv6_onlink_prefix_t entries[];
+} ipv6_onlink_table_t;
+
+static ipv6_onlink_table_t* g_onlink[MAX_L2_INTERFACES];
 
 struct ipv6_rt_table {
     l3_id_t owner_l3_id;
@@ -34,6 +50,151 @@ static void ipv6_rt_bump(ipv6_rt_table_t* t) {
     if (!t->epoch) t->epoch = 1;
 }
 
+static void onlink_bump(uint8_t ifindex) {
+    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
+    if (!l2) return;
+
+    for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+        l3_ipv6_interface_t* v6 = l2->l3_v6[i];
+        if (v6 && v6->routing_table) ipv6_rt_bump((ipv6_rt_table_t*)v6->routing_table);
+    }
+}
+
+static void onlink_refresh_expiry(ipv6_onlink_table_t* table) {
+    uint64_t next = UINT64_MAX;
+    for (uint8_t i = 0; i < table->count; i++) {
+        uint64_t valid = table->entries[i].valid_until_ms;
+
+        if (valid < next) next = valid;
+    }
+    table->next_expiry_ms = next;
+}
+
+static void onlink_expire(uint8_t ifindex, uint64_t now_ms) {
+    ipv6_onlink_table_t* table = g_onlink[ifindex-1];
+    if (!table || now_ms < table->next_expiry_ms) return;
+
+    bool changed = false;
+    for (uint8_t i = 0; i < table->count;){
+        ipv6_onlink_prefix_t* entry = &table->entries[i];
+        if (entry->valid_until_ms != UINT64_MAX && now_ms >= entry->valid_until_ms) {
+            table->count--;
+            if (i != table->count) table->entries[i] = table->entries[table->count];
+            changed = true;
+        } else i++;
+    }
+    if (changed) {
+        onlink_refresh_expiry(table);
+        onlink_bump(ifindex);
+    }
+}
+
+bool ipv6_rt_onlink_update(uint8_t ifindex, const uint8_t prefix[16], uint8_t prefix_len, uint32_t valid_lifetime_s) {
+    if (!ifindex || ifindex > MAX_L2_INTERFACES || !prefix || prefix_len > 128) return false;
+
+    uint8_t network[16];
+    ipv6_prefix_network(prefix, prefix_len, network);
+    ipv6_onlink_table_t* spare = NULL;
+
+    for (;;) {
+        uint64_t now_ms = get_time();
+        irq_flags_t irq = irq_save_disable();
+        onlink_expire(ifindex, now_ms);
+        ipv6_onlink_table_t* table = g_onlink[ifindex - 1];
+
+        int found = -1;
+        if (table) {
+            for (uint8_t i = 0; i < table->count; i++) {
+                const ipv6_onlink_prefix_t* entry = &table->entries[i];
+                if (entry->prefix_len == prefix_len && ipv6_cmp(entry->prefix, network) == 0) {
+                    found = i;
+                    break;
+                }
+            }
+        }
+
+        if (!valid_lifetime_s) { 
+            ipv6_onlink_table_t* retired = NULL;
+            if (found >= 0) {
+                bool refresh = table->entries[found].valid_until_ms == table->next_expiry_ms;
+                table->count--;
+                if ((uint8_t)found != table->count) table->entries[found] = table->entries[table->count];
+                if (!table->count) {
+                    g_onlink[ifindex - 1] = NULL;
+                    retired = table;
+                } else if (refresh) onlink_refresh_expiry(table);
+                onlink_bump(ifindex);
+            }
+            irq_restore(irq);
+            release(retired);
+            release(spare);
+            return true;
+        }
+
+        ipv6_onlink_table_t* retired = NULL;
+        if (found < 0 && (!table || table->count == table->capacity)) {
+            uint8_t capacity = table ? table->capacity : 0;
+            if (capacity >= IPV6_ONLINK_PREFIX_MAX) {
+                irq_restore(irq);
+                release(spare);
+                return false;
+            }
+            uint8_t needed = capacity ? capacity * 2 : IPV6_ONLINK_PREFIX_INIT;
+            if (needed > IPV6_ONLINK_PREFIX_MAX) needed = IPV6_ONLINK_PREFIX_MAX;
+            if (!spare || spare->capacity < needed) {
+                irq_restore(irq);
+                release(spare);
+                spare = zalloc(sizeof(spare->entries[0]) * needed + sizeof(*spare));
+                if (!spare) return false;
+                spare->capacity = needed;
+                continue;
+            }
+
+            spare->next_expiry_ms = table ? table->next_expiry_ms : UINT64_MAX;
+            if (table) {
+                spare->count = table->count;
+                memcpy(spare->entries, table->entries, sizeof(table->entries[0]) * table->count);
+            }
+            g_onlink[ifindex-1] = spare;
+            retired = table;
+            table = spare;
+            spare = NULL;
+        }
+
+        uint64_t valid_until_ms = UINT64_MAX;
+        if (valid_lifetime_s != UINT32_MAX) valid_until_ms = now_ms + (uint64_t)valid_lifetime_s * 1000;
+        ipv6_onlink_prefix_t* entry;
+        if (found >= 0) entry = &table->entries[found];
+        else {
+            entry = &table->entries[table->count++];
+            entry->prefix_len = prefix_len;
+            ipv6_cpy(entry->prefix, network);
+            entry->valid_until_ms = UINT64_MAX;
+        }
+        uint64_t previous = entry->valid_until_ms;
+        entry->valid_until_ms = valid_until_ms;
+        if (previous == table->next_expiry_ms && valid_until_ms > previous) onlink_refresh_expiry(table);
+        else if (valid_until_ms < table->next_expiry_ms) table->next_expiry_ms = valid_until_ms;
+        if (found < 0) onlink_bump(ifindex);
+        irq_restore(irq);
+        release(retired);
+        release(spare);
+        return true;
+    }
+}
+
+void ipv6_rt_onlink_clear(uint8_t ifindex) {
+    if (!ifindex || ifindex > MAX_L2_INTERFACES) return;
+    irq_flags_t irq = irq_save_disable();
+    ipv6_onlink_table_t* retired = g_onlink[ifindex - 1];
+    if (retired) {
+        g_onlink[ifindex - 1] = NULL;
+        onlink_bump(ifindex);
+    }
+    irq_restore(irq);
+    release(retired);
+}
+
 static bool v6_l3_ok_for_tx(l3_ipv6_interface_t* v6, int dst_is_ll, int dst_is_loop) {
     if (!ipv6_l3_is_ready(v6)) return false;
     if (v6->is_localhost && !dst_is_loop) return false;
@@ -57,7 +218,7 @@ bool ipv6_tx_plan_onlink(const ipv6_tx_plan_t* plan, const uint8_t dst[16]) {
     l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(plan->l3_id); 
     if (ipv6_is_loopback(dst)) return v6->is_localhost;
     if (ipv6_is_linklocal(dst) || ipv6_is_linkscope_mcast(dst) || ipv6_is_multicast(dst)) return true;
-    if (!(v6->ra_has && (v6->cfg & IPV6_CFG_SLAAC)) && v6->prefix_len && ipv6_common_prefix_len(v6->ip, dst) >= v6->prefix_len) return true;
+    if (!(v6->ra_has && (v6->cfg & IPV6_CFG_SLAAC)) && v6->prefix_len && ipv6_prefix_matches(v6->ip, dst, v6->prefix_len)) return true;
     if (v6->routing_table) {
         uint8_t via[16] = {0};
         if (ipv6_rt_lookup_in((const ipv6_rt_table_t*)v6->routing_table, dst, via, NULL, NULL) && ipv6_is_unspecified(via)) return true;
@@ -169,7 +330,8 @@ bool ipv6_rt_del_in(ipv6_rt_table_t* t, const uint8_t net[16], uint8_t plen) {
 
     for (int i = 0; i < t->len; i++) {
         if (t->e[i].prefix_len == plen && ipv6_cmp(t->e[i].network, net) == 0) {
-            t->e[i] = t->e[--t->len];
+            t->len--;
+            t->e[i] = t->e[t->len];
             memset(&t->e[t->len], 0, sizeof(t->e[0]));
             ipv6_rt_bump(t);
             return true;
@@ -201,29 +363,39 @@ bool ipv6_rt_lookup_in(const ipv6_rt_table_t* t, const uint8_t dst[16], uint8_t 
     uint8_t best_gw[16] = {0};
 
     for (int i = 0; i < t->len; i++) {
-        bool match = false;
+        const ipv6_rt_entry_t *entry = &t->e[i];
+        int pl = entry->prefix_len;
+        int met = entry->metric;
 
-        if (t->e[i].prefix_len == 0) match = true;
-        else match = ipv6_common_prefix_len(dst, t->e[i].network) >= t->e[i].prefix_len;
-
-        if (!match) continue;
-
-        int pl = t->e[i].prefix_len;
-        int met = t->e[i].metric;
-
-        if (pl > best_pl || (pl == best_pl && met < best_metric)) {
-            best_pl = pl;
-            best_metric = met;
-            ipv6_cpy(best_gw, t->e[i].gateway);
-        }
+        if (pl < best_pl || (pl == best_pl && met >= best_metric)) continue;
+        if (!ipv6_prefix_matches(dst, entry->network, entry->prefix_len)) continue;
+        best_pl = pl;
+        best_metric = met;
+        ipv6_cpy(best_gw, entry->gateway);
     }
 
     l3_ipv6_interface_t* owner = l3_ipv6_find_by_id(t->owner_l3_id);
     l2_interface_t* l2 = owner ? owner->l2 : NULL;
     if (l2 && !ipv6_is_unspecified(dst) && !ipv6_is_loopback(dst) && !ipv6_is_linklocal(dst) && !ipv6_is_multicast(dst)) {
-        int pl = ndp_onlink_prefix_len_for_l2(l2->ifindex, dst);
+        int pl = -1;
+        uint8_t ifindex = l2->ifindex;
+        if (ifindex && ifindex <= MAX_L2_INTERFACES) {
+            irq_flags_t irq = irq_save_disable();
+            onlink_expire(ifindex, get_time());
+            const ipv6_onlink_table_t* table = g_onlink[ifindex - 1];
+            if (table) {
+                for (uint8_t i = 0; i < table->count; i++) {
+                    const ipv6_onlink_prefix_t* entry = &table->entries[i];
+                    uint8_t plen = entry->prefix_len;
+                    if (plen <= pl || !ipv6_prefix_matches(dst, entry->prefix, plen)) continue;
+                    pl = plen;
+                    if (pl == 128) break;
+                }
+            }
+            irq_restore(irq);
+        }
         int met = l2->base_metric;
-        if (pl > best_pl || (pl == best_pl && met < best_metric)) {
+        if (pl >= 0 && (pl > best_pl || (pl == best_pl && met < best_metric))) {
             best_pl = pl;
             best_metric = met;
             memset(best_gw, 0, sizeof(best_gw));
@@ -245,11 +417,25 @@ bool ipv6_next_hop_for_l3(l3_id_t l3_id, const uint8_t dst[16], uint8_t next_hop
     ipv6_rt_table_t* rt = (ipv6_rt_table_t*)src_v6->routing_table;
 
     if (rt) {
-        uint32_t route_epoch = ipv6_rt_epoch(rt);
+        bool checked_expiry = false;
+        uint32_t route_epoch = 0;
 
         for (int i = 0; i < IPV6_REDIRECT_MAX; i++) {
             ipv6_redirect_entry_t* e = &g_redirects[i];
             if (!e->used || e->l3_id != src_v6->l3_id || ipv6_cmp(e->dst, dst) != 0) continue;
+
+            if (!checked_expiry) {
+                if (src_v6->l2) {
+                    uint8_t ifindex = src_v6->l2->ifindex;
+                    if (ifindex && ifindex <= MAX_L2_INTERFACES) {
+                        irq_flags_t irq = irq_save_disable();
+                        onlink_expire(ifindex, get_time());
+                        irq_restore(irq);
+                    }
+                }
+                route_epoch = ipv6_rt_epoch(rt);
+                checked_expiry = true;
+            }
             if (e->l3_epoch != src_v6->epoch || e->route_epoch != route_epoch) {
                 memset(e, 0, sizeof(*e));
                 continue;
@@ -264,7 +450,7 @@ bool ipv6_next_hop_for_l3(l3_id_t l3_id, const uint8_t dst[16], uint8_t next_hop
     if (rt && ipv6_rt_lookup_in(rt, dst, via, NULL, NULL)) {
         if (!ipv6_is_unspecified(via)) ipv6_cpy(next_hop, via);
         else ipv6_cpy(next_hop, dst);
-    } else if (!(src_v6->ra_has && (src_v6->cfg & IPV6_CFG_SLAAC)) && src_v6->prefix_len && ipv6_common_prefix_len(dst, src_v6->ip) >= src_v6->prefix_len) ipv6_cpy(next_hop, dst);
+    } else if (!(src_v6->ra_has && (src_v6->cfg & IPV6_CFG_SLAAC)) && src_v6->prefix_len && ipv6_prefix_matches(dst, src_v6->ip, src_v6->prefix_len)) ipv6_cpy(next_hop, dst);
     else if (!ipv6_is_unspecified(src_v6->gateway) && ipv6_is_linklocal(src_v6->gateway)) ipv6_cpy(next_hop, src_v6->gateway);
     else return false;
 
@@ -306,11 +492,18 @@ bool ipv6_redirect_update(l3_id_t l3_id, const uint8_t router[16], const uint8_t
 }
 
 bool ipv6_redirect_is_router(uint8_t ifindex, const uint8_t target[16]) {
-    if (!ifindex || !target) return false;
+    if (!ifindex || ifindex > MAX_L2_INTERFACES || !target) return false;
+    bool checked_expiry = false;
 
     for (int i = 0; i < IPV6_REDIRECT_MAX; i++) {
         ipv6_redirect_entry_t* e = &g_redirects[i];
         if (!e->used || e->ifindex != ifindex || ipv6_cmp(e->target, target) != 0) continue;
+        if (!checked_expiry) {
+            irq_flags_t irq = irq_save_disable();
+            onlink_expire(ifindex, get_time());
+            irq_restore(irq);
+            checked_expiry = true;
+        }
 
         l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(e->l3_id);
         if (!ipv6_l3_is_ready(v6) || !v6->routing_table || v6->l2->ifindex != ifindex ||
@@ -395,8 +588,7 @@ bool ipv6_rt_pick_best_l3(const uint8_t dst[16], uint8_t ifindex, l3_id_t* out_l
 
             int pl_conn = -1;
             if (!(x->ra_has && (x->cfg & IPV6_CFG_SLAAC)) && x->prefix_len) {
-                int pl = ipv6_common_prefix_len(dst, x->ip);
-                if (pl >= x->prefix_len) pl_conn = x->prefix_len;
+                if (ipv6_prefix_matches(dst, x->ip, x->prefix_len)) pl_conn = x->prefix_len;
             }
 
             int pl_tab = -1;

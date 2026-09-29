@@ -3,7 +3,6 @@
 #include "link_utils.h"
 #include "networking/internet_layer/icmpv6.h"
 #include "std/memory.h"
-#include "std/string.h"
 #include "networking/interface_manager.h"
 #include "networking/application_layer/dhcpv6_daemon.h"
 #include "networking/application_layer/dns/dns_daemon.h"
@@ -14,7 +13,6 @@
 #include "net/checksums.h"
 #include "syscalls/syscalls.h"
 #include "networking/network.h"
-#include "process/scheduler.h"
 #include "kernel_processes/kprocess_loader.h"
 #include "exceptions/irq.h"
 #include "math/rng.h"
@@ -30,17 +28,10 @@ typedef struct {
 } ndp_default_router_t;
 
 #define NDP_DEFAULT_ROUTER_MAX 8
-#define NDP_ONLINK_PREFIX_MAX 32
 
 typedef struct {
     ndp_entry_t entries[NDP_TABLE_MAX];
     ndp_default_router_t routers[NDP_DEFAULT_ROUTER_MAX];
-    struct {
-        uint8_t prefix[16];
-        uint64_t valid_until_ms;
-        uint8_t prefix_len;
-        uint8_t used;
-    } onlink[NDP_ONLINK_PREFIX_MAX];
     uint32_t base_reachable_time_ms;
     uint32_t reachable_time_ms;
     uint32_t retrans_timer_ms;
@@ -692,22 +683,6 @@ uint32_t ndp_default_router_lifetime_for_l2(uint8_t ifindex, const uint8_t ip[16
     if (!t || !ip) return 0;
     for (int i = 0; i < NDP_DEFAULT_ROUTER_MAX; i++) if (t->routers[i].used && ipv6_cmp(t->routers[i].ip, ip) == 0) return t->routers[i].lifetime_ms;
     return 0;
-}
-
-int ndp_onlink_prefix_len_for_l2(uint8_t ifindex, const uint8_t ip[16]) {
-    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-    ndp_table_impl_t* t = l2 ? (ndp_table_impl_t*)l2->nd_table : NULL;
-    if (!t || !ip) return -1;
-    uint64_t now_ms = get_time();
-    int best = -1;
-    for (int i = 0; i < NDP_ONLINK_PREFIX_MAX; i++) {
-        if (!t->onlink[i].used) continue;
-        if (t->onlink[i].valid_until_ms != UINT64_MAX && now_ms >= t->onlink[i].valid_until_ms) continue;
-        int plen = t->onlink[i].prefix_len;
-        if (plen && ipv6_common_prefix_len(ip, t->onlink[i].prefix) < plen) continue;
-        if (plen > best) best = plen;
-    }
-    return best;
 }
 
 static bool ndp_send_na_on(uint8_t ifindex, const uint8_t dst_ip[16], const uint8_t src_ip[16], const uint8_t target_ip[16], const uint8_t dst_mac_in[6], const uint8_t my_mac[6], uint8_t solicited) {
@@ -1535,32 +1510,7 @@ void ndp_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[1
                     bool linklocal_prefix = pfx_len >= 10 && pfx[0] == 0xFE && (pfx[1] & 0xC0) == 0x80;
                     bool multicast_prefix = pfx_len >= 8 && pfx[0] == 0xFF;
                     if (!linklocal_prefix && !multicast_prefix) {
-                        if (onlink) {
-                            uint64_t now_ms = get_time();
-                            int found = -1;
-                            int free_slot = -1;
-                            for (int i = 0; i < NDP_ONLINK_PREFIX_MAX; i++) {
-                                if (t->onlink[i].used && t->onlink[i].valid_until_ms != UINT64_MAX && now_ms >= t->onlink[i].valid_until_ms) t->onlink[i].used = 0;
-                                if (!t->onlink[i].used) {
-                                    if (free_slot < 0) free_slot = i;
-                                    
-                                    continue;
-                                }
-                                if (t->onlink[i].prefix_len == pfx_len && ipv6_cmp(t->onlink[i].prefix, pfx) == 0) found = i;
-                            }
-                            if (!valid_lft) {
-                                if (found >= 0) t->onlink[found].used = 0;
-                            } else {
-                                int slot = found >= 0 ? found : free_slot;
-                                if (slot >= 0) {
-                                    t->onlink[slot].used = 0;
-                                    t->onlink[slot].prefix_len = pfx_len;
-                                    ipv6_cpy(t->onlink[slot].prefix, pfx);
-                                    t->onlink[slot].valid_until_ms = valid_lft == UINT32_MAX ? UINT64_MAX : now_ms + (uint64_t)valid_lft * 1000ull;
-                                    t->onlink[slot].used = 1;
-                                }
-                            }
-                        }
+                        if (onlink) ipv6_rt_onlink_update(ifx, pfx, pfx_len, valid_lft);
                         if (pref_lft <= valid_lft && pfx_len) ndp_on_ra(ifx, pfx, pfx_len, valid_lft, pref_lft, autonomous, ra.flags);
                     }
                 }
@@ -1811,6 +1761,6 @@ void ndp_link_state_changed(uint8_t ifindex, bool up) {
     t->rs_timer_ms = 0;
     if (!up) {
         ipv6_redirect_invalidate(ifindex, NULL);
-        memset(t->onlink, 0, sizeof(t->onlink));
+        ipv6_rt_onlink_clear(ifindex);
     } else ndp_daemon_kick();
 }

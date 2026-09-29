@@ -57,6 +57,18 @@ static inline bool ipv6_is_linkscope_mcast(const uint8_t ip[16]){
     return scope == 0x02;
 }
 
+static inline bool ipv6_prefix_matches(const uint8_t a[16], const uint8_t b[16], uint8_t prefix_len) {
+    if (prefix_len > 128) return false;
+
+    const uint8_t full_bytes = prefix_len / 8;
+    const uint8_t remaining_bits = prefix_len % 8;
+    for (uint8_t i = 0; i < full_bytes; i++) if (a[i] != b[i]) return false;
+
+    if (remaining_bits == 0) return true;
+    const uint8_t mask = (uint8_t)(0xFF << (8 - remaining_bits));
+    return (a[full_bytes] & mask) == (b[full_bytes] & mask);
+}
+
 #ifdef __cplusplus
 }
 #endif

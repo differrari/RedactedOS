@@ -6,8 +6,6 @@
 #include "networking/link_layer/ndp.h"
 #include "networking/internet_layer/ipv4_route.h"
 #include "networking/internet_layer/ipv6_route.h"
-#include "process/scheduler.h"
-#include "memory/page_allocator.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/internet_layer/igmp.h"
@@ -195,6 +193,7 @@ bool l2_interface_destroy(uint8_t ifindex){
         itf->nd_table = NULL;
     }
 
+    ipv6_rt_onlink_clear(ifindex);
     memset(&g_l2[slot], 0, sizeof(l2_interface_t));
     g_l2_used[slot] = 0;
     if (g_l2_count) g_l2_count -= 1;

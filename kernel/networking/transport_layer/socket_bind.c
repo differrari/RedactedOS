@@ -8,15 +8,17 @@
 #include "networking/internet_layer/ipv6_route.h"
 #include "random/random.h"
 #include "std/memory.h"
-#include "data/struct/hashmap.h"
+#include "data/struct/fixed_hash.h"
+#include "data/hash.h"
 
 #define SOCKET_PORT_MIN_EPHEMERAL 49152u
 #define SOCKET_PORT_MAX_EPHEMERAL 65535u
 #define SOCKET_BIND_LIST_END 0xFFFF
+#define SOCKET_BIND_MAP_CAPACITY SOCKET_BIND_MAX * 4
 #define SOCKET_BIND_FLAG_REUSEADDR (1u << 0)
 #define SOCKET_BIND_FLAG_REUSEPORT (1u << 1)
 #define SOCKET_BIND_FLAG_LISTENING (1u << 2)
-//TODO FAR: 0x61636f6c0570630a hashmap corruption
+
 typedef struct socket_bind_entry {
     uint16_t port;
     uint16_t next;
@@ -27,24 +29,16 @@ typedef struct socket_bind_entry {
     ksocket_t* socket;
 } socket_bind_entry_t;
 
-static socket_bind_entry_t bind_entries[SOCKET_BIND_MAX];
-static hash_map_t* bind_map = NULL;
+static fixed_hash_entry_t bind_groups[SOCKET_BIND_MAX];
+static uint16_t bind_buckets[SOCKET_BIND_MAP_CAPACITY];
+static fixed_hash_t bind_map;
+static bool bind_ready = 0;
 static uint16_t bind_next_alloc = 0;
+static uint16_t bind_used = 0;
+static socket_bind_entry_t bind_entries[SOCKET_BIND_MAX];
 
-static uint16_t socket_bind_head(protocol_t protocol, uint16_t port) {
-    uint32_t key = ((uint32_t)protocol << 16) | port;
-    void* value = hash_map_get(bind_map, &key, sizeof(key));
-    if (!value) return SOCKET_BIND_LIST_END;
-    return (uint16_t)((uintptr_t)value - 1);
-}
-
-static bool socket_bind_set_head(protocol_t protocol, uint16_t port, uint16_t head) {
-    uint32_t key = ((uint32_t)protocol << 16) | port;
-    if (head == SOCKET_BIND_LIST_END) {
-        void* old = NULL;
-        return hash_map_remove(bind_map, &key, sizeof(key), &old);
-    }
-    return hash_map_put(bind_map, &key, sizeof(key), (void*)(uintptr_t)(head + 1)) >= 0;
+static uint32_t socket_bind_key(protocol_t protocol, uint16_t port) {
+    return ((uint32_t)protocol << 16) | port;
 }
 
 static bool socket_bind_normalize_spec(SockBindSpec* spec) {
@@ -214,33 +208,44 @@ static bool socket_bind_specs_overlap(const SockBindSpec* a, const SockBindSpec*
 }
 
 static bool socket_bind_insert_prepared(ksocket_t* socket, protocol_t protocol, const SockBindSpec* spec, uint16_t port, uint32_t options, bool allow_reuse, socket_bind_token_t* out_token) {
-    if (!bind_map) {
-        hash_map_t* new_map = hash_map_create(SOCKET_BIND_MAX * 2u);
-        if (!new_map) return false;
-
+    if (!bind_ready) {
         irq_flags_t init_irq = irq_save_disable();
-        if (!bind_map) {
+        if (!bind_ready) {
+            if (!fixed_hash_init(&bind_map, bind_groups, bind_buckets, SOCKET_BIND_MAP_CAPACITY, SOCKET_BIND_MAX)) {
+                irq_restore(init_irq);
+                return false;
+            }
             bind_next_alloc = 0;
-            for (uint32_t i = 0; i < SOCKET_BIND_MAX; ++i) bind_entries[i].next = SOCKET_BIND_LIST_END;
-            bind_map = new_map;
-            new_map = NULL;
+            bind_used = 0;
+            for (uint32_t i = 0; i < SOCKET_BIND_MAX; i++) bind_entries[i].next = SOCKET_BIND_LIST_END;
+            bind_ready = true;
         }
         irq_restore(init_irq);
-        if (new_map) hash_map_destroy(new_map);
     }
 
     uint8_t flags = 0;
     if (options & SOCK_OPT_REUSEADDR) flags |= SOCKET_BIND_FLAG_REUSEADDR;
     if (protocol == PROTO_UDP && (options & SOCK_OPT_REUSEPORT)) flags |= SOCKET_BIND_FLAG_REUSEPORT;
     irq_flags_t irq = irq_save_disable();
+    if (bind_used == SOCKET_BIND_MAX) {
+        irq_restore(irq);
+        return false;
+    }
 
     if (protocol == PROTO_TCP && tcp_bind_conflicts(spec, port, allow_reuse && (flags & SOCKET_BIND_FLAG_REUSEADDR))) {
         irq_restore(irq);
         return false;
     }
 
-    uint16_t head = socket_bind_head(protocol, port);
+    uint32_t group_key = socket_bind_key(protocol, port);
+    uint16_t* head_slot = fixed_hash_find_value_ptr(&bind_map, group_key);
+    uint16_t head = head_slot ? *head_slot : SOCKET_BIND_LIST_END;
     for (uint16_t idx = head; idx != SOCKET_BIND_LIST_END; idx = bind_entries[idx].next) {
+        if (idx >= SOCKET_BIND_MAX) {
+            irq_restore(irq);
+            //kprintf("inv chain idx %u ins", (unsigned)idx);
+            return false;
+        }
         socket_bind_entry_t* other = &bind_entries[idx];
         if (!other->socket || other->port != port) continue;
         if (!socket_bind_specs_overlap(spec, &other->spec)) continue;
@@ -279,14 +284,19 @@ static bool socket_bind_insert_prepared(ksocket_t* socket, protocol_t protocol, 
     entry->spec = *spec;
     entry->socket = socket;
     entry->next = head;
-    if (!socket_bind_set_head(protocol, port, idx)) {
+    if (head_slot) *head_slot = idx;
+    else if (!fixed_hash_put(&bind_map, group_key, idx)) {
         memset(entry, 0, sizeof(*entry));
         entry->generation = generation;
         entry->next = SOCKET_BIND_LIST_END;
+        bind_next_alloc = idx;
+        //size_t groups = bind_map.size;
         irq_restore(irq);
+        //kprintf("group ins fail proto=%u port=%u groups=%u", (unsigned)protocol, (unsigned)port, (unsigned)groups);
         return false;
     }
 
+    bind_used++;
     socket_core_ref(socket);
     if (out_token) *out_token = ((uint32_t)generation << 16) | (uint32_t)(idx + 1);
 
@@ -301,16 +311,21 @@ bool socket_bind_insert(ksocket_t* socket, protocol_t protocol, SockBindSpec* sp
     return socket_bind_insert_prepared(socket, protocol, spec, port, options, allow_reuse, out_token);
 }
 
+static bool socket_bind_decode_token(socket_bind_token_t token, uint16_t* idx, uint16_t* generation) {
+    uint16_t index = (uint16_t)token - 1;
+    uint16_t gen = (uint16_t)(token >> 16);
+    if (index >= SOCKET_BIND_MAX || !gen) return false;
+
+    *idx = index;
+    *generation = gen;
+    return true;
+}
+
 bool socket_bind_tcp_listen(socket_bind_token_t token) {
-    if (!token) return false;
-
-    uint32_t idxplus = (uint16_t)token;
-    uint32_t generation = token >> 16;
-    if (!idxplus || idxplus > SOCKET_BIND_MAX || !generation) return false;
-
-    if (!bind_map) return false;
-
-    uint16_t idx = (uint16_t)(idxplus - 1);
+    uint16_t idx;
+    uint16_t generation;
+    if (!socket_bind_decode_token(token, &idx, &generation)) return false;
+    if (!bind_ready) return false;
     irq_flags_t irq = irq_save_disable();
     socket_bind_entry_t* entry = &bind_entries[idx];
     if (!entry->socket || entry->generation != generation || socket_core_protocol(entry->socket) != PROTO_TCP) {
@@ -322,10 +337,17 @@ bool socket_bind_tcp_listen(socket_bind_token_t token) {
         return true;
     }
 
-    uint16_t head = socket_bind_head(PROTO_TCP, entry->port);
+    uint16_t head = SOCKET_BIND_LIST_END;
+    fixed_hash_find(&bind_map, socket_bind_key(PROTO_TCP, entry->port), &head);
     for (uint16_t other_idx = head; other_idx != SOCKET_BIND_LIST_END; other_idx = bind_entries[other_idx].next) {
+        if (other_idx >= SOCKET_BIND_MAX) {
+            irq_restore(irq);
+            //kprintf("inv chain idx %u listen", (unsigned)other_idx);
+            return false;
+        }
         socket_bind_entry_t* other = &bind_entries[other_idx];
-        if (other_idx == idx || !other->socket || !(other->flags & SOCKET_BIND_FLAG_LISTENING) || other->port != entry->port) continue;
+        if (other_idx == idx || !other->socket) continue;
+        if (!(other->flags & SOCKET_BIND_FLAG_LISTENING) || other->port != entry->port) continue;
         if (!socket_bind_specs_overlap(&entry->spec, &other->spec)) continue;
         irq_restore(irq);
         return false;
@@ -337,30 +359,37 @@ bool socket_bind_tcp_listen(socket_bind_token_t token) {
 }
 
 void socket_bind_remove(socket_bind_token_t token) {
-    if (!token) return;
-
-    uint32_t idxplus = (uint16_t)token;
-    uint32_t generation = token >> 16;
-    if (!idxplus || idxplus > SOCKET_BIND_MAX || !generation) return;
-
-    uint16_t idx = (uint16_t)(idxplus - 1);
+    uint16_t idx;
+    uint16_t generation;
+    if (!socket_bind_decode_token(token, &idx, &generation)) return;
     ksocket_t* drop = NULL;
 
-    if (!bind_map) return;
+    if (!bind_ready) return;
 
     irq_flags_t irq = irq_save_disable(); //TODO lock
     socket_bind_entry_t* e = &bind_entries[idx];
     if (e->socket && e->generation == generation) {
         protocol_t protocol = socket_core_protocol(e->socket);
-        uint16_t head = socket_bind_head(protocol, e->port);
+        uint32_t group_key = socket_bind_key(protocol, e->port);
+        uint16_t* head_slot = fixed_hash_find_value_ptr(&bind_map, group_key);
+        uint16_t head = head_slot ? *head_slot : SOCKET_BIND_LIST_END;
         uint16_t cur = head;
         uint16_t prev = SOCKET_BIND_LIST_END;
         bool removed = false;
         while (cur != SOCKET_BIND_LIST_END) {
+            if (cur >= SOCKET_BIND_MAX) {
+                irq_restore(irq);
+                //kprintf("inv chain idx %u remove", (unsigned)cur);
+                return;
+            }
             if (cur == idx) {
                 if (prev == SOCKET_BIND_LIST_END) {
                     head = bind_entries[cur].next;
-                    removed = socket_bind_set_head(protocol, e->port, head);
+                    if (head == SOCKET_BIND_LIST_END) removed = fixed_hash_remove(&bind_map, group_key);
+                    else if (head_slot) {
+                        *head_slot = head;
+                        removed = true;
+                    }
                 } else {
                     bind_entries[prev].next = bind_entries[cur].next;
                     removed = true;
@@ -372,6 +401,7 @@ void socket_bind_remove(socket_bind_token_t token) {
         }
 
         if (removed) {
+            bind_used--;
             drop = e->socket;
             memset(e, 0, sizeof(*e));
             e->generation = generation;
@@ -385,13 +415,10 @@ void socket_bind_remove(socket_bind_token_t token) {
 }
 
 void socket_bind_udp_set_remote(socket_bind_token_t token, const net_l4_endpoint* remote) {
-    if (!token) return;
+    uint16_t idx;
+    uint16_t generation;
+    if (!socket_bind_decode_token(token, &idx, &generation)) return;
 
-    uint32_t idxplus = (uint16_t)token;
-    uint32_t generation = token >> 16;
-    if (!idxplus || idxplus > SOCKET_BIND_MAX || !generation) return;
-
-    uint16_t idx = (uint16_t)(idxplus-1);
     irq_flags_t irq = irq_save_disable();
     socket_bind_entry_t* e = &bind_entries[idx];
     if (e->socket && e->generation == generation && socket_core_protocol(e->socket) == PROTO_UDP) {
@@ -404,6 +431,11 @@ void socket_bind_udp_set_remote(socket_bind_token_t token, const net_l4_endpoint
 int32_t socket_bind_alloc_ephemeral(ksocket_t* socket, protocol_t protocol, SockBindSpec* spec, uint32_t options, socket_bind_token_t* out_token) {
     if (out_token) *out_token = 0;
     if (!socket || !spec || !socket_bind_prepare_spec(spec, protocol)) return -1;
+
+    irq_flags_t irq = irq_save_disable();
+    bool full = bind_ready && bind_used == SOCKET_BIND_MAX;
+    irq_restore(irq);
+    if (full) return -1;
 
     rng_t rng;
     rng_init_random(&rng);
@@ -441,14 +473,15 @@ int32_t socket_bind_alloc_ephemeral_l3(ksocket_t* socket, protocol_t protocol, l
 ksocket_t* socket_bind_lookup(protocol_t protocol, ip_version_t ipver, l3_id_t l3_id, uint8_t ifindex, const void* src_ip_addr, uint16_t src_port, const void* dst_ip_addr, uint16_t dst_port) {
     if (!dst_ip_addr || (protocol != PROTO_TCP && protocol != PROTO_UDP)) return NULL;
     if (ipver != IP_VER4 && ipver != IP_VER6) return NULL;
-    if (!bind_map) return NULL;
+    if (!bind_ready) return NULL;
 
     uint32_t ip_len = ipver == IP_VER6 ? 16u : 4u;
     uint8_t reuseport_key[1 + sizeof(src_port) + sizeof(dst_port) + 32 + sizeof(socket_handle_t)];
     uint32_t reuseport_key_len = 0;
 
     irq_flags_t irq = irq_save_disable(); //TODO lock
-    uint16_t head = socket_bind_head(protocol, dst_port);
+    uint16_t head = SOCKET_BIND_LIST_END;
+    fixed_hash_find(&bind_map, socket_bind_key(protocol, dst_port), &head);
     uint8_t best_score = 0;
     bool reuseport_group = false;
     uint16_t reuseport_owner = 0;
@@ -457,6 +490,11 @@ ksocket_t* socket_bind_lookup(protocol_t protocol, ip_version_t ipver, l3_id_t l
     socket_bind_entry_t* reuseport_selected = NULL;
 
     for (uint16_t idx = head; idx != SOCKET_BIND_LIST_END; idx = bind_entries[idx].next) {
+        if (idx >= SOCKET_BIND_MAX) {
+            irq_restore(irq);
+            //kprintf("inv chain idx %u lookup", (unsigned)idx);
+            return NULL;
+        }
         socket_bind_entry_t* e = &bind_entries[idx];
         if (!e->socket || e->port != dst_port || socket_core_is_closing(e->socket)) continue;
         if (protocol == PROTO_TCP && !(e->flags & SOCKET_BIND_FLAG_LISTENING)) continue;
