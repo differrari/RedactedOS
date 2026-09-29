@@ -109,15 +109,19 @@ bool virtio_init_device(virtio_device *dev) {
     dev->num_queues = 0;
     dev->current_queue = 0;
     dev->negotiated_features = 0;
+    cfg->device_status = VIRTIO_STATUS_RESET;
+    asm volatile ("dsb sy" ::: "memory");
     uint32_t timeout = 2000;
-    while (cfg->device_status != 0) {
+    while (cfg->device_status != VIRTIO_STATUS_RESET) {
         if (timeout == 0) return false;
         timeout--;
         delay(1);
     }
 
     cfg->device_status = VIRTIO_STATUS_ACKNOWLEDGE;
+    asm volatile ("dsb sy" ::: "memory");
     cfg->device_status |= VIRTIO_STATUS_DRIVER;
+    asm volatile ("dsb sy" ::: "memory");
 
     cfg->device_feature_select = 0;
     uint32_t f_lo = cfg->device_feature;
@@ -128,6 +132,11 @@ bool virtio_init_device(virtio_device *dev) {
     kprintfv("Features %llx",(unsigned long long)features);
 
     uint64_t negotiated = (features & feature_mask);
+    if ((feature_mask & (1ULL << VIRTIO_F_VERSION_1)) && !(negotiated & (1ULL << VIRTIO_F_VERSION_1))) {
+        kprintf("[VIRTIO] VIRTIO_F_VERSION_1 not supported");
+        cfg->device_status |= VIRTIO_STATUS_FAILED;
+        return false;
+    }
 
     kprintfv("Negotiated features %llx",(unsigned long long)negotiated);
 
@@ -139,8 +148,10 @@ bool virtio_init_device(virtio_device *dev) {
     dev->negotiated_features = negotiated;
 
     cfg->device_status |= VIRTIO_STATUS_FEATURES_OK;
+    asm volatile ("dsb sy" ::: "memory");
     if (!(cfg->device_status & VIRTIO_STATUS_FEATURES_OK)){
         kprintf("Failed to negotiate features. Supported features %llx",(unsigned long long)features);
+        cfg->device_status |= VIRTIO_STATUS_FAILED;
         return false;
     }
 
@@ -223,26 +234,29 @@ uint32_t select_queue(virtio_device *dev, uint32_t index){
     return dev->queues[index].size;
 }
 
-void virtio_notify(virtio_device *dev) {
+void virtio_notify_queue(virtio_device *dev, uint16_t index) {
     if (!dev || !dev->notify_cfg) return;
-    uint16_t index = dev->current_queue;
     if (index >= VIRTIO_MAX_QUEUES) return;
     if (!dev->queues[index].valid) return;
 
     uint32_t mul = dev->notify_off_multiplier;
-    if (!mul) mul = 1;
-
     uint16_t off = dev->queues[index].notify_off;
     uint16_t value = (dev->negotiated_features & (1ULL << VIRTIO_F_NOTIFICATION_DATA)) ? dev->queues[index].notify_data : index;
 
     *(volatile uint16_t*)((uintptr_t)dev->notify_cfg + (uint64_t)off * (uint64_t)mul) = value;
 }
 
+void virtio_notify(virtio_device *dev) {
+    if (!dev) return;
+    virtio_notify_queue(dev, dev->current_queue);
+}
+
+//TODO this still blocks until the device completes the request
+//t would make more sense to split submit/completion later and complete requests through async/events/promises
 bool virtio_send_nd(virtio_device *dev, const virtio_buf *bufs, uint16_t n) {
-
     if (!dev || !bufs || !n) return false;
+    if (dev->current_queue >= VIRTIO_MAX_QUEUES || dev->current_queue >= dev->num_queues) return false;
 
-    if (dev->current_queue >= VIRTIO_MAX_QUEUES) return false;
     virtio_queue *queue = &dev->queues[dev->current_queue];
     if (!queue->valid || !queue->size || n > queue->size) return false;
 
@@ -276,6 +290,7 @@ bool virtio_send_nd(virtio_device *dev, const virtio_buf *bufs, uint16_t n) {
     virtio_notify(dev);
 
     while (last_used_idx == u->idx);//TODO: OPT
+    asm volatile ("dmb ishld" ::: "memory");
 
     return true;
 }

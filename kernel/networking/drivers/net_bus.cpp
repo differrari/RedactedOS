@@ -49,11 +49,7 @@ static void add_loopback(){
     if (g_lo_added) return;
     if (g_count >= MAX_L2_INTERFACES) return;
     net_nic_desc_t* d = &g_nics[g_count++];
-    d->drv = nullptr;
-
-    memset(d->ifname, 0, sizeof(d->ifname));
-    memset(d->hw_ifname, 0, sizeof(d->hw_ifname));
-    memset(d->mac, 0, sizeof(d->mac));
+    memset(d, 0, sizeof(*d));
 
     strncpy(d->ifname, "lo0", sizeof(d->ifname));
     strncpy(d->hw_ifname, "loopback", sizeof(d->hw_ifname));

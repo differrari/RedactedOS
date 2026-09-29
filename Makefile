@@ -9,7 +9,7 @@ else
 BOOTFS := /media/bootfs
 endif
 
-.PHONY: all shared user kernel clean raspi virt run debug dump prepare-fs help install
+.PHONY: all modules kernel shared user tools clean raspi virt run debug dump prepare-fs help install docs
 
 all: kshared modules kernel shared user tools libs docs
 	@echo "Build complete."
@@ -51,7 +51,10 @@ clean:
 	$(MAKE) -C modules $@
 	$(MAKE) -C libs $@
 	@echo "removing images"
-	$(RM) kernel.img kernel.elf dump
+	$(RM) -f kernel.img kernel.elf disk.img dump trace serial.log gdb_net.log screenlog.0 dump.dtb
+	$(RM) -f logs/*.log fs/kernel.elf
+	$(RM) -rf fs/redos/tools fs/redos/system fs/redos/user fs/redos/docs .cache
+	@find ./user ./tools ./modules ./kernel ./shared ./libs -type f \( -name dump -o -name '*.dump' -o -name '*.trace' -o -name '*.log' -o -name '*.tmp' \) -exec rm -f {} +
 
 raspi:
 	$(MAKE) LOAD_ADDR=0x80000 XHCI_CTX_SIZE=64 QEMU=true MODE=raspi all

@@ -9,6 +9,14 @@
 #include "sysregs.h"
 #include "memory/addr.h"
 
+bool verbose = true;
+#define kprintfv(fmt, ...) \
+    ({ \
+        if (verbose){\
+            kprintf(fmt, ##__VA_ARGS__); \
+        }\
+    })
+
 typedef struct {
     uint64_t addr;
     uint32_t fourcc;
@@ -39,25 +47,33 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
 //     preferred_screen_size.height /= 2;
 // #endif
     screen_size = preferred_screen_size;
+    kprintfv("[RAMFB] init requested %ix%i", preferred_screen_size.width, preferred_screen_size.height);
 
     if (!screen_size.width || !screen_size.height) return false;
 
     stride = bpp * screen_size.width;
     framebuffer_size = (size_t)(stride * screen_size.height);
 
-    fw_find_file("etc/ramfb", &file);
-    
-    if (file.selector == 0x0){
+    kprintfv("[RAMFB] probing cfg desc");
+    if (!fw_find_file("etc/ramfb", &file) || file.selector == 0x0){
         kprintf("[RAMFB error] ramfb not found");
         return false;
     }
+
+    kprintfv("[RAMFB] descriptor found selector=%x size=%x name=%s", file.selector, file.size, file.name);
     mem_page = palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW | MEM_DEV, false);
     uint8_t* fb_block = (uint8_t*)palloc(framebuffer_size*2, MEM_PRIV_SHARED, MEM_RW, true);
 
-    if (!fb_block) return false;
+    if (!fb_block) {
+        kprintfv("[RAMFB] failed to allocate fb");
+        return false;
+    }
 
     framebuffer = (uint32_t*)fb_block;
     back_framebuffer = (uint32_t*)(fb_block + framebuffer_size);
+
+    kprintfv("[RAMFB] framebuffer va=%x pa=%x", (uintptr_t)framebuffer, (uintptr_t)pt_va_to_pa(framebuffer));
+    kprintfv("[RAMFB] backbuffer va=%x pa=%x", (uintptr_t)back_framebuffer, (uintptr_t)pt_va_to_pa(back_framebuffer));
 
     ctx = {
         .dirty_rects = {},
@@ -87,7 +103,9 @@ void RamFBGPUDriver::update_gpu_fb(){
         .stride = __builtin_bswap32(stride),
     };
 
+    kprintfv("[RAMFB] writing descriptor selector=%x fb_pa=%x %ix%i stride=%x", file.selector, (uintptr_t)fb_pa, screen_size.width, screen_size.height, stride);
     fw_cfg_dma_write(&fb, sizeof(fb), file.selector);
+    kprintfv("[RAMFB] descriptor w completed");
 }
 
 gpu_size RamFBGPUDriver::get_screen_size(){
