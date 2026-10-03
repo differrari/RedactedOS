@@ -13,6 +13,7 @@
 #include "math/math.h"
 #include "draw/textdraw.h"
 #include "environment/env_types.h"
+#include "utils/theme.h"
 
 draw_ctx ctx = {};
 
@@ -184,6 +185,24 @@ int copypaste(){
     
 }
 
+int test_mouse(){
+    while (true){
+        mouse_data data = {};
+        get_mouse_status(&data);
+        fb_clear(&ctx, 0xff0c0c0c);
+        kbd_event ev;
+        if (read_event(&ev)){
+            if (ev.key == KEY_ESC) return 0;
+        }
+        color col = 0xffb4dd13;
+        if (data.raw.buttons & 1) col = 0xff674928;
+        if ((data.raw.buttons >> 1) & 1) col = 0xff398019;
+        if ((data.raw.buttons >> 2) & 1) col = 0xff029387;
+        fb_fill_rect(&ctx, data.position.x, data.position.y, 128 + data.raw.x, 128 + data.raw.y, col);
+        commit_draw_ctx(&ctx);
+    }
+}
+
 bool should_quit = false;
 
 bool on_quit(signal_info_t *do_not_use_this){
@@ -193,14 +212,29 @@ bool on_quit(signal_info_t *do_not_use_this){
     return true;
 }
 
+int log_test(){
+    int count = 0;
+    while (true){
+        fb_clear(&ctx, 0xff0c0c0c);
+        kbd_event ev;
+        if (read_event(&ev)){
+            if (ev.key == KEY_ESC) return 0;
+        }
+        print("Log %i",count++);
+        commit_draw_ctx(&ctx);
+    }
+}
+
 struct { char* name; int (*fn)(); } demos[] = {
     {"Display image on screen", img_example},
-    {"Networking demo", net_example},
+    // {"Networking demo", net_example},
     {"Audio demo", audio_example},
     {"Shared folder demo (requires 9Pfs)", file_sync},
-    {"Concurrent writing to file (WIP)", concurrent_write},
+    // {"Concurrent writing to file (WIP)", concurrent_write},
+    {"Console output test",log_test},
     {"Write large file", write_large_file},
     {"Copy-paste to clipboard", copypaste},
+    {"Mouse test",test_mouse}
 };
 
 int main(int argc, char* argv[]){
@@ -226,7 +260,10 @@ int main(int argc, char* argv[]){
 
     text_format text_fmt = {.scale = 3,.foreground = 0xFFFFFFFF,.background = 0xFF354657,.wrap = wrap_word};
     
-    fb_clear(&ctx, 0xFF354657);
+    theme_palette palette = {};
+    get_theme(&palette);
+    
+    fb_clear(&ctx, palette.background);
 
     gpu_size size = {};
     fb_continuous_draw_text(&ctx, draw_text_render, &cursor, initial, &range, rect, &size, (gpu_point){}, text_fmt, (text_format_arr){ });

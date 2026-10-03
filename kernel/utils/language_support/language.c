@@ -1,5 +1,6 @@
 #include "language.h"
 #include "files/vfs.h"
+#include "draw/textdraw.h"
 
 #define DATA_SYNTAX DATA_SIGNATURE("CODESNTX")
 #define DATA_FORMAT DATA_SIGNATURE("CODEFMT")

@@ -3,7 +3,7 @@
 #include "types.h"
 #include "files/fs.h"
 #include "files/system_module.h"
-#include "filesystem/modules/module_loader.h"
+#include "files/module_loader.h"
 
 typedef struct {
     file write_fd;

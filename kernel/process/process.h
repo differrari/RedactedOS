@@ -13,6 +13,9 @@ extern "C" {
 #include "signals/signals.h"
 #include "environment/environment.h"
 #include "files/jobs.h"
+#include "permissions/authorize.h"
+#include "procfs.h"
+#include "debug/proc.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
@@ -42,8 +45,6 @@ typedef struct {
     sizedptr entries[PACKET_BUFFER_CAPACITY];
 } packet_buffer_t;
 
-#define MAX_PROC_NAME_LENGTH 256
-
 #define SIGNAL_BUFFER_CAPACITY 64
 
 typedef struct {
@@ -55,6 +56,7 @@ typedef struct {
 typedef struct {
     u64 fs_id;//Filesystem this process has access to
     u64 owned_fs_id;//Filesystem this process owns, not automapped to fs_id due to isolation not being enforced yet
+    auth_token auth_id;
 } system_permissions;
 
 typedef enum { STOPPED, READY, RUNNING, BLOCKED, SLEEPING } process_state;
@@ -65,6 +67,14 @@ typedef struct {
     size_t size;
 } stack_t;
 
+typedef union {
+    struct {
+        u32 pid: 16;
+        u32 tid: 16;
+    };
+    u32 addr;
+} proc_addr;
+
 struct thread_t {
     uint64_t regs[31]; // x0–x30
     uintptr_t sp;
@@ -72,13 +82,14 @@ struct thread_t {
     uint64_t spsr; 
     //Not used in context saving
     stack_t stack_info;
-    uptr kstack_top;
+    uptr *special_mm;
     u16 pid;
     u16 tid;
     process_state state;
     u64 wake_at_msec;
-    thread_t *next;
     job_id_t job_id;
+    proc_addr inspector;
+    thread_t *next;
 };
 
 struct process_t {
@@ -109,6 +120,7 @@ struct process_t {
     __attribute__((aligned(16))) thread_t signal_handlers[NUMBER_SIGNALS];
     uint8_t priority;
     system_permissions permissions;
+    auth_resource resource_id;
     uint16_t win_id;
     uaddr_t win_fb_va;
     paddr_t win_fb_phys;
@@ -122,6 +134,7 @@ struct process_t {
     int thread_count;
     int thread_ids;
     environment_data environment;
+    procfs_files procfs;
     uptr shared_page;
     process_t *process_next;
 };
