@@ -162,7 +162,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
         file->file_buffer = (buffer){
             .buffer = (char*)(proc->output ? proc->output : proc->postmortem_output),
             .buffer_size = proc->output ? proc->output_size : proc->postmortem_output_size,
-            .limit = proc->output ? PROC_OUT_BUF : proc->postmortem_output_size,
+            .limit = proc->output ? PROC_STDIO_BUF : proc->postmortem_output_size,
             .options = proc->output ? buffer_circular : buffer_static,
             .cursor = proc->output ? proc->output_size : 0,
         };
@@ -269,7 +269,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     if (fd->id == FD_OUT){
         if (!proc || !size) return 0;
         if (!proc->output) {
-            proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
+            proc->output = (kaddr_t)palloc(PROC_STDIO_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
             if (!proc->output) return 0;
         }
         irq_flags_t irq = irq_save_disable();
@@ -277,7 +277,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
         buffer file_buffer = {
             .buffer = (char*)proc->output,
             .buffer_size = proc->output_size,
-            .limit = PROC_OUT_BUF,
+            .limit = PROC_STDIO_BUF,
             .options = buffer_circular,
             .cursor = proc->output_size,
         };
@@ -297,7 +297,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
                 file->buf = (uptr)proc->output;
                 file->file_buffer.buffer = (char*)proc->output;
                 file->file_buffer.buffer_size = proc->output_size;
-                file->file_buffer.limit = PROC_OUT_BUF;
+                file->file_buffer.limit = PROC_STDIO_BUF;
                 file->file_buffer.cursor = proc->output_size;
                 file->file_buffer.options = buffer_circular;
             }

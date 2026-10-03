@@ -225,7 +225,40 @@ int log_test(){
     }
 }
 
+int pipe_source(){
+    const char* arg = "1";
+    print("Hello from source pipe");
+    u16 id = exec("/boot/redos/system/demo.red", 1, &arg, EXEC_MODE_KEEP_FOCUS);//TODO: exec does not automatically add argv[0] as it should
+    thread_inspect(TINSPECT_INPUT, id, 1);
+    u16 own_id = 0;
+    sreadf("/proc/id",&own_id,sizeof(u16));
+    string src = string_format("/proc/%i/out",own_id);
+    string dst = string_format("/proc/%i/in",id);
+    file pipe = {};
+    pipef(src.data,dst.data, pipe_from_beginning, &pipe);
+    print("Piping %S into %S with fd %i",src,dst,pipe.id);
+    msleep(2000);
+    return 0;
+}
+
+int pipe_destination(){
+    print("Hello from destination pipe");
+    size_t n = 0;
+    char buf[256];
+    while (!n){
+        n = readf(&(file){
+            .id = FD_IN,
+        }, buf, 256);
+    }
+    string_slice msg = {buf,n};
+    print("Received message %v",msg);
+    msleep(1000);
+    return 0;
+}
+
 struct { char* name; int (*fn)(); } demos[] = {
+    {"Pipe source", pipe_source},
+    {"Pipe destination", pipe_destination},
     {"Display image on screen", img_example},
     // {"Networking demo", net_example},
     {"Audio demo", audio_example},
@@ -234,7 +267,7 @@ struct { char* name; int (*fn)(); } demos[] = {
     {"Console output test",log_test},
     {"Write large file", write_large_file},
     {"Copy-paste to clipboard", copypaste},
-    {"Mouse test",test_mouse}
+    {"Mouse test",test_mouse},
 };
 
 int main(int argc, char* argv[]){
@@ -264,6 +297,14 @@ int main(int argc, char* argv[]){
     get_theme(&palette);
     
     fb_clear(&ctx, palette.background);
+    
+    if (argc > 0){
+        char *id = argv[0];
+        u16 selection = parse_int_u64(id, 1);
+        if (selection < N_ARR(demos)){
+            return demos[selection].fn();
+        }
+    }
 
     gpu_size size = {};
     fb_continuous_draw_text(&ctx, draw_text_render, &cursor, initial, &range, rect, &size, (gpu_point){}, text_fmt, (text_format_arr){ });

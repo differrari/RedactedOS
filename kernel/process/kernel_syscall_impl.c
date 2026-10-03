@@ -48,6 +48,12 @@ void page_free(void *ptr){
 
 void printl(const char *str){
     kprint(str);
+    if (is_privileged(get_current_proc())){
+        size_t len = strlen(str);
+        file fd2 = { .id = 2 };
+        write_file(&fd2, str, len);
+        write_file(&fd2, "\r\n", 2);
+    }
 }
 
 bool read_key(keypress *kp){

@@ -95,8 +95,8 @@ bool set_inspect(debug_inspect_types types, process_t *inspector, thread_t *insp
         if (!auth_request(tok, auth_process_info, res)) return false;
     if (types & TINSPECT_STATE)
         if (!auth_request(tok, auth_process_state, res)) return false;
-    // if (types & TINSPECT_INPUT)
-    //     if (!request_auth(tok, auth_resource_filesystem)) return false;
+    if (types & TINSPECT_INPUT)
+        if (!auth_request(tok, auth_process_input, res)) return false;
     if (types & TINSPECT_OUTPUT)
         if (!auth_request(tok, auth_process_output, res)) return false;
     inspected_thread->inspector = (proc_addr){

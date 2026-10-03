@@ -19,7 +19,7 @@ extern "C" {
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
-#define PROC_OUT_BUF 0x10000
+#define PROC_STDIO_BUF 0x10000
 
 typedef struct {
     volatile u32 write_index;
@@ -101,9 +101,12 @@ struct process_t {
     size_t output_size;
     kaddr_t postmortem_output;
     size_t postmortem_output_size;
+    
+    kaddr_t input;
+    size_t input_size;
+    
     uint16_t procfs_refs;
     bool pending_reset;
-    file out_fd;
     int32_t exit_code;
     bool focused;
     paddr_t code;

@@ -418,9 +418,15 @@ void reset_process(process_t *proc){
 #endif
 
     if (proc->output) {
-        pfree((void*)proc->output, PROC_OUT_BUF);
+        pfree((void*)proc->output, PROC_STDIO_BUF);
         proc->output = 0;
         proc->output_size = 0;
+    }
+    
+    if (proc->input) {
+        pfree((void*)proc->input, PROC_STDIO_BUF);
+        proc->input = 0;
+        proc->input_size = 0;
     }
 
 #ifdef BUG_RESET_TTBR0
@@ -477,7 +483,6 @@ void reset_process(process_t *proc){
     proc->code = 0;
     proc->code_size = 0;
     proc->va = 0;
-    proc->out_fd = (file){};
 
     proc->win_id = 0;
     proc->win_fb_va = 0;

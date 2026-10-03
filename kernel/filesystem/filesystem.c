@@ -109,6 +109,13 @@ FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
 }
 
 size_t read_file(file *descriptor, char* buf, size_t size){
+    if (descriptor->id == FD_IN){
+        const char *search_path = "proc";//TODO: This is ugly
+        system_module *mod = get_module(&search_path);
+        if (!mod || !mod->write) return 0;
+        return mod->read(descriptor, buf, size, descriptor->cursor);
+        //TODO: this handles its own cursor movement, but with the new sync policies it shouldn't have to
+    }
     if (!open_files){
         kprintf("[FS] No open files");
         return 0;
@@ -193,10 +200,11 @@ void close_file_global(file *descriptor, system_module *mod){
 
 size_t write_file(file *descriptor, const char* buf, size_t size){
     if (descriptor->id == FD_OUT){
-        const char *search_path = "proc";//TODO: This is ugly
-        system_module *mod = get_module(&search_path);
+        system_module *mod = &procfs_mod;
         if (!mod || !mod->write) return 0;
-        return mod->write(descriptor, buf, size, descriptor->cursor);
+        size_t amount_written = mod->write(descriptor, buf, size, descriptor->cursor);
+        update_pipes(resolve_reserved_fd(FD_OUT), buf, amount_written);
+        return amount_written;
         //TODO: this handles its own cursor movement, but with the new sync policies it shouldn't have to
     }
     if (!open_files) return 0;
@@ -220,7 +228,7 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
             job_serialize_fd(&app, 0, &gfd, copy_on_start);
             job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_start);
         });
-        return j_ret;
+        amount_written = j_ret;
     } else {
         amount_written = local.mod->write(&gfd, buf, size, 0);
     }

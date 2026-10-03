@@ -37,6 +37,7 @@
 #include "stack_manager.h"
 #include "debug.h"
 #include "debug/inspect.h"
+#include "filesystem/pipe.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;
@@ -116,7 +117,12 @@ u64 syscall_pfree(process_t *ctx, thread_t *current_thread){
 
 u64 syscall_printl(process_t *ctx, thread_t *current_thread){
     SYSCALL_STR(str, PROC_X0, false);
+    size_t len = strlen(str);
+    if (len > UINT16_MAX) return 0;
     kprint((char*)str);
+    file fd2 = { .id = 2 };
+    write_file(&fd2, str, len);
+    write_file(&fd2, "\r\n", 2);
     return 0;
 }
 
@@ -369,6 +375,22 @@ u64 syscall_openf(process_t *ctx, thread_t *current_thread){
 #endif
 }
 
+u64 syscall_pipef(process_t *ctx, thread_t *current_thread){
+    SYSCALL_STR(src, PROC_X0, false);
+    SYSCALL_STR(dst, PROC_X1, false);
+    pipe_options options = current_thread->PROC_X2;
+    SYSCALL_ARG(file,descriptor,PROC_X3, true);
+    module_root srcfs = {}, dstfs = {}; 
+    string s = resolve_isolated_path(src, ctx->permissions.fs_id, &srcfs, ISOLATEDFS_ALLOW_KFS);
+    if (!s.data || !s.length || !srcfs.map) return 0;
+    string d = resolve_isolated_path(dst, ctx->permissions.fs_id, &dstfs, ISOLATEDFS_ALLOW_KFS);
+    if (!d.data || !d.length || !dstfs.map) return 0;
+    FS_RESULT res = create_pipe(&srcfs, s.data, &dstfs, d.data, options, descriptor);
+    string_free(s);
+    string_free(d);
+    return res;
+}
+
 u64 syscall_readf(process_t *ctx, thread_t *current_thread){
     SYSCALL_ARG(file, descriptor, PROC_X0, true);
     size_t size = (size_t)current_thread->PROC_X2;
@@ -572,6 +594,7 @@ syscall_entry syscalls[] = {
     [SOCKET_SEND_CODE] = syscall_socket_send,
     [SOCKET_RECEIVE_CODE] = syscall_socket_receive,
     [SOCKET_CLOSE_CODE] = syscall_socket_close,
+    [PIPE_OPEN_CODE] = syscall_pipef,
     [FILE_OPEN_CODE] = syscall_openf,
     [FILE_READ_CODE] = syscall_readf,
     [FILE_WRITE_CODE] = syscall_writef,
