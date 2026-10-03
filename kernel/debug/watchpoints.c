@@ -6,8 +6,8 @@
 uptr watchpoints[MAX_WATCHPOINTS] = {};
 size_t watchpoint_count = 0;
 
-#define STORE_VAL(i) case i: asm volatile("msr DBGWVR"#i"_EL1, %0" : "=r"(address)); break;
-#define STORE_CONFIG(i) case i: asm volatile("msr DBGWCR"#i"_EL1, %0" : "=r"(config)); break;
+#define STORE_VAL(i) case i: { asm volatile("msr DBGWVR"#i"_EL1, %0" :: "r"(address)); u64 readback = 0; asm volatile("mrs %0, DBGWVR"#i"_EL1" : "=r"(readback)); print("[DEBUGWP debug] Watchpoint value "#i" set to %llx",readback); } break;
+#define STORE_CONFIG(i) case i: { asm volatile("msr DBGWCR"#i"_EL1, %0" :: "r"(config)); u64 readback = 0; asm volatile("mrs %0, DBGWCR"#i"_EL1" : "=r"(readback)); print("[DEBUGWP debug] Watchpoint config "#i" set to %llx",readback); } break;
 
 typedef union {
     struct {
@@ -49,8 +49,7 @@ bool debug_store_watch_config(u64 index, debug_watchpoint_type type, u8 bit_mask
         .watchpoint_type = 0,
         .mask = 0,
     };
-    u32 config = entry.entry; 
-    print("Config %b",config);
+    u64 config = entry.entry;
     switch (index) {
         STORE_CONFIG(0)
         STORE_CONFIG(1)
