@@ -81,6 +81,7 @@ bool load_process_module(process_t *p, system_module *m, bool global){
     if (!p->permissions.owned_fs_id) p->permissions.owned_fs_id = register_fs_id();
     module_root *root = get_fs_for_id(p->permissions.fs_id);
     system_module *mod = zalloc(sizeof(system_module));
+    if (m->init) m->init = 0;//TODO: This function can be called again thanks to kctx switch
     memcpy(mod, m, sizeof(system_module));
     mod->name = string_from_literal(m->name).data;
     mod->mount = string_from_literal(m->mount).data;

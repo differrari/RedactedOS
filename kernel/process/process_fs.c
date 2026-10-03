@@ -191,7 +191,7 @@ void register_procfs(u16 procid){
 }
 
 static inline FS_RESULT procfs_main_open(const char *path, file *fd){
-    if (strncmp(path,"/id", 2) == 0){
+    if (strncmp(path,"/id", 3) == 0){
         process_t *proc = get_current_proc();
         fd->id = ((procfs_type_id & 0xFFFF) << 16) | proc->id;
         fd->data_type = DATA_SIG_RAW;

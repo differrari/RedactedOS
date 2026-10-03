@@ -1,6 +1,5 @@
 #include "syscalls/syscalls.h"
 #include "files/system_module.h"
-#include "files/helpers.h"
 
 extern void refresh_apps();
 extern system_module apps_mod;
