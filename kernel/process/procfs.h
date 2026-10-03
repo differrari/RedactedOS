@@ -9,6 +9,7 @@ void register_procfs(u16 procid);
 typedef struct {
     buffer output;
     buffer state;
+    buffer info;
 } procfs_files;
 
 

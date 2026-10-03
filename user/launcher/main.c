@@ -64,6 +64,7 @@ package_info get_pkg_info(char* info_path){
     package_info pkg = {};
     char *info = read_full_file(info_path, 0);
     if (!info) return pkg;
+    print("Exists %s",info_path);
     pkg = parse_package_info(info);
     release(info);
     return pkg;
@@ -77,7 +78,7 @@ void handle_entry(const char *directory, const char *file) {
     uint16_t extra = ext_loc ? 1 : 0;
     string_slice ext = make_string_slice(name.data + ext_loc + 1, 0, strlen(file)-ext_loc-extra);
     if (slice_lit_match(ext,"red",true)){
-        string pkg_info = string_concat(fullpath, string_from_literal("/package.info"));
+        string pkg_info = string_format("%S/package.info", fullpath);
         add_entry(name, ext, fullpath, get_pkg_info(pkg_info.data));
         // string_free(pkg_info);
     }

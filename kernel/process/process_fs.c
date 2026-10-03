@@ -22,6 +22,10 @@ void procfs_list(void *ctx, u64 original_index, u64 *out_offset){
     string_free(s);
 } 
 
+static inline buffer procfs_make_info_buffer(process_t *proc){
+    return buffer_create(sizeof(proc_info), buffer_static);
+}
+
 FS_RESULT procfs_open_output(process_t *proc, file *fd){
     fd->id = ((procfs_type_out & 0xFFFF) << 16) | proc->id;
     fd->data_type = DATA_SIG_TEXT;
@@ -48,7 +52,7 @@ FS_RESULT procfs_open(u64 id, string_slice file_name, file *fd){
     }
     if (slice_lit_match(file_name, "state", true)){
         if (!auth_valid(auth_get_proc_token(get_current_proc()), auth_process_state, auth_map_process(proc))){
-            print("Auth failure");
+            print("Auth failure for reading state");
             return FS_RESULT_NOTFOUND;
         }
         fd->id = ((procfs_type_state & 0xFFFF) << 16) | id;
@@ -59,7 +63,42 @@ FS_RESULT procfs_open(u64 id, string_slice file_name, file *fd){
         }
         return FS_RESULT_SUCCESS;
     }
+    if (slice_lit_match(file_name, "info", true)){
+        if (!auth_valid(auth_get_proc_token(get_current_proc()), auth_process_info, auth_map_process(proc))){
+            print("Auth failure for reading info");
+            return FS_RESULT_NOTFOUND;
+        }
+        fd->id = ((procfs_type_info & 0xFFFF) << 16) | id;
+        fd->data_type = DATA_SIG_PROC_INFO;
+        fd->size = sizeof(proc_info);
+        if (!proc->procfs.info.buffer_size){
+             proc->procfs.info = procfs_make_info_buffer(proc);
+        }
+        return FS_RESULT_SUCCESS;
+    }
     return FS_RESULT_NOTFOUND;
+}
+
+void procfs_fill_info(process_t *proc, buffer *buf){
+    size_t expected_size = sizeof(proc_info);
+    if (!buf || !buf->buffer || buf->limit < expected_size){
+        if (buf) buffer_destroy(buf);
+        proc->procfs.info = procfs_make_info_buffer(proc);
+    }
+    size_t namelen = strlen(proc->name);
+    if (namelen >= MAX_PROC_NAME_LENGTH) namelen = MAX_PROC_NAME_LENGTH-1;
+    proc_info info = {
+        .id = proc->id,
+        .procnamelen = namelen,
+        .stack = {proc->main_thread.stack_info.top,proc->main_thread.stack_info.size},
+        .sp = proc->main_thread.sp,
+        .heap = {proc->mm.mmap_bottom,proc->mm.mmap_top-proc->mm.mmap_bottom},
+        .pc = proc->main_thread.pc,
+        .privilege = is_privileged(proc),
+        .state = proc->state
+    };
+    memcpy(info.procname, proc->name, namelen);
+    buffer_write_lim(buf, (char*)&info, expected_size);
 }
 
 buffer* procfs_resolve_fd(file *fd){
@@ -78,6 +117,9 @@ buffer* procfs_resolve_fd(file *fd){
             return &proc->procfs.output;
         case procfs_type_state:
             return &proc->procfs.state;
+        case procfs_type_info:
+            procfs_fill_info(proc, &proc->procfs.info);
+            return &proc->procfs.info;
         default: return 0;
     }
     return 0;
@@ -88,10 +130,10 @@ bool init_procfs(){
     folderfs_custom_list = procfs_list;
     folderfs_custom_open = procfs_open;
     folderfs_resolve_fd = procfs_resolve_fd;
-    static_entries += make_entry(":id/out", backing_virtual, entry_file, DATA_SIG_TEXT, (buffer){}) != 0;
     // static_entries += make_entry(":id/in", backing_virtual, entry_file, DATA_SIG_RAW, (buffer){}) != 0;
+    static_entries += make_entry(":id/out", backing_virtual, entry_file, DATA_SIG_TEXT, (buffer){}) != 0;
     static_entries += make_entry(":id/state", backing_virtual, entry_file, DATA_SIG_PROC_ST, (buffer){}) != 0;
-    // static_entries += make_entry(":id/info", backing_virtual, entry_file, DATA_SIG_PROC_INFO, (buffer){}) != 0;
+    static_entries += make_entry(":id/info", backing_virtual, entry_file, DATA_SIG_PROC_INFO, (buffer){}) != 0;
     return true;
 }
 
@@ -105,7 +147,7 @@ void register_procfs(u16 procid){
 }
 
 system_module procfs_mod = (system_module){
-    .name = "scheduler",
+    .name = "procfs",
     .mount = "proc",
     .version = VERSION_NUM(0, 1, 0, 1),
     .init = init_procfs,

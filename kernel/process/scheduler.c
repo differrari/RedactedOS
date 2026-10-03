@@ -571,7 +571,7 @@ process_t* init_process(){
     return proc;
 }
 
-void name_process(process_t *proc, const char *name){
+void name_process(process_t *proc, const char *name){//TEST: try making the name longer than 256 and ensure it's properly truncated and null-terminated
     if (!proc) return;
 
     memset(proc->name, 0, sizeof(proc->name));

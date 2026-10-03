@@ -27,7 +27,7 @@ boot_theme_t boot_theme = {
 system_theme_t system_theme = {
     .palette = {
         .background = BG_COLOR,
-        .foreground = COLOR_WHITE,
+        .foreground = FG_COLOR,
         .error = 0xFF000000,
     },
     .cursor_color_deselected = CURSOR_COLOR_DESELECTED,

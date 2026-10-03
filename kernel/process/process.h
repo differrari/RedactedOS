@@ -15,6 +15,7 @@ extern "C" {
 #include "files/jobs.h"
 #include "permissions/authorize.h"
 #include "procfs.h"
+#include "debug/proc.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
@@ -43,8 +44,6 @@ typedef struct {
     volatile uint32_t read_index;
     sizedptr entries[PACKET_BUFFER_CAPACITY];
 } packet_buffer_t;
-
-#define MAX_PROC_NAME_LENGTH 256
 
 #define SIGNAL_BUFFER_CAPACITY 64
 

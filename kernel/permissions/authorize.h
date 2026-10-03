@@ -35,6 +35,15 @@ typedef enum {
     auth_resource_process
 } auth_resource_types;
 
+typedef union {
+    struct {
+        u64 auth_type: 8;
+        u64 rsvd: 24;
+        u64 action_type: 32;
+    };
+    u64 entitlement;
+} auth_entitlement_t;
+
 auth_token auth_get_proc_token(process_t *t);
 
 bool auth_valid(auth_token owner, u32 type, auth_resource resource_id);
@@ -42,3 +51,5 @@ bool auth_valid(auth_token owner, u32 type, auth_resource resource_id);
 auth_resource auth_map_process(process_t *p);
 
 bool auth_request(auth_token owner, u32 type, auth_resource resource_id);
+
+bool auth_entitlement(auth_token owner, u32 type, auth_resource_types resource_type);

@@ -12,6 +12,7 @@
 #endif
 
 hash_map_t *auth_entries;
+hash_map_t *auth_entitlements;
 
 static u32 auth_id_counter = 1;
 
@@ -51,6 +52,15 @@ auth_resource auth_map_process(process_t *p){
 }
 
 bool auth_valid_proc(auth_token owner, auth_process_actions type, auth_resource resource_id){
+    hash_map_t *entitlement_entries = hash_map_get(auth_entitlements, &owner, sizeof(auth_token));
+    if (entitlement_entries){
+        const auth_resource_types t = auth_resource_process;
+        auth_entitlement_t *entry = hash_map_get(entitlement_entries, &t, sizeof(auth_resource_types));
+        if (entry){
+            if ((entry->action_type & type) == type) return true;
+        }
+    }
+    
     hash_map_t *resource_entries = hash_map_get(auth_entries, &resource_id, sizeof(auth_resource));
     if (!resource_entries) auth_fail;
     auth_entry *entry = hash_map_get(resource_entries, &owner, sizeof(auth_token));
@@ -90,5 +100,35 @@ bool auth_request(auth_token owner, u32 type, auth_resource resource_id){
     if (!auth_entries) auth_entries = hash_map_create_alloc(64,alloc,release);
     if (resource_id.type == auth_resource_process)
         return request_auth_proc(owner, type, resource_id);
+    return false;
+}
+
+
+bool auth_entitlement_proc(auth_token owner, auth_process_actions type){
+    auth_print("[AUTH debug] Token %i entitled to process action %i",owner,type);
+    if (type >= auth_process_count) return false;
+    hash_map_t *resource_entries = hash_map_get(auth_entitlements, &owner, sizeof(auth_token));
+    if (!resource_entries) {
+        resource_entries = hash_map_create_alloc(64, alloc, release);
+        hash_map_put(auth_entitlements, &owner, sizeof(auth_token), resource_entries);
+    }
+    if (!resource_entries) return false;
+    const auth_resource_types t = auth_resource_process;
+    auth_entitlement_t *entry = hash_map_get(resource_entries, &t, sizeof(auth_resource_types));
+    if (!entry){
+        entry = new(auth_entitlement_t);
+        hash_map_put(resource_entries, &t, sizeof(auth_resource_types), entry);
+    }
+    if (!entry) return false;
+    entry->action_type |= type;
+    entry->auth_type = t;
+    auth_print("[AUTH debug] Token %i authorized for item %i with entitlement",owner, type);
+    return true;
+}
+
+bool auth_entitlement(auth_token owner, u32 type, auth_resource_types resource_type){
+    if (!auth_entitlements) auth_entitlements = hash_map_create_alloc(64, alloc, release);
+    if (resource_type == auth_resource_process)
+        return auth_entitlement_proc(owner, type);
     return false;
 }

@@ -3,6 +3,7 @@
 #include "memory/memory.h"
 #include "uno/uno.h"
 #include "utils/theme.h"
+#include "debug/proc.h"
 
 // - [x] control the program's execution
 // - [] get proc's information /proc/id/info
@@ -16,7 +17,6 @@
 // - [] breakpoints
 // - [] watchpoints
 // 
-typedef enum { PROC_STOPPED, PROC_READY, PROC_RUNNING, PROC_BLOCKED, PROC_SLEEPING } process_state;
 
 buffer proc_out_buf;
 
@@ -38,6 +38,8 @@ theme_palette theme;
 
 gpu_point log_scroll = {.x = -30};
 
+proc_info info = {};
+
 text_field_info log_text_info = {
     .content = &proc_out_buf,
 };
@@ -46,7 +48,7 @@ void view_builder(){
     VERTICAL(((node_info){.bg_color = theme.background, .sizing_rule = size_fill}), {
         HORIZONTAL((node_info){},{
             uno_button(button_pauseplay, (node_info){.bg_color = proc_state == PROC_READY || proc_state == PROC_RUNNING ? 0xFFcc0000 : 0xFF00cc00, .padding = 5}, &pp_button, SLICE(proc_state == PROC_READY || proc_state == PROC_RUNNING ? "|" : ">"));
-            uno_label((node_info){.fg_color = theme.foreground, .padding = 5}, doc_text_body, SLICE("Process name goes here")); 
+            uno_label((node_info){.fg_color = theme.foreground, .padding = 5}, doc_text_body, (string_slice){info.procname,info.procnamelen}); 
         });
         uno_text_field(2, (node_info){ .sizing_rule = size_fill, .fg_color = theme.foreground, .offset = &log_scroll, .type = doc_text_body }, &log_text_info);
     });
@@ -65,11 +67,18 @@ int main(int argc, char* argv[]){
     thread_inspect(TINSPECT_CONTROL | TINSPECT_TRACE | TINSPECT_INFO | TINSPECT_STATE | TINSPECT_OUTPUT, proc_id, 1);
     
     string proc_out_s = string_format("/proc/%i/out", proc_id);
-    string proc_state_s = string_format("/proc/%i/state", proc_id);
+    string proc_state_s = string_format("/proc/%i/state", proc_id);//TODO: Don't use sread, open and read
+    string proc_info_s = string_format("/proc/%i/info", proc_id);
     sreadf(proc_state_s.data, &proc_state, sizeof(proc_state));
     
     file proc_out_fd = {};
     if (openf(proc_out_s.data, &proc_out_fd) != FS_RESULT_SUCCESS) return false;
+    
+    file proc_info_fd = {};
+    if (openf(proc_info_s.data, &proc_info_fd) != FS_RESULT_SUCCESS){
+        print("Failed to open %S",proc_info_s);
+        return false;
+    }
     
     proc_out_buf = buffer_create(0x1000, buffer_can_grow);
 
@@ -101,6 +110,9 @@ int main(int argc, char* argv[]){
 
         char buf[256];
         size_t n = readf(&proc_out_fd, buf, 256);
+        
+        readf(&proc_info_fd, (char*)&info, proc_info_fd.size);
+        uno_refresh();
 
         if (n){
             buffer_write_lim(&proc_out_buf, buf, n);
