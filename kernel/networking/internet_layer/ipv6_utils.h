@@ -1,5 +1,7 @@
 #pragma once
 #include "types.h"
+#include "net/interface_types.h"
+#include "networking/interface_manager.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,9 +25,14 @@ bool ipv6_is_linklocal(const uint8_t ip[16]);
 int ipv6_cmp(const uint8_t a[16], const uint8_t b[16]);
 void ipv6_cpy(uint8_t dst[16], const uint8_t src[16]);
 int ipv6_common_prefix_len(const uint8_t a[16], const uint8_t b[16]);
+void ipv6_prefix_network(const uint8_t ip[16], uint8_t prefix_len, uint8_t out[16]);
 void ipv6_make_multicast(uint8_t scope, ipv6_mcast_kind_t kind, const uint8_t unicast[16], uint8_t out[16]);
 void ipv6_to_string(const uint8_t ip[16], char* buf, int buflen);
 bool ipv6_parse(const char* s, uint8_t out[16]);
+
+bool ipv6_l3_is_active(l3_ipv6_interface_t *v6);
+bool ipv6_l3_is_ready(l3_ipv6_interface_t *v6);
+bool ipv6_l3_is_tcp_usable(l3_ipv6_interface_t *v6);
 void ipv6_multicast_mac(const uint8_t ip[16], uint8_t mac[6]);
 void ipv6_make_lla_from_mac(uint8_t ifindex, uint8_t out[16]);
 
@@ -48,6 +55,18 @@ static inline bool ipv6_is_linkscope_mcast(const uint8_t ip[16]){
     if (ip[0] != 0xFF) return false;
     uint8_t scope = (uint8_t)(ip[1] & 0x0F);
     return scope == 0x02;
+}
+
+static inline bool ipv6_prefix_matches(const uint8_t a[16], const uint8_t b[16], uint8_t prefix_len) {
+    if (prefix_len > 128) return false;
+
+    const uint8_t full_bytes = prefix_len / 8;
+    const uint8_t remaining_bits = prefix_len % 8;
+    for (uint8_t i = 0; i < full_bytes; i++) if (a[i] != b[i]) return false;
+
+    if (remaining_bits == 0) return true;
+    const uint8_t mask = (uint8_t)(0xFF << (8 - remaining_bits));
+    return (a[full_bytes] & mask) == (b[full_bytes] & mask);
 }
 
 #ifdef __cplusplus

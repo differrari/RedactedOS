@@ -2,6 +2,7 @@
 #include "console/kio.h"
 #include "std/memory_access.h"
 #include "memory/mmu.h"
+#include "memory/addr.h"
 #include "async.h"
 #include "sysregs.h"
 #include "std/string.h"
@@ -44,7 +45,6 @@ void fw_cfg_dma_operation(void* dest, uint32_t size, uint32_t ctrl) {
     };
 
     write64(PHYS_TO_VIRT(FW_CFG_DMA), __builtin_bswap64(pt_va_to_pa(&access)));
-    
     __asm__("isb");
 
     if (!wait(&access.control, __builtin_bswap32(~0x1), false, 2000)){
@@ -71,7 +71,7 @@ bool fw_find_file(const char* search, struct fw_cfg_file *file) {
 
     if (!fw_cfg_check())
         return false;
-
+        
     u32 count = 0;
     fw_cfg_dma_read(&count, sizeof(count), FW_LIST_DIRECTORY);
 
