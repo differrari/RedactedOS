@@ -5,6 +5,7 @@
 #include "memory/page_allocator.h"
 #include "std/memory.h"
 #include "networking/network.h"
+#include "networking/link_layer/eth.h"
 #include "sysregs.h"
 #include "exceptions/irq.h"
 
@@ -155,6 +156,7 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
     net_feature_mask |= (1ULL << VIRTIO_NET_F_MTU);
     net_feature_mask |= (1ULL << VIRTIO_NET_F_CTRL_VQ);
     net_feature_mask |= (1ULL << VIRTIO_NET_F_CTRL_RX);
+    net_feature_mask |= (1ULL << VIRTIO_NET_F_CTRL_RX_EXTRA);
     net_feature_mask |= (1ULL << VIRTIO_NET_F_SPEED_DUPLEX);
     //TODO evaluate MRG_RXBUF CSUM TSO GSO GRO USO
     virtio_set_feature_mask(net_feature_mask);
@@ -265,7 +267,7 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
         if (dev_mtu != 0 && dev_mtu != 0xFFFF && dev_mtu >= 576) mtu = dev_mtu;
     }
 
-    uint16_t rx_mtu_cap = (uint16_t)(RX_BUF_SIZE - header_size - 14);
+    uint16_t rx_mtu_cap = (uint16_t)(RX_BUF_SIZE - header_size - sizeof(eth_hdr_t) - ETH_VLAN_TAG_LEN);
     if (mtu > rx_mtu_cap) mtu = rx_mtu_cap;
 
     if (vnp_net_dev.negotiated_features & (1ULL << VIRTIO_NET_F_SPEED_DUPLEX)) {
@@ -457,8 +459,10 @@ bool VirtioNetDriver::sync_multicast(const uint8_t* macs, uint32_t count) {
     ok = ok && virtio_net_ctrl_send(&vnp_net_dev, VIRTIO_NET_CTRL_RX, VIRTIO_NET_CTRL_RX_PROMISC, &v0, 1);
     ok = ok && virtio_net_ctrl_send(&vnp_net_dev, VIRTIO_NET_CTRL_RX, VIRTIO_NET_CTRL_RX_ALLMULTI, &v0, 1);
 
-    if (count == 0) ok = ok && virtio_net_ctrl_send(&vnp_net_dev, VIRTIO_NET_CTRL_RX, VIRTIO_NET_CTRL_RX_NOMULTI, &v1, 1);
-    else ok = ok && virtio_net_ctrl_send(&vnp_net_dev, VIRTIO_NET_CTRL_RX, VIRTIO_NET_CTRL_RX_NOMULTI, &v0, 1);
+    if (vnp_net_dev.negotiated_features & (1ULL << VIRTIO_NET_F_CTRL_RX_EXTRA)) {
+        if (count == 0) ok = ok && virtio_net_ctrl_send(&vnp_net_dev, VIRTIO_NET_CTRL_RX, VIRTIO_NET_CTRL_RX_NOMULTI, &v1, 1);
+        else ok = ok && virtio_net_ctrl_send(&vnp_net_dev, VIRTIO_NET_CTRL_RX, VIRTIO_NET_CTRL_RX_NOMULTI, &v0, 1);
+    }
 
     uint32_t payload_len = 8u + count * 6u;
     uint8_t* payload = (uint8_t*)kalloc(vnp_net_dev.memory_page, payload_len, ALIGN_16B, MEM_PRIV_KERNEL);

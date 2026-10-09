@@ -27,6 +27,8 @@ void socket_core_put(ksocket_t* socket);
 int32_t socket_core_close_handle(socket_handle_t handle, uint16_t pid);
 int32_t socket_core_close_socket(ksocket_t* socket);
 void socket_core_close_process(uint16_t pid);
+void socket_core_l2_deleted(uint8_t ifindex, uint32_t generation);
+void socket_core_l3_deleted(l3_id_t l3_id);
 int32_t socket_core_set_option(ksocket_t* socket, int32_t opt, const void* value, uint32_t len);
 int32_t socket_core_get_option(ksocket_t* socket, int32_t opt, void* value, uint32_t* len);
 int32_t socket_common_options_set(SocketOptions* opts, int32_t opt, const void* value, uint32_t len);

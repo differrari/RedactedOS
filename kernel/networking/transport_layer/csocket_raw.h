@@ -17,6 +17,8 @@ int32_t socket_connect_raw(socket_impl_t sh, const net_l4_endpoint* dst);
 int64_t socket_send_raw(socket_impl_t sh, const void* buf, uint64_t len);
 int64_t socket_sendto_raw(socket_impl_t sh, const net_l4_endpoint* dst, const void* buf, uint64_t len);
 int64_t socket_recv_raw(socket_impl_t sh, void* buf, uint64_t len, net_l4_endpoint* out_src);
+void socket_raw_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t generation);
+void socket_raw_l3_deleted(socket_impl_t sh, l3_id_t l3_id);
 bool socket_raw_input_v4(protocol_t protocol, uint8_t ifindex, uint32_t src, uint32_t dst, netpkt_t* pkt);
 bool socket_raw_input_v6(uint8_t ifindex, const uint8_t src[16], const uint8_t dst[16], netpkt_t* pkt);
 

@@ -121,7 +121,7 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
 
     if (ipv4_is_limited_broadcast(dst_ip) || is_dbcast) mac_set_broadcast(dst_mac);
     else if (ipv4_is_multicast(dst_ip)) ipv4_mcast_to_mac(dst_ip, dst_mac);
-    else if (l2->kind == NET_IFK_LOCALHOST) mac_clear(dst_mac);
+    else if (l2->link_kind == NET_LINK_LOOPBACK) mac_clear(dst_mac);
     else need_arp = true;
 
     uint16_t mtu = l3_ipv4_effective_mtu(src_v4);
@@ -364,7 +364,7 @@ void ipv4_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_L
 
     if (ipv4_is_loopback(src)) {
         l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-        if (!l2 || l2->kind != NET_IFK_LOCALHOST) return;
+        if (!l2 || l2->link_kind != NET_LINK_LOOPBACK) return;
     }
 
     uint8_t proto = ip.protocol;

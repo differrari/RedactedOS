@@ -155,12 +155,8 @@ bool virtio_init_device(virtio_device *dev) {
         return false;
     }
 
-    dev->memory_page = palloc(0x10000, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, false);
+    dev->memory_page = palloc(0x10000, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, false);
     if (!dev->memory_page) return false;
-
-    dev->status_dma = (uint8_t*)kalloc(dev->memory_page, 64, ALIGN_4KB, MEM_PRIV_KERNEL);
-    if (!dev->status_dma) return false;
-    *dev->status_dma = 0;
 
     dev->num_queues = cfg->num_queues;
     if (dev->num_queues > VIRTIO_MAX_QUEUES) dev->num_queues = VIRTIO_MAX_QUEUES;
@@ -182,9 +178,9 @@ bool virtio_init_device(virtio_device *dev) {
         uint64_t avail_alloc = (avail_sz + (uint64_t)(PAGE_SIZE - 1)) & ~(uint64_t)(PAGE_SIZE - 1);
         uint64_t used_alloc = (used_sz + (uint64_t)(PAGE_SIZE - 1)) & ~(uint64_t)(PAGE_SIZE - 1);
 
-        void* base = palloc(desc_alloc, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, true);
-        void* avail = palloc(avail_alloc, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, true);
-        void* used = palloc(used_alloc, MEM_PRIV_KERNEL, MEM_DEV | MEM_RW, true);
+        void* base = palloc(desc_alloc, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, true);
+        void* avail = palloc(avail_alloc, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, true);
+        void* used = palloc(used_alloc, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, true);
         if (!base || !avail || !used) return false;
 
         memset(base, 0, desc_alloc);

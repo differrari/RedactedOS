@@ -375,7 +375,14 @@ static bool tcp_sack_select_retransmit(tcp_flow_t *flow, bool force, bool rescue
     tcp_tx_seg_t *best_seg = NULL;
     uint32_t best_left = 0;
     uint32_t best_right = 0;
-    uint32_t limit = rescue ? (flow->tx.recover ? flow->tx.recover : flow->tx.snd_nxt) : (flow->tx.sack_range_count ? flow->tx.sack_ranges[flow->tx.sack_range_count-1].right : flow->tx.snd_una);
+    uint32_t limit;
+    if (rescue) {
+        if (flow->tx.recover) limit = flow->tx.recover;
+        else limit = flow->tx.snd_nxt;
+    } else if (flow->tx.sack_range_count) {
+        limit = flow->tx.sack_ranges[flow->tx.sack_range_count-1].right;
+    } else if (force) limit = flow->tx.snd_nxt;
+    else limit = flow->tx.snd_una;
     uint32_t mss = flow->tx.mss ? flow->tx.mss : TCP_DEFAULT_MSS;
 
     for (int i = 0; i < TCP_MAX_TX_SEGS; i++) {
@@ -461,7 +468,7 @@ static bool tcp_sack_retransmit_range(tcp_flow_t *flow, tcp_tx_seg_t *seg, uint3
 
     for (uint32_t i = 0; i < TCP_MAX_TX_SEGS; i++) flow->tx.txq[i].rtt_sample = 0;
     flow->tx.rtt_sample_pending = 0;
-    bool tracked = tcp_sack_insert(flow->tx.sack_retransmitted_ranges, &flow->tx.sack_retransmitted_count, left, right);
+    tcp_sack_insert(flow->tx.sack_retransmitted_ranges, &flow->tx.sack_retransmitted_count, left, right);
     if (rescue) {
         flow->tx.sack_rescue_rxt = flow->tx.recover;
         flow->tx.sack_rescue_valid = 1;
@@ -470,7 +477,7 @@ static bool tcp_sack_retransmit_range(tcp_flow_t *flow, tcp_tx_seg_t *seg, uint3
     seg->timer_ms = 0;
     seg->rtt_timer_ms = 0;
     seg->timeout_ms = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
-    return tracked;
+    return true;
 }
 
 static void tcp_sack_recovery_send(tcp_flow_t *flow, bool force_first) {
@@ -558,11 +565,10 @@ static bool tcp_apply_sack_blocks(tcp_flow_t *flow, const tcp_parsed_opts_t *opt
         uint32_t left = opts->sacks[b].left;
         uint32_t right = opts->sacks[b].right;
         if (TCP_SEQ_LEQ(right, left)) continue;
-        if (TCP_SEQ_LEQ(right, flow->tx.snd_una)) continue;
+        if (TCP_SEQ_LT(left, flow->tx.snd_una)) continue;
+        if (TCP_SEQ_GT(right, flow->tx.snd_nxt)) continue;
         if (TCP_SEQ_GEQ(left, flow->tx.snd_nxt)) continue;
-        if (TCP_SEQ_LT(left, flow->tx.snd_una)) left = flow->tx.snd_una;
-        if (TCP_SEQ_GT(right, flow->tx.snd_nxt)) right = flow->tx.snd_nxt;
-        if (TCP_SEQ_LEQ(right, left)) continue;
+        if (TCP_SEQ_LEQ(right, flow->tx.snd_una)) continue;
         changed |= tcp_sack_insert(flow->tx.sack_ranges, &flow->tx.sack_range_count, left, right);
     }
 
@@ -604,7 +610,6 @@ static void tcp_cc_on_new_ack(tcp_flow_t *f, uint32_t ack, uint32_t prev_una) {
             f->tx.recover_valid = 0;
             f->tx.dup_acks = 0;
             f->tx.cwnd_acc = 0;
-            f->tx.sack_range_count = 0;
             f->tx.sack_retransmitted_count = 0;
             f->tx.sack_rescue_rxt = 0;
             f->tx.sack_rescue_valid = 0;
@@ -1203,6 +1208,12 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->timer.keepalive_idle_ms = 0;
 
             if (!tcp_prepare_rcv_buffer(flow)) {
+                if (!flow->base.active_open) {
+                    tcp_flow_put(flow);
+                    netpkt_unref(pkt);
+                    return;
+                }
+
                 tcp_send_reset(l3_id, ipver, dst_ip_addr, src_ip_addr, dst_port, src_port, 0, flow->base.ctx.ack, true);
                 tcp_free_flow(flow);
                 tcp_flow_put(flow);
@@ -1211,10 +1222,23 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             }
 
             if (!flow->base.active_open) {
-                uint32_t queued = 0;
-                if (flow->base.listener) queued = tcp_accept_enqueue(flow->base.listener, ipver, src_ip_addr, dst_ip_addr, src_port, dst_port);
-                if (!queued) {
-                    tcp_stats.acceptq_drop_full++;
+                int32_t rc = SOCK_ERR_STATE;
+                if (flow->base.listener) rc = tcp_accept_enqueue(flow->base.listener, ipver, flow->base.l3_id, src_ip_addr, dst_ip_addr, src_port, dst_port);
+                if (rc != SOCK_OK) {
+                    if (rc == SOCK_ERR_WOULDBLOCK) {
+                        if (flow->rx.rcv_buf) {
+                            uintptr_t buf = flow->rx.rcv_buf;
+                            flow->rx.rcv_buf = 0;
+                            release((void*)buf);
+                            flow->rx.rcv_base = flow->rx.rcv_nxt;
+                            flow->rx.rcv_data_nxt = flow->rx.rcv_nxt;
+                            tcp_update_adv_wnd(flow, 1);
+                        }
+                        tcp_flow_put(flow);
+                        netpkt_unref(pkt);
+                        return;
+                    }
+
                     tcp_hdr_t rst_hdr;
                     rst_hdr.src_port = bswap16(flow->base.local.port);
                     rst_hdr.dst_port = bswap16(flow->base.remote.port);
@@ -1339,10 +1363,15 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
             tcp_sack_trim_ranges(flow->tx.sack_ranges, &flow->tx.sack_range_count, ack);
             tcp_sack_trim_ranges(flow->tx.sack_retransmitted_ranges, &flow->tx.sack_retransmitted_count, ack);
-            if (flow->tx.sack_ok && parsed_opts.sack_count) (void)tcp_apply_sack_blocks(flow, &parsed_opts);
+            bool sack_changed = flow->tx.sack_ok && parsed_opts.sack_count && tcp_apply_sack_blocks(flow, &parsed_opts);
+            bool partial_recovery = flow->tx.in_fast_recovery && flow->tx.sack_ok && TCP_SEQ_LT(ack, flow->tx.recover);
             tcp_cc_on_new_ack(flow, ack, prev_una);
+            if (sack_changed && !flow->tx.in_fast_recovery) {
+                if (flow->tx.dup_acks < UINT8_MAX) flow->tx.dup_acks++;
+                tcp_cc_on_dupack(flow);
+            }
             tcp_restart_retransmit_timer(flow);
-            if (flow->tx.in_fast_recovery && flow->tx.sack_ok) tcp_sack_recovery_send(flow, false);
+            if (partial_recovery && flow->tx.in_fast_recovery) tcp_sack_recovery_send(flow, false);
 
             if (flow->base.state == TCP_FIN_WAIT_1 && TCP_SEQ_GEQ(ack, flow->base.ctx.expected_ack)) {
                 flow->base.state = TCP_FIN_WAIT_2;
@@ -1359,13 +1388,21 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 netpkt_unref(pkt);
                 return;
             }
-        } else if (ack == flow->tx.snd_una && data_len == 0 && !fin) {
+        } else {
             bool sack_changed = flow->tx.sack_ok && parsed_opts.sack_count && tcp_apply_sack_blocks(flow, &parsed_opts);
-            if (old_wnd && flow->tx.snd_wnd && TCP_SEQ_LT(flow->tx.snd_una, flow->tx.snd_nxt) && (flow->tx.snd_wnd == old_wnd || sack_changed)) {
-                if (flow->tx.dup_acks < UINT8_MAX) flow->tx.dup_acks++;
-                tcp_cc_on_dupack(flow);
+            if (sack_changed) {
+                if (flow->tx.in_fast_recovery) tcp_sack_recovery_send(flow, false);
+                else {
+                    if (flow->tx.dup_acks < UINT8_MAX) flow->tx.dup_acks++;
+                    tcp_cc_on_dupack(flow);
+                }
+            } else {
+                if (ack == flow->tx.snd_una && data_len == 0 && !fin && old_wnd && flow->tx.snd_wnd && TCP_SEQ_LT(flow->tx.snd_una, flow->tx.snd_nxt) && flow->tx.snd_wnd == old_wnd) {
+                    if (flow->tx.dup_acks < UINT8_MAX) flow->tx.dup_acks++;
+                    tcp_cc_on_dupack(flow);
+                } else flow->tx.dup_acks = 0;
             }
-        } else flow->tx.dup_acks = 0;
+        }
     }
 
     if (flags & (1 << URG_F)) {

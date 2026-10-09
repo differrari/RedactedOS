@@ -227,13 +227,17 @@ static void ensure_binds() {
         l3_ipv6_interface_t* t = NULL;
         if (keep) {
             t = l3_ipv6_find_by_id(b->target_l3_id);
-            if (!t || t->generation != b->target_generation) keep = false;
+            if (!t) keep = false;
         }
 
         if (keep) {
             bool stateful = (t->cfg == IPV6_CFG_DHCPV6);
             bool stateless = ((t->cfg & IPV6_CFG_STATELESS) == IPV6_CFG_STATELESS && t->dhcpv6_stateless);
             if (!stateful && !stateless) keep = false;
+            else if (t->generation != b->target_generation) {
+                if (stateless && t->l2 == l2) b->target_generation = t->generation;
+                else keep = false;
+            }
         }
         if (keep && (!t->l2 || !t->l2->is_up)) keep = false;
 
@@ -352,6 +356,7 @@ static void fsm_once(dhcpv6_bind_t* b, uint32_t tick_ms, bool force_renew, bool 
 
     if (!stateful && !stateless) return;
     if (!(v6->kind & IPV6_ADDRK_GLOBAL)) return;
+    if (stateless && v6->dhcpv6_state == DHCPV6_S_INFO && !b->xid24) start_exchange(v6, b, DHCPV6_S_INFO);
     if (stateless && v6->dhcpv6_stateless_done) {
         if (b->info_refresh_left_ms != UINT64_MAX) {
             if (b->info_refresh_left_ms > tick_ms) b->info_refresh_left_ms -= tick_ms;

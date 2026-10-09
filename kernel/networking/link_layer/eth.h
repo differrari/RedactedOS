@@ -13,6 +13,7 @@ extern "C" {
 #define ETHERTYPE_VLAN1Q 0x8100
 #define ETHERTYPE_VLAN1AD 0x88A8
 #define ETHERTYPE_IPV6 0x86DD
+#define ETH_VLAN_TAG_LEN 4
 
 typedef struct __attribute__((packed)) eth_hdr_t {
     uint8_t dst_mac[MAC_ADDR_LEN];
@@ -21,6 +22,7 @@ typedef struct __attribute__((packed)) eth_hdr_t {
 } eth_hdr_t;
 
 uint16_t eth_parse_type(const netpkt_t* pkt);
+bool eth_parse_vlan(const netpkt_t* pkt, uint16_t* vlan_id, uint16_t* inner_type);
 bool eth_send_frame_on(uint8_t ifindex, uint16_t ethertype, const uint8_t dst_mac[MAC_ADDR_LEN], netpkt_t* pkt);
 
 void eth_input(uint8_t ifindex, netpkt_t* pkt);

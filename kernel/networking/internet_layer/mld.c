@@ -58,6 +58,12 @@ static bool mld_v1_mode(uint8_t ifindex, uint32_t now_ms) {
     return *until != 0;
 }
 
+void mld_l2_deleted(uint8_t ifindex) {
+    if (!ifindex || ifindex > MAX_L2_INTERFACES) return;
+    mld_v1_until_ms[ifindex - 1] = 0;
+    for (int i = 0; i < MLD_MAX_TRACK; i++) if (mld_states[i].used && mld_states[i].ifindex == ifindex) memset(&mld_states[i], 0, sizeof(mld_states[i]));
+}
+
 static bool mld_dest_assigned(uint8_t ifindex, const uint8_t dst[16]) {
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return false;
@@ -317,7 +323,7 @@ bool mld_send_leave(uint8_t ifindex, const uint8_t group[16]) {
 
 void mld_resend_memberships(uint8_t ifindex) {
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-    if (!l2 || l2->kind == NET_IFK_LOCALHOST) return;
+    if (!l2 || l2->link_kind == NET_LINK_LOOPBACK) return;
 
     for (int i = 0; i < (int)l2->ipv6_mcast_count; i++) mld_send_join(ifindex, l2->ipv6_mcast[i]);
 }

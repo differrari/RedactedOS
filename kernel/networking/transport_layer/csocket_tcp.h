@@ -19,8 +19,10 @@ int32_t socket_close_tcp(socket_impl_t sh);
 int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint32_t len);
 int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* len);
 void socket_destroy_tcp(socket_impl_t sh);
+void socket_tcp_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t generation);
+void socket_tcp_l3_deleted(socket_impl_t sh, l3_id_t l3_id);
 const SocketOptions* socket_tcp_options(socket_impl_t sh);
-uint32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uint16_t src_port, uint16_t dst_port);
+int32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, l3_id_t l3_id, const void* src_ip_addr, const void* dst_ip_addr, uint16_t src_port, uint16_t dst_port);
 
 #ifdef __cplusplus
 }

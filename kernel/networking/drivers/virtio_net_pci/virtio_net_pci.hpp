@@ -23,6 +23,7 @@
 #define VIRTIO_NET_F_STATUS 16
 #define VIRTIO_NET_F_CTRL_VQ 17
 #define VIRTIO_NET_F_CTRL_RX 18
+#define VIRTIO_NET_F_CTRL_RX_EXTRA 20
 #define VIRTIO_NET_F_SPEED_DUPLEX 63
 
 typedef struct __attribute__((packed)) virtio_net_hdr_t {

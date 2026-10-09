@@ -2,6 +2,7 @@
 #include "networking/transport_layer/socket_core.h"
 #include "networking/firewall.h"
 #include "network_dispatch.hpp"
+#include "networking/interface_manager.h"
 
 static NetworkDispatch *dispatch = 0;
 
@@ -24,6 +25,12 @@ int network_net_task_entry(int argc, char* argv[]) {
 
 int net_tx_packet_on(uint8_t ifindex, netpkt_t* pkt) {
     if (!dispatch || !pkt || !netpkt_len(pkt)) return -1;
+    l2_interface_t *l2 = l2_interface_find_by_index(ifindex);
+    if (!l2 || !l2->is_up) return -1;
+    if (l2->parent_ifindex) {
+        l2_interface_t *parent = l2_interface_find_by_index(l2->parent_ifindex);
+        if (!parent || !parent->is_up) return -1;
+    }
     return dispatch->enqueue_packet(ifindex, pkt) ? 0 : -1;
 }
 

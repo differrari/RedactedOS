@@ -16,6 +16,8 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
 int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_endpoint* out_src);
 int32_t socket_close_udp(socket_impl_t sh);
 void socket_destroy_udp(socket_impl_t sh);
+void socket_udp_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t generation);
+void socket_udp_l3_deleted(socket_impl_t sh, l3_id_t l3_id);
 int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint32_t len);
 int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* len);
 uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port);

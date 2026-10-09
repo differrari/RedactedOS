@@ -9,6 +9,7 @@ extern "C" {
 #endif
 
 bool mld_send_join(uint8_t ifindex, const uint8_t group[16]);
+void mld_l2_deleted(uint8_t ifindex);
 bool mld_send_leave(uint8_t ifindex, const uint8_t group[16]);
 void mld_resend_memberships(uint8_t ifindex);
 void mld_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], uint8_t hop_limit, bool router_alert, netpkt_t* pkt);

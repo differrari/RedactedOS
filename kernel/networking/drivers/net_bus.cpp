@@ -17,7 +17,7 @@ typedef struct {
     uint8_t mac[6];
     uint16_t mtu;
     uint16_t header_size;
-    uint8_t kind;
+    NetDevKind kind;
     uint32_t speed_mbps;
     uint8_t duplex;
 } net_nic_desc_t;
@@ -56,7 +56,7 @@ static void add_loopback(){
 
     d->mtu = 65535;
     d->header_size = 0;
-    d->kind = NET_IFK_LOCALHOST;
+    d->kind = NET_DEV_LOOPBACK;
     d->speed_mbps = 0xFFFFFFFFu;
     d->duplex = LINK_DUPLEX_UNKNOWN;
     g_lo_added = true;
@@ -103,10 +103,10 @@ int net_bus_init(){
                  (unsigned)i, ven, dev, cls, sub, infos[i].prog_if, (uintptr_t)infos[i].addr);
 
         const char* if_prefix = "net";
-        uint8_t kind = NET_IFK_OTHER;
+        NetDevKind kind = NET_DEV_OTHER;
         if (sub == 0x00) {
             if_prefix = "eth";
-            kind = NET_IFK_ETH;
+            kind = NET_DEV_ETH;
         }
 
         bool matched = false;
@@ -205,8 +205,8 @@ uint16_t net_bus_get_header_size(int idx){
     return g_nics[idx].header_size;
 }
 
-uint8_t net_bus_get_kind(int idx){
-    if (idx < 0 || (size_t)idx >= g_count) return NET_IFK_UNKNOWN;
+NetDevKind net_bus_get_kind(int idx){
+    if (idx < 0 || (size_t)idx >= g_count) return NET_DEV_UNKNOWN;
     return g_nics[idx].kind;
 }
 

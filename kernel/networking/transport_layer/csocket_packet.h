@@ -15,6 +15,7 @@ int32_t socket_getopt_packet(socket_impl_t sh, int32_t opt, void* value, uint32_
 int32_t socket_bind_packet(socket_impl_t sh, const SockBindSpec* spec);
 int64_t socket_recv_packet(socket_impl_t sh, void* buf, uint64_t len);
 bool socket_packet_input(uint8_t ifindex, netpkt_t* pkt);
+void socket_packet_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t generation);
 
 #ifdef __cplusplus
 }

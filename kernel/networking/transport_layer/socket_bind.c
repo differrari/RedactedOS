@@ -131,7 +131,7 @@ bool socket_bind_prepare_spec(SockBindSpec* spec, protocol_t protocol) {
     if (spec->kind == BIND_ANY || spec->kind == BIND_ANY4 || spec->kind == BIND_ANY6) return true;
     if (spec->kind == BIND_L2) {
         l2_interface_t* l2 = l2_interface_find_by_index(spec->ifindex);
-        return l2 && l2->is_up;
+        return l2_interface_is_operational(l2);
     }
 
     if (spec->kind == BIND_L3) {
@@ -585,7 +585,7 @@ static bool socket_bind_build_tx_opts(const SockBindSpec* spec, ip_version_t ver
     if (normal.kind == BIND_ANY || normal.kind == BIND_ANY4 || normal.kind == BIND_ANY6) return true;
     if (normal.kind == BIND_L2) {
         l2_interface_t* l2 = l2_interface_find_by_index(normal.ifindex);
-        if (!l2 || !l2->is_up) return false;
+        if (!l2_interface_is_operational(l2)) return false;
         tx->scope = IP_TX_BOUND_L2;
         tx->target.ifindex = normal.ifindex;
         *hint = tx;

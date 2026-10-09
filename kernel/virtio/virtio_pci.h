@@ -93,7 +93,6 @@ typedef struct virtio_device {
     volatile uint8_t* isr_cfg;
     uint32_t notify_off_multiplier;
     void *memory_page;
-    uint8_t* status_dma;
     uint64_t negotiated_features;
     uint16_t num_queues;
     uint16_t current_queue;

@@ -26,6 +26,7 @@ typedef struct tcp_socket {
     SocketOptions options;
     SockBindSpec bindSpec;
     socket_bind_token_t bindToken;
+    uint32_t bind_generation;
     tcp_data flow;
     ksocket_t** pending;
     int32_t backlogCap;
@@ -242,6 +243,7 @@ int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_BROADCAST_ALLOWED:
         case SOCK_OPT_FILTER:
         case SOCK_OPT_SPECIAL:
+        case SOCK_OPT_PACKET_TRUNK:
             return SOCK_ERR_UNSUP;
         case SOCK_OPT_BUF_SIZE: {
             if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
@@ -382,6 +384,7 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_MCAST_GROUPS:
         case SOCK_GET_OPT_BROADCAST_ALLOWED:
         case SOCK_GET_OPT_FILTER:
+        case SOCK_GET_OPT_PACKET_TRUNK:
             return SOCK_ERR_UNSUP;
         case SOCK_GET_OPT_RECV_TIMEOUT:
         case SOCK_GET_OPT_SEND_TIMEOUT:
@@ -429,6 +432,8 @@ int32_t socket_bind_tcp(socket_impl_t sh, const SockBindSpec* spec_in, uint16_t 
 
     s->bindSpec = spec;
     s->bindToken = token;
+    l2_interface_t *link = spec.kind == BIND_L2 ? l2_interface_find_by_index(spec.ifindex) : NULL;
+    s->bind_generation = link ? link->generation : 0;
     s->localPort = (uint16_t)bind_port;
     return SOCK_OK;
 }
@@ -771,9 +776,26 @@ int32_t socket_close_tcp(socket_impl_t sh) {
     s->localPort = 0;
     memset(&s->bindSpec, 0, sizeof(s->bindSpec));
     s->bindSpec.kind = BIND_ANY;
+    s->bind_generation = 0;
     tcp_socket_reset_connection(s, false);
     s->closed = true;
     return SOCK_OK;
+}
+
+void socket_tcp_l3_deleted(socket_impl_t sh, l3_id_t l3_id) {
+    tcp_socket_t *s = (tcp_socket_t*)sh;
+    if (!s || (s->bindSpec.kind != BIND_L3 && s->bindSpec.kind != BIND_IP) || s->bindSpec.l3_id != l3_id) return;
+    tcp_socket_reset_connection(s, true);
+    s->options.flags &= ~SOCK_OPT_LINGER;
+    socket_close_tcp(sh);
+}
+
+void socket_tcp_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t generation) {
+    tcp_socket_t *s = (tcp_socket_t*)sh;
+    if (!s || s->bindSpec.kind != BIND_L2 || s->bindSpec.ifindex != ifindex || s->bind_generation != generation) return;
+    tcp_socket_reset_connection(s, true);
+    s->options.flags &= ~SOCK_OPT_LINGER;
+    socket_close_tcp(sh);
 }
 
 void socket_destroy_tcp(socket_impl_t sh) {
@@ -795,11 +817,11 @@ const SocketOptions* socket_tcp_options(socket_impl_t sh) {
     return &s->options;
 }
 
-uint32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, const void* src_ip_addr, const void* dst_ip_addr, uint16_t src_port, uint16_t dst_port) {
-    if (!listener) return 0;
+int32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, l3_id_t l3_id, const void* src_ip_addr, const void* dst_ip_addr, uint16_t src_port, uint16_t dst_port) {
+    if (!listener) return SOCK_ERR_STATE;
     tcp_socket_t* s = (tcp_socket_t*)socket_core_impl(listener);
-    if (!s) return 0;
-    if (!s->listening || !s->localPort || s->localPort != dst_port || !s->pending) return 0;
+    if (!s) return SOCK_ERR_STATE;
+    if (!s->listening || !s->localPort || s->localPort != dst_port || !s->pending) return SOCK_ERR_STATE;
 
     for (int32_t i = 0;;) {
         irq_flags_t irq = irq_save_disable();
@@ -825,16 +847,19 @@ uint32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, const void*
         if (!removed) continue;
         tcp_socket_abort_pending(removed);
     }
-    if (tcp_socket_backlog_len(s) >= s->backlogCap) return 0;
+    if (tcp_socket_backlog_len(s) >= s->backlogCap) {
+        tcp_stats.acceptq_drop_full++;
+        return SOCK_ERR_WOULDBLOCK;
+    }
 
     ksocket_t* child_owner = NULL;
     uint16_t owner_pid = socket_core_pid(s->ownerSocket);
-    if (!socket_core_alloc(PROTO_TCP, SOCKET_SPECIAL_NONE, owner_pid, &child_owner)) return 0;
+    if (!socket_core_alloc(PROTO_TCP, SOCKET_SPECIAL_NONE, owner_pid, &child_owner)) return SOCK_ERR_WOULDBLOCK;
 
     tcp_socket_t* child = (tcp_socket_t*)socket_tcp_create(child_owner, NULL);
     if (!child) {
         socket_core_close_socket(child_owner);
-        return 0;
+        return SOCK_ERR_WOULDBLOCK;
     }
     child->options = s->options;
     child->options.flags &= ~SOCK_OPT_NONBLOCK;
@@ -847,32 +872,43 @@ uint32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, const void*
     child->remoteEP.port = src_port;
     child->bindSpec.kind = BIND_IP;
     child->bindSpec.ver = ipver;
+    child->bindSpec.l3_id = l3_id;
     if (ipver == IP_VER4) memcpy(child->bindSpec.ip, dst_ip_addr, 4);
     else if (ipver == IP_VER6) ipv6_cpy(child->bindSpec.ip, dst_ip_addr);
 
     if (!tcp_get_ctx(dst_port, ipver, dst_ip_addr, child->remoteEP.ip, src_port, &child->flow)) {
         socket_destroy_tcp(child);
         socket_core_close_socket(child_owner);
-        return 0;
+        return SOCK_ERR_STATE;
     }
 
     if (!socket_core_attach_impl(child_owner, child, socket_destroy_tcp, socket_close_tcp, socket_setopt_tcp, socket_getopt_tcp)) {
-        tcp_socket_reset_connection(child, true);
+        tcp_socket_reset_connection(child, false);
         socket_destroy_tcp(child);
         socket_core_close_socket(child_owner);
-        return 0;
+        return SOCK_ERR_STATE;
     }
 
     child->connected = true;
     socket_core_ref(child_owner);
 
     irq_flags_t irq = irq_save_disable();
+    if (!s->listening || !s->pending || s->backlogCap <= 0) {
+        irq_restore(irq);
+        tcp_socket_reset_connection(child, false);
+        socket_core_close_socket(child_owner);
+        socket_core_put(child_owner);
+        return SOCK_ERR_STATE;
+    }
     if (s->backlogLen >= s->backlogCap) {
         irq_restore(irq);
-        tcp_socket_abort_pending(child_owner);
-        return 0;
+        tcp_socket_reset_connection(child, false);
+        socket_core_close_socket(child_owner);
+        socket_core_put(child_owner);
+        tcp_stats.acceptq_drop_full++;
+        return SOCK_ERR_WOULDBLOCK;
     }
     s->pending[s->backlogLen++] = child_owner;
     irq_restore(irq);
-    return 1;
+    return SOCK_OK;
 }

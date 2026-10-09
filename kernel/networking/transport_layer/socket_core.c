@@ -1,5 +1,9 @@
 #include "socket_core.h"
 #include "socket_bind.h"
+#include "csocket_udp.h"
+#include "csocket_tcp.h"
+#include "csocket_packet.h"
+#include "csocket_raw.h"
 #include "exceptions/irq.h"
 #include "std/memory.h"
 #include "alloc/allocate.h"
@@ -237,7 +241,7 @@ int32_t socket_common_options_set(SocketOptions* opts, int32_t opt, const void* 
     if (value) {
         if (len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
         memcpy(&v, value, sizeof(v));
-    } else if (len || (opt != SOCK_OPT_DONTFRAG && opt != SOCK_OPT_BROADCAST_ALLOWED)) return SOCK_ERR_INVAL;
+    } else if (len || (opt != SOCK_OPT_DONTFRAG && opt != SOCK_OPT_BROADCAST_ALLOWED && opt != SOCK_OPT_PACKET_TRUNK)) return SOCK_ERR_INVAL;
 
     int32_t rc = SOCK_OK;
     irq_flags_t irq = irq_save_disable();
@@ -278,6 +282,10 @@ int32_t socket_common_options_set(SocketOptions* opts, int32_t opt, const void* 
         case SOCK_OPT_NONBLOCK:
             if (v) opts->flags |= SOCK_OPT_NONBLOCK;
             else opts->flags &= ~SOCK_OPT_NONBLOCK;
+            break;
+        case SOCK_OPT_PACKET_TRUNK:
+            if (v) opts->flags |= SOCK_OPT_PACKET_TRUNK;
+            else opts->flags &= ~SOCK_OPT_PACKET_TRUNK;
             break;
 
         case SOCK_OPT_DONTROUTE:
@@ -344,6 +352,9 @@ int32_t socket_common_options_get(const SocketOptions* opts, int32_t opt, void* 
         case SOCK_GET_OPT_NONBLOCK:
             v = (opts->flags & SOCK_OPT_NONBLOCK) != 0;
             break;
+        case SOCK_GET_OPT_PACKET_TRUNK:
+            v = (opts->flags & SOCK_OPT_PACKET_TRUNK) != 0;
+            break;
         case SOCK_GET_OPT_DONTROUTE:
             v = (opts->flags & SOCK_OPT_DONTROUTE) != 0;
             break;
@@ -396,4 +407,39 @@ bool socket_core_is_closing(const ksocket_t* socket) {
 socket_handle_t socket_core_export_handle(const ksocket_t* socket) {
     if (!socket || !socket->id || !socket->generation) return 0;
     return (socket->generation << SOCKET_HANDLE_INDEX_BITS) | socket->id;
+}
+
+void socket_core_l2_deleted(uint8_t ifindex, uint32_t generation) {
+    for (uint32_t i = 1; i < SOCKET_MAX_OPEN; i++) {
+        irq_flags_t irq = irq_save_disable();
+        ksocket_t *s = sockets[i];
+        bool handles_l2 = s && (s->protocol == PROTO_UDP || s->protocol == PROTO_TCP || s->special_kind == SOCKET_SPECIAL_PACKET || s->special_kind == SOCKET_SPECIAL_RAW);
+        if (handles_l2 && s->impl && !s->closing) s->refs++;
+        else s = 0;
+        irq_restore(irq);
+        if (!s) continue;
+
+        if (s->special_kind == SOCKET_SPECIAL_PACKET) socket_packet_l2_deleted(s->impl, ifindex, generation);
+        else if (s->special_kind == SOCKET_SPECIAL_RAW) socket_raw_l2_deleted(s->impl, ifindex, generation);
+        else if (s->protocol == PROTO_UDP) socket_udp_l2_deleted(s->impl, ifindex, generation);
+        else socket_tcp_l2_deleted(s->impl, ifindex, generation);
+        socket_core_put(s);
+    }
+}
+
+void socket_core_l3_deleted(l3_id_t l3_id) {
+    for (uint32_t i = 1; i < SOCKET_MAX_OPEN; i++) {
+        irq_flags_t irq = irq_save_disable();
+        ksocket_t *s = sockets[i];
+        bool handles_l3 = s && (s->protocol == PROTO_UDP || s->protocol == PROTO_TCP || s->special_kind == SOCKET_SPECIAL_RAW);
+        if (handles_l3 && s->impl && !s->closing) s->refs++;
+        else s = 0;
+        irq_restore(irq);
+        if (!s) continue;
+
+        if (s->special_kind == SOCKET_SPECIAL_RAW) socket_raw_l3_deleted(s->impl, l3_id);
+        else if (s->protocol == PROTO_UDP) socket_udp_l3_deleted(s->impl, l3_id);
+        else socket_tcp_l3_deleted(s->impl, l3_id);
+        socket_core_put(s);
+    }
 }

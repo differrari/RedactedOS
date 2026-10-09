@@ -21,7 +21,7 @@ bool ipv6_is_linklocal(const uint8_t ip[16]) { return ip[0] == 0xFE && (ip[1] & 
 
 bool ipv6_l3_is_active(l3_ipv6_interface_t *v6) {
     if (!v6 || !v6->l2) return false;
-    if (!v6->l2->is_up) return false;
+    if (!l2_interface_is_operational(v6->l2)) return false;
     if (v6->cfg == IPV6_CFG_DISABLE) return false;
     return true;
 }
@@ -270,4 +270,10 @@ void ipv6_make_lla_from_mac(uint8_t ifindex, uint8_t out[16]) {
     out[13] = mac[3];
     out[14] = mac[4];
     out[15] = mac[5];
+
+    l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
+    if (l2 && l2->link_kind == NET_LINK_VLAN) {
+        out[14] ^= (uint8_t)(l2->vlan_id >> 8);
+        out[15] ^= (uint8_t)l2->vlan_id;
+    }
 }

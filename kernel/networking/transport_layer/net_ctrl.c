@@ -12,6 +12,7 @@
 #include "networking/link_layer/ndp.h"
 #include "networking/network.h"
 #include "networking/firewall.h"
+#include "networking/link_layer/nic_types.h"
 #include "alloc/allocate.h"
 
 typedef struct {
@@ -20,6 +21,9 @@ typedef struct {
     uint8_t prefix_len;
     uint8_t ifname_len;
     char ifname[16];
+    char parent_name[16];
+    uint8_t parent_name_len;
+    uint16_t vlan_id;
     uint8_t mac[MAC_ADDR_LEN];
     uint16_t metric;
     uint16_t mtu;
@@ -144,6 +148,17 @@ static bool net_ctrl_read_attrs(const uint8_t* p, uint32_t len, net_ctrl_attrs_t
                 memcpy(&out->port_to, v, sizeof(out->port_to));
                 out->present |= 1u << NET_CTRL_EXT_PORT_TO;
                 break;
+            case NET_CTRL_EXT_VLAN_ID:
+                if (a.length != sizeof(uint16_t)) return false;
+                memcpy(&out->vlan_id, v, sizeof(out->vlan_id));
+                out->present |= 1u << NET_CTRL_EXT_VLAN_ID;
+                break;
+            case NET_CTRL_EXT_PARENT_IFNAME:
+                if (!a.length || a.length >= sizeof(out->parent_name)) return false;
+                memcpy(out->parent_name, v, a.length);
+                out->parent_name_len = (uint8_t)a.length;
+                out->present |= 1u << NET_CTRL_EXT_PARENT_IFNAME;
+                break;
             case NET_CTRL_EXT_ADDRESS:
                 if (a.length != sizeof(net_l4_endpoint)) return false;
                 memcpy(&out->address, v, sizeof(out->address));
@@ -200,16 +215,34 @@ static bool net_ctrl_link_dump(const net_ctrl_attrs_t* a, buffer* b) {
     for (uint8_t i = 0; i < count; i++) {
         l2_interface_t* l2 = l2_interface_at(i);
         if (!net_ctrl_l2_matches(l2, a)) continue;
-        NetCtrlLinkInfo info;
-        memset(&info, 0, sizeof(info));
+        NetCtrlLinkInfo info = {0};
         info.ifindex = l2->ifindex;
         info.up = l2->is_up ? 1 : 0;
         info.metric = l2->base_metric;
         info.mtu = network_get_device_mtu(l2->ifindex);
-        info.kind = l2->kind;
+        info.kind = l2->dev_kind;
+        info.link_kind = l2->link_kind;
         info.ipv4_count = l2->ipv4_count;
         info.ipv6_count = l2->ipv6_count;
         memcpy(info.name, l2->name, sizeof(info.name));
+        if (buffer_write_lim(b, (const char*)&info, sizeof(info)) != sizeof(info)) return false;
+    }
+    return true;
+}
+
+static bool net_ctrl_vlan_dump(const net_ctrl_attrs_t* a, buffer* b) {
+    uint8_t count = l2_interface_count();
+    for (uint8_t i = 0; i < count; i++) {
+        l2_interface_t* l2 = l2_interface_at(i);
+        if (!net_ctrl_l2_matches(l2, a) || l2->link_kind != NET_LINK_VLAN) continue;
+        l2_interface_t *parent = l2_interface_find_by_index(l2->parent_ifindex);
+        if (!parent) continue;
+        NetCtrlVlanInfo info = {0};
+        info.ifindex = l2->ifindex;
+        info.parent_ifindex = parent->ifindex;
+        info.vlan_id = l2->vlan_id;
+        memcpy(info.name, l2->name, sizeof(info.name));
+        memcpy(info.parent, parent->name, sizeof(info.parent));
         if (buffer_write_lim(b, (const char*)&info, sizeof(info)) != sizeof(info)) return false;
     }
     return true;
@@ -219,9 +252,59 @@ static int32_t net_ctrl_link_upd(const net_ctrl_attrs_t* a) {
     l2_interface_t* l2 = net_ctrl_l2_from_attrs(a);
     if (!l2) return SOCK_ERR_INVAL;
     if (NET_CTRL_HAS(a, NET_CTRL_EXT_MTU)) return SOCK_ERR_UNSUP;
-    if (NET_CTRL_HAS(a, NET_CTRL_EXT_STATE) && !l2_interface_set_up(l2->ifindex, a->state != 0)) return SOCK_ERR_INVAL;
+    if (NET_CTRL_HAS(a, NET_CTRL_EXT_STATE) && !l2_interface_set_up(l2->ifindex, a->state != 0)) return SOCK_ERR_SYS;
     if (NET_CTRL_HAS(a, NET_CTRL_EXT_METRIC) && !l2_interface_set_metric(l2->ifindex, a->metric)) return SOCK_ERR_INVAL;
     return SOCK_OK;
+}
+
+static int32_t net_ctrl_link_add(const net_ctrl_attrs_t* a) {
+    if (!NET_CTRL_HAS(a, NET_CTRL_EXT_IFNAME) || !NET_CTRL_HAS(a, NET_CTRL_EXT_PARENT_IFNAME) || 
+        !NET_CTRL_HAS(a, NET_CTRL_EXT_VLAN_ID) || !a->vlan_id || a->vlan_id > 4094 || a->ifname_len >= 16) return SOCK_ERR_INVAL;
+    if (net_ctrl_l2_from_attrs(a)) return SOCK_ERR_EXIST;
+    l2_interface_t* parent = NULL;
+    uint8_t count = l2_interface_count();
+    for (uint8_t i = 0; i < count; i++) {
+        l2_interface_t *link = l2_interface_at(i);
+        if (link && strcmp(link->name, a->parent_name) == 0) {
+            parent = link;
+            break;
+        }
+    }
+    if (!parent || parent->dev_kind != NET_DEV_ETH || parent->link_kind != NET_LINK_DIRECT) return SOCK_ERR_INVAL;
+    char name[16] = {0};
+    memcpy(name, a->ifname, a->ifname_len);
+    uint8_t ifindex = l2_vlan_create(parent->ifindex, a->vlan_id, name);
+    if (!ifindex) return SOCK_ERR_INVAL;
+    if (NET_CTRL_HAS(a, NET_CTRL_EXT_METRIC) && !l2_interface_set_metric(ifindex, a->metric)) {
+        l2_vlan_destroy(ifindex);
+        return SOCK_ERR_SYS;
+    }
+    if (!l2_interface_set_up(ifindex, true)) {
+        l2_vlan_destroy(ifindex);
+        return SOCK_ERR_SYS;
+    }
+    ifmgr_autoconfig_l2(ifindex);
+    return SOCK_OK;
+}
+
+static int32_t net_ctrl_link_del(const net_ctrl_attrs_t* a) {
+    l2_interface_t* vlan = net_ctrl_l2_from_attrs(a);
+    if (!vlan || vlan->link_kind != NET_LINK_VLAN) return SOCK_ERR_INVAL;
+    uint8_t ifindex = vlan->ifindex;
+    if (!l2_interface_set_up(ifindex, false)) return SOCK_ERR_SYS;
+    for (int i = 0; i < MAX_IPV4_PER_INTERFACE; i++) {
+        l3_ipv4_interface_t *v4 = vlan->l3_v4[i];
+        if (v4 && !l3_ipv4_remove_from_interface(v4->l3_id)) return SOCK_ERR_SYS;
+    }
+    for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+        l3_ipv6_interface_t *v6 = vlan->l3_v6[i];
+        if (v6 && !(v6->kind & IPV6_ADDRK_LINK_LOCAL) && !l3_ipv6_remove_from_interface(v6->l3_id)) return SOCK_ERR_SYS;
+    }
+    for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
+        l3_ipv6_interface_t *v6 = vlan->l3_v6[i];
+        if (v6 && !l3_ipv6_remove_from_interface(v6->l3_id)) return SOCK_ERR_SYS;
+    }
+    return l2_vlan_destroy(ifindex) ? SOCK_OK : SOCK_ERR_SYS;
 }
 
 static bool net_ctrl_addr_dump(const net_ctrl_attrs_t* a, buffer* b) {
@@ -272,6 +355,18 @@ static bool net_ctrl_addr_dump(const net_ctrl_attrs_t* a, buffer* b) {
     return true;
 }
 
+static bool net_ctrl_v4_overlap(const l2_interface_t* l2, const l3_ipv4_interface_t* except, uint32_t ip, uint32_t mask) {
+    if (!l2 || !mask) return false;
+    for (uint32_t i = 0; i < N_ARR(l2->l3_v4); i++) {
+        l3_ipv4_interface_t* v4 = l2->l3_v4[i];
+        if (!v4 || v4 == except || v4->mode == IPV4_CFG_DISABLED || !v4->ip || !v4->mask) continue;
+        uint32_t common = v4->mask < mask ? v4->mask : mask;
+        if (ipv4_net(ip, common) != ipv4_net(v4->ip, common)) continue;
+        if (v4->mask != mask) return true;
+    }
+    return false;
+}
+
 static int32_t net_ctrl_addr_apply(const net_ctrl_attrs_t* a, bool update) {
     if (!NET_CTRL_HAS(a, NET_CTRL_EXT_ADDRESS)) return SOCK_ERR_INVAL;
     if (NET_CTRL_HAS(a, NET_CTRL_EXT_MTU)) return SOCK_ERR_UNSUP;
@@ -300,7 +395,13 @@ static int32_t net_ctrl_addr_apply(const net_ctrl_attrs_t* a, bool update) {
             ip = 0;
             gw = 0;
         }
-        if (update) return l3_ipv4_update(a->l3_id, ip, mask, gw, (ipv4_cfg_t)config, NULL) ? SOCK_OK : SOCK_ERR_INVAL;
+        if (update) {
+            l3_ipv4_interface_t* current = l3_ipv4_find_by_id(a->l3_id);
+            if (!current || !current->l2) return SOCK_ERR_NOT_FOUND;
+            if (config == IPV4_CFG_STATIC && net_ctrl_v4_overlap(current->l2, current, ip, mask)) return SOCK_ERR_INVAL;
+            return l3_ipv4_update(a->l3_id, ip, mask, gw, (ipv4_cfg_t)config, NULL) ? SOCK_OK : SOCK_ERR_INVAL;
+        }
+        if (config == IPV4_CFG_STATIC && net_ctrl_v4_overlap(l2, NULL, ip, mask)) return SOCK_ERR_INVAL;
         return l3_ipv4_add_to_interface(l2->ifindex, ip, mask, gw, (ipv4_cfg_t)config, NULL) ? SOCK_OK : SOCK_ERR_INVAL;
     }
     if (a->address.ver == IP_VER6) {
@@ -549,7 +650,7 @@ static bool net_ctrl_neigh_dump(const net_ctrl_attrs_t* a, buffer* b) {
 static int32_t net_ctrl_neigh_set(const net_ctrl_attrs_t* a, bool add) {
     if (!NET_CTRL_HAS(a, NET_CTRL_EXT_ADDRESS) || !NET_CTRL_HAS(a, NET_CTRL_EXT_MAC)) return SOCK_ERR_INVAL;
     l2_interface_t* l2 = net_ctrl_l2_from_attrs(a);
-    if (!l2) return SOCK_ERR_INVAL;
+    if (!l2 || l2->link_kind == NET_LINK_LOOPBACK) return SOCK_ERR_INVAL;
     bool exists = false;
     if (a->address.ver == IP_VER4) {
         uint32_t ip = 0;
@@ -564,7 +665,7 @@ static int32_t net_ctrl_neigh_set(const net_ctrl_attrs_t* a, bool add) {
         }
         if (add && exists) return SOCK_ERR_EXIST;
         if (!add && !exists) return SOCK_ERR_NOT_FOUND;
-        if (!l2->arp_table) return SOCK_ERR_INVAL;
+        if (!l2_prepare_arp(l2->ifindex)) return SOCK_ERR_SYS;
         uint32_t ttl = NET_CTRL_HAS(a, NET_CTRL_EXT_TTL_MS) ? a->ttl_ms : 0;
         arp_table_put_for_l2(l2->ifindex, ip, a->mac, ttl, NET_CTRL_HAS(a, NET_CTRL_EXT_FLAGS) && (a->flags & NET_CTRL_NEIGH_F_STATIC));
         return SOCK_OK;
@@ -580,7 +681,7 @@ static int32_t net_ctrl_neigh_set(const net_ctrl_attrs_t* a, bool add) {
         }
         if (add && exists) return SOCK_ERR_EXIST;
         if (!add && !exists) return SOCK_ERR_NOT_FOUND;
-        if (!l2->nd_table) return SOCK_ERR_INVAL;
+        if (!l2_prepare_ndp(l2->ifindex)) return SOCK_ERR_SYS;
         uint32_t ttl = NET_CTRL_HAS(a, NET_CTRL_EXT_TTL_MS) ? a->ttl_ms : 0;
         bool router = NET_CTRL_HAS(a, NET_CTRL_EXT_FLAGS) && (a->flags & NET_CTRL_NEIGH_F_ROUTER);
         bool is_static = NET_CTRL_HAS(a, NET_CTRL_EXT_FLAGS) && (a->flags & NET_CTRL_NEIGH_F_STATIC);
@@ -638,6 +739,12 @@ int32_t net_ctrl_dispatch(const void* req, uint32_t req_len, uint8_t** out, uint
                 case NET_CTRL_OP_UPD:
                     status = net_ctrl_link_upd(&attrs);
                     break;
+                case NET_CTRL_OP_ADD:
+                    status = net_ctrl_link_add(&attrs);
+                    break;
+                case NET_CTRL_OP_DEL:
+                    status = net_ctrl_link_del(&attrs);
+                    break;
                 default:
                     status = SOCK_ERR_INVAL;
                     break;
@@ -680,6 +787,10 @@ int32_t net_ctrl_dispatch(const void* req, uint32_t req_len, uint8_t** out, uint
                     status = SOCK_ERR_INVAL;
                     break;
             }
+            break;
+        case NET_CTRL_OBJ_VLAN:
+            if (in.op != NET_CTRL_OP_GET) status = SOCK_ERR_INVAL;
+            else status = net_ctrl_vlan_dump(&attrs, &b) ? SOCK_OK : SOCK_ERR_SYS;
             break;
         case NET_CTRL_OBJ_NEIGH:
             switch ((uint32_t)in.op) {

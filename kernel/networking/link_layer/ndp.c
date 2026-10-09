@@ -1565,7 +1565,7 @@ static bool ndp_has_timed_work(void) {
     uint8_t n = l2_interface_count();
     for (uint8_t i = 0; i < n; i++) {
         l2_interface_t* l2 = l2_interface_at(i);
-        if (!l2 || !l2->is_up || !l2->nd_table) continue;
+        if (!l2_interface_is_operational(l2) || !l2->nd_table) continue;
 
         ndp_table_impl_t* t = (ndp_table_impl_t*)l2->nd_table;
         for (int r = 0; r < NDP_DEFAULT_ROUTER_MAX; r++) if (t->routers[r].used && t->routers[r].lifetime_ms) return true;
@@ -1607,7 +1607,7 @@ static int ndp_daemon_entry(int argc, char* argv[]) {
     uint8_t init_n = l2_interface_count();
     for (uint8_t i = 0; i < init_n; i++) {
         l2_interface_t* l2 = l2_interface_at(i);
-        ndp_table_impl_t* t = l2 && l2->is_up ? (ndp_table_impl_t*)l2->nd_table : NULL;
+        ndp_table_impl_t* t = l2_interface_is_operational(l2) ? (ndp_table_impl_t*)l2->nd_table : NULL;
         if (t && t->base_reachable_time_ms) {
             uint32_t low = t->base_reachable_time_ms / 2u;
             uint32_t high = t->base_reachable_time_ms + t->base_reachable_time_ms / 2u;
@@ -1628,7 +1628,7 @@ static int ndp_daemon_entry(int argc, char* argv[]) {
 
         for (uint8_t i = 0; i < n; i++) {
             l2_interface_t* l2 = l2_interface_at(i);
-            if (!l2 || !l2->is_up || !l2->nd_table) continue;
+            if (!l2_interface_is_operational(l2) || !l2->nd_table) continue;
 
             if (elapsed_ms) ndp_table_tick_for_l2(l2->ifindex, elapsed_ms);
 

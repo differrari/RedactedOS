@@ -5,6 +5,7 @@
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/internet_layer/ipv6_route.h"
 #include "networking/link_layer/eth.h"
+#include "networking/network.h"
 #include "networking/link_layer/ndp.h"
 #include "networking/internet_layer/mld.h"
 #include "networking/transport_layer/csocket_raw.h"
@@ -73,6 +74,17 @@ static bool icmpv6_send_echo_reply(uint8_t ifindex, const uint8_t src_ip[16], co
     e->hdr.checksum = 0;
 
     e->hdr.checksum = bswap16(checksum16_pipv6(dst_ip, src_ip, PROTO_ICMPV6, (const uint8_t*)e, icmp_len));
+
+    uint16_t mtu = network_get_device_mtu(ifindex);
+    if (mtu && total > mtu) {
+        l3_ipv6_interface_t* l3 = l3_ipv6_find_by_ip(dst_ip);
+        if (!ipv6_l3_is_ready(l3) || !l3->l2 || l3->l2->ifindex != ifindex || !netpkt_pull(pkt, sizeof(ipv6_hdr_t))) {
+            netpkt_unref(pkt);
+            return false;
+        }
+        ip_tx_opts_t tx = {.target = {.l3_id = l3->l3_id},.scope = IP_TX_BOUND_L3};
+        return ipv6_send_packet(src_ip, PROTO_ICMPV6, pkt, &tx, hop_limit, 0, 0);
+    }
 
     return eth_send_frame_on(ifindex, ETHERTYPE_IPV6, src_mac, pkt);
 }

@@ -20,7 +20,9 @@ static void print_help(void) {
     print("\t link\t interfaces");
     print("\t addr\t addresses");
     print("\t route\t routes");
-    print("\t neigh\t neighbors\n");
+    print("\t neigh\t neighbors");
+    print("\t link add IFACE type vlan id VLAN dev PARENT");
+    print("\t link del IFACE\n");
     print("Args:");
     print("\t IFACE\t interface name");
     print("\t PREFIX\t ADDRESS/LENGTH");
@@ -95,7 +97,27 @@ static int show_link(void) {
     NetCtrlMsg* msg = (NetCtrlMsg*)response;
     uint32_t count = NET_CTRL_MSG_PAYLOAD_LEN(msg) / sizeof(NetCtrlLinkInfo);
     NetCtrlLinkInfo* links = NET_CTRL_MSG_DATA(msg);
-    for (uint32_t i = 0; i < count; i++) print("%u: %s: %s mtu %u metric %u", links[i].ifindex, links[i].name, links[i].up ? "UP" : "DOWN", links[i].mtu, links[i].metric);
+    req_init(req, &req_len, NET_CTRL_OBJ_VLAN, NET_CTRL_OP_GET);
+    uint8_t* vlans_response = 0;
+    if (req_send(req, req_len, &vlans_response) != SOCK_OK) {
+        release(response);
+        return 1;
+    }
+    NetCtrlMsg* vlan_msg = (NetCtrlMsg*)vlans_response;
+    uint32_t vlan_count = NET_CTRL_MSG_PAYLOAD_LEN(vlan_msg) / sizeof(NetCtrlVlanInfo);
+    NetCtrlVlanInfo* vlans = NET_CTRL_MSG_DATA(vlan_msg);
+    for (uint32_t i = 0; i < count; i++){
+        const NetCtrlVlanInfo* vlan = NULL;
+        for (uint32_t j = 0; j < vlan_count; j++) if (vlans[j].ifindex == links[i].ifindex) {
+            vlan = &vlans[j];
+            break;
+            }
+        if (vlan) print("%u: %s: %s mtu %u metric %u vlan %u parent %s", links[i].ifindex, links[i].name,
+                    links[i].up ? "UP" : "DOWN", links[i].mtu, links[i].metric, vlan->vlan_id, vlan->parent);
+        else print("%u: %s: %s mtu %u metric %u", links[i].ifindex, links[i].name,
+                    links[i].up ? "UP" : "DOWN", links[i].mtu, links[i].metric);
+    }
+    release(vlans_response);
     release(response);
     return 0;
 }
@@ -111,6 +133,34 @@ static int set_link(int argc, char* argv[]) {
     req_init(req, &req_len, NET_CTRL_OBJ_LINK, NET_CTRL_OP_UPD);
     size_t ifname_len = strlen_max(argv[3], 17);
     if (!ifname_len || ifname_len > 16 || !req_attr(req, &req_len, NET_CTRL_EXT_IFNAME, argv[3], (uint16_t)ifname_len) || !req_attr(req, &req_len, NET_CTRL_EXT_STATE, &state, sizeof(state))) return 1;
+    return req_send(req, req_len, NULL) == SOCK_OK ? 0 : 1;
+}
+
+static int add_vlan(int argc, char *argv[]) {
+    if (argc != 10 || strcmp_case(argv[4], "type", true) != 0 || strcmp_case(argv[5], "vlan", true) != 0 || 
+        strcmp_case(argv[6], "id", true) != 0 || strcmp_case(argv[8], "dev", true) != 0) return 2;
+    uint32_t vlan_id = 0;
+    if (!parse_uint32_dec_exact(argv[7], &vlan_id) || !vlan_id || vlan_id > 4094) return 2;
+    size_t name_len = strlen_max(argv[3], 16);
+    size_t parent_len = strlen_max(argv[9], 16);
+    if (!name_len || name_len >= 16 || !parent_len || parent_len >= 16) return 2;
+    uint16_t tag = vlan_id;
+    uint8_t req[256];
+    uint32_t req_len;
+    req_init(req, &req_len, NET_CTRL_OBJ_LINK, NET_CTRL_OP_ADD);
+    if (!req_attr(req, &req_len, NET_CTRL_EXT_IFNAME, argv[3], name_len) || !req_attr(req, &req_len, NET_CTRL_EXT_PARENT_IFNAME, argv[9], parent_len) ||
+        !req_attr(req, &req_len, NET_CTRL_EXT_VLAN_ID, &tag, sizeof(tag))) return 1;
+    return req_send(req, req_len, NULL) == SOCK_OK ? 0 : 1;
+}
+
+static int delete_vlan(int argc, char *argv[]) {
+    if (argc != 4) return 2;
+    size_t len = strlen_max(argv[3], 16);
+    if (!len || len >= 16) return 2;
+    uint8_t req[256];
+    uint32_t req_len;
+    req_init(req, &req_len, NET_CTRL_OBJ_LINK, NET_CTRL_OP_DEL);
+    if (!req_attr(req, &req_len, NET_CTRL_EXT_IFNAME, argv[3], len)) return 1;
     return req_send(req, req_len, NULL) == SOCK_OK ? 0 : 1;
 }
 
@@ -304,6 +354,8 @@ int run_ip(int argc, char* argv[]) {
     int rc = 2;
     if (argc == 2 && strcmp_case(argv[1], "link", true) == 0) rc = show_link();
     else if (argc >= 3 && strcmp_case(argv[1], "link", true) == 0 && strcmp_case(argv[2], "set", true) == 0) rc = set_link(argc, argv);
+    else if (argc >= 3 && strcmp_case(argv[1], "link", true) == 0 && strcmp_case(argv[2], "add", true) == 0) rc = add_vlan(argc, argv);
+    else if (argc >= 3 && strcmp_case(argv[1], "link", true) == 0 && strcmp_case(argv[2], "del", true) == 0) rc = delete_vlan(argc, argv);
     else if (argc == 2 && strcmp_case(argv[1], "addr", true) == 0) rc = show_addr();
     else if (argc >= 3 && strcmp_case(argv[1], "addr", true) == 0 && strcmp_case(argv[2], "add", true) == 0) rc = addr_add(argc, argv);
     else if (argc >= 3 && strcmp_case(argv[1], "addr", true) == 0 && strcmp_case(argv[2], "del", true) == 0) rc = addr_del(argc, argv);

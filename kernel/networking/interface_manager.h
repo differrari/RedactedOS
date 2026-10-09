@@ -3,6 +3,7 @@
 #include "types.h"
 #include "net/interface_types.h"
 #include "net/network_types.h"
+#include "networking/link_layer/nic_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,10 +37,16 @@ typedef struct net_runtime_opts {
 typedef struct l2_interface {
     uint8_t ifindex;
     uint8_t nic_id;
+    uint8_t parent_ifindex;
+    uint16_t vlan_id;
+    uint32_t generation;
     char name[16];
     bool is_up;
+    bool suppress_auto_v4;
+    bool suppress_auto_v6;
     uint16_t base_metric;
-    uint8_t kind;
+    NetDevKind dev_kind;
+    NetLinkKind link_kind;
     uint8_t ipv6_default_hop_limit;
     uint16_t ipv6_link_mtu;
     void *arp_table;
@@ -132,13 +139,19 @@ typedef struct ip_resolution_result {
     l2_interface_t *l2;
 } ip_resolution_result_t;
 
-uint8_t l2_interface_create(const char *name, uint8_t nic_id, uint16_t base_metric, uint8_t kind);
+uint8_t l2_interface_create(const char *name, uint8_t nic_id, uint16_t base_metric, NetDevKind dev_kind);
 bool l2_interface_destroy(uint8_t ifindex);
+uint8_t l2_vlan_create(uint8_t parent_ifindex, uint16_t vlan_id, const char *name);
+l2_interface_t *l2_vlan_find(uint8_t parent_ifindex, uint16_t vlan_id);
+bool l2_vlan_destroy(uint8_t ifindex);
 l2_interface_t *l2_interface_find_by_index(uint8_t ifindex);
 uint8_t l2_interface_count(void);
 l2_interface_t *l2_interface_at(uint8_t idx);
 bool l2_interface_set_up(uint8_t ifindex, bool up);
 bool l2_interface_set_metric(uint8_t ifindex, uint16_t metric);
+bool l2_interface_is_operational(const l2_interface_t* l2);
+bool l2_prepare_arp(uint8_t ifindex);
+bool l2_prepare_ndp(uint8_t ifindex);
 
 bool l2_ipv4_mcast_join(uint8_t ifindex, uint32_t group);
 bool l2_ipv4_mcast_leave(uint8_t ifindex, uint32_t group);
@@ -168,6 +181,12 @@ void ifmgr_autoconfig_l2(uint8_t ifindex);
 
 ip_resolution_result_t resolve_ipv4_to_interface(uint32_t dst_ip);
 ip_resolution_result_t resolve_ipv6_to_interface(const uint8_t dst_ip[16]);
+
+static inline uint8_t l2_physical_ifindex(const l2_interface_t *l2) {
+    if (!l2) return 0;
+    if (l2->parent_ifindex) return l2->parent_ifindex;
+    return l2->ifindex;
+}
 
 #ifdef __cplusplus
 }

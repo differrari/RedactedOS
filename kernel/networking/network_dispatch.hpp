@@ -1,9 +1,7 @@
 #pragma once
 #include "types.h"
-#include "std/std.h"
 #include "drivers/net_driver.hpp"
 #include "net/network_types.h"
-#include "networking/internet_layer/ipv4.h"
 #include "interface_manager.h"
 #include "data/struct/ring_buffer.hpp"
 
@@ -41,7 +39,7 @@ private:
 
     static const size_t MAX_NIC = MAX_L2_INTERFACES;
 
-    NICCtx nics[MAX_NIC];
+    NICCtx* nics[MAX_NIC];
     size_t nic_num;
 
 

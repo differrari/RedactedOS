@@ -43,6 +43,7 @@ typedef struct udp_socket {
     SockBindSpec bindSpec;
     SockBindSpec lastRxSpec;
     socket_bind_token_t bindToken;
+    uint32_t bind_generation;
     udp_rx_entry_t* rx_ring;
     uint32_t* mcast_ifmasks;
     uint32_t ring_cap;
@@ -73,10 +74,11 @@ static bool udp_socket_mcast_endpoint_valid(const net_l4_endpoint* ep) {
     return false;
 }
 
-static bool udp_socket_mcast_match(udp_socket_t* s, ip_version_t ver, const void* dst_ip_addr) {
+static bool udp_socket_mcast_match(udp_socket_t* s, ip_version_t ver, const void* dst_ip_addr, uint8_t ifindex) {
     if (!s || !dst_ip_addr || !s->options.mcast_groups || !s->options.mcast_count) return false;
 
     for (uint32_t i = 0; i < s->options.mcast_count; i++) {
+        if (!ifindex || !s->mcast_ifmasks || !(s->mcast_ifmasks[i] & (1u << (ifindex - 1)))) continue;
         const net_l4_endpoint* group = &s->options.mcast_groups[i];
         if (group->ver != ver) continue;
 
@@ -219,6 +221,8 @@ static int32_t udp_socket_bind_l3(udp_socket_t* s, l3_id_t l3_id) {
     s->localPort = (uint16_t)port;
     s->bindToken = token;
     s->bindSpec = spec;
+    l2_interface_t *bound = spec.kind == BIND_L2 ? l2_interface_find_by_index(spec.ifindex) : NULL;
+    s->bind_generation = bound ? bound->generation : 0;
     irq_restore(irq);
     return SOCK_OK;
 }
@@ -242,6 +246,17 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, 
         multicast = ipv4_is_multicast(dip);
     } else multicast = ipv6_is_multicast(dst_ip_addr);
 
+    uint8_t rx_ifindex = 0;
+    if (multicast) {
+        if (ipver == IP_VER4) {
+            l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(l3_id);
+            if (v4 && v4->l2) rx_ifindex = v4->l2->ifindex;
+        } else {
+            l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(l3_id);
+            if (v6 && v6->l2) rx_ifindex = v6->l2->ifindex;
+        }
+    }
+
     udp_rx_entry_t entry = {0};
     entry.pkt = pkt;
     make_ep(src_ip_addr, src_port, ipver, &entry.src);
@@ -254,7 +269,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, 
         irq_restore(irq);
         return 0;
     }
-    bool joined_multicast = multicast && udp_socket_mcast_match(s, ipver, dst_ip_addr);
+    bool joined_multicast = multicast && udp_socket_mcast_match(s, ipver, dst_ip_addr, rx_ifindex);
     if (multicast && !joined_multicast) {
         irq_restore(irq);
         return 0;
@@ -307,7 +322,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, 
         return 0;
     }
 
-    if (multicast && !udp_socket_mcast_match(s, ipver, dst_ip_addr)) {
+    if (multicast && !udp_socket_mcast_match(s, ipver, dst_ip_addr, rx_ifindex)) {
         irq_restore(irq);
         return 0;
     }
@@ -409,6 +424,8 @@ int32_t socket_bind_udp(socket_impl_t sh, const SockBindSpec* spec_in, uint16_t 
     }
     s->bindSpec = spec;
     s->bindToken = token;
+    l2_interface_t *bound = spec.kind == BIND_L2 ? l2_interface_find_by_index(spec.ifindex) : 0;
+    s->bind_generation = bound ? bound->generation : 0;
     s->localPort = (uint16_t)bind_port;
     irq_restore(irq);
     return SOCK_OK;
@@ -870,6 +887,7 @@ int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint
             return SOCK_OK;
         }
         case SOCK_OPT_SEND_TIMEOUT:
+        case SOCK_OPT_PACKET_TRUNK:
             return SOCK_ERR_UNSUP;
         case SOCK_OPT_RECV_TIMEOUT:
         case SOCK_OPT_DEBUG:
@@ -973,6 +991,7 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_LINGER:
         case SOCK_GET_OPT_FILTER:
         case SOCK_GET_OPT_SEND_TIMEOUT:
+        case SOCK_GET_OPT_PACKET_TRUNK:
         case SOCK_GET_TCP_STATE:
         case SOCK_GET_TCP_MSS:
         case SOCK_GET_TCP_RTT_MS:
@@ -1030,6 +1049,7 @@ int32_t socket_close_udp(socket_impl_t sh) {
     memset(&s->lastRxSpec, 0, sizeof(s->lastRxSpec));
     s->lastRxSpec.kind = BIND_ANY;
     s->bindToken = 0;
+    s->bind_generation = 0;
     s->localPort = 0;
     memset(&s->bindSpec, 0, sizeof(s->bindSpec));
     s->bindSpec.kind = BIND_ANY;
@@ -1064,4 +1084,22 @@ void socket_destroy_udp(socket_impl_t sh) {
     if (!s) return;
     socket_close_udp(s);
     release(s);
+}
+
+void socket_udp_l3_deleted(socket_impl_t sh, l3_id_t l3_id) {
+    udp_socket_t *s = (udp_socket_t*)sh;
+    if (s && (s->bindSpec.kind == BIND_L3 || s->bindSpec.kind == BIND_IP) && s->bindSpec.l3_id == l3_id) (void)socket_close_udp(sh);
+}
+
+void socket_udp_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t generation) {
+    udp_socket_t *s = (udp_socket_t*)sh;
+    if (!s || !ifindex || ifindex > MAX_L2_INTERFACES) return;
+    irq_flags_t irq = irq_save_disable();
+    bool bound = s->bindSpec.kind == BIND_L2 && s->bindSpec.ifindex == ifindex && s->bind_generation == generation;
+    if (!bound && s->mcast_ifmasks) {
+        uint32_t bit = 1u << (ifindex - 1);
+        for (uint32_t i = 0; i < s->options.mcast_count; i++) s->mcast_ifmasks[i] &= ~bit;
+    }
+    irq_restore(irq);
+    if (bound) socket_close_udp(sh);
 }

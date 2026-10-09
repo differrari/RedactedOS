@@ -55,10 +55,19 @@ static void reass_free(reass_slot_t *s) {
     memset(s, 0, sizeof(*s));
 }
 
+static bool ipv6_error_quote(netpkt_t* pkt, const ipv6_hdr_t* ip6, uint32_t l4_off, uint32_t l4_len, uint8_t* out, uint32_t cap, uint32_t* out_len) {
+    if (!pkt || !ip6 || !out || !out_len || cap < sizeof(*ip6)) return false;
+    uint32_t len = l4_off + l4_len;
+    if (len > cap) len = cap;
+    if (!netpkt_copyout(pkt, 0, out, len)) return false;
+    *out_len = len;
+    return true;
+}
+
 static void icmpv6_send_error(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_ip[16], const uint8_t dst_mac[6], uint8_t type, uint8_t code, uint32_t param32, const uint8_t *invoking, uint32_t invoking_len) {
     if (!ifindex || !src_ip || !dst_ip || !dst_mac || !invoking || !invoking_len) return;
 
-    uint32_t max_invoke = 1280u;
+    uint32_t max_invoke = IPV6_MIN_MTU - (uint32_t)sizeof(ipv6_hdr_t);
     uint32_t base = (uint32_t)sizeof(icmpv6_hdr_t) + 4u;
     if (base >= max_invoke) return;
 
@@ -144,7 +153,7 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     uint8_t dst_mac[6];
     bool need_ndp = false;
     if (ipv6_is_multicast(dst)) ipv6_multicast_mac(dst, dst_mac);
-    else if (l2 && l2->kind == NET_IFK_LOCALHOST) mac_clear(dst_mac);
+    else if (l2 && l2->link_kind == NET_LINK_LOOPBACK) mac_clear(dst_mac);
     else need_ndp = true;
 
     uint16_t mtu = l3_ipv6_effective_mtu(src_v6);
@@ -339,7 +348,7 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
     if (ipv6_is_loopback(ip6->src)) {
         l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
-        if (!l2 || l2->kind != NET_IFK_LOCALHOST) return;
+        if (!l2 || l2->link_kind != NET_LINK_LOOPBACK) return;
     }
 
     uint32_t now = (uint32_t)get_time();
@@ -409,35 +418,17 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
         if (more && (frag_len & 7u)) {
             uint8_t invoke_buf[sizeof(ipv6_hdr_t) + sizeof(ipv6_frag_hdr_t) + 8];
-            uint32_t inv_len = (uint32_t)sizeof(ipv6_hdr_t) + l4_len;
-            const uint8_t *inv =(const uint8_t*) ip6;
-            if (inv_len > sizeof(invoke_buf)) {
-                memcpy(invoke_buf, ip6, sizeof(ipv6_hdr_t));
-                uint32_t cpy = l4_len;
-                uint32_t max = (uint32_t)sizeof(ipv6_frag_hdr_t) + 8u;
-                if (cpy > max) cpy = max;
-                if (!netpkt_copyout(pkt, l4_off, invoke_buf + sizeof(ipv6_hdr_t), cpy)) return;
-                inv = invoke_buf;
-                inv_len = (uint32_t)sizeof(invoke_buf);
-            }
-            icmpv6_send_error(ifindex, ip6->dst, ip6->src, src_mac, 4, 0, 4u, inv, inv_len);
+            uint32_t inv_len = 0;
+            if (!ipv6_error_quote(pkt, ip6, l4_off, l4_len, invoke_buf, sizeof(invoke_buf), &inv_len)) return;
+            icmpv6_send_error(ifindex, ip6->dst, ip6->src, src_mac, 4, 0, 4u, invoke_buf, inv_len);
             return;
         }
 
         if (off + frag_len > 65535u) {
             uint8_t invoke_buf[sizeof(ipv6_hdr_t) + sizeof(ipv6_frag_hdr_t) + 8];
-            uint32_t inv_len = (uint32_t)sizeof(ipv6_hdr_t) + l4_len;
-            const uint8_t *inv = (const uint8_t*)ip6;
-            if (inv_len > sizeof(invoke_buf)) {
-                memcpy(invoke_buf, ip6, sizeof(ipv6_hdr_t));
-                uint32_t cpy = l4_len;
-                uint32_t max = (uint32_t)sizeof(ipv6_frag_hdr_t) + 8u;
-                if (cpy > max) cpy = max;
-                if (!netpkt_copyout(pkt, l4_off, invoke_buf + sizeof(ipv6_hdr_t), cpy)) return;
-                inv = invoke_buf;
-                inv_len = (uint32_t)sizeof(invoke_buf);
-            }
-            icmpv6_send_error(ifindex, ip6->dst, ip6->src, src_mac, 4, 0, 42u, inv, inv_len);
+            uint32_t inv_len = 0;
+            if (!ipv6_error_quote(pkt, ip6, l4_off, l4_len, invoke_buf, sizeof(invoke_buf), &inv_len))return;
+            icmpv6_send_error(ifindex, ip6->dst, ip6->src, src_mac, 4, 0, l4_off + 2, invoke_buf, inv_len);
             return;
         }
 
@@ -498,27 +489,16 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
         if (off == 0 && !has_ulh) {
             uint8_t invoke_buf[sizeof(ipv6_hdr_t) + sizeof(ipv6_frag_hdr_t) + 64];
-            uint32_t inv_len = (uint32_t)sizeof(ipv6_hdr_t) + l4_len;
-            const uint8_t *inv = (const uint8_t*)ip6;
-            if (inv_len > sizeof(invoke_buf)) {
-                memcpy(invoke_buf, ip6, sizeof(ipv6_hdr_t));
-                uint32_t cpy = l4_len;
-                uint32_t max = (uint32_t)sizeof(ipv6_frag_hdr_t) + 64u;
-                if (cpy > max) cpy = max;
-                if (!netpkt_copyout(pkt, l4_off, invoke_buf + sizeof(ipv6_hdr_t), cpy)) return;
-                inv = invoke_buf;
-                inv_len = (uint32_t)sizeof(invoke_buf);
-            }
-            icmpv6_send_error(ifindex, ip6->dst, ip6->src, src_mac, 4, 3, 0u, inv, inv_len);
+            uint32_t inv_len = 0;
+            if (!ipv6_error_quote(pkt, ip6, l4_off, l4_len, invoke_buf, sizeof(invoke_buf), &inv_len))return;
+            icmpv6_send_error(ifindex, ip6->dst, ip6->src, src_mac, 4, 3, 0u, invoke_buf, inv_len);
             reass_free(s);
             return;
         }
 
         if (off == 0 && !s->have_first) {
-            uint32_t inv_len = (uint32_t)sizeof(ipv6_hdr_t) + l4_len;
-            if (inv_len > sizeof(s->first_pkt)) inv_len = sizeof(s->first_pkt);
-            memcpy(s->first_pkt, ip6, sizeof(*ip6));
-            if (inv_len > (uint32_t)sizeof(*ip6) && !netpkt_copyout(pkt, l4_off, s->first_pkt + sizeof(*ip6), inv_len - (uint32_t)sizeof(*ip6))) {
+            uint32_t inv_len = 0;
+            if (!ipv6_error_quote(pkt, ip6, l4_off, l4_len, s->first_pkt, sizeof(s->first_pkt), &inv_len)) {
                 reass_free(s);
                 return;
             }

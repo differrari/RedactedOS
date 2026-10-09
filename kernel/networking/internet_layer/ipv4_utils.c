@@ -47,7 +47,7 @@ bool ipv4_is_unicast_global(uint32_t ip) {
 
 bool ipv4_l3_is_active(l3_ipv4_interface_t *v4) {
     if (!v4 || !v4->l2) return false;
-    if (!v4->l2->is_up) return false;
+    if (!l2_interface_is_operational(v4->l2)) return false;
     if (v4->mode == IPV4_CFG_DISABLED) return false;
     return true;
 }

@@ -577,3 +577,9 @@ void igmp_input(uint8_t ifindex, uint32_t src, uint32_t dst, const uint8_t* ip_h
 
     netpkt_unref(pkt);
 }
+
+void igmp_l2_deleted(uint8_t ifindex) {
+    if (!ifindex || ifindex > MAX_L2_INTERFACES) return;
+    memset(&igmp_if_states[ifindex-1], 0, sizeof(igmp_if_states[0]));
+    for (int i = 0; i < IGMP_MAX_TRACK; i++) if (igmp_states[i].used && igmp_states[i].ifindex == ifindex) memset(&igmp_states[i], 0, sizeof(igmp_states[i]));
+}
