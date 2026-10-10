@@ -12,6 +12,7 @@
 #include "process/scheduler.h"
 #include "filesystem/filesystem.h"
 #include "process/uaccess.h"
+#include "filesystem/modules/fs_isolation.h"
 
 typedef struct elf_header {
     char magic[4];//should be " ELF"
@@ -65,7 +66,7 @@ void get_elf_debug_info(process_t* proc, void* file, size_t filesize){
     if (!file) return;
     if (filesize < sizeof(elf_header)) return;
 
-     elf_header *header = (elf_header*)file;
+    elf_header *header = (elf_header*)file;
 
     if (memcmp(header->magic, "\x7f" "ELF", 4) != 0) return;
 
@@ -199,15 +200,17 @@ process_t* load_elf_process_path(const char *name, const char *bundle, const cha
     if (!path || !*path) return 0;
     
     file fd = {};
-    if (open_file(kernel_fs(), path, &fd) != FS_RESULT_SUCCESS) return 0;
+    if (open_file(kernel_fs(), path, &fd) != FS_RESULT_SUCCESS || fd.size == 0) return 0;
     
     char *program = (char*)zalloc(fd.size);
     if (!program) {
         close_file(&fd);
         return 0;
     }
+
+    size_t amt = read_file(&fd, program, fd.size);
+    bool ok = amt && amt == fd.size;
     
-    bool ok = read_file(&fd, program, fd.size) == fd.size;
     close_file(&fd);
     if (!ok) {
         release(program);

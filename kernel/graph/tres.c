@@ -55,15 +55,22 @@ gpu_point win_to_screen(window_frame *frame, gpu_point point){
 
 extern process_t *win_system_proc;
 
-gpu_point convert_mouse_position(gpu_point point){
+bool convert_mouse_position(mouse_data *in){
     process_t *p = get_current_proc();
-    if (p == win_system_proc) return point;
+    if (p == win_system_proc) return true;
     linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
-        return win_to_screen(frame, point);
+        gpu_rect rect = {{frame->x, frame->y + MENU_HEIGHT}, {frame->width, frame->height - MENU_HEIGHT}};
+        if (mouse_in_rect(rect, in->position)){
+            in->position.x -= frame->x;
+            in->position.y -= frame->y;
+            return true;
+        }
     }
-    return (gpu_point){};
+    in->raw = (mouse_input){};
+    in->position = (gpu_point){};
+    return false;
 }
 
 i32 calculate_distance(i32 ep, i32 es, i32 np, i32 ns, i32 existing){
@@ -84,7 +91,6 @@ i32 calculate_distance(i32 ep, i32 es, i32 np, i32 ns, i32 existing){
 }
 
 int_point window_frame_intersect(window_frame *new_frame, window_frame *existing_frame, int_point existing_move){
-    
     i32 horizontal = calculate_distance(existing_frame->x, existing_frame->width, new_frame->x, new_frame->width,existing_move.x);
     i32 vertical = calculate_distance(existing_frame->y, existing_frame->height, new_frame->y, new_frame->height,existing_move.y);
     return (int_point){ abs(horizontal) < abs(vertical) ? horizontal : 0, abs(horizontal) < abs(vertical) ? 0 : vertical };
@@ -113,20 +119,21 @@ void check_collisions(window_frame *frame){
     }
 }
 
-bool create_window(i32 x, i32 y, u32 width, u32 height){
+window_frame* create_window_prog(i32 x, i32 y, u32 width, u32 height, char *prog, int argc, const char** argv){
     height -= TOOLBAR_HEIGHT;
     irq_flags_t irq = irq_save_disable();
     if (win_ids == UINT16_MAX){ 
         irq_restore(irq);
-        return false; 
+        return 0; 
     }
     if (zoom_scale != 1){ 
         irq_restore(irq);
-        return false; 
+        return 0; 
     }
-    if (width < 0x100 || height < 0x100){ 
+    
+    if (!prog){
         irq_restore(irq);
-        return false; 
+        return 0; 
     }
     
     window_frame *frame = (window_frame*)zalloc(sizeof(window_frame));
@@ -148,10 +155,10 @@ bool create_window(i32 x, i32 y, u32 width, u32 height){
     linked_list_push_front(window_list, PHYS_TO_VIRT_P(frame));
     gpu_create_window(x,y, width, height, &frame->win_ctx);
 
-    process_t *p = execute("/boot/redos/system/launcher.red", 0, 0, 0);
+    process_t *p = execute(prog, argc, argv, 0);
     if (!p){
         irq_restore(irq);
-        return false;
+        return 0;
     }
     p->win_id = frame->win_id;
     frame->pid = p->id;
@@ -159,7 +166,13 @@ bool create_window(i32 x, i32 y, u32 width, u32 height){
     dirty_windows = true;
     irq_restore(irq);
 
-    return true;
+    return frame;
+}
+
+window_frame* create_window(i32 x, i32 y, u32 width, u32 height){
+    if (width < 0x100 || height < 0x100) return 0; 
+
+    return create_window_prog(x, y, width, height, "/boot/redos/system/launcher.red", 0, 0);
 }
 
 void resize_window_proc(process_t *proc, u32 width, u32 height){

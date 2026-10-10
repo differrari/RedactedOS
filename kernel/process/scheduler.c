@@ -15,7 +15,7 @@
 #include "memory/addr.h"
 #include "sysregs.h"
 #include "filesystem/filesystem.h"
-#include "filesystem/modules/module_loader.h"
+#include "filesystem/modules/fs_isolation.h"
 #include "string/string.h"
 #include "alloc/allocate.h"
 #include "files/dir_list.h"
@@ -25,7 +25,7 @@
 extern void save_pc_interrupt(uintptr_t ptr);
 extern void restore_context(uintptr_t ptr);
 
-void *proc_mem_page;
+void *proc_mem_page = 0;
 
 static inline void* proc_palloc(size_t s){
     return palloc(s, MEM_PRIV_KERNEL, MEM_RW, true);
@@ -124,8 +124,6 @@ void update_sleep_timer() {
     } else virtual_timer_disable();
 }
 
-extern uptr job_ksp;
-
 void switch_proc(ProcSwitchReason reason) {
     syscall_depth = 0;
     if (proc_count == 0)
@@ -158,9 +156,11 @@ void switch_proc(ProcSwitchReason reason) {
         next_proc = idle_proc;
         next_thread = &idle_proc->main_thread;
     }
-    if (!next_proc || !process_can_run(next_proc)) panic("no runnable process", 0);
+
+    //TODO: the next two checks could be more lenient, just ensuring that we do panic if it happens a second time
+    if (!next_proc || !process_can_run(next_proc)) panic("No runnable process", 0);
+    if (!next_thread || next_thread->pid != next_proc->id) panic("No runnable thread", next_proc->id);
     
-    if (!next_thread || next_thread->pid != next_proc->id) next_thread = &next_proc->main_thread;
     next_proc->state = RUNNING;
     next_thread->state = RUNNING;
     current_proc = next_proc;
@@ -172,10 +172,10 @@ void switch_proc(ProcSwitchReason reason) {
     }
 
     if (current_proc->mm.ttbr0) mmu_asid_ensure(&current_proc->mm);
+    mmu_swap_kttbr(0);
     mmu_swap_ttbr(current_proc->mm.ttbr0 ? &current_proc->mm : 0);
     if (prev && prev != current_proc && prev != idle_proc && process_can_reset(prev)) reset_process(prev);
 
-    job_ksp = (uptr)ksp;
     process_restore();
 }
 
@@ -204,7 +204,7 @@ void prepare_process_restore(process_t *proc){
         if (proc->main_thread.pc >= HIGH_VA) panic("user pc in kernel VA", proc->main_thread.pc);
         mmu_swap_ttbr(&proc->mm);
         mmu_ttbr0_enable_user();
-    } else mmu_ttbr0_disable_user(); 
+    }
 }
 
 void process_restore(){
@@ -333,7 +333,7 @@ void reset_process(process_t *proc){
         sizedptr p = proc->packet_buffer.entries[k];
         if (p.ptr)
             free_sizedptr(p);
-        proc->packet_buffer.entries[k] = (sizedptr){0};
+        proc->packet_buffer.entries[k] = (sizedptr){};
     }
     close_files_for_process(pid);
 
@@ -354,78 +354,82 @@ void reset_process(process_t *proc){
 
     if (proc->debug_lines.ptr) {
         pfree((void*)proc->debug_lines.ptr, proc->debug_lines.size);
-        proc->debug_lines = (sizedptr){0};
+        proc->debug_lines = (sizedptr){};
     }
     if (proc->debug_line_str.ptr) {
         pfree((void*)proc->debug_line_str.ptr, proc->debug_line_str.size);
-        proc->debug_line_str = (sizedptr){0};
+        proc->debug_line_str = (sizedptr){};
     }
 
-    if (proc_opened_files) {
-        //irq_flags_t irq = irq_save_disable();
-        char proc_path[48] = {};
-        string_format_buf(proc_path, sizeof(proc_path), "/%i/out", pid);
-        uint64_t fid = reserve_fd_gid(proc_path);
-        module_file *out_file = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
-        if (out_file && (uintptr_t)out_file->file_buffer.buffer == (uintptr_t)proc->output) {
-            size_t snapshot_size = proc->output_size;
-            if (!snapshot_size) {
-                out_file->buf = 0;
-                out_file->file_buffer = (buffer){0};
-                out_file->file_size = 0;
-            } else {
-                void *snapshot = zalloc(snapshot_size+1);
+#ifndef FEATURE_NEW_PROCFS
+        if (proc_opened_files) {
+            //irq_flags_t irq = irq_save_disable();
+            char proc_path[48] = {};
+            string_format_buf(proc_path, sizeof(proc_path), "/%i/out", pid);
+            uint64_t fid = reserve_fd_gid(proc_path);
+            module_file *out_file = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
+            if (out_file && (uintptr_t)out_file->file_buffer.buffer == (uintptr_t)proc->output) {
+                size_t snapshot_size = proc->output_size;
+                if (!snapshot_size) {
+                    out_file->buf = 0;
+                    out_file->file_buffer = (buffer){0};
+                } else {
+                    void *snapshot = zalloc(snapshot_size+1);
+                    if (snapshot) {
+                        memcpy(snapshot, (void*)proc->output, snapshot_size);
+                        ((char*)snapshot)[snapshot_size] = 0;
+                        out_file->buf = (uptr)snapshot;
+                        out_file->file_buffer = (buffer){
+                            .buffer = snapshot,
+                            .buffer_size = snapshot_size,
+                            .limit = snapshot_size,
+                            .options = buffer_opt_none,
+                            .cursor = 0,
+                        };
+                    } else {
+                        out_file->buf = 0;
+                        out_file->file_buffer = (buffer){0};
+                    }
+                }
+            }
+    
+            string_format_buf(proc_path, sizeof(proc_path), "/%i/state", pid);
+            fid = reserve_fd_gid(proc_path);
+            module_file *state_file = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
+            if (state_file && (uintptr_t)state_file->file_buffer.buffer == (uintptr_t)&proc->state) {
+                process_state *snapshot = (process_state*)zalloc(sizeof(proc->state));
                 if (snapshot) {
-                    memcpy(snapshot, (void*)proc->output, snapshot_size);
-                    ((char*)snapshot)[snapshot_size] = 0;
-                    out_file->buf = (uptr)snapshot;
-                    out_file->file_buffer = (buffer){
+                    *snapshot = STOPPED;
+                    state_file->buf = (uptr)snapshot;
+                    state_file->file_buffer = (buffer){
                         .buffer = snapshot,
-                        .buffer_size = snapshot_size,
-                        .limit = snapshot_size,
+                        .buffer_size = sizeof(proc->state),
+                        .limit = sizeof(proc->state),
                         .options = buffer_opt_none,
                         .cursor = 0,
                     };
-                    out_file->file_size = snapshot_size;
                 } else {
-                    out_file->buf = 0;
-                    out_file->file_buffer = (buffer){0};
-                    out_file->file_size = 0;
+                    state_file->buf = 0;
+                    state_file->file_buffer = (buffer){0};
                 }
             }
-        }
-
-        string_format_buf(proc_path, sizeof(proc_path), "/%i/state", pid);
-        fid = reserve_fd_gid(proc_path);
-        module_file *state_file = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(fid));
-        if (state_file && (uintptr_t)state_file->file_buffer.buffer == (uintptr_t)&proc->state) {
-            process_state *snapshot = (process_state*)zalloc(sizeof(proc->state));
-            if (snapshot) {
-                *snapshot = STOPPED;
-                state_file->buf = (uptr)snapshot;
-                state_file->file_buffer = (buffer){
-                    .buffer = snapshot,
-                    .buffer_size = sizeof(proc->state),
-                    .limit = sizeof(proc->state),
-                    .options = buffer_opt_none,
-                    .cursor = 0,
-                };
-                state_file->file_size = sizeof(proc->state);
-            } else {
-                state_file->buf = 0;
-                state_file->file_buffer = (buffer){0};
-                state_file->file_size = 0;
-            }
-        }
         //irq_restore(irq);
     }
+#endif
 
     if (proc->output) {
-        pfree((void*)proc->output, PROC_OUT_BUF);
+        pfree((void*)proc->output, PROC_STDIO_BUF);
         proc->output = 0;
         proc->output_size = 0;
     }
+    
+    if (proc->input) {
+        pfree((void*)proc->input, PROC_STDIO_BUF);
+        proc->input = 0;
+        proc->input_size = 0;
+    }
 
+#ifdef BUG_RESET_TTBR0
     if (proc->mm.ttbr0) {
         for (uint16_t i = 0; i < proc->mm.vma_count; i++) {
             vma *m = &proc->mm.vmas[i];
@@ -451,6 +455,7 @@ void reset_process(process_t *proc){
         }
         proc->mm.vma_count = 0;
     }
+#endif
 
     if (proc->alloc_map) {
         if (proc->mm.ttbr0) {
@@ -478,7 +483,6 @@ void reset_process(process_t *proc){
     proc->code = 0;
     proc->code_size = 0;
     proc->va = 0;
-    proc->out_fd = (file){0};
 
     proc->win_id = 0;
     proc->win_fb_va = 0;
@@ -572,7 +576,7 @@ process_t* init_process(){
     return proc;
 }
 
-void name_process(process_t *proc, const char *name){
+void name_process(process_t *proc, const char *name){//TEST: try making the name longer than 256 and ensure it's properly truncated and null-terminated
     if (!proc) return;
 
     memset(proc->name, 0, sizeof(proc->name));
@@ -629,6 +633,7 @@ void block_process(process_t *proc){
 void resume_blocked_process(process_t *proc){
     proc->suspended = false;
     enqueue_ready_thread(&proc->main_thread);
+    //TODO: this only executes the main thread, not other threads
 }
 
 uint16_t process_count(){
@@ -716,18 +721,4 @@ thread_t* new_thread(process_t *proc, thread_t *addr, u64 spsr, uptr entry_point
     };
     addr->regs[30] = is_privileged(proc) ? (uptr)kernel_thread_return_trampoline : proc->shared_page+sizeof(u32);
     return addr;
-}
-
-bool load_process_module(process_t *p, system_module *m, bool global){//TODO: this doesn't belong here
-    if (!p->permissions.owned_fs_id) p->permissions.owned_fs_id = register_fs_id();
-    module_root *root = get_fs_for_id(p->permissions.fs_id);
-    system_module *mod = zalloc(sizeof(system_module));
-    memcpy(mod, m, sizeof(system_module));
-    mod->name = string_from_literal(m->name).data;
-    mod->mount = string_from_literal(m->mount).data;
-    mod->owner = p->id;
-    bool ret = load_module_to(root, mod);
-    if (!ret) return false;
-    if (!global) return true;
-    return load_module(mod);
 }

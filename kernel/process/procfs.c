@@ -1,3 +1,5 @@
+#ifndef FEATURE_NEW_PROCFS
+
 #include "procfs.h"
 #include "files/dir_list.h"
 #include "process.h"
@@ -5,6 +7,7 @@
 #include "console/kio.h"
 #include "scheduler.h"
 #include "math/math.h"
+#include "permissions/authorize.h"
 
 extern process_t *process_list;
 hash_map_t *proc_opened_files;
@@ -116,7 +119,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     module_file *mfile = (module_file*)hash_map_get(proc_opened_files, &fid, sizeof(uint64_t));
     if (mfile){
         descriptor->id = mfile->fid;
-        descriptor->size = mfile->file_size;
+        descriptor->size = mfile->file_buffer.buffer_size;
         descriptor->cursor = 0;
         mfile->references++;
         procfs_owner *owner_info = (procfs_owner*)mfile->private_data;
@@ -152,12 +155,14 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     file->references = 1;
     if (strcmp_case(path, "out",true) == 0){
         descriptor->size = proc->output ? proc->output_size : proc->postmortem_output_size;
+        file->permissions = fs_permission_request;
+        file->permission_request_type = auth_process_output;
         file->read_only = true;
         file->buf = (uptr)(proc->output ? proc->output : proc->postmortem_output);
         file->file_buffer = (buffer){
             .buffer = (char*)(proc->output ? proc->output : proc->postmortem_output),
             .buffer_size = proc->output ? proc->output_size : proc->postmortem_output_size,
-            .limit = proc->output ? PROC_OUT_BUF : proc->postmortem_output_size,
+            .limit = proc->output ? PROC_STDIO_BUF : proc->postmortem_output_size,
             .options = proc->output ? buffer_circular : buffer_static,
             .cursor = proc->output ? proc->output_size : 0,
         };
@@ -165,6 +170,8 @@ FS_RESULT open_proc(const char *path, file *descriptor){
     } else if (strcmp_case(path, "state",true) == 0){
         descriptor->size = sizeof(proc->state);
         file->read_only = true;
+        file->permissions = fs_permission_request;
+        file->permission_request_type = auth_process_state;
         file->buf = (uptr)&proc->state;
         file->file_buffer = (buffer){
             .buffer = (char*)&proc->state,
@@ -180,7 +187,7 @@ FS_RESULT open_proc(const char *path, file *descriptor){
         release(file);
         return FS_RESULT_NOTFOUND;
     }
-    file->file_size = descriptor->size;
+    file->file_buffer.buffer_size = descriptor->size;
     int put = hash_map_put(proc_opened_files, &descriptor->id, sizeof(uint64_t), file);
     irq_restore(irq);
     if (put >= 0) return FS_RESULT_SUCCESS;
@@ -252,7 +259,7 @@ size_t read_proc(file* fd, char *buf, size_t size, file_offset offset){
         return 0;
     }
     size_t s = buffer_read(&file->file_buffer, buf, size, offset);
-    fd->size = file->file_size;
+    fd->size = file->file_buffer.buffer_size;
     irq_restore(irq);
     return s;
 }
@@ -262,7 +269,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
     if (fd->id == FD_OUT){
         if (!proc || !size) return 0;
         if (!proc->output) {
-            proc->output = (kaddr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
+            proc->output = (kaddr_t)palloc(PROC_STDIO_BUF, MEM_PRIV_KERNEL, MEM_RW, true);
             if (!proc->output) return 0;
         }
         irq_flags_t irq = irq_save_disable();
@@ -270,7 +277,7 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
         buffer file_buffer = {
             .buffer = (char*)proc->output,
             .buffer_size = proc->output_size,
-            .limit = PROC_OUT_BUF,
+            .limit = PROC_STDIO_BUF,
             .options = buffer_circular,
             .cursor = proc->output_size,
         };
@@ -290,10 +297,9 @@ size_t write_proc(file* fd, const char *buf, size_t size, file_offset offset){
                 file->buf = (uptr)proc->output;
                 file->file_buffer.buffer = (char*)proc->output;
                 file->file_buffer.buffer_size = proc->output_size;
-                file->file_buffer.limit = PROC_OUT_BUF;
+                file->file_buffer.limit = PROC_STDIO_BUF;
                 file->file_buffer.cursor = proc->output_size;
                 file->file_buffer.options = buffer_circular;
-                file->file_size = proc->output_size;
             }
         }
 
@@ -373,3 +379,4 @@ system_module procfs_mod = (system_module){
     .getstat = stat_proc,
     .readdir = readdir_proc,
 };
+#endif
