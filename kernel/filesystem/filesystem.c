@@ -231,7 +231,7 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     size_t start_cursor = descriptor->cursor;
     file gfd = (file){
         .id = local.mfile_id,
-        .size = descriptor->size,
+        .size = ofile->file_size,
         .cursor = start_cursor,
         .data_type = descriptor->data_type
     };
@@ -249,11 +249,11 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     descriptor->size = gfd.size;
     irq = irq_save_disable();
     ofile = (open_file_descriptors *)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
-    if (ofile) ofile->file_size = gfd.size;
+    if (ofile) ofile->file_size += amount_written;
     irq_restore(irq);
 
     update_pipes(local.mfile_id, buf, amount_written);
-    if (amount_written){
+    if (amount_written && ofile){
         range_t modified = { .start = start_cursor, amount_written };
         u64 mod_time = get_time();
         ofile->last_sync = mod_time;
@@ -373,13 +373,14 @@ bool truncate(file *descriptor, size_t size){
         return j_ret;
     } else if (!local.mod->truncate(&gfd)) return false;
 
-    descriptor->size = gfd.size;
+    descriptor->size = size;
+    ofile->file_size = size;
+    //TODO: sync fd logic
     descriptor->cursor = gfd.cursor;
     if (descriptor->cursor > descriptor->size) descriptor->cursor = descriptor->size;
 
     irq = irq_save_disable();
     ofile = (open_file_descriptors *)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
-    if (ofile) ofile->file_size = gfd.size;
     irq_restore(irq);
     return true;
 }

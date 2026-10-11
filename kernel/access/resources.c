@@ -1,7 +1,7 @@
 #include "resources.h"
 #include "process/process.h"
 #define MOG_MODULE "RESOURCE"
-#define MOG_LEVEL MOG_VERBOSE
+#define MOG_LEVEL MOG_ERROR
 #include "utils/mog.h"
 
 static u64 resource_id_counter = 1;

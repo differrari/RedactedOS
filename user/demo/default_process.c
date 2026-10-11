@@ -158,6 +158,55 @@ int concurrent_write(){
     return 0;
 }
 
+int concurrent_write_proc(bool spawn){
+    
+    if (spawn){
+        const char* arg = "1";
+        exec("/boot/redos/system/demo.red", 1, &arg, EXEC_MODE_KEEP_FOCUS);
+    }
+    
+    file fd = {.sync_type = cursor_sync_follow};
+    
+    openf("/tmp/std", &fd);
+    
+    int total_written = 0;
+    
+    for (int i = 0; i < 100; i++){
+        char buf[4];
+        size_t n = string_format_buf(buf, 4, "%i\n", i);
+        size_t r = writef(&fd, buf, n);
+        total_written += r;
+        print("Writing %v: %i",(string_slice){buf,n},r);
+        msleep(0);
+    }
+    
+    msleep(0);
+    print("Total written by %i = %i",spawn,total_written);
+    
+    if (spawn){
+        // fs_stat out_stat = {};
+        // statf("/tmp/std", &out_stat);
+        // fd.size = out_stat.size;
+        // print("> %i %i",fd.cursor,fd.size);
+        // seek(&fd, 0, SEEK_ABSOLUTE);
+        // print("> %i %i",fd.cursor,fd.size);
+        // char *buf = zalloc(fd.size);
+        // size_t n = readf(&fd, buf, fd.size);
+        // print("Final result %i %s",n,buf);
+        print("%v",read_file_slice("/tmp/std"));
+    }
+    
+    return 0;
+}
+
+int concurrent_write_parent(){
+    return concurrent_write_proc(true);
+}
+
+int concurrent_write_child(){
+    return concurrent_write_proc(false);
+}
+
 int write_large_file(){
     void *buf = zalloc(1024);
     
@@ -260,6 +309,8 @@ int pipe_destination(){
 }
 
 struct { char* name; int (*fn)(); } demos[] = {
+    { "Concurrent write [Parent]", concurrent_write_parent},
+    { "Concurrent write [Child]", concurrent_write_child},
     {"Pipe source", pipe_source},
     {"Pipe destination", pipe_destination},
     {"Display image on screen", img_example},

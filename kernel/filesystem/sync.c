@@ -1,6 +1,6 @@
 #include "sync.h"
 #define MOG_MODULE "FSSYNC"
-#define MOG_LEVEL MOG_VERBOSE
+#define MOG_LEVEL MOG_ERROR
 #include "utils/mog.h"
 #include "syscalls/syscalls.h"
 #include "data/struct/linked_list.h"
@@ -42,7 +42,6 @@ void sync_fd(file *ifd, open_file_descriptors *ofile, bool replace){
     }
     
     ofile->last_sync = get_time();
-    ifd->size = ofile->file_size;
 }
 
 void report_fd_mod(file *ifd, open_file_descriptors *ofile, u64 time, range_t range){
@@ -54,7 +53,7 @@ void report_fd_mod(file *ifd, open_file_descriptors *ofile, u64 time, range_t ra
         while(e){
             hash_map_entry_t* next = e->next;
             u64 loc = (u64)e->value;
-            if (range.start <= loc) loc += range.size;
+            if (ifd->id != (u64)e->key && range.start <= loc) loc += range.size;
             e->value = (void*)loc;
             e = next;
         }
