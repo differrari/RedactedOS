@@ -11,6 +11,7 @@
 #include "kernel_processes/windows/dos.h"
 #include "tools/tools.h"
 #include "files/helpers.h"
+#include "process/scheduler.h"
 
 enum {
     bsm_none,
@@ -32,6 +33,7 @@ void load_service(const char *directory, const char *service){
     if (strlen(service) && *service == '.') return;
     string full_name = string_format("%s/%s",directory,service);
     process_t *proc = execute(full_name.data, 0, 0, EXEC_MODE_KEEP_FOCUS);
+    proc->priority = PROC_PRIORITY_LOW;
     string_free(full_name);
     if (!proc) print("[BOOT error] failed to load service %s",service);
 }

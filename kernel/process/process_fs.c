@@ -63,12 +63,12 @@ FS_RESULT procfs_open(u64 id, string_slice file_name, file *fd){
     if (!proc) return FS_RESULT_NOTFOUND;
     process_t *cproc = get_current_proc();
     if (slice_lit_match(file_name, "out", true)){
-        if (proc != cproc && !auth_valid(auth_get_proc_token(cproc), auth_process_output, auth_map_process(proc)))
+        if (proc != cproc && !auth_valid(auth_get_proc_token(cproc), auth_process_output, resource_map_process(proc)))
             return FS_RESULT_NOTFOUND;
         return procfs_open_output(proc, fd);
     }
     if (slice_lit_match(file_name, "state", true)){
-        if (proc != cproc && !auth_valid(auth_get_proc_token(cproc), auth_process_state, auth_map_process(proc))){
+        if (proc != cproc && !auth_valid(auth_get_proc_token(cproc), auth_process_state, resource_map_process(proc))){
             print("Auth failure for reading state");
             return FS_RESULT_NOTFOUND;
         }
@@ -81,7 +81,7 @@ FS_RESULT procfs_open(u64 id, string_slice file_name, file *fd){
         return FS_RESULT_SUCCESS;
     }
     if (slice_lit_match(file_name, "info", true)){
-        if (proc != cproc && !auth_valid(auth_get_proc_token(cproc), auth_process_info, auth_map_process(proc))){
+        if (proc != cproc && !auth_valid(auth_get_proc_token(cproc), auth_process_info, resource_map_process(proc))){
             print("Auth failure for reading info");
             return FS_RESULT_NOTFOUND;
         }
@@ -94,7 +94,7 @@ FS_RESULT procfs_open(u64 id, string_slice file_name, file *fd){
         return FS_RESULT_SUCCESS;
     }
     if (slice_lit_match(file_name, "in", true)){
-        if (!auth_valid(auth_get_proc_token(cproc), auth_process_input, auth_map_process(proc)))
+        if (!auth_valid(auth_get_proc_token(cproc), auth_process_input, resource_map_process(proc)))
             return FS_RESULT_NOTFOUND;
         return procfs_open_input(proc, fd);
     }

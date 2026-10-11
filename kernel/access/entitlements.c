@@ -35,12 +35,12 @@ void process_grant_entitlements(process_t *proc){
                 ent.length--;
             }
             ent_print("[ENTITLEMENT debug] found process entitlement %v",ent);
-            if (slice_lit_match(ent, "signal", true)) auth_entitlement(tok, auth_process_send_signals, auth_resource_process);
-            if (slice_lit_match(ent, "exceptions", true)) auth_entitlement(tok, auth_process_intercept_exceptions, auth_resource_process);
-            if (slice_lit_match(ent, "input", true)) auth_entitlement(tok, auth_process_input, auth_resource_process);
-            if (slice_lit_match(ent, "output", true)) auth_entitlement(tok, auth_process_output, auth_resource_process);
-            if (slice_lit_match(ent, "info", true)) auth_entitlement(tok, auth_process_info, auth_resource_process);
-            if (slice_lit_match(ent, "state", true)) auth_entitlement(tok, auth_process_state, auth_resource_process);
+            if (slice_lit_match(ent, "signal", true)) auth_entitlement(tok, auth_process_send_signals, resource_process);
+            if (slice_lit_match(ent, "exceptions", true)) auth_entitlement(tok, auth_process_intercept_exceptions, resource_process);
+            if (slice_lit_match(ent, "input", true)) auth_entitlement(tok, auth_process_input, resource_process);
+            if (slice_lit_match(ent, "output", true)) auth_entitlement(tok, auth_process_output, resource_process);
+            if (slice_lit_match(ent, "info", true)) auth_entitlement(tok, auth_process_info, resource_process);
+            if (slice_lit_match(ent, "state", true)) auth_entitlement(tok, auth_process_state, resource_process);
         } else print("[ENTITLEMENT error] Unknown entitlement %v",ent);
     }   
 }

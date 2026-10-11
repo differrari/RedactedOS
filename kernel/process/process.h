@@ -13,7 +13,7 @@ extern "C" {
 #include "signals/signals.h"
 #include "environment/environment.h"
 #include "files/jobs.h"
-#include "permissions/authorize.h"
+#include "access/authorize.h"
 #include "procfs.h"
 #include "debug/proc.h"
 
@@ -123,7 +123,7 @@ struct process_t {
     __attribute__((aligned(16))) thread_t signal_handlers[NUMBER_SIGNALS];
     uint8_t priority;
     system_permissions permissions;
-    auth_resource resource_id;
+    resource resource_id;
     uint16_t win_id;
     uaddr_t win_fb_va;
     paddr_t win_fb_phys;

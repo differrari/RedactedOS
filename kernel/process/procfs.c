@@ -7,7 +7,7 @@
 #include "console/kio.h"
 #include "scheduler.h"
 #include "math/math.h"
-#include "permissions/authorize.h"
+#include "access/authorize.h"
 
 extern process_t *process_list;
 hash_map_t *proc_opened_files;

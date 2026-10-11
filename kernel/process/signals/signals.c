@@ -3,7 +3,7 @@
 #include "process/scheduler.h"
 #include "process/debug.h"
 #include "console/kio.h"
-#include "permissions/authorize.h"
+#include "access/authorize.h"
 
 #define SIGNAL_DEBUG
 #ifdef SIGNAL_DEBUG
@@ -29,7 +29,7 @@ bool register_signal_handler(process_t *proc, signal_types type, signal_handler 
 bool send_signal_proc_proc(signal_types type, i64 value, process_t *source, process_t *destination){
     if (!source || !destination || !type) return false;
 
-    if (!source->permissions.auth_id || !auth_valid(source->permissions.auth_id, auth_process_send_signals, auth_map_process(destination))) return false;
+    if (!source->permissions.auth_id || !auth_valid(source->permissions.auth_id, auth_process_send_signals, resource_map_process(destination))) return false;
     
     if (signal_is_immediate(type)){
         handle_signal_default(destination, &(signal_info_t){

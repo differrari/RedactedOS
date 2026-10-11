@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "resources.h"
 
 typedef u32 auth_token;
 
@@ -8,16 +9,6 @@ typedef struct {
     u32 auth_token;
     u32 actions;
 } auth_entry;
-
-typedef union {
-    struct {
-        u64 type: 8;
-        u64 id: 56;
-    };
-    u64 resource;
-} auth_resource;
-
-typedef struct process_t process_t;
 
 typedef enum {
     auth_process_send_signals = 1 << 0,
@@ -31,10 +22,6 @@ typedef enum {
     auth_process_count = 1 << 6
 } auth_process_actions;
 
-typedef enum {
-    auth_resource_process
-} auth_resource_types;
-
 typedef union {
     struct {
         u64 auth_type: 8;
@@ -46,10 +33,8 @@ typedef union {
 
 auth_token auth_get_proc_token(process_t *t);
 
-bool auth_valid(auth_token owner, u32 type, auth_resource resource_id);
+bool auth_valid(auth_token owner, u32 type, resource resource_id);
 
-auth_resource auth_map_process(process_t *p);
+bool auth_request(auth_token owner, u32 type, resource resource_id);
 
-bool auth_request(auth_token owner, u32 type, auth_resource resource_id);
-
-bool auth_entitlement(auth_token owner, u32 type, auth_resource_types resource_type);
+bool auth_entitlement(auth_token owner, u32 type, resource_types resource_type);

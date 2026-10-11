@@ -263,7 +263,7 @@ struct { char* name; int (*fn)(); } demos[] = {
     // {"Networking demo", net_example},
     {"Audio demo", audio_example},
     {"Shared folder demo (requires 9Pfs)", file_sync},
-    // {"Concurrent writing to file (WIP)", concurrent_write},
+    {"Concurrent writing to file (WIP)", concurrent_write},
     {"Console output test",log_test},
     {"Write large file", write_large_file},
     {"Copy-paste to clipboard", copypaste},

@@ -6,20 +6,14 @@
 #include "files/dir_list.h"
 #include "process/jobs/job_manager.h"
 #include "modules/fs_isolation.h"
+#include "access/mutex.h"
+#include "sync.h"
 
 uint64_t fd_id = 256;//First byte reserved
 
 uint64_t reserve_fd_id(){
     return ++fd_id;
 }
-
-typedef struct {
-    uint64_t mfile_id;
-    uint64_t file_id;
-    size_t file_size;
-    uint16_t pid;
-    system_module* mod;
-} open_file_descriptors;
 
 hash_map_t *open_files;
 
@@ -82,6 +76,8 @@ FS_RESULT instance_local_fd(system_module *mod, file *descriptor){
     of->file_size = descriptor->size;
     of->mod = mod;
     of->pid = get_current_proc_pid();
+    of->resource_id = resource_map_file(mod, descriptor);
+    of->last_sync = get_time();
     descriptor->id = of->file_id;
     int put = hash_map_put(open_files, &of->file_id, sizeof(uint64_t), of);
 
@@ -126,6 +122,7 @@ size_t read_file(file *descriptor, char* buf, size_t size){
     if (ofile) local = *ofile;
     irq_restore(irq);
     if (!ofile || !local.mod || !local.mod->read || local.pid != get_current_proc_pid()) return 0;
+    sync_fd(descriptor, ofile);
     size_t start_cursor = descriptor->cursor;
     file gfd = (file){
         .id = local.mfile_id,
@@ -215,6 +212,12 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     if (ofile) local = *ofile;
     irq_restore(irq);
     if (!ofile || !local.mod || !local.mod->write || local.pid != get_current_proc_pid()) return 0;
+    mutex_owner own = new_mutex_owner();
+    if (!lock_mutex(own, ofile->resource_id)){
+        print("[FSWrite Implementation error] No fallback for concurrent writes yet, failing");
+        return 0;
+    }
+    sync_fd(descriptor,ofile);
     size_t start_cursor = descriptor->cursor;
     file gfd = (file){
         .id = local.mfile_id,
@@ -240,6 +243,13 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     irq_restore(irq);
 
     update_pipes(local.mfile_id, buf, amount_written);
+    if (amount_written){
+        range_t modified = { .start = start_cursor, amount_written };
+        u64 mod_time = get_time();
+        ofile->last_sync = mod_time;
+        report_fd_mod(descriptor, ofile, mod_time, modified);
+    }
+    unlock_mutex(own, ofile->resource_id);
     return amount_written;
 }
 

@@ -4,10 +4,21 @@
 #include "std/string.h"
 #include "files/system_module.h"
 #include "files/module_loader.h"
+#include "access/resources.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct {
+    u64 mfile_id;
+    u64 file_id;
+    size_t file_size;
+    u16 pid;
+    system_module* mod;
+    resource resource_id;
+    u64 last_sync; 
+} open_file_descriptors;
 
 FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor, system_module **mod);
 FS_RESULT open_file(module_root *root, const char* path, file* descriptor);
