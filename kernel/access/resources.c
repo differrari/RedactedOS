@@ -28,8 +28,8 @@ resource resource_map_process(process_t *p){
     return p->resource_id;
 }
 
-resource resource_map_file(system_module *mod, file *fd){
-    mog(VERBOSE, "Mapping fd %llx from mod %llx",fd->id, mod);
+resource resource_map_file_id(system_module *mod, u64 id){
+    mog(VERBOSE, "Mapping fd %llx from mod %llx",id, mod);
     if (!file_mappings) file_mappings = hash_map_create(256);
     hash_map_t *module_map = hash_map_get(file_mappings, mod, sizeof(uptr));
     if (!module_map){
@@ -38,15 +38,15 @@ resource resource_map_file(system_module *mod, file *fd){
         hash_map_put(file_mappings, mod, sizeof(uptr), module_map);
     }
     if (!module_map) return (resource){};
-    mog(VERBOSE, "Module map %llx. Fid %llx",module_map,fd->id);
-    uptr resourceid = (u64)hash_map_get(module_map, (void*)&fd->id, sizeof(u64));
+    mog(VERBOSE, "Module map %llx. Fid %llx",module_map,id);
+    uptr resourceid = (u64)hash_map_get(module_map, (void*)&id, sizeof(u64));
     resource r = { .resource = resourceid };
     if (r.type == resource_invalid){
         r = resource_new_rid(resource_file);
         mog(VERBOSE, "New resource %llx",r.resource);
         resourceid = r.resource;
-        hash_map_put(module_map, (void*)&fd->id, sizeof(u64), (void*)r.resource);
-        mog(VERBOSE, "New resource id %llx for file %llx of module %llx",r.resource,fd->id,mod);
-    } else mog(VERBOSE, "Existing resource id %llx for file %llx of module %llx",r.resource,fd->id,mod);
+        hash_map_put(module_map, (void*)&id, sizeof(u64), (void*)r.resource);
+        mog(VERBOSE, "New resource id %llx for file %llx of module %llx",r.resource,id,mod);
+    } else mog(VERBOSE, "Existing resource id %llx for file %llx of module %llx",r.resource,id,mod);
     return r;
 }

@@ -128,8 +128,8 @@ int file_sync(){
 }
 
 int concurrent_write(){
-    file fd1 = {};
-    file fd2 = {};
+    file fd1 = { .sync_type = cursor_sync_follow };
+    file fd2 = { .sync_type = cursor_sync_follow };
     
     openf("/tmp/std", &fd1);
     openf("/tmp/std", &fd2);
@@ -148,9 +148,12 @@ int concurrent_write(){
     
     seek(&fd1, 0, SEEK_ABSOLUTE);
     
-    readf(&fd1, buf, 64);
-    
-    print("Buffer now %s",buf);
+    size_t n = readf(&fd1, buf, 64);
+
+    if (!slice_lit_match((string_slice){buf,n}, "firstonetwothree", false)){
+        print("Slice |%v| does not match firstonetwothree",(string_slice){buf,n});
+        shame();
+    }
 
     return 0;
 }

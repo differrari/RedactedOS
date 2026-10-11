@@ -3,53 +3,60 @@
 #define MOG_LEVEL MOG_VERBOSE
 #include "utils/mog.h"
 #include "syscalls/syscalls.h"
+#include "data/struct/linked_list.h"
 
-typedef struct {
-    u64 time;
-    range_t r;
-} modification_entry;
+hash_map_t *synced_files;
 
-#ifdef SYNCFD_PROTOTYPE
-modification_entry hardcoded_mod_history[128];
-i32 mod_history_count;
-#endif
-
-void sync_fd(file *ifd, open_file_descriptors *ofile){
-#ifdef SYNCFD_PROTOTYPE
-    if (ofile->resource_id.resource == 0x1502){
-        mog(VERBOSE,"There are %i modifications",mod_history_count);
-        for (i32 i = 0; i < mod_history_count; i++){
-            if (hardcoded_mod_history[i].time > ofile->last_sync){
-                if (hardcoded_mod_history[i].r.start <= ifd->cursor || hardcoded_mod_history[i].r.start + hardcoded_mod_history[i].r.size <= ifd->cursor){
-                    ifd->cursor += hardcoded_mod_history[i].r.size;
-                    ifd->size += hardcoded_mod_history[i].r.size;
-                    mog(VERBOSE,"Moved fd %llx by %i",ifd->id,hardcoded_mod_history[i].r.size);
-                }
-            }
-        }
+void sync_fd(file *ifd, open_file_descriptors *ofile, bool replace){
+    if (ifd->sync_type == cursor_sync_none) return;
+    if (!synced_files) synced_files = hash_map_create(64);
+    
+    if (ifd->sync_type == cursor_sync_head){
+        mog(VERBOSE,"File %lli moved to head",ifd->id);
+        ifd->cursor = 0;
+        return;
     }
-#endif
+    if (ifd->sync_type == cursor_sync_tail){
+        mog(VERBOSE,"File %lli moved to tail",ifd->id);
+        ifd->cursor = ofile->file_size;
+        return;
+    }
+    
+    hash_map_t *cursors = hash_map_get(synced_files, &ofile->resource_id, sizeof(resource));
+    if (!cursors){
+        cursors = hash_map_create(16);
+        hash_map_put(synced_files, &ofile->resource_id, sizeof(resource), cursors);
+    }
+    
+    u64 loc = 0;
+    if (hash_map_has_key(cursors, &ifd->id, sizeof(u64), (void**)&loc)){
+        mog(VERBOSE,"Syncing cursor for %lli from %lli to %lli",ifd->id,ifd->cursor,loc);
+        if (replace){
+            hash_map_remove(cursors, &ifd->id, sizeof(u64), 0);
+            hash_map_put(cursors, &ifd->id, sizeof(u64), (void*)ifd->cursor);
+        } else {
+            ifd->cursor = loc;
+        }
+    } else {
+        hash_map_put(cursors, &ifd->id, sizeof(u64), (void*)ifd->cursor);
+    }
+    
     ofile->last_sync = get_time();
+    ifd->size = ofile->file_size;
 }
 
-// Only keep track of modifications so long as there is a single IFD that wants to synchronize itself
-// For each IFD that wants synchronization, only maintain changes starting at the lowest last_sync_time
-// Timeout changes. Any last_sync_time longer than n will require manual-resyncing
-
-// OR
-
-// Instead of keeping track of individual changes, keep track of synced cursors
-// As a mod is made, keep track of the movement of the cursor
-// Sync to each cursor once requested
-
 void report_fd_mod(file *ifd, open_file_descriptors *ofile, u64 time, range_t range){
-#ifdef SYNCFD_PROTOTYPE
-    if (ofile->resource_id.resource == 0x1502 && mod_history_count < 128){
-        hardcoded_mod_history[mod_history_count++] = (modification_entry){
-            .time = time,
-            .r = range,
-        };
-        mog(VERBOSE,"Registered fd %llx modification at %r",ifd->id,range);
+    if (!synced_files) return;
+    hash_map_t *cursors = hash_map_get(synced_files, &ofile->resource_id, sizeof(resource));
+    if (!cursors) return;
+    for (uint64_t i = 0; i < cursors->capacity; i++){
+        hash_map_entry_t* e = cursors->buckets[i];
+        while(e){
+            hash_map_entry_t* next = e->next;
+            u64 loc = (u64)e->value;
+            if (range.start <= loc) loc += range.size;
+            e->value = (void*)loc;
+            e = next;
+        }
     }
-#endif
 }

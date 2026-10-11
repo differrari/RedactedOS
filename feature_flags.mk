@@ -7,3 +7,4 @@ CFLAGS_BASE += -DFEATURE_MENU # disable or enable the menubar
 # CFLAGS_BASE += -DMODULE_STRICT # disable or enable strict checking for modules. May panic unnecessarily
 CFLAGS_BASE += -DFEATURE_DEBUGGING # enable window button to attach debugger to currently running program
 CFLAGS_BASE += -DFEATURE_NEW_PROCFS # enable cleaner /proc filesystem
+# CFLAGS_BASE += -DFEATURE_JS_PROTECTION

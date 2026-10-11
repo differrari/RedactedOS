@@ -421,6 +421,13 @@ u64 syscall_transf(process_t *ctx, thread_t *current_thread){
 #endif
 }
 
+u64 syscall_syncfd(process_t *ctx, thread_t *current_thread){
+    SYSCALL_ARG(file, descriptor, PROC_X0, true);
+    bool replace = current_thread->PROC_X1;
+    sync_file(descriptor, replace);
+    return 0;
+}
+
 u64 syscall_sreadf(process_t *ctx, thread_t *current_thread){
     SYSCALL_STR(path, PROC_X0, false);
     size_t size = (size_t)current_thread->PROC_X2;
@@ -605,6 +612,7 @@ syscall_entry syscalls[] = {
     [FILE_STAT_CODE] = syscall_stat,
     [FILE_TRNC_CODE] = syscall_trunc,
     [FILE_TRANS_CODE] = syscall_transf,
+    [FILE_SYNC_CODE] = syscall_syncfd,
     [LOAD_FSMODULE_CODE] = syscall_load_fsmod,
     [UNLOAD_FSMODULE_CODE] = syscall_unload_fsmod,
 

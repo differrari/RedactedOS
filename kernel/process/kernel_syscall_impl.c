@@ -210,6 +210,10 @@ bool statf(const char *path, fs_stat *out_stat){
     return ret;
 }
 
+void syncf(file *descriptor, bool replace){
+    sync_file(descriptor, replace);
+}
+
 bool send_signal(signal_types type, u16 proc_id){
     return send_signal_proc_id(type, 0, get_current_proc(), proc_id);
 }

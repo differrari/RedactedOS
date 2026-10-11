@@ -31,6 +31,8 @@ void close_file(file *descriptor);
 size_t list_directory_contents(module_root *root, const char *path, void* buf, size_t size, uint64_t *offset);
 bool init_filesystem();
 
+void sync_file(file *descriptor, bool replace);
+
 bool get_stat(module_root *root, const char *path, fs_stat *out_stat);
 bool truncate(file *descriptor, size_t size);
 

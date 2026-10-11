@@ -79,6 +79,7 @@ FS_RESULT instance_local_fd(system_module *mod, file *descriptor){
     of->resource_id = resource_map_file(mod, descriptor);
     of->last_sync = get_time();
     descriptor->id = of->file_id;
+    sync_fd(descriptor,of, true);
     int put = hash_map_put(open_files, &of->file_id, sizeof(uint64_t), of);
 
     if (put != 1) {
@@ -122,7 +123,7 @@ size_t read_file(file *descriptor, char* buf, size_t size){
     if (ofile) local = *ofile;
     irq_restore(irq);
     if (!ofile || !local.mod || !local.mod->read || local.pid != get_current_proc_pid()) return 0;
-    sync_fd(descriptor, ofile);
+    sync_fd(descriptor, ofile, false);
     size_t start_cursor = descriptor->cursor;
     file gfd = (file){
         .id = local.mfile_id,
@@ -199,8 +200,17 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     if (descriptor->id == FD_OUT){
         system_module *mod = &procfs_mod;
         if (!mod || !mod->write) return 0;
+        //TODO: mutex, using the proc fd
+        // mutex_owner own = new_mutex_owner();
+        u64 out_desc = resolve_reserved_fd(FD_OUT);
+        // resource rid = resource_map_file_id(mod, out_desc);
+        // if (!lock_mutex(own, rid)){
+        //     print("[FSWrite Implementation error] No fallback for concurrent writes yet, failing");
+        //     return 0;
+        // }
         size_t amount_written = mod->write(descriptor, buf, size, descriptor->cursor);
-        update_pipes(resolve_reserved_fd(FD_OUT), buf, amount_written);
+        update_pipes(out_desc, buf, amount_written);
+        // unlock_mutex(own, rid);
         return amount_written;
         //TODO: this handles its own cursor movement, but with the new sync policies it shouldn't have to
     }
@@ -217,7 +227,7 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
         print("[FSWrite Implementation error] No fallback for concurrent writes yet, failing");
         return 0;
     }
-    sync_fd(descriptor,ofile);
+    sync_fd(descriptor,ofile, false);
     size_t start_cursor = descriptor->cursor;
     file gfd = (file){
         .id = local.mfile_id,
@@ -251,6 +261,12 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     }
     unlock_mutex(own, ofile->resource_id);
     return amount_written;
+}
+
+void sync_file(file *descriptor, bool replace){
+    open_file_descriptors *ofile = (open_file_descriptors *)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!ofile || ofile->pid != get_current_proc_pid()) return;
+    sync_fd(descriptor, ofile, replace);
 }
 
 size_t simple_read(module_root *root, const char *path, void *buf, size_t size){
