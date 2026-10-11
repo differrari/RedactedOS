@@ -16,7 +16,10 @@ bool lock_mutex(mutex_owner owner, resource r){
     irq_flags_t irq = irq_save_disable();
     if (!mutexed_resources) mutexed_resources = hash_map_create(256);
     mutex_owner locker = ((u64)hash_map_get(mutexed_resources, &r, sizeof(resource)) & UINT32_MAX);
-    if (locker) return false;
+    if (locker) {
+        irq_restore(irq);
+        return false;
+    }
     hash_map_put(mutexed_resources, &r, sizeof(resource), (void*)(u64)owner);
     locker = ((u64)hash_map_get(mutexed_resources, &r, sizeof(resource)) & UINT32_MAX);
     bool res = locker == owner;
