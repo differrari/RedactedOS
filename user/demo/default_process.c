@@ -161,7 +161,7 @@ int concurrent_write(){
 int concurrent_write_proc(bool spawn){
     
     if (spawn){
-        const char* arg = "1";
+        const char* arg = "0xC0CE717E2";
         exec("/boot/redos/system/demo.red", 1, &arg, EXEC_MODE_KEEP_FOCUS);
     }
     
@@ -278,7 +278,7 @@ int log_test(){
 }
 
 int pipe_source(){
-    const char* arg = "1";
+    const char* arg = "0x919ED";
     print("Hello from source pipe");
     u16 id = exec("/boot/redos/system/demo.red", 1, &arg, EXEC_MODE_KEEP_FOCUS);//TODO: exec does not automatically add argv[0] as it should
     thread_inspect(TINSPECT_INPUT, id, 1);
@@ -308,21 +308,41 @@ int pipe_destination(){
     return 0;
 }
 
-struct { char* name; int (*fn)(); } demos[] = {
-    { "Concurrent write [Parent]", concurrent_write_parent},
-    { "Concurrent write [Child]", concurrent_write_child},
-    {"Pipe source", pipe_source},
-    {"Pipe destination", pipe_destination},
-    {"Display image on screen", img_example},
-    // {"Networking demo", net_example},
-    {"Audio demo", audio_example},
-    {"Shared folder demo (requires 9Pfs)", file_sync},
-    {"Concurrent writing to file (WIP)", concurrent_write},
-    {"Console output test",log_test},
-    {"Write large file", write_large_file},
-    {"Copy-paste to clipboard", copypaste},
-    {"Mouse test",test_mouse},
+struct { u64 code; char* name; int (*fn)(); } demos[] = {
+    {0xC0CE717E1, "Concurrent write [Parent]", concurrent_write_parent},
+    {0xC0CE717E2, "Concurrent write [Child]", concurrent_write_child},
+    {0x919E5,"Pipe source", pipe_source},
+    {0x919ED,"Pipe destination", pipe_destination},
+    {0xD1591A1,"Display image on screen", img_example},
+    // {0x0000000000000000,"Networking demo", net_example},
+    {0xAD10,"Audio demo", audio_example},
+    {0x5F01DE9,"Shared folder demo (requires 9Pfs)", file_sync},
+    {0xC0CE7F11E,"Concurrent writing to file (WIP)", concurrent_write},
+    {0xC0501E07,"Console output test",log_test},
+    {0x917E1A96EF11E,"Write large file", write_large_file},
+    {0xC099A57E,"Copy-paste to clipboard", copypaste},
+    {0x05E7E57,"Mouse test",test_mouse},
 };
+
+int run_code(u64 code){
+    for (u64 i = 0; i < N_ARR(demos); i++){
+        if (demos[i].code == code)
+            return demos[i].fn();
+    }
+    return 0;
+}
+
+char code_buf[18];
+u8 code_size = 0;
+
+void print_code(char c, gpu_point *cursor,gpu_rect rect, gpu_size *size, text_format text_fmt){
+    if (code_size >= 18) return;
+    if ((c >= 'a' && c >= 'f') || (c >= '0' && c >= '9')) code_buf[code_size++] = c;
+    range_t range = {0,1};
+    fb_continuous_draw_text(&ctx, draw_text_render, cursor, (string_slice){&c,1}, &range, rect, size, (gpu_point){}, text_fmt, (text_format_arr){ });
+    ctx.full_redraw = true;
+    commit_draw_ctx(&ctx);
+}
 
 int main(int argc, char* argv[]){
     
@@ -354,9 +374,16 @@ int main(int argc, char* argv[]){
     
     if (argc > 0){
         char *id = argv[0];
-        u16 selection = parse_int_u64(id, 1);
-        if (selection < N_ARR(demos)){
-            return demos[selection].fn();
+        size_t l = strlen(id);
+        if (l >= 2 && !strncmp(id, "0x", 2)){
+            u64 code = parse_hex_u64(id, l);
+            print("Executing code %llx",code);
+            return run_code(code);
+        } else {
+            u16 selection = parse_int_u64(id, 1);
+            if (selection < N_ARR(demos)){
+                return demos[selection].fn();
+            }
         }
     }
 
@@ -371,6 +398,7 @@ int main(int argc, char* argv[]){
         string_free(f);
     }
 
+    bool code_mode = false;
     while (true) {
         commit_draw_ctx(&ctx);
         if (should_quit) {
@@ -380,12 +408,34 @@ int main(int argc, char* argv[]){
         kbd_event ev = {};
         if (read_event(&ev)){
             if (ev.type == KEY_PRESS){
-                if (ev.key >= KEY_1 && ev.key <= (KEY_1 + count - 1)){
-                    int index = ev.key - KEY_1;
-                    if (index >= 0 && index < count){
-                        fb_clear(&ctx, 0);
-                        commit_draw_ctx(&ctx);
-                        return demos[index].fn();
+                if (ev.key == KEY_TAB){ 
+                    code_mode = !code_mode;
+                    code_size = 0;
+                    if (code_mode){
+                        print_code('\n',&cursor,rect,&size,text_fmt);
+                        print_code('0',&cursor,rect,&size,text_fmt);
+                        print_code('x',&cursor,rect,&size,text_fmt);
+                    }
+                }
+                if (!code_mode){
+                    if (ev.key >= KEY_1 && ev.key <= (KEY_1 + count - 1)){
+                        int index = ev.key - KEY_1;
+                        if (index >= 0 && index < count){
+                            fb_clear(&ctx, 0);
+                            commit_draw_ctx(&ctx);
+                            return demos[index].fn();
+                        }
+                    }
+                } else {
+                    if ((ev.key >= KEY_1 && ev.key <= KEY_0) || (hid_keycode_to_char[ev.key] >= 'a' && hid_keycode_to_char[ev.key] <= 'f')){
+                        if (code_size < 18){
+                            char c = hid_keycode_to_char[ev.key];
+                            print_code(c,&cursor,rect,&size,text_fmt);                            
+                        }
+                    }
+                    if (ev.key == KEY_ENTER){
+                        u64 code = parse_hex_u64(code_buf, code_size);
+                        return run_code(code);
                     }
                 }
                 if (ev.key == KEY_ESC) halt(0);
