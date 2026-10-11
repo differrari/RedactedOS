@@ -341,6 +341,7 @@ u16 window_fallback_focus(u16 win_id, u16 skip_id){
     }
 
     release(node->data);
+    ((window_frame*)node->data)->win_id = 0;
     linked_list_remove(window_list, node);
     dirty_windows = true;
     return 0;

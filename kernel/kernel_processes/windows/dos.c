@@ -85,7 +85,7 @@ static void draw_window(window_frame *frame){
                 .background_color = 0xFF40b0bc,
             }, &aux_pressed);
             if (aux_pressed){
-                if (!frame->aux){
+                if (!frame->aux || !frame->aux->win_id){
                     new_aux_window(frame);
                     print("New aux window with debugger and with this proc id, %x",frame->aux);
                 }
