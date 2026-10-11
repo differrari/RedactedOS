@@ -117,7 +117,6 @@ bool ktools_stat(const char *path, fs_stat *out_stat){
     return true;
 }
 
-//TODO: finish listing tool module
 system_module tool_module = (system_module){
     .name = "tools",
     .mount = "ktools",

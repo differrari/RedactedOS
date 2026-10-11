@@ -3,7 +3,7 @@
 #include "types.h"
 #include "process/process.h"
 #include "files/system_module.h"
-#include "procfs.h"
+#include "process_fs.h"
 
 typedef enum {
     INTERRUPT,

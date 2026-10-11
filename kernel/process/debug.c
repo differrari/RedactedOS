@@ -7,32 +7,34 @@
 #include "memory/addr.h"
 #include "loading/dwarf.h"
 #include "access/authorize.h"
+#define MOG_LEVEL MOG_INFO
+#define MOG_MODULE "DEBUG_SYM"
+#include "utils/mog.h"
 
 void debug_load(){
-    kprint("[DEBUG] Loading debug information for kernel");
+    mog(INFO,"Loading debug information for kernel");
     file fd = {};
     if (openf("/boot/kernel.elf", &fd) != FS_RESULT_SUCCESS) {
-        kprintf("[DEBUG] failed to open debug files");
+        mog(INFO,"Failed to open debug files");
         return;
     }
 
-    kprint("[DEBUG] .elf fopened");
+    mog(INFO,".elf fopened");
 
     void *file = zalloc(fd.size);
 
-    kprintf("[DEBUG] alloc'd %x",fd.size);
+    mog(INFO,"alloc'd %x",fd.size);
 
     readf(&fd, file, fd.size);
     closef(&fd);
 
-    kprintf("[DEBUG] Reading debug info from %x",file);
+    mog(INFO,"Reading debug info from %x",file);
 
     get_elf_debug_info(get_kernel_proc(), file, fd.size);
 
-    kprintf("[DEBUG] .debug_line %x .debug_line_str %x", get_kernel_proc()->debug_lines.ptr, get_kernel_proc()->debug_line_str.ptr);
+    mog(INFO,".debug_line %x .debug_line_str %x", get_kernel_proc()->debug_lines.ptr, get_kernel_proc()->debug_line_str.ptr);
 
 }
-
 
 bool decode_crash_address_with_info(uint8_t depth, uintptr_t address, sizedptr debug_line, sizedptr debug_line_str){
     if (!debug_line.ptr || !debug_line.size) return false;
@@ -51,7 +53,6 @@ bool decode_crash_address(uint8_t depth, uintptr_t address, sizedptr debug_line,
 
 
 void backtrace(uptr *ttbr, uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_line_str) {
-
     if (elr){
         if (!decode_crash_address(0, elr, debug_line, debug_line_str))
             kprintf("Exception triggered by %llx",(elr));

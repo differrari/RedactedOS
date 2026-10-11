@@ -1,5 +1,3 @@
-#ifdef FEATURE_NEW_PROCFS
-
 #include "files/system_module.h"
 #include "files/folderfs.h"
 #include "scheduler.h"
@@ -217,5 +215,3 @@ system_module procfs_mod = (system_module){
     .getstat = folderfs_stat,
     .readdir = folderfs_readdir,
 };
-
-#endif

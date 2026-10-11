@@ -50,7 +50,6 @@ FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor
     FS_RESULT result = FS_RESULT_DRIVER_ERROR;
     if (mod->owner != get_kernel_proc()->id){
         job_make(job_open, mod, {
-            //TODO: here, out_mod is in the stack, and we're referencing it through a pointer, which we of course lose as we move the stack the first time.
             job_serialize_str(&app, 0, search_path);
             job_serialize_fd(&app, 1, descriptor, copy_on_end);
         });
@@ -107,8 +106,7 @@ FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
 
 size_t read_file(file *descriptor, char* buf, size_t size){
     if (descriptor->id == FD_IN){
-        const char *search_path = "proc";//TODO: This is ugly
-        system_module *mod = get_module(&search_path);
+        system_module *mod = &procfs_mod;
         if (!mod || !mod->write) return 0;
         return mod->read(descriptor, buf, size, descriptor->cursor);
         //TODO: this handles its own cursor movement, but with the new sync policies it shouldn't have to
@@ -200,17 +198,16 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     if (descriptor->id == FD_OUT){
         system_module *mod = &procfs_mod;
         if (!mod || !mod->write) return 0;
-        //TODO: mutex, using the proc fd
-        // mutex_owner own = new_mutex_owner();
+        mutex_owner own = new_mutex_owner();
         u64 out_desc = resolve_reserved_fd(FD_OUT);
-        // resource rid = resource_map_file_id(mod, out_desc);
-        // if (!lock_mutex(own, rid)){
-        //     print("[FSWrite Implementation error] No fallback for concurrent writes yet, failing");
-        //     return 0;
-        // }
+        resource rid = resource_map_file_id(mod, out_desc);
+        if (!lock_mutex(own, rid)){
+            print("[FSWrite Implementation error] No fallback for concurrent writes yet, failing");
+            return 0;
+        }
         size_t amount_written = mod->write(descriptor, buf, size, descriptor->cursor);
         update_pipes(out_desc, buf, amount_written);
-        // unlock_mutex(own, rid);
+        unlock_mutex(own, rid);
         return amount_written;
         //TODO: this handles its own cursor movement, but with the new sync policies it shouldn't have to
     }

@@ -14,7 +14,7 @@ extern "C" {
 #include "environment/environment.h"
 #include "files/jobs.h"
 #include "access/authorize.h"
-#include "procfs.h"
+#include "process_fs.h"
 #include "debug/proc.h"
 
 #define INPUT_BUFFER_CAPACITY 64

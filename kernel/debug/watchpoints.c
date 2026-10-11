@@ -85,7 +85,6 @@ int debug_watch(uptr address, debug_watchpoint_type type, u8 bit_mask){
 
 bool debug_unwatch(int index){
     if (!watchpoint_count) return false;
-    //TODO actually (un)configure registers
     if (!watchpoints[index]) return false;
     watchpoint_count--;
     print("[DEBUG] Unset debug watchpoint for %llx",watchpoints[index]);

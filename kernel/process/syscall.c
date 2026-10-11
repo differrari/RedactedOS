@@ -729,7 +729,7 @@ void sync_el0_handler_c(){
     syscall_depth--;
     save_syscall_return(result);
     if (current_thread->special_mm) {
-        //TODO: schedule kstack_top to cleanup, but don't do immediately as we're in it
+        //TODO: schedule specialmm to cleanup, but don't do immediately as we're in it
         current_thread->special_mm = 0;
         mmu_swap_kttbr(0);
         mmu_flush_all();
