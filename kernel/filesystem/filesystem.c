@@ -1,26 +1,19 @@
 #include "filesystem.h"
 #include "console/kio.h"
-#include "filesystem/modules/module_loader.h"
-#include "memory/page_allocator.h"
 #include "exceptions/irq.h"
 #include "process/scheduler.h"
 #include "pipe.h"
 #include "files/dir_list.h"
 #include "process/jobs/job_manager.h"
+#include "modules/fs_isolation.h"
+#include "access/mutex.h"
+#include "sync.h"
 
 uint64_t fd_id = 256;//First byte reserved
 
 uint64_t reserve_fd_id(){
     return ++fd_id;
 }
-
-typedef struct {
-    uint64_t mfile_id;
-    uint64_t file_id;
-    size_t file_size;
-    uint16_t pid;
-    system_module* mod;
-} open_file_descriptors;
 
 hash_map_t *open_files;
 
@@ -60,7 +53,7 @@ FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor
             job_serialize_str(&app, 0, search_path);
             job_serialize_fd(&app, 1, descriptor, copy_on_end);
         });
-        return j_ret;
+        result = j_ret;
     } else {
         result = mod->open(search_path, descriptor);
     }
@@ -82,7 +75,10 @@ FS_RESULT instance_local_fd(system_module *mod, file *descriptor){
     of->file_size = descriptor->size;
     of->mod = mod;
     of->pid = get_current_proc_pid();
+    of->resource_id = resource_map_file(mod, descriptor);
+    of->last_sync = get_time();
     descriptor->id = of->file_id;
+    sync_fd(descriptor,of, true);
     int put = hash_map_put(open_files, &of->file_id, sizeof(uint64_t), of);
 
     if (put != 1) {
@@ -109,6 +105,12 @@ FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
 }
 
 size_t read_file(file *descriptor, char* buf, size_t size){
+    if (descriptor->id == FD_IN){
+        system_module *mod = &procfs_mod;
+        if (!mod || !mod->write) return 0;
+        return mod->read(descriptor, buf, size, descriptor->cursor);
+        //TODO: this handles its own cursor movement, but with the new sync policies it shouldn't have to
+    }
     if (!open_files){
         kprintf("[FS] No open files");
         return 0;
@@ -119,6 +121,7 @@ size_t read_file(file *descriptor, char* buf, size_t size){
     if (ofile) local = *ofile;
     irq_restore(irq);
     if (!ofile || !local.mod || !local.mod->read || local.pid != get_current_proc_pid()) return 0;
+    sync_fd(descriptor, ofile, false);
     size_t start_cursor = descriptor->cursor;
     file gfd = (file){
         .id = local.mfile_id,
@@ -139,6 +142,28 @@ size_t read_file(file *descriptor, char* buf, size_t size){
     descriptor->cursor = gfd.cursor != start_cursor ? gfd.cursor : start_cursor + amount_read;
     descriptor->size = gfd.size;
     return amount_read;
+}
+
+size_t transform_file(module_root *root, const char* path, void* buf, size_t size){
+    const char *search_path = path;
+    if (*search_path == '/') search_path++;
+    if (!*search_path) return FS_RESULT_NOTFOUND;
+    system_module *mod = get_module_from(root, &search_path);
+    if (!mod) return FS_RESULT_NOTFOUND;
+    if (!mod->transform) return FS_RESULT_NOTFOUND;
+    FS_RESULT result = FS_RESULT_DRIVER_ERROR;
+    if (mod->owner != get_kernel_proc()->id){
+        job_make(job_transform, mod, {
+            job_serialize_str(&app, 0, search_path);
+            job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_start | copy_on_end);
+        });
+        return j_ret;
+    } else {
+        result = mod->transform(search_path, buf, size);
+    }
+    if (result != FS_RESULT_SUCCESS) return result;
+    if (!open_files) return FS_RESULT_DRIVER_ERROR;
+    return FS_RESULT_SUCCESS;
 }
 
 void close_file(file *descriptor){
@@ -171,10 +196,19 @@ void close_file_global(file *descriptor, system_module *mod){
 
 size_t write_file(file *descriptor, const char* buf, size_t size){
     if (descriptor->id == FD_OUT){
-        const char *search_path = "proc";//TODO: This is ugly
-        system_module *mod = get_module(&search_path);
+        system_module *mod = &procfs_mod;
         if (!mod || !mod->write) return 0;
-        return mod->write(descriptor, buf, size, descriptor->cursor);
+        mutex_owner own = new_mutex_owner();
+        u64 out_desc = resolve_reserved_fd(FD_OUT);
+        resource rid = resource_map_file_id(mod, out_desc);
+        if (!lock_mutex(own, rid)){
+            print("[FSWrite Implementation error] No fallback for concurrent writes yet, failing");
+            return 0;
+        }
+        size_t amount_written = mod->write(descriptor, buf, size, descriptor->cursor);
+        update_pipes(out_desc, buf, amount_written);
+        unlock_mutex(own, rid);
+        return amount_written;
         //TODO: this handles its own cursor movement, but with the new sync policies it shouldn't have to
     }
     if (!open_files) return 0;
@@ -185,10 +219,16 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     if (ofile) local = *ofile;
     irq_restore(irq);
     if (!ofile || !local.mod || !local.mod->write || local.pid != get_current_proc_pid()) return 0;
+    mutex_owner own = new_mutex_owner();
+    if (!lock_mutex(own, ofile->resource_id)){
+        print("[FSWrite Implementation error] No fallback for concurrent writes yet, failing");
+        return 0;
+    }
+    sync_fd(descriptor,ofile, false);
     size_t start_cursor = descriptor->cursor;
     file gfd = (file){
         .id = local.mfile_id,
-        .size = descriptor->size,
+        .size = ofile->file_size,
         .cursor = start_cursor,
         .data_type = descriptor->data_type
     };
@@ -198,7 +238,7 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
             job_serialize_fd(&app, 0, &gfd, copy_on_start);
             job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_start);
         });
-        return j_ret;
+        amount_written = j_ret;
     } else {
         amount_written = local.mod->write(&gfd, buf, size, 0);
     }
@@ -206,18 +246,31 @@ size_t write_file(file *descriptor, const char* buf, size_t size){
     descriptor->size = gfd.size;
     irq = irq_save_disable();
     ofile = (open_file_descriptors *)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
-    if (ofile) ofile->file_size = gfd.size;
+    if (ofile) ofile->file_size += amount_written;
     irq_restore(irq);
 
     update_pipes(local.mfile_id, buf, amount_written);
+    if (amount_written && ofile){
+        range_t modified = { .start = start_cursor, amount_written };
+        u64 mod_time = get_time();
+        ofile->last_sync = mod_time;
+        report_fd_mod(descriptor, ofile, mod_time, modified);
+    }
+    unlock_mutex(own, ofile->resource_id);
     return amount_written;
+}
+
+void sync_file(file *descriptor, bool replace){
+    open_file_descriptors *ofile = (open_file_descriptors *)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
+    if (!ofile || ofile->pid != get_current_proc_pid()) return;
+    sync_fd(descriptor, ofile, replace);
 }
 
 size_t simple_read(module_root *root, const char *path, void *buf, size_t size){
     file fd = {};
     FS_RESULT ores = open_file(root, path, &fd);
     if (ores != FS_RESULT_SUCCESS){
-        kprintf("[FS error] Failed to open file for simple read (%i)",ores);
+        kprintf("[FS error] Failed to open file %s for simple read (%i)",path,ores);
         return 0;
     }
     size_t res = read_file(&fd, (char*)buf, size);
@@ -252,7 +305,7 @@ size_t list_directory_contents(module_root *root, const char *path, void* buf, s
     }
     system_module *mod = get_module_from(root, &search_path);
     if (!mod){
-        kprintf("No module for path %s",search_path);
+        kprintf("[LIST error] No module for path %s",path);
         return 0;
     }
     if (!mod->readdir) return 0;
@@ -276,7 +329,7 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
     }
     system_module *mod = get_module_from(root, &search_path);
     if (!mod){
-        kprintf("No module for path %s",search_path);
+        kprintf("[STAT error] No module for path %s",path);
         return false;
     }
     if (!mod->getstat) return false;
@@ -317,13 +370,14 @@ bool truncate(file *descriptor, size_t size){
         return j_ret;
     } else if (!local.mod->truncate(&gfd)) return false;
 
-    descriptor->size = gfd.size;
+    descriptor->size = size;
+    ofile->file_size = size;
+    //TODO: sync fd logic
     descriptor->cursor = gfd.cursor;
     if (descriptor->cursor > descriptor->size) descriptor->cursor = descriptor->size;
 
     irq = irq_save_disable();
     ofile = (open_file_descriptors *)hash_map_get(open_files, &descriptor->id, sizeof(uint64_t));
-    if (ofile) ofile->file_size = gfd.size;
     irq_restore(irq);
     return true;
 }

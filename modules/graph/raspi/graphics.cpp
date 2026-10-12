@@ -121,5 +121,7 @@ system_module graphics_module = {
     .truncate = 0,
     .getstat = 0,//TODO: stat
     .readdir = 0,
+    .transform = 0,
+    //.permissions = fs_permission_shared,
     .alias_info = {}
 };

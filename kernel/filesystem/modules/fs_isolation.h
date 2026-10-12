@@ -2,11 +2,7 @@
 
 #include "data/struct/linked_list.h"
 #include "files/system_module.h"
-
-typedef struct {
-    hash_map_t *map;
-    hash_map_t *reserved;
-} module_root;
+#include "files/module_loader.h"
 
 u64 register_fs_id();
 module_root* get_fs_for_id(u64 id);

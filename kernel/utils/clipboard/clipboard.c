@@ -1,9 +1,5 @@
 #include "clipboard.h"
-#include "data/struct/ring_buffer.h"
-#include "files/buffer.h"
-#include "syscalls/syscalls.h"
 #include "files/stack_fs.h"
-#include "console/kio.h"
 
 system_module clipboard_mod = {
     .name = "clipboard",

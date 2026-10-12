@@ -113,7 +113,7 @@ void USBKeyboard::process_keypress(keypress *rkp){
             if (now < next_repeat[key]) continue;
 
             kbd_event event = {};
-            event.type = KEY_PRESS;
+            event.type = KEY_CONTINUE;
             event.key = (char)key;
             register_event(event);
 

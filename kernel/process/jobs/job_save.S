@@ -1,6 +1,5 @@
 .global job_save_kernel
 job_save_kernel:
-    msr daifset, #2
 
     stp x17, x18, [sp, #-16]!
     add x17, sp, #16
@@ -45,40 +44,23 @@ add sp, sp, #16
 ret
 
 .global save_kstack
-save_kstack:
+save_kstack: //x0 = new stack
 
 sub sp, sp, #32
-stp x0, x1, [sp, #0]
+stp x2, x1, [sp, #0]
 stp x21,x30, [sp, #16]
 
-adrp x0, job_ksp
-add  x0, x0, :lo12:job_ksp
-ldr x0, [x0]
-
-adrp x1, ksp
-add x1, x1, :lo12:ksp
-cmp x0, x1
-
-b.ne 2f
+adrp x2, ksp
+add  x2, x2, :lo12:ksp
 
 mov x1, sp
-sub x21, x0, x1
-mov x0, #0x10000
-bl zalloc
+sub x2, x2, x1
 
-adrp x1, job_kstack
-add x1, x1, :lo12:job_kstack
-stp x0, x21, [x1, #0]
+sub x0,x0,x2
 
-add x0,x0,#0x10000
-sub x0,x0,x21
-
-mov x1, sp
-mov x2, x21
 bl memcpy
 
-2: 
-ldp x0, x1, [sp, #0]
+ldp x2, x1, [sp, #0]
 ldp x21,x30, [sp, #16]
 
 add sp, sp, #32
@@ -119,6 +101,11 @@ job_restore_kernel:
     ldr x17, [x18, #(8 * 17)]
     ldr x30, [x18, #(8 * 32)]
     ldr x18, [x18, #(8 * 18)]
+
+    dsb ishst
+    tlbi vmalle1is
+    dsb ish
+    isb
 
     ret
 

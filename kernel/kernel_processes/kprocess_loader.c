@@ -10,7 +10,7 @@
 #include "process/isolated_fs/isolated_fs.h"
 
 void kernel_thread_return_trampoline(int32_t exit_code){
-    switch_proc(YIELD);//TODO: proper cleanup
+    switch_proc(YIELD);
     while (true){}
 }
 

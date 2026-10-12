@@ -15,7 +15,7 @@
 #include "memory/page_allocator.h"
 #include "networking/network.h"
 #include "filesystem/filesystem.h"
-#include "filesystem/modules/module_loader.h" 
+#include "filesystem/modules/fs_isolation.h" 
 #include "audio/audio.h"
 #include "mailbox/mailbox.h"
 #include "math/vector.h"
@@ -92,7 +92,7 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
 
     kprint("Kernel initialization finished");
 
-    reserve_mount_point(kernel_fs(), "menu");
+    reserve_mount_point(kernel_fs(), "menu", get_kernel_proc()->id);
     
     kprint("Starting processes");
 

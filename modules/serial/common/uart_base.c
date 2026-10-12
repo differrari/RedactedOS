@@ -80,6 +80,7 @@ u8 uart_get_byte(){
 void uart_read_in(){
     u8 c = uart_get_byte();
     process_serial_input(c);
+    uart_putc(c);
 }
 
 void uart_puthex(uint64_t value) {
