@@ -1,5 +1,5 @@
 #include "ipv6_utils.h"
-#include "std/std.h"
+#include "std/memory.h"
 #include "networking/network.h"
 #include "networking/interface_manager.h"
 
@@ -50,13 +50,9 @@ int ipv6_cmp(const uint8_t a[16], const uint8_t b[16]) {
 void ipv6_cpy(uint8_t dst[16], const uint8_t src[16]) { memcpy(dst, src, 16); }
 
 int ipv6_common_prefix_len(const uint8_t a[16], const uint8_t b[16]) {
-    int bits = 0;
     for (int i = 0; i < 16; i++) {
         uint8_t x = (uint8_t)(a[i] ^ b[i]);
-        if (x == 0) { bits += 8; continue; }
-        for (int bpos = 7; bpos >= 0; --bpos) {
-            if (x & (1u << bpos)) return bits + (7 - bpos);
-        }
+        if (x) return i * 8 + __builtin_clz((uint32_t)x) - 24;
     }
     return 128;
 }

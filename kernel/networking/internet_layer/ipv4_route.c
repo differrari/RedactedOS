@@ -204,6 +204,7 @@ bool ipv4_rt_pick_best_l3(uint32_t dst, uint8_t ifindex, l3_id_t* out_l3){
     int best_pl = -1;
     int best_cost = 0x7FFFFFFF;
     l3_id_t best_l3 = 0;
+    bool dst_loopback = ipv4_is_loopback(dst);
     uint8_t first = ifindex ? ifindex : 1;
     uint8_t last = ifindex ? ifindex : MAX_L2_INTERFACES;
 
@@ -213,7 +214,7 @@ bool ipv4_rt_pick_best_l3(uint32_t dst, uint8_t ifindex, l3_id_t* out_l3){
 
         for (int slot = 0; slot < MAX_IPV4_PER_INTERFACE; slot++) {
             l3_ipv4_interface_t* x = l2->l3_v4[slot];
-            if (!ipv4_l3_is_ready(x) || ipv4_is_loopback(dst) != x->is_localhost) continue; 
+            if (!ipv4_l3_is_ready(x) || dst_loopback != x->is_localhost) continue;
 
             int pl_conn = -1;
             if (x->mask){
@@ -228,8 +229,7 @@ bool ipv4_rt_pick_best_l3(uint32_t dst, uint8_t ifindex, l3_id_t* out_l3){
                 if (rt->owner_l3_id && rt->owner_l3_id != x->l3_id) continue;
                 int out_pl = -1;
                 int out_met = 0x7FFF;
-                uint32_t nh;
-                if (ipv4_rt_lookup_in(rt, dst, &nh, &out_pl, &out_met)) {
+                if (ipv4_rt_lookup_in(rt, dst, NULL, &out_pl, &out_met)) {
                     pl_tab = out_pl;
                     met_tab = out_met;
                 }

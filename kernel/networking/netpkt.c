@@ -1,5 +1,6 @@
 #include "netpkt.h"
-#include "std/std.h"
+#include "memory/memory.h"
+#include "alloc/allocate.h"
 #include "memory/page_allocator.h"
 #include "exceptions/irq.h"
 
@@ -18,27 +19,19 @@ typedef struct netpkt_buf netpkt_buf_t;
 
 typedef struct meta_slab_page meta_slab_page_t;
 
-typedef struct meta_obj_hdr {
-    meta_slab_page_t*page;
-    uintptr_t pad;
-} meta_obj_hdr_t;
-
 struct meta_slab_page {
     meta_slab_page_t* next;
+    meta_slab_page_t* prev;
     void* free_list;
     uint16_t in_use;
     uint16_t capacity;
-    uint32_t stride;
 };
 
 typedef struct meta_slab {
     meta_slab_page_t* partial;
-    meta_slab_page_t* full;
     meta_slab_page_t* empty;
-    uint32_t obj_size;
     uint32_t stride;
     uint32_t empty_pages;
-    uint32_t keep_empty;
 } meta_slab_t;
 
 struct netpkt_buf {
@@ -185,80 +178,85 @@ static void netpkt_payload_free(uintptr_t base, uint32_t cap, uint32_t flags) {
     pfree((void*)base, (uint64_t)cap);
 }
 
-static void* meta_slab_alloc(meta_slab_t* s, uint32_t obj_size_aligned) {
+static inline __attribute__((always_inline)) void meta_slab_add(meta_slab_page_t** head, meta_slab_page_t* p) {
+    p->prev = 0;
+    p->next = *head;
+    if (*head) (*head)->prev = p;
+    *head = p;
+}
+
+static inline __attribute__((always_inline)) void meta_slab_remove(meta_slab_page_t** head, meta_slab_page_t* p) {
+    if (p->prev) p->prev->next = p->next;
+    else *head = p->next;
+    if (p->next) p->next->prev = p->prev;
+    p->next = 0;
+    p->prev = 0;
+}
+
+static void* meta_slab_alloc(meta_slab_t* s, uint32_t obj_size_aligned, irq_flags_t* irq) {
     if (!s) return 0;
     if (!obj_size_aligned) return 0;
     if ((obj_size_aligned & 15u) != 0u) return 0;
 
-    if (!s->obj_size) {
-        s->obj_size = obj_size_aligned;
-        s->stride = (uint32_t)(((uint64_t)sizeof(meta_obj_hdr_t) + (uint64_t)obj_size_aligned + 15ull) & ~15ull);
-        if (!s->stride) return 0;
-        s->keep_empty = NETPKT_META_KEEP_EMPTY_PAGES;
-    } else {
-        if (s->obj_size != obj_size_aligned) return 0;
-        if (!s->stride) return 0;
-    }
+    if (!s->stride) s->stride = obj_size_aligned;
+    else if (s->stride != obj_size_aligned) return 0;
 
     if (!s->partial) {
         if (s->empty) {
             meta_slab_page_t* p =s->empty;
-            s->empty = p->next;
+            meta_slab_remove(&s->empty, p);
             if (s->empty_pages) s->empty_pages--;
-            p->next = s->partial;
-            s->partial = p;
+            meta_slab_add(&s->partial, p);
         } else {
             if ((uint64_t)PAGE_SIZE > (uint64_t)NETPKT_MAX_PAGE_BYTES) return 0;
             if (g_netpkt_page_bytes > (uint64_t)NETPKT_MAX_PAGE_BYTES - (uint64_t)PAGE_SIZE) return 0;
 
             g_netpkt_page_bytes += (uint64_t)PAGE_SIZE;
+            irq_restore(*irq);//TODO lock
             meta_slab_page_t* p = (meta_slab_page_t*)palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, true);
             if (!p) {
-                if (g_netpkt_page_bytes >= (uint64_t)PAGE_SIZE) g_netpkt_page_bytes-= (uint64_t)PAGE_SIZE;
-                else g_netpkt_page_bytes = 0;
+                *irq = irq_save_disable();
+                g_netpkt_page_bytes -= (uint64_t)PAGE_SIZE;
                 return 0;
             }
 
             p->next = 0;
+            p->prev = 0;
             p->free_list = 0;
             p->in_use = 0;
             p->capacity = 0;
-            p->stride = s->stride;
 
             uint8_t* start = (uint8_t*)p + (uint64_t)sizeof(*p);
             start = (uint8_t*)(((uintptr_t)start + 15u) &~(uintptr_t)15u);
 
             uint64_t avail = (uint64_t)PAGE_SIZE - (uint64_t)(start - (uint8_t*)p);
-            if (avail < (uint64_t)p->stride) {
+            if (avail < (uint64_t)s->stride) {
                 pfree(p, (uint64_t)PAGE_SIZE);
-                if (g_netpkt_page_bytes >= (uint64_t)PAGE_SIZE) g_netpkt_page_bytes -= (uint64_t)PAGE_SIZE;
-                else g_netpkt_page_bytes = 0;
+                *irq = irq_save_disable();
+                g_netpkt_page_bytes -= (uint64_t)PAGE_SIZE;
                 return 0;
             }
 
-            uint32_t cap = (uint32_t)(avail / (uint64_t)p->stride);
+            uint32_t cap = (uint32_t)(avail / (uint64_t)s->stride);
             if (!cap) {
                 pfree(p, (uint64_t)PAGE_SIZE);
-                if (g_netpkt_page_bytes >= (uint64_t)PAGE_SIZE) g_netpkt_page_bytes -= (uint64_t)PAGE_SIZE;
-                else g_netpkt_page_bytes = 0;
+                *irq = irq_save_disable();
+                g_netpkt_page_bytes -= (uint64_t)PAGE_SIZE;
                 return 0;
             }
 
             p->capacity = (uint16_t)cap;
 
             for (uint32_t i = 0; i < cap; i++) {
-                uint8_t* slot = start + (uint64_t)i * (uint64_t)p->stride;
-                meta_obj_hdr_t* h = (meta_obj_hdr_t*)(uintptr_t)slot;
-                h->page = p;
-                h->pad = 0;
-                void* obj = (void*)(uintptr_t)(slot + (uint64_t)sizeof(*h));
+                uint8_t* slot = start + (uint64_t)i * (uint64_t)s->stride;
+                void* obj = slot;
 
                 *(void**)obj = p->free_list;
                 p->free_list = obj;
             }
 
-            p->next = s->partial;
-            s->partial = p;
+            *irq = irq_save_disable();
+            meta_slab_add(&s->partial, p);
         }
     }
 
@@ -271,20 +269,17 @@ static void* meta_slab_alloc(meta_slab_t* s, uint32_t obj_size_aligned) {
     page->in_use++;
 
     if (page->in_use == page->capacity) {
-        s->partial = page->next;
-        page->next = s->full;
-        s->full = page;
+        meta_slab_remove(&s->partial, page);
     }
 
     return obj;
 }
 
-static void meta_slab_free(meta_slab_t* s, void* obj) {
+static void meta_slab_free(meta_slab_t* s, void* obj, irq_flags_t* irq) {
     if (!s) return;
     if (!obj) return;
 
-    meta_obj_hdr_t* h = (meta_obj_hdr_t*)(uintptr_t)obj -1;
-    meta_slab_page_t* page = h->page;
+    meta_slab_page_t* page = (meta_slab_page_t*)((uintptr_t)obj & ~((uintptr_t)PAGE_SIZE - 1));
     if (!page) return;
 
     *(void**)obj = page->free_list;
@@ -293,56 +288,22 @@ static void meta_slab_free(meta_slab_t* s, void* obj) {
     bool was_full = page->in_use == page->capacity;
     if (page->in_use) page->in_use--;
 
-    if (was_full) {
-        meta_slab_page_t* prev = 0;
-        meta_slab_page_t* cur = s->full;
-        while (cur && cur != page) {
-            prev = cur;
-            cur = cur->next;
-        }
-        if (cur) {
-            if (prev) prev->next = cur->next;
-            else s->full = cur->next;
-            cur->next = s->partial;
-            s->partial = cur;
-        }
-    }
+    if (was_full) meta_slab_add(&s->partial, page);
 
     if (!page->in_use) {
-        meta_slab_page_t* prev = 0;
-        meta_slab_page_t* cur = s->partial;
-        while (cur && cur != page) {
-            prev = cur;
-            cur = cur->next;
-        }
-        if (cur) {
-            if (prev) prev->next = cur->next;
-            else s->partial = cur->next;
-        } else {
-            prev = 0;
-            cur = s->full;
-            while (cur && cur != page) {
-                prev = cur;
-                cur = cur->next;
-            }
-            if (cur) {
-                if (prev) prev->next = cur->next;
-                else s->full = cur->next;
-            }
-        }
-
-        page->next = s->empty;
-        s->empty = page;
+        meta_slab_remove(&s->partial, page);
+        meta_slab_add(&s->empty, page);
         s->empty_pages++;
 
-        while (s->empty_pages > s->keep_empty){
+        while (s->empty_pages > NETPKT_META_KEEP_EMPTY_PAGES){
             meta_slab_page_t* e = s->empty;
             if (!e) break;
-            s->empty = e->next;
+            meta_slab_remove(&s->empty, e);
             s->empty_pages--;
-            pfree(e,(uint64_t)PAGE_SIZE);
-            if (g_netpkt_page_bytes >= (uint64_t)PAGE_SIZE) g_netpkt_page_bytes -= (uint64_t)PAGE_SIZE;
-            else g_netpkt_page_bytes = 0;
+            g_netpkt_page_bytes -= (uint64_t)PAGE_SIZE;
+            irq_restore(*irq); //TODO lock
+            pfree(e, (uint64_t)PAGE_SIZE);
+            *irq = irq_save_disable();
         }
     }
 }
@@ -374,7 +335,7 @@ static bool netpkt_realloc_to(netpkt_t* p, uint32_t new_head, uint32_t new_alloc
 
     uint32_t bsz = (uint32_t)(((uint64_t)sizeof(netpkt_buf_t) + 15ull) & ~15ull);
     irq_flags_t irq = irq_save_disable();
-    netpkt_buf_t* nb = (netpkt_buf_t*)meta_slab_alloc(&g_meta_slab_buf, bsz);
+    netpkt_buf_t* nb = (netpkt_buf_t*)meta_slab_alloc(&g_meta_slab_buf, bsz, &irq);
     irq_restore(irq);
     if (!nb) {
         netpkt_payload_free((uintptr_t)mem, cap, flags);
@@ -412,7 +373,7 @@ static bool netpkt_realloc_to(netpkt_t* p, uint32_t new_head, uint32_t new_alloc
             free_flags = ob->flags;
             free_fn = ob->free_fn;
             free_ctx = ob->free_ctx;
-            meta_slab_free(&g_meta_slab_buf, ob);
+            meta_slab_free(&g_meta_slab_buf, ob, &irq);
         }
     }
 
@@ -444,10 +405,10 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
     if (!mem) return 0;
 
     irq_flags_t irq = irq_save_disable();
-    netpkt_buf_t* b = (netpkt_buf_t*)meta_slab_alloc(&g_meta_slab_buf, (uint32_t)(((uint64_t)sizeof(netpkt_buf_t) + 15ull) & ~15ull));
-    netpkt_t* p = b ? (netpkt_t*)meta_slab_alloc(&g_meta_slab_pkt, (uint32_t)(((uint64_t)sizeof(netpkt_t) + 15ull) & ~15ull)) : 0;
+    netpkt_buf_t* b = (netpkt_buf_t*)meta_slab_alloc(&g_meta_slab_buf, (uint32_t)(((uint64_t)sizeof(netpkt_buf_t) + 15ull) & ~15ull), &irq);
+    netpkt_t* p = b ? (netpkt_t*)meta_slab_alloc(&g_meta_slab_pkt, (uint32_t)(((uint64_t)sizeof(netpkt_t) + 15ull) & ~15ull), &irq) : 0;
     if (!b || !p) {
-        if (b) meta_slab_free(&g_meta_slab_buf, b);
+        if (b) meta_slab_free(&g_meta_slab_buf, b, &irq);
         irq_restore(irq);
         netpkt_payload_free((uintptr_t)mem, cap, flags);
         return 0;
@@ -478,10 +439,10 @@ netpkt_t* netpkt_alloc(uint32_t data_capacity, uint32_t headroom, uint32_t tailr
 netpkt_t* netpkt_wrap(uintptr_t base, uint32_t alloc_size, uint32_t data_off, uint32_t data_len, netpkt_free_fn free_fn, void* ctx) {
     if (!base || !alloc_size || alloc_size > NETPKT_MAX_STORAGE_BYTES || data_len > NETPKT_MAX_ALLOC || data_off > alloc_size || data_len > alloc_size - data_off) return 0;
     irq_flags_t irq = irq_save_disable();
-    netpkt_buf_t* b = (netpkt_buf_t*)meta_slab_alloc(&g_meta_slab_buf, (uint32_t)(((uint64_t)sizeof(netpkt_buf_t) + 15ull) & ~15ull));
-    netpkt_t* p = b ? (netpkt_t*)meta_slab_alloc(&g_meta_slab_pkt, (uint32_t)(((uint64_t)sizeof(netpkt_t) + 15ull) & ~15ull)) : 0;
+    netpkt_buf_t* b = (netpkt_buf_t*)meta_slab_alloc(&g_meta_slab_buf, (uint32_t)(((uint64_t)sizeof(netpkt_buf_t) + 15ull) & ~15ull), &irq);
+    netpkt_t* p = b ? (netpkt_t*)meta_slab_alloc(&g_meta_slab_pkt, (uint32_t)(((uint64_t)sizeof(netpkt_t) + 15ull) & ~15ull), &irq) : 0;
     if (!b || !p) {
-        if (b) meta_slab_free(&g_meta_slab_buf, b);
+        if (b) meta_slab_free(&g_meta_slab_buf, b, &irq);
         irq_restore(irq);
         return 0;
     }
@@ -518,7 +479,7 @@ netpkt_t* netpkt_view(netpkt_t* parent, uint32_t off, uint32_t len) {
         return 0;
     }
 
-    netpkt_t* v = (netpkt_t*)meta_slab_alloc(&g_meta_slab_pkt, (uint32_t)(((uint64_t)sizeof(netpkt_t) + 15ull) & ~15ull));
+    netpkt_t* v = (netpkt_t*)meta_slab_alloc(&g_meta_slab_pkt, (uint32_t)(((uint64_t)sizeof(netpkt_t) + 15ull) & ~15ull), &irq);
     if (!v) {
         irq_restore(irq);
         return 0;
@@ -569,11 +530,11 @@ void netpkt_unref(netpkt_t* p) {
             free_flags = b->flags;
             free_fn = b->free_fn;
             free_ctx = b->free_ctx;
-            meta_slab_free(&g_meta_slab_buf, b);
+            meta_slab_free(&g_meta_slab_buf, b, &irq);
         }
     }
 
-    meta_slab_free(&g_meta_slab_pkt, p);
+    meta_slab_free(&g_meta_slab_pkt, p, &irq);
     irq_restore(irq);
 
     if (free_base) {
@@ -604,7 +565,26 @@ bool netpkt_copyout(const netpkt_t* p, uint32_t off, void* dst, uint32_t len) {
     if (!src) return false;
     src += (uintptr_t)off;
 
-    memcpy(dst, (const void*)src, len);
+    uint8_t* d = (uint8_t*)dst;
+    const uint8_t* s = (const uint8_t*)src;
+    switch (len) {
+        case 1:
+            d[0] = s[0];
+            break;
+        case 2:
+            d[0] = s[0];
+            d[1] = s[1];
+            break;
+        case 4:
+            d[0] = s[0];
+            d[1] = s[1];
+            d[2] = s[2];
+            d[3] = s[3];
+            break;
+        default:
+            memcpy(dst, (const void*)src, len);
+            break;
+    }
     return true;
 }
 

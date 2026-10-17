@@ -83,12 +83,6 @@ static int arp_find_slot(arp_table_t* t, uint32_t ip){
     return -1;
 }
 
-static int arp_find_free(arp_table_t* t){
-    if (!t) return -1;
-    for (int i = 0; i < (int)N_ARR(t->entries); i++) if (t->entries[i].state == ARP_STATE_UNUSED) return i;
-    return -1;
-}
-
 static int arp_find_replacement(arp_table_t* t) {
     int best = -1;
     uint32_t best_ttl = UINT32_MAX;
@@ -113,7 +107,6 @@ void arp_table_put_for_l2(uint8_t ifindex, uint32_t ip, const uint8_t mac[MAC_AD
     arp_table_t* t = l2 ? (arp_table_t*)l2->arp_table : NULL;
     if (!t || !ip || !mac) return;
     int idx = arp_find_slot(t, ip);
-    if (idx < 0) idx = arp_find_free(t);
     if (idx < 0) idx = arp_find_replacement(t);
     if (idx < 0) return;
 
@@ -150,7 +143,6 @@ static void arp_table_learn_for_l2(uint8_t ifindex, uint32_t ip, const uint8_t m
 
     int idx = arp_find_slot(t, ip);
     if (idx < 0 && !allow_create) return;
-    if (idx < 0) idx = arp_find_free(t);
     if (idx < 0) idx = arp_find_replacement(t);
     if (idx < 0) return;
 
@@ -221,22 +213,14 @@ uint32_t arp_table_dump_for_l2(uint8_t ifindex, arp_entry_t* out, uint32_t out_c
 static uint32_t pick_spa_for_l2(uint8_t ifindex, uint32_t target_ip){
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return 0;
+    uint32_t fallback = 0;
     for (int s = 0; s < (int)N_ARR(l2->l3_v4); s++) {
         l3_ipv4_interface_t* v4 = l2->l3_v4[s];
         if (!ipv4_l3_is_ready(v4)) continue;
-        if (v4->mask){
-            uint32_t a = v4->ip & v4->mask;
-            uint32_t b = target_ip & v4->mask;
-            if (a == b)return v4->ip;
-        }
+        if (!fallback) fallback = v4->ip;
+        if (v4->mask && (v4->ip & v4->mask) == (target_ip & v4->mask)) return v4->ip;
     }
-
-    for (int s = 0; s < (int)N_ARR(l2->l3_v4); s++) {
-        l3_ipv4_interface_t* v4 = l2->l3_v4[s];
-        if (!ipv4_l3_is_ready(v4)) continue;
-        return v4->ip;
-    }
-    return 0;
+    return fallback;
 }
 
 static void arp_table_tick_for_l2(uint8_t ifindex, uint32_t ms) {
@@ -305,7 +289,6 @@ bool arp_send_or_queue_on(uint8_t ifindex, uint32_t ip, netpkt_t* pkt) {
         mac_set_broadcast(mac);
         return eth_send_frame_on(ifindex, ETHERTYPE_IPV4, mac, pkt);
     }
-    if (arp_table_get_for_l2(ifindex, ip, mac)) return eth_send_frame_on(ifindex, ETHERTYPE_IPV4, mac, pkt);
 
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     arp_table_t* t = l2 ? (arp_table_t*)l2->arp_table : NULL;
@@ -315,7 +298,10 @@ bool arp_send_or_queue_on(uint8_t ifindex, uint32_t ip, netpkt_t* pkt) {
     }
 
     int idx = arp_find_slot(t, ip);
-    if (idx < 0) idx = arp_find_free(t);
+    if (idx >= 0 && t->entries[idx].state != ARP_STATE_INCOMPLETE) {
+        mac_copy(mac, t->entries[idx].mac);
+        return eth_send_frame_on(ifindex, ETHERTYPE_IPV4, mac, pkt);
+    }
     if (idx < 0) idx = arp_find_replacement(t);
     if (idx < 0) {
         netpkt_unref(pkt);
@@ -521,9 +507,7 @@ void arp_input(uint8_t ifindex, const uint8_t src_mac[MAC_ADDR_LEN], netpkt_t* p
         arp_table_learn_for_l2(ifindex, sender_ip, hdr.sender_mac, confirmed, !garp && target_is_local);
     }
 
-    if (op == ARP_OPCODE_REQUEST) {
-        if (l2_has_ip(ifindex, target_ip)) arp_send_reply_on(ifindex, &hdr, src_mac);
-    }
+    if (op == ARP_OPCODE_REQUEST && target_is_local) arp_send_reply_on(ifindex, &hdr, src_mac);
 }
 
 

@@ -19,6 +19,7 @@ typedef struct {
     uint32_t max_len;
     uint32_t step;
     uint32_t block_count;
+    uint32_t filled_blocks;
     uint8_t have_last;
 } net_fragbuf_t;
 

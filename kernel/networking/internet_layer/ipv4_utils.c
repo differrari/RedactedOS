@@ -64,9 +64,7 @@ bool ipv4_mask_is_contiguous(uint32_t mask) {
 }
 
 int ipv4_prefix_len(uint32_t mask) {
-    int n = 0;
-    while (mask & 0x80000000u) { n++; mask <<= 1; }
-    return n;
+    return mask == UINT32_MAX ? 32 : __builtin_clz(~mask);
 }
 
 uint32_t ipv4_net(uint32_t ip, uint32_t mask) { return ip & mask; }

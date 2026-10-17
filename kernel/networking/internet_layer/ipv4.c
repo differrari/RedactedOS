@@ -39,12 +39,15 @@ static ipv4_reass_slot_t g_ipv4_reass[IPV4_REASS_SLOTS];
 static void ipv4_reass_free(ipv4_reass_slot_t *s) {
     if (!s) return;
     net_fragbuf_free(&s->frag);
-    memset(s, 0, sizeof(*s));
+    s->used = 0;
+    s->first_header_len = 0;
 }
 
 bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx_opts_t* opts, uint8_t ttl, uint8_t dontfrag, uint8_t dontroute) {
-    if (!pkt || !netpkt_len(pkt)) {
-        if (pkt) netpkt_unref(pkt);
+    if (!pkt) return false;
+    uint32_t seg_len = netpkt_len(pkt);
+    if (!seg_len || seg_len > UINT16_MAX - sizeof(ipv4_hdr_t)) {
+        netpkt_unref(pkt);
         return false;
     }
 
@@ -52,8 +55,10 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
     uint32_t src_ip = 0;
     uint32_t nh = dst_ip;
     l3_ipv4_interface_t* src_v4 = NULL;
+    bool limited = ipv4_is_limited_broadcast(dst_ip);
+    bool multicast = ipv4_is_multicast(dst_ip);
 
-    if (ipv4_is_limited_broadcast(dst_ip)) {
+    if (limited) {
         if (!opts || opts->scope != IP_TX_BOUND_L3) {
             netpkt_unref(pkt);
             return false;
@@ -118,19 +123,22 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
     uint8_t dst_mac[MAC_ADDR_LEN];
     bool need_arp = false;
     bool is_dbcast = src_v4->mask && nh == dst_ip && ipv4_broadcast_calc(src_v4->ip, src_v4->mask) == dst_ip;
+    if (proto == PROTO_TCP && (multicast || limited || is_dbcast)) {
+        netpkt_unref(pkt);
+        return false;
+    }
 
-    if (ipv4_is_limited_broadcast(dst_ip) || is_dbcast) mac_set_broadcast(dst_mac);
-    else if (ipv4_is_multicast(dst_ip)) ipv4_mcast_to_mac(dst_ip, dst_mac);
+    if (limited || is_dbcast) mac_set_broadcast(dst_mac);
+    else if (multicast) ipv4_mcast_to_mac(dst_ip, dst_mac);
     else if (l2->link_kind == NET_LINK_LOOPBACK) mac_clear(dst_mac);
     else need_arp = true;
 
     uint16_t mtu = l3_ipv4_effective_mtu(src_v4);
-    if (proto != PROTO_TCP && !ipv4_is_multicast(dst_ip) && !ipv4_is_limited_broadcast(dst_ip) && !is_dbcast) {
+    if (proto != PROTO_TCP && !multicast && !limited && !is_dbcast) {
         uint16_t path_mtu = pmtu_get(src_v4->l3_id, src_v4->epoch, IP_VER4, &dst_ip);
         if (path_mtu && path_mtu < mtu) mtu = path_mtu;
     }
     uint32_t hdr_len = IP_IHL_NOOPTS * 4;
-    uint32_t seg_len = netpkt_len(pkt);
     uint32_t total = hdr_len + seg_len;
 
     if (mtu < hdr_len + 8) {
@@ -177,6 +185,15 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
     }
 
     uint16_t ident = g_ip_ident++;
+    ipv4_hdr_t ip;
+    ip.version_ihl = (uint8_t)((IP_VER4 << 4) | IP_IHL_NOOPTS);
+    ip.dscp_ecn = 0;
+    ip.identification = bswap16(ident);
+    ip.ttl = ttl ? ttl : IP_TTL_DEFAULT;
+    ip.protocol = proto;
+    ip.src_ip = bswap32(src_ip);
+    ip.dst_ip = bswap32(dst_ip);
+
     uint32_t off = 0;
     const uint8_t* data = (const uint8_t*)netpkt_data(pkt);
     bool ok = true;
@@ -200,19 +217,11 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
             break;
         }
 
-        ipv4_hdr_t ip;
-        ip.version_ihl = (uint8_t)((IP_VER4 << 4) | IP_IHL_NOOPTS);
-        ip.dscp_ecn = 0;
         ip.total_length = bswap16((uint16_t)frame_len);
-        ip.identification = bswap16(ident);
         uint16_t ff = (uint16_t)((off / 8) & 0x1FFF);
         if (more) ff |= 0x2000;
         ip.flags_frag_offset = bswap16(ff);
-        ip.ttl = ttl ? ttl : IP_TTL_DEFAULT;
-        ip.protocol = proto;
         ip.header_checksum = 0;
-        ip.src_ip = bswap32(src_ip);
-        ip.dst_ip = bswap32(dst_ip);
         ip.header_checksum = bswap16(checksum16(&ip, hdr_len));
 
         memcpy(buf, &ip, sizeof(ip));
@@ -229,6 +238,19 @@ bool ipv4_send_packet(uint32_t dst_ip, uint8_t proto, netpkt_t* pkt, const ip_tx
     return ok && off == seg_len;
 }
 
+static bool ipv4_deliver_transport(uint8_t proto, uint32_t src, uint32_t dst, l3_id_t l3_id, netpkt_t *l4pkt, bool include_shared, udp_input_result_t *udp_result, bool* checksum_done) {
+    if (proto == PROTO_TCP) {
+        tcp_input(IP_VER4, &src, &dst, l3_id, l4pkt);
+        return true;
+    }
+    if (proto == PROTO_UDP) {
+        udp_input_result_t result = udp_input(IP_VER4, &src, &dst, l3_id, l4pkt, include_shared, checksum_done);
+        if (udp_result) *udp_result = result;
+        return true;
+    }
+    return false;
+}
+
 static void ipv4_deliver_l4(uint8_t ifindex, netpkt_t* pkt, uint32_t l4_off, uint32_t l4_len, uint8_t proto, uint32_t src, uint32_t dst, const uint8_t *ip_header, uint8_t ip_header_len) {
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     if (!l2) return;
@@ -242,7 +264,9 @@ static void ipv4_deliver_l4(uint8_t ifindex, netpkt_t* pkt, uint32_t l4_off, uin
     }
 
     if (ccount == 0) return;
+    bool checksum_done = false;
     if (ipv4_is_multicast(dst)) {
+        if (proto == PROTO_TCP) return;
         bool joined = false;
         for (int i = 0; i < (int)l2->ipv4_mcast_count; ++i) {
             if (l2->ipv4_mcast[i] == dst) {
@@ -251,29 +275,40 @@ static void ipv4_deliver_l4(uint8_t ifindex, netpkt_t* pkt, uint32_t l4_off, uin
             }
         }
         if (!joined) return;
+        if (proto == PROTO_IGMP) {
+            netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
+            if (l4pkt) igmp_input(ifindex, src, dst, ip_header, ip_header_len, l4pkt);
+            return;
+        }
 
+        bool include_shared = true;
         for (int i = 0; i < ccount; ++i) {
             netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
             if (!l4pkt) continue;
             l3_id_t l3id = cand[i]->l3_id;
-            if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, ip_header, ip_header_len, l4pkt);
-            else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
-            else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
-            else netpkt_unref(l4pkt);
+            if (!ipv4_deliver_transport(proto, src, dst, l3id, l4pkt, include_shared, NULL, &checksum_done)) netpkt_unref(l4pkt);
+            include_shared = false;
         }
         return;
     }
 
     if (dst == IPV4_LIMITED_BROADCAST) {
+        if (proto == PROTO_TCP) return;
+        if (proto == PROTO_IGMP || proto == PROTO_ICMP) {
+            netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
+            if (l4pkt) {
+                if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, ip_header, ip_header_len, l4pkt);
+                else icmp_input(ifindex, l4pkt, src, dst);
+            }
+            return;
+        }
+        bool include_shared = true;
         for (int i = 0; i < ccount; ++i) {
             netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
             if (!l4pkt) continue;
             l3_id_t l3id = cand[i]->l3_id;
-            if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
-            else if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, ip_header, ip_header_len, l4pkt);
-            else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
-            else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
-            else netpkt_unref(l4pkt);
+            if (!ipv4_deliver_transport(proto, src, dst, l3id, l4pkt, include_shared, NULL, &checksum_done)) netpkt_unref(l4pkt);
+            include_shared = false;
         }
         return;
     }
@@ -292,31 +327,38 @@ static void ipv4_deliver_l4(uint8_t ifindex, netpkt_t* pkt, uint32_t l4_off, uin
         if (!l4pkt) return;
         if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
         else if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, ip_header, ip_header_len, l4pkt);
-        else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
-        else if (proto == PROTO_UDP) {
-            udp_input_result_t result = udp_input(IP_VER4, &src, &dst, match_l3id, l4pkt);
-            if (result == UDP_INPUT_NO_LISTENER && ip_header) icmp_send_port_unreachable(match_l3id, src, ip_header, ip_header_len, pkt, l4_off, l4_len);
+        else {
+            udp_input_result_t result = UDP_INPUT_DROP;
+            if (!ipv4_deliver_transport(proto, src, dst, match_l3id, l4pkt, true, &result, &checksum_done)) netpkt_unref(l4pkt);
+            else if (proto == PROTO_UDP && result == UDP_INPUT_NO_LISTENER && ip_header) icmp_send_port_unreachable(match_l3id, src, ip_header, ip_header_len, pkt, l4_off, l4_len);
         }
-        else netpkt_unref(l4pkt);
         return;
     }
 
     if (match_count > 1) {
+        if (proto == PROTO_IGMP || proto == PROTO_ICMP) {
+            netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
+            if (l4pkt) {
+                if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, ip_header, ip_header_len, l4pkt);
+                else icmp_input(ifindex, l4pkt, src, dst);
+            }
+            return;
+        }
+        bool include_shared = true;
         for (int i = 0; i < ccount; ++i) {
             if (cand[i]->ip != dst) continue;
 
             netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
             if (!l4pkt) continue;
             l3_id_t l3id = cand[i]->l3_id;
-            if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
-            else if (proto == PROTO_IGMP) igmp_input(ifindex, src, dst, ip_header, ip_header_len, l4pkt);
-            else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, l3id, l4pkt);
-            else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, l3id, l4pkt);
-            else netpkt_unref(l4pkt);
+            if (!ipv4_deliver_transport(proto, src, dst, l3id, l4pkt, include_shared, NULL, &checksum_done)) netpkt_unref(l4pkt);
+            include_shared = false;
         }
         return;
     }
 
+    if (proto == PROTO_TCP) return;
+    bool include_shared = true;
     for (int i = 0; i < ccount; ++i) {
         l3_ipv4_interface_t* v4 = cand[i];
         if (!v4 || !v4->ip || !v4->mask) continue;
@@ -324,12 +366,14 @@ static void ipv4_deliver_l4(uint8_t ifindex, netpkt_t* pkt, uint32_t l4_off, uin
         if (ipv4_broadcast_calc(v4->ip, v4->mask) != dst) continue;
 
         netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
-        if (!l4pkt) return;
+        if (!l4pkt) {
+            if (proto != PROTO_UDP) return;
+            continue;
+        }
         if (proto == PROTO_ICMP) icmp_input(ifindex, l4pkt, src, dst);
-        else if (proto == PROTO_TCP) tcp_input(IP_VER4, &src, &dst, v4->l3_id, l4pkt);
-        else if (proto == PROTO_UDP) udp_input(IP_VER4, &src, &dst, v4->l3_id, l4pkt);
-        else netpkt_unref(l4pkt);
-        return;
+        else if (!ipv4_deliver_transport(proto, src, dst, v4->l3_id, l4pkt, include_shared, NULL, &checksum_done)) netpkt_unref(l4pkt);
+        if (proto != PROTO_UDP) return;
+        include_shared = false;
     }
 }
 
@@ -338,18 +382,15 @@ void ipv4_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_L
     uint32_t ip_len = netpkt_len(pkt);
     if (ip_len < sizeof(ipv4_hdr_t)) return;
 
-    uint8_t first = 0;
-    if (!netpkt_copyout(pkt, 0, &first, sizeof(first))) return;
-    uint8_t ver = (uint8_t)(first >> 4);
-    uint8_t ihl = (uint8_t)(first & 0x0F);
-    if (ver != IP_VER4) return;
-    if (ihl < IP_IHL_NOOPTS) return;
+    uint8_t hdr_copy[60];
+    if (!netpkt_copyout(pkt, 0, hdr_copy, sizeof(ipv4_hdr_t))) return;
+    uint8_t ver = (uint8_t)(hdr_copy[0] >> 4);
+    uint8_t ihl = (uint8_t)(hdr_copy[0] & 0x0F);
+    if (ver != IP_VER4 || ihl < IP_IHL_NOOPTS) return;
 
     uint32_t hdr_len = (uint32_t)ihl * 4;
     if (ip_len < hdr_len) return;
-
-    uint8_t hdr_copy[60];
-    if (!netpkt_copyout(pkt, 0, hdr_copy, hdr_len)) return;
+    if (hdr_len > sizeof(ipv4_hdr_t) && !netpkt_copyout(pkt, sizeof(ipv4_hdr_t), hdr_copy + sizeof(ipv4_hdr_t), hdr_len - sizeof(ipv4_hdr_t))) return;
     if (checksum16(hdr_copy, hdr_len) != 0) return;
     ipv4_hdr_t ip;
     memcpy(&ip, hdr_copy, sizeof(ip));
@@ -398,7 +439,6 @@ void ipv4_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[MAC_ADDR_L
             for (int i = 0; i < IPV4_REASS_SLOTS; i++) {
                 if (g_ipv4_reass[i].used) continue;
                 slot = &g_ipv4_reass[i];
-                memset(slot, 0, sizeof(*slot));
                 slot->used = 1;
                 net_fragbuf_init(&slot->frag);
                 slot->ifindex = ifindex;

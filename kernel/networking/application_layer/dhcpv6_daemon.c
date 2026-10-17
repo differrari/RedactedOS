@@ -289,28 +289,24 @@ static void ensure_binds() {
         }
         if (!target) continue;
 
-        l3_id_t ll_l3 = 0;
-        bool ll_ok = false;
-
+        l3_ipv6_interface_t* llv6 = NULL;
         for (int i = 0; i < MAX_IPV6_PER_INTERFACE; i++) {
             l3_ipv6_interface_t* v6 = l2->l3_v6[i];
             if (!ipv6_l3_is_ready(v6)) continue;
             if (!ipv6_is_linklocal(v6->ip)) continue;
-            ll_l3 = v6->l3_id;
-            ll_ok = true;
+            llv6 = v6;
             break;
         }
-        if (!ll_ok) continue;
+        if (!llv6) continue;
 
         dhcpv6_bind_t* b = (dhcpv6_bind_t*)zalloc(sizeof(*b));
         if (!b) continue;
 
         b->ifindex = l2->ifindex;
         b->target_l3_id = target->l3_id;
-        b->bound_linklocal_l3_id = ll_l3;
+        b->bound_linklocal_l3_id = llv6->l3_id;
         b->target_generation = target->generation;
-        l3_ipv6_interface_t* llv6 = l3_ipv6_find_by_id(ll_l3);
-        b->bound_linklocal_generation = llv6 ? llv6->generation : 0;
+        b->bound_linklocal_generation = llv6->generation;
         b->last_tick_ms = (uint32_t)get_time();
         b->sol_max_rt_ms = DHCPV6_SOL_MAX_RT_MS;
         b->inf_max_rt_ms = DHCPV6_INF_MAX_RT_MS;

@@ -4,7 +4,8 @@
 #include "dns_sd.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "data/hash.h"
-#include "std/std.h"
+#include "std/memory.h"
+#include "std/string.h"
 #include "syscalls/syscalls.h"
 
 #define MDNS_QUERY_DEDUP_MAX 8
@@ -25,34 +26,34 @@ static mdns_query_dedup_t g_mdns_query_dedup[MDNS_QUERY_DEDUP_MAX];
 static uint8_t g_mdns_query_dedup_next = 0;
 
 static int mdns_probe_compare(const dns_record_t* own, uint32_t own_count, const dns_record_t* records, uint32_t record_count, const char* name) {
-    dns_record_t lhs[8];
-    dns_record_t rhs[8];
+    const dns_record_t* lhs[8];
+    const dns_record_t* rhs[8];
     uint32_t lc = 0;
     uint32_t rc = 0;
 
-    for (uint32_t i = 0; i < own_count && lc < N_ARR(lhs); i++) lhs[lc++] = own[i];
+    for (uint32_t i = 0; i < own_count && lc < N_ARR(lhs); i++) lhs[lc++] = &own[i];
     for (uint32_t i = 0; i < record_count && rc < N_ARR(rhs); i++) {
         if (records[i].section != DNS_SECTION_AUTHORITY) continue;
         if ((records[i].rrclass & DNS_CLASS_MASK) != DNS_CLASS_IN) continue;
         if (!dns_wire_name_equals(records[i].name, name)) continue;
-        rhs[rc++] = records[i];
+        rhs[rc++] = &records[i];
     }
     if (!rc) return 0;
 
     for (uint32_t i = 1; i < lc; i++) {
-        dns_record_t cur = lhs[i];
+        const dns_record_t* cur = lhs[i];
         uint32_t j = i;
-        for (; j && dns_wire_record_cmp(&lhs[j - 1], &cur) > 0; j--) lhs[j] = lhs[j - 1];
+        for (; j && dns_wire_record_cmp(lhs[j - 1], cur) > 0; j--) lhs[j] = lhs[j - 1];
         lhs[j] = cur;
     }
     for (uint32_t i = 1; i < rc; i++) {
-        dns_record_t cur = rhs[i];
+        const dns_record_t* cur = rhs[i];
         uint32_t j = i;
-        for (; j && dns_wire_record_cmp(&rhs[j - 1], &cur) > 0; j--) rhs[j] = rhs[j - 1];
+        for (; j && dns_wire_record_cmp(rhs[j - 1], cur) > 0; j--) rhs[j] = rhs[j - 1];
         rhs[j] = cur;
     }
     for (uint32_t i = 0; i < lc && i < rc; i++) {
-        int cmp = dns_wire_record_cmp(&lhs[i], &rhs[i]);
+        int cmp = dns_wire_record_cmp(lhs[i], rhs[i]);
         if (cmp) return cmp;
     }
     if (lc == rc) return 0;
@@ -139,12 +140,10 @@ static void mdns_rx_response(l2_interface_t* l2, dns_record_t* records, uint32_t
         dns_record_t* r = &records[i];
         if ((r->rrclass & DNS_CLASS_MASK) != DNS_CLASS_IN) continue;
         if (dns_wire_name_equals(r->name, g_mdns_fqdn)) host_name = true;
-        if (r->type == DNS_TYPE_A) {
-            if (!r->ttl_s) dns_cache_remove_ip(r->name, DNS_TYPE_A);
-            else dns_cache_put_ip(r->name, DNS_TYPE_A, r->addr, r->ttl_s * 1000);
-        } else if (r->type == DNS_TYPE_AAAA) {
-            if (!r->ttl_s) dns_cache_remove_ip(r->name, DNS_TYPE_AAAA);
-            else dns_cache_put_ip(r->name, DNS_TYPE_AAAA, r->addr, r->ttl_s * 1000);
+        if (r->type == DNS_TYPE_A || r->type == DNS_TYPE_AAAA) {
+            uint32_t ttl_ms = r->ttl_s > (UINT32_MAX-1) / 1000 ? UINT32_MAX - 1 : r->ttl_s * 1000;
+            if (!r->ttl_s) dns_cache_remove_ip(r->name, r->type);
+            else dns_cache_put_ip(r->name, r->type, r->addr, ttl_ms);
         }
     }
 

@@ -597,11 +597,10 @@ bool ipv6_rt_pick_best_l3(const uint8_t dst[16], uint8_t ifindex, l3_id_t* out_l
             if (x->routing_table) {
                 const ipv6_rt_table_t* rt = (const ipv6_rt_table_t*)x->routing_table;
                 if (rt->owner_l3_id && rt->owner_l3_id != x->l3_id) continue;
-                uint8_t via[16] = {0};
                 int out_pl = -1;
                 int out_met = 0x7FFF;
 
-                if (ipv6_rt_lookup_in(rt, dst, via, &out_pl, &out_met)) {
+                if (ipv6_rt_lookup_in(rt, dst, NULL, &out_pl, &out_met)) {
                     pl_tab = out_pl;
                     met_tab = out_met;
                 }

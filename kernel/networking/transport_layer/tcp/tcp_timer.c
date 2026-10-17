@@ -131,13 +131,8 @@ static int tcp_daemon_entry(int argc, char *argv[]) {
 
             bool persist_state = flow->base.state == TCP_ESTABLISHED || flow->base.state == TCP_CLOSE_WAIT || flow->base.state == TCP_FIN_WAIT_1 || flow->base.state == TCP_FIN_WAIT_2 || flow->base.state == TCP_CLOSING || flow->base.state == TCP_LAST_ACK;
             if (persist_state && flow->tx.snd_wnd == 0 && (TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una) || flow->tx.nagle_len || flow->tx.fin_tx_pending)) {
-                if (!flow->timer.persist_active) {
-                    flow->timer.persist_active = 1;
-                    flow->timer.persist_timer_ms = 0;
-                    flow->timer.persist_timeout_ms = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
-                    if (flow->timer.persist_timeout_ms < TCP_PERSIST_MIN_MS) flow->timer.persist_timeout_ms = TCP_PERSIST_MIN_MS;
-                    if (flow->timer.persist_timeout_ms > TCP_PERSIST_MAX_MS) flow->timer.persist_timeout_ms = TCP_PERSIST_MAX_MS;
-                } else {
+                if (!flow->timer.persist_active) tcp_persist_start(flow);
+                else {
                     flow->timer.persist_timer_ms += elapsed_ms;
                     if (flow->timer.persist_timer_ms >= flow->timer.persist_timeout_ms) {
                         tcp_tx_seg_t *best = tcp_find_first_unacked(flow);
@@ -170,19 +165,9 @@ static int tcp_daemon_entry(int argc, char *argv[]) {
                         }
                     }
                 }
-            } else {
-                flow->timer.persist_active = 0;
-                flow->timer.persist_timer_ms = 0;
-                flow->timer.persist_timeout_ms = 0;
-            }
+            } else tcp_persist_reset(flow);
 
             if (TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una)) {
-                for (uint32_t j = 0; j < TCP_MAX_TX_SEGS; j++) {
-                    tcp_tx_seg_t *sample = &flow->tx.txq[j];
-                    if (!sample->used || !sample->rtt_sample || sample->persist) continue;
-                    sample->rtt_timer_ms += elapsed_ms;
-                }
-
                 tcp_tx_seg_t *seg = tcp_find_first_unacked(flow);
                 if (seg && !(flow->tx.snd_wnd == 0 && !seg->syn)) {
                     seg->timer_ms += elapsed_ms;

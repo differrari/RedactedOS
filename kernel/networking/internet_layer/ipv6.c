@@ -48,11 +48,15 @@ typedef struct __attribute__((packed)) {
 } ipv6_frag_hdr_t;
 
 static reass_slot_t g_reass[REASS_SLOTS] = {0};
+static uint8_t g_reass_active;
 
 static void reass_free(reass_slot_t *s) {
     if (!s) return;
     net_fragbuf_free(&s->frag);
-    memset(s, 0, sizeof(*s));
+    if (s->used && g_reass_active) g_reass_active--;
+    s->used = 0;
+    s->have_first = 0;
+    s->first_pkt_len = 0;
 }
 
 static bool ipv6_error_quote(netpkt_t* pkt, const ipv6_hdr_t* ip6, uint32_t l4_off, uint32_t l4_len, uint8_t* out, uint32_t cap, uint32_t* out_len) {
@@ -105,9 +109,32 @@ static void icmpv6_send_error(uint8_t ifindex, const uint8_t src_ip[16], const u
     eth_send_frame_on(ifindex, ETHERTYPE_IPV6, dst_mac, pkt);
 }
 
+static void ipv6_deliver_transport(netpkt_t *pkt, uint32_t l4_off, uint32_t l4_len, uint8_t proto, const uint8_t src[16], const uint8_t dst[16], l3_id_t l3_id, bool include_shared, udp_input_result_t *udp_result, bool* checksum_done) {
+    if (proto != PROTO_TCP && proto != PROTO_UDP) return;
+    if (proto == PROTO_TCP && ipv6_is_multicast(dst)) return;
+
+    netpkt_t* l4pkt = netpkt_view(pkt, l4_off, l4_len);
+    if (!l4pkt) return;
+
+    if (proto == PROTO_TCP) tcp_input(IP_VER6, src, dst, l3_id, l4pkt);
+    else {
+        udp_input_result_t result = udp_input(IP_VER6, src, dst, l3_id, l4pkt, include_shared, checksum_done);
+        if (udp_result) *udp_result = result;
+    }
+}
+
 bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt, const ip_tx_opts_t* opts, uint8_t hop_limit, uint8_t dontfrag, uint8_t dontroute) {
-    if (!dst || !pkt || !netpkt_len(pkt)) {
+    if (!dst || !pkt) {
         if (pkt) netpkt_unref(pkt);
+        return false;
+    }
+    if (next_header == PROTO_TCP && ipv6_is_multicast(dst)) {
+        netpkt_unref(pkt);
+        return false;
+    }
+    uint32_t seg_len = netpkt_len(pkt);
+    if (!seg_len || seg_len > UINT16_MAX) {
+        netpkt_unref(pkt);
         return false;
     }
 
@@ -128,13 +155,15 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     uint8_t nh[16];
     ipv6_cpy(src, plan.src_ip);
     ipv6_cpy(nh, dst);
+    bool linklocal = ipv6_is_linklocal(dst);
+    bool multicast = ipv6_is_multicast(dst);
 
-    if (ipv6_is_linklocal(src) && !ipv6_is_linklocal(dst) && !ipv6_is_multicast(dst)) {
+    if (ipv6_is_linklocal(src) && !linklocal && !multicast) {
         netpkt_unref(pkt);
         return false;
     }
 
-    if (!ipv6_is_linklocal(dst) && !ipv6_is_multicast(dst)) {
+    if (!linklocal && !multicast) {
         if (dontroute) {
             if (!ipv6_tx_plan_onlink(&plan, dst)) {
                 netpkt_unref(pkt);
@@ -152,7 +181,7 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     l2_interface_t* l2 = src_v6->l2;
     uint8_t dst_mac[6];
     bool need_ndp = false;
-    if (ipv6_is_multicast(dst)) ipv6_multicast_mac(dst, dst_mac);
+    if (multicast) ipv6_multicast_mac(dst, dst_mac);
     else if (l2 && l2->link_kind == NET_LINK_LOOPBACK) mac_clear(dst_mac);
     else need_ndp = true;
 
@@ -167,7 +196,6 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
     }
     if (mtu < IPV6_MIN_MTU) mtu = IPV6_MIN_MTU;
     uint32_t hdr_len = (uint32_t)sizeof(ipv6_hdr_t);
-    uint32_t seg_len = netpkt_len(pkt);
     uint32_t total_l3 = hdr_len + seg_len;
 
     if (total_l3 <= (uint32_t)mtu) {
@@ -207,6 +235,13 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
         rng_init_random(&rng);
     uint32_t ident = rng_next32(&rng);
 
+    ipv6_hdr_t ip6;
+    ip6.ver_tc_fl = bswap32((uint32_t)(6u << 28));
+    ip6.next_header = IPV6_NH_FRAGMENT;
+    ip6.hop_limit = hop_limit ? hop_limit : (src_v6->l2->ipv6_default_hop_limit ? src_v6->l2->ipv6_default_hop_limit : 64);
+    ipv6_cpy(ip6.src, src);
+    ipv6_cpy(ip6.dst, dst);
+
     uint32_t off = 0;
     const uint8_t* data = (const uint8_t*)netpkt_data(pkt);
     bool ok = true;
@@ -231,14 +266,7 @@ bool ipv6_send_packet(const uint8_t dst[16], uint8_t next_header, netpkt_t* pkt,
             break;
         }
 
-        ipv6_hdr_t ip6;
-        ip6.ver_tc_fl = bswap32((uint32_t)(6u << 28));
         ip6.payload_len = bswap16((uint16_t)payload_len);
-        ip6.next_header = IPV6_NH_FRAGMENT;
-        ip6.hop_limit = hop_limit ? hop_limit : (src_v6->l2->ipv6_default_hop_limit ? src_v6->l2->ipv6_default_hop_limit : 64);
-        ipv6_cpy(ip6.src, src);
-        ipv6_cpy(ip6.dst, dst);
-
         memcpy(buf, &ip6, sizeof(ip6));
         ipv6_frag_hdr_t fh;
         fh.next_header = next_header;
@@ -337,6 +365,7 @@ bool ipv6_skip_ext_headers(const netpkt_t* pkt, uint8_t* nh, uint32_t* l4_off, u
 
 void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     if (!pkt) return;
+    bool checksum_done = false;
     uint32_t ip_len = netpkt_len(pkt);
     if (ip_len < sizeof(ipv6_hdr_t)) return;
 
@@ -351,18 +380,15 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         if (!l2 || l2->link_kind != NET_LINK_LOOPBACK) return;
     }
 
-    uint32_t now = (uint32_t)get_time();
-    for (int i = 0; i < REASS_SLOTS; i++) {
-        reass_slot_t *s = &g_reass[i];
-        if (!s->used) continue;
-
-        if (now - s->last_update_ms < 60000u) continue;
-
-        if (s->have_first && s->first_pkt_len) {
-            icmpv6_send_error(s->ifindex, s->dst, s->src, s->first_src_mac, 3, 1, 0, s->first_pkt, s->first_pkt_len);
+    if (g_reass_active) {
+        uint32_t now = (uint32_t)get_time();
+        for (int i = 0; i < REASS_SLOTS; i++) {
+            reass_slot_t *s = &g_reass[i];
+            if (!s->used || now - s->last_update_ms < 60000u) continue;
+            if (s->have_first && s->first_pkt_len)
+                icmpv6_send_error(s->ifindex, s->dst, s->src, s->first_src_mac, 3, 1, 0, s->first_pkt, s->first_pkt_len);
+            reass_free(s);
         }
-
-        reass_free(s);
     }
 
     uint16_t payload_len = bswap16(ip6->payload_len);
@@ -401,21 +427,34 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
 
     if (!ipv6_skip_ext_headers(pkt, &nh, &l4_off, &l4_len, true, &router_alert)) return;
 
+    uint8_t inner_nh = 0;
+    uint32_t ident = 0, off = 0, frag_off = 0, frag_len = 0;
+    uint8_t more = 0;
+
     if (nh == IPV6_NH_FRAGMENT) {
         if (l4_len < sizeof(ipv6_frag_hdr_t)) return;
 
         ipv6_frag_hdr_t fh;
         if (!netpkt_copyout(pkt, l4_off, &fh, sizeof(fh))) return;
-        uint8_t inner_nh = fh.next_header;
+        inner_nh = fh.next_header;
         uint16_t off_flags = bswap16(fh.offset_flags);
-        uint32_t ident = bswap32(fh.identification);
+        ident = bswap32(fh.identification);
 
-        uint32_t off = ((uint32_t)(off_flags >> 3) & 0x1FFFu) * 8u;
-        uint8_t more = (off_flags & 0x0001u) ? 1u : 0u;
+        off = ((uint32_t)(off_flags >> 3) & 0x1FFFu) * 8u;
+        more = (off_flags & 0x0001u) ? 1u : 0u;
 
-        uint32_t frag_off = l4_off + (uint32_t)sizeof(ipv6_frag_hdr_t);
-        uint32_t frag_len = l4_len-(uint32_t)sizeof(ipv6_frag_hdr_t);
+        frag_off = l4_off + (uint32_t)sizeof(ipv6_frag_hdr_t);
+        frag_len = l4_len-(uint32_t)sizeof(ipv6_frag_hdr_t);
 
+        if (!off && !more) {
+            nh = inner_nh;
+            l4_off = frag_off;
+            l4_len = frag_len;
+            if (!ipv6_skip_ext_headers(pkt, &nh, &l4_off, &l4_len, false, NULL)) return;
+        }
+    }
+
+    if (nh == IPV6_NH_FRAGMENT) {
         if (more && (frag_len & 7u)) {
             uint8_t invoke_buf[sizeof(ipv6_hdr_t) + sizeof(ipv6_frag_hdr_t) + 8];
             uint32_t inv_len = 0;
@@ -459,6 +498,7 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 if (t->used) continue;
 
                 t->used = 1;
+                g_reass_active++;
                 t->ifindex = ifindex;
                 t->ident = ident;
                 ipv6_cpy(t->src, ip6->src);
@@ -490,7 +530,10 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         if (off == 0 && !has_ulh) {
             uint8_t invoke_buf[sizeof(ipv6_hdr_t) + sizeof(ipv6_frag_hdr_t) + 64];
             uint32_t inv_len = 0;
-            if (!ipv6_error_quote(pkt, ip6, l4_off, l4_len, invoke_buf, sizeof(invoke_buf), &inv_len))return;
+            if (!ipv6_error_quote(pkt, ip6, l4_off, l4_len, invoke_buf, sizeof(invoke_buf), &inv_len)) {
+                reass_free(s);
+                return;
+            }
             icmpv6_send_error(ifindex, ip6->dst, ip6->src, src_mac, 4, 3, 0u, invoke_buf, inv_len);
             reass_free(s);
             return;
@@ -572,14 +615,12 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
                 return;
             }
 
+            bool include_shared = true;
             for (int i = 0; i < ccount; i++) {
                 l3_ipv6_interface_t* v6 = cand[i];
                 if (!ipv6_is_linklocal(v6->ip) && ipv6_is_linkscope_mcast(ip6->dst)) continue;
-                netpkt_t* l4pkt = netpkt_view(reassembled, payload_off, payload_size);
-                if (!l4pkt) continue;
-                if (inner_nh == PROTO_UDP) udp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
-                else if (inner_nh == PROTO_TCP) tcp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
-                else netpkt_unref(l4pkt);
+                ipv6_deliver_transport(reassembled, payload_off, payload_size, inner_nh, ip6->src, ip6->dst, v6->l3_id, include_shared, NULL, &checksum_done);
+                include_shared = false;
             }
 
             netpkt_unref(reassembled);
@@ -597,12 +638,11 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         }
 
         if (match_count >= 1) {
-            netpkt_t* l4pkt = netpkt_view(reassembled, payload_off, payload_size);
-            if (l4pkt) {
-                if (inner_nh == PROTO_TCP) tcp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
-                else if (inner_nh == PROTO_UDP) udp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
-                else netpkt_unref(l4pkt);
-            }
+            udp_input_result_t result = UDP_INPUT_DROP;
+            ipv6_deliver_transport(reassembled, payload_off, payload_size, inner_nh, ip6->src, ip6->dst, match_l3id, true, &result, &checksum_done);
+            if (inner_nh == PROTO_UDP && result == UDP_INPUT_NO_LISTENER && s->have_first && s->first_pkt_len && 
+                !ipv6_is_unspecified(ip6->src) && !ipv6_is_multicast(ip6->src))
+                icmpv6_send_error(ifindex, ip6->dst, ip6->src, s->first_src_mac, ICMPV6_DEST_UNREACH, ICMPV6_CODE_PORT_UNREACH, 0, s->first_pkt, s->first_pkt_len);
         }
         netpkt_unref(reassembled);
         reass_free(s);
@@ -637,24 +677,14 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
         }
         if (!joined) return;
 
+        bool include_shared = true;
         for (int i = 0; i < ccount; i++) {
             l3_ipv6_interface_t* v6 = cand[i];
             if (!ipv6_is_linklocal(v6->ip) && ipv6_is_linkscope_mcast(ip6->dst))
                 continue;
 
-            switch (nh) {
-            netpkt_t* l4pkt;
-            case PROTO_UDP:
-                l4pkt = netpkt_view(pkt, l4_off, l4_len);
-                if (l4pkt) udp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
-                break;
-            case PROTO_TCP:
-                l4pkt = netpkt_view(pkt, l4_off, l4_len); 
-                if (l4pkt) tcp_input(IP_VER6, ip6->src, ip6->dst, v6->l3_id, l4pkt);
-                break;
-            default:
-                break;
-            }
+            ipv6_deliver_transport(pkt, l4_off, l4_len, nh, ip6->src, ip6->dst, v6->l3_id, include_shared, NULL, &checksum_done);
+            include_shared = false;
         }
         return;
     }
@@ -669,18 +699,14 @@ void ipv6_input(uint8_t ifindex, netpkt_t* pkt, const uint8_t src_mac[6]) {
     }
 
     if (match_count >= 1) {
-        switch (nh) {
-        netpkt_t* l4pkt;
-        case PROTO_TCP:
-            l4pkt = netpkt_view(pkt, l4_off, l4_len);
-            if (l4pkt) tcp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
-            break;
-        case PROTO_UDP:
-            l4pkt = netpkt_view(pkt, l4_off, l4_len);
-            if (l4pkt) udp_input(IP_VER6, ip6->src, ip6->dst, match_l3id, l4pkt);
-            break;
-        default:
-            break;
+        udp_input_result_t result = UDP_INPUT_DROP;
+        ipv6_deliver_transport(pkt, l4_off, l4_len, nh, ip6->src, ip6->dst, match_l3id, true, &result, &checksum_done);
+        if (nh == PROTO_UDP && result == UDP_INPUT_NO_LISTENER &&
+            !ipv6_is_unspecified(ip6->src) && !ipv6_is_multicast(ip6->src)) {
+            uint8_t invoke_buf[IPV6_MIN_MTU - sizeof(ipv6_hdr_t) - sizeof(icmpv6_hdr_t) - 4];
+            uint32_t inv_len = 0;
+            if (ipv6_error_quote(pkt, ip6, l4_off, l4_len, invoke_buf, sizeof(invoke_buf), &inv_len))
+                icmpv6_send_error(ifindex, ip6->dst, ip6->src, src_mac, ICMPV6_DEST_UNREACH, ICMPV6_CODE_PORT_UNREACH, 0, invoke_buf, inv_len);
         }
         return;
     }

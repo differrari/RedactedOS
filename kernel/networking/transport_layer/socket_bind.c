@@ -14,6 +14,7 @@
 #define SOCKET_PORT_MIN_EPHEMERAL 49152u
 #define SOCKET_PORT_MAX_EPHEMERAL 65535u
 #define SOCKET_BIND_LIST_END 0xFFFF
+#define BIND_FANOUT_HASH_MAX 12
 #define SOCKET_BIND_MAP_CAPACITY SOCKET_BIND_MAX * 4
 #define SOCKET_BIND_FLAG_REUSEADDR (1u << 0)
 #define SOCKET_BIND_FLAG_REUSEPORT (1u << 1)
@@ -476,8 +477,9 @@ ksocket_t* socket_bind_lookup(protocol_t protocol, ip_version_t ipver, l3_id_t l
     if (!bind_ready) return NULL;
 
     uint32_t ip_len = ipver == IP_VER6 ? 16u : 4u;
-    uint8_t reuseport_key[1 + sizeof(src_port) + sizeof(dst_port) + 32 + sizeof(socket_handle_t)];
+    uint8_t reuseport_key[1 + sizeof(src_port) + sizeof(dst_port) + 32];
     uint32_t reuseport_key_len = 0;
+    uint64_t reuseport_base = 0;
 
     irq_flags_t irq = irq_save_disable(); //TODO lock
     uint16_t head = SOCKET_BIND_LIST_END;
@@ -530,11 +532,14 @@ ksocket_t* socket_bind_lookup(protocol_t protocol, ip_version_t ipver, l3_id_t l
                 reuseport_key_len += ip_len;
                 memcpy(reuseport_key + reuseport_key_len, dst_ip_addr, ip_len);
                 reuseport_key_len += ip_len;
+                reuseport_base = hash_map_fnv1a64(reuseport_key, reuseport_key_len);
             }
 
             socket_handle_t handle = socket_core_export_handle(e->socket);
-            memcpy(reuseport_key + reuseport_key_len, &handle, sizeof(handle));
-            uint64_t hash = hash_map_fnv1a64(reuseport_key, reuseport_key_len + sizeof(handle));
+            uint64_t hash = reuseport_base ^ ((uint64_t)handle * 0x9E3779B97F4A7C15ULL);
+            hash = (hash ^ (hash >> 30)) * 0xBF51476C1CE40DB9ULL;
+            hash = (hash ^ (hash >> 27)) * 0x94D049BB133111EBULL;
+            hash ^= hash >> 31;
             if (!reuseport_selected || hash > reuseport_hash) {
                 reuseport_selected = e;
                 reuseport_hash = hash;
@@ -549,27 +554,50 @@ ksocket_t* socket_bind_lookup(protocol_t protocol, ip_version_t ipver, l3_id_t l
     return socket;
 }
 
-ksocket_t* socket_bind_udp_next_fanout(ip_version_t ipver, l3_id_t l3_id, uint8_t ifindex, const void* dst_ip_addr, uint16_t dst_port, uint32_t* cursor) {
-    if (!cursor || !dst_ip_addr || (ipver != IP_VER4 && ipver != IP_VER6)) return NULL;
+ksocket_t* socket_bind_udp_next_fanout(ip_version_t ipver, l3_id_t l3_id, uint8_t ifindex, const void* dst_ip_addr, uint16_t dst_port, bool include_shared, socket_bind_iter_t* iter) {
+    if (!iter || !dst_ip_addr || (ipver != IP_VER4 && ipver != IP_VER6)) return NULL;
 
-    uint32_t start = *cursor;
+    uint32_t start = iter->next;
     if (start >= SOCKET_BIND_MAX) return NULL;
 
     irq_flags_t irq = irq_save_disable();
-    for (uint32_t i = start; i < SOCKET_BIND_MAX; ++i) {
-        socket_bind_entry_t* e = &bind_entries[i];
-        if (!e->socket || socket_core_protocol(e->socket) != PROTO_UDP || e->port != dst_port || socket_core_is_closing(e->socket)) continue;
-        if (!socket_bind_match_score(&e->spec, ipver, l3_id, ifindex, dst_ip_addr)) continue;
-
-        *cursor = i + 1;
-        socket_core_ref(e->socket);
+    uint16_t head = SOCKET_BIND_LIST_END;
+    if (!bind_ready || (!iter->scan && !fixed_hash_find(&bind_map, socket_bind_key(PROTO_UDP, dst_port), &head))) {
+        iter->next = SOCKET_BIND_MAX;
         irq_restore(irq);
-        return e->socket;
+        return NULL;
     }
 
-    *cursor = SOCKET_BIND_MAX;
+    uint16_t best = SOCKET_BIND_LIST_END ;
+    if (iter->scan) {
+        for (uint32_t i = start; i < SOCKET_BIND_MAX; i++) {
+            socket_bind_entry_t* e = &bind_entries[i];
+            if (!e->socket || e->port != dst_port || socket_core_protocol(e->socket) != PROTO_UDP || socket_core_is_closing(e->socket)) continue;
+            if (!include_shared && e->spec.kind != BIND_L3) continue;
+            if (!socket_bind_match_score(&e->spec, ipver, l3_id, ifindex, dst_ip_addr)) continue;
+            best = (uint16_t)i;
+            break;
+        }
+    } else {
+        for (uint16_t i = head; i != SOCKET_BIND_LIST_END; i = bind_entries[i].next) {
+            if (i >= SOCKET_BIND_MAX) break;
+            socket_bind_entry_t* e = &bind_entries[i];
+            if (i < start || i >= best || !e->socket || e->port != dst_port || socket_core_is_closing(e->socket)) continue;
+            if (!include_shared && e->spec.kind != BIND_L3) continue;
+            if (!socket_bind_match_score(&e->spec, ipver, l3_id, ifindex, dst_ip_addr)) continue;
+            best = i;
+        }
+    }
+
+    ksocket_t* socket = best != SOCKET_BIND_LIST_END ? bind_entries[best].socket : NULL;
+    if (socket) {
+        iter->next = (uint16_t)(best + 1);
+        if (iter->hits < BIND_FANOUT_HASH_MAX) iter->hits++;
+        if (iter->hits == BIND_FANOUT_HASH_MAX) iter->scan = true;
+        socket_core_ref(socket);
+    } else iter->next = SOCKET_BIND_MAX;
     irq_restore(irq);
-    return NULL;
+    return socket;
 }
 
 static bool socket_bind_build_tx_opts(const SockBindSpec* spec, ip_version_t ver, ip_tx_opts_t* tx, const ip_tx_opts_t** hint) {

@@ -32,7 +32,8 @@ udp_input_result_t udp_input(ip_version_t ipver,
                const void *src_ip_addr,
                const void *dst_ip_addr,
                l3_id_t l3_id,
-               netpkt_t* pkt);
+               netpkt_t* pkt,
+               bool include_shared, bool* checksum_done);
 
 
 #ifdef __cplusplus

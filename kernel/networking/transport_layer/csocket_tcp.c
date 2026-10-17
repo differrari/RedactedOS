@@ -489,7 +489,28 @@ ksocket_t* socket_accept_tcp(socket_impl_t sh) {
     if (!s || !s->listening || !s->pending) return NULL;
 
     uint32_t start_ms = get_time();
-    while (tcp_socket_backlog_len(s) == 0) {
+    while (1) {
+        irq_flags_t irq = irq_save_disable(); //TODO lock
+        ksocket_t* owner = s->listening && s->pending && s->backlogLen > 0 ? s->pending[0] : 0;
+        if (owner) socket_core_ref(owner);
+        irq_restore(irq);
+
+        if (owner) {
+            tcp_socket_t* client = (tcp_socket_t*)socket_core_impl(owner);
+            int32_t state = client ? tcp_socket_connection_state(client) : -1;
+            if (state != 0) {
+                ksocket_t* ready = tcp_socket_pop_pending_at(s, 0, owner);
+                socket_core_put(owner);
+                if (ready) {
+                    if (state > 0) return ready;
+                    tcp_socket_abort_pending(ready);
+                }
+                continue;
+            }
+            socket_core_put(owner);
+        }
+
+        if (!s->listening || !s->pending || s->closed) return NULL;
         if (s->options.flags & SOCK_OPT_NONBLOCK) return NULL;
         if ((s->options.flags & SOCK_OPT_RECV_TIMEOUT) && s->options.recv_timeout_ms) {
             uint32_t elapsed = get_time() - start_ms;
@@ -497,19 +518,6 @@ ksocket_t* socket_accept_tcp(socket_impl_t sh) {
         }
         msleep(5);
     }
-
-    while (tcp_socket_backlog_len(s) > 0) {
-        ksocket_t* owner = tcp_socket_pop_pending_at(s, 0, NULL);
-        tcp_socket_t* client = owner ? (tcp_socket_t*)socket_core_impl(owner) : NULL;
-
-        if (client && client->flow.flow_generation) return owner;
-
-        if (owner) {
-            tcp_socket_abort_pending(owner);
-        }
-    }
-
-    return NULL;
 }
 
 int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst) {

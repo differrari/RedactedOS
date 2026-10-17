@@ -44,6 +44,7 @@ typedef struct raw_socket {
 } raw_socket_t;
 
 static raw_socket_t* g_raw_sockets[RAW_SOCKET_MAX];
+static uint32_t g_raw_count;
 
 static int32_t raw_set_filter(raw_socket_t* s, const void* value, uint32_t len) {
     if (!s) return SOCK_ERR_INVAL;
@@ -180,6 +181,7 @@ socket_impl_t socket_raw_create(ksocket_t* owner, const SocketOptions* extra) {
     for (int i = 0; i < RAW_SOCKET_MAX; i++) {
         if (!g_raw_sockets[i]) {
             g_raw_sockets[i] = s;
+            g_raw_count++;
             s->registered = true;
             irq_restore(irq);
             return s;
@@ -198,6 +200,7 @@ void socket_destroy_raw(socket_impl_t sh) {
         irq_flags_t irq = irq_save_disable();
         for (int i = 0; i < RAW_SOCKET_MAX; i++) if (g_raw_sockets[i] == s) {
                 g_raw_sockets[i] = NULL;
+                if (g_raw_count) g_raw_count--;
                 break;
         }
         s->registered = false;
@@ -217,6 +220,7 @@ int32_t socket_close_raw(socket_impl_t sh) {
         for (int i = 0; i < RAW_SOCKET_MAX; i++) {
             if (g_raw_sockets[i] == s) {
                 g_raw_sockets[i] = NULL;
+                if (g_raw_count) g_raw_count--;
                 break;
             }
         }
@@ -614,6 +618,10 @@ void socket_raw_l3_deleted(socket_impl_t sh, l3_id_t l3_id) {
 
 bool socket_raw_input_v4(protocol_t protocol, uint8_t ifindex, uint32_t src, uint32_t dst, netpkt_t* pkt) {
     if ((protocol != PROTO_ICMP && protocol != PROTO_IGMP) || !ifindex || !pkt) return false;
+    irq_flags_t check_irq = irq_save_disable(); //TODO lock
+    bool have_sockets = g_raw_count != 0;
+    irq_restore(check_irq);
+    if (!have_sockets) return false;
 
     net_l4_endpoint src_ep;
     make_ep(&src, 0, IP_VER4, &src_ep);
@@ -675,6 +683,10 @@ bool socket_raw_input_v4(protocol_t protocol, uint8_t ifindex, uint32_t src, uin
 
 bool socket_raw_input_v6(uint8_t ifindex, const uint8_t src[16], const uint8_t dst[16], netpkt_t* pkt) {
     if (!ifindex || !src || !dst || !pkt) return false;
+    irq_flags_t check_irq = irq_save_disable(); //TODO lock
+    bool have_sockets = g_raw_count != 0;
+    irq_restore(check_irq);
+    if (!have_sockets) return false;
 
     net_l4_endpoint src_ep;
     make_ep(src, 0, IP_VER6, &src_ep);

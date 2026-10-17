@@ -1,6 +1,7 @@
 #include "dns_cache.h"
 #include "dns_wire.h"
-#include "std/std.h"
+#include "std/memory.h"
+#include "std/string.h"
 #include "syscalls/syscalls.h"
 
 typedef struct {
@@ -32,30 +33,43 @@ static void dns_cache_ensure_init(void) {
 
 void dns_cache_put_ip(const char* name, uint16_t rr_type,const uint8_t addr[16], uint32_t ttl_ms) {
     if (!name || !addr) return;
+    dns_cache_ensure_init();
     char norm[128];
     if (!dns_wire_name_normalize(name, norm, sizeof(norm))) return;
     uint32_t nlen = strlen(norm);
     if (!nlen) return;
     if (!ttl_ms) return;
 
-    if (nlen == 9u&& memcmp(norm, "localhost", 9) == 0 && (rr_type == DNS_TYPE_A || rr_type == DNS_TYPE_AAAA)) ttl_ms = 0xFFFFFFFF;
+    if (nlen == 9u&& memcmp(norm, "localhost", 9) == 0 && (rr_type == DNS_TYPE_A || rr_type == DNS_TYPE_AAAA)) {
+        for (int i = 0; i < 32; i++) {
+            if (g_dns_cache[i].in_use && g_dns_cache[i].rr_type == rr_type && g_dns_cache[i].name_len == nlen && !memcmp(g_dns_cache[i].name, norm, nlen)) return;
+        }
+        ttl_ms = UINT32_MAX;
+    }
     int free_i = -1;
+    int evict_i = -1;
+    uint64_t evict_expire = UINT64_MAX;
     uint64_t now = get_time();
     for (int i = 0; i < 32; i++) {
         if (!g_dns_cache[i].in_use || (g_dns_cache[i].expire_ms != UINT64_MAX && now >= g_dns_cache[i].expire_ms)) {
             if (free_i < 0) free_i = i;
             continue;
         }
+        if (g_dns_cache[i].expire_ms < evict_expire) {
+            evict_expire = g_dns_cache[i].expire_ms;
+            evict_i = i;
+        }
         if (g_dns_cache[i].rr_type != rr_type) continue;
         if (g_dns_cache[i].name_len != nlen) continue;
         if (memcmp(g_dns_cache[i].name, norm, nlen) != 0) continue;
         memcpy(g_dns_cache[i].addr, addr, 16);
-        g_dns_cache[i].expire_ms = ttl_ms == 0xFFFFFFFFu ? UINT64_MAX : get_time() + ttl_ms;
+        g_dns_cache[i].expire_ms = ttl_ms == 0xFFFFFFFFu ? UINT64_MAX : now + ttl_ms;
         return;
     }
 
     int idx = free_i;
-    if (idx < 0) idx = 0;
+    if (idx < 0) idx = evict_i;
+    if (idx < 0) return;
     memset(&g_dns_cache[idx], 0, sizeof(g_dns_cache[idx]));
     g_dns_cache[idx].in_use = 1;
     g_dns_cache[idx].rr_type = rr_type;
@@ -67,9 +81,12 @@ void dns_cache_put_ip(const char* name, uint16_t rr_type,const uint8_t addr[16],
 }
 
 void dns_cache_remove_ip(const char* name, uint16_t rr_type) {
+    if (!name) return;
+    dns_cache_ensure_init();
     char norm[128];
     if (!dns_wire_name_normalize(name, norm, sizeof(norm))) return;
     uint32_t nlen = strlen(norm);
+    if (nlen == 9 && memcmp(norm, "localhost", 9) == 0 && (rr_type == DNS_TYPE_A || rr_type == DNS_TYPE_AAAA)) return;
     for (int i = 0; i < 32; i++) {
         if (!g_dns_cache[i].in_use) continue;
         if (g_dns_cache[i].rr_type != rr_type) continue;

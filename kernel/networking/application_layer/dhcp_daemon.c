@@ -498,6 +498,18 @@ static void dhcp_drop_lease_and_retry(dhcp_if_state_t* st) {
     st->retry_left_ms = dhcp_next_backoff_ms(st);
 }
 
+static void dhcp_finish_ack(dhcp_if_state_t* st, dhcp_apply_result_t applied) {
+    if (applied == DHCP_APPLY_OK) {
+        st->state = DHCP_S_BOUND;
+        st->backoff_ms = 0;
+        st->retry_left_ms = 0;
+        st->rx_fast_left_ms = 0;
+    } else {
+        dhcp_drop_lease_and_retry(st);
+        if (applied == DHCP_APPLY_CONFLICT && st->retry_left_ms < 10000) st->retry_left_ms = 10000;
+    }
+}
+
 static void fsm_once_for(dhcp_if_state_t* st) {
     switch (st->state) {
     case DHCP_S_INIT: {
@@ -552,15 +564,7 @@ static void fsm_once_for(dhcp_if_state_t* st) {
             st->retry_left_ms = dhcp_next_backoff_ms(st);
         } else if (mtype == DHCPACK) {
             dhcp_apply_result_t applied = apply_offer_to_l3(st->l3_id, &resp, resp_len, st->last_xid, st);
-            if (applied == DHCP_APPLY_OK) {
-                st->state = DHCP_S_BOUND;
-                st->backoff_ms = 0;
-                st->retry_left_ms = 0;
-                st->rx_fast_left_ms = 0;
-            } else {
-                dhcp_drop_lease_and_retry(st);
-                if (applied == DHCP_APPLY_CONFLICT && st->retry_left_ms < 10000) st->retry_left_ms = 10000;
-            }
+            dhcp_finish_ack(st, applied);
         } else {
             dhcp_drop_lease_and_retry(st);
         }
@@ -612,15 +616,7 @@ static void fsm_once_for(dhcp_if_state_t* st) {
         if (payload_len) {
             if (mtype == DHCPACK) {
                 dhcp_apply_result_t applied = apply_offer_to_l3(st->l3_id, &p, payload_len, st->last_xid, st);
-                if (applied == DHCP_APPLY_OK) {
-                    st->state = DHCP_S_BOUND;
-                    st->backoff_ms = 0;
-                    st->retry_left_ms = 0;
-                    st->rx_fast_left_ms = 0;
-                } else {
-                    dhcp_drop_lease_and_retry(st);
-                    if (applied == DHCP_APPLY_CONFLICT && st->retry_left_ms < 10000) st->retry_left_ms = 10000;
-                }
+                dhcp_finish_ack(st, applied);
             } else dhcp_drop_lease_and_retry(st);
             break;
         }
@@ -644,15 +640,7 @@ static void fsm_once_for(dhcp_if_state_t* st) {
         if (payload_len) {
             if (mtype == DHCPACK) {
                 dhcp_apply_result_t applied = apply_offer_to_l3(st->l3_id, &p, payload_len, st->last_xid, st);
-                if (applied == DHCP_APPLY_OK) {
-                    st->state = DHCP_S_BOUND;
-                    st->backoff_ms = 0;
-                    st->retry_left_ms = 0;
-                    st->rx_fast_left_ms = 0;
-                } else {
-                    dhcp_drop_lease_and_retry(st);
-                    if (applied == DHCP_APPLY_CONFLICT && st->retry_left_ms < 10000) st->retry_left_ms = 10000;
-                }
+                dhcp_finish_ack(st, applied);
             } else {
                 dhcp_drop_lease_and_retry(st);
             }

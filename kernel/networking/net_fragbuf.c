@@ -1,6 +1,6 @@
 #include "networking/net_fragbuf.h"
+#include "alloc/allocate.h"
 #include "std/memory.h"
-#include "std/string.h"
 
 void net_fragbuf_init(net_fragbuf_t *fb) {
     if (!fb) return;
@@ -18,7 +18,12 @@ void net_fragbuf_free(net_fragbuf_t *fb) {
 
 bool net_fragbuf_add(net_fragbuf_t *fb, netpkt_t *pkt, uint32_t pkt_off, uint32_t frag_off, uint32_t frag_len, uint8_t more) {
     if (!fb) return false;
-    if (frag_len && !pkt) return false;
+    if (frag_len) {
+        if (!pkt) return false;
+        uint32_t pkt_len = netpkt_len(pkt);
+        if (pkt_off > pkt_len || frag_len > pkt_len - pkt_off) return false;
+    }
+    if (frag_off & 7u) return false;
     if (!fb->max_len) fb->max_len = NET_FRAGBUF_DEFAULT_MAX_LEN;
     if (!fb->step) fb->step = NET_FRAGBUF_DEFAULT_STEP;
     if (frag_off > fb->max_len || frag_len > fb->max_len - frag_off) return false;
@@ -38,7 +43,16 @@ bool net_fragbuf_add(net_fragbuf_t *fb, netpkt_t *pkt, uint32_t pkt_off, uint32_
     if (need_blocks > fb->block_count) return false;
 
     uint32_t start = frag_off / 8u;
-    for (uint32_t i = start; i < need_blocks; i++) if (fb->blocks[i >> 3] & (uint8_t)(1u << (i & 7))) return false;
+    uint32_t first_byte = start / 8u;
+    uint32_t end_byte = (need_blocks + 7u) / 8u;
+    uint8_t first_mask = (uint8_t)(0xFF << (start & 7u));
+    uint8_t last_mask = (need_blocks & 7u) ? (uint8_t)((1u << (need_blocks & 7u)) - 1) : 0xFF;
+    if (first_byte < end_byte) {
+        uint8_t mask = first_byte + 1 == end_byte ? first_mask & last_mask : first_mask;
+        if (fb->blocks[first_byte] & mask) return false;
+        for (uint32_t i = first_byte + 1; i + 1 < end_byte; i++) if (fb->blocks[i]) return false;
+        if (first_byte + 1 < end_byte && (fb->blocks[end_byte-1] & last_mask)) return false;
+    }
 
     if (frag_len && fb->cap < frag_off + frag_len) {
         uint32_t new_cap = ((frag_off + frag_len + fb->step - 1u) / fb->step) * fb->step;
@@ -52,7 +66,15 @@ bool net_fragbuf_add(net_fragbuf_t *fb, netpkt_t *pkt, uint32_t pkt_off, uint32_
     }
 
     if (frag_len && !netpkt_copyout(pkt, pkt_off, fb->data + frag_off, frag_len)) return false;
-    for (uint32_t i = start; i < need_blocks; i++) fb->blocks[i >> 3] |= (uint8_t)(1u << (i & 7));
+    if (first_byte < end_byte) {
+        if (first_byte+1 == end_byte) fb->blocks[first_byte] |= (first_mask & last_mask); 
+        else {
+            fb->blocks[first_byte] |= first_mask;
+            if (end_byte > first_byte + 2) memset(fb->blocks + first_byte + 1, 0xFF, end_byte - first_byte - 2);
+            fb->blocks[end_byte - 1] |= last_mask;
+        }
+    }
+    fb->filled_blocks += need_blocks - start;
     if (frag_end > fb->max_end) fb->max_end = frag_end;
 
     if (!more) {
@@ -66,8 +88,7 @@ bool net_fragbuf_complete(const net_fragbuf_t *fb) {
     if (!fb || !fb->have_last || !fb->blocks) return false;
     uint32_t need = (fb->total_len + 7u) / 8u;
     if (need > fb->block_count) return false;
-    for (uint32_t i = 0; i < need; i++) if (!(fb->blocks[i >> 3] & (uint8_t)(1u << (i & 7)))) return false;
-    return true;
+    return fb->filled_blocks == need;
 }
 
 netpkt_t* net_fragbuf_take_packet(net_fragbuf_t *fb) {

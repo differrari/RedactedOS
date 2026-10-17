@@ -58,21 +58,33 @@ void virtio_get_capabilities(virtio_device *dev, uint64_t pci_addr, uint64_t *mm
 
     if (mmio_start) *mmio_start = 0;
     if (mmio_size) *mmio_size = 0;
-
-    uint64_t offset = read32(pci_addr + 0x34);
-    while (offset) {
+    //https://docs.oasis-open.org/virtio/virtio/v1.3/csd01/virtio-v1.3-csd01.html
+    //https://e2e.ti.com/cfs-file/__key/communityserver-discussions-components-files/639/1016.PCI.Local.Bus.Specification.Revision.3.0.pdf
+    //https://docs.oasis-open.org/virtio/virtio/v1.4/cs01/virtio-v1.4-cs01-diff-from-v1.2-cs01.pdf
+    //some changes to net virtio capabilities used to break the init
+    //seems to be ok now, but i believe there might be other bugs
+    uint8_t offset = read8(pci_addr + 0x34);
+    for (uint32_t n = 0; offset && n < 48; n++) {
+        if (offset < 0x40 || offset > 0xF0 || (offset & 3)) break;
         uint64_t cap_addr = pci_addr + offset;
         struct virtio_pci_cap* cap = (struct virtio_pci_cap*)(uintptr_t)cap_addr;
 
-        uint64_t bar_reg = pci_get_bar_address(pci_addr, 0x10, cap->bar);
-        uint32_t raw_lo = read32(bar_reg);
-        uint64_t bar_base = (uint64_t)(raw_lo & ~0xFULL);
-        if (raw_lo & 0x4) {
-            uint32_t raw_hi = read32(bar_reg + 4);
-            bar_base |= ((uint64_t)raw_hi) << 32;
-        }
-
-        if (cap->cap_vndr == 0x9) {
+        if (cap->cap_vndr == 0x9 && cap->cap_len >= sizeof(*cap) && cap->cap_len <= 0x100 - offset && cap->bar < 6) {
+            if (cap->cfg_type == VIRTIO_PCI_CAP_NOTIFY_CFG && cap->cap_len < sizeof(*cap) + 4) {
+                offset = cap->cap_next;
+                continue;
+            }
+            uint64_t bar_reg = pci_get_bar_address(pci_addr, 0x10, cap->bar);
+            uint32_t raw_lo = read32(bar_reg);
+            if ((raw_lo & 1) || (cap->bar == 5 && (raw_lo & 0x4))) { 
+                offset = cap->cap_next;
+                continue;
+            }
+            uint64_t bar_base = (uint64_t)(raw_lo & ~0xFULL);
+            if (raw_lo & 0x4) {
+                uint32_t raw_hi = read32(bar_reg + 4);
+                bar_base |= ((uint64_t)raw_hi) << 32;
+            }
             if (cap->cfg_type < VIRTIO_PCI_CAP_PCI_CFG && bar_base == 0){
                 kprintfv("[VIRTIO] Setting up bar");
                 bar_base = pci_setup_bar(pci_addr, cap->bar, mmio_start, mmio_size);
@@ -183,9 +195,6 @@ bool virtio_init_device(virtio_device *dev) {
         void* used = palloc(used_alloc, MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, true);
         if (!base || !avail || !used) return false;
 
-        memset(base, 0, desc_alloc);
-        memset(avail, 0, avail_alloc);
-        memset(used, 0, used_alloc);
         uint64_t desc_pa = VIRT_TO_PHYS((uint64_t)base);
         uint64_t driver_pa = VIRT_TO_PHYS((uint64_t)avail);
         uint64_t device_pa = VIRT_TO_PHYS((uint64_t)used);

@@ -56,7 +56,6 @@ typedef struct {
     netpkt_t *pkt;
     uint32_t payload_off;
     uint32_t timer_ms;
-    uint32_t rtt_timer_ms;
     uint32_t timeout_ms;
 } tcp_tx_seg_t;
 
@@ -92,6 +91,7 @@ typedef struct {
     uint32_t rto;
     uint8_t rtt_valid;
     uint8_t rtt_sample_pending;
+    uint32_t rtt_start_ms;
 
     uint32_t cwnd;
     uint32_t ssthresh;
@@ -194,6 +194,28 @@ typedef struct tcp_flow {
     tcp_flow_timer_t timer;
     tcp_flow_ip_t ip;
 } tcp_flow_t;
+
+static inline void tcp_persist_start(tcp_flow_t *flow) {
+    if (!flow) return;
+    if (!flow->timer.persist_active) {
+        flow->timer.persist_active = 1;
+        flow->timer.persist_timer_ms = 0;
+    }
+    if (!flow->timer.persist_timeout_ms) {
+        uint32_t timeout = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
+        if (timeout < TCP_PERSIST_MIN_MS) timeout = TCP_PERSIST_MIN_MS;
+        if (timeout > TCP_PERSIST_MAX_MS) timeout = TCP_PERSIST_MAX_MS;
+        flow->timer.persist_timeout_ms = timeout;
+    }
+}
+
+static inline void tcp_persist_reset(tcp_flow_t *flow) {
+    if (!flow) return;
+    flow->timer.persist_active = 0;
+    flow->timer.persist_timer_ms = 0;
+    flow->timer.persist_timeout_ms = 0;
+} 
+
 //TODO rfc 6675 is not complete
 extern tcp_flow_t *tcp_flows[MAX_TCP_FLOWS];
 extern uint16_t tcp_active_flows[MAX_TCP_FLOWS];

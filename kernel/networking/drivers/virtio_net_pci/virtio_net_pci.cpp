@@ -1,7 +1,6 @@
 #include "virtio_net_pci.hpp"
 #include "console/kio.h"
 #include "pci.h"
-#include "syscalls/syscalls.h"
 #include "memory/page_allocator.h"
 #include "std/memory.h"
 #include "networking/network.h"
@@ -61,7 +60,7 @@ void virtio_net_rx_free(void* ctx, uintptr_t base) {
 }
 
 bool virtio_net_ctrl_send(virtio_device* dev, uint8_t cls, uint8_t cmd, const void* payload, uint32_t payload_len) {
-    if (!dev) return false;
+    if (!dev || (payload_len && !payload)) return false;
 
     virtio_net_ctrl_hdr_t hdr;
     hdr.cls= cls;
@@ -196,7 +195,6 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
     kprintfv("[virtio-net] rx_pool=%x", (uintptr_t)rx_pool);
     if (!rx_pool) return false;
 
-    memset((void*)rx_desc, 0, 16ULL * rx_qsz);
     //re enable used buffer notifications when network irqs are used
     rx_avail->flags = VIRTQ_AVAIL_F_NO_INTERRUPT;
     rx_avail->idx = 0;
@@ -233,7 +231,6 @@ bool VirtioNetDriver::init_at(uint64_t addr, uint32_t irq_base_vector) {
     tx_pending = (netpkt_t**)palloc((uint64_t)tx_qsz * sizeof(netpkt_t*), MEM_PRIV_KERNEL, MEM_RW | MEM_NORM, true);
     if (!tx_pending) return false;
 
-    memset((void*)tx_desc, 0, 16 * tx_qsz);
     //re enable used buffer notifications when network irqs are used
     tx_avail->flags = VIRTQ_AVAIL_F_NO_INTERRUPT;
     tx_avail->idx = 0;
@@ -332,33 +329,36 @@ uint8_t VirtioNetDriver::get_duplex() const {
 netpkt_t* VirtioNetDriver::handle_receive_packet(){
     if (!rx_qsz || !rx_desc || !rx_used || !rx_avail || !rx_pool) return nullptr;
 
-    if (last_used_receive_idx == rx_used_batch_end) {
-        rx_used_batch_end = rx_used->idx;
-        asm volatile ("dmb ishld" ::: "memory");
-        if (last_used_receive_idx == rx_used_batch_end) return nullptr;
+    for (uint16_t attempt = 0; attempt < rx_qsz; attempt++) {
+        if (last_used_receive_idx == rx_used_batch_end) {
+            rx_used_batch_end = rx_used->idx;
+            asm volatile ("dmb ishld" ::: "memory");
+            if (last_used_receive_idx == rx_used_batch_end) return nullptr;
+        }
+
+        uint16_t used_ring_index = (uint16_t)(last_used_receive_idx % rx_qsz);
+        volatile virtq_used_elem* e = &rx_used->ring[used_ring_index];
+        uint32_t desc_index = e->id;
+        uint32_t total_len = e->len;
+        last_used_receive_idx++;
+
+        if (desc_index >= rx_qsz) continue;
+        uintptr_t buf = (uintptr_t)PHYS_TO_VIRT_P((void*)rx_desc[desc_index].addr);
+        if (total_len <= (uint32_t)header_size || total_len > rx_desc[desc_index].len) {
+            virtio_net_rx_free(this, buf);
+            continue;
+        }
+
+        uint32_t payload_len = total_len - (uint32_t)header_size;
+        netpkt_t* pkt = netpkt_wrap(buf, RX_BUF_SIZE, header_size, payload_len, virtio_net_rx_free, this);
+        if (!pkt) {
+            virtio_net_rx_free(this, buf);
+            return nullptr;
+        }
+
+        return pkt;
     }
-
-    uint16_t used_ring_index = (uint16_t)(last_used_receive_idx % rx_qsz);
-    volatile virtq_used_elem* e = &rx_used->ring[used_ring_index];
-    uint32_t desc_index = e->id;
-    uint32_t total_len = e->len;
-    last_used_receive_idx++;
-
-    if (desc_index >= rx_qsz) return nullptr;
-    uintptr_t buf = (uintptr_t)PHYS_TO_VIRT_P((void*)rx_desc[desc_index].addr);
-    if (total_len <= (uint32_t)header_size || total_len > rx_desc[desc_index].len) {
-        virtio_net_rx_free(this, buf);
-        return nullptr;
-    }
-
-    uint32_t payload_len = total_len - (uint32_t)header_size;
-    netpkt_t* pkt = netpkt_wrap(buf, RX_BUF_SIZE, header_size, payload_len, virtio_net_rx_free, this);
-    if (!pkt) {
-        virtio_net_rx_free(this, buf);
-        return nullptr;
-    }
-
-    return pkt;
+    return nullptr;
 }
 
 void VirtioNetDriver::complete_rx_batch() {

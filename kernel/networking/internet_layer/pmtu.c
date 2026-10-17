@@ -17,24 +17,48 @@ typedef struct {
 } pmtu_entry_t;
 
 static pmtu_entry_t g_pmtu[PMTU_CACHE_MAX_ENTRIES];
+static uint16_t g_pmtu_used;
+static uint16_t g_pmtu_end;
+static uint16_t g_pmtu_recent = UINT16_MAX;
 
 uint16_t pmtu_get(l3_id_t l3_id, uint32_t l3_epoch, ip_version_t ver, const void* dst) {
     if (!l3_id || !l3_epoch || !dst || (ver != IP_VER4 && ver != IP_VER6)) return 0;
 
     uint32_t dst_len = ver == IP_VER6 ? 16 : 4;
-    uint32_t now = (uint32_t)get_time();
     irq_flags_t irq = irq_save_disable();
 
-    for (uint32_t i = 0; i < PMTU_CACHE_MAX_ENTRIES; i++) {
+    if (!g_pmtu_used) {
+        irq_restore(irq);
+        return 0;
+    }
+    
+    uint32_t now = (uint32_t)get_time();
+    if (g_pmtu_recent < PMTU_CACHE_MAX_ENTRIES) {
+        pmtu_entry_t* e = &g_pmtu[g_pmtu_recent];
+        if (e->used && e->l3_id == l3_id && e->l3_epoch == l3_epoch && e->ver == ver && 
+            now - e->timestamp_ms < PMTU_CACHE_MAX_AGE_MS && !memcmp(e->dst, dst, dst_len)) {
+            uint16_t mtu = e->mtu;
+            irq_restore(irq);
+            return mtu;
+        }
+    }
+
+    uint32_t limit = g_pmtu_end;
+    for (uint32_t i = 0; i < limit; i++) {
         pmtu_entry_t* e = &g_pmtu[i];
         if (!e->used) continue;
         if (now - e->timestamp_ms >= PMTU_CACHE_MAX_AGE_MS || (e->l3_id == l3_id && e->l3_epoch != l3_epoch)) {
             memset(e, 0, sizeof(*e));
+            g_pmtu_used--;
+            if (i+1 == g_pmtu_end) {
+                while (g_pmtu_end && !g_pmtu[g_pmtu_end - 1].used) g_pmtu_end--;
+            }
             continue;
         }
         if (e->l3_id != l3_id || e->ver != ver || memcmp(e->dst, dst, dst_len) != 0) continue;
 
         uint16_t mtu = e->mtu;
+        g_pmtu_recent = (uint16_t)i;
         irq_restore(irq);
         return mtu;
     }
@@ -61,6 +85,7 @@ uint16_t pmtu_note(l3_id_t l3_id, uint32_t l3_epoch, ip_version_t ver, const voi
         }
         if (now - e->timestamp_ms >= PMTU_CACHE_MAX_AGE_MS || (e->l3_id == l3_id && e->l3_epoch != l3_epoch)) {
             memset(e, 0, sizeof(*e));
+            g_pmtu_used--;
             if (free_slot < 0) free_slot = (int)i;
             continue;
         }
@@ -68,6 +93,7 @@ uint16_t pmtu_note(l3_id_t l3_id, uint32_t l3_epoch, ip_version_t ver, const voi
             if (mtu < e->mtu) e->mtu = mtu;
             e->timestamp_ms = now;
             mtu = e->mtu;
+            g_pmtu_recent = (uint16_t)i;
             irq_restore(irq);
             return mtu;
         }
@@ -79,6 +105,7 @@ uint16_t pmtu_note(l3_id_t l3_id, uint32_t l3_epoch, ip_version_t ver, const voi
         }
     }
 
+    while (g_pmtu_end && !g_pmtu[g_pmtu_end - 1].used) g_pmtu_end--;
     int slot = free_slot >= 0 ? free_slot : oldest;
     if (slot < 0) {
         irq_restore(irq);
@@ -86,6 +113,8 @@ uint16_t pmtu_note(l3_id_t l3_id, uint32_t l3_epoch, ip_version_t ver, const voi
     }
 
     pmtu_entry_t* e = &g_pmtu[slot];
+    if (!e->used) g_pmtu_used++;
+    if ((uint32_t)slot >= g_pmtu_end) g_pmtu_end = (uint16_t)(slot + 1);
     memset(e, 0, sizeof(*e));
     e->used = true;
     e->ver = ver;
@@ -94,6 +123,7 @@ uint16_t pmtu_note(l3_id_t l3_id, uint32_t l3_epoch, ip_version_t ver, const voi
     e->mtu = mtu;
     e->timestamp_ms = now;
     memcpy(e->dst, dst, dst_len);
+    g_pmtu_recent = (uint16_t)slot;
     irq_restore(irq);
     return mtu;
 }

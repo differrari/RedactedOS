@@ -594,6 +594,25 @@ static void ndp_sync_default_routes(uint8_t ifindex, ndp_table_impl_t* t) {
     }
 }
 
+static void ndp_neighbor_failed(uint8_t ifindex, ndp_table_impl_t *t, ndp_entry_t *e) {
+    if (!t || !e) return;
+
+    ipv6_redirect_invalidate(ifindex, e->ip);
+    if (e->is_router) {
+        bool changed = false;
+        for (int r = 0; r < NDP_DEFAULT_ROUTER_MAX; r++) {
+            if (!t->routers[r].used || ipv6_cmp(t->routers[r].ip, e->ip) != 0) continue;
+            if (!t->routers[r].failed) {
+                t->routers[r].failed = 1;
+                changed = true;
+            }
+            break;
+        }
+        if (changed) ndp_sync_default_routes(ifindex, t);
+    }
+    ndp_entry_clear(e);
+}
+
 void ndp_table_put_for_l2(uint8_t ifindex, const uint8_t ip[16], const uint8_t mac[6], uint32_t ttl_ms, bool router, bool is_static) {
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     ndp_table_impl_t* t = l2 ? (ndp_table_impl_t*)l2->nd_table : NULL;
@@ -937,20 +956,7 @@ static void ndp_table_tick_for_l2(uint8_t ifindex, uint32_t ms) {
                     e->timer_ms = t->retrans_timer_ms;
                     ndp_send_probe(ifindex, e);
                 } else {
-                    ipv6_redirect_invalidate(ifindex, e->ip);
-                    if (e->is_router) {
-                        bool changed = false;
-                        for (int r = 0; r < NDP_DEFAULT_ROUTER_MAX; r++) {
-                            if (!t->routers[r].used || ipv6_cmp(t->routers[r].ip, e->ip) != 0) continue;
-                            if (!t->routers[r].failed) {
-                                t->routers[r].failed = 1;
-                                changed = true;
-                            }
-                            break;
-                        }
-                        if (changed) ndp_sync_default_routes(ifindex, t);
-                    }
-                    ndp_entry_clear(e);
+                    ndp_neighbor_failed(ifindex, t, e);
                 }
             }
             break;
@@ -975,20 +981,7 @@ static void ndp_table_tick_for_l2(uint8_t ifindex, uint32_t ms) {
                     e->timer_ms = t->retrans_timer_ms;
                     ndp_send_probe(ifindex, e);
                 } else {
-                    ipv6_redirect_invalidate(ifindex, e->ip);
-                    if (e->is_router) {
-                        bool changed = false;
-                        for (int r = 0; r < NDP_DEFAULT_ROUTER_MAX; r++) {
-                            if (!t->routers[r].used || ipv6_cmp(t->routers[r].ip, e->ip) != 0) continue;
-                            if (!t->routers[r].failed) {
-                                t->routers[r].failed = 1;
-                                changed = true;
-                            }
-                            break;
-                        }
-                        if (changed) ndp_sync_default_routes(ifindex, t);
-                    }
-                    ndp_entry_clear(e);
+                    ndp_neighbor_failed(ifindex, t, e);
                 }
             }
             break;
@@ -1011,8 +1004,6 @@ bool ndp_send_or_queue_on(uint8_t ifindex, const uint8_t next_hop[16], netpkt_t*
         return eth_send_frame_on(ifindex, ETHERTYPE_IPV6, out_mac, pkt);
     }
 
-    if (ndp_table_get_for_l2(ifindex, next_hop, out_mac)) return eth_send_frame_on(ifindex, ETHERTYPE_IPV6, out_mac, pkt);
-
     l2_interface_t* l2 = l2_interface_find_by_index(ifindex);
     ndp_table_impl_t* t = l2 ? (ndp_table_impl_t*)l2->nd_table : NULL;
     if (!t) {
@@ -1021,6 +1012,18 @@ bool ndp_send_or_queue_on(uint8_t ifindex, const uint8_t next_hop[16], netpkt_t*
     }
 
     int idx = ndp_find_slot(t, next_hop);
+    if (idx >= 0) {
+        ndp_entry_t* e = &t->entries[idx];
+        if (e->state != NDP_STATE_UNUSED && e->state != NDP_STATE_INCOMPLETE) {
+            mac_copy(out_mac, e->mac);
+            if (e->state == NDP_STATE_STALE) {
+                e->state = NDP_STATE_DELAY;
+                e->timer_ms = NDP_DELAY_FIRST_PROBE_TIME_MS;
+                ndp_daemon_kick();
+            }
+            return eth_send_frame_on(ifindex, ETHERTYPE_IPV6, out_mac, pkt);
+        }
+    }
     if (idx < 0) idx = ndp_find_free(t);
     if (idx < 0) idx = ndp_find_replacement(t);
     if (idx < 0) {

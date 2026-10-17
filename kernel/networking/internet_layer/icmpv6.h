@@ -26,6 +26,8 @@ typedef enum {
     ICMPV6_MLDV2_REPORT = 143
 } icmpv6_type_t;
 
+#define ICMPV6_CODE_PORT_UNREACH 4
+
 typedef struct __attribute__((packed)) {
     uint8_t type;
     uint8_t code;

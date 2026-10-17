@@ -1,9 +1,8 @@
 #include "dns.h"
 #include "dns_mdns.h"
 #include "dns_cache.h"
-#include "std/std.h"
-#include "math/math.h"
-#include "process/scheduler.h"
+#include "std/memory.h"
+#include "std/string.h"
 #include "types.h"
 #include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv4_utils.h"
@@ -186,7 +185,9 @@ static dns_result_t dns_resolve_ip_common(uint8_t use_l3, l3_id_t l3_id, const c
     char current[DNS_WIRE_MAX_NAME];
     if (!dns_wire_name_normalize(hostname, current, sizeof(current))) return DNS_ERR_FORMAT;
 
-    for (uint32_t depth = 0; depth <= DNS_MAX_CNAME_DEPTH; depth++) {
+    uint32_t alias_ttl_s = UINT32_MAX;
+    uint32_t depth = 0;
+    while (depth <= DNS_MAX_CNAME_DEPTH) {
         dns_record_t records[DNS_QUERY_RECORDS];
         uint32_t count = 0;
         dns_result_t res;
@@ -194,30 +195,52 @@ static dns_result_t dns_resolve_ip_common(uint8_t use_l3, l3_id_t l3_id, const c
         else res = dns_query(current, qtype, records, DNS_QUERY_RECORDS, &count, which, timeout_ms);
         if (res != DNS_OK) return res;
 
-        char cname[DNS_WIRE_MAX_NAME];
-        cname[0] = 0;
-
-        for (uint32_t i = 0; i < count; i++) {
-            if ((records[i].rrclass & DNS_CLASS_MASK) != DNS_CLASS_IN) continue;
-            if (records[i].type == qtype) {
+        for (;;) {
+            for (uint32_t i = 0; i < count; i++) {
+                if ((records[i].rrclass & DNS_CLASS_MASK) != DNS_CLASS_IN || records[i].type != qtype) continue;
+                if (!dns_wire_name_equals(records[i].name, current)) continue;
                 if (qtype == DNS_TYPE_A) memcpy(out_addr, records[i].addr, 4);
                 else ipv6_cpy(out_addr, records[i].addr);
 
-                uint32_t ttl_ms = 0xFFFFFFFF;
-                if (records[i].ttl_s <= 0xFFFFFFFFU / 1000) ttl_ms = records[i].ttl_s * 1000;
+                uint32_t ttl_s = records[i].ttl_s;
+                uint32_t ttl_ms = ttl_s > (UINT32_MAX - 1) / 1000 ? UINT32_MAX - 1 : ttl_s * 1000;
                 dns_cache_put_ip(current, qtype, out_addr, ttl_ms);
-                dns_cache_put_ip(hostname, qtype, out_addr, ttl_ms);
-                if (out_ttl_s) *out_ttl_s = records[i].ttl_s;
+                if (!dns_wire_name_equals(hostname, current)) {
+                    if (ttl_s > alias_ttl_s) ttl_s = alias_ttl_s;
+                    uint32_t alias_ms = ttl_s > (UINT32_MAX - 1) / 1000 ? UINT32_MAX - 1 : ttl_s * 1000;
+                    dns_cache_put_ip(hostname, qtype, out_addr, alias_ms);
+                }
+                if (out_ttl_s) *out_ttl_s = ttl_s;
                 return DNS_OK;
             }
-            if (records[i].type == DNS_TYPE_CNAME && records[i].target[0] && !cname[0]) strncpy(cname, records[i].target, sizeof(cname));
+
+            char cname[DNS_WIRE_MAX_NAME];
+            cname[0] = 0;
+            uint32_t cname_ttl = 0;
+            for (uint32_t i = 0; i < count; i++) {
+                if ((records[i].rrclass & DNS_CLASS_MASK) != DNS_CLASS_IN || records[i].type != DNS_TYPE_CNAME) continue;
+                if (!records[i].target[0] || !dns_wire_name_equals(records[i].name, current)) continue;
+                strncpy(cname, records[i].target, sizeof(cname));
+                cname[sizeof(cname) - 1] = 0;
+                cname_ttl = records[i].ttl_s;
+                break;
+            }
+            if (!cname[0]) return DNS_ERR_NO_ANSWER;
+            if (dns_wire_name_equals(cname, current) || depth == DNS_MAX_CNAME_DEPTH) return DNS_ERR_FORMAT;
+            if (cname_ttl < alias_ttl_s) alias_ttl_s = cname_ttl;
+            if (!dns_wire_name_normalize(cname, current, sizeof(current))) return DNS_ERR_FORMAT;
+            depth++;
+            bool have_next = false;
+            for (uint32_t i = 0; i < count; i++) {
+                if ((records[i].rrclass & DNS_CLASS_MASK) != DNS_CLASS_IN) continue;
+                if ((records[i].type == qtype || records[i].type == DNS_TYPE_CNAME) && dns_wire_name_equals(records[i].name, current)) {
+                    have_next = true;
+                    break;
+                }
+            }
+            if (!have_next) break;
         }
-
-        if (!cname[0]) return DNS_ERR_NO_ANSWER;
-        if (dns_wire_name_equals(cname, current)) return DNS_ERR_FORMAT;
-        strncpy(current, cname, sizeof(current));
     }
-
     return DNS_ERR_NO_ANSWER;
 }
 

@@ -21,6 +21,19 @@ static void tcp_note_dsack(tcp_flow_t *flow, uint32_t left, uint32_t right) {
     flow->rx.dsack_right = right;
 }
 
+static void tcp_consume_fin(tcp_flow_t *flow) {
+    if (!flow) return;
+
+    flow->rx.fin_pending = 0;
+    flow->rx.rcv_nxt++;
+    flow->base.ctx.ack = flow->rx.rcv_nxt;
+
+    tcp_state_t old = flow->base.state;
+    if (old == TCP_ESTABLISHED) flow->base.state = TCP_CLOSE_WAIT;
+    else if (old == TCP_FIN_WAIT_1) flow->base.state = TCP_CLOSING;
+    else if (old == TCP_FIN_WAIT_2) tcp_enter_time_wait(flow);
+}
+
 static bool tcp_reass_count_ok(tcp_flow_t *flow) {
     if (!flow) return false;
 
@@ -244,7 +257,7 @@ static bool tcp_acknowledge_segments(tcp_flow_t *flow, uint32_t ack) {
 
         uint32_t end_seq = seg->seq + seg->len + (seg->syn ? 1u : 0u) + (seg->fin ? 1u : 0u);
         if (seg->rtt_sample && TCP_SEQ_GEQ(ack, end_seq)) {
-            if (seg->retransmit_cnt == 0) tcp_rtt_update(flow, seg->rtt_timer_ms);
+            if (seg->retransmit_cnt == 0) tcp_rtt_update(flow, (uint32_t)get_time() - flow->tx.rtt_start_ms);
             flow->tx.rtt_sample_pending = 0;
             seg->rtt_sample = 0;
         }
@@ -464,10 +477,9 @@ static bool tcp_sack_retransmit_range(tcp_flow_t *flow, tcp_tx_seg_t *seg, uint3
         .payload_off = seg->payload_off + (left - seg->seq),
         .psh = seg->psh && right == seg->seq + seg->len
     };  
-    if (!tcp_send_from_seg(flow, &retransmit)) return false;
-
     for (uint32_t i = 0; i < TCP_MAX_TX_SEGS; i++) flow->tx.txq[i].rtt_sample = 0;
     flow->tx.rtt_sample_pending = 0;
+    if (!tcp_send_from_seg(flow, &retransmit)) return false;
     tcp_sack_insert(flow->tx.sack_retransmitted_ranges, &flow->tx.sack_retransmitted_count, left, right);
     if (rescue) {
         flow->tx.sack_rescue_rxt = flow->tx.recover;
@@ -475,7 +487,6 @@ static bool tcp_sack_retransmit_range(tcp_flow_t *flow, tcp_tx_seg_t *seg, uint3
     }
     if (seg->retransmit_cnt < UINT8_MAX) seg->retransmit_cnt++;
     seg->timer_ms = 0;
-    seg->rtt_timer_ms = 0;
     seg->timeout_ms = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
     return true;
 }
@@ -948,9 +959,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->tx.snd_wl1 = seq;
             flow->tx.snd_wl2 = 0;
 
-            flow->timer.persist_active = 0;
-            flow->timer.persist_timer_ms = 0;
-            flow->timer.persist_timeout_ms = 0;
+            tcp_persist_reset(flow);
 
             flow->timer.delayed_ack_pending = 0;
             flow->timer.delayed_ack_timer_ms = 0;
@@ -1058,7 +1067,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             netpkt_unref(pkt);
             return;
 
-        case TCP_SYN_SENT:
+        case TCP_SYN_SENT: {
             bool ack_set = (flags & (1u << ACK_F)) != 0;
             bool ack_acceptable = false;
 
@@ -1164,9 +1173,9 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
             handshake_ack_processed = true;
             break;
+        }
 
-
-        case TCP_SYN_RECEIVED:
+        case TCP_SYN_RECEIVED: {
             uint32_t syn_seg_len = data_len + ((flags & (1u << SYN_F)) ? 1 : 0) + fin;
             bool seq_acceptable = tcp_segment_acceptable(flow, seq, syn_seg_len);
 
@@ -1288,7 +1297,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
             handshake_ack_processed = true;
             break;
-
+        }
 
     default:
         break;
@@ -1345,11 +1354,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             flow->tx.snd_wnd = new_wnd;
             flow->tx.snd_wl1 = seq;
             flow->tx.snd_wl2 = ack;
-            if (new_wnd) {
-                flow->timer.persist_active = 0;
-                flow->timer.persist_timer_ms = 0;
-                flow->timer.persist_timeout_ms = 0;
-            }
+            if (new_wnd) tcp_persist_reset(flow);
         }
 
         if (TCP_SEQ_GT(ack, flow->tx.snd_una)) {
@@ -1519,15 +1524,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
                 if (fin_in) {
                     if (flow->rx.rcv_nxt == fin_seq) {
-                        flow->rx.rcv_nxt += 1;
-                        flow->base.ctx.ack = flow->rx.rcv_nxt;
-
-                        tcp_state_t old = flow->base.state;
-
-                        if (old == TCP_ESTABLISHED) flow->base.state = TCP_CLOSE_WAIT;
-                        else if (old == TCP_FIN_WAIT_1) flow->base.state = TCP_CLOSING;
-                        else if (old == TCP_FIN_WAIT_2) tcp_enter_time_wait(flow);
-
+                        tcp_consume_fin(flow);
                         ack_immediate = true;
                     } else {
                         flow->rx.fin_pending = 1;
@@ -1539,16 +1536,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 if (had_reass) ack_immediate = true;
 
                 if (flow->rx.fin_pending && flow->rx.fin_seq == flow->rx.rcv_nxt){
-                    flow->rx.fin_pending = 0;
-                    flow->rx.rcv_nxt += 1;
-                    flow->base.ctx.ack = flow->rx.rcv_nxt;
-
-                    tcp_state_t old = flow->base.state;
-
-                    if (old == TCP_ESTABLISHED) flow->base.state = TCP_CLOSE_WAIT;
-                    else if (old == TCP_FIN_WAIT_1) flow->base.state = TCP_CLOSING;
-                    else if (old == TCP_FIN_WAIT_2) tcp_enter_time_wait(flow);
-
+                    tcp_consume_fin(flow);
                     ack_immediate = true;
                 }
 

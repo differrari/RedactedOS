@@ -53,6 +53,7 @@ typedef struct packet_delivery {
 } packet_delivery_t;
 
 static packet_socket_t* g_packet_sockets[PACKET_SOCKET_MAX];
+static uint32_t g_packet_socket_count; //TODO lock
 
 static void packet_socket_unregister(packet_socket_t* s) {
     if (!s || !s->registered) return;
@@ -61,6 +62,7 @@ static void packet_socket_unregister(packet_socket_t* s) {
     for (int i = 0; i < PACKET_SOCKET_MAX; i++) {
         if (g_packet_sockets[i] == s) {
             g_packet_sockets[i] = NULL;
+            g_packet_socket_count--;
             break;
         }
     }
@@ -175,6 +177,7 @@ socket_impl_t socket_packet_create(ksocket_t* owner, const SocketOptions* extra)
     for (int i = 0; i < PACKET_SOCKET_MAX; i++) {
         if (!g_packet_sockets[i]) {
             g_packet_sockets[i] = s;
+            g_packet_socket_count++;
             s->registered = true;
             irq_restore(irq);
             return s;
@@ -421,6 +424,11 @@ void socket_packet_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t genera
 
 bool socket_packet_input(uint8_t ifindex, netpkt_t* pkt) {
     if (!ifindex || !pkt) return false;
+    irq_flags_t irq = irq_save_disable();
+    bool have_listeners = g_packet_socket_count != 0;
+    irq_restore(irq);
+    if (!have_listeners) return false;
+
     packet_frame_t frame = {0};
     frame.raw_len = netpkt_len(pkt);
     if (frame.raw_len < sizeof(eth_hdr_t)) return false;
@@ -444,7 +452,7 @@ bool socket_packet_input(uint8_t ifindex, netpkt_t* pkt) {
 
     packet_delivery_t targets[PACKET_SOCKET_MAX];
     int n = 0;
-    irq_flags_t irq = irq_save_disable();
+    irq = irq_save_disable();
     for (int i = 0; i < PACKET_SOCKET_MAX; i++) {
         packet_socket_t* s = g_packet_sockets[i];
         if (!s || socket_core_is_closing(s->ownerSocket)) continue;

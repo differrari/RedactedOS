@@ -1,13 +1,9 @@
 #include "network_dispatch.hpp"
-#include "drivers/virtio_net_pci/virtio_net_pci.hpp"
 #include "drivers/net_bus.hpp"
 #include "networking/link_layer/eth.h"
-#include "net/network_types.h"
 #include "std/memory.h"
-#include "std/std.h"
 #include "console/kio.h"
 #include "networking/interface_manager.h"
-#include "process/scheduler.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/netpkt.h"
@@ -16,8 +12,8 @@
 #include "networking/drivers/loopback/loopback_driver.hpp"
 #include "exceptions/irq.h"
 
-#define TASK_RX_QUANTUM 64
-#define TASK_TX_QUANTUM 64
+#define TASK_RX_QUANTUM 32
+#define TASK_TX_QUANTUM 32
 #define TASK_RX_BATCH_LIMIT 256
 #define TASK_TX_BATCH_LIMIT 256
 
@@ -64,19 +60,23 @@ bool NetworkDispatch::enqueue_packet(uint8_t ifindex, netpkt_t* pkt)
 
 int NetworkDispatch::net_task()
 {
+    size_t first = 0;
     for (;;) {
         bool did_work = false;
+        uint16_t rx_done[MAX_NIC] = {};
+        uint16_t tx_done[MAX_NIC] = {};
+        bool progress;
 
-        for (size_t n = 0; n < nic_num; ++n) {
-            NetDriver* driver = nics[n]->drv;
-            if (!driver) continue;
+        do {
+            progress = false;
+            for (size_t step = 0; step < nic_num; step++) {
+                size_t n = (first + step) % nic_num;
+                NetDriver* driver = nics[n]->drv;
+                if (!driver) continue;
 
-            uint16_t rx_processed = 0;
-            uint16_t tx_processed = 0;
-            while (rx_processed < TASK_RX_BATCH_LIMIT || tx_processed < TASK_TX_BATCH_LIMIT) {
                 uint16_t rx_round = 0;
                 uint16_t tx_round = 0;
-                while (rx_processed < TASK_RX_BATCH_LIMIT && rx_round < TASK_RX_QUANTUM) {
+                while (rx_done[n] < TASK_RX_BATCH_LIMIT && rx_round < TASK_RX_QUANTUM) {
                     netpkt_t* pkt = driver->handle_receive_packet();
                     if (!pkt) break;
                     if (!netpkt_len(pkt)) {
@@ -87,12 +87,12 @@ int NetworkDispatch::net_task()
                     socket_packet_input(nics[n]->l2_ifindex, pkt);
                     if (netpkt_len(pkt) >= sizeof(eth_hdr_t)) eth_input(nics[n]->l2_ifindex, pkt);
                     netpkt_unref(pkt);
-                    rx_processed++;
+                    rx_done[n]++;
                     rx_round++;
                 }
                 driver->complete_rx_batch();
                 driver->handle_sent_packet();
-                while (tx_processed < TASK_TX_BATCH_LIMIT && tx_round < TASK_TX_QUANTUM) {
+                while (tx_done[n] < TASK_TX_BATCH_LIMIT && tx_round < TASK_TX_QUANTUM) {
                     irq_flags_t flags = irq_save_disable();
                     if (nics[n]->tx.is_empty()) {
                         irq_restore(flags);
@@ -110,14 +110,17 @@ int NetworkDispatch::net_task()
                     irq_restore(flags);
 
                     if (txr == NETDEV_TX_DROP && popped) netpkt_unref(popped);
-                    tx_processed++;
+                    tx_done[n]++;
                     tx_round++;
                 }
                 driver->complete_tx_batch();
-                if (!rx_round && !tx_round) break;
+                if (rx_round || tx_round) {
+                    progress = true;
+                    did_work = true;
+                }
             }
-            if (rx_processed || tx_processed) did_work = true;
-        }
+        } while (progress);
+        if (nic_num) first = (first + 1) % nic_num;
 
         if (!did_work) msleep(1);//TODO: manage it with an event
     }

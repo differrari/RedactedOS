@@ -24,7 +24,13 @@ int32_t socket_bind_alloc_ephemeral(ksocket_t* socket, protocol_t protocol, Sock
 int32_t socket_bind_alloc_ephemeral_l3(ksocket_t* socket, protocol_t protocol, l3_id_t l3_id, uint32_t options, SockBindSpec* out_spec, socket_bind_token_t* out_token);
 
 ksocket_t* socket_bind_lookup(protocol_t protocol, ip_version_t ipver, l3_id_t l3_id, uint8_t ifindex, const void* src_ip_addr, uint16_t src_port, const void* dst_ip_addr, uint16_t dst_port);
-ksocket_t* socket_bind_udp_next_fanout(ip_version_t ipver, l3_id_t l3_id, uint8_t ifindex, const void* dst_ip_addr, uint16_t dst_port, uint32_t* cursor);
+typedef struct {
+    uint16_t next;
+    uint8_t hits;
+    bool scan;
+} socket_bind_iter_t;
+
+ksocket_t* socket_bind_udp_next_fanout(ip_version_t ipver, l3_id_t l3_id, uint8_t ifindex, const void* dst_ip_addr, uint16_t dst_port, bool include_shared, socket_bind_iter_t* iter);
 
 bool socket_bind_build_ipv4_tx_plan(const SockBindSpec* spec, bool use_spec, uint32_t dst, ipv4_tx_plan_t* out);
 bool socket_bind_build_ipv6_tx_plan(const SockBindSpec* spec, bool use_spec, const uint8_t dst[16], ipv6_tx_plan_t* out);

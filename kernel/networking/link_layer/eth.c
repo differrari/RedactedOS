@@ -69,7 +69,7 @@ bool eth_send_frame_on(uint8_t ifindex, uint16_t ethertype, const uint8_t dst_ma
 
 void eth_input(uint8_t ifindex, netpkt_t* pkt) {
     l2_interface_t* input = l2_interface_find_by_index(ifindex);
-    if (!pkt || !input || !input->is_up || netpkt_len(pkt) < sizeof(eth_hdr_t)) return;
+    if (!pkt || !input || !input->is_up) return;
 
     eth_hdr_t eth;
     if (!netpkt_copyout(pkt, 0, &eth, sizeof(eth))) return;

@@ -1,6 +1,5 @@
 #include "dns_daemon.h"
 #include "mdns_internal.h"
-#include "dns_wire.h"
 #include "process/scheduler.h"
 #include "kernel_processes/kprocess_loader.h"
 #include "exceptions/irq.h"
@@ -27,9 +26,27 @@ static uint32_t mdns_sync(const uint8_t* group4, const uint8_t* group6) {
         if (g_mdns[i].sock && g_mdns[i].ver == IP_VER4) {
             l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(g_mdns[i].l3_id);
             valid = ipv4_l3_is_ready(v4) && !v4->is_localhost && v4->generation == g_mdns[i].l3_generation;
+            if (valid) {
+                valid = false;
+                for (uint8_t j = 0; j < v4->l2->ipv4_mcast_count; j++) {
+                    if (v4->l2->ipv4_mcast[j] == DNS_MDNS_GROUP_V4) {
+                        valid = true;
+                        break;
+                    }
+                }
+            }
         } else if (g_mdns[i].sock && g_mdns[i].ver == IP_VER6) {
             l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(g_mdns[i].l3_id);
             valid = ipv6_l3_is_ready(v6) && !v6->is_localhost && v6->generation == g_mdns[i].l3_generation;
+            if (valid) {
+                valid = false;
+                for (uint8_t j = 0; j < v6->l2->ipv6_mcast_count; j++) {
+                    if (ipv6_cmp(v6->l2->ipv6_mcast[j], group6) == 0) {
+                        valid = true;
+                        break;
+                    }
+                }
+            }
         }
         if (!valid) {
             if (g_mdns[i].sock) close_socket(g_mdns[i].sock);

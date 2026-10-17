@@ -181,14 +181,8 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
         remaining -= seg_len;
         can_send -= seg_len;
         if (persist_only) {
-            flow->timer.persist_active = 1;
+            tcp_persist_start(flow);
             flow->timer.persist_timer_ms = 0;
-            if (!flow->timer.persist_timeout_ms) {
-                uint32_t timeout = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
-                if (timeout < TCP_PERSIST_MIN_MS) timeout = TCP_PERSIST_MIN_MS;
-                if (timeout > TCP_PERSIST_MAX_MS) timeout = TCP_PERSIST_MAX_MS;
-                flow->timer.persist_timeout_ms = timeout;
-            }
             tcp_daemon_kick();
             break;
         }
@@ -307,6 +301,8 @@ bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
 
     bool arm_timer = !tx.timer_ms && !tx.retransmit_cnt;
     bool sent_any = false;
+    bool sample = tx.rtt_sample && !tx.retransmit_cnt && !tx.persist;
+    uint32_t old_rtt_start = flow->tx.rtt_start_ms;
     uint32_t off = 0;
 
     do{
@@ -340,6 +336,7 @@ bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
         }
 
         const uint8_t* opts = tx.opts_len ? tx.opts : NULL;
+        if (sample && !sent_any) flow->tx.rtt_start_ms = (uint32_t)get_time();
         if (!tcp_send_flow_segment(flow, &hdr, opts, tx.opts_len, payload, (uint16_t)chunk)) break;
 
         sent_any = true;
@@ -347,7 +344,10 @@ bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
     } while (off < tx.len);
 
     if (tx.pkt) netpkt_unref(tx.pkt);
-    if (!sent_any) return false;
+    if (!sent_any) {
+        if (sample) flow->tx.rtt_start_ms = old_rtt_start;
+        return false;
+    }
 
     flow->timer.keepalive_idle_ms = 0;
     if (tx.len) {
@@ -360,14 +360,12 @@ bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
 
 bool tcp_retransmit_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg) {
     if (!flow || !seg || !seg->used) return false;
-    if (!tcp_send_from_seg(flow, seg)) return false;
-
     for (uint32_t i = 0; i < TCP_MAX_TX_SEGS; i++) flow->tx.txq[i].rtt_sample = 0;
     flow->tx.rtt_sample_pending = 0;
+    if (!tcp_send_from_seg(flow, seg)) return false;
 
     if (seg->retransmit_cnt < UINT8_MAX) seg->retransmit_cnt++;
     seg->timer_ms = 0;
-    seg->rtt_timer_ms = 0;
     seg->timeout_ms = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
     return true;
 }
@@ -593,16 +591,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
             payload_ptr += n;
             payload_len -= n;
             if (n) {
-                if (!flow->timer.persist_active) {
-                    flow->timer.persist_active = 1;
-                    flow->timer.persist_timer_ms = 0;
-                }
-                if (!flow->timer.persist_timeout_ms) {
-                    uint32_t timeout = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
-                    if (timeout < TCP_PERSIST_MIN_MS) timeout = TCP_PERSIST_MIN_MS;
-                    if (timeout > TCP_PERSIST_MAX_MS) timeout = TCP_PERSIST_MAX_MS;
-                    flow->timer.persist_timeout_ms = timeout;
-                }
+                tcp_persist_start(flow);
                 tcp_daemon_kick();
             }
         }
@@ -654,13 +643,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
         else if (accepted || fin_queued) rc = TCP_OK;
         else { 
             if (flow->tx.snd_wnd == 0) {
-                if (!flow->timer.persist_active) {
-                    flow->timer.persist_active = 1;
-                    flow->timer.persist_timer_ms = 0;
-                }
-                if (flow->timer.persist_timeout_ms == 0) flow->timer.persist_timeout_ms = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
-                if (flow->timer.persist_timeout_ms < TCP_PERSIST_MIN_MS) flow->timer.persist_timeout_ms = TCP_PERSIST_MIN_MS;
-                if (flow->timer.persist_timeout_ms > TCP_PERSIST_MAX_MS) flow->timer.persist_timeout_ms = TCP_PERSIST_MAX_MS;
+                tcp_persist_start(flow);
                 tcp_daemon_kick();
             }
             rc = TCP_WOULDBLOCK;
