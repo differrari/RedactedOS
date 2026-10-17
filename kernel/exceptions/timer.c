@@ -1,4 +1,5 @@
 #include "timer.h"
+#include "irq.h"
 #include "math/math.h"
 
 #define TIMER_SLEW_MAX_PPM 500
@@ -9,7 +10,9 @@ static int g_sync = 0;
 static uint64_t g_wall_base_mono_us = 0;
 static int64_t g_wall_base_unix_us = 0;
 static int32_t g_freq_ppm = 0;
+static int64_t g_freq_frac = 0;
 static int64_t g_slew_rem_us = 0;
+static uint64_t g_slew_frac = 0;
 
 static int32_t g_tz_offset_min = 0;
 
@@ -51,7 +54,9 @@ void timer_init(uint64_t msecs) {
     g_wall_base_mono_us = timer_now_usec();
     g_wall_base_unix_us = 0;
     g_freq_ppm = 0;
+    g_freq_frac = 0;
     g_slew_rem_us = 0;
+    g_slew_frac = 0;
     g_sync = 0;
 }
 
@@ -87,7 +92,9 @@ uint64_t timer_now() {
 uint64_t timer_now_msec() {
     uint64_t ticks = timer_now();
     uint64_t freq = rd_cntfrq_el0();
-    return (ticks * 1000) / freq;
+    uint64_t q = ticks / freq;
+    uint64_t r = ticks % freq;
+    return q * 1000ULL + (r * 1000ULL) / freq;
 }
 
 uint64_t timer_now_usec(void) {
@@ -110,17 +117,25 @@ static int64_t wall_advance_to(uint64_t mono_now_us) {
         int64_t dt = (int64_t)dt_u;
 
         int64_t base = g_wall_base_unix_us;
-        int64_t adj = dt +(dt * (int64_t)g_freq_ppm)/1000000LL;
-        base += adj;
-
-        int64_t max_slew = (dt * (int64_t)TIMER_SLEW_MAX_PPM) / 1000000LL;
-        if (max_slew < 1)max_slew = 1;
+        int64_t dt_sec = dt / 1000000LL;
+        int64_t dt_rem = dt % 1000000LL;
+        int64_t freq_num = dt_rem * (int64_t)g_freq_ppm + g_freq_frac;
+        int64_t freq_adj = dt_sec * (int64_t)g_freq_ppm + freq_num / 1000000LL;
+        g_freq_frac = freq_num % 1000000LL;
+        base += dt + freq_adj;
 
         if (g_slew_rem_us) {
-            int64_t apply = clamp_i64(g_slew_rem_us, -max_slew, max_slew);
-            g_slew_rem_us -= apply;
-            base += apply;
-        }
+            uint64_t slew_num = (dt_u % 1000000ULL) * (uint64_t)TIMER_SLEW_MAX_PPM + g_slew_frac;
+            int64_t max_slew = (int64_t)((dt_u / 1000000ULL) * (uint64_t)TIMER_SLEW_MAX_PPM + slew_num / 1000000ULL);
+            g_slew_frac = slew_num % 1000000ULL;
+
+            if (max_slew) {
+                int64_t apply = clamp_i64(g_slew_rem_us, -max_slew, max_slew);
+                g_slew_rem_us -= apply;
+                base += apply;
+                if (!g_slew_rem_us) g_slew_frac = 0;
+            }
+        } else g_slew_frac = 0;
 
         g_wall_base_mono_us = mono_now_us;
         g_wall_base_unix_us = base;
@@ -131,44 +146,65 @@ static int64_t wall_advance_to(uint64_t mono_now_us) {
 }
 
 uint64_t timer_wall_time_us(void) {
-    return (uint64_t)wall_advance_to(timer_now_usec());
+    irq_flags_t irq = irq_save_disable();
+    uint64_t us = (uint64_t)wall_advance_to(timer_now_usec());
+    irq_restore(irq);
+    return us;
 }
 
 uint64_t timer_unix_time_us(void) {
-    if (!g_sync) return 0;
+    irq_flags_t irq = irq_save_disable();
+    if (!g_sync) {
+        irq_restore(irq);
+        return 0;
+    }
     int64_t u = wall_advance_to( timer_now_usec());
+    irq_restore(irq);
     if (u < 0) return 0;
     return (uint64_t)u;
 }
 
 void timer_sync_set_unix_us(uint64_t unix_us) {
+    irq_flags_t irq = irq_save_disable();
     uint64_t now_us = timer_now_usec();
     g_wall_base_mono_us = now_us;
     g_wall_base_unix_us= (int64_t)unix_us;
+    g_freq_frac = 0;
     g_slew_rem_us = 0;
+    g_slew_frac = 0;
     g_sync = 1;
+    irq_restore(irq);
 }
 
 void timer_sync_slew_us(int64_t delta_us){
+    irq_flags_t irq = irq_save_disable();
+    wall_advance_to(timer_now_usec());
     const int64_t cap = 60LL * 1000000LL;
-    int64_t v = g_slew_rem_us + delta_us;
-    g_slew_rem_us = clamp_i64(v, -cap, cap);
+    g_slew_rem_us = clamp_i64(delta_us, -cap, cap);
+    g_slew_frac = 0;
+    irq_restore(irq);
 }
 
 void timer_sync_set_freq_ppm(int32_t ppm) {
+    irq_flags_t irq = irq_save_disable();
+    wall_advance_to(timer_now_usec());
     g_freq_ppm = clamp_i64((int32_t)ppm, -TIMER_FREQ_MAX_PPM, TIMER_FREQ_MAX_PPM);
+    g_freq_frac = 0;
+    irq_restore(irq);
 }
 
 int32_t timer_sync_get_freq_ppm(void) {
-    return g_freq_ppm;
-}
-
-void timer_apply_sntp_sample_us(uint64_t server_unix_us) {
-    timer_sync_set_unix_us(server_unix_us);
+    irq_flags_t irq = irq_save_disable();
+    int32_t ppm = g_freq_ppm;
+    irq_restore(irq);
+    return ppm;
 }
 
 int timer_is_synchronised(void) {
-    return g_sync;
+    irq_flags_t irq = irq_save_disable();
+    int sync = g_sync;
+    irq_restore(irq);
+    return sync;
 }
 
 uint64_t timer_unix_time_ms(void) {
@@ -194,10 +230,18 @@ uint64_t timer_local_time_ms(void){
 }
 
 int timer_set_manual_unix_time_ms(uint64_t unix_ms){
-    if (g_sync) return -1;
+    irq_flags_t irq = irq_save_disable();
+    if (g_sync) {
+        irq_restore(irq);
+        return -1;
+    }
     uint64_t now_us = timer_now_usec();
     g_wall_base_mono_us = now_us;
     g_wall_base_unix_us = (int64_t)(unix_ms * 1000ULL);
+    g_freq_frac = 0;
+    g_slew_rem_us = 0;
+    g_slew_frac = 0;
+    irq_restore(irq);
     return 0;
 }
 
@@ -224,10 +268,9 @@ static void civil_from_days(int64_t z, int64_t* y, unsigned* m, unsigned* d){
     *y = y_full; *m = mm; *d = dd;
 }
 
-static void fmt2u(uint64_t v, char out[3]){ //maybe move this in a helper file
+static inline void fmt2u(uint32_t v, char out[2]){ //maybe move this in a helper file
     out[0] = (char)('0' + (v/10u)%10u);
     out[1] = (char)('0' + (v%10u));
-    out[2] = '\0';
 }
 
 void timer_unix_ms_to_datetime(uint64_t unix_ms, int use_local, DateTime* out){
@@ -281,28 +324,18 @@ int timer_now_datetime(DateTime* out, int use_local){
 
 void timer_datetime_to_string(const DateTime* dt, char* buf, uint32_t buflen){
     if (!dt || !buf || buflen < 20) return;
-    uint16_t Y = dt->year;
-    buf[0] = (char)('0' + (Y/1000)%10);
-    buf[1] = (char)('0' + (Y/100)%10);
-    buf[2] = (char)('0' + (Y/10)%10);
-    buf[3] = (char)('0' + (Y%10));
+    fmt2u(dt->year/100, buf);
+    fmt2u(dt->year, buf + 2);
     buf[4] = '-';
 
-    char mm[3], dd[3], HH[3], MM[3], SS[3];
-    fmt2u(dt->month, mm);
-    fmt2u(dt->day, dd);
-    fmt2u(dt->hour, HH);
-    fmt2u(dt->minute, MM);
-    fmt2u(dt->second, SS);
-
-    buf[5] = mm[0]; buf[6] = mm[1];
+    fmt2u(dt->month, buf + 5);
     buf[7] = '-';
-    buf[8] = dd[0]; buf[9] = dd[1];
+    fmt2u(dt->day, buf + 8);
     buf[10] = ' ';
-    buf[11] = HH[0]; buf[12] = HH[1];
+    fmt2u(dt->hour, buf + 11);
     buf[13] = ':';
-    buf[14] = MM[0]; buf[15] = MM[1];
+    fmt2u(dt->minute, buf + 14);
     buf[16] = ':';
-    buf[17] = SS[0]; buf[18] = SS[1];
+    fmt2u(dt->second, buf + 17);
     buf[19] = '\0';
 }

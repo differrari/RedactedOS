@@ -1,58 +1,84 @@
 #include "tcp_utils.h"
+#include "std/memory.h"
+#include "tcp_internal.h"
+#include "networking/interface_manager.h"
+#include "networking/internet_layer/pmtu.h"
 
-uint32_t tcp_calc_mss_for_l3(uint8_t l3_id, ip_version_t ver, const void *remote_ip){
-    uint32_t mtu = 1500;
-    l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
-    if (v6) mtu =v6->mtu ? v6->mtu : 1500;
+#define TCP_INIT_CWND_SEGS 10u
 
-    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
-    if (v4)  mtu = v4->runtime_opts_v4.mtu ? v4->runtime_opts_v4.mtu : 1500;
+uint32_t tcp_initial_cwnd(uint32_t mss) {
+    if (!mss) mss = TCP_DEFAULT_MSS;
+    uint32_t ten_mss = mss * TCP_INIT_CWND_SEGS;
+    uint32_t lower = 2 * mss;
+    if (lower < 14600u) lower = 14600u;
+    return ten_mss < lower ? ten_mss : lower;
+}
 
-    if (ver == IP_VER6 && remote_ip){
-        uint16_t pmtu =ipv6_pmtu_get((const uint8_t*)remote_ip);
-        if (pmtu && pmtu < mtu) mtu = pmtu;
+void tcp_update_mss(tcp_flow_t *flow) {
+    if (!flow) return;
+    uint32_t local_mss = flow->tx.path_mss ? flow->tx.path_mss : TCP_DEFAULT_MSS;
+    if (local_mss > TCP_MAX_MSS) local_mss = TCP_MAX_MSS;
+    if (flow->tx.configured_mss && flow->tx.configured_mss < local_mss) local_mss = flow->tx.configured_mss;
+    flow->tx.advertised_mss = local_mss;
+
+    uint32_t mss = local_mss;
+    if (flow->tx.peer_mss && flow->tx.peer_mss < mss) mss = flow->tx.peer_mss;
+    flow->tx.mss = mss;
+}
+
+uint32_t tcp_calc_mss_for_l3(l3_id_t l3_id, ip_version_t ver, const void *remote_ip) {
+    uint32_t mtu = 0;
+    uint32_t epoch = 0;
+    if (ver == IP_VER4) {
+        l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(l3_id);
+        if (v4) {
+            mtu = l3_ipv4_effective_mtu(v4);
+            epoch = v4->epoch;
+        }
+    } else if (ver == IP_VER6) {
+        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(l3_id);
+        if (v6) {
+            mtu = l3_ipv6_effective_mtu(v6);
+            epoch = v6->epoch;
+        }
+    } else return 1;
+
+    if (remote_ip && epoch){
+        uint16_t path_mtu = pmtu_get(l3_id, epoch, ver, remote_ip);
+        if (path_mtu && path_mtu < mtu) mtu = path_mtu;
     }
 
     uint32_t ih = (ver == IP_VER6) ? 40u : 20u;
     uint32_t th = 20u;
-    if (mtu <= ih + th) return 256;
-    uint32_t mss = mtu - ih - th;
-    if (mss < 256u) mss = 256u;
-    return mss;
+    if (mtu <= ih + th) return 1;
+    return mtu - ih - th;
 }
 
-bool tcp_build_tx_opts_from_local_v4(const void *src_ip_addr, ipv4_tx_opts_t *out){
-    if (!out) return false;
-    l3_ipv4_interface_t *v4 = l3_ipv4_find_by_ip(*(const uint32_t *)src_ip_addr);
-    if (v4) {
-        out->scope = IP_TX_BOUND_L3;
-        out->index = v4->l3_id;
-    } else {
-        out->scope = IP_TX_AUTO;
-        out->index = 0;
+void tcp_pmtu_update(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port, uint16_t mtu) {
+    if (!l3_id || !local_ip || !remote_ip || !local_port || !remote_port || !mtu) return;
+
+    tcp_flow_t* flow = tcp_flow_acquire_match(local_port, ver, local_ip, remote_ip, remote_port);
+    if (!flow) return;
+    uint32_t l3_generation = 0;
+    if (ver == IP_VER4) {
+        l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(l3_id);
+        if (v4) l3_generation = v4->generation;
+    } else if (ver == IP_VER6) {
+        l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(l3_id);
+        if (v6) l3_generation = v6->generation;
     }
-    return true;
-}
-
-bool tcp_build_tx_opts_from_l3(uint8_t l3_id, ipv4_tx_opts_t *out){
-    if (!out) return false;
-    out->scope = IP_TX_BOUND_L3;
-    out->index = l3_id;
-    return true;
-}
-
-bool tcp_build_tx_opts_from_local_v6(const void *src_ip_addr, ipv6_tx_opts_t *out){
-    if (!out) return false;
-    const uint8_t *sip = (const uint8_t *)src_ip_addr;
-    l3_ipv6_interface_t *v6 = l3_ipv6_find_by_ip(sip);
-    if (v6 && v6->l2) {
-        out->scope = IP_TX_BOUND_L3;
-        out->index = v6->l3_id;
-    } else {
-        out->scope = IP_TX_AUTO;
-        out->index = 0;
+    if (flow->base.l3_id != l3_id || !l3_generation || flow->base.l3_generation != l3_generation) {
+        tcp_flow_put(flow);
+        return;
     }
-    return true;
+
+    uint32_t headers = ver == IP_VER6 ? 60 : 40;
+    uint32_t path_mss = mtu > headers ? (uint32_t)mtu - headers : 1;
+    if (!flow->tx.path_mss || path_mss < flow->tx.path_mss) {
+        flow->tx.path_mss = path_mss;
+        tcp_update_mss(flow);
+    }
+    tcp_flow_put(flow);
 }
 
 void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out) {
@@ -63,6 +89,8 @@ void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out
     out->sack_permitted = 0;
     out->has_mss = 0;
     out->has_wscale = 0;
+    out->sack_count = 0;
+    memset(out->sacks, 0, sizeof(out->sacks));
 
     if (!opts || len == 0) return;
 
@@ -81,13 +109,32 @@ void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out
         if (i + olen > len) break;
 
         if (kind == 2 && olen == 4) {
-            out->mss = (uint16_t)((opts[i + 2] << 8) | opts[i + 3]);
+            out->mss = rd_be16(&opts[i + 2]);
             out->has_mss = 1;
         } else if (kind == 3 && olen == 3) {
-            out->wscale =opts[i + 2];
-            out->has_wscale = 1;
+            uint8_t ws =opts[i + 2];
+            if (ws <= 14) {
+                out->wscale = ws;
+                out->has_wscale = 1;
+            }
         } else if (kind == 4 && olen == 2) {
             out->sack_permitted = 1;
+        } else if (kind == 5 && olen >= 10 && ((olen - 2) % 8) == 0) {
+            uint32_t blocks = (uint32_t)((olen - 2) / 8);
+            if (blocks > TCP_SACK_MAX_BLOCKS) blocks = TCP_SACK_MAX_BLOCKS;
+
+            for (uint32_t b = 0; b < blocks; b++) {
+                uint32_t o = i + 2 + b*8;
+                uint32_t left  = rd_be32(&opts[o]);
+                uint32_t right = rd_be32(&opts[o+4]);
+                if (TCP_SEQ_LEQ(right, left)) continue;
+
+                uint8_t n = out->sack_count;
+                if (n >= TCP_SACK_MAX_BLOCKS) break;
+                out->sacks[n].left = left;
+                out->sacks[n].right = right;
+                out->sack_count = (uint8_t)(n+1);
+            }
         }
 
         i += olen;
@@ -101,8 +148,8 @@ uint8_t tcp_build_syn_options(uint8_t *out, uint16_t mss, uint8_t wscale, uint8_
 
     out[i++] = 2;
     out[i++] = 4;
-    out[i++] = (uint8_t)(mss >> 8);
-    out[i++] = (uint8_t)(mss & 0xff);
+    wr_be16(out + i, mss);
+    i += 2;
 
     if (wscale != 0xffu){
         out[i++] = 1;

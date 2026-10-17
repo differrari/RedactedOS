@@ -92,7 +92,9 @@ void Terminal::cursor_set_visible(bool visible){
     if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0) {
         if ((uint32_t)last_drawn_cursor_x < columns && (uint32_t)last_drawn_cursor_y < rows) {
             char *prev_line = &row_data[((scroll_row_offset + (u32)last_drawn_cursor_y) % rows) * columns];
-            render_glyph(last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height, prev_line[last_drawn_cursor_x], current_format.current_text_color, current_format.current_bg_color, true);
+            color *prev_line_fg = &row_fg_data[((scroll_row_offset + (u32)last_drawn_cursor_y) % rows) * columns];
+            color *prev_line_bg = &row_bg_data[((scroll_row_offset + (u32)last_drawn_cursor_y) % rows) * columns];
+            render_glyph(last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height, prev_line[last_drawn_cursor_x], prev_line_fg[last_drawn_cursor_x], prev_line_bg[last_drawn_cursor_x], true);
         }
         last_drawn_cursor_x = -1;
         last_drawn_cursor_y = -1;
@@ -123,6 +125,8 @@ void Terminal::redraw_input_line(){
     fb_fill_rect(dctx, 0, current_format.cursor_y * lh, columns * cw, lh, current_format.current_bg_color);
 
     char* line = row_data + (((scroll_row_offset + current_format.cursor_y) % rows) * columns);
+    color* line_fg = &row_fg_data[((scroll_row_offset + current_format.cursor_y) % rows) * columns];
+    color* line_bg = &row_bg_data[((scroll_row_offset + current_format.cursor_y) % rows) * columns];
     memset(line, 0, columns);
 
     if (columns == 0) return;
@@ -137,6 +141,12 @@ void Terminal::redraw_input_line(){
 
     for (uint32_t i = 0; i < draw_len; i++) line[prompt_length + i] = input_buf[i];
     line[prompt_length + draw_len] = 0;
+
+    uint32_t line_len = (uint32_t)prompt_length + draw_len;
+    for (uint32_t i = 0; i <= line_len; i++) {
+        line_fg[i] = current_format.current_text_color;
+        line_bg[i] = current_format.current_bg_color;
+    }
 
     uint32_t ypix = (current_format.cursor_y * lh) + (lh / 2);
     fb_draw_char(dctx, 0, ypix, '>', char_scale, current_format.current_text_color);

@@ -16,13 +16,6 @@ typedef enum {
     NTP_ERR_KOD
 } ntp_result_t;
 
-typedef struct {
-    int64_t offset_us;
-    uint64_t delay_us;
-    uint64_t dispersion_us;
-    uint64_t mono_time_us;
-} ntp_sample_t;
-
 #define NTP_FILTER_N 8
 
 ntp_result_t ntp_poll_once(uint32_t timeout_ms);

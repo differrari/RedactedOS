@@ -186,6 +186,7 @@ void setup_page(uintptr_t address, uint8_t attributes){
 }
 
 paddr_t palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map) {
+    if (!size) return 0;
     if (!alloc_max_page) page_alloc_init();
     if (!page_alloc_high_va) page_alloc_enable_high_va();
     uint64_t page_count = count_pages(size,PAGE_SIZE);
@@ -263,10 +264,10 @@ paddr_t palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full
 
             uint64_t inv = ~mem_bitmap[i];
             uint64_t bit = __builtin_ctzll(inv);
-            if (bit > (64 - page_count)){ 
-                continue;
-            }
-            while (bit < 64) {
+            uint64_t max_bit = 64 - page_count;
+            if (bit > max_bit) continue;
+            
+            while (bit <= max_bit) {
                 bool found = true;
                 for (uint64_t b = bit; b < bit + page_count; b++){
                     if ((mem_bitmap[i] >> b) & 1ull){
@@ -277,7 +278,7 @@ paddr_t palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full
                 }
                 if (found) break;
             }
-            if (bit >= 64) continue;
+            if (bit > max_bit) continue;
             uintptr_t first_address = 0;
             mem_page* prev_page = 0;
 
