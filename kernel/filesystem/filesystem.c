@@ -135,7 +135,7 @@ size_t read_file(file *descriptor, char* buf, size_t size){
             job_serialize_fd(&app, 0, &gfd, copy_on_start);
             job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_end);
         });
-        return j_ret;
+        amount_read = j_ret;
     } else {
         amount_read = local.mod->read(&gfd, buf, size, start_cursor);
     }
@@ -157,7 +157,7 @@ size_t transform_file(module_root *root, const char* path, void* buf, size_t siz
             job_serialize_str(&app, 0, search_path);
             job_serialize_buf(&app, 1, true, (void*)buf, size, copy_on_start | copy_on_end);
         });
-        return j_ret;
+        result = j_ret;
     } else {
         result = mod->transform(search_path, buf, size);
     }

@@ -48,7 +48,7 @@ save_kstack: //x0 = new stack
 
 sub sp, sp, #32
 stp x2, x1, [sp, #0]
-stp x21,x30, [sp, #16]
+str x30, [sp, #16]
 
 adrp x2, ksp
 add  x2, x2, :lo12:ksp
@@ -61,7 +61,7 @@ sub x0,x0,x2
 bl memcpy
 
 ldp x2, x1, [sp, #0]
-ldp x21,x30, [sp, #16]
+ldr x30, [sp, #16]
 
 add sp, sp, #32
 

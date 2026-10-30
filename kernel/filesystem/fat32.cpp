@@ -413,6 +413,7 @@ f32_walk_result FAT32FS::read_entry_handler(FAT32FS *instance, f32file_entry *en
     if (matched != (int)name_len) return {};
 
     const char *next = seek + name_len;
+    if (!next) return {};
     if (*next == '/') next++;
     else if (*next != '\0') return {};
 
@@ -540,6 +541,7 @@ f32_walk_result FAT32FS::list_entries_handler(FAT32FS *instance, f32file_entry *
     if (matched != (int)name_len) return {};
     
     const char *next = seek + name_len;
+    if (!next) return {};
     if (*next == '/') next++;
     else if (*next != '\0') return {};
     

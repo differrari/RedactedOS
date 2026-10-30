@@ -101,7 +101,7 @@ static void play_startup_sound(){
     mixer_master_level(AUDIO_LEVEL_MAX / 2);
     if (wav_load_as_int16("/boot/redos/startup.wav", audio)){
         audio_play_async(&audio[0], 0, AUDIO_ONESHOT_FREE, AUDIO_LEVEL_MAX / 12, PAN_CENTRE);
-    }else{
+    } else {
         static envelope_defn env = { ENV_ASD, 0.025, 0.03 };
         static sound_defn s0 = { WAVE_SQUARE, 440, 440 };
         static sound_defn s1 = { WAVE_SQUARE, 587.33, 587.33 };
