@@ -4,6 +4,7 @@
 #include "networking/interface_manager.h"
 #include "alloc/allocate.h"
 #include "exceptions/irq.h"
+#include "data/struct/ring_buffer.h"
 #include "std/memory.h"
 #include "syscalls/syscalls.h"
 
@@ -26,10 +27,7 @@ typedef struct packet_socket {
     SockBindSpec bind_spec;
     uint32_t bind_generation;
     SockBindSpec last_rx_spec;
-    packet_rx_entry_t* ring;
-    uint32_t ring_cap;
-    uint32_t head;
-    uint32_t tail;
+    CRingBuffer rx;
     uint32_t rx_bytes;
 } packet_socket_t;
 
@@ -71,18 +69,15 @@ static void packet_socket_unregister(packet_socket_t* s) {
 }
 
 static void packet_socket_clear_rx(packet_socket_t* s) {
-    if (!s || !s->ring) return;
+    if (!s || !s->rx.buffer) return;
 
-    for (uint32_t i = 0; i < s->ring_cap; i++) {
-        if (s->ring[i].pkt) netpkt_unref(s->ring[i].pkt);
-        memset(&s->ring[i], 0, sizeof(s->ring[i]));
+    for (uint32_t i = 0; i < cring_size(&s->rx); i++) {
+        packet_rx_entry_t* entry = (packet_rx_entry_t*)cring_at(&s->rx, i);
+        if (entry && entry->pkt) netpkt_unref(entry->pkt);
     }
 
-    release(s->ring);
-    s->ring = NULL;
-    s->ring_cap = 0;
-    s->head = 0;
-    s->tail = 0;
+    release(s->rx.buffer);
+    memset(&s->rx, 0, sizeof(s->rx));
     s->rx_bytes = 0;
 }
 
@@ -166,12 +161,12 @@ socket_impl_t socket_packet_create(ksocket_t* owner, const SocketOptions* extra)
     if (usable < 4) usable = 4;
     if (usable > PACKET_RX_MAX_RING_CAP) usable = PACKET_RX_MAX_RING_CAP;
 
-    s->ring_cap = usable+1;
-    s->ring = (packet_rx_entry_t*)zalloc(sizeof(packet_rx_entry_t) * s->ring_cap);
-    if (!s->ring) {
+    packet_rx_entry_t* entries = (packet_rx_entry_t*)zalloc(sizeof(packet_rx_entry_t) * usable);
+    if (!entries) {
         release(s);
         return NULL;
     }
+    cring_init(&s->rx, entries, usable, sizeof(packet_rx_entry_t));
 
     irq_flags_t irq = irq_save_disable();
     for (int i = 0; i < PACKET_SOCKET_MAX; i++) {
@@ -330,26 +325,25 @@ int64_t socket_recv_packet(socket_impl_t sh, void* buf, uint64_t len) {
     uint32_t pkt_len = 0;
     for (;;) {
         irq_flags_t irq = irq_save_disable();
-        if (s->head != s->tail) {
-            uint32_t pos = s->head;
-            entry = s->ring[pos];
-            memset(&s->ring[pos], 0, sizeof(s->ring[pos]));
-            s->head = (s->head + 1) % s->ring_cap;
+        bool closing = socket_core_is_closing(s->ownerSocket);
+        bool ready = !closing && cring_pop(&s->rx, &entry);
+        uint32_t flags = s->options.flags;
+        uint32_t timeout_ms = s->options.recv_timeout_ms;
+        if (ready) {
             pkt_len = netpkt_len(entry.pkt);
             if (entry.strip_vlan && pkt_len >= ETH_VLAN_TAG_LEN) pkt_len -= ETH_VLAN_TAG_LEN;
             if (s->rx_bytes >= pkt_len) s->rx_bytes -= pkt_len;
             else s->rx_bytes = 0;
-            irq_restore(irq);
-            break;
         }
         irq_restore(irq);
 
-        if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
-        if ((s->options.flags & SOCK_OPT_RECV_TIMEOUT) && s->options.recv_timeout_ms) {
-            uint32_t now_ms = (uint32_t)get_time();
-            uint32_t elapsed_ms = now_ms - start_ms;
-            if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
-            uint32_t wait_ms = s->options.recv_timeout_ms - elapsed_ms;
+        if (closing) return SOCK_ERR_STATE;
+        if (ready) break;
+        if (flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
+        if ((flags & SOCK_OPT_RECV_TIMEOUT) && timeout_ms) {
+            uint32_t elapsed_ms = (uint32_t)get_time() - start_ms;
+            if (elapsed_ms >= timeout_ms) return SOCK_ERR_WOULDBLOCK;
+            uint32_t wait_ms = timeout_ms - elapsed_ms;
             if (wait_ms > 5) wait_ms = 5;
             msleep(wait_ms);
         }else msleep(5);
@@ -385,8 +379,10 @@ void socket_packet_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t genera
     packet_socket_t* s = (packet_socket_t*)sh;
     if (!s || !ifindex) return;
 
+    uint32_t index = 0;
     for (;;) {
-        netpkt_t* stale = NULL;
+        packet_rx_entry_t stale = {0};
+        bool removed = false;
         irq_flags_t irq = irq_save_disable();
         if (s->bind_spec.kind == BIND_L2 && s->bind_spec.ifindex == ifindex && s->bind_generation == generation) s->bind_generation = 0;
         if (s->last_rx_spec.kind == BIND_L2 && s->last_rx_spec.ifindex == ifindex) {
@@ -394,31 +390,22 @@ void socket_packet_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t genera
             s->last_rx_spec.kind = BIND_ANY;
         }
 
-        if (s->ring && s->ring_cap) { 
-            for (uint32_t pos = s->head; pos != s->tail; pos = (pos + 1) % s->ring_cap) {
-                packet_rx_entry_t* entry = &s->ring[pos];
-                if (entry->ifindex != ifindex || entry->generation != generation) continue;
+        for (; index < cring_size(&s->rx); index++) {
+            packet_rx_entry_t* entry = (packet_rx_entry_t*)cring_at(&s->rx, index);
+            if (!entry || entry->ifindex != ifindex || entry->generation != generation) continue;
 
-                stale = entry->pkt;
-                uint32_t stale_len = netpkt_len(entry->pkt);
-                if (entry->strip_vlan && stale_len >= ETH_VLAN_TAG_LEN) stale_len -= ETH_VLAN_TAG_LEN;
-                uint32_t cur = pos;
-                uint32_t next = (cur + 1) % s->ring_cap;
-                while (next != s->tail) {
-                    s->ring[cur] = s->ring[next];
-                    cur = next;
-                    next = (next + 1) % s->ring_cap;
-                }
-                memset(&s->ring[cur], 0, sizeof(s->ring[cur]));
-                s->tail = cur;
+            removed = cring_remove(&s->rx, index, &stale);
+            if (removed && stale.pkt) {
+                uint32_t stale_len = netpkt_len(stale.pkt);
+                if (stale.strip_vlan && stale_len >= ETH_VLAN_TAG_LEN) stale_len -= ETH_VLAN_TAG_LEN;
                 if (s->rx_bytes >= stale_len) s->rx_bytes -= stale_len;
                 else s->rx_bytes = 0;
-                break;
             }
+            break;
         }
         irq_restore(irq);
-        if (!stale) return;
-        netpkt_unref(stale);
+        if (!removed) return;
+        if (stale.pkt) netpkt_unref(stale.pkt);
     }
 }
 
@@ -515,22 +502,18 @@ bool socket_packet_input(uint8_t ifindex, netpkt_t* pkt) {
         irq = irq_save_disable();
         l2_interface_t* source = l2_interface_find_by_index(target->ifindex);
         bool same_bind = s->bind_spec.kind != BIND_L2 || s->bind_generation == target->generation;
-        bool can_queue = source && source->generation == target->generation && same_bind && s->ring && s->ring_cap && s->rx_bytes <= limit - pkt_len;
-        uint32_t nexti = 0;
+        bool can_queue = !socket_core_is_closing(s->ownerSocket) && source && source->generation == target->generation && same_bind && s->rx.buffer && s->rx_bytes <= limit - pkt_len;
         if (can_queue) {
-            nexti = (s->tail + 1) % s->ring_cap;
-            if (nexti == s->head) can_queue = false;
-        }
-        if (can_queue) {
-            packet_rx_entry_t* entry = &s->ring[s->tail];
-            netpkt_ref(view);
-            entry->pkt = view;
-            entry->ifindex = target->ifindex;
-            entry->generation = target->generation;
-            entry->strip_vlan = target->strip_vlan;
-            s->tail = nexti;
-            s->rx_bytes += pkt_len;
-            delivered = true;
+            packet_rx_entry_t* entry = (packet_rx_entry_t*)cring_push_slot(&s->rx);
+            if (entry) {
+                netpkt_ref(view);
+                entry->pkt = view;
+                entry->ifindex = target->ifindex;
+                entry->generation = target->generation;
+                entry->strip_vlan = target->strip_vlan;
+                s->rx_bytes += pkt_len;
+                delivered = true;
+            }
         }
         irq_restore(irq);
         socket_core_put(s->ownerSocket);

@@ -256,9 +256,16 @@ static int32_t http_client_connect_endpoint_origin(HTTPClient* cli, const net_l4
 
 static int32_t http_client_connect_domain_origin(HTTPClient* cli, const char* host, uint16_t port) {
     if (!host || !port) return SOCK_ERR_INVAL;
-    net_l4_endpoint ep = socket_endpoint_select(host, port, (ip_version_t)0, DNS_USE_BOTH, 3000);
-    if (!ep.ver) return SOCK_ERR_DNS;
-    return http_client_connect_endpoint_origin(cli, &ep, host);
+    net_l4_endpoint endpoints[2];
+    uint32_t count = socket_endpoint_resolve(host, port, DNS_USE_BOTH, 3000, endpoints, N_ARR(endpoints), NULL);
+    if (!count) return SOCK_ERR_DNS;
+
+    int32_t result = SOCK_ERR_DNS;
+    for (uint32_t i = 0; i < count; i++) {
+        result = http_client_connect_endpoint_origin(cli, &endpoints[i], host);
+        if (result >= 0) return result;
+    }
+    return result;
 }
 
 http_client_handle_t http_client_create(const SocketOptions* extra, const HTTPClientPolicyOptions* http_options) {

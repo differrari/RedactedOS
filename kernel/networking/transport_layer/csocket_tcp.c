@@ -15,6 +15,7 @@
 #include "std/memory.h"
 #include "alloc/allocate.h"
 #include "exceptions/irq.h"
+#include "data/struct/ring_buffer.h"
 
 #define TCP_MAX_BACKLOG 128
 
@@ -28,9 +29,7 @@ typedef struct tcp_socket {
     socket_bind_token_t bindToken;
     uint32_t bind_generation;
     tcp_data flow;
-    ksocket_t** pending;
-    int32_t backlogCap;
-    int32_t backlogLen;
+    CRingBuffer pending;
     bool listening;
     bool closed;
 } tcp_socket_t;
@@ -39,24 +38,24 @@ static int32_t tcp_socket_backlog_len(tcp_socket_t* s) {
     if (!s) return 0;
 
     irq_flags_t irq = irq_save_disable();
-    int32_t len = s->backlogLen;
+    int32_t len = (int32_t)cring_size(&s->pending);
     irq_restore(irq);
     return len;
 }
 
-static ksocket_t* tcp_socket_pop_pending_at(tcp_socket_t* s, int32_t idx, ksocket_t* expected) {
+static ksocket_t* tcp_socket_pop_pending_at(tcp_socket_t* s, uint32_t idx, ksocket_t* expected) {
     if (!s) return NULL;
 
     irq_flags_t irq = irq_save_disable();
-    if (idx < 0 || idx >= s->backlogLen || (expected && s->pending[idx] != expected)) {
+    ksocket_t** item = (ksocket_t**)cring_at(&s->pending, idx);
+    if (!item || (expected && *item != expected)) {
         irq_restore(irq);
         return NULL;
     }
 
-    ksocket_t* client = s->pending[idx];
-    for (int32_t i = idx + 1; i < s->backlogLen; ++i) s->pending[i-1] = s->pending[i];
-
-    s->pending[--s->backlogLen] = NULL;
+    ksocket_t* client = NULL;
+    if (idx == 0) cring_pop(&s->pending, &client);
+    else cring_remove(&s->pending, idx, &client);
     irq_restore(irq);
     return client;
 }
@@ -67,9 +66,7 @@ static void tcp_socket_reset_connection(tcp_socket_t* s, bool abort_flow) {
 
     s->connected = false;
     memset(&s->flow, 0, sizeof(s->flow));
-    s->remoteEP.port = 0;
-    s->remoteEP.ver = IP_VER4;
-    memset(s->remoteEP.ip, 0, sizeof(s->remoteEP.ip));
+    make_ep(0, 0, IP_VER4, &s->remoteEP);
 }
 
 static void tcp_socket_abort_pending(ksocket_t* owner) {
@@ -445,53 +442,46 @@ int32_t socket_listen_tcp(socket_impl_t sh, int32_t backlog) {
 
     int32_t cap = backlog > TCP_MAX_BACKLOG ? TCP_MAX_BACKLOG : backlog;
     if (cap < 1) cap = 1;
-    if (s->listening && s->pending && s->backlogCap == cap) return SOCK_OK;
+    if (s->listening && s->pending.buffer && cring_capacity(&s->pending) == (uint32_t)cap) return SOCK_OK;
 
     ksocket_t** pending = (ksocket_t**)zalloc(sizeof(ksocket_t*)*cap);
     if (!pending) return SOCK_ERR_SYS;
 
     irq_flags_t irq = irq_save_disable();
-    ksocket_t** old_pending = s->pending;
-    int32_t old_cap = s->backlogCap;
-    int32_t old_len = s->backlogLen;
-    bool old_listening = s->listening;
-    int32_t valid_old_len = old_pending ? old_len : 0;
-    int32_t keep = valid_old_len < cap ? valid_old_len : cap;
-    for (int32_t i = 0; i < keep; ++i) pending[i] = old_pending[i];
-    s->pending = pending;
-    s->backlogCap = cap;
-    s->backlogLen = keep;
-    s->listening = true;
-    irq_restore(irq);
-
     if (!socket_bind_tcp_listen(s->bindToken)) {
-        irq = irq_save_disable();
-        s->pending = old_pending;
-        s->backlogCap = old_cap;
-        s->backlogLen = old_len;
-        s->listening = old_listening;
         irq_restore(irq);
         release(pending);
         return SOCK_ERR_BOUND;
     }
-
-    for (int32_t i = keep; i < valid_old_len; ++i) {
-        if (!old_pending[i]) continue;
-        tcp_socket_abort_pending(old_pending[i]);
+    CRingBuffer old_pending = s->pending;
+    uint32_t old_len = cring_size(&old_pending);
+    uint32_t keep = old_len < (uint32_t)cap ? old_len : (uint32_t)cap;
+    cring_init(&s->pending, pending, (uint32_t)cap, sizeof(ksocket_t*));
+    for (uint32_t i = 0; i < keep; i++) {
+        ksocket_t** old = (ksocket_t**)cring_at(&old_pending, i);
+        if (old) cring_push(&s->pending, old);
     }
-    if (old_pending) release(old_pending);
+    s->listening = true;
+    irq_restore(irq);
+
+    for (uint32_t i = keep; i < old_len; i++) {
+        ksocket_t** owner = (ksocket_t**)cring_at(&old_pending, i);
+        if (owner && *owner) tcp_socket_abort_pending(*owner);
+    }
+    if (old_pending.buffer) release(old_pending.buffer);
     return SOCK_OK;
 }
 
 //TODO replace polling with a socket wait queue when kernel events are present
 ksocket_t* socket_accept_tcp(socket_impl_t sh) {
     tcp_socket_t* s = (tcp_socket_t*)sh;
-    if (!s || !s->listening || !s->pending) return NULL;
+    if (!s || !s->listening || !s->pending.buffer) return NULL;
 
     uint32_t start_ms = get_time();
     while (1) {
         irq_flags_t irq = irq_save_disable(); //TODO lock
-        ksocket_t* owner = s->listening && s->pending && s->backlogLen > 0 ? s->pending[0] : 0;
+        ksocket_t** head = s->listening ? (ksocket_t**)cring_front(&s->pending) : NULL;
+        ksocket_t* owner = head ? *head : 0;
         if (owner) socket_core_ref(owner);
         irq_restore(irq);
 
@@ -510,7 +500,7 @@ ksocket_t* socket_accept_tcp(socket_impl_t sh) {
             socket_core_put(owner);
         }
 
-        if (!s->listening || !s->pending || s->closed) return NULL;
+        if (socket_core_is_closing(s->ownerSocket) || s->closed || !s->listening || !s->pending.buffer) return NULL;
         if (s->options.flags & SOCK_OPT_NONBLOCK) return NULL;
         if ((s->options.flags & SOCK_OPT_RECV_TIMEOUT) && s->options.recv_timeout_ms) {
             uint32_t elapsed = get_time() - start_ms;
@@ -764,18 +754,18 @@ int32_t socket_close_tcp(socket_impl_t sh) {
         }
     }
 
-    if (s->pending) {
-        for (int32_t i = 0; i < s->backlogLen; ++i) {
-            if (!s->pending[i]) continue;
-            tcp_socket_abort_pending(s->pending[i]);
-            s->pending[i] = NULL;
-        }
-        release(s->pending);
-        s->pending = NULL;
-    }
-    s->backlogCap = 0;
-    s->backlogLen = 0;
+    irq_flags_t irq = irq_save_disable();
+    CRingBuffer pending = s->pending;
+    memset(&s->pending, 0, sizeof(s->pending));
     s->listening = false;
+    irq_restore(irq);
+    if (pending.buffer) {
+        for (uint32_t i = 0; i < cring_size(&pending); i++) {
+            ksocket_t** owner = (ksocket_t**)cring_at(&pending, i);
+            if (owner && *owner) tcp_socket_abort_pending(*owner);
+        }
+        release(pending.buffer);
+    }
 
     if (s->bindToken) {
         socket_bind_remove(s->bindToken);
@@ -829,11 +819,12 @@ int32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, l3_id_t l3_i
     if (!listener) return SOCK_ERR_STATE;
     tcp_socket_t* s = (tcp_socket_t*)socket_core_impl(listener);
     if (!s) return SOCK_ERR_STATE;
-    if (!s->listening || !s->localPort || s->localPort != dst_port || !s->pending) return SOCK_ERR_STATE;
+    if (!s->listening || !s->localPort || s->localPort != dst_port || !s->pending.buffer) return SOCK_ERR_STATE;
 
-    for (int32_t i = 0;;) {
+    for (uint32_t i = 0;;) {
         irq_flags_t irq = irq_save_disable();
-        ksocket_t* owner = (i >= 0 && i < s->backlogLen) ? s->pending[i] : NULL;
+        ksocket_t** item = (ksocket_t**)cring_at(&s->pending, i);
+        ksocket_t* owner = item ? *item : NULL;
         if (owner) socket_core_ref(owner);
         irq_restore(irq);
 
@@ -845,7 +836,7 @@ int32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, l3_id_t l3_i
             bool closed = tcp_flow_recv_closed(&client->flow);
             if (!closed || readable) {
                 socket_core_put(owner);
-                ++i;
+                i++;
                 continue;
             }
         }
@@ -855,7 +846,7 @@ int32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, l3_id_t l3_i
         if (!removed) continue;
         tcp_socket_abort_pending(removed);
     }
-    if (tcp_socket_backlog_len(s) >= s->backlogCap) {
+    if ((uint32_t)tcp_socket_backlog_len(s) >= cring_capacity(&s->pending)) {
         tcp_stats.acceptq_drop_full++;
         return SOCK_ERR_WOULDBLOCK;
     }
@@ -873,11 +864,7 @@ int32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, l3_id_t l3_i
     child->options.flags &= ~SOCK_OPT_NONBLOCK;
 
     child->localPort = dst_port;
-    child->remoteEP.ver = ipver;
-    memset(child->remoteEP.ip, 0, sizeof(child->remoteEP.ip));
-    if (ipver == IP_VER4) memcpy(child->remoteEP.ip, src_ip_addr, 4);
-    else ipv6_cpy(child->remoteEP.ip, src_ip_addr);
-    child->remoteEP.port = src_port;
+    make_ep(src_ip_addr, src_port, ipver, &child->remoteEP);
     child->bindSpec.kind = BIND_IP;
     child->bindSpec.ver = ipver;
     child->bindSpec.l3_id = l3_id;
@@ -901,14 +888,14 @@ int32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, l3_id_t l3_i
     socket_core_ref(child_owner);
 
     irq_flags_t irq = irq_save_disable();
-    if (!s->listening || !s->pending || s->backlogCap <= 0) {
+    if (!s->listening || !s->pending.buffer || !cring_capacity(&s->pending)) {
         irq_restore(irq);
         tcp_socket_reset_connection(child, false);
         socket_core_close_socket(child_owner);
         socket_core_put(child_owner);
         return SOCK_ERR_STATE;
     }
-    if (s->backlogLen >= s->backlogCap) {
+    if (!cring_push(&s->pending, &child_owner)) {
         irq_restore(irq);
         tcp_socket_reset_connection(child, false);
         socket_core_close_socket(child_owner);
@@ -916,7 +903,6 @@ int32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, l3_id_t l3_i
         tcp_stats.acceptq_drop_full++;
         return SOCK_ERR_WOULDBLOCK;
     }
-    s->pending[s->backlogLen++] = child_owner;
     irq_restore(irq);
     return SOCK_OK;
 }

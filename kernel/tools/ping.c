@@ -6,7 +6,7 @@
 #include "console/kio.h"
 #include "process/scheduler.h"
 #include "syscalls/syscalls.h"
-#include "networking/application_layer/dns/dns.h"
+#include "networking/transport_layer/socket_endpoint.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/transport_layer/trans_utils.h"
@@ -102,28 +102,36 @@ static const char *status_to_msg(uint8_t st) {
     }
 }
 
-static int ping_v4(const ping_opts_t *o) {
+static int ping_host(const ping_opts_t *o) {
     const char *host = o->addr.host;
 
-    uint32_t dst_ip = 0;
-    bool is_lit = ipv4_parse(host, &dst_ip);
-    if (!is_lit) {
-        uint32_t r = 0;
-        dns_result_t dr = dns_resolve_a(host, &r, DNS_USE_BOTH, o->timeout_ms);
-        if (dr != DNS_OK) {
-            print("ping: dns lookup failed (%d) for '%s'", (int)dr, host);
-            return 2;
-        }
-        dst_ip = r;
-    }
-
-    if (ipv4_is_limited_broadcast(dst_ip) && (!o->addr.bind_set || o->addr.bind.kind == BIND_L2)) {
-        print("ping: limited broadcast requires -s local_ipv4 or l3:id");
+    dns_result_t dr = DNS_OK;
+    net_l4_endpoint dst;
+    if (!socket_endpoint_select(host, 0, o->ver, DNS_USE_BOTH, o->timeout_ms, &dst, &dr)) {
+        print("ping: dns lookup failed (%d) for '%s'", (int)dr, host);
         return 2;
     }
 
-    char ipstr[16];
-    ipv4_to_string(dst_ip, ipstr);
+    bool multi;
+    if (o->ver == IP_VER4) {
+        uint32_t dst_ip = 0;
+        memcpy(&dst_ip, dst.ip, sizeof(dst_ip));
+
+        if (ipv4_is_limited_broadcast(dst_ip) && (!o->addr.bind_set || o->addr.bind.kind == BIND_L2)) {
+            print("ping: limited broadcast requires -s local_ipv4 or l3:id");
+            return 2;
+        }
+        multi = ipv4_is_multicast(dst_ip) || ipv4_is_limited_broadcast(dst_ip);
+    } else {
+        if (ipv6_is_linkscope_mcast(dst.ip) && (!o->addr.bind_set)) {
+            print("ping: IPv6 link-local multicast requires -s local_ipv6, l2:id or l3:id");
+            return 2;
+        }
+        multi = ipv6_is_multicast(dst.ip);
+    }
+
+    char ipstr[64];
+    net_ep_split(&dst, ipstr, sizeof(ipstr), 0, 0);
     print("PING %s (%s) with 32 bytes of data:", host, ipstr);
 
     uint32_t sent = 0, received = 0, min_ms = UINT32_MAX, max_ms = 0;
@@ -131,10 +139,7 @@ static int ping_v4(const ping_opts_t *o) {
     uint16_t id = (uint16_t)(get_current_proc_pid() & 0xFFFF);
     uint16_t seq_base = (uint16_t)(get_time() & 0xFFFF);
     const SockBindSpec* bind = o->addr.bind_set ? &o->addr.bind : NULL;
-    bool multi = ipv4_is_multicast(dst_ip) || ipv4_is_limited_broadcast(dst_ip);
     uint32_t max_results = multi ? PING_MAX_REPLIES : 1;
-    net_l4_endpoint dst;
-    make_ep(&dst_ip, 0, IP_VER4, &dst);
 
     for (uint32_t i = 0; i < o->count; i++) {
         sent++;
@@ -177,79 +182,6 @@ static int ping_v4(const ping_opts_t *o) {
     return received > 0 ? 0 : 1;
 }
 
-static int ping_v6(const ping_opts_t *o) {
-    const char *host = o->addr.host;
-    uint8_t dst_ip[16] ={0};
-    bool is_lit = ipv6_parse(host, dst_ip);
-    if (!is_lit) {
-        dns_result_t dr = dns_resolve_aaaa(host, dst_ip, DNS_USE_BOTH, o->timeout_ms);
-        if (dr != DNS_OK) {
-            print("ping: dns lookup failed (%d) for '%s'",(int)dr, host);
-            return 2;
-        }
-    }
-
-    if (ipv6_is_linkscope_mcast(dst_ip) && !o->addr.bind_set) {
-        print("ping: IPv6 link-local multicast requires -s local_ipv6, l2:id or l3:id");
-        return 2;
-    }
-
-    char ipstr[64];
-    ipv6_to_string(dst_ip, ipstr, (int)sizeof(ipstr));
-
-    print("PING %s (%s) with 32 bytes of data:", host, ipstr);
-
-    uint32_t sent = 0, received = 0, min_ms = UINT32_MAX, max_ms = 0;
-    uint64_t sum_ms = 0;
-    uint16_t id = (uint16_t)(get_current_proc_pid() & 0xFFFF);
-    uint16_t seq_base = (uint16_t)(get_time() & 0xFFFF);
-    const SockBindSpec* bind = o->addr.bind_set ? &o->addr.bind : NULL;
-    uint32_t max_results = ipv6_is_multicast(dst_ip) ? PING_MAX_REPLIES : 1;
-    net_l4_endpoint dst;
-    make_ep(dst_ip, 0, IP_VER6, &dst);
-
-    for (uint32_t i = 0; i < o->count; i++) {
-        sent++;
-        uint16_t seq = (uint16_t)(seq_base + i);
-        icmp_probe_result_t res[PING_MAX_REPLIES];
-        uint32_t n = icmp_probe_collect(&dst, id, seq, o->timeout_ms, bind, (uint8_t)o->ttl, res, max_results);
-
-        if (n) {
-            for (uint32_t j = 0; j < n; j++) {
-                if (res[j].status == ICMP_PROBE_OK) {
-                    received++;
-                    uint32_t rtt = res[j].rtt_ms;
-                    if (rtt < min_ms) min_ms = rtt;
-                    if (rtt > max_ms) max_ms = rtt;
-                    sum_ms += rtt;
-                    char rip[64];
-                    net_ep_split(&res[j].responder, rip, (int)sizeof(rip), NULL, NULL);
-                    print("Reply from %s: bytes=32 time=%ums", rip, rtt);
-                } else print("%s", status_to_msg(res[j].status));
-            }
-        } else print("%s", status_to_msg(ICMP_PROBE_TIMEOUT));
-
-        if (i + 1 < o->count) msleep(o->interval_ms);
-    }
-
-    print("");
-
-    print("--- %s ping statistics ---", host);
-
-    uint32_t loss = (sent == 0 || received >= sent) ? 0 : (uint32_t)((((uint64_t)(sent - received)) * 100) / sent);
-    uint32_t total_time = (o->count > 0) ? (o->count - 1) * o->interval_ms : 0;
-
-    print("%u packets transmitted, %u received, %u%% packet loss, time %ums", sent, received, loss, total_time);
-
-    if (received > 0) {
-        uint32_t avg = (uint32_t)(sum_ms / received);
-        if (min_ms == UINT32_MAX) min_ms = avg;
-        print("rtt min/avg/max = %u/%u/%u ms", min_ms, avg, max_ms);
-    }
-
-    return (received > 0) ? 0 : 1;
-}
-
 int run_ping(int argc, char *argv[]) {
     if (argc == 2 && strcmp_case(argv[1], "--help", true) == 0) {
         print_help();
@@ -267,8 +199,7 @@ int run_ping(int argc, char *argv[]) {
         return 2;
     }
 
-    if (opts.ver == IP_VER4) return ping_v4(&opts);
-    if (opts.ver == IP_VER6) return ping_v6(&opts);
+    if (opts.ver == IP_VER4 || opts.ver == IP_VER6) return ping_host(&opts);
     print_help();
 
     return 2;

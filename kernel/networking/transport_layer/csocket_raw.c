@@ -1,6 +1,7 @@
 #include "csocket_raw.h"
 #include "alloc/allocate.h"
 #include "exceptions/irq.h"
+#include "data/struct/ring_buffer.h"
 #include "net/checksums.h"
 #include "std/memory.h"
 #include "networking/interface_manager.h"
@@ -36,10 +37,8 @@ typedef struct raw_socket {
     uint32_t bind_generation;
     SockBindSpec last_rx_spec;
     net_l4_endpoint remote_ep;
-    raw_rx_entry_t rx[RAW_RX_RING_CAP];
-    uint8_t rx_head;
-    uint8_t rx_tail;
-    uint8_t rx_count;
+    raw_rx_entry_t rx_entries[RAW_RX_RING_CAP];
+    CRingBuffer rx;
     uint32_t rx_bytes;
 } raw_socket_t;
 
@@ -72,6 +71,21 @@ static int32_t raw_set_filter(raw_socket_t* s, const void* value, uint32_t len) 
     return SOCK_OK;
 }
 
+static bool raw_source_valid(const SockBindSpec *spec, uint32_t generation) {
+    if (!spec) return false;
+    if (spec->kind == BIND_L2) {
+        l2_interface_t* l2 = l2_interface_find_by_index(spec->ifindex);
+        return l2 && l2->generation == generation;
+    }
+    if (spec->kind != BIND_L3 && spec->kind != BIND_IP) return false;
+    if (spec->ver == IP_VER6) {
+        l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(spec->l3_id);
+        return v6 && v6->generation == generation;
+    }
+    l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(spec->l3_id);
+    return v4 && v4->generation == generation;
+}
+
 static bool raw_enqueue(raw_socket_t* s, const net_l4_endpoint* src, const SockBindSpec* rx_spec, uint32_t generation, netpkt_t* pkt, uint32_t len) {
     if (!s || !src || !pkt || !len || len > RAW_RX_MAX_BYTES) return false;
 
@@ -92,40 +106,24 @@ static bool raw_enqueue(raw_socket_t* s, const net_l4_endpoint* src, const SockB
         if (!ok) return false;
     }
 
-    netpkt_ref(pkt);
-
     irq_flags_t irq = irq_save_disable();
-    bool source_valid = false;
-    if (rx_spec && rx_spec->kind == BIND_L2) {
-        l2_interface_t* l2 = l2_interface_find_by_index(rx_spec->ifindex);
-        source_valid = l2 && l2->generation == generation;
-    } else if (rx_spec && (rx_spec->kind == BIND_L3 || rx_spec->kind == BIND_IP)) {
-        if (rx_spec->ver == IP_VER6) {
-            l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(rx_spec->l3_id);
-            source_valid = v6 && v6->generation == generation;
-        } else {
-            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(rx_spec->l3_id);
-            source_valid = v4 && v4->generation == generation;
-        }
-    }
-    if (!source_valid || (s->bound && !s->bind_generation) || s->rx_count >= RAW_RX_RING_CAP || s->rx_bytes > RAW_RX_MAX_BYTES - len) {
+    bool source_valid = raw_source_valid(rx_spec, generation);
+    if (!source_valid || socket_core_is_closing(s->ownerSocket) || (s->bound && !s->bind_generation) || s->rx_bytes > RAW_RX_MAX_BYTES - len) {
         irq_restore(irq);
-        netpkt_unref(pkt);
         return false;
     }
 
-    uint8_t pos = s->rx_tail;
-    s->rx[pos].pkt = pkt;
-    s->rx[pos].len = len;
-    s->rx[pos].src = *src;
-    if (rx_spec) s->rx[pos].rx_spec = *rx_spec;
-    else {
-        memset(&s->rx[pos].rx_spec, 0, sizeof(s->rx[pos].rx_spec));
-        s->rx[pos].rx_spec.kind = BIND_ANY;
+    raw_rx_entry_t* entry = (raw_rx_entry_t*)cring_push_slot(&s->rx);
+    if (!entry) {
+        irq_restore(irq);
+        return false;
     }
-    s->rx[pos].generation = generation;
-    s->rx_tail = (uint8_t)((s->rx_tail + 1) % RAW_RX_RING_CAP);
-    s->rx_count++;
+    netpkt_ref(pkt);
+    entry->pkt = pkt;
+    entry->len = len;
+    entry->generation = generation;
+    entry->src = *src;
+    entry->rx_spec = *rx_spec;
     s->rx_bytes += len;
     irq_restore(irq);
     return true;
@@ -146,7 +144,9 @@ socket_impl_t socket_raw_create(ksocket_t* owner, const SocketOptions* extra) {
     s->ownerSocket = owner;
     s->options.flags = SOCK_OPT_SPECIAL;
     s->options.special_kind = SOCKET_SPECIAL_RAW;
+    s->bind_spec.kind = BIND_ANY;
     s->last_rx_spec.kind = BIND_ANY;
+    cring_init(&s->rx, s->rx_entries, RAW_RX_RING_CAP, sizeof(raw_rx_entry_t));
     if (extra) {
         if ((extra->flags & SOCK_OPT_RECV_TIMEOUT) && extra->recv_timeout_ms) {
             s->options.flags |= SOCK_OPT_RECV_TIMEOUT;
@@ -196,18 +196,12 @@ void socket_destroy_raw(socket_impl_t sh) {
     raw_socket_t* s = (raw_socket_t*)sh;
     if (!s) return;
 
-    if (s->registered) {
-        irq_flags_t irq = irq_save_disable();
-        for (int i = 0; i < RAW_SOCKET_MAX; i++) if (g_raw_sockets[i] == s) {
-                g_raw_sockets[i] = NULL;
-                if (g_raw_count) g_raw_count--;
-                break;
-        }
-        s->registered = false;
-        irq_restore(irq);
-    }
+    socket_close_raw(s);
 
-    for (int i = 0; i < RAW_RX_RING_CAP; i++) if (s->rx[i].pkt) netpkt_unref(s->rx[i].pkt);
+    for (uint32_t i = 0; i < cring_size(&s->rx); i++) {
+        raw_rx_entry_t* entry = (raw_rx_entry_t*)cring_at(&s->rx, i);
+        if (entry && entry->pkt) netpkt_unref(entry->pkt);
+    }
     release(s);
 }
 
@@ -322,6 +316,7 @@ int32_t socket_bind_raw(socket_impl_t sh, const SockBindSpec* spec) {
     memset(&next, 0, sizeof(next));
 
     if (spec->kind == BIND_ANY || ((proto == PROTO_ICMP || proto == PROTO_IGMP) && spec->kind == BIND_ANY4) || (proto == PROTO_ICMPV6 && spec->kind == BIND_ANY6)) {
+        next.kind = BIND_ANY;
         s->bind_spec = next;
         s->bind_generation = 0;
         s->bound = false;
@@ -497,44 +492,29 @@ int64_t socket_recv_raw(socket_impl_t sh, void* buf, uint64_t len, net_l4_endpoi
     raw_rx_entry_t entry;
     for (;;) {
         irq_flags_t irq = irq_save_disable();
-        if (s->rx_count) {
-            uint8_t pos = s->rx_head;
-            entry = s->rx[pos];
-            memset(&s->rx[pos], 0, sizeof(s->rx[pos]));
+        bool closing = socket_core_is_closing(s->ownerSocket);
+        bool ready = !closing && cring_pop(&s->rx, &entry);
+        uint32_t flags = s->options.flags;
+        uint32_t timeout_ms = s->options.recv_timeout_ms;
+        if (ready) {
             if (s->rx_bytes >= entry.len) s->rx_bytes -= entry.len;
             else s->rx_bytes = 0;
-            s->rx_head = (uint8_t)((s->rx_head + 1) % RAW_RX_RING_CAP);
-            s->rx_count--;
-            irq_restore(irq);
-            break;
         }
         irq_restore(irq);
         
-        if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
-        if ((s->options.flags & SOCK_OPT_RECV_TIMEOUT) && s->options.recv_timeout_ms) {
-            uint32_t now_ms = (uint32_t)get_time();
-            uint32_t elapsed_ms = now_ms - start_ms;
-            if (elapsed_ms >= s->options.recv_timeout_ms) return SOCK_ERR_WOULDBLOCK;
-            uint32_t wait_ms = s->options.recv_timeout_ms - elapsed_ms;
+        if (closing) return SOCK_ERR_STATE;
+        if (ready) break;
+        if (flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
+        if ((flags & SOCK_OPT_RECV_TIMEOUT) && timeout_ms) {
+            uint32_t elapsed_ms = (uint32_t)get_time() - start_ms;
+            if (elapsed_ms >= timeout_ms) return SOCK_ERR_WOULDBLOCK;
+            uint32_t wait_ms = timeout_ms - elapsed_ms;
             if (wait_ms > 5) wait_ms = 5;
             msleep(wait_ms);
         } else msleep(5);
     }
 
-    bool source_valid = false;
-    if (entry.rx_spec.kind == BIND_L2) {
-        l2_interface_t* l2 = l2_interface_find_by_index(entry.rx_spec.ifindex);
-        source_valid = l2 && l2->generation == entry.generation;
-    } else if (entry.rx_spec.kind == BIND_L3 || entry.rx_spec.kind == BIND_IP) {
-        if (entry.rx_spec.ver == IP_VER6) {
-            l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(entry.rx_spec.l3_id);
-            source_valid = v6 && v6->generation == entry.generation;
-        } else {
-            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(entry.rx_spec.l3_id);
-            source_valid = v4 && v4->generation == entry.generation;
-        }
-    }
-    if (!source_valid) {
+    if (!raw_source_valid(&entry.rx_spec, entry.generation)) {
         netpkt_unref(entry.pkt);
         return SOCK_ERR_NOT_FOUND;
     }
@@ -554,43 +534,39 @@ int64_t socket_recv_raw(socket_impl_t sh, void* buf, uint64_t len, net_l4_endpoi
     return n;
 }
 
-static void raw_drop_rx(raw_socket_t* s, SockBindKind kind, uint32_t id) {
+static void raw_drop_rx(raw_socket_t* s, SockBindKind kind, uint32_t id, uint32_t generation) {
     if (!s) return;
 
     netpkt_t* dropped[RAW_RX_RING_CAP];
     uint8_t dropped_count = 0;
-    raw_rx_entry_t kept[RAW_RX_RING_CAP];
-    uint8_t kept_count = 0;
-    uint32_t kept_bytes = 0;
 
     irq_flags_t irq = irq_save_disable(); //TODO lock
-    for (uint8_t i = 0; i < s->rx_count; i++) {
-        uint8_t pos = (uint8_t)((s->rx_head + i) % RAW_RX_RING_CAP);
-        raw_rx_entry_t entry = s->rx[pos];
-        bool drop = false;
-        if (kind == BIND_L2) drop = entry.rx_spec.kind == BIND_L2 && entry.rx_spec.ifindex == (uint8_t)id;
-        else if (entry.rx_spec.kind == BIND_L3 || entry.rx_spec.kind == BIND_IP) drop = entry.rx_spec.l3_id == (l3_id_t)id;
+    for (uint32_t i = 0; i < cring_size(&s->rx);) {
+        raw_rx_entry_t* entry = (raw_rx_entry_t*)cring_at(&s->rx, i);
+        bool match = false;
+        if (kind == BIND_L2) match = entry->rx_spec.kind == BIND_L2 && entry->rx_spec.ifindex == (uint8_t)id && entry->generation == generation;
+        else if (entry->rx_spec.kind == BIND_L3 || entry->rx_spec.kind == BIND_IP) match = entry->rx_spec.l3_id == (l3_id_t)id;
 
-        if (drop) dropped[dropped_count++] = entry.pkt;
-        else {
-            kept[kept_count++] = entry;
-            kept_bytes += entry.len;
+        if (!match) {
+            i++;
+            continue;
         }
+
+        raw_rx_entry_t removed;
+        if (!cring_remove(&s->rx, i, &removed)) break;
+        if (s->rx_bytes >= removed.len) s->rx_bytes -= removed.len;
+        else s->rx_bytes = 0;
+        if (removed.pkt) dropped[dropped_count++] = removed.pkt;
     }
-    memset(s->rx, 0, sizeof(s->rx));
-    for (uint8_t i = 0; i < kept_count; i++) s->rx[i] = kept[i];
-    s->rx_head = 0;
-    s->rx_tail = (uint8_t)(kept_count % RAW_RX_RING_CAP);
-    s->rx_count = kept_count;
-    s->rx_bytes = kept_bytes;
     irq_restore(irq);
 
-    for (uint8_t i = 0; i < dropped_count; i++) if (dropped[i]) netpkt_unref(dropped[i]);
+    for (uint8_t i = 0; i < dropped_count; i++) netpkt_unref(dropped[i]);
 }
 
 void socket_raw_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t generation) {
     raw_socket_t *s = (raw_socket_t*)sh;
     if (!s || !ifindex) return;
+    raw_drop_rx(s, BIND_L2, ifindex, generation);
 
     irq_flags_t irq = irq_save_disable();
     if (s->last_rx_spec.kind == BIND_L2 && s->last_rx_spec.ifindex == ifindex) {
@@ -599,12 +575,12 @@ void socket_raw_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t generatio
     }
     if (s->bound && s->bind_spec.kind == BIND_L2 && s->bind_spec.ifindex == ifindex && s->bind_generation == generation) s->bind_generation = 0;
     irq_restore(irq);
-    raw_drop_rx(s, BIND_L2, ifindex);
 }
 
 void socket_raw_l3_deleted(socket_impl_t sh, l3_id_t l3_id) {
     raw_socket_t *s = (raw_socket_t*)sh;
     if (!s || !l3_id) return;
+    raw_drop_rx(s, BIND_L3, l3_id, 0);
 
     irq_flags_t irq = irq_save_disable();
     if ((s->last_rx_spec.kind == BIND_L3 || s->last_rx_spec.kind == BIND_IP) && s->last_rx_spec.l3_id == l3_id) {
@@ -613,7 +589,6 @@ void socket_raw_l3_deleted(socket_impl_t sh, l3_id_t l3_id) {
     }
     if (s->bound && (s->bind_spec.kind == BIND_L3 || s->bind_spec.kind == BIND_IP) && s->bind_spec.l3_id == l3_id) s->bind_generation = 0;
     irq_restore(irq);
-    raw_drop_rx(s, BIND_L3, l3_id);
 }
 
 bool socket_raw_input_v4(protocol_t protocol, uint8_t ifindex, uint32_t src, uint32_t dst, netpkt_t* pkt) {

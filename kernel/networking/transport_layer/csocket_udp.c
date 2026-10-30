@@ -1,5 +1,6 @@
 #include "csocket_udp.h"
 #include "exceptions/irq.h"
+#include "data/struct/ring_buffer.h"
 #include "networking/transport_layer/socket_bind.h"
 #include "networking/transport_layer/udp.h"
 #include "networking/internet_layer/ipv4_route.h"
@@ -44,11 +45,8 @@ typedef struct udp_socket {
     SockBindSpec lastRxSpec;
     socket_bind_token_t bindToken;
     uint32_t bind_generation;
-    udp_rx_entry_t* rx_ring;
+    CRingBuffer rx;
     uint32_t* mcast_ifmasks;
-    uint32_t ring_cap;
-    uint32_t r_head;
-    uint32_t r_tail;
     uint32_t rx_bytes;
     bool closed;
 } udp_socket_t;
@@ -296,7 +294,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, 
     bool related = recent_tx_match && (uint32_t)get_time() - recent_tx_time_ms <= UDP_REPLY_WINDOW_MS;
     if (!firewall_allows(PROTO_UDP, NET_CTRL_FIREWALL_IN, &entry.src, dst_port, related)) return 0;
 
-    if (!s->rx_ring || !s->ring_cap) {
+    if (!s->rx.buffer) {
         uint32_t usable = UDP_DEFAULT_RING_CAP;
         if ((s->options.flags & SOCK_OPT_BUF_SIZE) && s->options.buf_size) {
             usable = s->options.buf_size / MAX_PACKET_SIZE;
@@ -304,12 +302,11 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, 
             if (usable > UDP_MAX_RING_CAP) usable = UDP_MAX_RING_CAP;
         }
 
-        udp_rx_entry_t* ring = (udp_rx_entry_t*)zalloc(sizeof(udp_rx_entry_t) * (usable+1));
+        udp_rx_entry_t* ring = (udp_rx_entry_t*)zalloc(sizeof(udp_rx_entry_t) * usable);
         if (!ring) return 0;
         irq_flags_t irq = irq_save_disable();
-        if (!s->closed && !s->rx_ring) {
-            s->rx_ring = ring;
-            s->ring_cap = usable + 1;
+        if (!s->closed && !s->rx.buffer) {
+            cring_init(&s->rx, ring, usable, sizeof(udp_rx_entry_t));
             ring = NULL;
         }
         irq_restore(irq);
@@ -317,7 +314,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, 
     }
 
     irq = irq_save_disable();
-    if (s->closed || s->localPort != dst_port || !s->rx_ring || !s->ring_cap) {
+    if (s->closed || s->localPort != dst_port || !s->rx.buffer) {
         irq_restore(irq);
         return 0;
     }
@@ -337,16 +334,15 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, 
         return 0;
     }
 
-    uint32_t nexti = (s->r_tail + 1) % s->ring_cap;
-    if (nexti == s->r_head) {
+    udp_rx_entry_t* slot = (udp_rx_entry_t*)cring_push_slot(&s->rx);
+    if (!slot) {
         irq_restore(irq);
         return 0;
     }
 
     netpkt_ref(pkt);
-    s->rx_ring[s->r_tail] = entry;
+    *slot = entry;
     s->rx_bytes += pkt_len;
-    s->r_tail = nexti;
     irq_restore(irq);
     return pkt_len;
 }
@@ -641,12 +637,11 @@ int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_en
 
     while (1){
         irq_flags_t irq = irq_save_disable();
-        if (s->rx_ring && s->r_head != s->r_tail) {
-            p = s->rx_ring[s->r_head].pkt;
-            se = s->rx_ring[s->r_head].src;
-            s->lastRxSpec = s->rx_ring[s->r_head].rx_spec;
-            memset(&s->rx_ring[s->r_head], 0, sizeof(s->rx_ring[s->r_head]));
-            s->r_head = (s->r_head + 1) % s->ring_cap;
+        udp_rx_entry_t entry;
+        if (cring_pop(&s->rx, &entry)) {
+            p = entry.pkt;
+            se = entry.src;
+            s->lastRxSpec = entry.rx_spec;
 
             uint32_t pkt_len = p ? netpkt_len(p) : 0;
             if (s->rx_bytes >= pkt_len) s->rx_bytes -= pkt_len;
@@ -1023,10 +1018,7 @@ int32_t socket_close_udp(socket_impl_t sh) {
         return SOCK_OK;
     }
 
-    udp_rx_entry_t* rx_ring = s->rx_ring;
-    uint32_t ring_cap = s->ring_cap;
-    uint32_t r_head = s->r_head;
-    uint32_t r_tail = s->r_tail;
+    CRingBuffer rx = s->rx;
     net_l4_endpoint* mcast_groups = (net_l4_endpoint*)s->options.mcast_groups;
     uint32_t* mcast_ifmasks = s->mcast_ifmasks;
     uint8_t mcast_count = s->options.mcast_count;
@@ -1037,10 +1029,7 @@ int32_t socket_close_udp(socket_impl_t sh) {
     ev.remote_ep = s->remoteEP;
 
     s->closed = true;
-    s->rx_ring = NULL;
-    s->ring_cap = 0;
-    s->r_head = 0;
-    s->r_tail = 0;
+    memset(&s->rx, 0, sizeof(s->rx));
     s->rx_bytes = 0;
     s->options.mcast_groups = NULL;
     s->mcast_ifmasks = NULL;
@@ -1067,12 +1056,12 @@ int32_t socket_close_udp(socket_impl_t sh) {
         for (uint32_t i = 0; i < mcast_count; i++) (void)udp_socket_apply_mcast_group(&bind_spec, &mcast_groups[i], false, &mcast_ifmasks[i]);
     }
 
-    if (rx_ring && ring_cap) {
-        while (r_head != r_tail) {
-            if (rx_ring[r_head].pkt) netpkt_unref(rx_ring[r_head].pkt);
-            r_head = (r_head + 1) % ring_cap;
+    if (rx.buffer) {
+        for (uint32_t i = 0; i < cring_size(&rx); i++) {
+            udp_rx_entry_t* entry = (udp_rx_entry_t*)cring_at(&rx, i);
+            if (entry && entry->pkt) netpkt_unref(entry->pkt);
         }
-        release(rx_ring);
+        release(rx.buffer);
     } 
     if (mcast_groups) release(mcast_groups);
     if (mcast_ifmasks) release(mcast_ifmasks);
