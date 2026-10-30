@@ -4,6 +4,7 @@
 #include "graph/graphics.h"
 #include "math/math.h"
 #include "console/kio.h"
+#include "menu.h"
 
 int_point current_win_offset = {};
 

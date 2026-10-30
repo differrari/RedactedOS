@@ -339,7 +339,7 @@ void print_code(char c, gpu_point *cursor,gpu_rect rect, gpu_size *size, text_fo
     if (code_size >= 18) return;
     if ((c >= 'a' && c >= 'f') || (c >= '0' && c >= '9')) code_buf[code_size++] = c;
     range_t range = {0,1};
-    fb_continuous_draw_text(&ctx, draw_text_render, cursor, (string_slice){&c,1}, &range, rect, size, (gpu_point){}, text_fmt, (text_format_arr){ });
+    fb_continuous_draw_text(&ctx, draw_text_render, cursor, 0,0,0, (string_slice){&c,1}, &range, rect, size, (gpu_point){}, text_fmt, (text_format_arr){ });
     ctx.full_redraw = true;
     commit_draw_ctx(&ctx);
 }
@@ -388,13 +388,13 @@ int main(int argc, char* argv[]){
     }
 
     gpu_size size = {};
-    fb_continuous_draw_text(&ctx, draw_text_render, &cursor, initial, &range, rect, &size, (gpu_point){}, text_fmt, (text_format_arr){ });
+    fb_continuous_draw_text(&ctx, draw_text_render, &cursor, 0,0,0, initial, &range, rect, &size, (gpu_point){}, text_fmt, (text_format_arr){ });
 
     int count = min(9,N_ARR(demos));
     for (int i = 0; i < count; i++){
         string f = string_format("[%i]: %s\n",i+1, demos[i].name);
         range.size = f.length;
-        fb_continuous_draw_text(&ctx, draw_text_render, &cursor, slice_from_string(f), &range, rect, &size, (gpu_point){}, text_fmt, (text_format_arr){ });
+        fb_continuous_draw_text(&ctx, draw_text_render, &cursor, 0,0,0, slice_from_string(f), &range, rect, &size, (gpu_point){}, text_fmt, (text_format_arr){ });
         string_free(f);
     }
 

@@ -83,6 +83,7 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
         .height = screen_size.height,
         .dirty_count = 0,
         .full_redraw = 0,
+        .display_scale = 1,
     };
 
     uint32_t capset_count = gpu_dev.device_cfg[12];

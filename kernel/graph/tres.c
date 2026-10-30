@@ -15,6 +15,7 @@
 #include "exceptions/irq.h"
 #include "header_utils/composite.h"
 #include "theme/theme.h"
+#include "menu/render.h"
 
 linked_list_t *window_list;
 window_frame *focused_window;

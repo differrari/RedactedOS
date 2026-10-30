@@ -15,6 +15,7 @@
 #include "ui/color/color.h"
 #include "utils/cursor/cursor_manager.h"
 #include "menu.h"
+#include "filesystem/modules/fs_isolation.h"
 
 typedef enum { right_move, left_move, down_move, up_move } dos_movement;
 u16 move_shortcuts[4];
@@ -349,7 +350,7 @@ int window_system(){
         disable_interrupt();
         gpu_point curr_mouse = get_mouse_pos();
         //TODO: move the window mouse position & button translation here so we can simplify that logic
-        bool in_menu = draw_menu(curr_mouse);
+        bool in_menu = draw_menu(gpu_get_ctx(),curr_mouse,mouse_button_pressed(LMB));
         window_frame *curr_frame = get_current_mouse_window(curr_mouse);
         if (curr_frame || in_menu){
             if (mouse_any_button_pressed() && curr_frame && curr_mouse.y-curr_frame->y <= MENU_HEIGHT) dirty_windows = true;
@@ -366,7 +367,7 @@ int window_system(){
         if (dirty_windows){
             active = true;
             draw_desktop();
-            draw_menu(curr_mouse);
+            draw_menu(gpu_get_ctx(),curr_mouse,mouse_button_pressed(LMB));
             linked_list_for_each(window_list, redraw_win);
             dirty_windows = false;
         }
@@ -388,4 +389,10 @@ process_t* create_windowing_system(){
     if (!win_system_proc)
         win_system_proc = create_kernel_process("dos", window_system, 0, 0);
     return win_system_proc;
+}
+
+module_root* get_menu_mod(){
+    process_t *menu_proc = get_proc_by_pid(sys_get_focused_pid());
+    if (!menu_proc){ print("[MENU debug] no focused process"); return 0; }
+    return get_fs_for_id(menu_proc->permissions.fs_id);
 }

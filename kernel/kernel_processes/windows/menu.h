@@ -2,6 +2,6 @@
 
 #include "types.h"
 #include "graphic_types.h"
+#include "menu/render.h"
 
-bool draw_menu(gpu_point mouse);
 void refresh_menu();
