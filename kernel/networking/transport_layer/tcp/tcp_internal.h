@@ -27,11 +27,11 @@ extern "C" {
 #define TCP_SEQ_GT(a,b) ((int32_t)((uint32_t)(a) - (uint32_t)(b)) > 0)
 #define TCP_SEQ_GEQ(a,b) ((int32_t)((uint32_t)(a) - (uint32_t)(b)) >= 0)
 
-#define TCP_DELAYED_ACK_MS 10
+#define TCP_DELAYED_ACK_MS 40
 #define TCP_PERSIST_MIN_MS 500
 #define TCP_PERSIST_MAX_MS 60000
 #define TCP_NAGLE_FLUSH_THRESHOLD TCP_DEFAULT_MSS
-#define TCP_NAGLE_TIMEOUT_MS 10
+#define TCP_SWS_OVERRIDE_MS 200
 #define TCP_CONNECT_TIMEOUT_MS 10000
 #define TCP_SACK_SCOREBOARD_MAX 32
 #define TCP_CHALLENGE_ACK_INTERVAL_MS 100
@@ -40,6 +40,14 @@ typedef struct {
     uint32_t left;
     uint32_t right;
 } tcp_sack_range_t;
+
+typedef enum {
+    TCP_TX_FORCE_NONE = 0,
+    TCP_TX_BYPASS_NAGLE = 1u << 0,
+    TCP_TX_BYPASS_SWS = 1u << 1,
+    TCP_TX_PERSIST_PROBE = 1u << 2,
+    TCP_TX_FIN_FLUSH = 1u << 3,
+} tcp_tx_force_t;
 
 typedef struct {
     uint8_t used;
@@ -82,6 +90,7 @@ typedef struct {
 
 typedef struct {
     uint32_t snd_wnd;
+    uint32_t snd_wnd_max;
     uint32_t snd_wl1;
     uint32_t snd_wl2;
     uint32_t snd_una;
@@ -129,7 +138,7 @@ typedef struct {
     uintptr_t nagle_buf;
     uint32_t nagle_len;
     uint32_t nagle_cap;
-    uint32_t nagle_timer_ms;
+    uint32_t sws_timer_ms;
     uint32_t last_data_tx_ms;
 
     tcp_tx_seg_t txq[TCP_MAX_TX_SEGS];
@@ -171,6 +180,7 @@ typedef struct {
 
     uint8_t delayed_ack_pending;
     uint32_t delayed_ack_timer_ms;
+    uint32_t delayed_ack_bytes;
 
     uint8_t keepalive_on;
     uint32_t keepalive_ms;
@@ -241,7 +251,7 @@ bool tcp_retransmit_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg);
 bool tcp_send_flow_segment(tcp_flow_t *flow, tcp_hdr_t *hdr, const uint8_t *opts, uint8_t opts_len, const uint8_t *payload, uint16_t payload_len);
 void tcp_send_ack_now(tcp_flow_t *flow);
 void tcp_try_send_pending_fin(tcp_flow_t *flow);
-uint64_t tcp_flush_nagle(tcp_flow_t *flow, uint8_t force);
+uint64_t tcp_flush_nagle(tcp_flow_t *flow, tcp_tx_force_t force);
 
 static inline uint16_t tcp_checksum_ipv4(const void *segment, uint16_t seg_len, uint32_t src_ip, uint32_t dst_ip) {
     uint16_t csum = checksum16_pipv4(src_ip, dst_ip, PROTO_TCP, (const uint8_t *)segment, seg_len);

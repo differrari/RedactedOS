@@ -186,7 +186,7 @@ void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32
 
     if (apply_mask & SOCK_OPT_TCP_NO_DELAY) {
         flow->tx.nodelay = (flags & SOCK_OPT_TCP_NO_DELAY) ? 1 : 0;
-        if (flow->tx.nodelay && flow->tx.nagle_len && flow->tx.snd_wnd > 0 && !tcp_flush_nagle(flow, 1)) tcp_daemon_kick();
+        if (flow->tx.nodelay && flow->tx.nagle_len && flow->tx.snd_wnd > 0 && !tcp_flush_nagle(flow, TCP_TX_BYPASS_NAGLE)) tcp_daemon_kick();
     }
 
     if (apply_mask & SOCK_OPT_SEND_BUF_SIZE) {
@@ -239,7 +239,7 @@ static void tcp_flow_clear_storage(tcp_flow_t *flow) {
     }
     flow->tx.nagle_len = 0;
     flow->tx.nagle_cap = 0;
-    flow->tx.nagle_timer_ms = 0;
+    flow->tx.sws_timer_ms = 0;
     flow->tx.nagle_flushing = 0;
     flow->tx.nagle_appending = 0;
     flow->tx.nagle_psh = 0;

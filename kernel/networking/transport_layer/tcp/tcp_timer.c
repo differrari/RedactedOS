@@ -4,7 +4,7 @@
 
 static volatile int tcp_daemon_running;
 static int tcp_daemon_entry(int argc, char *argv[]);
-
+//TODO add keepalive option, check icmp/mtu propagation
 static bool tcp_timer_send_ack_segment(tcp_flow_t *flow, uint32_t seq, const uint8_t *payload, uint16_t payload_len) {
     tcp_hdr_t hdr;
     hdr.src_port = bswap16(flow->base.local.port);
@@ -15,7 +15,13 @@ static bool tcp_timer_send_ack_segment(tcp_flow_t *flow, uint32_t seq, const uin
     tcp_update_adv_wnd(flow, 1);
     hdr.window = flow->base.ctx.window;
     hdr.urgent_ptr = 0;
-    return tcp_send_flow_segment(flow, &hdr, NULL, 0, payload, payload_len);
+    bool sent = tcp_send_flow_segment(flow, &hdr, NULL, 0, payload, payload_len);
+    if (sent) {
+        flow->timer.delayed_ack_pending = 0;
+        flow->timer.delayed_ack_timer_ms = 0;
+        flow->timer.delayed_ack_bytes = 0;
+    }
+    return sent;
 }
 
 //TODO events
@@ -109,13 +115,27 @@ static int tcp_daemon_entry(int argc, char *argv[]) {
             }
 
             if (flow->tx.nagle_len && flow->tx.snd_wnd > 0) {
-                if (flow->tx.snd_nxt == flow->tx.snd_una) {
-                    if (!tcp_flush_nagle(flow, 1)) flow->tx.nagle_timer_ms = 0;
-                } else {
-                    flow->tx.nagle_timer_ms += elapsed_ms;
-                    if (flow->tx.nagle_timer_ms >= TCP_NAGLE_TIMEOUT_MS && !tcp_flush_nagle(flow, 1)) flow->tx.nagle_timer_ms = 0;
-                }
-            }
+                tcp_tx_force_t force = flow->tx.nodelay ? TCP_TX_BYPASS_NAGLE : TCP_TX_FORCE_NONE;
+                uint64_t sent = tcp_flush_nagle(flow, force);
+                if (!sent && flow->tx.nagle_len) {
+                    uint64_t in_flight = TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una) ? flow->tx.snd_nxt - flow->tx.snd_una : 0;
+                    uint32_t mss = flow->tx.mss ? flow->tx.mss : TCP_DEFAULT_MSS;
+                    uint64_t wnd_room = in_flight < flow->tx.snd_wnd ? flow->tx.snd_wnd - in_flight : 0;
+                    uint64_t cwnd = flow->tx.cwnd ? flow->tx.cwnd : mss;
+                    uint64_t cwnd_room = in_flight < cwnd ? cwnd - in_flight : 0;
+                    uint64_t send_room = wnd_room < cwnd_room ? wnd_room : cwnd_room;
+                    uint64_t candidate = flow->tx.nagle_len < send_room ? flow->tx.nagle_len : send_room;
+                    bool nagle_blocked = !flow->tx.nodelay && in_flight && candidate < mss;
+                    if (nagle_blocked) flow->tx.sws_timer_ms = 0;
+                    else {
+                        flow->tx.sws_timer_ms += elapsed_ms;
+                        if (flow->tx.sws_timer_ms >= TCP_SWS_OVERRIDE_MS) {
+                            force = (tcp_tx_force_t)(force | TCP_TX_BYPASS_SWS);
+                            if (tcp_flush_nagle(flow, force)) flow->tx.sws_timer_ms = 0;
+                        }
+                    }
+                } else flow->tx.sws_timer_ms = 0;
+            } else flow->tx.sws_timer_ms = 0;
 
             if (flow->tx.fin_tx_pending) tcp_try_send_pending_fin(flow);
 
@@ -152,7 +172,7 @@ static int tcp_daemon_entry(int argc, char *argv[]) {
                         }
 
                         bool sent = false;
-                        if (!best && flow->tx.nagle_len) sent = tcp_flush_nagle(flow, 1) != 0;
+                        if (!best && flow->tx.nagle_len) sent = tcp_flush_nagle(flow, TCP_TX_PERSIST_PROBE) != 0;
                         else sent = tcp_timer_send_ack_segment(flow, probe_seq, probe_payload, probe_len);
                         flow->timer.persist_timer_ms = 0;
 

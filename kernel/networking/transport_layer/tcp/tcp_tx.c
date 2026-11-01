@@ -85,12 +85,17 @@ static uint32_t tcp_nagle_threshold(tcp_flow_t *flow) {
     return threshold;
 }
 
-static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t payload_len, uint8_t push_partial) {
+static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t payload_len, uint8_t push_partial, tcp_tx_force_t force) {
     if (!flow || (!payload && payload_len)) return 0;
     if (flow->base.state != TCP_ESTABLISHED && flow->base.state != TCP_CLOSE_WAIT) return 0;
 
-    uint64_t in_flight = TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una) ? flow->tx.snd_nxt - flow->tx.snd_una : 0;
-    if (flow->tx.data_tx_valid && !in_flight) {
+    bool persist_probe = (force & TCP_TX_PERSIST_PROBE) != 0;
+    bool bypass_nagle = (force & (TCP_TX_BYPASS_NAGLE | TCP_TX_PERSIST_PROBE | TCP_TX_FIN_FLUSH)) != 0;
+    bool bypass_sws = (force & (TCP_TX_BYPASS_SWS | TCP_TX_PERSIST_PROBE | TCP_TX_FIN_FLUSH)) != 0;
+    uint32_t mss = tcp_nagle_threshold(flow);
+
+    uint64_t initial_flight = TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una) ? flow->tx.snd_nxt - flow->tx.snd_una : 0;
+    if (flow->tx.data_tx_valid && !initial_flight) {
         uint32_t idle_ms = (uint32_t)get_time() - flow->tx.last_data_tx_ms;
         uint32_t rto = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
         if (idle_ms >= rto) {
@@ -100,23 +105,24 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
         }
     }
 
-    uint32_t wnd = flow->tx.snd_wnd;
-    uint32_t cwnd = flow->tx.cwnd ? flow->tx.cwnd : (flow->tx.mss ? flow->tx.mss : TCP_DEFAULT_MSS);
-    uint32_t eff_wnd = wnd < cwnd ? wnd : cwnd;
-
-    uint64_t can_send = 0;
-    if (in_flight < eff_wnd) can_send = eff_wnd - in_flight;
-    bool persist_only = !can_send && !wnd && !in_flight && payload_len;
-    if (persist_only) can_send = 1;
-
     uint64_t remaining = payload_len;
     uint64_t sent_bytes = 0;
 
-    while (remaining > 0 && can_send > 0) {
-        uint64_t sendable = remaining > can_send ? can_send : remaining;
-        if (flow->tx.mss && sendable > flow->tx.mss) sendable = flow->tx.mss;
-        if (sendable > UINT32_MAX) sendable = UINT32_MAX;
-        uint32_t seg_len = (uint32_t)sendable;
+    while (remaining > 0) {
+        uint64_t in_flight = TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una) ? flow->tx.snd_nxt - flow->tx.snd_una : 0;
+        uint32_t wnd = flow->tx.snd_wnd;
+        uint32_t cwnd = flow->tx.cwnd ? flow->tx.cwnd : mss;
+        uint64_t can_send = 0;
+
+        if (persist_probe) { 
+            if (wnd || in_flight) break;
+            can_send = 1;
+        } else {
+            uint64_t wnd_room = in_flight < wnd ? wnd - in_flight : 0;
+            uint64_t cwnd_room = in_flight < cwnd ? cwnd - in_flight : 0;
+            can_send = wnd_room < cwnd_room ? wnd_room : cwnd_room;
+            if (!can_send) break;
+        }
 
         uint32_t tx_limit = flow->tx.queued_limit ? flow->tx.queued_limit : TCP_TX_MAX_BYTES_PER_FLOW;
         uint32_t flow_room = tx_limit > flow->tx.queued_bytes ? tx_limit - flow->tx.queued_bytes : 0;
@@ -129,8 +135,26 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
             tcp_stats.tx_block_global_bytes++;
             break;
         }
-        if (seg_len > flow_room) seg_len = flow_room;
-        if (seg_len > global_room) seg_len = global_room;
+        if (can_send > flow_room) can_send = flow_room;
+        if (can_send > global_room) can_send = global_room;
+        if (!can_send) break;
+
+        uint64_t candidate = remaining < can_send ? remaining : can_send;
+        bool nagle_ok = bypass_nagle || flow->tx.nodelay || !in_flight || candidate >= mss;
+        if (!nagle_ok) break;
+
+        if (!bypass_sws && !persist_probe) {
+            uint32_t max_wnd = flow->tx.snd_wnd_max ? flow->tx.snd_wnd_max : wnd;
+            uint32_t half_wnd = (max_wnd + 1) >> 1;
+            bool full_segment = candidate >= mss;
+            bool push_all = push_partial && remaining <= can_send && (bypass_nagle || flow->tx.nodelay || !in_flight);
+            bool large_fraction = half_wnd && candidate >= half_wnd && (bypass_nagle || flow->tx.nodelay || !in_flight);
+            if (!full_segment && !push_all && !large_fraction) break;
+        }
+
+        if (candidate > mss) candidate = mss;
+        if (candidate > UINT32_MAX) candidate = UINT32_MAX;
+        uint32_t seg_len = candidate;
         if (!seg_len) break;
 
         tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow, TCP_TX_CONTROL_RESERVE_SEGS);
@@ -156,13 +180,13 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
         seg->syn = 0;
         seg->fin = 0;
         seg->psh = push_partial && seg_len == remaining;
-        seg->persist = persist_only;
+        seg->persist = persist_probe;
         seg->timer_ms = 0;
         seg->timeout_ms = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
         seg->retransmit_cnt = 0;
         seg->rtt_sample = 0;
 
-        if (!persist_only && !flow->tx.rtt_sample_pending) {
+        if (!persist_probe && !flow->tx.rtt_sample_pending) {
             seg->rtt_sample = 1;
             flow->tx.rtt_sample_pending = 1;
         }
@@ -179,8 +203,7 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
 
         sent_bytes += seg_len;
         remaining -= seg_len;
-        can_send -= seg_len;
-        if (persist_only) {
+        if (persist_probe) {
             tcp_persist_start(flow);
             flow->timer.persist_timer_ms = 0;
             tcp_daemon_kick();
@@ -226,25 +249,24 @@ static uint64_t tcp_nagle_append(tcp_flow_t *flow, const uint8_t *payload, uint6
     return n;
 }
 
-uint64_t tcp_flush_nagle(tcp_flow_t *flow, uint8_t force) {
+uint64_t tcp_flush_nagle(tcp_flow_t *flow, tcp_tx_force_t force) {
     if (!flow || !flow->tx.nagle_len || !flow->tx.nagle_buf) return 0;
     if (flow->tx.nagle_flushing || flow->tx.nagle_appending) return 0;
 
-    uint64_t in_flight = TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una) ? flow->tx.snd_nxt - flow->tx.snd_una : 0;
-    if (!force && in_flight && flow->tx.nagle_len<tcp_nagle_threshold(flow)) return 0;
+    if (flow->tx.nodelay) force = (tcp_tx_force_t)(force | TCP_TX_BYPASS_NAGLE);
 
     flow->tx.nagle_flushing = 1;
 
     uint32_t old_len = flow->tx.nagle_len;
-    uint64_t sent = tcp_emit_data(flow, (const uint8_t*)flow->tx.nagle_buf, old_len, flow->tx.nagle_psh);
+    uint64_t sent = tcp_emit_data(flow, (const uint8_t*)flow->tx.nagle_buf, old_len, flow->tx.nagle_psh, force);
     if (!sent) {
         flow->tx.nagle_flushing = 0;
         return 0;
     }
 
+    flow->tx.sws_timer_ms = 0;
     if (sent >= old_len) {
         flow->tx.nagle_len = 0;
-        flow->tx.nagle_timer_ms = 0;
         flow->tx.nagle_psh = 0;
         flow->tx.nagle_flushing = 0;
         return sent;
@@ -252,7 +274,6 @@ uint64_t tcp_flush_nagle(tcp_flow_t *flow, uint8_t force) {
 
     memmove((void*)flow->tx.nagle_buf, (const void*)(flow->tx.nagle_buf + sent), old_len - sent);
     flow->tx.nagle_len = old_len - (uint32_t)sent;
-    flow->tx.nagle_timer_ms = 0;
     flow->tx.nagle_flushing = 0;
     return sent;
 }
@@ -339,6 +360,11 @@ bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
         if (sample && !sent_any) flow->tx.rtt_start_ms = (uint32_t)get_time();
         if (!tcp_send_flow_segment(flow, &hdr, opts, tx.opts_len, payload, (uint16_t)chunk)) break;
 
+        if (flags & (1 << ACK_F)) {
+            flow->timer.delayed_ack_pending = 0;
+            flow->timer.delayed_ack_timer_ms = 0;
+            flow->timer.delayed_ack_bytes = 0;
+        }
         sent_any = true;
         off += chunk;
     } while (off < tx.len);
@@ -461,6 +487,7 @@ void tcp_send_ack_now(tcp_flow_t *flow){
     flow->rx.dsack_right = 0;
     flow->timer.delayed_ack_pending = 0;
     flow->timer.delayed_ack_timer_ms = 0;
+    flow->timer.delayed_ack_bytes = 0;
 }
 
 void tcp_try_send_pending_fin(tcp_flow_t *flow) {
@@ -480,7 +507,7 @@ void tcp_try_send_pending_fin(tcp_flow_t *flow) {
 
     if (flow->tx.nagle_len && flow->tx.snd_wnd == 0) return;
     if (flow->tx.nagle_len) {
-        uint64_t flushed = tcp_flush_nagle(flow, 1);
+        uint64_t flushed = tcp_flush_nagle(flow, TCP_TX_FIN_FLUSH);
         if (!flushed || flow->tx.nagle_len) return;
     }
 
@@ -538,9 +565,10 @@ tcp_result_t tcp_flow_flush(tcp_data *flow_ctx){
     tcp_result_t rc = TCP_OK;
     if (flow->base.state != TCP_ESTABLISHED && flow->base.state != TCP_CLOSE_WAIT && flow->base.state != TCP_FIN_WAIT_1 && flow->base.state != TCP_FIN_WAIT_2) rc = TCP_INVALID;
 
+    tcp_tx_force_t force = (tcp_tx_force_t)(TCP_TX_BYPASS_NAGLE | TCP_TX_BYPASS_SWS);
     while (rc == TCP_OK && flow->tx.nagle_len && flow->tx.snd_wnd > 0) {
         uint32_t before = flow->tx.nagle_len;
-        uint64_t sent = tcp_flush_nagle(flow, 1);
+        uint64_t sent = tcp_flush_nagle(flow, force);
         if (!sent || flow->tx.nagle_len == before) break;
     }
 
@@ -578,58 +606,52 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
     bool fin_queued = false;
     uint64_t accepted = 0;
     tcp_result_t rc = TCP_OK;
-    bool zero_window_hold = false;
+    tcp_tx_force_t normal_force = flow->tx.nodelay ? TCP_TX_BYPASS_NAGLE : TCP_TX_FORCE_NONE;
 
     if (flow->base.state != TCP_ESTABLISHED && flow->base.state != TCP_CLOSE_WAIT) rc = TCP_INVALID;
 
-    if (rc == TCP_OK && payload_len && flow->tx.snd_wnd == 0 && flow->tx.snd_nxt == flow->tx.snd_una) {
-        zero_window_hold = true;
-        if (!flow->tx.nagle_len) {
-            uint64_t n = tcp_nagle_append(flow, payload_ptr, 1);
-            if (n && want_push && n == payload_len) flow->tx.nagle_psh = 1;
-            accepted += n;
-            payload_ptr += n;
-            payload_len -= n;
-            if (n) {
-                tcp_persist_start(flow);
-                tcp_daemon_kick();
-            }
-        }
-    }
-
-    if (rc == TCP_OK && !zero_window_hold && !flow->tx.nodelay && payload_len && flow->tx.nagle_len) {
+    if (rc == TCP_OK && payload_len && flow->tx.snd_wnd == 0) {
         uint64_t n = tcp_nagle_append(flow, payload_ptr, payload_len);
         if (n && want_push && n == payload_len) flow->tx.nagle_psh = 1;
         accepted += n;
         payload_ptr += n;
         payload_len -= n;
-        if (flow->tx.nagle_len >= tcp_nagle_threshold(flow) && !tcp_flush_nagle(flow, 1)) tcp_daemon_kick();
+        if (n) {
+            tcp_persist_start(flow);
+            tcp_daemon_kick();
+        }
     }
 
-    uint64_t in_flight = TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una) ? flow->tx.snd_nxt - flow->tx.snd_una : 0;
-    if (rc == TCP_OK && !zero_window_hold && !flow->tx.nodelay && payload_len && payload_len < tcp_nagle_threshold(flow) && in_flight != 0) {
+    if (rc == TCP_OK && flow->tx.snd_wnd > 0 && payload_len && flow->tx.nagle_len) {
         uint64_t n = tcp_nagle_append(flow, payload_ptr, payload_len);
         if (n && want_push && n == payload_len) flow->tx.nagle_psh = 1;
         accepted += n;
         payload_ptr += n;
         payload_len -= n;
-        if (flow->tx.nagle_len >= tcp_nagle_threshold(flow) && !tcp_flush_nagle(flow, 1)) tcp_daemon_kick();
+        if (flow->tx.nagle_len >= tcp_nagle_threshold(flow) && !tcp_flush_nagle(flow, normal_force)) tcp_daemon_kick();
     }
 
-    if (rc == TCP_OK && !zero_window_hold && payload_len) {
-        if (flow->tx.nagle_len && !tcp_flush_nagle(flow, 1)) tcp_daemon_kick();
-        if (!flow->tx.nagle_len) {
-            uint64_t n = tcp_emit_data(flow, payload_ptr, payload_len, want_push ? 1 : 0);
-            accepted += n;
-            payload_len -= n;
-        }
+    if (rc == TCP_OK && flow->tx.snd_wnd > 0 && payload_len && !flow->tx.nagle_len) {
+        uint64_t n = tcp_emit_data(flow, payload_ptr, payload_len, want_push ? 1 : 0, normal_force);
+        accepted += n;
+        payload_ptr += n;
+        payload_len -= n;
+    }
+
+    if (rc == TCP_OK && flow->tx.snd_wnd > 0 && payload_len) {
+        uint64_t n = tcp_nagle_append(flow, payload_ptr, payload_len);
+        if (n && want_push && n == payload_len) flow->tx.nagle_psh = 1;
+        accepted += n;
+        payload_ptr += n;
+        payload_len -= n;
+        if (flow->tx.nagle_len >= tcp_nagle_threshold(flow) && !tcp_flush_nagle(flow, normal_force)) tcp_daemon_kick();
     }
 
     if (rc == TCP_OK && want_fin && payload_len == 0) {
         flow->tx.fin_tx_pending = 1;
         if (flow->tx.nagle_len) flow->tx.nagle_psh = 1;
         fin_queued = true;
-        if (flow->tx.nagle_len && flow->tx.snd_wnd > 0 && !tcp_flush_nagle(flow, 1)) tcp_daemon_kick();
+        if (flow->tx.nagle_len && flow->tx.snd_wnd > 0 && !tcp_flush_nagle(flow, TCP_TX_FIN_FLUSH)) tcp_daemon_kick();
         tcp_try_send_pending_fin(flow);
         if (flow->tx.fin_tx_pending) tcp_daemon_kick();
     }
@@ -645,7 +667,7 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
             if (flow->tx.snd_wnd == 0) {
                 tcp_persist_start(flow);
                 tcp_daemon_kick();
-            }
+            } else if (flow->tx.nagle_len) tcp_daemon_kick();
             rc = TCP_WOULDBLOCK;
         }
     }
@@ -664,7 +686,7 @@ tcp_result_t tcp_flow_close(tcp_data *flow_ctx){
     if (flow->base.state == TCP_ESTABLISHED || flow->base.state == TCP_CLOSE_WAIT) {
         flow->tx.fin_tx_pending = 1;
         if (flow->tx.nagle_len) flow->tx.nagle_psh = 1;
-        if (flow->tx.nagle_len && flow->tx.snd_wnd > 0 && !tcp_flush_nagle(flow, 1)) tcp_daemon_kick();
+        if (flow->tx.nagle_len && flow->tx.snd_wnd > 0 && !tcp_flush_nagle(flow, TCP_TX_FIN_FLUSH)) tcp_daemon_kick();
         tcp_try_send_pending_fin(flow);
         if (flow->tx.fin_tx_pending) tcp_daemon_kick();
         rc = TCP_OK;
