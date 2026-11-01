@@ -76,6 +76,7 @@ system_module usb_module = (system_module){
     .name = "input",
     .mount = "in",
     .version = VERSION_NUM(0, 1, 0, 1),
+    .owner = 0,
     .init = input_init,
     .fini = 0,
     .open = 0,
@@ -85,5 +86,7 @@ system_module usb_module = (system_module){
     .truncate = 0,
     .getstat = 0,//TODO: stat
     .readdir = 0,
+    .transform = 0,
+    //.permissions = fs_permission_shared,
     .alias_info = {}
 };

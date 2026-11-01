@@ -1,6 +1,7 @@
 #include "syscalls/syscalls.h"
 #include "files/helpers.h"
 #include "input_keycodes.h"
+#include "utils/theme.h"
 
 string files[16];
 int file_count;
@@ -9,10 +10,7 @@ int selected = 0;
 
 draw_ctx ctx;
 
-struct {
-    color background;
-    color accent;
-} color_theme;
+theme_palette palette;
 
 void on_entry(const char* path, const char* name){
     if (strend(name, ".config")) return;
@@ -25,14 +23,16 @@ void refresh(){
     file_count = 0;
     traverse_directory("/boot/redos/", false, on_entry);
     
-    sreadf("/theme", &color_theme, sizeof(color_theme));
+    get_theme(&palette);
     
-    fb_clear(&ctx, color_theme.background);
+    if (!palette.accent) palette.accent = palette.foreground;
+    
+    fb_clear(&ctx, palette.background);
     for (int i = 0; i < file_count; i++){
         if (selected == i){
-            fb_draw_string(&ctx, ">", 0, 10 + (i * 30), 3, color_theme.accent);
+            fb_draw_string(&ctx, ">", 0, 10 + (i * 30), 3, palette.accent);
         }
-        fb_draw_string(&ctx, files[i].data, 30, 10 + (i * 30), 3, color_theme.accent);   
+        fb_draw_string(&ctx, files[i].data, 30, 10 + (i * 30), 3, palette.foreground);   
     }
     commit_draw_ctx(&ctx);
 }

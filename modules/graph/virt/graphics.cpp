@@ -121,6 +121,7 @@ system_module graphics_module = {
     .name = "graphics",
     .mount = "graph",
     .version = VERSION_NUM(0, 1, 0, 0),
+    .owner = 0,
     .init = gpu_init,
     .fini = 0,
     .open = 0,
@@ -130,5 +131,7 @@ system_module graphics_module = {
     .truncate = 0,
     .getstat = 0,
     .readdir = 0,
+    .transform = 0,
+    //.permissions = fs_permission_shared,
     .alias_info = {}
 };

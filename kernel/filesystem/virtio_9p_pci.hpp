@@ -14,7 +14,7 @@ public:
     size_t list_contents(const char *path, void* buf, size_t size, uint64_t *offset) override;
     void close_file(file* descriptor) override;
     bool stat(const char *path, fs_stat *out_stat) override;
-    bool truncate(file *descriptor, size_t size) override;
+    bool truncate(file *descriptor) override;
 private:
     virtio_device np_dev = {};
     size_t choose_version();

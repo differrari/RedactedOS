@@ -1,49 +1,62 @@
 #include "fs_isolation.h"
 #include "data/struct/chunk_array.h"
-#include "module_loader.h"
 #include "console/kio.h"
 #include "memory/memory.h"
+#include "alloc/alloc.h"
+#include "process/scheduler.h"
+#include "exceptions/exception_handler.h"
 
 chunk_array_t *fs_permissions;
 
 u64 register_fs_id(){
-    if (!fs_permissions) fs_permissions = chunk_array_create(sizeof(uptr), 256);
-    hash_map_t *map = hash_map_create(64);
-    return chunk_array_push(fs_permissions, &map);
+    if (!fs_permissions) fs_permissions = chunk_array_create(sizeof(module_root), 256);
+    module_root *map = zalloc(sizeof(module_root));
+    map->map = hash_map_create(64);
+    return chunk_array_push(fs_permissions, map)+1;
 }
 
-hash_map_t* get_fs_for_id(u64 id){
+module_root* get_fs_for_id(u64 id){
     if (!fs_permissions) return 0;
-    return *(hash_map_t**)chunk_array_get(fs_permissions, id);
+    return (module_root*)chunk_array_get(fs_permissions, id-1);
 }
 
-hash_map_t* kernel_modules;
+module_root kernel_modules = {};
 
-hash_map_t* kernel_fs(){
-    return kernel_modules;
+module_root* kernel_fs(){
+    return &kernel_modules;
 }
 
 bool load_module(system_module *module){
-    if (!kernel_modules) kernel_modules = hash_map_create(64);
-    return load_module_to(kernel_modules, module);
+    if (!kernel_modules.map) kernel_modules.map = hash_map_create(64);
+    if (module->owner == get_kernel_proc()->id && !module->init){
+        kprintf("[MODULE error] module not initialized due to missing initializer");
+        return false;
+    }
+    if (!module->owner) module->owner = get_kernel_proc()->id;
+    bool res = load_module_to(&kernel_modules, module);
+
+#ifdef MODULE_STRICT
+    if (!res) panic("Failed to load module",(uptr)module);
+#endif
+    return res;
 }
 
 bool unload_module(system_module *module){
-    return unload_module_from(kernel_modules, module);
+    return unload_module_from(&kernel_modules, module);
 }
 
 system_module* get_module(const char **full_path){
-    return get_module_from(kernel_modules, full_path);
+    return get_module_from(&kernel_modules, full_path);
 }
 
 size_t list_root(void* buf, size_t size, uint64_t *offset){
     fs_dir_list_helper helper = create_dir_list_helper(buf, size);
-    return list_root_from(kernel_modules, &helper, offset);
+    return list_root_from(&kernel_modules, &helper, offset);
 }
 
 string resolve_isolated_path(const char *path, u64 id, module_root *resolved, bool allow_kfs){
     if (!path || !resolved || !id) return (string){};
-    hash_map_t *localfs = get_fs_for_id(id);
+    module_root *localfs = get_fs_for_id(id);
     const char *localpath = path;
     system_module *localmod = get_module_from(localfs, &localpath);
     if (!localmod){
@@ -53,7 +66,7 @@ string resolve_isolated_path(const char *path, u64 id, module_root *resolved, bo
         if (!rootmod){
             return (string){};
         }
-        memcpy(resolved,kernel_modules,sizeof(module_root));
+        memcpy(resolved,&kernel_modules,sizeof(module_root));
         return string_from_literal(path);
     }
     if (localmod->alias_info.alias_path.length){
@@ -61,9 +74,17 @@ string resolve_isolated_path(const char *path, u64 id, module_root *resolved, bo
         const char *rootpath = s.data;
         system_module *rootmod = get_module(&rootpath);
         if (!rootmod) return (string){};
-        memcpy(resolved,kernel_modules,sizeof(module_root));
+        memcpy(resolved,&kernel_modules,sizeof(module_root));
         return s;
     }
     memcpy(resolved,localfs,sizeof(module_root));
     return string_from_literal(path);
+}
+
+void destroy_fs(u64 fsid){
+    if (!fsid) return;
+    module_root *root = get_fs_for_id(fsid);
+    if (!root) return;
+    destroy_root_module(root);
+    memset(root,0,sizeof(module_root));
 }

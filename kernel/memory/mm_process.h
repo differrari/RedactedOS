@@ -3,7 +3,8 @@
 #include "types.h"
 #include "memory/page_allocator.h"
 
-typedef struct process process_t;
+typedef struct process_t process_t;
+typedef struct thread_t thread_t;
 
 #define VMA_FLAG_DEMAND 1
 #define VMA_FLAG_USERALLOC 2
@@ -55,4 +56,4 @@ vma* mm_find_vma(mm_struct *mm, uaddr_t va);
 bool mm_add_vma(mm_struct *mm, uaddr_t start, uaddr_t end, uint8_t prot, uint8_t kind, uint8_t flags);
 bool mm_remove_vma(mm_struct *mm, uaddr_t start, uaddr_t end);
 uaddr_t mm_alloc_mmap(mm_struct *mm, size_t size, uint8_t prot, uint8_t kind, uint8_t flags);
-bool mm_try_handle_page_fault(process_t *proc, uintptr_t far, uint64_t esr);
+bool mm_try_handle_page_fault(process_t *proc, thread_t *current_thread, uintptr_t far, uint64_t esr);

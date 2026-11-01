@@ -1,6 +1,6 @@
 #include "ramfb.hpp"
 #include "console/kio.h"
-#include "ui/draw/draw.h"
+#include "draw/draw.h"
 #include "std/memory_access.h"
 #include "std/std.h"
 #include "std/memory.h"
@@ -67,6 +67,7 @@ bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
         .height = screen_size.height,
         .dirty_count = 0,
         .full_redraw = 0,
+        .display_scale = 1,
     };
 
     update_gpu_fb();

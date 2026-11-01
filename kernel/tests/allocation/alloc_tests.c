@@ -102,9 +102,9 @@ bool test_kalloc_fragment_reuse() {
 }
 
 bool test_after_free(){
-    uint64_t *a = malloc(64);
+    uint64_t *a = zalloc(64);
     a[3] = 12345678;
-    free_sized(a,64);
+    release(a);
     assert_eq(a[3], 0xDEADBEEFDEADBEEF, "Use after free failed: %x",a[3]);
     return true;
 }

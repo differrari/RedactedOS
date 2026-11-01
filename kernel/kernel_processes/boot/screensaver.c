@@ -26,7 +26,7 @@ void boot_draw_name(gpu_size screen_size, int xoffset, int yoffset){
         .size = { screen_size.width, (screen_size.height/2) - yoffset},
         .horizontal_align = HorizontalCenter,
         .vertical_align = Top,
-        .background_color = system_theme.bg_color,
+        .background_color = system_theme.palette.background,
         .foreground_color = COLOR_WHITE,
     });
 }
@@ -101,7 +101,7 @@ static void play_startup_sound(){
     mixer_master_level(AUDIO_LEVEL_MAX / 2);
     if (wav_load_as_int16("/boot/redos/startup.wav", audio)){
         audio_play_async(&audio[0], 0, AUDIO_ONESHOT_FREE, AUDIO_LEVEL_MAX / 12, PAN_CENTRE);
-    }else{
+    } else {
         static envelope_defn env = { ENV_ASD, 0.025, 0.03 };
         static sound_defn s0 = { WAVE_SQUARE, 440, 440 };
         static sound_defn s1 = { WAVE_SQUARE, 587.33, 587.33 };
@@ -129,7 +129,7 @@ int screensaver(){
     time = (float)get_time();
     while (1)
     {
-        gpu_clear(system_theme.bg_color);
+        gpu_clear(system_theme.palette.background);
         gpu_point screen_middle = {screen_size.width/2,screen_size.height/2};
         
         gpu_point current_point = boot_calc_point(boot_theme.logo_points[boot_theme.logo_points_count-1],screen_size,screen_middle);

@@ -5,7 +5,7 @@
 #include "input_keycodes.h"
 #include "syscalls/syscalls.h"
 #include "input/input_dispatch.h"
-#include "ui/draw/draw.h"
+#include "draw/draw.h"
 #include "std/string.h"
 #include "theme/theme.h"
 #include "memory/addr.h"
@@ -41,14 +41,14 @@ uint64_t calc_heap(uintptr_t ptr){
 char *procname;
 
 void print_process_info(){
-    process_t *proc = get_all_processes();
+    process_t *proc = get_all_processes();//TODO: awareness of threads
     while (proc){
         if (proc->id != 0 && proc->state != STOPPED && (!procname || strcmp_case(procname,proc->name,true) == 0)){
             print("Process %s [pid = %i | status = %s]",(uintptr_t)proc->name,proc->id,(uintptr_t)parse_proc_state(proc->state));
-            print("Stack: %x (%x). SP: %x",proc->stack, proc->stack_size, proc->sp);
+            print("Stack: %x (%x). SP: %x",proc->main_thread.stack_info.top, proc->main_thread.stack_info.size, proc->main_thread.sp);
             print("Heap: %x (%x)",proc->mm.mmap_bottom, calc_heap(proc->heap_phys));
-            print("Flags: %x", proc->spsr);
-            print("PC: %x",proc->pc);
+            print("Flags: %x", proc->main_thread.spsr);
+            print("PC: %x",proc->main_thread.pc);
         }
         proc = proc->process_next;
     }
@@ -70,15 +70,15 @@ void draw_memory(char *name,int x, int y, int width, int full_height, int used, 
     
     int used_height = max((used * height) / size,1);
 
-    fb_fill_rect(&ctx,stack_top.x + 1, stack_top.y + height - used_height + 1, width - 2, used_height-1, system_theme.bg_color);
+    fb_fill_rect(&ctx,stack_top.x + 1, stack_top.y + height - used_height + 1, width - 2, used_height-1, system_theme.palette.background);
 
     string str = string_format("%s\n%x",(uintptr_t)name, used);
-    fb_draw_string(&ctx,str.data, stack_top.x, stack_top.y + height + 5, 2, system_theme.bg_color);
+    fb_draw_string(&ctx,str.data, stack_top.x, stack_top.y + height + 5, 2, system_theme.palette.foreground);
     string_free(str);
 }
 
 void draw_process_view(){
-    fb_clear(&ctx,system_theme.bg_color+0x112211);
+    fb_clear(&ctx,system_theme.palette.background+0x112211);
     gpu_size screen_size = (gpu_size){ctx.width,ctx.height};
     gpu_point screen_middle = {screen_size.width / 2, screen_size.height / 2};
     
@@ -123,20 +123,20 @@ void draw_process_view(){
 
         int xo = (i * (screen_size.width / PROCS_PER_SCREEN)) + 50;
 
-        fb_draw_string(&ctx,name.data, xo, name_y, scale, system_theme.bg_color);
-        fb_draw_string(&ctx,state.data, xo, state_y, scale, system_theme.bg_color);
+        fb_draw_string(&ctx,name.data, xo, name_y, scale, system_theme.palette.foreground);
+        fb_draw_string(&ctx,state.data, xo, state_y, scale, system_theme.palette.foreground);
         
-        string pc = string_from_hex(proc->pc);
-        fb_draw_string(&ctx,pc.data, xo, pc_y, scale, system_theme.bg_color);
+        string pc = string_from_hex(proc->main_thread.pc);
+        fb_draw_string(&ctx,pc.data, xo, pc_y, scale, system_theme.palette.foreground);
         string_free(pc);
         
-        draw_memory("Stack", xo, stack_y, stack_width, stack_height, proc->stack - proc->sp, proc->stack_size ? proc->stack_size : 1);
+        draw_memory("Stack", xo, stack_y, stack_width, stack_height, proc->main_thread.stack_info.top - proc->main_thread.sp, proc->main_thread.stack_info.size ? proc->main_thread.stack_info.size : 1);
         uint64_t heap = proc->mm.ttbr0 ? (proc->mm.rss_anon_pages * PAGE_SIZE) : calc_heap(proc->heap_phys);
         uint64_t heap_limit = proc->mm.ttbr0 ? (uint64_t)(proc->mm.mmap_top - proc->mm.mmap_bottom) : ((heap + 0xFFF) & ~0xFFF);
         draw_memory("Heap", xo + stack_width + 50, stack_y, stack_width, stack_height, heap, heap_limit ? heap_limit : PAGE_SIZE);
 
-        string flags = string_format("Flags: %x", proc->spsr);
-        fb_draw_string(&ctx, flags.data, xo, flags_y, scale, system_theme.bg_color);
+        string flags = string_format("Flags: %x", proc->main_thread.spsr);
+        fb_draw_string(&ctx, flags.data, xo, flags_y, scale, system_theme.palette.foreground);
         string_free(name);
         string_free(state);
         string_free(flags);
@@ -154,8 +154,6 @@ bool parse_args(int argc, char* argv[]){
     for (int i = 1; i < argc; i++){
         if (strcmp(argv[i],"gui") == 0){ 
             visual = true;
-            ctx.width = 300;
-            ctx.height = 300;
             request_draw_ctx(&ctx);
         }
         else if (strcmp(argv[i],"-help") == 0 || strcmp(argv[i],"-h") == 0){ 

@@ -25,12 +25,15 @@ boot_theme_t boot_theme = {
 };
 
 system_theme_t system_theme = {
-    .bg_color = BG_COLOR,
-    .accent_color = COLOR_WHITE,
-    .err_color = 0xFF000000,
+    .palette = {
+        .background = BG_COLOR,
+        .foreground = FG_COLOR,
+        .error = 0xFF000000,
+    },
     .cursor_color_deselected = CURSOR_COLOR_DESELECTED,
     .cursor_color_selected = CURSOR_COLOR_SELECTED,
     .use_window_shadows = true,
+    .use_desktop_zoom = true,
 };
 
 system_config_t system_config = {
@@ -39,7 +42,7 @@ system_config_t system_config = {
     .system_name = SYSTEM_NAME,
     .app_directory = "boot",
     .use_net = false,
-    .preferred_screen_size = {1920,1080},
+    .preferred_screen_size = { 1920,1080 },
     .headless = false,
     .use_login = false,
     .use_windows = true,
@@ -97,12 +100,14 @@ gpu_point* parse_gpu_point_array(char *value, size_t value_len){
 #define parse_toml_str(k,dest) if ((size_t)strstart_case(#k, key.data,true) == key.length) dest.k = string_from_literal_length(value.data,value.length).data
 
 void parse_theme_kvp(string_slice key, string_slice value, void *context){
-    parse_toml(bg_color,                system_theme, parse_hex_u64);
-    parse_toml(accent_color,            system_theme, parse_hex_u64);
-    parse_toml(err_color,               system_theme, parse_hex_u64);
+    parse_toml(background,              system_theme.palette, parse_hex_u64);
+    parse_toml(foreground,              system_theme.palette, parse_hex_u64);
+    parse_toml(accent,                  system_theme.palette, parse_hex_u64);
+    parse_toml(error,                   system_theme.palette, parse_hex_u64);
     parse_toml(cursor_color_deselected, system_theme, parse_hex_u64);
     parse_toml(cursor_color_selected,   system_theme, parse_hex_u64);
     parse_toml(use_window_shadows,      system_theme, parse_int_u64);
+    parse_toml(use_desktop_zoom,        system_theme, parse_int_u64);
     
     parse_toml_str(panic_text,  system_config);
     parse_toml_str(system_name, system_config);
@@ -147,9 +152,9 @@ bool load_theme(){
     read_toml(buf, parse_theme_kvp, 0);
     
     make_entry(DIR_AS_FILE, backing_virtual, entry_file, DATA_SIG_THEME, (buffer){
-       .buffer = &system_theme,
-       .buffer_size = sizeof(system_theme_t),
-       .limit = sizeof(system_theme_t),
+       .buffer = &system_theme.palette,
+       .buffer_size = sizeof(theme_palette),
+       .limit = sizeof(theme_palette),
        .options = buffer_read_only
     });
     
@@ -158,8 +163,11 @@ bool load_theme(){
     return true;
 }
 
+extern void refresh_desktop_colors();
+
 size_t reload(file* fd, const char *buf, size_t size, file_offset offset){
     load_theme();
+    refresh_desktop_colors();
     return 0;
 }
 

@@ -7,7 +7,7 @@ extern "C" {
 #include "types.h"
 #include "files/system_module.h"
 
-bool init_disk_device();
+bool init_disk_device(system_module *mod);
 void disk_verbose();
 
 void disk_write(const void *buffer, uint32_t sector, uint32_t count);

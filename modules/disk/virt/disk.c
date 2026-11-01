@@ -39,7 +39,7 @@ void disk_verbose(){
         }\
     })
 
-bool init_disk_device(){
+bool init_disk_device(system_module *mod){
     kprint("Initializing disk");
     uint64_t addr = find_pci_device(VIRTIO_VENDOR, VIRTIO_BLK_ID);
     if (!addr){ 

@@ -2,7 +2,7 @@
 
 #include "signals/signal_types.h"
 
-typedef struct process process_t;
+typedef struct process_t process_t;
 extern process_t* get_proc_by_pid(uint16_t pid);
 
 bool register_signal_handler(process_t* proc, signal_types type, signal_handler handler);

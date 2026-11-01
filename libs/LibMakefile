@@ -1,8 +1,3 @@
-#Find the simplemake
-    #Iterate through each line
-        #gcc -I../../shared -c file.c -o file.o ../../shared/libshared.a
-    #Iterate through each line with .o and run
-        #ar rcs (folder).a *.o 
 
 BASE_FLAGS := -I. -I../../shared
 
@@ -15,7 +10,7 @@ endif
 CFLAGS   := $(CFLAGS_BASE) $(BASE_FLAGS)
 
 CLEAN_OBJS := $(shell find -name "*.o")
-C_SRC   := $(shell cat simplemake | xargs -n1 find . -name)
+C_SRC   := $(shell xargs -r -n1 printf './%s\n' < simplemake)
 OBJ     := $(C_SRC:%.c=$(BUILD_DIR)/%.o)
 
 TARGET  := $(shell echo "../lib$(notdir $(CURDIR)).a")
@@ -26,11 +21,8 @@ all: prepare $(TARGET)
 
 prepare:
 	mkdir -p $(BUILD_DIR)
-	@echo "C Sources $(C_SRC)"
 
 $(TARGET): $(OBJ)
-	@echo "Finishing build $(ARCH)"
-	@echo $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ)))
 	$(VAR) rcs $@ $(OBJ)
 
 $(BUILD_DIR)/%.o: %.c

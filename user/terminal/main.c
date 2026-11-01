@@ -10,6 +10,9 @@
 #include "files/helpers.h"
 #include "header_utils/screenprinter.h"
 #include "header_utils/composite.h"
+#include "files/system_module.h"
+#include "files/stack_fs.h"
+#include "utils/theme.h"
 
 embedded_fmt input_format = {};
 
@@ -24,7 +27,7 @@ bool headless = false;
 bool cursor_on = false;
 u64 cursor_blink_time = 500;
 
-u32 bg_color;
+theme_palette palette;
 
 buffer input_buf = {};
 
@@ -50,7 +53,7 @@ int debug_print(const char *fmt, ...){
 }
 
 shell_handle* make_default_shell(shell_bindings bindings){
-    return create_sheldon(bindings, 0);
+    return create_sheldon(bindings, 0, 0);
 }
 
 void clear(shell_handle *handle){
@@ -273,17 +276,51 @@ void toggle_cursor(){
     refresh_input();
 }
 
+bool quit = false;
+
+bool termhistory_init(system_module *mod){
+    printl("Mounting mod");
+    // while (true) printl("I'm told to quit %i");
+    return true;
+}
+
+bool custom_stat(const char *path, fs_stat *out_stat){
+    print("Stat %s into %x",path, out_stat);
+    stat_dir(out_stat);
+    return true;
+}
+
+size_t custom_readdir(const char *path, void *buf, size_t size, file_offset *offset){
+    print("READDIR %s info %x (%i) (%x)",path,buf,size,offset);
+    fs_dir_list_helper helper = create_dir_list_helper(buf, size);
+    dir_list_fill(&helper, "test");
+    return dir_buf_size(&helper);
+}
+
+system_module termhistory_mod = {
+    .name = "terminal history",
+    .mount = "termhistory",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .open = stackfs_open,
+    .read = stackfs_read,
+    .write = stackfs_write,
+    .readdir = custom_readdir,
+    .getstat = custom_stat
+};
+
 int main(){    
     request_app_ctx(&ctx);
 
     screen_printer_init(dummy_draw_ctx(ctx.width, ctx.height-INPUT_HEIGHT));
 
-    u32 color_buf[2] = {};
-    sreadf("/theme", &color_buf, sizeof(uint64_t));
-    if ((color_buf[0] & 0xFF000000) == 0) color_buf[0] |= 0xFF000000;
-    if ((color_buf[1] & 0xFF000000) == 0) color_buf[1] |= 0xFF000000;
-    screen_printer_formatting.default_bg_color = screen_printer_formatting.current_bg_color = color_buf[0];
-    screen_printer_formatting.default_text_color = screen_printer_formatting.current_text_color = color_buf[1];
+    stackfs_init();
+    load_fsmodule(&termhistory_mod, true);
+
+    get_theme(&palette);
+    if ((palette.background & 0xFF000000) == 0) palette.background |= 0xFF000000;
+    if ((palette.foreground & 0xFF000000) == 0) palette.foreground |= 0xFF000000;
+    screen_printer_formatting.default_bg_color = screen_printer_formatting.current_bg_color = palette.background;
+    screen_printer_formatting.default_text_color = screen_printer_formatting.current_text_color = palette.foreground;
 
     init_tcf(&screen_printer_formatting);
 
@@ -300,6 +337,7 @@ int main(){
     u64 last_time = get_time();
     refresh_input();
     while (true){
+        if (quit) halt(0);
         // append("Bonjour %.3i \t",i++);
         u64 current_time = get_time();
         cursor_current += (current_time-last_time);
@@ -311,7 +349,7 @@ int main(){
         handle_input();
         msleep(1);
         ctx.full_redraw = true;
-        composite(&printer_ctx, (int_point){}, 1, &ctx);
+        composite(&printer_ctx, (int_point){}, 1, &ctx, draw_ctx_rect(&ctx));
         commit_draw_ctx(&ctx);
     }
     

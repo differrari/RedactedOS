@@ -12,10 +12,14 @@ extern "C" {
 #include "graphic_types.h"
 #include "signals/signals.h"
 #include "environment/environment.h"
+#include "files/jobs.h"
+#include "access/authorize.h"
+#include "process_fs.h"
+#include "debug/proc.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
-#define PROC_OUT_BUF 0x10000
+#define PROC_STDIO_BUF 0x10000
 
 typedef struct {
     volatile u32 write_index;
@@ -41,8 +45,6 @@ typedef struct {
     sizedptr entries[PACKET_BUFFER_CAPACITY];
 } packet_buffer_t;
 
-#define MAX_PROC_NAME_LENGTH 256
-
 #define SIGNAL_BUFFER_CAPACITY 64
 
 typedef struct {
@@ -52,32 +54,59 @@ typedef struct {
 } signal_buffer_t;
 
 typedef struct {
-    u64 fs_id;
+    u64 fs_id;//Filesystem this process has access to
+    u64 owned_fs_id;//Filesystem this process owns, not automapped to fs_id due to isolation not being enforced yet
+    auth_token auth_id;
 } system_permissions;
 
-typedef struct process {
-    //We use the addresses of these variables to save and restore process state
+typedef enum { STOPPED, READY, RUNNING, BLOCKED, SLEEPING } process_state;
+
+typedef struct {
+    uptr top;
+    size_t max;
+    size_t size;
+} stack_t;
+
+typedef union {
+    struct {
+        u32 pid: 16;
+        u32 tid: 16;
+    };
+    u32 addr;
+} proc_addr;
+
+struct thread_t {
     uint64_t regs[31]; // x0–x30
     uintptr_t sp;
     uintptr_t pc;
     uint64_t spsr; 
-    //Not used in process saving
+    //Not used in context saving
+    stack_t stack_info;
+    uptr *special_mm;
+    u16 pid;
+    u16 tid;
+    process_state state;
+    u64 wake_at_msec;
+    job_id_t job_id;
+    proc_addr inspector;
+    thread_t *next;
+};
+
+struct process_t {
+    thread_t main_thread;
     uint16_t id;
-    bool in_ready_queue;
-    bool sleeping;
     bool suspended;
-    uint64_t wake_at_msec;
-    uintptr_t stack;
-    paddr_t stack_phys;
-    uint64_t stack_size;
     paddr_t heap_phys;
     kaddr_t output;
     size_t output_size;
     kaddr_t postmortem_output;
     size_t postmortem_output_size;
+    
+    kaddr_t input;
+    size_t input_size;
+    
     uint16_t procfs_refs;
     bool pending_reset;
-    file out_fd;
     int32_t exit_code;
     bool focused;
     paddr_t code;
@@ -85,15 +114,16 @@ typedef struct process {
     uaddr_t va;
     page_index *alloc_map;
     draw_ctx graphics_ctx;
-    enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
+    process_state state;
+    u64 spsr; 
     __attribute__((aligned(16))) input_buffer_t input_buffer;
     __attribute__((aligned(16))) event_buffer_t event_buffer;
     __attribute__((aligned(16))) packet_buffer_t packet_buffer;
     __attribute__((aligned(16))) scroll_buffer_t scroll_buffer;
-    __attribute__((aligned(16))) signal_buffer_t signal_buffer;
-    __attribute__((aligned(16))) signal_handler signal_handlers[NUMBER_SIGNALS];
+    __attribute__((aligned(16))) thread_t signal_handlers[NUMBER_SIGNALS];
     uint8_t priority;
     system_permissions permissions;
+    resource resource_id;
     uint16_t win_id;
     uaddr_t win_fb_va;
     paddr_t win_fb_phys;
@@ -102,11 +132,19 @@ typedef struct process {
     char name[MAX_PROC_NAME_LENGTH];
     sizedptr debug_lines;
     sizedptr debug_line_str;
-    system_module exposed_fs;
+    thread_t fs_thread;
     mm_struct mm;
+    int thread_count;
+    int thread_ids;
     environment_data environment;
-    struct process *process_next;
-} process_t;
+    procfs_files procfs;
+    uptr shared_page;
+    process_t *process_next;
+};
+
+static inline bool is_privileged(process_t *proc){
+    return proc->spsr & 0xf;
+} 
 
 //Helper functions for accessing registers mapped to scratch regs
 #define PROC_X0 regs[0]

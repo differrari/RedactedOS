@@ -1,7 +1,7 @@
 #include "virtio_gpu_pci.hpp"
 #include "pci.h"
 #include "console/kio.h"
-#include "ui/draw/draw.h"
+#include "draw/draw.h"
 #include "std/std.h"
 #include "theme/theme.h"
 #include "memory/page_allocator.h"
@@ -83,6 +83,7 @@ bool VirtioGPUDriver::init(gpu_size preferred_screen_size){
         .height = screen_size.height,
         .dirty_count = 0,
         .full_redraw = 0,
+        .display_scale = 1,
     };
 
     uint32_t capset_count = gpu_dev.device_cfg[12];

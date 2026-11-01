@@ -69,10 +69,13 @@ static void init_print_buf(){
     }
 }
 
+bool console_ready = false;
+
 bool console_init(){
     init_print_buf();
     enable_uart();
     kprint("UART initialized");
+    console_ready = true;
     return true;
 }
 
@@ -211,6 +214,7 @@ void putc(const char c){
 }
 
 void kprintf(const char *fmt, ...){
+    if (!console_ready) return;
     if (!console_storage) init_print_buf();
     if (!fmt) return;
 
@@ -227,6 +231,7 @@ void kprintf(const char *fmt, ...){
 }
 
 void kprint(const char *s){
+    if (!console_ready) return;
     if (!console_storage) init_print_buf();
     if (!s) return;
 

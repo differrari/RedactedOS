@@ -15,16 +15,17 @@
 #include "exceptions/irq.h"
 #include "header_utils/composite.h"
 #include "theme/theme.h"
+#include "menu/render.h"
 
 linked_list_t *window_list;
 window_frame *focused_window;
 
-i32 zoom_scale = 1;
+float zoom_scale = 1.f;
 
 uint16_t win_ids = 1;
 bool dirty_windows = false;
 
-int_point global_win_offset;
+int_point global_win_offset = {};
 
 draw_ctx non_win_ctx;
 
@@ -53,14 +54,24 @@ gpu_point win_to_screen(window_frame *frame, gpu_point point){
     return (gpu_point){};
 }
 
-gpu_point convert_mouse_position(gpu_point point){
+extern process_t *win_system_proc;
+
+bool convert_mouse_position(mouse_data *in){
     process_t *p = get_current_proc();
+    if (p == win_system_proc) return true;
     linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
     if (node && node->data){
         window_frame* frame = (window_frame*)node->data;
-        return win_to_screen(frame, point);
+        gpu_rect rect = {{frame->x, frame->y + MENU_HEIGHT}, {frame->width, frame->height - MENU_HEIGHT}};
+        if (mouse_in_rect(rect, in->position)){
+            in->position.x -= frame->x;
+            in->position.y -= frame->y;
+            return true;
+        }
     }
-    return (gpu_point){};
+    in->raw = (mouse_input){};
+    in->position = (gpu_point){};
+    return false;
 }
 
 i32 calculate_distance(i32 ep, i32 es, i32 np, i32 ns, i32 existing){
@@ -81,7 +92,6 @@ i32 calculate_distance(i32 ep, i32 es, i32 np, i32 ns, i32 existing){
 }
 
 int_point window_frame_intersect(window_frame *new_frame, window_frame *existing_frame, int_point existing_move){
-    
     i32 horizontal = calculate_distance(existing_frame->x, existing_frame->width, new_frame->x, new_frame->width,existing_move.x);
     i32 vertical = calculate_distance(existing_frame->y, existing_frame->height, new_frame->y, new_frame->height,existing_move.y);
     return (int_point){ abs(horizontal) < abs(vertical) ? horizontal : 0, abs(horizontal) < abs(vertical) ? 0 : vertical };
@@ -110,19 +120,21 @@ void check_collisions(window_frame *frame){
     }
 }
 
-bool create_window(i32 x, i32 y, u32 width, u32 height){
+window_frame* create_window_prog(i32 x, i32 y, u32 width, u32 height, char *prog, int argc, const char** argv){
+    height -= TOOLBAR_HEIGHT;
     irq_flags_t irq = irq_save_disable();
     if (win_ids == UINT16_MAX){ 
         irq_restore(irq);
-        return false; 
+        return 0; 
     }
     if (zoom_scale != 1){ 
         irq_restore(irq);
-        return false; 
+        return 0; 
     }
-    if (width < 0x100 || height < 0x100){ 
+    
+    if (!prog){
         irq_restore(irq);
-        return false; 
+        return 0; 
     }
     
     window_frame *frame = (window_frame*)zalloc(sizeof(window_frame));
@@ -144,10 +156,10 @@ bool create_window(i32 x, i32 y, u32 width, u32 height){
     linked_list_push_front(window_list, PHYS_TO_VIRT_P(frame));
     gpu_create_window(x,y, width, height, &frame->win_ctx);
 
-    process_t *p = execute("/boot/redos/system/launcher.red", 0, 0, 0);
+    process_t *p = execute(prog, argc, argv, 0);
     if (!p){
         irq_restore(irq);
-        return false;
+        return 0;
     }
     p->win_id = frame->win_id;
     frame->pid = p->id;
@@ -155,7 +167,13 @@ bool create_window(i32 x, i32 y, u32 width, u32 height){
     dirty_windows = true;
     irq_restore(irq);
 
-    return true;
+    return frame;
+}
+
+window_frame* create_window(i32 x, i32 y, u32 width, u32 height){
+    if (width < 0x100 || height < 0x100) return 0; 
+
+    return create_window_prog(x, y, width, height, "/boot/redos/system/launcher.red", 0, 0);
 }
 
 void resize_window_proc(process_t *proc, u32 width, u32 height){
@@ -260,7 +278,7 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus
         memcpy(&non_win_ctx.dirty_rects, frame_ctx->dirty_rects, sizeof(non_win_ctx.dirty_rects));
         non_win_ctx.dirty_count = frame_ctx->dirty_count;
         non_win_ctx.full_redraw = frame_ctx->full_redraw;
-        composite(&non_win_ctx, (int_point){}, 1, screen_ctx);
+        composite(&non_win_ctx, (int_point){}, 1, screen_ctx, (gpu_rect){ {0, MENU_HEIGHT}, {screen_ctx->width, screen_ctx->height-MENU_HEIGHT} });
     }
     if (!frame){
         linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&p->win_id), PHYS_TO_VIRT_P(find_window));
@@ -275,11 +293,18 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus
     win_ctx.dirty_count = frame_ctx->dirty_count;
     win_ctx.full_redraw = frame_ctx->full_redraw;
     
-    composite(&win_ctx, (int_point){global_win_offset.x + frame->x,global_win_offset.y + frame->y}, zoom_scale, screen_ctx);
+    composite(&win_ctx, (int_point){ global_win_offset.x + frame->x, global_win_offset.y + frame->y + TOOLBAR_HEIGHT }, zoom_scale, screen_ctx, (gpu_rect){ {0, MENU_HEIGHT}, {screen_ctx->width, screen_ctx->height-MENU_HEIGHT} });
 
     frame_ctx->dirty_count = 0;
     frame_ctx->full_redraw = false;
-    
+}
+
+void window_close_process(process_t *proc){
+    u16 npid = proc && proc->win_id ? window_fallback_focus(proc->win_id, proc->id) : 0;
+    if (npid){
+        process_t *next = get_proc_by_pid(npid);
+        if (next && next->focused && next->state != STOPPED && next->id && next->main_thread.pc && next->main_thread.sp && (is_privileged(next) || next->mm.ttbr0)) sys_set_focus(next->id);
+    }
 }
 
 u16 window_fallback_focus(u16 win_id, u16 skip_id){
@@ -287,8 +312,13 @@ u16 window_fallback_focus(u16 win_id, u16 skip_id){
     if (!node || !node->data) return 0;
 
     window_frame *frame = node->data;
-    if (frame->pid != skip_id)
-        return frame->pid;
+    if (frame->pid != skip_id){
+        process_t *proc = get_proc_by_pid(frame->pid);
+        if (proc){
+            proc->focused = true;
+            return frame->pid;
+        }
+    }
 
     process_t *proc = get_all_processes();
     while (proc) {
@@ -296,6 +326,7 @@ u16 window_fallback_focus(u16 win_id, u16 skip_id){
             frame->pid = proc->id;
             if (proc->graphics_ctx.fb){
                 frame->win_ctx.fb = proc->graphics_ctx.fb;
+                proc->focused = true;
                 if (proc->graphics_ctx.width != frame->width || proc->graphics_ctx.height != frame->height){
                     frame->width = proc->graphics_ctx.width;
                     frame->height = proc->graphics_ctx.height;
@@ -311,6 +342,7 @@ u16 window_fallback_focus(u16 win_id, u16 skip_id){
     }
 
     release(node->data);
+    ((window_frame*)node->data)->win_id = 0;
     linked_list_remove(window_list, node);
     dirty_windows = true;
     return 0;
@@ -325,4 +357,13 @@ void set_window_focus(uint16_t win_id){
 
 void unset_window_focus(){
     focused_window = 0;
+}
+
+void refresh_window_info(u16 wid, window_info_t *info){
+    linked_list_node_t *node = linked_list_find(window_list, &wid, find_window);
+    if (!node || !node->data) return;
+
+    window_frame *frame = node->data;
+    frame->info = *info;
+    dirty_windows = true;
 }

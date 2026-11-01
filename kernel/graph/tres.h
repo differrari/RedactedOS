@@ -1,24 +1,32 @@
 #pragma once
 
 #include "types.h"
-#include "ui/draw/draw.h"
+#include "draw/draw.h"
 #include "data/struct/linked_list.h"
+#include "process/process.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct {
+typedef struct window_frame {
     uint16_t win_id;
     int32_t x, y;
     uint32_t width, height;
     draw_ctx win_ctx;
     uint16_t pid;
+    window_info_t info;
+    struct window_frame *aux;
+    bool is_aux;
 } window_frame;
+
+#define TOOLBAR_HEIGHT 50
+#define BORDER_SIZE 3
 
 void init_window_manager();
 
-bool create_window(int32_t x, int32_t y, uint32_t width, uint32_t height);
+window_frame* create_window(int32_t x, int32_t y, uint32_t width, uint32_t height);
+window_frame* create_window_prog(i32 x, i32 y, u32 width, u32 height, char *prog, int argc, const char** argv);
 
 gpu_point win_to_screen(window_frame *frame, gpu_point point);
 
@@ -28,11 +36,14 @@ void get_window_ctx(draw_ctx* out_ctx);
 
 void commit_frame(draw_ctx* frame_ctx, window_frame* frame, bool overwrite_focus);
 
+void refresh_window_info(u16 wid, window_info_t *info);
+
 u16 window_fallback_focus(u16 win_id, u16 skip_id);
 void set_window_focus(uint16_t win_id);
 void unset_window_focus();
+void window_close_process(process_t *proc);
 
-gpu_point convert_mouse_position(gpu_point p);
+bool convert_mouse_position(mouse_data *in);
 
 extern linked_list_t *window_list;
 
