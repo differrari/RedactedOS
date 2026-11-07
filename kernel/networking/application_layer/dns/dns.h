@@ -1,5 +1,6 @@
 #pragma once
-#include "networking/transport_layer/csocket_udp.h"
+#include "networking/transport_layer/csocket.h"
+#include "networking/application_layer/dns/dns_wire.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -20,12 +21,14 @@ typedef enum {
     DNS_USE_BOTH = 2
 } dns_server_sel_t;
 
-dns_result_t dns_resolve_a(const char* hostname, uint32_t* out_ip, dns_server_sel_t which, uint32_t timeout_ms);
-dns_result_t dns_resolve_a_on_l3(uint8_t l3_id, const char* hostname, uint32_t* out_ip, dns_server_sel_t which, uint32_t timeout_ms);
-dns_result_t dns_resolve_aaaa(const char* hostname, uint8_t out_ipv6[16], dns_server_sel_t which, uint32_t timeout_ms);
-dns_result_t dns_resolve_aaaa_on_l3(uint8_t l3_id, const char* hostname, uint8_t out_ipv6[16], dns_server_sel_t which, uint32_t timeout_ms);
+typedef uint16_t dns_qtype_t;
 
-void dns_cache_tick(uint32_t ms);
+dns_result_t dns_query(const char* hostname, dns_qtype_t qtype, dns_record_t* out_records, uint32_t max_records, uint32_t* out_count, dns_server_sel_t which, uint32_t timeout_ms);
+dns_result_t dns_query_on_l3(l3_id_t l3_id, const char* hostname, dns_qtype_t qtype, dns_record_t* out_records, uint32_t max_records, uint32_t* out_count, dns_server_sel_t which, uint32_t timeout_ms);
+dns_result_t dns_resolve_a(const char* hostname, uint32_t* out_ip, dns_server_sel_t which, uint32_t timeout_ms);
+dns_result_t dns_resolve_a_on_l3(l3_id_t l3_id, const char* hostname, uint32_t* out_ip, dns_server_sel_t which, uint32_t timeout_ms);
+dns_result_t dns_resolve_aaaa(const char* hostname, uint8_t out_ipv6[16], dns_server_sel_t which, uint32_t timeout_ms);
+dns_result_t dns_resolve_aaaa_on_l3(l3_id_t l3_id, const char* hostname, uint8_t out_ipv6[16], dns_server_sel_t which, uint32_t timeout_ms);
 
 #ifdef __cplusplus
 }
