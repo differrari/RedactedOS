@@ -102,11 +102,8 @@ void check_collisions(window_frame *frame){
     
     size_t num_wins = linked_list_count(window_list);
     for (size_t i = 0; i < num_wins; i++){
-        linked_list_node_t *node = linked_list_get(window_list, i);
-        if (!node || !node->data) continue;
-        window_frame *ex_frame = node->data;
+        window_frame *ex_frame = linked_list_get(window_list, i);
         if (!ex_frame || ex_frame == frame) continue;
-        //TODO: ex_frame can be corrupted somehow
         int_point new_move_dist = window_frame_intersect(frame, ex_frame, move_dist);
         if (new_move_dist.x){
             frame->x += new_move_dist.x;
