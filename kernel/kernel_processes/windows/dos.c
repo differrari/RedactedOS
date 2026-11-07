@@ -286,7 +286,7 @@ int window_system(){
                 dragging = true;
                 start_point = get_mouse_pos();
             }
-            if (dragging){
+            if (dragging && !get_current_mouse_window(get_mouse_pos())){
                 gpu_point end_point = get_mouse_pos();
                 global_win_offset.x += end_point.x-start_point.x;
                 global_win_offset.y += end_point.y-start_point.y;
