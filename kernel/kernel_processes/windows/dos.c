@@ -280,7 +280,7 @@ int window_system(){
     while (1){
         bool active = false;
         check_shortcuts();
-        if (mouse_button_pressed(MMB)){
+        if (mouse_button_pressed(MMB)){//TODO: all the infinite canvas behavior can be removed and replaced with infcanvas.h (by adding an implementable function pointer to can_interact_with_infcanvas to prevent action while within a window)
             active = true;
             if (!dragging && !drawing){
                 dragging = true;

@@ -432,5 +432,5 @@ void close_files_for_process(uint16_t pid){
             close_file(&fd);
         }
     }
-    close_pipes_for_process(pid);//TODO: pipes need to be cleaned. They're not being used
+    close_pipes_for_process(pid);
 }

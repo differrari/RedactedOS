@@ -29,7 +29,6 @@ gpu_size tile_size;
 gpu_point selected;
 bool ready = false;
 bool rendered_full = false;
-file active_proc;
 chunk_array_t *entries;
 bool process_active = false;
 draw_ctx ctx;
@@ -105,21 +104,6 @@ void load_entries(){
 }
 
 void draw_desktop(){
-    if (active_proc.id){
-        u16 state = 0;
-        readf(&active_proc,(char*)&state, sizeof(state));
-        if (state)
-            return;
-    } 
-    if (process_active){
-        active_proc.id = 0;
-        load_entries();
-
-        gpu_size screen_size = {ctx.width, ctx.height};
-        tile_size = (gpu_size){ screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20 };
-        rendered_full = false;
-        process_active = false;
-    }
     gpu_point old_selected = selected;
     kbd_event event;
     while (read_event(&event)){

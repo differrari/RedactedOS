@@ -84,7 +84,7 @@ struct thread_t {
     thread_t *next;
 };
 
-struct process_t { // TODO: This structure is way bigger than it needs to be, use buffers and pointers more ffs
+struct process_t { // TODO: This structure is way bigger than it needs to be, use buffers and pointers more ffs, especially mm
     thread_t main_thread;
     uint16_t id;
     bool suspended;
