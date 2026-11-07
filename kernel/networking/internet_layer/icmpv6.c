@@ -11,6 +11,7 @@
 #include "networking/transport_layer/csocket_raw.h"
 #include "networking/transport_layer/trans_utils.h"
 #include "networking/transport_layer/tcp.h"
+#include "networking/transport_layer/csocket_udp.h"
 #include "networking/internet_layer/pmtu.h"
 #include "networking/interface_manager.h"
 
@@ -163,7 +164,7 @@ void icmpv6_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_i
         }
 
         l3_ipv6_interface_t* l3 = l3_ipv6_find_by_ip(inner.src);
-        if (!ipv6_l3_is_ready(l3) || !l3->l2 || l3->l2->ifindex != ifindex) {
+        if (!ipv6_l3_is_ready(l3) || l3->l2->ifindex != ifindex) {
             netpkt_unref(pkt);
             return;
         }
@@ -175,21 +176,53 @@ void icmpv6_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_i
             return;
         }
 
-        uint16_t path_mtu = pmtu_note(l3->l3_id, l3->epoch, IP_VER6, inner.dst, mtu);
-        if (path_mtu) {
-            uint32_t l4_off = 8 + (uint32_t)sizeof(ipv6_hdr_t);
-            uint32_t l4_len = icmp_len - l4_off;
-            uint8_t inner_nh = inner.next_header;
-            uint8_t ports[4];
-            if (ipv6_skip_ext_headers(pkt, &inner_nh, &l4_off, &l4_len, false, NULL) && inner_nh == PROTO_TCP && l4_len >= sizeof(ports) && 
-                netpkt_copyout(pkt, l4_off, ports, sizeof(ports))) tcp_pmtu_update(l3->l3_id, IP_VER6, inner.src, inner.dst, rd_be16(ports), rd_be16(ports + 2), path_mtu);
+        uint32_t l4_off = 8 + (uint32_t)sizeof(ipv6_hdr_t);
+        uint32_t l4_len = icmp_len - l4_off;
+        uint8_t inner_nh = inner.next_header;
+        if (!ipv6_skip_ext_headers(pkt, &inner_nh, &l4_off, &l4_len, false, NULL)) {
+            netpkt_unref(pkt);
+            return;
         }
+
+        uint8_t tcp[8];
+        if ((inner_nh != PROTO_TCP && inner_nh != PROTO_UDP) || l4_len < sizeof(tcp) || !netpkt_copyout(pkt, l4_off, tcp, sizeof(tcp))) {
+            netpkt_unref(pkt);
+            return;
+        }
+
+        uint16_t local_port = rd_be16(tcp);
+        uint16_t remote_port = rd_be16(tcp + 2);
+
+        bool valid;
+        if (inner_nh == PROTO_TCP) valid = tcp_icmp_validate(l3->l3_id, IP_VER6, inner.src, inner.dst, local_port, remote_port, rd_be32(tcp + 4));
+        else valid = udp_icmp_validate(l3->l3_id, IP_VER6, inner.src, inner.dst, local_port, remote_port);
+
+        if (!valid) {
+            netpkt_unref(pkt);
+            return;
+        }
+
+        uint16_t path_mtu = pmtu_note(l3->l3_id, l3->epoch, IP_VER6, inner.dst, mtu);
+        if (path_mtu) tcp_pmtu_update(l3->l3_id, IP_VER6, inner.dst, path_mtu);
 
         netpkt_unref(pkt);
         return;
     }
 
     if (h->type == ICMPV6_DEST_UNREACH || h->type == ICMPV6_TIME_EXCEEDED || h->type == ICMPV6_PARAM_PROBLEM) {
+        if (icmp_len >= sizeof(ipv6_hdr_t) + 16) {
+            ipv6_hdr_t inner = {};
+            memcpy(&inner, icmp + 8, sizeof(inner));
+            l3_ipv6_interface_t* l3 = l3_ipv6_find_by_ip(inner.src);
+            if ((bswap32(inner.ver_tc_fl) >> 28) == 6 && ipv6_l3_is_ready(l3) && l3->l2->ifindex == ifindex) {
+                uint32_t off = sizeof(ipv6_hdr_t) + 8;
+                uint32_t rem = icmp_len - off;
+                uint8_t proto = inner.next_header;
+                uint8_t tcp[8];
+                if (ipv6_skip_ext_headers(pkt, &proto, &off, &rem, false, 0) && proto == PROTO_TCP && rem >= sizeof(tcp) && netpkt_copyout(pkt, off, tcp, sizeof(tcp)))
+                    tcp_icmp_error(l3->l3_id, IP_VER6, inner.src, inner.dst, rd_be16(tcp), rd_be16(tcp + 2), rd_be32(tcp + 4), h->type, h->code);
+            }
+        }
         netpkt_unref(pkt);
         return;
     }

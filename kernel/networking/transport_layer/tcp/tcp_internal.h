@@ -55,6 +55,7 @@ typedef struct {
     uint8_t fin;
     uint8_t psh;
     uint8_t persist;
+    uint8_t partial_sent;
     uint8_t rtt_sample;
     uint8_t retransmit_cnt;
     uint8_t opts_len;
@@ -83,6 +84,7 @@ typedef struct {
     tcp_state_t state;
     tcp_data ctx;
     uint16_t refs;
+    uint32_t icmp_error;//TODO add SOCK_GET_TCP_LAST_ICMP_ERROR
     uint8_t retired;
     uint8_t active_open;
     struct ksocket *listener;
@@ -108,6 +110,7 @@ typedef struct {
     uint32_t advertised_mss;
     uint32_t path_mss;
     uint32_t peer_mss;
+    uint32_t pmtu_last_note_ms;
 
     uint8_t ws_send;
     uint8_t ws_recv;
@@ -185,6 +188,9 @@ typedef struct {
     uint8_t keepalive_on;
     uint32_t keepalive_ms;
     uint32_t keepalive_idle_ms;
+    uint32_t keepalive_interval_ms;
+    uint32_t keepalive_probes;
+    uint32_t keepalive_count;
 
     uint8_t challenge_ack_valid;
     uint32_t challenge_ack_last_ms;

@@ -195,6 +195,11 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
         flow->base.ctx.sequence = flow->tx.snd_nxt;
 
         if (!tcp_send_from_seg(flow, seg)) {
+            if (seg->partial_sent) {
+                sent_bytes += seg_len;
+                remaining -= seg_len;
+                break;
+            }
             flow->tx.snd_nxt -= seg_len;
             flow->base.ctx.sequence = flow->tx.snd_nxt;
             tcp_tx_seg_clear(flow, seg);
@@ -325,6 +330,7 @@ bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
     bool sample = tx.rtt_sample && !tx.retransmit_cnt && !tx.persist;
     uint32_t old_rtt_start = flow->tx.rtt_start_ms;
     uint32_t off = 0;
+    seg->partial_sent = 0;
 
     do{
         uint32_t chunk = tx.len - off;
@@ -370,10 +376,17 @@ bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
     } while (off < tx.len);
 
     if (tx.pkt) netpkt_unref(tx.pkt);
-    if (!sent_any) {
+    if (off != tx.len || !sent_any) {
         if (sample) flow->tx.rtt_start_ms = old_rtt_start;
+        if (sent_any) {
+            seg->partial_sent = 1;
+            seg->rtt_sample = 0;
+            flow->tx.rtt_sample_pending = 0;
+            tcp_daemon_kick();
+        }
         return false;
     }
+    seg->partial_sent = 0;
 
     flow->timer.keepalive_idle_ms = 0;
     if (tx.len) {
@@ -388,7 +401,10 @@ bool tcp_retransmit_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg) {
     if (!flow || !seg || !seg->used) return false;
     for (uint32_t i = 0; i < TCP_MAX_TX_SEGS; i++) flow->tx.txq[i].rtt_sample = 0;
     flow->tx.rtt_sample_pending = 0;
-    if (!tcp_send_from_seg(flow, seg)) return false;
+    if (!tcp_send_from_seg(flow, seg)) {
+        if (seg->partial_sent && seg->retransmit_cnt < UINT8_MAX) seg->retransmit_cnt++;
+        return false;
+    }
 
     if (seg->retransmit_cnt < UINT8_MAX) seg->retransmit_cnt++;
     seg->timer_ms = 0;

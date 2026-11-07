@@ -1,10 +1,11 @@
 #include "tcp_internal.h"
 #include "kernel_processes/kprocess_loader.h"
 #include "exceptions/irq.h"
+#include "networking/internet_layer/pmtu.h"
 
 static volatile int tcp_daemon_running;
 static int tcp_daemon_entry(int argc, char *argv[]);
-//TODO add keepalive option, check icmp/mtu propagation
+//TODO add keepalive option
 static bool tcp_timer_send_ack_segment(tcp_flow_t *flow, uint32_t seq, const uint8_t *payload, uint16_t payload_len) {
     tcp_hdr_t hdr;
     hdr.src_port = bswap16(flow->base.local.port);
@@ -45,11 +46,14 @@ static int tcp_daemon_entry(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
     uint32_t last_tick_ms = (uint32_t)get_time();
+    uint32_t last_pmtu_check_ms = last_tick_ms;
 
     while (true) {
         uint32_t now_ms = (uint32_t)get_time();
         uint32_t elapsed_ms = now_ms - last_tick_ms;
         last_tick_ms = now_ms;
+        bool check_pmtu = now_ms - last_pmtu_check_ms >= 60000;
+        if (check_pmtu) last_pmtu_check_ms = now_ms;
 
         uint16_t active_slots[MAX_TCP_FLOWS];
         uint32_t active_generations[MAX_TCP_FLOWS];
@@ -81,6 +85,17 @@ static int tcp_daemon_entry(int argc, char *argv[]) {
             flow->base.refs++;
             irq_restore(irq);
             bool retire_flow = false;
+
+            if (check_pmtu && (flow->base.state == TCP_ESTABLISHED || flow->base.state == TCP_CLOSE_WAIT) && l3_generation(flow->base.l3_id) == flow->base.l3_generation) { 
+                uint32_t path_mss = tcp_calc_mss_for_l3(flow->base.l3_id, flow->base.remote.ver, flow->base.remote.ip);
+                irq = irq_save_disable();
+                if (path_mss && (path_mss < flow->tx.path_mss || (path_mss > flow->tx.path_mss && now_ms - flow->tx.pmtu_last_note_ms >= PMTU_CACHE_MAX_AGE_MS))) {
+                    if (path_mss < flow->tx.path_mss) flow->tx.pmtu_last_note_ms = now_ms;
+                    flow->tx.path_mss = path_mss;
+                    tcp_update_mss(flow);
+                }
+                irq_restore(irq);
+            }
 
             if (flow->base.state == TCP_TIME_WAIT) {
                 flow->timer.time_wait_ms += elapsed_ms;
@@ -140,13 +155,27 @@ static int tcp_daemon_entry(int argc, char *argv[]) {
             if (flow->tx.fin_tx_pending) tcp_try_send_pending_fin(flow);
 
             if (!flow->tx.fin_tx_pending && !flow->tx.nagle_len && flow->timer.keepalive_on && flow->base.state == TCP_ESTABLISHED && flow->timer.keepalive_ms && flow->tx.snd_nxt == flow->tx.snd_una) {
-                flow->timer.keepalive_idle_ms += elapsed_ms;
-                if (flow->timer.keepalive_idle_ms >= flow->timer.keepalive_ms) {
-                    uint32_t seq = flow->tx.snd_nxt;
-                    if (seq) seq--;
-                    bool sent = tcp_timer_send_ack_segment(flow, seq, NULL, 0);
-                    flow->timer.keepalive_idle_ms = sent || flow->timer.keepalive_ms <= TCP_MIN_RTO ? 0 : flow->timer.keepalive_ms - TCP_MIN_RTO;
+                uint32_t limit = flow->timer.keepalive_probes ? flow->timer.keepalive_interval_ms : flow->timer.keepalive_ms;
+                if (limit < 1000) limit = 1000;
+                uint32_t remaining = UINT32_MAX - flow->timer.keepalive_idle_ms;
+                if (elapsed_ms >= remaining) flow->timer.keepalive_idle_ms = UINT32_MAX;
+                else flow->timer.keepalive_idle_ms += elapsed_ms;
+                if (flow->timer.keepalive_idle_ms >= limit) {
+                    if (flow->timer.keepalive_probes >= flow->timer.keepalive_count) retire_flow = true;
+                    else {
+                        uint32_t seq = flow->tx.snd_nxt ? flow->tx.snd_nxt-1 : 0;
+                        if (tcp_timer_send_ack_segment(flow, seq, NULL, 0)){
+                            flow->timer.keepalive_probes++;
+                            flow->timer.keepalive_idle_ms = 0;
+                        }
+                    }
                 }
+            } else if (!flow->timer.keepalive_probes) flow->timer.keepalive_idle_ms = 0;
+            
+            if (retire_flow) {
+                tcp_free_flow(flow);
+                tcp_flow_put(flow);
+                continue;
             }
 
             bool persist_state = flow->base.state == TCP_ESTABLISHED || flow->base.state == TCP_CLOSE_WAIT || flow->base.state == TCP_FIN_WAIT_1 || flow->base.state == TCP_FIN_WAIT_2 || flow->base.state == TCP_CLOSING || flow->base.state == TCP_LAST_ACK;

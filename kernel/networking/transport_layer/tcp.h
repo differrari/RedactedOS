@@ -72,11 +72,13 @@ typedef enum {
 #define TCP_RECV_WINDOW 65535
 #define TCP_MAX_TX_SEGS 128
 #define TCP_INIT_RTO 1000
-#define TCP_MIN_RTO 200
+#define TCP_MIN_RTO 500
 #define TCP_MAX_RTO 60000
 #define TCP_SYN_DATA_RTO 3000
 #define TCP_MSL_MS 30000
 #define SOCKET_DEFAULT_KEEPALIVE_MS (2u * 60u * 60u * 1000u)
+#define TCP_KEEPALIVE_INTERVAL_MS 75000u
+#define TCP_KEEPALIVE_PROBES 9
 #define TCP_2MSL_MS (2 * TCP_MSL_MS)
 #define TCP_MAX_RETRANS 8
 
@@ -97,7 +99,9 @@ uint32_t tcp_flow_readable(tcp_data *flow_ctx);
 bool tcp_flow_recv_closed(tcp_data *flow_ctx);
 
 void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_addr, l3_id_t l3_id, netpkt_t* pkt);
-void tcp_pmtu_update(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port, uint16_t mtu);
+void tcp_pmtu_update(l3_id_t l3_id, ip_version_t ver, const void* remote_ip, uint16_t mtu);
+bool tcp_icmp_validate(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port, uint32_t seq);
+void tcp_icmp_error(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port, uint32_t seq, uint8_t type, uint8_t code);
 void tcp_l3_retire(l3_id_t l3_id, uint32_t l3_generation);
 void tcp_l3_mtu_reduce(l3_id_t l3_id, uint32_t l3_generation, uint16_t mtu);
 

@@ -407,13 +407,7 @@ int64_t socket_sendto_raw(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         if (s->bind_spec.kind == BIND_L2) {
             l2_interface_t* l2 = l2_interface_find_by_index(s->bind_spec.ifindex);
             generation = l2 ? l2->generation : 0;
-        } else if (proto == PROTO_ICMPV6) {
-            l3_ipv6_interface_t* v6 = l3_ipv6_find_by_id(s->bind_spec.l3_id);
-            generation = v6 ? v6->generation : 0;
-        } else {
-            l3_ipv4_interface_t* v4 = l3_ipv4_find_by_id(s->bind_spec.l3_id);
-            generation = v4 ? v4->generation : 0;
-        }
+        } else if (s->bind_spec.kind == BIND_L3 || s->bind_spec.kind == BIND_IP) generation = l3_generation(s->bind_spec.l3_id);
         if (!generation || generation != s->bind_generation) return SOCK_ERR_NOT_FOUND;
     }
 

@@ -6,6 +6,7 @@
 #include "networking/transport_layer/csocket_raw.h"
 #include "networking/transport_layer/trans_utils.h"
 #include "networking/transport_layer/tcp.h"
+#include "networking/transport_layer/csocket_udp.h"
 #include "networking/internet_layer/pmtu.h"
 #include "networking/internet_layer/ipv4_utils.h"
 
@@ -56,11 +57,12 @@ static void icmp_note_frag_needed(uint8_t ifindex, const uint8_t* raw, uint32_t 
 
     ipv4_hdr_t inner;
     memcpy(&inner, quoted, sizeof(inner));
+    if (bswap16(inner.flags_frag_offset) & 0x1FFF) return;
     uint32_t local_ip = bswap32(inner.src_ip);
     uint32_t remote_ip = bswap32(inner.dst_ip);
     l3_ipv4_interface_t* l3 = l3_ipv4_find_by_ip(local_ip);
-    if (!ipv4_l3_is_ready(l3) || !l3->l2 || l3->l2->ifindex != ifindex) return;
-    if (!remote_ip || ipv4_is_multicast(remote_ip) || ipv4_is_limited_broadcast(remote_ip)) return;
+    if (!ipv4_l3_is_ready(l3) || l3->l2->ifindex != ifindex) return;
+    if (ipv4_is_unspecified(remote_ip) || ipv4_is_multicast(remote_ip) || ipv4_is_limited_broadcast(remote_ip)) return;
 
     uint16_t mtu = rd_be16(raw + 6);
     if (!mtu) {
@@ -79,11 +81,18 @@ static void icmp_note_frag_needed(uint8_t ifindex, const uint8_t* raw, uint32_t 
 
     uint16_t base_mtu = l3_ipv4_effective_mtu(l3);
     if (!base_mtu || mtu >= base_mtu) return;
-    uint16_t path_mtu = pmtu_note(l3->l3_id, l3->epoch, IP_VER4, &remote_ip, mtu);
-    if (!path_mtu || inner.protocol != PROTO_TCP || len < 8 + ihl + 4) return;
+    if (inner.protocol != PROTO_TCP && inner.protocol != PROTO_UDP) return;
+    if (len < ihl + 16) return;
+    const uint8_t* ports = quoted + ihl;
+    uint16_t local_port = rd_be16(ports);
+    uint16_t remote_port = rd_be16(ports + 2);
 
-    const uint8_t* tcp = quoted + ihl;
-    tcp_pmtu_update(l3->l3_id, IP_VER4, &local_ip, &remote_ip, rd_be16(tcp), rd_be16(tcp + 2), path_mtu);
+    if (inner.protocol == PROTO_TCP) {
+        if (!tcp_icmp_validate(l3->l3_id, IP_VER4, &local_ip, &remote_ip, local_port, remote_port, rd_be32(ports + 4))) return;
+    } else if (!udp_icmp_validate(l3->l3_id, IP_VER4, &local_ip, &remote_ip, local_port, remote_port)) return;
+
+    uint16_t path_mtu = pmtu_note(l3->l3_id, l3->epoch, IP_VER4, &remote_ip, mtu);
+    if (path_mtu) tcp_pmtu_update(l3->l3_id, IP_VER4,&remote_ip, path_mtu);
 }
 
 void icmp_input(uint8_t ifindex, netpkt_t* pkt, uint32_t src_ip, uint32_t dst_ip) {
@@ -139,13 +148,30 @@ void icmp_input(uint8_t ifindex, netpkt_t* pkt, uint32_t src_ip, uint32_t dst_ip
         return;
     }
 
-    if (type == ICMP_DEST_UNREACH) {
-        if (hdr[1] == 4) icmp_note_frag_needed(ifindex, raw, len);
+    if (type == ICMP_DEST_UNREACH && hdr[1] == 4) {
+        icmp_note_frag_needed(ifindex, raw, len);
         netpkt_unref(pkt);
         return;
     }
 
-    if (type == ICMP_TIME_EXCEEDED || type == ICMP_PARAM_PROBLEM || type == ICMP_REDIRECT) {
+    if (type == ICMP_DEST_UNREACH || type == ICMP_TIME_EXCEEDED || type == ICMP_PARAM_PROBLEM) {
+        if (len >= 8 + sizeof(ipv4_hdr_t) + 8) {
+            const uint8_t* q = raw + 8; 
+            uint32_t ihl = (q[0] & 15u) * 4;
+            if ((q[0] >> 4) == 4 && ihl >= sizeof(ipv4_hdr_t) && len >= 8 + ihl + 8 && !(rd_be16(q + 6) & 0x1FFF) && q[9] == PROTO_TCP) {
+                uint32_t lip = rd_be32(q + 12), rip = rd_be32(q + 16);
+                l3_ipv4_interface_t* l3 = l3_ipv4_find_by_ip(lip);
+                if (ipv4_l3_is_ready(l3) && l3->l2->ifindex == ifindex) {
+                    const uint8_t* t = q + ihl;
+                    tcp_icmp_error(l3->l3_id, IP_VER4, &lip, &rip, rd_be16(t), rd_be16(t + 2), rd_be32(t + 4),type, hdr[1]);
+                }
+            }
+        }
+        netpkt_unref(pkt);
+        return;
+    }
+
+    if (type == ICMP_REDIRECT) {
         netpkt_unref(pkt);
         return;
     }

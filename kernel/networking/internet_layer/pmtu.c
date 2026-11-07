@@ -3,7 +3,6 @@
 #include "syscalls/syscalls.h"
 #include "exceptions/irq.h"
 
-#define PMTU_CACHE_MAX_AGE_MS 600000u
 #define PMTU_CACHE_MAX_ENTRIES 128u
 
 typedef struct {

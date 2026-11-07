@@ -30,6 +30,8 @@ typedef struct udp_rx_entry {
 typedef struct udp_recent_tx {
     net_l4_endpoint remote;
     uint32_t sent_at_ms;
+    l3_id_t l3_id;
+    uint32_t l3_generation;
     bool match_any_source;
 } udp_recent_tx_t;
 
@@ -51,14 +53,57 @@ typedef struct udp_socket {
     bool closed;
 } udp_socket_t;
 
-static void udp_record_recent_tx(udp_socket_t* s, const net_l4_endpoint* remote, bool match_any_source) {
-    if (!s || !remote) return;
+static void udp_record_recent_tx(udp_socket_t* s, const net_l4_endpoint* remote, bool match_any_source, l3_id_t l3_id, uint32_t generation) {
+    if (!s || !remote || !l3_id || !generation) return;
     uint32_t now_ms = (uint32_t)get_time();
     irq_flags_t irq = irq_save_disable();
     uint8_t index = s->recent_tx_next;
     if (++s->recent_tx_next == UDP_RECENT_TX_COUNT) s->recent_tx_next = 0;
-    s->recent_tx[index] = (udp_recent_tx_t) {.remote = *remote, .sent_at_ms = now_ms, .match_any_source = match_any_source};
+    s->recent_tx[index] = (udp_recent_tx_t) {.remote = *remote, .sent_at_ms = now_ms, .l3_id = l3_id, .l3_generation = generation, .match_any_source = match_any_source};
     irq_restore(irq);
+}
+
+bool udp_icmp_validate(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port) {
+    if (!l3_id || !local_ip || !remote_ip || !local_port || !remote_port) return false;
+    uint8_t ifindex = 0;
+    uint32_t generation = 0;
+    if (ver == IP_VER4) {
+        l3_ipv4_interface_t* l3 = l3_ipv4_find_by_id(l3_id);
+        if (!ipv4_l3_is_ready(l3)) return false;
+        ifindex = l3->l2->ifindex;
+        generation = l3->generation;
+    } else if (ver == IP_VER6) {
+        l3_ipv6_interface_t* l3 = l3_ipv6_find_by_id(l3_id);
+        if (!ipv6_l3_is_ready(l3)) return false;
+        ifindex = l3->l2->ifindex;
+        generation = l3->generation;
+    } else return false;
+    if (!generation) return false;
+
+    net_l4_endpoint remote;
+    make_ep(remote_ip, remote_port, ver, &remote);
+    uint32_t now_ms = get_time();
+    socket_bind_iter_t iter = {};
+    ksocket_t* socket;
+    while ((socket = socket_bind_udp_next_fanout(ver, l3_id, ifindex, local_ip, local_port, true, &iter))) {
+        udp_socket_t *s = (udp_socket_t*)socket_core_impl(socket);
+        bool valid = false;
+        irq_flags_t irq = irq_save_disable();
+        if (s && !s->closed && s->localPort == local_port) {
+            for (uint32_t i = 0; i < UDP_RECENT_TX_COUNT; i++) {
+                const udp_recent_tx_t* tx = &s->recent_tx[i];
+                if (tx->match_any_source || tx->l3_id != l3_id || tx->l3_generation != generation) continue;
+                if (!net_ep_equal(&tx->remote, &remote)) continue;
+                if ((uint32_t)(now_ms - tx->sent_at_ms) > UDP_REPLY_WINDOW_MS) continue;
+                valid = true;
+                break;
+            }
+        }
+        irq_restore(irq);
+        socket_core_put(socket);
+        if (valid) return true;
+    }
+    return false;
 }
 
 static bool udp_socket_mcast_endpoint_valid(const net_l4_endpoint* ep) {
@@ -564,7 +609,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
             tx.target.l3_id = chosen_l3;
 
             if (!udp_send_segment(&src, &d, pay, &tx, ttl, dontfrag, 0)) return SOCK_ERR_SYS;
-            udp_record_recent_tx(s, &d, true);
+            udp_record_recent_tx(s, &d, true, chosen_l3, bcast_v4->generation);
             return (int64_t)len;
         }
 
@@ -587,7 +632,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         tx.target.l3_id = plan.l3_id;
 
         if (!udp_send_segment(&src, &d, pay, &tx, ttl, dontfrag, (s->options.flags & SOCK_OPT_DONTROUTE) ? 1 : 0)) return SOCK_ERR_SYS;
-        udp_record_recent_tx(s, &d, ipv4_is_multicast(dip));
+        udp_record_recent_tx(s, &d, ipv4_is_multicast(dip), tx_l3, v4->generation);
         return (int64_t)len;
     }
 
@@ -611,7 +656,7 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
         tx.target.l3_id = plan.l3_id;
 
         if (!udp_send_segment(&src, &d, pay, &tx, ttl, dontfrag, (s->options.flags & SOCK_OPT_DONTROUTE) ? 1 : 0)) return SOCK_ERR_SYS;
-        udp_record_recent_tx(s, &d, ipv6_is_multicast(d.ip));
+        udp_record_recent_tx(s, &d, ipv6_is_multicast(d.ip), chosen_l3, v6->generation);
         return (int64_t)len;
     }
 

@@ -857,6 +857,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                         flow->base.state = TCP_ESTABLISHED;
                         flow->base.active_open = 0;
                         flow->timer.keepalive_idle_ms = 0;
+                        flow->timer.keepalive_probes = 0;
                         flow->timer.delayed_ack_pending = 0;
                         flow->timer.delayed_ack_timer_ms = 0;
                         flow->timer.delayed_ack_bytes = 0;
@@ -1101,6 +1102,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             }
 
             flow->timer.keepalive_idle_ms = 0;
+            flow->timer.keepalive_probes = 0;
             flow->base.ctx.ack = seq + 1;
             flow->rx.rcv_nxt = seq + 1;
             flow->rx.rcv_base = flow->rx.rcv_nxt;
@@ -1220,6 +1222,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             }
 
             flow->timer.keepalive_idle_ms = 0;
+            flow->timer.keepalive_probes = 0;
 
             if (!tcp_prepare_rcv_buffer(flow)) {
                 if (!flow->base.active_open) {
@@ -1351,6 +1354,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
         }
 
         flow->timer.keepalive_idle_ms = 0;
+        flow->timer.keepalive_probes = 0;
         uint32_t old_wnd = flow->tx.snd_wnd;
         uint32_t new_wnd = window;
         if (flow->tx.ws_ok && flow->tx.ws_recv) new_wnd <<= flow->tx.ws_recv;

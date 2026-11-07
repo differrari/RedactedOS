@@ -6,7 +6,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
+//TODO pmtu validation
 socket_impl_t socket_raw_create(ksocket_t* owner, const SocketOptions* extra);
 void socket_destroy_raw(socket_impl_t sh);
 int32_t socket_close_raw(socket_impl_t sh);

@@ -2,6 +2,8 @@
 #include "types.h"
 #include "net/network_types.h"
 
+#define PMTU_CACHE_MAX_AGE_MS 600000u
+
 #ifdef __cplusplus
 extern "C" {
 #endif

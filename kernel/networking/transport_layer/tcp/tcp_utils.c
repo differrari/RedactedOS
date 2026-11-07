@@ -54,33 +54,6 @@ uint32_t tcp_calc_mss_for_l3(l3_id_t l3_id, ip_version_t ver, const void *remote
     return mtu - ih - th;
 }
 
-void tcp_pmtu_update(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port, uint16_t mtu) {
-    if (!l3_id || !local_ip || !remote_ip || !local_port || !remote_port || !mtu) return;
-
-    tcp_flow_t* flow = tcp_flow_acquire_match(local_port, ver, local_ip, remote_ip, remote_port);
-    if (!flow) return;
-    uint32_t l3_generation = 0;
-    if (ver == IP_VER4) {
-        l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(l3_id);
-        if (v4) l3_generation = v4->generation;
-    } else if (ver == IP_VER6) {
-        l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(l3_id);
-        if (v6) l3_generation = v6->generation;
-    }
-    if (flow->base.l3_id != l3_id || !l3_generation || flow->base.l3_generation != l3_generation) {
-        tcp_flow_put(flow);
-        return;
-    }
-
-    uint32_t headers = ver == IP_VER6 ? 60 : 40;
-    uint32_t path_mss = mtu > headers ? (uint32_t)mtu - headers : 1;
-    if (!flow->tx.path_mss || path_mss < flow->tx.path_mss) {
-        flow->tx.path_mss = path_mss;
-        tcp_update_mss(flow);
-    }
-    tcp_flow_put(flow);
-}
-
 void tcp_parse_options(const uint8_t *opts, uint32_t len, tcp_parsed_opts_t *out) {
     if (!out) return;
 

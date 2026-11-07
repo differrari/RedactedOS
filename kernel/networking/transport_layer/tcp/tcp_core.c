@@ -13,6 +13,60 @@
 #include "networking/transport_layer/socket_bind.h"
 #include "exceptions/irq.h"
 
+bool tcp_icmp_validate(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port, uint32_t seq) {
+    tcp_flow_t* flow = tcp_flow_acquire_match(local_port, ver, local_ip, remote_ip, remote_port);
+    if (!flow) return false;
+    uint32_t generation = l3_generation(l3_id);
+
+    bool valid = generation && flow->base.l3_id == l3_id && flow->base.l3_generation == generation && TCP_SEQ_GEQ(seq, flow->tx.snd_una) && TCP_SEQ_LT(seq, flow->tx.snd_nxt);
+    tcp_flow_put(flow);
+    return valid;
+}
+
+void tcp_icmp_error(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port, uint32_t seq, uint8_t type, uint8_t code) {
+    tcp_flow_t* flow = tcp_flow_acquire_match(local_port, ver, local_ip, remote_ip, remote_port);
+    if (!flow) return;
+    uint32_t generation = l3_generation(l3_id);
+    if (generation && flow->base.l3_id == l3_id && flow->base.l3_generation == generation && TCP_SEQ_GEQ(seq, flow->tx.snd_una) && TCP_SEQ_LT(seq, flow->tx.snd_nxt)) {
+        flow->base.icmp_error = ((uint32_t)ver << 16) | ((uint32_t)type << 8) | code;
+        if (flow->base.state == TCP_SYN_SENT && ((ver == IP_VER4 && type == 3 && (code == 2 || code == 3)) || (ver == IP_VER6 && type == 1 && code == 4))) tcp_free_flow(flow);
+    }
+    tcp_flow_put(flow);
+}
+
+void tcp_pmtu_update(l3_id_t l3_id, ip_version_t ver, const void* remote_ip, uint16_t mtu) {
+    if (!l3_id || !remote_ip || !mtu || (ver != IP_VER4 && ver != IP_VER6)) return;
+
+    uint32_t generation = l3_generation(l3_id);
+    if (!generation) return;
+
+    uint32_t headers = sizeof(tcp_hdr_t) + (ver == IP_VER6 ? sizeof(ipv6_hdr_t) : sizeof(ipv4_hdr_t));
+    uint32_t path_mss = mtu > headers ? (uint32_t)mtu - headers : 1;
+    uint32_t now_ms = (uint32_t)get_time();
+
+    for (uint16_t slot = 0; slot < MAX_TCP_FLOWS; slot++) {
+        irq_flags_t irq = irq_save_disable();
+        tcp_flow_t* flow = tcp_flows[slot];
+        if (!flow || flow->base.retired || flow->base.l3_id != l3_id || flow->base.l3_generation != generation ||
+            flow->base.remote.ver != ver || memcmp(flow->base.remote.ip, remote_ip, ver == IP_VER6 ? 16 : 4) != 0 ||
+            !flow->base.refs || flow->base.refs == UINT16_MAX) {
+            irq_restore(irq);
+            continue;
+        }
+        flow->base.refs++;
+        irq_restore(irq);
+
+        irq = irq_save_disable();
+        flow->tx.pmtu_last_note_ms = now_ms;
+        if (!flow->tx.path_mss || path_mss < flow->tx.path_mss) {
+            flow->tx.path_mss = path_mss;
+            tcp_update_mss(flow);
+        }
+        irq_restore(irq);
+        tcp_flow_put(flow);
+    }
+}
+
 tcp_flow_t *tcp_flows[MAX_TCP_FLOWS];
 uint16_t tcp_active_flows[MAX_TCP_FLOWS];
 uint16_t tcp_active_count;
@@ -179,8 +233,12 @@ void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32
 
     if (apply_mask & (SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL)) {
         flow->timer.keepalive_on = (flags & SOCK_OPT_KEEPALIVE) ? 1 : 0;
-        flow->timer.keepalive_ms = flow->timer.keepalive_on ? (extra->keepalive_ms ? extra->keepalive_ms : SOCKET_DEFAULT_KEEPALIVE_MS) : 0;
+        flow->timer.keepalive_ms = 0;
+        if (flow->timer.keepalive_on) flow->timer.keepalive_ms = extra->keepalive_ms ? extra->keepalive_ms : SOCKET_DEFAULT_KEEPALIVE_MS;
         flow->timer.keepalive_idle_ms = 0;
+        flow->timer.keepalive_probes = 0;
+        if (!flow->timer.keepalive_interval_ms) flow->timer.keepalive_interval_ms = TCP_KEEPALIVE_INTERVAL_MS;
+        if (!flow->timer.keepalive_count) flow->timer.keepalive_count = TCP_KEEPALIVE_PROBES;
         if (flow->base.active_pos != UINT16_MAX) tcp_daemon_kick();
     }
 
@@ -352,6 +410,7 @@ tcp_flow_t *tcp_alloc_flow(void){
     f->rx.rcv_wnd = f->rx.rcv_wnd_max;
 
     f->tx.path_mss = TCP_DEFAULT_MSS;
+    f->tx.pmtu_last_note_ms = get_time();
     f->tx.peer_mss = 0;
     f->tx.advertised_mss = TCP_DEFAULT_MSS;
     f->tx.mss = TCP_DEFAULT_MSS;

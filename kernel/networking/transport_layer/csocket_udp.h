@@ -20,6 +20,7 @@ void socket_udp_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t generatio
 void socket_udp_l3_deleted(socket_impl_t sh, l3_id_t l3_id);
 int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint32_t len);
 int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* len);
+bool udp_icmp_validate(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port);
 uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, const void* src_ip_addr, const void* dst_ip_addr, netpkt_t* pkt, uint16_t src_port, uint16_t dst_port);
 
 #ifdef __cplusplus
