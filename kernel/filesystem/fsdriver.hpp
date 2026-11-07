@@ -15,4 +15,5 @@ public:
     virtual void close_file(file* descriptor) = 0;
     virtual bool stat(const char *path, fs_stat *out_stat) = 0;
     virtual bool truncate(file *descriptor) = 0;
+    virtual bool create(const char *path, fs_entry_type type) = 0;
 };

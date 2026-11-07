@@ -497,6 +497,21 @@ u64 syscall_dir_list(process_t *ctx, thread_t *current_thread){
 #endif
 }
 
+u64 syscall_create_entry(process_t *ctx, thread_t *current_thread){
+    SYSCALL_STR(path,PROC_X0, false);
+    fs_entry_type type = current_thread->PROC_X1;
+#ifdef ISOLATEDFS
+    module_root rootfs = {}; 
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
+    if (!s.data || !s.length) return 0;
+    size_t ret = create_entry(&rootfs, s.data, type);
+    string_free(s);
+    return ret;
+#else
+    return make_entry(kernel_fs(), path, type);
+#endif
+}
+
 u64 syscall_stat(process_t *ctx, thread_t *current_thread){
     SYSCALL_STR(path,PROC_X0, false);
     SYSCALL_ARG(fs_stat,out_stat,PROC_X1, true);
@@ -609,6 +624,7 @@ syscall_entry syscalls[] = {
     [FILE_SIMPLE_READ_CODE] = syscall_sreadf,
     [FILE_SIMPLE_WRITE_CODE] = syscall_swritef,
     [DIR_LIST_CODE] = syscall_dir_list,
+    [CREATE_ENTRY_CODE] = syscall_create_entry,
     [FILE_STAT_CODE] = syscall_stat,
     [FILE_TRNC_CODE] = syscall_trunc,
     [FILE_TRANS_CODE] = syscall_transf,

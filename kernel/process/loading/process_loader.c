@@ -14,6 +14,8 @@
 #include "process/isolated_fs/isolated_fs.h"
 #include "process/stack_manager.h"
 #include "access/entitlements.h"
+#include "files/helpers.h"
+#include "process/support/container.h"
 
 typedef struct {
     uint64_t code_base_start;
@@ -408,13 +410,30 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
 
     proc->shared_page = shared_base;
     proc->main_thread.regs[30] = proc->shared_page;
-    kprintf("[NEW PROC:U]: %s (pid: %i, main tid: %i) allocated at %llx entry=%llx stack=%llx-%llx anon=%llx (phys=%llx)", name, proc->id, proc->main_thread.tid, proc, (uint64_t)proc->main_thread.pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);
     proc->state = BLOCKED;
     proc->priority = PROC_PRIORITY_HIGH;
     
-    process_grant_entitlements(proc);
+    if (proc->bundle){//TODO: CLI tools don't have access to entitlements
+        string path = string_format("%s/package.info",proc->bundle);
+        string_slice package = read_file_slice(path.data);
+        
+        package_info info = parse_package_info(package.data);
+        
+        process_grant_entitlements(proc, info);
+        
+        if (info.id.length <= MAX_PROC_BUNDLE_ID){
+            memcpy(proc->bundle_id, info.id.data, info.id.length);
+            proc->bundle_id_len = info.id.length;
+            
+            setup_container((string_slice){proc->bundle_id,proc->bundle_id_len});
+            
+        }
+        
+    }
 
     make_process_fs(proc,proc->bundle);
+    
+    kprintf("[NEW PROC:U]: %s (pid: %i, main tid: %i bid: %v) allocated at %llx entry=%llx stack=%llx-%llx anon=%llx (phys=%llx)", name, proc->id, proc->main_thread.tid, (string_slice){proc->bundle_id,proc->bundle_id_len}, proc, (uint64_t)proc->main_thread.pc, (uint64_t)proc->mm.stack_limit, (uint64_t)proc->mm.stack_top, (uint64_t)proc->mm.mmap_bottom, (uint64_t)proc->heap_phys);
     
     return proc;
 }

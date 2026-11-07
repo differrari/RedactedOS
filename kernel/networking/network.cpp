@@ -101,6 +101,7 @@ system_module net_module = (system_module){
     .getstat = 0,
     .readdir = 0,
     .transform = 0,
+    .create = 0,
     //.permissions = fs_permission_shared,
     .alias_info = {}
 };

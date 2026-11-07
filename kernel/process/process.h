@@ -45,14 +45,6 @@ typedef struct {
     sizedptr entries[PACKET_BUFFER_CAPACITY];
 } packet_buffer_t;
 
-#define SIGNAL_BUFFER_CAPACITY 64
-
-typedef struct {
-    volatile u32 write_index;
-    volatile u32 read_index;
-    signal_info_t entries[SIGNAL_BUFFER_CAPACITY];
-} signal_buffer_t;
-
 typedef struct {
     u64 fs_id;//Filesystem this process has access to
     u64 owned_fs_id;//Filesystem this process owns, not automapped to fs_id due to isolation not being enforced yet
@@ -92,7 +84,7 @@ struct thread_t {
     thread_t *next;
 };
 
-struct process_t {
+struct process_t { // TODO: This structure is way bigger than it needs to be, use buffers and pointers more ffs
     thread_t main_thread;
     uint16_t id;
     bool suspended;
@@ -130,6 +122,8 @@ struct process_t {
     uint64_t win_fb_size;
     char *bundle;
     char name[MAX_PROC_NAME_LENGTH];
+    char bundle_id[MAX_PROC_BUNDLE_ID];
+    u8 bundle_id_len;
     sizedptr debug_lines;
     sizedptr debug_line_str;
     thread_t fs_thread;

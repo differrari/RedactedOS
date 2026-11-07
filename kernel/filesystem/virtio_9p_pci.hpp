@@ -15,6 +15,7 @@ public:
     void close_file(file* descriptor) override;
     bool stat(const char *path, fs_stat *out_stat) override;
     bool truncate(file *descriptor) override;
+    bool create(const char *path, fs_entry_type type) override;
 private:
     virtio_device np_dev = {};
     size_t choose_version();
@@ -28,6 +29,9 @@ private:
     r_getattr* get_attribute(uint32_t fid, uint64_t mask);
     bool set_attribute(u32 fid, u64 mask, u64 value);
     bool clunk(virtio_device *dev, uint32_t fid);
+    u32 create_dir_inside(string_slice name, u32 parent);
+    u32 create_dir(string_slice name);
+    u32 create_file(string_slice name);
     size_t max_msize = 0;
 
     uint32_t root = 0;

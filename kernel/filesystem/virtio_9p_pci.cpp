@@ -543,6 +543,70 @@ bool Virtio9PDriver::sync_file(module_file *mfile){
     return true;
 }
 
+u32 Virtio9PDriver::create_dir_inside(string_slice name, u32 parent){
+    string s = string_from_literal_length(name.data, name.length);
+    u32 new_fs = walk_dir(parent, s.data);
+    if (new_fs == UINT32_MAX){
+        print("Create %s",s.data);
+        t_mkdir *cmd = make_p9_mkdir_packet(s.data, parent);
+        void* resp = make_p9_response_buffer();
+        virtio_buf b[2] = {VBUF(cmd, read_unaligned32(&cmd->header.size), 0), VBUF(resp, sizeof(r_mkdir), VIRTQ_DESC_F_WRITE)};
+        virtio_send_nd(&np_dev, b, 2);
+    
+        p9_free(cmd);
+    
+        if (!check_9p_success(resp)){
+            p9_free(resp);
+            return INVALID_FID;
+        }
+        
+        new_fs = walk_dir(parent, s.data);
+    }
+    string_free(s);
+    return new_fs;
+}
+
+u32 Virtio9PDriver::create_dir(string_slice name){
+    if (name.length && *name.data == '/') {
+        name.data++;
+        name.length--;
+    }
+    u32 fs = root;
+    
+    string_splitter split = make_string_splitter_slice(name, '/', true);
+    while (string_splitter_advance(&split)){
+        string_slice sl = string_splitter_get_current(&split);
+        fs = create_dir_inside(sl, fs);
+        if (fs == INVALID_FID) return INVALID_FID;
+    }
+    
+    return fs;
+}
+
+u32 Virtio9PDriver::create_file(string_slice name){
+    char *c = 0;
+    for (c = (char*)(name.data+name.length-1); c >= name.data; c--){
+        if (*c == '/') break;
+    }
+    string_slice dir = (string_slice){.data = name.data, .length = (uptr)c-(uptr)name.data};
+    string_slice file = (string_slice){.data = c, .length = name.length - dir.length};
+    if (file.length <= 1) return false;
+    file.data++;
+    file.length--;
+    create_dir(dir);
+    return 0;
+}
+
+bool Virtio9PDriver::create(const char *path, fs_entry_type type){
+    print("9P creating %s, type %i",path,type);
+    switch (type){
+        case entry_invalid: return false;
+        case entry_file: return create_file(slice_from_literal(path));
+        case entry_directory: return create_dir(slice_from_literal(path));
+    }
+    return false;
+}
+
 Virtio9PDriver *p9Driver;
 
 bool shared_init(system_module *mod){
@@ -585,6 +649,10 @@ bool shared_truncate(file *descriptor){
     return p9Driver->truncate(descriptor);
 }
 
+bool shared_create(const char *path, fs_entry_type type){
+    return p9Driver->create(path, type);
+}
+
 system_module p9_fs_module = (system_module){
     .name = "9PFS",
     .mount = "home",
@@ -600,6 +668,7 @@ system_module p9_fs_module = (system_module){
     .getstat = shared_stat,
     .readdir = shared_readdir,
     .transform = 0,
+    .create = shared_create,
     //.permissions = fs_permission_shared,
     .alias_info = {}
 };

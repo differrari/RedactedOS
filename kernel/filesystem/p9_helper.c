@@ -91,6 +91,7 @@ t_readdir* make_p9_readdir_packet(u32 fid, u32 size, u64 offset){
 
 t_walk* make_p9_walk_packet(u32 fid, literal path){
     const char *cursor = path;
+    if (!cursor) return 0;
     uint16_t names = 0;
     size_t full_size = sizeof(t_walk);
 
@@ -184,4 +185,16 @@ t_clunk* make_p9_clunk_packet(u32 fid){
     t_clunk *packet = make_p9_packet(sizeof(t_clunk), P9_TCLUNK, false);
     write_unaligned32(&packet->fid, fid);
     return packet;
+}
+
+t_mkdir* make_p9_mkdir_packet(literal name, u32 parent){
+    string_slice namesl = slice_from_literal(name);
+    t_mkdir *packet1 = make_p9_packet(sizeof(t_mkdir) + sizeof(t_mkdir2) + namesl.length, P9_TMKDIR, false);
+    write_unaligned32(&packet1->fid,parent);
+    write_unaligned16(&packet1->name_len,namesl.length);
+    memcpy(packet1->name, namesl.data, namesl.length);
+    t_mkdir2 *packet2 = (t_mkdir2*)(packet1 + sizeof(t_mkdir) + namesl.length);
+    write_unaligned32(&packet2->mode, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    
+    return packet1;
 }

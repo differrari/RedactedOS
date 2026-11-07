@@ -652,6 +652,11 @@ bool FAT32FS::truncate(file *descriptor){
     return false;
 }
 
+bool FAT32FS::create(const char *path, fs_entry_type type){
+    kprint("[FAT32 implementation error] creation not implemented");
+    return false;
+}
+
 #include "mbr.h"
 
 FAT32FS *fs_driver;
@@ -709,6 +714,7 @@ system_module boot_fs_module = (system_module){
     .getstat = boot_stat,
     .readdir = boot_partition_readdir,
     .transform = 0,
+    .create = 0,
     //.permissions = fs_permission_shared,
     .alias_info = {}
 };

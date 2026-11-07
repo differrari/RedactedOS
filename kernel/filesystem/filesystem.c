@@ -343,6 +343,33 @@ bool get_stat(module_root *root, const char *path, fs_stat *out_stat){
     return mod->getstat(search_path, out_stat);
 }
 
+bool create_entry(module_root *root, char *path, fs_entry_type type){
+    if (type == entry_invalid) return false;
+    const char *search_path = path;
+    if (*search_path == '/') search_path++;
+    if (!*search_path) return false;
+    system_module *mod = get_module_from(root, &search_path);
+    if (!mod){
+        kprintf("[CREATE error] No module for path %s",path);
+        return false;
+    }
+    if (!mod->create) {
+        kprintf("[CREATE error] creation inside of %s not allowed",mod->mount);
+        return false;
+    }
+    if (mod->owner != get_kernel_proc()->id){
+        kprintf("[CREATE implementation error] Creation of FSUS entries not yet handled by kernel");
+        return false;
+        // job_make(job_stat, mod, {
+        //     job_serialize_str(&app, 0, search_path);
+        //     job_serialize_stat(&app, 1, out_stat);
+        // })
+        // return j_ret;
+    }
+    return mod->create(search_path, type);
+    return true;
+}
+
 bool truncate(file *descriptor, size_t size){
     if (!open_files){
         kprintf("[FS] No open files");

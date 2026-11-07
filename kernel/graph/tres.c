@@ -106,7 +106,8 @@ void check_collisions(window_frame *frame){
         if (!node || !node->data) continue;
         window_frame *ex_frame = node->data;
         if (!ex_frame || ex_frame == frame) continue;
-        int_point new_move_dist = window_frame_intersect(ex_frame, frame, move_dist);
+        //TODO: ex_frame can be corrupted somehow
+        int_point new_move_dist = window_frame_intersect(frame, ex_frame, move_dist);
         if (new_move_dist.x){
             frame->x += new_move_dist.x;
             move_dist.x = new_move_dist.x;

@@ -1,5 +1,4 @@
 #include "entitlements.h"
-#include "utils/package_info.h"
 #include "files/helpers.h"
 #include "authorize.h"
 
@@ -12,14 +11,7 @@
 #define ent_print(...)
 #endif
 
-void process_grant_entitlements(process_t *proc){
-    if (!proc->bundle) return;//TODO: CLI tools don't have access to entitlements
-    
-    string path = string_format("%s/package.info",proc->bundle);
-    string_slice package = read_file_slice(path.data);
-    
-    package_info info = parse_package_info(package.data);
-    
+void process_grant_entitlements(process_t *proc, package_info info){
     if (!info.entitlements) return;
     
     size_t ents = chunk_array_count(info.entitlements);

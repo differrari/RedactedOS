@@ -222,6 +222,10 @@ bool handle_signal(signal_types type, signal_handler handler){
     return register_signal_handler(get_current_proc(), type, handler);
 }
 
+bool create_fs_entry(char *path, fs_entry_type type){
+    return create_entry(kernel_fs(), path, type);
+}
+
 void msleep(uint64_t time){
     //print(">>>>>> Attempt to sleep from %i",get_current_proc()->id);
     // sleep_thread(time);

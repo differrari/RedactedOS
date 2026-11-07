@@ -30,6 +30,7 @@ void close_file_global(file *descriptor, system_module *mod);
 void close_file(file *descriptor);
 size_t list_directory_contents(module_root *root, const char *path, void* buf, size_t size, uint64_t *offset);
 bool init_filesystem();
+bool create_entry(module_root *root, char *path, fs_entry_type type);
 
 void sync_file(file *descriptor, bool replace);
 
