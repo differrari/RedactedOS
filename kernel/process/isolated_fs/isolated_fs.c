@@ -2,6 +2,7 @@
 #include "filesystem/modules/fs_isolation.h"
 #include "process/environment/environment.h"
 #include "alloc/alloc.h"
+#include "filesystem/tmp/tmp_fs.h"
 
 bool stub_init(system_module *module){
     return true;
@@ -97,6 +98,13 @@ void make_process_fs(process_t* proc, char *bundle){
         system_module *local_conf = clone_mod(&conf_module);
         local_conf->alias_info.alias_path = string_format("/home/support/containers/%v/config",bid);
         load_module_to(root, local_conf);
+        
+        tmp_create_container(bid);
+        system_module *local_tmp = clone_mod(&tmp_mod);
+        local_tmp->init = stub_init;
+        local_tmp->mount = "tmp";
+        local_tmp->alias_info.alias_path = string_format("/ktmp/%v",bid);
+        load_module_to(root, local_tmp);
     }
     
     load_module_to(root, clone_mod(&man_module));
