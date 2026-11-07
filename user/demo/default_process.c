@@ -348,9 +348,6 @@ int main(int argc, char* argv[]){
     
     handle_signal(SIG_QUIT, on_quit);
     // send_signal(SIG_QUIT, 7);//TODO: get own procid?
-    
-    create_file("/home/file");
-    create_directory("/home/folder");
 
     window_info_t info = {
         .name = "Demo program",

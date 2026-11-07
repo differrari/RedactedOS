@@ -98,22 +98,22 @@ int_point window_frame_intersect(window_frame *new_frame, window_frame *existing
 }
 
 void check_collisions(window_frame *frame){
+    //TODO: doesn't seem to be accounting for toolbars
     int_point move_dist = {};
     
-    size_t num_wins = linked_list_count(window_list);
-    for (size_t i = 0; i < num_wins; i++){
-        window_frame *ex_frame = linked_list_get(window_list, i);
+    for (linked_list_node_t *node = window_list->head; node; node= node->next){
+        window_frame *ex_frame = node->data;
         if (!ex_frame || ex_frame == frame) continue;
         int_point new_move_dist = window_frame_intersect(frame, ex_frame, move_dist);
         if (new_move_dist.x){
             frame->x += new_move_dist.x;
             move_dist.x = new_move_dist.x;
-            i = 0;
+            node = window_list->head;
         }
         if (new_move_dist.y){
             frame->y += new_move_dist.y;
             move_dist.y = new_move_dist.y;
-            i = 0;
+            node = window_list->head;
         }
     }
 }

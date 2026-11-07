@@ -547,7 +547,6 @@ u32 Virtio9PDriver::create_dir_inside(string_slice name, u32 parent){
     string s = string_from_literal_length(name.data, name.length);
     u32 new_fs = walk_dir(parent, s.data);
     if (new_fs == UINT32_MAX){
-        print("Create %s",s.data);
         t_mkdir *cmd = make_p9_mkdir_packet(s.data, parent);
         void* resp = make_p9_response_buffer();
         virtio_buf b[2] = {VBUF(cmd, read_unaligned32(&cmd->header.size), 0), VBUF(resp, sizeof(r_mkdir), VIRTQ_DESC_F_WRITE)};
@@ -580,10 +579,13 @@ u32 Virtio9PDriver::create_dir(string_slice name){
         if (fs == INVALID_FID) return INVALID_FID;
     }
     
+    if (fs == root)
+        fs = walk_dir(fs, (char*)".");
+    
     return fs;
 }
 
-u32 Virtio9PDriver::create_file(string_slice name){
+bool Virtio9PDriver::create_file(string_slice name){
     char *c = 0;
     for (c = (char*)(name.data+name.length-1); c >= name.data; c--){
         if (*c == '/') break;
@@ -593,16 +595,31 @@ u32 Virtio9PDriver::create_file(string_slice name){
     if (file.length <= 1) return false;
     file.data++;
     file.length--;
-    create_dir(dir);
-    return 0;
+    u32 parent = create_dir(dir);
+    
+    string s = string_from_slice(file);
+    
+    t_create *cmd = make_p9_create_packet(s.data, parent);
+    void* resp = make_p9_response_buffer();
+    virtio_buf b[2] = {VBUF(cmd, read_unaligned32(&cmd->header.size), 0), VBUF(resp, sizeof(r_create), VIRTQ_DESC_F_WRITE)};
+    virtio_send_nd(&np_dev, b, 2);
+
+    p9_free(cmd);
+    string_free(s);
+
+    if (!check_9p_success(resp)){
+        p9_free(resp);
+        return false;
+    }
+    
+    return true;
 }
 
 bool Virtio9PDriver::create(const char *path, fs_entry_type type){
-    print("9P creating %s, type %i",path,type);
     switch (type){
         case entry_invalid: return false;
         case entry_file: return create_file(slice_from_literal(path));
-        case entry_directory: return create_dir(slice_from_literal(path));
+        case entry_directory: return create_dir(slice_from_literal(path)) != INVALID_FID;
     }
     return false;
 }

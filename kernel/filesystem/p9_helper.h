@@ -152,6 +152,7 @@ typedef struct r_readdir_data {
     uint8_t type;
     uint16_t name_len;
     // Followed by name;
+    char name[];
 }__attribute__((packed)) r_readdir_data;
 
 t_readdir* make_p9_readdir_packet(uint32_t fid, u32 size, uint64_t offset);
@@ -196,6 +197,28 @@ typedef struct {
 }__attribute__((packed)) r_mkdir;
 
 t_mkdir* make_p9_mkdir_packet(literal name, u32 parent);
+
+typedef struct {
+    p9_packet_header header;
+    u32 fid;
+    u16 name_len;
+    char name[];
+    //Followed by second part
+}__attribute__((packed)) t_create;
+
+typedef struct {
+    u32 flags;
+    u32 mode;
+    u32 group;
+}__attribute__((packed)) t_create2;
+
+typedef struct {
+    p9_packet_header header;
+    u8 qids[13];
+    u32 iounit;
+}__attribute__((packed)) r_create;
+
+t_create* make_p9_create_packet(literal name, u32 parent);
 
 #define P9_GETATTR_MODE         0x00000001ULL
 #define P9_GETATTR_NLINK        0x00000002ULL

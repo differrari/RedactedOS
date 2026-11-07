@@ -3,8 +3,8 @@
 #include "memory/memory_access.h"
 #include "memory/memory.h"
 
-uint32_t mid;
-uint32_t vfid;
+uint32_t mid = 0;
+uint32_t vfid = 0;
 
 void p9_max_tag(p9_packet_header* header){
     write_unaligned16(&header->tag,UINT16_MAX);
@@ -193,8 +193,22 @@ t_mkdir* make_p9_mkdir_packet(literal name, u32 parent){
     write_unaligned32(&packet1->fid,parent);
     write_unaligned16(&packet1->name_len,namesl.length);
     memcpy(packet1->name, namesl.data, namesl.length);
-    t_mkdir2 *packet2 = (t_mkdir2*)(packet1 + sizeof(t_mkdir) + namesl.length);
+    t_mkdir2 *packet2 = (t_mkdir2*)((uptr)packet1 + sizeof(t_mkdir) + namesl.length);
     write_unaligned32(&packet2->mode, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    
+    return packet1;
+}
+
+t_create* make_p9_create_packet(literal name, u32 parent){
+    string_slice namesl = slice_from_literal(name);
+    t_create *packet1 = make_p9_packet(sizeof(t_create) + sizeof(t_create2) + namesl.length, P9_TLCREATE, false);
+    write_unaligned32(&packet1->fid,parent);
+    write_unaligned16(&packet1->name_len,namesl.length);
+    memcpy(packet1->name, namesl.data, namesl.length);
+    t_create2 *packet2 = (t_create2*)((uptr)packet1 + sizeof(t_create) + namesl.length);
+    write_unaligned32(&packet2->mode, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    write_unaligned32(&packet2->flags, O_RDWR);
+    write_unaligned32(&packet2->group, 1000);
     
     return packet1;
 }

@@ -31,7 +31,7 @@ private:
     bool clunk(virtio_device *dev, uint32_t fid);
     u32 create_dir_inside(string_slice name, u32 parent);
     u32 create_dir(string_slice name);
-    u32 create_file(string_slice name);
+    bool create_file(string_slice name);
     size_t max_msize = 0;
 
     uint32_t root = 0;
