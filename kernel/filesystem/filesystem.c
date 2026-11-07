@@ -367,7 +367,6 @@ bool create_entry(module_root *root, char *path, fs_entry_type type){
         // return j_ret;
     }
     return mod->create(search_path, type);
-    return true;
 }
 
 bool truncate(file *descriptor, size_t size){

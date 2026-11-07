@@ -31,9 +31,9 @@ bool docs_init(system_module *mod){
     return true;
 }
 
-system_module doc_module = {
+system_module man_module = {
     .name = "documentation",
-    .mount = "docs",
+    .mount = "manual",
     .version = VERSION_NUM(0, 1, 0, 0),
     .init = docs_init
 };
@@ -41,6 +41,22 @@ system_module doc_module = {
 system_module env_module = {
     .name = "environment",
     .mount = "environment",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = stub_init,
+    .fini = 0,//TODO: These modules need to be unloaded too
+};
+
+system_module doc_module = {
+    .name = "doc",
+    .mount = "documents",
+    .version = VERSION_NUM(0, 1, 0, 0),
+    .init = stub_init,
+    .fini = 0,//TODO: These modules need to be unloaded too
+};
+
+system_module conf_module = {
+    .name = "config",
+    .mount = "config",
     .version = VERSION_NUM(0, 1, 0, 0),
     .init = stub_init,
     .fini = 0,//TODO: These modules need to be unloaded too
@@ -55,9 +71,7 @@ static inline system_module* clone_mod(system_module *mod){
 void make_process_fs(process_t* proc, char *bundle){
     proc->permissions.fs_id = register_fs_id();
     
-#ifdef FEATURE_NEW_PROCFS
     register_procfs(proc->id);
-#endif
     
     module_root *root = get_fs_for_id(proc->permissions.fs_id);
     
@@ -74,7 +88,18 @@ void make_process_fs(process_t* proc, char *bundle){
     local_env->alias_info.alias_path = string_format("/environments/%i",proc->id);
     load_module_to(root, local_env);
     
-    load_module_to(root, clone_mod(&doc_module));
+    if (proc->bundle_id_len){
+        string_slice bid = (string_slice){proc->bundle_id,proc->bundle_id_len};
+        system_module *local_doc = clone_mod(&doc_module);
+        local_doc->alias_info.alias_path = string_format("/home/support/containers/%v/documents",bid);
+        load_module_to(root, local_doc);
+        
+        system_module *local_conf = clone_mod(&conf_module);
+        local_conf->alias_info.alias_path = string_format("/home/support/containers/%v/config",bid);
+        load_module_to(root, local_conf);
+    }
+    
+    load_module_to(root, clone_mod(&man_module));
 }
 
 bool load_process_module(process_t *p, system_module *m, bool global){

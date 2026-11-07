@@ -63,7 +63,6 @@ package_info get_pkg_info(char* info_path){
     package_info pkg = {};
     char *info = read_full_file(info_path, 0);
     if (!info) return pkg;
-    print("Exists %s",info_path);
     pkg = parse_package_info(info);
     release(info);
     return pkg;
