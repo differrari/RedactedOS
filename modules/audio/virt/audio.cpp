@@ -8,7 +8,9 @@
 #include "audio/cuatro.h"
 #include "audio/mixer.h"
 #include "std/memory.h"
-
+#include "process/scheduler.h"
+#include "memory/mmu.h"
+#include "sysregs.h"
 
 VirtioAudioDriver *audio_driver;
 
@@ -129,7 +131,7 @@ static void mixer_run(){
     uint64_t buffers_start_time = 0;
     uint64_t buffers_output = 0;
     sizedptr outbuf = audio_request_buffer(audio_driver->out_dev->stream_id);
-    do{
+    do {
         audio_sample_t* output = (audio_sample_t*)outbuf.ptr;
         audio_sample_t* limit = output + outbuf.size;
         uint64_t now = timer_now_msec();
@@ -137,20 +139,19 @@ static void mixer_run(){
         while (output < limit){
             int64_t left_signal = 0;
             int64_t right_signal = 0;
-            mixer_line* line = mixin;
-            while (line < mixin + MIXER_INPUTS){
+            for (mixer_line* line = mixin; line < mixin + MIXER_INPUTS; line++){
                 sizedptr* inbuf = &line->dbl.buf[line->dbl.buf_idx];
+                if (!inbuf) continue;
                 if (line->in_use && inbuf->ptr != NULL && line->start_time < now){
                     left_signal += *(audio_sample_t*)inbuf->ptr * line->level; // line->left_lvl;
                     if (line->channels == 2){
                         inbuf->ptr += sizeof(audio_sample_t);
-                        --inbuf->size;
+                        inbuf->size--;
                     }
                     right_signal += *(audio_sample_t*)inbuf->ptr * line->level; // line->right_lvl;
                     inbuf->ptr += sizeof(audio_sample_t);
                     if (--inbuf->size < 1) buffer_exhausted(line, inbuf);
                 }
-                ++line;
             }
             *output++ = normalise_int64_sample(left_signal);
             *output++ = normalise_int64_sample(right_signal);
@@ -231,7 +232,7 @@ static size_t audio_write(file *fd, const char *buf, size_t size, file_offset of
             if (lineId == -1){
                 if (master_muted == false){
                     master_level = level;
-                }else{
+                } else {
                     master_premute = level;  // not being able to change volume without un-muting is a UI/UX failure
                 }
             }else{
@@ -269,7 +270,13 @@ static size_t audio_write(file *fd, const char *buf, size_t size, file_offset of
             line->source = cmd->audio->samples;
             line->dbl.buf_idx = 0;
             line->dbl.buf[0].size = line->source.size / sizeof(audio_sample_t);
-            line->dbl.buf[0].ptr = line->source.ptr;  // this must be last mutation of 'line'
+            int st = 0;
+            uptr buf = mmu_translate(get_current_proc()->mm.ttbr0, line->source.ptr, &st);
+            if (st) {
+                memset(line,0,sizeof(mixer_line));
+                return 0;
+            }
+            line->dbl.buf[0].ptr = PHYS_TO_VIRT(buf);  // this must be last mutation of 'line'
             break;
         }
         case MIXER_SETBUFFER: {
