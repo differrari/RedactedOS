@@ -3,7 +3,7 @@
 #include "fsdriver.hpp"
 #include "virtio/virtio_pci.h"
 #include "data/struct/hashmap.h"
-#include "p9_helper.h"
+#include "files/p9_helper.h"
 
 class Virtio9PDriver : public FSDriver {
 public:
