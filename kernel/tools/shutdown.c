@@ -7,12 +7,23 @@
 #include "hw/power.h"
 #include "syscalls/syscalls.h"
 
+static void print_help(void) {
+    print("Usage:\t shutdown -r|-p");
+    print("shut down or reboot\n");
+    print("Options:");
+    print("\t -r\t reboot");
+    print("\t -p\t power off");
+    print("\t --help\t help");
+}
+
 int run_shutdown(int argc, char* argv[]){
-    const char *u = "usage: shutdown [-r|-p]\n  -r  reboot\n  -p  power off\n";
-
-
     if (argc <= 0){
-        print("%s", u);
+        print_help();
+        return 0;
+    }
+
+    if (argc == 2 && strcmp(argv[1], "--help") == 0) {
+        print_help();
         return 0;
     }
 
@@ -25,14 +36,14 @@ int run_shutdown(int argc, char* argv[]){
         if (strcmp(a, "-r") == 0) mode = SHUTDOWN_REBOOT;
         else if (strcmp(a, "-p") == 0) mode = SHUTDOWN_POWEROFF;
         else{
-            print("%s", u);
+            print_help();
             msleep(100);
             return 2;
         }
     }
 
     if (mode == -1){
-        print("%s", u);
+        print_help();
         msleep(100);
         return 2;
     }

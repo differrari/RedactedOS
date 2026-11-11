@@ -20,7 +20,12 @@ LOCATION := ../../fs/redos/system/
 
 .PHONY: prepare all clean
 
+ifeq ($(strip $(OBJ)),)
+all:
+	@echo "Skipping $(NAME): no source files"
+else
 all: prepare $(PACKAGE)/$(TARGET)
+endif
 
 prepare:
 	mkdir -p resources
@@ -29,13 +34,9 @@ prepare:
 	cp -r resources $(PACKAGE)
 
 $(PACKAGE)/$(TARGET): ../../shared/libshared.a $(OBJ)
-	$(VLD) $(LDFLAGS) -o $(PACKAGE)/$(ELF) $(addprefix $(BUILD_DIR)/,$(notdir $(OBJ))) ../../shared/libshared.a
+	$(VLD) $(LDFLAGS) -o $(PACKAGE)/$(ELF) $(OBJ) ../../shared/libshared.a
 	$(OBJCOPY) -O binary $(PACKAGE)/$(ELF) $@
 	cp -r $(PACKAGE) $(LOCATION)
-
-$(BUILD_DIR)/%.o: %.S
-	@mkdir -p $(dir $@)
-	$(VAS) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -50,6 +51,6 @@ clean:
 	$(RM) -r $(PACKAGE) $(BUILD_DIR)
 	
 dump: all
-	$(ARCH)objdump -S $(NAME).red/$(NAME).elf > dump
+	$(ARCH)objdump -S $(PACKAGE)/$(ELF) > dump
 
 -include $(DEP)
