@@ -5,7 +5,7 @@
 
 static volatile int tcp_daemon_running;
 static int tcp_daemon_entry(int argc, char *argv[]);
-//TODO add keepalive option
+
 static bool tcp_timer_send_ack_segment(tcp_flow_t *flow, uint32_t seq, const uint8_t *payload, uint16_t payload_len) {
     tcp_hdr_t hdr;
     hdr.src_port = bswap16(flow->base.local.port);
@@ -85,16 +85,27 @@ static int tcp_daemon_entry(int argc, char *argv[]) {
             flow->base.refs++;
             irq_restore(irq);
             bool retire_flow = false;
+            int32_t retire_error = SOCK_ERR_TIMED_OUT;
 
             if (check_pmtu && (flow->base.state == TCP_ESTABLISHED || flow->base.state == TCP_CLOSE_WAIT) && l3_generation(flow->base.l3_id) == flow->base.l3_generation) { 
-                uint32_t path_mss = tcp_calc_mss_for_l3(flow->base.l3_id, flow->base.remote.ver, flow->base.remote.ip);
-                irq = irq_save_disable();
-                if (path_mss && (path_mss < flow->tx.path_mss || (path_mss > flow->tx.path_mss && now_ms - flow->tx.pmtu_last_note_ms >= PMTU_CACHE_MAX_AGE_MS))) {
-                    if (path_mss < flow->tx.path_mss) flow->tx.pmtu_last_note_ms = now_ms;
-                    flow->tx.path_mss = path_mss;
-                    tcp_update_mss(flow);
+                bool ready = false;
+                if (flow->base.remote.ver == IP_VER4) {
+                    l3_ipv4_interface_t *l3 = l3_ipv4_find_by_id(flow->base.l3_id);
+                    ready = ipv4_l3_is_ready(l3) && l3_ipv4_effective_mtu(l3) > sizeof(ipv4_hdr_t) + sizeof(tcp_hdr_t);
+                } else if (flow->base.remote.ver == IP_VER6) {
+                    l3_ipv6_interface_t *l3 = l3_ipv6_find_by_id(flow->base.l3_id);
+                    ready = ipv6_l3_is_ready(l3) && l3_ipv6_effective_mtu(l3) > sizeof(ipv6_hdr_t) + sizeof(tcp_hdr_t);
                 }
-                irq_restore(irq);
+                if (ready) {
+                    uint32_t path_mss = tcp_calc_mss_for_l3(flow->base.l3_id, flow->base.remote.ver, flow->base.remote.ip);
+                    irq = irq_save_disable();
+                    if (path_mss && (path_mss < flow->tx.path_mss || (path_mss > flow->tx.path_mss && now_ms - flow->tx.pmtu_last_note_ms >= PMTU_CACHE_MAX_AGE_MS))) {
+                        if (path_mss < flow->tx.path_mss) flow->tx.pmtu_last_note_ms = now_ms;
+                        flow->tx.path_mss = path_mss;
+                        tcp_update_mss(flow);
+                    }
+                    irq_restore(irq);
+                }
             }
 
             if (flow->base.state == TCP_TIME_WAIT) {
@@ -129,7 +140,17 @@ static int tcp_daemon_entry(int argc, char *argv[]) {
                 }
             }
 
-            if (flow->tx.nagle_len && flow->tx.snd_wnd > 0) {
+            if (flow->tx.cork && flow->tx.nagle_len && flow->tx.snd_wnd > 0) {
+                uint32_t left = UINT32_MAX - flow->tx.cork_ms;
+                if (elapsed_ms >= left) flow->tx.cork_ms = UINT32_MAX;
+                else flow->tx.cork_ms += elapsed_ms;
+                if (flow->tx.cork_ms >= TCP_CORK_MAX_HOLD_MS) {
+                    tcp_flush_nagle(flow, TCP_TX_BYPASS_NAGLE | TCP_TX_BYPASS_SWS);
+                    flow->tx.cork_ms = 0;
+                }
+            } else flow->tx.cork_ms = 0;
+
+            if (flow->tx.nagle_len && flow->tx.snd_wnd > 0 && !flow->tx.cork) {
                 tcp_tx_force_t force = flow->tx.nodelay ? TCP_TX_BYPASS_NAGLE : TCP_TX_FORCE_NONE;
                 uint64_t sent = tcp_flush_nagle(flow, force);
                 if (!sent && flow->tx.nagle_len) {
@@ -161,18 +182,24 @@ static int tcp_daemon_entry(int argc, char *argv[]) {
                 if (elapsed_ms >= remaining) flow->timer.keepalive_idle_ms = UINT32_MAX;
                 else flow->timer.keepalive_idle_ms += elapsed_ms;
                 if (flow->timer.keepalive_idle_ms >= limit) {
-                    if (flow->timer.keepalive_probes >= flow->timer.keepalive_count) retire_flow = true;
+                    if (flow->timer.keepalive_probes >= flow->timer.keepalive_count && !flow->timer.user_timeout_ms) retire_flow = true;
                     else {
                         uint32_t seq = flow->tx.snd_nxt ? flow->tx.snd_nxt-1 : 0;
                         if (tcp_timer_send_ack_segment(flow, seq, NULL, 0)){
                             flow->timer.keepalive_probes++;
                             flow->timer.keepalive_idle_ms = 0;
+                        } else { 
+                            uint32_t retry_ms = flow->timer.keepalive_interval_ms;
+                            if (retry_ms < 1000) retry_ms = 1000;
+                            if (limit > retry_ms) flow->timer.keepalive_idle_ms = limit - retry_ms;
+                            else flow->timer.keepalive_idle_ms = 0;
                         }
                     }
                 }
             } else if (!flow->timer.keepalive_probes) flow->timer.keepalive_idle_ms = 0;
             
             if (retire_flow) {
+                tcp_flow_note_socket_error(flow, SOCK_ERR_TIMED_OUT);
                 tcp_free_flow(flow);
                 tcp_flow_put(flow);
                 continue;
@@ -216,30 +243,70 @@ static int tcp_daemon_entry(int argc, char *argv[]) {
                 }
             } else tcp_persist_reset(flow);
 
+            if (flow->timer.user_timeout_ms && persist_state) {
+                uint32_t oldest_ms = 0;
+                uint32_t current_ms = (uint32_t)get_time();
+                if (TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una)) {
+                    for (uint32_t i = 0; i < TCP_MAX_TX_SEGS; i++) {
+                        tcp_tx_seg_t *seg = &flow->tx.txq[i];
+                        if (!seg->used || !seg->first_sent_valid) continue;
+                        uint32_t age_ms = current_ms - seg->first_sent_ms;
+                        if (age_ms > oldest_ms) oldest_ms = age_ms;
+                    }
+                }
+            
+                bool waiting = (flow->tx.snd_wnd == 0 && flow->tx.nagle_len) || (flow->timer.keepalive_on && flow->timer.keepalive_probes);
+                if (waiting) {
+                    uint32_t left = UINT32_MAX - flow->timer.user_timeout_wait_ms;
+                    if (elapsed_ms >= left) flow->timer.user_timeout_wait_ms = UINT32_MAX;
+                    else flow->timer.user_timeout_wait_ms += elapsed_ms;
+                } else flow->timer.user_timeout_wait_ms = 0;
+
+                if (oldest_ms >= flow->timer.user_timeout_ms || (waiting && flow->timer.user_timeout_wait_ms >= flow->timer.user_timeout_ms)) {
+                    tcp_flow_note_socket_error(flow, SOCK_ERR_TIMED_OUT);
+                    tcp_free_flow(flow);
+                    tcp_flow_put(flow);
+                    continue;
+                }
+            } else flow->timer.user_timeout_wait_ms = 0;
+
             if (TCP_SEQ_GT(flow->tx.snd_nxt, flow->tx.snd_una)) {
                 tcp_tx_seg_t *seg = tcp_find_first_unacked(flow);
                 if (seg && !(flow->tx.snd_wnd == 0 && !seg->syn)) {
                     seg->timer_ms += elapsed_ms;
                     if (seg->timer_ms >= seg->timeout_ms) {
-                        if (seg->retransmit_cnt >= TCP_MAX_RETRANS) retire_flow = true;
-                        else if (!tcp_retransmit_seg(flow, seg)) seg->timer_ms = 0;
+                        uint8_t retries = seg->syn && flow->base.state == TCP_SYN_SENT && flow->tx.syn_retries ? flow->tx.syn_retries : TCP_MAX_RETRANS;
+                        if (seg->retransmit_cnt >= retries) retire_flow = true;
                         else {
-                            tcp_cc_on_timeout(flow);
-                            uint32_t rto = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
-                            if (rto < TCP_MIN_RTO) rto = TCP_MIN_RTO;
-                            if (rto < TCP_MAX_RTO) {
-                                uint32_t next = rto << 1;
-                                if (next > TCP_MAX_RTO) next = TCP_MAX_RTO;
-                                rto = next;
+                            bool sent = tcp_retransmit_seg(flow, seg);
+                            bool local_syn_failure = !sent && !seg->partial_sent && seg->syn && flow->base.state == TCP_SYN_SENT;
+                            if (!sent) seg->timer_ms = 0;
+                            if (local_syn_failure && seg->local_failures < UINT8_MAX) seg->local_failures++;
+                            if (local_syn_failure && seg->local_failures >= TCP_MAX_SYN_SEND_FAILURES) { 
+                                retire_flow = true;
+                                retire_error = SOCK_ERR_SYS;
                             }
-                            flow->tx.rto = rto;
-                            seg->timeout_ms = rto;
+                            if (!retire_flow && (sent || seg->partial_sent || local_syn_failure)) {
+                                if (sent || seg->partial_sent) tcp_cc_on_timeout(flow);
+                                uint32_t rto = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
+                                if (rto < TCP_MIN_RTO) rto = TCP_MIN_RTO;
+                                if (rto < TCP_MAX_RTO) {
+                                    uint32_t next = rto << 1;
+                                    if (next > TCP_MAX_RTO) next = TCP_MAX_RTO;
+                                    rto = next;
+                                }
+                                flow->tx.rto = rto;
+                                seg->timeout_ms = rto;
+                            }
                         }
                     }
                 }
             }
 
-            if (retire_flow) tcp_free_flow(flow);
+            if (retire_flow) {
+                tcp_flow_note_socket_error(flow, retire_error);
+                tcp_free_flow(flow);
+            }
             tcp_flow_put(flow);
         }
 

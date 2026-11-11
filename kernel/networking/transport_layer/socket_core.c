@@ -22,6 +22,8 @@ struct ksocket {
     int32_t refs;
     bool closing;
     bool visible;
+    int32_t pending_error;
+    uint32_t last_icmp_error;
 };
 
 static ksocket_t* sockets[SOCKET_MAX_OPEN];
@@ -202,16 +204,60 @@ int32_t socket_core_close_handle(socket_handle_t handle, uint16_t pid) {
     return ret;
 }
 
-int32_t socket_core_set_option(ksocket_t* socket, int32_t opt, const void* value, uint32_t len) {
+int32_t socket_core_set_option(ksocket_t* socket, SockOptFlags opt, const void* value, uint32_t len) {
     if (!socket) return SOCK_ERR_INVAL;
     if (!value && len) return SOCK_ERR_INVAL;
     if (!socket->setopt || !socket->impl) return SOCK_ERR_PROTO;
     return socket->setopt(socket->impl, opt, value, len);
 }
 
+void socket_core_note_error(ksocket_t* socket, int32_t error) {
+    if (!socket || error >= 0) return;
+    irq_flags_t irq = irq_save_disable();
+    if (!socket->closing) socket->pending_error = error;
+    irq_restore(irq);
+}
+
+void socket_core_note_icmp_error(ksocket_t* socket, uint32_t detail, int32_t error) {
+    if (!socket || !detail) return;
+    irq_flags_t irq = irq_save_disable();
+    if (!socket->closing) {
+        socket->last_icmp_error = detail;
+        if (error < 0) socket->pending_error = error;
+    }
+    irq_restore(irq);
+}
+
+int32_t socket_core_take_error(ksocket_t* socket) {
+    if (!socket) return 0;
+    irq_flags_t irq = irq_save_disable();
+    int32_t error = socket->pending_error;
+    socket->pending_error = 0;
+    irq_restore(irq);
+    return error;
+}
+
 int32_t socket_core_get_option(ksocket_t* socket, int32_t opt, void* value, uint32_t* len) {
     if (!socket || !len) return SOCK_ERR_INVAL;
     if (!socket->getopt || !socket->impl) return SOCK_ERR_PROTO;
+    if (opt == SOCK_GET_LAST_ICMP_ERR) {
+        if (socket->special_kind != SOCKET_SPECIAL_NONE || (socket->protocol != PROTO_TCP && socket->protocol != PROTO_UDP)) return SOCK_ERR_UNSUP;
+        irq_flags_t irq = irq_save_disable();
+        uint32_t detail = socket->last_icmp_error;
+        irq_restore(irq);
+        return socket_common_get_value(&detail, sizeof(detail), value, len);
+    }
+    if (opt == SOCK_GET_ERROR) {
+        if (!value) {
+            *len = sizeof(int32_t);
+            return SOCK_OK;
+        }
+        if (*len < sizeof(int32_t)) return SOCK_ERR_INVAL;
+        int32_t error = socket_core_take_error(socket);
+        memcpy(value, &error, sizeof(error));
+        *len = sizeof(error);
+        return SOCK_OK;
+    }
 
     uint32_t v = 0;
     if (opt == SOCK_GET_PROTOCOL) v = socket->protocol;
@@ -234,7 +280,7 @@ int32_t socket_common_get_value(const void* data, uint32_t data_len, void* value
     return SOCK_OK;
 }
 
-int32_t socket_common_options_set(SocketOptions* opts, int32_t opt, const void* value, uint32_t len) {
+int32_t socket_common_options_set(SocketOptions* opts, SockOptFlags opt, const void* value, uint32_t len) {
     if (!opts) return SOCK_ERR_INVAL;
 
     uint32_t v = 1;
@@ -245,7 +291,7 @@ int32_t socket_common_options_set(SocketOptions* opts, int32_t opt, const void* 
 
     int32_t rc = SOCK_OK;
     irq_flags_t irq = irq_save_disable();
-    switch ((uint32_t)opt) {
+    switch (opt) {
         case SOCK_OPT_RECV_TIMEOUT:
             opts->recv_timeout_ms = v;
             if (v) opts->flags |= SOCK_OPT_RECV_TIMEOUT;

@@ -16,7 +16,7 @@ int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst);
 int64_t socket_send_tcp(socket_impl_t sh, const void* buf, uint64_t len);
 int64_t socket_recv_tcp(socket_impl_t sh, void* buf, uint64_t len);
 int32_t socket_close_tcp(socket_impl_t sh);
-int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint32_t len);
+int32_t socket_setopt_tcp(socket_impl_t sh, SockOptFlags opt, const void* value, uint32_t len);
 int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* len);
 void socket_destroy_tcp(socket_impl_t sh);
 void socket_tcp_l2_deleted(socket_impl_t sh, uint8_t ifindex, uint32_t generation);

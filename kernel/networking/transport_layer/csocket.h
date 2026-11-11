@@ -16,7 +16,7 @@ int32_t connect_socket(socket_handle_t handle, const net_l4_endpoint* dst);
 int64_t send_on_socket(socket_handle_t handle, const void* buf, uint64_t len);
 int64_t send_to_socket(socket_handle_t handle, const net_l4_endpoint* dst, const void* buf, uint64_t len);
 int64_t receive_from_socket(socket_handle_t handle, void* buf, uint64_t len, net_l4_endpoint* out_src);
-int32_t set_socket_option(socket_handle_t handle, int32_t opt, const void* value, uint32_t len);
+int32_t set_socket_option(socket_handle_t handle, SockOptFlags opt, const void* value, uint32_t len);
 int32_t get_socket_option(socket_handle_t handle, int32_t opt, void* value, uint32_t* len);
 
 int32_t close_socket(socket_handle_t handle);

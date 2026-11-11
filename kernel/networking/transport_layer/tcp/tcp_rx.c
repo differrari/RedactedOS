@@ -12,7 +12,6 @@
 #include "math/rng.h"
 #include "random/random.h"
 #include "syscalls/syscalls.h"
-#include "../tcp.h"
 
 static void tcp_set_send_window(tcp_flow_t *flow, uint32_t wnd, uint32_t seq, uint32_t ack) {
     if (!flow) return;
@@ -816,7 +815,10 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     }
 
     if (flow && (flow->base.l3_id != l3_id || !l3_generation || flow->base.l3_generation != l3_generation)) {
-        tcp_free_flow(flow);
+        if (flow->base.l3_id == l3_id) {
+            tcp_flow_note_socket_error(flow, SOCK_ERR_NO_ROUTE);
+            tcp_free_flow(flow);
+        }
         tcp_flow_put(flow);
         flow = NULL;
     }
@@ -841,6 +843,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                     if ((flags & (1 << ACK_F)) && flow->base.active_open && TCP_SEQ_GT(ack, flow->tx.snd_una) && TCP_SEQ_LEQ(ack, flow->tx.snd_nxt)) {
                         if (!tcp_prepare_rcv_buffer(flow)) {
                             tcp_send_reset(l3_id, ipver, dst_ip_addr, src_ip_addr, dst_port, src_port, ack, 0, false);
+                            tcp_flow_note_socket_error(flow, SOCK_ERR_SYS);
                             tcp_free_flow(flow);
                             tcp_flow_put(flow);
                             netpkt_unref(pkt);
@@ -974,7 +977,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             uint32_t rcvbuf = TCP_DEFAULT_RCV_BUF;
             if (listener_extra && (listener_extra->flags & SOCK_OPT_BUF_SIZE) && listener_extra->buf_size) rcvbuf = listener_extra->buf_size;
             flow->rx.rcv_wnd_max = tcp_clamp_rcvbuf(rcvbuf);
-            tcp_flow_apply_options(flow, listener_extra, UINT32_MAX);
+            tcp_flow_apply_options(flow, listener_extra, UINT64_MAX);
             flow->tx.sack_ok = flow->tx.sack_enabled && pop.sack_permitted;
             if (flow->rx.rcv_wnd_max > 65535u && pop.has_wscale) {
                 flow->tx.ws_send = 8;
@@ -1089,7 +1092,10 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             }
 
             if (flags & (1u << RST_F)) {
-                if (ack_acceptable) tcp_free_flow(flow);
+                if (ack_acceptable) {
+                    tcp_flow_note_socket_error(flow, SOCK_ERR_CONN_REFUSED);
+                    tcp_free_flow(flow);
+                }
                 tcp_flow_put(flow);
                 netpkt_unref(pkt);
                 return;
@@ -1145,6 +1151,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
 
             if (!tcp_prepare_rcv_buffer(flow)) {
                 tcp_send_reset(l3_id, ipver, dst_ip_addr, src_ip_addr, dst_port, src_port, ack, 0, false);
+                tcp_flow_note_socket_error(flow, SOCK_ERR_SYS);
                 tcp_free_flow(flow);
                 tcp_flow_put(flow);
                 netpkt_unref(pkt);
@@ -1187,7 +1194,10 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
             bool seq_acceptable = tcp_segment_acceptable(flow, seq, syn_seg_len);
 
             if (flags & (1u << RST_F)) {
-                if (seq == flow->rx.rcv_nxt) tcp_free_flow(flow);
+                if (seq == flow->rx.rcv_nxt) { 
+                    tcp_flow_note_socket_error(flow, SOCK_ERR_CONN_RESET);
+                    tcp_free_flow(flow);
+                }
                 else if (tcp_segment_acceptable(flow, seq, 0)) tcp_send_challenge_ack(flow);
                 tcp_flow_put(flow);
                 netpkt_unref(pkt);
@@ -1232,6 +1242,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
                 }
 
                 tcp_send_reset(l3_id, ipver, dst_ip_addr, src_ip_addr, dst_port, src_port, 0, flow->base.ctx.ack, true);
+                tcp_flow_note_socket_error(flow, SOCK_ERR_SYS);
                 tcp_free_flow(flow);
                 tcp_flow_put(flow);
                 netpkt_unref(pkt);
@@ -1314,7 +1325,10 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
         uint32_t seg_len = data_len + ((flags & (1u << SYN_F)) ? 1u : 0u) + fin;
 
         if (flags & (1u << RST_F)){
-            if (seq == flow->rx.rcv_nxt) tcp_free_flow(flow);
+            if (seq == flow->rx.rcv_nxt) {
+                tcp_flow_note_socket_error(flow, SOCK_ERR_CONN_RESET);
+                tcp_free_flow(flow);
+            }
             else if (tcp_segment_acceptable(flow, seq, 0)) tcp_send_challenge_ack(flow);
             tcp_flow_put(flow);
             netpkt_unref(pkt);
@@ -1679,6 +1693,7 @@ void tcp_input(ip_version_t ipver, const void *src_ip_addr, const void *dst_ip_a
     }
 
     if (need_ack){
+        if (flow->timer.quickack) ack_immediate = true;
         if (ack_immediate) tcp_send_ack_now(flow);
         else {
             if (delayed_ack_bytes) {

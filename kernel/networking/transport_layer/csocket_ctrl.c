@@ -1,5 +1,5 @@
 #include "csocket_ctrl.h"
-#include "net_ctrl.h"
+#include "net_ctrl_handler.h"
 #include "alloc/allocate.h"
 #include "std/memory.h"
 
@@ -31,7 +31,7 @@ int32_t socket_close_ctrl(socket_impl_t sh) {
     return sh ? SOCK_OK : SOCK_ERR_INVAL;
 }
 
-int32_t socket_setopt_ctrl(socket_impl_t sh, int32_t opt, const void* value, uint32_t len) {
+int32_t socket_setopt_ctrl(socket_impl_t sh, SockOptFlags opt, const void* value, uint32_t len) {
     return sh ? SOCK_ERR_UNSUP : SOCK_ERR_INVAL;
 }
 
@@ -66,12 +66,21 @@ int32_t socket_getopt_ctrl(socket_impl_t sh, int32_t opt, void* value, uint32_t*
         case SOCK_GET_OPT_DONTFRAG:
         case SOCK_GET_OPT_TTL:
         case SOCK_GET_OPT_KEEPALIVE:
-        case SOCK_GET_OPT_KEEPALIVE_INTERVAL:
         case SOCK_GET_OPT_TCP_NO_DELAY:
         case SOCK_GET_OPT_SEND_BUF_SIZE:
         case SOCK_GET_OPT_BROADCAST_ALLOWED:
         case SOCK_GET_OPT_FILTER:
         case SOCK_GET_MCAST_GROUPS:
+        case SOCK_GET_TCP_CWND:
+        case SOCK_GET_TCP_SSTHRESH:
+        case SOCK_GET_TCP_RTO_MS:
+        case SOCK_GET_IP_PATH_MTU:
+        case SOCK_GET_OPT_TCP_KEEPIDLE:
+        case SOCK_GET_OPT_TCP_KEEPINTVL:
+        case SOCK_GET_OPT_TCP_KEEPCNT:
+        case SOCK_GET_OPT_TCP_USER_TIMEOUT:
+        case SOCK_GET_OPT_TCP_QUICKACK:
+        case SOCK_GET_OPT_TCP_CORK:
         case SOCK_GET_TCP_STATE:
         case SOCK_GET_TCP_MSS:
         case SOCK_GET_TCP_RTT_MS:

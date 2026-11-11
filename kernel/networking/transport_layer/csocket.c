@@ -131,9 +131,12 @@ int64_t send_on_socket(socket_handle_t handle, const void* buf, uint64_t len){
 }
 
 int64_t send_to_socket(socket_handle_t handle, const net_l4_endpoint* dst, const void* buf, uint64_t len){
-    if (!dst) return SOCK_ERR_INVAL;
     ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
     if (!socket) return SOCK_ERR_INVAL;
+    if (!dst && (socket_core_special_kind(socket) != SOCKET_SPECIAL_NONE || socket_core_protocol(socket) != PROTO_UDP)) {
+        socket_core_put(socket);
+        return SOCK_ERR_INVAL;
+    }
 
     int64_t res = SOCK_ERR_PROTO;
     if (socket_core_special_kind(socket) == SOCKET_SPECIAL_RAW) res = socket_sendto_raw(socket_core_impl(socket), dst, buf, len);
@@ -160,7 +163,7 @@ int64_t receive_from_socket(socket_handle_t handle, void* buf, uint64_t len, net
     return res;
 }
 
-int32_t set_socket_option(socket_handle_t handle, int32_t opt, const void* value, uint32_t len){
+int32_t set_socket_option(socket_handle_t handle, SockOptFlags opt, const void* value, uint32_t len){
     ksocket_t* socket = socket_core_get(handle, get_current_proc_pid());
     if (!socket) return SOCK_ERR_INVAL;
     int32_t res = socket_core_set_option(socket, opt, value, len);

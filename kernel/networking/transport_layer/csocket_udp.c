@@ -3,8 +3,6 @@
 #include "data/struct/ring_buffer.h"
 #include "networking/transport_layer/socket_bind.h"
 #include "networking/transport_layer/udp.h"
-#include "networking/internet_layer/ipv4_route.h"
-#include "networking/internet_layer/ipv6_route.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/internet_layer/ipv6.h"
@@ -18,7 +16,7 @@
 #include "alloc/allocate.h"
 #define UDP_DEFAULT_RING_CAP 64
 #define UDP_REPLY_WINDOW_MS 60000
-#define UDP_RECENT_TX_COUNT 8
+#define UDP_RECENT_TX_COUNT 32
 #define UDP_MAX_RING_CAP 1024
 
 typedef struct udp_rx_entry {
@@ -57,13 +55,20 @@ static void udp_record_recent_tx(udp_socket_t* s, const net_l4_endpoint* remote,
     if (!s || !remote || !l3_id || !generation) return;
     uint32_t now_ms = (uint32_t)get_time();
     irq_flags_t irq = irq_save_disable();
+    for (uint32_t i = 0; i < UDP_RECENT_TX_COUNT; i++) { 
+        udp_recent_tx_t* tx = &s->recent_tx[i];
+        if (tx->l3_id != l3_id || tx->l3_generation != generation || tx->match_any_source != match_any_source || !net_ep_equal(&tx->remote, remote)) continue;
+        tx->sent_at_ms = now_ms;
+        irq_restore(irq);
+        return;
+    }
     uint8_t index = s->recent_tx_next;
     if (++s->recent_tx_next == UDP_RECENT_TX_COUNT) s->recent_tx_next = 0;
     s->recent_tx[index] = (udp_recent_tx_t) {.remote = *remote, .sent_at_ms = now_ms, .l3_id = l3_id, .l3_generation = generation, .match_any_source = match_any_source};
     irq_restore(irq);
 }
 
-bool udp_icmp_validate(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port) {
+bool udp_icmp_validate(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port, uint8_t type, uint8_t code) {
     if (!l3_id || !local_ip || !remote_ip || !local_port || !remote_port) return false;
     uint8_t ifindex = 0;
     uint32_t generation = 0;
@@ -95,6 +100,26 @@ bool udp_icmp_validate(l3_id_t l3_id, ip_version_t ver, const void* local_ip, co
                 if (tx->match_any_source || tx->l3_id != l3_id || tx->l3_generation != generation) continue;
                 if (!net_ep_equal(&tx->remote, &remote)) continue;
                 if ((uint32_t)(now_ms - tx->sent_at_ms) > UDP_REPLY_WINDOW_MS) continue;
+                uint32_t detail = ((uint32_t)ver << 16) | ((uint32_t)type << 8) | code;
+                int32_t pending = 0;
+                if (ver == IP_VER4) {
+                    if (type == 3) {
+                        if (code == 3) pending = SOCK_ERR_CONN_REFUSED;
+                        else if (code == 2) pending = SOCK_ERR_PROTO;
+                        else if (code == 9 || code == 10 || code == 13 || code == 14 || code == 15) pending = SOCK_ERR_PERM;
+                        else if (code <= 12 && code != 4) pending = SOCK_ERR_NO_ROUTE;
+                    } else if (type == 11 && code <= 1) pending = SOCK_ERR_TIME_EXCEEDED;
+                    else if (type == 12 && code <= 2) pending = SOCK_ERR_PROTO;
+                } else if (ver == IP_VER6) {
+                    if (type == 1) {
+                        if (code == 4) pending = SOCK_ERR_CONN_REFUSED;
+                        else if (code == 1 || code == 5 || code == 6) pending = SOCK_ERR_PERM;
+                        else if (code == 0 || code == 2 || code == 3 || code == 7 || code == 9) pending = SOCK_ERR_NO_ROUTE;
+                        else if (code == 8) pending = SOCK_ERR_PROTO;
+                    } else if (type == 3 && code <= 1) pending = SOCK_ERR_TIME_EXCEEDED;
+                    else if (type == 4 && code <= 10) pending = SOCK_ERR_PROTO;
+                }
+                socket_core_note_icmp_error(s->ownerSocket, detail, pending);
                 valid = true;
                 break;
             }
@@ -395,7 +420,7 @@ uint32_t socket_udp_input(ksocket_t* socket, ip_version_t ipver, l3_id_t l3_id, 
 socket_impl_t udp_socket_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
 
-    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_BROADCAST_ALLOWED | SOCK_OPT_TTL | SOCK_OPT_MCAST_JOIN | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE | SOCK_OPT_REUSEADDR | SOCK_OPT_REUSEPORT;
+    SockOptFlags supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_BROADCAST_ALLOWED | SOCK_OPT_TTL | SOCK_OPT_MCAST_JOIN | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE | SOCK_OPT_REUSEADDR | SOCK_OPT_REUSEPORT;
     if (extra) {
         if (extra->flags & ~supported) return NULL;
         if ((extra->flags & SOCK_OPT_DEBUG) && extra->debug_level > SOCK_DBG_ALL) return NULL;
@@ -541,6 +566,8 @@ int64_t socket_sendto_udp(socket_impl_t sh, const net_l4_endpoint* dst, const vo
     if (len > max_payload) return SOCK_ERR_INVAL;
     if (s->connected && explicit_dst && !net_ep_equal(&d, &s->remoteEP)) return SOCK_ERR_STATE;
     if (!firewall_allows(PROTO_UDP, NET_CTRL_FIREWALL_OUT, &d, s->localPort, false)) return SOCK_ERR_PERM;
+    int32_t pending = socket_core_take_error(s->ownerSocket);
+    if (pending) return pending;
 
     sizedptr pay;
     pay.ptr = (uintptr_t)buf;
@@ -696,11 +723,13 @@ int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_en
         }
 
         bool closed = s->closed;
-        uint32_t flags = s->options.flags;
+        SockOptFlags flags = s->options.flags;
         uint32_t timeout_ms = s->options.recv_timeout_ms;
         irq_restore(irq);
 
         if (closed) return 0;
+        int32_t pending = socket_core_take_error(s->ownerSocket);
+        if (pending) return pending;
         if (flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
         if ((flags & SOCK_OPT_RECV_TIMEOUT) && timeout_ms) {
             uint32_t now_ms = (uint32_t)get_time();
@@ -725,14 +754,13 @@ int64_t socket_recvfrom_udp(socket_impl_t sh, void* buf, uint64_t len, net_l4_en
     return tocpy;
 }
 
-int32_t socket_setopt_udp(socket_impl_t sh, int32_t opt, const void* value, uint32_t len) {
+int32_t socket_setopt_udp(socket_impl_t sh, SockOptFlags opt, const void* value, uint32_t len) {
     udp_socket_t* s = (udp_socket_t*)sh;
     if (!s) return SOCK_ERR_INVAL;
     if (s->closed) return SOCK_ERR_STATE;
 
-    switch ((uint32_t)opt) {
+    switch (opt) {
         case SOCK_OPT_KEEPALIVE:
-        case SOCK_OPT_KEEPALIVE_INTERVAL:
         case SOCK_OPT_TCP_NO_DELAY:
         case SOCK_OPT_SEND_BUF_SIZE:
         case SOCK_OPT_TCP_MAXSEG:
@@ -1022,7 +1050,6 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
             v = 0;
             break;
         case SOCK_GET_OPT_KEEPALIVE:
-        case SOCK_GET_OPT_KEEPALIVE_INTERVAL:
         case SOCK_GET_OPT_TCP_NO_DELAY:
         case SOCK_GET_OPT_SEND_BUF_SIZE:
         case SOCK_GET_OPT_TCP_MAXSEG:
@@ -1032,6 +1059,16 @@ int32_t socket_getopt_udp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_OPT_FILTER:
         case SOCK_GET_OPT_SEND_TIMEOUT:
         case SOCK_GET_OPT_PACKET_TRUNK:
+        case SOCK_GET_TCP_CWND:
+        case SOCK_GET_TCP_SSTHRESH:
+        case SOCK_GET_TCP_RTO_MS:
+        case SOCK_GET_IP_PATH_MTU:
+        case SOCK_GET_OPT_TCP_KEEPIDLE:
+        case SOCK_GET_OPT_TCP_KEEPINTVL:
+        case SOCK_GET_OPT_TCP_KEEPCNT:
+        case SOCK_GET_OPT_TCP_USER_TIMEOUT:
+        case SOCK_GET_OPT_TCP_QUICKACK:
+        case SOCK_GET_OPT_TCP_CORK:
         case SOCK_GET_TCP_STATE:
         case SOCK_GET_TCP_MSS:
         case SOCK_GET_TCP_RTT_MS:

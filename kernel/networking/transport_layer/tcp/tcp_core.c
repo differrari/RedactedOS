@@ -23,13 +23,34 @@ bool tcp_icmp_validate(l3_id_t l3_id, ip_version_t ver, const void* local_ip, co
     return valid;
 }
 
+void tcp_flow_note_socket_error(tcp_flow_t* flow, int32_t error) {
+    if (!flow || !flow->base.owner_handle) return;
+    ksocket_t* socket = socket_core_get(flow->base.owner_handle, 0);
+    if (!socket) return;
+    socket_core_note_error(socket, error);
+    socket_core_put(socket);
+}
+
 void tcp_icmp_error(l3_id_t l3_id, ip_version_t ver, const void* local_ip, const void* remote_ip, uint16_t local_port, uint16_t remote_port, uint32_t seq, uint8_t type, uint8_t code) {
     tcp_flow_t* flow = tcp_flow_acquire_match(local_port, ver, local_ip, remote_ip, remote_port);
     if (!flow) return;
     uint32_t generation = l3_generation(l3_id);
     if (generation && flow->base.l3_id == l3_id && flow->base.l3_generation == generation && TCP_SEQ_GEQ(seq, flow->tx.snd_una) && TCP_SEQ_LT(seq, flow->tx.snd_nxt)) {
-        flow->base.icmp_error = ((uint32_t)ver << 16) | ((uint32_t)type << 8) | code;
-        if (flow->base.state == TCP_SYN_SENT && ((ver == IP_VER4 && type == 3 && (code == 2 || code == 3)) || (ver == IP_VER6 && type == 1 && code == 4))) tcp_free_flow(flow);
+        bool hard = flow->base.state == TCP_SYN_SENT && ((ver == IP_VER4 && type == 3 && (code == 2 || code == 3)) || (ver == IP_VER6 && type == 1 && (code == 1 || code == 4 || code == 5 || code == 6)));
+        int32_t error = 0;
+        if (hard) {
+            error = SOCK_ERR_CONN_REFUSED;
+            if (ver == IP_VER4 && code == 2) error = SOCK_ERR_PROTO;
+            else if (ver == IP_VER6 && (code == 1 || code == 5 || code == 6)) error = SOCK_ERR_PERM;
+        }
+        if (flow->base.owner_handle) {
+            ksocket_t* socket = socket_core_get(flow->base.owner_handle, 0);
+            if (socket) {
+                socket_core_note_icmp_error(socket, ((uint32_t)ver << 16) | ((uint32_t)type << 8) | code, error);
+                socket_core_put(socket);
+            }
+        }
+        if (hard) tcp_free_flow(flow);
     }
     tcp_flow_put(flow);
 }
@@ -224,19 +245,22 @@ tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx) {
     return flow;
 }
 
-void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32_t apply_mask) {
+void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, SockOptFlags apply_mask) {
     if (!flow) return;
     SocketOptions defaults = {0};
-    defaults.flags = SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK;
+    defaults.flags = SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK | SOCK_OPT_DONTFRAG;
     if (!extra) extra = &defaults;
-    uint32_t flags = extra->flags;
+    SockOptFlags flags = extra->flags;
+    uint32_t keepidle_ms = (flags & SOCK_OPT_TCP_KEEPIDLE) && extra->tcp_keepidle ? extra->tcp_keepidle * 1000 : SOCKET_DEFAULT_KEEPALIVE_MS;
 
-    if (apply_mask & (SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL)) {
-        flow->timer.keepalive_on = (flags & SOCK_OPT_KEEPALIVE) ? 1 : 0;
-        flow->timer.keepalive_ms = 0;
-        if (flow->timer.keepalive_on) flow->timer.keepalive_ms = extra->keepalive_ms ? extra->keepalive_ms : SOCKET_DEFAULT_KEEPALIVE_MS;
-        flow->timer.keepalive_idle_ms = 0;
-        flow->timer.keepalive_probes = 0;
+    if (apply_mask & SOCK_OPT_KEEPALIVE) {
+        uint8_t keepalive_on = (flags & SOCK_OPT_KEEPALIVE) ? 1 : 0;
+        if (flow->timer.keepalive_on != keepalive_on) {
+            flow->timer.keepalive_idle_ms = 0;
+            flow->timer.keepalive_probes = 0;
+        }
+        flow->timer.keepalive_on = keepalive_on;
+        flow->timer.keepalive_ms = keepalive_on ? keepidle_ms : 0;
         if (!flow->timer.keepalive_interval_ms) flow->timer.keepalive_interval_ms = TCP_KEEPALIVE_INTERVAL_MS;
         if (!flow->timer.keepalive_count) flow->timer.keepalive_count = TCP_KEEPALIVE_PROBES;
         if (flow->base.active_pos != UINT16_MAX) tcp_daemon_kick();
@@ -244,7 +268,33 @@ void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32
 
     if (apply_mask & SOCK_OPT_TCP_NO_DELAY) {
         flow->tx.nodelay = (flags & SOCK_OPT_TCP_NO_DELAY) ? 1 : 0;
-        if (flow->tx.nodelay && flow->tx.nagle_len && flow->tx.snd_wnd > 0 && !tcp_flush_nagle(flow, TCP_TX_BYPASS_NAGLE)) tcp_daemon_kick();
+        if (flow->tx.nodelay && flow->tx.nagle_len && flow->tx.snd_wnd > 0 && !tcp_flush_nagle(flow, TCP_TX_BYPASS_NAGLE | TCP_TX_BYPASS_SWS)) tcp_daemon_kick();
+    }
+
+    if (apply_mask & (SOCK_OPT_TCP_KEEPIDLE | SOCK_OPT_TCP_KEEPINTVL | SOCK_OPT_TCP_KEEPCNT)) {
+        flow->timer.keepalive_ms = flow->timer.keepalive_on ? keepidle_ms : 0;
+        flow->timer.keepalive_interval_ms = (flags & SOCK_OPT_TCP_KEEPINTVL) && extra->tcp_keepintvl ? extra->tcp_keepintvl * 1000 : TCP_KEEPALIVE_INTERVAL_MS;
+        flow->timer.keepalive_count = (flags & SOCK_OPT_TCP_KEEPCNT) && extra->tcp_keepcnt ? extra->tcp_keepcnt : TCP_KEEPALIVE_PROBES;
+    }
+
+    if ((apply_mask & SOCK_OPT_TCP_SYNCNT) && flow->base.active_open) flow->tx.syn_retries = (flags & SOCK_OPT_TCP_SYNCNT) && extra->tcp_syncnt ? extra->tcp_syncnt : TCP_MAX_RETRANS;
+
+    if (apply_mask & SOCK_OPT_TCP_USER_TIMEOUT) {
+        flow->timer.user_timeout_ms = (flags & SOCK_OPT_TCP_USER_TIMEOUT) ? extra->tcp_user_timeout_ms : 0;
+        if (!flow->timer.user_timeout_ms) flow->timer.user_timeout_wait_ms = 0;
+    }
+
+    if (apply_mask & SOCK_OPT_TCP_QUICKACK) {
+        flow->timer.quickack = (flags & SOCK_OPT_TCP_QUICKACK) ? 1 : 0;
+        if (flow->timer.quickack && flow->timer.delayed_ack_pending) tcp_send_ack_now(flow);
+    }
+    if (apply_mask & SOCK_OPT_TCP_CORK) {
+        uint8_t was_cork = flow->tx.cork;
+        flow->tx.cork = (flags & SOCK_OPT_TCP_CORK) ? 1 : 0;
+        if (!flow->tx.cork) {
+            flow->tx.cork_ms = 0;
+            if (flow->tx.nagle_len) tcp_flush_nagle(flow, TCP_TX_BYPASS_NAGLE | TCP_TX_BYPASS_SWS);
+        } else if (!was_cork) flow->tx.cork_ms = 0;
     }
 
     if (apply_mask & SOCK_OPT_SEND_BUF_SIZE) {
@@ -279,7 +329,7 @@ void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32
     if (apply_mask & SOCK_OPT_REUSEADDR) flow->ip.reuseaddr = (flags & SOCK_OPT_REUSEADDR) ? 1 : 0;
 }
 
-void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra, uint32_t apply_mask) {
+void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra, SockOptFlags apply_mask) {
     tcp_flow_t *flow = tcp_flow_from_ctx(flow_ctx);
     if (!flow) return;
     tcp_flow_apply_options(flow, extra, apply_mask);
@@ -495,6 +545,7 @@ void tcp_l3_retire(l3_id_t l3_id, uint32_t l3_generation) {
         flow->base.refs++;
         irq_restore(irq);
 
+        if (flow->base.state != TCP_TIME_WAIT && flow->base.state != TCP_STATE_CLOSED) tcp_flow_note_socket_error(flow, SOCK_ERR_NO_ROUTE);
         tcp_free_flow(flow);
         tcp_flow_put(flow);
     }
@@ -661,12 +712,13 @@ void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms){
     flow->tx.rto = rto;
 }
 
-bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra) {
+bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra, socket_handle_t owner_handle) {
     if (!dst || !flow_ctx || !local_port || !dst->port || (dst->ver != IP_VER4 && dst->ver != IP_VER6)) return false;
 
     tcp_flow_t *flow = tcp_alloc_flow();
     if (!flow) return false;
     flow->base.l3_id = l3_id;
+    flow->base.owner_handle = owner_handle;
 
     flow->base.remote.ver = dst->ver;
     memcpy(flow->base.remote.ip, dst->ip, (size_t)(dst->ver == IP_VER6 ? 16 : 4));
@@ -676,6 +728,7 @@ bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
         l3_ipv4_interface_t *v4 = l3_ipv4_find_by_id(l3_id);
 
         if (!v4 || !v4->ip){
+            tcp_flow_note_socket_error(flow, SOCK_ERR_NO_ROUTE);
             tcp_free_flow(flow);
             tcp_flow_put(flow);
             return false;
@@ -687,6 +740,7 @@ bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
         l3_ipv6_interface_t *v6 = l3_ipv6_find_by_id(l3_id);
 
         if (!v6 || ipv6_is_unspecified(v6->ip)){
+            tcp_flow_note_socket_error(flow, SOCK_ERR_NO_ROUTE);
             tcp_free_flow(flow);
             tcp_flow_put(flow);
             return false;
@@ -721,7 +775,7 @@ bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->rx.rcv_adv_edge = 0;
     flow->tx.path_mss = tcp_calc_mss_for_l3(l3_id, dst->ver, dst->ip);
     flow->tx.peer_mss = 0;
-    tcp_flow_apply_options(flow, extra, UINT32_MAX);
+    tcp_flow_apply_options(flow, extra, UINT64_MAX);
 
     if (flow->rx.rcv_wnd_max > 65535u) {
         flow->tx.ws_send = 8;
@@ -763,6 +817,7 @@ bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     tcp_tx_seg_t *seg = tcp_alloc_tx_seg(flow, 0);
 
     if (!seg){
+        tcp_flow_note_socket_error(flow, SOCK_ERR_SYS);
         tcp_free_flow(flow);
         tcp_flow_put(flow);
         return false;
@@ -789,6 +844,7 @@ bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, 
     flow->base.ctx.expected_ack = flow->tx.snd_nxt;
 
     if (!tcp_active_insert_flow(flow) || !tcp_send_from_seg(flow, seg)) {
+        tcp_flow_note_socket_error(flow, SOCK_ERR_SYS);
         tcp_free_flow(flow);
         tcp_flow_put(flow);
         return false;

@@ -8,7 +8,6 @@
 #include "networking/internet_layer/ipv4.h"
 #include "networking/internet_layer/ipv4_utils.h"
 #include "networking/internet_layer/ipv6.h"
-#include "networking/internet_layer/ipv6_route.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/link_layer/eth.h"
 #include "networking/transport_layer/trans_utils.h"
@@ -135,7 +134,7 @@ socket_impl_t socket_raw_create(ksocket_t* owner, const SocketOptions* extra) {
     if (proto != PROTO_ICMP && proto != PROTO_IGMP && proto != PROTO_ICMPV6) return NULL;
     //TODO add ESP/AH sock if needed
 
-    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_FILTER | SOCK_OPT_SPECIAL | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE;
+    SockOptFlags supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_FILTER | SOCK_OPT_SPECIAL | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE;
     if (extra && (extra->flags & ~supported)) return NULL;
 
     raw_socket_t* s = (raw_socket_t*)zalloc(sizeof(raw_socket_t));
@@ -225,11 +224,11 @@ int32_t socket_close_raw(socket_impl_t sh) {
     return SOCK_OK;
 }
 
-int32_t socket_setopt_raw(socket_impl_t sh, int32_t opt, const void* value, uint32_t len) {
+int32_t socket_setopt_raw(socket_impl_t sh, SockOptFlags opt, const void* value, uint32_t len) {
     raw_socket_t* s = (raw_socket_t*)sh;
     if (!s) return SOCK_ERR_INVAL;
 
-    switch ((uint32_t)opt) {
+    switch (opt) {
         case SOCK_OPT_RECV_TIMEOUT:
         case SOCK_OPT_DEBUG:
         case SOCK_OPT_DONTFRAG:
@@ -279,9 +278,18 @@ int32_t socket_getopt_raw(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         case SOCK_GET_LOCAL_PORT:
         case SOCK_GET_SEND_QUEUED:
         case SOCK_GET_OPT_KEEPALIVE:
-        case SOCK_GET_OPT_KEEPALIVE_INTERVAL:
         case SOCK_GET_OPT_TCP_NO_DELAY:
         case SOCK_GET_OPT_SEND_BUF_SIZE:
+        case SOCK_GET_TCP_CWND:
+        case SOCK_GET_TCP_SSTHRESH:
+        case SOCK_GET_TCP_RTO_MS:
+        case SOCK_GET_IP_PATH_MTU:
+        case SOCK_GET_OPT_TCP_KEEPIDLE:
+        case SOCK_GET_OPT_TCP_KEEPINTVL:
+        case SOCK_GET_OPT_TCP_KEEPCNT:
+        case SOCK_GET_OPT_TCP_USER_TIMEOUT:
+        case SOCK_GET_OPT_TCP_QUICKACK:
+        case SOCK_GET_OPT_TCP_CORK:
         case SOCK_GET_TCP_STATE:
         case SOCK_GET_TCP_MSS:
         case SOCK_GET_TCP_RTT_MS:
@@ -488,7 +496,7 @@ int64_t socket_recv_raw(socket_impl_t sh, void* buf, uint64_t len, net_l4_endpoi
         irq_flags_t irq = irq_save_disable();
         bool closing = socket_core_is_closing(s->ownerSocket);
         bool ready = !closing && cring_pop(&s->rx, &entry);
-        uint32_t flags = s->options.flags;
+        SockOptFlags flags = s->options.flags;
         uint32_t timeout_ms = s->options.recv_timeout_ms;
         if (ready) {
             if (s->rx_bytes >= entry.len) s->rx_bytes -= entry.len;

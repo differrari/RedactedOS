@@ -32,9 +32,9 @@ extern "C" {
 #define TCP_PERSIST_MAX_MS 60000
 #define TCP_NAGLE_FLUSH_THRESHOLD TCP_DEFAULT_MSS
 #define TCP_SWS_OVERRIDE_MS 200
-#define TCP_CONNECT_TIMEOUT_MS 10000
 #define TCP_SACK_SCOREBOARD_MAX 32
 #define TCP_CHALLENGE_ACK_INTERVAL_MS 100
+#define TCP_MAX_SYN_SEND_FAILURES 8
 
 typedef struct {
     uint32_t left;
@@ -58,6 +58,7 @@ typedef struct {
     uint8_t partial_sent;
     uint8_t rtt_sample;
     uint8_t retransmit_cnt;
+    uint8_t local_failures;
     uint8_t opts_len;
     uint8_t opts[40];
     uint32_t seq;
@@ -66,6 +67,8 @@ typedef struct {
     uint32_t payload_off;
     uint32_t timer_ms;
     uint32_t timeout_ms;
+    uint32_t first_sent_ms;
+    uint8_t first_sent_valid;
 } tcp_tx_seg_t;
 
 typedef struct {
@@ -84,7 +87,7 @@ typedef struct {
     tcp_state_t state;
     tcp_data ctx;
     uint16_t refs;
-    uint32_t icmp_error;//TODO add SOCK_GET_TCP_LAST_ICMP_ERROR
+    socket_handle_t owner_handle;
     uint8_t retired;
     uint8_t active_open;
     struct ksocket *listener;
@@ -102,6 +105,7 @@ typedef struct {
     uint32_t rto;
     uint8_t rtt_valid;
     uint8_t rtt_sample_pending;
+    uint8_t syn_retries;
     uint32_t rtt_start_ms;
 
     uint32_t cwnd;
@@ -135,6 +139,8 @@ typedef struct {
     uint8_t nagle_flushing;
     uint8_t nagle_appending;
     uint8_t nodelay;
+    uint8_t cork;
+    uint32_t cork_ms;
     uint8_t nagle_psh;
     uint8_t data_tx_valid;
 
@@ -191,6 +197,9 @@ typedef struct {
     uint32_t keepalive_interval_ms;
     uint32_t keepalive_probes;
     uint32_t keepalive_count;
+    uint32_t user_timeout_ms;
+    uint32_t user_timeout_wait_ms;
+    uint8_t quickack;
 
     uint8_t challenge_ack_valid;
     uint32_t challenge_ack_last_ms;
@@ -245,7 +254,8 @@ bool tcp_active_insert_flow(tcp_flow_t *flow);
 tcp_flow_t *tcp_flow_from_ctx(tcp_data *flow_ctx);
 tcp_flow_t *tcp_flow_acquire_match(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port);
 void tcp_flow_put(tcp_flow_t *flow);
-void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, uint32_t apply_mask);
+void tcp_flow_apply_options(tcp_flow_t *flow, const SocketOptions* extra, SockOptFlags apply_mask);
+void tcp_flow_note_socket_error(tcp_flow_t* flow, int32_t error);
 
 void tcp_rtt_update(tcp_flow_t *flow, uint32_t sample_ms);
 

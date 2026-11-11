@@ -113,7 +113,7 @@ socket_impl_t socket_packet_create(ksocket_t* owner, const SocketOptions* extra)
     if (!owner) return NULL;
     if (socket_core_special_kind(owner) != SOCKET_SPECIAL_PACKET) return NULL;
 
-    uint32_t supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_FILTER | SOCK_OPT_SPECIAL | SOCK_OPT_NONBLOCK | SOCK_OPT_PACKET_TRUNK;
+    SockOptFlags supported = SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_FILTER | SOCK_OPT_SPECIAL | SOCK_OPT_NONBLOCK | SOCK_OPT_PACKET_TRUNK;
     if (extra && (extra->flags & ~supported)) return NULL;
 
     packet_socket_t* s = (packet_socket_t*)zalloc(sizeof(packet_socket_t));
@@ -202,11 +202,11 @@ int32_t socket_close_packet(socket_impl_t sh) {
     return SOCK_OK;
 }
 
-int32_t socket_setopt_packet(socket_impl_t sh, int32_t opt, const void* value, uint32_t len) {
+int32_t socket_setopt_packet(socket_impl_t sh, SockOptFlags opt, const void* value, uint32_t len) {
     packet_socket_t* s = (packet_socket_t*)sh;
     if (!s) return SOCK_ERR_INVAL;
 
-    switch ((uint32_t)opt) {
+    switch (opt) {
         case SOCK_OPT_RECV_TIMEOUT:
         case SOCK_OPT_DEBUG:
         case SOCK_OPT_NONBLOCK:
@@ -218,7 +218,6 @@ int32_t socket_setopt_packet(socket_impl_t sh, int32_t opt, const void* value, u
         case SOCK_OPT_SEND_TIMEOUT:
         case SOCK_OPT_SEND_BUF_SIZE:
         case SOCK_OPT_KEEPALIVE:
-        case SOCK_OPT_KEEPALIVE_INTERVAL:
         case SOCK_OPT_TCP_NO_DELAY:
         case SOCK_OPT_BROADCAST_ALLOWED:
         case SOCK_OPT_SPECIAL:
@@ -268,12 +267,21 @@ int32_t socket_getopt_packet(socket_impl_t sh, int32_t opt, void* value, uint32_
         case SOCK_GET_OPT_SEND_TIMEOUT:
         case SOCK_GET_OPT_SEND_BUF_SIZE:
         case SOCK_GET_OPT_KEEPALIVE:
-        case SOCK_GET_OPT_KEEPALIVE_INTERVAL:
         case SOCK_GET_OPT_TCP_NO_DELAY:
         case SOCK_GET_OPT_BROADCAST_ALLOWED:
         case SOCK_GET_OPT_DONTFRAG:
         case SOCK_GET_OPT_TTL:
         case SOCK_GET_MCAST_GROUPS:
+        case SOCK_GET_TCP_CWND:
+        case SOCK_GET_TCP_SSTHRESH:
+        case SOCK_GET_TCP_RTO_MS:
+        case SOCK_GET_IP_PATH_MTU:
+        case SOCK_GET_OPT_TCP_KEEPIDLE:
+        case SOCK_GET_OPT_TCP_KEEPINTVL:
+        case SOCK_GET_OPT_TCP_KEEPCNT:
+        case SOCK_GET_OPT_TCP_USER_TIMEOUT:
+        case SOCK_GET_OPT_TCP_QUICKACK:
+        case SOCK_GET_OPT_TCP_CORK:
         case SOCK_GET_TCP_STATE:
         case SOCK_GET_TCP_MSS:
         case SOCK_GET_TCP_RTT_MS:
@@ -327,7 +335,7 @@ int64_t socket_recv_packet(socket_impl_t sh, void* buf, uint64_t len) {
         irq_flags_t irq = irq_save_disable();
         bool closing = socket_core_is_closing(s->ownerSocket);
         bool ready = !closing && cring_pop(&s->rx, &entry);
-        uint32_t flags = s->options.flags;
+        SockOptFlags flags = s->options.flags;
         uint32_t timeout_ms = s->options.recv_timeout_ms;
         if (ready) {
             pkt_len = netpkt_len(entry.pkt);

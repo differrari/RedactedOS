@@ -152,6 +152,7 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
             if (!full_segment && !push_all && !large_fraction) break;
         }
 
+        if (flow->tx.cork && !(force & (TCP_TX_FIN_FLUSH | TCP_TX_PERSIST_PROBE)) && !(force & TCP_TX_BYPASS_SWS) && candidate < mss) break;
         if (candidate > mss) candidate = mss;
         if (candidate > UINT32_MAX) candidate = UINT32_MAX;
         uint32_t seg_len = candidate;
@@ -197,7 +198,6 @@ static uint64_t tcp_emit_data(tcp_flow_t *flow, const uint8_t *payload, uint64_t
         if (!tcp_send_from_seg(flow, seg)) {
             if (seg->partial_sent) {
                 sent_bytes += seg_len;
-                remaining -= seg_len;
                 break;
             }
             flow->tx.snd_nxt -= seg_len;
@@ -259,6 +259,7 @@ uint64_t tcp_flush_nagle(tcp_flow_t *flow, tcp_tx_force_t force) {
     if (flow->tx.nagle_flushing || flow->tx.nagle_appending) return 0;
 
     if (flow->tx.nodelay) force = (tcp_tx_force_t)(force | TCP_TX_BYPASS_NAGLE);
+    if (flow->tx.cork && !(force & (TCP_TX_FIN_FLUSH | TCP_TX_PERSIST_PROBE | TCP_TX_BYPASS_SWS)) && flow->tx.nagle_len < tcp_nagle_threshold(flow)) return 0;
 
     flow->tx.nagle_flushing = 1;
 
@@ -314,6 +315,7 @@ bool tcp_send_flow_segment(tcp_flow_t *flow, tcp_hdr_t *hdr, const uint8_t *opts
 
 bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
     if (!flow || !seg) return false;
+    seg->partial_sent = 0;
     if (flow->base.retired || flow->base.state == TCP_STATE_CLOSED) return false;
 
     irq_flags_t irq = irq_save_disable();
@@ -330,7 +332,6 @@ bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
     bool sample = tx.rtt_sample && !tx.retransmit_cnt && !tx.persist;
     uint32_t old_rtt_start = flow->tx.rtt_start_ms;
     uint32_t off = 0;
-    seg->partial_sent = 0;
 
     do{
         uint32_t chunk = tx.len - off;
@@ -376,6 +377,11 @@ bool tcp_send_from_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg){
     } while (off < tx.len);
 
     if (tx.pkt) netpkt_unref(tx.pkt);
+    if (sent_any && seg->used && !seg->first_sent_valid) {
+        seg->first_sent_ms = get_time();
+        seg->first_sent_valid = 1;
+    }
+
     if (off != tx.len || !sent_any) {
         if (sample) flow->tx.rtt_start_ms = old_rtt_start;
         if (sent_any) {
@@ -407,6 +413,7 @@ bool tcp_retransmit_seg(tcp_flow_t *flow, tcp_tx_seg_t *seg) {
     }
 
     if (seg->retransmit_cnt < UINT8_MAX) seg->retransmit_cnt++;
+    seg->local_failures = 0;
     seg->timer_ms = 0;
     seg->timeout_ms = flow->tx.rto ? flow->tx.rto : TCP_INIT_RTO;
     return true;
@@ -504,6 +511,7 @@ void tcp_send_ack_now(tcp_flow_t *flow){
     flow->timer.delayed_ack_pending = 0;
     flow->timer.delayed_ack_timer_ms = 0;
     flow->timer.delayed_ack_bytes = 0;
+    flow->timer.quickack = 0;
 }
 
 void tcp_try_send_pending_fin(tcp_flow_t *flow) {
@@ -658,7 +666,6 @@ tcp_result_t tcp_flow_send(tcp_data *flow_ctx){
         uint64_t n = tcp_nagle_append(flow, payload_ptr, payload_len);
         if (n && want_push && n == payload_len) flow->tx.nagle_psh = 1;
         accepted += n;
-        payload_ptr += n;
         payload_len -= n;
         if (flow->tx.nagle_len >= tcp_nagle_threshold(flow) && !tcp_flush_nagle(flow, normal_force)) tcp_daemon_kick();
     }

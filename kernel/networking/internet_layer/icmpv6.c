@@ -195,12 +195,13 @@ void icmpv6_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_i
 
         bool valid;
         if (inner_nh == PROTO_TCP) valid = tcp_icmp_validate(l3->l3_id, IP_VER6, inner.src, inner.dst, local_port, remote_port, rd_be32(tcp + 4));
-        else valid = udp_icmp_validate(l3->l3_id, IP_VER6, inner.src, inner.dst, local_port, remote_port);
+        else valid = udp_icmp_validate(l3->l3_id, IP_VER6, inner.src, inner.dst, local_port, remote_port, h->type, h->code);
 
         if (!valid) {
             netpkt_unref(pkt);
             return;
         }
+        if (inner_nh == PROTO_TCP) tcp_icmp_error(l3->l3_id, IP_VER6, inner.src, inner.dst, local_port, remote_port, rd_be32(tcp + 4), h->type, h->code);
 
         uint16_t path_mtu = pmtu_note(l3->l3_id, l3->epoch, IP_VER6, inner.dst, mtu);
         if (path_mtu) tcp_pmtu_update(l3->l3_id, IP_VER6, inner.dst, path_mtu);
@@ -219,8 +220,10 @@ void icmpv6_input(uint8_t ifindex, const uint8_t src_ip[16], const uint8_t dst_i
                 uint32_t rem = icmp_len - off;
                 uint8_t proto = inner.next_header;
                 uint8_t tcp[8];
-                if (ipv6_skip_ext_headers(pkt, &proto, &off, &rem, false, 0) && proto == PROTO_TCP && rem >= sizeof(tcp) && netpkt_copyout(pkt, off, tcp, sizeof(tcp)))
-                    tcp_icmp_error(l3->l3_id, IP_VER6, inner.src, inner.dst, rd_be16(tcp), rd_be16(tcp + 2), rd_be32(tcp + 4), h->type, h->code);
+                if (ipv6_skip_ext_headers(pkt, &proto, &off, &rem, false, 0) && (proto == PROTO_TCP || proto == PROTO_UDP) && rem >= sizeof(tcp) && netpkt_copyout(pkt, off, tcp, sizeof(tcp))) {
+                    if (proto == PROTO_TCP) tcp_icmp_error(l3->l3_id, IP_VER6, inner.src, inner.dst, rd_be16(tcp), rd_be16(tcp + 2), rd_be32(tcp + 4), h->type, h->code);
+                    else udp_icmp_validate(l3->l3_id, IP_VER6, inner.src, inner.dst, rd_be16(tcp), rd_be16(tcp + 2), h->type, h->code);
+                }
             }
         }
         netpkt_unref(pkt);

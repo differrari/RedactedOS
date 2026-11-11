@@ -125,7 +125,7 @@ int32_t socket_close(socket_handle_t handle){
     return close_socket(handle);
 }
 
-int32_t socket_set_option(socket_handle_t handle, int32_t opt, const void* value, uint32_t len){
+int32_t socket_set_option(socket_handle_t handle, SockOptFlags opt, const void* value, uint32_t len){
     return set_socket_option(handle, opt, value, len);
 }
 

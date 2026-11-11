@@ -4,9 +4,7 @@
 #include "networking/transport_layer/tcp/tcp_internal.h"
 #include "networking/interface_manager.h"
 #include "networking/internet_layer/ipv4.h"
-#include "networking/internet_layer/ipv4_route.h"
 #include "networking/internet_layer/ipv4_utils.h"
-#include "networking/internet_layer/ipv6_route.h"
 #include "networking/internet_layer/ipv6_utils.h"
 #include "networking/transport_layer/trans_utils.h"
 #include "networking/net_logger/net_logger.h"
@@ -112,13 +110,12 @@ static int32_t tcp_socket_connection_state(tcp_socket_t* s) {
 socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketOptions* extra) {
     if (!owner) return NULL;
 
-    uint32_t supported = SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_SEND_BUF_SIZE | SOCK_OPT_TCP_NO_DELAY | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE | SOCK_OPT_REUSEADDR | SOCK_OPT_TCP_MAXSEG | SOCK_OPT_LINGER | SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK;
+    SockOptFlags supported = SOCK_OPT_KEEPALIVE | SOCK_OPT_SEND_TIMEOUT | SOCK_OPT_RECV_TIMEOUT | SOCK_OPT_BUF_SIZE | SOCK_OPT_DEBUG | SOCK_OPT_DONTFRAG | SOCK_OPT_TTL | SOCK_OPT_SEND_BUF_SIZE | SOCK_OPT_TCP_NO_DELAY | SOCK_OPT_NONBLOCK | SOCK_OPT_DONTROUTE | SOCK_OPT_REUSEADDR | SOCK_OPT_TCP_MAXSEG | SOCK_OPT_LINGER | SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK | SOCK_OPT_TCP_KEEPIDLE | SOCK_OPT_TCP_KEEPINTVL | SOCK_OPT_TCP_KEEPCNT | SOCK_OPT_TCP_USER_TIMEOUT | SOCK_OPT_TCP_QUICKACK | SOCK_OPT_TCP_CORK | SOCK_OPT_TCP_SYNCNT;
     if (extra) {
         if (extra->flags & ~supported) return NULL;
         if ((extra->flags & SOCK_OPT_DEBUG) && extra->debug_level > SOCK_DBG_ALL) return NULL;
         if ((extra->flags & SOCK_OPT_BUF_SIZE) && !extra->buf_size) return NULL;
         if ((extra->flags & SOCK_OPT_SEND_BUF_SIZE) && !extra->send_buf_size) return NULL;
-        if ((extra->flags & SOCK_OPT_KEEPALIVE_INTERVAL) && !extra->keepalive_ms) return NULL;
     }
 
     tcp_socket_t* s = (tcp_socket_t*)zalloc(sizeof(*s));
@@ -128,7 +125,13 @@ socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketOptions* extra) {
     s->remoteEP.ver = IP_VER4;
     s->bindSpec.kind = BIND_ANY;
     if (extra) s->options = *extra;
+    if (!(s->options.flags & SOCK_OPT_TCP_KEEPIDLE)) s->options.tcp_keepidle = 0;
+    if (!(s->options.flags & SOCK_OPT_TCP_KEEPINTVL)) s->options.tcp_keepintvl = 0;
+    if (!(s->options.flags & SOCK_OPT_TCP_KEEPCNT)) s->options.tcp_keepcnt = 0;
+    if (!(s->options.flags & SOCK_OPT_TCP_USER_TIMEOUT)) s->options.tcp_user_timeout_ms = 0;
+    if (!(s->options.flags & SOCK_OPT_TCP_SYNCNT)) s->options.tcp_syncnt = 0;
     s->options.flags |= SOCK_OPT_TCP_SACK | SOCK_OPT_TCP_DSACK;
+    s->options.flags |= SOCK_OPT_DONTFRAG;
     if (!(s->options.flags & SOCK_OPT_BUF_SIZE)) {
         s->options.flags |= SOCK_OPT_BUF_SIZE;
         s->options.buf_size = TCP_DEFAULT_RCV_BUF;
@@ -147,33 +150,74 @@ socket_impl_t socket_tcp_create(ksocket_t* owner, const SocketOptions* extra) {
         memset(&s->options.linger, 0, sizeof(s->options.linger));
     } else s->options.linger.enabled = 1;
     if (s->options.flags & SOCK_OPT_TCP_DSACK) s->options.flags |= SOCK_OPT_TCP_SACK;
+    if (((s->options.flags & SOCK_OPT_TCP_KEEPIDLE) && (!s->options.tcp_keepidle || s->options.tcp_keepidle > UINT32_MAX / 1000)) || ((s->options.flags & SOCK_OPT_TCP_KEEPINTVL) && 
+    (!s->options.tcp_keepintvl || s->options.tcp_keepintvl > UINT32_MAX / 1000)) || ((s->options.flags & SOCK_OPT_TCP_KEEPCNT) && (!s->options.tcp_keepcnt || s->options.tcp_keepcnt > 255))) {
+        release(s);
+        return NULL;
+    }
+    if ((s->options.flags & SOCK_OPT_TCP_SYNCNT) && (!s->options.tcp_syncnt || s->options.tcp_syncnt > 255)) {
+        release(s);
+        return NULL;
+    }
     return s;
 }
 
-int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint32_t len) {
+int32_t socket_setopt_tcp(socket_impl_t sh, SockOptFlags opt, const void* value, uint32_t len) {
     tcp_socket_t* s = (tcp_socket_t*)sh;
     if (!s) return SOCK_ERR_INVAL;
 
-    switch ((uint32_t)opt) {
+    switch (opt) {
         case SOCK_OPT_KEEPALIVE: {
             if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
             uint32_t v = 0;
             memcpy(&v, value, sizeof(v));
             if (v) {
                 s->options.flags |= SOCK_OPT_KEEPALIVE;
-                if (!s->options.keepalive_ms) s->options.keepalive_ms = SOCKET_DEFAULT_KEEPALIVE_MS;
             } else s->options.flags &= ~SOCK_OPT_KEEPALIVE;
-            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options, (uint32_t)opt);
+            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options, opt);
             return SOCK_OK;
         }
-        case SOCK_OPT_KEEPALIVE_INTERVAL: {
+        case SOCK_OPT_TCP_KEEPIDLE:
+        case SOCK_OPT_TCP_KEEPINTVL:
+        case SOCK_OPT_TCP_KEEPCNT:
+        case SOCK_OPT_TCP_USER_TIMEOUT:
+        case SOCK_OPT_TCP_QUICKACK:
+        case SOCK_OPT_TCP_CORK:
+        case SOCK_OPT_TCP_SYNCNT: {
             if (!value || len != sizeof(uint32_t)) return SOCK_ERR_INVAL;
-            uint32_t v = 0;
+            uint32_t v;
             memcpy(&v, value, sizeof(v));
-            if (!v) return SOCK_ERR_INVAL;
-            s->options.keepalive_ms = v;
-            s->options.flags |= SOCK_OPT_KEEPALIVE | SOCK_OPT_KEEPALIVE_INTERVAL;
-            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options, (uint32_t)opt);
+            if ((opt == SOCK_OPT_TCP_KEEPIDLE || opt == SOCK_OPT_TCP_KEEPINTVL) && (v == 0 || v > UINT32_MAX / 1000)) return SOCK_ERR_INVAL;
+            if ((opt == SOCK_OPT_TCP_KEEPCNT || opt == SOCK_OPT_TCP_SYNCNT) && (v == 0 || v > 255)) return SOCK_ERR_INVAL;
+            switch (opt) {
+                case SOCK_OPT_TCP_KEEPIDLE:
+                    s->options.tcp_keepidle = v;
+                    s->options.flags |= opt;
+                    break;
+                case SOCK_OPT_TCP_KEEPINTVL:
+                    s->options.tcp_keepintvl = v;
+                    s->options.flags |= opt;
+                    break;
+                case SOCK_OPT_TCP_KEEPCNT:
+                    s->options.tcp_keepcnt = v; 
+                    s->options.flags |= opt;
+                    break;
+                case SOCK_OPT_TCP_SYNCNT:
+                    s->options.tcp_syncnt = v;
+                    s->options.flags |= opt;
+                    break;
+                case SOCK_OPT_TCP_USER_TIMEOUT:
+                    s->options.tcp_user_timeout_ms = v;
+                    s->options.flags |= opt;
+                    break;
+                case SOCK_OPT_TCP_QUICKACK:
+                case SOCK_OPT_TCP_CORK:
+                    if (v) s->options.flags |= opt;
+                    else s->options.flags &= ~opt;
+                    break;
+                default: break;
+            }
+            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options, opt);
             return SOCK_OK;
         }
         case SOCK_OPT_TCP_NO_DELAY: {
@@ -182,7 +226,7 @@ int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint
             memcpy(&v, value, sizeof(v));
             if (v) s->options.flags |= SOCK_OPT_TCP_NO_DELAY;
             else s->options.flags &= ~SOCK_OPT_TCP_NO_DELAY;
-            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options, (uint32_t)opt);
+            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options, opt);
             return SOCK_OK;
         }
         case SOCK_OPT_SEND_BUF_SIZE: {
@@ -192,7 +236,7 @@ int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint
             if (!v) return SOCK_ERR_INVAL;
             s->options.send_buf_size = v;
             s->options.flags |= SOCK_OPT_SEND_BUF_SIZE;
-            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options, (uint32_t)opt);
+            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options, opt);
             return SOCK_OK;
         }
         case SOCK_OPT_REUSEADDR: {
@@ -217,7 +261,7 @@ int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint
             s->options.tcp_maxseg = v;
             if (v) s->options.flags |= SOCK_OPT_TCP_MAXSEG;
             else s->options.flags &= ~SOCK_OPT_TCP_MAXSEG;
-            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options, (uint32_t)opt);
+            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options, opt);
             return SOCK_OK;
         }
         case SOCK_OPT_LINGER: {
@@ -259,7 +303,7 @@ int32_t socket_setopt_tcp(socket_impl_t sh, int32_t opt, const void* value, uint
         case SOCK_OPT_TTL: {
             int32_t rc = socket_common_options_set(&s->options, opt, value, len);
             if (rc != SOCK_OK) return rc;
-            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options, (uint32_t)opt);
+            if (s->flow.flow_generation) tcp_flow_apply_socket_options(&s->flow, &s->options, opt);
             return SOCK_OK;
         }
         default:
@@ -354,6 +398,54 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
             }
             break;
         }
+        case SOCK_GET_TCP_CWND:
+        case SOCK_GET_TCP_SSTHRESH:
+        case SOCK_GET_TCP_RTO_MS:
+        case SOCK_GET_IP_PATH_MTU: {
+            tcp_flow_t* flow = tcp_flow_from_ctx(&s->flow);
+            if (!flow) return SOCK_ERR_STATE;
+            switch (opt) {
+                case SOCK_GET_TCP_CWND:
+                    v = flow->tx.cwnd;
+                    break;
+                case SOCK_GET_TCP_SSTHRESH:
+                    v = flow->tx.ssthresh;
+                    break;
+                case SOCK_GET_TCP_RTO_MS:
+                    v = flow->tx.rto;
+                    break;
+                case SOCK_GET_IP_PATH_MTU:
+                    v = flow->tx.path_mss + (sizeof(tcp_hdr_t) + (flow->base.local.ver == IP_VER6 ? sizeof(ipv6_hdr_t) : sizeof(ipv4_hdr_t)));
+                    break;
+            }
+            tcp_flow_put(flow);
+            break;
+        }
+        case SOCK_GET_OPT_TCP_KEEPIDLE:
+            if ((s->options.flags & SOCK_OPT_TCP_KEEPIDLE) && s->options.tcp_keepidle) v = s->options.tcp_keepidle;
+            else v = SOCKET_DEFAULT_KEEPALIVE_MS / 1000;
+            break;
+        case SOCK_GET_OPT_TCP_KEEPINTVL:
+            v = (s->options.flags & SOCK_OPT_TCP_KEEPINTVL) && s->options.tcp_keepintvl ? s->options.tcp_keepintvl : TCP_KEEPALIVE_INTERVAL_MS / 1000;
+            break;
+        case SOCK_GET_OPT_TCP_KEEPCNT:
+            v = (s->options.flags & SOCK_OPT_TCP_KEEPCNT) && s->options.tcp_keepcnt ? s->options.tcp_keepcnt : TCP_KEEPALIVE_PROBES;
+            break;
+        case SOCK_GET_OPT_TCP_USER_TIMEOUT:
+            v = (s->options.flags & SOCK_OPT_TCP_USER_TIMEOUT) ? s->options.tcp_user_timeout_ms : 0;
+            break;
+        case SOCK_GET_OPT_TCP_QUICKACK: { 
+            tcp_flow_t* flow = tcp_flow_from_ctx(&s->flow);
+            v = flow ? flow->timer.quickack : (s->options.flags & SOCK_OPT_TCP_QUICKACK) != 0;
+            if (flow) tcp_flow_put(flow);
+            break;
+        }
+        case SOCK_GET_OPT_TCP_CORK:
+            v = (s->options.flags & SOCK_OPT_TCP_CORK) != 0;
+            break;
+        case SOCK_GET_OPT_TCP_SYNCNT:
+            v = (s->options.flags & SOCK_OPT_TCP_SYNCNT) && s->options.tcp_syncnt ? s->options.tcp_syncnt : TCP_MAX_RETRANS;
+            break;
         case SOCK_GET_TCP_URGENT_REMAINING: {
             tcp_flow_t* flow = tcp_flow_from_ctx(&s->flow);
             if (flow) {
@@ -364,9 +456,6 @@ int32_t socket_getopt_tcp(socket_impl_t sh, int32_t opt, void* value, uint32_t* 
         }
         case SOCK_GET_OPT_KEEPALIVE:
             v = (s->options.flags & SOCK_OPT_KEEPALIVE) != 0;
-            break;
-        case SOCK_GET_OPT_KEEPALIVE_INTERVAL:
-            v = s->options.keepalive_ms;
             break;
         case SOCK_GET_OPT_TCP_NO_DELAY:
             v = (s->options.flags & SOCK_OPT_TCP_NO_DELAY) != 0;
@@ -574,7 +663,7 @@ int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst) {
         }
 
         memset(&s->flow, 0, sizeof(s->flow));
-        if (!tcp_handshake_l3(chosen_l3, s->localPort, &d, &s->flow, &s->options)) {
+        if (!tcp_handshake_l3(chosen_l3, s->localPort, &d, &s->flow, &s->options, socket_core_export_handle(s->ownerSocket))) {
             tcp_socket_reset_connection(s, true);
 
             if (ephemeral_allocated) {
@@ -586,25 +675,29 @@ int32_t socket_connect_tcp(socket_impl_t sh, const net_l4_endpoint* dst) {
                 memset(&s->bindSpec, 0, sizeof(s->bindSpec));
                 s->bindSpec.kind = BIND_ANY;
             }
-            return SOCK_ERR_SYS;
+            int32_t error = socket_core_take_error(s->ownerSocket);
+            return error ? error : SOCK_ERR_SYS;
         }
 
         s->remoteEP = d;
     }
 
     uint32_t start_ms = get_time();
-    uint32_t timeout_ms = (s->options.flags & SOCK_OPT_SEND_TIMEOUT) && s->options.send_timeout_ms ? s->options.send_timeout_ms : TCP_CONNECT_TIMEOUT_MS;
+    uint32_t timeout_ms = (s->options.flags & SOCK_OPT_SEND_TIMEOUT) ? s->options.send_timeout_ms : 0;
 
     while (1) {
         int32_t state = tcp_socket_connection_state(s);
         if (state > 0) break;
-        if (state < 0) return SOCK_ERR_STATE;
+        if (state < 0) {
+            int32_t error = socket_core_take_error(s->ownerSocket);
+            return error ? error : SOCK_ERR_STATE;
+        }
         if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
 
         uint32_t now_ms = get_time();
-        if (now_ms - start_ms >= timeout_ms) {
+        if (timeout_ms && now_ms - start_ms >= timeout_ms) {
             tcp_socket_reset_connection(s, true);
-            return SOCK_ERR_WOULDBLOCK;
+            return SOCK_ERR_TIMED_OUT;
         }
         msleep(5);
     }
@@ -635,7 +728,11 @@ int64_t socket_send_tcp(socket_impl_t sh, const void* buf, uint64_t len) {
     netlog_socket_event(&s->options, &ev);
 
     int32_t connection_state = tcp_socket_connection_state(s);
-    if (connection_state <= 0 || !s->flow.flow_generation) return connection_state == 0 ? SOCK_ERR_WOULDBLOCK : SOCK_ERR_STATE;
+    if (connection_state <= 0 || !s->flow.flow_generation) {
+        if (connection_state == 0) return SOCK_ERR_WOULDBLOCK;
+        int32_t error = socket_core_take_error(s->ownerSocket);
+        return error ? error : SOCK_ERR_STATE;
+    }
     if (!buf && len) return SOCK_ERR_INVAL;
     if (!len) return 0;
 
@@ -647,7 +744,11 @@ int64_t socket_send_tcp(socket_impl_t sh, const void* buf, uint64_t len) {
         s->flow.flags = (1u << PSH_F) | (1u << ACK_F);
 
         tcp_result_t res = tcp_flow_send(&s->flow);
-        if (res != TCP_OK && res != TCP_WOULDBLOCK) return res == TCP_INVALID ? SOCK_ERR_STATE : SOCK_ERR_SYS;
+        if (res != TCP_OK && res != TCP_WOULDBLOCK) {
+            if (res != TCP_INVALID) return SOCK_ERR_SYS;
+            int32_t error = socket_core_take_error(s->ownerSocket);
+            return error ? error : SOCK_ERR_STATE;
+        }
         if (s->flow.payload.size) return (int64_t)s->flow.payload.size;
         if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
 
@@ -677,7 +778,10 @@ int64_t socket_recv_tcp(socket_impl_t sh, void* buf, uint64_t len) {
 
     if (!buf || !len) return 0;
     int32_t connection_state = tcp_socket_connection_state(s);
-    if (connection_state < 0) return 0;
+    if (connection_state < 0) {
+        int32_t error = socket_core_take_error(s->ownerSocket);
+        return error ? error : 0;
+    }
     if (connection_state == 0 || !s->flow.flow_generation) return SOCK_ERR_WOULDBLOCK;
 
     //TODO add receive low water mark support when socket events exist
@@ -688,10 +792,16 @@ int64_t socket_recv_tcp(socket_impl_t sh, void* buf, uint64_t len) {
         if (readable || closed) {
             int64_t n = tcp_flow_read(&s->flow, buf, len);
             if (n > 0) return n;
-            if (n == TCP_DISCONNECT) return 0;
+            if (n == TCP_DISCONNECT) {
+                int32_t error = socket_core_take_error(s->ownerSocket);
+                return error ? error : 0;
+            }
             if (n < 0) return SOCK_ERR_STATE;
         }
-        if (closed || !s->connected) return 0;
+        if (closed || !s->connected) {
+            int32_t error = socket_core_take_error(s->ownerSocket);
+            return error ? error : 0;
+        }
         if (s->options.flags & SOCK_OPT_NONBLOCK) return SOCK_ERR_WOULDBLOCK;
         if ((s->options.flags & SOCK_OPT_RECV_TIMEOUT) && s->options.recv_timeout_ms) {
 
@@ -885,6 +995,11 @@ int32_t tcp_accept_enqueue(ksocket_t* listener, ip_version_t ipver, l3_id_t l3_i
     }
 
     child->connected = true;
+    tcp_flow_t* flow = tcp_flow_from_ctx(&child->flow);
+    if (flow) {
+        flow->base.owner_handle = socket_core_export_handle(child_owner);
+        tcp_flow_put(flow);
+    }
     socket_core_ref(child_owner);
 
     irq_flags_t irq = irq_save_disable();

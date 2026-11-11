@@ -10,7 +10,7 @@ extern "C" {
 socket_impl_t socket_raw_create(ksocket_t* owner, const SocketOptions* extra);
 void socket_destroy_raw(socket_impl_t sh);
 int32_t socket_close_raw(socket_impl_t sh);
-int32_t socket_setopt_raw(socket_impl_t sh, int32_t opt, const void* value, uint32_t len);
+int32_t socket_setopt_raw(socket_impl_t sh, SockOptFlags opt, const void* value, uint32_t len);
 int32_t socket_getopt_raw(socket_impl_t sh, int32_t opt, void* value, uint32_t* len);
 int32_t socket_bind_raw(socket_impl_t sh, const SockBindSpec* spec);
 int32_t socket_connect_raw(socket_impl_t sh, const net_l4_endpoint* dst);

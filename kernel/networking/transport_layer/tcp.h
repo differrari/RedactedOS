@@ -69,6 +69,7 @@ typedef enum {
 } tcp_state_t;
 
 #define MAX_TCP_FLOWS 512
+#define TCP_CORK_MAX_HOLD_MS 200
 #define TCP_RECV_WINDOW 65535
 #define TCP_MAX_TX_SEGS 128
 #define TCP_INIT_RTO 1000
@@ -85,8 +86,8 @@ typedef enum {
 bool tcp_get_ctx(uint16_t local_port, ip_version_t ver, const void *local_ip, const void *remote_ip, uint16_t remote_port, tcp_data *out_ctx);
 bool tcp_bind_conflicts(const SockBindSpec* spec, uint16_t port, bool reuseaddr);
 
-bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra);
-void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra, uint32_t apply_mask);
+bool tcp_handshake_l3(l3_id_t l3_id, uint16_t local_port, net_l4_endpoint *dst, tcp_data *flow_ctx, const SocketOptions* extra, socket_handle_t owner_handle);
+void tcp_flow_apply_socket_options(tcp_data *flow_ctx, const SocketOptions* extra, SockOptFlags apply_mask);
 
 tcp_result_t tcp_flow_send(tcp_data *flow_ctx);
 tcp_result_t tcp_flow_flush(tcp_data *flow_ctx);

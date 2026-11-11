@@ -264,7 +264,8 @@ u64 syscall_socket_bind(process_t *ctx, thread_t *current_thread){
     const SockBindSpec* spec = NULL;
 
     if (current_thread->PROC_X1){
-        SYSCALL_ARG(SockBindSpec, user_spec, PROC_X1, false);
+        SockBindSpec* user_spec = (SockBindSpec*)current_thread->PROC_X1;
+        if (!validate_address(ctx, current_thread, (uptr)user_spec, sizeof(*user_spec), false)) return SOCK_ERR_INVAL;
         spec = user_spec;
     }
 
@@ -274,7 +275,8 @@ u64 syscall_socket_bind(process_t *ctx, thread_t *current_thread){
 
 u64 syscall_socket_connect(process_t *ctx, thread_t *current_thread){
     socket_handle_t handle = (socket_handle_t)current_thread->PROC_X0;
-    SYSCALL_ARG(net_l4_endpoint, ep, PROC_X1, false);
+    net_l4_endpoint* ep = (net_l4_endpoint*)current_thread->PROC_X1;
+    if (!validate_address(ctx, current_thread, (uptr)ep, sizeof(*ep), false)) return SOCK_ERR_INVAL;
     return connect_socket(handle, ep);
 }
 
@@ -294,15 +296,18 @@ u64 syscall_socket_send(process_t *ctx, thread_t *current_thread){
     size_t size = (size_t)current_thread->PROC_X2;
 
     socket_handle_t handle = (socket_handle_t)current_thread->PROC_X0;
-    SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
+    const void* buf = (const void*)current_thread->PROC_X1;
+    if (!validate_address(ctx, current_thread, (uptr)buf, size, false)) return SOCK_ERR_INVAL;
     return send_on_socket(handle, buf, size);
 }
 
 u64 syscall_socket_send_to(process_t *ctx, thread_t *current_thread) {
     size_t size = (size_t)current_thread->PROC_X3;
     socket_handle_t handle = (socket_handle_t)current_thread->PROC_X0;
-    SYSCALL_ARG(net_l4_endpoint, dst, PROC_X1, false);
-    SYSCALL_ARG_SIZE(void, buf, size, PROC_X2, false);
+    const net_l4_endpoint* dst = (const net_l4_endpoint*)current_thread->PROC_X1;
+    const void* buf = (const void*)current_thread->PROC_X2;
+    if (dst && !validate_address(ctx, current_thread, (uptr)dst, sizeof(*dst), false)) return SOCK_ERR_INVAL;
+    if (!validate_address(ctx, current_thread, (uptr)buf, size, false)) return SOCK_ERR_INVAL;
 
     return send_to_socket(handle, dst, buf, size);
 }
@@ -311,12 +316,13 @@ u64 syscall_socket_receive(process_t *ctx, thread_t *current_thread){
     size_t size = (size_t)current_thread->PROC_X2;
     
     socket_handle_t handle = (socket_handle_t)current_thread->PROC_X0;
-    SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, true);
+    void* buf = (void*)current_thread->PROC_X1;
+    if (!validate_address(ctx, current_thread, (uptr)buf, size, true)) return SOCK_ERR_INVAL;
 
     net_l4_endpoint* src = NULL;
     if (current_thread->PROC_X3) {
         src = (net_l4_endpoint*)current_thread->PROC_X3;
-        if (!validate_address(ctx, current_thread, (uptr)src, sizeof(net_l4_endpoint), true)) return 0;
+        if (!validate_address(ctx, current_thread, (uptr)src, sizeof(net_l4_endpoint), true)) return SOCK_ERR_INVAL;
     }
 
     return receive_from_socket(handle, buf, size, src);
@@ -329,18 +335,24 @@ u64 syscall_socket_close(process_t *ctx, thread_t *current_thread){
 
 u64 syscall_socket_setopt(process_t *ctx, thread_t *current_thread){
     socket_handle_t handle = (socket_handle_t)current_thread->PROC_X0;
-    int32_t opt = (int32_t)current_thread->PROC_X1;
+    SockOptFlags opt = (SockOptFlags)current_thread->PROC_X1;
     uint32_t len = (uint32_t)current_thread->PROC_X3;
-    SYSCALL_ARG_SIZE(void, value, len, PROC_X2, false);
+    const void *value = (const void*)current_thread->PROC_X2;
+    if (!validate_address(ctx, current_thread, (uptr)value, len, false)) return SOCK_ERR_INVAL;
     return set_socket_option(handle, opt, value, len);
 }
 
 u64 syscall_socket_getopt(process_t *ctx, thread_t *current_thread){
     socket_handle_t handle = (socket_handle_t)current_thread->PROC_X0;
     int32_t opt = (int32_t)current_thread->PROC_X1;
-    SYSCALL_ARG(uint32_t, len, PROC_X3, true);
-    SYSCALL_ARG_SIZE(void, value, *len, PROC_X2, true);
-    return get_socket_option(handle, opt, value, len);
+    uint32_t* user_len = (uint32_t*)current_thread->PROC_X3;
+    if (!validate_address(ctx, current_thread, (uptr)user_len, sizeof(*user_len), true)) return SOCK_ERR_INVAL;
+    uint32_t len = *user_len;
+    void* value = (void*)current_thread->PROC_X2;
+    if (value && !validate_address(ctx, current_thread, (uptr)value, len, true)) return SOCK_ERR_INVAL;
+    int32_t result = get_socket_option(handle, opt, value, &len);
+    *user_len = len;
+    return result;
 }
 
 #define ISOLATEDFS

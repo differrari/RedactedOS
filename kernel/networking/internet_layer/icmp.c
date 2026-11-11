@@ -58,6 +58,8 @@ static void icmp_note_frag_needed(uint8_t ifindex, const uint8_t* raw, uint32_t 
     ipv4_hdr_t inner;
     memcpy(&inner, quoted, sizeof(inner));
     if (bswap16(inner.flags_frag_offset) & 0x1FFF) return;
+    uint16_t original_len = bswap16(inner.total_length);
+    if (original_len < ihl + 8) return;
     uint32_t local_ip = bswap32(inner.src_ip);
     uint32_t remote_ip = bswap32(inner.dst_ip);
     l3_ipv4_interface_t* l3 = l3_ipv4_find_by_ip(local_ip);
@@ -67,8 +69,6 @@ static void icmp_note_frag_needed(uint8_t ifindex, const uint8_t* raw, uint32_t 
     uint16_t mtu = rd_be16(raw + 6);
     if (!mtu) {
         static const uint16_t plateau[] = {65535, 32000, 17914, 8166, 4352, 2002, 1492, 1006, 508, 296, 68};
-        uint16_t original_len = bswap16(inner.total_length);
-        if (original_len < ihl) return;
 
         mtu = 68;
         for (int i = 0; i < (int)N_ARR(plateau); i++) {
@@ -89,7 +89,8 @@ static void icmp_note_frag_needed(uint8_t ifindex, const uint8_t* raw, uint32_t 
 
     if (inner.protocol == PROTO_TCP) {
         if (!tcp_icmp_validate(l3->l3_id, IP_VER4, &local_ip, &remote_ip, local_port, remote_port, rd_be32(ports + 4))) return;
-    } else if (!udp_icmp_validate(l3->l3_id, IP_VER4, &local_ip, &remote_ip, local_port, remote_port)) return;
+        tcp_icmp_error(l3->l3_id, IP_VER4, &local_ip, &remote_ip, local_port, remote_port, rd_be32(ports + 4), 3, 4);
+    } else if (!udp_icmp_validate(l3->l3_id, IP_VER4, &local_ip, &remote_ip, local_port, remote_port, 3, 4)) return;
 
     uint16_t path_mtu = pmtu_note(l3->l3_id, l3->epoch, IP_VER4, &remote_ip, mtu);
     if (path_mtu) tcp_pmtu_update(l3->l3_id, IP_VER4,&remote_ip, path_mtu);
@@ -158,12 +159,13 @@ void icmp_input(uint8_t ifindex, netpkt_t* pkt, uint32_t src_ip, uint32_t dst_ip
         if (len >= 8 + sizeof(ipv4_hdr_t) + 8) {
             const uint8_t* q = raw + 8; 
             uint32_t ihl = (q[0] & 15u) * 4;
-            if ((q[0] >> 4) == 4 && ihl >= sizeof(ipv4_hdr_t) && len >= 8 + ihl + 8 && !(rd_be16(q + 6) & 0x1FFF) && q[9] == PROTO_TCP) {
+            if ((q[0] >> 4) == 4 && ihl >= sizeof(ipv4_hdr_t) && len >= 8 + ihl + 8 && (uint32_t)rd_be16(q + 2) >= ihl + 8 && !(rd_be16(q + 6) & 0x1FFF) && (q[9] == PROTO_TCP || q[9] == PROTO_UDP)) {
                 uint32_t lip = rd_be32(q + 12), rip = rd_be32(q + 16);
                 l3_ipv4_interface_t* l3 = l3_ipv4_find_by_ip(lip);
                 if (ipv4_l3_is_ready(l3) && l3->l2->ifindex == ifindex) {
                     const uint8_t* t = q + ihl;
-                    tcp_icmp_error(l3->l3_id, IP_VER4, &lip, &rip, rd_be16(t), rd_be16(t + 2), rd_be32(t + 4),type, hdr[1]);
+                    if (q[9] == PROTO_TCP) tcp_icmp_error(l3->l3_id, IP_VER4, &lip, &rip, rd_be16(t), rd_be16(t + 2), rd_be32(t + 4), type, hdr[1]);
+                    else udp_icmp_validate(l3->l3_id, IP_VER4, &lip, &rip, rd_be16(t), rd_be16(t + 2), type, hdr[1]);
                 }
             }
         }

@@ -13,7 +13,7 @@ typedef struct ksocket ksocket_t;
 
 typedef void (*socket_impl_destroy_fn)(socket_impl_t impl);
 typedef int32_t (*socket_impl_close_fn)(socket_impl_t impl);
-typedef int32_t (*socket_impl_setopt_fn)(socket_impl_t impl, int32_t opt, const void* value, uint32_t len);
+typedef int32_t (*socket_impl_setopt_fn)(socket_impl_t impl, SockOptFlags opt, const void* value, uint32_t len);
 typedef int32_t (*socket_impl_getopt_fn)(socket_impl_t impl, int32_t opt, void* value, uint32_t* len);
 
 #define SOCKET_MAX_OPEN 2048
@@ -29,9 +29,12 @@ int32_t socket_core_close_socket(ksocket_t* socket);
 void socket_core_close_process(uint16_t pid);
 void socket_core_l2_deleted(uint8_t ifindex, uint32_t generation);
 void socket_core_l3_deleted(l3_id_t l3_id);
-int32_t socket_core_set_option(ksocket_t* socket, int32_t opt, const void* value, uint32_t len);
+int32_t socket_core_set_option(ksocket_t* socket, SockOptFlags opt, const void* value, uint32_t len);
 int32_t socket_core_get_option(ksocket_t* socket, int32_t opt, void* value, uint32_t* len);
-int32_t socket_common_options_set(SocketOptions* opts, int32_t opt, const void* value, uint32_t len);
+void socket_core_note_error(ksocket_t* socket, int32_t error);
+void socket_core_note_icmp_error(ksocket_t* socket, uint32_t detail, int32_t error);
+int32_t socket_core_take_error(ksocket_t* socket);
+int32_t socket_common_options_set(SocketOptions* opts, SockOptFlags opt, const void* value, uint32_t len);
 int32_t socket_common_options_get(const SocketOptions* opts, int32_t opt, void* value, uint32_t* len);
 int32_t socket_common_get_value(const void* data, uint32_t data_len, void* value, uint32_t* len);
 
